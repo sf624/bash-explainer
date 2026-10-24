@@ -5,6 +5,7 @@ import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
 import { ExamplePlacement, noteRefs, placeExamples, ui } from './render';
 import { manualLabel, SECTIONS } from '../manual';
+import { readingNodes } from '../reading';
 
 // The explanation panel (media/panel.js) as both the extension and the web page drive it.
 
@@ -18,7 +19,12 @@ export type FromPanel =
   | { type: 'rerun'; id: number; spec: RerunSpec; inputs: string[] }
   | { type: 'copy' }
   | { type: 'override'; key: 'shell' | 'yq'; value: string }
-  | { type: 'reference' };
+  | { type: 'reference' }
+  /** The view and layers chosen (the web page keeps them for the next visit; VS Code keeps the webview's state). */
+  | { type: 'panelState'; state: PanelState };
+
+/** What the panel remembers per viewer: the list or the tree view, and how many layers of the tree it shows (1–4). */
+export interface PanelState { view?: 'list' | 'tree'; level?: number }
 
 export interface PanelLine {
   lang: Lang;
@@ -45,6 +51,8 @@ function manualLinks(lang: Lang, ex: LineExplanation): Record<string, { label: s
     t.children.forEach(walk);
   };
   ex.items.forEach(walk);
+  // (And those of the tree view: the sections of bash's own reading, where no token says them.)
+  for (const n of ex.reading ? readingNodes(ex.reading) : []) for (const id of n.refs ?? []) ids.add(id);
   return Object.fromEntries([...ids].map((id) => [id, { label: manualLabel(lang, [id]), title: SECTIONS.get(id)!.title, url: SECTIONS.get(id)!.url }]));
 }
 
@@ -91,8 +99,15 @@ export const PANEL_BODY = `<div id="top">
 <pre id="line"></pre>
 </div>
 <main id="main">
+  <div id="views" role="group">
+    <button id="view-list" type="button" aria-pressed="true"></button><button id="view-tree" type="button" aria-pressed="false"></button>
+  </div>
   <div id="notes"></div>
   <ul id="tree"></ul>
+  <section id="reading" hidden>
+    <div id="layers" role="group"><span id="layers-label"></span></div>
+    <ul id="reading-tree" role="tree"></ul>
+  </section>
   <div id="examples"></div>
   <p id="empty" hidden></p>
 </main>

@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading Tree</title>
+<style>
+/*COMMON_CSS*/
+.show { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 10px; font-size: 12px; color: var(--muted); }
+.show button { font: 12px var(--ui); color: var(--fg); background: transparent; border: 1px solid var(--rule); padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+.show button[aria-pressed="true"] { border-color: var(--c); background: color-mix(in srgb, var(--c) 16%, var(--bg)); }
+.src { font: 17px/1.5 var(--code); white-space: pre; margin: 0 0 10px; overflow-x: auto; }
+@media (max-width: 480px) { .src { font-size: 13px; } }
+.src mark { background: color-mix(in srgb, var(--c) 25%, transparent); color: inherit; border-radius: 2px; box-shadow: 0 2px 0 var(--c); }
+svg { display: block; width: 100%; overflow: visible; }
+.node { cursor: pointer; outline: none; }
+.node .chip { fill: color-mix(in srgb, var(--c) 10%, var(--bg)); stroke: var(--c); stroke-width: 1.3; }
+.node .kind { font: 600 11px var(--ui); fill: var(--c); }
+.node .code { font: 13px var(--code); fill: var(--fg); }
+.node .note { font: 12px var(--ui); fill: var(--muted); }
+.node .tw { fill: var(--c); }
+.node:focus-visible .chip { stroke: var(--focus); stroke-width: 2.5; }
+.node.on .chip { stroke-width: 2.5; fill: color-mix(in srgb, var(--c) 22%, var(--bg)); }
+.stub, .spine { stroke: var(--rule); fill: none; stroke-width: 1.3; }
+.spine { fill: var(--rule); stroke: none; }
+.band { fill: color-mix(in srgb, var(--c) 6%, transparent); }
+.band-edge { fill: var(--c); }
+.band-label { font: 600 10.5px var(--ui); fill: var(--c); text-anchor: end; }
+.nt, .nt * { transition: none !important; }
+@media (prefers-reduced-motion: no-preference) {
+  .node, .spine, .bandg, .band, .band-edge, svg { transition: transform .55s cubic-bezier(.2,.8,.2,1), opacity .4s, height .55s cubic-bezier(.2,.8,.2,1); }
+  .node .tw { transition: transform .3s; }
+}
+</style>
+</head>
+<body>
+<h1>The reading tree</h1>
+<div class="examples" id="ex"></div>
+<div class="show" role="group" aria-label="Which readers to show">Show:
+  <button class="l-bash" data-lvl="1">bash</button>
+  <button class="l-child" data-lvl="2">+ child bash</button>
+  <button class="l-cmd" data-lvl="3">+ commands</button>
+  <button class="l-lang" data-lvl="4">+ languages</button>
+</div>
+<pre class="src" id="src" aria-hidden="true"></pre>
+<svg id="tree" role="tree" aria-label="How bash and the commands read the line"></svg>
+<div class="detail" id="detail">Click a node to fold it; hover, tap or use the arrow keys to see who reads it.</div>
+<div class="legend"><span class="l-bash">bash</span><span class="l-child">child bash in $( )</span><span class="l-cmd">the command</span><span class="l-lang">embedded language</span></div>
+<script>
+const DATA = /*DATA*/;
+/*COMMON_JS*/
+const NS = 'http://www.w3.org/2000/svg';
+const LVL = { bash: 1, child: 2, cmd: 3, lang: 4 };
+const BAND = { bash: 'bash', child: 'child bash', cmd: 'reads', lang: 'language' };
+let cur = Number(params.get('ex') || 0), level = Number(params.get('lvl') || 4), folded = new Set(), active = null;
+const canvas = document.createElement('canvas').getContext('2d');
+const tw = (s, f) => { canvas.font = f; return canvas.measureText(s).width; };
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+let nodes = [], byId = new Map(), svg = document.getElementById('tree');
+
+function build() {
+  const d = DATA[cur];
+  svg.replaceChildren();
+  nodes = []; byId = new Map();
+  walk(d.root, (n, anc) => { const o = { n, anc, parent: anc.length ? byId.get(anc[anc.length - 1].id) : null, depth: anc.length }; nodes.push(o); byId.set(n.id, o); });
+  const gBands = el('g', {}, svg), gLinks = el('g', {}, svg), gNodes = el('g', {}, svg);
+  const ui = getComputedStyle(document.body).fontFamily;
+  const code = getComputedStyle(document.documentElement).getPropertyValue('--code');
+  for (const o of nodes) {
+    const n = o.n;
+    // A band where a new reader takes over: the root, $( ) → child bash, a command's reading, a language.
+    if (!o.parent || o.parent.n.layer !== n.layer) {
+      o.band = el('g', { class: `bandg l-${n.layer}` }, gBands);
+      o.bandRect = el('rect', { class: 'band', rx: 6 }, o.band);
+      o.bandEdge = el('rect', { class: 'band-edge', width: 3, rx: 1.5 }, o.band);
+      o.bandText = el('text', { class: 'band-label' }, o.band);
+      o.bandText.textContent = n.layer === 'cmd' ? `${n.label.split(' ')[0]} reads` : n.layer === 'lang' ? n.label : BAND[n.layer];
+    }
+    if (n.children.length) o.spine = el('rect', { class: 'spine', width: 1.3 }, gLinks);
+    const g = el('g', { class: `node l-${n.layer}`, role: 'treeitem', 'aria-level': o.depth + 1, tabindex: -1 }, gNodes);
+    o.g = g;
+    const kind = n.kind === 'reading' ? `${n.label.split(' ')[0]} reads` : n.kind === 'lang' ? n.label : n.kind === 'script' && n.layer === 'bash' ? 'bash reads the line' : labelsOf(n)[0];
+    const text = ['reading', 'lang', 'script', 'list', 'pipeline'].includes(n.kind) && n.layer !== 'child' ? '' : d.line.slice(n.s, n.e);
+    o.kind = kind; o.text = text;
+    o.kindW = tw(kind, `600 11px ${ui}`);
+    o.codeW = (s) => tw(s, `13px ${code}`);
+    if (o.depth) el('path', { class: 'stub' }, g);
+    o.chip = el('rect', { class: 'chip', rx: 5, height: 22, y: -11 }, g);
+    if (n.children.length) o.twisty = el('path', { class: 'tw', d: 'M-3,-4L3,0L-3,4Z' }, g);
+    o.kindEl = el('text', { class: 'kind', y: 4 }, g); o.kindEl.textContent = kind;
+    o.codeEl = el('text', { class: 'code', y: 4, 'xml:space': 'preserve' }, g);
+    o.noteEl = el('text', { class: 'note', y: 4 }, g);
+    g.setAttribute('aria-label', `${kind}${text ? ' ' + text : ''}, read by ${readerOf(n, o.anc)}`);
+    g.addEventListener('click', () => { g.focus(); if (n.children.length) toggle(o); });
+    g.addEventListener('mouseenter', () => show(o));
+    g.addEventListener('focus', () => show(o));
+    g.addEventListener('keydown', (e) => key(e, o));
+  }
+  document.getElementById('src').textContent = d.line;
+  svg.classList.add('nt');
+  layout(false);
+  svg.getBoundingClientRect();
+  requestAnimationFrame(() => requestAnimationFrame(() => svg.classList.remove('nt')));
+  (byId.get(DATA[cur].root.id)).g.tabIndex = 0;
+}
+const visible = (o) => LVL[o.n.layer] <= level && (!o.parent || (visible(o.parent) && !folded.has(o.parent.n.id)));
+function layout() {
+  const W = svg.clientWidth || document.body.clientWidth - 32;
+  const narrow = W < 520, ind = narrow ? 16 : 24, rowH = narrow ? 28 : 30;
+  let row = 0;
+  for (const o of nodes) {
+    o.vis = visible(o);
+    if (o.vis) { o.row = row++; o.x = 8 + o.depth * ind; o.y = o.row * rowH + rowH / 2 + 2; }
+  }
+  // Hidden nodes go to their nearest visible ancestor, so they fold into it.
+  for (const o of nodes) if (!o.vis) { let p = o.parent; while (p && !p.vis) p = p.parent; o.x = p ? p.x : 8; o.y = p ? p.y : 0; }
+  const H = row * rowH + 8;
+  svg.style.height = H + 'px';
+  for (const o of nodes) {
+    const n = o.n, g = o.g;
+    g.style.transform = `translate(${o.x}px, ${o.y}px)`;
+    g.style.opacity = o.vis ? 1 : 0;
+    g.style.pointerEvents = o.vis ? '' : 'none';
+    g.setAttribute('aria-hidden', String(!o.vis));
+    // The chip: twisty, kind, code; the note after it when there is room.
+    const tx = n.children.length ? 13 : 7;
+    const kindX = tx;
+    const codeX = kindX + o.kindW + (o.text ? 7 : 0);
+    let room = W - o.x - codeX - 14, text = o.text;
+    while (text && o.codeW(text) > room && text.length > 2) text = text.slice(0, -2) + '…';
+    o.codeEl.textContent = text;
+    o.kindEl.setAttribute('x', kindX);
+    o.codeEl.setAttribute('x', codeX);
+    const w = codeX + (text ? o.codeW(text) : 0) + 7;
+    o.chip.setAttribute('x', -2); o.chip.setAttribute('width', w + 2); o.chipW = w;
+    if (o.twisty) { o.twisty.setAttribute('transform', `translate(6,0) rotate(${folded.has(n.id) ? 0 : 90})`); o.twisty.style.display = n.children.some((c) => LVL[c.layer] <= level) ? '' : 'none'; }
+    const noteRoom = W - o.x - w - 24;
+    let note = !narrow && noteRoom > 120 && n.note ? n.note : '';
+    if (note) { const f = `12px ${getComputedStyle(document.body).fontFamily}`; while (tw(note, f) > noteRoom && note.length > 4) note = note.slice(0, note.lastIndexOf(' ', note.length - 2)) + '…'; }
+    o.noteEl.textContent = note; o.noteEl.setAttribute('x', w + 10);
+    if (o.depth) o.g.querySelector('.stub').setAttribute('d', `M${-ind + 8.6},0H-2`);
+  }
+  for (const o of nodes) {
+    // The spine from a node down to its last visible child.
+    if (o.spine) {
+      const kids = o.n.children.map((c) => byId.get(c.id)).filter((k) => k.vis);
+      const last = kids.length && o.vis ? kids[kids.length - 1] : null;
+      o.spine.style.transform = `translate(${o.x + 8}px, ${o.y + 11}px)`;
+      o.spine.style.height = last ? `${last.y - o.y - 11}px` : '0px';
+      o.spine.style.opacity = last ? 1 : 0;
+    }
+    if (o.band) {
+      // The band covers the node and its visible subtree.
+      let lastRow = o.row;
+      for (const k of nodes) if (k.vis && k.anc.includes(o.n)) lastRow = Math.max(lastRow, k.row);
+      const h = o.vis ? (lastRow - o.row + 1) * rowH - 2 : 0;
+      const bx = o.x - 6;
+      o.band.style.transform = `translate(${bx}px, ${o.y - rowH / 2 + 1}px)`;
+      o.band.style.opacity = o.vis ? 1 : 0;
+      o.bandRect.setAttribute('width', Math.max(0, W - bx)); o.bandRect.style.height = h + 'px';
+      o.bandEdge.style.height = h + 'px';
+      o.bandText.setAttribute('x', W - bx - 6); o.bandText.setAttribute('y', 12);
+      // No label where it would run into the node's own chip or note.
+      const lw = tw(o.bandText.textContent, `600 10.5px ${getComputedStyle(document.body).fontFamily}`);
+      const used = 6 + o.chipW + (o.noteEl.textContent ? 10 + o.noteEl.getComputedTextLength() : 0) + 8;
+      o.bandText.style.display = W - bx - 6 - lw > used ? '' : 'none';
+    }
+  }
+  document.querySelectorAll('.show button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.lvl === level)));
+}
+function toggle(o) { folded.has(o.n.id) ? folded.delete(o.n.id) : folded.add(o.n.id); o.g.setAttribute('aria-expanded', String(!folded.has(o.n.id))); layout(); }
+function show(o) {
+  nodes.forEach((k) => k.g.classList.toggle('on', k === o));
+  const line = DATA[cur].line, n = o.n;
+  const src = document.getElementById('src');
+  src.style.setProperty('--c', `var(--l-${n.layer})`);
+  src.innerHTML = `${esc(line.slice(0, n.s))}<mark>${esc(line.slice(n.s, n.e))}</mark>${esc(line.slice(n.e))}`;
+  const det = document.getElementById('detail');
+  det.style.setProperty('--c', `var(--l-${n.layer})`);
+  det.innerHTML = `<div class="who">${esc(readerOf(n, o.anc))}</div><b>${esc(o.kind)}</b> <code>${esc(line.slice(n.s, n.e))}</code><br>${esc(n.note || '')}`;
+}
+function key(e, o) {
+  const vis = nodes.filter((k) => k.vis), i = vis.indexOf(o);
+  let t = null;
+  if (e.key === 'ArrowDown') t = vis[i + 1];
+  else if (e.key === 'ArrowUp') t = vis[i - 1];
+  else if (e.key === 'ArrowRight') { if (folded.has(o.n.id)) toggle(o); else t = vis[i + 1]?.parent === o ? vis[i + 1] : null; }
+  else if (e.key === 'ArrowLeft') { if (o.n.children.length && !folded.has(o.n.id)) toggle(o); else t = o.parent; }
+  else if (e.key === 'Enter' || e.key === ' ') { if (o.n.children.length) toggle(o); }
+  else if (e.key === 'Home') t = vis[0];
+  else if (e.key === 'End') t = vis[vis.length - 1];
+  else return;
+  e.preventDefault();
+  if (t) { o.g.tabIndex = -1; t.g.tabIndex = 0; t.g.focus(); }
+}
+document.querySelectorAll('.show button').forEach((b) => b.onclick = () => { level = +b.dataset.lvl; layout(); });
+exampleButtons(document.getElementById('ex'), (i) => { cur = i; folded = new Set(); build(); });
+document.querySelectorAll('#ex button').forEach((b, i) => b.setAttribute('aria-pressed', String(i === cur)));
+build();
+if (params.get('focus')) show(nodes[Number(params.get('focus'))]);
+addEventListener('resize', () => layout());
+window.__lvl = (l) => { level = l; layout(); };
+window.__fold = (i) => toggle(nodes[i]);
+</script>
+</body>
+</html>

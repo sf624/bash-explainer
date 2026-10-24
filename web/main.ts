@@ -165,7 +165,7 @@ function updatePanel(): void {
   if (!doc) return;
   const line = editor.cursorLine();
   const s = shells();
-  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, explainOptions(settings));
+  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: true });
   shown = { explanation, line };
   panel.show(panelUpdate({
     lang, explanation, file: kindInfo(kind).fileName, line, lineText: doc.lines[line] ?? '',

@@ -1,0 +1,53 @@
+/* Shared theme tokens. In the VS Code webview the --vscode-* variables exist and win; on the web page the fallbacks apply. */
+:root {
+  color-scheme: light dark;
+  --bg: var(--vscode-editor-background, #ffffff);
+  --fg: var(--vscode-foreground, #1f2328);
+  --muted: var(--vscode-descriptionForeground, #5c6670);
+  --rule: var(--vscode-panel-border, #d0d7de);
+  --focus: var(--vscode-focusBorder, #0969da);
+  --code: var(--vscode-editor-font-family, ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace);
+  --ui: var(--vscode-font-family, system-ui, -apple-system, "Segoe UI", sans-serif);
+  /* One colour per reader: the parent bash, the child bash in $( ), the command, an embedded language. */
+  --l-bash: #7a3db8;
+  --l-child: #0a62c9;
+  --l-cmd: #1a7f37;
+  --l-lang: #b04f00;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: var(--vscode-editor-background, #1e1e1e);
+    --fg: var(--vscode-foreground, #d4d4d4);
+    --muted: var(--vscode-descriptionForeground, #9da5b0);
+    --rule: var(--vscode-panel-border, #3c3c3c);
+    --focus: var(--vscode-focusBorder, #4daafc);
+    --l-bash: #c796ee;
+    --l-child: #6badff;
+    --l-cmd: #7fcf7f;
+    --l-lang: #f0a050;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1e1e1e; --fg: #d4d4d4; --muted: #9da5b0; --rule: #3c3c3c; --focus: #4daafc;
+  --l-bash: #c796ee; --l-child: #6badff; --l-cmd: #7fcf7f; --l-lang: #f0a050;
+}
+@media (forced-colors: active) {
+  :root { --l-bash: CanvasText; --l-child: LinkText; --l-cmd: CanvasText; --l-lang: LinkText; --rule: CanvasText; --focus: Highlight; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--ui); padding: 16px; }
+h1 { font-size: 15px; margin: 0 0 8px; font-weight: 600; }
+.examples { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.examples button, .ctl button {
+  font: 12px var(--ui); color: var(--fg); background: transparent; border: 1px solid var(--rule);
+  border-radius: 4px; padding: 3px 8px; cursor: pointer;
+}
+.examples button[aria-pressed="true"] { border-color: var(--focus); background: color-mix(in srgb, var(--focus) 14%, var(--bg)); }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; background: var(--c); }
+.l-bash { --c: var(--l-bash); } .l-child { --c: var(--l-child); } .l-cmd { --c: var(--l-cmd); } .l-lang { --c: var(--l-lang); }
+.detail { margin-top: 12px; padding: 8px 10px; border-left: 3px solid var(--c, var(--rule)); background: color-mix(in srgb, var(--c, var(--rule)) 8%, var(--bg)); font-size: 13px; min-height: 3.6em; }
+.detail .who { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--c); font-weight: 600; }
+.detail code { font-family: var(--code); }

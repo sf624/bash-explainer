@@ -353,6 +353,10 @@ The test comes first (step 0), as a guard. Today's tree should mostly pass it: t
 - **Fixes look like changes.** A dump that changes is either a fix (with a bash test and a CHANGELOG line) or a bug of the step.
 - **snippets.json** is generated from the tests; when the PRs are stacked, it is regenerated at each level.
 
+### What it is for
+
+The panel's tree view (src/reading.ts) draws these commands as bash's layer of a line: who reads each part, bash, a child bash in a substitution, the command, or a language in a word. Its prototypes, and how their data is made, are in [tree-view/README.md](tree-view/README.md).
+
 ### Size
 
 About 2,000 to 2,500 changed lines in 7 PRs. Step 5 (redirections, about 700 lines) and step 1 (`[`, about 500) are the largest. Steps 2 to 4 are 150 to 300 each, and the guard about 250.

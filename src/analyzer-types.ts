@@ -5,11 +5,23 @@ import type { Interactive } from './examples/rerun';
 import type { HostId } from './hosts';
 import type { LabelPart } from './label';
 import type { Fact } from './messages';
+import type { ReadingNode } from './reading';
 
 export type Kind =
   | 'command' | 'subcommand' | 'builtin' | 'function' | 'keyword' | 'option' | 'argument' | 'operator'
   | 'redirect' | 'variable' | 'expansion' | 'substitution' | 'string' | 'number'
   | 'comment' | 'assignment' | 'test' | 'pattern' | 'block' | 'error';
+
+/**
+ * Who reads the part of the line a token is about: `shell`, bash itself (its commands, words, quotes, expansions,
+ * redirections, and the glob patterns and `$'…'` escapes it reads); `argv`, the command, from its spec (an option, an
+ * operand, a subcommand, a command it runs, the expression of `test` and `[`); `embedded`, a language inside a word,
+ * read by its own rules (a regex, a sed script, a jq filter, a printf format: src/embedded/registry.ts, and the regex
+ * of `=~`); `script`, a shell reading a string a command gives it as a script (`bash -c '…'`, `eval`, `trap`, `ssh host
+ * cmd`): the commands and words of that script (what its commands read of their words is `argv` again). The tree view
+ * of the panel (src/reading.ts) sorts the tokens into its layers by it.
+ */
+export type TokenOrigin = 'shell' | 'argv' | 'embedded' | 'script';
 
 export interface Pos { line: number; character: number }
 export interface Span { start: Pos; end: Pos }
@@ -38,6 +50,13 @@ export interface Token {
   group?: number;
   /** The sections of the Bash manual it is about ('3.7.2'; src/manual.ts), shown as a link or a section number. */
   refs?: readonly string[];
+  /**
+   * Who reads this part (see `TokenOrigin`). Every token of a `LineExplanation` has one: the analyzer sets it where it
+   * makes the token (the argument interpreter's roles, the embedded explainers) and gives the rest to `shell`.
+   */
+  origin?: TokenOrigin;
+  /** On the outermost tokens of an embedded language: which language (`regex`, `sed`, `jq`…; `EmbeddedLang`). */
+  language?: string;
 }
 
 export interface ContextEntry { label: string; line: number }
@@ -58,6 +77,8 @@ export interface ExplainOptions {
   customCommands?: Record<string, unknown>;
   /** Commands the host file defines for its scripts (a bats file: `run`, `load`…), read before the dictionary. */
   hostCommands?: Record<string, CommandSpec>;
+  /** Also build the reading tree of the line (`LineExplanation.reading`), for the panel's tree view. */
+  reading?: boolean;
 }
 
 export interface LineExplanation {
@@ -76,6 +97,8 @@ export interface LineExplanation {
   examples: Example[];
   /** The shell the script is written for, when it is not bash (checked for unsupported features). */
   shell?: Shell;
+  /** Who reads each part of the line, layer by layer (src/reading.ts); only when `ExplainOptions.reading` asks for it. */
+  reading?: ReadingNode;
 }
 
 export interface ExampleSection {

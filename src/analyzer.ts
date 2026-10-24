@@ -63,8 +63,9 @@ import { type Fact, fact, factOf, MESSAGES, said } from './messages';
 const statusFactCache = new WeakMap<StatusModel, WeakMap<SyntaxNode, Map<number, StatusFact[]>>>();
 
 export { EXAMPLE_KINDS } from './analyzer-types';
-export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, Span, Token } from './analyzer-types';
-import type { ContextEntry, Example, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, Span, Token } from './analyzer-types';
+export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, Span, Token, TokenOrigin } from './analyzer-types';
+import type { ContextEntry, Example, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, Span, Token, TokenOrigin } from './analyzer-types';
+import { readingTree } from './reading';
 
 /** A set of node types, checked against the model's: a name that is not a NodeType does not compile. */
 const types = (...names: NodeType[]): ReadonlySet<string> => new Set<string>(names);
@@ -229,7 +230,8 @@ export class Analyzer {
     };
     this.cx.line = null;
     // The summary above was made with the full explanations; the tree drops what its labels already say.
-    for (const item of items) dropLabelEcho(item);
+    for (const item of items) dropLabelEcho(claim(item, 'shell'));
+    if (opts.reading) result.reading = readingTree(tree, items);
     return result;
   }
 
@@ -510,7 +512,7 @@ export class Analyzer {
 
   /** A node's token, with the sections of the manual it is about when it has none of its own. */
   private explain(n: SyntaxNode): Token {
-    const t = this.explainNode(n);
+    const t = claim(this.explainNode(n), 'shell');
     const refs = t.refs ?? nodeSections(n);
     if (refs) t.refs = refs;
     return t;
@@ -758,7 +760,7 @@ export class Analyzer {
 
   /** The parts of a glob pattern as tokens, placed where the pattern is written (`base` characters into `n`). */
   private globChildren(n: SyntaxNode, text: string, base: number): Token[] {
-    return explainGlob(text, this.lang).map((t) => this.fromEmbedded(t, n, { text, base }));
+    return explainGlob(text, this.lang).map((t) => this.fromEmbedded(t, n, { text, base }, 'shell'));
   }
 
   private caseItem(n: SyntaxNode): Token {
@@ -1367,7 +1369,7 @@ export class Analyzer {
     let argToks = read.tokens;
     // `test` and `[` read their words as an expression (src/testexpr.ts), when the name runs one of them.
     const bracket = head.test?.closingOperand !== undefined;
-    if (head.test) argToks = this.testArgs(n, commandTest(head.test, args, this.bashTest(head.test)), bracket);
+    if (head.test) argToks = readByCommand(this.testArgs(n, commandTest(head.test, args, this.bashTest(head.test)), bracket));
     // (A function of the script is not the command its name suggests: no example of that command.)
     if (!head.fn) {
       this.unreadStdin(n, read.parse, args, head.name);
@@ -1766,7 +1768,7 @@ export class Analyzer {
     } finally {
       this.cx.argCtx = savedCtx;
     }
-    return out;
+    return readByCommand(out);
   }
 
   /** The tokens of an expansion in a word read as an option (`-$opts`), if any. */
@@ -2257,7 +2259,7 @@ export class Analyzer {
     const r = EMBEDDED[lang](lit.text, cx);
     if (!r) return undefined;
     this.embeddedExample(lang, lit.text, a);
-    return { tokens: r.tokens.map((t) => this.fromEmbedded(t, a, lit)), note: r.note };
+    return { tokens: r.tokens.map((t) => ({ ...this.fromEmbedded(t, a, lit, 'embedded'), language: lang })), note: r.note };
   }
 
   /** The worked example of an embedded text that the explainer read (src/embedded/registry.ts), when its language has one. */
@@ -2342,10 +2344,11 @@ export class Analyzer {
   /** The escapes inside `$'…'`, each with its meaning. */
   private ansiCChildren(n: SyntaxNode): Token[] {
     const lit: Literal = { text: n.text.slice(2, -1), base: 2 };
-    return explainEscapes(lit.text, this.lang, 'ansic').map((t) => this.fromEmbedded(t, n, lit));
+    return explainEscapes(lit.text, this.lang, 'ansic').map((t) => this.fromEmbedded(t, n, lit, 'shell'));
   }
 
-  private fromEmbedded(t: EmbeddedToken, node: SyntaxNode, lit: Literal): Token {
+  /** A token of an embedded explainer, placed in the source; `origin`: who reads it (`shell`: bash's own globs and escapes). */
+  private fromEmbedded(t: EmbeddedToken, node: SyntaxNode, lit: Literal, origin: TokenOrigin): Token {
     const text = node.text;
     const at = (offset: number, isEnd = false): Pos => {
       const idx = sourceIndex(lit, offset, isEnd);
@@ -2360,7 +2363,8 @@ export class Analyzer {
     return {
       kind: t.kind, label: shorten(label), explanation: t.explanation,
       span: { start: at(t.start), end: at(t.end, true) },
-      children: t.children.map((c) => this.fromEmbedded(c, node, lit)),
+      children: t.children.map((c) => this.fromEmbedded(c, node, lit, origin)),
+      origin,
       ...(t.group ? { group: t.group } : {}),
     };
   }
@@ -3398,7 +3402,8 @@ export class Analyzer {
       text += n.text[i];
       if (n.text[i] === '\\' && i + 1 < n.text.length) { offsets.push(++i); text += n.text[i]; }
     }
-    const tokens = explainRegex(text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, { text, offsets }));
+    // (The regex is read by the regex library bash calls, by the rules of an ERE: an embedded language.)
+    const tokens = explainRegex(text, 'ere', this.lang).map((t) => ({ ...this.fromEmbedded(t, n, { text, offsets }, 'embedded'), language: 'regex' }));
     const js = toJsRegex(text, 'ere');
     const dropped = [...new Set([...n.text.matchAll(/\\([bBwWsSdD<>])/g)].filter((m) => text !== n.text).map((m) => '\\' + m[1]))];
     if (dropped.length) {
@@ -3694,7 +3699,7 @@ export class Analyzer {
     const rows = tree.text.split('\n');
     const lines: Token[][] = [];
     for (let line = 0; line < rows.length; line++) {
-      const ex = inner.explainLine(tree, line, script.shell, this.cx.opts);
+      const ex = inner.explainLine(tree, line, script.shell, { ...this.cx.opts, reading: false });
       // (A statement over several lines is explained whole on each of them: keep it, and its notes, on its first.)
       const items = ex.items.filter((t) => t.span.start.line === line);
       lines.push(items.map((t) => this.fromScript(t, script)));
@@ -3712,6 +3717,7 @@ export class Analyzer {
     }));
     const note = script.known ? undefined
       : this.s('。実行するシェルはここではわからない（ユーザーのログインシェル）ので、bash として解説する', ". The shell that runs it is not known here (the user's login shell): it is explained as bash");
+    tokens.forEach(readAsScript);
     return { tokens, ...(note ? { note } : {}) };
   }
 
@@ -4111,6 +4117,34 @@ const isProgram = (name: string): boolean => {
  * mentions the label in a sentence. Done on the finished tree, since the same texts stand alone elsewhere
  * (notes, summaries, examples).
  */
+/** Marks `t` and the tokens under it that have no origin yet as read by `origin` (`Token.origin`). */
+function claim(t: Token, origin: TokenOrigin): Token {
+  if (!t.origin) {
+    t.origin = origin;
+    for (const c of t.children) claim(c, origin);
+  }
+  return t;
+}
+
+/**
+ * The tokens of a command's words as the command reads them (`Token.origin` `argv`): what its parse made, and the parts
+ * under them no one else claimed. A word token bash's reading made (an operand with no description of its own) is the
+ * operand all the same; its parts stay bash's.
+ */
+function readByCommand(ts: Token[]): Token[] {
+  for (const t of ts) {
+    if (t.origin === 'shell') t.origin = 'argv';
+    else claim(t, 'argv');
+  }
+  return ts;
+}
+
+/** Marks the tokens of a string read as a script that its shell reads (`Token.origin` `script`; not its commands' readings). */
+function readAsScript(t: Token): void {
+  if (!t.origin || t.origin === 'shell') t.origin = 'script';
+  t.children.forEach(readAsScript);
+}
+
 function dropLabelEcho(t: Token): void {
   const label = t.label.trim();
   const e = t.explanation;

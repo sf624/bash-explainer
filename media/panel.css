@@ -479,3 +479,190 @@ li.collapsed > .body {
     padding: 0.4rem 0.5rem;
   }
 }
+
+/* ---------------------------------------------------------------- the view switch and the tree view */
+
+/* The layers of the tree view (src/reading.ts), in the colours of the roles: bash in the keyword colour, a
+   child bash in the command colour, a command's reading in the argument colour, a language in the option colour. */
+body {
+  --l-bash: var(--c-keyword);
+  --l-child: var(--c-command);
+  --l-command: var(--c-argument);
+  --l-language: var(--c-option);
+}
+
+.l-bash { --l: var(--l-bash); }
+.l-child { --l: var(--l-child); }
+.l-command { --l: var(--l-command); }
+.l-language { --l: var(--l-language); }
+
+#views,
+#layers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0 0 0.5rem;
+}
+
+#views button,
+#layers button {
+  font: inherit;
+  font-size: 0.9em;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.4));
+  border-radius: 4px;
+  padding: 0.1rem 0.6rem;
+  cursor: pointer;
+}
+
+#views button[aria-pressed="true"] {
+  border-color: var(--vscode-focusBorder);
+  background: var(--vscode-list-activeSelectionBackground, rgba(127, 127, 127, 0.2));
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+}
+
+#layers-label {
+  color: var(--c-muted);
+  font-size: 0.9em;
+}
+
+#layers button[aria-pressed="true"] {
+  border-color: var(--l);
+  background: color-mix(in srgb, var(--l) 16%, transparent);
+}
+
+#views button:focus-visible,
+#layers button:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+#reading-tree,
+#reading-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#reading-tree ul {
+  padding-left: 1.1rem;
+}
+
+/* A band where a reader takes over: the item and what lies under it, tinted with its layer's colour, with an edge. */
+#reading-tree li.band {
+  background: color-mix(in srgb, var(--l) 7%, transparent);
+  box-shadow: inset 3px 0 0 var(--l);
+  border-radius: 4px;
+  margin: 0.15rem 0;
+}
+
+#reading-tree li:focus {
+  outline: none;
+}
+
+.trow {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.5rem;
+  /* The twisty sits in the left padding: a text that wraps under the row lines up with the kind, not the twisty. */
+  padding: 0.12rem 0.4rem 0.12rem 1.4rem;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.trow .twisty {
+  position: absolute;
+  left: 0.45rem;
+}
+
+#reading-tree li:focus-visible > .trow {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+.trow.active {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.trow .chip {
+  color: var(--l);
+  font-weight: 600;
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.trow .tcode {
+  font-family: var(--vscode-editor-font-family);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.trow .text {
+  flex: 1 1 14em;
+  min-width: 0;
+  color: var(--vscode-foreground);
+  overflow-wrap: anywhere;
+}
+
+.trow .text.about {
+  color: var(--c-muted);
+}
+
+.trow .band-label {
+  margin-left: auto;
+  color: var(--l);
+  font-size: 0.8em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The tree view's highlight in the line at the top. */
+pre#line span.mark {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .trow,
+  #reading-tree li.band {
+    transition: background-color 0.15s;
+  }
+}
+
+/* High contrast: no tints, a solid edge instead (VS Code's themes, and the system's forced colours). */
+body.vscode-high-contrast #reading-tree li.band,
+body.vscode-high-contrast-light #reading-tree li.band {
+  background: none;
+  box-shadow: none;
+  border-left: 2px solid var(--l);
+}
+
+@media (forced-colors: active) {
+  #reading-tree li.band {
+    background: none;
+    box-shadow: none;
+    border-left: 2px solid CanvasText;
+  }
+
+  .trow .chip,
+  .trow .band-label {
+    color: CanvasText;
+  }
+}
+
+/* A phone: the band names stay out of the way of the rows. */
+@media (max-width: 480px) {
+  .trow .band-label {
+    display: none;
+  }
+
+  #reading-tree ul {
+    padding-left: 0.7rem;
+  }
+}
