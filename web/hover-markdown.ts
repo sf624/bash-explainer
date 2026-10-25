@@ -6,7 +6,15 @@
 // headings, quotes, fenced code and HTML blocks (`<table>`); inline, code spans of any length, backslash escapes,
 // entities, raw HTML tags, links with a title, emphasis and strong emphasis by the rules of delimiter runs, and
 // VS Code's `$(icon)`. Lists and indented code are not read: hoverView writes none in the cards.
+import { SECTIONS } from '../src/manual';
 import { drawIcon } from './icons';
+
+/**
+ * The only web pages a card links to: the sections of the manual (`SECTIONS`, which hoverView and render.ts build the links
+ * from). The script is the reader's to share, so a link the script could write is never kept; an href is kept only when it
+ * is exactly one of these.
+ */
+const MANUAL_URLS: ReadonlySet<string> = new Set([...SECTIONS.values()].map((s) => s.url));
 
 /** The Codicons the cards use (media/icons.js); another `$(name)` draws nothing, as an unknown icon in VS Code. */
 export const CARD_ICONS = new Set(['warning', 'info', 'gear', 'list-tree', 'comment-discussion']);
@@ -202,7 +210,9 @@ export function markdownToHtml(md: string): string {
     } else if ((m = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/.exec(line))) {
       flush();
       html.push(`<h${m[1].length}>${inline(m[2] ?? '')}</h${m[1].length}>`);
-    } else if (!para.length && HTML_BLOCK.test(line)) {
+    } else if (HTML_BLOCK.test(line)) {
+      // (A block of kind 6 can interrupt a paragraph.)
+      flush();
       const body: string[] = [];
       for (; i < lines.length && lines[i].trim(); i++) body.push(lines[i]);
       html.push(body.join('\n'));
@@ -249,12 +259,16 @@ function sanitize(from: Node, to: Node): void {
     if (tag === 'SPAN' && icon && CARD_ICONS.has(icon)) copy.setAttribute('data-icon', icon);
     if (tag === 'A') {
       const href = el.getAttribute('href') ?? '';
-      // A page on the web opens in a new tab; a command of the extension becomes the page's own action (web/hover.ts).
-      if (/^https:\/\//i.test(href)) Object.assign(copy, { href, target: '_blank', rel: 'noopener noreferrer' });
+      // A page of the manual opens in a new tab; a command of the extension becomes the page's own action (web/hover.ts).
+      // Any other link loses its address and keeps its text.
+      if (MANUAL_URLS.has(href)) Object.assign(copy, { href, target: '_blank', rel: 'noopener noreferrer' });
       else if (/^command:[\w.]+/.test(href)) {
         copy.setAttribute('data-command', /^command:([\w.]+)/.exec(href)![1]);
         copy.setAttribute('role', 'link');
         copy.tabIndex = 0;
+      } else {
+        sanitize(el, to);
+        continue;
       }
     }
     to.appendChild(copy);

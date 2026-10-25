@@ -36,12 +36,51 @@ const attr = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt
 
 const muted = (html: string) => `<span style="color:var(--vscode-descriptionForeground);">${html}</span>`;
 
+/** Where the code span that opens with `ticks` backticks at `from` closes (the next run of exactly as many), or -1. */
+function closingTicks(s: string, from: number, ticks: number): number {
+  for (let i = from; i < s.length;) {
+    if (s[i] !== '`') {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (s[j] === '`') j++;
+    if (j - i === ticks) return i;
+    i = j;
+  }
+  return -1;
+}
+
 /**
- * Text with `code` spans for a Markdown paragraph: a `<` outside the code would start an HTML tag (`<dir>`), which
- * the hover drops with what it holds.
+ * Text with `code` spans for a Markdown paragraph. The text can carry words of the script, so outside the code spans
+ * (found as CommonMark finds them: a run of backticks closes at the next run of the same length) every character that
+ * Markdown or HTML reads is written as an entity (`<dir>` would start a tag, `[x](url)` a link, `*x*` emphasis), and
+ * a line break is a space. A run of backticks with no closing run is text.
  */
 export function md(text: string): string {
-  return text.split(/(`+[^`]*?`+)/).map((part, i) => (i % 2 ? part : part.replace(/</g, '&lt;').replace(/>/g, '&gt;'))).join('');
+  const flat = text.replace(/\s*\n\s*/g, ' ').trimStart();
+  const lit = (s: string) => s.replace(/[&<>*_`\\[\]~|#$]/g, (c) => (c === '<' ? '&lt;' : c === '>' ? '&gt;' : `&#${c.charCodeAt(0)};`));
+  let out = '';
+  let plain = '';
+  for (let i = 0; i < flat.length;) {
+    if (flat[i] !== '`') {
+      plain += flat[i++];
+      continue;
+    }
+    let j = i;
+    while (flat[j] === '`') j++;
+    const end = closingTicks(flat, j, j - i);
+    if (end < 0) {
+      plain += flat.slice(i, j);
+      i = j;
+    } else {
+      out += lit(plain) + flat.slice(i, end + (j - i));
+      plain = '';
+      i = end + (j - i);
+    }
+  }
+  // (At the start of the paragraph, a `-`, `+`, `=` or `1.` would make a list, a rule or a heading.)
+  return (out + lit(plain)).replace(/^(?:([-+=])|(\d+)([.)]))/, (_m, mark?: string, n?: string, dot?: string) => (mark ? `&#${mark.charCodeAt(0)};` : `${n}&#${dot!.charCodeAt(0)};`));
 }
 
 /** Text with `code` spans, as HTML (for an HTML block, where Markdown is not read). */

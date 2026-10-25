@@ -512,6 +512,59 @@ describe('the hover Markdown', () => {
     assert.strictEqual(mdText('usage: <dir> `a <b>`'), 'usage: &lt;dir&gt; `a <b>`');
   });
 
+  it('writes the words of a script in a Markdown paragraph as text: code spans as CommonMark finds them, the rest as entities', () => {
+    // What Markdown or HTML would read outside the code.
+    assert.strictEqual(mdText('x <img src=x onerror=alert(1)> y'), 'x &lt;img src=x onerror=alert(1)&gt; y');
+    assert.strictEqual(mdText('[x](https://evil.example) *x* _y_ &lt; \\ ~ | # $(gear) &'), '&#91;x&#93;(https://evil.example) &#42;x&#42; &#95;y&#95; &#38;lt; &#92; &#126; &#124; &#35; &#36;(gear) &#38;');
+    // A run of backticks closes at the next run of the same length (as the reader's and CommonMark's code spans do):
+    // `a``b` is one span, and the text after it is not in the code.
+    assert.strictEqual(mdText('`a``b` <i> ``c`d`` <j>'), '`a``b` &lt;i&gt; ``c`d`` &lt;j&gt;');
+    assert.strictEqual(mdText('``a`` <i> `b <j>'), '``a`` &lt;i&gt; &#96;b &lt;j&gt;');
+    // A run with no closing run is text, so it cannot pair with a backtick written after it.
+    assert.strictEqual(mdText('`a``b <i>'), '&#96;a&#96;&#96;b &lt;i&gt;');
+    // A line break is a space: a blank line cannot end the paragraph and let the next line start a block.
+    assert.strictEqual(mdText('a\n\n<b>c\n# d'), 'a &lt;b&gt;c &#35; d');
+    // At the start of the paragraph: no list, rule, heading or quote.
+    assert.deepStrictEqual(['- x', '+ x', '=== x', '1. x', '2) x', '> x', '# x'].map(mdText), ['&#45; x', '&#43; x', '&#61;== x', '1&#46; x', '2&#41; x', '&gt; x', '&#35; x']);
+  });
+
+  it('shows the words of a hostile script as text in every card, in the Markdown VS Code gets', () => {
+    const words = ['<img src=x onerror=alert(1)>', '[x](https://evil.example)', 'a``b', '*x*', '&lt;', '_y_', '`', '<a href="https://evil.example">l</a>'];
+    const quoted = (q: string) => words.map((w) => `${q}${w}${q}`).join(' ');
+    const scripts = [
+      `echo ${quoted("'")}`, `echo ${quoted('"')}`, `# ${words.join(' ')}`, `${quoted("'")}`, `f=${words[1]}; v='${words[0]}'; echo $v`,
+      `read -p '${words[0]}' x; export ${quoted("'")}; cd '${words[1]}' | ${quoted("'")}`,
+      `grep '${words[0]}' ${quoted("'")}; find . -name '${words[1]}'; [ '${words[0]}' = '${words[1]}' ]; case '${words[0]}' in '${words[1]}') ;; esac; trap '${words[0]}' '${words[1]}'`,
+      `alias '${words[0]}'='${words[1]}'; sed 's/${words[0]}/${words[1]}/' f; awk '{print "${words[0]}"}'; ssh '${words[0]}'; git '${words[1]}'; ${words[1]}() { :; }`,
+    ];
+    // What VS Code reads as code (a fence, a code span) is shown as it is, and a title is an attribute of HTML; the rest must hold none of the words' markup.
+    const outsideCode = (md: string) => md.replace(/^( *)(`{3,})[^\n]*\n[\s\S]*?\n\1\2 *$/gm, '').replace(/(`+)(?:(?!\1)[\s\S])*?\1/g, '').replace(/<code>[\s\S]*?<\/code>/g, '').replace(/ title="[^"]*"/g, '');
+    const bad = /<img|<a href="https:\/\/evil|\]\(https:\/\/evil|\*x\*|_y_/;
+    let cards = 0;
+    const literals = new Set<string>();
+    for (const lang of ['en', 'ja'] as const) {
+      for (const src of scripts) {
+        const doc = open(src);
+        for (let line = 0; line < doc.lines.length; line++) {
+          const x = input(doc, line, { lang });
+          const list = [lineCard(x), wholeLine(x)];
+          for (let c = 0; c <= doc.lines[line].length; c++) {
+            const chain = partAt(x.ex.items, { line, character: c }, heredocAt(doc, line));
+            if (chain.length) list.push(partHover(x, chain));
+          }
+          for (const md of list) {
+            assert.doesNotMatch(outsideCode(md), bad, md);
+            // (Some explanations hold a word of the script outside any code: the pieces of an awk string, a glob's text.)
+            for (const m of md.matchAll(/Literal "(&lt;img[^"]*)"|文字列「(&lt;img[^」]*)」/g)) literals.add(m[1] ?? m[2]);
+            cards++;
+          }
+        }
+      }
+    }
+    assert.ok(cards > 500, String(cards));
+    assert.deepStrictEqual([...literals], ['&lt;img src=x onerror=alert']);
+  });
+
   it('shows a construct as code and placeholders in italics', () => {
     const doc = open('for f in a b; do echo "$f"; done');
     const md = wholeLine(input(doc, 0));

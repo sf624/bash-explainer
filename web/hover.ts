@@ -130,7 +130,8 @@ function cardDom(host: HoverHost, view: EditorView, card: Card, pinned: boolean)
       act(a);
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      view.dispatch({ effects: openCard.of(null) });
+      // (A card the pointer opened closes with the tooltips; one opened by the keyboard, with its field.)
+      view.dispatch({ effects: [openCard.of(null), closeHoverTooltips] });
       view.focus();
     }
   });
