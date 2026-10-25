@@ -122,6 +122,13 @@ const editor = new Editor({
   settings: () => settings,
   document: shellDocument,
   shells,
+  explainer() {
+    const doc = shellDocument();
+    if (!doc) return undefined;
+    const s = shells();
+    const opts = explainOptions(settings);
+    return (line) => explainDocumentLine(analyzer(), doc, line, lang, s, opts);
+  },
   problems(list, codes) {
     codesSeen = codes;
     problemsShown = list;

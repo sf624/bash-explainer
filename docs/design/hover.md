@@ -69,6 +69,8 @@ An inlay hint after a command name, only where the name does not run what a read
 
 The hint is plain text (VS Code shows no Markdown in a hint); its tooltip says what runs, who runs it, the other meanings of the name and what it does. A click opens the line in the panel. `bashExplainer.hints.names` turns them off; VS Code's `editor.inlayHints.enabled` turns every hint on, off, or on while `Ctrl+Alt` is held. The Language Server gives the same hints (`textDocument/inlayHint`), with the tooltip and no command.
 
+The web page has no inlay hints of its own, so its editor draws the same hints as CodeMirror widgets (web/name-hints.ts): muted text on a faint tint after the name, inline so that it wraps with the line. Only the lines in view are explained, once per parse, language, shell and settings, after the text has rested (300 ms) or at once on a scroll. Hovering a hint shows its tooltip, with "Click to explain this line in the panel"; a click puts the cursor on the name, so the panel explains the line. The page's settings have `hints.names` too.
+
 VS Code (1.142) keeps a copy of the hints of the line whose hint the mouse is on, and puts it back when the mouse moves off, even after the hints were asked for again. A setting changed in between (the language) left that one hint stale. So for a minute after a refresh, a move of the cursor asks for the hints again.
 
 ## Why the inline summary was removed

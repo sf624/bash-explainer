@@ -171,7 +171,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 #### コマンド名のヒント
 
-名前から想像するものを実行しないコマンド名の後ろに、薄い文字でヒントを表示します。ビルトインやプログラムを隠す関数やエイリアス、`enable -n` で無効にしたビルトイン、スクリプトの中で bash が展開しないエイリアス、`sudo cd`（`cd` というプログラムはない）、何も実行されない名前です。ヒントにマウスを乗せると、何が実行されるか、同じ名前でほかに何があるかを表示し、クリックするとその行をパネルで開きます。VS Code の `editor.inlayHints.enabled` で、インレイヒント全体をオン・オフ（または `Ctrl+Alt` を押している間だけ表示）できます。
+名前から想像するものを実行しないコマンド名の後ろに、薄い文字でヒントを表示します。ビルトインやプログラムを隠す関数やエイリアス、`enable -n` で無効にしたビルトイン、スクリプトの中で bash が展開しないエイリアス、`sudo cd`（`cd` というプログラムはない）、何も実行されない名前です。ヒントにマウスを乗せると、何が実行されるか、同じ名前でほかに何があるかを表示し、クリックするとその行をパネルで開きます。Web 版のエディタにも同じヒントが付きます。VS Code の `editor.inlayHints.enabled` で、インレイヒント全体をオン・オフ（または `Ctrl+Alt` を押している間だけ表示）できます。
 
 ![コマンド名のヒント](images/name-hints.png)
 
@@ -279,9 +279,10 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | --- | --- | --- | --- |
 | `language`・`notes.idioms`・`notes.pitfalls`・`shell`・`bashVersion`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`diagnostics.pitfalls`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | （警告は `--check` で出す） | ✓ |
+| `hints.names` | ✓ | | ✓ |
 | `examples.placement`・`panel.animations` | ✓ | | |
 | `editor.wrap`（Web 版だけの設定です。VS Code の設定にはなく、VS Code には `editor.wordWrap` があります） | ✓ | | |
-| `examples.inHover`・`hover.enabled`・`hover.maxDepth`・`hints.names`・`highlight.enabled`・`languages`・`embedded.files` | | | ✓ |
+| `examples.inHover`・`hover.enabled`・`hover.maxDepth`・`highlight.enabled`・`languages`・`embedded.files` | | | ✓ |
 | `hover.followCursor`・`hover.followDelay`・`panel.autoOpen`・`panel.colors` | | | |
 
 空欄は、VS Code にしかないもの（ホバー、ヒント、開くパネル、対象ファイルの選択）についての設定です。Web 版とコマンドラインは、渡されたファイルを、選んだ種類として解説します。

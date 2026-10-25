@@ -171,7 +171,7 @@ For the whole line, press `Ctrl+K Ctrl+E`, choose **Explain Bash on Current Line
 
 #### Name hints
 
-A command name gets a faint hint after it where it does not run what a reader would guess: a function or an alias that hides a builtin or a program, a builtin turned off by `enable -n`, an alias that bash does not expand in a script, `sudo cd` (there is no `cd` program), a name that runs nothing. Hover the hint for what runs and what else the name is; click it to open the line in the panel. VS Code's `editor.inlayHints.enabled` turns all inlay hints on or off (or on while `Ctrl+Alt` is held).
+A command name gets a faint hint after it where it does not run what a reader would guess: a function or an alias that hides a builtin or a program, a builtin turned off by `enable -n`, an alias that bash does not expand in a script, `sudo cd` (there is no `cd` program), a name that runs nothing. Hover the hint for what runs and what else the name is; click it to open the line in the panel. The web page shows the same hints in its editor. VS Code's `editor.inlayHints.enabled` turns all inlay hints on or off (or on while `Ctrl+Alt` is held).
 
 ![Name hints](images/name-hints.png)
 
@@ -279,9 +279,10 @@ The same settings work on the web page, in the command-line tool and in the Lang
 | --- | --- | --- | --- |
 | `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `bashVersion`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled`, `customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | (`--check` asks for the warnings) | ✓ |
+| `hints.names` | ✓ | | ✓ |
 | `examples.placement`, `panel.animations` | ✓ | | |
 | `editor.wrap` (the web page only: it is not in VS Code's settings, which has `editor.wordWrap`) | ✓ | | |
-| `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `hints.names`, `highlight.enabled`, `languages`, `embedded.files` | | | ✓ |
+| `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `highlight.enabled`, `languages`, `embedded.files` | | | ✓ |
 | `hover.followCursor`, `hover.followDelay`, `panel.autoOpen`, `panel.colors` | | | |
 
 The empty cells are about what only VS Code has (a hover, hints, a panel to open, files to choose); the web page and the command line explain the file they are given, as the kind you choose.

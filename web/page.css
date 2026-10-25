@@ -9,6 +9,13 @@
   box-sizing: border-box;
 }
 
+/* The colours of the notes' levels, under the panel's names (media/panel.css): the editor's squiggles, gutter icons
+   and tooltips, and the Problems list. theme.css has their light and dark values. */
+:root {
+  --c-warning: var(--vscode-editorWarning-foreground);
+  --c-info: var(--vscode-editorInfo-foreground);
+}
+
 /* The app shell: the window's height, and no page scroll. */
 html,
 body {
@@ -629,11 +636,11 @@ body.resizing .problems-resize {
 }
 
 #problem-list .icon.warning {
-  color: var(--vscode-editorWarning-foreground);
+  color: var(--c-warning);
 }
 
 #problem-list .icon.info {
-  color: var(--vscode-editorInfo-foreground);
+  color: var(--c-info);
 }
 
 /* What an action did ("Link copied"): a toast at the bottom, for a few seconds. */

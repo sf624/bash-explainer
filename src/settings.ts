@@ -118,8 +118,8 @@ export const SETTINGS: readonly SettingSpec[] = [
     elsewhere: 'The web page and the command-line tool have no hover.',
   },
   {
-    key: 'hints.names', type: 'boolean', default: true, group: 'display', title: ['コマンド名のヒント', 'Name hints'], surfaces: ['vscode', 'lsp'],
-    elsewhere: 'The web page and the command-line tool show no inlay hints.',
+    key: 'hints.names', type: 'boolean', default: true, group: 'display', title: ['コマンド名のヒント', 'Name hints'], surfaces: ['vscode', 'web', 'lsp'],
+    elsewhere: 'The command-line tool shows no inlay hints.',
   },
   {
     key: 'inline.enabled', type: 'boolean', default: false, group: 'display', title: ['インライン要約（廃止）', 'Inline summary (removed)'], surfaces: ['vscode'],

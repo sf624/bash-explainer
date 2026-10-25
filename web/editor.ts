@@ -11,14 +11,19 @@ import { Diagnostic, forceLinting, linter, lintGutter } from '@codemirror/lint';
 import { Compartment, EditorState, Prec, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
-import { Span } from '../src/analyzer';
+import type { LineExplanation, Span } from '../src/analyzer';
 import { DocumentIssue, diagnosticsFor, plain, ShellDocument, Shells } from '../src/document';
 import { documentHighlight, HighlightKind, HIGHLIGHT_KINDS } from '../src/highlight';
 import type { HighlightModifier } from '../src/semanticFacts';
 import { Lang } from '../src/i18n';
 import { Settings } from '../src/settings';
+import { nameHints, type NameHint } from '../src/ui/nameHints';
 import { CLASSIC_COLOURS, kindColour } from './editor-colors';
+import { drawIcon, iconMask } from './icons';
+import { nameHintsExtension, PlacedHint, setHints } from './name-hints';
+import { withCode } from './problem-list';
 import { Kind } from './samples';
+import { TEXT } from './text';
 
 // The shell code is coloured from our own syntax tree (src/highlight.ts); these modes colour the rest of a host file.
 const MODES: Partial<Record<Kind, StreamParser<unknown>>> = {
@@ -116,6 +121,27 @@ const shellColours = {
   '.cm-bx-exported': { textDecoration: 'underline dotted' },
 };
 
+/**
+ * The problems' levels (docs/design/note-levels.md), as the panel and the Problems list show them: the squiggle, the
+ * gutter's icon (the panel's Codicon, media/icons.js) and the tooltip's border in the level's colour (`--c-warning`,
+ * `--c-info`: page.css). CodeMirror draws its squiggle as an image of a fixed colour, so a wavy underline in the
+ * colour takes its place; and the gutter's marker, an element it makes, shows the icon as a mask.
+ */
+const levelStyles = Object.fromEntries((['warning', 'info'] as const).flatMap((level) => {
+  const colour = `var(--c-${level})`;
+  return [
+    [`.cm-lintRange-${level}`, { backgroundImage: 'none', textDecoration: `underline wavy ${colour}`, textDecorationThickness: '1px', textUnderlineOffset: '3px', textDecorationSkipInk: 'none' }],
+    [`.cm-lintPoint-${level}`, { '&:after': { borderBottomColor: colour } }],
+    [`.cm-lint-marker-${level}`, {
+      content: 'normal', backgroundColor: colour,
+      maskImage: iconMask(level), maskSize: '100% 100%', maskRepeat: 'no-repeat',
+      WebkitMaskImage: iconMask(level), WebkitMaskSize: '100% 100%', WebkitMaskRepeat: 'no-repeat',
+    }],
+    [`.cm-diagnostic-${level}`, { borderLeftColor: colour }],
+    [`.cm-bx-level-${level}`, { fill: colour }],
+  ];
+}));
+
 const editorTheme = EditorView.theme({
   '&': { height: '100%', color: 'var(--vscode-editor-foreground)', backgroundColor: 'var(--vscode-editor-background)', fontSize: 'var(--vscode-editor-font-size)' },
   '.cm-scroller': { fontFamily: 'var(--vscode-editor-font-family)', lineHeight: '1.5' },
@@ -130,7 +156,42 @@ const editorTheme = EditorView.theme({
   // The shell's colours: the panel's (editor-colors.ts).
   ...shellColours,
   '.cm-tooltip': { backgroundColor: 'var(--vscode-input-background)', color: 'var(--vscode-foreground)', border: '1px solid var(--vscode-panel-border)' },
+  ...levelStyles,
+  '.cm-bx-level': { width: '14px', height: '14px', verticalAlign: '-2px', marginRight: '6px', flex: 'none' },
+  '@media (forced-colors: active)': {
+    '.cm-lint-marker': { backgroundColor: 'CanvasText', forcedColorAdjust: 'none' },
+    '.cm-bx-level': { fill: 'CanvasText' },
+  },
+  // A name hint (web/name-hints.ts): muted, on a faint tint, as VS Code draws an inlay hint. Inline, so that it
+  // wraps with the line when long lines wrap.
+  '.cm-bx-hint': {
+    color: 'var(--vscode-descriptionForeground)', backgroundColor: 'rgba(127, 127, 127, 0.14)', borderRadius: '3px',
+    padding: '0 4px', margin: '0 2px 0 4px', fontSize: '90%', cursor: 'pointer', userSelect: 'none',
+    boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone',
+  },
+  '.cm-bx-hint:hover': { color: 'var(--vscode-foreground)' },
+  '.cm-bx-hint-tip': {
+    padding: '2px 8px', maxWidth: 'min(440px, calc(100vw - 32px))', fontFamily: 'var(--vscode-font-family)', fontSize: 'var(--vscode-font-size)', lineHeight: '1.45',
+    '& p': { margin: '4px 0' },
+    '& code': { fontFamily: 'var(--vscode-editor-font-family)', backgroundColor: 'var(--vscode-textCodeBlock-background)', padding: '0 3px', borderRadius: '3px' },
+  },
+  '.cm-bx-hint-open': { color: 'var(--vscode-descriptionForeground)' },
 });
+
+/** A problem's message in its tooltip: the level's icon, named for a screen reader, then the text with its code. */
+function levelMessage(severity: 'warning' | 'info', text: string, lang: Lang): () => Node {
+  return () => {
+    const span = document.createElement('span');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('class', `cm-bx-level cm-bx-level-${severity}`);
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', TEXT[lang].levels[severity]);
+    drawIcon(svg, severity);
+    span.append(svg, ...withCode(text));
+    return span;
+  };
+}
 
 /** Line and column (0-based) to a position in the editor, clamped to the document. */
 export function pos(state: EditorState, line: number, col: number): number {
@@ -148,6 +209,8 @@ export interface EditorHost {
   /** The script as the explainers see it, parsed once per change. */
   document(): ShellDocument | undefined;
   shells(): Shells;
+  /** Explains the lines of the script as it is now (for the name hints); undefined while there is nothing to explain. */
+  explainer(): ((line: number) => LineExplanation) | undefined;
   /** The problems found in the script (the ones shown), and the warning codes in it. */
   problems(shown: DocumentIssue[], codes: string[]): void;
   /** The text or the selection changed. */
@@ -159,9 +222,12 @@ export interface EditorInit {
   text: string;
   /** Read mode (for touch screens): the editor says it takes no text input, so a tap places the cursor without the soft keyboard. */
   readMode: boolean;
-  /** Whether the page has its own lint marks and problems (not in panel mode). */
+  /** Whether the page has its own lint marks, problems and name hints (not in panel mode). */
   problems: boolean;
 }
+
+/** The name hints worked out for one parse, by line, with what else they depend on. */
+interface HintCache { lang: Lang; shell: string; settings: Settings; lines: Map<number, NameHint[]> }
 
 /** The editor of the page: the CodeMirror view, and what the page does to it. */
 export class Editor {
@@ -172,8 +238,12 @@ export class Editor {
   private readonly inputMode = new Compartment();
   private readonly shadings = new WeakMap<ShellDocument, { shell: string; spans: Shading[] }>();
   private shadingTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly hintCaches = new WeakMap<ShellDocument, HintCache>();
+  private hintTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly withHints: boolean;
 
   constructor(private readonly host: EditorHost, init: EditorInit) {
+    this.withHints = init.problems;
     const problems = linter((v): Diagnostic[] => {
       const doc = host.document();
       if (!doc) return [];
@@ -186,6 +256,7 @@ export class Editor {
         to: pos(v.state, i.endLine, i.endCol),
         severity: i.severity,
         message: plain(i.message),
+        renderMessage: levelMessage(i.severity, plain(i.message), lang),
         source: i.code,
         actions: i.fix ? [{
           name: i.fix.title[lang === 'ja' ? 0 : 1],
@@ -207,13 +278,15 @@ export class Editor {
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
-          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter()] : []),
+          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter(), nameHintsExtension(() => TEXT[host.lang()].hintClick)] : []),
           EditorView.updateListener.of((u) => {
             host.changed(u);
             if (u.docChanged) {
               clearTimeout(this.shadingTimer);
               this.shadingTimer = setTimeout(() => this.shade(), 100);
             }
+            // The hints of the lines in view, after the text has rested (as the problems are checked) or at once on a scroll.
+            if (u.docChanged || u.viewportChanged) this.scheduleHints(u.docChanged ? 300 : 50);
           }),
         ],
       }),
@@ -247,10 +320,57 @@ export class Editor {
     this.view.dispatch({ effects: setShadings.of(this.spansOf()) });
   }
 
-  /** Checks the script again now (forceLinting alone only hurries a check the text already asked for). */
+  /** Checks the script again now (forceLinting alone only hurries a check the text already asked for), and its name hints. */
   recheck(): void {
     this.view.dispatch({ effects: relint.of(null) });
     forceLinting(this.view);
+    this.refreshHints();
+  }
+
+  private scheduleHints(ms: number): void {
+    if (!this.withHints) return;
+    clearTimeout(this.hintTimer);
+    this.hintTimer = setTimeout(() => this.refreshHints(), ms);
+  }
+
+  /**
+   * Puts the name hints (src/ui/nameHints.ts) on the lines in view, as VS Code asks for its inlay hints, unless
+   * `bashExplainer.hints.names` is off. A line is explained once per parse, language, shell and settings.
+   */
+  refreshHints(): void {
+    if (!this.withHints) return;
+    clearTimeout(this.hintTimer);
+    const settings = this.host.settings();
+    const explain = settings['hints.names'] ? this.host.explainer() : undefined;
+    const placed: PlacedHint[] = [];
+    if (explain) {
+      const doc = this.host.document()!;
+      const lang = this.host.lang();
+      const shells = this.host.shells();
+      const shell = `${shells.forced ?? ''}/${shells.detected ?? ''}`;
+      let cache = this.hintCaches.get(doc);
+      if (!cache || cache.lang !== lang || cache.shell !== shell || cache.settings !== settings) {
+        cache = { lang, shell, settings, lines: new Map() };
+        this.hintCaches.set(doc, cache);
+      }
+      const text = this.view.state.doc;
+      const seen = new Set<number>();
+      for (const r of this.view.visibleRanges) {
+        for (let n = text.lineAt(r.from).number; n <= text.lineAt(r.to).number; n++) {
+          const line = n - 1;
+          if (seen.has(line)) continue;
+          seen.add(line);
+          const lineText = text.line(n).text;
+          let hints = cache.lines.get(line);
+          if (!hints) cache.lines.set(line, (hints = lineText.trim() ? nameHints(explain(line), line, lineText, lang) : []));
+          for (const h of hints) {
+            const at = pos(this.view.state, h.position.line, h.position.character);
+            placed.push({ at, back: at - pos(this.view.state, h.tok.span.start.line, h.tok.span.start.character), hint: h });
+          }
+        }
+      }
+    }
+    this.view.dispatch({ effects: setHints.of(placed.sort((a, b) => a.at - b.at)) });
   }
 
   /** The file kind changed: its colours. */

@@ -39,6 +39,7 @@ Every view shows the notes in the same order: the warnings, then the information
 - **CLI** (cli/main.ts): the mark and the word in the level's ANSI colour (33 yellow, 34 blue), bold; a plain fact's mark dim.
 - **Plain Markdown** (Copy as Markdown, the Language Server's hover): the mark, and the word in bold: `> ⚠ **Pitfall:** …`.
 - **Problems** (VS Code, the Language Server, `--check`, SARIF, the GitHub Action, the web page's Problems list): the severity of the level. SARIF has `warning` and `note`. The web page's list shows ⚠ and ⓘ in the level's colour.
+- **Web page's editor** (web/editor.ts, CodeMirror's lint): the squiggle is a wavy underline in the level's colour (CodeMirror's own is an image of a fixed colour, grey for information), the gutter shows the level's codicon from media/icons.js as a mask over that colour (CodeMirror makes the marker element, so CSS draws it), and the problem's tooltip starts with the icon, with the `aria-label` of the panel. The gutter is hidden from screen readers by CodeMirror (`aria-hidden`), so the label is in the tooltip and the Problems list. The colours are `--c-warning` and `--c-info` (web/page.css, from theme.css); with forced colours, the icons take `CanvasText`.
 
 ### Colours
 

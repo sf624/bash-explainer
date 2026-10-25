@@ -3,6 +3,7 @@
 // shows the same icon in both; its other icons are its own (web/index.html).
 
 interface Icons {
+  ICONS: Record<string, (string | string[])[]>;
   drawIcon(svg: Element, name: string): void;
   drawIcons(root: ParentNode): void;
 }
@@ -17,4 +18,16 @@ export function drawIcon(svg: Element, name: string): void {
 /** Draws every <svg data-icon="…"> of the page. */
 export function drawIcons(): void {
   icons().drawIcons(document);
+}
+
+/**
+ * The icon `name` as a CSS image (`url("data:…")`), for a mask that takes the colour of `background-color`: where
+ * CodeMirror draws an element we do not make (the lint gutter's markers).
+ */
+export function iconMask(name: string): string {
+  const paths = icons().ICONS[name].map((p) => {
+    const [d, rule] = Array.isArray(p) ? p : [p];
+    return `<path d="${d}"${rule ? ` fill-rule="${rule}"` : ''}/>`;
+  }).join('');
+  return `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">${paths}</svg>`)}")`;
 }
