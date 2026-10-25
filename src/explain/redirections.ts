@@ -114,7 +114,11 @@ export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
 /** The file redirections that open a file on one descriptor, which a later redirection of that descriptor can replace. */
 const OPENS_FILE: ReadonlySet<string> = new Set(['<', '>', '>>', '>|', '<>']);
 
-/** The files that stand for a descriptor (bash opens them as a copy of it, as Linux does): `/dev/stdout` is 1. */
+/**
+ * The files that stand for a descriptor: `/dev/stdout` is 1. Where the system has them, bash opens them as files (3.6):
+ * on Linux, `/proc/self/fd/N` opened anew (`>` empties a regular file, which gets an offset of its own); elsewhere
+ * bash copies the descriptor. Either way the redirection gets what that descriptor has.
+ */
 function deviceDescriptor(path: string): number | undefined {
   const m = /^\/dev\/(?:(stdin)|(stdout)|(stderr)|fd\/(\d+))$/.exec(path);
   return !m ? undefined : m[1] ? 0 : m[2] ? 1 : m[3] ? 2 : Number(m[4]);
@@ -152,10 +156,31 @@ function openedPath(r: SyntaxNode): string | undefined | null {
   return staticWordValue(words[0]);
 }
 
-/** Whether two paths name the same file as written (`a`, `./a`, `.//a`); links are not followed. */
+/** Whether two paths name the same file as written (`a`, `./a`, `.//a`). */
 function samePath(a: string, b: string): boolean {
   const norm = (p: string): string => (p.startsWith('/') ? '/' : '') + p.split('/').filter((s) => !/^\.?$/.test(s)).join('/');
   return norm(a) === norm(b);
+}
+
+/**
+ * Whether two paths that differ as written may still name the same file: one with a `..` part (`b/../a` is `a` when `b`
+ * is a directory), or an absolute one and a relative one (`/tmp/a` is `a` in /tmp). A device (`isDevice`) is only the
+ * same as a relative path from /dev, which is left out. Links (symbolic or hard) are not seen here: two plain paths
+ * (`a`, `b`) are taken for two files.
+ */
+function maySamePath(a: string, b: string): boolean {
+  const up = (p: string): boolean => p.split('/').includes('..');
+  if (up(a) || up(b)) return true;
+  return a.startsWith('/') !== b.startsWith('/') && !isDevice(a) && !isDevice(b);
+}
+
+/**
+ * The devices a redirection opens with nothing to create or empty: `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`,
+ * `/dev/urandom`, `/dev/tty`, and the files of a descriptor (`deviceDescriptor`). Any other path under /dev is a file
+ * (`/dev/shm/data`). (`/dev/tcp/…` and `/dev/udp/…` connect, where the shell does that: `networkTarget`.)
+ */
+function isDevice(path: string): boolean {
+  return /^\/dev\/(?:null|zero|full|u?random|tty)$/.test(path) || deviceDescriptor(path) !== undefined;
 }
 
 /**
@@ -183,8 +208,9 @@ function written(r: SyntaxNode): string {
 
 /**
  * `cat <a <b`, `echo >a >b`: what bash still does with the file of a redirection that a later one replaces. Nothing
- * when the later one opens the same file (`>s >>s` writes to `s`); when either word is not known here (`>a >"$f"`),
- * it says that the same file would be used. A device (`/dev/null`) is only opened.
+ * when the later one opens the same file (`>s >>s` writes to `s`); when either word is not known here (`>a >"$f"`), or
+ * the paths may name the same file (`maySamePath`: `>a >b/../a`), it says that the same file would be used. A device
+ * (`/dev/null`) is only opened.
  */
 function replacedFile(cx: Explainer, op: string, fd: string, dests: SyntaxNode[], later: SyntaxNode): string {
   const own = openedPath(dests[0].parent!);
@@ -192,15 +218,15 @@ function replacedFile(cx: Explainer, op: string, fd: string, dests: SyntaxNode[]
   if (own && other && samePath(own, other)) return '';
   const dest = dests.map((d) => d.text).join(' ');
   const name = op.startsWith('<') ? fdName(fd, '0') : fdName(fd, '1');
-  const device = !!own?.startsWith('/dev/');
+  const device = !!own && isDevice(own);
   const what = op === '<' ? cx.s(`\`${dest}\` は開かれる（存在しなければエラー）が、読まれない`, `\`${dest}\` is opened (it must exist) but not read`)
     : op === '<>' ? (device ? cx.s(`\`${dest}\` は開かれるが、使われない`, `\`${dest}\` is opened but not used`)
       : cx.s(`\`${dest}\` は開かれる（なければ作られる）が、使われない`, `\`${dest}\` is opened (and created if missing) but not used`))
     : device ? cx.s(`\`${dest}\` は開かれるが、何も書き込まれない`, `\`${dest}\` is opened, but nothing is written to it`)
     : op === '>>' ? cx.s(`\`${dest}\` はなければ作られるが、何も書き込まれない`, `\`${dest}\` is created if missing, but nothing is written to it`)
     : cx.s(`\`${dest}\` は作られる（中身は空になる）が、何も書き込まれない`, `\`${dest}\` is created or emptied, but nothing is written to it`);
-  // (A word not known here may name the same file: then that file is used.)
-  const unknown = other !== null && (own === undefined || other === undefined);
+  // (A word not known here, or a path with `..` or another root, may name the same file: then that file is used.)
+  const unknown = other !== null && (typeof own !== 'string' || other === undefined || maySamePath(own, other));
   const unless = !unknown ? '' : cx.s(`（\`${written(later)}\` が同じファイルを指すなら、このファイルが使われる）`, ` (unless \`${written(later)}\` names the same file, which is then used)`);
   return cx.s(`。ただし後の \`${written(later)}\` が続けて${name.ja}を置き換えるので、${what}${unless}`, `. But the later \`${written(later)}\` then replaces ${name.en}: ${what}${unless}`);
 }
