@@ -223,6 +223,23 @@ describe('a redirection that a later one of the same descriptor replaces', () =>
     assert.match(token('echo x >"$f" >a', '>"$f"').explanation, /\(unless `>a` names the same file, which is then used\)$/);
     assert.match(token('echo x >a >b', '>a').explanation, /nothing is written to it$/);
     assert.strictEqual(inDir('f=a; echo x >a >"$f"; cat a'), 'x\n');
+    // A path with `..`, or an absolute and a relative one, may name the same file; two plain relative paths do not
+    // (links are not seen).
+    assert.match(token('echo hi >a >b/../a', '>a').explanation, /`a` is created or emptied, but nothing is written to it \(unless `>b\/\.\.\/a` names the same file, which is then used\)$/);
+    assert.match(token('echo hi >../x/a >a', '>../x/a').explanation, /\(unless `>a` names the same file, which is then used\)$/);
+    assert.match(token('echo hi >/tmp/a >a', '>/tmp/a').explanation, /\(unless `>a` names the same file, which is then used\)$/);
+    assert.match(token('cat <a </tmp/a', '<a').explanation, /\(unless `<\/tmp\/a` names the same file, which is then used\)$/);
+    assert.match(token('echo hi >/tmp/a >/tmp/b', '>/tmp/a').explanation, /nothing is written to it$/);
+    assert.match(token('echo hi >d/a >d/b', '>d/a').explanation, /nothing is written to it$/);
+    assert.strictEqual(inDir('mkdir b; echo hi >a >b/../a; cat a'), 'hi\n');
+    // (A link is not seen: bash writes to `a` through `b`, where the note says nothing is written to `a`.)
+    assert.strictEqual(inDir('ln -s a l; echo hi >a >l; cat a'), 'hi\n');
+    const abs = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-abs-'));
+    try {
+      assert.strictEqual(runBash(`echo hi >${abs}/a >a; cat a`, { cwd: abs }).stdout, 'hi\n');
+    } finally {
+      fs.rmSync(abs, { recursive: true, force: true });
+    }
     // `/dev/stdout` is a copy of stdout, and `{v}>&1`, `{v}<&0` copy too: the earlier one is still used.
     assert.doesNotMatch(token('echo hi >a >/dev/stdout', '>a').explanation, /later/);
     assert.doesNotMatch(token('echo hi >a >/dev/fd/1', '>a').explanation, /later/);
@@ -242,6 +259,21 @@ describe('a redirection that a later one of the same descriptor replaces', () =>
     assert.match(token('echo hi >>/dev/null >b', '>>/dev/null', 'ja').explanation, /`\/dev\/null` は開かれるが、何も書き込まれない$/);
     assert.match(token('cat <>/dev/null <b', '<>/dev/null').explanation, /`\/dev\/null` is opened but not used$/);
     assert.strictEqual(inDir('echo hi >/dev/null >b; cat b; [ -c /dev/null ] && echo device'), 'hi\ndevice\n');
+    for (const dev of ['/dev/zero', '/dev/full', '/dev/random', '/dev/urandom', '/dev/tty', '/dev/fd/5']) {
+      assert.match(token(`echo hi >${dev} >b`, `>${dev}`).explanation, /is opened, but nothing is written to it$/, dev);
+    }
+    assert.strictEqual(inDir('echo hi >/dev/zero >b; echo hi >/dev/full >c; cat b c; [ -c /dev/zero ] && [ -c /dev/full ] && echo devices'), 'hi\nhi\ndevices\n');
+    // Any other path under /dev is a file: `>` empties it (/dev/shm is a tmpfs on Linux).
+    assert.match(token('echo hi >/dev/shm/data >b', '>/dev/shm/data').explanation, /: `\/dev\/shm\/data` is created or emptied, but nothing is written to it \(unless `>b` names the same file, which is then used\)$/);
+    assert.match(token('cat </dev/shm/data <b', '</dev/shm/data').explanation, /is opened \(it must exist\) but not read \(unless `<b` names the same file, which is then used\)$/);
+    if (fs.existsSync('/dev/shm')) {
+      const shm = fs.mkdtempSync('/dev/shm/explain-bash-');
+      try {
+        assert.strictEqual(inDir(`printf old >${shm}/data; echo hi >${shm}/data >b; echo "[$(cat ${shm}/data)] [$(cat b)]"`), '[] [hi]\n');
+      } finally {
+        fs.rmSync(shm, { recursive: true, force: true });
+      }
+    }
     assert.match(token('cat <<A\nA', '<<A').explanation, /are expanded \(line 2\)$/);
     assert.match(token('cat <<A\nA', '<<A', 'ja').explanation, /（行 2）$/);
     assert.match(token('cat <<A <<B\nA\nb\nB', '<<A').explanation, /\(line 2\)$/);
