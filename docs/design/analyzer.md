@@ -4,7 +4,7 @@ src/analyzer.ts is 4,202 lines (at d265509). One class, `Analyzer`, holds about 
 
 An outside review noted the size, and the pace (683 commits in 9 days). For one maintainer over the long term, a thin core matters more than a wider scope. The maintainer agreed: the next big work is to thin analyzer.ts, not to add features. This page plans it. Each step is a PR. The [traceability table](#traceability) records the findings and the steps.
 
-Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), step 3 (the readers) is done (#325), and step 4 (words and expansions) is done (#327). Steps 5 to 9 are not started: src/explain/ has the context, the node helpers, the readers and the words, and src/analyzer.ts is 3,174 lines.
+Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), step 3 (the readers) is done (#325), step 4 (words and expansions) is done (#327), and the tests of step 5 are done (#329). The redirections of step 5 and steps 6 to 9 are not started: src/explain/ has the context, the node helpers, the readers, the words, the tests and the examples the tests add, and src/analyzer.ts is 2,906 lines.
 
 The goal is not new behaviour. Every explanation stays byte-identical, except where a step fixes a contradiction with bash (and then says so).
 
@@ -369,6 +369,17 @@ Where the plan did not fit main:
 
 src/explain/tests.ts (about 230 lines), then src/explain/redirections.ts (about 190). `splitCommand` and `redirectLayout` stay in the class until step 8.
 
+**Tests, as done (#329).** The snapshot of the corpus is byte-identical before and after, and so are the snapshots of step 4 with options (the reading tree, pitfalls and idioms off, examples disabled, a Markdown host with bash 5.3), with one analyzer for every line in reverse, and with errors thrown in the middle of a line; to the inputs of step 4 it adds scripts of tests (`[ ]` and `test` with every unary and binary operator, `!`, `-a`, `-o` and parentheses, malformed and unclosed forms, `test` run through `command`, `builtin`, a path, an alias and a function; `[[ ]]` with every operator, patterns, `=~` with quoted and unquoted parts, `-v` with subscripts, `-o`, `nocasematch`, a test over several lines; `(( ))`), each also read as sh, zsh, ksh and dash. src/analyzer.ts went from 3,174 to 2,906 lines; src/explain/tests.ts is 233 lines and src/explain/examples.ts 71. The move was done by a script (TypeScript compiler API), kept in the PR. What moved where:
+
+- src/explain/tests.ts: `test` (`[[ ]]` and `(( ))`), `testTokens` (the expression of `[ ]` and `test`; `testArgs`, which explains the words of the command, stays with argv and calls it), `unary`, `binary` and `regexNode`; and, not exported, `arithTestExplanation`, `numericTestNote` and `quotedPatternNote`.
+- src/explain/examples.ts: the example builders the tests call (`regexExample`, `patternExample`, `testExample`), with those they call (`globOpts`, `pushExample`, `interactive`). The builders still in the class call them there.
+
+Where the plan did not fit main:
+
+- The tests add examples, and tests.ts sits above examples.ts (2.5), so steps 5 and 6 are not independent, as the summary said. The six builders the tests call moved to src/explain/examples.ts now; step 6 moves the others there. They read only the context and reads.ts.
+- The names guard (3.3) took `use === 'file'` in `globOpts` for the command `file`: `use` is a kind of glob match (`'file' | 'pattern' | 'none'`), not a name. As in step 4, the test now names the two other cases (`use !== 'pattern' && use !== 'none'`), which is the same test; the guard is unchanged.
+- The builders of src/examples/ that have the names of the moved ones (`patternExample`, `testExample`, `interactive`) are read through their modules (`patterns.testExample`, `commandExamples.interactive`).
+
 ### Step 6: examples, embedded languages (two M PRs)
 
 src/explain/examples.ts (about 500 lines; split off examples-jq.ts if it is near 600), then src/explain/embedded.ts (about 200).
@@ -394,13 +405,13 @@ src/explain/dispatch.ts (about 260 lines). analyzer.ts keeps `Analyzer`, `explai
 | 2 | The context | M | 1 (#324) | 0; #269 merged |
 | 3 | Readers, where, status | M | 1 (#325) | 2 |
 | 4 | Words | M | 1 (#327) | 3 |
-| 5 | Tests, redirections | M each | 2 | 4 |
+| 5 | Tests, redirections | M each | 2 | 4; the tests start examples.ts |
 | 6 | Examples, embedded | M each | 2 | 4 |
 | 7 | Scripts, assignments, argv | M–L | 3 | 5, 6 |
 | 8 | Commands, compound, line notes | M each | 2 | 7 |
 | 9 | Dispatch, orchestration | M | 1 | 8 |
 
-About 18 PRs; about 3,900 lines move. Steps 1.1–1.4 run in parallel with each other. They merge before step 3, which moves the functions they change (`groupSubshell`, `inSubshell`, `shoptAt`). Steps 5 and 6 are independent of each other.
+About 18 PRs; about 3,900 lines move. Steps 1.1–1.4 run in parallel with each other. They merge before step 3, which moves the functions they change (`groupSubshell`, `inSubshell`, `shoptAt`). Steps 5 and 6 share src/explain/examples.ts: the tests of step 5 start it with the builders they call (#329), and step 6 moves the others.
 
 ## 5. Checks and risks
 
@@ -434,14 +445,14 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 
 | ID | Finding (short) | Step | Status | Verified by |
 |---|---|---|---|---|
-| T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | in progress (step 3: PR #325; step 4: PR #327) | file-length test: analyzer.ts under 1,000 lines, then about 150 |
+| T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | in progress (step 3: PR #325; step 4: PR #327; step 5: PR #329) | file-length test: analyzer.ts under 1,000 lines, then about 150 |
 | T2 | Per-line state written from anywhere: notes pushed in 40 places, examples in 27, `argCtx` an implicit parameter | 2 | done (PR #324) | the snapshot unchanged; no `cx.extraNotes.push` left: notes, examples and the command go through the context's sinks and `withCommand` |
 | T3 | Three overlapping hosts: `LineContext`, `ExpansionHost`, the analyzer's half of `EmbeddedContext` | 2, 4 | done (PR #324, PR #327) | one `Explainer`; the reads of the words (`ExpansionWords`) are functions of src/explain/words.ts since step 4; the snapshot unchanged |
 | T4 | Name checks: yq (1356), `local` (1364), sed (3157), xargs label (2741) | 1.1 | done (PR #308) | names guard list empty; tests against the tools |
 | T5 | Where code runs, decided from node types: `groupSubshell` (377), `inSubshell` (417), `pipeSubshellPitfalls` (2964, 2982) | 1.2 | done (PR #308) | env probes; test/facts-from-model.test.ts rows |
 | T6 | `shoptAt` decides `globstar` per shell (361–362) | 1.3 | done (PR #308) | state probes |
 | T7 | A string's variables read by a regex (3185); risky words by node types (3239) | 1.4 | done (PR #308) | rows against bash (`bash -c`, `sudo`, `env -i`) |
-| T8 | Cycles between the groups (1.4) | 3–9 | in progress (step 3: PR #325; step 4: PR #327) | test/explain-imports.test.ts |
+| T8 | Cycles between the groups (1.4) | 3–9 | in progress (step 3: PR #325; step 4: PR #327; step 5: PR #329) | test/explain-imports.test.ts |
 | T9 | No guard on file length, import cycles or name checks | 0 | done (PR #275) | the guards themselves |
 | T10 | No before/after check of the whole explanation | 0 | done (PR #275) | test/snapshot.ts |
 
@@ -452,7 +463,7 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 | 2 | done (PR #324) |
 | 3 | done (PR #325) |
 | 4 | done (PR #327) |
-| 5 | planned |
+| 5 | tests done (PR #329); redirections planned |
 | 6 | planned |
 | 7 | planned |
 | 8 | planned |
