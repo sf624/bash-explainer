@@ -16,6 +16,7 @@ import { assignmentsOf, definitionFails, type NameResolution, resolveName, testS
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
+import { runBash } from './support/bash';
 
 const parser = createUnbashParser();
 const program = (name: string): boolean => {
@@ -279,12 +280,34 @@ describe('AssignmentMeaning', () => {
     assert.strictEqual(scopes('x=1 ls', 'x=1 ls'), 'x:command');
     // (A name that may expand to no word: then the assignment is the shell's.)
     assert.strictEqual(scopes('x=1 $cmd', 'x=1 $cmd'), 'x:command?');
+    // (A word after it that surely gives one is the command then, with the assignment: `x=1 $cmd env`; one that may
+    // also give none leaves it open.)
+    assert.strictEqual(scopes('x=1 $cmd env', 'x=1 $cmd env'), 'x:command');
+    assert.strictEqual(scopes('x=1 $cmd ""', 'x=1 $cmd ""'), 'x:command');
+    assert.strictEqual(scopes('x=1 $cmd $cmd', 'x=1 $cmd $cmd'), 'x:command?');
     assert.strictEqual(scopes('x=1 export y', 'x=1 export y'), 'x:command');
     assert.strictEqual(scopes('x=1 export y', 'x=1 export y', true), 'x:persists');
     assert.strictEqual(scopes('[ "$v" ] && set -o posix\nx=1 :', 'x=1 :'), 'x:persists?');
     // (A function, `command` and `builtin` keep it temporary, also in POSIX mode: bash 5.2.)
     assert.strictEqual(scopes('f() { :; }\nx=1 f', 'x=1 f', true), 'x:command');
     assert.strictEqual(scopes('x=1 command :', 'x=1 command :', true), 'x:command');
+  });
+});
+
+describe('an assignment before a name that may expand to no word, against bash', () => {
+  const said = (src: string, lang: 'en' | 'ja' = 'en'): string => new Analyzer(lang).explainLine(parser.parse(src), 0).items[0].children.find((t) => t.kind === 'assignment')!.explanation;
+
+  it('stays only when no word after the name gives one', () => {
+    // With `cmd` empty, `env` is the command and gets `x`; with no word left, `x` is the shell's.
+    assert.strictEqual(runBash('cmd=; x=1 $cmd env | grep "^x="; echo "x=$x"').stdout, 'x=1\nx=\n');
+    assert.strictEqual(runBash('cmd=; x=1 $cmd ""; echo "st=$? x=$x"').stdout, 'st=127 x=\n');
+    assert.strictEqual(runBash('cmd=; x=1 $cmd $cmd; echo "x=$x"').stdout, 'x=1\n');
+    assert.strictEqual(runBash('cmd=; x=1 $cmd; echo "x=$x"').stdout, 'x=1\n');
+    assert.match(said('x=1 $cmd env'), /^Environment variable set only for this command: /);
+    assert.match(said('x=1 $cmd env', 'ja'), /^このコマンドの実行中だけ設定される環境変数: /);
+    assert.match(said('x=1 $cmd $cmd'), /^Environment variable set only for this command \(if `\$cmd` and the words after it expand to no word at all, it stays as a shell variable\): /);
+    assert.match(said('x=1 $cmd $cmd', 'ja'), /^このコマンドの実行中だけ設定される環境変数（`\$cmd` もその後の語も何の語にもならなければ、シェルの変数として残る）: /);
+    assert.match(said('x=1 $cmd'), /^Environment variable set only for this command \(if `\$cmd` expands to no word at all, it stays as a shell variable\): /);
   });
 });
 

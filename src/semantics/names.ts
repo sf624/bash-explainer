@@ -287,7 +287,8 @@ export interface AssignmentMeaning {
   scope: 'shell' | 'command' | 'persists';
   /**
    * False when it depends on run time: `persists` when POSIX mode is on on some paths only; `command` when the
-   * name is an expansion that may give no word (`x=1 $cmd`: then the assignment is the shell's).
+   * name is an expansion that may give no word, and so may every word after it (`x=1 $cmd`: then the assignment is
+   * the shell's). A word after it that surely gives one is the command then (`x=1 $cmd env` runs `env` with `x`).
    */
   sure: boolean;
 }
@@ -302,10 +303,12 @@ export function assignmentsOf(model: StateModel, command: SyntaxNode, res: NameR
   const stays = res !== 'dynamic' && res?.kind === 'builtin' && res.special && (posix === 'on' || posix === 'unknown');
   // (`x=1 unset x` removes that `x`: it does not stay.)
   const unset = res !== 'dynamic' && res?.kind === 'builtin' ? temporariesUnset(res.name, fields(command, 'argument'), command) : undefined;
+  // (A word of known text gives one word: `x=1 $cmd env`.)
+  const named = res === 'dynamic' && fields(command, 'argument').some((w) => staticWordValue(w) !== undefined);
   return assignments.map((a) => {
     const name = (field(field(a, 'name')!, 'name') ?? field(a, 'name')!).text;
     const kept = stays && !unset?.has(name);
-    return { node: a, name, scope: !res ? 'shell' : kept ? 'persists' : 'command', sure: res === 'dynamic' ? false : !kept || posix === 'on' };
+    return { node: a, name, scope: !res ? 'shell' : kept ? 'persists' : 'command', sure: res === 'dynamic' ? named : !kept || posix === 'on' };
   });
 }
 

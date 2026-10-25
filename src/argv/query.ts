@@ -2,6 +2,7 @@
 // Readers of a command's words (the examples, the dialect check) ask these instead of reading the words again,
 // so that a value is never taken for an option (`grep -e -v`), nor an option's letter for another (`sed -ie`).
 import type { ArgRole, ArgvParse, ValueRole } from './interpret';
+import type { Shell } from '../dialect';
 import type { CommandSpec, NameSpace, OperandSpec, VariableAct } from './spec';
 
 type OptionRole = Extract<ArgRole, { role: 'option' }>;
@@ -89,6 +90,11 @@ export interface ActedName { word: number; acts: VariableAct; space: NameSpace |
 /** The operands of the parse that name what the builtin declares or unsets (`declare x`, `unset -f f`), in order. */
 export function actedNames(parse: ArgvParse): ActedName[] {
   return parse.roles.flatMap(({ word, role }) => (role.role === 'operand' && role.spec?.acts ? [{ word, acts: role.spec.acts, space: namespaceOf(parse, role.spec) }] : []));
+}
+
+/** Whether a builtin works only in a function in `shell` (undefined: bash), and fails outside one (`CommandSpec.scope`). */
+export function onlyInFunction(spec: CommandSpec, shell: Shell | undefined): boolean {
+  return !!spec.scope && !spec.scope.except.includes(shell ?? 'bash');
 }
 
 /** Whether a command's operands name what it acts on (`OperandSpec.acts`; `act`: only that act): `declare x`, `unset x`. */

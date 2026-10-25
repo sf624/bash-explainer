@@ -4,7 +4,7 @@
 import { evalArithWrapping } from '../../arith';
 import type { ArgRole, ArgvParse } from '../../argv/interpret';
 import type { CommandSpec } from '../../argv/spec';
-import { actedNames } from '../../argv/query';
+import { actedNames, onlyInFunction } from '../../argv/query';
 import { prefixOf } from '../../argv/words';
 import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
@@ -284,7 +284,7 @@ export class WalkBuiltins {
     }
     // `local` works only in a function (`scope`; `declare` there is local too, unless `-g`): outside one it fails,
     // and changes nothing; its words are still read as in a function (a line taken from one).
-    if (spec.scope === 'function' && !this.w.frames.length) {
+    if (onlyInFunction(spec, this.w.shell) && !this.w.frames.length) {
       this.w.frames.push({ def: n, saved: new Map() });
       this.declare(builtin, words, { roles, on, off }, n, st);
       this.w.frames.pop();

@@ -130,7 +130,10 @@ export const MESSAGES = {
   'unset-readonly': failure<{ name: string }>(['4.1', '4.2'], ({ name }) => [
     `変数 \`${name}\` は読み取り専用なので、\`unset\` はエラーになり（\`cannot unset: readonly variable\`、終了ステータス 1）、\`${name}\` は削除されません`,
     `The variable \`${name}\` is read-only, so \`unset\` fails (\`cannot unset: readonly variable\`, status 1) and \`${name}\` stays`]),
-  'local-outside-function': pitfall(['4.2'], () => [
+  // (`stops`: in dash and busybox ash, which stop the script there; bash goes on with status 1.)
+  'local-outside-function': pitfall<{ stops: boolean }>(['4.2'], ({ stops }) => stops ? [
+    '`local` は関数の中でしか使えず、関数の外で使うと dash や busybox ash は「local: not in a function」のエラーでスクリプトを止めます',
+    '`local` can be used only inside a function; outside one, dash and busybox ash stop the script with "local: not in a function"'] : [
     '`local` は関数の中でしか使えず、関数の外で使うと「can only be used in a function」のエラーになります',
     '`local` can be used only inside a function; outside one it fails with "can only be used in a function"']),
 
