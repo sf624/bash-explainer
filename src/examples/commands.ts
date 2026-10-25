@@ -341,7 +341,8 @@ export function gitLogExample(kind: 'gitformat' | 'gitdate', value: string, pars
     }
     // Multi-line formats get long; two commits show the layout.
     const multi = !pretty || ['short', 'medium', 'full', 'fuller'].includes(pretty);
-    const lines = runGitLog(multi ? commits.slice(0, 2) : commits, pretty, date, now);
+    // (The sample commits are one line of history: `--graph` draws `*` and `|` before them.)
+    const lines = runGitLog(multi ? commits.slice(0, 2) : commits, pretty, date, now, has(parse, '--graph'));
     return { kind: 'gitLog',
       title: s('例（この書式での `git log` の出力）', 'Example (`git log` output with this format)'),
       sections: [{ label: s('例のコミットでの出力', 'Output for sample commits'), lines: lines.map(visible) }],

@@ -28,7 +28,7 @@ class SedParser {
   private i = 0;
   private s: S;
 
-  constructor(private src: string, private flavor: 'bre' | 'ere', private lang: Lang) {
+  constructor(private src: string, private flavor: 'bre' | 'ere', private lang: Lang, private quiet: boolean) {
     this.s = pick(lang);
   }
 
@@ -189,6 +189,11 @@ class SedParser {
     if (c === '{') {
       return done(s('`{`: 以降 `}` までのコマンドをまとめて実行する', '`{`: run the commands up to `}` as a group'), [cmdTok(s('コマンドのまとまりの開始', 'start of a command group'))]);
     }
+    // `n` prints the line it leaves only when auto-print is on (GNU sed: not with `-n`).
+    if (c === 'n' && this.quiet) {
+      const expl = s('次の行を読み込む（`-n` があるので、今の行は出力しない）', 'read the next line (with `-n`, the current one is not printed)');
+      return done(expl, [cmdTok(`\`n\`: ${expl}`)]);
+    }
     if (SIMPLE[c]) {
       const [ja, en] = SIMPLE[c];
       return done(s(ja, en), [cmdTok(`\`${c}\`: ${s(ja, en)}`)]);
@@ -198,7 +203,10 @@ class SedParser {
       const m = /^\d+/.exec(src.slice(this.i));
       const codeStart = this.i;
       if (m) this.i += m[0].length;
-      const expl = c === 'q' ? s('現在の行を出力して終了する', 'print the current line and quit') : s('何も出力せずに終了する', 'quit without printing');
+      // (`q` prints the line only when auto-print is on: with `-n`, it quits without printing, as `Q` does.)
+      const expl = c === 'Q' ? s('何も出力せずに終了する', 'quit without printing') : this.quiet
+        ? s('終了する（`-n` があるので、今の行は出力しない）', 'quit (with `-n`, the current line is not printed)')
+        : s('現在の行を出力して終了する', 'print the current line and quit');
       const extra = [cmdTok(`\`${c}\`: ${expl}`)];
       if (m) extra.push(this.tok(codeStart, this.i, 'number', s(`終了ステータス ${m[0]}`, `exit status ${m[0]}`)));
       return done(expl, extra);
@@ -396,6 +404,7 @@ class SedParser {
 }
 
 /** Explain a sed script (one or more commands). */
-export function explainSed(src: string, flavor: 'bre' | 'ere', lang: Lang): EmbeddedToken[] {
-  return new SedParser(src, flavor, lang).parse();
+export function explainSed(src: string, flavor: 'bre' | 'ere', lang: Lang, quiet = false): EmbeddedToken[] {
+  // (A script whose first two characters are `#n` is run as with `-n`: POSIX, and GNU sed 4.9, also `#no`.)
+  return new SedParser(src, flavor, lang, quiet || src.startsWith('#n')).parse();
 }

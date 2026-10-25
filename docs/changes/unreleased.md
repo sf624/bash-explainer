@@ -526,3 +526,13 @@ The example of a pipeline inside `$( )` or `<( )` was titled with the command ar
 
 The positional parameters are those the shell starts with: a `shift` or `set --` in the string changes them later. In a function the string defines, `$1` is the function's argument, as before. After a word whose number of words is known only when it runs (`"$@"`, an unquoted `$x`), the words that follow are not named. Options of several letters that tools document as one stay one: `tcpdump -nn`, `ldapsearch -LLL`, `ip -br`, `nmap -sS`.
 
+### `sed -n`, `git log --graph`, and a `case` being typed
+
+| Written | GNU sed, git, bash | Shown now | Shown before |
+| --- | --- | --- | --- |
+| `sed -n '1p;/x/q' f`, `sed --quiet '/x/q' f` | `q` prints nothing | `q`: "quit (with `-n`, the current line is not printed)" | "print the current line and quit" |
+| `sed -n 'n;p' f` | `n` does not print the line it leaves | `n`: "read the next line (with `-n`, the current one is not printed)" | "print the line and read the next one" |
+| a sed script whose first two characters are `#n` (`#n`, `#no…`; not `#N`) | runs as with `-n` (GNU sed 4.9) | as with `-n`, in the explanation and the example | as without `-n` |
+| `git log --oneline --graph --format='%h %s'` | `* 3f2a9c1 Fix login timeout` | the example's lines start with `* `; a commit's other lines with `\| ` (two spaces for the last), as git draws one line of history | `3f2a9c1 Fix login timeout` |
+| `case` (no word yet) | a syntax error | "case statement: match the value (not written yet) against each pattern…", with no empty part for the value | "match `` against each pattern…", and an empty "Value to match" |
+

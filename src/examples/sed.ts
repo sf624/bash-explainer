@@ -372,7 +372,9 @@ function exec(cmds: Cmd[], ps: string, no: number, last: boolean, st: RunState, 
 }
 
 /** Run a script over input lines, as `sed [-n] [-E]` would. Undefined if the script uses unsupported features. */
-export function runSed(script: string, input: string[], opts: { quiet: boolean; extended: boolean }): string[] | undefined {
+export function runSed(script: string, input: string[], given: { quiet: boolean; extended: boolean }): string[] | undefined {
+  // (A script whose first two characters are `#n` runs as with `-n`: GNU sed 4.9, as POSIX says.)
+  const opts = { ...given, quiet: given.quiet || script.startsWith('#n') };
   const st: RunState = { out: [], quit: false, printQuit: false };
   try {
     const cmds = new Parser(script, opts.extended ? 'ere' : 'bre').script();

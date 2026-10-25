@@ -31,6 +31,8 @@ export interface EmbeddedContext {
   trSet(): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[] };
   /** The letters of the options given (`-lane`: l, a, n, e). */
   letters(): Set<string>;
+  /** Whether one of these options is given, in any of its spellings (`sed -n` is `--quiet` too). */
+  given(...names: string[]): boolean;
 }
 
 type Explainer = (text: string, cx: EmbeddedContext) => Embedded | undefined;
@@ -43,7 +45,7 @@ const regex: Explainer = (text, cx) => {
 /** One explainer per embedded language; undefined when the text is not one of that language (`date` without `+`). */
 export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   regex,
-  sed: (text, cx) => ({ tokens: explainSed(text, cx.flavor() === 'ere' ? 'ere' : 'bre', cx.lang) }),
+  sed: (text, cx) => ({ tokens: explainSed(text, cx.flavor() === 'ere' ? 'ere' : 'bre', cx.lang, cx.given('-n')) }),
   jq: (text, cx) => ({ tokens: explainJq(text, cx.lang) }),
   yq4: (text, cx) => ({ tokens: explainJq(text, cx.lang, 'yq') }),
   yq3path: (text, cx) => explainYq3Path(text, cx.lang),

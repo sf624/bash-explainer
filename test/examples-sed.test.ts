@@ -24,6 +24,7 @@ const cases: [string, boolean, boolean][] = [
   ['s/\\x1b\\[[0-9;]*m//g', false, false], ['s/\\x66oo/\\x26\\x26/', false, false], ['s/foo/[\\o101\\d066\\cA\\t\\x1b]/', false, false],
   ['s/[\\x66]oo/X/', false, false], ['/\\x66oo/d', false, false], ['s/f\\x6fo/\\a\\f\\v\\r/', false, false], ['y/f/\\x41/', false, false],
   ['s/\\d102oo/\\x5cn/', false, false], ['s/\\o146oo/\\x4a/', false, false], ['s/\\cF/X/', false, false],
+  ['1p;/x/q', true, false], ['/x/q', false, false], ['/x/q', true, false], ['#n\n1p;/x/q', false, false],
 ];
 
 describe('sed examples agree with GNU sed', () => {
@@ -104,6 +105,36 @@ describe('sed escapes that stand for a character', () => {
   it('keep an escaped backslash before x', () => {
     assert.ok(sedExample('s/\\\\x41/X/', { quiet: false, extended: false }));
     assert.ok(sedExample('s/\\xg/X/', { quiet: false, extended: false }) === undefined || true);
+  });
+});
+
+describe('sed `q` and `n` with `-n`', () => {
+  // GNU sed: `q` prints the pattern space, and `n` the line it leaves, only when auto-print is on.
+  const text = (line: string, label: string, lang: 'en' | 'ja' = 'en') => {
+    const all: { label: string; explanation: string; children: unknown[] }[] = [];
+    const walk = (t: { label: string; explanation: string; children: unknown[] }) => (all.push(t), t.children.forEach((c) => walk(c as typeof t)));
+    new Analyzer(lang).explainLine(createUnbashParser().parse(line), 0).items.forEach(walk);
+    return all.filter((t) => t.label === label).map((t) => t.explanation).pop();
+  };
+
+  it('says that they print nothing, as GNU sed does', () => {
+    const input = ['line 1', 'x', 'line 2'];
+    assert.deepStrictEqual(realSed('/x/q', input, true, false), []);
+    assert.deepStrictEqual(realSed('/x/q', input, false, false), ['line 1', 'x']);
+    assert.deepStrictEqual(realSed('n;p', input, true, false), ['x']);
+    assert.deepStrictEqual(realSed('#n\n/x/q', input, false, false), []);
+    assert.strictEqual(text("sed -n '1p;/x/q' f", 'q'), 'quit (with `-n`, the current line is not printed)');
+    assert.strictEqual(text("sed --quiet '/x/q' f", 'q'), 'quit (with `-n`, the current line is not printed)');
+    assert.strictEqual(text("sed '/x/q' f", 'q'), 'print the current line and quit');
+    assert.strictEqual(text("sed -n 'n;p' f", 'n'), 'read the next line (with `-n`, the current one is not printed)');
+    assert.strictEqual(text("sed 'n;d' f", 'n'), 'print the line and read the next one');
+    // (A script whose first two characters are `#n`, and not `#N`.)
+    assert.deepStrictEqual(realSed('#no\n/x/q', input, false, false), []);
+    assert.deepStrictEqual(realSed('#N\n/x/q', input, false, false), ['line 1', 'x']);
+    assert.strictEqual(text("sed '#n\n/x/q' f", 'q'), 'quit (with `-n`, the current line is not printed)');
+    assert.strictEqual(text("sed '#no\n/x/q' f", 'q'), 'quit (with `-n`, the current line is not printed)');
+    assert.strictEqual(text("sed '#N\n/x/q' f", 'q'), 'print the current line and quit');
+    assert.strictEqual(text("sed -n '/x/q' f", 'q', 'ja'), '終了する（`-n` があるので、今の行は出力しない）');
   });
 });
 

@@ -382,6 +382,12 @@ describe('malformed input explains without throwing', () => {
         }
       });
     }
+    // (`case` with no word yet: bash reports a syntax error; the explanation names no empty value.)
+    assert.match(runBash('case').stderr, /syntax error/);
+    const c = analyzer.explainLine(parser.parse('case'), 0).items[0];
+    assert.strictEqual(c.explanation, 'case statement: match the value (not written yet) against each pattern in order and run the first match');
+    assert.deepStrictEqual(allTokens([c]).map((x) => x.label), ['case ', 'case']);
+    assert.match(new Analyzer('ja').explainLine(parser.parse('case'), 0).items[0].explanation, /^case 文: 値（まだ書かれていない）を各パターン/);
     const t = allTokens(analyzer.explainLine(parser.parse('cat 3<<'), 0).items).find((x) => x.label === '3<<')!;
     assert.match(t.explanation, /the delimiter is not written yet\. The following lines up to a line containing only the delimiter become file descriptor 3$/);
   });
