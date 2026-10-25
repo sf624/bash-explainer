@@ -74,6 +74,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - With `sed -n`, `q` quits without printing the line and `n` reads the next one without printing this one, as GNU sed does; so does a script that starts with `#n`. Before, both said they print the line.
 - The `git log --graph` example draws the graph: `* ` before each commit, and `| ` before its other lines.
 - The Marketplace, Open VSX and npm pages show the images and links of the version they describe. Before, they showed the newest images from `main`, and one was missing.
+- The hover no longer repeats a problem that VS Code shows above it: the part leaves out that note. The notes that stay line up with the hover's text. Before, the same pitfall came twice, the second time indented.
 
 ## 0.8.0
 

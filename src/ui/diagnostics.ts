@@ -3,6 +3,9 @@ import { plain } from '../document';
 import type { Fix } from '../fixes';
 import { ExplainService } from '../service';
 
+/** The source of our diagnostics, by which the hover finds them (src/ui/hover.ts). */
+export const DIAGNOSTIC_SOURCE = 'Bash Explainer';
+
 /**
  * Puts the warnings shown in explanations (constructs the target shell lacks, injection risks…)
  * into the Problems panel, with quick fixes where a portable rewrite exists.
@@ -60,7 +63,7 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
       const range = new vscode.Range(i.startLine, i.startCol, i.endLine, i.endCol);
       // The ⚠ / ℹ marks are for the hover; the Problems panel has its own icons.
       const d = new vscode.Diagnostic(range, plain(i.message), i.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information);
-      d.source = 'Bash Explainer';
+      d.source = DIAGNOSTIC_SOURCE;
       d.code = i.code;
       if (i.fix) fixes.push({ code: i.code, range, fix: i.fix });
       return d;
@@ -73,7 +76,7 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
     const lang = this.service.lang;
     const known = this.fixes.get(doc.uri.toString()) ?? [];
     return context.diagnostics
-      .filter((d) => d.source === 'Bash Explainer')
+      .filter((d) => d.source === DIAGNOSTIC_SOURCE)
       .flatMap((d) => known.filter((k) => k.code === d.code && k.range.isEqual(d.range)).map((k) => {
         const action = new vscode.CodeAction(k.fix.title[lang === 'ja' ? 0 : 1], vscode.CodeActionKind.QuickFix);
         action.diagnostics = [d];
