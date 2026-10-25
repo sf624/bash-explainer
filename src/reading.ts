@@ -295,7 +295,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     // (`>f` alone: the redirection's text is its own, not the command's too.)
     if (children.some((x) => same(x.span, n.span) && x.text === n.text)) delete n.text;
     // (Its text runs to the end of a here-document, past what follows it on the line: `cat <<E; echo b`.)
-    const ends = c.namedChildren.map((x) => (x.type === 'heredoc_redirect' ? x.namedChildren.find((h) => h.type === 'heredoc_start')! : x).endIndex);
+    const ends = c.namedChildren.map((x) => ((x.type === 'heredoc_redirect' && x.namedChildren.find((h) => h.type === 'heredoc_start')) || x).endIndex);
     n.label = short(c.text.slice(0, Math.max(...ends) - c.startIndex));
     n.refs = union(['3.7.1'], n.refs);
     return n;
@@ -451,9 +451,10 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   };
 
   const redirect = (r: SyntaxNode, layer: Layer): ReadingNode => {
-    if (r.type !== 'heredoc_redirect') return shellNode(r, layer, 'redirect', inner(r, layer), new Set(['redirect']));
+    // (`cat <<` while typing: a here-document with no delimiter yet, nor a body.)
+    const start = r.type === 'heredoc_redirect' ? r.namedChildren.find((c) => c.type === 'heredoc_start') : undefined;
+    if (!start) return shellNode(r, layer, 'redirect', inner(r, layer), new Set(['redirect']));
     // A here-document: the operator and its word on the line, then its body.
-    const start = r.namedChildren.find((c) => c.type === 'heredoc_start')!;
     const body = r.namedChildren.find((c) => c.type === 'heredoc_body')!;
     const span: Span = { start: point(r.startPosition.row, r.startPosition.column), end: point(start.endPosition.row, start.endPosition.column) };
     const n = shellNode(r, layer, 'redirect', [shellNode(body, layer, 'heredoc', inner(body, layer))], new Set(['redirect']), span);

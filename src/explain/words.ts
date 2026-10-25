@@ -209,9 +209,14 @@ export function tilde(cx: Explainer, n: SyntaxNode): Token | undefined {
   const [first] = tildes;
   // (bash expands the tilde before the command sees the word: its reading, even in an operand.)
   if (tildes.length === 1 && first.start === 0) {
+    const rest = n.text.slice(first.end);
+    // `~/*.txt`: after the tilde, the word is globbed (unless `set -f` or the place turns that off).
+    const globbed = hasGlob(rest) && w.steps.find((s) => s.kind === 'glob')!.applies !== false;
+    const after = globbed
+      ? cx.s(`。続く \`${rest}\` にはワイルドカードがあるので、展開後のパスがグロブとして一致するファイル名に置き換わる`, `. The rest, \`${rest}\`, has wildcards: the expanded path is then a glob, replaced by the file names it matches`)
+      : rest ? cx.s(`。残りの \`${rest}\` はそのまま続く`, `. The rest, \`${rest}\`, stays as it is`) : '';
     return { origin: 'shell', ...cx.tok(n, 'expansion', cx.s(`チルダ展開: ${tildeTarget(cx, first.user)}に置き換わる`, `Tilde expansion: ${tildeTarget(cx, first.user)}`)
-      + (first.end < n.text.length ? cx.s(`。残りの \`${n.text.slice(first.end)}\` はそのまま続く`, `. The rest, \`${n.text.slice(first.end)}\`, stays as it is`) : '')
-      + (hasGlob(n.text) ? notGlobbedHere(cx, n) : '')), refs: ['3.5.2'] };
+      + after + (hasGlob(n.text) ? notGlobbedHere(cx, n) + globOff(cx, n) : ''), globbed ? globChildren(cx, n, rest, first.end) : []), refs: ['3.5.2', ...(globbed ? ['3.5.8'] : [])] };
   }
   const row = n.startPosition.row;
   const col = n.startPosition.column;

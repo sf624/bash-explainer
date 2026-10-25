@@ -71,6 +71,45 @@ export function fdName(fd: string, dflt: string): Text {
   return tx(`ファイルディスクリプタ ${n}`, `file descriptor ${n}`);
 }
 
+/** A redirection target `/dev/tcp/host/port` or `/dev/udp/host/port`, which bash opens as a socket (manual 3.6). */
+export interface NetworkPath { proto: 'TCP' | 'UDP'; host: string; port: string }
+
+export function networkPath(dest: string): NetworkPath | undefined {
+  const m = /^\/dev\/(tcp|udp)\/([^/]+)\/([^/]+)$/.exec(dest);
+  return m ? { proto: m[1] === 'tcp' ? 'TCP' : 'UDP', host: m[2], port: m[3] } : undefined;
+}
+
+/**
+ * What a redirection to `/dev/tcp/host/port` does in a shell that opens it as a socket (bash, ksh93): no file is
+ * opened; the shell connects, and the descriptor reads from or writes to the connection.
+ */
+export function networkRedirect(op: string, fd: string, net: NetworkPath): Text {
+  const { proto, host, port } = net;
+  const name = namedFd(fd);
+  const conn = tx(`${proto} でホスト \`${host}\` のポート \`${port}\` に接続し、`, `Connect to host \`${host}\`, port \`${port}\`, over ${proto}, and `);
+  const use = name
+    ? tx(`その接続を空いているファイルディスクリプタ（10 以上）で開き、番号を変数 \`${name}\` に入れる`, `open the connection on a free file descriptor (10 or higher), storing its number in variable \`${name}\``)
+    : op === '<'
+      ? tx(`${fdName(fd, '0').ja}を接続から読む`, `read ${fdName(fd, '0').en} from the connection`)
+      : op === '<>'
+        ? tx(`接続を読み書き両用で${fdName(fd, '0').ja}にする`, `use the connection for reading and writing as ${fdName(fd, '0').en}`)
+        : op === '&>' || op === '&>>' || op === '>&'
+          ? tx('標準出力と標準エラー出力の両方を接続に送る', 'send both stdout and stderr to it')
+          : tx(`${fdName(fd, '1').ja}を接続に送る`, `send ${fdName(fd, '1').en} to it`);
+  return tx(
+    `${conn.ja}${use.ja}（ファイルではない。\`/dev/${proto.toLowerCase()}/ホスト/ポート\` はシェル自身が扱う名前で、接続できなければエラー）`,
+    `${conn.en}${use.en} (not a file: the shell itself handles \`/dev/${proto.toLowerCase()}/host/port\`, and fails if it cannot connect)`,
+  );
+}
+
+/** The same target in a shell that has no such names: an ordinary path, usually missing. */
+export function networkPathAsFile(shell: string): Text {
+  return tx(
+    `${shell} では \`/dev/tcp/…\` も普通のファイル名で、ふつうは存在しない（ネットワークに接続するのは bash と ksh93 だけ）`,
+    `In ${shell}, \`/dev/tcp/…\` is an ordinary path, usually missing (only bash and ksh93 connect to the network for it)`,
+  );
+}
+
 export const specialDestinations: Record<string, Text> = {
   '/dev/null': tx('`/dev/null` は書き込んだ内容を捨てる特殊ファイル（出力を捨てる定番）', '`/dev/null` discards everything written to it'),
   '/dev/stderr': tx('`/dev/stderr` は標準エラー出力を指す', '`/dev/stderr` refers to standard error'),

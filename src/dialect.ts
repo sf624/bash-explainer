@@ -7,7 +7,8 @@ import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
 import { type NoteLevel, notePrefix, PORTABILITY } from './messages';
-import { ancestor, braceTakenAsWord, descendants, field, prefixAssignments, substitutionForm } from './syntax/tree';
+import { ancestor, braceTakenAsWord, descendants, field, fields, prefixAssignments, substitutionForm } from './syntax/tree';
+import { networkPath } from './dict/syntax';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
@@ -85,6 +86,7 @@ export const FEATURES: Record<string, Feature> = {
   procSub: { works: 'b ayk z', ja: 'プロセス置換 `<(…)` / `>(…)`', en: 'process substitution `<(…)` / `>(…)`', altJa: '一時ファイルや名前付きパイプを使う', altEn: 'use a temporary file or a named pipe' },
   ampRedirect: { works: 'b a kmz', ja: '`&>`（標準出力と標準エラー出力をまとめてリダイレクト）', en: '`&>` (redirect stdout and stderr together)', altJa: '`>file 2>&1` と書く（dash では `cmd &> file` が「バックグラウンド実行 + 空のリダイレクト」と解釈される）', altEn: 'write `>file 2>&1` (dash reads `cmd &> file` as "run in the background, then an empty redirection")' },
   ampAppend: { works: 'b    mz', ja: '`&>>`', en: '`&>>`', altJa: '`>>file 2>&1` と書く', altEn: 'write `>>file 2>&1`' },
+  netRedirect: { works: 'b   k', ja: '`/dev/tcp/ホスト/ポート` へのリダイレクトによるネットワーク接続', en: 'network connections by redirecting to `/dev/tcp/host/port`', altJa: '`nc` などのコマンドを使う', altEn: 'use a command such as `nc`' },
   pipeAmp: { works: 'b     z', ja: '`|&`（標準エラー出力もパイプに流す）', en: '`|&` (pipe stderr too)', altJa: '`2>&1 |` と書く', altEn: 'write `2>&1 |`' },
   eqeqTest: { works: 'b ayk m', ja: '`[ a == b ]` の `==`', en: '`==` in `[ ]`', altJa: '`=` を使う', altEn: 'use `=`' },
   arithCommand: { works: 'b   kmz', ja: '算術コマンド `(( ))`', en: 'the arithmetic command `(( ))`', altJa: '`[ "$((式))" -ne 0 ]` と書く', altEn: 'write `[ "$((expr))" -ne 0 ]`' },
@@ -257,6 +259,7 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
     case 'file_redirect':
       if (kids.includes('&>')) add('ampRedirect');
       if (kids.includes('&>>')) add('ampAppend');
+      if (networkPath(fields(n, 'destination').map((d) => d.text).join(' '))) add('netRedirect');
       return;
     case 'pipeline': if (kids.includes('|&')) add('pipeAmp'); return;
     case 'case_item':

@@ -116,7 +116,8 @@ describe('word notes: globs', () => {
     assert.strictEqual(bash('echo hi > *.txt'), 'error: *.txt: ambiguous redirect');
     assert.match(expl('echo > {a,b}', '> {a,b}'), /Brace expansion makes several words of it, so bash reports "ambiguous redirect"$/);
     assert.strictEqual(bash('echo hi > {a,b}'), 'error: {a,b}: ambiguous redirect');
-    assert.doesNotMatch(expl('echo > {a,}', '> {a,}'), /Brace/);
+    // (`{a,}` is the one word `a`: bash writes the file `a`.)
+    assert.match(expl('echo > {a,}', '> {a,}'), /^Write stdout \(fd 1\) to file `a` \(overwrite\)\. Brace expansion makes `\{a,\}` the one word `a`$/);
     assert.match(expl('echo > {1..9999}', '> {1..9999}'), /Brace expansion makes several words/);
     assert.match(expl('set -o posix\necho > *.log', '> *.log'), /But in POSIX mode a redirection target is not globbed: the file has this very name$/);
     assert.strictEqual(bash('echo hi > *.txt; ls', true), '*.txt\na.txt\nb.txt\nc.log\n');

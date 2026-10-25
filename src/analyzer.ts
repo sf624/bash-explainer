@@ -17,7 +17,7 @@ import { globIntro, hasGlob } from './embedded/glob';
 import { grepWrap, literalRegex, toJsRegex } from './examples/regex';
 import { awkExample, awkInvocation, AwkRunOptions } from './examples/awk';
 import { MAX_SHOWN_LINES, pipedOutput, pipelineExample, Stage } from './examples/pipeline';
-import { InputSource, inputSource, knownLines, NO_INPUT, readsFiles, readOrder, shareOut, shownSource, SourceWord, Stdin, stdinOf, Stream, streamLabel } from './examples/source';
+import { InputSource, inputSource, knownLines, NO_INPUT, pipeOf, readsFiles, readOrder, shareOut, shownSource, SourceWord, Stdin, stdinOf, Stream, streamLabel } from './examples/source';
 import { jqExample, JqFormat, jqPrint, jqReadsInputs, jqSample, Json, parseJsonValues, runJq, slurpLines, toJson, varyJson } from './examples/jq';
 import { sedExample, sedPattern } from './examples/sed';
 import { InputBox, jqStepSections, RerunSpec } from './examples/rerun';
@@ -1831,7 +1831,7 @@ export class Analyzer {
         // A program of `BEGIN` rules alone reads no input.
         const src = ex.readsInput ? this.inputSource() : NO_INPUT;
         // The names of the files a glob gives are not known, so neither is what `FILENAME` holds.
-        if (/\bFILENAME\b/.test(text) && src.streams.some((st) => st.kind === 'file' && st.many)) break;
+        if (/\bFILENAME\b/.test(text) && src.streams.some((st) => st.kind === 'file' && (st.many || st.pipe))) break;
         this.ioExample(ex.input, ex.output, { kind: 'awk', program: text, fs: opts!.fs, vars: opts!.vars, assigns: opts!.assigns }, src);
         break;
       }
@@ -2275,7 +2275,7 @@ export class Analyzer {
     const words = (nodes ?? ctx.nodes).map((a): SourceWord => {
       const value = literalContent(a)?.text;
       const glob = wordAt(this.cx, a)?.steps.find((st) => st.kind === 'glob');
-      return { value, text: a.text, ...(value === undefined ? { many: 'unknown' as const } : glob && glob.applies !== false ? { many: 'glob' as const } : {}) };
+      return pipeOf(a) ? { text: a.text, pipe: pipeOf(a) } : { value, text: a.text, ...(value === undefined ? { many: 'unknown' as const } : glob && glob.applies !== false ? { many: 'glob' as const } : {}) };
     });
     return inputSource(parse ?? ctx.parse, words, this.stdinOf(cmd ?? ctx.args[0].parent!), parse ? spec : ctx.spec);
   }
