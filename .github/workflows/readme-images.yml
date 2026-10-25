@@ -1,6 +1,6 @@
 name: README images
 
-# Records the README images (images/*.gif, name-hints.png) with scripts/capture-readme-images.mjs, in
+# Records the README images (images/readme/*.gif, name-hints.png) with scripts/capture-readme-images.mjs, in
 # VS Code on a virtual display. Run by hand when the UI changed (the Release workflow stops until the
 # images match it, see scripts/images-hash.mjs): it opens a pull request with the new images. On a
 # pull request that changes the recording itself, it only uploads the images as an artifact.
@@ -65,8 +65,8 @@ jobs:
         with:
           name: readme-images
           path: |
-            images/*.gif
-            images/*.png
+            images/readme/*.gif
+            images/readme/*.png
 
       # When the recording fails, its temporary directory holds VS Code's log and a screenshot.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -84,7 +84,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VSCODE_PATH: ${{ steps.vscode.outputs.path }}
         run: |
-          if git diff --quiet -- images && [ -z "$(git status --porcelain -- images)" ]; then
+          if git diff --quiet -- images/readme && [ -z "$(git status --porcelain -- images/readme)" ]; then
             echo "The images did not change."
             exit 0
           fi
@@ -92,7 +92,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c "$branch"
-          git add images
+          git add images/readme
           git commit -m 'Re-record the README images'
           git push origin "$branch"
           gh pr create --base main --head "$branch" --title 'Re-record the README images' \

@@ -73,6 +73,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `xargs -d '\n'` no longer says that the last newline stays in the last item: it does only with another delimiter.
 - With `sed -n`, `q` quits without printing the line and `n` reads the next one without printing this one, as GNU sed does; so does a script that starts with `#n`. Before, both said they print the line.
 - The `git log --graph` example draws the graph: `* ` before each commit, and `| ` before its other lines.
+- The Marketplace, Open VSX and npm pages show the images and links of the version they describe. Before, they showed the newest images from `main`, and one was missing.
 
 ## 0.8.0
 

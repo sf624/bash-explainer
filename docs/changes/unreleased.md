@@ -565,3 +565,14 @@ The positional parameters are those the shell starts with: a `shift` or `set --`
 | `git log --oneline --graph --format='%h %s'` | `* 3f2a9c1 Fix login timeout` | the example's lines start with `* `; a commit's other lines with `\| ` (two spaces for the last), as git draws one line of history | `3f2a9c1 Fix login timeout` |
 | `case` (no word yet) | a syntax error | "case statement: match the value (not written yet) against each pattern…", with no empty part for the value | "match `` against each pattern…", and an empty "Value to match" |
 
+### The package pages show their own version's README
+
+A README on the Marketplace, Open VSX or npm has relative images and links; the page loads them from GitHub at `HEAD`, the newest commit of `main`, not at the commit of the release. So the page of 0.8.0 showed the images of `main` (the Reading view, which was not released) and a link to a file `main` no longer had.
+
+| Page | Shown before | Shown now |
+| --- | --- | --- |
+| Marketplace and Open VSX (the same `.vsix`) | images and links at `raw/HEAD/…` and `blob/HEAD/…`; `images/inline.png`, deleted on `main`, was a 404 | `raw/v<version>/…` and `blob/v<version>/…`, in the README and the changelog |
+| npm (`cli/README.md`) | the image at `raw.githubusercontent.com/…/main/…`; `LICENSE` and `THIRD_PARTY_NOTICES.md` were relative to `cli/`, where the repository does not have the files | the image and the two links at `…/v<version>/…` (the license and the notices at the repository's root) |
+| README.md on GitHub | no word that it follows `main` | a note under the badges that it describes the development version, with links to the released one; the packaged README leaves the note out |
+
+The v0.8.0 page was packaged before this and cannot be changed, so `images/demo.gif`, `hover.gif`, `panel.gif` and `inline.png` are back on `main` at the paths that page loads, until the next release replaces it. The README now uses `images/readme/`. How it works, and the check that fails when a packaged README has a link that is not at the tag: [docs/publishing.md](../publishing.md#the-readme-of-a-package-page-describes-its-version).

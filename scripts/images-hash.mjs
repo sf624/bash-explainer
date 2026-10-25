@@ -2,7 +2,7 @@
 // that decide how those look, so a release can tell whether the images were recorded with them.
 // Usage: node scripts/images-hash.mjs [--write | --check]
 //   (no option)  print the hash
-//   --write      store it in images/.source-hash (the recording script does this)
+//   --write      store it in images/readme/.source-hash (the recording script does this)
 //   --check      exit 1 when the stored hash differs (the Release workflow does this)
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -10,9 +10,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const STORE = path.join(ROOT, 'images', '.source-hash');
+const STORE = path.join(ROOT, 'images', 'readme', '.source-hash');
 /** What the images look like depends on these; the explanations' wording is left out on purpose. */
-const SOURCES = ['src/ui', 'media', 'images/demo.sh', 'images/hints.sh', 'scripts/capture-readme-images.mjs'];
+const SOURCES = ['src/ui', 'media', 'images/readme/demo.sh', 'images/readme/hints.sh', 'scripts/capture-readme-images.mjs'];
 
 function files(rel) {
   const abs = path.join(ROOT, rel);

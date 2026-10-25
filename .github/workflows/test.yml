@@ -325,7 +325,7 @@ jobs:
       - name: Scripts without problems pass
         uses: ./
         with:
-          files: test/fixtures/sample.sh images/*.sh
+          files: test/fixtures/sample.sh images/readme/*.sh
           package: ${{ steps.pack.outputs.tgz }}
 
   bash-ast:

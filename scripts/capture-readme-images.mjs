@@ -1,4 +1,4 @@
-// Records the README images (images/demo.gif, hover.gif, panel.gif, name-hints.png).
+// Records the README images (images/readme/demo.gif, hover.gif, panel.gif, name-hints.png).
 // See images/RECORDING.md. Usage: npm run images [-- demo hover panel hints] [-- --keep]
 import { chromium } from 'playwright-core';
 import { spawn, spawnSync } from 'node:child_process';
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { imagesHash } from './images-hash.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const IMAGES = path.join(ROOT, 'images');
+const IMAGES = path.join(ROOT, 'images', 'readme');
 const ALL = ['demo', 'hover', 'panel', 'hints'];
 const args = process.argv.slice(2);
 const keep = args.includes('--keep');
@@ -101,6 +101,10 @@ async function launch(code, work, extDir, scenario) {
   const ud = path.join(work, `user-data-${scenario}`);
   fs.mkdirSync(path.join(ud, 'User'), { recursive: true });
   fs.writeFileSync(path.join(ud, 'User', 'settings.json'), JSON.stringify({ ...baseSettings, ...scenarioSettings[scenario] }, null, 2));
+  // The window title shows the folder's name: a copy named "images", as the images were always recorded.
+  const workspace = path.join(work, 'images');
+  fs.mkdirSync(workspace, { recursive: true });
+  for (const f of ['demo.sh', 'hints.sh']) fs.copyFileSync(path.join(IMAGES, f), path.join(workspace, f));
   const port = 9300 + Math.floor(Math.random() * 500);
   const proc = spawn(code, [
     `--remote-debugging-port=${port}`,
@@ -113,8 +117,8 @@ async function launch(code, work, extDir, scenario) {
     '--new-window',
     // CI runners (Ubuntu 24.04) do not allow Chromium's sandbox.
     ...(process.platform === 'linux' && process.env.CI ? ['--no-sandbox', '--disable-gpu'] : []),
-    IMAGES,
-    path.join(IMAGES, scenario === 'hints' ? 'hints.sh' : 'demo.sh'),
+    workspace,
+    path.join(workspace, scenario === 'hints' ? 'hints.sh' : 'demo.sh'),
   ], { stdio: ['ignore', 'ignore', fs.openSync(path.join(work, `${scenario}-vscode.log`), 'w')], env: cleanEnv });
 
   let browser;

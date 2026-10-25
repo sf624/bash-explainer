@@ -7,10 +7,21 @@ All three registries are reached through GitHub's OpenID Connect, so there is no
 ## Releasing a version
 
 1. If the UI changed since the README images were recorded (`node scripts/images-hash.mjs --check` fails), run the [README images](../.github/workflows/readme-images.yml) workflow and merge its pull request; the Release workflow stops otherwise.
-2. Bump `version` in `package.json` and `cli/package.json` (`npm version <version> --no-git-tag-version`, then the same in `cli/`), and rename `## Unreleased` in `CHANGELOG.md` to `## <version>`, with its `[All changes]` link changed to `compare/v<previous>...v<version>`; merge to `main`.
-3. Optional dry run: in the Actions tab, run the Release workflow by hand (**Run workflow**) on `main`. It checks that the Test workflow passed on that commit, checks the README images and packages the extension; the publish and web page jobs are skipped, so nothing is published.
+2. Bump `version` in `package.json` and `cli/package.json` (`npm version <version> --no-git-tag-version`, then the same in `cli/`), and rename `## Unreleased` in `CHANGELOG.md` to `## <version>`, with its `[All changes]` link changed to `compare/v<previous>...v<version>`; merge to `main`. Also rename `docs/changes/unreleased.md` to `docs/changes/<version>.md` and point the section's details link at the tag: `https://github.com/sf624/bash-explainer/blob/v<version>/docs/changes/<version>.md` (a link to `main` is flagged by the check in step 3 and 4).
+3. Optional dry run: in the Actions tab, run the Release workflow by hand (**Run workflow**) on `main`. It checks that the Test workflow passed on that commit, checks the README images, packages the extension and checks that the READMEs of the packages are pinned to the tag (see below); the publish and web page jobs are skipped, so nothing is published.
 4. Push the tag from an up-to-date `main`: `git switch main && git pull && git tag v<version> && git push origin v<version>`. The workflow stops if the tag does not match `package.json`, or if the Test workflow did not pass on the tagged commit.
 5. In the workflow run, approve the `release` environment (**Review deployments**).
+6. When the release is published (the Marketplace shows the new version), delete the images of the previous release that the old page needed: `images/demo.gif`, `images/hover.gif`, `images/panel.gif` and `images/inline.png` (the files directly in `images/`; the ones README.md uses are in `images/readme/`), and this reminder with them. Open a pull request for it; not before the publish, because until then the Marketplace and Open VSX page of the old version still load them from `HEAD`.
+
+### The README of a package page describes its version
+
+The Marketplace, Open VSX and npm pages show the README that was packaged. Relative links and images in it are rewritten to absolute ones on GitHub, and left alone they point at `HEAD`: a page would show the images of `main`, which can be newer than the release (and a file deleted on `main` would be missing). So each package is pinned to the release's tag:
+
+- **The extension** (Marketplace, Open VSX: the same `.vsix`): `npm run package` runs [scripts/package-vsix.ts](../scripts/package-vsix.ts), which calls `vsce package --githubBranch v<version>`. vsce then rewrites the relative links of `README.md` and `CHANGELOG.md` to `blob/v<version>/…` and the images to `raw/v<version>/…`. The script packages a copy of the files in a temporary directory, because it also takes the note at the top of README.md (the block between `<!-- development-note -->` markers: "this README describes the development version") out of the packaged README. The note is true on GitHub and false on a release's page.
+- **The npm package** (`cli/`): `scripts/build-cli.ts --outdir=<dir> --tag=v<version>` builds a complete package directory with `cli/README.md` pinned the same way (relative targets and `main`/`HEAD` URLs become `…/v<version>/…`; [scripts/readme-pins.ts](../scripts/readme-pins.ts)). The Release workflow publishes that directory, so `cli/README.md` in the repository stays relative and works on any branch.
+- **The check**: `npx tsx scripts/readme-pins.ts --vsix <file> | --tgz <file>` reads the README out of a package and fails when a link or image into this repository is relative or not at the tag (the changelog's `## Unreleased` section and links to older tags are left alone). The Release workflow runs it on the `.vsix` and on the packed npm package, in its dry run too, and `test/readme-pins.test.ts` runs it on a package made from the files in the repository.
+
+Images that the README of a release names must exist at its tag: a README that points at a new image path needs the file in the same commit, and a file the previous release's README used must stay until that release is replaced (step 6).
 
 ## One-time setup
 
@@ -51,7 +62,7 @@ On <https://open-vsx.org>, in the settings of the `shun-fujioka/bash-explainer` 
 
 The Release workflow also publishes `cli/` as the npm package [`bash-explainer`](https://www.npmjs.com/package/bash-explainer), at the same version as the extension (a test keeps `cli/package.json` and `package.json` in step). npm's trusted publishing works only for a package that exists, so:
 
-1. Publish the first version by hand, logged in to npm: `npm run build:cli && npm publish ./cli --access public`.
+1. Publish the first version by hand, logged in to npm: `npx tsx scripts/build-cli.ts --outdir=out/cli --tag=v<version> && npm publish out/cli --access public` (the tag pins the README's links to the release, see above).
 2. On npmjs.com, in the package's *Settings → Trusted publisher*, choose **GitHub Actions** and enter owner `sf624`, repository `bash-explainer`, workflow `release.yml`, environment `release`. Then, under *Publishing access*, disallow tokens.
 3. In the repository's *Settings → Secrets and variables → Actions → Variables*, add `NPM_PUBLISH` = `true`. Until then the Release workflow skips npm.
 

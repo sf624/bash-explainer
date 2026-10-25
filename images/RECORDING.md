@@ -1,6 +1,6 @@
 # Recording the README images
 
-README.md and README.ja.md use these four files from this directory, recorded by the script below:
+README.md and README.ja.md use these four files from `images/readme/`, recorded by the script below:
 
 | File | What it shows | Length |
 | --- | --- | --- |
@@ -9,9 +9,13 @@ README.md and README.ja.md use these four files from this directory, recorded by
 | `panel.gif` | Panel mode | about 17 s |
 | `name-hints.png` | Name hints (still image) | — |
 
-`action-annotations.png`, used by cli/README.md, is a screenshot of a pull request on GitHub, taken by hand: the action's warnings on a script's lines under *Files changed*.
+`images/action-annotations.png`, used by cli/README.md, is a screenshot of a pull request on GitHub, taken by hand: the action's warnings on a script's lines under *Files changed*.
 
-`images/` is left out of the .vsix by `.vscodeignore`. The Marketplace README loads the images from GitHub, through `repository` in `package.json` (github.com/sf624/bash-explainer), so **push before you publish**.
+`images/` is left out of the .vsix by `.vscodeignore`. The Marketplace, Open VSX and npm pages load the images from GitHub, through `repository` in `package.json` (github.com/sf624/bash-explainer). The packaged README is pinned to the release's tag (`https://github.com/sf624/bash-explainer/raw/v<version>/images/readme/…`, see [docs/publishing.md](../docs/publishing.md)), so a page shows the images of its own version, and the tag must be pushed before the page can show them.
+
+### The old files in `images/`
+
+`images/demo.gif`, `hover.gif`, `panel.gif` and `inline.png`, directly in this directory, are the images that the README of v0.8.0 used. That release's page was packaged before the pinning, so it loads its images from `HEAD`, that is from these paths on `main`: with the files in place it shows the images of v0.8.0 (without them, newer images of `main`, and none for `inline.png`). They are there until the next release is published, **then deleted** (a step of the release checklist in [docs/publishing.md](../docs/publishing.md)). Do not record into them and do not point a README at them: the recording script writes `images/readme/` only.
 
 ## Recording them automatically
 
@@ -22,11 +26,11 @@ npm run images -- hover panel  # only some of them
 npm run images -- --keep       # keep the frames and the temporary profile
 ```
 
-[scripts/capture-readme-images.mjs](../scripts/capture-readme-images.mjs) overwrites the files in this directory. It:
+[scripts/capture-readme-images.mjs](../scripts/capture-readme-images.mjs) overwrites the files in `images/readme/`. It:
 
 1. builds the extension and packages it into a .vsix
 2. installs the .vsix into an empty, temporary extensions directory, so your own VS Code settings and extensions are not used or changed
-3. starts VS Code once per image with `--remote-debugging-port`, a fresh user-data directory and the settings for that scenario, and drives it with [Playwright](https://playwright.dev/) (`playwright-core`, no browser download)
+3. starts VS Code once per image on a temporary folder named `images` (a copy of `demo.sh` and `hints.sh`, so that the window title reads as it always did), with `--remote-debugging-port`, a fresh user-data directory and the settings for that scenario, and drives it with [Playwright](https://playwright.dev/) (`playwright-core`, no browser download)
 4. takes screenshots while it moves the mouse and presses keys, and draws a mouse pointer on them, because screenshots do not include it
 5. turns the frames into GIFs with ffmpeg
 
@@ -50,7 +54,7 @@ The [README images workflow](../.github/workflows/readme-images.yml) runs the sa
 
 ### Keeping them up to date
 
-A full recording also writes `images/.source-hash`: a hash of the files that decide how the images look (`src/ui/`, `media/`, `images/demo.sh` and the recording script; not the explanations' wording). The Release workflow runs `node scripts/images-hash.mjs --check` before publishing and stops when the hash differs, so the Marketplace never shows images of an older UI. Re-record them by hand (above), merge the pull request, then push the tag again.
+A full recording also writes `images/readme/.source-hash`: a hash of the files that decide how the images look (`src/ui/`, `media/`, `images/readme/demo.sh`, `hints.sh` and the recording script; not the explanations' wording). The Release workflow runs `node scripts/images-hash.mjs --check` before publishing and stops when the hash differs, so the Marketplace never shows images of an older UI. Re-record them by hand (above), merge the pull request, then push the tag again.
 
 ### In WSL
 
@@ -72,13 +76,13 @@ The settings are the same for every image: Dark Modern theme, 16px editor font, 
 | `demo.gif` | defaults (hover on) | With the cursor on line 13 (`grep -rn "ERROR" "$LOG_DIR" 2>/dev/null >> errors.txt`), open the panel from the editor title bar. The panel first shows the explanation tree; scroll down to the example under the pattern `"ERROR"`, click into its input and turn `RROR` into `ERROR`: the matching lines change. Then hover line 2 (`set -euo pipefail`). |
 | `hover.gif` | defaults (hover on) | Hover line 2 (`set -euo pipefail`), line 4 (`${1:-…}`) and line 7 (inside the loop; the header says "for loop"). |
 | `panel.gif` | `hover.enabled: false`, `panel.autoOpen: true` | Move down from line 1 to line 11 with the arrow keys, point at the `-exec` row of the tree, then go on to line 12. |
-| `name-hints.png` | `hover.enabled: false`; the file `images/hints.sh` | Cursor at the end of line 12; the hints show after the names that do not run what they suggest. Cropped to the editor lines. |
+| `name-hints.png` | `hover.enabled: false`; the file `images/readme/hints.sh` | Cursor at the end of line 12; the hints show after the names that do not run what they suggest. Cropped to the editor lines. |
 
 To change a scenario, edit `record()` in the script.
 
 ## Recording them by hand
 
 - Tools: [ScreenToGif](https://www.screentogif.com/) on Windows, [Kap](https://getkap.co/) on macOS
-- Open `images/demo.sh` and use the settings and steps in the table above
+- Open `images/readme/demo.sh` and use the settings and steps in the table above
 - Export at most 1000px wide, 10–15 fps, under 5 MB per file
 - For Japanese images, set `"bashExplainer.language": "ja"`, save them under other names, and point README.ja.md at them
