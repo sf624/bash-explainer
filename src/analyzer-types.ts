@@ -105,8 +105,11 @@ export interface ExplainOptions {
   positional?: { via: string; words: readonly string[]; more: boolean };
 }
 
-/** A note of a line and the range it is about (`LineExplanation.anchors`). */
-export interface NoteAnchor { text: string; span: Span }
+/**
+ * A note of a line and the range it is about (`LineExplanation.anchors`); `code`: the code of the problem it is when
+ * the editors show it as one (`DocumentIssue.code`: a fact's id, a style check, a dialect issue).
+ */
+export interface NoteAnchor { text: string; span: Span; code?: string }
 
 export interface LineExplanation {
   line: number;

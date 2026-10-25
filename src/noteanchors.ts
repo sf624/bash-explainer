@@ -14,8 +14,8 @@ export function spanOf(n: Placed): Span {
   };
 }
 
-/** The texts of notes found on nodes, each once, in the order found; each is recorded in `anchors` with its node's range. */
-export function anchored(found: readonly { text: string; node?: Placed }[], anchors: NoteAnchor[]): string[] {
-  for (const f of found) if (f.node) anchors.push({ text: f.text, span: spanOf(f.node) });
+/** The texts of notes found on nodes, each once, in the order found; each is recorded in `anchors` with its node's range (and its problem's code). */
+export function anchored(found: readonly { text: string; node?: Placed; code?: string }[], anchors: NoteAnchor[]): string[] {
+  for (const f of found) if (f.node) anchors.push({ text: f.text, span: spanOf(f.node), ...(f.code ? { code: f.code } : {}) });
   return [...new Set(found.map((f) => f.text))];
 }

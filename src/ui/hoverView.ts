@@ -7,7 +7,7 @@ import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { joinParts, labelParts } from '../label';
 import { manualLabel, SECTIONS } from '../manual';
-import { isCommand, partNotes, sameSpan, shown } from './hoverParts';
+import { isCommand, partNotes, ProblemAt, sameSpan, shown } from './hoverParts';
 import { type NoteLevel, splitNote } from '../messages';
 import { levelColour, ThemeKind } from './palette';
 import { colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, plainNotes, refsMarkdown, ui } from './render';
@@ -27,6 +27,8 @@ export interface HoverInput {
   /** The keys of the command that explains the whole line, for the link's tooltip. */
   keys: string;
   placement: ExamplePlacement;
+  /** The problems the editor shows above the part in the same hover (the diagnostics at the position): the part leaves out their notes. */
+  problems?: readonly ProblemAt[];
 }
 
 /** Text for an attribute (a tooltip): only what would end it or start a tag is escaped, so that it still wraps. */
@@ -153,11 +155,14 @@ function noteMarkdown(note: string, lang: Lang, theme: ThemeKind): string {
   return `${icon} ${label ? `<span style="color:${colour};"><strong>${esc(label)}</strong></span> ` : ''}${md(body)}`;
 }
 
-/** Notes of the line (all of them by default), warnings first, each with its level and the sections of the manual it is about. */
+/**
+ * Notes of the line (all of them by default), warnings first, each with its level and the sections of the manual it is
+ * about. Paragraphs, not quotes: VS Code's hover gives a quote no bar, only the browser's margins (40 px on each side).
+ */
 function notes(ex: LineExplanation, lang: Lang, theme: ThemeKind, list: readonly string[] = ex.notes): string[] {
   return notesByLevel(list).flatMap((n) => {
     const refs = noteRefs(ex, n);
-    return [`> ${noteMarkdown(n, lang, theme)}${refs?.length ? ` <small>${refsMarkdown(lang, refs)}</small>` : ''}`, ''];
+    return [`${noteMarkdown(n, lang, theme)}${refs?.length ? ` <small>${refsMarkdown(lang, refs)}</small>` : ''}`, ''];
   });
 }
 
@@ -198,7 +203,7 @@ export function partHover(x: HoverInput, chain: Token[]): string {
   out.push(...table(own.rows, x));
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));
   if (command) out.push(`<small>${muted(t.command)}${label(command, x.theme)}${badge(command)} — ${md(command.explanation)}</small>`, '');
-  const { about, others } = partNotes(x.ex, part);
+  const { about, others } = partNotes(x.ex, part, x.problems);
   out.push(...notes(x.ex, x.lang, x.theme, about));
   // Its examples: those of the part and its own parts, else those of the nearest part around it.
   const placed = placeExamples(x.ex).items;

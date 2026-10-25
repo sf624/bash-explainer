@@ -576,3 +576,16 @@ A README on the Marketplace, Open VSX or npm has relative images and links; the 
 | README.md on GitHub | no word that it follows `main` | a note under the badges that it describes the development version, with links to the released one; the packaged README leaves the note out |
 
 The v0.8.0 page was packaged before this and cannot be changed, so `images/demo.gif`, `hover.gif`, `panel.gif` and `inline.png` are back on `main` at the paths that page loads, and they stay: Open VSX keeps a page for every version, and VS Code's details view of an installed 0.8.0 loads them too. The README now uses `images/readme/`. How it works, and the check that fails when a packaged README has a link that is not at the tag: [docs/publishing.md](../publishing.md#the-readme-of-a-package-page-describes-its-version).
+
+### The hover's notes
+
+VS Code puts the problems at the mouse above our hover. The part now leaves out the notes that those problems already say. They are matched by their code, such as `redirect-by-your-shell`, and by their place, not by their text.
+
+| Written, hovered on | Shown now | Shown before |
+| --- | --- | --- |
+| `sudo echo "nameserver 1.1.1.1" > /etc/resolv.conf`, on `>` | the problem above, then the part: `> /etc/resolv.conf` and what it does | the problem, and the same pitfall again in the part |
+| `rm -rf $DIR/*`, on `$DIR` | the two problems above, then `$DIR` | the two problems, and both pitfalls again |
+| the same, with `bashExplainer.diagnostics.enabled` off | `$DIR` with both pitfalls (no problem above) | the same |
+
+The notes that stay (on another word, about the line, a plain fact) start at the hover's left edge, with their icon and word in the level's colour. Before, each one was a quote: VS Code's hover draws no bar for a quote, only the browser's margins, so each note was pushed 40 px to the right.
+

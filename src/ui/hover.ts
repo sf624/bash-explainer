@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { heredocAt } from '../document';
 import { ExplainService } from '../service';
-import { blankRange, partAt, rangeOnLine } from './hoverParts';
+import { DIAGNOSTIC_SOURCE } from './diagnostics';
+import { blankRange, partAt, ProblemAt, rangeOnLine } from './hoverParts';
 import { HoverInput, lineCard, partHover, wholeLine } from './hoverView';
 import { ThemeKind } from './palette';
 import { pruneDepth } from './render';
@@ -71,6 +72,7 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
       ex, lang: this.service.lang, theme: themeKind(), lineText: line.text, placement: this.service.examplePlacement,
       panelLink: `command:bashExplainer.openPanel?${args}`, lineLink: `command:bashExplainer.explainLine?${args}`,
       keys: typeof process === 'object' && process.platform === 'darwin' ? '⌘K ⌘E' : 'Ctrl+K Ctrl+E',
+      problems: problemsAt(doc, pos),
     };
     const chain = forced ? [] : partAt(ex.items, pos, heredocAt(this.service.document(doc), pos.line));
     const [value, span] = forced ? [wholeLine(x), line.range]
@@ -103,6 +105,16 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
     this.registration?.dispose();
     this.disposables.forEach((d) => d.dispose());
   }
+}
+
+/**
+ * Our problems at the position, which VS Code shows in the same hover, above ours: the part leaves out their notes.
+ * None when the problems are off (`diagnostics.enabled`) or ignored: the part keeps those notes.
+ */
+function problemsAt(doc: vscode.TextDocument, pos: vscode.Position): ProblemAt[] {
+  return vscode.languages.getDiagnostics(doc.uri)
+    .filter((d) => d.source === DIAGNOSTIC_SOURCE && d.range.contains(pos) && typeof d.code === 'string')
+    .map((d) => ({ code: d.code as string, span: { start: d.range.start, end: d.range.end } }));
 }
 
 /** The kind of the active colour theme, whose colours the hover's labels take. */

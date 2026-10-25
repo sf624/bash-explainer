@@ -132,7 +132,7 @@ export interface LineOutput {
   /** Enclosing constructs, outermost first. */
   readonly context: ContextEntry[];
   /** The texts of notes found on nodes, each once; each is recorded in the anchors (see `anchored`). */
-  anchored(found: readonly { text: string; node?: Placed }[]): string[];
+  anchored(found: readonly { text: string; node?: Placed; code?: string }[]): string[];
   /** Ends the line: what is explained after it is explained whole. */
   end(): void;
 }
@@ -251,7 +251,7 @@ export class LineExplainer implements Explainer, LineOutput {
   say(f: Fact, at: SyntaxNode): string[] {
     const out = said([f], this.opts.pitfalls);
     this.facts.push(...out);
-    return anchored(out.map((x) => ({ text: x.text, node: at })), this.anchors);
+    return anchored(out.map((x) => ({ text: x.text, node: at, code: x.id })), this.anchors);
   }
 
   note(f: Fact, at: SyntaxNode): void;
@@ -265,7 +265,7 @@ export class LineExplainer implements Explainer, LineOutput {
     this.notes.push(...anchored(nodes.map((node) => ({ text: what, node })), this.anchors));
   }
 
-  anchored(found: readonly { text: string; node?: Placed }[]): string[] {
+  anchored(found: readonly { text: string; node?: Placed; code?: string }[]): string[] {
     return anchored(found, this.anchors);
   }
 
