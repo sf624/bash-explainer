@@ -169,11 +169,20 @@ describe('date formats', () => {
     for (const tz of ['UTC0', 'Asia/Tokyo', 'Europe/Paris', 'America/New_York', 'Asia/Kolkata', 'Australia/Lord_Howe', 'Asia/Kathmandu', 'America/Santiago']) {
       const zone = zoneOf(tz)!;
       for (const d of list) {
-        const t0 = Math.floor(Date.now() / 1000);
-        const gnu = execFileSync('date', ['-d', d, '+%s'], { env: { ...process.env, TZ: tz, LC_ALL: 'C' } }).toString().trim();
-        const t1 = Math.floor(Date.now() / 1000);
+        // The clock is read before and after GNU runs: GNU's moment lies between. A second (minute, day) that ends
+        // between is retried, up to 3 times; then each second between is accepted. A moment at which the model does
+        // not follow the date (a change of summer time in the zone) skips the item.
+        let t0 = 0, t1 = 0, gnu = '';
+        for (let attempt = 0; attempt < 3 && (attempt === 0 || t0 !== t1); attempt++) {
+          t0 = Math.floor(Date.now() / 1000);
+          gnu = execFileSync('date', ['-d', d, '+%s'], { env: { ...process.env, TZ: tz, LC_ALL: 'C' } }).toString().trim();
+          t1 = Math.floor(Date.now() / 1000);
+        }
         const ours = new Set<string | undefined>();
-        for (let t = t0; t <= t1; t++) ours.add(relativeFrom(relativeItems(d)!, new Date(t * 1000), zone)?.getTime().toString().replace(/000$/, ''));
+        for (let t = t0; t <= t1; t++) {
+          const at = relativeFrom(relativeItems(d)!, new Date(t * 1000), zone);
+          ours.add(at && String(at.getTime() / 1000));
+        }
         if (ours.has(undefined)) continue;
         assert.ok(ours.has(gnu), `${tz} ${d}: GNU ${gnu}, ours ${[...ours]}`);
         compared++;
