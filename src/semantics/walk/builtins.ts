@@ -618,7 +618,7 @@ export class WalkBuiltins {
       // (Surely, for a value the script set: `x=abc; … ${x:1:-4}`.)
       const p = parseExpansion(e.text)!;
       const part = (role: string): string | undefined => p.parts.find((x) => x.role === role)?.text;
-      if (v?.set === 'on' && typeof v.value === 'string' && sameInEveryLocale(v.value) && this.w.trust.variable(name) && substring(v.value, part('offset') ?? '', part('length')) === null) throw new ExpansionError(st, true);
+      if (v?.set === 'on' && typeof v.value === 'string' && sameInEveryLocale(v.value) && this.w.trust.variable(name) && substring(v.value, part('offset')!, part('length')) === null) throw new ExpansionError(st, true);
       this.w.abort(st, false);
     }
     if (fails !== 'shell') return;

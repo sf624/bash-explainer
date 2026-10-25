@@ -160,7 +160,7 @@ function knownTruth(kind: '[' | '[[', op: string, left: Operand | undefined, rig
   // (In `[[ ]]` the right side is a pattern: one with a glob character is not compared as text, nor is a tilde, which
   // expands; nor the variable's value when it is that side, unquoted: `x='a*'; [[ abc == $x ]]` is true.)
   if (kind === '[[' && (/[*?[]/.test(lit) || lit.startsWith('~') || ('var' in right! && !quotedRight && /[*?[\\]/.test(known)))) return undefined;
-  return ['=', '==', '!='].includes(op) ? (known === lit) !== (op === '!=') : undefined;
+  return (known === lit) !== (op === '!=');
 }
 
 function sampleTests(kind: '[' | '[[' | '((', op: string, left: Operand | undefined, right: Operand | undefined, quotedRight: boolean): TestCase[] | undefined {
