@@ -487,6 +487,7 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 | `for (( c = 0; c < 2; c++ )); do echo $v; done` | the body is commands: `$v` is split and globbed | "Expands to the value of `v` (unquoted, it is word-split and globbed)" | "Expands to the value of `v`": the body was read as arithmetic |
 | `a=1; a=2 export a; echo $a`, also `readonly`, `command export` | the prefix assignment stays after the command, exported: `2` | "`export` gets this name, so this assignment stays after the command, exported" | "set only for this command" |
 | `s='[section] key'; echo "${s//[/}"`, `${u//[/]/x}` | the pattern ends at the first `/`, also inside brackets: `section] key`; `[` becomes `]/x` | the example of the line, from that pattern | no example, or one of the pattern `[/` |
+| `[[ $x == ~ ]]`, `[ "$x" = ~ ]` | `~` is the home directory: `x='~'` makes it false | no example | "True when `x="~"`" |
 | `${t//[\!]/x}`, `${t//['a-c']/x}` | a quoted `!` or `-` in brackets is the character: `!`; `a`, `-`, `c` | the example replaces those characters | "any character but…", and the range `a-c` |
 | `a=1; declare a=5 b=$a`, `local x=$x` | the words are expanded before the builtin runs: `b` is `1`, and the local `x` gets the caller's value | the values that follow from them (the words of `$b`, the value of `$x`) | `b` was `5`, the local `x` empty |
 
