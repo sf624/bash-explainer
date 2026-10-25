@@ -33,6 +33,9 @@ export function specFor(cx: Explainer, name: string): CommandSpec | undefined {
   return customCommandSpec(cx.opts.customCommands?.[name.split('/').pop()!]) ?? hostCommand(cx, name) ?? lookupCommand(name);
 }
 
+/** The spec of a command with none: no options, no operands. */
+export const NO_SPEC: CommandSpec = { summary: { ja: '', en: '' } };
+
 /** A command the host defines (a function of bats, which a path does not name). */
 export function hostCommand(cx: Explainer, name: string): CommandSpec | undefined {
   const host = cx.opts.hostCommands;

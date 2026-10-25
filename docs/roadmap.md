@@ -20,7 +20,7 @@ Keep it current:
 4. Run-based oracles, steps 2–10 of [design/oracles.md](design/oracles.md): argv capture, checking suggestions in bash, the normal-forms audit.
 5. Pipeline examples: show the shape of the input each stage reads (item 3 of the external review of October 2026).
 6. bats, what [design/bats.md](design/bats.md) lists as not done: a model per test (its own process, `set -e`), hooks, bats-assert, tags.
-7. Small gaps of the specs ([design/semantics.md](design/semantics.md), A3): procps reads digits after BSD letters as PIDs (`ps u1`); GNU tar reads a first word without a dash as letters (`tar vf a.tar`).
+7. Small gaps of the specs and the models ([design/semantics.md](design/semantics.md), A3): procps reads digits after BSD letters as PIDs (`ps u1`); GNU tar reads a first word without a dash as letters (`tar vf a.tar`). The word model (`wordMeaning`, src/semantics/words.ts) applies brace expansion in every shell: in a `#!/bin/dash` script, `echo {a,b}` is said to expand, though dash (like POSIX sh) has no brace expansion and prints `{a,b}` (noted in #332; only the redirection target checks the dialect, `braceWorks` in src/explain/redirections.ts).
 8. Dead code faded in the editor: a `DiagnosticTag.Unnecessary` hint on a statement that never runs (`shellState(...).dead(n)`), with its message in the catalog and on every surface ([design/highlighting.md](design/highlighting.md)).
 
 ## Waiting on the maintainer
