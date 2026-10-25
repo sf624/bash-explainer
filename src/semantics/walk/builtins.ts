@@ -338,9 +338,10 @@ export class WalkBuiltins {
         if (hidden?.attrs.r?.state === 'on' && !this.w.frames.some((f) => f.saved.has(name))) continue;
         frame.saved.set(name, hidden);
         // It keeps the export attribute of the one it hides, and no other (bash's make_local_variable). (With
-        // localvar_inherit, it starts with the value and attributes of the one it hides: not followed.)
+        // localvar_inherit, it starts with the value and attributes of the one it hides: not followed. So does dash's
+        // `local`, and sh may be dash: `local IFS` keeps the IFS of the caller there.)
         const x = hidden?.attrs.x;
-        const inherit = option(st, 'shopt', 'localvar_inherit');
+        const inherit = ['sh', 'dash', 'ash'].includes(this.w.shell ?? '') ? 'unknown' : option(st, 'shopt', 'localvar_inherit');
         st = this.w.put(st, 'variables', name, { declared: 'on', set: inherit === 'off' || inherit === 'default' ? 'off' : 'unknown', attrs: x && x.state !== 'off' ? { x: { state: x.state, at: n } } : {}, at: n });
       }
       // `declare -g x` while `x` is local: the global one.

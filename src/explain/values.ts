@@ -14,7 +14,8 @@ import type { Explainer } from './context';
 /** `t`, the token of the expansion `n`, with its value where the model knows it for sure. */
 export function withValue(cx: Explainer, n: SyntaxNode, t: Token): Token {
   const v = expansionValue(n, cx.state);
-  if (v) t.value = { ...v, said: valueSaid(cx.lang, v) };
+  const shell = cx.state.shell;
+  if (v) t.value = { ...v, said: valueSaid(cx.lang, v, !shell || shell === 'bash') };
   return t;
 }
 

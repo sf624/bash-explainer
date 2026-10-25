@@ -1731,5 +1731,1679 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "msg='hello  world'; @PROBE:a@ \"$msg\"; @PROBE:b@ $msg; @PROBE:c@ ${msg}; @PROBE:d@ \"${msg}\"; @PROBE:e@ \"${#msg}\"",
+    "shell": "dash",
+    "requires": "dash",
+    "note": "dash: the plain forms, as bash gives them",
+    "facts": {
+      "a": [
+        [
+          "hello  world"
+        ]
+      ],
+      "b": [
+        [
+          "hello",
+          "world"
+        ]
+      ],
+      "c": [
+        [
+          "hello",
+          "world"
+        ]
+      ],
+      "d": [
+        [
+          "hello  world"
+        ]
+      ],
+      "e": [
+        [
+          "12"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "msg='hello  world'; @PROBE:a@ \"$msg\"; @PROBE:b@ $msg; @PROBE:c@ ${msg}; @PROBE:d@ \"${msg}\"; @PROBE:e@ \"${#msg}\"",
+    "shell": "sh",
+    "requires": "dash",
+    "note": "sh: dash and bash --posix agree on the plain forms",
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "hello  world"
+          ]
+        ],
+        "b": [
+          [
+            "hello",
+            "world"
+          ]
+        ],
+        "c": [
+          [
+            "hello",
+            "world"
+          ]
+        ],
+        "d": [
+          [
+            "hello  world"
+          ]
+        ],
+        "e": [
+          [
+            "12"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "hello  world"
+          ]
+        ],
+        "b": [
+          [
+            "hello",
+            "world"
+          ]
+        ],
+        "c": [
+          [
+            "hello",
+            "world"
+          ]
+        ],
+        "d": [
+          [
+            "hello  world"
+          ]
+        ],
+        "e": [
+          [
+            "12"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "e=; @PROBE:a@ $e; @PROBE:b@ \"$e\"; s='   '; @PROBE:c@ $s; @PROBE:d@ \"${#e}\"",
+    "shell": "dash",
+    "requires": "dash",
+    "facts": {
+      "a": [
+        []
+      ],
+      "b": [
+        [
+          ""
+        ]
+      ],
+      "c": [
+        []
+      ],
+      "d": [
+        [
+          "0"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "IFS=:; p='a:b c::d:'; @PROBE:a@ $p; @PROBE:b@ \"$p\"; q=':a'; @PROBE:c@ $q; IFS=' :'; r=' a : b::c  d :'; @PROBE:d@ $r",
+    "shell": "dash",
+    "requires": "dash",
+    "note": "dash splits on an IFS with other characters than spaces as bash does: empty fields between them, none at the end",
+    "facts": {
+      "a": [
+        [
+          "a",
+          "b c",
+          "",
+          "d"
+        ]
+      ],
+      "b": [
+        [
+          "a:b c::d:"
+        ]
+      ],
+      "c": [
+        [
+          "",
+          "a"
+        ]
+      ],
+      "d": [
+        [
+          "a",
+          "b",
+          "",
+          "c",
+          "d"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "IFS=:; p='a:b c::d:'; @PROBE:a@ $p; @PROBE:b@ \"$p\"; q=':a'; @PROBE:c@ $q; IFS=' :'; r='a :  : b'; @PROBE:d@ $r",
+    "shell": "sh",
+    "requires": "dash",
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "a",
+            "b c",
+            "",
+            "d"
+          ]
+        ],
+        "b": [
+          [
+            "a:b c::d:"
+          ]
+        ],
+        "c": [
+          [
+            "",
+            "a"
+          ]
+        ],
+        "d": [
+          [
+            "a",
+            "",
+            "b"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "a",
+            "b c",
+            "",
+            "d"
+          ]
+        ],
+        "b": [
+          [
+            "a:b c::d:"
+          ]
+        ],
+        "c": [
+          [
+            "",
+            "a"
+          ]
+        ],
+        "d": [
+          [
+            "a",
+            "",
+            "b"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "IFS=; p='a b'; @PROBE:a@ $p; unset IFS; @PROBE:b@ $p; IFS=' \t'; q='\ta \t b\t'; @PROBE:c@ $q",
+    "shell": "sh",
+    "requires": "dash",
+    "note": "an empty IFS does not split; an unset one splits as the default",
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "a b"
+          ]
+        ],
+        "b": [
+          [
+            "a",
+            "b"
+          ]
+        ],
+        "c": [
+          [
+            "a",
+            "b"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "a b"
+          ]
+        ],
+        "b": [
+          [
+            "a",
+            "b"
+          ]
+        ],
+        "c": [
+          [
+            "a",
+            "b"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=; @PROBE:a@ \"${x:-d}\"; @PROBE:b@ \"${x-d}\"; @PROBE:c@ \"${x:+d}\"; @PROBE:d@ \"${x+d}\"; @PROBE:e@ \"${x:?w}\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "e": "`${x:?w}` with `x` empty: dash fails (\"x: w\") and stops"
+    },
+    "facts": {
+      "a": [
+        [
+          "d"
+        ]
+      ],
+      "b": [
+        [
+          ""
+        ]
+      ],
+      "c": [
+        [
+          ""
+        ]
+      ],
+      "d": [
+        [
+          "d"
+        ]
+      ],
+      "e": [],
+      "status": 2,
+      "stderr": "SCRIPT: 1: x: w"
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=v; @PROBE:a@ \"${x:-d}\"; @PROBE:b@ \"${x-d}\"; @PROBE:c@ \"${x:+d}\"; @PROBE:d@ \"${x+d}\"; @PROBE:e@ \"${x:?w}\"; @PROBE:f@ \"${x?w}\"",
+    "shell": "sh",
+    "requires": "dash",
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "v"
+          ]
+        ],
+        "b": [
+          [
+            "v"
+          ]
+        ],
+        "c": [
+          [
+            "d"
+          ]
+        ],
+        "d": [
+          [
+            "d"
+          ]
+        ],
+        "e": [
+          [
+            "v"
+          ]
+        ],
+        "f": [
+          [
+            "v"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "v"
+          ]
+        ],
+        "b": [
+          [
+            "v"
+          ]
+        ],
+        "c": [
+          [
+            "d"
+          ]
+        ],
+        "d": [
+          [
+            "d"
+          ]
+        ],
+        "e": [
+          [
+            "v"
+          ]
+        ],
+        "f": [
+          [
+            "v"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=; y='c  d'; @PROBE:a@ ${x:-$y}; @PROBE:b@ \"${x:-$y}\"; @PROBE:c@ ${x:-\"a  b\"}; @PROBE:d@ \"${x:-\"a  b\"}\"; @PROBE:e@ \"${x:-'a b'}\"; @PROBE:f@ ${x:-'a  b'}; @PROBE:g@ \"${x:-'}'}\"; @PROBE:h@ ${x:-'}'}; @PROBE:i@ \"${x:-\"}\"}\"",
+    "shell": "sh",
+    "requires": "dash",
+    "note": "quotes in the word of `${x:-w}`: the same in dash and bash --posix, but a `}` in single quotes in double quotes",
+    "none": {
+      "g": "in double quotes, a single quote in the word is a plain character, so dash and bash --posix end it at the `}` (`''}`); bash gives `'}'`, and the model reads it as bash"
+    },
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "c",
+            "d"
+          ]
+        ],
+        "b": [
+          [
+            "c  d"
+          ]
+        ],
+        "c": [
+          [
+            "a  b"
+          ]
+        ],
+        "d": [
+          [
+            "a  b"
+          ]
+        ],
+        "e": [
+          [
+            "'a b'"
+          ]
+        ],
+        "f": [
+          [
+            "a  b"
+          ]
+        ],
+        "g": [
+          [
+            "''}"
+          ]
+        ],
+        "h": [
+          [
+            "}"
+          ]
+        ],
+        "i": [
+          [
+            "}"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "c",
+            "d"
+          ]
+        ],
+        "b": [
+          [
+            "c  d"
+          ]
+        ],
+        "c": [
+          [
+            "a  b"
+          ]
+        ],
+        "d": [
+          [
+            "a  b"
+          ]
+        ],
+        "e": [
+          [
+            "'a b'"
+          ]
+        ],
+        "f": [
+          [
+            "a  b"
+          ]
+        ],
+        "g": [
+          [
+            "''}"
+          ]
+        ],
+        "h": [
+          [
+            "}"
+          ]
+        ],
+        "i": [
+          [
+            "}"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=; @PROBE:a@ \"${x:-~}\"; @PROBE:b@ ${x:-~}; @PROBE:c@ ${x:-\\*}; @PROBE:d@ ${x:-\"*\"}; @PROBE:e@ ${x:-*.log}",
+    "shell": "sh",
+    "requires": "dash",
+    "none": {
+      "b": "the tilde gives `HOME`, which comes from the environment"
+    },
+    "glob": [
+      "e"
+    ],
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "~"
+          ]
+        ],
+        "b": [
+          [
+            "/home/probe"
+          ]
+        ],
+        "c": [
+          [
+            "*"
+          ]
+        ],
+        "d": [
+          [
+            "*"
+          ]
+        ],
+        "e": [
+          [
+            "c.log"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "~"
+          ]
+        ],
+        "b": [
+          [
+            "/home/probe"
+          ]
+        ],
+        "c": [
+          [
+            "*"
+          ]
+        ],
+        "d": [
+          [
+            "*"
+          ]
+        ],
+        "e": [
+          [
+            "c.log"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=report.tar.gz; @PROBE:a@ \"${x%.*}\"; @PROBE:b@ \"${x%%.*}\"; @PROBE:c@ \"${x#*.}\"; @PROBE:d@ \"${x##*.}\"; @PROBE:e@ ${x%.gz}",
+    "shell": "dash",
+    "requires": "dash",
+    "facts": {
+      "a": [
+        [
+          "report.tar"
+        ]
+      ],
+      "b": [
+        [
+          "report"
+        ]
+      ],
+      "c": [
+        [
+          "tar.gz"
+        ]
+      ],
+      "d": [
+        [
+          "gz"
+        ]
+      ],
+      "e": [
+        [
+          "report.tar"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=a; f() { y=$x; }; f; @PROBE:a@ \"$y\"; x='a\\b'; @PROBE:b@ \"$x\"; @PROBE:c@ $x; @PROBE:d@ \"${x#a\\\\}\"; x=1; x=2 :; @PROBE:e@ \"$x\"",
+    "shell": "dash",
+    "requires": "dash",
+    "facts": {
+      "a": [
+        [
+          "a"
+        ]
+      ],
+      "b": [
+        [
+          "a\\b"
+        ]
+      ],
+      "c": [
+        [
+          "a\\b"
+        ]
+      ],
+      "d": [
+        [
+          "b"
+        ]
+      ],
+      "e": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8.1",
+    "snippet": "x='a*b'; @PROBE:a@ \"${x#*\\*}\"; @PROBE:b@ \"${x#'a*'}\"; @PROBE:c@ \"${x#\"a*\"}\"; @PROBE:d@ ${x#a\"*\"}; y='[a]'; @PROBE:e@ \"${y#\\[}\"; @PROBE:f@ \"${y%]}\"",
+    "shell": "sh",
+    "requires": "dash",
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "b"
+          ]
+        ],
+        "b": [
+          [
+            "b"
+          ]
+        ],
+        "c": [
+          [
+            "b"
+          ]
+        ],
+        "d": [
+          [
+            "b"
+          ]
+        ],
+        "e": [
+          [
+            "a]"
+          ]
+        ],
+        "f": [
+          [
+            "[a"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "b"
+          ]
+        ],
+        "b": [
+          [
+            "b"
+          ]
+        ],
+        "c": [
+          [
+            "b"
+          ]
+        ],
+        "d": [
+          [
+            "b"
+          ]
+        ],
+        "e": [
+          [
+            "a]"
+          ]
+        ],
+        "f": [
+          [
+            "[a"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.5.8.1",
+    "snippet": "x=abc; @PROBE:a@ \"${x#[!a]}\"; @PROBE:b@ \"${x#[^a]}\"; @PROBE:c@ \"${x#[[:alpha:]]}\"; @PROBE:d@ \"${x%[a-c]}\"; @PROBE:e@ \"${x#[]a]}\"",
+    "shell": "sh",
+    "requires": "dash",
+    "note": "brackets: `[!a]`, ranges and classes are the same; `[^a]` is not",
+    "none": {
+      "b": "dash 0.5.12 reads `[^a]` as the set of `^` and `a` (`bc`); bash as not `a` (`abc`)"
+    },
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "abc"
+          ]
+        ],
+        "b": [
+          [
+            "bc"
+          ]
+        ],
+        "c": [
+          [
+            "bc"
+          ]
+        ],
+        "d": [
+          [
+            "ab"
+          ]
+        ],
+        "e": [
+          [
+            "bc"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "abc"
+          ]
+        ],
+        "b": [
+          [
+            "abc"
+          ]
+        ],
+        "c": [
+          [
+            "bc"
+          ]
+        ],
+        "d": [
+          [
+            "ab"
+          ]
+        ],
+        "e": [
+          [
+            "bc"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.5.8.1",
+    "snippet": "x=abc; @PROBE:a@ \"${x#[!b]}\"; @PROBE:b@ \"${x#[^b]}\"; @PROBE:c@ \"${x#*[[.b.]]}\"; y=a.b; @PROBE:d@ \"${y#*[[.]}\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "b": "dash 0.5.12 reads `[^b]` as the set of `^` and `b` (`abc`); bash as not `b` (`bc`)",
+      "c": "a collating symbol `[.b.]`: dash has none",
+      "d": "dash reads `[[.]` as the set of `[` and `.`; bash reads `[.` as the start of a collating symbol"
+    },
+    "facts": {
+      "a": [
+        [
+          "bc"
+        ]
+      ],
+      "b": [
+        [
+          "abc"
+        ]
+      ],
+      "c": [
+        [
+          "abc"
+        ]
+      ],
+      "d": [
+        [
+          "b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=abc; @PROBE:a@ \"${x/b/B}\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "a": "`${x/p/r}` is not POSIX: dash fails with \"Bad substitution\" and stops"
+    },
+    "facts": {
+      "a": [],
+      "status": 2,
+      "stderr": "SCRIPT: 1: Bad substitution"
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=abc; @PROBE:a@ \"$x\"; @PROBE:b@ \"${x:1:1}\"",
+    "shell": "dash",
+    "requires": "dash",
+    "note": "a form dash lacks anywhere in the script: no value in it",
+    "none": {
+      "a": "the script uses `${x:o:l}`, which dash lacks (\"Bad substitution\"): values are not given in it",
+      "b": "`${x:o:l}` is not POSIX: dash fails on it"
+    },
+    "facts": {
+      "a": [
+        [
+          "abc"
+        ]
+      ],
+      "b": [],
+      "status": 2,
+      "stderr": "SCRIPT: 1: Bad substitution"
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "x=abc; @PROBE:a@ \"$x\"; y=$((2**3)); @PROBE:b@ \"$y\"",
+    "shell": "sh",
+    "requires": "dash",
+    "none": {
+      "a": "the script uses `**` in arithmetic, which dash lacks: values are not given in it",
+      "b": "dash fails on `2**3` (\"expecting primary\"); bash gives 8"
+    },
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "abc"
+          ]
+        ],
+        "b": [],
+        "status": 2,
+        "stderr": "SCRIPT: 1: arithmetic expression: expecting primary: \"2**3\""
+      },
+      "posix": {
+        "a": [
+          [
+            "abc"
+          ]
+        ],
+        "b": [
+          [
+            "8"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.1.2.4",
+    "snippet": "x=$'a\\tb'; @PROBE:a@ \"$x\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "a": "dash 0.5.12 has no `$'…'`: `x` is `$a\\tb` there (newer dash has it)"
+    },
+    "facts": {
+      "a": [
+        [
+          "$a\\tb"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.1.2.4",
+    "snippet": "x=$'a\\tb'; @PROBE:a@ \"$x\"",
+    "shell": "sh",
+    "requires": "dash",
+    "none": {
+      "a": "`$'…'`: bash --posix gives a tab, dash 0.5.12 `$a\\tb`"
+    },
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "$a\\tb"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "a\tb"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.1.2.5",
+    "snippet": "x=$\"a b\"; @PROBE:a@ \"$x\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "a": "dash has no `$\"…\"`: `x` is `$a b` there"
+    },
+    "facts": {
+      "a": [
+        [
+          "$a b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=é; @PROBE:a@ \"$x\"; @PROBE:b@ \"${#x}\"; @PROBE:c@ \"${x%?}\"; @PROBE:d@ \"${x%%é}\"",
+    "shell": "dash",
+    "requires": "dash",
+    "note": "dash counts and matches bytes; bash characters (in a UTF-8 locale)",
+    "none": {
+      "b": "a value that is not ASCII: dash counts its bytes (2), bash in a UTF-8 locale its characters (1)",
+      "c": "a value that is not ASCII: dash's `?` matches a byte",
+      "d": "a pattern or a value that is not ASCII: dash matches bytes"
+    },
+    "facts": {
+      "a": [
+        [
+          "é"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "c": [
+        [
+          "�"
+        ]
+      ],
+      "d": [
+        [
+          ""
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "IFS=é; x=aéb; @PROBE:a@ $x; @PROBE:b@ \"$x\"",
+    "shell": "sh",
+    "requires": "dash",
+    "none": {
+      "a": "an IFS that is not ASCII: dash splits on each of its bytes (`a`, ``, `b`)"
+    },
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "a",
+            "",
+            "b"
+          ]
+        ],
+        "b": [
+          [
+            "aéb"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "a",
+            "",
+            "b"
+          ]
+        ],
+        "b": [
+          [
+            "aéb"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "x=1; f() { local x; @PROBE:a@ \"$x\"; local y=2; @PROBE:b@ \"$y\"; }; f; @PROBE:c@ \"$x\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "a": "dash's `local x` keeps the value of the `x` it hides (1); bash's starts unset; `local x` makes `x` not trusted",
+      "c": "`local x` with no value: `x` is not trusted"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "c": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "IFS=:; x='a:b'; f() { local IFS; @PROBE:a@ $x; }; f; g() { local IFS=' '; @PROBE:b@ $x; }; g; @PROBE:c@ $x",
+    "shell": "sh",
+    "requires": "dash",
+    "none": {
+      "a": "dash's `local IFS` keeps the caller's IFS (`a`, `b`); bash's is unset (`a:b`)"
+    },
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "a",
+            "b"
+          ]
+        ],
+        "b": [
+          [
+            "a:b"
+          ]
+        ],
+        "c": [
+          [
+            "a",
+            "b"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "a:b"
+          ]
+        ],
+        "b": [
+          [
+            "a:b"
+          ]
+        ],
+        "c": [
+          [
+            "a",
+            "b"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "x=1; f() { local x=2; @PROBE:a@ \"$x\"; }; f; @PROBE:b@ \"$x\"; y='a  b'; export e=$y; @PROBE:c@ \"$e\"; readonly r=$y; @PROBE:d@ \"$r\"; g() { local l=$y; @PROBE:e@ \"$l\"; }; g",
+    "shell": "sh",
+    "requires": "dash",
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "2"
+          ]
+        ],
+        "b": [
+          [
+            "1"
+          ]
+        ],
+        "c": [
+          [
+            "a  b"
+          ]
+        ],
+        "d": [
+          [
+            "a  b"
+          ]
+        ],
+        "e": [
+          [
+            "a  b"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "2"
+          ]
+        ],
+        "b": [
+          [
+            "1"
+          ]
+        ],
+        "c": [
+          [
+            "a  b"
+          ]
+        ],
+        "d": [
+          [
+            "a  b"
+          ]
+        ],
+        "e": [
+          [
+            "a  b"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "4.4",
+    "snippet": "x=1; x=2 :; @PROBE:a@ \"$x\"; y=1; y=2 true; @PROBE:b@ \"$y\"; z=1; z=2 eval '@PROBE:c@ \"$z\"'; @PROBE:d@ \"$z\"; w=1; w=2 export a=1; @PROBE:e@ \"$w\"; f() { :; }; v=1; v=2 f; @PROBE:f@ \"$v\"; u=1; u=2 command :; @PROBE:g@ \"$u\"",
+    "shell": "sh",
+    "requires": "dash",
+    "note": "assignments before a special builtin stay in both (POSIX), not before a function or another builtin",
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "2"
+          ]
+        ],
+        "b": [
+          [
+            "1"
+          ]
+        ],
+        "c": [
+          [
+            "2"
+          ]
+        ],
+        "d": [
+          [
+            "2"
+          ]
+        ],
+        "e": [
+          [
+            "2"
+          ]
+        ],
+        "f": [
+          [
+            "1"
+          ]
+        ],
+        "g": [
+          [
+            "1"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "2"
+          ]
+        ],
+        "b": [
+          [
+            "1"
+          ]
+        ],
+        "c": [
+          [
+            "2"
+          ]
+        ],
+        "d": [
+          [
+            "2"
+          ]
+        ],
+        "e": [
+          [
+            "2"
+          ]
+        ],
+        "f": [
+          [
+            "1"
+          ]
+        ],
+        "g": [
+          [
+            "1"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "4.4",
+    "snippet": "x=1; f() { x=2 local y; @PROBE:a@ \"$x\"; }; f; @PROBE:b@ \"$x\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "a": "dash keeps an assignment before `local` (2), bash --posix does not (1): values are not given in a script with one",
+      "b": "as for a"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "y='a  b'; command export x=$y; @PROBE:a@ \"$x\"; @PROBE:b@ \"$y\"",
+    "shell": "sh",
+    "requires": "dash",
+    "none": {
+      "a": "dash and bash --posix do not split `$y` in `command export x=$y`, bash does: values are not given in a script with one",
+      "b": "as for a"
+    },
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "a  b"
+          ]
+        ],
+        "b": [
+          [
+            "a  b"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "a  b"
+          ]
+        ],
+        "b": [
+          [
+            "a  b"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "y='a  b'; \\export x=$y; @PROBE:a@ \"$x\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "a": "dash does not split `$y` in `\\export x=$y`, bash and bash --posix do: values are not given in a script with one"
+    },
+    "facts": {
+      "a": [
+        [
+          "a  b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "f() { local -r x=1; @PROBE:a@ \"$x\"; }; x=0; @PROBE:b@ \"$x\"; f",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "a": "dash's `local` takes no option: `local -r x=1` fails, and the script stops",
+      "b": "as for a"
+    },
+    "facts": {
+      "a": [],
+      "b": [
+        [
+          "0"
+        ]
+      ],
+      "status": 2,
+      "stderr": "SCRIPT: 1: local: -r: bad variable name"
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "x=1; declare x=2; @PROBE:a@ \"$x\"",
+    "shell": "sh",
+    "requires": "dash",
+    "none": {
+      "a": "dash has no `declare` (1), bash --posix does (2)"
+    },
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "1"
+          ]
+        ],
+        "status": 0,
+        "stderr": "SCRIPT: 1: declare: not found"
+      },
+      "posix": {
+        "a": [
+          [
+            "2"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "x=1; local y; @PROBE:a@ \"$x\"",
+    "shell": "sh",
+    "requires": "dash",
+    "none": {
+      "a": "outside a function, dash's `local` fails and the script stops; bash --posix goes on"
+    },
+    "facts": {
+      "dash": {
+        "a": [],
+        "status": 2,
+        "stderr": "SCRIPT: 1: local: not in a function"
+      },
+      "posix": {
+        "a": [
+          [
+            "1"
+          ]
+        ],
+        "status": 0,
+        "stderr": "SCRIPT: line 1: local: can only be used in a function"
+      }
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "x=1; return; @PROBE:a@ \"$x\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "a": "dash's `return` outside a function ends the script (bash goes on)"
+    },
+    "facts": {
+      "a": [],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; x=1; @PROBE:a@ \"$x\"; @PROBE:b@ \"${y-d}\"; @PROBE:c@ \"$y\"",
+    "shell": "sh",
+    "requires": "dash",
+    "none": {
+      "b": "`y` is not set by the script: it may come from the environment",
+      "c": "`y` is not set by the script: with `set -u`, the shell may fail on it"
+    },
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "1"
+          ]
+        ],
+        "b": [
+          [
+            "d"
+          ]
+        ],
+        "c": [],
+        "status": 2,
+        "stderr": "SCRIPT: 1: y: parameter not set"
+      },
+      "posix": {
+        "a": [
+          [
+            "1"
+          ]
+        ],
+        "b": [
+          [
+            "d"
+          ]
+        ],
+        "c": [],
+        "status": 1,
+        "stderr": "SCRIPT: line 1: y: unbound variable"
+      }
+    }
+  },
+  {
+    "manual": "3.5.8",
+    "snippet": "x='*.txt'; @PROBE:a@ $x; @PROBE:b@ \"$x\"; set -f; @PROBE:c@ $x",
+    "shell": "sh",
+    "requires": "dash",
+    "glob": [
+      "a"
+    ],
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "a.txt",
+            "b.txt",
+            "x y.txt"
+          ]
+        ],
+        "b": [
+          [
+            "*.txt"
+          ]
+        ],
+        "c": [
+          [
+            "*.txt"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "a.txt",
+            "b.txt",
+            "x y.txt"
+          ]
+        ],
+        "b": [
+          [
+            "*.txt"
+          ]
+        ],
+        "c": [
+          [
+            "*.txt"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.7.3",
+    "snippet": "x=1; (x=2); @PROBE:a@ \"$x\"; x=3 | cat; @PROBE:b@ \"$x\"; y=$x; x=4; @PROBE:c@ \"$y\"; z=a.tar.gz; ext=${z##*.}; @PROBE:d@ \"$ext\"; w=\"[$z]\"; @PROBE:e@ $w",
+    "shell": "sh",
+    "requires": "dash",
+    "glob": [
+      "e"
+    ],
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "1"
+          ]
+        ],
+        "b": [
+          [
+            "1"
+          ]
+        ],
+        "c": [
+          [
+            "1"
+          ]
+        ],
+        "d": [
+          [
+            "gz"
+          ]
+        ],
+        "e": [
+          [
+            "[a.tar.gz]"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "1"
+          ]
+        ],
+        "b": [
+          [
+            "1"
+          ]
+        ],
+        "c": [
+          [
+            "1"
+          ]
+        ],
+        "d": [
+          [
+            "gz"
+          ]
+        ],
+        "e": [
+          [
+            "[a.tar.gz]"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "read x </dev/null; @PROBE:a@ \"$x\"; y=1; . /dev/null; @PROBE:b@ \"$y\"",
+    "shell": "sh",
+    "requires": "dash",
+    "none": {
+      "a": "`read` sets `x`: not trusted",
+      "b": "`.` runs a file the model does not read: nothing is trusted"
+    },
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            ""
+          ]
+        ],
+        "b": [
+          [
+            "1"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            ""
+          ]
+        ],
+        "b": [
+          [
+            "1"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=1; [[ -n $x ]] && @PROBE:a@ \"$x\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "a": "dash has no `[[ ]]` (\"not found\"): values are not given in a script with one"
+    },
+    "facts": {
+      "a": [],
+      "status": 127,
+      "stderr": "SCRIPT: 1: [[: not found"
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "echo -n; x=1; @PROBE:a@ \"$x\"; eval 'y=$x; @PROBE:b@ \"$y\"'; @PROBE:c@ \"$x\"",
+    "shell": "sh",
+    "requires": "dash",
+    "note": "an `echo -n`, which dash lacks, changes no variable: values are given",
+    "none": {
+      "b": "what a string of `eval` assigns is not trusted"
+    },
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "1"
+          ]
+        ],
+        "b": [
+          [
+            "1"
+          ]
+        ],
+        "c": [
+          [
+            "1"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "1"
+          ]
+        ],
+        "b": [
+          [
+            "1"
+          ]
+        ],
+        "c": [
+          [
+            "1"
+          ]
+        ],
+        "status": 0
+      }
+    }
   }
 ]

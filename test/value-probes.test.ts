@@ -5,7 +5,9 @@
 // with a glob is a pattern, so bash's fields are the names it matches among the probes' files (`wordFields`, which
 // the word probes check). A value given where bash did not run the marker is wrong too. Where the model gives none,
 // the row lists the marker in `none`, with the reason; an entry the model gives a value for fails, so that the list
-// stays true. The test reads the table only: it needs no bash.
+// stays true. A row with a `shell` is about a script of dash or sh: the model is of that shell, and its runs are
+// dash's, or for sh both dash's and `bash --posix`'s (src/semantics/shvalues.ts). The test reads the table only: it
+// needs no bash.
 import * as assert from 'assert';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
@@ -18,7 +20,14 @@ import { expansionValue } from '../src/semantics/values';
 import { wordFields } from '../src/semantics/words';
 import { BOX, FILES, instrument, PROBE_ENV, readProbeTable } from './support/probe';
 
-interface ValueRow { manual: string; snippet: string; none?: Record<string, string>; glob?: string[]; facts: Record<string, unknown> }
+interface ValueRow { manual: string; snippet: string; shell?: 'dash' | 'sh'; requires?: string; none?: Record<string, string>; glob?: string[]; facts: Record<string, unknown> }
+
+/** The runs of a marker in each shell of the row: bash's, dash's, or for sh dash's and `bash --posix`'s. */
+function runsOf(row: ValueRow, id: string): { shell: string; runs: string[][] }[] {
+  if (row.shell !== 'sh') return [{ shell: row.shell ?? 'bash', runs: row.facts[id] as string[][] }];
+  const { dash, posix } = row.facts as Record<'dash' | 'posix', Record<string, string[][]>>;
+  return [{ shell: 'dash', runs: dash[id] }, { shell: 'bash --posix', runs: posix[id] }];
+}
 
 /** The expansion a marker's word is: the word itself, or the one part of a double-quoted string. */
 function expansionIn(w: SyntaxNode): SyntaxNode {
@@ -52,24 +61,27 @@ describe('the values of expansions against bash (probes/values.json)', () => {
   const rows = readProbeTable('values') as ValueRow[];
   it('holds rows that show values and rows that show none', () => {
     assert.ok(rows.filter((r) => r.none).length >= 10 && rows.filter((r) => !r.none).length >= 20);
+    for (const shell of ['dash', 'sh']) {
+      const of = rows.filter((r) => r.shell === shell);
+      assert.ok(of.filter((r) => r.none).length >= 5 && of.filter((r) => !r.none).length >= 5, shell);
+    }
+  });
+
+  it('runs a row of dash or sh only where dash is (requires: dash)', () => {
+    assert.deepStrictEqual(rows.filter((r) => r.shell && r.requires !== 'dash').map((r) => r.snippet), []);
   });
   for (const row of rows) {
     it(`${row.manual}: ${JSON.stringify(row.snippet)}`, () => {
       const tree = parser.parse(instrument(row.snippet).script);
-      const state = shellState(tree, 'bash');
+      const state = shellState(tree, row.shell ?? 'bash');
       const found = new Map<string, string>();
       const globbed: string[] = [];
       for (const c of markers(tree.root, state)) {
         const [id, ...args] = fields(c, 'argument');
         assert.strictEqual(args.length, 1, `${id.text} has one word`);
-        const runs = row.facts[id.text] as string[][];
         const v = expansionValue(expansionIn(args[0]), state);
         if (!v) {
           found.set(id.text, 'none');
-          continue;
-        }
-        if (!runs.length) {
-          found.set(id.text, `model: ${JSON.stringify(v.text)}, bash: not run`);
           continue;
         }
         let expected = v.words ?? [v.text];
@@ -77,7 +89,10 @@ describe('the values of expansions against bash (probes/values.json)', () => {
           globbed.push(id.text);
           expected = wordFields(args[0], state, { variables: PROBE_ENV, pwd: BOX, files: FILES }).fields!;
         }
-        for (const run of runs) if (JSON.stringify(run) !== JSON.stringify(expected)) found.set(id.text, `model: ${JSON.stringify(expected)}, bash: ${JSON.stringify(run)}`);
+        for (const { shell, runs } of runsOf(row, id.text)) {
+          if (!runs.length) found.set(id.text, `model: ${JSON.stringify(v.text)}, ${shell}: not run`);
+          for (const run of runs) if (JSON.stringify(run) !== JSON.stringify(expected)) found.set(id.text, `model: ${JSON.stringify(expected)}, ${shell}: ${JSON.stringify(run)}`);
+        }
       }
       const none = row.none ?? {};
       const wrong = [...found].filter(([k, v]) => v !== 'none' || !(k in none)).map(([k, v]) => `${k}: ${v}`);

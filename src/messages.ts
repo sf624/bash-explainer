@@ -570,8 +570,8 @@ const EMPTY_WORD = '∅';
 /** How many words of a split value are shown. */
 const WORDS_SHOWN = 12;
 
-/** The texts of the value of an expansion, in `lang`. */
-export function valueSaid(lang: Lang, v: ExpansionValue): ValueSaid {
+/** The texts of the value of an expansion, in `lang`; `bash`: false in a script of sh or dash (the shell runs it, not bash). */
+export function valueSaid(lang: Lang, v: ExpansionValue, bash = true): ValueSaid {
   const ja = lang === 'ja';
   // (A newline is shown as `␊`, as in the notes on quote removal, so that it is not read as the two characters `\n`.
   // A space at either end is `␠`: Markdown takes one space at each end of a code span as padding, and a chip or a
@@ -602,7 +602,7 @@ export function valueSaid(lang: Lang, v: ExpansionValue): ValueSaid {
       : '. Unquoted, the word its wildcards end up in, with the text around it, is a pattern: bash matches it against file names when the line runs (not done here)');
   } else if (v.glob) {
     tails.push(ja ? '。クォートしていないのでパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
-      : '. Unquoted, it is a pattern: bash matches it against file names when the line runs (not done here)');
+      : `. Unquoted, it is a pattern: ${bash ? 'bash' : 'the shell'} matches it against file names when the line runs (not done here)`);
   }
   const shownTexts = [value ?? '', ...(split?.words ?? [])];
   const pictures = pictureList(shownTexts, (j, e) => (ja ? j : e));

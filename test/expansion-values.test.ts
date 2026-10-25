@@ -6,6 +6,7 @@ import { Analyzer } from '../src/analyzer';
 import type { LineExplanation, Token } from '../src/analyzer-types';
 import { explainDocumentLine, ShellDocument } from '../src/document';
 import { openDocument } from '../src/document-setup';
+import type { Shell } from '../src/dialect';
 import { valueSaid, type ValueSaid } from '../src/messages';
 import { shellState } from '../src/semantics/state';
 import { expansionValue } from '../src/semantics/values';
@@ -19,7 +20,7 @@ import { probeSkipReason, probeWords } from './support/probe';
 const parser = createUnbashParser();
 
 /** The value of the `nth` expansion whose text is `text` in `src`. */
-function valueOf(src: string, text: string, nth = 0, shell?: 'sh') {
+function valueOf(src: string, text: string, nth = 0, shell?: Shell) {
   const tree = parser.parse(src);
   const n = descendants(tree.root, ['simple_expansion', 'expansion']).filter((e) => e.text === text)[nth];
   assert.ok(n, `${text} in ${src}`);
@@ -46,7 +47,8 @@ describe('the value of an expansion where it runs (expansionValue)', () => {
     // Not an expansion of a parameter; a shell other than bash; nothing trusted.
     const tree = parser.parse('echo $(date)');
     assert.strictEqual(expansionValue(descendants(tree.root, ['command_substitution'])[0], shellState(tree)), undefined);
-    assert.strictEqual(valueOf('x=1; echo "$x"', '$x', 0, 'sh'), undefined);
+    assert.strictEqual(valueOf('x=1; echo "$x"', '$x', 0, 'zsh'), undefined);
+    assert.strictEqual(valueOf('x=1; echo "$x"', '$x', 0, 'ksh'), undefined);
     assert.strictEqual(valueOf('x=1; . ./lib; echo "$x"', '$x'), undefined);
     // An expansion inside the word of another one: bash expands it only when the outer one needs it.
     assert.strictEqual(valueOf('y=1; x=2; echo "${x:-$y}"', '$y'), undefined);
@@ -96,6 +98,86 @@ describe('the value of an expansion where it runs (expansionValue)', () => {
     assert.deepStrictEqual(valueOf("a='x y'; b=1; echo \"$a\"$b", '$a'), { text: 'x y', glob: false });
     assert.deepStrictEqual(valueOf("a='x y'; b=1; echo \"$a\"$b", '$b'), { text: '1', glob: false, joined: true });
     assert.deepStrictEqual(valueOf("a='x y'; echo \"$a\"", '$a'), { text: 'x y', glob: false });
+  });
+});
+
+// (dash and bash --posix are run on these in test/fixtures/probes/values.json, the rows with a `shell`.)
+describe('the value of an expansion in sh and dash (src/semantics/shvalues.ts)', () => {
+  const both = (src: string, text: string): ReturnType<typeof valueOf>[] => [valueOf(src, text, 0, 'sh'), valueOf(src, text, 0, 'dash')];
+  const none = (src: string, text: string): void => assert.deepStrictEqual(both(src, text), [undefined, undefined], src);
+
+  it('gives the POSIX forms as bash does', () => {
+    for (const v of both('msg="a  b"; echo $msg', '$msg')) assert.deepStrictEqual(v, { text: 'a  b', words: ['a', 'b'], glob: false });
+    assert.deepStrictEqual(both('x=report.tar.gz; echo "${x%.*}" "${x}" "${#x}"', '${x%.*}').map((v) => v?.text), ['report.tar', 'report.tar']);
+    assert.deepStrictEqual(both('x=; echo "${x:-d}"', '${x:-d}').map((v) => v?.text), ['d', 'd']);
+    assert.strictEqual(valueOf('x=abc; echo "${x}"', '${x}', 0, 'dash')?.text, 'abc');
+    assert.strictEqual(valueOf('x=abc; echo "${#x}"', '${#x}', 0, 'dash')?.text, '3');
+    assert.strictEqual(valueOf('x=a; y=$x; echo "${y#[[:alpha:]]}"', '${y#[[:alpha:]]}', 0, 'sh')?.text, '');
+    // A feature dash lacks that changes no variable (`echo -n`); `export -p`; `local` in a function.
+    assert.strictEqual(valueOf('echo -n a; export -p; x=1; echo "$x"', '$x', 0, 'dash')?.text, '1');
+    assert.strictEqual(valueOf('f() { local x=1; echo "$x"; }; f', '$x', 0, 'sh')?.text, '1');
+    assert.strictEqual(valueOf("x=; echo \"${x:-'a b'}\"", "${x:-'a b'}", 0, 'sh')?.text, "'a b'");
+    // An empty pattern; `command` before a word that is not a declaration.
+    assert.strictEqual(valueOf('x=a; echo "${x#}"', '${x#}', 0, 'dash')?.text, 'a');
+    assert.strictEqual(valueOf('x=a; command echo "$x"', '$x', 0, 'dash')?.text, 'a');
+  });
+
+  it('gives none for the forms dash lacks, or a script that uses something dash reads otherwise', () => {
+    // Not POSIX (dash: "Bad substitution"); `${x:=w}` assigns; `${#x:-a}` is no form.
+    none('x=abc; echo "${x~~}"', '${x~~}');
+    none('x=abc; echo "${x:=d}"', '${x:=d}');
+    none('x=abc; echo "${#x:-a}"', '${#x:-a}');
+    none('x=abc; echo "${!x}"', '${!x}');
+    // Anywhere in the script: a feature of bash, `$"…"`, `$[…]`, `**` and bases in arithmetic.
+    none('x=1; [[ -n $x ]]; echo "$x"', '$x');
+    none('x=1; y=$"a"; echo "$x"', '$x');
+    none('x=1; echo $[1+2] "$x"', '$x');
+    none('x=1; echo $((2**3)) "$x"', '$x');
+    none('x=1; echo $((16#f)) "$x"', '$x');
+    // Declarations dash reads otherwise; `return` and `local` outside a function.
+    none('x=1; f() { local -r y=1; }; echo "$x"', '$x');
+    none('x=1; export -n y; echo "$x"', '$x');
+    none('x=1; f() { z=1 local y; }; echo "$x"', '$x');
+    none('x=1; \\export y=$x; echo "$x"', '$x');
+    none('x=1; command export y=$x; echo "$x"', '$x');
+    none('x=1; builtin readonly y; echo "$x"', '$x');
+    none('x=1; return; echo "$x"', '$x');
+    none('x=1; local y; echo "$x"', '$x');
+    // In a string the script runs, when the script has one of those (and not when it has none).
+    for (const [src, text] of [['x=1; [[ a ]]; eval \'echo "$x"\'', undefined], ['x=1; eval \'echo "$x"\'', '1']]) {
+      const tree = parser.parse(src!);
+      const model = shellState(tree, 'dash');
+      const ev = descendants(tree.root, ['command']).find((c) => c.text.startsWith('eval'))!;
+      const script = model.script([ev.namedChildren[1]], model.env(ev));
+      assert.ok(!('why' in script));
+      const part = descendants(script.tree.root, ['simple_expansion'])[0];
+      assert.strictEqual(expansionValue(part, script.model)?.text, text, src);
+    }
+  });
+
+  it('gives none where dash gives another value', () => {
+    // Brackets: `[^a]`, a `[` in brackets but a class.
+    none('x=abc; echo "${x#[^a]}"', '${x#[^a]}');
+    none('x=abc; echo "${x#*[[.b.]]}"', '${x#*[[.b.]]}');
+    // Bytes: a value, a pattern or an IFS that is not ASCII.
+    none('x=é; echo "${#x}"', '${#x}');
+    none('x=aé; y=$x; echo "${y%?}"', '${y%?}');
+    none('x=ab; echo "${x%é}"', '${x%é}');
+    none('IFS=é; x=a; echo $x', '$x');
+    // A `}` in single quotes in the word, in double quotes.
+    none("x=; echo \"${x:-'}'}\"", "${x:-'}'}");
+    // A value the model does not know (`x` set from the environment) is none anyway.
+    none('echo "${x#a}"', '${x#a}');
+    none('read x; echo "${x#a}"', '${x#a}');
+  });
+
+  it('says "the shell" where the value line says who matches a pattern', () => {
+    const tree = parser.parse("p='*.txt'\nls $p");
+    for (const [shell, who] of [['dash', 'the shell'], ['sh', 'the shell'], ['bash', 'bash'], [undefined, 'bash']] as const) {
+      const valued = (ts: Token[]): Token[] => ts.flatMap((t) => [...(t.value ? [t] : []), ...valued(t.children)]);
+      const [t] = valued(new Analyzer('en').explainLine(tree, 1, shell).items);
+      assert.match(t.value!.said.tail!, new RegExp(`: ${who} matches it against file names`), String(shell));
+    }
   });
 });
 
