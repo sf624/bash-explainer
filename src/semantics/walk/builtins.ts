@@ -38,8 +38,9 @@ export class WalkBuiltins {
     }
     if (DECLARATIONS.has(name)) return this.declare(name, args, readDeclarationWords(name, args), n, st);
     if (name === 'unset') return this.unset(args, n, st);
+    const spec = builtins[name];
     const parse = builtinParse(name, args);
-    st = this.effects(builtins[name], parse, args, n, st);
+    st = this.effects(spec, parse, args, n, st);
     const operands = parse.roles.filter((r) => r.role.role === 'operand').map((r) => args[r.word]);
     const valueOf = (flag: string): SyntaxNode | undefined => {
       const r = parse.roles.find((x) => x.role.role === 'value' && x.role.of === flag);
@@ -47,6 +48,14 @@ export class WalkBuiltins {
     };
     const letters = optionRoles(parse);
     const has = (flag: string): boolean => letters.some((l) => l.flag === flag);
+    // `break`, `continue`, `return` and `exit`: the path goes on where what they end ends.
+    if (spec.ends === 'loop' || spec.ends === 'pass') {
+      // `break N`: N loops (a count not known, or not a number above 0, may fail).
+      const words = args.filter((a, i) => i > 0 || a.text !== '--');
+      const count = words.length ? staticWordValue(words[0]) : '1';
+      return this.w.jump(spec.ends, words.length < 2 && count !== undefined && /^0*[1-9]\d{0,8}$/.test(count) ? Number(count) : undefined, st);
+    }
+    if (spec.ends) return this.w.jump(spec.ends, undefined, st);
     switch (name) {
       case 'eval': case 'trap': {
         // A static string of `eval` runs here, in this shell; a trap's action runs later, when the signal comes
@@ -82,13 +91,6 @@ export class WalkBuiltins {
         return merge([st, moved], this.w.posix);
       }
       case 'let': return this.w.arith.arithRun((s) => this.w.arith.letCommand(operands, s), st);
-      case 'break': case 'continue': {
-        // `break N`: N loops (a count not known, or not a number above 0, may fail).
-        const words = args.filter((a, i) => i > 0 || a.text !== '--');
-        const count = words.length ? staticWordValue(words[0]) : '1';
-        return this.w.jump(name, words.length < 2 && count !== undefined && /^0*[1-9]\d{0,8}$/.test(count) ? Number(count) : undefined, st);
-      }
-      case 'return': case 'exit': return this.w.jump(name, undefined, st);
       case 'set': return this.setCommand(st, parse, args);
       case 'shopt': {
         const on = has('-s') ? 'on' : has('-u') ? 'off' : undefined;
@@ -278,9 +280,9 @@ export class WalkBuiltins {
       }
       return st;
     }
-    // `local` works only in a function (`declare` there is local too, unless `-g`): outside one it fails, and
-    // changes nothing; its words are still read as in a function (a line taken from one).
-    if (builtin === 'local' && !this.w.frames.length) {
+    // `local` works only in a function (`scope`; `declare` there is local too, unless `-g`): outside one it fails,
+    // and changes nothing; its words are still read as in a function (a line taken from one).
+    if (builtins[builtin].scope === 'function' && !this.w.frames.length) {
       this.w.frames.push({ def: n, saved: new Map() });
       this.declare(builtin, words, { roles, on, off }, n, st);
       this.w.frames.pop();

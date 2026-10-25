@@ -6,12 +6,12 @@ import { builtins } from '../src/dict/builtins';
 import { commands, core } from '../src/dict/commands';
 
 // Guards for src/explain/ (docs/design/analyzer.md, 3.2 and 3.3): no import cycles, no import of
-// src/analyzer.ts, and no comparison with the name of a dictionary command. The directory exists since step 2
+// src/analyzer.ts, and no comparison with the name of a dictionary command, nor a lookup of one by name. The directory exists since step 2
 // (src/explain/context.ts and nodes.ts); before, the checks passed with nothing to read.
 const base = path.join(__dirname, '..');
 const dir = path.join(base, 'src', 'explain');
 
-/** Known comparisons with a command name, each with a reason; it may only shrink (empty after step 1). */
+/** Known comparisons with a command name (and lookups of one), each with a reason; it may only shrink (empty after step 1). */
 const KNOWN_NAMES: { file: string; text: string; reason: string }[] = [];
 
 /** The relative modules a source imports, re-exports, requires or imports dynamically. */
@@ -125,6 +125,34 @@ function nameComparisons(checker: ts.TypeChecker, sf: ts.SourceFile, names: Read
   return found;
 }
 
+/** The records of the dictionary keyed by command name (src/dict/): `builtins`, `commands`, `core`. */
+const RECORDS = new Set(['builtins', 'commands', 'core']);
+const dictDir = path.join(base, 'src', 'dict') + path.sep;
+
+/** Whether `e` names one of the dictionary's records (through an import, renamed or not), not another value of that name. */
+function isRecord(checker: ts.TypeChecker, e: ts.Expression): boolean {
+  if (!ts.isIdentifier(e)) return false;
+  let sym = checker.getSymbolAtLocation(e);
+  if (sym && sym.flags & ts.SymbolFlags.Alias) sym = checker.getAliasedSymbol(sym);
+  return (sym?.declarations ?? []).some((d) => ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && RECORDS.has(d.name.text) && path.resolve(d.getSourceFile().fileName).startsWith(dictDir));
+}
+
+/**
+ * Lookups of a command by its name in a record of the dictionary (`builtins.local`, `builtins['return']`, `commands.sed`):
+ * a spec picked by name, which then decides by identity (`head.spec === builtins.local`) what a field of the spec should
+ * say. A lookup with a name read from the script (`builtins[name]`) is what the dictionary is for, and is not found.
+ */
+function recordLookups(checker: ts.TypeChecker, sf: ts.SourceFile, names: ReadonlySet<string>): string[] {
+  const found: string[] = [];
+  const visit = (n: ts.Node): void => {
+    const key = ts.isPropertyAccessExpression(n) ? n.name.text : ts.isElementAccessExpression(n) ? literalText(n.argumentExpression) : undefined;
+    if (key !== undefined && names.has(key) && isRecord(checker, (n as ts.PropertyAccessExpression | ts.ElementAccessExpression).expression)) found.push(n.getText(sf));
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return found;
+}
+
 // The snippets of the finder's own tests are files of src/explain/ that exist in memory only, so that they sit in the same
 // program as the real files (one `createProgram` for everything) and resolve imports from the real tree.
 const snippets = new Map<string, string>();
@@ -135,10 +163,11 @@ function snippet(name: string, code: string): string {
   return name;
 }
 
-const SNIPPET_NAMES = new Set(['sed', 'awk', 'jq', 'date', 'grep', 'declare', 'builtin', 'alias', 'command', 'unset']);
+const SNIPPET_NAMES = new Set(['sed', 'awk', 'jq', 'date', 'grep', 'declare', 'builtin', 'alias', 'command', 'unset', 'local', 'return']);
 const found = (name: string): string[] => {
   const sf = program().getSourceFile(snippets.get(name)!)!;
-  return nameComparisons(program().getTypeChecker(), sf, SNIPPET_NAMES);
+  const checker = program().getTypeChecker();
+  return [...nameComparisons(checker, sf, SNIPPET_NAMES), ...recordLookups(checker, sf, SNIPPET_NAMES)];
 };
 
 const fixtures: { name: string; code: string; found: string[] }[] = [
@@ -163,6 +192,18 @@ const fixtures: { name: string; code: string; found: string[] }[] = [
   { name: 'node-type', code: `export function f(node: SyntaxNode, p: SyntaxNode | null) { return node.type === 'command' || 'command' === node.type || p?.type !== 'declare'; }`, found: [] },
   // Not a command name, whatever the type.
   { name: 'not-a-name', code: `export function f(x: string) { return x === 'zzz' || x.includes('qq'); }`, found: [] },
+  // A command looked up by its name in a record of the dictionary, imported under its name or another.
+  {
+    name: 'lookup',
+    code: `import { builtins } from '../dict/builtins';\nimport { commands as dict, core } from '../dict/commands';\nexport const a = [builtins.local, builtins['return'], dict.sed, core[\`grep\`], builtins.unset.operands];`,
+    found: ['builtins.local', "builtins['return']", 'dict.sed', 'core[`grep`]', 'builtins.unset'],
+  },
+  // A lookup by a name read from the script, a field of another object, a record of the same name that is not the dictionary's.
+  {
+    name: 'not-a-lookup',
+    code: `import { builtins } from '../dict/builtins';\nexport function f(name: string, o: { local: number }) { const commands = { sed: 1 }; return [builtins[name], o.local, commands.sed, builtins.zzz]; }`,
+    found: [],
+  },
 ];
 for (const f of fixtures) snippet(f.name, f.code);
 
@@ -184,7 +225,7 @@ describe('src/explain guards', function () {
     assert.deepStrictEqual(findCycles(graph).map((c) => c.map((p) => path.basename(p)).join(' -> ')), []);
   });
 
-  it('compares nothing with the name of a dictionary command, except the known ones', () => {
+  it('compares nothing with the name of a dictionary command, nor looks one up by name, except the known ones', () => {
     const names = new Set([...Object.keys(commands), ...Object.keys(builtins), ...Object.keys(core)]);
     assert.ok(names.has('sed') && names.has('declare'));
     const p = program();
@@ -192,7 +233,7 @@ describe('src/explain guards', function () {
     const all = files().flatMap((f) => {
       const sf = p.getSourceFile(f);
       assert.ok(sf, f);
-      return nameComparisons(checker, sf, names).map((text) => ({ file: path.relative(base, f), text }));
+      return [...nameComparisons(checker, sf, names), ...recordLookups(checker, sf, names)].map((text) => ({ file: path.relative(base, f), text }));
     });
     const unknown = all.filter((x) => !KNOWN_NAMES.some((k) => k.file === x.file && k.text === x.text));
     assert.deepStrictEqual(unknown, []);

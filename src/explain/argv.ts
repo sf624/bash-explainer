@@ -6,10 +6,9 @@
 // and `[`, and the strings run as scripts (src/explain/scripts.ts).
 import type { ExplainOptions, Kind, Span, Token } from '../analyzer-types';
 import { type ArgRole, type ArgvParse, type CommandRole, interpret, type RoleAt, type ValueRole } from '../argv/interpret';
-import { namespaceOf } from '../argv/query';
+import { declaresNames, namespaceOf } from '../argv/query';
 import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
 import { argWord, countOf } from '../argv/words';
-import { builtins } from '../dict/builtins';
 import { describeFind, type FindNode, parseFind } from '../embedded/find';
 import { globIntro, hasGlob } from '../embedded/glob';
 import type { EmbeddedLang } from '../embedded/types';
@@ -48,9 +47,6 @@ function jobSpec(text: string): { ja: string; en: string } | undefined {
   if (rest.startsWith('?')) return { ja: `コマンドに \`${rest.slice(1)}\` を含むジョブ`, en: `the job whose command contains \`${rest.slice(1)}\`` };
   return { ja: `コマンドが \`${rest}\` で始まるジョブ`, en: `the job whose command starts with \`${rest}\`` };
 }
-
-/** The specs of the declaration builtins, whose options are explained by the letters they give (`declarationOption`). */
-const DECLARATION_SPECS: ReadonlySet<CommandSpec> = new Set(['declare', 'typeset', 'local', 'export', 'readonly'].map((n) => builtins[n]));
 
 /** `+x` (an option turned off) is written as `-x` in texts. */
 const dash = (flag: string): string => flag.replace(/^\+/, '-');
@@ -96,7 +92,8 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
         case 'unknown-option':
         case 'cluster':
           disables = (role.role === 'cluster' ? role.letters[0] as { flag: string } : role).flag.startsWith('+');
-          out.push(DECLARATION_SPECS.has(spec) ? declarationOption(cx, a, role) : optionToken(cx, a, role, spec, parse));
+          // (A declaration builtin's options are explained by the attributes they give.)
+          out.push(declaresNames(spec) ? declarationOption(cx, a, role) : optionToken(cx, a, role, spec, parse));
           break;
         case 'pattern-option':
           out.push(cx.tok(a, 'option', cx.t(role.text), wordParts(cx, a)));
@@ -374,7 +371,7 @@ function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Ex
   const a = nodes[word];
   const item = role.spec;
   // `unset NAME`, `declare NAME=value`: what the name stands for, as bash decides it here.
-  if (item?.acts === 'unsets') return unsetOperand(cx, nodes, word, namespaceOf(parse, item), parse);
+  if (item?.acts === 'unsets') return unsetOperand(cx, nodes, word, item, namespaceOf(parse, item), parse);
   if (item?.acts === 'declares') return declaredOperand(cx, a, namespaceOf(parse, item), parse.command);
   // `env FOO=1 cmd`: an assignment for the command, not the command.
   if (item?.assignment) {
@@ -482,13 +479,13 @@ function argumentAssignment(cx: Explainer, a: SyntaxNode, command: string): Toke
 }
 
 /**
- * An operand of `unset` (`OperandSpec.acts`): what its name stands for comes from the spec's options (`space`: a
+ * An operand of `unset` (`item`, its spec, with `acts: 'unsets'`): what its name stands for comes from the spec's options (`space`: a
  * function with `-f`, a variable with `-v`, the name reference itself with `-n`), else the variable if there is one
  * here, or the function (src/semantics/state.ts). `a[1]` is an element of an array, and a glob pattern too when it
  * is not quoted. A variable that a prefix assignment of the command sets (`x=1 unset x`) is that temporary one: the
  * variable from before stays.
  */
-function unsetOperand(cx: Explainer, nodes: SyntaxNode[], word: number, space: ReturnType<typeof namespaceOf>, parse: ArgvParse): Token {
+function unsetOperand(cx: Explainer, nodes: SyntaxNode[], word: number, item: OperandSpec, space: ReturnType<typeof namespaceOf>, parse: ArgvParse): Token {
   const a = nodes[word];
   const fn = space === 'function';
   if (space === 'none') {
@@ -499,7 +496,7 @@ function unsetOperand(cx: Explainer, nodes: SyntaxNode[], word: number, space: R
   const plain = isPlainWord(a);
   // (An unquoted glob has no value known here: its text, which bash uses when no file matches.)
   const name = staticWordValue(a) ?? (plain ? a.text : undefined);
-  if (name === undefined) return positional(cx, a, cx.t(builtins.unset.operands![0].pattern[0].text));
+  if (name === undefined) return positional(cx, a, cx.t(item.text));
   const element = /^([A-Za-z_]\w*)\[(.+)\]$/s.exec(name);
   let text: string;
   if (fn) text = cx.s(`関数 \`${name}\` を削除する`, `Remove the function \`${name}\``);

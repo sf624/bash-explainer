@@ -9,7 +9,6 @@ import type { ArgRole, ArgvParse } from '../argv/interpret';
 import type { CommandSpec } from '../argv/spec';
 import { argWord } from '../argv/words';
 import { lookupCommand } from '../dict/aliases';
-import { builtins } from '../dict/builtins';
 import { customCommandSpec } from '../dict/custom';
 import { distroAliases } from '../dict/distroAliases';
 import { fdName, keywords } from '../dict/syntax';
@@ -192,8 +191,8 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
     // A command over several lines is explained whole, so it always starts on the line explained.
     for (const text of yqNotes(verdict, cx.lang)) cx.note(text, n);
   }
-  if (head.kind === 'builtin' && head.spec === builtins.local && !inFunction(cx.state.env(n)) && scopeOf(n) !== 'substitution') cx.note(fact(cx.lang, 'local-outside-function'), n);
-  if (head.kind === 'builtin' && head.spec === builtins.return) head.explanation = returnInSubstitution(cx, n) ?? head.explanation;
+  if (head.kind === 'builtin' && head.spec!.scope === 'function' && !inFunction(cx.state.env(n)) && scopeOf(n) !== 'substitution') cx.note(fact(cx.lang, 'local-outside-function'), n);
+  if (head.kind === 'builtin' && head.spec!.ends === 'function') head.explanation = returnInSubstitution(cx, n) ?? head.explanation;
   const read = readArgs(cx, head.spec, args, head.runs ?? head.name, head.fn);
   let argToks = read.tokens;
   // `test` and `[` read their words as an expression (src/testexpr.ts), when the name runs one of them.

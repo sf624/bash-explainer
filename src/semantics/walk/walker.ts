@@ -3,6 +3,7 @@
 // they are called. Its parts: the arithmetic (./arith.ts), the conditions (./conditions.ts), the builtin effects
 // (./builtins.ts) and the aliases (./aliases.ts).
 import type { ArgvParse } from '../../argv/interpret';
+import type { Ends } from '../../argv/spec';
 import type { Shell } from '../../dialect';
 import { builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
@@ -510,19 +511,18 @@ export class Walker {
   }
 
   /**
-   * `break` or `continue` (`count`: their N, undefined when not known), `return` or `exit`, run from `st`: the state
-   * goes where the jump leads (the end of a loop or of its pass, of a function body, of the script), and the path does
-   * not go on. A jump that may fail (no loop, a count not known), may be made in a subshell, or is not `sure` (an
-   * error from values not trusted), or anywhere when nothing is trusted (`exit` may be a function a sourced file
-   * defined), is both made and not.
+   * What `break`, `continue` (`count`: their N, if known), `return` or `exit` ends (`CommandSpec.ends`), run from `st`:
+   * the state goes where the jump leads (the end of a loop or of its pass, of a function body, of the script), and the
+   * path does not go on. A jump that may fail (no loop, a count not known), may be made in a subshell, or is not `sure`
+   * (values not trusted), or anywhere when nothing is trusted (`exit` may be a sourced file's function), is made and not.
    */
-  jump(kind: 'break' | 'continue' | 'return' | 'exit', count: number | undefined, st: ShellState, sure = true): ShellState {
+  jump(ends: Ends, count: number | undefined, st: ShellState, sure = true): ShellState {
     st = withStatus(st, undefined);
     const collect = (t: { dead: number }, to: ShellState[]): void => {
       if (t.dead === this.mode.dead) to.push(st);
     };
     let maybe = !sure || this.blind;
-    if (kind === 'break' || kind === 'continue') {
+    if (ends === 'loop' || ends === 'pass') {
       // The loops it can leave: those of this function body and process (bash: "only meaningful in a loop" otherwise).
       const loops: Extract<Target, { kind: 'loop' }>[] = [];
       let surely = 0;
@@ -541,7 +541,7 @@ export class Walker {
       }
       // (More loops than the trap's action holds: it may leave those a signal interrupts.)
       if (trap && (count === undefined || count > loops.length)) this.escape(trap);
-      const to = (t: Extract<Target, { kind: 'loop' }>): ShellState[] => (kind === 'break' ? t.breaks : t.continues);
+      const to = (t: Extract<Target, { kind: 'loop' }>): ShellState[] => (ends === 'loop' ? t.breaks : t.continues);
       // (`break 5` in two loops leaves both.)
       const at = count === undefined ? undefined : Math.min(count, loops.length);
       if (at !== undefined && at > 0 && at <= surely) {
@@ -554,24 +554,24 @@ export class Walker {
     for (let i = this.targets.length - 1; i >= 0; i--) {
       const t = this.targets[i];
       if (t.kind === 'maybe') maybe = true;
-      else if (t.kind === 'trap' && kind === 'return') {
+      else if (t.kind === 'trap' && ends === 'function') {
         this.escape(t);
         return st;
       } else if (t.kind === 'subshell') {
         // It ends the subshell: `return` only in a function (else it fails, and the subshell goes on).
-        if (kind === 'return' && !this.targets.slice(0, i).some((x) => x.kind === 'function')) return st;
+        if (ends === 'function' && !this.targets.slice(0, i).some((x) => x.kind === 'function')) return st;
         return maybe ? st : unreachable(st);
-      } else if (t.kind === 'function' && kind === 'return') {
+      } else if (t.kind === 'function' && ends === 'function') {
         collect(t, t.returns);
         return maybe ? st : unreachable(st);
       } else if (t.kind === 'program') {
-        if (kind === 'return') return st;
+        if (ends === 'function') return st;
         collect(t, t.exits);
         return maybe ? st : unreachable(st);
       }
     }
     // (Outside the script's walk: a trap's action, a body no call reached.)
-    return kind === 'return' || maybe ? st : unreachable(st);
+    return ends === 'function' || maybe ? st : unreachable(st);
   }
 
   /**
@@ -686,7 +686,7 @@ export class Walker {
       return this.trapKeys.size ? this.widen(out, this.trapKeys) : out;
     } catch (e) {
       // (An expansion error in a subshell of its own, `$((1/0)) &`, ends it there.)
-      if (e instanceof ExpansionError) return reasons.length ? withStatus(st, undefined) : e.exit ? this.jump('exit', undefined, e.st, e.sure) : this.abort(e.st, e.sure);
+      if (e instanceof ExpansionError) return reasons.length ? withStatus(st, undefined) : e.exit ? this.jump('shell', undefined, e.st, e.sure) : this.abort(e.st, e.sure);
       /* c8 ignore next -- only an expansion error is thrown on purpose */
       throw e;
     } finally {
@@ -703,7 +703,7 @@ export class Walker {
     if (this.mode.quiet || !after.status || !ERREXIT_STOPS.has(n.type) || option(st, 'set', 'errexit') !== 'on') return after;
     // (The last stage of a pipeline: the pipeline's status counts.)
     if (n.parent?.type === 'pipeline') return after;
-    return this.jump('exit', undefined, after);
+    return this.jump('shell', undefined, after);
   }
 
   private runStatement(n: SyntaxNode, st: ShellState): ShellState {
@@ -935,7 +935,7 @@ export class Walker {
     const v = target === undefined ? undefined : st.variables.get(target);
     if (!v || !(v.set === 'off' || (colon && v.set === 'on' && v.value === '')) || v.declared === 'unknown') return;
     if (!maybe && this.trust.variable(name.text) && this.trust.variable(target!)) throw new ExpansionError(st, true, true);
-    this.jump('exit', undefined, st, false);
+    this.jump('shell', undefined, st, false);
   }
 
   /** `${x:=word}` sets `x`. */

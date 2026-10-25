@@ -2,7 +2,7 @@
 // Readers of a command's words (the examples, the dialect check) ask these instead of reading the words again,
 // so that a value is never taken for an option (`grep -e -v`), nor an option's letter for another (`sed -ie`).
 import type { ArgRole, ArgvParse, ValueRole } from './interpret';
-import type { NameSpace, OperandSpec, VariableAct } from './spec';
+import type { CommandSpec, NameSpace, OperandSpec, VariableAct } from './spec';
 
 type OptionRole = Extract<ArgRole, { role: 'option' }>;
 type UnknownOptionRole = Extract<ArgRole, { role: 'unknown-option' }>;
@@ -89,4 +89,9 @@ export interface ActedName { word: number; acts: VariableAct; space: NameSpace |
 /** The operands of the parse that name what the builtin declares or unsets (`declare x`, `unset -f f`), in order. */
 export function actedNames(parse: ArgvParse): ActedName[] {
   return parse.roles.flatMap(({ word, role }) => (role.role === 'operand' && role.spec?.acts ? [{ word, acts: role.spec.acts, space: namespaceOf(parse, role.spec) }] : []));
+}
+
+/** Whether a command's operands declare names (`OperandSpec.acts`): the declaration builtins (`declare`, `local`, `export`…). */
+export function declaresNames(spec: CommandSpec): boolean {
+  return !!spec.operands?.some((o) => o.pattern.some((p) => p.acts === 'declares'));
 }
