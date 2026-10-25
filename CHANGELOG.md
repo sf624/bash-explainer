@@ -69,6 +69,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `zsh`, `dash`, `ksh` and the other shells are named as themselves: `zsh -c …` said "Run the POSIX shell".
 - Combined short options listed as one are split as the others are: `docker run -it` and `docker exec -it` are `-i` and `-t`, `screen -dmS` and `usermod -aG` too.
 - `xargs -d '\n'` no longer says that the last newline stays in the last item: it does only with another delimiter.
+- With `sed -n`, `q` quits without printing the line and `n` reads the next one without printing this one, as GNU sed does; so does a script that starts with `#n`. Before, both said they print the line.
+- The `git log --graph` example draws the graph: `* ` before each commit, and `| ` before its other lines.
 
 ## 0.8.0
 

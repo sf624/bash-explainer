@@ -48,6 +48,7 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
     trSet: () => trContext(cx, a),
     // The letters given (`-lane`: l, a, n and e; `-pi.bak`: p and i).
     letters: () => new Set(givenOptions(cx.command!.parse).map(({ role }) => role.flag.slice(1))),
+    given: (...names) => given(cx, ...names),
   };
   const r = EMBEDDED[lang](lit.text, ecx);
   if (!r) return undefined;

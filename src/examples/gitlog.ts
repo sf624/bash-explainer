@@ -116,8 +116,18 @@ export function formatDate(time: number, style: string, now: number): string {
   }
 }
 
-/** Output lines of `git log` for the commits, with `--pretty`/`--format` and `--date` as given. */
-export function runGitLog(commits: SampleCommit[], pretty: string | undefined, dateStyle = 'default', now = Date.now()): string[] {
+/**
+ * Output lines of `git log` for the commits, with `--pretty`/`--format` and `--date` as given; `graph`: `--graph`, for
+ * commits on one line of history: `* ` before a commit's first line, and `| ` before its other lines (two spaces for
+ * the last commit's).
+ */
+export function runGitLog(commits: SampleCommit[], pretty: string | undefined, dateStyle = 'default', now = Date.now(), graph = false): string[] {
+  const chunks = commitLines(commits, pretty, dateStyle, now);
+  return graph ? chunks.flatMap((lines, i) => lines.map((l, k) => `${k === 0 ? '* ' : i < chunks.length - 1 ? '| ' : '  '}${l}`)) : chunks.flat();
+}
+
+/** The lines `git log` prints for each commit, with what separates it from the next. */
+function commitLines(commits: SampleCommit[], pretty: string | undefined, dateStyle: string, now: number): string[][] {
   const date = (c: SampleCommit) => formatDate(c.time, dateStyle, now);
   const message = (c: SampleCommit) => ['', `    ${c.subject}`, ...(c.body ? ['    ', ...c.body.replace(/\n$/, '').split('\n').map((l) => `    ${l}`)] : [])];
   const named: Record<string, (c: SampleCommit) => string[]> = {
@@ -130,17 +140,20 @@ export function runGitLog(commits: SampleCommit[], pretty: string | undefined, d
     reference: (c) => [`${c.hash.slice(0, 7)} (${c.subject}, ${formatDate(c.time, 'short', now)})`],
   };
   const style = pretty ?? 'medium';
+  const last = commits.length - 1;
   if (named[style]) {
     // Multi-line formats put a blank line between commits.
-    return commits.flatMap((c, i) => [...(i && style !== 'oneline' && style !== 'reference' ? [''] : []), ...named[style](c)]);
+    return commits.map((c, i) => [...named[style](c), ...(i < last && style !== 'oneline' && style !== 'reference' ? [''] : [])]);
   }
   const m = /^(t?format):([\s\S]*)$/.exec(style);
   if (!m && !style.includes('%')) throw new GitFormatUnsupported(style);
   const template = m ? m[2] : style;
   // `format:` separates commits with a newline; `tformat:` (and a bare template) ends each with one.
-  const text = commits.map((c) => expand(template, c, date, now)).join('\n');
   // With `format:` nothing follows the last commit, so a newline that ends it (`%B` ends with one) is the last of the output.
-  return (m && m[1] === 'format' ? text.replace(/\n$/, '') : text).split('\n');
+  return commits.map((c, i) => {
+    const text = expand(template, c, date, now);
+    return (i === last && m?.[1] === 'format' ? text.replace(/\n$/, '') : text).split('\n');
+  });
 }
 
 /** Expand the placeholders of a `format:` template for one commit. */

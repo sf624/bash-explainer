@@ -183,7 +183,8 @@ function examplesOn(placed: Token[], tok: Token): Example[] | undefined {
  * The part at a position (`chain`: the parts around it, outermost first, from `partAt`): a breadcrumb of the parts
  * around it and the link to the whole line, the part with its badge and meaning, its own parts, the command it belongs
  * to, then its notes and its examples, so that the first lines answer what the part is. The other notes of the line
- * (about other parts, or about the line) are counted in a link to the whole line, at the end.
+ * (about other parts, or about the line) are counted in a link to the whole line, at the end. `chain` is not empty: on
+ * no part, the providers show `lineCard` (VS Code) or the whole line (`plainPartHover`, the Language Server).
  */
 export function partHover(x: HoverInput, chain: Token[]): string {
   const part = chain[chain.length - 1];

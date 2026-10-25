@@ -42,6 +42,26 @@ describe('git log formats agree with git', () => {
       assert.deepStrictEqual(runGitLog(real, pretty, date ?? 'default', now), expected.replace(/\n$/, '').split('\n'));
     });
   }
+  // `--graph` on one line of history: `*` before each commit, `|` before its other lines and between commits.
+  for (const pretty of ['oneline', 'short', 'medium', 'reference', 'format:%h %s', 'tformat:%s%n%b', 'format:%B', '%B', 'format:%s%n', '%h %s']) {
+    it(`--graph --pretty=${pretty}`, () => {
+      const expected = git(['log', '--graph', `--pretty=${pretty}`]);
+      assert.deepStrictEqual(runGitLog(real, pretty, 'default', now, true), expected.replace(/\n$/, '').split('\n'));
+    });
+  }
+});
+
+describe('the git log example draws the graph of `--graph`', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { Analyzer } = require('../src/analyzer');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { createUnbashParser } = require('../src/syntax/adapters/unbash');
+  const lines = (line: string): string[] => new Analyzer('en').explainLine(createUnbashParser().parse(line), 0).examples.find((e: { kind: string }) => e.kind === 'gitLog').sections[0].lines;
+  it('with `--oneline --graph --format=…`', () => {
+    assert.deepStrictEqual(lines("git log --oneline --graph --format='%h %s'").map((l) => l.slice(0, 2)), ['* ', '* ', '* ']);
+    assert.ok(lines("git log --format='%h %s'").every((l) => !l.startsWith('* ')));
+    assert.match(lines('git log --graph --format=medium')[1], /^\| Author: /);
+  });
 });
 
 describe('the git log example shows as many commits as git', () => {

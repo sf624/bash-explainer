@@ -488,7 +488,7 @@ export class Analyzer {
   private caseStatement(n: SyntaxNode): Token {
     const v = field(n, 'value')!;
     const children = this.ordered(n, (c) => same(c, v));
-    const vt = this.sub(v).map((t) => ({ ...t, explanation: this.s('照合する値: ', 'Value to match: ') + t.explanation }));
+    const vt = v.text ? this.sub(v).map((t) => ({ ...t, explanation: this.s('照合する値: ', 'Value to match: ') + t.explanation })) : []; // (`case` alone: no value yet.)
     for (const c of children) {
       if (c.kind === 'keyword' && c.label === 'in') c.explanation = this.s('値の後に、パターンごとの分岐を並べる', 'Introduces the list of pattern branches');
     }
@@ -498,8 +498,8 @@ export class Analyzer {
       `。ただしこの文には \`${[...new Set(enders)].join('\` と \`')}\` があり、分岐の終わりが \`;;\` なら終了、\`;&\` なら次の分岐の中身をパターンを調べずに実行、\`;;&\` なら次以降のパターンの照合を続ける`,
       `. This one has \`${[...new Set(enders)].join('\` and \`')}\`: a branch ending in \`;;\` stops the \`case\`, \`;&\` runs the next branch's commands without testing its pattern, and \`;;&\` goes on testing the patterns after it`);
     return skeletal(this.tok(n, 'keyword', this.s(
-      `case 文: \`${v?.text}\` を各パターンと上から順に照合し、最初に一致した分岐を実行`,
-      `case statement: match \`${v?.text}\` against each pattern in order and run the first match`,
+      `case 文: ${v.text ? `\`${v.text}\` ` : '値（まだ書かれていない）'}を各パターンと上から順に照合し、最初に一致した分岐を実行`,
+      `case statement: match ${v.text ? `\`${v.text}\`` : 'the value (not written yet)'} against each pattern in order and run the first match`,
     ) + fall + this.lineRef(n), sortTokens([...children, ...vt])), n);
   }
 
