@@ -6,6 +6,7 @@
 // redirections set up first, the command inside); and the keyword `time`.
 import type { Kind, Span, Token } from '../analyzer-types';
 import type { ArgRole, ArgvParse } from '../argv/interpret';
+import { onlyInFunction } from '../argv/query';
 import type { CommandSpec } from '../argv/spec';
 import { argWord } from '../argv/words';
 import { lookupCommand } from '../dict/aliases';
@@ -25,7 +26,7 @@ import { assignmentsOf, type Missed, type NameResolution, testSpecOf } from '../
 import { docLine } from '../semantics/state';
 import { isPlainWord, literalContent, staticWordValue } from '../staticword';
 import { returnInSubstitution, scopeOf } from '../substitution-tokens';
-import { field, redirectionsOf, type SyntaxNode, token, wordsText } from '../syntax/tree';
+import { field, fields, redirectionsOf, type SyntaxNode, token, wordsText } from '../syntax/tree';
 import { commandTest } from '../testexpr';
 import { readByCommand } from '../tokenmarks';
 import { bashTest, readArgs, testArgs } from './argv';
@@ -164,9 +165,12 @@ function commandParts(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode): { pre
           : stays
           ? cx.s(`\`${nameNode.text}\` は POSIX の特殊ビルトインなので、この代入はコマンドの後も残る（bash の通常モードでは実行中だけ）: ${t.explanation}`,
             `\`${nameNode.text}\` is a POSIX special builtin, so this assignment stays after the command (in bash's normal mode it would last only while the command runs): ${t.explanation}`)
-          : !meaning.sure
+          : !meaning.sure && !fields(n, 'argument').length
           ? cx.s(`このコマンドの実行中だけ設定される環境変数（\`${nameNode.text}\` が何の語にもならなければ、シェルの変数として残る）: ${t.explanation}`,
             `Environment variable set only for this command (if \`${nameNode.text}\` expands to no word at all, it stays as a shell variable): ${t.explanation}`)
+          : !meaning.sure
+          ? cx.s(`このコマンドの実行中だけ設定される環境変数（\`${nameNode.text}\` もその後の語も何の語にもならなければ、シェルの変数として残る）: ${t.explanation}`,
+            `Environment variable set only for this command (if \`${nameNode.text}\` and the words after it expand to no word at all, it stays as a shell variable): ${t.explanation}`)
           : cx.s(
             `このコマンドの実行中だけ設定される環境変数: ${t.explanation}`,
             `Environment variable set only for this command: ${t.explanation}`,
@@ -191,7 +195,7 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
     // A command over several lines is explained whole, so it always starts on the line explained.
     for (const text of yqNotes(verdict, cx.lang)) cx.note(text, n);
   }
-  if (head.kind === 'builtin' && head.spec!.scope === 'function' && !inFunction(cx.state.env(n)) && scopeOf(n) !== 'substitution') cx.note(fact(cx.lang, 'local-outside-function'), n);
+  if (head.kind === 'builtin' && onlyInFunction(head.spec!, cx.shell) && !inFunction(cx.state.env(n)) && scopeOf(n) !== 'substitution') cx.note(fact(cx.lang, 'local-outside-function', { stops: !!cx.shell && cx.shell !== 'bash' }), n);
   if (head.kind === 'builtin' && head.spec!.ends === 'function') head.explanation = returnInSubstitution(cx, n) ?? head.explanation;
   const read = readArgs(cx, head.spec, args, head.runs ?? head.name, head.fn);
   let argToks = read.tokens;

@@ -97,10 +97,11 @@ export interface CommandSpec {
    */
   ends?: Ends;
   /**
-   * Where a builtin works, when not anywhere: `function`, only in a function (`local`). Outside one it fails and
-   * changes nothing (bash: "local: can only be used in a function", status 1).
+   * Where a builtin works, when not anywhere: only in a function (`local`). Outside one it fails and changes nothing
+   * (bash: "local: can only be used in a function", status 1; dash: "not in a function"). `except`: the shells where
+   * that is not so (zsh's, mksh's and yash's `local` is their `typeset`, which works anywhere; ksh93 has no `local`).
    */
-  scope?: 'function';
+  scope?: { only: 'function'; except: readonly Shell[] };
   /**
    * What a declaration builtin run in a function makes of the names it declares: `unless-g`, local variables of the
    * function unless `-g` is given, which acts on the global ones (`declare`, `typeset`, `local`: bash 5.2's `local -g x`

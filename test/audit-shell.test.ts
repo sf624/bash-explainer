@@ -1,8 +1,12 @@
 import * as assert from 'assert';
 import { execFileSync, spawnSync } from 'child_process';
-import { Token } from '../src/analyzer';
+import type { Token } from '../src/analyzer';
+import { Analyzer } from '../src/analyzer';
+import type { Shell } from '../src/dialect';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { exampleFor, parseExpansion } from '../src/expansion';
 import { allTokens, explain } from './support/explain';
+import { runBash } from './support/bash';
 
 /** The innermost token whose label, or the source text it covers, is `label` (a construct is labelled with its skeleton). */
 function find(src: string, label: string, lang: 'ja' | 'en' = 'en', line = 0): Token {
@@ -170,6 +174,26 @@ describe('shell audit fixes', () => {
       assert.match(explain(src).notes.join(), /can be used only inside a function/, src);
       assert.strictEqual(/can only be used in a function/.test(spawnSync('bash', ['-c', `${src}; ${run}`]).stderr.toString()), outside, src);
     }
+  });
+
+  it('local outside a function, in each shell', () => {
+    const notes = (src: string, shell: Shell, lang: 'ja' | 'en' = 'en') => new Analyzer(lang).explainLine(createUnbashParser().parse(src), 0, shell).notes.join('\n');
+    // bash, dash and busybox ash (and so a POSIX sh) refuse it outside a function: bash goes on (status 1), dash
+    // stops the script.
+    assert.match(notes('local y=1', 'bash'), /it fails with "can only be used in a function"/);
+    for (const shell of ['sh', 'dash', 'ash'] as const) assert.match(notes('local y=1', shell), /outside one, dash and busybox ash stop the script with "local: not in a function"/, shell);
+    assert.match(notes('local y=1', 'dash', 'ja'), /dash や busybox ash は「local: not in a function」のエラーでスクリプトを止めます/);
+    assert.match(runBash('local y=1; echo "st=$? y=$y"').stdout, /^st=1 y=$/m);
+    if (spawnSync('dash', ['-c', 'exit 0']).status === 0) {
+      const r = spawnSync('dash', ['-c', 'local y=1; echo "st=$? y=$y"']);
+      assert.strictEqual(r.stdout.toString(), '');
+      assert.notStrictEqual(r.status, 0);
+      assert.match(r.stderr.toString(), /local: not in a function/);
+    }
+    // zsh, mksh and yash document their `local` as `typeset` (which works anywhere, a global variable at the top level),
+    // and ksh93 has no `local`, which the dialect note says: not run here (none of them is installed in CI).
+    for (const shell of ['zsh', 'mksh', 'yash', 'ksh'] as const) assert.doesNotMatch(notes('local y=1', shell), /only inside a function/, shell);
+    assert.match(notes('local y=1', 'ksh'), /`local` is not available in ksh93/);
   });
 
   it('a missing ; or newline before then / do is a syntax error', () => {

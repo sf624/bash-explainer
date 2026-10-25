@@ -14,7 +14,7 @@ import { spanOf } from '../noteanchors';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { field, fields, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
-import { isBlockLike, skeletal, sortTokens, summaryOf } from './nodes';
+import { isBlockLike, same, skeletal, sortTokens, summaryOf } from './nodes';
 import { globOff, wordAt } from './reads';
 import { braceExpansion } from './words';
 
@@ -106,7 +106,58 @@ export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
   }
   const children = dests.filter((d) => !isPlainWord(d)).flatMap((d) => cx.sub(d));
   if (dests.length === 1 && (isPlainWord(dests[0]) || dests[0].type === 'brace_expression') && /[*?[{]/.test(dests[0].text)) expl += redirectTargetNote(cx, dests[0]);
+  const later = OPENS_FILE.has(op) ? replacedBy(n) : undefined;
+  if (later) expl += replacedFile(cx, op, fd, dest, later);
   return cx.tok(n, 'redirect', expl, children);
+}
+
+/** The file redirections that open a file on one descriptor, which a later redirection of that descriptor can replace. */
+const OPENS_FILE: ReadonlySet<string> = new Set(['<', '>', '>>', '>|', '<>']);
+
+/** The descriptors a redirection sets (`{name}>…` takes a new one of its own, left out), and the one it copies, if any. */
+function descriptors(r: Redirect): { sets: number[]; copies?: number | 'unknown' } {
+  if (/^\{.*\}$/.test(r.fd)) return { sets: [] };
+  const fd = r.fd !== '' ? Number(r.fd) : r.op.startsWith('<') ? 0 : 1;
+  if (r.op === '&>' || r.op === '&>>') return { sets: [1, 2] };
+  if (r.op !== '>&' && r.op !== '<&') return { sets: [fd] };
+  if (r.dest === '-') return { sets: [fd] };
+  const from = /^(\d+)(-?)$/.exec(r.dest);
+  if (from) return { sets: from[2] ? [fd, Number(from[1])] : [fd], copies: Number(from[1]) };
+  // `>&file` is `&>file`; `<&$fd`, `2>&$fd`: a descriptor not known here, or a file.
+  return r.op === '>&' && fd === 1 && !/[$`]/.test(r.dest) ? { sets: [1, 2] } : { sets: [fd], copies: 'unknown' };
+}
+
+/**
+ * The later redirection of the same command that sets again the one descriptor `n` opens, before the command starts, with
+ * none between that copies it (`>a 2>&1 >b` keeps `a` for stderr): bash opens `n` first, and the command never reads or
+ * writes it (`cat <<A <<B` reads `B` only).
+ */
+function replacedBy(n: SyntaxNode): SyntaxNode | undefined {
+  const all = redirectionsOf(n.parent!);
+  const own = descriptors(redirectInfo(n)).sets;
+  if (own.length !== 1) return undefined;
+  for (const r of all.slice(all.findIndex((x) => same(x, n)) + 1)) {
+    const d = descriptors(redirectInfo(r));
+    if (d.copies === own[0] || d.copies === 'unknown') return undefined;
+    if (d.sets.includes(own[0])) return r;
+  }
+  return undefined;
+}
+
+/** A redirection as its line has it: a here-document without its body (`<<EOF`). */
+function written(r: SyntaxNode): string {
+  const start = r.namedChildren.find((c) => c.type === 'heredoc_start');
+  return start ? `${field(r, 'descriptor')?.text ?? ''}${r.children.find((c) => !c.named)!.type}${start.text}` : r.text;
+}
+
+/** `cat <a <b`, `echo >a >b`: what bash still does with the file of a redirection that a later one replaces. */
+function replacedFile(cx: Explainer, op: string, fd: string, dest: string, later: SyntaxNode): string {
+  const name = op.startsWith('<') ? fdName(fd, '0') : fdName(fd, '1');
+  const what = op === '<' ? cx.s(`\`${dest}\` は開かれる（存在しなければエラー）が、読まれない`, `\`${dest}\` is opened (it must exist) but not read`)
+    : op === '<>' ? cx.s(`\`${dest}\` は開かれる（なければ作られる）が、使われない`, `\`${dest}\` is opened (and created if missing) but not used`)
+    : op === '>>' ? cx.s(`\`${dest}\` はなければ作られるが、何も書き込まれない`, `\`${dest}\` is created if missing, but nothing is written to it`)
+    : cx.s(`\`${dest}\` は作られる（中身は空になる）が、何も書き込まれない`, `\`${dest}\` is created or emptied, but nothing is written to it`);
+  return cx.s(`。ただし後の \`${written(later)}\` が続けて${name.ja}を置き換えるので、${what}`, `. But the later \`${written(later)}\` then replaces ${name.en}: ${what}`);
 }
 
 /** The one word brace expansion makes of a redirection target that differs from it (`{a,}` is `a`: an empty word is dropped). */
@@ -219,16 +270,21 @@ export function heredoc(cx: Explainer, n: SyntaxNode): Token {
   const body = n.namedChildren.find((c) => c.type === 'heredoc_body');
   const delim = delimiter(start);
   const quoted = start !== delim;
-  let expl = cx.s(
-    `ヒアドキュメント: 次の行から \`${delim}\` だけの行までを${to}として渡す`,
-    `Here-document: the following lines up to a line containing only \`${delim}\` become ${to}`,
-  );
+  const later = replacedBy(n);
+  let expl = later
+    ? cx.s(`ヒアドキュメント: 次の行から \`${delim}\` だけの行まで。${to}として開かれるが、後の \`${written(later)}\` が続けて${to}を置き換えるので、コマンドはこれを読まない`,
+      `Here-document: the following lines up to a line containing only \`${delim}\`, opened as ${to}; but the later \`${written(later)}\` then replaces ${to}, so the command does not read them`)
+    : cx.s(
+      `ヒアドキュメント: 次の行から \`${delim}\` だけの行までを${to}として渡す`,
+      `Here-document: the following lines up to a line containing only \`${delim}\` become ${to}`,
+    );
   if (op === '<<-') expl += cx.s('。`<<-` なので各行先頭のタブは取り除かれる', '. With `<<-`, leading tabs are stripped');
   expl += quoted
     ? cx.s('。区切り語がクォートされているので本文中の変数やコマンド置換は展開されない', '. The delimiter is quoted, so nothing in the body is expanded')
     : cx.s('。本文中の `$変数` や `$(…)` は展開される', '. `$vars` and `$(…)` in the body are expanded');
-  expl += cx.lineRef(n);
-  const label = `${field(n, 'descriptor')?.text ?? ''}${op}${start}`;
+  // (Its own lines: the body and the end, after those of the here-documents before it on the line.)
+  expl += cx.lineRef(body!, n);
+  const label = written(n);
   // An empty here-document still has a (empty) body.
   const children = cx.subs(body!.namedChildren.filter((c) => c.type !== 'heredoc_content'));
   // Keep the token span on the operator so highlighting does not swallow the whole body.
@@ -240,8 +296,12 @@ export function heredoc(cx: Explainer, n: SyntaxNode): Token {
 
 export function herestring(cx: Explainer, n: SyntaxNode): Token {
   const to = hereTarget(cx, n);
-  return cx.tok(n, 'redirect', cx.s(
-    `ヒアストリング \`<<<\`: 続く文字列（末尾に改行が付く）を${to}として渡す`,
-    `Here-string \`<<<\`: the following word (plus a newline) becomes ${to}`,
-  ), cx.subs(n.namedChildren.filter((c) => !isPlainWord(c) && c.type !== 'file_descriptor')));
+  const later = replacedBy(n);
+  return cx.tok(n, 'redirect', later
+    ? cx.s(`ヒアストリング \`<<<\`: 続く文字列（末尾に改行が付く）。${to}として開かれるが、後の \`${written(later)}\` が続けて${to}を置き換えるので、コマンドはこれを読まない`,
+      `Here-string \`<<<\`: the following word (plus a newline), opened as ${to}; but the later \`${written(later)}\` then replaces ${to}, so the command does not read it`)
+    : cx.s(
+      `ヒアストリング \`<<<\`: 続く文字列（末尾に改行が付く）を${to}として渡す`,
+      `Here-string \`<<<\`: the following word (plus a newline) becomes ${to}`,
+    ), cx.subs(n.namedChildren.filter((c) => !isPlainWord(c) && c.type !== 'file_descriptor')));
 }

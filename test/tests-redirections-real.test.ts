@@ -154,6 +154,62 @@ describe('a here-document or a here-string on another descriptor', () => {
   });
 });
 
+describe('a redirection that a later one of the same descriptor replaces', () => {
+  /** bash's output of `script`, in a fresh directory of its own. */
+  const inDir = (script: string): string => runBash(script, { files: ['.keep'] }).stdout;
+
+  it('a here-document is opened, but the command reads only the last one', () => {
+    const src = 'cat <<A <<B\na\nA\nb\nc\nB';
+    assert.strictEqual(bash(`${src}\n`).stdout, 'b\nc\n');
+    assert.strictEqual(token(src, '<<A').explanation,
+      'Here-document: the following lines up to a line containing only `A`, opened as stdin; but the later `<<B` then replaces stdin, so the command does not read them. `$vars` and `$(…)` in the body are expanded (lines 2–3)');
+    assert.match(token(src, '<<A', 'ja').explanation, /^ヒアドキュメント: 次の行から `A` だけの行まで。標準入力として開かれるが、後の `<<B` が続けて標準入力を置き換えるので、コマンドはこれを読まない。.*（行 2〜3）$/);
+    // Each here-document names its own lines: the body and the end.
+    assert.match(token(src, '<<B').explanation, /become stdin\. .* \(lines 4–6\)$/);
+    assert.match(token(src, '<<B', 'ja').explanation, /（行 4〜6）$/);
+    // (bash still expands the body of the one it replaces.)
+    assert.strictEqual(bash('cat <<A <<B\n$(echo ran >&2)\nA\nb\nB\n').stderr, 'ran\n');
+    // A here-string, and a file, are replaced the same way.
+    assert.match(token('cat <<<x <<B\nb\nB', '<<<x').explanation, /^Here-string `<<<`: the following word \(plus a newline\), opened as stdin; but the later `<<B` then replaces stdin, so the command does not read it$/);
+    assert.strictEqual(bash('cat <<<x <<B\nb\nB\n').stdout, 'b\n');
+    assert.match(token('cat <<A <b\na\nA', '<<A').explanation, /the later `<b` then replaces stdin/);
+  });
+
+  it('a file is still opened, created or emptied', () => {
+    assert.match(token('cat <a <b', '<a').explanation, /^Read file `a` as stdin \(fd 0\)\. But the later `<b` then replaces stdin \(fd 0\): `a` is opened \(it must exist\) but not read$/);
+    assert.match(token('cat <a <b', '<a', 'ja').explanation, /ただし後の `<b` が続けて標準入力\(fd 0\)を置き換えるので、`a` は開かれる（存在しなければエラー）が、読まれない$/);
+    assert.strictEqual(inDir('printf a >a; printf b >b; cat <a <b'), 'b');
+    assert.match(inDir('printf b >b; cat <missing <b; echo "st=$?"'), /^st=1$/m);
+    assert.match(token('echo hi >a >b', '>a').explanation, /But the later `>b` then replaces stdout \(fd 1\): `a` is created or emptied, but nothing is written to it$/);
+    assert.match(token('echo hi >>a >b', '>>a').explanation, /`a` is created if missing, but nothing is written to it$/);
+    assert.match(token('echo hi <>a <b', '<>a').explanation, /`a` is opened \(and created if missing\) but not used$/);
+    assert.strictEqual(inDir('printf old >a; printf old >c; echo hi >a >b; echo hi >>c >d; echo "[$(cat a)] [$(cat b)] [$(cat c)] [$(cat d)]"'), '[] [hi] [old] [hi]\n');
+    assert.match(token('echo hi >a 2>b', '>a').explanation, /\(overwrite\)$/);
+  });
+
+  it('is not replaced when a redirection between copies it, or sets another descriptor', () => {
+    // `2>&1` copies stdout to stderr before `>b`: `a` gets stderr.
+    assert.match(token('ls x >a 2>&1 >b', '>a').explanation, /\(overwrite\)$/);
+    assert.strictEqual(inDir('ls nothere >a 2>&1 >b; [ -s a ] && echo a-has-stderr; [ -s b ] || echo b-empty'), 'a-has-stderr\nb-empty\n');
+    // `<&3` copies the here-document on 3 to stdin, which `<<B` then replaces; 3 keeps it.
+    assert.match(token('cat 3<<A <&3 <<B\na\nA\nb\nB', '3<<A').explanation, /become file descriptor 3\./);
+    assert.strictEqual(bash('cat 3<<A <&3 <<B\na\nA\nb\nB\n').stdout, 'b\n');
+    // `<&$fd` may copy any descriptor; `{v}<<A` opens one of its own; `&>` sets two, only one of which `>b` replaces.
+    assert.match(token('cat <a <&$fd <b', '<a').explanation, /as stdin \(fd 0\)$/);
+    assert.match(token('exec {v}<<A <<B\na\nA\nb\nB', '{v}<<A').explanation, /become the input of a free file descriptor/);
+    assert.match(token('echo hi &>a >b', '&>a').explanation, /\(overwrite\)$/);
+    // Later ones that replace: a duplication, a move, a close, `&>`, `>&file`.
+    assert.match(token('echo hi >a >&2', '>a').explanation, /the later `>&2` then replaces stdout/);
+    assert.match(token('echo hi 2>a 3>&2- 2>&-', '2>a').explanation, /\(overwrite\)$/);
+    assert.match(token('echo hi 2>a 2>&3-', '2>a').explanation, /the later `2>&3-` then replaces stderr/);
+    assert.match(token('echo hi 2>a 2>&-', '2>a').explanation, /the later `2>&-` then replaces stderr/);
+    assert.match(token('echo hi >|a >>b', '>|a', 'ja').explanation, /`a` は作られる（中身は空になる）が、何も書き込まれない$/);
+    assert.match(token('echo hi >a &>b', '>a').explanation, /the later `&>b` then replaces stdout/);
+    assert.match(token('echo hi >a >&b', '>a').explanation, /the later `>&b` then replaces stdout/);
+    assert.match(token('echo hi >a >b', '>b').explanation, /\(overwrite\)$/);
+  });
+});
+
 describe('a redirection target that brace expansion makes one word', () => {
   /** What bash prints after `script` runs in a fresh directory, followed by `ls`. */
   const filesAfter = (script: string) => runBash(`${script}\nls`, { files: [] });

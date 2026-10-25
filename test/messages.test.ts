@@ -19,10 +19,10 @@ describe('the message catalog', () => {
     assert.ok(note.text.startsWith('ℹ '));
     assert.ok(fact('ja', 'exit-modulo', { value: '300', status: 44 }).text.startsWith('ℹ 終了ステータスは'));
     assert.deepStrictEqual(note.refs, ['3.7.5']);
-    const pit = fact('en', 'local-outside-function');
+    const pit = fact('en', 'local-outside-function', { stops: false });
     assert.strictEqual(pit.kind, 'pitfall');
     assert.ok(pit.text.startsWith('⚠ Pitfall: '));
-    assert.ok(fact('ja', 'local-outside-function').text.startsWith('⚠ 落とし穴: '));
+    assert.ok(fact('ja', 'local-outside-function', { stops: false }).text.startsWith('⚠ 落とし穴: '));
     assert.strictEqual(factOf('en', { id: 'exit-modulo', params: { value: '300', status: 44 } }).text, note.text);
   });
 
