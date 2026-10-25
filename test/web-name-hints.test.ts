@@ -83,23 +83,27 @@ describe('the web page: name hints in the editor', function () {
 
   for (const lang of ['en', 'ja'] as const) {
     it(`stays inside the editor at a phone's widths, with long lines wrapped (${lang})`, async () => {
-      for (const width of [320, 390, 430]) {
-        const ctx = await browser.newContext({ viewport: { width, height: 760 }, locale: lang === 'ja' ? 'ja-JP' : 'en-US', hasTouch: true, isMobile: true });
-        await ctx.addInitScript("try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'editor.wrap': true })); } catch {}");
-        const page = await ctx.newPage();
-        await open(page, `${SHADOWED}\nsudo cd /root/a/long/directory/name\nenable -n echo; echo hi`);
-        await until('the hints', () => hints(page), (h) => h.length === 3);
+      const ctx = await browser.newContext({ viewport: { width: 320, height: 760 }, locale: lang === 'ja' ? 'ja-JP' : 'en-US', hasTouch: true, isMobile: true });
+      await ctx.addInitScript("try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'editor.wrap': true })); } catch {}");
+      const page = await ctx.newPage();
+      await open(page, `${SHADOWED}\nsudo cd /root/a/long/directory/name\nenable -n echo; echo hi`);
+      await until('the hints', () => hints(page), (h) => h.length === 3);
+      // Every width from 320 to 440: where a line wraps depends on how wide the font draws the words, so a few widths
+      // chosen in advance would pass or fail by the font (a hint cut at the end of a line once ran past the edge).
+      for (let width = 320; width <= 440; width++) {
+        await page.setViewportSize({ width, height: 760 });
+        await page.evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
         const got = await page.evaluate(`(() => {
           const content = document.querySelector('.cm-content').getBoundingClientRect();
           const sc = document.querySelector('.cm-scroller');
-          return { vw: document.documentElement.clientWidth, sw: document.documentElement.scrollWidth, over: sc.scrollWidth > sc.clientWidth + 1,
+          return { vw: document.documentElement.clientWidth, sw: document.documentElement.scrollWidth, over: sc.scrollWidth - sc.clientWidth,
             right: content.right, hints: [...document.querySelectorAll('.cm-bx-hint')].flatMap((h) => [...h.getClientRects()].map((r) => r.right)) };
-        })()`) as { vw: number; sw: number; over: boolean; right: number; hints: number[] };
+        })()`) as { vw: number; sw: number; over: number; right: number; hints: number[] };
         assert.ok(got.sw <= got.vw, `${width}: the page is ${got.sw} wide`);
-        assert.ok(!got.over, `${width}: the editor scrolls sideways`);
+        assert.ok(got.over <= 1, `${width}: the editor scrolls sideways by ${got.over}px`);
         for (const r of got.hints) assert.ok(r <= Math.min(got.right, got.vw) + 0.5, `${width}: a hint ends at ${r}, the text at ${got.right}`);
-        await ctx.close();
       }
+      await ctx.close();
     });
   }
 });
