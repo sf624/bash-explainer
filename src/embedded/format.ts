@@ -314,16 +314,29 @@ export function parseSampleDate(text: string): Date | undefined {
 }
 
 /**
- * What GNU `date -u +FORMAT` prints for `when`, in the C locale; undefined when the format uses
- * something this does not reproduce. The leading `+` is optional.
+ * A time zone as `date` uses it: its offset from UTC at a moment (in minutes, east positive), and its abbreviation
+ * there (`%Z`), when it is known (src/examples/dates.ts reads `TZ`).
  */
-export function formatDate(src: string, when: Date): string | undefined {
+export interface Zone { offset(t: number): number; abbr(t: number): string | undefined }
+
+export const UTC: Zone = { offset: () => 0, abbr: () => 'UTC' };
+
+/**
+ * What GNU `date +FORMAT` prints for `when` in `zone` (UTC: `date -u`), in the C locale; undefined when the format
+ * uses something this does not reproduce. The leading `+` is optional.
+ */
+export function formatDate(src: string, when: Date, zone: Zone = UTC): string | undefined {
   const fmt = src.startsWith('+') ? src.slice(1) : src;
   const pad = (n: number, w = 2) => String(n).padStart(w, '0');
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const Y = when.getUTCFullYear(), mo = when.getUTCMonth(), d = when.getUTCDate(), H = when.getUTCHours(), M = when.getUTCMinutes(), S = when.getUTCSeconds();
-  const wday = when.getUTCDay();
+  const off = zone.offset(when.getTime());
+  // The fields are those of the wall clock in the zone.
+  const wall = new Date(when.getTime() + off * 60000);
+  const Y = wall.getUTCFullYear(), mo = wall.getUTCMonth(), d = wall.getUTCDate(), H = wall.getUTCHours(), M = wall.getUTCMinutes(), S = wall.getUTCSeconds();
+  const wday = wall.getUTCDay();
+  const sign = off < 0 ? '-' : '+', oh = pad(Math.floor(Math.abs(off) / 60)), om = pad(Math.abs(off) % 60);
+  const abbr = zone.abbr(when.getTime());
   const yday = Math.floor((Date.UTC(Y, mo, d) - Date.UTC(Y, 0, 1)) / 864e5);
   const h12 = H % 12 || 12;
   // ISO 8601 week: the week with the year's first Thursday is week 1.
@@ -341,7 +354,8 @@ export function formatDate(src: string, when: Date): string | undefined {
     u: [String(wday || 7), ''], w: [String(wday), ''],
     U: [pad(Math.floor((yday + 7 - wday) / 7)), '0'], W: [pad(Math.floor((yday + 7 - ((wday + 6) % 7)) / 7)), '0'],
     V: [pad(isoWeek), '0'], G: [String(isoYear), ''], g: [pad(isoYear % 100), '0'],
-    Z: ['UTC', ''], z: ['+0000', ''], ':z': ['+00:00', ''], '::z': ['+00:00:00', ''], ':::z': ['+00', ''],
+    z: [`${sign}${oh}${om}`, ''], ':z': [`${sign}${oh}:${om}`, ''], '::z': [`${sign}${oh}:${om}:00`, ''], ':::z': [`${sign}${oh}${om === '00' ? '' : `:${om}`}`, ''],
+    ...(abbr !== undefined ? { Z: [abbr, ''] as [string, ''] } : {}),
     n: ['\n', ''], t: ['\t', ''], '%': ['%', ''],
   };
   const composite: Record<string, string> = { F: '%Y-%m-%d', T: '%H:%M:%S', D: '%m/%d/%y', R: '%H:%M', r: '%I:%M:%S %p', c: '%a %b %e %H:%M:%S %Y', x: '%m/%d/%y', X: '%H:%M:%S' };
@@ -349,7 +363,7 @@ export function formatDate(src: string, when: Date): string | undefined {
   const out = fmt.replace(/%([-_0^#]?)(\d*)(:{1,3}z|[a-zA-Z%])/g, (whole, flag: string, width: string, c: string) => {
     if (composite[c]) {
       if (flag || width) { unknown = true; return whole; }
-      return formatDate(composite[c], when)!;
+      return formatDate(composite[c], when, zone)!;
     }
     const entry = v[c];
     if (!entry) { unknown = true; return whole; }

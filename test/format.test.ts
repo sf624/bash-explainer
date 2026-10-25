@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
-import { explainDate, explainPrintf, formatDate, parseSampleDate, printfNote } from '../src/embedded/format';
+import { explainDate, explainPrintf, formatDate, parseSampleDate, printfNote, UTC } from '../src/embedded/format';
+import { parseDateValue, relativeDate, zoneOf } from '../src/examples/dates';
 
 function parts(src: string, ts = explainPrintf(src, 'en')): string[] {
   return ts.map((t) => src.slice(t.start, t.end));
@@ -65,6 +66,45 @@ describe('date formats', () => {
     assert.strictEqual(formatDate('+%-3N', parseSampleDate('2024-01-01')!), undefined);
     // Flags on composites are left out.
     assert.strictEqual(formatDate('+%-F', parseSampleDate('2024-01-01')!), undefined);
+  });
+
+  it('renders the same text as GNU date in the zone TZ names, and reads -d dates as it does', function () {
+    try {
+      if (!/GNU/.test(execFileSync('date', ['--version']).toString())) return this.skip();
+    } catch {
+      return this.skip();
+    }
+    const real = (tz: string, args: string[]) => execFileSync('date', args, { env: { ...process.env, TZ: tz, LC_ALL: 'C' } }).toString().replace(/\n$/, '');
+    // Offsets east and west, of half hours, summer time, POSIX zones of a fixed offset (`-` is east).
+    const zones = ['Asia/Tokyo', ':Europe/Paris', 'America/New_York', 'Asia/Kolkata', 'America/St_Johns', 'UTC', 'Etc/UTC', 'GMT', 'JST-9', 'EST5', '<+0530>-5:30', 'UTC0', 'XYZ+3:30'];
+    const moments = [0, 1709622489, 1767225599, 1720000000, -86401];
+    for (const tz of zones) {
+      const zone = zoneOf(tz)!;
+      assert.ok(zone, tz);
+      for (const t of moments) {
+        for (const fmt of ['%F %T %s', '%z %:z %::z %:::z', '%a %j %U %V %c', '%Z']) {
+          const ours = formatDate(`+${fmt}`, new Date(t * 1000), zone);
+          // (The abbreviation of a zone of the tz database is not known here.)
+          if (ours === undefined && fmt === '%Z') continue;
+          assert.strictEqual(ours, real(tz, ['-d', `@${t}`, `+${fmt}`]), `${tz} @${t} ${fmt}`);
+        }
+      }
+      for (const d of ['2024-01-02', '2024-1-2', '2024-07-01T12:00', '2024-07-01 12:00:30', '2024-01-02T03:04:05Z', '2024-01-02 03:04:05 UTC', '2024-01-02 03:04:05+09:00',
+        '2024-01-02 03:04:05 -0130', '2024-01-02 03:04:05 +09', '2024-01-02 3:04', '@0', '@-1', ' @5 ', '2024-10-27 02:30', '2024-11-03 01:30']) {
+        assert.strictEqual(String(parseDateValue(d, zone)!.getTime() / 1000), real(tz, ['-d', d, '+%s']), `${tz} ${d}`);
+      }
+    }
+    for (const tz of ['asia/tokyo', 'Foo/Bar', 'CET-1CEST,M3.5.0,M10.5.0/3', '', 'XYZ-25', 'XYZ-1:61']) assert.strictEqual(zoneOf(tz), undefined, tz);
+    for (const d of ['2024-02-30', '2024-01-02 25:00', '2024-01-02 10:60', '2024-01-02 10:00:61', 'Jan 2 2024', 'next friday']) assert.strictEqual(parseDateValue(d, UTC), undefined, d);
+    // A time summer time skips does not exist: GNU date refuses it.
+    assert.strictEqual(parseDateValue('2024-03-31 02:30', zoneOf('Europe/Paris')!), undefined);
+  });
+
+  it('tells a date read from the moment date runs', () => {
+    for (const d of ['next friday', 'yesterday', '+3 days', '-1 week', '1 day ago', '10:00', 'last month', 'tomorrow 10:00 pm', 'thursday', 'Wednesday', 'thurs', 'next week', 'now', 'this sat', 'week ago']) {
+      assert.ok(relativeDate(d), d);
+    }
+    for (const d of ['2024-01-02', '2024-01-02 +3 days', 'Jan 2', '5', 'next', '@0']) assert.ok(!relativeDate(d), d);
   });
 
   it('reads the dates typed in the panel', () => {

@@ -470,3 +470,23 @@ The pitfall on `sudo cmd > /etc/…` also reads the path after quote removal: `s
 - With the setting on, a document with no shell code in it gets no answer from us, not an empty one. Before, the empty answer hid the semantic tokens of other extensions (the language server of a Dockerfile or YAML schema, for example) in those files.
 - We send no semantic tokens for Python files and Dockerfiles. VS Code takes the tokens of one provider for the whole file, so ours would have replaced those of Pylance, or of the Docker extension's language server, for the whole file wherever it held shell code; and a scope mapping for `dockerfile` would have remapped the Docker server's tokens even with the setting off. Their shell code keeps the colour of the TextMate grammar and the explanations are unchanged. The Language Server (`cli/lsp.ts`) still sends tokens for every document it explains (an LSP client combines servers itself).
 - In host files, a token no longer covers the host syntax that the extraction rewrote: make's `$(wildcard *.tmp)` or `$(CC)` keeps make's colour, and so does `${{ github.ref }}` in a workflow. A token that only partly covers such text is cut at its edge (`"a $(X) b"` gives the tokens `"a ` and ` b"`).
+
+### Examples of `date` and `sed`
+
+The `date +FORMAT` example reads the options and the zone of the line, as GNU date does (compared with GNU date in the tests). Where the line names no zone, it shows the time in UTC, and says so.
+
+| Written | date prints | Shown now | Shown before |
+| --- | --- | --- | --- |
+| `date -d '2024-01-02' +%A`, `date --date=@0 '+%F %T'` | `Tuesday`; `1970-01-01 00:00:00` in UTC, whenever it runs | "Example (the date given with `-d`)": `Tuesday`; `1970-01-01 00:00:00` | two made-up moments it runs at, and their weekdays (`Tuesday`, `Wednesday`) |
+| `date -d 'next friday' +%F`, `-d yesterday`, `-d '+3 days'` | a date that depends on when it runs | "Example (`next friday` depends on when it runs)", with made-up dates that `next friday` stands for | the moments it runs at, as if `-d` were not there |
+| `date -d "$d" +%F` | the date in `$d` | made-up dates "`-d "$d"` stands for" | the moments it runs at |
+| `date -f dates.txt +%A`, `echo 2024-01-02 \| date -f - +%A` | each line of the file, as a date | "Input: `dates.txt` (sample contents)" and the date of each line; the lines echo gives | the moments it runs at |
+| `date -r f +%T` | the time `f` was last modified | "Modification time of `f` (made up, UTC)" | "When it runs" |
+| `TZ=Asia/Tokyo date '+%T'`, `TZ=:Europe/Paris`, `TZ=JST-9`, `export TZ=…` | the time in that zone | "Output (the time in the zone `Asia/Tokyo`)": `16:08:09` for `07:08:09` UTC | the time in UTC, `07:08:09` |
+| `date -u +%T`, `TZ=Asia/Tokyo date -u +%T` | the time in UTC | the time in UTC | the same |
+| `date -I +%F`, `date -s … +%F`, `date -d @0 -r f +%F` | an error: another output format, setting the clock, two dates | no example | the moments it runs at |
+| `TZ=$z date +%T`, `TZ=asia/tokyo date +%T` (glibc reads it as UTC), `TZ=Asia/Tokyo date +%Z` | a zone (or its abbreviation) not known here | no example | the time in UTC, `UTC` |
+
+`sed -e 's/a/b/' -e 's/c/d/' f` showed the same example twice, once at each `-e`. sed runs the scripts in order as one script, so there is one example, of the whole script, shown on the command.
+
+The example of a pipeline inside a command's word was titled with that command: `echo $(echo a | tr a b) | cat` gave "Example for `echo $(echo a | tr a b)` (the whole pipeline)". It is now "Example for `echo a | tr a b` (the whole pipeline)", also in `x=$(echo a | tr a b)`.

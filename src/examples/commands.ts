@@ -4,9 +4,10 @@
 import type { Example } from '../analyzer-types';
 import type { CommandExampleKind } from '../argv/spec';
 import { visible } from '../ctlchars';
-import { formatDate as formatDateCommand, parseSampleDate, SAMPLE_DATES } from '../embedded/format';
+import { formatDate as formatDateCommand, parseSampleDate, SAMPLE_DATES, UTC } from '../embedded/format';
 import { pick } from '../embedded/types';
 import type { Lang } from '../i18n';
+import { dateOutputLabel, parseDateValue, relativeDate, zoneOf } from './dates';
 import { GetoptSpec, GetoptUnsupported, runGetopt, sampleGetoptArgs } from './getopt';
 import { formatDate, GitFormatUnsupported, runGitLog, sampleCommits } from './gitlog';
 import { perlExample, perlOptions } from './perlrun';
@@ -236,20 +237,72 @@ export function readExample(words: (string | undefined)[], ifs: string | undefin
   return { example, ...(note ? { note } : {}) };
 }
 
-/** What `date +FORMAT` prints at fixed, made-up moments (in UTC, so the same line always shows the same). */
-export function dateExample(format: string, lang: Lang): Example | undefined {
+/** What a `date +FORMAT` line gives besides its format (src/explain/examples.ts: `dateRun`). */
+export interface DateRun {
+  /** The value of `TZ` where it runs (a prefix assignment, an exported variable), unless `-u` is given. */
+  tz?: string;
+  /** `-d DATE`/`--date=DATE`, the last given: the option as written, the value as written, and its text when known. */
+  date?: { option: string; text: string; value?: string };
+  /** `-f FILE`/`--file=FILE`: what it reads, a date on each line. */
+  file?: InputSource;
+  /** `-r FILE`/`--reference=FILE`: the file whose modification time it prints. */
+  reference?: string;
+}
+
+/**
+ * What `date +FORMAT` prints: at fixed, made-up moments when it prints the time it runs (in UTC, so the same line
+ * always shows the same, or in the zone `TZ` names), for the date `-d` gives when it is fixed, or for the dates `-f`
+ * reads. Undefined when the example cannot follow the format, the zone or the date.
+ */
+export function dateExample(format: string, run: DateRun, lang: Lang): Example | undefined {
   const s = pick(lang);
-  const outputs = SAMPLE_DATES.map((d) => formatDateCommand(format, parseSampleDate(d)!));
-  if (outputs.some((o) => o === undefined)) return undefined;
-  const spec: RerunSpec = { kind: 'date', format };
-  // `date` reads no input: these are the moments at which it runs.
-  const when = s('実行した時刻（例、UTC）', 'When it runs (made up, UTC)');
+  const zone = run.tz === undefined ? UTC : zoneOf(run.tz);
+  if (!zone) return undefined;
+  const tz = run.tz !== undefined ? { tz: run.tz } : {};
+  const outputs = (dates: (Date | undefined)[]) => {
+    const out = dates.map((d) => d && formatDateCommand(format, d, zone));
+    return out.every((o) => o !== undefined) ? out.map((o) => visible(o!)) : undefined;
+  };
+  // (`-f`: the lines date reads, which it reads as dates in its time zone.)
+  if (run.file) {
+    const stream = run.file.streams[0];
+    const known = knownLines(stream);
+    const lines = outputs((known ?? SAMPLE_DATES).map((l) => parseDateValue(l, zone)));
+    // (Of several files, date reads only the last one given.)
+    if (!lines || run.file.streams.length !== 1) return undefined;
+    const label = streamLabel(stream, lang);
+    return { kind: 'date',
+      ...(known ? {} : { interactive: interactive({ kind: 'date', format, ...tz, local: true }, [{ label, lines: SAMPLE_DATES }], lang) }),
+      title: s('例', 'Example'),
+      sections: [{ label, lines: known ?? SAMPLE_DATES }, { label: dateOutputLabel(run.tz, true, lang), lines }],
+    };
+  }
+  const given = run.date;
+  // A date that does not depend on when date runs: what it prints is fixed.
+  const fixed = given?.value !== undefined ? parseDateValue(given.value, zone) : undefined;
+  if (fixed) {
+    const lines = outputs([fixed]);
+    return lines && { kind: 'date',
+      title: s(`例（\`${given!.option}\` で指定した日時）`, `Example (the date given with \`${given!.option}\`)`),
+      sections: [{ label: dateOutputLabel(run.tz, true, lang), lines }],
+    };
+  }
+  // A date of another form, read from the moment date runs, or not known here: made-up dates stand for it. (One of
+  // another fixed form, `Jan 2 2024`, is not followed.)
+  const relative = given?.value !== undefined && relativeDate(given.value);
+  if (given?.value !== undefined && !relative) return undefined;
+  const lines = outputs(SAMPLE_DATES.map((d) => parseSampleDate(d)));
+  if (!lines) return undefined;
+  const when = run.reference !== undefined ? s(`\`${run.reference}\` の更新日時（例、UTC）`, `Modification time of \`${run.reference}\` (made up, UTC)`)
+    : given ? s(`\`${given.option} ${given.text}\` が表す日時（例、UTC）`, `The date \`${given.option} ${given.text}\` stands for (made up, UTC)`)
+      // `date` reads no input: these are the moments at which it runs.
+      : s('実行した時刻（例、UTC）', 'When it runs (made up, UTC)');
   return { kind: 'date',
-    interactive: interactive(spec, [{ label: when, lines: SAMPLE_DATES }], lang),
-    title: s('例', 'Example'),
+    interactive: interactive({ kind: 'date', format, ...tz }, [{ label: when, lines: SAMPLE_DATES }], lang),
+    title: relative ? s(`例（\`${given!.value}\` は実行した時刻から決まる）`, `Example (\`${given!.value}\` depends on when it runs)`) : s('例', 'Example'),
     sections: [
       { label: when, lines: SAMPLE_DATES },
-      { label: s('出力', 'Output'), lines: outputs.map((o) => visible(o!)) },
+      { label: dateOutputLabel(run.tz, false, lang), lines },
     ],
   };
 }

@@ -136,6 +136,10 @@ describe('time keyword', () => {
     assert.deepStrictEqual(titles('time; sort -u f'), ['Example']);
     assert.deepStrictEqual(titles('time ls && time sort -u f'), ['Example for `sort -u f`']);
   });
+  it('names a pipeline in a word of a command in its example, not that command', () => {
+    assert.deepStrictEqual(explain('echo $(echo a | tr a b) | cat').examples.map((x) => x.title), ['Example for `echo a | tr a b` (the whole pipeline)']);
+    assert.deepStrictEqual(explain('x=$(echo a | tr a b)', 0, 'ja').examples.map((x) => x.title), ['`echo a | tr a b` の例（パイプライン全体）']);
+  });
   it('shows up to 12 lines of a whole-pipeline example, and cuts longer ones to 11 and a mark', () => {
     const sections = (src: string) => explain(src).examples[0].sections.map((x) => x.lines.length);
     assert.deepStrictEqual(sections('seq 12 | sort -n'), [12, 12]);

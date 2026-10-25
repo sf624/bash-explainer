@@ -102,7 +102,7 @@ export class Analyzer {
       notes,
       ...(facts.length ? { facts } : {}),
       ...(cx.anchors.some((a) => notes.includes(a.text)) ? { anchors: cx.anchors.filter((a) => notes.includes(a.text)) } : {}),
-      // Each -e of sed explains the same combined script, so drop repeated examples.
+      // Each -e of sed explains the same combined script, at the command: drop repeated examples.
       examples: titledExamples(this.cx, root, line, cx.examples)
         .filter((e) => wantsExample(this.cx, e))
         .filter((e, i, all) => all.findIndex((x) => JSON.stringify(x) === JSON.stringify(e)) === i)

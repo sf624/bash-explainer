@@ -19,7 +19,7 @@ import { NO_INPUT } from '../examples/source';
 import { type Literal, literalContent } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
-import { awkOptions, globExample, inputSource, ioExample, pushExample, regexExample, sedScripts } from './examples';
+import { awkOptions, dateRun, globExample, inputSource, ioExample, pushExample, regexExample, sedScripts } from './examples';
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
 import { fromEmbedded } from './nodes';
 import { given, regexFlavor, trContext } from './reads';
@@ -72,12 +72,15 @@ function embeddedExample(cx: Explainer, lang: EmbeddedLang, text: string, a: Syn
       const quiet = given(cx, '-n');
       // -z / --null-data: the "lines" are NUL-separated records, which the example runner does not model.
       const ex = given(cx, '-z') ? undefined : sedExample(scripts.join('\n'), { quiet, extended: flavor === 'ere' });
+      // (Each -e makes the same example, of the whole script: it belongs to the command, and is shown once.)
       if (ex) {
-        // With `-s` or `-i`, sed works on each file apart: the example shows the first (`EachFile`).
-        ioExample(cx, ex.input, ex.output, {
-          kind: 'sed', script: scripts.join('\n'), quiet, extended: flavor === 'ere',
-          highlight: sedPattern(scripts.join('\n'), flavor === 'ere' ? 'ere' : 'bre'),
-        }, inputSource(cx));
+        cx.examplesAt(scripts.length > 1 ? cx.command!.args[0].parent! : a, () => {
+          // With `-s` or `-i`, sed works on each file apart: the example shows the first (`EachFile`).
+          ioExample(cx, ex.input, ex.output, {
+            kind: 'sed', script: scripts.join('\n'), quiet, extended: flavor === 'ere',
+            highlight: sedPattern(scripts.join('\n'), flavor === 'ere' ? 'ere' : 'bre'),
+          }, inputSource(cx));
+        });
       }
       break;
     }
@@ -128,9 +131,11 @@ function embeddedExample(cx: Explainer, lang: EmbeddedLang, text: string, a: Syn
       }
       break;
     }
-    case 'date':
-      pushExample(cx, dateExample(text, cx.lang));
+    case 'date': {
+      const run = dateRun(cx);
+      if (run) pushExample(cx, dateExample(text, run, cx.lang));
       break;
+    }
   }
 }
 

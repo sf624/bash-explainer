@@ -1144,7 +1144,7 @@ export const core: Record<string, CommandSpec> = {
   ], { parser: 'getopt_long' }),
   date: cmd('日時を表示・設定する', 'Print or set the date and time', [
     ['-s|--set', '時刻を設定する（root）', 'set the time (root)', 'arg'],
-    ['-f|--file', 'ファイルの各行を日付として整形する', 'format each line of a file as a date', 'arg'],
+    ['-f|--file', 'ファイルの各行を日付として整形する', 'format each line of a file as a date', 'arg io:input'],
     ['--debug', '日付の解釈を表示する', 'annotate the parsed date'],
     ['--rfc-3339', 'RFC 3339 形式で出力（`date`、`seconds`、`ns`）', 'output in RFC 3339 format (`date`, `seconds`, `ns`)', 'arg'],
     ['-d|--date', '現在時刻の代わりに指定した日時を使う（例: `yesterday`）', 'use the given date instead of now (e.g. `yesterday`)', 'arg'],
