@@ -214,7 +214,7 @@ Web 版のエディタでも同じカードを表示します（タッチ画面�
 | `bashExplainer.hover.maxDepth` | `0` | ホバーに表示する解説ツリーの階層数（`0` はすべて） |
 | `bashExplainer.panel.autoOpen` | `false` | シェルスクリプトを開いたらパネルを自動で開く |
 | `bashExplainer.panel.animations` | `true` | パネルの行を、展開・折りたたみと「読まれ方」のステップの切り替えのときに伸び縮みさせる（オフでは即座に表示。動きを減らす設定でもオフ） |
-| `bashExplainer.panel.colors` | `"classic"` | パネルで行の各部分に付ける色。`classic`（独自の6色）、`theme`（エディターのテーマの色。読みにくい色は除く）、`themeLike`（テーマの色。テーマが2種類の部分に同じ色を付けるところは新しい色）。VS Code だけ |
+| `bashExplainer.panel.colors` | `"classic"` | パネルで行の各部分に付ける色。`classic`（独自の6色）、`theme`（エディターのテーマの色。読みにくい色は除く）、`themeLike`（テーマの色。テーマが2種類の部分に同じ色を付けるところは新しい色）。リモートのウィンドウでは VS Code の既定のカラーテーマだけ。VS Code だけ |
 | `bashExplainer.highlight.enabled` | `true` | 解説と同じ読み方でシェルのコードを色分け（エディタの色分けに重ねるセマンティックトークン）。コマンド名が実行するもの・オプション・読み取り専用の変数に色が付く。言語ごとに設定できる（下記）。Web 版は常にこの色分け |
 | `bashExplainer.hints.names` | `true` | 名前どおりのものを実行しないコマンド名の後ろにヒントを表示 |
 | `bashExplainer.inline.enabled`・`bashExplainer.inline.maxLength` | | 削除済み。効果はない |

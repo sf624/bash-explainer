@@ -214,7 +214,7 @@ The panel works like regex101:
 | `bashExplainer.hover.maxDepth` | `0` | Levels of the explanation tree the hover shows (`0`: all) |
 | `bashExplainer.panel.autoOpen` | `false` | Open the panel when a shell script is opened |
 | `bashExplainer.panel.animations` | `true` | Rows of the panel grow and shrink when they are unfolded and folded, and when a step of the Reading view changes (off: they appear at once; reduced motion turns it off too) |
-| `bashExplainer.panel.colors` | `"classic"` | Colours of the parts of a line in the panel: `classic` (its own six), `theme` (the editor theme's, where readable), `themeLike` (the theme's, with new colours where the theme gives two kinds of part one colour). VS Code only |
+| `bashExplainer.panel.colors` | `"classic"` | Colours of the parts of a line in the panel: `classic` (its own six), `theme` (the editor theme's, where readable), `themeLike` (the theme's, with new colours where the theme gives two kinds of part one colour). In a remote window, VS Code's default themes only. VS Code only |
 | `bashExplainer.highlight.enabled` | `true` | Colour shell code as the explanations read it (semantic tokens over the editor's colours): what each command name runs, options, readonly variables. Can be set per language (below); the web page always does it |
 | `bashExplainer.hints.names` | `true` | A hint after a command name that does not run what it suggests |
 | `bashExplainer.inline.enabled`, `bashExplainer.inline.maxLength` | | Removed: no longer have an effect |

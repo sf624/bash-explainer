@@ -4,6 +4,7 @@ import { ExplainService } from '../service';
 import { toPlainMarkdown, ui } from './render';
 import { FromPanel, lineMarks, PANEL_BODY, PanelState, panelUpdate } from './panelView';
 import { isPanelQuestion, panelReply } from './panelReply';
+import { unreadableThemeNotice } from './builtinThemes';
 import { THEME_SETTINGS, themeRoleColours } from './themeColours';
 import { panelPalette, paletteVars, type PanelBase } from './themePalette';
 
@@ -29,6 +30,8 @@ export class PanelController implements vscode.Disposable {
   /** What the panel last said it draws on (`themeBase`), and the number of the last theme request (an older answer is dropped). */
   private themeBase: PanelBase | undefined;
   private themeRequest = 0;
+  /** The themes the panel said it cannot read the colours of. */
+  private unreadableThemes = new Set<string>();
 
   constructor(private ctx: vscode.ExtensionContext, private service: ExplainService) {
     this.state = ctx.globalState.get<PanelState>(STATE_KEY) ?? {};
@@ -117,11 +120,24 @@ export class PanelController implements vscode.Disposable {
     const mode = this.service.panelColours;
     const base = this.themeBase;
     if (!this.panel || mode === 'classic' || !base) return;
-    // (A theme or a customization the code cannot read leaves the panel's own colours.)
-    const vars = themeRoleColours(this.ctx, this.service.settings['highlight.enabled']).then((roles) => (roles ? paletteVars(panelPalette(mode, roles, base)) : {})).catch(() => ({}));
+    // (A theme or a customization the code cannot read leaves the panel's own colours; a theme, with a notice.)
+    const vars = themeRoleColours(this.ctx, this.service.settings['highlight.enabled']).then((roles) => {
+      if (typeof roles === 'string') {
+        this.unreadable(roles);
+        return {};
+      }
+      return roles ? paletteVars(panelPalette(mode, roles, base)) : {};
+    }).catch(() => ({}));
     void vars.then((v) => {
       if (id === this.themeRequest) void this.panel?.webview.postMessage({ type: 'themeColours', vars: v });
     });
+  }
+
+  /** Says once a session for each theme that the panel cannot follow it. */
+  private unreadable(theme: string): void {
+    if (this.unreadableThemes.has(theme)) return;
+    this.unreadableThemes.add(theme);
+    void vscode.window.showInformationMessage(unreadableThemeNotice(this.service.lang, theme));
   }
 
   private post(): void {

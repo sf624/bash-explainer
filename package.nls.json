@@ -24,7 +24,7 @@
   "semanticTokenModifiers.unquoted": "A plain word, not quoted, after the command: one that looks like an option but that the command reads as data (`-v` in `grep -e -v`).",
   "config.panel.autoOpen": "Open the explanation panel automatically when a bash script is opened. The panel can always be opened with **Bash Explainer: Open Bash Explanation Panel** or the link in the hover.",
   "config.panel.animations": "Animate the explanation panel: rows grow from their parent when they are unfolded, and shrink into it when they are folded, in the Meaning and Reading views, and when a step of the Reading view changes. The panel shows no motion either when the system or VS Code asks for reduced motion (`workbench.reduceMotion`).",
-  "config.panel.colors": "Where the colours of the parts of a line in the explanation panel come from. VS Code only: the web page keeps its own palettes.",
+  "config.panel.colors": "Where the colours of the parts of a line in the explanation panel come from. VS Code only: the web page keeps its own palettes. In a remote window (WSL, SSH, a container), only VS Code's default themes can be followed.",
   "config.panel.colors.classic": "The panel's own six colours, which keep every kind of part apart.",
   "config.panel.colors.theme": "The colours the editor's colour theme gives each part. A part the theme leaves uncoloured, or colours with too little contrast (below 4.5:1, or 7:1 in a high contrast theme), keeps the panel's own colour.",
   "config.panel.colors.themeLike": "The theme's colours where they keep the parts apart; where the theme gives two kinds of part one colour (or leaves one uncoloured), a new colour that suits the theme, with enough contrast.",

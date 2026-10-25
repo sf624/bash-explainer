@@ -232,6 +232,8 @@ The web page's editor shows the cards of VS Code's hover. Before, the page had n
 - `theme`: the colour your theme gives each part in the editor, with your `editor.tokenColorCustomizations` and `editor.semanticTokenColorCustomizations`. A part the theme leaves uncoloured, or colours below 4.5:1 (7:1 in a high contrast theme), keeps the panel's own colour. In Dark Modern, `ll` and `grep` are #DCDCAA as in the editor, and `|` and `2>` are both the plain foreground.
 - `themeLike`: the theme's colours, except where the theme gives two kinds of part one colour that the panel keeps apart. Then a part takes the colour of its group (`|` takes the keyword's colour, as in the classic palette), or a new colour that suits the theme, with enough contrast. In Dark Modern, redirects and regexes get a teal of their own, and comments are a little lighter, to reach 4.5:1 on a code block.
 
+In a remote window (WSL, SSH, a dev container), VS Code keeps the colour themes on the local side, where the extension cannot read them. There the panel takes VS Code's default themes (Dark 2026, Light 2026, Dark Modern, Light Modern, Dark+, Light+, Visual Studio Dark and Light, and both high contrast ones) from a copy it carries, so `theme` and `themeLike` work with them. With any other theme, from the Marketplace or one VS Code ships from elsewhere (Monokai, Solarized…), the panel keeps its own colours, and a notice says so once a session.
+
 The colours follow the theme when it changes. How the theme is read, and how much each choice keeps parts apart, is in [docs/design/theme-colours.md](../design/theme-colours.md).
 
 ### The value of an expansion

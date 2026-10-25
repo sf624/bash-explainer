@@ -10,6 +10,7 @@ Bash Explainer includes the following third-party software and artwork (CC-BY-4.
 | --- | --- | --- | --- |
 | [unbash](https://github.com/webpro-nl/unbash) | 6.0.1 | ISC | bundled into `dist/extension.js`; bundled into `dist/web/extension.js` |
 | [@vscode/codicons](https://github.com/microsoft/vscode-codicons) | 0.0.46-24 | CC-BY-4.0 | icons copied into `media/icons.js` |
+| [microsoft/vscode](https://github.com/microsoft/vscode) | 1.143.1 | MIT | the token colours of the default colour themes copied into `src/ui/vscodeThemes.json`, bundled into `dist/extension.js` and `dist/web/extension.js` |
 
 ## In the web version
 
@@ -176,6 +177,39 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+```
+
+### microsoft/vscode
+
+```text
+Bash Explainer copies the token colours of VS Code's default colour themes (extensions/theme-defaults/themes/*.json
+of VS Code 1.143.1: the TextMate rules that give a foreground, the semantic token colours and the includes) into
+src/ui/vscodeThemes.json (scripts/vscode-themes.ts), for its panel in a remote window, where an extension cannot
+read the themes. They are under the license of the repository:
+
+MIT License
+
+Copyright (c) 2015 - present Microsoft Corporation
+
+All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ### style-mod
