@@ -197,7 +197,8 @@ describe('notes on the control pictures in examples', () => {
     const src = "printf '\\033[1m%s' OK";
     const ex = explain(src);
     const md = wholeLine({ ex: ex, lang: 'en', theme: 'dark', lineText: src, placement: 'first', panelLink: 'command:x', lineLink: 'command:l', keys: 'K' });
-    assert.ok(md.includes('> Control characters are invisible'));
+    // (In the hover a paragraph, not a quote: VS Code's hover gives a quote no bar, only 40 px of margin.)
+    assert.ok(md.includes('\nControl characters are invisible') && !md.includes('> Control characters'));
     assert.ok(examplesMarkdown(ex.examples).join('\n').includes('\n> Control characters are invisible'));
     const nested = examplesMarkdown(ex.examples, '  ').join('\n');
     assert.ok(nested.includes('  > Control characters are invisible'));
