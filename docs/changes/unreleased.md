@@ -249,7 +249,26 @@ The token of an expansion says its value where the script fixes it, under its me
 | `IFS=:; p='a:b c'; echo $p` | `a:b c`, split into `a` and `b c` |
 | `f() { echo "$x"; }; x=1; f` | `1` in the body |
 
-Nothing is shown where the value is not sure: a variable the script does not set (it may come from the environment: `$HOME`), one that `read`, `mapfile`, arithmetic, `${x:=…}`, a trap or an `eval` string may set, a loop that changes it, a function called with two values, a branch whose condition is not known, code that never runs, a script that runs `source`, positional parameters, arrays, and strings another shell runs (`bash -c '…'`). What is shown and why: [docs/design/expansion-values.md](../design/expansion-values.md).
+Nothing is shown where the value is not sure: a variable the script does not set (it may come from the environment: `$HOME`), one that `read`, `mapfile`, arithmetic, `${x:=…}`, a trap or an `eval` string may set, a loop that changes it, a function called with two values, a branch whose condition is not known, code that never runs, a script that runs `source`, positional parameters, arrays, and strings another shell runs (`bash -c '…'`). Nor is it shown where bash reads the text by the locale (text other than ASCII, beyond a plain copy: `${#e}`, `${e^^}` of `e=é`), after a word of the same command that may fail first (`e=; echo ${e:?} "$e"`), where bash fails (`${x:2:-5}`: "substring expression < 0"), in a script whose `PS4` may assign (`PS4='$((n++))'`, for `bash -x`), or in a function that only uncalled functions call. A part of a longer word (`$x/c`, `a$e`) shows its value only: its words join the text around it (`x='a b'; echo $x/c` gives `a` and `b/c`).
+
+A space at either end of a value is shown as `␠`, an empty word as `∅`, and a bidi control or zero-width character as its code (`<U+202E>`), named after the value; a long value is cut on a character. In the hover, a value with a backtick reads as it is.
+
+In sh and dash scripts, the POSIX forms show values too: `$x`, `${x}`, `${#x}`, `${x:-w}`, `${x-w}`, `${x:+w}`, `${x+w}`, `${x:?w}` when set, `%`, `%%`, `#`, `##`. `#!/bin/sh` is dash on Debian and Ubuntu and `bash --posix` elsewhere, so a value is shown only where both give it (checked with dash 0.5.12). Nothing is shown for the forms dash rejects ("Bad substitution": `${x/p/r}`, `${x:o:l}`, `${x^^}`), for `[^a]` in a pattern (dash reads `^` as a character), after `local IFS` (dash keeps the caller's value), for text other than ASCII (dash counts bytes), or in a script that uses what dash lacks (`[[ ]]`, `declare`, `$'…'`). zsh and ksh show none.
+
+The worked examples use the script's value where the value line knows it:
+
+| Script | Example now | Example before |
+| --- | --- | --- |
+| `msg="hello world"; echo ${#msg}` | When `msg="hello world"` → `11` | When `msg=hello` → `5` |
+| `x=abc; echo ${x#z}` | When `x=abc` → `abc`, then When `x=zname` → `name` | When `x=zname` → `name` |
+| `y=zzz; [ "$y" = abc ]` | the value that makes it false: `y="zzz"` | `y="abcx"` |
+| `x=abc; [[ $x == a* ]]` | values that match: `abc` `aapp` `adata` | `aapp` `adata` `aerror` |
+| `x=abc; case $x in a*) …;; *c) …;; esac` | `abc` under the first branch, and under "Values that do not" for `*c)` | samples only |
+| `x=abc; read -r a b <<< "$x y"` | the line `abc y`: `a="abc"`, `b="y"` | the line `alice 30 tokyo` |
+
+When the script's value shows no effect of the operator, a sample that shows it follows. A value with control characters, a backtick, a space at an end or over 60 characters keeps the samples, and so do sh and dash scripts.
+
+What is shown and why: [docs/design/expansion-values.md](../design/expansion-values.md).
 
 ## Changed
 
@@ -466,6 +485,9 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 | `declare -i n; n+=5`, `declare -ia a; a[0]+=5` | adds: 7 becomes 12 | "if `n` is 7, `+=5` makes 12, not 75"; with `n+=x`, "the value of the arithmetic expression `x` is added" | "if `n` is 7, `+=1` makes 8, not 71", whatever the operand |
 | `command declare k=1`, `builtin export q+=x`, `command declare z=$y` | `declare` assigns `k`; bash passes the word as an ordinary argument, so `z=$y` with `y='1 2'` is split (`z=1`, and an error on `2`) | "Assign `1` to the variable `k` (`declare` reads the word as an assignment). To bash it is an ordinary argument, not an assignment…"; with `$y`, "an unquoted expansion in it is split and globbed" | "Variable `k=1`" |
 | `for (( c = 0; c < 2; c++ )); do echo $v; done` | the body is commands: `$v` is split and globbed | "Expands to the value of `v` (unquoted, it is word-split and globbed)" | "Expands to the value of `v`": the body was read as arithmetic |
+| `a=1; a=2 export a; echo $a`, also `readonly`, `command export` | the prefix assignment stays after the command, exported: `2` | "`export` gets this name, so this assignment stays after the command, exported" | "set only for this command" |
+| `s='[section] key'; echo "${s//[/}"`, `${u//[/]/x}` | the pattern ends at the first `/`, also inside brackets: `section] key`; `[` becomes `]/x` | the example of the line, from that pattern | no example, or one of the pattern `[/` |
+| `${t//[\!]/x}`, `${t//['a-c']/x}` | a quoted `!` or `-` in brackets is the character: `!`; `a`, `-`, `c` | the example replaces those characters | "any character but…", and the range `a-c` |
 | `a=1; declare a=5 b=$a`, `local x=$x` | the words are expanded before the builtin runs: `b` is `1`, and the local `x` gets the caller's value | the values that follow from them (the words of `$b`, the value of `$x`) | `b` was `5`, the local `x` empty |
 
 `[[ $x == "$q" ]]` already said that a quoted right side is literal text.
@@ -622,5 +644,5 @@ VS Code puts the problems at the mouse above our hover. The part now leaves out 
 | `rm -rf $DIR/*`, on `$DIR` | the two problems above, then `$DIR` | the two problems, and both pitfalls again |
 | the same, with `bashExplainer.diagnostics.enabled` off | `$DIR` with both pitfalls (no problem above) | the same |
 
-The notes that stay (on another word, about the line, a plain fact) start at the hover's left edge, with their icon and word in the level's colour. Before, each one was a quote: VS Code's hover draws no bar for a quote, only the browser's margins, so each note was pushed 40 px to the right.
+The notes that stay (on another word, about the line, a plain fact) start at the hover's left edge, with their icon and word in the level's colour. So do the notes of examples ("Control characters are invisible, so the example shows them as symbols"); the Markdown of the command line and the Language Server keep them as quotes. Before, each one was a quote: VS Code's hover draws no bar for a quote, only the browser's margins, so each note was pushed 40 px to the right.
 
