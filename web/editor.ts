@@ -163,11 +163,12 @@ const editorTheme = EditorView.theme({
     '.cm-bx-level': { fill: 'CanvasText' },
   },
   // A name hint (web/name-hints.ts): muted, on a faint tint, as VS Code draws an inlay hint. Inline, so that it
-  // wraps with the line when long lines wrap.
+  // wraps with the line when long lines wrap. Its padding and margin stay at its two ends (the default
+  // `box-decoration-break: slice`): Chromium breaks a line without room for the padding that `clone` adds where a hint
+  // is cut, so a hint cut at the end of a line ran a few pixels past the editor's edge, at widths that depend on the font.
   '.cm-bx-hint': {
     color: 'var(--vscode-descriptionForeground)', backgroundColor: 'rgba(127, 127, 127, 0.14)', borderRadius: '3px',
     padding: '0 4px', margin: '0 2px 0 4px', fontSize: '90%', cursor: 'pointer', userSelect: 'none',
-    boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone',
   },
   '.cm-bx-hint:hover': { color: 'var(--vscode-foreground)' },
   '.cm-bx-hint-tip': {
