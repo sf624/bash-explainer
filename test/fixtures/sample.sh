@@ -4,6 +4,7 @@
 set -euo pipefail
 trap 'rm -rf "$workdir"' EXIT
 workdir=$(mktemp -d)
+name="World"
 make build > build.log 2>&1 || exit 1
 grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt && echo "done: $(date +%F)" || exit 1
 echo "done" >> run.log
@@ -42,6 +43,7 @@ cp config.yml{,.bak}
 echo {1..10..3} {a..e}
 
 # --- Commands with examples ---
+entry='root:x:0:0:root:/root:/bin/bash' csv_line='a,b,c'
 grep -E '^[A-Z]{3}-[0-9]+$' ids.txt
 grep -oP '(?<=id=)\d+' access.log
 sed -n '/^BEGIN/,/^END/p' config.txt
@@ -91,7 +93,7 @@ sudo -u www-data ls /srv
 # --- Pitfalls the extension points out ---
 ls **/*.conf
 rm -rf $BUILD_DIR/cache
-read line
+read answer
 cat $file
 sudo echo "nameserver 1.1.1.1" > /etc/resolv.conf
 for f in $(ls *.txt); do echo "$f"; done
@@ -104,6 +106,7 @@ f() {
 }
 
 # --- Tricky syntax, read as bash does ---
+x=notes.txt d=/usr/local/bin a=1 b=2 msg="hello"
 [[ -f a && $x =~ ^[0-9]+$ ]]
 [[ $x = *.txt || $x = *.sh ]]
 [[ ":$PATH:" = *":$d:"* ]]

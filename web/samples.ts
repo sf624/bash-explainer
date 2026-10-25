@@ -11,7 +11,7 @@ export const KINDS: { kind: Kind; name: string; fileName: string; cursorLine: nu
     kind: 'shell',
     name: 'Shell script',
     fileName: 'script.sh',
-    cursorLine: 8,
+    cursorLine: 9,
     sample: __SAMPLE_SH__,
   },
   {
