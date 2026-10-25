@@ -20,7 +20,7 @@ count=$(( ${#items[@]} * 2 ))
 if [ -z "${1:-}" ]; then
   echo "usage: $0 <dir>" >&2
 elif [[ $1 =~ ^[0-9]+$ ]]; then
-  count=$(( $1 * 2 ))
+  count=$(( count * 2 ))
 else
   echo "dir: $1"
 fi
@@ -108,7 +108,7 @@ f() {
 [[ $x = *.txt || $x = *.sh ]]
 [[ ":$PATH:" = *":$d:"* ]]
 [[ ! $x =~ ^a ]]
-echo "${s:$i:2}"
+s=abcdef i=2; echo "${s:$i:2}"
 [ "$a" -eq 1 -a "$b" -eq 2 ]
 [ ! a = b -a -f c ]
 [ -a file ]

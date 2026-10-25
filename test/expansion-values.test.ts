@@ -2,6 +2,8 @@
 // bash itself checks it in test/value-probes.test.ts and test/values.test.ts), the texts (`valueSaid`), and where the
 // outputs show them: the token, the panel's data, the hover, Markdown and the Language Server's hover.
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import type { LineExplanation, Token } from '../src/analyzer-types';
 import { explainDocumentLine, ShellDocument } from '../src/document';
@@ -245,6 +247,15 @@ describe('the value on the token and in the outputs', () => {
     // Japanese, from the same model.
     const ja = new Analyzer('ja').explainLine(parser.parse(doc.lines.join('\n')), 1);
     assert.match(find(ja.items, '$msg')!.value!.said.text, /^スクリプトから分かるここでの値: /);
+  });
+
+  it('shows values in the web page\'s sample (test/fixtures/sample.sh): the model is not blind there', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'fixtures', 'sample.sh'), 'utf8');
+    const tree = parser.parse(src);
+    const state = shellState(tree, 'bash');
+    assert.strictEqual(state.blind, undefined);
+    const shown = descendants(tree.root, ['simple_expansion', 'expansion']).filter((e) => expansionValue(e, state)).map((e) => `${e.startPosition.row + 1}: ${e.text}`);
+    assert.ok(shown.includes('14: ${file%.*}') && shown.includes('15: ${#file}') && shown.length >= 5, shown.join('\n'));
   });
 
   it('shows it in the hover, in Markdown and in the Language Server hover', () => {
