@@ -195,6 +195,29 @@ describe('the contrast of the colours of the roles', () => {
     }
   });
 
+  // A band's edges (media/panel.css): the rule on its left in the layer's colour, the hairlines at its top and
+  // bottom a mix of it with the background. Each is drawn on the background or on any band's tint (a band in a
+  // band, or one after another), and reaches WCAG's 3:1 for what is not text against all of them.
+  it('reaches 3:1 for the edges of the tree view\'s bands', () => {
+    const rule = /#reading-tree li\.band \{[^}]*\}/.exec(panel)?.[0] ?? '';
+    const pct = Number(/background: color-mix\(in srgb, var\(--l\) (\d+)%, var\(--t-bg\)\);/.exec(rule)?.[1]);
+    const edge = Number(/\n  border: 1px solid color-mix\(in srgb, var\(--l\) (\d+)%, var\(--t-bg\)\);/.exec(rule)?.[1]);
+    assert.match(rule, /\n  border-left: 2px solid var\(--l\);/);
+    assert.ok(pct > 0 && edge > 0 && edge <= 100, `${pct}% ${edge}%`);
+    const LAYERS: Record<string, Role> = { bash: 'operator', child: 'command', command: 'argument', language: 'option' };
+    for (const [kind, vars] of [['web light', web.light], ['web dark', web.dark]] as const) {
+      const bg = parse(vars['--vscode-editor-background']);
+      const mix = (c: RGB, p: number) => c.map((x, i) => (p / 100) * x + (1 - p / 100) * bg[i]) as RGB;
+      const under: Record<string, RGB> = { background: bg };
+      for (const [layer, role] of Object.entries(LAYERS)) under[`${layer}'s tint`] = mix(parse(vars[CHARTS[role]]), pct);
+      const hex = (c: RGB) => `#${c.map((x) => Math.round(x).toString(16).padStart(2, '0')).join('')}`;
+      for (const [layer, role] of Object.entries(LAYERS)) {
+        const colour = parse(vars[CHARTS[role]]);
+        check(`${kind}, the edges of ${layer}'s bands`, { rule: hex(colour), hairline: hex(mix(colour, edge)) }, under, 3);
+      }
+    }
+  });
+
   // The badge of a command name (media/panel.css `.nk-badge`): its word in the foreground colour, the muted lines
   // after it in the muted colour (both measured above, on the backgrounds and the tints); its edge, in the colour of
   // the command role (the keyword's for a reserved word) or the foreground, at least 3:1 (WCAG's non-text contrast).

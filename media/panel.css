@@ -942,10 +942,19 @@ body {
 
 /* A band where a reader takes over: the item and what lies under it, in its layer's tint. The tint is opaque
    (the layer's colour mixed with the background, not laid over it), so a band in a band has the same tint as
-   one at the top: the text measures the same on every band (at least 4.5:1, test/contrast.test.ts). */
+   one at the top: the text measures the same on every band (at least 4.5:1, test/contrast.test.ts).
+   Its edges show where the reader's part starts and ends: a rule in the layer's colour down its left side, and a
+   hairline at its top and its bottom, mixed with the background but still 3:1 against the background and every
+   tint (test/contrast.test.ts). No edge on the right: nested bands end at the same right edge. Borders, not a
+   shadow, so the row under the pointer does not paint over them; the negative margins give back the room they
+   take, so the content and the outline's lines stay where they are. */
 #reading-tree li.band {
   background: color-mix(in srgb, var(--l) 6%, var(--t-bg));
   border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--l) 80%, var(--t-bg));
+  border-left: 2px solid var(--l);
+  border-right: 0;
+  margin: -1px 0 -1px -2px;
 }
 
 #reading-tree ul[role="group"] > li {
@@ -1088,6 +1097,8 @@ pre#line span.mark {
 body.vscode-high-contrast #reading-tree li.band,
 body.vscode-high-contrast-light #reading-tree li.band {
   background: none;
+  border: 0;
+  margin: 0;
   outline: 1px solid var(--l);
   outline-offset: -1px;
 }
@@ -1152,6 +1163,8 @@ body.vscode-high-contrast-light #reading-tree li.band {
 @media (forced-colors: active) {
   #reading-tree li.band {
     background: none;
+    border: 0;
+    margin: 0;
     outline: 1px solid CanvasText;
     outline-offset: -1px;
   }

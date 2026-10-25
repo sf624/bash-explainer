@@ -1132,7 +1132,7 @@
     return { cancel: () => started.forEach((a) => a.cancel()) };
   }
 
-  /** The rows a step adds grow from their parent (each new subtree, one after the other), and a new reader's band takes its tint from the band around it. */
+  /** The rows a step adds grow from their parent (each new subtree, one after the other), and a new reader's band takes its tint and its edges from the band around it. */
   function growIn(/** @type {Set<string>} */ before) {
     const ul = $('reading-tree');
     const roots = /** @type {HTMLElement[]} */ (Array.from(ul.querySelectorAll('li[role="treeitem"]')))
@@ -1140,10 +1140,12 @@
     fold(roots.map((li, k) => ({ el: li, open: true, delay: Math.min(k, 8) * 30 })));
     roots.forEach((li, k) => {
       if (!li.classList.contains('band')) return;
-      const to = getComputedStyle(li).backgroundColor;
+      const style = getComputedStyle(li);
       const parent = li.parentElement?.closest('li');
       const from = parent ? getComputedStyle(parent).backgroundColor : 'transparent';
-      li.animate([{ backgroundColor: from }, { backgroundColor: to }], { duration: MOTION_MS + 200, delay: Math.min(k, 8) * 30 + 80, easing: 'ease-out', fill: 'backwards' });
+      // (Its edges come in with the tint.)
+      const to = { backgroundColor: style.backgroundColor, borderLeftColor: style.borderLeftColor, borderTopColor: style.borderTopColor, borderBottomColor: style.borderBottomColor };
+      li.animate([{ backgroundColor: from, borderLeftColor: from, borderTopColor: from, borderBottomColor: from }, to], { duration: MOTION_MS + 200, delay: Math.min(k, 8) * 30 + 80, easing: 'ease-out', fill: 'backwards' });
     });
   }
 
@@ -1522,10 +1524,11 @@
     }
   });
 
-  /** Selects a token's range in the editor. Not one over several lines (an if, a loop, a function): the cursor would move to its last
-      line, and the panel with it, when one only meant to fold the row; the hover already shows that range. */
+  /** Selects a token's range in the editor, only when it lies on the line explained. A range on another line (a clause of a
+      `case` under its `while`, one over several lines: an if, a loop, a function) would move the cursor there, and the panel
+      would explain that line instead, when one only meant to fold the row; the hover already shows that range. */
   function reveal(token, /** @type {boolean} */ keepFocus = false) {
-    if (token.span.start.line === token.span.end.line) vscode.postMessage({ type: 'reveal', span: token.span, preserveFocus: keepFocus });
+    if (token.span.start.line === shownLineNo && token.span.end.line === shownLineNo) vscode.postMessage({ type: 'reveal', span: token.span, preserveFocus: keepFocus });
   }
 
   /** The rows of a token and of all its parts. */

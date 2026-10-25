@@ -27,7 +27,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The panel's header in VS Code is a toolbar, like those of VS Code's own views: the line, the shell's dropdown and the Meaning/Reading switch, then icon buttons with tooltips for Collapse all, Copy as Markdown, Quick reference and Settings. Before, the buttons were text links.
 - On the web page, the Meaning/Reading switch is in the top bar, or in the menu on a phone.
 - On the web page, Collapse all, Copy as Markdown, Quick reference and Settings show the same icons as in the VS Code panel (VS Code's Codicons) and now stand in the panel header's order, with Copy as Markdown before Quick reference, and their icons change for Expand all and Back as there. Before, the page drew its own icons for them.
-- The panel's Reading view is drawn as an outline: the code in a pill, its text on a line below, and lines joining each item to its parent. Each reader's part has a light tint that is the same at every depth. Before, nested parts got darker, and some kind names were hard to read on them.
+- The panel's Reading view is drawn as an outline: the code in a pill, its text on a line below, and lines joining each item to its parent. Each reader's part has a light tint that is the same at every depth, with a rule in its colour on the left and thin lines at its top and bottom. Before, nested parts got darker, and some kind names were hard to read on them.
 - The quick reference's search box has rounded corners like the panel's other controls, and a focus ring. Before, it was square.
 - With `bashExplainer.highlight.enabled` on, shell code in Python files and Dockerfiles is no longer coloured by us, so their own language servers (Pylance, the Docker extension) keep colouring the whole file.
 - The web page on a phone opens with the Problems list folded (its header shows the count; tap it to unfold). Before, the sample's nine problems took a third of the editor. Wider screens, and a fold you chose yourself, are unchanged.
@@ -59,6 +59,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Tests and redirections are explained as bash runs them: `[ 08 -eq 8 ]` is true, `3<<EOF` and `3<<< x` go to descriptor 3, `> {a,}` writes `a`, and `/dev/tcp/host/port` connects to the network. In sh and dash it is a path, with a portability warning.
 - Examples follow bash: `[[ $x =~ ^"a."c$ ]]` matches only `a.c`, and the input read from `<(cmd)` is the output of `cmd`, through a pipe.
 - The panel's Reading view no longer fails on `cat <<` while the delimiter is not written yet.
+- A click on a row of the panel that is on another line, such as a `case` clause inside a `while` loop, only folds the row. Before, it moved the cursor to that line, and the panel explained that line instead.
 - The `date` example follows the line: `date -d 2024-01-02 +%A` shows `Tuesday`, `TZ=Asia/Tokyo date +%T` and `env TZ=Asia/Tokyo date` show the time in that zone, and `-d 'next friday'` shows the Friday after each moment it runs. Before, it always showed the time it runs, in UTC.
 - `sed -e 's/a/b/' -e 's/c/d/' f` shows one example of the whole script, not the same one twice; a pipeline in `$( )` names itself in its example's title.
 
