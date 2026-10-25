@@ -5,7 +5,8 @@
 //
 // This file holds the page's state (language, file kind, settings, theme) and wires the parts together:
 // web/editor.ts (the script), web/panel-bridge.ts (the panel's frame), web/compare.ts (the compare page),
-// web/share.ts (links), web/storage.ts (what the browser keeps), web/layout.ts (dividers and sheets).
+// web/share.ts (links), web/storage.ts (what the browser keeps), web/layout.ts (dividers and sheets),
+// web/file-io.ts (opening a file, saving to one).
 import { undo } from '@codemirror/commands';
 import { ViewUpdate } from '@codemirror/view';
 import { Analyzer, LineExplanation } from '../src/analyzer';
@@ -22,7 +23,8 @@ import { Compare, receiveState, toParent } from './compare';
 import { $, on, put } from './dom';
 import { Editor } from './editor';
 import { drawIcons } from './icons';
-import { askReplaceWithSample } from './kind-dialog';
+import { ChosenFile, chooseFile, decodeText, defaultName, fileContent, FileFormat, isMac, kindForFile, MAX_BYTES, PLAIN, saveText, withEol } from './file-io';
+import { ask, askReplaceWithSample } from './kind-dialog';
 import { closeSheet, narrow, reopenSheet, setUpEdgeSwipe, setUpProblems, setUpSheet, setUpSplitter } from './layout';
 import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
@@ -84,13 +86,22 @@ const choice = () => ({ shell: forcedShell(settings), yq: settings['yq.flavor'] 
 const parser = createUnbashParser();
 const analyzers = new Map<Lang, Analyzer>();
 let parsed: { text: string; kind: Kind; doc: ShellDocument } | undefined;
+/** The file the script was opened from or last saved to: its name, and its handle where the browser gives one (a save writes to it). */
+let file: { name: string; handle?: FileSystemFileHandle } | undefined;
+/**
+ * How that file holds its text: the editor keeps "\n" and no BOM; the file has its own line end (the explainers read it
+ * too, so a CRLF file gets the `crlf` warning) and its BOM back.
+ */
+let format: FileFormat = PLAIN;
+/** The name the explanations give the script: the file's, else the kind's (`script.sh`); a name ending in `.zsh` makes it zsh. */
+const fileName = () => file?.name ?? kindInfo(kind).fileName;
 let shown: { explanation: LineExplanation; line: number } | undefined;
 
 const analyzer = () => analyzers.get(lang) ?? analyzers.set(lang, new Analyzer(lang)).get(lang)!;
 
 /** The script as the explainers see it, parsed once per change. */
 function shellDocument(): ShellDocument | undefined {
-  const text = editor.text;
+  const text = withEol(editor.text, format.eol);
   if (parsed && parsed.text === text && parsed.kind === kind) return parsed.doc;
   const doc = openDocument(text, kind, (shellText) => parser.parse(shellText));
   parsed = { text, kind, doc };
@@ -100,7 +111,7 @@ function shellDocument(): ShellDocument | undefined {
 function shells(): Shells {
   const doc = editor.view.state.doc;
   const lines = Array.from({ length: Math.min(50, doc.lines) }, (_, i) => doc.line(i + 1).text);
-  return shellsOf(lines, kindInfo(kind).fileName, forcedShell(settings));
+  return shellsOf(lines, fileName(), forcedShell(settings));
 }
 
 // ---- Editor ---------------------------------------------------------------------------------
@@ -139,6 +150,7 @@ const editor = new Editor({
     // Undo would no longer undo the sample once the text changed again.
     if (u.docChanged && undoOffered && !loadingSample) status('');
     if (u.docChanged && !mode.panel) detectPasted(u);
+    if (u.docChanged) showFileSoon();
     // In panel mode the page around sends every change as a message, which is handled at once.
     if (mode.panel || (!u.docChanged && !u.selectionSet)) return;
     clearTimeout(timer);
@@ -186,7 +198,7 @@ function updatePanel(): void {
   const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: panel.view() === 'tree' });
   shown = { explanation, line };
   panel.show(panelUpdate({
-    lang, explanation, file: kindInfo(kind).fileName, line, lineText: doc.lines[line] ?? '',
+    lang, explanation, file: fileName(), line, lineText: doc.lines[line] ?? '',
     choice: choice(), detected: s.detected, placement: settings['examples.placement'],
     animations: settings['panel.animations'], marks: lineMarks(problemsShown, line),
   }));
@@ -194,7 +206,7 @@ function updatePanel(): void {
 
 function copyMarkdown(): void {
   if (!shown) return;
-  const md = toPlainMarkdown(shown.explanation, editor.view.state.doc.line(shown.line + 1).text, `${kindInfo(kind).fileName}:${shown.line + 1}`, lang);
+  const md = toPlainMarkdown(shown.explanation, editor.view.state.doc.line(shown.line + 1).text, `${fileName()}:${shown.line + 1}`, lang);
   void navigator.clipboard.writeText(md).then(() => status(TEXT[lang].copied));
 }
 
@@ -279,6 +291,15 @@ function applyLanguage(): void {
   placeReadTip();
   put('lang-label', t.lang);
   put('menu-sample-label', t.sample);
+  put('menu-open-label', t.open);
+  put('menu-save-label', t.save);
+  put('menu-open-key', shortcut('O'));
+  put('menu-save-key', shortcut('S'));
+  document.getElementById('menu-open-file')?.setAttribute('title', t.openTip);
+  document.getElementById('menu-save')?.setAttribute('title', t.saveTip);
+  put('drop-title', t.dropTitle);
+  put('drop-note', t.dropNote);
+  showFile();
   put('menu-share-label', t.share);
   put('menu-install-label', t.install);
   put('settings-label', t.settings);
@@ -519,10 +540,12 @@ on('kind-menu', 'change', (e) => {
  * the text itself rather than from a record of edits, so that it also holds after an undo back to a sample.
  */
 const untouched = (text: string) => !text.trim() || KINDS.some((k) => k.sample === text);
+/** Whether the editor holds the user's own text: a file's (even an empty one), or text that is no sample. */
+const ownText = () => file !== undefined || !untouched(editor.text);
 
 function chooseKind(k: Kind): void {
   // A sample, or nothing, gives way to the new kind's sample; whether the user's own text does is theirs to say.
-  const own = !untouched(editor.text);
+  const own = ownText();
   setKind(k, () => {
     if (!own) loadSample(false);
   });
@@ -536,6 +559,7 @@ function setKind(k: Kind, then?: () => void): void {
   if (menuKind) menuKind.value = k;
   kindPicker?.show(k);
   editor.setKind(kind);
+  showFile();
   then?.();
   editor.shade();
   updatePanel();
@@ -582,14 +606,27 @@ function askAboutSample(k: Kind): void {
 /** Puts in the current kind's sample; when it replaced the user's own text, the toast offers to undo it. */
 function loadSample(own: boolean): void {
   const info = kindInfo(kind);
+  const before = { file, format, clean };
   loadingSample = true;
   try { editor.setText(info.sample, info.cursorLine); } finally { loadingSample = false; }
-  if (own) status(TEXT[lang].sampleLoaded, false, { label: TEXT[lang].undo, run: () => { undo(editor.view); editor.focusUnlessTouch(); }, untilEdit: true });
+  // The sample is no file's text: a save asks where again (and never writes it into the file opened before).
+  file = undefined;
+  format = PLAIN;
+  clean = editor.text;
+  showFile();
+  // Undo brings back the text, and the file it was (its name, its handle, its line ends).
+  const back = () => {
+    undo(editor.view);
+    ({ file, format, clean } = before);
+    showFile();
+    editor.focusUnlessTouch();
+  };
+  if (own) status(TEXT[lang].sampleLoaded, false, { label: TEXT[lang].undo, run: back, untilEdit: true });
 }
 
 on('sample', 'click', () => {
   // The user's own text asks for a confirmation and, once replaced, offers to undo; a sample or nothing does not.
-  const own = !untouched(editor.text);
+  const own = ownText();
   if (own && !confirm(TEXT[lang].replace)) return;
   loadSample(own);
 });
@@ -619,6 +656,223 @@ on('share', 'click', async () => {
   status(TEXT[lang].shared);
 });
 
+// ---- Files: open one into the editor, save the editor's text to one (web/file-io.ts) ----------------
+
+/** The editor page has them; the compare page and the copies in panel mode do not. */
+const withFiles = !mode.compare && !mode.panel;
+/** The text as it was last opened, saved or loaded: the editor has changes not saved while it differs (`unsaved`). */
+let clean = '';
+/** The key of a shortcut: ⌘S on a Mac, Ctrl+S elsewhere. */
+const shortcut = (key: string) => (isMac() ? `⌘${key}` : `Ctrl+${key}`);
+
+/**
+ * Whether opening a file would lose text: the editor's text differs from the one last opened, saved or loaded, and is
+ * the user's own (with no file open, a sample or nothing is not). Read from the text, so that an undo back to it counts.
+ */
+function unsaved(): boolean {
+  const text = editor.text;
+  return text !== clean && (file !== undefined || !untouched(text));
+}
+
+/** The name of the file and a mark for changes not saved, as the screen shows them (the mark is said in words to a screen reader). */
+function nameWithMark(name: string, dirty: boolean): Node[] {
+  if (!dirty) return [document.createTextNode(name)];
+  const mark = Object.assign(document.createElement('span'), { textContent: ' ●' });
+  mark.setAttribute('aria-hidden', 'true');
+  const said = Object.assign(document.createElement('span'), { className: 'sr-only', textContent: TEXT[lang].unsaved });
+  return [document.createTextNode(name), mark, said];
+}
+
+let fileTimer: ReturnType<typeof setTimeout> | undefined;
+/** Shows the file's name, and whether it has changes not saved: in the top bar (not on a phone), the menu's Save and the page's title. */
+function showFile(): void {
+  if (!withFiles) return;
+  clearTimeout(fileTimer);
+  const dirty = unsaved();
+  const name = file?.name;
+  const label = $('file-label');
+  label.hidden = !name;
+  label.title = name ? (dirty ? `${name}${TEXT[lang].unsaved}` : name) : '';
+  $('file-name').replaceChildren(...nameWithMark(name ?? '', dirty));
+  // Save says where the script goes: the file, or the name a first save suggests.
+  $('menu-save-name').replaceChildren(...nameWithMark(name ?? defaultName(kind), dirty && !!name));
+  document.title = name ? `${dirty ? '● ' : ''}${name} — Bash Explainer` : 'Bash Explainer';
+}
+/** After an edit: the mark follows once typing rests (comparing the whole text at every key would slow a large file down). */
+function showFileSoon(): void {
+  if (!withFiles) return;
+  clearTimeout(fileTimer);
+  fileTimer = setTimeout(showFile, 150);
+}
+
+/**
+ * Opens a file chosen or dropped: refuses one too large or not text, asks before it replaces changes not saved, then
+ * puts its text in the editor as a new document and sets the kind from its name and content.
+ */
+async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElement | null): Promise<void> {
+  const t = TEXT[lang];
+  if (chosen.size > MAX_BYTES) return status(t.tooLarge(chosen.name));
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await chosen.arrayBuffer();
+  } catch {
+    // A folder dropped, or a file changed or gone since it was chosen.
+    return status(t.notRead(chosen.name));
+  }
+  const read = decodeText(new Uint8Array(bytes));
+  if (read === 'binary') return status(t.notText(chosen.name));
+  if (read === 'cr') return status(t.loneCr(chosen.name));
+  if (unsaved()) {
+    const discard = await ask({
+      id: 'discard', title: t.discardTitle, message: t.discardMessage(chosen.name, window.matchMedia('(pointer: fine)').matches ? shortcut('S') : t.saveInMenu),
+      confirm: { id: 'discard-open', text: t.discard }, cancel: { id: 'discard-cancel', text: t.cancel },
+    }, back);
+    if (!discard) return;
+  }
+  file = { name: chosen.name, handle };
+  format = { eol: read.eol, bom: read.bom };
+  editor.openText(read.text);
+  clean = editor.text;
+  setKind(kindForFile(chosen.name, read.text));
+  status(read.mixed ? t.mixedEol(chosen.name, read.eol === '\n' ? 'LF' : 'CRLF') : t.opened(chosen.name));
+  editor.focusUnlessTouch();
+}
+
+async function openFile(): Promise<void> {
+  const back = document.activeElement as HTMLElement | null;
+  let chosen: ChosenFile | undefined;
+  try {
+    chosen = await chooseFile($<HTMLInputElement>('open-input'));
+  } catch {
+    // Picked, but changed or gone before it could be read.
+    return status(TEXT[lang].notRead());
+  }
+  if (chosen) await openChosen(chosen, back);
+}
+
+/** Saves the editor's text as the file holds it (line ends, BOM): into the file, or where the user says, or as a download. */
+async function saveFile(): Promise<void> {
+  const t = TEXT[lang];
+  const text = editor.text;
+  const before = fileName();
+  const saving = file;
+  const r = await saveText(fileContent(text, format), file?.name ?? defaultName(kind), file?.handle);
+  if (r.how === 'cancelled') return;
+  // Another file was opened while the browser asked (its permission bubble is not modal): that one is not the file saved.
+  if (file !== saving) return status(r.how === 'refused' ? t.notSaved(r.name) : r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
+  if (r.how === 'refused') {
+    // The same write would fail again: the next save asks where.
+    if (file) file = { name: file.name };
+    return status(t.notSaved(r.name));
+  }
+  file = { name: r.name, handle: r.how === 'written' ? r.handle : undefined };
+  clean = text;
+  showFile();
+  status(r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
+  // A new name can say another shell (`.zsh`).
+  if (fileName() !== before) {
+    editor.shade();
+    updatePanel();
+    editor.recheck();
+  }
+}
+
+/** Ctrl+S and Ctrl+O (⌘S and ⌘O on a Mac), also with the focus in the panel's frame: the page's save and open, not the browser's. */
+function fileKeys(e: KeyboardEvent): void {
+  const mod = isMac() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+  if (!mod || e.altKey || e.shiftKey) return;
+  // The letter typed, or on a keyboard of another script the key at its place.
+  const key = /^[a-z]$/i.test(e.key) ? e.key.toLowerCase() : ({ KeyS: 's', KeyO: 'o' } as Record<string, string>)[e.code];
+  if (key !== 's' && key !== 'o') return;
+  e.preventDefault();
+  // A question or the settings are open: they come first.
+  if (e.repeat || document.querySelector('dialog.ask[open], #settings-dialog[open]')) return;
+  if (drawer?.open) drawer.close();
+  void (key === 's' ? saveFile() : openFile());
+}
+
+/** Whether a drag carries files (not text dragged from the editor or another page). */
+const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+
+/** Anywhere but on the editor, a file dropped would make the browser show it instead of the page: refuse it. */
+function refuseDrops(w: Window): void {
+  w.addEventListener('dragover', (e) => {
+    if (!hasFiles(e) || e.defaultPrevented) return; // the settings take a dropped settings file
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = 'none';
+  });
+  w.addEventListener('drop', (e) => {
+    if (hasFiles(e)) e.preventDefault();
+  });
+}
+
+if (withFiles) {
+  window.addEventListener('keydown', fileKeys, true);
+  refuseDrops(window);
+  // The panel's frame is a page of its own (the same origin): its keys and drops too, each time it loads.
+  const frame = document.getElementById('panel') as HTMLIFrameElement | null;
+  const watchFrame = () => {
+    const w = frame?.contentWindow;
+    if (!w || w.location.href === 'about:blank') return;
+    w.addEventListener('keydown', fileKeys, true);
+    refuseDrops(w);
+  };
+  frame?.addEventListener('load', watchFrame);
+  if (frame?.contentDocument?.readyState === 'complete') watchFrame();
+
+  // Leaving the page (closing it, reloading it, another version) would lose changes not saved to the file: the browser asks.
+  window.addEventListener('beforeunload', (e) => {
+    if (file && unsaved()) e.preventDefault();
+  });
+
+  on('menu-open-file', 'click', () => {
+    drawer?.close();
+    void openFile();
+  });
+  on('menu-save', 'click', () => {
+    drawer?.close();
+    void saveFile();
+  });
+
+  // A file dragged over the editor: the drop target shows while it is there, and a drop opens the file. Taken before
+  // CodeMirror, which would put the file's text where it is dropped. The target goes when the drag leaves the editor
+  // (for the page or the window) or ends; and, in case a browser misses that, a second after the last dragover
+  // (browsers repeat it every 350 ms or so while the pointer rests, or only when it moves).
+  const source = $('source');
+  const target = $('drop-target');
+  let dragTimer: ReturnType<typeof setTimeout> | undefined;
+  const hideTarget = () => {
+    clearTimeout(dragTimer);
+    target.hidden = true;
+  };
+  source.addEventListener('dragover', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer!.dropEffect = 'copy';
+    target.hidden = false;
+    clearTimeout(dragTimer);
+    dragTimer = setTimeout(hideTarget, 1000);
+  }, true);
+  source.addEventListener('dragleave', (e) => {
+    if (!source.contains(e.relatedTarget as Node | null)) hideTarget();
+  });
+  window.addEventListener('dragend', hideTarget);
+  source.addEventListener('drop', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    hideTarget();
+    const dropped = e.dataTransfer!.files[0];
+    if (!dropped) return;
+    // Chromium gives the file's handle too, so that a save writes to it; it is to be asked for during the event.
+    const item = [...e.dataTransfer!.items].find((i) => i.kind === 'file') as (DataTransferItem & { getAsFileSystemHandle?(): Promise<FileSystemHandle | null> }) | undefined;
+    const handle = item?.getAsFileSystemHandle?.().catch(() => null);
+    const back = document.activeElement as HTMLElement | null;
+    void Promise.resolve(handle).then((h) => openChosen({ file: dropped, handle: h?.kind === 'file' ? (h as FileSystemFileHandle) : undefined }, back));
+  }, true);
+}
+
 // ---- Start ----------------------------------------------------------------------------------
 
 async function start(): Promise<void> {
@@ -628,6 +882,8 @@ async function start(): Promise<void> {
     const text = await inflate(shared.deflated);
     if (text !== undefined) editor.setText(text, 1);
   }
+  clean = editor.text;
+  showFile();
   updatePanel();
   editor.recheck();
   // In panel mode: tell the page around that this copy is ready for a script.

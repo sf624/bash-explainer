@@ -237,6 +237,8 @@ export class Editor {
   /** Wrapping of long lines (the `editor.wrap` setting). */
   private readonly wrapMode = new Compartment();
   private readonly inputMode = new Compartment();
+  /** The undo history: emptied when a file is opened (openText). */
+  private readonly historyMode = new Compartment();
   private readonly shadings = new WeakMap<ShellDocument, { shell: string; spans: Shading[] }>();
   private shadingTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly hintCaches = new WeakMap<ShellDocument, HintCache>();
@@ -275,7 +277,7 @@ export class Editor {
         doc: init.text,
         selection: { anchor: 0 },
         extensions: [
-          lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(),
+          lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), this.historyMode.of(history()),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
@@ -396,6 +398,17 @@ export class Editor {
     // On its own in the history, so that one undo takes back the replacement and nothing typed just before it.
     this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: text }, annotations: isolateHistory.of('full') });
     this.placeCursor(cursorLine);
+  }
+
+  /**
+   * Puts in the text of a file just opened, as a new document: the undo history starts again, so that no undo brings
+   * back the text before it, which a save would then write into the file.
+   */
+  openText(text: string): void {
+    this.view.dispatch({ effects: this.historyMode.reconfigure([]) });
+    this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: text } });
+    this.view.dispatch({ effects: this.historyMode.reconfigure(history()) });
+    this.placeCursor(1);
   }
 
   /** Replaces the text as it is (panel mode: not a user edit, no history entry of its own). */

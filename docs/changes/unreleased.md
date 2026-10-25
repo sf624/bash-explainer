@@ -192,6 +192,22 @@ Only clear signals count; otherwise the kind stays:
 
 A shell script without a shebang says nothing clear, so pasting one keeps the kind. A Makefile whose recipes are indented with spaces is not one make accepts ("missing separator"), and looks like YAML, so it is detected only with a `.PHONY:` line.
 
+### Opening and saving files (web page)
+
+The web page opens a file from your computer and saves the script to one. The file is read in the browser and uploaded nowhere. Before, the only way in was a paste, and the only way out a copy.
+
+| To | Do |
+| --- | --- |
+| Open a file | **Open file…** in the menu (☰), `Ctrl+O` (`⌘O` on a Mac), or drop the file on the editor |
+| Save | `Ctrl+S` (`⌘S` on a Mac), also with the focus in the explanation, or **Save** in the menu |
+
+- **The kind** comes from the file's name, as in VS Code: `Dockerfile`, `Containerfile`, `Makefile`, `*.mk`, `*.yml`, `package.json`, `*.md`, `*.py`, `Jenkinsfile`, `*.bats` (or a bats shebang). A shell extension (`.sh`, `.bash`, `.zsh`…) makes a shell script. Any other name is read like a paste (the table above), and is a shell script when nothing is clear. A name like `deploy.zsh` also says which shell the script is for.
+- **Saving** writes the script back to the file it was opened from, in Chrome and Edge (the browser asks once for the permission to edit it). A script that came from no file opens the browser's Save dialog the first time; later saves write to the same file. Browsers that cannot write files (Firefox, Safari) download the script instead, so each save is a new download. A file that was never opened is named after the kind: `script.sh`, `Dockerfile`, `Makefile`, `ci.yml`, `package.json`, `README.md`, `deploy.py`, `Jenkinsfile`, `test.bats`.
+- **Saving** again after the browser could not write to the file (permission refused, a read-only or moved file) asks where to save.
+- **The text is kept byte for byte**: UTF-8 as it was, a BOM if there was one, no newline added at the end, and the file's line ends. A file with CRLF line ends is saved with CRLF, and gets the `crlf` warning, as bash would fail on it. A file that mixed CRLF and LF is saved with the more common one, and a toast says so. The BOM is left out of the script, as VS Code does, so a shebang after it is read as one.
+- **Changes not saved**: the top bar shows the file's name (the menu's Save on a phone, and the tab's title), with ● after it while there are changes not saved. Opening another file over them asks first; Cancel (or Esc) keeps them. Leaving the page (closing it, reloading it) with them makes the browser ask. Opening a file starts a new undo history, so Undo never brings back the text before it. Loading a sample leaves the file; the toast's Undo brings it back.
+- **Refused files**: a file larger than 1 MiB (the page explains the whole text again after every change, and at 1 MiB that already takes about 4 s), a file that is not UTF-8 text (a NUL byte, or bytes that are not UTF-8), and a file with a CR that ends no line (`printf '50%\r'` written with a real CR), which the editor would turn into a line break. The page says why, and keeps the script.
+
 ### Panel colours from the editor theme
 
 `bashExplainer.panel.colors` (VS Code only) chooses where the panel's colours come from:
