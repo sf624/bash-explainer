@@ -1181,7 +1181,24 @@ body.vscode-high-contrast-light #reading-tree li.band {
   margin-right: 0.1em;
 }
 
+/* A space at an end of a value, drawn by CSS (media/panel.js `valueLine`): a glyph for it (the symbol for a space) is a box
+   where no font has it. A real space in a box with a bottom edge, like the open box that marks a space in a terminal. */
+.ev-sp {
+  display: inline-block;
+  white-space: pre;
+  width: 1ch;
+  height: 0.55em;
+  box-sizing: border-box;
+  border: 1px solid var(--c-muted);
+  border-top: 0;
+  vertical-align: -0.1em;
+}
+
 @media (forced-colors: active) {
+  .ev-sp {
+    border-color: CanvasText;
+  }
+
   #reading-tree li.band {
     background: none;
     border: 0;

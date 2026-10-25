@@ -454,21 +454,43 @@
     const s = value.said;
     const d = document.createElement('span');
     d.className = 'ev-value';
-    const chip = (/** @type {string} */ text) => {
+    // A space at an end of a shown text is a real space in an element that CSS draws (`.ev-sp`), with a name for a screen
+    // reader: the glyph for it (`␠`) is a box where no font has it. `ends` is how many characters at each end are such marks.
+    const space = () => {
+      const m = document.createElement('span');
+      m.className = 'ev-sp';
+      m.setAttribute('role', 'img');
+      m.setAttribute('aria-label', s.spaceLabel || '');
+      m.textContent = ' ';
+      return m;
+    };
+    const chip = (/** @type {string} */ text, /** @type {number[] | undefined} */ ends) => {
       const c = document.createElement('code');
       c.className = 'ev-word';
-      c.textContent = text;
+      const [before, after] = ends || [0, 0];
+      const chars = [...text];
+      for (let i = 0; i < before; i++) c.append(space());
+      c.append(chars.slice(before, chars.length - after).join(''));
+      for (let i = 0; i < after; i++) c.append(space());
       return c;
     };
     const lead = document.createElement('span');
     lead.className = 'ev-lead';
     lead.textContent = `${s.lead} `;
-    d.append(lead, s.value !== undefined ? chip(s.value) : s.empty);
+    d.append(lead, s.value !== undefined ? chip(s.value, s.valueEnds) : s.empty);
     if (s.split) {
       d.append(...inline(s.split.said));
-      for (const w of s.split.words) d.append(' ', chip(w));
+      s.split.words.forEach((w, i) => d.append(' ', chip(w, s.split.wordEnds[i])));
     }
-    if (s.tail) d.append(...inline(s.tail));
+    if (s.tail) {
+      // (The note that names the mark shows it the same way.)
+      d.append(...inline(s.tail).map((n) => {
+        if (!(n instanceof HTMLElement) || n.textContent !== '\u2423') return n;
+        const c = document.createElement('code');
+        c.append(space());
+        return c;
+      }));
+    }
     return d;
   }
 

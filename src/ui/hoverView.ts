@@ -8,7 +8,7 @@ import { Lang } from '../i18n';
 import { joinParts, labelParts } from '../label';
 import { manualLabel, SECTIONS } from '../manual';
 import { isCommand, partNotes, ProblemAt, sameSpan, shown, valueOf } from './hoverParts';
-import { type NoteLevel, splitNote, type ValueSaid } from '../messages';
+import { type NoteLevel, SPACE_MARK, type SpaceEnds, splitNote, type ValueSaid } from '../messages';
 import { levelColour, ThemeKind } from './palette';
 import { colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, plainNotes, refsMarkdown, ui, valueMarkdown } from './render';
 
@@ -96,12 +96,27 @@ export function prose(text: string): string {
 }
 
 /**
+ * A mark of a space in a hover: a real (non-breaking) space on the badge background, with the name of the mark as its
+ * tooltip. A hover keeps only a few styles on a span (`colored`), and a glyph for a space (`␠`) is a box where no font has it.
+ */
+const spaceMark = (label: string) => `<span style="background-color:var(--vscode-badge-background);border-radius:2px;" title="${attr(label)}">&nbsp;</span>`;
+
+/** The shown text of a value, or of a word of it, as `<code>`: the marks at its ends (`SpaceEnds`) are drawn as `spaceMark`. */
+function valueCode(text: string, [lead, trail]: SpaceEnds, mark: string): string {
+  const middle = [...text].slice(lead, [...text].length - trail).join('');
+  return `<code>${mark.repeat(lead)}${escapeHtml(middle).replace(/ /g, '&nbsp;')}${mark.repeat(trail)}</code>`;
+}
+
+/**
  * The line of a value (`ValueSaid`) as HTML, made of its parts: the value and the words are code as they are, not
  * found again in the Markdown text, where a backtick in a value is ambiguous with a fence.
  */
 export function valueHtml(said: ValueSaid): string {
-  const split = said.split ? `${prose(said.split.said)}${said.split.words.map((w) => ` ${codeHtml(w)}`).join('')}` : '';
-  return `${escapeHtml(said.lead)} ${said.value !== undefined ? codeHtml(said.value) : escapeHtml(said.empty!)}${split}${said.tail ? prose(said.tail) : ''}`;
+  const mark = spaceMark(said.spaceLabel ?? '');
+  const split = said.split ? `${prose(said.split.said)}${said.split.words.map((w, i) => ` ${valueCode(w, said.split!.wordEnds[i], mark)}`).join('')}` : '';
+  // (The note that names the mark shows it the same way.)
+  const tail = said.tail ? prose(said.tail).replace(`<code>${SPACE_MARK}</code>`, `<code>${mark}</code>`) : '';
+  return `${escapeHtml(said.lead)} ${said.value !== undefined ? valueCode(said.value, said.valueEnds!, mark) : escapeHtml(said.empty!)}${split}${tail}`;
 }
 
 /**
