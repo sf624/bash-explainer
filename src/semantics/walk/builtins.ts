@@ -290,10 +290,10 @@ export class WalkBuiltins {
       this.w.frames.pop();
       return st;
     }
-    // `local -` (`locals: 'always'`): the set options come back when the function returns.
+    // `local -` (`localOptions`): the set options come back when the function returns.
     const frame = this.w.frames[this.w.frames.length - 1];
-    if (spec.locals === 'always' && words.some((w) => staticWordValue(w) === '-')) frame.options ??= st.set;
-    const local = this.w.frames.length > 0 && (spec.locals === 'always' || (spec.locals === 'unless-g' && !on.includes('g')));
+    if (spec.localOptions && words.some((w) => staticWordValue(w) === '-')) frame.options ??= st.set;
+    const local = this.w.frames.length > 0 && spec.locals === 'unless-g' && !on.includes('g');
     const gives = builtin === 'export' ? (on.includes('n') ? '' : 'x') : builtin === 'readonly' ? 'r' : [...on].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
     const removes = builtin === 'export' && on.includes('n') ? 'x' : [...off].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
     // (An option the spec does not know, `declare -c`, may change the values assigned: they are not known.)

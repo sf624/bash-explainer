@@ -94,6 +94,53 @@ function literalText(e: ts.Expression): string | undefined {
   return ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) ? e.text : undefined;
 }
 
+/** `e` without the parentheses, `as` and `satisfies` around it, and `!`. */
+function bare(e: ts.Expression): ts.Expression {
+  while (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isSatisfiesExpression(e) || ts.isNonNullExpression(e)) e = e.expression;
+  return e;
+}
+
+/** The initializer of the `const` that `e` names (through an import too), or undefined. */
+function constValue(checker: ts.TypeChecker, e: ts.Expression): ts.Expression | undefined {
+  if (!ts.isIdentifier(e)) return undefined;
+  let sym = checker.getSymbolAtLocation(e);
+  if (sym && sym.flags & ts.SymbolFlags.Alias) sym = checker.getAliasedSymbol(sym);
+  const d = sym?.declarations?.find(ts.isVariableDeclaration);
+  return d && ts.getCombinedNodeFlags(d) & ts.NodeFlags.Const ? d.initializer : undefined;
+}
+
+/**
+ * The string literals a container is written with: an array literal (`['local', 'declare']`), a `new Set([…])` of one,
+ * or a `const` holding either. Undefined for any other expression (a container filled at run time).
+ */
+function containerLiterals(checker: ts.TypeChecker, e: ts.Expression, depth = 0): string[] | undefined {
+  e = bare(e);
+  if (ts.isArrayLiteralExpression(e)) return e.elements.map(literalText).filter((t): t is string => t !== undefined);
+  if (ts.isNewExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === 'Set' && e.arguments?.length) return containerLiterals(checker, e.arguments[0], depth + 1);
+  const value = depth < 5 ? constValue(checker, e) : undefined;
+  return value && containerLiterals(checker, value, depth + 1);
+}
+
+/**
+ * The words a regular expression is an alternation of (`/^(local|declare)$/`, `/^(?:sed|awk)$/`, `/^grep$/`, a
+ * `new RegExp('…')` of a literal, or a `const` holding either): the pattern without its anchors and its outer group,
+ * when every alternative is a plain word. Undefined for any other pattern (`/^-[a-z]*g/`).
+ */
+function regexWords(checker: ts.TypeChecker, e: ts.Expression, depth = 0): string[] | undefined {
+  e = bare(e);
+  let source: string | undefined;
+  if (ts.isRegularExpressionLiteral(e)) source = e.text.slice(1, e.text.lastIndexOf('/'));
+  else if (ts.isNewExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === 'RegExp' && e.arguments?.length) source = literalText(e.arguments[0]);
+  else {
+    const value = depth < 5 ? constValue(checker, e) : undefined;
+    return value && regexWords(checker, value, depth + 1);
+  }
+  if (source === undefined) return undefined;
+  const inner = /^(?:\((?:\?:)?([^()]*)\)|([^()]*))$/.exec(source.replace(/^\^/, '').replace(/\$$/, ''));
+  const alternatives = (inner?.[1] ?? inner?.[2])?.split('|');
+  return alternatives?.every((a) => /^(?:[\w-]|\\\.)+$/.test(a)) ? alternatives.map((a) => a.replace(/\\\./g, '.')) : undefined;
+}
+
 const COMPARISONS = new Set([ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken]);
 
 /**
@@ -103,7 +150,10 @@ const COMPARISONS = new Set([ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.Equa
  * contains it (for a membership test, the parameter type of the method it calls, which is the element type of the
  * container): a value of a model (`'alias'` of a name's resolution, `'sed'` of `EmbeddedLang`), not a command name read from
  * a script. `string`, `any` and a union with `string` in it are open, and the comparison is found. The one exception is
- * `SyntaxNode.type`, an open `string` whose values (`command`, `test`) are node types. Returns the text of what is found.
+ * `SyntaxNode.type`, an open `string` whose values (`command`, `test`) are node types. A membership test the other way
+ * round is a comparison too: a value tested against a container written with names (`['local', 'declare'].includes(x)`,
+ * `new Set(['local']).has(x)`, a `const` holding one) or a regular expression of names (`/^(local|declare)$/.test(x)`),
+ * found when one of the names is a command's and the value is open. Returns the text of what is found.
  */
 function nameComparisons(checker: ts.TypeChecker, sf: ts.SourceFile, names: ReadonlySet<string>): string[] {
   const found: string[] = [];
@@ -120,6 +170,10 @@ function nameComparisons(checker: ts.TypeChecker, sf: ts.SourceFile, names: Read
       const text = literalText(n.arguments[0]);
       const param = checker.getResolvedSignature(n)?.getParameters()[0];
       if (text !== undefined && names.has(text) && !(param && closedWith(checker, checker.getTypeOfSymbolAtLocation(param, n), text))) found.push(n.getText(sf));
+      // A value (not a literal) tested against the names a container is written with.
+      else if (text === undefined && containerLiterals(checker, n.expression.expression)?.some((t) => open(n.arguments[0], t))) found.push(n.getText(sf));
+    } else if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ['test', 'exec'].includes(n.expression.name.text) && n.arguments.length > 0) {
+      if (literalText(n.arguments[0]) === undefined && regexWords(checker, n.expression.expression)?.some((t) => open(n.arguments[0], t))) found.push(n.getText(sf));
     }
     ts.forEachChild(n, visit);
   };
@@ -226,6 +280,20 @@ const fixtures: { name: string; code: string; found: string[] }[] = [
   { name: 'closed-case', code: `type EmbeddedLang = 'sed' | 'awk' | 'jq' | 'date' | 'regex';\nexport function f(lang: EmbeddedLang) { switch (lang) { case 'sed': case 'awk': return 1; case 'jq': case 'date': return 2; case 'regex': return 3; } return 0; }`, found: [] },
   { name: 'closed-bare', code: `type Lang = 'sed' | 'awk';\nexport function f(lang: Lang, maybe: Lang | undefined) { return lang === 'sed' || maybe !== 'awk'; }`, found: [] },
   { name: 'closed-mixed', code: `export function f(g: { value: string } | 'unset' | 'unknown') { return g !== 'unset'; }`, found: [] },
+  // A value tested against literals that are names: an array, a set, a constant of either, a regular expression of names.
+  {
+    name: 'open-containers',
+    code: "const LOCALS = new Set(['local', 'declare']);\nconst LIST = ['zzz', 'sed'] as const;\nconst RE = /^(?:grep|egrep)$/;\n"
+      + "export function f(x: string, y: any) { return ['local', 'qq'].includes(x) || new Set<string>(['unset']).has(x) || LOCALS.has(x) || (LIST as readonly string[]).includes(x) || /^(local|declare)$/.test(x) || RE.test(y) || new RegExp('^(sed|awk)$').exec(x) || /^alias$/.test(x); }",
+    found: ["['local', 'qq'].includes(x)", "new Set<string>(['unset']).has(x)", 'LOCALS.has(x)', '(LIST as readonly string[]).includes(x)', '/^(local|declare)$/.test(x)', 'RE.test(y)', "new RegExp('^(sed|awk)$').exec(x)", '/^alias$/.test(x)'],
+  },
+  // Not names, a closed value, or a pattern that is not an alternation of words.
+  {
+    name: 'closed-containers',
+    code: "const NOT = new Set(['zzz', 'qq']);\nlet later = ['sed'];\n"
+      + "export function f(x: string, y: 'local' | 'file', s: Set<string>) { return NOT.has(x) || ['a', 'b'].includes(x) || /^(zzz|qq)$/.test(x) || /^(local|file)$/.test(y) || ['local', 'file'].includes(y) || /^-[a-z]*g/.test(x) || /^(sed|a[bc])$/.test(x) || later.includes(x) || s.has(x); }",
+    found: [],
+  },
   { name: 'closed-members', code: `const LIST = ['sed', 'awk'] as const;\nexport function f(s: Set<'sed' | 'awk'>, m: ReadonlySet<'grep'>) { return LIST.includes('sed') || s.has('awk') || m.has('grep'); }`, found: [] },
   // The node type of the syntax tree is the one open string that is allowed.
   { name: 'node-type', code: `export function f(node: SyntaxNode, p: SyntaxNode | null) { return node.type === 'command' || 'command' === node.type || p?.type !== 'declare'; }`, found: [] },

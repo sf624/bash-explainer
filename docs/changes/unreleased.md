@@ -81,7 +81,7 @@ It is said for `$x`, `${x}`, `${#x}`, `${x[0]}`, `${x:1}`, `${x#p}` and the othe
 
 In a redirection or a here-document of a builtin, a function, a compound command or no command (`read -r v <<E`, `{ …; } > "$f"`), the shell running it exits. In one of a program (`cat < "$f"`, `cat <<E`, `command cat < "$f"`), bash fails in the program's own process: the pitfall says that the command does not run and fails with status 1, and the script goes on (as information). With `set -e` where it is not ignored (`set -euo pipefail; cat < "$f"`), it adds that `set -e` stops the script, as a warning; in a condition (`if cat < "$f"`) it does not. `command -v cat < "$f"` and `exec cat < "$f"` end the script.
 
-The note quotes the message of bash, or of dash (`dir: parameter not set`) in a script for dash. For another shell (sh, ksh, zsh…) it says only that reading the variable is an error. It adds "unless `dir` comes from the environment" except where the script removed the variable on every path before: `unset dir`, or `local dir` (`declare dir` in a function) where the function reads its local one. A `declare dir` outside a function keeps a value from the environment.
+The note quotes the message of bash, or of dash (`dir: parameter not set`) in a script for dash. For another shell (sh, ksh, zsh…) it says only that reading the variable is an error. It adds "unless `dir` comes from the environment" except where the script removed the variable on every path before: `unset dir`, or `local dir` (`declare dir` in a function) where the function reads its local one. A `declare dir` outside a function keeps a value from the environment. `local -g y=2`, like `declare -g y=2`, sets the global variable, so `"$y"` after it is set (`local -g y` keeps the global value).
 
 It is not said:
 
@@ -514,6 +514,7 @@ The example of a pipeline inside `$( )` or `<( )` was titled with the command ar
 | `toString x`, `constructor`, `hasOwnProperty a`, `valueOf`, `__proto__` (bash: not found) | "Run the external command `toString`", badge program | the same text with the badge builtin, also after `builtin`; after `enable -n toString`, "`enable -n` … turned the builtin `toString` off" |
 | `set -o constructor`, `cat < constructor`, `echo hi 2> valueOf` | "Value for `-o`"; "Read file `constructor` as stdin (fd 0)" | "constructor: undefined"; "… as stdin (fd 0). undefined" |
 | `jq 'constructor' a.json`, `yq '.a \| constructor' a.yaml`, `echo '{"a":1}' \| jq '.toString'` | "a function (built-in or defined with `def`)"; the example prints `null`, as jq does | the line was not explained (an error) |
+| `jq -n '{} \| .__proto__ = 3'`, `setpath(["__proto__"]; 5)`, `{} * {"__proto__": {"a": 1}}`, `from_entries`, `jq -n --arg __proto__ v '$__proto__'`, `yq -n '.__proto__ = 3'` | the example prints `{"__proto__": 3}`, `"v"`, as jq and yq do | the key, or the variable, was lost (`{}`) |
 
 The tables the explanations read (the commands, the variables, the functions of jq, yq, awk and perl, the classes of a bracket expression, the words of `date -d`…) are looked up by the words of the script; those that are also the names of what every JavaScript object has found that instead.
 

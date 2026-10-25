@@ -1308,6 +1308,49 @@
     }
   },
   {
+    "manual": "4.3.1",
+    "snippet": "set -u; g() { local -g y=2; @PROBE:a@ \"$y\"; }; g",
+    "note": "local -g sets the global variable, as declare -g does",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; x=1; f() { local -g x; @PROBE:a@ \"$x\"; }; f",
+    "note": "local -g x keeps the global value",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; f() { local -g -a arr=(a b); }; f; @PROBE:a@ \"${arr[@]}\"",
+    "note": "local -g -a makes a global array",
+    "facts": {
+      "a": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "a": "array values are not followed (4.7)"
+    }
+  },
+  {
     "manual": "4.2",
     "snippet": "x='a  b'; declare a=$x; declare \"b=$x\"; declare \"c\"=$x; @PROBE:a@ \"$a\" \"$b\" \"$c\"",
     "note": "A declaration's word is an assignment only when its name is unquoted: `\"c\"=$x` is split into `c=a` and `b`.",

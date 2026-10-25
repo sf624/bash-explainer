@@ -95,6 +95,12 @@ const pairs: [string, Json][] = [
   ['[label $a | (1, 2) | ., (select(. == 1) | break $a)]', null],
   ['break $x', null],
   ['map(type)', [0, -0]], ['.[] | numbers', [1.5]], ['ltrimstr("x")', null],
+  // `__proto__` is a key like any other (jq 1.7), not a JavaScript prototype.
+  ['.__proto__ = 3, (.__proto__ |= 3), setpath(["__proto__"]; 5), . * {"__proto__": {"a": 1}}, (.a.__proto__ |= 1), (.__proto__ += 1)', {}],
+  ['. * {"__proto__": {"b": 2}}, (.__proto__.c = 3), del(.__proto__), keys, has("__proto__")', JSON.parse('{"__proto__":{"a":1},"z":0}')],
+  ['from_entries', [{ key: '__proto__', value: 1 }, { key: 'a', value: 2 }]], ['with_entries(.value += 1)', JSON.parse('{"__proto__":1,"b":2}')],
+  ['reduce ("__proto__", "a") as $k ({}; .[$k] = 1)', null], ['{"__proto__": 1, (.k): 2, b: 3}, {(.k): {}}', { k: '__proto__' }],
+  ['keys, has("__proto__"), .__proto__, to_entries', {}], ['.[] |= . + 1', JSON.parse('{"__proto__":1}')],
 ];
 
 describe('jq evaluator agrees with jq', function () {

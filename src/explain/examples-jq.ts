@@ -9,6 +9,7 @@ import { type InputBox, jqStepSections, type RerunSpec } from '../examples/rerun
 import { type InputSource, knownLines, NO_INPUT, readOrder, shareOut, shownSource, streamLabel } from '../examples/source';
 import { type YamlStyle, YamlUnsupported, yamlLines, yqYamlOutput } from '../examples/yaml';
 import { literalContent } from '../staticword';
+import { wordTable } from '../wordtable';
 import type { Explainer } from './context';
 import { inputSource, interactive } from './examples';
 import { given, optionValues } from './reads';
@@ -26,7 +27,8 @@ function unwrapScalar(cx: Explainer): boolean {
 
 /** --arg / --argjson values of the current jq command. */
 export function jqVars(cx: Explainer): Record<string, Json> {
-  const vars: Record<string, Json> = {};
+  // (No prototype: `--arg __proto__ v` is a variable like any other.)
+  const vars = wordTable<Json>({});
   const args = optionValues(cx, '--arg', '--argjson');
   args.forEach(({ text: name, of, index }, i) => {
     // The name, then its value.
@@ -40,6 +42,14 @@ export function jqVars(cx: Explainer): Record<string, Json> {
   });
   return vars;
 }
+
+/**
+ * The formats mikefarah/yq v4 reads and prints by a file's extension, other than YAML (any other extension, or none):
+ * JSON, or one not followed here (`?`).
+ */
+const YQ_FORMAT_OF_EXTENSION = wordTable<'json' | '?'>({
+  json: 'json', xml: '?', csv: '?', tsv: '?', toml: '?', properties: '?', props: '?', ini: '?', lua: '?', hcl: '?', env: '?', kyaml: '?',
+});
 
 /** Input and output of a yq expression, in the YAML each yq reads and prints. */
 export function yqExample(cx: Explainer, filter: string, style: YamlStyle): void {
@@ -63,7 +73,7 @@ export function yqExample(cx: Explainer, filter: string, style: YamlStyle): void
     // knows), and prints the format `-o` names, or the one of the extension. Formats other than JSON and YAML are not followed.
     const first = src.streams[0];
     const ext = first && first.kind !== 'stdin' ? /\.([^./]+)$/.exec(first.name)?.[1].toLowerCase() : undefined;
-    const byExt = ext && ['xml', 'csv', 'tsv', 'toml', 'properties', 'props', 'ini', 'lua', 'hcl', 'env', 'kyaml'].includes(ext) ? '?' : ext === 'json' ? 'json' : 'yaml';
+    const byExt = (ext && YQ_FORMAT_OF_EXTENSION[ext]) || 'yaml';
     const p = last('-p', '--input-format');
     const input = p === undefined ? byExt : formatOf(p);
     const o = last('-o', '--output-format');

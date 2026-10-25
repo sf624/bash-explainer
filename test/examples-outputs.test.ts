@@ -50,6 +50,9 @@ describe('jq examples print as jq does', () => {
     'jq -R . f.txt', 'jq -Rs . f.txt', "jq -R 'split(\",\")' f.csv", "jq -R 'length' a b", "jq -n '[inputs]' a.json b.json", "jq -n 'input' a.json b.json",
     "jq -n '[inputs | .name]' a.json b.json", "jq '[., input]' a.json", "jq -n '{a:1}'", "jq -nc '[1,2]'", "jq '.a' <<< '{\"a\":{\"b\":1}}'",
     "jq -S '.items' a.json", "jq -n '[inputs]' a.json a.json", 'jq -n input < b.json', "jq -n '[inputs]' - a.json < b.json",
+    // `__proto__` is a key and a variable like any other.
+    "jq -n --arg __proto__ v '$__proto__'", "jq -nc --argjson __proto__ 1 '{a: $__proto__}'", "jq -nc '{} | .__proto__ = 3'", "jq -nc '{} * {\"__proto__\": {\"a\": 1}}'",
+    "jq -nc '[{key: \"__proto__\", value: 1}] | from_entries'", "jq -c '.__proto__ |= 1' <<< '{\"__proto__\": 0, \"b\": 2}'",
   ]);
   it('sorts the keys of objects inside arrays too (-S)', () => {
     assert.deepStrictEqual(jqPrint([{ b: 1, a: [{ d: 1, c: 2 }] }], { indent: 0, sortKeys: true }), ['[{"a":[{"c":2,"d":1}],"b":1}]']);
@@ -71,7 +74,7 @@ describe('mikefarah/yq examples print as yq does', () => {
     "yq -r '.name' f.json", "yq -o json -r '.name' f.yml", "yq -r=false '.name' f.json", "yq -o json -r=false '.name' f.yml", "yq --unwrapScalar '.name' f.json",
     "yq -r '.name' f.yml", "yq '.' a.yaml b.yaml", "yq '.name' a.yaml b.yaml",
     // -i writes the result of every file into the first.
-    "yq -i '.a' a.yaml b.yaml", "yq -i '.a' a.yaml", "yq -i -o json '.' a.yaml b.yaml",
+    "yq -i '.a' a.yaml b.yaml", "yq -i '.a' a.yaml", "yq -i -o json '.' a.yaml b.yaml", "yq -n '.__proto__ = 3'", "yq -n '.a.__proto__ = 3'",
   ], yq ? { yq } : {});
   it('says in Japanese which file -i rewrites', () => {
     assert.deepStrictEqual(exampleOf("yq -i '.a' a.yaml b.yaml", 'ja')?.sections.pop()?.label, '書き換え後の `a.yaml`');

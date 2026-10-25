@@ -235,7 +235,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   // `declare +x`: a `+` turns the attribute off.
   declare: actsOnShell(declarationSpec('declare', declarationFlags, DECLARE_NAMES, { plusOptions: true, locals: 'unless-g' }, declarationOffFlags), declares),
   typeset: actsOnShell(declarationSpec('typeset', declarationFlags, DECLARE_NAMES, { plusOptions: true, locals: 'unless-g' }, declarationOffFlags), declares),
-  local: actsOnShell(declarationSpec('local', declarationFlags, DECLARE_NAMES, { plusOptions: true, scope: 'function', locals: 'always' }, declarationOffFlags), (c) => c.operands.length > 0),
+  local: actsOnShell(declarationSpec('local', declarationFlags, DECLARE_NAMES, { plusOptions: true, scope: 'function', locals: 'unless-g', localOptions: true }, declarationOffFlags), (c) => c.operands.length > 0),
   // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word, `--` too, is text to print.
   // The last of `-e` and `-E` decides whether backslash escapes are read.
   echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', ECHO_OPTIONS, { program: PROGRAMS.echo, ...ECHO_READING }),

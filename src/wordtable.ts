@@ -6,3 +6,11 @@
 export function wordTable<T>(entries: Record<string, T>): Record<string, T> {
   return Object.assign(Object.create(null) as Record<string, T>, entries);
 }
+
+/**
+ * Sets the key `k` of the object `o` as its own, also `__proto__` (`o[k] = v` would set the prototype instead), and
+ * returns `o`. A key `o` has keeps its place; a new one goes last.
+ */
+export function setOwn<T>(o: Record<string, T>, k: string, v: T): Record<string, T> {
+  return Object.defineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true });
+}
