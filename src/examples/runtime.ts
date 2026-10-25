@@ -125,9 +125,44 @@ export interface TestCase {
 
 /**
  * Values that make a simple test true and false. `kind` is `[` (test), `[[` or `((`.
- * Undefined for tests whose result depends on the system (file tests) or on several conditions.
+ * Undefined for tests whose result depends on the system (file tests) or on several conditions. `known`: the value
+ * the script gives the variable there (as one word), which takes the place of the sample with the same result.
  */
-export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | undefined, right: Operand | undefined, quotedRight = false): TestCase[] | undefined {
+export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | undefined, right: Operand | undefined, quotedRight = false, known?: string): TestCase[] | undefined {
+  const cases = sampleTests(kind, op, left, right, quotedRight);
+  // (The model has no values in arithmetic: none for `(( ))`.)
+  const truth = cases && known !== undefined && kind !== '((' ? knownTruth(kind, op, left, right, known) : undefined;
+  if (truth === undefined) return cases;
+  const name = Object.keys(cases![0].vars)[0];
+  const i = cases!.findIndex((c) => c.result === truth);
+  return cases!.map((c, j) => (j === i ? { vars: { [name]: known! }, result: truth } : c));
+}
+
+/** The integer tests, as functions; and the operators of `(( ))` that are the same tests. */
+const NUMERIC: Record<string, (a: number, b: number) => boolean> = {
+  '-eq': (a, b) => a === b, '-ne': (a, b) => a !== b, '-lt': (a, b) => a < b, '-le': (a, b) => a <= b, '-gt': (a, b) => a > b, '-ge': (a, b) => a >= b,
+};
+const ARITH_TESTS: Record<string, string> = { '==': '-eq', '!=': '-ne', '<': '-lt', '<=': '-le', '>': '-gt', '>=': '-ge' };
+
+/**
+ * Whether the test `sampleTests` has cases for is true with `known` for its variable; undefined when that is not
+ * sure here: an integer test of a number that is not a plain decimal integer (`010` is 8 in arithmetic, 10 for `-eq`).
+ */
+function knownTruth(kind: '[' | '[[', op: string, left: Operand | undefined, right: Operand | undefined, known: string): boolean | undefined {
+  if (left === undefined) return op === '-z' ? known === '' : known !== '';
+  const lit = ('lit' in left ? left : right as { lit: string }).lit;
+  const f = NUMERIC[op];
+  if (f) {
+    const plain = (t: string) => /^(0|-?[1-9]\d{0,14})$/.test(t);
+    if (!plain(known) || !plain(lit)) return undefined;
+    return 'var' in left ? f(Number(known), Number(lit)) : f(Number(lit), Number(known));
+  }
+  // (In `[[ ]]` the right side is a pattern: one with a glob character is not compared as text.)
+  if (kind === '[[' && /[*?[]/.test(lit)) return undefined;
+  return (known === lit) !== (op === '!=');
+}
+
+function sampleTests(kind: '[' | '[[' | '((', op: string, left: Operand | undefined, right: Operand | undefined, quotedRight: boolean): TestCase[] | undefined {
   // Unary string tests.
   if (left === undefined && right && 'var' in right) {
     const v = right.var;
@@ -144,15 +179,11 @@ export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | u
   // The other side is the literal.
   const lit = ('lit' in left ? left : right as { lit: string }).lit;
   const varOnLeft = 'var' in left;
-  const numeric: Record<string, (a: number, b: number) => boolean> = {
-    '-eq': (a, b) => a === b, '-ne': (a, b) => a !== b, '-lt': (a, b) => a < b, '-le': (a, b) => a <= b, '-gt': (a, b) => a > b, '-ge': (a, b) => a >= b,
-  };
-  const arith: Record<string, string> = { '==': '-eq', '!=': '-ne', '<': '-lt', '<=': '-le', '>': '-gt', '>=': '-ge' };
-  const numOp = kind === '((' ? arith[op] : numeric[op] ? op : undefined;
+  const numOp = kind === '((' ? ARITH_TESTS[op] : NUMERIC[op] ? op : undefined;
   if (numOp) {
     if (!/^-?\d+$/.test(lit)) return undefined;
     const n = Number(lit);
-    const f = numeric[numOp];
+    const f = NUMERIC[numOp];
     const candidates = [n, n + 1, n - 1, n + 10, n - 10];
     const truth = (x: number) => (varOnLeft ? f(x, n) : f(n, x));
     // n and n + 1 always give one of each.

@@ -7,6 +7,7 @@ import { evalArith, intValue } from './arith';
 import { cannotAssign, expansionOps } from './dict/syntax';
 import type { Explainer } from './explain/context';
 import { isAssoc, shoptAt } from './explain/reads';
+import { scriptValue } from './explain/values';
 import { globChildren, orderNote, variableNote, varDesc } from './explain/words';
 import { globIntro, hasGlob } from './embedded/glob';
 import { hasExtglob } from './examples/shellwords';
@@ -55,7 +56,7 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   if (tf) summary.explanation = h.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
   else if (parsed.op === '@' && parsed.parts.some((p) => p.role === 'transform')) summary.explanation = h.s('パラメータ展開: bash は「bad substitution」のエラーにする（`@` の後ろの文字が変換の種類ではない）', 'Parameter expansion: bash reports "bad substitution" (the letter after `@` is not a transform)');
   if (parsed.op === ':') summary.explanation = h.s('パラメータ展開: ', 'Parameter expansion: ') + substringSummary(h, parsed);
-  const cases = exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: isAssoc(h, parsed.name, n) });
+  const cases = exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: isAssoc(h, parsed.name, n), script: scriptValue(h, n, parsed) });
   // A `${…}` on one line is always on the line explained.
   if (cases) {
     h.example({ kind: 'expansion',

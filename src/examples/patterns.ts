@@ -39,8 +39,10 @@ export function globExample(pattern: string, mode: GlobMode, opts: GlobOpts, ign
 /**
  * Values that match any of the glob patterns (`case` branches, the right side of `[[ == ]]`) and values that do not:
  * found with the matcher of `case`. `texts`: the patterns, undefined where one is not a plain word (then no example).
+ * `known`: the value the script gives the word matched, and whether it is one of the first section (it comes first in
+ * its section, in the place of a sample).
  */
-export function patternExample(texts: (string | undefined)[], opts: GlobOpts, labels: [string, string], lang: Lang): Example | undefined {
+export function patternExample(texts: (string | undefined)[], opts: GlobOpts, labels: [string, string], lang: Lang, known?: { value: string; matches: boolean }): Example | undefined {
   const s = pick(lang);
   if (texts.some((t) => t === undefined)) return undefined;
   const all = texts as string[];
@@ -53,14 +55,22 @@ export function patternExample(texts: (string | undefined)[], opts: GlobOpts, la
     candidates.push(...ex.nonMatching);
   }
   const nonMatching = [...new Set(candidates)].filter((v) => !all.some((t) => globMatches(t, v, 'value', opts))).slice(0, 2);
+  const lines = [[...new Set(matching)], nonMatching];
+  if (known) {
+    const i = known.matches ? 0 : 1;
+    lines[i] = [known.value, ...lines[i].filter((v) => v !== known.value)].slice(0, Math.max(lines[i].length, 1));
+  }
   return { kind: 'glob',
     title: s(`例（パターン \`${all.join('|')}\`）`, `Example (pattern \`${all.join('|')}\`)`),
-    sections: [{ label: labels[0], lines: [...new Set(matching)] }, { label: labels[1], lines: nonMatching }].filter((sec) => sec.lines.length),
+    sections: [{ label: labels[0], lines: lines[0] }, { label: labels[1], lines: lines[1] }].filter((sec) => sec.lines.length),
   };
 }
 
-/** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false. */
-export function testExample(n: SyntaxNode, bracket: TestShape | undefined, asKind: '[' | undefined, lang: Lang): Example | undefined {
+/**
+ * Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false. `known`: the value the script gives the
+ * operand node where the test runs, when it is known (it takes the place of the sample with the same result).
+ */
+export function testExample(n: SyntaxNode, bracket: TestShape | undefined, asKind: '[' | undefined, lang: Lang, known: (x: SyntaxNode) => string | undefined): Example | undefined {
   const s = pick(lang);
   const kind = asKind ?? n.children[0].type as '[' | '[[' | '((';
   let shape: TestShape | undefined;
@@ -87,9 +97,12 @@ export function testExample(n: SyntaxNode, bracket: TestShape | undefined, asKin
     return lit ? { lit: lit.text } : undefined;
   };
   const { left, op, right } = shape;
+  // (The side that is a variable: the other is text.)
+  const side = left && operand(left) && 'var' in operand(left)! ? left : right;
+  const value = known(side);
   const cases = left
-    ? testCases(kind, op, operand(left), operand(right), right.type === 'string' || right.type === 'raw_string')
-    : testCases(kind, op, undefined, operand(right), right.type === 'string');
+    ? testCases(kind, op, operand(left), operand(right), right.type === 'string' || right.type === 'raw_string', value)
+    : testCases(kind, op, undefined, operand(right), right.type === 'string', value);
   if (!cases) return undefined;
   // `$#` and `$?` cannot be assigned: say it in words.
   const show = (vars: Record<string, string>) => Object.entries(vars).map(([k, v]) => (k === '#'

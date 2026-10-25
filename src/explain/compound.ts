@@ -219,7 +219,7 @@ export function caseItem(cx: Explainer, n: SyntaxNode): Token {
     .map((p) => casePattern(cx, p));
   const rest = ordered(cx, n, (c) => has(pats, c) || c.type === '|' || c.type === ')' || c.type === '(');
   if (!isDefault && (cx.line === null || pats.some((p) => intersects(p, cx.line!)))) {
-    cx.examplesAt(n, () => caseExample(cx, pats));
+    cx.examplesAt(n, () => caseExample(cx, n, pats));
   }
   return skeletal(cx.tok(n, 'pattern', expl + (prev && !isDefault ? cx.s('。', '. ') + viaPrev : '') + cx.lineRef(n), sortTokens([...patToks, ...rest])), n);
 }

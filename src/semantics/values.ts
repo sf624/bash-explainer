@@ -4,7 +4,7 @@
 import { ancestor, assignmentsOnly, type SyntaxNode } from '../syntax/tree';
 import { inAnotherShell, type StateModel } from './state';
 import { mayStopAround } from './stops';
-import { partMeaning, trustedPart, wordMeaning } from './words';
+import { partMeaning, trustedPart, trustedVariable, wordMeaning, type WordMeaning } from './words';
 
 /** The value of an expansion: the text it gives, and the words that text makes where it is. */
 export interface ExpansionValue {
@@ -33,6 +33,37 @@ export interface ExpansionValue {
  * from the environment. Undefined otherwise, and where bash fails on it.
  */
 export function expansionValue(part: SyntaxNode, model: StateModel, around = true): ExpansionValue | undefined {
+  const w = shownWord(part, model);
+  if (!w) return undefined;
+  const meaning = partMeaning(part, model)!;
+  if (meaning.split.applies === 'unknown') return undefined;
+  const split = meaning.split.applies;
+  const got = trustedPart(part, w, model, meaning.quoted, split);
+  if (!got) return undefined;
+  // (Nor where another expansion of the statement may fail first: `echo ${e:?} "$e"`; `around`: that is checked.)
+  if (around && stopsAround(part, model)) return undefined;
+  const glob = meaning.glob.applies !== false && got.fields.some((f) => f.glob);
+  if (glob && meaning.glob.applies === 'unknown') return undefined;
+  // (Unquoted, and not the whole word: `$x/c`, `a$e`, `"$a"$b`.)
+  const joined = !meaning.quoted && !(w.nodes.length === 1 && w.nodes[0] === part);
+  return { text: got.text, ...(split && !joined ? { words: got.fields.map((f) => f.text) } : {}), glob, ...(joined ? { joined: true as const } : {}) };
+}
+
+/**
+ * The value of the variable `name` where the expansion `part` runs (`msg` of `${#msg}`), where the model knows it for
+ * sure, as for `expansionValue`: a string, null when it is unset, undefined when it is not known. The worked examples
+ * of `${…}` show it (src/explain/values.ts).
+ */
+export function variableValue(part: SyntaxNode, name: string, model: StateModel): string | null | undefined {
+  const w = shownWord(part, model);
+  return w && !stopsAround(part, model) ? trustedVariable(name, w, model) : undefined;
+}
+
+/** Whether another expansion of the statement of `part` may fail before it runs (`echo ${e:?} "$e"`). */
+const stopsAround = (part: SyntaxNode, model: StateModel): boolean => mayStopAround(part, model, (e) => !!expansionValue(e, model, false));
+
+/** The meaning of the word of the expansion `part`, when the model may say what `part` gives there (`expansionValue`). */
+function shownWord(part: SyntaxNode, model: StateModel): WordMeaning | undefined {
   if ((part.type !== 'simple_expansion' && part.type !== 'expansion') || model.blind !== undefined || (model.shell !== undefined && model.shell !== 'bash')) return undefined;
   if (inAnotherShell(part) || !model.settled(part)) return undefined;
   for (let x: SyntaxNode | null = part; x; x = x.parent) if (model.dead(x)) return undefined;
@@ -43,17 +74,5 @@ export function expansionValue(part: SyntaxNode, model: StateModel, around = tru
   // (A command with no name makes its assignments before it expands its redirections, `a=2 >f$a`: the state the model
   // has there is the one before them.)
   const cmd = ancestor(part, (a) => a.type === 'command');
-  if (cmd && assignmentsOnly(cmd) && cmd.namedChildren.some((c) => c.field === 'redirect' && c.startIndex <= part.startIndex && part.endIndex <= c.endIndex)) return undefined;
-  const meaning = partMeaning(part, model)!;
-  if (meaning.split.applies === 'unknown') return undefined;
-  const split = meaning.split.applies;
-  const got = trustedPart(part, w, model, meaning.quoted, split);
-  if (!got) return undefined;
-  // (Nor where another expansion of the statement may fail first: `echo ${e:?} "$e"`; `around`: that is checked.)
-  if (around && mayStopAround(part, model, (e) => !!expansionValue(e, model, false))) return undefined;
-  const glob = meaning.glob.applies !== false && got.fields.some((f) => f.glob);
-  if (glob && meaning.glob.applies === 'unknown') return undefined;
-  // (Unquoted, and not the whole word: `$x/c`, `a$e`, `"$a"$b`.)
-  const joined = !meaning.quoted && !(w.nodes.length === 1 && w.nodes[0] === part);
-  return { text: got.text, ...(split && !joined ? { words: got.fields.map((f) => f.text) } : {}), glob, ...(joined ? { joined: true as const } : {}) };
+  return cmd && assignmentsOnly(cmd) && cmd.namedChildren.some((c) => c.field === 'redirect' && c.startIndex <= part.startIndex && part.endIndex <= c.endIndex) ? undefined : w;
 }

@@ -17,7 +17,7 @@ import * as pipelines from '../examples/pipeline';
 import { MAX_SHOWN_LINES, pipedOutput, type Stage } from '../examples/pipeline';
 import { type JsRegex, regexExamples } from '../examples/regex';
 import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
-import { type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
+import { globMatches, type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
 import * as sources from '../examples/source';
 import { type InputSource, knownLines, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines } from '../examples/source';
 import { type Text, tx } from '../i18n';
@@ -31,14 +31,26 @@ import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
 import { given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
 import { operands, values } from '../argv/query';
+import { wordValue } from './values';
 import { braceExpansion } from './words';
 
-/** Strings that do and do not match `js` (as grep lines, inverted by -v, or `=~` values). */
-export function regexExample(cx: Explainer, js: JsRegex, mode: 'lines' | 'inverted' | 'values'): void {
+/**
+ * Strings that do and do not match `js` (as grep lines, inverted by -v, or `=~` values). `subject`: the left side of
+ * `=~`, whose value where it runs, when the model knows it, comes first in its section (`subjectValue`).
+ */
+export function regexExample(cx: Explainer, js: JsRegex, mode: 'lines' | 'inverted' | 'values', subject?: SyntaxNode): void {
   const ex = regexExamples(js);
   if (!ex) return;
-  const yes = ex.matching;
-  const no = ex.nonMatching;
+  let yes = ex.matching;
+  let no = ex.nonMatching;
+  // (`nocasematch` makes `=~` ignore case, which `js` does not.)
+  const nocase = subject && shoptAt(cx, subject).nocasematch;
+  const known = subject && (nocase === 'off' || nocase === 'default') ? subjectValue(cx, subject) : undefined;
+  if (known !== undefined) {
+    const first = (lines: string[]) => [known, ...lines.filter((l) => l !== known)].slice(0, Math.max(lines.length, 1));
+    if (new RegExp(js.source, js.flags).test(known)) yes = first(yes);
+    else no = first(no);
+  }
   let sections: ExampleSection[];
   if (mode === 'inverted') {
     sections = [
@@ -78,15 +90,41 @@ export function interactive(cx: Explainer, spec: RerunSpec, inputs: InputBox[]):
   return commandExamples.interactive(spec, inputs, cx.lang);
 }
 
-/** Values that match any of the glob patterns (`case` branches, the right side of `[[ == ]]`) and values that do not: found with the matcher of `case`. */
-export function patternExample(cx: Explainer, pats: SyntaxNode[], labels: [string, string]): void {
+/**
+ * Values that match any of the glob patterns (`case` branches, the right side of `[[ == ]]`) and values that do not:
+ * found with the matcher of `case`. `known`: where the value of the word matched is known (`subjectValue`), it and
+ * whether it is one of the first section.
+ */
+export function patternExample(cx: Explainer, pats: SyntaxNode[], labels: [string, string], known?: { value: string; matches: boolean }): void {
   const texts = pats.map((p) => unquotedWord(p) ?? (p.type === 'extglob_pattern' ? p.text : undefined));
-  pushExample(cx, patterns.patternExample(texts, globOpts(cx, 'pattern', pats[0]), labels, cx.lang));
+  pushExample(cx, patterns.patternExample(texts, globOpts(cx, 'pattern', pats[0]), labels, cx.lang, known));
 }
 
-/** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false. */
+/** `[[ x == pat ]]`: the values that match the pattern `pat` and some that do not, with the value of `x` where the model knows it. */
+export function matchExample(cx: Explainer, n: SyntaxNode, pat: SyntaxNode): void {
+  const left = field(n, 'left');
+  const value = left && shoptAt(cx, n).nocasematch !== 'unknown' ? subjectValue(cx, left) : undefined;
+  const text = unquotedWord(pat) ?? pat.text;
+  const known = value === undefined ? undefined : { value, matches: globMatches(text, value, 'value', globOpts(cx, 'pattern', pat)) };
+  patternExample(cx, [pat], [cx.s('一致する値', 'Values that match'), cx.s('一致しない値', 'Values that do not match')], known);
+}
+
+/**
+ * The value of the word `n` that a test or a pattern matches, where the model knows it (src/explain/values.ts,
+ * `wordValue`), when the matchers of the examples read it as bash does: printable ASCII (the classes such as
+ * `[[:alpha:]]` take more in other locales), and not empty (a line of an example is a value).
+ */
+export function subjectValue(cx: Explainer, n: SyntaxNode): string | undefined {
+  const v = wordValue(cx, n);
+  return v !== undefined && /^[\x20-\x7e]+$/.test(v) ? v : undefined;
+}
+
+/** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false, with the value of its variable where the model knows it. */
 export function testExample(cx: Explainer, n: SyntaxNode, bracket: TestShape | undefined, asKind?: '['): void {
-  pushExample(cx, patterns.testExample(n, bracket, asKind, cx.lang));
+  // (`nocasematch` changes `[[ == ]]`, which the cases do not follow.)
+  const nocase = n.children[0].type === '[[' ? shoptAt(cx, n).nocasematch : 'off';
+  const known = (x: SyntaxNode) => (nocase === 'off' || nocase === 'default' ? wordValue(cx, x) : undefined);
+  pushExample(cx, patterns.testExample(n, bracket, asKind, cx.lang, known));
 }
 
 /** A stage of a pipeline example; `runs`: its operands are a command it runs (xargs), so its step shows the commands. */
@@ -374,7 +412,8 @@ function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[]): void {
   }
   // The line the command reads, when a here-string gives it: `read -a p <<< "a,b,,c,"`.
   const here = n.namedChildren.find((c) => c.type === 'herestring_redirect')?.namedChildren[0];
-  const r = commandExamples.readExample(args.map((a) => literalContent(a)?.text), ifs, here && literalContent(here)?.text, cx.lang);
+  // (A here-string of expansions the model knows is read as their value: `read a b <<< "$x y"`.)
+  const r = commandExamples.readExample(args.map((a) => literalContent(a)?.text), ifs, here && (literalContent(here)?.text ?? wordValue(cx, here)), cx.lang);
   if (!r) return;
   if (r.note) cx.note(r.note, n);
   cx.example(r.example);
@@ -404,9 +443,17 @@ export function globExample(cx: Explainer, n: SyntaxNode, pattern: string, mode:
   pushExample(cx, patterns.globExample(pattern, mode, globOpts(cx, mode !== 'value' ? 'file' : 'none', n), typeof ignore === 'object' ? ignore.value : undefined, title, labels, cx.lang));
 }
 
-/** Values that select a case branch (any of its patterns) and values that do not. */
-export function caseExample(cx: Explainer, pats: SyntaxNode[]): void {
-  patternExample(cx, pats, [cx.s('この分岐に入る値', 'Values that take this branch'), cx.s('入らない値', 'Values that do not')]);
+/**
+ * Values that select a case branch (any of its patterns) and values that do not. Where the model decides the `case`
+ * (`StateModel.condition`) and knows the value of its word, that value is in the section of what it does here.
+ */
+export function caseExample(cx: Explainer, item: SyntaxNode, pats: SyntaxNode[]): void {
+  const stmt = item.parent!;
+  const decided = cx.state.condition(stmt);
+  const value = decided && subjectValue(cx, field(stmt, 'value')!);
+  const index = stmt.namedChildren.filter((c) => c.type === 'case_item').findIndex((c) => same(c, item));
+  const known = value ? { value, matches: decided!.outcome.split(',').includes(String(index)) } : undefined;
+  patternExample(cx, pats, [cx.s('この分岐に入る値', 'Values that take this branch'), cx.s('入らない値', 'Values that do not')], known);
 }
 
 /** An input → output example (sed, awk, perl, sort…; src/examples/commands.ts). */
