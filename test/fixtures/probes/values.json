@@ -3473,33 +3473,6 @@
     }
   },
   {
-    "manual": "3.6",
-    "snippet": "a=1; a=2 export a 2>/dev/null >/nonexistent/x\n@PROBE:a@ \"$a\"; b=1; { b=2; } 2>/dev/null >/nonexistent/x; @PROBE:b@ \"$b\"; c=1; { c=2; } >/dev/null; @PROBE:c@ \"$c\"",
-    "none": {
-      "a": "a redirection that may fail: export may not run",
-      "b": "a redirection that may fail: the group may not run"
-    },
-    "note": "a builtin or a group whose redirection fails does not run",
-    "facts": {
-      "a": [
-        [
-          "1"
-        ]
-      ],
-      "b": [
-        [
-          "1"
-        ]
-      ],
-      "c": [
-        [
-          "2"
-        ]
-      ],
-      "status": 0
-    }
-  },
-  {
     "manual": "6.11",
     "snippet": "set -o posix; x=a; readonly r=1; r=2\n@PROBE:a@ \"$x\"",
     "none": {

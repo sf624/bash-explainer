@@ -51,7 +51,9 @@ export function expansionFailure(text: string): 'line' | 'shell' | undefined {
   const p = parseExpansion(text);
   const part = (role: string): string | undefined => p?.parts.find((x) => x.role === role)?.text;
   if (p?.op === ':' && substringMayFail(part('offset') ?? '', part('length'))) return 'line';
-  return p?.op === '@' && !TRANSFORMS.has(part('transform') ?? '') ? 'shell' : undefined;
+  // (`${!v@}` names the variables whose names start with `v`: no transformation.)
+  const t = part('transform');
+  return p?.op === '@' && t !== undefined && !TRANSFORMS.has(t) ? 'shell' : undefined;
 }
 
 /** `${x^^}`, `${x,,}`, `${x^}`, `${x,}` (no pattern) of an ASCII value: its letters, or its first one, in capitals or in small letters. */
