@@ -32,7 +32,12 @@ describe('the settings module', () => {
       assert.ok(s.description![0] && s.description![1] && s.elsewhere);
       assert.strictEqual(properties[PREFIX + s.key], undefined);
     }
-    for (const s of VSCODE) assert.strictEqual(s.description, undefined);
+    // A setting of VS Code has a description of its own only on the web page, where the one of package.json is about VS Code alone.
+    assert.deepStrictEqual(VSCODE.filter((s) => s.description).map((s) => s.key), ['hover.enabled']);
+    for (const s of VSCODE.filter((x) => x.description)) {
+      assert.ok(s.surfaces.includes('web') && s.description![0] && s.description![1], s.key);
+      assert.doesNotMatch(s.description!.join(' '), /command:|#bashExplainer\.|Ctrl\+K Ctrl\+E/, s.key);
+    }
   });
 
   for (const spec of VSCODE) {
@@ -154,7 +159,7 @@ describe('the settings module', () => {
       // a copy of VS Code's settings.json
       "bashExplainer.shell": "sh",
       "notes": { "idioms": false },
-      "bashExplainer.hover.enabled": false,
+      "bashExplainer.hover.followCursor": true,
       "bashExplainer.nope": 1,
       "editor.fontSize": 14,
       "examples.placement": "nowhere",
@@ -165,10 +170,10 @@ describe('the settings module', () => {
         { key: 'nope', reason: 'unknown' },
         { key: 'editor.fontSize', reason: 'unknown' },
         { key: 'examples.placement', reason: 'invalid', detail: 'expected one of first, last, bottom' },
-        { key: 'hover.enabled', reason: 'elsewhere' },
+        { key: 'hover.followCursor', reason: 'elsewhere' },
       ],
     });
-    assert.deepStrictEqual(importSettings('{"hover.enabled": false}', 'lsp').settings, { 'hover.enabled': false });
+    for (const surface of ['web', 'lsp'] as const) assert.deepStrictEqual(importSettings('{"hover.enabled": false}', surface).settings, { 'hover.enabled': false }, surface);
     // A setting of a build that had it (bashExplainer.colors, before 0.7.0) is unknown like any other key.
     assert.deepStrictEqual(importSettings('{"bashExplainer.colors": "classic"}', 'web'), { settings: {}, ignored: [{ key: 'colors', reason: 'unknown' }] });
     assert.throws(() => importSettings('[1]', 'web'), /expected an object of settings/);
@@ -177,13 +182,15 @@ describe('the settings module', () => {
 
   it('exports the settings that differ from the defaults, as a settings file, and imports them back', () => {
     assert.strictEqual(exportSettings(defaultSettings(), 'web'), '{}\n');
-    const s = mergeSettings({ shell: 'dash', 'examples.disabled': ['sed'], 'hover.enabled': false, customCommands: { deploy: { summary: 'Deploy' } } });
+    // (hover.enabled is the web page's too since it has the hover; hover.followCursor is VS Code's only.)
+    const s = mergeSettings({ shell: 'dash', 'examples.disabled': ['sed'], 'hover.enabled': false, 'hover.followCursor': true, customCommands: { deploy: { summary: 'Deploy' } } });
     const text = exportSettings(s, 'web');
     assert.strictEqual(text, `{
   "bashExplainer.shell": "dash",
   "bashExplainer.examples.disabled": [
     "sed"
   ],
+  "bashExplainer.hover.enabled": false,
   "bashExplainer.customCommands": {
     "deploy": {
       "summary": "Deploy"
@@ -193,7 +200,7 @@ describe('the settings module', () => {
 `);
     const back = importSettings(text, 'web');
     assert.deepStrictEqual(back.ignored, []);
-    assert.deepStrictEqual(mergeSettings(back.settings), mergeSettings({ shell: 'dash', 'examples.disabled': ['sed'], customCommands: { deploy: { summary: 'Deploy' } } }));
+    assert.deepStrictEqual(mergeSettings(back.settings), mergeSettings({ shell: 'dash', 'examples.disabled': ['sed'], 'hover.enabled': false, customCommands: { deploy: { summary: 'Deploy' } } }));
   });
 
   it('reads key=value, the value as JSON when it is JSON', () => {

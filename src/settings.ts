@@ -2,7 +2,8 @@
 // their types and defaults, and where each one has a meaning: VS Code, the web page, the command-line
 // tool and the Language Server. test/settings-schema.test.ts keeps this list and package.json equal,
 // so that a new VS Code setting cannot be forgotten on the other surfaces. A setting of one surface
-// only, 'web', is not in package.json (VS Code has its own for it) and carries its own description.
+// only, 'web', is not in package.json (VS Code has its own for it) and carries its own description; so does
+// a setting whose description in package.json is about VS Code alone, for the web page's settings dialog.
 // Pure code: the web page bundles it, so it reads no file itself.
 import { EXAMPLE_KINDS, ExplainOptions } from './analyzer-types';
 import { BASH_VERSIONS, type BashVersion, DEFAULT_BASH_VERSION } from './bashversion';
@@ -70,7 +71,10 @@ export interface SettingSpec {
   surfaces: readonly Surface[];
   /** Why it has none on the other surfaces (for the docs and the tests). */
   elsewhere?: string;
-  /** The description, [Japanese, English], of a setting that is not in package.json (those of the web page only). */
+  /**
+   * The description, [Japanese, English], that the web page shows: of a setting that is not in package.json (those of
+   * the web page only), or of one whose description there is about VS Code alone (`hover.enabled`).
+   */
   description?: [string, string];
 }
 
@@ -99,11 +103,15 @@ export const SETTINGS: readonly SettingSpec[] = [
   },
   {
     key: 'examples.inHover', type: 'boolean', default: true, group: 'display', title: ['ホバーの具体例', 'Examples in the hover'], surfaces: ['vscode', 'lsp'],
-    elsewhere: 'The web page and the command-line tool have no hover.',
+    elsewhere: "The web page's hover cards always show the examples; the command-line tool has no hover.",
   },
   {
-    key: 'hover.enabled', type: 'boolean', default: true, group: 'display', title: ['ホバー', 'Hover'], surfaces: ['vscode', 'lsp'],
-    elsewhere: 'The web page and the command-line tool have no hover.',
+    key: 'hover.enabled', type: 'boolean', default: true, group: 'display', title: ['ホバー', 'Hover'], surfaces: ['vscode', 'web', 'lsp'],
+    description: [
+      'マウスを乗せた部分（単語・オプション・演算子）の解説を、VS Code のホバーと同じカードで表示する。`Ctrl+K Ctrl+I`（Mac では `⌘K ⌘I`）で、カーソル位置の部分を表示する。オフのときは、`Ctrl+K` と `Ctrl+E` をブラウザに渡す。行全体の解説は、オンでもオフでもパネルに表示される。タッチ画面ではカードを表示しない。',
+      "Shows the explanation of the part under the mouse (a word, an option, an operator) in a card, as VS Code's hover does; `Ctrl+K Ctrl+I` (`⌘K ⌘I` on a Mac) shows the part at the cursor. When off, the browser keeps `Ctrl+K` and `Ctrl+E`. The panel explains the whole line either way. A touch screen shows no card.",
+    ],
+    elsewhere: 'The command-line tool has no hover.',
   },
   {
     key: 'hover.followCursor', type: 'boolean', default: false, group: 'display', title: ['カーソルに追従', 'Follow the cursor'], surfaces: ['vscode'],
@@ -115,7 +123,7 @@ export const SETTINGS: readonly SettingSpec[] = [
   },
   {
     key: 'hover.maxDepth', type: 'number', default: 0, minimum: 0, group: 'display', title: ['ホバーの階層の深さ', 'Hover depth'], surfaces: ['vscode', 'lsp'],
-    elsewhere: 'The web page and the command-line tool have no hover.',
+    elsewhere: "The web page's hover cards show every level; the command-line tool has no hover.",
   },
   {
     key: 'hints.names', type: 'boolean', default: true, group: 'display', title: ['コマンド名のヒント', 'Name hints'], surfaces: ['vscode', 'web', 'lsp'],

@@ -208,6 +208,22 @@ The web page opens a file from your computer and saves the script to one. The fi
 - **Changes not saved**: the top bar shows the file's name (the menu's Save on a phone, and the tab's title), with ● after it while there are changes not saved. Opening another file over them asks first; Cancel (or Esc) keeps them. Leaving the page (closing it, reloading it) with them makes the browser ask. Opening a file starts a new undo history, so Undo never brings back the text before it. Loading a sample leaves the file; the toast's Undo brings it back.
 - **Refused files**: a file larger than 1 MiB (the page explains the whole text again after every change, and at 1 MiB that already takes about 4 s), a file that is not UTF-8 text (a NUL byte, or bytes that are not UTF-8), and a file with a CR that ends no line (`printf '50%\r'` written with a real CR), which the editor would turn into a line break. The page says why, and keeps the script.
 
+### Hover cards (web page)
+
+The web page's editor shows the cards of VS Code's hover. Before, the page had no hover: only the panel explained the line at the cursor.
+
+| To | Do |
+| --- | --- |
+| See what a word, an option or an operator is | point at it: its card shows the part, its kind of command, the command it belongs to, its notes and its examples |
+| See the line's structure | point at the indentation or a blank between statements |
+| See the card at the cursor | `Ctrl+K Ctrl+I` (`⌘K ⌘I` on a Mac); press it again to scroll the card or reach its links with Tab, and Escape to close it |
+| Explain the whole line | `Ctrl+K Ctrl+E`, or **Whole line** or **Open in panel** in the card: the cursor goes to the line, and the panel explains it |
+
+- A problem at the pointer shows above the card, in the same box, and the card does not say it again.
+- The card stays inside the editor: near the top of the page it opens below the word, and it no longer covers the top bar. A long card scrolls.
+- A touch screen shows no card: a tap moves the cursor, and the panel explains the line.
+- `bashExplainer.hover.enabled` is in the page's settings (on by default). Off, the page shows no card, and leaves `Ctrl+K` and `Ctrl+E` to the browser. A settings file from VS Code now brings it along; `hover.maxDepth`, `examples.inHover` and `hover.followCursor` stay VS Code's.
+
 ### Panel colours from the editor theme
 
 `bashExplainer.panel.colors` (VS Code only) chooses where the panel's colours come from:

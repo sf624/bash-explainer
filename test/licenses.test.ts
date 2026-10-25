@@ -46,14 +46,15 @@ describe('licenses', function () {
     const names = [...table.matchAll(/^ {4}'([a-z-]+)': /gm)].map((m) => m[1]);
     const c = COPIED['@vscode/codicons'];
     assert.match(c.licenseText, new RegExp(`\\(${names.join(', ')}\\)`.replace(/, /g, ',\\s+')), 'the notice names the icons media/icons.js has');
-    assert.match(c.licenseText, new RegExp(`${({ 7: 'seven', 9: 'nine' } as Record<number, string>)[names.length] ?? String(names.length)} of the icons`));
+    assert.match(c.licenseText, new RegExp(`${({ 7: 'seven', 9: 'nine', 11: 'eleven' } as Record<number, string>)[names.length] ?? String(names.length)} of the icons`));
     assert.match(js, /@vscode\/codicons 0\.0\.46-24[^]*CC BY 4\.0, \(c\) Microsoft Corporation/);
     assert.ok(js.includes(`@vscode/codicons ${c.version}`));
     // Every icon of the table is drawn somewhere (the notice names no icon we do not use), and nothing draws
     // an icon the table lacks: the panel's markup and script, and the web page's markup and scripts.
     const read = (...p: string[]) => fs.readFileSync(path.join(root, ...p), 'utf8');
     const sources = [read('src', 'ui', 'panelView.ts'), read('media', 'panel.js'), read('web', 'index.html'), read('web', 'compare.html')];
-    const drawn = new Set(sources.flatMap((text) => [...text.matchAll(/data-icon="([a-z-]+)"|'([a-z-]+)'/g)].map((m) => m[1] ?? m[2])).filter((n) => names.includes(n)));
+    // (The web page's hover cards draw the icons that src/ui/hoverView.ts names, from the list in web/hover-markdown.ts.)
+    const drawn = new Set([...sources, read('web', 'hover-markdown.ts')].flatMap((text) => [...text.matchAll(/data-icon="([a-z-]+)"|'([a-z-]+)'/g)].map((m) => m[1] ?? m[2])).filter((n) => names.includes(n)));
     for (const text of sources) for (const m of text.matchAll(/data-icon="([^"]+)"/g)) assert.ok(names.includes(m[1]), `${m[1]} is not in media/icons.js`);
     assert.deepStrictEqual([...drawn].sort(), [...names].sort());
     // Both products ship the file, and the notice says where.

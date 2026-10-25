@@ -2,7 +2,7 @@
 
 What the hover explains, how it looks, the name hints, and why the inline summary was removed. Built from a design study in real VS Code (the prototypes on the branches `proto/hover-inline` and `proto/hover-inline-2`), with the maintainer's choices.
 
-The code: `src/ui/hoverParts.ts` (which part a position explains, and which notes are about it), `src/ui/hoverView.ts` (the Markdown), `src/ui/hover.ts` (VS Code), `cli/lsp.ts` (the Language Server). Tests: `test/hover-view.test.ts`.
+The code: `src/ui/hoverParts.ts` (which part a position explains, and which notes are about it), `src/ui/hoverView.ts` (the Markdown), `src/ui/hover.ts` (VS Code), `cli/lsp.ts` (the Language Server), `web/hover.ts` and `web/hover-markdown.ts` (the web page: "Web page" below). Tests: `test/hover-view.test.ts`, `test/web-hover.test.ts`.
 
 ## The rule
 
@@ -74,6 +74,27 @@ The hint is plain text (VS Code shows no Markdown in a hint); its tooltip says w
 The web page has no inlay hints of its own, so its editor draws the same hints as CodeMirror widgets (web/name-hints.ts): muted text on a faint tint after the name, inline so that it wraps with the line. Only the lines in view are explained, once per parse, language, shell and settings, after the text has rested (300 ms) or at once on a scroll. Hovering a hint shows its tooltip, with "Click to explain this line in the panel"; a click puts the cursor on the name, so the panel explains the line. The page's settings have `hints.names` too.
 
 VS Code (1.142) keeps a copy of the hints of the line whose hint the mouse is on, and puts it back when the mouse moves off, even after the hints were asked for again. A setting changed in between (the language) left that one hint stale. So for a minute after a refresh, a move of the cursor asks for the hints again.
+
+## Web page
+
+The web page's editor shows VS Code's part hover too: option B of a design study (the prototype on the branch `proto/web-hover`), chosen by the maintainer. The page's panel already explains the line at the cursor, so the panel is its whole line, and the cards are the part and the line card only. There is no whole-line card on the web.
+
+| Trigger | The page shows |
+| --- | --- |
+| The pointer on a part | the part's card (`partHover`) |
+| The pointer on the indentation, on a blank between statements | the line card (`lineCard`) |
+| The pointer past the end of the line | nothing |
+| The pointer on a name hint | the hint's own tooltip |
+| `Ctrl+K Ctrl+I` (`⌘K ⌘I` on a Mac) | the card at the cursor; pressed again, the focus goes into the card, and Tab reaches its links. Escape, a click outside the editor, an edit or a move of the cursor closes it |
+| `Ctrl+K Ctrl+E`, the links "Whole line", "N more notes on this line" and "Open in panel" | no card: the cursor goes to the line (to its first word, unless it is on the line already), so the panel explains it |
+| The link "Settings" | the page's settings |
+| A touch screen (`hover: none`) | nothing: a tap moves the cursor, and the panel follows it |
+
+- **One source.** A card is hoverView's Markdown, with the extension's commands as its links. `web/hover-markdown.ts` turns it into DOM, as VS Code's hover does. First a reader of the CommonMark that hoverView writes: paragraphs, rules, headings, quotes, fences and HTML blocks (`<table>`); code spans of any length, backslash escapes, entities, raw tags, links with a title, emphasis by the rules of delimiter runs, and `$(icon)`. Then an allow-list: the elements and span styles that VS Code's hover keeps (`test/hover-view.test.ts`), `https:` links (opened in a new tab), and the extension's commands, which become the page's actions. Scripts, styles, handlers and other links are dropped. The icons are Codicons, from `media/icons.js`. `test/web-hover.test.ts` renders every card of the sample and checks that no Markdown syntax is left in the page.
+- **The problem at the pointer.** CodeMirror's lint shows it in the same box, above the card. The card leaves out the notes that it says, as in VS Code ("Problems shown above"): `HoverInput.problems` comes from the lint's diagnostics at the position (`forEachDiagnostic`, by the rule of the lint's own tooltip), with each problem's code. From the keyboard no problem shows, so the card keeps every note.
+- **The keys** are bound in a compartment of the highest precedence, and only while `hover.enabled` is on. Off, the page shows no card, and `Ctrl+K` and `Ctrl+E` go to the browser. `Ctrl+I` alone stays CodeMirror's own key (it selects the syntax around the cursor).
+- **The setting.** `hover.enabled` is in the page's settings, with a description of its own (`SettingSpec.description`), since the one in package.json is about VS Code's commands. `hover.maxDepth`, `examples.inHover` and `hover.followCursor` stay VS Code's: the page's cards are whole, and its panel already follows the cursor.
+- **Inside the pane.** Every tooltip of the editor (the cards, the problems, the name hints) stays inside the editor's pane, 8 px from the window's edges (CodeMirror's `tooltipSpace`). The box is no higher than the room above or below the position, whichever is larger, and no wider than the pane or 520 px. A long box scrolls as one, the problem above the card with it, as VS Code's hover does: on a narrow pane, a long problem would otherwise leave the card no room. A card near the top no longer covers the top bar.
 
 ## Why the inline summary was removed
 

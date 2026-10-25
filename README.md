@@ -30,7 +30,7 @@ Bash Explainer is a VS Code extension, and more: the same explanations and warni
 | **VS Code** | Install **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** from the Marketplace, open a shell script and hover a word. See [In VS Code](#in-vs-code). |
 | VSCodium and other editors using Open VSX | [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer) |
 | vscode.dev and github.dev | The same extension works in VS Code for the Web (press `.` in a GitHub repository). |
-| **Browser**, no installation | The [web version](https://sf624.github.io/bash-explainer/): paste a script or open a file (`Ctrl+O`, or drop it on the editor) and move the cursor; `Ctrl+S` saves it. The [development version](https://sf624.github.io/bash-explainer/next/) is built from `main` and may differ from the release. |
+| **Browser**, no installation | The [web version](https://sf624.github.io/bash-explainer/): paste a script or open a file (`Ctrl+O`, or drop it on the editor) and move the cursor, or hover a word for its card, as in VS Code; `Ctrl+S` saves it. The [development version](https://sf624.github.io/bash-explainer/next/) is built from `main` and may differ from the release. |
 | **Terminal** | `npx bash-explainer deploy.sh:12`, or `npm install --global bash-explainer`. See [cli/README.md](cli/README.md#installation). |
 | **Neovim, Helix, Emacs** and other LSP editors | `bash-explainer --lsp`, a Language Server with the same hovers, warnings and quick fixes. See [In your editor](cli/README.md#in-your-editor-language-server). |
 | **CI** | `uses: sf624/bash-explainer@v0` in GitHub Actions puts the warnings on the pull request's diff; elsewhere, `npx bash-explainer --check`. See [In CI](cli/README.md#in-ci-github-actions). |
@@ -171,6 +171,8 @@ Hover a word, an option or an operator to see what it is, right where you are re
 
 For the whole line, press `Ctrl+K Ctrl+E`, choose **Explain Bash on Current Line** from the context menu, or click **Whole line** in the hover: one block per command, with its arguments.
 
+The web page's editor shows the same cards (not on a touch screen); there, `Ctrl+K Ctrl+E` and **Whole line** explain the line in the panel.
+
 ![Hover](images/readme/hover.gif)
 
 #### Name hints
@@ -283,13 +285,13 @@ The same settings work on the web page, in the command-line tool and in the Lang
 | --- | --- | --- | --- |
 | `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `bashVersion`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled`, `customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | (`--check` asks for the warnings) | ✓ |
-| `hints.names` | ✓ | | ✓ |
+| `hover.enabled`, `hints.names` | ✓ | | ✓ |
 | `examples.placement`, `panel.animations` | ✓ | | |
 | `editor.wrap` (the web page only: it is not in VS Code's settings, which has `editor.wordWrap`) | ✓ | | |
-| `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `highlight.enabled`, `languages`, `embedded.files` | | | ✓ |
+| `examples.inHover`, `hover.maxDepth`, `highlight.enabled`, `languages`, `embedded.files` | | | ✓ |
 | `hover.followCursor`, `hover.followDelay`, `panel.autoOpen`, `panel.colors` | | | |
 
-The empty cells are about what only VS Code has (a hover, hints, a panel to open, files to choose); the web page and the command line explain the file they are given, as the kind you choose.
+The empty cells are about what only VS Code has (the hover's depth and examples, a hover that follows the cursor, a panel to open, files to choose); the web page and the command line explain the file they are given, as the kind you choose.
 
 - **Web page:** click the ⚙ button in the top bar. The shell and yq menus are in the menu (☰), and on a wide window in the top bar too. Changes apply at once, and are kept in your browser (localStorage); **Reset to defaults** puts the settings back, and **Clear stored data** (after a confirmation) removes everything the page keeps in the browser (the settings, the theme, the size of the panes, read mode and the first-run tip) and shows the defaults at once. The language and the shell and yq menus of the page are the same settings. **Export to a file** (or **Copy**) gives the settings you changed as a settings file in the format below, for the command-line tool or VS Code's `settings.json`; **Import a file…** (or dropping a file on the dialog, or pasting JSON) replaces the page's settings with those of such a file, and lists the keys it left out.
 - **Command line and Language Server:** a JSON file with the keys of VS Code's `settings.json`, with or without `bashExplainer.` (comments are allowed). It is the file given with `--config`, else `$BASH_EXPLAINER_CONFIG`, else `$XDG_CONFIG_HOME/bash-explainer/settings.json` (by default `~/.config/bash-explainer/settings.json`). `--set key=value` sets one setting. See [Settings](cli/README.md#settings) in the tool's README.

@@ -30,7 +30,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 | **VS Code** | Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールし、シェルスクリプトを開いて単語にマウスを乗せます。詳しくは [VS Code で使う](#vs-code-で使う) を参照してください。 |
 | VSCodium など Open VSX を使うエディタ | [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer) |
 | vscode.dev と github.dev | 同じ拡張が VS Code for the Web でも動きます（GitHub のリポジトリで `.` を押す）。 |
-| **ブラウザ**（インストールなし） | [ブラウザ版](https://sf624.github.io/bash-explainer/) にスクリプトを貼り付けるかファイルを開いて（`Ctrl+O`、またはエディタにドロップ）、カーソルを動かします。`Ctrl+S` で保存できます。`main` からビルドした [開発版](https://sf624.github.io/bash-explainer/next/) もあります（リリース版と異なる場合があります）。 |
+| **ブラウザ**（インストールなし） | [ブラウザ版](https://sf624.github.io/bash-explainer/) にスクリプトを貼り付けるかファイルを開いて（`Ctrl+O`、またはエディタにドロップ）、カーソルを動かします。単語にマウスを乗せると、VS Code と同じカードを表示します。`Ctrl+S` で保存できます。`main` からビルドした [開発版](https://sf624.github.io/bash-explainer/next/) もあります（リリース版と異なる場合があります）。 |
 | **ターミナル** | `npx bash-explainer deploy.sh:12`、または `npm install --global bash-explainer`。詳しくは [cli/README.md](cli/README.md#installation) を参照してください。 |
 | **Neovim、Helix、Emacs** など LSP に対応したエディタ | `bash-explainer --lsp` が Language Server として、同じホバー、警告、クイックフィックスを提供します。設定例は [In your editor](cli/README.md#in-your-editor-language-server) を参照してください。 |
 | **CI** | GitHub Actions で `uses: sf624/bash-explainer@v0` とすると、警告が PR の差分に表示されます。他の CI では `npx bash-explainer --check` を使います。詳しくは [In CI](cli/README.md#in-ci-github-actions) を参照してください。 |
@@ -171,6 +171,8 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 行全体の解説は、`Ctrl+K Ctrl+E`、右クリックメニューの **カーソル行の bash を解説**、またはホバーの **行全体** で開きます。コマンドごとに、引数とあわせて表示します。
 
+Web 版のエディタでも同じカードを表示します（タッチ画面では表示しません）。Web 版では、`Ctrl+K Ctrl+E` と **行全体** で、行全体の解説をパネルに表示します。
+
 ![ホバー](images/readme/hover.gif)
 
 #### コマンド名のヒント
@@ -283,13 +285,13 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | --- | --- | --- | --- |
 | `language`・`notes.idioms`・`notes.pitfalls`・`shell`・`bashVersion`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`diagnostics.pitfalls`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | （警告は `--check` で出す） | ✓ |
-| `hints.names` | ✓ | | ✓ |
+| `hover.enabled`・`hints.names` | ✓ | | ✓ |
 | `examples.placement`・`panel.animations` | ✓ | | |
 | `editor.wrap`（Web 版だけの設定です。VS Code の設定にはなく、VS Code には `editor.wordWrap` があります） | ✓ | | |
-| `examples.inHover`・`hover.enabled`・`hover.maxDepth`・`highlight.enabled`・`languages`・`embedded.files` | | | ✓ |
+| `examples.inHover`・`hover.maxDepth`・`highlight.enabled`・`languages`・`embedded.files` | | | ✓ |
 | `hover.followCursor`・`hover.followDelay`・`panel.autoOpen`・`panel.colors` | | | |
 
-空欄は、VS Code にしかないもの（ホバー、ヒント、開くパネル、対象ファイルの選択）についての設定です。Web 版とコマンドラインは、渡されたファイルを、選んだ種類として解説します。
+空欄は、VS Code にしかないもの（ホバーの深さと具体例、カーソルに追従するホバー、開くパネル、対象ファイルの選択）についての設定です。Web 版とコマンドラインは、渡されたファイルを、選んだ種類として解説します。
 
 - **Web 版:** 上のバーの ⚙ ボタンで開きます。変更はすぐに反映され、ブラウザに保存されます（localStorage）。**既定値に戻す** で設定が戻り、**保存したデータを消去**（確認あり）で、ページがブラウザに保存しているものすべて（設定、テーマ、画面の分割の大きさ、閲覧モード、初回のヒント）を消して、すぐに既定の状態に戻します。ページの言語、シェル、yq のメニューは、同じ設定です。シェルと yq のメニューはメニュー（☰）にあり、広い画面では上のバーにもあります。**ファイルにエクスポート**（または **コピー**）で、変えた設定を下の形式の設定ファイルにでき、コマンドラインツールや VS Code の `settings.json` で使えます。**ファイルからインポート…**（ダイアログへのファイルのドロップや、JSON の貼り付けも可）で、ページの設定をそのファイルの内容に置き換えます。読み込まなかったキーは一覧で表示します。
 - **コマンドラインと Language Server:** VS Code の `settings.json` と同じキー（`bashExplainer.` は付けても付けなくてもよい）の JSON ファイルです（コメントも書けます）。`--config` で指定したファイル、なければ `$BASH_EXPLAINER_CONFIG`、なければ `$XDG_CONFIG_HOME/bash-explainer/settings.json`（既定では `~/.config/bash-explainer/settings.json`）を読みます。1つの設定は `--set キー=値` でも変えられます。詳しくはツールの README の [Settings](cli/README.md#settings) を参照してください（英語）。
