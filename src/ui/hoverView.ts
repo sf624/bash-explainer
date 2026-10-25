@@ -8,7 +8,7 @@ import { Lang } from '../i18n';
 import { joinParts, labelParts } from '../label';
 import { manualLabel, SECTIONS } from '../manual';
 import { isCommand, partNotes, ProblemAt, sameSpan, shown, valueOf } from './hoverParts';
-import { type NoteLevel, splitNote } from '../messages';
+import { type NoteLevel, splitNote, type ValueSaid } from '../messages';
 import { levelColour, ThemeKind } from './palette';
 import { colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, plainNotes, refsMarkdown, ui, valueMarkdown } from './render';
 
@@ -83,11 +83,25 @@ export function md(text: string): string {
   return (out + lit(plain)).replace(/^(?:([-+=])|(\d+)([.)]))/, (_m, mark?: string, n?: string, dot?: string) => (mark ? `&#${mark.charCodeAt(0)};` : `${n}&#${dot!.charCodeAt(0)};`));
 }
 
+/** Text for an HTML block, where Markdown is not read: what Markdown would take for markup is escaped. */
+const escapeHtml = (text: string) => text.replace(/[&<>"'*_\\[\]~|#$]/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** Text as a `<code>` element, its spaces kept. */
+const codeHtml = (text: string) => `<code>${escapeHtml(text).replace(/ /g, '&nbsp;')}</code>`;
+
 /** Text with `code` spans, as HTML (for an HTML block, where Markdown is not read). */
 export function prose(text: string): string {
-  const e = (s: string) => s.replace(/[&<>"'*_\\[\]~|#$]/g, (c) => `&#${c.charCodeAt(0)};`);
   // split with two groups: [text, fence, code, text, fence, code, …]
-  return text.split(/(`+)([^`]*?)\1/).map((part, i) => (i % 3 === 0 ? e(part) : i % 3 === 2 ? `<code>${e(part).replace(/ /g, '&nbsp;')}</code>` : '')).join('');
+  return text.split(/(`+)([^`]*?)\1/).map((part, i) => (i % 3 === 0 ? escapeHtml(part) : i % 3 === 2 ? codeHtml(part) : '')).join('');
+}
+
+/**
+ * The line of a value (`ValueSaid`) as HTML, made of its parts: the value and the words are code as they are, not
+ * found again in the Markdown text, where a backtick in a value is ambiguous with a fence.
+ */
+export function valueHtml(said: ValueSaid): string {
+  const split = said.split ? `${prose(said.split.said)}${said.split.words.map((w) => ` ${codeHtml(w)}`).join('')}` : '';
+  return `${escapeHtml(said.lead)} ${said.value !== undefined ? codeHtml(said.value) : escapeHtml(said.empty!)}${split}${said.tail ? prose(said.tail) : ''}`;
 }
 
 /**
@@ -120,7 +134,7 @@ const also = (tok: Token) => (tok.name?.said.also ? `<br><small>${muted(prose(to
 /** The value of an expansion where it runs (`Token.value`: the model's), on a line of its own. */
 const value = (tok: Token) => {
   const v = valueOf(tok);
-  return v ? `<br><small>${prose(v.said.text)}</small>` : '';
+  return v ? `<br><small>${valueHtml(v.said)}</small>` : '';
 };
 
 /** The sections of the manual, small, as HTML links. */
@@ -245,7 +259,7 @@ export function partHover(x: HoverInput, chain: Token[]): string {
   out.push(`<b>${label(part, x.theme, 48)}</b>${badge(part)}`, '');
   out.push(`${md(part.explanation)}${part.refs?.length ? ` <small>${refsMarkdown(x.lang, part.refs)}</small>` : ''}${also(part)}`, '');
   const v = valueOf(part);
-  if (v) out.push(prose(v.said.text), '');
+  if (v) out.push(valueHtml(v.said), '');
   const own = rows(shown(part), 1, () => false);
   out.push(...table(own.rows, x));
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));

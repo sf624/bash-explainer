@@ -57,3 +57,32 @@ describe('the web page: the values of expansions in Meaning', function () {
     });
   }
 });
+
+describe('the web page: a value with a backtick, a space at an end or an invisible character', function () {
+  this.timeout(120000);
+  let browser: Browser;
+  let base = '';
+  before(async function () {
+    ({ browser, base } = await openSite(this));
+  });
+
+  it('shows them as chips that read back the value (a space at an end as ␠, a bidi control as <U+202E>)', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1000, height: 900 }, locale: 'en-US' });
+    await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'bashExplainer.panel.animations': false })); } catch {}`);
+    const page = await ctx.newPage();
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText("a=' a '; b='x`y'; e=$'a\\u202eb'; f=' p q '\necho \"$a\" \"$b\" \"$e\" $f");
+    await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('echo "$a"'));
+    await frames(panel());
+    const got = await lines(panel());
+    assert.deepStrictEqual(got.items.map((l) => l.chips), [['␠a␠'], ['x`y'], ['a<U+202E>b'], ['␠p q␠', 'p', 'q']]);
+    assert.match(got.items[3].text, /␠ is a space at an end\)$/);
+    // BASH_EXPLAINER_SHOT=<file.png> saves a screenshot of the page for a look.
+    if (process.env.BASH_EXPLAINER_SHOT) await page.screenshot({ path: process.env.BASH_EXPLAINER_SHOT });
+    await ctx.close();
+  });
+});

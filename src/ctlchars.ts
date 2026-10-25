@@ -114,3 +114,55 @@ export function sedEscapeAt(src: string, i: number): SedEscape | undefined {
 export function visible(line: string): string {
   return line.replace(/\t/g, '⇥').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, (c) => (c === '\x7f' ? '␡' : String.fromCharCode(0x2400 + c.charCodeAt(0))));
 }
+
+/**
+ * Characters with no look of their own that can hide in a value: bidirectional controls (they reorder the text around
+ * them, as in a "Trojan Source" file name), zero-width characters and the Unicode line and paragraph separators.
+ * [code, English name, Japanese name].
+ */
+const INVISIBLE: [number, string, string][] = [
+  [0x200b, 'zero width space', 'ゼロ幅スペース'],
+  [0x200c, 'zero width non-joiner', 'ゼロ幅非接合子'],
+  [0x200d, 'zero width joiner', 'ゼロ幅接合子'],
+  [0x200e, 'left-to-right mark', '左から右へのマーク'],
+  [0x200f, 'right-to-left mark', '右から左へのマーク'],
+  [0x2028, 'line separator', '行区切り'],
+  [0x2029, 'paragraph separator', '段落区切り'],
+  [0x202a, 'left-to-right embedding', '左から右への埋め込み'],
+  [0x202b, 'right-to-left embedding', '右から左への埋め込み'],
+  [0x202c, 'pop directional formatting', '方向指定の終わり'],
+  [0x202d, 'left-to-right override', '左から右への上書き'],
+  [0x202e, 'right-to-left override', '右から左への上書き'],
+  [0x2066, 'left-to-right isolate', '左から右への分離'],
+  [0x2067, 'right-to-left isolate', '右から左への分離'],
+  [0x2068, 'first strong isolate', '最初の強い方向への分離'],
+  [0x2069, 'pop directional isolate', '分離の終わり'],
+  [0xfeff, 'zero width no-break space, byte order mark', 'ゼロ幅の改行しない空白(BOM)'],
+];
+
+const INVISIBLE_BY_CODE = new Map(INVISIBLE.map((i) => [i[0], i]));
+
+/** `<U+202E>`: the form an invisible character is shown in. */
+const escapeOf = (code: number) => `<U+${code.toString(16).toUpperCase().padStart(4, '0')}>`;
+
+/**
+ * One character of a value as it is shown: a control character as its picture (`visible`), an invisible one (see
+ * above) as `<U+202E>`, any other as it is.
+ */
+export function visibleChar(ch: string): string {
+  const code = ch.codePointAt(0)!;
+  return INVISIBLE_BY_CODE.has(code) ? escapeOf(code) : visible(ch);
+}
+
+const ESCAPES = /<U\+[0-9A-F]{4}>/g;
+
+/** What each `<U+202E>` in `lines` stands for, once (`` `<U+202E>` is U+202E, right-to-left override ``); undefined when they hold none. */
+export function invisibleList(lines: string[], s: S): string | undefined {
+  const seen: string[] = [];
+  for (const l of lines) for (const m of l.matchAll(ESCAPES)) if (!seen.includes(m[0])) seen.push(m[0]);
+  const named = seen.flatMap((e) => {
+    const i = INVISIBLE_BY_CODE.get(parseInt(e.slice(3, 7), 16));
+    return i ? [`\`${e}\` ${s('は', 'is')} U+${e.slice(3, 7)} ${s(i[2], i[1])}`] : [];
+  });
+  return named.length ? named.join(s('、', ', ')) : undefined;
+}

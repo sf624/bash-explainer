@@ -1,4 +1,4 @@
-import { pictureList, visible } from './ctlchars';
+import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
 import { codeSpan } from './label';
 import type { NameFacts, NameKind } from './semantics/names';
@@ -564,16 +564,26 @@ export interface ValueSaid {
 
 /** How long a value, or a word of it, is shown; a longer one is cut. */
 const VALUE_SHOWN = 80;
+/** How a space at either end of a value, and an empty word of a split value, are shown. */
+const SPACE_MARK = '␠';
+const EMPTY_WORD = '∅';
 /** How many words of a split value are shown. */
 const WORDS_SHOWN = 12;
 
 /** The texts of the value of an expansion, in `lang`. */
 export function valueSaid(lang: Lang, v: ExpansionValue): ValueSaid {
   const ja = lang === 'ja';
-  // (A newline is shown as `␊`, as in the notes on quote removal, so that it is not read as the two characters `\n`.)
+  // (A newline is shown as `␊`, as in the notes on quote removal, so that it is not read as the two characters `\n`.
+  // A space at either end is `␠`: Markdown takes one space at each end of a code span as padding, and a chip or a
+  // hover would hide it. An empty word of a split value is `∅`. The cut is on characters, not on UTF-16 units.)
   const show = (t: string): string => {
-    const seen = visible(t).replace(/\n/g, '␊');
-    return seen.length > VALUE_SHOWN ? `${seen.slice(0, VALUE_SHOWN - 1)}…` : seen;
+    if (t === '') return EMPTY_WORD;
+    const chars = [...t].map((c) => (c === '\n' ? '␊' : visibleChar(c)));
+    const cut = chars.length > VALUE_SHOWN;
+    const units = cut ? [...chars.slice(0, VALUE_SHOWN - 1), '…'] : chars;
+    const first = units.findIndex((c) => c !== ' ');
+    const last = units.map((c) => c !== ' ').lastIndexOf(true);
+    return units.map((c, i) => (c === ' ' && (i < first || (!cut && i > last)) ? SPACE_MARK : c)).join('');
   };
   const lead = ja ? 'スクリプトから分かるここでの値:' : 'Value here, from the script:';
   const value = v.text === '' ? undefined : show(v.text);
@@ -591,8 +601,16 @@ export function valueSaid(lang: Lang, v: ExpansionValue): ValueSaid {
     tails.push(ja ? '。クォートしていないのでパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
       : '. Unquoted, it is a pattern: bash matches it against file names when the line runs (not done here)');
   }
-  const pictures = pictureList([value ?? '', ...(split?.words ?? [])], (j, e) => (ja ? j : e));
+  const shownTexts = [value ?? '', ...(split?.words ?? [])];
+  const pictures = pictureList(shownTexts, (j, e) => (ja ? j : e));
   if (pictures) tails.push(ja ? `（制御文字は記号で表している: ${pictures}）` : ` (control characters are shown as symbols: ${pictures})`);
+  const escapes = invisibleList(shownTexts, (j, e) => (ja ? j : e));
+  if (escapes) tails.push(ja ? `（見えない文字はコードで表している: ${escapes}）` : ` (invisible characters are shown as their code: ${escapes})`);
+  const marks = [
+    ...(shownTexts.some((t) => t.includes(SPACE_MARK)) ? [ja ? `\`${SPACE_MARK}\` は端の空白` : `\`${SPACE_MARK}\` is a space at an end`] : []),
+    ...(split?.words.includes(EMPTY_WORD) ? [ja ? `\`${EMPTY_WORD}\` は空の単語` : `\`${EMPTY_WORD}\` is an empty word`] : []),
+  ];
+  if (marks.length) tails.push(ja ? `（${marks.join('、')}）` : ` (${marks.join(', ')})`);
   const tail = tails.length ? tails.join('') : undefined;
   const empty = ja ? '空文字列' : 'an empty string';
   const text = `${lead} ${value !== undefined ? codeSpan(value) : empty}${split ? split.said + split.words.map((w) => ` ${codeSpan(w)}`).join('') : ''}${tail ?? ''}`;
