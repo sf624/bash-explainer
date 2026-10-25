@@ -32,9 +32,16 @@ export async function builtinTheme(name: string): Promise<ThemeTokens | undefine
   return theme;
 }
 
-/** What the panel says, once a session for each theme, when it keeps its own colours because the theme `name` cannot be read (plain text: a notification shows no Markdown). */
-export function unreadableThemeNotice(lang: Lang, name: string): string {
-  return lang === 'ja'
-    ? `パネルは独自の色のままです。カラーテーマ「${name}」を読めません。リモートのウィンドウ（WSL、SSH、コンテナー）で読めるのは VS Code の既定のカラーテーマ（Dark Modern、Light 2026 など）だけです。ほかのカラーテーマはローカル側にあり、拡張機能からは見えません。`
-    : `The panel keeps its own colours: the theme "${name}" cannot be read. In a remote window (WSL, SSH, a container), only VS Code's default themes (Dark Modern, Light 2026…) can be: the others are on the local side, out of the extension's reach.`;
+/**
+ * What the panel says, once a session for each theme, when it keeps its own colours because the theme `name` cannot be
+ * read (plain text: a notification shows no Markdown). `remote`: the extension runs on the remote side of a remote
+ * window, where VS Code has none of the theme extensions; on the local side it reads them all (package.json `extensionKind`).
+ */
+export function unreadableThemeNotice(lang: Lang, name: string, remote: boolean): string {
+  if (lang === 'ja') {
+    const why = remote ? 'このウィンドウでは Bash Explainer がリモート側（WSL、SSH、コンテナー）で動いていて、読めるのは VS Code の既定のカラーテーマ（Dark Modern、Light 2026 など）だけです。ローカル側に入れると（拡張機能ビューの「ローカルにインストール」）、どのカラーテーマも読めます。' : '';
+    return `パネルは独自の色のままです。カラーテーマ「${name}」を読めません。${why}`;
+  }
+  const why = remote ? ' Bash Explainer runs on the remote side of this window (WSL, SSH, a container), where only VS Code\'s default themes (Dark Modern, Light 2026…) can be read. Installed on the local side (Install Locally, in the Extensions view), it reads every theme.' : '';
+  return `The panel keeps its own colours: the theme "${name}" cannot be read.${why}`;
 }

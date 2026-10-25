@@ -430,8 +430,18 @@ describe("VS Code's default themes, for a remote window", () => {
   });
 
   it('says why the panel keeps its own colours when it cannot read the theme', () => {
-    assert.match(unreadableThemeNotice('en', 'Monokai Pro'), /theme "Monokai Pro" cannot be read\. In a remote window/);
-    assert.match(unreadableThemeNotice('ja', 'Monokai Pro'), /カラーテーマ「Monokai Pro」を読めません。リモート/);
+    assert.match(unreadableThemeNotice('en', 'Monokai Pro', true), /theme "Monokai Pro" cannot be read\. Bash Explainer runs on the remote side .*\(Install Locally/);
+    assert.match(unreadableThemeNotice('ja', 'Monokai Pro', true), /カラーテーマ「Monokai Pro」を読めません。このウィンドウでは Bash Explainer がリモート側.*ローカルにインストール/);
+    // (On the local side every theme is in reach: a theme there is unreadable only when its files are.)
+    assert.strictEqual(unreadableThemeNotice('en', 'Broken', false), 'The panel keeps its own colours: the theme "Broken" cannot be read.');
+    assert.strictEqual(unreadableThemeNotice('ja', 'Broken', false), 'パネルは独自の色のままです。カラーテーマ「Broken」を読めません。');
+  });
+
+  it('runs on the local side of a remote window, where every theme is, when it is installed there', () => {
+    // (VS Code keeps the theme extensions on the local side; `vscode.extensions.all` lists those of the calling host only.
+    // "ui" first: installed locally, the extension runs there; installed on the remote side only, it still runs there.)
+    const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { extensionKind?: string[] };
+    assert.deepStrictEqual(manifest.extensionKind, ['ui', 'workspace']);
   });
 
   describe('compared with the themes of the VS Code it was copied from', () => {

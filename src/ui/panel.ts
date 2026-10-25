@@ -137,7 +137,8 @@ export class PanelController implements vscode.Disposable {
   private unreadable(theme: string): void {
     if (this.unreadableThemes.has(theme)) return;
     this.unreadableThemes.add(theme);
-    void vscode.window.showInformationMessage(unreadableThemeNotice(this.service.lang, theme));
+    // (On the remote side of a remote window, the themes are out of reach: VS Code keeps them on the local side.)
+    void vscode.window.showInformationMessage(unreadableThemeNotice(this.service.lang, theme, this.ctx.extension.extensionKind === vscode.ExtensionKind.Workspace));
   }
 
   private post(): void {
