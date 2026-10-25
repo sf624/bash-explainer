@@ -433,7 +433,7 @@ A tilde before a glob is expanded, then the word is globbed:
 | `echo x 2>&f`, `3>&f`, `<&f`, `{v}>&f`, `2>&/dev/tcp/h/80` | "ambiguous redirect": only `>&f` and `1>&f` write both stdout and stderr to `f` | "`f` is no file descriptor number, so bash reports "ambiguous redirect"" | "Write both stdout and stderr to `f`"; for `<&f`, "a copy of file descriptor f" |
 | `exec 3<>/dev/tcp/example.com/80`, `cat < /dev/udp/h/53`, `>&/dev/tcp/h/p`, `{s}<>/dev/tcp/h/p`, `> "/dev/tcp/h/80"` | bash connects (TCP or UDP), and fails if it cannot | "Connect to host `example.com`, port `80`, over TCP, and use the connection for reading and writing as file descriptor 3 (not a file …)" | "Open `/dev/tcp/example.com/80` for reading and writing" |
 | `> /dev/tcp/h/80/x`, `> /dev/tcp//80` | an error: no host and port | "The shell takes `/dev/tcp/h/80/x` as a network address (host `h`, port `80/x`), which is no valid host and port: the redirection fails" | the file |
-| the same in sh or dash | a path, usually missing ("No such file") | the file, "dash opens `/dev/tcp/…` as an ordinary path, usually missing (POSIX does not define it; bash and ksh93 connect to the network)", and a portability warning | the file, no warning |
+| the same in sh or dash | a path, usually missing ("No such file") | the file, "dash opens `/dev/tcp/…` as an ordinary path, usually missing (POSIX does not define it; bash, yash and ksh93 connect to the network)", and a portability warning | the file, no warning |
 
 Examples:
 

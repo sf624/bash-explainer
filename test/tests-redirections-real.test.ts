@@ -282,11 +282,11 @@ describe('/dev/tcp and /dev/udp in a redirection', () => {
   it('are an ordinary path in sh and dash, which the dialect check reports', () => {
     const open = 'Open `/dev/tcp/127.0.0.1/9` for reading and writing as file descriptor 3. ';
     assert.strictEqual(token('exec 3<>/dev/tcp/127.0.0.1/9', '3<>/dev/tcp/127.0.0.1/9', 'en', 'sh').explanation,
-      `${open}POSIX does not define \`/dev/tcp/…\`: dash, busybox ash and other sh open it as an ordinary path, usually missing (bash, even in POSIX mode, and ksh93 connect to the network)`);
+      `${open}POSIX does not define \`/dev/tcp/…\`: dash, busybox ash and other sh open it as an ordinary path, usually missing (bash, even in POSIX mode, yash and ksh93 connect to the network)`);
     assert.strictEqual(token('exec 3<>/dev/tcp/127.0.0.1/9', '3<>/dev/tcp/127.0.0.1/9', 'en', 'dash').explanation,
-      `${open}dash opens \`/dev/tcp/…\` as an ordinary path, usually missing (POSIX does not define it; bash and ksh93 connect to the network)`);
-    assert.match(token('cat < /dev/tcp/h/80', '< /dev/tcp/h/80', 'ja', 'dash').explanation, /。dash では `\/dev\/tcp\/…` も普通のファイル名で、ふつうは存在しない（POSIX は定めていない。ネットワークに接続するのは bash と ksh93）$/);
-    assert.match(token('cat < /dev/tcp/h/80', '< /dev/tcp/h/80', 'ja', 'sh').explanation, /。POSIX は `\/dev\/tcp\/…` を定めていない。dash や busybox ash などの sh では普通のファイル名で、ふつうは存在しない（ネットワークに接続するのは bash（POSIX モードでも）と ksh93）$/);
+      `${open}dash opens \`/dev/tcp/…\` as an ordinary path, usually missing (POSIX does not define it; bash, yash and ksh93 connect to the network)`);
+    assert.match(token('cat < /dev/tcp/h/80', '< /dev/tcp/h/80', 'ja', 'dash').explanation, /。dash では `\/dev\/tcp\/…` も普通のファイル名で、ふつうは存在しない（POSIX は定めていない。ネットワークに接続するのは bash・yash・ksh93）$/);
+    assert.match(token('cat < /dev/tcp/h/80', '< /dev/tcp/h/80', 'ja', 'sh').explanation, /。POSIX は `\/dev\/tcp\/…` を定めていない。dash や busybox ash などの sh では普通のファイル名で、ふつうは存在しない（ネットワークに接続するのは bash（POSIX モードでも）・yash・ksh93）$/);
     // bash connects in POSIX mode too.
     assert.match(runBash('exec 3<>/dev/tcp/127.0.0.1/9', { posix: true }).stderr, /connect: Connection refused/);
     assert.deepStrictEqual(featuresOnLine(parser.parse('cat < /dev/tcp/h/80').root, 0), ['netRedirect']);

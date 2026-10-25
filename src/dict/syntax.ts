@@ -102,7 +102,7 @@ export function networkTarget(op: string, fd: string, target: string): NetworkPa
 }
 
 /**
- * What a redirection to `/dev/tcp/host/port` does in a shell that opens it as a socket (bash, ksh93): no file is
+ * What a redirection to `/dev/tcp/host/port` does in a shell that opens it as a socket (bash, yash, ksh93): no file is
  * opened; the shell connects, and the descriptor reads from or writes to the connection.
  */
 export function networkRedirect(op: string, fd: string, net: NetworkPath, target: string): Text {
@@ -141,13 +141,13 @@ export function networkRedirect(op: string, fd: string, net: NetworkPath, target
 export function networkPathAsFile(shell: string | undefined): Text {
   if (!shell) {
     return tx(
-      'POSIX は `/dev/tcp/…` を定めていない。dash や busybox ash などの sh では普通のファイル名で、ふつうは存在しない（ネットワークに接続するのは bash（POSIX モードでも）と ksh93）',
-      'POSIX does not define `/dev/tcp/…`: dash, busybox ash and other sh open it as an ordinary path, usually missing (bash, even in POSIX mode, and ksh93 connect to the network)',
+      'POSIX は `/dev/tcp/…` を定めていない。dash や busybox ash などの sh では普通のファイル名で、ふつうは存在しない（ネットワークに接続するのは bash（POSIX モードでも）・yash・ksh93）',
+      'POSIX does not define `/dev/tcp/…`: dash, busybox ash and other sh open it as an ordinary path, usually missing (bash, even in POSIX mode, yash and ksh93 connect to the network)',
     );
   }
   return tx(
-    `${shell} では \`/dev/tcp/…\` も普通のファイル名で、ふつうは存在しない（POSIX は定めていない。ネットワークに接続するのは bash と ksh93）`,
-    `${shell} opens \`/dev/tcp/…\` as an ordinary path, usually missing (POSIX does not define it; bash and ksh93 connect to the network)`,
+    `${shell} では \`/dev/tcp/…\` も普通のファイル名で、ふつうは存在しない（POSIX は定めていない。ネットワークに接続するのは bash・yash・ksh93）`,
+    `${shell} opens \`/dev/tcp/…\` as an ordinary path, usually missing (POSIX does not define it; bash, yash and ksh93 connect to the network)`,
   );
 }
 

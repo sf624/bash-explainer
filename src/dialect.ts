@@ -87,9 +87,10 @@ export const FEATURES: Record<string, Feature> = {
   procSub: { works: 'b ayk z', ja: 'プロセス置換 `<(…)` / `>(…)`', en: 'process substitution `<(…)` / `>(…)`', altJa: '一時ファイルや名前付きパイプを使う', altEn: 'use a temporary file or a named pipe' },
   ampRedirect: { works: 'b a kmz', ja: '`&>`（標準出力と標準エラー出力をまとめてリダイレクト）', en: '`&>` (redirect stdout and stderr together)', altJa: '`>file 2>&1` と書く（dash では `cmd &> file` が「バックグラウンド実行 + 空のリダイレクト」と解釈される）', altEn: 'write `>file 2>&1` (dash reads `cmd &> file` as "run in the background, then an empty redirection")' },
   ampAppend: { works: 'b    mz', ja: '`&>>`', en: '`&>>`', altJa: '`>>file 2>&1` と書く', altEn: 'write `>>file 2>&1`' },
-  // (Measured: bash and dash, by the probe in test/dialect.test.ts. The others are from their documentation: ksh93
-  // connects for `/dev/tcp` and `/dev/udp`; busybox ash, yash, mksh and zsh have no such names.)
-  netRedirect: { works: 'b   k', ja: '`/dev/tcp/ホスト/ポート` へのリダイレクトによるネットワーク接続', en: 'network connections by redirecting to `/dev/tcp/host/port`', altJa: '`nc` などのコマンドを使う', altEn: 'use a command such as `nc`' },
+  // (Measured by the probe in test/dialect.test.ts: bash and yash connect, dash does not (yash in CI, where it is
+  // installed). The others are from their documentation: ksh93 connects for `/dev/tcp` and `/dev/udp`; busybox
+  // ash, mksh and zsh have no such names.)
+  netRedirect: { works: 'b  yk', ja: '`/dev/tcp/ホスト/ポート` へのリダイレクトによるネットワーク接続', en: 'network connections by redirecting to `/dev/tcp/host/port`', altJa: '`nc` などのコマンドを使う', altEn: 'use a command such as `nc`' },
   pipeAmp: { works: 'b     z', ja: '`|&`（標準エラー出力もパイプに流す）', en: '`|&` (pipe stderr too)', altJa: '`2>&1 |` と書く', altEn: 'write `2>&1 |`' },
   eqeqTest: { works: 'b ayk m', ja: '`[ a == b ]` の `==`', en: '`==` in `[ ]`', altJa: '`=` を使う', altEn: 'use `=`' },
   arithCommand: { works: 'b   kmz', ja: '算術コマンド `(( ))`', en: 'the arithmetic command `(( ))`', altJa: '`[ "$((式))" -ne 0 ]` と書く', altEn: 'write `[ "$((expr))" -ne 0 ]`' },
