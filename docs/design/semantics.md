@@ -131,6 +131,7 @@ export interface CommandSlot {
   lookup?: 'no-functions' | 'builtins-only'; // `command`, `builtin`
   replacesShell?: boolean;              // `exec cmd`: nothing after it runs
   joinsWords?: boolean;                 // ssh joins the words into one string for the remote shell
+  params?: boolean;                     // `sh -c '…' NAME ARG…`: the operands after the string are its `$0`, `$1`…
 }
 ```
 

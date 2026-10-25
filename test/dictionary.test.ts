@@ -304,7 +304,7 @@ describe('the dictionary', () => {
     assert.match(tokens('ulimit -Hn 4096').find((t) => t.label === '-H')!.explanation, /hard limit/);
     assert.match(tokens('tar --zstd -cf a.tar.zst d').find((t) => t.label === '--zstd')!.explanation, /zstd/);
     assert.match(tokens('pkill -HUP -u root nginx').find((t) => t.label === '-HUP')!.explanation, /SIGHUP/);
-    assert.match(tokens('screen -dmS web').find((t) => t.label === '-dmS')!.explanation, /detached/);
+    assert.match(tokens('screen -dmS web').find((t) => t.label === '-m')!.explanation, /detached/);
   });
 
   it('describes every command and option in both languages', () => {
@@ -351,6 +351,15 @@ describe('the specs of the dictionary', () => {
       twice.push(...names.filter((n, i) => names.indexOf(n) !== i).map((n) => `${path} ${n}`));
     });
     assert.deepStrictEqual(twice, []);
+  });
+
+  it('list no cluster of short options as an option of its own: the interpreter splits it (`docker run -it`)', () => {
+    // (A tool's own option of several letters stays: `ip -br`, `xxd -ps`, `tcpdump -nn`, `ldapsearch -LLL`.)
+    const split = (line: string) => tokens(line).filter((t) => t.kind === 'option').map((t) => `${t.label}: ${t.explanation}`);
+    assert.deepStrictEqual(split('docker run -it ubuntu'), ['-it: Combined short options `-i` `-t`', '-i: keep stdin open', '-t: allocate a TTY']);
+    assert.deepStrictEqual(split('docker exec -it c1 sh'), ['-it: Combined short options `-i` `-t`', '-i: keep stdin open', '-t: allocate a TTY']);
+    assert.deepStrictEqual(split('usermod -aG docker alice').slice(1), ['-a: with `-G`, add to groups instead of replacing them', '-G: groups (replaced unless `-a`)']);
+    assert.deepStrictEqual(split('screen -dmS work').map((x) => x.split(':')[0]), ['-dmS', '-d', '-m', '-S']);
   });
 
   it('give a value spec to every option that takes a value', () => {

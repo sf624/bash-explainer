@@ -77,6 +77,8 @@ export type NameResolution =
      * (`import`), or because only its startup files would define it (`startup`: `bash -l`, BASH_ENV).
      */
     maybe?: 'branch' | 'later' | 'import' | 'startup';
+    /** With `startup`: a `source` or `.` before it in that shell, whose file may define it too. */
+    sourced?: SyntaxNode;
   }
   /** A builtin; `special` for the POSIX special builtins. `disabled`: `enable -n` on some paths only. */
   | { kind: 'builtin'; name: string; special: boolean; missed?: Missed; disabled?: CommandEntry }
@@ -253,7 +255,8 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
   // (In another shell, a function of the script that `sh` may not read, or that only its startup files would define.)
   const maybe = sure ? {} : { maybe: defined.imported === 'sh' ? 'import' as const : defined.imported ? 'startup' as const
     : model.definitions.functions.get(name)!.some((d) => before(d, at)) ? 'branch' as const : 'later' as const };
-  return { kind: 'function', name, fn: defined, sure, ...maybe, ...(shadows ? { shadows } : {}), ...(sure ? {} : { otherwise: builtin }), ...(missed ? { missed } : {}) };
+  const sourced = 'maybe' in maybe && maybe.maybe === 'startup' && place.sourced ? { sourced: place.sourced } : {};
+  return { kind: 'function', name, fn: defined, sure, ...maybe, ...sourced, ...(shadows ? { shadows } : {}), ...(sure ? {} : { otherwise: builtin }), ...(missed ? { missed } : {}) };
 }
 
 /** The builtin or the file `name` runs, past aliases and functions. */

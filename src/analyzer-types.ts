@@ -98,6 +98,11 @@ export interface ExplainOptions {
   hostCommands?: Record<string, CommandSpec>;
   /** Also build the reading tree of the line (`LineExplanation.reading`), for the panel's tree view. */
   reading?: boolean;
+  /**
+   * Set by the analyzer for a string a shell runs (`sh -c '…' sh "$msg"`): the shell (`sh -c`) and the words its
+   * `$0`, `$1`… start as, in order; `more`: words after them whose number is known only when it runs (`"$@"`).
+   */
+  positional?: { via: string; words: readonly string[]; more: boolean };
 }
 
 /** A note of a line and the range it is about (`LineExplanation.anchors`). */

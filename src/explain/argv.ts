@@ -4,7 +4,7 @@
 // variable for the command, a name that a declaration builtin declares or `unset` removes), subcommands (`git stash
 // push`), the command that a wrapper runs (sudo, xargs, `find -exec`), find's expression, the expression of `test`
 // and `[`, and the strings run as scripts (src/explain/scripts.ts).
-import type { Kind, Span, Token } from '../analyzer-types';
+import type { ExplainOptions, Kind, Span, Token } from '../analyzer-types';
 import { type ArgRole, type ArgvParse, type CommandRole, interpret, type RoleAt, type ValueRole } from '../argv/interpret';
 import { namespaceOf } from '../argv/query';
 import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
@@ -20,7 +20,7 @@ import { fact } from '../messages';
 import { nameInfo } from '../namefacts';
 import { spanOf } from '../noteanchors';
 import { nodeSections } from '../refs';
-import { shellEffectOf, slotEnvs } from '../semantics/env';
+import { shellEffectOf, type SlotLink, slotEnvs } from '../semantics/env';
 import { type Missed, testSpecOf } from '../semantics/names';
 import { attribute, docLine } from '../semantics/state';
 import { readDeclarationWords } from '../semantics/vars';
@@ -153,7 +153,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
           } else if (!role.parse) {
             // A command string (`bash -c 'cmd'`, `su -c 'cmd'`): the value of the option.
             slotNotes(cx, role, cx.slotEnvs.get(a)!, [a], assigned);
-            out.push(withScript(valueToken(cx, a, { role: 'value', of: role.of ?? '-c', index: 0 }, false), scriptTokens(cx, [a], cx.slotEnvs.get(a)!)));
+            out.push(withScript(valueToken(cx, a, { role: 'value', of: role.of ?? '-c', index: 0 }, false), scriptTokens(cx, [a], cx.slotEnvs.get(a)!, shellParams(cx, role, parse, nodes, word))));
           } else out.push(wrapped(cx, nodes, word, role, assigned));
           break;
         case 'joined':
@@ -375,7 +375,7 @@ function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Ex
   const item = role.spec;
   // `unset NAME`, `declare NAME=value`: what the name stands for, as bash decides it here.
   if (item?.acts === 'unsets') return unsetOperand(cx, nodes, word, namespaceOf(parse, item), parse);
-  if (item?.acts === 'declares') return declaredOperand(cx, a, namespaceOf(parse, item));
+  if (item?.acts === 'declares') return declaredOperand(cx, a, namespaceOf(parse, item), parse.command);
   // `env FOO=1 cmd`: an assignment for the command, not the command.
   if (item?.assignment) {
     const name = a.text.slice(0, a.text.indexOf('='));
@@ -440,12 +440,14 @@ function markedAssignment(cx: Explainer, a: SyntaxNode, desc: string, command: s
  * `-n`), `declare x` names the variable, `declare -f f` the function. A word that is not a plain name is explained
  * as its word (`\declare "a"=$v`: an argument, split as any other).
  */
-function declaredOperand(cx: Explainer, a: SyntaxNode, space: ReturnType<typeof namespaceOf>): Token {
+function declaredOperand(cx: Explainer, a: SyntaxNode, space: ReturnType<typeof namespaceOf>, command: string): Token {
   if (a.type === 'variable_assignment') {
     const t = skeletal(assignment(cx, a, space === 'nameref'), a, true);
     t.refs = nodeSections(a);
     return t;
   }
+  const assigned = space === 'function' ? undefined : argumentAssignment(cx, a, command);
+  if (assigned) return assigned;
   if (a.type !== 'word') return cx.explain(a);
   const element = /^([A-Za-z_]\w*)\[(.+)\]$/s.exec(a.text);
   if (space === 'function' || !element) {
@@ -456,6 +458,27 @@ function declaredOperand(cx: Explainer, a: SyntaxNode, space: ReturnType<typeof 
     : cx.s(`配列 \`${element[1]}\` の要素 \`[${element[2]}]\``, `Element \`[${element[2]}]\` of array \`${element[1]}\``);
   // (Unquoted, it is a glob first: `declare a[1]` with a file `a1` here declares the variable `a1`.)
   return wordAt(cx, a)?.steps.find((g) => g.kind === 'glob')?.applies !== false ? positional(cx, a, nameGlob(cx, a, a.text, text, 'declares')) : cx.tok(a, 'variable', text);
+}
+
+/**
+ * `NAME=VALUE` that bash passes as an ordinary argument, since the command name is not a declaration builtin as
+ * written (`command declare k=1`, `builtin export x=$v`): the builtin reads it as an assignment, but bash expanded it
+ * as any other word, so an unquoted expansion in it was split and globbed. Checked with bash 5.2: with `y='1 2'`,
+ * `command declare z=$y` sets `z` to `1` and fails on `2`.
+ */
+function argumentAssignment(cx: Explainer, a: SyntaxNode, command: string): Token | undefined {
+  const first = a.type === 'concatenation' ? a.namedChildren[0] : a;
+  const m = first?.type === 'word' ? /^([A-Za-z_]\w*)(\+?=)/.exec(first.text) : null;
+  if (!m) return undefined;
+  const [, name, op] = m;
+  const value = a.text.slice(m[0].length);
+  const split = wordAt(cx, a)?.steps.find((g) => g.kind === 'split')?.applies;
+  const what = op === '+=' ? cx.s(`変数 \`${name}\` に \`${value}\` を追記する`, `Append \`${value}\` to the variable \`${name}\``)
+    : cx.s(`変数 \`${name}\` に \`${value}\` を代入する`, `Assign \`${value}\` to the variable \`${name}\``);
+  return cx.tok(a, 'assignment', cx.s(
+    `${what}（\`${command}\` がこの語を代入として読む）。ただし bash にとっては普通の引数で、代入ではない（コマンド名が \`${command}\` そのものではないため）${split ? '。クォートしない展開は単語分割とグロブ展開を受ける' : ''}`,
+    `${what} (\`${command}\` reads the word as an assignment). To bash it is an ordinary argument, not an assignment, since the command name is not \`${command}\` itself${split ? ': an unquoted expansion in it is split and globbed' : ''}`,
+  ), a.type === 'concatenation' ? cx.sub(a).flatMap((t) => t.children) : []);
 }
 
 /**
@@ -555,6 +578,20 @@ function eachText(cx: Explainer, a: SyntaxNode, each: OperandSpec[]): string {
   const parts = braceExpand(a.text)!.map((w, k) => `\`${w}\`${cx.s(`（${cx.t(each[k].text).replace(/（(.*)）$/, ': $1')}）`, ` (${cx.t(each[k].text).replace(/ \((.*)\)$/, ': $1')})`)}`);
   const list = `${parts.slice(0, -1).join(cx.s('、', ', '))}${cx.s('と ', ' and ')}${parts[parts.length - 1]}`;
   return cx.s(`${list}に展開される`, `expands to ${list}`);
+}
+
+/**
+ * The words the `$0`, `$1`… of the shell that runs the command string at `word` start as (`sh -c '…' sh "$msg"`: `sh`,
+ * `"$msg"`), when its slot says the operands after it are those (`CommandSlot.params`): up to a word whose number of
+ * words is known only when it runs (`"$@"`, an unquoted `$x`).
+ */
+function shellParams(cx: Explainer, role: CommandRole, parse: ArgvParse, nodes: SyntaxNode[], word: number): ExplainOptions['positional'] {
+  if (!role.slot.params) return undefined;
+  const after = parse.roles.filter((r) => r.word > word && r.role.role === 'operand').map((r) => nodes[r.word]);
+  // (`countOf` gives nothing for a word that stays one word.)
+  const known = after.findIndex((w) => { const c = countOf(w); return c !== undefined && c.max !== 1; });
+  const via = (cx.slotEnvs.get(nodes[word])!.links.at(-1) as SlotLink).via;
+  return { via, words: (known < 0 ? after : after.slice(0, known)).map((w) => w.text), more: known >= 0 };
 }
 
 /** Words forming a command run by another command (sudo, xargs, find -exec…): the command, with its words read by its spec. */

@@ -362,6 +362,7 @@ The warning that an empty variable makes `rm -r` delete from the root:
 - `local` in a function is no pitfall when `eval` runs it there (`f() { eval 'local x'; }`, `f() { x=$(eval 'local y'); }`, `g() { eval 'local x'; }; eval g`); in a shell that `bash -c` starts, or in a trap's action (`f() { trap 'local x' EXIT; }`: it runs after `f` returns), it still is. Before, `local` in an `eval` string was always said to be outside a function.
 - The words of an ssh command that this shell expands before sending them are the ones bash expands: `'a'*`, `"a"*`, `a=~/x`, `x=~`, `<(echo hi)` and `>(cat)` now get the pitfall, and a `*` after `set -f` or `set -o noglob` no longer does.
 - A variable read in a `bash -c` string that bash cannot parse (`bash -c 'echo ${y'`) no longer gets the pitfall that it is not exported.
+- A function of this script that a `bash -c` string calls after it reads a file (`bash -c '. ./lib.sh && f'`, `bash -lc 'source ~/.profile; f'`) gets no pitfall that the new shell lacks it: the file may define it. Called before the file is read (`bash -c 'f; . ./lib.sh'`), it keeps the pitfall. With `-l`, the explanation of `f` names the file too: "only if the files it reads at startup (`-l`, `-i`, `BASH_ENV`), or the file it reads on line 2, define it".
 
 ### What `|| true` masks
 
@@ -410,6 +411,9 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 | `shopt -s failglob` (or `nullglob`), then `for f in *.txt; do [ -e "$f" ] \|\| continue; …` | a glob that matches nothing is an error (or goes away), so the loop never gets `*.txt` | no idiom (nor where either may be on) | the idiom "bash keeps `*.txt` as it is and the loop runs once with that text" |
 | `for f in "$@"; do [ -e "$f" ] \|\| continue; …` | no glob: nothing is kept as written | no idiom | the same idiom |
 | `echo "${x%@(a\|"$q")}"`, extglob not on | runs: `@(…)` in `${x%…}` is plain text (`x=ab` prints `ab`) | no caveat | "extended globs like `@(a\|` are a syntax error unless `shopt -s extglob` comes first" |
+
+| `declare -i n; n+=5`, `declare -ia a; a[0]+=5` | adds: 7 becomes 12 | "if `n` is 7, `+=5` makes 12, not 75"; with `n+=x`, "the value of the arithmetic expression `x` is added" | "if `n` is 7, `+=1` makes 8, not 71", whatever the operand |
+| `command declare k=1`, `builtin export q+=x`, `command declare z=$y` | `declare` assigns `k`; bash passes the word as an ordinary argument, so `z=$y` with `y='1 2'` is split (`z=1`, and an error on `2`) | "Assign `1` to the variable `k` (`declare` reads the word as an assignment). To bash it is an ordinary argument, not an assignment…"; with `$y`, "an unquoted expansion in it is split and globbed" | "Variable `k=1`" |
 
 `[[ $x == "$q" ]]` already said that a quoted right side is literal text.
 
@@ -509,4 +513,16 @@ The example of a pipeline inside `$( )` or `<( )` was titled with the command ar
 | `zsh -c 'echo hi'`, `dash`, `ksh93`, `mksh` | "Run the Z shell (zsh)", "Run dash, a small POSIX shell (`sh` on Debian and Ubuntu)", "Run the Korn shell (ksh93)"… | "Run the POSIX shell" |
 
 `builtin` and `command` look the name up (`builtin` among the builtins only, `command` past aliases and functions), and the builtin they find runs as bash would run it. Their own explanation keeps what they skip. A program that `command` finds (`command ls`) is still "run by `command`".
+
+### Strings, braces and options
+
+| Written | Shown now | Shown before |
+| --- | --- | --- |
+| `sudo sh -c 'printf "%s\n" "$1" > /etc/motd' sh "$msg"` | `$1`: "Positional parameter: argument #1 of the `sh -c` string (it starts as `"$msg"`)" | "Positional parameter: argument #1" |
+| `bash -c 'echo "$0 $1 $2"' name a` | `$0`: "`$0` of the `bash -c` string: the name given after it, `name`"; `$2`: "(none is given, so it starts empty)" | `$0`: the name of the script; `$2`: "argument #2" |
+| `{1..10..3}`, `{1..10..-3}`, `{10..1..3}`, `{1..10..4}`, `{01..10}`, `{a..k..2}`, `{1..5..0}` | the start, the end and the increment under the braces: "Increment: `-3` … its sign does not count: the start and the end set the direction", "End: `10` (the steps do not land on it: the last word is `9`)", "Start: `01`; it has a leading 0, so every number is padded with zeros to the same width", "0 counts as 1" | the braces alone, with the words they make |
+| `docker run -it`, `docker exec -it`, `screen -dmS name`, `usermod -aG docker alice` | "Combined short options `-i` `-t`", each with its own explanation | one option, `-it` "interactive with a TTY", `-dmS`, `-aG` |
+| `xargs -d '\n'` | "each item ends at the given character, and quotes and backslashes are not special (with one other than `\n`, the newline `echo` ends with stays in the last item)" | "the newline `echo` ends with stays in the last item" |
+
+The positional parameters are those the shell starts with: a `shift` or `set --` in the string changes them later. In a function the string defines, `$1` is the function's argument, as before. After a word whose number of words is known only when it runs (`"$@"`, an unquoted `$x`), the words that follow are not named. Options of several letters that tools document as one stay one: `tcpdump -nn`, `ldapsearch -LLL`, `ip -br`, `nmap -sS`.
 

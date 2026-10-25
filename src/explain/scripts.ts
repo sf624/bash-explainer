@@ -3,7 +3,7 @@
 // its lines is explained as a script of its own (`Explainer.nestedLine`), with its tokens placed in the source. And
 // the notes on a command that another one runs, which follow from where its slot runs it (src/semantics/env.ts): a
 // function or a builtin that a program cannot run, a variable that a new shell does not get.
-import type { Span, Token } from '../analyzer-types';
+import type { ExplainOptions, Span, Token } from '../analyzer-types';
 import type { CommandRole } from '../argv/interpret';
 import { specialVariables, wellKnownVariables } from '../dict/syntax';
 import { tx } from '../i18n';
@@ -30,7 +30,7 @@ const LOCAL_EXPANSIONS: ReadonlySet<ExpansionStep['kind']> = new Set(['tilde', '
  * token per line when it has several). Its notes and examples join the line's. `note`: why it is not read, or that
  * its shell is not known.
  */
-export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv): { tokens: Token[]; note?: string } {
+export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, positional?: ExplainOptions['positional']): { tokens: Token[]; note?: string } {
   const script = cx.state.script(words, env);
   // (A string no shell runs, `sudo eval s`, has the pitfall of its slot.)
   if ('why' in script) {
@@ -41,7 +41,7 @@ export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv): 
   const rows = script.tree.text.split('\n');
   const lines: Token[][] = [];
   for (let line = 0; line < rows.length; line++) {
-    const ex = cx.nestedLine(script, line);
+    const ex = cx.nestedLine(script, line, positional);
     // (A statement over several lines is explained whole on each of them: keep it, and its notes, on its first.)
     const items = ex.items.filter((t) => t.span.start.line === line);
     lines.push(items.map((t) => fromScript(cx, t, script)));
@@ -173,8 +173,10 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
     let fn: string | undefined;
     if (!('why' in script)) {
       const own = new Set(descendants(script.tree.root, ['function_definition']).map((d) => field(d, 'name')!.text));
-      fn = descendants(script.tree.root, ['command']).filter((c) => !assignmentsOnly(c)).map((c) => staticWordValue(field(c, 'name')!.namedChildren[0]))
-        .find((n) => n !== undefined && !own.has(n) && cx.state.definitions.functions.has(n));
+      const call = descendants(script.tree.root, ['command']).filter((c) => !assignmentsOnly(c))
+        .find((c) => { const n = staticWordValue(field(c, 'name')!.namedChildren[0]); return n !== undefined && !own.has(n) && cx.state.definitions.functions.has(n); });
+      // (A file the string reads first with `source` or `.` may define it: `bash -c '. ~/.profile; f'`.)
+      if (call && !script.model.sources.some((x) => x.startIndex < call.startIndex)) fn = staticWordValue(field(call, 'name')!.namedChildren[0]);
     } else {
       const lit = literalContent(first)?.text;
       fn = lit ? /^\s*([A-Za-z_][\w-]*)/.exec(lit)?.[1] : undefined;
