@@ -4,7 +4,7 @@ src/analyzer.ts is 4,202 lines (at d265509). One class, `Analyzer`, holds about 
 
 An outside review noted the size, and the pace (683 commits in 9 days). For one maintainer over the long term, a thin core matters more than a wider scope. The maintainer agreed: the next big work is to thin analyzer.ts, not to add features. This page plans it. Each step is a PR. The [traceability table](#traceability) records the findings and the steps.
 
-Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), step 3 (the readers) is done (#325), step 4 (words and expansions) is done (#327), step 5 (tests, redirections) is done (#329, #330), and step 6 (examples, embedded languages) is in progress: the examples are done (#333). Steps 7 to 9 are not started: src/explain/ has the context, the node helpers, the readers, the words, the tests, the redirections and the examples (those of jq and yq apart), and src/analyzer.ts is 2,239 lines.
+Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), step 3 (the readers) is done (#325), step 4 (words and expansions) is done (#327), step 5 (tests, redirections) is done (#329, #330), and step 6 (examples, embedded languages) is done (#333, #334). Steps 7 to 9 are not started: src/explain/ has the context, the node helpers, the readers, the words, the tests, the redirections, the examples (those of jq and yq apart) and the embedded languages, and src/analyzer.ts is 2,106 lines.
 
 The goal is not new behaviour. Every explanation stays byte-identical, except where a step fixes a contradiction with bash (and then says so).
 
@@ -403,6 +403,16 @@ Where the plan did not fit main:
 - The names guard (3.3) took values of closed unions for command names: `st.kind === 'file'` (a `Stream` is a file or stdin), `mode === 'file'` (a `GlobMode` is `file` or `value`), `u.from === 'file'` (a `Stdin`) and `kind === 'read'` (the spec's example kind, `CommandSpec.example`, whose values are command names). As in steps 4 and 5, the same tests name the other case (`st.kind !== 'stdin'`, `mode !== 'value'`), or the field only that variant has (`'name' in u`); the example kind is compared on its property, `spec.example === 'read'`, which the guard allows for `read` only (`.example` joined the closed fields in the review of #333). The guard still does not look at `case` labels (see 5.3).
 - `wantsExample` and `titledExamples` filter and title the line's examples in `explainLine`. They are in the examples' group (1.2), so they moved here, not to the orchestration.
 
+**Embedded languages, as done (#334).** The snapshots are byte-identical before and after, on the inputs and option sets of the examples above (main, #333 and this PR give the same bytes). src/analyzer.ts went from 2,239 to 2,106 lines (2,719 to 2,106 over step 6); src/explain/embedded.ts is 147 lines. The move was done by the same script. What moved where:
+
+- src/explain/embedded.ts: `embedded` and `embeddedText` (a word, or a part of one, read by the explainer of its language: the arguments, step 7, call them from the class), `ansiCChildren` (the escapes of `$'…'`: the dispatch, step 9, calls it), and, not exported, `embeddedTextInner`, `embeddedExample` (the worked example of each language, from examples.ts and examples-jq.ts) and `previousNamed` (the test before find's pattern; it reads nothing of the context and takes no `cx`).
+- `findExpression` stays with `render` (step 7), as 2.5 says, so embedded.ts does not call argv.ts. Layers: embedded.ts imports context, nodes, reads, examples and examples-jq.
+
+Where the plan did not fit main:
+
+- The explainers' context in `embeddedTextInner` was a local `cx`, which would have hidden the line's: it is `ecx`.
+- As in the examples, the names guard took `st.kind === 'file'` (the awk example's `FILENAME`) for the command `file`: it reads `st.kind !== 'stdin'`. The guard is unchanged.
+
 ### Step 7: arguments, assignments, scripts (L, in three PRs)
 
 src/explain/scripts.ts (about 220 lines; `nestedLine` from the context replaces the nested `Analyzer`), src/explain/assignments.ts (about 150), then src/explain/argv.ts (about 600, or options.ts and operands.ts). argv rendering is where new commands and options most often land: do this PR in a quiet window.
@@ -425,7 +435,7 @@ src/explain/dispatch.ts (about 260 lines). analyzer.ts keeps `Analyzer`, `explai
 | 3 | Readers, where, status | M | 1 (#325) | 2 |
 | 4 | Words | M | 1 (#327) | 3 |
 | 5 | Tests, redirections | M each | 2 (#329, #330) | 4; the tests start examples.ts |
-| 6 | Examples, embedded | M each | 2 | 4, 5 (#329) |
+| 6 | Examples, embedded | M each | 2 (#333, #334) | 4, 5 (#329) |
 | 7 | Scripts, assignments, argv | M–L | 3 | 5, 6 |
 | 8 | Commands, compound, line notes | M each | 2 | 7 |
 | 9 | Dispatch, orchestration | M | 1 | 8 |
@@ -465,14 +475,14 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 
 | ID | Finding (short) | Step | Status | Verified by |
 |---|---|---|---|---|
-| T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | in progress (step 3: PR #325; step 4: PR #327; step 5: PR #329, PR #330; step 6: PR #333) | file-length test: analyzer.ts under 1,000 lines, then about 150 |
+| T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | in progress (step 3: PR #325; step 4: PR #327; step 5: PR #329, PR #330; step 6: PR #333, PR #334) | file-length test: analyzer.ts under 1,000 lines, then about 150 |
 | T2 | Per-line state written from anywhere: notes pushed in 40 places, examples in 27, `argCtx` an implicit parameter | 2 | done (PR #324) | the snapshot unchanged; no `cx.extraNotes.push` left: notes, examples and the command go through the context's sinks and `withCommand` |
 | T3 | Three overlapping hosts: `LineContext`, `ExpansionHost`, the analyzer's half of `EmbeddedContext` | 2, 4 | done (PR #324, PR #327) | one `Explainer`; the reads of the words (`ExpansionWords`) are functions of src/explain/words.ts since step 4; the snapshot unchanged |
 | T4 | Name checks: yq (1356), `local` (1364), sed (3157), xargs label (2741) | 1.1 | done (PR #308) | names guard list empty; tests against the tools |
 | T5 | Where code runs, decided from node types: `groupSubshell` (377), `inSubshell` (417), `pipeSubshellPitfalls` (2964, 2982) | 1.2 | done (PR #308) | env probes; test/facts-from-model.test.ts rows |
 | T6 | `shoptAt` decides `globstar` per shell (361–362) | 1.3 | done (PR #308) | state probes |
 | T7 | A string's variables read by a regex (3185); risky words by node types (3239) | 1.4 | done (PR #308) | rows against bash (`bash -c`, `sudo`, `env -i`) |
-| T8 | Cycles between the groups (1.4) | 3–9 | in progress (step 3: PR #325; step 4: PR #327; step 5: PR #329, PR #330; step 6: PR #333) | test/explain-imports.test.ts |
+| T8 | Cycles between the groups (1.4) | 3–9 | in progress (step 3: PR #325; step 4: PR #327; step 5: PR #329, PR #330; step 6: PR #333, PR #334) | test/explain-imports.test.ts |
 | T9 | No guard on file length, import cycles or name checks | 0 | done (PR #275) | the guards themselves |
 | T10 | No before/after check of the whole explanation | 0 | done (PR #275) | test/snapshot.ts |
 
@@ -484,7 +494,7 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 | 3 | done (PR #325) |
 | 4 | done (PR #327) |
 | 5 | done (PR #329, PR #330) |
-| 6 | in progress (PR #333) |
+| 6 | done (PR #333, PR #334) |
 | 7 | planned |
 | 8 | planned |
 | 9 | planned |
