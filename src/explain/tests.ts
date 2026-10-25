@@ -10,7 +10,6 @@ import { explainRegex } from '../embedded/regex';
 import { toJsRegex } from '../examples/regex';
 import { shorten } from '../label';
 import { fact } from '../messages';
-import { nameInfo } from '../namefacts';
 import { spanOf } from '../noteanchors';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
@@ -36,7 +35,8 @@ export function test(cx: Explainer, n: SyntaxNode): Token {
         'Extended test `[[ ]]`: evaluates a condition (bash-only; shell syntax, not a command, so there is no word splitting or globbing inside and variables are safe unquoted; `&&`, `||`, `<` and `=~` work too)')
       : arithTestExplanation(cx) + commaNote(cx, n);
     const children = open === '((' ? arithChildren(cx, n) : cx.subs(n.namedChildren);
-    const t = Object.assign(cx.tok(n, 'test', expl, children), open === '[[' ? { name: nameInfo(cx.lang, { kind: 'keyword', name: '[[' }, cx, n) } : {});
+    // (No badge on `[[`: its kind, a test, says what it is; the badge is for `time`, which has another meaning.)
+    const t = cx.tok(n, 'test', expl, children);
     t.summary = cx.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
     skeletal(t, n, true);
     return t;

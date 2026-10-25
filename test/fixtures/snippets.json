@@ -1263,6 +1263,7 @@
  "time echo -e hi",
  "time echo -e hi | cat",
  "time grep -r x .",
+ "time ls",
  "time ls -a",
  "time ls 2>&1",
  "time ls |\n  grep x",

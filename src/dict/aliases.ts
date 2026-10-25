@@ -1,4 +1,5 @@
-import { shellFromName } from '../dialect';
+import { type Shell, shellFromName } from '../dialect';
+import { tx, type Text } from '../i18n';
 import { builtins } from './builtins';
 import { commands } from './commands';
 import type { CommandSpec } from '../argv/spec';
@@ -49,6 +50,26 @@ export function lookupCommand(name: string): CommandSpec | undefined {
   if (alias) return commands[alias.as];
   const shell = base === 'busybox' ? undefined : shellFromName(base);
   if (shell === 'bash') return commands.bash;
-  if (shell) return commands.sh;
+  if (shell) return shellSpec(shell);
   return undefined;
+}
+
+/** What each shell other than bash and sh is, for the summary of its spec (the options are those of `sh`). */
+const SHELL_SUMMARIES: Partial<Record<Shell, Text>> = {
+  dash: tx('dash（小さな POSIX シェル。Debian や Ubuntu の `sh`）を起動する', 'Run dash, a small POSIX shell (`sh` on Debian and Ubuntu)'),
+  ash: tx('busybox の ash（小さな POSIX シェル）を起動する', 'Run busybox ash, a small POSIX shell'),
+  yash: tx('yash（POSIX に忠実なシェル）を起動する', 'Run yash, a shell that follows POSIX closely'),
+  ksh: tx('Korn シェル（ksh93）を起動する', 'Run the Korn shell (ksh93)'),
+  mksh: tx('Korn シェルの一つ（mksh・pdksh の仲間）を起動する', 'Run a Korn shell of the pdksh line (mksh, pdksh, oksh)'),
+  zsh: tx('Z シェル（zsh）を起動する', 'Run the Z shell (zsh)'),
+};
+const shellSpecs = new Map<Shell, CommandSpec>();
+
+/** The spec of a shell other than bash: the options of `sh`, with a summary of its own (zsh is no POSIX shell). */
+function shellSpec(shell: Shell): CommandSpec {
+  const summary = SHELL_SUMMARIES[shell];
+  if (!summary) return commands.sh;
+  let spec = shellSpecs.get(shell);
+  if (!spec) shellSpecs.set(shell, (spec = { ...commands.sh, summary }));
+  return spec;
 }

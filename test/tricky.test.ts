@@ -1132,7 +1132,7 @@ describe('tricky lines (round 5)', () => {
     const src = ROUND5[1];
     const e = tokensAt(src, 0, 'en').find((x) => x.label === 'e')!;
     assert.strictEqual(e.kind, 'command');
-    assert.match(e.explanation, /^Run the external command `e`/);
+    assert.strictEqual(e.explanation, 'Run the command `e` (the alias of line 1 is not in effect here)');
     assert.match(notesAt(src).join('\n'), /^ℹ `e` is defined as an alias on line 1, but bash reads a whole line \(and a whole compound command or function body\) before running it, so an alias defined on the same line is not in effect yet\. It is not an alias here: without a command named `e`, this is "command not found" \(a string given to `eval` is read again when it runs, so it can use the alias\)$/m);
     assert.match(new Analyzer('ja').explainLine(parser.parse(src), 0).notes.join('\n'), /同じ行で定義したエイリアスはまだ使えません/);
     assert.strictEqual(bash(src), 'noalias\nA\n');
@@ -1144,15 +1144,15 @@ describe('tricky lines (round 5)', () => {
     // A body read before the alias ran does not see it; one read after does.
     const body = 'shopt -s expand_aliases\nalias g=\'echo G\'\nf() { g; h; }\nalias h=\'echo H\'\nf\n{\nalias m=\'echo M\'\nm\n}\nif true; then alias k=\'echo K\'; k; fi\nk';
     assert.match(findAt(body, 2, 'g').explanation, /^The alias `g` defined on line 2/);
-    assert.match(findAt(body, 2, 'h').explanation, /^Run the external command `h`/);
+    assert.match(findAt(body, 2, 'h').explanation, /^Run the command `h` \(the alias of line 4 is not in effect here\)$/);
     assert.match(notesAt(body, 2).join('\n'), /`h` is defined as an alias on line 4, but this is read before that/);
-    assert.match(findAt(body, 7, 'm').explanation, /^Run the external command `m`/);
-    assert.match(findAt(body, 9, 'k').explanation, /^Run the external command `k`/);
+    assert.match(findAt(body, 7, 'm').explanation, /^Run the command `m` \(the alias of line 7 is not in effect here\)$/);
+    assert.match(findAt(body, 9, 'k').explanation, /^Run the command `k` \(the alias of line 10 is not in effect here\)$/);
     assert.match(findAt(body, 10, 'k').explanation, /^The alias `k` defined on line 10/);
     assert.strictEqual(bash(`exec 2>&1\n${body}`).replace(/^.*line \d+: /gm, ''), 'G\nh: command not found\nm: command not found\nk: command not found\nK\n');
     // A use before the definition is no alias either.
     const early = 'e a\nalias e=\'echo A\'';
-    assert.match(findAt(early, 0, 'e a').explanation, /^Run the external command `e`/);
+    assert.match(findAt(early, 0, 'e a').explanation, /^Run the command `e` \(the alias of line 2 is not in effect here\)$/);
     assert.match(notesAt(early).join('\n'), /this is read before that, and an alias works only on what is read after it ran/);
   });
 

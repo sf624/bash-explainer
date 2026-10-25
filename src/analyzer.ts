@@ -925,8 +925,8 @@ export class Analyzer {
         };
       }
       if (missed.why === 'later' || missed.why === 'same-unit') {
-        const same = missed.why === 'same-unit';
-        this.cx.note(fact(this.lang, same ? 'alias-defined-same-unit' : 'alias-defined-later', { name, line: first + 1 }), nameNode);
+        this.cx.note(fact(this.lang, missed.why === 'same-unit' ? 'alias-defined-same-unit' : 'alias-defined-later', { name, line: first + 1 }), nameNode);
+        if (res.kind === 'file') return { name, res: ran, kind: 'command', nameTokens: [], refs: ['6.6'], explanation: this.s(`コマンド \`${name}\` を実行する（行 ${first + 1} のエイリアスはここではまだ効かない）`, `Run the command \`${name}\` (the alias of line ${first + 1} is not in effect here)`) };
       }
     }
     if (res.kind === 'function') return { name, res: ran, kind: 'function', fn: res.sure || 'maybe', nameTokens: [], refs: ['3.3'], explanation: this.functionCall(res) };

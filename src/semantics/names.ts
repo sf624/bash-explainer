@@ -386,7 +386,11 @@ export interface NameFacts {
   /** The name as bash looks it up (quotes removed). */
   name: string;
   runs: NameKind;
-  /** The command that looks the name up in place of bash's usual order: a program (`sudo`, `xargs`, `env`), or `command` and `builtin`. */
+  /**
+   * The command that looks the name up in place of bash's usual order: a program (`sudo`, `xargs`, `env`), or
+   * `command` and `builtin` when they find no builtin (`command ls`, `builtin ls`). A builtin they find runs in this
+   * shell, as bash runs it: no `by` (`builtin cd`).
+   */
   by?: string;
   /**
    * `runs` `none`: why nothing runs. `not-a-builtin`: `builtin` finds no builtin of the name. `not-found`: a reserved
@@ -415,7 +419,8 @@ export function nameFacts(res: NameResolution, opts: {
 } = {}): NameFacts {
   const last = opts.env?.links[opts.env.links.length - 1];
   const slot = last?.kind === 'slot' && (last.slot.run === 'exec' || last.slot.lookup) ? last : undefined;
-  const by = slot ? { by: slot.via } : {};
+  // (`builtin cd`, `command echo`: the builtin runs in this shell, as bash would run it: no other command runs it.)
+  const by = slot && !(slot.slot.run === 'current-shell' && res.kind === 'builtin') ? { by: slot.via } : {};
   const { name } = res;
   const bash = !opts.shell || opts.shell === 'bash' || !BASH_ONLY_BUILTINS.has(name);
   const builtin = Object.hasOwn(builtins, name) && bash ? builtins[name] : undefined;

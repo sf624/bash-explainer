@@ -112,7 +112,7 @@ describe('the Language Server', function () {
     assert.strictEqual(r.result.contents.kind, 'markdown');
     // The part at the position first (`[[ … ]]`, with the parts around it), then the whole line below a rule.
     const [part, whole] = r.result.contents.value.split('\n---\n');
-    assert.match(part, /^`if` \*condition\* `then`.* ›\n\n\*\*`\[\[ -f "\$1" \]\]`\*\* · _keyword_\n\nExtended test/);
+    assert.match(part, /^`if` \*condition\* `then`.* ›\n\n\*\*`\[\[ -f "\$1" \]\]`\*\*\n\nExtended test/);
     assert.deepStrictEqual(r.result.range, { start: { line: 1, character: 3 }, end: { line: 1, character: 16 } });
     assert.match(whole, /^\n\*\*Bash Explainer · line 2\*\*/);
     assert.match(whole, /`-f "\$1"`/);

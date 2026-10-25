@@ -466,7 +466,7 @@ describe('the analyzer says what a name runs', () => {
       ['shopt -s failglob; a=(1 2 3)\nunset a[1]', 'a=([0]="1" [1]="2" [2]="3")\n', /failglob makes it an error \(`no match`\) and nothing is unset/],
       ['set -f; a=(1 2 3)\nunset a[1]', 'a=([0]="1" [2]="3")\n', /Unset the element `a\[1\]` of the array `a` \(the other elements keep their indices\)\. But `set -f`/],
       ['x=5\n\\unset x', '', /The command name `\\unset` becomes `unset`[\s\S]*Unset the variable `x` \(it becomes undefined\)/],
-      ['x=5\ncommand unset x', '', /runs `unset`[\s\S]*Unset the variable `x` \(it becomes undefined\)/],
+      ['x=5\ncommand unset x', '', /^(?![\s\S]*runs `unset`)[\s\S]*Unset the variable `x` \(it becomes undefined\)/],
       ['f() { :; }\nbuiltin unset f', '', /Remove the function `f`/],
       ['a=(1 2 3)\nunset \'a[1]\'', 'a=([0]="1" [2]="3")\n', /Unset the element `a\[1\]` of the array `a`/],
       ['a=(1 2 3)\nunset a[1]', 'a=([0]="1" [2]="3")\n', /Unset the element `a\[1\]`[\s\S]*if a file matches it, that file's name is unset instead/],
