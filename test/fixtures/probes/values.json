@@ -944,5 +944,175 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.5.8.1",
+    "snippet": "s='[section] key'; @PROBE:a@ \"${s//[/}\"; @PROBE:b@ \"${s//[[]/(}\"; @PROBE:c@ \"${s//[[\\]]/}\"; @PROBE:d@ \"${s/#[/x}\"; @PROBE:e@ \"${s#[}\"; @PROBE:f@ \"${s%%[]]*}\"",
+    "facts": {
+      "a": [
+        [
+          "section] key"
+        ]
+      ],
+      "b": [
+        [
+          "(section] key"
+        ]
+      ],
+      "c": [
+        [
+          "section key"
+        ]
+      ],
+      "d": [
+        [
+          "xsection] key"
+        ]
+      ],
+      "e": [
+        [
+          "section] key"
+        ]
+      ],
+      "f": [
+        [
+          "[section"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8.1",
+    "snippet": "t='a]b[c\\d-e^f!g:h'; @PROBE:a@ \"${t//[a[]/x}\"; @PROBE:b@ \"${t//[![]/x}\"; @PROBE:c@ \"${t//[[:alpha:][]/x}\"; @PROBE:d@ \"${t//[\\!]/x}\"; @PROBE:e@ \"${t//[\\^]/x}\"; @PROBE:f@ \"${t//['a-c']/x}\"; @PROBE:g@ \"${t//[a\\-c]/x}\"; @PROBE:h@ \"${t//[[:word:]]/x}\"; @PROBE:i@ \"${t//[]-a]/x}\"",
+    "facts": {
+      "a": [
+        [
+          "x]bxc\\d-e^f!g:h"
+        ]
+      ],
+      "b": [
+        [
+          "xxx[xxxxxxxxxxx"
+        ]
+      ],
+      "c": [
+        [
+          "x]xxx\\x-x^x!x:x"
+        ]
+      ],
+      "d": [
+        [
+          "a]b[c\\d-e^fxg:h"
+        ]
+      ],
+      "e": [
+        [
+          "a]b[c\\d-exf!g:h"
+        ]
+      ],
+      "f": [
+        [
+          "x]b[x\\dxe^f!g:h"
+        ]
+      ],
+      "g": [
+        [
+          "x]b[x\\dxe^f!g:h"
+        ]
+      ],
+      "h": [
+        [
+          "x]x[x\\x-x^x!x:x"
+        ]
+      ],
+      "i": [
+        [
+          "xxb[c\\d-exf!g:h"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "u='a/b[c]/d'; @PROBE:a@ \"${u//[/]/x}\"; @PROBE:b@ \"${u//[c/]/x}\"; @PROBE:c@ \"${u//[c\\/]/x}\"; @PROBE:d@ \"${u///x}\"; @PROBE:e@ \"${u////x}\"; @PROBE:f@ \"${u//b[/c]/x}\"",
+    "facts": {
+      "a": [
+        [
+          "a/b]/xc]/d"
+        ]
+      ],
+      "b": [
+        [
+          "a/b]/x]/d"
+        ]
+      ],
+      "c": [
+        [
+          "axb[x]xd"
+        ]
+      ],
+      "d": [
+        [
+          "a/b[c]/d"
+        ]
+      ],
+      "e": [
+        [
+          "axb[c]xd"
+        ]
+      ],
+      "f": [
+        [
+          "a/c]/xc]/d"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8.1",
+    "snippet": "t='a]b[c\\d-e^f!g:h'; @PROBE:a@ \"${t//[!]]/x}\"; @PROBE:b@ \"${t#[!]]}\"; @PROBE:c@ \"${t//[[:]/x}\"; @PROBE:d@ \"${t//[[=a=]]/x}\"; w='a b-c'; @PROBE:e@ \"${w//[[.space.]]/x}\"; x='[abc'; @PROBE:f@ \"${x//[a*/y}\"",
+    "none": {
+      "a": "bash counts a match of `[!]]` in `${t/p/r}` as two characters (the count ends the brackets at the first `]`), so it finds none: not followed",
+      "c": "a `[:` that does not close: bash drops or keeps the `[` by rules of its own: not read",
+      "d": "an equivalence class: which characters it holds depends on the locale",
+      "e": "`[.space.]` is a name from bash's own table of collating symbols: not read",
+      "f": "bash counts the unclosed `[a*` as three characters in `${x/p/r}` and replaces only three: not followed"
+    },
+    "facts": {
+      "a": [
+        [
+          "a]b[c\\d-e^f!g:h"
+        ]
+      ],
+      "b": [
+        [
+          "]b[c\\d-e^f!g:h"
+        ]
+      ],
+      "c": [
+        [
+          "a]b[c\\d-e^f!gxh"
+        ]
+      ],
+      "d": [
+        [
+          "x]b[c\\d-e^f!g:h"
+        ]
+      ],
+      "e": [
+        [
+          "axb-c"
+        ]
+      ],
+      "f": [
+        [
+          "yc"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

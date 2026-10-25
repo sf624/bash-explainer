@@ -9,6 +9,7 @@
 // known here, an attribute given on some paths) "may" apply: `'unknown'`.
 import { evalArith } from '../arith';
 import { braceExpand, globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
+import { patsubMiscounts } from '../bracket';
 import { parseExpansion } from '../expansion';
 import { ansiCValue, decodedText, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
@@ -707,8 +708,8 @@ class Evaluator {
     }
     // `${x/p/r}`, `${x//p/r}`, `${x/#p/r}`, `${x/%p/r}`. An unquoted `&` in the replacement is the match (patsub_replacement).
     const rep = replacementOf(part('replacement'), this);
-    // (A pattern that matches nothing at all, like `*`, has rules of its own at the end of the value.)
-    if (rep === undefined || test('')) return undefined;
+    // (A pattern that matches nothing at all, like `*`, has rules of its own at the end of the value; `[!]]`: patsubMiscounts.)
+    if (rep === undefined || test('') || patsubMiscounts(pattern)) return undefined;
     const at = (k: number): number | undefined => range(len, k).find((e) => test(value.slice(k, e)));
     if (op === '/#') {
       const e = at(0);
@@ -832,13 +833,12 @@ function paramWord(text: string, quoted: boolean, ev: Evaluator): Piece[] | unde
 }
 
 /**
- * A pattern of `${x#p}` as a glob for globToRegex: quoted characters escaped. Its quotes count also when the `${…}`
- * is in double quotes (`"${x#'a'}"` removes an `a`), and so does the pattern that `$p` gives (`"${x#$p}"`).
+ * A pattern of `${x#p}` as a glob for globToRegex: quoted characters escaped (but letters and digits). Its quotes count
+ * also when the `${…}` is in double quotes (`"${x#'a'}"` removes an `a`), and so does the pattern `$p` gives (`"${x#$p}"`).
  */
 function patternOf(text: string, ev: Evaluator): string | undefined {
-  if (hasExtglob(text)) return undefined;
-  const segs = operandSegs(text, false, ev.param);
-  return segs?.map((g) => (g.quoted ? g.text.replace(/[\\*?[\]]/g, '\\$&') : g.text)).join('');
+  const segs = hasExtglob(text) ? undefined : operandSegs(text, false, ev.param);
+  return segs?.map((g) => (g.quoted ? g.text.replace(/\W/g, '\\$&') : g.text)).join('');
 }
 
 /** The replacement of `${x/p/r}` (its quotes count as in a pattern); undefined with an unquoted `&` (the match, with patsub_replacement). */

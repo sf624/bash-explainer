@@ -231,6 +231,8 @@ export function globToRegex(pattern: string, mode: GlobMode, opts: GlobOpts = {}
         const end = bracketEnd(pattern, i, to);
         if (end > 0) {
           let set = bracketRegex(pattern.slice(i + 1, end));
+          // (One that bash reads by rules of its own or by the locale, `[[.space.]]`, `[[=a=]]`: no regex.)
+          if (set === undefined) throw new Unmatchable();
           // (`nocaseglob`: both cases of every letter in the set.)
           if (ci(i)) set = set.replace(/\]$/, `${set.slice(1, -1).toUpperCase()}${set.slice(1, -1).toLowerCase()}]`);
           out += `${noDot(i)}${set}`;
@@ -298,7 +300,7 @@ export function globExamples(pattern: string, mode: GlobMode, opts: GlobOpts = {
       if (c === '[') {
         const end = bracketEnd(pattern, i, to);
         if (end > 0) {
-          const re = new RegExp(`^${bracketRegex(pattern.slice(i + 1, end))}$`);
+          const re = new RegExp(`^${bracketRegex(pattern.slice(i + 1, end))!}$`);
           const pool = 'abcxyz0123456789ABC-_defghijklmnopqrstuvwDEFGHIJKLMNOPQRSTUVWXYZ.+@%,=~]!^\\';
           const ok = pool.split('').filter((ch) => re.test(ch));
           out += ok[v % Math.max(ok.length, 1)] ?? 'a';
