@@ -1,7 +1,7 @@
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import type { BashVersion } from './bashversion';
-import { dialectIssues, issueLevel, Shell } from './dialect';
+import { dialectIssues, Shell } from './dialect';
 import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
@@ -39,7 +39,7 @@ export interface Shells {
 export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line: number, lang: Lang, shells: Shells, opts: ExplainOptions): LineExplanation {
   if (doc.extracted) {
     return explainHostedLine(analyzer, doc.tree, doc.extracted, doc.lines, line, lang, shells.forced, opts)
-      ?? { line, summary: '', items: [], context: [], notes: [], examples: [] };
+      ?? { line, summary: '', items: [], context: [], notes: [], noteInfo: [], examples: [] };
   }
   return analyzer.explainLine(doc.tree, line, shells.forced ?? shells.detected, opts);
 }
@@ -194,7 +194,7 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bas
     const n = i.place;
     const sameLine = n.startPosition.row === n.endPosition.row;
     return {
-      code: i.id, severity: severityOf(issueLevel(i.kind)), message: i.message, fix: fixFor(i),
+      code: i.id, severity: severityOf(i.note.level), message: i.note.text, fix: fixFor(i),
       startLine: n.startPosition.row, startCol: n.startPosition.column,
       endLine: n.startPosition.row, endCol: sameLine ? n.endPosition.column : doc.lines[n.startPosition.row].length,
     };
@@ -221,7 +221,7 @@ function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined):
       const start = at(source(index(i.place.startPosition), false));
       const end = at(source(index(i.place.endPosition), true));
       out.push({
-        code: i.id, severity: severityOf(issueLevel(i.kind)), message: i.message,
+        code: i.id, severity: severityOf(i.note.level), message: i.note.text,
         startLine: start.line, startCol: start.col, endLine: start.line, endCol: end.line === start.line ? end.col : doc.lines[start.line].length,
       });
     }

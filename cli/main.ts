@@ -12,7 +12,6 @@ import { Lang, resolveLang } from '../src/i18n';
 import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
 import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { splitNote } from '../src/messages';
 import { explained, noteRefs, notesByLevel, refsText, toPlainMarkdown, wordsMarkdown } from '../src/ui/render';
 import { startLanguageServer } from './lsp';
 import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
@@ -266,8 +265,7 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
   const out: string[] = [`${paint('1', `${name}:${line + 1}`)}  ${lineText.trim()}`];
   for (const c of ex.context) out.push(`  ${paint('90', `› ${c.label} (${c.line + 1})`)}`);
   // A note's mark and word in the colour of its level, as the problems print theirs (`warning`, `info`).
-  for (const n of notesByLevel(ex.notes)) {
-    const { level, body } = splitNote(n, lang);
+  for (const { text: n, level, body } of notesByLevel(ex)) {
     const head = n.slice(0, n.length - body.length).trimEnd();
     const shown = head ? `${paint(NOTE_ANSI[level], level === 'note' ? head : paint('1', head))} ${pictureText(body)}` : pictureText(body);
     out.push(`  ${shown}${refs(noteRefs(ex, n))}`);
@@ -347,7 +345,12 @@ function sarif(problems: Problem[]) {
 }
 
 /** Without what only the editor's views use: the examples' reruns, the ranges of the notes (for the part hover). */
-const forJson = ({ anchors: _, ...ex }: LineExplanation) => ({ ...ex, examples: ex.examples.map(({ interactive: _i, ...e }) => e) });
+// (The anchors and the notes' data are for the views: the JSON keeps what it had, the notes and the facts' ids.)
+const forJson = ({ anchors: _, noteInfo: _n, ...ex }: LineExplanation) => ({
+  ...ex,
+  ...(ex.facts ? { facts: ex.facts.map(({ id, kind, level, text, refs }) => ({ id, kind, level, text, refs })) } : {}),
+  examples: ex.examples.map(({ interactive: _i, ...e }) => e),
+});
 
 // ---- Main -------------------------------------------------------------------------------------
 

@@ -1,14 +1,14 @@
 import { githubFileNotes } from './yaml';
 import type { ExplainOptions, LineExplanation, Pos, Token } from '../analyzer-types';
 import type { BashVersion } from '../bashversion';
-import { dialectIssues, issueLevel, type Shell } from '../dialect';
+import { dialectIssues, type Shell } from '../dialect';
 import type { ReadingNode } from '../reading';
 import { descendants, type SyntaxTree } from '../syntax/tree';
 import { scriptTree } from './scripts';
 import { shellState } from '../semantics/state';
 import { statusModel } from '../semantics/status';
 import { batsFacts, batsTests } from '../bats';
-import { type Fact, type FactSpec, factOf, said, severityOf } from '../messages';
+import { type Fact, type FactSpec, factOf, type Note, plainNote, said, severityOf } from '../messages';
 import type { ShellRegion, Extracted } from './index';
 import { batsTestLine } from './bats';
 import { batsCommentFacts } from './batstags';
@@ -79,16 +79,19 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
   };
 }
 
-/** Notes for host syntax on a line (`$(CC)` is a make variable…). */
-export function substitutionNotes(extracted: Extracted, line: number, lang: 'ja' | 'en', pitfalls?: boolean, facts?: Fact[]): string[] {
+/** Notes for host syntax on a line (`$(CC)` is a make variable…); a warning about one is the problem `injection`. */
+export function substitutionNotes(extracted: Extracted, line: number, lang: 'ja' | 'en', pitfalls?: boolean, facts?: Fact[]): Note[] {
   const seen = new Set<string>();
   return extracted.substitutions
     .filter((s) => s.line === line && !seen.has(s.text) && seen.add(s.text))
     .flatMap((s) => [
-      ...(s.warning ? said([factOf(lang, s.warning)], pitfalls).map((f) => (facts?.push(f), f.text)) : []),
-      lang === 'ja' ? `\`${s.text}\` は${/^[A-Za-z]/.test(s.meaning[0]) ? ' ' : ''}${s.meaning[0]}。` : `\`${s.text}\` is ${s.meaning[1]}.`,
+      ...(s.warning ? said([factOf(lang, s.warning)], pitfalls).map((f): Note => (facts?.push(f), { ...noteData(f), code: 'injection' })) : []),
+      plainNote(lang === 'ja' ? `\`${s.text}\` は${/^[A-Za-z]/.test(s.meaning[0]) ? ' ' : ''}${s.meaning[0]}。` : `\`${s.text}\` is ${s.meaning[1]}.`),
     ]);
 }
+
+/** A fact's note, without what only the fact has (its id, kind and sections). */
+const noteData = ({ text, level, label, body, code }: Fact): Note => ({ text, level, label, body, code });
 
 const PIPEFAIL: FactSpec = { id: 'dockerfile-pipefail-missing', params: {} };
 
@@ -118,21 +121,23 @@ export function explainHostedLine(
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   // (The catalog facts of the host go through `said`, like the analyzer's, so `notes.pitfalls` off leaves out their pitfalls.)
   const hostFacts: Fact[] = [];
-  const spoken = (spec: FactSpec) => { const f = said([factOf(lang, spec)], opts.pitfalls); hostFacts.push(...f); return f.map((x) => x.text); };
-  const notes = [...(region.notes ?? []).flatMap((n) => (Array.isArray(n) ? [pick(n)] : spoken(n.spec))), ...substitutionNotes(extracted, line, lang, opts.pitfalls, hostFacts)];
-  if (region.host.ci === 'github') notes.push(...githubFileNotes(original[line], lang));
+  // (A fact the host says is the problem `code` of hostIssues.)
+  const spoken = (spec: FactSpec, code: string) => { const f = said([factOf(lang, spec)], opts.pitfalls); hostFacts.push(...f); return f.map((x) => ({ ...noteData(x), code })); };
+  const notes: Note[] = [...(region.notes ?? []).flatMap((n) => (Array.isArray(n) ? [plainNote(pick(n))] : spoken(n.spec, n.code))), ...substitutionNotes(extracted, line, lang, opts.pitfalls, hostFacts)];
+  if (region.host.ci === 'github') notes.push(...githubFileNotes(original[line], lang).map(plainNote));
   if (region.warnPipefail && pipeWithoutPipefail(tree, region, line)) {
-    notes.push(...spoken(PIPEFAIL));
+    notes.push(...spoken(PIPEFAIL, 'dockerPipefail'));
   }
   // (The lines bats rewrites where bash then reads a function: not one inside a here-document or a string.)
   const tests = region.tests && batsTests(tree, { ...region, tests: region.tests });
   if (tests) {
     const facts = said([...batsFacts(tree, region, tests, line, lang), ...batsCommentFacts(tree, original[line], line, tests.includes(line), lang)], opts.pitfalls);
-    notes.push(...facts.map((f) => f.text));
+    notes.push(...facts.map(noteData));
     hostFacts.push(...facts);
   }
   if (hostFacts.length) ex.facts = [...(ex.facts ?? []), ...hostFacts];
-  ex.notes.unshift(...notes);
+  ex.notes.unshift(...notes.map((n) => n.text));
+  ex.noteInfo.unshift(...notes);
   const out = remapExplanation(ex, extracted, original, lang);
   if (tests) batsTestLine(out, extracted, original, tests, lang);
   return out;
@@ -160,7 +165,7 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
   for (const region of extracted.regions) {
     const own = scriptTree(tree, extracted, region);
     for (const issue of dialectIssues(own, shell ?? region.shell ?? 'bash', lang, region.start, region.end, version)) {
-      out.push({ code: issue.id, severity: severityOf(issueLevel(issue.kind)), message: issue.message, ...at(issue.place) });
+      out.push({ code: issue.id, severity: severityOf(issue.note.level), message: issue.note.text, ...at(issue.place) });
     }
     if (region.warnPipefail) {
       for (let line = region.start; line <= region.end; line++) {

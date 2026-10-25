@@ -5,7 +5,7 @@ import type { Shell } from './dialect';
 import type { Interactive } from './examples/rerun';
 import type { HostId } from './hosts';
 import type { LabelPart } from './label';
-import type { Fact, SpaceEnds, ValueSaid } from './messages';
+import type { Fact, Note, SpaceEnds, ValueSaid } from './messages';
 import type { NameInfo } from './namefacts';
 import type { ReadingNode } from './reading';
 import type { ExpansionValue } from './semantics/values';
@@ -132,6 +132,11 @@ export interface LineExplanation {
   /** Enclosing constructs, outermost first (e.g. "for loop (line 3)"). */
   context: ContextEntry[];
   notes: string[];
+  /**
+   * The data of each note of `notes`, in the same order: its level, the word after its mark and the rest, and the code
+   * of the problem it is (docs/design/note-levels.md). The views read the level from here, not from the text.
+   */
+  noteInfo: Note[];
   /**
    * The notes that are facts of the message catalog (src/messages.ts): their id and the sections of the manual
    * they cite. `text` is the note as it is in `notes`.

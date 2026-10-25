@@ -7,6 +7,7 @@ import { examplesMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, 
 import { wholeLine } from '../src/ui/hoverView';
 import { lineMarks, panelUpdate } from '../src/ui/panelView';
 import type { DocumentIssue } from '../src/document';
+import type { NoteLevel } from '../src/messages';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -53,7 +54,7 @@ describe('placeExamples', () => {
     assert.ok(!JSON.stringify(ex.items).includes('"examples"'));
   });
   it('keeps examples without a token at the end', () => {
-    const placed = placeExamples({ line: 0, summary: '', items: [], context: [], notes: [], examples: [{ title: 'E', sections: [] }] });
+    const placed = placeExamples({ line: 0, summary: '', items: [], context: [], notes: [], noteInfo: [], examples: [{ title: 'E', sections: [] }] });
     assert.strictEqual(placed.examples.length, 1);
   });
 });
@@ -66,7 +67,11 @@ describe('the levels of the notes', () => {
 
   it('puts the warnings first, then the information, then the other notes, each in the order found', () => {
     assert.deepStrictEqual(ex().notes.map((n) => n[0]), ['ℹ', 'ⓘ', '⚠']);
-    assert.deepStrictEqual(notesByLevel(['ℹ a', '⚠ b', 'c', 'ⓘ d', '⚠ e']), ['⚠ b', '⚠ e', 'ⓘ d', 'ℹ a', 'c']);
+    const at = (text: string, level: NoteLevel) => ({ text, level, label: '', body: text });
+    const info = [at('a', 'note'), at('b', 'warning'), at('c', 'note'), at('d', 'info'), at('e', 'warning')];
+    const line = { line: 0, summary: '', items: [], context: [], notes: info.map((n) => n.text), noteInfo: info, examples: [] };
+    // (The level is the note's data, not its text: these have no marks.)
+    assert.deepStrictEqual(notesByLevel(line).map((n) => n.text), ['b', 'e', 'd', 'a', 'c']);
   });
 
   it('keeps the mark in plain Markdown, with the word in bold', () => {

@@ -6,7 +6,7 @@ import { builtins } from './dict/builtins';
 import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
-import { type NoteLevel, notePrefix, PORTABILITY } from './messages';
+import { marked, type Note, plainNote, PORTABILITY } from './messages';
 import { ancestor, braceTakenAsWord, descendants, field, fields, prefixAssignments, substitutionForm } from './syntax/tree';
 import { networkPath, networkTarget } from './dict/syntax';
 import { staticWordValue } from './staticword';
@@ -372,17 +372,21 @@ function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) =>
   }
 }
 
-/** The level of a dialect issue (src/messages.ts, `NoteLevel`): what fails in the shell is a warning, the rest information. */
-export function issueLevel(kind: Issue['kind']): NoteLevel {
-  return kind === 'unsupported' ? 'warning' : kind === 'behaviour' ? 'info' : 'note';
+/** The note of a construct the target shell lacks: a warning with no word, since its first words say that it fails, and where. */
+function unsupported(lang: Lang, id: string, body: string): Note {
+  return marked(lang, 'warning', body, { code: id });
 }
 
 /** A problem in a script for its target shell, with where it is. */
 export interface Issue {
   id: string;
-  /** `unsupported`: fails in the shell; `behaviour`: works differently; `parse`: zsh-only syntax. */
+  /**
+   * `unsupported`: fails in the shell (a warning); `behaviour`: works differently (information, "Portability");
+   * `parse`: zsh-only syntax (a plain fact, which is still a problem: the line is not explained).
+   */
   kind: 'unsupported' | 'behaviour' | 'parse';
-  message: string;
+  /** What the explanations say of it, and the problems: its text, level and word (src/messages.ts). */
+  note: Note;
   /** Where it is: the lines and columns the construct, or the syntax error, covers. */
   place: Place;
   /** The construct, for the issues about one (not `parse`). */
@@ -400,12 +404,12 @@ function featureMessage(id: string, shell: Shell, lang: Lang): string | undefine
     // Name the common /bin/sh implementations it breaks on.
     const fails = (['dash', 'ash'] as RealShell[]).filter((sh) => !works(f, sh)).map((sh) => SHELL_NAMES[sh]);
     return s(
-      `⚠ ${label}は POSIX sh にない書き方です${fails.length ? `（${fails.join('・')} では動きません）` : '（dash・busybox ash では動きますが、POSIX にはありません）'}。${alt}`,
-      `⚠ ${label} is not POSIX sh${fails.length ? ` (it fails in ${fails.join(' and ')})` : ' (dash and busybox ash accept it, but POSIX does not have it)'}.${alt}`,
+      `${label}は POSIX sh にない書き方です${fails.length ? `（${fails.join('・')} では動きません）` : '（dash・busybox ash では動きますが、POSIX にはありません）'}。${alt}`,
+      `${label} is not POSIX sh${fails.length ? ` (it fails in ${fails.join(' and ')})` : ' (dash and busybox ash accept it, but POSIX does not have it)'}.${alt}`,
     );
   }
   if (shell === 'bash' || works(f, shell)) return undefined;
-  return s(`⚠ ${label}は ${SHELL_NAMES[shell]} では使えません。${alt}`, `⚠ ${label} is not available in ${SHELL_NAMES[shell]}.${alt}`);
+  return s(`${label}は ${SHELL_NAMES[shell]} では使えません。${alt}`, `${label} is not available in ${SHELL_NAMES[shell]}.${alt}`);
 }
 
 /** What bash `version` does with feature `id`, which came in a later release (SINCE). */
@@ -414,7 +418,7 @@ function versionMessage(id: string, version: BashVersion, lang: Lang): string {
   const f = FEATURES[id];
   const { version: since, before } = SINCE[id];
   const alt = s(`代わりに ${f.altJa}。`, ` Instead, ${f.altEn}.`);
-  return s(`⚠ ${f.ja}は bash ${since} からの書き方です。bash ${version} では${before[0]}。${alt}`, `⚠ ${f.en} is bash ${since} syntax: bash ${version} ${before[1]}.${alt}`);
+  return s(`${f.ja}は bash ${since} からの書き方です。bash ${version} では${before[0]}。${alt}`, `${f.en} is bash ${since} syntax: bash ${version} ${before[1]}.${alt}`);
 }
 
 function behaviourMessage(id: string, shell: Shell, lang: Lang): string | undefined {
@@ -422,7 +426,7 @@ function behaviourMessage(id: string, shell: Shell, lang: Lang): string | undefi
   const b = BEHAVIOURS[id];
   // For POSIX sh, name the common /bin/sh implementations that differ.
   const differ = shell === 'sh' ? (['dash', 'ash'] as RealShell[]).filter((sh) => b.differs.includes(LETTER[sh])) : shell !== 'bash' && b.differs.includes(LETTER[shell]) ? [shell] : [];
-  return differ.length ? notePrefix(lang, 'info', 'note', PORTABILITY) + s(b.ja(differ.map((x) => SHELL_NAMES[x]).join('・')), b.en(differ.map((x) => SHELL_NAMES[x]).join(' and '))) : undefined;
+  return differ.length ? s(b.ja(differ.map((x) => SHELL_NAMES[x]).join('・')), b.en(differ.map((x) => SHELL_NAMES[x]).join(' and '))) : undefined;
 }
 
 /** The line and column of an offset in the text. */
@@ -470,7 +474,7 @@ function laterOptions(tree: SyntaxTree, from: number, to: number, version: BashV
     const args = c.namedChildren.filter((x) => x !== name && !prefix.includes(x) && x.field !== 'redirect');
     const parse = interpret(builtins[name.text], args.map(argWord), { name: name.text });
     const add = (word: number, text: [string, string]): void => {
-      out.push({ id: 'laterOption', kind: 'unsupported', message: `⚠ ${text[lang === 'ja' ? 0 : 1]}${lang === 'ja' ? '。' : '.'}`, node: args[word], place: args[word] });
+      out.push({ id: 'laterOption', kind: 'unsupported', note: unsupported(lang, 'laterOption', `${text[lang === 'ja' ? 0 : 1]}${lang === 'ja' ? '。' : '.'}`), node: args[word], place: args[word] });
     };
     for (const { word, role } of givenOptions(parse)) {
       const since = role.role === 'option' ? role.spec.since : undefined;
@@ -492,12 +496,12 @@ function laterOptions(tree: SyntaxTree, from: number, to: number, version: BashV
 export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from = 0, to = tree.root.endPosition.row, version: BashVersion = DEFAULT_BASH_VERSION): Issue[] {
   if (shell === 'bash') {
     const lacking = collectFeatures(tree.root, from, to).filter((f) => lacks(f.id, version))
-      .map((f): Issue => ({ id: f.id, kind: 'unsupported', message: versionMessage(f.id, version, lang), node: f.node, place: f.node }));
+      .map((f): Issue => ({ id: f.id, kind: 'unsupported', note: unsupported(lang, f.id, versionMessage(f.id, version, lang)), node: f.node, place: f.node }));
     // (Where bash lacks `${ …; }`, the issue above says what it does.)
     const unclosed = lacks('funsub', version) ? [] : descendants(tree.root, ['command_substitution'], { from, to }).flatMap((n): Issue[] => {
       const how = braceTakenAsWord(n);
       const text = how && unclosedBrace(how, substitutionForm(n) === '${' ? '${ …; }' : '${| …; }', true)[lang === 'ja' ? 0 : 1];
-      return text ? [{ id: 'funsubBrace', kind: 'unsupported', message: `⚠ ${text}${lang === 'ja' ? '。' : '.'}`, node: n, place: n.children[n.children.length - 1] }] : [];
+      return text ? [{ id: 'funsubBrace', kind: 'unsupported', note: unsupported(lang, 'funsubBrace', `${text}${lang === 'ja' ? '。' : '.'}`), node: n, place: n.children[n.children.length - 1] }] : [];
     });
     return [...lacking, ...unclosed, ...laterOptions(tree, from, to, version, lang)];
   }
@@ -505,17 +509,17 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
   if (shell === 'zsh') {
     for (const place of zshSyntaxPlaces(tree, from, to)) {
       issues.push({
-        id: 'zshSyntax', kind: 'parse', place, message: ZSH_SYNTAX[lang === 'ja' ? 0 : 1],
+        id: 'zshSyntax', kind: 'parse', place, note: { ...plainNote(ZSH_SYNTAX[lang === 'ja' ? 0 : 1]), code: 'zshSyntax' },
       });
     }
   }
   for (const f of collectBehaviours(tree.root, from, to)) {
-    const message = behaviourMessage(f.id, shell, lang);
-    if (message) issues.push({ id: f.id, kind: 'behaviour', message, node: f.node, place: f.node });
+    const body = behaviourMessage(f.id, shell, lang);
+    if (body) issues.push({ id: f.id, kind: 'behaviour', note: marked(lang, 'info', body, { heading: PORTABILITY, code: f.id }), node: f.node, place: f.node });
   }
   for (const f of collectFeatures(tree.root, from, to)) {
-    const message = featureMessage(f.id, shell, lang);
-    if (message) issues.push({ id: f.id, kind: 'unsupported', message, node: f.node, place: f.node });
+    const body = featureMessage(f.id, shell, lang);
+    if (body) issues.push({ id: f.id, kind: 'unsupported', note: unsupported(lang, f.id, body), node: f.node, place: f.node });
   }
   return issues;
 }
@@ -526,10 +530,10 @@ export function dialectNotes(tree: SyntaxTree, line: number, shell: Shell, lang:
 }
 
 /** The notes of `dialectNotes`, each with the place of its construct and its issue's id (the note on zsh syntax is about the line: none). */
-export function dialectFound(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion): { text: string; node?: Place; code?: string }[] {
+export function dialectFound(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion): (Note & { node?: Place })[] {
   const issues = dialectIssues(tree, shell, lang, line, line, version).filter((i) => i.kind !== 'parse');
   // On every line a zsh parse error covers, not only where it starts.
   const parse = shell === 'zsh' && zshSyntaxPlaces(tree, 0, tree.root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
-    ? [{ text: ZSH_SYNTAX[lang === 'ja' ? 0 : 1] }] : [];
-  return [...parse, ...issues.map((i) => ({ text: i.message, node: i.place, code: i.id }))];
+    ? [plainNote(ZSH_SYNTAX[lang === 'ja' ? 0 : 1])] : [];
+  return [...parse, ...issues.map((i) => ({ ...i.note, node: i.place }))];
 }

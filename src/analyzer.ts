@@ -8,6 +8,7 @@ import { pitfallFindings } from './pitfalls';
 import { wordFindings } from './wordfacts';
 import type { SyntaxNode, SyntaxTree } from './syntax/tree';
 import { lookupCommand } from './dict/aliases';
+import { plainNote } from './messages';
 import { pictureNote } from './ctlchars';
 import { dialectFound, Shell } from './dialect';
 import { shellState } from './semantics/state';
@@ -53,7 +54,7 @@ export class Analyzer {
       ...cx.anchored(dialectFound(tree, line, shell ?? 'bash', this.lang, opts.bashVersion)),
       ...new Set(cx.notes),
       ...statusNotes(cx, line, false),
-      ...(cx.opts.idioms === false ? [] : cx.anchored(idiomsFound(statements, this.lang, cx.status))),
+      ...(cx.opts.idioms === false ? [] : cx.anchored(idiomsFound(statements, this.lang, cx.status).map((f) => ({ ...plainNote(f.text), node: f.node })))),
       ...(cx.opts.pitfalls === false ? [] : cx.anchored(pitfallFindings(root, this.lang, line, line, cx.state, cx.shell))),
       ...new Set(wordFindings(root, this.lang, cx.state, cx.shell, line, line).flatMap((w) => cx.say(w.fact, w.node))),
       ...extglobPitfalls(cx, root, line),
@@ -69,6 +70,7 @@ export class Analyzer {
       items,
       context: cx.context,
       notes,
+      noteInfo: notes.map((n) => cx.noteOf(n)),
       ...(facts.length ? { facts } : {}),
       ...(cx.anchors.some((a) => notes.includes(a.text)) ? { anchors: cx.anchors.filter((a) => notes.includes(a.text)) } : {}),
       // Each -e of sed explains the same combined script, at the command: drop repeated examples.

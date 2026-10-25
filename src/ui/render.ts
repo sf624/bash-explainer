@@ -4,7 +4,7 @@ import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { codeSpan, joinParts, LabelPart, labelParts } from '../label';
 import { referencesWith } from '../references';
-import { noteLevel, type NoteLevel, splitNote } from '../messages';
+import { MARKS, type Note, type NoteLevel } from '../messages';
 import { errorColour, Role, roleColour, ThemeKind } from './palette';
 
 /** (Moved to src/label.ts, which the message catalog reads too.) */
@@ -185,9 +185,17 @@ export function noteRefs(ex: LineExplanation, note: string): readonly string[] |
 
 const RANK: Record<NoteLevel, number> = { warning: 0, info: 1, note: 2 };
 
-/** The notes in the order every output shows them: the warnings, then the information, then the other notes, each in the order found. */
-export function notesByLevel(notes: readonly string[]): string[] {
-  return notes.map((n, i) => ({ n, i, r: RANK[noteLevel(n)] })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.n);
+/** The data of a note of the line (`LineExplanation.noteInfo`): its level and its word come from there, never from its text. */
+export function noteOf(ex: LineExplanation, note: string): Note {
+  return ex.noteInfo[ex.notes.indexOf(note)];
+}
+
+/**
+ * Notes of the line (`notes`, all of them by default) in the order every output shows them: the warnings, then the
+ * information, then the other notes, each in the order found.
+ */
+export function notesByLevel(ex: LineExplanation, notes: readonly string[] = ex.notes): Note[] {
+  return notes.map((n, i) => ({ n: noteOf(ex, n), i })).sort((a, b) => RANK[a.n.level] - RANK[b.n.level] || a.i - b.i).map((x) => x.n);
 }
 
 /** "Bash manual [3.2.5.2](…), [6.4](…); [execve(2)](…)": the references as Markdown links (src/references.ts). */
@@ -369,10 +377,9 @@ export function labelMarkdown(parts: readonly LabelPart[]): string {
  * (`> ⚠ **Pitfall:** …`), with the sections of the manual it cites.
  */
 export function plainNotes(ex: LineExplanation, notes: readonly string[], lang: Lang): string[] {
-  return notesByLevel(notes).flatMap((n) => {
-    const { label, body } = splitNote(n, lang);
-    const refs = noteRefs(ex, n);
-    return [`> ${pictureText(label ? `${n.slice(0, n.length - body.length - label.length - 1).trimEnd()} **${label}** ${body}` : n)}${refs?.length ? ` (${refsMarkdown(lang, refs)})` : ''}`, ''];
+  return notesByLevel(ex, notes).flatMap(({ text, level, label, body }) => {
+    const refs = noteRefs(ex, text);
+    return [`> ${pictureText(label ? `${MARKS[level]} **${label}** ${body}` : text)}${refs?.length ? ` (${refsMarkdown(lang, refs)})` : ''}`, ''];
   });
 }
 

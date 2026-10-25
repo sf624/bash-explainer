@@ -10,7 +10,7 @@ import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { anonSections } from '../refs';
 import { definitionFails } from '../semantics/names';
-import { descendants, field, fields, isShebang, strayKeyword, type SyntaxNode } from '../syntax/tree';
+import { field, fields, isShebang, strayKeyword, type SyntaxNode } from '../syntax/tree';
 import { detectShell, SHELL_NAMES } from '../dialect';
 import type { Explainer } from './context';
 import { caseExample, pipelineExample } from './examples';
@@ -277,12 +277,10 @@ export function caseItem(cx: Explainer, n: SyntaxNode): Token {
 export function missingKeyword(cx: Explainer, n: SyntaxNode, t: Token): Token {
   const kw = strayKeyword(n);
   if (!kw) return t;
-  const msg = cx.s(
-    `構文エラー: \`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash は「syntax error near unexpected token」で止まる`,
-    `Syntax error: a \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash stops with "syntax error near unexpected token"`);
+  const f = fact(cx.lang, 'keyword-needs-separator', { kw });
   t.kind = 'error';
-  t.explanation = `${msg}. ${t.explanation}`;
-  cx.note(`⚠ ${msg}`, n);
+  t.explanation = `${f.body}. ${t.explanation}`;
+  cx.note(f, n);
   return t;
 }
 
