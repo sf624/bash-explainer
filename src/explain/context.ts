@@ -13,7 +13,7 @@ import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
 import { docLine, type StateModel } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
-import type { SyntaxNode } from '../syntax/tree';
+import type { SyntaxNode, SyntaxTree } from '../syntax/tree';
 import { effEndRow, intersects, isBlockLike } from './nodes';
 
 /**
@@ -28,12 +28,17 @@ export interface CommandContext { cmd: string; args: SyntaxNode[]; parse: ArgvPa
 export interface MemoKey<V> { readonly name: string; readonly value?: V }
 export const memoKey = <V>(name: string): MemoKey<V> => ({ name });
 
-/** The walk over the nodes, which the line filter of the context calls back (the dispatch). */
+/**
+ * The walk over the nodes, which the line filter of the context calls back (the dispatch), and the explanation of a
+ * line of a string read as a script.
+ */
 export interface Walk {
   /** The explanation of a node. */
   explain(n: SyntaxNode): Token;
   /** The parts of a block that are on the line explained. */
   flatten(n: SyntaxNode): Token[];
+  /** Line `line` of the script `tree`, explained as src/analyzer.ts explains a script, as a string of kind `kind`. */
+  nestedLine(tree: SyntaxTree, line: number, shell: Shell | undefined, kind: NestedScript['kind'], opts: ExplainOptions): LineExplanation;
 }
 
 /** What the explanation of a part of a line reads, and the only way it adds to what the line collects. */
@@ -67,6 +72,11 @@ export interface Explainer {
   subs(nodes: readonly (SyntaxNode | null | undefined)[]): Token[];
   /** Explain a node ignoring the line filter. */
   full(n: SyntaxNode): Token;
+  /**
+   * Line `line` of a string read as a script (src/explain/scripts.ts), explained as a script of its own: with its
+   * tree, its shell and its kind (`nested`), and the options of this line, but no reading tree.
+   */
+  nestedLine(script: NestedScript, line: number): LineExplanation;
 
   /**
    * A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`, and with the node it is
@@ -216,6 +226,10 @@ export class LineExplainer implements Explainer, LineOutput {
     } finally {
       this.current = saved;
     }
+  }
+
+  nestedLine(script: NestedScript, line: number): LineExplanation {
+    return this.walk.nestedLine(script.tree, line, script.shell, script.kind, { ...this.opts, reading: false });
   }
 
   end(): void {
