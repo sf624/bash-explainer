@@ -176,7 +176,8 @@ Sizes are estimates, with doc comments.
 | src/explain/where.ts | where code runs: `groupSubshell`, `subshellWhy`, `inSubshell`, `shellEffectNote`, `pidNote` | 90 | env |
 | src/explain/status.ts | `postfixStatusNote`, `statusRangeNote`, `substitutionStatus` | 60 | status, statusfacts |
 | src/explain/words.ts | words and expansions, with `globNotes`, `extglobNote`, `globToken`, `globChildren` | 450 | words, state |
-| src/explain/examples.ts | example builders that read the line (jq, yq, pipeline, regex, read, glob, case, test); may split off examples-jq.ts | 500 | spec (`example`, `io`, `eachFile`), examples/source.ts |
+| src/explain/examples.ts | example builders that read the line (pipeline, regex, read, glob, case, test), which examples the line keeps and their titles | 500 | spec (`example`, `io`, `eachFile`), examples/source.ts |
+| src/explain/examples-jq.ts | the examples of jq and yq (`jqExamples`, `yqExample`, `yqStreams`), split off examples.ts to keep it near 500 lines | 240 | spec (`example`), examples/source.ts |
 | src/explain/embedded.ts | `embedded`, `embeddedText`, `embeddedTextInner`, `embeddedExample`, `ansiCChildren` | 200 | embedded registry, argv query |
 | src/explain/tests.ts | `test`, `testTokens`, `unary`, `binary`, `regexNode`, `numericTestNote`, `quotedPatternNote` | 230 | testexpr (`testSpecOf`, which finds the spec of `test` or `[`, stays in analyzer.ts with `testArgs` until step 7) |
 | src/explain/redirections.ts | redirections, without `splitCommand` and `redirectLayout` | 190 | idioms (`simulateRedirects`), state |
@@ -270,7 +271,7 @@ test/explain-imports.test.ts reads the imports of src/explain/*.ts (as test/synt
 
 The same test looks for comparisons with a command name of the dictionary (`commands`, `builtins`): `=== 'sed'`, `.includes('declare')`. A comparison on `.type` is left out (node types such as `command` are also builtin names). The known ones are listed with a reason and may only shrink. After step 1 the list should be empty.
 
-Since step 3, comparisons on four fields of the models are checked against the values of their closed unions, not against command names: `.type` (any node type), `.kind` (a status rule's `command` and `test`; a value is added only when code that needs it moves, as a reviewed edit), `.stops` (errexit's `script`) and `.shell` (the members of the `Shell` type). The values compared are values of those unions, some spelled like commands (`command`, `test`, `bash`), not command names. Only a property access counts: a bare `kind` or `shell` is checked like any other name. A command name on these fields that is not in the list is found. The allowed values are listed per field in the guard, and a test keeps the `.shell` list equal to the `Shell` type.
+Since step 3, comparisons on five fields of the models are checked against the values of their closed unions, not against command names: `.type` (any node type), `.kind` (a status rule's `command` and `test`; a value is added only when code that needs it moves, as a reviewed edit), `.stops` (errexit's `script`), `.example` (a spec's kind of worked example, `CommandSpec.example`; only `read`, and more values are added as reviewed edits) and `.shell` (the members of the `Shell` type). The values compared are values of those unions, some spelled like commands (`command`, `test`, `bash`), not command names. Only a property access counts: a bare `kind` or `shell` is checked like any other name. A command name on these fields that is not in the list is found. The allowed values are listed per field in the guard, and a test keeps the `.shell` list equal to the `Shell` type.
 
 ## 4. Steps
 
@@ -399,7 +400,7 @@ src/explain/examples.ts (about 500 lines; split off examples-jq.ts if it is near
 
 Where the plan did not fit main:
 
-- The names guard (3.3) took values of closed unions for command names: `st.kind === 'file'` (a `Stream` is a file or stdin), `mode === 'file'` (a `GlobMode` is `file` or `value`), `u.from === 'file'` (a `Stdin`) and `kind === 'read'` (the spec's example kind, `CommandSpec.example`, whose values are command names). As in steps 4 and 5, the same tests name the other case (`st.kind !== 'stdin'`, `mode !== 'value'`), or the field only that variant has (`'name' in u`); the example kind is read with a `switch`, as `commandExampleOf` (src/examples/commands.ts) reads it. The guard is unchanged.
+- The names guard (3.3) took values of closed unions for command names: `st.kind === 'file'` (a `Stream` is a file or stdin), `mode === 'file'` (a `GlobMode` is `file` or `value`), `u.from === 'file'` (a `Stdin`) and `kind === 'read'` (the spec's example kind, `CommandSpec.example`, whose values are command names). As in steps 4 and 5, the same tests name the other case (`st.kind !== 'stdin'`, `mode !== 'value'`), or the field only that variant has (`'name' in u`); the example kind is compared on its property, `spec.example === 'read'`, which the guard allows for `read` only (`.example` joined the closed fields in the review of #333). The guard still does not look at `case` labels (see 5.3).
 - `wantsExample` and `titledExamples` filter and title the line's examples in `explainLine`. They are in the examples' group (1.2), so they moved here, not to the orchestration.
 
 ### Step 7: arguments, assignments, scripts (L, in three PRs)
@@ -455,6 +456,7 @@ About 18 PRs; about 3,900 lines move. Steps 1.1–1.4 run in parallel with each 
 ### 5.3 Not planned here
 
 - **The inline texts.** 393 `s(ja, en)` texts move with their code. Many state facts of the models and could be catalog entries (src/messages.ts). That is a change of each note's identity (`LineExplanation.facts`), so it is a plan of its own, after this one.
+- **`case` labels in the names guard.** The guard of 3.3 does not look at `case` labels, only at comparisons. The embedded explainers (in the class until step 6b, then src/explain/embedded.ts) have `case 'sed'`, `'awk'`, `'jq'` and `'date'` on `EmbeddedLang`, inherited from main, and the guard cannot see them. A later step should teach it `switch` on closed fields (the labels checked like the values of `===`, with `EmbeddedLang` among the closed fields), and then list or remove those labels.
 - **The other long files** (3.1). They are listed and may only shrink.
 
 ## Traceability
