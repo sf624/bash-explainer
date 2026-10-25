@@ -31,6 +31,13 @@
   // its screen, which no zoom changes: a page loaded zoomed out keeps the phone layout. Tablets and desktops
   // follow the width, as before, also when a window is resized. layout.ts reads the class and listens to
   // `narrowchange`.
+  // But a phone whose browser asks for the desktop site (Chrome's "Desktop site", Safari's "Request Desktop
+  // Website") is not treated as a phone: the user chose the desktop page, so the layout follows the width
+  // as on a desktop (about 980px wide then), and the phone's screens are neither recorded nor used. The browser
+  // tells: `navigator.userAgentData.mobile` is false in Chrome's desktop mode (and true in its normal mode);
+  // without it (Safari, Firefox) the User-Agent names no phone ("Mobi", "iPhone", "iPod", "iPad" or "Android"):
+  // Safari's desktop mode sends the Macintosh one. The browsers reload the page when the mode is switched,
+  // and a page restored from the back/forward cache is decided again, so the mode is read at every load.
   const PHONE_KEY = 'bash-explainer-phone-screens';
   const touch = window.matchMedia('(pointer: coarse) and (hover: none)');
   const narrowWidth = window.matchMedia('(max-width: 767px)');
@@ -38,8 +45,18 @@
   const shape = () => Math.round((Math.max(screen.width, screen.height) / Math.min(screen.width, screen.height)) * 100);
   let seenShape = 0;
   let phone = false;
+  /** The browser presents itself as a desktop browser: the desktop-site mode of a phone, or a desktop. */
+  const desktopSite = () => {
+    const data = /** @type {{ mobile?: unknown } | undefined} */ (/** @type {any} */ (navigator).userAgentData);
+    if (data && typeof data.mobile === 'boolean') return !data.mobile;
+    return !/Mobi|iPhone|iPod|iPad|Android/.test(navigator.userAgent);
+  };
   const decide = () => {
     seenShape = shape();
+    if (desktopSite()) {
+      phone = false;
+      return;
+    }
     /** @type {unknown} */
     let seen = [];
     try {
@@ -74,4 +91,10 @@
     update();
   });
   window.addEventListener('resize', update);
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+      decide();
+      update();
+    }
+  });
 })();

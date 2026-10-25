@@ -350,4 +350,99 @@ describe('the web page: touch screens, stored data and the window', function () 
     await expectLayout(d, wideLayout, 'desktop 1280 again');
     await desk.close();
   });
+
+  it('shows the desktop layout on a phone whose browser asks for the desktop site, and the phone layout again in the normal mode, also after a reload', async () => {
+    const { devices } = await import('playwright-core');
+    const phoneLayout = { kind: false, stacked: true, splitter: 'horizontal', problems: 'false' };
+    const wideLayout = { kind: true, stacked: false, splitter: 'vertical', problems: 'true' };
+    const read = async (page: import('playwright-core').Page) => {
+      await page.locator('.cm-line').first().waitFor();
+      await until('the sample\'s problems', () => page.locator('#problems').isVisible(), (v) => v);
+      return async () => {
+        const ed = (await page.locator('#editor').boundingBox())!;
+        const box = (await page.locator('#panel').boundingBox())!;
+        return {
+          kind: await page.locator('.kind').isVisible(),
+          stacked: box.y >= ed.y + ed.height,
+          splitter: await page.locator('#splitter').getAttribute('aria-orientation'),
+          problems: await page.locator('#problems-toggle').getAttribute('aria-expanded'),
+        };
+      };
+    };
+    const expectLayout = async (page: import('playwright-core').Page, expected: object, label: string) => {
+      const layout = await read(page);
+      await until(label, layout, (v) => isDeepStrictEqual(v, expected)).catch(() => undefined);
+      assert.deepStrictEqual(await stable(label, layout, 6), expected, label);
+    };
+    const mobileUA = devices['iPhone 13'].userAgent;
+    const desktopUA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+    const macUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
+    const meta = (mobile: boolean) => ({ platform: mobile ? 'iOS' : 'Linux', platformVersion: '15.0', architecture: '', model: '', mobile });
+
+    const phone = { ...devices['iPhone 13'], viewport: { width: 390, height: 740 }, screen: { width: 390, height: 844 }, deviceScaleFactor: 3, locale: 'en-US' };
+    const ctx = await browser.newContext(phone);
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await expectLayout(page, phoneLayout, 'the phone');
+    assert.ok((await page.evaluate("localStorage.getItem('bash-explainer-phone-screens')")) !== null, 'the phone\'s screen is remembered');
+    const cdp = await ctx.newCDPSession(page);
+    /** The browser's mode, as a phone's browser sends it: the User-Agent (and its client hints, when `hints` is set) and the viewport (980px wide in the desktop-site mode). */
+    const mode = async (ua: string, hints: boolean | undefined, width: number, screenScales: boolean) => {
+      await cdp.send('Emulation.setUserAgentOverride', { userAgent: ua, ...(hints === undefined ? {} : { userAgentMetadata: meta(hints) }) });
+      const z = width / 390;
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width, height: Math.round(740 * z), deviceScaleFactor: 3 / z, mobile: true,
+        screenWidth: screenScales ? width : 390, screenHeight: screenScales ? Math.round(844 * z) : 844,
+      });
+      await until('the viewport', () => page.evaluate('innerWidth') as Promise<number>, (w) => w === width);
+      await page.reload();
+    };
+
+    // Chrome's "Desktop site": a desktop User-Agent, `userAgentData.mobile` false, a viewport of about 980px; the screen as the phone's
+    // or in CSS pixels of the viewport. The remembered phone screen does not make it a phone.
+    for (const screenScales of [false, true]) {
+      await mode(desktopUA, false, 980, screenScales);
+      assert.strictEqual(await page.evaluate('navigator.userAgentData.mobile'), false);
+      await expectLayout(page, wideLayout, `desktop site (screen scales: ${screenScales})`);
+      assert.strictEqual(await page.evaluate('document.documentElement.classList.contains("phone")'), false);
+      // The normal mode again, zoomed out (the page is reloaded by the browser): the phone layout.
+      await mode(mobileUA, true, 780, screenScales);
+      assert.strictEqual(await page.evaluate('navigator.userAgentData.mobile'), true);
+      await expectLayout(page, phoneLayout, `normal mode zoomed out (screen scales: ${screenScales})`);
+    }
+    // Even in the desktop-site mode, the window's width still decides: zoomed in to 600px it is narrow.
+    await mode(desktopUA, false, 600, false);
+    await expectLayout(page, phoneLayout, 'desktop site zoomed in');
+    await mode(mobileUA, undefined, 390, false);
+    await expectLayout(page, phoneLayout, 'normal mode');
+    await ctx.close();
+
+    // A phone's first visit in the desktop-site mode records nothing.
+    const fresh = await browser.newContext(phone);
+    const f = await fresh.newPage();
+    const fcdp = await fresh.newCDPSession(f);
+    await fcdp.send('Emulation.setUserAgentOverride', { userAgent: desktopUA, userAgentMetadata: meta(false) });
+    await fcdp.send('Emulation.setDeviceMetricsOverride', { width: 980, height: 1865, deviceScaleFactor: 3 * 390 / 980, mobile: true, screenWidth: 390, screenHeight: 844 });
+    await f.goto(base);
+    await expectLayout(f, wideLayout, 'first visit in the desktop-site mode');
+    assert.strictEqual(await f.evaluate("localStorage.getItem('bash-explainer-phone-screens')"), null);
+    await fresh.close();
+
+    // Safari's "Request Desktop Website": the Macintosh User-Agent and no client hints (hidden here, as Chromium always has them
+    // on a secure origin): the User-Agent decides. The iPhone's own one, without hints, keeps the phone layout.
+    for (const [ua, expected] of [[macUA, wideLayout], [mobileUA, phoneLayout]] as const) {
+      const safari = await browser.newContext({ ...phone, userAgent: ua });
+      await safari.addInitScript("Object.defineProperty(Navigator.prototype, 'userAgentData', { value: undefined })");
+      const s = await safari.newPage();
+      const scdp = await safari.newCDPSession(s);
+      const wide = ua === macUA;
+      await scdp.send('Emulation.setDeviceMetricsOverride', {
+        width: wide ? 980 : 390, height: wide ? 1865 : 740, deviceScaleFactor: wide ? 3 * 390 / 980 : 3, mobile: true, screenWidth: 390, screenHeight: 844,
+      });
+      await s.goto(base);
+      assert.strictEqual(await s.evaluate('navigator.userAgentData'), undefined);
+      await expectLayout(s, expected, wide ? 'desktop website (Macintosh User-Agent)' : 'iPhone User-Agent');
+      await safari.close();
+    }
+  });
 });

@@ -44,7 +44,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Fixed
 
 - Other languages' semantic colours are back to normal: a TypeScript parameter is no longer drawn in keyword blue. Before, the scope mappings of our syntax colouring applied to every language, even with `bashExplainer.highlight.enabled` off.
-- The web page keeps the phone layout on a phone at every zoom. Before, zooming out far enough switched it to the desktop layout, with the editor and the explanation side by side.
+- The web page keeps the phone layout on a phone at every zoom. Before, zooming out far enough switched it to the desktop layout, with the editor and the explanation side by side. The browser's desktop-site mode (Chrome's **Desktop site**, Safari's **Request Desktop Website**) shows the desktop layout.
 - The `set` options of a shebang count: `#!/bin/bash -eu` turns on `set -e` and `set -u` for the script.
 - `$_` links to section 5.2 of the Bash manual (Bash Variables), where bash 5.2's manual describes it, and a variable such as `$_tmp` to 3.5.3.
 - A YAML block of shell code (`run: |`, `script: |` in any CI file) is read without its indentation, as the runner gets it, so an indented `EOF` ends a here-document. Before, every later line, and the steps after it, were explained as part of the here-document. A folded block (`run: >`) is read as the one line YAML makes of it.

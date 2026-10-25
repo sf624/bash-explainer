@@ -32,7 +32,7 @@ Nothing started: the first item of "Next" comes next.
 
 ## Waiting on the maintainer
 
-- A check on a real phone of the zoom fix (#285).
+- A check on a real phone of the zoom fix (#285) and of the desktop-site mode (Chrome's Desktop site, Safari's Request Desktop Website) showing the desktop layout.
 
 ## Not decided
 
