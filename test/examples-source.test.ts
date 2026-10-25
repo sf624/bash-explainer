@@ -30,7 +30,7 @@ describe('the input sections say what the command reads, and where from', () => 
     ["yq -n '.a = 1'", ['Output (YAML)']],
     ["sed -i 's/a/b/' x y", ['Input: `x` (sample contents)', 'After']],
     ["sed -s '$d' x y", ['Input: `x` (sample contents)', 'Output']],
-    ['date +%F', ['When it runs (made up, UTC)', 'Output']],
+    ['date +%F', ['When it runs (made up, UTC)', 'Output (if the local zone is UTC)']],
     ["perl -pi -e 's/a/b/' x y", ['Input: `x` (sample contents)', 'After']],
     ["yq -i '.a' x.yml y.yml", ['Input: `x.yml` (sample contents)', 'Input: `y.yml` (sample contents)', '`x.yml` after']],
     ["yq -i '.a' x.yml", ['Input: `x.yml` (sample contents)', 'After']],

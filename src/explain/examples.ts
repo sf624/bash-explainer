@@ -23,13 +23,14 @@ import { type InputSource, knownLines, pipeOf, readsFiles, shareOut, type Source
 import { type Text, tx } from '../i18n';
 import { shorten } from '../label';
 import { fact } from '../messages';
+import { slotEnvironment } from '../semantics/env';
 import { isPlainWord, literalContent, staticWordValue } from '../staticword';
 import { assignmentsOnly, field, prefixAssignments, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
 import { given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
-import { values } from '../argv/query';
+import { operands, values } from '../argv/query';
 import { braceExpansion } from './words';
 
 /** Strings that do and do not match `js` (as grep lines, inverted by -v, or `=~` values). */
@@ -136,17 +137,20 @@ export function sedScripts(cx: Explainer): string[] | undefined {
 /**
  * What the current `date` command is given besides its format (`DateRun`): the zone, the date `-d` gives, the file `-f`
  * reads or `-r` names. Undefined when it prints no format (`-s` sets the clock; `-I`, `-R` and `--rfc-3339` are
- * other formats: date refuses a second one), when it refuses two of `-d`, `-f` and `-r`, or when the zone `TZ` names
- * is not known here.
+ * other formats: date refuses a second one), when it refuses two of `-d`, `-f` and `-r` or a second operand, or when
+ * the zone `TZ` names is not known here.
  */
 export function dateRun(cx: Explainer): commandExamples.DateRun | undefined {
   if (given(cx, '-s', '-I', '-R', '--rfc-3339')) return undefined;
   const { parse, nodes } = cx.command!;
+  // (`date +%F +%T`: date refuses the extra operand.)
+  if (operands(parse).length > 1) return undefined;
   const [dates, files, refs] = [values(parse, '-d'), values(parse, '-f'), values(parse, '-r')];
   if ([dates, files, refs].filter((v) => v.length).length > 1) return undefined;
-  const tz = given(cx, '-u') ? undefined : tzOf(cx, cx.command!.args[0].parent!);
+  const utc = given(cx, '-u');
+  const tz = utc ? undefined : tzOf(cx);
   if (tz === null) return undefined;
-  const run: commandExamples.DateRun = tz !== undefined ? { tz } : {};
+  const run: commandExamples.DateRun = { ...(tz !== undefined ? { tz } : {}), ...(utc ? { utc } : {}) };
   const d = dates.pop();
   if (d) {
     const value = literalContent(nodes[d.word])?.text.slice(d.at ?? 0);
@@ -159,19 +163,45 @@ export function dateRun(cx: Explainer): commandExamples.DateRun | undefined {
 }
 
 /**
- * The value of `TZ` for command `cmd`: its own assignment (`TZ=Asia/Tokyo date`), or the variable exported where it
- * runs; undefined when there is none, null when one is set to a value not known here.
+ * The value of `TZ` where the current command runs: the command's own assignment (`TZ=Asia/Tokyo date`), or the
+ * variable exported where it runs, then what the wrappers on the line that run it do (`env TZ=Asia/Tokyo date`,
+ * `env -u TZ`, `env -i`, `sudo`: the slots of src/semantics/env.ts). Undefined when there is none, null when one is
+ * set to a value not known here, a wrapper may keep it or not, or runs the command elsewhere.
  */
-function tzOf(cx: Explainer, cmd: SyntaxNode): string | undefined | null {
+function tzOf(cx: Explainer): string | undefined | null {
+  const { args, nodes } = cx.command!;
+  const cmd = args[0].parent!;
+  let tz: string | undefined | null;
   const own = prefixAssignments(cmd).filter((c) => field(c, 'name')?.text === 'TZ').pop();
   if (own) {
     const v = field(own, 'value');
-    return v ? literalContent(v)?.text ?? null : '';
+    tz = v ? literalContent(v)?.text ?? null : '';
+  } else {
+    const v = cx.state.at(cmd).run.variables.get('TZ');
+    const exported = v?.attrs.x?.state ?? 'off';
+    tz = !v || v.set === 'off' || exported === 'off' ? undefined : v.set === 'on' && exported === 'on' && v.value !== undefined ? v.value : null;
   }
-  const v = cx.state.at(cmd).run.variables.get('TZ');
-  const exported = v?.attrs.x?.state ?? 'off';
-  if (!v || v.set === 'off' || exported === 'off') return undefined;
-  return v.set === 'on' && exported === 'on' && v.value !== undefined ? v.value : null;
+  // (The words of a command a wrapper runs follow its name: `env TZ=x date -d @0`. Each wrapper's assignments lie
+  // between its first word and the command it runs.)
+  const name = nodes[nodes.indexOf(args[0]) - 1];
+  let from = 0;
+  for (const link of (name && cx.slotEnvs.get(name)?.links) || []) {
+    const at = link.kind === 'slot' ? nodes.indexOf(link.at) : -1;
+    if (link.kind !== 'slot' || at < 0) continue;
+    const { kept, here } = slotEnvironment(link);
+    // (sudo resets the environment, but may keep TZ; ssh and docker run the command elsewhere. A file of variables,
+    // `docker run --env-file f`, may set it.)
+    if (tz !== undefined && !kept) tz = null;
+    if (link.assigns.includes('*') || (!here && (tz !== undefined || link.assigns.includes('TZ')))) return null;
+    if (link.unsets?.includes('TZ')) tz = undefined;
+    // (`env "TZ=x"` sets it too; `env "TZ=$z"` sets it to a value not known here.)
+    for (const n of nodes.slice(from, at)) {
+      const text = literalContent(n)?.text;
+      if (text === undefined ? n.text.includes('TZ=') : text.startsWith('TZ=')) tz = text?.slice(3) ?? null;
+    }
+    from = at;
+  }
+  return tz;
 }
 
 /** -F, -v and `name=value` operands of the current awk command (literal values only); undefined when the example cannot follow them. */
@@ -213,9 +243,10 @@ export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefin
         : cx.s(`\`${step.stage.text}\` の後`, `After \`${step.stage.text}\``);
     sections.push({ label, lines: cap(step.output), empty: cx.s('（なし）', '(nothing)') });
   });
-  // A pipeline in a word of a command (`echo $(a | b)`) is named in the title, not that command.
+  // A pipeline in a command or process substitution (`echo $(a | b)`, `[[ $(a | b) == x ]]`, `for i in $(a | b)`) is
+  // named in the title, not the command or statement around it.
   let up = n.parent;
-  while (up && up.type !== 'command') up = up.parent;
+  while (up && up.type !== 'command_substitution' && up.type !== 'process_substitution') up = up.parent;
   return {
     title: cx.s('例（パイプライン全体）', 'Example (the whole pipeline)'), sections,
     ...(up ? { target: shorten(n.text.replace(/\s*\\\n\s*/g, ' '), 40) } : {}),

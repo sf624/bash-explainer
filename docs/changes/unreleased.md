@@ -473,20 +473,23 @@ The pitfall on `sudo cmd > /etc/…` also reads the path after quote removal: `s
 
 ### Examples of `date` and `sed`
 
-The `date +FORMAT` example reads the options and the zone of the line, as GNU date does (compared with GNU date in the tests). Where the line names no zone, it shows the time in UTC, and says so.
+The `date +FORMAT` example reads the options and the zone of the line, as GNU date does (compared with GNU date in the tests). Where the line names no zone, date prints in the local zone: the example takes it to be UTC, and says so ("Output (if the local zone is UTC)").
 
 | Written | date prints | Shown now | Shown before |
 | --- | --- | --- | --- |
-| `date -d '2024-01-02' +%A`, `date --date=@0 '+%F %T'` | `Tuesday`; `1970-01-01 00:00:00` in UTC, whenever it runs | "Example (the date given with `-d`)": `Tuesday`; `1970-01-01 00:00:00` | two made-up moments it runs at, and their weekdays (`Tuesday`, `Wednesday`) |
-| `date -d 'next friday' +%F`, `-d yesterday`, `-d '+3 days'` | a date that depends on when it runs | "Example (`next friday` depends on when it runs)", with made-up dates that `next friday` stands for | the moments it runs at, as if `-d` were not there |
+| `date -d '2024-01-02' +%A`, `date --date=@0 '+%F %T'` | `Tuesday`; `1970-01-01 00:00:00` if the local zone is UTC, whenever it runs | "Example (the date given with `-d`)": `Tuesday`; `1970-01-01 00:00:00` | two made-up moments it runs at, and their weekdays (`Tuesday`, `Wednesday`) |
+| `date -d 'next friday' '+%A %T'`, `-d yesterday`, `-d '+3 days'`, `-d 10:00`, `-d 'tomorrow 10:30 pm'` | a date that depends on when it runs | "Example (`next friday` depends on when it runs)": made-up moments it runs at, and what the date gives at each (`Friday 00:00:00`, the same time yesterday, `10:00:00`) | the moments it runs at, as if `-d` were not there |
 | `date -d "$d" +%F` | the date in `$d` | made-up dates "`-d "$d"` stands for" | the moments it runs at |
 | `date -f dates.txt +%A`, `echo 2024-01-02 \| date -f - +%A` | each line of the file, as a date | "Input: `dates.txt` (sample contents)" and the date of each line; the lines echo gives | the moments it runs at |
 | `date -r f +%T` | the time `f` was last modified | "Modification time of `f` (made up, UTC)" | "When it runs" |
-| `TZ=Asia/Tokyo date '+%T'`, `TZ=:Europe/Paris`, `TZ=JST-9`, `export TZ=…` | the time in that zone | "Output (the time in the zone `Asia/Tokyo`)": `16:08:09` for `07:08:09` UTC | the time in UTC, `07:08:09` |
-| `date -u +%T`, `TZ=Asia/Tokyo date -u +%T` | the time in UTC | the time in UTC | the same |
-| `date -I +%F`, `date -s … +%F`, `date -d @0 -r f +%F` | an error: another output format, setting the clock, two dates | no example | the moments it runs at |
-| `TZ=$z date +%T`, `TZ=asia/tokyo date +%T` (glibc reads it as UTC), `TZ=Asia/Tokyo date +%Z` | a zone (or its abbreviation) not known here | no example | the time in UTC, `UTC` |
+| `TZ=Asia/Tokyo date '+%T'`, `TZ=:Europe/Paris`, `TZ=EST5EDT`, `TZ=JST-9`, `export TZ=…`, `env TZ=Asia/Tokyo date`, `env -i TZ=… date` | the time in that zone | "Output (the time in the zone `Asia/Tokyo`)": `16:08:09` for `07:08:09` UTC | the time in UTC, `07:08:09` |
+| `env -u TZ date`, `env -i date` | the time in the local zone | "Output (if the local zone is UTC)" | the time in UTC |
+| `date -u +%T`, `TZ=Asia/Tokyo date -u +%T` | the time in UTC | "Output (the time in UTC)" | the same |
+| `date -I +%F`, `date -s … +%F`, `date -d @0 -r f +%F`, `date +%F +%T` | an error: another output format, setting the clock, two dates, an extra operand | no example | the moments it runs at |
+| `TZ=$z date +%T`, `TZ=asia/tokyo`, `TZ=JST`, `TZ=PST` (glibc has no such zone and reads them as UTC), `TZ=Japan`, `TZ=Asia/Calcutta` (backward links, which some systems leave out), `TZ=Asia/Tokyo date +%Z` | a zone (or its abbreviation) not known here | no example | the time in UTC, `UTC` |
+| `export TZ=Asia/Tokyo; sudo date +%T`, `docker run -e TZ=… img date` | TZ as sudo's policy keeps it, or in the container | no example | the time in UTC |
+| `TZ=Asia/Tokyo date -d @-1 +%F`, `date -d @253402300800 +%F`, `date -d 'next friday next friday'`, `-d satday`, `-d 25:00`, `-d '10:00 -3 days'` | a date before 1970 in a named zone (the tz data of systems differ there), a year of five digits (`+10000-01-01`), an error, or `-3` read as the zone of `10:00` | no example | the moments it runs at |
 
 `sed -e 's/a/b/' -e 's/c/d/' f` showed the same example twice, once at each `-e`. sed runs the scripts in order as one script, so there is one example, of the whole script, shown on the command.
 
-The example of a pipeline inside a command's word was titled with that command: `echo $(echo a | tr a b) | cat` gave "Example for `echo $(echo a | tr a b)` (the whole pipeline)". It is now "Example for `echo a | tr a b` (the whole pipeline)", also in `x=$(echo a | tr a b)`.
+The example of a pipeline inside `$( )` or `<( )` was titled with the command around it, or not named: `echo $(echo a | tr a b) | cat` gave "Example for `echo $(echo a | tr a b)` (the whole pipeline)", and `for i in $(seq 3 | sort -r)` gave "Example (the whole pipeline)". It is now "Example for `echo a | tr a b` (the whole pipeline)", also in `x=$(…)`, `[[ $(…) == b ]]` and `for i in $(…)`.

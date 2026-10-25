@@ -308,6 +308,15 @@ export function whereOf(env: ExecEnv): 'local' | 'remote' | 'container' {
   return where;
 }
 
+/**
+ * What a slot does to the environment of the command it runs: `kept`, the variables that reach it pass on (`env`,
+ * `nice`, `sudo -E`); `reset`, it starts afresh or passes none (`env -i`, sudo's policy, ssh); and whether the command
+ * runs on this machine.
+ */
+export function slotEnvironment(link: SlotLink): { kept: boolean; here: boolean } {
+  return { kept: link.env === 'exported' || link.env === 'variables', here: (link.slot.where ?? 'local') === 'local' };
+}
+
 /** How much of a script's functions, variables, options or aliases reaches a process: all of them, the exported ones, or none. */
 export type Reach = 'all' | 'exported' | 'none';
 

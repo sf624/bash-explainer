@@ -59,7 +59,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Tests and redirections are explained as bash runs them: `[ 08 -eq 8 ]` is true, `3<<EOF` and `3<<< x` go to descriptor 3, `> {a,}` writes `a`, and `/dev/tcp/host/port` connects to the network. In sh and dash it is a path, with a portability warning.
 - Examples follow bash: `[[ $x =~ ^"a."c$ ]]` matches only `a.c`, and the input read from `<(cmd)` is the output of `cmd`, through a pipe.
 - The panel's Reading view no longer fails on `cat <<` while the delimiter is not written yet.
-- The `date` example follows the line: `date -d 2024-01-02 +%A` shows `Tuesday`, `TZ=Asia/Tokyo date +%T` shows the time in that zone, and `-d 'next friday'` says it depends on when date runs. Before, it always showed the time it runs, in UTC.
+- The `date` example follows the line: `date -d 2024-01-02 +%A` shows `Tuesday`, `TZ=Asia/Tokyo date +%T` and `env TZ=Asia/Tokyo date` show the time in that zone, and `-d 'next friday'` shows the Friday after each moment it runs. Before, it always showed the time it runs, in UTC.
 - `sed -e 's/a/b/' -e 's/c/d/' f` shows one example of the whole script, not the same one twice; a pipeline in `$( )` names itself in its example's title.
 
 ## 0.8.0

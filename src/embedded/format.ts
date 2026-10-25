@@ -314,16 +314,19 @@ export function parseSampleDate(text: string): Date | undefined {
 }
 
 /**
- * A time zone as `date` uses it: its offset from UTC at a moment (in minutes, east positive), and its abbreviation
- * there (`%Z`), when it is known (src/examples/dates.ts reads `TZ`).
+ * A time zone as `date` uses it: its offset from UTC at a moment (in minutes, east positive; not a whole number when
+ * the zone's offset has seconds), its abbreviation there (`%Z`), when it is known (src/examples/dates.ts reads `TZ`),
+ * and the first moment it is followed from (`since`: the tz data of systems and of `Intl` may differ before 1970).
  */
-export interface Zone { offset(t: number): number; abbr(t: number): string | undefined }
+export interface Zone { offset(t: number): number; abbr(t: number): string | undefined; since?: number }
 
 export const UTC: Zone = { offset: () => 0, abbr: () => 'UTC' };
 
 /**
  * What GNU `date +FORMAT` prints for `when` in `zone` (UTC: `date -u`), in the C locale; undefined when the format
- * uses something this does not reproduce. The leading `+` is optional.
+ * uses something this does not reproduce, or the moment is one this does not follow (before the zone's `since`, an
+ * offset with seconds, a year not of four digits: GNU writes `%F` as `+10000-01-01`, `%c` of year 1 as `1`).
+ * The leading `+` is optional.
  */
 export function formatDate(src: string, when: Date, zone: Zone = UTC): string | undefined {
   const fmt = src.startsWith('+') ? src.slice(1) : src;
@@ -331,9 +334,11 @@ export function formatDate(src: string, when: Date, zone: Zone = UTC): string | 
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const off = zone.offset(when.getTime());
+  if ((zone.since !== undefined && when.getTime() < zone.since) || !Number.isInteger(off)) return undefined;
   // The fields are those of the wall clock in the zone.
   const wall = new Date(when.getTime() + off * 60000);
   const Y = wall.getUTCFullYear(), mo = wall.getUTCMonth(), d = wall.getUTCDate(), H = wall.getUTCHours(), M = wall.getUTCMinutes(), S = wall.getUTCSeconds();
+  if (Y < 1000 || Y > 9999) return undefined;
   const wday = wall.getUTCDay();
   const sign = off < 0 ? '-' : '+', oh = pad(Math.floor(Math.abs(off) / 60)), om = pad(Math.abs(off) % 60);
   const abbr = zone.abbr(when.getTime());
