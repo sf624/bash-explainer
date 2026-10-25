@@ -66,7 +66,7 @@ describe('the web page: a value with a backtick, a space at an end or an invisib
     ({ browser, base } = await openSite(this));
   });
 
-  it('shows them as chips that read back the value (a space at an end as ␠, a bidi control as <U+202E>)', async () => {
+  it('shows them as chips that read back the value (a space at an end drawn by CSS, a bidi control as <U+202E>)', async () => {
     const ctx = await browser.newContext({ viewport: { width: 1000, height: 900 }, locale: 'en-US' });
     await ctx.addInitScript(`try { localStorage.setItem('bash-explainer-settings', JSON.stringify({ 'bashExplainer.panel.animations': false })); } catch {}`);
     const page = await ctx.newPage();
@@ -79,8 +79,23 @@ describe('the web page: a value with a backtick, a space at an end or an invisib
     await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('echo "$a"'));
     await frames(panel());
     const got = await lines(panel());
-    assert.deepStrictEqual(got.items.map((l) => l.chips), [['␠a␠'], ['x`y'], ['a<U+202E>b'], ['␠p q␠', 'p', 'q']]);
-    assert.match(got.items[3].text, /␠ is a space at an end\)$/);
+    assert.deepStrictEqual(got.items.map((l) => l.chips), [[' a '], ['x`y'], ['a<U+202E>b'], [' p q ', 'p', 'q']]);
+    assert.match(got.items[3].text, / is a space at an end\)$/);
+    // The space is a real space in an element that CSS draws, with a name, and no glyph that a font may lack is used.
+    const marks = await panel().evaluate(`[...document.querySelectorAll('.ev-value .ev-sp')].map((m) => {
+      const s = getComputedStyle(m);
+      const r = m.getBoundingClientRect();
+      return { text: m.textContent, label: m.getAttribute('aria-label'), role: m.getAttribute('role'), bottom: s.borderBottomStyle + ' ' + s.borderBottomWidth, top: s.borderTopStyle, display: s.display, w: r.width, h: r.height,
+        inChip: !!m.closest('code.ev-word'), note: !m.closest('.ev-word') };
+    })`) as { text: string; label: string; role: string; bottom: string; top: string; display: string; w: number; h: number; inChip: boolean; note: boolean }[];
+    // a: 2 marks and the note's; f: 2 marks and the note's (the words p and q have none).
+    assert.strictEqual(marks.length, 6);
+    for (const m of marks) {
+      assert.deepStrictEqual([m.text, m.label, m.role, m.bottom, m.top, m.display], [' ', 'space', 'img', 'solid 1px', 'none', 'inline-block']);
+      assert.ok(m.w > 2 && m.h > 2, `a mark is ${m.w} x ${m.h}`);
+    }
+    assert.deepStrictEqual(marks.map((m) => m.inChip), [true, true, false, true, true, false]);
+    assert.ok(!/[\u2420\u2423]/.test(await panel().evaluate(`document.querySelector('#line').textContent`) as string));
     // BASH_EXPLAINER_SHOT=<file.png> saves a screenshot of the page for a look.
     if (process.env.BASH_EXPLAINER_SHOT) await page.screenshot({ path: process.env.BASH_EXPLAINER_SHOT });
     await ctx.close();

@@ -186,16 +186,16 @@ describe('the value of an expansion in sh and dash (src/semantics/shvalues.ts)',
 
 describe('what the outputs say of a value (valueSaid)', () => {
   it('says the value, and the words of a split one', () => {
-    assert.deepStrictEqual(valueSaid('en', { text: 'hello', words: ['hello'], glob: false }), { lead: 'Value here, from the script:', value: 'hello', text: 'Value here, from the script: `hello`' });
+    assert.deepStrictEqual(valueSaid('en', { text: 'hello', words: ['hello'], glob: false }), { lead: 'Value here, from the script:', value: 'hello', valueEnds: [0, 0], text: 'Value here, from the script: `hello`' });
     assert.strictEqual(valueSaid('en', { text: 'a b', words: ['a', 'b'], glob: false }).text, 'Value here, from the script: `a b`; unquoted, it is split into 2 words: `a` `b`');
     assert.strictEqual(valueSaid('ja', { text: 'a b', words: ['a', 'b'], glob: false }).text, 'スクリプトから分かるここでの値: `a b`。クォートしていないので単語分割され、2 語になる: `a` `b`');
-    assert.strictEqual(valueSaid('en', { text: ' c ', words: ['c'], glob: false }).text, 'Value here, from the script: `␠c␠`; unquoted, it is split into 1 word: `c` (`␠` is a space at an end)');
+    assert.strictEqual(valueSaid('en', { text: ' c ', words: ['c'], glob: false }).text, 'Value here, from the script: `␣c␣`; unquoted, it is split into 1 word: `c` (`␣` is a space at an end)');
   });
 
   it('says an empty value, and one that gives no word', () => {
     assert.deepStrictEqual(valueSaid('en', { text: '', glob: false }), { lead: 'Value here, from the script:', empty: 'an empty string', text: 'Value here, from the script: an empty string' });
     assert.strictEqual(valueSaid('ja', { text: '', words: [], glob: false }).text, 'スクリプトから分かるここでの値: 空文字列。クォートしていないので単語分割され、単語は残らない');
-    assert.strictEqual(valueSaid('en', { text: '   ', words: [], glob: false }).text, 'Value here, from the script: `␠␠␠`; unquoted, it is split and gives no word (`␠` is a space at an end)');
+    assert.strictEqual(valueSaid('en', { text: '   ', words: [], glob: false }).text, 'Value here, from the script: `␣␣␣`; unquoted, it is split and gives no word (`␣` is a space at an end)');
   });
 
   it('says a glob, control characters, and cuts long values and many words', () => {
@@ -296,9 +296,9 @@ function codeSpans(md: string): string[] {
   return out;
 }
 
-/** The `<code>` elements of the hover's HTML, their text. */
+/** The `<code>` elements of the hover's HTML, their text (a drawn mark of a space is the mark `␣` again). */
 const htmlCodes = (html: string): string[] =>
-  [...html.matchAll(/<code>(.*?)<\/code>/g)].map((m) => m[1].replace(/&nbsp;/g, ' ').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
+  [...html.matchAll(/<code>(.*?)<\/code>/g)].map((m) => m[1].replace(/<span style="[^"]*" title="[^"]*">&nbsp;<\/span>/g, '\u2423').replace(/&nbsp;/g, ' ').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
 
 /** The value and the words as the line says them. */
 const shownOf = (said: ValueSaid): string[] => [...(said.value !== undefined ? [said.value] : []), ...(said.split?.words ?? [])];
@@ -330,21 +330,58 @@ describe('a value that holds a backtick, or a space at an end, reads back the sa
     assert.strictEqual(valueSaid('en', { text: '``', glob: false }).text, 'Value here, from the script: ``` `` ```');
   });
 
-  it('shows a space at either end as ␠, and an inner space as it is', () => {
-    assert.strictEqual(same(' a ').value, '␠a␠');
-    assert.strictEqual(same('  a').value, '␠␠a');
-    assert.strictEqual(same('a  ').value, 'a␠␠');
-    assert.strictEqual(same(' ').value, '␠');
-    assert.strictEqual(same('     ').value, '␠␠␠␠␠');
+  it('shows a space at either end as ␣, and an inner space as it is', () => {
+    assert.strictEqual(same(' a ').value, '␣a␣');
+    assert.strictEqual(same('  a').value, '␣␣a');
+    assert.strictEqual(same('a  ').value, 'a␣␣');
+    assert.strictEqual(same(' ').value, '␣');
+    assert.strictEqual(same('     ').value, '␣␣␣␣␣');
     assert.strictEqual(same('a  b').value, 'a  b');
-    assert.strictEqual(same(' a  b ').value, '␠a  b␠');
-    assert.strictEqual(same(' ` ').value, '␠`␠');
+    assert.strictEqual(same(' a  b ').value, '␣a  b␣');
+    assert.strictEqual(same(' ` ').value, '␣`␣');
     // A word of a split value with a space at its end (IFS=:).
-    assert.deepStrictEqual(same('a :b', ['a ', 'b']).split!.words, ['a␠', 'b']);
+    assert.deepStrictEqual(same('a :b', ['a ', 'b']).split!.words, ['a␣', 'b']);
     // The note says what the mark is, in both languages, and only when there is one.
-    assert.strictEqual(valueSaid('en', { text: ' a', glob: false }).tail, ' (`␠` is a space at an end)');
-    assert.strictEqual(valueSaid('ja', { text: ' a', glob: false }).tail, '（`␠` は端の空白）');
+    assert.strictEqual(valueSaid('en', { text: ' a', glob: false }).tail, ' (`␣` is a space at an end)');
+    assert.strictEqual(valueSaid('ja', { text: ' a', glob: false }).tail, '（`␣` は端の空白）');
     assert.strictEqual(valueSaid('en', { text: 'a b', glob: false }).tail, undefined);
+  });
+
+  it('tells where the marks are, for the outputs that draw them, and how the mark is called', () => {
+    const ends = (text: string, words?: string[]) => valueSaid('en', { text, ...(words ? { words } : {}), glob: false });
+    assert.deepStrictEqual(ends(' a ').valueEnds, [1, 1]);
+    assert.deepStrictEqual(ends('  a').valueEnds, [2, 0]);
+    assert.deepStrictEqual(ends('a  ').valueEnds, [0, 2]);
+    assert.deepStrictEqual(ends(' a  b ').valueEnds, [1, 1]);
+    assert.deepStrictEqual(ends('     ').valueEnds, [0, 5]);
+    assert.deepStrictEqual(ends('a b').valueEnds, [0, 0]);
+    // A cut value has no mark at its end; a long run of spaces is cut inside the run.
+    assert.deepStrictEqual(ends(` ${'x'.repeat(78)} yyy`).valueEnds, [1, 0]);
+    assert.deepStrictEqual(ends(' '.repeat(100)).valueEnds, [79, 0]);
+    // A literal `␣` in a value is not a mark (it has no end to draw, and no note).
+    assert.deepStrictEqual(ends('a\u2423b').valueEnds, [0, 0]);
+    assert.strictEqual(ends('a\u2423b').tail, undefined);
+    assert.strictEqual(ends('a\u2423b').spaceLabel, undefined);
+    assert.deepStrictEqual(ends(' p q ', ['p', 'q']).split!.wordEnds, [[0, 0], [0, 0]]);
+    assert.deepStrictEqual(ends('a :b', ['a ', 'b']).split!.wordEnds, [[0, 1], [0, 0]]);
+    assert.deepStrictEqual(ends('a::b', ['a', '', 'b']).split!.wordEnds, [[0, 0], [0, 0], [0, 0]]);
+    assert.deepStrictEqual(ends('', []).split!.wordEnds, []);
+    assert.strictEqual(ends(' a').spaceLabel, 'space');
+    assert.strictEqual(valueSaid('ja', { text: ' a', glob: false }).spaceLabel, '空白');
+    assert.strictEqual(ends('a :b', ['a ', 'b']).spaceLabel, 'space');
+    assert.strictEqual(ends('a b').spaceLabel, undefined);
+  });
+
+  it('draws the mark in the hover as a real space on a faint background, named by its tooltip, and never as a glyph that fonts lack', () => {
+    const mark = '<span style="background-color:var(--vscode-badge-background);border-radius:2px;" title="space">&nbsp;</span>';
+    const html = valueHtml(valueSaid('en', { text: ' p q ', words: ['p', 'q'], glob: false }));
+    assert.ok(html.includes(`<code>${mark}p&nbsp;q${mark}</code>`), html);
+    // The note names it the same way.
+    assert.ok(html.endsWith(` (<code>${mark}</code> is a space at an end)`), html);
+    assert.ok(valueHtml(valueSaid('ja', { text: ' a', glob: false })).includes('title="空白"'));
+    assert.ok(!/[\u2420\u2423]/.test(html), html);
+    // A run of spaces: one mark each.
+    assert.ok(valueHtml(valueSaid('en', { text: '   ', glob: false })).includes(`<code>${mark.repeat(3)}</code>`));
   });
 
   it('shows an empty word of a split value as ∅', () => {
@@ -352,7 +389,7 @@ describe('a value that holds a backtick, or a space at an end, reads back the sa
     assert.deepStrictEqual(said.split!.words, ['a', '∅', 'b']);
     assert.strictEqual(said.tail, ' (`∅` is an empty word)');
     assert.strictEqual(valueSaid('ja', { text: 'a::b', words: ['a', '', 'b'], glob: false }).tail, '（`∅` は空の単語）');
-    assert.strictEqual(valueSaid('en', { text: ' a::b', words: ['a', '', 'b'], glob: false }).tail, ' (`␠` is a space at an end, `∅` is an empty word)');
+    assert.strictEqual(valueSaid('en', { text: ' a::b', words: ['a', '', 'b'], glob: false }).tail, ' (`␣` is a space at an end, `∅` is an empty word)');
   });
 
   it('is the same through the analyzer, in the hover, Markdown and the Language Server hover', () => {
@@ -361,8 +398,8 @@ describe('a value that holds a backtick, or a space at an end, reads back the sa
       ["msg='``'; echo \"$msg\"", '``'],
       ["msg='`'; echo \"$msg\"", '`'],
       ["msg='`a`'; echo \"$msg\"", '`a`'],
-      ["msg=' a '; echo \"$msg\"", '␠a␠'],
-      ["msg=' '; echo \"$msg\"", '␠'],
+      ["msg=' a '; echo \"$msg\"", '␣a␣'],
+      ["msg=' '; echo \"$msg\"", '␣'],
     ];
     for (const [src, shown] of cases) {
       const doc = openDocument(src, 'shell', (t) => parser.parse(t));
@@ -398,9 +435,9 @@ describe('a long value is cut on characters, and invisible characters are shown'
   });
 
   it('does not mark a space before the cut as one at the end', () => {
-    assert.strictEqual(valueSaid('en', { text: ` ${'x'.repeat(78)} yyy`, glob: false }).value, `␠${'x'.repeat(78)}…`);
+    assert.strictEqual(valueSaid('en', { text: ` ${'x'.repeat(78)} yyy`, glob: false }).value, `␣${'x'.repeat(78)}…`);
     assert.strictEqual(valueSaid('en', { text: `${'x'.repeat(78)} yyy`, glob: false }).value, `${'x'.repeat(78)} …`);
-    assert.strictEqual(valueSaid('en', { text: ' '.repeat(100), glob: false }).value, `${'␠'.repeat(79)}…`);
+    assert.strictEqual(valueSaid('en', { text: ' '.repeat(100), glob: false }).value, `${'␣'.repeat(79)}…`);
   });
 
   it('shows bidi controls and zero-width characters as <U+XXXX>, and names them', () => {

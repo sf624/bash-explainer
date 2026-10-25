@@ -338,6 +338,22 @@ describe('the web page: hover cards in the editor', function () {
     await ctx.close();
   });
 
+  it('draws the mark of a space at the end of a value as a real space on a background, named by its tooltip', async () => {
+    const ctx = await context();
+    const page = await ctx.newPage();
+    await open(page, "f=' p q '\necho $f");
+    await hoverAt(page, 1, '$f');
+    await cardText(page);
+    const marks = await page.evaluate(`[...document.querySelectorAll('.cm-tooltip .cm-bx-hover code > span[title]')].map((m) => ({
+      text: m.textContent, title: m.title, bg: getComputedStyle(m).backgroundColor, inCode: m.parentElement.textContent }))`) as { text: string; title: string; bg: string; inCode: string }[];
+    // Two marks in the value, one in the note that names the mark.
+    assert.deepStrictEqual(marks.map((m) => [m.text, m.title]), [['\u00a0', 'space'], ['\u00a0', 'space'], ['\u00a0', 'space']]);
+    assert.ok(marks.every((m) => m.bg !== 'rgba(0, 0, 0, 0)'), marks.map((m) => m.bg).join());
+    assert.strictEqual(marks[0].inCode, '\u00a0p\u00a0q\u00a0');
+    assert.ok(!/[\u2420\u2423]/.test((await cardText(page))));
+    await ctx.close();
+  });
+
   it('shows the words of a hostile script in a card as text: no image, no link but the manual\'s', async () => {
     const ctx = await context();
     const page = await ctx.newPage();
