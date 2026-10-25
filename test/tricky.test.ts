@@ -1167,7 +1167,12 @@ describe('tricky lines (round 5)', () => {
     assert.strictEqual(el('declare -A m; m[k]=x', 'm[k]=x'), 'Assign to the element of associative array `m` with the key `k` (a string, not evaluated)');
     assert.match(el('declare -A m; m[k]+=x', 'm[k]+=x', 'ja'), /^連想配列 `m` のキー `k`（文字列で、計算はされない）の要素に値を追記する/);
     // With -i, `+=` on an element adds.
-    assert.match(el('declare -ai c=(1 2); c[0]+=5', 'c[0]+=5'), /^Add to element `\[0\]` of array `c` \(it has `-i`, so this adds numbers: 7 plus `\+=1` is 8\)$/);
+    // (The example takes the operand written: 7 and `+=5` make 12, as bash adds them, not the text `75`.)
+    assert.strictEqual(bash('declare -ai c=(7 2); c[0]+=5; echo "${c[0]}"; declare -i n=7; n+=5; echo "$n"; s=7; s+=5; echo "$s"'), '12\n12\n75\n');
+    assert.match(el('declare -ai c=(1 2); c[0]+=5', 'c[0]+=5'), /^Add to element `\[0\]` of array `c` \(it has `-i`, so this adds numbers: if it is 7, `\+=5` makes 12, not 75\)$/);
+    assert.strictEqual(el('declare -i n; n+=5', 'n+=5'), 'Add to the integer variable `n` (it has `-i`, so this adds instead of appending text: if `n` is 7, `+=5` makes 12, not 75)');
+    assert.strictEqual(el('declare -i n; n+=x', 'n+=x'), 'Add to the integer variable `n` (it has `-i`, so this adds instead of appending text: the value of the arithmetic expression `x` is added)');
+    assert.match(el('declare -ai c; c[0]+=2', 'c[0]+=2', 'ja'), /要素が 7 なら `\+=2` で 9 であり、72 ではない）$/);
     assert.match(el('declare -i c; c[0]+=5', 'c[0]+=5', 'ja'), /^配列 `c` の要素 `\[0\]` に値を足す（`-i` が付いているので算術式の足し算/);
     assert.match(el('declare -Ai m; m[k]+=5', 'm[k]+=5'), /^Add to the element of associative array `m`.*adds numbers/);
     assert.match(el('declare -ai c; c[0]=5', 'c[0]=5'), /^Assign to element/);

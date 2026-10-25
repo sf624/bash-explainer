@@ -78,7 +78,7 @@ export interface Explainer {
    * Line `line` of a string read as a script (src/explain/scripts.ts), explained as a script of its own: with its
    * tree, its shell and its kind (`nested`), and the options of this line, but no reading tree.
    */
-  nestedLine(script: NestedScript, line: number): LineExplanation;
+  nestedLine(script: NestedScript, line: number, positional?: ExplainOptions['positional']): LineExplanation;
 
   /**
    * A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`, and with the node it is
@@ -234,8 +234,9 @@ export class LineExplainer implements Explainer, LineOutput {
     }
   }
 
-  nestedLine(script: NestedScript, line: number): LineExplanation {
-    return this.walk.nestedLine(script.tree, line, script.shell, script.kind, { ...this.opts, reading: false });
+  nestedLine(script: NestedScript, line: number, positional?: ExplainOptions['positional']): LineExplanation {
+    // (The positional parameters are those of this string's shell: a string in it has its own, or none.)
+    return this.walk.nestedLine(script.tree, line, script.shell, script.kind, { ...this.opts, reading: false, positional });
   }
 
   end(): void {

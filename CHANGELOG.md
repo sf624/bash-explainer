@@ -16,6 +16,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A new setting, `bashExplainer.bashVersion` (`--bash-version` on the command line), says which bash scripts are explained for: `5.2` (the default) or `5.3`; the GitHub Action takes it as `bash-version`. With `5.2`, a construct of bash 5.3 is a warning. So by default, a bash script that uses `${ …; }` or `${| …; }` now gets a warning, and `--check` exits 1; set `bashVersion` to `5.3` to explain it as bash 5.3 runs it.
 - Every command name in the panel has a badge: keyword, builtin, function, alias or program, and who runs it (`sudo echo` runs the program). A name that is also something else gets a line with the code that runs the other meaning (`time`: also a program, with `\time`). In the JSON output, an alias's token `kind` is now `alias` (it was `function`).
 - A new setting, `bashExplainer.panel.colors`, colours the panel like your editor theme: `theme` takes the theme's colours, and `themeLike` adds colours of its own where the theme gives two kinds of part one colour. The default, `classic`, keeps the panel's own colours.
+- A sequence of braces names its parts: in `{1..10..3}`, the start `1`, the end `10` and the increment `3`, with what bash makes of them (a negative increment, an end the steps miss, padding with zeros), in Meaning and in Reading.
+- In a string another shell runs, `$0` and `$1`… say they are that shell's, and the word each starts as: in `sudo sh -c '… "$1" …' sh "$msg"`, `$1` starts as `"$msg"`.
 - On the web page, pasting or dropping a whole script sets the file kind from its content (a shebang, `FROM`, `jobs:`, a Makefile rule, a bash code block…), and a toast says so with Undo. A few lines pasted into your own script leave the kind as it is.
 
 ### Changed
@@ -65,6 +67,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `builtin cd` and `command echo` are explained as the builtin itself, which runs in this shell; the words after it are its own. Before, they said "runs `cd`", the badge "run by `builtin`", and Reading had `builtin` read them.
 - After `alias ll='ls -l'; ll -h` on one line, `ll` is the command bash looks for, not the alias, and `-h` is no longer read as an option of `ls`.
 - `zsh`, `dash`, `ksh` and the other shells are named as themselves: `zsh -c …` said "Run the POSIX shell".
+- Combined short options listed as one are split as the others are: `docker run -it` and `docker exec -it` are `-i` and `-t`, `screen -dmS` and `usermod -aG` too.
+- `xargs -d '\n'` no longer says that the last newline stays in the last item: it does only with another delimiter.
 
 ## 0.8.0
 

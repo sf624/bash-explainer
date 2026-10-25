@@ -6,9 +6,11 @@
 import type { Kind, Token } from '../analyzer-types';
 import { type ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping } from '../arith';
 import { pictureList, visible } from '../ctlchars';
+import { ordinal } from '../i18n';
 import { ciVariables } from '../dict/ciVariables';
 import { specialVariables, wellKnownVariables } from '../dict/syntax';
 import { explainGlob, globIntro, type GlobTarget, hasGlob } from '../embedded/glob';
+import type { EmbeddedToken } from '../embedded/types';
 import { braceExpand, extglobs, hasGlobstar, ShellWordsUnsupported } from '../examples/shellwords';
 import { parseExpansion } from '../expansion';
 import { shorten } from '../label';
@@ -163,10 +165,53 @@ function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
   const comma = /\\,/.test(text);
   // `{01..10..3}`: a number with a leading 0 makes every number as wide as the widest.
   const pad = /\{-?0\d+\.\./.test(text) || /\.\.-?0\d+(?:\.\.|\})/.test(text);
+  const parts = sequenceParts(cx, text).map((t) => fromEmbedded(t, n, { text, base: 0 }, 'shell'));
   return cx.tok(n, 'expansion', words.length
     ? cx.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}${pad ? '（先頭が 0 の数があるので、桁数をそろえて 0 で埋める）' : ''}`,
       `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}${pad ? ' (a number with a leading 0 pads all of them with zeros to the same width)' : ''}`)
-    : cx.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`));
+    : cx.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`), parts);
+}
+
+/** A sequence expression of braces, `{x..y[..incr]}` (3.5.1): two integers, or two letters, and an integer step. */
+const SEQUENCE = /\{(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])(?:\.\.(-?\d+))?\}/g;
+
+/**
+ * The parts of each sequence expression in a word's text, `{1..10..3}`: its start, its end and its increment, with
+ * what bash makes of them (checked with bash 5.2): the sign of the increment does not count, the order comes from
+ * the start and the end, an increment of 0 counts as 1, the last word is the last step that does not pass the end,
+ * and a number with a leading 0 pads every word with zeros to the same width.
+ */
+function sequenceParts(cx: Explainer, text: string): EmbeddedToken[] {
+  const out: EmbeddedToken[] = [];
+  for (const m of text.matchAll(SEQUENCE)) {
+    const [whole, x, y, z] = m;
+    const numbers = /\d/.test(x);
+    // (`{1..b}{x,y}`: no sequence, the braces stay.)
+    if (numbers !== /\d/.test(y)) continue;
+    // (A sequence of the word expands to no more words than the word: they were listed.)
+    const words = braceExpansion(whole)!;
+    const kind = numbers ? 'number' : 'string';
+    const at = m.index! + 1;
+    const value = (s: string): number => (numbers ? Number(s) : s.charCodeAt(0));
+    const down = value(x) > value(y);
+    const padded = (s: string): string => (numbers && /^-?0\d/.test(s) ? cx.s('。先頭が 0 なので、すべての数を 0 で埋めて同じ桁数にする', '; it has a leading 0, so every number is padded with zeros to the same width') : '');
+    out.push({ start: at, end: at + x.length, kind, explanation: cx.s(`開始: \`${x}\``, `Start: \`${x}\``) + padded(x), children: [] });
+    const last = words[words.length - 1];
+    const stops = last !== y && (!numbers || Number(last) !== Number(y)) ? cx.s(`（増分で届かないので、最後の単語は \`${last}\`）`, ` (the steps do not land on it: the last word is \`${last}\`)`) : '';
+    out.push({ start: at + x.length + 2, end: at + x.length + 2 + y.length, kind, explanation: cx.s(`終わり: \`${y}\``, `End: \`${y}\``) + stops + padded(y), children: [] });
+    if (z === undefined) continue;
+    const step = Math.abs(Number(z)) || 1;
+    const sign = Number(z) < 0 ? cx.s('。符号は使われず、向きは開始と終わりで決まる', '; its sign does not count: the start and the end set the direction') : Number(z) === 0 ? cx.s('。0 は 1 として扱われる', '; 0 counts as 1') : '';
+    const s0 = at + x.length + 2 + y.length + 2;
+    out.push({
+      start: s0, end: s0 + z.length, kind: 'number',
+      explanation: numbers
+        ? cx.s(`増分: \`${z}\`（単語ごとに ${step} ${down ? '減る' : '増える'}）${sign}`, `Increment: \`${z}\` (each word is ${step} ${down ? 'less' : 'more'} than the one before)${sign}`)
+        : cx.s(`増分: \`${z}\`（${step} 文字ごとに${down ? '逆向きに' : ''}進む）${sign}`, `Increment: \`${z}\` (${step === 1 ? 'each letter' : `every ${ordinal(step)} letter`}, counting ${down ? 'down' : 'up'})${sign}`),
+      children: [],
+    });
+  }
+  return out;
 }
 
 /** `{1..$n}`: braces are expanded before variables, so a range whose end is a variable is not a range. */
@@ -357,7 +402,9 @@ export function notGlobbedHere(cx: Explainer, n: SyntaxNode): string {
     : '';
 }
 
-export function varDesc(cx: Explainer, name: string): string | undefined {
+export function varDesc(cx: Explainer, name: string, at?: SyntaxNode): string | undefined {
+  const own = /^\d+$/.test(name) && at ? stringParam(cx, Number(name), at) : undefined;
+  if (own) return own;
   if (specialVariables[name]) return cx.t(specialVariables[name]);
   if (/^\d+$/.test(name)) return cx.s(`位置パラメータ: ${name} 番目の引数`, `Positional parameter: argument #${name}`);
   if (wellKnownVariables[name]) return cx.t(wellKnownVariables[name]);
@@ -369,14 +416,31 @@ export function varDesc(cx: Explainer, name: string): string | undefined {
   return undefined;
 }
 
+/**
+ * `$0`, `$1`… in a string a shell runs (`sh -c 'printf "%s\n" "$1"' sh "$msg"`): that shell's, which start as the
+ * words after the string (`ExplainOptions.positional`). Not in a function the string defines: there they are its
+ * arguments.
+ */
+function stringParam(cx: Explainer, k: number, at: SyntaxNode): string | undefined {
+  const p = cx.opts.positional;
+  if (!p || ancestor(at, (x) => x.type === 'function_definition')) return undefined;
+  const w = p.words[k];
+  const of = cx.s(`\`${p.via}\` の文字列`, `the \`${p.via}\` string`);
+  if (k === 0) {
+    return w === undefined ? undefined : cx.s(`${of}の \`$0\`: そのあとに渡した名前 \`${w}\`（エラーメッセージに出る）`, `\`$0\` of ${of}: the name given after it, \`${w}\` (shown in error messages)`);
+  }
+  const start = w !== undefined ? cx.s(`（最初は \`${w}\`）`, ` (it starts as \`${w}\`)`) : p.more ? '' : cx.s('（渡されていないので、最初は空）', ' (none is given, so it starts empty)');
+  return cx.s(`位置パラメータ: ${of}への ${k} 番目の引数${start}`, `Positional parameter: argument #${k} of ${of}${start}`);
+}
+
 export function variable(cx: Explainer, name: string, n: SyntaxNode): Token {
-  const d = varDesc(cx, name);
+  const d = varDesc(cx, name, n);
   return cx.tok(n, 'variable', d ? `\`$${name}\`: ${d}` : cx.s(`変数 \`${name}\``, `Variable \`${name}\``));
 }
 
 export function simpleExpansion(cx: Explainer, n: SyntaxNode): Token {
   const name = n.text.slice(1);
-  const d = varDesc(cx, name);
+  const d = varDesc(cx, name, n);
   const note = splitNote(cx, n);
   const t = cx.tok(n, 'variable', d ?? (note
     ? cx.s(`変数 \`${name}\` の値に置き換わる（クォートしないと${note.ja}）`, `Expands to the value of \`${name}\` (unquoted, ${note.en})`)

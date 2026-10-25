@@ -559,6 +559,9 @@ describe('the reading tree of a line', () => {
       '      command/argument "${y:-$(date +%F)}"',
       '    bash/argument a{1..3}b',
       '      bash/brace {1..3}',
+      // (A sequence's start and end, which bash reads in the braces: tokens of its own, with no node.)
+      '        bash/number 1',
+      '        bash/number 3',
       '      command/argument a{1..3}b',
       '    bash/argument c$((1 + $n))',
       '      bash/arithmetic $((1 + $n))',
@@ -814,6 +817,8 @@ describe('the origins of the tokens', () => {
       'shell expansion {a,b}',
       'argv argument {1..3}',
       'shell expansion {1..3}',
+      'shell number 1',
+      'shell number 3',
     ]);
   });
 });

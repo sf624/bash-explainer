@@ -857,8 +857,8 @@ export class Analyzer {
       ? this.s('。ただし、`sh` は Debian や Ubuntu では dash で、dash は bash がエクスポートした関数を読まないので、そこでは同じ名前のコマンドが動く',
         '. But `sh` is dash on Debian and Ubuntu, and dash does not read the functions bash exports: there the command of that name runs')
       : res.maybe === 'startup'
-      ? this.s('。ただし、この関数は新しいシェルに渡されないので、定義されているのは起動時に読むファイル（`-l`、`-i`、`BASH_ENV`）が定義する場合だけで、そうでなければ同じ名前のコマンドが動く',
-        '. But this function is not passed to the new shell: it is defined there only if the files it reads at startup (`-l`, `-i`, `BASH_ENV`) define it; otherwise the command of that name runs')
+      ? this.s(`。ただし、この関数は新しいシェルに渡されないので、定義されているのは起動時に読むファイル（\`-l\`、\`-i\`、\`BASH_ENV\`）${res.sourced ? `か、行 ${docLine(res.sourced) + 1} で読み込むファイル` : ''}が定義する場合だけで、そうでなければ同じ名前のコマンドが動く`,
+        `. But this function is not passed to the new shell: it is defined there only if the files it reads at startup (\`-l\`, \`-i\`, \`BASH_ENV\`)${res.sourced ? `, or the file it reads on line ${docLine(res.sourced) + 1},` : ''} define it; otherwise the command of that name runs`)
       : res.maybe === 'branch'
       ? this.s('。ただし、ここまでに定義されているのは一部の経路（分岐など）だけで、そうでなければ同じ名前のコマンドが動く',
         '. But only some paths before here (a branch…) define it; on the others the command of that name runs')

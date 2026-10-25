@@ -404,7 +404,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
 
   /**
    * `parts` of `n`, with bash's tokens in its text that no part has: the parts of a glob (`*`, `.txt`), the escapes of
-   * `$'…'`, a tilde after `=` (`x=~/y`), in the order of the text.
+   * `$'…'`, a tilde after `=` (`x=~/y`), the start, end and increment of `{1..10..3}`, in the order of the text.
    */
   const withTokens = (n: SyntaxNode, parts: ReadingNode[], layer: Layer): ReadingNode[] => {
     const span = spanOf(n);
@@ -443,7 +443,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       : p.type === 'arithmetic_expansion' ? 'arithmetic' : p.type === 'brace_expression' ? 'brace' : 'quote';
     const parts = inner(p, layer);
     // (Not the command's token, when the part is its name: `"$@"`.)
-    return shellNode(p, layer, kind, QUOTES.has(p.type) ? withTokens(p, parts, layer) : parts, notReader);
+    // (The parts of a sequence of braces, `{1..10..3}`, have tokens but no nodes, as the escapes of `$'…'`.)
+    return shellNode(p, layer, kind, QUOTES.has(p.type) || kind === 'brace' ? withTokens(p, parts, layer) : parts, notReader);
   };
 
   const assignment = (a: SyntaxNode, layer: Layer, kind: 'assignment' | 'assignmentArgument'): ReadingNode => {

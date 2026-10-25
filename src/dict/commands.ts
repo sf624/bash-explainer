@@ -100,7 +100,6 @@ const restoreLetters: OptSpec[] = [
 /** Options of `docker run` (and `docker container run`, `podman run`). */
 const dockerRun: OptSpec[] = [
   ['-d|--detach', 'バックグラウンドで実行', 'run in the background'],
-  ['-it', '対話的に端末付きで実行（`-i` と `-t`）', 'interactive with a TTY (`-i` + `-t`)'],
   ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'],
   ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY'],
   ['--rm', '終了後にコンテナを削除', 'remove the container on exit'],
@@ -157,7 +156,7 @@ const dockerSubs: Record<string, CommandSpec> = {
   run: cmd('イメージから新しいコンテナを起動する', 'Run a new container', dockerRun, { optionsFirst: true, operands: [{ pattern: [IMAGE, runs(IN_CONTAINER)] }] }),
   build: cmd('Dockerfile からイメージをビルドする', 'Build an image from a Dockerfile', dockerBuild, { positional: [pos('ビルドのコンテキスト（ディレクトリ）', 'build context (directory)')] }),
   login: cmd('レジストリにログインする', 'Log in to a registry', [['-u|--username', 'ユーザー名', 'user name', 'arg'], ['-p|--password', 'パスワード（ログに残るので `--password-stdin` を推奨）', 'password (shows up in logs; prefer `--password-stdin`)', 'arg'], ['--password-stdin', 'パスワードを標準入力から読む', 'read the password from stdin']], { positional: [pos('レジストリ（省略時は Docker Hub）', 'registry (default: Docker Hub)')] }),
-  exec: cmd('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-it', '対話的に端末付きで実行', 'interactive with a TTY'], ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY'], ['-e|--env', '環境変数を設定（`名前=値`、または `名前` だけで値は環境から）', 'set an environment variable (`NAME=value`, or `NAME` alone to take its value from the environment)', 'arg setenv'], ['--env-file', '環境変数をファイルから読む', 'read environment variables from a file', 'arg envfile'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg']], { optionsFirst: true, operands: [{ pattern: [operand('CONTAINER', 'コンテナ', 'container', { repeat: '?' }), runs(IN_CONTAINER)] }] }),
+  exec: cmd('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY'], ['-e|--env', '環境変数を設定（`名前=値`、または `名前` だけで値は環境から）', 'set an environment variable (`NAME=value`, or `NAME` alone to take its value from the environment)', 'arg setenv'], ['--env-file', '環境変数をファイルから読む', 'read environment variables from a file', 'arg envfile'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg']], { optionsFirst: true, operands: [{ pattern: [operand('CONTAINER', 'コンテナ', 'container', { repeat: '?' }), runs(IN_CONTAINER)] }] }),
   ps: cmd('コンテナ一覧を表示する', 'List containers', [['-a|--all', '停止中のものも表示', 'show all containers'], ['-q|--quiet', 'ID だけ表示', 'only IDs'], ['-f|--filter', '条件で絞る（`label=…`、`status=running`…）', 'filter (`label=…`, `status=running`…)', 'arg'], ['--format', 'Go テンプレートで出力形式を指定（`{{.ID}}`…）', 'Go template for the output (`{{.ID}}`…)', 'arg']]),
   images: cmd('イメージ一覧を表示する', 'List images'),
   pull: cmd('イメージを取得する', 'Pull an image'),
@@ -206,7 +205,7 @@ const SHELL_OPERANDS: OperandAlt[] = [
   {
     when: { option: ['-c'] },
     pattern: [
-      operand('COMMAND_STRING', '実行するコマンド文字列', 'command string to run', { command: { run: 'shell-string', env: 'exported' } }),
+      operand('COMMAND_STRING', '実行するコマンド文字列', 'command string to run', { command: { run: 'shell-string', env: 'exported', params: true } }),
       operand('NAME', '`$0` になる名前（スクリプト名の代わり。エラーメッセージにも出る）。引数ではない', 'Becomes `$0`, the name in place of a script name (shown in error messages); not an argument', { repeat: '?' }),
       shellArgs('コマンド文字列の位置パラメータ `$N`', 'Positional parameter `$N` of the command string'),
     ],
@@ -496,7 +495,7 @@ export const core: Record<string, CommandSpec> = {
     ['-P|--max-procs', '並列実行するプロセス数', 'run up to N processes in parallel', 'arg'],
     ['-r|--no-run-if-empty', '入力が空ならコマンドを実行しない', 'do not run if input is empty'],
     ['-t|--verbose', '実行するコマンドを表示', 'print commands before running'],
-    ['-d|--delimiter', '入力の区切り文字（`echo` が出す末尾の改行は、最後の項目にそのまま残る）', 'input delimiter (the newline `echo` ends with stays in the last item)', 'arg'],
+    ['-d|--delimiter', '入力の区切り文字（各項目は指定した文字で終わり、クォートやバックスラッシュは特別扱いしない。`\\n` 以外にすると、`echo` が出す末尾の改行は最後の項目に残る）', 'input delimiter: each item ends at the given character, and quotes and backslashes are not special (with one other than `\\n`, the newline `echo` ends with stays in the last item)', 'arg'],
     ['-i|--replace', '置換文字列（既定は `{}`。`-i` は直後にだけ文字列を付けられる）', 'replace string (default `{}`; attach any string directly)', 'attached'],
     ['-L', '入力の指定した行数ごとに1回実行する', 'run once per the given number of input lines', 'arg'],
     ['-E', '指定した文字列で入力を打ち切る', 'stop reading at the given string', 'arg'],

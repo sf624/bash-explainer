@@ -416,7 +416,7 @@ export const basic: Record<string, CommandSpec> = {
     ['-R', 'あれば再接続し、なければ新しく作る', 'reattach if possible, else start a new one'],
     ['-d', 'セッションを切り離す（`-r` と組み合わせて他の接続を外す）', 'detach a session (with `-r`: detach elsewhere, reattach here)'],
     ['-D', '切り離してから再接続（強制）', 'detach and logout remotely, then reattach'],
-    ['-dmS', '名前を付けて、つなげずに始める', 'start a named session detached'],
+    ['-m', '新しいセッションを始める（`-d` と組み合わせると、つなげずに始める: `-dmS 名前`）', 'start a new session (with `-d`: start it detached, as in `-dmS name`)'],
     ['-x', '接続中のセッションにもう1つ接続する（共有）', 'attach to a session that is already attached (sharing)'],
     ['-X', '実行中のセッションにコマンドを送る', 'send a command to a running session'],
     ['-L', '出力をログに記録する', 'turn on output logging'],

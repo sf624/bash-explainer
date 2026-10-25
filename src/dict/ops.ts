@@ -385,7 +385,6 @@ export const ops: Record<string, CommandSpec> = {
     ['-p|--password', '暗号化済みのパスワード', 'encrypted password', 'arg'],
     ['-U|--unlock', 'アカウントのロックを解除する', 'unlock the account'],
     ['-R|--root', '代わりのルートディレクトリ', 'apply changes in the given chroot directory', 'arg'],
-    ['-aG', '既存のグループに加えて追加する（`-a` なしの `-G` は置き換え）', 'add to these groups, keeping the others (`-G` without `-a` replaces them)', 'arg'],
     ['-a|--append', '`-G` と使い、グループを置き換えずに追加する', 'with `-G`, add to groups instead of replacing them'], ['-G|--groups', '所属するグループ（`-a` なしでは置き換え）', 'groups (replaced unless `-a`)', 'arg'],
     ['-g|--gid', '主グループ', 'primary group', 'arg'], ['-s|--shell', 'ログインシェル', 'login shell', 'arg'], ['-d|--home', 'ホームディレクトリ', 'home directory', 'arg'],
     ['-u|--uid', 'ユーザー ID', 'user ID', 'arg'], ['-L|--lock', 'パスワードでのログインを止める', 'lock the password'],

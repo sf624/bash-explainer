@@ -74,8 +74,8 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     const calc = v === undefined || String(v) === value.text.trim() ? '' : ` = ${v}`;
     intValueText = cx.s(`算術式として計算される${calc}`, `Evaluated as an arithmetic expression${calc}`);
     expl = op === '+='
-      ? cx.s(`整数変数 \`${nm}\` に値を足す（\`-i\` が付いているので文字列の連結ではなく算術式の足し算になる。\`${nm}\` が 7 なら \`+=1\` で 8 であり、71 ではない）`,
-        `Add to the integer variable \`${nm}\` (it has \`-i\`, so this adds instead of appending text: if \`${nm}\` is 7, \`+=1\` makes 8, not 71)`)
+      ? cx.s(`整数変数 \`${nm}\` に値を足す（\`-i\` が付いているので文字列の連結ではなく算術式の足し算になる。${sumText(cx, value, nm)}）`,
+        `Add to the integer variable \`${nm}\` (it has \`-i\`, so this adds instead of appending text: ${sumText(cx, value, nm)})`)
       : cx.s(`整数変数 \`${nm}\` に値を代入する（\`-i\` が付いているので、値は算術式として計算される）`,
         `Assign to the integer variable \`${nm}\` (it has \`-i\`, so the value is evaluated as arithmetic)`);
   }
@@ -95,8 +95,8 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
       const el = v !== undefined && String(v) !== idx
         ? cx.s(`配列 \`${arr}\` の要素 \`[${idx}]\`（算術式として計算すると ${v}）`, `element \`[${idx}]\` of array \`${arr}\` (an arithmetic expression: ${v})`)
         : cx.s(`配列 \`${arr}\` の要素 \`[${idx}]\``, `element \`[${idx}]\` of array \`${arr}\``);
-      expl = cx.s(`${el}${el.endsWith('`') ? ' ' : ''}${verb('に代入する', 'に値を追記する（文字列の連結。`b` に `x` を足すと `bx`）', 'に値を足す（`-i` が付いているので算術式の足し算。7 に `+=1` で 8）')}`,
-        `${verb('Assign to ', 'Append to ', 'Add to ')}${el}${add && !toInt ? ' (text is appended to the existing value: `b` plus `x` is `bx`)' : toInt ? ' (it has `-i`, so this adds numbers: 7 plus `+=1` is 8)' : ''}`);
+      expl = cx.s(`${el}${el.endsWith('`') ? ' ' : ''}${verb('に代入する', 'に値を追記する（文字列の連結。`b` に `x` を足すと `bx`）', `に値を足す（\`-i\` が付いているので算術式の足し算。${sumText(cx, value)}）`)}`,
+        `${verb('Assign to ', 'Append to ', 'Add to ')}${el}${add && !toInt ? ' (text is appended to the existing value: `b` plus `x` is `bx`)' : toInt ? ` (it has \`-i\`, so this adds numbers: ${sumText(cx, value)})` : ''}`);
     }
   }
   // `IFS` is the list of characters word splitting, `read` and `"${a[*]}"` use as separators.
@@ -119,3 +119,15 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
   }
   return cx.tok(n, 'assignment', expl, children);
 }
+
+/**
+ * What `+=` of an integer adds, with its own operand (`n+=5`: if `n` is 7, 12, not 75); `name`: the variable, else
+ * the element. An operand that is no number is an arithmetic expression whose value is added.
+ */
+function sumText(cx: Explainer, value: SyntaxNode | null | undefined, name?: string): string {
+  const v = value ? evalArith(value.text) : undefined;
+  const it = name === undefined ? cx.s('要素が', 'it') : cx.s(`\`${name}\` が`, `\`${name}\``);
+  if (v === undefined || !value) return value ? cx.s(`算術式 \`${value.text}\` の値を足す`, `the value of the arithmetic expression \`${value.text}\` is added`) : cx.s('空の値は 0 を足す', 'an empty value adds 0');
+  return cx.s(`${it} 7 なら \`+=${value.text}\` で ${7 + v} であり、7${value.text} ではない`, `if ${it} is 7, \`+=${value.text}\` makes ${7 + v}, not 7${value.text}`);
+}
+

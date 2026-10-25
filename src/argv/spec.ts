@@ -378,6 +378,8 @@ export interface CommandSlot {
   envWith?: { options: string[]; env: 'exported' | 'variables' | 'reset' | 'none' };
   /** `exec cmd`: nothing after it runs. */
   replacesShell?: boolean;
+  /** With `shell-string`: the operands after the string are its `$0`, `$1`… (`sh -c '…' sh "$msg"`). */
+  params?: boolean;
   /**
    * The words left are joined into one string for the shell (ssh): with `shell-string`, the slot takes every
    * word left, like `exec`, instead of one word.
