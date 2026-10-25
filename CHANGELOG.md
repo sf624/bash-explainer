@@ -72,6 +72,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `xargs -d '\n'` no longer says that the last newline stays in the last item: it does only with another delimiter.
 - With `sed -n`, `q` quits without printing the line and `n` reads the next one without printing this one, as GNU sed does; so does a script that starts with `#n`. Before, both said they print the line.
 - The `git log --graph` example draws the graph: `* ` before each commit, and `| ` before its other lines.
+- The hover no longer repeats a problem that VS Code shows above it: the part leaves out that note. The notes that stay line up with the hover's text. Before, the same pitfall came twice, the second time indented.
 
 ## 0.8.0
 

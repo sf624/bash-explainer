@@ -87,13 +87,25 @@ export function isAbout(at: Span, part: Token): boolean {
   return all(part).some((t) => within(at, t.span));
 }
 
+/** A problem the editor shows in the same hover, above the part (VS Code's diagnostics at the position): its code and range. */
+export interface ProblemAt { code: string; span: Span }
+
+const before = (a: Pos, b: Pos) => a.line < b.line || (a.line === b.line && a.character < b.character);
+const overlap = (a: Span, b: Span) => before(a.start, b.end) && before(b.start, a.end);
+
+/** Whether a note is one of the problems the hover shows already: one of its ranges is that problem's (the same code, overlapping). */
+const shownAsProblem = (ex: LineExplanation, note: string, problems: readonly ProblemAt[]) =>
+  problems.some((p) => ex.anchors?.some((a) => a.text === note && a.code === p.code && overlap(a.span, p.span)));
+
 /**
  * The notes of a line that a part's hover shows (`isAbout` one of their ranges, `LineExplanation.anchors`), and the
- * others: those about other parts, and those with no range (about the line), which only the whole line shows.
+ * others: those about other parts, and those with no range (about the line), which only the whole line shows. A note
+ * the hover shows above as a problem (`problems`) is in neither, so that it is not said twice.
  */
-export function partNotes(ex: LineExplanation, part: Token): { about: string[]; others: string[] } {
-  const about = ex.notes.filter((n) => ex.anchors?.some((a) => a.text === n && isAbout(a.span, part)));
-  return { about, others: ex.notes.filter((n) => !about.includes(n)) };
+export function partNotes(ex: LineExplanation, part: Token, problems: readonly ProblemAt[] = []): { about: string[]; others: string[] } {
+  const notes = ex.notes.filter((n) => !shownAsProblem(ex, n, problems));
+  const about = notes.filter((n) => ex.anchors?.some((a) => a.text === n && isAbout(a.span, part)));
+  return { about, others: notes.filter((n) => !about.includes(n)) };
 }
 
 /** The run of blanks around a position on no part (the indentation, between statements), so that moving onto a part asks again. */

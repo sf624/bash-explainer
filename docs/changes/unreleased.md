@@ -549,3 +549,15 @@ The positional parameters are those the shell starts with: a `shift` or `set --`
 | `git log --oneline --graph --format='%h %s'` | `* 3f2a9c1 Fix login timeout` | the example's lines start with `* `; a commit's other lines with `\| ` (two spaces for the last), as git draws one line of history | `3f2a9c1 Fix login timeout` |
 | `case` (no word yet) | a syntax error | "case statement: match the value (not written yet) against each pattern…", with no empty part for the value | "match `` against each pattern…", and an empty "Value to match" |
 
+### The hover's notes
+
+VS Code puts the problems at the mouse above our hover. The part now leaves out the notes that those problems already say. They are matched by their code, such as `redirect-by-your-shell`, and by their place, not by their text.
+
+| Written, hovered on | Shown now | Shown before |
+| --- | --- | --- |
+| `sudo echo "nameserver 1.1.1.1" > /etc/resolv.conf`, on `>` | the problem above, then the part: `> /etc/resolv.conf` and what it does | the problem, and the same pitfall again in the part |
+| `rm -rf $DIR/*`, on `$DIR` | the two problems above, then `$DIR` | the two problems, and both pitfalls again |
+| the same, with `bashExplainer.diagnostics.enabled` off | `$DIR` with both pitfalls (no problem above) | the same |
+
+The notes that stay (on another word, about the line, a plain fact) start at the hover's left edge, with their icon and word in the level's colour. Before, each one was a quote: VS Code's hover draws no bar for a quote, only the browser's margins, so each note was pushed 40 px to the right.
+

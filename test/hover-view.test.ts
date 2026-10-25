@@ -5,14 +5,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import type { LineExplanation, Token } from '../src/analyzer-types';
-import { explainDocumentLine, heredocAt, ShellDocument } from '../src/document';
+import { diagnosticsFor, explainDocumentLine, heredocAt, ShellDocument, Shells } from '../src/document';
 import { openDocument } from '../src/document-setup';
 import type { Lang } from '../src/i18n';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { blankRange, chainAt, covers, isCommand, partAt, rangeOnLine, sameSpan, shown } from '../src/ui/hoverParts';
+import { blankRange, chainAt, covers, isCommand, partAt, ProblemAt, rangeOnLine, sameSpan, shown } from '../src/ui/hoverParts';
 import { HoverInput, lineCard, md as mdText, partHover, plainPartHover, prose, structureCrumb, wholeLine } from '../src/ui/hoverView';
 import type { ThemeKind } from '../src/ui/palette';
 import { ExamplePlacement, toPlainMarkdown } from '../src/ui/render';
+import { defaultSettings } from '../src/settings';
 
 const parser = createUnbashParser();
 const open = (src: string): ShellDocument => openDocument(src, 'shell', (t) => parser.parse(t));
@@ -23,6 +24,8 @@ function chain(doc: ShellDocument, line: number, character: number): string[] {
   return partAt(explain(doc, line).items, { line, character }, heredocAt(doc, line)).map((t) => t.label);
 }
 const last = (labels: string[]) => labels[labels.length - 1];
+/** A line of the hover that is a note: the level's codicon in its colour (a paragraph, not a quote). */
+const isNote = (l: string) => /^<span style="color:[^"]+;">\$\((warning|info)\)<\/span> /.test(l);
 
 function input(doc: ShellDocument, line: number, opts: { lang?: Lang; theme?: ThemeKind; placement?: ExamplePlacement; ex?: LineExplanation } = {}): HoverInput {
   return {
@@ -222,7 +225,7 @@ describe('the hover Markdown', () => {
     // line, which are about other parts (the idioms of `sudo find … -print0` and `xargs -0`).
     const command = lines.findIndex((l) => l.includes('Command: '));
     assert.ok(command > 4, md);
-    assert.ok(!lines.some((l) => l.startsWith('> ') && l.includes(' Idiom')), md);
+    assert.ok(!lines.some((l) => isNote(l) && l.includes(' Idiom')), md);
     const example = lines.findIndex((l) => l.startsWith('#### Example'));
     assert.ok(example > command);
     assert.strictEqual(lines[lines.length - 4], '[$(list-tree) 2 more notes on this line](command:line "Explain the whole line (Ctrl+K Ctrl+E)")');
@@ -256,7 +259,7 @@ describe('the hover Markdown', () => {
     const md = partMd(open('exit 300'), 0, 0);
     assert.match(md, /\(builtin\)|&nbsp;builtin&nbsp;/);
     assert.match(md, /<small>Bash manual \[4\.1\]\(https:\/\/www\.gnu\.org\/software\/bash\/manual\/html_node\/Bourne-Shell-Builtins\.html "Bourne Shell Builtins"\)/);
-    assert.match(md, /^> <span style="color:var\(--vscode-descriptionForeground\);">\$\(info\)<\/span> An exit status is 0–255, .* <small>Bash manual \[3\.7\.5\]\(/m);
+    assert.match(md, /^<span style="color:var\(--vscode-descriptionForeground\);">\$\(info\)<\/span> An exit status is 0–255, .* <small>Bash manual \[3\.7\.5\]\(/m);
     const row = partMd(open('a | b'), 0, 0);
     assert.ok(row.includes('<small>Bash manual <a href="https://www.gnu.org/software/bash/manual/html_node/Pipelines.html" title="Pipelines">3.2.3</a></small>') || !row.includes('<table>'));
     const pipe = wholeLine(input(open('a | b'), 0));
@@ -301,7 +304,7 @@ describe('the hover Markdown', () => {
     assert.ok(md.includes('<tr><td>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--vscode-charts-orange);">-⁠name</span>'), md);
     assert.match(lines[lines.length - 1], /^\[\$\(comment-discussion\) \d+ more in the panel\]\(command:panel\) &nbsp;·&nbsp; \[\$\(gear\) Settings\]/);
     // The notes after the commands.
-    assert.ok(lines.findIndex((l) => (l.startsWith('> ') && l.includes(' Idiom'))) > lines.lastIndexOf('<table>'));
+    assert.ok(lines.findIndex((l) => (isNote(l) && l.includes(' Idiom'))) > lines.lastIndexOf('<table>'));
     // One command: no breadcrumb, and the panel link as it is.
     const one = wholeLine(input(open('ls -l'), 0));
     assert.ok(!one.includes('<small><span title'));
@@ -314,7 +317,7 @@ describe('the hover Markdown', () => {
     const md = wholeLine(x);
     assert.match(md, /^\*\*Bash Explainer\*\* · Line 2 · checked for POSIX sh/);
     // (The mark is the level's codicon, in the level's colour.)
-    assert.match(md, /> <span style="color:var\(--vscode-editorWarning-foreground\);">\$\(warning\)<\/span> `\[\[ \]\]` is not POSIX sh/);
+    assert.match(md, /\n<span style="color:var\(--vscode-editorWarning-foreground\);">\$\(warning\)<\/span> `\[\[ \]\]` is not POSIX sh/);
     assert.match(wholeLine(input(doc, 2)), /Nothing to explain/);
     assert.match(wholeLine({ ...input(doc, 2), lineText: '  x' }), /Nothing to explain/);
   });
@@ -322,21 +325,21 @@ describe('the hover Markdown', () => {
   it('shows each note with its level: its codicon and word in its colour, warnings first', () => {
     // A plain fact, a caveat and a pitfall, in the order found.
     const doc = open('exit 300; read line; x = 1');
-    const notes = (md: string) => md.split('\n').filter((l) => l.startsWith('> '));
+    const notes = (md: string) => md.split('\n').filter((l) => isNote(l));
     const whole = (theme: ThemeKind) => notes(wholeLine(input(doc, 0, { theme })));
     const w = 'var(--vscode-editorWarning-foreground)';
     const i = 'var(--vscode-editorInfo-foreground)';
     const [warning, info, note] = whole('dark');
-    assert.ok(warning.startsWith(`> <span style="color:${w};">$(warning)</span> <span style="color:${w};"><strong>Pitfall:</strong></span> \`x =…\` runs`), warning);
-    assert.ok(info.startsWith(`> <span style="color:${i};">$(info)</span> <span style="color:${i};"><strong>Caveat:</strong></span> without`), info);
+    assert.ok(warning.startsWith(`<span style="color:${w};">$(warning)</span> <span style="color:${w};"><strong>Pitfall:</strong></span> \`x =…\` runs`), warning);
+    assert.ok(info.startsWith(`<span style="color:${i};">$(info)</span> <span style="color:${i};"><strong>Caveat:</strong></span> without`), info);
     // (A plain fact: the info icon, muted, and no word.)
-    assert.ok(note.startsWith('> <span style="color:var(--vscode-descriptionForeground);">$(info)</span> An exit status'), note);
+    assert.ok(note.startsWith('<span style="color:var(--vscode-descriptionForeground);">$(info)</span> An exit status'), note);
     // Our own colours where the theme's are not readable as text (src/ui/palette.ts, LEVEL_COLOURS).
-    assert.match(whole('light')[0], /^> <span style="color:#855f00;">\$\(warning\)<\/span>/);
-    assert.match(whole('light')[1], /^> <span style="color:#005fb8;">\$\(info\)<\/span>/);
-    assert.match(whole('highContrast')[0], /^> <span style="color:var\(--vscode-editorWarning-foreground\);">/);
-    assert.match(whole('highContrast')[1], /^> <span style="color:#6badff;">/);
-    assert.match(whole('highContrastLight')[0], /^> <span style="color:#704500;">/);
+    assert.match(whole('light')[0], /^<span style="color:#855f00;">\$\(warning\)<\/span>/);
+    assert.match(whole('light')[1], /^<span style="color:#005fb8;">\$\(info\)<\/span>/);
+    assert.match(whole('highContrast')[0], /^<span style="color:var\(--vscode-editorWarning-foreground\);">/);
+    assert.match(whole('highContrast')[1], /^<span style="color:#6badff;">/);
+    assert.match(whole('highContrastLight')[0], /^<span style="color:#704500;">/);
     // The part's hover shows its own the same way, and the sanitizer keeps every colour.
     const at = (text: string) => doc.lines[0].indexOf(text);
     assert.deepStrictEqual([at('x ='), at('read'), at('exit')].flatMap((c) => notes(partMd(doc, 0, c))), whole('dark'));
@@ -353,10 +356,10 @@ describe('the hover Markdown', () => {
   it('shows only the notes about the part, and counts the others in a link to the whole line', () => {
     const doc = open('rm $f; read line');
     const at = (text: string) => doc.lines[0].indexOf(text);
-    const notes = (md: string) => md.split('\n').filter((l) => l.startsWith('> '));
+    const notes = (md: string) => md.split('\n').filter((l) => isNote(l));
     const link = (md: string) => md.split('\n').filter((l) => l.includes('](command:line ')).slice(1);
-    const warning = /^> .*\$\(warning\).*Pitfall:.*`\$f` is not quoted/;
-    const caveat = /^> .*\$\(info\).*Caveat:.* without `-r`/;
+    const warning = /^.*\$\(warning\).*Pitfall:.*`\$f` is not quoted/;
+    const caveat = /^.*\$\(info\).*Caveat:.* without `-r`/;
     // On `$f`, the warning about it; on `rm`, the same, since `$f` is one of its own parts.
     for (const c of [at('$f'), at('rm')]) {
       const md = partMd(doc, 0, c);
@@ -383,22 +386,74 @@ describe('the hover Markdown', () => {
     assert.match(link(ja)[0], /^\[\$\(list-tree\) この行のほかの注記 1 件\]\(command:line "行全体を説明 \(Ctrl\+K Ctrl\+E\)"\)$/);
   });
 
+  it('leaves out a note the hover shows above as a problem at the position, matched by its code', () => {
+    // The problems VS Code puts above the part: our diagnostics whose range holds the position (src/ui/hover.ts).
+    const problemsAt = (doc: ShellDocument, line: number, character: number, settings = defaultSettings(), shells: Shells = {}): ProblemAt[] =>
+      diagnosticsFor(() => doc, () => shells, 'en', settings, 'vscode').shown
+        .filter((i) => i.startLine === line && i.startCol <= character && character <= i.endCol)
+        .map((i) => ({ code: i.code, span: { start: { line: i.startLine, character: i.startCol }, end: { line: i.endLine, character: i.endCol } } }));
+    const part = (doc: ShellDocument, character: number, problems: ProblemAt[], lang: Lang = 'en') => {
+      const x = { ...input(doc, 0, { lang }), problems };
+      return partHover(x, partAt(x.ex.items, { line: 0, character }));
+    };
+    const notes = (md: string) => md.split('\n').filter(isNote);
+    const more = (md: string) => md.split('\n').filter((l) => l.includes('more note'));
+    // A style check (src/pitfalls.ts) and a fact of the catalog (src/messages.ts) carry the code of their problem.
+    const sudo = open('sudo echo "nameserver 1.1.1.1" > /etc/resolv.conf');
+    const gt = sudo.lines[0].indexOf('>');
+    assert.ok(explain(sudo, 0).anchors!.some((a) => a.code === 'redirect-by-your-shell'));
+    const shown = problemsAt(sudo, 0, gt);
+    assert.deepStrictEqual(shown.map((p) => p.code), ['redirect-by-your-shell']);
+    assert.deepStrictEqual(notes(part(sudo, gt, [])).length, 1);
+    assert.deepStrictEqual(notes(part(sudo, gt, shown)), []);
+    assert.deepStrictEqual(notes(part(sudo, gt, shown, 'ja')), []);
+    // (Not counted in the link either: the hover shows it.)
+    assert.deepStrictEqual(more(part(sudo, gt, shown)), []);
+    // Two problems on one word, both shown above: neither repeats; the line's other notes are still counted.
+    const rm = open('rm -rf $DIR/*; read line');
+    const dir = rm.lines[0].indexOf('$DIR');
+    const both = problemsAt(rm, 0, dir);
+    assert.deepStrictEqual(both.map((p) => p.code).sort(), ['rm-empty-variable-root', 'unquoted-variable-as-path']);
+    assert.strictEqual(notes(part(rm, dir, [])).length, 2);
+    assert.deepStrictEqual(notes(part(rm, dir, both)), []);
+    assert.match(more(part(rm, dir, both))[0], /1 more note on this line/);
+    // A dialect issue too.
+    const sh = open('#!/bin/sh\n[[ -f x ]]');
+    const shx = { ...input(sh, 1), ex: new Analyzer('en').explainLine(sh.tree, 1, 'sh') };
+    const shProblems = problemsAt(sh, 1, 0, defaultSettings(), { detected: 'sh' });
+    assert.ok(shProblems.length && shx.ex.anchors!.some((a) => a.code === shProblems[0].code));
+    assert.strictEqual(partHover({ ...shx, problems: shProblems }, partAt(shx.ex.items, { line: 1, character: 0 })).split('\n').filter(isNote).length, 0);
+    assert.strictEqual(partHover(shx, partAt(shx.ex.items, { line: 1, character: 0 })).split('\n').filter(isNote).length, 1);
+    // With the problems off, VS Code shows none above, and the part keeps its notes.
+    const off = { ...defaultSettings(), 'diagnostics.enabled': false };
+    assert.deepStrictEqual(problemsAt(sudo, 0, gt, off), []);
+    assert.strictEqual(notes(part(sudo, gt, problemsAt(sudo, 0, gt, off))).length, 1);
+    // A problem of another code, or at another place (the same code on another word), leaves the note.
+    assert.strictEqual(notes(part(sudo, gt, [{ ...shown[0], code: 'other' }])).length, 1);
+    const two = open('rm $a; rm $b');
+    const b = two.lines[0].indexOf('$b');
+    const onA = problemsAt(two, 0, two.lines[0].indexOf('$a'));
+    assert.deepStrictEqual(onA.map((p) => p.code), ['unquoted-variable-as-path']);
+    assert.strictEqual(notes(part(two, b, onA)).length, 1);
+    assert.strictEqual(notes(part(two, b, problemsAt(two, 0, b))).length, 0);
+  });
+
   it('shows a note on a statement on the part that starts it, and counts a note about the line', () => {
     // `pipefail-missing` is about the pipeline: on its first command, not on the others or their parts.
     const pipe = open('set -e; curl -s x | sh');
     const at = (text: string) => pipe.lines[0].indexOf(text);
-    const has = (md: string) => md.split('\n').some((l) => l.startsWith('> ') && l.includes('pipefail'));
+    const has = (md: string) => md.split('\n').some((l) => isNote(l) && l.includes('pipefail'));
     assert.deepStrictEqual([at('curl'), at('-s'), at('|'), at('sh')].map((c) => has(partMd(pipe, 0, c))), [true, false, false, false]);
     // A note with no node (the line is the body of a here-document) is in the count only.
     const doc = open(SCRIPT);
     const md = partMd(doc, 9, doc.lines[9].indexOf('$USER'));
-    assert.ok(!md.split('\n').some((l) => l.startsWith('> ')), md);
+    assert.ok(!md.split('\n').some((l) => isNote(l)), md);
     assert.ok(md.includes('[$(list-tree) 1 more note on this line](command:line '), md);
     assert.ok(explain(doc, 9).notes.length === 1 && !explain(doc, 9).anchors);
   });
 
   it('finds the notes of a part in a string run as a script, and in a host file', () => {
-    const has = (md: string, re: RegExp) => md.split('\n').some((l) => l.startsWith('> ') && re.test(l));
+    const has = (md: string, re: RegExp) => md.split('\n').some((l) => isNote(l) && re.test(l));
     // In the string `bash -c` runs, where the string's notes are moved to the line's columns.
     const nested = open("sudo bash -c 'rm $f; read x'");
     const at = (text: string) => nested.lines[0].indexOf(text);
