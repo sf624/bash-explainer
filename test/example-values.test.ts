@@ -135,6 +135,20 @@ describe('worked examples of tests and patterns with the value of the script', (
     assert.deepStrictEqual(examples('x=abc\n[[ $x == "a*" ]]'), ['True when → x="a*"', 'False when → x="a*x"']);
   });
 
+  it('keeps the samples where the value is the pattern, or the other side has a tilde (checked with bash)', () => {
+    // `x='a*'; [[ abc == $x ]]` is true: the unquoted value is a pattern. Quoted, it is text, and the case is the script's.
+    for (const src of ["x='a*'\n[[ abc == $x ]]", "x='a*'\n[[ abc != $x ]]", "y='[ab]c'\n[[ bc = $y ]]"]) {
+      assert.ok(!examples(src).some((e) => e.includes("a*") || e.includes('[ab]c')), src);
+    }
+    assert.strictEqual(succeeds("x='a*'\n[[ abc == $x ]]"), true);
+    assert.deepStrictEqual(examples("x='a*'\n[[ abc == \"$x\" ]]"), ['True when → x="abc"', 'False when → x="a*"']);
+    assert.strictEqual(succeeds("x='a*'\n[[ abc == \"$x\" ]]"), false);
+    // A tilde expands to a home directory: `[[ $x == ~ ]]` with `x='~'` is false.
+    assert.deepStrictEqual(examples('x=abc\n[[ $x == ~ ]]'), []);
+    assert.deepStrictEqual(examples('[ "$x" = ~ ]'), []);
+    assert.strictEqual(succeeds("x='~'\n[[ $x == ~ ]]"), false);
+  });
+
   const patterns: [string, string[], string, boolean][] = [
     ['x=abc\n[[ $x == a* ]]', ['Values that match → abc aapp adata', 'Values that do not match → AAPP xaapp'], 'abc', true],
     ['y=zzz\n[[ $y == a* ]]', ['Values that match → aapp adata aerror', 'Values that do not match → zzz AAPP'], 'zzz', false],

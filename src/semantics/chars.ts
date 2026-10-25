@@ -4,6 +4,7 @@
 // neither, so beyond copying a value as it is (`$x`, `"${x}"`, the same bytes in every locale), it reads only ASCII
 // text, which every locale reads the same.
 import { evalArith } from '../arith';
+import { parseExpansion } from '../expansion';
 
 /** Whether every locale reads `text` the same: it is ASCII. */
 export function sameInEveryLocale(text: string): boolean {
@@ -26,6 +27,31 @@ export function substring(value: string, offsetText: string, lengthText: string 
   if (start < 0 || start > value.length) return '';
   const end = length < 0 ? value.length + length : Math.min(start + length, value.length);
   return end < start ? null : value.slice(start, end);
+}
+
+/**
+ * Whether bash may fail on `${x:offset:length}` whatever `x` holds: an offset or a length that is not a constant
+ * number (`${x:08}`: "value too great for base", `${x:1/0}`), or a negative length, whose end may fall before the
+ * offset ("substring expression < 0"). The error discards the rest of the line.
+ */
+export function substringMayFail(offsetText: string, lengthText: string | undefined): boolean {
+  const num = (t: string): number | undefined => (t === '' ? 0 : evalArith(t));
+  const length = lengthText === undefined ? 0 : num(lengthText);
+  return num(offsetText) === undefined || length === undefined || length < 0;
+}
+
+/** The transformations of `${x@op}` (manual 3.5.3); another letter is a bad substitution, which ends the shell. */
+export const TRANSFORMS = new Set([...'QEPAKakUuL']);
+
+/**
+ * How bash may fail on the expansion `${…}` of the text `text` whatever the variable holds: `line` for a substring
+ * whose numbers may fail (`substringMayFail`), `shell` for a transformation bash lacks (`${x@Z}`).
+ */
+export function expansionFailure(text: string): 'line' | 'shell' | undefined {
+  const p = parseExpansion(text);
+  const part = (role: string): string | undefined => p?.parts.find((x) => x.role === role)?.text;
+  if (p?.op === ':' && substringMayFail(part('offset') ?? '', part('length'))) return 'line';
+  return p?.op === '@' && !TRANSFORMS.has(part('transform') ?? '') ? 'shell' : undefined;
 }
 
 /** `${x^^}`, `${x,,}`, `${x^}`, `${x,}` (no pattern) of an ASCII value: its letters, or its first one, in capitals or in small letters. */

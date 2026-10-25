@@ -591,6 +591,8 @@ export class Walker {
    * not trusted, or that may not be expanded) may happen or not.
    */
   abort(st: ShellState, sure: boolean): ShellState {
+    // (dash ends the shell on such errors: an arithmetic error, an assignment to a readonly variable.)
+    if (!this.bash) return this.jump('shell', undefined, st, sure);
     st = withStatus(st, undefined);
     const ends = sure && !this.blind;
     // (An error that may happen in a string `eval` runs may end the line of `eval` too: bash does so for an integer
@@ -739,7 +741,7 @@ export class Walker {
         for (const r of redirs) this.substitutions(r, st);
         // (A subshell makes them in its own process: `( : ) > $(( n = 3 ))` leaves n.)
         st = this.fdVariables(redirs, this.expandAll(redirs, st, field(n, 'body')!.type === 'subshell' ? 'on' : 'off'));
-        return this.sequence(n.children.filter((c) => c.field !== 'redirect'), st);
+        return this.conditions.ifRedirected(n, st, this.sequence(n.children.filter((c) => c.field !== 'redirect'), st));
       }
       case 'subshell':
         return this.sequence(n.children, st);
@@ -923,12 +925,14 @@ export class Walker {
         } catch (err) {
           /* c8 ignore next -- only an arithmetic error is thrown on purpose */
           if (!(err instanceof ArithError)) throw err;
-          throw new ExpansionError(maybe ? merge([st, err.st], this.posix) : err.st, !maybe && !this.assumed);
+          const posix = this.builtins.posixMode(st);
+          throw new ExpansionError(maybe ? merge([st, err.st], this.posix) : err.st, !maybe && !this.assumed && posix !== 'unknown', posix !== 'off');
         } finally {
           this.assumed ||= assumed;
         }
       } else {
         this.unsetError(e, st, maybe);
+        this.builtins.expansionFails(e, st);
         after = this.builtins.checkedSet(this.defaultOf(e, st), e);
       }
       st = maybe && after !== st ? merge([st, after], this.posix) : after;
@@ -1424,11 +1428,11 @@ export class Walker {
     const fn = this.functionCalled(name, st);
     // (`declare() { …; }; declare b=(1 2)`: bash assigns the array, and passes the name.)
     const called = fn && withStatus(this.call(fn, this.builtins.markedArrays(name, fields(n, 'argument'), n, st), assignments), undefined);
-    if (called && fn.state === 'on') return called;
+    if (called && fn.state === 'on') return this.conditions.ifRedirected(n, st, called);
     if (!special) st = this.builtins.appendArith(assignments, n, st);
     const ran = withStatus(kept(this, n, temps, this.builtins.builtin(name, fields(n, 'argument'), n, st, true)), this.conditions.simpleStatus(n, before));
     // (A function defined on some paths only: on the others, the builtin or the program runs.)
-    return called ? merge([called, ran], this.posix) : ran;
+    return this.conditions.ifRedirected(n, st, called ? merge([called, ran], this.posix) : ran);
   }
 
   /** The function a command named `name` calls in `st`: none when POSIX mode finds a special builtin of that name first. */
