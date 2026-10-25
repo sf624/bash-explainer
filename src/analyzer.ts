@@ -3,7 +3,7 @@ import { idiomsFound, simulateRedirects } from './idioms';
 import { pitfallFindings } from './pitfalls';
 import { wordFindings } from './wordfacts';
 import { spanOf } from './noteanchors';
-import { ancestor, assignmentSpan, assignmentsOnly, descendants, field, fields, prefixAssignments, readsVariable, redirectionsOf, token, wordsText } from './syntax/tree';
+import { ancestor, assignmentSpan, assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, token, wordsText } from './syntax/tree';
 import type { NodeType, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { builtins } from './dict/builtins';
 import { distroAliases } from './dict/distroAliases';
@@ -28,16 +28,15 @@ import { evalArith } from './arith';
 import { isPlainWord, type Literal, literalContent, splitElement, staticWordText, staticWordValue } from './staticword';
 import { explainExpansion } from './expansion-tokens';
 import {
-  fdName, keywords, listOps, specialVariables, wellKnownVariables,
+  fdName, keywords, listOps,
 } from './dict/syntax';
 import { bracket as bracketLabel, labelText, shorten } from './label';
 import { explainCommandSubstitution, explainProcessSubstitution, returnInSubstitution, scopeOf } from './substitution-tokens';
-import { type ExecEnv, inFunction, STATEMENTS, reachOf, shellEffectOf, type SlotLink, slotEnvs, whereOf } from './semantics/env';
+import { inFunction, STATEMENTS, shellEffectOf, slotEnvs } from './semantics/env';
 import { attribute, docLine, option, shellState } from './semantics/state';
 import { lostVariable } from './semantics/pipeline';
 import { readDeclarationWords } from './semantics/vars';
-import { type NestedScript, plainReads, scriptSourceIndex } from './semantics/nested';
-import { ExpansionStep, wordMeaning } from './semantics/words';
+import type { NestedScript } from './semantics/nested';
 import { assignmentsOf, definitionFails, type Missed, type NameResolution, testSpecOf } from './semantics/names';
 import { nameInfo } from './namefacts';
 import { statusModel, type StatusModel } from './semantics/status';
@@ -55,9 +54,9 @@ export { EXAMPLE_KINDS } from './analyzer-types';
 export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, ScriptProcess, Span, Token, TokenOrigin } from './analyzer-types';
 import type { ExplainOptions, Kind, LineExplanation, Span, Token } from './analyzer-types';
 import { readingTree } from './reading';
-import { claim, dropLabelEcho, readAsScript, readByCommand, scriptProcess } from './tokenmarks';
+import { claim, dropLabelEcho, readByCommand } from './tokenmarks';
 import { type Explainer, LineExplainer, type Walk } from './explain/context';
-import { has, intersects, isBlockLike, lineStarts, onLine, posOf, same, sameSpan, skeletal, sortTokens, summaryOf } from './explain/nodes';
+import { has, intersects, isBlockLike, onLine, same, skeletal, sortTokens, summaryOf } from './explain/nodes';
 import { globOff, hostCommand, isAssoc, NO_SPEC, resolve, shoptAt, specFor, unquotedWord, wordAt } from './explain/reads';
 import { groupSubshell, shellEffectNote } from './explain/where';
 import { postfixStatusNote, statusRangeNote } from './explain/status';
@@ -69,16 +68,28 @@ import { fileRedirect, heredoc, herestring, redirected, redirectedWhole, redirec
 import { binary, regexNode, test, testTokens, unary } from './explain/tests';
 import { caseExample, commandExampleFor, pipelineExample, testExample, titledExamples, unreadStdin, wantsExample, wordExample } from './explain/examples';
 import { ansiCChildren, embedded, embeddedText } from './explain/embedded';
+import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './explain/scripts';
 
 export { isBlockLike, summaryOf };
 
 export class Analyzer {
-  /** The kind of string this analyzer explains, when it explains a string read as a script (`scriptTokens`). */
+  /** The kind of string this analyzer explains, when it explains a string read as a script (`nestedLine` of the walk). */
   private nested: NestedScript['kind'] | undefined;
   /** What the current `explainLine` call reads and collects (src/explain/context.ts); made new by each call, so nothing of another line is left. */
   private cx!: Explainer;
-  /** The walk the context's line filter calls back. */
-  private readonly walk: Walk = { explain: (n) => this.explain(n), flatten: (n) => this.flatten(n) };
+  /**
+   * The walk the context's line filter calls back, and the explanation of a line of a string read as a script
+   * (src/explain/scripts.ts): a new `Analyzer`, which explains it as a script of its own.
+   */
+  private readonly walk: Walk = {
+    explain: (n) => this.explain(n),
+    flatten: (n) => this.flatten(n),
+    nestedLine: (tree, line, shell, kind, opts) => {
+      const inner = new Analyzer(this.lang);
+      inner.nested = kind;
+      return inner.explainLine(tree, line, shell, opts);
+    },
+  };
 
   constructor(private lang: Lang) {}
 
@@ -1213,26 +1224,26 @@ export class Analyzer {
           case 'command':
             if (role.slot.later) {
               // A trap's action: a string this shell runs later, with its expansions then.
-              out.push(this.withScript(this.positional(a, this.t(role.item!.text) + this.trapNote(a)), this.scriptTokens([a], this.cx.slotEnvs.get(a)!)));
+              out.push(withScript(this.positional(a, this.t(role.item!.text) + trapNote(this.cx, a)), scriptTokens(this.cx, [a], this.cx.slotEnvs.get(a)!)));
             } else if (role.slot.joinsWords && !role.slot.escapesWords) {
               // ssh sends the words joined to the remote shell; eval joins them and reads them again here, so they are plain words.
               joined = role.slot.run === 'current-shell' ? undefined : this.t(role.item!.text);
               if (role.slot.run === 'current-shell') this.cx.command!.rereads = true;
               const words = nodes.slice(word, parse.end);
-              this.slotNotes(role, this.cx.slotEnvs.get(a)!, words, assigned);
-              const script = this.scriptTokens(words, this.cx.slotEnvs.get(a)!);
+              slotNotes(this.cx, role, this.cx.slotEnvs.get(a)!, words, assigned);
+              const script = scriptTokens(this.cx, words, this.cx.slotEnvs.get(a)!);
               joinedWhole = words.length > 1 && !!script.tokens.length;
               const at = script.note && !script.tokens.length ? words.find((w) => !staticWordText(w)) ?? a : a;
               if (at !== a) joinedNote = { at, note: script.note! };
-              out.push(joinedWhole ? this.joinedScript(words, joined, script) : this.withScript(this.positional(a, joined), at === a ? script : { tokens: [] }));
+              out.push(joinedWhole ? joinedScript(this.cx, words, joined, script) : withScript(this.positional(a, joined), at === a ? script : { tokens: [] }));
             } else if (!role.parse) {
               // A command string (`bash -c 'cmd'`, `su -c 'cmd'`): the value of the option.
-              this.slotNotes(role, this.cx.slotEnvs.get(a)!, [a], assigned);
-              out.push(this.withScript(this.valueToken(a, { role: 'value', of: role.of ?? '-c', index: 0 }, false), this.scriptTokens([a], this.cx.slotEnvs.get(a)!)));
+              slotNotes(this.cx, role, this.cx.slotEnvs.get(a)!, [a], assigned);
+              out.push(withScript(this.valueToken(a, { role: 'value', of: role.of ?? '-c', index: 0 }, false), scriptTokens(this.cx, [a], this.cx.slotEnvs.get(a)!)));
             } else out.push(this.wrapped(nodes, word, role, assigned));
             break;
           case 'joined':
-            if (!joinedWhole) out.push(a === joinedNote?.at ? this.withScript(this.positional(a, joined), { tokens: [], note: joinedNote.note }) : this.positional(a, joined));
+            if (!joinedWhole) out.push(a === joinedNote?.at ? withScript(this.positional(a, joined), { tokens: [], note: joinedNote.note }) : this.positional(a, joined));
             break;
           case 'expression':
             // find's expression, read as a whole from its first word.
@@ -1625,7 +1636,7 @@ export class Analyzer {
     // `find -exec cmd {} ;`: the words up to the terminator.
     // (What the builtin it names would do to a shell: `sudo cd /x` cannot change this one.)
     const effect = shellEffectOf(role.spec, parse.roles.map((r) => [nodes[r.word], r.role] as const));
-    this.slotNotes(role, this.cx.slotEnvs.get(first)!, words, assigned, effect);
+    slotNotes(this.cx, role, this.cx.slotEnvs.get(first)!, words, assigned, effect);
     const name = first.text;
     let explanation = role.spec ? this.t(role.spec.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
     let kind: Kind = role.spec?.builtin ? 'builtin' : 'command';
@@ -1838,226 +1849,6 @@ export class Analyzer {
       : state === 'off' ? 'extglob-turned-off' : this.cx.nested === 'child' ? 'extglob-not-in-new-shell' : 'extglob-not-found';
     return this.say(fact(this.lang, id, { use: use.text }), use);
   }
-
-  /**
-   * `x=1; bash -c 'echo "$x"'`: a variable of this script that a string run by another shell reads (in single
-   * quotes, so that shell expands it), which that shell does not get: it is not exported, or a link on the way
-   * passes no variables (`env -i`, sudo, ssh: src/semantics/env.ts). Not one the string sets itself, nor one the
-   * command or a wrapper sets for it (`x=1 bash -c …`, `env x=1 …`), nor one from the environment or set by that shell (`$_`).
-   */
-  private unpassedVariables(env: ExecEnv, words: SyntaxNode[]): void {
-    // The string, read as the script it is (src/semantics/state.ts): the variables it reads, and whether each
-    // reached it there (passed by the slots, or set by the string itself before the read).
-    const script = this.cx.state.script(words, env);
-    if ('why' in script) return;
-    const cmd = ancestor(words[0], (x) => x.type === 'command')!;
-    const st = this.cx.state.at(cmd).run;
-    const { variables, blocker } = reachOf(env);
-    const remote = whereOf(env) === 'remote';
-    // (Only `$v` and `${v}`: `${v:-x}`, `${v+x}` and `${#v}` are fine with no value. A file of variables may give any.)
-    if (env.links.some((l) => l.kind === 'slot' && l.assigns.includes('*'))) return;
-    for (const { name: v, at: e } of plainReads(script)) {
-      const x = st.variables.get(v);
-      if (!x || x.set !== 'on' || wellKnownVariables[v] || specialVariables[v] || script.model.at(e).run.variables.has(v)) continue;
-      const exported = x.attrs.x?.state ?? 'off';
-      if (variables === 'none') {
-        this.cx.note(remote
-          ? fact(this.lang, 'variable-not-in-remote-shell', { v })
-          : fact(this.lang, 'variable-not-passed-by-wrapper', { v, via: blocker!.via }), words[0]);
-        return;
-      }
-      if (exported === 'off') {
-        this.cx.note(fact(this.lang, 'variable-not-exported', { v }), words[0]);
-        return;
-      }
-    }
-  }
-
-  /**
-   * Pitfalls of a command that another one runs (`words`, from its first word), which follow from how its slot runs
-   * it. A separate program (`exec`: sudo, xargs, find -exec…) cannot run a shell function or a builtin that
-   * only changes the shell, and `$NAME` of its words is read before the wrapper sets `NAME`; in a container,
-   * the script's functions are not there. A new shell (`shell-string`: bash -c, su -c, ssh) does not have the
-   * script's functions, and the words ssh joins are expanded here before they are sent. The current shell
-   * (`current-shell`: eval, command, builtin) runs both. `env` is where the command runs (src/semantics/env.ts):
-   * its last link is this slot, and what reaches it is what every link on the way passes on.
-   */
-  private slotNotes(role: CommandRole, env: ExecEnv, words: SyntaxNode[], assigned: string[], effect?: 'changes' | 'exits'): void {
-    const { slot } = role;
-    const link = env.links[env.links.length - 1] as SlotLink;
-    const via = link.via;
-    const where = whereOf(env);
-    // (The first link that passes no exported functions: `env -i`, `su -`, sudo, a container.)
-    const { blocker } = reachOf(env);
-    const first = words[0];
-    const name = first.text;
-    // A function of the script that the slot does not run (src/semantics/names.ts): even one defined later.
-    const isFn = isPlainWord(first) && (resolve(this.cx, name, first, { env }) as { missed?: Missed }).missed?.kind === 'function';
-    if (slot.run === 'exec' && where === 'container') {
-      if (isFn) {
-        this.cx.note(fact(this.lang, 'function-not-in-container', { via, name }), first);
-      }
-    } else if (slot.run === 'exec') {
-      // (A builtin with a program of its name runs the program: the slot gave its spec.)
-      if (isPlainWord(first) && (isFn || role.spec?.builtin)) {
-        const fix = isFn && blocker
-          ? tx(`関数の中身を直接書くか、\`${via} bash -c "$(declare -f ${name}); ${name}"\` のように定義ごと渡します（\`${blocker.via}\` は環境の関数を渡さないので、\`export -f\` は効きません）`,
-            `Write out its body, or pass the definition along: \`${via} bash -c "$(declare -f ${name}); ${name}"\` (\`${blocker.via}\` passes no exported functions, so \`export -f\` does not help)`)
-          : isFn
-          ? tx(`\`export -f ${name}\` してから \`bash -c '${name} "$@"' _ …\` のようにシェル経由で呼びます`, `Run \`export -f ${name}\`, then call it through a shell: \`bash -c '${name} "$@"' _ …\``)
-          : effect === 'changes'
-            ? tx(`サブシェル \`(${name} … && …)\` か、\`${via} sh -c '${name} … && …'\` を使います`, `Use a subshell \`(${name} … && …)\`, or \`${via} sh -c '${name} … && …'\``)
-            : tx(`\`${via} sh -c '${name} …'\` のようにシェル経由で呼びます（今のシェルの状態を変えるものは、別のプログラムでは変えられません）`, `Go through a shell, as in \`${via} sh -c '${name} …'\` (what changes the state of the current shell cannot be changed by another program)`);
-        this.cx.note(fact(this.lang, 'builtin-or-function-as-program', { via, name, isFn, fix }), first);
-      }
-    } else if (slot.run === 'shell-string' && where === 'remote') {
-      // (A word this shell expands before ssh joins the words: src/semantics/words.ts.)
-      const risky = words.find((w) => wordMeaning(w, this.cx.state)!.steps.some((x) => LOCAL_EXPANSIONS.has(x.kind) && x.applies !== false));
-      if (risky) {
-        this.cx.note(fact(this.lang, 'ssh-local-expansion', { risky: risky.text }), risky);
-      }
-      this.unpassedVariables(env, words);
-      if (isFn) {
-        this.cx.note(fact(this.lang, 'function-not-on-remote', { name }), first);
-      }
-    } else if (slot.run === 'shell-string') {
-      this.unpassedVariables(env, words);
-      // The commands of the string that name a function of this script, when the string is read as a script
-      // (src/semantics/state.ts), but not one the string defines itself (`bash -c 'f() { …; }; f'`); otherwise the
-      // first word of the string, when it is known (`su -c 'f arg'`).
-      const script = this.cx.state.script(words, env);
-      let fn: string | undefined;
-      if (!('why' in script)) {
-        const own = new Set(descendants(script.tree.root, ['function_definition']).map((d) => field(d, 'name')!.text));
-        fn = descendants(script.tree.root, ['command']).filter((c) => !assignmentsOnly(c)).map((c) => staticWordValue(field(c, 'name')!.namedChildren[0]))
-          .find((n) => n !== undefined && !own.has(n) && this.cx.state.definitions.functions.has(n));
-      } else {
-        const lit = literalContent(first)?.text;
-        fn = lit ? /^\s*([A-Za-z_][\w-]*)/.exec(lit)?.[1] : undefined;
-      }
-      // What the string's first word runs in the new shell (src/semantics/names.ts): this script's function only
-      // when every link passes the exported functions (not `su -c`, `env -i bash -c f`, `sudo bash -c f`) and the
-      // shell reads them (bash, not dash). (A function exported on some paths only is taken as exported.)
-      const res = fn && this.cx.state.definitions.functions.has(fn) ? resolve(this.cx, fn, first, { env }) : undefined;
-      const missed = res && res.kind !== 'keyword' && res.kind !== 'alias' ? res.missed : undefined;
-      const shell = link.shell!;
-      if (res && res.kind !== 'function') {
-        const f = fn!;
-        this.cx.note(missed?.why === 'not-passed' && blocker !== link
-          ? fact(this.lang, 'function-not-in-new-shell-blocked', { via, fn: f, blocker: blocker!.via })
-          : missed?.why === 'not-passed'
-          ? fact(this.lang, 'function-not-in-new-shell', { via, fn: f })
-          : missed?.why === 'not-imported'
-          ? fact(this.lang, 'function-not-imported', { via, shell, fn: f })
-          : fact(this.lang, 'function-not-in-new-shell-export', { via, fn: f }), first);
-      } else if (missed?.why === 'not-imported') {
-        // (`sh` is dash on Debian and Ubuntu, bash elsewhere.)
-        this.cx.note(fact(this.lang, 'function-not-imported-sh', { via, fn: fn! }), first);
-      }
-    }
-    for (const v of assigned) {
-      const use = words.find((w) => readsVariable(w, v));
-      if (use) {
-        this.cx.note(fact(this.lang, 'wrapper-assignment-expanded-first', { use: use.text, via, v }), use);
-        break;
-      }
-    }
-  }
-
-  /**
-   * The tokens of the string `words` hold, read as the script a slot runs (docs/design/semantics.md, 4.13): the
-   * items of each of its lines, explained with its shell and model and mapped to the source (a token per line when it
-   * has several). Its notes and examples join the line's. `note`: why it is not read, or that its shell is not known.
-   */
-  private scriptTokens(words: SyntaxNode[], env: ExecEnv): { tokens: Token[]; note?: string } {
-    const script = this.cx.state.script(words, env);
-    // (A string no shell runs, `sudo eval s`, has the pitfall of its slot.)
-    if ('why' in script) {
-      return script.why === 'not-run' ? { tokens: [] } : { tokens: [], note: script.why === 'not-static'
-        ? this.s('。展開を含み、中身は実行するときに決まるので、スクリプトとしては解説しない', '. It holds an expansion, so its text is known only when it runs: it is not explained as a script')
-        : this.s('。文字列の中の文字列が深すぎるので、スクリプトとしては解説しない', '. Strings nested this deep are not explained as scripts') };
-    }
-    const inner = new Analyzer(this.lang);
-    inner.nested = script.kind;
-    const tree = script.tree;
-    const rows = tree.text.split('\n');
-    const lines: Token[][] = [];
-    for (let line = 0; line < rows.length; line++) {
-      const ex = inner.explainLine(tree, line, script.shell, { ...this.cx.opts, reading: false });
-      // (A statement over several lines is explained whole on each of them: keep it, and its notes, on its first.)
-      const items = ex.items.filter((t) => t.span.start.line === line);
-      lines.push(items.map((t) => this.fromScript(t, script)));
-      if (!items.length) continue;
-      this.cx.adopt(ex, (span) => this.scriptSpan(span, script));
-    }
-    const used = lines.map((items, i) => ({ items, i })).filter((l) => l.items.length);
-    const tokens = used.length === 1 ? used[0].items : used.map(({ items, i }): Token => ({
-      kind: 'block', label: shorten(rows[i].trim()), children: items,
-      explanation: this.s(`文字列の ${i + 1} 行目`, `Line ${i + 1} of the string`),
-      span: { start: items[0].span.start, end: items[items.length - 1].span.end },
-    }));
-    const note = script.known ? undefined
-      : this.s('。実行するシェルはここではわからない（ユーザーのログインシェル）ので、bash として解説する', ". The shell that runs it is not known here (the user's login shell): it is explained as bash");
-    for (const t of tokens) readAsScript(t, scriptProcess(env));
-    return { tokens, ...(note ? { note } : {}) };
-  }
-
-  /** `t` with the tokens of a string read as a script under the token of its word (the quoted string, when `t` holds it). */
-  private withScript(t: Token, script: { tokens: Token[]; note?: string }): Token {
-    const only = t.children.length === 1 && sameSpan(t.children[0].span, t.span) ? t.children[0] : t;
-    // (The script's tokens take the place of the word's own parts, which cover the same text: `$'…'` escapes.)
-    if (script.tokens.length) only.children = sortTokens(script.tokens);
-    if (script.note) t.explanation += script.note;
-    return t;
-  }
-
-  /** One token for the words joined into a script (`eval echo $x`, `ssh host ls -l`), with the script's tokens. */
-  private joinedScript(words: SyntaxNode[], desc: string | undefined, script: { tokens: Token[]; note?: string }): Token {
-    const span: Span = { start: spanOf(words[0]).start, end: spanOf(words[words.length - 1]).end };
-    const text = this.cx.source.slice(words[0].startIndex, words[words.length - 1].endIndex);
-    const joinedText = this.s('（単語を空白でつないだ文字列を、スクリプトとして読む）', ' (the words, joined with spaces, are read as a script)');
-    return {
-      kind: 'argument', label: shorten(text), span, children: script.tokens,
-      explanation: (desc ?? this.s('もう一度読んで実行する文字列', 'Text to read and run again')) + joinedText + (script.note ?? ''),
-    };
-  }
-
-  /** A token of a string read as a script, with its spans moved from the string's text to the source. */
-  private fromScript(t: Token, script: NestedScript): Token {
-    return { ...t, span: this.scriptSpan(t.span, script), children: t.children.map((c) => this.fromScript(c, script)) };
-  }
-
-  /**
-   * A span in the text of a string read as a script, in the source: from the start of its first character to the end
-   * of its last (`\$x` for `$x` in `"echo \$x"`).
-   */
-  private scriptSpan(sp: Span, script: NestedScript): Span {
-    const inner = lineStarts(script.tree.text);
-    const s = inner[sp.start.line] + sp.start.character;
-    const e = inner[sp.end.line] + sp.end.character;
-    const outer = lineStarts(this.cx.source);
-    const start = posOf(outer, scriptSourceIndex(script, s, false));
-    // (An empty span ends where it starts.)
-    return { start, end: posOf(outer, scriptSourceIndex(script, e, e > s)) };
-  }
-
-  /** The command string of `trap`: when its `$variables` are expanded depends on the quotes. */
-  private trapNote(a: SyntaxNode): string {
-    // (In double quotes, the expansions the parser finds: `\$x` is text.)
-    const found = a.type === 'raw_string' ? a.text.match(/\$\{?[A-Za-z_]\w*\}?|\$\(|`/g) ?? []
-      : descendants(a, ['simple_expansion', 'expansion', 'command_substitution']).map((e) => (e.type === 'command_substitution' ? '$(' : e.text));
-    const vars = [...new Set(found)].map((v) => (v === '$(' || v === '`' ? '$(…)' : v));
-    if (!vars.length) return '';
-    const shown = [...new Set(vars)].map((v) => `\`${v}\``).join(this.s('、', ', '));
-    if (a.type === 'raw_string') {
-      return this.s(`。シングルクォートなので ${shown} はここでは展開されず、トラップが実行されるときに展開される（そのときの値が使われる）`,
-        `. Single quotes keep ${shown} from being expanded here: it is expanded when the trap runs, with the value it has then`);
-    }
-    return a.type === 'string'
-      ? this.s(`。ダブルクォートなので ${shown} は今ここで展開され、そのときの内容がトラップに固定される（実行時の値にしたいならシングルクォートにする）`,
-        `. Double quotes expand ${shown} now, and the trap keeps that text (use single quotes to get the value at run time)`)
-      : '';
-  }
 }
 
 interface CommandHead {
@@ -2077,9 +1868,6 @@ interface CommandHead {
 function alias1(value: string): boolean {
   return /^[^\s;|&<>()'"`$\\=]+$/.test(value);
 }
-
-/** The expansions that give a word a value of the shell that expands it (`$x`, `$(…)`, `*`, `~`): not braces or quotes. */
-const LOCAL_EXPANSIONS: ReadonlySet<ExpansionStep['kind']> = new Set(['tilde', 'parameter', 'command', 'arithmetic', 'process', 'glob']);
 
 /** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
 function jobSpec(text: string): { ja: string; en: string } | undefined {
