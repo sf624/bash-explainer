@@ -156,6 +156,7 @@ const editor = new Editor({
     clearTimeout(timer);
     timer = setTimeout(updatePanel, u.docChanged ? 150 : 60);
   },
+  openSettings: () => settingsDialog?.show(),
 }, { parent: $('editor'), text: shared.text ?? kindInfo(kind).sample, readMode, problems: mode.hasChrome });
 editor.shade();
 editor.placeCursor(shared.text ? 1 : kindInfo(kind).cursorLine);

@@ -190,7 +190,12 @@ describe('the web page: theme and settings', function () {
     assert.strictEqual(await page.locator('#settings-dialog').isVisible(), true);
     assert.strictEqual(await page.locator('#setting-notes-pitfalls').isChecked(), true);
     assert.strictEqual(await page.locator('#setting-diagnostics-pitfalls').isChecked(), true);
-    assert.strictEqual(await page.locator('#setting-hover-enabled').count(), 0);
+    // The hover is here, with the page's own description (not VS Code's); how it follows the cursor is VS Code's only.
+    assert.strictEqual(await page.locator('#setting-hover-enabled').count(), 1);
+    assert.match(await page.locator('[data-key="hover.enabled"]').innerText(), /in a card, as VS Code's hover does[\s\S]*the browser keeps Ctrl\+K and Ctrl\+E/);
+    assert.doesNotMatch(await page.locator('[data-key="hover.enabled"]').innerText(), /Explain Bash on Current Line/);
+    assert.strictEqual(await page.locator('#setting-hover-followCursor').count(), 0);
+    assert.match(await page.locator('.settings-elsewhere').innerText(), /hover\.followCursor/);
     assert.match(await page.locator('.settings-elsewhere').innerText(), /panel\.autoOpen/);
     // A note turned off goes from the explanation and from the problems at once.
     await page.locator('#setting-notes-pitfalls').uncheck();
@@ -314,12 +319,12 @@ describe('the web page: theme and settings', function () {
     // A file with keys that are not settings, not used here, or of the wrong type: the rest replaces the settings.
     await page.locator('#settings-file').setInputFiles({
       name: 'vscode.json', mimeType: 'application/json',
-      buffer: Buffer.from('{\n  // from VS Code\n  "bashExplainer.shell": "dash",\n  "bashExplainer.hover.enabled": false,\n  "editor.fontSize": 14,\n  "examples": { "placement": "nowhere" },\n}'),
+      buffer: Buffer.from('{\n  // from VS Code\n  "bashExplainer.shell": "dash",\n  "bashExplainer.hover.followCursor": true,\n  "editor.fontSize": 14,\n  "examples": { "placement": "nowhere" },\n}'),
     });
     const status = await until('the second import', () => page.locator('#settings-io-status').innerText(), (t) => /Imported 1 setting;/.test(t));
     assert.match(status, /editor\.fontSize — not a setting/);
     assert.match(status, /examples\.placement — wrong value \(expected one of first, last, bottom\)/);
-    assert.match(status, /hover\.enabled — not used on this page/);
+    assert.match(status, /hover\.followCursor — not used on this page/);
     assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'dash');
     assert.strictEqual(await page.locator('#setting-notes-pitfalls').isChecked(), true);
     const afterSecond = await saved();

@@ -20,6 +20,7 @@ import { Settings } from '../src/settings';
 import { nameHints, type NameHint } from '../src/ui/nameHints';
 import { CLASSIC_COLOURS, kindColour } from './editor-colors';
 import { drawIcon, iconMask } from './icons';
+import { webHover, WebHover } from './hover';
 import { nameHintsExtension, PlacedHint, setHints } from './name-hints';
 import { withCode } from './problem-list';
 import { Kind } from './samples';
@@ -216,6 +217,8 @@ export interface EditorHost {
   problems(shown: DocumentIssue[], codes: string[]): void;
   /** The text or the selection changed. */
   changed(u: ViewUpdate): void;
+  /** The hover card's link "Settings" (web/hover.ts). */
+  openSettings(): void;
 }
 
 export interface EditorInit {
@@ -244,9 +247,12 @@ export class Editor {
   private readonly hintCaches = new WeakMap<ShellDocument, HintCache>();
   private hintTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly withHints: boolean;
+  /** The part hover of VS Code (web/hover.ts), where the page has its own problems. */
+  private readonly hover: WebHover | undefined;
 
   constructor(private readonly host: EditorHost, init: EditorInit) {
     this.withHints = init.problems;
+    this.hover = init.problems ? webHover(host) : undefined;
     const problems = linter((v): Diagnostic[] => {
       const doc = host.document();
       if (!doc) return [];
@@ -281,7 +287,7 @@ export class Editor {
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
-          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter(), nameHintsExtension(() => TEXT[host.lang()].hintClick)] : []),
+          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter(), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []),
           EditorView.updateListener.of((u) => {
             host.changed(u);
             if (u.docChanged) {
@@ -328,6 +334,8 @@ export class Editor {
     this.view.dispatch({ effects: relint.of(null) });
     forceLinting(this.view);
     this.refreshHints();
+    // (The hover's keys are bound only while the hover is on.)
+    this.hover?.enable(this.view, this.host.settings()['hover.enabled']);
   }
 
   private scheduleHints(ms: number): void {
