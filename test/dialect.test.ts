@@ -34,6 +34,8 @@ const PROBES: Record<string, string> = {
   herestring: 'cat <<< ok',
   ansiC: 'v=$\'a\\tb\'; [ "$v" = "$(printf \'a\\tb\')" ] && echo ok',
   procSub: 'cat <(echo ok)',
+  // (A shell that connects reports the refused connection; one that does not, a missing file.)
+  netRedirect: '(exec 3</dev/tcp/127.0.0.1/9 && echo onnect) 2>&1 | grep -q onnect && echo ok',
   ampRedirect: 'x=$( { echo bad; } &>/dev/null ); sleep 0.1; [ -z "$x" ] && echo ok',
   ampAppend: 'x=$( { echo bad; } &>>/dev/null ); sleep 0.1; [ -z "$x" ] && echo ok',
   pipeAmp: '{ echo ok >&2; } |& cat',

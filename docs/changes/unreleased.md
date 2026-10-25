@@ -407,6 +407,38 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 
 `[[ $x == "$q" ]]` already said that a quoted right side is literal text.
 
+A tilde before a glob is expanded, then the word is globbed:
+
+| Written | bash | Said now | Said before |
+| --- | --- | --- | --- |
+| `ls ~/*.txt` | the `.txt` files in the home directory | "The rest, `/*.txt`, has wildcards: the expanded path is then a glob, replaced by the file names it matches", with the parts of the glob | "The rest, `/*.txt`, stays as it is" |
+| `set -f; ls ~/*.txt` | `~/*.txt` with the home directory, as written | "stays as it is", and the note on `set -f` | "stays as it is" |
+| the example of `ls ~/*.txt`, of `/var/cache/apk/*` | a hidden file is not matched | `~/.app.txt`, `/var/cache/apk/.app` | `.~/app.txt`, `./var/cache/apk/app` |
+
+### Tests and redirections as bash runs them
+
+| Written | bash | Said now | Said before |
+| --- | --- | --- | --- |
+| `[ 08 -eq 8 ]`, `test 09 -lt 10` | true: `[` reads decimal integers | "`08` is 8 (not octal)" | "`08` is an error (integer expression expected)", which is what `[[ 08 -eq 8 ]]` says |
+| `cat 3<<EOF <&3` | cat prints the here-document | "become file descriptor 3"; "In the end: stdin → the here-document, fd 3 → the here-document" | "become stdin"; "stdin → the original fd 3" |
+| `cat 3<<< x <&3` | prints `x` | "becomes file descriptor 3", and no token "file_descriptor" for the `3` | "becomes stdin" |
+| `cat <<< x 2>&1 > f` | | "stdin → the here-string" | "stdin → the here-document/string" |
+| `echo hi > {a,}` | writes the file `a` | "Write stdout (fd 1) to file `a` (overwrite). Brace expansion makes `{a,}` the one word `a`" | "to file `{a,}`" |
+| `echo hi > {,}` | "ambiguous redirect" | "Brace expansion leaves no word of it" | "makes several words of it" |
+| `exec 3<>/dev/tcp/example.com/80`, `cat < /dev/udp/h/53`, `>&/dev/tcp/h/p`, `{s}<>/dev/tcp/h/p` | bash connects (TCP or UDP), and fails if it cannot | "Connect to host `example.com`, port `80`, over TCP, and use the connection for reading and writing as file descriptor 3 (not a file …)" | "Open `/dev/tcp/example.com/80` for reading and writing" |
+| the same in sh or dash | a path, usually missing ("No such file") | the file, "In dash, `/dev/tcp/…` is an ordinary path, usually missing", and a portability warning (bash and ksh93 connect) | the file, no warning |
+
+Examples:
+
+| Written | bash | Shown now | Shown before |
+| --- | --- | --- | --- |
+| `[[ $x =~ ^"a."c$ ]]`, `^'a.'c$` | only `a.c` matches: the quoted `.` is literal | matches `a.c`; `a.` and `.c` do not | the regex of `c$` alone: `c` and `abc c` "match" |
+| `[[ $x =~ a$y ]]` | depends on `$y` | no example | the example of `a` alone |
+| `jq . <(curl -s url)`, `sort <(cmd) <(cmd2)` | the command reads the output of `curl` from a pipe (`/dev/fd/63`) | "Input: output of `curl -s url` (the pipe `<(curl -s url)` names, sample contents)" | "Input: the files `<(curl -s url)` names (sample contents)" |
+| `sort < <(cmd)` | stdin is the pipe | "Input: stdin (output of `cmd` through `<(cmd)`, sample contents)" | "Input: stdin (`<(cmd)`, sample contents)" |
+
+The panel's Reading view failed on a here-document with no delimiter yet (`cat <<`, then more lines): a `TypeError`. It now shows the `<<` as a redirection.
+
 ### Quote removal in find's expression
 
 find's expression is read from its words as bash passes them, after quote removal. A word whose value is not known (`$x`, an unquoted glob) is read as written.

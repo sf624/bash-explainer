@@ -12,7 +12,7 @@ import { shorten } from '../label';
 import { fact } from '../messages';
 import { nameInfo } from '../namefacts';
 import { spanOf } from '../noteanchors';
-import { isPlainWord } from '../staticword';
+import { isPlainWord, staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { type BracketTest, type TestExpr, testRange } from '../testexpr';
 import type { Explainer } from './context';
@@ -80,7 +80,7 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
 }
 
 /**
- * How `-eq`, `-lt`… read their operands: `[ ]` takes decimal integers (`010` is ten; `0x10` is an error),
+ * How `-eq`, `-lt`… read their operands: `[ ]` takes decimal integers (`010` is ten, `08` eight; `0x10` is an error),
  * `[[ ]]` evaluates them as arithmetic (`010` is octal 8, `0x10` is 16, `08` is an error).
  */
 function numericTestNote(cx: Explainer, op: string, operands: string[], double: boolean): string {
@@ -104,7 +104,8 @@ function numericTestNote(cx: Explainer, op: string, operands: string[], double: 
     }
     if (!lit || (lit.type === 'number' && lit.style === 'decimal' && !/^0\d/.test(m![2]))) continue;
     if (!double) {
-      notes.push(lit.type === 'number' && lit.style === 'octal' && /^\d+$/.test(m![2])
+      // (Digits alone are decimal to `[`, even those arithmetic rejects as octal: `08` is 8.)
+      notes.push(/^\d+$/.test(m![2])
         ? cx.s(`\`[ ]\` は 10 進の整数として読むので \`${raw}\` は ${Number(m![2])}（8 進数ではない）`, `\`[ ]\` reads decimal integers, so \`${raw}\` is ${Number(m![2])} (not octal)`)
         : cx.s(`\`[ ]\` は 10 進の整数しか読めないので \`${raw}\` はエラー（integer expression expected）。\`[[ ]]\` なら算術として読める`, `\`[ ]\` reads only decimal integers, so \`${raw}\` is an error (integer expression expected); \`[[ ]]\` would read it as arithmetic`));
     } else if (lit.type === 'invalid') {
@@ -120,16 +121,7 @@ function numericTestNote(cx: Explainer, op: string, operands: string[], double: 
 /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
 export function regexNode(cx: Explainer, n: SyntaxNode): Token {
   // (A `regex` node is only the plain right side of `=~`, without quotes: expansions and quotes make other nodes.)
-  // Quote removal drops a backslash before an ordinary character: `\b` is `b`, `\w` is `w`, `\<` is `<` (bash), not the GNU operators.
-  // One before a character special in an ERE stays, and makes it literal.
-  let text = '';
-  const offsets: number[] = [];
-  for (let i = 0; i < n.text.length; i++) {
-    if (n.text[i] === '\\' && i + 1 < n.text.length && !/[.[\]{}()\\*+?|^$]/.test(n.text[i + 1])) i++;
-    offsets.push(i);
-    text += n.text[i];
-    if (n.text[i] === '\\' && i + 1 < n.text.length) { offsets.push(++i); text += n.text[i]; }
-  }
+  const { text, offsets } = regexText(n);
   // (The regex is read by the regex library bash calls, by the rules of an ERE: an embedded language.)
   const tokens = explainRegex(text, 'ere', cx.lang).map((t) => ({ ...fromEmbedded(t, n, { text, offsets }, 'embedded'), language: 'regex' }));
   const js = toJsRegex(text, 'ere');
@@ -138,9 +130,46 @@ export function regexNode(cx: Explainer, n: SyntaxNode): Token {
     const list = dropped.map((d) => `\`${d}\``).join(cx.s('、', ', '));
     cx.note(fact(cx.lang, 'regex-backslash-dropped', { list }), n);
   }
-  if (js) regexExample(cx, js, 'values');
+  // (A part of a right side with quotes or expansions: the example is the whole regex's, made by `binary`.)
+  if (js && n.parent?.type !== 'concatenation') regexExample(cx, js, 'values');
   return cx.tok(n, 'pattern', cx.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
 }
+
+/**
+ * The regex a `regex` node gives after quote removal, with the offset in the node of each of its characters. Quote
+ * removal drops a backslash before an ordinary character: `\b` is `b`, `\w` is `w`, `\<` is `<` (bash), not the GNU
+ * operators. One before a character special in an ERE stays, and makes it literal.
+ */
+function regexText(n: SyntaxNode): { text: string; offsets: number[] } {
+  let text = '';
+  const offsets: number[] = [];
+  for (let i = 0; i < n.text.length; i++) {
+    if (n.text[i] === '\\' && i + 1 < n.text.length && !/[.[\]{}()\\*+?|^$]/.test(n.text[i + 1])) i++;
+    offsets.push(i);
+    text += n.text[i];
+    if (n.text[i] === '\\' && i + 1 < n.text.length) { offsets.push(++i); text += n.text[i]; }
+  }
+  return { text, offsets };
+}
+
+/**
+ * The regex bash matches for a right side of `=~` made of parts (`^"a."c$`): the quoted parts match as literal text,
+ * so their special characters are escaped. Undefined when a part is not known without running anything (`$re`).
+ */
+function wholeRegex(parts: readonly SyntaxNode[]): string | undefined {
+  let out = '';
+  for (const p of parts) {
+    if (p.type === 'regex') {
+      out += regexText(p).text;
+      continue;
+    }
+    const v = QUOTED_PARTS.has(p.type) ? staticWordValue(p) : undefined;
+    if (v === undefined) return undefined;
+    out += v.replace(/[.[\]{}()\\*+?|^$]/g, '\\$&');
+  }
+  return out;
+}
+const QUOTED_PARTS = new Set(['string', 'raw_string', 'ansi_c_string']);
 
 export function unary(cx: Explainer, n: SyntaxNode): Token {
   // `!` is not an operator field.
@@ -181,6 +210,12 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
   // `[[ $x = *.txt ]]`: the values that match, as for a `case` pattern (a pattern with a quoted part is not tried).
   if (['=', '==', '!='].includes(op) && rights.length === 1 && (pattern(rights[0]) || (rights[0].type === 'extglob_pattern' && !plain(rights[0])))) {
     cx.examplesAt(n, () => patternExample(cx, rights, [cx.s('一致する値', 'Values that match'), cx.s('一致しない値', 'Values that do not match')]));
+  }
+  // `[[ $x =~ ^"a."c$ ]]`: the strings the whole regex matches, its quoted parts as literal text.
+  if (op === '=~' && rights.length === 1 && rights[0].type === 'concatenation') {
+    const re = wholeRegex(rights[0].namedChildren);
+    const js = re === undefined ? undefined : toJsRegex(re, 'ere');
+    if (js) regexExample(cx, js, 'values');
   }
   if (!inArithmetic(n) && binaryTestOps[op]) {
     const num = numericTestNote(cx, op, [n.namedChildren[0].text, rightText], true);

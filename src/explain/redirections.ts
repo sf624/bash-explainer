@@ -5,7 +5,8 @@
 // words (src/explain/words.ts). A simple command with redirections before or after its words (`splitCommand`) is
 // the commands' (step 8).
 import type { Token } from '../analyzer-types';
-import { fdName, redirects, specialDestinations } from '../dict/syntax';
+import { SHELL_NAMES, featureWorks } from '../dialect';
+import { fdName, networkPath, networkPathAsFile, networkRedirect, redirects, specialDestinations } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { type Redirect, simulateRedirects } from '../idioms';
 import { shorten } from '../label';
@@ -70,16 +71,23 @@ export function redirectInfo(r: SyntaxNode): Redirect {
     const { op, dest } = redirectParts(r);
     return { op, fd: field(r, 'descriptor')?.text ?? '', dest };
   }
-  // The only others: heredoc_redirect and herestring_redirect.
-  return { op: r.type === 'heredoc_redirect' ? '<<' : '<<<', fd: '', dest: '' };
+  // The only others: heredoc_redirect and herestring_redirect (`3<<EOF`, `3<<< x`: to descriptor 3).
+  return { op: r.type === 'heredoc_redirect' ? '<<' : '<<<', fd: field(r, 'descriptor')?.text ?? '', dest: '' };
 }
 
 export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
   const fd = field(n, 'descriptor')?.text ?? '';
   const { op, dest } = redirectParts(n);
   const dests = fields(n, 'destination');
+  // `> {a,}` writes `a`: the one word brace expansion makes of the target.
+  const braced = dests.length === 1 ? bracedTarget(cx, dests[0]) : undefined;
   // Every operator the grammar has is in the dictionary.
-  let expl = cx.t(redirects[op](fd, dest));
+  let expl = cx.t(redirects[op](fd, braced ?? dest));
+  if (braced) expl += cx.s(`。ブレース展開で \`${dest}\` は1つの単語 \`${braced}\` になる`, `. Brace expansion makes \`${dest}\` the one word \`${braced}\``);
+  // `/dev/tcp/host/port`: bash connects to the network, where other shells see a path.
+  const net = NETWORK_OPS.has(op) && (op !== '>&' || fd === '' || fd === '1') ? networkPath(braced ?? dest) : undefined;
+  if (net && featureWorks('netRedirect', cx.shell)) return { ...cx.tok(n, 'redirect', cx.t(networkRedirect(op, fd, net)), dests.filter((d) => !isPlainWord(d)).flatMap((d) => cx.sub(d))), refs: ['3.6'] };
+  if (net) expl += cx.s('。', '. ') + cx.t(networkPathAsFile(SHELL_NAMES[cx.shell!]));
   const special = specialDestinations[dest];
   if (special) expl += cx.s('。', '. ') + cx.t(special);
   // `>&$fd` and `<&$fd`: the word is expanded first, and what it gives decides whether this duplicates a descriptor.
@@ -97,6 +105,17 @@ export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
   return cx.tok(n, 'redirect', expl, children);
 }
 
+/** The operators that open their target (a duplication `>&` only when it is a file: `>&/dev/tcp/h/p`). */
+const NETWORK_OPS = new Set(['<', '>', '>>', '>|', '<>', '&>', '&>>', '>&']);
+
+/** The one word brace expansion makes of a redirection target that differs from it (`{a,}` is `a`: an empty word is dropped). */
+function bracedTarget(cx: Explainer, d: SyntaxNode): string | undefined {
+  if (!(isPlainWord(d) || d.type === 'brace_expression') || !d.text.includes('{')) return undefined;
+  if (wordAt(cx, d)!.steps.find((s) => s.kind === 'brace')!.applies !== true) return undefined;
+  const words = braceExpansion(d.text);
+  return words?.length === 1 && words[0] !== d.text ? words[0] : undefined;
+}
+
 /**
  * A redirection target that brace expansion or a glob can turn into other words (`> *.log`, `> {a,b}`): it must
  * become exactly one word, else bash reports an ambiguous redirect. In POSIX mode it is not globbed.
@@ -106,6 +125,7 @@ function redirectTargetNote(cx: Explainer, d: SyntaxNode): string {
   const step = (kind: string) => w?.steps.find((s) => s.kind === kind);
   if (step('brace')!.applies === true) {
     const words = braceExpansion(d.text);
+    if (words?.length === 0) return cx.s('。ブレース展開で空の単語だけになって単語が残らないので、bash は「ambiguous redirect」のエラーにする', '. Brace expansion leaves no word of it (empty words are dropped), so bash reports "ambiguous redirect"');
     if (!words || words.length !== 1) return cx.s('。ブレース展開で複数の単語になるので、bash は「ambiguous redirect」のエラーにする', '. Brace expansion makes several words of it, so bash reports "ambiguous redirect"');
   }
   const glob = step('glob')!;
@@ -161,29 +181,39 @@ function fdExpansion(cx: Explainer, op: string, fd: string, dest: string): strin
     `If \`${dest}\` expands to a file descriptor number, send ${fdName(fd, '1').en} to the same place as that descriptor; ${file}${coproc}`);
 }
 
+/** Where a here-document or a here-string goes: stdin, or the descriptor written before the operator (`3<<EOF`). */
+function hereTarget(cx: Explainer, n: SyntaxNode): string {
+  const fd = field(n, 'descriptor')?.text ?? '';
+  const name = fdName(fd, '0');
+  const variable = /^\{(.+)\}$/.exec(fd)?.[1];
+  if (variable) return cx.s(`空いているファイルディスクリプタ（10 以上。番号は変数 \`${variable}\` に入る）の入力`, `the input of a free file descriptor (10 or higher, its number stored in variable \`${variable}\`)`);
+  return fd === '' || fd === '0' ? cx.s('標準入力', 'stdin') : cx.s(name.ja, name.en);
+}
+
 export function heredoc(cx: Explainer, n: SyntaxNode): Token {
   const op = n.children.find((c) => !c.named)!.type;
   const startNode = n.namedChildren.find((c) => c.type === 'heredoc_start');
+  const to = hereTarget(cx, n);
   // `cat <<` while typing: the delimiter is not there yet.
   if (!startNode) {
     return cx.tok(n, 'redirect', cx.s(
-      `ヒアドキュメント \`${op}\`: 区切り語がまだない。次の行から区切り語だけの行までを標準入力として渡す`,
-      `Here-document \`${op}\`: the delimiter is not written yet. The following lines up to a line containing only the delimiter become stdin`));
+      `ヒアドキュメント \`${op}\`: 区切り語がまだない。次の行から区切り語だけの行までを${to}として渡す`,
+      `Here-document \`${op}\`: the delimiter is not written yet. The following lines up to a line containing only the delimiter become ${to}`));
   }
   const start = startNode.text;
   const body = n.namedChildren.find((c) => c.type === 'heredoc_body');
   const delim = start.replace(/^['"\\]|['"]$/g, '');
   const quoted = start !== delim;
   let expl = cx.s(
-    `ヒアドキュメント: 次の行から \`${delim}\` だけの行までを標準入力として渡す`,
-    `Here-document: the following lines up to a line containing only \`${delim}\` become stdin`,
+    `ヒアドキュメント: 次の行から \`${delim}\` だけの行までを${to}として渡す`,
+    `Here-document: the following lines up to a line containing only \`${delim}\` become ${to}`,
   );
   if (op === '<<-') expl += cx.s('。`<<-` なので各行先頭のタブは取り除かれる', '. With `<<-`, leading tabs are stripped');
   expl += quoted
     ? cx.s('。区切り語がクォートされているので本文中の変数やコマンド置換は展開されない', '. The delimiter is quoted, so nothing in the body is expanded')
     : cx.s('。本文中の `$変数` や `$(…)` は展開される', '. `$vars` and `$(…)` in the body are expanded');
   expl += cx.lineRef(n);
-  const label = `${op}${start}`;
+  const label = `${field(n, 'descriptor')?.text ?? ''}${op}${start}`;
   // An empty here-document still has a (empty) body.
   const children = cx.subs(body!.namedChildren.filter((c) => c.type !== 'heredoc_content'));
   // Keep the token span on the operator so highlighting does not swallow the whole body.
@@ -194,8 +224,9 @@ export function heredoc(cx: Explainer, n: SyntaxNode): Token {
 }
 
 export function herestring(cx: Explainer, n: SyntaxNode): Token {
+  const to = hereTarget(cx, n);
   return cx.tok(n, 'redirect', cx.s(
-    'ヒアストリング `<<<`: 続く文字列（末尾に改行が付く）を標準入力として渡す',
-    'Here-string `<<<`: the following word (plus a newline) becomes stdin',
-  ), cx.subs(n.namedChildren.filter((c) => !isPlainWord(c))));
+    `ヒアストリング \`<<<\`: 続く文字列（末尾に改行が付く）を${to}として渡す`,
+    `Here-string \`<<<\`: the following word (plus a newline) becomes ${to}`,
+  ), cx.subs(n.namedChildren.filter((c) => !isPlainWord(c) && c.type !== 'file_descriptor')));
 }

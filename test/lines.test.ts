@@ -85,8 +85,10 @@ describe('lines no other test reaches', () => {
 
   it('redirections: the table of where each stream goes, with >&file, &> and here-strings', () => {
     const table = simulateRedirects([{ op: '<<<', fd: '', dest: 'x' }, { op: '&>', fd: '', dest: 'all.log' }, { op: '>&', fd: '', dest: 'out.log' }, { op: '<&', fd: '3', dest: '0' }], 'en');
-    assert.match(table!, /the here-document\/string/);
+    assert.match(table!, /^Redirections apply left to right\. In the end: stdin → the here-string, .*fd 3 → the here-string$/);
     assert.match(table!, /out\.log/);
+    // A here-document on a descriptor goes to that descriptor (`cat 3<<EOF <&3` reads it).
+    assert.match(simulateRedirects([{ op: '<<', fd: '3', dest: '' }, { op: '<&', fd: '', dest: '3' }], 'en')!, /stdin → the here-document, fd 3 → the here-document$/);
   });
 
   it('getopt: a leading - in the short options, and the arguments it rejects', () => {

@@ -60,8 +60,11 @@ export function simulateRedirects(redirs: Redirect[], lang: Lang): string | unde
         set(1, r.dest);
         set(2, r.dest);
         break;
-      case '<<': case '<<-': case '<<<':
-        set(0, s('ヒアドキュメント／文字列', 'the here-document/string'));
+      case '<<': case '<<-':
+        set(fd, s('ヒアドキュメント', 'the here-document'));
+        break;
+      case '<<<':
+        set(fd, s('ヒアストリング', 'the here-string'));
         break;
       default:
         set(fd, r.dest);

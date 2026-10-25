@@ -328,7 +328,8 @@ export function globExamples(pattern: string, mode: GlobMode, opts: GlobOpts = {
     ext ? base.slice(0, -ext.length) + (ext === '.txt' ? '.md' : '.txt') : base + '.bak',
     // `**` without globstar is one level only; with it, hidden directories are still skipped.
     ...(hasGlobstar(pattern) && mode === 'file' ? [deep ? `.cache/${base}` : `src/${base}`] : []),
-    mode === 'file' ? '.' + base : base.toUpperCase(),
+    // (A hidden file in the same directory: `~/.app.txt` for `~/*.txt`, its last name starting with a dot.)
+    mode === 'file' ? base.replace(/(^|\/)([^/]+)(\/*)$/, '$1.$2$3') : base.toUpperCase(),
     base.slice(0, -1), base.slice(1), 'x' + base, base + 'x', base.toUpperCase(),
   ];
   const nonMatching = [...new Set(candidates)].filter((n) => n && n !== base && !globMatches(pattern, n, mode, opts)).slice(0, 2);
