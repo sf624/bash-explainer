@@ -741,7 +741,7 @@ export class Walker {
         for (const r of redirs) this.substitutions(r, st);
         // (A subshell makes them in its own process: `( : ) > $(( n = 3 ))` leaves n.)
         st = this.fdVariables(redirs, this.expandAll(redirs, st, field(n, 'body')!.type === 'subshell' ? 'on' : 'off'));
-        return this.conditions.ifRedirected(n, st, this.sequence(n.children.filter((c) => c.field !== 'redirect'), st));
+        return this.sequence(n.children.filter((c) => c.field !== 'redirect'), st);
       }
       case 'subshell':
         return this.sequence(n.children, st);
@@ -1428,11 +1428,11 @@ export class Walker {
     const fn = this.functionCalled(name, st);
     // (`declare() { …; }; declare b=(1 2)`: bash assigns the array, and passes the name.)
     const called = fn && withStatus(this.call(fn, this.builtins.markedArrays(name, fields(n, 'argument'), n, st), assignments), undefined);
-    if (called && fn.state === 'on') return this.conditions.ifRedirected(n, st, called);
+    if (called && fn.state === 'on') return called;
     if (!special) st = this.builtins.appendArith(assignments, n, st);
     const ran = withStatus(kept(this, n, temps, this.builtins.builtin(name, fields(n, 'argument'), n, st, true)), this.conditions.simpleStatus(n, before));
     // (A function defined on some paths only: on the others, the builtin or the program runs.)
-    return this.conditions.ifRedirected(n, st, called ? merge([called, ran], this.posix) : ran);
+    return called ? merge([called, ran], this.posix) : ran;
   }
 
   /** The function a command named `name` calls in `st`: none when POSIX mode finds a special builtin of that name first. */

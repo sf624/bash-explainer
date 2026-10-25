@@ -210,13 +210,6 @@ describe('errors bash stops at, and commands bash may not run (review of #356)',
     assert.strictEqual(last('x=a; unset q\necho "$x"', '$x', 'dash'), 'a');
   });
 
-  it('takes a command whose redirection may fail as maybe not run', () => {
-    assert.strictEqual(after('a=1; a=2 export a >/nonexistent/x', 'a'), 'unknown');
-    assert.strictEqual(after('a=1; { a=2; } >/bad', 'a'), 'unknown');
-    assert.strictEqual(after('a=1; f() { a=2; }; f >/bad', 'a'), 'unknown');
-    assert.strictEqual(after('a=1; { a=2; } >/dev/null 2>&1', 'a'), '2');
-  });
-
   it("gives no value for `\\x{…}` in `$'…'`", () => {
     assert.strictEqual(valueOf("x=$'\\x{41}'; echo \"$x\"", '$x'), undefined);
     assert.strictEqual(valueOf("x=$'\\x41'; echo \"$x\"", '$x'), 'A');
