@@ -46,18 +46,23 @@ function findCycles(graph: Map<string, string[]>): string[][] {
  * property access counts (`rule.kind`, not a variable called `kind`), and only the values listed here are allowed on it:
  * a node's `.type` (any: node types, `command` among them), a status rule's `.kind` (`command`, `test`: add a value only
  * when code that needs it moves, as a reviewed edit), errexit's `.stops` (`script`), a spec's `.example` (`read`), a command
- * slot's `.run` (`exec`), and a `.shell` (the members of
+ * slot's `.run` (`exec`), an argument's `.role` (`command`), why a definition is missed, `.why` (`command`, `builtin`),
+ * and a `.shell` (the members of
  * `Shell` in src/dialect.ts, read here from the keys of `SHELL_NAMES`, a `Record<Shell, string>`, so the compiler keeps
  * the list equal to the type). A literal on these fields that is a command name and not in the list is found (the
  * fields hold other values too, such as `subshell` or `given`, which are not names and need no entry).
  */
-const CLOSED_FIELD = /\.(type|kind|stops|shell|example|run)$/;
+const CLOSED_FIELD = /\.(type|kind|stops|shell|example|run|role|why)$/;
 const CLOSED_VALUES: Record<string, ReadonlySet<string> | undefined> = {
   type: undefined, // any
-  // (`alias`: a `NameResolution` of src/semantics/names.ts, step 7.)
-  kind: new Set(['command', 'test', 'alias']),
+  // (`alias` and `file`: a `NameResolution` of src/semantics/names.ts, step 7.)
+  kind: new Set(['command', 'test', 'alias', 'file']),
   // `CommandSlot.run` (src/argv/spec.ts): a slot that runs its command as a separate program (step 7).
   run: new Set(['exec']),
+  // `ArgRole.role` (src/argv/interpret.ts): the words of a command that another one runs (step 7).
+  role: new Set(['command']),
+  // `Missed.why` (src/semantics/names.ts): a function that `command` or `builtin` skips (step 7).
+  why: new Set(['command', 'builtin']),
   stops: new Set(['script']),
   shell: new Set(Object.keys(SHELL_NAMES)),
   // `CommandSpec.example`, the kind of worked example. Its values are command names too; list only those the moved code
@@ -140,13 +145,13 @@ describe('the finders of the src/explain guards', () => {
   });
 
   it('allows the comparisons the moved code needs on closed fields, and no other value', () => {
-    const names = new Set(['sed', 'command', 'test', 'script', 'bash', 'grep', 'read', 'sort', 'exec', 'alias']);
-    for (const ok of [`rule.kind !== 'command'`, `rule.kind !== 'test'`, `ctx.stops !== 'script'`, `cx.shell === 'bash'`, `'command' === n.type`, `spec.example === 'read'`, `spec?.example === 'read'`, `slot.run === 'exec'`, `res.kind !== 'alias'`]) {
+    const names = new Set(['sed', 'command', 'test', 'script', 'bash', 'grep', 'read', 'sort', 'exec', 'alias', 'file', 'builtin']);
+    for (const ok of [`rule.kind !== 'command'`, `rule.kind !== 'test'`, `ctx.stops !== 'script'`, `cx.shell === 'bash'`, `'command' === n.type`, `spec.example === 'read'`, `spec?.example === 'read'`, `slot.run === 'exec'`, `res.kind !== 'alias'`, `res.kind === 'file'`, `role.role === 'command'`, `missed.why === 'builtin'`]) {
       assert.deepStrictEqual(nameComparisons(ok, names), [], ok);
     }
     // A bare identifier is checked like any other expression; so are command names that a closed field does not allow.
     assert.deepStrictEqual(nameComparisons(`x.kind === 'subshell' || x.stops === 'never' || kind === 'other'`, names), []);
-    for (const bad of [`shell === 'bash'`, `kind === 'sed'`, `type === 'sed'`, `x.kind === 'grep'`, `node.stops === 'sed'`, `x.shell === 'sed'`, `'sed' === x.shell`, `spec.example === 'sort'`, `'sort' === spec.example`, `x.kind.has('sed')`, `slot.run === 'sed'`, `run === 'exec'`]) {
+    for (const bad of [`shell === 'bash'`, `kind === 'sed'`, `type === 'sed'`, `x.kind === 'grep'`, `node.stops === 'sed'`, `x.shell === 'sed'`, `'sed' === x.shell`, `spec.example === 'sort'`, `'sort' === spec.example`, `x.kind.has('sed')`, `slot.run === 'sed'`, `run === 'exec'`, `role.role === 'sed'`, `missed.why === 'sed'`]) {
       assert.strictEqual(nameComparisons(bad, names).length, 1, bad);
     }
   });
