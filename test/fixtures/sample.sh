@@ -4,11 +4,11 @@
 set -euo pipefail
 trap 'rm -rf "$workdir"' EXIT
 workdir=$(mktemp -d)
-name="World"
 make build > build.log 2>&1 || exit 1
 grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt && echo "done: $(date +%F)" || exit 1
 echo "done" >> run.log
 sort < input.txt
+name="World"
 tr a-z A-Z <<< "$name"
 diff <(sort a.txt) <(sort b.txt)
 file="report.tar.gz"
