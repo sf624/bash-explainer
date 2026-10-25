@@ -597,7 +597,10 @@ export function valueSaid(lang: Lang, v: ExpansionValue): ValueSaid {
       : { said: ja ? `。クォートしていないので単語分割され、${n} 語になる${more}:` : `; unquoted, it is split into ${n === 1 ? '1 word' : `${n} words`}${more}:`, words: words.slice(0, WORDS_SHOWN).map(show) };
   }
   const tails: string[] = [];
-  if (v.glob) {
+  if (v.glob && v.joined) {
+    tails.push(ja ? '。クォートしていないので、ワイルドカードを含む単語が前後の文字列とつながったままパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
+      : '. Unquoted, the word its wildcards end up in, with the text around it, is a pattern: bash matches it against file names when the line runs (not done here)');
+  } else if (v.glob) {
     tails.push(ja ? '。クォートしていないのでパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
       : '. Unquoted, it is a pattern: bash matches it against file names when the line runs (not done here)');
   }

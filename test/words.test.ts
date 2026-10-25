@@ -287,6 +287,11 @@ describe('words: fields', () => {
       else assert.ok(!r.fields, w);
     }
     assert.deepStrictEqual(fieldsOf('echo ${u:?m}', '${u:?m}', env), { error: 'parameter-null' });
+    // "substring expression < 0": bash fails, and the command does not run.
+    assert.deepStrictEqual(fieldsOf('echo ${x:2:-9}', '${x:2:-9}', env), { error: 'substring' });
+    // Text other than ASCII is read by the locale (src/semantics/chars.ts): `$'é'` is `é` in a UTF-8 locale, `é` in C.
+    assert.deepStrictEqual(fieldsOf("echo $'\\u00e9'", "$'\\u00e9'", env), {});
+    assert.deepStrictEqual(fieldsOf("echo $'a\\u0041'", "$'a\\u0041'", env).fields, ['aA']);
     assert.deepStrictEqual(fieldsOf('echo "${x/a/"&"}"', '"${x/a/"&"}"', env).fields, ['&bc.tar.gz']);
     assert.deepStrictEqual(fieldsOf('echo "${x#\\a}"', '"${x#\\a}"', env).fields, ['bc.tar.gz']);
     assert.deepStrictEqual(fieldsOf('echo "${x#"$n"}"', '"${x#"$n"}"', env).fields, ['abc.tar.gz']);

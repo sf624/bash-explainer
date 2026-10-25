@@ -12,11 +12,18 @@ export interface ExpansionValue {
   text: string;
   /**
    * The words it gives where it is, when it is split (unquoted, in a context that splits): none for an empty value,
-   * several for a value with IFS characters. Undefined when it is not split.
+   * several for a value with IFS characters. Undefined when it is not split, and for a part of a word with other parts
+   * (`joined`).
    */
   words?: string[];
   /** Unquoted where pathname expansion applies, with a glob character in a word: bash matches it against file names (not followed here). */
   glob: boolean;
+  /**
+   * Unquoted in a word with other parts (`$x/c`, `a$e`, `"$a"$b`): its first and last fields join the text around it
+   * (`x='a b'; echo $x/c` gives `a` and `b/c`), so its own words are not said, and a glob makes a pattern of the
+   * field it ends up in, not of the value alone.
+   */
+  joined?: true;
 }
 
 /**
@@ -46,5 +53,7 @@ export function expansionValue(part: SyntaxNode, model: StateModel, around = tru
   if (around && mayStopAround(part, model, (e) => !!expansionValue(e, model, false))) return undefined;
   const glob = meaning.glob.applies !== false && got.fields.some((f) => f.glob);
   if (glob && meaning.glob.applies === 'unknown') return undefined;
-  return { text: got.text, ...(split ? { words: got.fields.map((f) => f.text) } : {}), glob };
+  // (Unquoted, and not the whole word: `$x/c`, `a$e`, `"$a"$b`.)
+  const joined = !meaning.quoted && !(w.nodes.length === 1 && w.nodes[0] === part);
+  return { text: got.text, ...(split && !joined ? { words: got.fields.map((f) => f.text) } : {}), glob, ...(joined ? { joined: true as const } : {}) };
 }

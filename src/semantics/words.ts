@@ -13,6 +13,7 @@ import { patsubMiscounts } from '../bracket';
 import { parseExpansion } from '../expansion';
 import { ansiCValue, decodedText, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
+import { caseConverted, sameInEveryLocale, substring } from './chars';
 import { DECLARATIONS } from './effects';
 import { STATEMENTS } from './env';
 import { resolveName } from './names';
@@ -495,7 +496,7 @@ export interface WordEnv {
 /** The fields of a word; `error` when bash fails on it; neither when they are not known here. */
 export interface Fields {
   fields?: string[];
-  error?: 'ambiguous-redirect' | 'no-match' | 'unbound' | 'parameter-null';
+  error?: 'ambiguous-redirect' | 'no-match' | 'unbound' | 'parameter-null' | 'substring';
   /** How bash fails on it: surely with `error`; may when the fields are not known and the word may fail (`WordMeaning.failure`). */
   failure?: WordFailure;
 }
@@ -541,6 +542,8 @@ class ModelValues implements ValueSource {
     }
     if (v.declared === 'unknown' || v.set === 'unknown') return undefined;
     if (v.set === 'off') return null;
+    // (`x=$'\u00e9'` sets `é` in a UTF-8 locale, `\u00E9` in C: src/semantics/chars.ts.)
+    if (v.value !== undefined && !sameInEveryLocale(v.value) && /\\[uU]/.test(v.at.text)) return undefined;
     // An array, an associative array or a nameref (also on some paths only): its value is not followed.
     if (['a', 'A', 'n'].some((l) => attribute(st, name, l) !== 'off')) return undefined;
     // Not static text: the word of the assignment, expanded where it ran.
@@ -584,7 +587,7 @@ class Evaluator {
   /** The value of `$name` in an operand of `${…}`: empty when unset (an error under `set -u`), undefined when not known. */
   readonly param = (name: string): string | undefined => {
     const v = this.variable(name, this.w.nodes[0]);
-    return v === null ? this.unset((t) => [{ text: t, quoted: false, expanded: true }])?.[0].text : v;
+    return v === null ? this.unset((t) => [{ text: t, quoted: false, expanded: true }])?.[0].text : v !== undefined && sameInEveryLocale(v) ? v : undefined;
   };
 
   /** The pieces of a node of the word, or undefined when they are not known here. */
@@ -595,7 +598,7 @@ class Evaluator {
       case 'raw_string': return [{ text: n.text.slice(1, -1), quoted: true, expanded: false }];
       case 'ansi_c_string': {
         const v = ansiCValue(n.text.slice(2, -1));
-        return v === undefined ? undefined : [{ text: v, quoted: true, expanded: false }];
+        return v === undefined || !sameInEveryLocale(v) ? undefined : [{ text: v, quoted: true, expanded: false }];
       }
       case 'translated_string': return this.pieces(n.namedChildren[0], quoted);
       case 'string': return this.inner(n, n.startIndex + 1, n.endIndex - 1, /\\([$`"\\\n])/g);
@@ -658,6 +661,8 @@ class Evaluator {
       return typeof target === 'string' && /^[A-Za-z_]\w*$/.test(target) ? this.valued(this.variable(target, n), out) : undefined;
     }
     const value = this.variable(p.name, n);
+    // (Beyond `${x}`, ASCII text only: src/semantics/chars.ts.)
+    if ((p.prefix || p.op) && (!sameInEveryLocale(n.text) || (value && !sameInEveryLocale(value)))) return undefined;
     if (p.prefix === '#') return value === undefined ? undefined : value === null ? this.unset(() => out('0')) : out(String(value.length));
     if (!p.op) return this.valued(value, out);
     const part = (role: string): string => p.parts.find((x) => x.role === role)?.text ?? '';
@@ -673,18 +678,10 @@ class Evaluator {
     if (value === undefined) return undefined;
     if (value === null) return this.unset(out);
     if (op === ':') {
-      const offset = evalArith(part('offset'));
-      const length = part('length') ? evalArith(part('length')) : value.length;
-      if (offset === undefined || length === undefined) return undefined;
-      const start = offset < 0 ? Math.max(value.length + offset, 0) : offset;
-      const end = length < 0 ? value.length + length : start + length;
-      return offset < 0 && -offset > value.length ? out('') : out(value.slice(start, Math.max(end, start)));
+      const got = substring(value, part('offset'), p.parts.find((x) => x.role === 'length')?.text);
+      return got === null ? (() => { throw new Failure('substring'); })() : got === undefined ? undefined : out(got);
     }
-    if (op === '^^' || op === ',,' || op === '^' || op === ',') {
-      if (part('pattern')) return undefined;
-      const conv = (s: string): string => (op[0] === '^' ? s.replace(/[a-z]/g, (c) => c.toUpperCase()) : s.replace(/[A-Z]/g, (c) => c.toLowerCase()));
-      return out(op.length === 2 ? conv(value) : conv(value.slice(0, 1)) + value.slice(1));
-    }
+    if (op === '^^' || op === ',,' || op === '^' || op === ',') return part('pattern') ? undefined : out(caseConverted(op, value));
     const pattern = patternOf(part('pattern'), this);
     if (pattern === undefined) return undefined;
     // nocasematch makes `${x/p/r}` ignore case (not `#` and `%`).
@@ -790,7 +787,7 @@ function operandSegs(text: string, quoted: boolean, param: (name: string) => str
       if (!quoted && text[i + 1] === "'") {
         const end = text.indexOf("'", i + 2);
         const v = end < 0 ? undefined : ansiCValue(text.slice(i + 2, end));
-        if (v === undefined) return undefined;
+        if (v === undefined || !sameInEveryLocale(v)) return undefined;
         out.push({ text: v, quoted: true });
         i = end;
         continue;
@@ -902,7 +899,8 @@ export function trustedPart(part: SyntaxNode, w: WordMeaning, model: StateModel,
   }
   if (!pieces) return undefined;
   // (Not split, as in double quotes or with an empty IFS: one text, which may still be globbed.)
-  const fields = split ? splitPieces(w, pieces)! : [pieces.flatMap((p) => [...p.text].map((c): Char => ({ c, quoted: p.quoted, split: false })))];
+  const fields = split ? splitPieces(w, pieces) : [pieces.flatMap((p) => [...p.text].map((c): Char => ({ c, quoted: p.quoted, split: false })))];
+  if (!fields) return undefined;
   return { text: pieces.map((p) => p.text).join(''), fields: fields.map((f) => ({ text: f.map((c) => c.c).join(''), glob: isGlob(patternOfChars(f)) })) };
 }
 
@@ -1067,7 +1065,8 @@ function splitPieces(w: WordMeaning, pieces: Piece[]): Char[][] | undefined {
     return kept ? [chars] : [];
   }
   const ifs = w.ifs.kind === 'default' ? DEFAULT_IFS : w.ifs.kind === 'value' ? w.ifs.value : undefined;
-  if (ifs === undefined && chars.some((c) => c.split)) return undefined;
+  // (An IFS of other than ASCII is split on by characters or by bytes, by the locale: src/semantics/chars.ts.)
+  if ((ifs === undefined || !sameInEveryLocale(ifs)) && chars.some((c) => c.split)) return undefined;
   const sep = ifs ?? '';
   const isSep = (c: Char): boolean => c.split && sep.includes(c.c);
   const white = (c: Char): boolean => isSep(c) && DEFAULT_IFS.includes(c.c);

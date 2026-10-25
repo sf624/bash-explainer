@@ -14,6 +14,7 @@ import { descendants } from '../src/syntax/tree';
 import { partAt } from '../src/ui/hoverParts';
 import { partHover, plainPartHover, valueHtml, wholeLine } from '../src/ui/hoverView';
 import { toPlainMarkdown } from '../src/ui/render';
+import { probeSkipReason, probeWords } from './support/probe';
 
 const parser = createUnbashParser();
 
@@ -59,9 +60,42 @@ describe('the value of an expansion where it runs (expansionValue)', () => {
     assert.strictEqual(valueOf('x=; echo "${x:?empty}"', '${x:?empty}'), undefined);
     // A redirection of a command with no name: bash assigns first (`f2`); the model's state is the one before.
     assert.strictEqual(valueOf('a=1; a=2 >f$a', '$a'), undefined);
-    assert.deepStrictEqual(valueOf('a=1; a=2 echo >f$a', '$a'), { text: '1', words: ['1'], glob: false });
+    assert.deepStrictEqual(valueOf('a=1; a=2 echo >f$a', '$a'), { text: '1', glob: false, joined: true });
     // Code that never runs.
     assert.strictEqual(valueOf('x=1; if false; then echo "$x"; fi', '$x'), undefined);
+  });
+
+  it('gives none where bash fails on a substring, and the cuts bash makes elsewhere', () => {
+    // "substring expression < 0": the end falls before the offset (probes/values.json has them all).
+    for (const e of ['${x:2:-5}', '${x:6:-1}', '${x: -3:-4}', '${x:0:-7}']) assert.strictEqual(valueOf(`x=abcdef; echo "${e}"`, e), undefined, e);
+    const cut = (e: string) => valueOf(`x=abcdef; echo "${e}"`, e)?.text;
+    assert.deepStrictEqual(['${x:2:-4}', '${x: -10:2}', '${x:7}', '${x:7:-1}', '${x:1:}', '${x::2}', '${x: -2:-1}'].map(cut), ['', '', '', '', '', 'ab', 'e']);
+    // `${x:}` is a bad substitution; an offset that is not a constant is not followed.
+    assert.strictEqual(cut('${x:}'), undefined);
+    assert.strictEqual(valueOf('x=abcdef; n=2; echo "${x:n}"', '${x:n}'), undefined);
+  });
+
+  it('gives none for text other than ASCII, which bash reads by the locale, beyond copying a value', () => {
+    // `${#e}` is 1 in a UTF-8 locale and 2 in C; `${a^^}` is `É` or `é`; a pattern, a replacement or an IFS of such text.
+    for (const [src, e] of [['e=é; echo "${#e}"', '${#e}'], ['e=é; echo "${e:1}"', '${e:1}'], ['a=é; echo "${a^^}"', '${a^^}'], ['e=éa; echo "${e#?}"', '${e#?}'],
+      ['x=abc; echo "${x/b/é}"', '${x/b/é}'], ['x=abc; p=é; echo "${x%$p}"', '${x%$p}'], ['IFS=é; x=abc; echo $x', '$x'], ['u=; echo ${u:-$\'\\u00e9\'}', "${u:-$'\\u00e9'}"]])
+      assert.strictEqual(valueOf(src, e), undefined, src);
+    // `$'\u00e9'` is `é` in a UTF-8 locale, `\u00E9` in C.
+    assert.strictEqual(valueOf("x=$'\\u00e9'; echo \"$x\"", '$x'), undefined);
+    // The value as it is: the same bytes in every locale, also split with an ASCII IFS.
+    assert.deepStrictEqual(valueOf('a=é; echo "$a"', '$a'), { text: 'é', glob: false });
+    assert.deepStrictEqual(valueOf("a='é ü'; echo ${a}", '${a}'), { text: 'é ü', words: ['é', 'ü'], glob: false });
+    assert.deepStrictEqual(valueOf('IFS=é; a=x; echo "$a"', '$a'), { text: 'x', glob: false });
+  });
+
+  it('says only the value of a part of a word with other parts: its fields join the text around it', () => {
+    assert.deepStrictEqual(valueOf("x='a b'; echo $x/c", '$x'), { text: 'a b', glob: false, joined: true });
+    assert.deepStrictEqual(valueOf('e=; echo a$e', '$e'), { text: '', glob: false, joined: true });
+    assert.deepStrictEqual(valueOf("p='*'; echo $p.txt", '$p'), { text: '*', glob: true, joined: true });
+    // A quoted part is not split: nothing joins.
+    assert.deepStrictEqual(valueOf("a='x y'; b=1; echo \"$a\"$b", '$a'), { text: 'x y', glob: false });
+    assert.deepStrictEqual(valueOf("a='x y'; b=1; echo \"$a\"$b", '$b'), { text: '1', glob: false, joined: true });
+    assert.deepStrictEqual(valueOf("a='x y'; echo \"$a\"", '$a'), { text: 'x y', glob: false });
   });
 });
 
@@ -96,6 +130,15 @@ describe('what the outputs say of a value (valueSaid)', () => {
     assert.match(valueSaid('ja', { text: many.join(' '), words: many, glob: false }).split!.said, /15 語になる（最初の 12 語）:$/);
     // A backtick in a value: the code span has a longer fence.
     assert.strictEqual(valueSaid('en', { text: 'a`b', glob: false }).text, 'Value here, from the script: ``a`b``');
+  });
+
+  it('says of a part of a word with other parts only its value, and that its wildcards make a pattern of the word', () => {
+    assert.strictEqual(valueSaid('en', { text: 'a b', glob: false, joined: true }).text, 'Value here, from the script: `a b`');
+    assert.strictEqual(valueSaid('en', { text: '', glob: false, joined: true }).text, 'Value here, from the script: an empty string');
+    assert.strictEqual(valueSaid('en', { text: '*', glob: true, joined: true }).tail,
+      '. Unquoted, the word its wildcards end up in, with the text around it, is a pattern: bash matches it against file names when the line runs (not done here)');
+    assert.strictEqual(valueSaid('ja', { text: '*', glob: true, joined: true }).tail,
+      '。クォートしていないので、ワイルドカードを含む単語が前後の文字列とつながったままパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）');
   });
 });
 
@@ -303,8 +346,49 @@ describe('a long value is cut on characters, and invisible characters are shown'
   });
 
   it('is the same through the analyzer', () => {
-    const doc = openDocument("msg=$'a\\u202eb'; echo \"$msg\"", 'shell', (t) => parser.parse(t));
+    // (The character itself in the script: `$'\u202e'` gives it only in a UTF-8 locale, and so has no value.)
+    const doc = openDocument("msg='a\u202eb'; echo \"$msg\"", 'shell', (t) => parser.parse(t));
     const ex = explainDocumentLine(new Analyzer('en'), doc, 0, 'en', {}, {});
     assert.match(toPlainMarkdown(ex, doc.lines[0], 'a.sh:1'), /Value here, from the script: `a<U\+202E>b`/);
   });
+});
+
+// A part of a word with other parts (`$x/c`): the value line says its value, and a glob note, but not its words. Each
+// case runs in bash (the probes' bash, test/support/probe.ts): with an empty IFS and `set -f`, the word is one field,
+// the parts' values side by side, which must be the model's values with the text between them; where the line says
+// the word is a pattern, `shopt -s nullglob` and `set -f` give other fields.
+(probeSkipReason ? describe.skip : describe)(`the value of a part of a word with other parts, against bash${probeSkipReason ? ` (${probeSkipReason})` : ''}`, () => {
+  const cases: [string, string][] = [
+    ["x='a b'", '$x/c'], ['e=', 'a$e'], ['e=', '${e}y'], ["x='a b'", '$x$x'], ["a='x y'; b='1 2'", '"$a"$b'], ["a='x y'; b='1 2'", '$a"$b"'],
+    ["s='  '", 'a${s}b'], ['x=report.tar.gz', '${x%.*}.bak'], ['x=abcdef', 'x${x:1:2}${x: -1}'], ["IFS=:; x='a:b'", '$x:c'], ['e=', '$e$e'],
+    ["p='*'", '$p.txt'], ["p='* x'", '$p.txt'], ["p='a.t?'", 'sub/../$p*'], ["p='[a'", '${p}]'], ["p='*'", '"$p"$p'],
+  ];
+  for (const [script, word] of cases) {
+    it(`${script}; echo ${word}`, async () => {
+      const src = `${script}; __probe a ${word}`;
+      const tree = parser.parse(src);
+      const state = shellState(tree, 'bash');
+      const parts = descendants(tree.root, ['simple_expansion', 'expansion']);
+      const values = parts.map((p) => expansionValue(p, state));
+      assert.ok(values.every((v) => v), `every part has a value: ${JSON.stringify(values)}`);
+      // The text between the parts (no quotes but `"` in these words), with each part's value in its place.
+      let whole = '';
+      let at = src.indexOf(word);
+      parts.forEach((p, i) => {
+        whole += src.slice(at, p.startIndex).replace(/"/g, '') + values[i]!.text;
+        at = p.endIndex;
+      });
+      whole += src.slice(at).replace(/"/g, '');
+      const run = async (before: string) => (await probeWords(`${script}; ${before}@PROBE:a@ ${word}`)).fields.a;
+      const one = await run('IFS=; set -f; ');
+      assert.deepStrictEqual(one, [whole === '' && !word.includes('"') ? [] : [whole]]);
+      parts.forEach((p, i) => {
+        const v = values[i]!;
+        const quoted = p.parent!.type === 'string';
+        // An unquoted part says no words of its own.
+        assert.deepStrictEqual([v.joined, v.words], quoted ? [undefined, undefined] : [true, undefined], p.text);
+      });
+      if (values.some((v) => v!.glob)) assert.notDeepStrictEqual(await run('shopt -s nullglob; '), await run('set -f; '));
+    });
+  }
 });

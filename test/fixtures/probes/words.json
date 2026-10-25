@@ -2100,5 +2100,22 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=abcdef; ( @PROBE:a@ ${x:2:-5} ); ( @PROBE:b@ x${x: -3:-4}y ); @PROBE:c@ ${x:2:-4} ${x: -10:2} ${x:7} ${x:7:-1} ${x:1:} ${x::2} x${x:3:-3}y ${x: -2:-1}",
+    "facts": {
+      "a": [],
+      "b": [],
+      "c": [
+        [
+          "ab",
+          "xy",
+          "e"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: -5: substring expression < 0"
+    }
   }
 ]
