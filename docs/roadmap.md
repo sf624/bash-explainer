@@ -37,7 +37,7 @@ Keep it current:
 
 ## Done lately
 
-- Reading view: each reader's band has a rule in its colour on the left and hairlines at its ends; a click on a row on another line (a `case` clause in a `while`) only folds it, without moving the editor to that line (#PR; [design/tree-view/README.md](design/tree-view/README.md)).
+- Reading view: each reader's band has a rule in its colour on the left and hairlines at its ends; a click on a row on another line (a `case` clause in a `while`) only folds it, without moving the editor to that line (#342; [design/tree-view/README.md](design/tree-view/README.md)).
 - Syntax colouring on by default, switched per language, with what a name runs, options by the specs and readonly variables from the models; fast range requests (#321; [design/highlighting.md](design/highlighting.md)).
 - Panel colours from the editor theme: the setting `bashExplainer.panel.colors` (`classic`, `theme`, `themeLike`) ([design/theme-colours.md](design/theme-colours.md)).
 - The hover explains the part at the position; a card on no part; the whole line per command through `Ctrl+K Ctrl+E` or the hover's link; no tree glyphs; the Language Server's hover starts with the part (#317; [design/hover.md](design/hover.md)). The part shows only its own notes, and counts the others in a link to the whole line ([design/hover.md](design/hover.md), "Notes").
