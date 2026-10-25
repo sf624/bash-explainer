@@ -18,7 +18,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A new setting, `bashExplainer.panel.colors`, colours the panel like your editor theme: `theme` takes the theme's colours, and `themeLike` adds colours of its own where the theme gives two kinds of part one colour. The default, `classic`, keeps the panel's own colours.
 - A sequence of braces names its parts: in `{1..10..3}`, the start `1`, the end `10` and the increment `3`, with what bash makes of them (a negative increment, an end the steps miss, padding with zeros), in Meaning and in Reading.
 - In a string another shell runs, `$0` and `$1`… say they are that shell's, and the word each starts as: in `sudo sh -c '… "$1" …' sh "$msg"`, `$1` starts as `"$msg"`.
-- Meaning shows the value an expansion has where the script sets it for sure: in `msg="hello world"; echo $msg`, `$msg` is `hello world`, split into the words `hello` and `world`. It is the value the script's own assignments give, so nothing is shown where the value may come from the environment, `read`, `source`, a loop or a function called with other values.
+- Meaning shows the value an expansion has where the script sets it for sure, also in sh and dash scripts: in `msg="hello world"; echo $msg`, `$msg` is `hello world`, split into the words `hello` and `world`. Worked examples use that value: `${#msg}` shows "When `msg="hello world"`" → 11.
 - On the web page, pasting or dropping a whole script sets the file kind from its content (a shebang, `FROM`, `jobs:`, a Makefile rule, a bash code block…), and a toast says so with Undo. A few lines pasted into your own script leave the kind as it is.
 - The web page opens files and saves them: **Open file…** in the menu, `Ctrl+O` or a drop on the editor opens one, with the kind from its name; `Ctrl+S` (`⌘S` on a Mac) or **Save** saves the script. The file stays in your browser.
 - On the web page, hovering a word in the editor shows its card, as in VS Code; `Ctrl+K Ctrl+I` shows the card at the cursor. Turn the cards off with `bashExplainer.hover.enabled`.
@@ -60,9 +60,9 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `|| true` and `|| :` count as a success only when they run the builtin or the program: after `true() { return 1; }`, `x=$(false || true)` stops the script under `set -e`, as the note on `$( )` now says, and it is no idiom. `|| command true` and `|| /bin/true` count too.
 - In a `for (( ))` header, `i = 0` no longer says "no spaces around `=`" (arithmetic allows them), and a name such as `x` in `!x` is a variable, as in `(( ))`. Before, it was a "Word".
 - Words follow the shell options and the `IFS` in effect: `**` matches one level until `shopt -s globstar`, and `@(…)` in `${x%…}` is plain text without `extglob`, not a syntax error. The `read` example splits on the `IFS` set before it. Before, `**` was always explained as any depth, and `IFS=,; read a b` was split on spaces.
-- Explanations match bash in more words: a quoted `"$q"` in a `case` pattern is literal text, `x=~` is the home directory, `$'\n'` shows a newline, `${x:?"msg"}` prints `msg`, and `${s@K}` of a plain value quotes it.
+- Explanations match bash in more words: a quoted `"$q"` in a `case` pattern is literal text, `x=~` is the home directory, `$'\n'` shows a newline, `${x:?"msg"}` prints `msg`, `${s@K}` of a plain value quotes it, and in `a=2 export a` the assignment stays after the command.
 - Tests and redirections are explained as bash runs them: `[ 08 -eq 8 ]` is true, `3<<EOF` and `3<<< x` go to descriptor 3, `cat <<A <<B` reads only `B`, `> {a,}` writes `a`, and `/dev/tcp/host/port` connects to the network. In sh and dash it is a path, with a portability warning.
-- Examples follow bash: `[[ $x =~ ^"a."c$ ]]` matches only `a.c`, and the input read from `<(cmd)` is the output of `cmd`, through a pipe.
+- Examples follow bash: `[[ $x =~ ^"a."c$ ]]` matches only `a.c`, the input read from `<(cmd)` is the output of `cmd`, through a pipe, and `"${s//[/}"` removes each `[` (a `/` inside brackets ends the pattern; a quoted `!` in brackets is the character).
 - The panel's Reading view no longer fails on `cat <<` while the delimiter is not written yet.
 - A line with a redirection that has no file yet, followed by another one (`echo > >g`, while typing), is explained; before, its explanation failed.
 - A click on a row of the panel that is on another line, such as a `case` clause inside a `while` loop, only folds the row. Before, it moved the cursor to that line, and the panel explained that line instead.
@@ -77,7 +77,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - With `sed -n`, `q` quits without printing the line and `n` reads the next one without printing this one, as GNU sed does; so does a script that starts with `#n`. Before, both said they print the line.
 - The `git log --graph` example draws the graph: `* ` before each commit, and `| ` before its other lines.
 - The Marketplace, Open VSX and npm pages show the images and links of the version they describe. Before, they showed the newest images from `main`, and one was missing.
-- The hover no longer repeats a problem that VS Code shows above it: the part leaves out that note. The notes that stay line up with the hover's text. Before, the same pitfall came twice, the second time indented.
+- The hover no longer repeats a problem that VS Code shows above it: the part leaves out that note. The notes that stay, and the notes of examples, line up with the hover's text. Before, the same pitfall came twice, the second time indented.
 
 ## 0.8.0
 
