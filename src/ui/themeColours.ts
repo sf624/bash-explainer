@@ -1,10 +1,13 @@
 // Reads the active colour theme's token colours for the panel (`bashExplainer.panel.colors`). VS Code has no API for
 // them: the theme is found among the extensions' `contributes.themes` by `workbench.colorTheme` (or the preferred
 // theme of the kind in use, when the theme follows the system), read with the files it includes, and the user's
-// customizations are applied over it (src/ui/themeTokens.ts). Only the reading is here; the rest is pure.
+// customizations are applied over it (src/ui/themeTokens.ts). An extension sees only the extensions of its own
+// extension host: in a remote window the themes are on the local side, so VS Code's default themes are taken from our
+// copy (src/ui/builtinThemes.ts), and the others cannot be read. Only the reading is here; the rest is pure.
 import * as vscode from 'vscode';
 import { parseJsonc } from '../settings';
-import { customize, emptyTheme, joinPath, loadTheme, roleColours, semanticOn, type Role } from './themeTokens';
+import { builtinTheme } from './builtinThemes';
+import { customize, emptyTheme, joinPath, loadTheme, roleColours, semanticOn, type Role, type ThemeTokens } from './themeTokens';
 
 /** The name of the theme in use (`workbench.colorTheme`), or the preferred one when the theme follows the system. */
 export function activeThemeName(): string | undefined {
@@ -35,8 +38,8 @@ async function labelOf(ext: vscode.Extension<unknown>, label: string): Promise<s
 }
 
 /** The extension that contributes the theme `name` (its id, else its label) and the theme's file in it. */
-async function findTheme(name: string): Promise<{ ext: vscode.Extension<unknown>; file: string } | undefined> {
-  for (const ext of vscode.extensions.all) {
+async function findTheme(name: string, extensions: readonly vscode.Extension<unknown>[]): Promise<{ ext: vscode.Extension<unknown>; file: string } | undefined> {
+  for (const ext of extensions) {
     const themes = (ext.packageJSON as { contributes?: { themes?: ThemeContribution[] } }).contributes?.themes ?? [];
     for (const t of themes) {
       if ((t.id ?? (await labelOf(ext, t.label ?? ''))) === name) return { ext, file: joinPath('package.json', t.path) };
@@ -52,17 +55,31 @@ function ourScopes(ctx: vscode.ExtensionContext): Record<string, string[]> {
   return Object.assign({}, ...entries.filter((e) => !e.language).map((e) => e.scopes), ...entries.filter((e) => e.language === 'shellscript').map((e) => e.scopes));
 }
 
-/** The colour of each role in the active theme as the editor draws it, or undefined when the theme cannot be read. */
-export async function themeRoleColours(ctx: vscode.ExtensionContext, ourHighlight: boolean): Promise<Record<Role, string | undefined> | undefined> {
-  const name = activeThemeName();
-  const found = name ? await findTheme(name) : undefined;
-  if (!name || !found) return undefined;
-  const theme = emptyTheme();
-  try {
-    await loadTheme(found.file, async (f) => new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(found.ext.extensionUri, f))), theme);
-  } catch {
-    return undefined;
+/** The token colours of the theme `name`: from the extension that contributes it here, else from our copy of VS Code's default ones. */
+async function readTheme(name: string, extensions: readonly vscode.Extension<unknown>[]): Promise<ThemeTokens | undefined> {
+  const found = await findTheme(name, extensions);
+  if (found) {
+    const theme = emptyTheme();
+    try {
+      await loadTheme(found.file, async (f) => new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(found.ext.extensionUri, f))), theme);
+      return theme;
+    } catch {
+      // (A theme file that cannot be read or parsed: our copy, if the theme is a default one.)
+    }
   }
+  return builtinTheme(name);
+}
+
+/**
+ * The colour of each role in the active theme as the editor draws it. A string, the theme's name, when the theme
+ * cannot be read (only another extension host has it, or its files cannot be read); undefined when no theme is named.
+ * `extensions`: those of this extension host (the integration test leaves them out, as a remote window does the themes).
+ */
+export async function themeRoleColours(ctx: vscode.ExtensionContext, ourHighlight: boolean, extensions: readonly vscode.Extension<unknown>[] = vscode.extensions.all): Promise<Record<Role, string | undefined> | string | undefined> {
+  const name = activeThemeName();
+  if (!name) return undefined;
+  const theme = await readTheme(name, extensions);
+  if (!theme) return name;
   const editor = vscode.workspace.getConfiguration('editor', { languageId: 'shellscript' });
   customize(theme, { tokens: editor.get('tokenColorCustomizations'), semantic: editor.get('semanticTokenColorCustomizations') }, name);
   return roleColours(theme, semanticOn(theme, editor.get('semanticHighlighting.enabled'), ourHighlight), ourScopes(ctx));

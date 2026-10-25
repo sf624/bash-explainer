@@ -64,6 +64,14 @@ describe('licenses', function () {
     for (const page of ['index.html', 'compare.html']) assert.ok(read('web', page).includes('<script src="icons.js"></script>\n<script src="app.js"></script>'), page);
   });
 
+  it('names the VS Code whose default themes src/ui/vscodeThemes.json copies, and only those', () => {
+    const copy = JSON.parse(fs.readFileSync(path.join(root, 'src', 'ui', 'vscodeThemes.json'), 'utf8')) as { vscode: string; files: Record<string, unknown> };
+    const c = COPIED['microsoft/vscode'];
+    assert.strictEqual(c.version, copy.vscode);
+    assert.ok(c.licenseText.includes(`of VS Code ${copy.vscode}:`));
+    assert.deepStrictEqual(Object.keys(copy.files).filter((f) => !f.startsWith('theme-defaults/themes/')), []);
+  });
+
   it('is itself under the MIT License', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
     assert.strictEqual(pkg.license, 'MIT');

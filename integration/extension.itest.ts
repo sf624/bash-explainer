@@ -6,6 +6,8 @@ import * as dns from 'dns';
 import * as net from 'net';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { themeRoleColours } from '../src/ui/themeColours';
+import copied from '../src/ui/vscodeThemes.json';
 import { state } from './watch';
 
 const root = path.resolve(__dirname, '../..');
@@ -133,6 +135,29 @@ describe('Bash Explainer in VS Code', function () {
       await sleep(150);
     }
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  });
+
+  it("reads the theme's colours for the panel, also where the theme extensions are in another extension host (a remote window)", async () => {
+    const ctx = { extension: extension() } as unknown as vscode.ExtensionContext;
+    const wb = vscode.workspace.getConfiguration('workbench');
+    try {
+      // The default theme, and other default ones (named alike in VS Code 1.85): here from their extension, and with no extension from our copy.
+      for (const theme of [undefined, 'Visual Studio Light', 'Default High Contrast']) {
+        await wb.update('colorTheme', theme, vscode.ConfigurationTarget.Global);
+        const here = await themeRoleColours(ctx, true);
+        const remote = await themeRoleColours(ctx, true, []);
+        assert.ok(here && typeof here === 'object' && here.string, `${theme}: ${JSON.stringify(here)}`);
+        assert.ok(remote && typeof remote === 'object' && remote.string, `${theme} (remote): ${JSON.stringify(remote)}`);
+        // (Another VS Code may have changed its themes since the copy.)
+        if (vscode.version === copied.vscode) assert.deepStrictEqual(remote, here, theme);
+      }
+      // Another theme VS Code ships: here only. Its name otherwise, for the panel's notice.
+      await wb.update('colorTheme', 'Monokai', vscode.ConfigurationTarget.Global);
+      assert.strictEqual(typeof (await themeRoleColours(ctx, true)), 'object');
+      assert.strictEqual(await themeRoleColours(ctx, true, []), 'Monokai');
+    } finally {
+      await wb.update('colorTheme', undefined, vscode.ConfigurationTarget.Global);
+    }
   });
 
   it('colours shell code with semantic tokens by default, and stops where highlight.enabled is off, also for one language', async () => {

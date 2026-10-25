@@ -10,7 +10,9 @@ import { DISTINCT, FREQUENT, GROUP, paletteStats, panelPalette, paletteVars, rea
 import {
   customize, emptyTheme, joinPath, loadTheme, parsePlist, ROLES, roleColours, compareSpecificity, selectorMatch, semanticForeground, tokenFallback, semanticOn, textMateForeground, type Role, type ThemeTokens,
 } from '../src/ui/themeTokens';
-import { availableThemes, baseOf, readTheme } from './support/themes';
+import { builtinTheme, unreadableThemeNotice, type BuiltinThemes } from '../src/ui/builtinThemes';
+import { COPIED_EXTENSIONS, OUT, render } from '../scripts/vscode-themes';
+import { availableThemes, baseOf, readTheme, themesIn, vscodeExtensions } from './support/themes';
 
 const hex = (s: string) => parseColour(s)!;
 const scopes = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).contributes.semanticTokenScopes[0].scopes as Record<string, string[]>;
@@ -396,6 +398,65 @@ describe('the palettes that follow the theme', () => {
       if (!dm) return this.skip();
       const roles = roleColours(await readTheme(dm.file), false, scopes);
       assert.deepStrictEqual(Object.fromEntries(ROLES.map((r) => [r, roles[r]?.toLowerCase()])), Object.fromEntries(ROLES.map((r) => [r, darkModern[r]?.toLowerCase()])));
+    });
+  });
+});
+
+// In a remote window (WSL, SSH, a container) an extension does not see the theme extensions, which are on the local
+// side: the panel reads VS Code's default themes from the copy in src/ui/vscodeThemes.json (scripts/vscode-themes.ts).
+describe("VS Code's default themes, for a remote window", () => {
+  const copy = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'ui', 'vscodeThemes.json'), 'utf8')) as BuiltinThemes;
+
+  it('reads the default themes from the copy, under their present and former names, and nothing else', async () => {
+    for (const name of ['Dark 2026', 'Light 2026', 'Dark Modern', 'Light Modern', 'Default High Contrast', 'Default High Contrast Light', 'Visual Studio Light']) {
+      const theme = await builtinTheme(name);
+      assert.ok(theme && theme.rules.length > 0 && roleColours(theme, false, scopes).string, name);
+    }
+    // Dark 2026 includes Dark Modern, which includes Dark+…: the rules of the files it includes come first.
+    const dark2026 = (await builtinTheme('Dark 2026'))!;
+    const darkModern = (await builtinTheme('Dark Modern'))!;
+    assert.deepStrictEqual(dark2026.rules.slice(0, darkModern.rules.length), darkModern.rules);
+    assert.deepStrictEqual(await builtinTheme('Default Dark Modern'), darkModern);
+    assert.deepStrictEqual(await builtinTheme('VS Code Light'), await builtinTheme('Light 2026'));
+    for (const name of ['Monokai', 'Solarized Light', 'Monokai Pro', 'toString', '__proto__', 'constructor']) assert.strictEqual(await builtinTheme(name), undefined, name);
+    // Only the token colours are kept, and every theme's files are there.
+    const included = Object.entries(copy.files).flatMap(([f, x]) => (x.include ? [joinPath(f, x.include)] : []));
+    assert.deepStrictEqual(Object.keys(copy.files).filter((f) => !Object.values(copy.themes).includes(f) && !included.includes(f)), []);
+    for (const [name, file] of Object.entries(copy.themes)) assert.ok(copy.files[file], name);
+    for (const f of Object.values(copy.files)) {
+      assert.deepStrictEqual(Object.keys(f).filter((k) => !['include', 'tokenColors', 'semanticTokenColors', 'semanticHighlighting'].includes(k)), []);
+      for (const r of f.tokenColors ?? []) assert.deepStrictEqual(Object.keys(r.settings ?? {}), ['foreground']);
+    }
+  });
+
+  it('says why the panel keeps its own colours when it cannot read the theme', () => {
+    assert.match(unreadableThemeNotice('en', 'Monokai Pro'), /theme "Monokai Pro" cannot be read\. In a remote window/);
+    assert.match(unreadableThemeNotice('ja', 'Monokai Pro'), /カラーテーマ「Monokai Pro」を読めません。リモート/);
+  });
+
+  describe('compared with the themes of the VS Code it was copied from', () => {
+    const ext = vscodeExtensions(copy.vscode);
+    const defaults = () => COPIED_EXTENSIONS.flatMap((e) => themesIn(ext!).filter((t) => t.file.startsWith(path.join(ext!, e) + path.sep)));
+    before(function () {
+      if (!ext) this.skip();
+    });
+
+    it('is what scripts/vscode-themes.ts makes from that VS Code', () => {
+      assert.strictEqual(fs.readFileSync(OUT, 'utf8'), render(ext!), 'run npx tsx scripts/vscode-themes.ts');
+    });
+
+    it('gives every role the colour the theme\'s own files give it, with and without semantic highlighting', async () => {
+      const failures: string[] = [];
+      for (const t of defaults()) {
+        const own = await readTheme(t.file);
+        const copied = (await builtinTheme(t.name))!;
+        if (copied.semanticHighlighting !== own.semanticHighlighting) failures.push(`${t.name}: semanticHighlighting`);
+        for (const semantic of [false, true]) {
+          if (JSON.stringify(roleColours(copied, semantic, scopes)) !== JSON.stringify(roleColours(own, semantic, scopes))) failures.push(`${t.name}${semantic ? ' (semantic)' : ''}`);
+        }
+      }
+      assert.deepStrictEqual(failures, []);
+      assert.deepStrictEqual(Object.keys(copy.themes).sort(), defaults().map((t) => t.name).sort());
     });
   });
 });

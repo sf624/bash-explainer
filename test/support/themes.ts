@@ -8,8 +8,8 @@ import { parseJsonc } from '../../src/settings';
 import type { PanelBase } from '../../src/ui/themePalette';
 import { emptyTheme, loadTheme, ROLES, type Role, type ThemeTokens } from '../../src/ui/themeTokens';
 
-/** The extensions folder of the VS Code build, if there is one. */
-export function vscodeExtensions(): string | undefined {
+/** The extensions folder of the VS Code build (the newest, or that of VS Code `version`), if there is one. */
+export function vscodeExtensions(version?: string): string | undefined {
   const env = process.env.BASH_EXPLAINER_VSCODE_BUILD;
   const builds: string[] = [];
   if (env) builds.push(env);
@@ -20,7 +20,7 @@ export function vscodeExtensions(): string | undefined {
   }
   for (const b of builds) {
     const ext = [path.join(b, 'resources', 'app', 'extensions'), path.join(b, 'VSCode-linux-x64', 'resources', 'app', 'extensions')].find((e) => fs.existsSync(e));
-    if (ext) return ext;
+    if (ext && (!version || JSON.parse(fs.readFileSync(path.join(ext, '..', 'package.json'), 'utf8')).version === version)) return ext;
   }
   return undefined;
 }
