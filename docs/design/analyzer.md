@@ -269,9 +269,15 @@ test/explain-imports.test.ts reads the imports of src/explain/*.ts (as test/synt
 
 ### 3.3 No command names in src/explain
 
-The same test looks for comparisons with a command name of the dictionary (`commands`, `builtins`): `=== 'sed'`, `.includes('declare')`. A comparison on `.type` is left out (node types such as `command` are also builtin names). The known ones are listed with a reason and may only shrink. After step 1 the list should be empty.
+The same test looks for comparisons with a command name of the dictionary (`commands`, `builtins`): `=== 'sed'`, `'declare' !== x`, `case 'awk':`, `.has('sed')`, `.includes('declare')`. The known ones are listed with a reason and may only shrink. After step 1 the list should be empty.
 
-Since step 3, comparisons on five fields of the models are checked against the values of their closed unions, not against command names: `.type` (any node type), `.kind` (a status rule's `command` and `test`; a value is added only when code that needs it moves, as a reviewed edit), `.stops` (errexit's `script`), `.example` (a spec's kind of worked example, `CommandSpec.example`; only `read`, and more values are added as reviewed edits), `.run` (how a command slot runs its command, `CommandSlot.run`; only `exec`), `.role` (a word's role, `ArgRole.role`; only `command`), `.why` (why a definition does not apply, `Missed.why`; only `command` and `builtin`) and `.shell` (the members of the `Shell` type). Step 7 added `.run`, `.role` and `.why`, and `alias` and `file` on `.kind` (a `NameResolution`). The values compared are values of those unions, some spelled like commands (`command`, `test`, `bash`), not command names. Only a property access counts: a bare `kind` or `shell` is checked like any other name. A command name on these fields that is not in the list is found. The allowed values are listed per field in the guard, and a test keeps the `.shell` list equal to the `Shell` type.
+The rule is by type, not by field name. The test builds one TypeScript program over src/explain/*.ts and what they import, with the repo's tsconfig (about a second; cached for the test), and asks the checker for the type of the other side of each comparison. A comparison is accepted only when that type is a closed union of string literals that contains the literal: the literal is then a value of a model (`'alias'` of a name's resolution, `'sed'` of `EmbeddedLang`), not a command name read from a script. A `string`, an `any`, an `unknown`, a type parameter or a union with `string` in it is open, and the comparison is found; so is a closed union that lacks the literal. `null` and `undefined` in the union are ignored.
+
+- **Case labels.** `switch (x) { case 'sed': … }` is checked like `x === 'sed'`, against the type of `x`: the labels on `EmbeddedLang` pass, a `case 'grep':` on a `string` is found.
+- **Membership tests.** `set.has('sed')` and `list.includes('sed')` are checked against the parameter type of the method the call resolves to, which is the element type of the container: a `Set<'sed' | 'awk'>` passes, a `Set<string>` or an array of `string` is found.
+- **The one exception.** `SyntaxNode.type`, the node type of the syntax tree, is an open `string` whose values (`command`, `test`, `declare`) are spelled like command names. A property access that the checker resolves to the `type` of `SyntaxNode` is not checked; another `type` field is.
+
+A field name decides nothing: an open `why: string` compared with `'builtin'` is found, a closed `kind: 'alias' | 'file'` compared with `'alias'` passes. To make a comparison pass, make its type a closed union (the model owns the values), not a name in the guard. Not covered: a list of names tested with a variable (`['sed', 'awk'].includes(x)`), lookups in a record, and regular expressions or `startsWith` over a name. The finder's own tests run on snippets that are files of src/explain/ in memory only, in the same program.
 
 ## 4. Steps
 
@@ -346,7 +352,7 @@ src/explain/reads.ts, where.ts and status.ts (2.3). These are the leaves that mo
 Where the plan did not fit main:
 
 - It moved about 200 lines, not 400: the readers are shorter than estimated. `unwrapScalar` (yq's `-r`) stays with the examples (step 6), and `statusNotes` with the line notes (step 8), as 2.3 places them.
-- The names guard (3.3) allows comparisons on `.kind`, `.stops` and `.shell`, besides `.type`, with the values of their closed unions only: the moved status and where code compares them with `command`, `test`, `script` and `bash`, which are values of the models, not names. A bare identifier, or another command name on these fields, is still found.
+- The names guard (3.3) allows comparisons on `.kind`, `.stops` and `.shell`, besides `.type`, with the values of their closed unions only: the moved status and where code compares them with `command`, `test`, `script` and `bash`, which are values of the models, not names. A bare identifier, or another command name on these fields, is still found. (Replaced by the type-aware rule of 3.3: the checker's type decides, not the field name.)
 - `Explainer.note` is two overloads, a fact about one node or a text about one or more, so that a fact with several nodes (which `spanOf` cannot place) does not type-check.
 
 ### Step 4: words and expansions (M)
@@ -400,7 +406,7 @@ src/explain/examples.ts (about 500 lines; split off examples-jq.ts if it is near
 
 Where the plan did not fit main:
 
-- The names guard (3.3) took values of closed unions for command names: `st.kind === 'file'` (a `Stream` is a file or stdin), `mode === 'file'` (a `GlobMode` is `file` or `value`), `u.from === 'file'` (a `Stdin`) and `kind === 'read'` (the spec's example kind, `CommandSpec.example`, whose values are command names). As in steps 4 and 5, the same tests name the other case (`st.kind !== 'stdin'`, `mode !== 'value'`), or the field only that variant has (`'name' in u`); the example kind is compared on its property, `spec.example === 'read'`, which the guard allows for `read` only (`.example` joined the closed fields in the review of #333). The guard still does not look at `case` labels (see 5.3).
+- The names guard (3.3) took values of closed unions for command names: `st.kind === 'file'` (a `Stream` is a file or stdin), `mode === 'file'` (a `GlobMode` is `file` or `value`), `u.from === 'file'` (a `Stdin`) and `kind === 'read'` (the spec's example kind, `CommandSpec.example`, whose values are command names). As in steps 4 and 5, the same tests name the other case (`st.kind !== 'stdin'`, `mode !== 'value'`), or the field only that variant has (`'name' in u`); the example kind is compared on its property, `spec.example === 'read'`, which the guard allows for `read` only (`.example` joined the closed fields in the review of #333). (The type-aware rule of 3.3 now checks the `case` labels too; see 5.3.)
 - `wantsExample` and `titledExamples` filter and title the line's examples in `explainLine`. They are in the examples' group (1.2), so they moved here, not to the orchestration.
 
 **Embedded languages, as done (#334).** The snapshots are byte-identical before and after, on the inputs and option sets of the examples above (main, #333 and this PR give the same bytes). src/analyzer.ts went from 2,239 to 2,106 lines (2,719 to 2,106 over step 6); src/explain/embedded.ts is 147 lines. The move was done by the same script. What moved where:
@@ -493,7 +499,7 @@ About 18 PRs; about 3,900 lines move. Steps 1.1–1.4 run in parallel with each 
 ### 5.3 Not planned here
 
 - **The inline texts.** 393 `s(ja, en)` texts move with their code. Many state facts of the models and could be catalog entries (src/messages.ts). That is a change of each note's identity (`LineExplanation.facts`), so it is a plan of its own, after this one.
-- **`case` labels in the names guard.** The guard of 3.3 does not look at `case` labels, only at comparisons. The embedded explainers (in the class until step 6b, then src/explain/embedded.ts) have `case 'sed'`, `'awk'`, `'jq'` and `'date'` on `EmbeddedLang`, inherited from main, and the guard cannot see them. A later step should teach it `switch` on closed fields (the labels checked like the values of `===`, with `EmbeddedLang` among the closed fields), and then list or remove those labels.
+- **`case` labels in the names guard.** Done: the guard of 3.3 is type-aware and checks `case` labels, `.has` and `.includes` like comparisons. The labels `'sed'`, `'awk'`, `'jq'` and `'date'` of src/explain/embedded.ts are on `EmbeddedLang`, a closed union, and pass.
 - **The other long files** (3.1). They are listed and may only shrink.
 
 ## Traceability
