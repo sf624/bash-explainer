@@ -20,6 +20,7 @@ import { Settings } from '../src/settings';
 import { nameHints, type NameHint } from '../src/ui/nameHints';
 import { CLASSIC_COLOURS, kindColour } from './editor-colors';
 import { drawIcon, iconMask } from './icons';
+import { hoverExtension, setHoverKeys } from './hover';
 import { nameHintsExtension, PlacedHint, setHints } from './name-hints';
 import { withCode } from './problem-list';
 import { Kind } from './samples';
@@ -216,6 +217,8 @@ export interface EditorHost {
   problems(shown: DocumentIssue[], codes: string[]): void;
   /** The text or the selection changed. */
   changed(u: ViewUpdate): void;
+  /** PROTOTYPE (web/hover.ts): the hover's link "Settings". */
+  openSettings(): void;
 }
 
 export interface EditorInit {
@@ -279,7 +282,7 @@ export class Editor {
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
-          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter(), nameHintsExtension(() => TEXT[host.lang()].hintClick)] : []),
+          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter(), nameHintsExtension(() => TEXT[host.lang()].hintClick), hoverExtension(host)] : []),
           EditorView.updateListener.of((u) => {
             host.changed(u);
             if (u.docChanged) {
@@ -326,6 +329,8 @@ export class Editor {
     this.view.dispatch({ effects: relint.of(null) });
     forceLinting(this.view);
     this.refreshHints();
+    // (The hover's keys are bound only while the hover is on.)
+    if (this.withHints) setHoverKeys(this.view, this.host.settings()['hover.enabled']);
   }
 
   private scheduleHints(ms: number): void {

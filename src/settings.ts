@@ -102,8 +102,8 @@ export const SETTINGS: readonly SettingSpec[] = [
     elsewhere: 'The web page and the command-line tool have no hover.',
   },
   {
-    key: 'hover.enabled', type: 'boolean', default: true, group: 'display', title: ['ホバー', 'Hover'], surfaces: ['vscode', 'lsp'],
-    elsewhere: 'The web page and the command-line tool have no hover.',
+    key: 'hover.enabled', type: 'boolean', default: true, group: 'display', title: ['ホバー', 'Hover'], surfaces: ['vscode', 'lsp', 'web'],
+    elsewhere: 'The command-line tool has no hover.',
   },
   {
     key: 'hover.followCursor', type: 'boolean', default: false, group: 'display', title: ['カーソルに追従', 'Follow the cursor'], surfaces: ['vscode'],

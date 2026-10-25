@@ -154,7 +154,7 @@ describe('the settings module', () => {
       // a copy of VS Code's settings.json
       "bashExplainer.shell": "sh",
       "notes": { "idioms": false },
-      "bashExplainer.hover.enabled": false,
+      "bashExplainer.hover.followCursor": true,
       "bashExplainer.nope": 1,
       "editor.fontSize": 14,
       "examples.placement": "nowhere",
@@ -165,7 +165,7 @@ describe('the settings module', () => {
         { key: 'nope', reason: 'unknown' },
         { key: 'editor.fontSize', reason: 'unknown' },
         { key: 'examples.placement', reason: 'invalid', detail: 'expected one of first, last, bottom' },
-        { key: 'hover.enabled', reason: 'elsewhere' },
+        { key: 'hover.followCursor', reason: 'elsewhere' },
       ],
     });
     assert.deepStrictEqual(importSettings('{"hover.enabled": false}', 'lsp').settings, { 'hover.enabled': false });
@@ -177,7 +177,7 @@ describe('the settings module', () => {
 
   it('exports the settings that differ from the defaults, as a settings file, and imports them back', () => {
     assert.strictEqual(exportSettings(defaultSettings(), 'web'), '{}\n');
-    const s = mergeSettings({ shell: 'dash', 'examples.disabled': ['sed'], 'hover.enabled': false, customCommands: { deploy: { summary: 'Deploy' } } });
+    const s = mergeSettings({ shell: 'dash', 'examples.disabled': ['sed'], 'hover.followCursor': true, customCommands: { deploy: { summary: 'Deploy' } } });
     const text = exportSettings(s, 'web');
     assert.strictEqual(text, `{
   "bashExplainer.shell": "dash",
