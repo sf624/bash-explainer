@@ -320,14 +320,15 @@ export function lineSegments(text: string, line: number, items: Token[]): { text
 
 /**
  * Examples as headings with one code block per section, so every line keeps its own row. Without `indent`, as blocks of
- * their own, each after a rule (`rule`); with it, inside a list item.
+ * their own, each after a rule (`rule`); with it, inside a list item. An example's note is a quote, or a paragraph when
+ * not `quote` (VS Code's hover gives a quote no bar, only the browser's margins).
  */
-export function examplesMarkdown(examples: Example[], indent?: string, rule = true): string[] {
+export function examplesMarkdown(examples: Example[], indent?: string, rule = true, quote = true): string[] {
   const out: string[] = [];
   for (const e of examples) {
     if (indent === undefined) out.push('', ...(rule ? ['---', ''] : []), `#### ${e.title}`);
     else out.push(`${indent}##### ${e.title}`);
-    if (e.note) out.push(...(indent === undefined ? ['', `> ${e.note}`] : [`${indent}> ${e.note}`]));
+    if (e.note) out.push(...(indent === undefined ? ['', `${quote ? '> ' : ''}${e.note}`] : [`${indent}> ${e.note}`]));
     for (const sec of e.sections) {
       const lines = sec.lines.length ? sec.lines : [sec.empty ?? ''];
       // The fence must be longer than any run of backticks inside.

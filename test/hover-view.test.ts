@@ -481,7 +481,9 @@ describe('the hover Markdown', () => {
     // No rule before an example inside a block, and a blank line before each section, so that a note does not take in the next line.
     assert.strictEqual(first.split('\n').filter((l) => l === '---').length, 3);
     const ctl = wholeLine(input(open('printf \'a\\0b\' | xargs -0 echo'), 0));
-    assert.match(ctl, /\n> Control characters [^\n]*\n\n\*\*/);
+    // (An example's note is a paragraph in the hover, not a quote: VS Code's hover gives a quote no bar, only 40 px of margin.)
+    assert.match(ctl, /\n\nControl characters [^\n]*\n\n\*\*/);
+    assert.ok(!ctl.includes('> Control characters'));
   });
 
   it('colours labels by kind, with our own colours where the theme kind has them', () => {

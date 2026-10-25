@@ -271,7 +271,7 @@ export function partHover(x: HoverInput, chain: Token[]): string {
   const below = (tok: Token): Token[] => [tok, ...shown(tok).flatMap(below)];
   const mine = below(part).flatMap((c) => examplesOn(placed, c) ?? []);
   const examples = mine.length ? mine : chain.slice(0, -1).reverse().map((c) => examplesOn(placed, c)).find(Boolean);
-  if (examples?.length) out.push(...examplesMarkdown(examples));
+  if (examples?.length) out.push(...examplesMarkdown(examples, undefined, true, false));
   if (others.length) out.push('', lineLink(x, t.moreNotes(others.length)));
   out.push(...footer(x, { where: true, hidden: own.hidden }));
   return out.join('\n');
@@ -322,12 +322,12 @@ export function wholeLine(x: HoverInput): string {
     const r = rows(shown(tok), 2, isBlock);
     hidden += r.hidden;
     const examples = placed && blockExamples(placed.items, tok, r.rows.map((row) => row.tok));
-    if (examples && x.placement === 'first') out.push(...examplesMarkdown(examples, undefined, false), '');
+    if (examples && x.placement === 'first') out.push(...examplesMarkdown(examples, undefined, false, false), '');
     out.push(...table(r.rows, x));
-    if (examples && x.placement === 'last') out.push(...examplesMarkdown(examples, undefined, false), '');
+    if (examples && x.placement === 'last') out.push(...examplesMarkdown(examples, undefined, false, false), '');
   }
   if (ex.notes.length) out.push('---', '', ...notes(ex, lang, theme));
-  out.push(...examplesMarkdown(placed ? placed.examples : ex.examples));
+  out.push(...examplesMarkdown(placed ? placed.examples : ex.examples, undefined, true, false));
   out.push(...footer(x, { hidden }));
   return out.join('\n');
 }
