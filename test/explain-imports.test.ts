@@ -13,8 +13,13 @@ import { commandAliases } from '../src/dict/aliases';
 const base = path.join(__dirname, '..');
 const dir = path.join(base, 'src', 'explain');
 
-/** Known comparisons with a command name (and lookups of one), each with a reason; it may only shrink (empty after step 1). */
-const KNOWN_NAMES: { file: string; text: string; reason: string }[] = [];
+const COLON = 'the operator `:` of `${x:offset:length}` (the text of an expansion operator, an open string), not the `:` builtin; it matches only because the name list holds `:`';
+/** Known comparisons with a command name (and lookups of one), each with a reason; it may only shrink (empty in src/explain/ after step 1; the three left read src/expansion-tokens.ts, which the guard reads since step 9's review). */
+const KNOWN_NAMES: { file: string; text: string; reason: string }[] = [
+  { file: 'src/expansion-tokens.ts', text: "parsed.op === ':'", reason: COLON },
+  { file: 'src/expansion-tokens.ts', text: "p.op === ':'", reason: COLON },
+  { file: 'src/expansion-tokens.ts', text: "t === ':'", reason: `${COLON} (two places)` },
+];
 
 /** The relative modules a source imports, re-exports, requires or imports dynamically. */
 function relativeImports(code: string): string[] {
@@ -43,7 +48,28 @@ function findCycles(graph: Map<string, string[]>): string[][] {
   return cycles;
 }
 
-const files = (): string[] => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /\.ts$/.test(f)).map((f) => path.join(dir, f)) : []);
+/**
+ * Modules outside src/explain/ that its modules import and that import its modules back (the dispatch calls them, and
+ * they read words.ts, reads.ts and the context): a cycle can pass through them, so they are in the graph and the
+ * names guard reads them as well (analyzer.md, 2.5).
+ */
+const OUTSIDE = ['expansion-tokens', 'substitution-tokens'].map((n) => path.join(base, 'src', `${n}.ts`));
+
+const explainFiles = (): string[] => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /\.ts$/.test(f)).map((f) => path.join(dir, f)) : []);
+const files = (): string[] => [...explainFiles(), ...OUTSIDE];
+
+/** The import graph of some sources (file to code): an edge only to a target that `inGraph` accepts (a path without its extension). */
+function importGraph(sources: ReadonlyMap<string, string>, inGraph: (target: string) => boolean): Map<string, string[]> {
+  const graph = new Map<string, string[]>();
+  for (const [f, code] of sources) {
+    const targets = relativeImports(code).map((r) => path.resolve(path.dirname(f), r).replace(/\.(js|ts)$/, ''));
+    graph.set(f.replace(/\.ts$/, ''), targets.filter(inGraph));
+  }
+  return graph;
+}
+/** Whether a target (a path without its extension) is a module of the directory `d` or one of the files `outside`. */
+const graphMember = (d: string, outside: readonly string[]) => (t: string): boolean => path.dirname(t) === d || outside.some((o) => o.replace(/\.ts$/, '') === t);
+const cycleNames = (graph: Map<string, string[]>): string[] => findCycles(graph).map((c) => c.map((p) => path.basename(p)).join(' -> '));
 
 /** Source of files that do not exist on disk (the snippets of the finder's own tests), by absolute path. */
 const virtualFiles = new Map<string, string>();
@@ -347,17 +373,14 @@ describe('src/explain guards', function () {
   this.timeout(120000);
 
   it('has no import cycle and does not import src/analyzer.ts', () => {
-    const graph = new Map<string, string[]>();
     const analyzer = path.join(base, 'src', 'analyzer');
-    const importsAnalyzer: string[] = [];
-    for (const f of files()) {
-      const targets = relativeImports(fs.readFileSync(f, 'utf8')).map((r) => path.resolve(path.dirname(f), r).replace(/\.(js|ts)$/, ''));
-      if (targets.includes(analyzer)) importsAnalyzer.push(path.relative(base, f));
-      // Only the modules of src/explain/ can close a cycle among themselves.
-      graph.set(f.replace(/\.ts$/, ''), targets.filter((t) => path.dirname(t) === dir));
-    }
+    const sources = new Map(files().map((f) => [f, fs.readFileSync(f, 'utf8')]));
+    const importsAnalyzer = [...sources]
+      .filter(([f, code]) => relativeImports(code).some((r) => path.resolve(path.dirname(f), r).replace(/\.(js|ts)$/, '') === analyzer))
+      .map(([f]) => path.relative(base, f));
     assert.deepStrictEqual(importsAnalyzer, []);
-    assert.deepStrictEqual(findCycles(graph).map((c) => c.map((p) => path.basename(p)).join(' -> ')), []);
+    // Only the modules of src/explain/ and the two outside it can close a cycle among themselves.
+    assert.deepStrictEqual(cycleNames(importGraph(sources, graphMember(dir, OUTSIDE))), []);
   });
 
   it('compares nothing with the name of a dictionary command, nor looks one up by name, except the known ones', () => {
@@ -399,6 +422,21 @@ describe('the finders of the src/explain guards', function () {
       relativeImports(`import { a } from './a';\nexport * from "../b";\nimport './c';\nconst d = require('./d');\ntype T = import('./e').T;\nimport x from 'node:fs';`),
       ['./a', '../b', './c', './d', './e'],
     );
+  });
+
+  it('finds a cycle that passes through a module outside src/explain/', () => {
+    // (as a.ts -> ../tokens -> ./explain/b -> ./a: the modules outside the directory are nodes of the graph)
+    const sources = new Map([
+      ['/x/explain/a.ts', `import { t } from '../tokens';`],
+      ['/x/explain/b.ts', `import { a } from './a';`],
+      ['/x/tokens.ts', `import { b } from './explain/b';`],
+      ['/x/other.ts', `import { a } from './explain/a';`],
+    ]);
+    assert.deepStrictEqual(cycleNames(importGraph(sources, graphMember('/x/explain', ['/x/tokens.ts']))), ['a -> tokens -> b -> a']);
+    // Without the outside module in the graph, the same sources pass: the reason the guard includes it.
+    assert.deepStrictEqual(cycleNames(importGraph(sources, graphMember('/x/explain', []))), []);
+    // A module outside that is not named is left out, though it imports into the directory.
+    assert.deepStrictEqual(cycleNames(importGraph(new Map([...sources, ['/x/explain/c.ts', `import { o } from '../other';`]]), graphMember('/x/explain', ['/x/tokens.ts']))), ['a -> tokens -> b -> a']);
   });
 
   it('finds cycles and leaves a DAG alone', () => {

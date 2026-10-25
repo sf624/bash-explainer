@@ -323,3 +323,37 @@ export function elifClause(cx: Explainer, n: SyntaxNode): Token {
 export function elseClause(cx: Explainer, n: SyntaxNode): Token {
   return block(cx, n, 'keyword', cx.t(keywords.else));
 }
+
+/** The label of a construct around the line (the context `flatten` records), or undefined for a node that is not one. */
+export function contextLabel(cx: Explainer, n: SyntaxNode): string | undefined {
+  switch (n.type) {
+    case 'for_statement':
+    case 'select_statement':
+    case 'c_style_for_statement':
+      return cx.s('for ループ', 'for loop');
+    case 'while_statement':
+      return n.children[0].type === 'until' ? cx.s('until ループ', 'until loop') : cx.s('while ループ', 'while loop');
+    case 'if_statement':
+      return cx.s('if 文', 'if statement');
+    case 'elif_clause':
+      return 'elif';
+    case 'else_clause':
+      return 'else';
+    case 'case_statement':
+      return cx.s('case 文', 'case statement');
+    case 'case_item': {
+      const pats = fields(n, 'value').map((c) => c.text);
+      return cx.s(`case 分岐 \`${pats.join('|')})\``, `case branch \`${pats.join('|')})\``);
+    }
+    case 'function_definition':
+      return cx.s(`関数 \`${field(n, 'name')?.text}\``, `function \`${field(n, 'name')?.text}\``);
+    case 'arithmetic_command':
+      return cx.s('(( )) 算術評価', '(( )) arithmetic');
+    case 'compound_statement':
+      return cx.s('{ } グループ', '{ } group');
+    case 'subshell':
+      return cx.s('( ) サブシェル', '( ) subshell');
+    default:
+      return undefined;
+  }
+}

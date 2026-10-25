@@ -1,19 +1,21 @@
 // The walk over a line's nodes (docs/design/analyzer.md, step 9): the explanation of each node by its type, which
 // calls the module of the part of bash it is (src/explain/words.ts, commands.ts, compound.ts…), and the parts of a
 // block on the line explained, with the construct around them (`flatten`). A case calls one function, or combines
-// two (`braceWord(cx, n) ?? word(cx, n)`); only a node the parser could not read, or a type no module knows, is
-// explained here. The context calls the walk back (`cx.explain`, `cx.sub`): src/analyzer.ts gives it these two.
+// two (`braceWord(cx, n) ?? word(cx, n)`); the dispatch makes a text only for a node the parser could not read (an
+// `error` node) and for a type no module knows. `flatten` decides which parts of a `case` branch it skips (`|`, `)`,
+// `(` after a patterns line) and calls `casePattern` for the patterns. The context calls the walk back (`cx.explain`,
+// `cx.sub`): src/analyzer.ts gives it these two.
 import type { Token } from '../analyzer-types';
 import { explainExpansion } from '../expansion-tokens';
 import { nodeSections } from '../refs';
 import { explainCommandSubstitution, explainProcessSubstitution } from '../substitution-tokens';
-import { assignmentsOnly, field, fields, type SyntaxNode } from '../syntax/tree';
+import { assignmentsOnly, fields, type SyntaxNode } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import { assignment, assignments } from './assignments';
 import { command, timeStatement } from './commands';
 import {
-  anon, caseItem, caseStatement, comment, coprocStatement, cStyleFor, doGroup, elifClause, elseClause, forStatement, functionDef, group,
-  ifStatement, list, missingKeyword, negated, pipeline, subshell, whileStatement,
+  anon, caseItem, caseStatement, comment, contextLabel, coprocStatement, cStyleFor, doGroup, elifClause, elseClause, forStatement, functionDef,
+  group, ifStatement, list, missingKeyword, negated, pipeline, subshell, whileStatement,
 } from './compound';
 import type { Explainer } from './context';
 import { ansiCString } from './embedded';
@@ -116,37 +118,4 @@ export function flatten(cx: Explainer, n: SyntaxNode): Token[] {
     }
   }
   return out;
-}
-
-function contextLabel(cx: Explainer, n: SyntaxNode): string | undefined {
-  switch (n.type) {
-    case 'for_statement':
-    case 'select_statement':
-    case 'c_style_for_statement':
-      return cx.s('for ループ', 'for loop');
-    case 'while_statement':
-      return n.children[0].type === 'until' ? cx.s('until ループ', 'until loop') : cx.s('while ループ', 'while loop');
-    case 'if_statement':
-      return cx.s('if 文', 'if statement');
-    case 'elif_clause':
-      return 'elif';
-    case 'else_clause':
-      return 'else';
-    case 'case_statement':
-      return cx.s('case 文', 'case statement');
-    case 'case_item': {
-      const pats = fields(n, 'value').map((c) => c.text);
-      return cx.s(`case 分岐 \`${pats.join('|')})\``, `case branch \`${pats.join('|')})\``);
-    }
-    case 'function_definition':
-      return cx.s(`関数 \`${field(n, 'name')?.text}\``, `function \`${field(n, 'name')?.text}\``);
-    case 'arithmetic_command':
-      return cx.s('(( )) 算術評価', '(( )) arithmetic');
-    case 'compound_statement':
-      return cx.s('{ } グループ', '{ } group');
-    case 'subshell':
-      return cx.s('( ) サブシェル', '( ) subshell');
-    default:
-      return undefined;
-  }
 }
