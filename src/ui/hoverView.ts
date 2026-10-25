@@ -7,6 +7,7 @@ import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { joinParts, labelParts } from '../label';
 import { manualLabel, SECTIONS } from '../manual';
+import { pictureLabel, pictureText, splitPictures } from '../ctlchars';
 import { isCommand, partNotes, ProblemAt, sameSpan, shown, valueOf } from './hoverParts';
 import { type NoteLevel, SPACE_MARK, type SpaceEnds, splitNote, type ValueSaid } from '../messages';
 import { levelColour, ThemeKind } from './palette';
@@ -59,7 +60,7 @@ function closingTicks(s: string, from: number, ticks: number): number {
  */
 export function md(text: string): string {
   const flat = text.replace(/\s*\n\s*/g, ' ').trimStart();
-  const lit = (s: string) => s.replace(/[&<>*_`\\[\]~|#$]/g, (c) => (c === '<' ? '&lt;' : c === '>' ? '&gt;' : `&#${c.charCodeAt(0)};`));
+  const lit = (s: string) => splitPictures(s).map((part, i) => (i % 2 ? pictureMark(part) : part.replace(/[&<>*_`\\[\]~|#$]/g, (c) => (c === '<' ? '&lt;' : c === '>' ? '&gt;' : `&#${c.charCodeAt(0)};`)))).join('');
   let out = '';
   let plain = '';
   for (let i = 0; i < flat.length;) {
@@ -74,7 +75,8 @@ export function md(text: string): string {
       plain += flat.slice(i, j);
       i = j;
     } else {
-      out += lit(plain) + flat.slice(i, end + (j - i));
+      // (A span with a control picture is HTML, where the picture can be drawn as a mark.)
+      out += lit(plain) + (splitPictures(flat.slice(j, end)).length > 1 ? codeHtml(flat.slice(j, end)) : flat.slice(i, end + (j - i)));
       plain = '';
       i = end + (j - i);
     }
@@ -86,13 +88,33 @@ export function md(text: string): string {
 /** Text for an HTML block, where Markdown is not read: what Markdown would take for markup is escaped. */
 const escapeHtml = (text: string) => text.replace(/[&<>"'*_\\[\]~|#$]/g, (c) => `&#${c.charCodeAt(0)};`);
 
+/**
+ * A control picture in a hover: its name (`LF`) small, on the badge background, as a mark of a space is. A glyph for it is a
+ * box where no font has the block of control pictures (src/ctlchars.ts, `pictureLabel`).
+ */
+const pictureMark = (picture: string) => `<span style="color:var(--vscode-badge-foreground);background-color:var(--vscode-badge-background);border-radius:2px;"><small>&nbsp;${pictureLabel(picture)}&nbsp;</small></span>`;
+
+/** Text for an HTML block, its control pictures drawn as marks. */
+const textInner = (text: string) => splitPictures(text).map((part, i) => (i % 2 ? pictureMark(part) : escapeHtml(part))).join('');
+
+/** The text of a `<code>` element: its spaces kept, its control pictures drawn as marks. */
+const codeInner = (text: string) => splitPictures(text).map((part, i) => (i % 2 ? pictureMark(part) : escapeHtml(part).replace(/ /g, '&nbsp;'))).join('');
+
 /** Text as a `<code>` element, its spaces kept. */
-const codeHtml = (text: string) => `<code>${escapeHtml(text).replace(/ /g, '&nbsp;')}</code>`;
+const codeHtml = (text: string) => `<code>${codeInner(text)}</code>`;
+
+/**
+ * `text` (Markdown) with its control pictures drawn as marks: a code span that holds one becomes a `<code>` element (a code
+ * span shows its text as it is), the others are replaced where they stand.
+ */
+export function pictureSpans(text: string): string {
+  return text.replace(/(`+)([^`]*?)\1|[␀-␟␡⇥]/gu, (all, ticks?: string, code?: string) => (ticks === undefined ? pictureMark(all) : splitPictures(code!).length > 1 ? codeHtml(code!) : all));
+}
 
 /** Text with `code` spans, as HTML (for an HTML block, where Markdown is not read). */
 export function prose(text: string): string {
   // split with two groups: [text, fence, code, text, fence, code, …]
-  return text.split(/(`+)([^`]*?)\1/).map((part, i) => (i % 3 === 0 ? escapeHtml(part) : i % 3 === 2 ? codeHtml(part) : '')).join('');
+  return text.split(/(`+)([^`]*?)\1/).map((part, i) => (i % 3 === 0 ? textInner(part) : i % 3 === 2 ? codeHtml(part) : '')).join('');
 }
 
 /**
@@ -104,7 +126,7 @@ const spaceMark = (label: string) => `<span style="background-color:var(--vscode
 /** The shown text of a value, or of a word of it, as `<code>`: the marks at its ends (`SpaceEnds`) are drawn as `spaceMark`. */
 function valueCode(text: string, [lead, trail]: SpaceEnds, mark: string): string {
   const middle = [...text].slice(lead, [...text].length - trail).join('');
-  return `<code>${mark.repeat(lead)}${escapeHtml(middle).replace(/ /g, '&nbsp;')}${mark.repeat(trail)}</code>`;
+  return `<code>${mark.repeat(lead)}${codeInner(middle)}${mark.repeat(trail)}</code>`;
 }
 
 /**
@@ -286,7 +308,7 @@ export function partHover(x: HoverInput, chain: Token[]): string {
   const below = (tok: Token): Token[] => [tok, ...shown(tok).flatMap(below)];
   const mine = below(part).flatMap((c) => examplesOn(placed, c) ?? []);
   const examples = mine.length ? mine : chain.slice(0, -1).reverse().map((c) => examplesOn(placed, c)).find(Boolean);
-  if (examples?.length) out.push(...examplesMarkdown(examples, undefined, true, false));
+  if (examples?.length) out.push(...examplesMarkdown(examples, undefined, true, false, pictureSpans));
   if (others.length) out.push('', lineLink(x, t.moreNotes(others.length)));
   out.push(...footer(x, { where: true, hidden: own.hidden }));
   return out.join('\n');
@@ -337,12 +359,12 @@ export function wholeLine(x: HoverInput): string {
     const r = rows(shown(tok), 2, isBlock);
     hidden += r.hidden;
     const examples = placed && blockExamples(placed.items, tok, r.rows.map((row) => row.tok));
-    if (examples && x.placement === 'first') out.push(...examplesMarkdown(examples, undefined, false, false), '');
+    if (examples && x.placement === 'first') out.push(...examplesMarkdown(examples, undefined, false, false, pictureSpans), '');
     out.push(...table(r.rows, x));
-    if (examples && x.placement === 'last') out.push(...examplesMarkdown(examples, undefined, false, false), '');
+    if (examples && x.placement === 'last') out.push(...examplesMarkdown(examples, undefined, false, false, pictureSpans), '');
   }
   if (ex.notes.length) out.push('---', '', ...notes(ex, lang, theme));
-  out.push(...examplesMarkdown(placed ? placed.examples : ex.examples, undefined, true, false));
+  out.push(...examplesMarkdown(placed ? placed.examples : ex.examples, undefined, true, false, pictureSpans));
   out.push(...footer(x, { hidden }));
   return out.join('\n');
 }
@@ -366,10 +388,10 @@ export function plainPartHover(ex: LineExplanation, chain: Token[], lang: Lang, 
   if (chain.length > 1) out.push(chain.slice(0, -1).map(flat).join(' › ') + ' ›', '');
   const s = part.name?.said;
   out.push(`**${flat(part)}**${s ? ` · _${s.kind}_${s.by ? `, ${s.by}` : ''}` : ''}`, '');
-  out.push(`${part.explanation}${part.refs?.length ? ` (${refsMarkdown(lang, part.refs)})` : ''}`, '');
+  out.push(`${pictureText(part.explanation)}${part.refs?.length ? ` (${refsMarkdown(lang, part.refs)})` : ''}`, '');
   if (s?.also) out.push(`_${s.also}_`, '');
   const v = valueOf(part);
-  if (v) out.push(v.said.text, '');
+  if (v) out.push(pictureText(v.said.text), '');
   const kids = shown(part);
   if (kids.length) out.push(...kids.map((k) => `- ${flat(k)} — ${explained(k)}${valueMarkdown(valueOf(k), '  ')}`), '');
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));

@@ -44,6 +44,8 @@
   let shownLine = '';
   /** UI strings from the extension. */
   let labels = /** @type {any} */ ({});
+  /** The control pictures (`\u240a`) with the name drawn for each (`LF`) and what it stands for, from the extension (`controlMarks`, src/ctlchars.ts). */
+  let controlMarks = /** @type {Record<string, [string, string]>} */ ({});
   /** The sections of the manual the rows and notes cite: { '3.7.2': { label, title, url } }. */
   let manual = /** @type {Record<string, { label: string, title: string, url: string }>} */ ({});
   /** Editable examples by id: where to show the result of a rerun. */
@@ -176,6 +178,7 @@
   function render(msg) {
     const ex = msg.explanation;
     labels = msg.labels ?? labels;
+    controlMarks = msg.controlMarks ?? controlMarks;
     if (msg.lang) document.documentElement.lang = msg.lang;
     manual = msg.manual ?? {};
     nameButton('settings', msg.settingsLabel);
@@ -319,7 +322,7 @@
       label.className = 'example-label';
       label.append(...inline(sec.label));
       const pre = document.createElement('pre');
-      if (sec.lines.length) pre.textContent = sec.lines.join('\n');
+      if (sec.lines.length) pre.append(...withMarks(sec.lines.join('\n')));
       else {
         pre.textContent = sec.empty ?? '';
         pre.classList.add('example-empty');
@@ -470,7 +473,7 @@
       const [before, after] = ends || [0, 0];
       const chars = [...text];
       for (let i = 0; i < before; i++) c.append(space());
-      c.append(chars.slice(before, chars.length - after).join(''));
+      c.append(...withMarks(chars.slice(before, chars.length - after).join('')));
       for (let i = 0; i < after; i++) c.append(space());
       return c;
     };
@@ -1421,7 +1424,7 @@
     const also = nameAlso(n.name);
     if (also) row.append(also);
     const spoken = badge.length ? `, ${nameSpoken(n.name)}` : '';
-    li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}${spoken}. ${readerOf(n)}. ${about.replace(/`/g, '')}${also ? `. ${also.textContent}` : ''}`);
+    li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}${spoken}. ${readerOf(n)}. ${spokenMarks(about.replace(/`/g, ''))}${also ? `. ${also.textContent}` : ''}`);
     li.append(row);
     readingNodes.set(li, n);
     row.addEventListener('mouseenter', () => showNode(n));
@@ -1670,14 +1673,37 @@
 
   /** Render `code` spans in explanation text without using innerHTML. */
   function inline(text) {
-    return text.split(/(`[^`]+`)/).filter(Boolean).map((part) => {
+    return text.split(/(`[^`]+`)/).filter(Boolean).flatMap((part) => {
       if (part.startsWith('`') && part.endsWith('`') && part.length > 1) {
         const c = document.createElement('code');
-        c.textContent = part.slice(1, -1);
-        return c;
+        c.append(...withMarks(part.slice(1, -1)));
+        return [c];
       }
-      return document.createTextNode(part);
+      return withMarks(part).map((n) => (typeof n === 'string' ? document.createTextNode(n) : n));
     });
   }
+
+  /**
+   * A text with each control picture (\u240a for a newline, \u21e5 for a tab) drawn by CSS (`.ev-ctl`): a small box with the
+   * picture's name in it (`LF`), and what it stands for as its label. The pictures are boxes where no font has their block.
+   */
+  function withMarks(/** @type {string} */ text) {
+    return text.split(/([\u2400-\u241f\u2421\u21e5])/u).map((part, i) => {
+      if (!(i % 2)) return part;
+      const [name, what] = controlMarks[part] ?? [part, part];
+      const m = document.createElement('span');
+      m.className = 'ev-ctl';
+      m.setAttribute('role', 'img');
+      m.setAttribute('aria-label', what);
+      m.textContent = name;
+      return m;
+    });
+  }
+
+  /** A text with each control picture as the words it stands for, for a screen reader. */
+  function spokenMarks(/** @type {string} */ text) {
+    return text.replace(/[\u2400-\u241f\u2421\u21e5]/gu, (p) => (controlMarks[p] ? ` ${controlMarks[p][1]} ` : p));
+  }
+
   $('settings').addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
 })();

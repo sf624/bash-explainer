@@ -354,6 +354,20 @@ describe('the web page: hover cards in the editor', function () {
     await ctx.close();
   });
 
+  it('draws a control character in a card as its name small on the badge background, never as a picture that a font may lack', async () => {
+    const ctx = await context();
+    const page = await ctx.newPage();
+    await open(page, "s=$'a\\nb'\necho \"$s\"; printf '\\033[1m%s' OK");
+    await hoverAt(page, 1, '$s');
+    await cardText(page);
+    const marks = await page.evaluate(`[...document.querySelectorAll('.cm-tooltip .cm-bx-hover code > span')].map((m) => ({
+      text: m.textContent, bg: getComputedStyle(m).backgroundColor, small: !!m.querySelector('small'), inCode: m.parentElement.textContent }))`) as { text: string; bg: string; small: boolean; inCode: string }[];
+    assert.ok(marks.length >= 2 && marks.every((m) => m.text.trim() === 'LF' && m.small && m.bg !== 'rgba(0, 0, 0, 0)'), JSON.stringify(marks));
+    assert.ok(marks.some((m) => m.inCode === 'a\u00a0LF\u00a0b'), JSON.stringify(marks));
+    assert.ok(!/[\u2400-\u241f\u2421\u21e5]/.test(await cardText(page)));
+    await ctx.close();
+  });
+
   it('shows the words of a hostile script in a card as text: no image, no link but the manual\'s', async () => {
     const ctx = await context();
     const page = await ctx.newPage();

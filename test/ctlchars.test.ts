@@ -2,15 +2,16 @@ import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
-import { controlAbbr, controlSuffix, pictureCode, pictureNote } from '../src/ctlchars';
+import { controlAbbr, controlMarks, controlSuffix, pictureCode, pictureLabel, pictureNote, pictureText, splitPictures } from '../src/ctlchars';
 import { explainEscapes, explainPrintf } from '../src/embedded/format';
 import { explainTrSet } from '../src/embedded/textutils';
 import { explainGitFormat } from '../src/embedded/gitformat';
 import { toJsRegex } from '../src/examples/regex';
 import { explainSed } from '../src/embedded/sed';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { wholeLine } from '../src/ui/hoverView';
-import { examplesMarkdown } from '../src/ui/render';
+import { md, pictureSpans, plainPartHover, prose, wholeLine } from '../src/ui/hoverView';
+import { examplesMarkdown, toPlainMarkdown } from '../src/ui/render';
+import { panelUpdate } from '../src/ui/panelView';
 import type { BashParser as Parser } from '../src/syntax/tree';
 
 void path;
@@ -204,6 +205,66 @@ describe('notes on the control pictures in examples', () => {
     assert.ok(nested.includes('  > Control characters are invisible'));
     const html = require('fs').readFileSync(path.join(__dirname, '../media/panel.js'), 'utf8') as string;
     assert.ok(html.includes('ex.note'));
+  });
+});
+
+/** The Unicode control pictures and the arrow for a tab: boxes on a machine whose fonts lack their blocks. */
+const PICTURE = /[\u2400-\u241f\u2421\u21e5]/;
+
+describe('the control pictures in the outputs', () => {
+  const MARK = (label: string) => `<span style="color:var(--vscode-badge-foreground);background-color:var(--vscode-badge-background);border-radius:2px;"><small>&nbsp;${label}&nbsp;</small></span>`;
+  const explain = (src: string, lang: 'en' | 'ja' = 'en') => new Analyzer(lang).explainLine(parser.parse(src), 0);
+  const card = (src: string) => wholeLine({ ex: explain(src), lang: 'en', theme: 'dark', lineText: src, placement: 'first', panelLink: 'command:x', lineLink: 'command:l', keys: 'K' });
+
+  it('names a picture by the abbreviation of its code (TAB for the tab), and writes it as <LF> in text', () => {
+    assert.deepStrictEqual(['␊', '⇥', '␛', '␡', '␍', '␁', '␀'].map(pictureLabel), ['LF', 'TAB', 'ESC', 'DEL', 'CR', 'SOH', 'NUL']);
+    assert.strictEqual(pictureLabel('a'), undefined);
+    assert.strictEqual(pictureText('a⇥b␊c ␣∅'), 'a<TAB>b<LF>c ␣∅');
+    assert.strictEqual(pictureText('plain'), 'plain');
+    assert.deepStrictEqual(splitPictures('a⇥b␊'), ['a', '⇥', 'b', '␊', '']);
+    assert.deepStrictEqual(splitPictures('plain'), ['plain']);
+  });
+
+  it('gives the panel every picture with its name and what it stands for, in both languages', () => {
+    const en = controlMarks(pickEn);
+    assert.strictEqual(Object.keys(en).length, 33);
+    assert.deepStrictEqual([en['␊'], en['⇥'], en['␛'], en['␡'], en['␁']], [['LF', 'line feed, newline'], ['TAB', 'tab'], ['ESC', 'escape'], ['DEL', 'delete'], ['SOH', 'SOH']]);
+    assert.deepStrictEqual(controlMarks(pickJa)['␊'], ['LF', '改行']);
+    for (const p of Object.keys(en)) assert.strictEqual(pictureLabel(p), en[p][0], p);
+    const msg = panelUpdate({ lang: 'en', explanation: explain('echo'), file: 'a.sh', line: 0, lineText: 'echo', choice: {}, placement: 'bottom', animations: false } as unknown as Parameters<typeof panelUpdate>[0]);
+    assert.deepStrictEqual(msg.controlMarks['␊'], ['LF', 'line feed, newline']);
+  });
+
+  it('writes them as <LF> in Markdown, the Language Server hover and the examples, and no picture is left', () => {
+    const src = "s=$'a\\nb'; printf '\\033[1m%s\\t' OK; echo \"$s\"";
+    const ex = explain(src);
+    const md = toPlainMarkdown(ex, src, 'a.sh:1');
+    assert.ok(md.includes('<ESC>[1mOK<TAB>'), md);
+    assert.ok(md.includes('`<ESC>` is ESC (escape)') && md.includes('`<TAB>` is HT (tab)'), md);
+    assert.ok(md.includes('`a<LF>b`'), md);
+    assert.ok(!PICTURE.test(md), md);
+    const part = ex.items.flatMap((t) => [t, ...t.children]).find((t) => t.explanation.includes('a␊b'))!;
+    const lsp = plainPartHover(ex, [part], 'en', 'W');
+    assert.ok(lsp.includes('`a<LF>b`') && !PICTURE.test(lsp), lsp);
+  });
+
+  it('draws them in the hover as the name small on the badge background, in code, in a note and in the value', () => {
+    const html = card("s=$'a\\nb'; printf '\\033[1m%s' OK; echo \"$s\"");
+    // The explanation of the string, its note, the value line, and the note of the example.
+    assert.ok(html.includes(`the string <code>a${MARK('LF')}b</code> (control characters are shown as symbols: <code>${MARK('LF')}</code> is LF (line feed, newline))`), html);
+    assert.ok(html.includes(`Value here, from the script: <code>a${MARK('LF')}b</code>`), html);
+    assert.ok(html.includes(`: <code>${MARK('ESC')}</code> is ESC (escape)`), html);
+    // A code block draws no HTML, so its lines have the text form.
+    assert.ok(html.includes('\n<ESC>[1mOK\n'), html);
+    assert.ok(!PICTURE.test(html), html);
+  });
+
+  it('draws a picture outside a code span too, and leaves other text as it is', () => {
+    assert.strictEqual(prose('a ⇥ `b⇥c` <d>'), `a ${MARK('TAB')} <code>b${MARK('TAB')}c</code> &#60;d&#62;`);
+    assert.strictEqual(pictureSpans('x `a⇥` y ␛ `plain`'), `x <code>a${MARK('TAB')}</code> y ${MARK('ESC')} \`plain\``);
+    assert.strictEqual(pictureSpans('no pictures'), 'no pictures');
+    // The Markdown of a card: a picture in the text, in a code span (HTML, which can draw it) and none in another span.
+    assert.strictEqual(md('a ⇥ `b⇥c` `d`'), `a ${MARK('TAB')} <code>b${MARK('TAB')}c</code> \`d\``);
   });
 });
 

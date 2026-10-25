@@ -654,3 +654,16 @@ The notes that stay (on another word, about the line, a plain fact) start at the
 The web page keeps the phone layout on a phone at every zoom: zooming out makes the viewport wider in CSS pixels (50% turns 390px into 780px), so a phone is told by its device (a touch screen without hover whose screen is under 600px on its short side), not by the width. A phone once seen is remembered by the shape of its screen, for a page loaded zoomed out. Tablets and desktops follow the window's width (up to 767px: the phone layout).
 
 When the browser asks for the desktop site (Chrome's **Desktop site**, Safari's **Request Desktop Website**), the page shows the desktop layout, as the browser's own choice: the viewport is about 980px wide and the width decides, as on a desktop; the phone's screens are neither used nor recorded. The page tells the mode from `navigator.userAgentData.mobile` (false in Chrome's desktop mode), or, where a browser has no client hints, from a User-Agent that names no phone (none of "Mobi", "iPhone", "iPod", "iPad", "Android"; Safari's desktop mode sends the Macintosh one). The mode is read at every load (the browsers reload the page when you switch it, and a page restored from the back/forward cache is read again), so switching back gives the phone layout again, also zoomed out. Before, a phone in the desktop-site mode kept the phone layout.
+
+### Control characters in values and examples
+
+A control character shown in a value, a note or the lines of an example was a Unicode control picture (`␊`, `␍`, `␛`, `␡`, `␀`…, and `⇥` for a tab). Those pictures are a block of Unicode that many fonts lack (Consolas, Segoe UI and many Linux monospace fonts), so they were empty boxes. Each output now shows the name of the code instead:
+
+| Where | Shown now | Shown before |
+| --- | --- | --- |
+| the panel and the web page | a small box with the name (`LF`, `CR`, `ESC`, `TAB`, `DEL`, `SOH`…), in a value's chip, in code, in a note and in an example's lines; a screen reader reads what it stands for ("line feed, newline") | the picture |
+| the hover (VS Code and the web page's cards) | the name, small, on the badge background, in a value, a note and an example's note | the picture |
+| the lines of an example in the hover (a code block draws no HTML), the command line (text and Markdown), the Language Server hover, Copy as Markdown | `<LF>`, `<TAB>`, `<ESC>`: the form of `<U+202E>`, and no other reading of `\n` | the picture |
+| JSON of the command line | the picture, as the analyzer says it | the same |
+
+Example: `s=$'a\nb'; printf '\033[1m%s' OK` says "the string `a<LF>b`" in Markdown, and draws `a`, a box `LF` and `b` in the panel. The note that says what the marks stand for follows the same form: "`<LF>` is LF (line feed, newline)". The tab is `TAB`, not its code `HT`; the note says "`<TAB>` is HT (tab)". `␣` (a space at an end) and `∅` (an empty word) are as they were.

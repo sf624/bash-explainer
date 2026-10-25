@@ -76,6 +76,18 @@ describe('the command-line tool', function () {
     assert.deepStrictEqual(json[0].explanation.items[0].span, { start: { line: 0, character: 0 }, end: { line: 0, character: 17 } });
   });
 
+  it('writes a control character as <LF>, <TAB> or <ESC> in the text and in Markdown, not as a picture that a font may lack', () => {
+    for (const args of [['--no-color'], ['--format', 'markdown']]) {
+      const r = run(['-e', "s=$'a\\nb'; printf '\\033[1m%s\\t' OK; echo \"$s\"", ...args]);
+      assert.strictEqual(r.code, 0, r.err);
+      const out = r.out.replace(/`/g, '');
+      assert.ok(out.includes('a<LF>b') && out.includes('<ESC>[1mOK<TAB>') && out.includes('<ESC> is ESC (escape)'), r.out);
+      assert.ok(!/[\u2400-\u241f\u2421\u21e5]/.test(r.out), r.out);
+    }
+    // JSON keeps the explanation as the analyzer says it.
+    assert.ok(run(['-e', "echo $'a\\nb'", '--format', 'json']).out.includes('\u240a'));
+  });
+
   it('explains a command line, in Japanese', () => {
     const r = run(['-e', 'tar -czf backup.tgz -C src .', '--no-examples'], { env: { LANG: 'ja_JP.UTF-8' } });
     assert.strictEqual(r.code, 0, r.err);

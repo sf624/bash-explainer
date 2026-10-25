@@ -2,6 +2,7 @@
 // constructs their shell lacks. Offline, like the extension: nothing is sent anywhere.
 import * as fs from 'fs';
 import { Analyzer, Example, LineExplanation, Token } from '../src/analyzer';
+import { pictureText } from '../src/ctlchars';
 import { BASH_VERSIONS, type BashVersion, DEFAULT_BASH_VERSION } from '../src/bashversion';
 import { Shell, SHELL_NAMES } from '../src/dialect';
 import { DocumentIssue, diagnosticsFor, explainDocumentLine, plain } from '../src/document';
@@ -267,7 +268,7 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
   for (const n of notesByLevel(ex.notes)) {
     const { level, body } = splitNote(n, lang);
     const head = n.slice(0, n.length - body.length).trimEnd();
-    const shown = head ? `${paint(NOTE_ANSI[level], level === 'note' ? head : paint('1', head))} ${body}` : body;
+    const shown = head ? `${paint(NOTE_ANSI[level], level === 'note' ? head : paint('1', head))} ${pictureText(body)}` : pictureText(body);
     out.push(`  ${shown}${refs(noteRefs(ex, n))}`);
   }
   const walk = (t: Token, depth: number) => {
@@ -277,7 +278,7 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
       : paint(ANSI[t.kind], p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
     out.push(`${'  '.repeat(depth + 1)}${label}  ${explained(t).replace(/`/g, '')}${refs(t.refs)}`);
     // (The value of an expansion where it runs, on a line of its own: its backticks are kept, as they mark where each word starts and ends.)
-    if (t.value) out.push(`${'  '.repeat(depth + 2)}${paint('90', '=')} ${t.value.said.text}`);
+    if (t.value) out.push(`${'  '.repeat(depth + 2)}${paint('90', '=')} ${pictureText(t.value.said.text)}`);
     for (const c of t.children) walk(c, depth + 1);
   };
   for (const t of ex.items) walk(t, 0);
@@ -287,10 +288,10 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
 
 function exampleText(e: Example, paint: (code: string | undefined, s: string) => string): string[] {
   const out = [`  ${paint('1', e.title)}`];
-  if (e.note) out.push(`    ${paint('90', e.note)}`);
+  if (e.note) out.push(`    ${paint('90', pictureText(e.note))}`);
   for (const s of e.sections) {
     out.push(`    ${paint('90', s.label)}`);
-    for (const l of s.lines.length ? s.lines : [s.empty ?? '']) out.push(`      ${l}`);
+    for (const l of s.lines.length ? s.lines : [s.empty ?? '']) out.push(`      ${pictureText(l)}`);
   }
   return out;
 }

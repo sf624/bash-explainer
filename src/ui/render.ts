@@ -1,3 +1,4 @@
+import { pictureText } from '../ctlchars';
 import { Example, Kind, LineExplanation, Pos, Span, Token, ValueInfo } from '../analyzer-types';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
@@ -205,7 +206,7 @@ export function refsText(lang: Lang, refs: readonly string[]): string {
  * and who runs it, when it is one (`Token.name`): "Print arguments to stdout (builtin)".
  */
 export function explained(tok: Token): string {
-  return tok.name ? tok.explanation + tok.name.said.short : tok.explanation;
+  return pictureText(tok.name ? tok.explanation + tok.name.said.short : tok.explanation);
 }
 
 /**
@@ -213,7 +214,7 @@ export function explained(tok: Token): string {
  * break, then the line, indented by `indent` under the row's text. Empty without a value.
  */
 export function valueMarkdown(value: ValueInfo | undefined, indent: string): string {
-  return value ? `\\\n${indent}${value.said.text}` : '';
+  return value ? `\\\n${indent}${pictureText(value.said.text)}` : '';
 }
 
 /** Display features that can each be turned on or off. */
@@ -321,16 +322,17 @@ export function lineSegments(text: string, line: number, items: Token[]): { text
 /**
  * Examples as headings with one code block per section, so every line keeps its own row. Without `indent`, as blocks of
  * their own, each after a rule (`rule`); with it, inside a list item. An example's note is a quote, or a paragraph when
- * not `quote` (VS Code's hover gives a quote no bar, only the browser's margins).
+ * not `quote` (VS Code's hover gives a quote no bar, only the browser's margins). The control pictures of the lines (a code
+ * block draws no marks) are written as `<LF>`; those of the note, as `pictureText` does or as `noteText` says.
  */
-export function examplesMarkdown(examples: Example[], indent?: string, rule = true, quote = true): string[] {
+export function examplesMarkdown(examples: Example[], indent?: string, rule = true, quote = true, noteText: (note: string) => string = pictureText): string[] {
   const out: string[] = [];
   for (const e of examples) {
     if (indent === undefined) out.push('', ...(rule ? ['---', ''] : []), `#### ${e.title}`);
     else out.push(`${indent}##### ${e.title}`);
-    if (e.note) out.push(...(indent === undefined ? ['', `${quote ? '> ' : ''}${e.note}`] : [`${indent}> ${e.note}`]));
+    if (e.note) out.push(...(indent === undefined ? ['', `${quote ? '> ' : ''}${noteText(e.note)}`] : [`${indent}> ${noteText(e.note)}`]));
     for (const sec of e.sections) {
-      const lines = sec.lines.length ? sec.lines : [sec.empty ?? ''];
+      const lines = (sec.lines.length ? sec.lines : [sec.empty ?? '']).map(pictureText);
       // The fence must be longer than any run of backticks inside.
       const longest = Math.max(2, ...lines.map((l) => Math.max(0, ...(l.match(/`+/g) ?? []).map((m) => m.length))));
       const fence = '`'.repeat(longest + 1);
@@ -355,7 +357,7 @@ export function plainNotes(ex: LineExplanation, notes: readonly string[], lang: 
   return notesByLevel(notes).flatMap((n) => {
     const { label, body } = splitNote(n, lang);
     const refs = noteRefs(ex, n);
-    return [`> ${label ? `${n.slice(0, n.length - body.length - label.length - 1).trimEnd()} **${label}** ${body}` : n}${refs?.length ? ` (${refsMarkdown(lang, refs)})` : ''}`, ''];
+    return [`> ${pictureText(label ? `${n.slice(0, n.length - body.length - label.length - 1).trimEnd()} **${label}** ${body}` : n)}${refs?.length ? ` (${refsMarkdown(lang, refs)})` : ''}`, ''];
   });
 }
 

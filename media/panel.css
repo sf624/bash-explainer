@@ -1194,9 +1194,31 @@ body.vscode-high-contrast-light #reading-tree li.band {
   vertical-align: -0.1em;
 }
 
+/* A control character in a shown text (media/panel.js `withMarks`): its name in a small box, since the glyphs for them (the
+   Unicode control pictures: a newline, an escape, a tab) are boxes where no font has their block, as in Consolas or Segoe UI. */
+.ev-ctl {
+  display: inline-block;
+  font-size: 0.78em;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+  padding: 0 0.3em;
+  margin: 0 0.1em;
+  border: 1px solid var(--c-muted);
+  border-radius: 3px;
+  color: var(--c-muted);
+  vertical-align: 0.05em;
+  white-space: pre;
+}
+
 @media (forced-colors: active) {
-  .ev-sp {
+  .ev-sp,
+  .ev-ctl {
     border-color: CanvasText;
+  }
+
+  .ev-ctl {
+    color: CanvasText;
   }
 
   #reading-tree li.band {

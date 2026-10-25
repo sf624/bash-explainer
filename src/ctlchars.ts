@@ -49,6 +49,46 @@ export function pictureCode(ch: string): number | undefined {
 const PICTURES = /[␀-␟␡⇥]/gu;
 
 /**
+ * The name drawn for a control picture: the abbreviation of its code (`␊` is LF, `␛` is ESC), TAB for the tab. A picture is a
+ * box on a machine whose fonts lack the block of Unicode control pictures (Consolas, Segoe UI and many Linux monospace fonts
+ * do), so the panel, the web page and the hover draw this name in a small box instead, and the outputs that are text only
+ * (the CLI, Markdown) write it as `<LF>`, the form of `<U+202E>`. The data keeps the pictures, so one string says which
+ * characters are control characters and which are not.
+ */
+export function pictureLabel(picture: string): string | undefined {
+  const code = pictureCode(picture);
+  if (code === undefined) return undefined;
+  return code === 0x09 ? 'TAB' : controlAbbr(code);
+}
+
+/** `text` with each control picture written as `<LF>`, for the outputs that are text only (see `pictureLabel`). */
+export function pictureText(text: string): string {
+  return text.replace(PICTURES, (p) => `<${pictureLabel(p)}>`);
+}
+
+/**
+ * `text` cut into pieces at its control pictures: the text between them at the even places, the pictures at the odd ones
+ * (`a⇥b` is `['a', '⇥', 'b']`). A text with none is the one piece.
+ */
+export function splitPictures(text: string): string[] {
+  return text.split(/([␀-␟␡⇥])/u);
+}
+
+/**
+ * Each control picture with the name drawn for it (`LF`, see `pictureLabel`) and what it stands for ("line feed, newline"),
+ * for the panel, which draws the marks itself: the name is the label of the mark for a screen reader. `s` picks the language.
+ */
+export function controlMarks(s: S): Record<string, [label: string, what: string]> {
+  const out: Record<string, [string, string]> = {};
+  for (const code of [...ABBREVIATIONS.keys(), 0x7f]) {
+    const picture = code === 0x09 ? '⇥' : code === 0x7f ? '␡' : String.fromCharCode(0x2400 + code);
+    const n = NAMED[code];
+    out[picture] = [pictureLabel(picture)!, n ? s(n[2], n[1]) : controlAbbr(code)!];
+  }
+  return out;
+}
+
+/**
  * The note for an example whose lines show control characters as pictures: what each picture
  * stands for, once. Undefined when the lines hold none.
  */
