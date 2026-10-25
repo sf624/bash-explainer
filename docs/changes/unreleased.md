@@ -420,13 +420,20 @@ A tilde before a glob is expanded, then the word is globbed:
 | Written | bash | Said now | Said before |
 | --- | --- | --- | --- |
 | `[ 08 -eq 8 ]`, `test 09 -lt 10` | true: `[` reads decimal integers | "`08` is 8 (not octal)" | "`08` is an error (integer expression expected)", which is what `[[ 08 -eq 8 ]]` says |
-| `cat 3<<EOF <&3` | cat prints the here-document | "become file descriptor 3"; "In the end: stdin → the here-document, fd 3 → the here-document" | "become stdin"; "stdin → the original fd 3" |
+| `[ -08 -eq -8 ]`, `[ -010 -eq -10 ]` | true | "`-08` is -8 (not octal)" | "`-08` is an error (integer expression expected)", "`-010` is 10" |
+| `[ 1e3 -eq 1 ]` | an error, in `[[ ]]` too | "`[[ ]]` rejects it too, as arithmetic (value too great for base)" | "`[[ ]]` would read it as arithmetic" |
+| `[[ 1e3 -eq 1 ]]`, `[[ 0#1 -eq 1 ]]`, `[[ 1#1 -eq 1 ]]` | value too great for base, invalid number, invalid arithmetic base | "`1e3` is no valid number (`e` is not a digit in base 10): an error (value too great for base)", and bash's message for each | "`1e3` with a leading 0 is octal", and "value too great for base" for all |
+| `cat 3<<EOF <&3` | cat prints the here-document | "become file descriptor 3"; "In the end: stdin → the here-document `EOF`, fd 3 → the here-document `EOF`"; its body lines are "started by `3<<EOF`" | "become stdin"; "stdin → the original fd 3"; "started by `<<EOF`" |
+| `cat 3<<A 4<<B <&4` | cat prints the body of `B` | "stdin → the here-document `B`, fd 3 → the here-document `A`, fd 4 → the here-document `B`" | "stdin → the original fd 4" |
 | `cat 3<<< x <&3` | prints `x` | "becomes file descriptor 3", and no token "file_descriptor" for the `3` | "becomes stdin" |
 | `cat <<< x 2>&1 > f` | | "stdin → the here-string" | "stdin → the here-document/string" |
 | `echo hi > {a,}` | writes the file `a` | "Write stdout (fd 1) to file `a` (overwrite). Brace expansion makes `{a,}` the one word `a`" | "to file `{a,}`" |
+| the same in sh or dash | writes the file `{a,}` (no brace expansion); `> {a,b}` writes `{a,b}` | "to file `{a,}`", with no note | (`> {a,b}`) "Brace expansion makes several words of it" |
 | `echo hi > {,}` | "ambiguous redirect" | "Brace expansion leaves no word of it" | "makes several words of it" |
-| `exec 3<>/dev/tcp/example.com/80`, `cat < /dev/udp/h/53`, `>&/dev/tcp/h/p`, `{s}<>/dev/tcp/h/p` | bash connects (TCP or UDP), and fails if it cannot | "Connect to host `example.com`, port `80`, over TCP, and use the connection for reading and writing as file descriptor 3 (not a file …)" | "Open `/dev/tcp/example.com/80` for reading and writing" |
-| the same in sh or dash | a path, usually missing ("No such file") | the file, "In dash, `/dev/tcp/…` is an ordinary path, usually missing", and a portability warning (bash and ksh93 connect) | the file, no warning |
+| `echo x 2>&f`, `3>&f`, `<&f`, `{v}>&f`, `2>&/dev/tcp/h/80` | "ambiguous redirect": only `>&f` and `1>&f` write both stdout and stderr to `f` | "`f` is no file descriptor number, so bash reports "ambiguous redirect"" | "Write both stdout and stderr to `f`"; for `<&f`, "a copy of file descriptor f" |
+| `exec 3<>/dev/tcp/example.com/80`, `cat < /dev/udp/h/53`, `>&/dev/tcp/h/p`, `{s}<>/dev/tcp/h/p`, `> "/dev/tcp/h/80"` | bash connects (TCP or UDP), and fails if it cannot | "Connect to host `example.com`, port `80`, over TCP, and use the connection for reading and writing as file descriptor 3 (not a file …)" | "Open `/dev/tcp/example.com/80` for reading and writing" |
+| `> /dev/tcp/h/80/x`, `> /dev/tcp//80` | an error: no host and port | "The shell takes `/dev/tcp/h/80/x` as a network address (host `h`, port `80/x`), which is no valid host and port: the redirection fails" | the file |
+| the same in sh or dash | a path, usually missing ("No such file") | the file, "dash opens `/dev/tcp/…` as an ordinary path, usually missing (POSIX does not define it; bash and ksh93 connect to the network)", and a portability warning | the file, no warning |
 
 Examples:
 
@@ -434,8 +441,9 @@ Examples:
 | --- | --- | --- | --- |
 | `[[ $x =~ ^"a."c$ ]]`, `^'a.'c$` | only `a.c` matches: the quoted `.` is literal | matches `a.c`; `a.` and `.c` do not | the regex of `c$` alone: `c` and `abc c` "match" |
 | `[[ $x =~ a$y ]]` | depends on `$y` | no example | the example of `a` alone |
-| `jq . <(curl -s url)`, `sort <(cmd) <(cmd2)` | the command reads the output of `curl` from a pipe (`/dev/fd/63`) | "Input: output of `curl -s url` (the pipe `<(curl -s url)` names, sample contents)" | "Input: the files `<(curl -s url)` names (sample contents)" |
-| `sort < <(cmd)` | stdin is the pipe | "Input: stdin (output of `cmd` through `<(cmd)`, sample contents)" | "Input: stdin (`<(cmd)`, sample contents)" |
+| `sort <(printf 'b\na\n')` | sorts the lines `b`, `a` that printf writes to the pipe | "Input: output of `printf 'b\na\n'` (through the pipe `<(printf 'b\na\n')` names)": `b`, `a`; output `a`, `b` | "Input: the files `<(printf 'b\na\n')` names (sample contents)": `banana`, `apple`, … |
+| `jq . <(curl -s url)`, `sort <(cmd) <(cmd2)` | the command reads the output of `curl` from a pipe (`/dev/fd/63`) | "Input: sample output of `curl -s url` (through the pipe `<(curl -s url)` names)" | "Input: the files `<(curl -s url)` names (sample contents)" |
+| `sort < <(cmd)` | stdin is the pipe | "Input: stdin (sample output of `cmd`, through the pipe `<(cmd)` names)" | "Input: stdin (`<(cmd)`, sample contents)" |
 
 The panel's Reading view failed on a here-document with no delimiter yet (`cat <<`, then more lines): a `TypeError`. It now shows the `<<` as a redirection.
 

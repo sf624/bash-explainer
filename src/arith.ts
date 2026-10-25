@@ -148,19 +148,25 @@ export function evalArith(text: string): number | undefined {
   return r && Number.isSafeInteger(Number(r.value)) ? Number(r.value) : undefined;
 }
 
+/** Why bash rejects an invalid constant `text`, and the error it prints (`value too great for base`). */
+export function invalidLiteral(text: string, lit: Extract<ArithLiteral, { type: 'invalid' }>, lang: Lang): { why: string; message: string } {
+  const s = (ja: string, en: string): string => (lang === 'ja' ? ja : en);
+  const octal = lit.base === 8 && !text.includes('#');
+  const why = lit.reason === 'base'
+    ? s(`基数 ${lit.base} は使えない（2〜64）`, `${lit.base} is not a base bash has (2 to 64)`)
+    : lit.reason === 'empty' ? s('\`#\` の後に数字がない', 'no digits follow the `#`')
+    : lit.reason === 'zero-base' ? s('基数が 0 で始まっている', 'the base starts with 0')
+    : octal ? s(`先頭が 0 の数は 8 進数として読まれ、数字 \`${lit.digit}\` は使えない`, `a number starting with 0 is read as octal, and \`${lit.digit}\` is not an octal digit`)
+    : s(`基数 ${lit.base} では数字 \`${lit.digit}\` は使えない`, `\`${lit.digit}\` is not a digit in base ${lit.base}`);
+  const message = { digit: 'value too great for base', base: 'invalid arithmetic base', empty: 'invalid integer constant', 'zero-base': 'invalid number' }[lit.reason];
+  return { why, message };
+}
+
 /** A constant of an arithmetic expression in words: its base and value, or why bash rejects it. */
 export function describeArithLiteral(text: string, lit: ArithLiteral, lang: Lang): string {
   const s = (ja: string, en: string): string => (lang === 'ja' ? ja : en);
   if (lit.type === 'invalid') {
-    const octal = lit.base === 8 && !text.includes('#');
-    const why = lit.reason === 'base'
-      ? s(`基数 ${lit.base} は使えない（2〜64）`, `${lit.base} is not a base bash has (2 to 64)`)
-      // (The grammar does not read `2#` as a number, so only the unit tests of arithLiteral get here.)
-      /* c8 ignore next */
-      : lit.reason === 'empty' ? s('\`#\` の後に数字がない', 'no digits follow the `#`')
-      : lit.reason === 'zero-base' ? s('基数が 0 で始まっている', 'the base starts with 0')
-      : octal ? s(`先頭が 0 の数は 8 進数として読まれ、数字 \`${lit.digit}\` は使えない`, `a number starting with 0 is read as octal, and \`${lit.digit}\` is not an octal digit`)
-      : s(`基数 ${lit.base} では数字 \`${lit.digit}\` は使えない`, `\`${lit.digit}\` is not a digit in base ${lit.base}`);
+    const { why } = invalidLiteral(text, lit, lang);
     return s(`⚠ 不正な数 \`${text}\`: ${why}。bash は算術エラーで止まる`, `⚠ Invalid number \`${text}\`: ${why}. bash stops with an arithmetic error`);
   }
   const name: Record<number, [string, string]> = { 2: ['2進数', 'binary'], 8: ['8進数', 'octal'], 16: ['16進数', 'hexadecimal'] };

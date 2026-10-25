@@ -35,6 +35,7 @@ export const redirects: Record<string, (fd: string, dest: string) => Text> = {
 function dup(fd: string, d: string, dflt: string, shared: Text): Text {
   const name = namedFd(fd);
   const move = /^(\d+)-$/.exec(d)?.[1];
+  if (d !== '-' && !move && !/^\d+$/.test(d)) return notFd(d);
   if (name) {
     if (d === '-') return tx(`変数 \`${name}\` に入っている番号のファイルディスクリプタを閉じる`, `Close the file descriptor whose number is in variable \`${name}\``);
     if (move) {
@@ -60,7 +61,15 @@ function dupOut(fd: string, d: string): Text {
       `Send ${fdName(fd, '1').en} to the same place as ${fdName(d, d).en}`,
     );
   }
+  // (Only `>&word` and `1>&word` take a file name, as `&>word`: `2>&f` is an error.)
+  if (fd !== '' && fd !== '1') return notFd(d, tx('。ファイル名を取れるのは `>&` と `1>&` だけ', '; only `>&` and `1>&` take a file name'));
   return tx(`標準出力と標準エラー出力の両方をファイル \`${d}\` に書き込む`, `Write both stdout and stderr to \`${d}\``);
+}
+
+/** `<&f`, `2>&f`, `{v}>&f`: a word that is no descriptor number, which bash reports as an ambiguous redirect. */
+function notFd(d: string, why: Text = tx('', '')): Text {
+  return tx(`\`${d}\` はファイルディスクリプタの番号ではないので、bash は「ambiguous redirect」のエラーにする${why.ja}`,
+    `\`${d}\` is no file descriptor number, so bash reports "ambiguous redirect"${why.en}`);
 }
 
 export function fdName(fd: string, dflt: string): Text {
@@ -71,22 +80,45 @@ export function fdName(fd: string, dflt: string): Text {
   return tx(`ファイルディスクリプタ ${n}`, `file descriptor ${n}`);
 }
 
-/** A redirection target `/dev/tcp/host/port` or `/dev/udp/host/port`, which bash opens as a socket (manual 3.6). */
-export interface NetworkPath { proto: 'TCP' | 'UDP'; host: string; port: string }
+/**
+ * A redirection target `/dev/tcp/host/port` or `/dev/udp/host/port`, which bash opens as a socket (manual 3.6).
+ * bash takes any name under `/dev/tcp/` with another `/`: the host runs to it, the port is the rest. `bad`: that is
+ * no host and port (`/dev/tcp//80`, `/dev/tcp/h/80/x`), and the redirection fails. (With an empty port, `/dev/udp/h/`,
+ * bash still connects.)
+ */
+export interface NetworkPath { proto: 'TCP' | 'UDP'; host: string; port: string; bad: boolean }
 
 export function networkPath(dest: string): NetworkPath | undefined {
-  const m = /^\/dev\/(tcp|udp)\/([^/]+)\/([^/]+)$/.exec(dest);
-  return m ? { proto: m[1] === 'tcp' ? 'TCP' : 'UDP', host: m[2], port: m[3] } : undefined;
+  const m = /^\/dev\/(tcp|udp)\/([^/]*)\/(.*)$/s.exec(dest);
+  return m ? { proto: m[1] === 'tcp' ? 'TCP' : 'UDP', host: m[2], port: m[3], bad: !m[2] || m[3].includes('/') } : undefined;
+}
+
+/** The operators that open their target (a duplication `>&` only when it takes a file name: `>&/dev/tcp/h/p`, `1>&…`). */
+const NETWORK_OPS = new Set(['<', '>', '>>', '>|', '<>', '&>', '&>>', '>&']);
+
+/** The network path a redirection opens; `target` is the value of its word (a quoted `"/dev/tcp/h/80"` connects too). */
+export function networkTarget(op: string, fd: string, target: string): NetworkPath | undefined {
+  return NETWORK_OPS.has(op) && (op !== '>&' || fd === '' || fd === '1') ? networkPath(target) : undefined;
 }
 
 /**
  * What a redirection to `/dev/tcp/host/port` does in a shell that opens it as a socket (bash, ksh93): no file is
  * opened; the shell connects, and the descriptor reads from or writes to the connection.
  */
-export function networkRedirect(op: string, fd: string, net: NetworkPath): Text {
+export function networkRedirect(op: string, fd: string, net: NetworkPath, target: string): Text {
   const { proto, host, port } = net;
+  if (net.bad) {
+    const part = (v: string, ja: string, en: string) => (v ? tx(`${ja} \`${v}\``, `${en} \`${v}\``) : tx(`${ja}は空`, `${en} empty`));
+    const h = part(host, 'ホスト', 'host');
+    const p = part(port, 'ポート', 'port');
+    return tx(
+      `シェルは \`${target}\` をネットワークの接続先（${h.ja}、${p.ja}）として扱うが、正しいホストとポートではないのでリダイレクトはエラーになる（ファイルは開かない）`,
+      `The shell takes \`${target}\` as a network address (${h.en}, ${p.en}), which is no valid host and port: the redirection fails (no file is opened)`,
+    );
+  }
   const name = namedFd(fd);
-  const conn = tx(`${proto} でホスト \`${host}\` のポート \`${port}\` に接続し、`, `Connect to host \`${host}\`, port \`${port}\`, over ${proto}, and `);
+  const at = port ? tx(`ポート \`${port}\` `, `port \`${port}\``) : tx('ポート（空）', 'port empty');
+  const conn = tx(`${proto} でホスト \`${host}\` の${at.ja}に接続し、`, `Connect to host \`${host}\`, ${at.en}, over ${proto}, and `);
   const use = name
     ? tx(`その接続を空いているファイルディスクリプタ（10 以上）で開き、番号を変数 \`${name}\` に入れる`, `open the connection on a free file descriptor (10 or higher), storing its number in variable \`${name}\``)
     : op === '<'
@@ -102,11 +134,20 @@ export function networkRedirect(op: string, fd: string, net: NetworkPath): Text 
   );
 }
 
-/** The same target in a shell that has no such names: an ordinary path, usually missing. */
-export function networkPathAsFile(shell: string): Text {
+/**
+ * The same target in a shell that has no such names: an ordinary path, usually missing. `shell` is its name, or
+ * undefined for POSIX sh (which does not define the names; bash connects even in POSIX mode).
+ */
+export function networkPathAsFile(shell: string | undefined): Text {
+  if (!shell) {
+    return tx(
+      'POSIX は `/dev/tcp/…` を定めていない。dash や busybox ash などの sh では普通のファイル名で、ふつうは存在しない（ネットワークに接続するのは bash（POSIX モードでも）と ksh93）',
+      'POSIX does not define `/dev/tcp/…`: dash, busybox ash and other sh open it as an ordinary path, usually missing (bash, even in POSIX mode, and ksh93 connect to the network)',
+    );
+  }
   return tx(
-    `${shell} では \`/dev/tcp/…\` も普通のファイル名で、ふつうは存在しない（ネットワークに接続するのは bash と ksh93 だけ）`,
-    `In ${shell}, \`/dev/tcp/…\` is an ordinary path, usually missing (only bash and ksh93 connect to the network for it)`,
+    `${shell} では \`/dev/tcp/…\` も普通のファイル名で、ふつうは存在しない（POSIX は定めていない。ネットワークに接続するのは bash と ksh93）`,
+    `${shell} opens \`/dev/tcp/…\` as an ordinary path, usually missing (POSIX does not define it; bash and ksh93 connect to the network)`,
   );
 }
 

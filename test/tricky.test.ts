@@ -879,8 +879,8 @@ describe('tricky lines (round 4)', () => {
     // Hexadecimal, a base, a sign, and a number that is no octal.
     assert.match(findAt('[[ 0x10 -eq 16 ]]', 0, '0x10 -eq 16').explanation, /`0x10` is hexadecimal 16$/);
     assert.match(findAt('[[ -010 -lt 2#11 ]]', 0, '-010 -lt 2#11').explanation, /`-010` is octal -8\. .*`2#11` is base 2 3$/);
-    assert.match(findAt('[[ 08 -eq 8 ]]', 0, '08 -eq 8').explanation, /`08` with a leading 0 is octal and `8` is not a digit: an error \(value too great for base\)$/);
-    assert.match(findAt('[[ 08 -eq 8 ]]', 0, '08 -eq 8', 'ja').explanation, /先頭が 0 の `08` は 8 進数で、`8` は使えずエラー/);
+    assert.match(findAt('[[ 08 -eq 8 ]]', 0, '08 -eq 8').explanation, /`08` is no valid number \(a number starting with 0 is read as octal, and `8` is not an octal digit\): an error \(value too great for base\)$/);
+    assert.match(findAt('[[ 08 -eq 8 ]]', 0, '08 -eq 8', 'ja').explanation, /`08` は数として正しくない（先頭が 0 の数は 8 進数として読まれ、数字 `8` は使えない）のでエラー/);
     assert.match(findAt('[ 0x10 -eq 16 ]', 0, '0x10 -eq 16').explanation, /`\[ \]` reads only decimal integers, so `0x10` is an error \(integer expression expected\); `\[\[ \]\]` would read it as arithmetic$/);
     assert.match(findAt('[ 0x10 -eq 16 ]', 0, '0x10 -eq 16', 'ja').explanation, /10 進の整数しか読めないので `0x10` はエラー/);
     assert.match(bashErr('[ 0x10 -eq 16 ]'), /integer expression expected/);

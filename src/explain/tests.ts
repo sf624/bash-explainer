@@ -3,7 +3,7 @@
 // as bash reads it (src/testexpr.ts; the words of the command itself are argv's, which calls `testTokens`). The
 // examples of a test (values that make it true, that match a pattern or a regex) come from src/explain/examples.ts.
 import type { Kind, Token } from '../analyzer-types';
-import { arithLiteral, evalArith } from '../arith';
+import { arithLiteral, evalArith, invalidLiteral } from '../arith';
 import { binaryTestOps, extendedEqualOps, unaryTestOps } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { explainRegex } from '../embedded/regex';
@@ -103,13 +103,18 @@ function numericTestNote(cx: Explainer, op: string, operands: string[], double: 
       continue;
     }
     if (!lit || (lit.type === 'number' && lit.style === 'decimal' && !/^0\d/.test(m![2]))) continue;
+    // (Why arithmetic rejects it: `08` with a leading 0 is octal, `1e3` has a letter, `0#1` a base starting with 0.)
+    const bad = lit.type === 'invalid' ? invalidLiteral(m![2], lit, cx.lang) : undefined;
     if (!double) {
-      // (Digits alone are decimal to `[`, even those arithmetic rejects as octal: `08` is 8.)
+      // (Digits alone are decimal to `[`, even those arithmetic rejects as octal: `08` is 8, `-08` is -8.)
+      const dbl = bad
+        ? cx.s(`。\`[[ ]]\` の算術でもエラー（${bad.message}）`, `; \`[[ ]]\` rejects it too, as arithmetic (${bad.message})`)
+        : cx.s('。`[[ ]]` なら算術として読める', '; `[[ ]]` would read it as arithmetic');
       notes.push(/^\d+$/.test(m![2])
-        ? cx.s(`\`[ ]\` は 10 進の整数として読むので \`${raw}\` は ${Number(m![2])}（8 進数ではない）`, `\`[ ]\` reads decimal integers, so \`${raw}\` is ${Number(m![2])} (not octal)`)
-        : cx.s(`\`[ ]\` は 10 進の整数しか読めないので \`${raw}\` はエラー（integer expression expected）。\`[[ ]]\` なら算術として読める`, `\`[ ]\` reads only decimal integers, so \`${raw}\` is an error (integer expression expected); \`[[ ]]\` would read it as arithmetic`));
+        ? cx.s(`\`[ ]\` は 10 進の整数として読むので \`${raw}\` は ${Number(raw)}（8 進数ではない）`, `\`[ ]\` reads decimal integers, so \`${raw}\` is ${Number(raw)} (not octal)`)
+        : cx.s(`\`[ ]\` は 10 進の整数しか読めないので \`${raw}\` はエラー（integer expression expected）${dbl}`, `\`[ ]\` reads only decimal integers, so \`${raw}\` is an error (integer expression expected)${dbl}`));
     } else if (lit.type === 'invalid') {
-      notes.push(cx.s(`\`[[ ]]\` は算術として読むので、先頭が 0 の \`${raw}\` は 8 進数で、\`${lit.digit}\` は使えずエラー（value too great for base）`, `\`[[ ]]\` reads arithmetic, where \`${raw}\` with a leading 0 is octal and \`${lit.digit}\` is not a digit: an error (value too great for base)`));
+      notes.push(cx.s(`\`[[ ]]\` は算術として読むが、\`${raw}\` は数として正しくない（${bad!.why}）のでエラー（${bad!.message}）`, `\`[[ ]]\` reads arithmetic, where \`${raw}\` is no valid number (${bad!.why}): an error (${bad!.message})`));
     } else {
       const kind = { octal: cx.s('8 進数', 'octal'), hex: cx.s('16 進数', 'hexadecimal'), based: cx.s(`${lit.base} 進数`, `base ${lit.base}`), decimal: '' }[lit.style];
       notes.push(cx.s(`\`[[ ]]\` の ${op} は算術として読むので \`${raw}\` は ${kind}で ${m![1] === '-' ? '-' : ''}${lit.value}`, `\`[[ ]]\` reads ${op} operands as arithmetic, so \`${raw}\` is ${kind} ${m![1] === '-' ? '-' : ''}${lit.value}`));
