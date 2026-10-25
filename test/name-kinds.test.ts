@@ -58,6 +58,10 @@ const rows: Row[] = [
   { script: 'exec echo x', label: 'echo', runs: 'program', by: 'exec', also: [['builtin', 'echo']] },
   { script: 'find . -maxdepth 0 -exec echo x \\;', label: 'echo', runs: 'program', by: 'find -exec', also: [['builtin', 'echo']] },
   { script: 'printf "x\\n" | xargs kill', label: 'kill', runs: 'program', by: 'xargs', also: [['builtin', 'kill']] },
+  // (`builtin` and `command` find the builtin, which runs in this shell as bash runs it: no `by`.)
+  { script: 'builtin echo x', label: 'echo', runs: 'builtin', also: [['program', 'env echo']] },
+  { script: 'command echo x', label: 'echo', runs: 'builtin', also: [['program', 'env echo']] },
+  { script: 'builtin cd /', label: 'cd', runs: 'builtin' },
   { script: 'command time x', label: 'time', runs: 'program', by: 'command', also: [['keyword']] },
   { script: '\\time x', label: '\\time', runs: 'program', also: [['keyword']] },
   { script: 'env time x', label: 'time', runs: 'program', by: 'env', also: [['keyword']] },
@@ -191,7 +195,9 @@ describe('what a command name is, in the model and the texts', () => {
     const ts = tokens('git commit -m x');
     assert.strictEqual(ts.find((t) => t.label === 'commit')!.name, undefined);
     assert.strictEqual(ts.find((t) => t.label === 'git')!.name!.said.kind, 'program');
-    assert.strictEqual(tokens('[[ -f x ]]')[0].name!.runs, 'keyword');
+    // (Not on `[[`: a test, which no other meaning shares; the keyword badge is for `time`.)
+    assert.strictEqual(tokens('[[ -f x ]]')[0].name, undefined);
+    assert.strictEqual(tokens('time ls')[0].children[0].name!.runs, 'keyword');
   });
 
   it('shows an alias with its own kind', () => {
@@ -252,6 +258,43 @@ describe('what a command name is, in the model and the texts', () => {
     assert.strictEqual(nameSaid('en', { name: 'x', runs: 'none', also: [] }).by, '`builtin` finds no builtin named `x`');
     // (With no lookup, the name is read as in a script that defines nothing.)
     assert.deepStrictEqual(nameFacts({ kind: 'keyword', name: 'time' }, { program: (n) => n === 'time' }).also, [{ kind: 'program', reach: ['\\time', 'command time'] }]);
+  });
+});
+
+describe('a builtin that `builtin` or `command` runs, and an alias not in effect yet (checked with bash)', () => {
+  const ex = (src: string, line = 0, lang: 'en' | 'ja' = 'en') => new Analyzer(lang).explainLine(parser.parse(src), line, undefined, { reading: true });
+
+  it('shows the builtin as run in this shell, as bash runs it, and the words after it as its own', () => {
+    // The builtin runs in this shell: `cd` moves it, as `cd` alone would.
+    assert.strictEqual(runBash('builtin cd /tmp && pwd; command cd / && pwd').stdout, '/tmp\n/\n');
+    for (const [src, lead] of [['builtin cd "$x"', 'Run the shell builtin'], ['command cd /tmp', 'Run a command ignoring']] as const) {
+      const e = ex(src);
+      const cd = allTokens(e.items).find((t) => t.label === 'cd')!;
+      assert.strictEqual(cd.explanation, 'Change the current directory', src);
+      assert.deepStrictEqual([cd.name!.runs, cd.name!.by, cd.name!.said.short], ['builtin', undefined, ' (builtin)'], src);
+      assert.match(e.items[0].explanation, new RegExp(`^${lead}`), src);
+      // In Reading: a command name of this shell, under the word; its operand is read by `cd`, not by `builtin`.
+      const nodes = readingNodes(e.reading!);
+      const name = nodes.find((n) => n.label === 'cd' && n.name)!;
+      assert.deepStrictEqual([name.layer, name.kind, name.reader], ['bash', 'commandName', undefined], src);
+      assert.deepStrictEqual(nodes.filter((n) => n.layer === 'command').map((n) => `${n.label} ${n.reader}`), [`${src.split(' ')[2]} cd`], src);
+    }
+    assert.strictEqual(allTokens(ex('builtin cd /', 0, 'ja').items).find((t) => t.label === 'cd')!.name!.said.short, '（ビルトイン）');
+    // (A program `command` finds is still run by it; `builtin` finds no builtin `ls`.)
+    assert.strictEqual(allTokens(ex('command ls').items).find((t) => t.label === 'ls')!.name!.by, 'command');
+    assert.strictEqual(allTokens(ex('builtin ls').items).find((t) => t.label === 'ls')!.name!.by, 'builtin');
+  });
+
+  it('reads the name after an alias defined on the same line as a command of that name', () => {
+    const r = runBash("alias ll='ls -l'; ll -h");
+    assert.match(r.stderr, /ll: command not found/);
+    assert.strictEqual(r.status, 127);
+    const ll = allTokens(ex("alias ll='ls -l'; ll -h").items).find((t) => t.label === 'll')!;
+    assert.strictEqual(ll.explanation, 'Run the command `ll` (the alias of line 1 is not in effect here)');
+    assert.strictEqual(ll.kind, 'command');
+    // (`-h` is not read as an option of `ls`: `ll` is no `ls` here.)
+    assert.doesNotMatch(ll.children.map((c) => c.explanation).join('\n'), /human-readable/);
+    assert.strictEqual(allTokens(ex("alias ll='ls -l'; ll -h", 0, 'ja').items).find((t) => t.label === 'll')!.explanation, 'コマンド `ll` を実行する（行 1 のエイリアスはここではまだ効かない）');
   });
 });
 

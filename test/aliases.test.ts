@@ -55,9 +55,15 @@ describe('shells other than bash take the options of sh', () => {
   it('follows the shell-name mapping of dialect.ts', () => {
     for (const n of ['dash', 'zsh', 'ksh', 'ksh93', 'mksh', 'lksh', 'pdksh', 'oksh', 'posh', 'yash', 'ash', '/bin/dash']) {
       assert.ok(shellFromName(n.split('/').pop()!), n);
-      assert.strictEqual(lookupCommand(n), commands.sh, n);
+      // (The options of `sh`; the summary says which shell it is: zsh is no POSIX shell.)
+      assert.strictEqual(lookupCommand(n)!.options, commands.sh.options, n);
+      assert.strictEqual(lookupCommand(n)!.operands, commands.sh.operands, n);
     }
     assert.strictEqual(lookupCommand('busybox'), undefined);
+    assert.strictEqual(lookupCommand('posh'), commands.sh);
+    assert.deepStrictEqual(['zsh', 'dash', 'ksh93', 'oksh'].map((n) => lookupCommand(n)!.summary.en),
+      ['Run the Z shell (zsh)', 'Run dash, a small POSIX shell (`sh` on Debian and Ubuntu)', 'Run the Korn shell (ksh93)', 'Run a Korn shell of the pdksh line (mksh, pdksh, oksh)']);
+    assert.strictEqual(lookupCommand('/usr/bin/zsh'), lookupCommand('zsh'));
     for (const n of ['bash', 'bash5', '/usr/bin/bash5.2']) assert.strictEqual(lookupCommand(n), commands.bash, n);
   });
 

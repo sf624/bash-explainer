@@ -112,6 +112,8 @@ const WORDS = new Set(['word', 'number', 'concatenation', 'extglob_pattern', 're
 const REDIRECTS = new Set(['file_redirect', 'heredoc_redirect', 'herestring_redirect']);
 /** The kinds of token that explain a command: the root of what it reads. */
 const READERS = new Set(['command', 'builtin', 'function', 'alias', 'test']);
+/** The kinds of token of a command another one runs (`sudo ls`, `builtin cd`): it reads the words after its name itself. */
+const RUNS = new Set(['command', 'builtin']);
 /** The kinds of token about a word, or a part of one. */
 const WORD_TOKENS = new Set(['string', 'variable', 'expansion', 'substitution', 'number', 'pattern']);
 /** The kinds of bash's tokens inside a word that have no node: a glob's parts, an escape, a tilde, a brace expansion. */
@@ -279,10 +281,15 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const words = children.filter((w) => w.kind !== 'redirect');
     const place = (p: ReadingNode): void => {
       const at = words.find((w) => within(p.span, w.span));
-      const head = !at && p.layer === 'command' && p.kind === 'command' ? words.find((w) => le(w.span.start, p.span.start) && le(p.span.start, w.span.start)) : undefined;
+      const head = !at && p.layer === 'command' && RUNS.has(p.kind) ? words.find((w) => le(w.span.start, p.span.start) && le(p.span.start, w.span.start)) : undefined;
       if (at) at.children.push(p);
       else if (head) {
-        head.children.push({ ...p, span: head.span, children: [] });
+        // (A builtin that `builtin` or `command` finds runs in this shell, as bash runs a command name: no other
+        // command reads it, `builtin cd`. What it reads of the words after it is still its own.)
+        const { reader: _, ...own } = p;
+        head.children.push(p.kind === 'builtin' && p.name && p.name.by === undefined
+          ? { ...own, layer, kind: 'commandName', resolves: 'builtin', span: head.span, children: [] }
+          : { ...p, span: head.span, children: [] });
         p.children.forEach(place);
       } else {
         let i = children.length;
@@ -490,7 +497,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     layer, kind: t.kind, label: t.label, span: t.span, reader, ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}),
     // (A word the command reads as a script, which the analyzer says only is a word: `eval ls`.)
     text: t.explanation === TEXTS.word[cx.lang](t.label) && t.children.some((c) => c.origin === 'script') ? TEXTS.again[cx.lang] : t.explanation,
-    children: readParts(t.children, false, t.kind === 'command' ? t.label : reader),
+    children: readParts(t.children, false, RUNS.has(t.kind) ? t.label : reader),
   });
 
   /** A token of a string a shell reads as a script; `process`: which shell. */

@@ -62,6 +62,9 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A click on a row of the panel that is on another line, such as a `case` clause inside a `while` loop, only folds the row. Before, it moved the cursor to that line, and the panel explained that line instead.
 - The `date` example follows the line: `date -d 2024-01-02 +%A` shows `Tuesday`, `TZ=Asia/Tokyo date +%T` and `env TZ=Asia/Tokyo date` show the time in that zone, and `-d 'next friday'` shows the Friday after each moment it runs. Before, it always showed the time it runs, in UTC.
 - `sed -e 's/a/b/' -e 's/c/d/' f` shows one example of the whole script, not the same one twice; a pipeline in `$( )` names itself in its example's title.
+- `builtin cd` and `command echo` are explained as the builtin itself, which runs in this shell; the words after it are its own. Before, they said "runs `cd`", the badge "run by `builtin`", and Reading had `builtin` read them.
+- After `alias ll='ls -l'; ll -h` on one line, `ll` is the command bash looks for, not the alias, and `-h` is no longer read as an option of `ls`.
+- `zsh`, `dash`, `ksh` and the other shells are named as themselves: `zsh -c …` said "Run the POSIX shell".
 
 ## 0.8.0
 

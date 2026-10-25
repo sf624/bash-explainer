@@ -607,10 +607,12 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
     mark(children);
   }
   const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
+  // (`builtin cd`, `command echo`: the builtin runs in this shell, as if bash ran it: no other command runs it.)
+  const direct = role.slot.run === 'current-shell' && res?.kind === 'builtin';
   return {
     kind, ...(res ? { name: nameInfo(cx.lang, res, cx, first, cx.slotEnvs.get(first)) } : {}),
     label: shorten(name),
-    explanation: (role.of ? cx.s('実行するコマンド: ', 'Command to run: ') : '') + cx.s(`\`${name}\` を実行: `, `runs \`${name}\`: `) + explanation,
+    explanation: (role.of ? cx.s('実行するコマンド: ', 'Command to run: ') : '') + (direct ? '' : cx.s(`\`${name}\` を実行: `, `runs \`${name}\`: `)) + explanation,
     span, children, summary: `${name}: ${explanation}`,
   };
 }

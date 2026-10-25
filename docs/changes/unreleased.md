@@ -165,6 +165,9 @@ A name that is also something else gets one muted line, with the code that runs 
 | `sudo cd /tmp` | program, run by `sudo` | `sudo` looks the name up, so bash's builtin does not run, and there is usually no program of this name |
 | `alias ll='ls -l'; ll` (no `shopt -s expand_aliases`) | program | Same name, also: an alias, not expanded here (needs `shopt -s expand_aliases`) |
 | `command [[ -f x ]]` | nothing runs, `command` finds no command named `[[` (bash says `[[: command not found`) | Same name, also: a reserved word, where it starts a command unquoted |
+| `builtin cd /tmp`, `command echo hi` | builtin (it runs in this shell, as `cd /tmp` would) | |
+
+Of the reserved words, only `time` has a badge: it is also a program. `[[` has none; it is a test, and nothing else has its name.
 
 The code given for each other meaning is what reaches it from where the name is: `\time` reaches the program only where no function `time` is defined, and `env echo` is given only where bash's builtin `echo` comes first.
 The explanations no longer end with "(shell builtin)", and the programs named like builtins say their package: "(from coreutils)" where they said "(the coreutils program)". The hover, Copy as Markdown and the command line's text and Markdown end each such row with the kind instead: " (builtin)", " (program, run by `sudo`)"; the JSON output has a `name` field with the facts. In the Reading view, the badge replaces the kind after "command name" ("command name · builtin" before). An alias is shown as an alias, no longer as a function: in the JSON output, its token's `kind` is `alias` (it was `function`).
@@ -496,3 +499,14 @@ The `date +FORMAT` example reads the options and the zone of the line, as GNU da
 `sed -e 's/a/b/' -e 's/c/d/' f` showed the same example twice, once at each `-e`. sed runs the scripts in order as one script, so there is one example, of the whole script, shown on the command.
 
 The example of a pipeline inside `$( )` or `<( )` was titled with the command around it, or not named: `echo $(echo a | tr a b) | cat` gave "Example for `echo $(echo a | tr a b)` (the whole pipeline)", and `for i in $(seq 3 | sort -r)` gave "Example (the whole pipeline)". It is now "Example for `echo a | tr a b` (the whole pipeline)", also in `x=$(…)`, `[[ $(…) == b ]]` and `for i in $(…)`.
+
+### Names
+
+| Written | Shown now | Shown before |
+| --- | --- | --- |
+| `builtin cd "$x"`, `command cd /tmp` | `cd`: "Change the current directory", badge builtin; in Reading, a command name under the word `cd`, and `"$x"` read by `cd` | "runs `cd`: Change the current directory", badge "builtin, run by `builtin`"; in Reading, `cd "$x"` read by `builtin` |
+| `alias ll='ls -l'; ll -h` | `ll`: "Run the command `ll` (the alias of line 1 is not in effect here)"; `-h` an option of `ll` | "Alias `ll`: list files in long format", the alias of Ubuntu and others, and `-h` "human-readable sizes", an option of `ls` |
+| `zsh -c 'echo hi'`, `dash`, `ksh93`, `mksh` | "Run the Z shell (zsh)", "Run dash, a small POSIX shell (`sh` on Debian and Ubuntu)", "Run the Korn shell (ksh93)"… | "Run the POSIX shell" |
+
+`builtin` and `command` look the name up (`builtin` among the builtins only, `command` past aliases and functions), and the builtin they find runs as bash would run it. Their own explanation keeps what they skip. A program that `command` finds (`command ls`) is still "run by `command`".
+

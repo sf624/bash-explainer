@@ -10,7 +10,7 @@ What a command name can be (3.7.2, in bash's order), and the badge:
 
 | Kind | Badge (en / ja) | Edge | Example |
 | --- | --- | --- | --- |
-| reserved word | keyword / 予約語 | solid, the keyword colour | `time`, `[[` |
+| reserved word | keyword / 予約語 | solid, the keyword colour | `time` |
 | alias | alias / エイリアス | solid | `ll` after `shopt -s expand_aliases; alias ll='ls -l'` |
 | function | function / 関数 | solid | `f` after `f() { …; }` |
 | builtin | builtin / ビルトイン | solid | `cd`, `echo`, `[` |
@@ -20,8 +20,8 @@ What a command name can be (3.7.2, in bash's order), and the badge:
 Where the names are:
 
 - the name of a simple command (the token of the command; for `[`, the token of `[`);
-- a command another command runs (`sudo echo`, `xargs kill`, `find -exec`, `env`, `nohup`, `exec`, `command`, `builtin`): the badge says "run by `sudo`";
-- the reserved words that stand where a command name does: `time` and `[[`. In Reading, a reserved word's node has no badge (its kind, "keyword", says it), but keeps its line on the other meanings.
+- a command another command runs (`sudo echo`, `xargs kill`, `find -exec`, `env`, `nohup`, `exec`, `command ls`, `builtin ls`): the badge says "run by `sudo`". A builtin that `command` or `builtin` finds (`builtin cd`, `command echo`) runs in this shell, as bash runs a command name: its badge is the builtin's alone, its explanation is the builtin's (no "runs `cd`"), and in Reading it is a command name of bash's layer under the word, whose arguments `cd` reads (decided by the maintainer, 2026-10-25);
+- the reserved word `time`, which stands where a command name does and is also a program. In Reading, a reserved word's node has no badge (its kind, "keyword", says it), but keeps its line on the other meanings. `[[` has none (decided by the maintainer, 2026-10-25): it is a test, which no other meaning shares.
 
 A subcommand (`git commit`) has no badge: bash does not look it up; it stays a command with the note that to the shell it is an argument. A name that is an expansion (`$cmd`) has none: it is known only when the line runs.
 
@@ -73,7 +73,7 @@ The maintainer chose C, always on (no setting).
 - The model does not know the file system: "a program" may not be there (`ll` with an alias that is not expanded is "command not found"), and a program that is not in the dictionary is never listed as another meaning of a builtin's or a function's name, except as "a program in PATH" where the dictionary knows the name.
 - After `hash -p PATH NAME`, the badge says program; the line does not list the program PATH would find.
 - In POSIX mode, a function named like a special builtin cannot be reached by its name; it is not listed.
-- Reserved words other than `time` and `[[` (`if`, `while`, `{`…) get no badge: their kind is the construct they start.
+- Reserved words other than `time` (`[[`, `if`, `while`, `{`…) get no badge: their kind is the construct they start.
 - In a string run by another shell (`bash -c 'echo hi'`), the codes are those of the shell where the name is, read with the functions that shell gets.
 
 test/name-kinds.test.ts checks the model against bash: the line runs what the badge says, each code of the line runs the meaning it is given for, and `type -a` lists the same meanings (the differences are listed with their reasons). test/web-name-kinds.test.ts checks the badges in both views, on the web page at 1280 and 390 pixels and in the VS Code panel; test/contrast.test.ts the colours (the word in the foreground colour, at least 4.5:1; the edge at least 3:1).
