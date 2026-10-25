@@ -1,7 +1,8 @@
 // Re-runs a worked example on input the user typed in the panel (regex101's test string).
 import type { Lang } from '../i18n';
-import { formatDate, parseSampleDate } from '../embedded/format';
+import { formatDate, parseSampleDate, UTC } from '../embedded/format';
 import { runAwk } from './awk';
+import { dateOutputLabel, parseDateValue, zoneOf } from './dates';
 import { Json, JqFormat, jqOutputLines, jqPrint, JqStep, jqSteps, parseJsonValues, runJq } from './jq';
 import { PerlOptions, runPerl } from './perlrun';
 import { pipelineExample, Stage } from './pipeline';
@@ -34,7 +35,11 @@ type RerunKind =
   | { kind: 'filter'; cmd: string; words: (string | undefined)[]; files?: string[] }
   | { kind: 'pipeline'; stages: Stage[] }
   | { kind: 'xargs'; words: (string | undefined)[] }
-  | { kind: 'date'; format: string };
+  /**
+   * `tz`: the zone `TZ` names (src/examples/dates.ts), else UTC; `local`: the lines are dates as `date -f` reads them
+   * (in that zone, or `@SECONDS`), else moments in UTC.
+   */
+  | { kind: 'date'; format: string; tz?: string; local?: boolean };
 
 /** A highlighted range on a line of the input: the whole match (group 0) or a capture group. */
 export interface Mark { start: number; end: number; group: number }
@@ -198,10 +203,11 @@ export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResu
     case 'xargs': return out(runXargs(words(spec.words), input.join('\n') + '\n').map(showCommand), s('実行されるコマンド', 'Commands that run'));
     case 'date': {
       const unreadable = s('（日時として読めません。`2024-03-05 07:08:09` の形で）', '(not a date; write it like `2024-03-05 07:08:09`)');
+      const zone = spec.tz === undefined ? UTC : zoneOf(spec.tz)!;
       return out(input.filter((l) => l.trim()).map((l) => {
-        const when = parseSampleDate(l);
-        return when ? (formatDate(spec.format, when) ?? '') : unreadable;
-      }));
+        const when = spec.local ? parseDateValue(l, zone) : parseSampleDate(l);
+        return when ? (formatDate(spec.format, when, zone) ?? '') : unreadable;
+      }), dateOutputLabel(spec.tz, !!spec.local, lang));
     }
   }
 }

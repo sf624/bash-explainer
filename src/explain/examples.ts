@@ -28,7 +28,8 @@ import { assignmentsOnly, field, prefixAssignments, redirectionsOf, type SyntaxN
 import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
-import { globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
+import { given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
+import { values } from '../argv/query';
 import { braceExpansion } from './words';
 
 /** Strings that do and do not match `js` (as grep lines, inverted by -v, or `=~` values). */
@@ -132,6 +133,47 @@ export function sedScripts(cx: Explainer): string[] | undefined {
   return scripts.length && scripts.every((t) => t !== undefined) ? scripts as string[] : undefined;
 }
 
+/**
+ * What the current `date` command is given besides its format (`DateRun`): the zone, the date `-d` gives, the file `-f`
+ * reads or `-r` names. Undefined when it prints no format (`-s` sets the clock; `-I`, `-R` and `--rfc-3339` are
+ * other formats: date refuses a second one), when it refuses two of `-d`, `-f` and `-r`, or when the zone `TZ` names
+ * is not known here.
+ */
+export function dateRun(cx: Explainer): commandExamples.DateRun | undefined {
+  if (given(cx, '-s', '-I', '-R', '--rfc-3339')) return undefined;
+  const { parse, nodes } = cx.command!;
+  const [dates, files, refs] = [values(parse, '-d'), values(parse, '-f'), values(parse, '-r')];
+  if ([dates, files, refs].filter((v) => v.length).length > 1) return undefined;
+  const tz = given(cx, '-u') ? undefined : tzOf(cx, cx.command!.args[0].parent!);
+  if (tz === null) return undefined;
+  const run: commandExamples.DateRun = tz !== undefined ? { tz } : {};
+  const d = dates.pop();
+  if (d) {
+    const value = literalContent(nodes[d.word])?.text.slice(d.at ?? 0);
+    return { ...run, date: { option: d.role.of, text: nodes[d.word].text.slice(d.at ?? 0), ...(value !== undefined ? { value } : {}) } };
+  }
+  if (files.length) return { ...run, file: inputSource(cx) };
+  const r = refs.pop();
+  if (r) return { ...run, reference: (literalContent(nodes[r.word])?.text ?? nodes[r.word].text).slice(r.at ?? 0) };
+  return run;
+}
+
+/**
+ * The value of `TZ` for command `cmd`: its own assignment (`TZ=Asia/Tokyo date`), or the variable exported where it
+ * runs; undefined when there is none, null when one is set to a value not known here.
+ */
+function tzOf(cx: Explainer, cmd: SyntaxNode): string | undefined | null {
+  const own = prefixAssignments(cmd).filter((c) => field(c, 'name')?.text === 'TZ').pop();
+  if (own) {
+    const v = field(own, 'value');
+    return v ? literalContent(v)?.text ?? null : '';
+  }
+  const v = cx.state.at(cmd).run.variables.get('TZ');
+  const exported = v?.attrs.x?.state ?? 'off';
+  if (!v || v.set === 'off' || exported === 'off') return undefined;
+  return v.set === 'on' && exported === 'on' && v.value !== undefined ? v.value : null;
+}
+
 /** -F, -v and `name=value` operands of the current awk command (literal values only); undefined when the example cannot follow them. */
 export function awkOptions(cx: Explainer): (AwkRunOptions & { vars: Record<string, string> }) | undefined {
   const words = cx.command!.args.map((a) => literalContent(a)?.text);
@@ -171,8 +213,12 @@ export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefin
         : cx.s(`\`${step.stage.text}\` の後`, `After \`${step.stage.text}\``);
     sections.push({ label, lines: cap(step.output), empty: cx.s('（なし）', '(nothing)') });
   });
+  // A pipeline in a word of a command (`echo $(a | b)`) is named in the title, not that command.
+  let up = n.parent;
+  while (up && up.type !== 'command') up = up.parent;
   return {
     title: cx.s('例（パイプライン全体）', 'Example (the whole pipeline)'), sections,
+    ...(up ? { target: shorten(n.text.replace(/\s*\\\n\s*/g, ' '), 40) } : {}),
     // Data from a file can be edited; data made by echo or seq cannot.
     ...(inputs.length ? { interactive: interactive(cx, { kind: 'pipeline', stages }, inputs) } : {}),
   };

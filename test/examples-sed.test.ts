@@ -116,8 +116,11 @@ describe('the sed example of a line agrees with GNU sed', () => {
   const parser = createUnbashParser();
   for (const line of cases) {
     it(line, () => {
-      const ex = new Analyzer('en').explainLine(parser.parse(line), 0).examples.find((x) => x.kind === 'sed');
-      assert.ok(ex, 'has an example');
+      // (One example of the whole script, however many -e give it, at the command.)
+      const all = new Analyzer('en').explainLine(parser.parse(line), 0).examples.filter((x) => x.kind === 'sed');
+      assert.strictEqual(all.length, 1, 'has one example');
+      const ex = all[0];
+      if (/ -e .* -e /.test(line)) assert.deepStrictEqual(ex.anchor, { start: { line: 0, character: 0 }, end: { line: 0, character: line.length } });
       const [input, output] = ex.sections.map((s) => s.lines);
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-sed-'));
       try {

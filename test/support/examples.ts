@@ -19,10 +19,10 @@ export function exampleOf(src: string, lang: 'en' | 'ja' = 'en'): Example | unde
 
 /**
  * Runs `line` with bash in a directory holding the files its example shows, with the standard input it shows (its
- * last section is the output, or a file written); `bin`: programs put first on PATH, by name. What it printed (or
- * wrote), and what the example says.
+ * last section is the output, or a file written); `bin`: programs put first on PATH, by name; `env`: variables set.
+ * What it printed (or wrote), and what the example says.
  */
-export function realOutput(line: string, ex: Example, bin: Record<string, string> = {}): { got: string; want: string } {
+export function realOutput(line: string, ex: Example, bin: Record<string, string> = {}, env: NodeJS.ProcessEnv = {}): { got: string; want: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-examples-'));
   try {
     let stdin = '';
@@ -38,7 +38,7 @@ export function realOutput(line: string, ex: Example, bin: Record<string, string
     const binDir = path.join(dir, '.bin');
     fs.mkdirSync(binDir);
     for (const [name, target] of Object.entries(bin)) fs.symlinkSync(target, path.join(binDir, name));
-    const r = run('bash', ['-c', line], { cwd: dir, input: stdin, env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` } });
+    const r = run('bash', ['-c', line], { cwd: dir, input: stdin, env: { ...process.env, ...env, PATH: `${binDir}:${process.env.PATH}` } });
     // What a file gets: one the output is written to, or the file rewritten in place (the first input file).
     const firstFile = ex.sections.map((sec) => /^Input: `([^`]+)`/.exec(sec.label)?.[1]).find((f) => f);
     const written = /^Written to `([^`]+)`$|^`([^`]+)` after$/.exec(out.label)?.slice(1).find((f) => f) ?? (out.label === 'After' ? firstFile : undefined);
