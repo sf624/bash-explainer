@@ -7,7 +7,7 @@ import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
 import { marked, type Note, plainNote, PORTABILITY } from './messages';
-import { ancestor, braceTakenAsWord, descendants, field, fields, prefixAssignments, substitutionForm } from './syntax/tree';
+import { ancestor, braceTakenAsWord, childrenOnRows, descendants, field, fields, prefixAssignments, substitutionForm } from './syntax/tree';
 import { networkPath, networkTarget } from './dict/syntax';
 import { staticWordValue } from './staticword';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
@@ -173,7 +173,7 @@ function walk(root: SyntaxNode, from: number, to: number, check: (n: SyntaxNode)
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row > to || n.endPosition.row < from) return;
     if (n.startPosition.row >= from) check(n);
-    n.children.forEach(visit);
+    childrenOnRows(n.children, from, to).forEach(visit);
   };
   visit(root);
 }

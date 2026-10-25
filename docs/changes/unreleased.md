@@ -21,9 +21,9 @@ A name the reader asked for gets none: `builtin cd`, `command ls`, `\ls`, `sudo 
 
 The web page's editor shows the same hints, muted after the name, on the lines in view: hover one for its tooltip, click it to explain its line in the panel. When long lines wrap, a long hint wraps with its line. `bashExplainer.hints.names` is in the page's settings too.
 
-### Pitfalls as problems
+### Warnings and caveats as problems
 
-The pitfalls that the explanation of a line points out are now problems too. Each has a code, shown in the Problems panel and in the output of `--check`, and its range is the part of the line it is about (the word `$DIR/*`, the `$(ls)` of a `for`, the whole `x = 1`).
+Every warning (⚠) and caveat (ⓘ) that the explanation of a line points out is now a problem too; a plain fact (ℹ) is not, except the note that bash cannot read zsh syntax (`zshSyntax`), as before. Each has a code, shown in the Problems panel and in the output of `--check`, and its range is the part of the line it is about (the word `$DIR/*`, the `$(ls)` of a `for`, the whole `x = 1`).
 
 ```text
 script.sh:2:10: info: Caveat: the output of $(ls …) is split on spaces and newlines, so file names with spaces break. Use a glob, as in for f in *.txt [for-over-ls-output]
@@ -60,10 +60,35 @@ Information, for what goes wrong only with some values, and where the damage is 
 | `unquoted-variable-in-test` | `[ $a = b ]` |
 | `read-without-r` | `read line` |
 
-- They follow the same settings as the other problems: `bashExplainer.diagnostics.ignore` and `# bash-explainer disable=<code>` leave one out. The new `bashExplainer.diagnostics.pitfalls` (default on) leaves all of them out, and so does `bashExplainer.notes.pitfalls` off.
+The other warnings and caveats of the explanations are problems as well. Among them:
+
+| Code | Example | Level |
+| --- | --- | --- |
+| `keyword-needs-separator` | `if [ -f a ] then …` | warning |
+| `bracket-missing-close`, `bracket-close-glued`, `test-malformed` | `[ -f a`, `[ -f a]`, `[ a b c ]` | warning |
+| `unset-readonly`, `unset-function-and-variable` | `readonly x=1; unset x`, `unset -f -v x` | warning |
+| `local-outside-function` | `local x=1` outside a function | warning |
+| `alias-not-expanded-in-script`, `distro-alias-in-script` | `alias ll='ls -l'` then `ll`; `ll /tmp` | warning |
+| `extglob-turned-off`, `extglob-in-same-block`, `extglob-not-in-new-shell` | `shopt -u extglob`, then `ls !(a)` on a later line | warning |
+| `variable-not-exported`, `variable-not-passed-by-wrapper`, `variable-not-in-remote-shell` | `x=1; bash -c 'echo $x'` | warning |
+| `builtin-or-function-as-program`, `function-not-in-new-shell-export`, `function-not-on-remote`… | `f() { :; }; sudo f` | warning |
+| `wrapper-assignment-expanded-first` | `sudo X=1 echo $X` | warning |
+| `pipeline-subshell-variable` | `… \| while read -r l; do n=1; done; echo "$n"` | warning |
+| `regex-backslash-dropped` | `[[ $x =~ \bfoo ]]` | warning |
+| `posix-special-function-name` | `exit() { :; }` in sh | warning |
+| `postfix-increment-status`, `postfix-decrement-status` | `set -e; i=0; (( i++ ))` (information without `set -e`) | warning |
+| `declaration-masks-status` | `local x=$(false)` | information |
+| `pipefail-missing` | `set -e; curl -s x \| sh` | information |
+| `extglob-not-found`, `extglob-maybe-on`, `globstar-not-found`, `globstar-maybe-on` | `ls !(a)`, `ls **/*.sh` with the option not turned on | information |
+| `unmatched-glob-runs-once` | `for f in *.log; do rm "$f"; done` | information |
+| `ssh-local-expansion` | `ssh host "echo $HOME"` | information |
+
+- They follow the same settings as the other problems: `bashExplainer.diagnostics.ignore` and `# bash-explainer disable=<code>` leave one out. The new `bashExplainer.diagnostics.pitfalls` (default on) leaves all of them out. With `bashExplainer.notes.pitfalls` off, the explanations leave out their pitfalls, and so do the problems; the notes that say a line fails when it runs (`[` without `]`) stay.
+- A problem is said once for each part it is about, however many lines say it (a statement over several lines), and once for each part where it is about several (`cp $a b; cp $a c`). In VS Code and on the web page, the hover then leaves the note out of its card, since the problem above it says it.
 - They follow the script's shell. In zsh, which does not split or glob an unquoted `$var`, `cp $a b` and `for a in $@` have none; `[ -n $x ]` keeps its pitfall, since zsh drops an empty unquoted word too, and says so. A line that zsh syntax leaves unreadable to bash gets none.
-- They are found in shell scripts, and in the strings a script runs as scripts (`bash -c 'x = 1'`, `eval '…'`, `trap '…' EXIT`), at their place in the string. The shell code inside other files (Dockerfiles, Makefiles, CI YAML, bats files…) shows them in its explanations, as before, but not yet as problems.
-- These are the pitfalls about how a line is written and how its words expand. The others the explanations give (on exit status and `set -e`, `shopt -s extglob`, a variable set in a pipeline, a glob that matches nothing) are not problems yet.
+- The notes that name a host's placeholder (a Makefile's `$(SRC)`, read as `${SRC}`) name it as the file writes it, in the explanations too.
+- They are found in shell scripts, in the strings a script runs as scripts (`bash -c 'x = 1'`, `eval '…'`, `trap '…' EXIT`), at their place in the string, and in the shell code inside other files (Dockerfiles, Makefiles, CI YAML, bats files…), at its place in the file (`bashExplainer.diagnostics.embedded` leaves those out).
+- The note on a missing `;` before `then` or `do` now cites the manual's sections on loops and conditionals.
 - **Compatibility:** `--check` prints these lines, but its exit status does not change: a warning on a pitfall makes it exit 1 only with the new `--strict`. The GitHub Action has a `strict` input (default `'false'`) for it; with a `package:` pin to a tool without `--strict`, the step fails and says so. Its `warnings` output counts the warnings that fail the step (those on pitfalls only with `strict`), as before; the new `pitfalls` output counts the pitfalls, warnings and notices. The annotations of pitfalls are titled `Bash Explainer (pitfall): <code>`, and `--format github` prints those that fail the check first, since GitHub shows only the first annotations of each kind in a step. SARIF has them as `warning` and `note` results. Before, `--check` reported only what the script's shell lacks and the risks in embedded shell code.
 
 ### An unset variable under `set -u`

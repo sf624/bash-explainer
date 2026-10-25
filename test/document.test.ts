@@ -4,7 +4,7 @@ import { descendants } from '../src/syntax/tree';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
-import { documentIssues, explainDocumentLine, pitfallIssues, ShellDocument } from '../src/document';
+import { documentIssues, explainDocumentLine, noteIssues, ShellDocument } from '../src/document';
 import { extractShell } from '../src/hosts';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
@@ -15,10 +15,11 @@ before(async () => {
 });
 
 const script = (text: string): ShellDocument => ({ lines: text.split('\n'), tree: parser.parse(text) });
-const dockerfile = (text: string): ShellDocument => {
-  const extracted = extractShell('dockerfile', text);
+const hosted = (kind: Parameters<typeof extractShell>[0], text: string): ShellDocument => {
+  const extracted = extractShell(kind, text);
   return { lines: text.split('\n'), extracted, tree: parser.parse(extracted.text) };
 };
+const dockerfile = (text: string): ShellDocument => hosted('dockerfile', text);
 
 // The functions the extension and the web page share.
 describe('documents without VS Code', () => {
@@ -108,7 +109,8 @@ describe('the pitfalls of a script, as problems', () => {
     ['read line', [['read-without-r', 'info', 0, 0, 0, 9]]],
     ['[ $a < $b ]', [['redirect-in-bracket', 'warning', 0, 5, 0, 9], ['unquoted-variable-in-test', 'info', 0, 2, 0, 4]]],
     ['[ -f $x]', [['bracket-close-in-word', 'warning', 0, 5, 0, 8]]],
-    ['[ a && b ]', [['and-or-in-bracket', 'warning', 0, 4, 0, 6]]],
+    // (`&&` ends the command `[ a`, which then has no `]`: a failure note, said too.)
+    ['[ a && b ]', [['bracket-missing-close', 'warning', 0, 0, 0, 3], ['and-or-in-bracket', 'warning', 0, 4, 0, 6]]],
     // src/wordfacts.ts
     ['FOO=1 echo $FOO', [['prefix-assignment-expanded-first', 'warning', 0, 11, 0, 15]]],
     ['cp $a b', [['unquoted-variable-as-path', 'warning', 0, 3, 0, 5]]],
@@ -133,6 +135,19 @@ describe('the pitfalls of a script, as problems', () => {
     // Each place, also where the explanation of the line says it once.
     ['cp $a b; cp $a c', [['unquoted-variable-as-path', 'warning', 0, 3, 0, 5], ['unquoted-variable-as-path', 'warning', 0, 12, 0, 14]]],
     ['echo "$x"\nx=1', []],
+    // The other warnings and caveats of the explanations: a fact of the catalog, a failure, a status fact, a level that depends on `set -e`.
+    ['f() {\n  local x=$(false)\n}', [['declaration-masks-status', 'info', 1, 2, 1, 18]]],
+    ['[ -f a', [['bracket-missing-close', 'warning', 0, 0, 0, 6]]],
+    ['set -e\ni=0\n(( i++ ))', [['postfix-increment-status', 'warning', 2, 0, 2, 9]]],
+    ['i=0\n(( i++ ))', [['postfix-increment-status', 'info', 1, 0, 1, 9]]],
+    ['set -e\ncat a \\\n  | grep b', [['pipefail-missing', 'info', 1, 0, 1, 7]]],
+    // (Said on each line of a statement over several lines: one problem.)
+    ['f() {\n  local x=$(false) \\\n    y=1\n}', [['declaration-masks-status', 'info', 1, 2, 1, 20]]],
+    // (In `$( )` and in a string a shell runs, at their places in the document.)
+    ['echo a\nx=$( [ -f a )', [['bracket-missing-close', 'warning', 1, 5, 1, 11]]],
+    ["sh -c 'f() {\n  local x=$(false)\n}'", [['declaration-masks-status', 'info', 1, 2, 1, 18]]],
+    // A plain fact is never a problem.
+    ['exit 300', []],
   ];
   for (const [text, want] of cases) {
     it(`${JSON.stringify(text)}: ${want.map((w) => w[0]).join(', ') || 'none'}`, () => assert.deepStrictEqual(found(text), want));
@@ -152,7 +167,7 @@ describe('the pitfalls of a script, as problems', () => {
     assert.deepStrictEqual(documentIssues(script(text), 'en', {}, [], { pitfalls: false }), []);
   });
 
-  it('follows the shell: none where zsh syntax leaves the line unread, and none in a host file', () => {
+  it('follows the shell: none where zsh syntax leaves the line unread; in a host file, at the columns of the file', () => {
     // zsh does not split `$a`, and bash cannot read the line with `${(f)…}`.
     assert.deepStrictEqual(found('cp $a b', { forced: 'zsh' }), []);
     assert.deepStrictEqual(documentIssues(script('cp $a b'), 'en', { forced: 'zsh' }).map((i) => i.code), ['wordSplit']);
@@ -168,8 +183,18 @@ describe('the pitfalls of a script, as problems', () => {
     assert.deepStrictEqual(found('[ -n $x ]', { forced: 'zsh' }), [['unquoted-variable-in-test', 'info', 0, 5, 0, 7]]);
     const [test] = documentIssues(script('[ -n $x ]'), 'en', { forced: 'zsh' }).filter((i) => i.pitfall);
     assert.match(test.message, /is not split in zsh, but an empty value drops the word/);
-    assert.deepStrictEqual(documentIssues(dockerfile('FROM alpine\nRUN x = 1'), 'en', {}).filter((i) => i.pitfall), []);
-    assert.deepStrictEqual(pitfallIssues(dockerfile('FROM alpine\nRUN x = 1'), 'en', undefined), []);
+    assert.deepStrictEqual(documentIssues(dockerfile('FROM alpine\nRUN x = 1'), 'en', {}).filter((i) => i.pitfall).map((i) => [i.code, i.startLine, i.startCol, i.endLine, i.endCol]), [['assignment-with-spaces', 1, 4, 1, 9]]);
+  });
+
+  it('in a host file: the facts of bats on their statements, a placeholder as the file writes it, a pipe said once', () => {
+    const rows = (doc: ShellDocument) => documentIssues(doc, 'en', {}).map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endCol]);
+    assert.deepStrictEqual(rows(hosted('bats', '@test "x" {\n  ! grep a f\n  run echo a | grep a\n  true\n}')),
+      [['bats-negation-ignored', 'warning', 1, 2, 12], ['bats-run-in-pipeline', 'warning', 2, 2, 21]]);
+    const [make] = documentIssues(hosted('makefile', 'all:\n\tcp $(SRC) $$dir/\n'), 'en', {});
+    assert.deepStrictEqual([make.code, make.startLine, make.startCol, make.endCol], ['unquoted-variable-as-path', 1, 4, 10]);
+    assert.match(make.message, /`\$\(SRC\)` is not quoted/);
+    // (`set -e` and a pipe in a RUN: the Dockerfile's own problem says it; the note's `pipefail-missing` is not made too.)
+    assert.deepStrictEqual(rows(dockerfile('FROM debian\nSHELL ["/bin/bash","-c"]\nRUN set -e; curl -s x | tar -x')).map((r) => r[0]), ['dockerPipefail']);
   });
 
   // A string a command runs as a script is read with its own model and shell, at its place in the document.
@@ -185,12 +210,12 @@ describe('the pitfalls of a script, as problems', () => {
 
   it('leaves out a pitfall that another problem at its place already says', () => {
     const doc = script('x = 1');
-    const [mine] = pitfallIssues(doc, 'en', undefined);
+    const [mine] = noteIssues(doc, 'en', {}, {});
     const other = { code: 'other', severity: 'warning' as const, message: 'something else', startLine: 0, startCol: 0, endLine: 0, endCol: 1 };
-    assert.deepStrictEqual(pitfallIssues(doc, 'en', undefined, [other]), [mine]);
-    assert.deepStrictEqual(pitfallIssues(doc, 'en', undefined, [{ ...other, message: mine.message }]), []);
-    assert.deepStrictEqual(pitfallIssues(doc, 'en', undefined, [{ ...other, code: mine.code }]), []);
-    assert.deepStrictEqual(pitfallIssues(doc, 'en', undefined, [{ ...other, code: mine.code, startCol: 5, endCol: 6 }]), [mine]);
-    assert.deepStrictEqual(pitfallIssues(doc, 'en', undefined, [{ ...other, code: mine.code, startLine: 1, endLine: 1 }]), [mine]);
+    assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [other]), [mine]);
+    assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [{ ...other, message: mine.message }]), []);
+    assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [{ ...other, code: mine.code }]), []);
+    assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [{ ...other, code: mine.code, startCol: 5, endCol: 6 }]), [mine]);
+    assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}, [{ ...other, code: mine.code, startLine: 1, endLine: 1 }]), [mine]);
   });
 });
