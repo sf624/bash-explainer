@@ -1,6 +1,7 @@
 import { ordinal, type Lang } from '../i18n';
 import { EmbeddedToken, pick } from './types';
 import { JQ_ONLY, YQ_BUILTINS } from './yqfuncs';
+import { wordTable } from '../wordtable';
 
 /** `yq`: the expression language of mikefarah/yq v4, which is jq-like with its own functions. */
 export type JqDialect = 'jq' | 'yq';
@@ -18,7 +19,7 @@ const KEYWORDS = new Set(['if', 'then', 'elif', 'else', 'end', 'as', 'def', 'red
 const OPS = ['...', '?//', '|=', '+=', '-=', '*=', '/=', '%=', '//=', '==', '!=', '<=', '>=', '//', '..', '|', ',', '+', '-', '*', '/', '%', '<', '>', '=', '(', ')', '[', ']', '{', '}', ':', ';', '?', '.'];
 
 /** Built-in functions: [ja, en]. */
-const BUILTINS: Record<string, [string, string]> = {
+const BUILTINS: Record<string, [string, string]> = wordTable({
   select: ['条件が真の入力だけを通す（偽なら何も出力しない）', 'pass the input through only if the condition is true'],
   map: ['配列の各要素にフィルタを適用した配列を作る（`[.[] | f]` と同じ）', 'apply the filter to every element of an array (same as `[.[] | f]`)'],
   map_values: ['オブジェクト・配列の各値にフィルタを適用する', 'apply the filter to every value'],
@@ -120,7 +121,7 @@ const BUILTINS: Record<string, [string, string]> = {
   scalars: ['配列・オブジェクト以外だけを通す', 'pass through non-container values only'],
   IN: ['入力が、引数の出力のどれかと等しいか', 'whether the input equals any output of the argument'],
   INDEX: ['指定したキーでオブジェクトに索引付けする', 'build an object indexed by the given key'],
-};
+});
 
 const FORMATS: Record<string, [string, string]> = {
   '@csv': ['配列を CSV の1行にする', 'format an array as a CSV row'],
@@ -641,7 +642,7 @@ class JqParser {
       return this.node(t.start, v.end, 'keyword', s(`\`break ${v.text}\`: \`label ${v.text}\` の範囲をここで抜ける（以降の出力は出ない）`, `\`break ${v.text}\`: leaves the \`label ${v.text}\` scope here (no more outputs from it)`));
     }
     const lit: Record<string, [string, string]> = { true: ['真偽値 true', 'boolean true'], false: ['真偽値 false', 'boolean false'], null: ['null', 'null'] };
-    if (lit[name]) return this.node(t.start, t.end, 'number', s(lit[name][0], lit[name][1]));
+    if (Object.hasOwn(lit, name)) return this.node(t.start, t.end, 'number', s(lit[name][0], lit[name][1]));
     const args: Node[] = [];
     let end = t.end;
     if (this.peek('(') && this.toks[this.p].start === t.end) {

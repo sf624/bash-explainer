@@ -1,16 +1,17 @@
 import { sedEscapeAt } from '../ctlchars';
 import type { Lang } from '../i18n';
 import { EmbeddedToken, pick } from './types';
+import { wordTable } from '../wordtable';
 
 /** POSIX basic (grep, sed), POSIX extended (grep -E, sed -E, [[ =~ ]]) or Perl-compatible (grep -P). */
 export type Flavor = 'bre' | 'ere' | 'pcre';
 
-const CLASSES: Record<string, [string, string]> = {
+const CLASSES: Record<string, [string, string]> = wordTable({
   alpha: ['英字', 'letters'], digit: ['数字', 'digits'], alnum: ['英数字', 'letters and digits'],
   upper: ['大文字', 'uppercase letters'], lower: ['小文字', 'lowercase letters'], space: ['空白文字', 'whitespace'],
   blank: ['スペースとタブ', 'spaces and tabs'], punct: ['記号', 'punctuation'], xdigit: ['16進数字', 'hex digits'],
   cntrl: ['制御文字', 'control characters'], print: ['表示可能な文字', 'printable characters'], graph: ['空白以外の表示可能な文字', 'visible characters'],
-};
+});
 
 /** `\w`, `\d`… Whether each is available in each flavor (GNU tools support some in BRE/ERE). */
 const SHORTHANDS: Record<string, { ja: string; en: string; gnu: boolean }> = {

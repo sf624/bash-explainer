@@ -6,6 +6,8 @@
 import type { Shell } from './dialect';
 import type { ShellDocument, Shells } from './document';
 import type { CommandSpec } from './argv/spec';
+import { actsOnNames } from './argv/query';
+import { builtins } from './dict/builtins';
 import type { Extracted } from './hosts';
 import { scriptTree } from './hosts/scripts';
 import { type HighlightModifier, semanticFacts } from './semanticFacts';
@@ -53,8 +55,8 @@ const MODIFIERS: readonly HighlightModifier[] = ['readonly', 'exported'];
 export const HIGHLIGHT_KINDS = KINDS.slice(1) as HighlightKind[];
 const CODE = new Map(KINDS.map((k, i) => [k, i]));
 
-/** The builtins whose operands name variables (or functions): `declare x`, `unset x`. */
-const NAMES_VARIABLES: ReadonlySet<string> = new Set(['declare', 'typeset', 'local', 'export', 'readonly', 'unset']);
+/** The builtins whose operands name variables (or functions, `OperandSpec.acts`): `declare x`, `unset x`. */
+const NAMES_VARIABLES: ReadonlySet<string> = new Set(Object.keys(builtins).filter((name) => actsOnNames(builtins[name])));
 
 const KEYWORDS = new Set(['if', 'then', 'else', 'elif', 'fi', 'for', 'in', 'do', 'done', 'while', 'until', 'case', 'esac', 'select', 'function',
   'time', 'coproc', '!', '{', '}', '[[', ']]', '((', '))']);

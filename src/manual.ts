@@ -1,4 +1,5 @@
 import type { Lang } from './i18n';
+import { wordTable } from './wordtable';
 
 // The GNU Bash Reference Manual, as the explanations cite it: by the section numbers of bash 5.2, with a link to its
 // page on gnu.org. The texts are our own words; the manual (GFDL) is cited, never quoted.
@@ -126,7 +127,7 @@ export function manualLabel(lang: Lang, ids: readonly string[]): string {
 }
 
 /** The section that describes each builtin (its `@btindex` in the manual). */
-export const BUILTIN_SECTIONS: Readonly<Record<string, string>> = {
+export const BUILTIN_SECTIONS: Readonly<Record<string, string>> = wordTable({
   ':': '4.1',
   '.': '4.1',
   break: '4.1',
@@ -186,5 +187,5 @@ export const BUILTIN_SECTIONS: Readonly<Record<string, string>> = {
   compopt: '8.7',
   fc: '9.2',
   history: '9.2',
-};
+});
 

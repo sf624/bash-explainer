@@ -1,6 +1,7 @@
 import { Text, tx } from '../i18n';
 import { splitReplacement } from '../expansion';
 import { messageText, unquoteWord } from '../staticword';
+import { wordTable } from '../wordtable';
 
 /** The name of `{name}` in `{name}>file`: bash picks a free descriptor (10 or higher) and stores its number in that variable. */
 function namedFd(fd: string): string | undefined {
@@ -151,11 +152,11 @@ export function networkPathAsFile(shell: string | undefined): Text {
   );
 }
 
-export const specialDestinations: Record<string, Text> = {
+export const specialDestinations: Record<string, Text> = wordTable({
   '/dev/null': tx('`/dev/null` は書き込んだ内容を捨てる特殊ファイル（出力を捨てる定番）', '`/dev/null` discards everything written to it'),
   '/dev/stderr': tx('`/dev/stderr` は標準エラー出力を指す', '`/dev/stderr` refers to standard error'),
   '/dev/stdout': tx('`/dev/stdout` は標準出力を指す', '`/dev/stdout` refers to standard output'),
-};
+});
 
 /** Whether a name as shown (`$1`, `$@`) is a positional parameter, which `${…:=…}` cannot assign to. */
 export function cannotAssign(shown: string): boolean {
@@ -230,7 +231,7 @@ for (const op of ['/', '//', '/#', '/%']) {
   };
 }
 
-export const specialVariables: Record<string, Text> = {
+export const specialVariables: Record<string, Text> = wordTable({
   '?': tx('直前に実行したコマンドの終了ステータス（0 は成功）', 'Exit status of the last command (0 = success)'),
   '@': tx('全ての位置パラメータ。`"$@"` とすると各引数を別々の単語として展開', 'All positional parameters; `"$@"` expands each one as a separate word'),
   '*': tx('全ての位置パラメータ。`"$*"` は IFS の先頭文字で連結した1つの文字列になる', 'All positional parameters; `"$*"` joins them into one string with the first IFS char'),
@@ -240,9 +241,9 @@ export const specialVariables: Record<string, Text> = {
   '0': tx('スクリプト名（またはシェル名）', 'Name of the script or shell'),
   '-': tx('現在有効なシェルオプションのフラグ', 'Current shell option flags'),
   '_': tx('直前のコマンドの最後の引数', 'Last argument of the previous command'),
-};
+});
 
-export const wellKnownVariables: Record<string, Text> = {
+export const wellKnownVariables: Record<string, Text> = wordTable({
   HOME: tx('ホームディレクトリのパス', 'Home directory'),
   PATH: tx('コマンドを探すディレクトリの一覧（`:` 区切り）', 'Colon-separated list of directories searched for commands'),
   PWD: tx('カレントディレクトリ', 'Current working directory'),
@@ -268,7 +269,7 @@ export const wellKnownVariables: Record<string, Text> = {
   TMPDIR: tx('一時ファイル用ディレクトリ', 'Directory for temporary files'),
   LANG: tx('ロケール設定', 'Locale setting'),
   EDITOR: tx('既定のテキストエディタ', 'Default text editor'),
-};
+});
 
 /** Unary test operators used in `[ ]`, `[[ ]]` and `test`. */
 export const unaryTestOps: Record<string, Text> = {

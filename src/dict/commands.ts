@@ -10,7 +10,7 @@ import { admin } from './admin';
 import { netadmin } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
-import { args, ASSIGNMENTS, byCount, cmd, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO } from './types';
+import { args, ASSIGNMENTS, byCount, cmd, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, wordTable } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
@@ -2086,7 +2086,7 @@ export const core: Record<string, CommandSpec> = {
   }),
 };
 
-export const commands: Record<string, CommandSpec> = {
+export const commands: Record<string, CommandSpec> = wordTable({
   ...core,
   ...distro,
   ...system,
@@ -2097,5 +2097,5 @@ export const commands: Record<string, CommandSpec> = {
   ...monitor,
   ...macos,
   ...ops,
-};
+});
 

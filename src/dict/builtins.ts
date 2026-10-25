@@ -1,6 +1,6 @@
 import { Text, tx } from '../i18n';
 import type { BuiltinCall, CommandSpec, NameOptions, OperandSpec, OptionSpec, PatternOption, ValueSpec, ValueType, VariableSet } from '../argv/spec';
-import { args, cmd, operand, optionOf, OptSpec, runs } from './types';
+import { args, cmd, operand, optionOf, OptSpec, runs, wordTable } from './types';
 import { declarationCommands, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags } from './syntax';
 
 export const shellOptions = {
@@ -229,13 +229,13 @@ const GLOB_AGAIN = tx('グロブ（ワイルドカード展開）を再び有効
 /** The builtins of bash that sh-like shells (dash, ksh…) are not taken to have: there they are programs, if any. */
 export const BASH_ONLY_BUILTINS: ReadonlySet<string> = new Set(['shopt', 'mapfile', 'readarray']);
 
-export const builtins: Record<string, CommandSpec> = {
+export const builtins: Record<string, CommandSpec> = wordTable({
   export: actsOnShell(declarationSpec('export', exportFlags, FUNCTION_NAMES, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
   readonly: actsOnShell(declarationSpec('readonly', readonlyFlags, FUNCTION_NAMES, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
   // `declare +x`: a `+` turns the attribute off.
-  declare: actsOnShell(declarationSpec('declare', declarationFlags, DECLARE_NAMES, { plusOptions: true }, declarationOffFlags), declares),
-  typeset: actsOnShell(declarationSpec('typeset', declarationFlags, DECLARE_NAMES, { plusOptions: true }, declarationOffFlags), declares),
-  local: actsOnShell(declarationSpec('local', declarationFlags, DECLARE_NAMES, { plusOptions: true, scope: 'function' }, declarationOffFlags), (c) => c.operands.length > 0),
+  declare: actsOnShell(declarationSpec('declare', declarationFlags, DECLARE_NAMES, { plusOptions: true, locals: 'unless-g' }, declarationOffFlags), declares),
+  typeset: actsOnShell(declarationSpec('typeset', declarationFlags, DECLARE_NAMES, { plusOptions: true, locals: 'unless-g' }, declarationOffFlags), declares),
+  local: actsOnShell(declarationSpec('local', declarationFlags, DECLARE_NAMES, { plusOptions: true, scope: 'function', locals: 'always' }, declarationOffFlags), (c) => c.operands.length > 0),
   // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word, `--` too, is text to print.
   // The last of `-e` and `-E` decides whether backslash escapes are read.
   echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', ECHO_OPTIONS, { program: PROGRAMS.echo, ...ECHO_READING }),
@@ -564,4 +564,4 @@ export const builtins: Record<string, CommandSpec> = {
   ]),
   times: special('シェルと子プロセスの累積CPU時間を表示する', 'Print accumulated CPU times'),
   caller: b('呼び出し元の行番号・関数名を表示する（デバッグ用）', 'Print the caller context (debugging)'),
-};
+});

@@ -511,6 +511,11 @@ The example of a pipeline inside `$( )` or `<( )` was titled with the command ar
 | `builtin cd "$x"`, `command cd /tmp` | `cd`: "Change the current directory", badge builtin; in Reading, a command name under the word `cd`, and `"$x"` read by `cd` | "runs `cd`: Change the current directory", badge "builtin, run by `builtin`"; in Reading, `cd "$x"` read by `builtin` |
 | `alias ll='ls -l'; ll -h` | `ll`: "Run the command `ll` (the alias of line 1 is not in effect here)"; `-h` an option of `ll` | "Alias `ll`: list files in long format", the alias of Ubuntu and others, and `-h` "human-readable sizes", an option of `ls` |
 | `zsh -c 'echo hi'`, `dash`, `ksh93`, `mksh` | "Run the Z shell (zsh)", "Run dash, a small POSIX shell (`sh` on Debian and Ubuntu)", "Run the Korn shell (ksh93)"… | "Run the POSIX shell" |
+| `toString x`, `constructor`, `hasOwnProperty a`, `valueOf`, `__proto__` (bash: not found) | "Run the external command `toString`", badge program | the same text with the badge builtin, also after `builtin`; after `enable -n toString`, "`enable -n` … turned the builtin `toString` off" |
+| `set -o constructor`, `cat < constructor`, `echo hi 2> valueOf` | "Value for `-o`"; "Read file `constructor` as stdin (fd 0)" | "constructor: undefined"; "… as stdin (fd 0). undefined" |
+| `jq 'constructor' a.json`, `yq '.a \| constructor' a.yaml`, `echo '{"a":1}' \| jq '.toString'` | "a function (built-in or defined with `def`)"; the example prints `null`, as jq does | the line was not explained (an error) |
+
+The tables the explanations read (the commands, the variables, the functions of jq, yq, awk and perl, the classes of a bracket expression, the words of `date -d`…) are looked up by the words of the script; those that are also the names of what every JavaScript object has found that instead.
 
 `builtin` and `command` look the name up (`builtin` among the builtins only, `command` past aliases and functions), and the builtin they find runs as bash would run it. Their own explanation keeps what they skip. A program that `command` finds (`command ls`) is still "run by `command`".
 

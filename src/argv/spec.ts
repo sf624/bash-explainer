@@ -88,10 +88,12 @@ export interface CommandSpec {
   builtin?: 'special' | 'regular';
   /**
    * What a builtin ends, where the path goes on after it: `loop`, the loop it runs in (`break`); `pass`, the pass of
-   * that loop, which goes on with the next one (`continue`); `function`, the function that runs it, a file that
-   * `source` reads, or a trap's action (`return`); `shell`, the shell, or the subshell it runs in (`exit`). Outside a
-   * loop, `break` and `continue` do nothing (bash says "only meaningful in a … loop", status 0); outside a function
-   * and a sourced file, `return` fails ("can only `return' from a function or sourced script", status 2).
+   * that loop, which goes on with the next one (`continue`); `function`, the function that runs it or a file that
+   * `source` reads (`return`); `shell`, the shell, or the subshell it runs in (`exit`). Outside a loop, `break` and
+   * `continue` do nothing (bash says "only meaningful in a … loop", status 0); outside a function and a sourced file,
+   * `return` fails ("can only `return' from a function or sourced script", status 2) and the path goes on. So in a
+   * trap's action, `return` ends the function the signal interrupted (and the action with it), or fails when no
+   * function was running (bash 5.2; `Walker.jump` takes both).
    */
   ends?: Ends;
   /**
@@ -99,6 +101,13 @@ export interface CommandSpec {
    * changes nothing (bash: "local: can only be used in a function", status 1).
    */
   scope?: 'function';
+  /**
+   * What a declaration builtin run in a function makes of the names it declares: `always`, local variables of the
+   * function (`local`, which also makes the set options local with `local -`; bash 5.2 rejects `declare -`);
+   * `unless-g`, local ones unless `-g` is given (`declare`, `typeset`). Without it (`export`, `readonly`), the
+   * variables visible there, a local one if there is one, else the global one.
+   */
+  locals?: 'always' | 'unless-g';
   /**
    * What a builtin does to the shell that runs it: changes its state (`cd`, `set`, `export`, `read`). (Ending it,
    * `exit`, is `ends`.) In a subshell (src/semantics/env.ts), only the subshell. `when`: the calls that do, when not

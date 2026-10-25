@@ -1,19 +1,20 @@
 import type { Lang } from '../i18n';
 import { controlSuffix } from '../ctlchars';
 import { EmbeddedToken, pick } from './types';
+import { wordTable } from '../wordtable';
 
 export interface Explained {
   tokens: EmbeddedToken[];
   note?: string;
 }
 
-const SORT_OPTS: Record<string, [string, string]> = {
+const SORT_OPTS: Record<string, [string, string]> = wordTable({
   n: ['数値として比較', 'compare as numbers'], g: ['一般的な数値（指数表記も）として比較', 'compare as general numbers (incl. exponents)'],
   h: ['単位付きの数値（2K, 1G）として比較', 'compare human-readable sizes (2K, 1G)'], r: ['逆順（降順）', 'reverse (descending)'],
   b: ['先頭の空白を無視', 'ignore leading blanks'], f: ['大文字・小文字を区別しない', 'ignore case'], d: ['英数字と空白だけで比較', 'dictionary order'],
   i: ['表示できない文字を無視', 'ignore non-printable characters'], M: ['月名（JAN〜DEC）として比較', 'compare as month names'],
   V: ['バージョン番号として比較', 'compare as version numbers'], R: ['ランダムに並べる', 'random order'],
-};
+});
 
 /** `sort -k F[.C][opts][,F[.C][opts]]`. */
 export function explainSortKey(src: string, lang: Lang): Explained | undefined {
@@ -71,12 +72,12 @@ export function explainCutList(src: string, unit: 'field' | 'char', lang: Lang):
   return { tokens, note: s(`取り出すのは ${words.join('、')}（番号は1始まり）`, `selects ${words.join(', ')} (numbered from 1)`) };
 }
 
-const TR_CLASSES: Record<string, [string, string]> = {
+const TR_CLASSES: Record<string, [string, string]> = wordTable({
   upper: ['大文字', 'uppercase letters'], lower: ['小文字', 'lowercase letters'], alpha: ['英字', 'letters'], digit: ['数字', 'digits'],
   alnum: ['英数字', 'letters and digits'], space: ['空白文字（改行・タブを含む）', 'whitespace (incl. newline and tab)'], blank: ['スペースとタブ', 'spaces and tabs'],
   punct: ['記号', 'punctuation'], cntrl: ['制御文字', 'control characters'], print: ['表示可能な文字', 'printable characters'],
   graph: ['空白以外の表示可能な文字', 'visible characters'], xdigit: ['16進数字', 'hex digits'],
-};
+});
 
 const TR_ESCAPES: Record<string, [string, string]> = {
   n: ['改行', 'newline'], t: ['タブ', 'tab'], r: ['復帰文字(CR。Windows の改行 CRLF の CR)', 'carriage return (the CR of Windows CRLF)'], '\\': ['バックスラッシュ', 'backslash'],

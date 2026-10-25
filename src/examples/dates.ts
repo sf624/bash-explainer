@@ -4,9 +4,10 @@
 import { UTC, type Zone } from '../embedded/format';
 import { pick } from '../embedded/types';
 import type { Lang } from '../i18n';
+import { wordTable } from '../wordtable';
 
 /** Zones whose abbreviation (`%Z`) is known: the others are left out of a `%Z` example. */
-const ABBREVIATIONS: Record<string, string> = { UTC: 'UTC', 'Etc/UTC': 'UTC', GMT: 'GMT', 'Etc/GMT': 'GMT' };
+const ABBREVIATIONS: Record<string, string> = wordTable({ UTC: 'UTC', 'Etc/UTC': 'UTC', GMT: 'GMT', 'Etc/GMT': 'GMT' });
 
 /** The zones of the tz database named by one word that the tz data of every system has (Ubuntu's tzdata 2026e). */
 const SINGLE = new Set(['UTC', 'GMT', 'CET', 'EET', 'MET', 'WET', 'EST', 'MST', 'HST', 'EST5EDT', 'CST6CDT', 'MST7MDT', 'PST8PDT']);
@@ -114,17 +115,17 @@ export function parseDateValue(text: string, zone: Zone): Date | undefined {
 export interface Relative { years: number; months: number; days: number; seconds: number; day?: { ordinal: number; number: number }; time?: [number, number, number]; shifts: boolean }
 
 /** GNU's units of relative items: the field each adds to, and how much. */
-const UNITS: Record<string, ['years' | 'months' | 'days' | 'seconds', number]> = {
+const UNITS: Record<string, ['years' | 'months' | 'days' | 'seconds', number]> = wordTable({
   year: ['years', 1], month: ['months', 1], fortnight: ['days', 14], week: ['days', 7], day: ['days', 1],
   hour: ['seconds', 3600], minute: ['seconds', 60], min: ['seconds', 60], second: ['seconds', 1], sec: ['seconds', 1],
-};
+});
 /** GNU's names of the days of the week (and any of them cut to three letters). */
-const WEEKDAYS: Record<string, number> = {
+const WEEKDAYS: Record<string, number> = wordTable({
   sun: 0, sunday: 0, mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2, wed: 3, wednes: 3, wednesday: 3,
   thu: 4, thur: 4, thurs: 4, thursday: 4, fri: 5, friday: 5, sat: 6, saturday: 6,
-};
-const ORDINALS: Record<string, number> = { last: -1, this: 0, next: 1 };
-const SHIFTS: Record<string, number> = { now: 0, today: 0, yesterday: -1, tomorrow: 1 };
+});
+const ORDINALS: Record<string, number> = wordTable({ last: -1, this: 0, next: 1 });
+const SHIFTS: Record<string, number> = wordTable({ now: 0, today: 0, yesterday: -1, tomorrow: 1 });
 // (A word is a unit also with a plural `s`: GNU drops it.)
 const unit = (w: string) => UNITS[w] ?? (w.endsWith('s') ? UNITS[w.slice(0, -1)] : undefined);
 

@@ -6,6 +6,7 @@ import { Unsupported as RunnerUnsupported } from './unsupported';
 
 import { type ArgRole, type ArgvParse, interpret } from '../argv/interpret';
 import { lookupCommand } from '../dict/aliases';
+import { wordTable } from '../wordtable';
 
 export class Unsupported extends RunnerUnsupported {}
 
@@ -290,11 +291,11 @@ export function runCut(words: (string | undefined)[], input: string[]): string[]
 
 // ---------------------------------------------------------------- tr
 
-const TR_CLASSES: Record<string, string> = {
+const TR_CLASSES: Record<string, string> = wordTable({
   alpha: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', lower: 'abcdefghijklmnopqrstuvwxyz',
   digit: '0123456789', alnum: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', space: '\t\n\v\f\r ', blank: '\t ',
   punct: '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~', xdigit: '0123456789ABCDEFabcdef',
-};
+});
 
 /** Expand a tr set to its characters; `[c*n]` repeats (n omitted: fill to `fillTo`). */
 export function expandSet(set: string, fillTo?: number): string[] {

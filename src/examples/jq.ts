@@ -670,7 +670,7 @@ function contains(a: Json, b: Json): boolean {
   if (typeName(a) !== typeName(b)) throw new JqError(`${typeName(a)} and ${typeName(b)} cannot have their containment checked`);
   if (typeof a === 'string') return a.includes(b as string);
   if (Array.isArray(a)) return (b as Json[]).every((x) => a.some((y) => typeName(x) === typeName(y) && contains(y, x)));
-  if (isObj(a)) return Object.entries(b as Obj).every(([k, v]) => k in a && typeName(a[k]) === typeName(v) && contains(a[k], v));
+  if (isObj(a)) return Object.entries(b as Obj).every(([k, v]) => Object.hasOwn(a, k) && typeName(a[k]) === typeName(v) && contains(a[k], v));
   return cmp(a, b) === 0;
 }
 
@@ -859,7 +859,7 @@ class Evaluator {
         return p.entries.reduce<Env[]>((envs, ent) => envs.flatMap((e) => this.ev(ent.key, x, e).flatMap((k) => {
           if (typeof k !== 'string') throw new JqError(`Cannot index ${typeName(v)} with ${typeName(k)}`);
           if (v !== null && !isObj(v)) throw new JqError(`Cannot index ${typeName(v)} with "${k}"`);
-          const val = v === null ? null : v[k] ?? null;
+          const val = v !== null && Object.hasOwn(v, k) ? v[k] : null;
           const bound = ent.bind ? set(e, ent.bind, val) : e;
           return ent.pat ? this.bind(ent.pat, val, x, bound) : [bound];
         })), [env]);
@@ -898,7 +898,7 @@ class Evaluator {
   private field(b: Json, name: string): Json {
     if (b === null) return null;
     if (!isObj(b)) throw new JqError(`Cannot index ${typeName(b)} with "${name}"`);
-    return name in b ? b[name] : null;
+    return Object.hasOwn(b, name) ? b[name] : null;
   }
 
   private index(b: Json, i: Json): Json {
@@ -1051,7 +1051,7 @@ class Evaluator {
       return arr;
     }
     const obj = x === null ? {} : isObj(x) ? { ...x } : (() => { throw new JqError(`Cannot index ${typeName(x)} with "${k}"`); })();
-    obj[k] = this.setpath(obj[k] ?? null, rest, value);
+    obj[k] = this.setpath(Object.hasOwn(obj, k) ? obj[k] : null, rest, value);
     return obj;
   }
 
@@ -1160,13 +1160,13 @@ class Evaluator {
       case 'values/0': return x === null ? [] : [x];
       case 'has/1': {
         const k = one(0);
-        if (isObj(x) && typeof k === 'string') return [k in x];
+        if (isObj(x) && typeof k === 'string') return [Object.hasOwn(x, k)];
         if (Array.isArray(x) && typeof k === 'number') return [k >= 0 && k < x.length];
         throw new JqError(`Cannot check whether ${typeName(x)} has a ${typeName(k)} key`);
       }
       case 'in/1': {
         const o = one(0);
-        if (isObj(o) && typeof x === 'string') return [x in o];
+        if (isObj(o) && typeof x === 'string') return [Object.hasOwn(o, x)];
         if (Array.isArray(o) && typeof x === 'number') return [x >= 0 && x < o.length];
         throw new JqError('in: bad arguments');
       }
@@ -1606,17 +1606,17 @@ class Inferer {
   }
 }
 
-const NAMES: Record<string, string[]> = {
+const NAMES: Record<string, string[]> = Object.assign(Object.create(null), {
   name: ['alice', 'bob', 'carol'], user: ['alice', 'bob', 'carol'], author: ['alice', 'bob', 'carol'],
   email: ['alice@example.com', 'bob@example.com', 'carol@example.com'], city: ['Tokyo', 'Osaka', 'Kyoto'],
   title: ['Intro', 'Guide', 'Notes'], status: ['active', 'inactive', 'active'], type: ['book', 'pen', 'book'],
   id: ['a1', 'b2', 'c3'], tag: ['sale', 'new', 'sale'], url: ['https://example.com/a', 'https://example.com/b', 'https://example.com/c'],
   version: ['1.0.0', '1.2.0', '2.0.0'], date: ['2026-01-15', '2026-03-02', '2026-07-21'], key: ['host', 'port', 'user'],
-};
-const NUMBERS: Record<string, number[]> = {
+});
+const NUMBERS: Record<string, number[]> = Object.assign(Object.create(null), {
   age: [30, 25, 41], price: [80, 150, 120], count: [3, 7, 1], id: [1, 2, 3], score: [72, 95, 88], size: [120, 2048, 512],
   total: [10, 30, 20], year: [2024, 2025, 2026], timeout: [30, 60, 10], port: [8080, 3000, 5432],
-};
+});
 const BOOLS = /^(ok|enabled|active|done|valid|deleted|published|visible|admin|is_\w+|has_\w+)$/;
 
 /** A JSON value of the given shape; `i` varies values between array elements. `omit` leaves out optional fields. */

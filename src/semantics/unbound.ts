@@ -2,6 +2,8 @@
 // the shell state (src/semantics/state.ts) and said by src/wordfacts.ts (`nounset-unbound`, src/messages.ts).
 // test/fixtures/probes/words.json checks it against bash (each row's `unbound`).
 import type { Shell } from '../dialect';
+import { actsOnNames } from '../argv/query';
+import { builtins } from '../dict/builtins';
 import { parseExpansion } from '../expansion';
 import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { processOf, STATEMENTS } from './env';
@@ -271,15 +273,16 @@ function inTest(d: SyntaxNode): boolean {
 
 /**
  * Whether the command `at` that left the variable without a value surely ran before `n` and leaves none from the
- * environment: `unset x`, or `local x` (`declare x` in a function) where `n` reads the local one. A `declare x`
- * outside a function keeps a value the variable has from the environment.
+ * environment: `unset x` (`OperandSpec.acts`), or `local x` (`declare x` in a function, `CommandSpec.locals`) where
+ * `n` reads the local one. A `declare x` outside a function keeps a value the variable has from the environment.
  */
 function removed(at: SyntaxNode, n: SyntaxNode): boolean {
   const command = at.type === 'command' ? at : ancestor(at, (a) => a.type === 'command');
   const name = command && field(command, 'name')?.text;
-  const local = name === 'local' || ((name === 'declare' || name === 'typeset') && !!ancestor(command!, (a) => a.type === 'function_definition')
+  const spec = builtins[name!];
+  const local = spec?.locals === 'always' || (spec?.locals === 'unless-g' && !!ancestor(command!, (a) => a.type === 'function_definition')
     && !command!.namedChildren.some((c) => c.field === 'argument' && /^-[a-zA-Z]*g/.test(c.text)));
-  if (name !== 'unset' && !local) return false;
+  if (!(spec && actsOnNames(spec, 'unsets')) && !local) return false;
   // (It runs on every path to `n`: a statement of a list that holds `n`, before it.)
   let x = command!;
   while (x.parent && !(x.parent.startIndex <= n.startIndex && n.endIndex <= x.parent.endIndex)) {

@@ -126,6 +126,11 @@ const optionValues = (c: SyntaxNode, name: string): (string | undefined)[] => {
   return values(parseOf(c)!, name).map((v) => staticWordValue(args[v.word])?.slice(v.at ?? 0));
 };
 const commandIs = (c: SyntaxNode, ...names: string[]): boolean => names.includes(nameOf(c)!);
+/** What the builtin a simple command names ends (`CommandSpec.ends`: `continue` ends the pass of a loop). */
+const endsOf = (c: SyntaxNode): string | undefined => {
+  const name = nameOf(c);
+  return name === undefined ? undefined : lookupCommand(name)?.ends;
+};
 /** The tokens of a node (its operators and keywords), in order. */
 const tokensOf = (n: SyntaxNode): string[] => n.children.filter((c) => !c.named).map((c) => c.text);
 
@@ -297,7 +302,7 @@ const argsLoop = (n: SyntaxNode): boolean => {
 };
 /** `[ -e "$f" ] || continue`: a test of a name, and `continue` when it is not there. */
 const globGuard = (n: SyntaxNode, status: StatusModel): boolean => {
-  if (n.type !== 'list' || tokensOf(n)[0] !== '||' || !commandIs(n.namedChildren[1], 'continue') || argsOf(n.namedChildren[1]).length) return false;
+  if (n.type !== 'list' || tokensOf(n)[0] !== '||' || endsOf(n.namedChildren[1]) !== 'pass' || argsOf(n.namedChildren[1]).length) return false;
   const t = n.namedChildren[0];
   const u = t.type === 'extended_test' && t.namedChildren[0].type === 'unary_expression' ? t.namedChildren[0] : undefined;
   const [op, operand] = u ? [field(u, 'operator')!.text, u.namedChildren[1]]

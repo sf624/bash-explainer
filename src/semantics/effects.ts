@@ -3,14 +3,18 @@
 // trust scan (src/semantics/trust.ts) both read the effects here, so that they never disagree on what a builtin sets.
 import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
 import type { CommandSpec, ValueSpec, VariableSet } from '../argv/spec';
+import { declaresNames } from '../argv/query';
 import { argWord } from '../argv/words';
 import type { Shell } from '../dialect';
 import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
 import { field, type SyntaxNode } from '../syntax/tree';
 
-/** The declaration builtins (their words may be assignments: `declare x=1`). */
-export const DECLARATIONS: ReadonlySet<string> = new Set(['declare', 'typeset', 'local', 'export', 'readonly']);
+/**
+ * The names of the declaration builtins, whose operands declare names (`declaresNames`): `declare`, `typeset`, `local`,
+ * `export`, `readonly`. Their words may be assignments (`declare x=1`).
+ */
+export const DECLARATIONS: ReadonlySet<string> = new Set(Object.keys(builtins).filter((name) => declaresNames(builtins[name])));
 
 /** `set` letters and the options they stand for. */
 export const SET_LETTERS: Readonly<Record<string, string>> = {

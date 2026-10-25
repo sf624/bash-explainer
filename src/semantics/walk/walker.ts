@@ -513,8 +513,8 @@ export class Walker {
   /**
    * What `break`, `continue` (`count`: their N, if known), `return` or `exit` ends (`CommandSpec.ends`), run from `st`:
    * the state goes where the jump leads (the end of a loop or of its pass, of a function body, of the script), and the
-   * path does not go on. A jump that may fail (no loop, a count not known), may be made in a subshell, or is not `sure`
-   * (values not trusted), or anywhere when nothing is trusted (`exit` may be a sourced file's function), is made and not.
+   * path does not go on. A jump that may fail (no loop, a count not known, `return` in a trap's action), may be made in
+   * a subshell, or is not `sure`, or anywhere when nothing is trusted (`exit` may be a sourced function), is made and not.
    */
   jump(ends: Ends, count: number | undefined, st: ShellState, sure = true): ShellState {
     st = withStatus(st, undefined);

@@ -67,6 +67,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `builtin cd` and `command echo` are explained as the builtin itself, which runs in this shell; the words after it are its own. Before, they said "runs `cd`", the badge "run by `builtin`", and Reading had `builtin` read them.
 - After `alias ll='ls -l'; ll -h` on one line, `ll` is the command bash looks for, not the alias, and `-h` is no longer read as an option of `ls`.
 - `zsh`, `dash`, `ksh` and the other shells are named as themselves: `zsh -c …` said "Run the POSIX shell".
+- Words such as `toString` and `constructor` are read like any other: `toString x` runs an external command, not a builtin, `set -o constructor` and `> constructor` no longer say "undefined", and `jq 'constructor'` no longer leaves the line unexplained.
 - Combined short options listed as one are split as the others are: `docker run -it` and `docker exec -it` are `-i` and `-t`, `screen -dmS` and `usermod -aG` too.
 - `xargs -d '\n'` no longer says that the last newline stays in the last item: it does only with another delimiter.
 - With `sed -n`, `q` quits without printing the line and `n` reads the next one without printing this one, as GNU sed does; so does a script that starts with `#n`. Before, both said they print the line.

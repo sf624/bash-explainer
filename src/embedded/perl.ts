@@ -1,12 +1,13 @@
 import { ordinal, type Lang } from '../i18n';
 import { explainRegex } from './regex';
 import { EmbeddedToken, pick, shift } from './types';
+import { wordTable } from '../wordtable';
 
 type S = (ja: string, en: string) => string;
 
 const PAIRS: Record<string, string> = { '{': '}', '(': ')', '[': ']', '<': '>' };
 
-const VARS: Record<string, [string, string]> = {
+const VARS: Record<string, [string, string]> = wordTable({
   '$_': ['現在の行（またはループ中の値）', 'the current line (or loop value)'],
   '$.': ['現在の行番号', 'the current line number'],
   '@F': ['`-a` で分割した各列の配列', 'the fields split by `-a`'],
@@ -18,9 +19,9 @@ const VARS: Record<string, [string, string]> = {
   '$,': ['print の引数の間に入る区切り', 'separator printed between print arguments'],
   '$\\': ['print の最後に付く文字列', 'appended after each print'],
   '$/': ['入力の行区切り', 'the input record separator'],
-};
+});
 
-const FUNCS: Record<string, [string, string]> = {
+const FUNCS: Record<string, [string, string]> = wordTable({
   print: ['出力する（引数がなければ `$_`）', 'print (`$_` if no arguments)'],
   say: ['改行付きで出力する（引数がなければ `$_`）', 'print with a newline (`$_` if no arguments)'],
   printf: ['書式を指定して出力する', 'print with a format'],
@@ -35,7 +36,7 @@ const FUNCS: Record<string, [string, string]> = {
   die: ['エラーメッセージを出して終了する', 'exit with an error message'], warn: ['警告を表示する', 'print a warning'], exit: ['終了する', 'exit'],
   map: ['各要素に式を適用したリストを作る', 'apply an expression to each element'], grep: ['条件に合う要素だけを残す', 'keep the elements that match'],
   int: ['整数部分', 'the integer part'], abs: ['絶対値', 'the absolute value'], time: ['現在の UNIX 時刻', 'the current UNIX time'], localtime: ['日時に変換する', 'convert to local time'],
-};
+});
 
 /** Index just past a quote-like construct starting at `i` (`'…'`, `"…"`, `/…/`, `s{…}{…}`…), or `i` if none. */
 function skipQuoteLike(src: string, i: number): number {

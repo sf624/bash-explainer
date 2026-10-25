@@ -2,7 +2,7 @@
 // coverage`), leaving out the code that tsx adds when it compiles the sources for the tests. That
 // code maps back to places in the sources that no test can run:
 // - line 1 of a file, where tsx's helpers and the getters of its exports map;
-// - the name of a declared function, where some getters of exports map;
+// - the name of a declared function (with its type parameters), where some getters of exports map;
 // - lines and branches of nothing but closing brackets, after code that ran (V8 counts the end of a
 //   block after a `return` as not run, and tsx's `0 && (module.exports = …)` maps to the last `};`).
 // Only parts that never ran are left out, so the numbers say what the tests reach in our code.
@@ -18,7 +18,9 @@ const FINAL = `${DIR}/coverage-final.json`;
 const raw = JSON.parse(fs.readFileSync(FINAL, 'utf8'));
 
 const closersOnly = (text) => /^[\s})\];,]*$/.test(text);
-const declaresFunction = (line) => /\b(?:function\*?\s+[\w$]+\s*\(|(?:const|let)\s+[\w$]+\s*=\s*(?:async\s*)?\()/.test(line);
+const declaresFunction = (line) => /\b(?:function\*?\s+[\w$]+\s*(?:<[^>()]*>\s*)?\(|(?:const|let)\s+[\w$]+\s*=\s*(?:async\s*)?\()/.test(line);
+/** The name of a function as its declaration has it, with its type parameters (`f(`, `wordTable<T>(`). */
+const functionName = (text) => /^[\w$]*(?:<[^>()]*>)?\(?$/.test(text);
 
 /** The file's coverage without the parts tsx added. */
 export function clean(file, cov) {
@@ -45,7 +47,7 @@ export function clean(file, cov) {
   }
   for (const [id, fn] of Object.entries(cov.fnMap)) {
     const at = fn.decl.start;
-    if (!cov.f[id] && anyRan && (at.line === 1 || (/^[\w$]*\(?$/.test(text(fn.decl)) && declaresFunction(src[at.line - 1])))) continue;
+    if (!cov.f[id] && anyRan && (at.line === 1 || (functionName(text(fn.decl)) && declaresFunction(src[at.line - 1])))) continue;
     out.fnMap[id] = fn;
     out.f[id] = cov.f[id];
   }
@@ -55,7 +57,7 @@ export function clean(file, cov) {
       const t = text(loc);
       if (loc.start.line === 1 && anyRan) return false;
       if (closersOnly(t)) return false;
-      if (/^[\w$]*\(?$/.test(t) && declaresFunction(src[loc.start.line - 1])) return false;
+      if (functionName(t) && declaresFunction(src[loc.start.line - 1])) return false;
       return true;
     });
     if (!keep.some(Boolean)) continue;

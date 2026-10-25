@@ -2,6 +2,7 @@ import type { Lang } from '../i18n';
 import type { HostId } from '../hosts';
 import { lex, ParseError } from './jq';
 import { JQ_ONLY, YQ_ONLY } from './yqfuncs';
+import { wordTable } from '../wordtable';
 
 /** The three tools called `yq`. */
 export type YqFlavor = 'mikefarah4' | 'kislyuk' | 'mikefarah3';
@@ -38,15 +39,15 @@ const V4_OPTION: Record<string, string> = {
   '-n': '4.3.2', '--null-input': '4.3.2', '-f': '4.11.2', '--front-matter': '4.11.2', '-0': '4.33.3', '--nul-output': '4.33.3',
   '-e': '4.0.0', '--exit-status': '4.0.0', '-N': '4.0.0', '--no-doc': '4.0.0', '-M': '4.0.0', '-C': '4.0.0', '-r': '4.0.0',
 };
-const V4_OUTPUT: Record<string, string> = {
+const V4_OUTPUT: Record<string, string> = wordTable({
   json: '4.12.2', j: '4.12.2', props: '4.12.2', p: '4.12.2', yaml: '4.12.2', y: '4.12.2', xml: '4.17.2', x: '4.17.2',
   csv: '4.16.2', c: '4.16.2', tsv: '4.16.2', t: '4.16.2', toml: '4.52.5', shell: '4.34.2', s: '4.34.2', lua: '4.40.7', l: '4.40.7',
-};
-const V4_INPUT: Record<string, string> = {
+});
+const V4_INPUT: Record<string, string> = wordTable({
   json: '4.27.5', j: '4.27.5', xml: '4.17.2', x: '4.17.2', csv: '4.27.5', c: '4.27.5', tsv: '4.27.5', t: '4.27.5',
   toml: '4.33.3', props: '4.20.2', p: '4.20.2', ini: '4.46.1', i: '4.46.1', yaml: '4.17.2', y: '4.17.2', lua: '4.40.7', l: '4.40.7',
-};
-const V4_FUNCTION: Record<string, string> = {
+});
+const V4_FUNCTION: Record<string, string> = wordTable({
   keys: '4.4.1', del: '4.1.0', to_entries: '4.8.0', from_entries: '4.8.0', with_entries: '4.8.0', map: '4.16.2', map_values: '4.16.2',
   sort_by: '4.16.2', sort: '4.16.2', unique: '4.9.8', unique_by: '4.9.8', group_by: '4.14.2', flatten: '4.14.2', env: '4.3.2', strenv: '4.3.2',
   envsubst: '4.18.1', load: '4.15.1', load_str: '4.17.2', pick: '4.22.1', omit: '4.43.1', split: '4.4.1', join: '4.4.1', test: '4.10.0',
@@ -56,7 +57,7 @@ const V4_FUNCTION: Record<string, string> = {
   shuffle: '4.31.2', min: '4.44.6', max: '4.44.6', any: '4.9.8', all: '4.9.8', reverse: '4.21.1', pivot: '4.44.6', with: '4.13.5',
   tostring: '4.43.1', to_string: '4.43.1', trim: '4.27.5', contains: '4.13.5', sort_keys: '4.16.2', now: '4.25.3', ireduce: '4.6.3',
   '@base64': '4.21.1', '@base64d': '4.21.1', '@json': '4.16.2', '@csv': '4.16.2', '@tsv': '4.16.2', '@yaml': '4.16.2', '@sh': '4.31.2',
-};
+});
 
 /** Options only kislyuk/yq (or the jq inside it) has. */
 const KISLYUK_OPTIONS = new Set([
@@ -77,10 +78,10 @@ const V4_ONLY_OPTIONS = new Set([
 const V4_VALUE = new Set(['-o', '--output-format', '-p', '--input-format', '-I', '--indent', '-f', '--front-matter', '-s', '--split-exp', '--expression', '--from-file', '--xml-attribute-prefix', '--xml-content-name', '--csv-separator', '--properties-separator', '--shell-key-separator', '--lua-prefix', '--lua-suffix', '--split-exp-file']);
 /** kislyuk/jq options that take values: name → count. */
 const KISLYUK_VALUE: Record<string, number> = { '--arg': 2, '--argjson': 2, '--slurpfile': 2, '--rawfile': 2, '-w': 1, '--width': 1, '--indent': 1, '--yaml-output-grammar-version': 1, '--yml-out-ver': 1, '-L': 1, '-f': 1, '--from-file': 1 };
-const V3_COMMANDS: Record<string, string> = {
+const V3_COMMANDS: Record<string, string> = wordTable({
   r: 'read', read: 'read', w: 'write', write: 'write', d: 'delete', delete: 'delete', m: 'merge', merge: 'merge', n: 'new', new: 'new',
   p: 'prefix', prefix: 'prefix', x: 'compare', compare: 'compare', v: 'validate', validate: 'validate',
-};
+});
 
 const versionKey = (v: string) => v.split('.').map(Number).reduce((a, n) => a * 1000 + n, 0);
 const later = (a: string, b: string) => (versionKey(a) >= versionKey(b) ? a : b);

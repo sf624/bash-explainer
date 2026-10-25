@@ -257,18 +257,20 @@ export class WalkBuiltins {
   /**
    * The arrays `a=(…)` among the words of a command that does not declare them, after a name written as a declaration
    * builtin or `alias` (a function named `declare`, `alias` itself): bash assigns them as the builtin `command` would.
-   * `declare`, `local` and `typeset` read their options (`-g`, `-l`) and make them local in a function; `export`,
-   * `readonly` and `alias` assign the variable visible here (a local one, else the global one), with no attribute.
+   * Those that make locals (`CommandSpec.locals`: `declare`, `local`, `typeset`) read their options (`-g`, `-l`) and
+   * make them local in a function; `export`, `readonly` and `alias` assign the variable visible here (a local one,
+   * else the global one), with no attribute.
    */
   markedArrays(command: string, words: readonly SyntaxNode[], n: SyntaxNode, st: ShellState): ShellState {
     const arrays = words.filter((w) => w.type === 'variable_assignment' && field(w, 'value')?.type === 'array');
     if (!arrays.length) return st;
-    if (!['declare', 'local', 'typeset'].includes(command)) return arrays.reduce((s, a) => this.assignNode(a, s), st);
+    if (!builtins[command]?.locals) return arrays.reduce((s, a) => this.assignNode(a, s), st);
     return this.declare(command, arrays, readDeclarationWords(command, [...words]), n, st);
   }
 
   declare(builtin: string, words: SyntaxNode[], { roles, on, off }: Declaration, n: SyntaxNode, st: ShellState): ShellState {
     if (on.includes('p')) return st;
+    const spec = builtins[builtin];
     const operands = this.operands(words, roles, st);
     // `export -f f`, `declare -fx f`, `readonly -f f`: the names are functions.
     if (/[fF]/.test(on)) {
@@ -282,16 +284,16 @@ export class WalkBuiltins {
     }
     // `local` works only in a function (`scope`; `declare` there is local too, unless `-g`): outside one it fails,
     // and changes nothing; its words are still read as in a function (a line taken from one).
-    if (builtins[builtin].scope === 'function' && !this.w.frames.length) {
+    if (spec.scope === 'function' && !this.w.frames.length) {
       this.w.frames.push({ def: n, saved: new Map() });
       this.declare(builtin, words, { roles, on, off }, n, st);
       this.w.frames.pop();
       return st;
     }
-    // `local -`: the set options come back when the function returns.
+    // `local -` (`locals: 'always'`): the set options come back when the function returns.
     const frame = this.w.frames[this.w.frames.length - 1];
-    if (builtin === 'local' && words.some((w) => staticWordValue(w) === '-')) frame.options ??= st.set;
-    const local = this.w.frames.length > 0 && (builtin === 'local' || ((builtin === 'declare' || builtin === 'typeset') && !on.includes('g')));
+    if (spec.locals === 'always' && words.some((w) => staticWordValue(w) === '-')) frame.options ??= st.set;
+    const local = this.w.frames.length > 0 && (spec.locals === 'always' || (spec.locals === 'unless-g' && !on.includes('g')));
     const gives = builtin === 'export' ? (on.includes('n') ? '' : 'x') : builtin === 'readonly' ? 'r' : [...on].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
     const removes = builtin === 'export' && on.includes('n') ? 'x' : [...off].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
     // (An option the spec does not know, `declare -c`, may change the values assigned: they are not known.)

@@ -15,7 +15,7 @@ import type { CommandSpec } from '../argv/spec';
 import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
 import type { ArgvParse } from '../argv/interpret';
-import { actedNames } from '../argv/query';
+import { actedNames, actsOnNames } from '../argv/query';
 import { field, fields, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { builtinParse } from './effects';
 import { type ExecEnv, reachOf, type SlotLink, subshellReasons } from './env';
@@ -316,7 +316,7 @@ export function assignmentsOf(model: StateModel, command: SyntaxNode, res: NameR
  */
 export function temporariesUnset(name: string, words: readonly SyntaxNode[], n: SyntaxNode, parse?: ArgvParse): Set<string> {
   const prefix = new Set(prefixAssignments(n).map((a) => field(a, 'name')!.text));
-  if (!prefix.size || !builtins[name]?.operands?.some((o) => o.pattern.some((p) => p.acts === 'unsets'))) return new Set();
+  if (!prefix.size || !(builtins[name] && actsOnNames(builtins[name], 'unsets'))) return new Set();
   const ws = words.filter((w) => !w.type.endsWith('redirect'));
   const names = actedNames(parse ?? builtinParse(name, ws)).filter((o) => o.acts === 'unsets' && o.space !== 'function' && o.space !== 'none');
   return new Set(names.map(({ word }) => staticWordValue(ws[word])).filter((v): v is string => v !== undefined && prefix.has(v)));

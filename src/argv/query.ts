@@ -91,7 +91,10 @@ export function actedNames(parse: ArgvParse): ActedName[] {
   return parse.roles.flatMap(({ word, role }) => (role.role === 'operand' && role.spec?.acts ? [{ word, acts: role.spec.acts, space: namespaceOf(parse, role.spec) }] : []));
 }
 
-/** Whether a command's operands declare names (`OperandSpec.acts`): the declaration builtins (`declare`, `local`, `export`…). */
-export function declaresNames(spec: CommandSpec): boolean {
-  return !!spec.operands?.some((o) => o.pattern.some((p) => p.acts === 'declares'));
+/** Whether a command's operands name what it acts on (`OperandSpec.acts`; `act`: only that act): `declare x`, `unset x`. */
+export function actsOnNames(spec: CommandSpec, act?: VariableAct): boolean {
+  return !!spec.operands?.some((o) => o.pattern.some((p) => (act ? p.acts === act : !!p.acts)));
 }
+
+/** Whether a command's operands declare names (`OperandSpec.acts`): the declaration builtins (`declare`, `local`, `export`…). */
+export const declaresNames = (spec: CommandSpec): boolean => actsOnNames(spec, 'declares');

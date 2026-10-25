@@ -4,6 +4,8 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import { builtins } from '../src/dict/builtins';
 import { commands, core } from '../src/dict/commands';
+import { BATS_COMMANDS } from '../src/dict/bats';
+import { commandAliases } from '../src/dict/aliases';
 
 // Guards for src/explain/ (docs/design/analyzer.md, 3.2 and 3.3): no import cycles, no import of
 // src/analyzer.ts, and no comparison with the name of a dictionary command, nor a lookup of one by name. The directory exists since step 2
@@ -125,28 +127,65 @@ function nameComparisons(checker: ts.TypeChecker, sf: ts.SourceFile, names: Read
   return found;
 }
 
-/** The records of the dictionary keyed by command name (src/dict/): `builtins`, `commands`, `core`. */
-const RECORDS = new Set(['builtins', 'commands', 'core']);
+/**
+ * The records of the dictionary keyed by command name (src/dict/): those of specs (every one of them, checked below), and
+ * those that say something else of a command (`commandAliases`, `declarationCommands`, `distroAliases`).
+ */
+const RECORDS = new Set([
+  'builtins', 'commands', 'core', 'basic', 'admin', 'storage', 'netadmin', 'ops', 'macos', 'distro', 'system', 'monitor', 'BATS_COMMANDS', 'YQ_SPECS',
+  'commandAliases', 'declarationCommands', 'distroAliases',
+]);
 const dictDir = path.join(base, 'src', 'dict') + path.sep;
+const inDict = (d: ts.Declaration): boolean => path.resolve(d.getSourceFile().fileName).startsWith(dictDir);
 
-/** Whether `e` names one of the dictionary's records (through an import, renamed or not), not another value of that name. */
-function isRecord(checker: ts.TypeChecker, e: ts.Expression): boolean {
-  if (!ts.isIdentifier(e)) return false;
-  let sym = checker.getSymbolAtLocation(e);
+/** The declarations of what `e` names (an identifier, or the member of a namespace `B.builtins`), through an import. */
+function declarationsOf(checker: ts.TypeChecker, e: ts.Expression): readonly ts.Declaration[] {
+  const at = ts.isIdentifier(e) ? e : ts.isPropertyAccessExpression(e) ? e.name : undefined;
+  let sym = at && checker.getSymbolAtLocation(at);
   if (sym && sym.flags & ts.SymbolFlags.Alias) sym = checker.getAliasedSymbol(sym);
-  return (sym?.declarations ?? []).some((d) => ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && RECORDS.has(d.name.text) && path.resolve(d.getSourceFile().fileName).startsWith(dictDir));
+  return sym?.declarations ?? [];
 }
 
 /**
- * Lookups of a command by its name in a record of the dictionary (`builtins.local`, `builtins['return']`, `commands.sed`):
- * a spec picked by name, which then decides by identity (`head.spec === builtins.local`) what a field of the spec should
- * say. A lookup with a name read from the script (`builtins[name]`) is what the dictionary is for, and is not found.
+ * Whether `e` names one of the dictionary's records (through an import, renamed or not, or a namespace import:
+ * `B.builtins`), not another value of that name. (A record given to a variable first, `const b = builtins`, is not
+ * followed.)
+ */
+function isRecord(checker: ts.TypeChecker, e: ts.Expression): boolean {
+  return declarationsOf(checker, e).some((d) => ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && RECORDS.has(d.name.text) && inDict(d));
+}
+
+/** Whether `e` names a function of the dictionary (`lookupCommand`, `aliasOf`, `canonicalName`, `yqSpecsOf`…). */
+function isDictFunction(checker: ts.TypeChecker, e: ts.Expression): boolean {
+  return declarationsOf(checker, e).some((d) => (ts.isFunctionDeclaration(d) || (ts.isVariableDeclaration(d) && !!d.initializer && ts.isArrowFunction(d.initializer))) && inDict(d));
+}
+
+/**
+ * Lookups of a command by its name in the dictionary: in a record (`builtins.local`, `builtins['return']`, `commands.sed`,
+ * `B.builtins.local`, `const { local } = builtins`, `'local' in builtins`, `Object.hasOwn(builtins, 'local')`), or with
+ * a function of the dictionary (`lookupCommand('local')`, `aliasOf('egrep')`). A spec picked by name then decides by
+ * identity (`head.spec === builtins.local`) what a field of the spec should say. A lookup with a name read from the
+ * script (`builtins[name]`, `lookupCommand(name)`) is what the dictionary is for, and is not found.
  */
 function recordLookups(checker: ts.TypeChecker, sf: ts.SourceFile, names: ReadonlySet<string>): string[] {
   const found: string[] = [];
+  const named = (e: ts.Expression | undefined): boolean => {
+    const text = e && literalText(e);
+    return text !== undefined && names.has(text);
+  };
   const visit = (n: ts.Node): void => {
     const key = ts.isPropertyAccessExpression(n) ? n.name.text : ts.isElementAccessExpression(n) ? literalText(n.argumentExpression) : undefined;
     if (key !== undefined && names.has(key) && isRecord(checker, (n as ts.PropertyAccessExpression | ts.ElementAccessExpression).expression)) found.push(n.getText(sf));
+    // `const { local, sed: s } = builtins`.
+    else if (ts.isVariableDeclaration(n) && ts.isObjectBindingPattern(n.name) && n.initializer && isRecord(checker, n.initializer)) {
+      for (const el of n.name.elements) {
+        const prop = el.propertyName ?? el.name;
+        if ((ts.isIdentifier(prop) || ts.isStringLiteral(prop)) && names.has(prop.text)) found.push(`${el.getText(sf)} of ${n.initializer.getText(sf)}`);
+      }
+    } else if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.InKeyword && named(n.left) && isRecord(checker, n.right)) found.push(n.getText(sf));
+    // `Object.hasOwn(builtins, 'local')`, `Object.prototype.hasOwnProperty.call(builtins, 'local')`: a record and a name.
+    else if (ts.isCallExpression(n) && n.arguments.some((a) => isRecord(checker, a)) && n.arguments.some(named)) found.push(n.getText(sf));
+    else if (ts.isCallExpression(n) && named(n.arguments[0]) && isDictFunction(checker, n.expression)) found.push(n.getText(sf));
     ts.forEachChild(n, visit);
   };
   visit(sf);
@@ -163,7 +202,7 @@ function snippet(name: string, code: string): string {
   return name;
 }
 
-const SNIPPET_NAMES = new Set(['sed', 'awk', 'jq', 'date', 'grep', 'declare', 'builtin', 'alias', 'command', 'unset', 'local', 'return']);
+const SNIPPET_NAMES = new Set(['sed', 'awk', 'jq', 'date', 'grep', 'declare', 'builtin', 'alias', 'command', 'unset', 'local', 'return', 'egrep', 'run']);
 const found = (name: string): string[] => {
   const sf = program().getSourceFile(snippets.get(name)!)!;
   const checker = program().getTypeChecker();
@@ -198,10 +237,38 @@ const fixtures: { name: string; code: string; found: string[] }[] = [
     code: `import { builtins } from '../dict/builtins';\nimport { commands as dict, core } from '../dict/commands';\nexport const a = [builtins.local, builtins['return'], dict.sed, core[\`grep\`], builtins.unset.operands];`,
     found: ['builtins.local', "builtins['return']", 'dict.sed', 'core[`grep`]', 'builtins.unset'],
   },
+  // Through a namespace import, by destructuring, in the other records of the dictionary.
+  {
+    name: 'lookup-namespace',
+    code: `import * as B from '../dict/builtins';\nimport * as A from '../dict/aliases';\nexport const a = [B.builtins.local, A.commandAliases.egrep, B.builtins[\`return\`]];`,
+    found: ['B.builtins.local', 'A.commandAliases.egrep', 'B.builtins[`return`]'],
+  },
+  {
+    name: 'lookup-destructuring',
+    code: `import { builtins } from '../dict/builtins';\nconst { local, return: r, 'unset': u, zzz } = builtins;\nexport const a = [local, r, u, zzz];`,
+    found: ['local of builtins', 'return: r of builtins', "'unset': u of builtins"],
+  },
+  {
+    name: 'lookup-records',
+    code: `import { basic } from '../dict/basic';\nimport { BATS_COMMANDS } from '../dict/bats';\nimport { declarationCommands } from '../dict/syntax';\nimport { distroAliases } from '../dict/distroAliases';\nexport const a = [basic.sed, BATS_COMMANDS.run, declarationCommands.declare, distroAliases['grep']];`,
+    found: ['basic.sed', 'BATS_COMMANDS.run', 'declarationCommands.declare', "distroAliases['grep']"],
+  },
+  // A function of the dictionary given a name, `in`, and a call given a record and a name.
+  {
+    name: 'lookup-functions',
+    code: `import { aliasOf, canonicalName, lookupCommand } from '../dict/aliases';\nimport { yqSpecsOf } from '../dict/yq';\nexport function f(name: string) { return [lookupCommand('local'), aliasOf('egrep'), canonicalName(\`grep\`), yqSpecsOf('sed'), lookupCommand(name), lookupCommand('zzz')]; }`,
+    found: ["lookupCommand('local')", "aliasOf('egrep')", 'canonicalName(`grep`)', "yqSpecsOf('sed')"],
+  },
+  {
+    name: 'lookup-membership',
+    code: `import { builtins } from '../dict/builtins';\nimport { commands } from '../dict/commands';\nexport function f(name: string) { return ['local' in builtins, Object.hasOwn(commands, 'sed'), Object.prototype.hasOwnProperty.call(builtins, 'unset'), name in builtins, Object.hasOwn(builtins, name), 'zzz' in builtins]; }`,
+    found: ["'local' in builtins", "Object.hasOwn(commands, 'sed')", "Object.prototype.hasOwnProperty.call(builtins, 'unset')"],
+  },
   // A lookup by a name read from the script, a field of another object, a record of the same name that is not the dictionary's.
+  // (Not covered: a record given to a variable first, `b.local`.)
   {
     name: 'not-a-lookup',
-    code: `import { builtins } from '../dict/builtins';\nexport function f(name: string, o: { local: number }) { const commands = { sed: 1 }; return [builtins[name], o.local, commands.sed, builtins.zzz]; }`,
+    code: `import { builtins } from '../dict/builtins';\nexport function f(name: string, o: { local: number }) { const commands = { sed: 1 }; const b = builtins; const { sed } = commands; return [builtins[name], o.local, commands.sed, builtins.zzz, b.local, sed, 'sed' in commands]; }`,
     found: [],
   },
 ];
@@ -226,8 +293,8 @@ describe('src/explain guards', function () {
   });
 
   it('compares nothing with the name of a dictionary command, nor looks one up by name, except the known ones', () => {
-    const names = new Set([...Object.keys(commands), ...Object.keys(builtins), ...Object.keys(core)]);
-    assert.ok(names.has('sed') && names.has('declare'));
+    const names = new Set([...Object.keys(commands), ...Object.keys(builtins), ...Object.keys(core), ...Object.keys(BATS_COMMANDS), ...Object.keys(commandAliases)]);
+    assert.ok(names.has('sed') && names.has('declare') && names.has('run') && names.has('egrep'));
     const p = program();
     const checker = p.getTypeChecker();
     const all = files().flatMap((f) => {
@@ -239,6 +306,20 @@ describe('src/explain guards', function () {
     assert.deepStrictEqual(unknown, []);
     const stale = KNOWN_NAMES.filter((k) => !all.some((x) => x.file === k.file && x.text === k.text));
     assert.deepStrictEqual(stale, []);
+  });
+
+  it('knows every record of specs of the dictionary', async () => {
+    // (A record whose values are all specs, with a summary: a new one must be in RECORDS, or the guard misses it.)
+    const seen = new Set<string>();
+    for (const f of fs.readdirSync(path.join(base, 'src', 'dict')).filter((x) => x.endsWith('.ts'))) {
+      const mod = (await import(path.join(base, 'src', 'dict', f))) as Record<string, unknown>;
+      for (const [name, value] of Object.entries(mod)) {
+        const entries = value && typeof value === 'object' && !Array.isArray(value) ? Object.values(value) : [];
+        if (entries.length && entries.every((v) => !!v && typeof v === 'object' && 'summary' in v)) seen.add(name);
+      }
+    }
+    assert.ok(seen.has('builtins') && seen.has('basic') && seen.has('BATS_COMMANDS'), [...seen].join(' '));
+    assert.deepStrictEqual([...seen].filter((name) => !RECORDS.has(name)), []);
   });
 });
 
