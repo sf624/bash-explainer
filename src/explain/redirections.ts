@@ -3,7 +3,7 @@
 // the redirections that apply to a compound command, `time` or assignments as a whole. What a list of
 // redirections does to the descriptors comes from `simulateRedirects` (src/idioms.ts); the words of a target are
 // words (src/explain/words.ts). A simple command with redirections before or after its words (`splitCommand`) is
-// the commands' (step 8).
+// the commands' (src/explain/commands.ts).
 import type { Token } from '../analyzer-types';
 import { SHELL_NAMES, featureWorks } from '../dialect';
 import { fdName, networkPathAsFile, networkRedirect, networkTarget, redirects, specialDestinations } from '../dict/syntax';
