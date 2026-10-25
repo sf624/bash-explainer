@@ -13,22 +13,21 @@ import { ArgRole, ArgvParse, CommandRole, interpret, RoleAt, ValueRole } from '.
 import type { CommandSpec, OperandSpec, VariableAct } from './argv/spec';
 import { argWord, countOf } from './argv/words';
 import { givenOptions, namespaceOf, values } from './argv/query';
-import { explainRegex } from './embedded/regex';
 import { globIntro, hasGlob } from './embedded/glob';
-import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
+import { grepWrap, literalRegex, toJsRegex } from './examples/regex';
 import { awkExample, awkInvocation, AwkRunOptions } from './examples/awk';
 import { MAX_SHOWN_LINES, pipedOutput, pipelineExample, Stage } from './examples/pipeline';
 import { InputSource, inputSource, knownLines, NO_INPUT, readsFiles, readOrder, shareOut, shownSource, SourceWord, Stdin, stdinOf, Stream, streamLabel } from './examples/source';
 import { jqExample, JqFormat, jqPrint, jqReadsInputs, jqSample, Json, parseJsonValues, runJq, slurpLines, toJson, varyJson } from './examples/jq';
 import { sedExample, sedPattern } from './examples/sed';
-import { InputBox, Interactive, jqStepSections, RerunSpec } from './examples/rerun';
-import { globExample, patternExample, testExample } from './examples/patterns';
-import { braceExpand, GlobMode, GlobOpts, hasExtglob, hasGlobstar, isGlob } from './examples/shellwords';
+import { InputBox, jqStepSections, RerunSpec } from './examples/rerun';
+import { globExample } from './examples/patterns';
+import { braceExpand, GlobMode, hasExtglob, hasGlobstar, isGlob } from './examples/shellwords';
 import { pictureNote, visible } from './ctlchars';
-import { commandExampleOf, dateExample, gitLogExample, interactive, ioExample, readExample } from './examples/commands';
+import { commandExampleOf, dateExample, gitLogExample, ioExample, readExample } from './examples/commands';
 import { explainEscapes } from './embedded/format';
 import { describeFind, FindNode, parseFind } from './embedded/find';
-import { type BracketTest, bracketShape, type CommandTest, commandTest, type TestExpr, type TestShape, testRange } from './testexpr';
+import { bracketShape, type CommandTest, commandTest } from './testexpr';
 import { judgeYq, yqNotes, yqSameAsJq } from './embedded/yq';
 import { YamlStyle, YamlUnsupported, yamlLines, yqYamlOutput } from './examples/yaml';
 import { YQ_SPECS, yqSpecsOf } from './dict/yq';
@@ -37,12 +36,12 @@ import { DIRECTIVE } from './directives';
 import { EmbeddedLang } from './embedded/types';
 import { EMBEDDED, type EmbeddedContext } from './embedded/registry';
 import { dialectFound, Shell } from './dialect';
-import { arithLiteral, evalArith } from './arith';
+import { evalArith } from './arith';
 import { isPlainWord, type Literal, literalContent, splitElement, staticWordText, staticWordValue } from './staticword';
 import { explainExpansion } from './expansion-tokens';
 import {
-  binaryTestOps, extendedEqualOps, fdName, keywords, listOps,
-  redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
+  fdName, keywords, listOps,
+  redirects, specialDestinations, specialVariables, wellKnownVariables,
 } from './dict/syntax';
 import { bracket as bracketLabel, labelText, shorten } from './label';
 import { explainCommandSubstitution, explainProcessSubstitution, returnInSubstitution, scopeOf } from './substitution-tokens';
@@ -72,13 +71,15 @@ import { readingTree } from './reading';
 import { claim, dropLabelEcho, readAsScript, readByCommand, scriptProcess } from './tokenmarks';
 import { type Explainer, LineExplainer, memoKey, type Walk } from './explain/context';
 import { fromEmbedded, has, intersects, isBlockLike, lineStarts, onLine, posOf, same, sameSpan, skeletal, sortTokens, summaryOf } from './explain/nodes';
-import { given, globOff, hostCommand, ifsAt, inArithmetic, isAssoc, optionValues, regexFlavor, resolve, shoptAt, type ShoptName, specFor, trContext, unquotedWord, wordAt } from './explain/reads';
+import { given, globOff, hostCommand, ifsAt, isAssoc, optionValues, regexFlavor, resolve, shoptAt, specFor, trContext, unquotedWord, wordAt } from './explain/reads';
 import { groupSubshell, shellEffectNote } from './explain/where';
 import { postfixStatusNote, statusRangeNote } from './explain/status';
 import {
   arithChildren, arithNumber, arrayElement, braceExpansion, braceVarNote, braceWord, braceWords, casePattern, commaNote, concatenationNote, globChildren, globNotes, globToken,
   notGlobbedHere, shown, simpleExpansion, string, subscript, tilde, tildeNote, valueNote, variable, word, wrapNote,
 } from './explain/words';
+import { binary, regexNode, test, testTokens, unary } from './explain/tests';
+import { globOpts, interactive, patternExample, pushExample, regexExample, testExample } from './explain/examples';
 
 export { isBlockLike, summaryOf };
 
@@ -316,9 +317,9 @@ export class Analyzer {
       case 'negated_command': return skeletal(this.tok(n, 'operator', this.t(keywords[n.namedChildren[0]?.type === 'pipeline' ? '! pipeline' : '!']), this.subs(n.namedChildren)), n);
       case 'extended_test': case 'arithmetic_command':
         if (n.type === 'arithmetic_command') postfixStatusNote(this.cx, n);
-        return this.test(n);
-      case 'unary_expression': return this.unary(n);
-      case 'binary_expression': return this.binary(n);
+        return test(this.cx, n);
+      case 'unary_expression': return unary(this.cx, n);
+      case 'binary_expression': return binary(this.cx, n);
       case 'ternary_expression': return this.tok(n, 'expansion', this.s('三項演算子: 条件 ? 真のときの値 : 偽のときの値', 'Ternary: cond ? if-true : if-false'), this.subs(n.namedChildren));
       case 'postfix_expression': return this.tok(n, 'operator', this.s(`算術: \`${n.text}\`（${n.text.endsWith('++') ? '1 増やす' : '1 減らす'}）`, `Arithmetic: \`${n.text}\` (${n.text.endsWith('++') ? 'increment' : 'decrement'})`));
       case 'parenthesized_expression': return this.tok(n, 'operator', this.s('括弧でまとめた式', 'Parenthesized expression'), this.subs(n.namedChildren));
@@ -340,7 +341,7 @@ export class Analyzer {
       case 'brace_expression': return braceWord(this.cx, n) ?? word(this.cx, n);
       case 'array': return this.tok(n, 'expansion', this.s('配列: `( )` 内の要素から配列を作る', 'Array: built from the elements inside `( )`'), this.subs(n.namedChildren));
       case 'subscript': return subscript(this.cx, n);
-      case 'regex': return this.regexNode(n);
+      case 'regex': return regexNode(this.cx, n);
       case 'extglob_pattern': return globToken(this.cx, n, 'value');
       case 'variable_name': return arithNumber(this.cx, n) ?? variable(this.cx, n.text, n);
       case 'subshell': return this.block(n, 'block', this.s('サブシェル: `( )` 内を別プロセスで実行する。中での変数変更や cd は外に影響しない', 'Subshell: runs `( )` in a child process; variable changes and cd do not leak out'));
@@ -1169,8 +1170,8 @@ export class Analyzer {
     if (test.malformed) this.cx.note(fact(this.lang, 'test-malformed', { name: bracket ? '[' : 'test' }), n);
     let inner: Token[];
     if (test.test && !test.unclosed && !glued) {
-      this.testExample(n, bracketShape(test.test), '[');
-      inner = this.testTokens(n, test.test, test.test.expr);
+      testExample(this.cx, n, bracketShape(test.test), '[');
+      inner = testTokens(this.cx, n, test.test, test.test.expr);
     } else inner = this.subs(test.words);
     if (!test.close) return inner;
     return [...inner, this.tok(test.close, 'argument', this.s('`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）', 'The last argument passed to `[`. `[` checks it to find the end of the expression (without it, an error)'))];
@@ -1966,7 +1967,7 @@ export class Analyzer {
         const flavor = regexFlavor(this.cx);
         const ignoreCase = given(this.cx, '-i');
         const js = flavor === 'fixed' ? literalRegex(text, ignoreCase) : toJsRegex(text, flavor, { ignoreCase });
-        if (js) this.regexExample(grepWrap(js, given(this.cx, '-x'), given(this.cx, '-w')), given(this.cx, '-v') ? 'inverted' : 'lines');
+        if (js) regexExample(this.cx, grepWrap(js, given(this.cx, '-x'), given(this.cx, '-w')), given(this.cx, '-v') ? 'inverted' : 'lines');
         break;
       }
       case 'sed': {
@@ -2020,7 +2021,7 @@ export class Analyzer {
         break;
       case 'gitformat':
       case 'gitdate':
-        this.pushExample(gitLogExample(lang, text, this.cx.command!.parse, this.cx.command!.nodes.map((x) => literalContent(x)?.text), this.lang));
+        pushExample(this.cx, gitLogExample(lang, text, this.cx.command!.parse, this.cx.command!.nodes.map((x) => literalContent(x)?.text), this.lang));
         break;
       case 'glob': {
         // Unlike the shell, find matches a leading dot with * too; -path also matches / with *.
@@ -2033,7 +2034,7 @@ export class Analyzer {
         break;
       }
       case 'date':
-        this.pushExample(dateExample(text, this.lang));
+        pushExample(this.cx, dateExample(text, this.lang));
         break;
     }
   }
@@ -2108,30 +2109,6 @@ export class Analyzer {
     const found = givenOptions(parse).filter(({ role }) => role.role === 'option' && role.spec.names.includes('-r'));
     if (!found.length) return false;
     return !/=(0|f|false)$/i.test(nodes[found[found.length - 1].word].text);
-  }
-
-  /** Strings that do and do not match `js` (as grep lines, inverted by -v, or `=~` values). */
-  private regexExample(js: JsRegex, mode: 'lines' | 'inverted' | 'values'): void {
-    const ex = regexExamples(js);
-    if (!ex) return;
-    const yes = ex.matching;
-    const no = ex.nonMatching;
-    let sections: ExampleSection[];
-    if (mode === 'inverted') {
-      sections = [
-        { label: this.s('表示される行（一致しない行）', 'Printed (lines that do not match)'), lines: no },
-        { label: this.s('表示されない行（一致する行）', 'Not printed (lines that match)'), lines: yes },
-      ];
-    } else if (mode === 'values') {
-      sections = [{ label: this.s('一致する値', 'Matches'), lines: yes }, { label: this.s('一致しない値', 'Does not match'), lines: no }];
-    } else {
-      sections = [{ label: this.s('一致する行', 'Matching lines'), lines: yes }, { label: this.s('一致しない行', 'Non-matching lines'), lines: no }];
-    }
-    this.cx.example({ kind: 'regex',
-      title: mode === 'inverted' ? this.s('例（`-v` なので一致しない行が表示される）', 'Example (with `-v`, lines that do not match are printed)') : this.s('例', 'Example'),
-      sections: sections.filter((s) => s.lines.length),
-      interactive: this.interactive({ kind: 'regex', regex: js, mode }, [{ label: this.s('試す文字列（1行ずつ判定し、一致した部分を色付け）', 'Test strings (one per line; matches are highlighted)'), lines: [...yes, ...no] }]),
-    });
   }
 
   /** The scripts given to sed with -e/--expression, in order; undefined when there are none, or one is not plain text. */
@@ -2265,7 +2242,7 @@ export class Analyzer {
       }
       const inputs: InputBox[] = src.streams.map((st, i) => ({ label: streamLabel(st, this.lang, nullInput ? readBy : undefined), lines: contents[i] }));
       // (A file named twice is read twice.)
-      const it = this.interactive({ ...spec, ...(src.reads ? { reads: src.reads } : {}) }, inputs);
+      const it = interactive(this.cx, { ...spec, ...(src.reads ? { reads: src.reads } : {}) }, inputs);
       // (An input the filter cannot run on here, such as one too few for `input`: no example.)
       if (it.result.sections.some((sec) => sec.lines.includes(this.s('（この入力では実行できません）', '(cannot run on this input)')))) return;
       this.cx.example({ kind: 'jq',
@@ -2290,7 +2267,7 @@ export class Analyzer {
               : { label: spec.join ? this.s('出力（改行なし）', 'Output (no newlines)') : this.s('出力', 'Output'), lines: r.outputs, empty: this.s('（出力なし）', '(no output)') }]),
         ],
         // Only the first example can be edited; the second shows the missing-value case.
-        ...(i === 0 && src.streams.length ? { interactive: this.interactive(spec, [{ label, lines: input }]) } : {}),
+        ...(i === 0 && src.streams.length ? { interactive: interactive(this.cx, spec, [{ label, lines: input }]) } : {}),
       });
     });
   }
@@ -2400,7 +2377,7 @@ export class Analyzer {
     return {
       title: this.s('例（パイプライン全体）', 'Example (the whole pipeline)'), sections,
       // Data from a file can be edited; data made by echo or seq cannot.
-      ...(inputs.length ? { interactive: this.interactive({ kind: 'pipeline', stages }, inputs) } : {}),
+      ...(inputs.length ? { interactive: interactive(this.cx, { kind: 'pipeline', stages }, inputs) } : {}),
     };
   }
 
@@ -2467,7 +2444,7 @@ export class Analyzer {
     const src = this.inputSource(n, parse, args, spec);
     // A command that prints what it reads as it is (cat) shows what it does when it joins several streams (`cat a - b`).
     if (spec.copies && src.streams.length < 2 && !src.reads) return;
-    this.pushExample(commandExampleOf(kind, args.map((a) => ({ value: literalContent(a)?.text, text: a.text })), this.lang, src));
+    pushExample(this.cx, commandExampleOf(kind, args.map((a) => ({ value: literalContent(a)?.text, text: a.text })), this.lang, src));
   }
 
   /**
@@ -2628,47 +2605,15 @@ export class Analyzer {
     return this.say(fact(this.lang, id, { use: use.text }), use);
   }
 
-  /** How globs match on this line: file names, or `case` and `[[ == ]]` patterns (`find -name` takes neither). */
-  private globOpts(use: 'file' | 'pattern' | 'none', n: SyntaxNode): GlobOpts {
-    const shopt = shoptAt(this.cx, n);
-    const on = (name: ShoptName) => shopt[name] === 'on';
-    if (use === 'file') {
-      // (`**` reaches any depth with globstar on; where it may be on, the example says so.)
-      const o: GlobOpts = { globstar: on('globstar') || shopt.globstar === 'unknown', dotglob: on('dotglob'), nocase: on('nocaseglob') };
-      return Object.fromEntries(Object.entries(o).filter(([, v]) => v));
-    }
-    return use === 'pattern' && on('nocasematch') ? { nocase: true } : {};
-  }
-
   private globExample(n: SyntaxNode, pattern: string, mode: GlobMode, title: string, labels?: [string, string]): void {
     // A name that matches a pattern of GLOBIGNORE is left out.
     const ignore = mode === 'file' ? wordAt(this.cx, n)?.glob.globignore : undefined;
-    this.pushExample(globExample(pattern, mode, this.globOpts(mode === 'file' ? 'file' : 'none', n), typeof ignore === 'object' ? ignore.value : undefined, title, labels, this.lang));
-  }
-
-  private pushExample(ex: Example | undefined): void {
-    if (ex) this.cx.example(ex);
-  }
-
-  /** An example's editable form for the panel (src/examples/commands.ts). */
-  private interactive(spec: RerunSpec, inputs: InputBox[]): Interactive {
-    return interactive(spec, inputs, this.lang);
+    pushExample(this.cx, globExample(pattern, mode, globOpts(this.cx, mode === 'file' ? 'file' : 'none', n), typeof ignore === 'object' ? ignore.value : undefined, title, labels, this.lang));
   }
 
   /** Values that select a case branch (any of its patterns) and values that do not. */
   private caseExample(pats: SyntaxNode[]): void {
-    this.patternExample(pats, [this.s('この分岐に入る値', 'Values that take this branch'), this.s('入らない値', 'Values that do not')]);
-  }
-
-  /** Values that match any of the glob patterns (`case` branches, the right side of `[[ == ]]`) and values that do not: found with the matcher of `case`. */
-  private patternExample(pats: SyntaxNode[], labels: [string, string]): void {
-    const texts = pats.map((p) => unquotedWord(p) ?? (p.type === 'extglob_pattern' ? p.text : undefined));
-    this.pushExample(patternExample(texts, this.globOpts('pattern', pats[0]), labels, this.lang));
-  }
-
-  /** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false. */
-  private testExample(n: SyntaxNode, bracket: TestShape | undefined, asKind?: '['): void {
-    this.pushExample(testExample(n, bracket, asKind, this.lang));
+    patternExample(this.cx, pats, [this.s('この分岐に入る値', 'Values that take this branch'), this.s('入らない値', 'Values that do not')]);
   }
 
   /** An input → output example (sed, awk, perl, sort…; src/examples/commands.ts). */
@@ -2799,219 +2744,6 @@ export class Analyzer {
         break;
       }
     }
-  }
-
-  // ---------------------------------------------------------------- tests
-
-  private arithTestExplanation(): string {
-    return this.s('算術評価 `(( ))`: 式を計算し、結果が 0 以外なら成功(0)を返す', 'Arithmetic evaluation `(( ))`: succeeds if the result is non-zero');
-  }
-
-  private test(n: SyntaxNode): Token {
-    // Includes examples from inside the test, such as the regex of `=~`.
-    return this.cx.examplesOf(n, () => {
-      // A test over several lines is explained whole (see sub), so it is always where the line starts.
-      const open = n.children[0].type;
-      this.testExample(n, undefined);
-      const expl = open === '[['
-        ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。コマンドではなくシェルの構文なので、中で単語分割・グロブ展開が起きず、変数をクォートしなくても安全。`&&` `||` `<` `=~` も使える）',
-          'Extended test `[[ ]]`: evaluates a condition (bash-only; shell syntax, not a command, so there is no word splitting or globbing inside and variables are safe unquoted; `&&`, `||`, `<` and `=~` work too)')
-        : this.arithTestExplanation() + commaNote(this.cx, n);
-      const children = open === '((' ? arithChildren(this.cx, n) : this.subs(n.namedChildren);
-      const t = Object.assign(this.tok(n, 'test', expl, children), open === '[[' ? { name: nameInfo(this.lang, { kind: 'keyword', name: '[[' }, this.cx, n) } : {});
-      t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
-      skeletal(t, n, true);
-      return t;
-    });
-  }
-
-  /** The tokens of a `[ ]` test read as bash reads it (see testexpr.ts). */
-  private testTokens(n: SyntaxNode, b: BracketTest, e: TestExpr): Token[] {
-    const words = b.words;
-    const slice = (from: number, to: number) => n.text.slice(words[from].nodes[0].startIndex - n.startIndex, words[to].nodes[words[to].nodes.length - 1].endIndex - n.startIndex);
-    const [first, last] = testRange(e);
-    const make = (kind: Kind, explanation: string, children: Token[]): Token => ({
-      kind, label: shorten(slice(first, last)), explanation, children,
-      span: { start: spanOf(words[first].nodes[0]).start, end: spanOf(words[last].nodes[words[last].nodes.length - 1]).end },
-    });
-    // Operators and parentheses are not nodes to explain; they get no token of their own, but a word that is one does.
-    const wordTokens = (i: number) => words[i].nodes.flatMap((x) => this.sub(x));
-    const operandTokens = (i: number, plain: (x: SyntaxNode) => boolean) => this.subs(words[i].nodes.filter((x) => !plain(x)));
-    switch (e.type) {
-      case 'word': return wordTokens(e.at);
-      case 'not': {
-        const [from, to] = testRange(e.operand);
-        return [make('test', this.s(`否定: \`${slice(from, to)}\` が偽なら真`, `Negation: true if \`${slice(from, to)}\` is false`), this.testTokens(n, b, e.operand))];
-      }
-      case 'group': return [make('operator', this.s('括弧でまとめた式', 'Parenthesized expression'), this.testTokens(n, b, e.inner))];
-      case 'unary': {
-        const d = unaryTestOps[words[e.op].text!];
-        return [make('test', this.s(`条件: \`${slice(e.arg, e.arg)}\` が${this.t(d)}`, `Condition: \`${slice(e.arg, e.arg)}\` ${this.t(d)}`), operandTokens(e.arg, isPlainWord))];
-      }
-      case 'binary': {
-        const op = words[e.op].text!;
-        const num = this.numericTestNote(op, [slice(e.left, e.left), slice(e.right, e.right)], false);
-        return [make('test', this.s(
-          `条件: \`${slice(e.left, e.left)}\` と \`${slice(e.right, e.right)}\` を比較 — ${this.t(binaryTestOps[op])}${num}`,
-          `Condition: \`${slice(e.left, e.left)}\` vs \`${slice(e.right, e.right)}\` — ${this.t(binaryTestOps[op])}${num}`,
-        ), [...operandTokens(e.left, isPlainWord), ...operandTokens(e.right, isPlainWord)])];
-      }
-      default:
-        return [make('test', this.t(binaryTestOps[e.type === 'and' ? '-a' : '-o']), [...this.testTokens(n, b, e.left), ...this.testTokens(n, b, e.right)])];
-    }
-  }
-
-  /**
-   * How `-eq`, `-lt`… read their operands: `[ ]` takes decimal integers (`010` is ten; `0x10` is an error),
-   * `[[ ]]` evaluates them as arithmetic (`010` is octal 8, `0x10` is 16, `08` is an error).
-   */
-  private numericTestNote(op: string, operands: string[], double: boolean): string {
-    if (!/^-(?:eq|ne|lt|le|gt|ge)$/.test(op)) return '';
-    const notes: string[] = [];
-    for (const raw of operands) {
-      const m = /^([-+]?)(\d[0-9A-Za-z@_#]*)$/.exec(raw);
-      const lit = m ? arithLiteral(m[2]) : undefined;
-      if (!lit && !double && /^[\w+\-/%.,:^]+$/.test(raw) && !/^[-+]?\d+$/.test(raw)) {
-        // A word written out in full that is no integer (`1+1`, `1.5`, `x`): `[` and `test` do not calculate.
-        const v = evalArith(raw);
-        notes.push(this.s(`\`[ ]\` の ${op} は整数しか読めないので \`${raw}\` はエラー（integer expression expected）。\`[[ ]]\` なら算術として読める${v === undefined ? '' : `（${v}）`}`,
-          `\`[ ]\` reads only integers for ${op}, so \`${raw}\` is an error (integer expression expected); \`[[ ]]\` would read it as arithmetic${v === undefined ? '' : ` (${v})`}`));
-        continue;
-      }
-      if (!lit && double && /^[\d\s+\-*/%()]+$/.test(raw) && !/^\s*[-+]?\d+\s*$/.test(raw)) {
-        // An arithmetic expression of constants (`1+1`): `[[ ]]` calculates it.
-        const v = evalArith(raw);
-        if (v !== undefined) notes.push(this.s(`\`[[ ]]\` の ${op} は算術として読むので \`${raw}\` は ${v}`, `\`[[ ]]\` reads ${op} operands as arithmetic, so \`${raw}\` is ${v}`));
-        continue;
-      }
-      if (!lit || (lit.type === 'number' && lit.style === 'decimal' && !/^0\d/.test(m![2]))) continue;
-      if (!double) {
-        notes.push(lit.type === 'number' && lit.style === 'octal' && /^\d+$/.test(m![2])
-          ? this.s(`\`[ ]\` は 10 進の整数として読むので \`${raw}\` は ${Number(m![2])}（8 進数ではない）`, `\`[ ]\` reads decimal integers, so \`${raw}\` is ${Number(m![2])} (not octal)`)
-          : this.s(`\`[ ]\` は 10 進の整数しか読めないので \`${raw}\` はエラー（integer expression expected）。\`[[ ]]\` なら算術として読める`, `\`[ ]\` reads only decimal integers, so \`${raw}\` is an error (integer expression expected); \`[[ ]]\` would read it as arithmetic`));
-      } else if (lit.type === 'invalid') {
-        notes.push(this.s(`\`[[ ]]\` は算術として読むので、先頭が 0 の \`${raw}\` は 8 進数で、\`${lit.digit}\` は使えずエラー（value too great for base）`, `\`[[ ]]\` reads arithmetic, where \`${raw}\` with a leading 0 is octal and \`${lit.digit}\` is not a digit: an error (value too great for base)`));
-      } else {
-        const kind = { octal: this.s('8 進数', 'octal'), hex: this.s('16 進数', 'hexadecimal'), based: this.s(`${lit.base} 進数`, `base ${lit.base}`), decimal: '' }[lit.style];
-        notes.push(this.s(`\`[[ ]]\` の ${op} は算術として読むので \`${raw}\` は ${kind}で ${m![1] === '-' ? '-' : ''}${lit.value}`, `\`[[ ]]\` reads ${op} operands as arithmetic, so \`${raw}\` is ${kind} ${m![1] === '-' ? '-' : ''}${lit.value}`));
-      }
-    }
-    return notes.length ? this.s('。', '. ') + notes.join(this.s('。', '. ')) : '';
-  }
-
-  /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
-  private regexNode(n: SyntaxNode): Token {
-    // (A `regex` node is only the plain right side of `=~`, without quotes: expansions and quotes make other nodes.)
-    // Quote removal drops a backslash before an ordinary character: `\b` is `b`, `\w` is `w`, `\<` is `<` (bash), not the GNU operators.
-    // One before a character special in an ERE stays, and makes it literal.
-    let text = '';
-    const offsets: number[] = [];
-    for (let i = 0; i < n.text.length; i++) {
-      if (n.text[i] === '\\' && i + 1 < n.text.length && !/[.[\]{}()\\*+?|^$]/.test(n.text[i + 1])) i++;
-      offsets.push(i);
-      text += n.text[i];
-      if (n.text[i] === '\\' && i + 1 < n.text.length) { offsets.push(++i); text += n.text[i]; }
-    }
-    // (The regex is read by the regex library bash calls, by the rules of an ERE: an embedded language.)
-    const tokens = explainRegex(text, 'ere', this.lang).map((t) => ({ ...fromEmbedded(t, n, { text, offsets }, 'embedded'), language: 'regex' }));
-    const js = toJsRegex(text, 'ere');
-    const dropped = [...new Set([...n.text.matchAll(/\\([bBwWsSdD<>])/g)].filter((m) => text !== n.text).map((m) => '\\' + m[1]))];
-    if (dropped.length) {
-      const list = dropped.map((d) => `\`${d}\``).join(this.s('、', ', '));
-      this.cx.note(fact(this.lang, 'regex-backslash-dropped', { list }), n);
-    }
-    if (js) this.regexExample(js, 'values');
-    return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
-  }
-
-  private unary(n: SyntaxNode): Token {
-    // `!` is not an operator field.
-    const opNode = field(n, 'operator')!;
-    const op = opNode.text;
-    const operand = n.namedChildren.find((c) => !same(c, opNode));
-    // `[[ $a && -n` while typing: the operand is not written yet.
-    if (!operand) {
-      return this.tok(n, 'test', this.s(`単項演算 \`${op}\`: 対象がまだ書かれていない`, `Unary operator \`${op}\`: the operand is not written yet`));
-    }
-    if (op === '!' && !inArithmetic(n)) {
-      return this.tok(n, 'test', this.s(`否定: \`${operand.text}\` が偽なら真`, `Negation: true if \`${operand.text}\` is false`), this.sub(operand));
-    }
-    const d = unaryTestOps[op];
-    if (d && !inArithmetic(n)) {
-      return this.tok(n, 'test', this.s(`条件: \`${operand.text}\` が${this.t(d)}`, `Condition: \`${operand.text}\` ${this.t(d)}`), this.subs([operand].filter((x) => !isPlainWord(x))));
-    }
-    return this.tok(n, 'operator', this.s(`算術の単項演算 \`${op}\``, `Arithmetic unary operator \`${op}\``), this.subs(n.namedChildren));
-  }
-
-  private binary(n: SyntaxNode): Token {
-    const left = field(n, 'left');
-    // The right side of `=`, `==` and `!=` in `[[ ]]` can be several fields: `*"$y"*z` is a pattern, a string and a pattern.
-    // (The binary expression in `${s:$i+1}` has no fields at all.)
-    const rightFields = fields(n, 'right');
-    const rights = rightFields.length ? rightFields : [n.namedChildren[n.namedChildren.length - 1]];
-    const rightText = n.text.slice(rights[0].startIndex - n.startIndex, rights[rights.length - 1].endIndex - n.startIndex);
-    const op = field(n, 'operator')!.text;
-    // The grammar reads even a plain `a` after `=`, `==` and `!=` as a pattern; it is only a word to explain, and in `[ ]` any text is.
-    // (A constant such as `0x1F` is not plain in arithmetic: it has a value to show.)
-    const plain = (x: SyntaxNode) => (isPlainWord(x) && !(inArithmetic(n) && arithNumber(this.cx, x))) || (x.type === 'extglob_pattern' && rights.length === 1 && !hasGlob(x.text));
-    // The grammar leaves some patterns as words (`*.txt`, `--?(a)b`, `-@(!(-*)e*|-edit)`); on the right of `==` in `[[ ]]` they are patterns all the same.
-    const pattern = (x: SyntaxNode) => x.type === 'word' && ['=', '==', '!='].includes(op) && hasGlob(x.text) && !!ancestor(n, (a) => a.type === 'extended_test');
-    const operands = sortTokens([
-      ...this.subs([left, ...rights].filter((x) => x && !plain(x) && !pattern(x))),
-      ...rights.filter(pattern).map((x) => globToken(this.cx, x, 'value')),
-    ]);
-    // `[[ $x = *.txt ]]`: the values that match, as for a `case` pattern (a pattern with a quoted part is not tried).
-    if (['=', '==', '!='].includes(op) && rights.length === 1 && (pattern(rights[0]) || (rights[0].type === 'extglob_pattern' && !plain(rights[0])))) {
-      this.cx.examplesAt(n, () => this.patternExample(rights, [this.s('一致する値', 'Values that match'), this.s('一致しない値', 'Values that do not match')]));
-    }
-    if (!inArithmetic(n) && binaryTestOps[op]) {
-      const num = this.numericTestNote(op, [n.namedChildren[0].text, rightText], true);
-      if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
-        return this.tok(n, 'test', this.t(binaryTestOps[op]), this.subs([left, ...rights]));
-      }
-      return this.tok(n, 'test', this.s(
-        `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${this.quotedPatternNote(n, op, rights) ?? this.t(extendedEqualOps[op] ?? binaryTestOps[op])}${num}`,
-        `Condition: \`${left?.text}\` vs \`${rightText}\` — ${this.quotedPatternNote(n, op, rights) ?? this.t(extendedEqualOps[op] ?? binaryTestOps[op])}${num}`,
-      ), operands);
-    }
-    const assignOps = ['=', '+=', '-=', '*=', '/=', '%='];
-    return this.tok(n, 'operator', assignOps.includes(op)
-      ? this.s(`算術代入: \`${left?.text}\` ${op} \`${rightText}\``, `Arithmetic assignment: \`${left?.text}\` ${op} \`${rightText}\``)
-      : this.s(`算術演算: \`${left?.text}\` ${op} \`${rightText}\``, `Arithmetic: \`${left?.text}\` ${op} \`${rightText}\``), operands);
-  }
-
-  /**
-   * In `[[ x == "*" ]]` and `[[ x =~ "a.c" ]]`, a quoted right side is plain text: quoting turns the pattern or the
-   * regex off. Undefined when nothing is quoted.
-   */
-  private quotedPatternNote(n: SyntaxNode, op: string, rights: SyntaxNode[]): string | undefined {
-    const regex = op === '=~';
-    if (!['=', '==', '!=', '=~'].includes(op) || !ancestor(n, (a) => a.type === 'extended_test')) return undefined;
-    // (In a regex a backslash is no quoting: `a\.c` is the same regex as `a[.]c`.)
-    const quoted = (x: SyntaxNode): boolean[] => {
-      if (x.type === 'concatenation') return x.namedChildren.flatMap(quoted);
-      if (['string', 'raw_string', 'ansi_c_string', 'translated_string'].includes(x.type)) return [true];
-      return [!regex && x.text.includes('\\')];
-    };
-    const kinds = rights.flatMap(quoted);
-    if (!kinds.some((q) => q)) return undefined;
-    if (regex) {
-      const pitfall = rights.some((x) => x.type === 'string' && descendants(x, ['simple_expansion', 'expansion']).length)
-        ? this.s('。正規表現を入れた変数は `"$re"` でなく `$re` とクォートせずに書く', '. A variable that holds a regex is written `$re`, not `"$re"`')
-        : '';
-      return (kinds.every((q) => q)
-        ? this.s('左辺が右辺の文字列をそのまま含めば真（右辺はクォートされているので正規表現ではなく文字列そのもの。`.` や `*` も普通の文字）',
-          'true if the left side contains the right side as it is (the right side is quoted, so it is literal text, not a regex: `.` and `*` are plain characters)')
-        : this.s('左辺が右辺の正規表現(ERE)に一致すれば真（右辺のうちクォートされた部分は文字列そのまま、残りは正規表現）',
-          'true if the left side matches the regex (ERE) on the right (the quoted parts of the right side are literal text, the rest is regex)'))
-        + pitfall + this.s('。一致結果は `BASH_REMATCH` に入る', '; captures go to `BASH_REMATCH`');
-    }
-    const equal = op !== '!=';
-    return kinds.every((q) => q)
-      ? this.s(`文字列が${equal ? '等しい' : '等しくない'}（右辺はクォートされているので文字列そのもの。パターンとしては扱われない）`,
-        `strings ${equal ? 'are equal' : 'differ'} (the right side is quoted, so it is literal text, not a pattern)`)
-      : this.s(`文字列が${equal ? '等しい' : '等しくない'}（右辺のうちクォートされた部分は文字列そのもの、残りはパターン）`,
-        `strings ${equal ? 'are equal' : 'differ'} (the quoted parts of the right side are literal text, the rest is a pattern)`);
   }
 
   /**
