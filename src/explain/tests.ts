@@ -15,7 +15,7 @@ import { isPlainWord, staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { type BracketTest, type TestExpr, testRange } from '../testexpr';
 import type { Explainer } from './context';
-import { patternExample, regexExample, testExample } from './examples';
+import { matchExample, regexExample, testExample } from './examples';
 import { fromEmbedded, same, skeletal, sortTokens } from './nodes';
 import { inArithmetic } from './reads';
 import { postfixStatusNote } from './status';
@@ -137,7 +137,7 @@ export function regexNode(cx: Explainer, n: SyntaxNode): Token {
     cx.note(fact(cx.lang, 'regex-backslash-dropped', { list }), n);
   }
   // (A part of a right side with quotes or expansions: the example is the whole regex's, made by `binary`.)
-  if (js && n.parent?.type !== 'concatenation') regexExample(cx, js, 'values');
+  if (js && n.parent?.type !== 'concatenation') regexExample(cx, js, 'values', field(n.parent!, 'left')!);
   return cx.tok(n, 'pattern', cx.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
 }
 
@@ -215,13 +215,13 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
   ]);
   // `[[ $x = *.txt ]]`: the values that match, as for a `case` pattern (a pattern with a quoted part is not tried).
   if (['=', '==', '!='].includes(op) && rights.length === 1 && (pattern(rights[0]) || (rights[0].type === 'extglob_pattern' && !plain(rights[0])))) {
-    cx.examplesAt(n, () => patternExample(cx, rights, [cx.s('一致する値', 'Values that match'), cx.s('一致しない値', 'Values that do not match')]));
+    cx.examplesAt(n, () => matchExample(cx, n, rights[0]));
   }
   // `[[ $x =~ ^"a."c$ ]]`: the strings the whole regex matches, its quoted parts as literal text.
   if (op === '=~' && rights.length === 1 && rights[0].type === 'concatenation') {
     const re = wholeRegex(rights[0].namedChildren);
     const js = re === undefined ? undefined : toJsRegex(re, 'ere');
-    if (js) regexExample(cx, js, 'values');
+    if (js) regexExample(cx, js, 'values', left!);
   }
   if (!inArithmetic(n) && binaryTestOps[op]) {
     const num = numericTestNote(cx, op, [n.namedChildren[0].text, rightText], true);

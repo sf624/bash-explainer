@@ -313,12 +313,18 @@ function convertCase(value: string, op: string, matches?: (c: string) => boolean
   return [...value].map((c, i) => ((op.length === 2 || i === 0) && (!matches || matches(c)) ? change(c) : c)).join('');
 }
 
+/** Whether a character is one the pattern of `${v^pat}` matches (undefined: no pattern, every one); null when the pattern is not one we read. */
+function caseMatcher(pattern: string | undefined): ((c: string) => boolean) | undefined | null {
+  const glob = pattern === undefined ? undefined : globParts(pattern);
+  if (pattern !== undefined && !glob) return null;
+  const one = glob && new RegExp(`^(?:${globRegex(glob)})$`);
+  return one ? (c: string) => one.test(c) : undefined;
+}
+
 function caseExamples(p: ParsedExpansion, pattern: string | undefined, set: (val: string, result: string) => ExpansionCase): ExpansionCase[] | undefined {
   const op = p.op!;
-  const glob = pattern === undefined ? undefined : globParts(pattern);
-  if (pattern !== undefined && !glob) return undefined;
-  const one = glob && new RegExp(`^(?:${globRegex(glob)})$`);
-  const matches = one ? (c: string) => one.test(c) : undefined;
+  const matches = caseMatcher(pattern);
+  if (matches === null) return undefined;
   const dflt = op[0] === '^' ? 'hello world' : op[0] === ',' ? 'HELLO World' : 'Hello World';
   // (For a pattern such as `l`, a value that starts with that letter, in either case.)
   const samples = [dflt, 'hello world', 'HELLO World', 'Hello World', 'HELLO', 'hello', 'report.tar.gz', 'ABC-123-xyz',
@@ -346,6 +352,31 @@ export interface ExpansionCase {
   result: string;
   /** Bash that sets up the condition (for named variables), used by the tests. */
   setup?: string;
+  /** The value of the parameter the condition gives it (`hello` of "When `msg=hello`"), when it gives one. */
+  value?: string;
+}
+
+/**
+ * The value the script itself gives the variable where the expansion runs, and what the expansion gives with it, when
+ * the model knows it (src/explain/values.ts).
+ */
+export interface ScriptValue { value: string; result?: string }
+
+/**
+ * What the forms of `${…}` the model does not follow give with the script's value `v` (`${v@Q}`, `${v^^[a-c]}`,
+ * `${v~}`), by the rules of the samples; only for printable ASCII, whose case is the same in every locale.
+ */
+function resultWith(p: ParsedExpansion, v: string): string | undefined {
+  if (!/^[\x20-\x7e]*$/.test(v)) return undefined;
+  const part = (role: ExpansionPart['role']) => p.parts.find((x) => x.role === role)?.text;
+  if (p.op === '@') {
+    const t = part('transform');
+    return t === 'U' ? v.toUpperCase() : t === 'L' ? v.toLowerCase() : t === 'u' ? v.slice(0, 1).toUpperCase() + v.slice(1) : t === 'Q' ? sq(v) : undefined;
+  }
+  // (The model follows `${v^}`, `${v^^}`, `${v,}` and `${v,,}` without a pattern: what it does not give is not known.)
+  if (!p.op || !/^[~^,]/.test(p.op) || (p.op[0] !== '~' && part('pattern') === undefined)) return undefined;
+  // (A pattern we do not read has no samples either: `exampleFor` has returned before.)
+  return convertCase(v, p.op, caseMatcher(part('pattern')) as ((c: string) => boolean) | undefined);
 }
 
 /** Arrays the shell fills in itself: bash code that sets them, and what they then hold. */
@@ -356,11 +387,50 @@ const SET_BY_SHELL: Record<string, { setup: string; values: string[]; ja: string
 
 const sq = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 
+/** "When `msg=hello`": a case of the named variable `ref` with the value `val` (in the form `shown` gives). */
+function valueCase(ref: string, val: string, shown: string, result: string, ja: boolean): ExpansionCase {
+  return { when: ja ? `\`${ref}=${shown}\` のとき` : `When \`${ref}=${shown}\``, result, setup: `${ref}=${sq(val)}`, value: val };
+}
+
+/** "When `msg=""`": the named variable `ref` set to an empty string. */
+function emptyValueCase(ref: string, result: string, ja: boolean): ExpansionCase {
+  return { when: ja ? `\`${ref}=""\` のとき` : `When \`${ref}=""\``, result, setup: `${ref}=`, value: '' };
+}
+
+/**
+ * The worked example with the script's own value (docs/design/expansion-values.md): the case of that value takes the place
+ * of the case of a sample value, or of the case with the same condition. When the script's value does not show what the
+ * operator does (`${x#z}` of `abc`) and the sample does, both are shown, the script's first. A value that is not set, or not
+ * known, leaves the samples as they are.
+ */
+function withScriptValue(p: ParsedExpansion, cases: ExpansionCase[], own: ExpansionCase): ExpansionCase[] {
+  const same = cases.findIndex((c) => c.when === own.when);
+  if (same >= 0) return cases.map((c, i) => (i === same ? own : c));
+  // (The length always shows what `#` does.)
+  const shows = (c: ExpansionCase) => c.result !== c.value || p.prefix === '#';
+  const sample = own.value ? cases.findIndex((c) => !!c.value) : -1;
+  if (sample >= 0 && (/^:?[-=+?]$/.test(p.op ?? '') || shows(own) || !shows(cases[sample]))) return cases.map((c, i) => (i === sample ? own : c));
+  return [own, ...cases];
+}
+
 /**
  * Worked examples such as `file=report.tar.gz` → `report.tar`, computed with the same matching
  * rules as bash. Undefined when the expansion depends on values we cannot know. `ctx.quoted`: the expansion is in double quotes; `ctx.assoc`: the array is associative (its keys are strings, in no fixed order).
  */
-export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; assoc?: boolean } = {}): ExpansionCase[] | undefined {
+export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; assoc?: boolean; script?: ScriptValue } = {}): ExpansionCase[] | undefined {
+  const cases = sampleCases(p, lang, ctx);
+  const own = ctx.script;
+  // (Only a variable of the script has its value: not an argument, an element, a special parameter, nor `${!x}`.)
+  if (!cases || !own || !/^[A-Za-z_]\w*$/.test(p.name) || p.subscript !== undefined || p.prefix === '!') return cases;
+  const v = own.value;
+  const result = own.result ?? resultWith(p, v);
+  if (result === undefined) return cases;
+  const shown = /^[\w.,:@%+/=^-]+$/.test(v) ? v : /["$`\\!]/.test(v) ? sq(v) : `"${v}"`;
+  return withScriptValue(p, cases, v === '' ? emptyValueCase(p.name, result, lang === 'ja') : valueCase(p.name, v, shown, result, lang === 'ja'));
+}
+
+/** The worked examples with sample values (`exampleFor`). */
+function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; assoc?: boolean }): ExpansionCase[] | undefined {
   const quoted = ctx.quoted ?? false;
   const ja = lang === 'ja';
   const name = p.name;
@@ -374,15 +444,13 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
   const ref = element ? `${name}[${p.subscript}]` : name;
   // Values are never empty here (an empty one is `emptyCase`).
   const shown = (val: string) => (/[\s']/.test(val) ? `"${val}"` : val);
-  const set = (val: string, result: string): ExpansionCase => ({
+  const set = (val: string, result: string): ExpansionCase => (args || positional ? {
     when: args
       ? (ja ? `引数が \`${shown(val)}\` のとき` : `When the arguments are \`${shown(val)}\``)
-      : positional
-        ? (ja ? `${name} 番目の引数が \`${shown(val)}\` のとき` : `When argument ${name} is \`${shown(val)}\``)
-        : (ja ? `\`${ref}=${shown(val)}\` のとき` : `When \`${ref}=${shown(val)}\``),
+      : (ja ? `${name} 番目の引数が \`${shown(val)}\` のとき` : `When argument ${name} is \`${shown(val)}\``),
     result,
-    setup: args ? `set -- ${sq(val)}` : positional ? undefined : `${ref}=${sq(val)}`,
-  });
+    setup: args ? `set -- ${sq(val)}` : undefined,
+  } : valueCase(ref, val, shown(val), result, ja));
   // `coproc` fills these in with descriptor numbers and a process ID: no example holds on every run.
   if (name === 'COPROC' || name === 'COPROC_PID') return undefined;
   const shellSet = Object.hasOwn(SET_BY_SHELL, name) ? SET_BY_SHELL[name] : undefined;
@@ -447,13 +515,11 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
   // A plausible value for "when it has a value", chosen to look like the default.
   const sample = homeWord || /^\/|^~/.test(word) ? '/data' : /^-?\d+$/.test(word) ? '42' : 'hello';
   const expanded = (w: string) => `${w}${/\$/.test(w) ? (ja ? '（展開結果）' : ' (expanded)') : ''}`;
-  const emptyCase = (result: string): ExpansionCase => ({
-    when: args
-      ? (ja ? '引数が空の1つだけのとき' : 'When the only argument is empty')
-      : positional ? (ja ? `${name} 番目の引数が空のとき` : `When argument ${name} is empty`) : (ja ? `\`${ref}=""\` のとき` : `When \`${ref}=""\``),
+  const emptyCase = (result: string): ExpansionCase => (args || positional ? {
+    when: args ? (ja ? '引数が空の1つだけのとき' : 'When the only argument is empty') : (ja ? `${name} 番目の引数が空のとき` : `When argument ${name} is empty`),
     result,
-    setup: args ? "set -- ''" : positional ? undefined : `${ref}=`,
-  });
+    setup: args ? "set -- ''" : undefined,
+  } : emptyValueCase(ref, result, ja));
   // The arguments cannot be assigned to: bash stops with "cannot assign in this way" when the default would be used.
   const noAssign = ja ? 'エラー「cannot assign in this way」で止まる' : 'fails with "cannot assign in this way"';
   switch (p.op) {

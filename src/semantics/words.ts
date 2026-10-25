@@ -681,6 +681,7 @@ class Evaluator {
       const got = substring(value, part('offset'), p.parts.find((x) => x.role === 'length')?.text);
       return got === null ? (() => { throw new Failure('substring'); })() : got === undefined ? undefined : out(got);
     }
+    if (op[0] === '~') return undefined; // (`~` and `~~` toggle the case: not followed.)
     if (op === '^^' || op === ',,' || op === '^' || op === ',') return part('pattern') ? undefined : out(caseConverted(op, value));
     const pattern = patternOf(part('pattern'), this);
     if (pattern === undefined) return undefined;
@@ -883,17 +884,15 @@ export function wordFields(n: SyntaxNode, model: StateModel, env?: WordEnv): Fie
 }
 
 /**
- * What the expansion `part` of the word `w` gives with only the values the model trusts (`ModelValues.trusted`): its
- * text, and its fields where `split` (each with whether it has a glob character); undefined when bash fails on it or
- * a value is not known. For src/semantics/values.ts.
+ * What the expansion `part` of the word `w` gives with only the values the model trusts (`ModelValues.trusted`): its text, and its
+ * fields where `split` (each with whether it has a glob character); undefined when bash fails on it or a value is not known.
  */
 export function trustedPart(part: SyntaxNode, w: WordMeaning, model: StateModel, quoted: boolean, split: boolean): { text: string; fields: { text: string; glob: boolean }[] } | undefined {
   let pieces: Piece[] | undefined;
   try {
     pieces = new Evaluator(w, new ModelValues(w, model, undefined, new Set(), true)).pieces(part, quoted);
   } catch (e) {
-    // A rethrow guard, as in `fieldsAt`.
-    /* c8 ignore next */
+    /* c8 ignore next -- a rethrow guard, as in `fieldsAt`. */
     if (!(e instanceof Failure)) throw e;
     return undefined;
   }
@@ -904,6 +903,8 @@ export function trustedPart(part: SyntaxNode, w: WordMeaning, model: StateModel,
   return { text: pieces.map((p) => p.text).join(''), fields: fields.map((f) => ({ text: f.map((c) => c.c).join(''), glob: isGlob(patternOfChars(f)) })) };
 }
 
+/** The variable `name` where the word `w` is expanded, as `trustedPart` reads it: a string, null when unset, undefined when not known. */
+export const trustedVariable = (name: string, w: WordMeaning, model: StateModel): string | null | undefined => new Evaluator(w, new ModelValues(w, model, undefined, new Set(), true)).variable(name, w.nodes[0]);
 function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, expanding: ReadonlySet<SyntaxNode>, trusted = false): Fields {
   const w = wordMeaning(n, model);
   if (!w) return {};

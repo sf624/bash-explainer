@@ -1673,5 +1673,63 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=aBc; @PROBE:a@ \"${x~}\"; @PROBE:b@ \"${x~~}\"; @PROBE:c@ \"${x~[a-c]}\"; @PROBE:d@ \"${x^^}\"",
+    "none": {
+      "a": "`~` toggles the case of the first letter: not followed",
+      "b": "`~~` toggles the case of every letter: not followed",
+      "c": "`~` with a pattern: not followed (it is not a pattern substitution)"
+    },
+    "facts": {
+      "a": [
+        [
+          "ABc"
+        ]
+      ],
+      "b": [
+        [
+          "AbC"
+        ]
+      ],
+      "c": [
+        [
+          "ABc"
+        ]
+      ],
+      "d": [
+        [
+          "ABC"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=été; @PROBE:a@ \"${x^}\"; @PROBE:b@ \"${x^^}\"; y=ABC; @PROBE:c@ \"${y,,}\"",
+    "none": {
+      "a": "a letter other than ASCII changes case by the locale (bash leaves it in C, changes it in a UTF-8 locale): not followed",
+      "b": "the same, for every letter"
+    },
+    "facts": {
+      "a": [
+        [
+          "été"
+        ]
+      ],
+      "b": [
+        [
+          "éTé"
+        ]
+      ],
+      "c": [
+        [
+          "abc"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]
