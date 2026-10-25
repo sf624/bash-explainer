@@ -5,7 +5,7 @@ import { YQ_NAMES } from '../embedded/yq';
 import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
 import type { DocumentIssue } from '../document';
-import { type NoteLevel, splitNote } from '../messages';
+import type { NoteLevel } from '../messages';
 import { ExamplePlacement, noteRefs, notesByLevel, placeExamples, ui } from './render';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
@@ -107,7 +107,7 @@ export function panelUpdate(p: PanelLine) {
     animations: p.animations,
     contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
     // The notes as drawn: warnings first, each with its level and the word after its mark (src/messages.ts).
-    notes: notesByLevel(ex.notes).map((n) => ({ ...splitNote(n, lang), refs: noteRefs(ex, n) ?? [] })),
+    notes: notesByLevel(ex).map(({ text, level, label, body }) => ({ level, label, body, refs: noteRefs(ex, text) ?? [] })),
     levelLabels: lang === 'ja' ? { warning: '警告', info: '情報', note: '補足' } : { warning: 'Warning', info: 'Information', note: 'Note' },
     marks: p.marks ?? [],
     emptyMessage: t.empty,

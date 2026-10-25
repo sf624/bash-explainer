@@ -23,12 +23,15 @@ One source per kind of note:
 
 - The message catalog (src/messages.ts): `pitfall()` is a warning, `caveat()` a pitfall at the level `info`, `failure()` a fact that says the line fails when it runs (a note at the level `warning`), `note()` a plain fact. `fact()` gives the level with the text (`Fact.level`).
 - The style checks (src/pitfalls.ts): `STYLE_LEVELS`.
-- The dialect issues (src/dialect.ts): `issueLevel(kind)`: `unsupported` is a warning, `behaviour` information, `parse` (zsh syntax bash cannot read) a plain fact.
+- The dialect issues (src/dialect.ts): `unsupported` is a warning, `behaviour` information, `parse` (zsh syntax bash cannot read) a plain fact (`Issue.note`).
+- A note with no mark (an idiom, where a line is in a here-document or a statement) is a plain fact (`plainNote`).
 - A diagnostic's severity is `severityOf(level)`: `warning` is a warning, the others information (src/document.ts, src/hosts/remap.ts). The old list of pitfalls shown as warnings (`PITFALL_WARNINGS`) and `WordFinding.mild` are gone.
 
-### The bridge: marks in the text
+### Notes as data
 
-The views still get a line's notes as strings (`LineExplanation.notes`), and some notes are not made from the catalog yet (the analyzer's own `⚠ …` notes, idioms with no mark). So a view reads the level back from the mark the text starts with: `noteLevel(text)`, and `splitNote(text, lang)` for the level, the word and the rest. This is an interim bridge: once the analyzer gives note nodes with their level (with the thinning of [analyzer.md](analyzer.md)), the views read the level from the node, and every pitfall stated becomes a diagnostic. Meanwhile a note found on a node has its range beside its text (`LineExplanation.anchors`), which the part hover reads to show only the notes about the part ([hover.md](hover.md), "Notes"). Until then, the problems are the pitfalls of src/pitfalls.ts and src/wordfacts.ts, as before (roadmap, "Next").
+A note is made as data where it is said (`Note` in src/messages.ts): its text, its level, the word after its mark ("Pitfall:", "Caveat:", a heading; empty when there is none), the rest of the text, and the code of the problem it is (a fact's id, a style check, a dialect issue). `marked(lang, level, body, …)` makes a note with a mark, `plainNote(text)` one without; a fact (`fact()`) is a note with its id as its code. A line gives its notes as texts (`LineExplanation.notes`) and their data in the same order (`LineExplanation.noteInfo`); the analyzer records the data where each note is said (`say`, `note`, `anchored` in src/explain/context.ts), the notes of a string run as a script come with theirs (`adopt`), and a host file adds the data of its own notes (src/hosts/remap.ts). The views read the level and the word from the data (`noteOf`, `notesByLevel` in src/ui/render.ts), never from the mark; test/note-data.test.ts checks over the corpus that the data agrees with the mark each text starts with.
+
+This replaced a bridge: the views read the level back from the mark (`noteLevel(text)`, `splitNote(text, lang)`), which is gone. A note found on a node has its range beside its text (`LineExplanation.anchors`), which the part hover reads to show only the notes about the part ([hover.md](hover.md), "Notes"). Until the next step, the problems are the pitfalls of src/pitfalls.ts and src/wordfacts.ts, as before (roadmap, "Now").
 
 ## The views
 
@@ -61,6 +64,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | Id | Why |
 | --- | --- |
 | `function-last-test-stops-script` | `set -e` stops the script whenever the test fails, which is what a test is written for. |
+| `keyword-needs-separator` | `then` or `do` with no `;` or newline before it is an argument: a syntax error, every time. |
 | `bracket-missing-close`, `bracket-close-glued`, `test-malformed` | `[` or `test` fails every time it runs (status 2), and the condition is never evaluated. |
 | `unset-readonly`, `unset-function-and-variable` | `unset` fails every time (status 1), and nothing is unset. |
 | `local-outside-function` | `local` fails every time outside a function. |

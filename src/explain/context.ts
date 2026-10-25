@@ -7,8 +7,8 @@ import type { CommandSpec } from '../argv/spec';
 import type { Shell } from '../dialect';
 import type { Lang, Text } from '../i18n';
 import { shorten } from '../label';
-import { type Fact, said } from '../messages';
-import { anchored, type Placed, spanOf } from '../noteanchors';
+import { type Fact, type Note, plainNote, said } from '../messages';
+import { anchored, type Found, spanOf } from '../noteanchors';
 import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
 import { docLine, type StateModel } from '../semantics/state';
@@ -131,8 +131,10 @@ export interface LineOutput {
   readonly examples: readonly Example[];
   /** Enclosing constructs, outermost first. */
   readonly context: ContextEntry[];
-  /** The texts of notes found on nodes, each once; each is recorded in the anchors (see `anchored`). */
-  anchored(found: readonly { text: string; node?: Placed; code?: string }[]): string[];
+  /** The texts of notes found on nodes, each once; each is recorded in the anchors (see `anchored`), with its data. */
+  anchored(found: readonly Found[]): string[];
+  /** The data of a note of this line, by its text (`LineExplanation.noteInfo`): a note with none is a plain fact. */
+  noteOf(text: string): Note;
   /** Ends the line: what is explained after it is explained whole. */
   end(): void;
 }
@@ -163,6 +165,8 @@ export class LineExplainer implements Explainer, LineOutput {
   readonly notes: string[] = [];
   readonly facts: Fact[] = [];
   readonly anchors: NoteAnchor[] = [];
+  /** The data of the notes said on this line, by their text. */
+  private readonly data = new Map<string, Note>();
   readonly examples: Example[] = [];
   readonly context: ContextEntry[] = [];
   readonly slotEnvs = new Map<SyntaxNode, ExecEnv>();
@@ -251,7 +255,7 @@ export class LineExplainer implements Explainer, LineOutput {
   say(f: Fact, at: SyntaxNode): string[] {
     const out = said([f], this.opts.pitfalls);
     this.facts.push(...out);
-    return anchored(out.map((x) => ({ text: x.text, node: at, code: x.id })), this.anchors);
+    return anchored(out.map((x) => ({ ...x, node: at })), this.anchors, this.data);
   }
 
   note(f: Fact, at: SyntaxNode): void;
@@ -262,11 +266,15 @@ export class LineExplainer implements Explainer, LineOutput {
       return;
     }
     const nodes = 'type' in at ? [at] : at;
-    this.notes.push(...anchored(nodes.map((node) => ({ text: what, node })), this.anchors));
+    this.notes.push(...anchored(nodes.map((node) => ({ ...plainNote(what), node })), this.anchors, this.data));
   }
 
-  anchored(found: readonly { text: string; node?: Placed; code?: string }[]): string[] {
-    return anchored(found, this.anchors);
+  anchored(found: readonly Found[]): string[] {
+    return anchored(found, this.anchors, this.data);
+  }
+
+  noteOf(text: string): Note {
+    return this.data.get(text) ?? plainNote(text);
   }
 
   enclosing(entry: ContextEntry): void {
@@ -308,6 +316,7 @@ export class LineExplainer implements Explainer, LineOutput {
   adopt(ex: LineExplanation, span: (s: Span) => Span): void {
     this.notes.push(...ex.notes);
     this.facts.push(...(ex.facts ?? []));
+    for (const n of ex.noteInfo) this.data.set(n.text, n);
     this.anchors.push(...(ex.anchors ?? []).map((a) => ({ ...a, span: span(a.span) })));
     // (Every example of a line is anchored at its command: `examplesOf`.)
     for (const e of ex.examples) this.examples.push({ ...e, anchor: span(e.anchor!) });

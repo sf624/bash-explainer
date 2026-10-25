@@ -1,7 +1,7 @@
 // The message catalog (src/messages.ts): every entry cites sections of the manual that exist, says its kind with the
 // right mark in both languages, and the analyzer lists a fact with the exact text of the note it shows.
 import * as assert from 'assert';
-import { fact, factOf, MESSAGES, noteLevel, notePrefix, PORTABILITY, severityOf, splitNote, type FactId } from '../src/messages';
+import { fact, factOf, marked, MESSAGES, plainNote, PORTABILITY, severityOf, type FactId } from '../src/messages';
 import { SECTIONS } from '../src/manual';
 import { reference } from '../src/references';
 import { explain } from './support/explain';
@@ -34,7 +34,7 @@ describe('the message catalog', () => {
     'extglob-maybe-on', 'extglob-not-found', 'extglob-maybe-on-trap', 'globstar-maybe-on',
     'globstar-not-found', 'ssh-local-expansion', 'function-not-imported-sh', 'unmatched-glob-runs-once', 'for-over-ls-output', 'for-over-unquoted-args',
     'unquoted-variable-in-test', 'dockerfile-pipefail-missing'];
-  const FAILURES = ['bracket-missing-close', 'bracket-close-glued', 'test-malformed', 'unset-readonly', 'unset-function-and-variable', 'bats-tags-invalid'];
+  const FAILURES = ['keyword-needs-separator', 'bracket-missing-close', 'bracket-close-glued', 'test-malformed', 'unset-readonly', 'unset-function-and-variable', 'bats-tags-invalid'];
   it('gives each entry the level of the design: warning, info or note', () => {
     for (const [id, e] of Object.entries(MESSAGES) as [FactId, { kind: string; level?: unknown }][]) {
       if (typeof e.level === 'function') continue;
@@ -61,21 +61,23 @@ describe('the message catalog', () => {
     assert.ok(fact('en', 'unset-readonly', { name: 'x' }).text.startsWith('⚠ The variable `x` is read-only'));
     // (A heading of its own in place of the word.)
     assert.ok(fact('en', 'python-shell-injection').text.startsWith('⚠ Shell injection risk: '));
-    assert.strictEqual(notePrefix('en', 'info', 'note', PORTABILITY), 'ⓘ Portability: ');
-    assert.strictEqual(notePrefix('ja', 'info', 'note', PORTABILITY), 'ⓘ 移植性: ');
-    assert.strictEqual(notePrefix('en', 'note'), 'ℹ ');
+    assert.deepStrictEqual(marked('en', 'info', 'dash\'s `echo`', { heading: PORTABILITY, code: 'echoE' }), { text: 'ⓘ Portability: dash\'s `echo`', level: 'info', label: 'Portability:', body: 'dash\'s `echo`', code: 'echoE' });
+    assert.strictEqual(marked('ja', 'info', 'x', { heading: PORTABILITY }).text, 'ⓘ 移植性: x');
+    assert.strictEqual(marked('en', 'note', 'x').text, 'ℹ x');
   });
 
-  it('reads a note back into its level, its word and the rest', () => {
-    assert.deepStrictEqual(splitNote('⚠ Pitfall: `x =…` runs a command', 'en'), { level: 'warning', label: 'Pitfall:', body: '`x =…` runs a command' });
-    assert.deepStrictEqual(splitNote('ⓘ 注意: `-r` を付けないと', 'ja'), { level: 'info', label: '注意:', body: '`-r` を付けないと' });
-    assert.deepStrictEqual(splitNote('ⓘ Portability: dash\'s `echo`', 'en'), { level: 'info', label: 'Portability:', body: 'dash\'s `echo`' });
-    assert.deepStrictEqual(splitNote('⚠ Script injection risk: `x`', 'en'), { level: 'warning', label: 'Script injection risk:', body: '`x`' });
+  it('gives a note its level, its word and the rest as data', () => {
+    const { text, level, label, body, code } = fact('en', 'local-outside-function', { stops: false });
+    assert.deepStrictEqual({ level, label, code }, { level: 'warning', label: 'Pitfall:', code: 'local-outside-function' });
+    assert.strictEqual(text, `⚠ Pitfall: ${body}`);
+    const caveat = fact('ja', 'declaration-masks-status', { kw: 'local', v: 'x' });
+    assert.deepStrictEqual([caveat.level, caveat.label], ['info', '注意:']);
+    const risk = fact('en', 'python-shell-injection');
+    assert.deepStrictEqual([risk.level, risk.label], ['warning', 'Shell injection risk:']);
     // (A warning that names its own problem has no word; a plain fact neither; a note without a mark, an idiom, is a plain fact.)
-    assert.deepStrictEqual(splitNote('⚠ `[[ ]]` is not POSIX sh', 'en'), { level: 'warning', label: '', body: '`[[ ]]` is not POSIX sh' });
-    assert.deepStrictEqual(splitNote('ℹ An exit status', 'en'), { level: 'note', label: '', body: 'An exit status' });
-    assert.deepStrictEqual(splitNote('Idiom: `cmd || true`', 'en'), { level: 'note', label: '', body: 'Idiom: `cmd || true`' });
-    assert.deepStrictEqual(['⚠ a', 'ⓘ b', 'ℹ c', 'd'].map(noteLevel), ['warning', 'info', 'note', 'note']);
+    assert.deepStrictEqual(marked('en', 'warning', '`[[ ]]` is not POSIX sh'), { text: '⚠ `[[ ]]` is not POSIX sh', level: 'warning', label: '', body: '`[[ ]]` is not POSIX sh' });
+    assert.strictEqual(fact('en', 'exit-modulo', { value: '300', status: 44 }).label, '');
+    assert.deepStrictEqual(plainNote('Idiom: `cmd || true`'), { text: 'Idiom: `cmd || true`', level: 'note', label: '', body: 'Idiom: `cmd || true`' });
     // (A diagnostic is a warning or information: a plain fact is never one, so it is taken as information.)
     assert.deepStrictEqual((['warning', 'info', 'note'] as const).map(severityOf), ['warning', 'info', 'info']);
   });

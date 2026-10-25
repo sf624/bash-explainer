@@ -4,7 +4,8 @@ import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import { detectShell, type Shell } from '../src/dialect';
 import { documentIssues, explainDocumentLine, type ShellDocument } from '../src/document';
-import { noteLevel, severityOf } from '../src/messages';
+import { severityOf } from '../src/messages';
+import { noteOf } from '../src/ui/render';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import type { BashParser as Parser } from '../src/syntax/tree';
 
@@ -52,7 +53,7 @@ describe('pitfall problems and the explanations agree', () => {
           const where = `${name} (${shell ?? 'bash'}) line ${line + 1}: ${doc.lines[line]}`;
           for (const i of here) if (!ex.notes.includes(i.message)) problems.push(`${where}\n  problem [${i.code}] not in the notes: ${i.message}`);
           // (The problem's severity is the level of the note: docs/design/note-levels.md.)
-          for (const i of here) if (i.severity !== severityOf(noteLevel(i.message))) problems.push(`${where}\n  problem [${i.code}] is ${i.severity}: ${i.message}`);
+          for (const i of here) if (i.severity !== severityOf(noteOf(ex, i.message).level)) problems.push(`${where}\n  problem [${i.code}] is ${i.severity}: ${i.message}`);
           if (unread.some((i) => i.startLine <= line && line <= i.endLine)) continue;
           for (const note of ex.notes.filter((n) => PITFALL.test(n))) {
             const f = ex.facts?.find((x) => x.text === note);

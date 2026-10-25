@@ -100,6 +100,9 @@ export const MESSAGES = {
     `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status and \`set -e\` stops the script at the call on line ${line}. Write \`if …; then …; fi\`, or end the function with \`return 0\``]),
 
   // ---------------------------------------------------------------- functions and what runs instead (3.3, 3.7.2)
+  'keyword-needs-separator': failure<{ kw: string }>(['3.2.5.1', '3.2.5.2'], ({ kw }) => [
+    `構文エラー: \`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash は「syntax error near unexpected token」で止まる`,
+    `Syntax error: a \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash stops with "syntax error near unexpected token"`]),
   'bracket-missing-close': failure(['4.1', '6.4'], () => [
     '`[` は最後の引数が `]` でないので、実行するとエラーになり、条件は評価されません（`[: missing \']\'`、終了ステータス 2）。構文エラーではなく、コマンド `[` が実行時に出すエラーです',
     '`[` has no `]` as its last argument, so it fails when it runs, without evaluating the condition (`[: missing \']\'`, status 2). This is not a syntax error but an error of the command `[` at run time']),
@@ -443,10 +446,19 @@ export const MESSAGES = {
 export type FactId = keyof typeof MESSAGES;
 export type Params<K extends FactId> = Parameters<(typeof MESSAGES)[K]['text']>[0];
 
-/** A fact as a note: its id, its text (with its mark), its level, and the sections it cites. */
-export interface Fact { id: FactId; kind: FactKind; level: NoteLevel; text: string; refs: readonly string[] }
+/**
+ * A note as data (docs/design/note-levels.md): its text as the line's notes have it (`LineExplanation.notes`: the mark,
+ * the word, the body), its level, the word after the mark that names the level or the kind of problem ("Pitfall:",
+ * "Caveat:", "Script injection risk:"; empty when there is none), and the rest. `code`: the problem it is, in the
+ * editors (`DocumentIssue.code`: a fact's id, a style check, a dialect issue). The views read the level and the word
+ * from here, never from the text.
+ */
+export interface Note { text: string; level: NoteLevel; label: string; body: string; code?: string }
 
-/** The mark a note starts with, one per level; `noteLevel` reads it back. */
+/** A fact as a note: its id (also its `code`), its kind, and the sections it cites. */
+export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly string[]; code: FactId }
+
+/** The mark a note starts with, one per level. */
 export const MARKS: Record<NoteLevel, string> = { warning: '⚠', info: 'ⓘ', note: 'ℹ' };
 
 /** What follows the mark of a pitfall when it has no heading of its own. */
@@ -455,39 +467,23 @@ const PITFALL_WORD: Record<'warning' | 'info', Text> = {
   info: { ja: '注意: ', en: 'Caveat: ' },
 };
 
-/** The start of a note of `level`: its mark, and for a pitfall the word that names the level (or its heading). */
-export function notePrefix(lang: Lang, level: NoteLevel, kind: FactKind = 'note', heading?: Text): string {
+/**
+ * A note of `level` whose text starts with its mark, then, for a pitfall, the word that names the level (or its
+ * heading, `heading`), then `body`.
+ */
+export function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?: FactKind; heading?: Text; code?: string } = {}): Note {
+  const { kind = 'note', heading, code } = opts;
   const word = heading ? heading[lang] : kind === 'pitfall' && level !== 'note' ? PITFALL_WORD[level][lang] : '';
-  return `${MARKS[level]} ${word}`;
+  return { text: `${MARKS[level]} ${word}${body}`, level, label: word.trimEnd(), body, ...(code ? { code } : {}) };
+}
+
+/** A note with no mark (an idiom, where a line is): a plain fact, the whole text its body. */
+export function plainNote(text: string): Note {
+  return { text, level: 'note', label: '', body: text };
 }
 
 /** The heading of a dialect note on a construct that works differently in the target shell (src/dialect.ts). */
 export const PORTABILITY: Text = { ja: '移植性: ', en: 'Portability: ' };
-
-/** The words that can follow a mark: a pitfall's word, the headings of the catalog, the dialect notes' heading. */
-function headings(lang: Lang): string[] {
-  const all = [PITFALL_WORD.warning, PITFALL_WORD.info, PORTABILITY, ...Object.values(MESSAGES).map((e: Entry<never>) => e.heading)];
-  return [...new Set(all.map((h) => h?.[lang] ?? '').filter(Boolean))];
-}
-
-/**
- * A note as the views draw it: its level, the word after its mark that names the level or the kind of problem
- * ("Pitfall:", "Caveat:", "Script injection risk:"; empty when there is none), and the rest.
- */
-export function splitNote(text: string, lang: Lang): { level: NoteLevel; label: string; body: string } {
-  const level = noteLevel(text);
-  const rest = level === 'note' && !text.startsWith(MARKS.note) ? text : text.slice(MARKS[level].length).trimStart();
-  const label = headings(lang).find((h) => rest.startsWith(h)) ?? '';
-  return { level, label: label.trimEnd(), body: rest.slice(label.length) };
-}
-
-/**
- * The level of a note, from its mark: every note is made with one (the catalog, the style checks of src/pitfalls.ts,
- * the dialect notes); one without a mark (an idiom) is a `note`.
- */
-export function noteLevel(text: string): NoteLevel {
-  return text.startsWith(MARKS.warning) ? 'warning' : text.startsWith(MARKS.info) ? 'info' : 'note';
-}
 
 /** The severity of a diagnostic for a note of `level`: a `note` is never one, so it is taken as information. */
 export function severityOf(level: NoteLevel): 'warning' | 'info' {
@@ -499,7 +495,8 @@ export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> e
   const e = MESSAGES[id] as Entry<unknown>;
   const [ja, en] = e.text(params[0]);
   const level = typeof e.level === 'function' ? e.level(params[0]) : e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note');
-  return { id, kind: e.kind, level, text: notePrefix(lang, level, e.kind, e.heading) + (lang === 'ja' ? ja : en), refs: e.refs };
+  const { text, label, body } = marked(lang, level, lang === 'ja' ? ja : en, { kind: e.kind, heading: e.heading });
+  return { id, kind: e.kind, level, text, refs: e.refs, label, body, code: id };
 }
 
 /** A fact before its language is chosen: its id and its params (language-free, or `Words`). */

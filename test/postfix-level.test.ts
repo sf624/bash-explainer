@@ -3,15 +3,13 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { noteLevel } from '../src/messages';
 import { explain } from './support/explain';
 
 // `((i++))` with `i` 0 has status 1: a warning where `set -e` stops the shell there (the script breaks as written),
 // information otherwise. Whether it stops comes from the model (statusModel(state).errexit(n)); bash shows it.
 
 const levelOf = (src: string, line: number): string | undefined => {
-  const note = explain(src, line).notes.find((n) => /exit status is 1 when/.test(n));
-  return note && noteLevel(note);
+  return explain(src, line).noteInfo.find((n) => /exit status is 1 when/.test(n.text))?.level;
 };
 const run = (script: string): boolean => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-postfix-'));

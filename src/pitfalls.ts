@@ -9,7 +9,7 @@ import { bracketWords, writtenAsBracket } from './testexpr';
 import { staticWordValue, unquoteWord } from './staticword';
 import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
-import { type NoteLevel, notePrefix } from './messages';
+import { marked, type Note, type NoteLevel } from './messages';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
 // `rm -rf $DIR/…`, `read` without `-r`, `<` and `>` or a missing `]` inside `[ ]`), explained where they appear: what
@@ -110,7 +110,8 @@ export const STYLE_LEVELS: Record<StyleCode, NoteLevel> = {
 };
 
 /** A style check found: its code, the node it is about, its level and its note. */
-export interface StyleFinding { code: StyleCode; node: SyntaxNode; level: NoteLevel; text: string }
+/** A style check found on a node: its note, whose code is the check's. */
+export interface StyleFinding extends Note { code: StyleCode; node: SyntaxNode }
 
 /** Notes for the pitfalls whose node starts on `line`. */
 export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang, model: StateModel, shell: Shell | undefined): string[] {
@@ -152,8 +153,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
   const s = pick(lang);
   const found: StyleFinding[] = [];
   const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string) => {
-    const level = STYLE_LEVELS[code];
-    found.push({ code, node, level, text: notePrefix(lang, level, 'pitfall') + s(ja, en) });
+    found.push({ ...marked(lang, STYLE_LEVELS[code], s(ja, en), { kind: 'pitfall' }), code, node });
   };
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row >= from && n.startPosition.row <= to) check(n);

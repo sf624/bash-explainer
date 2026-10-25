@@ -3,7 +3,7 @@ import { run } from './support/run';
 import * as path from 'path';
 import { Analyzer, ExplainOptions } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
-import { factOf } from '../src/messages';
+import { factOf, plainNote } from '../src/messages';
 import { explainHostedLine, Extracted, extractShell, HostKind, hostIssues, hostKind, remapExplanation, substitutionNotes } from '../src/hosts';
 import { customCommandSpec } from '../src/dict/custom';
 import { githubContext } from '../src/dict/ciVariables';
@@ -139,17 +139,17 @@ describe('branches no other test takes', () => {
   });
 
   it('render: an example with no anchor, a token over several lines, empty sections, notes and backticks', () => {
-    const placed = placeExamples({ line: 0, summary: '', items: explain('echo a').items, context: [], notes: [], examples: [{ title: 'E', sections: [] }] });
+    const placed = placeExamples({ line: 0, summary: '', items: explain('echo a').items, context: [], notes: [], noteInfo: [], examples: [{ title: 'E', sections: [] }] });
     assert.strictEqual(placed.examples.length, 1);
     const span = (a: number, b: number, c: number, d: number) => ({ start: { line: a, character: b }, end: { line: c, character: d } });
     const outer = { kind: 'keyword' as const, label: 'if', explanation: '', span: span(0, 0, 2, 2), children: [] };
     assert.deepStrictEqual(lineSegments('  echo a', 1, [outer]).map((x) => x.kind), ['keyword']);
-    const away = placeExamples({ line: 0, summary: '', items: [outer], context: [], notes: [], examples: [{ title: 'E', sections: [], anchor: span(5, 0, 5, 1) }] });
+    const away = placeExamples({ line: 0, summary: '', items: [outer], context: [], notes: [], noteInfo: [], examples: [{ title: 'E', sections: [], anchor: span(5, 0, 5, 1) }] });
     assert.strictEqual(away.examples.length, 1);
-    const inside = placeExamples({ line: 0, summary: '', items: [outer], context: [], notes: [], examples: [{ title: 'E', sections: [], anchor: span(0, 0, 0, 1) }] });
+    const inside = placeExamples({ line: 0, summary: '', items: [outer], context: [], notes: [], noteInfo: [], examples: [{ title: 'E', sections: [], anchor: span(0, 0, 0, 1) }] });
     assert.strictEqual(inside.items[0].examples!.length, 1);
     assert.deepStrictEqual(examplesMarkdown([{ title: 'T', sections: [{ label: 'L', lines: [] }] }]).slice(-3), ['```text', '', '```']);
-    const md = toPlainMarkdown({ ...explain('echo `date`'), notes: ['a note'] }, 'echo `date`', 'a.sh:1');
+    const md = toPlainMarkdown({ ...explain('echo `date`'), notes: ['a note'], noteInfo: [plainNote('a note')] }, 'echo `date`', 'a.sh:1');
     assert.match(md, /> a note/);
     assert.match(md, /- `echo` — /);
     assert.match(md, /`` `date` `` — /);
@@ -474,7 +474,7 @@ describe('branches no other test takes', () => {
     assert.deepStrictEqual(features('echo $BASHPID'), ['bashVar']);
     assert.deepStrictEqual(features('set pipefail; set errtrace; set -o errtrace'), ['errtrace']);
     const tree = parser.parse('setopt extended_glob\nprint ${(j:,:)arr}');
-    assert.ok(dialectIssues(tree, 'zsh', 'ja').some((i) => i.kind === 'parse' && /zsh/.test(i.message)));
+    assert.ok(dialectIssues(tree, 'zsh', 'ja').some((i) => i.kind === 'parse' && /zsh/.test(i.note.text)));
     assert.ok(dialectNotes(tree, 1, 'zsh', 'ja').length > 0);
   });
 
@@ -667,7 +667,7 @@ describe('host files: branches no other test takes', () => {
     const exec = explainHost('dockerfile', 'FROM alpine\nCMD ["echo", "hi"]', 1, 'ja')!;
     assert.ok(exec.notes.some((n) => /exec 形式/.test(n)));
     const e = extractShell('dockerfile', 'RUN echo');
-    const plain = remapExplanation({ line: 0, summary: '', items: [], context: [], notes: [], examples: [{ title: 'E', sections: [] }] }, e, ['RUN echo']);
+    const plain = remapExplanation({ line: 0, summary: '', items: [], context: [], notes: [], noteInfo: [], examples: [{ title: 'E', sections: [] }] }, e, ['RUN echo']);
     assert.strictEqual(plain.examples[0].anchor, undefined);
     assert.deepStrictEqual(substitutionNotes(extractShell('yaml', 'jobs:\n  a:\n    steps:\n      - run: echo ${{ github.head_ref }}'), 3, 'en').length, 2);
   });
