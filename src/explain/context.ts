@@ -67,6 +67,8 @@ export interface Explainer {
   readonly line: number | null;
   /** Whether `n` is on the line explained (always, while a construct is explained whole). */
   onLine(n: SyntaxNode): boolean;
+  /** The explanation of a node, not checked against the line filter (its parts are): the dispatch of src/analyzer.ts. */
+  explain(n: SyntaxNode): Token;
   /** Explain a child node, respecting the current line filter. */
   sub(n: SyntaxNode | null | undefined): Token[];
   subs(nodes: readonly (SyntaxNode | null | undefined)[]): Token[];
@@ -201,6 +203,10 @@ export class LineExplainer implements Explainer, LineOutput {
 
   onLine(n: SyntaxNode): boolean {
     return this.current === null || intersects(n, this.current);
+  }
+
+  explain(n: SyntaxNode): Token {
+    return this.walk.explain(n);
   }
 
   sub(n: SyntaxNode | null | undefined): Token[] {

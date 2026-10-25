@@ -14,7 +14,7 @@ Design documents and plans for Bash Explainer. The code is the authority: when a
 | Document | Covers | Status |
 | --- | --- | --- |
 | [refactor.md](refactor.md) | One source per fact: the 55 review findings and the steps that fixed them | Built. All steps done (last: #253); kept as the record |
-| [analyzer.md](analyzer.md) | Thinning `src/analyzer.ts` into modules in `src/explain/` | In progress. Step 0 (guards and snapshot, #275), step 1 (facts the models own, #308), step 2 (the context, #324), step 3 (the readers, #325), step 4 (words and expansions, #327), step 5 (tests and redirections, #329, #330) and step 6 (examples and embedded languages, #333, #334) done; step 7 (arguments, assignments, scripts) in progress (scripts, #338; assignments, #339); steps 8–9 not started |
+| [analyzer.md](analyzer.md) | Thinning `src/analyzer.ts` into modules in `src/explain/` | In progress. Step 0 (guards and snapshot, #275), step 1 (facts the models own, #308), step 2 (the context, #324), step 3 (the readers, #325), step 4 (words and expansions, #327), step 5 (tests and redirections, #329, #330) and step 6 (examples and embedded languages, #333, #334) and step 7 (scripts, assignments and arguments, #338, #339, #340) done; steps 8–9 not started |
 | [oracles.md](oracles.md) | Checks against real bash for the layers above the syntax: argv capture, suggestion verification, normalization audit | In progress. Step 1 (inventory) done (#273); steps 2–10 not started |
 | [bash-versions.md](bash-versions.md) | Explaining a script as bash 5.3 runs it, beside the 5.2 reference | In progress. Step 1 (setting, `${ }` and `${| }`) done (#283); steps 2–7 not started |
 

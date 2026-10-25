@@ -4,7 +4,7 @@ src/analyzer.ts is 4,202 lines (at d265509). One class, `Analyzer`, holds about 
 
 An outside review noted the size, and the pace (683 commits in 9 days). For one maintainer over the long term, a thin core matters more than a wider scope. The maintainer agreed: the next big work is to thin analyzer.ts, not to add features. This page plans it. Each step is a PR. The [traceability table](#traceability) records the findings and the steps.
 
-Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), step 3 (the readers) is done (#325), step 4 (words and expansions) is done (#327), step 5 (tests, redirections) is done (#329, #330), step 6 (examples, embedded languages) is done (#333, #334), and step 7 (arguments, assignments, scripts) is in progress: the scripts (#338) and the assignments (#339) are moved. Steps 8 and 9 are not started: src/explain/ has the context, the node helpers, the readers, the words, the tests, the redirections, the examples (those of jq and yq apart), the embedded languages, the scripts and the assignments, and src/analyzer.ts is 1,791 lines.
+Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), step 3 (the readers) is done (#325), step 4 (words and expansions) is done (#327), step 5 (tests, redirections) is done (#329, #330), step 6 (examples, embedded languages) is done (#333, #334), and step 7 (arguments, assignments, scripts) is done (#338, #339, #340). Steps 8 and 9 are not started: src/explain/ has the context, the node helpers, the readers, the words, the tests, the redirections, the examples (those of jq and yq apart), the embedded languages, the scripts, the assignments and the arguments, and src/analyzer.ts is 1,100 lines.
 
 The goal is not new behaviour. Every explanation stays byte-identical, except where a step fixes a contradiction with bash (and then says so).
 
@@ -271,7 +271,7 @@ test/explain-imports.test.ts reads the imports of src/explain/*.ts (as test/synt
 
 The same test looks for comparisons with a command name of the dictionary (`commands`, `builtins`): `=== 'sed'`, `.includes('declare')`. A comparison on `.type` is left out (node types such as `command` are also builtin names). The known ones are listed with a reason and may only shrink. After step 1 the list should be empty.
 
-Since step 3, comparisons on five fields of the models are checked against the values of their closed unions, not against command names: `.type` (any node type), `.kind` (a status rule's `command` and `test`; a value is added only when code that needs it moves, as a reviewed edit), `.stops` (errexit's `script`), `.example` (a spec's kind of worked example, `CommandSpec.example`; only `read`, and more values are added as reviewed edits), `.run` (how a command slot runs its command, `CommandSlot.run`; only `exec`, since step 7) and `.shell` (the members of the `Shell` type). Step 7 added `alias` to `.kind` (a `NameResolution`). The values compared are values of those unions, some spelled like commands (`command`, `test`, `bash`), not command names. Only a property access counts: a bare `kind` or `shell` is checked like any other name. A command name on these fields that is not in the list is found. The allowed values are listed per field in the guard, and a test keeps the `.shell` list equal to the `Shell` type.
+Since step 3, comparisons on five fields of the models are checked against the values of their closed unions, not against command names: `.type` (any node type), `.kind` (a status rule's `command` and `test`; a value is added only when code that needs it moves, as a reviewed edit), `.stops` (errexit's `script`), `.example` (a spec's kind of worked example, `CommandSpec.example`; only `read`, and more values are added as reviewed edits), `.run` (how a command slot runs its command, `CommandSlot.run`; only `exec`), `.role` (a word's role, `ArgRole.role`; only `command`), `.why` (why a definition does not apply, `Missed.why`; only `command` and `builtin`) and `.shell` (the members of the `Shell` type). Step 7 added `.run`, `.role` and `.why`, and `alias` and `file` on `.kind` (a `NameResolution`). The values compared are values of those unions, some spelled like commands (`command`, `test`, `bash`), not command names. Only a property access counts: a bare `kind` or `shell` is checked like any other name. A command name on these fields that is not in the list is found. The allowed values are listed per field in the guard, and a test keeps the `.shell` list equal to the `Shell` type.
 
 ## 4. Steps
 
@@ -431,6 +431,19 @@ Where the plan did not fit main:
 - src/explain/assignments.ts: `assignments` (a command of assignments only, with the redirections around them: the dispatch, step 9, calls it) and `assignment` (one assignment: what it does with the variable's attributes here, and `IFS`; the dispatch and the operands of the declaration builtins, the next PR, call it); and, not exported, `assignmentList`. Layers: assignments.ts imports context, nodes, reads, words and redirections, as 2.5 has it (assignments → redirections).
 - The rest of the group "Assignments and declarations" (1.2) reads the words of a declaration builtin by its spec: `declaredOperand`, `unsetOperand`, `markedAssignment`, `nameGlob`, `declarationOption` and `endOfOptions` go with the arguments (2.3), in the next PR. The assignments before a command name stay with the commands (`commandParts`, step 8).
 
+**Arguments, as done (#340).** The snapshots are byte-identical before and after, on the inputs and option sets of the scripts above (main, #338, #339 and this PR give the same bytes). src/analyzer.ts went from 1,791 to 1,100 lines (2,106 to 1,100 over step 7); src/explain/argv.ts is 725 lines. The move was done by the same script. What moved where:
+
+- src/explain/argv.ts: `readArgs` (the words of a command read by its spec, and where the commands its slots run run: the commands, step 8, call it), `testArgs` and `bashTest` (the words of `test` and `[`, which the commands also call); and, not exported, `render` (a token for each role of a parse), the options (`declarationOption`, `endOfOptions`, `optionToken`, `equalsToken`, `letterParts`, `part`, `span`, `unknownOption`, `turnedOff`, `wordParts`), the values (`valueToken`, `splicedNote`), the operands (`operandToken`, `markedAssignment`, `declaredOperand`, `unsetOperand`, `nameGlob`, `uncertainText`, `eachText`, `positional`), the command a wrapper runs (`wrapped`), find's expression (`findExpression`), and the module helpers `jobSpec`, `DECLARATION_SPECS` and `dash`. `part` and `span` read nothing of the context and take no `cx`.
+- src/explain/context.ts: `Explainer.explain`, the dispatch (the walk's `explain`), which `declaredOperand` calls for a word that is not a plain name.
+- Layers: argv.ts imports context, nodes, reads, words, tests, examples, embedded, scripts and assignments, as 2.5 has it (argv → scripts, assignments, embedded, tests). `findExpression` is beside `render`, so embedded.ts does not import argv.ts.
+
+Where the plan did not fit main:
+
+- `args` is `readArgs`: `commandTail`, its caller, has a parameter `args`, which would hide it.
+- One module, not options.ts and operands.ts: `render` reads the options and the operands, an operand of a wrapper (`wrapped`) calls `render` again, and the values of options and the operands share `positional`; split in two, the modules would import each other. At 725 lines it is under the limit of 3.1.
+- The names guard (3.3) took four comparisons with values of closed unions for command names: `role.role === 'command'` (an `ArgRole`: the words of a command another one runs), `res.kind === 'file'` (a `NameResolution`), and `missed.why === 'command'` and `'builtin'` (a `Missed`: a function that `command` or `builtin` skips). As reviewed edits, `.kind` allows `file`, and `.role` (`command`) and `.why` (`command`, `builtin`) joined the closed fields; the guard's own tests have them.
+- 2.2 said that `explain` and `nestedLine` would come on the `Explainer` with the steps that move their callers: they did (this PR and #338). `commandToken` comes with step 8.
+
 ### Step 8: commands, compound commands, line notes (two M PRs)
 
 src/explain/commands.ts (about 450 lines, with `splitCommand` and `redirectLayout`), then src/explain/compound.ts (about 270) and src/explain/line-notes.ts (about 320).
@@ -450,7 +463,7 @@ src/explain/dispatch.ts (about 260 lines). analyzer.ts keeps `Analyzer`, `explai
 | 4 | Words | M | 1 (#327) | 3 |
 | 5 | Tests, redirections | M each | 2 (#329, #330) | 4; the tests start examples.ts |
 | 6 | Examples, embedded | M each | 2 (#333, #334) | 4, 5 (#329) |
-| 7 | Scripts, assignments, argv | M–L | 3 | 5, 6 |
+| 7 | Scripts, assignments, argv | M–L | 3 (#338, #339, #340) | 5, 6 |
 | 8 | Commands, compound, line notes | M each | 2 | 7 |
 | 9 | Dispatch, orchestration | M | 1 | 8 |
 
@@ -489,14 +502,14 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 
 | ID | Finding (short) | Step | Status | Verified by |
 |---|---|---|---|---|
-| T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | in progress (step 3: PR #325; step 4: PR #327; step 5: PR #329, PR #330; step 6: PR #333, PR #334; step 7: PR #338, PR #339) | file-length test: analyzer.ts under 1,000 lines, then about 150 |
+| T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | in progress (step 3: PR #325; step 4: PR #327; step 5: PR #329, PR #330; step 6: PR #333, PR #334; step 7: PR #338, PR #339, PR #340) | file-length test: analyzer.ts under 1,000 lines, then about 150 |
 | T2 | Per-line state written from anywhere: notes pushed in 40 places, examples in 27, `argCtx` an implicit parameter | 2 | done (PR #324) | the snapshot unchanged; no `cx.extraNotes.push` left: notes, examples and the command go through the context's sinks and `withCommand` |
 | T3 | Three overlapping hosts: `LineContext`, `ExpansionHost`, the analyzer's half of `EmbeddedContext` | 2, 4 | done (PR #324, PR #327) | one `Explainer`; the reads of the words (`ExpansionWords`) are functions of src/explain/words.ts since step 4; the snapshot unchanged |
 | T4 | Name checks: yq (1356), `local` (1364), sed (3157), xargs label (2741) | 1.1 | done (PR #308) | names guard list empty; tests against the tools |
 | T5 | Where code runs, decided from node types: `groupSubshell` (377), `inSubshell` (417), `pipeSubshellPitfalls` (2964, 2982) | 1.2 | done (PR #308) | env probes; test/facts-from-model.test.ts rows |
 | T6 | `shoptAt` decides `globstar` per shell (361–362) | 1.3 | done (PR #308) | state probes |
 | T7 | A string's variables read by a regex (3185); risky words by node types (3239) | 1.4 | done (PR #308) | rows against bash (`bash -c`, `sudo`, `env -i`) |
-| T8 | Cycles between the groups (1.4) | 3–9 | in progress (step 3: PR #325; step 4: PR #327; step 5: PR #329, PR #330; step 6: PR #333, PR #334; step 7: PR #338, PR #339) | test/explain-imports.test.ts |
+| T8 | Cycles between the groups (1.4) | 3–9 | in progress (step 3: PR #325; step 4: PR #327; step 5: PR #329, PR #330; step 6: PR #333, PR #334; step 7: PR #338, PR #339, PR #340) | test/explain-imports.test.ts |
 | T9 | No guard on file length, import cycles or name checks | 0 | done (PR #275) | the guards themselves |
 | T10 | No before/after check of the whole explanation | 0 | done (PR #275) | test/snapshot.ts |
 
@@ -509,6 +522,6 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 | 4 | done (PR #327) |
 | 5 | done (PR #329, PR #330) |
 | 6 | done (PR #333, PR #334) |
-| 7 | in progress (PR #338, PR #339) |
+| 7 | done (PR #338, PR #339, PR #340) |
 | 8 | planned |
 | 9 | planned |
