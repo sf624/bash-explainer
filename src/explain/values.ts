@@ -55,6 +55,8 @@ export function wordValue(cx: Explainer, n: SyntaxNode): string | undefined {
     const v = expansionValue(x, cx.state);
     return v && !v.glob && (!v.words || (v.words.length === 1 && v.words[0] === v.text)) ? v.text : undefined;
   };
+  // (The examples compute what bash does: in sh and dash they keep their samples.)
+  if (cx.state.shell !== undefined && cx.state.shell !== 'bash') return undefined;
   let text: string | undefined;
   if (n.type === 'simple_expansion' || n.type === 'expansion') text = one(n);
   else if (n.type === 'string') {

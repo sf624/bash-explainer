@@ -164,3 +164,61 @@ describe('the variables bash 5.3 makes dynamic', () => {
     }
   });
 });
+
+describe('errors bash stops at, and commands bash may not run (review of #356)', () => {
+  /** The value of the last expansion `text` of `src`, in the shell `shell`. */
+  const last = (src: string, text: string, shell?: 'bash' | 'dash' | 'sh'): string | undefined => {
+    const tree = parser.parse(src);
+    const all = descendants(tree.root, ['simple_expansion', 'expansion']).filter((e) => e.text === text);
+    return expansionValue(all[all.length - 1], shellState(tree, shell))?.text;
+  };
+
+  it('gives no value to the words of a statement whose other expansion may fail (bash checks the rows of values.json)', () => {
+    assert.strictEqual(valueOf('x=abc; echo "${x:1:-4}" "$x"', '$x'), undefined);
+    assert.strictEqual(valueOf('x=abc; echo "${x:08}" "$x"', '$x'), undefined);
+    assert.strictEqual(valueOf('x=abc; echo "$((1/0))" "$x"', '$x'), undefined);
+    assert.strictEqual(valueOf('x=abc; echo "${x@Z}" "$x"', '$x'), undefined);
+    // (A constant arithmetic expansion, a substring that cannot fail, a known transformation: the value stays.)
+    assert.strictEqual(valueOf('x=abc; echo "$x" $((2+3)) "${x: -2}" "${x@Q}"', '$x'), 'abc');
+    // With failglob maybe on, any word may fail.
+    assert.strictEqual(valueOf('[ -f a ] && shopt -s failglob; x=abc; echo "$x" *.c', '$x'), undefined);
+  });
+
+  it('keeps the values of the words before a redirection that fails: bash expands them first', () => {
+    assert.deepStrictEqual(valueOf("x='a b'; echo \"$x\" > $x", '$x'), 'a b');
+  });
+
+  it('follows the line or the shell that an error ends', () => {
+    assert.strictEqual(last('x=a; z=abc; : "${z:08}"; x=b\necho "$x"', '$x'), undefined);
+    assert.strictEqual(last('x=a; z=abc; : "${z:1:2}"; x=b\necho "$x"', '$x'), 'b');
+    assert.strictEqual(last('x=a; z=abc; : "${z@Z}"; x=b\necho "$x"', '$x'), undefined);
+    // (Unset, `${z@Z}` gives nothing; from the environment, it may be set.)
+    assert.strictEqual(last('x=a; unset z; : "${z@Z}"; x=b\necho "$x"', '$x'), 'b');
+    assert.strictEqual(last('x=a; : "${z@Z}"; x=b\necho "$x"', '$x'), 'b');
+    // In POSIX mode an assignment or arithmetic error ends the shell; with the mode not known, it may.
+    assert.strictEqual(last('set -o posix; x=a; readonly r=1; r=2\necho "$x"', '$x'), undefined);
+    assert.strictEqual(last('[ -f a ] && set -o posix; x=a; readonly r=1; r=2\necho "$x"', '$x'), 'a');
+    assert.strictEqual(last('set -o posix; x=a; echo $((1/0))\necho "$x"', '$x'), undefined);
+    assert.strictEqual(last('x=a; readonly r=1; r=2\necho "$x"', '$x'), 'a');
+  });
+
+  it('follows the errors that end a dash script', () => {
+    assert.strictEqual(last('x=a; readonly r=1; r=2 true\necho "$x"', '$x', 'dash'), undefined);
+    assert.strictEqual(last('x=a; readonly r=1; unset r\necho "$x"', '$x', 'dash'), undefined);
+    assert.strictEqual(last('x=a; [ -f a ] && readonly r=1; unset r\necho "$x"', '$x', 'dash'), 'a');
+    assert.strictEqual(last('x=a; : $((1/0))\necho "$x"', '$x', 'sh'), undefined);
+    assert.strictEqual(last('x=a; unset q\necho "$x"', '$x', 'dash'), 'a');
+  });
+
+  it('takes a command whose redirection may fail as maybe not run', () => {
+    assert.strictEqual(after('a=1; a=2 export a >/nonexistent/x', 'a'), 'unknown');
+    assert.strictEqual(after('a=1; { a=2; } >/bad', 'a'), 'unknown');
+    assert.strictEqual(after('a=1; f() { a=2; }; f >/bad', 'a'), 'unknown');
+    assert.strictEqual(after('a=1; { a=2; } >/dev/null 2>&1', 'a'), '2');
+  });
+
+  it("gives no value for `\\x{…}` in `$'…'`", () => {
+    assert.strictEqual(valueOf("x=$'\\x{41}'; echo \"$x\"", '$x'), undefined);
+    assert.strictEqual(valueOf("x=$'\\x41'; echo \"$x\"", '$x'), 'A');
+  });
+});

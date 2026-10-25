@@ -3,9 +3,9 @@
 import { evalArith } from '../../arith';
 import { parseExpansion } from '../../expansion';
 import { staticWordValue, substitutionNames } from '../../staticword';
-import { assignmentsOnly, descendants, field, fields, prefixAssignments, type SyntaxNode } from '../../syntax/tree';
+import { assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from '../../syntax/tree';
 import { compareIntegers, patternMatches, plainRegex, testStatus, type TestEnv, unaryTest } from '../conditions';
-import { attribute, EMPTY, option, type ShellState, type Tri } from '../shellstate';
+import { attribute, EMPTY, merge, option, type ShellState, type Tri, withStatus } from '../shellstate';
 import type { Decision } from '../state';
 import { actedNames, namespaceOf } from '../../argv/query';
 import { builtins } from '../../dict/builtins';
@@ -33,6 +33,14 @@ const INTEGER_TESTS = new Set(['-eq', '-ne', '-lt', '-le', '-gt', '-ge']);
 /** What the walk decides of its conditions, and the values they read (src/semantics/words.ts evaluates their words). */
 export class WalkConditions {
   constructor(private readonly w: Walker) {}
+
+  /**
+   * `after`, the state after the command `n` run from `st`: when a redirection of `n` may fail (a file that may not be
+   * opened), bash does not run it (`a=2 export a >/bad/f` leaves `a`), so the state may also be `st`.
+   */
+  ifRedirected(n: SyntaxNode, st: ShellState, after: ShellState): ShellState {
+    return redirectionsOf(n).every(safeRedirect) ? after : merge([withStatus(st, undefined), after], this.w.posix);
+  }
 
   /** What each condition decided on each walk ('?': nothing), and the variables it read (`mixed`: with other values on other walks). */
   private readonly decisions = new Map<SyntaxNode, { outcomes: Set<string>; reads: Map<string, string | null>; mixed: boolean }>();

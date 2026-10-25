@@ -88,6 +88,8 @@ export function testExample(n: SyntaxNode, bracket: TestShape | undefined, asKin
   }
   if (!shape) return undefined;
   const operand = (x: SyntaxNode): Operand | undefined => {
+    // (An unquoted `~` at the start expands to a home directory: not text the example may compare.)
+    if (x.text.startsWith('~')) return undefined;
     if (x.type === 'simple_expansion' || (x.type === 'expansion' && /^\$\{\w+\}$/.test(x.text))) return { var: x.text.replace(/^\$\{?|\}$/g, '') };
     if (x.type === 'variable_name') return { var: x.text };
     // The grammar reads the right side of `=`, `==` and `!=` as a pattern; `[ ]` compares it as text.

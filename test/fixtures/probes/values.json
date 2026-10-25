@@ -3405,5 +3405,185 @@
         "status": 0
       }
     }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=abc; y=${x:1:-4} @PROBE:a@ \"$x\"; @PROBE:b@ \"$x\"\n@PROBE:c@ \"$x\"",
+    "none": {
+      "a": "another word of the command may fail (a substring whose end may fall before its offset): bash discards the line",
+      "b": "the line may be discarded before it"
+    },
+    "note": "a substring error discards the rest of the line",
+    "facts": {
+      "a": [],
+      "b": [],
+      "c": [
+        [
+          "abc"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: -4: substring expression < 0"
+    }
+  },
+  {
+    "manual": "3.5.5",
+    "snippet": "x=abc; y=$((1/0)) @PROBE:a@ \"$x\"\n@PROBE:b@ \"$x\"",
+    "none": {
+      "a": "an arithmetic expansion of the command may fail"
+    },
+    "note": "an arithmetic error discards the command",
+    "facts": {
+      "a": [],
+      "b": [
+        [
+          "abc"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: 1/0: division by 0 (error token is \"0\")"
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=a; z=abc; : \"${z:08}\"; x=b\n@PROBE:a@ \"$x\"",
+    "none": {
+      "a": "the line before may end at `${z:08}` (value too great for base), so x may be a or b"
+    },
+    "facts": {
+      "a": [
+        [
+          "a"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: z: 08: value too great for base (error token is \"08\")"
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=a; z=abc; : \"${z@Z}\"; x=b\n@PROBE:a@ \"$x\"",
+    "none": {
+      "a": "`${z@Z}` of a set z is a bad substitution, which ends the shell"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: ${z@Z}: bad substitution"
+    }
+  },
+  {
+    "manual": "3.6",
+    "snippet": "a=1; a=2 export a 2>/dev/null >/nonexistent/x\n@PROBE:a@ \"$a\"; b=1; { b=2; } 2>/dev/null >/nonexistent/x; @PROBE:b@ \"$b\"; c=1; { c=2; } >/dev/null; @PROBE:c@ \"$c\"",
+    "none": {
+      "a": "a redirection that may fail: export may not run",
+      "b": "a redirection that may fail: the group may not run"
+    },
+    "note": "a builtin or a group whose redirection fails does not run",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "1"
+        ]
+      ],
+      "c": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "set -o posix; x=a; readonly r=1; r=2\n@PROBE:a@ \"$x\"",
+    "none": {
+      "a": "in POSIX mode an assignment to a readonly variable ends the shell"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: r: readonly variable"
+    }
+  },
+  {
+    "manual": "3.1.2.4",
+    "snippet": "x=$'\\x{41}'; @PROBE:a@ \"$x\"; y=$'\\x41'; @PROBE:b@ \"$y\"",
+    "none": {
+      "a": "`\\x{…}` in `$'…'`: not followed"
+    },
+    "facts": {
+      "a": [
+        [
+          "A"
+        ]
+      ],
+      "b": [
+        [
+          "A"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "x=a; y=b; case $x in $y|a) @PROBE:a@ \"$y\";; esac",
+    "note": "the first pattern is always expanded; the value is shown in the body",
+    "facts": {
+      "a": [
+        [
+          "b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=a; readonly r=1; r=2 true\n@PROBE:a@ \"$x\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "a": "dash ends the shell on a prefix assignment to a readonly variable"
+    },
+    "facts": {
+      "a": [],
+      "status": 2,
+      "stderr": "SCRIPT: 1: r: is read only"
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=a; readonly r=1; unset r\n@PROBE:a@ \"$x\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "a": "dash ends the shell on `unset` of a readonly variable"
+    },
+    "facts": {
+      "a": [],
+      "status": 2,
+      "stderr": "SCRIPT: 1: unset: r: is read only"
+    }
+  },
+  {
+    "manual": "3.5.5",
+    "snippet": "x=a; : $((1/0))\n@PROBE:a@ \"$x\"",
+    "shell": "dash",
+    "requires": "dash",
+    "none": {
+      "a": "dash ends the shell on an arithmetic error"
+    },
+    "facts": {
+      "a": [],
+      "status": 2,
+      "stderr": "SCRIPT: 1: arithmetic expression: division by zero: \"1/0\""
+    }
   }
 ]

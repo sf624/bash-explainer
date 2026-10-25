@@ -16,6 +16,8 @@ export function ansiCValue(body: string): string | undefined {
   for (let i = 0; i < body.length; i++) {
     if (body[i] !== '\\' || i + 1 >= body.length) { out += body[i]; continue; }
     const c = body[++i];
+    // (bash 5.2 also reads `\x{H…}`: not followed.)
+    if (body.startsWith('x{', i)) return undefined;
     const num = /^(?:x([0-9A-Fa-f]{1,2})|u([0-9A-Fa-f]{1,4})|U([0-9A-Fa-f]{1,8})|([0-7]{1,3}))/.exec(body.slice(i));
     if (num) {
       i += num[0].length - 1;

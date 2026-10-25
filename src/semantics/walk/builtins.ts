@@ -9,6 +9,8 @@ import { prefixOf } from '../../argv/words';
 import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
 import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
+import { parseExpansion } from '../../expansion';
+import { expansionFailure, sameInEveryLocale, substring } from '../chars';
 import { temporariesUnset } from '../names';
 import { aliasOf, builtinParse, commandName, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
 import { attribute, type Attribute, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy } from '../shellstate';
@@ -420,6 +422,9 @@ export class WalkBuiltins {
       }
       // A readonly variable stays; `unset r` of a nameref unsets the variable it names (`unset -n r`: the nameref).
       const target = space === 'nameref' ? text : this.resolve(st, text);
+      // (dash ends the shell there: "unset: r: is read only".)
+      if (target && !this.w.bash && attribute(st, target, 'r') === 'on') return this.w.abort(st, true);
+      if (target && !this.w.bash && attribute(st, target, 'r') === 'unknown') this.w.abort(st, false);
       if (!target || attribute(st, target, 'r') === 'on') continue;
       // The local of a calling function: unset removes it, and the variable outside shows again (it is no longer restored).
       const top = this.w.frames[this.w.frames.length - 1];
@@ -458,7 +463,8 @@ export class WalkBuiltins {
     const subscript = nameNode.type === 'subscript';
     const name = subscript ? field(nameNode, 'name')!.text : nameNode.text;
     const text = value ? this.w.conditions.staticText(value, st, true) : '';
-    if (statement) this.assignmentError(st, name, value?.type === 'array' ? '' : text, a);
+    // (dash ends the shell on a prefix assignment to a readonly variable too: `r=2 true`.)
+    if (statement || !this.w.bash) this.assignmentError(st, name, value?.type === 'array' ? '' : text, a);
     return this.assign(st, name, subscript, { append: a.children.some((c) => c.type === '+='), text, array: value?.type === 'array', source: value }, a, false, false, temporary);
   }
 
@@ -471,7 +477,9 @@ export class WalkBuiltins {
     const target = this.resolve(st, name);
     const v = target === undefined ? undefined : st.variables.get(target);
     const readonly = v?.attrs.r?.state ?? 'off';
-    if (readonly === 'on') throw new ExpansionError(st, true);
+    // (In POSIX mode it ends the shell.)
+    const posix = this.posixMode(st);
+    if (readonly === 'on') throw new ExpansionError(st, posix !== 'unknown', posix !== 'off');
     if (readonly === 'unknown' || ((v?.attrs.i?.state ?? 'off') !== 'off' && this.mayFail(text, st, at))) this.w.abort(st, false);
   }
 
@@ -595,5 +603,33 @@ export class WalkBuiltins {
   giveAttribute(st: ShellState, name: string, letter: string, at: SyntaxNode): ShellState {
     const v = st.variables.get(name)!;
     return this.w.put(st, 'variables', name, { ...v, attrs: { ...v.attrs, [letter]: { state: 'on', at } } });
+  }
+
+  /**
+   * The failures of the expansion `e` of `${…}` that do not depend on whether its variable is set or empty: a
+   * substring whose numbers may fail discards the rest of the line; a transformation bash lacks (`${x@Z}`) ends the
+   * shell where the variable is set (unset, it gives nothing).
+   */
+  expansionFails(e: SyntaxNode, st: ShellState): void {
+    const fails = expansionFailure(e.text);
+    const name = e.namedChildren[0]?.text ?? '';
+    const v = st.variables.get(name);
+    if (fails === 'line') {
+      // (Surely, for a value the script set: `x=abc; … ${x:1:-4}`.)
+      const p = parseExpansion(e.text)!;
+      const part = (role: string): string | undefined => p.parts.find((x) => x.role === role)?.text;
+      if (v?.set === 'on' && typeof v.value === 'string' && sameInEveryLocale(v.value) && this.w.trust.variable(name) && substring(v.value, part('offset') ?? '', part('length')) === null) throw new ExpansionError(st, true);
+      this.w.abort(st, false);
+    }
+    if (fails !== 'shell') return;
+    if (v?.set === 'off' && v.declared !== 'unknown') return;
+    if (v?.set === 'on' && v.declared !== 'unknown' && this.w.trust.variable(name)) throw new ExpansionError(st, true, true);
+    this.w.jump('shell', undefined, st, false);
+  }
+
+  /** Whether bash is in POSIX mode at `st`, where an arithmetic or assignment error ends the shell, not only the line. */
+  posixMode(st: ShellState): Tri {
+    const p = option(st, 'set', 'posix');
+    return p === 'default' ? 'off' : p;
   }
 }
