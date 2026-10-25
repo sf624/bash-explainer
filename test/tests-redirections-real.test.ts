@@ -177,6 +177,8 @@ describe('a redirection that a later one of the same descriptor replaces', () =>
 
   it('a file is still opened, created or emptied', () => {
     assert.match(token('cat <a <b', '<a').explanation, /^Read file `a` as stdin \(fd 0\)\. But the later `<b` then replaces stdin \(fd 0\): `a` is opened \(it must exist\) but not read$/);
+    // (A later here-string opens no file: `a` is not said to be the same.)
+    assert.match(token('cat <a <<< x', '<a').explanation, /But the later `<<< x` then replaces stdin \(fd 0\): `a` is opened \(it must exist\) but not read$/);
     assert.match(token('cat <a <b', '<a', 'ja').explanation, /ただし後の `<b` が続けて標準入力\(fd 0\)を置き換えるので、`a` は開かれる（存在しなければエラー）が、読まれない$/);
     assert.strictEqual(inDir('printf a >a; printf b >b; cat <a <b'), 'b');
     assert.match(inDir('printf b >b; cat <missing <b; echo "st=$?"'), /^st=1$/m);

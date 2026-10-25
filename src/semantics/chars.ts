@@ -50,7 +50,7 @@ export const TRANSFORMS = new Set([...'QEPAKakUuL']);
 export function expansionFailure(text: string): 'line' | 'shell' | undefined {
   const p = parseExpansion(text);
   const part = (role: string): string | undefined => p?.parts.find((x) => x.role === role)?.text;
-  if (p?.op === ':' && substringMayFail(part('offset') ?? '', part('length'))) return 'line';
+  if (p?.op === ':' && substringMayFail(part('offset')!, part('length'))) return 'line';
   // (`${!v@}` names the variables whose names start with `v`: no transformation.)
   const t = part('transform');
   return p?.op === '@' && t !== undefined && !TRANSFORMS.has(t) ? 'shell' : undefined;
