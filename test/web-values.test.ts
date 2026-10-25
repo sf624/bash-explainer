@@ -75,7 +75,7 @@ describe('the web page: a value with a backtick, a space at an end or an invisib
     await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
-    await page.keyboard.insertText("a=' a '; b='x`y'; e=$'a\\u202eb'; f=' p q '\necho \"$a\" \"$b\" \"$e\" $f");
+    await page.keyboard.insertText("a=' a '; b='x`y'; e='a\u202eb'; f=' p q '\necho \"$a\" \"$b\" \"$e\" $f");
     await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('echo "$a"'));
     await frames(panel());
     const got = await lines(panel());

@@ -2,6 +2,7 @@
 // bash itself checks it in test/value-probes.test.ts and test/values.test.ts), the texts (`valueSaid`), and where the
 // outputs show them: the token, the panel's data, the hover, Markdown and the Language Server's hover.
 import * as assert from 'assert';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
@@ -255,7 +256,7 @@ describe('the value on the token and in the outputs', () => {
     const state = shellState(tree, 'bash');
     assert.strictEqual(state.blind, undefined);
     const shown = descendants(tree.root, ['simple_expansion', 'expansion']).filter((e) => expansionValue(e, state)).map((e) => `${e.startPosition.row + 1}: ${e.text}`);
-    assert.ok(shown.includes('14: ${file%.*}') && shown.includes('15: ${#file}') && shown.length >= 5, shown.join('\n'));
+    assert.ok(shown.includes('15: ${file%.*}') && shown.includes('16: ${#file}') && shown.length >= 5, shown.join('\n'));
   });
 
   it('shows it in the hover, in Markdown and in the Language Server hover', () => {
@@ -450,6 +451,29 @@ describe('a long value is cut on characters, and invisible characters are shown'
 // case runs in bash (the probes' bash, test/support/probe.ts): with an empty IFS and `set -f`, the word is one field,
 // the parts' values side by side, which must be the model's values with the text between them; where the line says
 // the word is a pattern, `shopt -s nullglob` and `set -f` give other fields.
+(probeSkipReason ? describe.skip : describe)(`an expansion bash may leave unexpanded, against bash${probeSkipReason ? ` (${probeSkipReason})` : ''}`, () => {
+  // The right side of `&&` or `||` in `[[ ]]`, and a pattern of `case` after the first: bash expands them only when
+  // what comes before does not decide. `$(echo R >&2)` in their place shows whether bash got there.
+  const cases: [string, string, boolean][] = [
+    ['x=a; y=b; [[ $x = a || $y = b ]]', '[[ $x = a || $(echo R >&2) = b ]]', false],
+    ['x=a; y=b; [[ ( $x = b ) && ( $y = b ) ]]', '[[ ( $x = b ) && ( $(echo R >&2) = b ) ]]', false],
+    ['x=a; y=b; case $x in a) ;; $y) ;; esac', 'case $x in a) ;; $(echo R >&2)) ;; esac', false],
+    ['x=a; y=b; case $x in a|$y) ;; esac', 'case $x in a|$(echo R >&2)) ;; esac', false],
+  ];
+  for (const [src, probe, runs] of cases) {
+    it(`${src}: no value for $y (bash ${runs ? 'expands' : 'skips'} it there)`, () => {
+      const r = spawnSync(process.env.BASH_EXPLAINER_BASH || 'bash', ['--norc', '--noprofile', '-c', `x=a; ${probe}`], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } });
+      assert.strictEqual(r.stderr.includes('R'), runs);
+      assert.strictEqual(valueOf(src, '$y'), undefined);
+      assert.ok(valueOf(src, '$x'));
+    });
+  }
+  it('gives the value where nothing comes before: the first pattern, the left side', () => {
+    assert.deepStrictEqual(valueOf('x=a; y=b; case $x in $y|a) ;; esac', '$y'), { text: 'b', glob: false });
+    assert.deepStrictEqual(valueOf('x=a; y=b; [[ $y = b || $x = a ]]', '$y'), { text: 'b', glob: false });
+  });
+});
+
 (probeSkipReason ? describe.skip : describe)(`the value of a part of a word with other parts, against bash${probeSkipReason ? ` (${probeSkipReason})` : ''}`, () => {
   const cases: [string, string][] = [
     ["x='a b'", '$x/c'], ['e=', 'a$e'], ['e=', '${e}y'], ["x='a b'", '$x$x'], ["a='x y'; b='1 2'", '"$a"$b'], ["a='x y'; b='1 2'", '$a"$b"'],

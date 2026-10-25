@@ -1,7 +1,7 @@
 // The value of a parameter expansion where it runs, as Meaning shows it (docs/design/expansion-values.md): what the
 // script's own assignments give there, only where the model is sure of it. The words are evaluated by the word model
 // (src/semantics/words.ts, `trustedPart`), with the values of the variables the decisions trust (src/semantics/trust.ts).
-import { ancestor, assignmentsOnly, type SyntaxNode } from '../syntax/tree';
+import { ancestor, assignmentsOnly, field, fields, type SyntaxNode } from '../syntax/tree';
 import { shellValueRefused, valueShell } from './shvalues';
 import { inAnotherShell, type StateModel } from './state';
 import { mayStopAround } from './stops';
@@ -32,10 +32,11 @@ export interface ExpansionValue {
  * model knows it for sure: in bash (or in sh and dash, where they read it as bash does: src/semantics/shvalues.ts),
  * outside the strings of another shell, in code that runs and whose states hold wherever it runs
  * (`StateModel.settled`), from variables the model trusts that the script set on every path, never from the
- * environment. Undefined otherwise, and where the shell fails on it.
+ * environment. Undefined otherwise, and where the shell fails on it. `around` false: only whether the value is known,
+ * for the check of the other expansions of the statement (one bash may leave unexpanded cannot fail either).
  */
 export function expansionValue(part: SyntaxNode, model: StateModel, around = true): ExpansionValue | undefined {
-  const w = shownWord(part, model);
+  const w = shownWord(part, model, around);
   if (!w) return undefined;
   const meaning = partMeaning(part, model)!;
   if (meaning.split.applies === 'unknown') return undefined;
@@ -66,10 +67,10 @@ export function variableValue(part: SyntaxNode, name: string, model: StateModel)
 const stopsAround = (part: SyntaxNode, model: StateModel): boolean => mayStopAround(part, model, (e) => !!expansionValue(e, model, false));
 
 /** The meaning of the word of the expansion `part`, when the model may say what `part` gives there (`expansionValue`). */
-function shownWord(part: SyntaxNode, model: StateModel): WordMeaning | undefined {
+function shownWord(part: SyntaxNode, model: StateModel, skips = true): WordMeaning | undefined {
   if ((part.type !== 'simple_expansion' && part.type !== 'expansion') || model.blind !== undefined || !valueShell(model.shell)) return undefined;
   if (inAnotherShell(part) || !model.settled(part)) return undefined;
-  for (let x: SyntaxNode | null = part; x; x = x.parent) if (model.dead(x)) return undefined;
+  for (let x: SyntaxNode | null = part; x; x = x.parent) if (model.dead(x) || (skips && maySkip(x))) return undefined;
   const w = wordMeaning(part, model);
   // (Not one in the word of another expansion, `${x:-$y}`: bash expands it only when the outer one needs it, and the
   // outer one shows what it gives.)
@@ -78,4 +79,16 @@ function shownWord(part: SyntaxNode, model: StateModel): WordMeaning | undefined
   // has there is the one before them.)
   const cmd = ancestor(part, (a) => a.type === 'command');
   return cmd && assignmentsOnly(cmd) && cmd.namedChildren.some((c) => c.field === 'redirect' && c.startIndex <= part.startIndex && part.endIndex <= c.endIndex) ? undefined : w;
+}
+
+/**
+ * Whether bash may leave `n` unexpanded where the walk does not follow it: the right side of `&&` or `||` in `[[ ]]`
+ * (`[[ $x = *.txt || $x = *.sh ]]` reads the second `$x` only when the first test fails), and a pattern of `case`
+ * after the first (`case $x in a) …;; $y) …;; esac` expands `$y` only when `a` does not match).
+ */
+function maySkip(n: SyntaxNode): boolean {
+  const p = n.parent;
+  if (p?.type === 'binary_expression' && field(p, 'right') === n) return ['&&', '||'].includes(field(p, 'operator')!.text);
+  if (p?.type !== 'case_item' || !fields(p, 'value').includes(n)) return false;
+  return p.parent!.namedChildren.find((c) => c.type === 'case_item') !== p || fields(p, 'value')[0] !== n;
 }
