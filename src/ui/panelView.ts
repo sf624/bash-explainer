@@ -1,3 +1,4 @@
+import { controlMarks } from '../ctlchars';
 import { LineExplanation, Span, Token } from '../analyzer-types';
 import { Shell, SHELL_NAMES } from '../dialect';
 import { YQ_NAMES } from '../embedded/yq';
@@ -85,6 +86,8 @@ export function panelUpdate(p: PanelLine) {
     // (The page's language: the web page's panel has none of its own, and the styles follow it, `:lang(ja)`.)
     lang,
     labels: tp,
+    // (The control pictures with the name the panel draws for each, and what it stands for: the label of the mark, for a screen reader.)
+    controlMarks: controlMarks((ja, en) => (lang === 'ja' ? ja : en)),
     dialect: {
       shells: [['auto', `${tp.auto}${p.detected ? (lang === 'ja' ? `（${SHELL_NAMES[p.detected]}）` : ` (${SHELL_NAMES[p.detected]})`) : ''}`], ...Object.entries(SHELL_NAMES)],
       shell: p.choice.shell ?? 'auto',
