@@ -922,6 +922,35 @@
   },
   {
     "manual": "3.3",
+    "snippet": "x=global; f() { local -g x=v; }; f\ny=1; g() { local -g y; }; g\nh() { local -g -a arr=(a b); }; h",
+    "note": "local -g acts on the global variable, as declare -g does",
+    "facts": {
+      "end": {
+        "variables": {
+          "arr": {
+            "attrs": "a",
+            "value": "([0]=\"a\" [1]=\"b\")"
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"v\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f",
+          "g": "f",
+          "h": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
     "snippet": "f() { x=5; }\nx=1 f\nset -u\ndeclare d\nloc() { local l; }\nloc",
     "note": "a prefix assignment to a function is its temporary; declare with no value declares a variable that is not set",
     "facts": {

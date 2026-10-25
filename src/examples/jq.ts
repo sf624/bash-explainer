@@ -1,6 +1,7 @@
 import { lex, Lex, ParseError } from '../embedded/jq';
 import { base64Decode, base64Encode, utf8Length } from './bytes';
 import { Unsupported as RunnerUnsupported } from './unsupported';
+import { setOwn } from '../wordtable';
 
 /** Raised for jq features the example runner does not implement; no example is shown then. */
 class Unsupported extends RunnerUnsupported {}
@@ -590,7 +591,7 @@ function arith(op: string, a: Json, b: Json): Json {
 
 function deepMerge(a: Obj, b: Obj): Obj {
   const out: Obj = { ...a };
-  for (const [k, v] of Object.entries(b)) out[k] = isObj(out[k]) && isObj(v) ? deepMerge(out[k] as Obj, v) : v;
+  for (const [k, v] of Object.entries(b)) setOwn(out, k, Object.hasOwn(out, k) && isObj(out[k]) && isObj(v) ? deepMerge(out[k] as Obj, v) : v);
   return out;
 }
 
@@ -1051,8 +1052,7 @@ class Evaluator {
       return arr;
     }
     const obj = x === null ? {} : isObj(x) ? { ...x } : (() => { throw new JqError(`Cannot index ${typeName(x)} with "${k}"`); })();
-    obj[k] = this.setpath(Object.hasOwn(obj, k) ? obj[k] : null, rest, value);
-    return obj;
+    return setOwn(obj, k, this.setpath(Object.hasOwn(obj, k) ? obj[k] : null, rest, value));
   }
 
   private delpaths(x: Json, paths: Path[]): Json {
@@ -1257,7 +1257,7 @@ class Evaluator {
         for (const e of arr(x)) {
           if (!isObj(e)) throw new JqError('from_entries: bad entry');
           const k = e.key ?? e.k ?? e.name ?? e.Name ?? e.Key ?? e.K;
-          o[typeof k === 'string' ? k : toJson(k ?? null)] = 'value' in e ? e.value : ('v' in e ? e.v : (e.Value ?? null));
+          setOwn(o, typeof k === 'string' ? k : toJson(k ?? null), 'value' in e ? e.value : ('v' in e ? e.v : (e.Value ?? null)));
         }
         return [o];
       }

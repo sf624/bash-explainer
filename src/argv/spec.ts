@@ -102,12 +102,14 @@ export interface CommandSpec {
    */
   scope?: 'function';
   /**
-   * What a declaration builtin run in a function makes of the names it declares: `always`, local variables of the
-   * function (`local`, which also makes the set options local with `local -`; bash 5.2 rejects `declare -`);
-   * `unless-g`, local ones unless `-g` is given (`declare`, `typeset`). Without it (`export`, `readonly`), the
-   * variables visible there, a local one if there is one, else the global one.
+   * What a declaration builtin run in a function makes of the names it declares: `unless-g`, local variables of the
+   * function unless `-g` is given, which acts on the global ones (`declare`, `typeset`, `local`: bash 5.2's `local -g x`
+   * is `declare -g x`). Without it (`export`, `readonly`), the variables visible there, a local one if there is one,
+   * else the global one.
    */
-  locals?: 'always' | 'unless-g';
+  locals?: 'unless-g';
+  /** The operand `-` makes the set options local to the function: they come back when it returns (`local -`; bash 5.2 rejects `declare -`). */
+  localOptions?: true;
   /**
    * What a builtin does to the shell that runs it: changes its state (`cd`, `set`, `export`, `read`). (Ending it,
    * `exit`, is `ends`.) In a subshell (src/semantics/env.ts), only the subshell. `when`: the calls that do, when not

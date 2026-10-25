@@ -280,8 +280,8 @@ function removed(at: SyntaxNode, n: SyntaxNode): boolean {
   const command = at.type === 'command' ? at : ancestor(at, (a) => a.type === 'command');
   const name = command && field(command, 'name')?.text;
   const spec = builtins[name!];
-  const local = spec?.locals === 'always' || (spec?.locals === 'unless-g' && !!ancestor(command!, (a) => a.type === 'function_definition')
-    && !command!.namedChildren.some((c) => c.field === 'argument' && /^-[a-zA-Z]*g/.test(c.text)));
+  const local = spec?.locals === 'unless-g' && !!ancestor(command!, (a) => a.type === 'function_definition')
+    && !command!.namedChildren.some((c) => c.field === 'argument' && /^-[a-zA-Z]*g/.test(c.text));
   if (!(spec && actsOnNames(spec, 'unsets')) && !local) return false;
   // (It runs on every path to `n`: a statement of a list that holds `n`, before it.)
   let x = command!;
