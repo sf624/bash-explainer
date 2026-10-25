@@ -1,0 +1,152 @@
+// The walk over a line's nodes (docs/design/analyzer.md, step 9): the explanation of each node by its type, which
+// calls the module of the part of bash it is (src/explain/words.ts, commands.ts, compound.ts…), and the parts of a
+// block on the line explained, with the construct around them (`flatten`). A case calls one function, or combines
+// two (`braceWord(cx, n) ?? word(cx, n)`); only a node the parser could not read, or a type no module knows, is
+// explained here. The context calls the walk back (`cx.explain`, `cx.sub`): src/analyzer.ts gives it these two.
+import type { Token } from '../analyzer-types';
+import { explainExpansion } from '../expansion-tokens';
+import { nodeSections } from '../refs';
+import { explainCommandSubstitution, explainProcessSubstitution } from '../substitution-tokens';
+import { assignmentsOnly, field, fields, type SyntaxNode } from '../syntax/tree';
+import { claim } from '../tokenmarks';
+import { assignment, assignments } from './assignments';
+import { command, timeStatement } from './commands';
+import {
+  anon, caseItem, caseStatement, comment, coprocStatement, cStyleFor, doGroup, elifClause, elseClause, forStatement, functionDef, group,
+  ifStatement, list, missingKeyword, negated, pipeline, subshell, whileStatement,
+} from './compound';
+import type { Explainer } from './context';
+import { ansiCString } from './embedded';
+import { has, skeletal } from './nodes';
+import { fileRedirect, heredoc, herestring, redirected } from './redirections';
+import { arithmeticCommand, binary, parenthesized, postfix, regexNode, ternary, test, unary } from './tests';
+import {
+  arithmeticExpansion, arithNumber, array, braceWord, casePattern, concatenation, globToken, number, rawString, simpleExpansion, string,
+  subscript, variable, word,
+} from './words';
+
+/** A node's token, with the sections of the manual it is about when it has none of its own. */
+export function explain(cx: Explainer, n: SyntaxNode): Token {
+  const t = claim(explainNode(cx, n), 'shell');
+  const refs = t.refs ?? nodeSections(n);
+  if (refs) t.refs = refs;
+  return t;
+}
+
+function explainNode(cx: Explainer, n: SyntaxNode): Token {
+  switch (n.type) {
+    case 'comment': return comment(cx, n);
+    case 'command': return assignmentsOnly(n) ? assignments(cx, n) : command(cx, n);
+    case 'time_statement': return timeStatement(cx, n);
+    case 'variable_assignment': return skeletal(assignment(cx, n), n, true);
+    case 'pipeline': return pipeline(cx, n);
+    case 'list': return list(cx, n);
+    case 'redirected_statement': return redirected(cx, n);
+    case 'file_redirect': return fileRedirect(cx, n);
+    case 'heredoc_redirect': return heredoc(cx, n);
+    case 'herestring_redirect': return herestring(cx, n);
+    case 'negated_command': return negated(cx, n);
+    case 'extended_test': return test(cx, n);
+    case 'arithmetic_command': return arithmeticCommand(cx, n);
+    case 'unary_expression': return unary(cx, n);
+    case 'binary_expression': return binary(cx, n);
+    case 'ternary_expression': return ternary(cx, n);
+    case 'postfix_expression': return postfix(cx, n);
+    case 'parenthesized_expression': return parenthesized(cx, n);
+    case 'expansion': return explainExpansion(cx, n);
+    case 'simple_expansion': return simpleExpansion(cx, n);
+    case 'command_substitution': return explainCommandSubstitution(cx, n);
+    case 'process_substitution': return explainProcessSubstitution(cx, n);
+    case 'arithmetic_expansion': return arithmeticExpansion(cx, n);
+    case 'string': return string(cx, n);
+    case 'raw_string': return rawString(cx, n);
+    case 'ansi_c_string': return ansiCString(cx, n);
+    // (The model has the `$` and the string in one node; the string takes the `$` in.)
+    case 'translated_string': return string(cx, n.namedChildren[0]);
+    case 'concatenation': return concatenation(cx, n);
+    case 'word': return braceWord(cx, n) ?? word(cx, n);
+    case 'number': return number(cx, n);
+    // (`{1..x}` is not a brace expansion: it stays a word.)
+    case 'brace_expression': return braceWord(cx, n) ?? word(cx, n);
+    case 'array': return array(cx, n);
+    case 'subscript': return subscript(cx, n);
+    case 'regex': return regexNode(cx, n);
+    case 'extglob_pattern': return globToken(cx, n, 'value');
+    case 'variable_name': return arithNumber(cx, n) ?? variable(cx, n.text, n);
+    case 'subshell': return subshell(cx, n);
+    case 'compound_statement': return group(cx, n);
+    case 'do_group': return doGroup(cx, n);
+    case 'function_definition': return functionDef(cx, n);
+    case 'for_statement': case 'select_statement': return missingKeyword(cx, n, forStatement(cx, n));
+    case 'c_style_for_statement': return cStyleFor(cx, n);
+    case 'while_statement': return missingKeyword(cx, n, whileStatement(cx, n));
+    case 'if_statement': return missingKeyword(cx, n, ifStatement(cx, n));
+    case 'elif_clause': return missingKeyword(cx, n, elifClause(cx, n));
+    case 'else_clause': return elseClause(cx, n);
+    case 'coproc_statement': return coprocStatement(cx, n);
+    case 'case_statement': return caseStatement(cx, n);
+    case 'case_item': return caseItem(cx, n);
+    case 'error': return cx.tok(n, 'error', cx.s('構文エラー: この部分は正しく解析できませんでした（クォートや括弧の閉じ忘れなど）', 'Syntax error: this part could not be parsed (unclosed quote or bracket?)'), cx.subs(n.namedChildren));
+    // Every type the adapters build is explained above or by its parent. This is for a type added to the model
+    // before the analyzer learns it: callers explain keywords and operators themselves, and any other node is shown as itself.
+    /* c8 ignore start */
+    default:
+      if (!n.named) return anon(cx, n) ?? cx.tok(n, 'operator', n.type);
+      return cx.tok(n, 'argument', n.type, cx.subs(n.namedChildren));
+    /* c8 ignore stop */
+  }
+}
+
+/** Expose the parts of a block that are on the current line, recording the block as context. */
+export function flatten(cx: Explainer, n: SyntaxNode): Token[] {
+  const label = contextLabel(cx, n);
+  if (label) cx.enclosing({ label, line: n.startPosition.row });
+  const out: Token[] = [];
+  // The patterns of a case branch go on after a `\` at the end of a line (`a|\` then `b)`): the later lines have
+  // patterns, `|` and `)` of the branch, which are not words, pipes and the end of a subshell.
+  const patterns = n.type === 'case_item' ? fields(n, 'value') : [];
+  for (const c of n.children) {
+    if (!cx.onLine(c)) continue;
+    if (has(patterns, c)) out.push(casePattern(cx, c));
+    else if (patterns.length && (c.type === '|' || c.type === ')' || c.type === '(')) continue;
+    else if (c.named) out.push(...cx.sub(c));
+    else {
+      const k = anon(cx, c);
+      if (k) out.push(k);
+    }
+  }
+  return out;
+}
+
+function contextLabel(cx: Explainer, n: SyntaxNode): string | undefined {
+  switch (n.type) {
+    case 'for_statement':
+    case 'select_statement':
+    case 'c_style_for_statement':
+      return cx.s('for ループ', 'for loop');
+    case 'while_statement':
+      return n.children[0].type === 'until' ? cx.s('until ループ', 'until loop') : cx.s('while ループ', 'while loop');
+    case 'if_statement':
+      return cx.s('if 文', 'if statement');
+    case 'elif_clause':
+      return 'elif';
+    case 'else_clause':
+      return 'else';
+    case 'case_statement':
+      return cx.s('case 文', 'case statement');
+    case 'case_item': {
+      const pats = fields(n, 'value').map((c) => c.text);
+      return cx.s(`case 分岐 \`${pats.join('|')})\``, `case branch \`${pats.join('|')})\``);
+    }
+    case 'function_definition':
+      return cx.s(`関数 \`${field(n, 'name')?.text}\``, `function \`${field(n, 'name')?.text}\``);
+    case 'arithmetic_command':
+      return cx.s('(( )) 算術評価', '(( )) arithmetic');
+    case 'compound_statement':
+      return cx.s('{ } グループ', '{ } group');
+    case 'subshell':
+      return cx.s('( ) サブシェル', '( ) subshell');
+    default:
+      return undefined;
+  }
+}

@@ -1,6 +1,6 @@
 // The embedded languages, one explainer each with one return shape: the tokens of the text, and a note on the whole.
 // What an explainer needs of the command around the text (the regex flavor its options choose, the role of a `tr`
-// set, perl's letters) it asks of the context; the worked examples are the analyzer's (src/analyzer.ts).
+// set, perl's letters) it asks of the context; the worked examples are the analyzer's (src/explain/embedded.ts).
 import type { Lang } from '../i18n';
 import { explainArith } from './arith';
 import { explainAwk } from './awk';

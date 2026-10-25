@@ -70,7 +70,7 @@ const effEndRow = (n: SyntaxNode): number =>
 
 /**
  * The rows that only continue a statement explained whole on its first line (a statement over several lines that
- * is not a block, as `sub` in src/analyzer.ts explains it): those of its later rows on which nothing else starts.
+ * is not a block, as `sub` of src/explain/context.ts explains it): those of its later rows on which nothing else starts.
  */
 function continuationRows(root: SyntaxNode): Set<number> {
   const whole: SyntaxNode[] = [];

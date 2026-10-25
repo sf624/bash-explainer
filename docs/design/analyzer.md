@@ -4,7 +4,7 @@ src/analyzer.ts is 4,202 lines (at d265509). One class, `Analyzer`, holds about 
 
 An outside review noted the size, and the pace (683 commits in 9 days). For one maintainer over the long term, a thin core matters more than a wider scope. The maintainer agreed: the next big work is to thin analyzer.ts, not to add features. This page plans it. Each step is a PR. The [traceability table](#traceability) records the findings and the steps.
 
-Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), step 3 (the readers) is done (#325), step 4 (words and expansions) is done (#327), step 5 (tests, redirections) is done (#329, #330), step 6 (examples, embedded languages) is done (#333, #334), step 7 (arguments, assignments, scripts) is done (#338, #339, #340), and step 8 (commands, compound commands, line notes) is done (#348, #349). Step 9 is not started: src/explain/ has the context, the node helpers, the readers, the words, the tests, the redirections, the examples (those of jq and yq apart), the embedded languages, the scripts, the assignments, the arguments, the commands, the compound commands and the line notes, and src/analyzer.ts is 270 lines (the dispatch and the orchestration).
+Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), step 3 (the readers) is done (#325), step 4 (words and expansions) is done (#327), step 5 (tests, redirections) is done (#329, #330), step 6 (examples, embedded languages) is done (#333, #334), step 7 (arguments, assignments, scripts) is done (#338, #339, #340), step 8 (commands, compound commands, line notes) is done (#348, #349), and step 9 (the dispatch) is done (#353). The plan is done: src/explain/ has the context, the node helpers, the readers, the words, the tests, the redirections, the examples (those of jq and yq apart), the embedded languages, the scripts, the assignments, the arguments, the commands, the compound commands, the line notes and the dispatch, and src/analyzer.ts is 100 lines: the orchestration only.
 
 The goal is not new behaviour. Every explanation stays byte-identical, except where a step fixes a contradiction with bash (and then says so).
 
@@ -219,27 +219,29 @@ Switching on node types to *render* them is fine: the syntax tree is the model o
 
 ### 2.5 Layers
 
-Imports point down only:
+Imports point down only. The arrows are the imports between the modules as built (step 9):
 
 ```mermaid
 flowchart TB
-  analyzer["analyzer.ts: orchestration"] --> dispatch
-  dispatch --> compound & linenotes[line-notes]
-  compound --> commands
-  linenotes --> words
-  commands --> argv & redirections & examples & where
-  argv --> scripts & assignments & embedded & tests
-  assignments --> redirections
-  embedded --> examples
-  tests --> examples
+  analyzer["analyzer.ts: orchestration"] --> dispatch & linenotes[line-notes] & examples
+  dispatch --> commands & compound & assignments & redirections & tests & embedded & words
+  commands --> argv & redirections & examples & status & where & words
+  compound --> examples & where & words
+  argv --> scripts & assignments & embedded & tests & examples & words
+  assignments --> redirections & words
+  embedded --> examplesjq[examples-jq] & examples & words
+  tests --> examples & status & words
+  examplesjq --> examples
   redirections --> words
   examples --> words
-  scripts --> where
-  words --> reads & where & status
+  words --> where
+  scripts & linenotes & words --> reads
   reads & where & status --> context["context, nodes"]
 ```
 
-The real recursions go up through the context: `cx.explain` and `cx.sub` (the dispatch), `cx.commandToken` (a command with redirections first, from commands.ts back into itself through redirections), and `cx.nestedLine` (a string read as a script; analyzer.ts provides it). `findExpression` moves beside `render`, so embedded.ts does not call argv.ts.
+Left out of the drawing: every module above reads.ts imports it, and so does analyzer.ts, except dispatch.ts (drawn only for scripts.ts, line-notes.ts and words.ts); every module imports context.ts (the `Explainer` type), and all but where.ts, status.ts and examples-jq.ts import nodes.ts. src/expansion-tokens.ts (`${…}`) and src/substitution-tokens.ts (`$( )`, `<( )`), outside src/explain/, are called by the dispatch (and commands.ts reads the substitutions' scope); they import words, reads, status and the context, nothing above them.
+
+The real recursions go up through the context: `cx.explain`, `cx.sub` and `cx.full` (the dispatch, which src/analyzer.ts gives the context as its walk) and `cx.nestedLine` (a string read as a script; analyzer.ts provides it too). A command with its redirections first recurses inside commands.ts (`splitCommand` calls `commandToken`, step 8), so the context has no `commandToken`. `findExpression` is beside `render`, so embedded.ts does not call argv.ts.
 
 ## 3. Guards
 
@@ -482,7 +484,22 @@ Where the plan did not fit main:
 
 ### Step 9: the dispatch, and analyzer.ts as orchestration (M)
 
-src/explain/dispatch.ts (about 260 lines). analyzer.ts keeps `Analyzer`, `explainLine` and the re-exports, about 150 lines. Its entry leaves test/fixtures/file-length.json. CLAUDE.md "Design" gets a line on src/explain/ (one module per part, the context, the layers).
+src/explain/dispatch.ts (about 260 lines). analyzer.ts keeps `Analyzer`, `explainLine` and the re-exports, about 150 lines. (Its entry left test/fixtures/file-length.json in step 8, #348, when it went under 1,000 lines.) CLAUDE.md "Design" gets a line on src/explain/ (one module per part, the context, the layers).
+
+**As done (#353).** The snapshots are byte-identical before and after: the snapshot of the corpus, the dump of sample.sh, and the harness of step 8 (the six option sets, every example kind alone and left out, one analyzer for every line in reverse, errors thrown in the context's sinks alone with periods 2, 3 and 5), on the inputs of step 8 and a script of the cases of the dispatch (quoting kinds, arrays, arithmetic with `?:`, `++` and parentheses, number bases, words of several parts, `!`, `if`, `elif` and `else` on one line and over several, C-style `for`, `do … done`, groups and subshells in pipelines and loops, `case`, `select`, functions, `coproc`, `time`, `[[ ]]`, and a syntax error), each also read as sh, zsh, ksh and dash. The errors of step 8 were thrown in `flatten` and `explain` of the class, which this step moves; here they are thrown where main and the branch both call: the context's sinks with `tok` and `sub`, and the walk that the context calls back (its `explain` and `flatten`, wrapped on each line's context; also with `tok` and `subs`, period 3). src/analyzer.ts went from 270 to 100 lines (4,202 to 100 over the plan); src/explain/dispatch.ts is 152 lines. The move was done by a script (TypeScript compiler API), kept in the PR. What moved where:
+
+- src/explain/dispatch.ts: `explain` (a node's token, with the sections of the manual it is about) and `flatten` (the parts of a block on the line, with the construct around them), which src/analyzer.ts gives the context as its walk; and, not exported, `explainNode` (the switch on the node's type) and `contextLabel` (the label of a construct around the line, which `flatten` records).
+- The cases of the dispatch that built a token themselves, to the module of their part: to compound.ts `negated` (`!`), `subshell`, `group` (`{ }`, with where it runs), `doGroup`, `cStyleFor`, `ifStatement`, `elifClause` and `elseClause`; to words.ts `rawString`, `concatenation`, `number`, `array` and `arithmeticExpansion`; to tests.ts `ternary`, `postfix`, `parenthesized` (in arithmetic) and `arithmeticCommand` (`(( ))` as a command: the note on the status of a postfix `++`, then the test); to embedded.ts `ansiCString` (`$'…'`).
+- src/analyzer.ts: `Analyzer` with `explainLine` and `nestedLine` (a line of a string read as a script: a new `Analyzer` with `nested` set), and the re-exports. `explainLine` makes the walk for the line (`explain` and `flatten` with that line's context, and `nestedLine`), then the context, then walks the line and gathers the notes (listed one source per line, in the same order) and the examples. The class keeps no field of a line: the fields `cx` and `walk`, and the one-line delegates of the context (`say`, `s`, `t`, `lineRef`, `tok`, `sub`, `subs`), are gone.
+- Layers: dispatch.ts imports context, nodes, assignments, commands, compound, embedded, redirections, tests and words, and src/expansion-tokens.ts and src/substitution-tokens.ts; tests.ts now imports status.ts, and embedded.ts words.ts (2.5 draws the imports as built).
+
+Where the plan did not fit main, and what was decided:
+
+- The dispatch only dispatches. A case calls one function of a module, or combines two (`braceWord(cx, n) ?? word(cx, n)`, `missingKeyword(cx, n, forStatement(cx, n))`, `skeletal(assignment(cx, n), n, true)`, the string of a `$"…"`); a text is made there only for an `error` node and for a type no module knows (the `default`, ignored by coverage). Steps 4 and 8 left the inline cases "with the dispatch, or to compound.ts": they went to the module of their part, so that a new explanation lands there (principle 2), and dispatch.ts is 152 lines, not about 260.
+- `$'…'` went to embedded.ts, not words.ts: its escapes (`ansiCChildren`) are read there as an embedded language, and words.ts is below embedded.ts. `contextLabel` stayed with `flatten`, its only caller.
+- The walk is made per line, in `explainLine`, rather than kept on the class: its `explain` and `flatten` need the line's context, which the dispatch takes as a parameter. The context's `Walk` interface did not change.
+- analyzer.ts is 100 lines, not about 150: the delegates went with their last callers.
+- The names guard (3.3) passed unchanged, with nothing known (`KNOWN_NAMES` empty): the moved cases compare only node types.
 
 ### Summary
 
@@ -497,7 +514,7 @@ src/explain/dispatch.ts (about 260 lines). analyzer.ts keeps `Analyzer`, `explai
 | 6 | Examples, embedded | M each | 2 (#333, #334) | 4, 5 (#329) |
 | 7 | Scripts, assignments, argv | M–L | 3 (#338, #339, #340) | 5, 6 |
 | 8 | Commands, compound, line notes | M each | 2 (#348, #349) | 7 |
-| 9 | Dispatch, orchestration | M | 1 | 8 |
+| 9 | Dispatch, orchestration | M | 1 (#353) | 8 |
 
 About 18 PRs; about 3,900 lines move. Steps 1.1–1.4 run in parallel with each other. They merge before step 3, which moves the functions they change (`groupSubshell`, `inSubshell`, `shoptAt`). Steps 5 and 6 share src/explain/examples.ts: the tests of step 5 start it with the builders they call (#329), and step 6 moves the others.
 
@@ -534,14 +551,14 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 
 | ID | Finding (short) | Step | Status | Verified by |
 |---|---|---|---|---|
-| T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | in progress (step 3: PR #325; step 4: PR #327; step 5: PR #329, PR #330; step 6: PR #333, PR #334; step 7: PR #338, PR #339, PR #340; step 8: PR #348, PR #349) | file-length test: analyzer.ts under 1,000 lines, then about 150 |
+| T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | done (step 3: PR #325; step 4: PR #327; step 5: PR #329, PR #330; step 6: PR #333, PR #334; step 7: PR #338, PR #339, PR #340; step 8: PR #348, PR #349; step 9: PR #353) | file-length test: analyzer.ts under 1,000 lines (its entry left in PR #348); then 100 lines, `explainLine` only |
 | T2 | Per-line state written from anywhere: notes pushed in 40 places, examples in 27, `argCtx` an implicit parameter | 2 | done (PR #324) | the snapshot unchanged; no `cx.extraNotes.push` left: notes, examples and the command go through the context's sinks and `withCommand` |
 | T3 | Three overlapping hosts: `LineContext`, `ExpansionHost`, the analyzer's half of `EmbeddedContext` | 2, 4 | done (PR #324, PR #327) | one `Explainer`; the reads of the words (`ExpansionWords`) are functions of src/explain/words.ts since step 4; the snapshot unchanged |
 | T4 | Name checks: yq (1356), `local` (1364), sed (3157), xargs label (2741) | 1.1 | done (PR #308) | names guard list empty; tests against the tools |
 | T5 | Where code runs, decided from node types: `groupSubshell` (377), `inSubshell` (417), `pipeSubshellPitfalls` (2964, 2982) | 1.2 | done (PR #308) | env probes; test/facts-from-model.test.ts rows |
 | T6 | `shoptAt` decides `globstar` per shell (361–362) | 1.3 | done (PR #308) | state probes |
 | T7 | A string's variables read by a regex (3185); risky words by node types (3239) | 1.4 | done (PR #308) | rows against bash (`bash -c`, `sudo`, `env -i`) |
-| T8 | Cycles between the groups (1.4) | 3–9 | in progress (step 3: PR #325; step 4: PR #327; step 5: PR #329, PR #330; step 6: PR #333, PR #334; step 7: PR #338, PR #339, PR #340; step 8: PR #348, PR #349) | test/explain-imports.test.ts |
+| T8 | Cycles between the groups (1.4) | 3–9 | done (step 3: PR #325; step 4: PR #327; step 5: PR #329, PR #330; step 6: PR #333, PR #334; step 7: PR #338, PR #339, PR #340; step 8: PR #348, PR #349; step 9: PR #353) | test/explain-imports.test.ts; the imports as built in 2.5 |
 | T9 | No guard on file length, import cycles or name checks | 0 | done (PR #275) | the guards themselves |
 | T10 | No before/after check of the whole explanation | 0 | done (PR #275) | test/snapshot.ts |
 
@@ -556,4 +573,4 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 | 6 | done (PR #333, PR #334) |
 | 7 | done (PR #338, PR #339, PR #340) |
 | 8 | done (PR #348, PR #349) |
-| 9 | planned |
+| 9 | done (PR #353) |

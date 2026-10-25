@@ -23,6 +23,7 @@ import { awkOptions, dateRun, globExample, inputSource, ioExample, pushExample, 
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
 import { fromEmbedded } from './nodes';
 import { given, regexFlavor, trContext } from './reads';
+import { valueNote } from './words';
 
 /**
  * Explain the contents of a quoted or plain word written in another language (a regex, a sed
@@ -150,4 +151,9 @@ function previousNamed(n: SyntaxNode): SyntaxNode {
 export function ansiCChildren(cx: Explainer, n: SyntaxNode): Token[] {
   const lit: Literal = { text: n.text.slice(2, -1), base: 2 };
   return explainEscapes(lit.text, cx.lang, 'ansic').map((t) => fromEmbedded(t, n, lit, 'shell'));
+}
+
+/** A `$'…'` string, with its escapes. */
+export function ansiCString(cx: Explainer, n: SyntaxNode): Token {
+  return cx.tok(n, 'string', cx.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? valueNote(cx, n) : ''), ansiCChildren(cx, n));
 }
