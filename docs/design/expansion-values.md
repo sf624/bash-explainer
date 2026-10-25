@@ -2,7 +2,7 @@
 
 `msg="hello world"; echo $msg`: the token of `$msg` says what bash puts there, `hello world`, and that unquoted it becomes two words, `hello` and `world`. The roadmap's "Now" item ([../roadmap.md](../roadmap.md)). This page says which expansions get a value, when the value may be said, how it is shown, and how it is tested.
 
-Status: the first set is built (this PR). What is left out is listed in "Not yet", with the open questions.
+Status: the first set is built (#356). What is left out is listed in "Not yet", with the open questions.
 
 ## 1. What a value is
 

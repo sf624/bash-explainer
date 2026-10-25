@@ -10,7 +10,7 @@ Keep it current:
 
 ## Now
 
-1. Show the value of an expansion the script fixes (`msg="hello"; echo $msg` → `hello`) in Meaning, where the model trusts the value.
+1. Show the value of an expansion the script fixes (`msg="hello"; echo $msg` → `hello`) in Meaning, where the model trusts the value. Started: the first set (#356), `$x`, `${x}`, `${#x}` and the operators the word model evaluates, with the words splitting makes; [design/expansion-values.md](design/expansion-values.md) lists what is left and the questions for the maintainer (other shells, examples with the script's value, whole words, arrays).
 
 ## Next, in this order
 
