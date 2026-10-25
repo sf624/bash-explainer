@@ -138,10 +138,16 @@ export function docIndex(n: SyntaxNode, end = false): number {
 }
 
 const lineStarts = new WeakMap<SyntaxNode, number[]>();
-/** The line (from 0) of the document where `n` starts. */
-export function docLine(n: SyntaxNode): number {
+/** The root of the document `n` is in: of the script, also for a node of a string read as a script (4.13). */
+export function documentRoot(n: SyntaxNode): SyntaxNode {
   let root = rootOf(n);
   for (let s = rootOwners.get(root); s; s = rootOwners.get(root)) root = rootOf(s.words[0]);
+  return root;
+}
+
+/** The line (from 0) of the document where `n` starts. */
+export function docLine(n: SyntaxNode): number {
+  const root = documentRoot(n);
   let starts = lineStarts.get(root);
   if (!starts) {
     starts = [];

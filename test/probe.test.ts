@@ -33,6 +33,14 @@ describe('probes: the harness', () => {
     assert.deepStrictEqual(fields, { a: [['a\nb', '', 'x']], b: [[]], c: [['']] });
   });
 
+  it('runs a snippet in dash with `__probe` on its first line: NULs, empty fields and line numbers are kept', async function () {
+    if (!hasRequired({ manual: '', snippet: '', requires: 'dash' })) this.skip();
+    const { fields, run } = await probeWords("@PROBE:a@ 'a\nb' '' x; @PROBE:b@\n@PROBE:c@ ''\n${x/a/b}", { dash: true });
+    assert.deepStrictEqual(fields, { a: [['a\nb', '', 'x']], b: [[]], c: [['']] });
+    // (dash names the line of the error: the fourth.)
+    assert.match(run.stderr, /^SCRIPT: 4: Bad substitution/);
+  });
+
   it('gives the state of a marker that ran, and none for one that did not', async () => {
     const { states } = await probeState('x=1\n@PROBE:a@\nexit 0\n@PROBE:b@');
     assert.deepStrictEqual(states.a.variables.x, { attrs: '-', value: '"1"' });
@@ -52,7 +60,7 @@ describe('probes: the harness', () => {
         facts = await pooled(rows.map((row) => () => (hasRequired(row) ? factsOf(kind, row) : Promise.resolve(row.facts))));
       });
       rows.forEach((row, i) => {
-        const opts = [row.posix && 'bash --posix', row.errexit === false && 'no -e'].filter(Boolean).join(', ');
+        const opts = [row.posix && 'bash --posix', row.shell === 'sh' ? 'dash and bash --posix' : row.shell, row.errexit === false && 'no -e'].filter(Boolean).join(', ');
         it(`${row.manual}: ${JSON.stringify(row.snippet)}${opts ? ` (${opts})` : ''}`, () => {
           assert.deepStrictEqual(facts[i], row.facts);
         });

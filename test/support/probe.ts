@@ -12,6 +12,10 @@
 // --noprofile` (and `--posix` when asked) runs the snippet as a script file, with LC_ALL=C, a fixed PATH and
 // HOME, and no other environment (IFS is bash's default). A snippet that starts with `#!…/bash ARG` is run as the
 // kernel runs it, with ARG (the rest of the line, as one word) before the script's name.
+//
+// A values row can be about dash (`"shell": "dash"`) or sh (`"shell": "sh"`: dash, and `bash --posix`, which sh is
+// on systems where it is not dash). dash reads no function from the environment, so it gets `__probe` defined at the
+// start of the first line (`__probe() { …; }; `), which keeps the lines of the snippet where they are.
 import { execFile, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -39,6 +43,8 @@ export const SCRIPT = 'SCRIPT';
 export interface ProbeOptions {
   /** `bash --posix`. */
   posix?: boolean;
+  /** dash (`/usr/bin/dash` on PATH) instead of bash; the body of `__probe` is then dash's. */
+  dash?: boolean;
   /** `bash -e`. */
   errexit?: boolean;
   timeout?: number;
@@ -100,13 +106,17 @@ export function runProbe(snippet: string, body: string, opts: ProbeOptions = {})
   const log = path.join(out, 'log');
   const scriptFile = path.join(out, 'script.sh');
   const { script, markers } = instrument(snippet);
-  fs.writeFileSync(scriptFile, script);
+  const logged = body.replace(/\bLOG\b/g, quote(log));
+  if (opts.dash && snippet.startsWith('#!')) throw new Error('a dash probe has no shebang');
+  // (dash: on the first line, so that the snippet's lines keep their numbers.)
+  fs.writeFileSync(scriptFile, opts.dash ? `__probe() { ${logged}; }; ${script}` : script);
   fs.writeFileSync(log, '');
-  const fn = `() { ${body.replace(/\bLOG\b/g, quote(log))}\n}`;
-  const args = ['--norc', '--noprofile', ...shebangArgs(snippet), ...(opts.posix ? ['--posix'] : []), ...(opts.errexit ? ['-e'] : []), scriptFile];
+  const fn = `() { ${logged}\n}`;
+  const args = opts.dash ? [scriptFile] : ['--norc', '--noprofile', ...shebangArgs(snippet), ...(opts.posix ? ['--posix'] : []), ...(opts.errexit ? ['-e'] : []), scriptFile];
+  const env = opts.dash ? PROBE_ENV : { ...PROBE_ENV, 'BASH_FUNC___probe%%': fn };
   const normalize = (s: string): string => s.split(box).join(BOX).split(scriptFile).join(SCRIPT);
   return new Promise((resolve) => {
-    const child = execFile(PROBE_BASH, args, { cwd: box, env: { ...PROBE_ENV, 'BASH_FUNC___probe%%': fn }, timeout: opts.timeout ?? 5000, encoding: 'utf8', maxBuffer: 1 << 24 }, (_err, stdout, stderr) => {
+    const child = execFile(opts.dash ? 'dash' : PROBE_BASH, args, { cwd: box, env, timeout: opts.timeout ?? 5000, encoding: 'utf8', maxBuffer: 1 << 24 }, (_err, stdout, stderr) => {
       const raw = fs.readFileSync(log, 'utf8');
       // What the run left in its directory besides FILES (a directory ends with `/`).
       const created: string[] = [];
@@ -295,7 +305,8 @@ export async function probeNames(snippet: string, names: string[]): Promise<Reco
 // ---------------------------------------------------------------------------------------------------
 // B4: words.
 
-const WORDS_BODY = `{ printf '%s\\0' "$1"; shift; if [ "$#" -gt 0 ]; then printf '%s\\0' "$@"; fi; printf '\\x1e'; } >>LOG`;
+// (POSIX text, which dash runs too: its printf knows no `\x1e`.)
+const WORDS_BODY = `{ printf '%s\\0' "$1"; shift; if [ "$#" -gt 0 ]; then printf '%s\\0' "$@"; fi; printf '\\036'; } >>LOG`;
 
 /** For each marker, the fields of its words, once per time it ran (`@PROBE:x@ $a *.txt`). */
 export async function probeWords(snippet: string, opts: ProbeOptions = {}): Promise<{ fields: Record<string, string[][]>; run: ProbeRun }> {
@@ -336,6 +347,8 @@ export interface ProbeRow {
   note?: string;
   /** A program the snippet runs that may be missing (`dash`): without it on the probes' PATH, the row is not run again. */
   requires?: string;
+  /** values: the shell the row is about, when not bash: dash, or sh (dash and `bash --posix`; facts `{ dash, posix }`). Such a row requires dash. */
+  shell?: 'dash' | 'sh';
   facts?: unknown;
 }
 
@@ -368,10 +381,18 @@ export async function factsOf(kind: ProbeKind, row: ProbeRow): Promise<unknown> 
       const { ran, status, run } = await probeStatus(row.snippet, { errexit: row.errexit ?? true, posix: row.posix });
       return { ran, status, ...firstError(run) };
     }
-    // (The values of expansions, docs/design/expansion-values.md: the fields of each marker's one word, as for words.)
+    // (The values of expansions, docs/design/expansion-values.md: the fields of each marker's one word, as for words;
+    // for sh, those of dash and of `bash --posix`.)
     case 'values': {
-      const { fields, run } = await probeWords(row.snippet, { posix: row.posix });
-      return { ...fields, status: run.status, ...firstError(run) };
+      const facts = async (opts: ProbeOptions): Promise<Record<string, unknown>> => {
+        const { fields, run } = await probeWords(row.snippet, opts);
+        return { ...fields, status: run.status, ...firstError(run) };
+      };
+      if (row.shell === 'sh') {
+        const [dash, posix] = await Promise.all([facts({ dash: true }), facts({ posix: true })]);
+        return { dash, posix };
+      }
+      return facts(row.shell === 'dash' ? { dash: true } : { posix: row.posix });
     }
   }
 }
