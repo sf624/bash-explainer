@@ -14,8 +14,11 @@ import { field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 export type Stdin =
   /** The output of the command before it in a pipeline: its lines, when the stages before it are known to print them. */
   | { from: 'pipe'; lines?: string[] }
-  /** A file, `< b.json` (`name` as its word gives it); `pipe`: the command of a process substitution, `< <(cmd)`. */
-  | { from: 'file'; name: string; pipe?: string }
+  /**
+   * A file, `< b.json` (`name` as its word gives it); `pipe`: the command of a process substitution, `< <(cmd)`, and
+   * `lines`, what it prints when that is known.
+   */
+  | { from: 'file'; name: string; pipe?: string; lines?: string[] }
   /** A here-string (`<<<`) or a here-document (`doc`): its text, as lines, when it is known. */
   | { from: 'here'; doc: boolean; lines?: string[] }
   /** Whatever the script was given (the terminal, a file, a pipe into the script). */
@@ -25,9 +28,10 @@ export type Stdin =
 export type Stream =
   /**
    * A file named on the line; `many`: a word that may name any number of files (a glob, a word not known: `"$@"`);
-   * `pipe`: the command of a process substitution (`<(cmd)`), whose output is read through a pipe (`/dev/fd/63`).
+   * `pipe`: the command of a process substitution (`<(cmd)`), whose output is read through a pipe (`/dev/fd/63`), and
+   * `lines`, that output when it is known (`<(printf 'b\na\n')`).
    */
-  | { kind: 'file'; name: string; many?: 'glob' | 'unknown'; pipe?: string }
+  | { kind: 'file'; name: string; many?: 'glob' | 'unknown'; pipe?: string; lines?: string[] }
   | { kind: 'stdin'; stdin: Stdin };
 
 /** What a command reads. */
@@ -50,7 +54,7 @@ export interface InputSource {
 }
 
 /** A word of the command line as the source reads it: its value when known, as written, and whether it may be many files. */
-export interface SourceWord { value?: string; text: string; many?: 'glob' | 'unknown'; pipe?: string }
+export interface SourceWord { value?: string; text: string; many?: 'glob' | 'unknown'; pipe?: string; lines?: string[] }
 
 /** A command that reads nothing: its example has no input section. */
 export const NO_INPUT: InputSource = { streams: [] };
@@ -108,7 +112,7 @@ export function inputSource(parse: ArgvParse, words: SourceWord[], stdin: Stdin,
   for (const { word, at = 0 } of named) {
     const w = words[word];
     const value = w.value?.slice(at);
-    const st: Stream = value === '-' ? { kind: 'stdin', stdin } : { kind: 'file', name: value ?? w.text.slice(at), ...(w.many ? { many: w.many } : {}), ...(w.pipe ? { pipe: w.pipe } : {}) };
+    const st: Stream = value === '-' ? { kind: 'stdin', stdin } : { kind: 'file', name: value ?? w.text.slice(at), ...(w.many ? { many: w.many } : {}), ...(w.pipe ? { pipe: w.pipe } : {}), ...(w.lines ? { lines: w.lines } : {}) };
     const key = st.kind === 'stdin' ? '-' : `f:${st.name}`;
     const before = seen.get(key);
     // The standard input read again is at its end: it gives nothing more (`-1`).
@@ -170,7 +174,8 @@ export function stdinOf(cmd: SyntaxNode, literal: (n: SyntaxNode) => string | un
       if (fd === '' && !op.startsWith('<')) continue;
       const dest = field(r, 'destination');
       // `<& 3`, `0>&-` and the like: not a file the example can name.
-      stdin = (op === '<' || op === '<>') && dest ? { from: 'file', name: literal(dest) ?? dest.text, ...(pipeOf(dest) ? { pipe: pipeOf(dest) } : {}) } : { from: 'unknown' };
+      const lines = dest && pipeOf(dest) ? substitutionLines(dest, piped) : undefined;
+      stdin = (op === '<' || op === '<>') && dest ? { from: 'file', name: literal(dest) ?? dest.text, ...(pipeOf(dest) ? { pipe: pipeOf(dest) } : {}), ...(lines ? { lines } : {}) } : { from: 'unknown' };
     }
   }
   if (stdin) return stdin;
@@ -189,7 +194,7 @@ export function streamLabel(stream: Stream, lang: Lang, readBy?: string): string
   const head = readBy ? s(`\`${readBy}\` が読む入力: `, `Input read by \`${readBy}\`: `) : s('入力: ', 'Input: ');
   if (stream.kind === 'file') {
     const name = `\`${stream.name}\``;
-    if (stream.pipe) return head + s(`\`${stream.pipe}\` の出力（${name} が名前を渡すパイプ、中身の例）`, `output of \`${stream.pipe}\` (the pipe ${name} names, sample contents)`);
+    if (stream.pipe) return head + substitutionLabel(stream.pipe, stream.name, !!stream.lines, false, s);
     if (stream.many === 'glob') return head + s(`${name} に一致するファイル（中身の例）`, `files matching ${name} (sample contents)`);
     if (stream.many) return head + s(`${name} のファイル（中身の例）`, `the files ${name} names (sample contents)`);
     return head + s(`${name}（中身の例）`, `${name} (sample contents)`);
@@ -198,7 +203,7 @@ export function streamLabel(stream: Stream, lang: Lang, readBy?: string): string
   switch (stdin.from) {
     case 'pipe': return head + (stdin.lines ? s('標準入力（前のコマンドの出力）', 'stdin (output of the previous command)') : s('標準入力（前のコマンドの出力の例）', 'stdin (sample output of the previous command)'));
     case 'file':
-      if (stdin.pipe) return head + s(`標準入力（\`${stdin.pipe}\` の出力、\`${stdin.name}\` のパイプ、中身の例）`, `stdin (output of \`${stdin.pipe}\` through \`${stdin.name}\`, sample contents)`);
+      if (stdin.pipe) return head + substitutionLabel(stdin.pipe, stdin.name, !!stdin.lines, true, s);
       return head + s(`標準入力（\`${stdin.name}\`、中身の例）`, `stdin (\`${stdin.name}\`, sample contents)`);
     case 'here': {
       const what = stdin.doc ? s('ヒアドキュメント', 'here-document') : s('ヒアストリング', 'here-string');
@@ -208,14 +213,47 @@ export function streamLabel(stream: Stream, lang: Lang, readBy?: string): string
   }
 }
 
+/**
+ * What `<(cmd)` gives to read, named like the output of the stage before a pipe: "output of `cmd`" when its lines are
+ * known, else "sample output of `cmd`", and the pipe its name opens (`stdin`: read as stdin, `< <(cmd)`).
+ */
+function substitutionLabel(cmd: string, name: string, known: boolean, stdin: boolean, s: (ja: string, en: string) => string): string {
+  const what = known ? s(`\`${cmd}\` の出力`, `output of \`${cmd}\``) : s(`\`${cmd}\` の出力の例`, `sample output of \`${cmd}\``);
+  return stdin
+    ? s(`標準入力（${what}、\`${name}\` のパイプ）`, `stdin (${what}, through the pipe \`${name}\` names)`)
+    : s(`${what}（\`${name}\` が名前を渡すパイプ）`, `${what} (through the pipe \`${name}\` names)`);
+}
+
+/**
+ * What a process substitution `<(cmd)` gives to read, when it is known: the output of its one command or pipeline,
+ * which `piped` reads as it does the stages before a pipe. Undefined for several commands, or when the last one
+ * sends its output elsewhere (`<(printf 'a\n' > f)`).
+ */
+export function substitutionLines(ps: SyntaxNode, piped?: (pipeline: SyntaxNode, index: number) => string[] | undefined): string[] | undefined {
+  const [inner, ...more] = ps.namedChildren;
+  if (!inner || more.length) return undefined;
+  // (A command alone is a pipeline of one stage.)
+  const p = inner.type === 'pipeline' ? inner : ps;
+  const last = p.namedChildren[p.namedChildren.length - 1];
+  const elsewhere = redirectionsOf(last).some((r) => {
+    const op = r.children.find((c) => !c.named)?.type;
+    const fd = field(r, 'descriptor')?.text ?? '';
+    return r.type === 'file_redirect' && (op?.startsWith('&') || (!op?.startsWith('<') && (fd === '' || fd === '1')));
+  });
+  return elsewhere ? undefined : piped?.(p, p.namedChildren.length);
+}
+
 /** The command of a process substitution `<(cmd)` (not `>(cmd)`, which takes what is written to it). */
 export function pipeOf(n: SyntaxNode): string | undefined {
   return n.type === 'process_substitution' && n.text.startsWith('<(') ? n.text.slice(2, -1).trim() : undefined;
 }
 
-/** The text of a stream when the line gives it (a here-string or a here-document of known text, or what a pipe brings of it). */
+/**
+ * The text of a stream when the line gives it (a here-string or a here-document of known text, or what a pipe or a
+ * process substitution brings of it).
+ */
 export function knownLines(stream: Stream): string[] | undefined {
-  return stream.kind === 'stdin' && (stream.stdin.from === 'here' || stream.stdin.from === 'pipe') ? stream.stdin.lines : undefined;
+  return stream.kind === 'file' ? stream.lines : stream.stdin.from === 'unknown' ? undefined : stream.stdin.lines;
 }
 
 /**

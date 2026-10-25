@@ -17,7 +17,7 @@ import { globIntro, hasGlob } from './embedded/glob';
 import { grepWrap, literalRegex, toJsRegex } from './examples/regex';
 import { awkExample, awkInvocation, AwkRunOptions } from './examples/awk';
 import { MAX_SHOWN_LINES, pipedOutput, pipelineExample, Stage } from './examples/pipeline';
-import { InputSource, inputSource, knownLines, NO_INPUT, pipeOf, readsFiles, readOrder, shareOut, shownSource, SourceWord, Stdin, stdinOf, Stream, streamLabel } from './examples/source';
+import { InputSource, inputSource, knownLines, NO_INPUT, pipeOf, readsFiles, readOrder, shareOut, shownSource, SourceWord, Stdin, stdinOf, Stream, streamLabel, substitutionLines } from './examples/source';
 import { jqExample, JqFormat, jqPrint, jqReadsInputs, jqSample, Json, parseJsonValues, runJq, slurpLines, toJson, varyJson } from './examples/jq';
 import { sedExample, sedPattern } from './examples/sed';
 import { InputBox, jqStepSections, RerunSpec } from './examples/rerun';
@@ -265,8 +265,8 @@ export class Analyzer {
       const end = h.namedChildren.find((c) => c.type === 'heredoc_end');
       const delim = h.namedChildren.find((c) => c.type === 'heredoc_start')?.text;
       if (delim === undefined) continue; // `cat <<` while typing
-      // `<<-END` / `<<END` as written (the operator may have a tab-stripping `-`).
-      const operator = `${/<<-?/.exec(h.text)![0]}${delim}`;
+      // `<<END`, `3<<-END` as written (its descriptor, and the operator may have a tab-stripping `-`).
+      const operator = `${field(h, 'descriptor')?.text ?? ''}${/<<-?/.exec(h.text)![0]}${delim}`;
       // The end line itself can be inside the range of the body (with `<<-` it is indented with tabs).
       if (end && end.startPosition.row === line) {
         notes.push(this.s(`\`${end.text.trim()}\` はヒアドキュメント（行 ${(docLine(h) + 1)} の \`${operator}\`）の終わりを示す行です。`, `\`${end.text.trim()}\` marks the end of the here-document started by \`${operator}\` on line ${(docLine(h) + 1)}.`));
@@ -2275,7 +2275,7 @@ export class Analyzer {
     const words = (nodes ?? ctx.nodes).map((a): SourceWord => {
       const value = literalContent(a)?.text;
       const glob = wordAt(this.cx, a)?.steps.find((st) => st.kind === 'glob');
-      return pipeOf(a) ? { text: a.text, pipe: pipeOf(a) } : { value, text: a.text, ...(value === undefined ? { many: 'unknown' as const } : glob && glob.applies !== false ? { many: 'glob' as const } : {}) };
+      return pipeOf(a) ? { text: a.text, pipe: pipeOf(a), lines: substitutionLines(a, (p, i) => this.pipedLines(p, i)) } : { value, text: a.text, ...(value === undefined ? { many: 'unknown' as const } : glob && glob.applies !== false ? { many: 'glob' as const } : {}) };
     });
     return inputSource(parse ?? ctx.parse, words, this.stdinOf(cmd ?? ctx.args[0].parent!), parse ? spec : ctx.spec);
   }

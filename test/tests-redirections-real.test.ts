@@ -3,9 +3,12 @@
 // against bash (and dash, where the shells differ).
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import type { Example, Token } from '../src/analyzer-types';
-import { featuresOnLine } from '../src/dialect';
+import { featuresOnLine, type Shell } from '../src/dialect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { partAt } from '../src/ui/hoverParts';
 import { partHover, plainPartHover } from '../src/ui/hoverView';
@@ -13,9 +16,9 @@ import { runBash } from './support/bash';
 import { allTokens, explain } from './support/explain';
 
 const parser = createUnbashParser();
-const tokens = (src: string, lang: 'en' | 'ja' = 'en', shell?: 'bash' | 'dash' | 'sh'): Token[] =>
+const tokens = (src: string, lang: 'en' | 'ja' = 'en', shell?: Shell): Token[] =>
   allTokens(new Analyzer(lang).explainLine(parser.parse(src), 0, shell).items);
-const token = (src: string, label: string, lang: 'en' | 'ja' = 'en', shell?: 'bash' | 'dash' | 'sh'): Token => {
+const token = (src: string, label: string, lang: 'en' | 'ja' = 'en', shell?: Shell): Token => {
   const t = tokens(src, lang, shell).filter((x) => x.label === label).pop();
   assert.ok(t, `a token ${label} in ${src}`);
   return t;
@@ -23,6 +26,15 @@ const token = (src: string, label: string, lang: 'en' | 'ja' = 'en', shell?: 'ba
 const examples = (src: string, lang: 'en' | 'ja' = 'en'): Example[] => explain(src, 0, lang).examples;
 const bash = (script: string) => runBash(script);
 const hasDash = spawnSync('dash', ['-c', 'exit 0']).status === 0;
+/** What dash prints for `script`, run in a fresh directory of its own (removed after). */
+const dash = (script: string) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-dash-'));
+  try {
+    return spawnSync('dash', ['-c', script], { cwd: dir, encoding: 'utf8', timeout: 10000, env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+};
 
 describe('the operands of -eq in [ ] and [[ ]], as bash reads them', () => {
   it('reads digits with a leading 0 as decimal in [ ] and test, even 08 and 09', () => {
@@ -35,6 +47,38 @@ describe('the operands of -eq in [ ] and [[ ]], as bash reads them', () => {
     const r = bash('[ 08 -eq 8 ] && echo bracket; test 09 -lt 10 && echo test; [[ 08 -eq 8 ]]; echo "status $?"');
     assert.strictEqual(r.stdout, 'bracket\ntest\nstatus 1\n');
     assert.match(r.stderr, /08: value too great for base/);
+  });
+
+  it('keeps the sign: -08 is -8, +08 is 8', () => {
+    const cases: [string, string][] = [['[ -08 -eq -8 ]', '-08 is -8'], ['[ -010 -eq -10 ]', '-010 is -10'], ['[ +08 -eq 8 ]', '+08 is 8']];
+    for (const [src, said] of cases) {
+      const [a, b] = said.split(' is ');
+      const t = token(src, src.slice(2, -2)).explanation;
+      assert.ok(t.endsWith(`so \`${a}\` is ${b} (not octal)`), t);
+      assert.strictEqual(bash(`${src} && echo yes`).stdout, 'yes\n', src);
+    }
+    assert.match(token('[ -08 -eq -8 ]', '-08 -eq -8', 'ja').explanation, /`-08` は -8（8 進数ではない）$/);
+  });
+
+  it('says why [[ ]] rejects a constant too, with the error bash prints', () => {
+    assert.match(token('[ 1e3 -eq 1 ]', '1e3 -eq 1').explanation, /so `1e3` is an error \(integer expression expected\); `\[\[ \]\]` rejects it too, as arithmetic \(value too great for base\)$/);
+    assert.match(token('[ 1e3 -eq 1 ]', '1e3 -eq 1', 'ja').explanation, /`1e3` はエラー（integer expression expected）。`\[\[ \]\]` の算術でもエラー（value too great for base）$/);
+    // (A constant that arithmetic reads still says so.)
+    assert.match(token('[ 0x10 -eq 16 ]', '0x10 -eq 16').explanation, /`\[\[ \]\]` would read it as arithmetic$/);
+    const cases: [string, string][] = [
+      ['1e3', '`e` is not a digit in base 10'], ['0#1', 'the base starts with 0'], ['1#1', '1 is not a base bash has (2 to 64)'], ['2#', 'no digits follow the `#`'], ['08', 'a number starting with 0 is read as octal, and `8` is not an octal digit'],
+    ];
+    for (const [v, why] of cases) {
+      const t = token(`[[ ${v} -eq 1 ]]`, `${v} -eq 1`).explanation;
+      const m = /where `([^`]+)` is no valid number \((.*)\): an error \(([^)]+)\)$/.exec(t);
+      assert.ok(m, t);
+      assert.deepStrictEqual([m[1], m[2]], [v, why], v);
+      // The error is the one bash prints.
+      const r = bash(`[[ ${v} -eq 1 ]]`);
+      assert.strictEqual(r.status, 1, v);
+      assert.match(r.stderr, new RegExp(`\\[\\[: ${v}: ${m[3]} \\(error token`), v);
+    }
+    assert.match(token('[[ 1e3 -eq 1 ]]', '1e3 -eq 1', 'ja').explanation, /`\[\[ \]\]` は算術として読むが、`1e3` は数として正しくない（基数 10 では数字 `e` は使えない）のでエラー（value too great for base）$/);
   });
 });
 
@@ -70,13 +114,24 @@ describe('a here-document or a here-string on another descriptor', () => {
   it('goes to that descriptor, and the order of the redirections says so', () => {
     const src = 'cat 3<<EOF <&3\nbody\nEOF';
     const ex = explain(src);
-    assert.ok(ex.notes.includes('Redirections apply left to right. In the end: stdin → the here-document, fd 3 → the here-document'), ex.notes.join('\n'));
-    assert.ok(explain(src, 0, 'ja').notes.includes('リダイレクトは左から順に適用される。最終的に: 標準入力 → ヒアドキュメント、fd 3 → ヒアドキュメント'));
+    assert.ok(ex.notes.includes('Redirections apply left to right. In the end: stdin → the here-document `EOF`, fd 3 → the here-document `EOF`'), ex.notes.join('\n'));
+    assert.ok(explain(src, 0, 'ja').notes.includes('リダイレクトは左から順に適用される。最終的に: 標準入力 → ヒアドキュメント `EOF`、fd 3 → ヒアドキュメント `EOF`'));
     const doc = token(src, '3<<EOF');
     assert.match(doc.explanation, /^Here-document: the following lines up to a line containing only `EOF` become file descriptor 3\./);
     assert.match(token(src, '3<<EOF', 'ja').explanation, /^ヒアドキュメント: 次の行から `EOF` だけの行までをファイルディスクリプタ 3として渡す/);
     assert.match(token('cat <<EOF\nx\nEOF', '<<EOF').explanation, /become stdin\./);
     assert.strictEqual(bash(`${src}\n`).stdout, 'body\n');
+    // The lines of the body name the here-document with its descriptor.
+    assert.ok(explain(src, 1).notes.includes('This line is part of the here-document started by `3<<EOF` on line 1.'), explain(src, 1).notes.join('\n'));
+    assert.ok(explain(src, 2).notes.includes('`EOF` marks the end of the here-document started by `3<<EOF` on line 1.'));
+    assert.ok(explain(src, 1, 'ja').notes.includes('この行はヒアドキュメント（行 1 の `3<<EOF`）の本文です。'));
+  });
+
+  it('names which of several here-documents stdin gets', () => {
+    const src = "cat 3<<A 4<<'B' <&4\na\nA\nb\nB";
+    assert.ok(explain(src).notes.includes('Redirections apply left to right. In the end: stdin → the here-document `B`, fd 3 → the here-document `A`, fd 4 → the here-document `B`'), explain(src).notes.join('\n'));
+    assert.ok(explain(src, 0, 'ja').notes.includes('リダイレクトは左から順に適用される。最終的に: 標準入力 → ヒアドキュメント `B`、fd 3 → ヒアドキュメント `A`、fd 4 → ヒアドキュメント `B`'));
+    assert.strictEqual(bash(`${src}\n`).stdout, 'b\n');
   });
 
   it('a here-string too', () => {
@@ -120,6 +175,41 @@ describe('a redirection target that brace expansion makes one word', () => {
     assert.strictEqual(r.stdout, '');
     assert.match(r.stderr, /\{,\}: ambiguous redirect[\s\S]*\{a,\}b: ambiguous redirect/);
   });
+
+  it('is the word as written in sh and dash, which have no brace expansion (and mksh, no ranges)', () => {
+    for (const shell of ['sh', 'dash'] as const) {
+      assert.strictEqual(token('echo hi > {a,}', '> {a,}', 'en', shell).explanation, 'Write stdout (fd 1) to file `{a,}` (overwrite)', shell);
+      assert.strictEqual(token('echo hi > {a,b}', '> {a,b}', 'en', shell).explanation, 'Write stdout (fd 1) to file `{a,b}` (overwrite)', shell);
+      assert.strictEqual(token('echo hi > {b..b}', '> {b..b}', 'en', shell).explanation, 'Write stdout (fd 1) to file `{b..b}` (overwrite)', shell);
+    }
+    assert.strictEqual(token('echo hi > {a,}', '> {a,}', 'ja', 'dash').explanation, '標準出力(fd 1)をファイル `{a,}` に書き込む（既存の内容は上書き）');
+    assert.strictEqual(token('echo hi > {b..b}', '> {b..b}', 'en', 'mksh').explanation, 'Write stdout (fd 1) to file `{b..b}` (overwrite)');
+    assert.match(token('echo hi > {a,}', '> {a,}', 'en', 'mksh').explanation, /the one word `a`$/);
+    if (hasDash) assert.strictEqual(dash('echo hi > {a,}; echo hi > {a,b}; echo hi > {b..b}; ls').stdout, '{a,b}\n{a,}\n{b..b}\n');
+  });
+});
+
+describe('a duplication to a word that is no descriptor number', () => {
+  it('writes both stdout and stderr to the file only as >&word and 1>&word; else bash reports an ambiguous redirect', () => {
+    assert.strictEqual(token('echo x >&f', '>&f').explanation, 'Write both stdout and stderr to `f`');
+    assert.strictEqual(token('echo x 1>&f', '1>&f').explanation, 'Write both stdout and stderr to `f`');
+    const errors: [string, string][] = [['echo x 2>&f', '2>&f'], ['echo x 3>&f', '3>&f'], ['echo x 0>&f', '0>&f']];
+    for (const [src, label] of errors) {
+      assert.strictEqual(token(src, label).explanation, '`f` is no file descriptor number, so bash reports "ambiguous redirect"; only `>&` and `1>&` take a file name', src);
+    }
+    assert.strictEqual(token('echo x 2>&f', '2>&f', 'ja').explanation, '`f` はファイルディスクリプタの番号ではないので、bash は「ambiguous redirect」のエラーにする。ファイル名を取れるのは `>&` と `1>&` だけ');
+    for (const [src, label] of [['cat <&f', '<&f'], ['exec {v}>&f', '{v}>&f'], ['exec {v}<&f', '{v}<&f']]) {
+      assert.strictEqual(token(src, label).explanation, '`f` is no file descriptor number, so bash reports "ambiguous redirect"', src);
+    }
+    // The order of the redirections: `>&f` sends both, `2>&$fd` only stderr.
+    assert.ok(explain('echo x >&f 2>&1').notes.includes('Redirections apply left to right. In the end: stdout → f, stderr → f'), explain('echo x >&f 2>&1').notes.join('\n'));
+    assert.ok(explain('echo x 2>&$fd >o').notes.includes('Redirections apply left to right. In the end: stdout → o, stderr → $fd'), explain('echo x 2>&$fd >o').notes.join('\n'));
+    // bash writes both to `f` for `>&f` and `1>&f`; the others are errors, and make no file.
+    const r = runBash('{ echo out; echo err >&2; } >&f; { echo out; echo err >&2; } 1>&g; cat f g; echo x 2>&h; echo x 3>&h; cat <&h; exec {v}>&h; ls', { files: [] });
+    assert.strictEqual(r.stdout, 'out\nerr\nout\nerr\nf\ng\n');
+    assert.strictEqual(r.stderr.match(/h: ambiguous redirect/g)?.length, 3);
+    assert.match(r.stderr, /v: ambiguous redirect/);
+  });
 });
 
 describe('/dev/tcp and /dev/udp in a redirection', () => {
@@ -140,19 +230,65 @@ describe('/dev/tcp and /dev/udp in a redirection', () => {
     // The host and the port may be expanded.
     assert.ok(tokens('exec 3<>/dev/tcp/$host/80').some((t) => t.label === '$host'));
     // `2>&word` is no file: an error, whatever the word.
-    assert.ok(!/Connect/.test(token('echo x 2>&/dev/tcp/h/80', '2>&/dev/tcp/h/80').explanation));
+    assert.strictEqual(token('echo x 2>&/dev/tcp/h/80', '2>&/dev/tcp/h/80').explanation, '`/dev/tcp/h/80` is no file descriptor number, so bash reports "ambiguous redirect"; only `>&` and `1>&` take a file name');
+    assert.deepStrictEqual(featuresOnLine(parser.parse('echo x 2>&/dev/tcp/h/80').root, 0), []);
     // bash tries to connect (port 9 has no server here): no file is opened, and none is made.
     const r = runBash('exec 3<>/dev/tcp/127.0.0.1/9; echo after', { files: [] });
     assert.match(r.stderr, /connect: Connection refused/);
     assert.strictEqual(runBash('echo x > /dev/tcp/127.0.0.1/9; ls /dev/tcp 2>&1 | grep -c "No such"').stdout, '1\n');
+    assert.match(runBash('echo x 2>&/dev/tcp/127.0.0.1/9').stderr, /\/dev\/tcp\/127\.0\.0\.1\/9: ambiguous redirect/);
+  });
+
+  it('connect when quoted too: the word after quote removal is the name', () => {
+    for (const src of ['echo x > "/dev/tcp/127.0.0.1/9"', "echo x > '/dev/tcp/127.0.0.1/9'", 'echo x >&"/dev/tcp/127.0.0.1/9"']) {
+      const label = src.slice(7);
+      assert.match(token(src, label).explanation, /^Connect to host `127\.0\.0\.1`, port `9`, over TCP, and send (stdout \(fd 1\)|both stdout and stderr) to it/, src);
+      assert.match(token(src, label, 'ja').explanation, /^TCP でホスト `127\.0\.0\.1` のポート `9` に接続し、/, src);
+      assert.deepStrictEqual(featuresOnLine(parser.parse(src).root, 0), ['netRedirect'], src);
+      assert.match(runBash(src, { files: [] }).stderr, /connect: Connection refused/, src);
+    }
+    // (A quoted number is a descriptor as well: `>&"2"` is `>&2`.)
+    assert.strictEqual(token('echo x >&"2"', '>&"2"').explanation, 'Send stdout (fd 1) to the same place as stderr (fd 2)');
+    const q = runBash('echo x >&"2"');
+    assert.deepStrictEqual([q.stdout, q.stderr], ['', 'x\n']);
+  });
+
+  it('are network paths in bash even when no host and port can be read of them, and fail', () => {
+    const cases: [string, string][] = [
+      ['/dev/tcp/127.0.0.1/9/x', 'host `127.0.0.1`, port `9/x`'], ['/dev/tcp//9', 'host empty, port `9`'], ['/dev/tcp//', 'host empty, port empty'],
+    ];
+    for (const [target, parts] of cases) {
+      assert.strictEqual(token(`echo x > ${target}`, `> ${target}`).explanation,
+        `The shell takes \`${target}\` as a network address (${parts}), which is no valid host and port: the redirection fails (no file is opened)`);
+      assert.deepStrictEqual(featuresOnLine(parser.parse(`echo x > ${target}`).root, 0), ['netRedirect']);
+      // bash fails on it, and says nothing of a missing file.
+      const b = runBash(`echo x > ${target}; echo "status $?"`, { files: [] });
+      assert.strictEqual(b.stdout, 'status 1\n', target);
+      assert.doesNotMatch(b.stderr, /No such file/, target);
+    }
+    assert.strictEqual(token('echo x > /dev/tcp//9', '> /dev/tcp//9', 'ja').explanation,
+      'シェルは `/dev/tcp//9` をネットワークの接続先（ホストは空、ポート `9`）として扱うが、正しいホストとポートではないのでリダイレクトはエラーになる（ファイルは開かない）');
+    // An empty port: bash still connects (UDP sends without an answer; TCP is refused).
+    assert.strictEqual(token('echo x > /dev/udp/127.0.0.1/', '> /dev/udp/127.0.0.1/').explanation.replace(/ \(not a file.*$/, ''),
+      'Connect to host `127.0.0.1`, port empty, over UDP, and send stdout (fd 1) to it');
+    assert.match(token('echo x > /dev/udp/127.0.0.1/', '> /dev/udp/127.0.0.1/', 'ja').explanation, /^UDP でホスト `127\.0\.0\.1` のポート（空）に接続し、/);
+    assert.strictEqual(runBash('echo x > /dev/udp/127.0.0.1/; echo "status $?"', { files: [] }).stdout, 'status 0\n');
+    assert.match(runBash('echo x > /dev/tcp/127.0.0.1/', { files: [] }).stderr, /Connection refused/);
+    // Without a second `/`, it is a file.
+    assert.strictEqual(token('echo x > /dev/tcp/h', '> /dev/tcp/h').explanation, 'Write stdout (fd 1) to file `/dev/tcp/h` (overwrite)');
+    assert.match(runBash('echo x > /dev/tcp/h').stderr, /\/dev\/tcp\/h: No such file or directory/);
   });
 
   it('are an ordinary path in sh and dash, which the dialect check reports', () => {
-    for (const shell of ['sh', 'dash'] as const) {
-      const t = token('exec 3<>/dev/tcp/127.0.0.1/9', '3<>/dev/tcp/127.0.0.1/9', 'en', shell);
-      assert.match(t.explanation, /^Open `\/dev\/tcp\/127\.0\.0\.1\/9` for reading and writing as file descriptor 3\. In (POSIX sh|dash), `\/dev\/tcp\/…` is an ordinary path, usually missing \(only bash and ksh93 connect to the network for it\)$/);
-    }
-    assert.match(token('cat < /dev/tcp/h/80', '< /dev/tcp/h/80', 'ja', 'dash').explanation, /。dash では `\/dev\/tcp\/…` も普通のファイル名で、ふつうは存在しない/);
+    const open = 'Open `/dev/tcp/127.0.0.1/9` for reading and writing as file descriptor 3. ';
+    assert.strictEqual(token('exec 3<>/dev/tcp/127.0.0.1/9', '3<>/dev/tcp/127.0.0.1/9', 'en', 'sh').explanation,
+      `${open}POSIX does not define \`/dev/tcp/…\`: dash, busybox ash and other sh open it as an ordinary path, usually missing (bash, even in POSIX mode, and ksh93 connect to the network)`);
+    assert.strictEqual(token('exec 3<>/dev/tcp/127.0.0.1/9', '3<>/dev/tcp/127.0.0.1/9', 'en', 'dash').explanation,
+      `${open}dash opens \`/dev/tcp/…\` as an ordinary path, usually missing (POSIX does not define it; bash and ksh93 connect to the network)`);
+    assert.match(token('cat < /dev/tcp/h/80', '< /dev/tcp/h/80', 'ja', 'dash').explanation, /。dash では `\/dev\/tcp\/…` も普通のファイル名で、ふつうは存在しない（POSIX は定めていない。ネットワークに接続するのは bash と ksh93）$/);
+    assert.match(token('cat < /dev/tcp/h/80', '< /dev/tcp/h/80', 'ja', 'sh').explanation, /。POSIX は `\/dev\/tcp\/…` を定めていない。dash や busybox ash などの sh では普通のファイル名で、ふつうは存在しない（ネットワークに接続するのは bash（POSIX モードでも）と ksh93）$/);
+    // bash connects in POSIX mode too.
+    assert.match(runBash('exec 3<>/dev/tcp/127.0.0.1/9', { posix: true }).stderr, /connect: Connection refused/);
     assert.deepStrictEqual(featuresOnLine(parser.parse('cat < /dev/tcp/h/80').root, 0), ['netRedirect']);
     assert.deepStrictEqual(featuresOnLine(parser.parse('cat < /dev/tcpx/h/80').root, 0), []);
     if (hasDash) {
@@ -165,18 +301,44 @@ describe('/dev/tcp and /dev/udp in a redirection', () => {
 describe('a process substitution read as a file', () => {
   it('is labelled as the output of its command, through a pipe', () => {
     const ex = examples('jq . <(curl -s url)');
-    assert.strictEqual(ex[0].sections[0].label, 'Input: output of `curl -s url` (the pipe `<(curl -s url)` names, sample contents)');
-    assert.strictEqual(examples('jq . <(curl -s url)', 'ja')[0].sections[0].label, '入力: `curl -s url` の出力（`<(curl -s url)` が名前を渡すパイプ、中身の例）');
+    assert.strictEqual(ex[0].sections[0].label, 'Input: sample output of `curl -s url` (through the pipe `<(curl -s url)` names)');
+    assert.strictEqual(examples('jq . <(curl -s url)', 'ja')[0].sections[0].label, '入力: `curl -s url` の出力の例（`<(curl -s url)` が名前を渡すパイプ）');
     const sorted = examples('sort <(cmd) <(cmd2)')[0].sections.map((s) => s.label);
-    assert.deepStrictEqual(sorted.slice(0, 2), ['Input: output of `cmd` (the pipe `<(cmd)` names, sample contents)', 'Input: output of `cmd2` (the pipe `<(cmd2)` names, sample contents)']);
+    assert.deepStrictEqual(sorted.slice(0, 2), ['Input: sample output of `cmd` (through the pipe `<(cmd)` names)', 'Input: sample output of `cmd2` (through the pipe `<(cmd2)` names)']);
     // Read as stdin through `<`.
-    assert.strictEqual(examples('sort < <(cmd)')[0].sections[0].label, 'Input: stdin (output of `cmd` through `<(cmd)`, sample contents)');
-    assert.strictEqual(examples('sort < <(cmd)', 'ja')[0].sections[0].label, '入力: 標準入力（`cmd` の出力、`<(cmd)` のパイプ、中身の例）');
+    assert.strictEqual(examples('sort < <(cmd)')[0].sections[0].label, 'Input: stdin (sample output of `cmd`, through the pipe `<(cmd)` names)');
+    assert.strictEqual(examples('sort < <(cmd)', 'ja')[0].sections[0].label, '入力: 標準入力（`cmd` の出力の例、`<(cmd)` のパイプ）');
     // A file name the example cannot know (`/dev/fd/63`): no headers of head, no `FILENAME` of awk.
     assert.deepStrictEqual(examples('head -n 1 a <(cmd)').filter((e) => e.sections.some((s) => /==>/.test(s.lines.join('\n')))), []);
     assert.deepStrictEqual(examples("awk '{ print FILENAME }' <(cmd)"), []);
     // bash gives the command a name in /dev/fd for a pipe, and reads the command's output from it.
     assert.match(bash('echo <(true); [ -p <(true) ] && echo pipe; cat <(echo out); awk "{ print FILENAME }" <(echo x)').stdout, /^\/dev\/fd\/\d+\npipe\nout\n\/dev\/fd\/\d+\n$/);
+  });
+
+  it('shows what its command prints, when that is known, and what the command makes of it, as bash runs it', () => {
+    const p = "printf 'b\\na\\n'";
+    const cases: [string, string, string][] = [
+      [`sort <(${p})`, `Input: output of \`${p}\` (through the pipe \`<(${p})\` names)`, `入力: \`${p}\` の出力（\`<(${p})\` が名前を渡すパイプ）`],
+      [`sort < <(${p})`, `Input: stdin (output of \`${p}\`, through the pipe \`<(${p})\` names)`, `入力: 標準入力（\`${p}\` の出力、\`<(${p})\` のパイプ）`],
+      [`sort <(${p} | tr a-z A-Z)`, `Input: output of \`${p} | tr a-z A-Z\` (through the pipe \`<(${p} | tr a-z A-Z)\` names)`, `入力: \`${p} | tr a-z A-Z\` の出力（\`<(${p} | tr a-z A-Z)\` が名前を渡すパイプ）`],
+      [`sort <(${p} 2> e)`, `Input: output of \`${p} 2> e\` (through the pipe \`<(${p} 2> e)\` names)`, `入力: \`${p} 2> e\` の出力（\`<(${p} 2> e)\` が名前を渡すパイプ）`],
+    ];
+    for (const [src, en, ja] of cases) {
+      const ex = examples(src).find((e) => e.kind === 'textFilters')!;
+      assert.ok(ex, src);
+      const [input, output] = ex.sections;
+      assert.strictEqual(input.label, en);
+      assert.strictEqual(examples(src, 'ja').find((e) => e.kind === 'textFilters')!.sections[0].label, ja);
+      // The input is what the command prints, and the output what sort makes of it.
+      const inner = /<\((.*)\)$/.exec(src)![1];
+      assert.deepStrictEqual(input.lines, runBash(inner, { files: [] }).stdout.trimEnd().split('\n'), src);
+      assert.deepStrictEqual(output.lines, runBash(src, { files: [] }).stdout.trimEnd().split('\n'), src);
+    }
+    // A command whose output goes elsewhere, or several commands: a sample.
+    for (const src of [`sort <(${p} > f)`, `sort <(${p} &> f)`, `sort <(${p} >&2)`, `sort <(printf 'b\\n'; printf 'a\\n')`]) {
+      const label = examples(src).find((e) => e.kind === 'textFilters')!.sections[0].label;
+      assert.ok(label.startsWith('Input: sample output of'), `${src}: ${label}`);
+    }
   });
 });
 

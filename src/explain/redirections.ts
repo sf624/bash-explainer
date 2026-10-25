@@ -6,12 +6,12 @@
 // the commands' (step 8).
 import type { Token } from '../analyzer-types';
 import { SHELL_NAMES, featureWorks } from '../dialect';
-import { fdName, networkPath, networkPathAsFile, networkRedirect, redirects, specialDestinations } from '../dict/syntax';
+import { fdName, networkPathAsFile, networkRedirect, networkTarget, redirects, specialDestinations } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { type Redirect, simulateRedirects } from '../idioms';
 import { shorten } from '../label';
 import { spanOf } from '../noteanchors';
-import { isPlainWord } from '../staticword';
+import { isPlainWord, staticWordValue } from '../staticword';
 import { field, fields, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { isBlockLike, skeletal, sortTokens, summaryOf } from './nodes';
@@ -71,8 +71,10 @@ export function redirectInfo(r: SyntaxNode): Redirect {
     const { op, dest } = redirectParts(r);
     return { op, fd: field(r, 'descriptor')?.text ?? '', dest };
   }
-  // The only others: heredoc_redirect and herestring_redirect (`3<<EOF`, `3<<< x`: to descriptor 3).
-  return { op: r.type === 'heredoc_redirect' ? '<<' : '<<<', fd: field(r, 'descriptor')?.text ?? '', dest: '' };
+  // The only others: heredoc_redirect and herestring_redirect (`3<<EOF`, `3<<< x`: to descriptor 3); a here-document
+  // is named by its delimiter.
+  const start = r.namedChildren.find((c) => c.type === 'heredoc_start');
+  return { op: r.type === 'heredoc_redirect' ? '<<' : '<<<', fd: field(r, 'descriptor')?.text ?? '', dest: start ? delimiter(start.text) : '' };
 }
 
 export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
@@ -81,13 +83,15 @@ export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
   const dests = fields(n, 'destination');
   // `> {a,}` writes `a`: the one word brace expansion makes of the target.
   const braced = dests.length === 1 ? bracedTarget(cx, dests[0]) : undefined;
+  // The word after quote removal, when known: `>&"2"` duplicates, `> "/dev/tcp/h/80"` connects.
+  const target = braced ?? (dests.length === 1 ? staticWordValue(dests[0]) : undefined) ?? dest;
   // Every operator the grammar has is in the dictionary.
-  let expl = cx.t(redirects[op](fd, braced ?? dest));
+  let expl = cx.t(redirects[op](fd, braced ?? (op === '>&' || op === '<&' ? target : dest)));
   if (braced) expl += cx.s(`。ブレース展開で \`${dest}\` は1つの単語 \`${braced}\` になる`, `. Brace expansion makes \`${dest}\` the one word \`${braced}\``);
   // `/dev/tcp/host/port`: bash connects to the network, where other shells see a path.
-  const net = NETWORK_OPS.has(op) && (op !== '>&' || fd === '' || fd === '1') ? networkPath(braced ?? dest) : undefined;
-  if (net && featureWorks('netRedirect', cx.shell)) return { ...cx.tok(n, 'redirect', cx.t(networkRedirect(op, fd, net)), dests.filter((d) => !isPlainWord(d)).flatMap((d) => cx.sub(d))), refs: ['3.6'] };
-  if (net) expl += cx.s('。', '. ') + cx.t(networkPathAsFile(SHELL_NAMES[cx.shell!]));
+  const net = networkTarget(op, fd, target);
+  if (net && featureWorks('netRedirect', cx.shell)) return { ...cx.tok(n, 'redirect', cx.t(networkRedirect(op, fd, net, target)), dests.filter((d) => !isPlainWord(d)).flatMap((d) => cx.sub(d))), refs: ['3.6'] };
+  if (net) expl += cx.s('。', '. ') + cx.t(networkPathAsFile(cx.shell === 'sh' ? undefined : SHELL_NAMES[cx.shell!]));
   const special = specialDestinations[dest];
   if (special) expl += cx.s('。', '. ') + cx.t(special);
   // `>&$fd` and `<&$fd`: the word is expanded first, and what it gives decides whether this duplicates a descriptor.
@@ -105,15 +109,21 @@ export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
   return cx.tok(n, 'redirect', expl, children);
 }
 
-/** The operators that open their target (a duplication `>&` only when it is a file: `>&/dev/tcp/h/p`). */
-const NETWORK_OPS = new Set(['<', '>', '>>', '>|', '<>', '&>', '&>>', '>&']);
-
 /** The one word brace expansion makes of a redirection target that differs from it (`{a,}` is `a`: an empty word is dropped). */
 function bracedTarget(cx: Explainer, d: SyntaxNode): string | undefined {
   if (!(isPlainWord(d) || d.type === 'brace_expression') || !d.text.includes('{')) return undefined;
-  if (wordAt(cx, d)!.steps.find((s) => s.kind === 'brace')!.applies !== true) return undefined;
+  if (!braceWorks(cx, d)) return undefined;
   const words = braceExpansion(d.text);
   return words?.length === 1 && words[0] !== d.text ? words[0] : undefined;
+}
+
+/**
+ * Whether the shell brace-expands the target here. (The word model expands braces in every shell; dash and POSIX sh
+ * have no brace expansion, mksh no ranges: `> {a,}` writes `{a,}` in dash.)
+ */
+function braceWorks(cx: Explainer, d: SyntaxNode): boolean {
+  if (wordAt(cx, d)!.steps.find((s) => s.kind === 'brace')!.applies !== true) return false;
+  return (!/\{[^{}]*,[^{}]*\}/.test(d.text) || featureWorks('braceList', cx.shell)) && (!/\{[^{}]*\.\.[^{}]*\}/.test(d.text) || featureWorks('braceRange', cx.shell));
 }
 
 /**
@@ -123,7 +133,7 @@ function bracedTarget(cx: Explainer, d: SyntaxNode): string | undefined {
 function redirectTargetNote(cx: Explainer, d: SyntaxNode): string {
   const w = wordAt(cx, d);
   const step = (kind: string) => w?.steps.find((s) => s.kind === kind);
-  if (step('brace')!.applies === true) {
+  if (braceWorks(cx, d)) {
     const words = braceExpansion(d.text);
     if (words?.length === 0) return cx.s('。ブレース展開で空の単語だけになって単語が残らないので、bash は「ambiguous redirect」のエラーにする', '. Brace expansion leaves no word of it (empty words are dropped), so bash reports "ambiguous redirect"');
     if (!words || words.length !== 1) return cx.s('。ブレース展開で複数の単語になるので、bash は「ambiguous redirect」のエラーにする', '. Brace expansion makes several words of it, so bash reports "ambiguous redirect"');
@@ -181,6 +191,11 @@ function fdExpansion(cx: Explainer, op: string, fd: string, dest: string): strin
     `If \`${dest}\` expands to a file descriptor number, send ${fdName(fd, '1').en} to the same place as that descriptor; ${file}${coproc}`);
 }
 
+/** The delimiter of a here-document as its line has it: `'EOF'`, `"EOF"` and `\EOF` end at `EOF`. */
+function delimiter(start: string): string {
+  return start.replace(/^['"\\]|['"]$/g, '');
+}
+
 /** Where a here-document or a here-string goes: stdin, or the descriptor written before the operator (`3<<EOF`). */
 function hereTarget(cx: Explainer, n: SyntaxNode): string {
   const fd = field(n, 'descriptor')?.text ?? '';
@@ -202,7 +217,7 @@ export function heredoc(cx: Explainer, n: SyntaxNode): Token {
   }
   const start = startNode.text;
   const body = n.namedChildren.find((c) => c.type === 'heredoc_body');
-  const delim = start.replace(/^['"\\]|['"]$/g, '');
+  const delim = delimiter(start);
   const quoted = start !== delim;
   let expl = cx.s(
     `ヒアドキュメント: 次の行から \`${delim}\` だけの行までを${to}として渡す`,

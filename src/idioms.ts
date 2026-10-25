@@ -51,9 +51,13 @@ export function simulateRedirects(redirs: Redirect[], lang: Lang): string | unde
           set(fd, table.get(Number(r.dest)) ?? orig(Number(r.dest)));
           // `2>&1 >file`: stderr copied stdout before stdout was redirected.
           if (fd === 2 && r.dest === '1' && redirs.slice(idx + 1).some((later) => (later.fd === '' || later.fd === '1') && /^>>?$|^>\|$/.test(later.op))) pitfall = true;
-        } else {
+        } else if (r.op === '>&' && fd === 1) {
+          // `>&file` and `1>&file` are `&>file`.
           set(1, r.dest);
           set(2, r.dest);
+        } else {
+          // `2>&$fd`: where the word leads (an error unless it gives a number: `2>&f` is an ambiguous redirect).
+          set(fd, r.dest);
         }
         break;
       case '&>': case '&>>':
@@ -61,7 +65,8 @@ export function simulateRedirects(redirs: Redirect[], lang: Lang): string | unde
         set(2, r.dest);
         break;
       case '<<': case '<<-':
-        set(fd, s('ヒアドキュメント', 'the here-document'));
+        // (Named by its delimiter, which tells several apart: `cat 3<<A 4<<B <&4`.)
+        set(fd, r.dest ? s(`ヒアドキュメント \`${r.dest}\``, `the here-document \`${r.dest}\``) : s('ヒアドキュメント', 'the here-document'));
         break;
       case '<<<':
         set(fd, s('ヒアストリング', 'the here-string'));
