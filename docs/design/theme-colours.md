@@ -46,7 +46,7 @@ The extension needs nothing from the remote machine. It reads the documents VS C
 
 VS Code for the Web is unchanged: there the manifest's kinds get `web` added after them, and the browser's host picks `workspace` before `web`, so in Codespaces in a browser the extension runs in the codespace, as before; on vscode.dev it runs in the browser. VS Code takes `extensionKind` as a list since 1.40; the minimum is 1.85.
 
-A user can also choose the side: `"remote.extensionKind": { "shun-fujioka.bash-explainer": ["ui"] }`.
+A user can still choose the side: `"remote.extensionKind": { "shun-fujioka.bash-explainer": ["workspace"] }` keeps it next to the files.
 
 ## Which roles are frequent
 
