@@ -183,7 +183,7 @@ export class ExplainService implements vscode.Disposable {
 
   /** Problems in the whole document for the Problems panel, with quick fixes for shell scripts. */
   issues(doc: vscode.TextDocument): DocumentIssue[] {
-    return diagnosticsFor(() => this.document(doc), () => this.shells(doc), this.lang, this.settings, 'vscode').shown;
+    return diagnosticsFor(() => this.document(doc), () => this.shells(doc), this.lang, this.settings, 'vscode', { yqFlavor: this.yqFlavorOf(doc) }).shown;
   }
 
   forget(doc: vscode.TextDocument): void {

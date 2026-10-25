@@ -4,6 +4,7 @@ import type { BashVersion } from '../bashversion';
 import { dialectIssues, type Shell } from '../dialect';
 import type { ReadingNode } from '../reading';
 import { descendants, type SyntaxTree } from '../syntax/tree';
+import { spanOf } from '../noteanchors';
 import { scriptTree } from './scripts';
 import { shellState } from '../semantics/state';
 import { statusModel } from '../semantics/status';
@@ -70,11 +71,22 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
     if (host) return { ...out, text: host, children: [] };
     return { ...out, children: n.children.filter((c) => !insidePlaceholder(c)).map(reading) };
   };
+  // A note names a placeholder as the extracted text has it (`${SRC}`): in the file it is what it stands for (`$(SRC)`),
+  // also in the problems made of the notes.
+  const shellLines = extracted.text.split('\n');
+  const rows = [...new Set([ex.line, ...(ex.anchors ?? []).map((a) => a.span.start.line)])];
+  const names = rows.flatMap((l) => extracted.inserted[l].map(([a, b]) => [shellLines[l].slice(a, b), original[l].slice(extracted.maps[l][a], extracted.maps[l][b])]))
+    .filter(([inShell, file]) => file && inShell !== file);
+  const inFile = (text: string) => names.reduce((t, [inShell, file]) => t.split(inShell).join(file), text);
+  const noteInFile = <N extends { text: string; body: string }>(n: N): N => ({ ...n, text: inFile(n.text), body: inFile(n.body) });
   return {
     ...ex,
     items: ex.items.map(token),
     examples: ex.examples.map((e) => (e.anchor ? { ...e, anchor: span(e.anchor) } : e)),
-    ...(ex.anchors ? { anchors: ex.anchors.map((a) => ({ ...a, span: span(a.span) })) } : {}),
+    notes: ex.notes.map(inFile),
+    noteInfo: ex.noteInfo.map(noteInFile),
+    ...(ex.facts ? { facts: ex.facts.map(noteInFile) } : {}),
+    ...(ex.anchors ? { anchors: ex.anchors.map((a) => ({ ...a, text: inFile(a.text), span: span(a.span) })) } : {}),
     ...(ex.reading ? { reading: reading(ex.reading) } : {}),
   };
 }
@@ -131,9 +143,17 @@ export function explainHostedLine(
   // (The lines bats rewrites where bash then reads a function: not one inside a here-document or a string.)
   const tests = region.tests && batsTests(tree, { ...region, tests: region.tests });
   if (tests) {
-    const facts = said([...batsFacts(tree, region, tests, line, lang), ...batsCommentFacts(tree, original[line], line, tests.includes(line), lang)], opts.pitfalls);
-    notes.push(...facts.map(noteData));
-    hostFacts.push(...facts);
+    // (On their nodes, as the analyzer's: the hover and the problems read them there. The facts of a comment on the
+    // line: on the comment, else on the function the line defines.)
+    const onRow = (types: string[]) => descendants(tree.root, types).find((d) => d.startPosition.row === line);
+    const commentNode = onRow(['comment']) ?? onRow(['function_definition']);
+    const found = [
+      ...batsFacts(tree, region, tests, line, lang),
+      ...batsCommentFacts(tree, original[line], line, tests.includes(line), lang).map((fact) => ({ fact, node: commentNode })),
+    ].filter((f) => said([f.fact], opts.pitfalls).length);
+    notes.push(...found.map((f) => noteData(f.fact)));
+    hostFacts.push(...found.map((f) => f.fact));
+    ex.anchors = [...(ex.anchors ?? []), ...found.filter((f) => f.node).map((f) => ({ text: f.fact.text, span: spanOf(f.node!), code: f.fact.code }))];
   }
   if (hostFacts.length) ex.facts = [...(ex.facts ?? []), ...hostFacts];
   ex.notes.unshift(...notes.map((n) => n.text));

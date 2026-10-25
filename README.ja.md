@@ -127,7 +127,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 
 クイックフィックスは、スクリプトのシェルがその書き方に対応していない場合で、かつ意味が変わらない場合だけ出します。例えば `[[ $f == *.txt ]]` はパターン一致なので出しません。書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。警告を消すには、その前の行（または同じ行のコードの後ろ）に `# bash-explainer disable=<コード>`、ファイル全体なら `# bash-explainer disable-file=<コード>` を書くか、`bashExplainer.diagnostics.ignore` にコードを指定します（`all` ですべて）。「問題」パネルへの表示自体は `bashExplainer.diagnostics.enabled` でオフにできます。
 
-解説で指摘するよくある間違いも、コード付きで「問題」パネルに出します。書いたとおりでは動かないものと、取り返しのつかない被害が出るもの（代入にならない `x = 1`、`DIR` が空のときの `rm -rf $DIR/*`、`rm $f`、`[-f x]`）は警告、値によってだけ問題になるもの（`for f in $(ls)`、`cat $f`、`-r` のない `read`）は情報です。`bashExplainer.diagnostics.pitfalls` で出さないようにできます。`--check` はこれも表示しますが、失敗にするのは `--strict` を付けたときだけです。
+解説で指摘する警告と注意は、すべてコード付きで「問題」パネルにも出します。書いたとおりでは動かないものと、取り返しのつかない被害が出るもの（代入にならない `x = 1`、`DIR` が空のときの `rm -rf $DIR/*`、`rm $f`、`[-f x]`、`]` のない `[`）は警告、値によってだけ問題になるものや失敗に気づけないもの（`for f in $(ls)`、`cat $f`、`-r` のない `read`、`local x=$(cmd)`）は情報です。ただの補足は問題にしません。`bashExplainer.diagnostics.pitfalls` で出さないようにできます。`--check` はこれも表示しますが、失敗にするのは `--strict` を付けたときだけです。
 
 ## VS Code で使う
 
@@ -231,7 +231,7 @@ Web 版のエディタでも同じカードを表示します（タッチ画面�
 | `bashExplainer.diagnostics.enabled` | `true` | 警告を「問題」パネルにも表示（クイックフィックス付き） |
 | `bashExplainer.diagnostics.ignore` | `[]` | 出さない警告のコード（「問題」パネルに表示されるコード。`dbracket`・`echoE`・`dockerPipefail` など） |
 | `bashExplainer.diagnostics.embedded` | `true` | 他のファイルの中のシェルの警告も出す |
-| `bashExplainer.diagnostics.pitfalls` | `true` | よくある間違いも「問題」パネルに出す（`x = 1`・`rm -rf $DIR/*`・`rm $f` は警告、`cat $f`・`read line` は情報） |
+| `bashExplainer.diagnostics.pitfalls` | `true` | 解説の警告と注意も「問題」パネルに出す（`x = 1`・`rm -rf $DIR/*`・`rm $f` は警告、`cat $f`・`read line` は情報） |
 | `bashExplainer.yq.flavor` | `auto` | `auto`・`mikefarah4`・`kislyuk`・`mikefarah3` |
 | **ファイル** | | |
 | `bashExplainer.embedded.files` | すべて | 中のシェルを解説するファイル: `dockerfile`・`makefile`・`yaml`・`packageJson`・`markdown`・`python`・`jenkinsfile`・`bats` |

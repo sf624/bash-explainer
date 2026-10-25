@@ -3,7 +3,7 @@ import { lookupCommand } from './dict/aliases';
 import { Lang } from './i18n';
 import { resolveName } from './semantics/names';
 import type { StateModel } from './semantics/state';
-import { descendants, field, fields } from './syntax/tree';
+import { childrenOnRows, descendants, field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 import { staticWordValue, unquoteWord } from './staticword';
@@ -157,7 +157,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
   };
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row >= from && n.startPosition.row <= to) check(n);
-    if (n.startPosition.row <= to && n.endPosition.row >= from) for (const c of n.namedChildren) visit(c);
+    if (n.startPosition.row <= to && n.endPosition.row >= from) for (const c of childrenOnRows(n.namedChildren, from, to)) visit(c);
   };
 
   const check = (n: SyntaxNode) => {

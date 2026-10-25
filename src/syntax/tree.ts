@@ -222,10 +222,39 @@ export function descendants(n: SyntaxNode, types: readonly string[], rows?: { fr
   const visit = (m: SyntaxNode): void => {
     if (rows && (m.endPosition.row < rows.from || m.startPosition.row > rows.to)) return;
     if (types.includes(m.type)) out.push(m);
-    for (const c of m.children) visit(c);
+    for (const c of rows ? childrenOnRows(m.children, rows.from, rows.to) : m.children) visit(c);
   };
   visit(n);
   return out;
+}
+
+/** For a long list of children: the last row any of them up to each one reaches (`childrenOnRows`). */
+const reaches = new WeakMap<readonly SyntaxNode[], number[]>();
+
+/**
+ * The children in `list` (a node's `children` or `namedChildren`) that may lie on rows `from` to `to`: from the first
+ * that reaches `from` (it or one before it ends there or later) to the last that starts by `to`. Children are in the
+ * order of their starts, so the statements of a long script are not each looked at for every line explained (the walks
+ * of one line: `descendants` with rows, the style checks, the word facts, the dialect).
+ */
+export function childrenOnRows(list: readonly SyntaxNode[], from: number, to: number): readonly SyntaxNode[] {
+  if (list.length < 16) return list;
+  let reach = reaches.get(list);
+  if (!reach) {
+    let max = -1;
+    reach = list.map((c) => (max = Math.max(max, c.endPosition.row)));
+    reaches.set(list, reach);
+  }
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (reach[mid] < from) lo = mid + 1;
+    else hi = mid;
+  }
+  let end = lo;
+  while (end < list.length && list[end].startPosition.row <= to) end++;
+  return list.slice(lo, end);
 }
 
 /** Does the word expand the variable (`$NAME`, `${NAME}`, `${NAME:-…}`, also inside `"…"` or `$( )`), as the tree reads it? */

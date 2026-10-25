@@ -10,7 +10,7 @@ Keep it current:
 
 ## Now
 
-- Every warning and caveat stated as a problem, with its level, its range and its code, on every surface ([design/note-levels.md](design/note-levels.md), "Notes as data"). Step 1, the notes as data with their level (`LineExplanation.noteInfo`), which the views read instead of the mark: in review. Step 2, the problems made from the notes of the explanations: next, stacked on it. Today only the pitfalls of src/pitfalls.ts and src/wordfacts.ts are problems.
+Nothing started: the first item of "Next" comes next.
 
 ## Next, in this order
 
@@ -41,6 +41,7 @@ Nothing.
 
 ## Done lately
 
+- Every warning and caveat the explanations say is a problem, with its level, its range and its code, on every surface (VS Code, the Language Server, the web page, `--check`, SARIF, the Action), also in the shell code of host files; a plain fact never is. The notes are data with their level (`LineExplanation.noteInfo`), which the views read instead of the mark (`noteLevel` and `splitNote` are gone) (#365, #366; [design/note-levels.md](design/note-levels.md), "Notes as data", "Notes as problems").
 - bats: the model per test and the hooks (#381), tags and `# @test` functions (#384), and the helpers of bats-support, bats-assert and bats-file as specs (#374). What [design/bats.md](design/bats.md) still lists as not done (the code outside the tests, the test names in the C locale) is small and waits for a user who needs it.
 - The example of a brace expansion shows the words as chips in a row (a list for a screen reader; code spans on one line in Markdown, the CLI and the hover), cut after 11 with the count, and what `echo` or `printf` prints with them; the examples of `printf` and of pipelines run the expanded words (#371).
 - Small gaps of the specs and the models (A3): `ps u1` reads the number after BSD letters as PIDs (or the value of the last letter, `ps t1`), `tar vf a.tar` is letters (`oldStyle.numbers`, `tar`'s `oldStyle` without `needs`); the word model applies brace expansion by shell, as `src/dialect.ts` says (none in dash, POSIX sh, ash, yash; no ranges in mksh), so `echo {a,b}` in a dash script is a plain word, with no example, and the redirection target reads the model (src/semantics/brace.ts; [design/semantics.md](design/semantics.md)).

@@ -8,7 +8,7 @@ import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
 import { partMeaning } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { field, isShebang, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
+import { childrenOnRows, field, isShebang, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a
@@ -74,7 +74,7 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
   const add = (f: Fact, node: SyntaxNode = at) => facts.push({ fact: f, node });
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row >= from && n.startPosition.row <= to) check((at = n));
-    if (n.startPosition.row <= to && n.endPosition.row >= from) for (const c of n.namedChildren) visit(c);
+    if (n.startPosition.row <= to && n.endPosition.row >= from) for (const c of childrenOnRows(n.namedChildren, from, to)) visit(c);
   };
 
   const check = (n: SyntaxNode) => {

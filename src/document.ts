@@ -6,14 +6,11 @@ import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
-import { type NoteLevel, severityOf } from './messages';
-import { pitfallFindings } from './pitfalls';
-import { shellState, type StateModel } from './semantics/state';
+import { severityOf } from './messages';
 import { type NestedScript, nestedScripts } from './semantics/nested';
-import { settingSpec } from './settings';
+import { explainOptions, settingSpec } from './settings';
 import type { Settings, Surface } from './settings';
-import { descendants, type Point, type SyntaxNode, type SyntaxTree } from './syntax/tree';
-import { wordFindings } from './wordfacts';
+import { descendants, type Point, type SyntaxTree } from './syntax/tree';
 
 // What the extension and the web page share: explaining a line and finding the problems of a
 // document, given its text and parse tree. Nothing here depends on VS Code.
@@ -26,7 +23,7 @@ export interface ShellDocument {
   tree: SyntaxTree;
 }
 
-/** `pitfall`: one of the pitfalls the explanations point out (`pitfallIssues`), not a construct the shell lacks. */
+/** `pitfall`: a warning or caveat the explanations say (`noteIssues`), not a construct the shell lacks. */
 export type DocumentIssue = DocIssue & { fix?: Fix; pitfall?: true };
 
 export interface Shells {
@@ -59,13 +56,13 @@ export function heredocAt(doc: ShellDocument, line: number): HeredocAt | undefin
 }
 
 /**
- * Problems in the whole document, with quick fixes for shell scripts, and (unless `pitfalls` is false) the pitfalls
- * of a shell script. Codes in `ignore`, and those turned off by `# bash-explainer disable=` comments in the file, are
- * left out.
+ * Problems in the whole document, with quick fixes for shell scripts, and (unless `pitfalls` is false) the warnings and
+ * caveats its explanations say (`noteIssues`). Codes in `ignore`, and those turned off by `# bash-explainer disable=`
+ * comments in the file, are left out.
  */
 export function documentIssues(doc: ShellDocument, lang: Lang, shells: Shells, ignore: readonly string[] = [], opts: { pitfalls?: boolean; bashVersion?: BashVersion } = {}): DocumentIssue[] {
   const base = allIssues(doc, lang, shells, opts.bashVersion);
-  const found = opts.pitfalls === false ? base : [...base, ...pitfallIssues(doc, lang, shells.forced ?? shells.detected, base)];
+  const found = opts.pitfalls === false ? base : [...base, ...noteIssues(doc, lang, shells, { bashVersion: opts.bashVersion }, base)];
   return unsuppressed(doc, found, ignore);
 }
 
@@ -76,47 +73,56 @@ function unsuppressed(doc: ShellDocument, issues: DocumentIssue[], ignore: reado
   return issues.filter((i) => !skip.has(i.code) && !suppressed(directives, i.startLine, i.code));
 }
 
+/** A note's code, and the code of another problem that says the same where both are (a Dockerfile `RUN` with `set -e` and a pipe). */
+const SAME_PROBLEM: Readonly<Record<string, string>> = { 'pipefail-missing': 'dockerPipefail' };
+
+/** The note problems of a document, by its tree, for the language, shells and options they were found with. */
+const noteIssueCache = new WeakMap<SyntaxTree, Map<string, DocumentIssue[]>>();
+
 /**
- * The pitfalls of a shell script that its explanations point out (src/pitfalls.ts, and the pitfalls of
- * src/wordfacts.ts), as problems: each with its code, on the node it is about, `pitfall: true`. One walk of the
- * tree, with the script's one model, and one of each string it runs as a script (`bash -c '…'`, `eval`, a trap's
- * action), with the string's model and shell, at its place in the document. None in a host file, none on a line
- * `others` (the other problems) says is not parsed, and none where one of them already says the same.
+ * The warnings and caveats the explanations of a document say, as problems (docs/design/note-levels.md, "Notes as
+ * problems"): every note of a line at the level `warning` or `info` (`LineExplanation.noteInfo`), with its code, on
+ * the range of each node it was found on (`LineExplanation.anchors`, cut to the line it starts on), `pitfall: true`.
+ * A plain fact is never one. The same note on the same node is one problem, whichever lines say it (a statement over
+ * several lines says its notes on each); one on two nodes is a problem on each. A note about no node is about its line:
+ * only a host file has such warnings (a CI step, a Dockerfile `RUN`), which `hostIssues` already gives. The notes of a
+ * string run as a script (`bash -c '…'`, `$( )`) are on its words, in the document. None on a line `others` (the
+ * other problems) says is not parsed, and none where one of them already says the same.
  */
-export function pitfallIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined, others: readonly DocumentIssue[] = []): DocumentIssue[] {
-  if (doc.extracted) return [];
-  const found: { code: string; start: Place; end: Place; text: string; level: NoteLevel }[] = [];
-  const scan = (tree: SyntaxTree, model: StateModel, sh: Shell | undefined, place: (n: SyntaxNode, end: boolean) => Place) => {
-    const last = tree.root.endPosition.row;
-    const findings: { code: string; node: SyntaxNode; text: string; level: NoteLevel }[] = [
-      ...pitfallFindings(tree.root, lang, 0, last, model, sh),
-      ...wordFindings(tree.root, lang, model, sh, 0, last).filter((f) => f.fact.kind === 'pitfall').map((f) => ({ code: f.fact.id, node: f.node, text: f.fact.text, level: f.fact.level })),
-    ];
-    for (const { code, node, text, level } of findings) found.push({ code, start: place(node, false), end: place(node, true), text, level });
-  };
-  const point = (p: Point): Place => ({ line: p.row, col: p.column });
-  scan(doc.tree, shellState(doc.tree, shell), shell, (n, end) => point(end ? n.endPosition : n.startPosition));
-  const starts = lineStarts(doc.tree.text);
-  for (const { script, source } of nestedScripts(doc.tree, shell)) {
-    const rows = lineStarts(script.tree.text);
-    const index = (p: Point) => rows[p.row] + p.column;
-    scan(script.tree, script.model, script.shell, (n, end) => placeOf(starts, source(index(end ? n.endPosition : n.startPosition), end)));
-  }
+export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts: ExplainOptions, others: readonly DocumentIssue[] = []): DocumentIssue[] {
+  // (Examples and idioms add no warning: the line is explained without them, and without its reading tree.)
+  const lean: ExplainOptions = { ...opts, examples: { enabled: false, disabled: [] }, idioms: false, reading: false };
+  const key = JSON.stringify([lang, shells.forced, shells.detected, lean, others.map((i) => [i.code, i.startLine, i.startCol, i.endCol, i.message])]);
+  let byKey = noteIssueCache.get(doc.tree);
+  if (!byKey) noteIssueCache.set(doc.tree, (byKey = new Map()));
+  const known = byKey.get(key);
+  if (known) return known;
+  const analyzer = new Analyzer(lang);
   // (zsh syntax that bash cannot read: the tree there is not the script's.)
   const unparsed = others.filter((i) => i.code === 'zshSyntax');
   const out: DocumentIssue[] = [];
-  for (const { code, start, end, text, level } of found) {
-    const { line } = start;
-    const issue: DocumentIssue = {
-      code, severity: severityOf(level), message: text, pitfall: true,
-      startLine: line, startCol: start.col, endLine: line, endCol: end.line === line ? end.col : doc.lines[line].length,
-    };
-    if (unparsed.some((i) => i.startLine <= line && line <= i.endLine)) continue;
-    // (Said already where it overlaps: the same problem.)
-    const overlaps = (i: DocumentIssue) => i.startLine === line && i.startCol < issue.endCol && issue.startCol < i.endCol;
-    if ([...others, ...out].some((i) => overlaps(i) && (i.code === code || i.message === text))) continue;
-    out.push(issue);
+  const seen = new Set<string>();
+  for (let line = 0; line < doc.lines.length; line++) {
+    const ex = explainDocumentLine(analyzer, doc, line, lang, shells, lean);
+    for (const n of ex.noteInfo) {
+      if (n.level === 'note') continue;
+      for (const { span } of ex.anchors?.filter((a) => a.text === n.text) ?? []) {
+        const at = span.start.line;
+        const issue: DocumentIssue = {
+          code: n.code!, severity: severityOf(n.level), message: n.text, pitfall: true,
+          startLine: at, startCol: span.start.character, endLine: at, endCol: span.end.line === at ? span.end.character : doc.lines[at].length,
+        };
+        const id = `${issue.code} ${at}:${issue.startCol}-${issue.endCol}`;
+        if (seen.has(id) || unparsed.some((i) => i.startLine <= at && at <= i.endLine)) continue;
+        seen.add(id);
+        // (Said already where it overlaps: the same problem.)
+        const overlaps = (i: DocumentIssue) => i.startLine === at && i.startCol < issue.endCol && issue.startCol < i.endCol;
+        if (others.some((i) => overlaps(i) && (i.code === issue.code || i.message === issue.message || SAME_PROBLEM[issue.code] === i.code))) continue;
+        out.push(issue);
+      }
+    }
   }
+  byKey.set(key, out);
   return out;
 }
 
@@ -133,15 +139,16 @@ function placeOf(starts: readonly number[], i: number): Place {
  * The problems of a document (`open` gives it, `shellsOf` its shells) under the settings: `shown` (none while `diagnostics.enabled` is off, where the
  * surface has it; none in the shell code of another file while `diagnostics.embedded` is off; without the
  * codes in `diagnostics.ignore`) and `all` (what the document has, whatever the settings say, found only when
- * asked for; the codes the file itself turns off are left out in both).
+ * asked for; the codes the file itself turns off are left out in both). The warnings and caveats of the explanations
+ * (`noteIssues`) are explained with the settings' options, and `explain` (the yq flavour a panel chose).
  */
-export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: (doc: ShellDocument) => Shells, lang: Lang, settings: Settings, surface: Surface): { readonly all: DocumentIssue[]; shown: DocumentIssue[] } {
+export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: (doc: ShellDocument) => Shells, lang: Lang, settings: Settings, surface: Surface, explain: ExplainOptions = {}): { readonly all: DocumentIssue[]; shown: DocumentIssue[] } {
   let doc: ShellDocument | undefined;
   let raw: DocumentIssue[] | undefined;
   let base: DocumentIssue[] | undefined;
   let found: DocumentIssue[] | undefined;
-  // (The document is opened, that is parsed, only when its problems are looked at; its pitfalls are looked for only
-  // when they are shown, or all the problems are asked for. They are weighed against the other problems before any is
+  // (The document is opened, that is parsed, only when its problems are looked at; its notes are looked at only when
+  // they are shown, or all the problems are asked for. They are weighed against the other problems before any is
   // turned off, as `documentIssues` does.)
   const rawIssues = () => (raw ??= (doc ??= open()) ? allIssues(doc, lang, shellsOf(doc), settings.bashVersion) : []);
   const without = () => {
@@ -151,23 +158,19 @@ export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: 
     }
     return base;
   };
-  const pitfallsOf = (d: ShellDocument) => {
-    const shells = shellsOf(d);
-    return unsuppressed(d, pitfallIssues(d, lang, shells.forced ?? shells.detected, rawIssues()), []);
+  // (`all` has the pitfalls whatever `notes.pitfalls` says; what is shown, only those the explanations say.)
+  const notesOf = (d: ShellDocument, pitfalls: boolean) => unsuppressed(d, noteIssues(d, lang, shellsOf(d), { ...explainOptions(settings), ...explain, pitfalls }, rawIssues()), []);
+  const withNotes = (pitfalls: boolean) => {
+    const list = without();
+    return doc ? [...list, ...notesOf(doc, pitfalls)] : list;
   };
-  const all = () => {
-    if (!found) {
-      const list = without();
-      found = doc ? [...list, ...pitfallsOf(doc)] : list;
-    }
-    return found;
-  };
+  const all = () => (found ??= withNotes(true));
   const disabled = settingSpec('diagnostics.enabled')!.surfaces.includes(surface) && !settings['diagnostics.enabled'];
-  const pitfalls = settings['diagnostics.pitfalls'] && settings['notes.pitfalls'];
   const ignore = new Set(settings['diagnostics.ignore']);
   const shown = () => {
     if (disabled) return [];
-    const list = pitfalls ? all() : without();
+    // (With `notes.pitfalls` off the explanations leave out their pitfalls, so the problems do too, but not their failures.)
+    const list = !settings['diagnostics.pitfalls'] ? without() : settings['notes.pitfalls'] ? all() : withNotes(false);
     return doc?.extracted !== undefined && !settings['diagnostics.embedded'] ? [] : list.filter((i) => !ignore.has(i.code));
   };
   return { get all() { return all(); }, shown: shown() };

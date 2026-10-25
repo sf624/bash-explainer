@@ -84,6 +84,26 @@ describe('Bash Explainer in VS Code', function () {
     assert.strictEqual(doc.lineAt(1).text, 'if [ -f "$1" ]; then echo yes; fi');
   });
 
+  it('lists every warning and caveat of the explanations as a problem, with its level, range and code, and no plain fact', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'shellscript', content: '#!/bin/bash\nf() {\n  local x=$(false)\n}\n[ -f a\nexit 300\n' });
+    await open(doc);
+    const mine = (d: vscode.Diagnostic[]) => d.filter((x) => x.source === 'Bash Explainer');
+    const diagnostics = await until('the problems', () => mine(vscode.languages.getDiagnostics(doc.uri)), (d) => d.length >= 2);
+    const at = (x: vscode.Diagnostic) => [x.code, x.severity, x.range.start.line, x.range.start.character, x.range.end.line, x.range.end.character];
+    assert.deepStrictEqual(diagnostics.map(at), [
+      ['declaration-masks-status', vscode.DiagnosticSeverity.Information, 2, 2, 2, 18],
+      ['bracket-missing-close', vscode.DiagnosticSeverity.Warning, 4, 0, 4, 6],
+    ]);
+    // `diagnostics.ignore` leaves one out.
+    await config().update('diagnostics.ignore', ['declaration-masks-status'], vscode.ConfigurationTarget.Global);
+    try {
+      await until('one problem left', () => mine(vscode.languages.getDiagnostics(doc.uri)), (d) => d.length === 1 && d[0].code === 'bracket-missing-close');
+    } finally {
+      await config().update('diagnostics.ignore', undefined, vscode.ConfigurationTarget.Global);
+    }
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  });
+
   it('offers the quick fix in a language added to bashExplainer.languages', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'plaintext', content: '#!/bin/sh\nif [[ -f "$1" ]]; then echo yes; fi\n' });
     await open(doc);

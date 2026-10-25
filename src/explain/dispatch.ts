@@ -9,7 +9,7 @@ import type { Token } from '../analyzer-types';
 import { explainExpansion } from '../expansion-tokens';
 import { nodeSections } from '../refs';
 import { explainCommandSubstitution, explainProcessSubstitution } from '../substitution-tokens';
-import { assignmentsOnly, fields, type SyntaxNode } from '../syntax/tree';
+import { assignmentsOnly, childrenOnRows, fields, type SyntaxNode } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import { assignment, assignments } from './assignments';
 import { command, timeStatement } from './commands';
@@ -109,7 +109,9 @@ export function flatten(cx: Explainer, n: SyntaxNode): Token[] {
   // The patterns of a case branch go on after a `\` at the end of a line (`a|\` then `b)`): the later lines have
   // patterns, `|` and `)` of the branch, which are not words, pipes and the end of a subshell.
   const patterns = n.type === 'case_item' ? fields(n, 'value') : [];
-  for (const c of n.children) {
+  // (Only the children that may lie on the line: the statements of a long script are not each looked at. A line is
+  // flattened only while there is one: the root of `explainLine`, and a block the line is inside, `Explainer.sub`.)
+  for (const c of childrenOnRows(n.children, cx.line!, cx.line!)) {
     if (!cx.onLine(c)) continue;
     if (has(patterns, c)) out.push(casePattern(cx, c));
     else if (patterns.length && (c.type === '|' || c.type === ')' || c.type === '(')) continue;

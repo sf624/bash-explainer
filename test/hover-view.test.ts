@@ -423,6 +423,13 @@ describe('the hover Markdown', () => {
     assert.strictEqual(notes(part(rm, dir, [])).length, 2);
     assert.deepStrictEqual(notes(part(rm, dir, both)), []);
     assert.match(more(part(rm, dir, both))[0], /1 more note on this line/);
+    // A caveat of the catalog that the analyzer says (`declaration-masks-status`), a problem too since the notes are problems.
+    const loc = open('f() { local x=$(false); }');
+    const kw = loc.lines[0].indexOf('local');
+    const masks = problemsAt(loc, 0, kw);
+    assert.deepStrictEqual(masks.map((p) => p.code), ['declaration-masks-status']);
+    assert.strictEqual(notes(part(loc, kw, [])).length, 1);
+    assert.deepStrictEqual(notes(part(loc, kw, masks)), []);
     // A dialect issue too.
     const sh = open('#!/bin/sh\n[[ -f x ]]');
     const shx = { ...input(sh, 1), ex: new Analyzer('en').explainLine(sh.tree, 1, 'sh') };

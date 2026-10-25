@@ -229,6 +229,24 @@ describe('the command-line tool', function () {
     assert.deepStrictEqual(order(['--check', '--strict']), ['Bash Explainer (pitfall)%3A assignment-with-spaces', 'Bash Explainer%3A dbracket']);
   });
 
+  it('reports the other warnings and caveats of the explanations, with their codes and ranges, and no plain fact', () => {
+    const file = path.join(dir, 'notes.sh');
+    fs.writeFileSync(file, '#!/bin/bash\nf() {\n  local x=$(false)\n}\n[ -f a\nexit 300\n');
+    const r = run(['--check', '--no-color', file]);
+    // (Warnings of the explanations fail the check only with --strict, as the pitfalls do.)
+    assert.strictEqual(r.code, 0, r.out);
+    assert.deepStrictEqual(r.out.trim().split('\n').map((l) => /:(\d+:\d+): (\w+): .* \[([\w-]+)\]$/.exec(l)!.slice(1).join(' ')), ['3:3 info declaration-masks-status', '5:1 warning bracket-missing-close']);
+    assert.strictEqual(run(['--check', '--strict', file]).code, 1);
+    const json = JSON.parse(run(['--check', '--format', 'json', file]).out);
+    assert.deepStrictEqual(json.map((x: { code: string; line: number; column: number; endColumn: number; severity: string }) => [x.code, x.severity, x.line, x.column, x.endColumn]),
+      [['declaration-masks-status', 'info', 3, 3, 19], ['bracket-missing-close', 'warning', 5, 1, 7]]);
+    const sarif = JSON.parse(run(['--check', '--format', 'sarif', file]).out);
+    assert.deepStrictEqual(sarif.runs[0].results.map((x: { ruleId: string; level: string }) => [x.ruleId, x.level]), [['declaration-masks-status', 'note'], ['bracket-missing-close', 'warning']]);
+    const gh = run(['--check', '--format', 'github', '--strict', file]).out.trim().split('\n');
+    assert.deepStrictEqual(gh.map((l) => /^::(\w+) .*line=(\d+),.*title=([^:]*)::/.exec(l)!.slice(1).join(' ')), ['warning 5 Bash Explainer (pitfall)%3A bracket-missing-close', 'notice 3 Bash Explainer (pitfall)%3A declaration-masks-status']);
+    assert.strictEqual(run(['--check', '--set', 'diagnostics.ignore=["declaration-masks-status","bracket-missing-close"]', file]).out, '');
+  });
+
   it('takes the files after -- as files', () => {
     assert.strictEqual(run(['--check', '--', fixture('sample.sh')]).code, 0);
   });

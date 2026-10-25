@@ -46,12 +46,13 @@ export function batsTests(tree: SyntaxTree, region: Pick<ShellRegion, 'commands'
 
 /**
  * The facts of `line` of a bats file whose tests start on the lines `tests` (in the extracted text, where they are
- * functions); `region` gives bats' functions and how bats runs the file, as the analyzer reads them. The caller
- * filters them by the `notes.pitfalls` setting (`said`).
+ * functions), each with the node it is about (the problems are on it); `region` gives bats' functions and how bats
+ * runs the file, as the analyzer reads them. The caller filters them by the `notes.pitfalls` setting (`said`).
  */
-export function batsFacts(tree: SyntaxTree, region: Pick<ShellRegion, 'commands' | 'run'>, tests: readonly number[], line: number, lang: Lang): Fact[] {
-  const out: Fact[] = [];
-  if (tests.includes(line)) out.push(fact(lang, 'bats-test'));
+export function batsFacts(tree: SyntaxTree, region: Pick<ShellRegion, 'commands' | 'run'>, tests: readonly number[], line: number, lang: Lang): { fact: Fact; node: SyntaxNode }[] {
+  const out: { fact: Fact; node: SyntaxNode }[] = [];
+  const def0 = tests.includes(line) && descendants(tree.root, ['function_definition']).find((d) => d.startPosition.row === line);
+  if (def0) out.push({ fact: fact(lang, 'bats-test'), node: def0 });
   // (The model the analyzer reads for a bats file, which reads bats' functions by their specs.)
   const state = shellState(tree, undefined, { host: region.commands, run: region.run });
   const status = statusModel(state);
@@ -59,10 +60,11 @@ export function batsFacts(tree: SyntaxTree, region: Pick<ShellRegion, 'commands'
   for (const [def, call] of state.hostCalls) {
     if (call.role === 'test' || def.startPosition.row !== line) continue;
     const when = call.process === 'test' ? call.role : call.role === 'before' ? 'file-before' : 'file-after';
-    out.push(fact(lang, 'bats-hook', { name: field(def, 'name')!.text, when }));
+    out.push({ fact: fact(lang, 'bats-hook', { name: field(def, 'name')!.text, when }), node: def });
   }
   // (bats calls `setup_suite` only from setup_suite.bash: of a test file, it warns.)
-  if (descendants(tree.root, ['function_definition']).some((d) => d.startPosition.row === line && field(d, 'name')!.text === 'setup_suite')) out.push(fact(lang, 'bats-setup-suite-in-test-file'));
+  const suite = descendants(tree.root, ['function_definition']).find((d) => d.startPosition.row === line && field(d, 'name')!.text === 'setup_suite');
+  if (suite) out.push({ fact: fact(lang, 'bats-setup-suite-in-test-file'), node: suite });
   // `! cmd` in a test, not its last command: bash ignores `set -e` after `!`, so it fails nothing.
   for (const def of descendants(tree.root, ['function_definition'])) {
     if (!tests.includes(def.startPosition.row)) continue;
@@ -76,7 +78,7 @@ export function batsFacts(tree: SyntaxTree, region: Pick<ShellRegion, 'commands'
       // (`run !` runs one command: a pipeline needs bats_pipe, a group neither, and assignments alone are no command to run.)
       const inner = s.namedChildren.find((c) => STATEMENTS.has(c.type))!;
       const form = inner.type === 'command' && !assignmentsOnly(inner) ? 'command' : inner.type === 'pipeline' ? 'pipeline' : 'other';
-      out.push(fact(lang, 'bats-negation-ignored', { cmd: shorten(inner.text), form }));
+      out.push({ fact: fact(lang, 'bats-negation-ignored', { cmd: shorten(inner.text), form }), node: s });
     }
   }
   // `run cmd | …`: the pipe gets run's output, which is none, and run's variables are set in a subshell; `… | run
@@ -91,8 +93,8 @@ export function batsFacts(tree: SyntaxTree, region: Pick<ShellRegion, 'commands'
       const words = runCommand(cmd);
       if (!words.length) return;
       const text = shorten(words.map((w) => w.text).join(' '));
-      if (k === 0) out.push(fact(lang, 'bats-run-in-pipeline', { cmd: text }));
-      else if (processOf(state.env(cmd)).kind === 'subshell') out.push(fact(lang, 'bats-run-in-pipeline-stage', { cmd: text }));
+      if (k === 0) out.push({ fact: fact(lang, 'bats-run-in-pipeline', { cmd: text }), node: p });
+      else if (processOf(state.env(cmd)).kind === 'subshell') out.push({ fact: fact(lang, 'bats-run-in-pipeline-stage', { cmd: text }), node: cmd });
     });
   }
   return out;

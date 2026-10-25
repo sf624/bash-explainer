@@ -64,4 +64,37 @@ describe('the web page: the levels of the notes', function () {
       await ctx.close();
     });
   }
+
+  it('lists every warning and caveat of the explanations as a problem, on its part, and says it once in the hover', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    // A caveat of the catalog, a failure, and a plain fact (`exit 300`), none of them a problem before.
+    await page.keyboard.insertText('#!/bin/bash\nf() {\n  local x=$(false)\n}\n[ -f a\nexit 300');
+    const rows = await until('the problems', () => page.locator('#problem-list li').evaluateAll((els) => els.map((e) => [...e.querySelectorAll('.icon, .where, .code')].map((x) => x.textContent))), (r) => r.length === 2);
+    assert.deepStrictEqual(rows, [['ⓘ', 'Ln 3', 'declaration-masks-status'], ['⚠', 'Ln 5', 'bracket-missing-close']]);
+    // The squiggles cover the parts the notes are about.
+    const ranges = await page.evaluate(`(['info', 'warning']).map((level) => [...document.querySelectorAll('.cm-lintRange-' + level)].map((e) => e.textContent).join(''))`);
+    assert.deepStrictEqual(ranges, ['local x=$(false)', '[ -f a']);
+    // The hover on `local`: the problem in the lint's section, and not again in the card.
+    const p = await page.evaluate(`(() => {
+      const el = document.querySelectorAll('.cm-line')[2];
+      const r = document.createRange();
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode() && !walker.currentNode.data.includes('local'));
+      const at = walker.currentNode.data.indexOf('local');
+      r.setStart(walker.currentNode, at);
+      r.setEnd(walker.currentNode, at + 1);
+      const b = r.getBoundingClientRect();
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+    })()`) as { x: number; y: number };
+    await page.mouse.move(p.x, p.y);
+    const box = page.locator('.cm-tooltip-hover');
+    await until('the problem and the card', () => box.locator('> *').count(), (n) => n === 2);
+    const all = await box.innerText();
+    assert.strictEqual(all.split('hides a failure inside').length - 1, 1, all);
+    await ctx.close();
+  });
 });
