@@ -136,7 +136,8 @@ export function rich(text: string): Node[] {
   return text.split(/(`[^`]*`|\*\*[^*]*\*\*|#bashExplainer\.[\w.]+#|\[[^\]]*\]\([^)]*\))/).filter(Boolean).map((part) => {
     const key = /^`?#bashExplainer\.([\w.]+)#`?$/.exec(part)?.[1];
     if (key) return setting(key);
-    if (part.startsWith('`')) return el('code', { textContent: part.slice(1, -1) });
+    // (A setting of VS Code's own, `#editor.inlayHints.enabled#`, is its name.)
+    if (part.startsWith('`')) return el('code', { textContent: part.slice(1, -1).replace(/^#([\w.]+)#$/, '$1') });
     if (part.startsWith('**')) return el('strong', { textContent: part.slice(2, -2) });
     const link = /^\[([^\]]*)\]\(([^)]*)\)$/.exec(part);
     if (link) return /^https?:/.test(link[2]) ? el('a', { href: link[2], textContent: link[1], target: '_blank', rel: 'noopener' }) : document.createTextNode(link[1]);

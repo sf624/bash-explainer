@@ -19,6 +19,8 @@ A command name gets an inlay hint after it where it does not run what a reader w
 
 A name the reader asked for gets none: `builtin cd`, `command ls`, `\ls`, `sudo echo`, `xargs echo`. The hint's tooltip says what runs, who runs it, what else the name is and what it does; a click opens the line in the panel. `bashExplainer.hints.names` turns the hints off, and VS Code's `editor.inlayHints.enabled` all inlay hints. The Language Server answers `textDocument/inlayHint` with the same hints (and asks the editor to refresh them when the settings change, if it can).
 
+The web page's editor shows the same hints, muted after the name, on the lines in view: hover one for its tooltip, click it to explain its line in the panel. When long lines wrap, a long hint wraps with its line. `bashExplainer.hints.names` is in the page's settings too.
+
 ### Pitfalls as problems
 
 The pitfalls that the explanation of a line points out are now problems too. Each has a code, shown in the Problems panel and in the output of `--check`, and its range is the part of the line it is about (the word `$DIR/*`, the `$(ls)` of a `for`, the whole `x = 1`).
@@ -232,6 +234,7 @@ A note says how much it matters, with a mark, a word and a colour:
 
 - The panel shows the level's icon (VS Code's warning and info icons) and its word in bold, in the editor's warning or info colour (ours where the theme's is too light as text), and colours the note's left border. A plain fact keeps the grey border and a muted icon. The panel's copy of the line underlines the line's problems as the editor does.
 - The hover shows the same icon and word; the command line colours the mark and the word (yellow, blue); Copy as Markdown keeps the mark and puts the word in bold (`> ⚠ **Pitfall:** …`).
+- The web page's editor draws a warning's squiggle in yellow and an information's in blue, the colours of the panel and of the Problems list, in the light and the dark theme. Its gutter shows the panel's icons in those colours (a triangle, a circled i), and the tooltip of a problem starts with the same icon, named "Warning" or "Information" for a screen reader. Before, an information's squiggle was grey, and the gutter showed CodeMirror's own marks: a yellow triangle and a purple square.
 - Every view lists the warnings first, then the information, then the plain facts.
 - A construct the target shell lacks (`[[ ]]` in sh) stays a warning, with no word: its text says it fails, and where. A note on what works differently started with ℹ before; it is ⓘ Portability now.
 - The notes that say a command fails when it runs are warnings now: `[` without `]`, `[ -f x]`, a `[` test it cannot read, `unset` of a read-only variable, `unset -f -v`.

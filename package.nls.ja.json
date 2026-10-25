@@ -18,7 +18,7 @@
   "config.hover.enabled": "マウスを乗せた部分（単語・オプション・演算子）の解説をホバーで表示する。行全体を解説する **Bash Explainer: カーソル行の bash を解説**（`Ctrl+K Ctrl+E`）は、オフでも使える。",
   "config.inline.enabled": "効果はない（インライン要約は削除された）。",
   "config.inline.deprecated": "インライン要約は削除され、この設定には効果がない。単語にマウスを乗せるとその解説、`Ctrl+K Ctrl+E` で行全体の解説を表示する。名前どおりのものを実行しないコマンド名には `#bashExplainer.hints.names#` のヒントが付く。",
-  "config.hints.names": "名前どおりのものを実行しないコマンド名の後ろにヒントを表示する: ビルトインやプログラムを隠す関数やエイリアス（`cd() { … }`）、`enable -n` で無効にしたビルトイン、bash が展開しないエイリアス、`sudo cd`（そのプログラムはない）、何も実行されない名前。マウスを乗せると詳しい説明、クリックでパネルを開く。`#editor.inlayHints.enabled#` ですべてのインレイヒントをオン・オフできる。",
+  "config.hints.names": "名前どおりのものを実行しないコマンド名の後ろにヒントを表示する: ビルトインやプログラムを隠す関数やエイリアス（`cd() { … }`）、`enable -n` で無効にしたビルトイン、bash が展開しないエイリアス、`sudo cd`（そのプログラムはない）、何も実行されない名前。マウスを乗せると詳しい説明、クリックでパネルを開く。VS Code では `#editor.inlayHints.enabled#` ですべてのインレイヒントをオン・オフできる。",
   "config.highlight.enabled": "解説と同じ構文木とモデルからシェルのコードを色分けする（セマンティックトークン）。エディタ自身の色分けの上に重ねます。ヒアドキュメントは bash と同じ所で終わり、コマンド・組み込みコマンド・エイリアス・スクリプト内の関数・オプション・グロブ・算術式に、その場所で bash が読むとおりの色が付きます。読み取り専用の変数は定数の色です。CI の YAML・Makefile・package.json・Markdown・Jenkinsfile・bats ファイルの中のシェルのコードも対象です（Python ファイルと Dockerfile は、それぞれの言語サーバーが色分けするので対象外）。ファイルの種類ごとにオフにするには、その言語に設定します: `\"[makefile]\": { \"bashExplainer.highlight.enabled\": false }`。セマンティックハイライトに対応したテーマが必要です（ほとんどのテーマが対応）。",
   "semanticTokenModifiers.exported": "シェルが実行するコマンドに渡す（エクスポートした）変数。",
   "semanticTokenModifiers.unquoted": "コマンドの後ろのクォートしていない単語。オプションに見えるが、コマンドがデータとして読むもの（`grep -e -v` の `-v`）。",

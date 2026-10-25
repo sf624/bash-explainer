@@ -5,7 +5,7 @@ import { $ } from './dom';
 import { TEXT } from './text';
 
 /** Text with its `backtick` spans as <code> nodes, as the panel shows them (DOM nodes, never HTML). */
-function withCode(text: string): Node[] {
+export function withCode(text: string): Node[] {
   return text.split(/(`[^`]+`)/).filter(Boolean).map((part) => {
     if (!(part.startsWith('`') && part.endsWith('`') && part.length > 1)) return document.createTextNode(part);
     return Object.assign(document.createElement('code'), { textContent: part.slice(1, -1) });

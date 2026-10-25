@@ -51,6 +51,9 @@ export const TEXT = {
     github: 'GitHub repository',
     resize: 'Resize the script and the explanation',
     resizeProblems: 'Resize the Problems list',
+    /** The levels of the problems, for a screen reader (the panel's own words: src/ui/panelView.ts). */
+    levels: { warning: 'Warning', info: 'Information' },
+    hintClick: 'Click to explain this line in the panel.',
   },
   ja: {
     tagline: 'シェルスクリプトを1行ずつ解説します。知りたい行にカーソルを置いてください。',
@@ -101,5 +104,7 @@ export const TEXT = {
     github: 'GitHub リポジトリ',
     resize: 'スクリプトと解説の大きさを変える',
     resizeProblems: '問題の一覧の高さを変える',
+    levels: { warning: '警告', info: '情報' },
+    hintClick: 'クリックすると、この行の解説をパネルに表示します。',
   },
 };

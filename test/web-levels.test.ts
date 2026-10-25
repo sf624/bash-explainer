@@ -40,6 +40,27 @@ describe('the web page: the levels of the notes', function () {
       // The Problems list: ⚠ and ⓘ, in the levels' colours.
       const rows = await until('the problems', () => page.locator('#problem-list .icon').evaluateAll((els) => els.map((e) => [e.textContent, e.ownerDocument.defaultView!.getComputedStyle(e).color])), (r) => r.length === 2);
       assert.deepStrictEqual(rows, [['ⓘ', rgb(info)], ['⚠', rgb(warning)]]);
+      // The editor: a wavy squiggle in the level's colour, and in the gutter the panel's icon (the Codicon of
+      // media/icons.js, as a mask) in that colour. (A line's marker is of its worst problem: a line of information.)
+      await page.keyboard.press('Control+End');
+      await page.keyboard.insertText('\nread other');
+      await until('the information marker', () => page.locator('.cm-lint-marker-info').count(), (n) => n === 1);
+      const marks = await page.evaluate(`(['warning', 'info']).map((level) => {
+        const range = getComputedStyle(document.querySelector('.cm-lintRange-' + level));
+        const marker = getComputedStyle(document.querySelector('.cm-lint-marker-' + level));
+        const mask = marker.maskImage || marker.webkitMaskImage;
+        const icon = BashExplainerIcons.ICONS[level][0];
+        return [level, range.textDecorationLine, range.textDecorationStyle, range.textDecorationColor, range.backgroundImage,
+          marker.backgroundColor, mask.includes(encodeURIComponent(icon.slice(0, 40)))];
+      })`) as unknown[][];
+      assert.deepStrictEqual(marks, [
+        ['warning', 'underline', 'wavy', rgb(warning), 'none', rgb(warning), true],
+        ['info', 'underline', 'wavy', rgb(info), 'none', rgb(info), true],
+      ]);
+      // The gutter's tooltip starts each problem with that icon, named for a screen reader.
+      await page.locator('.cm-lint-marker-info').hover();
+      const icons = await until('the tooltip', () => page.locator('.cm-tooltip-lint svg.cm-bx-level').evaluateAll((els) => els.map((e) => [e.getAttribute('data-icon'), e.getAttribute('role'), e.getAttribute('aria-label'), e.ownerDocument.defaultView!.getComputedStyle(e).fill])), (r) => r.length > 0);
+      assert.deepStrictEqual(icons, [['info', 'img', 'Information', rgb(info)]]);
       await ctx.close();
     });
   }
