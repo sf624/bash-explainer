@@ -1,6 +1,9 @@
+import { pictureList, visible } from './ctlchars';
 import type { Lang, Text } from './i18n';
+import { codeSpan } from './label';
 import type { NameFacts, NameKind } from './semantics/names';
 import type { ShebangRefusal } from './semantics/state';
+import type { ExpansionValue } from './semantics/values';
 
 // The message catalog: the notes and pitfalls that render a fact of the semantic models (src/semantics/: the shell
 // state, where code runs, words, names, status), each with a stable id, its texts in ja and en, and the sections of
@@ -537,4 +540,61 @@ export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
     short: ja ? `（${k.word.ja}${by ? `。${by}` : ''}）` : ` (${k.word.en}${by ? `, ${by}` : ''})`,
     spoken: [k.word[lang], ...(by ? [by] : [])].join(ja ? '、' : ', ').replace(/`/g, ''),
   };
+}
+
+/**
+ * What the outputs say of the value of an expansion where it runs (`Token.value`; docs/design/expansion-values.md):
+ * the model's value, from the script's own assignments, not bash's output. The panel draws `value` and the words of
+ * `split` as chips between the texts; the other outputs show `text`.
+ */
+export interface ValueSaid {
+  /** Before the value: "Value here, from the script:". */
+  lead: string;
+  /** The value as shown (control characters as pictures, cut when long); absent when it is empty (then `empty`). */
+  value?: string;
+  /** "an empty string", in place of `value`. */
+  empty?: string;
+  /** What word splitting makes of it, when that is not the value itself: the text before the words, and the words as shown. */
+  split?: { said: string; words: string[] };
+  /** After the rest: a glob in the value, what the control characters' pictures are (inline Markdown, with no value in it). */
+  tail?: string;
+  /** The whole line in inline Markdown, for the outputs with no chips (the hover, Markdown, the CLI). */
+  text: string;
+}
+
+/** How long a value, or a word of it, is shown; a longer one is cut. */
+const VALUE_SHOWN = 80;
+/** How many words of a split value are shown. */
+const WORDS_SHOWN = 12;
+
+/** The texts of the value of an expansion, in `lang`. */
+export function valueSaid(lang: Lang, v: ExpansionValue): ValueSaid {
+  const ja = lang === 'ja';
+  // (A newline is shown as `␊`, as in the notes on quote removal, so that it is not read as the two characters `\n`.)
+  const show = (t: string): string => {
+    const seen = visible(t).replace(/\n/g, '␊');
+    return seen.length > VALUE_SHOWN ? `${seen.slice(0, VALUE_SHOWN - 1)}…` : seen;
+  };
+  const lead = ja ? 'スクリプトから分かるここでの値:' : 'Value here, from the script:';
+  const value = v.text === '' ? undefined : show(v.text);
+  const words = v.words;
+  let split: ValueSaid['split'];
+  if (words && !(words.length === 1 && words[0] === v.text)) {
+    const n = words.length;
+    const more = n > WORDS_SHOWN ? (ja ? `（最初の ${WORDS_SHOWN} 語）` : ` (the first ${WORDS_SHOWN})`) : '';
+    split = n === 0
+      ? { said: ja ? '。クォートしていないので単語分割され、単語は残らない' : '; unquoted, it is split and gives no word', words: [] }
+      : { said: ja ? `。クォートしていないので単語分割され、${n} 語になる${more}:` : `; unquoted, it is split into ${n === 1 ? '1 word' : `${n} words`}${more}:`, words: words.slice(0, WORDS_SHOWN).map(show) };
+  }
+  const tails: string[] = [];
+  if (v.glob) {
+    tails.push(ja ? '。クォートしていないのでパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
+      : '. Unquoted, it is a pattern: bash matches it against file names when the line runs (not done here)');
+  }
+  const pictures = pictureList([value ?? '', ...(split?.words ?? [])], (j, e) => (ja ? j : e));
+  if (pictures) tails.push(ja ? `（制御文字は記号で表している: ${pictures}）` : ` (control characters are shown as symbols: ${pictures})`);
+  const tail = tails.length ? tails.join('') : undefined;
+  const empty = ja ? '空文字列' : 'an empty string';
+  const text = `${lead} ${value !== undefined ? codeSpan(value) : empty}${split ? split.said + split.words.map((w) => ` ${codeSpan(w)}`).join('') : ''}${tail ?? ''}`;
+  return { lead, ...(value !== undefined ? { value } : { empty }), ...(split ? { split } : {}), ...(tail ? { tail } : {}), text };
 }

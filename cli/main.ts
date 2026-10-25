@@ -276,6 +276,8 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
       ? (color ? `\x1b[2;3m${p.text}\x1b[0m` : `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}`)
       : paint(ANSI[t.kind], p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
     out.push(`${'  '.repeat(depth + 1)}${label}  ${explained(t).replace(/`/g, '')}${refs(t.refs)}`);
+    // (The value of an expansion where it runs, on a line of its own: its backticks are kept, as they mark where each word starts and ends.)
+    if (t.value) out.push(`${'  '.repeat(depth + 2)}${paint('90', '=')} ${t.value.said.text}`);
     for (const c of t.children) walk(c, depth + 1);
   };
   for (const t of ex.items) walk(t, 0);

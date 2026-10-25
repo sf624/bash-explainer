@@ -17,6 +17,9 @@ import { STATEMENTS } from './env';
 import { resolveName } from './names';
 import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 import { changedByBash, setAtStart } from './vars';
+import { ARITH, underscoreValue, unreliableNames } from './wordsites';
+
+export { underscoreValue, unreliableNames };
 
 /** Where a word is: its context decides which expansions it undergoes. */
 export type WordContext =
@@ -151,7 +154,6 @@ export interface PartMeaning {
 // Finding the word and its context.
 
 const IN_WORD = new Set(['concatenation', 'string', 'translated_string', 'heredoc_body']);
-const ARITH = new Set(['arithmetic_expansion', 'arithmetic_command', 'c_style_for_statement']);
 const EXPRESSIONS = new Set(['binary_expression', 'unary_expression', 'parenthesized_expression', 'ternary_expression', 'postfix_expression']);
 const PATTERN_OPS = new Set(['=', '==', '!=']);
 
@@ -175,8 +177,9 @@ function declarationContext(c: SyntaxNode, w: SyntaxNode): WordContext | undefin
 function contextOf(w: SyntaxNode): WordContext | undefined {
   const p = w.parent;
   if (!p) return undefined;
-  // (The nearest of these decides: `$( (( $x )) )` is arithmetic, `$(( $(echo $x) ))` is not.)
-  if (ARITH.has(ancestor(w, (a) => ARITH.has(a.type) || a.type === 'command_substitution' || a.type === 'expansion')?.type ?? '')) return 'arith';
+  // (The nearest of these decides: `$( (( $x )) )` is arithmetic, `$(( $(echo $x) ))` is not, nor the body of
+  // `for (( ; ; ))`, which holds commands.)
+  if (ARITH.has(ancestor(w, (a) => ARITH.has(a.type) || ['command_substitution', 'expansion', 'do_group', 'compound_statement'].includes(a.type))?.type ?? '')) return 'arith';
   switch (p.type) {
     case 'command_name': return 'command-name';
     case 'command': return w.field !== 'argument' ? undefined : declarationContext(p, w) ?? 'argument';
@@ -515,15 +518,19 @@ export interface ValueSource {
   arith?(n: SyntaxNode): bigint | undefined;
 }
 
-/** The values of the model where the word runs, with the environment `env` for what the script does not set. */
+/**
+ * The values of the model where the word runs, with the environment `env` for what the script does not set.
+ * `trusted`: only the values of the variables the model trusts (src/semantics/trust.ts), with no environment: the
+ * values Meaning shows (`trustedPart`, for src/semantics/values.ts).
+ */
 class ModelValues implements ValueSource {
   constructor(private readonly w: WordMeaning, private readonly model: StateModel, private readonly env: WordEnv | undefined,
-    private readonly expanding: ReadonlySet<SyntaxNode>) {}
+    private readonly expanding: ReadonlySet<SyntaxNode>, private readonly trusted = false) {}
 
   variable(name: string, node: SyntaxNode): string | null | undefined {
-    if (name === '_') return underscoreValue(node, this.model);
+    if (name === '_') return this.trusted ? undefined : underscoreValue(node, this.model);
     // (Bash changes some values itself: `RANDOM`, `SECONDS`, a readonly `UID`; src/semantics/vars.ts.)
-    if (!/^[A-Za-z_]\w*$/.test(name) || changedByBash(name)) return undefined;
+    if (!/^[A-Za-z_]\w*$/.test(name) || changedByBash(name) || (this.trusted && !this.model.trusts(name))) return undefined;
     const st = this.w.state;
     const v = st.variables.get(name);
     if (!v) {
@@ -537,7 +544,7 @@ class ModelValues implements ValueSource {
     if (['a', 'A', 'n'].some((l) => attribute(st, name, l) !== 'off')) return undefined;
     // Not static text: the word of the assignment, expanded where it ran.
     if (v.value === undefined && v.source && !this.expanding.has(v.source) && ['i', 'l', 'u'].every((l) => attribute(st, name, l) === 'off')) {
-      return sourceValue(v.source, this.model, this.env, this.expanding);
+      return sourceValue(v.source, this.model, this.env, this.expanding, this.trusted);
     }
     return v.value;
   }
@@ -550,7 +557,7 @@ class ModelValues implements ValueSource {
   /** `~+` and `~-` not after a `cd` anywhere. */
   tilde(user: string): string | undefined {
     const name = user === '' ? 'HOME' : user === '+' ? 'PWD' : user === '-' ? 'OLDPWD' : undefined;
-    if (!name || (name !== 'HOME' && changesDirectory(this.w.nodes[0]))) return undefined;
+    if (!name || (name !== 'HOME' && changesDirectory(this.w.nodes[0])) || (this.trusted && !this.model.trusts(name))) return undefined;
     if (name === 'PWD') return this.env?.pwd;
     const v = this.w.state.variables.get(name);
     if (v) return v.set === 'on' ? v.value : undefined;
@@ -840,82 +847,25 @@ function replacementOf(text: string, ev: Evaluator): string | undefined {
   return !segs || segs.some((g) => !g.quoted && g.text.includes('&')) ? undefined : segs.map((g) => g.text).join('');
 }
 
-/** Whether the simple command before `n` is only an assignment (it sets `$_` to nothing). */
-function afterAssignment(n: SyntaxNode, model: StateModel): boolean {
-  let root = n;
-  while (root.parent) root = root.parent;
-  let prev: SyntaxNode | undefined;
-  // (A command in a subshell that `n` is not in sets the subshell's `$_`, and a function body runs elsewhere.)
-  const here = model.env(n).links;
-  // (The assignments of a command or a declaration are its words: `declare x=1` sets `$_` to `x=1`. The first part of
-  // `for (( i = 0; … ))` is arithmetic, not a command: it leaves `$_`.)
-  for (const c of descendants(root, ['command'])) {
-    if (c.endIndex > n.startIndex) continue;
-    if (ancestor(c, (x) => x.type === 'function_definition') || model.env(c).links.some((l) => !here.includes(l))) continue;
-    if (!prev || c.endIndex >= prev.endIndex) prev = c;
-  }
-  return !!prev && assignmentsOnly(prev);
-}
-
-/** The value of `$_` where `n` is: empty after a command that is only an assignment; undefined otherwise. */
-export function underscoreValue(n: SyntaxNode, model: StateModel): string | undefined {
-  return afterAssignment(n, model) ? '' : undefined;
-}
-
-const unreliableCache = new WeakMap<SyntaxNode, Set<string>>();
-const unreliableInWordsCache = new WeakMap<SyntaxNode, Set<string>>();
-/**
- * The variables an arithmetic expression or a `${x:=word}` may assign in the statement that holds `n` (through
- * the substitutions around it): the state there is the one before the statement, so their values are not known.
- * (A simple command expands its words, or makes its assignments, before its redirections: what those assign does
- * not reach them.)
- */
-export function unreliableNames(n: SyntaxNode): Set<string> {
-  let top = n;
-  let open = true;
-  for (let x = n.parent; x; x = x.parent) {
-    if (x.type === 'command_substitution' || x.type === 'process_substitution') open = true;
-    else if (open && STATEMENTS.has(x.type)) {
-      top = x;
-      open = false;
-    }
-  }
-  const redirs = top.type === 'command' ? redirectionsOf(top) : [];
-  const inside = (a: SyntaxNode, r: SyntaxNode) => a.startIndex >= r.startIndex && a.endIndex <= r.endIndex;
-  const skip = redirs.some((r) => inside(n, r)) ? [] : redirs;
-  const cache = skip.length ? unreliableInWordsCache : unreliableCache;
-  let names = cache.get(top);
-  if (names) return names;
-  names = new Set();
-  // (Not `let`: its words are expanded before it runs.)
-  for (const a of descendants(top, [...ARITH, 'expansion'])) {
-    if (skip.some((r) => inside(a, r))) continue;
-    if (a.type === 'expansion') {
-      const p = parseExpansion(a.text);
-      if (p && (p.op === ':=' || p.op === '=')) names.add(p.name);
-      continue;
-    }
-    for (const m of a.text.matchAll(ARITH_ASSIGNED)) names.add(m[1] ?? m[3] ?? m[4]);
-  }
-  cache.set(top, names);
-  return names;
-}
-
 const DEFAULT_IFS = ' \t\n';
 
 /** How deep the values of assignments are expanded through each other (`a=$b; b=$c; …`); deeper is not known here. */
 const MAX_SOURCE_DEPTH = 32;
 const NO_ENV = {};
+/** The key of the values that only trusted variables give (`ModelValues.trusted`). */
+const TRUSTED = {};
 const sourceCache = new WeakMap<StateModel, WeakMap<object, Map<SyntaxNode, string | undefined>>>();
 /** The value the word of an assignment gave, where it ran: cached per model, environment and word. */
-function sourceValue(source: SyntaxNode, model: StateModel, env: WordEnv | undefined, expanding: ReadonlySet<SyntaxNode>): string | undefined {
+function sourceValue(source: SyntaxNode, model: StateModel, env: WordEnv | undefined, expanding: ReadonlySet<SyntaxNode>, trusted = false): string | undefined {
   let byEnv = sourceCache.get(model);
   if (!byEnv) sourceCache.set(model, (byEnv = new WeakMap()));
-  let cache = byEnv.get(env ?? NO_ENV);
-  if (!cache) byEnv.set(env ?? NO_ENV, (cache = new Map()));
+  // (The trusted values have no environment: `env` is undefined with them.)
+  const key = trusted ? TRUSTED : env ?? NO_ENV;
+  let cache = byEnv.get(key);
+  if (!cache) byEnv.set(key, (cache = new Map()));
   if (cache.has(source)) return cache.get(source);
   if (expanding.size >= MAX_SOURCE_DEPTH) return undefined;
-  const v = fieldsAt(source, model, env, new Set([...expanding, source])).fields?.[0];
+  const v = fieldsAt(source, model, env, new Set([...expanding, source]), trusted).fields?.[0];
   cache.set(source, v);
   return v;
 }
@@ -935,11 +885,32 @@ export function wordFields(n: SyntaxNode, model: StateModel, env?: WordEnv): Fie
   return fieldsAt(n, model, env, new Set());
 }
 
-function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, expanding: ReadonlySet<SyntaxNode>): Fields {
+/**
+ * What the expansion `part` of the word `w` gives with only the values the model trusts (`ModelValues.trusted`): its
+ * text, and its fields where `split` (each with whether it has a glob character); undefined when bash fails on it or
+ * a value is not known. For src/semantics/values.ts.
+ */
+export function trustedPart(part: SyntaxNode, w: WordMeaning, model: StateModel, quoted: boolean, split: boolean): { text: string; fields: { text: string; glob: boolean }[] } | undefined {
+  let pieces: Piece[] | undefined;
+  try {
+    pieces = new Evaluator(w, new ModelValues(w, model, undefined, new Set(), true)).pieces(part, quoted);
+  } catch (e) {
+    // A rethrow guard, as in `fieldsAt`.
+    /* c8 ignore next */
+    if (!(e instanceof Failure)) throw e;
+    return undefined;
+  }
+  if (!pieces) return undefined;
+  // (Not split, as in double quotes or with an empty IFS: one text, which may still be globbed.)
+  const fields = split ? splitPieces(w, pieces)! : [pieces.flatMap((p) => [...p.text].map((c): Char => ({ c, quoted: p.quoted, split: false })))];
+  return { text: pieces.map((p) => p.text).join(''), fields: fields.map((f) => ({ text: f.map((c) => c.c).join(''), glob: isGlob(patternOfChars(f)) })) };
+}
+
+function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, expanding: ReadonlySet<SyntaxNode>, trusted = false): Fields {
   const w = wordMeaning(n, model);
   if (!w) return {};
   const unknown: Fields = w.failure ? { failure: w.failure } : {};
-  const ev = new Evaluator(w, new ModelValues(w, model, env, expanding));
+  const ev = new Evaluator(w, new ModelValues(w, model, env, expanding, trusted));
   try {
     const split = splitFields(w, ev);
     if (!split) return unknown;

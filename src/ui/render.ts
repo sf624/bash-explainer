@@ -1,10 +1,13 @@
-import { Example, Kind, LineExplanation, Pos, Span, Token } from '../analyzer-types';
+import { Example, Kind, LineExplanation, Pos, Span, Token, ValueInfo } from '../analyzer-types';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
-import { joinParts, LabelPart, labelParts } from '../label';
+import { codeSpan, joinParts, LabelPart, labelParts } from '../label';
 import { manualLabel, SECTIONS } from '../manual';
 import { noteLevel, type NoteLevel, splitNote } from '../messages';
 import { errorColour, Role, roleColour, ThemeKind } from './palette';
+
+/** (Moved to src/label.ts, which the message catalog reads too.) */
+export { codeSpan };
 
 export const ui = {
   ja: {
@@ -205,6 +208,14 @@ export function explained(tok: Token): string {
   return tok.name ? tok.explanation + tok.name.said.short : tok.explanation;
 }
 
+/**
+ * The value of an expansion where it runs (`Token.value`: the model's), for a row of a Markdown list: a hard line
+ * break, then the line, indented by `indent` under the row's text. Empty without a value.
+ */
+export function valueMarkdown(value: ValueInfo | undefined, indent: string): string {
+  return value ? `\\\n${indent}${value.said.text}` : '';
+}
+
 /** Display features that can each be turned on or off. */
 export type Feature = keyof typeof ui.ja.features;
 
@@ -330,13 +341,6 @@ export function examplesMarkdown(examples: Example[], indent?: string, rule = tr
   return out;
 }
 
-/** Text as a Markdown code span: the fence is longer than any run of backticks inside, and a backtick at either end is set off by a space. */
-export function codeSpan(text: string): string {
-  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((m) => m.length));
-  const fence = '`'.repeat(longest + 1);
-  return text.startsWith('`') || text.endsWith('`') ? `${fence} ${text} ${fence}` : `${fence}${text}${fence}`;
-}
-
 /** A label as Markdown: code parts as code spans, placeholders in italics (`if` *condition* `then`). */
 export function labelMarkdown(parts: readonly LabelPart[]): string {
   return joinParts(parts, (p) => (p.placeholder ? `*${p.text}*` : codeSpan(p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
@@ -360,7 +364,7 @@ export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: st
   const links = (refs: readonly string[] | undefined) => (refs?.length ? ` (${refsMarkdown(lang, refs)})` : '');
   out.push(...plainNotes(ex, ex.notes, lang));
   const walk = (tok: Token, depth: number) => {
-    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${explained(tok)}${links(tok.refs)}`);
+    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${explained(tok)}${links(tok.refs)}${valueMarkdown(tok.value, '  '.repeat(depth + 1))}`);
     for (const c of tok.children) walk(c, depth + 1);
   };
   for (const item of ex.items) walk(item, 0);

@@ -107,7 +107,7 @@ export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
   const children = dests.filter((d) => !isPlainWord(d)).flatMap((d) => cx.sub(d));
   if (dests.length === 1 && (isPlainWord(dests[0]) || dests[0].type === 'brace_expression') && /[*?[{]/.test(dests[0].text)) expl += redirectTargetNote(cx, dests[0]);
   const later = OPENS_FILE.has(op) ? replacedBy(n) : undefined;
-  if (later) expl += replacedFile(cx, op, fd, dests, later);
+  if (later) expl += replacedFile(cx, op, fd, n, dests, later);
   return cx.tok(n, 'redirect', expl, children);
 }
 
@@ -212,8 +212,8 @@ function written(r: SyntaxNode): string {
  * the paths may name the same file (`maySamePath`: `>a >b/../a`), it says that the same file would be used. A device
  * (`/dev/null`) is only opened.
  */
-function replacedFile(cx: Explainer, op: string, fd: string, dests: SyntaxNode[], later: SyntaxNode): string {
-  const own = openedPath(dests[0].parent!);
+function replacedFile(cx: Explainer, op: string, fd: string, n: SyntaxNode, dests: SyntaxNode[], later: SyntaxNode): string {
+  const own = openedPath(n);
   const other = openedPath(later);
   if (own && other && samePath(own, other)) return '';
   const dest = dests.map((d) => d.text).join(' ');

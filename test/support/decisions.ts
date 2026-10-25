@@ -293,7 +293,7 @@ export function forModel(text: string): { src: string; starts: Map<number, numbe
 }
 
 /** The text for bash, with probes; `reads`: the variables each decided construct read. */
-function forBash(text: string, reads: Map<number, string[]>): string {
+export function forBash(text: string, reads: Map<number, string[]>): string {
   let d = 0;
   const values = (id: number): string => (reads.get(id) ?? []).map((v) => ` "\${${v}+S}\${${v}-}"`).join('');
   return text.replace(/⟦(\w)(?::(\d+))?(?::(\d+))?⟧/g, (_, k: string, a?: string, b?: string) => {
@@ -313,14 +313,14 @@ function forBash(text: string, reads: Map<number, string[]>): string {
   });
 }
 
-const PRELUDE = `__p() { local s=$?; local IFS=$'\\t'; printf 'P\\t%s\\t%s\\n' "$*" "$s" >&9; return $s; }
+export const PRELUDE = `__p() { local s=$?; local IFS=$'\\t'; printf 'P\\t%s\\t%s\\n' "$*" "$s" >&9; return $s; }
 __c() { local s=$?; local IFS=$'\\t'; printf 'C\\t%s\\t%s\\n' "$*" "$s" >&9; return $s; }
 __d() { local IFS=$'\\t'; printf 'D\\t%s\\t%s\\n' "$BASHPID" "$*" >&9; }
 __k() { printf 'K\\t%s\\t%s\\t%s\\n' "$BASHPID" "$1" "$2" >&9; }
 `;
 
 /** Runs `file` with bash in `dir` (xtrace and probes to `trace`), stopped after 4 s; false when it was. */
-function runBash(dir: string, file: string): Promise<boolean> {
+export function runBash(dir: string, file: string): Promise<boolean> {
   return new Promise((resolve) => {
     // (A loop with no guard may write fast: the trace is limited to 10 MB.)
     const c = spawn('bash', ['-c', 'ulimit -f 20000; cd "$1" && exec 9>trace && BASH_XTRACEFD=9 PS4="+X " FUNCNEST=20 exec bash -x "$2" </dev/null >/dev/null 2>&1', 'x', dir, file],

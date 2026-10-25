@@ -21,6 +21,7 @@ import type { Explainer } from './context';
 import { ansiCString } from './embedded';
 import { has, skeletal } from './nodes';
 import { fileRedirect, heredoc, herestring, redirected } from './redirections';
+import { withValue } from './values';
 import { arithmeticCommand, binary, parenthesized, postfix, regexNode, ternary, test, unary } from './tests';
 import {
   arithmeticExpansion, arithNumber, array, braceWord, casePattern, concatenation, globToken, number, rawString, simpleExpansion, string,
@@ -30,6 +31,7 @@ import {
 /** A node's token, with the sections of the manual it is about when it has none of its own. */
 export function explain(cx: Explainer, n: SyntaxNode): Token {
   const t = claim(explainNode(cx, n), 'shell');
+  if (n.type === 'simple_expansion' || n.type === 'expansion') withValue(cx, n, t);
   const refs = t.refs ?? nodeSections(n);
   if (refs) t.refs = refs;
   return t;

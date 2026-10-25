@@ -270,6 +270,8 @@ export class WalkBuiltins {
 
   declare(builtin: string, words: SyntaxNode[], { roles, on, off }: Declaration, n: SyntaxNode, st: ShellState): ShellState {
     if (on.includes('p')) return st;
+    // (bash expands every word before the builtin runs: `a=1; declare a=5 b=$a` sets b to 1.)
+    const before = st;
     const spec = builtins[builtin];
     const operands = this.operands(words, roles, st);
     // `export -f f`, `declare -fx f`, `readonly -f f`: the names are functions.
@@ -322,7 +324,7 @@ export class WalkBuiltins {
       // `declare -g x` while `x` is local: the global one.
       const global = on.includes('g') ? this.w.frames.find((f) => f.saved.has(name)) : undefined;
       const scope = global ? { ...st, variables: st.variables.with(name, global.saved.get(name)) } : st;
-      let next = this.declareOne(scope, name, gives, removes, o, n, on.includes('n'));
+      let next = this.declareOne(scope, name, gives, removes, o, n, on.includes('n'), before);
       if (global) {
         global.saved.set(name, next.variables.get(name));
         next = { ...next, variables: next.variables.with(name, st.variables.get(name)) };
@@ -332,7 +334,8 @@ export class WalkBuiltins {
     return st;
   }
 
-  private declareOne(st: ShellState, name: string, gives: string, removes: string, o: Operand, n: SyntaxNode, nameref: boolean): ShellState {
+  /** `before`: the state before the declaration, where its words are expanded. */
+  private declareOne(st: ShellState, name: string, gives: string, removes: string, o: Operand, n: SyntaxNode, nameref: boolean, before: ShellState): ShellState {
     const prev = st.variables.get(name);
     const attrs: Record<string, Attribute> = { ...(prev?.attrs ?? {}) };
     for (const l of gives) {
@@ -346,9 +349,14 @@ export class WalkBuiltins {
     st = this.w.put(st, 'variables', name, { declared: 'on', set, attrs, value: prev?.value, at: n });
     // (A variable readonly before the declaration keeps its value; `readonly r=1` sets it.)
     if (!o.assign || prev?.attrs.r?.state === 'on') return st;
-    // (The state of an assignment in a declaration has the attributes the declaration gives. A value that may not be a
-    // valid expression, given to an integer, may discard the rest of the line: see `assignmentError`.)
-    if (o.node.type === 'variable_assignment') this.w.record(o.node, st);
+    // (The state of an assignment in a declaration has the attributes the declaration gives, and the values from before
+    // it, where bash expands its words: `local x=$x` reads the `x` of the caller. A value that may not be a valid
+    // expression, given to an integer, may discard the rest of the line: see `assignmentError`.)
+    if (o.node.type === 'variable_assignment') {
+      const was = before.variables.get(name);
+      const declared = st.variables.get(name)!;
+      this.w.record(o.node, { ...before, variables: before.variables.with(name, was ? { ...was, attrs: declared.attrs } : declared) });
+    }
     if ((attrs.i?.state ?? 'off') !== 'off' && !o.subscript && this.mayFail(o.assign.text, st, o.node)) this.w.abort(st, false);
     return this.assign(st, name, false, o.assign, o.node, nameref, true);
   }

@@ -234,6 +234,23 @@ The web page's editor shows the cards of VS Code's hover. Before, the page had n
 
 The colours follow the theme when it changes. How the theme is read, and how much each choice keeps parts apart, is in [docs/design/theme-colours.md](../design/theme-colours.md).
 
+### The value of an expansion
+
+The token of an expansion says its value where the script fixes it, under its meaning, in the panel (Meaning), the hover, the Markdown output and the command line. An unquoted one also shows the words it is split into, as chips in the panel:
+
+| Script | Shown on the expansion |
+| --- | --- |
+| `msg="hello world"; echo $msg` | Value here, from the script: `hello world`; unquoted, it is split into 2 words: `hello` `world` |
+| `msg="hello world"; echo "$msg"` | Value here, from the script: `hello world` |
+| `file=report.tar.gz; echo "${file%.*}" "${#file}"` | `report.tar`; `13` |
+| `x=; echo "${x:-default}"` | `default` |
+| `empty=; echo $empty` | an empty string; unquoted, it is split and gives no word |
+| `pat='*.txt'; ls $pat` | `*.txt`. Unquoted, it is a pattern: bash matches it against file names when the line runs (not done here) |
+| `IFS=:; p='a:b c'; echo $p` | `a:b c`, split into `a` and `b c` |
+| `f() { echo "$x"; }; x=1; f` | `1` in the body |
+
+Nothing is shown where the value is not sure: a variable the script does not set (it may come from the environment: `$HOME`), one that `read`, `mapfile`, arithmetic, `${x:=…}`, a trap or an `eval` string may set, a loop that changes it, a function called with two values, a branch whose condition is not known, code that never runs, a script that runs `source`, positional parameters, arrays, and strings another shell runs (`bash -c '…'`). What is shown and why: [docs/design/expansion-values.md](../design/expansion-values.md).
+
 ## Changed
 
 ### The inline summary was removed
@@ -448,6 +465,8 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 
 | `declare -i n; n+=5`, `declare -ia a; a[0]+=5` | adds: 7 becomes 12 | "if `n` is 7, `+=5` makes 12, not 75"; with `n+=x`, "the value of the arithmetic expression `x` is added" | "if `n` is 7, `+=1` makes 8, not 71", whatever the operand |
 | `command declare k=1`, `builtin export q+=x`, `command declare z=$y` | `declare` assigns `k`; bash passes the word as an ordinary argument, so `z=$y` with `y='1 2'` is split (`z=1`, and an error on `2`) | "Assign `1` to the variable `k` (`declare` reads the word as an assignment). To bash it is an ordinary argument, not an assignment…"; with `$y`, "an unquoted expansion in it is split and globbed" | "Variable `k=1`" |
+| `for (( c = 0; c < 2; c++ )); do echo $v; done` | the body is commands: `$v` is split and globbed | "Expands to the value of `v` (unquoted, it is word-split and globbed)" | "Expands to the value of `v`": the body was read as arithmetic |
+| `a=1; declare a=5 b=$a`, `local x=$x` | the words are expanded before the builtin runs: `b` is `1`, and the local `x` gets the caller's value | the values that follow from them (the words of `$b`, the value of `$x`) | `b` was `5`, the local `x` empty |
 
 `[[ $x == "$q" ]]` already said that a quoted right side is literal text.
 

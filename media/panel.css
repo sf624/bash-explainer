@@ -1160,6 +1160,27 @@ body.vscode-high-contrast-light #reading-tree li.band {
   min-width: 0;
 }
 
+/* The value of an expansion where it runs (media/panel.js `valueLine`, docs/design/expansion-values.md): a line under
+   the meaning, the lead muted, the value and its words as chips with an edge, so that two words read as two (and a
+   space inside a word stays visible). */
+.ev-value {
+  display: block;
+  font-size: 0.9em;
+  margin-top: 0.15rem;
+  overflow-wrap: anywhere;
+}
+
+.ev-lead {
+  color: var(--c-muted);
+}
+
+.text code.ev-word {
+  white-space: pre-wrap;
+  border: 1px solid var(--c-muted);
+  padding: 0 0.3em;
+  margin-right: 0.1em;
+}
+
 @media (forced-colors: active) {
   #reading-tree li.band {
     background: none;
@@ -1188,8 +1209,13 @@ body.vscode-high-contrast-light #reading-tree li.band {
   }
 
   .nk-by,
-  .nk-also {
+  .nk-also,
+  .ev-lead {
     color: CanvasText;
+  }
+
+  .text code.ev-word {
+    border-color: CanvasText;
   }
 
   .trow .band-label {

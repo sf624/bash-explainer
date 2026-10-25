@@ -5,9 +5,10 @@ import type { Shell } from './dialect';
 import type { Interactive } from './examples/rerun';
 import type { HostId } from './hosts';
 import type { LabelPart } from './label';
-import type { Fact } from './messages';
+import type { Fact, ValueSaid } from './messages';
 import type { NameInfo } from './namefacts';
 import type { ReadingNode } from './reading';
+import type { ExpansionValue } from './semantics/values';
 
 export type Kind =
   | 'command' | 'subcommand' | 'builtin' | 'function' | 'alias' | 'keyword' | 'option' | 'argument' | 'operator'
@@ -74,6 +75,16 @@ export interface Token {
    * and `[[`): what the name is here, who looks it up, and what else the same name is (src/namefacts.ts).
    */
   name?: NameInfo;
+  /**
+   * On the token of a parameter expansion (`$msg`, `${msg%.*}`): its value where it runs, when the semantic model knows
+   * it for sure (docs/design/expansion-values.md), with what the outputs say of it.
+   */
+  value?: ValueInfo;
+}
+
+/** The value of an expansion (`Token.value`): the model's (src/semantics/values.ts, `expansionValue`), and its texts. */
+export interface ValueInfo extends ExpansionValue {
+  said: ValueSaid;
 }
 
 export interface ContextEntry { label: string; line: number }

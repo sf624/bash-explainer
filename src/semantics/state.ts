@@ -101,6 +101,13 @@ export interface StateModel {
    * `break`, `continue`, `return` or `exit`.
    */
   dead(n: SyntaxNode): boolean;
+  /**
+   * Whether what the walks found at `n` holds wherever `n` runs (the walk's `everywhere`): not when nothing is
+   * trusted, in a function body that may run where the walk does not see it, in one not walked at some call, in a
+   * loop whose passes did not settle, nor in a trap's action. The values shown in Meaning ask it
+   * (src/semantics/values.ts, `expansionValue`).
+   */
+  settled(n: SyntaxNode): boolean;
 }
 
 /** The nested script whose tree each tree is (docs/design/semantics.md, 4.13): `shellState` gives its model. */
@@ -113,6 +120,12 @@ const rootOf = (n: SyntaxNode): SyntaxNode => {
   while (r.parent) r = r.parent;
   return r;
 };
+
+/** Whether `n` is in a string another shell runs (`bash -c S`, also through the strings around it), which has a model of its own. */
+export function inAnotherShell(n: SyntaxNode): boolean {
+  for (let s = rootOwners.get(rootOf(n)); s; s = rootOwners.get(rootOf(s.words[0]))) if (s.kind === 'child') return true;
+  return false;
+}
 
 /**
  * Where `n` starts (with `end`, ends) in the text of the document: a node of a string read as a script (4.13) is
@@ -453,6 +466,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     writes: (n) => w.varWrites.get(n) ?? new Set(),
     condition: (n) => w.conditions.decision(n),
     dead: (n) => w.runAt(n) !== undefined && !w.live.has(n) && w.everywhere(n),
+    settled: (n) => w.everywhere(n),
     at(n) {
       let run: ShellState | undefined;
       let expand: ShellState | undefined;

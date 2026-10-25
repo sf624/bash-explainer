@@ -444,6 +444,34 @@
     return d;
   }
 
+  /**
+   * The value of an expansion where it runs (`Token.value`, docs/design/expansion-values.md): the model's, from the
+   * script's assignments, on a line of its own under the meaning. The value and the words splitting makes of it are
+   * chips, so that separate words read as separate (`ValueSaid`, src/messages.ts, gives the texts).
+   */
+  function valueLine(/** @type {any} */ value) {
+    if (!value) return null;
+    const s = value.said;
+    const d = document.createElement('span');
+    d.className = 'ev-value';
+    const chip = (/** @type {string} */ text) => {
+      const c = document.createElement('code');
+      c.className = 'ev-word';
+      c.textContent = text;
+      return c;
+    };
+    const lead = document.createElement('span');
+    lead.className = 'ev-lead';
+    lead.textContent = `${s.lead} `;
+    d.append(lead, s.value !== undefined ? chip(s.value) : s.empty);
+    if (s.split) {
+      d.append(...inline(s.split.said));
+      for (const w of s.split.words) d.append(' ', chip(w));
+    }
+    if (s.tail) d.append(...inline(s.tail));
+    return d;
+  }
+
   /** What the badge says, for a screen reader: "builtin, run by sudo" (`NameSaid.spoken`). */
   const nameSpoken = (/** @type {any} */ name) => (name ? name.said.spoken : '');
 
@@ -482,6 +510,8 @@
     text.append(...inline(token.explanation));
     const also = nameAlso(token.name);
     if (also) text.append(also);
+    const value = valueLine(token.value);
+    if (value) text.append(value);
     row.append(twisty, label, ...nameBadge(token.name), text, ...refLinks(token.refs));
     li.append(row);
     if (token.children.length && collapsedKeys.has(path)) setCollapsed(li, true);

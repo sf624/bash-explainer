@@ -1,0 +1,948 @@
+[
+  {
+    "manual": "3.5.3",
+    "snippet": "msg=hello; @PROBE:a@ \"$msg\"; @PROBE:b@ $msg; @PROBE:c@ ${msg}; @PROBE:d@ \"${msg}\"",
+    "facts": {
+      "a": [
+        [
+          "hello"
+        ]
+      ],
+      "b": [
+        [
+          "hello"
+        ]
+      ],
+      "c": [
+        [
+          "hello"
+        ]
+      ],
+      "d": [
+        [
+          "hello"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "x='a  b'; @PROBE:a@ $x; @PROBE:b@ \"$x\"; y=' c '; @PROBE:c@ $y; @PROBE:d@ \"$y\"",
+    "facts": {
+      "a": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "b": [
+        [
+          "a  b"
+        ]
+      ],
+      "c": [
+        [
+          "c"
+        ]
+      ],
+      "d": [
+        [
+          " c "
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "e=; @PROBE:a@ $e; @PROBE:b@ \"$e\"; s='   '; @PROBE:c@ $s",
+    "facts": {
+      "a": [
+        []
+      ],
+      "b": [
+        [
+          ""
+        ]
+      ],
+      "c": [
+        []
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "IFS=:; p='a:b c::d'; @PROBE:a@ $p; @PROBE:b@ \"$p\"",
+    "facts": {
+      "a": [
+        [
+          "a",
+          "b c",
+          "",
+          "d"
+        ]
+      ],
+      "b": [
+        [
+          "a:b c::d"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "IFS=; p='a b'; @PROBE:a@ $p",
+    "facts": {
+      "a": [
+        [
+          "a b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "x=$'a\\nb\\tc'; @PROBE:a@ $x; @PROBE:b@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "a",
+          "b",
+          "c"
+        ]
+      ],
+      "b": [
+        [
+          "a\nb\tc"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=report.tar.gz; @PROBE:a@ \"${#x}\"; @PROBE:b@ \"${x%.*}\"; @PROBE:c@ \"${x%%.*}\"; @PROBE:d@ \"${x#*.}\"; @PROBE:e@ \"${x##*.}\"",
+    "facts": {
+      "a": [
+        [
+          "13"
+        ]
+      ],
+      "b": [
+        [
+          "report.tar"
+        ]
+      ],
+      "c": [
+        [
+          "report"
+        ]
+      ],
+      "d": [
+        [
+          "tar.gz"
+        ]
+      ],
+      "e": [
+        [
+          "gz"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=banana; @PROBE:a@ \"${x/a/o}\"; @PROBE:b@ \"${x//a/o}\"; @PROBE:c@ \"${x/#b/B}\"; @PROBE:d@ \"${x/%a/A}\"; @PROBE:e@ \"${x/n/&}\"",
+    "none": {
+      "e": "an unquoted `&` in the replacement is the match (patsub_replacement): not followed"
+    },
+    "facts": {
+      "a": [
+        [
+          "bonana"
+        ]
+      ],
+      "b": [
+        [
+          "bonono"
+        ]
+      ],
+      "c": [
+        [
+          "Banana"
+        ]
+      ],
+      "d": [
+        [
+          "bananA"
+        ]
+      ],
+      "e": [
+        [
+          "banana"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=abcdef; @PROBE:a@ \"${x:1}\"; @PROBE:b@ \"${x:1:3}\"; @PROBE:c@ \"${x: -2}\"; @PROBE:d@ \"${x:2:-1}\"",
+    "facts": {
+      "a": [
+        [
+          "bcdef"
+        ]
+      ],
+      "b": [
+        [
+          "bcd"
+        ]
+      ],
+      "c": [
+        [
+          "ef"
+        ]
+      ],
+      "d": [
+        [
+          "cde"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x='hello World'; @PROBE:a@ \"${x^^}\"; @PROBE:b@ \"${x,,}\"; @PROBE:c@ \"${x^}\"; @PROBE:d@ ${x^^}; @PROBE:e@ \"${x@U}\"",
+    "none": {
+      "e": "the transformations `${x@…}` are not followed"
+    },
+    "facts": {
+      "a": [
+        [
+          "HELLO WORLD"
+        ]
+      ],
+      "b": [
+        [
+          "hello world"
+        ]
+      ],
+      "c": [
+        [
+          "Hello World"
+        ]
+      ],
+      "d": [
+        [
+          "HELLO",
+          "WORLD"
+        ]
+      ],
+      "e": [
+        [
+          "HELLO WORLD"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=; y=set; @PROBE:a@ \"${x:-d}\"; @PROBE:b@ \"${x-d}\"; @PROBE:c@ \"${y:+alt}\"; @PROBE:d@ \"${x:+alt}\"; @PROBE:e@ \"${y:?no}\"",
+    "facts": {
+      "a": [
+        [
+          "d"
+        ]
+      ],
+      "b": [
+        [
+          ""
+        ]
+      ],
+      "c": [
+        [
+          "alt"
+        ]
+      ],
+      "d": [
+        [
+          ""
+        ]
+      ],
+      "e": [
+        [
+          "set"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "@PROBE:a@ \"${u:-d}\"; @PROBE:b@ \"$u\"; @PROBE:c@ \"${u:=w}\"; @PROBE:d@ \"$u\"",
+    "none": {
+      "a": "`u` is assigned by `${u:=w}`, which decisions do not trust; and before it, it may come from the environment",
+      "b": "as for a",
+      "c": "as for a",
+      "d": "as for a"
+    },
+    "facts": {
+      "a": [
+        [
+          "d"
+        ]
+      ],
+      "b": [
+        [
+          ""
+        ]
+      ],
+      "c": [
+        [
+          "w"
+        ]
+      ],
+      "d": [
+        [
+          "w"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.4",
+    "snippet": "a=1; b=$a; c=\"$b-x\"; d=${c}0; @PROBE:a@ \"$d\"",
+    "facts": {
+      "a": [
+        [
+          "1-x0"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.4",
+    "snippet": "x=a; x+=b; x+=\"$x\"; @PROBE:a@ \"$x\"",
+    "none": {
+      "a": "`x+=\"$x\"` appends an expansion: the value it gives is not followed"
+    },
+    "facts": {
+      "a": [
+        [
+          "abab"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "x=1; x=2 y=$x; @PROBE:a@ \"$y\"; x=3 @PROBE:b@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "a=1; declare a=5 b=$a; @PROBE:a@ \"$b\"; @PROBE:b@ \"$a\"; export c=7; readonly d=8; @PROBE:c@ \"$c\"; @PROBE:d@ \"$d\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "5"
+        ]
+      ],
+      "c": [
+        [
+          "7"
+        ]
+      ],
+      "d": [
+        [
+          "8"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { @PROBE:a@ \"$x\"; }; x=1; f",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { @PROBE:a@ \"$x\"; }; x=1; f; x=2; f",
+    "none": {
+      "a": "the body runs with two values of `x`"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ],
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { @PROBE:a@ \"$x\"; }; x=1",
+    "none": {
+      "a": "no call runs the body"
+    },
+    "facts": {
+      "a": [],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { x=2; }; x=1; f; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "x=1; f() { local x=2; @PROBE:a@ \"$x\"; }; f; @PROBE:b@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { @PROBE:a@ \"$x\"; }; x=1; x=2 f; @PROBE:b@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { @PROBE:a@ \"$x\"; }; export -f f; x=1; f",
+    "none": {
+      "a": "an exported function may be called where the walk does not see it (another bash)"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "x=1; for i in a b; do @PROBE:a@ \"$x\"; done; for i in a b; do @PROBE:b@ \"$i\"; done",
+    "none": {
+      "b": "a loop variable is not trusted"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ],
+        [
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "a"
+        ],
+        [
+          "b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "x=1; for i in a b; do @PROBE:a@ \"$x\"; x=2; done; @PROBE:b@ \"$x\"",
+    "none": {
+      "a": "`x` changes in the loop"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ],
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "x=1; while [ \"$x\" = 1 ]; do x=2; done; @PROBE:a@ \"$x\"",
+    "none": {
+      "a": "the state after the loop merges its passes, and its first test is not decided as one"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "x=1; if [ \"$x\" = 1 ]; then y=a; else y=b; fi; @PROBE:a@ \"$y\"",
+    "facts": {
+      "a": [
+        [
+          "a"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "if [ -f a.txt ]; then y=a; else y=b; fi; @PROBE:a@ \"$y\"",
+    "none": {
+      "a": "the condition reads the file system: `y` may be `a` or `b`"
+    },
+    "facts": {
+      "a": [
+        [
+          "a"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "x=1; if false; then @PROBE:a@ \"$x\"; fi; x=b; case $x in a) y=1;; b) y=2;; esac; @PROBE:b@ \"$y\"",
+    "none": {
+      "a": "code that never runs"
+    },
+    "facts": {
+      "a": [],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.4.3",
+    "snippet": "x=1; (x=2; @PROBE:a@ \"$x\"); @PROBE:b@ \"$x\"; echo | @PROBE:c@ \"$x\"; y=$(@PROBE:d@ \"$x\")",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "1"
+        ]
+      ],
+      "c": [
+        [
+          "1"
+        ]
+      ],
+      "d": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "x=1; echo | x=2; @PROBE:a@ \"$x\"; x=3 | cat; @PROBE:b@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "x=1; read x </dev/null; @PROBE:a@ \"$x\"",
+    "none": {
+      "a": "`read` sets `x`"
+    },
+    "facts": {
+      "a": [
+        [
+          ""
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "x=1; read y </dev/null; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "x=1; . /dev/null; @PROBE:a@ \"$x\"",
+    "none": {
+      "a": "a file is sourced: the model trusts nothing"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "x=1; eval 'x=2'; @PROBE:a@ \"$x\"; y=3; eval '@PROBE:b@ \"$y\"'",
+    "none": {
+      "a": "the string `eval` runs assigns `x`: not trusted"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "3"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "x=1; trap 'x=2' USR1; @PROBE:a@ \"$x\"",
+    "none": {
+      "a": "a trap's action assigns `x`, and may run at any time"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "n=1; ((n++)); @PROBE:a@ \"$n\"; m=2; @PROBE:b@ \"$m\"",
+    "none": {
+      "a": "arithmetic assigns `n`"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "snippet": "w=$(echo hi); @PROBE:a@ \"$w\"; v=$(true)x; @PROBE:b@ \"$v\"",
+    "none": {
+      "a": "the output of a command substitution is not known without running it"
+    },
+    "facts": {
+      "a": [
+        [
+          "hi"
+        ]
+      ],
+      "b": [
+        [
+          "x"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8",
+    "snippet": "p='*.txt'; @PROBE:a@ $p; @PROBE:b@ \"$p\"; q='x y.txt'; @PROBE:c@ $q",
+    "glob": [
+      "a"
+    ],
+    "facts": {
+      "a": [
+        [
+          "a.txt",
+          "b.txt",
+          "x y.txt"
+        ]
+      ],
+      "b": [
+        [
+          "*.txt"
+        ]
+      ],
+      "c": [
+        [
+          "x",
+          "y.txt"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -f; p='*.txt'; @PROBE:a@ $p",
+    "facts": {
+      "a": [
+        [
+          "*.txt"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "@PROBE:a@ \"$HOME\"; @PROBE:b@ \"$PATH\"; set -- a b; @PROBE:d@ \"$1\"; @PROBE:e@ \"$#\"",
+    "none": {
+      "a": "from the environment",
+      "b": "from the environment",
+      "d": "a positional parameter",
+      "e": "a special parameter"
+    },
+    "facts": {
+      "a": [
+        [
+          "/home/probe"
+        ]
+      ],
+      "b": [
+        [
+          "/usr/bin:/bin"
+        ]
+      ],
+      "d": [
+        [
+          "a"
+        ]
+      ],
+      "e": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.2",
+    "snippet": "x=; @PROBE:a@ ${x:-~}; HOME=/h; @PROBE:b@ ${x:-~}",
+    "none": {
+      "a": "`~` is `$HOME`, from the environment"
+    },
+    "facts": {
+      "a": [
+        [
+          "/home/probe"
+        ]
+      ],
+      "b": [
+        [
+          "/h"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.4",
+    "snippet": "a=(1 2); @PROBE:a@ \"$a\"; declare -i n=1+2; @PROBE:b@ \"$n\"; x=1; declare -n r=x; @PROBE:c@ \"$r\"",
+    "none": {
+      "a": "an array",
+      "b": "`declare -i`: an option other than -r, -x and -g (the value is arithmetic)",
+      "c": "a nameref"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "3"
+        ]
+      ],
+      "c": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=1; v=x; @PROBE:a@ \"${!v}\"; @PROBE:b@ \"$x\"",
+    "none": {
+      "a": "indirection: the model trusts nothing",
+      "b": "indirection: the model trusts nothing"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; x=1; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "cmd=true; $cmd; x=1; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.8",
+    "snippet": "x=1; bash -c '@PROBE:a@ \"$x\"'; export y=2; bash -c '@PROBE:b@ \"$y\"'",
+    "none": {
+      "a": "another shell: its values come from the environment it gets",
+      "b": "another shell: its values come from the environment it gets"
+    },
+    "facts": {
+      "a": [
+        [
+          ""
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  }
+]

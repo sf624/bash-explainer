@@ -7,10 +7,10 @@ import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { joinParts, labelParts } from '../label';
 import { manualLabel, SECTIONS } from '../manual';
-import { isCommand, partNotes, ProblemAt, sameSpan, shown } from './hoverParts';
+import { isCommand, partNotes, ProblemAt, sameSpan, shown, valueOf } from './hoverParts';
 import { type NoteLevel, splitNote } from '../messages';
 import { levelColour, ThemeKind } from './palette';
-import { colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, plainNotes, refsMarkdown, ui } from './render';
+import { colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, plainNotes, refsMarkdown, ui, valueMarkdown } from './render';
 
 /** What every view of the hover needs. */
 export interface HoverInput {
@@ -117,6 +117,12 @@ function badge(tok: Token): string {
 /** "Same name, also: …", on a line of its own. */
 const also = (tok: Token) => (tok.name?.said.also ? `<br><small>${muted(prose(tok.name.said.also))}</small>` : '');
 
+/** The value of an expansion where it runs (`Token.value`: the model's), on a line of its own. */
+const value = (tok: Token) => {
+  const v = valueOf(tok);
+  return v ? `<br><small>${prose(v.said.text)}</small>` : '';
+};
+
 /** The sections of the manual, small, as HTML links. */
 function refsHtml(lang: Lang, refs?: readonly string[]): string {
   if (!refs?.length) return '';
@@ -125,7 +131,7 @@ function refsHtml(lang: Lang, refs?: readonly string[]): string {
 }
 
 /** A part as a row's text: its meaning, badge, sections and other meanings. */
-const about = (tok: Token, lang: Lang) => `${prose(tok.explanation)}${badge(tok)}${refsHtml(lang, tok.refs)}${also(tok)}`;
+const about = (tok: Token, lang: Lang) => `${prose(tok.explanation)}${badge(tok)}${refsHtml(lang, tok.refs)}${also(tok)}${value(tok)}`;
 
 /** The rows of the parts under a token, `depth` levels deep, indented with non-breaking spaces; `stop` keeps a part out (with its own parts). */
 function rows(items: Token[], depth: number, stop: (t: Token) => boolean): { rows: { tok: Token; level: number }[]; hidden: number } {
@@ -238,6 +244,8 @@ export function partHover(x: HoverInput, chain: Token[]): string {
   out.push(`${crumbs.length ? `<small>${crumbs.join(sep('›'))}${sep('›')}</small> &nbsp; ` : ''}${lineLink(x)}`, '');
   out.push(`<b>${label(part, x.theme, 48)}</b>${badge(part)}`, '');
   out.push(`${md(part.explanation)}${part.refs?.length ? ` <small>${refsMarkdown(x.lang, part.refs)}</small>` : ''}${also(part)}`, '');
+  const v = valueOf(part);
+  if (v) out.push(prose(v.said.text), '');
   const own = rows(shown(part), 1, () => false);
   out.push(...table(own.rows, x));
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));
@@ -331,8 +339,10 @@ export function plainPartHover(ex: LineExplanation, chain: Token[], lang: Lang, 
   out.push(`**${flat(part)}**${s ? ` · _${s.kind}_${s.by ? `, ${s.by}` : ''}` : ''}`, '');
   out.push(`${part.explanation}${part.refs?.length ? ` (${refsMarkdown(lang, part.refs)})` : ''}`, '');
   if (s?.also) out.push(`_${s.also}_`, '');
+  const v = valueOf(part);
+  if (v) out.push(v.said.text, '');
   const kids = shown(part);
-  if (kids.length) out.push(...kids.map((k) => `- ${flat(k)} — ${explained(k)}`), '');
+  if (kids.length) out.push(...kids.map((k) => `- ${flat(k)} — ${explained(k)}${valueMarkdown(valueOf(k), '  ')}`), '');
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));
   if (command) out.push(`${t.command}${flat(command)} — ${explained(command)}`, '');
   out.push(...plainNotes(ex, partNotes(ex, part).about, lang));

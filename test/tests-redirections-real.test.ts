@@ -207,6 +207,8 @@ describe('a redirection that a later one of the same descriptor replaces', () =>
     assert.match(token('echo hi >a &>b', '>a').explanation, /the later `&>b` then replaces stdout/);
     assert.match(token('echo hi >a >&b', '>a').explanation, /the later `>&b` then replaces stdout/);
     assert.match(token('echo hi >a >b', '>b').explanation, /\(overwrite\)$/);
+    // A redirection with no word (the fuzz test's `export A=1 >  >g`, which bash rejects) is explained, not thrown on.
+    assert.ok(tokens('export A=1 >  >g', 'en').some((x) => x.label.startsWith('>')));
   });
 
   it('is not replaced when the later one opens the same file, or copies the descriptor', () => {

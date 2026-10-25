@@ -319,8 +319,8 @@ export async function probeStatus(snippet: string, opts: ProbeOptions = {}): Pro
 // The tables: test/fixtures/probes/<kind>.json, an array of rows. `snippet` and the inputs are written by
 // hand; `facts` by scripts/record-probes.ts.
 
-export type ProbeKind = 'state' | 'env' | 'names' | 'words' | 'status';
-export const PROBE_KINDS: ProbeKind[] = ['state', 'env', 'names', 'words', 'status'];
+export type ProbeKind = 'state' | 'env' | 'names' | 'words' | 'status' | 'values';
+export const PROBE_KINDS: ProbeKind[] = ['state', 'env', 'names', 'words', 'status', 'values'];
 
 export interface ProbeRow {
   /** The section of the Bash manual the row is about ('3.2.3'). */
@@ -367,6 +367,11 @@ export async function factsOf(kind: ProbeKind, row: ProbeRow): Promise<unknown> 
     case 'status': {
       const { ran, status, run } = await probeStatus(row.snippet, { errexit: row.errexit ?? true, posix: row.posix });
       return { ran, status, ...firstError(run) };
+    }
+    // (The values of expansions, docs/design/expansion-values.md: the fields of each marker's one word, as for words.)
+    case 'values': {
+      const { fields, run } = await probeWords(row.snippet, { posix: row.posix });
+      return { ...fields, status: run.status, ...firstError(run) };
     }
   }
 }
