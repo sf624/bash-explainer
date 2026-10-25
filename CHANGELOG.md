@@ -19,6 +19,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A sequence of braces names its parts: in `{1..10..3}`, the start `1`, the end `10` and the increment `3`, with what bash makes of them (a negative increment, an end the steps miss, padding with zeros), in Meaning and in Reading.
 - In a string another shell runs, `$0` and `$1`… say they are that shell's, and the word each starts as: in `sudo sh -c '… "$1" …' sh "$msg"`, `$1` starts as `"$msg"`.
 - On the web page, pasting or dropping a whole script sets the file kind from its content (a shebang, `FROM`, `jobs:`, a Makefile rule, a bash code block…), and a toast says so with Undo. A few lines pasted into your own script leave the kind as it is.
+- The web page opens files and saves them: **Open file…** in the menu, `Ctrl+O` or a drop on the editor opens one, with the kind from its name; `Ctrl+S` (`⌘S` on a Mac) or **Save** saves the script. The file stays in your browser.
 
 ### Changed
 

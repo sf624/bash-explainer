@@ -320,6 +320,32 @@ button {
   text-overflow: ellipsis;
 }
 
+/* The name of the file opened or saved (with ● for changes not saved), in the tagline's place; cut with "…" when
+   the bar is short of room. A phone has no room: its menu's Save shows the name. */
+.file-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 24rem;
+  margin: 0;
+  overflow: hidden;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.file-label[hidden] {
+  display: none;
+}
+
+.file-label:not([hidden]) ~ .tagline {
+  display: none;
+}
+
+:where(html.narrow) .file-label {
+  display: none;
+}
+
 .actions {
   display: flex;
   flex: none;
@@ -420,10 +446,62 @@ button {
 }
 
 .source {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+
+/* Over the editor while a file is dragged onto it (web/main.ts): a dashed frame and what a drop does. It lets the
+   drag through to the editor below. */
+.drop-target {
+  position: absolute;
+  inset: 6px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  border: 2px dashed var(--vscode-focusBorder);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
+  color: var(--vscode-foreground);
+  text-align: center;
+  pointer-events: none;
+}
+
+.drop-target[hidden] {
+  display: none;
+}
+
+.drop-target p {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 22rem;
+  margin: 0;
+}
+
+.drop-target svg {
+  width: 32px;
+  height: 32px;
+  fill: none;
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.drop-target strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.drop-target span {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12.5px;
 }
 
 #editor {
@@ -705,7 +783,7 @@ body.resizing .problems-resize {
   visibility: hidden;
 }
 
-/* The question after a change of the file kind (web/kind-dialog.ts): a small modal box in the middle. */
+/* The questions before the text is replaced (web/kind-dialog.ts): a small modal box in the middle. */
 .ask {
   width: min(26rem, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
@@ -743,14 +821,14 @@ body.resizing .problems-resize {
   gap: 8px;
 }
 
-.ask-actions #kind-replace {
+.ask-actions .ask-confirm {
   border-color: var(--page-accent);
   background: var(--page-accent);
   color: var(--page-accent-foreground);
 }
 
 @media (hover: hover) {
-  .ask-actions #kind-replace:hover {
+  .ask-actions .ask-confirm:hover {
     filter: brightness(1.1);
   }
 }
@@ -760,7 +838,7 @@ body.resizing .problems-resize {
   outline-offset: 2px;
 }
 
-/* On a phone the two choices are full-width touch targets, the sample first. */
+/* On a phone the two choices are full-width touch targets, the one that changes the text first. */
 :where(html.narrow) .ask-actions {
   flex-direction: column-reverse;
 }
@@ -979,6 +1057,37 @@ body.resizing .problems-resize {
 
 .menu-item[hidden] {
   display: none;
+}
+
+/* After a label: the file Save writes to (cut with "…"), and the item's shortcut (only with a mouse: a touch
+   screen has no keyboard for it). */
+.menu-note,
+.menu-key {
+  margin-left: auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.menu-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-note + .menu-key {
+  margin-left: 0;
+}
+
+.menu-key {
+  flex: none;
+  font-family: inherit;
+}
+
+@media (pointer: coarse) {
+  .menu-key {
+    display: none;
+  }
 }
 
 @media (hover: hover) {
