@@ -208,6 +208,45 @@ describe('a redirection that a later one of the same descriptor replaces', () =>
     assert.match(token('echo hi >a >&b', '>a').explanation, /the later `>&b` then replaces stdout/);
     assert.match(token('echo hi >a >b', '>b').explanation, /\(overwrite\)$/);
   });
+
+  it('is not replaced when the later one opens the same file, or copies the descriptor', () => {
+    /** The first token labelled `label` (`>s` of `>s >s`). */
+    const first = (src: string, label: string, lang: 'en' | 'ja' = 'en'): Token => tokens(src, lang).find((x) => x.label === label)!;
+    // The same file, as written: bash writes to it, or reads it.
+    for (const [src, label] of [['echo hi >s >s', '>s'], ['echo hi >s >>s', '>s'], ['echo hi >s >./s', '>s'], ['cat <a <a', '<a'], ['echo hi >s &>s', '>s']]) {
+      assert.doesNotMatch(first(src, label).explanation, /later/, src);
+    }
+    assert.strictEqual(inDir('echo hi >s >s; echo hi >t >>t; echo hi >u >./u; printf a >a; cat <a <a; echo; echo "[$(cat s)] [$(cat t)] [$(cat u)]"'), 'a\n[hi] [hi] [hi]\n');
+    // A word not known here may name the same file.
+    assert.match(token('echo x >a >"$f"', '>a').explanation, /`a` is created or emptied, but nothing is written to it \(unless `>"\$f"` names the same file, which is then used\)$/);
+    assert.match(token('echo x >a >"$f"', '>a', 'ja').explanation, /何も書き込まれない（`>"\$f"` が同じファイルを指すなら、このファイルが使われる）$/);
+    assert.match(token('echo x >"$f" >a', '>"$f"').explanation, /\(unless `>a` names the same file, which is then used\)$/);
+    assert.match(token('echo x >a >b', '>a').explanation, /nothing is written to it$/);
+    assert.strictEqual(inDir('f=a; echo x >a >"$f"; cat a'), 'x\n');
+    // `/dev/stdout` is a copy of stdout, and `{v}>&1`, `{v}<&0` copy too: the earlier one is still used.
+    assert.doesNotMatch(token('echo hi >a >/dev/stdout', '>a').explanation, /later/);
+    assert.doesNotMatch(token('echo hi >a >/dev/fd/1', '>a').explanation, /later/);
+    assert.strictEqual(inDir('echo hi >a >/dev/stdout; cat a'), 'hi\n');
+    assert.doesNotMatch(token('cat <a </dev/stdin', '<a').explanation, /later/);
+    assert.doesNotMatch(token('ls x 2>e 2>/dev/stderr', '2>e').explanation, /later/);
+    assert.strictEqual(inDir('printf a >a; cat <a </dev/stdin; ls nothere 2>e 2>/dev/stderr; [ -s e ] && echo e-has-stderr'), 'ae-has-stderr\n');
+    assert.doesNotMatch(token('{ echo hi >&$v; } >o1 {v}>&1 >o2', '>o1').explanation, /later/);
+    assert.strictEqual(inDir('{ echo hi >&$v; } >o1 {v}>&1 >o2; echo "[$(cat o1)] [$(cat o2)]"'), '[hi] []\n');
+    assert.doesNotMatch(token('cat <<A {v}<&0 <<B\na\nA\nb\nB', '<<A').explanation, /later/);
+    assert.strictEqual(bash('{ cat; cat <&$v; } <<A {v}<&0 <<B\na\nA\nb\nB\n').stdout, 'b\na\n');
+    assert.match(token('cat <a {v}<&3 <b', '<a').explanation, /the later `<b` then replaces stdin/);
+  });
+
+  it('a device is only opened; an empty here-document names its end line', () => {
+    assert.match(token('echo hi >/dev/null >b', '>/dev/null').explanation, /: `\/dev\/null` is opened, but nothing is written to it$/);
+    assert.match(token('echo hi >>/dev/null >b', '>>/dev/null', 'ja').explanation, /`\/dev\/null` は開かれるが、何も書き込まれない$/);
+    assert.match(token('cat <>/dev/null <b', '<>/dev/null').explanation, /`\/dev\/null` is opened but not used$/);
+    assert.strictEqual(inDir('echo hi >/dev/null >b; cat b; [ -c /dev/null ] && echo device'), 'hi\ndevice\n');
+    assert.match(token('cat <<A\nA', '<<A').explanation, /are expanded \(line 2\)$/);
+    assert.match(token('cat <<A\nA', '<<A', 'ja').explanation, /（行 2）$/);
+    assert.match(token('cat <<A <<B\nA\nb\nB', '<<A').explanation, /\(line 2\)$/);
+    assert.strictEqual(bash('cat <<A\nA\necho after\n').stdout, 'after\n');
+  });
 });
 
 describe('a redirection target that brace expansion makes one word', () => {

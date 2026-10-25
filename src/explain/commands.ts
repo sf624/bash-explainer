@@ -21,7 +21,7 @@ import { bracket as bracketLabel, labelText, shorten } from '../label';
 import { fact } from '../messages';
 import { nameInfo } from '../namefacts';
 import { builtinSections } from '../refs';
-import { inFunction, shellEffectOf } from '../semantics/env';
+import { inFunction, processOf, shellEffectOf } from '../semantics/env';
 import { assignmentsOf, type Missed, type NameResolution, testSpecOf } from '../semantics/names';
 import { docLine } from '../semantics/state';
 import { isPlainWord, literalContent, staticWordValue } from '../staticword';
@@ -184,6 +184,16 @@ function commandParts(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode): { pre
   return { prefix, args, redirs };
 }
 
+/**
+ * What `local` outside a function stops in `cx.shell`: nothing in bash (it fails, status 1); in dash and busybox ash,
+ * the shell that runs it (`processOf`): the script, a subshell, or one not known to be either.
+ */
+function localStops(cx: Explainer, n: SyntaxNode): false | 'script' | 'subshell' | 'shell' {
+  if (!cx.shell || cx.shell === 'bash') return false;
+  const p = processOf(cx.state.env(n));
+  return p.kind === 'main' ? 'script' : p.kind === 'subshell' && p.sure ? 'subshell' : 'shell';
+}
+
 function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: SyntaxNode[], prefix: Token[], redirs: SyntaxNode[], word?: SyntaxNode): Token {
   const head = commandHead(cx, nameNode, word);
   const yq = yqSpecsOf(head.name);
@@ -195,7 +205,7 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
     // A command over several lines is explained whole, so it always starts on the line explained.
     for (const text of yqNotes(verdict, cx.lang)) cx.note(text, n);
   }
-  if (head.kind === 'builtin' && onlyInFunction(head.spec!, cx.shell) && !inFunction(cx.state.env(n)) && scopeOf(n) !== 'substitution') cx.note(fact(cx.lang, 'local-outside-function', { stops: !!cx.shell && cx.shell !== 'bash' }), n);
+  if (head.kind === 'builtin' && onlyInFunction(head.spec!, cx.shell) && !inFunction(cx.state.env(n)) && scopeOf(n) !== 'substitution') cx.note(fact(cx.lang, 'local-outside-function', { stops: localStops(cx, n) }), n);
   if (head.kind === 'builtin' && head.spec!.ends === 'function') head.explanation = returnInSubstitution(cx, n) ?? head.explanation;
   const read = readArgs(cx, head.spec, args, head.runs ?? head.name, head.fn);
   let argToks = read.tokens;
