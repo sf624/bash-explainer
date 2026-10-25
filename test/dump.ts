@@ -22,6 +22,8 @@ const root = path.join(__dirname, '..');
     console.log(`${'  '.repeat(d)}- [${t.kind}] ${t.label} (${t.span.start.line + 1}:${t.span.start.character}-${t.span.end.line + 1}:${t.span.end.character}) — ${t.explanation}${t.refs ? ` ⟦${t.refs.join(', ')}⟧` : ''}`);
     // (What a command name is: the panel's badge, and its line on the other meanings.)
     if (t.name) console.log(`${'  '.repeat(d + 1)}« ${t.name.said.kind}${t.name.said.by ? `, ${t.name.said.by}` : ''} »${t.name.said.also ? ` ${t.name.said.also}` : ''}`);
+    // (The value of an expansion where it runs: the model's, `Token.value`.)
+    if (t.value) console.log(`${'  '.repeat(d + 1)}= ${t.value.said.text}`);
     t.children.forEach((c) => print(c, d + 1));
   };
   lines.forEach((text, i) => {

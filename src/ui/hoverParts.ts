@@ -1,6 +1,6 @@
 // Which part of a line a hover explains (docs/design/hover.md): the part at the position, as an editor finds the word at
 // the cursor. Pure code, shared by VS Code's hover and the Language Server's.
-import type { LineExplanation, Pos, Span, Token } from '../analyzer-types';
+import type { LineExplanation, Pos, Span, Token, ValueInfo } from '../analyzer-types';
 import type { HeredocAt } from '../document';
 
 const samePos = (a: Pos, b: Pos) => a.line === b.line && a.character === b.character;
@@ -20,6 +20,15 @@ export function covers(t: Token, p: Pos): boolean {
  */
 export function shown(tok: Token): Token[] {
   return tok.children.flatMap((c) => (sameSpan(c.span, tok.span) ? shown(c) : [c]));
+}
+
+/**
+ * The value of the expansion a part is (`Token.value`), also when the part is a word made of it alone (`$msg` as an
+ * argument): the token of the same range that `shown` leaves out holds it.
+ */
+export function valueOf(tok: Token): ValueInfo | undefined {
+  const same = tok.children.find((c) => sameSpan(c.span, tok.span));
+  return tok.value ?? (same && valueOf(same));
 }
 
 /** A command a reader thinks of as one unit: a command name of bash (it has name facts), or a command outside an embedded language. */

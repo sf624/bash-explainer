@@ -245,3 +245,10 @@ export function skeleton(n: SyntaxNode): LabelPart[] {
     default: return [keep(flat(n.text), 'word')];
   }
 }
+
+/** Text as a Markdown code span: the fence is longer than any run of backticks inside, and a backtick at either end is set off by a space. */
+export function codeSpan(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((m) => m.length));
+  const fence = '`'.repeat(longest + 1);
+  return text.startsWith('`') || text.endsWith('`') ? `${fence} ${text} ${fence}` : `${fence}${text}${fence}`;
+}

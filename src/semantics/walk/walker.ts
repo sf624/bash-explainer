@@ -627,7 +627,7 @@ export class Walker {
    * a loop whose passes did not settle.
    */
   everywhere(n: SyntaxNode): boolean {
-    /* c8 ignore next -- a guard: with nothing trusted, no condition is decided and no path ends, so nothing asks */
+    /* c8 ignore next -- a guard: with nothing trusted, no condition is decided and no path ends, so nothing asks (the callers of `StateModel.settled` check `blind` first) */
     if (this.blind) return false;
     // (A definition itself runs where it stands: its body is what may run elsewhere.)
     let root = n;

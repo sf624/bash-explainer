@@ -2080,5 +2080,25 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "v='a b'; for (( c = 0; c < 1; c++ )); do @PROBE:a@ $v; done; for (( ; c < 2; c++ )) { @PROBE:b@ $v; }",
+    "note": "the body of `for (( ))` is commands, not arithmetic: its words are split",
+    "facts": {
+      "a": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "b": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]
