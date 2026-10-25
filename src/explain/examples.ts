@@ -232,13 +232,12 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
 
 /** The example of a run of the command, when its spec has one (`CommandSpec.example`: printf, xargs, sort…). */
 export function commandExampleFor(cx: Explainer, n: SyntaxNode, spec: CommandSpec | undefined, args: SyntaxNode[], parse: ArgvParse): void {
-  const kind = spec?.example;
-  if (!kind) return;
-  switch (kind) {
-    case 'read':
-      readExample(cx, n, args);
-      return;
+  if (!spec?.example) return;
+  if (spec.example === 'read') {
+    readExample(cx, n, args);
+    return;
   }
+  const kind = spec.example;
   const src = inputSource(cx, n, parse, args, spec);
   // A command that prints what it reads as it is (cat) shows what it does when it joins several streams (`cat a - b`).
   if (spec.copies && src.streams.length < 2 && !src.reads) return;
