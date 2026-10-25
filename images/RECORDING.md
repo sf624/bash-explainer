@@ -15,7 +15,7 @@ README.md and README.ja.md use these four files from `images/readme/`, recorded 
 
 ### The old files in `images/`
 
-`images/demo.gif`, `hover.gif`, `panel.gif` and `inline.png`, directly in this directory, are the images that the README of v0.8.0 used. That release's page was packaged before the pinning, so it loads its images from `HEAD`, that is from these paths on `main`: with the files in place it shows the images of v0.8.0 (without them, newer images of `main`, and none for `inline.png`). They are there until the next release is published, **then deleted** (a step of the release checklist in [docs/publishing.md](../docs/publishing.md)). Do not record into them and do not point a README at them: the recording script writes `images/readme/` only.
+`images/demo.gif`, `hover.gif`, `panel.gif` and `inline.png`, directly in this directory, are the images that the README of v0.8.0 used. The pages of 0.8.0 and older were packaged before the pinning, so they load their images from `HEAD`, that is from these paths on `main`: Open VSX keeps a page for every version, and VS Code's details view of an installed 0.8.0 loads them the same way. With the files in place these pages show the images of v0.8.0 (without them, newer images of `main`, and none for `inline.png`). **Keep them: do not remove or replace them**; the blobs are in the history anyway, so they cost nothing. Do not record into them and do not point a README at them: the recording script writes `images/readme/` only.
 
 ## Recording them automatically
 

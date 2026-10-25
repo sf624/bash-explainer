@@ -11,6 +11,10 @@
 //          packaged .vsix or npm tarball and exits 1 when anything is left (the Release workflow, and
 //          test/readme-pins.test.ts).
 //
+// Code (spans, fenced and indented blocks) is neither checked nor rewritten here, as a Markdown reader
+// shows it as it is. vsce, though, rewrites `[text](relative)` in code too (it uses a regular expression),
+// so test/readme-pins.test.ts requires that README.md, README.ja.md and CHANGELOG.md hold no such example.
+//
 // Usage: npx tsx scripts/readme-pins.ts --vsix <file> [--tag v0.9.0]
 //        npx tsx scripts/readme-pins.ts --tgz <file> [--tag v0.9.0]
 //        npx tsx scripts/readme-pins.ts --file <README.md> [--tag v0.9.0]
@@ -22,15 +26,95 @@ import { inflateRawSync } from 'zlib';
 
 export const REPO = 'sf624/bash-explainer';
 
-/** A link or image target in Markdown (inline, reference definition) or in an HTML tag. */
+/** A link or image target in a README, and where it stands in the text. */
 interface Target {
   url: string;
   image: boolean;
+  /** A URL in running text, not the target of a link: it is only checked when it names a branch of this repository. */
+  bare: boolean;
+  start: number;
+  end: number;
 }
 
-const INLINE = /\]\(\s*<?([^)\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g;
-const DEFINITION = /^( {0,3}\[[^\]]+\]:\s*)(\S+)/gm;
-const HTML = /(<(img|a|video|source)\b[^>]*?\s(?:src|href)=)(["'])([^"']*)\3/gi;
+/**
+ * The text with its code replaced by spaces of the same length (line ends stay), or, with `keepCode`,
+ * the code alone. Code is fenced blocks (``` and ~~~, with an info string), indented blocks and code
+ * spans (a backtick run of any length). A Markdown reader shows it as it is, so a link in it is no link.
+ */
+export function maskCode(text: string, keepCode = false): string {
+  const chars = text.split('');
+  const isCode = new Array<boolean>(chars.length).fill(false);
+  const mark = (from: number, to: number) => isCode.fill(true, from, to);
+
+  // Blocks, line by line.
+  let fence: { char: string; length: number } | undefined;
+  let afterBlank = true;
+  let inList = false;
+  let inIndented = false;
+  let at = 0;
+  for (const line of text.split('\n')) {
+    const from = at;
+    at += line.length + 1;
+    if (fence) {
+      mark(from, from + line.length);
+      const close = /^[ \t>]*(`{3,}|~{3,})[ \t]*$/.exec(line);
+      if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = undefined;
+      continue;
+    }
+    const open = /^[ \t>]*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (open && !(open[1][0] === '`' && open[2].includes('`'))) {
+      fence = { char: open[1][0], length: open[1].length };
+      mark(from, from + line.length);
+      afterBlank = false;
+      inIndented = false;
+      continue;
+    }
+    if (/^\s*$/.test(line)) {
+      afterBlank = true;
+      continue;
+    }
+    const indent = /^[ \t]*/.exec(line)![0].replace(/\t/g, '    ').length;
+    if (indent >= 4 && (inIndented || (afterBlank && !inList))) {
+      mark(from, from + line.length);
+      inIndented = true;
+    } else {
+      inIndented = false;
+      if (indent < 4) inList = /^ {0,3}(?:[-*+]|\d{1,9}[.)])[ \t]/.test(line) || (inList && indent > 0);
+    }
+    afterBlank = false;
+  }
+
+  // Code spans, in what the blocks leave.
+  const rest = chars.map((c, i) => (isCode[i] ? ' ' : c)).join('');
+  const runs = [...rest.matchAll(/`+/g)].map((m) => ({ start: m.index!, length: m[0].length }));
+  for (let i = 0; i < runs.length; i++) {
+    let { start, length } = runs[i];
+    let escapes = 0;
+    while (rest[start - 1 - escapes] === '\\') escapes++;
+    if (escapes % 2 === 1) {
+      start++;
+      length--;
+    }
+    if (length === 0) continue;
+    for (let j = i + 1; j < runs.length; j++) {
+      if (/\n[ \t]*\n/.test(rest.slice(start + length, runs[j].start))) break;
+      if (runs[j].length !== length) continue;
+      mark(start, runs[j].start + length);
+      i = j;
+      break;
+    }
+  }
+  return chars.map((c, i) => (c === '\n' || isCode[i] === keepCode ? c : ' ')).join('');
+}
+
+const INLINE = /\]\(\s*<?([^)\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/dg;
+const DEFINITION = /^ {0,3}\[[^\]]+\]:\s*<?([^\s>]+)/dgm;
+const AUTOLINK = /<([a-z][a-z0-9+.-]{1,31}:[^\s<>]*)>/dgi;
+const TAG = /<(img|a|video|source)\b((?:"[^"]*"|'[^']*'|[^>"'])*)>/gi;
+const ATTRIBUTE = /\s(src|href|poster|srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/dgi;
+const SRCSET_URL = /(?:^|,)\s*([^\s,]+)/dg;
+const BARE = /https?:\/\/[^\s<>()[\]"'`]+/g;
+const IMAGE_FILE = /\.(png|gif|jpe?g|svg|webp)(\?|#|$)/i;
 
 /** Whether the `[` that the `]` at `close` closes is preceded by `!`. */
 function isImage(text: string, close: number): boolean {
@@ -42,34 +126,63 @@ function isImage(text: string, close: number): boolean {
   return false;
 }
 
-/** Every target in the README, with a function that rewrites them. */
-function rewrite(text: string, fix: (target: Target) => string): string {
-  return text
-    .replace(INLINE, (all, url: string, offset: number) => all.replace(url, fix({ url, image: isImage(text, offset) })))
-    .replace(DEFINITION, (_all, head: string, url: string) => head + fix({ url, image: /\.(png|gif|jpe?g|svg|webp)(\?|#|$)/i.test(url) }))
-    .replace(HTML, (_all, head: string, tag: string, quote: string, url: string) => head + quote + fix({ url, image: !/^a$/i.test(tag) }) + quote);
+/**
+ * The targets of the links and images of a README, outside its code: Markdown inline links and images,
+ * reference definitions, autolinks, the src, href, poster and srcset of HTML tags (quoted or not), and
+ * the URLs written in the text.
+ */
+function scan(text: string): Target[] {
+  const masked = maskCode(text);
+  const found: Target[] = [];
+  const add = (at: readonly [number, number], image: boolean) => found.push({ url: text.slice(...at), image, bare: false, start: at[0], end: at[1] });
+  for (const m of masked.matchAll(INLINE)) add(m.indices![1], isImage(masked, m.index!));
+  for (const m of masked.matchAll(DEFINITION)) add(m.indices![1], IMAGE_FILE.test(m[1]));
+  for (const m of masked.matchAll(AUTOLINK)) add(m.indices![1], false);
+  for (const tag of masked.matchAll(TAG)) {
+    const image = !/^a$/i.test(tag[1]);
+    const shift = tag.index!;
+    for (const attribute of tag[0].matchAll(ATTRIBUTE)) {
+      const value = attribute.indices!.slice(2).find(Boolean)!;
+      if (attribute[1].toLowerCase() !== 'srcset') add([shift + value[0], shift + value[1]], image);
+      else for (const c of tag[0].slice(value[0], value[1]).matchAll(SRCSET_URL)) add([shift + value[0] + c.indices![1][0], shift + value[0] + c.indices![1][1]], true);
+    }
+  }
+  for (const m of masked.matchAll(BARE)) {
+    const url = m[0].replace(/[.,;:!?*_~]+$/, '');
+    const start = m.index!;
+    if (!found.some((t) => start >= t.start && start < t.end)) found.push({ url, image: false, bare: true, start, end: start + url.length });
+  }
+  return found.sort((a, b) => a.start - b.start);
 }
 
-function targets(text: string): Target[] {
-  const found: Target[] = [];
-  rewrite(text, (t) => (found.push(t), t.url));
-  return found;
+/** The text with every target replaced by what `fix` makes of it. */
+function rewrite(text: string, fix: (target: Target) => string): string {
+  let out = text;
+  for (const t of scan(text).reverse()) out = out.slice(0, t.start) + fix(t) + out.slice(t.end);
+  return out;
 }
 
 const SKIPPED = /^(#|mailto:|tel:|data:)/i;
 const ABSOLUTE = /^[a-z][a-z0-9+.-]*:/i;
-const RAW_HOST = new RegExp(`^(https://raw\\.githubusercontent\\.com/${REPO}/)([^/?#]+)(/.*)?$`, 'i');
-const GITHUB_HOST = new RegExp(`^(https://github\\.com/${REPO}/(?:blob|tree|raw)/)([^/?#]+)(/.*)?$`, 'i');
+const BRANCH = /^(main|master|HEAD)$/;
+const REPO_URL = `https?://(?:www\\.)?github\\.com/${REPO}`;
+// A URL into this repository names its ref after blob/tree/raw, or as refs/heads/<branch> or refs/tags/<tag>.
+const RAW_HOST = new RegExp(`^(https?://raw\\.githubusercontent\\.com/${REPO}/)(?:refs/(?:heads|tags)/)?([^/?#]+)(/.*)?$`, 'i');
+const GITHUB_HOST = new RegExp(`^(${REPO_URL}/(?:blob|tree|raw)/)(?:refs/(?:heads|tags)/)?([^/?#]+)(/.*)?$`, 'i');
+// The repository's page with an anchor, https://github.com/<repo>#settings, shows the README of the default branch.
+const ROOT_ANCHOR = new RegExp(`^${REPO_URL}/?(?:\\?[^#]*)?(#.*)$`, 'i');
 
 /**
  * What is wrong with a target that should be pinned to `tag`, or undefined when it is fine. A changelog
- * may link to the tags of its older versions (`anyTag`); a README names exactly the tag.
+ * may link to the tags of its older versions (`anyTag`); a README names exactly the tag. A URL in the
+ * text (`bare`) is only wrong when it names a branch.
  */
-function problem(url: string, tag: string, anyTag: boolean): string | undefined {
+function problem({ url, bare }: Target, tag: string, anyTag: boolean): string | undefined {
   if (SKIPPED.test(url)) return undefined;
   if (!ABSOLUTE.test(url)) return 'a relative link (it resolves to the default branch)';
   const m = RAW_HOST.exec(url) ?? GITHUB_HOST.exec(url);
-  if (m && m[2] !== tag && !(anyTag && /^v\d+\.\d+\.\d+/.test(m[2]))) return `pinned to ${m[2]}, not ${tag}`;
+  if (m) return (bare ? BRANCH.test(m[2]) : m[2] !== tag && !(anyTag && /^v\d+\.\d+\.\d+/.test(m[2]))) ? `pinned to ${m[2]}, not ${tag}` : undefined;
+  if (!bare && ROOT_ANCHOR.test(url)) return 'the repository page with an anchor (it shows the README of the default branch)';
   return undefined;
 }
 
@@ -78,30 +191,34 @@ export interface Unpinned {
   why: string;
 }
 
-/** The links and images of `text` that point into this repository but not at `tag` (or, with `anyTag`, at no version's tag). */
+/** The links and images of `text`, outside its code, that point into this repository but not at `tag` (or, with `anyTag`, at no version's tag). */
 export function findUnpinned(text: string, tag: string, anyTag = false): Unpinned[] {
-  return targets(text).flatMap((t) => {
-    const why = problem(t.url, tag, anyTag);
+  return scan(text).flatMap((t) => {
+    const why = problem(t, tag, anyTag);
     return why ? [{ url: t.url, why }] : [];
   });
 }
 
 /** The images of `text` that are served from this repository at `tag`. */
 export function pinnedImages(text: string, tag: string): string[] {
-  return targets(text).filter((t) => t.image && (RAW_HOST.exec(t.url) ?? GITHUB_HOST.exec(t.url))?.[2] === tag).map((t) => t.url);
+  return scan(text).filter((t) => t.image && (RAW_HOST.exec(t.url) ?? GITHUB_HOST.exec(t.url))?.[2] === tag).map((t) => t.url);
 }
 
 /**
- * Pins the README at `dir` (relative to the repository root: 'cli' for cli/README.md) to `tag`:
- * relative targets become absolute ones in this repository at the tag, and the ones that name a
- * branch (main, HEAD) name the tag.
+ * Pins the README at `dir` (relative to the repository root: 'cli' for cli/README.md) to `tag`, outside
+ * its code: relative targets become absolute ones in this repository at the tag, the ones that name a
+ * branch (main, HEAD, also as refs/heads/main) name the tag, and the repository's page with an anchor
+ * becomes the README at the tag with that anchor.
  */
 export function pinReadme(text: string, dir: string, tag: string): string {
-  return rewrite(text, ({ url, image }) => {
+  return rewrite(text, ({ url, image, bare }) => {
     if (SKIPPED.test(url)) return url;
     const m = RAW_HOST.exec(url) ?? GITHUB_HOST.exec(url);
-    if (m) return /^(main|master|HEAD)$/.test(m[2]) ? `${m[1]}${tag}${m[3] ?? ''}` : url;
-    if (ABSOLUTE.test(url)) return url;
+    if (m) return BRANCH.test(m[2]) ? `${m[1]}${tag}${m[3] ?? ''}` : url;
+    if (ABSOLUTE.test(url)) {
+      const root = bare ? null : ROOT_ANCHOR.exec(url);
+      return root ? `https://github.com/${REPO}/blob/${tag}/README.md${root[1]}` : url;
+    }
     const [, file, rest] = /^([^?#]*)(.*)$/.exec(url)!;
     const target = file.startsWith('/') ? path.posix.normalize(file.slice(1)) : path.posix.normalize(path.posix.join(dir, file));
     if (target.startsWith('..')) throw new Error(`${url} leaves the repository`);
