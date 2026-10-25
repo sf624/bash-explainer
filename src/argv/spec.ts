@@ -9,6 +9,9 @@ import type { Shell } from '../dialect';
 import type { Text } from '../i18n';
 import type { OptionParser } from './parsers';
 
+/** What a builtin ends (`CommandSpec.ends`): a loop, a pass of a loop, a function, the shell. */
+export type Ends = 'loop' | 'pass' | 'function' | 'shell';
+
 export interface CommandSpec {
   summary: Text;
   /**
@@ -84,12 +87,25 @@ export interface CommandSpec {
   unknownOption?: Text;
   builtin?: 'special' | 'regular';
   /**
-   * What a builtin does to the shell that runs it: changes its state (`cd`, `set`, `export`, `read`) or ends it
-   * (`exit`). In a subshell (src/semantics/env.ts), only the subshell. `when`: the calls that do, when not all of
-   * them do (`set +o` and `umask` only print).
+   * What a builtin ends, where the path goes on after it: `loop`, the loop it runs in (`break`); `pass`, the pass of
+   * that loop, which goes on with the next one (`continue`); `function`, the function that runs it, a file that
+   * `source` reads, or a trap's action (`return`); `shell`, the shell, or the subshell it runs in (`exit`). Outside a
+   * loop, `break` and `continue` do nothing (bash says "only meaningful in a … loop", status 0); outside a function
+   * and a sourced file, `return` fails ("can only `return' from a function or sourced script", status 2).
+   */
+  ends?: Ends;
+  /**
+   * Where a builtin works, when not anywhere: `function`, only in a function (`local`). Outside one it fails and
+   * changes nothing (bash: "local: can only be used in a function", status 1).
+   */
+  scope?: 'function';
+  /**
+   * What a builtin does to the shell that runs it: changes its state (`cd`, `set`, `export`, `read`). (Ending it,
+   * `exit`, is `ends`.) In a subshell (src/semantics/env.ts), only the subshell. `when`: the calls that do, when not
+   * all of them do (`set +o` and `umask` only print).
    */
   shellEffect?: {
-    does: 'changes' | 'exits'; when?: (call: BuiltinCall) => boolean;
+    does: 'changes'; when?: (call: BuiltinCall) => boolean;
     /** The variable it sets when no word names one (a value or an operand with `sets`): `read` sets REPLY, `mapfile` the array MAPFILE. */
     byDefault?: { name: string; sets: VariableSet };
     /**

@@ -217,8 +217,8 @@ for (const [name, spec] of Object.entries(PROGRAMS)) spec.path = `/usr/bin/${nam
  * it (`exit`). In a subshell, that is the subshell only. `how`: `exits`, or the calls that change the shell when
  * not all of them do (the others only print: `set +o`, `umask`, `trap -p`).
  */
-const actsOnShell = (spec: CommandSpec, how?: 'exits' | ((call: BuiltinCall) => boolean), more: Omit<NonNullable<CommandSpec['shellEffect']>, 'does' | 'when'> = {}): CommandSpec =>
-  ({ ...spec, shellEffect: how === 'exits' ? { does: 'exits' } : { does: 'changes', ...(how ? { when: how } : {}), ...more } });
+const actsOnShell = (spec: CommandSpec, when?: (call: BuiltinCall) => boolean, more: Omit<NonNullable<CommandSpec['shellEffect']>, 'does' | 'when'> = {}): CommandSpec =>
+  ({ ...spec, shellEffect: { does: 'changes', ...(when ? { when } : {}), ...more } });
 const has = (call: BuiltinCall, ...flags: string[]): boolean => call.flags.some((f) => flags.includes(f));
 /** `declare`, `typeset`: no name, `-p` and `-F` print, and so does `-f` without an attribute to give. */
 const declares = (c: BuiltinCall): boolean => c.operands.length > 0 && !has(c, '-p', '-F') && !(has(c, '-f') && !c.flags.some((f) => /^[-+][xrt]$/.test(f)));
@@ -235,7 +235,7 @@ export const builtins: Record<string, CommandSpec> = {
   // `declare +x`: a `+` turns the attribute off.
   declare: actsOnShell(declarationSpec('declare', declarationFlags, DECLARE_NAMES, { plusOptions: true }, declarationOffFlags), declares),
   typeset: actsOnShell(declarationSpec('typeset', declarationFlags, DECLARE_NAMES, { plusOptions: true }, declarationOffFlags), declares),
-  local: actsOnShell(declarationSpec('local', declarationFlags, DECLARE_NAMES, { plusOptions: true }, declarationOffFlags), (c) => c.operands.length > 0),
+  local: actsOnShell(declarationSpec('local', declarationFlags, DECLARE_NAMES, { plusOptions: true, scope: 'function' }, declarationOffFlags), (c) => c.operands.length > 0),
   // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word, `--` too, is text to print.
   // The last of `-e` and `-E` decides whether backslash escapes are read.
   echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', ECHO_OPTIONS, { program: PROGRAMS.echo, ...ECHO_READING }),
@@ -271,8 +271,8 @@ export const builtins: Record<string, CommandSpec> = {
     ['-L', 'シンボリックリンクを含んだ論理パスを表示（既定）', 'print the logical path, with symlinks (default)'],
   ], { program: PROGRAMS.pwd }),
   logout: b('ログインシェルを終了する（ログインシェル以外ではエラー）', 'Exit a login shell (an error in other shells)', [], numeric(operand('STATUS', '終了ステータス', 'exit status'))),
-  exit: actsOnShell(special('シェル（スクリプト）を終了する', 'Exit the shell or script', [], numeric(operand('STATUS', '終了ステータス（0 が成功、省略時は直前のコマンドのステータス）', 'exit status (0 = success; default: status of last command)'))), 'exits'),
-  return: special('関数から戻る', 'Return from a function', [], numeric(operand('STATUS', '戻り値となる終了ステータス', 'exit status to return'))),
+  exit: special('シェル（スクリプト）を終了する', 'Exit the shell or script', [], { ...numeric(operand('STATUS', '終了ステータス（0 が成功、省略時は直前のコマンドのステータス）', 'exit status (0 = success; default: status of last command)')), ends: 'shell' }),
+  return: special('関数から戻る', 'Return from a function', [], { ...numeric(operand('STATUS', '戻り値となる終了ステータス', 'exit status to return')), ends: 'function' }),
   set: actsOnShell(special('シェルオプションや位置パラメータを設定する', 'Set shell options or positional parameters', [
     ['-e', 'コマンドが失敗したら即座にスクリプトを終了する', 'exit immediately if a command fails'],
     ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
@@ -504,8 +504,8 @@ export const builtins: Record<string, CommandSpec> = {
     ['-p', '1行に1つずつ表示する', 'print one entry per line'],
     ['-v', '番号を付けて1行に1つずつ表示する', 'print one entry per line with its index'],
   ], { patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）だけを表示する`, `Show only entry ${n}, counted from the ${side} (from 0)`))] }),
-  break: special('ループを抜ける', 'Exit from a loop', [], numeric(operand('N', '抜けるループの段数', 'number of loop levels'))),
-  continue: special('ループの次の繰り返しに進む', 'Skip to the next loop iteration', [], numeric(operand('N', '対象のループの段数', 'number of loop levels'))),
+  break: special('ループを抜ける', 'Exit from a loop', [], { ...numeric(operand('N', '抜けるループの段数', 'number of loop levels')), ends: 'loop' }),
+  continue: special('ループの次の繰り返しに進む', 'Skip to the next loop iteration', [], { ...numeric(operand('N', '対象のループの段数', 'number of loop levels')), ends: 'pass' }),
   unset: actsOnShell(special('変数や関数を削除する', 'Unset variables or functions', [
     ['-v', '変数を削除', 'unset variables'],
     ['-f', '関数を削除', 'unset functions'],

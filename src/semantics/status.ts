@@ -12,7 +12,7 @@ import { canonicalName } from '../dict/aliases';
 import { builtins } from '../dict/builtins';
 import type { Shell } from '../dialect';
 import { assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from '../syntax/tree';
-import { actedNames } from '../argv/query';
+import { actedNames, declaresNames } from '../argv/query';
 import { builtinParse, commandName, wrapped } from './effects';
 import { processOf, STATEMENTS } from './env';
 import { resolveName, testSpecOf } from './names';
@@ -39,10 +39,13 @@ export type StatusRule =
   | { readonly kind: 'test'; readonly fails?: true }
   /** Lists, `{ }`, `( )`, `if`, `case`, loops, `time`: the status of the last command run (0 when none ran). */
   | { readonly kind: 'last-run' }
-  /** `exit N` and `return N`: N modulo 256 (with a word that is not a number, the rule is `command`). */
-  | { readonly kind: 'given'; readonly by: 'exit' | 'return'; readonly value: number }
+  /**
+   * `exit N` and `return N` (what they end, `CommandSpec.ends`: the shell or the function): N modulo 256 (with a word
+   * that is not a number, the rule is `command`).
+   */
+  | { readonly kind: 'given'; readonly ends: 'shell' | 'function'; readonly value: number }
   /** `exit` and `return` with no number: the status of the command before. */
-  | { readonly kind: 'previous'; readonly by: 'exit' | 'return' }
+  | { readonly kind: 'previous'; readonly ends: 'shell' | 'function' }
   /** `wait`: the status of the job waited for (`job`, the statement `$!` started, when known); 0 with no operand. */
   | { readonly kind: 'wait'; readonly job?: SyntaxNode; readonly all: boolean }
   /** A statement started with `&` (or a coproc): 0 for the shell that starts it; `job` is its own status, for `wait`. */
@@ -112,9 +115,6 @@ function backgrounded(n: SyntaxNode): boolean {
 }
 
 /** The command substitutions of `n` that are not inside another one, in source order. */
-/** Whether the builtin `name` has operands that declare names (`OperandSpec.acts`): the declaration builtins. */
-const declaresNames = (name: string): boolean => !!builtins[name]?.operands?.some((o) => o.pattern.some((p) => p.acts === 'declares'));
-
 /** A word that is an assignment as text (`\declare a=$(cmd)`): the name assigned. */
 const ASSIGNMENT = /^([A-Za-z_]\w*(?:\[[^\]]*\])?)\+?=/;
 
@@ -223,16 +223,17 @@ class Statuses implements StatusModel {
           return read.unclosed || read.malformed ? { kind: 'test', fails: true } : { kind: 'test' };
         }
         if (res?.kind !== 'builtin') return { kind: 'command', functions: this.calledBy(n) };
-        if (name === 'exit' || name === 'return') {
+        const spec = builtins[res.name];
+        if (spec.ends === 'shell' || spec.ends === 'function') {
           const v = args[0]?.text;
-          if (v === undefined) return { kind: 'previous', by: name };
+          if (v === undefined) return { kind: 'previous', ends: spec.ends };
           // (`exit $code`: the value is not known here.)
-          return /^-?\d+$/.test(v) ? { kind: 'given', by: name, value: ((Number(v) % 256) + 256) % 256 } : { kind: 'command', functions: [] };
+          return /^-?\d+$/.test(v) ? { kind: 'given', ends: spec.ends, value: ((Number(v) % 256) + 256) % 256 } : { kind: 'command', functions: [] };
         }
         if (name === 'let') return { kind: 'arith' };
         // `local x=$(cmd)`, `\local x=$(cmd)`: the declaration's own status, whatever the substitution's (its operands
         // that declare names, `OperandSpec.acts`).
-        const assigned = !declaresNames(res.name) ? [] : actedNames(builtinParse(res.name, args)).filter((o) => o.acts === 'declares').map(({ word }) => args[word])
+        const assigned = !declaresNames(spec) ? [] : actedNames(builtinParse(res.name, args)).filter((o) => o.acts === 'declares').map(({ word }) => args[word])
           .filter((a) => a.type === 'variable_assignment' || ASSIGNMENT.test(a.text));
         const subs = assigned.flatMap(outerSubstitutions);
         if (subs.length) {
