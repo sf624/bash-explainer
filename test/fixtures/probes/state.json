@@ -4204,5 +4204,71 @@
       },
       "status": 0
     }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "a=1; b=1; c=1; a=2 b=3 c=4 export a; c=5 readonly c",
+    "note": "a prefix assignment of a name that export or readonly gets stays, also outside POSIX mode",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "x",
+            "value": "\"2\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "c": {
+            "attrs": "rx",
+            "value": "\"5\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "a=1; b=1; a=2 b=3 command export a",
+    "posix": true,
+    "note": "behind command, export is no special builtin: only the assignment it exports stays",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "x",
+            "value": "\"2\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "5.2",
+    "snippet": "y=1; z=1; PPID=5; y=2\nz=2",
+    "note": "an assignment to a variable bash makes readonly fails and discards the rest of the line",
+    "facts": {
+      "end": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: PPID: readonly variable"
+    }
   }
 ]

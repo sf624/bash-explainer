@@ -120,11 +120,20 @@ export const INTEGERS_AT_START: readonly string[] = Object.keys(BASH_VARIABLES).
 /** Whether `name` is readonly from the start (`UID`): what the script assigns to it fails. */
 export const readonlyAtStart = (name: string): boolean => known(name)?.start?.includes('r') ?? false;
 
+/** The variables readonly from the start (`UID`, `SHELLOPTS`…), each with the attribute letters bash gives it (`ir`). */
+export const READONLY_AT_START: readonly (readonly [string, string])[] = Object.keys(BASH_VARIABLES).filter(readonlyAtStart).map((name) => [name, BASH_VARIABLES[name].start!.slice(1)]);
+
 /**
- * Whether the value of `name` is never known here: bash changes it as the script runs (`RANDOM`, `LINENO`), or keeps
- * its own (a readonly variable such as `UID`).
+ * The variables bash 5.3 changes as the script runs (docs/design/bash-versions.md, 3.3), which are plain ones in 5.2:
+ * the model does not know which bash runs the script.
  */
-export const changedByBash = (name: string): boolean => !!known(name)?.dynamic || readonlyAtStart(name);
+export const DYNAMIC_SINCE_53: ReadonlySet<string> = new Set(['BASH_MONOSECONDS', 'BASH_TRAPSIG']);
+
+/**
+ * Whether the value of `name` is never known here: bash changes it as the script runs (`RANDOM`, `LINENO`; in 5.3,
+ * `BASH_MONOSECONDS`), or keeps its own (a readonly variable such as `UID`).
+ */
+export const changedByBash = (name: string): boolean => !!known(name)?.dynamic || readonlyAtStart(name) || DYNAMIC_SINCE_53.has(name);
 
 /** Whether the value of `name` is always a number, so that arithmetic reading it runs no code (`RANDOM`, `UID`, `OPTIND`). */
 export const alwaysNumeric = (name: string): boolean => !!known(name)?.numeric;

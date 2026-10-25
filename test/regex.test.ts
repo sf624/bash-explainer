@@ -94,6 +94,8 @@ describe('regex in commands', () => {
     assert.match(lineTokens("grep 'a+' f").find((t) => t.kind === 'argument')!.explanation, /basic regex/);
     assert.match(lineTokens("grep -iP 'a+' f").find((t) => t.kind === 'argument')!.explanation, /Perl-compatible/);
     assert.match(lineTokens("egrep 'a+' f").find((t) => t.kind === 'argument')!.explanation, /extended regex/);
+    // (An option grep does not know selects nothing.)
+    assert.match(lineTokens("grep -Q 'a+' f").find((t) => t.kind === 'argument')!.explanation, /basic regex/);
     const fixed = lineTokens("grep -F 'a.b' f");
     assert.match(fixed.find((t) => t.kind === 'argument')!.explanation, /fixed string/);
     assert.ok(!fixed.some((t) => t.label === '.'));

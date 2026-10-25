@@ -1114,5 +1114,320 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "a=1; f() { @PROBE:a@ \"$b\"; }; a=2 b=$a f; P=/a; g() { @PROBE:b@ \"$D\"; }; P=/x D=$P g",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "/x"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "a=1; a=2 b=$a eval '@PROBE:a@ \"$b\"'; a=2 b=$a command eval '@PROBE:b@ \"$b\"'; @PROBE:c@ \"$a\"",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "c": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "a=1; a=2 export a; @PROBE:a@ \"$a\"; b=1; c=1; b=2 c=3 export b; @PROBE:b@ \"$b\"; @PROBE:c@ \"$c\"; d=1; d=2 e=$d export e; @PROBE:d@ \"$d\"; @PROBE:e@ \"$e\"",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "c": [
+        [
+          "1"
+        ]
+      ],
+      "d": [
+        [
+          "1"
+        ]
+      ],
+      "e": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "a=1; a=2 command export a; @PROBE:a@ \"$a\"; b=1; b=2 builtin export -- b; @PROBE:b@ \"$b\"; c=1; c=2 readonly c; @PROBE:c@ \"$c\"; d=1; d=2 export d=7; @PROBE:d@ \"$d\"; e=x; e+=y export e; @PROBE:e@ \"$e\"",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "c": [
+        [
+          "2"
+        ]
+      ],
+      "d": [
+        [
+          "7"
+        ]
+      ],
+      "e": [
+        [
+          "xy"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "a=1; f() { a=2 export a; @PROBE:a@ \"$a\"; }; f; @PROBE:b@ \"$a\"; g() { local a=5; a=3 export a; @PROBE:c@ \"$a\"; }; g; @PROBE:d@ \"$a\"",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "c": [
+        [
+          "3"
+        ]
+      ],
+      "d": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "a=1; a=2 declare -x a; @PROBE:a@ \"$a\"; b=1; b=2 export -n b; @PROBE:b@ \"$b\"; c=1; c=2 declare c=7; @PROBE:c@ \"$c\"; n=1; n=2 export n x; @PROBE:d@ \"$n\"",
+    "none": {
+      "a": "`declare` of a prefix assignment's name: the variable is not known after it",
+      "b": "`export` with an option, of a prefix assignment's name: the variable is not known after it",
+      "c": "`declare` of a prefix assignment's name: the variable is not known after it"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "1"
+        ]
+      ],
+      "c": [
+        [
+          "1"
+        ]
+      ],
+      "d": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "5.2",
+    "snippet": "y=1; UID=5; y=5; @PROBE:a@ \"$y\"\n@PROBE:b@ \"$y\"\nSHELLOPTS=x && y=6; @PROBE:c@ \"$y\"\n@PROBE:d@ \"$y\"",
+    "none": {
+      "a": "bash does not run it (an assignment to a readonly variable discards the rest of the line)",
+      "c": "bash does not run it (an assignment to a readonly variable discards the rest of the line)"
+    },
+    "facts": {
+      "a": [],
+      "b": [
+        [
+          "1"
+        ]
+      ],
+      "c": [],
+      "d": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: UID: readonly variable"
+    }
+  },
+  {
+    "manual": "5.2",
+    "snippet": "y=1; UID=5 true; y=5; @PROBE:a@ \"$y\"; f() { EUID=5; y=6; }; f; @PROBE:b@ \"$y\"\n@PROBE:c@ \"$y\"; declare PPID=5; y=7; @PROBE:d@ \"$y\"",
+    "none": {
+      "b": "bash does not run it (an assignment to a readonly variable in a function discards the rest of the line that called it)"
+    },
+    "facts": {
+      "a": [
+        [
+          "5"
+        ]
+      ],
+      "b": [],
+      "c": [
+        [
+          "5"
+        ]
+      ],
+      "d": [
+        [
+          "7"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: UID: readonly variable"
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "X=1; f() { g; }; g() { @PROBE:a@ \"$X\"; h; }; h() { @PROBE:b@ \"$X\"; }; k() { k; @PROBE:c@ \"$X\"; }; m() { @PROBE:d@ \"$X\"; }; n() { m; }; m",
+    "none": {
+      "a": "bash does not run it (only a function no call reaches calls it)",
+      "b": "bash does not run it (only a function no call reaches calls it)",
+      "c": "bash does not run it (no call reaches it)"
+    },
+    "facts": {
+      "a": [],
+      "b": [],
+      "c": [],
+      "d": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "e=; x=1; y=${e:?} @PROBE:a@ \"$x\"\n@PROBE:b@ \"$x\" > ${e:?}\n@PROBE:c@ \"$x\"",
+    "none": {
+      "a": "bash does not run it (an expansion of the command fails, which ends the shell)",
+      "b": "bash does not run it (an expansion of the command fails, which ends the shell)",
+      "c": "bash does not run it (the shell ended)"
+    },
+    "facts": {
+      "a": [],
+      "b": [],
+      "c": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: e: parameter null or not set"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; unset nope; x=1; y=$nope @PROBE:a@ \"$x\"",
+    "none": {
+      "a": "bash does not run it (under `set -u`, an expansion of the command may fail, which ends the shell)"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: nope: unbound variable"
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "e=; y=1; : ${y:-${e:?}}; @PROBE:a@ \"$y\"; : ${y:+${e:?}}\n@PROBE:b@ \"$y\"",
+    "none": {
+      "b": "bash does not run it (the shell ended)"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "b": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: e: parameter null or not set"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "n=0; PS4='$((n++)) '; set -x; :; :; set +x; @PROBE:a@ \"$n\"",
+    "none": {
+      "a": "PS4 may assign as `set -x` expands it: nothing is trusted"
+    },
+    "facts": {
+      "a": [
+        [
+          "3"
+        ]
+      ],
+      "status": 0,
+      "stderr": "0 :"
+    }
+  },
+  {
+    "manual": "5.2",
+    "snippet": "BASH_TRAPSIG=1 BASH_MONOSECONDS=2; @PROBE:a@ \"$BASH_TRAPSIG\"; @PROBE:b@ \"$BASH_MONOSECONDS\"",
+    "none": {
+      "a": "bash 5.3 changes it as the script runs",
+      "b": "bash 5.3 changes it as the script runs"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

@@ -17,7 +17,7 @@ import { staticWordValue } from '../staticword';
 import type { ArgvParse } from '../argv/interpret';
 import { actedNames, actsOnNames } from '../argv/query';
 import { field, fields, prefixAssignments, type SyntaxNode } from '../syntax/tree';
-import { builtinParse } from './effects';
+import { builtinParse, wrapped } from './effects';
 import { type ExecEnv, reachOf, type SlotLink, subshellReasons } from './env';
 import { type AliasState, type CommandEntry, type FunctionState, option, type ShellState, type StateModel, type Tri } from './state';
 import { docIndex } from './state';
@@ -282,9 +282,11 @@ export interface AssignmentMeaning {
   /**
    * `shell`: there is no command, so it sets a shell variable. `command`: the command gets it in its environment,
    * and it is gone after (also for a function, and in POSIX mode: bash 5.2). `persists`: it stays after the
-   * command, exported (a special builtin in POSIX mode).
+   * command, exported (a special builtin in POSIX mode, or `export` or `readonly` of its name: `named`).
    */
   scope: 'shell' | 'command' | 'persists';
+  /** The builtin that keeps it, in any mode, because it gets its name (`a=2 export a`: `export`; see `keptPrefixes`). */
+  named?: string;
   /**
    * False when it depends on run time: `persists` when POSIX mode is on on some paths only; `command` when the
    * name is an expansion that may give no word, and so may every word after it (`x=1 $cmd`: then the assignment is
@@ -305,11 +307,57 @@ export function assignmentsOf(model: StateModel, command: SyntaxNode, res: NameR
   const unset = res !== 'dynamic' && res?.kind === 'builtin' ? temporariesUnset(res.name, fields(command, 'argument'), command) : undefined;
   // (A word of known text gives one word: `x=1 $cmd env`.)
   const named = res === 'dynamic' && fields(command, 'argument').some((w) => staticWordValue(w) !== undefined);
+  const exported = res !== 'dynamic' && res?.kind === 'builtin' ? keptPrefixes(command, staticWordValue) : undefined;
   return assignments.map((a) => {
     const name = (field(field(a, 'name')!, 'name') ?? field(a, 'name')!).text;
+    if (exported?.names.get(name)) return { node: a, name, scope: 'persists', sure: true, named: exported.builtin };
     const kept = stays && !unset?.has(name);
     return { node: a, name, scope: !res ? 'shell' : kept ? 'persists' : 'command', sure: res === 'dynamic' ? named : !kept || posix === 'on' };
   });
+}
+
+/** The builtins that make a variable of a name they get: what they do to a prefix assignment of it (`keptPrefixes`). */
+const DECLARING = new Set(['export', 'readonly', 'declare', 'typeset', 'local']);
+
+/**
+ * The prefix assignments of the command `n` that its builtin may keep in the shell (also behind `command` and
+ * `builtin`), by name: bash's `export a` and `readonly a` act on the variable of the command, which then stays
+ * (`a=2 export a` leaves `a` set to 2, exported; `a=2 b=3 export a` keeps only `a`): `true`. Named with an option,
+ * after a word not known (`text` gives none), or by `declare`, `typeset` or `local` (which make a variable of their
+ * own in a function, and give `a=7` to the variable of the command): `false`, it may stay or not. With the name of
+ * the builtin.
+ */
+export function keptPrefixes(n: SyntaxNode, text: (w: SyntaxNode) => string | undefined): { builtin?: string; names: Map<string, boolean> } {
+  let name = field(n, 'name')?.text;
+  let args = fields(n, 'argument');
+  const out = new Map<string, boolean>();
+  while (name === 'command' || name === 'builtin') {
+    const inner = wrapped(name, args);
+    if ('lookup' in inner) return { names: out };
+    ({ name, args } = inner);
+  }
+  const names = new Set(prefixAssignments(n).filter((a) => field(a, 'name')!.type !== 'subscript').map((a) => field(a, 'name')!.text));
+  if (!name || !DECLARING.has(name) || !names.size) return { names: out };
+  let exact = name === 'export' || name === 'readonly';
+  let ended = false;
+  for (const arg of args) {
+    const t = arg.type === 'variable_assignment' ? arg.text : text(arg);
+    if (t === undefined) {
+      for (const v of names) out.set(v, false);
+      break;
+    }
+    if (!ended && /^[-+]/.test(t)) {
+      ended = t === '--';
+      exact &&= ended;
+      continue;
+    }
+    ended = true;
+    // (`a=2 export a=7` gives `a` 7, the builtin's own assignment.)
+    const v = /^[A-Za-z_]\w*/.exec(t)?.[0];
+    if (v && names.has(v) && (v === t || !exact)) out.set(v, exact);
+  }
+  if (!exact) for (const [v] of out) out.set(v, false);
+  return { builtin: name, names: out };
 }
 
 /**

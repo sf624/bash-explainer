@@ -158,8 +158,11 @@ function commandParts(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode): { pre
       const meaning = meanings.find((m) => m.node === c)!;
       const stays = meaning.scope === 'persists';
       for (const t of cx.sub(c)) {
-        t.refs = stays ? ['3.7.4', '4.4'] : ['3.7.4'];
-        t.explanation = stays && !meaning.sure
+        t.refs = meaning.named ? ['3.7.4', '4.1'] : stays ? ['3.7.4', '4.4'] : ['3.7.4'];
+        t.explanation = meaning.named
+          ? cx.s(`\`${meaning.named}\` がこの名前を受け取るので、この代入はコマンドの後も残り、エクスポートされる: ${t.explanation}`,
+            `\`${meaning.named}\` gets this name, so this assignment stays after the command, exported: ${t.explanation}`)
+          : stays && !meaning.sure
           ? cx.s(`\`${nameNode.text}\` は POSIX の特殊ビルトインなので、ここで POSIX モードなら（この前で有効にしているのは一部の経路だけ）、この代入はコマンドの後も残る: ${t.explanation}`,
             `\`${nameNode.text}\` is a POSIX special builtin, so if POSIX mode is on here (only some paths before here turn it on), this assignment stays after the command: ${t.explanation}`)
           : stays

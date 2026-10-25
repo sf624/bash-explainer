@@ -8,7 +8,7 @@ import type { Shell } from '../../dialect';
 import { builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
 import { assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from '../../syntax/tree';
-import { commandName, SET_LETTERS, wrapped } from '../effects';
+import { commandName, SET_LETTERS } from '../effects';
 import { type ExecEnv, lastStageInShell, reachOf, slotEnvs, STATEMENTS, subshellReasons } from '../env';
 import { NESTED_DEPTH, type NestedScript, type NotRead } from '../nested';
 import {
@@ -17,12 +17,13 @@ import {
 } from '../shellstate';
 import type { Scripts } from '../state';
 import { type HostCommands, NO_HOST, type Trust } from '../trust';
-import { alwaysNumeric, changedByBash, INTEGERS_AT_START } from '../vars';
+import { alwaysNumeric, changedByBash, INTEGERS_AT_START, READONLY_AT_START } from '../vars';
 import { WalkAliases } from './aliases';
 import { WalkArith } from './arith';
 import { temporariesUnset } from '../names';
 import { WalkBuiltins } from './builtins';
 import { WalkConditions } from './conditions';
+import { kept, temporaries } from './temporaries';
 import { ArithError, ExpansionError, NAME, SUBSTITUTIONS, WalkAgain } from './shared';
 
 /** The shells that start in POSIX mode (for what the model follows: assignments before special builtins). */
@@ -190,6 +191,10 @@ export class Walker {
    * bodies it calls are not recorded (the action runs later, with the state of then).
    */
   silent = 0;
+  /** Set while what `put` gives is only worked out, not a change of the walk (`temporaries`). */
+  scratch = 0;
+  /** Set while a body no call reached is walked (`uncalled`). */
+  private outside = 0;
 
   constructor(readonly shell: Shell | undefined, readonly posix: boolean, readonly scripts: Scripts, readonly trust: Trust,
     readonly host: HostCommands = NO_HOST) {
@@ -199,6 +204,8 @@ export class Walker {
 
   put<K extends Kind>(st: ShellState, kind: K, name: string, value: Entry<K> | undefined): ShellState {
     const key = `${kind} ${name}`;
+    // (Not a change while the temporaries of a command are worked out: src/semantics/walk/temporaries.ts.)
+    if (this.scratch) return { ...st, [kind]: (st[kind] as NameMap<Entry<K>>).with(name, value) };
     this.lastChange.set(key, ++this.changeCount);
     this.lastAt.set(key, this.node!);
     // (A local of a function being run is gone when it returns: not a write of the shell's own.)
@@ -227,14 +234,15 @@ export class Walker {
 
   /**
    * The state a shell starts with, as set at `at` (the root): bash's own integers (`OPTIND`, `RANDOM`…: what the script
-   * assigns them is arithmetic, `OPTIND='x=5'` sets x); in POSIX mode, its options and POSIXLY_CORRECT (`bash --posix`
-   * sets it to `y`).
+   * assigns them is arithmetic, `OPTIND='x=5'` sets x) and readonly ones (`UID`); in POSIX mode, its options and
+   * POSIXLY_CORRECT (`bash --posix` sets it to `y`).
    */
   initial(at: SyntaxNode): ShellState {
     let st = EMPTY;
     if (this.bash) {
       const attrs = { i: { state: 'on' as const, at } };
       st = { ...st, variables: st.variables.withAll(new Map(INTEGERS_AT_START.map((name) => [name, { declared: 'on', set: 'on', attrs, at }]))) };
+      for (const [name, letters] of READONLY_AT_START) st = { ...st, variables: st.variables.with(name, { declared: 'on', set: 'on', attrs: Object.fromEntries([...letters].map((l) => [l, { state: 'on' as const, at }])), at }) };
     }
     if (this.posix) {
       for (const kind of ['set', 'shopt'] as const) for (const name of POSIX_ON[kind]) st = { ...st, [kind]: st[kind].with(name, 'on') };
@@ -353,7 +361,8 @@ export class Walker {
 
   /**
    * The bodies no call reached: each is walked from its definition's state, with what the script changes after
-   * the definition taken as unknown (it may be called from anywhere after it).
+   * the definition taken as unknown (it may be called from anywhere after it). So may the bodies they call that no
+   * call of the script reached (`outside`).
    */
   private uncalled(): void {
     for (let found = true; found;) {
@@ -368,7 +377,9 @@ export class Walker {
           const since = this.changeAtDefinition.get(def)!;
           const after = new Set([...this.lastChange].filter(([, i]) => i > since).map(([k]) => k));
           this.walks.set(def, []);
+          this.outside++;
           this.walkBody(def, this.widen(at, after), { def, saved: new Map() });
+          this.outside--;
         }
       }
     }
@@ -892,7 +903,10 @@ export class Walker {
       for (let x = e; x !== n; x = x.parent!) {
         const up = x.parent!;
         if (SUBSTITUTIONS.includes(up.type) || (e.type === 'arithmetic_expansion' && ARITH_HOSTS.includes(up.type))) skip = true;
-        if ((e.type === 'arithmetic_expansion' && up.type === 'expansion') || (up.type === 'binary_expression' && x.field === 'right' && ['&&', '||'].includes(field(up, 'operator')!.type))) maybe = true;
+        // (The word of `${y:-w}` is expanded only when `y` is not set or empty, of `${y:+w}` only when it is, and so on.)
+        const operand = up.type !== 'expansion' ? 'on' : e.type === 'arithmetic_expansion' ? 'unknown' : x === up.namedChildren[0] ? 'on' : this.conditions.operandRuns(up, st);
+        if (operand === 'off') skip = true;
+        if (operand === 'unknown' || (up.type === 'binary_expression' && x.field === 'right' && ['&&', '||'].includes(field(up, 'operator')!.type))) maybe = true;
       }
       if (skip || program === 'on') continue;
       if (program === 'unknown') maybe = true;
@@ -969,28 +983,6 @@ export class Walker {
       if (name) st = merge([st, this.builtins.setVariable(st, name, r, undefined)], this.posix);
     }
     return st;
-  }
-
-  /**
-   * Whether the simple command `c` runs a program (not a builtin or a function), in a process of its own, where its
-   * redirections are made; `unknown` when its name is not known here. `command cat` runs `cat` (`command -v` only
-   * looks it up), and never a function.
-   */
-  private runsProgram(c: SyntaxNode, st: ShellState): Tri {
-    let name = commandName(c);
-    let args = fields(c, 'argument');
-    let fn = true;
-    while (name === 'command') {
-      const inner = wrapped(name, args);
-      if ('lookup' in inner) return 'off';
-      ({ name, args } = inner);
-      fn = false;
-    }
-    if (name === undefined) return 'unknown';
-    if (!name || (fn && st.functions.has(name))) return 'off';
-    if (!builtins[name] || !this.builtins.bashBuiltin(name)) return 'on';
-    // A builtin turned off (`enable -n echo`) runs the program of its name.
-    return st.disabled.get(name)?.state ?? 'off';
   }
 
   /** The value of the variable `name` as text; null when it is unset (and `set -u` is off), undefined when not known here. */
@@ -1229,6 +1221,8 @@ export class Walker {
     const def = fn.def;
     // (`$?` in the body is not followed: the walks are remembered by the state without it.)
     st = withStatus(st, undefined);
+    // (A body that only one no call reached calls: its conditions are not decided either, see `uncalled`.)
+    if (this.outside && !this.walks.has(def)) this.unwalked.add(def);
     const site = this.aliasHost ?? this.node!;
     const sites = this.calls.get(def) ?? new Map<SyntaxNode, boolean>();
     if (!this.silent) {
@@ -1410,7 +1404,8 @@ export class Walker {
     // The words are expanded, then the values of the assignments, then the redirections are made.
     const before = st;
     st = this.expandAll(n.namedChildren.filter((c) => !assignments.includes(c) && c.field !== 'redirect'), st);
-    st = this.redirections(n, this.expandAll(assignments, st), this.runsProgram(n, st));
+    const temps = temporaries(this, assignments, st);
+    st = this.redirections(n, this.expandAll(assignments, st), this.builtins.runsProgram(n, st));
     // A prefix assignment to PATH empties the table of remembered paths too.
     if (assignments.some((a) => field(a, 'name')!.text === 'PATH')) st = this.builtins.forgetHashed(st);
     const expanded = this.aliases.expand(n, st);
@@ -1431,7 +1426,7 @@ export class Walker {
     const called = fn && withStatus(this.call(fn, this.builtins.markedArrays(name, fields(n, 'argument'), n, st), assignments), undefined);
     if (called && fn.state === 'on') return called;
     if (!special) st = this.builtins.appendArith(assignments, n, st);
-    const ran = withStatus(this.builtins.builtin(name, fields(n, 'argument'), n, st, true), this.conditions.simpleStatus(n, before));
+    const ran = withStatus(kept(this, n, temps, this.builtins.builtin(name, fields(n, 'argument'), n, st, true)), this.conditions.simpleStatus(n, before));
     // (A function defined on some paths only: on the others, the builtin or the program runs.)
     return called ? merge([called, ran], this.posix) : ran;
   }

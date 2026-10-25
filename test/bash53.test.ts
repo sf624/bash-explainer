@@ -12,6 +12,7 @@ import { documentIssues } from '../src/document';
 import { dialectNotes, type Shell } from '../src/dialect';
 import { processOf } from '../src/semantics/env';
 import { shellState } from '../src/semantics/state';
+import { expansionValue } from '../src/semantics/values';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
 import { runBash } from './support/bash';
@@ -205,6 +206,16 @@ describe('bash 5.3 command substitutions', () => {
     assert.deepStrictEqual(run('set -e\nx=${ echo hi; }\necho next'), ['', 1]);
     assert.strictEqual(run('x=${ echo hi; }\necho next', true)[0], '');
     assert.deepStrictEqual(run('( x=${ echo hi; }; echo in-sub ); echo "out $?"'), ['out 1\n', 0]);
+  });
+
+  it('gives no value to the variables bash 5.3 changes as the script runs (docs/design/bash-versions.md, 3.3)', function () {
+    const script = 'BASH_TRAPSIG=y; trap \'echo "[$BASH_TRAPSIG]"\' USR1; kill -USR1 $$; a=$BASH_MONOSECONDS; [[ $a =~ ^[0-9]+$ ]] && echo n';
+    const tree = parser.parse(script);
+    const model = shellState(tree);
+    for (const e of descendants(tree.root, ['simple_expansion']).filter((x) => x.text.startsWith('$BASH_'))) assert.strictEqual(expansionValue(e, model), undefined, e.text);
+    if (releaseOf('bash') === '5.2') assert.strictEqual(runBash(script).stdout, '[y]\n');
+    needBash53(this);
+    assert.strictEqual(runBash(script, { program: BASH53 }).stdout, '[10]\nn\n');
   });
 
   it('says the same as a note of the line, in both languages, and nothing in bash 5.3 mode', () => {

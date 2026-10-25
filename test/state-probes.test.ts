@@ -11,15 +11,15 @@ import * as assert from 'assert';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields } from '../src/syntax/tree';
 import { defaultOn, option, shellState, ShellState } from '../src/semantics/state';
-import { INTEGERS_AT_START } from '../src/semantics/vars';
+import { INTEGERS_AT_START, READONLY_AT_START } from '../src/semantics/vars';
 import { instrument, readProbeTable, StateDiff } from './support/probe';
 
 /**
- * The attributes bash gives its own variables (as in the baseline of the probes): the integers, which the model gives
- * them at start too (src/semantics/vars.ts), and the exported ones, which it does not follow.
+ * The attributes bash gives its own variables (as in the baseline of the probes): the integers and the readonly ones,
+ * which the model gives them at start too (src/semantics/vars.ts), and the exported ones, which it does not follow.
  */
 const BASELINE_ATTRS: Record<string, string> = {
-  ...Object.fromEntries(INTEGERS_AT_START.map((name) => [name, 'i'])), PWD: 'x', OLDPWD: 'x', HOME: 'x', PATH: 'x', LC_ALL: 'x', SHLVL: 'x',
+  ...Object.fromEntries(INTEGERS_AT_START.map((name) => [name, 'i'])), ...Object.fromEntries(READONLY_AT_START), PWD: 'x', OLDPWD: 'x', HOME: 'x', PATH: 'x', LC_ALL: 'x', SHLVL: 'x',
 };
 
 /** How bash's `declare -p` writes a scalar value. */

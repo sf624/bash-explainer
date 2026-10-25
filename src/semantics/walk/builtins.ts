@@ -10,7 +10,7 @@ import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
 import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
 import { temporariesUnset } from '../names';
-import { aliasOf, builtinParse, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
+import { aliasOf, builtinParse, commandName, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
 import { attribute, type Attribute, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy } from '../shellstate';
 import { optionRoles, readDeclarationWords, type Declaration } from '../vars';
 import { ExpansionError, NAME, type Operand } from './shared';
@@ -183,6 +183,28 @@ export class WalkBuiltins {
     const name = staticWordValue(w);
     const e = name ? st.hashed.get(name) : undefined;
     return e ? this.w.put(st, 'hashed', name!, { ...e, state: 'off', at }) : st;
+  }
+
+  /**
+   * Whether the simple command `c` runs a program (not a builtin or a function), in a process of its own, where its
+   * redirections are made; `unknown` when its name is not known here. `command cat` runs `cat` (`command -v` only
+   * looks it up), and never a function.
+   */
+  runsProgram(c: SyntaxNode, st: ShellState): Tri {
+    let name = commandName(c);
+    let args = fields(c, 'argument');
+    let fn = true;
+    while (name === 'command') {
+      const inner = wrapped(name, args);
+      if ('lookup' in inner) return 'off';
+      ({ name, args } = inner);
+      fn = false;
+    }
+    if (name === undefined) return 'unknown';
+    if (!name || (fn && st.functions.has(name))) return 'off';
+    if (!builtins[name] || !this.bashBuiltin(name)) return 'on';
+    // A builtin turned off (`enable -n echo`) runs the program of its name.
+    return st.disabled.get(name)?.state ?? 'off';
   }
 
   /** Whether `name` is read here as bash's builtin (the others are programs, or other shells' builtins). */
