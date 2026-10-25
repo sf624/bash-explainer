@@ -14,6 +14,7 @@ import { Analyzer } from '../src/analyzer';
 import { explainDocumentLine, heredocAt } from '../src/document';
 import { openDocument } from '../src/document-setup';
 import type { Lang } from '../src/i18n';
+import { SECTIONS } from '../src/manual';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { partAt } from '../src/ui/hoverParts';
 import { HoverInput, lineCard, partHover } from '../src/ui/hoverView';
@@ -322,6 +323,53 @@ describe('the web page: hover cards in the editor', function () {
     }
   }
 
+  it('closes a card the pointer opened with Escape inside it, and puts the focus back in the editor', async () => {
+    const ctx = await context();
+    const page = await ctx.newPage();
+    await open(page);
+    await hoverAt(page, 2, '-n');
+    await cardText(page);
+    // The focus in one of its links (a keyboard user's Tab from the page reaches them), then Escape.
+    await page.evaluate("document.querySelector('.cm-tooltip .cm-bx-hover a[data-command]').focus()");
+    assert.ok(await page.evaluate("document.activeElement.matches('.cm-bx-hover a[data-command]')"));
+    await page.keyboard.press('Escape');
+    await until('no card', () => card(page).count(), (n) => n === 0);
+    assert.ok(await page.evaluate("document.activeElement.classList.contains('cm-content')"));
+    await ctx.close();
+  });
+
+  it('shows the words of a hostile script in a card as text: no image, no link but the manual\'s', async () => {
+    const ctx = await context();
+    const page = await ctx.newPage();
+    // A command with such words, and a comment with them (short, so that the lines fit the pane).
+    await open(page, "#!/bin/bash\necho '<img src=x onerror=window.bxRan=1>' '[x](https://evil.example)'\ntrue # <img src=x onerror=window.bxRan=1> *x* &lt;");
+    await page.keyboard.press('Control+Home');
+    const manual = [...SECTIONS.values()].map((sec) => sec.url);
+    for (const [line, text, shows] of [
+      [1, "'<img", "'<img src=x onerror=window.bxRan=1>'"], [1, "'[x]", "'[x](https://evil.example)'"],
+      [2, '<img', '# <img src=x onerror=window.bxRan=1> *x* &lt;'],
+    ] as const) {
+      await hoverAt(page, line, text);
+      // (The label's spaces are no-break spaces.)
+      const t = (await cardText(page)).replace(/ /g, ' ');
+      assert.ok(t.includes(shows), `${text}: ${t}`);
+      const dom = await page.evaluate(`(() => {
+        const el = document.querySelector('.cm-tooltip .cm-bx-hover');
+        return {
+          bad: Array.from(el.querySelectorAll('img, iframe, script, style, form, input, svg:not(.cm-bx-hover-icon)')).map((e) => e.outerHTML),
+          hrefs: Array.from(el.querySelectorAll('a')).map((a) => a.getAttribute('href')),
+          handlers: Array.from(el.querySelectorAll('*')).flatMap((e) => Array.from(e.attributes).map((a) => a.name)).filter((n) => /^on|^src/.test(n)),
+          ran: window.bxRan,
+        };
+      })()`) as { bad: string[]; hrefs: (string | null)[]; handlers: string[]; ran: unknown };
+      assert.deepStrictEqual(dom.bad, [], text);
+      assert.deepStrictEqual(dom.handlers, [], text);
+      assert.strictEqual(dom.ran, undefined);
+      for (const href of dom.hrefs) assert.ok(href === null || manual.includes(href), `${text}: ${href}`);
+    }
+    await ctx.close();
+  });
+
   it('reads every card of the sample into HTML with no Markdown left, and keeps to the allow-list', async () => {
     const ctx = await context();
     const page = await ctx.newPage();
@@ -337,29 +385,42 @@ describe('the web page: hover cards in the editor', function () {
     const parser = createUnbashParser();
     const sample = openDocument(fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8'), 'shell', (t) => parser.parse(t));
     const cards = new Set<string>();
-    for (const lang of ['en', 'ja'] as const) {
-      for (const theme of ['light', 'dark'] as const) {
-        for (let line = 0; line < sample.lines.length; line++) {
-          const ex = explainDocumentLine(new Analyzer(lang), sample, line, lang, {}, {});
-          if (!ex.items.length) continue;
-          const x: HoverInput = { ex, lang, theme, lineText: sample.lines[line], placement: 'first', panelLink: 'command:bashExplainer.openPanel', lineLink: 'command:bashExplainer.explainLine', keys: 'Ctrl+K Ctrl+E' };
-          cards.add(lineCard(x));
-          for (let c = 0; c <= sample.lines[line].length; c += 2) {
-            const chain = partAt(ex.items, { line, character: c }, heredocAt(sample, line));
-            if (chain.length) cards.add(partHover(x, chain));
+    const cardsOf = (doc: typeof sample, step: number) => {
+      for (const lang of ['en', 'ja'] as const) {
+        for (const theme of ['light', 'dark'] as const) {
+          for (let line = 0; line < doc.lines.length; line++) {
+            const ex = explainDocumentLine(new Analyzer(lang), doc, line, lang, {}, {});
+            if (!ex.items.length) continue;
+            const x: HoverInput = { ex, lang, theme, lineText: doc.lines[line], placement: 'first', panelLink: 'command:bashExplainer.openPanel', lineLink: 'command:bashExplainer.explainLine', keys: 'Ctrl+K Ctrl+E' };
+            cards.add(lineCard(x));
+            for (let c = 0; c <= doc.lines[line].length; c += step) {
+              const chain = partAt(ex.items, { line, character: c }, heredocAt(doc, line));
+              if (chain.length) cards.add(partHover(x, chain));
+            }
           }
         }
       }
-    }
+    };
+    cardsOf(sample, 2);
+    const plain = new Set(cards);
     assert.ok(cards.size > 1500, String(cards.size));
+    // The cards of scripts whose words are what an attacker would write (a share link carries the script): the same rules.
+    const words = ['<img src=x onerror=alert(1)>', '[x](https://evil.example)', 'a``b', '*x*', '&lt;', '_y_', '`', '<a href="https://evil.example">l</a>'];
+    const quoted = (q: string) => words.map((w) => `${q}${w}${q}`).join(' ');
+    for (const src of [
+      `echo ${quoted("'")}`, `echo ${quoted('"')}`, `# ${words.join(' ')}`, `f=${words[1]}; v='${words[0]}'; echo $v`,
+      `grep '${words[0]}' ${quoted("'")}; find . -name '${words[1]}'; case '${words[0]}' in '${words[1]}') ;; esac; trap '${words[0]}' '${words[1]}'`,
+      `alias '${words[0]}'='${words[1]}'; sed 's/${words[0]}/${words[1]}/' f; awk '{print "${words[0]}"}'; ${words[1]}() { :; }`,
+    ]) cardsOf(openDocument(src, 'shell', (t) => parser.parse(t)), 1);
     // The icons a card asks for: `$(name)` outside code.
     const icons = (md: string) => (md.replace(/^(`{3,})text\n[\s\S]*?\n\1$/gm, '').replace(/(`+)(?:(?!\1)[\s\S])*?\1/g, '').match(/\$\([a-z-]+\)/g) ?? []).length;
     // A character hoverView writes as an entity is text (a label's `**/*.sh`, `$(date)`): it becomes a character of the
     // private use area, so that what is left of `*`, `` ` ``, `$(`… in the text is Markdown that was not read.
     const literal = (md: string) => md.replace(/&#(35|36|42|62|91|92|93|95|96|124|126);|&gt;/g, (m, n?: string) => `&#${0xe000 + Number(n ?? 62)};`);
-    const list = [...cards].map((md) => ({ md: literal(md), icons: icons(md) }));
+    const list = [...cards].map((md) => ({ md: literal(md), icons: plain.has(md) ? icons(md) : -1 }));
+    const manual = [...SECTIONS.values()].map((sec) => sec.url);
     // (The functions run in the page, given as text: this file is compiled without the DOM's types.)
-    const problems = await page.evaluate(`((list) => {
+    const problems = await page.evaluate(`((list, manual) => {
       const out = [];
       for (const { md, icons } of list) {
         const el = window.bxRenderCard(md);
@@ -369,29 +430,34 @@ describe('the web page: hover cards in the editor', function () {
         const text = copy.textContent;
         const blocks = Array.from(copy.querySelectorAll('p, h1, h2, h3, h4, h5, h6, blockquote, td')).map((b) => b.textContent.trim());
         const leak = /\\*\\*|\`|\\$\\([a-z-]+\\)|\\]\\(/.exec(text)?.[0] ?? blocks.find((b) => /^(> |#{1,6} |-{3,}$)/.test(b));
-        if (leak) out.push(JSON.stringify(leak) + ' in ' + md.slice(0, 300));
+        if (leak && icons >= 0) out.push(JSON.stringify(leak) + ' in ' + md.slice(0, 300));
         const drawn = el.querySelectorAll('svg.cm-bx-hover-icon').length;
-        if (drawn !== icons) out.push(icons + ' icons asked, ' + drawn + ' drawn: ' + md.slice(0, 200));
-        // Every link is a page on the web or one of the extension's commands.
+        if (icons >= 0 && drawn !== icons) out.push(icons + ' icons asked, ' + drawn + ' drawn: ' + md.slice(0, 200));
+        // Every link is a section of the manual or one of the extension's commands; no image, form or script is there.
         for (const a of el.querySelectorAll('a')) {
-          if (!(a.getAttribute('href')?.startsWith('https://') || a.dataset.command)) out.push('link ' + a.outerHTML);
+          if (!(manual.includes(a.getAttribute('href')) || a.dataset.command)) out.push('link ' + a.outerHTML);
         }
+        for (const e of el.querySelectorAll('img, picture, video, audio, form, input, button, script, style, iframe, object, embed, link, meta, base')) out.push('element ' + e.outerHTML);
+        for (const e of el.querySelectorAll('*')) for (const a of Array.from(e.attributes)) if (/^on|^src|^srcset|^action|^formaction/i.test(a.name)) out.push('attribute ' + a.name + ' on ' + e.outerHTML);
         if (out.length > 5) break;
       }
       return out;
-    })(${JSON.stringify(list)})`);
+    })(${JSON.stringify(list)}, ${JSON.stringify(manual)})`);
     assert.deepStrictEqual(problems, []);
     // What the allow-list drops: scripts and styles with what they hold, handlers, other styles, links that are not https.
+    const manualPage = SECTIONS.get('3.1.2.2')!;
     const hostile = [
       'a <script>window.bxRan = 1</script> b',
       '<style>body { display: none }</style>text',
       '<img src="x" onerror="window.bxRan = 2"> <iframe src="https://example.com"></iframe>',
       '<span style="position:fixed;top:0" onclick="window.bxRan = 3" title="t">s</span> <span style="color:#fff;">kept</span>',
-      '[js](javascript:window.bxRan=4) [http](http://example.com) [data](data:text/html,x) [ok](https://example.com "T")',
+      `[js](javascript:window.bxRan=4) [http](http://example.com) [data](data:text/html,x) [crafted](https://evil.example "T") [near](${manualPage.url}#x) [ok](${manualPage.url} "T")`,
       '<a href="javascript:void(0)" onmouseover="x">a</a> <div class="x" id="y">d</div>',
       '<table><tr><td onclick="x">cell</td></tr></table>',
       '<svg><script>1</script></svg><math>m</math><textarea>t</textarea>',
       '[$(gear) Settings](command:bashExplainer.openSettings) $(unknown-icon) `**not bold**` **bold** _em_ snake_case_word 2 * 3 * 4',
+      '<a href="https://evil.example" title="T">raw</a> <a href="//evil.example">rel</a> <a href="HTTPS://evil.example">upper</a>',
+      'a paragraph\n<table><tr><td>cell</td></tr></table>\nand text after',
     ];
     const got = await page.evaluate(`((list) => list.map((md) => {
       const el = window.bxRenderCard(md);
@@ -412,8 +478,13 @@ describe('the web page: hover cards in the editor', function () {
     assert.match(got[0].text!, /^a\s+b$/);
     assert.strictEqual(got[1].text, 'text');
     assert.deepStrictEqual(got[3].attrs, ['span[title=t]', 'span[style=color:#fff;]']);
-    assert.deepStrictEqual(got[4].attrs.sort(), ['a[href=https://example.com]', 'a[rel=noopener noreferrer]', 'a[target=_blank]', 'a[title=T]']);
-    assert.strictEqual(got[4].text, 'js http data ok');
+    // Only a section of the manual keeps its address (exactly): any other link, a crafted one too, keeps its text only.
+    assert.deepStrictEqual(got[4].attrs.sort(), [`a[href=${manualPage.url}]`, 'a[rel=noopener noreferrer]', 'a[target=_blank]', 'a[title=T]']);
+    assert.strictEqual(got[4].text, 'js http data crafted near ok');
+    assert.deepStrictEqual(got[9].attrs, []);
+    assert.strictEqual(got[9].text, 'raw rel upper');
+    // A block of HTML (kind 6) interrupts a paragraph.
+    assert.match(got[10].html, /^<p>a paragraph<\/p>\s*<table><tbody><tr><td>cell<\/td><\/tr><\/tbody><\/table>\s*(<p>)?and text after/);
     assert.strictEqual(got[6].html, '<table><tbody><tr><td>cell</td></tr></tbody></table>');
     assert.strictEqual(got[7].text, '');
     // The extension's command is the page's action; an unknown icon draws nothing; code is text; emphasis by CommonMark's rules.
