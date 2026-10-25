@@ -9,13 +9,17 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![lang: English](https://img.shields.io/badge/lang-English-blue)](./README.md)
 ![lang: 日本語](https://img.shields.io/badge/lang-%E6%97%A5%E6%9C%AC%E8%AA%9E-lightgrey)
 
+<!-- development-note -->
+> この README は `main` ブランチの開発版について書いています。公開済みの版より先の機能を含むことがあります。公開済みの版は [Marketplace](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer) と [Open VSX](https://open-vsx.org/extension/shun-fujioka/bash-explainer) のページで見られます。README を含むソースは、[最新リリース](https://github.com/sf624/bash-explainer/releases/latest)のタグにあります。
+<!-- /development-note -->
+
 シェルスクリプトを1行ずつ解説します。シェルスクリプト版の [regex101](https://regex101.com/) を目指しています。
 
 行のどこにでもマウスを乗せると、その部分（コマンド・オプション・リダイレクト・`${…}`）が何をしているかを、書き換えて試せる具体例つきで解説します。知らないスクリプトを読むときにも、シェルを学ぶときにも、教えるときにも役立ちます。
 
 **設定不要で、[設計上オフラインで動きます](#プライバシー)。** 通信も AI もテレメトリも使いません。日本語と英語に対応しています。
 
-![Bash Explainer デモ](images/demo.gif)
+![Bash Explainer デモ](images/readme/demo.gif)
 
 Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解説と警告をほかの形でも使えます。インストールせずに試せるブラウザ版、コマンドラインツール、他のエディタ向けの Language Server、PR でスクリプトを検査する GitHub Action です。
 
@@ -159,7 +163,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 パネルはカーソル行に追従します。ツリーの項目を指すと、エディタ側の該当箇所がハイライトされます。
 
-![パネル](images/panel.gif)
+![パネル](images/readme/panel.gif)
 
 #### ホバー
 
@@ -167,13 +171,13 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 行全体の解説は、`Ctrl+K Ctrl+E`、右クリックメニューの **カーソル行の bash を解説**、またはホバーの **行全体** で開きます。コマンドごとに、引数とあわせて表示します。
 
-![ホバー](images/hover.gif)
+![ホバー](images/readme/hover.gif)
 
 #### コマンド名のヒント
 
 名前から想像するものを実行しないコマンド名の後ろに、薄い文字でヒントを表示します。ビルトインやプログラムを隠す関数やエイリアス、`enable -n` で無効にしたビルトイン、スクリプトの中で bash が展開しないエイリアス、`sudo cd`（`cd` というプログラムはない）、何も実行されない名前です。ヒントにマウスを乗せると、何が実行されるか、同じ名前でほかに何があるかを表示し、クリックするとその行をパネルで開きます。Web 版のエディタにも同じヒントが付きます。VS Code の `editor.inlayHints.enabled` で、インレイヒント全体をオン・オフ（または `Ctrl+Alt` を押している間だけ表示）できます。
 
-![コマンド名のヒント](images/name-hints.png)
+![コマンド名のヒント](images/readme/name-hints.png)
 
 カーソル行の行末に要約を表示するインライン表示は削除しました。`bashExplainer.inline.*` には効果がありません。
 
@@ -364,7 +368,7 @@ npm run test:integration:web   # VS Code for the Web でも同様に（`npx play
 - 依存パッケージを変えたら `npm run notices` を実行して、ビルドに実際に含まれるものから [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を作り直してください。古いままのときや、まだ確認していないライセンスのものが入ったときは、テストが失敗します。
 - 日本語の解説は [docs/japanese-style.md](docs/japanese-style.md) の決まりに合わせてください（テストで確かめます）。
 - コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。説明は自分の言葉で書いてください。man ページや `--help` の出力などの文書から写してはいけません。それらのライセンス（GPL や GFDL が多い）は、このプロジェクトのライセンスと異なるためです。
-- `CHANGELOG.md` は利用者向けです。GitHub Release の本文と Marketplace の Changelog タブにそのまま出ます。項目は `## Unreleased` の下の `### New`、`### Changed`、`### Fixed` に書きます。利用者に見える変更ごとに短い箇条を一つ書き、今どう見えるかを書きます（前との違いは一言で添えます）。同じ種類の小さな修正は一つの箇条にまとめ、各節は十数個までにします。テスト、CI、リファクタリング、内部の設計は書きません。各バージョンの末尾には `[All changes](…/compare/vPREV...vX.Y.Z)` のリンクを置きます。
+- `CHANGELOG.md` は利用者向けです。GitHub Release の本文と Marketplace の Changelog タブにそのまま出ます。項目は `## Unreleased` の下の `### New`、`### Changed`、`### Fixed` に書きます。利用者に見える変更ごとに短い箇条を一つ書き、今どう見えるかを書きます（前との違いは一言で添えます）。同じ種類の小さな修正は一つの箇条にまとめ、各節は十数個までにします。テスト、CI、リファクタリング、内部の設計は書きません。各バージョンの末尾には、前のタグとこのタグの GitHub の比較ビュー（`compare/vPREV...vX.Y.Z`）への `[All changes]` のリンクを置きます。
 - リリースするには、`package.json` と `cli/package.json` の `version` を上げて `CHANGELOG.md` に節を追加し、`v<version>` のタグを push します。[Release ワークフロー](.github/workflows/release.yml) が、タグを付けた commit で Test ワークフローが成功したことを確かめてパッケージを作り、`release` 環境での承認を待ってから、VS Code Marketplace、Open VSX、npm に公開し、GitHub Release の作成、GitHub Action が使う `v0` タグの付け替え、ブラウザ版の更新を行います。手順と、最初に一度だけ必要な設定は [docs/publishing.md](docs/publishing.md) を参照してください。Release ワークフローを手動で実行すると（Actions、Release、Run workflow）、確認とパッケージ作成だけを行う予行演習になり、何も公開しません。
 
 ## ライセンス

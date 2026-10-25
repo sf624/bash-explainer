@@ -9,13 +9,17 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) ![lang: English](https://img.shields.io/badge/lang-English-lightgrey)
 [![lang: 日本語](https://img.shields.io/badge/lang-%E6%97%A5%E6%9C%AC%E8%AA%9E-blue)](./README.ja.md)
 
+<!-- development-note -->
+> This README describes the development version on `main`, which can be ahead of the release. The released version is on the [Marketplace](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer) and [Open VSX](https://open-vsx.org/extension/shun-fujioka/bash-explainer) pages, and its source, README included, is at the tag of the [latest release](https://github.com/sf624/bash-explainer/releases/latest).
+<!-- /development-note -->
+
 Explains shell scripts line by line — like [regex101](https://regex101.com/), but for bash.
 
 Hover any part of a line and see what it does — every command, option, redirection and `${…}` — with worked examples you can edit. Useful for reading unfamiliar scripts, learning the shell, and teaching it.
 
 **No setup, and [offline by design](#privacy):** no network, no AI, no telemetry. In English and Japanese.
 
-![Bash Explainer demo](images/demo.gif)
+![Bash Explainer demo](images/readme/demo.gif)
 
 Bash Explainer is a VS Code extension, and more: the same explanations and warnings also come as a web page you can try without installing anything, a command-line tool, a Language Server for other editors, and a GitHub Action that checks scripts in pull requests.
 
@@ -159,7 +163,7 @@ Turn the hover and the panel on or off by clicking **Bash Explainer** in the sta
 
 The panel follows the cursor line by line. Point at a part of the tree to highlight it in the editor.
 
-![Panel](images/panel.gif)
+![Panel](images/readme/panel.gif)
 
 #### Hover
 
@@ -167,13 +171,13 @@ Hover a word, an option or an operator to see what it is, right where you are re
 
 For the whole line, press `Ctrl+K Ctrl+E`, choose **Explain Bash on Current Line** from the context menu, or click **Whole line** in the hover: one block per command, with its arguments.
 
-![Hover](images/hover.gif)
+![Hover](images/readme/hover.gif)
 
 #### Name hints
 
 A command name gets a faint hint after it where it does not run what a reader would guess: a function or an alias that hides a builtin or a program, a builtin turned off by `enable -n`, an alias that bash does not expand in a script, `sudo cd` (there is no `cd` program), a name that runs nothing. Hover the hint for what runs and what else the name is; click it to open the line in the panel. The web page shows the same hints in its editor. VS Code's `editor.inlayHints.enabled` turns all inlay hints on or off (or on while `Ctrl+Alt` is held).
 
-![Name hints](images/name-hints.png)
+![Name hints](images/readme/name-hints.png)
 
 The inline summary at the end of the cursor line was removed: `bashExplainer.inline.*` no longer has an effect.
 
@@ -366,9 +370,9 @@ npm run test:integration:web   # …and in VS Code for the Web (needs `npx playw
 - A weekly workflow ([unbash-release.yml](.github/workflows/unbash-release.yml)) opens an issue when a newer unbash (the parser, pinned exactly in `package.json`) is on npm, with the upgrade checklist; Dependabot's monthly npm run proposes the same bump as a PR.
 - Japanese text follows [docs/japanese-style.md](docs/japanese-style.md) (in Japanese); a test checks it.
 - To add a command, add an entry to [`src/dict/commands.ts`](src/dict/commands.ts): `cmd(japanese, english, [options…], { positional: […] })`. Write the descriptions in your own words: do not copy them from man pages, `--help` output or other documentation, whose licenses (often the GPL or the GFDL) differ from this project's.
-- `CHANGELOG.md` is for users: it is the GitHub Release's notes and the Marketplace's Changelog tab. Add entries under `## Unreleased`, in `### New`, `### Changed` or `### Fixed`: one bullet per change users can see, in one or two short sentences that say what they see now. Write "Before, …" only when the behaviour changes in a way users will notice, not for every fix. Leave out tests, CI, refactors and internal design. Each version ends with an `[All changes](…/compare/vPREV...vX.Y.Z)` link.
+- `CHANGELOG.md` is for users: it is the GitHub Release's notes and the Marketplace's Changelog tab. Add entries under `## Unreleased`, in `### New`, `### Changed` or `### Fixed`: one bullet per change users can see, in one or two short sentences that say what they see now. Write "Before, …" only when the behaviour changes in a way users will notice, not for every fix. Leave out tests, CI, refactors and internal design. Each version ends with an `[All changes]` link to GitHub's compare view of the previous and this tag (`compare/vPREV...vX.Y.Z`).
 - Fine-grained examples and the earlier behaviour go into `docs/changes/<version>.md`, linked from the version's section in `CHANGELOG.md` (for unreleased work, `docs/changes/unreleased.md`, linked from `## Unreleased`). When a change is a fix of a kind already listed, add a few words or an example to the details file; do not grow the bullet.
-- To release, bump `version` in `package.json` and `cli/package.json`, rename `## Unreleased` in `CHANGELOG.md` to the version, rename `docs/changes/unreleased.md` to `docs/changes/<version>.md` (and fix its link in the section), and push a tag `v<version>`. The [Release workflow](.github/workflows/release.yml) takes the version's section of `CHANGELOG.md` as the release notes, so keep the section short and the details link in it. It checks that the Test workflow passed on the tagged commit, packages it, waits for approval in the `release` environment, then publishes to the VS Code Marketplace, Open VSX and npm, creates a GitHub Release, moves the `v0` tag the GitHub Action is used by, and updates the web version; see [docs/publishing.md](docs/publishing.md) for the steps and the one-time setup. Run by hand (Actions, Release, Run workflow), the Release workflow is a dry run: it does the checks and packages the extension, and publishes nothing.
+- To release, bump `version` in `package.json` and `cli/package.json`, rename `## Unreleased` in `CHANGELOG.md` to the version, rename `docs/changes/unreleased.md` to `docs/changes/<version>.md` (and fix its link in the section to `https://github.com/sf624/bash-explainer/blob/v<version>/docs/changes/<version>.md`), and push a tag `v<version>`. The [Release workflow](.github/workflows/release.yml) takes the version's section of `CHANGELOG.md` as the release notes, so keep the section short and the details link in it. It checks that the Test workflow passed on the tagged commit, packages it, waits for approval in the `release` environment, then publishes to the VS Code Marketplace, Open VSX and npm, creates a GitHub Release, moves the `v0` tag the GitHub Action is used by, and updates the web version; see [docs/publishing.md](docs/publishing.md) for the steps (including deleting the previous release's old images, the files directly in `images/`, once this one is published) and the one-time setup. The package pages show the README of their version: the packages are pinned to the tag (`npm run package`, `scripts/build-cli.ts --tag`), and the release checks it. Run by hand (Actions, Release, Run workflow), the Release workflow is a dry run: it does the checks and packages the extension, and publishes nothing.
 
 ## License
 

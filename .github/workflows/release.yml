@@ -69,8 +69,21 @@ jobs:
           echo "::error::The Test workflow has not passed on $GITHUB_SHA: tag a commit whose Test run succeeded"
           exit 1
 
+      # `npm run package` pins the README's and the changelog's links to the tag (vsce --githubBranch), and
+      # leaves out the note that README.md describes the development version. The npm package's README is
+      # pinned the same way when it is built (scripts/build-cli.ts --tag). The page of a release must show
+      # that release's images, not the newest ones on main: check the packaged files, not the sources.
       - name: Package the extension
         run: npm run package
+
+      - name: Check that the README of each package is pinned to the tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          npx tsx scripts/readme-pins.ts --vsix "bash-explainer-$VERSION.vsix" --tag "v$VERSION"
+          npx tsx scripts/build-cli.ts --outdir="$RUNNER_TEMP/cli" --tag="v$VERSION"
+          npm pack "$RUNNER_TEMP/cli" --pack-destination "$RUNNER_TEMP" --silent
+          npx tsx scripts/readme-pins.ts --tgz "$RUNNER_TEMP/bash-explainer-$VERSION.tgz" --tag "v$VERSION"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -124,11 +137,13 @@ jobs:
       - name: Publish the command-line tool to npm
         if: vars.NPM_PUBLISH == 'true'
         run: |
-          npm run build:cli
+          # Built into a directory of its own, with the README pinned to this release's tag.
+          npx tsx scripts/build-cli.ts --outdir="$RUNNER_TEMP/cli" --tag="v${{ needs.build.outputs.version }}"
+          npx tsx scripts/readme-pins.ts --file "$RUNNER_TEMP/cli/README.md" --tag "v${{ needs.build.outputs.version }}"
           if npm view "bash-explainer@${{ needs.build.outputs.version }}" version >/dev/null 2>&1; then
             echo "bash-explainer ${{ needs.build.outputs.version }} is already on npm"
           else
-            npx --yes npm@11.20.0 publish ./cli --access public
+            npx --yes npm@11.20.0 publish "$RUNNER_TEMP/cli" --access public
           fi
 
       # The GitHub Marketplace listing of the action is a checkbox on the release page, with no API
