@@ -15,8 +15,9 @@
 //   others, `run`…, are read by their specs, as builtins: `shellState`'s `host`), a builtin given a variable name not known (`read "$v"`),
 //   indirection (`${!v}`, `${!1}`: its subscript may assign), a DEBUG or RETURN trap, a `${ …; }` (bash 5.3: it runs
 //   in the shell itself, and the walk does not keep what it changes), a trap's or a callback's function that changes options, functions
-//   or aliases; and when arithmetic may read text not known (`$1`, `$(cmd)`, a variable `read` sets or that is never
-//   set: bash runs it as an expression, which may assign any variable).
+//   or aliases, a PS4 that may assign or run a command (`set -x` expands it before each command); and when arithmetic
+//   may read text not known (`$1`, `$(cmd)`, a variable `read` sets or that is never set: bash runs it as an
+//   expression, which may assign any variable).
 // - A function is closed (its decisions and dead code may be said, and src/semantics/env.ts says for sure where its
 //   body runs) when every call of it is one the walk sees, in the script or in an `eval`'s string: not exported
 //   (`export -f`, `set -a`), not named as an argument (`complete -F f`, `trap f INT`), not called from the text of a
@@ -67,6 +68,14 @@ const NAME = /^[A-Za-z_]\w*$/;
 const IDENTIFIERS = /(?<![\w#@.])[A-Za-z_]\w*/g;
 /** A `${…}` that arithmetic may paste: a value, an element, a length, or a default (`${x:-0}`). */
 const PASTE = /^\$\{#?[A-Za-z_]\w*(?:\[[^\]]*\])?(?::?-[^{}$`'"]*)?\}/;
+/** A parameter that expanding changes nothing: `$x`, `${x}`, `${#x}`, `${x[0]}`, `${x:-w}`, `${x:+w}` (w with no `$`). */
+const QUIET_PARAMETER = /\$(?:[A-Za-z_]\w*|[0-9@*#?$!_-]|\{#?(?:[A-Za-z_]\w*|[0-9@*#?$!_-])(?:\[(?:\d+|@|\*)\])?(?::?[-+?][^$`{}]*)?\})/g;
+/** Whether the text of a prompt (`PS4`) runs nothing and assigns nothing when bash expands it: only `QUIET_PARAMETER`s, nested in each other. */
+function quietPrompt(text: string): boolean {
+  for (let before = ''; before !== text;) [before, text] = [text, text.replace(QUIET_PARAMETER, '')];
+  return !/[$`]/.test(text);
+}
+
 /** The builtins a command name read from a variable may be (`debug=false; $debug`): they change nothing. */
 const SAFE_BUILTINS = new Set(['true', 'false', ':', 'echo', 'test', '[']);
 
@@ -714,6 +723,11 @@ class Scan {
         else if (this.functions.has(v.text)) this.callbacks.add(v.text);
         else if (builtins[v.text] && !SAFE_BUILTINS.has(v.text)) this.blindFor('a command name not known');
       }
+    }
+    // PS4 is expanded before each command `set -x` traces (also `bash -x script`): a value that may assign (arithmetic,
+    // `${x:=w}`, a subscript) or run a command changes the shell where the walk does not see it.
+    for (const w of this.writes.get('PS4') ?? []) {
+      if (w.value !== 'none' && w.value !== 'number' && (w.value === 'unknown' || !w.value.fixed || !quietPrompt(w.value.text))) this.blindFor('PS4, which `set -x` expands before each command, may assign or run a command');
     }
     // A nameref whose target is not known, assigned or unset: any variable may change.
     for (const r of this.refUnknown) if (this.writes.get(r)!.some((w) => !w.nameref)) this.blindFor('a nameref whose target is not known is assigned');

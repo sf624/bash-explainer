@@ -473,6 +473,8 @@
  "a=1; a=2 >f$a",
  "a=1; b=2; [ \"$a\" \\< \"$b\" ]",
  "a=1; b=2; [ $a < $b ]",
+ "a=2 b=3 export a",
+ "a=2 command -v export a",
  "a=2 echo >f$a",
  "a=; [ $a = x ]",
  "a[1]=x",

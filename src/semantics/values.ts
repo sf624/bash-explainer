@@ -3,6 +3,7 @@
 // (src/semantics/words.ts, `trustedPart`), with the values of the variables the decisions trust (src/semantics/trust.ts).
 import { ancestor, assignmentsOnly, type SyntaxNode } from '../syntax/tree';
 import { inAnotherShell, type StateModel } from './state';
+import { mayStopAround } from './stops';
 import { partMeaning, trustedPart, wordMeaning } from './words';
 
 /** The value of an expansion: the text it gives, and the words that text makes where it is. */
@@ -24,7 +25,7 @@ export interface ExpansionValue {
  * wherever it runs (`StateModel.settled`), from variables the model trusts that the script set on every path, never
  * from the environment. Undefined otherwise, and where bash fails on it.
  */
-export function expansionValue(part: SyntaxNode, model: StateModel): ExpansionValue | undefined {
+export function expansionValue(part: SyntaxNode, model: StateModel, around = true): ExpansionValue | undefined {
   if ((part.type !== 'simple_expansion' && part.type !== 'expansion') || model.blind !== undefined || (model.shell !== undefined && model.shell !== 'bash')) return undefined;
   if (inAnotherShell(part) || !model.settled(part)) return undefined;
   for (let x: SyntaxNode | null = part; x; x = x.parent) if (model.dead(x)) return undefined;
@@ -41,6 +42,8 @@ export function expansionValue(part: SyntaxNode, model: StateModel): ExpansionVa
   const split = meaning.split.applies;
   const got = trustedPart(part, w, model, meaning.quoted, split);
   if (!got) return undefined;
+  // (Nor where another expansion of the statement may fail first: `echo ${e:?} "$e"`; `around`: that is checked.)
+  if (around && mayStopAround(part, model, (e) => !!expansionValue(e, model, false))) return undefined;
   const glob = meaning.glob.applies !== false && got.fields.some((f) => f.glob);
   if (glob && meaning.glob.applies === 'unknown') return undefined;
   return { text: got.text, ...(split ? { words: got.fields.map((f) => f.text) } : {}), glob };
