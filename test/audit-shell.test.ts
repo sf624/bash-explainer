@@ -189,7 +189,16 @@ describe('shell audit fixes', () => {
       assert.strictEqual(r.stdout.toString(), '');
       assert.notStrictEqual(r.status, 0);
       assert.match(r.stderr.toString(), /local: not in a function/);
+      // In a subshell, only the subshell ends.
+      assert.strictEqual(spawnSync('dash', ['-c', '( local y; echo in ); echo "st=$?"; x=$(local z; echo in); echo "st=$? [$x]"']).stdout.toString(), 'st=2\nst=2 []\n');
     }
+    for (const src of ['( local y )', 'x=$(local z; echo in)', 'echo | ( local y )']) {
+      assert.match(notes(src, 'dash'), /outside one, dash and busybox ash end this subshell with "local: not in a function" \(status 2; what is outside the subshell goes on\)/, src);
+    }
+    assert.match(notes('( local y )', 'dash', 'ja'), /このサブシェルを終えます（終了ステータス 2。サブシェルの外は続きます）/);
+    // (A shell not known to be the script or a subshell: the one a string runs in.)
+    assert.match(notes(`sh -c 'local s'`, 'dash'), /stop the shell that runs it with "local: not in a function" \(in a subshell, only the subshell ends\)/);
+    assert.match(notes(`sh -c 'local s'`, 'dash', 'ja'), /それを実行するシェルを止めます/);
     // zsh, mksh and yash document their `local` as `typeset` (which works anywhere, a global variable at the top level),
     // and ksh93 has no `local`, which the dialect note says: not run here (none of them is installed in CI).
     for (const shell of ['zsh', 'mksh', 'yash', 'ksh'] as const) assert.doesNotMatch(notes('local y=1', shell), /only inside a function/, shell);

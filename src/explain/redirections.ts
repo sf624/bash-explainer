@@ -107,24 +107,55 @@ export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
   const children = dests.filter((d) => !isPlainWord(d)).flatMap((d) => cx.sub(d));
   if (dests.length === 1 && (isPlainWord(dests[0]) || dests[0].type === 'brace_expression') && /[*?[{]/.test(dests[0].text)) expl += redirectTargetNote(cx, dests[0]);
   const later = OPENS_FILE.has(op) ? replacedBy(n) : undefined;
-  if (later) expl += replacedFile(cx, op, fd, dest, later);
+  if (later) expl += replacedFile(cx, op, fd, dests, later);
   return cx.tok(n, 'redirect', expl, children);
 }
 
 /** The file redirections that open a file on one descriptor, which a later redirection of that descriptor can replace. */
 const OPENS_FILE: ReadonlySet<string> = new Set(['<', '>', '>>', '>|', '<>']);
 
-/** The descriptors a redirection sets (`{name}>…` takes a new one of its own, left out), and the one it copies, if any. */
+/** The files that stand for a descriptor (bash opens them as a copy of it, as Linux does): `/dev/stdout` is 1. */
+function deviceDescriptor(path: string): number | undefined {
+  const m = /^\/dev\/(?:(stdin)|(stdout)|(stderr)|fd\/(\d+))$/.exec(path);
+  return !m ? undefined : m[1] ? 0 : m[2] ? 1 : m[3] ? 2 : Number(m[4]);
+}
+
+/**
+ * The descriptors a redirection sets, and the one it copies, if any. `{name}>…` takes a new descriptor of its own,
+ * left out, but copies one all the same (`{v}>&1`). A file that stands for a descriptor (`>/dev/stdout`) copies it.
+ */
 function descriptors(r: Redirect): { sets: number[]; copies?: number | 'unknown' } {
-  if (/^\{.*\}$/.test(r.fd)) return { sets: [] };
-  const fd = r.fd !== '' ? Number(r.fd) : r.op.startsWith('<') ? 0 : 1;
+  const named = /^\{.*\}$/.test(r.fd);
+  const fd = r.fd !== '' && !named ? Number(r.fd) : r.op.startsWith('<') ? 0 : 1;
+  const own = named ? [] : [fd];
   if (r.op === '&>' || r.op === '&>>') return { sets: [1, 2] };
-  if (r.op !== '>&' && r.op !== '<&') return { sets: [fd] };
-  if (r.dest === '-') return { sets: [fd] };
+  const device = OPENS_FILE.has(r.op) ? deviceDescriptor(r.dest) : undefined;
+  if (r.op !== '>&' && r.op !== '<&') return device === undefined ? { sets: own } : { sets: own, copies: device };
+  if (r.dest === '-') return { sets: own };
   const from = /^(\d+)(-?)$/.exec(r.dest);
-  if (from) return { sets: from[2] ? [fd, Number(from[1])] : [fd], copies: Number(from[1]) };
+  if (from) return { sets: from[2] ? [...own, Number(from[1])] : own, copies: Number(from[1]) };
   // `>&file` is `&>file`; `<&$fd`, `2>&$fd`: a descriptor not known here, or a file.
-  return r.op === '>&' && fd === 1 && !/[$`]/.test(r.dest) ? { sets: [1, 2] } : { sets: [fd], copies: 'unknown' };
+  return r.op === '>&' && fd === 1 && !named && !/[$`]/.test(r.dest) ? { sets: [1, 2] } : { sets: own, copies: 'unknown' };
+}
+
+/**
+ * The path a redirection opens as a file (`>a`, `&>a`, `>&a`), when its word is known here (undefined: not known, as
+ * `"$f"` or an unquoted glob); null when it opens none (a here-document, a copy, a close).
+ */
+function openedPath(r: SyntaxNode): string | undefined | null {
+  if (r.type !== 'file_redirect') return null;
+  const info = redirectInfo(r);
+  const d = descriptors(info);
+  if (!OPENS_FILE.has(info.op) && info.op !== '&>' && info.op !== '&>>' && (d.copies !== undefined || info.dest === '-')) return null;
+  const words = fields(r, 'destination');
+  if (words.length !== 1 || (isPlainWord(words[0]) && /[*?[]/.test(words[0].text))) return undefined;
+  return staticWordValue(words[0]);
+}
+
+/** Whether two paths name the same file as written (`a`, `./a`, `.//a`); links are not followed. */
+function samePath(a: string, b: string): boolean {
+  const norm = (p: string): string => (p.startsWith('/') ? '/' : '') + p.split('/').filter((s) => !/^\.?$/.test(s)).join('/');
+  return norm(a) === norm(b);
 }
 
 /**
@@ -150,14 +181,28 @@ function written(r: SyntaxNode): string {
   return start ? `${field(r, 'descriptor')?.text ?? ''}${r.children.find((c) => !c.named)!.type}${start.text}` : r.text;
 }
 
-/** `cat <a <b`, `echo >a >b`: what bash still does with the file of a redirection that a later one replaces. */
-function replacedFile(cx: Explainer, op: string, fd: string, dest: string, later: SyntaxNode): string {
+/**
+ * `cat <a <b`, `echo >a >b`: what bash still does with the file of a redirection that a later one replaces. Nothing
+ * when the later one opens the same file (`>s >>s` writes to `s`); when either word is not known here (`>a >"$f"`),
+ * it says that the same file would be used. A device (`/dev/null`) is only opened.
+ */
+function replacedFile(cx: Explainer, op: string, fd: string, dests: SyntaxNode[], later: SyntaxNode): string {
+  const own = openedPath(dests[0].parent!);
+  const other = openedPath(later);
+  if (own && other && samePath(own, other)) return '';
+  const dest = dests.map((d) => d.text).join(' ');
   const name = op.startsWith('<') ? fdName(fd, '0') : fdName(fd, '1');
+  const device = !!own?.startsWith('/dev/');
   const what = op === '<' ? cx.s(`\`${dest}\` は開かれる（存在しなければエラー）が、読まれない`, `\`${dest}\` is opened (it must exist) but not read`)
-    : op === '<>' ? cx.s(`\`${dest}\` は開かれる（なければ作られる）が、使われない`, `\`${dest}\` is opened (and created if missing) but not used`)
+    : op === '<>' ? (device ? cx.s(`\`${dest}\` は開かれるが、使われない`, `\`${dest}\` is opened but not used`)
+      : cx.s(`\`${dest}\` は開かれる（なければ作られる）が、使われない`, `\`${dest}\` is opened (and created if missing) but not used`))
+    : device ? cx.s(`\`${dest}\` は開かれるが、何も書き込まれない`, `\`${dest}\` is opened, but nothing is written to it`)
     : op === '>>' ? cx.s(`\`${dest}\` はなければ作られるが、何も書き込まれない`, `\`${dest}\` is created if missing, but nothing is written to it`)
     : cx.s(`\`${dest}\` は作られる（中身は空になる）が、何も書き込まれない`, `\`${dest}\` is created or emptied, but nothing is written to it`);
-  return cx.s(`。ただし後の \`${written(later)}\` が続けて${name.ja}を置き換えるので、${what}`, `. But the later \`${written(later)}\` then replaces ${name.en}: ${what}`);
+  // (A word not known here may name the same file: then that file is used.)
+  const unknown = other !== null && (own === undefined || other === undefined);
+  const unless = !unknown ? '' : cx.s(`（\`${written(later)}\` が同じファイルを指すなら、このファイルが使われる）`, ` (unless \`${written(later)}\` names the same file, which is then used)`);
+  return cx.s(`。ただし後の \`${written(later)}\` が続けて${name.ja}を置き換えるので、${what}${unless}`, `. But the later \`${written(later)}\` then replaces ${name.en}: ${what}${unless}`);
 }
 
 /** The one word brace expansion makes of a redirection target that differs from it (`{a,}` is `a`: an empty word is dropped). */
@@ -282,8 +327,9 @@ export function heredoc(cx: Explainer, n: SyntaxNode): Token {
   expl += quoted
     ? cx.s('。区切り語がクォートされているので本文中の変数やコマンド置換は展開されない', '. The delimiter is quoted, so nothing in the body is expanded')
     : cx.s('。本文中の `$変数` や `$(…)` は展開される', '. `$vars` and `$(…)` in the body are expanded');
-  // (Its own lines: the body and the end, after those of the here-documents before it on the line.)
-  expl += cx.lineRef(body!, n);
+  // (Its own lines: the body and the end, after those of the here-documents before it on the line; the end alone when
+  // the body is empty, but not on the operator's line, where one that is never ended starts.)
+  expl += cx.lineRef(body!, n, body!.startPosition.row > n.startPosition.row);
   const label = written(n);
   // An empty here-document still has a (empty) body.
   const children = cx.subs(body!.namedChildren.filter((c) => c.type !== 'heredoc_content'));

@@ -22,7 +22,8 @@ Keep it current:
 6. Pipeline examples: show the shape of the input each stage reads (item 3 of the external review of October 2026).
 7. bats, what [design/bats.md](design/bats.md) lists as not done: a model per test (its own process, `set -e`), hooks, bats-assert, tags.
 8. Small gaps of the specs and the models ([design/semantics.md](design/semantics.md), A3): procps reads digits after BSD letters as PIDs (`ps u1`); GNU tar reads a first word without a dash as letters (`tar vf a.tar`). The word model (`wordMeaning`, src/semantics/words.ts) applies brace expansion in every shell: in a `#!/bin/dash` script, `echo {a,b}` is said to expand, though dash (like POSIX sh) has no brace expansion and prints `{a,b}` (noted in #332; only the redirection target checks the dialect, `braceWorks` in src/explain/redirections.ts).
-9. Dead code faded in the editor: a `DiagnosticTag.Unnecessary` hint on a statement that never runs (`shellState(...).dead(n)`), with its message in the catalog and on every surface ([design/highlighting.md](design/highlighting.md)).
+9. Brace expansion examples: show that the result is several words (`echo 1 4 7 10`), not one (`echo "1 4 7 10"`). Today "Resulting words" lists one word per line, which reads like the command's output. Find a look that shows separate words (word chips, or the expanded command line), and, where the output is known (`echo`, `printf`), the output too. Agreed 2026-10-25, to do after the analyzer.
+10. Dead code faded in the editor: a `DiagnosticTag.Unnecessary` hint on a statement that never runs (`shellState(...).dead(n)`), with its message in the catalog and on every surface ([design/highlighting.md](design/highlighting.md)).
 
 ## Waiting on the maintainer
 

@@ -47,8 +47,11 @@ export interface Explainer {
   s(ja: string, en: string): string;
   t(text: Text): string;
   tok(n: SyntaxNode, kind: Kind, explanation: string, children?: Token[], label?: string): Token;
-  /** The lines a construct over several lines covers (` (lines 3–5)`), from `n` to the end of `to`; empty for one line. */
-  lineRef(n: SyntaxNode, to?: SyntaxNode): string;
+  /**
+   * The lines a construct over several lines covers (` (lines 3–5)`), from `n` to the end of `to`; for one line, empty,
+   * or ` (line 3)` with `one` (the end line of an empty here-document).
+   */
+  lineRef(n: SyntaxNode, to?: SyntaxNode, one?: boolean): string;
 
   /** The shell state along the script (src/semantics/state.ts). */
   readonly state: StateModel;
@@ -190,10 +193,12 @@ export class LineExplainer implements Explainer, LineOutput {
     return { kind, label, explanation, span: spanOf(n), children };
   }
 
-  lineRef(n: SyntaxNode, to = n): string {
+  lineRef(n: SyntaxNode, to = n, one = false): string {
     const a = docLine(n) + 1;
     const b = a + effEndRow(to) - n.startPosition.row;
-    if (a === b) return '';
+    if (a === b && one) return this.s(`（行 ${a}）`, ` (line ${a})`);
+    // (Also a here-document that is not ended: its body starts after the end of the script.)
+    if (a >= b) return '';
     return this.s(`（行 ${a}〜${b}）`, ` (lines ${a}–${b})`);
   }
 

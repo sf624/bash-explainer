@@ -130,10 +130,15 @@ export const MESSAGES = {
   'unset-readonly': failure<{ name: string }>(['4.1', '4.2'], ({ name }) => [
     `変数 \`${name}\` は読み取り専用なので、\`unset\` はエラーになり（\`cannot unset: readonly variable\`、終了ステータス 1）、\`${name}\` は削除されません`,
     `The variable \`${name}\` is read-only, so \`unset\` fails (\`cannot unset: readonly variable\`, status 1) and \`${name}\` stays`]),
-  // (`stops`: in dash and busybox ash, which stop the script there; bash goes on with status 1.)
-  'local-outside-function': pitfall<{ stops: boolean }>(['4.2'], ({ stops }) => stops ? [
+  // (`stops`: in dash and busybox ash, which stop the shell that runs it there, the script, a subshell (which ends
+  // only itself, status 2) or a shell not known to be either; bash goes on with status 1.)
+  'local-outside-function': pitfall<{ stops: false | 'script' | 'subshell' | 'shell' }>(['4.2'], ({ stops }) => stops === 'script' ? [
     '`local` は関数の中でしか使えず、関数の外で使うと dash や busybox ash は「local: not in a function」のエラーでスクリプトを止めます',
-    '`local` can be used only inside a function; outside one, dash and busybox ash stop the script with "local: not in a function"'] : [
+    '`local` can be used only inside a function; outside one, dash and busybox ash stop the script with "local: not in a function"'] : stops === 'subshell' ? [
+    '`local` は関数の中でしか使えず、関数の外で使うと dash や busybox ash は「local: not in a function」のエラーでこのサブシェルを終えます（終了ステータス 2。サブシェルの外は続きます）',
+    '`local` can be used only inside a function; outside one, dash and busybox ash end this subshell with "local: not in a function" (status 2; what is outside the subshell goes on)'] : stops ? [
+    '`local` は関数の中でしか使えず、関数の外で使うと dash や busybox ash は「local: not in a function」のエラーで、それを実行するシェルを止めます（サブシェルなら、終わるのはそのサブシェルだけです）',
+    '`local` can be used only inside a function; outside one, dash and busybox ash stop the shell that runs it with "local: not in a function" (in a subshell, only the subshell ends)'] : [
     '`local` は関数の中でしか使えず、関数の外で使うと「can only be used in a function」のエラーになります',
     '`local` can be used only inside a function; outside one it fails with "can only be used in a function"']),
 
