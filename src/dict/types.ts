@@ -1,6 +1,7 @@
 import type { CommandSlot, CommandSpec, Condition, EachFile, IoUse, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec } from '../argv/spec';
 import type { EmbeddedLang } from '../embedded/types';
 import { Text, tx } from '../i18n';
+export { wordTable } from '../wordtable';
 
 /**
  * `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg` (a value; `arg2` for two

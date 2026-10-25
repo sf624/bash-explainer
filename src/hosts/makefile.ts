@@ -1,13 +1,14 @@
 import { type Shell, shellFromName } from '../dialect';
 import { LineOut, Builder } from './builder';
+import { wordTable } from '../wordtable';
 
-const MAKE_AUTO: Record<string, [string, string, string]> = {
+const MAKE_AUTO: Record<string, [string, string, string]> = wordTable({
   '@': ['make_target', 'ターゲット名', 'the target name'],
   '<': ['make_first_prerequisite', '最初の依存ファイル', 'the first prerequisite'],
   '^': ['make_prerequisites', 'すべての依存ファイル', 'all prerequisites'],
   '?': ['make_newer_prerequisites', 'ターゲットより新しい依存ファイル', 'the prerequisites newer than the target'],
   '*': ['make_stem', 'パターンルールの `%` に当たる部分', 'the stem matched by `%`'],
-};
+});
 
 export function makefile(b: Builder): void {
   let shell: Shell = 'sh';

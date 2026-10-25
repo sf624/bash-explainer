@@ -9,6 +9,7 @@ import { type ArgRole, type ArgvParse, type CommandRole, interpret, type RoleAt,
 import { declaresNames, namespaceOf } from '../argv/query';
 import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
 import { argWord, countOf } from '../argv/words';
+import { builtins } from '../dict/builtins';
 import { describeFind, type FindNode, parseFind } from '../embedded/find';
 import { globIntro, hasGlob } from '../embedded/glob';
 import type { EmbeddedLang } from '../embedded/types';
@@ -47,6 +48,9 @@ function jobSpec(text: string): { ja: string; en: string } | undefined {
   if (rest.startsWith('?')) return { ja: `コマンドに \`${rest.slice(1)}\` を含むジョブ`, en: `the job whose command contains \`${rest.slice(1)}\`` };
   return { ja: `コマンドが \`${rest}\` で始まるジョブ`, en: `the job whose command starts with \`${rest}\`` };
 }
+
+/** The entry of a table of a spec for a word of the script (`set -o constructor` finds none). */
+const own = <T>(table: Readonly<Record<string, T>> | undefined, word: string): T | undefined => (table && Object.hasOwn(table, word) ? table[word] : undefined);
 
 /** `+x` (an option turned off) is written as `-x` in texts. */
 const dash = (flag: string): string => flag.replace(/^\+/, '-');
@@ -232,7 +236,7 @@ function equalsToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const whole = literalContent(a);
   const litEq = whole?.text.indexOf('=') ?? -1;
   const val = whole && litEq >= 0 ? whole.text.slice(litEq + 1) : a.text.slice(a.text.indexOf('=') + 1);
-  const known = value.spec?.values?.[val];
+  const known = own(value.spec?.values, val);
   const valueLit: Literal | undefined = whole && litEq >= 0
     ? (whole.offsets ? { text: val, offsets: whole.offsets.slice(litEq + 1) } : { text: val, base: whole.base! + litEq + 1 })
     : undefined;
@@ -279,7 +283,7 @@ function letterParts(cx: Explainer, a: SyntaxNode, l: ArgRole, spec: CommandSpec
     raw.explanation = cx.s(`\`${flag}\` の値 \`${val}\``, `Value \`${val}\` for \`${flag}\``) + (trap || '');
     return [...parts, raw];
   }
-  const known = value.spec?.values?.[val];
+  const known = own(value.spec?.values, val);
   const glued = lit && !isPlainWord(a);
   raw.explanation = (known ? `${val}: ${cx.t(known)}` : cx.s(`\`${flag}\` の値`, `Value for \`${flag}\``) + (glued ? cx.s(`（クォートを外すと \`${val}\`）`, ` (\`${val}\` after quote removal)`) : '')) + splicedNote(cx, value);
   // `-k3,3nr`, `-f2-4`: the attached value can be broken down like a separate one.
@@ -301,9 +305,9 @@ function valueToken(cx: Explainer, v: SyntaxNode, role: ValueRole, disables: boo
   const valueFor = /^-/.test(flag) ? cx.s(`\`${flag}\` オプションの値`, `Value for \`${flag}\``) : cx.s(`\`${flag}\` の値`, `Value for \`${flag}\``);
   if (spec?.lang) t = positional(cx, v, valueFor + ': ' + cx.t(role.option!.text), spec.lang);
   else {
-    const known = spec?.values?.[v.text];
+    const known = own(spec?.values, v.text);
     t = cx.tok(v, 'argument', known
-      ? `${v.text}: ${disables ? turnedOff(cx, v.text, cx.t(known), true, spec!.offValues?.[v.text]) : cx.t(known)}`
+      ? `${v.text}: ${disables ? turnedOff(cx, v.text, cx.t(known), true, own(spec!.offValues, v.text)) : cx.t(known)}`
       : valueFor, wordParts(cx, v));
   }
   // `jq --arg NAME VALUE`: two words follow; the first is the name.
@@ -413,7 +417,7 @@ function markedAssignment(cx: Explainer, a: SyntaxNode, desc: string, command: s
   if (value?.type === 'array') {
     // (`declare -g b=(…)`: the options count, as for the builtin.)
     const global = readDeclarationWords('declare', fields(a.parent!, 'argument')).on.includes('g');
-    const assigns = !['declare', 'local', 'typeset'].includes(command)
+    const assigns = !builtins[command]?.locals
       ? cx.s(`bash は配列 \`${name}\` を代入する。代入先はここで見える変数（関数のローカル変数があればそれ、なければグローバル変数）で、属性は付かない`,
         `bash assigns the array \`${name}\`. It is the variable visible here: a local one if there is one, else the global one, with no attribute`)
       : global ? cx.s(`bash は \`${command} -g\` と同じく、配列 \`${name}\` をグローバル変数として代入する`, `bash assigns the array \`${name}\` as \`${command} -g\` would: a global variable`)

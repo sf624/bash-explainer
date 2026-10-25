@@ -937,5 +937,41 @@
         }
       }
     }
+  },
+  {
+    "manual": "3.7.2",
+    "snippet": "@PROBE@",
+    "note": "names of the members every JavaScript object has are no builtins",
+    "names": [
+      "toString",
+      "constructor",
+      "hasOwnProperty",
+      "valueOf",
+      "__proto__"
+    ],
+    "facts": {
+      "1": {
+        "toString": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "constructor": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "hasOwnProperty": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "valueOf": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "__proto__": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
   }
 ]

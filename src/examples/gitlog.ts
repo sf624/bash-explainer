@@ -141,7 +141,7 @@ function commitLines(commits: SampleCommit[], pretty: string | undefined, dateSt
   };
   const style = pretty ?? 'medium';
   const last = commits.length - 1;
-  if (named[style]) {
+  if (Object.hasOwn(named, style)) {
     // Multi-line formats put a blank line between commits.
     return commits.map((c, i) => [...named[style](c), ...(i < last && style !== 'oneline' && style !== 'reference' ? [''] : [])]);
   }

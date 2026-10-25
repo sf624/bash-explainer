@@ -2,6 +2,7 @@ import type { Lang } from '../i18n';
 import { explainPrintf } from './format';
 import { explainRegex } from './regex';
 import { EmbeddedToken, pick, shift } from './types';
+import { wordTable } from '../wordtable';
 
 type S = (ja: string, en: string) => string;
 
@@ -15,7 +16,7 @@ export interface Lex {
 const KEYWORDS = new Set(['BEGIN', 'END', 'BEGINFILE', 'ENDFILE', 'function', 'func', 'if', 'else', 'while', 'for', 'do', 'break', 'continue', 'next', 'nextfile', 'exit', 'return', 'delete', 'getline', 'print', 'printf', 'in']);
 const OPS = ['&&', '||', '++', '--', '+=', '-=', '*=', '/=', '%=', '^=', '==', '!=', '<=', '>=', '!~', '>>', '|&', '~', '|', '?', ':', '!', '<', '>', '=', '+', '-', '*', '/', '%', '^', '$', '{', '}', '(', ')', '[', ']', ',', ';'];
 
-const VARS: Record<string, [string, string]> = {
+const VARS: Record<string, [string, string]> = wordTable({
   NR: ['これまでに読んだ行数（現在の行番号）', 'number of records read so far (the current line number)'],
   FNR: ['現在のファイル内での行番号', 'line number within the current file'],
   NF: ['現在の行のフィールド（列）の数', 'number of fields on the current line'],
@@ -32,9 +33,9 @@ const VARS: Record<string, [string, string]> = {
   RLENGTH: ['`match()` で一致した長さ', 'length of the last `match()`'],
   CONVFMT: ['数値を文字列にするときの書式', 'number-to-string conversion format'],
   OFMT: ['数値を出力するときの書式', 'output format for numbers'],
-};
+});
 
-const FUNCS: Record<string, [string, string]> = {
+const FUNCS: Record<string, [string, string]> = wordTable({
   length: ['文字列の長さ（引数なしなら現在の行の長さ）', 'length of a string (of the line, without an argument)'],
   substr: ['部分文字列を取り出す（`substr(s, 開始, 長さ)`、位置は1始まり）', 'take a substring (`substr(s, start, len)`, 1-based)'],
   index: ['文字列が最初に現れる位置（1始まり。なければ 0）', 'position of a substring (1-based; 0 if absent)'],
@@ -58,7 +59,7 @@ const FUNCS: Record<string, [string, string]> = {
   systime: ['現在の UNIX 時刻（GNU awk）', 'current UNIX time (GNU awk)'],
   asort: ['配列の値を並べ替える（GNU awk）', 'sort array values (GNU awk)'],
   asorti: ['配列のキーを並べ替える（GNU awk）', 'sort array indices (GNU awk)'],
-};
+});
 
 export function lex(src: string): Lex[] {
   const out: Lex[] = [];

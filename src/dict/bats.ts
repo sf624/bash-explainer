@@ -1,12 +1,12 @@
 import type { CommandSpec } from '../argv/spec';
 import { tx } from '../i18n';
-import { cmd, operand, runs } from './types';
+import { cmd, operand, runs, wordTable } from './types';
 
 // The commands bats-core defines for its test files (docs/design/bats.md): shell functions of bats itself, read
 // with these specs only in a bats file (the `bats` host kind, src/hosts.ts). In a shell script the names are
 // ordinary commands. The texts follow bats-core 1.13 (lib/bats-core/test_functions.bash, man 7 bats).
 
-export const BATS_COMMANDS: Record<string, CommandSpec> = {
+export const BATS_COMMANDS: Record<string, CommandSpec> = wordTable({
   // `run` reads its options up to the first word that is not one (`!`, `-N`, or one of its long options), or
   // up to `--`; an unknown option is an error. It runs the command inside `$( )`, so in a subshell. Any option
   // (`--` too) makes bats warn (BW02) unless `bats_require_minimum_version 1.5.0` comes first.
@@ -63,4 +63,4 @@ export const BATS_COMMANDS: Record<string, CommandSpec> = {
     // (It `eval`s the pipeline in the shell that calls it: with `lastpipe`, the last stage runs there, and may set anything.)
     shellEffect: { does: 'changes', runsUnread: 'command-line' },
   }),
-};
+});

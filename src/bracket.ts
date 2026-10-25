@@ -1,3 +1,4 @@
+import { wordTable } from './wordtable';
 /**
  * Bracket expressions in shell patterns (`[abc]`, `[!a-c]`, `[]]`, `[\^a]`, `[[:alpha:]_]`): where one ends,
  * what it holds, and the regular expression for it. The rules are those of bash's `case` and `[[ == ]]`.
@@ -7,10 +8,10 @@
 export type BracketItem = { type: 'char'; ch: string } | { type: 'range'; from: string; to: string } | { type: 'class'; name: string };
 
 /** The characters of the POSIX classes bash knows, as the inside of a JS character class. */
-const CLASSES: Record<string, string> = {
+const CLASSES: Record<string, string> = wordTable({
   digit: '0-9', alpha: 'A-Za-z', alnum: 'A-Za-z0-9', upper: 'A-Z', lower: 'a-z', space: ' \t\n\r\f\v', blank: ' \t',
   xdigit: '0-9A-Fa-f', punct: '!-/:-@\\[-`{-~', cntrl: '\u0000-\u001f\u007f', graph: '!-~', print: ' -~',
-};
+});
 
 /**
  * The `]` that closes the bracket expression opened at `open` (a `]` first, a `[:class:]` inside and a

@@ -1,5 +1,6 @@
 import { sedEscapeAt } from '../ctlchars';
 import type { Flavor } from '../embedded/regex';
+import { wordTable } from '../wordtable';
 
 /** A POSIX or PCRE pattern translated to a JavaScript RegExp. */
 export interface JsRegex {
@@ -7,10 +8,10 @@ export interface JsRegex {
   flags: string;
 }
 
-const CLASS_TO_JS: Record<string, string> = {
+const CLASS_TO_JS: Record<string, string> = wordTable({
   digit: '0-9', alpha: 'A-Za-z', alnum: 'A-Za-z0-9', upper: 'A-Z', lower: 'a-z', space: '\\s', blank: ' \\t',
   xdigit: '0-9A-Fa-f', punct: '!-\\/:-@\\[-`{-~', word: 'A-Za-z0-9_', cntrl: '\\x00-\\x1f', print: ' -~', graph: '!-~',
-};
+});
 
 const SED_ESCAPES: Record<string, string> = { t: '\\t', n: '\\n', r: '\\r', f: '\\f', v: '\\v', a: '\\x07' };
 

@@ -1,7 +1,8 @@
+import { wordTable } from '../wordtable';
 // Functions of mikefarah/yq v4 that jq does not have, or that work differently there.
 
 /** mikefarah/yq v4 functions: [ja, en]. Checked with the yq binaries (see test/yq.test.ts). */
-export const YQ_BUILTINS: Record<string, [string, string]> = {
+export const YQ_BUILTINS: Record<string, [string, string]> = wordTable({
   keys: ['キー（配列ならインデックス）の一覧を元の順序で返す（jq と違いソートしない）', 'the keys (or indices) in their original order (unlike jq, not sorted)'],
   env: ['環境変数の値を YAML として読んだもの（`env(HOME)`）', 'the value of an environment variable, parsed as YAML (`env(HOME)`)'],
   strenv: ['環境変数の値を文字列として返す（`strenv(HOME)`）', 'the value of an environment variable as a string (`strenv(HOME)`)'],
@@ -60,7 +61,7 @@ export const YQ_BUILTINS: Record<string, [string, string]> = {
   min: ['最小値', 'the minimum'],
   max: ['最大値', 'the maximum'],
   trim: ['前後の空白を取り除く', 'trim surrounding whitespace'],
-};
+});
 
 /** jq functions that mikefarah/yq v4 lacks (measured with v4.54.1 and jq 1.7). */
 export const JQ_ONLY = new Set([

@@ -324,6 +324,22 @@ describe('the analyzer says what a name runs', () => {
     assert.ok(explain('read -r line <<< "a b"', 0).examples.length > 0);
   });
 
+  it('a word that names a member of every JavaScript object finds nothing in the dictionary', () => {
+    // (bash 5.2: `toString` is not found, `type -t` prints nothing; jq 1.7: `.toString` of `{"a":1}` is null.)
+    for (const name of ['toString', 'constructor', 'hasOwnProperty', 'valueOf', '__proto__']) {
+      const t = explain(`${name} x`, 0).items[0];
+      assert.strictEqual(t.kind, 'command', name);
+      assert.match(t.explanation, new RegExp(`external command \`${name}\``), name);
+      assert.strictEqual(short(resolve(`${name} x`, `${name} x`)), 'file:search-unknown', name);
+    }
+    const text = (src: string): string => JSON.stringify(explain(src, 0));
+    for (const src of ['set -o constructor', 'cat < constructor', 'echo hi 2> valueOf', 'enable -n toString', "jq 'constructor' a.json", "yq '.a | constructor' a.yaml", 'yq -o constructor . a.yaml']) {
+      assert.doesNotMatch(text(src), /undefined/, src);
+    }
+    assert.match(text(`echo '{"a":1}' | jq '.toString'`), /"null"/);
+    assert.match(text(`echo '{"constructor":1}' | jq '.constructor'`), /"1"/);
+  });
+
   it('an assignment before a name that may expand to no word', () => {
     assert.match(all(explain('x=1 $cmd', 0).items[0]).join('\n'), /if `\$cmd` expands to no word at all, it stays as a shell variable/);
     assert.match(all(explain('x=1 $cmd', 0, 'ja').items[0]).join('\n'), /シェルの変数として残る/);

@@ -260,7 +260,7 @@ export function githubContext(expr: string): Text | undefined {
     'strategy.job-index': tx('マトリックスの中で何番目のジョブか（0 から）', 'which job of the matrix this is (from 0)'),
     'strategy.job-total': tx('マトリックスのジョブ数', 'the number of jobs in the matrix'),
   };
-  if (exact[expr]) return exact[expr];
+  if (Object.hasOwn(exact, expr)) return exact[expr];
   if (/^github\.event\.\w/.test(expr) && !expr.startsWith('github.event.inputs.')) {
     const path = expr.slice(13);
     return Object.hasOwn(eventFields, path) ? eventFields[path] : eventField(path);

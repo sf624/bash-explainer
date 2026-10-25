@@ -2,8 +2,9 @@ import type { Lang } from '../i18n';
 import { explainDate } from './format';
 import { controlSuffix } from '../ctlchars';
 import { EmbeddedToken, pick, shift } from './types';
+import { wordTable } from '../wordtable';
 
-const NAMED: Record<string, [string, string]> = {
+const NAMED: Record<string, [string, string]> = wordTable({
   oneline: ['1コミット1行（ハッシュと件名）', 'one line per commit (hash and subject)'],
   short: ['ハッシュ・作者・件名', 'hash, author and subject'],
   medium: ['ハッシュ・作者・日時・メッセージ（既定）', 'hash, author, date and message (default)'],
@@ -12,9 +13,9 @@ const NAMED: Record<string, [string, string]> = {
   reference: ['「ハッシュ (件名, 日付)」の形', '"hash (subject, date)"'],
   email: ['メール（パッチ）形式', 'e-mail (patch) format'],
   raw: ['内部の生の形式', 'the raw internal format'],
-};
+});
 
-const PLACEHOLDERS: Record<string, [string, string]> = {
+const PLACEHOLDERS: Record<string, [string, string]> = wordTable({
   H: ['コミットハッシュ（完全）', 'commit hash'], h: ['コミットハッシュ（短縮）', 'abbreviated commit hash'],
   T: ['ツリーハッシュ', 'tree hash'], t: ['ツリーハッシュ（短縮）', 'abbreviated tree hash'],
   P: ['親コミットのハッシュ', 'parent hashes'], p: ['親コミットのハッシュ（短縮）', 'abbreviated parent hashes'],
@@ -32,7 +33,7 @@ const PLACEHOLDERS: Record<string, [string, string]> = {
   D: ['ブランチ・タグ名（括弧なし）', 'ref names without the wrapping'], N: ['ノート', 'notes'], e: ['エンコーディング', 'encoding'],
   GG: ['署名の検証結果', 'signature verification output'], G: ['署名の状態（G/B/U/N など）', 'signature status (G/B/U/N…)'], GS: ['署名者の名前', 'signer name'],
   n: ['改行', 'a newline'], '%': ['文字「%」そのもの', 'a literal "%"'],
-};
+});
 
 const COLORS = ['red', 'green', 'blue', 'yellow', 'reset', 'normal', 'black', 'magenta', 'cyan', 'white', 'bold'];
 
@@ -92,12 +93,12 @@ export function explainGitFormat(src: string, lang: Lang): { tokens: EmbeddedTok
   return { tokens };
 }
 
-const DATE_STYLES: Record<string, [string, string]> = {
+const DATE_STYLES: Record<string, [string, string]> = wordTable({
   relative: ['「3 days ago」のような相対表記', 'relative ("3 days ago")'], local: ['ローカル時刻', 'local time'],
   iso: ['ISO 8601 風（2026-10-16 09:30:00 +0900）', 'ISO 8601-like (2026-10-16 09:30:00 +0900)'], 'iso-strict': ['厳密な ISO 8601', 'strict ISO 8601'],
   rfc: ['RFC 2822 形式（メールの日付）', 'RFC 2822 (e-mail style)'], short: ['日付だけ（2026-10-16）', 'date only (2026-10-16)'],
   raw: ['UNIX 時刻とタイムゾーン', 'UNIX time and zone'], unix: ['UNIX 時刻', 'UNIX time'], human: ['人間に読みやすい形', 'human-friendly'], default: ['既定の形式', 'the default format'],
-};
+});
 
 /** Explain a `--date` value: a named style or `format:` with strftime conversions. */
 export function explainGitDate(src: string, lang: Lang): { tokens: EmbeddedToken[]; note?: string } | undefined {
