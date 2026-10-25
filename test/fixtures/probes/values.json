@@ -1429,5 +1429,249 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=abcdef; @PROBE:a@ \"${x:2:-4}\"; @PROBE:b@ \"${x: -10:2}\"; @PROBE:c@ \"${x: -6:-6}\"; @PROBE:d@ \"${x:7}\"; @PROBE:e@ \"${x:6}\"; @PROBE:f@ \"${x:7:-1}\"; @PROBE:g@ \"${x:2:0}\"; @PROBE:h@ \"${x: -2:-1}\"; @PROBE:i@ \"${x:1:}\"; @PROBE:j@ \"${x::2}\"; @PROBE:k@ \"${x: -7:0}\"; @PROBE:l@ \"${x:0:-6}\"; @PROBE:m@ \"${x:3:-3}\"; @PROBE:n@ \"${x:2:-3}\"; @PROBE:o@ \"${x: -6}\"; @PROBE:p@ \"${x:1:100}\"; y=; @PROBE:q@ \"${y:1:-1}\"; @PROBE:r@ \"${y:0}\"",
+    "facts": {
+      "a": [
+        [
+          ""
+        ]
+      ],
+      "b": [
+        [
+          ""
+        ]
+      ],
+      "c": [
+        [
+          ""
+        ]
+      ],
+      "d": [
+        [
+          ""
+        ]
+      ],
+      "e": [
+        [
+          ""
+        ]
+      ],
+      "f": [
+        [
+          ""
+        ]
+      ],
+      "g": [
+        [
+          ""
+        ]
+      ],
+      "h": [
+        [
+          "e"
+        ]
+      ],
+      "i": [
+        [
+          ""
+        ]
+      ],
+      "j": [
+        [
+          "ab"
+        ]
+      ],
+      "k": [
+        [
+          ""
+        ]
+      ],
+      "l": [
+        [
+          ""
+        ]
+      ],
+      "m": [
+        [
+          ""
+        ]
+      ],
+      "n": [
+        [
+          "c"
+        ]
+      ],
+      "o": [
+        [
+          "abcdef"
+        ]
+      ],
+      "p": [
+        [
+          "bcdef"
+        ]
+      ],
+      "q": [
+        [
+          ""
+        ]
+      ],
+      "r": [
+        [
+          ""
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=abcdef; y=; ( @PROBE:a@ \"${x:2:-5}\" ); ( @PROBE:b@ \"${x:6:-1}\" ); ( @PROBE:c@ \"${x: -3:-4}\" ); ( @PROBE:d@ \"${x:0:-7}\" ); ( @PROBE:e@ \"${y:0:-1}\" ); ( @PROBE:f@ \"${x:}\" ); @PROBE:g@ \"${x:2:-4}\"",
+    "none": {
+      "a": "the end (offset 2 from the start, 5 from the end) falls before the offset: bash fails (\"substring expression < 0\") and the command does not run",
+      "b": "the end falls before the offset: bash fails",
+      "c": "the end falls before the offset: bash fails",
+      "d": "the end falls before the start: bash fails",
+      "e": "the end falls before the start of an empty value: bash fails",
+      "f": "`${x:}` is a bad substitution"
+    },
+    "facts": {
+      "a": [],
+      "b": [],
+      "c": [],
+      "d": [],
+      "e": [],
+      "f": [],
+      "g": [
+        [
+          ""
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: -5: substring expression < 0"
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "e=é; @PROBE:a@ \"$e\"; @PROBE:b@ \"${#e}\"; @PROBE:c@ \"${e:1}\"; @PROBE:d@ \"${e^^}\"; @PROBE:e@ \"${e%?}\"; @PROBE:f@ \"${e//[[:alpha:]]/x}\"; @PROBE:g@ $e; @PROBE:h@ \"${e:-x}\"; @PROBE:i@ \"${e}\"; @PROBE:j@ ${e}",
+    "none": {
+      "b": "bash counts characters by the locale, which comes from the environment: 1 in a UTF-8 locale, 2 bytes in C",
+      "c": "cut by characters or by bytes, by the locale",
+      "d": "case conversion by the locale (`É` in a UTF-8 locale)",
+      "e": "`?` matches a character or a byte, by the locale",
+      "f": "what `[[:alpha:]]` holds depends on the locale",
+      "h": "text other than ASCII is said only as `$x` or `${x}` copy it"
+    },
+    "facts": {
+      "a": [
+        [
+          "é"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "c": [
+        [
+          "�"
+        ]
+      ],
+      "d": [
+        [
+          "é"
+        ]
+      ],
+      "e": [
+        [
+          "�"
+        ]
+      ],
+      "f": [
+        [
+          "é"
+        ]
+      ],
+      "g": [
+        [
+          "é"
+        ]
+      ],
+      "h": [
+        [
+          "é"
+        ]
+      ],
+      "i": [
+        [
+          "é"
+        ]
+      ],
+      "j": [
+        [
+          "é"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=abc; @PROBE:a@ \"${x/b/é}\"; @PROBE:b@ \"${x#é}\"; p=é; @PROBE:c@ \"${x%$p}\"; @PROBE:d@ ${u:-$'\\u00e9'}; y=$'\\u00e9'; @PROBE:e@ \"$y\"; @PROBE:f@ \"${x:-$'\\u00e9'}\"; IFS=é; @PROBE:g@ $x; @PROBE:h@ \"$x\"",
+    "none": {
+      "a": "a replacement other than ASCII: the model reads only ASCII text beyond copying a value",
+      "b": "a pattern other than ASCII is matched by characters or by bytes, by the locale",
+      "c": "a pattern other than ASCII, from `$p`",
+      "d": "`$'\\u00e9'` is `é` in a UTF-8 locale, `\\u00E9` in C (as these probes run)",
+      "e": "`$'\\u00e9'` is `é` in a UTF-8 locale, `\\u00E9` in C (as these probes run)",
+      "g": "an IFS other than ASCII is split on by characters or by bytes, by the locale"
+    },
+    "facts": {
+      "a": [
+        [
+          "aéc"
+        ]
+      ],
+      "b": [
+        [
+          "abc"
+        ]
+      ],
+      "c": [
+        [
+          "abc"
+        ]
+      ],
+      "d": [
+        [
+          "\\u00E9"
+        ]
+      ],
+      "e": [
+        [
+          "\\u00E9"
+        ]
+      ],
+      "f": [
+        [
+          "abc"
+        ]
+      ],
+      "g": [
+        [
+          "abc"
+        ]
+      ],
+      "h": [
+        [
+          "abc"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]
