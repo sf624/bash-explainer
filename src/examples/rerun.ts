@@ -2,7 +2,7 @@
 import type { Lang } from '../i18n';
 import { formatDate, parseSampleDate, UTC } from '../embedded/format';
 import { runAwk } from './awk';
-import { dateOutputLabel, parseDateValue, zoneOf } from './dates';
+import { dateOutputLabel, parseDateValue, relativeFrom, relativeItems, zoneOf } from './dates';
 import { Json, JqFormat, jqOutputLines, jqPrint, JqStep, jqSteps, parseJsonValues, runJq } from './jq';
 import { PerlOptions, runPerl } from './perlrun';
 import { pipelineExample, Stage } from './pipeline';
@@ -36,10 +36,11 @@ type RerunKind =
   | { kind: 'pipeline'; stages: Stage[] }
   | { kind: 'xargs'; words: (string | undefined)[] }
   /**
-   * `tz`: the zone `TZ` names (src/examples/dates.ts), else UTC; `local`: the lines are dates as `date -f` reads them
-   * (in that zone, or `@SECONDS`), else moments in UTC.
+   * `tz`: the zone `TZ` names (src/examples/dates.ts), else UTC (`utc`: `-u` says so); `local`: the lines are dates as
+   * `date -f` reads them (in that zone, or `@SECONDS`), else moments in UTC, when date runs at them for `relative`
+   * (`-d 'next friday'`).
    */
-  | { kind: 'date'; format: string; tz?: string; local?: boolean };
+  | { kind: 'date'; format: string; tz?: string; utc?: boolean; local?: boolean; relative?: string };
 
 /** A highlighted range on a line of the input: the whole match (group 0) or a capture group. */
 export interface Mark { start: number; end: number; group: number }
@@ -204,10 +205,14 @@ export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResu
     case 'date': {
       const unreadable = s('（日時として読めません。`2024-03-05 07:08:09` の形で）', '(not a date; write it like `2024-03-05 07:08:09`)');
       const zone = spec.tz === undefined ? UTC : zoneOf(spec.tz)!;
+      const relative = spec.relative === undefined ? undefined : relativeItems(spec.relative)!;
       return out(input.filter((l) => l.trim()).map((l) => {
-        const when = spec.local ? parseDateValue(l, zone) : parseSampleDate(l);
-        return when ? (formatDate(spec.format, when, zone) ?? '') : unreadable;
-      }), dateOutputLabel(spec.tz, !!spec.local, lang));
+        const at = spec.local ? parseDateValue(l, zone) : parseSampleDate(l);
+        if (!at) return unreadable;
+        // (Nothing for a moment the example does not follow: a time the zone skips, a year not of four digits.)
+        const when = relative ? relativeFrom(relative, at, zone) : at;
+        return (when && formatDate(spec.format, when, zone)) ?? '';
+      }), dateOutputLabel(spec.tz, !!spec.utc, lang));
     }
   }
 }
