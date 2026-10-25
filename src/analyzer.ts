@@ -12,26 +12,17 @@ import { lookupCommand } from './dict/aliases';
 import { ArgRole, ArgvParse, CommandRole, interpret, RoleAt, ValueRole } from './argv/interpret';
 import type { CommandSpec, OperandSpec, VariableAct } from './argv/spec';
 import { argWord, countOf } from './argv/words';
-import { givenOptions, namespaceOf } from './argv/query';
+import { namespaceOf } from './argv/query';
 import { globIntro, hasGlob } from './embedded/glob';
-import { grepWrap, literalRegex, toJsRegex } from './examples/regex';
-import { awkExample } from './examples/awk';
-import { NO_INPUT } from './examples/source';
-import { jqReadsInputs } from './examples/jq';
-import { sedExample, sedPattern } from './examples/sed';
-import type { RerunSpec } from './examples/rerun';
 import { braceExpand, hasExtglob, isGlob } from './examples/shellwords';
 import { pictureNote } from './ctlchars';
-import { dateExample, gitLogExample } from './examples/commands';
-import { explainEscapes } from './embedded/format';
 import { describeFind, FindNode, parseFind } from './embedded/find';
 import { bracketShape, type CommandTest, commandTest } from './testexpr';
 import { judgeYq, yqNotes } from './embedded/yq';
-import { YQ_SPECS, yqSpecsOf } from './dict/yq';
+import { yqSpecsOf } from './dict/yq';
 import { customCommandSpec } from './dict/custom';
 import { DIRECTIVE } from './directives';
 import { EmbeddedLang } from './embedded/types';
-import { EMBEDDED, type EmbeddedContext } from './embedded/registry';
 import { dialectFound, Shell } from './dialect';
 import { evalArith } from './arith';
 import { isPlainWord, type Literal, literalContent, splitElement, staticWordText, staticWordValue } from './staticword';
@@ -66,8 +57,8 @@ import type { ExplainOptions, Kind, LineExplanation, Span, Token } from './analy
 import { readingTree } from './reading';
 import { claim, dropLabelEcho, readAsScript, readByCommand, scriptProcess } from './tokenmarks';
 import { type Explainer, LineExplainer, type Walk } from './explain/context';
-import { fromEmbedded, has, intersects, isBlockLike, lineStarts, onLine, posOf, same, sameSpan, skeletal, sortTokens, summaryOf } from './explain/nodes';
-import { given, globOff, hostCommand, isAssoc, NO_SPEC, regexFlavor, resolve, shoptAt, specFor, trContext, unquotedWord, wordAt } from './explain/reads';
+import { has, intersects, isBlockLike, lineStarts, onLine, posOf, same, sameSpan, skeletal, sortTokens, summaryOf } from './explain/nodes';
+import { globOff, hostCommand, isAssoc, NO_SPEC, resolve, shoptAt, specFor, unquotedWord, wordAt } from './explain/reads';
 import { groupSubshell, shellEffectNote } from './explain/where';
 import { postfixStatusNote, statusRangeNote } from './explain/status';
 import {
@@ -76,10 +67,8 @@ import {
 } from './explain/words';
 import { fileRedirect, heredoc, herestring, redirected, redirectedWhole, redirectInfo, redirectParts } from './explain/redirections';
 import { binary, regexNode, test, testTokens, unary } from './explain/tests';
-import {
-  awkOptions, caseExample, commandExampleFor, globExample, inputSource, ioExample, pipelineExample, pushExample, regexExample, sedScripts, testExample, titledExamples, unreadStdin, wantsExample, wordExample,
-} from './explain/examples';
-import { jqExamples, jqFormat, jqVars, yqExample } from './explain/examples-jq';
+import { caseExample, commandExampleFor, pipelineExample, testExample, titledExamples, unreadStdin, wantsExample, wordExample } from './explain/examples';
+import { ansiCChildren, embedded, embeddedText } from './explain/embedded';
 
 export { isBlockLike, summaryOf };
 
@@ -155,12 +144,6 @@ export class Analyzer {
 
   private sub(n: SyntaxNode | null | undefined): Token[] {
     return this.cx.sub(n);
-  }
-
-  /** The named sibling before `n`. */
-  private previousNamed(n: SyntaxNode): SyntaxNode {
-    const kids = n.parent!.namedChildren;
-    return kids[kids.indexOf(n) - 1];
   }
 
   private subs(nodes: readonly (SyntaxNode | null | undefined)[]): Token[] {
@@ -321,7 +304,7 @@ export class Analyzer {
         + (n.text.startsWith('$[') ? this.s('。`$[…]` は古い書き方（廃止予定）で、`$((…))` と同じ意味', '. `$[…]` is the obsolete form of `$((…))`') : '') + commaNote(this.cx, n) + wrapNote(this.cx, n), arithChildren(this.cx, n));
       case 'string': return string(this.cx, n);
       case 'raw_string': return this.tok(n, 'string', this.s('シングルクォート文字列: 中身は一切展開されず、そのままの文字列になる', 'Single-quoted string: taken literally, nothing is expanded'));
-      case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? valueNote(this.cx, n) : ''), this.ansiCChildren(n));
+      case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? valueNote(this.cx, n) : ''), ansiCChildren(this.cx, n));
       // (The model has the `$` and the string in one node; the string takes the `$` in.)
       case 'translated_string': return string(this.cx, n.namedChildren[0]);
       case 'concatenation': if (n.parent!.type === 'array' && splitElement(n.text)) return arrayElement(this.cx, n); return braceWord(this.cx, n) ?? this.tok(n, 'argument', concatenationNote(this.cx, n) + valueNote(this.cx, n), this.subs(n.namedChildren));
@@ -1316,7 +1299,7 @@ export class Analyzer {
     const valueLit: Literal | undefined = whole && litEq >= 0
       ? (whole.offsets ? { text: val, offsets: whole.offsets.slice(litEq + 1) } : { text: val, base: whole.base! + litEq + 1 })
       : undefined;
-    const emb = value.spec?.lang && valueLit ? this.embeddedText(valueLit, value.spec.lang, a) : undefined;
+    const emb = value.spec?.lang && valueLit ? embeddedText(this.cx, valueLit, value.spec.lang, a) : undefined;
     const extra = emb?.note ? ` — ${emb.note}` : '';
     const text = role.role === 'option' ? this.t(role.text) : this.unknownOption(parse.command, spec, role.ambiguous);
     return this.tok(a, 'option', text + this.s(`（値: \`${val}\`${known ? ' — ' + this.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + this.t(known) : ''})`) + extra + this.splicedNote(value), emb?.tokens ?? []);
@@ -1364,7 +1347,7 @@ export class Analyzer {
     raw.explanation = (known ? `${val}: ${this.t(known)}` : this.s(`\`${flag}\` の値`, `Value for \`${flag}\``) + (glued ? this.s(`（クォートを外すと \`${val}\`）`, ` (\`${val}\` after quote removal)`) : '')) + this.splicedNote(value);
     // `-k3,3nr`, `-f2-4`: the attached value can be broken down like a separate one.
     const lang = value.spec?.lang;
-    const emb = lang && lit ? this.embeddedText(lit.offsets ? { text: val, offsets: lit.offsets.slice(value.attached) } : { text: val, base: lit.base! + value.attached! }, lang, a) : undefined;
+    const emb = lang && lit ? embeddedText(this.cx, lit.offsets ? { text: val, offsets: lit.offsets.slice(value.attached) } : { text: val, base: lit.base! + value.attached! }, lang, a) : undefined;
     if (emb) {
       raw.children = emb.tokens;
       if (emb.note) raw.explanation += ` — ${emb.note}`;
@@ -1693,7 +1676,7 @@ export class Analyzer {
   }
 
   private positional(a: SyntaxNode, desc: string | undefined, lang?: EmbeddedLang): Token {
-    const emb = lang && this.embedded(a, lang);
+    const emb = lang && embedded(this.cx, a, lang);
     if (emb && desc && emb.note) desc += ` — ${emb.note}`;
     if (isPlainWord(a)) {
       // Arguments in another language are positional ones the dictionary describes.
@@ -1718,122 +1701,6 @@ export class Analyzer {
     if (!desc) return inner[0];
     // Describe the role, then what the quoting/expansion does.
     return this.tok(a, 'argument', desc, inner);
-  }
-
-  /**
-   * Explain the contents of a quoted or plain word written in another language (a regex, a sed
-   * script…). Only literal text is handled: with expansions or escapes inside, the shell changes
-   * the text before the command sees it, so offsets would not line up.
-   */
-  private embedded(a: SyntaxNode, lang: EmbeddedLang): { tokens: Token[]; note?: string } | undefined {
-    const lit = literalContent(a, lang);
-    return lit && this.embeddedText(lit, lang, a);
-  }
-
-  /** Explain `lit.text`, which sits inside `a` as `lit` describes (e.g. after `-k` in `-k3,3n`). */
-  private embeddedText(lit: Literal, lang: EmbeddedLang, a: SyntaxNode): { tokens: Token[]; note?: string } | undefined {
-    return this.cx.examplesAt(a, () => this.embeddedTextInner(lit, lang, a));
-  }
-
-  private embeddedTextInner(lit: Literal, lang: EmbeddedLang, a: SyntaxNode): { tokens: Token[]; note?: string } | undefined {
-    // (A line the tool refuses runs no program: `grep -E -F PATTERN` reads the pattern in no flavour.)
-    if (this.cx.command?.parse.refused) return undefined;
-    const cx: EmbeddedContext = {
-      lang: this.cx.lang,
-      flavor: () => regexFlavor(this.cx),
-      trSet: () => trContext(this.cx, a),
-      // The letters given (`-lane`: l, a, n and e; `-pi.bak`: p and i).
-      letters: () => new Set(givenOptions(this.cx.command!.parse).map(({ role }) => role.flag.slice(1))),
-    };
-    const r = EMBEDDED[lang](lit.text, cx);
-    if (!r) return undefined;
-    this.embeddedExample(lang, lit.text, a);
-    return { tokens: r.tokens.map((t) => ({ ...fromEmbedded(t, a, lit, 'embedded'), language: lang })), note: r.note };
-  }
-
-  /** The worked example of an embedded text that the explainer read (src/embedded/registry.ts), when its language has one. */
-  private embeddedExample(lang: EmbeddedLang, text: string, a: SyntaxNode): void {
-    switch (lang) {
-      case 'regex': {
-        const flavor = regexFlavor(this.cx);
-        const ignoreCase = given(this.cx, '-i');
-        const js = flavor === 'fixed' ? literalRegex(text, ignoreCase) : toJsRegex(text, flavor, { ignoreCase });
-        if (js) regexExample(this.cx, grepWrap(js, given(this.cx, '-x'), given(this.cx, '-w')), given(this.cx, '-v') ? 'inverted' : 'lines');
-        break;
-      }
-      case 'sed': {
-        const flavor = regexFlavor(this.cx);
-        // With several -e options sed runs them as one script, so the example does too.
-        const scripts = sedScripts(this.cx) ?? [text];
-        const quiet = given(this.cx, '-n');
-        // -z / --null-data: the "lines" are NUL-separated records, which the example runner does not model.
-        const ex = given(this.cx, '-z') ? undefined : sedExample(scripts.join('\n'), { quiet, extended: flavor === 'ere' });
-        if (ex) {
-          // With `-s` or `-i`, sed works on each file apart: the example shows the first (`EachFile`).
-          ioExample(this.cx, ex.input, ex.output, {
-            kind: 'sed', script: scripts.join('\n'), quiet, extended: flavor === 'ere',
-            highlight: sedPattern(scripts.join('\n'), flavor === 'ere' ? 'ere' : 'bre'),
-          }, inputSource(this.cx));
-        }
-        break;
-      }
-      case 'jq': {
-        // kislyuk/yq passes the filter to jq, but reads and (with -y) writes YAML.
-        if (this.cx.command!.spec === YQ_SPECS.kislyuk) {
-          yqExample(this.cx, text, 'kislyuk');
-          break;
-        }
-        const nullInput = given(this.cx, '-n');
-        const rawInput = given(this.cx, '-R');
-        const format = jqFormat(this.cx);
-        if (!format) break;
-        const spec: Extract<RerunSpec, { kind: 'jq' }> = {
-          kind: 'jq', filter: text, raw: given(this.cx, '-r'), join: given(this.cx, '-j'), slurp: given(this.cx, '-s') && !nullInput, vars: jqVars(this.cx), format,
-          ...(nullInput ? { nullInput } : {}), ...(rawInput ? { rawInput } : {}),
-        };
-        // `-n`: jq reads no input, unless the filter's `input` or `inputs` reads it.
-        const readBy = jqReadsInputs(text);
-        jqExamples(this.cx, spec, nullInput && !readBy ? NO_INPUT : inputSource(this.cx), readBy);
-        break;
-      }
-      case 'awk': {
-        const opts = awkOptions(this.cx);
-        const ex = opts && awkExample(text, opts);
-        if (!ex) break;
-        // A program of `BEGIN` rules alone reads no input.
-        const src = ex.readsInput ? inputSource(this.cx) : NO_INPUT;
-        // The names of the files a glob gives are not known, so neither is what `FILENAME` holds.
-        if (/\bFILENAME\b/.test(text) && src.streams.some((st) => st.kind === 'file' && (st.many || st.pipe))) break;
-        ioExample(this.cx, ex.input, ex.output, { kind: 'awk', program: text, fs: opts!.fs, vars: opts!.vars, assigns: opts!.assigns }, src);
-        break;
-      }
-      case 'yq4':
-        yqExample(this.cx, text, 'mikefarah');
-        break;
-      case 'gitformat':
-      case 'gitdate':
-        pushExample(this.cx, gitLogExample(lang, text, this.cx.command!.parse, this.cx.command!.nodes.map((x) => literalContent(x)?.text), this.lang));
-        break;
-      case 'glob': {
-        // Unlike the shell, find matches a leading dot with * too; -path also matches / with *.
-        // The test before the pattern: -name, -path…
-        const opt = this.previousNamed(a).text;
-        if (!/^-i/.test(opt)) {
-          globExample(this.cx, a, text, 'value', this.s(`例（\`${opt}\` のパターン）`, `Example (the \`${opt}\` pattern)`),
-            opt === '-name' ? [this.s('一致するファイル名', 'Matching names'), this.s('一致しないファイル名', 'Non-matching names')] : [this.s('一致するパス', 'Matching paths'), this.s('一致しないパス', 'Non-matching paths')]);
-        }
-        break;
-      }
-      case 'date':
-        pushExample(this.cx, dateExample(text, this.lang));
-        break;
-    }
-  }
-
-  /** The escapes inside `$'…'`, each with its meaning. */
-  private ansiCChildren(n: SyntaxNode): Token[] {
-    const lit: Literal = { text: n.text.slice(2, -1), base: 2 };
-    return explainEscapes(lit.text, this.lang, 'ansic').map((t) => fromEmbedded(t, n, lit, 'shell'));
   }
 
   /**
