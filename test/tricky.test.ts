@@ -10,7 +10,7 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { evalArithWrapping } from '../src/arith';
 import { explainGlob } from '../src/embedded/glob';
 import { explainArith } from '../src/embedded/arith';
-import { braceExpand, globMatches, isGlob } from '../src/examples/shellwords';
+import { braceExpand, globMatches, globToRegex, isGlob } from '../src/examples/shellwords';
 import { allTokens } from './support/explain';
 
 let parser: Parser;
@@ -1479,6 +1479,12 @@ describe('tricky lines (round 6)', () => {
     // Odd ones: out-of-order and class-ended ranges, collating and equivalence elements, a `[` that is no bracket expression.
     const chars = ['a', 'b', 'c', ']', '^', '\\', '-', '!', '1', 'A', '_', '.', 'x', 'z', '[', '+', ',', '5'];
     for (const pattern of ['[z-a]', '[a-[:digit:]]', '[+-[:digit:]]', '[a[', '[[]', '[[a]', '[a-[.z.]]', '[[=a=]-c]', '[[:foo:]]', '[[:alpha:]', '[!a]', '[\\^a]', '[]-a]', '[a-]', '[]]', '[^]]', '[!]a]', '[a\\]b]', '[[.a.]]', '[\\a]', '[\\-a]', '[[:digit:][:alpha:]_]', '[[:punct:]]', '[[:space:]x]', '[[:xdigit:]]', '[[:cntrl:]]']) {
+      // (Not read: a range with a collating symbol at an end, an equivalence class, which depend on the locale; a range
+      // that ends in a class, which matches nothing at all.)
+      if (['[a-[.z.]]', '[[=a=]-c]', '[a-[:digit:]]', '[+-[:digit:]]'].includes(pattern)) {
+        assert.strictEqual(globToRegex(pattern, 'value'), undefined, pattern);
+        continue;
+      }
       for (const c of chars) assert.strictEqual(globMatches(pattern, c, 'value'), caseMatches(pattern, c), `${pattern} on ${c}`);
     }
     assert.ok(isGlob('[]]') && isGlob('[[:alpha:]]') && isGlob('a?') && isGlob('+(a)') && !isGlob('[a') && !isGlob('\\[a]') && !isGlob('a\\*'));

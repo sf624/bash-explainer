@@ -1,6 +1,6 @@
 import { intValue } from './arith';
 import { Lang } from './i18n';
-import { bracketEnd, bracketItems, bracketRegex } from './bracket';
+import { bracketEnd, bracketItems, bracketRegex, patsubMiscounts, type BracketItem } from './bracket';
 import { messageText, unquoteWord } from './staticword';
 
 /** A part of a `${…}` expansion; offsets are relative to the start of the whole `${…}` text. */
@@ -45,9 +45,34 @@ function findTopLevel(s: string, from: number, stop: string, ternary = false): n
   return -1;
 }
 
-/** The argument of `${v/pat/rep}` cut at its first slash that is not escaped, quoted or inside an expansion; no replacement part if there is none. */
-export function splitReplacement(arg: string): { pattern: string; replacement?: string } {
-  const slash = findTopLevel(arg, 0, '/');
+/**
+ * The `/` that ends the pattern of `${x/p/r}` in `s`, from `from`, or -1: the first one that is not escaped, quoted or
+ * inside `${…}`, `$(…)` or backquotes. Brackets, parentheses and braces do not hide it: `${x//[/]/r}` replaces a `[`
+ * with `]/r`, as bash reads it.
+ */
+function patternSlash(s: string, from: number): number {
+  for (let i = from; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') i++;
+    else if (c === "'" || c === '`') {
+      i = s.indexOf(c, i + 1);
+      if (i < 0) return -1;
+    } else if (c === '"') {
+      for (i++; i < s.length && s[i] !== '"'; i++) if (s[i] === '\\') i++;
+    } else if (c === '$' && (s[i + 1] === '{' || s[i + 1] === '(')) {
+      i = findTopLevel(s, i + 2, s[i + 1] === '{' ? '}' : ')');
+      if (i < 0) return -1;
+    } else if (c === '/') return i;
+  }
+  return -1;
+}
+
+/**
+ * The argument of `${v/pat/rep}` cut where its pattern ends (`patternSlash`); no replacement part if there is none.
+ * `global`: the argument of `${v//pat/rep}`, where a `/` first is part of the pattern (`${v///x}` removes `/x`).
+ */
+export function splitReplacement(arg: string, global = false): { pattern: string; replacement?: string } {
+  const slash = patternSlash(arg, global && arg[0] === '/' ? 1 : 0);
   return slash < 0 ? { pattern: arg } : { pattern: arg.slice(0, slash), replacement: arg.slice(slash + 1) };
 }
 
@@ -120,7 +145,8 @@ export function parseExpansion(text: string, hashIsName = false): ParsedExpansio
   add('op', i, i + op.length);
   const argStart = i + op.length;
   if (op[0] === '/') {
-    const slash = findTopLevel(inner, argStart, '/');
+    // (After `//`, a `/` first is part of the pattern: `${v///x}` removes `/x`.)
+    const slash = patternSlash(inner, op === '//' && inner[argStart] === '/' ? argStart + 1 : argStart);
     if (slash < 0) add('pattern', argStart, inner.length);
     else {
       add('pattern', argStart, slash);
@@ -139,29 +165,56 @@ export function parseExpansion(text: string, hashIsName = false): ParsedExpansio
 
 export type GlobPart = { type: 'any' } | { type: 'one' } | { type: 'class'; body: string } | { type: 'text'; text: string };
 
-/** Split a glob into parts. Returns undefined if it contains expansions or extglobs we cannot evaluate. */
-export function globParts(pattern: string): GlobPart[] | undefined {
+/**
+ * A pattern as a glob with backslash escapes: its quotes removed, and each quoted character escaped (`"[a]"` is
+ * `\[a\]`; `['!']` is `[\!]`, where the `!` is the character). Undefined with an expansion, an extended glob or a
+ * quote that does not close.
+ */
+export function globText(pattern: string): string | undefined {
   if (/\$|`|[?*+@!]\(/.test(pattern)) return undefined;
+  const esc = (c: string): string => (/\w/.test(c) ? c : `\\${c}`);
+  let out = '';
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '\\' && i + 1 < pattern.length) out += c + pattern[++i];
+    else if (c === "'") {
+      const end = pattern.indexOf(c, i + 1);
+      if (end < 0) return undefined;
+      out += [...pattern.slice(i + 1, end)].map(esc).join('');
+      i = end;
+    } else if (c === '"') {
+      // (In double quotes a backslash escapes `\` and `"`; `$` and backquotes are not read here.)
+      for (i++; pattern[i] !== '"'; i++) {
+        if (i >= pattern.length) return undefined;
+        if (pattern[i] === '\\' && /^[\\"]$/.test(pattern[i + 1])) i++;
+        out += esc(pattern[i]);
+      }
+    } else out += c;
+  }
+  return out;
+}
+
+/** Split a glob into parts. Returns undefined if it contains expansions, extglobs or brackets we cannot evaluate. */
+export function globParts(pattern: string): GlobPart[] | undefined {
+  const glob = globText(pattern);
+  if (glob === undefined) return undefined;
   const out: GlobPart[] = [];
   const text = (s: string) => {
     const last = out[out.length - 1];
     if (last?.type === 'text') last.text += s;
     else out.push({ type: 'text', text: s });
   };
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i];
-    if (c === '\\' && i + 1 < pattern.length) text(pattern[++i]);
-    else if (c === '"' || c === "'") {
-      const end = pattern.indexOf(c, i + 1);
-      if (end < 0) return undefined;
-      text(pattern.slice(i + 1, end));
-      i = end;
-    } else if (c === '*') out.push({ type: 'any' });
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === '\\' && i + 1 < glob.length) text(glob[++i]);
+    else if (c === '*') out.push({ type: 'any' });
     else if (c === '?') out.push({ type: 'one' });
     else if (c === '[') {
-      const end = bracketEnd(pattern, i);
+      const end = bracketEnd(glob, i);
       if (end < 0) { text(c); continue; }
-      out.push({ type: 'class', body: pattern.slice(i + 1, end) });
+      const body = glob.slice(i + 1, end);
+      if (!bracketItems(body)) return undefined;
+      out.push({ type: 'class', body });
       i = end;
     } else text(c);
   }
@@ -173,7 +226,7 @@ function globRegex(parts: GlobPart[]): string {
     switch (p.type) {
       case 'any': return '[\\s\\S]*';
       case 'one': return '[\\s\\S]';
-      case 'class': return bracketRegex(p.body);
+      case 'class': return bracketRegex(p.body)!;
       case 'text': return p.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
   }).join('');
@@ -187,8 +240,11 @@ export function describeGlob(parts: GlobPart[], lang: Lang): string {
       case 'any': return ja ? '任意の文字列' : 'any string';
       case 'one': return ja ? '任意の1文字' : 'any one character';
       case 'class': {
-        const { negated } = bracketItems(p.body);
-        const set = describeSet(p.body, lang);
+        const read = bracketItems(p.body);
+        // (One that bash reads by rules of its own, or by the locale: `[[.space.]]`, `[[=a=]]`.)
+        if (!read) return ja ? `\`[${p.body}]\` に一致する1文字` : `one character that \`[${p.body}]\` matches`;
+        const { negated } = read;
+        const set = describeSet(read.items, lang);
         return ja ? `${set}${negated ? '以外の' : 'のどれか'}1文字` : `one character ${negated ? 'other than' : 'from'} ${set}`;
       }
       case 'text': return ja ? `「${p.text}」` : `"${p.text}"`;
@@ -196,13 +252,12 @@ export function describeGlob(parts: GlobPart[], lang: Lang): string {
   }).join(' + ');
 }
 
-function describeSet(body: string, lang: Lang): string {
+function describeSet(items: BracketItem[], lang: Lang): string {
   const ja = lang === 'ja';
   const named: Record<string, [string, string]> = {
     digit: ['数字', 'digits'], alpha: ['英字', 'letters'], alnum: ['英数字', 'letters/digits'],
     space: ['空白', 'whitespace'], upper: ['大文字', 'uppercase letters'], lower: ['小文字', 'lowercase letters'],
   };
-  const { items } = bracketItems(body);
   const words = items.map((item) => {
     if (item.type === 'range') return `${item.from}${ja ? '〜' : '-'}${item.to}`;
     if (item.type === 'char') return item.ch;
@@ -443,6 +498,8 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
       // The quotes and backslashes of the replacement are removed (`\}` is `}`); `&` stands for the match in bash 5.2.
       const repText = unquoteWord(rep);
       if (!glob || repText === undefined || /&/.test(rep)) return undefined;
+      // (A pattern that bash counts otherwise than it matches, `[!]]`, finds nothing here: no example.)
+      if (patsubMiscounts(globText(part('pattern')!)!)) return undefined;
       const test = new RegExp(globRegex(glob));
       // For `/` and `//` show a value with two matches, so "first" vs "every" is visible.
       const twice = p.op === '/' || p.op === '//';
@@ -492,9 +549,9 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
 
 /** A character that the bracket expression `[body]` matches. */
 function classSample(body: string): string {
-  const { negated, items } = bracketItems(body);
+  const { negated, items } = bracketItems(body)!;
   const first = items[0];
-  const re = new RegExp(`^${bracketRegex(body)}$`);
+  const re = new RegExp(`^${bracketRegex(body)!}$`);
   const candidates = [negated ? '_' : first.type === 'char' ? first.ch : first.type === 'range' ? first.from : '', ...'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-.]^\\!'];
   return candidates.find((c) => c && re.test(c)) ?? 'x';
 }

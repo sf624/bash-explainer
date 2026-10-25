@@ -217,9 +217,11 @@ function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, is
       if (!glob) {
         // An extended glob (`+(a)`, `@(a|x)`) is a pattern of its own; only `$…` and backquotes are decided at run time.
         if (!/\$|`/.test(t)) {
-          return ['pattern', `${what} \`${t}\`: ${globIntro(h.lang, 'value')}` + (plainExt && hasExtglob(t)
+          // (Or a bracket expression that bash reads by rules of its own, `[[.space.]]`: nothing more is said.)
+          const ext = !hasExtglob(t) ? '' : plainExt
             ? s(`。extglob が${plainExt === 'off' ? '無効' : '有効になっていない'}ので拡張グロブにはならず、\`(\`、\`|\`、\`)\` は普通の文字として照合される`, `. With extglob ${plainExt === 'off' ? 'off' : 'not turned on'}, there is no extended glob: \`(\`, \`|\` and \`)\` are matched as plain characters`)
-            : s('。拡張グロブは `shopt -s extglob` が必要で、これがないと文字どおりの文字列として扱われる', '. An extended glob needs `shopt -s extglob`, or it is taken as literal text')) + only];
+            : s('。拡張グロブは `shopt -s extglob` が必要で、これがないと文字どおりの文字列として扱われる', '. An extended glob needs `shopt -s extglob`, or it is taken as literal text');
+          return ['pattern', `${what} \`${t}\`: ${globIntro(h.lang, 'value')}` + ext + only];
         }
         return ['pattern', s(`${what} \`${t}\`（変数などを含むため、内容は実行時に決まる）`, `${what} \`${t}\` (contains expansions, so it is decided at run time)`)];
       }

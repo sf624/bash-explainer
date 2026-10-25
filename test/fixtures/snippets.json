@@ -667,6 +667,7 @@
  "echo \"${a:-\nb}\"",
  "echo \"${a[@]~~}\" \"${@~}\"",
  "echo \"${f%.*}\"; grep -E '^v[0-9]+' t",
+ "echo \"${x#[[.space.]]}\"",
  "echo \"PV \" x",
  "echo \"unterminated",
  "echo # hi",

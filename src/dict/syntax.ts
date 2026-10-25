@@ -178,7 +178,7 @@ export const expansionOps: Record<string, (v: string, a: string) => Text> = {
   '%': (v, a) => tx(`\`${v}\` の末尾からパターン \`${a}\` に一致する最短部分を削除（拡張子除去などに使う）`, `Remove the shortest suffix of \`${v}\` matching \`${a}\` (e.g. strip an extension)`),
   '%%': (v, a) => tx(`\`${v}\` の末尾からパターン \`${a}\` に一致する最長部分を削除`, `Remove the longest suffix of \`${v}\` matching \`${a}\``),
   '/': (v, a) => rep(a) === '' ? tx(`\`${v}\` 内で最初に \`${pat(a)}\` に一致した部分を削除`, `Delete the first match of \`${pat(a)}\` in \`${v}\``) : tx(`\`${v}\` 内で最初に \`${pat(a)}\` に一致した部分を \`${rep(a)}\` に置換`, `Replace the first match of \`${pat(a)}\` in \`${v}\` with \`${rep(a)}\``),
-  '//': (v, a) => rep(a) === '' ? tx(`\`${v}\` 内で \`${pat(a)}\` に一致する部分をすべて削除`, `Delete every match of \`${pat(a)}\` in \`${v}\``) : tx(`\`${v}\` 内で \`${pat(a)}\` に一致する部分をすべて \`${rep(a)}\` に置換`, `Replace every match of \`${pat(a)}\` in \`${v}\` with \`${rep(a)}\``),
+  '//': (v, a) => rep(a, true) === '' ? tx(`\`${v}\` 内で \`${pat(a, true)}\` に一致する部分をすべて削除`, `Delete every match of \`${pat(a, true)}\` in \`${v}\``) : tx(`\`${v}\` 内で \`${pat(a, true)}\` に一致する部分をすべて \`${rep(a, true)}\` に置換`, `Replace every match of \`${pat(a, true)}\` in \`${v}\` with \`${rep(a, true)}\``),
   '/#': (v, a) => rep(a) === '' ? tx(`\`${v}\` の先頭が \`${pat(a)}\` に一致すれば削除`, `Delete \`${pat(a)}\` at the start of \`${v}\``) : tx(`\`${v}\` の先頭が \`${pat(a)}\` に一致すれば \`${rep(a)}\` に置換`, `Replace \`${pat(a)}\` at the start of \`${v}\` with \`${rep(a)}\``),
   '/%': (v, a) => rep(a) === '' ? tx(`\`${v}\` の末尾が \`${pat(a)}\` に一致すれば削除`, `Delete \`${pat(a)}\` at the end of \`${v}\``) : tx(`\`${v}\` の末尾が \`${pat(a)}\` に一致すれば \`${rep(a)}\` に置換`, `Replace \`${pat(a)}\` at the end of \`${v}\` with \`${rep(a)}\``),
   '^': (v, a) => a ? tx(`\`${v}\` の先頭文字が \`${a}\` に一致すれば大文字にする`, `Uppercase the first character of \`${v}\` if it matches \`${a}\``) : tx(`\`${v}\` の先頭文字を大文字にする`, `Uppercase the first character of \`${v}\``),
@@ -191,12 +191,13 @@ export const expansionOps: Record<string, (v: string, a: string) => Text> = {
   '@': (v, a) => tx(`\`${v}\` に変換 \`@${a}\` を適用（Q:クォート, E:エスケープ展開, U/L:大小文字, a:属性 など）`, `Apply transformation \`@${a}\` to \`${v}\` (Q quote, E escapes, U/L case, a attributes…)`),
 };
 
-function pat(a: string): string {
-  return splitReplacement(a).pattern;
+/** The pattern of `${v/pat/rep}` (`global`: of `${v//pat/rep}`, where a `/` first is the pattern's). */
+function pat(a: string, global = false): string {
+  return splitReplacement(a, global).pattern;
 }
 /** The replacement of `${v/pat/rep}` as the shell uses it: its quotes and backslashes are removed (`\}` is `}`). */
-function rep(a: string): string {
-  const raw = splitReplacement(a).replacement ?? '';
+function rep(a: string, global = false): string {
+  const raw = splitReplacement(a, global).replacement ?? '';
   return unquoteWord(raw) ?? raw;
 }
 
@@ -204,8 +205,8 @@ function rep(a: string): string {
  * `&` in the replacement of `${v/p/r}`: since bash 5.2 (`patsub_replacement`) an unquoted one stands for the matched text,
  * and `\&` (or a quoted one) is the character. Undefined when the replacement has no `&`.
  */
-function ampersandNote(a: string): Text | undefined {
-  const raw = splitReplacement(a).replacement ?? '';
+function ampersandNote(a: string, global: boolean): Text | undefined {
+  const raw = splitReplacement(a, global).replacement ?? '';
   let special = false;
   let quoted = false;
   let quote = '';
@@ -226,7 +227,7 @@ for (const op of ['/', '//', '/#', '/%']) {
   const base = expansionOps[op];
   expansionOps[op] = (v, a) => {
     const t = base(v, a);
-    const n = ampersandNote(a);
+    const n = ampersandNote(a, op === '//');
     return n ? tx(t.ja + n.ja, t.en + n.en) : t;
   };
 }
