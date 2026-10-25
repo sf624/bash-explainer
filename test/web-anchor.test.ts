@@ -8,6 +8,14 @@ import type { Browser, BrowserContext, Frame, Page } from 'playwright-core';
 import { servePanel, type PanelServer } from './support/panel-page';
 import { chooseView, openSite, until } from './support/site';
 
+/** A loop over several lines (test/fixtures/sample.sh), explained whole on its first line. */
+const LOOP = `while getopts ":hv:o:" opt; do
+  case "$opt" in
+    h) usage ;;
+    v) verbose=$OPTARG ;;
+    \\?) echo "unknown option: -$OPTARG" >&2 ;;
+  esac
+done`;
 const LINE = `find . -type f -name '*.log' -mtime +7 -print0 | xargs -0 grep -l "ERROR $(date +%Y)" | sort | uniq -c | awk '{print $2}' | sed 's/a/b/g' > out.txt 2>&1 && echo done || echo failed`;
 
 /** What a change did to rows (by selector), sampled in the page: before, right after it, then after each frame drawn, for 600 ms (null: not drawn). */
@@ -48,20 +56,25 @@ describe('the panel keeps the row acted on in place', function () {
   let browser: Browser;
   let base = '';
   let vscode: PanelServer;
+  let loop: PanelServer;
 
   before(async function () {
     ({ browser, base } = await openSite(this));
     vscode = await servePanel(LINE, 'cleanup.sh');
+    loop = await servePanel(LOOP, 'opts.sh');
   });
-  after(async () => vscode?.close());
+  after(async () => {
+    await vscode?.close();
+    await loop?.close();
+  });
 
   interface Host {
     name: string;
     open(view: 'list' | 'tree', animations: boolean, reduced?: boolean): Promise<{ ctx: BrowserContext; panel: Frame }>;
   }
 
-  /** The web page, `width` wide (390: a phone), its panel showing `LINE` in `view`. */
-  const web = (width: number): Host => ({
+  /** The web page, `width` wide (390: a phone), its panel showing `text` in `view` (its first line, when it has several). */
+  const web = (width: number, text = LINE): Host => ({
     name: width < 520 ? `the web page on a phone (${width}px)` : `the web page (${width}px)`,
     async open(view, animations, reduced = false) {
       const { devices } = await import('playwright-core');
@@ -74,8 +87,9 @@ describe('the panel keeps the row acted on in place', function () {
       await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
       await page.locator('.cm-content').click();
       await page.keyboard.press('Control+A');
-      await page.keyboard.insertText(LINE);
-      await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes(LINE.slice(0, 12)));
+      await page.keyboard.insertText(text);
+      if (text.includes('\n')) await page.keyboard.press('Control+Home');
+      await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes(text.slice(0, 12)));
       await chooseView(page, view);
       if (view === 'tree') await until('the tree', () => panel().locator('#reading-tree li').count(), (n) => n > 20);
       await still(panel());
@@ -83,13 +97,13 @@ describe('the panel keeps the row acted on in place', function () {
     },
   });
 
-  /** VS Code's panel (its page outside VS Code), 600 by 500. */
-  const code: Host = {
+  /** VS Code's panel (its page outside VS Code), 600 by 500, showing what `server` serves (`LINE`). */
+  const vsCode = (server = () => vscode): Host => ({
     name: "VS Code's panel",
     async open(view, animations, reduced = false) {
       const ctx = await browser.newContext({ viewport: { width: 600, height: 500 }, reducedMotion: reduced ? 'reduce' : 'no-preference' });
       const page: Page = await ctx.newPage();
-      await page.goto(vscode.url('dark', 'en', view));
+      await page.goto(server().url('dark', 'en', view));
       await until('the line', () => page.locator('#where').textContent(), (t) => !!t);
       if (!animations) await page.evaluate(`document.body.classList.add('vscode-reduce-motion')`);
       if (view === 'tree') {
@@ -102,7 +116,8 @@ describe('the panel keeps the row acted on in place', function () {
       }
       return { ctx, panel: page.mainFrame() };
     },
-  };
+  });
+  const code = vsCode();
 
   const track = (panel: Frame, selectors: string[], target: string) => panel.evaluate(`(${TRACK})(${JSON.stringify([selectors, target])})`) as Promise<Track>;
 
@@ -301,6 +316,51 @@ describe('the panel keeps the row acted on in place', function () {
         else assert.ok(to === 1 || from > to, `${from} → ${to}: a step forward keeps every row`);
         if (animations) assert.ok(t.samples.some((s) => s.moving > 0), 'it moved');
       }
+      await ctx.close();
+    });
+  }
+
+  // A row on another line than the one explained (a clause of the `case` under the `while`) only folds: before, a
+  // click selected its characters in the editor, the cursor went to that line, and the panel explained it instead.
+  const CLAUSE = 'v) verbose=$OPTARG ;;';
+  for (const [host, animations] of [[web(1280, LOOP), true], [web(390, LOOP), true], [vsCode(() => loop), true], [web(1280, LOOP), false]] as const) {
+    it(`${host.name}, Reading${animations ? '' : ', the setting off'}: a click on a clause of a loop over several lines folds it; the line explained and the row stay`, async () => {
+      const { ctx, panel } = await host.open('tree', animations);
+      const errors: string[] = [];
+      panel.page().on('pageerror', (e) => errors.push(e.message));
+      const line = await panel.locator('#line').textContent();
+      const path = await panel.evaluate(`(() => {
+        const li = [...document.querySelectorAll('#reading-tree li[aria-expanded="true"]')].find((x) => x.querySelector(':scope > .trow .tcode')?.textContent === ${JSON.stringify(CLAUSE)});
+        if (li) li.firstElementChild.scrollIntoView({ block: 'center', behavior: 'instant' });
+        return li ? li.dataset.path : null;
+      })()`) as string | null;
+      assert.ok(path, 'the clause has a row');
+      const item = panel.locator(`#reading-tree li[data-path="${path}"]`);
+      for (const [want, what] of [['false', 'folded'], ['true', 'unfolded']] as const) {
+        await click(panel, 'tree', path, `the clause ${what}`, animations);
+        assert.strictEqual(await item.getAttribute('aria-expanded'), want, `the clause ${what}`);
+        // (The editor's selection would come back as another line to explain: give it time.)
+        await panel.waitForTimeout(400);
+        assert.strictEqual(await panel.locator('#line').textContent(), line, `the line explained stays (the clause ${what})`);
+        assert.strictEqual(await item.getAttribute('aria-expanded'), want, `the clause stays ${what}`);
+      }
+      // A row on the line explained still selects its characters in the editor (VS Code's panel says so to its host).
+      const posted = (await panel.evaluate(`JSON.stringify((window.POSTED ?? []).filter((m) => m.type === 'reveal').map((m) => m.span))`)) as string;
+      assert.deepStrictEqual(JSON.parse(posted), [], 'no range selected in the editor for the clause');
+      const getopts = await panel.evaluate(`(() => {
+        const li = [...document.querySelectorAll('#reading-tree li[role="treeitem"]')].find((x) => x.querySelector(':scope > .trow .tcode')?.textContent === 'getopts ":hv:o:" opt');
+        if (li) li.firstElementChild.scrollIntoView({ block: 'center', behavior: 'instant' });
+        return li ? li.dataset.path : null;
+      })()`) as string | null;
+      assert.ok(getopts, 'the getopts command has a row');
+      await click(panel, 'tree', getopts, 'the command on the line folded', animations);
+      await panel.waitForTimeout(400);
+      assert.strictEqual(await panel.locator('#line').textContent(), line, 'the line explained stays (a row on it)');
+      if (host.name.startsWith('VS Code')) {
+        const spans = JSON.parse(await panel.evaluate(`JSON.stringify(window.POSTED.filter((m) => m.type === 'reveal').map((m) => m.span.start.line))`) as string) as number[];
+        assert.deepStrictEqual(spans, [1], 'the command on the line is selected in the editor');
+      }
+      assert.deepStrictEqual(errors, []);
       await ctx.close();
     });
   }

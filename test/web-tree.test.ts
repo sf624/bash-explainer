@@ -212,19 +212,22 @@ describe('the web page: the tree view of the panel', function () {
       // (A long code wraps in its pill: the elbow is at the middle of its first line.)
       const lh = px(getComputedStyle(row).lineHeight);
       const mid = first.height > lh * 1.5 ? first.top + 1 + lh / 2 : middle(first);
-      const elbow = r.top + px(after.top) + px(after.marginTop) + px(after.borderTopWidth) / 2;
+      // (The lines are placed from the item's padding box: a band's edges are borders around it.)
+      const box = getComputedStyle(li);
+      const elbow = r.top + px(box.borderTopWidth) + px(after.top) + px(after.marginTop) + px(after.borderTopWidth) / 2;
       const twisty = li.parentElement.closest('li').querySelector(':scope > .trow > .twisty').getBoundingClientRect();
-      const line = r.left + px(before.left) + px(before.borderLeftWidth) / 2;
+      const line = r.left + px(box.borderLeftWidth) + px(before.left) + px(before.borderLeftWidth) / 2;
       const refs = row.querySelector('.refs');
       const parts = [...row.querySelectorAll('*')].map((e) => e.getBoundingClientRect().right);
       return {
         text: row.textContent.slice(0, 40), pill: !!pill, last: !li.nextElementSibling, band: li.classList.contains('band'),
         layer: li.className.match(/l-(\\w+)/)[1], background: getComputedStyle(li).backgroundColor,
-        elbow: elbow - mid, line: line - (twisty.left + twisty.right) / 2, below: r.top + px(before.top) + px(before.height) - elbow,
+        elbow: elbow - mid, line: line - (twisty.left + twisty.right) / 2, below: r.top + px(box.borderTopWidth) + px(before.top) + px(before.height) - elbow,
         refs: refs ? middle(refs.getBoundingClientRect()) - mid : null, overflow: Math.max(...parts) - width,
+        edges: [box.borderLeftWidth, box.borderTopWidth, box.borderBottomWidth, box.borderRightWidth].join(' '), rule: box.borderLeftColor, colour: getComputedStyle(row.querySelector('.chip')).color,
       };
     });
-  })()`) as Promise<{ text: string; pill: boolean; last: boolean; band: boolean; layer: string; background: string; elbow: number; line: number; below: number; refs: number | null; overflow: number }[]>;
+  })()`) as Promise<{ text: string; pill: boolean; last: boolean; band: boolean; layer: string; background: string; elbow: number; line: number; below: number; refs: number | null; overflow: number; edges: string; rule: string; colour: string }[]>;
 
   it('draws the outline: elbows at the pills, lines under the twisties, links level with the code, one tint per layer', async () => {
     for (const width of [1280, 360]) {
@@ -252,6 +255,9 @@ describe('the web page: the tree view of the panel', function () {
           assert.ok(!/rgba|\/ 0\.|\/ 0\)/.test([...set][0]), `${at}: ${layer}'s tint is opaque: ${[...set]}`);
         }
         assert.ok(items.some((i) => !i.band && i.background === 'rgba(0, 0, 0, 0)'), `${at}: an item in a band shows the band's tint`);
+        // A band's edges: a rule in the layer's colour (the colour of its kind) on its left, hairlines at its top and bottom, none on the right.
+        for (const i of items) assert.strictEqual(i.edges, i.band ? '2px 1px 1px 0px' : '0px 0px 0px 0px', `${at}: the edges of ${JSON.stringify(i)}`);
+        for (const i of items.filter((x) => x.band)) assert.strictEqual(i.rule, i.colour, `${at}: the rule in the layer's colour, ${JSON.stringify(i)}`);
         assert.strictEqual(await panel.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true, `${at}: no sideways scroll`);
         // On a phone, a command name's row wraps its text, not its links.
         if (width === 360) assert.ok(await panel.locator('#reading-tree .trow', { hasText: 'command name' }).evaluateAll((rs) => rs.some((r) => r.getBoundingClientRect().height > 30)), `${at}: a row wraps`);

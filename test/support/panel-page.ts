@@ -18,9 +18,13 @@ const root = path.join(__dirname, '..', '..');
 export const SAMPLE = 'find . -name "*.log" -mtime +7 | xargs rm -f 2>/dev/null';
 export type PanelTheme = 'dark' | 'light' | 'hc';
 
-/** The update message for `line` (the second line of the script `file`), as the extension sends it. */
-function message(lang: Lang, line: string, file: string): unknown {
-  const src = `#!/bin/bash\n${line}\n`;
+/**
+ * The update message for `text` (from the second line of the script `file`), as the extension sends it. `text` may
+ * have several lines: its first is explained (a loop over several lines is explained whole from its first line).
+ */
+function message(lang: Lang, text: string, file: string): unknown {
+  const src = `#!/bin/bash\n${text}\n`;
+  const line = text.split('\n')[0];
   const tree = createUnbashParser().parse(src);
   const ex = new Analyzer(lang).explainLine(tree, 1, 'bash', { reading: true });
   // (The line's problems, as the editor underlines them.)
