@@ -633,3 +633,30 @@ export function wrapNote(cx: Explainer, n: SyntaxNode): string {
       `. Bash integers are signed 64-bit, and a result beyond that wraps around instead of failing, so this is ${r.value}`)
     : '';
 }
+
+/** `$(( … ))`, and the obsolete `$[ … ]`. */
+export function arithmeticExpansion(cx: Explainer, n: SyntaxNode): Token {
+  return cx.tok(n, 'substitution', cx.s('算術展開: 中の式を整数として計算した結果に置き換える', 'Arithmetic expansion: replaced by the integer result of the expression')
+    + (n.text.startsWith('$[') ? cx.s('。`$[…]` は古い書き方（廃止予定）で、`$((…))` と同じ意味', '. `$[…]` is the obsolete form of `$((…))`') : '') + commaNote(cx, n) + wrapNote(cx, n), arithChildren(cx, n));
+}
+
+/** A single-quoted string. */
+export function rawString(cx: Explainer, n: SyntaxNode): Token {
+  return cx.tok(n, 'string', cx.s('シングルクォート文字列: 中身は一切展開されず、そのままの文字列になる', 'Single-quoted string: taken literally, nothing is expanded'));
+}
+
+/** A word of several parts (`a"b"$c`): an element of an array assignment that bash splits, a brace expansion, or the parts joined. */
+export function concatenation(cx: Explainer, n: SyntaxNode): Token {
+  if (n.parent!.type === 'array' && splitElement(n.text)) return arrayElement(cx, n);
+  return braceWord(cx, n) ?? cx.tok(n, 'argument', concatenationNote(cx, n) + valueNote(cx, n), cx.subs(n.namedChildren));
+}
+
+/** A number: a constant of arithmetic that is not plain decimal, with its value (`arithNumber`), or a plain number. */
+export function number(cx: Explainer, n: SyntaxNode): Token {
+  return arithNumber(cx, n) ?? cx.tok(n, 'number', cx.s('数値', 'Number'));
+}
+
+/** `( … )` of an array assignment. */
+export function array(cx: Explainer, n: SyntaxNode): Token {
+  return cx.tok(n, 'expansion', cx.s('配列: `( )` 内の要素から配列を作る', 'Array: built from the elements inside `( )`'), cx.subs(n.namedChildren));
+}

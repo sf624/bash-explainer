@@ -1,4 +1,4 @@
-// The explanation of tests (docs/design/analyzer.md, step 5): `[[ ]]` and `(( ))`, the unary and binary
+// The explanation of tests (docs/design/analyzer.md, step 5): `[[ ]]` and `(( ))`, the unary, binary and ternary
 // expressions in them and in arithmetic, the right side of `=~` (an ERE), and the expression of `[ ]` and `test`
 // as bash reads it (src/testexpr.ts; the words of the command itself are argv's, which calls `testTokens`). The
 // examples of a test (values that make it true, that match a pattern or a regex) come from src/explain/examples.ts.
@@ -18,6 +18,7 @@ import type { Explainer } from './context';
 import { patternExample, regexExample, testExample } from './examples';
 import { fromEmbedded, same, skeletal, sortTokens } from './nodes';
 import { inArithmetic } from './reads';
+import { postfixStatusNote } from './status';
 import { arithChildren, arithNumber, commaNote, globToken } from './words';
 
 function arithTestExplanation(cx: Explainer): string {
@@ -270,4 +271,25 @@ function quotedPatternNote(cx: Explainer, n: SyntaxNode, op: string, rights: Syn
       `strings ${equal ? 'are equal' : 'differ'} (the right side is quoted, so it is literal text, not a pattern)`)
     : cx.s(`文字列が${equal ? '等しい' : '等しくない'}（右辺のうちクォートされた部分は文字列そのもの、残りはパターン）`,
       `strings ${equal ? 'are equal' : 'differ'} (the quoted parts of the right side are literal text, the rest is a pattern)`);
+}
+
+/** `a ? b : c` in arithmetic. */
+export function ternary(cx: Explainer, n: SyntaxNode): Token {
+  return cx.tok(n, 'expansion', cx.s('三項演算子: 条件 ? 真のときの値 : 偽のときの値', 'Ternary: cond ? if-true : if-false'), cx.subs(n.namedChildren));
+}
+
+/** `i++` and `i--` in arithmetic. */
+export function postfix(cx: Explainer, n: SyntaxNode): Token {
+  return cx.tok(n, 'operator', cx.s(`算術: \`${n.text}\`（${n.text.endsWith('++') ? '1 増やす' : '1 減らす'}）`, `Arithmetic: \`${n.text}\` (${n.text.endsWith('++') ? 'increment' : 'decrement'})`));
+}
+
+/** `( … )` in arithmetic. */
+export function parenthesized(cx: Explainer, n: SyntaxNode): Token {
+  return cx.tok(n, 'operator', cx.s('括弧でまとめた式', 'Parenthesized expression'), cx.subs(n.namedChildren));
+}
+
+/** `(( … ))` as a command, with the note on the status of a postfix `++` or `--`. */
+export function arithmeticCommand(cx: Explainer, n: SyntaxNode): Token {
+  postfixStatusNote(cx, n);
+  return test(cx, n);
 }

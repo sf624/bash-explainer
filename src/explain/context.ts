@@ -29,8 +29,8 @@ export interface MemoKey<V> { readonly name: string; readonly value?: V }
 export const memoKey = <V>(name: string): MemoKey<V> => ({ name });
 
 /**
- * The walk over the nodes, which the line filter of the context calls back (the dispatch), and the explanation of a
- * line of a string read as a script.
+ * The walk over the nodes, which the line filter of the context calls back (the dispatch, src/explain/dispatch.ts),
+ * and the explanation of a line of a string read as a script (src/analyzer.ts gives both).
  */
 export interface Walk {
   /** The explanation of a node. */
@@ -70,7 +70,7 @@ export interface Explainer {
   readonly line: number | null;
   /** Whether `n` is on the line explained (always, while a construct is explained whole). */
   onLine(n: SyntaxNode): boolean;
-  /** The explanation of a node, not checked against the line filter (its parts are): the dispatch of src/analyzer.ts. */
+  /** The explanation of a node, not checked against the line filter (its parts are): the dispatch (src/explain/dispatch.ts). */
   explain(n: SyntaxNode): Token;
   /** Explain a child node, respecting the current line filter. */
   sub(n: SyntaxNode | null | undefined): Token[];

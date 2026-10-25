@@ -280,3 +280,46 @@ export function list(cx: Explainer, n: SyntaxNode): Token {
   t.summary = children.map((c) => (c.kind === 'operator' && !c.children.length ? c.label : summaryOf(c))).join(' ');
   return skeletal(t, n);
 }
+
+/** `!` before a pipeline: its status, negated. */
+export function negated(cx: Explainer, n: SyntaxNode): Token {
+  return skeletal(cx.tok(n, 'operator', cx.t(keywords[n.namedChildren[0]?.type === 'pipeline' ? '! pipeline' : '!']), cx.subs(n.namedChildren)), n);
+}
+
+/** `( … )`: the list in a subshell. */
+export function subshell(cx: Explainer, n: SyntaxNode): Token {
+  return block(cx, n, 'block', cx.s('サブシェル: `( )` 内を別プロセスで実行する。中での変数変更や cd は外に影響しない', 'Subshell: runs `( )` in a child process; variable changes and cd do not leak out'));
+}
+
+/** `{ …; }`: the list in the current shell, or in a subshell where the group stands in one (src/explain/where.ts). */
+export function group(cx: Explainer, n: SyntaxNode): Token {
+  const why = groupSubshell(cx, n);
+  return block(cx, n, 'block', why
+    ? cx.s(`コマンドグループ: \`{ }\` 内のコマンドをまとめて実行する。${why.ja}ので、グループはサブシェルで実行され、中で変えた変数は外に残らない`, `Command group: runs the commands in \`{ }\` together. ${why.en}, so the group is a subshell: variables set inside are gone afterwards`)
+    : cx.s('コマンドグループ: `{ }` 内のコマンドを現在のシェルでまとめて実行する', 'Command group: runs the commands in `{ }` in the current shell'));
+}
+
+/** `do … done`: the body of a loop. */
+export function doGroup(cx: Explainer, n: SyntaxNode): Token {
+  return block(cx, n, 'block', cx.s('ループ本体: `do` から `done` までを繰り返し実行する', 'Loop body: the commands between `do` and `done`'));
+}
+
+/** `for (( init; condition; update ))`. */
+export function cStyleFor(cx: Explainer, n: SyntaxNode): Token {
+  return block(cx, n, 'keyword', cx.s('C 言語風 for ループ: `((初期化; 条件; 更新))` で回数を制御して繰り返す', 'C-style for loop: `((init; condition; update))`') + cx.lineRef(n));
+}
+
+/** `if … then … fi`. */
+export function ifStatement(cx: Explainer, n: SyntaxNode): Token {
+  return block(cx, n, 'keyword', cx.s('if 文: 条件コマンドの終了ステータスが 0（成功）なら then 以下を実行', 'if statement: runs the `then` branch if the condition exits 0') + cx.lineRef(n));
+}
+
+/** An `elif` branch. */
+export function elifClause(cx: Explainer, n: SyntaxNode): Token {
+  return block(cx, n, 'keyword', cx.t(keywords.elif));
+}
+
+/** The `else` branch. */
+export function elseClause(cx: Explainer, n: SyntaxNode): Token {
+  return block(cx, n, 'keyword', cx.t(keywords.else));
+}

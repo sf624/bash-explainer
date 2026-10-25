@@ -7,7 +7,7 @@ import type { ShebangRefusal } from './semantics/state';
 // the Bash manual it is about (src/manual.ts). The renderers show the sections as links, or as "(Bash manual 3.7.5)"
 // in the CLI; the JSON output gives the id.
 //
-// The texts are the analyzer's: a fact is found where the model is read (src/analyzer.ts, src/statusfacts.ts,
+// The texts are the analyzer's: a fact is found where the model is read (src/explain/, src/statusfacts.ts,
 // src/wordfacts.ts), and said here. The style checks of src/pitfalls.ts are not facts and have no entry.
 
 /** `note`: a fact of the models, always said. `pitfall`: advice on how a script is written, said only when the pitfalls are on. */
