@@ -167,6 +167,9 @@ describe('pipelines that start with a made-up output agree with the real tools s
     assert.deepStrictEqual(layoutSample('ps-bsd-u', [['ps', 'aux'], undefined], 0).length, layoutSample('ps-bsd-u', [['ps', 'aux']], 0).length);
     const sh = explain("ps aux | grep -v grep | awk '{print $2}' | while read -r p; do echo \"$p\"; done").examples.find((e) => e.kind === 'awk');
     assert.ok(sh && !sh.sections[0].lines.some((r) => /while|read/.test(r)), 'no row for the loop');
+    // (Nor one whose words are not all known: `tee "$log"`.)
+    const tee = explain('ps aux | tee "$log" | wc -l').examples.find((e) => e.kind === 'pipeline')!;
+    assert.ok(!tee.sections[0].lines.some((r) => / tee/.test(r)) && tee.sections[0].lines.some((r) => / wc -l$/.test(r)));
   });
   it('makes up no output for other options or operands, and says that the input is not known', () => {
     for (const line of ['ps aux --sort=-%mem | head', 'ls -l /etc | wc -l', 'ls -lt | head -n 3', 'df | wc -l', 'ls -l --nope | wc -l', 'ls -lZ | wc -l', 'mytool | wc -l']) {

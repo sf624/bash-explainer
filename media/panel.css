@@ -415,6 +415,48 @@ code {
   font-size: 0.9em;
 }
 
+/* Lines wider than their section scroll sideways; an edge fades where more lies beyond it. */
+.example pre.ex-more-right {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2em), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 2em), transparent);
+}
+
+.example pre.ex-more-left {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 2em), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 2em), transparent);
+}
+
+.example pre.ex-more-left.ex-more-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 2em, #000 calc(100% - 2em), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 2em, #000 calc(100% - 2em), transparent);
+}
+
+/* What the next stage of a pipeline reads (src/examples/marks.ts): a background and an underline, not a colour alone;
+   no padding or border, so that the columns stay lined up. The lines it leaves out are dimmer. */
+.example mark.ex-read {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  color: inherit;
+  text-decoration: underline 2px;
+  text-underline-offset: 0.2em;
+  border-radius: 2px;
+}
+
+.example .ex-left-out {
+  color: color-mix(in srgb, currentColor 45%, transparent);
+}
+
+@media (forced-colors: active) {
+  .example mark.ex-read {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .example .ex-left-out {
+    color: GrayText;
+  }
+}
+
 /* An example placed under its token: indented with the token's children, set off by a left rule. */
 .example.nested {
   margin: 0.5rem 0 0.5rem 1.1rem;

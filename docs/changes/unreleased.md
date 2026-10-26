@@ -398,6 +398,23 @@ The input section of a command's own example names where a pipe brings it from:
 | `curl -s url \| jq .name` | stdin (output of `curl -s url`, not known here: made-up lines) | stdin (sample output of the previous command) |
 | `grep x a > f \| sort` | stdin (made-up lines: `grep x a > f` writes its output elsewhere, not to the pipe) | stdin (sample output of the previous command) |
 
+Each section that a later command reads marks what that command reads of it. The mark is a background and an underline, and a screen reader hears what it is ("matched by `grep nginx`", 「`grep nginx` が一致する部分」). Lines the command leaves out are dimmer. The marks are what the real tool does: they are checked against GNU grep, GNU sed, gawk, GNU cut and `sort --debug` on the made-up lines.
+
+| The command after the section | Marked | Dimmer |
+| --- | --- | --- |
+| `grep nginx`, `grep -i`, `-w`, `-x`, `-E`, `-F`, `-P`, several `-e` | every match on a line grep reads, as `grep -o` prints it (the longest, for a POSIX regex) | the lines it does not print; with `-m N`, the lines after the Nth, which it does not read |
+| `grep -v grep` | the matches, on the lines it leaves out for them | those lines |
+| `sed -n '/re/p'`, `sed '/re/d'`, `sed '/re/!d'`, `sed 1d`, `sed '$d'` | the first match of the regex | the lines it does not print |
+| `sed 's/re/x/'` (with `g` or a number) | what it replaces | with `-n`, the lines it does not print |
+| `awk '{print $2}'`, `$NF`, `-F:`, `$3 > 1 {…}` | the fields it reads (not `$0`), while the line is as read | with patterns, the lines no rule selects; the lines after `exit` |
+| `awk '/nginx/'`, `awk '!/grep/'` | the first match of the regex, as `match()` finds it | the lines no rule selects |
+| `cut -d: -f1`, `-f2-`, `--complement`, `-c1-20` | the fields or characters it prints (a line without the delimiter whole) | with `-s`, the lines without the delimiter |
+| `sort -k5 -h`, `-k2,2`, `-t: -k3n` | each key, as `sort --debug` underlines it: with `-n` or `-h`, the number it reads | (none) |
+
+`head`, `tail`, `wc`, `uniq`, `tr`, `sort` without `-k`, and sed and awk programs other than those above get no marks. In the box of a single command's example (`cut -d: -f1 /etc/passwd`, `sort -k2`) and in the editable input of a pipeline, what the command reads is highlighted as a regex match is.
+
+When a section is wider than the panel (`ps aux`, `ls -l` on a phone), it starts scrolled so that its first mark is in view, with the header row, which scrolls with it. An edge fades where more lies beyond it. Text outputs (the CLI, Markdown, the hover) show no marks: a code block cannot, and the section after shows what the command kept.
+
 ## Changed
 
 ### The inline summary was removed
@@ -839,7 +856,7 @@ The positional parameters are those the shell starts with: a `shift` or `set --`
 | `git log --oneline --graph --format='%h %s'` | `* 3f2a9c1 Fix login timeout` | the example's lines start with `* `; a commit's other lines with `\| ` (two spaces for the last), as git draws one line of history | `3f2a9c1 Fix login timeout` |
 | `case` (no word yet) | a syntax error | "case statement: match the value (not written yet) against each pattern…", with no empty part for the value | "match `` against each pattern…", and an empty "Value to match" |
 
-### `sort -h`
+### `sort -h`, `sort -k`, `grep -o` and `sed s///`
 
 GNU `sort -h` reads a size suffix only right after the number, and compares the suffix before the number. The example now does too.
 
@@ -848,6 +865,10 @@ GNU `sort -h` reads a size suffix only right after the number, and compares the 
 | `sort -h` of `8.3K`, `1.5K` | `1.5K`, `8.3K` | in the order read: the numbers were lost beside the suffix |
 | `sort -k5 -h` of `ls -lh` lines (`220 Mar`, `1.5K`) | `220` first | `220 Mar` last, as 220 megabytes |
 | `sort -h` of `1m` | `1m` is 1 (only `k` is a suffix in lower case) | 1 megabyte |
+| `sort -h` of `5.K` | `5.K` is 5K | 5 |
+| `sort -k1.2,1.3` of `ab cd` | the key `b ` (a character position runs on past the end of its field) | `b` |
+
+grep and sed find the longest match where a POSIX regex has several at one place, as GNU grep and sed do: `echo ab | grep -o 'a\|ab'` prints `ab`, and `sed 's/a\|ab/X/'` changes `ab` to `X`. Before, the examples took the first alternative: `a`, and `Xb`.
 
 ### The package pages show their own version's README
 

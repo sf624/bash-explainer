@@ -10,7 +10,7 @@ Keep it current:
 
 ## Now
 
-- Pipeline examples: show the shape of the input each stage reads (item 3 of the external review of October 2026). First step in review: made-up output in the real layout for `ps`, `ls`, `df -h`, `who`, `env` (`CommandSpec.layouts`), and input labels that name the command a pipe brings them from. Waits on the maintainer's look at the screenshots (wide tables scroll sideways on a phone).
+- Pipeline examples: show the shape of the input each stage reads (item 3 of the external review of October 2026). First step in review: made-up output in the real layout for `ps`, `ls`, `df -h`, `who`, `env` (`CommandSpec.layouts`), and input labels that name the command a pipe brings them from; each section marks what the next stage reads (grep's and sed's matches, awk's and cut's fields, sort's keys), and a wide table starts scrolled to its first mark. Waits on the maintainer's look at the screenshots.
 
 ## Next, in this order
 

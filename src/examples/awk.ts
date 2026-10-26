@@ -3,6 +3,7 @@ import { JsRegex, regexExamples, toJsRegex } from './regex';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 import { parseWords } from './textfilters';
 import { has } from '../argv/query';
+import type { AwkWatch } from './marks';
 
 /** Raised for awk features the example runner does not implement; no example is shown then. */
 class Unsupported extends RunnerUnsupported {}
@@ -665,16 +666,11 @@ class Interp {
   private steps = 0;
   private locals: Map<string, Val | Map<string, Val>>[] = [];
 
+  /** Told what each record is read for (`AwkRunOptions.watch`). */
+  watch?: AwkWatch;
+
   constructor(private prog: Program) {
-    this.vars.set('FS', ' ');
-    this.vars.set('OFS', ' ');
-    this.vars.set('ORS', '\n');
-    this.vars.set('SUBSEP', '\x1c');
-    this.vars.set('NR', 0);
-    this.vars.set('FNR', 0);
-    this.vars.set('RSTART', 0);
-    this.vars.set('RLENGTH', -1);
-    this.vars.set('FILENAME', '');
+    for (const [k, v] of Object.entries({ FS: ' ', OFS: ' ', ORS: '\n', SUBSEP: '\x1c', NR: 0, FNR: 0, RSTART: 0, RLENGTH: -1, FILENAME: '' })) this.vars.set(k, v);
   }
 
   private tick(): void {
@@ -750,7 +746,7 @@ class Interp {
 
   private getField(i: number): Val {
     if (i < 0) throw new Unsupported('negative field');
-    if (i === 0) return new StrNum(this.fields[0]);
+    this.watch?.field(this.fields, i);
     return new StrNum(this.fields[i] ?? '');
   }
 
@@ -783,7 +779,9 @@ class Interp {
     switch (e.k) {
       case 'num': return e.v;
       case 'str': return e.v;
-      case 're': return this.regexOf(e).test(this.fields[0]) ? 1 : 0;
+      case 're':
+        this.watch?.regex(this.fields, e.re);
+        return this.regexOf(e).test(this.fields[0]) ? 1 : 0;
       case 'var': return this.getVar(e.name);
       case 'idx': {
         const a = this.array(e.name);
@@ -1045,6 +1043,8 @@ export interface AwkRunOptions {
    * Without them, awk reads the input lines from its standard input, which `FILENAME` calls `-`.
    */
   files?: { name: string; lines: string[] }[];
+  /** Told each record read, the rules that select it, and the fields and regexes read of it (src/examples/marks.ts). */
+  watch?: AwkWatch;
 }
 
 /**
@@ -1128,6 +1128,7 @@ export function runAwk(src: string, input: string[], opts: AwkRunOptions = {}): 
   const prog = parseAwk(src);
   if (!prog) return undefined;
   const it = new Interp(prog);
+  it.watch = opts.watch;
   if (opts.fs !== undefined) it.vars.set('FS', opts.fs);
   for (const [k, v] of Object.entries(opts.vars ?? {})) it.vars.set(k, new StrNum(v));
   // (-v RS=… and RS=… operands are set directly, without setVar.)
@@ -1153,9 +1154,11 @@ export function runAwk(src: string, input: string[], opts: AwkRunOptions = {}): 
             it.vars.set('NR', ++nr);
             it.vars.set('FNR', k + 1);
             it.setRecord(line);
+            opts.watch?.record(toStr(it.vars.get('FS')));
             try {
               for (const r of main) {
                 if (!it.selects(r)) continue;
+                opts.watch?.selected();
                 if (r.action) it.exec(r.action);
                 else it.out.push(it.fields[0] + toStr(it.vars.get('ORS')));
               }
@@ -1312,12 +1315,8 @@ function analyse(prog: Program): Usage {
 }
 
 const WORDS = [
-  ['apple', 'banana', 'cherry', 'grape'],
-  ['red', 'yellow', 'green', 'purple'],
-  ['tokyo', 'osaka', 'kyoto', 'nara'],
-  ['alpha', 'beta', 'gamma', 'delta'],
-  ['north', 'south', 'east', 'west'],
-  ['one', 'two', 'three', 'four'],
+  ['apple', 'banana', 'cherry', 'grape'], ['red', 'yellow', 'green', 'purple'], ['tokyo', 'osaka', 'kyoto', 'nara'],
+  ['alpha', 'beta', 'gamma', 'delta'], ['north', 'south', 'east', 'west'], ['one', 'two', 'three', 'four'],
 ];
 
 function numbersAround(thresholds: number[]): number[] {

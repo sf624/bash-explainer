@@ -4,6 +4,6 @@
   "src/examples/jq.ts": 1847,
   "src/semantics/walk/walker.ts": 1490,
   "src/syntax/adapters/unbash.ts": 1421,
-  "src/examples/awk.ts": 1388,
+  "src/examples/awk.ts": 1387,
   "src/semantics/words.ts": 1136
 }

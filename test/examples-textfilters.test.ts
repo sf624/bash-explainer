@@ -76,7 +76,10 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
     sort: ['b 10 x', 'a  2 y', '', 'B 1.5K z', 'a-1 2 y', 'c\t3', 'v1.10', 'v1.2', 'v1.2', ' d 7', 'é 1'],
     // GNU's version sort treats leading blanks and punctuation in ways the examples leave out.
     'sort -V': ['1.10', '1.2', '', '1.2', '1.2a', 'a', '1.2b'],
-    'sort -h': ['0K', '1K', '2', '1M', '-1K', '220 Mar', '8.3K y', '1.5K x', '1m', '3k', '2R', '1Q', '-2', '-3M'],
+    // (A character position past the end of its field runs on into the next: `b ` of `ab cd`. Bytes in GNU's C locale: ASCII.)
+    'sort -k1.2,1.3': ['ab cd', 'ab ab', 'a', 'abc d', 'b a', 'b  z'],
+    'sort -t   -k1.3,2': ['ab cd', 'ab ab', 'a', 'abc d', 'b a', 'b  z'],
+    'sort -h': ['0K', '1K', '2', '1M', '-1K', '220 Mar', '8.3K y', '1.5K x', '1m', '3k', '2R', '1Q', '-2', '-3M', '5.K', '2.5.K'],
     'tr -d a-z\\n': ['abc', 'de'],
     uniq: ['a b', 'a b', 'x b', 'A c', 'a c', 'a c'],
     cut: ['a,b,c', 'abcdef', 'x,,y'],
@@ -86,7 +89,7 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
   };
   const cases: string[][] = [
     ['sort', '-d'], ['sort', '-i'], ['sort', '-g'], ['sort', '-V'], ['sort', '-b', '-k2'], ['sort', '-k2b,2'], ['sort', '-k2.2b,3.1b'], ['sort', '-k5'],
-    ['sort', '-k1,9'], ['sort', '-s', '-k1,1'], ['sort', '-f'], ['sort', '-h', '-k2,2'], ['sort', '-t', ' ', '-k2,2n'],
+    ['sort', '-k1,9'], ['sort', '-s', '-k1,1'], ['sort', '-k1.2,1.3'], ['sort', '-t', ' ', '-k1.3,2'], ['sort', '-f'], ['sort', '-h', '-k2,2'], ['sort', '-t', ' ', '-k2,2n'],
     ['uniq', '-w', '1'], ['uniq', '-s', '2'], ['uniq', '-f', '1', '-c'], ['uniq', '-i', '-u'],
     ['cut', '-c', '2,4', '--output-delimiter=:'], ['cut', '-f', '2', '-d', ','],
     ['tr', '[=a=]', 'b'], ['tr', '\\101\\154', 'xy'], ['tr', '\\q', 'x'], ['tr', '-t', 'abc', 'xy'], ['tr', 'abcl', 'xy'], ['tr', '-s', 'a'], ['tr', '-c', 'a-z\\n', '_'],

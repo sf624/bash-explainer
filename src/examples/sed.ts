@@ -1,5 +1,6 @@
 import { sedEscapeAt } from '../ctlchars';
-import { JsRegex, regexExamples, toJsRegex } from './regex';
+import { JsRegex, posixExec, posixMatches, regexExamples, toJsRegex } from './regex';
+import type { LineMarks } from './marks';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 
 type Addr =
@@ -324,7 +325,6 @@ function exec(cmds: Cmd[], ps: string, no: number, last: boolean, st: RunState, 
         const re = cmd.re ?? st.lastRe;
         if (!re) throw new Unsupported();
         st.lastRe = re;
-        const g = new RegExp(re.source, re.flags + 'g');
         let count = 0;
         let changed = false;
         let out = '';
@@ -332,8 +332,8 @@ function exec(cmds: Cmd[], ps: string, no: number, last: boolean, st: RunState, 
         let at = 0; // where to search next
         let prevEnd = -1; // end of the previous match
         for (;;) {
-          g.lastIndex = at;
-          const m = g.exec(ps);
+          // (POSIX's leftmost longest match: `s/a\|ab/X/` changes all of `ab`.)
+          const m = posixExec(re, ps, at);
           if (!m) break;
           const end = m.index + m[0].length;
           // GNU sed: an empty match right after the previous match is not a match.
@@ -392,6 +392,39 @@ export function runSed(script: string, input: string[], given: { quiet: boolean;
     throw e;
   }
   return st.out.flatMap((l) => l.split('\n'));
+}
+
+/**
+ * What a script of one command matches on each line, and the lines it leaves out (src/examples/marks.ts): `p` or `d` at
+ * a regex (its first match on the line), at a line number or at `$`; `s` with no address (the matches it replaces: the
+ * first, the Nth, or all with `g`). Undefined for any other script. Only for a script `runSed` runs.
+ */
+export function sedMarks(script: string, input: string[], given: { quiet: boolean; extended: boolean }): LineMarks | undefined {
+  const quiet = given.quiet || script.startsWith('#n');
+  const cmds = new Parser(script, given.extended ? 'ere' : 'bre').script();
+  const [c] = cmds;
+  if (cmds.length !== 1 || c.a2 || c.a1?.kind === 'step' || (c.a1?.kind === 're' && !c.a1.re)) return undefined;
+  const ranges: [number, number][][] = [];
+  const dropped: number[] = [];
+  if (c.name === 's') {
+    if (c.a1 || c.neg || !c.re) return undefined;
+    input.forEach((line, k) => {
+      const taken = posixMatches([c.re!], line, true).filter((_, i) => (c.nth ? (c.global ? i + 1 >= c.nth : i + 1 === c.nth) : c.global || i === 0));
+      ranges.push(taken.filter(([a, b]) => b > a));
+      // (`-n`: only a line `s///p` changes is printed.)
+      if (quiet && !(c.print && taken.length)) dropped.push(k);
+    });
+    return { ranges, dropped };
+  }
+  if (c.name !== 'p' && c.name !== 'd') return undefined;
+  const a = c.a1;
+  input.forEach((line, k) => {
+    const m = a?.kind === 're' ? posixExec(a.re!, line, 0) : null;
+    ranges.push(m?.[0] ? [[m.index, m.index + m[0].length]] : []);
+    const hit = !a || (a.kind === 'line' ? k + 1 === a.n : a.kind === 'last' ? k === input.length - 1 : !!m);
+    if (c.name === 'd' ? hit !== c.neg : quiet && hit === c.neg) dropped.push(k);
+  });
+  return { ranges, dropped };
 }
 
 export interface SedExample {

@@ -5,7 +5,8 @@ import { runAwk } from './awk';
 import { dateOutputLabel, parseDateValue, relativeFrom, relativeItems, zoneOf } from './dates';
 import { Json, JqFormat, jqOutputLines, jqPrint, JqStep, jqSteps, parseJsonValues, runJq } from './jq';
 import { PerlOptions, runPerl } from './perlrun';
-import { pipelineExample, Stage } from './pipeline';
+import { sectionMarks, type SectionMarks, type StageMarks } from './marks';
+import { pipelineExample, Stage, stageMarks } from './pipeline';
 import { JsRegex } from './regex';
 import { runXargs, showCommand } from './runtime';
 import { runSed } from './sed';
@@ -45,7 +46,7 @@ type RerunKind =
 /** A highlighted range on a line of the input: the whole match (group 0) or a capture group. */
 export interface Mark { start: number; end: number; group: number }
 
-export interface RerunSection { label: string; lines: string[]; empty?: string }
+export interface RerunSection { label: string; lines: string[]; empty?: string; marks?: SectionMarks }
 
 export interface RerunResult {
   sections: RerunSection[];
@@ -62,6 +63,9 @@ export interface Interactive {
   inputs: InputBox[];
   result: RerunResult;
 }
+
+/** Marks of what a stage reads (src/examples/marks.ts) as the box of its input highlights them. */
+const boxMarks = (m: StageMarks): Mark[][] => m.ranges.map((rs) => rs.map(([start, end]) => ({ start, end, group: 0 })));
 
 /** Every match of the regex on a line, with the range of each capture group (group 0 is the match). */
 export function matchMarks(regex: JsRegex, line: string): Mark[] {
@@ -153,7 +157,10 @@ export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResu
       if (!run) return out(undefined);
       // (`files` is given to the tools that print a header for each file, head and tail: `EachFile`.)
       if (spec.files) return out(perFile(spec.cmd as 'head' | 'tail', spec.files.map((name, i) => ({ name, lines: inputs[i] })), words(spec.words)));
-      return out(run(words(spec.words), input));
+      const r = out(run(words(spec.words), input));
+      // What cut takes and the key sort compares are marked in the box (src/examples/marks.ts).
+      const m = stageMarks({ cmd: spec.cmd, words: words(spec.words), text: spec.cmd }, input);
+      return m ? { ...r, marks: boxMarks(m) } : r;
     }
     case 'jq': {
       const format = spec.format ?? { indent: 0 };
@@ -194,11 +201,15 @@ export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResu
     case 'pipeline': {
       const ex = pipelineExample(spec.stages.map((st) => ({ ...st, words: words(st.words) })), true, input);
       if (!ex) return out(undefined);
+      const shown = ex.steps.filter((st, i) => !st.stage.copies || i === ex.steps.length - 1);
       return {
-        sections: ex.steps.filter((st, i) => !st.stage.copies || i === ex.steps.length - 1).map((st, i, all) => ({
-          label: i === all.length - 1 ? s(`出力（\`${st.stage.text}\` の後）`, `Output (after \`${st.stage.text}\`)`) : s(`\`${st.stage.text}\` の後`, `After \`${st.stage.text}\``),
+        sections: shown.map((st, i) => ({
+          label: i === shown.length - 1 ? s(`出力（\`${st.stage.text}\` の後）`, `Output (after \`${st.stage.text}\`)`) : s(`\`${st.stage.text}\` の後`, `After \`${st.stage.text}\``),
           lines: st.output, empty: s('（なし）', '(nothing)'),
+          // (The last has none: no stage reads it.)
+          ...(st.marks ? { marks: sectionMarks(st.marks, shown[i + 1].stage.text, lang) } : {}),
         })),
+        ...(ex.inputMarks ? { marks: boxMarks(ex.inputMarks) } : {}),
       };
     }
     case 'xargs': return out(runXargs(words(spec.words), input.join('\n') + '\n').map(showCommand), s('実行されるコマンド', 'Commands that run'));
