@@ -51,6 +51,18 @@ describe('the message catalog', () => {
     assert.strictEqual(fact('en', 'postfix-increment-status', { v: 'count', errexit: true }).text, '⚠ Pitfall: `set -e` is on here, so the script stops at this line when `count` is 0: `((count++))` gives the value before the increment, and 0 is a failure status. Write `((++count))`, `count=$((count+1))` or `((count++)) || true`');
     assert.strictEqual(fact('ja', 'postfix-increment-status', { v: 'count', errexit: true, stops: 'subshell' }).text, '⚠ 落とし穴: ここでは `set -e` が効いているので、`count` が 0 のときこの行でサブシェルが終わる。`((count++))` の値は増やす前の値で、0 は失敗の終了ステータスになるため。`((++count))` か `count=$((count+1))` か `((count++)) || true` と書く');
     assert.match(fact('en', 'postfix-decrement-status', { v: 'n', errexit: true, stops: 'unknown' }).text, /^⚠ Pitfall: `set -e` is on here, so the shell running it stops at this line when `n` is 0/);
+    // Every shell that `set -e` stops, in both languages and for both operators.
+    const ends = { script: ['スクリプトが止まる', 'the script stops'], subshell: ['サブシェルが終わる', 'the subshell ends'], unknown: ['これを実行するシェルが止まる', 'the shell running it stops'] } as const;
+    for (const id of ['postfix-increment-status', 'postfix-decrement-status'] as const) {
+      for (const [stops, [ja, en]] of Object.entries(ends)) {
+        assert.ok(fact('ja', id, { v: 'n', errexit: true, stops: stops as keyof typeof ends }).text.includes(`この行で${ja}`), `${id} ja ${stops}`);
+        assert.ok(fact('en', id, { v: 'n', errexit: true, stops: stops as keyof typeof ends }).text.includes(`so ${en} at this line`), `${id} en ${stops}`);
+      }
+      assert.ok(fact('ja', id, { v: 'n', errexit: true }).text.includes('この行でスクリプトが止まる'), `${id} ja default`);
+      assert.ok(fact('en', id, { v: 'n', errexit: true }).text.includes('so the script stops at this line'), `${id} en default`);
+      assert.ok(!fact('en', id, { v: 'n' }).text.includes('set -e` is on here'), `${id} en plain`);
+      assert.ok(!fact('ja', id, { v: 'n' }).text.includes('が効いているので'), `${id} ja plain`);
+    }
     assert.match(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true }).text, /file names, and this command then deletes or overwrites files it should not$/);
     assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true }).level, 'warning');
     assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f' }).level, 'info');
