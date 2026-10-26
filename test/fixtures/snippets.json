@@ -1339,6 +1339,7 @@
  "tar --zstd -cf a.tar.zst d",
  "tar -C'/tmp' -cf a.tar b",
  "tar -C'/tmp' -xf a.tar",
+ "tar -czf out.tgz ~/docs",
  "tee >(gzip > f.gz)",
  "terraform plan -chdir=x",
  "terraform plan -var-file=prod.tfvars",
