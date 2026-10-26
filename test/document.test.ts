@@ -210,7 +210,8 @@ describe('the pitfalls of a script, as problems', () => {
   it('in a host file: the facts of bats on their statements, a placeholder as the file writes it, a pipe said once', () => {
     const rows = (doc: ShellDocument) => documentIssues(doc, 'en', {}).map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endCol]);
     assert.deepStrictEqual(rows(hosted('bats', '@test "x" {\n  ! grep a f\n  run echo a | grep a\n  true\n}')),
-      [['bats-negation-ignored', 'warning', 1, 2, 12], ['bats-run-in-pipeline', 'warning', 2, 2, 21]]);
+      [['bats-negation-ignored', 'warning', 1, 2, 12], ['bats-run-in-pipeline', 'warning', 2, 2, 21], ['pipefail-missing', 'info', 2, 2, 21]]);
+    // (A test runs with `set -e`, so a failing first stage of the pipe is not seen: the status fact is said too.)
     const [make] = documentIssues(hosted('makefile', 'all:\n\tcp $(SRC) $$dir/\n'), 'en', {});
     assert.deepStrictEqual([make.code, make.startLine, make.startCol, make.endCol], ['unquoted-variable-as-path', 1, 4, 10]);
     assert.match(make.message, /`\$\(SRC\)` is not quoted/);
