@@ -207,3 +207,69 @@ html.bx-compact #top[data-ln]::before,
 html.bx-blank #top::before {
   display: none;
 }
+
+/* ---- Prototype round 6 (proto/chrome-6) ---- */
+/* The Reference tab has no line box: the reference is about the language, not about the line (the editor shows it). */
+html.bx-head:has(#reference:not([hidden])) #top {
+  display: none;
+}
+
+/* The phone's sheet, at half and full: the line box first (one compact row, sticky at the frame's top), then the view
+   row, which the page lays over the frame just below the box (`bx-lead`), then the explanation. */
+html.bx-phone #top {
+  padding: 4px 0 6px;
+}
+
+html.bx-phone pre#line {
+  padding: 0.35rem 0.7rem;
+  max-height: none;
+}
+
+html.bx-lead body {
+  padding-top: 0;
+}
+
+html.bx-lead #main {
+  padding-top: 36px;
+}
+
+/* The empty panel (desktop): under its message, a one-line preview of what it will show and "Try the sample". */
+#bx-empty-more {
+  max-width: 30rem;
+  margin: 12px auto 0;
+  padding: 0 1rem;
+  text-align: center;
+}
+
+html:not(.bx-blank) #bx-empty-more,
+html.bx-phone #bx-empty-more {
+  display: none;
+}
+
+.bx-empty-preview {
+  margin: 0 0 6px;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.bx-empty-sample {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bx-empty-sample:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.bx-empty-sample:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 0;
+}

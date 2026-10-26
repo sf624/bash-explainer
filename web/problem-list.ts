@@ -104,7 +104,10 @@ export function showPosition(list: DocumentIssue[], line: number, col: number, l
   const pos = document.getElementById('problem-pos');
   if (pos) {
     // (Round 4: one count, at the left; the right says where the cursor is only when it is on a problem.)
-    pos.textContent = !list.length || at < 0 ? '' : c.posAt4(sorted[at].startLine + 1, at + 1, list.length);
+    const text = !list.length || at < 0 ? '' : c.posAt4(sorted[at].startLine + 1, at + 1, list.length);
+    // Round 6: the line apart from the count, so that a narrow strip with a toast in it keeps only "1/11".
+    const cut = text.lastIndexOf(' · ');
+    pos.replaceChildren(...(cut < 0 ? [text] : [Object.assign(document.createElement('span'), { className: 'pos-ln', textContent: text.slice(0, cut + 3) }), text.slice(cut + 3)]));
     pos.setAttribute('aria-label', at >= 0 ? c.posLabel(at + 1, list.length) : c.posNone(list.length));
     pos.classList.toggle('none', at < 0);
   }

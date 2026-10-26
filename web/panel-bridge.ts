@@ -165,6 +165,33 @@ export class PanelBridge {
     if (top && label) top.dataset.ln = label;
     else if (top) delete top.dataset.ln;
     doc.documentElement.classList.toggle('bx-blank', label === undefined);
+    this.showEmptyExtra(doc, label === undefined);
+  }
+
+  /** Round 6: what the empty panel adds under its message (desktop): a one-line preview and "Try the sample". */
+  onEmpty: (() => { preview: string; link: string; run: () => void }) | undefined;
+  private showEmptyExtra(doc: Document, blank: boolean): void {
+    const empty = doc.getElementById('empty');
+    let extra = doc.getElementById('bx-empty-more');
+    if (!blank || !this.onEmpty || !empty) {
+      extra?.remove();
+      return;
+    }
+    const { preview, link } = this.onEmpty();
+    if (!extra) {
+      extra = doc.createElement('div');
+      extra.id = 'bx-empty-more';
+      const p = doc.createElement('p');
+      p.className = 'bx-empty-preview';
+      const a = doc.createElement('button');
+      a.type = 'button';
+      a.className = 'bx-empty-sample';
+      a.addEventListener('click', () => this.onEmpty?.().run());
+      extra.append(p, a);
+    }
+    if (extra.previousElementSibling !== empty) empty.after(extra);
+    extra.querySelector('.bx-empty-preview')!.textContent = preview;
+    extra.querySelector('.bx-empty-sample')!.textContent = link;
   }
 
   /** Round 4: how far down the empty panel's message starts (px), level with the empty editor's block. */
@@ -300,7 +327,8 @@ export class PanelBridge {
     const expand = this.button('toggle')?.querySelector('svg')?.getAttribute('data-icon') === 'expand-all';
     for (const button of ['pane-collapse', 'menu-collapse']) document.querySelector(`#${button} use`)?.setAttribute('href', expand ? '#i-expand' : '#i-collapse');
     put('pane-collapse-label', expand ? c.expandShort : c.collapseShort);
-    put('pane-copy-label', tp.copy);
+    // Round 6: the word is "Copy" (its name and tooltip say "as Markdown"), shown from a 560px panel as Collapse's is.
+    put('pane-copy-label', c.copyShort);
     const icon = this.button('ref')?.querySelector('svg')?.getAttribute('data-icon');
     const refSvg = document.querySelector('#menu-ref svg');
     if (icon && refSvg) drawIcon(refSvg, icon);

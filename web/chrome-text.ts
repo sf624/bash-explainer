@@ -134,6 +134,16 @@ export const CHROME = {
     pasteRefused5: (key: string) => `The browser blocked the clipboard. Press ${key} in the editor to paste.`,
     lineTab: (n: number) => `${n}`,
     lineTabLabel: (n: number) => `Explanation, line ${n}`,
+    // Round 6.
+    autoMark: '(auto)',
+    autoMarkTip: 'Auto: the script has no #! line, so it is read as bash.',
+    renameMore: 'Rename…',
+    emptyPreview: 'Each part of the line, what bash does with it, and its pitfalls.',
+    trySample: 'Try the sample',
+    settingShort: {
+      'notes.pitfalls': 'Point out common mistakes and how to avoid them: `x = 1` (not an assignment), `rm -rf $DIR/…` with an empty `DIR`, unquoted variables, `for f in $(ls)`, and more.',
+      'hover.enabled': "Shows the part under the mouse in a card, as VS Code's hover does; `Ctrl+K Ctrl+I` shows the part at the cursor. When off, the browser keeps `Ctrl+K` and `Ctrl+E`.",
+    } as Record<string, string>,
   },
   ja: {
     typePrefix: '種類:',
@@ -264,5 +274,14 @@ export const CHROME = {
     pasteRefused5: (key: string) => `ブラウザがクリップボードの読み取りを許可しませんでした。エディターで ${key} を押して貼り付けてください。`,
     lineTab: (n: number) => `${n}`,
     lineTabLabel: (n: number) => `説明、${n} 行目`,
+    autoMark: '（自動）',
+    autoMarkTip: '自動: スクリプトに #! 行がないので、bash として読みます。',
+    renameMore: '名前を変更…',
+    emptyPreview: '行の各部分と、bash がそれをどう扱うか、落とし穴を表示します。',
+    trySample: 'サンプルで試す',
+    settingShort: {
+      'notes.pitfalls': 'よくある間違いと避け方を注記する: `x = 1`（代入にならない）、空の `DIR` での `rm -rf $DIR/…`、クォートしていない変数、`for f in $(ls)` など。',
+      'hover.enabled': 'マウスを乗せた部分の解説を、VS Code のホバーと同じカードで表示する。`Ctrl+K Ctrl+I` でカーソル位置の部分を表示する。オフのときは `Ctrl+K` と `Ctrl+E` をブラウザに渡す。',
+    } as Record<string, string>,
   },
 };

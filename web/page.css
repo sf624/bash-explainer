@@ -2509,14 +2509,7 @@ body:not([data-page="compare"]) .top .icon-btn {
 
 /* A narrow editor pane (under 1000px windows): Open and Save as icons, the kind and the shell as one chip. */
 @container source (max-width: 600px) {
-  .scope-wide {
-    display: none !important;
-  }
-
-  .scope-narrow {
-    display: flex;
-  }
-
+  /* (Round 6: whether the chip stands for the pickers is measured: web/main.ts, `fitScope`, `.use-chip`.) */
   .tool-btn .lbl {
     display: none;
   }
@@ -5271,16 +5264,6 @@ html.narrow .ed-head .scope-wide {
   display: none !important;
 }
 
-/* Japanese labels are wider: the editor header takes the chip below a 680px pane (a 640px pane would cut the name). */
-@container source (max-width: 680px) {
-  html[lang="ja"] .scope-wide {
-    display: none !important;
-  }
-
-  html[lang="ja"] .scope-narrow {
-    display: flex;
-  }
-}
 
 /* The desktop hint stays one row: the sentence gives way (…) before the buttons do. */
 html:not(.narrow) .first-hint {
@@ -5788,4 +5771,287 @@ html.narrow.kb-open .panel-head .bsheet-handle {
   text-overflow: clip;
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+}
+
+/* ==== Prototype round 6 (proto/chrome-6): words kept whole when lines wrap, toasts beside the counts, file names on
+   touch screens, pickers by measure, the sheet's line box first, and polish ==================================== */
+
+/* ---- 2. Toasts: [› Problems ⚠ 5 ⓘ 6] [toast · Undo · ✕] [Ln 20 · 1/11 ‹ ›]; under a 480px pane "⚠5 ⓘ6" alone ---- */
+body:not([data-page="compare"]) #status.docked {
+  padding: 0 2px 0 10px;
+  border-radius: 6px;
+}
+
+@container source (max-width: 480px) {
+  .problems-strip.with-toast .strip-title {
+    display: none;
+  }
+
+  .problems-strip.with-toast .summary {
+    gap: 6px;
+  }
+
+  .problems-strip.with-toast .sum .icon {
+    margin-right: 1px;
+  }
+
+  .problems-strip.with-toast .pos-ln {
+    display: none;
+  }
+}
+
+/* With the phone's keyboard open the toast lies inside the sheet's tabs row, never over the editor. */
+:where(html.narrow) body:not([data-page="compare"]) #status.in-tabs {
+  z-index: 30;
+  min-height: 0;
+  padding: 0 2px 0 12px;
+  border-radius: 8px;
+  background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--vscode-editor-background);
+  box-shadow: inset 3px 0 0 var(--page-accent), var(--shadow);
+}
+
+:where(html.narrow) #status.in-tabs .status-action,
+:where(html.narrow) #status.in-tabs .status-close {
+  min-height: 0;
+  height: 32px;
+}
+
+/* ---- 4. Settings: two lines of description; "More" at the end of the second line, at the right, only when the text
+   is longer; a code chip never wraps (so the cut, between lines, never falls inside one); the whole text on touch ---- */
+.desc-line {
+  display: block;
+  position: relative;
+}
+
+.desc-line .setting-desc.clamp {
+  overflow: visible;
+  line-height: 1.45;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.settings-body .setting-desc code {
+  white-space: nowrap;
+}
+
+.desc-line .setting-desc.clamp.cut:not(.open) {
+  max-height: calc(2 * 1.45em);
+  padding-right: 4.2em;
+  overflow: hidden;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.desc-line .setting-desc.cut:not(.open) + .desc-more {
+  position: absolute;
+  right: 0;
+  bottom: 6px;
+  line-height: 1.45;
+}
+
+.desc-line .setting-desc.open + .desc-more {
+  display: block;
+  margin: -4px 0 6px auto;
+}
+
+/* ---- 5. The file name on a touch screen: in the stacked strip between [Read | Edit] and the chip ("a.sh ●", muted
+   "untitled.sh"), a tap renames; the pencil always shows on a coarse pointer (the header and the menu's first row) ---- */
+:where(html.narrow) .file-name-box {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: 6px;
+}
+
+:where(html.narrow) .ed-head .file-name {
+  max-width: 100%;
+  height: 32px;
+  padding: 0 6px;
+  font-size: 14px;
+}
+
+:where(html.narrow) .ed-head .file-name-input {
+  max-width: 50vw;
+  height: 28px;
+  font-size: 16px;
+}
+
+@media (pointer: coarse) {
+  .file-pencil {
+    opacity: 1;
+  }
+}
+
+/* A tablet held upright: Open, Save, the name, then the chip and ⋯ at the right, as on the desktop. */
+html.tablet-portrait .ed-head .popbox:has(#ed-more) {
+  display: flex;
+}
+
+/* ---- 6. Pickers or the chip, by measure (web/main.ts, `fitScope`); the Shell picker is a list like Type's ---- */
+.ed-head.use-chip .scope-wide {
+  display: none !important;
+}
+
+.ed-head.use-chip .scope-narrow {
+  display: flex;
+}
+
+.pick.shell-native[hidden] {
+  display: none !important;
+}
+
+/* ---- 7. The full sheet's way back: "Script ⌄" at the `wide` and `snug` steps, the icon alone at `icons` ---- */
+:where(html.narrow[data-sheet="full"]) .sheet-back,
+:where(html.narrow) .panel-bar.fit-test .sheet-back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: auto;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 10px 0 12px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.sheet-back .back-chev {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+:where(html.narrow) .panel-bar[data-fit="snug"] .sheet-back {
+  padding: 0 6px 0 8px;
+  font-size: 13px;
+}
+
+:where(html.narrow) .panel-bar[data-fit="icons"] .sheet-back {
+  width: 44px;
+  padding: 0;
+}
+
+:where(html.narrow) .panel-bar[data-fit="icons"] .sheet-back .lbl {
+  display: none;
+}
+
+:where(html.narrow) .panel-bar[data-fit="icons"] .sheet-back .back-chev {
+  width: 18px;
+  height: 18px;
+}
+
+/* ---- 8. The panel header: words for Collapse and Copy from a 560px panel, icons for both below; the view slot keeps
+   one width per step whatever it holds (the depth control will come into it without moving Collapse and Copy) ---- */
+@container panelcol (min-width: 560px) {
+  #pane-copy .lbl {
+    display: inline !important;
+  }
+
+  #pane-copy.tool-lbl {
+    width: auto;
+    gap: 5px;
+    padding: 0 9px 0 7px;
+  }
+}
+
+html:not(.narrow) .view-slot {
+  justify-content: flex-end;
+  width: 160px;
+}
+
+@container panelcol (min-width: 430px) and (max-width: 559.98px) {
+  html:not(.narrow) .view-slot {
+    width: 136px;
+  }
+}
+
+@container panelcol (max-width: 429.98px) {
+  html:not(.narrow) .view-slot {
+    width: 104px;
+  }
+}
+
+/* ---- 9. The phone's sheet at half and full: the frame's line box first, the view row under it (placed by
+   web/main.ts, `followFrameScroll`), then the explanation ---- */
+:where(html.narrow) .panel-col[data-tab="explain"] .view-row {
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+/* ---- 10. The phone's Problems: no rule ids (each item's tooltip keeps it) ---- */
+:where(html.narrow) .problem-list .problem .code {
+  display: none;
+}
+
+/* ⋯'s items in two groups: what to do with this script, then what replaces it. */
+.popsep {
+  display: block;
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--vscode-panel-border);
+}
+
+/* A strip with no room for the name (larger text on a phone): the name stays in the menu's first row. */
+:where(html.narrow) .ed-head.no-name .file-name-box {
+  display: none;
+}
+
+/* The strip's name says "●" itself: no second dot on ≡ while it shows. */
+html.narrow:has(#ed-head:not(.no-name)) #menu-dot {
+  display: none;
+}
+
+/* Common in one screen at 1280x800 with its two-line descriptions: closer rows. */
+.settings-common .setting {
+  padding: 7px 0;
+}
+
+.settings-common .setting-desc {
+  margin-bottom: 3px;
+}
+
+.settings-common .desc-line .setting-desc.cut:not(.open) + .desc-more {
+  bottom: 3px;
+}
+
+/* The strip's name: 44px to tap, as drawn 32px. */
+:where(html.narrow) .ed-head .file-name {
+  position: relative;
+}
+
+:where(html.narrow) .ed-head .file-name::after {
+  content: "";
+  position: absolute;
+  inset: -6px 0;
+}
+
+/* A chip wider than most of its line (a JSON example) wraps rather than running past the dialog's edge. */
+.settings-body .setting-desc code.long {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.desc-line .setting-desc.open {
+  max-height: none !important;
+}
+
+/* A header short of room for the name: Open and Save as icons (their names stay as tooltips). */
+html .ed-head.tight .tool-btn .lbl {
+  display: none !important;
+}
+
+html .ed-head.tight .tool-btn {
+  width: 32px !important;
+  padding: 0 !important;
+  justify-content: center;
+}
+
+/* No room for even part of the name, side by side too: it stays in the menu's first row. */
+.ed-head.no-name .file-name-box {
+  display: none;
 }

@@ -204,8 +204,6 @@ export class SettingsDialog {
   private query = '';
   /** Whether Advanced is unfolded (it unfolds by itself while a search is typed, or a link jumps into it). */
   private advancedOpen = false;
-  /** Whether the long text of Export and import is shown. */
-  private ioMore = false;
 
   constructor(dialog: HTMLDialogElement, private host: SettingsHost) {
     this.dialog = dialog;
@@ -243,7 +241,6 @@ export class SettingsDialog {
     this.clearing = undefined;
     this.query = '';
     this.advancedOpen = false;
-    this.ioMore = false;
     this.render();
     this.dialog.showModal();
     this.dialog.querySelector<HTMLElement>('.settings-body')?.scrollTo(0, 0);
@@ -341,22 +338,10 @@ export class SettingsDialog {
           el('code', { textContent: i.key }), ` — ${i.reason === 'invalid' ? t.reasons.invalid(i.detail!) : t.reasons[i.reason]()}`))));
       }
     }
-    // Round 4: one line, and "More" for the whole text.
-    const c = CHROME[lang];
-    const full = el('p', { className: 'setting-desc settings-io-more', id: 'settings-io-more', hidden: !this.ioMore }, ...rich(t.ioDesc));
-    const more = el('button', { type: 'button', className: 'link-btn', id: 'settings-io-more-btn', textContent: this.ioMore ? c.less : c.moreText });
-    more.setAttribute('aria-expanded', String(this.ioMore));
-    more.setAttribute('aria-controls', full.id);
-    more.addEventListener('click', () => {
-      this.ioMore = !this.ioMore;
-      full.hidden = !this.ioMore;
-      more.textContent = this.ioMore ? c.less : c.moreText;
-      more.setAttribute('aria-expanded', String(this.ioMore));
-    });
+    // Round 6: the same two lines and "More" as every other description.
     return el('section', { className: 'settings-group settings-io' },
       el('h4', { textContent: t.io }),
-      el('p', { className: 'setting-desc' }, c.ioShort, ' ', more),
-      full,
+      this.descLine(el('p', { className: 'setting-desc' }, ...rich(t.ioDesc)), lang),
       el('div', { className: 'settings-io-buttons' },
         button('settings-export', t.exportFile, () => this.exportFile()),
         button('settings-copy', t.copy, () => void this.copy()),
@@ -427,8 +412,10 @@ export class SettingsDialog {
     close.setAttribute('aria-label', t.close);
     close.addEventListener('click', () => closeSheet(this.dialog));
     const elsewhere = SETTINGS.filter((x) => !x.surfaces.includes('web'));
-    const rowOf = (spec: SettingSpec) => this.row(spec, s, spec.description ? { ...texts[spec.key], description: spec.description[lang === 'ja' ? 0 : 1] } : texts[spec.key], lang);
     const c = CHROME[lang];
+    // Round 6: Common's descriptions in at most two lines: the page's own shorter copy where the shared one is longer.
+    const short: Record<string, string> = c.settingShort;
+    const rowOf = (spec: SettingSpec) => this.row(spec, s, short[spec.key] ? { ...texts[spec.key], description: short[spec.key] } : spec.description ? { ...texts[spec.key], description: spec.description[lang === 'ja' ? 0 : 1] } : texts[spec.key], lang);
     const section = (id: Section, ...rows: HTMLElement[]) => {
       // Common is a section heading (big); the parts of Advanced are sub-headings (small capitals).
       const heading = id === 'common' ? el('h3', { className: 'settings-major', textContent: c.common }) : el('h4', { textContent: t.sections[id] });
@@ -614,15 +601,36 @@ export class SettingsDialog {
     return el('div', { className: 'desc-line' }, desc, more);
   }
 
-  /** Hides "More" after a description that its one line holds whole (measured once the dialog shows, and on a resize). */
+  /**
+   * Round 6: a description shows two lines; "More" (at the end of the second line, at the right) only when the text
+   * really takes more than two lines at the dialog's width. The cut falls between lines, and a code chip never wraps,
+   * so no chip is cut in two. On a touch screen the whole text shows, with no "More".
+   */
   fitDescs(): void {
+    const touch = window.matchMedia('(pointer: coarse)').matches;
     for (const line of this.dialog.querySelectorAll<HTMLElement>('.desc-line')) {
       const desc = line.firstElementChild as HTMLElement | null;
       const more = line.querySelector<HTMLElement>('.desc-more');
       if (!desc || !more || desc.classList.contains('open') || !desc.clientWidth) continue;
-      more.hidden = desc.scrollWidth <= desc.clientWidth + 1;
-      // (A cut line fades out at its end rather than ending in "…", which would cut a code chip in two.)
-      desc.classList.toggle('cut', !more.hidden);
+      // Measured whole, at the full width. A chip wider than most of the line may wrap (it would run past the edge).
+      desc.classList.remove('cut');
+      desc.style.maxHeight = '';
+      const chips = [...desc.querySelectorAll<HTMLElement>('code')];
+      for (const code of chips) code.classList.remove('long');
+      for (const code of chips) code.classList.toggle('long', code.getBoundingClientRect().width > desc.clientWidth * 0.7);
+      const lh = parseFloat(getComputedStyle(desc).lineHeight) || 18;
+      const long = !touch && desc.scrollHeight > lh * 2 + 2;
+      more.hidden = !long;
+      desc.classList.toggle('cut', long);
+      if (!long) continue;
+      // A wrapping chip that starts on the second line and goes on past it: the text ends before it, after one line.
+      const top = desc.getBoundingClientRect().top;
+      for (const code of chips) {
+        const rects = code.getClientRects();
+        if (rects.length < 2) continue;
+        const line = Math.floor((rects[0].top - top + 2) / lh);
+        if (line === 1) desc.style.maxHeight = `${lh}px`;
+      }
     }
   }
 

@@ -24,13 +24,15 @@ import { webHover, WebHover } from './hover';
 import { nameHintsExtension, PlacedHint, setHints } from './name-hints';
 import { withCode } from './problem-list';
 import { Kind } from './samples';
+import { wordWrap } from './word-wrap';
 import { TEXT } from './text';
 
 // The shell code is coloured from our own syntax tree (src/highlight.ts); these modes colour the rest of a host file.
 const MODES: Partial<Record<Kind, StreamParser<unknown>>> = {
   dockerfile: dockerFile, yaml, npm: json, python, jenkinsfile: groovy,
 };
-const wrapFor = (on: boolean) => (on ? EditorView.lineWrapping : []);
+// Round 6: long lines wrap between shell words only, with a hanging indent (web/word-wrap.ts).
+const wrapFor = (on: boolean) => (on ? wordWrap : []);
 const inputModeFor = (on: boolean) => EditorView.contentAttributes.of(on ? { inputmode: 'none' } : {});
 const modeFor = (k: Kind) => (MODES[k] ? StreamLanguage.define(MODES[k]!) : []);
 

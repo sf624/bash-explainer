@@ -258,6 +258,7 @@ function updatePanel(): void {
   panel.show(message);
   fitPickers();
   panel.markLine(blank ? undefined : TEXT[lang].line(line + 1));
+  followFrameScroll();
   // The phone's tab says which line it explains ("Explanation · Ln 8").
   put('tab-explain-line', blank ? '' : ` · ${CHROME[lang].lineTab(line + 1)}`);
   document.getElementById('tab-explain')?.setAttribute('aria-label', blank ? CHROME[lang].explain : CHROME[lang].lineTabLabel(line + 1));
@@ -353,6 +354,7 @@ function status(text: string, sticky = false, action?: StatusAction, opts: Statu
       bubble.hidden = !bubble.hidden;
       more.setAttribute('aria-expanded', String(!bubble.hidden));
       clearTimeout(statusTimer);
+      toastLeft = 0;
       placeToast();
     });
     el.append(more);
@@ -366,7 +368,11 @@ function status(text: string, sticky = false, action?: StatusAction, opts: Statu
     el.append(x);
   }
   clearTimeout(statusTimer);
-  if (!sticky && text) statusTimer = setTimeout(() => status(''), 6000);
+  toastLeft = 0;
+  toastHeld = false;
+  // Round 6: a toast with nothing to press goes after 4 s; one with a button (Undo, More, Why?) after 8 s. The time
+  // stops while the pointer is over the toast or the focus in it (armToast, and the listeners below).
+  if (!sticky && text) armToast(action || opts.detail ? 8000 : 4000);
   // Round 5: one line. A text too long for it keeps its first sentence; the rest goes behind "More".
   if (text && !opts.detail && !mode.compare && !mode.panel) {
     placeToast();
@@ -376,6 +382,40 @@ function status(text: string, sticky = false, action?: StatusAction, opts: Statu
       return status(head, sticky, action, { ...opts, detail: rest });
     }
   }
+}
+
+/** Round 6: the toast's time left (ms; 0: none running) and when it was started. */
+let toastLeft = 0;
+let toastSince = 0;
+let toastHeld = false;
+function armToast(ms: number): void {
+  clearTimeout(statusTimer);
+  toastHeld = false;
+  toastLeft = ms;
+  toastSince = Date.now();
+  statusTimer = setTimeout(() => status(''), ms);
+}
+/** The toast's time stops while it is pointed at or focused, and goes on (at least 2 s more) when neither is. */
+function holdToast(hold: boolean): void {
+  const el = document.getElementById('status');
+  if (!el || !toastLeft) return;
+  if (hold) {
+    if (toastHeld) return;
+    clearTimeout(statusTimer);
+    toastHeld = true;
+    toastLeft = Math.max(1, toastLeft - (Date.now() - toastSince));
+    return;
+  }
+  if (!toastHeld || el.matches(':hover') || el.contains(document.activeElement)) return;
+  toastHeld = false;
+  armToast(Math.max(2000, toastLeft));
+}
+{
+  const el = document.getElementById('status');
+  el?.addEventListener('pointerenter', () => holdToast(true));
+  el?.addEventListener('focusin', () => holdToast(true));
+  el?.addEventListener('pointerleave', () => setTimeout(() => holdToast(false), 0));
+  el?.addEventListener('focusout', () => setTimeout(() => holdToast(false), 0));
 }
 
 /** A toast's text in two: its first sentence (or what comes before ": "), and the rest; the whole text twice when it has no such break. */
@@ -1249,6 +1289,11 @@ function chromeLanguage(): void {
   put('empty-drop', c.orDrop);
   document.getElementById('sheet-back')?.setAttribute('aria-label', c.showScript);
   document.getElementById('sheet-back')?.setAttribute('title', c.showScript);
+  // Round 6: the full sheet's way back is labelled ("Script ⌄"); ⋯ has Rename… and Copy the script; the Shell picker.
+  put('sheet-back-label', c.script);
+  put('more-rename-label', c.renameMore);
+  put('more-copy-script-label', c.copyScript);
+  put('shell-pick-prefix', c.shellPrefix);
   for (const where of ['top', 'phone']) {
     put(`view-list-${where}`, c.viewMeaning);
     put(`view-tree-${where}`, c.viewReading);
@@ -1282,16 +1327,42 @@ function showScope(): void {
   const chip = document.getElementById('scope-chip-text');
   if (!chip) return;
   const t = TEXT[lang];
+  const c = CHROME[lang];
   const kindName = t.kinds[kind] ?? kindInfo(kind).name;
-  const shell = document.getElementById('shell-top') as HTMLSelectElement | null;
-  const text = shell?.selectedOptions[0]?.textContent ?? '';
-  // "Auto (bash)" → "bash" ("自動（bash）" too); a shell chosen is its own name.
-  const short = /[(（]([^)）]+)[)）]/.exec(text)?.[1] ?? text;
-  chip.textContent = short ? `${kindName} · ${short}` : kindName;
-  // Round 5: a chip with no room for the kind's name (larger text on a phone) shows its short name ("sh · bash").
-  if (chip.scrollWidth > chip.clientWidth + 1) chip.textContent = short ? `${SHORT_KIND[kind]} · ${short}` : SHORT_KIND[kind];
-  document.getElementById('scope-chip')?.setAttribute('aria-label', `${CHROME[lang].script}: ${chip.textContent}`);
-  document.getElementById('scope-chip')?.setAttribute('title', `${CHROME[lang].fileType}, ${CHROME[lang].shell}`);
+  // Round 6: always "<type> · <the shell the script is read as>": the shell chosen, or the one its #! line names
+  // ("Shell script · bash", "Shell script · sh"); with neither, bash, marked "(auto)" ("Shell script · bash (auto)").
+  const s = shells();
+  const shellName = s.forced ?? s.detected ?? 'bash';
+  const auto = !s.forced && !s.detected;
+  const shellText = auto ? `${shellName}${lang === 'ja' ? '' : ' '}${c.autoMark}` : shellName;
+  chip.textContent = `${kindName} · ${shellText}`;
+  // A chip with no room for the type's name shows its short one: never "sh" for a shell script, which reads as the
+  // shell ("Script · bash", "スクリプト · bash").
+  // Where the chip shows, the file name comes first: while the name is cut (or the chip is), the header takes less room
+  // in steps: the chip's short form ("Script · bash"; it leaves "(auto)" to its name and tooltip), Open and Save as
+  // icons (`tight`), the shell alone in the chip ("bash"), and last, with no room for even part of the name (larger
+  // text on a phone), no name: it stays in the menu's first row (`no-name`).
+  const head = document.getElementById('ed-head');
+  head?.classList.remove('no-name', 'tight');
+  const name = document.getElementById('file-name');
+  const chipShown = chip.offsetParent !== null;
+  const nameCut = () => chipShown && !!name && name.offsetParent !== null && name.scrollWidth > name.clientWidth + 1;
+  const fits = () => !nameCut() && chip.scrollWidth <= chip.clientWidth + 1;
+  const steps = [
+    () => { chip.textContent = `${kind === 'shell' ? c.script : SHORT_KIND[kind]} · ${shellName}`; },
+    () => head?.classList.add('tight'),
+    () => { if (kind === 'shell') chip.textContent = shellName; },
+    () => {
+      const box = document.getElementById('file-name-btn')?.getBoundingClientRect();
+      if (box && box.width < 72) head?.classList.add('no-name');
+    },
+  ];
+  for (const step of steps) {
+    if (fits()) break;
+    step();
+  }
+  document.getElementById('scope-chip')?.setAttribute('aria-label', `${c.script}: ${kindName} · ${shellText}`);
+  document.getElementById('scope-chip')?.setAttribute('title', auto ? `${c.fileType}, ${c.shell}. ${c.autoMarkTip}` : `${c.fileType}, ${c.shell}`);
 }
 
 // The popovers: Share (app bar), ⋯ (editor's header), the kind-and-shell chip.
@@ -1368,14 +1439,24 @@ function showTabs(): void {
 }
 panel.onActions = showTabs;
 narrow.addEventListener('change', showTabs);
-on('tab-explain', 'click', () => showTab('explain'));
+/** Round 6: a tap on the tab that is already open, with the sheet full, takes the sheet back to half (the script shows). */
+function backToHalf(id: Tab): boolean {
+  if (!narrow.matches || document.documentElement.dataset.sheet !== 'full' || tab !== id) return false;
+  sheet?.set('half');
+  return true;
+}
+on('tab-explain', 'click', () => {
+  if (!backToHalf('explain')) showTab('explain');
+});
 on('tab-problems', 'click', () => {
+  if (backToHalf('problems')) return;
   showTab('explain');
   tab = 'problems';
   showTabs();
   sheet?.raise('half');
 });
 on('tab-ref', 'click', () => {
+  if (backToHalf('ref')) return;
   showTab('ref');
   sheet?.raise('half');
 });
@@ -1420,6 +1501,23 @@ function placeToast(): void {
   toast.style.top = '';
   toast.style.width = '';
   toast.style.height = '';
+  toast.classList.remove('in-tabs');
+  const stripEl = document.querySelector<HTMLElement>('#problems .problems-strip');
+  // Round 6: the strip makes room for the toast between its counts and its position (web/page.css, `with-toast`).
+  stripEl?.classList.toggle('with-toast', !narrow.matches && !!toast.textContent);
+  if (narrow.matches && document.documentElement.classList.contains('kb-open')) {
+    // Round 6: with the on-screen keyboard open the toast stays out of the editor: inside the sheet's tabs row.
+    toast.classList.remove('docked');
+    toast.classList.add('in-tabs');
+    const head = $('panel-head').getBoundingClientRect();
+    toast.style.left = '8px';
+    toast.style.right = '8px';
+    toast.style.maxWidth = '';
+    toast.style.bottom = '';
+    toast.style.top = `${Math.round(head.top + 4)}px`;
+    toast.style.height = `${Math.round(head.height - 8)}px`;
+    return placeBubble();
+  }
   if (narrow.matches) {
     toast.classList.remove('docked');
     const top = sheetCol?.getBoundingClientRect().top ?? window.innerHeight;
@@ -1431,18 +1529,24 @@ function placeToast(): void {
     toast.style.bottom = full ? '12px' : `${Math.round(window.innerHeight - top + 12)}px`;
     return placeBubble();
   }
-  const strip = document.querySelector<HTMLElement>('#problems .problems-strip');
+  const strip = stripEl;
   if (strip && strip.getClientRects().length) {
     const r = strip.getBoundingClientRect();
     const nav = strip.querySelector<HTMLElement>('.strip-nav');
-    const navLeft = nav && nav.getBoundingClientRect().width > 0 ? nav.getBoundingClientRect().left : r.right;
+    // Round 6: [› Problems ⚠ 5 ⓘ 6] [the toast] [Ln 20 · 1/11 ‹ ›]: the counts and the position stay in sight.
+    const navBox = nav?.getBoundingClientRect();
+    const pos = nav?.querySelector<HTMLElement>('.pos');
+    const navLeft = navBox && navBox.width > 0 ? (pos && pos.textContent ? pos.getBoundingClientRect().left : navBox.left) : r.right;
+    // (The toggle's last thing shown: the counts, or "✓ No problems".)
+    const ends = [...(strip.querySelector('#problems-toggle')?.children ?? [])].map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0).map((b) => b.right);
+    const left = ends.length ? Math.max(...ends) + 10 : r.left;
     toast.classList.add('docked');
-    toast.style.left = `${Math.round(r.left)}px`;
+    toast.style.left = `${Math.round(left)}px`;
     toast.style.right = '';
-    toast.style.top = `${Math.round(r.top)}px`;
+    toast.style.top = `${Math.round(r.top + 4)}px`;
     toast.style.bottom = '';
-    toast.style.height = `${Math.round(r.height)}px`;
-    toast.style.width = `${Math.round(navLeft - r.left - 4)}px`;
+    toast.style.height = `${Math.round(r.height - 8)}px`;
+    toast.style.width = `${Math.max(120, Math.round(navLeft - left - 6))}px`;
     toast.style.maxWidth = '';
     return placeBubble();
   }
@@ -1543,6 +1647,56 @@ function fitPickers(): void {
   }
   // (Round 5: no picker keeps a reserved width. They are anchored at the right, so a change of one moves only the
   // controls at its left, and only as the result of that choice; the header keeps room for the file name at 1280px.)
+  syncShellPicker();
+  fitScope();
+}
+
+/** Round 6: the Shell picker is a list like Type's (web/picker.ts), over the select the panel bridge fills. */
+const shellPickButton = document.getElementById('shell-pick');
+const shellPickList = document.getElementById('shell-list');
+const shellPicker = shellPickButton instanceof HTMLButtonElement && shellPickList
+  ? new Picker(shellPickButton, shellPickList, (v) => {
+    const select = document.getElementById('shell-top') as HTMLSelectElement | null;
+    if (!select) return;
+    select.value = v;
+    select.dispatchEvent(new Event('change'));
+  })
+  : undefined;
+let shellPickerKey = '';
+function syncShellPicker(): void {
+  const select = document.getElementById('shell-top') as HTMLSelectElement | null;
+  if (!shellPicker || !select) return;
+  // "Auto" with no #! line says what it resolves to, as the chip does: "Auto (bash)".
+  const name = (o: HTMLOptionElement) => (o.value === 'auto' && !/[(（]/.test(o.text) ? `${o.text}${lang === 'ja' ? '（bash）' : ' (bash)'}` : o.text);
+  const options = [...select.options].map((o) => ({ value: o.value, name: name(o), short: name(o) }));
+  const key = JSON.stringify([options, lang]);
+  if (key !== shellPickerKey) {
+    shellPickerKey = key;
+    shellPicker.set(options, select.value, CHROME[lang].shell);
+  } else {
+    shellPicker.show(select.value);
+  }
+}
+
+/**
+ * Round 6: the editor header shows the Type and Shell pickers when they fit with the file name, and the chip when they
+ * do not: measured, in every language (no width threshold per language). A stacked layout always has the chip.
+ */
+function fitScope(): void {
+  const head = document.getElementById('ed-head');
+  if (!head || mode.compare || mode.panel) return showScope();
+  head.classList.remove('use-chip');
+  if (!narrow.matches) {
+    const name = document.getElementById('file-name');
+    const nameButton = document.getElementById('file-name-btn');
+    // The name is cut although it has not reached its own largest width, or the header overflows.
+    const maxName = nameButton ? parseFloat(getComputedStyle(nameButton).maxWidth) || Infinity : Infinity;
+    const nameCut = !!name && !!nameButton && !nameButton.hidden && name.scrollWidth > name.clientWidth + 1 && nameButton.getBoundingClientRect().width < maxName - 1;
+    const spacer = head.querySelector<HTMLElement>('.spacer');
+    const over = head.scrollWidth > head.clientWidth + 1 || nameCut || (spacer !== null && spacer.getBoundingClientRect().width < 4 && nameCut);
+    head.classList.toggle('use-chip', over);
+  }
+  showScope();
 }
 window.addEventListener('resize', fitPickers);
 for (const id of ['shell-top', 'yq-top']) on(id, 'change', () => queueMicrotask(fitPickers));
@@ -1593,7 +1747,8 @@ function markSheet(): void {
   const col = document.getElementById('panel-col');
   // (At peek the sheet is a glance: the explanation alone, under the tabs; the view row comes at half and full.)
   const lead = col?.dataset.tab === 'explain' && !col.classList.contains('blank') && snap !== 'peek';
-  panel.markSheet(snap !== 'full', !!lead);
+  // Round 6: the same order at half and full: the line box (one compact row), then the view row; at peek neither.
+  panel.markSheet(snap === 'peek', !!lead);
   followFrameScroll();
 }
 /** The view row follows the frame's scroll: it moves up as the explanation does, and comes back at the top. */
@@ -1603,7 +1758,12 @@ function followFrameScroll(): void {
   if (!w || !row) return;
   const place = () => {
     const y = narrow.matches ? Math.min(w.scrollY, row.offsetHeight) : 0;
+    // Round 6: the row sits under the frame's line box (sticky at the frame's top) and slides away under it.
+    const top = w.document.getElementById('top');
+    const above = narrow.matches && top && w.getComputedStyle(top).display !== 'none' ? top.offsetHeight : 0;
+    row.style.marginTop = above ? `${above}px` : '';
     row.style.transform = y ? `translateY(${-y}px)` : '';
+    row.style.clipPath = y ? `inset(${y}px 0 0 0)` : '';
   };
   if (w !== scrollWatched) {
     scrollWatched = w;
@@ -1641,6 +1801,8 @@ function fitTabs(): void {
   bar?.classList.add('fit-test');
   for (const fit of ['wide', 'snug', 'icons']) {
     tabs.dataset.fit = fit;
+    // Round 6: "Script ⌄" keeps its word at `wide` and `snug`, and is its icon alone at `icons`.
+    if (bar) bar.dataset.fit = fit;
     if (fits()) break;
   }
   bar?.classList.remove('fit-test');
@@ -1721,6 +1883,22 @@ if (withFiles) {
   frame?.addEventListener('load', () => frame.contentWindow?.addEventListener('keydown', shortcutsKey));
   if (frame?.contentDocument?.readyState === 'complete') frame.contentWindow?.addEventListener('keydown', shortcutsKey);
 }
+
+// ---- Round 6 (proto/chrome-6) ------------------------------------------------------------------------------------
+
+// ⋯ has useful items before Load the sample and Clear: Rename… (the header's name turns into a field) and Copy the script.
+on('more-rename', 'click', () => setTimeout(() => {
+  const button = document.getElementById('file-name-btn');
+  if (button && button.offsetParent !== null) button.click();
+  else {
+    openMenu();
+    document.getElementById('menu-file')?.click();
+  }
+}, 0));
+on('more-copy-script', 'click', () => document.getElementById('copy-script')?.click());
+
+// The empty panel (desktop): a one-line preview of what it will show, and "Try the sample".
+panel.onEmpty = () => ({ preview: CHROME[lang].emptyPreview, link: CHROME[lang].trySample, run: () => loadSample(ownText()) });
 
 // ---- Start ----------------------------------------------------------------------------------
 
