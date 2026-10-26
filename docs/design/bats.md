@@ -21,7 +21,7 @@ The host kind does what bats does (rewrite, then run bash), so the semantic mode
 
 ## What is done
 
-The host kind came in #202; bats' functions became spec effects in #222 (refactor 2.1).
+The host kind came in #202; bats' functions became spec effects in #222 (refactor 2.1); the model per test and the hooks came in #381.
 
 - Detection: the `.bats` extension, the language id `bats` (from a bats extension for VS Code), or a `bats` shebang. A `.bats` file opened as a shell script is still a bats file.
 - The extractor, and the explanation of the `@test` line: the test as written, the function bats makes of it, and a note on how bats runs it.

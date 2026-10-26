@@ -22,7 +22,7 @@ Design documents and plans for Bash Explainer. The code is the authority: when a
 
 | Document | Covers | Status |
 | --- | --- | --- |
-| [bats.md](bats.md) | bats test files as a host kind | In progress. Host kind (#202), bats functions as specs (#222), the model per test and the hooks built; bats-assert and tags not done |
+| [bats.md](bats.md) | bats test files as a host kind | In progress. Host kind (#202), bats functions as specs (#222), the model per test and the hooks (#381) built; bats-assert and tags not done |
 | [tree-view/README.md](tree-view/README.md) | The Reading view: names, colours, the eight steps, motion and anchoring | Built. Records the prototypes and the choices made |
 | [theme-colours.md](theme-colours.md) | The panel's colours from the editor theme (`bashExplainer.panel.colors`): reading the theme as VS Code does, and "themeLike", which keeps the panel's distinctions | Built |
 | [hover.md](hover.md) | What the hover explains at a position (the part, a line card, the whole line), its views without tree glyphs, the Language Server's hover, and the web page's cards | Built (#317; the web page: #359) |
