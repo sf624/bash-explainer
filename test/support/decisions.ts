@@ -214,7 +214,7 @@ class Generator {
   private stmt(inLoop: number, inFn: boolean): string {
     const body = (): string => this.block(inLoop, inFn);
     const loopBody = (): string => this.block(inLoop + 1, inFn);
-    switch (Math.floor(this.r() * (this.depth > 3 ? 8 : 35))) {
+    switch (Math.floor(this.r() * (this.depth > 3 ? 8 : 39))) {
       case 0: case 1: case 2: return this.assign();
       case 3: case 4: return this.otherWrite();
       case 5: return this.cond();
@@ -283,6 +283,27 @@ class Generator {
         if (!this.fns.includes('rc')) this.fns.push('rc');
         return `⟦D⟧rc() { if [ "$d" = 1 ]; then d=2; rc; ${this.pick(['return', ':', `${this.test()} && return`])}; fi; ${this.block(0, true)}; }⟦E⟧; d=1; rc`;
       }
+      // Redirections that may fail (a file not there, a directory, a descriptor the script closed), with `set -e` or not.
+      case 34: if (!this.chance(0.5)) return this.mark();
+        return `{ ${body()}; } ${this.pick(['> out.txt', '> ./no/dir', '< ./nofile', '2>&1', '>&2', '<&0', '>&- 2>&1', '2>&1 >&-'])}`;
+      // (The standard descriptors, closed and copied: `exec 1>&-` makes a later `2>&1` fail. Reopened from /dev/null.)
+      // (Then a copy of one, and a condition that reads what the group assigns.)
+      case 35: if (!this.chance(0.3)) return this.mark();
+        return `${this.pick(['exec 4>&1 1>&-', 'exec 1>&-', 'exec 2>&-', 'exec 0<&-', 'exec 1>&2-', 'exec 1>/dev/null 2>/dev/null 0</dev/null',
+          `${this.fns.length ? this.pick(this.fns) : this.mark()} >&-`, `${this.assign()} 2>&1`])}; { v=fd; } ${this.pick(['2>&1', '>&2', '1<&0'])}; ${this.list('[ "$v" = fd ]', '&&', this.mark())}`;
+      // Copies of IFS through `for`, an array or `$(( ))`, and a word of `[` that IFS may split into `-v` and a subscript
+      // that assigns.
+      case 36: {
+        if (!this.chance(0.25)) return this.mark();
+        const v = this.pick(this.plain);
+        return `${this.pick(['s=( 0 ); IFS=$s', 'for s in 0 :; do :; done; IFS=$s', 's=$((0)); IFS=$s', 'IFS=$((0))', 'for IFS in 0; do :; done', 's=$IFS; IFS=:; IFS=$s',
+          'unset IFS; s=$IFS; IFS=v; IFS=$s', 'IFS=v; IFS=:'])}; t=${this.pick(["'-v0'", "'-v:'", "'-va'", 'a'])}; [ $t 'a[${v}=e]' ] 2>/dev/null; ${this.list(`[ "$${v}" = e ]`, '&&', this.mark())}`;
+      }
+      // Values arithmetic runs, from the environment (`q='w=7'`, `HOME='w=8'`: `runBash`): through an element of an array, or a tilde.
+      // (Then a condition that reads `w`.)
+      case 37: if (!this.chance(0.3)) return this.mark();
+        return `w=0; ${this.pick(['a=(0); a[0]=$q; q=0; (( a[0] ))', 'a=("$q"); q=0; (( a[0] ))', 'a=(); a+=("$q"); q=0; (( a ))', 'declare -a a=([0]="$q"); q=0; (( a[0] ))',
+          'm=~; (( m ))', 'm=~; : "${arr[m]}"', 'm=(~); (( m ))', 'HOME=0; m=~; (( m ))', 'a=(1); a[0]=2; (( a[0] ))'])}; ${this.list('[ "$w" = 0 ]', '&&', this.mark())}`;
       default: return this.mark();
     }
   }
@@ -313,6 +334,8 @@ class Generator {
       lib = this.pick(['mode=zz', 'set -f', 'f() { mode=q; }', 'flag=1']);
       lines.push('. ./lib.sh');
     } else if (rare < 0.05) lines.push(this.pick(['cmd=f; $cmd', '$cmd', 'export -f f 2>/dev/null', 'trap "mode=3" USR1', 'complete -F f c 2>/dev/null', 'set -a']));
+    // (Callbacks that run code in this shell: the model trusts nothing then.)
+    else if (rare < 0.07) lines.push(this.pick(["mapfile -C 'mode=c; :' -c 1 arr <<< q", "readarray -C 'flag=c; :' -c 1 arr <<< q", "jobs -x eval 'v=c'"]));
     const k = 3 + Math.floor(this.r() * 5);
     for (let i = 0; i < k; i++) lines.push(this.stmt(0, false));
     lines.push(this.mark());
@@ -380,7 +403,7 @@ export function runBash(dir: string, file: string): Promise<boolean> {
   return new Promise((resolve) => {
     // (A loop with no guard may write fast: the trace is limited to 10 MB.)
     const c = spawn('bash', ['-c', 'ulimit -f 20000; cd "$1" && exec 9>trace && BASH_XTRACEFD=9 PS4="+X " FUNCNEST=20 exec bash -x "$2" </dev/null >/dev/null 2>&1', 'x', dir, file],
-      { detached: true, stdio: 'ignore', env: { PATH: process.env.PATH, HOME: process.env.HOME, LC_ALL: 'C' } });
+      { detached: true, stdio: 'ignore', env: { PATH: process.env.PATH, HOME: 'w=8', q: 'w=7', LC_ALL: 'C' } });
     const stop = (): void => {
       try {
         process.kill(-c.pid!, 'SIGKILL');
