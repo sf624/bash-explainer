@@ -57,6 +57,62 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     assert.strictEqual(decided(`${body}; shopt -s expand_aliases; alias 'g/h=f'; eval f`), 'true');
   });
 
+  it('takes a command whose redirection may fail as one that may not run (docs/design/trust-allow-list.md, step 3)', () => {
+    // bash runs no command after a redirection that fails: the group, the declaration, the function.
+    const after = (src: string): string => bash(`${src} 2>/dev/null; if [ "$x" = 2 ]; then echo two; else echo other; fi`);
+    for (const src of ['x=1; { x=2; } < ./nofile', 'x=1; declare x=2 < ./nofile', 'f() { x=2; }; x=1; f > ./no/such/dir', 'f() { x=2; } 2>&9; x=1; f', 'x=1; { x=2; } >&"$fd"', 'x=1; { x=2; } > >g']) {
+      if (!src.includes('$fd') && !src.includes('>g')) assert.strictEqual(after(src), 'other\n', src);
+      assert.strictEqual(decided(`${src}; [ "$x" = 2 ] && :`), undefined, src);
+    }
+    // A here-document, a here-string, /dev/null, a copy of fd 0, 1 or 2, closing a descriptor, and assignments alone.
+    for (const src of ['x=1; { x=2; } <<< a', 'x=1; { x=2; } > /dev/null 2>&1', 'x=1; { x=2; } <&0 >&2 3>&-', 'x=1; x=2 < ./nofile', 'x=1; { x=2; } < <(echo a)']) {
+      assert.strictEqual(after(src), 'two\n', src);
+      assert.strictEqual(decided(`${src}; [ "$x" = 2 ] && :`), 'true', src);
+    }
+  });
+
+  it('follows the patterns after `;;&` in the state the list before them leaves (step 3)', () => {
+    // bash tests `"$x"` after `x=c`: `*)` runs.
+    const src = 'x=b; case b in b) x=c ;;& "$x") y=1 ;; *) y=2 ;; esac';
+    assert.strictEqual(bash(`${src}; echo $y`), '2\n');
+    assert.strictEqual(shellState(parser.parse(src)).condition(descendants(parser.parse(src).root, ['case_statement'])[0]), undefined);
+    // Static patterns after lists that change no option: decided as before.
+    const fixed = 'case a in a) echo 1 ;;& b) echo 2 ;; *) echo 3 ;; esac';
+    assert.strictEqual(bash(fixed), '1\n3\n');
+    const tree = parser.parse(fixed);
+    assert.strictEqual(shellState(tree).condition(descendants(tree.root, ['case_statement'])[0])?.outcome, '0,2');
+    // (Not after a list that may turn on nocasematch.)
+    const nocase = 'case a in a) shopt -s nocasematch ;;& A) echo 2 ;; esac';
+    assert.strictEqual(bash(nocase), '2\n');
+    assert.strictEqual(shellState(parser.parse(nocase)).condition(descendants(parser.parse(nocase).root, ['case_statement'])[0]), undefined);
+    // (A pattern after `;;&` that assigns, `${p:=b}`, is expanded after the list before it.)
+    const assigns = 'case b in b) p= ;;& ${p:=b}) y=1 ;; esac';
+    assert.strictEqual(bash(`${assigns}; echo "$p $y"`), 'b 1\n');
+    assert.strictEqual(shellState(parser.parse(assigns)).condition(descendants(parser.parse(assigns).root, ['case_statement'])[0]), undefined);
+  });
+
+  it('takes a copy of a nameref whose target is not known as a value the script may not have written (step 3)', () => {
+    assert.strictEqual(shellState(parser.parse('v=a; declare -n r="$v"; y=$r')).blind, 'a nameref whose target is not known is read');
+  });
+
+  it('takes arithmetic of lengths alone as one that cannot fail, so that what it assigns is set on every path (step 3)', () => {
+    // (A value that may not be set, from an error that ends the line, may be the environment's: arithmetic of it trusts nothing.)
+    const blind = (e: string): string | undefined => shellState(parser.parse(`a=(1 2); n=3; y=${e}\n(( y ))`)).blind;
+    assert.strictEqual(blind('$(( ${#a[@]} * 2 ))'), undefined);
+    for (const e of ['$(( ${#a[@]} / 2 ))', '$(( ${#a[@]} * n ))', '$(( RANDOM * 2 ))']) assert.strictEqual(blind(e), 'arithmetic reads `y`, which the script may not have set', e);
+    assert.strictEqual(bash('a=(1 2); y=$(( ${#a[@]} * 2 )); echo $y'), '4\n');
+  });
+
+  it('follows copies of IFS, `save=$IFS; IFS=:; …; IFS=$save`, when the copy is set where IFS takes it (step 3)', () => {
+    const copy = 's=$IFS; IFS=:; x=a; IFS=$s';
+    assert.strictEqual(bash(`u=1; ${copy}; [ $x = a ] && echo $u`), '1\n');
+    assert.strictEqual(decided(`u=1; ${copy}; [ $x = a ]; [ "$u" = 1 ] && :`), 'true');
+    // (A copy of a variable set on some paths only, or later, may be a value of the environment.)
+    for (const src of ['f() { s=$IFS; }; [ "$z" ] && f; IFS=$s', 'IFS=$s; s=:', 'IFS=$s', 's=:; IFS="$s$s"']) assert.strictEqual(decided(`u=1; ${src}; x=a; [ $x = a ]; [ "$u" = 1 ] && :`), undefined, src);
+    // (bash ignores an IFS in the environment.)
+    assert.strictEqual(spawnSync('bash', ['-c', 'printf %q "$IFS"'], { env: { PATH: '/usr/bin:/bin', IFS: '9' }, encoding: 'utf8' }).stdout, "$' \\t\\n'");
+  });
+
   it('takes a function defined after `shopt -so allexport` as exported, as after `set -a`', () => {
     // (bash exports it: another bash sees it. Before the allow-list, the scan read `set -a` but not `shopt -so`.)
     assert.strictEqual(bash("shopt -so allexport; f() { :; }; bash -c 'declare -F f'"), 'f\n');
@@ -168,6 +224,10 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
       // `mapfile -C` (and `readarray -C`) runs its text in this shell; `jobs -x` its command.
       ["mapfile -C 'u=2; :' -c 1 arr <<< q", 'mapfile -C'], ["readarray -C 'u=2; :' -c 1 arr <<< q", 'readarray -C'], ['f() { u=2; }; mapfile -C f -c 1 arr <<< q', 'mapfile -C f'],
       ['jobs -x eval u=2', 'jobs -x'],
+      // The walk: arithmetic reads a value the script may not have written there, on some path or through a copy
+      // (docs/design/trust-allow-list.md, section 2, "Arithmetic").
+      ['[ -n "$z" ] && n=0; (( n ))', 'n set on some paths'], ['n="$n"; (( n ))', 'n="$n"'], [': "${n:=0}"; (( n ))', '${n:=0}'],
+      ["n+=''; (( n ))", 'n+='], ['a="$n"; n=0; (( a ))', 'a="$n"; n=0'], ['export n; (( n ))', 'export n'],
     ];
     for (const [src, what] of changes) {
       assert.strictEqual(inherited(`u=1; ${src}\necho "$u"`), '2', what);

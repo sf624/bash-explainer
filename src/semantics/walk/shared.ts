@@ -1,8 +1,10 @@
 // What the parts of the walk of the shell state share (src/semantics/walk/walker.ts): the errors that stop a part of
-// it, where jumps go, and the parser of the texts it reads (aliases, arithmetic).
+// it, where jumps go, the frames of the functions it runs, what reaches another shell, and the parser of the texts it
+// reads (aliases, arithmetic).
 import { createUnbashParser } from '../../syntax/adapters/unbash';
 import type { BashParser, SyntaxNode } from '../../syntax/tree';
-import type { ShellState } from '../shellstate';
+import { evalArithWrapping } from '../../arith';
+import type { NameMap, OptionState, ShellState, VariableState } from '../shellstate';
 
 export const NAME = /^[A-Za-z_]\w*$/;
 
@@ -42,5 +44,62 @@ export interface Operand {
   node: SyntaxNode;
   name: string;
   subscript: boolean;
-  assign?: { append: boolean; text: string | undefined; array: boolean; source?: SyntaxNode };
+  assign?: { append: boolean; text: string | undefined; array: boolean; source?: SyntaxNode; kept?: boolean };
+}
+
+/** A function being run: the outer values of its locals (restored when it returns), and its set options with `local -`. */
+export interface Frame { def: SyntaxNode; saved: Map<string, VariableState | undefined>; options?: NameMap<OptionState> }
+
+/**
+ * Where `break`, `continue`, `return` and `exit` go (innermost last): a loop, a function body, the script; a
+ * subshell ends them (`maybe`: a pipeline's last stage that may run in the shell or in a subshell). `dead` is the
+ * depth of dead code where it was entered: a jump from deeper dead code is not collected.
+ */
+export type Target =
+  | { kind: 'loop'; dead: number; breaks: ShellState[]; continues: ShellState[] }
+  | { kind: 'function'; dead: number; returns: ShellState[] }
+  | { kind: 'program'; dead: number; exits: ShellState[] }
+  /**
+   * A line of top-level statements, or of a string `eval` or a trap runs: an expansion error discards the rest of it
+   * (`aborts`, see `abort`); one that may happen (`maybes`) may discard it, or the rest of a line around it.
+   */
+  | { kind: 'unit'; dead: number; aborts: ShellState[]; maybes: ShellState[] }
+  | { kind: 'subshell' | 'maybe' }
+  /**
+   * A trap's action (`exitOnly`: of EXIT alone): a signal may run it between any two statements, so an error that may
+   * end the line around it, or a `return`, `break` or `continue` it does not hold, may leave any of them (see `escape`).
+   */
+  | { kind: 'trap'; exitOnly: boolean };
+
+/** What the slots on the way give another shell besides the script's exported names (`childModel`). */
+export interface ChildPass {
+  readonly given: readonly string[];
+  readonly removed: ReadonlySet<string>;
+  readonly invocation: readonly { readonly flag: string; readonly value?: string }[];
+}
+
+export const passedMemo = new WeakMap<object, ReadonlyMap<string, VariableState>>();
+/**
+ * What of a variable of the script reaches another shell (`Walker.childStart`): undefined when it does not (not
+ * exported, unset, an array, or IFS, which a shell sets itself when it starts). Kept per bucket of the script's
+ * variables, which the states along the script share, so that many strings cost little (`NameMap.mapped`).
+ */
+export function passed(name: string, v: VariableState): VariableState | undefined {
+  const x = v.attrs.x?.state ?? 'off';
+  const array = ['a', 'A'].map((l) => v.attrs[l]?.state ?? 'off');
+  if (x === 'off' || v.set === 'off' || array.includes('on') || name === 'IFS') return undefined;
+  return x === 'on' && v.set === 'on' && !array.includes('unknown')
+    ? { declared: 'on', set: 'on', attrs: { x: v.attrs.x! }, ...(v.value !== undefined ? { value: v.value } : {}), at: v.at }
+    : { declared: 'unknown', set: 'unknown', attrs: { x: { state: 'unknown', at: v.attrs.x!.at } }, at: v.at };
+}
+
+/**
+ * Whether the arithmetic expansion `e` cannot fail, though its value is not known: a length (`${#x}`, `${#a[@]}`) is
+ * always a number, and with each taken as 1 the expression is a constant that has no `/`, `%` or `**` (`$(( ${#a[@]} * 2 ))`).
+ */
+export function numberOfLengths(e: SyntaxNode): boolean {
+  const text = e.text.replace(/^\$\(\(|\)\)$/g, '');
+  if (/[/%]|\*\*/.test(text)) return false;
+  const ones = text.replace(/\$\{#[A-Za-z_]\w*(?:\[[@*]\])?\}/g, '1');
+  return ones !== text && evalArithWrapping(ones) !== undefined;
 }

@@ -1,6 +1,6 @@
 # Trust as a strict allow-list
 
-Status: in progress (2026-10-26): steps 1 and 2 done (section 6). Values in Meaning, decided conditions and dead code rest on the trust of src/semantics/trust.ts ([semantics.md](semantics.md), 4.14; [expansion-values.md](expansion-values.md), 3). This page proposes to turn its default around. Today a construct the scan does not recognise is taken to change nothing. With this plan, every construct is looked up in a table, and a construct that is not in the table changes anything. A new hole then gives no value, instead of a wrong one.
+Status: in progress (2026-10-26): steps 1 to 3 done (section 6); step 4 waits on the maintainer. Values in Meaning, decided conditions and dead code rest on the trust of src/semantics/trust.ts ([semantics.md](semantics.md), 4.14; [expansion-values.md](expansion-values.md), 3). This page proposes to turn its default around. Today a construct the scan does not recognise is taken to change nothing. With this plan, every construct is looked up in a table, and a construct that is not in the table changes anything. A new hole then gives no value, instead of a wrong one.
 
 ## 1. The failure pattern
 
@@ -228,7 +228,7 @@ Each step keeps every test passing.
 | --- | --- |
 | 1. The specs | Done (2026-10-26) |
 | 2. The table, with today's behaviour | Done (2026-10-26) |
-| 3. The walk | Not started |
+| 3. The walk | Done (2026-10-26) |
 | 4. The default flips | Not started (the maintainer decides when) |
 | 5. Docs | Not started |
 
@@ -243,6 +243,21 @@ Each step keeps every test passing.
 
    The review of steps 1 to 3 added rows for options (`BuiltinRow.options`, `all` today): `jobs -x`, `mapfile -C` and `readarray -C`, and `ulimit -n` and `-u`. The specs now type `mapfile -C` as code this shell runs (it was a function's name: bash runs any text there, `mapfile -C 'x=2; :'`), and `compgen -C` and `complete -C` as code a subshell runs. test/allow-list.test.ts checks every callback of a builtin against bash (where it runs: this shell, a subshell, or only in an interactive shell, as `complete`, `bind -x` and `PROMPT_COMMAND`), and that each row names its checks precisely: a probe row by its `id`, a test by its exact title, a construct of the generator by its name in `GENERATED`.
 3. **The walk.** Redirections that may fail make their command "may not run"; the patterns after `;&` and `;;&` are expanded in the state after the list before them; a name read as arithmetic must have a value known on every path there (`Walker.found` otherwise). Each with probe rows. Measure the corpus and the real scripts: the redirection rule may cost values after `{ …; } > "$log"`. Users see fewer wrong values and dead marks (CHANGELOG "Fixed").
+
+   Done, with copies of IFS. Each change was measured on the corpus (1,517 inputs at this step), the 802 real scripts and 1,000 generated scripts (the counter of section 4 and the model's decisions on `scripts(1, 1000)`), against step 2:
+
+   | Change | Corpus: values (files), decisions, dead, blind | Real: values (files), blind | Generated: blind, decisions, dead, values |
+   | --- | --- | --- | --- |
+   | Step 2 | 32 (13), 26, 9, 159 | 69 (16), 668 | 631, 623, 1,702, 801 |
+   | Redirections that may fail | the same | the same | the same |
+   | Patterns after `;;&` | the same | the same | 632, 618, 1,662, 804 |
+   | Arithmetic: values known on every path | the same | the same | the same |
+   | Copies of IFS | the same | 145 (18), 665 | the same |
+
+   - *Redirections.* `redirectionMayFail` (src/semantics/walk/conditions.ts): every file redirection but `safeRedirect`'s, a copy of fd 0, 1 or 2, closing a descriptor, and one from or to a process substitution. The walk merges the state after the redirections with the state after the command (`Walker.mayNotRun`), for a simple command and a compound one (a function defined with a redirection gets it at each call). It cost nothing measured: the redirections in the corpus that may fail are on programs, or in subshells and pipelines. One state probe (`declare n=… > f$(( m++ ))`) and one test (`{ set -f; } > out`) now say "may"; the probe lists it in `gaps`.
+   - *`case`.* The decision (`WalkConditions.caseRuns`) is not made when testing goes on past `;;&` to patterns that are not static text, or after a list that may change an option a pattern reads (`shopt`, `eval`, `source`, a function, an alias). The walk expands the patterns after a `;;&` list in the state that list leaves. On the generated scripts this costs 5 decisions and 40 dead statements, in scripts whose patterns read `$mode` or `$flag` after a list that writes them; one more script walks again with nothing trusted. The differential check finds no contradiction on the 1,000 scripts, before and after.
+   - *Arithmetic.* `VariableState.kept` marks a value the script may not have written there: a variable absent on one path of a merge (the environment's), or made of such a value (`n="$n"`, `a="$b"` while `b` is unset, `n+=x`, `${n:=w}` of an unset `n`, `export n`, `declare n`). `Walker.unsetRead`, which ran arithmetic again with nothing trusted only for a name no path had set, now also does so for a `kept` one. IFS is never `kept`: bash ignores an IFS in the environment. One fix came with it: `$(( ${#a[@]} * 2 ))` no longer "may fail" (a length is a number), which kept the web page's sample from trusting nothing.
+   - *Copies of IFS.* The check of the words of `test` that may split (`testSplits`, now in src/semantics/testwords.ts) follows a value of IFS that copies a variable whose values are text the script wrote or copies of IFS (which starts as space, tab and newline). The walk checks, at each such copy (`Trust.copied`), that the variable is set there on every path and not `kept`. This wins back the 76 values of `ncurses6-config` and `ncursesw6-config` that #387 lost, and `update-shells` no longer trusts nothing.
 4. **The default flips.** A missing row is `all`, and the rows marked "new" take their effect: the options (also from the shebang), the variables of bash (also those given to another shell), `jobs -x`, `{a[i]}>`, `${x@P}` with `+=`, `error` nodes. Each with its probe rows and the generator's "unknown construct" statements. Users see fewer wrong values and dead marks (CHANGELOG "Fixed": one bullet, the details in docs/changes).
 5. **Docs**: [semantics.md](semantics.md) 4.14 ("What decisions trust": the table replaces the lists), [expansion-values.md](expansion-values.md) section 3, README's Limitations (the assumptions about the start: those of [trust-per-position.md](trust-per-position.md) section 2, `BASH_COMPAT`, `POSIXLY_CORRECT`, `FUNCNEST`, `BASHOPTS` and the locale from the environment, and how the script is started: `bash -k script`, `sh script`), the roadmap and this page's status.
 

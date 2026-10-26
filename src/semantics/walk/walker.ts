@@ -21,11 +21,13 @@ import { WalkAliases } from './aliases';
 import { WalkArith } from './arith';
 import { temporariesUnset } from '../names';
 import { WalkBuiltins } from './builtins';
-import { WalkConditions } from './conditions';
+import { redirectionMayFail, WalkConditions } from './conditions';
 import { kept, temporaries } from './temporaries';
 import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
-import { ArithError, ExpansionError, NAME, OPAQUE, SUBSTITUTIONS, WalkAgain } from './shared';
+import { ArithError, type ChildPass, ExpansionError, type Frame, NAME, numberOfLengths, OPAQUE, passed, passedMemo, SUBSTITUTIONS, type Target, WalkAgain } from './shared';
+
+export type { ChildPass, Frame, Target } from './shared';
 
 /** The shells that start in POSIX mode (for what the model follows: assignments before special builtins). */
 const POSIX_SHELLS = new Set<Shell>(['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh']);
@@ -40,56 +42,10 @@ const rootOf = (n: SyntaxNode): SyntaxNode => {
   return r;
 };
 
-/** A function being run: the outer values of its locals (restored when it returns), and its set options with `local -`. */
-export interface Frame { def: SyntaxNode; saved: Map<string, VariableState | undefined>; options?: NameMap<OptionState> }
-
-/**
- * Where `break`, `continue`, `return` and `exit` go (innermost last): a loop, a function body, the script; a
- * subshell ends them (`maybe`: a pipeline's last stage that may run in the shell or in a subshell). `dead` is the
- * depth of dead code where it was entered: a jump from deeper dead code is not collected.
- */
-export type Target =
-  | { kind: 'loop'; dead: number; breaks: ShellState[]; continues: ShellState[] }
-  | { kind: 'function'; dead: number; returns: ShellState[] }
-  | { kind: 'program'; dead: number; exits: ShellState[] }
-  /**
-   * A line of top-level statements, or of a string `eval` or a trap runs: an expansion error discards the rest of it
-   * (`aborts`, see `abort`); one that may happen (`maybes`) may discard it, or the rest of a line around it.
-   */
-  | { kind: 'unit'; dead: number; aborts: ShellState[]; maybes: ShellState[] }
-  | { kind: 'subshell' | 'maybe' }
-  /**
-   * A trap's action (`exitOnly`: of EXIT alone): a signal may run it between any two statements, so an error that may
-   * end the line around it, or a `return`, `break` or `continue` it does not hold, may leave any of them (see `escape`).
-   */
-  | { kind: 'trap'; exitOnly: boolean };
-
 /** How many times a function body is walked with different states before the rest of its calls are guessed. */
 const WALKS_PER_FUNCTION = 4;
 /** How deep calls are followed (deeper ones are guessed). */
 const CALL_DEPTH = 64;
-
-/** What the slots on the way give another shell besides the script's exported names (`childModel`). */
-export interface ChildPass {
-  readonly given: readonly string[];
-  readonly removed: ReadonlySet<string>;
-  readonly invocation: readonly { readonly flag: string; readonly value?: string }[];
-}
-
-const passedMemo = new WeakMap<object, ReadonlyMap<string, VariableState>>();
-/**
- * What of a variable of the script reaches another shell (`Walker.childStart`): undefined when it does not (not
- * exported, unset, an array, or IFS, which a shell sets itself when it starts). Kept per bucket of the script's
- * variables, which the states along the script share, so that many strings cost little (`NameMap.mapped`).
- */
-function passed(name: string, v: VariableState): VariableState | undefined {
-  const x = v.attrs.x?.state ?? 'off';
-  const array = ['a', 'A'].map((l) => v.attrs[l]?.state ?? 'off');
-  if (x === 'off' || v.set === 'off' || array.includes('on') || name === 'IFS') return undefined;
-  return x === 'on' && v.set === 'on' && !array.includes('unknown')
-    ? { declared: 'on', set: 'on', attrs: { x: v.attrs.x! }, ...(v.value !== undefined ? { value: v.value } : {}), at: v.at }
-    : { declared: 'unknown', set: 'unknown', attrs: { x: { state: 'unknown', at: v.attrs.x!.at } }, at: v.at };
-}
 
 /**
  * Whether the assignment before a command name makes a variable for it: not one to an element (`n[0]=5 f`), which
@@ -664,6 +620,8 @@ export class Walker {
     // associative here, else it is arithmetic too. One that may fail may discard the rest of the line: see `abort`.
     // The trust scan read the trees of the strings and of the aliases the walk runs too: `StringTrees`.)
     for (const name of this.trust.arithNames(n) ?? []) this.unsetRead(st, name);
+    // (A copy into IFS that the trust follows: `IFS=$save`.)
+    for (const name of this.trust.copied(n) ?? []) this.unsetRead(st, name, 'IFS is copied from');
     if (this.trust.mayFail(n)) this.abort(st, false);
     for (const name of this.trust.associative(n) ?? []) {
       if (!this.mode.dead && !this.blind && attribute(st, name, 'A') !== 'on') this.walkAgain(`\`${name}\` may not be associative where its subscript is read`);
@@ -723,7 +681,7 @@ export class Walker {
         for (const r of redirs) this.substitutions(r, st);
         // (A subshell makes them in its own process: `( : ) > $(( n = 3 ))` leaves n.)
         st = this.fdVariables(redirs, this.expandAll(redirs, st, field(n, 'body')!.type === 'subshell' ? 'on' : 'off'));
-        return this.sequence(n.children.filter((c) => c.field !== 'redirect'), st);
+        return this.mayNotRun(redirs, st, this.sequence(n.children.filter((c) => c.field !== 'redirect'), st));
       }
       case 'subshell':
         return this.sequence(n.children, st);
@@ -782,6 +740,14 @@ export class Walker {
         const tested: ShellState[] = [];
         let fallen: ShellState | undefined;
         for (const item of items) {
+          // (After a list that ends with `;;&`, bash tests the patterns in the state it leaves: they are expanded there too.)
+          if (tested.length) {
+            const at = merge([st, ...tested], this.posix);
+            for (const v of fields(item, 'value')) {
+              const after = this.defaults(v, at, 'unknown');
+              if (after !== at) st = merge([st, after], this.posix);
+            }
+          }
           const from = [...tested, ...(fallen ? [fallen] : [])];
           const end = this.sequence(item.children, from.length ? merge([st, ...from], this.posix) : st);
           ends.push(end);
@@ -903,7 +869,7 @@ export class Walker {
           const r = this.arith.arithScript(e.namedChildren, st);
           after = r.st;
           // (A value not known may come from an error: a division by 0, text that is no expression.)
-          if (r.value === undefined || this.arith.unsure) this.abort(st, false);
+          if ((r.value === undefined || this.arith.unsure) && !numberOfLengths(e)) this.abort(st, false);
         } catch (err) {
           /* c8 ignore next -- only an arithmetic error is thrown on purpose */
           if (!(err instanceof ArithError)) throw err;
@@ -941,7 +907,10 @@ export class Walker {
   /** `${x:=word}` sets `x`. */
   private defaultOf(e: SyntaxNode, st: ShellState): ShellState {
     const name = e.namedChildren[0];
-    return e.children.some((c) => c.type === ':=' || c.type === '=') && name?.type === 'variable_name' ? this.builtins.setVariable(st, name.text, e, undefined) : st;
+    if (!e.children.some((c) => c.type === ':=' || c.type === '=') || name?.type !== 'variable_name') return st;
+    // (A variable the script has not set keeps a value from the environment.)
+    const prev = st.variables.get(name.text);
+    return this.builtins.setVariable(st, name.text, e, undefined, false, false, undefined, !prev || !!prev.kept);
   }
 
   /** `defaults` of each of `nodes`, in turn. */
@@ -996,10 +965,12 @@ export class Walker {
    * Arithmetic reads `name` from `st`: when no path has set it (nor bash: `RANDOM`…), its value may come from the
    * environment, as text bash runs as an expression, which may assign any variable: nothing is trusted (see `found`).
    */
-  unsetRead(st: ShellState, name: string): void {
+  unsetRead(st: ShellState, name: string, what = 'arithmetic reads'): void {
     if (this.mode.dead || this.blind) return;
     const target = this.builtins.resolve(st, name) ?? name;
-    if (!st.variables.get(target) && !alwaysNumeric(target)) this.walkAgain(`arithmetic reads \`${target}\`, which the script may not have set`);
+    // (Also one set on some paths only, or to a value made of one the script may not have written.)
+    const v = st.variables.get(target);
+    if ((!v || v.kept) && !alwaysNumeric(target)) this.walkAgain(`${what} \`${target}\`, which the script may not have set`);
   }
 
   /**
@@ -1389,6 +1360,7 @@ export class Walker {
     st = this.expandAll(n.namedChildren.filter((c) => !assignments.includes(c) && c.field !== 'redirect'), st);
     const temps = temporaries(this, assignments, st);
     st = this.redirections(n, this.expandAll(assignments, st), this.builtins.runsProgram(n, st));
+    const unrun = st;
     // A prefix assignment to PATH empties the table of remembered paths too.
     if (assignments.some((a) => field(a, 'name')!.text === 'PATH')) st = this.builtins.forgetHashed(st);
     const expanded = this.aliases.expand(n, st);
@@ -1407,11 +1379,19 @@ export class Walker {
     const fn = this.functionCalled(name, st);
     // (`declare() { …; }; declare b=(1 2)`: bash assigns the array, and passes the name.)
     const called = fn && withStatus(this.call(fn, this.builtins.markedArrays(name, fields(n, 'argument'), n, st), assignments), undefined);
-    if (called && fn.state === 'on') return called;
+    if (called && fn.state === 'on') return this.mayNotRun(redirectionsOf(n), unrun, called);
     if (!special) st = this.builtins.appendArith(assignments, n, st);
     const ran = withStatus(kept(this, n, temps, this.builtins.builtin(name, fields(n, 'argument'), n, st, true)), this.conditions.simpleStatus(n, before));
     // (A function defined on some paths only: on the others, the builtin or the program runs.)
-    return called ? merge([called, ran], this.posix) : ran;
+    return this.mayNotRun(redirectionsOf(n), unrun, called ? merge([called, ran], this.posix) : ran);
+  }
+
+  /**
+   * What a command with the redirections `redirects` leaves: `ran`, or when one of them may fail, maybe `unrun`, the
+   * state after them, with status 1 (bash runs no command after a redirection that fails).
+   */
+  private mayNotRun(redirects: readonly SyntaxNode[], unrun: ShellState, ran: ShellState): ShellState {
+    return redirects.some(redirectionMayFail) ? merge([withStatus(unrun, 1), ran], this.posix) : ran;
   }
 
   /** The function a command named `name` calls in `st`: none when POSIX mode finds a special builtin of that name first. */

@@ -44,7 +44,7 @@ import { field, fields, substitutionForm, type SyntaxNode } from '../syntax/tree
 import { builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
 import { aliasName, aliasOf, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
-import { testWordShape } from './testwords';
+import { COPY, testSplits, testWordShape } from './testwords';
 import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, optionRoles, readDeclarationWords, writeEffect, type Declaration } from './vars';
 
 export interface Trust {
@@ -60,6 +60,11 @@ export interface Trust {
    * environment, as text bash runs).
    */
   arithNames(n: SyntaxNode): readonly string[] | undefined;
+  /**
+   * The variables whose values the statement `n` copies into IFS (`IFS=$save`), which the trust follows (see
+   * `testSplits`): each must have a value there that the script wrote.
+   */
+  copied(n: SyntaxNode): readonly string[] | undefined;
   /** The arrays whose subscripts in the statement `n` are taken as keys (the script declares them associative): each must be so there. */
   associative(n: SyntaxNode): readonly string[] | undefined;
   /**
@@ -164,6 +169,9 @@ class Scan {
    */
   private readonly testSplits: string[] = [];
   private testNumbers = false;
+  /** The assignments that copy a variable (`IFS=$save`), and the statements where those that IFS takes are checked. */
+  private readonly copies: { owner: SyntaxNode; target: string; source: string }[] = [];
+  readonly copied = new Map<SyntaxNode, Set<string>>();
   /** The variables whose values are command names (`$debug`), and whether they are quoted (not split). */
   private readonly commandVariables: { name: string; quoted: boolean }[] = [];
   /** The aliases the `alias` commands define (a name and its text), and the commands that may run one (see `aliases`). */
@@ -491,6 +499,9 @@ class Scan {
       return;
     }
     const v = this.value(value);
+    // (A copy, `save=$IFS`, `IFS=$save`: see `testSplits`.)
+    const copy = typeof v === 'object' && !subscript ? COPY.exec(v.text)?.[1] : undefined;
+    if (copy) this.copies.push({ owner: this.owner(a)!, target: name, source: copy });
     this.write(name, w, plain && !subscript, v);
     this.assigned(name, value ? value.text : '', a, w);
     if (!subscript && a.children.some((c) => c.type === '+=')) this.appended(name, a, w);
@@ -836,26 +847,14 @@ class Scan {
     // An unquoted expansion in a word of `test` or `[`: each value the script gives it must stay one word, and not be
     // `-v`, with every IFS the script sets (a number, with no IFS of digits or `-`).
     if (this.testNumbers || this.testSplits.length) {
-      const separators = (this.writes.get('IFS') ?? []).map((x) => {
-        if (x.value === 'none') return '';
-        // (An empty value is the one value with no `fixed`, but no names either.)
-        if (typeof x.value !== 'object' || !(x.value.fixed || !x.value.names.length)) this.blindFor('`-v` may test a variable name not known');
-        return x.value.text;
-      }).join('');
-      const digits = /[\d-]/.test(separators);
-      if (this.testNumbers && digits) this.blindFor('`-v` may test a variable name not known');
-      // (Text the script gives splits into words it knows, none of them `-v` unless one is: with any blank or IFS
-      // character as a separator, a word `-v` stays one. Text with numbers of `$(( ))` in it, which the value leaves
-      // out, too. Unset, the variable gives no word.)
-      const notV = (v: Value): boolean => {
-        if (v === 'none') return true;
-        if (v === 'number') return !digits;
-        if (typeof v !== 'object' || (!v.fixed && (v.names.length > 0 || digits)) || /[*?[]/.test(v.text)) return false;
-        return !v.text.split(/\s/).some((x) => [...separators].reduce((ws, c) => ws.flatMap((y) => y.split(c)), [x]).includes('-v'));
-      };
-      for (const name of this.testSplits) {
-        const writes = this.writes.get(name) ?? [];
-        if (!writes.length || writes.some((x) => !notV(x.value))) this.blindFor('`-v` may test a variable name not known');
+      const chain = testSplits((name) => (this.writes.get(name) ?? []).map((x) => x.value), this.testSplits, this.testNumbers);
+      if (!chain) this.blindFor('`-v` may test a variable name not known');
+      // (The walk checks that each copy of a value into IFS reads one the script set there: see `Trust.copied`.)
+      for (const c of this.copies) {
+        if (!chain.has(c.target) || c.source === 'IFS') continue;
+        const set = this.copied.get(c.owner) ?? new Set<string>();
+        set.add(c.source);
+        this.copied.set(c.owner, set);
       }
     }
     // The values of the names read as arithmetic are run as expressions: each must be text the script wrote.
@@ -970,6 +969,10 @@ export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HO
     variable: (name) => trusted.get(name) ?? trusted.set(name, NAME.test(name) && !changedUnseen(name) && !scan.arith.has(name) && !unseen.has(name)
       && !scan.refTargets.has(name) && (scan.writes.get(name) ?? []).every((w) => w.plain)).get(name)!,
     closed: (name) => !scan.exportAll && !scan.exported.has(name) && !scan.callbacks.has(name),
+    copied: (n) => {
+      const names = scan.copied.get(n);
+      return names && [...names];
+    },
     arithNames: (n) => {
       const names = scan.pending.get(n);
       return names && [...names];
@@ -983,7 +986,9 @@ export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HO
 }
 
 /** Nothing trusted: for a walk that found, as it went, arithmetic reading text not known (see `Walker`). */
-export const BLIND: Trust = { blind: 'arithmetic reads text not known', variable: () => false, closed: () => false, arithNames: () => undefined, associative: () => undefined, mayFail: () => false };
+export const BLIND: Trust = {
+  blind: 'arithmetic reads text not known', variable: () => false, closed: () => false, arithNames: () => undefined, copied: () => undefined, associative: () => undefined, mayFail: () => false,
+};
 
 /**
  * What another shell's model trusts (`bash -c S`): its own script's trust, and no more than the outer model's, whose

@@ -1391,6 +1391,7 @@
  "until false; do\n  echo a\ndone",
  "until ping -c1 host; do sleep 1; done",
  "v1.2",
+ "v=a; declare -n r=\"$v\"; y=$r",
  "vars.REGION",
  "vim -c q f",
  "wait -n",
