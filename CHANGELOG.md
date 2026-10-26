@@ -48,6 +48,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Fixed
 
 - The examples of `printf` and of pipelines run the words of a brace expansion: `printf '%s\n' {a,b}` prints `a` and `b`. Before, they printed `{a,b}`, and `printf '%s\n' *.txt` printed `*.txt`.
+- In the panel's Meaning view, a long label (a shebang, a long pipeline) no longer squeezes its explanation into a narrow column. The explanation keeps at least half of the row, or goes under the label, and the label is shown whole. Before, the label took up to 45% of the row and was cut with "…".
 - Other languages' semantic colours are back to normal: a TypeScript parameter is no longer drawn in keyword blue. Before, the scope mappings of our syntax colouring applied to every language, even with `bashExplainer.highlight.enabled` off.
 - The web page keeps the phone layout on a phone at every zoom. Before, zooming out far enough switched it to the desktop layout, with the editor and the explanation side by side. The browser's desktop-site mode (Chrome's **Desktop site**, Safari's **Request Desktop Website**) shows the desktop layout.
 - The `set` options of a shebang count: `#!/bin/bash -eu` turns on `set -e` and `set -u` for the script.

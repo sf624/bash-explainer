@@ -763,6 +763,18 @@ VS Code puts the problems at the mouse above our hover. The part now leaves out 
 
 The notes that stay (on another word, about the line, a plain fact) start at the hover's left edge, with their icon and word in the level's colour. So do the notes of examples ("Control characters are invisible, so the example shows them as symbols"); the Markdown of the command line and the Language Server keep them as quotes. Before, each one was a quote: VS Code's hover draws no bar for a quote, only the browser's margins, so each note was pushed 40 px to the right.
 
+### Long labels in the panel
+
+In the Meaning view, each row has the part's code (its label) and the explanation beside it. The rule is now the same in VS Code and on the web page, at every width:
+
+| Label | Shown now | Shown before |
+| --- | --- | --- |
+| short (`grep`, `-rn`, `2>&1`) | on one line, with the explanation right after it | the same |
+| long enough to leave less than half of the row (60% on a panel narrower than 520px) for the explanation: `grep … \| sort \| uniq -c \| …`, `"${file%.*} ${file%%.*} …"`, `#!/usr/bin/env -S bash -e` on a phone | on a line of its own, whole; the explanation under it, starting in line with the label | beside the explanation, cut with "…" at 45% of the row; on a panel narrower than 520px, the explanation went under it, but started under the fold mark |
+| longer than the row (a long pipeline, a long path) | wrapped at its spaces, and anywhere in a word longer than the row (no hyphen added) | cut with "…" |
+
+Which labels share their row is decided as before on a narrow panel; on a wider one, only long labels (in the sample, the ones that were cut) now go above their explanation. The links to the manual (`§3.8 §3.1.3 execve(2)`) go under the explanation, at the right, where beside it they would take its room. The fold mark stays on the label's first line. Reading is unchanged: its code already wraps in its pill, with the text on a line of its own.
+
 ### The web page on a phone: the phone layout and the desktop site
 
 The web page keeps the phone layout on a phone at every zoom: zooming out makes the viewport wider in CSS pixels (50% turns 390px into 780px), so a phone is told by its device (a touch screen without hover whose screen is under 600px on its short side), not by the width. A phone once seen is remembered by the shape of its screen, for a page loaded zoomed out. Tablets and desktops follow the window's width (up to 767px: the phone layout).
