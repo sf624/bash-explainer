@@ -50,6 +50,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Meaning and Reading show lists as the manual reads them: the commands joined by `;` and `&` make one list, with the AND and OR lists (`&&`, `||`) as its parts, and each `;` and `&` says what it applies to (`a && b &`: the whole AND list). Before, only `&&` and `||` made a list.
 - Syntax colouring follows the explanations: aliases, readonly variables and the words a command reads as data get their colours, in shell scripts and the shell code of other files (not Python files and Dockerfiles). **Compatibility:** `bashExplainer.highlight.enabled` is now `true` by default, also in the Language Server (before, `false`); set it to `false` to turn it off.
 - The example of a brace expansion shows the words as separate chips in a row (`1` `4` `7` `10`), and under them what `echo` or `printf` prints. Before, it listed one word per line, which read like output.
+- On the web page, the address bar no longer shows the script: **Copy link** only copies the link, and opening a link takes the script off the address bar. Share links work as before, and a reload keeps the script.
 
 ### Fixed
 

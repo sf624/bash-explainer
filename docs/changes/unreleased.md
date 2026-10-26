@@ -417,6 +417,14 @@ When a section is wider than the panel (`ps aux`, `ls -l` on a phone), it starts
 
 ## Changed
 
+### Share links keep the script out of the address bar (web page)
+
+- **Copy link** (the top bar's button and the menu's item) copies the link and does nothing else. Before, it also put the whole `#lang=…&kind=…&z=…` fragment into the address bar.
+- A page opened from a link reads the fragment (`lang`, `kind`, `t` or `z`) and removes it from the address bar at once, by replacing the current history entry: no entry is added, so the back button works as before. Other fragments (an anchor such as `#anchor`) stay.
+- The fragment is kept in the tab's session storage (not in the settings; gone when the tab closes). A reload or a return through history reads it again, so the script and the language stay; a plain visit of the address in the same tab shows the sample. Without session storage a reload shows the sample.
+- Opening a second link in a tab replaces the first. A link pasted into the address bar of the page that is already open (a change of the fragment only) leaves the open page as it is, takes the fragment off the address bar, and is read by the next reload, as it was when the fragment stayed there.
+- The compare page and the switch between the release, development and preview pages carry the script in the fragment as before, and take it off the address bar when they open. The copies of the page in the compare page and in the panel get their script by message and change nothing in the address.
+
 ### The inline summary was removed
 
 The faint one-line summary at the end of the cursor line (`bashExplainer.inline.enabled`, off by default) was removed. It repeated the start of the hover on every line the cursor passed, and could say only one thing about a line. The hover now explains the part under the mouse, `Ctrl+K Ctrl+E` the whole line, and the name hints mark what a reader could misread.

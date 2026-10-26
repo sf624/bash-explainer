@@ -2,6 +2,7 @@
 // z= is deflated, t= plain.
 import { Lang } from '../src/i18n';
 import { Kind, KINDS } from './samples';
+import { readSessionLink, writeSessionLink } from './storage';
 
 /** What a link holds, as far as it could be read. */
 export interface SharedScript { lang?: Lang; kind?: Kind; text?: string; deflated?: Uint8Array }
@@ -24,9 +25,40 @@ function fromBase64Url(text: string): Uint8Array {
   return Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
 }
 
-/** The language, file kind and script in the page's address (`#lang=…&kind=…&z=…`). */
+const OURS = ['lang', 'kind', 't', 'z'];
+
+/**
+ * Takes the link's fragment off the address bar and keeps it for a reload of this tab (session storage). For
+ * a link pasted into the open page the page does not read it at once, but a reload does, as it did when the
+ * fragment stayed in the address. Other fragments stay. Returns whether there was a link.
+ */
+export function takeLinkFromAddress(): boolean {
+  const fragment = location.hash.slice(1);
+  if (window.parent !== window || !OURS.some((k) => new URLSearchParams(fragment).has(k))) return false;
+  writeSessionLink(fragment);
+  window.history.replaceState(window.history.state, '', location.pathname + location.search);
+  return true;
+}
+
+/**
+ * The language, file kind and script of the link this page was opened with. The link's fragment is read once
+ * and then taken off the address bar (`replaceState`: no new history entry; other fragments, such as an
+ * in-page anchor, stay). It is kept in this tab's session storage, which a reload or a return through
+ * history reads again; a plain visit of the page's address shows the sample. A copy of the page in a frame
+ * (the compare page, the panel) reads its address and changes nothing.
+ */
 export function readHash(): SharedScript {
-  const p = new URLSearchParams(location.hash.slice(1));
+  const fragment = location.hash.slice(1);
+  if (window.parent !== window) return parseParams(fragment);
+  if (takeLinkFromAddress()) return parseParams(fragment);
+  const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+  if (nav?.type === 'reload' || nav?.type === 'back_forward') return parseParams(readSessionLink() ?? '');
+  return {};
+}
+
+/** What a link's fragment holds (`lang=…&kind=…&z=…`), as far as it could be read. */
+function parseParams(fragment: string): SharedScript {
+  const p = new URLSearchParams(fragment);
   const out: SharedScript = {};
   const l = p.get('lang');
   if (l === 'en' || l === 'ja') out.lang = l;
