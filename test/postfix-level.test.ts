@@ -9,7 +9,7 @@ import { explain } from './support/explain';
 // information otherwise. Whether it stops comes from the model (statusModel(state).errexit(n)); bash shows it.
 
 const levelOf = (src: string, line: number): string | undefined => {
-  return explain(src, line).noteInfo.find((n) => /exit status is 1 when/.test(n.text))?.level;
+  return explain(src, line).noteInfo.find((n) => /exit status is 1 when|gives the value before the (in|de)crement/.test(n.text))?.level;
 };
 const run = (script: string): boolean => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-postfix-'));

@@ -12,8 +12,8 @@ export function postfixStatusNote(cx: Explainer, n: SyntaxNode): void {
   if (!m) return;
   const [, v, op] = m;
   // (Where bash surely ignores `set -e`, `((i++)) || true`, the status 1 is the intent.)
-  const { ignored, active } = cx.status.errexit(n); if (ignored?.sure) return;
-  cx.note(fact(cx.lang, op === '++' ? 'postfix-increment-status' : 'postfix-decrement-status', { v, errexit: active === 'on' }), n);
+  const { ignored, active, stops } = cx.status.errexit(n); if (ignored?.sure) return;
+  cx.note(fact(cx.lang, op === '++' ? 'postfix-increment-status' : 'postfix-decrement-status', { v, errexit: active === 'on', stops }), n);
 }
 
 /** `exit 256` and `return 300`: the status is taken modulo 256. */
