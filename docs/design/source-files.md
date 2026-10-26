@@ -1,6 +1,6 @@
 # Reading the files given to `source`
 
-Status: proposed (2026-10-27). Not started. The roadmap's "Next" item "Read a file given to `source` when it is in the workspace" ([../roadmap.md](../roadmap.md)), which the deferred constants in functions wait for ([function-constants.md](function-constants.md), section 7). This page says what bash does with `source` and `.`, which paths the model can resolve honestly and under which assumptions, how the model would read the file, where each part lives (the hosts read files, the model never does), the steps, the tests, the gain measured on three sets, and the risks.
+Status: deferred (2026-10-27): low measured gain; kept as the design if it is taken up. The roadmap's "Next" item "Read a file given to `source` when it is in the workspace" ([../roadmap.md](../roadmap.md)), which the deferred constants in functions wait for ([function-constants.md](function-constants.md), section 7). This page says what bash does with `source` and `.`, which paths the model can resolve honestly and under which assumptions, how the model would read the file, where each part lives (the hosts read files, the model never does), the steps, the tests, the gain measured on three sets, and the risks.
 
 ## 1. The problem
 
