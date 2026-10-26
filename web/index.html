@@ -39,6 +39,9 @@
   <symbol id="i-copy-text" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="13" rx="1.5"/><path d="M16 8V4.5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1V16a1 1 0 0 0 1 1h3"/></symbol>
   <symbol id="i-paste" viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5.5h3a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1h3"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M6.5 11.5l5.5-5.5 5.5 5.5M6.5 18l5.5-5.5 5.5 5.5"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M6.5 6l5.5 5.5 5.5-5.5M6.5 12.5l5.5 5.5 5.5-5.5"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
   <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11.5L20 7.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M8 4v5h7V4M7.5 20v-6.5h9V20"/></symbol>
 </svg>
 <div id="channel-banner" class="banner" role="note" hidden><span id="banner-text"></span> <a id="banner-release" href="../"></a> · <a id="banner-compare" href="compare.html"></a> · <a id="banner-pr" href="https://github.com/sf624/bash-explainer/pull/" hidden></a><span id="banner-pr-sep" hidden> · </span><a id="banner-commit" href="https://github.com/sf624/bash-explainer/commit/"></a></div>
@@ -50,6 +53,7 @@
     <div class="popbox desk-bar"><button id="share-open" class="text-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="share-menu"><svg aria-hidden="true"><use href="#i-share"/></svg><span id="share-open-label">Share</span><svg class="chev" aria-hidden="true" viewBox="0 0 12 12"><path d="M3 4.5l3 3 3-3"/></svg></button>
       <div id="share-menu" class="popmenu right" role="menu" hidden>
         <button id="share" class="popitem" type="button" role="menuitem"><svg aria-hidden="true"><use href="#i-link"/></svg><span id="share-label">Copy a link to this script</span></button>
+        <button id="copy-script" class="popitem" type="button" role="menuitem"><svg aria-hidden="true"><use href="#i-copy-text"/></svg><span id="copy-script-label">Copy the script</span></button>
         <button id="copy-md" class="popitem" type="button" role="menuitem"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="copy-md-label">Copy the explanation as Markdown</span></button>
       </div>
     </div>
@@ -63,8 +67,8 @@
     <div class="pane-head ed-head" id="ed-head">
       <div id="modes" class="modes" role="group"><button id="mode-read" type="button" aria-pressed="true"><svg aria-hidden="true"><use href="#i-eye"/></svg><span id="mode-read-label">Read</span></button><button id="mode-edit" type="button" aria-pressed="false"><svg aria-hidden="true"><use href="#i-pencil"/></svg><span id="mode-edit-label">Edit</span></button></div>
       <button id="open-btn" class="tool-btn" type="button"><svg aria-hidden="true"><use href="#i-open"/></svg><span id="open-btn-label" class="lbl">Open…</span></button>
-      <button id="save-btn" class="tool-btn" type="button"><svg aria-hidden="true"><use href="#i-save"/></svg><span id="save-btn-label" class="lbl">Save</span></button>
-      <p id="file-label" class="file-chip"><svg aria-hidden="true"><use href="#i-file"/></svg><span id="file-name"></span></p>
+      <button id="save-btn" class="tool-btn" type="button"><svg aria-hidden="true"><use href="#i-save"/></svg><span id="save-btn-label" class="lbl">Save</span><span id="save-dot" class="save-dot" aria-hidden="true" hidden></span></button>
+      <span id="file-label" class="file-name-box"><button id="file-name-btn" class="file-name" type="button"><span id="file-name"></span><span id="file-dot" class="file-dot" aria-hidden="true" hidden>●</span></button><input id="file-name-input" class="file-name-input" type="text" spellcheck="false" autocomplete="off" hidden></span>
       <span class="spacer"></span>
       <div class="kind scope-wide"><button id="kind" class="picker" type="button"><span id="kind-prefix" class="picker-prefix" aria-hidden="true">Type:</span><span class="picker-name"></span><span class="picker-short" aria-hidden="true"></span><svg class="chev" aria-hidden="true" viewBox="0 0 12 12"><path d="M3 4.5l3 3 3-3"/></svg></button><ul id="kind-list" class="picker-list right"></ul></div>
       <label class="pick scope-wide"><span id="shell-top-prefix" class="pick-prefix" aria-hidden="true">Shell:</span><select id="shell-top"></select></label>
@@ -83,18 +87,18 @@
         <div id="ed-more-menu" class="popmenu right" role="menu" hidden>
           <button id="sample" class="popitem" type="button" role="menuitem"><svg aria-hidden="true"><use href="#i-sample"/></svg><span id="sample-label">Load the sample</span></button>
           <button id="clear" class="popitem" type="button" role="menuitem"><svg aria-hidden="true"><use href="#i-clear"/></svg><span id="clear-label">Clear the editor</span></button>
-          <button id="copy-script" class="popitem" type="button" role="menuitem"><svg aria-hidden="true"><use href="#i-copy-text"/></svg><span id="copy-script-label">Copy the script</span></button>
         </div>
       </div>
     </div>
     <div id="first-hint" class="first-hint" role="note" hidden><p id="first-hint-text"></p><span class="hint-actions"><button id="hint-paste" class="hint-btn" type="button"><svg aria-hidden="true"><use href="#i-paste"/></svg><span id="hint-paste-label">Paste your own script</span></button><button id="hint-open" class="hint-btn" type="button"><svg aria-hidden="true"><use href="#i-open"/></svg><span id="hint-open-label">Open a file…</span></button></span><button id="first-hint-close" class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div>
     <div id="editor"></div>
+    <div id="empty-editor" class="empty-editor" hidden><div class="empty-box"><button id="empty-paste" class="empty-btn primary" type="button"><svg aria-hidden="true"><use href="#i-paste"/></svg><span id="empty-paste-label">Paste a script</span><kbd id="empty-paste-key"></kbd></button><button id="empty-open" class="empty-btn" type="button"><svg aria-hidden="true"><use href="#i-open"/></svg><span id="empty-open-label">Open a file…</span></button><button id="empty-sample" class="empty-btn" type="button"><svg aria-hidden="true"><use href="#i-sample"/></svg><span id="empty-sample-label">Load the sample</span></button><p id="empty-drop" class="empty-drop">or drop a file here</p></div></div>
     <p id="editor-hint" class="editor-hint">To leave the editor, press Escape, then Tab.</p>
     <div id="drop-target" class="drop-target" hidden><p><svg aria-hidden="true"><use href="#i-open"/></svg><strong id="drop-title">Drop a file to open it</strong><span id="drop-note">It is read in this browser and uploaded nowhere.</span></p></div>
     <input id="open-input" type="file" hidden>
     <section id="problems" hidden>
       <div id="problems-resize" class="problems-resize" role="separator" tabindex="0" aria-orientation="horizontal" aria-controls="problems" aria-valuemin="72" aria-valuemax="300" aria-valuenow="100"></div>
-      <h2 class="problems-strip"><button id="problems-toggle" type="button" aria-expanded="false" aria-controls="problem-list"><span id="problems-title" class="strip-title">Problems</span><span id="problems-summary" class="summary"></span><svg class="chev" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button><span class="strip-nav"><span id="problem-pos" class="pos"></span><button id="problem-prev" class="icon-btn small" type="button"><svg aria-hidden="true"><use href="#i-chev-left"/></svg></button><button id="problem-next" class="icon-btn small" type="button"><svg aria-hidden="true"><use href="#i-chev-right"/></svg></button></span></h2>
+      <h2 class="problems-strip"><button id="problems-toggle" type="button" aria-expanded="false" aria-controls="problem-list"><svg class="chev" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span id="problems-title" class="strip-title">Problems</span><span id="problems-summary" class="summary"></span></button><span class="strip-nav"><span id="problem-pos" class="pos"></span><button id="problem-prev" class="icon-btn small" type="button"><svg aria-hidden="true"><use href="#i-chev-left"/></svg></button><button id="problem-next" class="icon-btn small" type="button"><svg aria-hidden="true"><use href="#i-chev-right"/></svg></button></span></h2>
       <ul id="problem-list" class="problem-list"></ul>
     </section>
   </section>
@@ -102,18 +106,22 @@
   <section class="panel-col" id="panel-col">
     <div class="panel-head" id="panel-head">
       <button id="bsheet-handle" class="bsheet-handle" type="button"><span aria-hidden="true"></span></button>
+      <button id="sheet-back" class="sheet-back" type="button"><svg aria-hidden="true"><use href="#i-down"/></svg><span id="sheet-back-label">Script</span></button>
       <div class="panel-bar">
         <div class="tabs" role="tablist" id="panel-tabs">
-          <button id="tab-explain" role="tab" type="button" aria-selected="true" aria-controls="panel">Explanation</button>
+          <button id="tab-explain" role="tab" type="button" aria-selected="true" aria-controls="panel"><span id="tab-explain-label">Explanation</span><span id="tab-explain-line" class="tab-line"></span></button>
           <button id="tab-problems" role="tab" type="button" aria-selected="false" aria-controls="sheet-problem-list" tabindex="-1"><span id="tab-problems-label">Problems</span><span id="tab-problems-count" class="count"></span></button>
           <button id="tab-ref" role="tab" type="button" aria-selected="false" aria-controls="panel" tabindex="-1">Reference</button>
         </div>
         <span class="panel-tools" id="panel-tools">
-          <button id="pane-collapse" class="icon-btn" type="button"><svg class="ico" data-icon="collapse-all" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
-          <button id="pane-copy" class="icon-btn" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
+          <span id="view-slot" class="view-slot"><span id="views-top" class="seg" role="group"><button id="view-list-top" type="button" aria-pressed="true">Meaning</button><button id="view-tree-top" type="button" aria-pressed="false">Reading</button></span></span>
+          <span class="tools-div" aria-hidden="true"></span>
+          <button id="pane-collapse" class="icon-btn tool-lbl" type="button"><svg class="glyph" aria-hidden="true"><use href="#i-collapse"/></svg><span id="pane-collapse-label" class="lbl">Collapse</span></button>
+          <button id="pane-copy" class="icon-btn tool-lbl" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="pane-copy-label" class="lbl">Copy</span></button>
         </span>
       </div>
     </div>
+    <div id="view-row" class="view-row"><span id="views-phone" class="seg" role="group"><button id="view-list-phone" type="button" aria-pressed="true">Meaning</button><button id="view-tree-phone" type="button" aria-pressed="false">Reading</button></span></div>
     <iframe id="panel" src="panel.html" title="Explanation"></iframe>
     <ul id="sheet-problem-list" class="problem-list sheet-problems" hidden></ul>
   </section>
@@ -138,17 +146,20 @@
       <button id="menu-save" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-save"/></svg><span id="menu-save-label">Save</span><span id="menu-save-name" class="menu-note"></span><kbd id="menu-save-key" class="menu-key"></kbd></button>
       <button id="menu-sample" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-sample"/></svg><span id="menu-sample-label">Load the sample</span></button>
       <button id="menu-clear" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-clear"/></svg><span id="menu-clear-label">Clear the editor</span></button>
-      <button id="menu-share" class="menu-item only-narrow" type="button"><svg aria-hidden="true"><use href="#i-link"/></svg><span id="menu-share-label">Copy a link to this script</span></button>
     </section>
-    <section class="menu-group">
+    <section class="menu-group only-narrow-block">
+      <h3 id="menu-h-share" class="menu-h">Share</h3>
+      <button id="menu-share" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-link"/></svg><span id="menu-share-label">Copy a link to this script</span></button>
+      <button id="menu-copy-script" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-copy-text"/></svg><span id="menu-copy-script-label">Copy the script</span></button>
+      <button id="menu-copy" class="menu-item" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="menu-copy-label">Copy the explanation as Markdown</span></button>
+    </section>
+    <section class="menu-group only-narrow-block">
       <h3 id="menu-h-explanation" class="menu-h">Explanation</h3>
-      <div class="field not-narrow" role="group" aria-labelledby="views-menu-label"><span id="views-menu-label"></span><div id="views-menu" class="views"><button id="view-list-menu" type="button" aria-pressed="true"></button><button id="view-tree-menu" type="button" aria-pressed="false"></button></div></div>
-      <button id="menu-copy" class="menu-item only-narrow" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="menu-copy-label">Copy as Markdown</span></button>
-      <button id="menu-collapse" class="menu-item only-narrow" type="button"><svg class="ico" data-icon="collapse-all" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="menu-collapse-label">Collapse all</span></button>
+      <button id="menu-collapse" class="menu-item" type="button"><svg class="glyph" aria-hidden="true"><use href="#i-collapse"/></svg><span id="menu-collapse-label">Collapse all</span></button>
     </section>
     <section class="menu-group">
       <h3 id="menu-h-prefs" class="menu-h">Preferences</h3>
-      <label class="field"><span id="lang-label">Language</span><select id="lang"><option value="auto">Auto</option><option value="en">English</option><option value="ja">日本語</option></select></label>
+      <label class="field"><span id="lang-label">Language</span><select id="lang"><option value="auto">Auto (follows the browser)</option><option value="en">English</option><option value="ja">日本語</option></select></label>
       <label class="field"><span id="theme-label">Theme</span><select id="theme"></select></label>
       <!--switch--><label class="field"><span id="channel-label">Version</span><select id="channel"></select></label><!--/switch-->
       <button id="menu-settings" class="menu-item" type="button"><svg class="ico" data-icon="gear" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="menu-settings-label">All settings…</span></button>

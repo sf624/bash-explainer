@@ -109,3 +109,40 @@ pre#line {
 html.bx-web.bx-head header {
   display: none;
 }
+
+/* ---- Prototype round 3 (proto/chrome-3): the page marks the line box with the line it shows ("Ln 8", at its left,
+   staying there while the box scrolls sideways), and an empty script (`bx-blank`): no line box, and the panel's
+   message ("Paste or type a script on the left. …") as a calm block in the middle. */
+html.bx-head pre#line[data-ln]::before {
+  content: attr(data-ln);
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  display: inline-block;
+  margin: 0 10px 0 -0.8rem;
+  padding: 0 10px 0 0.8rem;
+  border-right: 1px solid var(--vscode-panel-border);
+  background: inherit;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-font-family);
+  font-size: 12px;
+}
+
+/* (On a phone the sheet's tab says the line: "Explanation · Ln 8".) */
+html.bx-phone pre#line[data-ln]::before {
+  display: none;
+}
+
+html.bx-blank pre#line {
+  display: none;
+}
+
+html.bx-blank #empty {
+  max-width: 26rem;
+  margin: 18vh auto 0;
+  padding: 0 1rem;
+  color: var(--vscode-descriptionForeground);
+  font-size: 14px;
+  line-height: 1.6;
+  text-align: center;
+}

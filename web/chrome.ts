@@ -133,7 +133,7 @@ export function setUpTooltips(tip: HTMLElement, roots: string): void {
 }
 
 /** The heights of the phone's bottom sheet, in % of the window's height; `full` reaches up to the editor's strip. */
-export const SNAPS = { peek: 36, half: 55, full: 100 } as const;
+export const SNAPS = { peek: 40, half: 55, full: 100 } as const;
 export type Snap = keyof typeof SNAPS;
 
 /**
@@ -216,4 +216,20 @@ export class BottomSheet {
   raise(to: Snap): void {
     if (SNAPS[this.snap] < SNAPS[to]) this.set(to);
   }
+}
+
+let measure: CanvasRenderingContext2D | null | undefined;
+/**
+ * Sizes a native select to the option it shows (proto/chrome-3): the editor header's pickers fit their content
+ * instead of the widest option. Its own padding (with the arrow) and borders are added to the text's width.
+ */
+export function fitSelect(select: HTMLSelectElement): void {
+  if (!select.isConnected || !select.offsetParent) return;
+  measure ??= document.createElement('canvas').getContext('2d');
+  if (!measure) return;
+  const cs = getComputedStyle(select);
+  measure.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const text = select.selectedOptions[0]?.textContent ?? '';
+  const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+  select.style.width = `${Math.ceil(measure.measureText(text).width + pad + 2)}px`;
 }
