@@ -1302,7 +1302,7 @@
  "sleep 9; alert",
  "sort --key=2,2n f",
  "sort -k x f",
- "sort -k2 -o out *.txt",
+ "sort -o *.txt",
  "sort -rn nums.txt",
  "sort -t: -k3,3nr f",
  "sort -u f | uniq -c",
