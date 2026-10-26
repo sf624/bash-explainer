@@ -12,8 +12,11 @@ import { field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 
 /** Where a command's standard input comes from. */
 export type Stdin =
-  /** The output of the command before it in a pipeline: its lines, when the stages before it are known to print them. */
-  | { from: 'pipe'; lines?: string[] }
+  /**
+   * The output of the command before it in a pipeline (`Piped`): what it is, and its lines, when the stages before it
+   * are known to print them.
+   */
+  | ({ from: 'pipe' } & Piped)
   /**
    * A file, `< b.json` (`name` as its word gives it); `pipe`: the command of a process substitution, `< <(cmd)`, and
    * `lines`, what it prints when that is known.
@@ -23,6 +26,14 @@ export type Stdin =
   | { from: 'here'; doc: boolean; lines?: string[] }
   /** Whatever the script was given (the terminal, a file, a pipe into the script). */
   | { from: 'unknown' };
+
+/**
+ * What the stages of a pipeline before a command give it to read: `by`, the text of the stage just before; `lines`, the
+ * lines they print, when known: exactly (they start with a here-string, `echo` or `printf`), or as `sample` lines of
+ * the layout the first one prints (`ps aux`: `CommandSpec.layouts`); `file`, the file the stage before copies as it is,
+ * when it is all it reads (`cat a.json | jq .`); `elsewhere`, the stage before sends its output elsewhere (`grep x a > f`).
+ */
+export interface Piped { by: string; lines?: string[]; sample?: true; file?: string; elsewhere?: true }
 
 /** One thing the command reads, in the order it reads them. */
 export type Stream =
@@ -151,7 +162,7 @@ export function shownSource(src: InputSource): InputSource {
  * `<<`), or the stage before it in a pipeline. `literal` gives a word's value when it is known; `piped`, what the
  * stages of a pipeline before the one at `index` print, when it is known.
  */
-export function stdinOf(cmd: SyntaxNode, literal: (n: SyntaxNode) => string | undefined, piped?: (pipeline: SyntaxNode, index: number) => string[] | undefined): Stdin {
+export function stdinOf(cmd: SyntaxNode, literal: (n: SyntaxNode) => string | undefined, piped: (pipeline: SyntaxNode, index: number) => Piped): Stdin {
   const redirs = redirectionsOf(cmd);
   let stdin: Stdin | undefined;
   for (const r of redirs) {
@@ -181,8 +192,7 @@ export function stdinOf(cmd: SyntaxNode, literal: (n: SyntaxNode) => string | un
   if (stdin) return stdin;
   const p = cmd.parent;
   if (p?.type !== 'pipeline' || p.namedChildren[0] === cmd) return { from: 'unknown' };
-  const lines = piped?.(p, p.namedChildren.indexOf(cmd));
-  return { from: 'pipe', ...(lines ? { lines } : {}) };
+  return { from: 'pipe', ...piped(p, p.namedChildren.indexOf(cmd)) };
 }
 
 /**
@@ -201,7 +211,7 @@ export function streamLabel(stream: Stream, lang: Lang, readBy?: string): string
   }
   const stdin = stream.stdin;
   switch (stdin.from) {
-    case 'pipe': return head + (stdin.lines ? s('標準入力（前のコマンドの出力）', 'stdin (output of the previous command)') : s('標準入力（前のコマンドの出力の例）', 'stdin (sample output of the previous command)'));
+    case 'pipe': return head + pipeLabel(stdin, s);
     case 'file':
       if (stdin.pipe) return head + substitutionLabel(stdin.pipe, stdin.name, !!stdin.lines, true, s);
       return head + s(`標準入力（\`${stdin.name}\`、中身の例）`, `stdin (\`${stdin.name}\`, sample contents)`);
@@ -211,6 +221,18 @@ export function streamLabel(stream: Stream, lang: Lang, readBy?: string): string
     }
     case 'unknown': return head + s('標準入力（中身の例）', 'stdin (sample contents)');
   }
+}
+
+/**
+ * What the stage before a pipe gives to read (`Piped`): its output; a sample of the layout it prints; the file it
+ * copies; or else lines made up for the command, said to be so.
+ */
+function pipeLabel(p: Extract<Stdin, { from: 'pipe' }>, s: (ja: string, en: string) => string): string {
+  const by = `\`${p.by}\``;
+  if (p.lines) return p.sample ? s(`標準入力（${by} の出力の例）`, `stdin (sample output of ${by})`) : s(`標準入力（${by} の出力）`, `stdin (output of ${by})`);
+  if (p.elsewhere) return s(`標準入力（仮の行。${by} は出力をパイプでなく別の所へ書く）`, `stdin (made-up lines: ${by} writes its output elsewhere, not to the pipe)`);
+  if (p.file !== undefined) return s(`標準入力（${by} が渡す \`${p.file}\`、中身の例）`, `stdin (\`${p.file}\` through ${by}, sample contents)`);
+  return s(`標準入力（${by} の出力。中身は分からないので仮の行）`, `stdin (output of ${by}, not known here: made-up lines)`);
 }
 
 /**
@@ -229,18 +251,23 @@ function substitutionLabel(cmd: string, name: string, known: boolean, stdin: boo
  * which `piped` reads as it does the stages before a pipe. Undefined for several commands, or when the last one
  * sends its output elsewhere (`<(printf 'a\n' > f)`).
  */
-export function substitutionLines(ps: SyntaxNode, piped?: (pipeline: SyntaxNode, index: number) => string[] | undefined): string[] | undefined {
+export function substitutionLines(ps: SyntaxNode, piped: (pipeline: SyntaxNode, index: number) => Piped): string[] | undefined {
   const [inner, ...more] = ps.namedChildren;
   if (!inner || more.length) return undefined;
   // (A command alone is a pipeline of one stage.)
   const p = inner.type === 'pipeline' ? inner : ps;
-  const last = p.namedChildren[p.namedChildren.length - 1];
-  const elsewhere = redirectionsOf(last).some((r) => {
+  const got = writesElsewhere(p.namedChildren[p.namedChildren.length - 1]) ? undefined : piped(p, p.namedChildren.length);
+  // (A sample of the layout of `ps aux` is not what `<(ps aux)` gives.)
+  return got?.sample ? undefined : got?.lines;
+}
+
+/** Whether a command sends its standard output elsewhere than where it was (`> f`, `&> f`, `>&2`): a pipe after it gets nothing. */
+export function writesElsewhere(cmd: SyntaxNode): boolean {
+  return redirectionsOf(cmd).some((r) => {
     const op = r.children.find((c) => !c.named)?.type;
     const fd = field(r, 'descriptor')?.text ?? '';
     return r.type === 'file_redirect' && (op?.startsWith('&') || (!op?.startsWith('<') && (fd === '' || fd === '1')));
   });
-  return elsewhere ? undefined : piped?.(p, p.namedChildren.length);
 }
 
 /** The command of a process substitution `<(cmd)` (not `>(cmd)`, which takes what is written to it). */

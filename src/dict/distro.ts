@@ -84,7 +84,7 @@ export const distro: Record<string, CommandSpec> = {
   printenv: cmd('環境変数の値を表示する', 'Print environment variables', [
     ['-0|--null', '各項目を改行ではなく NUL で終える', 'end each entry with NUL, not a newline'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('環境変数の名前（省略時はすべて）', 'variable name (default: all)')] }),
+  ], { parser: 'getopt_long', positional: [pos('環境変数の名前（省略時はすべて）', 'variable name (default: all)')], layouts: [{ options: [], layout: 'env' }] }),
   fold: cmd('長い行を指定した幅で折り返す', 'Wrap long lines to a given width', [
     ['-w|--width', '折り返す幅（既定 80）', 'line width (default 80)', 'arg'],
     ['-s|--spaces', '空白の位置で折り返す', 'break at spaces'],
@@ -204,7 +204,7 @@ export const distro: Record<string, CommandSpec> = {
     ['--lookup', 'ホスト名を DNS で正規化する', 'canonicalize host names via DNS'],
     ['--message|--writable', '`-T` と同じ', 'same as `-T`'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long' }),
+  ], { parser: 'getopt_long', layouts: [{ options: [], layout: 'who' }] }),
   strings: cmd('バイナリから印字できる文字列を取り出す', 'Print the printable strings in a binary file', [
     ['-n|--bytes', '文字列の最小の長さ（既定 4）', 'minimum string length (default 4)', 'arg'],
     ['-a|--all', 'ファイル全体を調べる', 'scan the whole file'],

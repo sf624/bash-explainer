@@ -7,7 +7,7 @@
 import type { Example, ExampleSection } from '../analyzer-types';
 import type { ArgvParse } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
-import type { CommandSpec } from '../argv/spec';
+import type { CommandSpec, Layout } from '../argv/spec';
 import { argWordFor } from '../argv/words';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { visible } from '../ctlchars';
@@ -20,7 +20,8 @@ import { type JsRegex, regexExamples } from '../examples/regex';
 import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
 import { globMatches, type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
 import * as sources from '../examples/source';
-import { type InputSource, knownLines, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines } from '../examples/source';
+import { layoutOf, layoutSample } from '../examples/layouts';
+import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines, writesElsewhere } from '../examples/source';
 import { type Text, tx } from '../i18n';
 import { shorten } from '../label';
 import { EMPTY_WORD, fact, shownWord, SPACE_MARK } from '../messages';
@@ -128,8 +129,11 @@ export function testExample(cx: Explainer, n: SyntaxNode, bracket: TestShape | u
   pushExample(cx, patterns.testExample(n, bracket, asKind, cx.lang, known));
 }
 
-/** A stage of a pipeline example; `runs`: its operands are a command it runs (xargs), so its step shows the commands. */
-type PipelineStage = { stage: Stage; file: boolean; readsFile: boolean; source: InputSource; runs: boolean };
+/**
+ * A stage of a pipeline example; `runs`: its operands are a command it runs (xargs), so its step shows the commands;
+ * `prints`: the layout of what it prints, when made-up lines of it can stand for its output (`ps aux`).
+ */
+type PipelineStage = { stage: Stage; file: boolean; readsFile: boolean; source: InputSource; runs: boolean; layout?: Layout };
 
 /** The stages of pipelines read so far on the line (`pipelineStage`). */
 const PIPELINE_STAGES = memoKey<PipelineStage | undefined>('pipeline stages');
@@ -141,8 +145,9 @@ const PIPELINE_STAGES = memoKey<PipelineStage | undefined>('pipeline stages');
 function stageText(n: SyntaxNode): string {
   const kids = n.namedChildren;
   let end = kids.length;
-  while (kids[end - 1].type === 'file_redirect' || kids[end - 1].type === 'heredoc_redirect') end--;
-  return n.text.slice(0, kids[end - 1].endIndex - n.startIndex);
+  while (end && (kids[end - 1].type === 'file_redirect' || kids[end - 1].type === 'heredoc_redirect')) end--;
+  // (A stage of redirections alone, `< a.json | jq .`, is named as written.)
+  return shorten(end ? n.text.slice(0, kids[end - 1].endIndex - n.startIndex) : n.text, 40);
 }
 
 /** Whether the settings keep this example (examples.enabled / examples.disabled). */
@@ -260,6 +265,8 @@ export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefin
   const { stages, files, readsFile, src, runs } = p;
   // A later stage that reads a file does not read what the stages before it write (`printf … | grep -e -v foo`).
   if (files.slice(1).some(Boolean)) return undefined;
+  // A first stage that prints a layout the examples make up (`ps aux`): its made-up lines go through the others.
+  if (p.layout) return sampledPipeline(cx, n, p.layout, stages, runs);
   // Several files read as one stream; a first stage that works on each apart (`EachFile`: head, grep) is not
   // followed, nor one that reads a file twice.
   const streams = src.streams;
@@ -268,10 +275,30 @@ export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefin
   const known = streams.length === 1 ? knownLines(streams[0]) : undefined;
   const ex = pipelines.pipelineExample(stages, readsFile || !!known, known);
   if (!ex) return undefined;
-  const cap = (lines: string[]) => (lines.length > MAX_SHOWN_LINES ? [...lines.slice(0, MAX_SHOWN_LINES - 1), '…'] : lines).map(visible);
-  const sections: ExampleSection[] = [];
   const inputs: InputBox[] = ex.input ? shareOut(src, ex.input).map((lines, i) => ({ label: streamLabel(streams[i], cx.lang), lines })) : [];
-  sections.push(...inputs.map((b) => ({ label: b.label, lines: cap(b.lines), empty: cx.s('（空）', '(empty)') })));
+  return wholePipeline(cx, n, ex, inputs, stages, runs);
+}
+
+/** The lines of a section of the whole-pipeline example: at most `MAX_SHOWN_LINES`, control characters made visible. */
+const cap = (lines: string[]) => (lines.length > MAX_SHOWN_LINES ? [...lines.slice(0, MAX_SHOWN_LINES - 1), '…'] : lines).map(visible);
+
+/**
+ * The whole-pipeline example of a first stage that prints a layout the examples make up (`ps aux`, `ls -l`): its
+ * made-up lines, and what each stage after it makes of them. They are shown as they are, not in a box to edit: the
+ * columns of a table stay lined up (a box wraps its long lines).
+ */
+function sampledPipeline(cx: Explainer, n: SyntaxNode, kind: Layout, stages: Stage[], runs: ReadonlySet<Stage>): Example | undefined {
+  const sample = layoutSample(kind, n.namedChildren.map((c) => argvOf(cx, c)), 0);
+  const rest = stages.slice(1);
+  const ex = pipelines.pipelineExample(rest, true, sample);
+  if (!ex) return undefined;
+  const label = cx.s(`\`${stages[0].text}\` の出力（例）`, `Output of \`${stages[0].text}\` (sample)`);
+  return wholePipeline(cx, n, ex, [{ label, lines: sample }], rest, runs, false);
+}
+
+/** The example of the whole pipeline `n`: the input boxes, then what each stage leaves. */
+function wholePipeline(cx: Explainer, n: SyntaxNode, ex: pipelines.PipelineExample, inputs: InputBox[], stages: Stage[], runs: ReadonlySet<Stage>, editable = true): Example {
+  const sections: ExampleSection[] = inputs.map((b) => ({ label: b.label, lines: cap(b.lines), empty: cx.s('（空）', '(empty)') }));
   ex.steps.forEach((step, i) => {
     // `cat file` passes the input on unchanged.
     if (step.stage.copies && i < ex.steps.length - 1) return;
@@ -290,7 +317,7 @@ export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefin
     title: cx.s('例（パイプライン全体）', 'Example (the whole pipeline)'), sections,
     ...(up ? { target: shorten(n.text.replace(/\s*\\\n\s*/g, ' '), 40) } : {}),
     // Data from a file can be edited; data made by echo or seq cannot.
-    ...(inputs.length ? { interactive: interactive(cx, { kind: 'pipeline', stages }, inputs) } : {}),
+    ...(inputs.length && editable ? { interactive: interactive(cx, { kind: 'pipeline', stages }, inputs) } : {}),
   };
 }
 
@@ -298,14 +325,14 @@ export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefin
  * The stages of pipeline `n` (the first `count`), as the pipeline examples run them: whether each names a file to
  * read, whether the first reads one (`< f`), and what the first reads. Undefined for a stage they cannot follow.
  */
-function pipelineStages(cx: Explainer, n: SyntaxNode, count = n.namedChildren.length): { stages: Stage[]; files: boolean[]; readsFile: boolean; src: InputSource; runs: ReadonlySet<Stage> } | undefined {
+function pipelineStages(cx: Explainer, n: SyntaxNode, count = n.namedChildren.length): { stages: Stage[]; files: boolean[]; readsFile: boolean; src: InputSource; runs: ReadonlySet<Stage>; layout?: Layout } | undefined {
   const read: PipelineStage[] = [];
   for (const [i, cmd] of n.namedChildren.slice(0, count).entries()) {
     const st = pipelineStage(cx, n, cmd, i);
     if (!st) return undefined;
     read.push(st);
   }
-  return { stages: read.map((st) => st.stage), files: read.map((st) => st.file), readsFile: !!read[0]?.readsFile, src: read[0]?.source, runs: new Set(read.filter((st) => st.runs).map((st) => st.stage)) };
+  return { stages: read.map((st) => st.stage), files: read.map((st) => st.file), readsFile: !!read[0]?.readsFile, src: read[0]?.source, runs: new Set(read.filter((st) => st.runs).map((st) => st.stage)), ...(read[0]?.layout ? { layout: read[0].layout } : {}) };
 }
 
 /**
@@ -335,12 +362,13 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     if (['function', 'alias'].includes(resolve(cx, name.text, name).kind)) return undefined;
     const args = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect');
     const spec = specFor(cx, name.text);
-    const stage: Stage = { cmd: name.text.split('/').pop()!, words: exampleWords(cx, args, !!spec?.prints).map((w) => w.value), text: shorten(stageText(cmd), 40), ...(spec?.copies ? { copies: true } : {}) };
+    const stage: Stage = { cmd: name.text.split('/').pop()!, words: exampleWords(cx, args, !!spec?.prints).map((w) => w.value), text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}) };
     const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell)), { name: name.text, lookup: (x) => specFor(cx, x) });
     const source = inputSource(cx, cmd, parse, args, spec);
     // A stage that writes its output to a file (`sort -o f`) hands nothing on.
     const runs = !!spec?.operands?.some((alt) => alt.pattern.some((o) => o.command));
-    return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source, runs };
+    const layout = i === 0 ? layoutOf(spec, parse) : undefined;
+    return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source, runs, ...(layout ? { layout } : {}) };
   })();
   stages.set(cmd, read);
   return read;
@@ -384,13 +412,41 @@ function stdinOf(cx: Explainer, cmd: SyntaxNode): Stdin {
 }
 
 /**
- * What the stages of pipeline `n` before the one at `index` print, when it is known: the first reads the text the
- * line gives it (a here-string or a here-document) or prints it (echo, printf), and none reads a file.
+ * What the stages of pipeline `n` before the one at `index` give it to read (`Piped`): the stage before, by its text;
+ * what they print, when it is known (the first reads the text the line gives it, a here-string or a here-document, or
+ * prints it: echo, printf; and none reads a file), or made-up lines of the layout the first prints (`ps aux`); or the
+ * one file the stage before copies (`cat a.json`).
  */
-function pipedLines(cx: Explainer, n: SyntaxNode, index: number): string[] | undefined {
+function pipedLines(cx: Explainer, n: SyntaxNode, index: number): Piped {
+  const before = n.namedChildren[index - 1];
+  const by = before.type === 'command' ? stageText(before) : shorten(before.text, 40);
+  // (Named whole: what it writes to is the point.)
+  if (writesElsewhere(before)) return { by: shorten(before.text, 40), elsewhere: true };
   const p = pipelineStages(cx, n, index);
-  if (!p || p.readsFile || p.files.some(Boolean)) return undefined;
-  return pipedOutput(p.stages, knownLines(p.src.streams[0]));
+  if (!p) return { by };
+  if (p.layout && !p.files.slice(1).some(Boolean)) {
+    const lines = pipedOutput(p.stages.slice(1), layoutSample(p.layout, n.namedChildren.map((c) => argvOf(cx, c)), 0));
+    return lines ? { by, lines, sample: true } : { by };
+  }
+  if (p.readsFile || p.files.some(Boolean)) {
+    // (`cat a.json | jq .`: what jq reads is the file.)
+    const [only, ...more] = p.src.streams;
+    const file = only.kind === 'file' ? !only.many && !only.pipe && only.name : only.stdin.from === 'file' && !only.stdin.pipe && only.stdin.name;
+    return index === 1 && p.stages[0].copies && !more.length && file ? { by: p.stages[0].cmd, file } : { by };
+  }
+  const lines = pipedOutput(p.stages, knownLines(p.src.streams[0]));
+  return lines ? { by, lines } : { by };
+}
+
+/**
+ * The words a stage of a pipeline runs as a program, as ps shows its command line (`awk {print $2}`); undefined when
+ * they are not all known, or the stage is not a program (a builtin, a function, a compound command).
+ */
+function argvOf(cx: Explainer, cmd: SyntaxNode): string[] | undefined {
+  const name = cmd.type === 'command' ? field(cmd, 'name') : undefined;
+  if (!name || resolve(cx, name.text, name).kind !== 'file') return undefined;
+  const words = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect').map((a) => literalContent(a)?.text);
+  return words.every((w) => w !== undefined) ? [name.text, ...words as string[]] : undefined;
 }
 
 /** A note when the command reads files it names, so not the standard input the line gives it (`jq . a.json < b.json`). */

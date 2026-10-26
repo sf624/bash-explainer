@@ -374,6 +374,30 @@ The functions of bats-support, bats-assert and bats-file are explained in a bats
 
 They are explained only where the file can have the library: a `load` or `bats_load_library` that names it (a path with the component `bats-assert`, `bats-support` or `bats-file`) gives that library; a `load` of anything else (`load 'test_helper/common-setup'`, which may load them) gives all three; with no `load` at all, bats does not define them, and they are programs as before. A function of the file with the same name stays the file's own. The texts come from the libraries' READMEs; they are not tested against the libraries, which are not installed here.
 
+### The input of each stage of a pipeline
+
+A pipeline's worked example shows what each command reads. When the first command prints a table of a known layout, the example starts from made-up lines in that layout (procps-ng 4, GNU coreutils 9), then shows what each later command makes of them. ps lists the commands of the pipeline too, since they run with it: `ps aux | grep nginx` keeps grep's own line.
+
+| Written | Shown now | Shown before |
+| --- | --- | --- |
+| `ps aux \| grep nginx \| awk '{print $2}'` | "Output of `ps aux` (sample)": `USER PID %CPU …` and a row per process; "After `grep nginx`": the nginx rows and grep's; "Output": their PIDs | awk's example alone, on lines `apple red tokyo` |
+| `ps -ef \| grep python`, `ps \| wc -l` | the `UID PID PPID C STIME TTY TIME CMD` and `PID TTY TIME CMD` layouts | no example, or the commands' examples on made-up lines |
+| `ls -l \| grep '^d' \| wc -l`, `ls -lh \| sort -k5 -h`, `ls -la`, `ls \| wc -l` | `total 36`, then `drwxr-xr-x 2 alice alice 4096 Mar  3 09:15 docs`…; `ls` alone prints a name a line into a pipe | the same |
+| `df -h \| awk '{print $5}'` | `Filesystem Size Used Avail Use% Mounted on` and five file systems: `Use%`, `1%`, `45%`… | the same |
+| `who \| cut -d' ' -f1 \| sort -u`, `env \| grep PATH`, `printenv` | `alice    pts/0        2026-03-03 09:30 (192.168.1.20)`; `NAME=value` lines, ending with `_=/usr/bin/env` | the same |
+
+The made-up lines are shown as they are, not in a box to edit: a box wraps long lines, and the columns would no longer line up. Other options or an operand (`ps aux --sort=-%mem`, `ls -l /etc`, `ls -lt`, `df`) get no made-up output.
+
+The input section of a command's own example names where a pipe brings it from:
+
+| Written | Input label now | Before |
+| --- | --- | --- |
+| `echo '{"a":1}' \| jq .a` | stdin (output of `echo '{"a":1}'`) | stdin (output of the previous command) |
+| `ls -l \| awk '{print $5}' \| paste -sd+` (awk's example) | stdin (sample output of `ls -l`) | stdin (sample output of the previous command), with lines that were not `ls -l`'s |
+| `cat a.json \| jq .items[]` | stdin (`a.json` through `cat`, sample contents) | stdin (sample output of the previous command) |
+| `curl -s url \| jq .name` | stdin (output of `curl -s url`, not known here: made-up lines) | stdin (sample output of the previous command) |
+| `grep x a > f \| sort` | stdin (made-up lines: `grep x a > f` writes its output elsewhere, not to the pipe) | stdin (sample output of the previous command) |
+
 ## Changed
 
 ### The inline summary was removed
@@ -814,6 +838,16 @@ The positional parameters are those the shell starts with: a `shift` or `set --`
 | a sed script whose first two characters are `#n` (`#n`, `#no…`; not `#N`) | runs as with `-n` (GNU sed 4.9) | as with `-n`, in the explanation and the example | as without `-n` |
 | `git log --oneline --graph --format='%h %s'` | `* 3f2a9c1 Fix login timeout` | the example's lines start with `* `; a commit's other lines with `\| ` (two spaces for the last), as git draws one line of history | `3f2a9c1 Fix login timeout` |
 | `case` (no word yet) | a syntax error | "case statement: match the value (not written yet) against each pattern…", with no empty part for the value | "match `` against each pattern…", and an empty "Value to match" |
+
+### `sort -h`
+
+GNU `sort -h` reads a size suffix only right after the number, and compares the suffix before the number. The example now does too.
+
+| Written | GNU sort | Shown before |
+| --- | --- | --- |
+| `sort -h` of `8.3K`, `1.5K` | `1.5K`, `8.3K` | in the order read: the numbers were lost beside the suffix |
+| `sort -k5 -h` of `ls -lh` lines (`220 Mar`, `1.5K`) | `220` first | `220 Mar` last, as 220 megabytes |
+| `sort -h` of `1m` | `1m` is 1 (only `k` is a suffix in lower case) | 1 megabyte |
 
 ### The package pages show their own version's README
 

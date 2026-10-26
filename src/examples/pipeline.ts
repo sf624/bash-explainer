@@ -310,7 +310,8 @@ export interface PipelineExample {
 /** Run sample data (or `given`, the user's own input) through every stage. */
 export function pipelineExample(stages: Stage[], readsFile: boolean, given?: string[]): PipelineExample | undefined {
   try {
-    if (stages.length < 2) return undefined;
+    // (Given lines, one stage is enough: what `ps aux` prints, made up, is the input of the one after it.)
+    if (stages.length < (given ? 1 : 2)) return undefined;
     let input: string[] | undefined;
     let rest = stages;
     const src = !readsFile ? sourceOutput(stages[0]) : undefined;
