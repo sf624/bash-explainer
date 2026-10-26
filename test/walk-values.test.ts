@@ -134,7 +134,8 @@ describe('a word bash fails on', () => {
     assert.strictEqual(valueOf('e=; y=; : ${y:=${e:?}}\necho "$y"', '$y'), undefined);
     // (A variable not known here, or a nameref to one not known: it may be. The subscript is always expanded.)
     assert.strictEqual(valueOf('e=; y=$(cmd); x=1; : ${y:+${e:?}}\necho "$x"', '$x'), '1');
-    assert.strictEqual(valueOf('e=; t=a; declare -n r=$t; x=1; : ${r:+${e:?}}\necho "$x"', '$x'), '1');
+    // (Reading a nameref whose target the scan does not know trusts nothing: the target's subscript may assign.)
+    assert.strictEqual(valueOf('e=; t=a; declare -n r=$t; x=1; : ${r:+${e:?}}\necho "$x"', '$x'), undefined);
     assert.strictEqual(valueOf('e=; a=(1); x=1; : ${a[${e:?}]}\necho "$x"', '$x'), undefined);
   });
 });

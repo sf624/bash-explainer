@@ -905,6 +905,7 @@
  "function g() { :; }",
  "function time { :; }\ntime :",
  "g() { :; }; f() { :; }; f; export -fn g; f",
+ "g() { if [ \"$d\" = 1 ]; then d=2; g; return; fi; x=2; }; x=1; d=1; g; if [ \"$x\" = 2 ]; then (( q )); fi; q=1",
  "gawk '{ print $1 }' f",
  "getopt \"$o\"",
  "getopt --name=prog -o a --",

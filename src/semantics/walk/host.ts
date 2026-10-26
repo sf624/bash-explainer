@@ -5,6 +5,7 @@
 import { field, type SyntaxNode } from '../../syntax/tree';
 import { merge, type ShellState, withStatus } from '../shellstate';
 import type { Target, Walker } from './walker';
+import { widen } from './widen';
 
 const rootOf = (n: SyntaxNode): SyntaxNode => {
   let r = n;
@@ -65,7 +66,7 @@ export function hostRun(w: Walker, root: SyntaxNode, end: ShellState): void {
     if (fn(name) !== def) continue;
     const target: Extract<Target, { kind: 'program' }> = { kind: 'program', dead: w.mode.dead, exits: [] };
     w.targets.push(target);
-    let st = call(w, fn(run.each.before), w.widen(end, reach), { role: 'before', process: 'test', ignored: false });
+    let st = call(w, fn(run.each.before), widen(w, end, reach), { role: 'before', process: 'test', ignored: false });
     st = call(w, def, st, { role: 'test', process: 'test', ignored: false });
     w.targets.pop();
     call(w, fn(run.each.after), merge([st, ...target.exits], w.posix), { role: 'after', process: 'test', ignored: true });

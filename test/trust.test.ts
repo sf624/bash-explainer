@@ -9,6 +9,8 @@ import { assertGrowth } from './support/growth';
 
 const parser = createUnbashParser();
 const bash = (code: string): string => execFileSync('bash', ['-c', code], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } }).toString();
+/** The last line `code` prints, run with `n='u=2'` in the environment. */
+const inherited = (code: string): string => spawnSync('bash', ['-c', code], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C', n: 'u=2' }, encoding: 'utf8' }).stdout.trim().split('\n').pop()!;
 const bashErr = (code: string): string => spawnSync('bash', ['-c', code], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' }, encoding: 'utf8' }).stderr;
 
 /** What the model decides of the last `&&` list of `src` (undefined: nothing). */
@@ -116,5 +118,39 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
       assert.strictEqual(decided(`x=1; ${src}; [ "$x" = 1 ] && :`), 'true', src);
     }
     assert.strictEqual(decided('x=1; OPTIND="$y"; [ "$x" = 1 ] && :'), undefined);
+  });
+
+  // docs/design/trust-per-position.md, section 2: what changed `u` where the scan saw no write. bash's environment
+  // here gives `n='u=2'` (a variable the script declares without a value keeps it).
+  it('trusts nothing where bash may run a subscript, a prompt, a word list or a history line, or an inherited value', () => {
+    const changes: [string, string][] = [
+      // A nameref whose target is not known, read: the target's subscript is arithmetic.
+      ["set -- 'a[u=2]'; declare -n r=$1; : \"$r\"", 'reads a nameref'],
+      // `-v` of a name not known: its subscript is arithmetic.
+      ["set -- 'a[u=2]'; [ -v \"$1\" ]", '[ -v'], ["set -- 'a[u=2]'; test -v \"$1\"", 'test -v'], ["x='a[u=2]'; [[ -v $x ]]", '[[ -v'],
+      // `@P` expands the value as a prompt: `$(( ))` in it runs, also from an octal escape.
+      ["set -- '$((u=2))'; : \"${1@P}\"", '@P of $1'], ["x='$((u=2))'; : \"${x@P}\"", '@P'], ["x='\\044((u=2))'; : \"${x@P}\"", '@P of \\044'],
+      ["PS4='+\\044((u=2)) '; set -x; :", 'PS4 with \\044'],
+      // `compgen -W` expands its list; `-F` runs a function.
+      ["compgen -W '$((u=2))' >/dev/null", 'compgen -W'], ['f() { u=2; }; compgen -F f x >/dev/null 2>&1', 'compgen -F'],
+      // `fc -s` runs a line of the history again.
+      ['set -o history\nu=2\nu=1\nfc -s 1=2 u >/dev/null 2>&1\n', 'fc'],
+      // `declare n` outside a function keeps the value from the environment, which arithmetic runs; so does `+=` of an integer.
+      ['declare n; (( n ))', 'declare n'], ['declare -i n; n+=1', 'declare -i n; n+='], ['f() { declare -g n; }; f; (( n ))', 'declare -g n'], ['declare -i n+=1', 'declare -i n+=1'],
+    ];
+    for (const [src, what] of changes) {
+      assert.strictEqual(inherited(`u=1; ${src}\necho "$u"`), '2', what);
+      assert.strictEqual(decided(`u=1; ${src}\n[ "$u" = 1 ] && :`), undefined, what);
+    }
+    // Their quiet forms change nothing: a static name, a quiet prompt, a word list of plain words, `fc -l`, a local.
+    const quiet = ['a=(1); [ -v u ]; [[ -v a[0] ]]; test -v a[0]; test -v 1x', "x='a \\u $u'; : \"${x@P}\"", "compgen -W 'a b $u' -- a >/dev/null", 'fc -l >/dev/null 2>&1',
+      'f() { declare n; local -i m; m+=1; (( n )); }; f', 'declare n=0; (( n ))', 'enable -n echo'];
+    for (const src of quiet) {
+      assert.strictEqual(inherited(`u=1; ${src}\necho "$u"`), '1', src);
+      assert.strictEqual(decided(`u=1; ${src}\n[ "$u" = 1 ] && :`), 'true', src);
+    }
+    // (`enable` of a name not known may turn off any builtin.)
+    assert.strictEqual(decided('u=1; enable -n "$b"; [ "$u" = 1 ] && :'), undefined);
+    assert.strictEqual(decided('u=1; compgen -W "$w" -- a; [ "$u" = 1 ] && :'), undefined);
   });
 });

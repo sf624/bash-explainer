@@ -852,7 +852,7 @@
   },
   {
     "manual": "4.3.1",
-    "snippet": "set -u; declare n; @PROBE:a@ $((n + 1))",
+    "snippet": "set -u; f() { declare n; @PROBE:a@ $((n + 1)); }; f",
     "unbound": [
       "a"
     ],

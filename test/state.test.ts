@@ -405,9 +405,16 @@ describe('shell state: function bodies run at their calls', () => {
     assert.strictEqual(set(end('f() { if a; then set -f; return; fi; f; }; f'), 'noglob'), 'unknown');
     const deep = Array.from({ length: 40 }, (_, i) => `f${i}() { f${i + 1}; }`).join('\n') + '\nf40() { set -f; }\nf0';
     assert.strictEqual(set(end(deep), 'noglob'), 'on');
-    // Deeper than 64 calls, the rest is not followed.
+    // Deeper than 64 calls, the rest is not followed: what those bodies change is not known (bash runs `set -f`).
     const deeper = Array.from({ length: 70 }, (_, i) => `f${i}() { f${i + 1}; }`).join('\n') + '\nf70() { set -f; }\nf0';
-    assert.strictEqual(set(end(deeper), 'noglob'), 'default');
+    assert.strictEqual(set(end(deeper), 'noglob'), 'unknown');
+    // A recursive call may change what the body changes after it (bash prints 2: docs/design/trust-per-position.md, 2).
+    const after = end('g() { if [ "$d" = 1 ]; then d=2; g; return; fi; x=2; }; x=1; d=1; g');
+    assert.strictEqual(variable(after, 'x')?.set, 'unknown');
+    assert.strictEqual(variable(end('g() { if [ "$d" = 1 ]; then d=2; g; fi; }; x=1; d=1; g'), 'x')?.value, '1');
+    // (Walked again for it, the code after it runs: there arithmetic reads `q`, which may not be set yet.)
+    const tree = parser.parse('g() { if [ "$d" = 1 ]; then d=2; g; return; fi; x=2; }; x=1; d=1; g; if [ "$x" = 2 ]; then (( q )); fi; q=1');
+    assert.strictEqual(shellState(tree).blind, 'arithmetic reads `q`, which the script may not have set');
     // Called with many different states.
     const many = 'f() { set -f; x=1; }\n' + Array.from({ length: 20 }, (_, i) => `v${i}=1; f`).join('\n');
     assert.strictEqual(variable(end(many), 'x')?.set, 'unknown');

@@ -80,4 +80,11 @@ describe('the model of a bats file', () => {
     const note = ex.facts!.find((f) => f.id === 'errexit-set-in-ignored-group')!;
     assert.match(note.text, /in `teardown`, which is called on the left of `\|\|`/);
   });
+
+  it('walks a test that calls a recursive function again, with what the function changes', () => {
+    // (The recursive call may run `x=2` after `d=2`: bash prints 2. The walk again keeps the test's call by bats.)
+    const { state, command } = model(['g() { if [ "$d" = 1 ]; then d=2; g; return; fi; x=2; }', '@test "a" {', '  x=1; d=1; g', '  echo "$x"', '}']);
+    assert.deepStrictEqual([...state.hostCalls.values()].map((c) => c.role), ['test']);
+    assert.strictEqual(state.at(command('echo "$x"')).run.variables.get('x')?.set, 'unknown');
+  });
 });

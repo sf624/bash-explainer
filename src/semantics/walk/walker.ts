@@ -24,14 +24,13 @@ import { WalkBuiltins } from './builtins';
 import { WalkConditions } from './conditions';
 import { kept, temporaries } from './temporaries';
 import { type HostCall, hostRun, type HostRun } from './host';
-import { ArithError, ExpansionError, NAME, SUBSTITUTIONS, WalkAgain } from './shared';
+import { notWalked, unsettledBodies, widen } from './widen';
+import { ArithError, ExpansionError, NAME, OPAQUE, SUBSTITUTIONS, WalkAgain } from './shared';
 
 /** The shells that start in POSIX mode (for what the model follows: assignments before special builtins). */
 const POSIX_SHELLS = new Set<Shell>(['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh']);
 /** Where an expression is arithmetic: an arithmetic expansion in it is run with the expression. */
 const ARITH_HOSTS = ['arithmetic_expansion', 'arithmetic_command', 'c_style_for_statement'];
-/** The change (see `Walker.put`) of a path that ran what the walk does not read (`Walker.opaque`). */
-export const OPAQUE = 'opaque';
 /** The statements whose failure stops the shell under `set -e` (a compound command stops in the command that fails). */
 const ERREXIT_STOPS = new Set(['command', 'extended_test', 'arithmetic_command', 'subshell', 'pipeline']);
 
@@ -126,15 +125,21 @@ export class Walker {
    * main shell (not in a branch, a subshell or a function), and never named by `unset`. A body that runs later
    * (no call reaches it, a trap's action) has them.
    */
-  private sureLater = new Map<string, SyntaxNode>();
+  readonly sureLater = new Map<string, SyntaxNode>();
   /** The actions of `trap`, run after the top level (an EXIT trap with its state at the end). */
   readonly traps: { script: NestedScript; host: SyntaxNode; st: ShellState; since: number; exit: boolean; exitOnly: boolean; dead: boolean }[] = [];
   /** The command whose alias, `eval` string or trap action is being run (its nodes are in their own tree). */
   aliasHost: SyntaxNode | undefined;
   /** The walks of each function body: the state it was called with, and the state after it. */
   private readonly walks = new Map<SyntaxNode, { entry: ShellState; exit: ShellState; how: string; aborts: ShellState[]; maybes: ShellState[]; changed: ReadonlySet<string> }[]>();
-  /** What the walks of each function body changed. */
-  private readonly changes = new Map<SyntaxNode, Set<string>>();
+  /** What the walks of each function body changed (from the start: what an earlier walk of the script found, `seed`'s). */
+  readonly changes = new Map<SyntaxNode, Set<string>>();
+  /**
+   * The calls not walked (recursive, too deep, past `WALKS_PER_FUNCTION`), each with how many changes of the body it
+   * took as unknown: a body that changes more by the end of the walk (`x=2` after the recursive call of
+   * `g() { …; g; return; fi; x=2; }`) makes the walk short (`short`).
+   */
+  readonly widened: { def: SyntaxNode; size: number }[] = [];
   /** The state each body being walked started with, and the one to walk it again from (see `recurse`). */
   private readonly bodyEntries = new Map<SyntaxNode, ShellState>();
   private readonly recursed = new Map<SyntaxNode, ShellState>();
@@ -144,7 +149,7 @@ export class Walker {
   /** The changes (`kind name`): how many so far, the number of the last change of each name and the node that made it, and the count at each definition. */
   changeCount = 0;
   readonly lastChange = new Map<string, number>();
-  private readonly lastAt = new Map<string, SyntaxNode>();
+  readonly lastAt = new Map<string, SyntaxNode>();
   private readonly changeAtDefinition = new Map<SyntaxNode, number>();
   /** The sets of the bodies being walked, which collect what they change. */
   readonly collecting: Set<string>[] = [];
@@ -168,6 +173,11 @@ export class Walker {
    * or too deep call) and the loops whose passes did not settle: the conditions in them are not decided.
    */
   private readonly unwalked = new Set<SyntaxNode>();
+  /**
+   * The function bodies called from a place where what the walks found may not hold (`g` in
+   * `rc() { …; rc; return; fi; g; }`: the recursive call, not walked, runs `g`): see `everywhere`.
+   */
+  private unsettled: ReadonlySet<SyntaxNode> | undefined;
   /** Whether the expression being run has read a name the script has not set, taken as unset (see `variableText`). */
   assumed = false;
   /** Where jumps go (see `Target`). */
@@ -199,9 +209,20 @@ export class Walker {
   private outside = 0;
 
   constructor(readonly shell: Shell | undefined, readonly posix: boolean, readonly scripts: Scripts, readonly trust: Trust,
-    readonly host: HostCommands = NO_HOST, readonly hosted?: HostRun) {
+    readonly host: HostCommands = NO_HOST, readonly hosted?: HostRun, seed?: Walker) {
     this.bash = !shell || shell === 'bash';
     this.blind = trust.blind !== undefined;
+    // (With the nodes of those changes, for a call widened before the walk makes them.)
+    for (const [def, keys] of seed?.changes ?? []) this.changes.set(def, new Set(keys));
+    for (const [key, at] of seed?.lastAt ?? []) this.lastAt.set(key, at);
+  }
+
+  /**
+   * Whether a call not walked took fewer changes of its body as unknown than the body makes: then the script is
+   * walked again, with what this walk found each body changes (`seed`).
+   */
+  get short(): boolean {
+    return this.widened.some((w) => this.changes.get(w.def)!.size > w.size);
   }
 
   put<K extends Kind>(st: ShellState, kind: K, name: string, value: Entry<K> | undefined): ShellState {
@@ -380,7 +401,7 @@ export class Walker {
           const after = new Set([...this.lastChange].filter(([, i]) => i > since).map(([k]) => k));
           this.walks.set(def, []);
           this.outside++;
-          this.walkBody(def, this.widen(at, after), { def, saved: new Map() });
+          this.walkBody(def, widen(this, at, after), { def, saved: new Map() });
           this.outside--;
         }
       }
@@ -396,7 +417,7 @@ export class Walker {
     // (An action may set a trap of its own: it is walked in the next round.)
     for (let round = 0; round < NESTED_DEPTH && this.traps.length; round++) for (const t of this.traps.splice(0)) {
       const after = new Set([...this.lastChange].filter(([, i]) => i > t.since).map(([k]) => k));
-      const st = t.exit && this.topLevel(t.host) ? end : this.widen(t.st, after);
+      const st = t.exit && this.topLevel(t.host) ? end : widen(this, t.st, after);
       this.trapAction(t.script, t.host, st, t.exitOnly, t.dead);
     }
   }
@@ -407,49 +428,6 @@ export class Walker {
       if (subshellReasons(x).length || (x.parent.parent && x.parent.type !== 'list' && x.parent.type !== 'redirected_statement')) return false;
     }
     return true;
-  }
-
-  /** `st` with the names in `keys` (`kind name`) taken as unknown; but a function surely defined by the top level (`sureLater`) is. */
-  widen(st: ShellState, keys: Set<string>): ShellState {
-    const changes = { set: new Map(), shopt: new Map(), variables: new Map(), functions: new Map(), aliases: new Map(), disabled: new Map(), hashed: new Map() } as { [K in Kind]: Map<string, Entry<K>> };
-    let opaque = st.opaque;
-    for (const key of keys) {
-      if (key === OPAQUE) {
-        opaque = true;
-        continue;
-      }
-      const kind = key.slice(0, key.indexOf(' ')) as Kind;
-      const name = key.slice(kind.length + 1);
-      if (kind === 'set' || kind === 'shopt') {
-        if (st[kind].get(name) !== 'unknown') changes[kind].set(name, 'unknown');
-      } else if (kind === 'variables') {
-        const v = st.variables.get(name);
-        if (!v) changes.variables.set(name, { declared: 'unknown', set: 'unknown', attrs: {}, at: this.lastAt.get(key)! });
-        else if (v.declared !== 'unknown' || v.set !== 'unknown' || v.value !== undefined) changes.variables.set(name, { ...v, declared: 'unknown', set: 'unknown', value: undefined });
-      } else if (kind === 'functions') {
-        const f = st.functions.get(name);
-        const defs = this.functionDefs.get(name)!;
-        const sure = this.sureLater.get(name);
-        if (sure) {
-          if (f?.state !== 'on') changes.functions.set(name, { state: 'on', def: f?.def ?? sure, exported: f?.exported ?? 'unknown', readonly: f?.readonly ?? 'unknown' });
-        } else if (!f) changes.functions.set(name, { state: 'unknown', def: defs[defs.length - 1], exported: 'unknown', readonly: 'unknown' });
-        else if (f.state !== 'unknown') changes.functions.set(name, { ...f, state: 'unknown' });
-      } else if (kind === 'disabled' || kind === 'hashed') {
-        const e = st[kind].get(name);
-        if (e?.state !== 'unknown') changes[kind].set(name, { state: 'unknown', value: e?.value ?? '', at: e?.at ?? this.lastAt.get(key)! });
-      } else {
-        const a = this.aliases.unknown(name, st.aliases.get(name));
-        if (a) changes.aliases.set(name, a);
-      }
-    }
-    // (The status, and whether the path gets here, stay.)
-    return {
-      ...st,
-      ...(opaque ? { opaque } : {}),
-      set: st.set.withAll(changes.set), shopt: st.shopt.withAll(changes.shopt), variables: st.variables.withAll(changes.variables),
-      functions: st.functions.withAll(changes.functions), aliases: st.aliases.withAll(changes.aliases),
-      disabled: st.disabled.withAll(changes.disabled), hashed: st.hashed.withAll(changes.hashed),
-    };
   }
 
   /**
@@ -635,16 +613,21 @@ export class Walker {
 
   /**
    * Whether what the walks found at `n` holds wherever it runs: not when nothing is trusted, in a function body that
-   * may run where the walk does not see it (src/semantics/trust.ts: `closed`), in one not walked at some call, or in
-   * a loop whose passes did not settle.
+   * may run where the walk does not see it (src/semantics/trust.ts: `closed`), in one not walked at some call, or
+   * called from such a place (`unsettled`), or in a loop whose passes did not settle. (Asked once the walk is done.)
    */
   everywhere(n: SyntaxNode): boolean {
     /* c8 ignore next -- a guard: with nothing trusted, no condition is decided and no path ends, so nothing asks (the callers of `StateModel.settled` check `blind` first) */
     if (this.blind) return false;
+    return this.holds(n, this.unsettled ??= unsettledBodies(this));
+  }
+
+  /** `everywhere`, with `bad` the function definitions whose bodies are not settled. */
+  private holds(n: SyntaxNode, bad: ReadonlySet<SyntaxNode>): boolean {
     // (A definition itself runs where it stands: its body is what may run elsewhere.)
     let root = n;
     for (let x: SyntaxNode | null = n.type === 'function_definition' ? n.parent : n; x; x = x.parent) {
-      if (this.unwalked.has(x) || (x.type === 'function_definition' && !this.trust.closed(field(x, 'name')!.text))) return false;
+      if (this.unwalked.has(x) || (x.type === 'function_definition' && (bad.has(x) || !this.trust.closed(field(x, 'name')!.text)))) return false;
       root = x;
     }
     // (Nor in a trap's action, or a string it runs: a signal, an error or `exit` may run it at any point, with values
@@ -695,7 +678,7 @@ export class Walker {
       // (A job and a coproc are started: 0.)
       const out = this.errexit(n, st, reasons.length ? withStatus(st, reasons.includes('background') || reasons.includes('coproc') ? 0 : after.status) : after);
       // (A trap's action may run after any statement, when its signal comes.)
-      return this.trapKeys.size ? this.widen(out, this.trapKeys) : out;
+      return this.trapKeys.size ? widen(this, out, this.trapKeys) : out;
     } catch (e) {
       // (An expansion error in a subshell of its own, `$((1/0)) &`, ends it there.)
       if (e instanceof ExpansionError) return reasons.length ? withStatus(st, undefined) : e.exit ? this.jump('shell', undefined, e.st, e.sure) : this.abort(e.st, e.sure);
@@ -1231,8 +1214,8 @@ export class Walker {
     }
     let exit: ShellState;
     if (this.stack.includes(def) || this.stack.length >= CALL_DEPTH) {
-      // A recursive call: what the body changed in its walks so far may change, and it may end the line (see `abort`).
-      exit = this.widen(st, this.changes.get(def) ?? new Set());
+      // A recursive call: what the body changes may change, and it may end the line (see `abort`).
+      exit = notWalked(this, def, st);
       this.recurse(def, st);
       this.unwalked.add(def);
       this.abort(st, false);
@@ -1263,7 +1246,7 @@ export class Walker {
           for (const c of this.collecting) c.add(key);
         }
       } else if (walks.length >= WALKS_PER_FUNCTION) {
-        exit = this.widen(st, this.changes.get(def)!);
+        exit = notWalked(this, def, st);
         this.unwalked.add(def);
         this.abort(st, false);
       } else {

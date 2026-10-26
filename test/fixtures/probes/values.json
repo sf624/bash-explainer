@@ -3558,5 +3558,216 @@
       "status": 2,
       "stderr": "SCRIPT: 1: arithmetic expression: division by zero: \"1/0\""
     }
+  },
+  {
+    "manual": "3.4",
+    "snippet": "u=1; set -- 'a[u=2]'; declare -n r=$1; : \"$r\"; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: a nameref whose target is not known is read (its subscript is arithmetic)"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.4",
+    "snippet": "u=1; set -- 'a[u=2]'; [ -v \"$1\" ]; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: `-v` tests a variable name not known (its subscript is arithmetic)"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.4",
+    "snippet": "u=1; set -- 'a[u=2]'; test -v \"$1\"; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: as for `[ -v \"$1\" ]`"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.4",
+    "snippet": "u=1; x='a[u=2]'; [[ -v $x ]]; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: as for `[ -v \"$1\" ]`"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.4",
+    "snippet": "u=1; a=(1); [ -v u ]; [[ -v a[0] ]]; test -v 'a[0]'; @PROBE:a@ \"$u\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "u=1; set -- '$((u=2))'; : \"${1@P}\"; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: a prompt expansion (`@P`) of a value not known"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "u=1; x='$((u=2))'; : \"${x@P}\"; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: `@P` expands `$(( ))` in the value"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "u=1; x='\\044((u=2))'; : \"${x@P}\"; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: `@P` decodes `\\044` to `$` before it expands the value"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "u=1; x='a \\u $u'; : \"${x@P}\"; @PROBE:a@ \"$u\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "8.7",
+    "snippet": "u=1; compgen -W '$((u=2))' >/dev/null; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: `compgen -W` expands its word list"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "8.7",
+    "snippet": "u=1; compgen -W 'a b $u' -- a >/dev/null; @PROBE:a@ \"$u\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "9.2",
+    "snippet": "set -o history\ny=1\nfc -s 1=3 y >/dev/null\n@PROBE:a@ \"$y\"",
+    "none": {
+      "a": "nothing is trusted: `fc` runs a line of the history again"
+    },
+    "facts": {
+      "a": [
+        [
+          "3"
+        ]
+      ],
+      "status": 0,
+      "stderr": "y=3"
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "g() { if [ \"$d\" = 1 ]; then d=2; g; return; fi; x=2; }; x=1; d=1; g; @PROBE:a@ \"$x\"",
+    "none": {
+      "a": "the recursive call of `g` may change `x` (the body sets it after the call)"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "g() { if [ \"$d\" = 1 ]; then d=2; g; fi; }; x=1; d=1; g; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "enable -n exit; x=1; exit 2>/dev/null; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

@@ -15,9 +15,12 @@
 //   others, `run`…, are read by their specs, as builtins: `shellState`'s `host`), a builtin given a variable name not known (`read "$v"`),
 //   indirection (`${!v}`, `${!1}`: its subscript may assign), a DEBUG or RETURN trap, a `${ …; }` (bash 5.3: it runs
 //   in the shell itself, and the walk does not keep what it changes), a trap's or a callback's function that changes options, functions
-//   or aliases, a PS4 that may assign or run a command (`set -x` expands it before each command); and when arithmetic
-//   may read text not known (`$1`, `$(cmd)`, a variable `read` sets or that is never set: bash runs it as an
-//   expression, which may assign any variable).
+//   or aliases, a PS4 that may assign or run a command (`set -x` expands it before each command), a nameref whose
+//   target is not known, assigned or read (the target's subscript is arithmetic), `-v` of a name not known (the
+//   same), `${x@P}` of a value that may run code, `compgen` of a word list that may (or with `-F`), `fc` (but `-l`),
+//   `enable` of a name not known; and when arithmetic may read text not known (`$1`, `$(cmd)`, a variable `read`
+//   sets, that is never set, or that `declare x` outside a function keeps: bash runs it as an expression, which may
+//   assign any variable).
 // - A function is closed (its decisions and dead code may be said, and src/semantics/env.ts says for sure where its
 //   body runs) when every call of it is one the walk sees, in the script or in an `eval`'s string: not exported
 //   (`export -f`, `set -a`), not named as an argument (`complete -F f`, `trap f INT`), not called from the text of a
@@ -70,8 +73,13 @@ const IDENTIFIERS = /(?<![\w#@.])[A-Za-z_]\w*/g;
 const PASTE = /^\$\{#?[A-Za-z_]\w*(?:\[[^\]]*\])?(?::?-[^{}$`'"]*)?\}/;
 /** A parameter that expanding changes nothing: `$x`, `${x}`, `${#x}`, `${x[0]}`, `${x:-w}`, `${x:+w}` (w with no `$`). */
 const QUIET_PARAMETER = /\$(?:[A-Za-z_]\w*|[0-9@*#?$!_-]|\{#?(?:[A-Za-z_]\w*|[0-9@*#?$!_-])(?:\[(?:\d+|@|\*)\])?(?::?[-+?][^$`{}]*)?\})/g;
-/** Whether the text of a prompt (`PS4`) runs nothing and assigns nothing when bash expands it: only `QUIET_PARAMETER`s, nested in each other. */
+/**
+ * Whether the text of a prompt (`PS4`, `${x@P}`) runs nothing and assigns nothing when bash expands it: only
+ * `QUIET_PARAMETER`s, nested in each other, and no octal escape (bash decodes `\044` to a `$` before it expands the
+ * prompt: `x='\044((u=2))'; : "${x@P}"` sets `u`).
+ */
 function quietPrompt(text: string): boolean {
+  if (/\\[0-7]/.test(text)) return false;
   for (let before = ''; before !== text;) [before, text] = [text, text.replace(QUIET_PARAMETER, '')];
   return !/[$`]/.test(text);
 }
@@ -79,8 +87,11 @@ function quietPrompt(text: string): boolean {
 /** The builtins a command name read from a variable may be (`debug=false; $debug`): they change nothing. */
 const SAFE_BUILTINS = new Set(['true', 'false', ':', 'echo', 'test', '[']);
 
-/** What a write gives a variable: a number, nothing (unset), text with these names in it, or text not known. */
-type Value = 'number' | 'none' | 'unknown' | { names: string[]; text: string; fixed?: true };
+/**
+ * What a write gives a variable: a number, nothing (unset), the value it had (`declare x` outside a function: maybe
+ * one from the environment), text with these names in it, or text not known.
+ */
+type Value = 'number' | 'none' | 'kept' | 'unknown' | { names: string[]; text: string; fixed?: true };
 
 interface Write {
   /** A plain assignment (see the head of this file). */
@@ -91,6 +102,8 @@ interface Write {
   foreign: boolean;
   /** Made by a nameref declaration (`declare -n r=x`). */
   nameref?: boolean;
+  /** Made by `+=` (`n+=1`): an integer adds to the value it had, which arithmetic reads (see `appended`). */
+  append?: true;
 }
 
 /**
@@ -157,6 +170,10 @@ class Scan {
   readonly associative = new Set<string>();
   readonly refTargets = new Set<string>();
   readonly refUnknown = new Set<string>();
+  /** The variables the script expands, or tests with `-v` (a nameref's target, read through it, may have a subscript). */
+  private readonly reads = new Set<string>();
+  /** The variables expanded as prompts (`${x@P}`), whose values bash expands again. */
+  private readonly prompts = new Set<string>();
   readonly exported = new Set<string>();
   exportAll = false;
   readonly functions = new Set<string>();
@@ -276,7 +293,15 @@ class Scan {
     this.texts.set(name, list);
   }
 
-  /** A variable named by a word given to a builtin (`read x`, `printf -v 'a[i]'`): written, to a value of `value`. */
+  /**
+   * `n+=w`, just written: an integer adds to the value `n` had, read as arithmetic (one from the environment runs as an
+   * expression: `declare -i n+=1` with `n='u=2'` sets `u`).
+   */
+  private appended(name: string, n: SyntaxNode, w: Where): void {
+    this.writes.get(name)!.at(-1)!.append = true;
+    this.assigned(name, name, n, w);
+  }
+
   /** A variable a builtin sets, named `text` by the word `word` (undefined: a name not known here). */
   private named(text: string | undefined, word: SyntaxNode, w: Where, value: Value = 'unknown'): void {
     const m = text === undefined ? null : /^([A-Za-z_]\w*)(?:\[(.*)\])?$/s.exec(text);
@@ -317,10 +342,20 @@ class Scan {
         if (index) this.subscripts.push({ array: field(n, 'name')!.text, text: index.text, owner: this.owner(n), where: w });
         break;
       }
+      case 'simple_expansion':
+        if (n.namedChildren[0]?.type === 'variable_name') this.reads.add(n.namedChildren[0].text);
+        break;
       case 'expansion': {
         const name = n.namedChildren[0];
         const ops = n.children.filter((c) => !c.named).map((c) => c.type);
         if (indirect(n)) this.blindFor('indirect expansion');
+        const read = name?.type === 'subscript' ? field(name, 'name')!.text : name?.text;
+        if (read !== undefined) this.reads.add(read);
+        // `${x@P}`: the value is expanded as a prompt, which may run `$(( ))` and `$( )` in it (see `finish`).
+        if (ops.join(' ').includes('@ P')) {
+          if (read === undefined || !NAME.test(read)) this.blindFor('a prompt expansion (`@P`) of a value not known');
+          this.prompts.add(read);
+        }
         if (name?.type === 'variable_name' && (ops.includes(':=') || ops.includes('='))) {
           const word = n.namedChildren[n.namedChildren.length - 1];
           this.write(name.text, w, false, word === name ? { names: [], text: '' } : this.value(word));
@@ -387,10 +422,19 @@ class Scan {
     return x?.type === 'extended_test';
   }
 
-  /** The operand of `-v` (`[[ -v a[i] ]]`): its subscript is arithmetic. */
+  /**
+   * The operand of `-v` (`[[ -v a[i] ]]`): its subscript is arithmetic. A name not known (`[ -v "$1" ]`) may have a
+   * subscript that assigns any variable (`-v 'a[u=2]'`).
+   */
   private testV(word: SyntaxNode, w: Where): void {
-    const m = /^([A-Za-z_]\w*)\[(.*)\]$/s.exec(staticWordValue(word) ?? word.text);
-    if (m) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(word), where: w });
+    const text = staticWordValue(word) ?? word.text;
+    const m = /^([A-Za-z_]\w*)(?:\[(.*)\])?$/s.exec(text);
+    if (!m) {
+      if (staticWordValue(word) === undefined) this.blindFor('`-v` tests a variable name not known');
+      return;
+    }
+    this.reads.add(m[1]);
+    if (m[2] !== undefined) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(word), where: w });
   }
 
   /**
@@ -415,6 +459,7 @@ class Scan {
     const v = this.value(value);
     this.write(name, w, plain && !subscript, v);
     this.assigned(name, value ? value.text : '', a, w);
+    if (!subscript && a.children.some((c) => c.type === '+=')) this.appended(name, a, w);
   }
 
   private declaration(builtin: string, words: SyntaxNode[], { roles, on, off }: Declaration, w: Where): void {
@@ -475,9 +520,13 @@ class Scan {
           const value: Value = text === undefined ? 'unknown' : { names: identifiers(m[4]), text: m[4], fixed: true };
           this.write(name, w, plain && !m[2], value);
           this.assigned(name, text === undefined ? undefined : m[4], o, w);
+          if (m[3] === '+=' && !m[2]) this.appended(name, o, w);
         } else if (!(builtin === 'export' || builtin === 'readonly') || !plain) {
-          // (`local x`, `declare x`: a new variable, with no value; `export x` and `readonly x` change no value.)
-          this.write(name, w, false, 'none');
+          // (`local x`, `declare x` in a function: a new variable, with no value; `export x` and `readonly x` change no
+          // value. Outside a function, or with -g, `declare x` keeps the value it had, maybe one from the environment:
+          // `declare n; (( n ))` runs `n='y=5'` from there. A trap's action may run in any function, or none.)
+          const local = w.fn !== undefined && (!w.foreign || w.now) && !on.includes('g') && builtin !== 'export' && builtin !== 'readonly';
+          this.write(name, w, false, local ? 'none' : 'kept');
         }
       }
       if (on.includes('i')) this.integers.add(name);
@@ -593,6 +642,25 @@ class Scan {
       case 'let':
         for (const r of parse.roles) if (r.role.role === 'operand') this.arithText(args[r.word].text, w);
         return;
+      case 'compgen': {
+        // `compgen -W list` expands the list in the shell (`compgen -W '$((u=2))'` sets `u`); `-F f` runs a function.
+        // (The word being completed is only matched.)
+        for (const r of parse.roles) {
+          const v = staticWordValue(args[r.word]);
+          if (r.role.role === 'operand') continue;
+          if (v === undefined || r.role.role === 'unknown-option'
+            || (r.role.role === 'value' && r.role.of === '-W' && !quietPrompt(v))) this.blindFor('`compgen` expands a word list or runs a command the model does not read');
+        }
+        return;
+      }
+      case 'fc':
+        // (`fc -l` lists; the others run a line of the history again.)
+        if (!optionRoles(parse).some((r) => r.flag === '-l')) this.blindFor('`fc` runs a line of the history again');
+        return;
+      case 'enable':
+        // (`enable -n x` turns the builtin `x` off: the walk follows a name it knows.)
+        if (args.some((a) => staticWordValue(a) === undefined)) this.blindFor('`enable` is given a name not known');
+        return;
       case 'unset':
         this.unset(args, w);
         return;
@@ -700,8 +768,10 @@ class Scan {
         this.blindFor(`arithmetic reads \`${name}\`, which the script never sets`);
       }
       if (this.refUnknown.has(name)) this.blindFor(`arithmetic reads \`${name}\`, a nameref whose target is not known`);
+      if (writes.every((w) => w.append)) this.blindFor(`arithmetic reads \`${name}\`, which only \`+=\` sets`);
       for (const w of writes) {
         if (w.value === 'unknown' && !w.nameref) this.blindFor(`arithmetic reads \`${name}\`, which may be set to text not known`);
+        if (w.value === 'kept') this.blindFor(`arithmetic reads \`${name}\`, which a declaration may keep from the environment`);
         if (typeof w.value !== 'object') continue;
         for (const x of w.value.names) {
           if (!seen.has(x)) {
@@ -727,10 +797,21 @@ class Scan {
     // PS4 is expanded before each command `set -x` traces (also `bash -x script`): a value that may assign (arithmetic,
     // `${x:=w}`, a subscript) or run a command changes the shell where the walk does not see it.
     for (const w of this.writes.get('PS4') ?? []) {
-      if (w.value !== 'none' && w.value !== 'number' && (w.value === 'unknown' || !w.value.fixed || !quietPrompt(w.value.text))) this.blindFor('PS4, which `set -x` expands before each command, may assign or run a command');
+      // (A value kept from the environment is assumed quiet: README, Limitations.)
+      if (w.value !== 'none' && w.value !== 'kept' && w.value !== 'number' && (w.value === 'unknown' || !w.value.fixed || !quietPrompt(w.value.text))) this.blindFor('PS4, which `set -x` expands before each command, may assign or run a command');
     }
-    // A nameref whose target is not known, assigned or unset: any variable may change.
+    // A nameref whose target is not known, assigned or unset: any variable may change. Read, too: bash expands the
+    // target's subscript (`declare -n r=$1; : "$r"` with `$1` = `a[u=2]` sets `u`).
     for (const r of this.refUnknown) if (this.writes.get(r)!.some((w) => !w.nameref)) this.blindFor('a nameref whose target is not known is assigned');
+    for (const r of this.refUnknown) if (this.reads.has(r)) this.blindFor('a nameref whose target is not known is read');
+    // `${x@P}` expands the value again, as a prompt: each value the script gives it must run nothing and assign nothing.
+    for (const name of this.prompts) {
+      const writes = this.writes.get(name);
+      if (!writes || changedUnseen(name) || this.refUnknown.has(name) || this.refTargets.has(name)
+        || writes.some((w) => w.value === 'unknown' || w.value === 'kept' || (typeof w.value === 'object' && (!w.value.fixed || !quietPrompt(w.value.text))))) {
+        this.blindFor('a prompt expansion (`@P`) of a value that may run a command or assign');
+      }
+    }
     // The functions a callback, a trap or a foreign text may run, and those they call.
     const reached = [...this.callbacks];
     const run = new Set(reached);
