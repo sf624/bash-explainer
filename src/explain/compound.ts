@@ -10,7 +10,7 @@ import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { anonSections } from '../refs';
 import { definitionFails } from '../semantics/names';
-import { descendants, field, fields, type SyntaxNode } from '../syntax/tree';
+import { descendants, field, fields, strayKeyword, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { caseExample, pipelineExample } from './examples';
 import { has, intersects, isBlockLike, same, skeletal, sortTokens, summaryOf } from './nodes';
@@ -229,11 +229,8 @@ export function caseItem(cx: Explainer, n: SyntaxNode): Token {
  * word, the construct lacks its keyword and bash stops with a syntax error. Marks the token and adds a note.
  */
 export function missingKeyword(cx: Explainer, n: SyntaxNode, t: Token): Token {
-  if (!n.incomplete) return t;
-  const kw = n.type === 'if_statement' || n.type === 'elif_clause' ? 'then' : 'do';
-  const head = n.type === 'for_statement' || n.type === 'select_statement' ? n.namedChildren : n.namedChildren.slice(0, 1);
-  const stray = head.some((h) => [h, ...descendants(h, ['word'])].some((w) => w.type === 'word' && w.text === kw));
-  if (!stray) return t;
+  const kw = strayKeyword(n);
+  if (!kw) return t;
   const msg = cx.s(
     `構文エラー: \`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash は「syntax error near unexpected token」で止まる`,
     `Syntax error: a \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash stops with "syntax error near unexpected token"`);

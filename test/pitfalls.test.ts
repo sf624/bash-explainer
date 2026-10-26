@@ -225,6 +225,22 @@ describe('the pitfall gate', () => {
     const readme = new Analyzer('en').explainLine(parser.parse('ll /tmp'), 0, undefined, { pitfalls: false, host: { kind: 'markdown' } }).notes;
     assert.ok(readme.some((n) => /^ℹ System-dependent: `ll`/.test(n)));
   });
+  it('the distro-alias note says "an alias" and "a function"; a quoted name is no alias, so it gets no note', () => {
+    const n = (src: string) => explainNotes(src, 0, true).filter((x) => /System-dependent/.test(x));
+    assert.match(n('ll /tmp')[0], /^⚠ System-dependent: `ll` is an alias Ubuntu, /);
+    assert.match(n('remount ro /')[0], /^⚠ System-dependent: `remount` is a function openSUSE defines /);
+    assert.match(n('x=1 ll')[0], /is an alias/);
+    // (Bash looks up no alias for a quoted or escaped word: `"+"` is a plain command name, here as in `ls "+"`.)
+    for (const src of ['"+"', '"ll" /tmp', "'ll' /tmp", '\\ll /tmp', '"l."', 'ls "+"', 'echo ll', 'sudo ll', 'command ll']) assert.deepStrictEqual(n(src), [], src);
+    // A function of a system is called by its quoted name too.
+    assert.match(n('"remount" ro /')[0], /is a function/);
+    // The README note reads the same.
+    const readme = (src: string) => new Analyzer('en').explainLine(parser.parse(src), 0, undefined, { pitfalls: false, host: { kind: 'markdown' } }).notes;
+    assert.match(readme('remount ro /')[0], /^ℹ System-dependent: `remount` is a function /);
+    assert.deepStrictEqual(readme('"ll" /tmp').filter((x) => /System-dependent/.test(x)), []);
+    const ja = new Analyzer('ja').explainLine(parser.parse('remount ro /'), 0, undefined, { pitfalls: true }).notes;
+    assert.ok(ja.some((x) => /^⚠ 環境依存: `remount` は openSUSE が対話シェル用に定義する関数で/.test(x)), ja.join('|'));
+  });
   it('a syntax error is not a pitfall: the missing then stays with pitfalls off', () => {
     const notes = explainNotes('if [ -f a ] then echo x; fi', 0, false);
     assert.ok(notes.some((n) => /Syntax error: a `;` or a newline is needed before `then`/.test(n)), notes.join('|'));

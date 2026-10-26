@@ -436,6 +436,8 @@ The warning that an empty variable makes `rm -r` delete from the root:
 - The words of an ssh command that this shell expands before sending them are the ones bash expands: `'a'*`, `"a"*`, `a=~/x`, `x=~`, `<(echo hi)` and `>(cat)` now get the pitfall, and a `*` after `set -f` or `set -o noglob` no longer does.
 - A variable read in a `bash -c` string that bash cannot parse (`bash -c 'echo ${y'`) no longer gets the pitfall that it is not exported.
 - A function of this script that a `bash -c` string calls after it reads a file (`bash -c '. ./lib.sh && f'`, `bash -lc 'source ~/.profile; f'`) gets no pitfall that the new shell lacks it: the file may define it. Called before the file is read (`bash -c 'f; . ./lib.sh'`), it keeps the pitfall. With `-l`, the explanation of `f` names the file too: "only if the files it reads at startup (`-l`, `-i`, `BASH_ENV`), or the file it reads on line 2, define it".
+- The note on a distribution's alias or function (`ll`, `remount`) reads "is an alias" and "is a function"; before, it said "is an function". A quoted or escaped name (`"+"`, `"ll" /tmp`, `\ll`) gets none for an alias: bash looks up no alias for it. A function of the system (`"remount"`) still does.
+- In `if [ -f a ] then …`, `while [ x ] do …` and `if test -f a then …` (no `;` before `then` or `do`), the note is the syntax error only. Before, the line also said `[` or `test` "fails when it runs"; bash never runs it: `then` is an argument, so the construct has no `then` and bash stops with "syntax error near unexpected token `fi`" (`done` for a loop). `if [[ -f a ]] then` is valid and gets no note.
 
 ### What `|| true` masks
 
