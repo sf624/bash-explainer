@@ -1,4 +1,5 @@
 import type { CommandSlot, CommandSpec, Condition, EachFile, IoUse, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec } from '../argv/spec';
+import type { BashVersion } from '../bashversion';
 import type { EmbeddedLang } from '../embedded/types';
 import { Text, tx } from '../i18n';
 export { wordTable } from '../wordtable';
@@ -11,7 +12,8 @@ export { wordTable } from '../wordtable';
  * `-i.bak`), `next:<regexp>` (an optional value, taken from the next word when it matches: `journalctl -b -1`),
  * `lang:<name>` (the value's language), `io:<use>` (what the command does with the file the value names, `IoUse`:
  * `sort -o` writes it), `each:<how>` (how the command works on its input files when the option is given, `EachFile`:
- * `sed -i` rewrites each) and `persistent` (subcommands take it too). The fifth item gives the meaning of particular
+ * `sed -i` rewrites each), `persistent` (subcommands take it too) and `since:<release>` (the bash release that brought
+ * a builtin's option: `OptionSpec.since`). The fifth item gives the meaning of particular
  * values (`set -o pipefail`).
  */
 export type OptSpec = [string, string, string, string?] | [string, string, string, string, Record<string, Text>];
@@ -19,7 +21,8 @@ export type OptSpec = [string, string, string, string?] | [string, string, strin
 /** The option spec of a tuple (see `OptSpec`). */
 export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
   const each = /each:([\w-]+)/.exec(flags)?.[1] as EachFile | undefined;
-  const opt: OptionSpec = { names: names.split('|'), text: tx(ja, en), ...(flags.includes('persistent') ? { persistent: true } : {}), ...(each ? { eachFile: each } : {}) };
+  const since = /since:([\d.]+)/.exec(flags)?.[1] as BashVersion | undefined;
+  const opt: OptionSpec = { names: names.split('|'), text: tx(ja, en), ...(flags.includes('persistent') ? { persistent: true } : {}), ...(each ? { eachFile: each } : {}), ...(since ? { since } : {}) };
   const lang = /lang:(\w+)/.exec(flags)?.[1] as EmbeddedLang | undefined;
   const io = /io:(\w+)/.exec(flags)?.[1] as IoUse | undefined;
   const setsEnv = /\bsetenv\b/.test(flags) ? 'variable' : flags.includes('envfile') ? 'file' : undefined;

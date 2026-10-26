@@ -1319,6 +1319,7 @@
  "trap 'rm -f $tmp' EXIT",
  "trap 'rm f' INT",
  "trap - INT; v=2",
+ "trap -lP INT",
  "true",
  "try input",
  "type -t ls",

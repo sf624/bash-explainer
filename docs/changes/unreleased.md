@@ -145,6 +145,19 @@ script.sh:3:3: warning: ${ …; } (command substitution in the current shell) is
 
 This changes what bash scripts that already use `${ …; }` or `${| …; }` get by default: a warning, and `--check` exits 1. Set `bashVersion` to `5.3` to explain them as bash 5.3 runs them. The GitHub Action takes the release as its `bash-version` input.
 
+The options that builtins got in bash 5.3 are explained, and are warnings in 5.2 mode (`laterOption`): bash 5.2 says "invalid option", and the builtin does nothing (status 2). `source`, `.` and `trap` are special builtins: in POSIX mode, that error exits the shell.
+
+| Written | Shown now | Shown before |
+| --- | --- | --- |
+| `source -p "$HOME/lib" util.sh` (and `. -p`) | "bash 5.3: look for the file in the given directories, separated by colons, instead of `$PATH` (the current directory only for an empty entry)" | "`-p`: option not in the dictionary" |
+| `compgen -V words -W "a b" -- a` | "bash 5.3: store the candidates in the named indexed array instead of printing them"; `words` is the array it sets | `-V` unknown, and `words` taken for the word to complete |
+| `trap -P INT` | "bash 5.3: print only the command set for each signal given"; `INT` is a signal whose command it prints | `-P` unknown, and `INT` said to reset the trap |
+| `read -E line` | "bash 5.3: read with Readline line editing and bash's own completion" | `-E` unknown |
+
+```text
+script.sh:4:8: warning: source -p is a bash 5.3 option: bash 5.2 reports "invalid option", and source does nothing (status 2; an error of a special builtin, so in POSIX mode the shell exits). [laterOption]
+```
+
 The plan, and the list of what else changed in bash 5.3, are in [docs/design/bash-versions.md](../design/bash-versions.md).
 
 ### What a command name is
