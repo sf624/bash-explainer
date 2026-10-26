@@ -30,7 +30,7 @@ describe('the message catalog', () => {
 
   // The levels of docs/design/note-levels.md: a pitfall is a warning unless it is a caveat; a note is a plain fact
   // unless it says the line fails when it runs.
-  const CAVEATS = ['declaration-masks-status', 'pipefail-missing', 'function-last-test-returns-status', 'posix-special-function-name-maybe',
+  const CAVEATS = ['declaration-masks-status', 'pipefail-missing', 'function-last-test-returns-status', 'failure-reported-as-success', 'posix-special-function-name-maybe',
     'extglob-maybe-on', 'extglob-not-found', 'extglob-maybe-on-trap', 'globstar-maybe-on',
     'globstar-not-found', 'ssh-local-expansion', 'function-not-imported-sh', 'unmatched-glob-runs-once', 'for-over-ls-output', 'for-over-unquoted-args',
     'unquoted-variable-in-test', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment'];

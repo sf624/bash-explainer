@@ -5,15 +5,19 @@
 // where bash ignores it; a function, `( )` or `{ }` of several commands run where it is ignored; a `$( )` of several
 // commands, where bash turns it off; a declaration that hides the status of its `$( )`; the first pipeline that
 // hides a failure without pipefail; a function whose last command is `test && cmd`, called where `set -e` stops it,
-// and a script that ends with one.
-import { canonicalName } from './dict/aliases';
+// and a script that ends with one; `cmd || echo "msg"` where its status is the function's or the script's, or where
+// `set -e` would have stopped it.
+import { canonicalName, lookupCommand } from './dict/aliases';
 import type { FactSpec, Words } from './messages';
 import { featureWorks, type Shell } from './dialect';
+import { outputsOf } from './idioms';
+import { commandName } from './semantics/effects';
 import { STATEMENTS } from './semantics/env';
 import { resolveName } from './semantics/names';
 import type { Decision, StateModel } from './semantics/state';
 import { type Ignored, lastStatements, type StatusModel, type StatusRule } from './semantics/status';
-import { ancestor, descendants, field, fields, isShebang, substitutionForm, type SyntaxNode } from './syntax/tree';
+import { staticWordValue } from './staticword';
+import { ancestor, descendants, field, fields, isShebang, redirectionsOf, substitutionForm, type SyntaxNode } from './syntax/tree';
 
 /** A fact and the statement it is about (where the part hover shows it). */
 export type StatusFact = FactSpec & { node: SyntaxNode };
@@ -137,6 +141,8 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         break;
       }
       case 'list': {
+        const reported = failureReported(n, root, state, status, shell);
+        if (reported) add(n, reported);
         // The last command of a function, `test && cmd`: when the test fails, the function returns its status.
         if (!n.children.some((c) => c.type === '&&') || n.children.some((c) => c.type === '||')) break;
         const def = ancestor(n, (x) => x.type === 'function_definition');
@@ -230,6 +236,60 @@ function conditionFacts(root: SyntaxNode, state: StateModel): [SyntaxNode, FactS
     }
   }
   return out;
+}
+
+/**
+ * `cmd || echo "msg"`: the list's status is that of the command on the right, which prints a message and succeeds, so a
+ * failure of `cmd` is seen as a success where the status matters: at the end of a function (called, and not only in
+ * `$( )`, where what it prints is a value: `v=$(cat f || echo none)`), at the end of a script run as a program (it has
+ * a shebang), or where `set -e` is on and would have stopped the script. Not when the left side is a test (`[ -f x ]
+ * || echo none`), nor for `|| true` or `|| :`, which mean to ignore the failure.
+ */
+function failureReported(n: SyntaxNode, root: SyntaxNode, state: StateModel, status: StatusModel, shell?: Shell): FactSpec | undefined {
+  const ops = n.children.filter((c) => c.type === '&&' || c.type === '||');
+  // (A list has an operator, and a parent: the script at least.)
+  if (ops.at(-1)!.type !== '||' || n.parent!.type === 'list') return undefined;
+  // (While it is typed, `a ||` has no right side.)
+  const [left, right] = n.namedChildren.filter((c) => STATEMENTS.has(c.type));
+  const prints = right ? lastStatements(right) : [];
+  if (!prints.length || !prints.every((c) => printsAndSucceeds(c, state, shell)) || status.succeeds(left) || tests(n, state, status, shell)) return undefined;
+  const background = status.status(n).kind === 'background' || !!ancestor(n, (x) => STATEMENTS.has(x.type) && status.status(x).kind === 'background');
+  if (background) return undefined;
+  const def = ancestor(n, (x) => x.type === 'function_definition');
+  const body = def && field(def, 'body');
+  let where: 'function' | 'script' | 'errexit';
+  if (body && lastStatements(body).includes(n)) {
+    const calls = [...state.calls.get(def)?.keys() ?? []];
+    if (!calls.length || calls.some((c) => ancestor(c, (x) => x.type === 'command_substitution' || x.type === 'process_substitution'))) return undefined;
+    where = 'function';
+  } else if (!def && isShebang(root.namedChildren[0]) && lastStatements(root).includes(n)) {
+    where = 'script';
+  } else if (status.errexit(n).active === 'on') {
+    where = 'errexit';
+  } else return undefined;
+  // (The message goes to stderr in the rewrite, unless its output is sent somewhere already.)
+  const msg = prints[prints.length - 1];
+  const fix = shorten(msg.text) + (redirectionsOf(msg).length ? '' : ' >&2');
+  const quiet = (left.type === 'command' || left.type === 'redirected_statement') && outputsOf(left).err === '/dev/null' ? redirectionsOf(left).map((r) => r.text).join(' ') : '';
+  return { id: 'failure-reported-as-success', params: { where, name: def ? field(def, 'name')!.text : '', left: shorten(left.text), right: shorten(msg.text), quiet, fix } };
+}
+
+/**
+ * Whether command `c` prints its words and surely succeeds (`CommandSpec.prints`: `echo "msg"`; `printf 'msg\n'`, whose
+ * format is known and has no conversion that fails on a bad value, `%d`, nor `-v`, which prints nothing). The builtin
+ * or the program, not a function of that name.
+ */
+function printsAndSucceeds(c: SyntaxNode, state: StateModel, shell?: Shell): boolean {
+  if (c.type !== 'command') return false;
+  const name = commandName(c);
+  const prints = name === undefined ? undefined : lookupCommand(name)?.prints;
+  if (!prints) return false;
+  const kind = resolveName(state, field(c, 'name')!.text, field(c, 'name')!, { shell, command: true }).kind;
+  if (kind !== 'builtin' && kind !== 'file') return false;
+  if (prints === 'words') return true;
+  const format = fields(c, 'argument')[0];
+  const text = format && staticWordValue(format);
+  return text !== undefined && !text.startsWith('-') && !/%(?![sb])/.test(text.replace(/%%/g, ''));
 }
 
 /** Whether every command of an `&&` list but the last is a test: `[ ]`, `[[ ]]`, `(( ))`, `test`, `grep -q`. */

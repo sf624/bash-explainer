@@ -187,7 +187,7 @@ const scriptDirPath = (c: SyntaxNode): boolean => {
 };
 
 /** Where stdout and stderr end up after a command's redirections, when the targets are plain words. */
-const outputsOf = (n: SyntaxNode): { out?: string; err?: string } => {
+export const outputsOf = (n: SyntaxNode): { out?: string; err?: string } => {
   const to: { out?: string; err?: string } = {};
   for (const r of redirectionsOf(n).filter((x) => x.type === 'file_redirect')) {
     const fd = field(r, 'descriptor')?.text ?? '';

@@ -37,6 +37,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'function-last-test-stops-script': 'mechanical',
   // `a && b` as the script's last command → `if a; then b; fi`: the script's status is 0.
   'script-last-test-returns-status': 'mechanical',
+  // `cmd || echo "msg"` → `cmd || { echo "msg" >&2; exit 1; }`: the status is 1 when `cmd` fails.
+  'failure-reported-as-success': 'mechanical',
   'keyword-needs-separator': 'none',
   'bracket-missing-close': 'none',
   // `[ -f $x]` → `[ -f $x ]`.
@@ -158,6 +160,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 15, scenario: 24, prose: 12, none: 41 });
+      { mechanical: 16, scenario: 24, prose: 12, none: 41 });
   });
 });

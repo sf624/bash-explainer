@@ -120,12 +120,13 @@ The catalog's classification is in test/suggestions.test.ts (#273), one line per
 | `declaration-masks-status` | `local x=$(f)` → `local x; x=$(f)` | `f` fails, succeeds; with `set -e` |
 | `postfix-increment-status` | `((i++))` → `((++i))`, `i=$((i+1))` | `i` 0, 1, unset; with `set -e` |
 | `function-last-test-returns-status`, `-stops-script` | `a && b` last → `if a; then b; fi` | `a` fails, succeeds; with `set -e` |
+| `failure-reported-as-success` | `a \|\| echo m` → `a \|\| { echo m >&2; exit 1; }` (`return 1` in a function) | `a` fails, succeeds; last of a script, of a function; with `set -e` |
 | `unmatched-glob-runs-once` | `[ -e "$f" ] \|\| continue` first; `shopt -s nullglob` | matching files, none |
 | `regex-backslash-dropped` | `[[ $x =~ \bfoo ]]` → `re='\bfoo'; [[ $x =~ $re ]]` | strings that match and do not |
 | `nounset-unbound` | `$x` → `${x:-}` (when the analyzer gives `fix`) | unset, empty, set; with `set -u` |
 | `bracket-close-glued` | `[ -f $x]` → `[ -f $x ]` | file present, absent |
 
-The style checks of src/pitfalls.ts are all mechanical: `[-f x]` → `[ -f x ]`, `x = 1` → `x=1`, `{echo a;}` → `{ echo a; }`, `}` after a command → `; }`, `rm -rf $D/…` → `"${D:?}"/…`, `read x` → `read -r x`, `<` in `[ ]` → `\<`, `$x]` → `$x ]`, `&&` in `[ ]` → `] && [`.
+The style checks of src/pitfalls.ts are mechanical: `[-f x]` → `[ -f x ]`, `x = 1` → `x=1`, `{echo a;}` → `{ echo a; }`, `}` after a command → `; }`, `rm -rf $D/…` → `"${D:?}"/…`, `read x` → `read -r x`, `<` in `[ ]` → `\<`, `$x]` → `$x ]`, `&&` in `[ ]` → `] && [`. Two give advice instead, whose rewrite changes what runs as meant: `source lib.sh` → `source ./lib.sh` (another file when `$PATH` has one of the name), and a regex pattern that is a variable → `-F`, `-w` or `-x`.
 
 ### 3.2 The data
 
