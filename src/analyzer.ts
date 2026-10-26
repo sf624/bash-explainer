@@ -11,14 +11,16 @@ import { lookupCommand } from './dict/aliases';
 import { plainNote } from './messages';
 import { pictureNote } from './ctlchars';
 import { dialectFound, Shell } from './dialect';
-import { shellState } from './semantics/state';
+import { docLine, documentRoot, shellState, type StateModel } from './semantics/state';
+import { wordMeaning } from './semantics/words';
+import { parseExpansion } from './expansion';
+import { varDesc } from './explain/words';
 import type { NestedScript } from './semantics/nested';
 import { statusModel } from './semantics/status';
-import { wordMeaning } from './semantics/words';
 
 export { EXAMPLE_KINDS } from './analyzer-types';
 export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, ScriptProcess, Span, Token, TokenOrigin } from './analyzer-types';
-import type { ExplainOptions, LineExplanation } from './analyzer-types';
+import type { ExplainOptions, LineExplanation, Token } from './analyzer-types';
 import { readingTree } from './reading';
 import { claim, dropLabelEcho } from './tokenmarks';
 import { LineExplainer, type Walk } from './explain/context';
@@ -29,6 +31,33 @@ import { explain, flatten } from './explain/dispatch';
 import { continuationNotes, extglobPitfalls, pipeSubshellPitfalls, statusNotes, unmatchedGlobPitfalls } from './explain/line-notes';
 
 export { isBlockLike, summaryOf };
+
+/**
+ * (Prototype B) Where the value of a parameter expansion comes from, for the first step of the panel: what the
+ * variable is when it is a well-known one (`$USER`: the user name), else the line of the script that last set it,
+ * when the model trusts that it is set there (`backup=…` on line 1).
+ */
+function variableFrom(cx: LineExplainer, state: StateModel, part: SyntaxNode): { meaning?: string; line?: number; loop?: boolean } | undefined {
+  const name = part.type === 'simple_expansion' ? part.text.slice(1) : parseExpansion(part.text)?.name;
+  if (!name) return undefined;
+  const meaning = varDesc(cx, name, part);
+  if (meaning) return { meaning };
+  if (!/^[A-Za-z_]\w*$/.test(name)) return undefined;
+  const v = state.at(part).run.variables.get(name);
+  if (!v || v.set !== 'on' || documentRoot(v.at) !== documentRoot(part)) return undefined;
+  // (The variable of a `for` loop around the expansion, which the loop sets on each pass, even where the model does
+  // not trust its value: the words it takes may be a glob.)
+  const loop = v.at.parent?.type === 'for_statement' && v.at.parent.startIndex <= part.startIndex && part.endIndex <= v.at.parent.endIndex;
+  if (!loop && !state.trusts(name)) return undefined;
+  return { line: docLine(v.at) + 1, ...(loop ? { loop: true } : {}) };
+}
+
+/** (Prototype B) What bash's expansions make of the word `w` before the command reads it: file names (a glob), a home directory (a tilde). */
+function wordExpands(state: StateModel, w: SyntaxNode): ('glob' | 'tilde' | 'split')[] {
+  const m = wordMeaning(w, state);
+  if (!m) return [];
+  return (['glob', 'tilde', 'split'] as const).filter((k) => m.steps.some((s) => s.kind === k && s.applies !== false && (k === 'tilde' ? m.tildes.length > 0 : s.parts.length > 0)));
+}
 
 export class Analyzer {
   /** The kind of string this analyzer explains, when it explains a string read as a script (`nestedLine`). */
@@ -88,8 +117,36 @@ export class Analyzer {
     // The summary above was made with the full explanations; the tree drops what its labels already say.
     for (const item of items) dropLabelEcho(claim(item, 'shell'));
     const resolveAt = (name: string, w: SyntaxNode) => resolve(cx, name, w, { quoted: w.type !== 'word' || w.text !== name });
-    if (opts.reading) result.reading = readingTree(tree, items, { lang: this.lang, resolve: resolveAt, meaning: (w) => wordMeaning(w, cx.state) });
+    if (opts.reading) {
+      result.reading = readingTree(tree, items, {
+        lang: this.lang, resolve: resolveAt, meaning: (w) => wordMeaning(w, cx.state), extra: this.otherLines(tree, line, shell, opts, items),
+        variable: (part) => variableFrom(cx, state, part), expands: (w) => wordExpands(state, w),
+      });
+    }
     return result;
+  }
+
+  /**
+   * (Prototype B) The tokens of the other lines of the statement the reading tree shows (the body of a loop whose
+   * first line is the line): each line's own explanation, so that a word says the same whatever line the cursor is on.
+   * The lines no token of `items` starts on, up to 100.
+   */
+  private otherLines(tree: SyntaxTree, line: number, shell: Shell | undefined, opts: ExplainOptions, items: readonly Token[]): Token[] {
+    if (!items.length) return [];
+    const starts = new Set<number>();
+    const walk = (t: Token): void => {
+      starts.add(t.span.start.line);
+      t.children.forEach(walk);
+    };
+    items.forEach(walk);
+    const last = Math.max(...items.map((t) => t.span.end.line));
+    const lean: ExplainOptions = { ...opts, reading: false, examples: { enabled: false, disabled: [] }, idioms: false, pitfalls: false };
+    const out: Token[] = [];
+    for (let l = items[0].span.start.line; l <= Math.min(last, line + 100); l++) {
+      if (l === line || starts.has(l)) continue;
+      out.push(...this.explainLine(tree, l, shell, lean).items);
+    }
+    return out;
   }
 
   /** Line `line` of a string read as a script (src/explain/scripts.ts): a new `Analyzer`, which explains it as a script of its own. */
