@@ -336,6 +336,13 @@ code {
   color: var(--c-muted);
 }
 
+/* The line in one sentence, above its rows (Meaning). */
+#summary {
+  margin: 0 0 0.5rem;
+  padding: 0.2rem 0 0.4rem;
+  border-bottom: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
+}
+
 .example {
   margin-top: 1rem;
   padding-top: 0.5rem;
@@ -968,8 +975,28 @@ body {
   display: none;
 }
 
+/* The stepper of a narrow panel has room for the label again. */
+#layers.compact #layers-label {
+  display: inline;
+}
+
 #layers.tighter #steps button.step {
-  padding: 0.1rem 0.4rem;
+  padding: 0.1rem 0.3rem;
+}
+
+/* Where the steps do not fit, first less room in and between the buttons (.snug), before anything goes. */
+#layers.snug {
+  gap: 0.2rem;
+}
+
+#layers.snug #steps button.step {
+  padding: 0.1rem 0.25rem;
+  gap: 0.15rem;
+}
+
+#layers.snug #tp-back,
+#layers.snug #tp-forward {
+  padding: 0.1rem 0.25rem;
 }
 
 #layers.compact .step-pick {
@@ -1197,6 +1224,7 @@ body {
 .trow .text.about {
   color: var(--c-muted);
   font-style: italic;
+  font-size: 0.9em;
 }
 
 .trow .band-label {
@@ -1207,6 +1235,37 @@ body {
   border: 1px solid color-mix(in srgb, var(--l) 60%, transparent);
   border-radius: 3px;
   padding: 0 0.3em;
+}
+
+/* A row that is one word to bash and an option or operand to the command (panel.js, `joined`): the command's role
+   after an arrow, and its text with a rule of the command's colour at its left, where bash's reading ends. */
+.trow .hand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.trow .hand .arrow {
+  color: var(--l);
+  font-weight: 600;
+  font-size: 0.85em;
+}
+
+.trow .text.by {
+  border-left: 2px solid var(--l);
+  padding-left: 0.4rem;
+}
+
+#reading-tree ul.by {
+  background: color-mix(in srgb, var(--l) 6%, var(--t-bg));
+  /* (A shadow, not a border: the outline's lines stay where they are.) */
+  box-shadow: inset 2px 0 var(--l);
+  border-radius: 0 0 0 4px;
+}
+
+/* The sections stay at the right, smaller than in the list. */
+#reading-tree .refs {
+  font-size: 0.75em;
 }
 
 /* The tree view's highlight in the line at the top. */

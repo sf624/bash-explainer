@@ -212,7 +212,7 @@ describe('the web page: the steps of the tree view, and motion', function () {
     await ctx.close();
   });
 
-  it('keeps the step buttons at 600px, without the numbers and the step back and forward buttons', async () => {
+  it('keeps the step buttons at 600px, with their numbers and the step back and forward buttons', async () => {
     const ctx = await context({ viewport: { width: 1280, height: 800 } }, false);
     const page = await ctx.newPage();
     const panel = await open(page);
@@ -220,10 +220,11 @@ describe('the web page: the steps of the tree view, and motion', function () {
     await panel.evaluate(`document.documentElement.classList.remove('bx-web')`);
     await until('the panel narrower', () => panel.evaluate('document.documentElement.clientWidth') as Promise<number>, (w) => w === 600);
     const box = panel.locator('#layers');
-    await until('the buttons fitted', () => box.getAttribute('class'), (c) => /tighter/.test(c ?? ''));
+    await until('the buttons fitted', () => box.getAttribute('class'), (c) => /snug/.test(c ?? ''));
     assert.strictEqual(await box.evaluate((b) => b.classList.contains('compact')), false);
     assert.strictEqual(await panel.locator('#layers button.step').nth(7).isVisible(), true);
-    assert.strictEqual(await panel.locator('#tp-back').isVisible(), false);
+    assert.strictEqual(await panel.locator('#layers .num').first().isVisible(), true);
+    assert.strictEqual(await panel.locator('#tp-back').isVisible(), true);
     assert.strictEqual(await box.evaluate((b) => b.scrollWidth <= b.clientWidth), true);
     await ctx.close();
   });

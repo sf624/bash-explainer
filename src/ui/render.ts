@@ -127,9 +127,9 @@ export const ui = {
       reference: 'Quick reference', search: 'Search (e.g. ${, 2>&1, -f, grep)', back: '← Back to the explanation', shell: 'Shell', yq: 'yq', auto: 'Auto',
       editHint: 'Editable; the result updates as you type', noMatch: 'Nothing found',
       partsOf: 'Parts of {name}', opensTab: '(opens in a new tab)', opensBrowser: '(opens in the browser)',
-      views: 'View', listView: 'Meaning', treeView: 'Reading',
+      views: 'View', listView: 'Meaning', treeView: 'How bash reads it',
       tree: {
-        label: 'Who reads each part of the line', show: 'Show',
+        label: 'Who reads each part of the line', show: 'Depth',
         steps: [['Line', 'the line'], ['Lists', 'lists and pipelines'], ['Commands', 'commands'], ['Words', 'words'], ['Inside', 'inside the words (quotes and expansions)'],
           ['Scripts', 'scripts inside'], ['Arguments', 'how each command reads its arguments'], ['Languages', 'languages']],
         stepper: {

@@ -48,7 +48,7 @@ describe('the web page: the tree view of the panel', function () {
     let panel = await open(page, 'x=$(grep -c foo f) && [ "$x" -gt 0 ]');
     assert.strictEqual(await panel.locator('#reading').isHidden(), true, 'the list first');
     // The switch is the page's, in its top bar; the panel shows no copy of it.
-    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#views-top button')].map((b) => b.textContent + ' ' + b.getAttribute('aria-pressed'))`), ['Meaning true', 'Reading false']);
+    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#views-top button')].map((b) => b.textContent + ' ' + b.getAttribute('aria-pressed'))`), ['Meaning true', 'How bash reads it false']);
     assert.strictEqual(await page.locator('#views-top').getAttribute('aria-label'), 'View');
     assert.strictEqual(await panel.locator('#views').isHidden(), true);
     await page.locator('#view-tree-top').click();
@@ -86,9 +86,10 @@ describe('the web page: the tree view of the panel', function () {
     await page.keyboard.press('ArrowLeft');
     assert.strictEqual((await focused(panel)).level, '2', 'to the parent');
     await page.keyboard.press('End');
-    assert.strictEqual((await focused(panel)).name, 'operand ]');
+    // (Prototype A: the last word is one row, bash's argument and `[`'s operand.)
+    assert.strictEqual((await focused(panel)).name, 'argument ]');
     await page.keyboard.press('Enter');
-    assert.strictEqual((await focused(panel)).name, 'operand ]', 'Enter on a leaf folds nothing');
+    assert.strictEqual((await focused(panel)).name, 'argument ]', 'Enter on a leaf folds nothing');
 
     // The steps: bash alone (all of its reading at step 5), then up to the languages.
     const layers = async () => panel.locator('#reading-tree').evaluate((t) => [...new Set([...t.querySelectorAll('li')].map((li) => li.className.match(/l-(\w+)/)![1]))].sort());
@@ -237,7 +238,7 @@ describe('the web page: the tree view of the panel', function () {
         const panel = await treeOf(page, line);
         const items = await outline(panel);
         const at = `${width}px, ${line}`;
-        assert.ok(items.length > 15, `${at}: ${items.length} items`);
+        assert.ok(items.length > 12, `${at}: ${items.length} items`);
         for (const i of items) {
           const it = `${at}: ${JSON.stringify(i)}`;
           if (i.pill) assert.ok(Math.abs(i.elbow) <= 1.5, `the elbow at the pill's middle, ${it}`);
@@ -249,7 +250,8 @@ describe('the web page: the tree view of the panel', function () {
         // A band's tint is opaque, and the same for a layer at every depth (not laid over the band around it).
         const tints = new Map<string, Set<string>>();
         for (const i of items.filter((x) => x.band)) tints.set(i.layer, (tints.get(i.layer) ?? new Set()).add(i.background));
-        assert.ok(tints.size >= 2, `${at}: bands of ${[...tints.keys()]}`);
+        // (Prototype A: a word a command reads is one row with bash's, so a line may have bands of one layer only.)
+        assert.ok(tints.size >= 1, `${at}: bands of ${[...tints.keys()]}`);
         for (const [layer, set] of tints) {
           assert.strictEqual(set.size, 1, `${at}: one tint for ${layer}: ${[...set]}`);
           assert.ok(!/rgba|\/ 0\.|\/ 0\)/.test([...set][0]), `${at}: ${layer}'s tint is opaque: ${[...set]}`);

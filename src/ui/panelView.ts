@@ -149,6 +149,7 @@ export const PANEL_BODY = `<div id="top">
 </div>
 <main id="main">
   <div id="notes"></div>
+  <p id="summary" hidden></p>
   <ul id="tree"></ul>
   <section id="reading" hidden>
     <div id="layers" role="group"><span id="layers-label"></span></div>

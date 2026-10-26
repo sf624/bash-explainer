@@ -33,6 +33,8 @@
 
   /** @type {Array<{ token: any, el: HTMLElement }>} */
   let flat = [];
+  /** Prototype A: the texts of quotes drawn so far in the list of the line (a quote's text is drawn whole once). */
+  let quotesSaid = /** @type {Set<string>} */ (new Set());
   let examplesFirst = true;
   /** @type {HTMLElement[]} */
   let segments = [];
@@ -198,6 +200,7 @@
     renderDialect(msg.dialect);
 
     flat = [];
+    quotesSaid = new Set();
     editors.clear();
     const where = `${msg.file}\n${ex.line}`;
     if (where !== shownLine) {
@@ -216,6 +219,10 @@
     measureSteps();
     const tree = $('tree');
     tree.replaceChildren(...ex.items.map((t, i) => item(t, `${i}`)));
+    // Prototype A: the line in one sentence, where it says more than its first row (a pipeline, a list of commands).
+    const summary = ex.items.length && ex.summary && !ex.summary.endsWith(ex.items[0].explanation) ? ex.summary : '';
+    $('summary').replaceChildren(...inline(summary));
+    $('summary').dataset.has = summary ? '1' : '';
     if (kept) {
       const row = tree.querySelector(`li[data-path="${kept.path}"] > .row`);
       const target = row && (kept.link < 0 ? row.querySelector(':scope > button.twisty') : row.querySelectorAll('.refs a')[kept.link]);
@@ -682,7 +689,10 @@
     });
     const text = document.createElement('span');
     text.className = 'text';
-    text.append(...inline(token.explanation));
+    // (Prototype A: a quote's text that the line has already said whole: only its name, `Double-quoted string`.)
+    const repeated = token.kind === 'string' && quotesSaid.has(token.explanation) && token.explanation.includes(': ');
+    if (token.kind === 'string') quotesSaid.add(token.explanation);
+    text.append(...inline(repeated ? token.explanation.slice(0, token.explanation.indexOf(': ')) : token.explanation));
     const also = nameAlso(token.name);
     if (also) text.append(also);
     const value = valueLine(token.value);
@@ -906,6 +916,7 @@
     $('view-list').setAttribute('aria-pressed', String(!tree));
     $('view-tree').setAttribute('aria-pressed', String(tree));
     $('tree').hidden = tree;
+    $('summary').hidden = tree || !$('summary').dataset.has;
     $('examples').hidden = tree;
     $('reading').hidden = !tree || !reading;
     if (labels.expandAll) updateToggle();
@@ -990,7 +1001,7 @@
       const at = Math.max(from, ownStep(n));
       appear.set(n, at);
       added[at - 1]++;
-      if (n.text === undefined) {
+      if (ownText(n) === undefined) {
         const o = first.get(aboutKey(n));
         if (!o || at < o.at) first.set(aboutKey(n), { node: n, at });
       }
@@ -998,6 +1009,40 @@
     };
     walk(reading, 1);
     for (const o of first.values()) aboutAt.add(o.node);
+  }
+
+  /**
+   * Prototype A (a lean reading view): the glosses of the words bash reads (what a command does, what a variable
+   * holds, a literal's text) are the Meaning view's; here a word shows its role and its sections, and the text of
+   * what reads it further (the command's option or operand) once, in the command's part.
+   */
+  const QUIET = new Set(['commandName', 'expandedName', 'string', 'variable']);
+  const ownText = (/** @type {any} */ n) => ((n.layer === 'bash' || n.layer === 'child') && QUIET.has(n.kind) ? undefined : n.text);
+  /** The texts drawn so far in the tree: a text is drawn once (the pipe of every `|`, the quotes of every `"…"`). */
+  let said = /** @type {Set<string>} */ (new Set());
+  const sameSpan = (/** @type {any} */ a, /** @type {any} */ b) => a.start.line === b.start.line && a.start.character === b.start.character
+    && a.end.line === b.end.line && a.end.character === b.end.character;
+  /** Kinds of bash's nodes that are one word, which a part or a command's reading about the same text joins. */
+  const WORDY = new Set(['command', 'commandName', 'argument', 'assignmentArgument', 'word', 'expandedName', 'quote', 'expansion', 'substitution']);
+  /**
+   * The nodes drawn as one row with `n`: those about the same text under it (`"$USER"`: the argument, its quotes, and
+   * grep's operand), at most one of bash's and one of a command's; and the children of them all, in the order of the text.
+   */
+  function joined(/** @type {any} */ n) {
+    const chain = [n];
+    let kids = n.children.filter(shown);
+    for (;;) {
+      const last = chain[chain.length - 1];
+      if ((last.layer !== 'bash' && last.layer !== 'child') || !WORDY.has(last.kind)) break;
+      const c = kids.find((x) => sameSpan(x.span, last.span) && x.layer === last.layer && WORDY.has(x.kind))
+        ?? kids.find((x) => sameSpan(x.span, last.span) && x.layer === 'command');
+      if (!c) break;
+      chain.push(c);
+      kids = [...kids.filter((x) => x !== c), ...c.children.filter(shown)];
+    }
+    const at = (/** @type {any} */ x) => x.span.start.line * 1e6 + x.span.start.character;
+    if (chain.length > 1) kids.sort((a, b) => at(a) - at(b));
+    return { chain, kids };
   }
 
   /** Whether a node is drawn at the step shown. */
@@ -1020,6 +1065,7 @@
     ul.setAttribute('aria-label', t.label);
     renderControls();
     if (!reading || view !== 'tree') return;
+    said = new Set();
     ul.append(treeItem(reading, '0', 1, null, 1, 1));
     const items = visibleItems();
     const current = items.find((li) => li.dataset.path === currentKey) ?? items[0];
@@ -1137,8 +1183,9 @@
     const box = $('layers');
     if (!document.getElementById('steps') || box.closest('[hidden]')) return;
     const open = box.classList.contains('open');
-    box.classList.remove('tight', 'tighter', 'compact', 'open');
-    for (const level of ['tight', 'tighter', 'compact']) {
+    box.classList.remove('snug', 'tight', 'tighter', 'compact', 'open');
+    // (Prototype A: first the buttons' room shrinks, `.snug`, so the label, the numbers and the arrows stay in English too.)
+    for (const level of ['snug', 'tight', 'tighter', 'compact']) {
       if (box.scrollWidth <= box.clientWidth + 1) break;
       box.classList.add(level);
     }
@@ -1541,7 +1588,9 @@
     const band = !parent || parent.layer !== n.layer || (n.layer === 'command' && parent.reader !== n.reader)
       || (n.layer === 'child' && parent.process !== n.process);
     if (band) li.classList.add('band');
-    const kids = n.children.filter((/** @type {any} */ c) => shown(c));
+    const { chain, kids } = joined(n);
+    /** The node of a command's reading drawn in this row (`-l`: bash's argument, wc's option), if any. */
+    const hand = chain.find((x) => x.layer === 'command' && x !== n);
     const row = document.createElement('div');
     row.className = 'trow';
     const twisty = document.createElement('span');
@@ -1549,11 +1598,9 @@
     twisty.setAttribute('aria-hidden', 'true');
     const folded = foldedKeys.has(path);
     if (kids.length) twisty.textContent = folded ? '▸' : '▾';
-    const chip = document.createElement('span');
-    chip.className = 'chip';
-    chip.textContent = chipOf(n);
-    // The first line: the code in a pill (in the colour of its role, as in the list) and the kind; at its right,
-    // where a reader takes over, the reader's name, and the links. The text has a line of its own under them.
+    // The first line: the code in a pill (in the colour of its role, as in the list) and the roles: bash's (`argument ·
+    // quotes`), and the command's after an arrow (`→ operand`); at its right, where a reader takes over, the reader's
+    // name, and the links. The texts have lines of their own under them, each drawn once in the tree.
     const head = document.createElement('span');
     head.className = 'thead';
     const code = !['line', 'language'].includes(n.kind) ? n.label : '';
@@ -1563,33 +1610,52 @@
       c.textContent = code;
       head.append(c);
     }
+    const own = chain.filter((x) => x !== hand);
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = own.map(chipOf).join(' · ');
     // (The badge after the code, then the kind of node; a reserved word's kind says what it is.)
-    const badge = n.kind === 'keyword' ? [] : nameBadge(n.name);
+    const named = own.find((x) => x.name && x.kind !== 'keyword');
+    const badge = named ? nameBadge(named.name) : [];
     head.append(...badge, chip);
-    const about = n.text ?? aboutOf(n);
-    const text = document.createElement('span');
-    // (What the kind is in general, where no token says more: quieter than an explanation.)
-    text.className = n.text === undefined ? 'text about' : 'text';
-    text.append(...inline(about));
-    const links = refLinks(n.refs);
+    if (hand) {
+      const h = el('span', { class: 'hand l-command' }, el('span', { class: 'arrow', 'aria-hidden': 'true' }, '→'), el('span', { class: 'chip' }, chipOf(hand)));
+      head.append(h);
+    }
+    /** @type {HTMLElement[]} */
+    const texts = [];
+    for (const x of chain) {
+      const t = ownText(x) ?? aboutOf(x);
+      // (Nor a text that one drawn already says: the operator `-f` under `-f config.ini`, whose text has it.)
+      if (!t || said.has(t) || (t.length >= 12 && [...said].some((x) => x.includes(t)))) continue;
+      said.add(t);
+      const span = document.createElement('span');
+      // (What the kind is in general, where no token says more: quieter than an explanation. A command's text has its
+      // reader's rule at its left.)
+      span.className = `text${ownText(x) === undefined ? ' about' : ''}${x === hand ? ' l-command by' : ''}`;
+      span.append(...inline(t));
+      texts.push(span);
+    }
+    const links = refLinks([...new Set(chain.flatMap((x) => x.refs ?? []))]);
     links.forEach((l) => l.querySelectorAll('a').forEach((a) => { a.tabIndex = -1; }));
     const right = document.createElement('span');
     right.className = 'tright';
-    const bandName = band ? bandOf(n) : '';
+    // (Under a row that says who reads it, the parts that reader reads have its tint but not its name again: `-czf`'s `-c`.)
+    const bandName = band && !parent?.quiet ? bandOf(n) : hand ? bandOf(hand) : '';
     if (bandName) {
       const b = document.createElement('span');
-      b.className = 'band-label';
+      b.className = `band-label${hand && !band ? ' l-command' : ''}`;
       b.setAttribute('aria-hidden', 'true');
       b.textContent = bandName;
       right.append(b);
     }
     right.append(...links);
-    row.append(twisty, head, right);
-    if (about) row.append(text);
-    const also = nameAlso(n.name);
+    row.append(twisty, head, right, ...texts);
+    const also = nameAlso(named?.name);
     if (also) row.append(also);
-    const spoken = badge.length ? `, ${nameSpoken(n.name)}` : '';
-    li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}${spoken}. ${readerOf(n)}. ${spokenMarks(about.replace(/`/g, ''))}${also ? `. ${also.textContent}` : ''}`);
+    const spoken = badge.length ? `, ${nameSpoken(named.name)}` : '';
+    const about = texts.map((x) => x.textContent).join('. ');
+    li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}${spoken}. ${readerOf(n)}. ${hand ? `${chipOf(hand)}: ${readerOf(hand)}. ` : ''}${spokenMarks(about.replace(/`/g, ''))}${also ? `. ${also.textContent}` : ''}`);
     li.append(row);
     readingNodes.set(li, n);
     row.addEventListener('mouseenter', () => showNode(n));
@@ -1605,7 +1671,14 @@
       const group = document.createElement('ul');
       group.setAttribute('role', 'group');
       group.hidden = folded;
-      group.append(...kids.map((/** @type {any} */ c, /** @type {number} */ i) => treeItem(c, `${path}.${n.children.indexOf(c)}`, depth + 1, n, i + 1, kids.length)));
+      // (A child of a node joined to this row has a path of its own: the place of that node in the row, then its own.)
+      const owner = (/** @type {any} */ c) => chain.findIndex((x) => x.children.includes(c));
+      const key = (/** @type {any} */ c, /** @type {number} */ i) => (i ? `${path}.j${i}.${chain[i].children.indexOf(c)}` : `${path}.${n.children.indexOf(c)}`);
+      // (When all of them are what the command reads, the group has the command's tint, as a band: `-czf`'s `-c`, `-z`, `-f`.)
+      const all = hand && kids.every((c) => chain[owner(c)] === hand);
+      if (all) group.classList.add('by', 'l-command');
+      const from = (/** @type {any} */ c) => (chain[owner(c)] === hand && !all ? { layer: n.layer, quiet: true } : chain[owner(c)]);
+      group.append(...kids.map((/** @type {any} */ c, /** @type {number} */ i) => treeItem(c, key(c, owner(c)), depth + 1, from(c), i + 1, kids.length)));
       li.append(group);
     }
     return li;

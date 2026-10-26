@@ -59,7 +59,7 @@ describe('the VS Code panel: its header', function () {
     assert.strictEqual(await page.getByRole('combobox', { name: 'Shell' }).getAttribute('title'), 'Shell');
     assert.strictEqual(await page.locator('#shell-box .ico path').count(), 1);
     // The view switch: two words, the view shown pressed.
-    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#views button')].map((b) => b.textContent + ' ' + b.getAttribute('aria-pressed'))`), ['Meaning true', 'Reading false']);
+    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#views button')].map((b) => b.textContent + ' ' + b.getAttribute('aria-pressed'))`), ['Meaning true', 'How bash reads it false']);
     assert.strictEqual(await page.locator('#views').getAttribute('aria-label'), 'View');
     assert.strictEqual(await page.locator('header #views').count(), 1, 'the view switch is in the header');
     const ja = await open('dark', 600, 'ja');
