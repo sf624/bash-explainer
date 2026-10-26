@@ -34,7 +34,7 @@ export type FromPanel =
  * What the panel remembers per viewer: the list or the tree view, and the step of the tree it shows (1–8: the line
  * alone up to every layer). `level` (1–4: the layers) is what it kept before the steps, read when there is no step.
  */
-export interface PanelState { view?: 'list' | 'tree'; level?: number; step?: number; /** Prototype B: the depth of the one view (1–2). */ depth?: number; /** Prototype B: whether the program's side is shown. */ who?: boolean; /** Prototype B: whether the examples are drawn open. */ examples?: 'open' | 'closed'; /** Prototype B: the line under the controls hidden. */ captions?: 'hidden' }
+export interface PanelState { view?: 'list' | 'tree'; level?: number; step?: number; /** Prototype B: the depth of the one view (1–2). */ depth?: number; /** Prototype B: whether the program's side is shown. */ who?: boolean; /** Prototype B: whether the examples are drawn open. */ examples?: 'open' | 'closed'; /** Prototype B: the line under the controls hidden. */ captions?: 'hidden'; /** (Round 7) The reserved words of compound commands drawn as rows. */ keywords?: 'shown' }
 
 export interface PanelLine {
   lang: Lang;

@@ -31,7 +31,11 @@ export interface ArgvWord { span: Span; parts: ArgvPart[]; many?: true }
  * A part of a simple command that bash handles itself, not in the program's arguments: an assignment, or a redirection
  * with what it does (`effect`: "stderr → `/dev/null`") and how the program finds it when it starts (`already`).
  */
-export interface ArgvRemoved { text: string; span: Span; kind: 'redirect' | 'assignment'; effect?: string; already?: string }
+export interface ArgvRemoved {
+  text: string; span: Span; kind: 'redirect' | 'assignment'; effect?: string; already?: string;
+  /** (Round 7) What a redirection to or from a file does, in one short sentence ("Write stderr (fd 2) to `/dev/null`"): its row's text. */
+  say?: string;
+}
 /** The words a simple command's program receives, and what bash took out first: assignments, redirections, and quotes. */
 export interface ArgvLine { words: ArgvWord[]; removed: ArgvRemoved[]; quotes: boolean; empty: string[] }
 
@@ -67,6 +71,12 @@ const T = {
   },
   alreadyClosed: { ja: (name: string, stream: string) => `${name} の起動時には、${stream}がすでに閉じている`, en: (name: string, stream: string) => `${name}'s ${stream} is already closed when it starts` },
   assigned: { ja: '変数の代入', en: 'a variable assignment' },
+  say: {
+    write: { ja: (s: string, f: string) => `${s}を ${f} に書き込む`, en: (s: string, f: string) => `Write ${s} to ${f}` },
+    append: { ja: (s: string, f: string) => `${s}を ${f} に追記する`, en: (s: string, f: string) => `Append ${s} to ${f}` },
+    read: { ja: (s: string, f: string) => `${s}を ${f} から読む`, en: (s: string, f: string) => `Read ${s} from ${f}` },
+  },
+  fdOf: { ja: (s: string, n: string) => `${s}(fd ${n})`, en: (s: string, n: string) => `${s} (fd ${n})` },
 };
 
 /** Text as a placeholder shows it: short (a long command or expansion is cut). */
@@ -111,7 +121,7 @@ export function argvLine(cmd: SyntaxNode, model: StateModel, lang: Lang, describ
  * What a redirection does (3.6), said short: the stream it changes and where it goes (`2>/dev/null`: stderr →
  * `/dev/null`; `>&2`: stdout → stderr), and how the program `prog` finds that stream when it starts.
  */
-function redirEffect(r: SyntaxNode, prog: string, lang: Lang): { effect?: string; already?: string } {
+function redirEffect(r: SyntaxNode, prog: string, lang: Lang): { effect?: string; already?: string; say?: string } {
   const op = r.children.find((c) => !c.named)?.type ?? '';
   const fdText = r.children.find((c) => c.field === 'descriptor')?.text;
   const dest = r.children.find((c) => c.field === 'destination');
@@ -128,7 +138,7 @@ function redirEffect(r: SyntaxNode, prog: string, lang: Lang): { effect?: string
   const to = dest.text;
   if (op === '&>' || op === '&>>') {
     const both = T.both[lang];
-    return { effect: `${both} → ${code(to)}${op === '&>>' ? T.append[lang] : ''}`, already: T.already[lang](name, both, code(to)) };
+    return { effect: `${both} → ${code(to)}${op === '&>>' ? T.append[lang] : ''}`, already: T.already[lang](name, both, code(to)), say: T.say[op === '&>>' ? 'append' : 'write'][lang](both, code(to)) };
   }
   if (op === '>&' || op === '<&') {
     const stream = streamOf(fdText ?? (op === '<&' ? '0' : '1'));
@@ -138,11 +148,11 @@ function redirEffect(r: SyntaxNode, prog: string, lang: Lang): { effect?: string
   }
   if (op === '<') {
     const stream = streamOf(fdText ?? '0');
-    return { effect: `${stream} ← ${code(to)}`, already: T.already[lang](name, stream, code(to)) };
+    return { effect: `${stream} ← ${code(to)}`, already: T.already[lang](name, stream, code(to)), say: T.say.read[lang](T.fdOf[lang](stream, fdText ?? '0'), code(to)) };
   }
   if (op === '>' || op === '>|' || op === '>>') {
     const stream = streamOf(fdText ?? '1');
-    return { effect: `${stream} → ${code(to)}${op === '>>' ? T.append[lang] : ''}`, already: T.already[lang](name, stream, code(to)) };
+    return { effect: `${stream} → ${code(to)}${op === '>>' ? T.append[lang] : ''}`, already: T.already[lang](name, stream, code(to)), say: T.say[op === '>>' ? 'append' : 'write'][lang](T.fdOf[lang](stream, fdText ?? '1'), code(to)) };
   }
   return {};
 }

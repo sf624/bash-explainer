@@ -44,14 +44,32 @@ describe('the web page: the depths of the explanation add, and never move a text
     spans: [...l.querySelectorAll('.u-arg')].map((w) => w.dataset.span),
   }))`) as Promise<{ words: string[]; spans: string[] }[]>;
   /**
-   * The argv chips that are not one line high (round 6: a chip never breaks across lines; a long one is cut, with its
-   * whole text in its tooltip): their texts. A chip is one box, no higher than 1.8 times its font size.
+   * The argv chips broken across lines where they need not be (round 7: the line wraps between chips; a chip wraps
+   * inside only when it is wider than the line, and then only after a `/`): their texts. A chip is one box; one higher
+   * than 1.8 times its font size is as wide as its line, and no piece of it is broken.
    */
   const brokenChips = async (f: Frame): Promise<string[]> => f.evaluate(`[...document.querySelectorAll('#tree .u-arg')].filter((c) => {
     const rects = c.getClientRects();
     const size = parseFloat(getComputedStyle(c).fontSize);
-    return rects.length !== 1 || rects[0].height > size * 1.8;
+    if (rects.length !== 1) return true;
+    if (rects[0].height <= size * 1.8) return false;
+    return rects[0].width < 0.9 * c.parentElement.clientWidth || [...c.children].some((p) => p.getClientRects().length > 1);
   }).map((c) => c.textContent)`) as Promise<string[]>;
+  /** The line boxes of an element's text: one per line, with its left and right. */
+  const LINES = `const lines = (e) => { const rg = document.createRange(); rg.selectNodeContents(e); const rs = [...rg.getClientRects()].filter((x) => x.width > 0).sort((a, b) => a.top - b.top); const out = []; for (const x of rs) { const l = out.find((o) => Math.abs(o.bottom - x.bottom) < 4); if (l) { l.left = Math.min(l.left, x.left); l.right = Math.max(l.right, x.right); } else out.push({ left: x.left, right: x.right, bottom: x.bottom }); } return out; };`;
+  /**
+   * (Round 7) The rows whose text wraps while its first line is narrower than 70% of the meaning column, on a row with
+   * no chips (the chips are a line of their own; nothing else takes the text's width): their codes.
+   */
+  const narrowTexts = async (f: Frame): Promise<string[]> => f.evaluate(`(() => { ${LINES} return [...document.querySelectorAll('#tree .u-row')].filter((r) => {
+    const t = r.querySelector('.u-l1 > .text');
+    if (!t || r.querySelector('.u-side') || !t.getClientRects().length) return false;
+    const ls = lines(t);
+    return ls.length > 1 && ls[0].right - ls[0].left < 0.7 * r.querySelector('.u-desc').clientWidth;
+  }).map((r) => r.querySelector('.label').textContent); })()`) as Promise<string[]>;
+  /** (Round 7) The code spans of the texts broken across lines (a long one, `.u-long`, and a form's may wrap): their texts. */
+  const brokenCode = async (f: Frame): Promise<string[]> => f.evaluate(`(() => { ${LINES} return [...document.querySelectorAll('#tree .u-desc code, #u-summary code, #u-risks code')]
+    .filter((c) => c.getClientRects().length && !c.classList.contains('u-long') && !c.closest('.u-argv, .u-form, .u-cond') && lines(c).length > 1).map((c) => c.textContent); })()`) as Promise<string[]>;
   /** "1:2-1:4": its start, as a number that orders the ranges. */
   const startOf = (span: string): number => {
     const [l, c] = span.split('-')[0].split(':').map(Number);
@@ -137,7 +155,26 @@ describe('the web page: the depths of the explanation add, and never move a text
     });
   }
 
-  it('never breaks an argv chip across lines, on a phone either', async () => {
+  for (const lang of ['en', 'ja'] as const) {
+    it(`gives the text the column's width, and never breaks a code span (${lang})`, async () => {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: lang === 'ja' ? 'ja-JP' : 'en-US' });
+      const page = await ctx.newPage();
+      for (const script of SCRIPTS) {
+        for (const line of script.lines.slice(0, 2)) {
+          const f = await open(page, script.text, line);
+          for (const [step, who] of [[1, false], [2, false], [2, true]] as const) {
+            await show(f, step, who);
+            const at = `${script.text.split('\n')[line - 1]}: depth ${step}${who ? ' with the program\'s side' : ''}`;
+            assert.deepStrictEqual(await narrowTexts(f), [], `${at}: a text narrower than its column`);
+            assert.deepStrictEqual(await brokenCode(f), [], `${at}: code broken across lines`);
+          }
+        }
+      }
+      await ctx.close();
+    });
+  }
+
+  it('never breaks an argv chip where it need not, on a phone either', async () => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: 'en-US' });
     const page = await ctx.newPage();
     for (const script of SCRIPTS) {

@@ -892,6 +892,8 @@
   let who = false;
   /** (Prototype B) Whether the viewer hid the line under the controls that says what the depth shows (then the key says it). */
   let captionsHidden = false;
+  /** (Round 7) Whether the reserved words and separators of compound commands are drawn as rows at depth 2. */
+  let keywordsShown = false;
   const BASH_STEP = /** @type {Record<string, number>} */ ({
     line: 1, list: 2, andList: 2, orList: 2, pipeline: 2, command: 3, compound: 3, clause: 3, coprocess: 3, function: 3, part: 3,
     commandName: 4, aliasWord: 4, expandedName: 4, option: 4, argument: 4, assignmentArgument: 4, word: 4, name: 4,
@@ -905,7 +907,7 @@
   /** Tells the host the choice: it keeps it for the next time (VS Code's global state, the web page's storage) and, in the list view, builds no tree. */
   function save() {
     // (`view: 'tree'`: the hosts build the reading tree, which the one view is drawn from.)
-    const state = { view: 'tree', depth: step, who, examples: examplesOpen ? 'open' : 'closed', ...(captionsHidden ? { captions: 'hidden' } : {}) };
+    const state = { view: 'tree', depth: step, who, examples: examplesOpen ? 'open' : 'closed', ...(captionsHidden ? { captions: 'hidden' } : {}), ...(keywordsShown ? { keywords: 'shown' } : {}) };
     vscode.setState(state);
     vscode.postMessage({ type: 'panelState', state });
   }
@@ -920,6 +922,7 @@
     else if (state.depth === 3) who = true;
     if (state.examples === 'open' || state.examples === 'closed') examplesOpen = state.examples === 'open';
     captionsHidden = state.captions === 'hidden';
+    keywordsShown = state.keywords === 'shown';
   }
 
   /** Shows the list or the tree view. */
@@ -1197,9 +1200,18 @@
    * evaluates a condition (bash-only; …)"): its head at the step, and the remark from step 2 on, on a line of its own.
    */
   function splitLong(/** @type {string} */ text) {
-    if (text.length <= 90) return [text];
-    const m = /^(.{12,}?)\s*([(（][^]*[)）])$/.exec(text);
-    return m && m[1].length <= 80 ? [m[1], m[2].slice(1, -1)] : [text];
+    if (text.length <= 90 || !/[)）]$/.test(text)) return [text];
+    // (Round 7: the remark is the last parenthesis of the text, matched from its end: a parenthesis inside the head,
+    // `成功（終了ステータス 0）を返す（…）`, stays in the head.)
+    let depth = 0;
+    for (let i = text.length - 1; i >= 0; i--) {
+      if (text[i] === ')' || text[i] === '）') depth++;
+      else if ((text[i] === '(' || text[i] === '（') && --depth === 0) {
+        const head = text.slice(0, i).trimEnd();
+        return head.length >= 12 && head.length <= 80 ? [head, text.slice(i + 1, -1)] : [text];
+      }
+    }
+    return [text];
   }
 
   /** The texts of a row from the members that say something, the reader's first; their steps. */
@@ -1274,10 +1286,11 @@
     nameRow.children.push(...argRows);
     // (Round 6: a row is tinted only when it is one word the program receives whole: not a glob, whose matches it
     // receives, nor a part of a word, `-r` of `-rn`.)
+    // (Round 7: the tint says "its result is in the words the program receives": a glob, whose matches it receives,
+    // is tinted too.)
     if (cmd.argv) {
-      const count = new Map();
-      for (const w of cmd.argv.words) count.set(spanKey(w.span), (count.get(spanKey(w.span)) ?? 0) + (w.many ? 2 : 1));
-      for (const r of argRows) if (count.get(spanKey(r.span)) === 1) r.recv = true;
+      const got = new Set(cmd.argv.words.map((/** @type {any} */ w) => spanKey(w.span)));
+      for (const r of argRows) if (got.has(spanKey(r.span))) r.recv = true;
     }
     // (The examples of the command are under its name's row: the header is not drawn at step 1.)
     nameRow.keys.add(spanKey(cmd.span));
@@ -1290,14 +1303,6 @@
     nameRow.argv0 = !!cmd.argv && !inside;
     const chip = { text: t.kinds.command, layer: 'bash', def: t.about.command, step: 2 };
     const others = [...before, ...own].map((r) => buildRow(r.node, r.parent, inner));
-    // (Round 6: a command of its name alone, `sort`, is one row at both depths: its name's row, with the words it
-    // receives; the simple command's chip in its tooltip.)
-    if (!others.length && !args.length) {
-      nameRow.argv = cmd.argv;
-      nameRow.chips.push(chip);
-      nameRow.refs = [...new Set([...nameRow.refs, ...(cmd.refs ?? [])])];
-      return nameRow;
-    }
     // (Every simple command has its header at depth 2, a bare `sort` too: the same shape for all.)
     const head = newRow(cmd, [cmd]);
     head.argv = cmd.argv;
@@ -1328,9 +1333,10 @@
     row.texts = memberTexts(members, parent, !!ctx.name);
     // The values of the expansions in a word that says something at step 1: where each comes from. (At depth 2 an
     // expansion that is a part of the word has a row of its own, which says it there: once.)
+    // (Round 7: at depth 2 the expansion's own row says it, with what bash does: once at each depth.)
     if (members.some((m) => m.layer === 'bash' && VALUED.has(m.kind))) {
       for (const x of expansionsIn(members.concat(rest.map((r) => r.node).filter((c) => c.layer === 'bash' && !NAMES.has(c.kind))))) {
-        if (x.from) row.lines.push({ text: fromText(x), step: 1, cls: 'u-val' });
+        if (x.from) row.lines.push({ text: fromText(x), step: 1, cls: 'u-val', ...(members.includes(x) ? {} : { max: 1 }) });
       }
     }
     // The tilde prefixes of a word (3.5.2): a part of their own at depth 2, as an expansion is; the word's own line
@@ -1349,6 +1355,26 @@
         tr.bash = true;
         return tr;
       });
+      // (Round 7: and the literal text after each prefix, `/docs` of `~/docs`, a part of its own as a glob's are.)
+      const sp = tw.span;
+      if (sp.start.line === sp.end.line && sp.start.line === shownLineNo) {
+        const ends = tw.tildes.map((/** @type {any} */ tl) => tl.span.end.character);
+        tw.tildes.forEach((/** @type {any} */ tl, /** @type {number} */ i) => {
+          const from = ends[i];
+          const to = tw.tildes[i + 1]?.span.start.character ?? sp.end.character;
+          const text = shownText.slice(from, to);
+          if (!text || tl.span.start.line !== shownLineNo) return;
+          const span = { start: { line: sp.start.line, character: from }, end: { line: sp.start.line, character: to } };
+          const lr = newRow({ span, kind: 'string', layer: 'bash', label: text, children: [] }, []);
+          lr.label = text;
+          lr.kind = 'argument';
+          lr.texts = [{ text: d.literal.replace('{code}', codeOf(text)), step: 2 }];
+          lr.chips = [{ text: chipOf({ layer: 'bash', kind: 'string' }), layer: 'bash', def: t.about.string ?? '', step: 2 }];
+          lr.bash = true;
+          lr.lit = true;
+          row.tildeRows.push(lr);
+        });
+      }
     }
     // A pipe of a pipeline: the two commands it joins, in source order (each `|` a row of its own).
     if (primary.kind === 'operator' && (primary.label === '|' || primary.label === '|&') && parent?.kind === 'pipeline') {
@@ -1360,10 +1386,12 @@
     }
     // A redirection of a command: only for that command, set up by bash before it starts (`Redirection applied to
     // …`, said once on the command's token), on the redirection's row at every depth.
+    // (Round 7: its own text short, "Write stderr (fd 2) to `/dev/null`"; that it is not in the program's arguments
+    // is said once, under the words the program receives; with the program's side off, only whose it is.)
     if (primary.kind === 'redirect' && ctx.redirectsOf) {
       const what = (ctx.removed ?? []).find((/** @type {any} */ x) => spanKey(x.span) === spanKey(primary.span));
-      const text = what?.already ? d.redirForAlready.replace('{already}', what.already) : d.redirFor;
-      row.lines.push({ text: text.replaceAll('{name}', codeOf(ctx.redirectsOf)), step: 1, cls: 'u-note u-redir' });
+      if (what?.say) row.texts = [{ text: what.say, step: 1, kind: 'redirect', src: primary }];
+      row.lines.push({ text: d.redirFor.replaceAll('{name}', codeOf(ctx.redirectsOf)), step: 1, cls: 'u-note u-redir', off: true });
     }
     if (primary.cond) row.cond = primary.cond;
     // (Round 6: the role the program gives the word, `option`, `operand`, `value of -f`, beside its role to bash.)
@@ -1473,13 +1501,14 @@
     };
     shownItems.forEach(visit);
 
-    // Nothing said twice. A text its parent row says already (or that says the parent's again) is left out; the
-    // literal pieces of a glob say nothing the glob does not. A row left with nothing to say gives its place to its
+    // Nothing said twice. A text its parent row says already (or that says the parent's again) is left out (round 7: the
+    // literal pieces of a glob keep their rows: every part of a word is one). A row left with nothing to say gives its place to its
     // parts. (Every operator keeps its row, in source order: each `|` says which two commands it joins.)
     const prune = (/** @type {any} */ r, /** @type {any} */ parent) => {
       const main = parent && !parent.promote ? parent.texts[0]?.text : undefined;
       if (main) r.texts = r.texts.filter((/** @type {any} */ x) => !repeats(x.text, main));
-      if (r.primary?.kind === 'string' && r.primary.layer === 'bash' && !r.children.length && parent?.children.some((/** @type {any} */ c) => c.primary?.kind === 'pattern')) r.drop = true;
+      // (A literal piece of a word, `/var/log/` of `/var/log/*.log`: text, not something bash does; no `bash` mark.)
+      if (r.primary?.kind === 'string' && r.primary.layer === 'bash' && !r.children.length) r.lit = true;
       r.children.forEach((/** @type {any} */ c) => prune(c, r));
       if (!r.around && !r.promote && !r.texts.length && !r.lines.length && !r.examples.length) r.drop = true;
     };
@@ -1518,6 +1547,26 @@
       r.children.forEach(define);
     };
     rows.forEach(define);
+    // (Round 7) Whether a row is all bash's own, it and its parts (no word a program receives, no command name in
+    // it): the `bash` mark goes on the top row of each such part only (`[[ … ]]`, not its operands; `*.txt`, not `*`).
+    const bashOnly = (/** @type {any} */ r) => {
+      const kids = r.children.map(bashOnly);
+      const own = !r.around && !r.recv && !r.argv0 && !r.read && r.kind !== 'command' && r.kind !== 'builtin' && !r.nameRow
+        && (r.bash || (r.struct && r.primary?.layer === 'bash'));
+      return (r.bashOnly = own && kids.every(Boolean));
+    };
+    rows.forEach(bashOnly);
+    // (Round 7) The reserved words and separators of a compound command (`if`, `then`, `;`, `fi`, `[[`, `]]`, `in`,
+    // `do`, `done`) fold into its Form line at depth 2, one click away ("Show the keywords").
+    const fold = (/** @type {any} */ r) => {
+      for (const c of r.children) {
+        const k = c.primary?.kind;
+        if (r.form && !c.children.length && (k === 'keyword' || (k === 'operator' && /^(;|;;|&|\n)$/.test(c.primary.label)))) c.kw = true;
+        fold(c);
+      }
+      r.kwCount = r.children.filter((/** @type {any} */ c) => c.kw).length;
+    };
+    rows.forEach(fold);
     // A row comes in at the first step it says something, and no later than its parts; a header (a simple command)
     // comes in at step 2, and its parts take its place before.
     const stepOf = (/** @type {any} */ r) => {
@@ -1568,6 +1617,7 @@
   }
   function viewList(/** @type {any[]} */ rows, /** @type {number} */ s) {
     return rows.flatMap((/** @type {any} */ c) => {
+      if (c.kw && !keywordsShown) return [];
       if (c.step <= s) return [viewOf(c, s)];
       if (!c.promote) return [];
       // (A simple command's header not drawn yet: its name's row stands for the command, with the words its program
@@ -1581,6 +1631,8 @@
   }
   /** Whether the first line of the words a program receives is drawn yet (it says what the first word is). */
   let argvShown = false;
+  /** (Round 7) Whether the note that the quotes are removed is drawn yet: once on the panel. */
+  let quotesShown = false;
   /** Whether a text or a line of a row is drawn at step `s`: from its step on, and up to its last (`max`) when it has one. */
   const atStep = (/** @type {any} */ x, /** @type {number} */ s) => x.step <= s && (!x.max || s <= x.max);
 
@@ -1642,13 +1694,13 @@
   }
 
   /**
-   * The words a simple command's program receives (`ReadingNode.argv`, src/argvline.ts), on one line: "grep receives:"
-   * and each word as a chip, never broken across lines (a long one is cut, its whole text in its tooltip); a value
+   * The words a simple command's program receives (`ReadingNode.argv`, src/argvline.ts): "grep receives:" and each
+   * word as a chip; the line wraps between chips, and a chip longer than the line only after a `/` (round 7); a value
    * known only when it runs as a placeholder ‹…›, dashed when it stands for any number of words. Then what bash did
-   * that the program does not see: quote removal, and the redirections and assignments, each with what it does.
-   * `first`: the first such line of the panel, which says what the first word is.
+   * that the program does not see: the redirections and assignments, each with what it does. `notes`: at depth 2, on
+   * the first such line of the panel, what the first word is; on the first with quotes, that they are removed.
    */
-  function argvEl(/** @type {any} */ argv, /** @type {boolean} */ first) {
+  function argvEl(/** @type {any} */ argv, /** @type {{ argv0: boolean, quotes: boolean }} */ notes) {
     const a = labels.depth.argv;
     const named = argv.inside ? argv.name : argv.words[0];
     const name = named ? named.parts.map((/** @type {any} */ p) => p.text).join('') : '';
@@ -1658,21 +1710,18 @@
       const word = el('code', { class: `u-arg${w.many ? ' u-many' : ''}`, 'data-span': spanKey(w.span) });
       const titles = [];
       for (const p of w.parts) {
-        if (p.ph) {
-          word.append(el('span', { class: 'u-ph' }, `‹${p.text}›`));
-          if (p.title) titles.push(p.title);
-        } else {
-          word.append(el('span', {}, p.text));
-          if (p.title) titles.push(p.title);
-        }
+        // (Pieces that do not break: a placeholder whole, a text up to each `/`.)
+        if (p.ph) word.append(el('span', { class: 'u-ph' }, `‹${p.text}›`));
+        else for (const piece of String(p.text).split(/(?<=\/)/)) word.append(el('span', {}, piece));
+        if (p.title) titles.push(p.title);
       }
       const whole = w.parts.map((/** @type {any} */ p) => (p.ph ? `‹${p.text}›` : p.text)).join('');
       word.title = [whole, ...titles, ...(w.many ? [a.many] : []), ...(i === 0 && !argv.inside ? [a.argv0] : [])].join('\n');
       line.append(' ', word);
     });
     const out = [line];
-    if (first && !argv.inside) out.push(el('div', { class: 'u-note u-argv0' }, ...inline(cap(a.argv0))));
-    if (argv.quotes) out.push(el('div', { class: 'u-note u-argv-removed' }, ...inline(a.quotes)));
+    if (notes.argv0) out.push(el('div', { class: 'u-note u-argv0' }, ...inline(cap(a.argv0))));
+    if (notes.quotes) out.push(el('div', { class: 'u-note u-argv-quotes' }, ...inline(a.quotes.replace('{name}', codeOf(name)))));
     if (argv.removed.length) {
       const list = argv.removed.map((/** @type {any} */ x) => `${codeOf(x.text)}${x.effect ? a.effect.replace('{e}', x.effect) : ''}`).join(a.sep);
       out.push(el('div', { class: 'u-note u-argv-removed' }, ...inline(a.handled.replace('{name}', codeOf(name)).replace('{list}', list))));
@@ -1729,8 +1778,33 @@
     return [chip];
   }
 
-  /** A caveat or warning on a row, folded to its first line (it is in the Problems list too); open, the whole text. */
-  function problemEl(/** @type {any} */ p) {
+  /** (Round 7) One risk of the line in the list under "In short": its icon, its word and its first sentence; it goes to `at`. */
+  function riskEl(/** @type {any} */ p, /** @type {HTMLElement} */ at) {
+    const body = String(p.body ?? '');
+    const head = body.split(/(?<=[.。])\s+|(?<=。)/)[0] ?? body;
+    const b = el('button', { type: 'button', class: `u-risk level-${p.level}`, title: labels.depth.riskJump.replace('{label}', p.label || (levelLabels[p.level] ?? '')) });
+    const icon = noteEl({ level: p.level, label: p.label, body: head, refs: [] }, 'span', 'u-risk-note');
+    b.append(icon);
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const box = at.querySelector('details.u-problem');
+      if (box) /** @type {HTMLDetailsElement} */ (box).open = true;
+      at.scrollIntoView({ block: 'center', behavior: 'instant' });
+      at.classList.remove('u-flash');
+      void at.offsetWidth;
+      at.classList.add('u-flash');
+      const target = /** @type {HTMLElement | null} */ (box?.querySelector('summary') ?? null);
+      target?.focus({ preventScroll: true });
+    });
+    return el('li', {}, b);
+  }
+
+  /**
+   * A caveat or warning on a row: whole at depth 1 (`open`); at depth 2 folded to its first line, the whole text when
+   * opened (it is in the Problems list too, and in the list of risks under "In short").
+   */
+  function problemEl(/** @type {any} */ p, /** @type {boolean} */ open) {
+    if (open) return el('div', { class: `u-problem u-whole level-${p.level}` }, noteEl(p, 'span', 'u-problem-note'));
     const box = el('details', { class: `u-problem level-${p.level}` });
     const sum = el('summary', { title: labels.depth.problemsAlso });
     sum.append(noteEl(p, 'span', 'u-problem-note'));
@@ -1752,12 +1826,13 @@
     r.className = `row u-row kind-${row.kind}`;
     r.dataset.span = spanKey(row.span);
     r.style.setProperty('--lvl', String(lvl));
-    // (The program's side, round 6: a row is tinted only when it is a word the program receives whole (its name too,
-    // as argv[0]); a group of commands or of parts is structure, drawn with a hollow bar; a part bash handles itself
-    // has a small `bash` mark, at the top of a run of such parts, and keeps its contrast.)
+    // (The program's side: a group of commands or of parts is structure, drawn with a hollow bar.)
     const struct = row.struct || row.promote;
-    const handled = who && row.bash && !row.recv && !row.argv0 && !struct && !row.around && row.kind !== 'builtin' && row.kind !== 'command';
-    const marked = handled && !(up && up.handled);
+    // (Round 7: the `bash` mark on the top row of each part that is all bash's own (`bashOnly`, buildRows), next to
+    // its code; a row is tinted when the words the program receives come from it (a glob too); a part of such a word
+    // that the program reads, `-c` of `-czf`, says so.)
+    const marked = who && row.bashOnly && !row.lit && !(up && up.bashOnly);
+    const partOf = who && !row.recv && !row.bashOnly && !struct && up?.recv && !row.bash ? up.label : '';
     if (struct) r.classList.add('u-struct');
     if (who && (row.recv || row.argv0)) r.classList.add('u-read');
     if (row.around) r.classList.add('u-around');
@@ -1782,63 +1857,79 @@
     label.className = row.group ? `label grp-label grp-${((row.group - 1) % 6) + 1}` : 'label';
     if (r.classList.contains('u-group') && !(row.labelParts ?? []).some((/** @type {any} */ x) => x.placeholder)) groupCode(label);
     const badge = row.badge ? nameBadge(row.badge) : row.badgeText ? [el('span', { class: 'nk-badge nk-program' }, row.badgeText)] : [];
-    if (marked) label.append(' ', el('span', { class: 'u-bmark', title: d.bashMarkTitle }, d.bashMark));
-    const tok = el('span', { class: 'u-tok' }, twisty, label, ...badge);
+    const mark = marked ? [el('span', { class: 'u-bmark', title: d.bashMarkTitle }, d.bashMark)] : [];
+    const tok = el('span', { class: 'u-tok' }, twisty, label, ...badge, ...mark);
     const desc = el('div', { class: 'u-desc' });
     const texts = row.texts.filter((/** @type {any} */ x) => atStep(x, s));
     const first = el('div', { class: 'u-l1' });
     const main = el('span', { class: `text${texts[0]?.cls ? ` ${texts[0].cls}` : ''}` }, ...(texts[0] ? inline(texts[0].text) : []));
     // Who reads a language in the word (`awk '{…}'`), after its text.
     if (row.reads) main.append(' ', el('span', { class: `u-reads l-${row.reads.layer}` }, '→ ', ...inline(row.reads.text)));
-    const side = el('span', { class: 'u-side' });
+    // (Round 7: the chips and the link to the manual on a short line of their own under the text, all in sight at
+    // depth 2; none at all on a row with none. The text takes the column's whole width.)
+    const side = el('div', { class: 'u-side' });
     const defs = el('div', { class: 'u-def u-open', hidden: '' });
-    // (One role chip at most, the others in its tooltip; from depth 2. The role the program gives the word stays in
-    // sight, after it: `argument → option`; the other chips and the link, on hover or focus.)
     const chips = row.chips.filter((/** @type {any} */ c) => c.step <= s);
     const prog = s >= 2 && chips.length ? row.progRole : undefined;
     if (chips.length) {
       const [c] = chipNode(chips[0], side, defs);
       const rest = chips.slice(1);
       if (rest.length && c instanceof HTMLElement) c.title = [c.title, d.moreRoles.replace('{list}', rest.map((/** @type {any} */ x) => x.text).join(', '))].filter(Boolean).join('\n');
-      if (!prog && c instanceof HTMLElement) c.classList.add('u-hov');
       side.append(c);
     }
     if (prog) {
-      // (A long role is said short, its whole text in the tooltip: `operand: each matching file name`.)
+      // (A long role is said short, its whole text in the tooltip: `operand: each matching file name`. Who reads it,
+      // only with the program's side off: on, the tint says it.)
       const [role, ...more] = String(prog.text).split(/:\s*/);
       const p = el('span', { class: 'u-prog l-command' }, d.progRole.replace('{role}', role));
-      if (prog.name) p.append(el('span', { class: 'u-prog-who' }, ` ${d.progRoleWho.replace('{name}', prog.name)}`));
+      if (prog.name && !who) p.append(el('span', { class: 'u-prog-who' }, ` ${d.progRoleWho.replace('{name}', prog.name)}`));
       if (more.length) p.title = prog.text;
       side.append(p);
     }
+    if (partOf) side.append(el('span', { class: 'u-partof' }, ...inline(d.partOf.replace('{code}', codeOf(partOf)))));
     const link = s >= 2 ? refLink(row.refs) : null;
-    if (link) {
-      link.classList.add('u-hov');
-      side.append(link);
-    }
-    // (The chips float at the right of the first line, so that the text's other lines take the whole width.)
-    if (side.childElementCount) first.append(side);
-    first.append(texts.length || row.reads ? main : el('span', { class: 'text u-blank' }, ' '));
+    if (link) side.append(link);
+    first.append(texts.length || row.reads ? main : el('span', { class: 'text u-blank' }, ' '));
     desc.append(first);
-    // (The words a program receives: right under the first line of the row that stands for its simple command, at
-    // every depth.)
+    if (side.childElementCount) desc.append(side);
+    // (The words a program receives: right under the row that stands for its simple command, at every depth; what
+    // the first word is and that the quotes are removed, once on the panel, at depth 2.)
     if (who && row.argv) {
-      desc.append(...argvEl(row.argv, !argvShown));
-      if (!row.argv.inside) argvShown = true;
+      const notes = { argv0: s >= 2 && !argvShown && !row.argv.inside, quotes: s >= 2 && !quotesShown && !!row.argv.quotes };
+      desc.append(...argvEl(row.argv, notes));
+      if (notes.argv0) argvShown = true;
+      if (notes.quotes) quotesShown = true;
     }
     texts.slice(1).forEach((/** @type {any} */ x) => desc.append(el('div', { class: `text ${x.cls ?? 'u-text2'}` }, ...inline(x.text))));
-    for (const x of row.lines) if (atStep(x, s)) desc.append(el('div', { class: x.cls }, ...inline(x.text)));
+    for (const x of row.lines) if (atStep(x, s) && !(x.off && who)) desc.append(el('div', { class: x.cls }, ...inline(x.text)));
     // (`[[ … ]]` with the program's side: no program runs; what bash evaluates, once it has expanded the words.)
     if (who && row.cond) {
       desc.append(el('div', { class: 'u-cond-line' }, ...inline(d.cond.none.replace('{code}', codeOf('[[ … ]]')))));
       desc.append(el('div', { class: 'u-note' }, `${d.cond.after} `, condCode(row.cond)));
     }
     const formKey = row.form ? (row.label.match(/^(\[\[|\(\(|[{(]|[a-z]+)/)?.[1] ?? '') : '';
-    if (s >= 2 && row.form) desc.append(el('div', { class: 'u-note u-form' }, `${d.form} `, d.forms[formKey] ? formCode(d.forms[formKey]) : codeParts(row.form)));
+    if (s >= 2 && row.form) {
+      const form = el('div', { class: 'u-note u-form' }, `${d.form} `, d.forms[formKey] ? formCode(d.forms[formKey]) : codeParts(row.form));
+      // (Round 7: its reserved words and separators fold into this line; one click shows them as rows.)
+      if (row.kwCount) {
+        const b = el('button', { type: 'button', class: 'u-kwtoggle', 'aria-pressed': String(keywordsShown) },
+          keywordsShown ? d.hideKeywords : d.showKeywords.replace('{n}', String(row.kwCount)));
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          keywordsShown = !keywordsShown;
+          save();
+          // (The rows drawn again get no mouseleave: the editor's mark of the row under the pointer goes now.)
+          focus(-1);
+          drawList();
+        });
+        form.append(' ', b);
+      }
+      desc.append(form);
+    }
     if (s >= 2 && row.also) desc.append(el('div', { class: 'u-note' }, ...inline(row.also)));
     const value = valueLine(row.value);
     if (value) desc.append(value);
-    for (const p of row.problems) desc.append(problemEl(p));
+    for (const p of row.problems) desc.append(problemEl(p, s === 1));
     desc.append(defs);
     r.append(tok, desc);
     li.append(r);
@@ -1851,6 +1942,8 @@
     r.addEventListener('focusout', () => r.classList.remove('u-focus'));
     r.addEventListener('click', (e) => {
       if (selecting()) return;
+      // (Round 7: opening a caveat, or the keywords, leaves the editor alone: no selection there, no focus.)
+      if (e.target instanceof Element && e.target.closest('.u-problem, .u-kwtoggle')) return;
       if (!(e.target instanceof Element && e.target.closest('a, button, input, textarea, select, summary'))) {
         if (folds) toggle(li);
       }
@@ -1863,7 +1956,7 @@
     body.className = 'body';
     if (row.children.length) {
       const ul = document.createElement('ul');
-      const me = { handled: handled || (up?.handled && !struct && !row.recv && !row.argv0) };
+      const me = { bashOnly: !!row.bashOnly, recv: !!row.recv, label: row.label };
       ul.append(...row.children.map((/** @type {any} */ c, /** @type {number} */ i) => uitem(c, `${path}.${i}`, s, lvl + 1, me)));
       body.append(ul);
     }
@@ -1900,6 +1993,7 @@
   function drawList() {
     flat = [];
     argvShown = false;
+    quotesShown = false;
     editors.clear();
     const unified = !!built;
     const views = unified ? viewList(/** @type {any} */ (built).rows, step) : shownItems;
@@ -1917,6 +2011,20 @@
     }
     sum.hidden = !(unified && reading?.summary);
     sum.replaceChildren(...(unified && reading?.summary ? [el('strong', {}, labels.depth.summary), ' ', ...inline(reading.summary)] : []));
+    // (Round 7) The risks of the line, right under "In short": each the first sentence of a warning or a caveat, a
+    // button that goes to the row it is on (or to the note above the rows) and opens it there.
+    let risks = document.getElementById('u-risks');
+    if (!risks) {
+      risks = el('div', { id: 'u-risks' });
+      $('notes').before(risks);
+    }
+    const found = unified ? flat.flatMap((f) => (f.token.problems ?? []).map((/** @type {any} */ p) => ({ p, at: f.el }))) : [];
+    const noteEls = [...$('notes').children];
+    if (unified) left.forEach((n, i) => found.push({ p: n, at: /** @type {HTMLElement} */ (noteEls[i]) }));
+    found.sort((a, b) => (a.p.level === 'warning' ? 0 : 1) - (b.p.level === 'warning' ? 0 : 1));
+    risks.hidden = !found.length;
+    risks.classList.toggle('has-warning', found.some(({ p }) => p.level === 'warning'));
+    risks.replaceChildren(...(found.length ? [el('strong', { class: 'u-risks-title' }, labels.depth.risks), el('ul', {}, ...found.map(({ p, at }) => riskEl(p, at)))] : []));
     $('main').dataset.depth = String(unified ? step : 0);
     $('main').classList.toggle('u-who', unified && who);
     alignRows();
@@ -1983,32 +2091,56 @@
   }
 
   /**
-   * The key to the view (prototype B), opened by its button at the right of the controls: the colours of the kinds,
-   * the chips as they are drawn, the green fill and the `bash` chip of the program's side, the problems, the keys.
+   * (Round 7) The marks of the view, as the line under the controls says them and the key starts: the tint, the
+   * `bash` mark, the outline of a command; each with its swatch.
+   */
+  function legendItems(/** @type {boolean} */ withTint) {
+    const g = labels.depth.legend;
+    const items = [];
+    if (withTint) {
+      items.push(el('span', { class: 'u-leg' }, el('span', { class: 'u-swatch-tint', 'aria-hidden': 'true' }), ' ', g.tint));
+      items.push(el('span', { class: 'u-leg' }, el('span', { class: 'u-bmark' }, labels.depth.bashMark), ' ', g.bash));
+    }
+    items.push(el('span', { class: 'u-leg' }, el('span', { class: 'u-swatch u-swatch-hollow', 'aria-hidden': 'true' }), ' ', g.box));
+    return items.flatMap((x, i) => (i ? [el('span', { class: 'u-leg-sep', 'aria-hidden': 'true' }, ' · '), x] : [x]));
+  }
+
+  /**
+   * The key to the view (prototype B), opened by its button at the right of the controls (round 7: one legend): the
+   * marks of the line under the controls, then the colours of the left bars, each named, the chips, the risks, the
+   * order of bash's expansions and the keys.
    */
   let keyOpen = false;
   function keyEl(/** @type {any} */ k) {
     const d = labels.depth;
     const box = el('div', { id: 'u-keybox', class: 'u-key' });
-    // (Round 6: three short lines with an example each; the rest under "More".)
-    const basics = k.basics.map((/** @type {string} */ t) => el('div', { class: 'u-kbasic' }, ...inline(t)));
-    const bars = el('div', {}, `${k.bars}: `);
+    const close = el('button', { type: 'button', class: 'u-cap-hide', title: d.keyClose, 'aria-label': d.keyClose }, el('span', { 'aria-hidden': 'true' }, '× '), d.keyClose);
+    close.addEventListener('click', () => {
+      keyOpen = false;
+      renderControls();
+    });
+    const head = el('div', { class: 'u-khead' }, el('strong', {}, k.title), close);
+    const marks = el('div', {}, el('strong', {}, `${k.marks}: `), ...legendItems(true), ' · ',
+      el('span', { class: 'u-argv u-argv-sample' }, el('code', { class: 'u-arg' }, el('span', { class: 'u-ph' }, '‹…›'))), ' ', k.ph.replace(/^‹…›:\s*/, ''), ' · ',
+      el('span', { class: 'u-argv u-argv-sample' }, el('code', { class: 'u-arg u-many' }, '…')), ' ', k.many.replace(/^[^:]*:\s*/, ''), ' · ',
+      el('span', { class: 'u-partof' }, ...inline(d.partOf.replace('{code}', '`-czf`'))), ' ', ...inline(k.partOf.replace(/^[^:]*:\s*/, '')));
+    const argv = el('div', {}, ...inline(k.argvText));
+    const bars = el('div', {}, el('strong', {}, `${k.bars}: `));
     k.kinds.forEach((/** @type {string[]} */ [kind, name], /** @type {number} */ i) => {
       if (i) bars.append(' · ');
-      bars.append(el('span', { class: `u-kitem kind-${kind}` }, el('span', { class: 'u-swatch', 'aria-hidden': 'true' }), el('code', {}, name)));
+      bars.append(el('span', { class: `u-kitem kind-${kind}` }, el('span', { class: 'u-swatch', 'aria-hidden': 'true' }), name));
     });
-    const lines = el('div', {}, el('span', { class: 'u-swatch', 'aria-hidden': 'true' }), el('span', { class: 'u-swatch u-swatch-hollow', 'aria-hidden': 'true' }), ' ', k.lines);
-    const chips = el('div', { class: 'u-kchips' }, `${k.chips}: `,
+    const ja = document.documentElement.lang === 'ja';
+    const chips = el('div', { class: 'u-kchips' }, el('strong', {}, `${k.chips}: `),
       el('span', { class: 'u-role l-bash' }, k.role), ' ', k.roleText, ' · ',
-      el('span', { class: 'nk-badge nk-program' }, 'program'), ' ', ...inline(k.badgeText), ' · ', k.ref);
-    const side = el('div', { class: 'u-kchips' }, el('strong', {}, d.who.label), ': ',
-      el('span', { class: 'u-argv u-argv-sample' }, el('code', { class: 'u-arg' }, 'grep'), ' ', el('code', { class: 'u-arg' }, el('span', { class: 'u-ph' }, '‹…›'))), ' ', k.argvText, ' · ',
-      el('span', { class: 'u-kread' }, k.fill), ' · ', el('span', { class: 'u-bmark' }, d.bashMark), ' ', k.mark, ' · ',
-      el('span', { class: 'u-swatch u-swatch-hollow', 'aria-hidden': 'true' }), ' ', ...inline(k.structure), ' · ', k.plain);
+      el('span', { class: 'u-prog l-command' }, k.prog), ' ', k.progText, ' · ',
+      el('span', { class: 'nk-badge nk-program' }, ja ? 'プログラム' : 'program'), ' ', ...inline(k.badgeText), ' · ', k.ref);
+    const problems = el('div', {}, el('strong', {}, `${k.problems}: `),
+      el('span', { class: 'u-kprob level-warning' }, k.warning), ' ', el('span', { class: 'u-kprob level-info' }, k.info));
     // (The lines under the controls, once the viewer hid them.)
-    const caps = captionsHidden ? [el('div', {}, ...inline(`1: ${d.captions[0]} 2: ${d.captions[1]} ${d.who.caption}`))] : [];
-    const more = el('details', { class: 'u-kmore' }, el('summary', {}, k.more), bars, lines, chips, side, el('div', {}, k.order), el('div', {}, k.problems), ...caps, el('div', {}, ...inline(k.keys)));
-    box.append(...basics, more);
+    const stop = ja ? '。' : '. ';
+    const caps = captionsHidden ? [el('div', {}, ...inline(`1: ${d.captions[0]}${stop}2: ${d.captions[1]}${stop}${d.who.caption}`))] : [];
+    box.append(head, marks, argv, bars, chips, problems, el('div', {}, k.order), ...caps, el('div', {}, ...inline(k.keys)));
     return box;
   }
 
@@ -2037,13 +2169,16 @@
       cap.hidden = !reading;
       // (One line: what the program's side shows when it is on, else what the depth shows; hidden for good by its
       // button, then said in the key.)
-      const hide = el('button', { type: 'button', class: 'u-cap-hide', title: d.hideTitle, 'aria-label': d.hideTitle }, '×');
+      // (Round 7: one legend. With the program's side, the line is its marks with their swatches; else what the
+      // depth shows, and the outline of a command. Its button says what it hides.)
+      const hide = el('button', { type: 'button', class: 'u-cap-hide', title: d.hideTitle, 'aria-label': d.hideTitle }, el('span', { 'aria-hidden': 'true' }, '× '), d.hide);
       hide.addEventListener('click', () => {
         captionsHidden = true;
         save();
         renderControls();
       });
-      const line = el('div', { class: `u-cap${who ? ' u-cap-who' : ''}` }, el('span', {}, ...inline(who ? d.who.caption : d.captions[step - 1])), hide);
+      const said = who ? legendItems(true) : [...inline(d.captions[step - 1]), el('span', { class: 'u-leg-sep', 'aria-hidden': 'true' }, ' · '), ...legendItems(false)];
+      const line = el('div', { class: `u-cap${who ? ' u-cap-who' : ''}` }, el('span', {}, ...said), hide);
       cap.replaceChildren(...(captionsHidden ? [] : [line]), ...(keyOpen ? [keyEl(d.key)] : []));
       const wt = $('who-toggle');
       wt.setAttribute('aria-pressed', String(who));
@@ -2839,6 +2974,8 @@
       if (part.startsWith('`') && part.endsWith('`') && part.length > 1) {
         const c = document.createElement('code');
         c.append(...withMarks(part.slice(1, -1)));
+        // (Round 7: code never breaks inside a line of text, but a long one, which may.)
+        if (part.length > 32) c.className = 'u-long';
         return [c];
       }
       return withMarks(part).map((n) => (typeof n === 'string' ? document.createTextNode(n) : n));

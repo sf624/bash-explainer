@@ -2168,3 +2168,246 @@ pre#line {
 #tree.u-stacked .u-row:not(:hover):not(.active):not(.u-focus) .u-side:not(:has(> :not(.u-hov))) {
   display: none;
 }
+
+
+/* Round 7. The description column: the text takes the column's whole width; the chips and the link to the manual
+   are a short line of their own under it, all in sight at depth 2; a row with none has no such line. */
+.u-row .u-l1 {
+  display: block;
+}
+.u-row .u-side,
+#tree.u-stacked .u-row .u-side {
+  float: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.45em;
+  margin: 0.05rem 0 0;
+  white-space: normal;
+  line-height: 1.35;
+}
+.u-row .u-side > * {
+  white-space: nowrap;
+}
+#tree.u-stacked .u-row .u-l1 {
+  display: block;
+}
+.u-row .u-partof {
+  color: var(--c-muted);
+}
+.u-row .u-partof code {
+  font-size: 0.95em;
+}
+/* Japanese breaks as Japanese does (not before small kana or closing marks); code never breaks inside, but for a
+   long one (`.u-long`); no slanted Japanese (the fonts have no italic: the browser would only skew the glyphs). */
+.u-row > .u-desc,
+#u-summary,
+#u-risks,
+#notes,
+#depth-caption {
+  line-break: strict;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+.u-row .u-desc code,
+#u-summary code,
+#u-risks code,
+#notes code,
+#depth-caption code {
+  white-space: nowrap;
+}
+.u-row .u-desc code.u-long,
+#u-summary code.u-long,
+#u-risks code.u-long,
+#notes code.u-long {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+:lang(ja) .u-ph,
+:lang(ja) .u-row .u-form .ph,
+:lang(ja) .u-cond .u-ph,
+:lang(ja) .u-row .u-def,
+:lang(ja) .row.u-row.u-around > .u-tok > .label {
+  font-style: normal;
+}
+/* The words a program receives: the line wraps between chips; a chip longer than the line wraps only after a `/`. */
+.u-argv code.u-arg {
+  display: inline-block;
+  max-width: 100%;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+  vertical-align: top;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.u-argv code.u-arg > span {
+  white-space: nowrap;
+}
+.u-row .u-argv-quotes {
+  font-size: 0.88em;
+}
+/* The `bash` mark next to the code it belongs to (beside its first line, not after wrapped code). */
+.u-row > .u-tok > .u-bmark {
+  flex: none;
+}
+/* One dashed style only, for a placeholder of any number of words: a simple command's bar is the outline of a
+   command, as a group's; a program's badge is a pill (a builtin's a box). */
+.row.u-row.u-head.u-struct::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+  -webkit-mask: none;
+  mask: none;
+}
+.u-row .nk-badge.nk-program,
+.u-key .nk-badge.nk-program {
+  border-style: solid;
+  border-radius: 0.8em;
+  padding: 0 0.5em;
+}
+/* Caveats and warnings: a warning amber, a caveat in the colour of information; whole at depth 1. */
+.u-row .u-problem.level-warning,
+#notes .u-problem.level-warning {
+  border-left: 3px solid var(--c-warning);
+  background: color-mix(in srgb, var(--c-warning) 13%, transparent);
+}
+.u-row .u-problem.level-info,
+#notes .u-problem.level-info {
+  border-left: 3px solid var(--c-info);
+  background: color-mix(in srgb, var(--c-info) 7%, transparent);
+}
+.u-row .u-problem.level-warning .note-label { color: var(--c-warning); }
+.u-row .u-problem.level-info .note-label { color: var(--c-info); }
+.u-row .u-problem.u-whole .u-problem-note {
+  display: flex;
+  gap: 0.35em;
+  align-items: flex-start;
+}
+/* The risks of the line, right under "In short": each goes to its row. */
+#u-risks {
+  margin: 0 0 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-left: 3px solid var(--c-info);
+  background: color-mix(in srgb, var(--c-info) 6%, transparent);
+}
+#u-risks.has-warning {
+  border-left-color: var(--c-warning);
+  background: color-mix(in srgb, var(--c-warning) 9%, transparent);
+}
+#u-risks[hidden] {
+  display: none;
+}
+#u-risks ul {
+  list-style: none;
+  margin: 0.1rem 0 0;
+  padding: 0;
+}
+#u-risks button.u-risk {
+  display: block;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0.1rem 0;
+  cursor: pointer;
+}
+#u-risks button.u-risk:hover .note-text,
+#u-risks button.u-risk:focus-visible .note-text {
+  text-decoration: underline;
+}
+#u-risks .u-risk-note {
+  display: flex;
+  gap: 0.35em;
+  align-items: flex-start;
+}
+#u-risks .level-warning .note-label { color: var(--c-warning); }
+#u-risks .level-info .note-label { color: var(--c-info); }
+.row.u-row.u-flash {
+  animation: u-flash 1.4s ease-out;
+}
+@keyframes u-flash {
+  from { box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #0078d4); }
+  to { box-shadow: inset 0 0 0 2px transparent; }
+}
+/* The reserved words folded into the Form line: one click shows them. */
+.u-row .u-kwtoggle {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vscode-textLink-foreground, #006ab1);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  white-space: nowrap;
+}
+/* One legend: the line under the controls and the key, with their swatches. */
+.u-leg {
+  white-space: nowrap;
+}
+.u-swatch-tint {
+  display: inline-block;
+  width: 1.3em;
+  height: 0.85em;
+  vertical-align: -0.08em;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--c-recv) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-recv) 55%, transparent);
+}
+#depth-caption .u-cap-hide {
+  font-size: 0.95em;
+  white-space: nowrap;
+}
+.u-key .u-khead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.u-key .u-kitem {
+  margin-right: 0.1em;
+}
+.u-key .u-kprob {
+  padding: 0 0.35em;
+  border-left: 3px solid var(--c-info);
+  background: color-mix(in srgb, var(--c-info) 7%, transparent);
+}
+.u-key .u-kprob.level-warning {
+  border-left-color: var(--c-warning);
+  background: color-mix(in srgb, var(--c-warning) 13%, transparent);
+}
+.u-key .u-argv-sample code.u-arg {
+  vertical-align: baseline;
+}
+/* A form is a pattern with placeholders, not code to copy: it may wrap at its spaces. */
+.u-row .u-form code {
+  white-space: normal;
+}
+/* The chip line, compact: one small line under the text. */
+.u-row .u-side .u-role {
+  line-height: 1.2;
+  padding: 0 0.3em;
+}
+.u-row .u-side {
+  line-height: 1.25;
+  margin-top: 0.02rem;
+}
+.u-leg .u-swatch.u-swatch-hollow {
+  width: 0.7em;
+  height: 0.8em;
+  border-radius: 2px;
+}
+/* Japanese breaks between phrases where the browser can find them (no verb's last kana alone on a line). */
+@supports (word-break: auto-phrase) {
+  :lang(ja) .u-row > .u-desc,
+  :lang(ja) #u-summary,
+  :lang(ja) #u-risks,
+  :lang(ja) #notes {
+    word-break: auto-phrase;
+  }
+}
+.u-key .u-prog {
+  font-weight: 600;
+  color: color-mix(in srgb, var(--c-argument) 80%, var(--vscode-foreground));
+}

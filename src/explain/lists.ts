@@ -175,9 +175,9 @@ export function andOrList(cx: Explainer, n: SyntaxNode, other: (c: SyntaxNode) =
   const kind = andOrKind(n);
   const grouped = kind === 'both' ? grouping(n) : undefined;
   const text = kind === 'and'
-    ? cx.s('AND リスト: 前のコマンドが成功（終了ステータス 0）したときだけ次を実行する。終了ステータスは最後に実行したもののもの', 'AND list: runs each command only if the one before it succeeds (exit 0); the status is that of the last one run')
+    ? cx.s('AND リスト: 前のコマンドが成功（終了ステータス 0）したときだけ次を実行する。終了ステータスは最後に実行したコマンドのもの', 'AND list: runs each command only if the one before it succeeds (exit 0); the status is that of the last one run')
     : kind === 'or'
-      ? cx.s('OR リスト: 前のコマンドが失敗（終了ステータス 0 以外）したときだけ次を実行する。終了ステータスは最後に実行したもののもの', 'OR list: runs each command only if the one before it fails (non-zero exit); the status is that of the last one run')
+      ? cx.s('OR リスト: 前のコマンドが失敗（終了ステータス 0 以外）したときだけ次を実行する。終了ステータスは最後に実行したコマンドのもの', 'OR list: runs each command only if the one before it fails (non-zero exit); the status is that of the last one run')
       : cx.s(
         `AND・OR リスト${grouped ? `。左から \`${grouped}\` と読む` : '。左から順に読む'}: \`&&\` の次はそこまでの終了ステータスが 0 のときだけ、\`||\` の次は 0 以外のときだけ実行する`,
         `AND and OR lists, read from the left${grouped ? ` as \`${grouped}\`` : ''}: after \`&&\` the next command runs only if the status so far is 0, after \`||\` only if it is not`);

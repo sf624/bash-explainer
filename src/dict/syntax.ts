@@ -245,7 +245,7 @@ export const specialVariables: Record<string, Text> = wordTable({
 });
 
 export const wellKnownVariables: Record<string, Text> = wordTable({
-  HOME: tx('ホームディレクトリのパス', 'Home directory'),
+  HOME: tx('ホームディレクトリ', 'Home directory'),
   PATH: tx('コマンドを探すディレクトリの一覧（`:` 区切り）', 'Colon-separated list of directories searched for commands'),
   PWD: tx('カレントディレクトリ', 'Current working directory'),
   OLDPWD: tx('直前のカレントディレクトリ', 'Previous working directory'),

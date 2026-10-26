@@ -785,6 +785,15 @@ const KEYWORDS_BEFORE = new Set(['if', 'then', 'else', 'elif', 'do', 'while', 'u
  */
 function compactCode(c: SyntaxNode, max = 44): string {
   if (!c.text.includes('\n') && c.text.length <= max) return c.text;
+  // (Round 7) A short body (`do … done`, `{ …; }`) as written, over its lines: no rewrite on one line. Its lines keep
+  // their indentation from that of the line it starts on.
+  const lines = c.text.split('\n');
+  if ((c.type === 'do_group' || c.type === 'compound_statement') && lines.length <= 6 && lines.every((l) => l.length <= 60)) {
+    let root = c;
+    while (root.parent) root = root.parent;
+    const indent = /^[ \t]*/.exec(root.text.split('\n')[c.startPosition.row] ?? '')![0].length;
+    return lines.map((l, i) => (i ? l.replace(new RegExp(`^[ \\t]{0,${indent}}`), '') : l)).join('\n');
+  }
   const kids = c.children;
   const join = (texts: string[]): string => texts.reduce((out, t, i) => {
     if (!i) return t;

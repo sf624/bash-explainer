@@ -32,7 +32,7 @@ export function test(cx: Explainer, n: SyntaxNode): Token {
     const open = n.children[0].type;
     testExample(cx, n, undefined);
     const expl = open === '[['
-      ? cx.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。コマンドではなくシェルの構文なので、中で単語分割・グロブ展開が起きず、変数をクォートしなくても安全。`&&` `||` `<` `=~` も使える）',
+      ? cx.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功（終了ステータス 0）を返す（bash 専用。コマンドではなくシェルの構文なので、中で単語分割・グロブ展開が起きず、変数をクォートしなくても安全。`&&` `||` `<` `=~` も使える）',
         'Extended test `[[ ]]`: evaluates a condition (bash-only; shell syntax, not a command, so there is no word splitting or globbing inside and variables are safe unquoted; `&&`, `||`, `<` and `=~` work too)')
       : arithTestExplanation(cx) + commaNote(cx, n);
     const children = open === '((' ? arithChildren(cx, n) : cx.subs(n.namedChildren);
