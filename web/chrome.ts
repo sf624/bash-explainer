@@ -8,11 +8,12 @@ const openPops = new Set<() => void>();
  * A button that opens a small popover under it: a menu (role=menu, its items are buttons; the arrows move between
  * them) or a little dialog (the kind-and-shell chip). A press outside, Escape, or choosing an item closes it.
  */
-export function popover(button: HTMLElement, pop: HTMLElement, opts: { closeOnPick?: boolean; onOpen?: () => void } = {}): { close(): void } {
+export function popover(button: HTMLElement, pop: HTMLElement, opts: { closeOnPick?: boolean; onOpen?: () => void; scrim?: HTMLElement } = {}): { close(): void } {
   const items = () => [...pop.querySelectorAll<HTMLElement>('[role="menuitem"]')].filter((i) => !i.hidden);
   const close = (focusButton = false) => {
     if (pop.hidden) return;
     pop.hidden = true;
+    if (opts.scrim) opts.scrim.hidden = true;
     button.setAttribute('aria-expanded', 'false');
     openPops.delete(closer);
     if (focusButton) button.focus();
@@ -21,6 +22,9 @@ export function popover(button: HTMLElement, pop: HTMLElement, opts: { closeOnPi
   const open = () => {
     for (const other of [...openPops]) other();
     pop.hidden = false;
+    // The scrim (a phone's sheet): shown only where the popover is a sheet; a tap on it closes the sheet on its click,
+    // so that the tap never reaches the editor under it (it would move the cursor).
+    if (opts.scrim) opts.scrim.hidden = getComputedStyle(pop).position !== 'fixed';
     button.setAttribute('aria-expanded', 'true');
     openPops.add(closer);
     opts.onOpen?.();
@@ -28,8 +32,9 @@ export function popover(button: HTMLElement, pop: HTMLElement, opts: { closeOnPi
   };
   button.addEventListener('click', () => (pop.hidden ? open() : close(true)));
   document.addEventListener('pointerdown', (e) => {
-    if (!pop.hidden && !button.contains(e.target as Node) && !pop.contains(e.target as Node)) close(false);
+    if (!pop.hidden && !button.contains(e.target as Node) && !pop.contains(e.target as Node) && e.target !== opts.scrim) close(false);
   });
+  opts.scrim?.addEventListener('click', () => close(false));
   window.addEventListener('blur', () => {
     // A native select's popup takes the focus from the window in some browsers: keep the popover then.
     if (!pop.contains(document.activeElement)) close(false);
@@ -58,7 +63,7 @@ export function popover(button: HTMLElement, pop: HTMLElement, opts: { closeOnPi
       if ((e.target as Element).closest('[role="menuitem"]')) close(false);
     });
   }
-  return { close: () => close(false) };
+  return { close: () => close(true) };
 }
 
 /** Closes every popover (a dialog opens, the layout changes). */
@@ -127,33 +132,40 @@ export function setUpTooltips(tip: HTMLElement, roots: string): void {
   window.addEventListener('blur', hide);
 }
 
-/** The heights of the phone's bottom sheet, in % of the window's height. */
-export const SNAPS = { peek: 30, half: 55, full: 92 } as const;
+/** The heights of the phone's bottom sheet, in % of the window's height; `full` reaches up to the editor's strip. */
+export const SNAPS = { peek: 36, half: 55, full: 100 } as const;
 export type Snap = keyof typeof SNAPS;
 
 /**
  * The phone's bottom sheet: the explanation's column, over the editor's lower part, at one of three heights. Dragging
  * its handle moves it and lets go at the nearest height; a tap on the handle goes peek → half → full → peek.
- * `--sheet-h` (on the root) is its height, which the editor's pane leaves free (up to the half height).
+ * `--sheet-h` (on the root) is its height, which the editor's pane leaves free (up to the half height). Full puts its
+ * top edge exactly under the app bar and the editor's strip (`top()`, in px from the top of the window): never over them.
  */
 export class BottomSheet {
   snap: Snap = 'peek';
-  constructor(private readonly col: HTMLElement, private readonly head: HTMLElement, private readonly handle: HTMLElement, private readonly changed: () => void) {
+  constructor(private readonly col: HTMLElement, private readonly head: HTMLElement, private readonly handle: HTMLElement, private readonly top: () => number, private readonly changed: () => void) {
     let start: { y: number; h: number; id: number; moved: boolean } | undefined;
+    let quietUntil = 0;
+    head.addEventListener('click', (c) => {
+      if (Date.now() >= quietUntil) return;
+      c.stopPropagation();
+      c.preventDefault();
+    }, true);
     head.addEventListener('pointerdown', (e) => {
       if (!document.documentElement.classList.contains('narrow')) return;
-      // The tabs and buttons take their own taps; the handle and the bar's empty space drag.
-      if ((e.target as Element).closest('button:not(.bsheet-handle)')) return;
+      // The whole header drags: the handle, the tabs (a tap still picks one) and the space between them.
+      if ((e.target as Element).closest('button:not(.bsheet-handle):not([role="tab"])')) return;
       start = { y: e.clientY, h: col.getBoundingClientRect().height, id: e.pointerId, moved: false };
-      head.setPointerCapture(e.pointerId);
     });
     head.addEventListener('pointermove', (e) => {
       if (!start || e.pointerId !== start.id) return;
       const dy = start.y - e.clientY;
       if (!start.moved && Math.abs(dy) < 6) return;
+      if (!start.moved) head.setPointerCapture(e.pointerId);
       start.moved = true;
       col.classList.add('dragging');
-      const h = Math.max(window.innerHeight * 0.18, Math.min(window.innerHeight * 0.95, start.h + dy));
+      const h = Math.max(window.innerHeight * 0.18, Math.min(this.px('full'), start.h + dy));
       document.documentElement.style.setProperty('--sheet-h', `${h}px`);
     });
     const end = (e: PointerEvent) => {
@@ -161,9 +173,11 @@ export class BottomSheet {
       const moved = start.moved;
       start = undefined;
       col.classList.remove('dragging');
-      if (!moved) return; // a tap: the handle's click cycles
-      const pct = (col.getBoundingClientRect().height / window.innerHeight) * 100;
-      const nearest = (Object.keys(SNAPS) as Snap[]).reduce((a, b) => (Math.abs(SNAPS[b] - pct) < Math.abs(SNAPS[a] - pct) ? b : a));
+      if (!moved) return; // a tap: the handle's click cycles, a tab's click picks it
+      // The click right after a drag is not a tap.
+      quietUntil = Date.now() + 400;
+      const h = col.getBoundingClientRect().height;
+      const nearest = (Object.keys(SNAPS) as Snap[]).reduce((a, b) => (Math.abs(this.px(b) - h) < Math.abs(this.px(a) - h) ? b : a));
       this.set(nearest);
     };
     head.addEventListener('pointerup', end);
@@ -177,14 +191,24 @@ export class BottomSheet {
       else return;
       e.preventDefault();
     });
+    // The window's height changes (the phone turned, the keyboard): full keeps to the strip.
+    window.addEventListener('resize', () => {
+      if (this.snap === 'full') this.set('full');
+    });
     this.set('peek');
+  }
+
+  /** The height of a snap in px. */
+  px(snap: Snap): number {
+    const full = window.innerHeight - this.top();
+    return snap === 'full' ? full : Math.min(full, (window.innerHeight * SNAPS[snap]) / 100);
   }
 
   set(snap: Snap): void {
     this.snap = snap;
-    document.documentElement.style.setProperty('--sheet-h', `${SNAPS[snap]}dvh`);
+    document.documentElement.style.setProperty('--sheet-h', snap === 'full' ? `${this.px('full')}px` : `${SNAPS[snap]}dvh`);
     document.documentElement.dataset.sheet = snap;
-    this.handle.setAttribute('aria-valuenow', String(SNAPS[snap]));
+    this.handle.setAttribute('aria-valuenow', String(Math.round((this.px(snap) / window.innerHeight) * 100)));
     this.changed();
   }
 

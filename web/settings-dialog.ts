@@ -16,9 +16,9 @@ declare const __SETTING_TEXT__: Record<Lang, Record<string, SettingText>>;
 const TEXT = {
   en: {
     title: 'Settings',
-    intro: 'The settings of the VS Code extension that apply on this page, and the page\'s own. They take effect at once.',
-    saved: 'They are kept in this browser.',
-    unsaved: 'This browser does not let the page keep them: they last until the page is closed.',
+    intro: 'Changes apply at once',
+    saved: 'and are kept in this browser.',
+    unsaved: '. This browser does not let the page keep them: they last until the page is closed.',
     sections: { display: 'Display', examples: 'Examples', checks: 'Checks', editor: 'Editor', data: 'Data' },
     sectionNav: 'Sections',
     search: 'Search settings',
@@ -26,6 +26,10 @@ const TEXT = {
     notTouch: 'Not on touch screens',
     themeDesc: 'The colours of the page: follow the system, or always light or dark.',
     reset: 'Reset to defaults',
+    resetDesc: 'Puts every setting back to its default. The theme and the size of the panes stay as they are.',
+    resetAsk: 'Reset every setting to its default?',
+    resetYes: 'Reset',
+    resetDone: 'Every setting is back to its default.',
     clear: 'Clear stored data',
     clearDesc: 'Removes everything this page keeps in this browser: the settings, the theme, the size of the panes, read mode and the first-run tips. They go back to their defaults at once.',
     clearAsk: 'Clear all of it? This cannot be undone.',
@@ -61,9 +65,9 @@ const TEXT = {
   },
   ja: {
     title: '設定',
-    intro: 'VS Code 拡張の設定のうち、このページで使えるものと、このページだけの設定です。変更はすぐに反映されます。',
-    saved: '設定はこのブラウザに保存されます。',
-    unsaved: 'このブラウザではページが設定を保存できません。ページを閉じるまで有効です。',
+    intro: '変更はすぐに反映され',
+    saved: '、このブラウザに保存されます。',
+    unsaved: 'ます。このブラウザではページが設定を保存できないため、ページを閉じるまで有効です。',
     sections: { display: '表示', examples: '具体例', checks: 'チェック', editor: 'エディター', data: 'データ' },
     sectionNav: 'セクション',
     search: '設定を検索',
@@ -71,6 +75,10 @@ const TEXT = {
     notTouch: 'タッチ操作の画面では使われません',
     themeDesc: 'ページの配色です。システムに合わせるか、常にライトまたはダークにします。',
     reset: '既定値に戻す',
+    resetDesc: 'すべての設定を既定値に戻します。テーマと画面の分割の大きさはそのままです。',
+    resetAsk: 'すべての設定を既定値に戻しますか？',
+    resetYes: '戻す',
+    resetDone: 'すべての設定を既定値に戻しました。',
     clear: '保存したデータを消去',
     clearDesc: 'このページがこのブラウザに保存しているものをすべて消します。設定、テーマ、画面の分割の大きさ、閲覧モード、初回のヒントです。すぐに既定の状態に戻ります。',
     clearAsk: 'すべて消去しますか？ 元に戻せません。',
@@ -183,8 +191,8 @@ export class SettingsDialog {
   private status?: { error: boolean; text: string; ignored?: Ignored[] };
   /** The paste box: open or not, and its text. */
   private paste = { open: false, text: '' };
-  /** Clearing the stored data: asked for, then done. */
-  private clearing: 'done' | undefined;
+  /** Clearing the stored data (or resetting the settings): asked for, then done. */
+  private clearing: 'done' | 'reset' | undefined;
   /** The text in the search field. */
   private query = '';
 
@@ -223,6 +231,7 @@ export class SettingsDialog {
     this.render();
     this.dialog.showModal();
     this.dialog.querySelector<HTMLElement>('.settings-body')?.scrollTo(0, 0);
+    this.markSection();
   }
 
   /** Draws the dialog again, after a change made in it or elsewhere (keeping the focus). */
@@ -326,6 +335,30 @@ export class SettingsDialog {
       details, status);
   }
 
+  /** The "Reset to defaults" group (in Data): a button, then the page's modal question. */
+  private reset(lang: Lang): HTMLElement {
+    const t = TEXT[lang];
+    const status = el('div', { id: 'settings-reset-status', className: 'settings-io-status' });
+    status.setAttribute('role', 'status');
+    const reset = el('button', { type: 'button', id: 'settings-reset', textContent: t.reset });
+    reset.addEventListener('click', () => {
+      void ask({ id: 'reset', title: t.resetAsk, message: t.resetDesc, confirm: { id: 'settings-reset-yes', text: t.resetYes }, cancel: { id: 'settings-reset-no', text: t.clearNo } }, reset)
+        .then((yes) => {
+          if (!yes) return;
+          this.draft = undefined;
+          this.host.set(this.host.defaults());
+          this.clearing = 'reset';
+          this.refresh();
+        });
+    });
+    if (this.clearing === 'reset') status.append(el('p', { textContent: t.resetDone }));
+    return el('section', { className: 'settings-group settings-clear settings-reset' },
+      el('h3', { textContent: t.reset }),
+      el('p', { className: 'setting-desc', textContent: t.resetDesc }),
+      el('div', { className: 'settings-io-buttons' }, reset),
+      status);
+  }
+
   /** The "Clear stored data" group: a button, then the page's modal question before anything is removed. */
   private clear(lang: Lang): HTMLElement {
     const t = TEXT[lang];
@@ -363,14 +396,6 @@ export class SettingsDialog {
     const close = el('button', { type: 'button', className: 'icon-btn settings-x', textContent: '×', title: t.close });
     close.setAttribute('aria-label', t.close);
     close.addEventListener('click', () => closeSheet(this.dialog));
-    const reset = el('button', { type: 'button', id: 'settings-reset', textContent: t.reset });
-    reset.addEventListener('click', () => {
-      this.draft = undefined;
-      this.host.set(this.host.defaults());
-      this.refresh();
-    });
-    const done = el('button', { type: 'button', id: 'settings-done', textContent: t.close });
-    done.addEventListener('click', () => this.dialog.close());
     const elsewhere = SETTINGS.filter((x) => !x.surfaces.includes('web'));
     const rowOf = (spec: SettingSpec) => this.row(spec, s, spec.description ? { ...texts[spec.key], description: spec.description[lang === 'ja' ? 0 : 1] } : texts[spec.key], lang);
     const section = (id: Section, ...rows: HTMLElement[]) => {
@@ -381,6 +406,7 @@ export class SettingsDialog {
     const inSection = (id: Section) => here.filter((x) => SECTION_OF[x.key] === id).map(rowOf);
     const io = this.io(lang);
     const clear = this.clear(lang);
+    const reset = this.reset(lang);
     const search = el('input', { type: 'search', id: 'settings-search', placeholder: t.search, value: this.query, autocomplete: 'off', spellcheck: false });
     search.setAttribute('aria-label', t.search);
     search.addEventListener('input', () => {
@@ -404,6 +430,7 @@ export class SettingsDialog {
         e.preventDefault();
         const target = this.dialog.querySelector<HTMLElement>(`#settings-section-${id}`);
         if (target && !target.hidden) target.scrollIntoView({ block: 'start' });
+        this.markSection(id);
       });
       return a;
     }));
@@ -414,19 +441,45 @@ export class SettingsDialog {
       el('header', { className: 'settings-head' }, el('h2', { id: 'settings-title', textContent: t.title }), close),
       nav,
       el('div', { className: 'settings-body' },
-        el('p', { className: 'settings-intro', textContent: `${t.intro} ${this.host.canSave() ? t.saved : t.unsaved}` }),
+        el('p', { className: 'settings-intro', textContent: `${t.intro}${lang === 'ja' ? '' : this.host.canSave() ? ' ' : ''}${this.host.canSave() ? t.saved : t.unsaved}` }),
         search,
         section('display', display[0], this.themeRow(lang), ...display.slice(1)),
         section('examples', ...inSection('examples')),
         section('checks', ...inSection('checks')),
         section('editor', ...inSection('editor')),
-        section('data', io, clear),
+        section('data', io, reset, clear),
         none,
         el('p', { className: 'settings-elsewhere' }, t.notHere, ' ', ...elsewhere.flatMap((x, i) => [i ? ', ' : '', el('code', { textContent: x.key })])),
       ),
-      el('footer', { className: 'settings-foot' }, reset, done),
     );
+    // No footer: X and Escape close, and every change applies at once. The section link of the part in view is marked.
+    this.dialog.querySelector('.settings-body')?.addEventListener('scroll', () => this.markSection(), { passive: true });
     this.filter();
+    this.markSection();
+  }
+
+  /** Marks (underlines) the section link of the part in view: the last section whose top is above the body's upper part. */
+  private markSection(chosen?: Section): void {
+    const body = this.dialog.querySelector<HTMLElement>('.settings-body');
+    if (!body || !this.dialog.open) return;
+    let current: string | undefined = chosen;
+    if (!current) {
+      const top = body.getBoundingClientRect().top + 24;
+      for (const sec of body.querySelectorAll<HTMLElement>('.settings-group[data-section]')) {
+        if (sec.hidden) continue;
+        if (sec.getBoundingClientRect().top <= top || !current) current = sec.dataset.section;
+      }
+      // At the end of the scroll, the last section is the one in view.
+      if (body.scrollTop + body.clientHeight >= body.scrollHeight - 2) {
+        const shown = [...body.querySelectorAll<HTMLElement>('.settings-group[data-section]')].filter((x) => !x.hidden);
+        current = shown[shown.length - 1]?.dataset.section ?? current;
+      }
+    }
+    for (const a of this.dialog.querySelectorAll<HTMLElement>('.settings-nav a')) {
+      const on = a.getAttribute('href') === `#settings-section-${current}`;
+      if (on) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    }
   }
 
   /** Hides the rows (and sections) that the search text does not match. */

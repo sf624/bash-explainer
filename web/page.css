@@ -2971,3 +2971,940 @@ html.narrow body:not([data-page="compare"]) .top .icon-btn {
 :where(html.narrow) .mode-toggle {
   height: 40px;
 }
+
+/* ==== Prototype round 2 (proto/chrome-2): one set of tabs, the phone's strip, Problems strip, first run ========= */
+
+:root {
+  --tab-line: var(--vscode-textLink-foreground);
+  --tint-warning: color-mix(in srgb, var(--c-warning) 13%, var(--page-background));
+  --here-tint: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent);
+}
+
+/* Menus: what only one layout has. */
+.only-narrow {
+  display: none !important;
+}
+
+:where(html.narrow) .only-narrow {
+  display: flex !important;
+}
+
+:where(html.narrow) .not-narrow {
+  display: none !important;
+}
+
+/* Chrome text: 12px at least. */
+.menu-h,
+.pop-title {
+  font-size: 12px;
+}
+
+/* ---- 1. The explanation's column: one header with the tabs at every width ---- */
+.panel-head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  height: 36px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--page-background);
+}
+
+.panel-head .bsheet-handle {
+  display: none;
+}
+
+.panel-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  height: 35px;
+  min-width: 0;
+  padding: 4px 6px 0 6px;
+}
+
+.panel-bar .tabs {
+  flex: 1 1 auto;
+  gap: 2px;
+}
+
+/* A tab: 28px, 13px; the selected one with a 2px line on the header's bottom border (inside it). */
+.panel-bar [role="tab"] {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  min-height: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.panel-bar [role="tab"][aria-selected="true"] {
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+.panel-bar [role="tab"][aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -3px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--tab-line);
+}
+
+@media (hover: hover) {
+  .panel-bar [role="tab"]:hover {
+    background: var(--vscode-list-hoverBackground);
+    color: var(--vscode-foreground);
+  }
+}
+
+.panel-bar [role="tab"]:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+#tab-problems {
+  display: none;
+}
+
+.panel-bar .count {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.panel-bar .count:empty {
+  display: none;
+}
+
+.panel-tools {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.panel-tools[hidden] {
+  display: none;
+}
+
+.panel-tools .icon-btn {
+  width: 28px;
+  height: 28px;
+}
+
+.panel-tools .icon-btn svg.ico {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---- 2. The editor's header: the file chip as a plain label; the phone's strip ---- */
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 16rem;
+  margin: 0 0 0 6px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+}
+
+.file-chip svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--vscode-descriptionForeground);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.file-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-chip.untitled {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* The Read | Edit switch: the phone's strip only. */
+.modes {
+  display: none;
+}
+
+:where(html.narrow) .modes {
+  display: inline-flex;
+  flex: none;
+  padding: 1px;
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: 8px;
+  background: var(--vscode-dropdown-background);
+}
+
+.modes button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 56px;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.modes button svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.modes button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vscode-textLink-foreground) 45%, transparent);
+  font-weight: 600;
+}
+
+.modes button:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+/* The phone's bar: ≡, the logo and name, ⚙; an unsaved change puts a dot on ≡. */
+#menu-open {
+  position: relative;
+}
+
+.menu-dot {
+  position: absolute;
+  top: 8px;
+  right: 7px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--page-background);
+  border-radius: 50%;
+  background: var(--vscode-textLink-foreground);
+}
+
+.menu-dot[hidden] {
+  display: none;
+}
+
+:where(html.narrow) .pane-head.ed-head {
+  height: 40px;
+  padding: 0 8px;
+  gap: 8px;
+}
+
+:where(html.narrow) .ed-head .file-chip {
+  display: none;
+}
+
+:where(html.narrow) .ed-head .scope-narrow {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+  max-width: 55%;
+}
+
+:where(html.narrow) .ed-head .chip {
+  height: 32px;
+  max-width: 100%;
+  font-size: 13px;
+}
+
+:where(html.narrow) .ed-head .spacer {
+  flex: 1 1 0;
+}
+
+/* The script popover (the chip): labels above full-width selects, and a help line; on a phone a sheet with a scrim. */
+.field.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 0;
+}
+
+.field.stack > span {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.field.stack select {
+  width: 100%;
+}
+
+.pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pop-done,
+.pop-grab {
+  display: none;
+}
+
+.pop-help {
+  margin: -2px 0 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.scrim[hidden] {
+  display: none;
+}
+
+:where(html.narrow) .popmenu.scope-pop {
+  gap: 12px;
+  padding: 0 16px calc(20px + env(safe-area-inset-bottom));
+}
+
+:where(html.narrow) .pop-grab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+}
+
+:where(html.narrow) .pop-grab::after {
+  content: "";
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--vscode-descriptionForeground);
+  opacity: 0.55;
+}
+
+:where(html.narrow) .pop-head {
+  height: 44px;
+  margin: 0 -8px 0 0;
+}
+
+:where(html.narrow) .pop-head .pop-title {
+  margin: 0;
+  color: var(--vscode-foreground);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+:where(html.narrow) .pop-done {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  height: 44px;
+  min-height: 0;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+:where(html.narrow) .scope-pop .field.stack select {
+  min-height: 44px;
+  font-size: 15px;
+}
+
+:where(html.narrow) .scope-pop .field.stack > span {
+  font-size: 13px;
+}
+
+:where(html.narrow) .pop-help {
+  font-size: 13px;
+}
+
+/* ---- 3. The phone's sheet: a 16px handle, then one 44px row of tabs ---- */
+:where(html.narrow) .panel-head {
+  display: flex;
+  height: auto;
+  touch-action: none;
+}
+
+:where(html.narrow) .panel-head .bsheet-handle {
+  display: flex;
+  height: 16px;
+}
+
+:where(html.narrow) .bsheet-handle span {
+  width: 36px;
+}
+
+:where(html.narrow) .panel-bar {
+  align-items: stretch;
+  height: 44px;
+  padding: 0 4px;
+}
+
+:where(html.narrow) .panel-bar .tabs {
+  flex: 1 1 auto;
+  gap: 0;
+}
+
+:where(html.narrow) .panel-bar [role="tab"] {
+  flex: 1 1 0;
+  justify-content: center;
+  height: 44px;
+  padding: 0 6px;
+  border-radius: 0;
+  font-size: 14px;
+}
+
+:where(html.narrow) .panel-bar [role="tab"][aria-selected="true"]::after {
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+}
+
+:where(html.narrow) #tab-problems {
+  display: inline-flex;
+}
+
+/* Collapse all and Copy are in the menu on a phone. */
+:where(html.narrow) .panel-tools {
+  display: none;
+}
+
+/* ---- 4. The first-run hint: one line over the code, with what to do instead of reading the sample ---- */
+.first-hint {
+  gap: 8px;
+  min-height: 36px;
+  padding: 3px 4px 3px 12px;
+  font-size: 13px;
+}
+
+.first-hint p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hint-actions {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.hint-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  min-height: 0;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--vscode-textLink-foreground) 45%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--vscode-editor-background);
+  color: var(--vscode-textLink-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hint-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (hover: hover) {
+  .hint-btn:hover {
+    background: var(--accent-soft);
+  }
+}
+
+:where(html.narrow) .first-hint {
+  min-height: 52px;
+  padding: 4px 8px 4px 12px;
+  font-size: 14px;
+}
+
+:where(html.narrow) .first-hint p {
+  white-space: normal;
+}
+
+:where(html.narrow) #hint-open,
+:where(html.narrow) #first-hint-close {
+  display: none;
+}
+
+:where(html.narrow) .hint-btn {
+  height: 44px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+/* An empty editor says what to do. */
+.cm-placeholder {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+/* ---- 5. Problems: a 32px strip, always there; the list ≤40% of the pane ---- */
+#problems {
+  max-height: 40%;
+}
+
+#problems h2.problems-strip {
+  height: 32px;
+  font-size: 13px;
+}
+
+#problems.pitfalls h2.problems-strip {
+  background: var(--tint-warning);
+}
+
+#problems-toggle {
+  height: 32px;
+  gap: 12px;
+}
+
+#problems-toggle[disabled] {
+  cursor: default;
+  opacity: 1;
+}
+
+#problems-toggle[disabled]:hover {
+  background: none;
+}
+
+.strip-title {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+#problems.none .strip-title {
+  color: var(--vscode-descriptionForeground);
+  font-weight: 400;
+}
+
+#problems.none .strip-title::before {
+  content: "✓";
+  margin-right: 6px;
+  color: var(--vscode-testing-iconPassed, #388a34);
+}
+
+#problems.none #problems-toggle .chev {
+  display: none;
+}
+
+.summary {
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.strip-nav {
+  align-items: center;
+  gap: 2px;
+}
+
+.strip-nav .pos {
+  min-width: 3.5em;
+  margin-right: 4px;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.strip-nav .pos.none {
+  color: var(--vscode-descriptionForeground);
+}
+
+.icon-btn.small {
+  width: 28px;
+  height: 28px;
+}
+
+.icon-btn.small[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* An item: icon · Ln · the message on up to two lines · the rule id, muted at the right (under it below 600px), never cut. */
+.problem-list .problem {
+  align-items: flex-start;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-left: 3px solid transparent;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.problem-list .problem .text {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.problem-list .message {
+  display: -webkit-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.problem-list .code {
+  flex: none;
+  font-size: 12px;
+}
+
+.problem-list .problem.here {
+  border-left-color: var(--vscode-textLink-foreground);
+  background: var(--here-tint);
+}
+
+@container source (max-width: 600px) {
+  .problem-list .problem .text {
+    flex-direction: column;
+    gap: 0;
+  }
+}
+
+:where(html.narrow) .sheet-problems .problem .text {
+  flex-direction: column;
+  gap: 0;
+}
+
+:where(html.narrow) .sheet-problems .code {
+  width: auto;
+  padding-left: 0;
+}
+
+:where(html.narrow) .sheet-problems .problem {
+  min-height: 44px;
+  padding: 8px 12px 8px 9px;
+  font-size: 14px;
+}
+
+/* ---- 6. The menu's header names the file; Help lists the keys ---- */
+.menu-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.menu-file svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--vscode-descriptionForeground);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.menu-file > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.menu-keys summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  list-style: none;
+}
+
+.menu-keys summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu-keys summary::after {
+  content: "▾";
+  margin-left: auto;
+  color: var(--vscode-descriptionForeground);
+}
+
+.menu-keys[open] summary::after {
+  content: "▴";
+}
+
+.menu-keys summary svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--vscode-descriptionForeground);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (hover: hover) {
+  .menu-keys summary:hover {
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+:where(html.narrow) .menu-keys summary {
+  min-height: 44px;
+}
+
+.menu-keys dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 12px;
+  margin: 6px 8px 4px 38px;
+  font-size: 13px;
+}
+
+.menu-keys dt {
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.menu-keys dt,
+.menu-keys dd {
+  margin: 0;
+}
+
+.menu-keys dd {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ---- 8. The toast: bottom left of the editor's pane (web/main.ts places it), never over a control ---- */
+body:not([data-page="compare"]) #status {
+  left: 12px;
+  transform: none;
+  font-size: 13px;
+}
+
+body:not([data-page="compare"]) #status:empty {
+  transform: translateY(8px);
+}
+
+:where(html.narrow) body:not([data-page="compare"]) #status {
+  width: auto;
+}
+
+/* ---- 9. Settings: the section in view is underlined; no footer ---- */
+.settings-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  font-size: 13px;
+}
+
+.settings-nav a[aria-current="true"] {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+  text-decoration-color: var(--tab-line);
+}
+
+:where(html.narrow) .settings-nav a {
+  min-height: 44px;
+}
+
+/* The hint's sentence wraps rather than hides the buttons in a narrow pane. */
+.first-hint p {
+  flex: 1 1 15rem;
+  overflow: visible;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+/* "Save as script.sh — Ctrl+S" */
+.tooltip kbd::before {
+  content: "— ";
+}
+
+.first-hint {
+  flex-wrap: wrap;
+}
+
+:where(html.narrow) .first-hint {
+  flex-wrap: nowrap;
+}
+
+:where(html.narrow) .first-hint p {
+  flex: 1 1 0;
+}
+
+.field[hidden] {
+  display: none !important;
+}
+
+/* The pressed segment: tinted, in the link colour, bold (no ring: it read as a focus ring). */
+.modes button[aria-pressed="true"] {
+  box-shadow: none;
+  color: var(--vscode-textLink-foreground);
+}
+
+/* ---- 10. Touch targets: 44px at least, around controls drawn smaller (the strip's segments and chip, the handle) ---- */
+:where(html.narrow) .modes button,
+:where(html.narrow) .ed-head .chip {
+  position: relative;
+  overflow: visible;
+}
+
+:where(html.narrow) .modes button::before,
+:where(html.narrow) .ed-head .chip::before {
+  content: "";
+  position: absolute;
+  inset: -6px 0;
+}
+
+/* The sheet keeps its rounded top on its header, so that the handle's target can reach above its edge. */
+:where(html.narrow) .panel-col {
+  overflow: visible;
+}
+
+:where(html.narrow) .panel-head {
+  border-radius: 14px 14px 0 0;
+}
+
+:where(html.narrow) .bsheet-handle {
+  position: relative;
+}
+
+:where(html.narrow) .bsheet-handle::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -28px;
+  width: 160px;
+  height: 44px;
+  transform: translateX(-50%);
+}
+
+:where(html.narrow) .brand {
+  min-height: 44px;
+}
+
+:where(html.narrow) .field select {
+  min-height: 44px;
+}
+
+/* (Not the round-1 rule for the hint's text span.) */
+.first-hint > .hint-actions {
+  flex: none;
+  min-width: auto;
+  overflow: visible;
+}
+
+.first-hint p {
+  flex-basis: 13rem;
+}
+
+.hint-btn {
+  gap: 5px;
+  padding: 0 8px;
+}
+
+:where(html.narrow) .first-hint p {
+  flex-basis: 0;
+}
+
+/* (Over the base rules of #problem-list, which have an id.) */
+:is(#problem-list, #sheet-problem-list) .problem {
+  border-left: 3px solid transparent;
+}
+
+:is(#problem-list, #sheet-problem-list) .problem.here {
+  border-left-color: var(--vscode-textLink-foreground);
+  background: var(--here-tint);
+}
+
+/* ?view=panel (the compare page's copies): the panel alone, with its own header, at every width: no sheet, no tabs. */
+html.view-panel .panel-head {
+  display: none !important;
+}
+
+html.view-panel .panel-col {
+  position: relative;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* The compare page's list: the message, then the rule id. */
+#problem-list .problem .text {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+#problem-list .problem .message {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@container source (max-width: 600px) {
+  #problem-list .problem .text {
+    flex-direction: column;
+    gap: 0;
+  }
+}
