@@ -21,7 +21,7 @@ export type ColourRole = HighlightKind;
 export const PANEL_KIND_ROLE: Record<Kind, ColourRole> = {
   command: 'command', subcommand: 'command', builtin: 'builtin', function: 'function', alias: 'function', keyword: 'keyword', option: 'option',
   argument: 'argument', operator: 'operator', redirect: 'redirect', variable: 'variable', expansion: 'variable', substitution: 'substitution',
-  string: 'string', number: 'number', comment: 'comment', assignment: 'assignment', test: 'operator', pattern: 'glob', block: 'operator', error: 'error',
+  string: 'string', number: 'number', comment: 'comment', shebang: 'shebang', assignment: 'assignment', test: 'operator', pattern: 'glob', block: 'operator', error: 'error',
 };
 
 /**
@@ -40,7 +40,7 @@ export const CLASSIC_COLOURS = {
 
 /** The colour each role takes (the panel's `.kind-*` classes, by way of PANEL_KIND_ROLE). */
 export const CLASSIC_ROLE: Record<ColourRole, keyof typeof CLASSIC_COLOURS> = {
-  comment: 'muted', keyword: 'operator', builtin: 'command', command: 'command', function: 'command', alias: 'command', functionName: 'command', option: 'option',
+  comment: 'muted', shebang: 'command', keyword: 'operator', builtin: 'command', command: 'command', function: 'command', alias: 'command', functionName: 'command', option: 'option',
   argument: 'argument', string: 'argument', heredoc: 'argument', heredocDelimiter: 'argument', variable: 'variable', assignment: 'variable',
   substitution: 'variable', number: 'argument', operator: 'operator', redirect: 'redirect', glob: 'redirect', error: 'variable',
 };

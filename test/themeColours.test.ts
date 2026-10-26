@@ -180,6 +180,14 @@ describe('reading a colour theme', () => {
     assert.strictEqual(semanticForeground(semantic, 'variable'), undefined);
     assert.strictEqual(semanticForeground(semantic, 'variable', 'python'), '#000004');
     assert.strictEqual(semanticForeground(semantic, 'parameter'), undefined);
+    // Our `shebang` is a `comment` to a theme with no rule for it (its super type, as VS Code ranks it: a point lower).
+    assert.strictEqual(semanticForeground({ comment: '#000008' }, 'shebang'), '#000008');
+    assert.strictEqual(semanticForeground({ shebang: '#000009', comment: '#000008' }, 'shebang'), '#000009');
+    assert.strictEqual(semanticForeground({ comment: '#000008', shebang: '#000009' }, 'shebang'), '#000009');
+    assert.strictEqual(semanticForeground({ shebang: '#000009' }, 'comment'), undefined);
+    assert.strictEqual(tokenFallback([{ scope: 'comment', settings: { foreground: '#00000a' } }], 'shebang', {}), '#00000a');
+    assert.strictEqual(tokenFallback([{ scope: 'comment', settings: { foreground: '#00000a' } }, { scope: 'meta.shebang', settings: { foreground: '#00000b' } }], 'shebang',
+      { shebang: ['comment.line.number-sign.shell meta.shebang.shell'] }), '#00000b');
   });
 
   it('applies the user\'s customizations, for every theme and for the theme by name', () => {
@@ -259,14 +267,14 @@ describe('the palettes that follow the theme', () => {
   const classicDark: Record<Role, string> = {
     command: 'rgb(55, 148, 255)', builtin: 'rgb(55, 148, 255)', option: 'rgb(209, 134, 22)', argument: 'rgb(137, 209, 133)', string: 'rgb(137, 209, 133)',
     number: 'rgb(137, 209, 133)', keyword: 'rgb(177, 128, 215)', operator: 'rgb(177, 128, 215)', redirect: 'rgb(204, 167, 0)', pattern: 'rgb(204, 167, 0)',
-    variable: 'rgb(255, 92, 101)', assignment: 'rgb(255, 92, 101)', comment: 'rgba(204, 204, 204, 0.7)',
+    variable: 'rgb(255, 92, 101)', assignment: 'rgb(255, 92, 101)', comment: 'rgba(204, 204, 204, 0.7)', shebang: 'rgb(55, 148, 255)',
   };
   const dark: PanelBase = { highContrast: false, backgrounds: ['#1f1f1f', 'rgba(10, 10, 10, 0.4)', '#2a2d2e'], foreground: '#cccccc', classic: classicDark };
   const none = Object.fromEntries(ROLES.map((r) => [r, undefined])) as Record<Role, string | undefined>;
   // Dark Modern's colours of the roles (the editor's, measured in VS Code 1.142).
   const darkModern: Record<Role, string | undefined> = {
     command: '#DCDCAA', builtin: '#DCDCAA', option: '#569cd6', argument: '#ce9178', string: '#ce9178', number: '#b5cea8', keyword: '#C586C0',
-    operator: '#d4d4d4', redirect: '#d4d4d4', pattern: '#d16969', variable: '#9CDCFE', assignment: '#9CDCFE', comment: '#6A9955',
+    operator: '#d4d4d4', redirect: '#d4d4d4', pattern: '#d16969', variable: '#9CDCFE', assignment: '#9CDCFE', comment: '#6A9955', shebang: '#6A9955',
   };
 
   it('orders the roles by frequency, and keeps every role in a group', () => {
@@ -279,6 +287,7 @@ describe('the palettes that follow the theme', () => {
   it('classic: the panel\'s own colours (a translucent one laid over the background)', () => {
     const p = panelPalette('classic', darkModern, dark);
     assert.strictEqual(p.command, '#3794ff');
+    assert.strictEqual(p.shebang, '#3794ff');
     assert.strictEqual(p.comment, toHex(parseColour(classicDark.comment, hex('#1f1f1f'))!));
     assert.deepStrictEqual(Object.keys(paletteVars(p)), ROLES.map((r) => `--c-${r}`));
   });
@@ -287,6 +296,9 @@ describe('the palettes that follow the theme', () => {
     const p = panelPalette('theme', darkModern, dark);
     assert.strictEqual(p.command, '#dcdcaa');
     assert.strictEqual(p.operator, '#d4d4d4');
+    // (The shebang is a comment's colour in the editor, too faint here: the panel's own, a command's.)
+    assert.strictEqual(p.shebang, '#3794ff');
+    assert.strictEqual(panelPalette('theme', { ...darkModern, shebang: '#8bc34a' }, dark).shebang, '#8bc34a');
     // #6A9955 is 4.4:1 on a code block: the panel's muted colour instead.
     assert.strictEqual(p.comment, panelPalette('classic', none, dark).comment);
     assert.deepStrictEqual(panelPalette('theme', none, dark), panelPalette('classic', none, dark));
@@ -309,6 +321,9 @@ describe('the palettes that follow the theme', () => {
     // The redirect is the foreground and the pattern is near the string: their group gets a colour of its own.
     assert.strictEqual(p.redirect, p.pattern);
     assert.ok(!Object.values(darkModern).includes(p.redirect));
+    // The shebang is a comment's colour in the theme: it gives way to the command's, its group's.
+    assert.strictEqual(p.shebang, p.command);
+    assert.notStrictEqual(p.shebang, p.comment);
     const s = paletteStats(p, dark);
     assert.ok(s.deltaEOK >= SAME && s.contrast >= 4.5, JSON.stringify(s));
     // A theme with no colours: every group made, apart.
@@ -338,8 +353,8 @@ describe('the palettes that follow the theme', () => {
 
   it('themeLike computes again on its own tints until they stop changing it', () => {
     // (Found by a random search: the first palette, made on the classic colours' tints, is not readable on its own.)
-    const theme = { command: undefined, builtin: '#36ff27', option: '#9d0000', argument: '#ba516a', string: '#ae34d6', number: '#d41814', keyword: '#a13636', operator: '#63f3f2', redirect: '#44b148', pattern: '#c86c48', variable: '#0231fb', assignment: '#d12265', comment: '#2dd428' };
-    const classic = { command: '#0021c1', builtin: '#758838', option: '#0cadad', argument: '#ef6284', string: '#d4080d', number: '#87ab01', keyword: '#62116a', operator: '#af96ee', redirect: '#d88617', pattern: '#a76ab3', variable: '#e9c343', assignment: '#0cbc54', comment: '#a1c1fd' };
+    const theme = { command: undefined, builtin: '#36ff27', option: '#9d0000', argument: '#ba516a', string: '#ae34d6', number: '#d41814', keyword: '#a13636', operator: '#63f3f2', redirect: '#44b148', pattern: '#c86c48', variable: '#0231fb', assignment: '#d12265', comment: '#2dd428', shebang: '#2dd428' };
+    const classic = { command: '#0021c1', builtin: '#758838', option: '#0cadad', argument: '#ef6284', string: '#d4080d', number: '#87ab01', keyword: '#62116a', operator: '#af96ee', redirect: '#d88617', pattern: '#a76ab3', variable: '#e9c343', assignment: '#0cbc54', comment: '#a1c1fd', shebang: '#0021c1' };
     const base: PanelBase = { highContrast: false, backgrounds: ['#ffffff', 'rgba(10,10,10,0.4)', '#e8e8e8'], foreground: '#333333', classic };
     const s = paletteStats(panelPalette('themeLike', theme, base), base);
     assert.ok(s.contrast >= 4.5 && s.deltaEOK >= SAME, JSON.stringify(s));

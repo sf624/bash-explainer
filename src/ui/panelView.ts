@@ -7,7 +7,7 @@ import { Lang } from '../i18n';
 import type { DocumentIssue } from '../document';
 import { type NoteLevel, splitNote } from '../messages';
 import { ExamplePlacement, noteRefs, notesByLevel, placeExamples, ui } from './render';
-import { manualLabel, SECTIONS } from '../manual';
+import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
 import type { PanelBase } from './themePalette';
 
@@ -55,10 +55,10 @@ export interface PanelLine {
 }
 
 /**
- * The sections of the manual the rows and notes cite, for their links: the label ("Bash manual 3.7.2"), the
- * section's title and its page.
+ * The references the rows and notes cite (src/references.ts), for their links: the link's text (§3.7.2, execve(2)),
+ * the label ("Bash manual 3.7.2"), what it is about and its page.
  */
-function manualLinks(lang: Lang, ex: LineExplanation): Record<string, { label: string; title: string; url: string }> {
+function manualLinks(lang: Lang, ex: LineExplanation): Record<string, { text: string; label: string; title: string; url: string }> {
   const ids = new Set<string>(ex.notes.flatMap((n) => noteRefs(ex, n) ?? []));
   const walk = (t: Token): void => {
     for (const id of t.refs ?? []) ids.add(id);
@@ -67,7 +67,10 @@ function manualLinks(lang: Lang, ex: LineExplanation): Record<string, { label: s
   ex.items.forEach(walk);
   // (And those of the tree view: the sections of bash's own reading, where no token says them.)
   for (const n of ex.reading ? readingNodes(ex.reading) : []) for (const id of n.refs ?? []) ids.add(id);
-  return Object.fromEntries([...ids].map((id) => [id, { label: manualLabel(lang, [id]), title: SECTIONS.get(id)!.title, url: SECTIONS.get(id)!.url }]));
+  return Object.fromEntries([...ids].map((id) => {
+    const r = reference(id)!;
+    return [id, { text: r.text, label: referenceLabel(lang, r), title: r.title, url: r.url }];
+  }));
 }
 
 /** The problems on `line`, as the panel underlines them in its copy of the line (to its end when they go on). */

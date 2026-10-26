@@ -72,6 +72,8 @@ export function startLanguageServer(io: Io): void {
   let canRefresh = false;
   /** Whether the client lets the server ask it to request the inlay hints again. */
   let canRefreshHints = false;
+  /** The token types the client knows (its `tokenTypes`): a type of our own it does not list is sent as its standard type. */
+  let knownTypes: readonly string[] | undefined;
   let requests = 0;
 
   const send = (msg: Message) => {
@@ -177,7 +179,7 @@ export function startLanguageServer(io: Io): void {
   /** The semantic tokens of a document (none while highlight.enabled is off); with `lines`, of those lines only. */
   function tokens(doc: Doc | undefined, lines?: { from: number; to: number }) {
     const parsed = doc && settings['highlight.enabled'] ? parse(doc) : undefined;
-    return { data: parsed ? semanticTokens(parsed, { shells: shells(parsed, doc!.uri), ...(lines ? { lines } : {}) }) : [] };
+    return { data: parsed ? semanticTokens(parsed, { shells: shells(parsed, doc!.uri), known: knownTypes, ...(lines ? { lines } : {}) }) : [] };
   }
 
   const log = (message: string) => send({ method: 'window/logMessage', params: { type: 2, message: `Bash Explainer: ${message}` } });
@@ -203,6 +205,7 @@ export function startLanguageServer(io: Io): void {
         configure(m.params?.initializationOptions, 'initializationOptions');
         canRefresh = !!m.params?.capabilities?.workspace?.semanticTokens?.refreshSupport;
         canRefreshHints = !!m.params?.capabilities?.workspace?.inlayHint?.refreshSupport;
+        knownTypes = m.params?.capabilities?.textDocument?.semanticTokens?.tokenTypes ?? [];
         return void reply({
           capabilities: {
             textDocumentSync: { openClose: true, change: 1 },

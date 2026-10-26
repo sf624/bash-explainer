@@ -120,7 +120,10 @@ describe('links to the Bash manual', () => {
     const ex = new Analyzer('en').explainLine(parser.parse(src), 0);
     const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: src, choice: {}, placement: 'first', animations: true });
     assert.deepStrictEqual(Object.keys(msg.manual).sort(), ['3.7.5', '4.1', '4.4']);
-    assert.deepStrictEqual(msg.manual['3.7.5'], { label: 'Bash manual 3.7.5', title: 'Exit Status', url: exitStatus });
+    assert.deepStrictEqual(msg.manual['3.7.5'], { text: '§3.7.5', label: 'Bash manual 3.7.5', title: 'Exit Status', url: exitStatus });
+    // A manual page, for the shebang: its own text and label.
+    const shebang = panelUpdate({ lang: 'ja', explanation: new Analyzer('ja').explainLine(parser.parse('#!/bin/sh'), 0), file: 'a.sh', line: 0, lineText: '#!/bin/sh', choice: {}, placement: 'first', animations: true });
+    assert.deepStrictEqual(shebang.manual['execve(2)'], { text: 'execve(2)', label: 'Linux マニュアルページ execve(2)', title: 'Interpreter scripts', url: 'https://man7.org/linux/man-pages/man2/execve.2.html' });
     assert.deepStrictEqual(noteRefs(ex, ex.notes[0]), ['3.7.5']);
     assert.strictEqual(noteRefs(ex, 'not a note'), undefined);
   });

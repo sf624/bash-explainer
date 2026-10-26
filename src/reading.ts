@@ -30,7 +30,7 @@ import { anonSections, CONSTRUCTS, nodeSections } from './refs';
 import type { NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
 import { staticWordValue } from './staticword';
-import { field, type SyntaxNode, type SyntaxTree } from './syntax/tree';
+import { field, isShebang, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 
 /** Who reads a part: bash, bash again (a substitution, or a string a command gives a shell), the command, a language. */
 export type Layer = 'bash' | 'child' | 'command' | 'language';
@@ -49,6 +49,7 @@ export type ShellKind =
   | 'word' | 'name' | 'assignment' | 'redirect' | 'heredoc'
   | 'quote' | 'expansion' | 'substitution' | 'arithmetic' | 'brace'
   | 'operator' | 'keyword' | 'comment'
+  | 'shebang' // the first line `#!…`: to bash a comment (3.1.3), which the kernel reads when the file is run as a program
   | 'part'; // another part of a construct: an expression
 
 export interface ReadingNode {
@@ -210,7 +211,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     }
     switch (c.type) {
       case 'command': return [simple(c, layer)];
-      case 'comment': return [shellNode(c, layer, 'comment', [])];
+      case 'comment': return [shellNode(c, layer, isShebang(c) ? 'shebang' : 'comment', [])];
       case 'variable_name': case 'special_variable_name': return [shellNode(c, layer, 'name', [])];
       case 'list': return [construct(c, layer, 'list')];
       case 'pipeline': return [construct(c, layer, 'pipeline')];

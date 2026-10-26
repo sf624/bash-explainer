@@ -24,15 +24,18 @@ export interface PanelBase {
 export const GROUP: Record<Role, string> = {
   command: 'command', builtin: 'command', option: 'option', argument: 'text', string: 'text', number: 'text',
   keyword: 'keyword', operator: 'keyword', redirect: 'redirect', pattern: 'redirect', variable: 'variable', assignment: 'variable', comment: 'comment',
+  // (The shebang names the program that runs the file: a command's colour, unless the theme gives it one of its own.)
+  shebang: 'command',
 };
 
 /**
  * The roles from the most frequent to the rarest: the share of the coloured segments of the panel's line over the
  * corpus (test/fixtures/sample.sh, the snippets, the host files; October 2026): command 15.2% (with functions,
  * subcommands and aliases), operator 13.8% (with `[[ ]]` and `{ }`), string 13.6, argument 12.2, variable 12.0 (with
- * expansions and `$( )`), builtin 8.5, keyword 7.4, option 7.2; then pattern 3.4, redirect 1.9, assignment 1.8, number 1.8, comment 0.5.
+ * expansions and `$( )`), builtin 8.5, keyword 7.4, option 7.2; then pattern 3.4, redirect 1.9, assignment 1.8, number 1.8, comment 0.5, and the
+ * shebang (at most one a script), after the comment, so that its theme colour, a comment's in most themes, gives way to the command's.
  */
-export const ROLE_ORDER: readonly Role[] = ['command', 'operator', 'string', 'argument', 'variable', 'builtin', 'keyword', 'option', 'pattern', 'redirect', 'assignment', 'number', 'comment'];
+export const ROLE_ORDER: readonly Role[] = ['command', 'operator', 'string', 'argument', 'variable', 'builtin', 'keyword', 'option', 'pattern', 'redirect', 'assignment', 'number', 'comment', 'shebang'];
 
 /** The roles each layer of the Reading view tints its band with (media/panel.css `--l-*`), and the tint's share. */
 const TINT_ROLES: readonly Role[] = ['keyword', 'command', 'argument', 'option'];

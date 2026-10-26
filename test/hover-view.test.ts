@@ -264,6 +264,12 @@ describe('the hover Markdown', () => {
     assert.ok(row.includes('<small>Bash manual <a href="https://www.gnu.org/software/bash/manual/html_node/Pipelines.html" title="Pipelines">3.2.3</a></small>') || !row.includes('<table>'));
     const pipe = wholeLine(input(open('a | b'), 0));
     assert.ok(pipe.includes('<small>Bash manual <a href="https://www.gnu.org/software/bash/manual/html_node/Pipelines.html" title="Pipelines">3.2.3</a></small>'), pipe);
+    // A manual page after the sections: the shebang's execve(2).
+    const execve = '[execve(2)](https://man7.org/linux/man-pages/man2/execve.2.html "Interpreter scripts")';
+    const shebang = partMd(open('#!/bin/sh\necho'), 0, 3);
+    assert.ok(shebang.includes(`, [3.1.3](https://www.gnu.org/software/bash/manual/html_node/Comments.html "Comments"); ${execve}</small>`), shebang);
+    assert.ok(wholeLine(input(open('#!/bin/sh\necho'), 0)).includes(`; ${execve}`));
+    assert.ok(wholeLine(input(open('#!/bin/sh\necho'), 0, { lang: 'ja' })).includes(`Bash マニュアル [3.8](`));
   });
 
   it('keeps a long label in a row from breaking after a dash', () => {

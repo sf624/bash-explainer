@@ -13,7 +13,7 @@ import type { ExpansionValue } from './semantics/values';
 export type Kind =
   | 'command' | 'subcommand' | 'builtin' | 'function' | 'alias' | 'keyword' | 'option' | 'argument' | 'operator'
   | 'redirect' | 'variable' | 'expansion' | 'substitution' | 'string' | 'number'
-  | 'comment' | 'assignment' | 'test' | 'pattern' | 'block' | 'error';
+  | 'comment' | 'shebang' | 'assignment' | 'test' | 'pattern' | 'block' | 'error';
 
 /**
  * Who reads the part of the line a token is about: `shell`, bash itself (its commands, words, quotes, expansions,

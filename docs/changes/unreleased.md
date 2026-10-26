@@ -347,6 +347,23 @@ What the colours follow now:
 - On the web page, the same colours: the shell menu changes them where a name is a builtin in one shell only. A readonly variable is in bold there, an exported one underlined (dotted).
 - A range request (the visible lines) reads the names and the specs on those lines only. On a 5,000-line script it takes about 5 ms once the script's model is built, which the panel and the problems share. A script that uses one variable many times is coloured in a time linear in its length (20,000 lines of `x=$i; echo "$x"`: about 0.3 s, where a first version took 2 s).
 
+### The shebang
+
+The first line `#!…` is read by the kernel, not by bash: execve(2) starts the interpreter it names when the file is run as a program (`./script.sh`, or a command found on PATH), with the rest of the line and the script's path as arguments. To bash the line is a comment, so `bash script.sh`, `sh script.sh`, `source script.sh` and `. script.sh` ignore it. The explanation now says so:
+
+> Shebang: when the file is run as a program (`./script.sh`, or a command found on PATH), the kernel (or bash, on a system whose kernel does not) runs `/usr/bin/env bash ./script.sh args…`, and `env` finds `bash` on PATH and runs it. To bash this line is a comment: `bash script.sh`, `sh script.sh`, `source script.sh` and `. script.sh` ignore it. Bash Explainer explains the script as bash, from this line
+
+Before, it said "Shebang: run this script with `/usr/bin/env bash`", whatever ran the file.
+
+- The command the kernel runs is shown with the rest of the line as one argument, as Linux passes it: `#!/usr/bin/env -S bash -e` runs `/usr/bin/env '-S bash -e' ./script.sh args…`, then `env -S` splits it (the notes on `env` without `-S` stay).
+- The last sentence says which shell Bash Explainer reads the script as: the one the line names (`#!/bin/sh`: POSIX sh), or the one a ShellCheck directive or a setting chose instead. An interpreter that is no shell (`#!/usr/bin/python3`) gets no such sentence.
+- It cites execve(2), "Interpreter scripts", besides sections 3.8 and 3.1.3 of the Bash manual. A manual page is a new kind of reference: the panel links it as `execve(2)` next to `§3.8`, the hover and Copy as Markdown as "Bash manual 3.8, 3.1.3; execve(2)", to its page on man7.org. The web page's hover keeps that link, as it keeps the manual's. The pitfall on a shebang whose options bash refuses cites it too.
+- Only `#!` as the first two bytes of the file is a shebang, as the kernel reads it. ` #!/bin/bash` (after a blank) is a comment, as on any later line. A byte order mark before it (`U+FEFF`, from some Windows editors) is a new pitfall: the kernel sees no `#!`, and bash runs the line as a command named `#!/bin/bash`, which fails ("No such file or directory"). The command line and the web page see the mark; VS Code takes it off when it reads the file, so its editor does not show the pitfall.
+- Lines that never start the interpreter get a ⚠: `#!bash` (the kernel opens the interpreter as a path from the current directory, not from PATH: "required file not found"), and `#!/usr/bin/env` alone or with only an assignment (`#!/usr/bin/env FOO=1 bash`), where env runs the script's path, which starts itself again without end.
+- The JSON output of the command line gives the shebang's token the `kind` `shebang` (it was `comment`), and the text output colours it as a command.
+- Colour: the shebang is its own kind, `shebang`, in the panel's Meaning and Reading (labelled "shebang, a comment to bash"), and is drawn in the colour of a command name, the program it names; in the web page's editor too, in italics like a comment. With `bashExplainer.panel.colors` set to `theme`, it takes the editor's colour of the shebang (a comment's, in most themes) where that is readable; with `themeLike`, a command's when the theme draws it as a comment.
+- In VS Code it is the semantic token type `shebang`, declared with `superType: comment`: a theme with no rule for it colours it as a comment, as before (through the grammar's scope `meta.shebang.shell`), and `"editor.semanticTokenColorCustomizations": { "rules": { "shebang": "#4ec9b0" } }` gives it a colour of your own. The Language Server sends `shebang` to a client that lists it in its `tokenTypes`, and `comment` to one that does not.
+
 ## Fixed
 
 ### Shell code in host files

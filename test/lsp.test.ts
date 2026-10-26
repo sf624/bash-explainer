@@ -195,7 +195,7 @@ describe('the Language Server', function () {
     };
     const { tokenTypes } = (await import('../src/semanticTokens')).LEGEND;
     const full = await client.request('textDocument/semanticTokens/full', { textDocument: { uri: script } });
-    // #!/bin/sh / if [ -f "$1" ]; then echo yes; fi
+    // #!/bin/sh / if [ -f "$1" ]; then echo yes; fi (the shebang a comment: this client lists no `tokenTypes`)
     assert.deepStrictEqual(decode(full.result.data, tokenTypes), [
       '0:0:9:comment:0', '1:0:2:keyword:0', '1:3:1:function:4', '1:5:2:parameter:0', '1:8:1:string:0', '1:9:2:variable:0', '1:11:1:string:0', '1:13:1:function:4',
       '1:14:1:operator:0', '1:16:4:keyword:0', '1:21:4:function:4', '1:29:1:operator:0', '1:31:2:keyword:0',
@@ -294,11 +294,18 @@ describe('the Language Server', function () {
 
   it('asks a client that can do it to request the semantic tokens again when the settings change', async () => {
     const c = new Client(cli, blocker);
-    const init = await c.request('initialize', { processId: null, rootUri: null, capabilities: { workspace: { semanticTokens: { refreshSupport: true } } } });
-    assert.strictEqual(init.result.capabilities.semanticTokensProvider.legend.tokenTypes[0], 'comment');
+    const init = await c.request('initialize', {
+      processId: null, rootUri: null, capabilities: { workspace: { semanticTokens: { refreshSupport: true } }, textDocument: { semanticTokens: { tokenTypes: ['comment', 'shebang'] } } },
+    });
+    const legend: string[] = init.result.capabilities.semanticTokensProvider.legend.tokenTypes;
+    assert.strictEqual(legend[0], 'comment');
     c.notify('initialized', {});
     c.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { 'highlight.enabled': true } } });
     await until(() => c.notifications.some((n) => n.method === 'workspace/semanticTokens/refresh' && n.id !== undefined));
+    // A client that lists our own type `shebang` gets it (the others get a comment, as above).
+    c.notify('textDocument/didOpen', { textDocument: { uri: script, languageId: 'sh', version: 1, text: '#!/bin/sh\n' } });
+    const tokens = await c.request('textDocument/semanticTokens/full', { textDocument: { uri: script } });
+    assert.deepStrictEqual(tokens.result.data.slice(0, 5), [0, 0, 9, legend.indexOf('shebang'), 0]);
     await c.request('shutdown', null);
     c.notify('exit', null);
     await c.exited;

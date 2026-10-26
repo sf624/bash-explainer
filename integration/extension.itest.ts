@@ -168,9 +168,9 @@ describe('Bash Explainer in VS Code', function () {
     const legend = await until('the legend', () => vscode.commands.executeCommand<vscode.SemanticTokensLegend | undefined>('vscode.provideDocumentSemanticTokensLegend', script.uri), Boolean);
     assert.ok(legend!.tokenTypes.includes('keyword'));
     const data = (await until('tokens', () => tokens(script.uri), (t) => !!t && t.data.length > 0))!.data;
-    // The first token is the shebang, a comment.
+    // The first token is the shebang, our own type (a comment to a theme with no rule for it: package.json's superType).
     assert.deepStrictEqual([...data.slice(0, 2)], [0, 0]);
-    assert.strictEqual(legend!.tokenTypes[data[3]], 'comment');
+    assert.strictEqual(legend!.tokenTypes[data[3]], 'shebang');
     // A Makefile has tokens on its recipe lines only.
     const mdata = (await until('Makefile tokens', () => tokens(make.uri), (t) => !!t && t.data.length > 0))!.data;
     assert.match(make.lineAt(mdata[0]).text, /^\t/);

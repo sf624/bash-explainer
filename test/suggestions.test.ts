@@ -105,6 +105,7 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'nounset-unbound': 'mechanical',
   // Options of the shebang → `set …` on the next line: run the file directly (before: bash refuses; after: it runs).
   'shebang-refused': 'scenario',
+  'shebang-bom': 'prose',
   // `… | sudo tee file`, with `sudo` stubbed.
   'redirect-by-your-shell': 'scenario',
   'bats-test': 'none',
@@ -123,7 +124,7 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
 };
 
 /** Words of the English texts that tell the user what to write instead. */
-const SUGGESTS = /\b(Write|write it|write `|Use|use `|use a|Put|Run `|Pass|Quote it|Split it|Start the body|Keep the regex|Turn it on|single-quote|go through a shell|instead\b|give status 0|needs a space before it|would make it)/;
+const SUGGESTS = /\b(Write|write it|write `|Use|use `|use a|Put|Run `|Pass|Quote it|Split it|Start the body|Keep the regex|Turn it on|single-quote|go through a shell|instead\b|give status 0|needs a space before it|would make it|Save the file)/;
 
 /** Any parameter: a string `X` wherever it is read (also as `{ ja, en }`, a list or a call). */
 const ANY: unknown = new Proxy(function () { /* placeholder */ }, {
@@ -146,6 +147,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 13, scenario: 22, prose: 11, none: 36 });
+      { mechanical: 13, scenario: 22, prose: 12, none: 36 });
   });
 });

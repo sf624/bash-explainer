@@ -248,7 +248,8 @@ function readInputs(o: Options): Input[] {
 // ---- Output -----------------------------------------------------------------------------------
 
 const ANSI: Partial<Record<Token['kind'], string>> = {
-  command: '34', subcommand: '34', builtin: '34', function: '34', alias: '34',
+  // (The shebang as the program it names, as the panel draws it.)
+  command: '34', subcommand: '34', builtin: '34', function: '34', alias: '34', shebang: '34',
   option: '33', redirect: '33', pattern: '33',
   argument: '32', string: '32', number: '32',
   operator: '35', keyword: '35', block: '35', test: '35',
@@ -260,7 +261,7 @@ const NOTE_ANSI = { warning: '33', info: '34', note: '90' } as const;
 
 function textOutput(name: string, line: number, lineText: string, ex: LineExplanation, color: boolean, lang: Lang): string {
   const paint = (code: string | undefined, s: string) => (color && code ? `\x1b[${code}m${s}\x1b[0m` : s);
-  // The sections of the manual a row is about, dim: " (Bash manual 3.7.2)".
+  // The references a row cites, dim: " (Bash manual 3.7.2)", " (Bash manual 3.8, 3.1.3; execve(2))".
   const refs = (r: readonly string[] | undefined) => (r?.length ? paint('90', refsText(lang, r)) : '');
   const out: string[] = [`${paint('1', `${name}:${line + 1}`)}  ${lineText.trim()}`];
   for (const c of ex.context) out.push(`  ${paint('90', `› ${c.label} (${c.line + 1})`)}`);

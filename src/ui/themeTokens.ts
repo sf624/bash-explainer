@@ -5,6 +5,7 @@
 // without semantic highlighting, from the scopes of VS Code's shell grammar.
 // Pure: src/ui/themeColours.ts finds the theme and reads its files; src/ui/themePalette.ts makes the panel's colours.
 import { parseJsonc } from '../settings';
+import { SUPER_TYPES, type TokenType } from '../semanticTokens';
 
 /** A TextMate theme rule (an item of `tokenColors`, or of `editor.tokenColorCustomizations.textMateRules`). */
 export interface TextMateRule {
@@ -271,7 +272,7 @@ export function customize(theme: ThemeTokens, custom: Customizations, name: stri
 }
 
 /** The panel's colour roles: the kinds of media/panel.css (`.kind-*`), as far as an editor colours them apart. */
-export const ROLES = ['command', 'builtin', 'option', 'argument', 'string', 'number', 'keyword', 'operator', 'redirect', 'pattern', 'variable', 'assignment', 'comment'] as const;
+export const ROLES = ['command', 'builtin', 'option', 'argument', 'string', 'number', 'keyword', 'operator', 'redirect', 'pattern', 'variable', 'assignment', 'comment', 'shebang'] as const;
 export type Role = (typeof ROLES)[number];
 
 /**
@@ -292,6 +293,7 @@ export const ROLE_PROBES: Record<Role, { token?: string; grammar: string[] }> = 
   variable: { token: 'variable', grammar: ['variable.other.normal.shell'] },
   assignment: { token: 'variable.modification', grammar: ['variable.other.assignment.shell'] },
   comment: { token: 'comment', grammar: ['comment.line.number-sign.shell'] },
+  shebang: { token: 'shebang', grammar: ['comment.line.number-sign.shell', 'meta.shebang.shell'] },
 };
 
 /**
@@ -304,12 +306,16 @@ const DEFAULT_SCOPES: Record<string, string[]> = {
   parameter: ['variable.parameter'], variable: ['variable.other.readwrite', 'entity.name.variable'],
 };
 
-/** How a selector of token rules (`function.defaultLibrary`, `*.readonly`, `variable:shellscript`) matches a token: its score, -1 if not. */
+/**
+ * How a selector of token rules (`function.defaultLibrary`, `*.readonly`, `variable:shellscript`) matches a token: its
+ * score, -1 if not. A selector of a type's super type matches it too, a point lower (`comment` for `shebang`).
+ */
 function tokenScore(selector: string, type: string, mods: string[], language: string): number {
   const [sel, lang] = selector.split(':');
   const [sType, ...sMods] = sel.split('.');
-  if ((sType !== '*' && sType !== type) || !sMods.every((m) => mods.includes(m)) || (lang && lang !== language)) return -1;
-  return (sType === '*' ? 0 : 100) + sMods.length * 100 + (lang ? 10 : 0);
+  const depth = [type, ...(type in SUPER_TYPES ? [SUPER_TYPES[type as TokenType]] : [])].indexOf(sType);
+  if ((sType !== '*' && depth < 0) || !sMods.every((m) => mods.includes(m)) || (lang && lang !== language)) return -1;
+  return (sType === '*' ? 0 : 100 - depth) + sMods.length * 100 + (lang ? 10 : 0);
 }
 
 /**

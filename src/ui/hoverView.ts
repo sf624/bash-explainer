@@ -6,7 +6,7 @@ import { Example, LineExplanation, Token } from '../analyzer-types';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { joinParts, labelParts } from '../label';
-import { manualLabel, SECTIONS } from '../manual';
+import { referencesWith } from '../references';
 import { pictureLabel, pictureText, splitPictures } from '../ctlchars';
 import { isCommand, partNotes, ProblemAt, sameSpan, shown, valueOf } from './hoverParts';
 import { type NoteLevel, SPACE_MARK, type SpaceEnds, splitNote, type ValueSaid } from '../messages';
@@ -174,11 +174,10 @@ const value = (tok: Token) => {
   return v ? `<br><small>${valueHtml(v.said)}</small>` : '';
 };
 
-/** The sections of the manual, small, as HTML links. */
+/** The references (the manual's sections, manual pages), small, as HTML links. */
 function refsHtml(lang: Lang, refs?: readonly string[]): string {
   if (!refs?.length) return '';
-  const [first, ...rest] = refs.map((id) => `<a href="${SECTIONS.get(id)!.url}" title="${attr(SECTIONS.get(id)!.title)}">${id}</a>`);
-  return ` <small>${[manualLabel(lang, [first]), ...rest].join(', ')}</small>`;
+  return ` <small>${referencesWith(lang, refs, (r, shown) => `<a href="${r.url}" title="${attr(r.title)}">${shown}</a>`)}</small>`;
 }
 
 /** A part as a row's text: its meaning, badge, sections and other meanings. */

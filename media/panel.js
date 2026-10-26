@@ -46,8 +46,8 @@
   let labels = /** @type {any} */ ({});
   /** The control pictures (`\u240a`) with the name drawn for each (`LF`) and what it stands for, from the extension (`controlMarks`, src/ctlchars.ts). */
   let controlMarks = /** @type {Record<string, [string, string]>} */ ({});
-  /** The sections of the manual the rows and notes cite: { '3.7.2': { label, title, url } }. */
-  let manual = /** @type {Record<string, { label: string, title: string, url: string }>} */ ({});
+  /** The references the rows and notes cite: { '3.7.2': { text: '§3.7.2', label, title, url }, 'execve(2)': … }. */
+  let manual = /** @type {Record<string, { text: string, label: string, title: string, url: string }>} */ ({});
   /** Editable examples by id: where to show the result of a rerun. */
   /** @type {Map<number, { spec: any, layer: HTMLElement, results: HTMLElement, empty: string }>} */
   const editors = new Map();
@@ -80,7 +80,7 @@
   let themeWatching = false;
   let themeSent = '';
   let themeTimer = 0;
-  const THEME_ROLES = ['command', 'builtin', 'option', 'argument', 'string', 'number', 'keyword', 'operator', 'redirect', 'pattern', 'variable', 'assignment', 'comment'];
+  const THEME_ROLES = ['command', 'builtin', 'option', 'argument', 'string', 'number', 'keyword', 'operator', 'redirect', 'pattern', 'variable', 'assignment', 'comment', 'shebang'];
   function setThemeVars(/** @type {Record<string, string>} */ vars) {
     for (const k of themeVars) document.body.style.removeProperty(k);
     themeVars = Object.keys(vars);
@@ -243,7 +243,7 @@
   }
 
   /**
-   * The sections of the manual a row or a note is about, as small links (§3.7.2) to their pages. A link opens in
+   * The references a row or a note cites, as small links (§3.7.2, execve(2)) to their pages. A link opens in
    * the browser: VS Code opens a webview's links outside it, and the web page in a new tab.
    */
   function refLinks(/** @type {string[] | undefined} */ refs) {
@@ -257,7 +257,7 @@
       a.href = m.url;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
-      a.textContent = `§${id}`;
+      a.textContent = m.text;
       a.title = `${m.label}: ${m.title}`;
       if (i) box.append(' ');
       box.append(a);
@@ -706,7 +706,7 @@
   const BASH_STEP = /** @type {Record<string, number>} */ ({
     line: 1, list: 2, pipeline: 2, command: 3, compound: 3, clause: 3, coprocess: 3, function: 3,
     commandName: 4, aliasWord: 4, expandedName: 4, option: 4, argument: 4, assignmentArgument: 4, word: 4, name: 4,
-    assignment: 4, redirect: 4, heredoc: 4, operator: 4, keyword: 4, comment: 4,
+    assignment: 4, redirect: 4, heredoc: 4, operator: 4, keyword: 4, comment: 4, shebang: 4,
   });
   /** The step a node appears at by itself: in bash's reading by its kind (5: a part of a word), else its layer's. */
   const ownStep = (/** @type {any} */ n) => (n.layer === 'bash' ? BASH_STEP[n.kind] ?? 5 : LEVEL[n.layer] + 4);

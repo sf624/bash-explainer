@@ -199,6 +199,14 @@ export function token(n: SyntaxNode, text: string): SyntaxNode | undefined {
   return n.children.find((c) => !c.named && c.type === text);
 }
 
+/**
+ * Whether `n` is the shebang: a comment `#!…` at the very start of the text. The kernel reads it only when `#!` are
+ * the file's first two bytes (execve(2)): not after a blank or a byte order mark, nor on a later line.
+ */
+export function isShebang(n: SyntaxNode): boolean {
+  return n.type === 'comment' && n.startIndex === 0 && n.text.startsWith('#!');
+}
+
 /** The nearest ancestor (not `n` itself) that satisfies `test`. */
 export function ancestor(n: SyntaxNode, test: (a: SyntaxNode) => boolean): SyntaxNode | undefined {
   for (let a = n.parent; a; a = a.parent) if (test(a)) return a;

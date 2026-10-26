@@ -277,7 +277,7 @@ describe('command tokens: each token of an explanation lies in one command of ba
         if (skipRows.has(line)) continue;
         counts.lines++;
         for (const t of allTokens(analyzer.explainLine(tree, line, shell).items)) {
-          if (t.kind === 'comment') continue;
+          if (t.kind === 'comment' || t.kind === 'shebang') continue;
           const a = offset(t.span.start);
           const b = offset(t.span.end);
           const name = `${t.label} (${t.span.start.line + 1}:${t.span.start.character + 1})`;

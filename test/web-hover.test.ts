@@ -15,6 +15,7 @@ import { explainDocumentLine, heredocAt } from '../src/document';
 import { openDocument } from '../src/document-setup';
 import type { Lang } from '../src/i18n';
 import { SECTIONS } from '../src/manual';
+import { REFERENCE_URLS } from '../src/references';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { partAt } from '../src/ui/hoverParts';
 import { HoverInput, lineCard, partHover } from '../src/ui/hoverView';
@@ -374,7 +375,7 @@ describe('the web page: hover cards in the editor', function () {
     // A command with such words, and a comment with them (short, so that the lines fit the pane).
     await open(page, "#!/bin/bash\necho '<img src=x onerror=window.bxRan=1>' '[x](https://evil.example)'\ntrue # <img src=x onerror=window.bxRan=1> *x* &lt;");
     await page.keyboard.press('Control+Home');
-    const manual = [...SECTIONS.values()].map((sec) => sec.url);
+    const manual = [...REFERENCE_URLS];
     for (const [line, text, shows] of [
       [1, "'<img", "'<img src=x onerror=window.bxRan=1>'"], [1, "'[x]", "'[x](https://evil.example)'"],
       [2, '<img', '# <img src=x onerror=window.bxRan=1> *x* &lt;'],
@@ -448,7 +449,7 @@ describe('the web page: hover cards in the editor', function () {
     // private use area, so that what is left of `*`, `` ` ``, `$(`… in the text is Markdown that was not read.
     const literal = (md: string) => md.replace(/&#(35|36|42|62|91|92|93|95|96|124|126);|&gt;/g, (m, n?: string) => `&#${0xe000 + Number(n ?? 62)};`);
     const list = [...cards].map((md) => ({ md: literal(md), icons: plain.has(md) ? icons(md) : -1 }));
-    const manual = [...SECTIONS.values()].map((sec) => sec.url);
+    const manual = [...REFERENCE_URLS];
     // (The functions run in the page, given as text: this file is compiled without the DOM's types.)
     const problems = await page.evaluate(`((list, manual) => {
       const out = [];
@@ -476,6 +477,7 @@ describe('the web page: hover cards in the editor', function () {
     assert.deepStrictEqual(problems, []);
     // What the allow-list drops: scripts and styles with what they hold, handlers, other styles, links that are not https.
     const manualPage = SECTIONS.get('3.1.2.2')!;
+    const MAN_PAGE = 'https://man7.org/linux/man-pages/man2/execve.2.html';
     const hostile = [
       'a <script>window.bxRan = 1</script> b',
       '<style>body { display: none }</style>text',
@@ -488,6 +490,7 @@ describe('the web page: hover cards in the editor', function () {
       '[$(gear) Settings](command:bashExplainer.openSettings) $(unknown-icon) `**not bold**` **bold** _em_ snake_case_word 2 * 3 * 4',
       '<a href="https://evil.example" title="T">raw</a> <a href="//evil.example">rel</a> <a href="HTTPS://evil.example">upper</a>',
       'a paragraph\n<table><tr><td>cell</td></tr></table>\nand text after',
+      `[man](${MAN_PAGE} "T") [other](https://man7.org/linux/man-pages/man1/rm.1.html)`,
     ];
     const got = await page.evaluate(`((list) => list.map((md) => {
       const el = window.bxRenderCard(md);
@@ -511,6 +514,9 @@ describe('the web page: hover cards in the editor', function () {
     // Only a section of the manual keeps its address (exactly): any other link, a crafted one too, keeps its text only.
     assert.deepStrictEqual(got[4].attrs.sort(), [`a[href=${manualPage.url}]`, 'a[rel=noopener noreferrer]', 'a[target=_blank]', 'a[title=T]']);
     assert.strictEqual(got[4].text, 'js http data crafted near ok');
+    // A manual page cited (execve(2)) keeps its address too; another one of the same site does not.
+    assert.deepStrictEqual(got[11].attrs.sort(), [`a[href=${MAN_PAGE}]`, 'a[rel=noopener noreferrer]', 'a[target=_blank]', 'a[title=T]']);
+    assert.strictEqual(got[11].text, 'man other');
     assert.deepStrictEqual(got[9].attrs, []);
     assert.strictEqual(got[9].text, 'raw rel upper');
     // A block of HTML (kind 6) interrupts a paragraph.

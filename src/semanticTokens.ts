@@ -2,15 +2,22 @@
 // Pure: the VS Code provider (src/ui/semanticTokens.ts) and the Language Server (cli/lsp.ts) send what
 // this encodes. Editors draw the tokens over their own grammar (TextMate in VS Code), so the kinds map to
 // the standard token types and modifiers, which every theme colours; `exported` and `unquoted` are our own modifiers
-// (package.json `semanticTokenModifiers`), which themes ignore unless they style it.
+// (package.json `semanticTokenModifiers`), which themes ignore unless they style it, and `shebang` our own type
+// (package.json `semanticTokenTypes`), a `comment` to a theme with no rule for it.
 import type { ShellDocument } from './document';
 import { documentHighlight, type DocumentHighlightOptions, HighlightKind, LineSpan } from './highlight';
 
-export const TOKEN_TYPES = ['comment', 'keyword', 'function', 'parameter', 'string', 'variable', 'operator', 'number', 'regexp', 'macro'] as const;
+export const TOKEN_TYPES = ['comment', 'keyword', 'function', 'parameter', 'string', 'variable', 'operator', 'number', 'regexp', 'macro', 'shebang'] as const;
 export const TOKEN_MODIFIERS = ['declaration', 'modification', 'defaultLibrary', 'readonly', 'exported', 'unquoted'] as const;
 
 export type TokenType = (typeof TOKEN_TYPES)[number];
 export type TokenModifier = (typeof TOKEN_MODIFIERS)[number];
+
+/**
+ * Our own token types, with the standard type each falls back to (package.json `semanticTokenTypes`, `superType`): a
+ * theme with no rule for `shebang` colours it as a comment, and an LSP client that does not list it gets a comment.
+ */
+export const SUPER_TYPES: Partial<Record<TokenType, TokenType>> = { shebang: 'comment' };
 
 /** The legend sent once to the editor: token types and modifiers, by index. */
 export const LEGEND: { tokenTypes: string[]; tokenModifiers: string[] } = { tokenTypes: [...TOKEN_TYPES], tokenModifiers: [...TOKEN_MODIFIERS] };
@@ -25,6 +32,7 @@ export const LEGEND: { tokenTypes: string[]; tokenModifiers: string[] } = { toke
  */
 export const TOKEN_OF: Record<HighlightKind, [TokenType, ...TokenModifier[]] | null> = {
   comment: ['comment'],
+  shebang: ['shebang'],
   keyword: ['keyword'],
   builtin: ['function', 'defaultLibrary'],
   command: ['function'],
@@ -48,16 +56,18 @@ export const TOKEN_OF: Record<HighlightKind, [TokenType, ...TokenModifier[]] | n
 
 /**
  * Spans in lines (sorted, not overlapping) as the integers of semantic tokens: for each token, its line and
- * start relative to the previous token, its length, its type and a bit set of its modifiers.
+ * start relative to the previous token, its length, its type and a bit set of its modifiers. `known`: the types the
+ * editor knows (an LSP client's `tokenTypes`); another of our own types is sent as its standard type (`SUPER_TYPES`).
  */
-export function encodeTokens(spans: readonly LineSpan[]): number[] {
+export function encodeTokens(spans: readonly LineSpan[], known?: readonly string[]): number[] {
   const data: number[] = [];
   let line = 0;
   let start = 0;
   for (const s of spans) {
     const token = TOKEN_OF[s.kind];
     if (!token) continue;
-    const [type, ...modifiers] = token;
+    const [own, ...modifiers] = token;
+    const type = known && !known.includes(own) ? SUPER_TYPES[own] ?? own : own;
     data.push(s.line - line, s.line === line ? s.from - start : s.from, s.to - s.from, TOKEN_TYPES.indexOf(type),
       [...modifiers, ...(s.modifiers ?? [])].reduce((bits, m) => bits | (1 << TOKEN_MODIFIERS.indexOf(m)), 0));
     line = s.line;
@@ -71,10 +81,10 @@ export function encodeTokens(spans: readonly LineSpan[]): number[] {
  * explanations read it; with `lines`, only those on these lines (inclusive), as a range request asks, and the models
  * are read on those lines only.
  */
-export function semanticTokens(doc: ShellDocument, opts: Pick<DocumentHighlightOptions, 'shells' | 'lines'> = {}): number[] {
-  const { lines } = opts;
-  const spans = documentHighlight(doc, { ...opts, skipInserted: true });
-  return encodeTokens(lines ? spans.filter((s) => s.line >= lines.from && s.line <= lines.to) : spans);
+export function semanticTokens(doc: ShellDocument, opts: Pick<DocumentHighlightOptions, 'shells' | 'lines'> & { known?: readonly string[] } = {}): number[] {
+  const { lines, known } = opts;
+  const spans = documentHighlight(doc, { shells: opts.shells, lines, skipInserted: true });
+  return encodeTokens(lines ? spans.filter((s) => s.line >= lines.from && s.line <= lines.to) : spans, known);
 }
 
 /** The tokens of encoded integers, as lines, columns and lengths (for tests and tools). */

@@ -309,6 +309,8 @@ code {
 .kind-variable, .kind-expansion, .kind-substitution { color: var(--c-variable); }
 .kind-assignment { color: var(--c-assignment, var(--c-variable)); }
 .kind-comment { color: var(--c-comment); }
+/* The shebang names the program that runs the file: a command's colour, not a comment's (src/ui/themePalette.ts, GROUP). */
+.kind-shebang { color: var(--c-shebang, var(--c-command)); }
 .kind-error { color: var(--c-error); }
 
 #empty {
