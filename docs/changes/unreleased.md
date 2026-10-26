@@ -473,6 +473,31 @@ A list (Bash manual 3.2.4) is pipelines separated by `;`, `&`, `&&` or `||`; `&&
 - The `;` of the head of a `for` is the loop's: it ends the words before `do` (or `{`), or separates the three expressions of `(( ))`. Reading shows it too.
 - At the top of a script, a newline ends a list: bash reads and runs a script one line at a time. In a body (`{ }`, `( )`, `$( )`, the parts of `if`, `while` and `case`), a newline separates commands as `;` does, and the body's list is shown on the line of the construct in Reading; each line of it shows its own part.
 
+### Reading as the Bash manual reads it
+
+Reading was checked against chapter 3 of the Bash manual, section by section (3.1 to 3.4 in this round). Each construct is now named and grouped as the manual does, and cites its section; every reserved word and operator of a statement is a row of its own. Meaning cites the same sections.
+
+| Section | Line | Before | Now |
+| --- | --- | --- | --- |
+| 3.1.2.1 | `echo \$a b\ c` | the words cited only 3.7.1 | a word with an escape character (or a line continuation) cites 3.1.2.1 |
+| 3.1.3 | `# note` | a comment cited no section | 3.1.3 |
+| 3.2.1 | `if`, `do`, `{`, `!` | kind "keyword" | "reserved word", with what one is |
+| 3.2.2 | `a b` | a simple command cited 3.7.1 | 3.2.2 and 3.7.1 |
+| 3.2.3 | `! a \| b`, `time -p ! a \| b` | a pipeline inside a pipeline | one pipeline: `time`, `-p`, `!`, then its commands and `\|`, as bash's parser reads it |
+| 3.2.5 | `while …; done < f`, `f() { :; } > log` | an unnamed "part" around the command and its redirections | the compound command, with its redirections as its last parts, as bash's parser keeps them |
+| 3.2.5.1 | `for … do … done` | the body cited no section, and appeared only at step 5 | it cites the loop's section and appears with the commands, at step 3 |
+| 3.2.5.1, 6.5 | `for ((i = 0; i < 3; i++))` | `i = 0` cited 3.4 (an assignment), the operators only 3.2.5.1 | expressions, citing 3.2.5.1 and 6.5 |
+| 3.2.5.2 | `case $x in a\|b)` | the `\|` cited 3.2.3 (a pipe) | 3.2.5.2; a branch with one pattern no longer says what `\|` means |
+| 3.2.5.2 | `select v in a b` | `v`: "receives the next value on each iteration" | "set to the chosen word: the one whose number is typed (an empty string when the line is not one of the numbers)", as bash does |
+| 3.2.5.2, 6.4 | `[[ ! -f a && b ]]` | unnamed parts, `!` a reserved word, `-f` with no section | expressions; `!` is an operator of the expression; every operator cites 3.2.5.2 and 6.4 |
+| 3.2.5.2, 6.5 | `(( x > 1 ))` | unnamed parts; `1` a word that bash expands | expressions citing 6.5; a number is part of the expression |
+| 3.3 | `f() { …; }` | the `( )` were left out | they are rows, citing 3.3; the kind is "function definition" |
+| 3.4 | `x=1`, `y+=2` | the `=` and `+=` were not shown | an operator row each, citing 3.4 |
+| 3.4.1, 3.4.2 | `${10}`, `${#}` | 3.5.3 only | also 3.4.1 (a positional parameter) or 3.4.2 (a special one) |
+| 3.5.5 | `$((1 + $n))` | nothing under the expansion but `$n` | its expression, as in `(( ))`; the kind is "arithmetic expansion" |
+
+Left for the next round (3.5 and 3.6): the filename expansion of a word (3.5.8) is cited on the command's reading of it but not on bash's word; a redirection is one row, with no rows of its own for its descriptor, its operator and its word (3.6); the body of a here-document cites no section (3.6.6); `{a,b}` has no row of its own for the braces (3.5.1). The grouping is checked against bash's own parser (bash-ast), and the `select` text against bash.
+
 ### Note levels
 
 A note says how much it matters, with a mark, a word and a colour:

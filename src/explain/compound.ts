@@ -239,7 +239,10 @@ export function forStatement(cx: Explainer, n: SyntaxNode): Token {
         : cx.s(`for ループ: 位置パラメータ（"$@"）の各値を順に \`${name}\` に入れて繰り返す（\`in\` を省略したとき）`, `for loop over the positional parameters ("$@") as \`${name}\` (what a loop with no \`in\` does)`);
   const children = ordered(cx, n, (c) => same(c, v) || has(values, c));
   const extra: Token[] = [];
-  if (v && cx.onLine(v)) extra.push(cx.tok(v, 'variable', cx.s('ループ変数: 繰り返しごとに次の値が入る', 'Loop variable: receives the next value on each iteration')));
+  // (`select` sets it to the word whose number is read, and to an empty string after any other line: 3.2.5.2.)
+  if (v && cx.onLine(v)) extra.push(cx.tok(v, 'variable', select
+    ? cx.s('選んだ単語が入る変数: 入力した番号の単語（メニューの番号でない行なら空文字列）', 'Variable set to the chosen word: the one whose number is typed (an empty string when the line is not one of the numbers)')
+    : cx.s('ループ変数: 繰り返しごとに次の値が入る', 'Loop variable: receives the next value on each iteration')));
   for (const val of values) {
     for (const t of cx.sub(val)) {
       t.explanation = cx.s('繰り返す値: ', 'Value to iterate: ') + t.explanation;
@@ -289,7 +292,8 @@ export function caseItem(cx: Explainer, n: SyntaxNode): Token {
   const expl = prev && isDefault ? cx.s('分岐: `*` は何にでも一致する。', 'Branch: `*` matches anything. ') + viaPrev
     : isDefault
     ? cx.s('既定の分岐: どのパターンにも一致しなかった場合に実行（`*` は何にでも一致）', 'Default branch: runs when nothing else matched (`*` matches anything)')
-    : cx.s(`分岐: 値がパターン \`${ptext}\` に一致した場合に実行（\`|\` は「または」）`, `Branch: runs when the value matches \`${ptext}\` (\`|\` means "or")`);
+    // (What `|` means, where there is one: `a|b)`.)
+    : cx.s(`分岐: 値がパターン \`${ptext}\` に一致した場合に実行${pats.length > 1 ? '（`|` は「または」）' : ''}`, `Branch: runs when the value matches \`${ptext}\`${pats.length > 1 ? ' (`|` means "or")' : ''}`);
   const patToks = pats
     .filter((p) => cx.onLine(p))
     .map((p) => casePattern(cx, p));

@@ -51,6 +51,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Meaning and Reading show lists as the manual reads them: the commands joined by `;` and `&` make one list, with the AND and OR lists (`&&`, `||`) as its parts, and each `;` and `&` says what it applies to (`a && b &`: the whole AND list). Before, only `&&` and `||` made a list.
 - Syntax colouring follows the explanations: aliases, readonly variables and the words a command reads as data get their colours, in shell scripts and the shell code of other files (not Python files and Dockerfiles). **Compatibility:** `bashExplainer.highlight.enabled` is now `true` by default, also in the Language Server (before, `false`); set it to `false` to turn it off.
 - The example of a brace expansion shows the words as separate chips in a row (`1` `4` `7` `10`), and under them what `echo` or `printf` prints. Before, it listed one word per line, which read like output.
+- Reading names and groups each construct as the Bash manual does, and cites its section: `time` and `!` start one pipeline, a compound command holds its redirections, `[[ ]]` and arithmetic show their expressions, and every reserved word and operator is a row (the `( )` of a function, the `=` of an assignment). Before, `! a | b` was a pipeline inside a pipeline.
 - On the web page, the address bar no longer shows the script: **Copy link** only copies the link, and opening a link takes the script off the address bar. Share links work as before, and a reload keeps the script.
 
 ### Fixed
@@ -84,6 +85,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A line with a redirection that has no file yet, followed by another one (`echo > >g`, while typing), is explained; before, its explanation failed.
 - A click on a row of the panel that is on another line, such as a `case` clause inside a `while` loop, only folds the row. Before, it moved the cursor to that line, and the panel explained that line instead.
 - The `date` example follows the line: `date -d 2024-01-02 +%A` shows `Tuesday`, `TZ=Asia/Tokyo date +%T` and `env TZ=Asia/Tokyo date` show the time in that zone, and `-d 'next friday'` shows the Friday after each moment it runs. Before, it always showed the time it runs, in UTC.
+- A `select` loop's variable says it gets the word whose number is typed; before, it said it gets the next value on each iteration. A `case` branch says what `|` means only when it has one.
 - `sed -e 's/a/b/' -e 's/c/d/' f` shows one example of the whole script, not the same one twice; a pipeline in `$( )` names itself in its example's title.
 - `builtin cd` and `command echo` are explained as the builtin itself, which runs in this shell; the words after it are its own. Before, they said "runs `cd`", the badge "run by `builtin`", and Reading had `builtin` read them.
 - After `alias ll='ls -l'; ll -h` on one line, `ll` is the command bash looks for, not the alias, and `-h` is no longer read as an option of `ls`.
