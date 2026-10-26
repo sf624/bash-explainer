@@ -1,6 +1,6 @@
 # Values of top-level constants inside functions
 
-Status: proposed (2026-10-27). Not started. The roadmap's item "Values of top-level constants inside functions" ([../roadmap.md](../roadmap.md), "Next"). This page says where function bodies get no value today, what bash does there, the rule that would give one, where the rule lives, the steps, the tests, and the gain measured on the corpus and on real scripts. The gain is zero on both sets today (section 7), so section 10 asks the maintainer whether to build it now.
+Status: deferred: no gain measured (2026-10-27). Not built; kept as the record. The roadmap had it as the item "Values of top-level constants inside functions"; the maintainer moved reading sourced files into its place ([../roadmap.md](../roadmap.md), "Next" and "Done lately"). This page says where function bodies get no value today, what bash does there, the rule that would give one, where the rule lives, the steps, the tests, and the gain measured on the corpus and on real scripts. The gain is zero on both sets today (section 7). Section 10 has the question and the decision.
 
 ## 1. Today
 
@@ -210,3 +210,5 @@ Where the rule does help is short hand-written scripts that are not blind: a `lo
 - The rule is sound on every bash check of section 2, and it is small: a view in values only, no change of the walk. But it gives no new value on the corpus or on the 802 real scripts, and the earlier sets gave the same. The bodies that would gain are in blind scripts, where only reading sourced files (or `eval` text) would help.
 - So: build steps 0 to 2 now for the short hand-written scripts (a `log` function called five times, recursion, the web page), or leave the item after reading sourced files ("Not decided"), with step 0's probe rows as the record?
 - Step 3 (`trap cleanup EXIT`) is the case users meet most in hand-written scripts. Include it with step 2, or keep it optional?
+
+**Decided** (2026-10-27): steps 0 to 2 are not built now; this page stays as the record. Reading a file given to `source` in the workspace takes the item's place in the roadmap, since the bodies that would gain are in scripts blind by `source` or `eval`.
