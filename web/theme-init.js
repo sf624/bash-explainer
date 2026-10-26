@@ -29,23 +29,24 @@
       return false;
     }
   }
+  /** Whether this is the first load of the page in this tab's session, which it marks as seen (web/storage.ts repeats the key). */
+  function firstLoad() {
+    try {
+      if (sessionStorage.getItem('bash-explainer-opening') === '1') return false;
+      sessionStorage.setItem('bash-explainer-opening', '1');
+    } catch {
+      // No storage: every load is a first one.
+    }
+    return true;
+  }
   if (/[?&]view=panel(&|$)/.test(location.search)) root.classList.add('view-panel');
   // The opening (src/ui/opening.ts): the overlay of index.html covers the page from the first paint until the page is
   // ready, when web/opening.ts ends it. Only on the page whose script tag asks for it (index.html, not compare.html),
   // not in the panel view or in a frame, nor without JavaScript (this file does not run then, and the overlay stays
-  // hidden), nor on a link to a script: the script is there from the start. It plays whole on the first load of a
-  // browser session; on later loads and with reduced motion it is still: the finished picture, gone as soon as the
-  // page is ready.
-  else if (window.parent === window && document.currentScript && document.currentScript.hasAttribute('data-opening') && !sharedScript()) {
-    let seen = false;
-    try {
-      seen = sessionStorage.getItem('bash-explainer-opening') === '1';
-      sessionStorage.setItem('bash-explainer-opening', '1');
-    } catch {
-      // No storage: every load plays it whole.
-    }
-    const still = seen || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    root.classList.add('opening-on', still ? 'opening-still' : 'opening-whole');
+  // hidden). Only on the first load of a browser session: a later load, and a link to a script, show the editor from
+  // the start. It plays whole; with reduced motion it is still, the finished picture, gone as soon as the page is ready.
+  else if (window.parent === window && document.currentScript && document.currentScript.hasAttribute('data-opening') && !sharedScript() && firstLoad()) {
+    root.classList.add('opening-on', window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'opening-still' : 'opening-whole');
     // Its labels in the page's language, as web/main.ts picks it: the link's, the setting's, then the browser's.
     let lang = (/[#&]lang=(ja|en)(&|$)/.exec(location.hash) || [])[1];
     if (!lang) {
