@@ -583,29 +583,35 @@ const VALUE_SHOWN = 80;
  * the panel and the hover draw the mark themselves (`SpaceEnds`), and use this one only where a note names it.
  */
 export const SPACE_MARK = '␣';
-const EMPTY_WORD = '∅';
+export const EMPTY_WORD = '∅';
 /** How many words of a split value are shown. */
 const WORDS_SHOWN = 12;
+
+/**
+ * A value, or a word of it, as the outputs show it: control characters as pictures, a space at either end as `␣`, an
+ * empty word as `∅`, cut when long; `ends`: how many characters at each end are marks of a space.
+ */
+export function shownWord(t: string): { text: string; ends: SpaceEnds } {
+  // (A newline is shown as `␊`, as in the notes on quote removal, so that it is not read as the two characters `\n`.
+  // A space at either end is `␣`: Markdown takes one space at each end of a code span as padding, and a chip or a
+  // hover would hide it. An empty word of a split value is `∅`. The cut is on characters, not on UTF-16 units.)
+  if (t === '') return { text: EMPTY_WORD, ends: [0, 0] };
+  const chars = [...t].map((c) => (c === '\n' ? '␊' : visibleChar(c)));
+  const cut = chars.length > VALUE_SHOWN;
+  const units = cut ? [...chars.slice(0, VALUE_SHOWN - 1), '…'] : chars;
+  const first = units.findIndex((c) => c !== ' ');
+  const last = units.map((c) => c !== ' ').lastIndexOf(true);
+  const marked = units.map((c, i) => c === ' ' && (i < first || (!cut && i > last)));
+  const firstText = marked.indexOf(false);
+  const lead = firstText < 0 ? 0 : firstText;
+  const trail = firstText < 0 ? marked.length : marked.length - 1 - marked.lastIndexOf(false);
+  return { text: units.map((c, i) => (marked[i] ? SPACE_MARK : c)).join(''), ends: [lead, trail] };
+}
 
 /** The texts of the value of an expansion, in `lang`; `bash`: false in a script of sh or dash (the shell runs it, not bash). */
 export function valueSaid(lang: Lang, v: ExpansionValue, bash = true): ValueSaid {
   const ja = lang === 'ja';
-  // (A newline is shown as `␊`, as in the notes on quote removal, so that it is not read as the two characters `\n`.
-  // A space at either end is `␣`: Markdown takes one space at each end of a code span as padding, and a chip or a
-  // hover would hide it. An empty word of a split value is `∅`. The cut is on characters, not on UTF-16 units.)
-  const show = (t: string): { text: string; ends: SpaceEnds } => {
-    if (t === '') return { text: EMPTY_WORD, ends: [0, 0] };
-    const chars = [...t].map((c) => (c === '\n' ? '␊' : visibleChar(c)));
-    const cut = chars.length > VALUE_SHOWN;
-    const units = cut ? [...chars.slice(0, VALUE_SHOWN - 1), '…'] : chars;
-    const first = units.findIndex((c) => c !== ' ');
-    const last = units.map((c) => c !== ' ').lastIndexOf(true);
-    const marked = units.map((c, i) => c === ' ' && (i < first || (!cut && i > last)));
-    const firstText = marked.indexOf(false);
-    const lead = firstText < 0 ? 0 : firstText;
-    const trail = firstText < 0 ? marked.length : marked.length - 1 - marked.lastIndexOf(false);
-    return { text: units.map((c, i) => (marked[i] ? SPACE_MARK : c)).join(''), ends: [lead, trail] };
-  };
+  const show = shownWord;
   const lead = ja ? 'スクリプトから分かるここでの値:' : 'Value here, from the script:';
   const shownValue = v.text === '' ? undefined : show(v.text);
   const value = shownValue?.text;

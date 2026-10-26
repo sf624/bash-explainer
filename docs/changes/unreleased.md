@@ -364,6 +364,24 @@ Before, it said "Shebang: run this script with `/usr/bin/env bash`", whatever ra
 - Colour: the shebang is its own kind, `shebang`, in the panel's Meaning and Reading (labelled "shebang, a comment to bash"), and is drawn in the colour of a command name, the program it names; in the web page's editor too, in italics like a comment. With `bashExplainer.panel.colors` set to `theme`, it takes the editor's colour of the shebang (a comment's, in most themes) where that is readable; with `themeLike`, a command's when the theme draws it as a comment.
 - In VS Code it is the semantic token type `shebang`, declared with `superType: comment`: a theme with no rule for it colours it as a comment, as before (through the grammar's scope `meta.shebang.shell`), and `"editor.semanticTokenColorCustomizations": { "rules": { "shebang": "#4ec9b0" } }` gives it a colour of your own. The Language Server sends `shebang` to a client that lists it in its `tokenTypes`, and `comment` to one that does not.
 
+### The words of a brace expansion
+
+The example of a brace expansion shows the words bash makes as chips in a row, each with an edge, so that they read as separate arguments, not as lines of output. Where the command is `echo` or `printf` and its words are known, the output follows:
+
+| Line | Resulting words | Output |
+| --- | --- | --- |
+| `echo {1..10..3}` | `1` `4` `7` `10` | `1 4 7 10` |
+| `touch file{1..3}.txt` | `file1.txt` `file2.txt` `file3.txt` | (none: `touch` prints nothing) |
+| `printf '%s\n' {a,b}{1,2}` | `a1` `a2` `b1` `b2` | four lines, `a1` to `b2` |
+| `printf -v v '%s,' {a..c}` | `a` `b` `c` | Value stored in `v`: `a,b,c,` |
+
+- The label counts the words: "Resulting words (4 separate arguments of `echo`)".
+- A long expansion is cut after 11 words, with "… 100 words in all" (`echo {1..100}`); a long `echo` line is cut at 120 characters.
+- A space at an end of a word is drawn as in the values of expansions (`echo {a\ ,b}`), and an empty word is `∅` (`echo {Z..a}` makes one), each said after the words.
+- The output is under the last word that expands (`echo x{1..3}y {a,b}`), and not where the command writes to a pipe whose example shows the stages. `echo` with an option or a backslash, and a word with a glob or a `~`, give no output.
+- The command-line tool and Markdown write the words on one line as code spans: `` `1` `4` `7` `10` ``. The VS Code hover shows them as code, side by side. In the panel they are a list, named by the label, so a screen reader says how many words there are.
+- Before, "Resulting words" listed one word per line, and `printf` had an example of its own that printed the braces as they are (`{a,b}{1,2}`). The examples of `printf` and of pipelines now run the words of the expansion (`echo {a,b} | tr a-z A-Z` shows `A B`), and `printf '%s\n' *.txt` or `printf '%s\n' ~/x` has no example, as the files and the home directory are not known. After `set +B`, braces do not expand, and there is no example.
+
 ## Fixed
 
 ### Shell code in host files

@@ -2,7 +2,7 @@
 // the whole line, per command. VS Code's hover keeps only some HTML (see test/hover-view.test.ts): `<span style>` in
 // one shape (a colour, a background, display:inline-block, border-radius, in that order), tables, `<small>`, `title`.
 // Inside an HTML block (a table) Markdown is not read, so its text is turned into HTML here (`prose`).
-import { Example, LineExplanation, Token } from '../analyzer-types';
+import { Example, ExampleSection, LineExplanation, Token } from '../analyzer-types';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { joinParts, labelParts } from '../label';
@@ -139,6 +139,17 @@ export function valueHtml(said: ValueSaid): string {
   // (The note that names the mark shows it the same way.)
   const tail = said.tail ? prose(said.tail).replace(`<code>${SPACE_MARK}</code>`, `<code>${mark}</code>`) : '';
   return `${escapeHtml(said.lead)} ${said.value !== undefined ? valueCode(said.value, said.valueEnds!, mark) : escapeHtml(said.empty!)}${split}${tail}`;
+}
+
+/**
+ * The words of a section of words (`ExampleSection.words`, a brace expansion) as HTML: each a `<code>`, as the words of
+ * a value (`valueHtml`), so that they read as separate words; the marks of a space drawn as `spaceMark`.
+ */
+export function wordsHtml(sec: ExampleSection): string {
+  const w = sec.words!;
+  const mark = spaceMark(w.spaceLabel ?? '');
+  const words = sec.lines.length ? sec.lines.map((l, i) => valueCode(l, w.ends[i], mark)).join(' ') : escapeHtml(sec.empty!);
+  return w.after ? `${words} ${prose(w.after).replace(`<code>${SPACE_MARK}</code>`, `<code>${mark}</code>`)}` : words;
 }
 
 /**
@@ -307,7 +318,7 @@ export function partHover(x: HoverInput, chain: Token[]): string {
   const below = (tok: Token): Token[] => [tok, ...shown(tok).flatMap(below)];
   const mine = below(part).flatMap((c) => examplesOn(placed, c) ?? []);
   const examples = mine.length ? mine : chain.slice(0, -1).reverse().map((c) => examplesOn(placed, c)).find(Boolean);
-  if (examples?.length) out.push(...examplesMarkdown(examples, undefined, true, false, pictureSpans));
+  if (examples?.length) out.push(...examplesMarkdown(examples, undefined, true, false, pictureSpans, wordsHtml));
   if (others.length) out.push('', lineLink(x, t.moreNotes(others.length)));
   out.push(...footer(x, { where: true, hidden: own.hidden }));
   return out.join('\n');
@@ -358,12 +369,12 @@ export function wholeLine(x: HoverInput): string {
     const r = rows(shown(tok), 2, isBlock);
     hidden += r.hidden;
     const examples = placed && blockExamples(placed.items, tok, r.rows.map((row) => row.tok));
-    if (examples && x.placement === 'first') out.push(...examplesMarkdown(examples, undefined, false, false, pictureSpans), '');
+    if (examples && x.placement === 'first') out.push(...examplesMarkdown(examples, undefined, false, false, pictureSpans, wordsHtml), '');
     out.push(...table(r.rows, x));
-    if (examples && x.placement === 'last') out.push(...examplesMarkdown(examples, undefined, false, false, pictureSpans), '');
+    if (examples && x.placement === 'last') out.push(...examplesMarkdown(examples, undefined, false, false, pictureSpans, wordsHtml), '');
   }
   if (ex.notes.length) out.push('---', '', ...notes(ex, lang, theme));
-  out.push(...examplesMarkdown(placed ? placed.examples : ex.examples, undefined, true, false, pictureSpans));
+  out.push(...examplesMarkdown(placed ? placed.examples : ex.examples, undefined, true, false, pictureSpans, wordsHtml));
   out.push(...footer(x, { hidden }));
   return out.join('\n');
 }

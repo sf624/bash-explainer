@@ -156,7 +156,7 @@ const ECHO_OPTIONS: OptionSpec[] = [
   { names: ['-E'], text: tx('バックスラッシュエスケープを解釈しない（既定）', 'do not interpret escapes (default)'), selects: 'plain' },
 ];
 const ECHO_READING: Rest = {
-  parser: 'letters', dashDash: 'literal', modes: [{ name: 'escapes' }, { name: 'plain', default: true }], lastModeWins: true,
+  parser: 'letters', dashDash: 'literal', modes: [{ name: 'escapes' }, { name: 'plain', default: true }], lastModeWins: true, prints: 'words',
   operands: [
     { when: { mode: 'escapes' }, pattern: [operand('TEXT', '表示する文字列', 'text to print', { repeat: '*', lang: 'echo' })] },
     { pattern: [operand('TEXT', '表示する文字列', 'text to print', { repeat: '*' })] },
@@ -184,7 +184,7 @@ const BRACKET_READING: Rest = { parser: 'single-dash', operandParser: 'test-expr
 const PROGRAMS: Record<string, CommandSpec> = {
   echo: cmd('引数を空白区切りで標準出力に表示する（coreutils 版）', 'Print arguments to stdout, separated by spaces (from coreutils)', ECHO_OPTIONS, ECHO_READING),
   printf: cmd('書式を指定して文字列を出力する（coreutils 版。`-v` はない）', 'Print formatted output (from coreutils, with no `-v`)', [], {
-    parser: 'letters', example: 'printf', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')),
+    parser: 'letters', example: 'printf', prints: 'format', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')),
   }),
   pwd: cmd('カレントディレクトリのパスを表示する（coreutils 版。既定は `-P`）', 'Print the current directory (from coreutils; `-P` is the default)', [
     ['-P|--physical', 'シンボリックリンクを解決した物理パスを表示（既定）', 'print the physical path (default)'],
@@ -241,7 +241,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', ECHO_OPTIONS, { program: PROGRAMS.echo, ...ECHO_READING }),
   printf: b('書式を指定して文字列を出力する（`%s` 文字列, `%d` 整数, `\\n` 改行 など）', 'Print formatted output (`%s` string, `%d` integer, `\\n` newline…)', [
     naming(['-v', '出力せず、結果を指定した変数に代入する', 'assign the output to a variable instead of printing', 'arg'], 'variable', 'string'),
-  ], { program: PROGRAMS.printf, example: 'printf', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')) }),
+  ], { program: PROGRAMS.printf, example: 'printf', prints: 'format', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')) }),
   read: actsOnShell(b('標準入力から1行読み、変数に代入する', 'Read a line from stdin into variables', [
     ['-r', 'バックスラッシュをエスケープ文字として扱わない（ほぼ常に付けるべき）', 'do not treat backslashes as escapes (almost always wanted)'],
     ['-p', '入力前にプロンプトを表示する', 'show a prompt first', 'arg'],

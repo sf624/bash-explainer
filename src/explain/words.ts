@@ -13,7 +13,7 @@ import { explainGlob, globIntro, type GlobTarget, hasGlob } from '../embedded/gl
 import type { EmbeddedToken } from '../embedded/types';
 import { braceExpand, extglobs, hasGlobstar, ShellWordsUnsupported } from '../examples/shellwords';
 import { parseExpansion } from '../expansion';
-import { shorten } from '../label';
+import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { attribute, docLine } from '../semantics/state';
@@ -166,7 +166,8 @@ function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
   }
   if (!words) return undefined;
   // (An empty word that stays is shown as `''`: a lone backslash, as `{Z..a}` makes, is gone after quote removal.)
-  const list = (words.length > 12 ? [...words.slice(0, 11), '…'] : words).map((w) => (w === '…' ? w : `\`${w || "''"}\``)).join(' ');
+  // (A word with a backtick, as `{Z..a}` makes, is in a longer fence.)
+  const list = (words.length > 12 ? [...words.slice(0, 11), '…'] : words).map((w) => (w === '…' ? w : codeSpan(w || "''"))).join(' ');
   const comma = /\\,/.test(text);
   // `{01..10..3}`: a number with a leading 0 makes every number as wide as the widest.
   const pad = /\{-?0\d+\.\./.test(text) || /\.\.-?0\d+(?:\.\.|\})/.test(text);

@@ -35,6 +35,11 @@ describe('the command-line tool', function () {
     assert.match(r.out, /-r {2}search directories recursively/);
   });
 
+  it('writes the words of a brace expansion on one line, each in backticks, then what echo prints', () => {
+    const text = run(['-e', 'echo {1..10..3}', '--no-color']).out;
+    assert.match(text, /^ {4}Resulting words \(4 separate arguments of `echo`\)\n {6}`1` `4` `7` `10`\n {4}Output\n {6}1 4 7 10$/m);
+  });
+
   it('says what each command name is, as the panel\'s badge does: in the text, in Markdown, and in JSON', () => {
     const text = run(['-e', 'sudo echo hi; echo hi', '--no-color']).out;
     assert.match(text, /^ {4}echo {2}runs echo: Print arguments to stdout, separated by spaces \(from coreutils\) \(program, run by sudo\)$/m);

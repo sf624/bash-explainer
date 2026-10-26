@@ -1,5 +1,5 @@
 import { pictureText } from '../ctlchars';
-import { Example, Kind, LineExplanation, Pos, Span, Token, ValueInfo } from '../analyzer-types';
+import { Example, ExampleSection, Kind, LineExplanation, Pos, Span, Token, ValueInfo } from '../analyzer-types';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { codeSpan, joinParts, LabelPart, labelParts } from '../label';
@@ -321,18 +321,32 @@ export function lineSegments(text: string, line: number, items: Token[]): { text
 
 
 /**
+ * The words of a section of words (`ExampleSection.words`) on one line: each a code span, so that they read as separate
+ * words, then what is said after them; control pictures as `pictureText` writes them.
+ */
+export function wordsMarkdown(sec: ExampleSection): string {
+  const words = sec.lines.length ? sec.lines.map((w) => codeSpan(pictureText(w))).join(' ') : sec.empty!;
+  return sec.words?.after ? `${words} ${sec.words.after}` : words;
+}
+
+/**
  * Examples as headings with one code block per section, so every line keeps its own row. Without `indent`, as blocks of
  * their own, each after a rule (`rule`); with it, inside a list item. An example's note is a quote, or a paragraph when
  * not `quote` (VS Code's hover gives a quote no bar, only the browser's margins). The control pictures of the lines (a code
- * block draws no marks) are written as `<LF>`; those of the note, as `pictureText` does or as `noteText` says.
+ * block draws no marks) are written as `<LF>`; those of the note, as `pictureText` does or as `noteText` says. A section
+ * of words is a line of code spans (`wordsMarkdown`), or as `wordsText` writes it.
  */
-export function examplesMarkdown(examples: Example[], indent?: string, rule = true, quote = true, noteText: (note: string) => string = pictureText): string[] {
+export function examplesMarkdown(examples: Example[], indent?: string, rule = true, quote = true, noteText: (note: string) => string = pictureText, wordsText: (sec: ExampleSection) => string = wordsMarkdown): string[] {
   const out: string[] = [];
   for (const e of examples) {
     if (indent === undefined) out.push('', ...(rule ? ['---', ''] : []), `#### ${e.title}`);
     else out.push(`${indent}##### ${e.title}`);
     if (e.note) out.push(...(indent === undefined ? ['', `${quote ? '> ' : ''}${noteText(e.note)}`] : [`${indent}> ${noteText(e.note)}`]));
     for (const sec of e.sections) {
+      if (sec.words) {
+        out.push(...(indent === undefined ? ['', `**${sec.label}**`, '', wordsText(sec)] : [`${indent}**${sec.label}**\\`, `${indent}${wordsText(sec)}`]));
+        continue;
+      }
       const lines = (sec.lines.length ? sec.lines : [sec.empty ?? '']).map(pictureText);
       // The fence must be longer than any run of backticks inside.
       const longest = Math.max(2, ...lines.map((l) => Math.max(0, ...(l.match(/`+/g) ?? []).map((m) => m.length))));

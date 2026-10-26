@@ -22,7 +22,7 @@ import * as sources from '../examples/source';
 import { type InputSource, knownLines, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines } from '../examples/source';
 import { type Text, tx } from '../i18n';
 import { shorten } from '../label';
-import { fact } from '../messages';
+import { EMPTY_WORD, fact, shownWord, SPACE_MARK } from '../messages';
 import { slotEnvironment } from '../semantics/env';
 import { isPlainWord, literalContent, staticWordValue } from '../staticword';
 import { assignmentsOnly, field, prefixAssignments, redirectionsOf, type SyntaxNode } from '../syntax/tree';
@@ -334,7 +334,7 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     if (['function', 'alias'].includes(resolve(cx, name.text, name).kind)) return undefined;
     const args = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect');
     const spec = specFor(cx, name.text);
-    const stage: Stage = { cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(stageText(cmd), 40), ...(spec?.copies ? { copies: true } : {}) };
+    const stage: Stage = { cmd: name.text.split('/').pop()!, words: exampleWords(cx, args, !!spec?.prints).map((w) => w.value), text: shorten(stageText(cmd), 40), ...(spec?.copies ? { copies: true } : {}) };
     const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell)), { name: name.text, lookup: (x) => specFor(cx, x) });
     const source = inputSource(cx, cmd, parse, args, spec);
     // A stage that writes its output to a file (`sort -o f`) hands nothing on.
@@ -356,7 +356,9 @@ export function commandExampleFor(cx: Explainer, n: SyntaxNode, spec: CommandSpe
   const src = inputSource(cx, n, parse, args, spec);
   // A command that prints what it reads as it is (cat) shows what it does when it joins several streams (`cat a - b`).
   if (spec.copies && src.streams.length < 2 && !src.reads) return;
-  pushExample(cx, commandExamples.commandExampleOf(kind, args.map((a) => ({ value: literalContent(a)?.text, text: a.text })), cx.lang, src));
+  // (printf with a brace expansion: its output is in the example of the expansion, with the words.)
+  if (kind === 'printf' && args.some((a) => braceWordsOf(cx, a)?.length)) return;
+  pushExample(cx, commandExamples.commandExampleOf(kind, exampleWords(cx, args, !!spec.prints), cx.lang, src));
 }
 
 /**
@@ -419,19 +421,97 @@ function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[]): void {
   cx.example(r.example);
 }
 
-/** Brace expansion results, or file names a glob matches, for an argument word. */
-export function wordExample(cx: Explainer, a: SyntaxNode): void {
+/** The words bash makes of argument `a` by brace expansion where it runs; undefined when it makes none, or too many to list. */
+export function braceWordsOf(cx: Explainer, a: SyntaxNode): string[] | undefined {
+  // (The model says whether braces expand there: not after `set +B`.)
+  if (wordAt(cx, a)?.steps.find((st) => st.kind === 'brace')?.applies !== true) return undefined;
+  // (The model applies brace expansion only to a word of plain parts, which `unquotedWord` reads.)
+  return braceExpansion(unquotedWord(a)!) ?? undefined;
+}
+
+/**
+ * What a command gets from its argument words, for the examples that run it: each word of a brace expansion is a value of
+ * its own, the others their literal text. `printed`: for a command that prints its words (echo, printf), a word bash globs
+ * or expands a tilde in has no value, since the files it matches and the home directory are not known (a command that
+ * reads files reads the names as files).
+ */
+export function exampleWords(cx: Explainer, args: SyntaxNode[], printed = false): commandExamples.ExampleWord[] {
+  return args.flatMap((a) => {
+    const steps = printed ? wordAt(cx, a)?.steps : undefined;
+    const globbed = steps?.find((st) => st.kind === 'glob')?.applies !== false && printed;
+    const unknown = (w: string) => (globbed && isGlob(w)) || (printed && steps?.find((st) => st.kind === 'tilde')?.applies === true);
+    const braced = braceWordsOf(cx, a);
+    if (braced) return braced.map((w) => ({ value: unknown(w) ? undefined : w, text: w }));
+    return [{ value: unknown(a.text) ? undefined : literalContent(a)?.text, text: a.text }];
+  });
+}
+
+/** How many words of a brace expansion an example shows, and how many characters of the line `echo` prints. */
+const WORDS_SHOWN = 12;
+const OUTPUT_SHOWN = 120;
+
+/** The words of a brace expansion as a section of chips (`ExampleSection.words`), cut when there are many. */
+function wordsSection(cx: Explainer, words: string[], cmd: string): ExampleSection {
+  const n = words.length;
+  const shown = (n > WORDS_SHOWN ? words.slice(0, WORDS_SHOWN - 1) : words).map(shownWord);
+  const spaced = shown.some((w) => w.ends[0] + w.ends[1] > 0);
+  const marks = [
+    ...(spaced ? [cx.s(`\`${SPACE_MARK}\` は端の空白`, `\`${SPACE_MARK}\` is a space at an end`)] : []),
+    ...(words.includes('') ? [cx.s(`\`${EMPTY_WORD}\` は空の単語`, `\`${EMPTY_WORD}\` is an empty word`)] : []),
+  ];
+  const after = [
+    ...(n > WORDS_SHOWN ? [cx.s(`…（全 ${n} 語）`, `… ${n} words in all`)] : []),
+    ...(marks.length ? [cx.s(`（${marks.join('、')}）`, `(${marks.join(', ')})`)] : []),
+  ].join(' ');
+  return {
+    label: n ? cx.s(`展開後の単語（\`${cmd}\` が受け取る別々の引数 ${n} 個）`, `Resulting words (${n} separate ${n === 1 ? 'argument' : 'arguments'} of \`${cmd}\`)`) : cx.s('展開後の単語', 'Resulting words'),
+    lines: shown.map((w) => w.text),
+    ...(n ? {} : { empty: cx.s('（なし: 空の単語は取り除かれる）', '(none: empty words are dropped)') }),
+    words: { ends: shown.map((w) => w.ends), ...(spaced ? { spaceLabel: cx.s('空白', 'space') } : {}), ...(after ? { after } : {}) },
+  };
+}
+
+/**
+ * What a command that prints its words (`CommandSpec.prints`: echo, printf) prints with these words, when it is known (the
+ * section of the brace example; `wordExample`).
+ */
+function printedSection(cx: Explainer, prints: NonNullable<CommandSpec['prints']>, words: commandExamples.ExampleWord[]): ExampleSection | undefined {
+  const values = words.map((w) => w.value);
+  if (values.some((v) => v === undefined)) return undefined;
+  const list = values as string[];
+  if (prints === 'format') {
+    const sec = commandExamples.commandExampleOf('printf', words, cx.lang)?.sections[0];
+    return sec && (sec.lines.length > MAX_SHOWN_LINES ? { ...sec, lines: [...sec.lines.slice(0, MAX_SHOWN_LINES - 1), '…'] } : sec);
+  }
+  // echo with no option, and words with no backslash: every shell's echo prints them as they are, joined with spaces.
+  if (list[0].startsWith('-') || list.some((v) => v.includes('\\'))) return undefined;
+  const line = [...visible(list.join(' '))];
+  return { label: cx.s('出力', 'Output'), lines: [line.length > OUTPUT_SHOWN ? line.slice(0, OUTPUT_SHOWN - 1).join('') + '…' : line.join('')] };
+}
+
+/**
+ * Brace expansion results, or file names a glob matches, for an argument word of the command `cmd`. The words of a brace
+ * expansion are chips, so that they read as separate arguments; under the last word that expands, what the command prints
+ * when it is known (`CommandSpec.prints`: echo, printf), unless it goes to a pipe (the pipeline's example shows it). `spec`:
+ * the spec of what the name runs (none for a function of the script).
+ */
+export function wordExample(cx: Explainer, a: SyntaxNode, cmd: { name: string; node: SyntaxNode; args: SyntaxNode[]; spec?: CommandSpec }): void {
   const text = unquotedWord(a);
   if (!text) return;
-  const words = bracesHere(cx, a) ? braceExpansion(text) : undefined;
-  if (words === null) return;
+  const words = braceWordsOf(cx, a);
   if (words) {
+    const name = cmd.name.split('/').pop()!;
+    const last = [...cmd.args].reverse().find((x) => braceWordsOf(cx, x)?.length);
+    const pipe = cmd.node.parent?.type === 'pipeline' ? cmd.node.parent : undefined;
+    const prints = cmd.spec?.prints;
+    const printed = prints && last && same(last, a) && !(pipe && !same(pipe.namedChildren[pipe.namedChildren.length - 1], cmd.node)) ? printedSection(cx, prints, exampleWords(cx, cmd.args, true)) : undefined;
     cx.example({ kind: 'glob',
       title: cx.s(`例（ブレース展開 \`${text}\`）`, `Example (brace expansion \`${text}\`)`),
-      sections: [{ label: cx.s('展開後の単語', 'Resulting words'), lines: (words.length > 12 ? [...words.slice(0, 11), '…'] : words).map((w) => w || "''") }],
+      sections: [wordsSection(cx, words, name), ...(printed ? [printed] : [])],
     });
     return;
   }
+  if (bracesHere(cx, a) && braceExpansion(text) !== undefined) return;
   // (Where globstar may be on, the example shows `**` at any depth, and says so.)
   const maybe = hasGlobstar(text) && shoptAt(cx, a).globstar === 'unknown';
   if (isGlob(text) && !globOff(cx, a)) globExample(cx, a, text, 'file', cx.s(`例（グロブ \`${text}\`${maybe ? '、globstar が有効なとき' : ''}）`, `Example (glob \`${text}\`${maybe ? ', where globstar is on' : ''})`));

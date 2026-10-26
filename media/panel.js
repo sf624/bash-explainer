@@ -321,6 +321,7 @@
       const label = document.createElement('div');
       label.className = 'example-label';
       label.append(...inline(sec.label));
+      if (sec.words) return [label, wordList(sec, label)];
       const pre = document.createElement('pre');
       if (sec.lines.length) pre.append(...withMarks(sec.lines.join('\n')));
       else {
@@ -329,6 +330,44 @@
       }
       return [label, pre];
     });
+  }
+
+  /**
+   * A section of words (`ExampleSection.words`: the words of a brace expansion): the words as chips in a row, as the
+   * words of a value (`valueLine`), so that they read as separate arguments, not lines of output. A list, named by the
+   * section's label, so that a screen reader says how many words there are; then what is said after them (the cut).
+   */
+  function wordList(/** @type {any} */ sec, /** @type {HTMLElement} */ label) {
+    const box = document.createElement('div');
+    box.className = 'example-words';
+    if (!sec.lines.length) {
+      box.classList.add('example-empty');
+      box.textContent = sec.empty ?? '';
+      return box;
+    }
+    label.id = `example-words-${nextId++}`;
+    const list = document.createElement('ul');
+    // (A list with no bullets is still a list: Safari drops the role of one styled with `list-style: none`.)
+    list.setAttribute('role', 'list');
+    list.setAttribute('aria-labelledby', label.id);
+    sec.lines.forEach((/** @type {string} */ w, /** @type {number} */ i) => {
+      const li = document.createElement('li');
+      li.append(wordChip(w, sec.words.ends[i], sec.words.spaceLabel));
+      list.append(li);
+    });
+    box.append(list);
+    if (sec.words.after) {
+      const after = document.createElement('span');
+      after.className = 'example-words-after';
+      after.append(...inline(sec.words.after).map((n) => {
+        if (!(n instanceof HTMLElement) || n.textContent !== '\u2423') return n;
+        const c = document.createElement('code');
+        c.append(spaceMark(sec.words.spaceLabel));
+        return c;
+      }));
+      box.append(after);
+    }
+    return box;
   }
 
   /**
@@ -448,6 +487,31 @@
   }
 
   /**
+   * A space at an end of a shown text: a real space in an element that CSS draws (`.ev-sp`), with a name for a screen
+   * reader (`label`): the glyph for it (`␠`) is a box where no font has it.
+   */
+  function spaceMark(/** @type {string | undefined} */ label) {
+    const m = document.createElement('span');
+    m.className = 'ev-sp';
+    m.setAttribute('role', 'img');
+    m.setAttribute('aria-label', label || '');
+    m.textContent = ' ';
+    return m;
+  }
+
+  /** A word as a chip with an edge; `ends`: how many characters at each end are marks of a space (`spaceMark`). */
+  function wordChip(/** @type {string} */ text, /** @type {number[] | undefined} */ ends, /** @type {string | undefined} */ label) {
+    const c = document.createElement('code');
+    c.className = 'ev-word';
+    const [before, after] = ends || [0, 0];
+    const chars = [...text];
+    for (let i = 0; i < before; i++) c.append(spaceMark(label));
+    c.append(...withMarks(chars.slice(before, chars.length - after).join('')));
+    for (let i = 0; i < after; i++) c.append(spaceMark(label));
+    return c;
+  }
+
+  /**
    * The value of an expansion where it runs (`Token.value`, docs/design/expansion-values.md): the model's, from the
    * script's assignments, on a line of its own under the meaning. The value and the words splitting makes of it are
    * chips, so that separate words read as separate (`ValueSaid`, src/messages.ts, gives the texts).
@@ -457,26 +521,8 @@
     const s = value.said;
     const d = document.createElement('span');
     d.className = 'ev-value';
-    // A space at an end of a shown text is a real space in an element that CSS draws (`.ev-sp`), with a name for a screen
-    // reader: the glyph for it (`␠`) is a box where no font has it. `ends` is how many characters at each end are such marks.
-    const space = () => {
-      const m = document.createElement('span');
-      m.className = 'ev-sp';
-      m.setAttribute('role', 'img');
-      m.setAttribute('aria-label', s.spaceLabel || '');
-      m.textContent = ' ';
-      return m;
-    };
-    const chip = (/** @type {string} */ text, /** @type {number[] | undefined} */ ends) => {
-      const c = document.createElement('code');
-      c.className = 'ev-word';
-      const [before, after] = ends || [0, 0];
-      const chars = [...text];
-      for (let i = 0; i < before; i++) c.append(space());
-      c.append(...withMarks(chars.slice(before, chars.length - after).join('')));
-      for (let i = 0; i < after; i++) c.append(space());
-      return c;
-    };
+    const space = () => spaceMark(s.spaceLabel);
+    const chip = (/** @type {string} */ text, /** @type {number[] | undefined} */ ends) => wordChip(text, ends, s.spaceLabel);
     const lead = document.createElement('span');
     lead.className = 'ev-lead';
     lead.textContent = `${s.lead} `;
