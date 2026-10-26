@@ -95,6 +95,6 @@ describe('redirections of a simple command', () => {
     // bash prints nothing: both outputs go to /dev/null.
     assert.equal(runBash('>/dev/null 2>&1 command -v bash; echo $?').stdout, '0\n');
     assert.ok(explain('>/dev/null 2>&1 command -v jq').notes.some((n) => /checks quietly whether a command is installed/.test(n)));
-    assert.ok(explain('>/etc/motd sudo echo hi').notes.some((n) => /not by sudo/.test(n)));
+    assert.ok(explain('>/etc/motd sudo echo hi').notes.some((n) => /opened by your own shell with your rights, before sudo starts/.test(n)));
   });
 });

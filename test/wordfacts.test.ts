@@ -34,7 +34,7 @@ describe('word facts', () => {
     ['for f in $(ls *.txt); do echo "$f"; done', 'for-over-ls-output', /`\$\(ls …\)` is split on spaces/],
     ['for f in $(find . -name "*.sh"); do :; done', 'for-over-ls-output', /-print0/],
     ['[ $x = y ]', 'unquoted-variable-in-test', /unquoted `\$x` inside `\[ \]`/],
-    ['sudo echo 1 > /proc/sys/vm/drop_caches', 'redirect-by-your-shell', /done by your own shell .* `… \| sudo tee file`/],
+    ['sudo echo 1 > /proc/sys/vm/drop_caches', 'redirect-by-your-shell', /Pitfall: `\/proc\/sys\/vm\/drop_caches` is normally writable only by root: the redirection \(`>`\) is opened by your own shell with your rights, before sudo starts, so it fails with "Permission denied" and the command does not run\. Use `… \| sudo tee \/proc\/sys\/vm\/drop_caches` \(`sudo tee -a` to append\)/],
     ['for a in $*; do :; done', 'for-over-unquoted-args', /unquoted `\$\*` splits arguments/],
     ['cp $src "$dst"', 'unquoted-variable-as-path', /`\$src` is not quoted/],
     // `time` times what follows; what follows is a command like any other.
@@ -42,12 +42,12 @@ describe('word facts', () => {
     // A path names the program of its last part (`/bin/cp` is cp); the prefix assignment holds for any command.
     ['/bin/cp $src "$dst"', 'unquoted-variable-as-path', /`\$src` is not quoted/],
     ['for f in $(/bin/ls); do :; done', 'for-over-ls-output', /`\$\(ls …\)` is split on spaces/],
-    ['/usr/bin/sudo echo 1 > /proc/sys/vm/drop_caches', 'redirect-by-your-shell', /done by your own shell/],
+    ['/usr/bin/sudo echo 1 > /proc/sys/vm/drop_caches', 'redirect-by-your-shell', /opened by your own shell/],
     ['FOO=1 ./x $FOO', 'prefix-assignment-expanded-first', /`FOO=…` is set only in the environment of `\.\/x`/],
     // The path after quote removal (`'/proc'/sys` is `/proc/sys`), or as written when it is not known.
-    ["sudo echo 1 > '/proc'/sys/vm/drop_caches", 'redirect-by-your-shell', /done by your own shell/],
-    ['sudo echo 1 > ""/etc/x', 'redirect-by-your-shell', /done by your own shell/],
-    ['sudo echo 1 > "/etc/$f"', 'redirect-by-your-shell', /done by your own shell/],
+    ["sudo echo 1 > '/proc'/sys/vm/drop_caches", 'redirect-by-your-shell', /opened by your own shell/],
+    ['sudo echo 1 > ""/etc/x', 'redirect-by-your-shell', /opened by your own shell/],
+    ['sudo echo 1 > "/etc/$f"', 'redirect-by-your-shell', /opened by your own shell/],
   ];
   for (const [src, id, expected] of cases) {
     it(`points out ${src}`, () => {
@@ -61,6 +61,37 @@ describe('word facts', () => {
       assert.ok(f.refs.length >= 1);
     });
   }
+  describe('redirect-by-your-shell', () => {
+    const text = (src: string, lang: 'en' | 'ja' = 'en') => facts(src, 0, lang).find((x) => x.id === 'redirect-by-your-shell')!.text;
+    it('names a file that only root writes, in both languages', () => {
+      assert.strictEqual(text('sudo echo "nameserver 1.1.1.1" > /etc/resolv.conf'),
+        '⚠ Pitfall: `/etc/resolv.conf` is normally writable only by root: the redirection (`>`) is opened by your own shell with your rights, before sudo starts, so it fails with "Permission denied" and the command does not run. Use `… | sudo tee /etc/resolv.conf` (`sudo tee -a` to append)');
+      assert.match(text('sudo echo "nameserver 1.1.1.1" > /etc/resolv.conf', 'ja'),
+        /`\/etc\/resolv\.conf` はふつう root しか書き込めない。リダイレクト（`>`）は sudo ではなく今のシェルが今のユーザーの権限で開くので、sudo が動く前に「Permission denied」で失敗し、コマンドは実行されない。`… \| sudo tee \/etc\/resolv\.conf`（追記なら `sudo tee -a`）を使う$/);
+    });
+    it('says "if the file is writable only by root" for a path that is not known to be root-only', () => {
+      for (const src of ['sudo echo 1 > "/etc/$f"', 'sudo echo 1 > /proc/self/x', 'sudo echo 1 > "/usr/a b"']) {
+        assert.match(text(src), /^⚠ Pitfall: if the file is writable only by root, the redirection \(`>`\)/, src);
+        assert.match(text(src), /Use `… \| sudo tee file` \(`sudo tee -a` to append\)$/, src);
+      }
+      assert.match(text('sudo echo 1 > "/etc/$f"', 'ja'), /^⚠ 落とし穴: ファイルが root しか書き込めないなら、リダイレクト（`>`）は/);
+    });
+    it('suggests tee -a for >>, and a command run by sudo for other descriptors and for input', () => {
+      assert.match(text('sudo echo 1 >> /etc/hosts'), /^⚠ Pitfall: `\/etc\/hosts` is normally writable only by root: the redirection \(`>>`\).* Use `… \| sudo tee -a \/etc\/hosts`$/);
+      assert.match(text('sudo echo 1 >> /etc/hosts', 'ja'), /リダイレクト（`>>`）.*`… \| sudo tee -a \/etc\/hosts` を使う$/);
+      assert.match(text('sudo make 2> /etc/err.log'), /the redirection \(`2>`\).* Use `sudo bash -c '… 2> \/etc\/err\.log'`, so that the redirection is done inside sudo too$/);
+      assert.match(text('sudo make &> /etc/err.log', 'ja'), /リダイレクト（`&>`）.*`sudo bash -c '… &> \/etc\/err\.log'` のようにリダイレクトも sudo の中で行う$/);
+      assert.match(text('sudo make {fd}> /etc/err.log'), /the redirection \(`\{fd\}>`\).* Use `sudo bash -c '… \{fd\}> \/etc\/err\.log'`/);
+      assert.match(text('sudo cat < /etc/shadow'), /^⚠ Pitfall: if the file is readable only by root, the redirection \(`<`\).* Pass the file to the command as an argument, or do the redirection inside sudo too: `sudo bash -c '… < file'`$/);
+    });
+    // What the note says, with bash: the redirection is opened before the command runs, and a failure ends the command with 1.
+    it('is true: a redirection to a file that cannot be written fails before the command runs, with status 1', function () {
+      if (process.getuid?.() === 0) this.skip(); // root can write it
+      const out = runBash(`echo old > f; chmod a-w f; sh -c 'echo ran > marker' > f; echo "out=$?"; sh -c 'echo ran > marker' >> f; echo "append=$?"; sh -c 'echo ran > marker' 2> f; echo "fd2=$?"; [ -e marker ] && echo marker=present || echo marker=absent`, { files: [] });
+      assert.deepStrictEqual(out.stdout.split('\n').filter(Boolean), ['out=1', 'append=1', 'fd2=1', 'marker=absent']);
+      assert.strictEqual((out.stderr.match(/Permission denied/g) ?? []).length, 3, out.stderr);
+    });
+  });
   // (A wrong path given to a command that deletes or overwrites cannot be undone: a warning; to the others, a caveat.)
   for (const [src, level] of [['rm $f', 'warning'], ['mv $a "$b"', 'warning'], ['cp -f "$a" $b', 'warning'], ['cat $f', 'info'], ['chmod +x $f', 'info'], ['cd $d', 'info']] as const) {
     it(`gives an unquoted path in ${src} the level ${level}`, () => {
