@@ -9,7 +9,7 @@ import { python } from '@codemirror/legacy-modes/mode/python';
 import { yaml } from '@codemirror/legacy-modes/mode/yaml';
 import { Diagnostic, forceLinting, linter, lintGutter } from '@codemirror/lint';
 import { Compartment, EditorState, Prec, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
-import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, ViewPlugin, ViewUpdate } from '@codemirror/view';
+import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import type { LineExplanation, Span } from '../src/analyzer';
 import { DocumentIssue, diagnosticsFor, plain, ShellDocument, Shells } from '../src/document';
@@ -250,6 +250,8 @@ export class Editor {
   private readonly labelMode = new Compartment();
   /** The undo history: emptied when a file is opened (openText). */
   private readonly historyMode = new Compartment();
+  /** What an empty editor shows (prototype: "Paste a shell script here…"). */
+  private readonly placeholderMode = new Compartment();
   private readonly shadings = new WeakMap<ShellDocument, { shell: string; spans: Shading[] }>();
   private shadingTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly hintCaches = new WeakMap<ShellDocument, HintCache>();
@@ -298,7 +300,7 @@ export class Editor {
         extensions: [
           lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), this.historyMode.of(history()),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-          this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
+          this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.placeholderMode.of([]), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
           highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter({ markerFilter: (ds) => ds.filter((d) => d.severity !== 'hint') }), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []),
           EditorView.updateListener.of((u) => {
@@ -412,7 +414,28 @@ export class Editor {
   }
 
   setReadMode(on: boolean): void {
+    // The cursor and the scroll stay where they are (a mode is how a tap acts, not where it is).
+    const selection = this.view.state.selection;
+    const top = this.view.scrollDOM.scrollTop;
     this.view.dispatch({ effects: this.inputMode.reconfigure(inputModeFor(on)) });
+    if (!this.view.state.selection.eq(selection)) this.view.dispatch({ selection });
+    this.view.scrollDOM.scrollTop = top;
+  }
+
+  /** The text an empty editor shows. */
+  setPlaceholder(text: string): void {
+    this.view.dispatch({ effects: this.placeholderMode.reconfigure(placeholder(text)) });
+  }
+
+  /** Empties the editor, as one step of the history (one undo brings the text back). */
+  clear(): void {
+    this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: '' }, annotations: isolateHistory.of('full') });
+  }
+
+  /** Scrolls the editor so that the cursor's line sits in the upper third of what shows of the editor (above the phone's sheet). */
+  cursorToUpperThird(): void {
+    const visible = this.view.scrollDOM.clientHeight;
+    this.view.dispatch({ effects: EditorView.scrollIntoView(this.view.state.selection.main.head, { y: 'start', yMargin: Math.round(visible * 0.22) }) });
   }
 
   placeCursor(lineNumber: number): void {
