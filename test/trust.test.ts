@@ -308,6 +308,8 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
       assert.strictEqual(inherited(`u=1; ${src}\necho "$u"`), '2', what);
       assert.strictEqual(decided(`u=1; ${src}\n[ "$u" = 1 ] && :`), undefined, what);
     }
+    // `fc` without `-l` is read as running a line of the history (without `set -o history`, which trusts nothing by itself).
+    assert.strictEqual(decided('u=1; fc -s >/dev/null 2>&1\n[ "$u" = 1 ] && :'), undefined);
     // Their quiet forms change nothing: a static name, a quiet prompt, a word list of plain words, `fc -l`, a local.
     const quiet = ['a=(1); [ -v u ]; [[ -v a[0] ]]; test -v a[0]; test -v 1x', "x='a \\u $u'; : \"${x@P}\"", "compgen -W 'a b $u' -- a >/dev/null", 'fc -l >/dev/null 2>&1',
       // (`compgen -G`, `-X`, `-P` and `-S` take their words as text.)
