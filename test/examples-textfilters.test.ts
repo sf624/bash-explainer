@@ -76,7 +76,7 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
     sort: ['b 10 x', 'a  2 y', '', 'B 1.5K z', 'a-1 2 y', 'c\t3', 'v1.10', 'v1.2', 'v1.2', ' d 7', 'é 1'],
     // GNU's version sort treats leading blanks and punctuation in ways the examples leave out.
     'sort -V': ['1.10', '1.2', '', '1.2', '1.2a', 'a', '1.2b'],
-    'sort -h': ['0K', '1K', '2', '1M', '-1K'],
+    'sort -h': ['0K', '1K', '2', '1M', '-1K', '220 Mar', '8.3K y', '1.5K x', '1m', '3k', '2R', '1Q', '-2', '-3M'],
     'tr -d a-z\\n': ['abc', 'de'],
     uniq: ['a b', 'a b', 'x b', 'A c', 'a c', 'a c'],
     cut: ['a,b,c', 'abcdef', 'x,,y'],

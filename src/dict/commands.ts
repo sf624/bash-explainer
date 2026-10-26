@@ -338,7 +338,7 @@ export const core: Record<string, CommandSpec> = {
     ['-w|--width', '出力の幅（桁数。0 は制限なし）', 'output width in columns (0: no limit)', 'arg'],
     ['--zero', '各行の終わりを改行でなく NUL にする', 'end each line with NUL, not newline'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('表示するファイルまたはディレクトリ（省略時はカレント）', 'file or directory (default: current)')] }),
+  ], { parser: 'getopt_long', positional: [pos('表示するファイルまたはディレクトリ（省略時はカレント）', 'file or directory (default: current)')], layouts: [{ options: [], layout: 'ls' }, { options: ['-1'], layout: 'ls' }, { options: ['-l'], layout: 'ls-long' }, { options: ['-l', '-a'], layout: 'ls-long-all' }, { options: ['-l', '-h'], layout: 'ls-long-human' }] }),
   cat: cmd('ファイルの内容を連結して標準出力に出す', 'Concatenate files and print to stdout', [
     ['-b|--number-nonblank', '空行以外に行番号を付ける', 'number non-empty lines'],
     ['-E|--show-ends', '行末に `$` を表示', 'show `$` at the end of each line'],
@@ -1399,7 +1399,7 @@ export const core: Record<string, CommandSpec> = {
     ['--help', 'ヘルプを表示する', 'show help'],
     ['--version', 'バージョンを表示する', 'print the version'],
   ], {
-    parser: 'getopt_long', optionsFirst: true,
+    parser: 'getopt_long', optionsFirst: true, layouts: [{ options: [], layout: 'env' }],
     patternOptions: [{ pattern: /^-$/, text: () => tx('空の環境から始める（`-i` と同じ）', 'start with an empty environment (same as `-i`)') }],
     operands: [
       // `env -S'-i A=1' cmd`: the interpreter reads the words of the string in its place. A string it cannot
@@ -1530,7 +1530,7 @@ export const core: Record<string, CommandSpec> = {
     ['--group', 'グループで絞る', 'select by group', 'arg'],
   ], {
     // A bare number starts a list of process IDs that ends the line: `ps 1 u` and `ps 1 -e` fail with "process ID list syntax error".
-    endsOptions: BARE_NUMBER,
+    endsOptions: BARE_NUMBER, layouts: [{ options: [], layout: 'ps' }, { options: ['a', 'u', 'x'], layout: 'ps-bsd-u' }, { options: ['-e', '-f'], layout: 'ps-full' }],
     operands: [{
       when: { operand: 0, matches: BARE_NUMBER },
       pattern: [
@@ -1702,7 +1702,7 @@ export const core: Record<string, CommandSpec> = {
     ['--sync', '使用状況を調べる前に `sync` する', 'call `sync` before getting usage'],
     ['--output', '表示する列（コンマ区切り。省略すると全部）', 'columns to show (comma-separated; all if omitted)', 'attached'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long' }),
+  ], { parser: 'getopt_long', layouts: [{ options: ['-h'], layout: 'df-human' }] }),
   tput: cmd('端末の機能（色・カーソル位置など）を操作する', 'Query or control terminal capabilities (colors, cursor…)'),
   less: cmd('ファイルをページ単位でスクロール表示する', 'View text one screen at a time'),
   file: cmd('ファイルの種類を判定して表示する', 'Determine file type', [

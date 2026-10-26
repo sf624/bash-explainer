@@ -139,13 +139,19 @@ function numPrefix(s: string): number {
   return m ? Number(m[1]) : 0;
 }
 
-function human(s: string): number {
-  const m = /^\s*(-?\d*\.?\d+)\s*([KMGTPEZY]?)/i.exec(s);
-  if (!m) return 0;
-  const mult = 'KMGTPEZY'.indexOf(m[2].toUpperCase()) + 1;
-  // GNU compares the sign, then the suffix, then the number (`0K` is zero).
-  return (m[2] ? mult * 1e30 * Math.sign(Number(m[1])) : 0) + Number(m[1]);
+/** How `sort -h` orders a key: by the order of its suffix, negative for a negative number (`0K` has none), then by the number. */
+function human(s: string): [number, number] {
+  // (The suffix follows the number at once: `220 Mar` is 220. Only `k` is also taken in lower case.)
+  const m = /^\s*(-?\d*\.?\d+)([kKMGTPEZYRQ]?)/.exec(s);
+  if (!m) return [0, 0];
+  const n = Number(m[1]);
+  return [m[2] ? ('KMGTPEZYRQ'.indexOf(m[2].toUpperCase()) + 1) * Math.sign(n) : 0, n];
 }
+
+const humanCmp = (a: string, b: string): number => {
+  const [x, y] = [human(a), human(b)];
+  return x[0] - y[0] || x[1] - y[1];
+};
 
 function versionCmp(a: string, b: string): number {
   const split = (s: string) => s.match(/\d+|\D+/g) ?? [];
@@ -173,7 +179,7 @@ function compareKey(a: string, b: string, opts: string): number {
   let c: number;
   if (opts.includes('n')) c = numPrefix(x) - numPrefix(y);
   else if (opts.includes('g')) c = (parseFloat(x) || 0) - (parseFloat(y) || 0);
-  else if (opts.includes('h')) c = human(x) - human(y);
+  else if (opts.includes('h')) c = humanCmp(x, y);
   else if (opts.includes('V')) c = versionCmp(x, y);
   else c = strCmp(x, y);
   return opts.includes('r') ? -c : c;

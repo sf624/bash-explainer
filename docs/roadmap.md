@@ -10,7 +10,7 @@ Keep it current:
 
 ## Now
 
-Nothing started: the first item of "Next" comes next.
+- Pipeline examples: show the shape of the input each stage reads (item 3 of the external review of October 2026). First step in review: made-up output in the real layout for `ps`, `ls`, `df -h`, `who`, `env` (`CommandSpec.layouts`), and input labels that name the command a pipe brings them from. Waits on the maintainer's look at the screenshots (wide tables scroll sideways on a phone).
 
 ## Next, in this order
 
@@ -20,11 +20,10 @@ Nothing started: the first item of "Next" comes next.
 4. The basis of an explanation, as data, after the analyzer is thinned: an explanation that rests on bash's behaviour rather than the manual gets a chip ("Not in the manual · checked with bash 5.2", or "Differs from the manual"), and a folded "Try it in your terminal" with a command and its output, taken from the probe that checks it in CI (look A of the prototype on branch `proto/basis`). A setting turns the chips and the try-its off. Other kinds of basis (another tool's spec, convention) are data only for now.
 5. bash 5.3, step 3 of [design/bash-versions.md](design/bash-versions.md), the walk of `${ }` (the substitution walk moved out of src/semantics/walk/walker.ts first), and the POSIX-mode rows of step 6.
 6. Run-based oracles, steps 2–10 of [design/oracles.md](design/oracles.md): argv capture, checking suggestions in bash, the normal-forms audit.
-7. Pipeline examples: show the shape of the input each stage reads (item 3 of the external review of October 2026).
-8. Dead code faded in the editor: a `DiagnosticTag.Unnecessary` hint on a statement that never runs (`shellState(...).dead(n)`), with its message in the catalog and on every surface ([design/highlighting.md](design/highlighting.md)).
-9. Values of a whole word (`"$dir/$f"`), arrays, and per-call values in functions: after item 3 and trust per position (item 11); the corpus shows little gain ([design/expansion-values.md](design/expansion-values.md), section 6).
-10. The leftovers of the small gaps (A3): the readers of arguments that have no shell at hand (`argWord` in src/semantics/env.ts, effects.ts, vars.ts, src/idioms.ts, src/semanticFacts.ts) count the words of a brace expansion in every shell; and a BSD letter of ps with a value takes the rest of its word (`ps opid,comm`, `ps Uroot`), which the argument interpreter reads as the next word.
-11. Trust per position instead of per script: a `source`, `eval` or `$cmd` makes variables untrusted only on the paths after it, not in the whole file. Shared with conditions and dead code. Design: [design/trust-per-position.md](design/trust-per-position.md) (deferred; step 0 done). Its step 0, done (#382), fixed wrong values and dead code of today's model found on the way (`-v` of a name not known, reads of a nameref whose target is not known, `${x@P}`, a bare `declare n` from the environment read as arithmetic, `compgen -W`, `fc -s`, recursive calls, `enable -n exit`). Steps 1–4 deferred: the measured gain is small (34 → 45 values on 358 real scripts). (Measured with a prototype: every function body is lost after a taint in the main flow; section 10 there.) Decided by the maintainer 2026-10-26.
+7. Dead code faded in the editor: a `DiagnosticTag.Unnecessary` hint on a statement that never runs (`shellState(...).dead(n)`), with its message in the catalog and on every surface ([design/highlighting.md](design/highlighting.md)).
+8. Values of a whole word (`"$dir/$f"`), arrays, and per-call values in functions: after item 3 and trust per position (item 10); the corpus shows little gain ([design/expansion-values.md](design/expansion-values.md), section 6).
+9. The leftovers of the small gaps (A3): the readers of arguments that have no shell at hand (`argWord` in src/semantics/env.ts, effects.ts, vars.ts, src/idioms.ts, src/semanticFacts.ts) count the words of a brace expansion in every shell; and a BSD letter of ps with a value takes the rest of its word (`ps opid,comm`, `ps Uroot`), which the argument interpreter reads as the next word.
+10. Trust per position instead of per script: a `source`, `eval` or `$cmd` makes variables untrusted only on the paths after it, not in the whole file. Shared with conditions and dead code. Design: [design/trust-per-position.md](design/trust-per-position.md) (deferred; step 0 done). Its step 0, done (#382), fixed wrong values and dead code of today's model found on the way (`-v` of a name not known, reads of a nameref whose target is not known, `${x@P}`, a bare `declare n` from the environment read as arithmetic, `compgen -W`, `fc -s`, recursive calls, `enable -n exit`). Steps 1–4 deferred: the measured gain is small (34 → 45 values on 358 real scripts). (Measured with a prototype: every function body is lost after a taint in the main flow; section 10 there.) Decided by the maintainer 2026-10-26.
 
 ## Waiting on the maintainer
 

@@ -16,7 +16,12 @@ describe('the input sections say what the command reads, and where from', () => 
     ['jq . *.json', ['Input: files matching `*.json` (sample contents)', 'Output']],
     ['jq . "$@"', ['Input: the files `"$@"` names (sample contents)', 'Output']],
     ['jq .', ['Input: stdin (sample contents)', 'Output']],
-    ['curl -s u | jq .', ['Input: stdin (sample output of the previous command)', 'Output']],
+    ['curl -s u | jq .', ['Input: stdin (output of `curl -s u`, not known here: made-up lines)', 'Output']],
+    ['cat a.json | jq .', ['Input: stdin (`a.json` through `cat`, sample contents)', 'Output']],
+    ['cat < a.json | jq .', ['Input: stdin (`a.json` through `cat`, sample contents)', 'Output']],
+    ['grep x a > f | sort', ['Input: stdin (made-up lines: `grep x a > f` writes its output elsewhere, not to the pipe)', 'Output']],
+    ['< a.json | jq .', ['Input: stdin (output of `< a.json`, not known here: made-up lines)', 'Output']],
+    ['(cat a.json) | jq .', ['Input: stdin (output of `(cat a.json)`, not known here: made-up lines)', 'Output']],
     ["jq .a <<< '{\"a\":5}'", ['Input: stdin (here-string)', 'Output']],
     ['jq .a <<< "$x"', ['Input: stdin (here-string, sample contents)', 'Output']],
     ['jq -n \'{a:1}\'', ['Output']],
@@ -34,8 +39,8 @@ describe('the input sections say what the command reads, and where from', () => 
     ["perl -pi -e 's/a/b/' x y", ['Input: `x` (sample contents)', 'After']],
     ["yq -i '.a' x.yml y.yml", ['Input: `x.yml` (sample contents)', 'Input: `y.yml` (sample contents)', '`x.yml` after']],
     ["yq -i '.a' x.yml", ['Input: `x.yml` (sample contents)', 'After']],
-    ["echo '{\"a\":1}' | jq .a", ['Input: stdin (output of the previous command)', 'Output']],
-    ["cat <<'E' | jq .a\n{\"a\":1}\nE", ['Input: stdin (output of the previous command)', 'Output']],
+    ["echo '{\"a\":1}' | jq .a", ['Input: stdin (output of `echo \'{"a":1}\'`)', 'Output']],
+    ["cat <<'E' | jq .a\n{\"a\":1}\nE", ['Input: stdin (output of `cat`)', 'Output']],
     ['cat a - b < c', ['Input: `a` (sample contents)', 'Input: stdin (`c`, sample contents)', 'Input: `b` (sample contents)', 'Output']],
     ['sort a a', ['Input: `a` (sample contents)', 'Output']],
   ];
@@ -43,8 +48,8 @@ describe('the input sections say what the command reads, and where from', () => 
   it('in Japanese', () => {
     assert.deepStrictEqual(labels('jq . - a.json < b.json', 'ja'), ['入力: 標準入力（`b.json`、中身の例）', '入力: `a.json`（中身の例）', '出力']);
     assert.deepStrictEqual(labels('cat *.log | sort', 'ja')?.[0], '入力: `*.log` に一致するファイル（中身の例）');
-    assert.deepStrictEqual(labels('curl -s u | jq .', 'ja')?.[0], '入力: 標準入力（前のコマンドの出力の例）');
-    assert.deepStrictEqual(labels('echo 1 | jq .', 'ja')?.[0], '入力: 標準入力（前のコマンドの出力）');
+    assert.deepStrictEqual(labels('curl -s u | jq .', 'ja')?.[0], '入力: 標準入力（`curl -s u` の出力。中身は分からないので仮の行）');
+    assert.deepStrictEqual(labels('echo 1 | jq .', 'ja')?.[0], '入力: 標準入力（`echo 1` の出力）');
     assert.deepStrictEqual(labels("jq .a <<< '{\"a\":5}'", 'ja')?.[0], '入力: 標準入力（ヒアストリング）');
     assert.deepStrictEqual(labels('jq .a <<E\n{"a":5}\nE', 'ja')?.[0], '入力: 標準入力（ヒアドキュメント）');
     assert.deepStrictEqual(labels('jq .a <<E\n$x\nE', 'ja')?.[0], '入力: 標準入力（ヒアドキュメント、中身の例）');
@@ -139,7 +144,7 @@ describe('the sources of the edge cases', () => {
     assert.ok(explain('cat a b | sort').examples.some((e) => e.kind === 'pipeline'));
     // A here-document to another descriptor is not the input; the commands xargs runs print what is not known.
     assert.ok(!explain('cat 3<<E | sort\nx\nE').examples.some((e) => e.kind === 'pipeline'));
-    assert.strictEqual(explain('echo a | xargs echo | jq .').examples.find((e) => e.kind === 'jq')?.sections[0].label, 'Input: stdin (sample output of the previous command)');
+    assert.strictEqual(explain('echo a | xargs echo | jq .').examples.find((e) => e.kind === 'jq')?.sections[0].label, 'Input: stdin (output of `xargs echo`, not known here: made-up lines)');
   });
   it('gives head and tail of files of a glob no example (how many is not known)', () => {
     for (const line of ['head -n 1 *.log', 'tail -n 1 - *.log']) assert.strictEqual(exampleOf(line), undefined, line);

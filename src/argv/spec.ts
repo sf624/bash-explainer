@@ -157,9 +157,22 @@ export interface CommandSpec {
   /**
    * What it prints is made of its words: joined with spaces (`words`: echo), or by its first word as a format (`format`:
    * printf). The example of a brace expansion in its words shows what it prints, and a word bash globs has no known value.
+   * (What a command prints from what it reads, in a layout of its own, is `layouts`.)
    */
   prints?: 'words' | 'format';
+  /**
+   * What it prints, as made-up lines of the real layout (`ps aux`: a header and a row per process), for the examples of
+   * the commands after it in a pipeline (src/examples/layouts.ts): the first alternative whose options are exactly the
+   * ones given, with no operand. (What a command prints made of its words, as echo, is `prints`.)
+   */
+  layouts?: LayoutAlt[];
 }
+
+/** The layouts of output that src/examples/layouts.ts makes up. */
+export type Layout = 'ps' | 'ps-bsd-u' | 'ps-full' | 'ls' | 'ls-long' | 'ls-long-all' | 'ls-long-human' | 'df-human' | 'who' | 'env';
+
+/** One layout of a command's output: `options`, the options given (as their spec names them: `-l`, BSD letters `a` `u` `x`). */
+export interface LayoutAlt { options: string[]; layout: Layout }
 
 /**
  * How a command works on several input files (operands and values with `io: 'input'`) when it does not read them as

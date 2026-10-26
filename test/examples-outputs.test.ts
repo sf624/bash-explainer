@@ -94,7 +94,7 @@ describe('awk examples name the file they read', () => {
 
 describe('a command that writes its output to a file shows what the file gets', () => {
   compare(has('uniq') ? 'uniq' : undefined, ['uniq a out.txt', 'uniq -c a out.txt', 'sort -o out.txt a b', 'sort -r -o out.txt a', 'uniq - out.txt < c', 'sort -o out.txt a a']);
-  it('gives a pipeline that writes to a file no example of the whole', () => assert.deepStrictEqual(exampleOf('cat a | sort -o out.txt')?.sections.map((s) => s.label), ['Input: stdin (sample output of the previous command)', 'Written to `out.txt`']));
+  it('gives a pipeline that writes to a file no example of the whole', () => assert.deepStrictEqual(exampleOf('cat a | sort -o out.txt')?.sections.map((s) => s.label), ['Input: stdin (`a` through `cat`, sample contents)', 'Written to `out.txt`']));
 });
 
 describe('date examples print what GNU date prints', () => {

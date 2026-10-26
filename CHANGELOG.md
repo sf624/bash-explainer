@@ -26,6 +26,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - In a bats file, each test is explained as bats runs it: in a process of its own, with `set -e` on, after `setup`; what one test sets does not reach another. `setup`, `teardown`, `setup_file` and `teardown_file` say when bats calls them, and that `set -e` is ignored in `teardown`.
 - In a bats file, the tag comments `# bats test_tags=…` and `# bats file_tags=…` are explained (bash ignores them, bats reads them): which tests get which tags, `bats --filter-tags`, `bats:focus`, and a warning for a list bats refuses. A function marked `name() { # @test` is explained as a test, which bats renames.
 - In a bats file, the helpers of bats-support, bats-assert and bats-file (`assert_output -p`, `assert_success`, `assert_file_exists`, `fail`, `temp_make`…) are explained with their options, once the file loads the library (or a helper that may load it). Before, they were unknown programs.
+- A pipeline that starts with `ps aux`, `ps -ef`, `ls -l`, `df -h`, `who` or `env` gets a worked example: made-up lines in the real layout, then what each later command makes of them (`ps aux | grep nginx | awk '{print $2}'`).
+- The input of a worked example that comes through a pipe names the command it comes from, and says when its lines are made up (`curl -s url | jq .name`) or are a file passed on by `cat`.
 
 ### Changed
 
@@ -51,6 +53,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 - The examples of `printf` and of pipelines run the words of a brace expansion: `printf '%s\n' {a,b}` prints `a` and `b`. Before, they printed `{a,b}`, and `printf '%s\n' *.txt` printed `*.txt`.
 - In the panel's Meaning view, a long label (a shebang, a long pipeline) no longer squeezes its explanation into a narrow column. The explanation keeps at least half of the row, or goes under the label, and the label is shown whole. Before, the label took up to 45% of the row and was cut with "…".
+- The `sort -h` example orders sizes as GNU sort does: `1.5K` before `8.3K`, and `220 Mar` as 220, not 220 megabytes.
 - Other languages' semantic colours are back to normal: a TypeScript parameter is no longer drawn in keyword blue. Before, the scope mappings of our syntax colouring applied to every language, even with `bashExplainer.highlight.enabled` off.
 - The web page keeps the phone layout on a phone at every zoom. Before, zooming out far enough switched it to the desktop layout, with the editor and the explanation side by side. The browser's desktop-site mode (Chrome's **Desktop site**, Safari's **Request Desktop Website**) shows the desktop layout.
 - The `set` options of a shebang count: `#!/bin/bash -eu` turns on `set -e` and `set -u` for the script.
