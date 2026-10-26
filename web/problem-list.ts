@@ -48,7 +48,12 @@ export function showProblems(list: DocumentIssue[], lang: Lang, pick: (issue: Do
     if (!list.length && toggle.getAttribute('aria-expanded') === 'true') toggle.click();
     toggle.toggleAttribute('disabled', list.length === 0);
   }
-  for (const id of ['problem-prev', 'problem-next']) document.getElementById(id)?.toggleAttribute('disabled', list.length === 0);
+  // With none, ‹ › go (the strip says "✓ No problems" alone).
+  for (const id of ['problem-prev', 'problem-next']) {
+    const b = document.getElementById(id);
+    if (b) b.hidden = summary ? list.length === 0 : false;
+    b?.toggleAttribute('disabled', list.length === 0);
+  }
   const count = document.getElementById('tab-problems-count');
   if (count) count.textContent = list.length ? String(list.length) : '';
   const build = () => list.map((i) => {
@@ -88,8 +93,8 @@ export function showProblems(list: DocumentIssue[], lang: Lang, pick: (issue: Do
 const byPlace = (a: DocumentIssue, b: DocumentIssue) => a.startLine - b.startLine || a.startCol - b.startCol;
 
 /**
- * The strip's position "3 / 11": the problem the cursor is in (or on the line of), of all of them; "– / 11" when the
- * cursor is on none. The items of the cursor's line are marked in the lists.
+ * The strip's position "Ln 20 · 1 of 11": the problem the cursor is in (or on the line of), with its line, of all of
+ * them; "11 problems" (muted) when the cursor is on none. The items of the cursor's line are marked in the lists.
  */
 export function showPosition(list: DocumentIssue[], line: number, col: number, lang: Lang): void {
   const c = CHROME[lang];
@@ -98,7 +103,7 @@ export function showPosition(list: DocumentIssue[], line: number, col: number, l
   const at = sorted.findIndex(inside) >= 0 ? sorted.findIndex(inside) : sorted.findIndex((i) => i.startLine === line);
   const pos = document.getElementById('problem-pos');
   if (pos) {
-    pos.textContent = !list.length ? '' : at >= 0 ? c.pos(at + 1, list.length) : c.pos(0, list.length).replace(/^0/, '–');
+    pos.textContent = !list.length ? '' : at >= 0 ? c.posAt(sorted[at].startLine + 1, at + 1, list.length) : c.countAll(list.length);
     pos.setAttribute('aria-label', at >= 0 ? c.posLabel(at + 1, list.length) : c.posNone(list.length));
     pos.classList.toggle('none', at < 0);
   }

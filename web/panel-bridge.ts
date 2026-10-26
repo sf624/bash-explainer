@@ -8,6 +8,7 @@ import { Lang } from '../src/i18n';
 import { FromPanel, PanelState, panelUpdate } from '../src/ui/panelView';
 import { isPanelQuestion, panelReply } from '../src/ui/panelReply';
 import { ui } from '../src/ui/render';
+import { CHROME } from './chrome-text';
 import { on, put } from './dom';
 import { drawIcon } from './icons';
 import { Theme } from './protocol';
@@ -66,8 +67,8 @@ export class PanelBridge {
         act();
       });
     }
-    // The view switch: in the panel's header, and in the menu.
-    for (const where of ['top', 'menu']) {
+    // The view switch: in the panel header's view slot, and in the phone's row over the explanation.
+    for (const where of ['top', 'phone']) {
       for (const v of ['list', 'tree'] as const) on(`view-${v}-${where}`, 'click', () => this.setView(v));
     }
     this.showView();
@@ -85,7 +86,7 @@ export class PanelBridge {
 
   /** The page's view switch shows the view chosen. */
   private showView(): void {
-    for (const where of ['top', 'menu']) {
+    for (const where of ['top', 'phone']) {
       for (const v of ['list', 'tree']) document.getElementById(`view-${v}-${where}`)?.setAttribute('aria-pressed', String(this.view() === v));
     }
   }
@@ -113,6 +114,19 @@ export class PanelBridge {
     // the pane's header on the editor page. (Also when the frame was ready before this script: no `load` then.)
     if (this.controls) root.classList.add('bx-settings', 'bx-head');
     root.classList.toggle('bx-phone', document.documentElement.classList.contains('narrow'));
+  }
+
+  /**
+   * The line the panel explains, at the left of its line box ("Ln 8"), drawn by web/panel-page.css from the box's
+   * `data-ln`; undefined: an empty script, whose panel shows no line box and says where to start (`bx-blank`).
+   */
+  markLine(label: string | undefined): void {
+    const doc = this.frame?.contentDocument;
+    const line = doc?.getElementById('line');
+    if (!doc || !line) return;
+    if (label) line.dataset.ln = label;
+    else delete line.dataset.ln;
+    doc.documentElement.classList.toggle('bx-blank', label === undefined);
   }
 
   /** Presses the panel's "Collapse all" (or "Expand all"). */
@@ -217,24 +231,28 @@ export class PanelBridge {
   showActions(): void {
     const tp = ui[this.host.lang()].panel;
     const open = this.frame?.contentDocument?.getElementById('reference')?.hidden === false;
+    const c = CHROME[this.host.lang()];
     const toggleName = this.button('toggle')?.getAttribute('aria-label') || tp.collapseAll;
-    for (const [button, name] of [['pane-collapse', toggleName], ['pane-copy', tp.copy]]) {
+    for (const [button, name] of [['pane-collapse', toggleName], ['pane-copy', c.copyMdTip]]) {
       document.getElementById(button)?.setAttribute('aria-label', name);
       document.getElementById(button)?.setAttribute('title', name);
     }
     put('menu-collapse-label', toggleName);
     put('menu-ref-label', this.button('ref')?.getAttribute('aria-label') || tp.reference);
-    for (const [button, theirs] of [['pane-collapse', 'toggle'], ['menu-collapse', 'toggle'], ['menu-ref', 'ref']] as const) {
-      const icon = this.button(theirs)?.querySelector('svg')?.getAttribute('data-icon');
-      const svg = document.querySelector(`#${button} svg`);
-      if (icon && svg) drawIcon(svg, icon);
-    }
+    // Collapse all is two chevrons that meet; Expand all, two that part (the page's own glyphs: the panel's codicon
+    // read as a second "copy" beside Copy). With a wide panel they have short words: "Collapse", "Copy".
+    const expand = this.button('toggle')?.querySelector('svg')?.getAttribute('data-icon') === 'expand-all';
+    for (const button of ['pane-collapse', 'menu-collapse']) document.querySelector(`#${button} use`)?.setAttribute('href', expand ? '#i-expand' : '#i-collapse');
+    put('pane-collapse-label', expand ? c.expandShort : c.collapseShort);
+    put('pane-copy-label', c.copyShort);
+    const icon = this.button('ref')?.querySelector('svg')?.getAttribute('data-icon');
+    const refSvg = document.querySelector('#menu-ref svg');
+    if (icon && refSvg) drawIcon(refSvg, icon);
     document.getElementById('menu-ref')?.setAttribute('aria-pressed', String(open));
-    put('menu-copy-label', tp.copy);
     put('views-menu-label', tp.views);
     document.getElementById('views-top')?.setAttribute('aria-label', tp.views);
     this.onActions?.();
-    for (const where of ['top', 'menu']) {
+    for (const where of ['top', 'phone']) {
       put(`view-list-${where}`, tp.listView);
       put(`view-tree-${where}`, tp.treeView);
     }

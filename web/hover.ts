@@ -16,6 +16,10 @@ import { Lang } from '../src/i18n';
 import { Settings } from '../src/settings';
 import { blankRange, partAt, ProblemAt, rangeOnLine } from '../src/ui/hoverParts';
 import { HoverInput, lineCard, partHover } from '../src/ui/hoverView';
+import { joinParts, labelParts } from '../src/label';
+import type { Token } from '../src/analyzer';
+import { colored, ui } from '../src/ui/render';
+import { CHROME } from './chrome-text';
 import type { ThemeKind } from '../src/ui/palette';
 import { isMac } from './file-io';
 import { renderCard } from './hover-markdown';
@@ -29,6 +33,8 @@ export interface HoverHost {
   explainer(): ((line: number) => LineExplanation) | undefined;
   /** The card's link "Settings". */
   openSettings(): void;
+  /** The card's link "Hide hover cards" (the page's footer, proto/chrome-3). */
+  hideHover?(): void;
   /** Says a short message to a screen reader (the page's live region): a card opened by the keyboard. */
   announce?(text: string): void;
 }
@@ -78,7 +84,44 @@ function cardAt(host: HoverHost, view: EditorView, pos: number, problems: Proble
   const at = { line, character: pos - l.from };
   const chain = partAt(ex.items, at, heredocAt(doc, line));
   const span = chain.length ? rangeOnLine(chain[chain.length - 1].span, line, l.text.length) : blankRange(l.text, at);
-  return { md: chain.length ? partHover(x, chain) : lineCard(x), from: l.from + span.start.character, to: l.from + span.end.character, line };
+  const md = pageCard(chain.length ? partHover(x, chain) : lineCard(x), chain, x, line, !!host.hideHover);
+  return { md, from: l.from + span.start.character, to: l.from + span.end.character, line };
+}
+
+/** Text for an attribute of the card's HTML. */
+const attrText = (text: string) => text.replace(/[&"<>]/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/**
+ * The page's own changes to VS Code's card (prototype, proto/chrome-3): the breadcrumb of the parts around the part
+ * names each part whole and wraps (to two lines at most, web/page.css) instead of cutting each name at 18 characters;
+ * the footer is "Line 8 · Open in panel · Hide hover cards" (the link turns the setting off, with an Undo).
+ */
+function pageCard(md: string, chain: Token[], x: HoverInput, line: number, canHide: boolean): string {
+  const lines = md.split('\n');
+  const glue = '</small> &nbsp; ';
+  if (chain.length > 1) {
+    const at = lines[0].indexOf(glue);
+    const sep = ' <span style="color:var(--vscode-descriptionForeground);">›</span> ';
+    const crumb = (tok: Token) => {
+      let left = 60;
+      const text = joinParts(labelParts(tok), (p) => {
+        if (left <= 0) return '';
+        let t = p.text.replace(/\s*\n\s*/g, ' ⏎ ');
+        if (t.length > left) t = `${t.slice(0, left - 1)}…`;
+        left -= t.length;
+        return p.placeholder ? `<i>${colored(t, 'comment', x.theme)}</i>` : colored(t, tok.kind, x.theme);
+      });
+      return `<span title="${attrText(tok.explanation.replace(/`/g, ''))}">${text}</span>`;
+    };
+    if (at >= 0) lines[0] = `<small>${chain.slice(0, -1).map(crumb).join(sep)}${sep}${glue}${lines[0].slice(at + glue.length)}`;
+  }
+  const last = lines.length - 1;
+  const open = /\[\$\(comment-discussion\)[^\]]*\]\([^)]*\)/.exec(lines[last])?.[0];
+  if (open && lines[last - 1] === '---') {
+    const hide = canHide ? ` &nbsp;·&nbsp; [${CHROME[x.lang].hideHover}](command:bashExplainer.hideHover)` : '';
+    lines[last] = `<small>${ui[x.lang].line(line + 1)}</small> &nbsp;·&nbsp; ${open}${hide}`;
+  }
+  return lines.join('\n');
 }
 
 // A card opened by the keyboard stays until Escape, a click elsewhere, an edit or a move of the cursor.
@@ -111,7 +154,10 @@ function cardDom(host: HoverHost, view: EditorView, card: Card, pinned: boolean)
   const act = (a: HTMLElement) => {
     const command = a.dataset.command;
     if (command === 'bashExplainer.explainLine' || command === 'bashExplainer.openPanel') wholeLineInPanel(view, card.line);
-    else if (command === 'bashExplainer.openSettings') {
+    else if (command === 'bashExplainer.hideHover') {
+      view.dispatch({ effects: [openCard.of(null), closeHoverTooltips] });
+      host.hideHover?.();
+    } else if (command === 'bashExplainer.openSettings') {
       view.dispatch({ effects: [openCard.of(null), closeHoverTooltips] });
       host.openSettings();
     }

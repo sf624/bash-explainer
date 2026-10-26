@@ -5,6 +5,8 @@ import { Lang } from '../src/i18n';
 import { ask } from './kind-dialog';
 import { Theme, THEMES } from './protocol';
 import { TEXT as PAGE_TEXT } from './text';
+import { CHROME } from './chrome-text';
+import { readStored, STORAGE_KEYS, writeStored } from './storage';
 import { checkValue, exportSettings, Ignored, importSettings, parseJsonc, Settings, SettingSpec, SettingText, SETTINGS, settingsFor } from '../src/settings';
 
 /** The name of an exported settings file. */
@@ -24,7 +26,7 @@ const TEXT = {
     search: 'Search settings',
     noMatch: 'No setting matches.',
     notTouch: 'Not on touch screens',
-    themeDesc: 'The colours of the page: follow the system, or always light or dark.',
+    themeDesc: 'The colours of the page: follow the browser, or always light or dark.',
     reset: 'Reset to defaults',
     resetDesc: 'Puts every setting back to its default. The theme and the size of the panes stay as they are.',
     resetAsk: 'Reset every setting to its default?',
@@ -73,7 +75,7 @@ const TEXT = {
     search: '設定を検索',
     noMatch: '一致する設定はありません。',
     notTouch: 'タッチ操作の画面では使われません',
-    themeDesc: 'ページの配色です。システムに合わせるか、常にライトまたはダークにします。',
+    themeDesc: 'ページの配色です。ブラウザに合わせるか、常にライトまたはダークにします。',
     reset: '既定値に戻す',
     resetDesc: 'すべての設定を既定値に戻します。テーマと画面の分割の大きさはそのままです。',
     resetAsk: 'すべての設定を既定値に戻しますか？',
@@ -422,8 +424,11 @@ export class SettingsDialog {
         this.filter();
       }
     });
+    const c = CHROME[lang];
     const nav = el('nav', { className: 'settings-nav' });
     nav.setAttribute('aria-label', t.sectionNav);
+    // A row of plain links ("Jump to: Display · Examples · …"), not tabs: they scroll the one page of settings.
+    nav.append(el('span', { className: 'settings-jump', textContent: c.jumpTo }));
     nav.append(...SECTIONS.map((id) => {
       const a = el('a', { href: `#settings-section-${id}`, textContent: t.sections[id] });
       a.addEventListener('click', (e) => {
@@ -443,6 +448,7 @@ export class SettingsDialog {
       el('div', { className: 'settings-body' },
         el('p', { className: 'settings-intro', textContent: `${t.intro}${lang === 'ja' ? '' : this.host.canSave() ? ' ' : ''}${this.host.canSave() ? t.saved : t.unsaved}` }),
         search,
+        this.namesSwitch(lang),
         section('display', display[0], this.themeRow(lang), ...display.slice(1)),
         section('examples', ...inSection('examples')),
         section('checks', ...inSection('checks')),
@@ -456,6 +462,19 @@ export class SettingsDialog {
     this.dialog.querySelector('.settings-body')?.addEventListener('scroll', () => this.markSection(), { passive: true });
     this.filter();
     this.markSection();
+  }
+
+  /** "Show VS Code setting names": off by default on the web; the names are for those who copy settings to VS Code. */
+  private namesSwitch(lang: Lang): HTMLElement {
+    const on = readStored(STORAGE_KEYS.settingNames) === '1';
+    this.dialog.classList.toggle('show-keys', on);
+    const box = el('input', { type: 'checkbox', id: 'settings-show-keys', checked: on });
+    box.setAttribute('role', 'switch');
+    box.addEventListener('change', () => {
+      writeStored(STORAGE_KEYS.settingNames, box.checked ? '1' : '0');
+      this.dialog.classList.toggle('show-keys', box.checked);
+    });
+    return el('label', { className: 'settings-show-keys', htmlFor: 'settings-show-keys' }, box, ' ', CHROME[lang].showKeys);
   }
 
   /** Marks (underlines) the section link of the part in view: the last section whose top is above the body's upper part. */
@@ -553,7 +572,9 @@ export class SettingsDialog {
       const labels: Record<string, string> = { ...text.values, ...(spec.key === 'language' ? { auto: t.browser } : {}) };
       const select = el('select', { id });
       describe(select);
-      select.append(...spec.enum!.map((v) => new Option(labels[v] && labels[v] !== v ? `${v} — ${labels[v].replace(/`/g, '')}` : v, v, false, v === value)));
+      // The language: the same words as the menu's ("Auto (follows the browser)", "English", "日本語").
+      const languageName: Record<string, string> = { auto: CHROME[lang].autoBrowser, en: 'English', ja: '日本語' };
+      select.append(...spec.enum!.map((v) => new Option(spec.key === 'language' && languageName[v] ? languageName[v] : labels[v] && labels[v] !== v ? `${v} — ${labels[v].replace(/`/g, '')}` : v, v, false, v === value)));
       select.addEventListener('change', () => this.change(spec.key, select.value));
       row.append(select);
     } else if (spec.type === 'number') {

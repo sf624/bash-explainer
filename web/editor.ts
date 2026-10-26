@@ -223,6 +223,8 @@ export interface EditorHost {
   changed(u: ViewUpdate): void;
   /** The hover card's link "Settings" (web/hover.ts). */
   openSettings(): void;
+  /** The hover card's link "Hide hover cards" (web/hover.ts): turns `hover.enabled` off, with an Undo. */
+  hideHover?(): void;
   /** Says a short message in the page's live region (web/a11y.ts). */
   announce?(text: string): void;
 }
