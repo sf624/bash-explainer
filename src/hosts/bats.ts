@@ -2,7 +2,7 @@ import type { LineExplanation, Token } from '../analyzer-types';
 import { BATS_COMMANDS } from '../dict/bats';
 import type { Extracted } from './index';
 import { Builder } from './builder';
-import { COMMENT_TEST, tagComment } from './batstags';
+import { ALNUM, COMMENT_TEST, droppedBefore, tagComment } from './batstags';
 import type { HostRun } from '../semantics/walk/host';
 
 /**
@@ -21,12 +21,13 @@ export const BATS_TEST = /^([ \t]*)(@test[ \t]+)(.*[^ \t])[ \t]+\{(.*)$/;
 
 /**
  * The name bats gives the function of a test (bats_encode_test_name), as in a UTF-8 locale: `test_` and the
- * description, with a space as `_`, a letter or a digit as it is (`[[:alnum:]]`, which takes `é` too), and any other
+ * description, with a space as `_`, a letter or a digit as it is (`[[:alnum:]]`, which takes `é` too, not `²`), and any other
  * character as `-` and its code point in hex (`_` is `-5f`, `-` is `-2d`). The name depends on the locale: in the C
  * locale, `é` is not a letter, and each of its UTF-8 bytes is written in hex (`-c3-a9`).
  */
+const LETTER = new RegExp(`[${ALNUM}]`, 'u');
 export function batsTestName(description: string): string {
-  return 'test_' + [...description].map((c) => (c === ' ' ? '_' : /[\p{L}\p{N}]/u.test(c) ? c : `-${c.codePointAt(0)!.toString(16).padStart(2, '0')}`)).join('');
+  return 'test_' + [...description].map((c) => (c === ' ' ? '_' : LETTER.test(c) ? c : `-${c.codePointAt(0)!.toString(16).padStart(2, '0')}`)).join('');
 }
 
 const batsTestMeaning = (name: string): [string, string] => [
@@ -42,7 +43,9 @@ const batsMarkedMeaning = (written: string, name: string): [string, string] => [
 function batsComments(ex: LineExplanation, original: string, marked: boolean, lang: 'ja' | 'en'): void {
   const tag = tagComment(original);
   if (!tag && !marked) return;
-  const text = tag
+  const text = tag?.invalid
+    ? lang === 'ja' ? 'bats への指示コメント: bash は無視するが、bats はこのタグのリストを受け付けず、このファイルのテストを1つも実行しない' : 'bats directive: bash ignores the comment; bats refuses its list of tags, and runs none of the tests of this file'
+    : tag
     ? lang === 'ja' ? `bats への指示コメント: bash は無視するが、bats が読んで${tag.scope === 'test' ? '次のテストだけ' : 'これ以降のすべてのテスト'}にタグを付ける` : `bats directive: bash ignores the comment, bats reads it and tags ${tag.scope === 'test' ? 'the next test only' : 'every later test'}`
     : lang === 'ja' ? 'bats への指示コメント: bash は無視するが、bats は前の関数をテストとして登録する' : 'bats directive: bash ignores the comment, bats registers the function before it as a test';
   const walk = (ts: Token[]): void => ts.forEach((t) => {
@@ -56,16 +59,31 @@ function batsComments(ex: LineExplanation, original: string, marked: boolean, la
   walk(ex.items);
 }
 
+/** A function marked `# @test`, read as bats reads it, and how the extractor writes it for bash. */
+function markedTest(line: string) {
+  const [, before, written, gap] = COMMENT_TEST.exec(line.replace(/\r$/, ''))!;
+  // (The keyword `function` is kept, blanks and parentheses become `()`, other text before the name is dropped.)
+  const keyword = droppedBefore(line) === undefined && /function[ \t]+$/.test(before);
+  const parens = /[()]/.test(gap);
+  // (One quote is taken off each end, as of a description.)
+  const name = batsTestName(written.replace(/^['"]/, '').replace(/['"]$/, ''));
+  const fn = keyword ? 'function ' : '';
+  return {
+    from: before.length, to: before.length + written.length, end: before.length + written.length + gap.length, keyword, parens, name, written,
+    /** The head of the definition, as bash shows it (`test_x()`, `function test_x`) and as written, normalized (`x()`, `function x`, `x`). */
+    head: fn + name + (keyword && !parens ? '' : '()'), label: fn + written + (parens ? '()' : ''),
+  };
+}
+
 /** The head of the definition of a test: `@test "x"` and the function bash reads, or the name and the parentheses of a marked function. */
-function testHeads(original: string, shell: string): { written: string; head: string; name: string; marked: boolean } {
+function testHeads(original: string, shell: string): { written: string; head: string; name: string; marked?: string } {
   const line = original.replace(/\r$/, '');
   if (BATS_TEST.test(line)) {
     const name = /^\s*(\S+)\(\)/.exec(shell)![1];
-    return { written: testText(line), head: `${name}()`, name, marked: false };
+    return { written: testText(line), head: `${name}()`, name };
   }
-  const o = COMMENT_TEST.exec(line)!;
-  const c = COMMENT_TEST.exec(shell)!;
-  return { written: o[2] + o[3] + o[4], head: c[2] + c[3] + c[4], name: c[3], marked: true };
+  const m = markedTest(line);
+  return { written: m.label, head: m.head, name: m.name, marked: m.written };
 }
 
 /**
@@ -85,7 +103,7 @@ export function batsTestLine(ex: LineExplanation, extracted: Extracted, original
   if (!here) return;
   const def = ex.items.find((t) => t.kind === 'function' && t.span.start.line === ex.line)!;
   const lines = /\s*[（(](?:行|lines?) [^)）]*[)）]$/.exec(def.explanation)?.[0] ?? '';
-  def.explanation = (here.marked ? batsMarkedMeaning(here.written.replace(/^function\s+|\(\)$/g, ''), here.name) : batsTestMeaning(here.name))[lang === 'ja' ? 0 : 1] + lines;
+  def.explanation = (here.marked ? batsMarkedMeaning(here.marked, here.name) : batsTestMeaning(here.name))[lang === 'ja' ? 0 : 1] + lines;
   def.summary = def.explanation;
   def.label = def.label.replace(here.head, here.written);
   def.labelParts = def.labelParts!.map((p) => (p.text.startsWith(here.head) ? { ...p, text: p.text.replace(here.head, here.written) } : p));
@@ -109,15 +127,18 @@ export function bats(b: Builder): void {
     const line = b.lines[i];
     const m = BATS_TEST.exec(line);
     if (!m) {
-      // `name() { # @test`: bats makes the function a test under the name it gives `@test "name"`.
-      const c = COMMENT_TEST.exec(line);
-      if (!c || !(c[2] || c[4])) { b.plain(i); continue; }
-      const from = c[1].length + c[2].length;
-      const to = from + c[3].length;
-      const name = batsTestName(c[3].replace(/^['"]/, '').replace(/['"]$/, ''));
-      const o = b.plain(i, 0, from);
-      o.insert(name, from, to, [`bats がテストの関数に付ける名前（\`# @test\` のコメントがある関数の名前から作る）`, `the name bats gives the function of the test (made of the name of a function marked with \`# @test\`)`]);
-      o.copy(line, to, line.length);
+      // `name() { # @test`: bats makes the function a test under the name it gives `@test "name"` (the parentheses and
+      // `function` are optional), and replaces the whole line with its definition.
+      if (!COMMENT_TEST.test(line)) { b.plain(i); continue; }
+      const t = markedTest(line);
+      const indent = /^[ \t]*/.exec(line)![0].length;
+      const o = b.plain(i, 0, t.keyword ? t.from : indent);
+      // (What bats drops before the name, blanked out, so that the columns stay.)
+      if (!t.keyword) o.copy(' '.repeat(t.from), indent, t.from);
+      o.insert(t.name, t.from, t.to, [`bats がテストの関数に付ける名前（\`# @test\` のコメントがある関数の名前から作る）`, `the name bats gives the function of the test (made of the name of a function marked with \`# @test\`)`]);
+      if (t.keyword && !t.parens) o.copy(line, t.to, t.end);
+      else o.insert('()', t.to, t.end);
+      o.copy(line, t.end, line.length);
       tests.push(i);
       continue;
     }

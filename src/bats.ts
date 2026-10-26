@@ -7,7 +7,7 @@ import { builtinParse, commandName } from './semantics/effects';
 import { processOf, STATEMENTS } from './semantics/env';
 import { BATS_COMMANDS } from './dict/bats';
 import type { ShellRegion } from './hosts';
-import { assignmentsOnly, descendants, field, fields, type SyntaxNode, type SyntaxTree } from './syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, fields, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 
 // What bats adds to a test file, said on its lines (docs/design/bats.md): the note on each `@test`, and two pitfalls
 // that follow from bash itself once bats has made a test a function run with `set -e`. The extractor (src/hosts.ts)
@@ -28,14 +28,18 @@ function runCommand(n: SyntaxNode): SyntaxNode[] {
 const testLines = new WeakMap<SyntaxTree, number[]>();
 
 /**
- * The lines of `candidates` (where bats rewrote `@test`) on which bash reads a function definition: not those inside
- * a here-document or a quoted string, which bats rewrites too but bash takes as text.
+ * The lines of `region.tests` (where bats rewrote a test) on which bash reads a function definition: not those inside
+ * a here-document or a quoted string, which bats rewrites too but bash takes as text. A definition inside a function
+ * is a test only when that function runs as the file is read (bats registers a test when its line runs), as the model
+ * reads it: when bats calls it as a test.
  */
-export function batsTests(tree: SyntaxTree, candidates: readonly number[]): number[] {
+export function batsTests(tree: SyntaxTree, region: Pick<ShellRegion, 'commands' | 'run'> & { tests: readonly number[] }): number[] {
   let out = testLines.get(tree);
   if (!out) {
-    const rows = new Set(descendants(tree.root, ['function_definition']).map((d) => d.startPosition.row));
-    testLines.set(tree, (out = candidates.filter((l) => rows.has(l))));
+    const called = new Set([...shellState(tree, undefined, { host: region.commands, run: region.run }).hostCalls].filter(([, c]) => c.role === 'test').map(([d]) => d));
+    const rows = new Set(descendants(tree.root, ['function_definition'])
+      .filter((d) => called.has(d) || !ancestor(d, (a) => a.type === 'function_definition')).map((d) => d.startPosition.row));
+    testLines.set(tree, (out = region.tests.filter((l) => rows.has(l))));
   }
   return out;
 }
