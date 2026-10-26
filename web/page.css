@@ -3908,3 +3908,764 @@ html.view-panel .panel-col {
     gap: 0;
   }
 }
+
+/* ==== Prototype round 3 (proto/chrome-3): the view slot, one place to share, a quiet Problems strip, the file name,
+   empty states, settings, the phone sheet's orientation, the panel's icons, the editor header, the hover card ======= */
+
+/* ---- 1. The panel header's view slot: Explanation | Reference … [Meaning | Reading] | Collapse Copy ---- */
+.panel-col {
+  container: panelcol / inline-size;
+}
+
+.panel-tools {
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+}
+
+.view-slot {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+/* A segmented control: 28px, 12.5px; the pressed segment tinted and bold (both reserve the bold width). */
+.seg {
+  display: inline-flex;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: 7px;
+  background: var(--vscode-dropdown-background);
+}
+
+.seg button {
+  display: inline-grid;
+  place-items: center;
+  height: 22px;
+  min-height: 0;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12.5px;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+@media (hover: hover) {
+  .seg button[aria-pressed="false"]:hover {
+    background: var(--vscode-list-hoverBackground);
+    color: var(--vscode-foreground);
+  }
+}
+
+.seg button:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+.tools-div {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--vscode-panel-border);
+}
+
+/* ---- 8. The panel's icons: Collapse all is two chevrons that meet; with a panel of 560px or more, words too ---- */
+svg.glyph {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.panel-tools .tool-lbl .lbl {
+  display: none;
+}
+
+@container panelcol (min-width: 560px) {
+  .panel-tools .icon-btn.tool-lbl {
+    width: auto;
+    gap: 5px;
+    padding: 0 9px 0 7px;
+    font-size: 12.5px;
+  }
+
+  .panel-tools .tool-lbl .lbl {
+    display: inline;
+  }
+}
+
+/* A narrow panel (a tablet's half): the tabs and the segments draw closer, so that the header keeps one row. */
+@container panelcol (max-width: 430px) {
+  .panel-bar [role="tab"] {
+    padding: 0 7px;
+  }
+
+  .panel-bar {
+    padding-left: 2px;
+    padding-right: 4px;
+  }
+
+  .seg button {
+    padding: 0 7px;
+  }
+
+  .panel-tools {
+    gap: 2px;
+  }
+}
+
+/* The phone: a 40px row over the explanation (its tab only) with the same control, full width, two halves. */
+.view-row {
+  display: none;
+}
+
+:where(html.narrow) .panel-col[data-tab="explain"] .view-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-editor-background);
+}
+
+:where(html.narrow) .view-row .seg {
+  width: 100%;
+  height: 32px;
+}
+
+:where(html.narrow) .view-row .seg button {
+  position: relative;
+  flex: 1 1 50%;
+  height: 26px;
+  font-size: 14px;
+}
+
+/* 44px of tap area around a 26px segment. */
+:where(html.narrow) .view-row .seg button::before {
+  content: "";
+  position: absolute;
+  inset: -9px -2px;
+}
+
+/* ---- 2. Share: the menu's SHARE section is the phone's; the desktop menu has no Explanation section any more ---- */
+.only-narrow-block {
+  display: none !important;
+}
+
+:where(html.narrow) .only-narrow-block {
+  display: block !important;
+}
+
+/* ---- 3. Problems: a quiet strip; only the icons are coloured ---- */
+#problems.pitfalls h2.problems-strip,
+#problems h2.problems-strip {
+  background: var(--page-background);
+}
+
+#problems:not(.collapsed) h2.problems-strip {
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+#problems h2.problems-strip {
+  gap: 4px;
+  padding: 0 4px 0 0;
+  color: var(--vscode-foreground);
+}
+
+#problems-toggle {
+  flex: 0 1 auto;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px 0 8px;
+  border-radius: 0;
+  color: var(--vscode-foreground);
+}
+
+#problems-toggle .chev {
+  order: -1;
+  width: 14px;
+  height: 14px;
+  color: var(--vscode-foreground);
+  transform: none;
+}
+
+#problems.collapsed #problems-toggle .chev {
+  transform: none;
+}
+
+#problems:not(.collapsed) #problems-toggle .chev {
+  transform: rotate(90deg);
+}
+
+#problems .summary {
+  gap: 10px;
+  color: var(--vscode-foreground);
+}
+
+#problems .sum .icon {
+  margin-right: 4px;
+}
+
+.strip-nav {
+  margin-left: auto;
+}
+
+.strip-nav .pos {
+  min-width: 0;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+
+.strip-nav .icon-btn.small {
+  width: 32px;
+  height: 32px;
+}
+
+.strip-nav .icon-btn[hidden] {
+  display: none;
+}
+
+/* The selected item (the cursor's line) and the focused one show their whole message. */
+:is(#problem-list, #sheet-problem-list) .problem.here .message,
+:is(#problem-list, #sheet-problem-list) .problem:focus .message {
+  display: block;
+  overflow: visible;
+  white-space: normal;
+  -webkit-line-clamp: unset;
+}
+
+/* ---- 4. The file name: a quiet text button; muted and italic until saved or opened; ● while unsaved ---- */
+.file-name-box {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  margin-left: 4px;
+}
+
+.file-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 16rem;
+  height: 28px;
+  min-height: 0;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: text;
+}
+
+.file-name #file-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.file-name.draft {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+@media (hover: hover) {
+  .file-name:hover {
+    border-color: var(--vscode-dropdown-border);
+  }
+}
+
+.file-name:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.file-dot {
+  color: var(--vscode-foreground);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.file-dot[hidden],
+.file-name[hidden],
+.file-name-input[hidden] {
+  display: none;
+}
+
+.file-name-input {
+  box-sizing: content-box;
+  height: 24px;
+  min-height: 0;
+  padding: 1px 7px;
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font: inherit;
+  font-size: 13px;
+}
+
+:where(html.narrow) .file-name-box {
+  display: none;
+}
+
+/* The unsaved dot on Save (6px), and on ≡ only on a phone, where no name shows. */
+#save-btn {
+  position: relative;
+}
+
+.save-dot {
+  position: absolute;
+  top: 5px;
+  left: 20px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vscode-textLink-foreground);
+  box-shadow: 0 0 0 1.5px var(--page-background);
+}
+
+.save-dot[hidden] {
+  display: none;
+}
+
+html:not(.narrow) .menu-dot {
+  display: none;
+}
+
+.menu-file.draft > span {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  font-weight: 600;
+}
+
+/* ---- 9. The editor header: Open, Save, the name and the pickers as ghost buttons, 28px, 13px; a border on hover ---- */
+.pane-head .tool-btn,
+.pane-head .picker,
+.pane-head .pick {
+  box-sizing: border-box;
+  height: 28px;
+  min-height: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.pane-head .tool-btn {
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.pane-head .picker {
+  width: auto;
+  min-width: 0;
+  padding: 0 6px 0 8px;
+}
+
+.pane-head .pick {
+  padding-left: 8px;
+}
+
+.pane-head .pick select {
+  height: 26px;
+  min-height: 0;
+  max-width: 14rem;
+  padding: 0 24px 0 4px;
+  border: 0;
+  background-color: transparent;
+  background-position: right 6px center;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+@media (hover: hover) {
+  .pane-head .tool-btn:hover,
+  .pane-head .picker:hover,
+  .pane-head .pick:hover {
+    border-color: var(--vscode-dropdown-border);
+    background: transparent;
+  }
+}
+
+.pane-head .pick:focus-within {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.pane-head .tool-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Text on Open and Save down to a 520px pane (the pickers become the chip under 600px); icons only below. */
+@container source (min-width: 521px) {
+  .pane-head .tool-btn .lbl {
+    display: inline;
+  }
+
+  .pane-head .tool-btn {
+    width: auto;
+    padding: 0 8px;
+  }
+}
+
+@container source (max-width: 520px) {
+  .pane-head .tool-btn {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .save-dot {
+    left: 19px;
+  }
+}
+
+/* ---- 5. The empty editor: a centred block with what to do ---- */
+#editor {
+  position: relative;
+}
+
+.empty-editor {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  pointer-events: none;
+}
+
+.empty-editor[hidden] {
+  display: none;
+}
+
+.empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: min(280px, 100%);
+  pointer-events: auto;
+}
+
+.empty-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  min-height: 0;
+  padding: 0 14px;
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: 8px;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: start;
+  cursor: pointer;
+}
+
+.empty-btn.primary {
+  border-color: transparent;
+  background: var(--page-accent);
+  color: var(--page-accent-foreground);
+  font-weight: 600;
+}
+
+@media (hover: hover) {
+  .empty-btn:not(.primary):hover {
+    background: var(--vscode-list-hoverBackground);
+  }
+
+  .empty-btn.primary:hover {
+    filter: brightness(1.08);
+  }
+}
+
+.empty-btn:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.empty-btn svg {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.empty-btn kbd {
+  margin-left: auto;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.empty-btn kbd:empty {
+  display: none;
+}
+
+.empty-drop {
+  margin: 4px 0 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+:where(html.narrow) .empty-btn {
+  height: 44px;
+  font-size: 15px;
+}
+
+:where(html.narrow) .empty-drop {
+  display: none;
+}
+
+/* The phone's first-run hint: the sentence, then two 44px buttons. */
+:where(html.narrow) .first-hint {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding: 8px 12px;
+}
+
+:where(html.narrow) .first-hint p {
+  flex: 1 1 100%;
+}
+
+:where(html.narrow) #hint-open {
+  display: inline-flex;
+}
+
+:where(html.narrow) .first-hint .hint-actions {
+  gap: 8px;
+}
+
+/* ---- 7. The phone sheet: "Explanation · Ln 8"; "↓ Script" when full; tabs as wide as their words ---- */
+.tab-line {
+  display: none;
+}
+
+:where(html.narrow) .tab-line {
+  display: inline;
+  color: var(--vscode-descriptionForeground);
+  font-weight: 400;
+  white-space: pre;
+}
+
+:where(html.narrow) .panel-bar [role="tab"] {
+  flex: 1 1 auto;
+  gap: 0;
+  padding: 0 8px;
+}
+
+:where(html.narrow) #tab-problems {
+  gap: 6px;
+}
+
+.sheet-back {
+  display: none;
+}
+
+:where(html.narrow) .panel-head {
+  position: relative;
+}
+
+:where(html.narrow[data-sheet="full"]) .panel-head .bsheet-handle {
+  height: 36px;
+}
+
+:where(html.narrow[data-sheet="full"]) .sheet-back {
+  position: absolute;
+  top: 4px;
+  right: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  min-height: 0;
+  padding: 0 11px 0 8px;
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: 14px;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+:where(html.narrow) .sheet-back::before {
+  content: "";
+  position: absolute;
+  inset: -8px -4px;
+}
+
+.sheet-back svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- 6. Settings: "Jump to:" and plain links; the VS Code names behind a switch ---- */
+.settings-nav {
+  align-items: center;
+  gap: 2px 2px;
+}
+
+.settings-jump {
+  margin-right: 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 13px;
+}
+
+.settings-nav a,
+.settings-nav a[aria-current="true"] {
+  padding: 4px 6px;
+  color: var(--vscode-textLink-foreground);
+  font-weight: 400;
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .settings-nav a:hover {
+    background: none;
+    text-decoration: underline;
+  }
+}
+
+.settings-show-keys {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 2px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#settings-dialog:not(.show-keys) .setting-key,
+#settings-dialog:not(.show-keys) .settings-elsewhere {
+  display: none;
+}
+
+:where(html.narrow) .settings-show-keys {
+  min-height: 44px;
+}
+
+/* ---- 10. The hover card: the breadcrumb wraps (two lines at most) beside "Whole line" ---- */
+.cm-bx-hover > p:first-child {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px 10px;
+}
+
+.cm-bx-hover > p:first-child > small {
+  display: -webkit-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.cm-bx-hover > p:first-child > a {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* The menu's selects take the room their labels leave ("Auto (follows the browser)" whole). */
+#drawer .field {
+  grid-template-columns: 5.75rem minmax(0, 1fr);
+}
+
+.menu-item svg.glyph {
+  width: 18px;
+  height: 18px;
+}
+
+/* The phone: the tab says the line ("Explanation · Ln 8"), so the line box does not; an empty script has no view row. */
+:where(html.narrow) .panel-col.blank .view-row {
+  display: none;
+}
+
+/* A tablet's half (under 430px): the header's words a little smaller, so that it keeps one row. */
+@container panelcol (max-width: 430px) {
+  .panel-bar .tabs {
+    flex: 1 0 auto;
+  }
+
+  .panel-bar [role="tab"] {
+    padding: 0 6px;
+    font-size: 12.5px;
+  }
+
+  .seg button {
+    padding: 0 6px;
+    font-size: 12px;
+  }
+
+  .tools-div {
+    display: none;
+  }
+}
+
+/* Desktop segments: 24px inside the 28px control (a pointer target of 24px at least). */
+.panel-tools .seg {
+  padding: 1px;
+}
+
+.panel-tools .seg button {
+  height: 24px;
+}
+
+/* The narrow pane's chip (tablet): a ghost button like the pickers it stands for; a phone keeps its outline. */
+html:not(.narrow) .pane-head .chip {
+  height: 28px;
+  padding: 0 6px 0 8px;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 13px;
+}
+
+@media (hover: hover) {
+  html:not(.narrow) .pane-head .chip:hover {
+    border-color: var(--vscode-dropdown-border);
+  }
+}

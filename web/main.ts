@@ -31,7 +31,7 @@ import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
 import { Picker } from './picker';
 import { nextProblem, showPosition, showProblems } from './problem-list';
-import { BottomSheet, closePopovers, popover, setUpTooltips } from './chrome';
+import { BottomSheet, closePopovers, fitSelect, popover, setUpTooltips } from './chrome';
 import { CHROME } from './chrome-text';
 import { CopyState, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
@@ -97,8 +97,12 @@ let file: { name: string; handle?: FileSystemFileHandle } | undefined;
  * too, so a CRLF file gets the `crlf` warning) and its BOM back.
  */
 let format: FileFormat = PLAIN;
-/** The name the explanations give the script: the file's, else the kind's (`script.sh`); a name ending in `.zsh` makes it zsh. */
-const fileName = () => file?.name ?? kindInfo(kind).fileName;
+/** The name the user gave the script before it was ever saved or opened (the file name control, renamed inline). */
+let draftName: string | undefined;
+/** The name the explanations give the script: the file's, else the name given, else the kind's (`script.sh`); a name ending in `.zsh` makes it zsh. */
+const fileName = () => file?.name ?? draftName ?? kindInfo(kind).fileName;
+/** The name the page shows and a first save suggests: the file's, the name given, or the kind's (`script.sh`). */
+const shownName = () => file?.name ?? draftName ?? defaultName(kind);
 let shown: { explanation: LineExplanation; line: number } | undefined;
 
 const analyzer = () => analyzers.get(lang) ?? analyzers.set(lang, new Analyzer(lang)).get(lang)!;
@@ -166,7 +170,10 @@ const editor = new Editor({
     // Undo would no longer undo the sample once the text changed again.
     if (u.docChanged && undoOffered && !loadingSample) status('');
     if (u.docChanged && !mode.panel) detectPasted(u);
-    if (u.docChanged) showFileSoon();
+    if (u.docChanged) {
+      showFileSoon();
+      showEmptyEditor();
+    }
     if (u.selectionSet || u.docChanged) queueMicrotask(showProblemPosition);
     // In panel mode the page around sends every change as a message, which is handled at once.
     if (mode.panel || (!u.docChanged && !u.selectionSet)) return;
@@ -174,6 +181,7 @@ const editor = new Editor({
     timer = setTimeout(updatePanel, u.docChanged ? 150 : 60);
   },
   openSettings: () => settingsDialog?.show(),
+  hideHover: () => hideHover(),
   announce: (text) => announcer?.say(text),
 }, { parent: $('editor'), text: shared.text ?? kindInfo(kind).sample, readMode, problems: mode.hasChrome });
 editor.shade();
@@ -184,6 +192,9 @@ editor.placeCursor(shared.text ? 1 : kindInfo(kind).cursorLine);
   if (region) announcer = new LineAnnouncer(region, editor.view);
   const hint = document.getElementById('editor-hint');
   if (hint) editorHint(editor.view, hint);
+  // The empty editor's block lies over the editor itself, centred in it.
+  const empty = document.getElementById('empty-editor');
+  if (empty) $('editor').append(empty);
 }
 
 // ---- Panel ----------------------------------------------------------------------------------
@@ -225,11 +236,20 @@ function updatePanel(): void {
   shown = { explanation, line };
   announcer?.shown(explanation, line, lang);
   queueMicrotask(showScope);
-  panel.show(panelUpdate({
+  const message = panelUpdate({
     lang, explanation, file: fileName(), line, lineText: doc.lines[line] ?? '',
     choice: choice(), detected: s.detected, placement: settings['examples.placement'],
     animations: settings['panel.animations'], marks: lineMarks(problemsShown, line), web: true,
-  }));
+  });
+  // An empty script: the panel says where to start instead of "Nothing to explain on this line" over an empty line box.
+  const blank = !mode.compare && !mode.panel && !editor.text.trim();
+  if (blank) message.emptyMessage = narrow.matches ? CHROME[lang].panelEmptyPhone : CHROME[lang].panelEmpty;
+  panel.show(message);
+  fitPickers();
+  panel.markLine(blank ? undefined : TEXT[lang].line(line + 1));
+  // The phone's tab says which line it explains ("Explanation · Ln 8").
+  put('tab-explain-line', blank ? '' : ` · ${TEXT[lang].line(line + 1)}`);
+  document.getElementById('panel-col')?.classList.toggle('blank', blank);
 }
 
 function copyMarkdown(): void {
@@ -572,7 +592,7 @@ on('menu-settings', 'click', () => {
   drawer?.close();
   settingsDialog?.show();
 });
-for (const [item, target] of [['menu-sample', 'sample'], ['menu-share', 'share'], ['menu-clear', 'clear']]) {
+for (const [item, target] of [['menu-sample', 'sample'], ['menu-share', 'share'], ['menu-clear', 'clear'], ['menu-copy-script', 'copy-script']]) {
   on(item, 'click', () => {
     drawer?.close();
     $(target).click();
@@ -771,30 +791,100 @@ function nameWithMark(name: string, dirty: boolean): Node[] {
 }
 
 let fileTimer: ReturnType<typeof setTimeout> | undefined;
-/** Shows the file's name, and whether it has changes not saved: in the top bar (not on a phone), the menu's Save and the page's title. */
+/**
+ * Shows the script's name, and whether it has changes not saved: the file name control in the editor's header (muted
+ * and italic until the script is saved or opened, ● after it while unsaved), a dot on Save, the menu's header and its
+ * Save, the dot on ≡ (shown on a phone only, where no name shows), and the page's title.
+ */
 function showFile(): void {
   if (!withFiles) return;
   clearTimeout(fileTimer);
   const dirty = unsaved();
-  const name = file?.name;
-  const label = $('file-label');
-  const shownName = name ?? CHROME[lang].untitled;
-  label.hidden = false;
-  label.classList.toggle('untitled', !name);
-  label.title = dirty ? `${shownName}${TEXT[lang].unsaved}` : shownName;
-  $('file-name').replaceChildren(...nameWithMark(shownName, dirty));
-  // Save says where the script goes: the file, or the name a first save suggests.
-  $('menu-save-name').replaceChildren(...nameWithMark(name ?? defaultName(kind), dirty && !!name));
-  // The menu's header names the file (a phone has no file chip); an unsaved change puts a dot on the menu's button.
-  document.getElementById('menu-file-name')?.replaceChildren(...nameWithMark(shownName, dirty));
+  const c = CHROME[lang];
+  const name = shownName();
+  const saved = file !== undefined;
+  const button = document.getElementById('file-name-btn');
+  if (button) {
+    put('file-name', name);
+    button.classList.toggle('draft', !saved);
+    $('file-dot').hidden = !dirty;
+    button.setAttribute('aria-label', `${name}${saved ? '' : ` (${c.notSavedYet})`}${dirty ? TEXT[lang].unsaved : ''}`);
+    button.title = c.renameTip;
+  }
+  const saveDot = document.getElementById('save-dot');
+  if (saveDot) saveDot.hidden = !dirty;
+  $('menu-save-name').replaceChildren(...nameWithMark(name, dirty && saved));
+  document.getElementById('menu-file-name')?.replaceChildren(...nameWithMark(name, dirty));
+  document.getElementById('menu-file')?.classList.toggle('draft', !saved);
   const dot = document.getElementById('menu-dot');
   if (dot) dot.hidden = !dirty;
-  document.getElementById('menu-open')?.setAttribute('aria-label', dirty ? CHROME[lang].menuUnsaved : TEXT[lang].menu);
+  document.getElementById('menu-open')?.setAttribute('aria-label', dirty && narrow.matches ? c.menuUnsaved : TEXT[lang].menu);
   const save = document.getElementById('save-btn');
-  if (save) save.title = name ? CHROME[lang].saveTo(name) : CHROME[lang].saveAs(defaultName(kind));
+  if (save) {
+    save.title = saved ? c.saveTo(name) : c.saveAs(name);
+    save.setAttribute('aria-label', `${c.save}${dirty ? TEXT[lang].unsaved : ''}`);
+  }
   showFirstHint();
-  document.title = name ? `${dirty ? '● ' : ''}${name} — Bash Explainer` : 'Bash Explainer';
+  document.title = saved || draftName ? `${dirty ? '● ' : ''}${name} — Bash Explainer` : 'Bash Explainer';
 }
+
+/** Gives the script another name (the file name control): the file's (a save then asks where again), or the name a first save suggests. */
+function rename(next: string): void {
+  const before = fileName();
+  if (file) file = { name: next };
+  else draftName = next;
+  showFile();
+  // A new name can say another shell (`.zsh`).
+  if (fileName() !== before) {
+    editor.shade();
+    updatePanel();
+    editor.recheck();
+  }
+}
+
+/** The file name control: a click turns it into a field (Enter or leaving it confirms, Escape cancels). */
+function setUpRename(): void {
+  const button = document.getElementById('file-name-btn');
+  const input = document.getElementById('file-name-input') as HTMLInputElement | null;
+  if (!button || !input) return;
+  const fit = () => {
+    input.style.width = `${Math.min(28, Math.max(8, input.value.length + 2))}ch`;
+  };
+  const end = (commit: boolean) => {
+    if (input.hidden) return;
+    const hadFocus = document.activeElement === input;
+    const value = input.value.trim().replace(/[\\/]/g, '');
+    input.hidden = true;
+    button.hidden = false;
+    if (commit && value && value !== shownName()) rename(value);
+    if (hadFocus) button.focus();
+  };
+  button.addEventListener('click', () => {
+    input.value = shownName();
+    input.setAttribute('aria-label', CHROME[lang].renameLabel);
+    fit();
+    button.hidden = true;
+    input.hidden = false;
+    input.focus();
+    // The stem is selected, the extension kept.
+    const dot = input.value.lastIndexOf('.');
+    input.setSelectionRange(0, dot > 0 ? dot : input.value.length);
+  });
+  input.addEventListener('input', fit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      end(true);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      end(false);
+    }
+  });
+  input.addEventListener('blur', () => end(true));
+}
+setUpRename();
+
 /** After an edit: the mark follows once typing rests (comparing the whole text at every key would slow a large file down). */
 function showFileSoon(): void {
   if (!withFiles) return;
@@ -827,6 +917,7 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
     if (!discard) return;
   }
   file = { name: chosen.name, handle };
+  draftName = undefined;
   format = { eol: read.eol, bom: read.bom };
   editor.openText(read.text);
   clean = editor.text;
@@ -853,7 +944,7 @@ async function saveFile(): Promise<void> {
   const text = editor.text;
   const before = fileName();
   const saving = file;
-  const r = await saveText(fileContent(text, format), file?.name ?? defaultName(kind), file?.handle);
+  const r = await saveText(fileContent(text, format), shownName(), file?.handle);
   if (r.how === 'cancelled') return;
   // Another file was opened while the browser asked (its permission bubble is not modal): that one is not the file saved.
   if (file !== saving) return r.how === 'downloaded' ? downloadedToast(r.name) : status(r.how === 'refused' ? t.notSaved(r.name) : t.saved(r.name));
@@ -1041,7 +1132,7 @@ function chromeLanguage(): void {
   ]));
   put('scope-done', c.done);
   put('scope-help', c.autoHelp);
-  put('hint-open-label', c.openFile);
+  // (The compare page has no empty-editor block: it keeps the placeholder.)
   editor.setPlaceholder(touchOnly() ? c.placeholderTouch : c.placeholder(shortcut('V')));
   document.getElementById('panel-tabs')?.setAttribute('aria-label', c.panelTabs);
   put('sample-label', t.sample);
@@ -1058,13 +1149,34 @@ function chromeLanguage(): void {
   put('menu-h-prefs', c.menuPrefs);
   put('menu-h-about', c.menuAbout);
   put('menu-settings-label', c.allSettings);
-  put('tab-explain', c.explain);
+  put('tab-explain-label', c.explain);
   put('tab-problems-label', c.problems);
   put('tab-ref', c.reference);
   put('first-hint-text', narrow.matches ? (touchOnly() ? c.hintPhone : c.hintClick) : c.hintDesk);
   put('hint-paste-label', narrow.matches ? c.useOwn : c.pasteOwn);
+  // (The phone's hint has room for "Open a file" without the dots: it opens the chooser at once.)
+  put('hint-open-label', narrow.matches ? c.openFileShort : c.openFile);
   const auto = document.querySelector<HTMLOptionElement>('#lang option[value="auto"]');
-  if (auto) auto.textContent = c.auto;
+  if (auto) auto.textContent = c.autoBrowser;
+  // Round 3: Share (three items) and the phone menu's SHARE; the empty editor; the panel header's view slot.
+  put('menu-h-share', c.menuShare);
+  put('menu-copy-script-label', c.copyScript);
+  put('menu-copy-label', c.copyMd);
+  put('empty-paste-label', touchOnly() ? c.paste : c.pasteScript);
+  put('empty-paste-key', touchOnly() ? '' : shortcut('V'));
+  put('empty-open-label', c.openFile);
+  put('empty-sample-label', c.loadSample);
+  put('empty-drop', c.orDrop);
+  put('sheet-back-label', c.backShort);
+  document.getElementById('sheet-back')?.setAttribute('aria-label', c.backToScript);
+  document.getElementById('sheet-back')?.setAttribute('title', c.backToScript);
+  for (const where of ['top', 'phone']) {
+    put(`view-list-${where}`, c.viewMeaning);
+    put(`view-tree-${where}`, c.viewReading);
+    document.getElementById(`views-${where}`)?.setAttribute('aria-label', c.viewLabel);
+  }
+  // The empty editor's block says it all: CodeMirror's placeholder would say it twice.
+  if (document.getElementById('empty-editor')) editor.setPlaceholder('');
   const named: [string, string, string?][] = [
     ['open-btn', `${t.openTip}`, shortcut('O')], ['save-btn', c.saveAs(defaultName(kind)), shortcut('S')], ['ed-more', c.more],
     ['problem-prev', c.prevProblem, 'Shift+F8'], ['problem-next', c.nextProblem, 'F8'], ['bsheet-handle', c.sheet],
@@ -1245,6 +1357,61 @@ new MutationObserver((records) => {
   }
 }).observe(document.body, { attributes: true, attributeFilter: ['open'], subtree: true });
 
+// ---- Round 3 (proto/chrome-3): empty states, the hover card's "Hide hover cards", the sheet's way back -----------------
+
+/** An empty editor shows a block in its middle: Paste a script, Open a file…, Load the sample (and that a file can be dropped). */
+function showEmptyEditor(): void {
+  const box = document.getElementById('empty-editor');
+  if (!box) return;
+  const empty = editor.view.state.doc.length === 0;
+  if (box.hidden === !empty) return;
+  box.hidden = !empty;
+}
+
+/** "Paste a script": reads the clipboard (the browser may ask), and puts its text in the editor as a paste, so that its kind is detected. */
+async function pasteScript(): Promise<void> {
+  let text: string | undefined;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    text = undefined;
+  }
+  if (text === undefined) {
+    // Refused, or a browser without the API: the editor takes the focus, and the toast says which key pastes.
+    editor.view.focus();
+    return status(CHROME[lang].pasteRefused(shortcut('V')));
+  }
+  if (!text) return editor.view.focus();
+  editor.view.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: text }, selection: { anchor: 0 }, userEvent: 'input.paste', scrollIntoView: true });
+  editor.focusUnlessTouch();
+}
+on('empty-paste', 'click', () => void pasteScript());
+on('empty-open', 'click', () => void openFile());
+on('empty-sample', 'click', () => loadSample(ownText()));
+
+/** The hover card's "Hide hover cards": turns the setting off, with Undo in the toast. */
+function hideHover(): void {
+  const set = (on: boolean) => {
+    changeSettings({ ...settings, 'hover.enabled': on });
+    settingsDialog?.refresh();
+  };
+  set(false);
+  status(CHROME[lang].hoverHidden, false, { label: TEXT[lang].undo, run: () => set(true) });
+}
+
+/** The editor header's Shell and yq pickers fit the value they show. */
+function fitPickers(): void {
+  for (const id of ['shell-top', 'yq-top']) {
+    const select = document.getElementById(id);
+    if (select instanceof HTMLSelectElement) fitSelect(select);
+  }
+}
+window.addEventListener('resize', fitPickers);
+for (const id of ['shell-top', 'yq-top']) on(id, 'change', () => queueMicrotask(fitPickers));
+
+// The full sheet's "↓ Script": back to half, the script above it.
+on('sheet-back', 'click', () => sheet?.set('half'));
+
 // ---- Start ----------------------------------------------------------------------------------
 
 async function start(): Promise<void> {
@@ -1256,6 +1423,7 @@ async function start(): Promise<void> {
   }
   clean = editor.text;
   showFile();
+  showEmptyEditor();
   updatePanel();
   editor.recheck();
   // The page is ready: the opening labels its line and leaves.
