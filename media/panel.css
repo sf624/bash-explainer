@@ -222,18 +222,36 @@ ul#tree {
   top: 0.35rem;
 }
 
+/* A row: the fold mark, the label (the part's code), its name badge, the explanation and the links. A label
+   and its explanation share the row when at least half of it (60% on a narrow panel) is left for the
+   explanation; otherwise the explanation goes under the label, in line with it, and the label, shown whole,
+   wraps at its spaces (or anywhere in a long word) when it is longer than the row. Links that would take
+   that room go under the explanation, at the right. The fold mark sits in the
+   left padding (a negative margin), so that a wrapped line starts under the label, not under the mark; the
+   shares are of the row from the fold mark on (--fold: the mark and its gap), as when the mark was in line. */
 .row {
+  --fold: calc(0.8em + 0.6rem);
+  --share: 0.5;
   display: flex;
-  gap: 0.6rem;
+  flex-wrap: wrap;
+  column-gap: 0.6rem;
+  row-gap: 0;
   align-items: baseline;
-  padding: 0.15rem 0.4rem;
+  padding: 0.15rem 0.4rem 0.15rem calc(0.4rem + var(--fold));
   border-left: 3px solid currentColor;
   margin: 0.15rem 0;
   border-radius: 2px;
   cursor: pointer;
 }
 
+.row > .twisty {
+  margin-left: calc(-1 * var(--fold));
+}
+
 .row .text {
+  flex: 1 1 calc(var(--share) * (100% + var(--fold)));
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--vscode-foreground);
 }
 
@@ -268,11 +286,12 @@ ul#tree {
 
 .label {
   font-family: var(--vscode-editor-font-family);
-  white-space: pre;
-  flex: 0 0 auto;
-  max-width: 45%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* A placeholder in a label (what a skeleton leaves out): proportional, italic and muted, unlike the code around it. */
@@ -703,29 +722,11 @@ li.collapsed > .body[data-closing],
   border-radius: 3px;
 }
 
-/* Narrow panels (a phone): a long label no longer squeezes the explanation into a few words. When
-   less than 60% of the row is left beside the label, the explanation goes under it, in line with the
-   label (after the twisty); a label too long for the row is cut at the row's width. A short label
-   keeps its explanation beside it. */
+/* Narrow panels (a phone): the explanation keeps 60% of the row beside a label, or goes under it. */
 @media (max-width: 520px) {
   .row {
-    flex-wrap: wrap;
-    row-gap: 0;
+    --share: 0.6;
   }
-
-  .row .text {
-    flex: 1 1 60%;
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
-  /* The label stays on the twisty's line, cut with "…" at what is left of it. */
-  .label {
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: calc(100% - 0.8em - 0.6rem);
-  }
-
 }
 
 /* ---------------------------------------------------------------- the tree view */
