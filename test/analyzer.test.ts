@@ -198,7 +198,7 @@ describe('statements as bash reads them', () => {
     assert.match(g.items[0].children[2].explanation, /^Redirection applied to `\{ echo b; \}` as a whole/);
     assert.match(explain('{ echo a; } > f').items[0].explanation, /as a whole/);
     // The pitfall of sudo looks at the command that is redirected.
-    assert.match(explain('echo x && sudo echo hi > /etc/motd').notes.join('\n'), /not by sudo/);
+    assert.match(explain('echo x && sudo echo hi > /etc/motd').notes.join('\n'), /opened by your own shell with your rights, before sudo starts/);
   });
   it('! negates the whole pipeline', () => {
     const e = explain('! true | false');

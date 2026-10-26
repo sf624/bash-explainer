@@ -333,9 +333,25 @@ export const MESSAGES = {
       + `bash はこの行を BOM の付いた \`${word}\` という名前のコマンドとして実行して失敗する（${slash ? 'No such file or directory' : 'command not found'}）。BOM を付けずに保存する`,
     `the first line starts with an invisible byte order mark (BOM, U+FEFF), so it is no shebang: the kernel starts an interpreter only when the file's first two bytes are \`#!\`, `
       + `and bash runs this line as a command named \`${word}\` with the BOM before it, which fails (${slash ? '"No such file or directory"' : '"command not found"'}). Save the file without the BOM`]),
-  'redirect-by-your-shell': pitfall(['3.6', '3.7.3'], () => [
-    'リダイレクト（`>`）は sudo ではなく今のシェルが、今のユーザーの権限で行います。root しか書けないファイルには `… | sudo tee ファイル` を使います',
-    'the redirection (`>`) is done by your own shell with your rights, not by sudo. For a file only root can write, use `… | sudo tee file`']),
+  // (src/wordfacts.ts: `op` is the operator as written; `file` is a static path under a directory only root writes.)
+  'redirect-by-your-shell': pitfall<{ op: string; kind: 'write' | 'append' | 'other' | 'read'; file?: string }>(['3.6', '3.7.3'], ({ op, kind, file }) => {
+    const read = kind === 'read';
+    const f = (ja: boolean) => file ?? (ja ? 'ファイル' : 'file');
+    const sh = (ja: boolean) => `sudo bash -c '… ${op} ${f(ja)}'`;
+    return [
+      (file ? `\`${file}\` はふつう root しか書き込めない。` : read ? 'ファイルが root しか読めないなら、' : 'ファイルが root しか書き込めないなら、')
+        + `リダイレクト（\`${op}\`）は sudo ではなく今のシェルが今のユーザーの権限で開くので、sudo が動く前に「Permission denied」で失敗し、コマンドは実行されない。`
+        + (read ? `コマンドにファイルを引数で渡すか、\`${sh(true)}\` のようにリダイレクトも sudo の中で行う`
+          : kind === 'write' ? `\`… | sudo tee ${f(true)}\`（追記なら \`sudo tee -a\`）を使う`
+            : kind === 'append' ? `\`… | sudo tee -a ${f(true)}\` を使う`
+              : `\`${sh(true)}\` のようにリダイレクトも sudo の中で行う`),
+      (file ? `\`${file}\` is normally writable only by root: ` : read ? 'if the file is readable only by root, ' : 'if the file is writable only by root, ')
+        + `the redirection (\`${op}\`) is opened by your own shell with your rights, before sudo starts, so it fails with "Permission denied" and the command does not run. `
+        + (read ? `Pass the file to the command as an argument, or do the redirection inside sudo too: \`${sh(false)}\``
+          : kind === 'write' ? `Use \`… | sudo tee ${f(false)}\` (\`sudo tee -a\` to append)`
+            : kind === 'append' ? `Use \`… | sudo tee -a ${f(false)}\``
+              : `Use \`${sh(false)}\`, so that the redirection is done inside sudo too`)];
+  }),
 
   // ---------------------------------------------------------------- bats test files (src/bats.ts; bash's side of what bats does)
   'bats-test': note(['3.3', '4.3.1'], () => [

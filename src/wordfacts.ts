@@ -33,6 +33,9 @@ function ranName(r: NameResolution): string | undefined {
   return pathCommand(r.name);
 }
 
+/** Static paths under the system directories that, by the FHS, only root writes (`/var/log`, `/var/lib` are for the programs' users too). */
+const ROOT_ONLY_PATH = /^(\/etc|\/usr|\/boot|\/root|\/opt|\/sys|\/proc\/sys|\/lib)\//;
+
 /** The path a redirection writes to, after quote removal when it is known. */
 function destination(d: SyntaxNode | null | undefined): string {
   return !d ? '' : staticWordValue(d) ?? d.text.replace(/^["']/, '');
@@ -128,7 +131,14 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         // `'/etc'/x` is `/etc/x`; when it is not known, as written, from an opening quote: `"/etc/$f"`.)
         const toFile = redirectionsOf(n).find((c) => c.type === 'file_redirect' && !/^\d*>&/.test(c.text.trim())
           && /^(\/etc|\/proc|\/sys|\/usr|\/opt|\/root|\/boot|\/lib)\//.test(destination(field(c, 'destination'))));
-        if (name === 'sudo' && toFile) add(fact(lang, 'redirect-by-your-shell'), toFile);
+        if (name === 'sudo' && toFile) {
+          // The operator as written (`>`, `>>`, `2>`, `&>`, `>|`, `<`) tells what the file is needed for; a static path of
+          // a system directory that only root writes is named in the note, any other target is not.
+          const op = /^(\d*|&|{[A-Za-z_]\w*})(>>|>\||>|<>|<)/.exec(toFile.text.trim())![0];
+          const kind = /<>?$/.test(op) ? 'read' : /^1?>\|?$/.test(op) ? 'write' : /^1?>>$/.test(op) ? 'append' : 'other';
+          const path = staticWordValue(field(toFile, 'destination')!);
+          add(fact(lang, 'redirect-by-your-shell', { op, kind, ...(path && kind !== 'read' && ROOT_ONLY_PATH.test(path) && /^[\w./+-]+$/.test(path) ? { file: path } : {}) }), toFile);
+        }
         break;
       }
       case 'for_statement': case 'select_statement': {
