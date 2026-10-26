@@ -506,13 +506,14 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
 
 /**
  * The options a shell is started with (`bash -e -o pipefail -O extglob -c S`): each option of its parse (`all`,
- * with the words of the line it reads after an `env -S` value) as written, with the value it takes (`-o NAME`).
+ * with the words of the line it reads after an `env -S` value) as written, with the value it takes (`-o NAME`), and
+ * those its spec does not know (`bash -k`: a letter of `set`).
  */
 function shellInvocation(all: readonly Item[]): { flag: string; value?: string }[] {
   const out: { flag: string; value?: string }[] = [];
   for (const { word, role, w } of all) {
     for (const r of role.role === 'cluster' ? role.letters : [role]) {
-      if (r.role === 'option' && !r.spec.value) out.push({ flag: r.flag });
+      if ((r.role === 'option' && !r.spec.value) || r.role === 'unknown-option') out.push({ flag: r.flag });
       else if (r.role === 'option' && r.value) out.push({ flag: r.flag, value: w.args[word].value?.slice(r.value.attached) });
       else if (r.role === 'value') out.push({ flag: r.of, value: w.args[word].value });
     }

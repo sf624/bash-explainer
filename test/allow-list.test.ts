@@ -8,12 +8,20 @@ import { builtins } from '../src/dict/builtins';
 import { SHELL_OPTIONS_SINCE } from '../src/bashversion';
 import {
   BUILTINS, builtinRow, EXPANSION_OPERATORS, expansionOperator, expansionRow, optionRow, REDIRECTIONS, redirectionRow, type Row,
-  SET_OPTIONS, SHOPT_OPTIONS, SYNTAX, syntaxRow, UNLISTED,
+  PROGRAM, SET_OPTIONS, SHOPT_OPTIONS, SYNTAX, syntaxRow,
 } from '../src/semantics/allow';
 import { shellState } from '../src/semantics/state';
+import { childOpening, localeWritten, openingBlinds } from '../src/semantics/opening';
+import { scriptTrust } from '../src/semantics/trust';
+import type { WrittenValue } from '../src/semantics/written';
 import { BASH_VARIABLES } from '../src/semantics/vars';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { descendants } from '../src/syntax/tree';
+import { descendants, fields, type SyntaxNode } from '../src/syntax/tree';
+import { interpret } from '../src/argv/interpret';
+import { argWord } from '../src/argv/words';
+import { lookupCommand } from '../src/dict/aliases';
+import { commandName } from '../src/semantics/effects';
+import { slotEnvs } from '../src/semantics/env';
 import { runBash } from './support/bash';
 import { forModel, GENERATED, scripts } from './support/decisions';
 import { PROBE_KINDS, type ProbeKind, readProbeTable } from './support/probe';
@@ -96,22 +104,28 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
     for (const [name, v] of Object.entries(BASH_VARIABLES)) assert.ok(v.effect, name);
     // (`SYNTAX` is a `Record` of every `NodeType`.)
     assert.ok(Object.keys(SYNTAX).length > 60);
-    // Today a construct with no row changes nothing; when the default flips, it trusts nothing.
-    assert.deepStrictEqual(UNLISTED.effect, { kind: 'none' });
-    assert.strictEqual(UNLISTED.next?.kind, 'all');
-    assert.strictEqual(syntaxRow('no_such_node'), UNLISTED);
-    // (zsh's `setopt` is in the dictionary, but no builtin of bash.)
+    // A construct with no row trusts nothing, and says which construct it is.
+    assert.deepStrictEqual(syntaxRow('no_such_node').effect, { kind: 'all', why: 'the node type `no_such_node`, which the allow-list does not have' });
+    assert.deepStrictEqual(optionRow(SHOPT_OPTIONS, 'no_such_option', true).effect, { kind: 'all', why: '`shopt -s no_such_option`, which the allow-list does not have' });
+    assert.deepStrictEqual(optionRow(SET_OPTIONS, 'no_such_option', false).effect, { kind: 'all', why: '`set +o no_such_option`, which the allow-list does not have' });
+    // (zsh's `setopt` is in the dictionary, but no builtin of bash: bash runs a program of that name, or finds none.)
     assert.ok(builtins.setopt);
-    assert.strictEqual(builtinRow('setopt').effect, UNLISTED.effect);
-    assert.strictEqual(optionRow(SHOPT_OPTIONS, 'no_such_option', true), UNLISTED);
+    assert.strictEqual(builtinRow('setopt'), PROGRAM);
+    assert.deepStrictEqual(PROGRAM.effect, { kind: 'none' });
     // An option's row turned off: its own `off`, or the row itself.
-    assert.strictEqual(optionRow(SHOPT_OPTIONS, 'extquote', false).next?.kind, 'all');
+    assert.strictEqual(optionRow(SHOPT_OPTIONS, 'extquote', false).effect.kind, 'all');
     assert.strictEqual(optionRow(SET_OPTIONS, 'errexit', false), SET_OPTIONS.errexit);
     // `${x@}` and `${x@Z}`, which bash rejects ("bad substitution"), have no row.
     for (const e of ['${x@}', '${x@Z}']) {
       const n = descendants(parser.parse(`: ${e}`).root, ['expansion'])[0];
-      assert.strictEqual(expansionRow(n), UNLISTED, e);
+      assert.deepStrictEqual(expansionRow(n).effect, { kind: 'all', why: `the parameter expansion \`${e}\`, which the allow-list does not have` }, e);
     }
+    // (A long one is named by its operator.)
+    const long = descendants(parser.parse(`: \${x${'y'.repeat(40)}@Z}`).root, ['expansion'])[0];
+    assert.deepStrictEqual(expansionRow(long).effect, { kind: 'all', why: 'the operator `@Z` of a parameter expansion, which the allow-list does not have' });
+    // Every builtin's option its spec does not know trusts nothing, but those of the builtins that print or ignore it,
+    // and of `test` and `[`, whose words are the expression's (`[ -a file ]`).
+    for (const [name, row] of Object.entries(BUILTINS)) assert.strictEqual(row.unknownOption.effect.kind, [':', 'true', 'false', 'echo', 'printf', 'test', '['].includes(name) ? 'none' : 'all', name);
     assert.strictEqual(redirectionRow(descendants(parser.parse('c >f').root, ['file_redirect'])[0]), REDIRECTIONS['>']);
   });
 
@@ -218,9 +232,84 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
   });
 
   it('is what the scan reads: a row of `all` trusts nothing, and `none` reads no further', () => {
-    // (compgen's row for an option its spec does not know, as before the table.)
-    assert.strictEqual(shellState(parser.parse('compgen -Z x')).blind, '`compgen` expands a word list or runs a command the model does not read');
-    // (`shopt` reads each option by its row: none today trusts nothing.)
-    for (const src of ['shopt -s compat31 nosuch "$x"; shopt -u extquote; shopt -p nullglob; shopt -so errexit', 'setopt x']) assert.strictEqual(shellState(parser.parse(src)).blind, undefined, src);
+    const blind = (src: string): string | undefined => shellState(parser.parse(src)).blind;
+    // (compgen's row for an option its spec does not know.)
+    assert.strictEqual(blind('compgen -Z x'), '`compgen` expands a word list or runs a command the model does not read');
+    assert.strictEqual(blind('read -Q x'), '`read` is given an option its spec does not know');
+    for (const src of ['shopt -p nullglob; shopt -so errexit; shopt -s nullglob dotglob; echo -Q', 'setopt x']) assert.strictEqual(blind(src), undefined, src);
+    // Options and operators the table does not have, and option names not known.
+    assert.strictEqual(blind('shopt -s nosuch'), '`shopt -s nosuch`, which the allow-list does not have');
+    assert.strictEqual(blind('set -o nosuch'), '`set -o nosuch`, which the allow-list does not have');
+    assert.strictEqual(blind(': "${x@Z}"'), 'the parameter expansion `${x@Z}`, which the allow-list does not have');
+    assert.strictEqual(blind('shopt -s "$x"'), '`shopt` is given an option name not known');
+    assert.strictEqual(blind('set -o "$x"'), '`set -o` is given an option name not known');
+    assert.strictEqual(blind('set $x'), '`set` is given a word not known before its operands, which may be any option');
+    assert.strictEqual(blind('shopt -u extquote'), '`shopt -u extquote` changes what bash does in ways the walk does not follow');
+  });
+
+  it('reads what a shell starts with by the table: the shebang, and the options and variables another shell gets', function () {
+    const blind = (src: string): string | undefined => shellState(parser.parse(src)).blind;
+    const regex = 'x=abc; if [[ $x =~ "a.c" ]]; then y=yes; else y=no; fi; echo "$y"';
+    // The shebang's options and assignments, as if set on the first line.
+    assert.strictEqual(blind('#!/bin/bash -k\nf() { y=$x; }; x=1; f x=2; echo "$y"'), '`set -k` (keyword) makes every assignment word one for its command');
+    assert.strictEqual(blind(`#!/usr/bin/env -S bash -O compat31\n${regex}`), '`shopt -s compat31` changes what bash does in ways the walk does not follow');
+    assert.strictEqual(blind(`#!/usr/bin/env -S BASH_COMPAT=42 bash\n${regex}`), '`BASH_COMPAT` changes how bash reads the script');
+    assert.strictEqual(blind(`#!/usr/bin/env -S LC_ALL=C bash -O extglob -eu\n${regex}`), undefined);
+    // (POSIX mode is walked from the start; `-O` turns the option on there.)
+    assert.strictEqual(blind(`#!/usr/bin/env -S POSIXLY_CORRECT=1 bash\n${regex}`), undefined);
+    const started = parser.parse('#!/usr/bin/env -S bash -O extglob\n: END');
+    assert.strictEqual(shellState(started).at(descendants(started.root, ['command'])[0]).run.shopt.get('extglob'), 'on');
+    // Another shell (`bash -c`): its options and the variables given to it. Its model decides nothing then.
+    const inner = (src: string): { blind: string | undefined; decided: boolean } => {
+      const tree = parser.parse(src);
+      const model = shellState(tree);
+      const c = descendants(tree.root, ['command'])[0];
+      const args = fields(c, 'argument');
+      const name = commandName(c)!;
+      const spec = lookupCommand(name)!;
+      const envs = slotEnvs(model.env(c), interpret(spec, args.map(argWord), { name, lookup: lookupCommand }), spec, args, lookupCommand);
+      const string = args[args.findIndex((a) => a.text === '-c') + 1];
+      const script = model.script([string], envs.get(string)!);
+      assert.ok(!('why' in script), src);
+      return { blind: script.model.blind, decided: !!script.model.condition(descendants(script.tree.root, ['if_statement'])[0]) };
+    };
+    assert.deepStrictEqual(inner(`bash -c '${regex}'`), { blind: undefined, decided: true });
+    assert.deepStrictEqual(inner(`LC_ALL=C bash -c '${regex}'`), { blind: undefined, decided: true });
+    assert.deepStrictEqual(inner(`env LC_ALL=C bash -o posix -c '${regex}'`), { blind: undefined, decided: true });
+    assert.deepStrictEqual(inner(`BASH_COMPAT=31 bash -c '${regex}'`), { blind: '`BASH_COMPAT` changes how bash reads the script', decided: false });
+    assert.deepStrictEqual(inner(`env BASH_COMPAT=31 bash -c '${regex}'`), { blind: '`BASH_COMPAT` changes how bash reads the script', decided: false });
+    assert.deepStrictEqual(inner(`bash -O compat31 -c '${regex}'`), { blind: '`shopt -s compat31` changes what bash does in ways the walk does not follow', decided: false });
+    assert.deepStrictEqual(inner(`LC_ALL=de_DE.UTF-8 bash -c '${regex}'`), { blind: '`LC_ALL` may be set to a locale other than C', decided: false });
+    assert.deepStrictEqual(inner("bash -k -c 'f() { y=$x; }; x=1; f x=2; echo \"$y\"'"), { blind: '`set -k` (keyword) makes every assignment word one for its command', decided: false });
+    // (A prefix assignment of a program is for its environment: this shell keeps its trust.)
+    assert.strictEqual(blind(`BASH_COMPAT=31 bash -c '${regex}'; LANG=de_DE.UTF-8 sort /dev/null`), undefined);
+    if (!hasBash) this.skip();
+    // What bash does: each of them takes `then`, where the model without them decides "always false".
+    assert.strictEqual(runBash(`BASH_COMPAT=31 bash -c '${regex}'; bash -O compat31 -c '${regex}'`).stdout, 'yes\nyes\n');
+    const shebang = (line: string, body: string): string => runBash(`printf '%s\\n' '${line}' '${body.replace(/'/g, "'\\''")}' > s; chmod +x s; ./s`, { files: [] }).stdout;
+    assert.strictEqual(shebang('#!/bin/bash -k', 'f() { y=$x; }; x=1; f x=2; echo "$y"'), '2\n');
+    assert.strictEqual(shebang('#!/usr/bin/env -S bash -O compat31', regex), 'yes\n');
+  });
+
+  it('takes a locale of C, and empty or unset, as changing nothing (src/semantics/opening.ts)', () => {
+    const kept: WrittenValue[] = ['none', 'kept', { names: [], text: 'C', fixed: true }, { names: [], text: 'C POSIX', each: ['C', 'POSIX'], fixed: true }];
+    for (const v of kept) assert.ok(localeWritten(v), JSON.stringify(v));
+    const other: WrittenValue[] = ['number', 'unknown', { names: [], text: 'de_DE', fixed: true }, { names: ['l'], text: '$l' }, { names: [], text: 'C', fixed: true, appended: true }, { names: [], text: '', fixed: true, arith: true }];
+    for (const v of other) assert.ok(!localeWritten(v), JSON.stringify(v));
+    const blind = (src: string): string | undefined => shellState(parser.parse(src)).blind;
+    for (const src of ['LANG=C; LC_ALL=; unset LC_CTYPE; export LC_COLLATE; LC_ALL=C.UTF-8; local LANG=POSIX', 'LANG=de_DE.UTF-8 sort; LC_MESSAGES=de_DE.UTF-8']) assert.strictEqual(blind(src), undefined, src);
+    for (const src of ['LANG=de_DE.UTF-8', 'LC_ALL=$l', 'read LANG', 'LC_ALL+=C', 'f() { :; }; LC_ALL=de f', 'alias s=sort; LC_ALL=de s']) assert.strictEqual(blind(src)?.endsWith('may be set to a locale other than C'), true, src);
+    // What another shell starts with: unset, or given with a value not known; options turned off.
+    assert.strictEqual(openingBlinds({ variables: [['LANG', null], ['PATH', undefined]], shopt: new Map([['compat31', 'off']]), set: new Map([['keyword', 'off'], ['errexit', 'on']]) }), undefined);
+    assert.strictEqual(openingBlinds({ variables: [['LANG', undefined]] }), '`LANG` may be set to a locale other than C');
+    assert.deepStrictEqual(childOpening([{ flag: '+o', value: 'keyword' }, { flag: '-o', value: 'posix' }, { flag: '+O', value: 'extquote' }, { flag: '-e' }, { flag: '-Z' }, { flag: '--norc' }], [['x', { set: 'on', value: '1' }], ['y', { set: 'off' }], ['z', { set: 'unknown' }], ['POSIXLY_CORRECT', { set: 'on', value: 'y' }]], true),
+      { set: new Map([['keyword', 'off'], ['errexit', 'on']]), shopt: new Map([['extquote', 'off']]), variables: [['x', '1'], ['y', null], ['z', undefined]] });
+  });
+
+  it('trusts nothing in a script with a construct the table has no row for', () => {
+    // (A node type no parser gives: the scan asks the table first, and the default is `all`.)
+    const fake = { type: 'no_such_node', named: true, children: [], namedChildren: [], parent: null, text: '', startIndex: 0, endIndex: 0 } as unknown as SyntaxNode;
+    const strings = { script: () => undefined, alias: () => fake, expansion: () => fake, capped: false };
+    assert.strictEqual(scriptTrust(fake, strings).blind, 'the node type `no_such_node`, which the allow-list does not have');
   });
 });

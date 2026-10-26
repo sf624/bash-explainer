@@ -5,7 +5,7 @@ import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
 import { argWord } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import type { SyntaxNode } from '../syntax/tree';
-import { all, followed, FOLLOWED, none, type Row } from './allow';
+import { blinds, followed, none, type Row } from './allow';
 
 /** The names an arithmetic text assigns (`x = 1`, `a[i] += 2`, `i++`, `--j`): group 1 (with 2, a subscript), 3 or 4. */
 export const ARITH_ASSIGNED = /(?<![\w$])(?:([A-Za-z_]\w*)\s*(\[[^\]]*\])?\s*(?:[-+*/%&^|]|<<|>>)?=(?!=)|([A-Za-z_]\w*)\s*(?:\+\+|--)|(?:\+\+|--)\s*([A-Za-z_]\w*))/g;
@@ -48,10 +48,10 @@ const OPTIND = followed(["test/trust.test.ts: reads bash's own variables from th
 const HOME = followed(['words#home-tilde']);
 /** Read by another shell the script starts (its model's start: `bash -c`, `sh -c`). */
 const SHELL_START = followed(['test/nested.test.ts: starts another shell with its options, without what a slot removes, and with what its startup files may set']);
-/** A locale: case conversion, character classes and ranges follow it (step 4: followed for `C`, `POSIX`, `C.UTF-8` or empty; else all). */
-const LOCALE = none(FOLLOWED);
-/** What bash does after it, the walk does not follow (step 4). */
-const later = (why: string): Row => none(all(why));
+/** A locale: case conversion, character classes and ranges follow it. Followed for `C`, `POSIX`, `C.UTF-8` or empty (`localeKept`); else all. */
+const LOCALE = followed(['values#locale-c', 'values#locale-other']);
+/** What bash does after it, the walk does not follow: nothing is trusted. */
+const later = (why: string): Row => blinds(why);
 
 /**
  * The variables bash knows, each with what bash does with it: every variable of the manual's two lists (bash 5.2),
@@ -138,6 +138,16 @@ const known = (name: string): BashVariable | undefined => (Object.hasOwn(BASH_VA
 
 /** What a write of the variable `name` does to bash (a variable of the script's own: nothing). */
 export const writeEffect = (name: string): Row => known(name)?.effect ?? NONE;
+
+/** Whether `name` sets the locale of case conversion, character classes or ranges (`LANG`, `LC_ALL`…): its row is `LOCALE`. */
+export const localeVariable = (name: string): boolean => writeEffect(name) === LOCALE;
+
+/**
+ * The values of a locale variable that change nothing a value or a decision reads: C (its synonyms), and empty, which
+ * leaves the locale to the next variable or to the environment (README, Limitations).
+ */
+const C_LOCALES = new Set(['', 'C', 'POSIX', 'C.UTF-8', 'C.utf8']);
+export const cLocale = (value: string): boolean => C_LOCALES.has(value);
 
 /** Whether bash sets `name` when it starts a script, whatever the environment. */
 export const setAtStart = (name: string): boolean => known(name)?.start !== undefined;

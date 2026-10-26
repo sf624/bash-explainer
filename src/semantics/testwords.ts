@@ -4,6 +4,13 @@ import { staticWordValue } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import { COPY, type WrittenValue } from './written';
 
+/** Whether `n` is in `[[ ]]` (where `-eq` and the others read arithmetic; in `test` and `[`, integers only). */
+export function inExtendedTest(n: SyntaxNode): boolean {
+  let x: SyntaxNode | null = n.parent;
+  while (x && (x.type === 'binary_expression' || x.type === 'unary_expression' || x.type === 'parenthesized_expression')) x = x.parent;
+  return x?.type === 'extended_test';
+}
+
 /**
  * How many words a word of `test` or `[` that is not static text gives: one (`"$x"`, `x"$y"`, `~/a`); `glob`: one
  * or more names of files (`/tmp/*`); `number`: one, a number, unless IFS splits it (`$#`); `variable`: an unquoted
