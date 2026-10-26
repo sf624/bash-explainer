@@ -11,7 +11,7 @@ import { actedNames, namespaceOf } from '../../argv/query';
 import { builtins } from '../../dict/builtins';
 import { builtinParse } from '../effects';
 import { testSpec } from '../names';
-import { type ValueSource, wordIn } from '../words';
+import { type WalkSource, wordIn } from '../words';
 import { ArithError, NAME, SUBSTITUTIONS } from './shared';
 import type { Walker } from './walker';
 
@@ -262,7 +262,7 @@ export class WalkConditions {
    * through `variableText` (not one the script has not set, nor one decisions do not trust: see `markAssumed`), `$?`,
    * `~` from HOME, and whether `$(true)` runs the builtin. One object for the walk (a condition is read often).
    */
-  private readonly source: ValueSource = {
+  private readonly source: WalkSource = {
     variable: (name) => {
       const st = this.valuesState;
       if (name === '?') return this.lastStatus(st);
@@ -274,6 +274,7 @@ export class WalkConditions {
     tilde: (user) => (user === '' ? this.source.variable('HOME', this.w.node!) ?? undefined : undefined),
     builtinRuns: (name) => this.builtinRuns(name, this.valuesState),
     arith: (n) => this.arithValue(n, this.valuesState),
+    shell: () => this.w.shell,
   };
 
   /**
@@ -301,7 +302,7 @@ export class WalkConditions {
   }
 
   /** The walk's values (`source`), read from `st`. */
-  private values(st: ShellState): ValueSource {
+  private values(st: ShellState): WalkSource {
     this.valuesState = st;
     return this.source;
   }

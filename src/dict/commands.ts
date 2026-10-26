@@ -904,7 +904,7 @@ export const core: Record<string, CommandSpec> = {
     ['--restrict', '危険になりうる一部のオプションを使えなくする', 'disable some potentially harmful options'],
     ['--usage', '短い使い方を表示する', 'give a short usage message'],
     ...GNU_INFO,
-  ], { oldStyle: { needs: 'cxtrudA' },
+  ], { oldStyle: {},
     modes: [{ name: 'create' }, { name: 'extract' }, { name: 'list' }, { name: 'append' }, { name: 'update' }, { name: 'catenate' }, { name: 'diff' }, { name: 'delete' }, { name: 'test-label' }],
     conflictingModes: tx('`-A`・`-c`・`-d`・`-r`・`-t`・`-u`・`-x`・`--delete`・`--test-label` のうち別のものと一緒に指定すると、tar は「You may not specify more than one」と言って何もしない（終了ステータス 2）', 'With another of `-A`, `-c`, `-d`, `-r`, `-t`, `-u`, `-x`, `--delete`, `--test-label`, tar refuses the line: "You may not specify more than one" (exit status 2)'), parser: 'getopt_long' }),
   gzip: cmd('ファイルを gzip 圧縮する（元ファイルは .gz に置き換わる）', 'Compress files with gzip', [
@@ -1539,7 +1539,7 @@ export const core: Record<string, CommandSpec> = {
       ],
     }],
     oldStyle: {
-      anywhere: true,
+      anywhere: true, numbers: { option: 'p', text: tx('プロセス ID を指定（数字は BSD 形式の文字のあとに続けて書くと PID の指定になる。`p` と同じ）', 'process IDs (a number after BSD letters is a PID list, the same as `p`)') },
       style: tx('BSD 形式のオプション（ハイフンなし。`-` 付きの UNIX 形式とは意味が違うものがある）', 'BSD-style options (no dash; some mean something else than the UNIX forms with `-`)'),
       letters: letters([
         ['a', '端末につながったプロセスを、ほかのユーザーのものも含めて表示（`x` と合わせて全プロセス）', "show processes that have a terminal, other users' included (with `x`: all processes)"],

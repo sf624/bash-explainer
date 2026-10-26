@@ -616,6 +616,12 @@ The tables the explanations read (the commands, the variables, the functions of 
 | `{1..10..3}`, `{1..10..-3}`, `{10..1..3}`, `{1..10..4}`, `{01..10}`, `{a..k..2}`, `{1..5..0}` | the start, the end and the increment under the braces: "Increment: `-3` … its sign does not count: the start and the end set the direction", "End: `10` (the steps do not land on it: the last word is `9`)", "Start: `01`; it has a leading 0, so every number is padded with zeros to the same width", "0 counts as 1" | the braces alone, with the words they make |
 | `docker run -it`, `docker exec -it`, `screen -dmS name`, `usermod -aG docker alice` | "Combined short options `-i` `-t`", each with its own explanation | one option, `-it` "interactive with a TTY", `-dmS`, `-aG` |
 | `xargs -d '\n'` | "each item ends at the given character, and quotes and backslashes are not special (with one other than `\n`, the newline `echo` ends with stays in the last item)" | "the newline `echo` ends with stays in the last item" |
+| `tar vf a.tar` | "Old-style options (no dash): `v` `f`", `a.tar` the value of `f` (tar reads a first word without a dash as letters, and then asks for an operation) | "Word `vf`": a word with no operation among its letters was not read as letters |
+| `ps u1`, `ps aux1,2` | the letters, and "process IDs (a number after BSD letters is a PID list, the same as `p`)" for the number (`ps u1` is `ps u -p 1`) | "Word `u1`" |
+| `ps t1`, `ps p1,2` | "Value for `t`": the number is the value of the last letter, when it takes one | "Word `t1`" |
+| `ps u1x`, `ps op1` | a plain word: `u1x` is an error in ps, and in `op1` the rest of the word is the value of `o` | a plain word |
+| `echo {a,b}`, `echo {1..3}`, `cp a{,.bak}`, `for x in {a,b}` in a script for dash, sh or ash | a plain word, as the shell prints it (`cp a{,.bak}`: one source); no example of words; the line's warning says the shell lacks brace expansion | "Brace expansion: `{a,b}` expands to 2 words", an example of the words, a source and a destination for `cp` |
+| `echo {1..3}` in mksh | a plain word (mksh has no ranges; `{a,b}` expands) | "expands to 3 words" |
 
 The positional parameters are those the shell starts with: a `shift` or `set --` in the string changes them later. In a function the string defines, `$1` is the function's argument, as before. After a word whose number of words is known only when it runs (`"$@"`, an unquoted `$x`), the words that follow are not named. Options of several letters that tools document as one stay one: `tcpdump -nn`, `ldapsearch -LLL`, `ip -br`, `nmap -sS`.
 

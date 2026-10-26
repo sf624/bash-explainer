@@ -10,10 +10,12 @@
 import { evalArith } from '../arith';
 import { braceExpand, globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { patsubMiscounts } from '../bracket';
+import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
 import { ansiCValue, decodedText, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, sameInEveryLocale, substring } from './chars';
+import { bracedWords, braceStep } from './brace';
 import { DECLARATIONS } from './effects';
 import { STATEMENTS } from './env';
 import { resolveName } from './names';
@@ -86,8 +88,8 @@ export const CONTEXTS: Readonly<Record<WordContext, ContextRule>> = {
 
 export type Applies = boolean | 'unknown';
 export type StepKind = 'brace' | 'tilde' | 'parameter' | 'command' | 'arithmetic' | 'process' | 'split' | 'glob' | 'quote-removal';
-/** Why a step does not apply (or may not). `zsh`: zsh, without SH_WORD_SPLIT and GLOB_SUBST (its defaults), neither splits nor globs a parameter expansion. */
-export type StepWhy = 'context' | 'quoted' | 'noglob' | 'ifs-empty' | 'posix-mode' | 'braceexpand-off' | 'zsh';
+/** Why a step does not apply (or may not). `dialect`: the shell has no brace expansion of the kind the word has (dash and POSIX sh none, mksh no ranges; src/dialect.ts). `zsh`: zsh, without SH_WORD_SPLIT and GLOB_SUBST (its defaults), neither splits nor globs a parameter expansion. */
+export type StepWhy = 'context' | 'quoted' | 'noglob' | 'ifs-empty' | 'posix-mode' | 'braceexpand-off' | 'dialect' | 'zsh';
 
 export interface ExpansionStep {
   kind: StepKind;
@@ -290,17 +292,6 @@ function tildesOf(nodes: readonly SyntaxNode[], rule: ContextRule, posix: Tri): 
   return tildeSpots(parts, mode).map((t) => ({ node: parts[t.part].node, start: t.start, end: t.end, user: t.user, after: t.after }));
 }
 
-/** Whether a word has a brace expansion bash expands (`{a,b}`, `{1..3}`). */
-function hasBrace(nodes: readonly SyntaxNode[]): boolean {
-  return plainWords(nodes).some((n) => {
-    try {
-      return braceExpand(n.text) !== undefined;
-    } catch {
-      return true;
-    }
-  });
-}
-
 const cache = new WeakMap<StateModel, WeakMap<SyntaxNode, WordMeaning>>();
 
 /** The meaning of the word that holds `n`, where it runs (undefined outside a word). */
@@ -311,7 +302,7 @@ export function wordMeaning(n: SyntaxNode, model: StateModel): WordMeaning | und
   if (!byNode) cache.set(model, (byNode = new WeakMap()));
   const known = byNode.get(found.nodes[0]);
   if (known) return known;
-  const meaning = build(found.nodes, found.context, model.at(found.nodes[0]).run);
+  const meaning = build(found.nodes, found.context, model.at(found.nodes[0]).run, model.shell);
   byNode.set(found.nodes[0], meaning);
   return meaning;
 }
@@ -322,7 +313,8 @@ interface Shape {
   /** The expansions not in double quotes (nor process substitutions), and whether some are in them. */
   unquoted: SyntaxNode[];
   someQuoted: boolean;
-  brace: boolean;
+  /** The plain words with a brace expansion. */
+  braced: SyntaxNode[];
   plain: SyntaxNode[];
   globWords: SyntaxNode[];
   quoted: boolean;
@@ -344,7 +336,7 @@ function shapeOf(nodes: readonly SyntaxNode[]): Shape {
     expansions,
     unquoted: expansions.filter((e) => e.type !== 'process_substitution' && !nearestQuote(e)),
     someQuoted: expansions.some(nearestQuote),
-    brace: hasBrace(nodes),
+    braced: bracedWords(plain),
     plain,
     globWords: plain.filter((w) => isGlob(w.text)),
     quoted: nodes.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text)),
@@ -357,7 +349,7 @@ function shapeOf(nodes: readonly SyntaxNode[]): Shape {
 }
 
 /** What the meaning of a word reads of its state: POSIX mode, the glob options, the IFS, braceexpand. */
-interface WordOptions { posix: Tri; glob: GlobState; ifs: IfsState; braceOpt: Tri }
+interface WordOptions { posix: Tri; glob: GlobState; ifs: IfsState; braceOpt: Tri; ofShell?: Map<Shell, WordOptions> }
 const NONE = {};
 type OptionsCache = WeakMap<object, WeakMap<object, WeakMap<object, WeakMap<object, WordOptions>>>>;
 const stateOptions: OptionsCache = new WeakMap();
@@ -365,7 +357,7 @@ const stateOptions: OptionsCache = new WeakMap();
  * The options of `st` that words read: one object for the states that share them (the same `set` and `shopt` maps,
  * IFS and GLOBIGNORE), so that the meanings of a word can be kept by it (`Shape.walked`).
  */
-function optionsOf(st: ShellState): WordOptions {
+function optionsOf(st: ShellState, shell?: Shell): WordOptions {
   const keys: object[] = [st.set, st.shopt, st.variables.get('IFS') ?? NONE, st.variables.get('GLOBIGNORE') ?? NONE];
   let m = stateOptions as WeakMap<object, unknown>;
   for (const k of keys.slice(0, -1)) {
@@ -379,11 +371,14 @@ function optionsOf(st: ShellState): WordOptions {
     o = { posix, glob: globOf(st, posix === 'on'), ifs: ifsOf(st), braceOpt: on(option(st, 'set', 'braceexpand'), 'set', 'braceexpand', false) };
     m.set(keys[3], o);
   }
-  return o;
+  // (The shell is part of what a meaning is kept by: the models of one script for two shells share the states.)
+  if (!shell || shell === 'bash') return o;
+  const ofShell = (o.ofShell ??= new Map<Shell, WordOptions>());
+  return ofShell.get(shell) ?? ofShell.set(shell, { ...o, ofShell: undefined }).get(shell)!;
 }
 
 /** The meaning of a word where it runs; `whole`: also its `value` and `failure` (the walk's conditions need neither). */
-function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, whole = true): WordMeaning {
+function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: Shell | undefined, whole = true): WordMeaning {
   // A subscript of an associative array is a key; of an indexed one (or one not known as associative), arithmetic.
   const sub = found === 'subscript-indexed' ? nodes[0].parent! : undefined;
   const context: WordContext = sub && attribute(st, field(sub, 'name')!.text, 'A') === 'on' ? 'subscript-assoc' : found;
@@ -395,8 +390,8 @@ function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, whole = 
   let tildes = shape.tildes.get(key);
   if (!tildes) shape.tildes.set(key, (tildes = tildesOf(nodes, rule, posix)));
   const steps: ExpansionStep[] = [];
-  const brace = rule.brace && shape.brace;
-  steps.push(mk({ kind: 'brace', applies: brace && (braceOpt === 'unknown' ? 'unknown' : braceOpt === 'on'), ...(brace && braceOpt !== 'on' ? { why: 'braceexpand-off' as const } : !rule.brace ? { why: 'context' as const } : {}), parts: brace ? shape.plain : [] }));
+  const brace = rule.brace && shape.braced.length > 0;
+  steps.push(mk(braceStep(shape.braced, rule.brace, braceOpt, shell, shape.plain)));
   steps.push(mk({ kind: 'tilde', applies: tildes.length > 0, parts: [...new Set(tildes.map((t) => t.node))] }));
   for (const kind of ['parameter', 'command', 'arithmetic', 'process'] as const) {
     const parts = expansions.filter((e) => STEP_OF[e.type] === kind);
@@ -518,6 +513,11 @@ export interface ValueSource {
   builtinRuns(name: string, at: SyntaxNode): boolean;
   /** The value of the arithmetic expansion `n`, when it is known (the walk's arithmetic); without it, of a constant expression only. */
   arith?(n: SyntaxNode): bigint | undefined;
+}
+
+/** The values the walk's conditions read, and the shell the walk is of (bash when absent). */
+export interface WalkSource extends ValueSource {
+  shell(): Shell | undefined;
 }
 
 /**
@@ -951,9 +951,9 @@ function splitFields(w: WordMeaning, ev: Evaluator): Char[][] | undefined {
  * `case` pattern: quoted characters escaped), or its regex (`[[ =~ ]]`: quoted characters other than letters, digits
  * and `_` escaped with a backslash, as bash does). Undefined when it is not known, or bash fails on it.
  */
-export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: 'fields', ifs: boolean): string[] | undefined;
-export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: 'value' | 'pattern' | 'regex'): string | undefined;
-export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: 'fields' | 'value' | 'pattern' | 'regex', ifs = true): string[] | string | undefined {
+export function wordIn(n: SyntaxNode, st: ShellState, source: WalkSource, as: 'fields', ifs: boolean): string[] | undefined;
+export function wordIn(n: SyntaxNode, st: ShellState, source: WalkSource, as: 'value' | 'pattern' | 'regex'): string | undefined;
+export function wordIn(n: SyntaxNode, st: ShellState, source: WalkSource, as: 'fields' | 'value' | 'pattern' | 'regex', ifs = true): string[] | string | undefined {
   // (Most words of conditions are plain text, which is their field, value, pattern and regex as it is: read at once.
   // `n` is the whole word: the right side of `[[ == ]]` comes in parts only when it starts with an expansion.)
   if ((n.type === 'word' || n.type === 'number') && PLAIN_TEXT.test(n.text)) return as === 'fields' ? [n.text] : n.text;
@@ -963,9 +963,9 @@ export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: '
   // (The same word is read in many states, most of them with the same options: its meaning is kept, and only the
   // evaluator is given the state.)
   const walked = shapeOf(found.nodes).walked;
-  const key = optionsOf(st);
+  const key = optionsOf(st, source.shell());
   let seen = walked.get(key);
-  if (!seen) walked.set(key, (seen = { meaning: build(found.nodes, found.context, st, false) }));
+  if (!seen) walked.set(key, (seen = { meaning: build(found.nodes, found.context, st, source.shell(), false) }));
   const w = ifs ? seen.meaning : (seen.noIfs ??= { ...seen.meaning, ifs: { kind: 'unknown', at: found.nodes[0] } });
   try {
     const split = splitFields(w, new Evaluator(w, source, st));

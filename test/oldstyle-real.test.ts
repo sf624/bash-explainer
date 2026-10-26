@@ -32,6 +32,9 @@ const wordsWith = (line: string, pick: (r: ArgRole) => boolean): string[] => {
 };
 const valueOf = (names: string[]) => (r: ArgRole): boolean => r.role === 'value' && names.includes(r.of);
 const operand = (r: ArgRole): boolean => r.role === 'operand';
+/** The letters of the old-style words of a line, as the interpreter reads them. */
+const letters = (line: string): string[] =>
+  parseOf(line).parse.roles.flatMap(({ role }) => (role.role === 'old-style' ? role.letters.map((l) => (l as { flag: string }).flag) : []));
 
 function tempDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oldstyle-real-'));
@@ -126,6 +129,78 @@ describe('ps reads BSD letters in any place, as procps does', () => {
       assert.strictEqual(first(line), first(moved), line);
       assert.notStrictEqual(first(line), first(without), line);
     }
+  });
+});
+
+describe('ps: a number after BSD letters is a list of PIDs', () => {
+  /** The PIDs ps lists for `line`, from the PID column its header names (the other columns change from run to run). */
+  const pids = (line: string): string[] => {
+    const lines = run(line, os.tmpdir()).out.split('\n').filter(Boolean);
+    const col = lines[0].trim().split(/\s+/).indexOf('PID');
+    return col < 0 ? [] : lines.slice(1).map((l) => l.trim().split(/\s+/)[col]);
+  };
+  // [line, the same with the PIDs in `-p`, the letters of the first word as the interpreter reads them]
+  const ROWS: [string, string, string[]][] = [
+    ['ps u1', 'ps u -p 1', ['u', '1']],
+    ['ps u1,2', 'ps u -p 1,2', ['u', '1,2']],
+    ['ps j1', 'ps j -p 1', ['j', '1']],
+    ['ps l1', 'ps l -p 1', ['l', '1']],
+    ['ps v1', 'ps v -p 1', ['v', '1']],
+    ['ps n1', 'ps n -p 1', ['n', '1']],
+    ['ps p1', 'ps -p 1', ['p']],
+    ['ps p1,2', 'ps -p 1,2', ['p']],
+    ['ps u1 2', 'ps u -p 1,2', ['u', '1']],
+  ];
+  (usable('ps') ? it : it.skip)('lists the PIDs `-p` gives, as the interpreter reads it', () => {
+    for (const [line, dashed, flags] of ROWS) {
+      assert.deepStrictEqual(letters(line), flags, line);
+      assert.ok(pids(line).length >= 1 && !/error/.test(run(line, os.tmpdir()).err), line);
+      assert.deepStrictEqual(pids(line), pids(dashed), line);
+    }
+    // A letter that takes a list reads the number as its value (`t1` is the terminal 1, not the PID 1).
+    assert.deepStrictEqual(parseOf('ps t1').parse.roles.map(({ role }) => (role.role === 'old-style' ? role.letters.map((l) => (l as { value?: { attached?: number } }).value?.attached) : [])), [[1]]);
+    assert.deepStrictEqual(pids('ps t1'), pids('ps -t 1'));
+    assert.deepStrictEqual(pids('ps t1'), pids('ps t 1'));
+  });
+
+  // The number must come last in the word; a letter with a value before it takes the rest of the word (`ps op1`).
+  (usable('ps') ? it : it.skip)('is an error where the number is not last, which stays a plain word', () => {
+    for (const line of ['ps u1x', 'ps 1u', 'ps u1a', 'ps a1p2']) {
+      assert.match(run(line, os.tmpdir()).err, /process ID list syntax error/, line);
+      assert.deepStrictEqual(letters(line), [], line);
+    }
+    assert.deepStrictEqual(letters('ps op1'), []);
+  });
+});
+
+describe('tar reads the first word as letters, whatever they are', () => {
+  const failure = (line: string): string => {
+    const r = run(line, os.tmpdir());
+    return `${r.status} ${r.err.split('\n')[0]}`;
+  };
+  (usable('tar') ? it : it.skip)('is `tar -vf a.tar` for `tar vf a.tar`, which has no operation', () => {
+    for (const [line, dashed, flags] of [['tar vf a.tar', 'tar -vf a.tar', 'v f'], ['tar f a.tar', 'tar -f a.tar', 'f'], ['tar vzf a.tar', 'tar -vzf a.tar', 'v z f']] as const) {
+      assert.strictEqual(failure(line), failure(dashed), line);
+      assert.match(failure(line), /^2 tar: You must specify one of/, line);
+      assert.deepStrictEqual(letters(line), flags.split(' '), line);
+      assert.deepStrictEqual(wordsWith(line, valueOf(['f'])), ['a.tar'], line);
+    }
+    // After the letters come other options, and the operation may be one of them: `tar f a.tar -t` lists a.tar.
+    const dir = tempDir();
+    try {
+      assert.strictEqual(run('tar cf a.tar src', dir).status, 0);
+      assert.strictEqual(run('tar f a.tar -t', dir).out, run('tar -tf a.tar', dir).out);
+      assert.strictEqual(run('tar f a.tar -t', dir).status, 0);
+      assert.deepStrictEqual(letters('tar f a.tar -t'), ['f']);
+      // Only the first word: with an option before it, it is a member name.
+      assert.deepStrictEqual(letters('tar -t vf a.tar'), []);
+      assert.notStrictEqual(run('tar -t vf a.tar', dir).status, 0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    // A word with a character that is no letter (`a.tar`) is no letters: tar refuses it as an option.
+    assert.match(failure('tar a.tar'), /^64 tar: invalid option -- '\.'/);
+    assert.deepStrictEqual(letters('tar a.tar'), []);
   });
 });
 

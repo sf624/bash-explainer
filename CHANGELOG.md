@@ -73,6 +73,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `zsh`, `dash`, `ksh` and the other shells are named as themselves: `zsh -c …` said "Run the POSIX shell".
 - Words such as `toString` and `constructor` are read like any other: `toString x` runs an external command, not a builtin, `set -o constructor` and `> constructor` no longer say "undefined", and `jq 'constructor'` no longer leaves the line unexplained.
 - Combined short options listed as one are split as the others are: `docker run -it` and `docker exec -it` are `-i` and `-t`, `screen -dmS` and `usermod -aG` too.
+- `tar vf a.tar` (the first word is always letters, with or without an operation) and `ps u1` (a number after BSD letters lists PIDs, as `ps u -p 1`) are explained as the tools read them. Before, both were plain words.
+- In a script for dash, POSIX sh or busybox ash, `echo {a,b}` and `{1..3}` are plain words, as the shell prints them (mksh: only `{a,b}` expands). Before, they were explained as expanding, with a warning that the shell lacks it.
 - `xargs -d '\n'` no longer says that the last newline stays in the last item: it does only with another delimiter.
 - With `sed -n`, `q` quits without printing the line and `n` reads the next one without printing this one, as GNU sed does; so does a script that starts with `#n`. Before, both said they print the line.
 - The `git log --graph` example draws the graph: `* ` before each commit, and `| ` before its other lines.

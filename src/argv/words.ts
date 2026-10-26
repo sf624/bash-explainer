@@ -1,5 +1,6 @@
 // The words of a command as the argument interpreter (src/argv/interpret.ts) takes them: their value after
 // quote removal when it is known, the start that is known otherwise, and how many words they become.
+import { bracesWork, type Shell } from '../dialect';
 import { braceExpand } from '../examples/shellwords';
 import { staticWordValue } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
@@ -29,10 +30,10 @@ const UNQUOTED_EXPANSION = new Set(['simple_expansion', 'expansion', 'command_su
 const plainPart = (c: SyntaxNode): boolean => c.type === 'word' || c.type === 'number' || c.type === 'brace_expression';
 
 /**
- * How many words a word gives, when that is not one: a brace expansion its count; a glob at least one;
- * `"$@"`, `"${a[@]}"` and an unquoted expansion an unknown number.
+ * How many words a word gives, when that is not one: a brace expansion its count (where the `shell` has it); a glob
+ * at least one; `"$@"`, `"${a[@]}"` and an unquoted expansion an unknown number.
  */
-export function countOf(n: SyntaxNode): ArgWord['count'] {
+export function countOf(n: SyntaxNode, shell?: Shell): ArgWord['count'] {
   const parts = n.type === 'concatenation' ? n.namedChildren : [n];
   // (Only in double quotes: `'"$@"'` is text.)
   const many = (c: SyntaxNode): boolean => c.type === 'string' && c.namedChildren.some((e) => e.text === '$@' || /^\$\{[^}]*\[@\]\}$/.test(e.text));
@@ -40,7 +41,7 @@ export function countOf(n: SyntaxNode): ArgWord['count'] {
   if (parts.every(plainPart)) {
     let words: string[] | undefined;
     try {
-      words = braceExpand(n.text);
+      words = bracesWork(n.text, shell) ? braceExpand(n.text) : undefined;
     } catch {
       // Too many words to list (`{1..100000}`).
       return { min: 1 };
@@ -52,9 +53,12 @@ export function countOf(n: SyntaxNode): ArgWord['count'] {
   return undefined;
 }
 
-/** A word of the command line as the interpreter reads it. */
-export const argWord = (n: SyntaxNode): ArgWord => {
+/** The words of the command line as the interpreter reads them, in a script for `shell` (bash when absent). */
+export const argWordFor = (shell?: Shell) => (n: SyntaxNode): ArgWord => {
   const value = staticWordValue(n);
-  const count = countOf(n);
+  const count = countOf(n, shell);
   return { ...(value !== undefined ? { value } : { prefix: prefixOf(n) }), ...(count ? { count } : {}) };
 };
+
+/** A word of the command line as the interpreter reads it in bash. */
+export const argWord = argWordFor();

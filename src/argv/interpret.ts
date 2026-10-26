@@ -530,17 +530,32 @@ class Reader {
     return last;
   }
 
-  /** `tar cvf a.tar`, `ps aux`: a word as letters without a dash. Returns the last word used, or -1. */
+  /**
+   * `tar cvf a.tar`, `ps aux`: a word as letters without a dash. Returns the last word used, or -1. With `numbers`, a
+   * number at the end of the word is the value of the last letter when it takes one (`ps t1`), else the value of the
+   * number option (`ps u1` is `ps u p1`).
+   */
   private oldStyle(st: OptionState, i: number): number {
     const old = st.spec.oldStyle!;
-    const text = this.words[i].value;
+    const word = this.words[i].value;
+    const split = old.numbers && word !== undefined ? /^([A-Za-z]+)(\d+(?:,\d+)*)$/.exec(word) : null;
+    const text = split ? split[1] : word;
+    const tail = split?.[2];
     const look = (ch: string): OptionSpec | undefined => (old.letters ? old.letters[ch] : findOption(st.options, '-' + ch, false));
     if (text === undefined || !/^[A-Za-z0-9]+$/.test(text) || ![...text].every(look)) return -1;
     if (old.needs && ![...text].some((ch) => old.needs!.includes(ch))) return -1;
+    const takes = (opt: OptionSpec): boolean => valuesOf(opt).some((v) => !v.optional && v.how !== 'attached-only');
+    // A letter with a value before the number would read the rest of the word, the number too (`ps op1`): not described.
+    if (tail && [...text].slice(0, -1).some((ch) => takes(look(ch)!))) return -1;
     let last = i;
+    let attached = false;
     const letters: ArgRole[] = [...text].map((ch, k) => {
       const opt = look(ch)!;
       st.given.specs.push(opt);
+      if (tail && k === text.length - 1 && takes(opt)) {
+        attached = true;
+        return { role: 'option', flag: ch, spec: opt, text: opt.text, part: [k, k + 1], value: { role: 'value', of: ch, option: opt, spec: valuesOf(opt)[0], index: 0, attached: k + 1 } };
+      }
       // Each letter with a value takes the next word not used yet, in order (`tar cfC a.tar dir`).
       for (const [index, v] of valuesOf(opt).entries()) {
         if (v.optional || v.how === 'attached-only' || last + 1 >= st.end) break;
@@ -549,6 +564,11 @@ class Reader {
       }
       return { role: 'option', flag: ch, spec: opt, text: opt.text, part: [k, k + 1] };
     });
+    if (tail && !attached) {
+      const opt = look(old.numbers!.option)!;
+      st.given.specs.push(opt);
+      letters.push({ role: 'option', flag: tail, spec: opt, text: old.numbers!.text, part: [text.length, text.length + tail.length] });
+    }
     st.roles.set(i, { role: 'old-style', letters });
     return last;
   }
