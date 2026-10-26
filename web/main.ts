@@ -214,7 +214,7 @@ function updatePanel(): void {
     lang, explanation, file: fileName(), line, lineText: doc.lines[line] ?? '',
     choice: choice(), detected: s.detected, placement: settings['examples.placement'],
     animations: settings['panel.animations'], marks: lineMarks(problemsShown, line), web: true,
-    around: aroundLines(explanation, problemsShown, (n) => doc.lines[n] ?? ''),
+    around: aroundLines(explanation, problemsShown, (n) => doc.lines[n] ?? '', (n) => explainDocumentLine(analyzer(), doc, n, lang, s, explainOptions(settings))),
   }));
 }
 

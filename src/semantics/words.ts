@@ -883,6 +883,11 @@ export function wordFields(n: SyntaxNode, model: StateModel, env?: WordEnv): Fie
   return fieldsAt(n, model, env, new Set());
 }
 
+/** (Prototype B) The fields of the word that holds `n` with only the values the model trusts and no environment: those Meaning may show. */
+export function trustedFields(n: SyntaxNode, model: StateModel): Fields {
+  return fieldsAt(n, model, undefined, new Set(), true);
+}
+
 /**
  * What the expansion `part` of the word `w` gives with only the values the model trusts (`ModelValues.trusted`): its text, and its
  * fields where `split` (each with whether it has a glob character); undefined when bash fails on it or a value is not known.
