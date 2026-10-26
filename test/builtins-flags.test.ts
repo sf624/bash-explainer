@@ -114,6 +114,14 @@ describe('declare, export, unset', () => {
     }
     assert.strictEqual(bash('declare -x BAR=1; declare +x BAR; declare -p BAR').stdout, 'declare -- BAR="1"\n');
   });
+  it('declare -iZ: a letter bash does not have adds nothing to what the known letters give', () => {
+    assert.match(parts('declare -iZ x')['-iZ'], /^treat as integer/);
+    assert.ok(!/Z/.test(parts('declare -iZ x')['-iZ']));
+    assert.strictEqual(bash('declare -iZ x').status, 2);
+  });
+  it('declare +g: an attribute that has no text for being turned off says nothing of it', () => {
+    assert.strictEqual(parts('declare +g x')['+g'], 'Option');
+  });
   it('declare -t', () => assert.match(parts('declare -t F')['-t'], /trace/));
   it('unset -n unsets the reference itself', () => {
     const p = parts('unset -n ref');
