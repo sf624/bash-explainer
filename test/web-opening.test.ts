@@ -1,6 +1,5 @@
 // The web page: its opening (src/ui/opening.ts, web/theme-init.js, web/opening.ts), run for real in headless Chromium
-// (test/support/site.ts). The other web tests see it as on a later load of the session: still, and gone as soon as
-// the page is ready.
+// (test/support/site.ts). The other web tests load the page as on a later load of the session, which has none.
 import * as assert from 'assert';
 import type { Browser, Page } from 'playwright-core';
 import { openSite, until, Site } from './support/site';
@@ -19,6 +18,8 @@ const state = (page: Page) =>
       leaving: !!el && el.classList.contains('out'),
     };
   })()`) as Promise<{ there: boolean; shown: boolean; whole: boolean; still: boolean; ready: boolean; leaving: boolean }>;
+/** The overlay is in the page but never shown. */
+const NONE = { there: true, shown: false, whole: false, still: false, ready: false, leaving: false };
 const ready = (page: Page) => page.locator('#editor .cm-line').first().waitFor();
 
 describe('the web page: the opening', function () {
@@ -47,9 +48,10 @@ describe('the web page: the opening', function () {
     await until('the labels', async () => (await state(page)).ready, (v) => v);
     assert.strictEqual(await page.evaluate("document.activeElement && document.activeElement.closest('#opening')"), null);
     await until('the opening to leave', async () => (await state(page)).there, (v) => !v);
-    // A later load of the session shows it still.
-    await page.reload();
-    assert.ok((await state(page)).still || !(await state(page)).there);
+    // A later load of the session shows none.
+    await page.reload({ waitUntil: 'commit' });
+    await page.waitForSelector('#opening', { state: 'attached' });
+    assert.deepStrictEqual(await state(page), NONE);
     await ctx.close();
   });
 
@@ -91,7 +93,7 @@ describe('the web page: the opening', function () {
     const page = await ctx.newPage();
     await page.goto(`${base}#lang=en&z=AAAA`, { waitUntil: 'commit' });
     await page.waitForSelector('#opening', { state: 'attached' });
-    assert.deepStrictEqual(await state(page), { there: true, shown: false, whole: false, still: false, ready: false, leaving: false });
+    assert.deepStrictEqual(await state(page), NONE);
     await ready(page);
     // The address no longer has the link (web/share.ts); the tab keeps it, and a reload shows the script again.
     await page.reload({ waitUntil: 'commit' });
@@ -105,7 +107,7 @@ describe('the web page: the opening', function () {
     const page = await ctx.newPage();
     await page.goto(`${base}?view=panel`);
     await page.waitForLoadState('load');
-    assert.deepStrictEqual(await state(page), { there: true, shown: false, whole: false, still: false, ready: false, leaving: false });
+    assert.deepStrictEqual(await state(page), NONE);
     await page.goto(base);
     await ready(page);
     const frame = page.frameLocator('#panel').locator('html');
@@ -116,12 +118,12 @@ describe('the web page: the opening', function () {
     await ctx.close();
   });
 
-  it('is seen by the other tests as on a later load', async () => {
+  it('is not shown to the other tests, which load the page as on a later load', async () => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     await page.goto(base, { waitUntil: 'commit' });
-    await page.waitForSelector('html.opening-on');
-    assert.ok((await state(page)).still);
+    await page.waitForSelector('#opening', { state: 'attached' });
+    assert.deepStrictEqual(await state(page), NONE);
     await ctx.close();
   });
 });

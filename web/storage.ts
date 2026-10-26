@@ -81,7 +81,7 @@ export function clearStoredData(): void {
  * (theme-init.js reads it too, to leave the opening out, and repeats the name).
  */
 const SESSION_LINK = 'bash-explainer-shared-link';
-/** The opening was shown in this tab, so later loads show it still (theme-init.js sets and reads it before the first paint, and repeats the name). */
+/** The opening was shown in this tab, so later loads show none (theme-init.js sets and reads it before the first paint, and repeats the name). */
 const SESSION_OPENING = 'bash-explainer-opening';
 
 /** The link fragment this tab kept; null when none, or when session storage is unavailable. */

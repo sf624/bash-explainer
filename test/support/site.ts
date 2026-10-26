@@ -19,11 +19,11 @@ export const FILES = ['/', '/app.js', '/favicon.ico', '/favicon.svg', '/icons.js
 export const MARKER = 'secret-7f3a9c';
 
 export interface Site {
-  /** Its contexts see the opening as on a later load of the session; see `firstLoad`. */
+  /** Its contexts load the page as on a later load of the session, without the opening; see `firstLoad`. */
   browser: Browser;
   /**
    * A context that sees the opening (src/ui/opening.ts) as on the first load of a session: whole, for about two
-   * seconds over the page. The others see it still, gone as soon as the page is ready.
+   * seconds over the page. The others see none.
    */
   firstLoad: Browser['newContext'];
   /** The address of the release page, with a trailing slash (`next/` and `pr/123/` are under it). */
@@ -49,8 +49,8 @@ async function start(): Promise<Running | undefined> {
     if (process.env.BASH_EXPLAINER_BROWSER) throw e;
     return undefined;
   }
-  // The opening covers the page for about two seconds on the first load of a session: the tests see it as on a later
-  // load (web/theme-init.js reads this key), except those that ask for `firstLoad`.
+  // The opening covers the page for about two seconds on the first load of a session: the tests load the page as on a
+  // later load, which has none (web/theme-init.js reads this key), except those that ask for `firstLoad`.
   const firstLoad = browser.newContext.bind(browser);
   browser.newContext = async (options) => {
     const ctx = await firstLoad(options);
