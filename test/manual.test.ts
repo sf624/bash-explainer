@@ -150,6 +150,40 @@ describe('the sections of tokens', () => {
 /** makeinfo's file and anchor names: letters and digits as they are, a space as `-`, anything else as `_00xx`. */
 const mangle = (s: string): string => [...s].map((c) => (/[A-Za-z0-9]/.test(c) ? c : c === ' ' ? '-' : `_${c.charCodeAt(0).toString(16).padStart(4, '0')}`)).join('');
 
+/**
+ * The sections of a bashref.texi (`show` reads a file of the bash tree), numbered as makeinfo numbers them, with the
+ * page and anchor gnu.org gives each, and the section of each builtin (its `@btindex`).
+ */
+function manualOf(show: (file: string) => string): { sections: Map<string, { title: string; url: string }>; builtins: Record<string, string> } {
+  const texi = show('doc/bashref.texi')
+    .replace(/^@include rluser\.texi$/m, () => show('lib/readline/doc/rluser.texi'))
+    .replace(/^@include hsuser\.texi$/m, () => show('lib/readline/doc/hsuser.texi'));
+  const sections = new Map<string, { title: string; url: string }>();
+  const builtins: Record<string, string> = {};
+  const firstOfNode = new Set<string>();
+  let node = '';
+  let current = '';
+  const num = [0, 0, 0, 0];
+  for (const line of texi.split('\n')) {
+    const n = /^@node ([^,]+)/.exec(line);
+    if (n) node = n[1].trim();
+    const s = /^@(chapter|section|subsection|subsubsection) (.*)$/.exec(line);
+    if (s) {
+      const depth = ['chapter', 'section', 'subsection', 'subsubsection'].indexOf(s[1]);
+      num[depth]++;
+      num.fill(0, depth + 1);
+      const id = num.slice(0, depth + 1).join('.');
+      current = id;
+      const anchor = firstOfNode.has(node) ? `#${mangle(s[2])}` : '';
+      firstOfNode.add(node);
+      sections.set(id, { title: s[2], url: `https://www.gnu.org/software/bash/manual/html_node/${mangle(node)}.html${anchor}` });
+    }
+    const b = /^@btindex (.*)$/.exec(line);
+    if (b) builtins[b[1]] = current;
+  }
+  return { sections, builtins };
+}
+
 describe('the manual table against bashref.texi of bash 5.2', function () {
   const dir = process.env.BASH_SOURCE_DIR;
   before(function () {
@@ -157,34 +191,33 @@ describe('the manual table against bashref.texi of bash 5.2', function () {
   });
 
   it('has the numbers, titles, pages and builtins of the manual', () => {
-    const show = (file: string) => execFileSync('git', ['-C', dir!, 'show', `bash-5.2:${file}`], { encoding: 'utf8' });
-    const texi = show('doc/bashref.texi')
-      .replace(/^@include rluser\.texi$/m, () => show('lib/readline/doc/rluser.texi'))
-      .replace(/^@include hsuser\.texi$/m, () => show('lib/readline/doc/hsuser.texi'));
-    const sections = new Map<string, { title: string; url: string }>();
-    const builtins: Record<string, string> = {};
-    const firstOfNode = new Set<string>();
-    let node = '';
-    let current = '';
-    const num = [0, 0, 0, 0];
-    for (const line of texi.split('\n')) {
-      const n = /^@node ([^,]+)/.exec(line);
-      if (n) node = n[1].trim();
-      const s = /^@(chapter|section|subsection|subsubsection) (.*)$/.exec(line);
-      if (s) {
-        const depth = ['chapter', 'section', 'subsection', 'subsubsection'].indexOf(s[1]);
-        num[depth]++;
-        num.fill(0, depth + 1);
-        const id = num.slice(0, depth + 1).join('.');
-        current = id;
-        const anchor = firstOfNode.has(node) ? `#${mangle(s[2])}` : '';
-        firstOfNode.add(node);
-        sections.set(id, { title: s[2], url: `https://www.gnu.org/software/bash/manual/html_node/${mangle(node)}.html${anchor}` });
-      }
-      const b = /^@btindex (.*)$/.exec(line);
-      if (b) builtins[b[1]] = current;
-    }
+    const { sections, builtins } = manualOf((file) => execFileSync('git', ['-C', dir!, 'show', `bash-5.2:${file}`], { encoding: 'utf8' }));
     for (const [id, s] of SECTIONS) assert.deepStrictEqual({ title: s.title, url: s.url }, sections.get(id), id);
-    assert.deepStrictEqual(BUILTIN_SECTIONS, builtins);
+    // (BUILTIN_SECTIONS is a table without a prototype.)
+    assert.deepStrictEqual({ ...BUILTIN_SECTIONS }, builtins);
+  });
+});
+
+/**
+ * The bash 5.3 manual, which gnu.org serves (docs/design/bash-versions.md, 5): the table keeps the numbers of bash 5.2,
+ * and every page it links to is there, at the same number. The tree of the bash-5.3 release comes from
+ * $BASH53_SOURCE_DIR (CI's bash53 job unpacks it to build bash 5.3); without it the test is skipped, and
+ * BASH_EXPLAINER_BASH53_REQUIRED=1 makes a missing one fail.
+ */
+describe('the manual table against bashref.texi of bash 5.3', function () {
+  const dir = process.env.BASH53_SOURCE_DIR;
+  before(function () {
+    if (!dir && process.env.BASH_EXPLAINER_BASH53_REQUIRED) assert.fail('BASH_EXPLAINER_BASH53_REQUIRED is set, but $BASH53_SOURCE_DIR is not');
+    if (!dir) this.skip();
+  });
+
+  it('finds every page at the same number, and every builtin in the same section', () => {
+    const { sections, builtins } = manualOf((file) => fs.readFileSync(path.join(dir!, file), 'utf8'));
+    // 6.11 is "Bash and POSIX" in 5.3, on the same page; "Bash POSIX Mode" is its subsection 6.11.2 there.
+    const renamed: Record<string, string> = { '6.11': 'Bash and POSIX' };
+    for (const [id, s] of SECTIONS) assert.deepStrictEqual(sections.get(id), { title: renamed[id] ?? s.title, url: s.url }, id);
+    assert.strictEqual(sections.get('6.11.2')?.title, 'Bash POSIX Mode');
+    // The 5.3 manual also indexes `true` and `false`, among the Bourne Shell Builtins.
+    assert.deepStrictEqual({ ...builtins }, { ...BUILTIN_SECTIONS, true: '4.1', false: '4.1' });
   });
 });

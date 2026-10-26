@@ -2,7 +2,7 @@
 
 bash 5.2 stays the reference of the explanations. The explainer can also explain a script as bash 5.3 reads and runs it. This document says where the version comes from, how it reaches the explanations and the models, which differences of 5.3 we explain, and how they are tested.
 
-Status: steps 1 (#283) and 2 of section 7 are done. Steps 3 to 7 are not started.
+Status: steps 1 (#283), 2 and 7 of section 7 are done. Steps 3 to 6 are not started.
 
 ## 1. Why
 
@@ -110,12 +110,12 @@ Left out: readline and completion changes, job notifications, messages, `$BASH` 
 - Every section the inventory needs exists in both manuals, under the same node name: Command Substitution (3.5.4) describes `${ }` and `${| }` in 5.3; Bash Variables (section 5.2), The Shopt Builtin (4.3.2), Bourne Shell Builtins (4.1) and Bash Builtins (4.2) list the new variables, options and flags; Filename Expansion (3.5.8) points to `GLOBSORT`.
 - The 5.3 manual moves "Bash POSIX Mode" from 6.11 to 6.11.2 and adds 6.11.1 "What is POSIX?". We cite 6.11 by its 5.2 number; nothing cites the new node.
 - A fact true only in 5.3 cites the same sections, and its text names the version ("bash 5.3"). If a 5.3-only node is ever needed, it gets an entry with its 5.3 number and a note that 5.2 has no such section.
-- test/manual.test.ts checks the table against the 5.2 bashref.texi (`BASH_SOURCE_DIR`). A second run against the 5.3 bashref.texi would check that every page name still exists there; that is a later step.
+- test/manual.test.ts checks the table against the 5.2 bashref.texi (`BASH_SOURCE_DIR`, a bash git checkout), and against the 5.3 one (`BASH53_SOURCE_DIR`, the tree of the release tarball, which CI's `bash53` job unpacks): every section of the table is in the 5.3 manual at the same number and on the same page, and every builtin in the same section. Two differences are listed there: 6.11 is titled "Bash and POSIX" in 5.3 (on the same page, with "Bash POSIX Mode" as 6.11.2), and the 5.3 manual also indexes `true` and `false` (4.1).
 
 ## 6. Testing
 
 - A real bash 5.3 is run as a separate program, found in `$BASH_EXPLAINER_BASH53` (a path). test/bash53.test.ts runs each case with it and with the bash 5.2 on `PATH`, and checks what we say against both: the explanation in 5.3 mode, and the issue in 5.2 mode ("bad substitution", status 1). Without the binary, the 5.3 half is skipped, as test/bash-ast.test.ts is; `BASH_EXPLAINER_BASH53_REQUIRED=1` makes a missing binary fail.
-- CI builds bash 5.3 from the release tarball (pinned by its SHA-256; from ftpmirror.gnu.org, else mirrors.kernel.org, else ftp.gnu.org, each download checked; the job has a 15-minute limit), with `./configure --without-bash-malloc && make`, in `$RUNNER_TEMP`, in a job of its own (`bash53`, like `bash-ast`), and runs test/bash53.test.ts there with `BASH_EXPLAINER_BASH53_REQUIRED=1`. The build takes about a minute. It is not cached: the repository keeps no copy of a GPL binary (6.1). Coverage does not depend on it: the 5.3 half checks bash, not new branches of src/.
+- CI builds bash 5.3 from the release tarball (pinned by its SHA-256; from ftpmirror.gnu.org, else mirrors.kernel.org, else ftp.gnu.org, each download checked; the job has a 15-minute limit), with `./configure --without-bash-malloc && make`, in `$RUNNER_TEMP`, in a job of its own (`bash53`, like `bash-ast`), and runs test/bash53.test.ts and test/manual.test.ts there with `BASH_EXPLAINER_BASH53_REQUIRED=1` (the manual test reads the tarball's bashref.texi). The build takes about a minute. It is not cached: the repository keeps no copy of a GPL binary (6.1). Coverage does not depend on it: the 5.3 half checks bash, not new branches of src/.
 - The probes of the models (test/state-probes, env-probes, status-probes…) run bash 5.2. A row about a 5.3 construct goes in test/bash53.test.ts, not in the 5.2 probe files, until the probe runners take a version.
 - test/dialect.test.ts probes `FEATURES` in the installed shells; the probes of `funsub` and `valsub` print "ok" only where the construct works (ksh93 and mksh; mksh for `${| }`; and a bash on `PATH` of a release that has it, as `SINCE` says).
 
@@ -133,4 +133,4 @@ Each step is a PR that keeps every test green and coverage at 100%.
 4. Version-gated options in the command specs (`since` on an option, read by the argument interpreter, with the issue in 5.2 mode): `source -p`, `compgen -V`, `trap -P`, `read -E`.
 5. Variables and shell options: `GLOBSORT` (and the glob examples), `BASH_TRAPSIG`, `BASH_MONOSECONDS`, `array_expand_once`, `bash_source_fullpath`.
 6. POSIX-mode and `test` differences, checked with generated cases against both versions.
-7. test/manual.test.ts against the 5.3 bashref.texi too.
+7. Done. test/manual.test.ts against the 5.3 bashref.texi too (5), in CI's `bash53` job.
