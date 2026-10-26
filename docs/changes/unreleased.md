@@ -425,7 +425,8 @@ The web page opens with a full-screen overlay: the logo, and the line `sort -u "
 
 The labels are taken from the explanation when the page is built, so they say what the panel says. The overlay covers the page while it starts; before, the page showed an empty editor and panel for that time. In full it lasts about 2 seconds on a fast connection, about a second longer than the page takes to start. After a slow start it leaves about half a second after the page is ready.
 
-- On later loads in the same browser session, on a link to a script, and with reduced motion, it is a still picture that leaves as soon as the page is ready.
+- On later loads in the same browser session and with reduced motion, it is a still picture that leaves as soon as the page is ready.
+- A link to a script (`#z=`) opens without it: the script is there from the start, also when the tab is reloaded.
 - A key, a click, a tap or the wheel ends it. A key still reaches the page.
 - It is hidden from screen readers, and nothing in it takes the focus.
 - It is not shown in `?view=panel` (the page embedded as a panel), and not without JavaScript.

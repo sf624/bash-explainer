@@ -86,12 +86,17 @@ describe('the web page: the opening', function () {
     await ctx.close();
   });
 
-  it('is still on a link to a script', async () => {
+  it('is not shown on a link to a script, nor when that tab is reloaded: the script is there from the start', async () => {
     const ctx = await firstLoad();
     const page = await ctx.newPage();
-    await page.goto(`${base}#z=AAAA`, { waitUntil: 'commit' });
-    await page.waitForSelector('html.opening-on');
-    assert.ok((await state(page)).still);
+    await page.goto(`${base}#lang=en&z=AAAA`, { waitUntil: 'commit' });
+    await page.waitForSelector('#opening', { state: 'attached' });
+    assert.deepStrictEqual(await state(page), { there: true, shown: false, whole: false, still: false, ready: false, leaving: false });
+    await ready(page);
+    // The address no longer has the link (web/share.ts); the tab keeps it, and a reload shows the script again.
+    await page.reload({ waitUntil: 'commit' });
+    await page.waitForSelector('#opening', { state: 'attached' });
+    assert.strictEqual((await state(page)).shown, false);
     await ctx.close();
   });
 
