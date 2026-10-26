@@ -154,7 +154,7 @@ describe('lists of commands in Meaning', () => {
 
   it('says where a `;` ends a list, and where a `;` or a newline is needed', () => {
     const ops = (src: string, line = 0) => meaning(src, line).filter((l) => /^ *operator ; /.test(l)).map((l) => l.trim().replace(/^operator ; — /, ''));
-    const needed = (w: string, what: string) => `End the list before \`${w}\` and wait for \`${what}\` to end (without a \`;\` or a newline here, \`${w}\` would not be read as a reserved word)`;
+    const needed = (w: string, _what: string) => `Ends the commands before \`${w}\` (without a \`;\` or a newline here, \`${w}\` would not be read as a reserved word)`;
     assert.deepStrictEqual(ops('a;'), ['End of the list: wait for `a` to end']);
     assert.deepStrictEqual(ops('if a; then b; elif c; then d; else e; fi'), [needed('then', 'a'), needed('elif', 'b'), needed('then', 'c'), needed('else', 'd'), needed('fi', 'e')]);
     assert.deepStrictEqual(ops('while a | b; do c && d; done'), [needed('do', 'the pipeline `a | b`').replace('`the pipeline `a | b``', 'the pipeline `a | b`'), needed('done', 'the AND list `c && d`').replace('`the AND list `c && d``', 'the AND list `c && d`')]);
@@ -162,9 +162,9 @@ describe('lists of commands in Meaning', () => {
     assert.deepStrictEqual(ops('case x in y) a; esac'), [needed('esac', 'a')]);
     // (After a compound command, a reserved word may follow at once.)
     assert.deepStrictEqual(ops('if [[ a ]]; then { b; }; fi'), [
-      'End the list before `then` and wait for `[[ a ]]` to end (it may be left out after a compound command)',
+      'Ends the commands before `then` (it may be left out: after a compound command, bash reads `then` as a reserved word)',
       needed('}', 'b'),
-      'End the list before `fi` and wait for `{ b; }` to end (it may be left out after a compound command)',
+      'Ends the commands before `fi` (it may be left out: after a compound command, bash reads `fi` as a reserved word)',
     ]);
     // (The `;` of the head of a `for` is the loop's.)
     assert.deepStrictEqual(ops('for x in a b; do c; done'), ['Ends the words of `for` before `do` (a `;` or a newline is needed there)', needed('done', 'c')]);
@@ -336,7 +336,7 @@ describe('lists of commands as bash runs them', () => {
       const tree = parser.parse(src);
       const tokens = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...tokens(t.children)]);
       for (const t of tokens(new Analyzer('en').explainLine(tree, 0, 'bash').items)) {
-        if (t.label !== ';' || !/^End the list before/.test(t.explanation)) continue;
+        if (t.label !== ';' || !/^(End the list|Ends the commands) before/.test(t.explanation)) continue;
         const said = /would not be read as a reserved word/.test(t.explanation) ? 'needed' : 'optional';
         const at = t.span.start.character;
         // (`else` after a word is one more word, not a syntax error: the parse differs from the one with the `;`.)

@@ -16,7 +16,7 @@ import { Lang, resolveLang } from '../src/i18n';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
 import { detectKind } from '../src/hosts/detect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { lineMarks, panelUpdate } from '../src/ui/panelView';
+import { aroundLines, lineMarks, panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
 import { editorAttributes, editorHint, isPaneKey, LineAnnouncer } from './a11y';
 import { CHANNEL, COMMIT, PR, UP, VERSION } from './build-info';
@@ -214,6 +214,7 @@ function updatePanel(): void {
     lang, explanation, file: fileName(), line, lineText: doc.lines[line] ?? '',
     choice: choice(), detected: s.detected, placement: settings['examples.placement'],
     animations: settings['panel.animations'], marks: lineMarks(problemsShown, line), web: true,
+    around: aroundLines(explanation, problemsShown, (n) => doc.lines[n] ?? ''),
   }));
 }
 

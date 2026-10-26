@@ -930,3 +930,19 @@ describe('the reading tree in the panel and in host files', () => {
     assert.ok(!lines.some((l) => /GITHUB_REF/.test(l)), lines.join('\n'));
   });
 });
+
+describe('the words of a conditional expression in the reading tree', () => {
+  it('says what each word is to its operator, and what `[[` and `]]` do', () => {
+    const r = explain('[[ -f a && $x == 1 && "$n" -eq 2 && -n $s ]]').reading!;
+    const text = (label: string, kind = 'word') => find(r, label, 'bash', kind).text;
+    assert.strictEqual(text('a'), 'The file `-f` tests');
+    assert.strictEqual(text('$x'), 'The string on the left of `==`');
+    assert.match(text('1')!, /^The pattern on the right of `==`: the left side is matched against it as a glob pattern/);
+    assert.strictEqual(text('"$n"'), 'A value `-eq` compares: evaluated as an arithmetic expression');
+    assert.strictEqual(text('$s'), 'The string `-n` tests');
+    assert.strictEqual(text('[[', 'keyword'), 'Starts the conditional expression');
+    assert.strictEqual(text(']]', 'keyword'), 'Ends the conditional expression');
+    // (As bash reads them: `==` matches a pattern, `-eq` evaluates its sides as arithmetic.)
+    assert.strictEqual(bash('x=12; [[ $x == 1* ]] && echo m; n=1+1; [[ "$n" -eq 2 ]] && echo a'), 'm\na\n');
+  });
+});

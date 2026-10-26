@@ -41,20 +41,30 @@ export const ui = {
       views: '表示', listView: '意味', treeView: '読まれ方',
       // (Prototype B) What each depth adds, the quoting notes of depth 1, and how a program's reading of a word is said.
       depth: {
-        captions: ['各部分が何をするかを、例と注記つきで表示。', 'bash の構文を追加: 予約語・演算子・リストと、単純コマンドごとの単語。',
-          '各単語を誰が解釈するかを追加: シェルか、渡された先のプログラムか。', '単語の部品を追加: クォート・展開・文字列・パターン。'],
-        keepOne: 'ステップ 1 の内容もすべて含む。', keep: 'ステップ 1〜{p} の内容もすべて含む。',
+        captions: ['各コマンドが何をするかと、各単語がそのコマンドにとって何か。',
+          'bash の構文を追加: 予約語・演算子・単純コマンドとそのコマンド名、単語の部品（クォート・展開・パターン）と、その役割・マニュアルの節。',
+          '各単語を誰が読むかを追加: bash か、渡された先のプログラム（緑の地）か。コマンド名には bash が何を実行するかを添える。'],
+        keepOne: 'ステップ 1 の内容もすべて残る。', keep: 'ステップ 1〜{p} の内容もすべて残る。',
         quotes: {
           double: 'ダブルクォートの中: 1つの単語のまま。`$` は展開される', single: 'シングルクォートの中: 1つの単語のまま、書いたとおり（何も展開されない）',
           ansi: '`$\'…\'` の中: 1つの単語のまま。`\\n` などのバックスラッシュのエスケープが置き換わる',
         },
-        readsAs: '{name} が{kind}として読む', madeUp: '（入力は仮）',
+        readsAs: '{name} が{kind}として読む', madeUp: '（入力は例）',
+        globTitle: 'グロブを試す: {glob} に一致する名前',
+        redirNote: 'bash が {name} の起動前に設定する。{name} 自身には見えない',
+        nameRow: 'コマンド名: bash が探して、引数を渡して実行する', again: '{text}（上と同じ）',
+        context: 'この行を囲む{label}（{n} 行目）',
+        more: '定義',
+        key: {
+          title: '凡例', bars: '左の線: 部分の種類', fill: '緑の地: bash ではなくプログラムが読む単語（ステップ 3）',
+          badges: '`program`: bash が PATH から見つけるファイル。`builtin`: bash に組み込まれたコマンド', problems: '警告と注意は、その単語の行に出る',
+          kinds: [['command', 'コマンド'], ['option', 'オプション'], ['argument', '引数'], ['variable', '展開'], ['operator', '構文'], ['redirect', 'リダイレクト']],
+        },
       },
       tree: {
         label: '行の各部分を誰が読むか', show: '深さ',
         // (Prototype B) The depths of the one view: their short names (the buttons) and their names.
-        steps: [['何をするか', '各部分が何をするか（例つき）'], ['構文', 'bash の構文: 予約語・演算子・リスト・単純コマンド'],
-          ['シェルかプログラムか', '各単語を誰が解釈するか: シェルか、渡された先のプログラムか'], ['単語の部品', '単語の部品: クォート・展開・文字列・パターン']],
+        steps: [['何をするか', '各コマンドが何をするか'], ['構文', 'bash の構文と単語の部品'], ['誰が読むか', '各単語を誰が読むか: bash か、プログラムか']],
         stepper: {
           group: '深さ', back: '浅く', forward: '深く',
           step: '深さ {i}/{n}：{name}', empty: 'この行では増えるものなし', jump: '深さを選ぶ',
@@ -140,20 +150,30 @@ export const ui = {
       partsOf: 'Parts of {name}', opensTab: '(opens in a new tab)', opensBrowser: '(opens in the browser)',
       views: 'View', listView: 'Meaning', treeView: 'Reading',
       depth: {
-        captions: ['What each part does, with examples and notes.', "Adds bash's syntax: reserved words, operators, lists, and each simple command with its words.",
-          'Adds who interprets each word: the shell, or the program it is passed to.', 'Adds the parts of each word: quotes, expansions, literal text and patterns.'],
-        keepOne: 'Keeps everything of step 1.', keep: 'Keeps everything of steps 1–{p}.',
+        captions: ['What each command does, and what each word means to it.',
+          "Adds bash's syntax: reserved words, operators, each simple command with its name, and the parts of each word (quotes, expansions, patterns), with their roles and manual sections.",
+          'Adds who reads each word: bash, or the program it is passed to (green fill), and what bash runs for each command name.'],
+        keepOne: 'Keeps everything from step 1.', keep: 'Keeps everything from steps 1–{p}.',
         quotes: {
           double: 'In double quotes: stays one word; `$` still expands', single: 'In single quotes: stays one word, as written (nothing expands)',
           ansi: 'In `$\'…\'`: stays one word; backslash escapes such as `\\n` are replaced',
         },
-        readsAs: '{name} reads it as {kind}', madeUp: ' · made-up input',
+        readsAs: '{name} reads it as {kind}', madeUp: ' · sample input',
+        globTitle: 'Try the glob: which names match {glob}',
+        redirNote: 'bash sets this up before {name} starts; {name} itself does not see it',
+        nameRow: 'The command name: bash looks it up and runs it with the arguments', again: '{text} (as above)',
+        context: 'The {label} around this line (line {n})',
+        more: 'definition',
+        key: {
+          title: 'Key', bars: 'Left bar: the kind of part', fill: 'Green fill: a word the program reads, not bash (step 3)',
+          badges: '`program`: a file bash finds in PATH; `builtin`: a command built into bash', problems: 'Warnings and caveats sit on the row of their word',
+          kinds: [['command', 'command'], ['option', 'option'], ['argument', 'argument'], ['variable', 'expansion'], ['operator', 'syntax'], ['redirect', 'redirection']],
+        },
       },
       tree: {
         label: 'Who reads each part of the line', show: 'Depth',
         // (Prototype B) The depths of the one view.
-        steps: [['What it does', 'what each part does, with examples'], ['Syntax', "bash's syntax: reserved words, operators, lists, simple commands"],
-          ['Shell or program', 'who interprets each word: the shell, or the program it is passed to'], ['Word parts', 'the parts of each word: quotes, expansions, literal text, patterns']],
+        steps: [['What it does', 'what each command does'], ['Syntax', "bash's syntax and the parts of each word"], ['Who reads each word', 'who reads each word: bash, or the program']],
         stepper: {
           group: 'Depth', back: 'Less detail', forward: 'More detail',
           step: 'Depth {i} of {n}: {name}', empty: 'Adds nothing on this line', jump: 'Choose a depth',

@@ -180,6 +180,8 @@
     $('reading-tree').replaceChildren();
     reading = null;
     shownItems = [];
+    shownNotes = [];
+    shownAround = [];
     measureDepths();
     dropSpacer();
     $('reading').hidden = true;
@@ -226,6 +228,9 @@
     shownRest = ex.examples ?? [];
     shownText = msg.lineText;
     shownMarks = msg.marks ?? [];
+    shownNotes = msg.notes ?? [];
+    shownAround = msg.around ?? [];
+    levelLabels = msg.levelLabels ?? {};
     measureDepths();
     drawList();
     const tree = $('tree');
@@ -235,29 +240,7 @@
       if (target instanceof HTMLElement) target.focus({ preventScroll: true });
     }
 
-    // Each note with the icon of its level (src/messages.ts, `NoteLevel`) in place of its mark, and the word that
-    // names the level in bold: the icon's shape and the word say it without the colour.
-    $('notes').replaceChildren(...(msg.notes ?? []).map((/** @type {{ level: string, label: string, body: string, refs: string[] }} */ n) => {
-      const p = document.createElement('p');
-      p.className = `note level-${n.level}`;
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '0 0 16 16');
-      svg.setAttribute('class', 'note-icon');
-      svg.setAttribute('role', 'img');
-      svg.setAttribute('aria-label', msg.levelLabels?.[n.level] ?? n.level);
-      drawIcon(svg, n.level === 'warning' ? 'warning' : 'info');
-      const text = document.createElement('span');
-      text.className = 'note-text';
-      if (n.label) {
-        const label = document.createElement('strong');
-        label.className = 'note-label';
-        label.textContent = n.label;
-        text.append(label, ' ');
-      }
-      text.append(...inline(n.body), ...refLinks(n.refs));
-      p.append(svg, text);
-      return p;
-    }));
+    // (The notes: on the row of the word each is about, the others above the rows; `drawList`.)
     $('empty').textContent = msg.emptyMessage;
     $('empty').hidden = ex.items.length > 0;
     applyView();
@@ -904,7 +887,7 @@
    * (quotes, expansions, the scripts of substitutions as bash reads them). Steps 6 to 8 add the other readers: the
    * scripts inside (a child shell), each command's reading of its arguments, and the languages.
    */
-  const STEPS = 4;
+  const STEPS = 3;
   const BASH_STEP = /** @type {Record<string, number>} */ ({
     line: 1, list: 2, andList: 2, orList: 2, pipeline: 2, command: 3, compound: 3, clause: 3, coprocess: 3, function: 3, part: 3,
     commandName: 4, aliasWord: 4, expandedName: 4, option: 4, argument: 4, assignmentArgument: 4, word: 4, name: 4,
@@ -927,7 +910,7 @@
   function applyState(/** @type {any} */ state) {
     if (!state || typeof state !== 'object') return;
     // (Prototype B: one view, and the depth the viewer chose; the old view and its eight steps are not read.)
-    if (Number.isInteger(state.depth) && state.depth >= 1 && state.depth <= 4) step = state.depth;
+    if (Number.isInteger(state.depth) && state.depth >= 1 && state.depth <= 3) step = state.depth;
     if (state.examples === 'open' || state.examples === 'closed') examplesOpen = state.examples === 'open';
   }
 
@@ -1082,79 +1065,83 @@
   // ---------------------------------------------------------------- one view with a depth (prototype B)
 
   /*
-   * Prototype B: one view, drawn in the list (`#tree`) from the reading tree (src/reading.ts), at the depth chosen.
-   * 1 What it does: each part that says what it does, with the examples and notes (and a short note on a quoted word).
-   * 2 Syntax: bash's syntax: reserved words, operators, lists, and each simple command as a row of its own, with its words.
-   * 3 Shell or program: who interprets each word: bash, or the program it is passed to ("grep reads it as an option").
-   * 4 Word parts: quotes, literal text, patterns, and the words with no text of their own.
-   * A node of the tree comes into the view at the depth of its kind (`depthOf`); before, it is passed over, its parts
-   * going to the row above. Nodes about the same text (bash's argument, its quotes, the command's operand) are one row,
-   * each saying its part: a text is said once. Each kind's general definition is said once, on its first row.
+   * Prototype B: one view, drawn in the list (`#tree`) from the reading tree (src/reading.ts), at the step chosen.
+   * 1 What it does: each command (by its name) and what it does, what it reads each word as, its redirections; the
+   *   lists, the compound commands and the conditions of `[[ ]]`.
+   * 2 Syntax: reserved words and operators, each simple command whole with its command name, and the parts of each
+   *   word (quotes, expansions, literal text, patterns), with their roles and the sections of the manual.
+   * 3 Who reads each word: bash, or the command it is passed to (a green fill), and what bash runs for each name.
+   * The rows are built once for the line, each with the step it comes in at; a row comes in no later than its parts,
+   * and an example has one place (the last thing under the row of its range), so a step deeper only adds rows and
+   * lines, and never moves a row. Nodes about the same text (bash's argument, its quotes, the command's operand) are
+   * one row, each saying its part.
    */
 
-  /** The tokens, the examples left for the end, the text and the problems of the line shown: drawn again at another depth. */
+  /** The tokens, the examples left for the end, the text, problems, notes and blocks around of the line shown. */
   let shownItems = /** @type {any[]} */ ([]);
   let shownRest = /** @type {any[]} */ ([]);
   let shownText = '';
   let shownMarks = /** @type {any[]} */ ([]);
+  let shownNotes = /** @type {any[]} */ ([]);
+  let shownAround = /** @type {any[]} */ ([]);
+  let levelLabels = /** @type {Record<string, string>} */ ({});
+  /** The rows of the line shown, at every step (`buildRows`), and the examples left for the end. */
+  let built = /** @type {{ rows: any[], rest: any[] } | null} */ (null);
   /** The outermost token of the list for each range of the line shown. */
   let tokenAt = /** @type {Map<string, any>} */ (new Map());
 
   const spanKey = (/** @type {any} */ s) => `${s.start.line}:${s.start.character}-${s.end.line}:${s.end.character}`;
   const posCmp = (/** @type {any} */ a, /** @type {any} */ b) => a.line - b.line || a.character - b.character;
   const spanCovers = (/** @type {any} */ outer, /** @type {any} */ inner) => posCmp(outer.start, inner.start) <= 0 && posCmp(inner.end, outer.end) <= 0;
-  /** The kinds of the first word of a simple command: one row with the command at depth 1. */
+  /** The kinds of the first word of a simple command. */
   const NAMES = new Set(['commandName', 'aliasWord', 'expandedName']);
   /** The kinds whose parts are parts of a word (an operator there is an escape or a glob's, not bash's syntax). */
   const WORDISH = new Set(['argument', 'assignmentArgument', 'word', 'quote', 'expansion', 'substitution', 'arithmetic', 'brace', 'commandName', 'expandedName', 'string']);
-  /** The kinds of bash's syntax: their roles come in at depth 2. */
-  const SYNTAX = new Set(['list', 'andList', 'orList', 'pipeline', 'compound', 'clause', 'coprocess', 'function', 'part', 'command', 'keyword', 'operator',
-    'comment', 'shebang', 'expression', 'redirect', 'heredoc', 'assignment', 'name', 'option']);
-  /** The roles of the words bash passes, or reads as a name: at depth 3. */
-  const WORD_ROLES = new Set(['commandName', 'aliasWord', 'expandedName', 'argument', 'assignmentArgument', 'script']);
-  /** Kinds whose own text already says what the kind is: no general definition with them. */
-  const SELF_DEFINED = new Set(['line', 'list', 'andList', 'orList', 'pipeline']);
+  /** The parts of a word, and bash's syntax: their texts come in at step 2. */
+  const PART_KINDS = new Set(['quote', 'expansion', 'substitution', 'arithmetic', 'brace', 'string', 'pattern', 'number', 'keyword', 'operator', 'name']);
   const hasText = (/** @type {any} */ n) => typeof n.text === 'string' && n.text !== '';
   const isReader = (/** @type {any} */ m) => m.layer === 'command' || m.layer === 'language';
+  /** A simple command as bash reads it (not a command another one runs). */
+  const isSimple = (/** @type {any} */ m) => m.kind === 'command' && !isReader(m);
 
-  /** The depth at which a node gets a row (or says its text). */
-  function depthOf(/** @type {any} */ n, /** @type {any} */ parent) {
-    const has = hasText(n);
-    if (n.layer === 'language') return n.kind === 'language' ? 3 : has ? 1 : 4;
-    if (n.layer === 'command') return has ? 1 : 3;
-    switch (n.kind) {
-      case 'line': return Infinity;
-      case 'script': return 3;
-      case 'keyword': return 2;
-      case 'operator': return parent && WORDISH.has(parent.kind) ? 4 : 2;
-      case 'quote': case 'string': case 'pattern': case 'number': return 4;
-      case 'commandName': case 'aliasWord': case 'comment': case 'shebang': return 1;
-      case 'command': return has ? 1 : 2;
-      case 'argument': case 'assignmentArgument': case 'expandedName': return has ? 1 : 3;
-      case 'word': case 'expansion': case 'substitution': case 'arithmetic': case 'brace': return has ? 1 : 4;
-      default: return has ? 1 : 2;
-    }
+  /** The step at which a node's own text is said. */
+  function textStep(/** @type {any} */ m, /** @type {any} */ parent) {
+    if (isReader(m)) return 1;
+    if (PART_KINDS.has(m.kind)) return 2;
+    // (A word of a conditional expression, `config.ini` in `[[ -f config.ini ]]`: the syntax of the expression.)
+    if (m.kind === 'word' && parent && (parent.kind === 'expression' || WORDISH.has(parent.kind))) return 2;
+    return 1;
   }
 
-  /** The depth at which a node's role is said. */
-  function roleDepthOf(/** @type {any} */ n, /** @type {any} */ parent) {
-    if (n.kind === 'line') return Infinity;
-    if (isReader(n) || n.kind === 'script') return 3;
-    if (n.kind === 'operator' && parent && WORDISH.has(parent.kind)) return 4;
-    if (SYNTAX.has(n.kind)) return 2;
-    if (WORD_ROLES.has(n.kind)) return 3;
-    return 4;
+  /** The source text of a range on the line shown (else the node's label). */
+  function sourceOf(/** @type {any} */ n) {
+    const sp = n.span;
+    return sp.start.line === shownLineNo && sp.end.line === shownLineNo ? shownText.slice(sp.start.character, sp.end.character) : n.label;
   }
 
-  /** A node and those about the same text under it (at depth 1, a command without a text of its own takes its name), and the other parts. */
-  function groupOf(/** @type {any} */ n, /** @type {number} */ s) {
+  /** The short note on a word in quotes (the quoting rule); none for `"$@"` and the like. */
+  function quoteNote(/** @type {any} */ q) {
+    const notes = labels.depth?.quotes;
+    if (!notes || q.label.includes('@')) return '';
+    if (q.label.startsWith("$'")) return notes.ansi;
+    if (q.label.startsWith('"')) return notes.double;
+    if (q.label.startsWith("'")) return notes.single;
+    return '';
+  }
+
+  /** "an option": the kind with its article, in English. */
+  const article = (/** @type {string} */ k) => (document.documentElement.lang === 'ja' ? k : `${/^[aeiou]/i.test(k) ? 'an' : 'a'} ${k}`);
+  /** What a kind is, short: the part of its general definition before the colon ("An argument", "引数"). */
+  const kindShort = (/** @type {string} */ about) => about.split(/[:：]/)[0];
+
+  /** A node and those about the same text under it, and the other parts in the order of the text. */
+  function groupOf(/** @type {any} */ n) {
     const members = [n];
     const rest = /** @type {{ node: any, parent: any }[]} */ ([]);
     const visit = (/** @type {any} */ x) => {
       for (const c of x.children) {
-        // (The line itself has no row: its parts are the rows at the top.)
-        const same = x.kind !== 'line' && (spanKey(c.span) === spanKey(x.span) || (s === 1 && x.kind === 'command' && !isReader(x) && !hasText(x) && NAMES.has(c.kind)));
-        if (same) {
+        // (A command's name is a row of its own, also when it is the whole command: `sort`.)
+        if (x.kind !== 'line' && spanKey(c.span) === spanKey(x.span) && !(isSimple(x) && NAMES.has(c.kind))) {
           members.push(c);
           visit(c);
         } else rest.push({ node: c, parent: x });
@@ -1173,80 +1160,60 @@
     return c ? `child:${c.process ?? 'subshell'}` : 'bash';
   }
 
-  /** The rows of a node at depth `s`: its own, or (before its depth) those of its parts. */
-  function rowsOf(/** @type {any} */ n, /** @type {any} */ parent, /** @type {number} */ s, /** @type {any} */ ctx) {
-    const { members, rest } = groupOf(n, s);
-    const depth = Math.min(...members.map((m) => depthOf(m, parent)));
-    if (depth > s) return rest.flatMap((r) => rowsOf(r.node, r.parent, s, ctx));
-    const row = makeRow(members, parent, depth, s, ctx);
-    const inner = { ...ctx, readerKey: row.readerKey, parentText: row.explanation || ctx.parentText };
-    row.children = rest.flatMap((r) => rowsOf(r.node, r.parent, s, inner));
-    return [row];
-  }
-
-  /** The source text of a range on the line shown (else the node's label). */
-  function sourceOf(/** @type {any} */ n) {
-    const sp = n.span;
-    return sp.start.line === shownLineNo && sp.end.line === shownLineNo ? shownText.slice(sp.start.character, sp.end.character) : n.label;
-  }
-
-  /** The short note on a word in quotes, said from depth 1 (the quoting rule a beginner needs); none for `"$@"` and the like. */
-  function quoteNote(/** @type {any} */ q) {
-    const notes = labels.depth?.quotes;
-    if (!notes || q.label.includes('@')) return '';
-    if (q.label.startsWith("$'")) return notes.ansi;
-    if (q.label.startsWith('"')) return notes.double;
-    if (q.label.startsWith("'")) return notes.single;
-    return '';
-  }
-
-  /** "an option": the kind with its article, in English. */
-  const article = (/** @type {string} */ k) => (document.documentElement.lang === 'ja' ? k : `${/^[aeiou]/i.test(k) ? 'an' : 'a'} ${k}`);
-
-  /** The row of the nodes `members` (about the same text) at depth `s`. */
-  function makeRow(/** @type {any[]} */ members, /** @type {any} */ parent, /** @type {number} */ depth, /** @type {number} */ s, /** @type {any} */ ctx) {
+  /**
+   * The row of node `n` (and those about the same text), with its parts; `ctx`: who reads the row above, and the
+   * command whose redirections these are. Each thing a row says has the step it comes in at.
+   */
+  function buildRow(/** @type {any} */ n, /** @type {any} */ parent, /** @type {any} */ ctx) {
     const t = labels.tree;
+    const d = labels.depth;
+    const { members, rest } = groupOf(n);
     const primary = members[0];
     const tok = tokenAt.get(spanKey(primary.span));
-    const nameNode = members.find((m) => NAMES.has(m.kind));
-    const name = members.find((m) => m.name && m.kind !== 'keyword')?.name;
-    const facets = members.map((m) => ({ m, d: depthOf(m, parent), r: roleDepthOf(m, parent) }));
-    // The row's text: the most specific one (the last reader's) among those that come in at the row's depth.
-    const main = [...facets].reverse().find((f) => hasText(f.m) && f.m.kind !== 'quote' && f.d <= s);
-    /** A text said once: the same as the row above's, or a syntax text said already, is left out. */
-    const once = (/** @type {string} */ text, /** @type {boolean} */ syntax) => {
-      if (text === ctx.parentText) return '';
-      if (syntax) {
-        if (ctx.seen.has(text)) return '';
-        ctx.seen.add(text);
-      }
-      return text;
-    };
-    const explanation = main ? once(main.m.text, ['operator', 'keyword'].includes(main.m.kind)) : '';
+    const simple = isSimple(primary);
+    const nameChild = simple ? rest.find((r) => NAMES.has(r.node.kind))?.node : undefined;
     const readerKey = readerKeyOf(members);
-    const notes = [];
-    const defs = [];
-    const roles = [];
-    let reads = /** @type {{ text: string, layer: string } | null} */ (null);
-    // The quoting rule, short, from depth 1; its full definition with the word's parts (depth 4), once.
-    const quote = members.find((m) => m.kind === 'quote');
-    if (quote) {
-      const note = quoteNote(quote);
-      if (note) notes.push(note);
-    }
     const reader = [...members].reverse().find(isReader);
     const takesOver = !!reader && readerKey !== ctx.readerKey;
-    for (const f of facets) {
-      if (f.r > s) continue;
-      const m = f.m;
+    /** @type {{ text: string, step: number }[]} */
+    const texts = [];
+    /** @type {{ text: string, step: number, cls: string }[]} */
+    const notes = [];
+    /** @type {{ text: string, layer: string, def: string, step: number }[]} */
+    const roles = [];
+    let reads = /** @type {{ text: string, layer: string } | null} */ (null);
+    // What the row says: a simple command, what its name does (its redirections say what they do); a command name
+    // under it, that it is the name (its command's row said what it does); the others, the text of each member, the
+    // reader's first. A word's quotes say their rule short (the general definition is the role's).
+    if (simple) {
+      if (nameChild && hasText(nameChild)) texts.push({ text: nameChild.text, step: 1 });
+      else if (hasText(primary) && tok?.kind !== 'redirect') texts.push({ text: primary.text, step: 1 });
+    } else if (ctx.nameOf === primary && primary.kind === 'commandName') {
+      texts.push({ text: d.nameRow, step: 2 });
+    } else {
+      const said = new Set();
+      for (const m of [...members.filter(isReader).reverse(), ...members.filter((x) => !isReader(x))]) {
+        if (!hasText(m) || m.kind === 'quote' || said.has(m.text)) continue;
+        said.add(m.text);
+        // (A command's first word, an alias or an expansion, comes in with the command's syntax.)
+        texts.push({ text: m.text, step: ctx.nameOf === primary ? 2 : textStep(m, parent) });
+      }
+    }
+    const quote = members.find((m) => m.kind === 'quote');
+    if (quote && quoteNote(quote)) notes.push({ text: quoteNote(quote), step: 2, cls: 'u-note' });
+    // A redirection of a command: bash sets it up before the command starts (`Redirection applied to …`, said once
+    // on the command's token), on the redirection's row.
+    if (primary.kind === 'redirect' && ctx.redirectsOf) notes.push({ text: d.redirNote.replaceAll('{name}', `\`${ctx.redirectsOf}\``), step: 3, cls: 'u-note' });
+    for (const m of members) {
       if (isReader(m)) {
         if (m !== reader) continue;
         const kind = m.kind === 'language' ? '' : chipOf(m);
         if (takesOver) {
-          const text = m.kind === 'language' ? t.readers.language.replace('{name}', m.reader ?? '')
-            : labels.depth.readsAs.replace('{name}', m.reader ?? '').replace('{kind}', article(kind));
-          reads = { text, layer: m.layer };
-        } else if (kind) roles.push({ text: kind, layer: m.layer, title: '' });
+          reads = {
+            text: m.kind === 'language' ? t.readers.language.replace('{name}', m.reader ?? '') : d.readsAs.replace('{name}', m.reader ?? '').replace('{kind}', article(kind)),
+            layer: m.layer,
+          };
+        } else if (kind) roles.push({ text: kind, layer: m.layer, def: '', step: 3 });
         continue;
       }
       if (m.kind === 'script') {
@@ -1254,73 +1221,119 @@
         continue;
       }
       const about = t.about[aboutKey(m)] ?? '';
-      roles.push({ text: chipOf(m), layer: m.layer === 'child' ? 'bash' : m.layer, title: about });
-      // (Each kind's general definition, once: on the first row whose role is said.)
-      const def = m.kind === 'quote' ? m.text : SELF_DEFINED.has(m.kind) && hasText(m) ? '' : about;
-      const key = m.kind === 'quote' ? `quote:${m.text}` : aboutKey(m);
-      if (def && key && !ctx.defs.has(key)) {
-        ctx.defs.add(key);
-        defs.push(def);
-      }
+      roles.push({ text: chipOf(m), layer: m.layer === 'child' ? 'bash' : m.layer, def: m.kind === 'quote' ? m.text : about, step: 2 });
+    }
+    // A row that says nothing of its own says what it is (the role's short name): every row says something.
+    if (!texts.length) {
+      const lang = primary.kind === 'language' ? (t.languages[primary.label] ?? primary.label) : '';
+      const about = t.about[aboutKey(primary)] ?? '';
+      const text = lang || (about ? kindShort(about) : chipOf(primary));
+      texts.push({ text, step: isReader(primary) ? 3 : 2 });
     }
     const lang = primary.kind === 'language' ? (t.languages[primary.label] ?? primary.label) : '';
-    const merged = !!nameNode && primary.kind === 'command';
-    const command = primary.kind === 'command' && !isReader(primary) && !merged;
-    const label = lang || (command ? sourceOf(primary) : merged ? (tok?.label ?? nameNode.label) : (tok?.label ?? primary.label));
-    const kind = command ? 'operator' : tok?.kind ?? (nameNode ? (name?.runs === 'builtin' ? 'builtin' : 'command') : roleOf(primary));
-    const refs = s >= 2 ? [...new Set(facets.filter((f) => f.r <= s).flatMap((f) => f.m.refs ?? []))] : undefined;
-    return {
-      kind, label, labelParts: lang ? [{ text: lang, placeholder: true }] : command ? undefined : tok?.labelParts, group: command ? undefined : tok?.group,
-      span: primary.span, explanation, name, value: tok?.value, refs, roles, reads, notes, defs, readerKey,
-      region: takesOver && s >= 3 ? reader.layer : '', plain: readerKey === 'bash' || readerKey.startsWith('child:'),
-      keys: new Set(members.map((m) => spanKey(m.span))), children: /** @type {any[]} */ ([]), examples: /** @type {any[] | undefined} */ (undefined),
+    const name = members.find((m) => m.name && m.kind !== 'keyword')?.name;
+    const refs = [...new Set(members.filter((m) => !isReader(m)).flatMap((m) => m.refs ?? []))];
+    const inner = {
+      readerKey, nameOf: nameChild,
+      redirectsOf: simple && tok?.kind === 'redirect' ? (nameChild ? sourceOf(nameChild) : sourceOf(primary)) : undefined,
     };
+    const row = {
+      members, span: primary.span, keys: new Set(members.map((m) => spanKey(m.span))),
+      // (A simple command is named by its name at step 1, where its name has no row of its own; whole from step 2.)
+      label: lang || (simple ? sourceOf(primary) : (tok?.label ?? primary.label)),
+      shortLabel: simple && nameChild ? sourceOf(nameChild) : '',
+      labelParts: lang ? [{ text: lang, placeholder: true }] : simple ? undefined : tok?.labelParts,
+      group: simple ? undefined : tok?.group,
+      kind: simple ? 'operator' : tok?.kind ?? (NAMES.has(primary.kind) ? (name?.runs === 'builtin' ? 'builtin' : 'command') : roleOf(primary)),
+      shortKind: simple && nameChild ? (name?.runs === 'builtin' || nameChild.name?.runs === 'builtin' ? 'builtin' : 'command') : '',
+      texts, notes, roles, reads, name, value: tok?.value, refs,
+      // (What the command reads is filled green from step 3; bash's own parts inside it are not.)
+      read: readerKey.startsWith('command:') || readerKey.startsWith('language:'),
+      children: /** @type {any[]} */ ([]), examples: /** @type {any[]} */ ([]), step: 9, forced: 9,
+    };
+    row.children = rest.map((r) => buildRow(r.node, r.parent, inner));
+    return row;
   }
 
-  /** The rows of the line shown at depth `s` (the list's tokens when there is no reading tree). */
-  function displayRows(/** @type {number} */ s) {
-    if (!reading || !labels.tree || !labels.depth) return shownItems;
-    return rowsOf(reading, null, s, { readerKey: 'bash', parentText: '', seen: new Set(), defs: new Set() });
-  }
-
-  /** Puts each token's examples on the row about its text (the outermost), else the innermost row around it; returns those left. */
-  function attachExamples(/** @type {any[]} */ rows) {
-    const rest = [...shownRest];
+  /** The rows of the line shown, with the examples on their rows, and the step each comes in at. */
+  function buildRows() {
+    if (!reading || !labels.tree || !labels.depth) return null;
+    indexTokens();
+    const rows = reading.children.map((/** @type {any} */ c) => buildRow(c, reading, { readerKey: 'bash' }));
+    // A block around the line (the `for` of a loop body), with the problems on its line, first.
+    const around = shownAround.map((a) => ({
+      members: [], span: { start: { line: a.line, character: 0 }, end: { line: a.line, character: a.text.length } }, keys: new Set(),
+      label: a.text.trim(), shortLabel: '', kind: 'keyword', shortKind: '',
+      texts: [{ text: labels.depth.context.replace('{label}', a.label).replace('{n}', String(a.line + 1)), step: 1 }],
+      notes: [], roles: [], reads: null, refs: [], read: false, children: [], examples: [], step: 1, forced: 1, around: true,
+      // (A problem's text starts with the mark of its level, which the icon stands for here.)
+      problems: a.problems.map((/** @type {any} */ p) => ({ level: p.level, label: '', body: p.text.replace(/^[⚠ⓘℹ]\uFE0F?\s*/u, ''), refs: [] })),
+    }));
+    // Each example on the row of its range, else on the deepest row of step 1 around it; examples with neither, at the end.
     const all = /** @type {{ row: any, depth: number }[]} */ ([]);
-    const walk = (/** @type {any} */ r, /** @type {number} */ d) => {
-      all.push({ row: r, depth: d });
-      r.children.forEach((/** @type {any} */ c) => walk(c, d + 1));
+    const walk = (/** @type {any} */ r, /** @type {number} */ depth) => {
+      all.push({ row: r, depth });
+      r.children.forEach((/** @type {any} */ c) => walk(c, depth + 1));
     };
     rows.forEach((r) => walk(r, 0));
-    const visit = (/** @type {any} */ tok) => {
-      if (tok.examples?.length) {
-        const key = spanKey(tok.span);
-        let target = all.find((x) => x.row.keys.has(key))?.row;
-        if (!target) {
-          let best = /** @type {{ row: any, depth: number } | undefined} */ (undefined);
-          for (const x of all) if (spanCovers(x.row.span, tok.span) && (!best || x.depth >= best.depth)) best = x;
-          target = best?.row;
-        }
-        if (target) (target.examples ??= []).push(...tok.examples);
-        else rest.push(...tok.examples);
+    const firstStep = (/** @type {any} */ r) => r.texts.some((/** @type {any} */ x) => x.step === 1);
+    const rest = [...shownRest];
+    const place = (/** @type {any} */ e) => {
+      if (!e.anchor) return rest.push(e);
+      const key = spanKey(e.anchor);
+      let target = all.find((x) => x.row.keys.has(key))?.row;
+      if (!target) {
+        let best = /** @type {{ row: any, depth: number } | undefined} */ (undefined);
+        for (const x of all) if (firstStep(x.row) && spanCovers(x.row.span, e.anchor) && (!best || x.depth >= best.depth)) best = x;
+        target = best?.row;
       }
+      if (!target) return rest.push(e);
+      target.examples.push(e);
+      target.forced = 1;
+    };
+    const visit = (/** @type {any} */ tok) => {
+      (tok.examples ?? []).forEach(place);
       tok.children.forEach(visit);
     };
     shownItems.forEach(visit);
-    return rest;
+    // A long text said again (each `|`, each command name) is said short the next times: its head, "as above".
+    const said = new Set();
+    const again = (/** @type {any} */ r) => {
+      const main = r.texts[0];
+      if (main && !r.around) {
+        const head = main.text.split(/[:：]/)[0];
+        if (said.has(main.text) && head.length <= 30 && main.text.length >= head.length + 15) main.text = labels.depth.again.replace('{text}', head);
+        else said.add(main.text);
+      }
+      r.children.forEach(again);
+    };
+    rows.forEach(again);
+    // A row comes in at the first step it says something, and no later than its parts.
+    const stepOf = (/** @type {any} */ r) => {
+      const kids = r.children.map(stepOf);
+      r.step = Math.min(r.forced, ...r.texts.map((/** @type {any} */ x) => x.step), ...kids);
+      // (A row its parts bring in early says its first text from then: every row drawn says something.)
+      if (!r.texts.some((/** @type {any} */ x) => x.step <= r.step)) r.texts[0].step = r.step;
+      return r.step;
+    };
+    rows.forEach(stepOf);
+    return { rows: [...around, ...rows], rest };
   }
 
-  /** How much each depth adds to the line shown (rows, roles and texts); a depth that adds nothing is passed over by ◁ ▷. */
+  /** How much each step adds to the line shown; a step that adds nothing is passed over by ◁ ▷. */
   function measureDepths() {
     appear = new WeakMap();
     aboutAt = new Set();
     added = new Array(STEPS).fill(0);
-    if (!reading || !labels.tree || !labels.depth) return;
-    indexTokens();
-    const count = (/** @type {any[]} */ rows) => rows.reduce((n, r) => n + 1 + r.roles.length + r.notes.length + r.defs.length + (r.reads ? 1 : 0) + (r.explanation ? 1 : 0) + count(r.children), 0);
+    built = buildRows();
+    if (!built) return;
+    const count = (/** @type {any[]} */ rows, /** @type {number} */ s) => rows.filter((r) => r.step <= s).reduce((n, r) => n + 1
+      + r.texts.filter((/** @type {any} */ x) => x.step <= s).length + r.notes.filter((/** @type {any} */ x) => x.step <= s).length
+      + r.roles.filter((/** @type {any} */ x) => x.step <= s).length + (s >= 3 && (r.reads || r.name) ? 1 : 0) + (s >= 2 && r.refs.length ? 1 : 0)
+      + count(r.children, s), 0);
     let last = 0;
     for (let s = 1; s <= STEPS; s++) {
-      const n = count(displayRows(s));
+      const n = count(built.rows, s);
       added[s - 1] = s === 1 ? n : Math.max(0, n - last);
       last = n;
     }
@@ -1337,21 +1350,66 @@
     shownItems.forEach(walk);
   }
 
+  /** The rows of step `s`, as drawn: each with the label, kind and parts it has at that step. */
+  function viewOf(/** @type {any} */ r, /** @type {number} */ s) {
+    const short = s === 1 && r.shortLabel;
+    return {
+      ...r, label: short ? r.shortLabel : r.label, kind: short ? r.shortKind : r.kind, labelParts: short ? undefined : r.labelParts,
+      children: r.children.filter((/** @type {any} */ c) => c.step <= s).map((/** @type {any} */ c) => viewOf(c, s)), problems: [...(r.problems ?? [])],
+    };
+  }
+
+  /** Puts each note of the line that is about a range on the innermost row drawn around it; returns the others. */
+  function placeNotes(/** @type {any[]} */ views) {
+    const left = [];
+    for (const n of shownNotes) {
+      let best = /** @type {{ row: any, depth: number } | undefined} */ (undefined);
+      const walk = (/** @type {any} */ r, /** @type {number} */ depth) => {
+        if (!r.around && (n.spans ?? []).some((/** @type {any} */ sp) => spanCovers(r.span, sp)) && (!best || depth >= best.depth)) best = { row: r, depth };
+        r.children.forEach((/** @type {any} */ c) => walk(c, depth + 1));
+      };
+      views.forEach((r) => walk(r, 0));
+      if (best) best.row.problems.push(n);
+      else left.push(n);
+    }
+    return left;
+  }
+
+  /** A note of the line, or a problem on a row: the icon of its level and the word that names it, then its text. */
+  function noteEl(/** @type {{ level: string, label: string, body: string, refs: string[] }} */ n, /** @type {string} */ tag = 'p', /** @type {string} */ cls = 'note') {
+    const p = document.createElement(tag);
+    p.className = `${cls} level-${n.level}`;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('class', 'note-icon');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', levelLabels[n.level] ?? n.level);
+    drawIcon(svg, n.level === 'warning' ? 'warning' : 'info');
+    const text = document.createElement('span');
+    text.className = 'note-text';
+    if (n.label) text.append(el('strong', { class: 'note-label' }, n.label), ' ');
+    text.append(...inline(n.body), ...refLinks(n.refs));
+    p.append(svg, text);
+    return p;
+  }
+
   /**
-   * A row of the one view, on a grid: the code (with its fold button and badge) in a column whose right edge is the same
-   * for every row (`alignRows`), and what it says from that edge on: its text, the notes, a kind's definition, and a
-   * quiet line with its roles and references.
+   * A row of the one view, on a grid: the code (indented by its level, with its fold button and badge) in a column
+   * of the same width on every row, and what it says from that column's edge on: its texts, notes and problems, and a
+   * line with its roles (each opens its definition) and the sections of the manual, at the same right edge.
    */
-  function uitem(/** @type {any} */ row, /** @type {string} */ path) {
+  function uitem(/** @type {any} */ row, /** @type {string} */ path, /** @type {number} */ s, /** @type {number} */ lvl) {
     const li = document.createElement('li');
     li.dataset.path = path;
-    if (row.region) li.classList.add('u-region', `l-${row.region}`);
-    else if (row.plain) li.classList.add('u-plain');
     const r = document.createElement('div');
     r.className = `row u-row kind-${row.kind}`;
-    const twisty = document.createElement(row.children.length ? 'button' : 'span');
+    r.style.setProperty('--lvl', String(lvl));
+    if (row.read && s >= 3) r.classList.add('u-read');
+    if (row.around) r.classList.add('u-around');
+    const folds = row.children.length > 0 || row.examples.length > 0;
+    const twisty = document.createElement(folds ? 'button' : 'span');
     twisty.className = 'twisty';
-    if (row.children.length) {
+    if (folds) {
       const b = /** @type {HTMLButtonElement} */ (twisty);
       b.type = 'button';
       b.setAttribute('aria-label', String(labels.partsOf ?? '{name}').replace('{name}', row.label));
@@ -1369,37 +1427,45 @@
       if (p.placeholder) label.append(el('span', { class: 'ph' }, p.text));
       else label.append(p.text);
     });
-    const tok = el('span', { class: 'u-tok' }, twisty, label, ...nameBadge(row.name));
+    const tok = el('span', { class: 'u-tok' }, twisty, label, ...(s >= 3 ? nameBadge(row.name) : []));
     const desc = el('div', { class: 'u-desc' });
-    if (row.explanation) desc.append(el('div', { class: 'text' }, ...inline(row.explanation)));
-    const also = nameAlso(row.name);
-    if (also) desc.append(also);
+    row.texts.filter((/** @type {any} */ x) => x.step <= s).forEach((/** @type {any} */ x, /** @type {number} */ i) => desc.append(el('div', { class: i ? 'text u-text2' : 'text' }, ...inline(x.text))));
+    if (s >= 3) {
+      const also = nameAlso(row.name);
+      if (also) desc.append(also);
+    }
     const value = valueLine(row.value);
     if (value) desc.append(value);
-    for (const n of row.notes) desc.append(el('div', { class: 'u-note' }, ...inline(n)));
-    for (const d of row.defs) desc.append(el('div', { class: 'u-def' }, ...inline(d)));
-    const links = refLinks(row.refs);
-    if (row.roles.length || row.reads || links.length) {
-      const roles = el('span', { class: 'u-roles' });
-      row.roles.forEach((/** @type {any} */ c, /** @type {number} */ i) => {
-        if (i) roles.append(el('span', { class: 'u-sep', 'aria-hidden': 'true' }, ' · '));
-        const e = el('span', { class: `u-role l-${c.layer}` }, c.text);
-        if (c.title) e.title = c.title;
-        roles.append(e);
+    for (const n of row.notes) if (n.step <= s) desc.append(el('div', { class: n.cls }, ...inline(n.text)));
+    for (const p of row.problems) desc.append(noteEl(p, 'div', 'u-problem'));
+    const roles = row.roles.filter((/** @type {any} */ c) => c.step <= s);
+    const reads = s >= 3 ? row.reads : null;
+    const links = s >= 2 ? refLinks(row.refs) : [];
+    if (roles.length || reads || links.length) {
+      const line = el('span', { class: 'u-roles' });
+      const defs = el('div', { class: 'u-def', hidden: '' });
+      roles.forEach((/** @type {any} */ c) => {
+        if (!c.def) return line.append(el('span', { class: `u-role l-${c.layer}` }, c.text));
+        const chip = el('button', { type: 'button', class: `u-role l-${c.layer}`, 'aria-expanded': 'false', title: labels.depth.more }, c.text);
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const open = chip.getAttribute('aria-expanded') !== 'true';
+          line.querySelectorAll('button.u-role').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+          chip.setAttribute('aria-expanded', String(open));
+          defs.replaceChildren(...(open ? inline(c.def) : []));
+          defs.hidden = !open;
+        });
+        line.append(chip);
       });
-      if (row.reads) {
-        if (row.roles.length) roles.append(el('span', { class: 'u-arrow' }, ' → '));
-        roles.append(el('span', { class: `u-reads l-${row.reads.layer}` }, row.reads.text));
+      if (reads) {
+        if (roles.length) line.append(el('span', { class: 'u-arrow', 'aria-hidden': 'true' }, '→'));
+        line.append(el('span', { class: `u-reads l-${reads.layer}` }, reads.text));
       }
-      desc.append(el('div', { class: 'u-meta' }, roles, ...links));
+      desc.append(el('div', { class: 'u-meta' }, line, ...links), defs);
     }
     r.append(tok, desc);
     li.append(r);
-    if (row.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
-    const examples = (row.examples ?? []).map((/** @type {any} */ e) => example(e, true));
-    const body = document.createElement('div');
-    body.className = 'body';
-    if (examplesFirst) body.append(...examples);
+    if (folds && collapsedKeys.has(path)) setCollapsed(li, true);
     const index = flat.length;
     flat.push({ token: row, el: r });
     r.addEventListener('mouseenter', () => focus(index));
@@ -1407,55 +1473,61 @@
     r.addEventListener('click', (e) => {
       if (selecting()) return;
       if (!(e.target instanceof Element && e.target.closest('a, button, input, textarea, select'))) {
-        if (row.children.length) toggle(li);
+        if (folds) toggle(li);
       }
-      reveal(row);
-      revealInLine(index);
+      if (!row.around) {
+        reveal(row);
+        revealInLine(index);
+      }
     });
+    const body = document.createElement('div');
+    body.className = 'body';
     if (row.children.length) {
       const ul = document.createElement('ul');
-      ul.append(...row.children.map((/** @type {any} */ c, /** @type {number} */ i) => uitem(c, `${path}.${i}`)));
+      ul.append(...row.children.map((/** @type {any} */ c, /** @type {number} */ i) => uitem(c, `${path}.${i}`, s, lvl + 1)));
       body.append(ul);
     }
-    if (!examplesFirst) body.append(...examples);
+    // (Its examples last, under its parts: in the same place at every step.)
+    for (const e of row.examples) {
+      const box = example(e.kind === 'glob' && e.anchor && labels.depth.globTitle ? { ...e, title: labels.depth.globTitle.replace('{glob}', `\`${sourceOf({ span: e.anchor, label: '' })}\``) } : e, true);
+      box.style.setProperty('--lvl', String(lvl + 1));
+      body.append(box);
+    }
     if (body.childElementCount) li.append(body);
     return li;
   }
 
   /**
-   * Puts the right edge of every row's code column at the same place in the view (a share of its width), whatever the
-   * row's depth in the tree; a code too long for its column takes the row's first line, and its text starts under it at
-   * the same edge.
+   * The code column: the same width on every row (a share of the view's). A code wider than its column takes the
+   * row's first line, and the text starts under it at the column's edge; on a narrow view every row is so.
    */
   function alignRows() {
     const tree = $('tree');
-    if (!reading || !tree.getClientRects().length) return;
-    const box = tree.getBoundingClientRect();
-    const edge = Math.max(84, Math.min(240, box.width * 0.3));
+    if (!reading || !built || !tree.getClientRects().length) return;
+    const width = tree.clientWidth;
+    const stacked = width < 520;
+    tree.classList.toggle('u-stacked', stacked);
+    tree.style.setProperty('--codew', `${Math.round(Math.max(150, Math.min(300, width * 0.37)))}px`);
     for (const r of /** @type {HTMLElement[]} */ (Array.from(tree.querySelectorAll('.u-row')))) {
-      if (!r.getClientRects().length) continue;
-      const pad = parseFloat(getComputedStyle(r).paddingLeft);
-      const col = Math.max(48, edge - (r.getBoundingClientRect().left - box.left) - pad);
-      r.style.setProperty('--tokcol', `${col}px`);
       r.classList.remove('u-long');
+      if (stacked || !r.getClientRects().length) continue;
       const tok = /** @type {HTMLElement} */ (r.querySelector('.u-tok'));
-      const last = tok.lastElementChild;
-      if (last && last.getBoundingClientRect().right - tok.getBoundingClientRect().left > col + 1) r.classList.add('u-long');
+      if (tok.scrollWidth > tok.clientWidth + 1) r.classList.add('u-long');
     }
   }
   new ResizeObserver(() => alignRows()).observe($('tree'));
 
-  /** Draws the one view at the depth chosen: its rows, the line at the top, and the examples left for the end. */
+  /** Draws the one view at the step chosen: its rows, the line at the top, the notes left, and the examples left for the end. */
   function drawList() {
     flat = [];
     editors.clear();
-    indexTokens();
-    const rows = displayRows(step);
-    const unified = !!(reading && labels.tree && labels.depth);
-    const rest = unified ? attachExamples(rows) : shownRest;
-    $('tree').replaceChildren(...rows.map((t, i) => (unified ? uitem(t, `${i}`) : item(t, `${i}`))));
-    renderLine(shownText, shownLineNo, rows, shownMarks);
-    $('examples').replaceChildren(...rest.map((e) => example(e, false)));
+    const unified = !!built;
+    const views = unified ? /** @type {any} */ (built).rows.filter((/** @type {any} */ r) => r.step <= step).map((/** @type {any} */ r) => viewOf(r, step)) : shownItems;
+    const left = unified ? placeNotes(views) : shownNotes;
+    $('tree').replaceChildren(...views.map((/** @type {any} */ t, /** @type {number} */ i) => (unified ? uitem(t, `${i}`, step, 0) : item(t, `${i}`))));
+    renderLine(shownText, shownLineNo, views.filter((/** @type {any} */ v) => !v.around), shownMarks);
+    $('notes').replaceChildren(...left.map((n) => noteEl(n)));
+    $('examples').replaceChildren(...(unified ? /** @type {any} */ (built).rest : shownRest).map((/** @type {any} */ e) => example(e, false)));
     $('main').dataset.depth = String(unified ? step : 0);
     alignRows();
   }
@@ -1484,7 +1556,7 @@
   const icon = (/** @type {string} */ text) => el('span', { class: 'tp-icon', 'aria-hidden': 'true' }, text);
   const LAYERS = ['bash', 'child', 'command', 'language'];
   // (Prototype B: the depths' tints: the meaning, the command's reading, bash's syntax, bash's reading of words.)
-  const layerOfStep = (/** @type {number} */ s) => ['depth', 'command', 'bash', 'bash'][s - 1] ?? LAYERS[0];
+  const layerOfStep = (/** @type {number} */ s) => ['depth', 'bash', 'command'][s - 1] ?? LAYERS[0];
 
   /**
    * Makes the controls (once): step back, a button per step, and step forward; where the buttons do not fit, a
@@ -1514,6 +1586,23 @@
     return { short, name, said, full: added[s - 1] || s === 1 ? said : `${said} (${t.stepper.empty})` };
   }
 
+  /** The key to the view (prototype B): the colours of the left bars, the green fill, the badges and the problems; folded. */
+  let keyOpen = false;
+  function keyEl(/** @type {any} */ k) {
+    const box = /** @type {HTMLDetailsElement} */ (el('details', { class: 'u-key' }, el('summary', {}, k.title)));
+    box.open = keyOpen;
+    box.addEventListener('toggle', () => {
+      keyOpen = box.open;
+    });
+    const bars = el('div', {}, `${k.bars}: `);
+    k.kinds.forEach((/** @type {string[]} */ [kind, name], /** @type {number} */ i) => {
+      if (i) bars.append(' · ');
+      bars.append(el('span', { class: `u-swatch kind-${kind}`, 'aria-hidden': 'true' }), name);
+    });
+    box.append(bars, el('div', {}, el('span', { class: 'u-swatch-fill', 'aria-hidden': 'true' }), k.fill), el('div', {}, ...inline(k.badges)), el('div', {}, k.problems));
+    return box;
+  }
+
   /** Draws the controls as the step is now. */
   function renderControls() {
     const t = labels.tree;
@@ -1528,7 +1617,7 @@
     const cap = document.getElementById('depth-caption');
     if (d && cap) {
       cap.hidden = !reading;
-      cap.replaceChildren(el('span', {}, d.captions[step - 1]), ...(step > 1 ? [' ', el('span', { class: 'u-keep' }, (step === 2 ? d.keepOne : d.keep).replace('{p}', String(step - 1)))] : []));
+      cap.replaceChildren(el('span', {}, d.captions[step - 1]), ...(step > 1 ? [' ', el('span', { class: 'u-keep' }, (step === 2 ? d.keepOne : d.keep).replace('{p}', String(step - 1)))] : []), ' ', keyEl(d.key));
     }
     const here = stepWords(step);
     box.querySelectorAll('button.step').forEach((b) => {
