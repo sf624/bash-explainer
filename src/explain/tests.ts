@@ -62,7 +62,15 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
       const [from, to] = testRange(e.operand);
       return [make('test', cx.s(`否定: \`${slice(from, to)}\` が偽なら真`, `Negation: true if \`${slice(from, to)}\` is false`), testTokens(cx, n, b, e.operand))];
     }
-    case 'group': return [make('operator', cx.s('括弧でまとめた式', 'Parenthesized expression'), testTokens(cx, n, b, e.inner))];
+    case 'group': {
+      // (bash 5.3 takes the truth of a group of one word from the first word of the test: `TestExpr`, `truth`.)
+      const inner = e.inner;
+      const odd = inner.type === 'word' && inner.truth !== undefined
+        ? cx.s(`。ただし bash 5.3 はここで \`${slice(inner.at, inner.at)}\` ではなく、式の最初の語 \`${slice(inner.truth, inner.truth)}\` が空でないかを調べる（bash 5.3 の不具合）`,
+          `. But bash 5.3 tests here whether the first word of the test, \`${slice(inner.truth, inner.truth)}\`, is not empty, not \`${slice(inner.at, inner.at)}\` (a bug of bash 5.3)`)
+        : '';
+      return [make('operator', cx.s('括弧でまとめた式', 'Parenthesized expression') + odd, testTokens(cx, n, b, inner))];
+    }
     case 'unary': {
       const d = unaryTestOps[words[e.op].text!];
       return [make('test', cx.s(`条件: \`${slice(e.arg, e.arg)}\` が${cx.t(d)}`, `Condition: \`${slice(e.arg, e.arg)}\` ${cx.t(d)}`), operandTokens(e.arg, isPlainWord))];

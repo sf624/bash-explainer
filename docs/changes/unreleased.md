@@ -450,6 +450,18 @@ Notes that name a line of the script name the line of the document: where a here
 - In bash 5.3 mode, a `}` right after a simple command (`${ echo a }`) is a warning (`funsubBrace`): bash reads that `}` as an argument of the command, and reports a syntax error. A `return` in `${ …; }` ends the substitution, and `local` in it is no pitfall.
 - Before, both were explained as `$( )`.
 
+### `test` and `[` in bash 5.3
+
+In a test of more than four words, bash 5.3 reads a parenthesized part of one to four words by the rules for that many words, as POSIX does for a whole test; bash 5.2 reads it by the general grammar. With `bashVersion` 5.3, the explanation follows 5.3:
+
+| Written | bash 5.3 | bash 5.2 |
+| --- | --- | --- |
+| `[ \( ! -a f \) ]` | `!` and `f` are both not empty: true | NOT (`f` exists) |
+| `[ "$a" -o \( x \) ]` | "But bash 5.3 tests here whether the first word of the test, `"$a"`, is not empty, not `x` (a bug of bash 5.3)": false when `$a` is empty | `x` is not empty: true |
+| `[ x -a \( x -a \) \) ]` | an error (`x -a` is no test of two words) | true |
+
+Checked with every list of five words over ten words, and 5,000 longer ones with a group, in bash 5.2.21 and 5.3 (test/testexpr.test.ts). The conditions the model decides (an `if` that is always true, dead code) are those both releases read alike.
+
 ### printf formats
 
 Each was checked with bash 5.2 and bash 5.3 (test/bash53.test.ts) and, for `env printf`, with coreutils.

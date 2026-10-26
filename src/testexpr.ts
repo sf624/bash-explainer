@@ -1,4 +1,5 @@
 import type { CommandSpec } from './argv/spec';
+import type { BashVersion } from './bashversion';
 import { literalContent, staticWordValue } from './staticword';
 import type { SyntaxNode } from './syntax/tree';
 
@@ -10,8 +11,11 @@ import type { SyntaxNode } from './syntax/tree';
 
 /** A parsed test. Numbers are indexes into the words; `first` / `last` of a node are the words it covers. */
 export type TestExpr =
-  /** A lone word: true if it is not empty. */
-  | { type: 'word'; at: number }
+  /**
+   * A lone word: true if it is not empty. `truth`: the word bash takes the truth from instead (bash 5.3 reads a group
+   * of one word, `( x )`, in a longer test as the first word of the whole test: 0).
+   */
+  | { type: 'word'; at: number; truth?: number }
   | { type: 'unary'; op: number; arg: number }
   | { type: 'binary'; left: number; op: number; right: number }
   | { type: 'not'; op: number; operand: TestExpr }
@@ -42,10 +46,21 @@ class Unfollowed extends Error {}
  * depends on the value of an expansion (it is then never an operator). Undefined when bash reports an error, or for a
  * `-t` without a number in a long test, which this parser does not follow.
  */
-export function parseTest(w: (string | null)[]): TestExpr | undefined {
-  const r = readTest(w);
+export function parseTest(w: (string | null)[], rules: TestRules = '5.2'): TestExpr | undefined {
+  if (rules === 'both') {
+    const [a, b] = [parseTest(w, '5.2'), parseTest(w, '5.3')];
+    return JSON.stringify(a) === JSON.stringify(b) ? a : undefined;
+  }
+  const r = readTest(w, rules === '5.3');
   return typeof r === 'object' ? r : undefined;
 }
+
+/**
+ * The bash release whose `test` reads the words, or both: what the models say (they do not take the release) holds in
+ * each. bash 5.3 reads a group of up to four words inside a longer test by the rules for that many words, as POSIX
+ * does for a whole test (docs/design/bash-versions.md, 3.2).
+ */
+export type TestRules = BashVersion | 'both';
 
 /**
  * Whether bash's `test` surely fails on the words `w` without evaluating them (status 2, with "unary operator
@@ -53,11 +68,13 @@ export function parseTest(w: (string | null)[]): TestExpr | undefined {
  * POSIX rules for one to four arguments, nor of bash's grammar beyond. Only when every word is known: an expansion
  * may give an operator, or no word or several.
  */
-export function testFails(w: readonly (string | null)[]): boolean {
-  return w.every((x) => x !== null) && readTest(w) === 'error';
+export function testFails(w: readonly (string | null)[], rules: TestRules = '5.2'): boolean {
+  if (rules === 'both') return testFails(w, '5.2') && testFails(w, '5.3');
+  return w.every((x) => x !== null) && readTest(w, rules === '5.3') === 'error';
 }
 
-function readTest(w: readonly (string | null)[]): TestExpr | 'error' | 'unfollowed' | undefined {
+/** `groups53`: a group of up to four words in a longer test is read by its count, as bash 5.3 does (`TestRules`). */
+function readTest(w: readonly (string | null)[], groups53 = false): TestExpr | 'error' | 'unfollowed' | undefined {
   const n = w.length;
   let pos = 0;
   const is = (i: number, s: string) => w[i] === s;
@@ -103,6 +120,12 @@ function readTest(w: readonly (string | null)[]): TestExpr | 'error' | 'unfollow
     }
     if (is(p, '(')) {
       pos++;
+      const counted = groups53 ? byCount(pos) : undefined;
+      if (counted) {
+        if (!is(pos, ')')) return fail();
+        pos++;
+        return group(p, counted);
+      }
       const inner = or();
       if (!is(pos, ')')) return fail();
       pos++;
@@ -125,6 +148,33 @@ function readTest(w: readonly (string | null)[]): TestExpr | 'error' | 'unfollow
     }
     pos++;
     return word(p);
+  };
+  /**
+   * bash 5.3: the words of a group from `from`, read by their count when the `)` that closes it comes within four
+   * words (the first word is not looked at for a parenthesis). One word is true when the first word of the whole test
+   * is not empty: bash 5.3 reads that one, not the word in the group.
+   */
+  const byCount = (from: number): TestExpr | undefined => {
+    let count = 1;
+    let k = 1;
+    for (; from + k < n; k++) {
+      if (is(from + k, ')')) count--;
+      else if (is(from + k, '(')) count++;
+      if (count === 0) break;
+    }
+    if (from + k >= n || k > 4) return undefined;
+    // (`-t` in a long test takes a number or nothing, which is not followed, as in `term`.)
+    if (w.slice(from, from + k).includes('-t')) throw new Unfollowed();
+    const at = pos;
+    switch (k) {
+      case 1: pos += 1; return { type: 'word', at, truth: 0 };
+      case 2: pos += 2; return two(at);
+      case 3: pos += 3; return three(at);
+      default:
+        if (is(at, '!')) { pos += 4; return not(at, three(at + 1)); }
+        if (is(at, '(') && is(at + 3, ')')) { pos += 4; return group(at, two(at + 1)); }
+        return or();
+    }
   };
   const general = (): TestExpr => {
     pos = 0;
@@ -193,13 +243,13 @@ export interface CommandTest {
  * `bashRules`: the words are read by bash's builtin. Other shells differ where POSIX leaves the result unspecified
  * (dash: `[ a -a ]` is 1, `test a -o` is 0, where bash fails with 2), so `malformed` is said only for bash.
  */
-export function commandTest(spec: CommandSpec, args: SyntaxNode[], bashRules: boolean): CommandTest {
+export function commandTest(spec: CommandSpec, args: SyntaxNode[], bashRules: TestRules | false): CommandTest {
   const closer = spec.closingOperand;
   const last = args[args.length - 1];
   const value = last && staticWordValue(last);
   const read = (words: SyntaxNode[], unclosed: boolean): CommandTest => {
-    const test = testOfWords(words);
-    return { words, unclosed, ...(test ? { test } : {}), malformed: bashRules && !unclosed && !test && testFails(words.map(fieldText)) };
+    const test = testOfWords(words, bashRules || '5.2');
+    return { words, unclosed, ...(test ? { test } : {}), malformed: !!bashRules && !unclosed && !test && testFails(words.map(fieldText), bashRules) };
   };
   if (!closer) return read(args, false);
   if (value === closer) return { ...read(args.slice(0, -1), false), close: last };
@@ -223,11 +273,11 @@ function wordText(x: SyntaxNode): string | null {
 }
 
 /** The words of a `[ ]` or of the arguments of `test`, read as one expression. */
-export function testOfWords(leaves: SyntaxNode[]): BracketTest | undefined {
+export function testOfWords(leaves: SyntaxNode[], rules: TestRules = '5.2'): BracketTest | undefined {
   // (Each node is a whole word: an argument of the command.)
   // `\(` and `\)` are the parentheses of a group: after quote removal they are `(` and `)`.
   const words: BracketWord[] = leaves.map((x) => ({ nodes: [x], text: wordText(x) }));
-  const expr = parseTest(words.map((w) => w.text));
+  const expr = parseTest(words.map((w) => w.text), rules);
   return expr && { words, expr };
 }
 
