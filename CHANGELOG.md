@@ -106,6 +106,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A control character in a value or an example (a newline, a tab, an escape) is a small box with its name (`LF`, `TAB`, `ESC`) in the panel, the web page and the hover, and `<LF>`, `<TAB>`, `<ESC>` in the command line and Markdown. Before, it was a Unicode control picture (`␊`, `␛`), which is an empty box where no font has it (Consolas and Segoe UI do not).
 - Fewer wrong notes that a condition is always true or false, or that code never runs: after a recursive call, after `enable -n exit`, and in scripts with `[ -v "$1" ]`, `${x@P}`, `compgen -W`, `fc -s` or another way to change variables unseen.
 - The panel and the web page work with the keyboard and a screen reader: the Meaning view folds with buttons, a problem opens with Enter, `F6` goes between the editor and the explanation, and the editor says how to leave it. Before, folding and the Problems list needed a mouse.
+- The web page's tab icon is legible in a dark browser theme.
 
 ## 0.8.0
 
