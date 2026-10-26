@@ -160,17 +160,19 @@ describe('Bash Explainer in VS Code', function () {
   it("reads the theme's colours for the panel, also where the theme extensions are in another extension host (a remote window)", async () => {
     const ctx = { extension: extension() } as unknown as vscode.ExtensionContext;
     const wb = vscode.workspace.getConfiguration('workbench');
-    // `activeColorTheme` follows the setting a moment after `update` returns, and while it still has the kind of the
-    // theme before (high contrast), the preferred high contrast theme is read instead (CI, flaky): wait for the kind.
-    const setTheme = async (theme: string | undefined, kind: vscode.ColorThemeKind) => {
+    // `activeColorTheme` follows the setting a moment after `update` returns. While it still has the high contrast
+    // kind of the theme before, `activeThemeName` reads the preferred high contrast theme instead (CI, flaky): after
+    // leaving a high contrast theme, wait for the kind to leave it. (Only that: VS Code 1.85 here never changes the
+    // kind, so waiting for the kind of the new theme would not end.)
+    const setTheme = async (theme: string | undefined) => {
+      const wasHighContrast = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.HighContrast;
       await wb.update('colorTheme', theme, vscode.ConfigurationTarget.Global);
-      await until(`the colour theme kind ${vscode.ColorThemeKind[kind]}`, () => vscode.window.activeColorTheme.kind, (k) => k === kind);
+      if (wasHighContrast && theme !== 'Default High Contrast') await until('the colour theme to leave high contrast', () => vscode.window.activeColorTheme.kind, (k) => k !== vscode.ColorThemeKind.HighContrast);
     };
     try {
       // The default theme, and other default ones (named alike in VS Code 1.85): here from their extension, and with no extension from our copy.
-      const kinds = [[undefined, vscode.ColorThemeKind.Dark], ['Visual Studio Light', vscode.ColorThemeKind.Light], ['Default High Contrast', vscode.ColorThemeKind.HighContrast]] as const;
-      for (const [theme, kind] of kinds) {
-        await setTheme(theme, kind);
+      for (const theme of [undefined, 'Visual Studio Light', 'Default High Contrast']) {
+        await setTheme(theme);
         const here = await themeRoleColours(ctx, true);
         const remote = await themeRoleColours(ctx, true, []);
         assert.ok(here && typeof here === 'object' && here.string, `${theme}: ${JSON.stringify(here)}`);
@@ -179,7 +181,7 @@ describe('Bash Explainer in VS Code', function () {
         if (vscode.version === copied.vscode) assert.deepStrictEqual(remote, here, theme);
       }
       // Another theme VS Code ships: here only. Its name otherwise, for the panel's notice.
-      await setTheme('Monokai', vscode.ColorThemeKind.Dark);
+      await setTheme('Monokai');
       assert.strictEqual(typeof (await themeRoleColours(ctx, true)), 'object');
       assert.strictEqual(await themeRoleColours(ctx, true, []), 'Monokai');
     } finally {
