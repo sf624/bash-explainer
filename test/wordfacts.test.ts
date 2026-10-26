@@ -278,9 +278,9 @@ describe('word facts: an unset variable under set -u', () => {
     ['set -u\ncommand -v cat < "$f"', 1, 'f', true, S],
     ['set -u\nexec cat < "$f"', 1, 'f', true, S],
     // (With `set -e`, the command's failure stops the script, unless it is ignored there.)
-    ['set -euo pipefail\ncat < "$f"', 1, 'f', true, `${C}, and \`set -e\` stops the script`],
-    ['set -eu\nshopt -s inherit_errexit\nx=$(cat < "$f")', 2, 'f', true, `${C}, and \`set -e\` stops the subshell running it`],
-    ['set -eu\n( cat < "$f" )', 1, 'f', true, `${C}, and \`set -e\` stops the subshell running it`],
+    ['set -euo pipefail\ncat < "$f"', 1, 'f', true, `${C}, and \`set -e\` stops the script on that failure`],
+    ['set -eu\nshopt -s inherit_errexit\nx=$(cat < "$f")', 2, 'f', true, `${C}, and \`set -e\` stops the subshell running it on that failure`],
+    ['set -eu\n( cat < "$f" )', 1, 'f', true, `${C}, and \`set -e\` stops the subshell running it on that failure`],
     // (Without inherit_errexit, `set -e` is off in `$( )`.)
     ['set -eu\nx=$(cat < "$f")', 1, 'f', true, C],
     ['set -euo pipefail\nif cat < "$f"; then :; fi', 1, 'f', true, C],
@@ -292,7 +292,8 @@ describe('word facts: an unset variable under set -u', () => {
       assert.ok(text, `${src}: (none)`);
       assert.deepStrictEqual(more, []);
       // (Only the command fails, and the shell goes on: a caveat.)
-      assert.ok(text.startsWith(`${exits === C ? 'ⓘ Caveat' : '⚠ Pitfall'}: \`${v}\` is not set here: with \`set -u\` on, bash fails with "${v}: unbound variable" and ${exits}${environment ? ` (unless \`${v.replace(/\[.*/, '')}\` comes from the environment)` : ''}. `), text);
+      const stops = /\`set -e\` stops (the script|the subshell running it) on/.exec(exits)?.[1];
+      assert.ok(text.startsWith(`${exits === C ? 'ⓘ Caveat' : '⚠ Pitfall'}: \`${v}\` is not set here${stops ? `, so ${stops} stops` : ''}: with \`set -u\` on, bash fails with "${v}: unbound variable" and ${exits}${environment ? ` (unless \`${v.replace(/\[.*/, '')}\` comes from the environment)` : ''}. `), text);
       assert.ok(text.endsWith(fix ? `write \`\${${v}:-}\`` : 'Set it before this line'), text);
     });
   }

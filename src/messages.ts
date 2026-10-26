@@ -165,10 +165,16 @@ export const MESSAGES = {
     `in POSIX mode a function cannot have the name of a special builtin: bash stops the script here with the error "is a special builtin" (only some paths before here turn POSIX mode on). Use another name`]),
 
   // ---------------------------------------------------------------- arithmetic and status (6.5, 4.3.1)
-  'postfix-increment-status': pitfall<{ v: string; errexit?: boolean }>(['6.5', '4.3.1'], ({ v }) => [
+  // (`errexit`: `set -e` surely stops the shell there, the warning: the text leads with that and why. `stops`: the shell
+  // it stops, from the status model; none means the script.)
+  'postfix-increment-status': pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown' }>(['6.5', '4.3.1'], ({ v, errexit, stops }) => errexit ? [
+    `ここでは \`set -e\` が効いているので、\`${v}\` が 0 のときこの行で${stops === 'subshell' ? 'サブシェルが終わる' : stops === 'unknown' ? 'これを実行するシェルが止まる' : 'スクリプトが止まる'}。\`((${v}++))\` の値は増やす前の値で、0 は失敗の終了ステータスになるため。\`((++${v}))\` か \`${v}=$((${v}+1))\` か \`((${v}++)) || true\` と書く`,
+    `\`set -e\` is on here, so ${stops === 'subshell' ? 'the subshell ends' : stops === 'unknown' ? 'the shell running it stops' : 'the script stops'} at this line when \`${v}\` is 0: \`((${v}++))\` gives the value before the increment, and 0 is a failure status. Write \`((++${v}))\`, \`${v}=$((${v}+1))\` or \`((${v}++)) || true\``] : [
     `\`((${v}++))\` の値は増やす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）。\`((++${v}))\` や \`${v}=$((${v}+1))\` なら 0 になる`,
     `the value of \`((${v}++))\` is the value before the increment, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops). \`((++${v}))\` and \`${v}=$((${v}+1))\` give status 0`], undefined, postfixLevel),
-  'postfix-decrement-status': pitfall<{ v: string; errexit?: boolean }>(['6.5', '4.3.1'], ({ v }) => [
+  'postfix-decrement-status': pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown' }>(['6.5', '4.3.1'], ({ v, errexit, stops }) => errexit ? [
+    `ここでは \`set -e\` が効いているので、\`${v}\` が 0 のときこの行で${stops === 'subshell' ? 'サブシェルが終わる' : stops === 'unknown' ? 'これを実行するシェルが止まる' : 'スクリプトが止まる'}。\`((${v}--))\` の値は減らす前の値で、0 は失敗の終了ステータスになるため`,
+    `\`set -e\` is on here, so ${stops === 'subshell' ? 'the subshell ends' : stops === 'unknown' ? 'the shell running it stops' : 'the script stops'} at this line when \`${v}\` is 0: \`((${v}--))\` gives the value before the decrement, and 0 is a failure status`] : [
     `\`((${v}--))\` の値は減らす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）`,
     `the value of \`((${v}--))\` is the value before the decrement, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops)`], undefined, postfixLevel),
 
@@ -298,9 +304,9 @@ export const MESSAGES = {
   // (`quoted`: the word with only its expansions in quotes, so a glob or a tilde in it still works: `"$DIR"/*`; none
   // when quotes would change it, as in `${x:-*.txt}`.)
   // (`destroys`: the command deletes or overwrites what the word names, `rm`, `mv`, `cp`: a wrong name cannot be undone.)
-  'unquoted-variable-as-path': pitfall<{ bare: string; quoted?: string; destroys?: boolean }>(['3.5.7', '3.5.8'], ({ bare, quoted }) => [
-    `\`${bare}\` をクォートしていないので、値に空白や \`*\` があると別々の引数に分かれたり、ファイル名に展開されたりします${quoted ? `。\`${quoted}\` と書きます` : ''}`,
-    `\`${bare}\` is not quoted, so a value with spaces or \`*\` is split into several arguments or expanded to file names${quoted ? `. Write \`${quoted}\`` : ''}`], undefined, ({ destroys }) => (destroys ? 'warning' : 'info')),
+  'unquoted-variable-as-path': pitfall<{ bare: string; quoted?: string; destroys?: boolean }>(['3.5.7', '3.5.8'], ({ bare, quoted, destroys }) => [
+    `\`${bare}\` をクォートしていないので、値に空白や \`*\` があると別々の引数に分かれたり、ファイル名に展開されたりする${destroys ? '。このコマンドは意図しないファイルを削除したり上書きしたりすることになる' : ''}${quoted ? `。\`${quoted}\` と書く` : ''}`,
+    `\`${bare}\` is not quoted, so a value with spaces or \`*\` is split into several arguments or expanded to file names${destroys ? ', and this command then deletes or overwrites files it should not' : ''}${quoted ? `. Write \`${quoted}\`` : ''}`], undefined, ({ destroys }) => (destroys ? 'warning' : 'info')),
   'for-over-ls-output': caveat<{ cmd: string }>(['3.5.7'], ({ cmd }) => [
     `\`$(${cmd} …)\` の結果は空白や改行で区切られるので、空白を含むファイル名が壊れます。${cmd === 'ls' ? '`for f in *.txt` のようにグロブを使います' : '`find … -print0 | while IFS= read -r -d \'\' f` や `find -exec` を使います'}`,
     `the output of \`$(${cmd} …)\` is split on spaces and newlines, so file names with spaces break. ${cmd === 'ls' ? 'Use a glob, as in `for f in *.txt`' : "Use `find … -print0 | while IFS= read -r -d '' f` or `find -exec`"}`]),
@@ -319,11 +325,11 @@ export const MESSAGES = {
   }>(['4.3.1', '3.5.3'], ({ v, name, exits, shell, environment, errexit, fix }) => {
     const message = `${v}: ${shell === 'bash' ? 'unbound variable' : 'parameter not set'}`;
     return [
-      `ここでは \`${v}\` に値が設定されていない。\`set -u\` が有効なので、${shell === 'other' ? '読むとエラーになり' : `${shell} は \`${message}\` のエラーを出し`}、`
-        + `${exits === 'script' ? 'スクリプトが終了する' : exits === 'subshell' ? 'これを実行するサブシェルが終了する' : exits === 'shell' ? 'これを実行するシェルが終了する' : `このコマンドは実行されず、終了ステータス 1 で失敗する${errexit ? `。\`set -e\` により${errexit === 'script' ? 'スクリプト' : 'これを実行するサブシェル'}も終了する` : ''}`}`
+      `ここでは \`${v}\` に値が設定されていない${errexit ? `ので、${errexit === 'script' ? 'スクリプト' : 'これを実行するサブシェル'}が終了する` : ''}。\`set -u\` が有効なので、${shell === 'other' ? '読むとエラーになり' : `${shell} は \`${message}\` のエラーを出し`}、`
+        + `${exits === 'script' ? 'スクリプトが終了する' : exits === 'subshell' ? 'これを実行するサブシェルが終了する' : exits === 'shell' ? 'これを実行するシェルが終了する' : `このコマンドは実行されず、終了ステータス 1 で失敗する${errexit ? `。\`set -e\` がこの失敗で${errexit === 'script' ? 'スクリプト' : 'これを実行するサブシェル'}を止める` : ''}`}`
         + `${environment ? `（\`${name}\` が環境変数から来るときを除く）` : ''}。${fix ? `設定されていないことがあるなら \`${fix}\` と書く` : 'この前で値を設定しておく'}`,
-      `\`${v}\` is not set here: with \`set -u\` on, ${shell === 'other' ? 'reading it is an error, and' : `${shell} fails with "${message}" and`} `
-        + `${exits === 'script' ? 'the script exits' : exits === 'subshell' ? 'the subshell running it exits' : exits === 'shell' ? 'the shell running it exits' : `the command does not run: it fails with status 1${errexit ? `, and \`set -e\` stops ${errexit === 'script' ? 'the script' : 'the subshell running it'}` : ''}`}`
+      `\`${v}\` is not set here${errexit ? `, so ${errexit === 'script' ? 'the script' : 'the subshell running it'} stops` : ''}: with \`set -u\` on, ${shell === 'other' ? 'reading it is an error, and' : `${shell} fails with "${message}" and`} `
+        + `${exits === 'script' ? 'the script exits' : exits === 'subshell' ? 'the subshell running it exits' : exits === 'shell' ? 'the shell running it exits' : `the command does not run: it fails with status 1${errexit ? `, and \`set -e\` stops ${errexit === 'script' ? 'the script' : 'the subshell running it'} on that failure` : ''}`}`
         + `${environment ? ` (unless \`${name}\` comes from the environment)` : ''}. ${fix ? `If it may be unset, write \`${fix}\`` : 'Set it before this line'}`];
   }, undefined,
   // (Only the command fails, and the shell goes on: an unset read in a redirection of a program, `cat < "$f"` with `set -u`.)

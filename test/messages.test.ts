@@ -47,6 +47,11 @@ describe('the message catalog', () => {
       assert.strictEqual(fact('en', id, { v: 'i', errexit: true }).level, 'warning', id);
       assert.strictEqual(fact('en', id, { v: 'i' }).level, 'info', id);
     }
+    // (The warning leads with the consequence and the reason: `set -e` is on, so the shell stops there.)
+    assert.strictEqual(fact('en', 'postfix-increment-status', { v: 'count', errexit: true }).text, '⚠ Pitfall: `set -e` is on here, so the script stops at this line when `count` is 0: `((count++))` gives the value before the increment, and 0 is a failure status. Write `((++count))`, `count=$((count+1))` or `((count++)) || true`');
+    assert.strictEqual(fact('ja', 'postfix-increment-status', { v: 'count', errexit: true, stops: 'subshell' }).text, '⚠ 落とし穴: ここでは `set -e` が効いているので、`count` が 0 のときこの行でサブシェルが終わる。`((count++))` の値は増やす前の値で、0 は失敗の終了ステータスになるため。`((++count))` か `count=$((count+1))` か `((count++)) || true` と書く');
+    assert.match(fact('en', 'postfix-decrement-status', { v: 'n', errexit: true, stops: 'unknown' }).text, /^⚠ Pitfall: `set -e` is on here, so the shell running it stops at this line when `n` is 0/);
+    assert.match(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true }).text, /file names, and this command then deletes or overwrites files it should not$/);
     assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true }).level, 'warning');
     assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f' }).level, 'info');
     const unset = { v: 'x', name: 'x', shell: 'bash', environment: false } as const;
