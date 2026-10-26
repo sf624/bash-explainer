@@ -38,8 +38,8 @@ jobs:
       # Cascadia Code is the font the recording sets; the emoji font draws emoji in the explanations.
       - name: Install a virtual display, ffmpeg and fonts
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb ffmpeg fonts-cascadia-code fonts-noto-color-emoji
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends xvfb ffmpeg fonts-cascadia-code fonts-noto-color-emoji
 
       - name: Download VS Code
         id: vscode
