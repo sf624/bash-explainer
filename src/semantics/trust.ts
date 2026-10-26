@@ -574,9 +574,10 @@ class Scan {
           if (m[3] === '+=' && !m[2]) this.appended(name, o, w);
         } else if (!(builtin === 'export' || builtin === 'readonly') || !plain) {
           // (`local x`, `declare x` in a function: a new variable, with no value; `export x` and `readonly x` change no
-          // value. Outside a function, or with -g, `declare x` keeps the value it had, maybe one from the environment:
+          // value. Outside a function, or with -g or -I, `declare x` keeps the value it had, maybe one from the environment:
           // `declare n; (( n ))` runs `n='y=5'` from there. A trap's action may run in any function, or none.)
-          const local = w.fn !== undefined && (!w.foreign || w.now) && !on.includes('g') && builtin !== 'export' && builtin !== 'readonly';
+          // (`declare -I x` makes the local variable start with the value of the one it hides.)
+          const local = w.fn !== undefined && (!w.foreign || w.now) && !on.includes('g') && !on.includes('I') && builtin !== 'export' && builtin !== 'readonly';
           this.write(name, w, false, local ? 'none' : 'kept');
         }
       }
@@ -692,12 +693,13 @@ class Scan {
         for (const r of parse.roles) if (r.role.role === 'operand') this.arithText(args[r.word].text, w);
         return;
       case 'compgen': {
-        // `compgen -W list` expands the list in the shell (`compgen -W '$((u=2))'` sets `u`); `-F f` runs a function.
-        // (The word being completed is only matched.)
+        // `compgen -W list` expands the list in the shell (`compgen -W '$((u=2))'` sets `u`); `-F f` runs a function
+        // in the shell, and `-C cmd` a command. (The word being completed is only matched; `-G`, `-X`, `-P` and `-S`
+        // take their words as text.)
         for (const r of parse.roles) {
           const v = staticWordValue(args[r.word]);
           if (r.role.role === 'operand') continue;
-          if (v === undefined || r.role.role === 'unknown-option'
+          if (v === undefined || r.role.role === 'unknown-option' || (r.role.role === 'value' && ['-F', '-C'].includes(r.role.of))
             || (r.role.role === 'value' && r.role.of === '-W' && !quietPrompt(v))) this.blindFor('`compgen` expands a word list or runs a command the model does not read');
         }
         return;
