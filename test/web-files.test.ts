@@ -501,6 +501,7 @@ describe('the web page: opening a file and saving the script', function () {
     await until('the kind', () => kindOf(page), (k) => k === 'File: Dockerfile');
     await page.locator('#share').click();
     const url = await until('the link', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.startsWith(`${base}#`));
+    assert.strictEqual(await page.evaluate('location.hash'), '');
     await ctx.close();
     const other = await open([NO_PICKERS]);
     await other.page.goto(url);

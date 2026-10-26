@@ -87,6 +87,7 @@ describe('the web page: the menu and the settings sheet', function () {
     await page.locator('#menu-open').tap();
     await page.locator('#menu-share').tap();
     await until('the copied link', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.startsWith(`${base}#`));
+    assert.strictEqual(await page.evaluate('location.hash'), '');
     // ...and says so in a toast, inside the screen.
     const toast = (await page.locator('#status').boundingBox())!;
     assert.ok(toast.x >= 16 && toast.x + toast.width <= 390 - 16 + 0.5, JSON.stringify(toast));

@@ -68,4 +68,31 @@ export function removeStored(key: string): boolean {
 /** Removes everything the page keeps. Without storage there is nothing to remove. */
 export function clearStoredData(): void {
   for (const key of Object.values(STORAGE_KEYS)) removeStored(key);
+  try {
+    sessionStorage.removeItem(SESSION_LINK);
+  } catch {
+    // Nothing kept, nothing to remove.
+  }
+}
+
+/** What a tab keeps for itself (sessionStorage), not for the next visit: the fragment of the link the tab was opened with. */
+const SESSION_LINK = 'bash-explainer-shared-link';
+
+/** The link fragment this tab kept; null when none, or when session storage is unavailable. */
+export function readSessionLink(): string | null {
+  try {
+    return sessionStorage.getItem(SESSION_LINK);
+  } catch {
+    return null;
+  }
+}
+
+/** Keeps the link fragment for a reload of this tab; false when session storage refuses. */
+export function writeSessionLink(fragment: string): boolean {
+  try {
+    sessionStorage.setItem(SESSION_LINK, fragment);
+    return true;
+  } catch {
+    return false;
+  }
 }

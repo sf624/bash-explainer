@@ -33,7 +33,7 @@ import { showProblems } from './problem-list';
 import { CopyState, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
 import { SettingsDialog } from './settings-dialog';
-import { inflate, readHash, scriptParams } from './share';
+import { takeLinkFromAddress, inflate, readHash, scriptParams } from './share';
 import { clearStoredData, readStored, removeStored, STORAGE_KEYS, writeStored } from './storage';
 import { TEXT } from './text';
 
@@ -652,7 +652,6 @@ for (const [id, href] of [['banner-compare', 'compare.html'], ['back', './']]) {
 on('share', 'click', async () => {
   const params = await scriptParams(lang, kind, editor.text);
   const url = `${location.origin}${location.pathname}#${params}`;
-  window.history.replaceState(null, '', url);
   await navigator.clipboard.writeText(url);
   status(TEXT[lang].shared);
 });
@@ -891,4 +890,6 @@ async function start(): Promise<void> {
   if (mode.panel) toParent({ type: 'bx-ready', channel: CHANNEL, version: VERSION, pr: PR, commit: COMMIT });
 }
 
+// A link pasted into the address bar of the open page: off the address bar at once, read by the next reload.
+window.addEventListener('hashchange', () => void takeLinkFromAddress());
 void start();
