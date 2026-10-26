@@ -1,4 +1,6 @@
 import { interpret, type ArgvParse } from './argv/interpret';
+import { downloadsTo, readsScriptFromStdin } from './argv/query';
+import type { CommandSpec, OptionSpec } from './argv/spec';
 import { argWordFor } from './argv/words';
 import type { Shell } from './dialect';
 import { lookupCommand } from './dict/aliases';
@@ -6,7 +8,7 @@ import { Lang } from './i18n';
 import { type ExecEnv, runsString, slotEnvs } from './semantics/env';
 import { resolveName } from './semantics/names';
 import type { StateModel } from './semantics/state';
-import { childrenOnRows, descendants, field, fields } from './syntax/tree';
+import { childrenOnRows, descendants, field, fields, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 import { staticWordValue, unquoteWord } from './staticword';
@@ -137,7 +139,8 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
 
 /** The codes of the style checks, as diagnostics show them (`# bash-explainer disable=<code>`). */
 export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-no-space' | 'brace-close-no-separator'
-  | 'rm-empty-variable-root' | 'read-without-r' | 'redirect-in-bracket' | 'bracket-close-in-word' | 'and-or-in-bracket';
+  | 'rm-empty-variable-root' | 'read-without-r' | 'redirect-in-bracket' | 'bracket-close-in-word' | 'and-or-in-bracket'
+  | 'download-run-by-shell' | 'trap-goes-on';
 
 /**
  * The level of each style check (src/messages.ts, `NoteLevel`): `warning` when the line breaks as written, `info` when
@@ -146,7 +149,7 @@ export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-n
 export const STYLE_LEVELS: Record<StyleCode, NoteLevel> = {
   'bracket-no-space': 'warning', 'assignment-with-spaces': 'warning', 'brace-no-space': 'warning', 'brace-close-no-separator': 'warning',
   'rm-empty-variable-root': 'warning', 'read-without-r': 'info', 'redirect-in-bracket': 'warning', 'bracket-close-in-word': 'warning',
-  'and-or-in-bracket': 'warning',
+  'and-or-in-bracket': 'warning', 'download-run-by-shell': 'warning', 'trap-goes-on': 'info',
 };
 
 /** A style check found: its code, the node it is about, its level and its note. */
@@ -186,6 +189,62 @@ function hasStaticText(n: SyntaxNode): boolean {
 function runsCommand(model: StateModel, name: string, at: SyntaxNode, shell: Shell | undefined): boolean {
   const r = resolveName(model, name, at, { shell, command: true, program: (p) => !!lookupCommand(p) });
   return r.kind !== 'file' || r.known || !!r.sourced;
+}
+
+/** A command a command runs that is a builtin or a program (not a function or an alias of that name), with its spec and the parse of its words. */
+interface SpecRun { run: RunCommand; name: string; spec: CommandSpec; parse: ArgvParse; values: (string | undefined)[] }
+
+/** The commands the simple command `n` runs (`runCommands`) that are builtins or programs the dictionary knows. */
+function specRuns(n: SyntaxNode, model: StateModel, shell: Shell | undefined): SpecRun[] {
+  const out: SpecRun[] = [];
+  for (const run of runCommands(n, model, shell)) {
+    const spec = run.name === undefined ? undefined : lookupCommand(run.name);
+    if (!spec) continue;
+    const kind = resolveName(model, run.nameWord.text, run.nameWord, { shell, command: true, ...(run.env ? { env: run.env } : {}) }).kind;
+    if (kind !== 'builtin' && kind !== 'file') continue;
+    const parse = interpret(spec, run.args.map(argWordFor(model.shell)), { name: run.name, lookup: lookupCommand });
+    out.push({ run, name: run.name!, spec, parse, values: run.args.map((w) => staticWordValue(w)) });
+  }
+  return out;
+}
+
+/** Whether a redirection of the command `n` takes its standard output elsewhere (`> f`, `&> f`, `>&2`; not `2> f`). */
+function stdoutRedirected(n: SyntaxNode): boolean {
+  return redirectionsOf(n).some((r) => r.type === 'file_redirect' && /^(1?>|&>)/.test(r.text));
+}
+
+/** Whether a redirection or a here-document gives the command `n` another standard input (`< f`, `<<EOF`, `<<<`). */
+function stdinRedirected(n: SyntaxNode): boolean {
+  return redirectionsOf(n).some((r) => r.type === 'heredoc_redirect' || r.type === 'herestring_redirect' || (r.type === 'file_redirect' && /^0?</.test(r.text)));
+}
+
+/**
+ * The command that `n`, a statement, runs to download something to its standard output (`curl URL`, `wget -qO- URL`,
+ * `sudo curl URL`; `CommandSpec.downloads`), with the option of its spec that writes the download to a file instead.
+ */
+function downloader(n: SyntaxNode | undefined, model: StateModel, shell: Shell | undefined): { name: string; option: string } | undefined {
+  if (n?.type !== 'command' || stdoutRedirected(n)) return undefined;
+  const run = specRuns(n, model, shell).find((r) => downloadsTo(r.spec, r.parse, r.values) === 'stdout');
+  if (!run) return undefined;
+  const writes = (o: OptionSpec) => [o.value ?? []].flat().some((v) => v.io === 'write');
+  return { name: run.name, option: run.spec.options!.find(writes)!.names[0] };
+}
+
+/** The one command a substitution runs (`$(curl URL)`, `"$(curl URL)"`, `<(curl URL)`), if it is all the word holds. */
+function substitutedCommand(w: SyntaxNode, kind: 'command_substitution' | 'process_substitution'): SyntaxNode | undefined {
+  const sub = w.type === kind ? w : w.type === 'string' && w.namedChildren.length === 1 && w.text === `"${w.namedChildren[0].text}"` ? w.namedChildren[0] : undefined;
+  if (sub?.type !== kind) return undefined;
+  const stmts = sub.namedChildren.filter((c) => c.type !== 'comment');
+  return stmts.length === 1 ? stmts[0] : undefined;
+}
+
+/** The signals that end a script by default, which a trap's action catches, with their numbers: a hangup, Ctrl+C, `kill`. */
+const STOPS = { HUP: 1, INT: 2, TERM: 15 } as const;
+
+/** A signal as `trap` reads it (`INT`, `SIGINT`, `int`, `2`): its name without `SIG`, in capitals, when it is one of `STOPS`. */
+function signalName(v: string | undefined): keyof typeof STOPS | undefined {
+  const name = v === undefined ? undefined : /^\d+$/.test(v) ? Object.entries(STOPS).find(([, k]) => k === Number(v))?.[0] : v.toUpperCase().replace(/^SIG/, '');
+  return name !== undefined && name in STOPS ? name as keyof typeof STOPS : undefined;
 }
 
 /** The style checks whose node starts on a line from `from` to `to`, in one walk of the tree, with the model of the tree and its shell. */
@@ -240,9 +299,119 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
           add('read-without-r', n, '`-r` を付けないと、入力のバックスラッシュ（`\\`）がエスケープとして消えます。ふつうは `read -r` と書きます',
             'without `-r`, backslashes in the input are taken as escapes and lost. Usually write `read -r`');
         }
+        downloadRun(n);
+        trapGoesOn(n);
         break;
       }
     }
+  };
+
+  /**
+   * A shell that runs what a download prints, unseen: from a pipe (`curl URL | sh`, `wget -qO- URL | sudo bash -s`), a
+   * process substitution (`bash <(curl URL)`, `source <(curl URL)`) or a string (`sh -c "$(curl URL)"`, `eval "$(curl URL)"`).
+   * What reads its script from stdin, or runs a file or a string, comes from the specs (`OperandAlt.stdin`, `io: 'run'`,
+   * a slot that runs a string), and what downloads to stdout too (`CommandSpec.downloads`).
+   */
+  const downloadRun = (n: SyntaxNode) => {
+    const runs = specRuns(n, model, shell);
+    // (`runner`: what runs the file instead, `source` for a string this shell runs.)
+    const say = (at: SyntaxNode, sh: string, dl: { name: string; option: string }, stream: boolean, runner = sh) => {
+      const fix = s(`先にファイルへダウンロードし（\`${dl.name} ${dl.option} ファイル …\`）、中身を確かめてから実行します（\`${runner} ファイル\`）`,
+        `Download it to a file first (\`${dl.name} ${dl.option} FILE …\`), check it, then run the file (\`${runner} FILE\`)`);
+      add('download-run-by-shell', at, stream
+        ? `\`${sh}\` は \`${dl.name}\` がダウンロードするスクリプトを、誰も読まないまま、届いた行から順に実行します。ダウンロードが途中で切れても、届いた行（途中で切れた最後の行も）は実行されます。${fix}`
+        : `\`${sh}\` は \`${dl.name}\` がダウンロードするスクリプトを、誰も読まないまま実行します。ダウンロードが途中で切れても、届いた分が実行されます。${fix}`,
+      stream
+        ? `\`${sh}\` runs the script \`${dl.name}\` downloads without anyone reading it, each line as it arrives: if the download breaks off, the lines that came still run, the last one perhaps cut short. ${fix}`
+        : `\`${sh}\` runs the script \`${dl.name}\` downloads without anyone reading it: if the download breaks off, the part that came still runs. ${fix}`);
+    };
+    // `curl URL | bash`: the stage before gives the shell its script. (Not `bash < f`: stdin is the file.)
+    const p = n.parent;
+    if (p?.type === 'pipeline' && !stdinRedirected(n)) {
+      const sh = runs.find((r) => readsScriptFromStdin(r.spec, r.parse, r.values));
+      const dl = sh && downloader(p.namedChildren[p.namedChildren.indexOf(n) - 1], model, shell);
+      if (sh && dl) return say(n, sh.name, dl, true);
+    }
+    for (const r of runs) {
+      for (const { word, role } of r.parse.roles) {
+        const w = r.run.args[word];
+        // `bash <(curl URL)`, `. <(curl URL)`: a file it runs, read from a pipe as the download goes.
+        const piped = role.role === 'operand' && role.spec?.io === 'run' ? substitutedCommand(w, 'process_substitution') : undefined;
+        // `sh -c "$(curl URL)"`, `eval "$(curl URL)"`: the string is the whole download. (Not a trap's, run later.)
+        const slot = role.role === 'command' && runsString(role.slot) && !role.slot.later ? role.slot : undefined;
+        const dl = downloader(piped ?? (slot && substitutedCommand(w, 'command_substitution')), model, shell);
+        if (dl) return say(w, r.name, dl, !!piped, slot?.run === 'current-shell' ? (shell === undefined || shell === 'bash' ? 'source' : '.') : r.name);
+      }
+    }
+  };
+
+  /**
+   * `trap 'echo bye' INT` (or TERM, HUP): when the signal comes, bash runs the action and goes on where it was, so the
+   * script does not stop. Only for an action whose text is known, and which surely does not end the shell
+   * (`endsShell`). Not `trap '' INT` (ignore it), nor `trap - INT` (the default again).
+   */
+  const trapGoesOn = (n: SyntaxNode) => {
+    const r = specRuns(n, model, shell)[0];
+    // (Its own words: `sudo trap` runs no builtin.)
+    const at = r?.parse.roles.find(({ role }) => role.role === 'command' && role.slot.later);
+    if (!at) return;
+    const w = r.run.args[at.word];
+    const signals = [...new Set(r.parse.roles.flatMap(({ word, role }) => (role.role === 'operand' && role.spec?.name === 'SIGNAL' ? [signalName(r.values[word])] : [])))]
+      .filter((x) => x !== undefined);
+    if (!signals.length) return;
+    const script = model.script([w], slotEnvs(model.env(n), r.parse, r.spec, r.run.args, lookupCommand).get(w)!);
+    if ('why' in script || script.text === '' || endsShell(script.tree.root, new Set()) !== false) return;
+    const code = (x: keyof typeof STOPS) => `\`exit ${128 + STOPS[x]}\``;
+    const named = signals.map((x) => (x === 'INT' ? s('`INT`（Ctrl+C）', '`INT` (Ctrl+C)') : `\`${x}\``));
+    const list = s(named.join('・'), named.length > 1 ? `${named.slice(0, -1).join(', ')} or ${named.at(-1)}` : named[0]);
+    const exits = signals.length === 1
+      ? s(`${code(signals[0])}（128 + \`${signals[0]}\` の番号 ${STOPS[signals[0]]}）`, `${code(signals[0])} (128 + ${STOPS[signals[0]]}, the number of \`${signals[0]}\`)`)
+      : s(`\`exit\` と 128 + シグナルの番号をシグナルごとの \`trap\` で書きます（${signals.map((x) => `\`${x}\` は ${code(x)}`).join('、')}）`,
+        `\`exit\` and 128 + the signal's number, in a trap of each signal (${signals.map((x) => `${code(x)} for \`${x}\``).join(', ')})`);
+    // (A space between code and Japanese, not after a closing parenthesis.)
+    const sp = (t: string) => (t.endsWith('`') ? ' ' : '');
+    add('trap-goes-on', w, `${list}${sp(list)}を受けると、bash はこの処理を実行したあと、スクリプトを中断したところから続けるので、スクリプトは止まりません。止めるには、処理の最後に ${exits}${signals.length === 1 ? `${sp(exits)}を書きます` : ''}`,
+      `when ${list} comes, bash runs this action and then goes on with the script from where it was, so the script does not stop. To stop it, end the action with ${exits}`);
+  };
+
+  /**
+   * Whether the commands under `root` (a trap's action, a function body) may end the shell: `exit`, `exec cmd`, a
+   * `kill` of `$$`, or a function that does (`seen`: the bodies on the way). Undefined when it cannot be told: a name
+   * that is neither a builtin, a function of the script nor a program the dictionary knows (a function of a file
+   * `source` reads), or an alias.
+   */
+  const endsShell = (root: SyntaxNode, seen: Set<SyntaxNode>): boolean | undefined => {
+    let unknown = false;
+    for (const c of descendants(root, ['command'])) {
+      const nameWord = field(c, 'name');
+      if (!nameWord) continue;
+      const r = resolveName(model, nameWord.text, nameWord, { shell, command: true, program: (p) => !!lookupCommand(p) });
+      if (r.kind === 'function') {
+        // (A function the name runs is defined in the script.)
+        /* c8 ignore next */
+        for (const def of model.definitions.functions.get(nameWord.text) ?? []) {
+          // (A definition being typed may have no body yet: `f()  f; }`.)
+          const body = field(def, 'body');
+          if (!body || seen.has(body)) continue;
+          seen.add(body);
+          const ends = endsShell(body, seen);
+          if (ends !== false) return ends;
+        }
+        continue;
+      }
+      if (r.kind === 'alias' || (r.kind === 'file' && !r.known)) {
+        unknown = true;
+        continue;
+      }
+      // (A builtin, or a program the dictionary knows.)
+      const spec = lookupCommand(nameWord.text)!;
+      const a = args(c);
+      // (`kill -s INT $$`, `kill 0`: the signal again, to the shell itself or its process group.)
+      if (spec.ends === 'shell' || (commandName(c) === 'kill' && a.some((w) => /\$\$|\$\{\$\}|\$\{?BASHPID\b|^-?0$/.test(w.text)))) return true;
+      // `exec cmd`: the command replaces the shell (`exec 2>&1` alone does not).
+      if (interpret(spec, a.map(argWordFor(model.shell)), { lookup: lookupCommand }).roles.some(({ role }) => role.role === 'command' && role.slot.replacesShell)) return true;
+    }
+    return unknown ? undefined : false;
   };
 
   /** `rm -r` with these words: the first that removes from the root when a variable in it is empty. */

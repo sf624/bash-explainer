@@ -206,7 +206,7 @@ function declarationSpec(name: string, flags: Record<string, Text>, options: Nam
 const SOURCE_OPTIONS: OptSpec[] = [
   ['-p', 'bash 5.3: ファイルを `$PATH` ではなく、指定したコロン区切りのディレクトリから探す（カレントディレクトリは、空の要素があるときだけ）', 'bash 5.3: look for the file in the given directories, separated by colons, instead of `$PATH` (the current directory only for an empty entry)', 'arg since:5.3'],
 ];
-const SOURCE_OPERANDS = args(operand('FILE', '読み込むファイル', 'file to source'), operand('ARG', 'そのファイルに渡す引数（実行中は $1, $2…になる）', 'arguments passed to it (they are $1, $2… while it runs)'));
+const SOURCE_OPERANDS = args(operand('FILE', '読み込むファイル', 'file to source', { io: 'run' }), operand('ARG', 'そのファイルに渡す引数（実行中は $1, $2…になる）', 'arguments passed to it (they are $1, $2… while it runs)'));
 
 /** The signals `kill` knows by name (`-TERM`, `-SIGTERM`), as Linux and the BSDs name them. */
 const SIGNALS = 'HUP|INT|QUIT|ILL|TRAP|ABRT|BUS|FPE|KILL|USR1|SEGV|USR2|PIPE|ALRM|TERM|STKFLT|CHLD|CONT|STOP|TSTP|TTIN|TTOU|URG|XCPU|XFSZ|VTALRM|PROF|WINCH|IO|PWR|SYS|EMT|INFO|POLL|CLD|IOT';

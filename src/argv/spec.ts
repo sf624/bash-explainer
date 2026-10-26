@@ -166,6 +166,13 @@ export interface CommandSpec {
    * ones given, with no operand. (What a command prints made of its words, as echo, is `prints`.)
    */
   layouts?: LayoutAlt[];
+  /**
+   * It downloads what the URLs among its operands name, and writes it to its standard output (`stdout`: curl) or to a
+   * file named after each URL (`file`: wget). An option value with `io: 'write'` writes it to the file the value
+   * names instead, `-` being the standard output (`curl -o f`, `wget -O -`); an option of `elsewhere` writes it to a
+   * file it names itself, or fetches nothing to print (`curl -O`, `wget --spider`).
+   */
+  downloads?: { to: 'stdout' | 'file'; elsewhere: string[] };
 }
 
 /** The layouts of output that src/examples/layouts.ts makes up. */
@@ -356,12 +363,21 @@ export interface OldStyleSpec {
  * What a command does with a file a word names, which the worked examples follow (src/examples/source.ts): `input`,
  * it reads the data it works on from it, instead of its standard input (`sort FILE`, `jq FILTER FILE`, `xargs -a
  * FILE`); `read`, it reads something else from it (a script, `sed -f FILE`; a variable, `jq --rawfile NAME FILE`);
- * `write`, it writes its output to it, not to its standard output (`sort -o FILE`, `uniq IN OUT`; not `tee FILE`, which copies it there).
+ * `write`, it writes its output to it, not to its standard output (`sort -o FILE`, `uniq IN OUT`; not `tee FILE`, which copies it there);
+ * `run`, it runs the commands the file holds, as a script of its own (`bash FILE`, `source FILE`).
  */
-export type IoUse = 'input' | 'read' | 'write';
+export type IoUse = 'input' | 'read' | 'write' | 'run';
 
 /** One way to read the operands: it applies when `when` holds and the pattern fits. */
-export interface OperandAlt { when?: Condition; pattern: OperandSpec[] }
+export interface OperandAlt {
+  when?: Condition;
+  pattern: OperandSpec[];
+  /**
+   * `script`: under this alternative, the command reads the script it runs from its standard input, unless an operand
+   * with `io: 'run'` names a file other than `-` (`bash`, `sh -s -- a`; not `bash file`, nor `bash -c '…'`).
+   */
+  stdin?: 'script';
+}
 
 export interface OperandSpec {
   /** 'SOURCE', 'DEST', 'DURATION'. */

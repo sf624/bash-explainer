@@ -43,16 +43,17 @@ describe('documents without VS Code', () => {
   it('checks for the forced shell first, then the detected one', () => {
     const text = '#!/bin/sh\n[[ -f x ]] && echo y';
     const detected = detectShell(text, 'x.sh');
-    assert.deepStrictEqual(documentIssues(script(text), 'en', { detected }).map((i) => i.code), ['dbracket']);
-    assert.deepStrictEqual(documentIssues(script(text), 'en', { forced: 'bash', detected }), []);
+    // (It is also the last command of a script run as a program: `script-last-test-returns-status`.)
+    assert.deepStrictEqual(documentIssues(script(text), 'en', { detected }).map((i) => i.code), ['dbracket', 'script-last-test-returns-status']);
+    assert.deepStrictEqual(documentIssues(script(text), 'en', { forced: 'bash', detected }).map((i) => i.code), ['script-last-test-returns-status']);
     assert.ok(documentIssues(script(text), 'en', { detected })[0].fix);
   });
 
   it('leaves out ignored codes and codes disabled in the file', () => {
     const text = '#!/bin/sh\n[[ -f x ]] && echo -e y';
     const detected = detectShell(text, 'x.sh');
-    assert.deepStrictEqual(documentIssues(script(text), 'en', { detected }, ['echoE']).map((i) => i.code), ['dbracket']);
-    const disabled = '#!/bin/sh\n# bash-explainer disable=dbracket\n[[ -f x ]] && echo -e y';
+    assert.deepStrictEqual(documentIssues(script(text), 'en', { detected }, ['echoE', 'script-last-test-returns-status']).map((i) => i.code), ['dbracket']);
+    const disabled = '#!/bin/sh\n# bash-explainer disable=dbracket,script-last-test-returns-status\n[[ -f x ]] && echo -e y';
     assert.deepStrictEqual(documentIssues(script(disabled), 'en', { detected }).map((i) => i.code), ['echoE']);
   });
 

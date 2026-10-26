@@ -106,6 +106,9 @@ export const MESSAGES = {
   'function-last-test-stops-script': pitfall<{ name: string; line: number }>(['3.3', '3.7.5', '4.3.1'], ({ name, line }) => [
     `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、\`set -e\` により行 ${line} の呼び出しでスクリプトが止まる。\`if …; then …; fi\` と書くか、最後に \`return 0\` を置く`,
     `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status and \`set -e\` stops the script at the call on line ${line}. Write \`if …; then …; fi\`, or end the function with \`return 0\``]),
+  'script-last-test-returns-status': caveat<{ left: string }>(['3.7.5', '3.8'], ({ left }) => [
+    `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗すると、スクリプトはその終了ステータス（0 以外）で終わり、呼び出し元（CI や \`make\`、\`./script && next\`）には失敗に見えます。\`if …; then …; fi\` と書くか、最後に \`exit 0\` を置きます`,
+    `this is the last command of the script, so when \`${left}\` fails, the script ends with its non-zero status, which its caller (CI, \`make\`, \`./script && next\`) sees as a failure. Write \`if …; then …; fi\`, or end the script with \`exit 0\``]),
 
   // ---------------------------------------------------------------- functions and what runs instead (3.3, 3.7.2)
   'keyword-needs-separator': failure<{ kw: string }>(['3.2.5.1', '3.2.5.2'], ({ kw }) => [
@@ -319,6 +322,9 @@ export const MESSAGES = {
   'for-over-unquoted-args': caveat<{ value: string }>(['3.4.2', '3.5.7'], ({ value }) => [
     `\`${value}\` をクォートしないと、空白を含む引数が分かれてしまいます。\`for a in "$@"\`（または \`for a\` だけ）と書きます`,
     `unquoted \`${value}\` splits arguments that contain spaces. Write \`for a in "$@"\` (or just \`for a\`)`]),
+  'array-joined-in-assignment': caveat<{ v: string; op: string; word: string; args: boolean; list: string; string: string }>(['3.4', '3.4.2', '6.7'], ({ v, op, word, args, list, string }) => [
+    `\`${v}${op}${word}\` では${args ? '引数' : '要素'}が空白で区切られて1つの文字列につながり、\`${v}\` はただの文字列になります（空白を含む${args ? '引数' : '要素'}は元に戻せません）。別々に残すには配列にして \`${v}${op}${list}\` と書き、1つの文字列にするつもりなら \`${v}${op}${string}\` と書きます`,
+    `\`${v}${op}${word}\` joins the ${args ? 'arguments' : 'elements'} into one string, separated by spaces: \`${v}\` is a plain string, and ${args ? 'arguments' : 'elements'} with spaces cannot be told apart again. To keep them apart, assign an array: \`${v}${op}${list}\`; if one string is meant, write \`${v}${op}${string}\``]),
   'unquoted-variable-in-test': caveat<{ bare: string; zsh?: boolean }>(['3.5.7'], ({ bare, zsh }) => zsh ? [
     `\`[ ]\` の中の \`${bare}\` をクォートしないと、zsh では空白で分かれはしませんが、値が空のときは引数ごと消えるので条件式が壊れます（\`[ -n $x ]\` は空でも真になります）。\`"${bare}"\` と書きます`,
     `unquoted \`${bare}\` inside \`[ ]\` is not split in zsh, but an empty value drops the word, which breaks the test (an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``] : [

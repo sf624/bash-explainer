@@ -104,6 +104,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `nounset-unbound`, when a shell exits | Under `set -u`, the script (or the subshell) stops there, every time; also when only the command fails and `set -e` then stops the script. |
 | Style: `bracket-no-space`, `assignment-with-spaces`, `brace-no-space`, `brace-close-no-separator`, `redirect-in-bracket`, `bracket-close-in-word`, `and-or-in-bracket` | The line does not do what it says, every time (`[ a > b ]` also writes a file `b`). |
 | Style: `rm-empty-variable-root` | With an empty variable, `rm -r` deletes from the root. |
+| Style: `download-run-by-shell` | A script nobody read runs, as far as it arrived: damage that cannot be undone (`curl … \| sh`, `sh -c "$(curl …)"`). |
 | Dialect: `unsupported` | The construct fails in the target shell. |
 
 ### Caveats (information)
@@ -112,7 +113,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | --- | --- |
 | `declaration-masks-status` | A failure in `$( )` goes unnoticed. |
 | `pipefail-missing`, `dockerfile-pipefail-missing` | A failure before the last command of a pipeline goes unnoticed. |
-| `function-last-test-returns-status` | Only the script's exit status is wrong, and only when the test fails. |
+| `function-last-test-returns-status`, `script-last-test-returns-status` | Only the script's exit status is wrong, and only when the test fails. |
 | `posix-special-function-name-maybe` | Only on the paths that turn POSIX mode on. |
 | `postfix-increment-status`, `postfix-decrement-status`, when `set -e` is not surely on there | Only when the value is 0, and only the status. |
 | `extglob-maybe-on`, `extglob-maybe-on-trap` | A syntax error only on some paths, or if the signal comes early. |
@@ -121,10 +122,12 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `function-not-imported-sh` | Only where sh is dash (Debian, Ubuntu). |
 | `unmatched-glob-runs-once` | Only when nothing matches, and the body then gets a name that is no file: a command given it fails, or creates a file of that name; nothing is deleted. |
 | `for-over-ls-output`, `for-over-unquoted-args` | Only names or arguments with spaces (or glob characters) are split. |
+| `array-joined-in-assignment` | Only arguments or elements with spaces cannot be told apart again (`a=$@`). |
 | `unquoted-variable-as-path` given to another command (`cat`, `cd`, `chmod`…) | Only values with spaces or glob characters; the command fails or acts on another file, which can be undone. |
 | `unquoted-variable-in-test` | Only an empty value or one with spaces breaks the test. |
 | `nounset-unbound`, when only the command fails | A redirection of a program (`cat < "$f"`): that command fails with status 1, and the script goes on. |
 | Style: `read-without-r` | Only input with a backslash. |
+| Style: `trap-goes-on` | Only when the signal comes, and often meant: the script goes on after the action (`trap 'echo bye' INT`). |
 | Dialect: `behaviour` | The construct works, differently, in some shells ("Portability"). |
 
 ## Changes from the prototype
