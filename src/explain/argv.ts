@@ -119,7 +119,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             if (!letter.value) return [own];
             const lit = literalContent(a);
             const text = (lit ? lit.text : a.text).slice(letter.value.attached);
-            return [own, span(a, letter.value.attached!, -1, 'argument', cx.s(`\`${letter.flag}\` の値`, `Value for \`${letter.flag}\``), text)];
+            return [own, { ...span(a, letter.value.attached!, -1, 'argument', cx.s(`\`${letter.flag}\` の値`, `Value for \`${letter.flag}\``), text), valueFor: letter.flag }];
           });
           const letterTokens = parts.filter((p) => p.kind === 'option');
           const style = spec.oldStyle!.style ? cx.t(spec.oldStyle!.style) : cx.s('旧式のオプション（ハイフンなし）', 'Old-style options (no dash)');
@@ -282,6 +282,7 @@ function letterParts(cx: Explainer, a: SyntaxNode, l: ArgRole, spec: CommandSpec
   // The value ends where its text ends, not at the closing quote (`-f='X${Package}'`: the label is `X${Package}`).
   const raw = span(a, value.attached!, lit && val ? lit.text.length : -1, 'argument', '', '');
   raw.label = lit && val ? val : a.text.slice(raw.span.start.character - a.startPosition.column);
+  raw.valueFor = flag;
   if (value.spec?.how === 'attached-only') {
     // `-i.bak`: the rest of the word is the value. In `-pie` that makes `e` the value, not `-e`.
     const trap = /^[a-zA-Z]/.test(val) && spec.options?.some((o) => o.names.includes('-' + val[0]))
@@ -324,6 +325,7 @@ function valueToken(cx: Explainer, v: SyntaxNode, role: ValueRole, disables: boo
     t.explanation = cx.s(`\`${flag}\` の${name}`, `${name[0].toUpperCase()}${name.slice(1)} for \`${flag}\``) + (role.index === 0 ? cx.s('（フィルタでは `$` を付けて使う）', ' (use it as `$name` in the filter)') : '');
   }
   t.explanation += splicedNote(cx, role);
+  t.valueFor = flag;
   return t;
 }
 
@@ -670,7 +672,8 @@ function positional(cx: Explainer, a: SyntaxNode, desc: string | undefined, lang
     if (emb) return cx.tok(a, 'argument', desc!, emb.tokens);
     const brace = braceWord(cx, a);
     const base = brace ?? word(cx, a);
-    if (!desc) return base;
+    // (A word that is only a tilde expansion is still an operand the command reads: bash's token is under it.)
+    if (!desc) return base.kind === 'expansion' && !brace ? cx.tok(a, 'argument', cx.s(`文字列 \`${a.text}\``, `Word \`${a.text}\``), [base]) : base;
     if (brace) return cx.tok(a, 'argument', desc, [brace]);
     const tl = tilde(cx, a);
     // (Tildes after `=` and `:` come as a word with them as its children.)
