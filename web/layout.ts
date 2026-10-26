@@ -137,7 +137,8 @@ export function setUpProblems(
   // When storage refuses, the choice lasts until the page is closed.
   const store = () => writeStored(STORAGE_KEYS.problems, JSON.stringify(saved));
   // Without a stored choice the list starts folded on a phone (it would take much of the editor) and open elsewhere.
-  const isCollapsed = () => saved.collapsed ?? narrow.matches;
+  // (Prototype: folded to its status strip by default at every width.)
+  const isCollapsed = () => saved.collapsed ?? true;
   const max = () => Math.max(LIST_MIN, pane.clientHeight - EDITOR_MIN);
   const clamp = (v: number) => Math.round(Math.min(max(), Math.max(LIST_MIN, v)));
   const height = () => (saved.height === undefined ? box.getBoundingClientRect().height : clamp(saved.height));
