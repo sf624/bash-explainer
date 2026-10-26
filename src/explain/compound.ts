@@ -71,6 +71,9 @@ function headSemicolon(cx: Explainer, n: SyntaxNode): Token | undefined {
     ? cx.s('`(( ))` の3つの式（初期化・条件・更新）の区切り', 'Separates the three expressions of `(( ))`: start, test and step')
     : p.type === 'c_style_for_statement'
       ? cx.s(`\`${body}\` の前で \`(( ))\` を終える（\`))\` の後では省いてもよい）`, `Ends the \`(( ))\` before \`${body}\` (it may be left out after \`))\`)`)
+      // (`for x in a do echo; done`: `do` is one of the words, and the note says why bash stops.)
+      : strayKeyword(p)
+        ? cx.s(`\`${kids[0].type}\` の単語の並びを終える。その前の \`do\` も単語の1つ`, `Ends the words of \`${kids[0].type}\`; the \`do\` before it is one of the words`)
       : kids.some((c) => c.type === 'in')
         ? cx.s(`\`${body}\` の前で \`${kids[0].type}\` の単語の並びを終える（ここには \`;\` か改行が必要）`, `Ends the words of \`${kids[0].type}\` before \`${body}\` (a \`;\` or a newline is needed there)`)
         : cx.s(`\`${body}\` の前で \`${kids[0].type}\` の名前を終える`, `Ends the name of \`${kids[0].type}\` before \`${body}\``);
