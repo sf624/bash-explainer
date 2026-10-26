@@ -1,6 +1,6 @@
 # Trust as a strict allow-list
 
-Status: built (2026-10-26): steps 1 to 4 done (section 6); step 5, the other documents, is left. Values in Meaning, decided conditions and dead code rest on the trust of src/semantics/trust.ts ([semantics.md](semantics.md), 4.14; [expansion-values.md](expansion-values.md), 3). This page turns its default around. Before, a construct the scan did not recognise was taken to change nothing. Now every construct is looked up in a table (src/semantics/allow.ts), and a construct that is not in the table changes anything. A new hole then gives no value, instead of a wrong one.
+Status: built (2026-10-26): steps 1 to 5 done (section 6). Values in Meaning, decided conditions and dead code rest on the trust of src/semantics/trust.ts ([semantics.md](semantics.md), 4.14; [expansion-values.md](expansion-values.md), 3). This page turns its default around. Before, a construct the scan did not recognise was taken to change nothing. Now every construct is looked up in a table (src/semantics/allow.ts), and a construct that is not in the table changes anything. A new hole then gives no value, instead of a wrong one.
 
 ## 1. The failure pattern
 
@@ -230,7 +230,7 @@ Each step keeps every test passing.
 | 2. The table, with today's behaviour | Done (2026-10-26) |
 | 3. The walk | Done (2026-10-26) |
 | 4. The default flips | Done (2026-10-26) |
-| 5. Docs | Not started |
+| 5. Docs | Done (2026-10-27) |
 
 1. **The specs first.** Every builtin's options as bash 5.2 and 5.3 accept them (`complete -f`, `-u`, `-X` and the others, `declare -I`, those of `read` the corpus uses, and the rest the comparison of section 5 finds), with test/builtins-real.test.ts. Nothing users see changes, except the explanation of those options.
 
@@ -317,6 +317,8 @@ Each step keeps every test passing.
    - Section 4 predicted 51 more blind files (42 in the corpus, 9 real), and no value lost. Measured: 55 (53 and 2). The corpus adds `set -o posix`, the names and the expansions bash rejects, which the prototype did not count; the real scripts lose 7 of the 9, since step 1 put the options of `complete` in its spec and `noclobber` is followed.
    - The generated scripts are the same: none uses a construct whose row changed.
 5. **Docs**: [semantics.md](semantics.md) 4.14 ("What decisions trust": the table replaces the lists), [expansion-values.md](expansion-values.md) section 3, README's Limitations (the assumptions about the start: those of [trust-per-position.md](trust-per-position.md) section 2, `BASH_COMPAT`, `POSIXLY_CORRECT`, `FUNCNEST`, `BASHOPTS` and the locale from the environment, and how the script is started: `bash -k script`, `sh script`), the roadmap and this page's status.
+
+   Done. semantics.md 4.14 ("What decisions trust") and expansion-values.md section 3 say what the table does: the effects, the default for a construct with no row, the start of a shell, what is followed and what blinds, and point here and to src/semantics/allow.ts rather than copy the tables. README's Limitations (en and ja) say that the model assumes a default start, that it decides nothing when the script changes that start itself (shebang options, `env -S`, `BASH_COMPAT`, `POSIXLY_CORRECT`, `FUNCNEST`, a locale other than C), and that it cannot see the environment, `SHELLOPTS`, `BASHOPTS`, nor the options of `bash -k script` or `sh script`.
 
 **Risks.**
 
