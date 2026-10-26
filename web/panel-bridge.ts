@@ -54,17 +54,19 @@ export class PanelBridge {
     }
     window.addEventListener('message', (e) => this.onMessage(e));
     for (const key of ['shell', 'yq'] as const) {
-      for (const id of [key, `${key}-top`]) on(id, 'change', (e) => host.choose(key, (e.target as HTMLSelectElement).value));
+      for (const id of [key, `${key}-top`, `scope-${key}`]) on(id, 'change', (e) => host.choose(key, (e.target as HTMLSelectElement).value));
     }
-    // Below 360px the copy is in the menu only (web/page.css), for the top bar's other buttons to keep their size.
-    for (const [id, act] of [['collapse', () => this.button('toggle')?.click()], ['copy-md', () => host.copy()], ['menu-copy', () => host.copy()], ['ref', () => this.button('ref')?.click()]] as const) {
+    // The panel's own header has these buttons (shown on the page, web/panel-page.css); the menu, the share menu and
+    // the phone's bottom sheet press the same ones, which keep the state.
+    for (const [id, act] of [['copy-md', () => host.copy()], ['menu-copy', () => host.copy()], ['bsheet-copy', () => host.copy()],
+      ['menu-collapse', () => this.pressToggle()], ['bsheet-collapse', () => this.pressToggle()], ['menu-ref', () => this.pressRef()]] as const) {
       on(id, 'click', () => {
         // The menu's item closes the menu first, as the others do.
         if (id.startsWith('menu-')) (document.getElementById('drawer') as HTMLDialogElement | null)?.close();
         act();
       });
     }
-    // The view switch: in the top bar, on a phone in the menu (the bar has no room for it there).
+    // The view switch: in the panel's header, and in the menu.
     for (const where of ['top', 'menu']) {
       for (const v of ['list', 'tree'] as const) on(`view-${v}-${where}`, 'click', () => this.setView(v));
     }
@@ -91,7 +93,7 @@ export class PanelBridge {
   private loaded(): void {
     this.ready = true;
     // The panel's ⚙ button opens the settings dialog (it is hidden where there is none: in panel mode).
-    if (this.controls) this.frame?.contentDocument?.documentElement.classList.add('bx-settings');
+    this.markPhone();
     this.send({ type: 'theme', theme: this.host.theme() });
     this.sendState();
     if (this.controls) this.watch();
@@ -102,6 +104,34 @@ export class PanelBridge {
   private sendState(): void {
     this.send({ type: 'panelState', state: this.state });
   }
+
+  /** Tells the panel's frame whether it is in the phone's bottom sheet (its header then keeps only the view switch). */
+  markPhone(): void {
+    const root = this.frame?.contentDocument?.documentElement;
+    if (!root) return;
+    // The panel's ⚙ button opens the settings dialog (it is hidden where there is none: in panel mode); its header is
+    // the pane's header on the editor page. (Also when the frame was ready before this script: no `load` then.)
+    if (this.controls) root.classList.add('bx-settings', 'bx-head');
+    root.classList.toggle('bx-phone', document.documentElement.classList.contains('narrow'));
+  }
+
+  /** Presses the panel's "Collapse all" (or "Expand all"). */
+  pressToggle(): void {
+    this.button('toggle')?.click();
+  }
+
+  /** Presses the panel's "Quick reference" (or "Back"). */
+  pressRef(): void {
+    this.button('ref')?.click();
+  }
+
+  /** Whether the quick reference is open in the panel. */
+  refOpen(): boolean {
+    return this.frame?.contentDocument?.getElementById('reference')?.hidden === false;
+  }
+
+  /** Called when the panel's buttons change their names (the quick reference opened or closed, the tree folded). */
+  onActions: (() => void) | undefined;
 
   /** The view the panel shows: the tree is built only for the tree view. */
   view(): 'list' | 'tree' {
@@ -122,6 +152,7 @@ export class PanelBridge {
   /** Shows what the panel was sent for a line: the page's shell and yq selects follow it. */
   show(message: ReturnType<typeof panelUpdate>): void {
     this.send(message);
+    this.markPhone();
     if (this.controls) this.watch();
     this.showDialect(message.dialect);
   }
@@ -160,7 +191,7 @@ export class PanelBridge {
   private showDialect(d: Dialect): void {
     const tp = ui[this.host.lang()].panel;
     for (const [key, options, value, label] of [['shell', d.shells, d.shell, tp.shell], ['yq', d.yqs, d.yq, tp.yq]] as const) {
-      for (const id of [key, `${key}-top`]) {
+      for (const id of [key, `${key}-top`, `scope-${key}`]) {
         const select = document.getElementById(id) as HTMLSelectElement | null;
         if (!select) continue;
         select.replaceChildren(...(options ?? []).map(([v, text]) => new Option(text, v)));
@@ -170,7 +201,7 @@ export class PanelBridge {
         select.title = label;
       }
       // The yq choice only matters on the lines that run yq.
-      for (const id of [`${key}-box`, `${key}-top-box`]) {
+      for (const id of [`${key}-box`, `${key}-top-box`, `scope-${key}-box`]) {
         const box = document.getElementById(id);
         if (box && key === 'yq') box.hidden = !options;
       }
@@ -186,30 +217,29 @@ export class PanelBridge {
   showActions(): void {
     const tp = ui[this.host.lang()].panel;
     const open = this.frame?.contentDocument?.getElementById('reference')?.hidden === false;
-    const names: [string, string][] = [
-      ['collapse', this.button('toggle')?.getAttribute('aria-label') || tp.collapseAll],
-      ['ref', this.button('ref')?.getAttribute('aria-label') || tp.reference],
-      ['copy-md', tp.copy],
-    ];
-    for (const [button, name] of names) {
+    const toggleName = this.button('toggle')?.getAttribute('aria-label') || tp.collapseAll;
+    for (const [button, name] of [['bsheet-collapse', toggleName], ['bsheet-copy', tp.copy]]) {
       document.getElementById(button)?.setAttribute('aria-label', name);
       document.getElementById(button)?.setAttribute('title', name);
     }
-    for (const [button, theirs] of [['collapse', 'toggle'], ['ref', 'ref']] as const) {
+    put('menu-collapse-label', toggleName);
+    put('menu-ref-label', this.button('ref')?.getAttribute('aria-label') || tp.reference);
+    for (const [button, theirs] of [['bsheet-collapse', 'toggle'], ['menu-collapse', 'toggle'], ['menu-ref', 'ref']] as const) {
       const icon = this.button(theirs)?.querySelector('svg')?.getAttribute('data-icon');
       const svg = document.querySelector(`#${button} svg`);
       if (icon && svg) drawIcon(svg, icon);
     }
-    document.getElementById('ref')?.setAttribute('aria-pressed', String(open));
+    document.getElementById('menu-ref')?.setAttribute('aria-pressed', String(open));
     put('menu-copy-label', tp.copy);
     put('views-menu-label', tp.views);
     document.getElementById('views-top')?.setAttribute('aria-label', tp.views);
+    this.onActions?.();
     for (const where of ['top', 'menu']) {
       put(`view-list-${where}`, tp.listView);
       put(`view-tree-${where}`, tp.treeView);
     }
     for (const [key, label] of [['shell', tp.shell], ['yq', tp.yq]]) {
-      for (const id of [key, `${key}-top`]) {
+      for (const id of [key, `${key}-top`, `scope-${key}`]) {
         put(`${id}-label`, label);
         document.getElementById(id)?.setAttribute('aria-label', label);
       }
