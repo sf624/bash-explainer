@@ -102,3 +102,120 @@ pre#line {
     height: 34px;
   }
 }
+
+/* ---- Prototype (proto/chrome-1): the panel's own header, shown on the editor page as the pane's header. ----------
+   The page sets `bx-head` when it has no other place for these controls (not on the compare page's copies). The line,
+   the shell and yq dropdowns and the gear stay hidden: the editor's header and the settings have them. Left: the view
+   switch; right: Reference (with its name; "Back" while open), Collapse all, Copy. */
+html.bx-web.bx-head header {
+  display: flex;
+  flex-wrap: nowrap;
+  box-sizing: border-box;
+  height: 36px;
+  min-height: 0;
+  padding: 0 6px 0 10px;
+}
+
+html.bx-head header .here,
+html.bx-head #yq-box,
+html.bx-head #settings {
+  display: none;
+}
+
+html.bx-head header .actions {
+  flex: 1 1 auto;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+html.bx-head .segmented {
+  height: 32px;
+  align-items: center;
+  padding: 2px;
+  border-radius: 7px;
+}
+
+html.bx-head .segmented button {
+  height: 26px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  border-radius: 5px;
+}
+
+html.bx-head .segmented button[aria-pressed="false"] {
+  color: var(--vscode-foreground);
+  opacity: 0.82;
+}
+
+html.bx-head .segmented button[aria-pressed="true"] {
+  font-weight: 600;
+}
+
+html.bx-head .tb {
+  width: 32px;
+  height: 32px;
+}
+
+html.bx-head #ref {
+  order: -1;
+  width: auto;
+  gap: 6px;
+  padding: 0 10px 0 8px;
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+html.bx-head #ref::after {
+  content: attr(aria-label);
+}
+
+html.bx-head .tools {
+  gap: 2px;
+}
+
+/* On a phone the bottom sheet's own header has Reference, Collapse all and Copy: only the view switch stays here. */
+html.bx-head.bx-phone .tools {
+  display: none;
+}
+
+html.bx-head.bx-phone header {
+  height: 40px;
+}
+
+html.bx-head.bx-phone .segmented {
+  height: 34px;
+}
+
+html.bx-head.bx-phone .segmented button {
+  height: 28px;
+  padding: 0 14px;
+}
+
+/* While open, its name already says "← Back": no second arrow. */
+@media (min-width: 441px) {
+  html.bx-head #ref[aria-pressed="true"] svg {
+    display: none;
+  }
+}
+
+/* A narrow panel (a tablet's): Reference as an icon only, as the other two. */
+@media (max-width: 440px) {
+  html.bx-head #ref {
+    width: 32px;
+    padding: 0;
+  }
+
+  html.bx-head #ref::after {
+    content: none;
+  }
+}
+
+html.bx-head.bx-phone .segmented {
+  height: 32px;
+  border-radius: 8px;
+}
+
+html.bx-head.bx-phone .segmented button {
+  height: 26px;
+}

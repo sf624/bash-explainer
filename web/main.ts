@@ -30,7 +30,9 @@ import { closeSheet, narrow, reopenSheet, setUpEdgeSwipe, setUpProblems, setUpSh
 import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
 import { Picker } from './picker';
-import { showProblems } from './problem-list';
+import { nextProblem, showProblems } from './problem-list';
+import { BottomSheet, closePopovers, popover, setUpTooltips } from './chrome';
+import { CHROME } from './chrome-text';
 import { CopyState, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
 import { openingReady } from './opening';
@@ -118,7 +120,10 @@ function shells(): Shells {
 
 // ---- Editor ---------------------------------------------------------------------------------
 
-let readMode = readStored(STORAGE_KEYS.readMode) === '1';
+/** Read mode (a tap selects a line, no keyboard): on by default on a touch screen (prototype). */
+const touchOnly = () => window.matchMedia('(pointer: coarse) and (hover: none)').matches;
+const readModeDefault = () => (readStored(STORAGE_KEYS.readMode) ?? (touchOnly() ? '1' : '0')) === '1';
+let readMode = readModeDefault();
 /** The warning codes in the script, offered in the settings dialog. */
 let codesSeen: string[] = [];
 /** The problems the editor shows, for the panel's squiggles. */
@@ -148,7 +153,10 @@ const editor = new Editor({
     codesSeen = codes;
     problemsShown = list;
     updatePanel();
-    showProblems(list, lang, (i) => editor.select(i.startLine, i.startCol, i.endLine, i.endCol));
+    showProblems(list, lang, (i) => {
+      editor.select(i.startLine, i.startCol, i.endLine, i.endCol);
+      if (narrow.matches) showTab('explain');
+    });
   },
   changed(u: ViewUpdate) {
     // Undo would no longer undo the sample once the text changed again.
@@ -164,6 +172,7 @@ const editor = new Editor({
   announce: (text) => announcer?.say(text),
 }, { parent: $('editor'), text: shared.text ?? kindInfo(kind).sample, readMode, problems: mode.hasChrome });
 editor.shade();
+editor.setWrap(wrapOn());
 editor.placeCursor(shared.text ? 1 : kindInfo(kind).cursorLine);
 {
   const region = document.getElementById('announce');
@@ -210,6 +219,7 @@ function updatePanel(): void {
   const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: panel.view() === 'tree' });
   shown = { explanation, line };
   announcer?.shown(explanation, line, lang);
+  queueMicrotask(showScope);
   panel.show(panelUpdate({
     lang, explanation, file: fileName(), line, lineText: doc.lines[line] ?? '',
     choice: choice(), detected: s.detected, placement: settings['examples.placement'],
@@ -298,10 +308,7 @@ function applyLanguage(): void {
   document.documentElement.lang = lang;
   put('tagline', mode.compare ? t.compareTagline : t.tagline);
   put('install', t.install);
-  put('readtip-text', t.readTip);
-  document.getElementById('readtip-close')?.setAttribute('aria-label', t.close);
-  document.getElementById('readtip-close')?.setAttribute('title', t.close);
-  placeReadTip();
+  chromeLanguage();
   put('lang-label', t.lang);
   put('menu-sample-label', t.sample);
   put('menu-open-label', t.open);
@@ -322,7 +329,7 @@ function applyLanguage(): void {
   put('drawer-title', t.menu);
   panel.showActions();
   // The buttons drawn as icons say what they do to screen readers and in a tooltip.
-  for (const [id, name] of [['sample', t.sample], ['share', t.share], ['readmode', t.readMode], ['settings-open', t.settings], ['menu-open', t.menu], ['menu-close', t.close], ['github', t.github], ['splitter', t.resize], ['problems-resize', t.resizeProblems]]) {
+  for (const [id, name] of [['settings-open', t.settings], ['menu-open', t.menu], ['menu-close', t.close], ['github', t.github], ['splitter', t.resize], ['problems-resize', t.resizeProblems]]) {
     const el = document.getElementById(id);
     el?.setAttribute('aria-label', name);
     if (!id.endsWith('resize') && id !== 'splitter') el?.setAttribute('title', name);
@@ -371,15 +378,21 @@ function applyLanguage(): void {
     $('banner-commit').textContent = COMMIT;
     $('channel-banner').hidden = false;
   }
-  $<HTMLSelectElement>('lang').value = lang;
-  kindPicker?.set(KINDS.map((k) => ({ value: k.kind, name: t.kinds[k.kind] ?? k.name, short: SHORT_KIND[k.kind] })), kind, t.kind);
+  $<HTMLSelectElement>('lang').value = mode.compare ? lang : settings.language === 'auto' ? 'auto' : lang;
+  kindPicker?.set(KINDS.map((k) => ({ value: k.kind, name: t.kinds[k.kind] ?? k.name, short: SHORT_KIND[k.kind] })), kind, mode.compare ? t.kind : CHROME[lang].kind);
+  const scopeKind = document.getElementById('scope-kind') as HTMLSelectElement | null;
+  if (scopeKind) {
+    scopeKind.replaceChildren(...KINDS.map((k) => new Option(t.kinds[k.kind] ?? k.name, k.kind)));
+    scopeKind.value = kind;
+  }
+  showScope();
   // The same choice as a select in the menu, for a phone.
   const menuKind = document.getElementById('kind-menu') as HTMLSelectElement | null;
   if (menuKind) {
     menuKind.replaceChildren(...KINDS.map((k) => new Option(t.kinds[k.kind] ?? k.name, k.kind)));
     menuKind.value = kind;
     menuKind.setAttribute('aria-label', t.kind);
-    put('kind-label', t.kind);
+    put('kind-label', CHROME[lang].kind);
   }
 }
 
@@ -399,7 +412,8 @@ $<HTMLSelectElement>('theme').addEventListener('change', (e) => setTheme((e.targ
 
 // The language menu is the `language` setting.
 $<HTMLSelectElement>('lang').addEventListener('change', (e) => {
-  changeSettings({ ...settings, language: (e.target as HTMLSelectElement).value === 'ja' ? 'ja' : 'en' });
+  const v = (e.target as HTMLSelectElement).value;
+  changeSettings({ ...settings, language: v === 'ja' ? 'ja' : v === 'auto' && !mode.compare ? 'auto' : 'en' });
 });
 
 /** Applies new settings, keeps them, and shows them in the toolbar, the panel and the dialog. */
@@ -407,7 +421,7 @@ function changeSettings(next: Settings): void {
   // A link's language stays until the setting itself changes.
   const languageChanged = next.language !== settings.language;
   settings = next;
-  editor.setWrap(settings['editor.wrap']);
+  editor.setWrap(wrapOn());
   // When storage refuses, they last until the page is closed.
   const changed = changedSettings(settings, 'web');
   if (Object.keys(changed).length) writeStored(STORAGE_KEYS.settings, JSON.stringify(changed));
@@ -460,57 +474,45 @@ function clearEverything(): void {
   document.documentElement.removeAttribute('data-theme');
   $<HTMLSelectElement>('theme').value = 'auto';
   pushTheme();
-  readMode = false;
-  editor.setReadMode(false);
+  readMode = readModeDefault();
+  editor.setReadMode(readMode);
   showReadMode();
   resetSplit?.();
   resetProblems?.();
-  showReadTip();
+  showFirstHint();
 }
+/** The labelled switch of the phone's bar: the mode it is in ("Read" with an eye, "Edit" with a pencil). */
 function showReadMode(): void {
-  // The compare page has no such button.
-  document.getElementById('readmode')?.setAttribute('aria-pressed', String(readMode));
+  const b = document.getElementById('readmode');
+  if (!b) return; // the compare page has no such button
+  const c = CHROME[lang];
+  b.setAttribute('aria-pressed', String(readMode));
+  b.classList.toggle('editing', !readMode);
+  put('readmode-label', readMode ? c.read : c.edit);
+  b.title = readMode ? c.readTip : c.editTip;
 }
 showReadMode();
 on('readmode', 'click', () => {
-  hideReadTip(true);
   readMode = !readMode;
   editor.setReadMode(readMode);
   showReadMode();
   writeStored(STORAGE_KEYS.readMode, readMode ? '1' : '0');
+  // Edit brings the keyboard: the editor takes the focus (read mode leaves it where it is).
+  if (!readMode) editor.view.focus();
 });
 
-// The first-run tip for the read-mode switch: shown while the switch is (a coarse pointer), until it has
-// been closed or the switch used. It is kept in storage; without storage it shows again on the next visit.
-function readTipSeen(): boolean {
-  return readStored(STORAGE_KEYS.readTipSeen) === '1';
+// A one-line hint over the editor on the first visit (it pushes the code down, it covers none), until it is closed.
+function showFirstHint(): void {
+  const hint = document.getElementById('first-hint');
+  if (hint && !mode.compare) hint.hidden = readStored(STORAGE_KEYS.firstHint) === '1';
+  editor.view.requestMeasure();
 }
-/** Puts the bubble under the switch (below the banner too, on the development version and previews) and points its arrow at the middle of the switch. */
-function placeReadTip(): void {
-  const tip = document.getElementById('readtip');
-  const btn = document.getElementById('readmode');
-  if (!tip || !btn || tip.hidden) return;
-  const b = btn.getBoundingClientRect();
-  tip.style.top = `${b.bottom + 10}px`;
-  tip.style.setProperty('--arrow-x', `${b.left + b.width / 2 - tip.getBoundingClientRect().left}px`);
-}
-function hideReadTip(remember: boolean): void {
-  const tip = document.getElementById('readtip');
-  if (tip) tip.hidden = true;
-  if (remember) writeStored(STORAGE_KEYS.readTipSeen, '1');
-}
-/** Shows the tip, if there is a switch to point at and the tip was not seen. */
-function showReadTip(): void {
-  const tip = document.getElementById('readtip');
-  const btn = document.getElementById('readmode');
-  if (tip && btn && window.matchMedia('(pointer: coarse)').matches && !readTipSeen()) {
-    tip.hidden = false;
-    placeReadTip();
-  }
-}
-showReadTip();
-window.addEventListener('resize', placeReadTip);
-on('readtip-close', 'click', () => hideReadTip(true));
+showFirstHint();
+on('first-hint-close', 'click', () => {
+  writeStored(STORAGE_KEYS.firstHint, '1');
+  showFirstHint();
+});
+
 function openSettings(): void {
   if (dialogElement && reopenSheet(dialogElement)) return;
   if (settingsDialog?.open || drawer?.open) return;
@@ -535,7 +537,11 @@ if (edge) setUpEdgeSwipe(edge, openMenu, 'left');
 const edgeRight = document.getElementById('edge-right');
 if (edgeRight) setUpEdgeSwipe(edgeRight, openSettings, 'right');
 // The menu's items do what the top bar's buttons do, and close the menu first.
-for (const [item, target] of [['menu-sample', 'sample'], ['menu-share', 'share']]) {
+on('menu-settings', 'click', () => {
+  drawer?.close();
+  settingsDialog?.show();
+});
+for (const [item, target] of [['menu-sample', 'sample'], ['menu-share', 'share'], ['more-share', 'share']]) {
   on(item, 'click', () => {
     drawer?.close();
     $(target).click();
@@ -550,8 +556,16 @@ const resetProblems = splitElement && mode.hasChrome
   ? setUpProblems($('source'), $('problems'), $('problems-resize'), $('problems-toggle'), () => editor.view.requestMeasure())
   : undefined;
 // The cursor's line stays in view when the editor's pane changes size (the phone turned, the divider moved).
-narrow.addEventListener('change', () => editor.keepCursorInView());
+narrow.addEventListener('change', () => {
+  closePopovers();
+  panel.markPhone();
+  editor.setWrap(wrapOn());
+  editor.keepCursorInView();
+});
 
+on('scope-kind', 'change', (e) => {
+  chooseKind((e.target as HTMLSelectElement).value as Kind);
+});
 on('kind-menu', 'change', (e) => {
   chooseKind((e.target as HTMLSelectElement).value as Kind);
 });
@@ -578,6 +592,8 @@ function setKind(k: Kind, then?: () => void): void {
   kind = k;
   const menuKind = document.getElementById('kind-menu') as HTMLSelectElement | null;
   if (menuKind) menuKind.value = k;
+  const scopeKind = document.getElementById('scope-kind') as HTMLSelectElement | null;
+  if (scopeKind) scopeKind.value = k;
   kindPicker?.show(k);
   editor.setKind(kind);
   showFile();
@@ -642,14 +658,12 @@ function loadSample(own: boolean): void {
     showFile();
     editor.focusUnlessTouch();
   };
-  if (own) status(TEXT[lang].sampleLoaded, false, { label: TEXT[lang].undo, run: back, untilEdit: true });
+  if (own) status(CHROME[lang].sampleLoaded, false, { label: TEXT[lang].undo, run: back, untilEdit: true });
 }
 
 on('sample', 'click', () => {
-  // The user's own text asks for a confirmation and, once replaced, offers to undo; a sample or nothing does not.
-  const own = ownText();
-  if (own && !confirm(TEXT[lang].replace)) return;
-  loadSample(own);
+  // Replaced at once; the user's own text gets the toast's Undo (prototype: no confirm() before it).
+  loadSample(ownText());
 });
 
 // The other version is another page: go there with the script in the hash, in the same language.
@@ -711,9 +725,11 @@ function showFile(): void {
   const dirty = unsaved();
   const name = file?.name;
   const label = $('file-label');
-  label.hidden = !name;
-  label.title = name ? (dirty ? `${name}${TEXT[lang].unsaved}` : name) : '';
-  $('file-name').replaceChildren(...nameWithMark(name ?? '', dirty));
+  const shownName = name ?? CHROME[lang].untitled;
+  label.hidden = false;
+  label.classList.toggle('untitled', !name);
+  label.title = dirty ? `${shownName}${TEXT[lang].unsaved}` : shownName;
+  $('file-name').replaceChildren(...nameWithMark(shownName, dirty));
   // Save says where the script goes: the file, or the name a first save suggests.
   $('menu-save-name').replaceChildren(...nameWithMark(name ?? defaultName(kind), dirty && !!name));
   document.title = name ? `${dirty ? '● ' : ''}${name} — Bash Explainer` : 'Bash Explainer';
@@ -779,7 +795,7 @@ async function saveFile(): Promise<void> {
   const r = await saveText(fileContent(text, format), file?.name ?? defaultName(kind), file?.handle);
   if (r.how === 'cancelled') return;
   // Another file was opened while the browser asked (its permission bubble is not modal): that one is not the file saved.
-  if (file !== saving) return status(r.how === 'refused' ? t.notSaved(r.name) : r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
+  if (file !== saving) return r.how === 'downloaded' ? downloadedToast(r.name) : status(r.how === 'refused' ? t.notSaved(r.name) : t.saved(r.name));
   if (r.how === 'refused') {
     // The same write would fail again: the next save asks where.
     if (file) file = { name: file.name };
@@ -788,13 +804,27 @@ async function saveFile(): Promise<void> {
   file = { name: r.name, handle: r.how === 'written' ? r.handle : undefined };
   clean = text;
   showFile();
-  status(r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
+  if (r.how === 'downloaded') downloadedToast(r.name);
+  else status(t.saved(r.name));
   // A new name can say another shell (`.zsh`).
   if (fileName() !== before) {
     editor.shade();
     updatePanel();
     editor.recheck();
   }
+}
+
+/** Whether the long text of a download was shown once in this page. */
+let downloadExplained = false;
+/** "Downloaded a.sh." with a "Why?" that tells why a save downloads; the first time the whole text. */
+function downloadedToast(name: string): void {
+  const t = TEXT[lang];
+  const c = CHROME[lang];
+  if (!downloadExplained) {
+    downloadExplained = true;
+    return status(t.downloaded(name));
+  }
+  status(c.downloaded(name), false, { label: c.why, run: () => queueMicrotask(() => status(`${c.downloaded(name)} ${c.whyText}`)) });
 }
 
 /** Ctrl+S and Ctrl+O (⌘S and ⌘O on a Mac), also with the focus in the panel's frame: the page's save and open, not the browser's. */
@@ -872,6 +902,8 @@ if (withFiles) {
     drawer?.close();
     void saveFile();
   });
+  on('open-btn', 'click', () => void openFile());
+  on('save-btn', 'click', () => void saveFile());
   on('menu-panes', 'click', () => {
     drawer?.close();
     toPanel();
@@ -915,6 +947,161 @@ if (withFiles) {
     void Promise.resolve(handle).then((h) => openChosen({ file: dropped, handle: h?.kind === 'file' ? (h as FileSystemFileHandle) : undefined }, back));
   }, true);
 }
+
+// ---- The chrome prototype (proto/chrome-1): app bar, panes' headers, Problems strip, the phone's sheet --------
+
+/**
+ * Whether the editor wraps long lines: the setting, and on a phone by default (no sideways scroll on a tap) unless the
+ * stored settings say otherwise.
+ */
+function wrapOn(): boolean {
+  if (settings['editor.wrap']) return true;
+  if (!narrow.matches || mode.panel) return false;
+  const raw = readStored(STORAGE_KEYS.settings);
+  return !(raw && raw.includes('"editor.wrap"'));
+}
+
+/** The texts of the chrome, in the page's language. */
+function chromeLanguage(): void {
+  const c = CHROME[lang];
+  const t = TEXT[lang];
+  put('share-open-label', c.share);
+  put('share-label', c.copyLink);
+  put('copy-md-label', c.copyMd);
+  put('more-share-label', c.copyLink);
+  put('sample-label', t.sample);
+  put('open-btn-label', c.open);
+  put('save-btn-label', c.save);
+  put('kind-prefix', c.kindPrefix);
+  put('shell-top-prefix', c.shellPrefix);
+  put('yq-top-prefix', c.yqPrefix);
+  put('scope-pop-title', c.script);
+  put('scope-kind-label', c.kind);
+  put('scope-shell-label', c.shell);
+  put('menu-h-script', c.menuScript);
+  put('menu-h-explanation', c.menuExplanation);
+  put('menu-h-prefs', c.menuPrefs);
+  put('menu-h-about', c.menuAbout);
+  put('menu-settings-label', c.allSettings);
+  put('tab-explain', c.explain);
+  put('tab-problems-label', c.problems);
+  put('tab-ref', c.reference);
+  put('first-hint-text', touchOnly() ? c.firstHintTouch : c.firstHint);
+  const auto = document.querySelector<HTMLOptionElement>('#lang option[value="auto"]');
+  if (auto) auto.textContent = c.auto;
+  const named: [string, string, string?][] = [
+    ['open-btn', `${t.openTip}`, shortcut('O')], ['save-btn', t.saveTip, shortcut('S')], ['ed-more', c.more],
+    ['problem-prev', c.prevProblem, 'Shift+F8'], ['problem-next', c.nextProblem, 'F8'], ['bsheet-handle', c.sheet],
+    ['first-hint-close', c.close], ['share-open', c.share],
+  ];
+  for (const [id, name, key] of named) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (!el.textContent?.trim() || id === 'open-btn' || id === 'save-btn') el.setAttribute('aria-label', id.endsWith('-btn') ? (id === 'open-btn' ? c.open : c.save) : name);
+    el.title = name;
+    if (key) {
+      el.dataset.key = key;
+      el.setAttribute('aria-keyshortcuts', key.replace('Ctrl', 'Control'));
+    }
+  }
+  showReadMode();
+  showProblemsToggle();
+  showScope();
+}
+
+/** The chip that stands for the kind and the shell where the editor's header has no room for both pickers: "Shell script · bash". */
+function showScope(): void {
+  const chip = document.getElementById('scope-chip-text');
+  if (!chip) return;
+  const t = TEXT[lang];
+  const kindName = t.kinds[kind] ?? kindInfo(kind).name;
+  const shell = document.getElementById('shell-top') as HTMLSelectElement | null;
+  const text = shell?.selectedOptions[0]?.textContent ?? '';
+  // "Auto (bash)" → "bash" ("自動（bash）" too); a shell chosen is its own name.
+  const short = /[(（]([^)）]+)[)）]/.exec(text)?.[1] ?? text;
+  chip.textContent = short ? `${kindName} · ${short}` : kindName;
+  document.getElementById('scope-chip')?.setAttribute('aria-label', `${CHROME[lang].script}: ${chip.textContent}`);
+}
+
+// The popovers: Share (app bar), ⋯ (editor's header), the kind-and-shell chip.
+for (const [button, pop, pick] of [['share-open', 'share-menu', true], ['ed-more', 'ed-more-menu', true], ['scope-chip', 'scope-pop', false]] as const) {
+  const b = document.getElementById(button);
+  const p = document.getElementById(pop);
+  if (b && p) popover(b, p, { closeOnPick: pick });
+}
+
+// The Problems strip: its button names what it does; ‹ › (and F8, Shift+F8) go to the next or previous problem.
+function showProblemsToggle(): void {
+  const toggle = document.getElementById('problems-toggle');
+  if (!toggle) return;
+  const open = toggle.getAttribute('aria-expanded') === 'true';
+  toggle.title = open ? CHROME[lang].hideProblems : CHROME[lang].showProblems;
+}
+document.getElementById('problems-toggle')?.addEventListener('click', () => queueMicrotask(showProblemsToggle));
+function goProblem(back: boolean): void {
+  const { line, col } = editor.cursor();
+  const i = nextProblem(problemsShown, line, col, back);
+  if (i) editor.select(i.startLine, i.startCol, i.endLine, i.endCol);
+}
+on('problem-prev', 'click', () => goProblem(true));
+on('problem-next', 'click', () => goProblem(false));
+if (mode.hasChrome && !mode.compare) {
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'F8' || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
+    e.preventDefault();
+    goProblem(e.shiftKey);
+  }, true);
+}
+
+// The phone's bottom sheet: the explanation's column at three heights, with tabs Explain | Problems | Reference.
+const sheetCol = document.getElementById('panel-col');
+const sheet = sheetCol && !mode.compare && !mode.panel
+  ? new BottomSheet(sheetCol, $('bsheet-head'), $('bsheet-handle'), () => editor.view.requestMeasure())
+  : undefined;
+type Tab = 'explain' | 'problems' | 'ref';
+let tab: Tab = 'explain';
+function showTab(next: Tab): void {
+  if (!sheetCol) return;
+  tab = next;
+  if ((next === 'ref') !== panel.refOpen()) panel.pressRef();
+  showTabs();
+}
+function showTabs(): void {
+  if (!sheetCol) return;
+  // The quick reference may be opened or closed from the panel's own header or the menu.
+  if (tab !== 'problems') tab = panel.refOpen() ? 'ref' : 'explain';
+  for (const id of ['explain', 'problems', 'ref'] as const) document.getElementById(`tab-${id}`)?.setAttribute('aria-selected', String(tab === id));
+  sheetCol.dataset.tab = tab;
+  $('sheet-problem-list').hidden = tab !== 'problems';
+}
+panel.onActions = showTabs;
+on('tab-explain', 'click', () => showTab('explain'));
+on('tab-problems', 'click', () => {
+  showTab('explain');
+  tab = 'problems';
+  showTabs();
+  sheet?.raise('half');
+});
+on('tab-ref', 'click', () => {
+  showTab('ref');
+  sheet?.raise('half');
+});
+// A tap on a line raises a peeking sheet to half.
+$('editor')?.addEventListener('pointerup', (e) => {
+  if (narrow.matches && e.pointerType !== 'mouse') sheet?.raise('half');
+});
+
+// The page's own tooltips (hover 400 ms, and keyboard focus), over the bar, the panes' headers and the Problems strip.
+const tooltip = document.getElementById('tooltip');
+if (tooltip) setUpTooltips(tooltip, '.top, .pane-head, #problems, .bsheet-head');
+
+// A dialog that opens (the menu, the settings, a question) dismisses the toast, which it would cover or contradict.
+new MutationObserver((records) => {
+  if (records.some((r) => r.target instanceof HTMLDialogElement && r.target.open)) {
+    status('');
+    closePopovers();
+  }
+}).observe(document.body, { attributes: true, attributeFilter: ['open'], subtree: true });
 
 // ---- Start ----------------------------------------------------------------------------------
 
