@@ -40,13 +40,13 @@ export const ui = {
       partsOf: '{name} の内訳', opensTab: '（新しいタブで開く）', opensBrowser: '（ブラウザで開く）',
       views: '表示', listView: '意味', treeView: '読まれ方',
       tree: {
-        label: '行の各部分を誰が読むか', show: '表示',
-        // The steps of the tree, from the line alone to every layer: their short names (the buttons) and their names.
-        steps: [['行', '行'], ['リスト', 'リストとパイプライン'], ['コマンド', 'コマンド'], ['単語', '単語'], ['単語の中', '単語の中身（クォートと展開）'],
-          ['スクリプト', '中のスクリプト'], ['引数', '各コマンドによる引数の読み方'], ['言語', '言語']],
+        label: '行の各部分を誰が読むか', show: '深さ',
+        // (Prototype B) The depths of the one view: their short names (the buttons) and their names.
+        steps: [['何をするか', '各部分が何をするか（例つき）'], ['誰が読むか', '誰が読むか: bash か、コマンドか（役割）'], ['構文', 'bash の構文: 予約語・演算子・単純コマンド'],
+          ['単語の中', '単語の中: クォート・文字列・パターン']],
         stepper: {
-          group: 'ステップ', back: '前のステップ', forward: '次のステップ',
-          step: 'ステップ {i}/{n}：{name}', empty: 'この行では増えるものなし', jump: 'ステップを選ぶ',
+          group: '深さ', back: '浅く', forward: '深く',
+          step: '深さ {i}/{n}：{name}', empty: 'この行では増えるものなし', jump: '深さを選ぶ',
         },
         reads: '{name} が読む',
         bands: { bash: 'bash', child: { subshell: 'サブシェル', shell: '新しいシェル', same: '同じシェルでもう一度', remote: 'リモートのシェル', container: 'コンテナのシェル' } },
@@ -129,12 +129,13 @@ export const ui = {
       partsOf: 'Parts of {name}', opensTab: '(opens in a new tab)', opensBrowser: '(opens in the browser)',
       views: 'View', listView: 'Meaning', treeView: 'Reading',
       tree: {
-        label: 'Who reads each part of the line', show: 'Show',
-        steps: [['Line', 'the line'], ['Lists', 'lists and pipelines'], ['Commands', 'commands'], ['Words', 'words'], ['Inside', 'inside the words (quotes and expansions)'],
-          ['Scripts', 'scripts inside'], ['Arguments', 'how each command reads its arguments'], ['Languages', 'languages']],
+        label: 'Who reads each part of the line', show: 'Depth',
+        // (Prototype B) The depths of the one view.
+        steps: [['What it does', 'what each part does, with examples'], ['Who reads it', 'who reads each part: bash or the command (roles)'],
+          ['Syntax', "bash's syntax: reserved words, operators, simple commands"], ['Inside words', 'inside the words: quotes, literal text, patterns']],
         stepper: {
-          group: 'Steps', back: 'Previous step', forward: 'Next step',
-          step: 'Step {i} of {n}: {name}', empty: 'Adds nothing on this line', jump: 'Choose a step',
+          group: 'Depth', back: 'Less detail', forward: 'More detail',
+          step: 'Depth {i} of {n}: {name}', empty: 'Adds nothing on this line', jump: 'Choose a depth',
         },
         reads: '{name} reads',
         bands: { bash: 'bash', child: { subshell: 'subshell', shell: 'new shell', same: 'same shell, again', remote: 'remote shell', container: 'container shell' } },
