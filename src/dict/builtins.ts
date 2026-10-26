@@ -44,6 +44,9 @@ export const shoptOptions = {
   inherit_errexit: tx('`$(…)` の中でも `set -e` を効かせる', 'keep `set -e` inside `$(…)`'),
   lastpipe: tx('パイプラインの最後のコマンドを今のシェルで実行する（`… | read x` の `x` が残る）', 'run the last command of a pipeline in the current shell (so `… | read x` keeps `x`)'),
   expand_aliases: tx('スクリプトの中でもエイリアスを展開する', 'expand aliases in scripts too'),
+  // (bash 5.3's: SHELL_OPTIONS_SINCE in src/bashversion.ts.)
+  array_expand_once: tx('bash 5.3: 配列の添字を一度だけ展開する（算術式の中と、配列の要素を代入・参照する組み込みで）。`assoc_expand_once` の新しい名前', 'bash 5.3: evaluate array subscripts only once (in arithmetic, and in builtins that assign or read elements); the new name of `assoc_expand_once`'),
+  bash_source_fullpath: tx('bash 5.3: `BASH_SOURCE` にファイルのフルパスを入れる', 'bash 5.3: put the full path of each file in `BASH_SOURCE`'),
 };
 
 /**

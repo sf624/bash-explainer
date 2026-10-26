@@ -272,6 +272,19 @@ export const wellKnownVariables: Record<string, Text> = wordTable({
   EDITOR: tx('既定のテキストエディタ', 'Default text editor'),
 });
 
+/**
+ * The variables that bash 5.3 sets or reads (docs/design/bash-versions.md, 3.3; checked: test/bash53.test.ts). To
+ * bash 5.2 they are plain variables.
+ */
+export const bash53Variables: Record<string, Text> = wordTable({
+  GLOBSORT: tx(
+    'グロブの結果の並べ方を決める: `name`（既定）・`numeric`（数字だけの名前を数値順に）・`size`・`mtime`・`atime`・`ctime`・`blocks`。前に `-` で降順、`nosort` で並べない',
+    'how the results of a glob are sorted: `name` (the default), `numeric` (names of digits only by their value), `size`, `mtime`, `atime`, `ctime` or `blocks`; a `-` before it sorts in descending order, and `nosort` does not sort',
+  ),
+  BASH_TRAPSIG: tx('実行中の trap のシグナルの番号になる（`INT` なら 2）', 'the number of the signal whose trap is running, 2 for `INT`'),
+  BASH_MONOSECONDS: tx('参照するたびに、システムの単調増加する時計の秒数になる', "the seconds of the system's monotonic clock, each time it is read"),
+});
+
 /** Unary test operators used in `[ ]`, `[[ ]]` and `test`. */
 export const unaryTestOps: Record<string, Text> = {
   '-a': tx('存在する（`-e` と同じ。非推奨）', 'exists (same as `-e`, obsolescent)'),

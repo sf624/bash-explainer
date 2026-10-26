@@ -58,6 +58,17 @@ export function lacks(id: string, version: BashVersion): boolean {
   return !!since && earlier(version, since.version);
 }
 
+/** The `shopt` options that came in a later release (checked: test/bash53.test.ts). */
+export const SHELL_OPTIONS_SINCE: Readonly<Record<string, BashVersion>> = { array_expand_once: '5.3', bash_source_fullpath: '5.3' };
+
+/** What bash `version` does with the `shopt` option `name`, which came in release `since`, [Japanese, English]. */
+export function laterShellOption(name: string, since: BashVersion, version: BashVersion): [string, string] {
+  return [
+    `\`${name}\` は bash ${since} からの \`shopt\` のオプションです。bash ${version} では「invalid shell option name」のエラーになります（終了ステータス 1。ほかの名前は設定されます）`,
+    `\`${name}\` is a bash ${since} \`shopt\` option: bash ${version} reports "invalid shell option name" for it (status 1; the other names are still set)`,
+  ];
+}
+
 /**
  * What bash `version` does with the option `flag` of builtin `command`, which came in release `since`, [Japanese,
  * English]; for a special builtin (`special`), also that POSIX mode exits there (checked with bash 5.2.21:

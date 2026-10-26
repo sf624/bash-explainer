@@ -354,3 +354,50 @@ describe('bash 5.3 options of builtins', () => {
     assert.strictEqual(runBash('compgen -V a -W x; echo next', { posix: true }).stdout, 'next\n');
   });
 });
+
+/**
+ * Variables and shell options of bash 5.3 (docs/design/bash-versions.md, 3.3): a script, what bash 5.3 and bash 5.2
+ * print, and what the explanation says in each mode. To bash 5.2 the variables are plain ones.
+ */
+const VARIABLES: { script: string; out: Record<BashVersion, string>; says: Record<BashVersion, RegExp> }[] = [
+  { script: 'trap \'echo "[$BASH_TRAPSIG]"\' INT; kill -INT $$; echo after', out: { '5.2': '[]\nafter\n', '5.3': '[2]\nafter\n' }, says: { '5.2': /A plain variable in bash 5\.2 \(in bash 5\.3, the number of the signal whose trap is running, 2 for `INT`\)/, '5.3': /In bash 5\.3, the number of the signal whose trap is running/ } },
+  { script: 'd=$(mktemp -d); cd "$d"; touch a b 10 9; GLOBSORT=-name; echo *; GLOBSORT=numeric; echo *; cd /; rm -r "$d"', out: { '5.2': '10 9 a b\n10 9 a b\n', '5.3': 'b a 9 10\n9 10 a b\n' }, says: { '5.2': /`GLOBSORT`: A plain variable in bash 5\.2 \(in bash 5\.3, how the results of a glob are sorted/, '5.3': /`GLOBSORT`: In bash 5\.3, how the results of a glob are sorted: `name` \(the default\), `numeric` \(names of digits only by their value\).*a `-` before it sorts in descending order, and `nosort` does not sort/ } },
+  { script: 's=$BASH_MONOSECONDS; [[ $s =~ ^[0-9]+$ ]] && echo digits || echo "[$s]"', out: { '5.2': '[]\n', '5.3': 'digits\n' }, says: { '5.2': /A plain variable in bash 5\.2 \(in bash 5\.3, the seconds of the system's monotonic clock/, '5.3': /In bash 5\.3, the seconds of the system's monotonic clock, each time it is read/ } },
+];
+
+/** `shopt` options of bash 5.3: bash 5.2 says "invalid shell option name" (status 1) and still sets the others. */
+const SHELL_OPTIONS: { script: string; out: Record<BashVersion, string>; name: string; says: RegExp }[] = [
+  { script: 'shopt -s array_expand_once nullglob; echo "st=$?"; shopt -q nullglob && echo on', out: { '5.2': 'st=1\non\n', '5.3': 'st=0\non\n' }, name: 'array_expand_once', says: /bash 5\.3: evaluate array subscripts only once.*the new name of `assoc_expand_once`/ },
+  { script: 'shopt -s bash_source_fullpath; echo "st=$?"', out: { '5.2': 'st=1\n', '5.3': 'st=0\n' }, name: 'bash_source_fullpath', says: /bash 5\.3: put the full path of each file in `BASH_SOURCE`/ },
+];
+
+describe('bash 5.3 variables and shell options', () => {
+  it('explains each one as each release reads it, with an issue for a shell option in bash 5.2 mode (also without a bash 5.3)', () => {
+    for (const c of VARIABLES) for (const version of ['5.2', '5.3'] as const) assert.match(said(c.script, version).tokens, c.says[version], `${version}: ${c.script}`);
+    // (Without the setting, as bash 5.2.)
+    assert.match(allTokens(explain('echo "$BASH_TRAPSIG"').items).map((t) => t.explanation).join('\n'), /A plain variable in bash 5\.2/);
+    for (const c of SHELL_OPTIONS) {
+      assert.match(said(c.script).tokens, c.says, c.script);
+      const issues = (version: BashVersion) => documentIssues({ lines: [c.script], tree: parser.parse(c.script) }, 'en', {}, [], { pitfalls: false, bashVersion: version });
+      const found = issues('5.2');
+      assert.deepStrictEqual(found.map((i) => i.code), ['laterOption'], c.script);
+      assert.strictEqual(found[0].message, `⚠ \`${c.name}\` is a bash 5.3 \`shopt\` option: bash 5.2 reports "invalid shell option name" for it (status 1; the other names are still set).`, c.script);
+      assert.strictEqual(c.script.slice(found[0].startCol, found[0].endCol), c.name, c.script);
+      assert.deepStrictEqual(issues('5.3'), [], c.script);
+    }
+    assert.match(dialectNotes(parser.parse('shopt -s bash_source_fullpath'), 0, 'bash', 'ja')[0], /^⚠ `bash_source_fullpath` は bash 5\.3 からの `shopt` のオプションです。bash 5\.2 では「invalid shell option name」のエラーになります/);
+    // (A name of 5.2, or one given by a variable: nothing.)
+    for (const script of ['shopt -s nullglob', 'shopt -s "$opt"']) assert.deepStrictEqual(dialectNotes(parser.parse(script), 0, 'bash', 'en'), [], script);
+  });
+
+  it('runs each one in bash 5.3 as we say', function () {
+    needBash53(this);
+    for (const c of [...VARIABLES, ...SHELL_OPTIONS]) assert.strictEqual(runBash(c.script, { program: BASH53 }).stdout, c.out['5.3'], c.script);
+  });
+
+  it('runs each one in bash 5.2 as we say', function () {
+    if (releaseOf('bash') !== '5.2') this.skip();
+    for (const c of [...VARIABLES, ...SHELL_OPTIONS]) assert.strictEqual(runBash(c.script).stdout, c.out['5.2'], c.script);
+    for (const c of SHELL_OPTIONS) assert.match(runBash(c.script).stderr, new RegExp(`shopt: ${c.name}: invalid shell option name`), c.script);
+  });
+});

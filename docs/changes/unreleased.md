@@ -154,6 +154,15 @@ The options that builtins got in bash 5.3 are explained, and are warnings in 5.2
 | `trap -P INT` | "bash 5.3: print only the command set for each signal given"; `INT` is a signal whose command it prints | `-P` unknown, and `INT` said to reset the trap |
 | `read -E line` | "bash 5.3: read with Readline line editing and bash's own completion" | `-E` unknown |
 
+The variables and `shopt` options of bash 5.3 are explained in 5.3 mode, and said to be plain variables, or a warning (`laterOption`: "invalid shell option name", status 1), in 5.2 mode:
+
+| Written | bash 5.3 mode | bash 5.2 mode | Before |
+| --- | --- | --- | --- |
+| `GLOBSORT=-mtime` | "`GLOBSORT`: In bash 5.3, how the results of a glob are sorted: `name` (the default), `numeric` …; a `-` before it sorts in descending order, and `nosort` does not sort" | "A plain variable in bash 5.2 (in bash 5.3, …)" | an assignment to a plain variable |
+| `$BASH_TRAPSIG` | "the number of the signal whose trap is running, 2 for `INT`" | a plain variable | "Expands to the value of `BASH_TRAPSIG`" |
+| `$BASH_MONOSECONDS` | "the seconds of the system's monotonic clock, each time it is read" | a plain variable | "Expands to the value of `BASH_MONOSECONDS`" |
+| `shopt -s array_expand_once`, `shopt -s bash_source_fullpath` | "bash 5.3: evaluate array subscripts only once …; the new name of `assoc_expand_once`", "bash 5.3: put the full path of each file in `BASH_SOURCE`" | the same, and a warning | "option name (e.g. nullglob, globstar, extglob)" |
+
 ```text
 script.sh:4:8: warning: source -p is a bash 5.3 option: bash 5.2 reports "invalid option", and source does nothing (status 2; an error of a special builtin, so in POSIX mode the shell exits). [laterOption]
 ```
