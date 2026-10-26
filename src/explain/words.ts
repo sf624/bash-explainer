@@ -5,10 +5,11 @@
 // the descriptions and notes of variables from here.
 import type { Kind, Token } from '../analyzer-types';
 import { type ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping } from '../arith';
+import { DEFAULT_BASH_VERSION, earlier } from '../bashversion';
 import { pictureList, visible } from '../ctlchars';
 import { ordinal } from '../i18n';
 import { ciVariables } from '../dict/ciVariables';
-import { specialVariables, wellKnownVariables } from '../dict/syntax';
+import { bash53Variables, specialVariables, wellKnownVariables } from '../dict/syntax';
 import { explainGlob, globIntro, type GlobTarget, hasGlob } from '../embedded/glob';
 import type { EmbeddedToken } from '../embedded/types';
 import { braceExpand, extglobs, hasGlobstar, ShellWordsUnsupported } from '../examples/shellwords';
@@ -408,12 +409,23 @@ export function notGlobbedHere(cx: Explainer, n: SyntaxNode): string {
     : '';
 }
 
+/** What a variable of bash 5.3 (`bash53Variables`) is in the release explained for: a plain one in bash 5.2. */
+export function bash53Variable(cx: Explainer, name: string): string | undefined {
+  if (!Object.hasOwn(bash53Variables, name)) return undefined;
+  const what = cx.t(bash53Variables[name]);
+  return earlier(cx.opts.bashVersion ?? DEFAULT_BASH_VERSION, '5.3')
+    ? cx.s(`bash 5.2 では普通の変数（bash 5.3 では${what}）`, `A plain variable in bash 5.2 (in bash 5.3, ${what})`)
+    : cx.s(`bash 5.3 では${what}`, `In bash 5.3, ${what}`);
+}
+
 export function varDesc(cx: Explainer, name: string, at?: SyntaxNode): string | undefined {
   const own = /^\d+$/.test(name) && at ? stringParam(cx, Number(name), at) : undefined;
   if (own) return own;
   if (specialVariables[name]) return cx.t(specialVariables[name]);
   if (/^\d+$/.test(name)) return cx.s(`位置パラメータ: ${name} 番目の引数`, `Positional parameter: argument #${name}`);
   if (wellKnownVariables[name]) return cx.t(wellKnownVariables[name]);
+  const later = bash53Variable(cx, name);
+  if (later) return later;
   // Set by a CI system, unless the script sets it itself (`BRANCH_NAME=…`).
   const ci = Object.hasOwn(ciVariables, name) ? ciVariables[name] : undefined;
   if (ci && !cx.state.assigned.has(name)) {

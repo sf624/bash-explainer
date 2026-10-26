@@ -15,7 +15,7 @@ import type { Explainer } from './context';
 import { skeletal } from './nodes';
 import { isAssoc, wordAt } from './reads';
 import { redirectedWhole } from './redirections';
-import { arithNumber, notGlobbedHere, shown } from './words';
+import { arithNumber, bash53Variable, notGlobbedHere, shown } from './words';
 
 /**
  * A command with no name: its assignments (`a=1`, `a=1 b=2`), and any redirections between them; redirections
@@ -55,6 +55,9 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     : value
       ? (n.parent?.type === 'c_style_for_statement' ? cx.s(`変数 \`${nm}\` に算術式の値を代入する（算術式の中なので、\`=\` の前後に空白を入れてよい）`, `Assign the value of the arithmetic expression to variable \`${nm}\` (in arithmetic, spaces around \`=\` are allowed)`) : cx.s(`変数 \`${nm}\` に値を代入する（\`=\` の前後に空白は入れられない）`, `Assign a value to variable \`${nm}\` (no spaces around \`=\`)`))
       : cx.s(`変数 \`${nm}\` に空文字を代入する`, `Set variable \`${nm}\` to the empty string`);
+  // (A variable bash 5.3 reads or sets: what it is.)
+  const later = bash53Variable(cx, nm);
+  if (later) expl += cx.s(`。\`${nm}\`: ${later}`, `. \`${nm}\`: ${later}`);
   // `local -n r=$1` makes `r` another name for the variable named by `$1`; every later `r=…` then sets that variable.
   // (In a declaration, the state has the attributes it gives: they apply before the value is assigned.)
   const st = cx.state.at(n).run;

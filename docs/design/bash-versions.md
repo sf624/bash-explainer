@@ -2,7 +2,7 @@
 
 bash 5.2 stays the reference of the explanations. The explainer can also explain a script as bash 5.3 reads and runs it. This document says where the version comes from, how it reaches the explanations and the models, which differences of 5.3 we explain, and how they are tested.
 
-Status: steps 1 (#283), 2, 4 and 7 of section 7 are done. Steps 3, 5 and 6 are not started.
+Status: steps 1 (#283), 2, 4, 5 and 7 of section 7 are done. Steps 3 and 6 are not started.
 
 ## 1. Why
 
@@ -70,11 +70,11 @@ From NEWS, CHANGES (5.3-alpha to 5.3-rc2) and COMPAT of the bash-5.3 tarball, ea
 
 | Change | Today | Needed | Prio |
 | --- | --- | --- | --- |
-| `GLOBSORT`: how globs are sorted (`name`, `size`, `blocks`, `mtime`, `atime`, `ctime`, `numeric`, `none`, `-` for descending). | A plain variable | Describe it (5.3); glob examples sort by it when set; in 5.2 it is a plain variable (no effect) | 2 |
-| `BASH_TRAPSIG`: the signal number of the trap running. | "Expands to the value of `BASH_TRAPSIG`" | Describe it; in 5.2 it is unset | 2 |
-| `BASH_MONOSECONDS`: the monotonic clock. | Generic | Describe it; in 5.2 it is unset | 3 |
-| `shopt -s array_expand_once` (replaces `assoc_expand_once`, which stays as a synonym). 5.2: "invalid shell option name", status 1. | "option name" | The shopt names of the model by version; issue in 5.2 mode | 2 |
-| `shopt -s bash_source_fullpath`: full paths in `BASH_SOURCE`. 5.2 as above. | "option name" | As above | 3 |
+| `GLOBSORT`: how globs are sorted (`name`, `size`, `blocks`, `mtime`, `atime`, `ctime`, `numeric`, `nosort`, `-` for descending; an unknown value sorts by name). | A plain variable | Done in step 5: described (5.3), a plain variable in 5.2. The glob examples show which names match, in no order, so they need no change | 2 |
+| `BASH_TRAPSIG`: the signal number of the trap running (for `EXIT`, `ERR`, `DEBUG` and `RETURN`, numbers of bash's own: 0, 66, 65, 67 in bash 5.3.0). | "Expands to the value of `BASH_TRAPSIG`" | Done in step 5: described; in 5.2 a plain variable | 2 |
+| `BASH_MONOSECONDS`: the monotonic clock; an assignment is ignored, until it is unset. | Generic | Done in step 5: described; in 5.2 a plain variable | 3 |
+| `shopt -s array_expand_once` (replaces `assoc_expand_once`, which stays as a synonym). 5.2: "invalid shell option name", status 1; the other names given are still set. | "option name" | Done in step 5: described, with the issue in 5.2 mode (`SHELL_OPTIONS_SINCE` in src/bashversion.ts, read for an operand of type `shell-option`). The model does not take the version | 2 |
+| `shopt -s bash_source_fullpath`: full paths in `BASH_SOURCE`. 5.2 as above. | "option name" | Done in step 5, as above | 3 |
 | `$TIMEFORMAT` precision up to 6 digits (`%6R`) | Nothing said | Describe the format when we describe `TIMEFORMAT` | 3 |
 | `patsub_replacement`: its default can be chosen when bash is built (still on by default) | On, as 5.2 | Nothing | – |
 
@@ -131,6 +131,6 @@ Each step is a PR that keeps every test green and coverage at 100%.
 2. Done. Fixes that hold in both versions, found by the inventory: `printf %#q` (5.2: the `#` does nothing), `printf %ls` and `%lc`. The embedded explainers get the release whose builtin reads the text (`EmbeddedContext.bash()`; undefined for a program), and `explainPrintf` and `bashPrintf` a reader (`PrintfReader`: a bash release or coreutils; awk's printf as before). Found on the way, in both releases: `%Q` (bash 5.2 has it too), the length modifiers of C (`%ld`), precisions and widths in bytes, and what `%q` quotes (`,` and `^`; `#` and `~` only at the start of a word); and in coreutils printf, no `%#q`, `%Q`, `%S`, `%C` or `%(…)T`.
 3. The walk runs `${ }` in the current shell and keeps its changes (4.2); `${| }` gives `REPLY`.
 4. Done. Version-gated options in the command specs, with the issue in 5.2 mode: `source -p`, `compgen -V`, `trap -P`, `read -E`. `OptionSpec.since` (the tuple flag `since:5.3`) names the release; the argument interpreter reads the option in every release, as it reads the options of the other shells, and the dialect check reads `since` (`laterOptions` in src/dialect.ts; the issue `laterOption`), so the explanation is the one of 5.3 and the issue says what 5.2 does, as for `${ }`. The model does not take the version (4.2): in 5.2 mode, `compgen -V arr` still counts as setting `arr`.
-5. Variables and shell options: `GLOBSORT` (and the glob examples), `BASH_TRAPSIG`, `BASH_MONOSECONDS`, `array_expand_once`, `bash_source_fullpath`.
+5. Done. Variables and shell options: `GLOBSORT`, `BASH_TRAPSIG`, `BASH_MONOSECONDS` (`bash53Variables` in src/dict/syntax.ts; a plain variable in 5.2 mode), `array_expand_once`, `bash_source_fullpath` (with the issue `laterOption` in 5.2 mode). Left: `$TIMEFORMAT`'s six digits (3.3), as we do not describe `TIMEFORMAT` yet.
 6. POSIX-mode and `test` differences, checked with generated cases against both versions.
 7. Done. test/manual.test.ts against the 5.3 bashref.texi too (5), in CI's `bash53` job.

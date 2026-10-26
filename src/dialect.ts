@@ -1,5 +1,5 @@
 import { interpret } from './argv/interpret';
-import { type BashVersion, DEFAULT_BASH_VERSION, earlier, lacks, laterOption, SINCE, unclosedBrace } from './bashversion';
+import { type BashVersion, DEFAULT_BASH_VERSION, earlier, lacks, laterOption, laterShellOption, SHELL_OPTIONS_SINCE, SINCE, unclosedBrace } from './bashversion';
 import { givenOptions, has, operands, values } from './argv/query';
 import { argWord } from './argv/words';
 import { builtins } from './dict/builtins';
@@ -458,7 +458,8 @@ const ZSH_SYNTAX: [string, string] = [
 
 /**
  * The options of bash's builtins on lines [from, to] that bash `version` lacks (`OptionSpec.since`): bash reports
- * "invalid option" there, and the builtin does nothing.
+ * "invalid option" there, and the builtin does nothing. Also the names of shell options it lacks
+ * (`SHELL_OPTIONS_SINCE`, in an operand of type `shell-option`: `shopt -s NAME`).
  */
 function laterOptions(tree: SyntaxTree, from: number, to: number, version: BashVersion, lang: Lang): Issue[] {
   const out: Issue[] = [];
@@ -467,11 +468,18 @@ function laterOptions(tree: SyntaxTree, from: number, to: number, version: BashV
     if (!name || !Object.hasOwn(builtins, name.text)) continue;
     const prefix = prefixAssignments(c);
     const args = c.namedChildren.filter((x) => x !== name && !prefix.includes(x) && x.field !== 'redirect');
-    for (const { word, role } of givenOptions(interpret(builtins[name.text], args.map(argWord), { name: name.text }))) {
+    const parse = interpret(builtins[name.text], args.map(argWord), { name: name.text });
+    const add = (word: number, text: [string, string]): void => {
+      out.push({ id: 'laterOption', kind: 'unsupported', message: `⚠ ${text[lang === 'ja' ? 0 : 1]}${lang === 'ja' ? '。' : '.'}`, node: args[word], place: args[word] });
+    };
+    for (const { word, role } of givenOptions(parse)) {
       const since = role.role === 'option' ? role.spec.since : undefined;
-      if (!since || !earlier(version, since)) continue;
-      const text = laterOption(name.text, role.flag, since, version, builtins[name.text].builtin === 'special')[lang === 'ja' ? 0 : 1];
-      out.push({ id: 'laterOption', kind: 'unsupported', message: `⚠ ${text}${lang === 'ja' ? '。' : '.'}`, node: args[word], place: args[word] });
+      if (since && earlier(version, since)) add(word, laterOption(name.text, role.flag, since, version, builtins[name.text].builtin === 'special'));
+    }
+    for (const { word, role } of parse.roles) {
+      const option = role.role === 'operand' && role.spec?.type === 'shell-option' ? argWord(args[word]).value : undefined;
+      const since = option !== undefined && Object.hasOwn(SHELL_OPTIONS_SINCE, option) ? SHELL_OPTIONS_SINCE[option] : undefined;
+      if (since && earlier(version, since)) add(word, laterShellOption(option!, since, version));
     }
   }
   return out;
