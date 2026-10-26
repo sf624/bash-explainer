@@ -5,6 +5,7 @@
 // the worked example of the text (src/explain/examples.ts, src/explain/examples-jq.ts).
 import type { Token } from '../analyzer-types';
 import { givenOptions } from '../argv/query';
+import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { YQ_SPECS } from '../dict/yq';
 import { explainEscapes } from '../embedded/format';
 import { EMBEDDED, type EmbeddedContext } from '../embedded/registry';
@@ -50,6 +51,7 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
     // The letters given (`-lane`: l, a, n and e; `-pi.bak`: p and i).
     letters: () => new Set(givenOptions(cx.command!.parse).map(({ role }) => role.flag.slice(1))),
     given: (...names) => given(cx, ...names),
+    bash: () => (cx.command?.spec.builtin ? cx.opts.bashVersion ?? DEFAULT_BASH_VERSION : undefined),
   };
   const r = EMBEDDED[lang](lit.text, ecx);
   if (!r) return undefined;

@@ -3,7 +3,8 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { bashPrintf, braceExpand, globExamples, globMatches, GlobOpts } from '../src/examples/shellwords';
+import type { PrintfReader } from '../src/embedded/format';
+import { bashPrintf, braceExpand, globExamples, globMatches, GlobOpts, ShellWordsUnsupported } from '../src/examples/shellwords';
 
 const bash = (script: string, ...args: string[]) => execFileSync('bash', ['-c', script, '_', ...args]).toString();
 
@@ -29,6 +30,13 @@ describe('printf agrees with bash', () => {
     ['%#5x|%#.3x|%-#8o|%#08x\\n', '255', '5', '8', '255'], ['%5.2d|%.0d|\\n', '3', '0'], ['%d %i\\n', '-0x1f', '0x1f'], ['%e\\n', '1e3'], ['%f\\n', '0x10'],
     ['%d\\n', ' 3'], ['%g %G %g\\n', '100000', '1e-5', '1e6'], ['%+x|% x\\n', '5', '5'], ['%.2e %.1e\\n', '1.005', '1.25'],
     ['%q|%.*f|%b|%q|%c|%d|%d\\n', '', '2', '3.14159', 'a\\qb', '', '', "'", '010'], ['%s|%b|%q|%c|%d\\n'],
+    // The same in bash 5.2 and 5.3 (test/bash53.test.ts has what differs): `%Q`, the length modifiers of C, widths and
+    // precisions in bytes, what `%q` quotes.
+    ['%Q|%.2Q|%5Q|%-6Q|%.1Q|\\n', 'a b', 'a b c', 'x', 'y z', "it's"], ['%ld|%hhd|%lu|%zx|%jo|%Lf|%lld|%lq|%lb\\n', '5', '300', '7', '255', '8', '1.5', '9', 'a b', 'x\\ty'],
+    ['%5s|%.2s|%-4s|%5b|%5q|%.3s|\\n', 'é', 'éa', 'é', 'é', 'ab', 'aé'], ['%*s|%-*s|%*c|\\n', '-4', 'ab', '3', 'c', '-2', 'd'], ['%05s|%-05s|%05q|\\n', 'ab', 'cd', 'e f'],
+    ['%q|%q|%q|%q|%q|%q\\n', 'a,b^c#d~e', '#a', '~a', 'x=~a:~b', '!a{b}[c]?*$`"<>()&;| ', 'a%b+c=d@e.f:g/h-i_j'], ['%#q|%#Q|%#x|%#o|%#e|%#g|%#d|%#s\\n', '', '', '255', '8', '1', '1', '5', 'ab'],
+    ['%lc|%5ls|%.1ls\\n', 'ab', 'cd', 'ef'],
+    ['%.s|%ls|%Q|%.2Q|%q|\\n'], ['%#.0f|%#5.0f|%#.0e|%#.0E|%#.0g|%#-6.0f|\\n', '3', '3', '3', '-3', '3', '-2'], ['%.Q|%.0Q|%.q|%.Q|\\n', 'abc', 'abc', 'abc'],
   ];
   for (const [fmt, ...args] of cases) {
     it(JSON.stringify([fmt, ...args]), () => {
@@ -38,11 +46,31 @@ describe('printf agrees with bash', () => {
 });
 
 describe('printf arguments bash rejects are not run', () => {
-  for (const [fmt, arg] of [['%d', '1.5'], ['%d', '1e3'], ['%x', '1.5'], ['%u', '5.5'], ['%d', '3 '], ['%d', 'abc'], ['%d', '99999999999999999999'], ['%*d', '1e1']]) {
+  for (const [fmt, arg] of [['%d', '1.5'], ['%d', '1e3'], ['%x', '1.5'], ['%u', '5.5'], ['%d', '3 '], ['%d', 'abc'], ['%d', '99999999999999999999'], ['%*d', '1e1'], ['%5%', '1'], ['%l%', '1']]) {
     it(`${fmt} ${arg}`, () => {
       assert.throws(() => bashPrintf(fmt, [arg]), /./);
     });
   }
+});
+
+describe('printf output that depends on what is not known is not shown', () => {
+  // The bash release (`%#q`, `%S`, `%C`: test/bash53.test.ts), the program, the locale (a character that is not ASCII in
+  // `%q`, `%c`, `%ls`), or bytes that are not text (a precision that cuts a character).
+  const cases: [string, string, PrintfReader?][] = [
+    ['%#q', 'a'], ['%#Q', 'a'], ['%S', 'a'], ['%C', 'a'], ['%S', 'a', '5.2'], ['%q', 'é', '5.2'], ['%c', 'é', '5.3'], ['%ls', 'é', '5.3'], ['%lc', 'é', '5.2'],
+    ['%.1s', 'é', '5.2'], ['%.2Q', 'aé', '5.3'], ['%q', 'a b', 'coreutils'], ['%Q', 'a', 'coreutils'], ['%S', 'a', 'coreutils'], ['%5b', 'a', 'coreutils'], ['%#d', '1', 'coreutils'],
+    ['%.*Q', '1'], ['%5.Q', 'a', '5.2'],
+  ];
+  for (const [fmt, arg, reader] of cases) {
+    it(`${fmt} ${arg} (${reader ?? 'unknown'})`, () => {
+      assert.throws(() => bashPrintf(fmt, [arg], reader), ShellWordsUnsupported);
+    });
+  }
+  it('shows what coreutils printf prints', () => {
+    for (const [fmt, ...args] of [['%ld|%ls|%lc|%5s|%.2s|%c|\\n', '5', 'x', 'y', 'é', 'éa', 'z']]) {
+      assert.strictEqual(bashPrintf(fmt, args, 'coreutils'), execFileSync('/usr/bin/printf', [fmt, ...args]).toString());
+    }
+  });
 });
 
 describe('glob examples agree with bash and find', () => {

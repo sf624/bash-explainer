@@ -4,7 +4,7 @@
 import type { Example } from '../analyzer-types';
 import type { CommandExampleKind } from '../argv/spec';
 import { visible } from '../ctlchars';
-import { formatDate as formatDateCommand, parseSampleDate, SAMPLE_DATES, UTC } from '../embedded/format';
+import { formatDate as formatDateCommand, parseSampleDate, type PrintfReader, SAMPLE_DATES, UTC } from '../embedded/format';
 import { pick } from '../embedded/types';
 import type { Lang } from '../i18n';
 import { dateOutputLabel, parseDateValue, relativeFrom, relativeItems, zoneOf } from './dates';
@@ -73,11 +73,11 @@ export function ioExample(sample: string[], output: string[], spec: RerunSpec, l
 }
 
 /** What a command whose spec names `kind` does with these words (`read` has `readExample`). */
-export function commandExampleOf(kind: Exclude<CommandExampleKind, 'read'>, words: ExampleWord[], lang: Lang, src: InputSource = STDIN): Example | undefined {
+export function commandExampleOf(kind: Exclude<CommandExampleKind, 'read'>, words: ExampleWord[], lang: Lang, src: InputSource = STDIN, printf?: PrintfReader): Example | undefined {
   const s = pick(lang);
   const values = words.map((w) => w.value);
   switch (kind) {
-    case 'printf': return printfExample(values, lang);
+    case 'printf': return printfExample(values, lang, printf);
     case 'xargs': return xargsExample(words, lang, src);
     case 'getopt': return getoptExample(values, lang);
     case 'perl': {
@@ -100,8 +100,8 @@ export function commandExampleOf(kind: Exclude<CommandExampleKind, 'read'>, word
   }
 }
 
-/** What `printf FORMAT ARGS…` prints, when all of them are literal. */
-function printfExample(words: (string | undefined)[], lang: Lang): Example | undefined {
+/** What `printf FORMAT ARGS…` prints, when all of them are literal, as `reader` runs it. */
+function printfExample(words: (string | undefined)[], lang: Lang, reader?: PrintfReader): Example | undefined {
   const s = pick(lang);
   if (words.some((w) => w === undefined)) return undefined;
   let list = words as string[];
@@ -114,7 +114,7 @@ function printfExample(words: (string | undefined)[], lang: Lang): Example | und
   if (!list.length) return undefined;
   let out: string;
   try {
-    out = bashPrintf(list[0], list.slice(1));
+    out = bashPrintf(list[0], list.slice(1), reader);
   } catch (e) {
     if (e instanceof ShellWordsUnsupported) return undefined;
     // A bug in bashPrintf: let it show.

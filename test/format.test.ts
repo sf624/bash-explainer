@@ -1,6 +1,7 @@
 import * as assert from 'assert';
-import { execFileSync } from 'child_process';
-import { explainDate, explainPrintf, formatDate, parseSampleDate, printfNote, UTC } from '../src/embedded/format';
+import { execFileSync, spawnSync } from 'child_process';
+import { explainDate, explainPrintf, formatDate, parseSampleDate, type PrintfReader, printfNote, UTC } from '../src/embedded/format';
+import { tokensOf } from './support/explain';
 import { parseDateValue, relativeFrom, relativeItems, zoneOf } from '../src/examples/dates';
 
 function parts(src: string, ts = explainPrintf(src, 'en')): string[] {
@@ -24,6 +25,72 @@ describe('printf formats', () => {
     assert.match(explainPrintf('%(%F)T', 'en')[0].explanation, /formatted with `%F`/);
     assert.strictEqual(explainPrintf('%y', 'en')[0].kind, 'error');
     assert.match(explainPrintf('\\033[1m', 'en')[0].children[0].explanation, /octal code 033/);
+  });
+
+  it('says what `#` does to each conversion', () => {
+    const alt = (conv: string, reader?: PrintfReader) => explainPrintf(`%#${conv}`, 'en', reader)[0].explanation;
+    assert.match(alt('x'), /with a 0x prefix \(none for 0\)/);
+    assert.match(alt('X'), /with a 0X prefix/);
+    assert.match(alt('o'), /with a leading 0/);
+    for (const c of 'aAeEfF') assert.match(alt(c), /always with a decimal point\)/);
+    for (const c of 'gG') assert.match(alt(c), /always with a decimal point, trailing zeros kept/);
+    for (const c of 'dsc') assert.match(alt(c, '5.3'), /the `#` changes nothing here/);
+    assert.match(alt('q', '5.3'), /in single quotes/);
+    assert.match(alt('Q', '5.2'), /changes nothing in bash 5\.2/);
+  });
+
+  it('reads the length modifiers of C in bash and coreutils, not in awk', () => {
+    assert.match(explainPrintf('%ld', 'en', '5.2')[0].explanation, /value 1 as an integer \(decimal\) \(the `l` changes nothing\)/);
+    assert.match(explainPrintf('%.3ls', 'en', '5.3')[0].explanation, /at most 3 characters, in a multibyte locale/);
+    assert.match(explainPrintf('%.3s', 'en', '5.3')[0].explanation, /at most 3 bytes/);
+    assert.match(explainPrintf('%ls', 'ja', '5.2')[0].explanation, /`l` は bash 5\.2 では何も変えない/);
+    assert.match(explainPrintf('%ls', 'en', 'coreutils')[0].explanation, /the `l` changes nothing\)/);
+    // (awk: as before.)
+    assert.strictEqual(explainPrintf('%ld', 'en')[0].kind, 'error');
+    assert.strictEqual(explainPrintf('%Q', 'en')[0].kind, 'error');
+  });
+
+  it('says what each precision does', () => {
+    const at = (fmt: string, reader?: PrintfReader) => explainPrintf(fmt, 'en', reader)[0].explanation;
+    assert.match(at('%.*f', '5.2'), /the digits after the decimal point taken from an argument/);
+    assert.match(at('%.*g', '5.2'), /the significant digits taken from an argument/);
+    assert.match(at('%.*d', '5.2'), /at least as many digits as an argument says/);
+    assert.match(at('%.*s', '5.2'), /at most as many bytes as an argument says/);
+    assert.match(at('%.*Q', '5.3'), /at most as many bytes of the value as an argument says, before it is quoted/);
+    assert.match(at('%.*Q', '5.2'), /changes nothing in bash 5\.2/);
+    assert.match(at('%.Q', '5.2'), /an empty precision: it prints nothing/);
+    assert.match(at('%.2c', '5.2'), /the precision changes nothing here/);
+    assert.match(at('%.2lc', '5.3'), /at most 2 characters/);
+    assert.match(at('%.*s'), /at most as many characters as an argument says/);
+  });
+
+  it('rejects what coreutils printf rejects, and only that', () => {
+    const formats: string[] = [];
+    for (const conv of 'diouxXfeEgGaAcsbq') for (const mod of ['', '#', '0', '-', '+', ' ', "'", '5', '.2', '.', 'l', 'hh', 'L', 'j', 'z']) formats.push(`%${mod}${conv}`);
+    const wrong = formats.filter((fmt) => {
+      const r = spawnSync('/usr/bin/printf', [fmt, /[csbq]$/.test(fmt) ? 'a' : '1']);
+      return (explainPrintf(fmt, 'en', 'coreutils')[0].kind === 'error') !== (r.status !== 0);
+    });
+    assert.deepStrictEqual(wrong, []);
+  });
+
+  it('marks what coreutils printf rejects', () => {
+    for (const fmt of ['%#q', '%Q', '%S', '%C', '%(%F)T']) {
+      assert.strictEqual(explainPrintf(fmt, 'en', 'coreutils')[0].kind, 'error', fmt);
+      assert.strictEqual(explainPrintf(fmt, 'en', '5.3')[0].kind, 'variable', fmt);
+      let status = 0;
+      try {
+        execFileSync('/usr/bin/printf', [fmt, 'a'], { stdio: 'pipe' });
+      } catch (e) {
+        status = (e as { status: number }).status;
+      }
+      assert.strictEqual(status, 1, fmt);
+    }
+    assert.match(explainPrintf('%#q', 'en', 'coreutils')[0].explanation, /coreutils printf rejects it \("invalid conversion specification"\)/);
+    assert.match(explainPrintf('%(%F)T', 'en', 'coreutils')[0].explanation, /coreutils printf has no such conversion/);
+    // In a script: the builtin is bash's, `env printf` the program.
+    assert.match(tokensOf("env printf '%Q' a").map((t) => t.explanation).join('\n'), /unknown conversion `Q`/);
+    assert.match(tokensOf("printf '%Q' a").map((t) => t.explanation).join('\n'), /value 1 as a string quoted/);
   });
 
   it('notes how many values one use of the format takes', () => {

@@ -9,6 +9,7 @@ import type { ArgvParse } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
 import type { CommandSpec } from '../argv/spec';
 import { argWordFor } from '../argv/words';
+import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { visible } from '../ctlchars';
 import { awkInvocation, type AwkRunOptions } from '../examples/awk';
 import * as commandExamples from '../examples/commands';
@@ -358,7 +359,9 @@ export function commandExampleFor(cx: Explainer, n: SyntaxNode, spec: CommandSpe
   if (spec.copies && src.streams.length < 2 && !src.reads) return;
   // (printf with a brace expansion: its output is in the example of the expansion, with the words.)
   if (kind === 'printf' && args.some((a) => braceWordsOf(cx, a)?.length)) return;
-  pushExample(cx, commandExamples.commandExampleOf(kind, exampleWords(cx, args, !!spec.prints), cx.lang, src));
+  // (printf: the builtin of the bash release explained for, or the coreutils program.)
+  const reader = spec.builtin ? cx.opts.bashVersion ?? DEFAULT_BASH_VERSION : 'coreutils';
+  pushExample(cx, commandExamples.commandExampleOf(kind, exampleWords(cx, args, !!spec.prints), cx.lang, src, reader));
 }
 
 /**
