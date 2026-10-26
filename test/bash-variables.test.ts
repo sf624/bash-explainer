@@ -5,7 +5,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { alwaysNumeric, assignsArithmetic, BASH_VARIABLES, changedByBash, changedUnseen, readonlyAtStart, setAtStart } from '../src/semantics/vars';
+import { alwaysNumeric, assignsArithmetic, BASH_VARIABLES, changedByBash, changedUnseen, DYNAMIC_SINCE_53, readonlyAtStart, setAtStart } from '../src/semantics/vars';
 
 const [BASH, ENV] = execFileSync('bash', ['-c', 'type -P bash env']).toString().trim().split('\n');
 const names = Object.keys(BASH_VARIABLES);
@@ -42,15 +42,17 @@ describe('the variables bash sets (src/semantics/vars.ts)', () => {
       for (const m of section.matchAll(/<dt[^>]*>.*?<code[^>]*>([A-Za-z_0-9]+)<\/code>/g)) listed.push(m[1]);
     }
     assert.ok(listed.length > 100);
-    // (Besides the manual's: TERM, which bash sets at start, and COPROC_PID, the PID of the coprocess COPROC.)
-    assert.deepStrictEqual(names.filter((n) => !listed.includes(n)), ['COPROC_PID', 'TERM']);
+    // (Besides the manual's: TERM, which bash sets at start, COPROC_PID, the PID of the coprocess COPROC, bash 5.3's
+    // GLOBSORT, BASH_MONOSECONDS and BASH_TRAPSIG, and the variables of `$"…"` (3.1.2.5).)
+    assert.deepStrictEqual(names.filter((n) => !listed.includes(n)), ['COPROC_PID', 'TERM', 'GLOBSORT', 'BASH_MONOSECONDS', 'BASH_TRAPSIG', 'TEXTDOMAIN', 'TEXTDOMAINDIR']);
     assert.deepStrictEqual(listed.filter((n) => !names.includes(n)), []);
   });
 
   it('marks readonly, numeric and dynamic variables as bash treats an assignment to them', () => {
     // Each is assigned text in a function (FUNCNAME, BASH_SOURCE… are set there), then read. (`eval`: an assignment to a
     // readonly variable discards the rest of the line.)
-    const tried = where((n) => changedByBash(n) || alwaysNumeric(n));
+    // (Not those that only bash 5.3 changes: this is bash 5.2.)
+    const tried = where((n) => (changedByBash(n) || alwaysNumeric(n)) && !DYNAMIC_SINCE_53.has(n));
     const script = `f() {\n${tried.map((v) => `  eval ${v}=zz 2>/dev/null; s=$?; r=("\${${v}[@]}"); echo "${v} $s \${r[*]}"`).join('\n')}\n}\nf\n`;
     const rows = cleanRun(script).trim().split('\n').map((l) => /^(\w+) (\d+) ?(.*)$/.exec(l)!);
     assert.deepStrictEqual(rows.map((r) => r[1]), tried);

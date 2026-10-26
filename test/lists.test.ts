@@ -44,6 +44,12 @@ function lists(src: string): string[] {
 }
 
 describe('lists of commands in the tree', () => {
+  it('explains a reserved word that an unfinished construct leaves in an AND list as that word', () => {
+    // (`while a do b; done`: bash needs a `;` before `do`, so our parser leaves `done` among the list's parts.)
+    assert.notStrictEqual(runBash('while false do b; done && c').status, 0);
+    assert.ok(meaning('while a do b; done && c').some((l) => /^ {2}\S+ done — End of the loop body$/.test(l)), meaning('while a do b; done && c').join('\n'));
+  });
+
   it('makes a list of the parts joined by `;` and `&` on a line, and of one part with `&`, not of one part alone', () => {
     assert.deepStrictEqual(lists('a; b & c && d || e'), ['"a; b & c && d || e": a | ; | b | & | c && d || e']);
     assert.deepStrictEqual(lists('a && b &'), ['"a && b &": a && b | &']);
