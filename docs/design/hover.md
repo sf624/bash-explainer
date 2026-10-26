@@ -85,7 +85,7 @@ The web page's editor shows VS Code's part hover too: option B of a design study
 | The pointer on the indentation, on a blank between statements | the line card (`lineCard`) |
 | The pointer past the end of the line | nothing |
 | The pointer on a name hint | the hint's own tooltip |
-| `Ctrl+K Ctrl+I` (`⌘K ⌘I` on a Mac) | the card at the cursor; pressed again, the focus goes into the card, and Tab reaches its links. Escape, a click outside the editor, an edit or a move of the cursor closes it |
+| `Ctrl+K Ctrl+I` (`⌘K ⌘I` on a Mac) | the card at the cursor, and the page's live region tells a screen reader that it is shown and how to reach it; pressed again, the focus goes into the card, and Tab reaches its links. Escape, a click outside the editor, an edit or a move of the cursor closes it |
 | `Ctrl+K Ctrl+E`, the links "Whole line", "N more notes on this line" and "Open in panel" | no card: the cursor goes to the line (to its first word, unless it is on the line already), so the panel explains it |
 | The link "Settings" | the page's settings |
 | A touch screen (`hover: none`) | nothing: a tap moves the cursor, and the panel follows it |

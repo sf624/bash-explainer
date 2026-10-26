@@ -52,6 +52,8 @@ export interface PanelLine {
   animations: boolean;
   /** The problems on the line, as the editor underlines them: columns from 0, and the level of each. */
   marks?: { from: number; to: number; level: NoteLevel }[];
+  /** The web page's panel, whose links open in a new tab (VS Code opens them in the browser). */
+  web?: boolean;
 }
 
 /**
@@ -103,6 +105,8 @@ export function panelUpdate(p: PanelLine) {
     lineText: p.lineText,
     explanation: p.placement === 'bottom' ? ex : placeExamples(ex),
     manual: manualLinks(lang, ex),
+    // (Said after a link's name, for a screen reader: the links open outside the panel.)
+    linkNote: p.web ? tp.opensTab : tp.opensBrowser,
     examplesFirst: p.placement === 'first',
     animations: p.animations,
     contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),

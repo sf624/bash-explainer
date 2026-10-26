@@ -131,5 +131,8 @@ describe('links to the Bash manual', () => {
     assert.deepStrictEqual(shebang.manual['execve(2)'], { text: 'execve(2)', label: 'Linux マニュアルページ execve(2)', title: 'Interpreter scripts', url: 'https://man7.org/linux/man-pages/man2/execve.2.html' });
     assert.deepStrictEqual(noteRefs(ex, ex.notes[0]), ['3.7.5']);
     assert.strictEqual(noteRefs(ex, 'not a note'), undefined);
+    // Where the links open, said after their names: the browser from VS Code, a new tab from the web page.
+    assert.strictEqual(msg.linkNote, '(opens in the browser)');
+    assert.strictEqual(panelUpdate({ lang: 'ja', explanation: ex, file: 'a.sh', line: 0, lineText: src, choice: {}, placement: 'first', animations: true, web: true }).linkNote, '（新しいタブで開く）');
   });
 });

@@ -30,7 +30,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 | **VS Code** | Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールし、シェルスクリプトを開いて単語にマウスを乗せます。詳しくは [VS Code で使う](#vs-code-で使う) を参照してください。 |
 | VSCodium など Open VSX を使うエディタ | [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer) |
 | vscode.dev と github.dev | 同じ拡張が VS Code for the Web でも動きます（GitHub のリポジトリで `.` を押す）。 |
-| **ブラウザ**（インストールなし） | [ブラウザ版](https://sf624.github.io/bash-explainer/) にスクリプトを貼り付けるかファイルを開いて（`Ctrl+O`、またはエディタにドロップ）、カーソルを動かします。単語にマウスを乗せると、VS Code と同じカードを表示します。`Ctrl+S` で保存できます。`main` からビルドした [開発版](https://sf624.github.io/bash-explainer/next/) もあります（リリース版と異なる場合があります）。 |
+| **ブラウザ**（インストールなし） | [ブラウザ版](https://sf624.github.io/bash-explainer/) にスクリプトを貼り付けるかファイルを開いて（`Ctrl+O`、またはエディタにドロップ）、カーソルを動かします。単語にマウスを乗せると、VS Code と同じカードを表示します。`Ctrl+S` で保存でき、`F6` でエディタと解説を行き来できます。`main` からビルドした [開発版](https://sf624.github.io/bash-explainer/next/) もあります（リリース版と異なる場合があります）。 |
 | **ターミナル** | `npx bash-explainer deploy.sh:12`、または `npm install --global bash-explainer`。詳しくは [cli/README.md](cli/README.md#installation) を参照してください。 |
 | **Neovim、Helix、Emacs** など LSP に対応したエディタ | `bash-explainer --lsp` が Language Server として、同じホバー、警告、クイックフィックスを提供します。設定例は [In your editor](cli/README.md#in-your-editor-language-server) を参照してください。 |
 | **CI** | GitHub Actions で `uses: sf624/bash-explainer@v0` とすると、警告が PR の差分に表示されます。他の CI では `npx bash-explainer --check` を使います。詳しくは [In CI](cli/README.md#in-ci-github-actions) を参照してください。 |

@@ -19,6 +19,7 @@ import { HoverInput, lineCard, partHover } from '../src/ui/hoverView';
 import type { ThemeKind } from '../src/ui/palette';
 import { isMac } from './file-io';
 import { renderCard } from './hover-markdown';
+import { TEXT } from './text';
 
 /** What the hover asks of the page. */
 export interface HoverHost {
@@ -28,6 +29,8 @@ export interface HoverHost {
   explainer(): ((line: number) => LineExplanation) | undefined;
   /** The card's link "Settings". */
   openSettings(): void;
+  /** Says a short message to a screen reader (the page's live region): a card opened by the keyboard. */
+  announce?(text: string): void;
 }
 
 /** The theme the page shows now, for the labels' colours (src/ui/palette.ts). */
@@ -189,6 +192,8 @@ export function webHover(host: HoverHost): WebHover {
     const pos = view.state.selection.main.head;
     measureRoom(view, pos);
     view.dispatch({ effects: [closeHoverTooltips, openCard.of({ pos })] });
+    // The focus stays in the editor: a screen reader is told that the card is there, and how to reach it.
+    if (view.dom.querySelector('.cm-bx-hover-pinned')) host.announce?.(TEXT[host.lang()].cardOpened(isMac() ? '⌘K ⌘I' : 'Ctrl+K Ctrl+I'));
     return true;
   };
   const keys = keymap.of([

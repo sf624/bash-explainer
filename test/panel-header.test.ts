@@ -99,6 +99,32 @@ describe('the VS Code panel: its header', function () {
     await page.close();
   });
 
+  it('folds a row with its twisty button from the keyboard, and says that the links open in the browser', async () => {
+    for (const lang of ['en', 'ja'] as const) {
+      const page = await open('dark', 600, lang);
+      const twisty = page.locator('#tree button.twisty').first();
+      assert.strictEqual(await twisty.getAttribute('aria-label'), lang === 'en' ? 'Parts of find | xargs' : 'find | xargs の内訳');
+      assert.strictEqual(await twisty.getAttribute('aria-expanded'), 'true');
+      await twisty.focus();
+      await page.keyboard.press('Enter');
+      assert.strictEqual(await twisty.getAttribute('aria-expanded'), 'false');
+      await until('folded', () => page.locator('#tree > li').first().locator(':scope > .body').isVisible(), (v) => !v);
+      // (The fold is the button's: the row's own click, which also selects the part in the editor, is not posted.)
+      assert.deepStrictEqual((await posted(page)).filter((t) => t === 'reveal'), []);
+      await page.keyboard.press('Enter');
+      assert.strictEqual(await twisty.getAttribute('aria-expanded'), 'true');
+      // The same line drawn again (its problems came): the button keeps the focus, in the new rows.
+      await page.evaluate(`window.postMessage({ ...window.MSGS['${lang}'], marks: [{ from: 0, to: 4, level: 'info' }] }, '*')`);
+      await until('drawn again', () => page.locator('#line .squiggle').count(), (n) => n > 0);
+      assert.strictEqual(await page.evaluate('document.activeElement.matches("#tree > li:first-child > .row > button.twisty")'), true);
+      // VS Code opens a webview's links in the browser.
+      const name = (await page.locator('#tree .refs a').first().getAttribute('aria-label'))!;
+      assert.ok(name.endsWith(lang === 'en' ? ' (opens in the browser)' : '（ブラウザで開く）'), name);
+      assert.deepStrictEqual(page.errors, []);
+      await page.close();
+    }
+  });
+
   it('has VS Code\'s hover and 1px focus ring in each theme, a dashed hover outline in high contrast', async () => {
     // (toolbar.hoverOutline is set in high contrast only: elsewhere the outline is transparent.)
     const none = 'dashed rgba(0, 0, 0, 0)';

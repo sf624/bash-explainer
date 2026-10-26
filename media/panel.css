@@ -637,11 +637,41 @@ header .actions {
   outline-offset: -1px;
 }
 
-/* Folding: the twisty, and a collapsed item's children. */
+/* The explanation as a whole, focused by the web page's F6 (panel.js, `focusExplanation`). */
+#main:focus {
+  outline: none;
+}
+
+#main:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+/* Folding: the twisty, and a collapsed item's children. The list's twisty is a button (panel.js, `item`) drawn as
+   the glyph alone, in the same place. */
 .twisty {
   flex: 0 0 0.8em;
   color: var(--c-muted);
   user-select: none;
+}
+
+button.twisty {
+  box-sizing: border-box;
+  width: 0.8em;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  color: var(--c-muted);
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+button.twisty:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
 }
 
 li.collapsed > .body {
@@ -911,6 +941,20 @@ body {
 
 #layers button.step.empty .short {
   opacity: 0.6;
+}
+
+/* With forced colours the step's tint is gone: the current step is drawn in the system's highlight. */
+@media (forced-colors: active) {
+  #layers button.step[aria-current="step"] {
+    forced-color-adjust: none;
+    background: Highlight;
+    border-color: Highlight;
+    color: HighlightText;
+  }
+
+  #layers button.step[aria-current="step"] * {
+    color: HighlightText;
+  }
 }
 
 #step-menu {

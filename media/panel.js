@@ -48,6 +48,8 @@
   let controlMarks = /** @type {Record<string, [string, string]>} */ ({});
   /** The references the rows and notes cite: { '3.7.2': { text: '§3.7.2', label, title, url }, 'execve(2)': … }. */
   let manual = /** @type {Record<string, { text: string, label: string, title: string, url: string }>} */ ({});
+  /** Said after a reference link's name: where it opens ("(opens in a new tab)"). */
+  let linkNote = '';
   /** Editable examples by id: where to show the result of a rerun. */
   /** @type {Map<number, { spec: any, layer: HTMLElement, results: HTMLElement, empty: string }>} */
   const editors = new Map();
@@ -148,6 +150,7 @@
       reference = msg.entries;
       renderReference();
     }
+    if (msg.type === 'focus') focusExplanation();
     if (msg.type === 'panelState') {
       const was = view;
       applyState(msg.state);
@@ -181,6 +184,7 @@
     controlMarks = msg.controlMarks ?? controlMarks;
     if (msg.lang) document.documentElement.lang = msg.lang;
     manual = msg.manual ?? {};
+    linkNote = msg.linkNote ?? '';
     nameButton('settings', msg.settingsLabel);
     nameButton('copy', labels.copy);
     // The quick reference stays open while the cursor moves; keep its button saying how to go back.
@@ -203,12 +207,20 @@
       foldedKeys = new Set();
       currentKey = '';
     }
+    // The same line drawn again (its problems came, the settings changed): a fold button or a link of the list that had the
+    // focus gets it back in the new rows.
+    const kept = where === shownLine ? focusInList() : null;
     shownLine = where;
     shownLineNo = ex.line;
     reading = ex.reading ?? null;
     measureSteps();
     const tree = $('tree');
     tree.replaceChildren(...ex.items.map((t, i) => item(t, `${i}`)));
+    if (kept) {
+      const row = tree.querySelector(`li[data-path="${kept.path}"] > .row`);
+      const target = row && (kept.link < 0 ? row.querySelector(':scope > button.twisty') : row.querySelectorAll('.refs a')[kept.link]);
+      if (target instanceof HTMLElement) target.focus({ preventScroll: true });
+    }
 
     renderLine(msg.lineText, ex.line, ex.items, msg.marks ?? []);
 
@@ -259,6 +271,9 @@
       a.rel = 'noopener noreferrer';
       a.textContent = m.text;
       a.title = `${m.label}: ${m.title}`;
+      // (A screen reader hears where it is, what it is about, and that it opens outside the panel.)
+      // (Japanese runs its full-width parenthesis on: "§3.7.2 …（新しいタブで開く）".)
+      a.setAttribute('aria-label', `${m.text} ${m.title}${linkNote.startsWith('(') ? ' ' : ''}${linkNote}`);
       if (i) box.append(' ');
       box.append(a);
     });
@@ -476,6 +491,9 @@
       layer.className = 'layer';
       const area = document.createElement('textarea');
       area.spellcheck = false;
+      // (Named by its label: "Input: `a.txt` (sample contents) — Editable…".)
+      label.id = `example-input-${nextId++}`;
+      area.setAttribute('aria-labelledby', label.id);
       area.value = input.lines.join('\n');
       wrap.append(layer, area);
       boxes.push({ layer, area });
@@ -634,10 +652,16 @@
     li.dataset.path = path;
     const row = document.createElement('div');
     row.className = `row kind-${token.kind}`;
-    const twisty = document.createElement('span');
+    // A row with parts folds with its twisty: a button for the keyboard and a screen reader (named by the row's label,
+    // its state in `aria-expanded`); the glyph is only drawn. A row with no parts keeps the room of one.
+    const twisty = document.createElement(token.children.length ? 'button' : 'span');
     twisty.className = 'twisty';
     if (token.children.length) {
-      twisty.textContent = '▾';
+      const b = /** @type {HTMLButtonElement} */ (twisty);
+      b.type = 'button';
+      b.setAttribute('aria-label', String(labels.partsOf ?? '{name}').replace('{name}', token.label));
+      b.setAttribute('aria-expanded', 'true');
+      b.append(el('span', { 'aria-hidden': 'true' }, '▾'));
       twisty.addEventListener('click', (e) => {
         e.stopPropagation();
         toggle(li);
@@ -695,14 +719,28 @@
     return li;
   }
 
+  /** What of the list's rows has the focus: a row's fold button (`link` -1) or its link number `link`; null: nothing there. */
+  function focusInList() {
+    const a = document.activeElement;
+    const li = a instanceof HTMLElement && $('tree').contains(a) ? /** @type {HTMLElement | null} */ (a.closest('li[data-path]')) : null;
+    if (!li || !a) return null;
+    const row = li.querySelector(':scope > .row');
+    if (a.matches('button.twisty')) return { path: String(li.dataset.path), link: -1 };
+    const links = row ? Array.from(row.querySelectorAll('.refs a')) : [];
+    return links.includes(a) ? { path: String(li.dataset.path), link: links.indexOf(a) } : null;
+  }
+
   /** Folds or unfolds an item of the list; the change returned says how what lies under it moves (see `fold`). */
   function setCollapsed(/** @type {HTMLElement} */ li, /** @type {boolean} */ want) {
     li.classList.toggle('collapsed', want);
     const path = String(li.dataset.path);
     if (want) collapsedKeys.add(path);
     else collapsedKeys.delete(path);
-    const tw = li.querySelector(':scope > .row > .twisty');
-    if (tw) tw.textContent = want ? '▸' : '▾';
+    const tw = li.querySelector(':scope > .row > button.twisty');
+    if (tw) {
+      tw.setAttribute('aria-expanded', String(!want));
+      /** @type {Element} */ (tw.firstElementChild).textContent = want ? '▸' : '▾';
+    }
     const body = /** @type {HTMLElement | null} */ (li.querySelector(':scope > .body'));
     return body && { el: body, open: !want };
   }
@@ -1659,6 +1697,8 @@
     const li = e.target instanceof HTMLElement ? /** @type {HTMLElement | null} */ (e.target.closest('li[role="treeitem"]')) : null;
     linksTabbable(li);
     if (li) showNode(readingNodes.get(li));
+    // (Tab into the tree: the browser shows the item, which may leave its row under the sticky rows.)
+    if (li && e.target === li && Date.now() - pointerAt > 500) showRow(li);
   });
   $('reading-tree').addEventListener('focusout', (e) => {
     if (!(e.relatedTarget instanceof Node && $('reading-tree').contains(e.relatedTarget))) {
@@ -1701,9 +1741,21 @@
     e.preventDefault();
     if (next) {
       focusItem(next);
-      next.scrollIntoView({ block: 'nearest' });
+      showRow(next);
     }
   });
+
+  /**
+   * Scrolls an item's own row into view, below the sticky line and step controls (the page's `scroll-padding-top`):
+   * the item holds its group too, taller than the screen, which the browser would take as in view already.
+   */
+  function showRow(/** @type {HTMLElement} */ li) {
+    li.querySelector(':scope > .trow')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  /** When the pointer last went down: a focus soon after it is the pointer's, and leaves the row where it is. */
+  let pointerAt = 0;
+  document.addEventListener('pointerdown', () => { pointerAt = Date.now(); }, true);
 
   /** Selects a token's range in the editor, only when it lies on the line explained. A range on another line (a clause of a
       `case` under its `while`, one over several lines: an if, a loop, a function) would move the cursor there, and the panel
@@ -1832,4 +1884,16 @@
   }
 
   $('settings').addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
+
+  /**
+   * Puts the focus in the explanation (the web page's key from the editor, F6): the tree view's current item, the quick
+   * reference's search field, or else the explanation itself, from where a screen reader reads on.
+   */
+  function focusExplanation() {
+    if (!$('reference').hidden) return $('ref-search').focus();
+    const li = view === 'tree' && reading ? /** @type {HTMLElement | null} */ ($('reading-tree').querySelector('li[tabindex="0"]')) : null;
+    if (li) return li.focus();
+    $('main').tabIndex = -1;
+    $('main').focus();
+  }
 })();
