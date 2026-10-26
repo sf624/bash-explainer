@@ -7,11 +7,17 @@ import type { Browser, Frame, Page } from 'playwright-core';
 import { openSite, until } from './support/site';
 
 /** The survey's scripts, and the lines to put the cursor on (from 1). */
-const SCRIPTS = [
-  { text: 'for f in *.txt; do\n  wc -l "$f"\ndone', lines: [1, 2, 3] },
-  { text: 'grep -h "$USER" /var/log/*.log | sort | uniq -c | sort -rn | head -5', lines: [1] },
-  { text: 'backup="${HOME}/backup-$(date +%F).tar.gz"\ntar -czf "$backup" ~/docs 2>/dev/null || echo "failed" >&2', lines: [1, 2] },
-  { text: 'if [[ -f config.ini && $DEBUG == 1 ]]; then source config.ini; fi', lines: [1] },
+const SCRIPTS: { text: string; lines: number[]; argv?: Record<number, string[][]> }[] = [
+  { text: 'for f in *.txt; do\n  wc -l "$f"\ndone', lines: [1, 2, 3], argv: { 2: [['wc', '-l', "‹the loop's current item from *.txt›"]] } },
+  {
+    text: 'grep -h "$USER" /var/log/*.log | sort | uniq -c | sort -rn | head -5', lines: [1],
+    argv: { 1: [['grep', '-h', '‹current user name›', '‹each name matching /var/log/*.log›'], ['sort'], ['uniq', '-c'], ['sort', '-rn'], ['head', '-5']] },
+  },
+  {
+    text: 'backup="${HOME}/backup-$(date +%F).tar.gz"\ntar -czf "$backup" ~/docs 2>/dev/null || echo "failed" >&2', lines: [1, 2],
+    argv: { 2: [['tar', '-czf', '‹home directory›/backup-‹output of date +%F›.tar.gz', '‹home directory›/docs'], ['echo', 'failed']] },
+  },
+  { text: 'if [[ -f config.ini && $DEBUG == 1 ]]; then source config.ini; fi', lines: [1], argv: { 1: [['source', 'config.ini']] } },
 ];
 
 interface Row { text: string; kind: string; read: boolean }
@@ -27,10 +33,21 @@ describe('the web page: the depths of the explanation add, and never move a text
 
   /** The rows drawn, by the range of the line they are about: the first text (without what the program reads), the colour, the fill. */
   const rows = async (f: Frame): Promise<Map<string, Row>> => new Map(await f.evaluate(`[...document.querySelectorAll('#tree .u-row')].filter((r) => !r.classList.contains('u-around')).map((r) => {
-    const t = r.querySelector('.u-l1 > .text').cloneNode(true);
-    t.querySelectorAll('.u-reads').forEach((x) => x.remove());
-    return [r.dataset.span, { text: t.textContent.trim(), kind: [...r.classList].find((c) => c.startsWith('kind-')), read: r.classList.contains('u-read') }];
+    const t = r.querySelector('.u-l1 > .text')?.cloneNode(true);
+    t?.querySelectorAll('.u-reads').forEach((x) => x.remove());
+    return [r.dataset.span, { text: (t?.textContent ?? '').trim(), kind: [...r.classList].find((c) => c.startsWith('kind-')), read: r.classList.contains('u-read') }];
   })`) as [string, Row][]);
+
+  /** The argv lines drawn (the program's side): for each, its words' texts and the ranges of the words they come from. */
+  const argvs = async (f: Frame): Promise<{ words: string[]; spans: string[] }[]> => f.evaluate(`[...document.querySelectorAll('#tree .u-argv')].map((l) => ({
+    words: [...l.querySelectorAll('.u-arg')].map((w) => w.textContent),
+    spans: [...l.querySelectorAll('.u-arg')].map((w) => w.dataset.span),
+  }))`) as Promise<{ words: string[]; spans: string[] }[]>;
+  /** "1:2-1:4": its start, as a number that orders the ranges. */
+  const startOf = (span: string): number => {
+    const [l, c] = span.split('-')[0].split(':').map(Number);
+    return l * 10000 + c;
+  };
 
   /** Shows depth `step`, with the program's side or not. */
   const show = async (f: Frame, step: number, who: boolean): Promise<void> => {
@@ -77,7 +94,19 @@ describe('the web page: the depths of the explanation add, and never move a text
             assert.strictEqual(d.kind, r.kind, `line ${line}, ${span}`);
           }
         }
+        // The program's side: one argv line per simple command, the same at both depths; its words in source order,
+        // the first the command's name (the program receives it, as argv[0]).
+        await show(f, 1, true);
+        const a1 = await argvs(f);
         await show(f, 2, true);
+        const a2 = await argvs(f);
+        assert.deepStrictEqual(a2, a1, `line ${line}: the argv lines at depth 1 and 2`);
+        for (const a of a2) {
+          assert.ok(a.words.length > 0, `line ${line}: an empty argv line`);
+          const starts = a.spans.map(startOf);
+          for (let i = 1; i < starts.length; i++) assert.ok(starts[i] >= starts[i - 1], `line ${line}: argv ${a.words.join(' ')} out of order`);
+        }
+        if (script.argv?.[line]) assert.deepStrictEqual(a2.map((a) => a.words), script.argv[line], `line ${line}: the argv lines`);
         byLine.push(await rows(f));
         // Every row drawn says something.
         for (const [span, r] of byLine[byLine.length - 1]) if (r.kind !== 'kind-simple') assert.ok(r.text, `line ${line}, ${span}: no text`);

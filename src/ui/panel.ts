@@ -164,7 +164,7 @@ export class PanelController implements vscode.Disposable {
       placement: this.service.examplePlacement,
       animations: this.service.panelAnimations,
       marks: lineMarks(this.service.issues(ed.document), line),
-      around: aroundLines(ex, this.service.issues(ed.document), (n) => ed.document.lineAt(n).text),
+      around: aroundLines(ex, this.service.issues(ed.document), (n) => ed.document.lineAt(n).text, (n) => this.service.explain(ed.document, n, false)),
     }));
   }
 

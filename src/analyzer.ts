@@ -20,7 +20,8 @@ import { statusModel } from './semantics/status';
 
 export { EXAMPLE_KINDS } from './analyzer-types';
 export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, ScriptProcess, Span, Token, TokenOrigin } from './analyzer-types';
-import type { ExplainOptions, LineExplanation, Token } from './analyzer-types';
+import type { ExplainOptions, LineExplanation, Span, Token } from './analyzer-types';
+import { argvLine } from './argvline';
 import { readingTree } from './reading';
 import { claim, dropLabelEcho } from './tokenmarks';
 import { LineExplainer, type Walk } from './explain/context';
@@ -57,6 +58,17 @@ function wordExpands(state: StateModel, w: SyntaxNode): ('glob' | 'tilde' | 'spl
   const m = wordMeaning(w, state);
   if (!m) return [];
   return (['glob', 'tilde', 'split'] as const).filter((k) => m.steps.some((s) => s.kind === k && s.applies !== false && (k === 'tilde' ? m.tildes.length > 0 : s.parts.length > 0)));
+}
+
+/** (Prototype B) The tilde prefixes of the word `w` (3.5.2), from the word model: their ranges and texts. */
+function wordTildes(state: StateModel, w: SyntaxNode): { span: Span; text: string; user: string }[] {
+  const m = wordMeaning(w, state);
+  if (!m || m.steps.find((s) => s.kind === 'tilde')?.applies === false) return [];
+  return m.tildes.filter((t) => !t.node.text.slice(0, t.start).includes('\n')).map((t) => {
+    const line = t.node.startPosition.row;
+    const col = t.node.startPosition.column;
+    return { span: { start: { line, character: col + t.start }, end: { line, character: col + t.end } }, text: t.node.text.slice(t.start, t.end), user: t.user };
+  });
 }
 
 export class Analyzer {
@@ -121,6 +133,7 @@ export class Analyzer {
       result.reading = readingTree(tree, items, {
         lang: this.lang, resolve: resolveAt, meaning: (w) => wordMeaning(w, cx.state), extra: this.otherLines(tree, line, shell, opts, items),
         variable: (part) => variableFrom(cx, state, part), expands: (w) => wordExpands(state, w),
+        tildes: (w) => wordTildes(state, w), argv: (c) => argvLine(c, state, this.lang, (name, at) => varDesc(cx, name, at)),
       });
     }
     return result;
