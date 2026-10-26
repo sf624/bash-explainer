@@ -67,6 +67,8 @@ export const ui = {
         },
         commandKinds: { argument: 'オペランド' },
         valueFor: '{flag} の値',
+        valueExpands: '{flag} の値: 展開された最初の語。残りはオペランド',
+        expands: { glob: '{kind}: 一致したファイル名ごと', split: '{kind}: 分割された語ごと', brace: '{kind}: ブレース展開の語ごと' },
         resolves: { alias: 'エイリアス', keyword: '予約語', function: '関数', builtin: 'ビルトイン', file: '外部コマンド', none: '実行されない' },
         tokenKinds: {
           command: '実行', subcommand: 'サブコマンド', builtin: 'ビルトイン', function: '関数', alias: 'エイリアス', keyword: 'キーワード', option: 'オプション', argument: '引数',
@@ -158,6 +160,8 @@ export const ui = {
         },
         commandKinds: { argument: 'operand' },
         valueFor: 'value of {flag}',
+        valueExpands: 'value of {flag}: the first of the expanded words; the rest are operands',
+        expands: { glob: '{kind}: each matching file name', split: '{kind}: each word it splits into', brace: '{kind}: each word the braces give' },
         resolves: { alias: 'alias', keyword: 'reserved word', function: 'function', builtin: 'builtin', file: 'program', none: 'nothing runs' },
         tokenKinds: {
           command: 'runs', subcommand: 'subcommand', builtin: 'builtin', function: 'function', alias: 'alias', keyword: 'keyword', option: 'option', argument: 'argument',

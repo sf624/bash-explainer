@@ -1017,4 +1017,54 @@ describe('the reading tree in the panel and in host files', () => {
       assert.match(find(r, '~/docs', 'bash').text!, /^Tilde expansion/);
     });
   });
+
+  it('says a command reads each word that bash makes of a glob, a split variable or a brace expansion, not the word as written', () => {
+    const expands = (src: string, label: string): string | undefined => find(explain(src).reading!, label, 'command', 'argument')?.expands;
+    assert.strictEqual(expands('grep -h "$USER" /var/log/*.log', '/var/log/*.log'), 'glob');
+    assert.strictEqual(expands('grep -h "$USER" /var/log/*.log', '"$USER"'), undefined);
+    assert.strictEqual(expands('ls $x', '$x'), 'split');
+    assert.strictEqual(expands('ls *.c{,h}', '*.c{,h}'), 'glob');
+    assert.strictEqual(expands('cat f{1,2}.txt', 'f{1,2}.txt'), 'brace');
+    assert.strictEqual(expands('cat "$x" "a*" f.txt', '"$x"'), undefined);
+    assert.strictEqual(expands('cat "$x" "a*" f.txt', '"a*"'), undefined);
+    assert.strictEqual(expands('cat "$x" "a*" f.txt', 'f.txt'), undefined);
+    // (With `set -f` a glob is not expanded.)
+    assert.strictEqual(expands('set -f\ncat *.txt', '*.txt'), undefined);
+    // (The value of an option is expanded as well.)
+    // (A value that is expanded too: bash makes several words, and `-o` takes the first; the others are operands.)
+    const sorted = find(explain('sort -o *.txt').reading!, '*.txt', 'command', 'argument');
+    assert.deepStrictEqual([sorted.valueFor, sorted.expands], ['-o', 'glob']);
+    // How many words reach the command, in bash: a match gives one per file, two fields give two, braces give two.
+    const dir = mkdtempSync(path.join(process.env.TMPDIR ?? tmpdir(), 'reading-expands-'));
+    try {
+      for (const f of ['a.log', 'b.log', 'f1.txt']) writeFileSync(path.join(dir, f), '');
+      const count = (script: string): string => bash(`cd '${dir}' && x='p q'; set -- ${script}; echo $#`).trim();
+      assert.strictEqual(count('*.log'), '2');
+      assert.strictEqual(count('$x'), '2');
+      assert.strictEqual(count('f{1,2}.txt'), '2');
+      assert.strictEqual(count('"*.log"'), '1');
+      assert.strictEqual(count('"$x"'), '1');
+      // `sort -o *.txt`: the output goes to the first file, the other is the input.
+      writeFileSync(path.join(dir, 'b.log'), 'z\n');
+      assert.strictEqual(bash(`cd '${dir}' && sort -o *.log; cat a.log`), 'z\n');
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it('names the role with how bash expands the word, in both languages', () => {
+    const chip = (lang: 'en' | 'ja', n: ReadingNode): string => {
+      const labels = ui[lang].panel.tree;
+      const kind = labels.commandKinds[n.kind as 'argument'];
+      return n.expands ? labels.expands[n.expands].replace('{kind}', kind) : kind;
+    };
+    for (const lang of ['en', 'ja'] as const) {
+      const r = new Analyzer(lang).explainLine(parser.parse('grep -h "$USER" /var/log/*.log'), 0, 'bash', { reading: true }).reading!;
+      const globbed = chip(lang, find(r, '/var/log/*.log', 'command', 'argument'));
+      const quoted = chip(lang, find(r, '"$USER"', 'command', 'argument'));
+      assert.strictEqual(globbed, lang === 'en' ? 'operand: each matching file name' : 'オペランド: 一致したファイル名ごと');
+      assert.strictEqual(quoted, lang === 'en' ? 'operand' : 'オペランド');
+      assert.match(ui[lang].panel.tree.valueExpands.replace('{flag}', '-o'), lang === 'en' ? /^value of -o: the first of the expanded words/ : /^-o の値: 展開された最初の語/);
+    }
+  });
 });

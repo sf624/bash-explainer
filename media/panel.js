@@ -933,9 +933,12 @@
     // (A word the command reads that is not an option is an operand: bash's arguments are called arguments.)
     // (A command another runs is a command name too, as bash's own are: its badge says what it is, and who runs it.)
     const named = n.name && ['command', 'builtin', 'function', 'alias'].includes(n.kind);
+    // (A word that bash expands first: the command reads each word that comes out, not the word as written. When it is the value of an option too, the first of those words is the value.)
+    if (n.layer === 'command' && n.expands && n.valueFor) return t.valueExpands.replace('{flag}', n.valueFor);
     // (A word the command reads as the value of an option says so, not that it is an operand.)
     if (n.layer === 'command' && n.valueFor) return t.valueFor.replace('{flag}', n.valueFor);
-    const kind = (named && t.kinds.commandName) || (shell && t.kinds[n.kind]) || (n.layer === 'command' && t.commandKinds[n.kind]) || t.tokenKinds[n.kind] || n.kind;
+    let kind = (named && t.kinds.commandName) || (shell && t.kinds[n.kind]) || (n.layer === 'command' && t.commandKinds[n.kind]) || t.tokenKinds[n.kind] || n.kind;
+    if (n.layer === 'command' && n.expands && t.expands[n.expands]) kind = t.expands[n.expands].replace('{kind}', kind);
     // (A command name's badge says what it runs.)
     return n.resolves && !n.name && t.resolves[n.resolves] ? `${kind} · ${t.resolves[n.resolves]}` : kind;
   }

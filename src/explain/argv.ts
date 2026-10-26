@@ -34,6 +34,7 @@ import type { Explainer } from './context';
 import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
+import type { StepKind } from '../semantics/words';
 import { globOff, NO_SPEC, resolve, shoptAt, specFor, wordAt } from './reads';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -110,7 +111,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             'Options known only at run time (the command reads what the expansion gives as options)'), wordParts(cx, a)));
           break;
         case 'value':
-          out.push(valueToken(cx, a, role, disables));
+          out.push(expanded(cx, a, valueToken(cx, a, role, disables)));
           break;
         case 'old-style': {
           const parts = role.letters.flatMap((l) => {
@@ -138,7 +139,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
           const count = countOf(a, cx.state.shell);
           const gives = !count ? 1 : count.min === count.max ? count.min : undefined;
           if (role.spec) ordinals.set(role.spec, { n: before.n + (gives ?? 1), sure: before.sure && gives !== undefined });
-          out.push(operandToken(cx, nodes, word, role, parse, spec, { n: before.n + 1, sure: before.sure && !count }, assigned, isFn));
+          out.push(expanded(cx, a, operandToken(cx, nodes, word, role, parse, spec, { n: before.n + 1, sure: before.sure && !count }, assigned, isFn)));
           break;
         }
         case 'subcommand': {
@@ -179,6 +180,18 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
     }
   });
   return readByCommand(out);
+}
+
+/**
+ * Marks the token of a word the command reads as an argument with how bash changes the word before the command gets
+ * it (`Token.expands`), from the word's meaning: a glob that applies, an unquoted expansion that splits, a brace expansion.
+ */
+function expanded(cx: Explainer, a: SyntaxNode, t: Token): Token {
+  if (t.kind !== 'argument') return t;
+  const steps = wordAt(cx, a)?.steps ?? [];
+  const on = (k: StepKind): boolean => steps.some((x) => x.kind === k && x.applies === true);
+  const kind = on('split') ? 'split' : on('glob') ? 'glob' : on('brace') ? 'brace' : undefined;
+  return kind ? { ...t, expands: kind } : t;
 }
 
 /**
