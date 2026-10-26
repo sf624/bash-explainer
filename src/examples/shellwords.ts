@@ -265,7 +265,8 @@ export function globMissReason(pattern: string, name: string, mode: GlobMode, op
   const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
   if (globMatches(pattern, name, mode, opts)) return '';
   if (mode === 'file' && !opts.dotglob && globMatches(pattern, name, mode, { ...opts, dotglob: true })) {
-    return s('先頭の . には * が一致しない（dotglob がオフ）', 'leading dot, not matched by * (dotglob off)');
+    // (Round 11: what dotglob is, said where it decides.)
+    return s('先頭が .（dotglob がオフ: * は . で始まる名前に一致しない）', 'leading dot (dotglob off: * skips names starting with a dot)');
   }
   if (!/[()]/.test(pattern)) {
     const tail = /[^*?\]]*$/.exec(pattern)?.[0] ?? '';

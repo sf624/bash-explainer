@@ -35,6 +35,8 @@ export interface ArgvRemoved {
   text: string; span: Span; kind: 'redirect' | 'assignment'; effect?: string; already?: string;
   /** (Round 7) What a redirection to or from a file does, in one short sentence ("Write stderr (fd 2) to `/dev/null`"): its row's text. */
   say?: string;
+  /** (Round 11) The same at depth 1, in plain words ("Error output, thrown away: …"); `say` then uses bash's terms with fd numbers. */
+  plain?: string;
 }
 /** The words a simple command's program receives, and what bash took out first: assignments, redirections, and quotes. */
 export interface ArgvLine { words: ArgvWord[]; removed: ArgvRemoved[]; quotes: boolean; empty: string[] }
@@ -77,7 +79,24 @@ const T = {
     read: { ja: (s: string, f: string) => `${s}を ${f} から読む`, en: (s: string, f: string) => `Read ${s} from ${f}` },
   },
   fdOf: { ja: (s: string, n: string) => `${s}(fd ${n})`, en: (s: string, n: string) => `${s} (fd ${n})` },
+  // (Round 11) Depth 2 says the exam's terms with fd numbers ("stderr (fd 2) to the file `/dev/null` (overwrite)"); depth
+  // 1 plain words ("Error output, thrown away: …").
+  file: {
+    write: { ja: (s: string, f: string) => `${s}をファイル ${f} へ（上書き）`, en: (s: string, f: string) => `${s} to the file ${f} (overwrite)` },
+    append: { ja: (s: string, f: string) => `${s}をファイル ${f} へ（追記）`, en: (s: string, f: string) => `${s} to the file ${f} (append)` },
+    read: { ja: (s: string, f: string) => `${s}をファイル ${f} から読む`, en: (s: string, f: string) => `${s} from the file ${f}` },
+  },
+  dup: {
+    out: { ja: (a: string, b: string) => `${a}を${b}と同じ出力先へ`, en: (a: string, b: string) => `${a} goes where ${b} goes` },
+    in: { ja: (a: string, b: string) => `${a}を${b}と同じ入力元から読む`, en: (a: string, b: string) => `${a} reads from where ${b} reads` },
+  },
+  plainStreams: { ja: ['入力', '出力', 'エラー出力'], en: ['input', 'output', 'error output'] },
+  bothPlain: { ja: '出力とエラー出力', en: 'output and error output' },
+  devnull: { ja: (s: string) => `${s}を捨てる: \`/dev/null\` に書いたものはすべて消える`, en: (s: string) => `${s}, thrown away: \`/dev/null\` discards everything written to it` },
 };
+
+/** (Round 11) A text of a row: its first letter in capitals (English). */
+const capital = (lang: Lang, t: string): string => (lang === 'en' ? t.charAt(0).toUpperCase() + t.slice(1) : t);
 
 /**
  * Text as a placeholder shows it: short (a long command or expansion is cut after a whole word, never inside one;
@@ -128,11 +147,21 @@ export function argvLine(cmd: SyntaxNode, model: StateModel, lang: Lang, describ
  * What a redirection does (3.6), said short: the stream it changes and where it goes (`2>/dev/null`: stderr →
  * `/dev/null`; `>&2`: stdout → stderr), and how the program `prog` finds that stream when it starts.
  */
-function redirEffect(r: SyntaxNode, prog: string, lang: Lang): { effect?: string; already?: string; say?: string } {
+function redirEffect(r: SyntaxNode, prog: string, lang: Lang): { effect?: string; already?: string; say?: string; plain?: string } {
   const op = r.children.find((c) => !c.named)?.type ?? '';
   const fdText = r.children.find((c) => c.field === 'descriptor')?.text;
   const dest = r.children.find((c) => c.field === 'destination');
   const streamOf = (n: string): string => (/^[012]$/.test(n) ? T.streams[lang][Number(n)] : T.fd[lang](n));
+  // (Round 11) The stream with its number, and in plain words.
+  const termOf = (n: string): string => (/^[012]$/.test(n) ? T.fdOf[lang](T.streams[lang][Number(n)], n) : T.fd[lang](n));
+  const plainOf = (n: string): string => (/^[012]$/.test(n) ? T.plainStreams[lang][Number(n)] : T.fd[lang](n));
+  const fileSay = (kind: 'write' | 'append' | 'read', n: string | undefined, to: string) => {
+    // (bash's names of the streams stay as they are written, lower case: "stderr (fd 2) to the file …".)
+    const say = (T.file[kind][lang](n === undefined ? `${T.fdOf[lang](T.streams[lang][1], '1')}${lang === 'ja' ? 'と' : ' and '}${T.fdOf[lang](T.streams[lang][2], '2')}` : termOf(n), code(to)));
+    const p = n === undefined ? T.bothPlain[lang] : plainOf(n);
+    const plain = capital(lang, kind !== 'read' && to === '/dev/null' ? T.devnull[lang](p) : T.file[kind][lang](p, code(to)));
+    return { say, plain };
+  };
   const code = (t: string) => `\`${t}\``;
   const name = code(prog);
   if (fdText !== undefined && !/^\d+$/.test(fdText)) return {};
@@ -145,21 +174,21 @@ function redirEffect(r: SyntaxNode, prog: string, lang: Lang): { effect?: string
   const to = dest.text;
   if (op === '&>' || op === '&>>') {
     const both = T.both[lang];
-    return { effect: `${both} → ${code(to)}${op === '&>>' ? T.append[lang] : ''}`, already: T.already[lang](name, both, code(to)), say: T.say[op === '&>>' ? 'append' : 'write'][lang](both, code(to)) };
+    return { effect: `${both} → ${code(to)}${op === '&>>' ? T.append[lang] : ''}`, already: T.already[lang](name, both, code(to)), ...fileSay(op === '&>>' ? 'append' : 'write', undefined, to) };
   }
   if (op === '>&' || op === '<&') {
     const stream = streamOf(fdText ?? (op === '<&' ? '0' : '1'));
     if (to === '-') return { effect: `${stream}: ${T.closed[lang]}`, already: T.alreadyClosed[lang](name, stream) };
-    if (/^\d+$/.test(to)) return { effect: `${stream} → ${streamOf(to)}`, already: T.already[lang](name, stream, streamOf(to)) };
+    if (/^\d+$/.test(to)) return { effect: `${stream} → ${streamOf(to)}`, already: T.already[lang](name, stream, streamOf(to)), say: T.dup[op === '<&' ? 'in' : 'out'][lang](termOf(fdText ?? (op === '<&' ? '0' : '1')), termOf(to)) };
     return {};
   }
   if (op === '<') {
     const stream = streamOf(fdText ?? '0');
-    return { effect: `${stream} ← ${code(to)}`, already: T.already[lang](name, stream, code(to)), say: T.say.read[lang](T.fdOf[lang](stream, fdText ?? '0'), code(to)) };
+    return { effect: `${stream} ← ${code(to)}`, already: T.already[lang](name, stream, code(to)), ...fileSay('read', fdText ?? '0', to) };
   }
   if (op === '>' || op === '>|' || op === '>>') {
     const stream = streamOf(fdText ?? '1');
-    return { effect: `${stream} → ${code(to)}${op === '>>' ? T.append[lang] : ''}`, already: T.already[lang](name, stream, code(to)), say: T.say[op === '>>' ? 'append' : 'write'][lang](T.fdOf[lang](stream, fdText ?? '1'), code(to)) };
+    return { effect: `${stream} → ${code(to)}${op === '>>' ? T.append[lang] : ''}`, already: T.already[lang](name, stream, code(to)), ...fileSay(op === '>>' ? 'append' : 'write', fdText ?? '1', to) };
   }
   return {};
 }
@@ -173,19 +202,13 @@ function redirEffect(r: SyntaxNode, prog: string, lang: Lang): { effect?: string
 export function condLine(test: SyntaxNode, model: StateModel, lang: Lang, describe: Ctx['describe']): ArgvPart[] | undefined {
   const cx: Ctx = { model, lang, describe };
   const out: ArgvPart[] = [];
-  // (Round 10: the right side of `==` said in words: a pattern, and a plain comparison when it has no wildcard.)
-  const mark = {
-    pattern: { ja: '（右辺はパターン）', en: ' (the right side is a pattern)' },
-    plain: { ja: '（右辺はパターン。ワイルドカードがないので、ただの比較）', en: ' (the right side is a pattern; no wildcard here, so a plain comparison)' },
-    regex: { ja: '（正規表現）', en: ' (regex)' },
-  };
-  const wild = (c: SyntaxNode) => /[*?[]/.test(c.text.replace(/\\./g, '').replace(/'[^']*'|"[^"]*"/g, ''));
+  // (Round 11: that the right side of `==` is a pattern is said once, on the row of `==`; a regex is marked here.)
+  const mark = { regex: { ja: '（正規表現）', en: ' (regex)' } };
   const walk = (n: SyntaxNode): boolean => {
     if (['binary_expression', 'unary_expression', 'parenthesized_expression', 'negated_expression'].includes(n.type)) {
       const op = n.type === 'binary_expression' ? n.children.find((c) => c.field === 'operator')?.text : undefined;
       for (const c of n.children) {
         if (!walk(c)) return false;
-        if (c.field === 'right' && op && ['==', '=', '!='].includes(op)) out.push({ text: mark[wild(c) ? 'pattern' : 'plain'][lang], tight: true });
         if (c.field === 'right' && op === '=~') out.push({ text: mark.regex[lang], tight: true });
       }
       return true;

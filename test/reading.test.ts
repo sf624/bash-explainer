@@ -1078,8 +1078,8 @@ describe('the words of a conditional expression in the reading tree', () => {
     const text = (label: string, kind = 'word') => find(r, label, 'bash', kind).text;
     assert.strictEqual(text('a'), 'The file `-f` tests');
     assert.strictEqual(text('$x'), 'The string on the left of `==`');
-    // (Round 9: a pattern with no wildcard matches only the same text, and is said so.)
-    assert.strictEqual(text('1'), 'The pattern on the right of `==`: with no wildcard, the left side matches it only when it is the same text');
+    // (Round 11: that a pattern with no wildcard is a plain comparison is said once, on `==`.)
+    assert.strictEqual(text('1'), 'The pattern on the right of `==`');
     assert.match(find(explain('[[ $x == "$y" ]]').reading!, '"$y"', 'bash', 'word').text!, /^The pattern on the right of `==`: the left side is matched against it as a glob pattern/);
     assert.strictEqual(text('"$n"'), 'A value `-eq` compares: evaluated as an arithmetic expression');
     assert.strictEqual(text('$s'), 'The string `-n` tests');

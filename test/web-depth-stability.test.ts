@@ -21,7 +21,7 @@ const SCRIPTS: { text: string; lines: number[]; argv?: Record<number, string[][]
   { text: 'if [[ -f config.ini && $DEBUG == 1 ]]; then source config.ini; fi', lines: [1], argv: { 1: [['config.ini']] } },
 ];
 
-interface Row { text: string; kind: string; read: boolean }
+interface Row { text: string; kind: string; read: boolean; byDepth?: boolean }
 
 describe('the web page: the depths of the explanation add, and never move a text', function () {
   this.timeout(180000);
@@ -36,7 +36,7 @@ describe('the web page: the depths of the explanation add, and never move a text
   const rows = async (f: Frame): Promise<Map<string, Row>> => new Map(await f.evaluate(`[...document.querySelectorAll('#tree .u-row')].filter((r) => !r.classList.contains('u-around')).map((r) => {
     const t = r.querySelector('.u-l1 > .text')?.cloneNode(true);
     t?.querySelectorAll('.u-reads').forEach((x) => x.remove());
-    return [r.dataset.span, { text: (t?.textContent ?? '').trim(), kind: [...r.classList].find((c) => c.startsWith('kind-')), read: r.classList.contains('u-read') }];
+    return [r.dataset.span, { text: (t?.textContent ?? '').trim(), kind: [...r.classList].find((c) => c.startsWith('kind-')), read: r.classList.contains('u-read'), ...(r.dataset.byDepth ? { byDepth: true } : {}) }];
   })`) as [string, Row][]);
 
   /** The argv lines drawn (the program's side): for each, its words' texts and the ranges of the words they come from. */
@@ -143,7 +143,8 @@ describe('the web page: the depths of the explanation add, and never move a text
           for (const [span, r] of first) {
             const d = deeper.get(span);
             assert.ok(d, `line ${line}: the row of ${span} ("${r.text}") at depth ${step}${who ? ' with the program\'s side' : ''}`);
-            assert.strictEqual(d.text, r.text, `line ${line}, ${span}`);
+            // (Round 11: a redirection says its text in plain words at depth 1, in bash's terms with fd numbers at depth 2.)
+            if (!(r.byDepth && step === 2)) assert.strictEqual(d.text, r.text, `line ${line}, ${span}`);
             assert.strictEqual(d.kind, r.kind, `line ${line}, ${span}`);
           }
         }
@@ -210,7 +211,7 @@ describe('the web page: the depths of the explanation add, and never move a text
    * border: 1.5 px is allowed). Round 10: one row of controls (the depth, the switch, "Key"), no legend line; `rows`:
    * how many rows its controls take (their middles apart by more than half a control's height).
    */
-  const toolbar = async (f: Frame): Promise<{ height: number; overlaps: string[]; rows: number }> => f.evaluate(`(() => {
+  const toolbar = async (f: Frame): Promise<{ height: number; overlaps: string[]; rows: number; keyOnRow: boolean }> => f.evaluate(`(() => {
     const vis = (e) => e.getClientRects().length > 0;
     const height = Math.round(document.getElementById('layers').getBoundingClientRect().height);
     const boxes = [...document.querySelectorAll('#layers #layers-label, #layers button.step, #layers #who-toggle, #layers #key-button')]
@@ -224,8 +225,18 @@ describe('the web page: the depths of the explanation add, and never move a text
       const [n2, b] = boxes[j];
       if (a.left < b.right - 1.5 && b.left < a.right - 1.5 && a.top < b.bottom - 1.5 && b.top < a.bottom - 1.5) overlaps.push(n1 + ' / ' + n2);
     }
-    return { height, overlaps, rows };
-  })()`) as Promise<{ height: number; overlaps: string[]; rows: number }>;
+    const mid = (e) => { const b = e.getBoundingClientRect(); return (b.top + b.bottom) / 2; };
+    const keyOnRow = Math.abs(mid(document.getElementById('key-button')) - mid(document.getElementById('who-toggle'))) < 12;
+    return { height, overlaps, rows, keyOnRow };
+  })()`) as Promise<{ height: number; overlaps: string[]; rows: number; keyOnRow: boolean }>;
+
+  /**
+   * (Round 11) The chips broken into two boxes: a chip (a word the program receives, the mark "bash only", what bash
+   * runs for a name, a risk's marker) is one box on one line; a word the program receives wider than its line may
+   * wrap inside its one box. Returns their texts.
+   */
+  const splitChips = async (f: Frame): Promise<string[]> => f.evaluate(`[...document.querySelectorAll('#tree .u-arg, #tree .u-bmark, #tree .nk-badge, #tree .u-rmark, #tree .u-arg .u-ph')]
+    .filter((c) => c.getClientRects().length > 1).map((c) => c.textContent)`) as Promise<string[]>;
 
   for (const lang of ['en', 'ja'] as const) {
     for (const width of [1280, 390]) {
@@ -244,6 +255,9 @@ describe('the web page: the depths of the explanation add, and never move a text
               // (Round 10: no switch of the keywords; one row of controls at a desktop width.)
               assert.strictEqual(await f.evaluate("document.getElementById('kw-toggle')"), null, `${at}: the keywords' switch is gone`);
               if (width >= 1280) assert.strictEqual(t.rows, 1, `${at}: the toolbar in one row`);
+              // (Round 11: "Key" stays on the toolbar's row on a phone too.)
+              assert.ok(t.keyOnRow, `${at}: "Key" on the row of the switch`);
+              assert.deepStrictEqual(await splitChips(f), [], `${at}: chips broken into two boxes`);
               const key = `${step}${who}`;
               if (!heights.has(key)) heights.set(key, t.height);
               assert.strictEqual(t.height, heights.get(key), `${at}: the toolbar's height`);
@@ -272,7 +286,7 @@ describe('the web page: the depths of the explanation add, and never move a text
     return { simple: count('Simple command:'), dquote: count('Double quotes:'), chips, xs, depth };
   })()`) as Promise<{ simple: number; dquote: number; chips: string[]; xs: number[]; depth: string }>;
 
-  it('says each definition once, gives every row of depth 2 one role chip, and keeps the description column in place', async () => {
+  it('says each definition once, gives every row of depth 2 one role label, and keeps the description column in place', async () => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-US' });
     const page = await ctx.newPage();
     const xs = new Set<number>();
@@ -294,10 +308,62 @@ describe('the web page: the depths of the explanation add, and never move a text
     await ctx.close();
   });
 
+  it('says that the right side of `==` is a pattern once, on `==`', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    const f = await open(page, SCRIPTS[3].text, 1);
+    for (const [step, who] of [[2, false], [2, true], [1, true]] as const) {
+      await show(f, step, who);
+      const said = await f.evaluate(`[...document.querySelectorAll('#main .u-row')].filter((r) => /plain comparison|right side is a pattern/.test(r.querySelector('.u-desc').innerText)).map((r) => r.querySelector('.label').textContent.trim())`) as string[];
+      const whole = await f.evaluate("document.getElementById('main').innerText") as string;
+      assert.deepStrictEqual(said, step === 2 ? ['=='] : [], `depth ${step}${who ? ' with the program\'s side' : ''}`);
+      assert.ok((whole.match(/plain comparison/g) ?? []).length <= 1, `depth ${step}: said ${(whole.match(/plain comparison/g) ?? []).length} times`);
+    }
+    await ctx.close();
+  });
+
+  for (const width of [1280, 390]) {
+    it(`lists in the key only the marks on the screen, and opens it in the panel's flow (${width} px)`, async () => {
+      const ctx = await browser.newContext({ viewport: { width, height: 900 }, locale: 'en-US' });
+      const page = await ctx.newPage();
+      for (const script of SCRIPTS) {
+        const f = await open(page, script.text, script.lines[0]);
+        for (const [step, who] of [[1, false], [2, false], [2, true], [1, true]] as const) {
+          await show(f, step, who);
+          if ((await f.evaluate("document.getElementById('key-button').getAttribute('aria-expanded')")) !== 'true') await f.evaluate("document.getElementById('key-button').click()");
+          const at = `${script.text.split('\n')[0]}: depth ${step}${who ? ' with the program\'s side' : ''}`;
+          const got = await f.evaluate(`(() => {
+            const shown = (sel) => [...document.querySelectorAll(sel)].some((e) => e.getClientRects().length > 0);
+            const items = [...document.querySelectorAll('#u-keybox [data-for]')];
+            const key = document.getElementById('u-keybox');
+            const style = getComputedStyle(key.parentElement);
+            const summary = document.getElementById('u-summary');
+            return {
+              absent: items.filter((i) => !shown(i.dataset.for)).map((i) => i.nextElementSibling.textContent),
+              count: items.length,
+              receive: items.filter((i) => /u-read|u-argv/.test(i.dataset.for)).length,
+              flow: style.position === 'static' && (!summary || summary.hidden || key.getBoundingClientRect().bottom <= summary.getBoundingClientRect().top + 1),
+            };
+          })()`) as { absent: string[]; count: number; receive: number; flow: boolean };
+          assert.deepStrictEqual(got.absent, [], `${at}: key items for marks not on the screen`);
+          assert.ok(got.count > 0, `${at}: the key lists the marks`);
+          if (!who) assert.strictEqual(got.receive, 0, `${at}: receive marks in the key with the switch off`);
+          assert.ok(got.flow, `${at}: the key is in the flow, above "In short"`);
+        }
+      }
+      await ctx.close();
+    });
+  }
+
   it('shows every reserved word and operator at depth 2, none at depth 1 but a line made of one', async () => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-US' });
     const page = await ctx.newPage();
-    const labels = async (f: Frame): Promise<string[]> => f.evaluate(`[...document.querySelectorAll('#tree .u-row')].filter((r) => r.getClientRects().length && !r.classList.contains('u-around')).map((r) => r.querySelector('.label').textContent.trim())`) as Promise<string[]>;
+    // (The code of each row, without the mark "bash only" that follows it.)
+    const labels = async (f: Frame): Promise<string[]> => f.evaluate(`[...document.querySelectorAll('#tree .u-row')].filter((r) => r.getClientRects().length && !r.classList.contains('u-around')).map((r) => {
+      const l = r.querySelector('.label').cloneNode(true);
+      l.querySelectorAll('.u-bmark').forEach((m) => m.remove());
+      return l.textContent.trim();
+    })`) as Promise<string[]>;
     const want: [number, number, string[]][] = [[0, 1, ['for', 'in', ';', 'do', 'done']], [1, 1, ['|', '|', '|', '|']], [2, 2, ['||']], [3, 1, ['[[', '&&', '==', ']]', ';', 'then', ';', 'fi']]];
     const syntax = /^(for|in|do|done|if|then|fi|\[\[|\]\]|;|\||\|\||&&|==)$/;
     for (const [i, line, words] of want) {

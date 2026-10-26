@@ -3201,3 +3201,414 @@ body.vscode-high-contrast {
   max-width: 100%;
   vertical-align: top;
 }
+
+/* ---------------------------------------------------------------- prototype B, round 11 */
+/* The rows: the description takes the width; the section of the manual is at the end of the role line. */
+.row.u-row,
+#main[data-depth="2"] .row.u-row {
+  grid-template-columns: var(--codew, 12rem) minmax(0, 1fr);
+}
+#tree.u-stacked .row.u-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+.u-row > .u-refcol {
+  display: none;
+}
+
+/* The role line: plain small muted text ("argument → option · tar reads it  §3.7.1"), no boxes. */
+#tree .u-row .u-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.35em;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--c-muted);
+}
+#tree .u-row .u-side .u-role,
+#tree .u-row .u-side button.u-role {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: color-mix(in srgb, var(--vscode-foreground) 72%, transparent);
+  line-height: inherit;
+}
+#tree .u-row .u-side button.u-role {
+  text-decoration: underline dotted color-mix(in srgb, var(--c-muted) 70%, transparent);
+  text-underline-offset: 2px;
+}
+#tree .u-row .u-side button.u-role[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 12%, transparent);
+}
+#tree .u-row .u-side .u-role.u-partrole {
+  font-family: inherit;
+}
+#tree .u-row .u-side .u-prog {
+  font-weight: normal;
+  color: color-mix(in srgb, var(--vscode-foreground) 72%, transparent);
+}
+#tree .u-row .u-side .u-prog .u-prog-who {
+  font-size: inherit;
+  color: var(--c-muted);
+}
+#tree .u-row .u-side .refs {
+  margin-left: 0.6em;
+  font-size: inherit;
+}
+#tree .u-row .u-side .refs a.u-ref {
+  color: var(--c-muted);
+  text-decoration-style: dotted;
+}
+/* The definition said once (what a simple command is): one muted line under the role line. */
+#tree .u-row .u-defline {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--c-muted);
+  font-style: normal;
+}
+/* Each note a line of its own. */
+#tree .u-row .u-notes + .u-notes {
+  margin-top: 0.05rem;
+}
+
+/* bash's steps: plain text with arrows; a step that does not apply muted and struck, with why. */
+#tree .u-row .u-strip {
+  display: block;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0.05rem 0;
+  color: color-mix(in srgb, var(--vscode-foreground) 80%, transparent);
+}
+#tree .u-row .u-strip .u-step {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  white-space: normal;
+}
+#tree .u-row .u-strip .u-step-on {
+  color: var(--vscode-foreground);
+}
+#tree .u-row .u-strip .u-step-off,
+#tree .u-row .u-strip .u-step-off s,
+#tree .u-row .u-strip .u-step-why {
+  color: color-mix(in srgb, var(--c-muted) 85%, transparent);
+}
+#tree .u-row .u-strip .u-stepbox {
+  display: inline;
+  margin-right: 0.25em;
+}
+#tree .u-row .u-strip .u-stepbox > .u-step {
+  display: inline-block;
+  max-width: 100%;
+}
+#tree .u-row .u-strip .u-strip-arrow {
+  color: var(--c-muted);
+}
+
+/* A reserved word or an operator: one line, its role and section after its text. */
+#tree .u-row.u-oneline .u-l1 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.7em;
+}
+#tree .u-row.u-oneline .u-side-inline {
+  margin: 0;
+}
+/* A `|` between two commands: a thin connector, its text small and muted. */
+#tree .row.u-row.u-conn {
+  padding-top: 0.05rem;
+  padding-bottom: 0.05rem;
+}
+#tree .row.u-row.u-conn > .u-tok > .label {
+  font-size: 12px;
+}
+#tree .row.u-row.u-conn .u-l1 > .text {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--vscode-foreground) 80%, transparent);
+}
+#tree .row.u-row.u-conn::before {
+  top: 0.05rem;
+  bottom: 0.05rem;
+}
+
+/* No chip breaks into two boxes: each is one piece on one line. */
+#tree .u-bmark,
+#tree .nk-badge,
+#tree .u-rmark,
+#tree .u-arg .u-ph,
+.u-key .u-bmark {
+  white-space: nowrap;
+}
+
+/* The switch: a track and a knob, off grey at the left, on blue at the right; one name at every width. */
+#layers #who-toggle,
+#layers #who-toggle[aria-pressed="true"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0 0.2rem;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-foreground);
+}
+#layers #who-toggle .u-switch {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 16px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--c-muted) 55%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-muted) 70%, transparent);
+}
+#layers #who-toggle .u-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  right: auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+#layers #who-toggle[aria-pressed="true"] .u-switch {
+  background: var(--vscode-button-background, #0078d4);
+  box-shadow: none;
+}
+#layers #who-toggle[aria-pressed="true"] .u-switch::after {
+  left: 16px;
+  right: auto;
+}
+#layers #who-toggle .u-full {
+  display: inline;
+}
+#layers #who-toggle .u-short {
+  display: none;
+}
+#layers #who-toggle:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #0078d4);
+  outline-offset: 2px;
+}
+@media (max-width: 480px) {
+  /* A phone: the depth's label goes first, then the switch's name wraps on two lines; "Key" stays on the row. */
+  #layers #layers-label {
+    display: none;
+  }
+  #layers {
+    flex-wrap: nowrap;
+    gap: 0.35rem 0.5rem;
+  }
+  #layers #who-toggle .who-text {
+    white-space: normal;
+    max-width: 10em;
+    font-size: 12px;
+    line-height: 1.15;
+    text-align: left;
+  }
+  :lang(ja) #layers #who-toggle .who-text {
+    max-width: 6.6em;
+  }
+}
+
+/* The key: in the panel's flow under the toolbar, at every width; it pushes the rest down. */
+#main > #depth-caption,
+#layers > #depth-caption {
+  position: static;
+  width: auto;
+  margin: 0 0 0.5rem;
+  z-index: auto;
+  font-size: max(12px, 0.92em);
+}
+#main > #depth-caption[hidden] {
+  display: none;
+}
+#depth-caption .u-key,
+#main > #depth-caption .u-key {
+  max-height: none;
+  overflow: visible;
+  box-shadow: none;
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.35));
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem 0.5rem;
+  background: color-mix(in srgb, var(--vscode-foreground) 3%, var(--vscode-editor-background, #fff));
+}
+@media (max-width: 480px) {
+  #main > #depth-caption {
+    position: static;
+  }
+  #depth-caption .u-key {
+    border-radius: 4px;
+    max-height: none;
+  }
+}
+#depth-caption .u-kcols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.5rem;
+}
+#depth-caption .u-ksec {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+#depth-caption .u-kgrid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem 0.6rem;
+  align-items: baseline;
+  margin-top: 0.15rem;
+}
+#depth-caption .u-ksw {
+  white-space: nowrap;
+}
+#depth-caption .u-ksample {
+  display: inline-flex;
+  font-size: 12px;
+  color: var(--c-muted);
+}
+#depth-caption .u-ksample .u-role {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: color-mix(in srgb, var(--vscode-foreground) 72%, transparent);
+}
+#depth-caption .u-ksample .u-prog {
+  font-weight: normal;
+  color: color-mix(in srgb, var(--vscode-foreground) 72%, transparent);
+}
+#depth-caption .u-ksample .u-step {
+  border: 0;
+  background: none;
+  padding: 0;
+}
+#depth-caption .u-ksample .u-step-off,
+#depth-caption .u-ksample .u-step-off s {
+  color: var(--c-muted);
+}
+#depth-caption .u-kkeys {
+  margin: 0.35rem 0 0;
+  color: var(--c-muted);
+}
+#depth-caption .note-icon {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+}
+
+/* "Run the whole line on sample lines": an action, a button-like row right under the risks. */
+#u-tryit > details.example > summary {
+  display: block;
+  list-style: none;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--vscode-textLink-foreground, #006ab1) 45%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-textLink-foreground, #006ab1) 7%, transparent);
+  color: var(--vscode-textLink-foreground, #006ab1);
+}
+#u-tryit > details.example > summary::-webkit-details-marker {
+  display: none;
+}
+#u-tryit > details.example > summary::before {
+  content: "▶ ";
+}
+#u-tryit > details.example[open] > summary::before {
+  content: "▼ ";
+}
+#u-tryit > details.example > summary:hover {
+  background: color-mix(in srgb, var(--vscode-textLink-foreground, #006ab1) 14%, transparent);
+}
+#u-tryit > details.example > summary > h3 {
+  color: inherit;
+}
+
+/* A risk's "more": its text, the sections on a line of their own, then the fix. */
+#u-risks .u-risk-more > p.u-risk-refs {
+  margin: 0.1rem 0 0.25rem;
+  font-size: 12px;
+}
+/* A one-line row: the role and the section flow after the text, kept together. */
+#tree .u-row.u-oneline .u-l1 {
+  display: block;
+}
+#tree .u-row.u-oneline .u-side-inline {
+  display: inline-flex;
+  margin-left: 0.7em;
+  vertical-align: baseline;
+}
+/* A group's code wraps between its pieces first (before an operator, after a `;`), inside a piece only when it is
+   wider than the column. */
+.u-row > .u-tok > .label .u-seg {
+  display: inline-block;
+  max-width: 100%;
+  white-space: normal;
+  vertical-align: top;
+}
+/* The key's marks: two pairs on a row where there is room; the bars under them. */
+#depth-caption .u-ksec:first-child {
+  flex-basis: 100%;
+}
+#depth-caption .u-ksec:first-child .u-kgrid {
+  grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+  column-gap: 0.6rem;
+}
+@media (max-width: 560px) {
+  #depth-caption .u-ksec:first-child .u-kgrid {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+}
+/* Each step with the arrow before it stays together: the strip wraps between steps only. */
+#tree .u-row .u-strip .u-stepbox {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+}
+/* A run of muted steps wraps between its names. */
+#tree .u-row .u-strip .u-stepbox.u-stepbox-off,
+#tree .u-row .u-strip .u-stepbox.u-stepbox-off > .u-step {
+  display: inline;
+}
+#tree .u-row .u-strip .u-nw {
+  white-space: nowrap;
+}
+#tree .u-row .u-strip .u-stepbox,
+#tree .u-row .u-strip .u-strip-lead {
+  margin-right: 0;
+}
+/* (Round 11) The key's sections one under the other: the marks (two pairs a row where they fit), then the bars. */
+#depth-caption .u-key .u-kcols {
+  display: block;
+}
+#depth-caption .u-key .u-ksec + .u-ksec {
+  margin-top: 0.4rem;
+}
+#depth-caption .u-key .u-ksec:first-child .u-kgrid {
+  grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+  column-gap: 0.6rem;
+}
+#depth-caption .u-key .u-ksec:last-child:not(:first-child) .u-kgrid {
+  grid-template-columns: repeat(3, max-content minmax(0, 1fr));
+}
+@media (max-width: 560px) {
+  #depth-caption .u-key .u-ksec:first-child .u-kgrid,
+  #depth-caption .u-key .u-ksec:last-child:not(:first-child) .u-kgrid {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+}
+/* The key's sample of a risk's marker: drawn as on a row. */
+#depth-caption .u-rmark {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.82em;
+  font-weight: 600;
+  line-height: 1.25;
+  padding: 0 0.35em;
+  border: 1px solid var(--c-info);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--c-info) 8%, transparent);
+  color: var(--c-info);
+  white-space: nowrap;
+}

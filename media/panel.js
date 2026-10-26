@@ -897,9 +897,8 @@
   let who = true;
   /** (Round 10) Whether the viewer chose the switch's state (then it is kept). */
   let whoChosen = false;
-  /** (Round 10) Whether the key is open over the view, and with all its sections ("More"). */
+  /** (Round 11) Whether the key is open, under the toolbar. */
   let keyOpen = false;
-  let keyMore = false;
   /**
    * (Round 7) Whether the reserved words and separators are drawn as rows. Round 9: by depth, remembered: hidden at
    * depth 1 and shown at depth 2 unless the viewer chose otherwise.
@@ -1256,7 +1255,10 @@
       // (Round 8: what depth 1 says, in plain words; bash's own terms come at depth 2, `terms`.)
       const p = step === 1 ? plainOf(head) : { text: head, terms: [] };
       texts.push({ text: p.text, orig: head, terms: p.terms, step, kind: m.kind, src: m });
-      if (tail) texts.push({ text: tail, step: 2, cls: 'u-text2' });
+      // (Round 11: a remark said short at depth 2, `labels.depth.tails`.)
+      let t2 = tail ?? '';
+      for (const [src, flags, to] of labels.depth.tails ?? []) t2 = t2.replace(new RegExp(src, flags), to);
+      if (tail) texts.push({ text: t2, step: 2, cls: 'u-text2' });
     }
     return texts;
   }
@@ -1459,7 +1461,9 @@
       const nameOf = (/** @type {any} */ c) => (c ? codeOf(c.children.find((x) => NAMES.has(x.kind))?.label ?? c.label) : '');
       const left = parent.children.slice(0, i).reverse().find((c) => c.kind !== 'operator');
       const right = parent.children.slice(i + 1).find((c) => c.kind !== 'operator');
-      if (left && right) row.texts = [{ text: d.pipe.replace('{left}', nameOf(left)).replace('{right}', nameOf(right)), step: 2 }];
+      // (Round 11: in bash's terms, the streams it joins: "stdout of `grep` → stdin of `sort`".)
+      if (left && right) row.texts = [{ text: (primary.label === '|&' ? d.pipeBoth : d.pipe).replace('{left}', nameOf(left)).replace('{right}', nameOf(right)), step: 2 }];
+      row.conn = true;
     }
     // A redirection of a command: only for that command, set up by bash before it starts (`Redirection applied to
     // …`, said once on the command's token), on the redirection's row at every depth.
@@ -1467,11 +1471,17 @@
     // is said once, under the words the program receives; with the program's side off, only whose it is.)
     if (primary.kind === 'redirect' && ctx.redirectsOf) {
       const what = (ctx.removed ?? []).find((/** @type {any} */ x) => spanKey(x.span) === spanKey(primary.span));
+      // (Round 11) Depth 1 in plain words ("Error output, thrown away: …"), depth 2 in bash's terms with the fd numbers
+      // ("stderr (fd 2) to the file `/dev/null` (overwrite)"): one text at each depth.
       if (what?.say) {
-        const p = plainOf(what.say);
-        row.texts = [{ text: p.text, orig: what.say, terms: p.terms, step: 1, kind: 'redirect', src: primary }];
+        const p = what.plain ? { text: what.plain, terms: [] } : row.texts.length ? null : plainOf(what.say);
+        const first = p ? [{ text: p.text, orig: what.say, terms: p.terms, step: 1, max: 1, kind: 'redirect', src: primary }] : row.texts.filter((/** @type {any} */ x) => x.step === 1).map((/** @type {any} */ x) => ({ ...x, max: 1 }));
+        row.texts = [...first, { text: what.say, step: 2, kind: 'redirect', src: primary }];
+        row.byDepth = true;
       }
     }
+    // (Round 11) On every redirection row at depth 2: bash sets it up before the command starts, which never sees it.
+    if (primary.kind === 'redirect') row.lines.push({ text: d.redirAll, step: 2, cls: 'u-note' });
     if (primary.cond) row.cond = primary.cond;
     // (Round 6: the role the program gives the word, `option`, `operand`, `value of -f`, beside its role to bash.)
     if (reader?.layer === 'command' && !['command', 'builtin', 'function', 'alias', 'subcommand'].includes(reader.kind)) row.progRole = { text: chipOf(reader), name: reader.reader ?? '' };
@@ -1561,23 +1571,41 @@
    * (quoted) → no globbing (quoted) → quote removal".
    */
   function stepsEl(/** @type {any[]} */ steps, /** @type {string | undefined} */ bare) {
-    // (Round 10) A strip: each step a box, done (solid), skipped (struck through, with why) or maybe (dashed), in
-    // order; the last, quote removal, says what the program gets.
+    // (Round 11) Plain text with arrows, in bash's order (3.5): brace → tilde → parameter and arithmetic expansion,
+    // command substitution → word splitting → globbing → quote removal. A step done is said plainly; one that does not
+    // apply is muted and struck, with why in a few words (none in this word, quoted, not inside `[[ ]]`…); steps
+    // muted one after another for the same reason are one. Each step stays whole on its line.
     const t = labels.depth.steps;
     const strip = el('div', { class: 'u-strip' }, el('span', { class: 'u-strip-lead' }, t.lead));
-    // (Steps skipped one after another for the same reason are one box: "word splitting, globbing (quoted)".)
-    const whyOf = (/** @type {any} */ x) => (x.why === 'nothing' ? t.nothing[x.kind] : t.why[x.why]) ?? x.why;
+    const whyOf = (/** @type {any} */ x) => (x.why === 'absent' ? t.absent : x.why === 'noquotes' ? t.noQuotes : x.why === 'nothing' ? t.nothing[x.kind] : t.why[x.why]) ?? x.why;
+    // (Nothing in the word for the step to act on, whatever the step: "none", said once for a run of such steps; the
+    // tooltip says each.)
+    const groupWhy = (/** @type {any} */ x) => (['absent', 'noquotes', 'nothing'].includes(x.why) ? t.absent : whyOf(x));
+    const at = (/** @type {string} */ k) => steps.find((x) => x.kind === k);
+    const subst = ['parameter', 'arithmetic', 'command', 'process'];
+    /** @type {any[]} */
+    const full = [];
+    for (const k of ['brace', 'tilde']) full.push(at(k) ?? { kind: k, applies: false, why: 'absent' });
+    const done = steps.filter((x) => subst.includes(x.kind));
+    if (done.length) full.push(...done);
+    else full.push({ kind: 'parameter', applies: false, why: 'absent' }, { kind: 'command', applies: false, why: 'absent' });
+    for (const k of ['split', 'glob']) full.push(at(k) ?? { kind: k, applies: false, why: 'absent' });
+    full.push(at('quote-removal') ?? { kind: 'quote-removal', applies: false, why: 'noquotes' });
     /** @type {any[][]} */
     const groups = [];
-    for (const x of steps) {
+    for (const x of full) {
       const last = groups.at(-1);
-      if (x.applies === false && last && last[0].applies === false && whyOf(last[0]) === whyOf(x)) last.push(x);
+      if (x.applies === false && last && last[0].applies === false && groupWhy(last[0]) === groupWhy(x)) last.push(x);
       else groups.push([x]);
     }
-    const sep = document.documentElement.lang === 'ja' ? '・' : ', ';
+    const ja = document.documentElement.lang === 'ja';
+    const sep = ja ? '・' : ', ';
+    const nameOf = (/** @type {any} */ x) => (x.kind === 'subst' ? t.subst : t.kinds[x.kind] ?? x.kind);
+    // (A step absent from the word is said short, its full name in the tooltip: "brace, tilde (none)".)
+    const shortOf = (/** @type {any} */ x) => (x.why === 'absent' ? t.short?.[x.kind] ?? nameOf(x) : nameOf(x));
     groups.forEach((g, i) => {
       const x = g[0];
-      const name = t.kinds[x.kind] ?? x.kind;
+      const name = nameOf(x);
       const box = el('span', { class: 'u-stepbox' }, ...(i ? [el('span', { class: 'u-strip-arrow', 'aria-hidden': 'true' }, '→ ')] : []));
       if (x.applies === true) {
         const b = el('span', { class: 'u-step u-step-on' }, name);
@@ -1585,11 +1613,22 @@
         box.append(b);
       } else if (x.applies === 'unknown') box.append(el('span', { class: 'u-step u-step-maybe' }, t.maybe.replace('{kind}', name)));
       else {
-        const why = whyOf(x);
-        const names = g.map((y) => t.kinds[y.kind] ?? y.kind);
-        box.append(el('span', { class: 'u-step u-step-off', title: names.map((n) => t.no.replace('{kind}', n).replace('{why}', why)).join('\n') }, el('s', {}, names.join(sep)), ...(sep === '・' ? [el('span', { class: 'u-step-why' }, ...inline(`（${why}）`))] : [' ', el('span', { class: 'u-step-why' }, ...inline(`(${why})`))])));
+        const why = groupWhy(x);
+        // (A run of muted steps may wrap between its names: each name stays whole, the arrow with the first, the why
+        // with the last.)
+        box.className = 'u-stepbox u-stepbox-off';
+        const arrow = box.firstChild;
+        const off = el('span', { class: 'u-step u-step-off', title: g.map((y) => t.no.replace('{kind}', nameOf(y)).replace('{why}', whyOf(y))).join('\n') });
+        const names = g.map(shortOf);
+        names.forEach((n, k) => {
+          const piece = el('span', { class: 'u-nw' }, ...(k === 0 && arrow ? [arrow] : []), el('s', {}, n), ...(k < names.length - 1 ? [sep.trim()] : []),
+            ...(k === names.length - 1 ? (ja ? [el('span', { class: 'u-step-why' }, ...inline(`（${why}）`))] : [' ', el('span', { class: 'u-step-why' }, ...inline(`(${why})`))]) : []));
+          off.append(...(k && !ja ? [' '] : []), piece);
+        });
+        box.append(off);
       }
-      strip.append(box);
+      // (A space between the steps: where the line may wrap.)
+      strip.append(' ', box);
     });
     return strip;
   }
@@ -1716,7 +1755,9 @@
       const last = r.children[r.children.length - 1];
       const head = /^([^:：]+)[:：]/.exec(r.texts[0]?.text ?? '')?.[1];
       if (r.primary?.kind === 'compound' && head && last?.primary?.kind === 'keyword' && /^(done|fi|esac)$/.test(last.label)) {
-        last.texts = [{ text: d.endOf.replace('{label}', head).replace('{n}', String(r.span.start.line + 1)), step: last.texts[0]?.step ?? 2 }];
+        // (Round 11: "that starts on line 1" only when the statement is on more than one line.)
+        const here = r.span.start.line === r.span.end.line;
+        last.texts = [{ text: (here ? d.endOfHere : d.endOf).replace('{label}', head).replace('{n}', String(r.span.start.line + 1)), step: last.texts[0]?.step ?? 2 }];
       }
       r.children.forEach(ends);
     };
@@ -1865,13 +1906,6 @@
   let keyPartOf = '';
   /** (Round 9) How many lines say what a program receives (or that none runs) on the panel. */
   let progLines = 0;
-  /** (Round 9) Whether the mark "done by bash" says something on a row: an expansion, a glob, a redirection, `[[ ]]`. */
-  const informs = (/** @type {any} */ r) => {
-    const k = r.primary?.kind;
-    if (['expansion', 'substitution', 'arithmetic', 'brace', 'redirect', 'heredoc'].includes(k)) return true;
-    if (r.kind === 'pattern' || /^\[\[/.test(r.label)) return true;
-    return !r.struct && !['keyword', 'operator', 'name'].includes(k) && /[*?]/.test(r.label);
-  };
   /** Whether a text or a line of a row is drawn at step `s`: from its step on, and up to its last (`max`) when it has one. */
   const atStep = (/** @type {any} */ x, /** @type {number} */ s) => x.step <= s && (!x.max || s <= x.max);
 
@@ -1965,8 +1999,9 @@
     // the order stdin, stdout, stderr; only what the line says (nothing about a stream it leaves as it is).
     const st = a.stream;
     const streams = /** @type {{ at: number, text: string }[]} */ ([]);
-    if (row.pipeIn?.from) streams.push({ at: 0, text: st.inPipe.replace('{name}', codeOf(row.pipeIn.from)) });
-    if (row.pipeOut?.to) streams.push({ at: 1, text: (row.pipeOut.both ? st.bothPipe : st.outPipe).replace('{name}', codeOf(row.pipeOut.to)) });
+    // (Round 11: at depth 2 the `|` between two boxes says it, once: no pipe here.)
+    if (s < 2 && row.pipeIn?.from) streams.push({ at: 0, text: st.inPipe.replace('{name}', codeOf(row.pipeIn.from)) });
+    if (s < 2 && row.pipeOut?.to) streams.push({ at: 1, text: (row.pipeOut.both ? st.bothPipe : st.outPipe).replace('{name}', codeOf(row.pipeOut.to)) });
     // (Round 10: a redirection is said once, on its own row, "done by bash": not here too.)
     streams.sort((p, q) => p.at - q.at);
     if (streams.length) {
@@ -2090,7 +2125,9 @@
       });
       mark?.addEventListener('click', (e) => {
         e.stopPropagation();
-        // (Back to the box: "In short" above it stays in sight, below the toolbar.)
+        // (Back to the box: "In short" above it stays in sight, below the toolbar. Round 11: its "more" opens.)
+        const more = li.querySelector('details.u-risk-more');
+        if (more instanceof HTMLDetailsElement) more.open = true;
         bringIntoView(li, document.getElementById('u-summary')?.hidden === false ? document.getElementById('u-summary') : li);
         li.classList.remove('u-flash');
         void li.offsetWidth;
@@ -2100,10 +2137,35 @@
     }
     // The rest of its text, and the fix, behind "more".
     const body = String(p.body ?? '');
-    const restText = body.startsWith(head) ? body.slice(head.length).trim() : body;
+    let restText = body.startsWith(head) ? body.slice(head.length).trim() : body;
+    if (p.headline) {
+      restText = body;
+      // (Round 11: the body's first sentence, when it says the headline again in other words, is left out.)
+      const [first, ...others] = body.split(/(?<=\.)\s+(?=\S)|(?<=。)/);
+      const words = (/** @type {string} */ t) => {
+        const c = t.toLowerCase().replace(/[`.,;:()（）、。「」]/g, ' ');
+        // (Japanese has no spaces: its pieces of two characters.)
+        if (document.documentElement.lang === 'ja') return new Set([...c.replace(/\s+/g, '')].map((ch, i, all) => ch + (all[i + 1] ?? '')).slice(0, -1));
+        return new Set(c.split(/\s+/).filter((w) => w.length > 2));
+      };
+      const hw = words(head);
+      const fw = words(first ?? '');
+      const shared = [...hw].filter((w) => fw.has(w)).length;
+      if (others.length && hw.size && shared / hw.size >= 0.7) restText = others.join(document.documentElement.lang === 'ja' ? '' : ' ');
+    }
+    // (Round 11) The fix is said once, in its box: the sentence of the text that gives it ("To pass the failure on,
+    // write `…`") is left out. The text starts with a capital; the sections follow on a line of their own.
+    if (p.fix) {
+      const sentences = restText.split(/(?<=\.)\s+(?=\S)|(?<=。)/);
+      const kept = sentences.filter((x) => !x.includes(p.fix.code) && !(/`[^`]*(\|\||&&)[^`]*`/.test(x) && /\b(write|end it with|add)\b|書く|書き換える|付ける/.test(x)));
+      restText = kept.join(document.documentElement.lang === 'ja' ? '' : ' ').trim();
+    }
+    restText = cap(restText);
     if (restText || p.fix || (p.refs ?? []).length) {
       const more = el('details', { class: 'u-risk-more' }, el('summary', {}, d.riskMore));
-      more.append(el('p', {}, ...inline(p.headline ? body : restText), ...refLinks(p.refs ?? [])));
+      if (restText) more.append(el('p', {}, ...inline(restText)));
+      const refs = refLinks(p.refs ?? []);
+      if (refs.length) more.append(el('p', { class: 'u-risk-refs' }, ...refs));
       if (p.fix) {
         const code = el('code', { class: 'u-long' }, p.fix.code);
         const copy = el('button', { type: 'button', class: 'u-copy' }, d.copy);
@@ -2169,7 +2231,9 @@
     // (Round 7: the `bash` mark on the top row of each part that is all bash's own (`bashOnly`, buildRows), next to
     // its code. Round 9: only where it informs: an expansion, a glob, a redirection, `[[ ]]`; not on `if`, `;`, `||`
     // or a loop's variable.)
-    const marked = who && row.bashOnly && !row.lit && !(up && up.bashOnly) && informs(row);
+    // (Round 11: on every such part, consistently: expansions, globs, redirections, `[[ ]]`, the operators and the
+    // reserved words; still not on a piece of literal text of a word.)
+    const marked = who && row.bashOnly && !row.lit && !(up && up.bashOnly);
     // (Round 9: the same with the switch on and off: a piece of a word the program receives whole, `-r` of `-rn`.)
     const partOf = !row.recv && !row.recvAny && !row.bashOnly && !struct && up?.recvAny && !row.bash ? up.label : '';
     if (partOf && !keyPartOf) keyPartOf = partOf;
@@ -2205,9 +2269,25 @@
     if (mark.length) label.append(' ', ...mark);
     const tok = el('span', { class: 'u-tok' }, twisty, label, ...badge);
     const desc = el('div', { class: 'u-desc' });
-    const texts = row.texts.filter((/** @type {any} */ x) => atStep(x, s));
+    let texts = row.texts.filter((/** @type {any} */ x) => atStep(x, s));
+    // (Round 11) A reserved word or an operator with no parts is one line at depth 2: its text, its role and its section
+    // on the same line; a `|` is a thin connector between the boxes of the two commands. A remark in parentheses of a
+    // reserved word or a `;` goes to the text's tooltip.
+    const oneLine = s >= 2 && !row.children.length && !row.examples.length && ['keyword', 'operator'].includes(row.primary?.kind);
+    let fullText = '';
+    if (oneLine && (row.primary.kind === 'keyword' || row.primary.label === ';') && texts[0]) {
+      const m = /^(.{8,}?)\s*[(（]([^]*)[)）]$/.exec(texts[0].text);
+      if (m) {
+        fullText = texts[0].text.replace(/`/g, '');
+        texts = [{ ...texts[0], text: m[1] }, ...texts.slice(1)];
+      }
+    }
+    if (oneLine) r.classList.add('u-oneline');
+    if (oneLine && row.conn) r.classList.add('u-conn');
+    if (row.byDepth) r.dataset.byDepth = '1';
     const first = el('div', { class: 'u-l1' });
     const main = el('span', { class: `text${texts[0]?.cls ? ` ${texts[0].cls}` : ''}` }, ...(texts[0] ? inline(texts[0].text) : []));
+    if (fullText) main.title = fullText;
     // Who reads a language in the word (`awk '{…}'`), after its text.
     if (row.reads) main.append(' ', el('span', { class: `u-reads l-${row.reads.layer}` }, '→ ', ...inline(row.reads.text)));
     // (Round 9) Under the text, one grey line in the same order on every row: the role chips, the program's role,
@@ -2222,9 +2302,12 @@
     const roleChip = s < 2 || row.around ? undefined
       : partOf ? { text: d.partOf.replace('{code}', partOf), layer: 'bash', def: '', step: 2, cls: 'u-partrole' }
       : chips[0] ?? (row.primary?.kind ? { text: chipOf(row.primary), layer: 'bash', def: labels.tree.about[aboutKey(row.primary)] ?? '', step: 2 } : undefined);
+    // (Round 11) The row of a simple command: its role is "simple command", its name's role after it.
+    const roleOf = row.cmdBox && row.simpleChip && !row.assignOnly && roleChip && !partOf
+      ? { ...row.simpleChip, text: `${row.simpleChip.text} · ${roleChip.text}` } : roleChip;
     const prog = s >= 2 && roleChip ? row.progRole : undefined;
-    if (roleChip) {
-      const [c] = chipNode(roleChip, side, defs);
+    if (roleOf) {
+      const [c] = chipNode(roleOf, side, defs);
       if (c instanceof HTMLElement) {
         const rest = chips.filter((/** @type {any} */ x) => x !== roleChip && x.text !== roleChip.text);
         c.title = [c.title, ...(rest.length ? [d.moreRoles.replace('{list}', rest.map((/** @type {any} */ x) => x.text).join(', '))] : []),
@@ -2235,18 +2318,23 @@
     }
     if (prog) {
       // (A long role is said short, its whole text in the tooltip: `operand: each matching file name`. Who reads it,
-      // with the switch on and off alike.)
+      // with the switch on and off alike. Round 11: a role the row's text says already, "Value for `-f`", is not said
+      // again: only who reads it.)
       const [role, ...more] = String(prog.text).split(/:\s*/);
-      const p = el('span', { class: 'u-prog l-command' }, d.progRole.replace('{role}', role));
-      if (prog.name) p.append(el('span', { class: 'u-prog-who' }, ` ${d.progRoleWho.replace('{name}', prog.name)}`));
+      const norm = (/** @type {string} */ x) => x.replace(/`/g, '').replace(/\bfor\b/g, 'of').toLowerCase().trim();
+      const said = texts.some((/** @type {any} */ x) => norm(x.text) === norm(role) || norm(x.text).startsWith(`${norm(role)} `));
+      const p = el('span', { class: 'u-prog l-command' }, ...(said ? [] : [d.progRole.replace('{role}', role)]));
+      if (prog.name) p.append(el('span', { class: 'u-prog-who' }, `${said ? '' : ' '}${d.progRoleWho.replace('{name}', prog.name)}`));
       if (more.length) p.title = prog.text;
       side.append(p);
     }
     // (Round 9: "part of `-rn`" at depth 1 too, as a grey word; at depth 2 it is the role chip.)
     if (partOf && s < 2) side.append(el('span', { class: 'u-partof' }, ...inline(d.partOf.replace('{code}', codeOf(partOf)))));
-    // (Round 10) The section of the manual on every row that cites one, in a column of its own at the right.
+    // (Round 11) The section of the manual on every row that cites one, at the end of its role line.
     const link = s >= 2 ? refLink(row.refs) : null;
-    const refCol = el('div', { class: 'u-refcol' }, ...(link ? [link] : []));
+    if (link) side.append(link);
+    // (A reserved word's or an operator's definition, in its role's tooltip: the row stays one line.)
+    const sideEl = side.querySelector('.u-role');
     first.append(texts.length || row.reads ? main : el('span', { class: 'text u-blank' }, ' '));
     // (Round 8: a risk has one home, the box "Risks on this line" above the rows; its row has a small marker that goes
     // there, `riskMarks`.)
@@ -2269,7 +2357,16 @@
       first.append(' ', b);
     }
     desc.append(first);
-    if (side.childElementCount) desc.append(side);
+    if (oneLine) {
+      if (side.childElementCount) first.append(el('span', { class: 'u-side u-side-inline' }, ...side.childNodes));
+    } else if (side.childElementCount) desc.append(side);
+    // (Round 11) A definition said once on the panel (what a simple command is): one muted line under the role line.
+    for (const x of row.lines) {
+      if (!atStep(x, s) || x.cls !== 'u-def') continue;
+      if (oneLine) {
+        if (sideEl instanceof HTMLElement) sideEl.title = [sideEl.title, x.text.replace(/`/g, '')].filter(Boolean).join('\n');
+      } else desc.append(el('div', { class: 'u-def u-defline' }, ...inline(x.text)));
+    }
     // (The words a program receives: right under the row that stands for its simple command, at every depth; then
     // where its streams go, from the pipeline and its redirections. Round 9: an assignment alone says no program runs.)
     if (who && row.argv) {
@@ -2289,7 +2386,7 @@
     // The notes: one paragraph, its items apart by a dot, in the order of the row's facts.
     const notes = /** @type {HTMLElement[]} */ ([]);
     texts.slice(1).forEach((/** @type {any} */ x) => notes.push(el('span', { class: `${x.cls ?? 'u-text2'}` }, ...inline(x.text))));
-    for (const x of row.lines) if (atStep(x, s) && !x.steps) notes.push(el('span', { class: x.cls }, ...inline(x.text)));
+    for (const x of row.lines) if (atStep(x, s) && !x.steps && x.cls !== 'u-def') notes.push(el('span', { class: x.cls }, ...inline(x.text)));
     // (Round 10) The steps bash takes on the word: a strip at the text's size, under its chips.
     for (const x of row.lines) if (atStep(x, s) && x.steps) desc.append(stepsEl(x.steps, x.bare));
     const formKey = row.form ? (row.label.match(/^(\[\[|\(\(|[{(]|[a-z]+)/)?.[1] ?? '') : '';
@@ -2326,13 +2423,14 @@
       notes.push(line);
     }
     if (s >= 2 && row.also) notes.push(el('span', {}, ...inline(row.also)));
-    if (notes.length) desc.append(el('div', { class: 'u-note u-notes' }, ...notes.flatMap((x, i) => (i ? [el('span', { class: 'u-dot', 'aria-hidden': 'true' }, ' · '), x] : [x]))));
+    // (Round 11: each note a line of its own, so that none runs on into the next.)
+    if (notes.length) desc.append(...notes.map((x) => el('div', { class: 'u-note u-notes' }, x)));
     const value = valueLine(row.value);
     if (value) desc.append(value);
     // (A note that is not a risk stays whole on its row: it has no other place.)
     for (const p of row.problems) if (p.level !== 'warning' && p.level !== 'info') desc.append(problemEl(p, true));
     desc.append(defs);
-    r.append(tok, desc, refCol);
+    r.append(tok, desc);
     li.append(r);
     // (Round 8: one box, one command: around the rows of a simple command, from its indentation on.)
     // (Round 9: a compound command is a command too, `if`, `for`, `[[ ]]`: boxed alike. A pipeline or a list joins
@@ -2397,7 +2495,7 @@
   /** (Round 9) The width the code column was measured at, and for which drawing: measured again only when one changes. */
   let alignedFor = '';
   /** (Round 10) The share of the panel's width the code column takes. */
-  const CODE_SHARE = 0.38;
+  const CODE_SHARE = 0.3;
   function alignRows(/** @type {boolean} */ force = false) {
     const tree = $('tree');
     if (!reading || !built || !tree.getClientRects().length) return;
@@ -2438,7 +2536,10 @@
       $('notes').before(sum);
     }
     // (Its words plain, as depth 1's: "error output", not "stderr".)
-    const said = unified ? plainOf(reading?.summary ?? fallbackSummary(views)).text : '';
+    // (Round 11: none when it would only say the one row below it again (a summary made from the rows), or type the
+    // code again (an assignment's value): the panel then starts with that row.)
+    const summary = unified ? (reading?.summary ?? '') : '';
+    const said = summary && !retypes(summary, shownText) ? plainOf(summary).text : '';
     sum.hidden = !said;
     sum.replaceChildren(...(said ? [el('strong', {}, labels.depth.summary), ' ', ...inline(said)] : []));
     // (Round 8) The example of the whole pipeline, folded, right under "In short".
@@ -2494,7 +2595,14 @@
       mark.addEventListener('click', (e) => {
         e.stopPropagation();
         const li = document.getElementById(`u-risk-${i}`);
-        if (li) bringIntoView(li, document.getElementById('u-summary'));
+        const more = li?.querySelector('details.u-risk-more');
+        if (more instanceof HTMLDetailsElement) more.open = true;
+        if (li) {
+          bringIntoView(li, document.getElementById('u-summary'));
+          li.classList.remove('u-flash');
+          void li.offsetWidth;
+          li.classList.add('u-flash');
+        }
       });
     }
     $('main').dataset.depth = String(unified ? step : 0);
@@ -2505,22 +2613,18 @@
   }
 
   /**
-   * (Round 8) "In short" for a line src/linesummary.ts knows no pattern of, from the rows: the end of the block around
-   * it (`done`), or what its one command does, as its row says it at depth 1.
+   * (Round 11) Whether a summary types much of the line's code again: a piece of the code at least half as long as it
+   * (and 16 characters), as written in it.
    */
-  function fallbackSummary(/** @type {any[]} */ views) {
-    const f = labels.depth.shortFallback;
-    if (!f) return '';
-    const own = views.filter((v) => !v.around);
-    // (Round 10: a line of one reserved word has its row, `done`: "In short" says which block it ends, as before.)
-    if ((!own.length || (own.length === 1 && own[0].only)) && shownAround.length) {
-      const a = shownAround[shownAround.length - 1];
-      return f.context.replace('{label}', a.label).replace('{n}', String(a.line + 1));
-    }
-    if (own.length !== 1 || !own[0].cmdBox) return '';
-    const text = own[0].texts.find((/** @type {any} */ x) => x.step === 1)?.text;
-    return text ? f.command.replace('{text}', text.replace(/[.。]$/, '')).replace('{name}', codeOf(own[0].label)) : '';
+  function retypes(/** @type {string} */ summary, /** @type {string} */ line) {
+    const code = line.trim();
+    const text = summary.replace(/`/g, '');
+    const n = Math.max(16, Math.ceil(code.length / 2));
+    for (let i = 0; i + n <= code.length; i++) if (text.includes(code.slice(i, i + n))) return true;
+    return false;
   }
+
+  // (Round 11: no "In short" made from the rows: it only said the one row below it again.)
 
   // ---------------------------------------------------------------- the steps of the tree
 
@@ -2591,55 +2695,64 @@
    * control closes it (and Escape, or a click outside).
    */
   function keyEl(/** @type {any} */ k) {
+    // (Round 11) Inline under the toolbar (it pushes the panel down, at every width), and only the marks drawn now:
+    // each found on the panel as it is (the switch, the depth, the line), with what it means.
     const d = labels.depth;
+    const x = k.k11;
     const ja = document.documentElement.lang === 'ja';
-    const box = el('div', { id: 'u-keybox', class: 'u-key', role: 'dialog', 'aria-label': k.title });
+    const box = el('div', { id: 'u-keybox', class: 'u-key', role: 'region', 'aria-label': k.title });
     const close = el('button', { type: 'button', class: 'u-key-close', title: d.keyClose, 'aria-label': d.keyClose }, el('span', { 'aria-hidden': 'true' }, '×'));
     close.addEventListener('click', () => setKey(false));
-    const after = (/** @type {string} */ s) => s.replace(/^[^:：]*[:：]\s*/, '');
-    /** A section: its title, then a grid of [swatch, meaning]. */
-    const section = (/** @type {string} */ title, /** @type {[Node[], (Node | string)[]][]} */ items) => el('section', { class: 'u-ksec' },
+    const shown = (/** @type {string} */ sel) => [...document.querySelectorAll(sel)].some((e) => e.getClientRects().length > 0);
+    /** @type {[Node[], (Node | string)[], string][]} */
+    const items = [];
+    // (Each item keeps the selector of what it is about, `data-for`: the test checks that it is on the screen.)
+    const add = (/** @type {string} */ sel, /** @type {Node[]} */ sw, /** @type {string} */ text) => {
+      if (shown(sel)) items.push([sw, inline(text), sel]);
+    };
+    const sample = (/** @type {string} */ cls, /** @type {(Node | string)[]} */ kids) => el('span', { class: cls }, ...kids);
+    add('#tree .u-row.u-read', [el('span', { class: 'u-swatch-tint' })], x.tint);
+    add('#tree .u-row.u-readx', [el('span', { class: 'u-swatch-dashed' })], x.dashed);
+    add('#tree .u-argv', [sample('u-argv u-argv-sample', [el('code', { class: 'u-arg' }, 'grep'), ' ', el('code', { class: 'u-arg' }, '-h')])], x.argv);
+    add('#tree .u-argv .u-ph', [sample('u-argv u-argv-sample', [el('code', { class: 'u-arg' }, el('span', { class: 'u-ph' }, '‹…›'))])], x.ph);
+    add('#tree .u-argv .u-many', [sample('u-argv u-argv-sample', [el('code', { class: 'u-arg u-many' }, '…')])], x.many);
+    add('#tree .u-bmark', [el('span', { class: 'u-bmark' }, d.bashMark)], x.bash);
+    add('#tree .u-side .u-role:not(.u-partrole)', [sample('u-side u-ksample', [el('span', { class: 'u-role l-bash' }, ja ? '引数' : 'argument')])], x.role);
+    add('#tree .u-prog', [sample('u-side u-ksample', [el('span', { class: 'u-prog l-command' }, ja ? '→ オプション' : '→ option')])], x.prog);
+    add('#tree .u-partrole, #tree .u-partof', [sample('u-side u-ksample', [el('span', { class: 'u-role l-bash u-partrole' }, d.partOf.replace('{code}', '-rn'))])], x.partOf);
+    add('#tree .u-strip', [sample('u-strip u-ksample', [el('span', { class: 'u-step u-step-on' }, d.steps.kinds.parameter), el('span', { class: 'u-strip-arrow' }, ' → ')])], x.steps);
+    add('#tree .u-step-off', [sample('u-strip u-ksample', [el('span', { class: 'u-step u-step-off' }, el('s', {}, d.steps.kinds.split))])], x.struck);
+    add('#tree .u-rmark', [el('span', { class: 'u-rmark level-info u-ksample' }, d.riskMark.replace('{label}', ja ? '注意' : 'Caveat'), ' ↑')], x.rmark);
+    add('#tree .nk-badge.nk-program, #tree .nk-badge.nk-file', [el('span', { class: 'nk-badge nk-program' }, ja ? 'プログラム' : 'program')], x.program);
+    add('#tree .nk-badge.nk-builtin', [el('span', { class: 'nk-badge nk-builtin' }, ja ? 'ビルトイン' : 'builtin')], x.builtin);
+    add('#tree .nk-badge.nk-function', [el('span', { class: 'nk-badge nk-function' }, ja ? '関数' : 'function')], x.function);
+    add('#tree .u-ref', [el('span', { class: 'u-ref' }, '§3.7.1')], x.ref);
+    add('#tree li.u-cmdbox', [el('span', { class: 'u-swatch-box' })], x.box);
+    add('#tree li.u-bracket', [el('span', { class: 'u-swatch-bracket' })], x.bracket);
+    // (The icons of the risks, in the box above the rows.)
+    add('#u-risks .u-risk.level-warning, #u-risks .u-risk-pointer.level-warning', [levelIcon('warning', '')], x.warning);
+    add('#u-risks .u-risk.level-info, #u-risks .u-risk-pointer.level-info', [levelIcon('info', '')], x.info);
+    const section = (/** @type {string} */ title, /** @type {[Node[], (Node | string)[], string][]} */ list) => el('section', { class: 'u-ksec' },
       el('strong', {}, title),
-      el('div', { class: 'u-kgrid' }, ...items.flatMap(([sw, text]) => [el('span', { class: 'u-ksw' }, ...sw), el('span', { class: 'u-kmean' }, ...text)])));
-    const marks = section(k.marks, [
-      [[el('span', { class: 'u-swatch-tint' })], inline(k.tint10)],
-      [[el('span', { class: 'u-swatch-dashed' })], inline(k.dashed)],
-      [[el('span', { class: 'u-bmark' }, d.bashMark)], [d.bashMarkTitle]],
-      [[el('span', { class: 'u-swatch-box' })], inline(after(k.box))],
-      [[el('span', { class: 'u-swatch-bracket' })], inline(after(k.bracket))],
-    ]);
-    const bars = section(k.bars, k.kinds10.map((/** @type {string[]} */ [kind, name]) => [[el('span', { class: `u-kitem kind-${kind}` }, el('span', { class: 'u-swatch', 'aria-hidden': 'true' }))], [name]]));
-    const parts = [marks, bars];
-    if (keyMore) {
-      parts.push(section(k.chips, [
-        [[el('span', { class: 'u-role l-bash' }, k.role)], [k.roleText]],
-        [[el('span', { class: 'u-prog l-command' }, k.prog)], [k.progText]],
-        [[el('span', { class: 'nk-badge nk-program' }, ja ? 'プログラム' : 'program')], inline(k.badgeText)],
-        [[el('span', { class: 'u-ref' }, '§3.7.1')], [after(k.ref)]],
-        [[el('span', { class: 'u-argv u-argv-sample' }, el('code', { class: 'u-arg' }, el('span', { class: 'u-ph' }, '‹…›')))], [after(k.ph)]],
-        [[el('span', { class: 'u-argv u-argv-sample' }, el('code', { class: 'u-arg u-many' }, '…'))], [after(k.many)]],
-      ]));
-      parts.push(section(k.problems, [
-        [[el('span', { class: 'u-kprob level-warning' }, k.warning.split(/[:：]/)[0])], [after(k.warning)]],
-        [[el('span', { class: 'u-kprob level-info' }, k.info.split(/[:：]/)[0])], [after(k.info)]],
-      ]));
-    }
-    const more = el('button', { type: 'button', class: 'u-key-more', 'aria-expanded': String(keyMore) }, keyMore ? k.less : k.more);
-    more.addEventListener('click', () => {
-      keyMore = !keyMore;
-      renderControls();
-    });
-    const stop = ja ? '。' : '. ';
-    box.append(el('div', { class: 'u-khead' }, el('strong', {}, k.title), close), el('div', { class: 'u-kcols' }, ...parts),
-      ...(keyMore ? [el('p', {}, ...inline(k.argvText)), el('p', {}, ...inline(`1: ${d.captions[0]}${stop}2: ${d.captions[1]}`)), el('p', { class: 'u-kkeys' }, ...inline(k.keys10))] : []),
-      more);
+      el('div', { class: 'u-kgrid' }, ...list.flatMap(([sw, text, sel]) => [el('span', { class: 'u-ksw', 'data-for': sel }, ...sw), el('span', { class: 'u-kmean' }, ...text)])));
+    // The bars: the colour groups of the rows drawn (an assignment's name is green, as an argument).
+    const kinds = new Set([...document.querySelectorAll('#tree .u-row')].filter((r) => r.getClientRects().length).map((r) => [...r.classList].find((c) => c.startsWith('kind-'))?.slice(5) ?? ''));
+    const groupOf = (/** @type {string} */ kind) => (['command', 'builtin', 'function', 'alias', 'subcommand', 'shebang'].includes(kind) ? 'command'
+      : ['variable', 'expansion', 'substitution'].includes(kind) ? 'variable' : kind === 'pattern' ? 'pattern'
+        : ['keyword', 'operator', 'test', 'block', 'simple'].includes(kind) ? 'operator' : kind === 'redirect' ? 'redirect' : kind ? 'argument' : '');
+    const groups = new Set([...kinds].map(groupOf));
+    const bars = x.bars.filter((/** @type {string[]} */ [g]) => groups.has(g))
+      .map((/** @type {string[]} */ [g, name]) => /** @type {[Node[], (Node | string)[], string]} */ ([[el('span', { class: `u-kitem kind-${g}` }, el('span', { class: 'u-swatch', 'aria-hidden': 'true' }))], [name],
+        [...kinds].filter((k) => groupOf(k) === g).map((k) => `#tree .u-row.kind-${k}`).join(', ')]));
+    box.append(el('div', { class: 'u-khead' }, el('strong', {}, k.title), close),
+      el('div', { class: 'u-kcols' }, ...(items.length ? [section(k.marks, items)] : []), ...(bars.length ? [section(k.bars, bars)] : [])),
+      el('p', { class: 'u-kkeys' }, ...inline(x.keys)));
     return box;
   }
 
   /** (Round 10) Opens or closes the key. */
   function setKey(/** @type {boolean} */ open) {
     keyOpen = open;
-    if (!open) keyMore = false;
     renderControls();
     if (open) /** @type {HTMLElement | null} */ (document.querySelector('#u-keybox .u-key-close'))?.focus({ preventScroll: true });
     else $('key-button').focus({ preventScroll: true });
@@ -2647,9 +2760,7 @@
   document.addEventListener('keydown', (e) => {
     if (keyOpen && e.key === 'Escape') setKey(false);
   });
-  document.addEventListener('pointerdown', (e) => {
-    if (keyOpen && e.target instanceof Element && !e.target.closest('#u-keybox, #key-button')) setKey(false);
-  });
+  // (Round 11: the key is part of the panel, not over it: a click elsewhere leaves it open.)
 
   /** Turns the program's side on or off, and keeps the choice. */
   function setWho(/** @type {boolean} */ on) {
@@ -2673,8 +2784,8 @@
     const d = labels.depth;
     const cap = document.getElementById('depth-caption');
     if (d && cap) {
-      // (Round 10: no legend line; the key opens over the view, under the toolbar: inside it, which sticks.)
-      if (cap.parentElement !== box) box.append(cap);
+      // (Round 11: the key opens under the toolbar, in the panel's flow: it pushes the rest down, never covers it.)
+      if (cap.previousElementSibling !== box) box.after(cap);
       cap.hidden = !reading || !keyOpen;
       cap.replaceChildren(...(keyOpen ? [keyEl(d.key)] : []));
       const key = $('key-button');

@@ -167,12 +167,13 @@ const TEXTS = {
     fd: { ja: (op: string) => `\`${op}\` で調べるファイルディスクリプタ`, en: (op: string) => `The file descriptor \`${op}\` tests` },
     compared: { ja: (op: string) => `\`${op}\` で比べる左辺の文字列`, en: (op: string) => `The string on the left of \`${op}\`` },
     pattern: {
-      ja: (op: string) => `\`${op}\` の右辺のパターン: 左辺がこれにグロブパターンとして一致するかを調べる（クォートした部分は書いたとおりに一致）`,
+      ja: (op: string) => `\`${op}\` の右辺のパターン: 左辺がこれにパス名展開のパターンとして一致するかを調べる（クォートした部分は書いたとおりに一致）`,
       en: (op: string) => `The pattern on the right of \`${op}\`: the left side is matched against it as a glob pattern (a quoted part matches as written)`,
     },
     literal: {
-      ja: (op: string) => `\`${op}\` の右辺のパターン: ワイルドカードがないので、左辺がこの文字列と同じときだけ一致する`,
-      en: (op: string) => `The pattern on the right of \`${op}\`: with no wildcard, the left side matches it only when it is the same text`,
+      // (Round 11: that it is a plain comparison here is said once, on the row of the operator.)
+      ja: (op: string) => `\`${op}\` の右辺のパターン`,
+      en: (op: string) => `The pattern on the right of \`${op}\``,
     },
     plain: { ja: (op: string) => `\`${op}\` で比べる文字列`, en: (op: string) => `A string \`${op}\` compares` },
     number: { ja: (op: string) => `\`${op}\` で比べる値: 算術式として評価する`, en: (op: string) => `A value \`${op}\` compares: evaluated as an arithmetic expression` },
