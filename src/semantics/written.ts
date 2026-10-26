@@ -34,7 +34,7 @@ export const COPY = /^\$\{?([A-Za-z_]\w*)\}?$/;
  * when `true` is the builtin).
  */
 export function writtenValue(v: SyntaxNode | undefined, renamed: (name: string) => boolean): WrittenValue {
-  if (!v) return { names: [], text: '' };
+  if (!v) return { names: [], text: '', fixed: true };
   const s = substitutionNames(v).some(renamed) ? undefined : staticWordValue(v, true);
   if (s !== undefined) return { names: identifiers(s), text: s, fixed: true };
   // (A tilde gives the value of HOME, `~user` a home not known: `m=~; (( m ))` runs a HOME from the environment.)

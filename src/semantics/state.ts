@@ -28,8 +28,9 @@ import { SET_LETTERS } from './effects';
 import { EnvModel, type ExecEnv, MAIN_SHELL, type SlotLink } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
 import type { ShellState } from './shellstate';
+import { childOpening, type Opening, openingBlinds } from './opening';
 import { BLIND, type HostCommands, NO_HOST, scriptTrust, type StringTrees, type Trust, withinTrust } from './trust';
-import { type MappedText } from '../staticword';
+import { type MappedText, staticWordValue } from '../staticword';
 import { parser, WalkAgain } from './walk/shared';
 import { type HostCall, type HostRun, hostRunKey } from './walk/host';
 import { Walker } from './walk/walker';
@@ -302,53 +303,84 @@ function childModel(script: NestedScript): StateModel {
     }
   }
   const pass = { given: [...given], removed, invocation: links[links.length - 1].invocation ?? [] };
-  return buildModel(script.tree, script.shell, false, script.depth, script.env, (w) => w.childStart(outer, script.env, pass, first), modelTrusts.get(script.outer));
+  // (What the shell is started with goes through the allow-list of the trust: `bash -O compat31 -c`, `BASH_COMPAT=31
+  // bash -c`. A row of `all` walks it again with nothing trusted.)
+  // (The values given, where they are static text: `LC_ALL=C bash -c`, `env LC_ALL=C bash -c`.)
+  const values = new Map<string, string | undefined>();
+  for (const c of cmd.namedChildren) {
+    if (c.type === 'variable_assignment') {
+      const value = field(c, 'value');
+      values.set(field(c, 'name')!.text, value ? staticWordValue(value) : '');
+      continue;
+    }
+    const m = /^([A-Za-z_]\w*)=(.*)$/s.exec(staticWordValue(c) ?? '');
+    if (m) values.set(m[1], m[2]);
+  }
+  const start = (w: Walker): ShellState => {
+    const st = w.childStart(outer, script.env, pass, first);
+    const vars = [...st.variables].map(([name, v]) => [name, given.has(name) ? { set: 'on', value: values.get(name) } : v] as const);
+    const why = w.blind ? undefined : openingBlinds(childOpening(pass.invocation, vars, st.set.get('posix') === 'on'));
+    return why ? w.walkAgain(why) : st;
+  };
+  return buildModel(script.tree, script.shell, false, script.depth, script.env, start, modelTrusts.get(script.outer));
 }
 
 const models = new WeakMap<SyntaxTree, Map<string, StateModel>>();
 
-/** What the shebang of a script gives the shell it starts: POSIX mode, and the `set` options of its letters (`-eu`). */
-interface ShebangStart { posix: boolean; set: Map<string, 'on' | 'off'> }
+/**
+ * What the shebang of a script gives the shell it starts: POSIX mode, the `set` options of its letters (`-eu`), and
+ * through `env -S`, `shopt` options (`-O extglob`) and the variables it assigns (`BASH_COMPAT=42 bash`).
+ */
+interface ShebangStart { posix: boolean; set: Map<string, 'on' | 'off'>; shopt: Map<string, 'on' | 'off'>; variables: Map<string, string> }
 
 /**
  * What the shebang starts bash with: the kernel passes the rest of the line as one argument, so `#!/bin/bash -eu`
  * turns on `errexit` and `nounset`, `#!/bin/bash --posix` is POSIX mode, and `#!/bin/bash --posix -e` is an error,
  * not POSIX mode. Through `env -S` (env splits it, as one word `-S`): `bash --posix` (bash reads its long options
- * before the others), `bash -o posix`, `POSIXLY_CORRECT=… bash`, and the letters and `-o` names of `set` (`-e -u`,
- * `-o nounset`). Undefined when the shebang does not start bash.
+ * before the others), `bash -o posix`, `POSIXLY_CORRECT=… bash`, the letters and `-o` names of `set` (`-e -u`,
+ * `-o nounset`), the `-O` names of `shopt`, and the other variables assigned (`BASH_COMPAT=42 bash`). Undefined when
+ * the shebang does not start bash.
  */
 function shebangStart(root: SyntaxNode): ShebangStart | undefined {
   const m = /^#![ \t]*(\S+)[ \t]*([^\n]*?)[ \t]*(?:\n|$)/.exec(root.text);
   if (!m) return undefined;
   const base = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
   const set = new Map<string, 'on' | 'off'>();
+  const shopt = new Map<string, 'on' | 'off'>();
+  const variables = new Map<string, string>();
   const letters = (cluster: string): void => {
     for (const letter of cluster.slice(1)) if (SET_LETTERS[letter]) set.set(SET_LETTERS[letter], cluster[0] === '-' ? 'on' : 'off');
   };
   if (base(m[1]) === 'bash') {
     // (Not when bash refuses them: then no option is on, run directly or by `bash script`.)
     if (/^[-+][a-zA-Z]+$/.test(m[2]) && !shebangRefused(root.text)) letters(m[2]);
-    return { posix: m[2] === '--posix', set };
+    return { posix: m[2] === '--posix', set, shopt, variables };
   }
   const words = m[2].split(/[ \t]+/);
   if (base(m[1]) !== 'env' || words[0] !== '-S') return undefined;
   let i = 1;
   let posix = false;
-  for (; /^\w+=/.test(words[i] ?? ''); i++) posix ||= words[i].startsWith('POSIXLY_CORRECT=');
+  for (; /^\w+=/.test(words[i] ?? ''); i++) {
+    const at = words[i].indexOf('=');
+    if (words[i].startsWith('POSIXLY_CORRECT=')) posix = true;
+    else variables.set(words[i].slice(0, at), words[i].slice(at + 1));
+  }
   if (base(words[i] ?? '') !== 'bash') return undefined;
   for (i++; words[i]?.startsWith('--') && words[i] !== '--'; i++) posix ||= words[i] === '--posix';
-  // (Then the short options: each `o` of a cluster takes the next word, `-ox posix` too.)
+  // (Then the short options: each `o` or `O` of a cluster takes the next word, `-ox posix` too.)
   for (; /^[-+][a-zA-Z]+$/.test(words[i] ?? ''); i++) {
     const cluster = words[i];
     letters(cluster);
     for (const letter of cluster.slice(1)) {
-      if (letter !== 'o') continue;
+      if (letter !== 'o' && letter !== 'O') continue;
       const name = words[++i];
-      if (name === 'posix') posix = cluster[0] === '-';
+      if (letter === 'O') {
+        if (name) shopt.set(name, cluster[0] === '-' ? 'on' : 'off');
+      } else if (name === 'posix') posix = cluster[0] === '-';
       else if (name) set.set(name, cluster[0] === '-' ? 'on' : 'off');
     }
   }
-  return { posix, set };
+  return { posix, set, shopt, variables };
 }
 
 /** The letters bash takes as options when it starts (`set`'s, and `-c`, `-i`, `-l`, `-r`, `-s`, `-D`, `-o`, `-O`). */
@@ -402,13 +434,16 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
   if (!byKey) models.set(tree, (byKey = new Map()));
   const hit = byKey.get(key);
   if (hit) return hit;
-  // (The `set` options of the shebang, `#!/bin/bash -eu`, when the script is bash's.)
-  const set = run ? new Map(run.set.map((o) => [o, 'on' as const])) : !shell || shell === 'bash' ? shebangStart(tree.root)?.set : undefined;
+  // (The `set` and `shopt` options of the shebang, `#!/bin/bash -eu`, when the script is bash's; what it starts bash
+  // with goes through the allow-list of the trust, `Opening`.)
+  const shebang = run || (shell && shell !== 'bash') ? undefined : shebangStart(tree.root);
+  const set = run ? new Map(run.set.map((o) => [o, 'on' as const])) : shebang?.set;
+  const shopt = shebang?.shopt;
   const start = (w: Walker): ShellState => {
     const st = w.initial(tree.root);
-    return set?.size ? { ...st, set: st.set.withAll(set) } : st;
+    return { ...st, ...(set?.size ? { set: st.set.withAll(set) } : {}), ...(shopt?.size ? { shopt: st.shopt.withAll(shopt) } : {}) };
   };
-  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, undefined, host, run);
+  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, undefined, host, run, { set, shopt, variables: shebang?.variables });
   byKey.set(key, model);
   return model;
 }
@@ -418,11 +453,12 @@ const modelTrusts = new WeakMap<StateModel, Trust>();
 
 /**
  * The model of `tree`, whose root runs in `base`, from the state `start` gives; `depth` levels of strings deep;
- * `outer`: what the model of the script that starts this shell trusts; `host`: as for `shellState`.
+ * `outer`: what the model of the script that starts this shell trusts; `host`: as for `shellState`; `opening`: what the
+ * shebang starts it with.
  */
-function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust, host = NO_HOST, run?: HostRun): StateModel {
+function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening): StateModel {
   const scripts = new Scripts(depth);
-  const own = scriptTrust(tree.root, scripts, host);
+  const own = scriptTrust(tree.root, scripts, host, opening);
   const trust = outer ? withinTrust(own, outer) : own;
   let w = new Walker(shell, posix, scripts, trust, host, run);
   let initial!: ShellState;

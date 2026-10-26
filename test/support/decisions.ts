@@ -357,6 +357,30 @@ export function scripts(seed: number, count: number): Script[] {
   return out;
 }
 
+/**
+ * Statements whose row in the allow-list is `all` (src/semantics/allow.ts; docs/design/trust-allow-list.md, section
+ * 5): a construct the walk does not follow, or one the table does not have.
+ */
+export const UNKNOWN_CONSTRUCTS: readonly string[] = [
+  'shopt -s compat42', 'BASH_COMPAT=42', 'set -k', 'FUNCNEST=1', 'BASH_ALIASES[1]="mode=9"', 'set -o history -H', 'shopt -s localvar_inherit',
+  'read -Q v 2>/dev/null', 'set -o posix', 'shopt -u extquote', 'LC_ALL=de_DE.UTF-8', 'shopt -s nosuch 2>/dev/null', ': "${v@Z}" 2>/dev/null',
+];
+
+/**
+ * `scripts(seed, count)`, with an unknown construct (`UNKNOWN_CONSTRUCTS`) put at the start or before the last line of
+ * a fifth of them, chosen by a generator of their own (the scripts are those of `scripts`); `unknown` says which.
+ */
+export function withUnknown(seed: number, count: number): (Script & { unknown?: string })[] {
+  const r = random(seed ^ 0x5eed);
+  return scripts(seed, count).map((s) => {
+    if (r() >= 0.2) return s;
+    const unknown = UNKNOWN_CONSTRUCTS[Math.floor(r() * UNKNOWN_CONSTRUCTS.length)];
+    const lines = s.text.split('\n');
+    const at = r() < 0.5 ? 0 : lines.length - 1;
+    return { ...s, text: [...lines.slice(0, at), unknown, ...lines.slice(at)].join('\n'), unknown };
+  });
+}
+
 /** The text for the model (placeholders removed), where each construct starts, and where each definition does. */
 export function forModel(text: string): { src: string; starts: Map<number, number>; defs: number[] } {
   const starts = new Map<number, number>();

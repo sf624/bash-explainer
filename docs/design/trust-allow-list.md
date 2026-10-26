@@ -1,6 +1,6 @@
 # Trust as a strict allow-list
 
-Status: in progress (2026-10-26): steps 1 to 3 done (section 6); step 4 waits on the maintainer. Values in Meaning, decided conditions and dead code rest on the trust of src/semantics/trust.ts ([semantics.md](semantics.md), 4.14; [expansion-values.md](expansion-values.md), 3). This page proposes to turn its default around. Today a construct the scan does not recognise is taken to change nothing. With this plan, every construct is looked up in a table, and a construct that is not in the table changes anything. A new hole then gives no value, instead of a wrong one.
+Status: built (2026-10-26): steps 1 to 4 done (section 6); step 5, the other documents, is left. Values in Meaning, decided conditions and dead code rest on the trust of src/semantics/trust.ts ([semantics.md](semantics.md), 4.14; [expansion-values.md](expansion-values.md), 3). This page turns its default around. Before, a construct the scan did not recognise was taken to change nothing. Now every construct is looked up in a table (src/semantics/allow.ts), and a construct that is not in the table changes anything. A new hole then gives no value, instead of a wrong one.
 
 ## 1. The failure pattern
 
@@ -229,7 +229,7 @@ Each step keeps every test passing.
 | 1. The specs | Done (2026-10-26) |
 | 2. The table, with today's behaviour | Done (2026-10-26) |
 | 3. The walk | Done (2026-10-26) |
-| 4. The default flips | Not started (the maintainer decides when) |
+| 4. The default flips | Done (2026-10-26) |
 | 5. Docs | Not started |
 
 1. **The specs first.** Every builtin's options as bash 5.2 and 5.3 accept them (`complete -f`, `-u`, `-X` and the others, `declare -I`, those of `read` the corpus uses, and the rest the comparison of section 5 finds), with test/builtins-real.test.ts. Nothing users see changes, except the explanation of those options.
@@ -279,6 +279,33 @@ Each step keeps every test passing.
 
    The decisions' generator now also writes what the review found (test/support/decisions.ts): redirections that may fail around a group (with `set -e` or not), closed and copied standard descriptors, copies of IFS through `for`, arrays and `$(( ))` before a `[` word that may split into `-v` and a subscript that assigns, arrays and tildes read as arithmetic with `q='w=7'` and `HOME='w=8'` in bash's environment, and callbacks that run code (`mapfile -C`, `jobs -x`).
 4. **The default flips.** A missing row is `all`, and the rows marked "new" take their effect: the options (also from the shebang), the variables of bash (also those given to another shell), `jobs -x`, `{a[i]}>`, `${x@P}` with `+=`, `error` nodes. Each with its probe rows and the generator's "unknown construct" statements. Users see fewer wrong values and dead marks (CHANGELOG "Fixed": one bullet, the details in docs/changes).
+
+   Done. Each row holds its effect (the field `next` is gone), and a construct with no row trusts nothing, with a reason that names it (`unlisted`: "the node type `x`", "`shopt -s nosuch`", "the parameter expansion `${x@Z}`", "the redirection operator `x`", "… which the allow-list does not have"). What changed besides the rows marked "new":
+
+   - *The start of a shell.* The shebang's options and assignments go through the tables as if set on the first line (`Opening`, src/semantics/opening.ts): `#!/bin/bash -k`, `#!/usr/bin/env -S bash -O compat31` (the walk now also starts with that `shopt` option on) and `#!/usr/bin/env -S BASH_COMPAT=42 bash`. So do another shell's invocation and the variables it starts with (`childOpening`, read in `childModel`, src/semantics/state.ts): `bash -O compat31 -c`, `bash -k -c` (an option the spec of `bash` lacks is now passed on as written, `shellInvocation`), `BASH_COMPAT=31 bash -c`, `env BASH_COMPAT=31 bash -c`; its model walks again with nothing trusted. POSIX mode at the start (`#!/bin/bash --posix`, `POSIXLY_CORRECT=1` in `env -S`, `bash -o posix -c`) is left out: the walk follows it from the start, as for `sh`.
+   - *Prefix assignments of a program* (`LANG=de_DE.UTF-8 sort`, `BASH_COMPAT=31 bash -c …`) do not go through the variables' table for this shell: a static name that is no builtin of bash, no function of the script or its host, in a script that defines no alias (`Scan.program`).
+   - *Locales.* `LANG`, `LC_ALL`, `LC_CTYPE` and `LC_COLLATE` are followed when every value the script gives them is `C`, `POSIX`, `C.UTF-8`, `C.utf8` or empty, or unset, or kept from the environment (`localeWritten`; for another shell, the static value given). Any other value, a value not known, or `+=` trusts nothing.
+   - *Options turned off.* `set +k`, `+H`, `+o history`, `+n`, `+t` and `shopt -u` of the `compat` options and the others turned on as `all` change nothing (`off: none`); `set +o posix` stays `all`.
+   - *Names not known.* `set -o "$x"`, `shopt -s "$x"`, and a word not known before the operands of `set` (`set $x`, which may be `-k`) trust nothing; before, they only exported the functions defined after them.
+   - *Builtins' options.* The unknown option of `test` and `[` is `none`: their words are the expression's (`[ -a file ]`, `[ -o errexit ]`). That of the declarations (`declare -Q`) is `all`, as the table says, instead of `names`. A name of the dictionary that is no builtin of bash (zsh's `setopt`, `print`) runs a program in bash: `none` (`PROGRAM`).
+   - An empty assignment (`x=`) gives a value known in full (`writtenValue`), so `LC_ALL=` keeps the trust.
+
+   test/allow-list.test.ts checks that a construct with no row (a node type no parser gives, an option, an operator) trusts nothing, and the start of a shell against bash (a shebang run as a program, `BASH_COMPAT=31 bash -c`). values.json has rows for the holes of section 1 (each recorded with bash), for a locale of C, and for a prefix assignment of a program. The decisions' generator puts an unknown construct (`UNKNOWN_CONSTRUCTS`, test/support/decisions.ts: `shopt -s compat42`, `BASH_COMPAT=42`, `set -k`, `FUNCNEST=1`, `BASH_ALIASES[1]=…`, `set -o history -H`, `shopt -s localvar_inherit`, `read -Q`, `set -o posix`, `shopt -u extquote`, a locale, `shopt -s nosuch`, `${v@Z}`) into a fifth of the scripts of `withUnknown`, by a generator of its own; test/decisions.test.ts checks that each such script is blind, decides nothing and marks nothing dead, and that bash contradicts none of them. `scripts(seed, n)` is unchanged, so its floors keep their meaning.
+
+   Measured against step 3 (the counter of section 4; the corpus as at step 3):
+
+   | Set | Values (files) | Decisions | Dead | Blind |
+   | --- | --- | --- | --- | --- |
+   | Corpus (1,518 inputs), step 3 | 32 (13) | 26 | 9 | 161 |
+   | Corpus, step 4 | 32 (13) | 25 | 9 | 214 |
+   | Real scripts (802), step 3 | 145 (18) | 0 | 0 | 665 |
+   | Real scripts, step 4 | 145 (18) | 0 | 0 | 667 |
+   | Generated (`scripts(1, 1000)`), step 3 and step 4 | 746 | 534 | 4,663 | 641 |
+
+   - The corpus: 53 more inputs trust nothing, 38 of them for a parse error. The others: `set -o posix` (5), `read -q`, `read -z` and `declare -Q` (options bash refuses), `${(f)var}`, `${(j:,:)arr}`, `${x@Z}` and `${x@w}` (expansions bash rejects), `set +o globstar` and `shopt -s foo` (names bash does not have). One decision is lost: `if true; then echo ${(f)x}; fi`, a zsh expansion that bash rejects ("bad substitution") at run time; the model no longer decides the `if` of a script it cannot read. The snapshot of the corpus (test/snapshot.ts) is byte-identical: no explanation shows a decision or a value that changed.
+   - The real scripts: 2 more trust nothing, the Perl and Python helpers of bash-completion that the parser cannot read. `add-shell` and `remove-shell` (`set -o noclobber`) keep their trust: `noclobber` is followed (step 3 takes every redirection to a file as one that may fail). No value is lost.
+   - Section 4 predicted 51 more blind files (42 in the corpus, 9 real), and no value lost. Measured: 55 (53 and 2). The corpus adds `set -o posix`, the names and the expansions bash rejects, which the prototype did not count; the real scripts lose 7 of the 9, since step 1 put the options of `complete` in its spec and `noclobber` is followed.
+   - The generated scripts are the same: none uses a construct whose row changed.
 5. **Docs**: [semantics.md](semantics.md) 4.14 ("What decisions trust": the table replaces the lists), [expansion-values.md](expansion-values.md) section 3, README's Limitations (the assumptions about the start: those of [trust-per-position.md](trust-per-position.md) section 2, `BASH_COMPAT`, `POSIXLY_CORRECT`, `FUNCNEST`, `BASHOPTS` and the locale from the environment, and how the script is started: `bash -k script`, `sh script`), the roadmap and this page's status.
 
 **Risks.**

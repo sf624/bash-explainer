@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { checkAll, forModel, type Script, scripts } from './support/decisions';
+import { checkAll, forModel, type Script, scripts, UNKNOWN_CONSTRUCTS, withUnknown } from './support/decisions';
 
 describe('decisions of the state model against bash (test/support/decisions.ts)', () => {
   it('makes none that bash contradicts, over generated scripts', async function () {
@@ -22,6 +22,24 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
       assert.ok(results.reduce((n, r) => n + r.decided, 0) > 50);
       assert.ok(results.reduce((n, r) => n + r.dead, 0) > 200);
       assert.ok(results.some((r) => r.blind));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The property of docs/design/trust-allow-list.md (section 5): a script that holds a construct whose row is `all`
+  // gives no value, decides no condition and marks nothing dead.
+  it('decides nothing in generated scripts that hold a construct the model does not follow', async function () {
+    this.timeout(120_000);
+    const list = withUnknown(1, 120).filter((s) => s.unknown);
+    assert.ok(list.length >= 15);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'decisions-'));
+    try {
+      const results = await checkAll(list, dir, 6);
+      assert.deepStrictEqual(results.flatMap((r, i) => r.problems.map((p) => `${p}\n${forModel(list[i].text).src}`)), []);
+      assert.deepStrictEqual(results.map((r, i) => (r.blind && r.decided + r.dead === 0 ? '' : list[i].unknown)), list.map(() => ''));
+      // (Each of them is there.)
+      assert.deepStrictEqual(new Set(withUnknown(5, 400).map((s) => s.unknown).filter(Boolean)), new Set(UNKNOWN_CONSTRUCTS));
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

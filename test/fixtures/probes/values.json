@@ -4144,5 +4144,218 @@
       ],
       "status": 0
     }
+  },
+  {
+    "id": "noclobber-declare",
+    "manual": "4.3.1",
+    "snippet": "set -C; : > f; x=1; declare x=2 > f 2>/dev/null; @PROBE:a@ \"$x\"",
+    "note": "with noclobber, `> f` fails on an existing file and `declare` does not run: the walk takes every redirection to a file as one that may fail",
+    "none": {
+      "a": "`x` is 1 or 2: `declare x=2 > f` may not run"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: f: cannot overwrite existing file"
+    }
+  },
+  {
+    "id": "locale-c",
+    "manual": "5.2",
+    "snippet": "LC_ALL=C; x=abc; @PROBE:a@ \"${x^^}\"",
+    "note": "a locale of C changes nothing a value reads: the trust follows it",
+    "facts": {
+      "a": [
+        [
+          "ABC"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "locale-other",
+    "manual": "5.2",
+    "snippet": "LC_ALL=de_DE.UTF-8; x=abc; @PROBE:a@ \"${x^^}\"",
+    "none": {
+      "a": "nothing is trusted: case conversion, character classes and ranges follow a locale other than C"
+    },
+    "facts": {
+      "a": [
+        [
+          "ABC"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: warning: setlocale: LC_ALL: cannot change locale (de_DE.UTF-8): No such file or directory"
+    }
+  },
+  {
+    "manual": "5.2",
+    "snippet": "LANG=de_DE.UTF-8 sort /dev/null; x=abc; @PROBE:a@ \"${x^^}\"",
+    "note": "a prefix assignment of a program goes to its environment only: the values are kept",
+    "facts": {
+      "a": [
+        [
+          "ABC"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.2",
+    "snippet": "shopt -s compat42; x=abc; @PROBE:a@ \"${x/b/'q'}\"",
+    "none": {
+      "a": "nothing is trusted: `compat42` keeps the quotes of a replacement (the model gave `aqc`)"
+    },
+    "facts": {
+      "a": [
+        [
+          "a'q'c"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "5.2",
+    "snippet": "BASH_COMPAT=42; x=abc; @PROBE:a@ \"${x/b/'q'}\"",
+    "none": {
+      "a": "nothing is trusted: `BASH_COMPAT` changes how bash reads the script (the model gave `aqc`)"
+    },
+    "facts": {
+      "a": [
+        [
+          "a'q'c"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.2",
+    "snippet": "shopt -s compat31; x=abc; if [[ $x =~ \"a.c\" ]]; then y=yes; else y=no; fi; @PROBE:a@ \"$y\"",
+    "none": {
+      "a": "nothing is trusted: with `compat31`, a quoted pattern of `=~` is a regular expression (the model gave `no`)"
+    },
+    "facts": {
+      "a": [
+        [
+          "yes"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "5.2",
+    "snippet": "FUNCNEST=1; g() { x=2; }; f() { g; }; x=1; f\n@PROBE:a@ \"$x\"",
+    "none": {
+      "a": "nothing is trusted: `FUNCNEST` stops the call of `g` (the model gave 2)"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: g: maximum function nesting level exceeded (1)"
+    }
+  },
+  {
+    "manual": "5.2",
+    "snippet": "shopt -s expand_aliases; BASH_ALIASES[1]=\"u=2\"; u=1\n1\n@PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: `BASH_ALIASES` defines the alias `1` (the model gave 1)"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -k; f() { y=$x; }; x=1; f x=2; @PROBE:a@ \"$y\"",
+    "none": {
+      "a": "nothing is trusted: with `set -k`, `x=2` is an assignment for `f` (the model gave 1)"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -o history -H; u=1; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: history expansion may run an earlier line (`!!`)"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.6",
+    "snippet": "u=1; exec {a[u=2]}>/dev/null; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "`u` is not trusted: the subscript of `{a[u=2]}` is arithmetic"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "u=1; x='\\0'; x+='44((u=2))'; : \"${x@P}\"; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: `+=` joins texts that are quiet alone into a prompt that assigns"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "x=1; jobs -x eval x=2; @PROBE:a@ \"$x\"",
+    "none": {
+      "a": "nothing is trusted: `jobs -x` runs `eval` in this shell"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

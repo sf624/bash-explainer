@@ -3,9 +3,8 @@
 // variables it writes not trusted, `followed` runs the scan's handler (the walk follows the construct, maybe with a
 // precondition the handler checks), and `none` changes nothing a value, a decision or a dead mark reads.
 //
-// Each row holds the effect the scan gives the construct today. `next` is the effect the design gives it when the
-// default flips (its step 4: the rows marked "new"), and a construct with no row then trusts nothing; until then, it
-// changes nothing. A `followed` row names what checks it against bash (`tests`): a row of a probe table
+// A construct with no row trusts nothing (`unlisted`): the scan fails toward "no value" for what it does not know. A
+// `followed` row names what checks it against bash (`tests`): a row of a probe table
 // (test/fixtures/probes/*.json, by its `id`), a construct of the decisions' generator (test/support/decisions.ts, by its
 // key in `GENERATED`), or a test of a test file (by its title); test/allow-list.test.ts checks that each names exactly
 // one, and that every set is complete against bash.
@@ -20,8 +19,6 @@ export type Effect =
 
 export interface Row {
   readonly effect: Effect;
-  /** The effect step 4 of the design gives it, where it differs from today's. */
-  readonly next?: Effect;
   /**
    * What checks a `followed` row against bash, in one of three forms:
    * - `kind#id`: the row of the probe table `kind` (`state`, `env`, `names`, `words`, `status` or `values`) whose `id`
@@ -38,12 +35,14 @@ export const FOLLOWED: Effect = { kind: 'followed' };
 const NAMES: Effect = { kind: 'names' };
 export const all = (why: string): Effect => ({ kind: 'all', why });
 
-export const none = (next?: Effect): Row => (next ? { effect: NONE, next } : { effect: NONE });
+export const none = (): Row => ({ effect: NONE });
 export const followed = (tests: readonly string[]): Row => ({ effect: FOLLOWED, tests });
 export const names = (): Row => ({ effect: NAMES });
+/** A row that trusts nothing, for `why`. */
+export const blinds = (why: string): Row => ({ effect: all(why) });
 
-/** The row of a construct the table does not have: today, it changes nothing (step 4: it changes anything). */
-export const UNLISTED: Row = none(all('a construct the allow-list does not have'));
+/** The row of a construct the table does not have (`what` says which): it may change anything. */
+export const unlisted = (what: string): Row => blinds(`${what}, which the allow-list does not have`);
 
 /** The node types of the syntax tree (src/syntax/tree.ts). */
 export const SYNTAX: Readonly<Record<NodeType, Row>> = {
@@ -73,7 +72,7 @@ export const SYNTAX: Readonly<Record<NodeType, Row>> = {
   extended_test: followed(['values#test-n', 'generator: [[']),
   // A function: the walk walks each call it sees; one called otherwise is not closed (`Trust.closed`).
   function_definition: followed(['env#function-call', 'generator: function definition']),
-  // The patterns after `;&` and `;;&`: expanded in the state before the `case` (step 3 of the design fixes the walk).
+  // (The patterns after `;&` and `;;&`: expanded in the state after the list before them.)
   case_statement: followed(['generator: case']),
   // The loop variable; `select`'s is what the user types.
   for_statement: names(),
@@ -122,7 +121,7 @@ export const SYNTAX: Readonly<Record<NodeType, Row>> = {
   heredoc_end: followed(['words#heredoc-body']),
   herestring_redirect: followed(['words#herestring', 'generator: <<<']),
   // Text our parser could not read: bash may read it otherwise.
-  error: none(all('text the parser could not read')),
+  error: blinds('text the parser could not read'),
 };
 
 /**
@@ -134,12 +133,12 @@ export interface BuiltinRow extends Row {
   readonly options?: Readonly<Record<string, Row>>;
 }
 
-const ANY_OPTION = all('an option of a builtin that the spec does not know');
-const builtin = (row: Row, unknownOption: Row = none(ANY_OPTION), options?: Readonly<Record<string, Row>>): BuiltinRow => ({ ...row, unknownOption, ...(options ? { options } : {}) });
+type BuiltinRowOf = Row & { readonly unknownOption?: Row; readonly options?: Readonly<Record<string, Row>> };
+const builtin = (row: Row, unknownOption?: Row, options?: Readonly<Record<string, Row>>): BuiltinRowOf => ({ ...row, ...(unknownOption ? { unknownOption } : {}), ...(options ? { options } : {}) });
 /** `ulimit -n` and `-u` may lower a limit: then a redirection (even to /dev/null), a pipe of `$( )` or a fork fails. */
-const LIMITS = { effect: all('`ulimit -n` or `-u` may make a redirection, a pipe or a fork fail') };
+const LIMITS = blinds('`ulimit -n` or `-u` may make a redirection, a pipe or a fork fail');
 /** `mapfile -C` runs its text in this shell, as `eval` does (with the index and the line after it). */
-const MAPFILE_CALLBACK = { '-C': { effect: all('`mapfile -C` runs code in this shell') } };
+const MAPFILE_CALLBACK = { '-C': blinds('`mapfile -C` runs code in this shell') };
 
 /**
  * Each of bash's 61 builtins (`compgen -b`, the same in 5.2 and 5.3). What their specs say is read from them, for
@@ -147,57 +146,70 @@ const MAPFILE_CALLBACK = { '-C': { effect: all('`mapfile -C` runs code in this s
  * (`complete -F f`: not closed), a file or command line run unread (`source`: all), and what they alter
  * (`shellEffect`). The rows say the rest.
  */
-export const BUILTINS: Readonly<Record<string, BuiltinRow>> = {
-  // They change nothing a value or a decision reads.
+const BUILTIN_ROWS: Readonly<Record<string, BuiltinRowOf>> = {
+  // They change nothing a value or a decision reads. (`echo`, `printf`, `:`, `true` and `false` print or ignore a word
+  // that looks like an option.)
   ':': builtin(none(), none()), true: builtin(none(), none()), false: builtin(none(), none()),
   echo: builtin(none(), none()), printf: builtin(none(), none()),
   pwd: builtin(none()), type: builtin(none()), help: builtin(none()), times: builtin(none()), caller: builtin(none()),
   dirs: builtin(none()), disown: builtin(none()), suspend: builtin(none()), logout: builtin(none()),
-  ulimit: builtin(none(), none(ANY_OPTION), { '-n': LIMITS, '-u': LIMITS }),
+  ulimit: builtin(none(), undefined, { '-n': LIMITS, '-u': LIMITS }),
   umask: builtin(none()), hash: builtin(none()), bind: builtin(none()), history: builtin(none()), kill: builtin(none()),
   wait: builtin(none()), bg: builtin(none()), fg: builtin(none()),
   // (A function named as a callback, `complete -F f`, is not closed. `complete -C` and `-F` run when a command is
   // completed, in an interactive shell only.)
   complete: builtin(none()), compopt: builtin(none()),
   // `jobs -x` runs its command in this shell (its spec's command slot).
-  jobs: builtin(none(), none(ANY_OPTION), { '-x': { effect: all('`jobs -x` runs a command in this shell') } }),
+  jobs: builtin(none(), undefined, { '-x': blinds('`jobs -x` runs a command in this shell') }),
   // PWD, OLDPWD and DIRSTACK; the positional parameters (never trusted).
   cd: builtin(names()), pushd: builtin(names()), popd: builtin(names()), shift: builtin(names()),
-  read: builtin(names()), mapfile: builtin(names(), none(ANY_OPTION), MAPFILE_CALLBACK), readarray: builtin(names(), none(ANY_OPTION), MAPFILE_CALLBACK),
+  read: builtin(names()), mapfile: builtin(names(), undefined, MAPFILE_CALLBACK), readarray: builtin(names(), undefined, MAPFILE_CALLBACK),
   getopts: builtin(names()),
   // Jumps (a count not known takes both paths).
   exit: builtin(followed(['status#exit-status', 'generator: exit'])), return: builtin(followed(['status#return-status', 'generator: return'])),
   break: builtin(followed(['generator: break'])), continue: builtin(followed(['generator: continue'])),
-  // `x=w` with no option but -r, -x and -g; names for the other options; the nameref rule for -n; all for a name not known.
-  declare: builtin(followed(['values#declare-export-readonly']), names()), typeset: builtin(followed(['state#declare-attributes']), names()),
-  local: builtin(followed(['values#local-shadow', 'generator: local']), names()), export: builtin(followed(['values#declare-export-readonly', 'generator: export']), names()),
-  readonly: builtin(followed(['values#declare-export-readonly']), names()),
+  // `x=w` with no option but -r, -x and -g; names for the other options; the nameref rule for -n; all for a name not known,
+  // and for an option the spec does not know.
+  declare: builtin(followed(['values#declare-export-readonly'])), typeset: builtin(followed(['state#declare-attributes'])),
+  local: builtin(followed(['values#local-shadow', 'generator: local'])), export: builtin(followed(['values#declare-export-readonly', 'generator: export'])),
+  readonly: builtin(followed(['values#declare-export-readonly'])),
   unset: builtin(followed(['values#unset-ifs', 'generator: unset'])),
   let: builtin(followed(['status#let-assign', 'generator: let'])),
   // The string the walk reads; else all.
   eval: builtin(followed(['values#eval-string'])),
-  source: builtin({ effect: all('a file is sourced') }), '.': builtin({ effect: all('a file is sourced') }),
+  source: builtin(blinds('a file is sourced')), '.': builtin(blinds('a file is sourced')),
   // An action the walk reads (foreign text); all for DEBUG, RETURN, or an action not known.
   trap: builtin(followed(['values#trap-action'])),
   alias: builtin(followed(['state#alias-unalias'])), unalias: builtin(followed(['state#alias-unalias'])),
   // `-n NAME`, `-ns NAME`, `-n -s NAME`, `-n -a NAME`, `NAME`; all for -f or a name not known.
   enable: builtin(followed(['values#enable-n-exit'])),
   set: builtin(followed(['state#set-euo-pipefail', 'generator: set option'])), shopt: builtin(followed(['state#shopt-extglob-nullglob', 'generator: shopt -s'])),
-  // Precondition: no word may be `-v` with an operand that has a subscript.
-  test: builtin(followed(['generator: test'])), '[': builtin(followed(['generator: [ test'])),
+  // Precondition: no word may be `-v` with an operand that has a subscript. (Their words are the expression's, which
+  // the handler reads: `[ -a file ]` is no option.)
+  test: builtin(followed(['generator: test']), none()), '[': builtin(followed(['generator: [ test']), none()),
   command: builtin(followed(['env#command-builtin-time'])), builtin: builtin(followed(['env#command-builtin-time'])),
   // A quiet word list and no -F or -C; else all.
-  compgen: builtin(followed(['values#compgen-word-list']), { effect: all('`compgen` expands a word list or runs a command the model does not read') }),
+  compgen: builtin(followed(['values#compgen-word-list']), blinds('`compgen` expands a word list or runs a command the model does not read')),
   // `fc -l` lists; else all.
   fc: builtin(followed(['values#fc-substitute'])),
   exec: builtin(followed(['words#exec-redirect'])),
 };
+
+/**
+ * Each of bash's 61 builtins, with the row of an option its spec does not know: bash may take it, and the scan cannot
+ * say what it does (all), unless the row says otherwise.
+ */
+export const BUILTINS: Readonly<Record<string, BuiltinRow>> = Object.fromEntries(Object.entries(BUILTIN_ROWS).map(([name, row]) =>
+  [name, { ...row, unknownOption: row.unknownOption ?? blinds(`\`${name}\` is given an option its spec does not know`) }]));
 
 /** The options of `set -o` (the same 27 in bash 5.2 and 5.3), by what turning them on does (and off, `off`). */
 export interface OptionRow extends Row {
   /** The effect when the option is turned off, where it differs. */
   readonly off?: Row;
 }
+
+/** An option that trusts nothing when it is turned on, for `why`. */
+const onOnly = (why: string): OptionRow => ({ ...blinds(why), off: none() });
 
 export const SET_OPTIONS: Readonly<Record<string, OptionRow>> = {
   allexport: followed(['state#set-allexport']), errexit: followed(['status#errexit-subshell', 'generator: set -e']), nounset: followed(['status#nounset-expansion', 'generator: set -u']),
@@ -209,15 +221,17 @@ export const SET_OPTIONS: Readonly<Record<string, OptionRow>> = {
   emacs: none(), vi: none(), ignoreeof: none(), nolog: none(), notify: none(), verbose: none(), hashall: none(), physical: none(),
   privileged: none(), 'interactive-comments': none(), errtrace: none(), functrace: none(),
   // `!!` runs an earlier line.
-  histexpand: none(all('history expansion may run an earlier line')), history: none(all('history expansion may run an earlier line')),
+  // (Turned off, these change nothing.)
+  histexpand: onOnly('`set -H` (histexpand): history expansion may run an earlier line'), history: onOnly('`set -o history`: history expansion may run an earlier line'),
   // An assignment word anywhere in a command is an assignment for it.
-  keyword: none(all('`set -k` makes every assignment word one for its command')),
-  // With it, a `>` may fail on any file (step 3: a redirection that may fail).
-  noclobber: none(FOLLOWED),
+  keyword: onOnly('`set -k` (keyword) makes every assignment word one for its command'),
+  // With it, a `>` may fail on an existing file: the walk takes every redirection to a file as one that may fail.
+  noclobber: followed(['values#noclobber-declare']),
   // The commands after it do not run.
-  noexec: none(all('`set -n` or `set -t` stops running commands')), onecmd: none(all('`set -n` or `set -t` stops running commands')),
-  // Until the POSIX-mode rows of docs/design/bash-versions.md, step 6.
-  posix: none(all('POSIX mode')),
+  noexec: onOnly('`set -n` (noexec) stops running commands'), onecmd: onOnly('`set -t` (onecmd) stops running commands'),
+  // Until the POSIX-mode rows of docs/design/bash-versions.md, step 6. (A script that starts in POSIX mode, `sh` or
+  // `#!/bin/bash --posix`, is walked so from its start.)
+  posix: blinds('`set -o posix` turns on POSIX mode, which the walk does not follow from there'),
 };
 
 /** The options of `shopt` (57 in bash 5.2; 5.3 adds `array_expand_once` and `bash_source_fullpath`, SINCE in src/bashversion.ts). */
@@ -235,9 +249,9 @@ export const SHOPT_OPTIONS: Readonly<Record<string, OptionRow>> = {
   interactive_comments: none(), login_shell: none(), restricted_shell: none(), bash_source_fullpath: none(),
   // Turned on, they change what words and arithmetic do in ways the walk does not follow.
   ...Object.fromEntries(['compat31', 'compat32', 'compat40', 'compat41', 'compat42', 'compat43', 'compat44', 'extdebug', 'localvar_inherit', 'localvar_unset',
-    'assoc_expand_once', 'array_expand_once'].map((o) => [o, { ...none(all(`\`shopt -s ${o}\``)), off: none() }])),
+    'assoc_expand_once', 'array_expand_once'].map((o) => [o, onOnly(`\`shopt -s ${o}\` changes what bash does in ways the walk does not follow`)])),
   // Turned off: `$'…'` inside `"${x:-…}"`, and ranges in patterns by the locale.
-  ...Object.fromEntries(['extquote', 'globasciiranges'].map((o) => [o, { ...none(), off: none(all(`\`shopt -u ${o}\``)) }])),
+  ...Object.fromEntries(['extquote', 'globasciiranges'].map((o) => [o, { ...none(), off: blinds(`\`shopt -u ${o}\` changes what bash does in ways the walk does not follow`) }])),
 };
 
 /**
@@ -255,7 +269,7 @@ export const EXPANSION_OPERATORS: Readonly<Record<string, Row>> = {
   // Arithmetic.
   ':': followed(['generator: substring expansion']),
   '@Q': none(), '@E': none(), '@A': none(), '@a': none(), '@K': none(), '@k': none(), '@U': none(), '@u': none(), '@L': none(),
-  // Precondition: every value the script gives it is quiet (step 4: and none is made with `+=`).
+  // Precondition: every value the script gives it is quiet, and none is made with `+=` (it joins texts that are quiet alone).
   '@P': followed(['values#prompt-expansion']),
   // `${!x}` and the other indirections: all; the keys and the names with a prefix, with nothing after them: none.
   '!': followed(['values#indirect']), '!@': none(), '!*': none(), '![@]': none(),
@@ -265,25 +279,29 @@ export const EXPANSION_OPERATORS: Readonly<Record<string, Row>> = {
 export const REDIRECTIONS: Readonly<Record<string, Row>> = {
   // A here-document and a here-string do not fail; their words are looked up as words.
   '<<': followed(['words#heredoc-body']), '<<-': followed(['words#heredoc-tab']), '<<<': followed(['words#herestring']),
-  // The others may fail, and then their command does not run (step 3 of the design: today the walk takes them as made).
-  // `{fd}>…`: names `fd`.
+  // The others may fail, and then their command does not run (the walk takes it as one that may not run).
+  // `{fd}>…`: names `fd`; `{a[i]}>…`: names `a`, and `i` is arithmetic.
   '<': followed(['words#redirect-input']), '>': followed(['words#redirect-word-split']), '>>': followed(['test/tests-redirections-real.test.ts: a file is still opened, created or emptied']), '<>': followed(['test/tests-redirections-real.test.ts: a file is still opened, created or emptied']),
   '>|': followed(['test/tests-redirections-real.test.ts: is not replaced when a redirection between copies it, or sets another descriptor']), '&>': followed(['test/tests-redirections-real.test.ts: is not replaced when a redirection between copies it, or sets another descriptor']), '&>>': followed(['test/redirections.test.ts: are explained with the command, wherever they are written']), '<&': followed(['env#process-subst-fd']),
   '>&': followed(['state#redirect-dup-exec']),
 };
 
-const rowOf = <R>(table: Readonly<Record<string, R>>, key: string, unlisted: R): R => (Object.hasOwn(table, key) ? table[key] : unlisted);
+const rowOf = <R>(table: Readonly<Record<string, R>>, key: string, missing: () => R): R => (Object.hasOwn(table, key) ? table[key] : missing());
 
-/** The row of a node type (one the table does not have: `UNLISTED`). */
-export const syntaxRow = (type: string): Row => rowOf<Row>(SYNTAX, type, UNLISTED);
+/** The row of a node type (one the table does not have trusts nothing). */
+export const syntaxRow = (type: string): Row => rowOf<Row>(SYNTAX, type, () => unlisted(`the node type \`${type}\``));
 
-const UNLISTED_BUILTIN: BuiltinRow = { ...UNLISTED, unknownOption: UNLISTED };
-/** The row of a builtin (a name of the dictionary that is no builtin of bash, zsh's `setopt`: `UNLISTED`). */
-export const builtinRow = (name: string): BuiltinRow => rowOf(BUILTINS, name, UNLISTED_BUILTIN);
+/**
+ * A name of the dictionary that is no builtin of bash (zsh's `setopt`): bash runs a program of that name in a child
+ * process, or finds none, which changes nothing of this shell.
+ */
+export const PROGRAM: BuiltinRow = { effect: NONE, unknownOption: { effect: NONE } };
+/** The row of a builtin (`PROGRAM` for a name of the dictionary that is no builtin of bash). */
+export const builtinRow = (name: string): BuiltinRow => rowOf(BUILTINS, name, () => PROGRAM);
 
-/** The row of an option of `set -o` or `shopt` (`table`), turned on or off. */
+/** The row of an option of `set -o` or `shopt` (`table`), turned on or off (one the table does not have trusts nothing). */
 export function optionRow(table: Readonly<Record<string, OptionRow>>, name: string, on: boolean): Row {
-  const row = rowOf<OptionRow>(table, name, UNLISTED);
+  const row = rowOf<OptionRow>(table, name, () => unlisted(table === SET_OPTIONS ? `\`set ${on ? '-' : '+'}o ${name}\`` : `\`shopt ${on ? '-s' : '-u'} ${name}\``));
   return on ? row : row.off ?? row;
 }
 
@@ -309,10 +327,16 @@ export function expansionOperator(n: SyntaxNode): string {
 }
 
 /** The row of the operator of the parameter expansion `n`. */
-export const expansionRow = (n: SyntaxNode): Row => rowOf<Row>(EXPANSION_OPERATORS, expansionOperator(n), UNLISTED);
+export function expansionRow(n: SyntaxNode): Row {
+  const op = expansionOperator(n);
+  return rowOf<Row>(EXPANSION_OPERATORS, op, () => unlisted(n.text.length <= 40 ? `the parameter expansion \`${n.text}\`` : `the operator \`${op}\` of a parameter expansion`));
+}
 
 /** The row of a redirection, by its operator. */
-export const redirectionRow = (n: SyntaxNode): Row => rowOf<Row>(REDIRECTIONS, n.children.find((c) => !c.named)!.type, UNLISTED);
+export function redirectionRow(n: SyntaxNode): Row {
+  const op = n.children.find((c) => !c.named)!.type;
+  return rowOf<Row>(REDIRECTIONS, op, () => unlisted(`the redirection operator \`${op}\``));
+}
 
 // The preconditions of the expansion rows `@P` and `!`, which the scan checks.
 

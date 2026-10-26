@@ -193,12 +193,15 @@ describe('errors bash stops at, and commands bash may not run (review of #356)',
     assert.strictEqual(last('x=a; z=abc; : "${z:08}"; x=b\necho "$x"', '$x'), undefined);
     assert.strictEqual(last('x=a; z=abc; : "${z:1:2}"; x=b\necho "$x"', '$x'), 'b');
     assert.strictEqual(last('x=a; z=abc; : "${z@Z}"; x=b\necho "$x"', '$x'), undefined);
-    // (Unset, `${z@Z}` gives nothing; from the environment, it may be set.)
-    assert.strictEqual(last('x=a; unset z; : "${z@Z}"; x=b\necho "$x"', '$x'), 'b');
-    assert.strictEqual(last('x=a; : "${z@Z}"; x=b\necho "$x"', '$x'), 'b');
+    // (Unset, `${z@Z}` gives nothing; from the environment, it may be set. An operator the allow-list does not have
+    // trusts nothing, so the walk's state is read.)
+    assert.strictEqual(last('x=a; unset z; : "${z@Z}"; x=b\necho "$x"', '$x'), undefined);
+    assert.strictEqual(after('x=a; unset z; : "${z@Z}"; x=b', 'x'), 'b');
+    assert.strictEqual(after('x=a; : "${z@Z}"; x=b', 'x'), 'b');
     // In POSIX mode an assignment or arithmetic error ends the shell; with the mode not known, it may.
     assert.strictEqual(last('set -o posix; x=a; readonly r=1; r=2\necho "$x"', '$x'), undefined);
-    assert.strictEqual(last('[ -f a ] && set -o posix; x=a; readonly r=1; r=2\necho "$x"', '$x'), 'a');
+    // (`set -o posix` trusts nothing: the walk's state is read.)
+    assert.strictEqual(after('[ -f a ] && set -o posix; x=a; readonly r=1; r=2', 'x'), 'a');
     assert.strictEqual(last('set -o posix; x=a; echo $((1/0))\necho "$x"', '$x'), undefined);
     assert.strictEqual(last('x=a; readonly r=1; r=2\necho "$x"', '$x'), 'a');
   });

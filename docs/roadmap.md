@@ -14,7 +14,7 @@ Keep it current:
 
 ## Next, in this order
 
-1. Trust as a strict allow-list: the trust scan looks every construct up in a table (node types, builtins and their options, `set` and `shopt` options, bash's own variables, expansion operators), and one it does not know makes the script trust nothing, instead of being taken to change nothing. Each row the model follows names its tests. It closes the four findings of the #382 review that #387 leaves open (`${n:=0}`, `n="$n"` and `+=` read as arithmetic, `${x@P}` built with `+=`, `set -H`, `case … ;;&`), twelve more holes found for the design (`compat31`, `compat42`/`BASH_COMPAT`, `FUNCNEST`, `BASH_ALIASES`, `set -C`, `set -k`, redirections that fail, `jobs -x`, shebang options, values given to `bash -c`, environment values copied into arithmetic, `{a[i]}>`). Its first draft, measured on top of #387, cost no value, decision or dead mark on the corpus and on 802 real scripts; the walk changes the review added (redirections that may fail above all) are measured in its step 3. Design: [design/trust-allow-list.md](design/trust-allow-list.md) (in progress: steps 1 to 3 done, the builtins' options in the specs, the table with today's effects, and the walk changes with copies of IFS; step 4, the default flip, waits on the maintainer). Placed right after item 1, which is in progress (#386). Proposed 2026-10-26.
+1. Trust as a strict allow-list, step 5: the documents that describe the trust say what the table now does ([design/semantics.md](design/semantics.md) 4.14, [design/expansion-values.md](design/expansion-values.md) section 3, and README's Limitations: what the model assumes of the start, `BASH_COMPAT`, `POSIXLY_CORRECT`, `FUNCNEST`, `BASHOPTS` and the locale from the environment, `bash -k script`, `sh script`). Steps 1 to 4 are done (see Done lately).
 2. Audit Reading against the Bash Reference Manual, section by section (chapter 3 first): every construct Reading shows is named and grouped as the manual does, and every operator and reserved word appears in the tree. Findings fixed as explanation bugs, with tests against bash or bash-ast. Raised by the maintainer 2026-10-26.
 3. Values of top-level constants inside functions (assigned once before any call, no other writer).
 4. The basis of an explanation, as data, after the analyzer is thinned: an explanation that rests on bash's behaviour rather than the manual gets a chip ("Not in the manual · checked with bash 5.2", or "Differs from the manual"), and a folded "Try it in your terminal" with a command and its output, taken from the probe that checks it in CI (look A of the prototype on branch `proto/basis`). A setting turns the chips and the try-its off. Other kinds of basis (another tool's spec, convention) are data only for now.
@@ -27,7 +27,7 @@ Keep it current:
 
 ## Waiting on the maintainer
 
-- Trust as a strict allow-list, step 4: flip the default (a construct with no row trusts nothing, and the rows marked "new" take their effect). Steps 1 to 3 are in review ([design/trust-allow-list.md](design/trust-allow-list.md), section 6).
+Nothing at the moment.
 
 ## Not decided
 
@@ -40,6 +40,7 @@ Keep it current:
 
 ## Done lately
 
+- Trust as a strict allow-list, steps 1 to 4: every construct of a script is looked up in one table (node types, builtins and their options, `set` and `shopt` options, bash's own variables, expansion and redirection operators; src/semantics/allow.ts), and one the walk does not follow, or that the table does not have, makes the script trust nothing. It closes the twelve holes found for the design and the four open findings of the #382 review; the shebang and another shell's start go through the table too. Measured: no value lost on the corpus or on 802 real scripts, one decision lost on a zsh snippet (#391, #392, #393, #PR4; [design/trust-allow-list.md](design/trust-allow-list.md)).
 - Lists as the manual reads them (3.2.4): the commands joined by `;` and `&` are one list in Meaning and Reading, AND and OR lists (`&&`, `||`) are parts of it, nested from the left, and each `;` and `&` says what it applies to; Reading shows every `;`. The tree keeps a body's statements as they were; `commandLists` (src/syntax/tree.ts) reads them as lists, checked against bash-ast and bash (test/lists.test.ts).
 - Every warning and caveat the explanations say is a problem, with its level, its range and its code, on every surface (VS Code, the Language Server, the web page, `--check`, SARIF, the Action), also in the shell code of host files; a plain fact never is. The notes are data with their level (`LineExplanation.noteInfo`), which the views read instead of the mark (`noteLevel` and `splitNote` are gone) (#365, #366; [design/note-levels.md](design/note-levels.md), "Notes as data", "Notes as problems").
 - bats: the model per test and the hooks (#381), tags and `# @test` functions (#384), and the helpers of bats-support, bats-assert and bats-file as specs (#374). What [design/bats.md](design/bats.md) still lists as not done (the code outside the tests, the test names in the C locale) is small and waits for a user who needs it.

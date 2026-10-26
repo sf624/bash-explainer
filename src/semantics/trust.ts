@@ -10,18 +10,13 @@
 //   arithmetic text (where bash may assign it), in no other builtin that takes names, in no array, nameref, `${x:=w}`,
 //   function a trap or a callback may run, nor in the text of an `eval`, `trap` or `alias`. Positional parameters and
 //   the variables bash sets itself never are.
-// - Nothing is trusted (`blind`) when the script runs what cannot be read: `source`, `eval` or `trap` of text not
-//   known, a command name not known (`$cmd`, `"$@"`), a file a function of the file's host runs (bats' `load`; the
-//   others, `run`…, are read by their specs, as builtins: `shellState`'s `host`), a builtin given a variable name not known (`read "$v"`),
-//   indirection (`${!v}`, `${!1}`: its subscript may assign), a DEBUG or RETURN trap, a `${ …; }` (bash 5.3: it runs
-//   in the shell itself, and the walk does not keep what it changes), a trap's or a callback's function that changes options, functions
-//   or aliases, a PS4 that may assign or run a command (`set -x` expands it before each command), a nameref whose
-//   target is not known (or refers to one), assigned or read (the target's subscript is arithmetic), `-v` of a name
-//   not known (the same; also a word of `test` or `[` that may be `-v` itself, or that splits), `${x@P}` of a value
-//   that may run code, `compgen` of a word list that may (or with `-F`), `fc` (but `-l`), `enable` of a name not
-//   known, or `-f` (a loadable builtin); and when arithmetic may read text not known (`$1`, `$(cmd)`, a variable `read`
-//   sets, that is never set, or that `declare x` outside a function keeps: bash runs it as an expression, which may
-//   assign any variable).
+// - Nothing is trusted (`blind`) when the script holds a construct whose row in the allow-list (src/semantics/allow.ts;
+//   docs/design/trust-allow-list.md) is `all`, or one the table does not have: what the walk does not follow, or the
+//   scan cannot read (`source`, `eval` or `trap` of text not known, a command name not known, indirection, an option
+//   of `set` or `shopt` the walk does not follow, a variable of bash such as `BASH_COMPAT`, a parse error…). A
+//   `followed` row has a handler here, which checks its precondition (a nameref's target, `-v` of a name not known,
+//   `${x@P}` of a value that may run code, a PS4 that may, a locale other than C), and arithmetic must not read text
+//   not known (`$1`, `$(cmd)`, a variable `read` sets: bash runs it as an expression, which may assign any variable).
 // - A function is closed (its decisions and dead code may be said, and src/semantics/env.ts says for sure where its
 //   body runs) when every call of it is one the walk sees, in the script or in an `eval`'s string: not exported
 //   (`export -f`, `set -a`), not named as an argument (`complete -F f`, `trap f INT`), not called from the text of a
@@ -41,13 +36,14 @@ import { prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
 import { field, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
-import { builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
+import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
 import { aliasName, aliasOf, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
+import { localeWritten, openingBlinds, type Opening } from './opening';
 import { closesStandard } from './redirects';
-import { testSplits, testWordShape } from './testwords';
+import { inExtendedTest, testSplits, testWordShape } from './testwords';
 import { COPY, identifiers, joined, writtenValue, type WrittenValue } from './written';
-import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, optionRoles, readDeclarationWords, writeEffect, type Declaration } from './vars';
+import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, localeVariable, optionRoles, readDeclarationWords, writeEffect, type Declaration } from './vars';
 
 export interface Trust {
   /** Why nothing is trusted (no decision at all), when so. */
@@ -182,7 +178,7 @@ class Scan {
   /** The aliases each tree of an alias expanded at a command comes from (bash does not expand an alias in itself). */
   private readonly expanding = new Map<SyntaxNode, ReadonlySet<string>>();
 
-  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands) {
+  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening?: Opening) {
     const defs = (n: SyntaxNode): void => {
       if (n.type === 'function_definition') this.functions.add(field(n, 'name')!.text);
       if (n.type === 'command' && ['alias', 'enable'].includes(commandName(n) ?? '')) this.renames = true;
@@ -190,6 +186,9 @@ class Scan {
     };
     defs(root);
     try {
+      // (What the shebang starts bash with, as if set on the first line.)
+      const why = opening && openingBlinds(opening);
+      if (why) this.blindFor(why);
       this.visit(root, { fn: undefined, foreign: false, now: true });
       this.aliases();
       this.finish();
@@ -214,10 +213,13 @@ class Scan {
     return row.effect.kind !== 'none';
   }
 
-  private write(name: string, w: Where, plain: boolean, value: Value, nameref = false): void {
-    // (What a write of a variable of bash does to bash: unsetting BASH_XTRACEFD, or making it empty, closes the fd it
-    // named, which may be 1 or 2.)
-    this.apply(writeEffect(name));
+  /** `program`: a prefix assignment of a program (`LANG=de_DE.UTF-8 sort`), which changes its environment only. */
+  private write(name: string, w: Where, plain: boolean, value: Value, nameref = false, program = false): void {
+    // (What a write of a variable of bash does to bash, by its row: a locale other than C trusts nothing. Unsetting
+    // BASH_XTRACEFD, or making it empty, closes the fd it named, which may be 1 or 2.)
+    if (!program && localeVariable(name)) {
+      if (!localeWritten(value)) this.blindFor(`\`${name}\` may be set to a locale other than C`);
+    } else if (!program) this.apply(writeEffect(name));
     if (name === 'BASH_XTRACEFD') this.fdsClose = true;
     const list = this.writes.get(name) ?? [];
     list.push({ plain, value, fn: w.fn, foreign: w.foreign, ...(nameref ? { nameref } : {}) });
@@ -275,6 +277,7 @@ class Scan {
    * expression: `declare -i n+=1` with `n='u=2'` sets `u`).
    */
   private appended(name: string, n: SyntaxNode, w: Where): void {
+    if (localeVariable(name)) this.blindFor(`\`${name}\` may be set to a locale other than C`);
     this.writes.get(name)!.at(-1)!.append = true;
     this.assigned(name, name, n, w);
   }
@@ -357,7 +360,7 @@ class Scan {
       }
       case 'binary_expression': {
         const op = field(n, 'operator')?.text;
-        if (op && ['-eq', '-ne', '-lt', '-le', '-gt', '-ge'].includes(op) && n.parent && this.inExtendedTest(n)) {
+        if (op && ['-eq', '-ne', '-lt', '-le', '-gt', '-ge'].includes(op) && n.parent && inExtendedTest(n)) {
           for (const side of [field(n, 'left'), field(n, 'right')]) if (side) this.arithText(side.text, w, this.owner(n));
         }
         break;
@@ -383,14 +386,16 @@ class Scan {
       }
       case 'file_redirect': case 'heredoc_redirect': case 'herestring_redirect': {
         this.apply(redirectionRow(n));
-        const fd = /^\{([A-Za-z_]\w*)\}$/.exec(field(n, 'descriptor')?.text ?? '')?.[1];
-        if (fd) this.write(fd, w, false, 'number');
+        // (`{fd}>f` sets `fd`; `{a[i]}>f` sets an element of `a`, and `i` is arithmetic.)
+        const fd = /^\{([A-Za-z_]\w*)(?:\[(.*)\])?\}$/s.exec(field(n, 'descriptor')?.text ?? '');
+        if (fd) this.write(fd[1], w, false, 'number');
+        if (fd?.[2] !== undefined) this.subscripts.push({ array: fd[1], text: fd[2], owner: this.owner(n), where: w });
         if (closesStandard(n)) this.fdsClose = true;
         break;
       }
       case 'variable_assignment':
         // (Those of a declaration are read with it.)
-        if (n.field !== 'argument') this.assignment(n, w, true);
+        if (n.field !== 'argument') this.assignment(n, w, true, false, n.parent!.type === 'command' && this.program(n.parent!));
         break;
       case 'command':
         // (A command with no name has only its assignments, read above.)
@@ -398,13 +403,6 @@ class Scan {
         break;
     }
     for (const c of n.children) this.visit(c, w);
-  }
-
-  /** Whether `n` is in `[[ ]]` (where `-eq` and the others read arithmetic; in `test` and `[`, integers only). */
-  private inExtendedTest(n: SyntaxNode): boolean {
-    let x: SyntaxNode | null = n.parent;
-    while (x && (x.type === 'binary_expression' || x.type === 'unary_expression' || x.type === 'parenthesized_expression')) x = x.parent;
-    return x?.type === 'extended_test';
   }
 
   private refEdge(name: string, target: string): void {
@@ -464,13 +462,13 @@ class Scan {
    * `x=w`, `x+=w`, `a[i]=w`, `a=(…)`: `plain` unless it is in a declaration that gives attributes; `associative`: in
    * `declare -A`, whose keys are not arithmetic.
    */
-  private assignment(a: SyntaxNode, w: Where, plain: boolean, associative = false): void {
+  private assignment(a: SyntaxNode, w: Where, plain: boolean, associative = false, program = false): void {
     const nameNode = field(a, 'name')!;
     const value = field(a, 'value');
     const subscript = nameNode.type === 'subscript';
     const name = subscript ? field(nameNode, 'name')!.text : nameNode.text;
     if (value?.type === 'array') {
-      this.write(name, w, false, joined(value.namedChildren.map((e) => this.value(e))));
+      this.write(name, w, false, joined(value.namedChildren.map((e) => this.value(e))), false, program);
       for (const e of value.namedChildren) {
         // (`a=([i]=x)`: `[i]` is a subscript.)
         const key = /^\[([^\]]*)\]\+?=/.exec(e.text)?.[1];
@@ -483,7 +481,7 @@ class Scan {
     // (A copy, `save=$IFS`, `IFS=$save`: see `testSplits`.)
     const copy = typeof v === 'object' && !subscript ? COPY.exec(v.text)?.[1] : undefined;
     if (copy) this.copies.push({ owner: this.owner(a)!, target: name, source: copy });
-    this.write(name, w, plain && !subscript, v);
+    this.write(name, w, plain && !subscript, v, false, program);
     this.assigned(name, value ? value.text : '', a, w);
     if (!subscript && a.children.some((c) => c.type === '+=')) this.appended(name, a, w);
   }
@@ -589,6 +587,16 @@ class Scan {
       direct = false;
     }
     return { name, args, lookup: false, direct };
+  }
+
+  /**
+   * Whether the command `c` runs a program (a child process), or a name bash does not find: a static name that is no
+   * builtin of bash, no function of the script, and no function of the file's host, in a script that defines no alias
+   * (an alias's text may make it another command).
+   */
+  private program(c: SyntaxNode): boolean {
+    const name = field(c, 'name') && commandName(c);
+    return name !== undefined && !Object.hasOwn(BUILTINS, name) && !this.functions.has(name) && !Object.hasOwn(this.host, name) && !this.renames;
   }
 
   private command(c: SyntaxNode, w: Where): void {
@@ -704,13 +712,17 @@ class Scan {
         this.shopt(parse, args);
         return;
       case 'set': {
-        // `set -a`, `set -o allexport` (the last of them in the command wins), or options not known (a name of `-o`
-        // not known, a word whose value is not known before the operands): functions defined after are exported.
+        // Each option by its row; a name of `-o` not known, or a word whose value is not known before the operands
+        // (`set $x`: `-k`?), may be any option. `set -a`, `set -o allexport` (the last of them in the command wins):
+        // functions defined after are exported.
         const writes = setOptionWrites(parse, args);
-        for (const o of writes) if (o.name !== undefined) this.apply(optionRow(SET_OPTIONS, o.name, o.on));
+        for (const o of writes) {
+          if (o.name === undefined) this.blindFor('`set -o` is given an option name not known');
+          this.apply(optionRow(SET_OPTIONS, o.name, o.on));
+        }
         const first = parse.roles.find((r) => r.role.role === 'end-of-options' || (r.role.role === 'operand' && staticWordValue(args[r.word]) !== undefined))?.word ?? args.length;
-        if (writes.filter((o) => o.name === 'allexport').pop()?.on || writes.some((o) => o.name === undefined && o.on)
-          || args.slice(0, first).some((a) => staticWordValue(a) === undefined)) this.exportAll = true;
+        if (args.slice(0, first).some((a) => staticWordValue(a) === undefined)) this.blindFor('`set` is given a word not known before its operands, which may be any option');
+        if (writes.filter((o) => o.name === 'allexport').pop()?.on) this.exportAll = true;
         return;
       }
     }
@@ -718,8 +730,8 @@ class Scan {
   }
 
   /**
-   * `shopt -s` and `-u`: each option by its row (`-o`: those of `set -o`). `shopt -so allexport` exports the functions
-   * defined after it, as `set -a` does; so may a name not known.
+   * `shopt -s` and `-u`: each option by its row (`-o`: those of `set -o`); a name not known may be any option.
+   * `shopt -so allexport` exports the functions defined after it, as `set -a` does.
    */
   private shopt(parse: ReturnType<typeof builtinParse>, args: SyntaxNode[]): void {
     const flags = optionRoles(parse).map((r) => r.flag);
@@ -729,8 +741,9 @@ class Scan {
     for (const r of parse.roles) {
       if (r.role.role !== 'operand') continue;
       const name = staticWordValue(args[r.word]);
-      if (set && on && (name === undefined || name === 'allexport')) this.exportAll = true;
-      if (name !== undefined) this.apply(optionRow(set ? SET_OPTIONS : SHOPT_OPTIONS, name, on));
+      if (name === undefined) this.blindFor('`shopt` is given an option name not known');
+      if (set && on && name === 'allexport') this.exportAll = true;
+      this.apply(optionRow(set ? SET_OPTIONS : SHOPT_OPTIONS, name, on));
     }
   }
 
@@ -886,11 +899,12 @@ class Scan {
     // target's subscript (`declare -n r=$1; : "$r"` with `$1` = `a[u=2]` sets `u`).
     for (const r of this.refUnknown) if (this.writes.get(r)!.some((w) => !w.nameref)) this.blindFor('a nameref whose target is not known is assigned');
     for (const r of this.refUnknown) if (this.reads.has(r)) this.blindFor('a nameref whose target is not known is read');
-    // `${x@P}` expands the value again, as a prompt: each value the script gives it must run nothing and assign nothing.
+    // `${x@P}` expands the value again, as a prompt: each value the script gives it must run nothing and assign nothing,
+    // and none may be added with `+=` (`x='\0'; x+='44((u=2))'` joins texts that are quiet alone).
     for (const name of this.prompts) {
       const writes = this.writes.get(name);
       if (!writes || changedUnseen(name) || this.refUnknown.has(name) || this.refTargets.has(name)
-        || writes.some((w) => w.value === 'unknown' || w.value === 'kept' || (typeof w.value === 'object' && (!w.value.fixed || !quietPrompt(w.value.text))))) {
+        || writes.some((w) => w.append || w.value === 'unknown' || w.value === 'kept' || (typeof w.value === 'object' && (!w.value.fixed || !quietPrompt(w.value.text))))) {
         this.blindFor('a prompt expansion (`@P`) of a value that may run a command or assign');
       }
     }
@@ -937,10 +951,11 @@ export interface StringTrees {
 /**
  * The trust of the decisions of a model over the script `root`, whose strings have the trees `strings` gives (once
  * per model: the trees are the model's). The scan stops at the first reason to trust nothing. `host`: the functions
- * the file's host defines (a bats file: `run`, `load`…), read by their specs.
+ * the file's host defines (a bats file: `run`, `load`…), read by their specs. `opening`: what the shebang starts bash
+ * with (`#!/bin/bash -k`).
  */
-export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST): Trust {
-  const scan = new Scan(root, strings, host);
+export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST, opening?: Opening): Trust {
+  const scan = new Scan(root, strings, host, opening);
   if (scan.blind) return { ...BLIND, blind: scan.blind };
   const unseen = new Set<string>();
   for (const [name, ws] of scan.writes) if (ws.some((w) => w.foreign || (w.fn !== undefined && scan.callbacks.has(w.fn)))) unseen.add(name);
