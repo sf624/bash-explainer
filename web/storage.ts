@@ -70,6 +70,7 @@ export function clearStoredData(): void {
   for (const key of Object.values(STORAGE_KEYS)) removeStored(key);
   try {
     sessionStorage.removeItem(SESSION_LINK);
+    sessionStorage.removeItem(SESSION_OPENING);
   } catch {
     // Nothing kept, nothing to remove.
   }
@@ -77,6 +78,8 @@ export function clearStoredData(): void {
 
 /** What a tab keeps for itself (sessionStorage), not for the next visit: the fragment of the link the tab was opened with. */
 const SESSION_LINK = 'bash-explainer-shared-link';
+/** The opening was shown in this tab, so later loads show it still (theme-init.js sets and reads it before the first paint, and repeats the name). */
+const SESSION_OPENING = 'bash-explainer-opening';
 
 /** The link fragment this tab kept; null when none, or when session storage is unavailable. */
 export function readSessionLink(): string | null {

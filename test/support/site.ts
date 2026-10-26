@@ -19,7 +19,13 @@ export const FILES = ['/', '/app.js', '/favicon.ico', '/favicon.svg', '/icons.js
 export const MARKER = 'secret-7f3a9c';
 
 export interface Site {
+  /** Its contexts see the opening as on a later load of the session; see `firstLoad`. */
   browser: Browser;
+  /**
+   * A context that sees the opening (src/ui/opening.ts) as on the first load of a session: whole, for about two
+   * seconds over the page. The others see it still, gone as soon as the page is ready.
+   */
+  firstLoad: Browser['newContext'];
   /** The address of the release page, with a trailing slash (`next/` and `pr/123/` are under it). */
   base: string;
 }
@@ -43,6 +49,14 @@ async function start(): Promise<Running | undefined> {
     if (process.env.BASH_EXPLAINER_BROWSER) throw e;
     return undefined;
   }
+  // The opening covers the page for about two seconds on the first load of a session: the tests see it as on a later
+  // load (web/theme-init.js reads this key), except those that ask for `firstLoad`.
+  const firstLoad = browser.newContext.bind(browser);
+  browser.newContext = async (options) => {
+    const ctx = await firstLoad(options);
+    await ctx.addInitScript("try { sessionStorage.setItem('bash-explainer-opening', '1'); } catch {}");
+    return ctx;
+  };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-web-'));
   const build = (outdir: string, ...args: string[]) =>
     execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${outdir}`, ...args], { cwd: root, stdio: 'pipe' });
@@ -62,7 +76,7 @@ async function start(): Promise<Running | undefined> {
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] ?? 'application/octet-stream' }).end(fs.readFileSync(file));
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  return { browser, server, dir, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}/` };
+  return { browser, firstLoad, server, dir, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}/` };
 }
 
 /**

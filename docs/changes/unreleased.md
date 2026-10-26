@@ -415,6 +415,21 @@ Each section that a later command reads marks what that command reads of it. The
 
 When a section is wider than the panel (`ps aux`, `ls -l` on a phone), it starts scrolled so that its first mark is in view, with the header row, which scrolls with it. An edge fades where more lies beyond it. Text outputs (the CLI, Markdown, the hover) show no marks: a code block cannot, and the section after shows what the command kept.
 
+### The opening (web page)
+
+The web page opens with a full-screen overlay: the logo, and the line `sort -u "$file" | wc -l`, which is read the way the explainer reads it.
+
+1. The plain line appears, and bash's tokens lift one by one, each in a box: `"$file"` is one word with its quotes, and `|` is an operator.
+2. The parts take their colours in the order they become known: the pipe and the command names (bash's reading), then the options and the argument (what `sort` and `wc` make of them).
+3. When the page is ready, each part gets a label with what the explanation says of it ("Sort lines", "target file", "Pipe"; in Japanese 「行を並べ替える」…). On a phone the labels are a list under the line.
+
+The labels are taken from the explanation when the page is built, so they say what the panel says. The overlay covers the page while it starts; before, the page showed an empty editor and panel for that time. In full it lasts about 2 seconds on a fast connection, about a second longer than the page takes to start. After a slow start it leaves about half a second after the page is ready.
+
+- On later loads in the same browser session, on a link to a script, and with reduced motion, it is a still picture that leaves as soon as the page is ready.
+- A key, a click, a tap or the wheel ends it. A key still reaches the page.
+- It is hidden from screen readers, and nothing in it takes the focus.
+- It is not shown in `?view=panel` (the page embedded as a panel), and not without JavaScript.
+
 ## Changed
 
 ### A new logo

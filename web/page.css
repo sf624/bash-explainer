@@ -1785,3 +1785,299 @@ html.view-panel .split {
   margin: 2px 0;
   padding-left: 20px;
 }
+
+/* ---- The opening (src/ui/opening.ts) -----------------------------------------------------------
+   A full-screen overlay from the first paint until the page is ready (web/theme-init.js, web/opening.ts). It is
+   hidden from assistive technology and has nothing to focus; it takes pointer events only until it starts to leave.
+   The static styles are the finished picture, shown as such when it is still; `.opening-whole` animates towards it,
+   with opacity and transform only, which the compositor runs while app.js is parsed and run. */
+
+.opening {
+  display: none;
+}
+
+html.opening-on .opening {
+  /* The line is read when the last role's colour has come in (web/opening.ts waits for it): 650 + 2 × 150 + 180. */
+  --opening-read: 1130ms;
+  --opening-plain: var(--vscode-descriptionForeground);
+  display: flex;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--page-background);
+  color: var(--vscode-foreground);
+  transition: opacity 280ms var(--ease);
+}
+
+html.opening-gone .opening {
+  display: none;
+}
+
+.opening.out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.opening.fast {
+  transition-duration: 150ms;
+}
+
+.opening-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 36px;
+  transition: transform 280ms var(--ease);
+}
+
+.opening.out .opening-stage {
+  transform: translateY(-8px);
+}
+
+.opening-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.opening-logo {
+  width: 56px;
+  height: 56px;
+  flex: none;
+}
+
+.opening-name {
+  font-size: 38px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* The cursor of the logo's prompt blinks while the page starts. */
+.opening-logo .opening-cursor {
+  animation: opening-blink 1060ms steps(1) infinite;
+}
+
+@keyframes opening-blink {
+  50% { opacity: 0; }
+}
+
+html.opening-whole .opening-brand {
+  animation: opening-logo 320ms var(--ease) both;
+}
+
+@keyframes opening-logo {
+  from { opacity: 0; transform: scale(0.96); }
+}
+
+/* The line: each part has a plain layer (grey) and its colours on top. */
+.opening-line {
+  position: relative;
+  margin: 44px 0;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 32px;
+  line-height: 1.4;
+  white-space: pre;
+}
+
+.opening-line .part {
+  /* Its times, from its order (--k) and its role (--role: 0 an operator, 1 a command name, 2 the rest). */
+  --lift-at: calc(150ms + var(--k) * 50ms);
+  --ink-at: calc(650ms + var(--role) * 150ms);
+  position: relative;
+  display: inline-block;
+}
+
+.opening-line .plain {
+  color: var(--opening-plain);
+  opacity: 0;
+}
+
+.opening-line .ink {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: pre;
+}
+
+.opening .k-command { color: var(--vscode-charts-blue); }
+.opening .k-option { color: var(--vscode-charts-orange); }
+.opening .k-argument { color: var(--vscode-charts-green); }
+.opening .k-operator { color: var(--vscode-charts-purple); }
+.opening .k-variable { color: var(--vscode-charts-red); }
+
+/* bash's reading: the tokens lift in turn and show their bounds… */
+.opening-line .part::before {
+  content: "";
+  position: absolute;
+  inset: -0.1em -0.12em;
+  border: 1px solid var(--opening-plain);
+  border-radius: 5px;
+  opacity: 0;
+}
+
+html.opening-whole .opening-line {
+  animation: opening-in 150ms both;
+}
+
+html.opening-whole .opening-line .part {
+  animation: opening-lift 360ms var(--lift-at) var(--ease) both;
+}
+
+html.opening-whole .opening-line .part::before {
+  animation: opening-box calc(var(--ink-at) - var(--lift-at) + 160ms) linear var(--lift-at) both;
+}
+
+/* …then each part takes its colour, by role. */
+html.opening-whole .opening-line .plain {
+  animation: opening-out 180ms var(--ink-at) both;
+}
+
+html.opening-whole .opening-line .ink {
+  animation: opening-in 180ms var(--ink-at) both;
+}
+
+@keyframes opening-in {
+  from { opacity: 0; }
+}
+
+@keyframes opening-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes opening-lift {
+  40% { transform: translateY(-8px); }
+}
+
+@keyframes opening-box {
+  0% { opacity: 0; }
+  15% { opacity: 0.8; }
+  80% { opacity: 0.8; }
+  100% { opacity: 0; }
+}
+
+/* When the page is ready, each part is underlined and labelled with what the explanation says of it; web/opening.ts
+   puts each label below its part, or above it where the one before is in the way. */
+.opening-line .part::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: -3px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 200ms calc(var(--k) * 45ms) var(--ease);
+}
+
+html.opening-still .opening-line .part::after,
+.opening.ready .opening-line .part::after {
+  transform: scaleX(1);
+}
+
+.opening-line .chip {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 14px);
+  padding: 2px 9px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: var(--vscode-editor-background);
+  font: 13px/1.5 var(--vscode-font-family);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 6px);
+  transition: opacity 200ms calc(var(--k) * 45ms) var(--ease), transform 200ms calc(var(--k) * 45ms) var(--ease);
+}
+
+.opening-line .chip.above {
+  top: auto;
+  bottom: calc(100% + 14px);
+  transform: translate(-50%, -6px);
+}
+
+.opening-line .chip::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 1px;
+  height: 11px;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+.opening-line .chip.above::before {
+  bottom: auto;
+  top: 100%;
+}
+
+.opening.ready .opening-line .chip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+html[data-opening-lang="ja"] .opening .l-en,
+html:not([data-opening-lang="ja"]) .opening .l-ja {
+  display: none;
+}
+
+/* Where the labels do not fit around the line (a phone), they are a list under it, as the panel lists the parts. */
+.opening-list {
+  display: none;
+}
+
+.opening.opening-as-list .opening-line .chip {
+  visibility: hidden;
+}
+
+.opening.opening-as-list .opening-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.opening-list li {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 200ms calc(var(--k) * 45ms) var(--ease), transform 200ms calc(var(--k) * 45ms) var(--ease);
+}
+
+.opening.ready .opening-list li {
+  opacity: 1;
+  transform: none;
+}
+
+.opening-list code {
+  display: inline-block;
+  min-width: 5.5em;
+  font-family: var(--vscode-editor-font-family);
+  font-weight: 600;
+}
+
+@media (max-width: 560px) {
+  .opening-line .chip { display: none; }
+  .opening-list {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .opening-stage { gap: 28px; }
+  .opening-logo { width: 40px; height: 40px; }
+  .opening-name { font-size: 28px; }
+  .opening-line { font-size: 18px; margin: 0; }
+  .opening-line .part::before { inset: -0.1em -0.05em; border-radius: 3px; }
+}

@@ -16,6 +16,43 @@
   }
   // ?view=panel: the page shows its explanation panel only (page.css), to be filled by the page around it.
   if (/[?&]view=panel(&|$)/.test(location.search)) root.classList.add('view-panel');
+  // The opening (src/ui/opening.ts): the overlay of index.html covers the page from the first paint until the page is
+  // ready, when web/opening.ts ends it. Only on the page whose script tag asks for it (index.html, not compare.html),
+  // not in the panel view or in a frame, nor without JavaScript (this file does not run then, and the overlay stays
+  // hidden). It plays whole on the first load of a browser session; on later loads, on a link to a script and with
+  // reduced motion it is still: the finished picture, gone as soon as the page is ready.
+  else if (window.parent === window && document.currentScript && document.currentScript.hasAttribute('data-opening')) {
+    let seen = false;
+    try {
+      seen = sessionStorage.getItem('bash-explainer-opening') === '1';
+      sessionStorage.setItem('bash-explainer-opening', '1');
+    } catch {
+      // No storage: every load plays it whole.
+    }
+    const still = seen || /[#&]z=/.test(location.hash) || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    root.classList.add('opening-on', still ? 'opening-still' : 'opening-whole');
+    // Its labels in the page's language, as web/main.ts picks it: the link's, the setting's, then the browser's.
+    let lang = (/[#&]lang=(ja|en)(&|$)/.exec(location.hash) || [])[1];
+    if (!lang) {
+      try {
+        const saved = JSON.parse(localStorage.getItem('bash-explainer-settings') || '{}').language;
+        if (saved === 'ja' || saved === 'en') lang = saved;
+      } catch {
+        // No storage, or not JSON: the browser's language.
+      }
+    }
+    root.setAttribute('data-opening-lang', lang || (navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en'));
+    // The time of its first frame, from which its animations run.
+    requestAnimationFrame((t) => root.setAttribute('data-opening-t0', String(t)));
+    // A key, a click, a tap or the wheel before the page is ready: it leaves as soon as the page is ready. A key is
+    // not taken from the page.
+    const skip = () => root.classList.add('opening-skip');
+    for (const type of ['keydown', 'pointerdown', 'wheel']) window.addEventListener(type, skip, { capture: true, once: true, passive: true });
+    // The page failed to start, or is still not ready after 15 seconds: do not keep it covered.
+    const gone = () => root.classList.add('opening-gone');
+    window.addEventListener('error', gone, { once: true });
+    setTimeout(gone, 15000);
+  }
   // The frame follows the page at once, also when it cannot read the storage itself.
   if (window.parent !== window) {
     window.addEventListener('message', (event) => {
