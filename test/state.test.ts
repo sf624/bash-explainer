@@ -381,6 +381,14 @@ describe('shell state: function bodies run at their calls', () => {
     assert.strictEqual(set(before('set -C\nf() { ls; }\nset -C', 'ls'), 'noclobber'), 'unknown');
     // A function only called from one that is never called.
     assert.strictEqual(set(before('f() { g; }\ng() { ls; }\nset -f', 'ls'), 'noglob'), 'unknown');
+    // Attributes given after it are not known either: `for y` may fail there (an integer given text that is no
+    // expression), which ends nothing outside the script's walk.
+    const int = before('f() { for y in a+; do :; done; ls; }\ndeclare -i y', 'ls');
+    assert.deepStrictEqual([attribute(int, 'y', 'i'), int.unreachable], ['unknown', undefined]);
+    // (An error that surely happens there ends the walk of the body; but code in a body no call reaches is never said
+    // to be dead.)
+    const err = parser.parse('f() { : $(( 1 / 0 )); ls; }');
+    assert.strictEqual(shellState(err).dead(descendants(err.root, ['command']).find((c) => c.text === 'ls')!), false);
     // An alias defined after, with a value that is not static, is left alone.
     assert.strictEqual(before('f() { ls; }\nalias q="$x"', 'ls').aliases.get('q')?.value, '$x');
   });
@@ -415,6 +423,11 @@ describe('shell state: function bodies run at their calls', () => {
     // (Walked again for it, the code after it runs: there arithmetic reads `q`, which may not be set yet.)
     const tree = parser.parse('g() { if [ "$d" = 1 ]; then d=2; g; return; fi; x=2; }; x=1; d=1; g; if [ "$x" = 2 ]; then (( q )); fi; q=1');
     assert.strictEqual(shellState(tree).blind, 'arithmetic reads `q`, which the script may not have set');
+    // A recursive call may give attributes (bash: `x=5` fails, "x: readonly variable"); one that changes only a value keeps them.
+    const ro = end('g() { if [ "$d" = 1 ]; then d=2; g; return; fi; readonly x; }; d=1; g');
+    assert.deepStrictEqual([attribute(ro, 'x', 'r'), attribute(ro, 'x', 'i')], ['unknown', 'unknown']);
+    const kept = end('declare -i x=1; readonly r=1; g() { if [ "$d" = 1 ]; then d=2; g; return; fi; x=2; unset r; declare -i r; }; d=1; g');
+    assert.deepStrictEqual([attribute(kept, 'x', 'i'), variable(kept, 'x')?.set, attribute(kept, 'r', 'r'), attribute(kept, 'r', 'i')], ['on', 'unknown', 'on', 'off']);
     // Called with many different states.
     const many = 'f() { set -f; x=1; }\n' + Array.from({ length: 20 }, (_, i) => `v${i}=1; f`).join('\n');
     assert.strictEqual(variable(end(many), 'x')?.set, 'unknown');

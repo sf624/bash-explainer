@@ -24,7 +24,7 @@ import { WalkBuiltins } from './builtins';
 import { WalkConditions } from './conditions';
 import { kept, temporaries } from './temporaries';
 import { type HostCall, hostRun, type HostRun } from './host';
-import { notWalked, unsettledBodies, widen } from './widen';
+import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
 import { ArithError, ExpansionError, NAME, OPAQUE, SUBSTITUTIONS, WalkAgain } from './shared';
 
 /** The shells that start in POSIX mode (for what the model follows: assignments before special builtins). */
@@ -229,14 +229,14 @@ export class Walker {
     const key = `${kind} ${name}`;
     // (Not a change while the temporaries of a command are worked out: src/semantics/walk/temporaries.ts.)
     if (this.scratch) return { ...st, [kind]: (st[kind] as NameMap<Entry<K>>).with(name, value) };
-    this.lastChange.set(key, ++this.changeCount);
-    this.lastAt.set(key, this.node!);
-    // (A local of a function being run is gone when it returns: not a write of the shell's own.)
-    if (kind === 'variables' && !this.frames.some((f) => f.saved.has(name))) {
-      const set = this.varWrites.get(this.node!) ?? new Set<string>();
-      this.varWrites.set(this.node!, set.add(name));
+    // (A change of attributes is a change of its own, `attrs name`: what `widen` takes as unknown where it is made.)
+    for (const k of kind === 'variables' && attributesChange(st.variables.get(name), value as VariableState | undefined) ? [key, `${ATTRS}${name}`] : [key]) {
+      this.lastChange.set(k, ++this.changeCount);
+      this.lastAt.set(k, this.node!);
+      for (const c of this.collecting) c.add(k);
     }
-    for (const c of this.collecting) c.add(key);
+    // (A local of a function being run is gone when it returns: not a write of the shell's own.)
+    if (kind === 'variables' && !this.frames.some((f) => f.saved.has(name))) this.varWrites.set(this.node!, (this.varWrites.get(this.node!) ?? new Set<string>()).add(name));
     return { ...st, [kind]: (st[kind] as NameMap<Entry<K>>).with(name, value) };
   }
 
@@ -1098,7 +1098,7 @@ export class Walker {
       // (With the status the passes started from, `$?`, which the body may change too.)
       const was = { ...st, status: before.entry.status };
       for (const key of before.keys) {
-        if (key === OPAQUE) continue;
+        if (key === OPAQUE || key.startsWith(ATTRS)) continue;
         const kind = key.slice(0, key.indexOf(' ')) as Kind;
         const name = key.slice(kind.length + 1);
         (was as Record<Kind, NameMap<unknown>>)[kind] = (was[kind] as NameMap<unknown>).with(name, before.entry[kind].get(name));

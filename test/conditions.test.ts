@@ -147,7 +147,7 @@ describe('the status after a statement against bash (src/semantics/state.ts)', (
     ['p=a; [[ abc == $p* ]]', true], ['p=a; [[ abc == "$p"* ]]', true], ['p=a; [[ a* == "$p*" ]]', true], ['p=a; case abc in $p*) false;; esac', true],
     ['p="\\*"; [[ "*" == $p ]]', true], ['p="\\*"; [[ a == $p ]]', true], ['x=a; [[ ${x:-b} == a ]]', true], ['[[ ${nope-b} == b ]]', false], ['x=abc; [ "${x#a}" = bc ]', true],
     ['HOME=/h; [[ ~ == /h ]]', true], ['HOME=/h; [ ~/a = /h/a ]', true], ['[[ ~ == /h ]]', false], ['[[ $((1+2)) == 3 ]]', true], ['x=1; [[ $((x=2)) == 2 && $x == 2 ]]', false],
-    ['set -f; x="*"; [ $x = "*" ]', true], ['x="*"; [ $x = "*" ]', false], ['x=a; [ {a,b} = a ]', true], ['set +B; [ {a,b} = a ]', true], ['x="a b"; [ $x = "a b" ]', true],
+    ['x="*"; [ $x = "*" ]', false], ['x=a; [ {a,b} = a ]', true], ['set +B; [ {a,b} = a ]', true], ['x="a b"; [ $x = "a b" ]', true],
     // `$(true)` prints nothing only when `true` runs the builtin (each of these prints `a` in bash).
     ['x=$(true); [ "$x" = "" ]', true], ['declare x=$(false); [ "$x" = "" ]', true], ['[ "$(:)" = "" ]', true],
     ['true() { echo a; }; x=; [ -n "$x$(true)" ]', false], [':() { echo a; }; [ "$(:)" = "" ]', false], ['enable -n true; [ "$(true)" = "" ]', false],
@@ -163,6 +163,8 @@ describe('the status after a statement against bash (src/semantics/state.ts)', (
     ['n=2; [[ $(( n + 1 )) == 3 ]]', false],
     ['[[ $(( nope + 1 )) == 1 ]]', false], ['[[ $(( 1 / 0 )) == 1 ]]', false], ['a=(1); [[ $(( a[0] )) == 1 ]]', false],
     // What the model does not follow, or must not decide.
+    // (An unquoted `*` in `[` may give a file named `-v`, and src/semantics/trust.ts does not follow `set -f`.)
+    ['set -f; x="*"; [ $x = "*" ]', false],
     ['set -o pipefail; [ -f /nonexistent ] | true', false], ['set -o pipefail; true | true', true], ['if true; then false; elif true; then true; fi', true], ['[() { return 3; }; [ a ]', false],
     ['set +e; [[ -o errexit ]]', true], ['set -o posix; [ a \\< b ]', false], ['[ -f /nonexistent ] && set -o posix; [ a \\< b ]', false],
     ['[[ 1 -eq $nope ]]', false], ['[[ ~+ == /x ]]', false], ["[ $'\\xff' = a ]", false], ["[ $'a\\tb' = a ]", true], ['unset x; [ -z "$x" ]', false], ['x=; [ -z "$x" ]', true], ['x=1 ""', false],

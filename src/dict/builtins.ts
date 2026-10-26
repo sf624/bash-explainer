@@ -529,9 +529,9 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-a', 'すべてのビルトインを対象にする', 'act on all builtins'],
     ['-p', '再入力できる形で表示する', 'print in a reusable form'],
     ['-s', 'POSIX の特殊ビルトインだけを対象にする', 'act on POSIX special builtins only'],
-    ['-d', '`-f` で読み込んだビルトインを取り除く', 'remove a builtin loaded with `-f`', 'arg'],
+    ['-d', '`-f` で読み込んだビルトインを取り除く', 'remove a builtin loaded with `-f`'],
     ['-f', '共有オブジェクトからビルトインを読み込む', 'load a builtin from a shared object', 'arg'],
-  ]), (c) => c.operands.length > 0 && !has(c, '-p', '-a'), { alters: ['builtins'] }),
+  ]), (c) => c.operands.length > 0 && !has(c, '-p'), { alters: ['builtins'] }),
   help: b('ビルトインのヘルプを表示する', 'Show help for builtins', [
     ['-d', '1行の説明だけを表示する', 'print a one-line description'],
     ['-m', 'man ページの形式で表示する', 'print in man page format'],

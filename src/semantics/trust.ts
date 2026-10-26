@@ -16,9 +16,10 @@
 //   indirection (`${!v}`, `${!1}`: its subscript may assign), a DEBUG or RETURN trap, a `${ …; }` (bash 5.3: it runs
 //   in the shell itself, and the walk does not keep what it changes), a trap's or a callback's function that changes options, functions
 //   or aliases, a PS4 that may assign or run a command (`set -x` expands it before each command), a nameref whose
-//   target is not known, assigned or read (the target's subscript is arithmetic), `-v` of a name not known (the
-//   same), `${x@P}` of a value that may run code, `compgen` of a word list that may (or with `-F`), `fc` (but `-l`),
-//   `enable` of a name not known; and when arithmetic may read text not known (`$1`, `$(cmd)`, a variable `read`
+//   target is not known (or refers to one), assigned or read (the target's subscript is arithmetic), `-v` of a name
+//   not known (the same; also a word of `test` or `[` that may be `-v` itself, or that splits), `${x@P}` of a value
+//   that may run code, `compgen` of a word list that may (or with `-F`), `fc` (but `-l`), `enable` of a name not
+//   known, or `-f` (a loadable builtin); and when arithmetic may read text not known (`$1`, `$(cmd)`, a variable `read`
 //   sets, that is never set, or that `declare x` outside a function keeps: bash runs it as an expression, which may
 //   assign any variable).
 // - A function is closed (its decisions and dead code may be said, and src/semantics/env.ts says for sure where its
@@ -42,6 +43,7 @@ import { staticWordValue, substitutionNames } from '../staticword';
 import { field, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { aliasName, aliasOf, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
+import { testWordShape } from './testwords';
 import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, optionRoles, readDeclarationWords, type Declaration } from './vars';
 
 export interface Trust {
@@ -186,6 +188,14 @@ class Scan {
   readonly changes = new Set<string>();
   foreignChanges = false;
   blind: string | undefined;
+  /** The names each nameref declaration refers to (`declare -n a=b`): a nameref that refers to one in `refUnknown` is in it too. */
+  private readonly refEdges = new Map<string, Set<string>>();
+  /**
+   * The variables expanded unquoted in a word of `test` or `[` (`[ $x = y ]`), and whether such a word is a number
+   * (`$#`): no word of their values may be `-v` (see `testWords`).
+   */
+  private readonly testSplits: string[] = [];
+  private testNumbers = false;
   /** The variables whose values are command names (`$debug`), and whether they are quoted (not split). */
   private readonly commandVariables: { name: string; quoted: boolean }[] = [];
   /** The aliases the `alias` commands define (a name and its text), and the commands that may run one (see `aliases`). */
@@ -422,6 +432,44 @@ class Scan {
     return x?.type === 'extended_test';
   }
 
+  private refEdge(name: string, target: string): void {
+    const set = this.refEdges.get(name) ?? new Set<string>();
+    set.add(target);
+    this.refEdges.set(name, set);
+  }
+
+  /**
+   * The words of `test` or `[` (`]` left out). `-v name` reads a variable (`testV`). Which word is an operator is
+   * decided when the command runs, from the words expansion gives: a word not known may be `-v` itself, and then the
+   * word after it is its operand (`[ "$1" "$2" ]` with `-v` and `a[u=2]`); a word that splits or globs gives words
+   * not known, at places not known (`test "$@"`, `[ $x ]`). `[[ ]]` reads its operators before expansion.
+   */
+  private testWords(words: SyntaxNode[], w: Where): void {
+    words.forEach((a, i) => {
+      const next = words[i + 1] as SyntaxNode | undefined;
+      const v = staticWordValue(a);
+      if (v !== undefined) {
+        if (v === '-v' && next) this.testV(next, w);
+        return;
+      }
+      const shape = testWordShape(a);
+      if (shape === 'split') this.blindFor('`-v` may test a variable name not known');
+      if (shape === 'number') {
+        this.testNumbers = true;
+        return;
+      }
+      if (typeof shape === 'object') {
+        this.testSplits.push(shape.variable);
+        return;
+      }
+      // (A word that starts with text other than `-` is never `-v`: `"x$1"`, `/tmp/*`.)
+      const lead = /^[^-$`"'*?[\\{~]/.test(a.text);
+      if (lead) return;
+      if (shape === 'glob' || (next && staticWordValue(next) === undefined)) this.blindFor('`-v` may test a variable name not known');
+      if (next) this.testV(next, w);
+    });
+  }
+
   /**
    * The operand of `-v` (`[[ -v a[i] ]]`): its subscript is arithmetic. A name not known (`[ -v "$1" ]`) may have a
    * subscript that assigns any variable (`-v 'a[u=2]'`).
@@ -491,6 +539,7 @@ class Scan {
           const m = target === undefined ? null : /^([A-Za-z_]\w*)(?:\[(.*)\])?$/s.exec(target);
           if (m) {
             this.refTargets.add(m[1]);
+            this.refEdge(name, m[1]);
             if (m[2] !== undefined) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(o), where: w });
           } else this.refUnknown.add(name);
           this.write(name, w, false, 'unknown', true);
@@ -511,8 +560,10 @@ class Scan {
         if (m[2]) this.subscripts.push({ array: name, text: m[2].slice(1, -1), owner: this.owner(o), where: w });
         if (nameref) {
           const target = m[3] && text !== undefined ? m[4] : undefined;
-          if (target !== undefined && NAME.test(target)) this.refTargets.add(target);
-          else this.refUnknown.add(name);
+          if (target !== undefined && NAME.test(target)) {
+            this.refTargets.add(target);
+            this.refEdge(name, target);
+          } else this.refUnknown.add(name);
           this.write(name, w, false, 'unknown', true);
           continue;
         }
@@ -603,9 +654,7 @@ class Scan {
     if (hosted) return;
     // `test` and `[` (by their spec): `-v name` reads a variable.
     if (spec.operandParser === 'test-expression') {
-      args.forEach((a, i) => {
-        if (i > 0 && staticWordValue(args[i - 1]) === '-v') this.testV(a, w);
-      });
+      this.testWords(name === '[' && staticWordValue(args[args.length - 1] ?? c) === ']' ? args.slice(0, -1) : args, w);
       return;
     }
     switch (name) {
@@ -658,7 +707,9 @@ class Scan {
         if (!optionRoles(parse).some((r) => r.flag === '-l')) this.blindFor('`fc` runs a line of the history again');
         return;
       case 'enable':
-        // (`enable -n x` turns the builtin `x` off: the walk follows a name it knows.)
+        // (`enable -n x` turns the builtin `x` off: the walk follows a name it knows. `-f` loads a builtin from a
+        // shared object, which may replace one, and run code as it loads.)
+        if (optionRoles(parse).some((r) => r.flag === '-f')) this.blindFor('`enable -f` loads a builtin the model does not read');
         if (args.some((a) => staticWordValue(a) === undefined)) this.blindFor('`enable` is given a name not known');
         return;
       case 'unset':
@@ -755,6 +806,42 @@ class Scan {
       for (const t of this.texts.get(name) ?? []) {
         if (t.text === undefined) this.blindFor('an integer variable is given text not known');
         else this.arithText(t.text, t.where, t.owner);
+      }
+    }
+    // (A nameref that refers to one whose target is not known reads and assigns through it: `declare -n a=b` with
+    // `declare -n b=$1`.)
+    for (let more = true; more;) {
+      more = false;
+      for (const [r, targets] of this.refEdges) {
+        if (!this.refUnknown.has(r) && [...targets].some((t) => this.refUnknown.has(t))) {
+          this.refUnknown.add(r);
+          more = true;
+        }
+      }
+    }
+    // An unquoted expansion in a word of `test` or `[`: each value the script gives it must stay one word, and not be
+    // `-v`, with every IFS the script sets (a number, with no IFS of digits or `-`).
+    if (this.testNumbers || this.testSplits.length) {
+      const separators = (this.writes.get('IFS') ?? []).map((x) => {
+        if (x.value === 'none') return '';
+        // (An empty value is the one value with no `fixed`, but no names either.)
+        if (typeof x.value !== 'object' || !(x.value.fixed || !x.value.names.length)) this.blindFor('`-v` may test a variable name not known');
+        return x.value.text;
+      }).join('');
+      const digits = /[\d-]/.test(separators);
+      if (this.testNumbers && digits) this.blindFor('`-v` may test a variable name not known');
+      // (Text the script gives splits into words it knows, none of them `-v` unless one is: with any blank or IFS
+      // character as a separator, a word `-v` stays one. Text with numbers of `$(( ))` in it, which the value leaves
+      // out, too. Unset, the variable gives no word.)
+      const notV = (v: Value): boolean => {
+        if (v === 'none') return true;
+        if (v === 'number') return !digits;
+        if (typeof v !== 'object' || (!v.fixed && (v.names.length > 0 || digits)) || /[*?[]/.test(v.text)) return false;
+        return !v.text.split(/\s/).some((x) => [...separators].reduce((ws, c) => ws.flatMap((y) => y.split(c)), [x]).includes('-v'));
+      };
+      for (const name of this.testSplits) {
+        const writes = this.writes.get(name) ?? [];
+        if (!writes.length || writes.some((x) => !notV(x.value))) this.blindFor('`-v` may test a variable name not known');
       }
     }
     // The values of the names read as arithmetic are run as expressions: each must be text the script wrote.

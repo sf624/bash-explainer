@@ -534,9 +534,11 @@ A condition was said to be always true or false, or code to never run, where bas
 | `g() { if [ "$d" = 1 ]; then d=2; g; return; fi; x=2; }; x=1; d=1; g` then `if [ "$x" = 1 ]` | `x` is 2: the recursive call runs `x=2` | always true | nothing |
 | the same `g`, with `h` instead of `x=2` | the recursive call runs `h` | the body of `h` never runs | nothing |
 | `enable -n exit; exit; echo after` | "exit: command not found", then `after` | `echo after` never runs | nothing |
+| `enable -ns exit; exit; echo after` (also `enable -n -s`, `enable -n -a`) | the same | `echo after` never runs | nothing |
+| the same `g`, with `readonly x` instead of `x=2`, then `x=5` and `if [ "$x" = 5 ]` | "x: readonly variable": `x` stays empty | always true | nothing |
 | `u=1; [ -v "$1" ]` with `$1` = `a[u=2]`, then `if [ "$u" = 1 ]` | `u` is 2: the subscript is arithmetic | always true | nothing |
 
-The same holds after `test -v "$1"`, `[[ -v $x ]]`, a read of a nameref whose target is not known (`declare -n r=$1; : "$r"`), `${x@P}` of a value that may run code, `compgen -W '$((u=2))'`, `fc -s`, and `declare n; (( n ))` with `n='u=2'` in the environment. A function called only from code that a recursive call, or a call the model does not follow, may run is no longer said to never run. Past 64 nested calls, what the deeper functions change is taken as not known; before, it was taken as unchanged.
+The same holds after `test -v "$1"`, `[[ -v $x ]]`, `[ "$1" "$2" ]` or `test "$@"` (with `-v` and `a[u=2]`), an unquoted word of `[` or `test` that may split into `-v` and a name (`[ $x ]`, `[ -z $1 ]`), a read of a nameref whose target is not known (`declare -n r=$1; : "$r"`; also through another nameref, `declare -n a=r`, and its assignment or `unset`), `${x@P}` of a value that may run code, `compgen -W '$((u=2))'`, `fc -s`, `declare n; (( n ))` with `n='u=2'` in the environment, and `enable -f` (a builtin loaded from a shared object). `enable -d x` reads `x` as the builtin to remove; before, as the value of `-d`. A recursive call may also give or take attributes (`readonly x`, `declare -gi x`). A function called only from code that a recursive call, or a call the model does not follow, may run is no longer said to never run. Past 64 nested calls, what the deeper functions change is taken as not known; before, it was taken as unchanged.
 
 ### Shell code in host files
 
