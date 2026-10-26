@@ -1448,15 +1448,47 @@ body.vscode-high-contrast-light #reading-tree li.band {
   }
 }
 
-/* Prototype B: the one view (media/panel.js, `uitem`). Each row is a grid: the code in a column whose right edge is the
-   same for every row (--tokcol, set by `alignRows`), and what it says from that edge on; its roles and references on
-   one quiet line under its text. */
+/* Prototype B: the one view (media/panel.js, `uitem`). The rows are drawn flat: every row is as wide as the view,
+   its code indented by its level (--lvl) inside a column of the same width on every row (--codew, `alignRows`), and
+   what it says from that column's edge on, so every text starts at one x and every section of the manual ends at one
+   right edge, at any level. A coloured bar at the indent says the kind of part; faint guides stand for the levels
+   above. A code wider than its column takes a line of its own (.u-long), and the text starts under it at the same
+   edge; on a narrow view every row is so, the text under the code. */
 .l-depth { --l: var(--vscode-focusBorder, #0078d4); }
+#main[data-depth] #tree ul {
+  padding-left: 0;
+  margin: 0;
+  border: 0;
+}
+#main[data-depth] #tree li > .body::before {
+  display: none;
+}
 .row.u-row {
+  --ind: 1rem;
+  --x: calc(var(--lvl, 0) * var(--ind));
+  --guide: var(--vscode-tree-indentGuidesStroke, rgba(127, 127, 127, 0.35));
+  position: relative;
   display: grid;
-  grid-template-columns: var(--tokcol, 9rem) minmax(0, 1fr);
-  column-gap: 0.6rem;
+  grid-template-columns: var(--codew, 12rem) minmax(0, 1fr);
+  column-gap: 0.9rem;
   align-items: baseline;
+  border-left: 0;
+  margin: 0;
+  padding: 0.22rem 0.5rem 0.22rem 0;
+  background-image: repeating-linear-gradient(to right, var(--guide) 0 1px, transparent 1px var(--ind));
+  background-size: var(--x) 100%;
+  background-repeat: no-repeat;
+  background-position: 1px 0;
+}
+.row.u-row::before {
+  content: "";
+  position: absolute;
+  left: var(--x);
+  top: 0.15rem;
+  bottom: 0.15rem;
+  width: 3px;
+  border-radius: 2px;
+  background: currentColor;
 }
 .u-row > .u-tok {
   grid-column: 1;
@@ -1465,6 +1497,8 @@ body.vscode-high-contrast-light #reading-tree li.band {
   gap: 0.4rem;
   min-width: 0;
   white-space: nowrap;
+  overflow: hidden;
+  padding-left: calc(var(--x) + 3px + var(--fold) + 0.15rem);
 }
 .u-row > .u-tok > .twisty {
   margin-left: calc(-1 * var(--fold));
@@ -1479,73 +1513,143 @@ body.vscode-high-contrast-light #reading-tree li.band {
   grid-column: 2;
   min-width: 0;
   overflow-wrap: anywhere;
+  color: var(--vscode-foreground);
+  /* The roles and sections go on the line of the text when they fit there, at the right; under it when not. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.8em;
 }
-/* A code longer than its column: on its own line, and the text under it from the same edge. */
-.u-row.u-long > .u-tok {
+.u-row > .u-desc > * {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.u-row > .u-desc > .text:first-child {
+  flex: 1 1 auto;
+}
+.u-row > .u-desc > .u-meta {
+  flex: 0 1 auto;
+  margin-left: auto;
+}
+.u-row.u-long > .u-tok,
+#tree.u-stacked .u-row > .u-tok {
   grid-column: 1 / -1;
   white-space: normal;
   flex-wrap: wrap;
+  overflow: visible;
 }
-.u-row.u-long > .u-tok > .label {
+.u-row.u-long > .u-tok > .label,
+#tree.u-stacked .u-row > .u-tok > .label {
   flex: 0 1 auto;
   max-width: 100%;
   white-space: pre-wrap;
 }
+.u-row.u-long > .u-desc {
+  grid-column: 2;
+}
+#tree.u-stacked .row.u-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+#tree.u-stacked .u-row > .u-desc {
+  grid-column: 1;
+  padding-left: calc(var(--x) + 3px + var(--fold) + 0.15rem);
+}
+.u-row .u-text2 {
+  color: color-mix(in srgb, var(--vscode-foreground) 82%, transparent);
+}
 .u-row .u-note {
   color: var(--c-muted);
-  font-size: 0.9em;
+  font-size: 0.92em;
 }
 .u-row .u-def {
   color: var(--c-muted);
   font-size: 0.9em;
   font-style: italic;
+  margin-top: 0.1rem;
 }
+.u-row .u-def[hidden] {
+  display: none;
+}
+/* A problem on the row of its word: the icon and word of its level, as the notes above the rows. */
+.u-row .u-problem {
+  display: flex;
+  gap: 0.35em;
+  align-items: flex-start;
+  margin: 0.15rem 0;
+  padding: 0.1rem 0.4rem;
+  border-left: 2px solid var(--c-muted);
+  background: var(--vscode-textBlockQuote-background, transparent);
+  font-size: 0.92em;
+}
+.u-row .u-problem.level-warning { border-left-color: var(--c-warning); }
+.u-row .u-problem.level-info { border-left-color: var(--c-info); }
 .u-row .u-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   column-gap: 0.8em;
-  font-size: 0.78em;
+  row-gap: 0.1rem;
+  margin-top: 0.12rem;
+  font-size: 0.8em;
   color: var(--c-muted);
+}
+.u-row .u-roles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.35rem;
 }
 .u-row .u-meta .refs {
   margin-left: auto;
   font-size: 1em;
 }
+/* A role: a small chip in the colour of its reader, legible (not pale); it opens the role's definition. */
 .u-row .u-role {
-  color: color-mix(in srgb, var(--l) 80%, var(--c-muted));
+  font: inherit;
+  line-height: 1.35;
+  padding: 0 0.35em;
+  border: 1px solid color-mix(in srgb, var(--l) 45%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--l) 8%, transparent);
+  color: color-mix(in srgb, var(--l) 70%, var(--vscode-foreground));
+}
+.u-row button.u-role {
+  cursor: help;
+}
+.u-row button.u-role[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--l) 20%, transparent);
 }
 .u-row .u-reads {
-  color: var(--l);
+  color: color-mix(in srgb, var(--l) 80%, var(--vscode-foreground));
   font-weight: 600;
 }
-.u-row .u-sep,
 .u-row .u-arrow {
   color: var(--c-muted);
 }
 
-/* The rows of a program's reading (from depth 3): a light tint behind them; what bash reads inside (an expansion) is not tinted. */
-#tree li.u-region {
-  background: color-mix(in srgb, var(--l) 7%, transparent);
-  border-radius: 3px;
+/* What a program reads (from step 3): a light green fill from the row's bar on; bash's own parts inside are not
+   filled, and nor are the examples. */
+.row.u-row.u-read {
+  background-image: repeating-linear-gradient(to right, var(--guide) 0 1px, transparent 1px var(--ind)),
+    linear-gradient(to right, transparent var(--x), color-mix(in srgb, var(--l-command) 9%, transparent) var(--x));
+  background-size: var(--x) 100%, 100% 100%;
+  background-position: 1px 0, 0 0;
 }
-#tree li.u-region li.u-plain {
-  background: var(--vscode-editor-background);
+/* A block around the line (the `for` of a loop body): quiet, above the line's rows. */
+.row.u-row.u-around {
+  color: var(--c-muted);
+  margin-bottom: 0.3rem;
 }
-
-/* Indent guides from depth 2 (the syntax): a thin line beside the parts of a row, as in VS Code's trees. None at depth 1. */
-#main[data-depth] #tree li > .body::before {
-  display: none;
-}
-#main[data-depth="2"] #tree .body > ul,
-#main[data-depth="3"] #tree .body > ul,
-#main[data-depth="4"] #tree .body > ul {
-  margin-left: 0.7rem;
-  padding-left: 0.4rem;
-  border-left: 1px solid var(--vscode-tree-indentGuidesStroke, rgba(127, 127, 127, 0.4));
+.row.u-row.u-around > .u-tok > .label {
+  font-style: italic;
 }
 
-/* What the depth shown adds, under the control. */
+/* An example: at its row's place, indented one level under it, set off by a left rule. */
+#main[data-depth] #tree .example.nested {
+  margin: 0.3rem 0 0.4rem calc(var(--lvl, 1) * 1rem + 3px + 0.15rem);
+}
+
+/* What the step shown adds, under the control, and the key. */
 #depth-caption {
   margin: -0.2rem 0 0.5rem;
   font-size: 0.85em;
@@ -1554,8 +1658,45 @@ body.vscode-high-contrast-light #reading-tree li.band {
 #depth-caption .u-keep {
   font-style: italic;
 }
+#depth-caption .u-key {
+  display: inline;
+}
+#depth-caption .u-key > summary {
+  display: inline;
+  cursor: pointer;
+  color: var(--vscode-textLink-foreground);
+}
+#depth-caption .u-key[open] {
+  display: block;
+  margin-top: 0.3rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
+  border-radius: 3px;
+}
+#depth-caption .u-key > div {
+  margin-top: 0.15rem;
+}
+.u-swatch {
+  display: inline-block;
+  width: 3px;
+  height: 0.9em;
+  margin: 0 0.3em 0 0.1em;
+  vertical-align: -0.1em;
+  border-radius: 1px;
+  background: currentColor;
+}
+.u-swatch-fill {
+  display: inline-block;
+  width: 1.4em;
+  height: 0.9em;
+  margin-right: 0.35em;
+  vertical-align: -0.1em;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--l-command) 14%, transparent);
+  border-left: 3px solid var(--c-argument);
+}
 
-/* An example folds by its title; a made-up input is said after it. */
+/* An example folds by its title; a sample input is said after it. */
 .example .u-madeup {
   font-weight: normal;
   color: var(--c-muted);
@@ -1578,4 +1719,7 @@ pre#line {
   background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
   padding: 0 0.25em;
   border-radius: 3px;
+}
+.u-row .u-problem .refs {
+  margin-left: 0.5em;
 }
