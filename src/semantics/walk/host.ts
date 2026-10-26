@@ -5,7 +5,7 @@
 import { field, type SyntaxNode } from '../../syntax/tree';
 import { merge, type ShellState, withStatus } from '../shellstate';
 import type { Target, Walker } from './walker';
-import { widen } from './widen';
+import { ATTRS, widen } from './widen';
 
 const rootOf = (n: SyntaxNode): SyntaxNode => {
   let r = n;
@@ -55,7 +55,7 @@ export function hostRun(w: Walker, root: SyntaxNode, end: ShellState): void {
   };
   const since = w.changeCount;
   let file = call(w, fn(run.file.before), end, { role: 'before', process: 'file', ignored: false });
-  const reach = new Set([...w.lastChange].filter(([k, i]) => i > since && (k.startsWith('variables ') || k.startsWith('functions '))).map(([k]) => k));
+  const reach = new Set([...w.lastChange].filter(([k, i]) => i > since && (k.startsWith('variables ') || k.startsWith(ATTRS) || k.startsWith('functions '))).map(([k]) => k));
   file = call(w, fn(run.file.after), file, { role: 'after', process: 'file', ignored: true });
   // (The definitions on the rows of the tests: a row bats rewrites inside a string or a here-document holds none.)
   const rows = new Set(run.tests);

@@ -98,7 +98,7 @@ cat $file
 sudo echo "nameserver 1.1.1.1" > /etc/resolv.conf
 for f in $(ls *.txt); do echo "$f"; done
 for a in $*; do echo "$a"; done
-[ $answer = yes ] && echo "ok"
+[ $name = "$1" ] && echo "ok"
 x = 1
 make 2>&1 >build.log
 f() {

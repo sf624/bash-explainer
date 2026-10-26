@@ -128,6 +128,13 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
       ["set -- 'a[u=2]'; declare -n r=$1; : \"$r\"", 'reads a nameref'],
       // `-v` of a name not known: its subscript is arithmetic.
       ["set -- 'a[u=2]'; [ -v \"$1\" ]", '[ -v'], ["set -- 'a[u=2]'; test -v \"$1\"", 'test -v'], ["x='a[u=2]'; [[ -v $x ]]", '[[ -v'],
+      // A word not known of `test` or `[` may be `-v` itself, and one that splits gives words not known.
+      ["set -- -v 'a[u=2]'; [ \"$1\" \"$2\" ]", '[ $1 $2'], ["set -- -v 'a[u=2]'; [ ! \"$1\" \"$2\" ]", '[ ! $1 $2'], ["set -- -v 'a[u=2]'; test \"$@\"", 'test "$@"'],
+      ["set -- '-v a[u=2]'; x=$1; [ $x ]", '[ $x'], ["x='-v a[u=2]'; [ $x ]", '[ $x of a known -v'], ["set -- 'x -a -v a[u=2]'; [ -z $1 ] 2>/dev/null", '[ -z $1'],
+      // A nameref that refers to one whose target is not known, read or assigned, declared in either order.
+      ["set -- 'a[u=2]'; declare -n q=$1; declare -n p=q; : \"$p\"", 'reads a nameref of a nameref'],
+      ["set -- 'a[u=2]'; declare -n p=q; declare -n q=$1; : \"$p\"", 'the same, declared the other way'],
+      ["set -- 'a[u=2]'; declare -n q=$1; declare -n p=q; p=x", 'assigns a nameref of a nameref'],
       // `@P` expands the value as a prompt: `$(( ))` in it runs, also from an octal escape.
       ["set -- '$((u=2))'; : \"${1@P}\"", '@P of $1'], ["x='$((u=2))'; : \"${x@P}\"", '@P'], ["x='\\044((u=2))'; : \"${x@P}\"", '@P of \\044'],
       ["PS4='+\\044((u=2)) '; set -x; :", 'PS4 with \\044'],
@@ -144,11 +151,26 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     }
     // Their quiet forms change nothing: a static name, a quiet prompt, a word list of plain words, `fc -l`, a local.
     const quiet = ['a=(1); [ -v u ]; [[ -v a[0] ]]; test -v a[0]; test -v 1x', "x='a \\u $u'; : \"${x@P}\"", "compgen -W 'a b $u' -- a >/dev/null", 'fc -l >/dev/null 2>&1',
-      'f() { declare n; local -i m; m+=1; (( n )); }; f', 'declare n=0; (( n ))', 'enable -n echo'];
+      'f() { declare n; local -i m; m+=1; (( n )); }; f', 'declare n=0; (( n ))', 'enable -n echo',
+      // (Words of `test` that are never `-v`, or are known: `[[ ]]` reads its operators before it expands.)
+      "set -- a; x=abc; y='a b'; n=$((1+1)); [ \"$1\" = \"$u\" ]; [ $# -eq 1 ]; [ $x = abc ]; [ $y = a ] 2>/dev/null; [ $n -gt 1 ]; [ -n \"$1\" ]; [ x\"$1\" = xa ]; [ /*/ ] 2>/dev/null",
+      'o=-v; [[ $o ]]; [[ -n $o ]]', 'IFS=; f() { local IFS; }; f; (( n = 3 )); g() { local m; [ $m ]; }; g; [ $n -gt 1 ]'];
     for (const src of quiet) {
       assert.strictEqual(inherited(`u=1; ${src}\necho "$u"`), '1', src);
       assert.strictEqual(decided(`u=1; ${src}\n[ "$u" = 1 ] && :`), 'true', src);
     }
+    // `unset` of a nameref of a nameref whose target is not known may unset any variable (bash unsets `u`).
+    assert.strictEqual(bash("u=1; set -- u; declare -n q=$1; declare -n p=q; unset p; echo \"${u-unset}\""), 'unset\n');
+    assert.strictEqual(decided("u=1; set -- u; declare -n q=$1; declare -n p=q; unset p; [ \"$u\" = 1 ] && :"), undefined);
+    // An unquoted number splits only where IFS has digits (`IFS=1`: `$#` of 10 is two words, the second `0`).
+    assert.strictEqual(decided('u=1; IFS=1; [ $# -eq 0 ]; [ "$u" = 1 ] && :'), undefined);
+    assert.strictEqual(decided('u=1; IFS=:; [ $# -eq 0 ]; [ "$u" = 1 ] && :'), 'true');
+    // (A variable the script does not set, from the environment, may hold anything; so may an IFS not known.)
+    assert.strictEqual(decided('u=1; [ -d $HOME ]; [ "$u" = 1 ] && :'), undefined);
+    // (An IFS not known may split anything.)
+    for (const ifs of ['IFS=$y', 'read -r IFS']) assert.strictEqual(decided(`u=1; ${ifs}; [ $# -eq 0 ]; [ "$u" = 1 ] && :`), undefined, ifs);
+    // `enable -f` loads a builtin from a shared object: it may replace any builtin, and run code as it loads.
+    assert.strictEqual(shellState(parser.parse('enable -f ./b.so b')).blind, '`enable -f` loads a builtin the model does not read');
     // (`enable` of a name not known may turn off any builtin.)
     assert.strictEqual(decided('u=1; enable -n "$b"; [ "$u" = 1 ] && :'), undefined);
     assert.strictEqual(decided('u=1; compgen -W "$w" -- a; [ "$u" = 1 ] && :'), undefined);

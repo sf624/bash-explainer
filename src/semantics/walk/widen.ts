@@ -2,13 +2,24 @@
 // a call not walked, a body no call reached, a trap's action (from when it was set); and the bodies that such a
 // call runs with states no walk saw.
 import type { SyntaxNode } from '../../syntax/tree';
-import type { Entry, Kind, ShellState } from '../shellstate';
+import type { Attribute, Entry, Kind, ShellState, VariableState } from '../shellstate';
+import { ATTRIBUTE_LETTERS } from './builtins';
 import { OPAQUE } from './shared';
 import type { Walker } from './walker';
 
+/** The prefix of the key of a change of a variable's attributes (`Walker.put`): `attrs x`, beside `variables x`. */
+export const ATTRS = 'attrs ';
+
+/** Whether a variable's attributes differ between `a` and `b` (none: not set, no attributes). */
+export function attributesChange(a: VariableState | undefined, b: VariableState | undefined): boolean {
+  const x = a?.attrs ?? {};
+  const y = b?.attrs ?? {};
+  return [...new Set([...Object.keys(x), ...Object.keys(y)])].some((l) => (x[l]?.state ?? 'off') !== (y[l]?.state ?? 'off'));
+}
+
 /**
- * `st` with the names in `keys` (`kind name`) taken as unknown; but a function surely defined by the top level
- * (`Walker.sureLater`) is defined.
+ * `st` with the names in `keys` (`kind name`) taken as unknown, and the attributes of the variables in `attrs name`
+ * keys; but a function surely defined by the top level (`Walker.sureLater`) is defined.
  */
 export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>): ShellState {
   const changes = { set: new Map(), shopt: new Map(), variables: new Map(), functions: new Map(), aliases: new Map(), disabled: new Map(), hashed: new Map() } as { [K in Kind]: Map<string, Entry<K>> };
@@ -18,14 +29,25 @@ export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>): She
       opaque = true;
       continue;
     }
+    if (key.startsWith(ATTRS)) continue;
     const kind = key.slice(0, key.indexOf(' ')) as Kind;
     const name = key.slice(kind.length + 1);
     if (kind === 'set' || kind === 'shopt') {
       if (st[kind].get(name) !== 'unknown') changes[kind].set(name, 'unknown');
     } else if (kind === 'variables') {
       const v = st.variables.get(name);
-      if (!v) changes.variables.set(name, { declared: 'unknown', set: 'unknown', attrs: {}, at: w.lastAt.get(key)! });
-      else if (v.declared !== 'unknown' || v.set !== 'unknown' || v.value !== undefined) changes.variables.set(name, { ...v, declared: 'unknown', set: 'unknown', value: undefined });
+      const at = v?.at ?? w.lastAt.get(key)!;
+      // (Each attribute too, where what runs changes them: it may give one, `readonly x`, or take it off; but not
+      // take off `readonly`.)
+      let attrs: Record<string, Attribute> = v?.attrs ?? {};
+      let same = true;
+      if (keys.has(`${ATTRS}${name}`)) {
+        attrs = {};
+        for (const l of ATTRIBUTE_LETTERS) attrs[l] = l === 'r' && v?.attrs.r?.state === 'on' ? v.attrs.r : { state: 'unknown', at: v?.attrs[l]?.at ?? at };
+        same = !!v && [...ATTRIBUTE_LETTERS].every((l) => v.attrs[l]?.state === attrs[l].state);
+      }
+      if (!v) changes.variables.set(name, { declared: 'unknown', set: 'unknown', attrs, at });
+      else if (v.declared !== 'unknown' || v.set !== 'unknown' || v.value !== undefined || !same) changes.variables.set(name, { ...v, declared: 'unknown', set: 'unknown', value: undefined, attrs });
     } else if (kind === 'functions') {
       const f = st.functions.get(name);
       const defs = w.functionDefs.get(name)!;

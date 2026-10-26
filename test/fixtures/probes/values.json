@@ -3769,5 +3769,215 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "6.4",
+    "snippet": "u=1; set -- -v 'a[u=2]'; [ \"$1\" \"$2\" ]; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: `-v` may test a variable name not known (`$1` may be `-v`, and `$2` its operand)"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.4",
+    "snippet": "u=1; set -- -v 'a[u=2]'; test \"$@\"; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: as for `[ \"$1\" \"$2\" ]`"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.4",
+    "snippet": "u=1; set -- '-v a[u=2]'; x=$1; [ $x ]; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: `$x` splits into words not known"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.4",
+    "snippet": "u=1; set -- -v 'a[u=2]'; [ ! \"$1\" \"$2\" ]; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: as for `[ \"$1\" \"$2\" ]`"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.4",
+    "snippet": "u=1; x=abc; IFS=,; set -- a; [ \"$1\" = \"$u\" ]; [ $# -eq 1 ]; [ $x = abc ]; [ -n \"$1\" ]; [ \"$1\" ]; [ x\"$1\" = xa ]; @PROBE:a@ \"$u\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.4",
+    "snippet": "u=1; set -- 'a[u=2]'; declare -n q=$1; declare -n p=q; : \"$p\"; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: `p` refers to `q`, a nameref whose target is not known"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.4",
+    "snippet": "u=1; set -- 'a[u=2]'; declare -n p=q; declare -n q=$1; : \"$p\"; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: as when `q` is declared first"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.4",
+    "snippet": "u=1; set -- 'a[u=2]'; declare -n q=$1; declare -n p=q; p=x; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: as for reading `p`"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.4",
+    "snippet": "u=1; set -- u; declare -n q=$1; declare -n p=q; unset p; @PROBE:a@ \"$u\"",
+    "none": {
+      "a": "nothing is trusted: `unset p` unsets the target of `q`, which is not known"
+    },
+    "facts": {
+      "a": [
+        [
+          ""
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "enable -ns exit; x=1; exit 2>/dev/null; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "enable -n -s exit; x=1; exit 2>/dev/null; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "enable -n -a exit; x=1; exit 2>/dev/null; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "enable -np exit >/dev/null; x=1; exit; @PROBE:a@ \"$x\"",
+    "none": {
+      "a": "`exit` ends the script before it: `-p` prints, and turns nothing off"
+    },
+    "facts": {
+      "a": [],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "g() { if [ \"$d\" = 1 ]; then d=2; g; return; fi; readonly x; }; d=1; g\nx=5 2>/dev/null\n@PROBE:a@ \"$x\"",
+    "none": {
+      "a": "the recursive call of `g` may make `x` readonly"
+    },
+    "facts": {
+      "a": [
+        [
+          ""
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 2: x: readonly variable"
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "g() { if [ \"$d\" = 1 ]; then d=2; g; return; fi; declare -gi x; }; d=1; g\nx=2+3\n@PROBE:a@ \"$x\"",
+    "none": {
+      "a": "the recursive call of `g` may give `x` the integer attribute"
+    },
+    "facts": {
+      "a": [
+        [
+          "5"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

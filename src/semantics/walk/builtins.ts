@@ -19,7 +19,7 @@ import { ExpansionError, NAME, type Operand } from './shared';
 import type { Walker } from './walker';
 
 /** The attributes the declaration builtins give with their options. */
-const ATTRIBUTE_LETTERS = new Set(['a', 'A', 'i', 'l', 'n', 'r', 't', 'u', 'x']);
+export const ATTRIBUTE_LETTERS: ReadonlySet<string> = new Set(['a', 'A', 'i', 'l', 'n', 'r', 't', 'u', 'x']);
 
 /** What builtins and assignments change in the state, for the walk. */
 export class WalkBuiltins {
@@ -130,8 +130,9 @@ export class WalkBuiltins {
         }
         return st;
       case 'enable': {
-        // (`enable -f`, `-d`: loadable builtins, not followed.)
-        if (has('-f') || has('-d') || has('-p') || has('-a') || has('-s')) return st;
+        // (`-p` prints. `-f` and `-d` load and remove builtins of a shared object, not followed: `-f` trusts nothing.
+        // With names, `-a` and `-s` choose nothing: `enable -ns exit` turns `exit` off.)
+        if (has('-f') || has('-d') || has('-p')) return st;
         for (const o of operands) {
           const b = staticWordValue(o);
           if (b) st = this.w.put(st, 'disabled', b, { state: has('-n') ? 'on' : 'off', value: '', at: n });
