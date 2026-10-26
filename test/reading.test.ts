@@ -2,6 +2,9 @@
 // The layers come from the tree and from `Token.origin`, which the analyzer sets where it makes each token.
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
 import { explainHostedLine, extractShell, type HostKind } from '../src/hosts';
 import { readingNodes, readingTree, type ReadingNode } from '../src/reading';
@@ -952,5 +955,64 @@ describe('the reading tree in the panel and in host files', () => {
     ]);
     assert.match(lines[6], /GitHub Actions/);
     assert.ok(!lines.some((l) => /GITHUB_REF/.test(l)), lines.join('\n'));
+  });
+
+  describe('the value of an option is not an operand', () => {
+    /** The words the command reads (layer `command`, kind `argument`) with the option each is the value of (`-` when none). */
+    const reads = (src: string): string[] => readingNodes(explain(src).reading!)
+      .filter((n) => n.layer === 'command' && n.kind === 'argument')
+      .map((n) => `${n.label} ${n.valueFor ?? '-'}`);
+
+    it('marks the value of an option in each way it is written: attached, bundled, separate, long, old-style', () => {
+      assert.deepStrictEqual(reads('tar -czf "$backup" ~/docs'), ['"$backup" -f', '~/docs -']);
+      assert.deepStrictEqual(reads('tar -xf a.tar b'), ['a.tar -f', 'b -']);
+      assert.deepStrictEqual(reads('tar -xfa.tar b'), ['a.tar -f', 'b -']);
+      assert.deepStrictEqual(reads('tar --file a.tar -x b'), ['a.tar --file', 'b -']);
+      assert.deepStrictEqual(reads('tar cf a.tar b'), ['a.tar f', 'b -']);
+      assert.deepStrictEqual(reads('grep -e foo -nf pats x'), ['foo -e', 'pats -f', 'x -']);
+      assert.deepStrictEqual(reads('grep --regexp foo x'), ['foo --regexp', 'x -']);
+      assert.deepStrictEqual(reads('sort -k2 -t, a'), ['2 -k', ', -t', 'a -']);
+      assert.deepStrictEqual(reads('sort -k 2 a'), ['2 -k', 'a -']);
+      assert.deepStrictEqual(reads('head -n3 f'), ['3 -n', 'f -']);
+      assert.deepStrictEqual(reads('head -n 3 f'), ['3 -n', 'f -']);
+      assert.deepStrictEqual(reads('ssh -o StrictHostKeyChecking=no h'), ['StrictHostKeyChecking=no -o', 'h -']);
+      assert.deepStrictEqual(reads('find . -name x'), ['. -', 'x -name']);
+      assert.deepStrictEqual(reads('sed -e p f'), ['p -e', 'f -']);
+    });
+
+    it('says so in the panel: the badge names the option, in both languages', () => {
+      assert.strictEqual(ui.en.panel.tree.valueFor.replace('{flag}', '-f'), 'value of -f');
+      assert.strictEqual(ui.ja.panel.tree.valueFor.replace('{flag}', '-f'), '-f の値');
+      assert.match(readFileSync(path.join(__dirname, '../media/panel.js'), 'utf8'), /n\.valueFor\) return t\.valueFor\.replace/);
+    });
+
+    it('agrees with GNU tar: the word after -f (in every form) is the archive, the other word an operand', () => {
+      const dir = mkdtempSync(path.join(tmpdir(), 'valuefor-'));
+      try {
+        writeFileSync(path.join(dir, 'x'), 'x');
+        // (`--file=OUT` is one word, the option with its value: no word of its own.)
+        const forms: [string, string[]][] = [
+          ['-czf OUT x', ['OUT -f', 'x -']], ['-czfOUT x', ['OUT -f', 'x -']], ['--file OUT -cz x', ['OUT --file', 'x -']],
+          ['--file=OUT -cz x', ['x -']], ['czf OUT x', ['OUT f', 'x -']],
+        ];
+        for (const [i, [form, expected]] of forms.entries()) {
+          const out = path.join(dir, `a${i}.tgz`);
+          const r = spawnSync('tar', form.replace('OUT', out).split(' '), { cwd: dir, encoding: 'utf8' });
+          assert.strictEqual(r.status, 0, `${form}: ${r.stderr}`);
+          assert.ok(existsSync(out), `${form}: tar wrote the archive to OUT`);
+          assert.deepStrictEqual(reads(`tar ${form}`), expected, form);
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('gives a word that is only a tilde expansion the role of an operand, like other operands', () => {
+      assert.deepStrictEqual(reads('tar -czf out.tgz ~/docs'), ['out.tgz -f', '~/docs -']);
+      assert.deepStrictEqual(reads('tar -czf out.tgz ~'), ['out.tgz -f', '~ -']);
+      const r = explain('tar -czf out.tgz ~/docs').reading!;
+      assert.match(find(r, '~/docs', 'command').text!, /^Word `~\/docs`$/);
+      assert.match(find(r, '~/docs', 'bash').text!, /^Tilde expansion/);
+    });
   });
 });

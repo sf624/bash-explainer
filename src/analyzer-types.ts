@@ -74,6 +74,11 @@ export interface Token {
    * makes the token (the argument interpreter's roles, the embedded explainers) and gives the rest to `shell`.
    */
   origin?: TokenOrigin;
+  /**
+   * On the token of a word (or the characters of a word) the command reads as the value of an option: the option's name
+   * as written (`-f`, `--file`). Every other word the command reads that is not an option is an operand.
+   */
+  valueFor?: string;
   /** On the outermost tokens of an embedded language: which language (`regex`, `sed`, `jq`…; `EmbeddedLang`). */
   language?: string;
   /** On the tokens of a string read as a script (`origin` `script`): which shell reads it. */
