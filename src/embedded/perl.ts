@@ -180,9 +180,11 @@ class PerlExplainer {
       const cond = this.condition(ca, cb);
       const condText = src.slice(ca, cb);
       const condWords = /^\/.*\/[a-z]*$/.test(condText) ? s(`現在の行が \`${condText}\` に一致する`, `the line matches \`${condText}\``) : `\`${condText}\``;
+      // (A space between code and Japanese: docs/japanese-style.md.)
+      const gap = condWords.endsWith('`') ? ' ' : '';
       return this.tok(start, end, 'keyword', kw === 'if'
-        ? s(`${condWords}なら: ${body.explanation}`, `if ${condWords}: ${body.explanation}`)
-        : s(`${condWords}でなければ: ${body.explanation}`, `unless ${condWords}: ${body.explanation}`), [body, cond]);
+        ? s(`${condWords}${gap}なら: ${body.explanation}`, `if ${condWords}: ${body.explanation}`)
+        : s(`${condWords}${gap}でなければ: ${body.explanation}`, `unless ${condWords}: ${body.explanation}`), [body, cond]);
     }
     const sub = /^(?:(\$\w+)\s*=~\s*)?s\b\s*[^\w\s]/.exec(text);
     if (sub) return this.substitution(start, end, start + sub[0].length - 1, sub[1]);

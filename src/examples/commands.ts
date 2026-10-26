@@ -12,7 +12,7 @@ import { GetoptSpec, GetoptUnsupported, runGetopt, sampleGetoptArgs } from './ge
 import { formatDate, GitFormatUnsupported, runGitLog, sampleCommits } from './gitlog';
 import { perlExample, perlOptions } from './perlrun';
 import { InputBox, Interactive, rerun, RerunSpec } from './rerun';
-import { InputSource, knownLines, readOrder, shareOut, shownSource, streamLabel } from './source';
+import { InputSource, knownLines, readOrder, shareOut, shownSource, streamLabel, withSystemFiles } from './source';
 import { readSampleLine, runRead, xargsExample as runXargs } from './runtime';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
 import { commandExample, parseOptions, parseWords, shortKeys, Unsupported as TextFiltersUnsupported } from './textfilters';
@@ -41,7 +41,8 @@ export function ioExample(sample: string[], output: string[], spec: RerunSpec, l
   const s = pick(lang);
   const tabs = (lines: string[]) => lines.map(visible);
   const kind = spec.kind === 'sed' || spec.kind === 'awk' || spec.kind === 'perl' ? spec.kind : 'textFilters';
-  const src = shownSource(all);
+  // (A well-known system file read holds lines of its own format: `root:x:0:0:…` for /etc/passwd.)
+  const src = withSystemFiles(shownSource(all));
   const inPlace = src.each === 'in-place';
   const title = inPlace ? s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : s('例', 'Example');
   // (`uniq IN OUT`, `sort -o OUT`: the output goes to the file, and nothing to the standard output.)

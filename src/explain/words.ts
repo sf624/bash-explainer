@@ -458,12 +458,14 @@ export function variable(cx: Explainer, name: string, n: SyntaxNode): Token {
 
 export function simpleExpansion(cx: Explainer, n: SyntaxNode): Token {
   const name = n.text.slice(1);
-  const d = varDesc(cx, name, n);
+  // (`"$@"` keeps the arguments apart only where words are split: not where the word stays one string.)
+  const joined = name === '@' || name === '*' ? joinedNote(cx, n, name, true) : undefined;
+  const d = joined ? cx.s('全ての位置パラメータ', 'All positional parameters') : varDesc(cx, name, n);
   const note = splitNote(cx, n);
   const t = cx.tok(n, 'variable', d ?? (note
-    ? cx.s(`変数 \`${name}\` の値に置き換わる（クォートしないと${note.ja}）`, `Expands to the value of \`${name}\` (unquoted, ${note.en})`)
+    ? cx.s(`変数 \`${name}\` の値に置き換わる（クォートしないと${note.ja.startsWith('`') ? ' ' : ''}${note.ja}）`, `Expands to the value of \`${name}\` (unquoted, ${note.en})`)
     : cx.s(`変数 \`${name}\` の値に置き換わる`, `Expands to the value of \`${name}\``)));
-  t.explanation += matchNote(cx, n) + orderNote(cx, n, name) + variableNote(cx, n, name);
+  t.explanation += matchNote(cx, n) + orderNote(cx, n, name) + variableNote(cx, n, name) + (joined ?? '');
   return t;
 }
 
@@ -543,6 +545,34 @@ export function orderNote(cx: Explainer, n: SyntaxNode, name: string): string {
   return field(cmd, 'name') && !(mine.type === 'variable_assignment' && mine.field !== 'argument') && cmd.namedChildren.some((a) => sets(a) && a.endIndex <= field(cmd, 'name')!.startIndex)
     ? cx.s(`。\`${name}=…\` はこのコマンドの実行中だけ有効で、引数の展開が先に行われるので、ここでは代入前の値（未設定なら空）になる`, `. \`${name}=…\` only applies while the command runs, and the arguments are expanded first, so this is the value from before the assignment (empty if unset)`)
     : '';
+}
+
+/** The places where a word stays one string, and how the notes name them (src/semantics/words.ts, `CONTEXTS`). */
+const JOINED: Partial<Record<string, [string, string]>> = {
+  'assignment-value': ['代入の値', 'the value of an assignment'],
+  herestring: ['ヒアストリング', 'a here-string'],
+  'case-word': ['`case` の単語', 'the word of `case`'],
+  'cond-operand': ['`[[ ]]` の中', '`[[ ]]`'],
+};
+
+/**
+ * `t=${a[@]}`, `t=$*`: where a word stays one string, all the elements (or arguments) of `n` are joined into one, with a
+ * space for `@` and the first character of `IFS` for `*` (manual 3.4.2, 3.4); undefined elsewhere. `of`: `@` or `*`.
+ */
+export function joinedNote(cx: Explainer, n: SyntaxNode, of: '@' | '*', args: boolean): string | undefined {
+  const part = partMeaning(n, cx.state);
+  const where = part && JOINED[part.word.context];
+  if (!where) return undefined;
+  const items = args ? cx.s('引数', 'arguments') : cx.s('要素', 'elements');
+  const ifs = part.word.ifs;
+  const sep = of === '@' || ifs.kind === 'default' ? cx.s('空白', 'a space')
+    : ifs.kind === 'unknown' ? cx.s(' `IFS` の先頭の文字', 'the first character of `IFS`')
+      : ifs.value === '' ? undefined : cx.s(` \`IFS\` の先頭の文字 \`${shown(ifs.value[0])}\` `, `the first character of \`IFS\`, \`${shown(ifs.value[0])}\``);
+  return sep
+    ? cx.s(`。${where[0]}は単語分割されないので、${items}は${sep}で区切って1つの文字列につながる（クォートしても別々にはならない）`,
+      `. In ${where[1]} there is no word splitting: the ${items} are joined into one string, separated by ${sep} (quoting does not keep them apart)`)
+    : cx.s(`。${where[0]}は単語分割されないので、${items}は区切りなしで1つの文字列につながる（\`IFS\` が空）`,
+      `. In ${where[1]} there is no word splitting: the ${items} are joined into one string with nothing between them (\`IFS\` is empty)`);
 }
 
 /** `$y` on an array is its element 0; `$_` after an assignment is empty; `$x` inside `$(( ))` is pasted as text. */

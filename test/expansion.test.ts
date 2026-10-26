@@ -133,3 +133,47 @@ describe('expansion tokens', () => {
     assert.match(t.children[2].explanation, /^[^`]/);
   });
 });
+
+describe('all the elements where the word stays one string', () => {
+  // `t=${a[@]}` joins the elements with a space, `t=${a[*]}` with the first character of IFS (manual 3.4.2, 3.4); the
+  // value of an assignment, a here-string, the word of `case` and `[[ ]]` are not split. Each row: the script (its last
+  // line, or the body of `f`, is explained), the expansion, what the explanation says, and the value bash gives
+  // (`declare -p t`, or what `cat` reads).
+  const rows: [string, string, RegExp, string][] = [
+    ['a=("x  y" b c)\nt=${a[@]}', '${a[@]}', /separated by a space/, 'x  y b c'],
+    ['a=("x  y" b c)\nt="${a[@]}"', '${a[@]}', /separated by a space/, 'x  y b c'],
+    ['a=("x  y" b c)\nIFS=:\nt=${a[@]}', '${a[@]}', /separated by a space/, 'x  y b c'],
+    ['a=("x  y" b c)\nIFS=:\nt=${a[*]}', '${a[*]}', /separated by the first character of `IFS`, `:`/, 'x  y:b:c'],
+    ['a=("x  y" b c)\nIFS=\nt=${a[*]}', '${a[*]}', /with nothing between them/, 'x  ybc'],
+    ['a=("x  y" b c)\nIFS=:\nunset IFS\nt=${a[*]}', '${a[*]}', /separated by a space/, 'x  y b c'],
+    ['set -- "x  y" b c\nIFS=:\nt=$@', '$@', /arguments are joined into one string, separated by a space/, 'x  y b c'],
+    ['set -- "x  y" b c\nIFS=:\nt=$*', '$*', /separated by the first character of `IFS`, `:`/, 'x  y:b:c'],
+    ['set -- "x  y" b c\nt=${@}', '${@}', /separated by a space/, 'x  y b c'],
+    ['a=("x  y" b c)\nf() { IFS=:; local t=${a[@]}; declare -p t; }\nf', '${a[@]}', /separated by a space/, 'x  y b c'],
+    ['a=("x  y" b c)\nIFS=:\ncat <<< ${a[*]}', '${a[*]}', /In a here-string .* `:`/, 'x  y:b:c'],
+    ['a=("x  y" b c)\nif [ "$1" ]; then IFS=:; fi\nt=${a[*]}', '${a[*]}', /separated by the first character of `IFS` \(quoting/, 'x  y b c'],
+    ['a=("x  y" b c)\nIFS=:\nt=${a[@]:1}', '${a[@]:1}', /^Parameter expansion: .*separated by a space/, 'b c'],
+  ];
+  for (const [src, text, said, value] of rows) {
+    it(`${src.replace(/\n/g, '; ')}: ${value}`, () => {
+      const lines = src.split('\n');
+      const at = lines[lines.length - 1] === 'f' ? lines.length - 2 : lines.length - 1;
+      const t = allTokens(new Analyzer('en').explainLine(parser.parse(src), at).items).find((x) => x.label === text);
+      assert.ok(t, src);
+      assert.match(t.explanation, said);
+      assert.doesNotMatch(t.explanation, /separate word/);
+      const own = /declare -p t|<<</.test(src);
+      const out = execFileSync('bash', ['--norc', '--noprofile', '-c', own ? src : `${src}\ndeclare -p t`]).toString();
+      assert.strictEqual(/<<</.test(src) ? out : out.match(/^declare -- t="(.*)"\n$/s)?.[1], /<<</.test(src) ? `${value}\n` : value);
+    });
+  }
+  it('says so in Japanese, and not where the words are split', () => {
+    const ja = allTokens(new Analyzer('ja').explainLine(parser.parse('a=(x y)\nT=${a[@]}'), 1).items);
+    assert.match(ja.find((x) => x.label === '${a[@]}')!.explanation, /代入の値は単語分割されないので、要素は空白で区切って1つの文字列につながる/);
+    assert.match(ja.find((x) => x.label === '[@]')!.explanation, /1つの文字列につながる/);
+    const split = allTokens(new Analyzer('en').explainLine(parser.parse('a=(x y)\necho ${a[@]} $@; t=${!a[@]} n=${#a[@]}; alias $@ ${a[*]}'), 1).items);
+    assert.ok(split.some((x) => x.label === '$@'));
+    assert.ok(split.some((x) => x.label === '${!a[@]}'));
+    assert.ok(split.every((x) => !/joined into one string/.test(x.explanation)));
+  });
+});

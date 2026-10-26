@@ -168,3 +168,25 @@ describe('redirections around assignments', () => {
     assert.deepStrictEqual(soundness(createUnbashParser().parse('>f x=1 >g')), []);
   });
 });
+
+describe('ssh -o: the values explained, as ssh reads them (`ssh -G` prints the settings and connects to nothing)', () => {
+  const hasSsh = (() => { try { execFileSync('ssh', ['-F', '/dev/null', '-G', 'x'], { stdio: 'pipe' }); return true; } catch { return false; } })();
+  const rows: [string, RegExp, string][] = [
+    ['StrictHostKeyChecking=no', /without checking host keys.*man-in-the-middle.*\(careful\)$/, 'stricthostkeychecking false'],
+    ['StrictHostKeyChecking=off', /without checking host keys/, 'stricthostkeychecking false'],
+    ['StrictHostKeyChecking=accept-new', /add the keys of unknown hosts automatically, but refuse hosts whose key has changed/, 'stricthostkeychecking accept-new'],
+    ['UserKnownHostsFile=/dev/null', /keep no known host keys/, 'userknownhostsfile /dev/null'],
+  ];
+  for (const [value, said, setting] of rows) {
+    (hasSsh ? it : it.skip)(value, () => {
+      assert.match(explain(`ssh -o ${value} host`, value), said);
+      assert.ok(execFileSync('ssh', ['-F', '/dev/null', '-G', '-o', value, 'host']).toString().split('\n').includes(setting), value);
+    });
+  }
+  it('gives a harmless setting as the example of `-o`', () => {
+    assert.match(explain('ssh -o ConnectTimeout=5 host', '-o'), /e\.g\. `ConnectTimeout=5`/);
+    assert.match(explain('ssh -o ConnectTimeout=5 host', '-o', 'ja'), /例: `ConnectTimeout=5`/);
+    assert.doesNotMatch(explain('ssh -o ConnectTimeout=5 host', '-o'), /StrictHostKeyChecking/);
+    assert.match(explain('ssh -o StrictHostKeyChecking=no host', 'StrictHostKeyChecking=no', 'ja'), /なりすまし（中間者攻撃）に気づけない（注意）$/);
+  });
+});

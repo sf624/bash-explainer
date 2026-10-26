@@ -7,7 +7,7 @@ import { tx } from '../i18n';
 import { basic } from './basic';
 import { storage } from './storage';
 import { admin } from './admin';
-import { netadmin } from './netadmin';
+import { netadmin, SSH_OPTION_VALUES } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
 import { args, ASSIGNMENTS, byCount, cmd, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, wordTable } from './types';
@@ -1224,7 +1224,7 @@ export const core: Record<string, CommandSpec> = {
   ssh: cmd('リモートホストに SSH で接続する（コマンドを渡すとリモートで実行）', 'Connect to a remote host over SSH (optionally run a command)', [
     ['-i', '秘密鍵ファイル', 'identity (private key) file', 'arg'],
     ['-p', 'ポート番号', 'port', 'arg'],
-    ['-o', 'ssh の設定オプション（例: `StrictHostKeyChecking=no`）', 'config option (e.g. `StrictHostKeyChecking=no`)', 'arg'],
+    ['-o', 'ssh の設定オプションを `名前=値` で指定する（例: `ConnectTimeout=5`）', 'a config option, as `Name=value` (e.g. `ConnectTimeout=5`)', 'arg', SSH_OPTION_VALUES],
     ['-L', 'ローカルポートフォワーディング', 'local port forwarding', 'arg'],
     ['-N', 'リモートコマンドを実行しない（転送専用）', 'do not run a remote command'],
     ['-t', '疑似端末を割り当てる', 'force pseudo-terminal allocation'],

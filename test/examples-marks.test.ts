@@ -297,7 +297,8 @@ describe('pipeline marks in the examples', () => {
     const cut = rerun({ kind: 'filter', cmd: 'cut', words: ['-d:', '-f1'] }, [['1:a', '2:b']], 'en');
     assert.deepStrictEqual(cut.marks, [[{ start: 0, end: 1, group: 0 }], [{ start: 0, end: 1, group: 0 }]]);
     assert.strictEqual(rerun({ kind: 'filter', cmd: 'uniq', words: [] }, [['a']], 'en').marks, undefined);
-    assert.deepStrictEqual(explain('cut -d: -f1 /etc/passwd').examples[0].interactive?.result.marks?.[0], [{ start: 0, end: 1, group: 0 }]);
+    // (`/etc/passwd` holds lines of its format: the first field of `root:x:0:0:…` is `root`.)
+    assert.deepStrictEqual(explain('cut -d: -f1 /etc/passwd').examples[0].interactive?.result.marks?.[0], [{ start: 0, end: 4, group: 0 }]);
   });
   it('finds matches one after another as POSIX tools do: empty ones skipped after a match, and PCRE first', () => {
     assert.deepStrictEqual(posixMatches([{ source: 'x*', flags: '' }], 'axxb', true), [[0, 0], [1, 3], [4, 4]]);

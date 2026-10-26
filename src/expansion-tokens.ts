@@ -8,7 +8,7 @@ import { cannotAssign, expansionOps } from './dict/syntax';
 import type { Explainer } from './explain/context';
 import { isAssoc, shoptAt } from './explain/reads';
 import { scriptValue } from './explain/values';
-import { globChildren, orderNote, variableNote, varDesc } from './explain/words';
+import { globChildren, joinedNote, orderNote, variableNote, varDesc } from './explain/words';
 import { globIntro, hasGlob } from './embedded/glob';
 import { hasExtglob } from './examples/shellwords';
 import { ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformOf } from './expansion';
@@ -56,6 +56,11 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   if (tf) summary.explanation = h.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
   else if (parsed.op === '@' && parsed.parts.some((p) => p.role === 'transform')) summary.explanation = h.s('パラメータ展開: bash は「bad substitution」のエラーにする（`@` の後ろの文字が変換の種類ではない）', 'Parameter expansion: bash reports "bad substitution" (the letter after `@` is not a transform)');
   if (parsed.op === ':') summary.explanation = h.s('パラメータ展開: ', 'Parameter expansion: ') + substringSummary(h, parsed);
+  // `t=${a[@]}`: where the word stays one string, the elements are joined into one.
+  const all = parsed.prefix ? undefined : parsed.subscript === '@' || parsed.subscript === '*' ? parsed.subscript : parsed.subscript === undefined && (parsed.name === '@' || parsed.name === '*') ? parsed.name : undefined;
+  const joined = all && joinedNote(h, n, all, parsed.subscript === undefined);
+  // (`"$@"` keeps the arguments apart only where words are split: not here.)
+  if (joined) summary.explanation = (parsed.subscript === undefined && !parsed.op ? h.s('全ての位置パラメータ', 'All positional parameters') : summary.explanation) + joined;
   const cases = exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: isAssoc(h, parsed.name, n), script: scriptValue(h, n, parsed) });
   // A `${…}` on one line is always on the line explained.
   if (cases) {
@@ -74,7 +79,7 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   const extglob = shoptAt(h, n).extglob;
   const plainExt = extglob === 'off' || extglob === 'default' ? extglob : undefined;
   summary.children = parsed.parts.flatMap((part) => {
-    const expl = expansionPart(h, parsed, part, part === mainOp, isAssoc(h, parsed.name, n), plainExt);
+    const expl = expansionPart(h, parsed, part, part === mainOp, isAssoc(h, parsed.name, n), plainExt, !!joined);
     if (!expl || !part.text) return [];
     const span: Span = { start: { line: row, character: col + part.start }, end: { line: row, character: col + part.end } };
     const nested = nestedIn(h, n, col + part.start, col + part.end);
@@ -150,7 +155,7 @@ function nestedIn(h: Explainer, n: SyntaxNode, from: number, to: number): Token[
   return found.map((c) => h.full(c));
 }
 
-function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, isMainOp: boolean, assoc: boolean, plainExt: 'off' | 'default' | undefined): [Kind, string] | undefined {
+function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, isMainOp: boolean, assoc: boolean, plainExt: 'off' | 'default' | undefined, joined: boolean): [Kind, string] | undefined {
   const t = part.text;
   const s = (ja: string, en: string): string => h.s(ja, en);
   switch (part.role) {
@@ -169,6 +174,7 @@ function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, is
     case 'subscript': {
       const idx = p.subscript!;
       if ((idx === '@' || idx === '*') && p.prefix) return ['variable', s(`\`[${idx}]\`: 配列のすべての要素を対象にする`, `\`[${idx}]\`: applies to every element of the array`)];
+      if (joined) return ['variable', s(`\`[${idx}]\`: すべての要素（ここでは1つの文字列につながる）`, `\`[${idx}]\`: every element (here joined into one string)`)];
       if (idx === '@') return ['variable', s('`[@]`: すべての要素（`"${a[@]}"` とクォートすると各要素が別々の単語になる）', '`[@]`: every element (quoted, `"${a[@]}"` keeps each element a separate word)')];
       if (idx === '*') return ['variable', s('`[*]`: すべての要素（`"${a[*]}"` とクォートすると、`IFS` の先頭の文字で区切った1つの文字列に連結される）', '`[*]`: every element (quoted, `"${a[*]}"` joins them into one string, separated by the first character of `IFS`)')];
       if (p.name === 'BASH_REMATCH' && /^\d+$/.test(idx)) {

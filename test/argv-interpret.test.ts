@@ -290,12 +290,12 @@ describe('argv interpreter: commands of the dictionary', () => {
   });
 
   it('set: `+` turns options off, and `-o` takes the next word even inside a cluster', () => {
-    assert.deepStrictEqual(roles('set -euo pipefail'), ['-euo: cluster -e exit immediately if a command fails | -u treat unset variables as an error | -o enable an option by name', 'pipefail: value 0 of -o VALUE']);
+    assert.deepStrictEqual(roles('set -euo pipefail'), ['-euo: cluster -e exit immediately if a command fails (but not in the condition of `if`, `while` or `until`, in a `&&` or `||` list except its last command, in a pipeline except its last command (unless `pipefail` is on), after `!`, or in a function called from those places) | -u treat unset variables as an error | -o enable an option by name', 'pipefail: value 0 of -o VALUE']);
     assert.deepStrictEqual(roles('set -oe pipefail').slice(1), ['pipefail: value 0 of -o VALUE']);
     // The flags as written; a value names its option's flag (`of`).
     assert.deepStrictEqual(roles('set +x +o xtrace'), ['+x: +x (off) print each command after expansion (debugging)', '+o: +o (off) enable an option by name', 'xtrace: value 0 of +o VALUE']);
     assert.deepStrictEqual(roles('set -o'), ['-o: -o (no value) enable an option by name']);
-    assert.deepStrictEqual(roles('set +ex')[0], '+ex: cluster +e (off) exit immediately if a command fails | +x (off) print each command after expansion (debugging)');
+    assert.deepStrictEqual(roles('set +ex')[0], '+ex: cluster +e (off) exit immediately if a command fails (but not in the condition of `if`, `while` or `until`, in a `&&` or `||` list except its last command, in a pipeline except its last command (unless `pipefail` is on), after `!`, or in a function called from those places) | +x (off) print each command after expansion (debugging)');
     assert.deepStrictEqual(roles('set -- a').map((l) => l.split(':')[0]), ['--', 'a']);
   });
 

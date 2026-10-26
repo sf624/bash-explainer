@@ -107,6 +107,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Fewer wrong notes that a condition is always true or false, or that code never runs: after a recursive call, after `enable -n exit`, and in scripts with `[ -v "$1" ]`, `${x@P}`, `compgen -W`, `fc -s` or another way to change variables unseen.
 - The panel and the web page work with the keyboard and a screen reader: the Meaning view folds with buttons, a problem opens with Enter, `F6` goes between the editor and the explanation, and the editor says how to leave it. Before, folding and the Problems list needed a mouse.
 - The web page's tab icon is legible in a dark browser theme.
+- Pitfalls are found in a command that another one runs: `sudo rm -rf $DIR/releases/$line` (and the same under `env`, `nice`, `nohup`, `xargs` or `command`) gets the warnings of `rm -rf $DIR/…`. An unquoted path whose value the script sets to one word (`TS=2024`) is a caveat, not a warning.
 
 ## 0.8.0
 

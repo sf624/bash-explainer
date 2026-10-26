@@ -304,9 +304,11 @@ export const MESSAGES = {
   // (`quoted`: the word with only its expansions in quotes, so a glob or a tilde in it still works: `"$DIR"/*`; none
   // when quotes would change it, as in `${x:-*.txt}`.)
   // (`destroys`: the command deletes or overwrites what the word names, `rm`, `mv`, `cp`: a wrong name cannot be undone.)
-  'unquoted-variable-as-path': pitfall<{ bare: string; quoted?: string; destroys?: boolean }>(['3.5.7', '3.5.8'], ({ bare, quoted, destroys }) => [
-    `\`${bare}\` をクォートしていないので、値に空白や \`*\` があると別々の引数に分かれたり、ファイル名に展開されたりする${destroys ? '。このコマンドは意図しないファイルを削除したり上書きしたりすることになる' : ''}${quoted ? `。\`${quoted}\` と書く` : ''}`,
-    `\`${bare}\` is not quoted, so a value with spaces or \`*\` is split into several arguments or expanded to file names${destroys ? ', and this command then deletes or overwrites files it should not' : ''}${quoted ? `. Write \`${quoted}\`` : ''}`], undefined, ({ destroys }) => (destroys ? 'warning' : 'info')),
+  // (`known`: the one word the model knows it gives here; then it does no harm as it is, and is a caveat.)
+  'unquoted-variable-as-path': pitfall<{ bare: string; quoted?: string; destroys?: boolean; known?: string }>(['3.5.7', '3.5.8'], ({ bare, quoted, destroys, known }) => [
+    `\`${bare}\` をクォートしていないので、値に空白や \`*\` があると別々の引数に分かれたり、ファイル名に展開されたりする${destroys ? '。このコマンドは意図しないファイルを削除したり上書きしたりすることになる' : ''}${known !== undefined ? `（ここでの値では1つの引数 \`${known}\` のままだが、値が変わると壊れる）` : ''}${quoted ? `。\`${quoted}\` と書く` : ''}`,
+    `\`${bare}\` is not quoted, so a value with spaces or \`*\` is split into several arguments or expanded to file names${destroys ? ', and this command then deletes or overwrites files it should not' : ''}${known !== undefined ? ` (with its value here it stays one argument, \`${known}\`, but another value breaks it)` : ''}${quoted ? `. Write \`${quoted}\`` : ''}`],
+  undefined, ({ destroys, known }) => (destroys && known === undefined ? 'warning' : 'info')),
   'for-over-ls-output': caveat<{ cmd: string }>(['3.5.7'], ({ cmd }) => [
     `\`$(${cmd} …)\` の結果は空白や改行で区切られるので、空白を含むファイル名が壊れます。${cmd === 'ls' ? '`for f in *.txt` のようにグロブを使います' : '`find … -print0 | while IFS= read -r -d \'\' f` や `find -exec` を使います'}`,
     `the output of \`$(${cmd} …)\` is split on spaces and newlines, so file names with spaces break. ${cmd === 'ls' ? 'Use a glob, as in `for f in *.txt`' : "Use `find … -print0 | while IFS= read -r -d '' f` or `find -exec`"}`]),

@@ -1,6 +1,9 @@
+import { interpret, type ArgvParse } from './argv/interpret';
+import { argWordFor } from './argv/words';
 import type { Shell } from './dialect';
 import { lookupCommand } from './dict/aliases';
 import { Lang } from './i18n';
+import { type ExecEnv, runsString, slotEnvs } from './semantics/env';
 import { resolveName } from './semantics/names';
 import type { StateModel } from './semantics/state';
 import { childrenOnRows, descendants, field, fields } from './syntax/tree';
@@ -93,6 +96,43 @@ export function pathCommand(name: string): string | undefined {
 
 export function args(n: SyntaxNode): SyntaxNode[] {
   return fields(n, 'argument');
+}
+
+/**
+ * A command that the simple command `n` runs: itself, or one that its words run through a command slot of its spec
+ * (`sudo rm …`, `env X=1 rm …`, `xargs rm …`, `nice nohup rm …`): the word of its name, its arguments, and where it
+ * runs (src/semantics/env.ts) when a slot runs it. Not a string a slot runs as a script (`bash -c '…'`): its words
+ * are not words of this line.
+ */
+export interface RunCommand { nameWord: SyntaxNode; name: string | undefined; args: SyntaxNode[]; env?: ExecEnv }
+
+/** The commands the simple command `n` runs (see `RunCommand`), itself first. */
+export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | undefined): RunCommand[] {
+  const nameWord = field(n, 'name');
+  if (!nameWord) return [];
+  const name = commandName(n);
+  const a = args(n);
+  const out: RunCommand[] = [{ nameWord, name, args: a }];
+  const spec = name === undefined ? undefined : lookupCommand(name);
+  // (A function or an alias of that name runs something else: its words have no spec.)
+  if (!spec || !a.length) return out;
+  const kind = resolveName(model, nameWord.text, nameWord, { shell, command: true }).kind;
+  if (kind === 'function' || kind === 'alias') return out;
+  const parse = interpret(spec, a.map(argWordFor(model.shell)), { name, lookup: lookupCommand });
+  let envs: Map<SyntaxNode, ExecEnv> | undefined;
+  const visit = (p: ArgvParse): void => {
+    for (const { word, role } of p.roles) {
+      if (role.role === 'subcommand') visit(role.parse);
+      if (role.role !== 'command' || !role.parse) continue;
+      if (role.name !== undefined && !runsString(role.slot)) {
+        envs ??= slotEnvs(model.env(n), parse, spec, a, lookupCommand);
+        out.push({ nameWord: a[word], name: pathCommand(role.name), args: a.slice(word + 1, role.parse.end), env: envs.get(a[word]) });
+      }
+      visit(role.parse);
+    }
+  };
+  visit(parse);
+  return out;
 }
 
 /** The codes of the style checks, as diagnostics show them (`# bash-explainer disable=<code>`). */
@@ -188,32 +228,9 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
           add('brace-close-no-separator', lastArg, `\`}\` の前に \`;\` か改行が必要です。このままでは \`}\` は \`${name}\` の引数で、\`{ }\` のグループが閉じていません: \`{ …; }\``,
             `\`}\` needs a \`;\` or a newline before it. As written, \`}\` is an argument of \`${name}\` and the \`{ }\` group is never closed: \`{ …; }\``);
         }
-        // `rm -rf $DIR/…`: an empty DIR removes from the root.
-        if (name === 'rm' && a.some((w) => /^-[a-zA-Z]*[rR]/.test(w.text) || w.text === '--recursive')) {
-          for (const w of a) {
-            const t = rootTarget(w);
-            if (!t) continue;
-            const { e, v, left } = t;
-            // (Nor a plain value the script surely set to some text: `DIR=/opt/app; rm -rf $DIR/*`.)
-            if (t.plain && neverEmpty(model, v, e)) continue;
-            const safe = t.plain && quoteExpansions(w, new Map([[e, `\${${v}:?}`]]));
-            if (safe) {
-              add('rm-empty-variable-root', w, `\`${v}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。\`${safe}\` と書くと、空のときは止まります`,
-                `if \`${v}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${safe}\` to stop when it is empty`);
-            } else {
-              // `${DIR%/}` has no form with `:?` (and is empty for DIR=/ too); `${x:-*.txt}` has no quoted form.
-              const what = t.plain ? v : e.text;
-              if (t.check) {
-                add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${t.check}\` と書くと、空のときは止まります`,
-                  `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${t.check}\` before it to stop when it is empty`);
-              } else {
-                // (A quote or backslash in the expansion: a check in quotes would not read it the same.)
-                add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。空でないことを前に確かめてください`,
-                  `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Check that it is not empty before it`);
-              }
-            }
-            break;
-          }
+        // `rm -rf $DIR/…`: an empty DIR removes from the root. (Also when another command runs it: `sudo rm -rf $DIR/…`.)
+        for (const run of runCommands(n, model, shell)) {
+          if (run.name === 'rm' && run.args.some((w) => /^-[a-zA-Z]*[rR]/.test(w.text) || w.text === '--recursive')) rmFromRoot(run.args);
         }
         // `read` without -r eats backslashes.
         // Only when it reads into a variable; `read` alone or `read -n 1` waits for a key. Only the builtin: not a
@@ -225,6 +242,34 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         }
         break;
       }
+    }
+  };
+
+  /** `rm -r` with these words: the first that removes from the root when a variable in it is empty. */
+  const rmFromRoot = (words: readonly SyntaxNode[]) => {
+    for (const w of words) {
+      const t = rootTarget(w);
+      if (!t) continue;
+      const { e, v, left } = t;
+      // (Nor a plain value the script surely set to some text: `DIR=/opt/app; rm -rf $DIR/*`.)
+      if (t.plain && neverEmpty(model, v, e)) continue;
+      const safe = t.plain && quoteExpansions(w, new Map([[e, `\${${v}:?}`]]));
+      if (safe) {
+        add('rm-empty-variable-root', w, `\`${v}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。\`${safe}\` と書くと、空のときは止まります`,
+          `if \`${v}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${safe}\` to stop when it is empty`);
+      } else {
+        // `${DIR%/}` has no form with `:?` (and is empty for DIR=/ too); `${x:-*.txt}` has no quoted form.
+        const what = t.plain ? v : e.text;
+        if (t.check) {
+          add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${t.check}\` と書くと、空のときは止まります`,
+            `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${t.check}\` before it to stop when it is empty`);
+        } else {
+          // (A quote or backslash in the expansion: a check in quotes would not read it the same.)
+          add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。空でないことを前に確かめてください`,
+            `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Check that it is not empty before it`);
+        }
+      }
+      break;
     }
   };
 

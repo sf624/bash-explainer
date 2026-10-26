@@ -1,5 +1,5 @@
 import { interpret } from './argv/interpret';
-import { type BashVersion, DEFAULT_BASH_VERSION, earlier, lacks, laterOption, laterShellOption, SHELL_OPTIONS_SINCE, SINCE, unclosedBrace } from './bashversion';
+import { BASH_VERSIONS, type BashVersion, DEFAULT_BASH_VERSION, earlier, lacks, laterOption, laterShellOption, SHELL_OPTIONS_SINCE, SINCE, unclosedBrace } from './bashversion';
 import { givenOptions, has, operands, values } from './argv/query';
 import { argWord } from './argv/words';
 import { builtins } from './dict/builtins';
@@ -395,21 +395,32 @@ export interface Issue {
 
 export interface Place { startPosition: Point; endPosition: Point }
 
+/**
+ * Japanese text joined as docs/japanese-style.md writes it: a space between code or a word in Latin letters and
+ * Japanese (`` `local` は ``, `代わりに \`.\` を使う`), none between Japanese (`代わりに一時ファイル`).
+ */
+function jaJoin(a: string, b: string): string {
+  const japanese = /[぀-ヿ一-鿿]/;
+  const latin = /[`\w)]/;
+  const gap = (latin.test(a.slice(-1)) && japanese.test(b.charAt(0))) || (japanese.test(a.slice(-1)) && latin.test(b.charAt(0)));
+  return a + (gap ? ' ' : '') + b;
+}
+
 function featureMessage(id: string, shell: Shell, lang: Lang): string | undefined {
   const s = pick(lang);
   const f = FEATURES[id];
   const label = s(f.ja, f.en);
-  const alt = f.altJa ? s(`代わりに ${f.altJa}。`, ` Instead, ${f.altEn}.`) : '';
+  const alt = f.altJa ? s(`${jaJoin('代わりに', f.altJa)}。`, ` Instead, ${f.altEn}.`) : '';
   if (shell === 'sh') {
     // Name the common /bin/sh implementations it breaks on.
     const fails = (['dash', 'ash'] as RealShell[]).filter((sh) => !works(f, sh)).map((sh) => SHELL_NAMES[sh]);
     return s(
-      `${label}は POSIX sh にない書き方です${fails.length ? `（${fails.join('・')} では動きません）` : '（dash・busybox ash では動きますが、POSIX にはありません）'}。${alt}`,
+      `${jaJoin(label, 'は POSIX sh にない書き方です')}${fails.length ? `（${fails.join('・')} では動きません）` : '（dash・busybox ash では動きますが、POSIX にはありません）'}。${alt}`,
       `${label} is not POSIX sh${fails.length ? ` (it fails in ${fails.join(' and ')})` : ' (dash and busybox ash accept it, but POSIX does not have it)'}.${alt}`,
     );
   }
   if (shell === 'bash' || works(f, shell)) return undefined;
-  return s(`${label}は ${SHELL_NAMES[shell]} では使えません。${alt}`, `${label} is not available in ${SHELL_NAMES[shell]}.${alt}`);
+  return s(`${jaJoin(label, 'は')} ${SHELL_NAMES[shell]} では使えません。${alt}`, `${label} is not available in ${SHELL_NAMES[shell]}.${alt}`);
 }
 
 /** What bash `version` does with feature `id`, which came in a later release (SINCE). */
@@ -417,8 +428,18 @@ function versionMessage(id: string, version: BashVersion, lang: Lang): string {
   const s = pick(lang);
   const f = FEATURES[id];
   const { version: since, before } = SINCE[id];
-  const alt = s(`代わりに ${f.altJa}。`, ` Instead, ${f.altEn}.`);
-  return s(`${f.ja}は bash ${since} からの書き方です。bash ${version} では${before[0]}。${alt}`, `${f.en} is bash ${since} syntax: bash ${version} ${before[1]}.${alt}`);
+  const alt = s(`${jaJoin('代わりに', f.altJa!)}。`, ` Instead, ${f.altEn}.`);
+  return s(`${jaJoin(f.ja, 'は')} bash ${since} からの書き方です。bash ${version} では${before[0]}。${alt}`, `${f.en} is bash ${since} syntax: bash ${version} ${before[1]}.${alt}`);
+}
+
+/** Every text the dialect checks can say of a construct in `lang`, for each shell and bash version (checked by test/ja-style.test.ts). */
+export function dialectTexts(lang: Lang): string[] {
+  const shells = Object.keys(SHELL_NAMES) as Shell[];
+  return [
+    ...Object.keys(FEATURES).flatMap((id) => shells.map((sh) => featureMessage(id, sh, lang))),
+    ...Object.keys(BEHAVIOURS).flatMap((id) => shells.map((sh) => behaviourMessage(id, sh, lang))),
+    ...Object.keys(SINCE).flatMap((id) => BASH_VERSIONS.filter((v) => earlier(v, SINCE[id].version)).map((v) => versionMessage(id, v, lang))),
+  ].filter((t): t is string => t !== undefined);
 }
 
 function behaviourMessage(id: string, shell: Shell, lang: Lang): string | undefined {

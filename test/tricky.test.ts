@@ -932,12 +932,13 @@ describe('tricky lines (round 4)', () => {
   it('explains +f as undoing -f, and other + options as turning them off', () => {
     assert.match(findAt('set +f', 0, '+f').explanation, /^Undo `-f`: enable globbing \(wildcard expansion\) again$/);
     assert.match(findAt('set +f', 0, '+f', 'ja').explanation, /^`-f` を解除: グロブ（ワイルドカード展開）を再び有効にする$/);
-    assert.match(findAt('set +e', 0, '+e').explanation, /^Undo `-e`: turn it off again \(`-e` is "exit immediately if a command fails"\)$/);
-    assert.match(findAt('set +e', 0, '+e', 'ja').explanation, /^`-e` を解除: 元に戻す（`-e` は「コマンドが失敗したら即座にスクリプトを終了する」）$/);
+    // (`set +e` and `set +o errexit` say what turning it off does, not the exceptions of `-e`.)
+    assert.match(findAt('set +e', 0, '+e').explanation, /^Undo `-e`: go on when a command fails \(the default\)$/);
+    assert.match(findAt('set +e', 0, '+e', 'ja').explanation, /^`-e` を解除: コマンドが失敗しても終了しないようにする（既定）$/);
     assert.match(findAt('set +o noglob', 0, '+o').explanation, /^Undo `-o`: disable an option by name$/);
     assert.match(findAt('set +o noglob', 0, 'noglob').explanation, /^noglob: enable globbing \(wildcard expansion\) again$/);
-    assert.match(findAt('set +o errexit', 0, 'errexit').explanation, /^errexit: turn it off again \(exit immediately when a command fails/);
-    assert.match(findAt('set +o errexit', 0, 'errexit', 'ja').explanation, /^errexit: 元に戻す（コマンドが失敗したら即座にスクリプトを終了/);
+    assert.match(findAt('set +o errexit', 0, 'errexit').explanation, /^errexit: go on when a command fails \(the default\)$/);
+    assert.match(findAt('set +o errexit', 0, 'errexit', 'ja').explanation, /^errexit: コマンドが失敗しても終了しないようにする（既定）$/);
     assert.match(findAt('set +fe', 0, '-f').explanation, /^Undo `-f`/);
     assert.match(findAt('set -o noglob', 0, 'noglob').explanation, /^noglob: disable globbing/);
     assert.match(findAt('set -f', 0, '-f').explanation, /^disable globbing/);

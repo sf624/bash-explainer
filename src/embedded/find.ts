@@ -10,6 +10,32 @@ export type FindNode =
   | { type: 'or'; children: FindNode[]; ops: number[] }
   | { type: 'group'; open: number; close: number; child: FindNode };
 
+/** The special bits of a mode (chmod(1), inode(7)): set-user-ID, set-group-ID and sticky; the names, in Japanese and English. */
+const SPECIAL_BITS: [number, string, string][] = [
+  [0o4000, 'SUID: set-user-ID', 'SUID, set-user-ID'],
+  [0o2000, 'SGID: set-group-ID', 'SGID, set-group-ID'],
+  [0o1000, 'スティッキービット', 'the sticky bit'],
+];
+
+/**
+ * What the bits of an octal mode are (`4000`: SUID; `644`: the owner's read and write, the group's and the others'
+ * read), in `lang`; undefined for a symbolic mode (`u+s`).
+ */
+export function permBits(mode: string, lang: Lang): string | undefined {
+  if (!/^[0-7]{1,4}$/.test(mode)) return undefined;
+  const s = pick(lang);
+  const m = parseInt(mode, 8);
+  const out = SPECIAL_BITS.filter(([bit]) => m & bit).map(([, ja, en]) => s(ja, en));
+  const who: [string, string][] = [['所有者', 'owner'], ['グループ', 'group'], ['その他', 'others']];
+  const what: [string, string][] = [['読み', 'read'], ['書き', 'write'], ['実行', 'execute']];
+  who.forEach(([wj, we], i) => {
+    const three = (m >> (6 - 3 * i)) & 7;
+    const has = what.filter((_, k) => three & (4 >> k));
+    if (has.length) out.push(s(`${wj}の${has.map(([j]) => j).join('・')}`, `${we} ${has.map(([, e]) => e).join(', ')}`));
+  });
+  return out.length ? out.join(s('、', '; ')) : undefined;
+}
+
 /** How many words a primary takes: a count, or everything up to `;`/`+`. */
 export type Arity = (primary: string) => number | 'until';
 
@@ -156,9 +182,14 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): string {
     case '-user': return s(`所有者が ${a}`, `owned by ${a}`);
     case '-group': return s(`グループが ${a}`, `group ${a}`);
     case '-perm': {
-      if (a.startsWith('-')) return s(`権限に ${a.slice(1)} のビットがすべて立っている（他のビットは問わない）`, `permissions include all the bits of ${a.slice(1)} (other bits do not matter)`);
-      if (a.startsWith('/') || a.startsWith('+')) return s(`権限に ${a.slice(1)} のビットが1つでも立っている`, `permissions have at least one of the bits of ${a.slice(1)}`);
-      return s(`権限がちょうど ${a}`, `permissions exactly ${a}`);
+      // (`+4000` meant "any of the bits" before findutils 4.5.12; GNU find now rejects it.)
+      if (a.startsWith('+')) return s(`権限が ${a}（GNU find はこの書き方を受け付けず、\`invalid mode\` のエラーになる。どれか1つでも立っているものは \`/${a.slice(1)}\`）`, `permissions ${a} (GNU find rejects this form with "invalid mode"; any of the bits is \`/${a.slice(1)}\`)`);
+      const mode = /^[-/]/.test(a) ? a.slice(1) : a;
+      const bits = permBits(mode, lang);
+      const named = bits ? s(`（${bits}）`, ` (${bits})`) : '';
+      if (a.startsWith('-')) return s(`権限に ${mode} のビット${named}がすべて立っている（他のビットは問わない）`, `permissions include all the bits of ${mode}${named}, whatever the other bits are`);
+      if (a.startsWith('/')) return s(`権限に ${mode} のビット${named}が1つでも立っている`, `permissions have at least one of the bits of ${mode}${named}`);
+      return s(`権限がちょうど ${a}${named}`, `permissions exactly ${a}${named}`);
     }
     case '-links': {
       const k = a.replace(/^[+-]/, '');

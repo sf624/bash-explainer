@@ -1,6 +1,9 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Analyzer, type Token } from '../src/analyzer';
+import { dialectTexts, type Shell } from '../src/dialect';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 // Keeps the Japanese wording consistent, as docs/japanese-style.md describes.
 const root = path.join(__dirname, '..');
@@ -44,4 +47,49 @@ describe('Japanese wording', () => {
       assert.deepStrictEqual(hits, []);
     });
   }
+
+  it('puts a space between code and Japanese in the literal strings (`local` は)', () => {
+    const hits = texts.flatMap((t) => glued(t.text.replace(/\\`/g, '`')).map((g) => `${t.where}: ${g}`));
+    assert.deepStrictEqual(hits, []);
+  });
+
+  it('puts a space between code and Japanese in the dialect notes, built from parts', () => {
+    const notes = dialectTexts('ja');
+    assert.ok(notes.length > 100, String(notes.length));
+    assert.deepStrictEqual(notes.flatMap((t) => glued(t).map((g) => `${g}: ${t}`)), []);
+    // (No space between Japanese words either: `代わりに一時ファイル`.)
+    assert.deepStrictEqual(notes.filter((t) => /[ぁ-ゖァ-ヺー一-鿿] [ぁ-ゖァ-ヺー一-鿿]/.test(t)), []);
+    assert.ok(notes.includes('`local` は POSIX sh にない書き方です（dash・busybox ash では動きますが、POSIX にはありません）。'));
+  });
+
+  it('puts a space between code and Japanese in the explanations of the sample script, in every shell', function () {
+    this.timeout(60_000);
+    const sample = fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8').replace(/^#!.*\n/, '');
+    const parser = createUnbashParser();
+    const hits = new Set<string>();
+    for (const shell of ['bash', 'sh', 'dash', 'zsh'] as Shell[]) {
+      const tree = parser.parse(sample);
+      sample.split('\n').forEach((_, i) => {
+        const e = new Analyzer('ja').explainLine(tree, i, shell);
+        const all: string[] = [...e.notes, e.summary];
+        const walk = (t: Token) => (all.push(t.explanation), t.children.forEach(walk));
+        e.items.forEach(walk);
+        for (const t of all) for (const g of glued(t)) hits.add(`${shell}:${i + 1}: ${g}`);
+      });
+    }
+    assert.deepStrictEqual([...hits], []);
+  });
 });
+
+/** Where a code span (`` `…` ``) touches a kana or a kanji with no space: none when the backticks do not pair up. */
+function glued(text: string): string[] {
+  const letter = /[ぁ-ゖァ-ヺー一-鿿]/;
+  const parts = text.split('`');
+  if (parts.length % 2 === 0) return [];
+  const out: string[] = [];
+  for (let i = 1; i < parts.length; i += 2) {
+    if (letter.test(parts[i - 1].slice(-1))) out.push(`${parts[i - 1].slice(-3)}\`${parts[i]}\``);
+    if (letter.test(parts[i + 1][0] ?? '')) out.push(`\`${parts[i]}\`${parts[i + 1].slice(0, 3)}`);
+  }
+  return out;
+}
