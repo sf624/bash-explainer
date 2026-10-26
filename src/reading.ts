@@ -107,6 +107,37 @@ const TEXTS = {
   again: { ja: 'もう一度読んで実行する文字列', en: 'Text to read and run again' },
   /** The text of the analyzer for a word it says nothing more of (`Analyzer.word`). */
   word: { ja: (w: string) => `文字列 \`${w}\``, en: (w: string) => `Word \`${w}\`` },
+  /** The delimiters of `[[ ]]` (3.2.5.2), which no token explains. */
+  testOpen: { ja: '条件式の始まり', en: 'Starts the conditional expression' },
+  testClose: { ja: '条件式の終わり', en: 'Ends the conditional expression' },
+  /**
+   * A word of a conditional expression in `[[ ]]` (6.4), by the operator it is an operand of: the file or string a
+   * unary operator tests; the sides of a comparison (`==` matches the right side as a glob pattern, and a quoted part
+   * of it as written, 3.2.5.2; `-eq` evaluates both sides as arithmetic expressions, 6.4).
+   */
+  operand: {
+    file: { ja: (op: string) => `\`${op}\` で調べるファイル`, en: (op: string) => `The file \`${op}\` tests` },
+    string: { ja: (op: string) => `\`${op}\` で調べる文字列`, en: (op: string) => `The string \`${op}\` tests` },
+    variable: { ja: (op: string) => `\`${op}\` で調べる変数名`, en: (op: string) => `The variable name \`${op}\` tests` },
+    option: { ja: (op: string) => `\`${op}\` で調べるシェルオプション名`, en: (op: string) => `The shell option name \`${op}\` tests` },
+    fd: { ja: (op: string) => `\`${op}\` で調べるファイルディスクリプタ`, en: (op: string) => `The file descriptor \`${op}\` tests` },
+    compared: { ja: (op: string) => `\`${op}\` で比べる左辺の文字列`, en: (op: string) => `The string on the left of \`${op}\`` },
+    pattern: {
+      ja: (op: string) => `\`${op}\` の右辺のパターン: 左辺がこれにグロブパターンとして一致するかを調べる（クォートした部分は書いたとおりに一致）`,
+      en: (op: string) => `The pattern on the right of \`${op}\`: the left side is matched against it as a glob pattern (a quoted part matches as written)`,
+    },
+    plain: { ja: (op: string) => `\`${op}\` で比べる文字列`, en: (op: string) => `A string \`${op}\` compares` },
+    number: { ja: (op: string) => `\`${op}\` で比べる値: 算術式として評価する`, en: (op: string) => `A value \`${op}\` compares: evaluated as an arithmetic expression` },
+    files: { ja: (op: string) => `\`${op}\` で比べるファイル`, en: (op: string) => `A file \`${op}\` compares` },
+  },
+};
+
+/** The kind of operand of each operator of a conditional expression (6.4), for `TEXTS.operand`. */
+const OPERANDS: Record<string, keyof typeof TEXTS.operand> = {
+  ...Object.fromEntries(['-a', '-b', '-c', '-d', '-e', '-f', '-g', '-h', '-k', '-p', '-r', '-s', '-u', '-w', '-x', '-G', '-L', '-N', '-O', '-S'].map((o) => [o, 'file' as const])),
+  '-z': 'string', '-n': 'string', '-v': 'variable', '-R': 'variable', '-o': 'option', '-t': 'fd',
+  '<': 'plain', '>': 'plain', '-eq': 'number', '-ne': 'number', '-lt': 'number', '-le': 'number', '-gt': 'number', '-ge': 'number',
+  '-nt': 'files', '-ot': 'files', '-ef': 'files',
 };
 
 /** The words of an alias's text, when it is plain words a command name can start (no quotes, no operators, no assignment). */
@@ -234,6 +265,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       // for a newline.)
       const reserved = /^[a-z]|^[{}!]$|^\[\[$|^\]\]$/.test(c.type) && !isExpression(c.parent!) && !PARTS.has(c.parent!.type);
       const n = shellNode(c, layer, reserved ? 'keyword' : 'operator', [], new Set(['keyword', 'operator']));
+      if (!n.text && (c.type === '[[' || c.type === ']]')) n.text = TEXTS[c.type === '[[' ? 'testOpen' : 'testClose'][cx.lang];
       // An operator of a conditional expression in `[[ ]]` (6.4): what it tests. (Its sections are the expression's,
       // src/refs.ts: `&&` there is not a list's.)
       if (isExpression(c.parent!) && c.field === 'operator' && expressionHost(c) === 'extended_test' && !n.text) {
@@ -268,8 +300,25 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       }
     }
     if (REDIRECTS.has(c.type)) return [redirect(c, layer)];
-    if (WORDS.has(c.type)) return [word(c, layer, 'word')];
+    if (WORDS.has(c.type)) {
+      const w = word(c, layer, 'word');
+      const op = !w.text && isExpression(c.parent!) && expressionHost(c) === 'extended_test' ? operandText(c) : undefined;
+      return [op ? { ...w, text: op } : w];
+    }
     return [construct(c, layer, constructKind(c.type))];
+  };
+
+  /** What a word of a conditional expression in `[[ ]]` is to its operator: the file `-f` tests, the pattern of `==`. */
+  const operandText = (c: SyntaxNode): string | undefined => {
+    const p = c.parent!;
+    const opNode = p.children.find((x) => x.field === 'operator' || x.type === 'test_operator');
+    const op = opNode?.text;
+    if (!op) return undefined;
+    if (p.type === 'binary_expression' && ['=', '==', '!='].includes(op)) return TEXTS.operand[c.field === 'right' ? 'pattern' : 'compared'][cx.lang](op);
+    const kind = OPERANDS[op];
+    // (`=~`: the regex on the right is a language of its own; the left side is the string matched.)
+    if (op === '=~') return c.field === 'left' ? TEXTS.operand.compared[cx.lang](op) : undefined;
+    return kind && TEXTS.operand[kind][cx.lang](op);
   };
 
   /** What the operator of a conditional expression tests (`-f`: is an existing regular file; `==` in `[[ ]]`: a glob match). */
