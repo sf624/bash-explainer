@@ -210,8 +210,8 @@ const SHELL_OPERANDS: OperandAlt[] = [
       shellArgs('コマンド文字列の位置パラメータ `$N`', 'Positional parameter `$N` of the command string'),
     ],
   },
-  { when: { option: ['-s'] }, pattern: [shellArgs('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)')] },
-  { pattern: [operand('SCRIPT', '実行するスクリプト', 'Script to run', { repeat: '?', type: 'file' }), shellArgs('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)')] },
+  { when: { option: ['-s'] }, pattern: [shellArgs('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)')], stdin: 'script' },
+  { pattern: [operand('SCRIPT', '実行するスクリプト', 'Script to run', { repeat: '?', type: 'file', io: 'run' }), shellArgs('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)')], stdin: 'script' },
 ];
 
 /** `head -5`, `tail -5`: the old way to write `-n 5`. */
@@ -689,7 +689,7 @@ export const core: Record<string, CommandSpec> = {
     ['-S|--show-error', '`-s` と併用時もエラーは表示する', 'show errors even with `-s`'],
     ['-f|--fail', 'HTTP エラー(4xx/5xx)時に失敗の終了ステータスを返す', 'fail with non-zero exit on HTTP errors'],
     ['-L|--location', 'リダイレクトをたどる', 'follow redirects'],
-    ['-o|--output', 'レスポンスをファイルに保存', 'write output to a file', 'arg'],
+    ['-o|--output', 'レスポンスをファイルに保存', 'write output to a file', 'arg io:write'],
     ['-O|--remote-name', 'URL のファイル名で保存', 'save with the remote file name'],
     ['-X|--request', 'HTTP メソッドを指定（GET, POST など）', 'HTTP method (GET, POST…)', 'arg'],
     ['-H|--header', 'リクエストヘッダーを追加', 'add a request header', 'arg'],
@@ -700,7 +700,7 @@ export const core: Record<string, CommandSpec> = {
     ['-k|--insecure', 'TLS 証明書の検証をしない（注意）', 'skip TLS verification (careful!)'],
     ['-v|--verbose', '通信の詳細を表示', 'verbose output'],
     ['-w|--write-out', '完了後に表示する情報の書式', 'output format after completion', 'arg'],
-  ], { positional: [pos('アクセスする URL', 'URL')] }),
+  ], { positional: [pos('アクセスする URL', 'URL')], downloads: { to: 'stdout', elsewhere: ['-O'] } }),
   wget: cmd('URL からファイルをダウンロードする', 'Download files from URLs', [
     ['-P|--directory-prefix', '保存先のディレクトリ', 'directory to save into', 'arg'],
     ['-r|--recursive', 'リンクをたどって再帰的に取得する', 'download recursively'],
@@ -741,12 +741,12 @@ export const core: Record<string, CommandSpec> = {
     ['--save-cookies', 'クッキーを保存するファイル', 'file to save cookies to', 'arg'],
     ['--load-cookies', 'クッキーを読むファイル', 'file to load cookies from', 'arg'],
     ['--progress', '進行状況の表示形式', 'progress indicator style', 'arg'],
-    ['-O', '保存するファイル名（`-` で標準出力）', 'output file (`-` = stdout)', 'arg'],
+    ['-O|--output-document', '保存するファイル名（`-` で標準出力）', 'output file (`-` = stdout)', 'arg io:write'],
     ['-q|--quiet', '何も表示しない', 'quiet'],
     ['-c|--continue', '途中まで落としたファイルを再開', 'resume a partial download'],
     ['--spider', 'ダウンロードせず、ファイルがあるかだけ確かめる', 'only check that the file exists, do not download'],
     ['--version', '版を表示する', 'print the version'],
-  ], { positional: [pos('ダウンロードする URL', 'URL to download')] }),
+  ], { positional: [pos('ダウンロードする URL', 'URL to download')], downloads: { to: 'file', elsewhere: ['--spider'] } }),
   tar: cmd('tar アーカイブを作成・展開する', 'Create or extract tar archives', [
     { ...optionOf(['-c|--create', 'アーカイブを作る', 'create an archive']), selects: 'create' },
     { ...optionOf(['-x|--extract|--get', 'アーカイブを展開する', 'extract an archive']), selects: 'extract' },

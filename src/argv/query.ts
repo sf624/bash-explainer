@@ -104,3 +104,41 @@ export function actsOnNames(spec: CommandSpec, act?: VariableAct): boolean {
 
 /** Whether a command's operands declare names (`OperandSpec.acts`): the declaration builtins (`declare`, `local`, `export`…). */
 export const declaresNames = (spec: CommandSpec): boolean => actsOnNames(spec, 'declares');
+
+/**
+ * Whether the command reads the script it runs from its standard input, under the alternative its operands fit
+ * (`OperandAlt.stdin`): `bash`, `sh -s -- a`, `bash -` (`-` names the standard input); not `bash file`, `bash -c '…'`,
+ * nor a script named by a word whose value is not known (`bash "$f"`). `words`: the values of the words, when known.
+ */
+export function readsScriptFromStdin(spec: CommandSpec, parse: ArgvParse, words: readonly (string | undefined)[]): boolean {
+  if (parse.alternative === undefined || spec.operands![parse.alternative].stdin !== 'script') return false;
+  return !operands(parse).some(({ word, role }) => role.spec?.io === 'run' && words[word] !== '-');
+}
+
+/**
+ * Where the command writes what it downloads (`CommandSpec.downloads`): its standard output, or a file; undefined when
+ * it downloads nothing. The last value of an option with `io: 'write'` decides (`curl -o f`, `wget -qO-`); a value not
+ * known (`-o "$out"`) is taken for a file. `words`: the values of the words, when known.
+ */
+export function downloadsTo(spec: CommandSpec, parse: ArgvParse, words: readonly (string | undefined)[]): 'stdout' | 'file' | undefined {
+  const d = spec.downloads;
+  if (!d) return undefined;
+  if (has(parse, ...d.elsewhere)) return 'file';
+  let to = d.to;
+  for (const { word, at, role } of givenValues(parse)) {
+    if (role.spec?.io === 'write') to = words[word]?.slice(at ?? 0) === '-' ? 'stdout' : 'file';
+  }
+  return to;
+}
+
+/** Every value given to an option in the parse, in order: in the option's word (`-ofile`) or in the words after it. */
+function givenValues(parse: ArgvParse): GivenValue[] {
+  const out: GivenValue[] = [];
+  for (const { word, role } of parse.roles) {
+    if (role.role === 'value') out.push({ word, role });
+    for (const r of role.role === 'cluster' ? role.letters : [role]) {
+      if ((r.role === 'option' || r.role === 'unknown-option') && r.value) out.push({ word, at: r.value.attached, role: r.value });
+    }
+  }
+  return out;
+}

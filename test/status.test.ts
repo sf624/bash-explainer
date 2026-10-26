@@ -343,6 +343,31 @@ describe('the notes on status and errexit', () => {
     assert.ok(!notes('set -e\n[ -f x ] && echo found', 1).some((n) => /last command of/.test(n)));
   });
 
+  it('points out a script run as a program that ends with `test && cmd`', () => {
+    const last = (src: string, lang: 'en' | 'ja' = 'en') => notes(src, src.split('\n').length - 1, lang).filter((n) => /last command of the script|スクリプトの最後のコマンド/.test(n));
+    assert.deepStrictEqual(last('#!/bin/bash\necho start\n[ -f x ] && echo found'), ['ⓘ Caveat: this is the last command of the script, so when `[ -f x ]` fails, the script ends with its non-zero status, which its caller (CI, `make`, `./script && next`) sees as a failure. Write `if …; then …; fi`, or end the script with `exit 0`']);
+    assert.deepStrictEqual(last('#!/bin/bash\n[ -f x ] && echo found', 'ja'), ['ⓘ 注意: これはスクリプトの最後のコマンドなので、`[ -f x ]` が失敗すると、スクリプトはその終了ステータス（0 以外）で終わり、呼び出し元（CI や `make`、`./script && next`）には失敗に見えます。`if …; then …; fi` と書くか、最後に `exit 0` を置きます']);
+    for (const src of ['#!/bin/sh\nset -e\n[[ -n $v ]] && echo v', '#!/bin/bash\n{ echo a; (( n )) && echo n; }', '#!/bin/bash\ngrep -q x f && echo x', '#!/bin/bash\n[ -f x ] && [ -r x ] && cat x']) {
+      assert.strictEqual(last(src).length, 1, src);
+    }
+    // Not a file sourced or typed in (no shebang), `||`, a command after it, a command whose failure is an error, nor in a function.
+    for (const src of ['echo start\n[ -f x ] && echo found', '#!/bin/bash\n[ -f x ] || echo none', '#!/bin/bash\n[ -f x ] && echo found\nexit 0', '#!/bin/bash\n[ -f x ] && echo found\necho done',
+      '#!/bin/bash\nmkdir d && cd d', '#!/bin/bash\nf() { [ -f x ] && echo found; }', '#!/bin/bash\n[ -f x ] && a || b', '#!/bin/bash\nx=$([ -f x ] && echo found)', '#!/bin/bash\n( [ -f x ] && echo found ) &', '#!/bin/bash\n[ -f x ] && echo found &']) {
+      assert.deepStrictEqual(last(src), [], src);
+    }
+  });
+  it('a script that ends with `test && cmd` exits with the status of the test, and the rewrites with 0 (bash)', () => {
+    for (const program of [undefined, ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])]) {
+      // (Run as a program would run it: the file is the script.)
+      const run = (body: string) => runBash(`printf '%s\\n' '#!/bin/bash' ${body.split('\n').map((l) => `'${l}'`).join(' ')} > s; ${program ?? 'bash'} s`, { program, files: [] });
+      assert.deepStrictEqual(run('echo start\n[ -f nofile ] && echo found'), { stdout: 'start\n', stderr: '', status: 1 });
+      assert.strictEqual(run('echo start\nif [ -f nofile ]; then echo found; fi').status, 0);
+      assert.strictEqual(run('echo start\n[ -f nofile ] && echo found\nexit 0').status, 0);
+      // (In a function under `set -e`: the call stops the script, as the note of the function says.)
+      assert.deepStrictEqual(run('f() { [ -f nofile ] && :; }\nset -e\nf\necho after'), { stdout: '', stderr: '', status: 1 });
+    }
+  });
+
   it('says where set -e has no effect', () => {
     // status.json: `set +e; f() { set -e; false; @in@; }; if f; then …` runs in, then stops at the next false.
     const fn = 'f() {\n  set -e\n  false\n}\nif f; then :; fi';

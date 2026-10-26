@@ -1,12 +1,13 @@
 import type { Lang } from './i18n';
 import { quoteExpansions } from './fixes';
-import { type Fact, fact } from './messages';
-import type { Shell } from './dialect';
+import { type Fact, fact, type Params } from './messages';
+import { featureWorks, type Shell } from './dialect';
+import { parseExpansion } from './expansion';
 import { args, commandName, pathCommand, runCommands } from './pitfalls';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
 import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
-import { partMeaning, wordFields } from './semantics/words';
+import { partMeaning, wordFields, wordOf } from './semantics/words';
 import { staticWordValue } from './staticword';
 import { childrenOnRows, field, isShebang, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
@@ -51,6 +52,34 @@ function alwaysNumber(n: SyntaxNode): boolean {
   return /^\$[?#$!]$/.test(n.text) || /^\$\{#/.test(n.text);
 }
 
+/**
+ * `a=$@`, `x=${arr[@]}`, `local x="$@"`: the whole value of an assignment is every argument or element, which bash
+ * joins into one string there (src/semantics/words.ts: no word splitting in `assignment-value`), with what to write
+ * instead. Not a count or the keys (`${#a[@]}`, `${!a[@]}`), a slice (`${@: -1}`, often one element), an assignment
+ * that is a prefix of a command (`x=$@ cmd`) or an argument of `export` (the environment holds strings), one to an
+ * element (`a[0]=$@`), nor in a shell without arrays.
+ */
+function joinedArray(n: SyntaxNode, shell: Shell | undefined): Params<'array-joined-in-assignment'> | undefined {
+  if (!featureWorks('array', shell)) return undefined;
+  const p = n.type === 'expansion' ? parseExpansion(n.text) : undefined;
+  const all = n.type === 'simple_expansion' ? n.text === '$@' : !!p && !p.prefix && p.op !== ':' && (p.subscript === undefined ? p.name === '@' : p.subscript === '@');
+  const word = all ? wordOf(n) : undefined;
+  if (word?.context !== 'assignment-value') return undefined;
+  // (An assignment's value is one word.)
+  const value = word.nodes[0];
+  if (value !== n && !(value.type === 'string' && value.namedChildren.length === 1 && value.text === `"${n.text}"`)) return undefined;
+  // (The assignment, and the command it is in: a statement of assignments, `local`…, or a prefix of a command.)
+  const a = value.parent!;
+  const cmd = a.parent!;
+  const name = field(a, 'name')!;
+  // (`export x=$@`: what goes into the environment is a string; an array is not exported.)
+  if (name.type !== 'variable_name' || (field(cmd, 'name') && (a.field !== 'argument' || commandName(cmd) === 'export'))) return undefined;
+  // (`=` or `+=`.)
+  const op = a.text.slice(name.endIndex - a.startIndex, value.startIndex - a.startIndex);
+  const starred = n.text === '$@' ? '$*' : n.text.replace(/^\$\{@/, '${*').replace('[@]', '[*]');
+  return { v: name.text, op, word: value.text, args: !p?.subscript, list: `("${n.text}")`, string: `"${starred}"` };
+}
+
 /** The facts (pitfalls) about words whose node starts on `line`. */
 export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: StateModel, shell?: Shell): Fact[] {
   // (Each text once.)
@@ -93,6 +122,8 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
             v: u.shown, name: u.name, exits: u.exits, shell: said, environment: u.environment, ...(errexit ? { errexit } : {}), ...(plain ? { fix: `\${${u.shown}:-}` } : {}),
           }), n);
         }
+        const joined = joinedArray(n, shell);
+        if (joined) add(fact(lang, 'array-joined-in-assignment', joined), n);
         break;
       }
       case 'command': {

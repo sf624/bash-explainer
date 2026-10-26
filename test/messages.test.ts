@@ -33,7 +33,7 @@ describe('the message catalog', () => {
   const CAVEATS = ['declaration-masks-status', 'pipefail-missing', 'function-last-test-returns-status', 'posix-special-function-name-maybe',
     'extglob-maybe-on', 'extglob-not-found', 'extglob-maybe-on-trap', 'globstar-maybe-on',
     'globstar-not-found', 'ssh-local-expansion', 'function-not-imported-sh', 'unmatched-glob-runs-once', 'for-over-ls-output', 'for-over-unquoted-args',
-    'unquoted-variable-in-test', 'dockerfile-pipefail-missing'];
+    'unquoted-variable-in-test', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment'];
   const FAILURES = ['keyword-needs-separator', 'bracket-missing-close', 'bracket-close-glued', 'test-malformed', 'unset-readonly', 'unset-function-and-variable', 'bats-tags-invalid'];
   it('gives each entry the level of the design: warning, info or note', () => {
     for (const [id, e] of Object.entries(MESSAGES) as [FactId, { kind: string; level?: unknown }][]) {

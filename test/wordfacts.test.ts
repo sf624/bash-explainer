@@ -25,7 +25,7 @@ function facts(src: string, line = 0, lang: 'en' | 'ja' = 'en', shell?: Shell) {
 
 /** The word facts that are caveats (\`info\`): the others found here are warnings. */
 const LEVELS: Record<string, 'info'> = {
-  'for-over-ls-output': 'info', 'for-over-unquoted-args': 'info', 'unquoted-variable-in-test': 'info',
+  'for-over-ls-output': 'info', 'for-over-unquoted-args': 'info', 'unquoted-variable-in-test': 'info', 'array-joined-in-assignment': 'info',
 };
 
 describe('word facts', () => {
@@ -48,6 +48,7 @@ describe('word facts', () => {
     ["sudo echo 1 > '/proc'/sys/vm/drop_caches", 'redirect-by-your-shell', /opened by your own shell/],
     ['sudo echo 1 > ""/etc/x', 'redirect-by-your-shell', /opened by your own shell/],
     ['sudo echo 1 > "/etc/$f"', 'redirect-by-your-shell', /opened by your own shell/],
+    ['args=$@', 'array-joined-in-assignment', /`args=\$@` joins the arguments into one string/],
   ];
   for (const [src, id, expected] of cases) {
     it(`points out ${src}`, () => {
@@ -394,4 +395,48 @@ describe('word facts: an unset variable under set -u', () => {
     const tree = parser.parse('set -u\necho x');
     assert.strictEqual(unboundRead(descendants(tree.root, ['word']).pop()!, shellState(tree)), undefined);
   });
+});
+
+describe('word facts: an array joined in an assignment', () => {
+  const joined = (src: string, lang: 'en' | 'ja' = 'en', shell?: Shell) => facts(src, src.split('\n').length - 1, lang, shell).filter((f) => f.id === 'array-joined-in-assignment').map((f) => f.text);
+  it('says what bash makes of it and what to write, in both languages', () => {
+    assert.deepStrictEqual(joined('a=$@'), ['ⓘ Caveat: `a=$@` joins the arguments into one string, separated by spaces: `a` is a plain string, and arguments with spaces cannot be told apart again. To keep them apart, assign an array: `a=("$@")`; if one string is meant, write `a="$*"`']);
+    assert.deepStrictEqual(joined('x=${arr[@]}'), ['ⓘ Caveat: `x=${arr[@]}` joins the elements into one string, separated by spaces: `x` is a plain string, and elements with spaces cannot be told apart again. To keep them apart, assign an array: `x=("${arr[@]}")`; if one string is meant, write `x="${arr[*]}"`']);
+    assert.deepStrictEqual(joined('a=$@', 'ja'), ['ⓘ 注意: `a=$@` では引数が空白で区切られて1つの文字列につながり、`a` はただの文字列になります（空白を含む引数は元に戻せません）。別々に残すには配列にして `a=("$@")` と書き、1つの文字列にするつもりなら `a="$*"` と書きます']);
+  });
+  // A count, the keys, a slice (often one element: the last argument), part of a string, a prefix of a command, `export`,
+  // an element, an array already, and a shell without arrays.
+  for (const src of ['a=("$@")', 'a=$*', 'a="$*"', 'a=${#arr[@]}', 'a=${!arr[@]}', 'a=${@: -1}', 'a=${arr[@]: -1}', 'a=${@:2:1}', 'a="args: $@"', 'a=$@x',
+    'a=$@ env', 'export a=$@', 'a[0]=$@', 'echo $@', 'for x in $@; do :; done', 'a=$(echo $@)', 'a=${@Z}', 'a=${x}', 'a=${arr[0]}']) {
+    it(`says nothing about ${src}`, () => assert.deepStrictEqual(joined(src), []));
+  }
+  it('says nothing in a shell without arrays', () => assert.deepStrictEqual(joined('a=$@', 'en', 'sh'), []));
+
+  // In bash: the value is one string, joined with spaces (whatever IFS is), the array keeps the words apart, and the
+  // string form gives the same string.
+  const cases: string[] = ['a=$@', 'a="$@"', 'a=${@}', 'a=${arr[@]}', 'a="${arr[@]}"', 'a+=$@', 'declare a=${arr[@]/b/B}', 'readonly a=$@', 'IFS=:; a=$@', 'f() { local a=$@; declare -p a; }; f "$@"'];
+  const programs = [undefined, ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])];
+  for (const program of programs) {
+    for (const src of cases) {
+      it(`${src}: one string in ${program ? 'bash 5.3' : 'bash'}, and the rewrites do what the note says`, () => {
+        const text = joined(src).join('');
+        const [, list] = /assign an array: `a\+?=(.*?)`;/.exec(text) ?? [];
+        const [, string] = /if one string is meant, write `a\+?=(.*?)`$/.exec(text) ?? [];
+        assert.ok(list && string, text || '(none)');
+        const setup = "set -- 'a  b' c; arr=('a  b' c); ";
+        const bash = (script: string) => runBash(setup + script, { program }).stdout;
+        // (`local` is said in the function, and checked there.)
+        const local = src.startsWith('f()');
+        const original = bash(local ? src : `${src}; declare -p a`);
+        assert.match(original, /^declare -[-r] a="a  [bB] c"\n$/, src);
+        const op = src.includes('+=') ? '+=' : '=';
+        const before = src.slice(0, src.indexOf(`a${op}`));
+        const after = local ? src.slice(src.indexOf(';')) : '';
+        const items = bash(`${before}a${op}${list}${after.replace('declare -p a', 'printf "<%s>" "${a[@]}"')}${local ? '' : '; printf "<%s>" "${a[@]}"'}`);
+        assert.strictEqual(items, src.includes('/b/B') ? '<a  B><c>' : '<a  b><c>', src);
+        // (With IFS=:, `"$*"` joins with `:`: the string form is the same only with the default IFS.)
+        if (!src.startsWith('IFS')) assert.strictEqual(bash(`${before}a${op}${string}${after}${local ? '' : '; declare -p a'}`), original, src);
+      });
+    }
+  }
 });

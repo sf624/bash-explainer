@@ -62,6 +62,7 @@ Warnings, for what breaks the script as written or does damage that cannot be un
 | `redirect-by-your-shell` | `sudo cmd > /etc/x` |
 | `nounset-unbound` | `set -u; echo "$dir"` (information when only the command fails: `cat < "$f"`) |
 | `shebang-refused` | `#!/bin/bash -e -u` |
+| `download-run-by-shell` | `curl -fsSL URL \| bash`, `sh -c "$(curl URL)"` |
 
 Information, for what goes wrong only with some values, and where the damage is limited:
 
@@ -72,6 +73,8 @@ Information, for what goes wrong only with some values, and where the damage is 
 | `for-over-unquoted-args` | `for a in $*` |
 | `unquoted-variable-in-test` | `[ $a = b ]` |
 | `read-without-r` | `read line` |
+| `trap-goes-on` | `trap 'echo bye' INT` |
+| `array-joined-in-assignment` | `args=$@`, `x=${arr[@]}` |
 
 The other warnings and caveats of the explanations are problems as well. Among them:
 
@@ -94,6 +97,7 @@ The other warnings and caveats of the explanations are problems as well. Among t
 | `pipefail-missing` | `set -e; curl -s x \| sh` | information |
 | `extglob-maybe-on`, `globstar-maybe-on` | `ls !(a)`, `ls **/*.sh` with the option turned on on some paths only | information |
 | `unmatched-glob-runs-once` | `for f in *.log; do rm "$f"; done` | information |
+| `script-last-test-returns-status` | `[ -f x ] && echo found` as the last line of a script with a shebang | information |
 
 - They follow the same settings as the other problems: `bashExplainer.diagnostics.ignore` and `# bash-explainer disable=<code>` leave one out. The new `bashExplainer.diagnostics.pitfalls` (default on) leaves all of them out. With `bashExplainer.notes.pitfalls` off, the explanations leave out their pitfalls, and so do the problems; the notes that say a line fails when it runs (`[` without `]`) stay.
 - Three caveats stay notes and are not problems: `ssh-local-expansion` (`ssh host "echo $HOME"`: often meant), and `globstar-not-found` and `extglob-not-found` (`ls **/*.sh`, `ls !(a)` with no `shopt -s` before: the file may be read after the option is set). The panel, the hover and the CLI still show them as caveats. (To be confirmed by the maintainer.)
@@ -150,6 +154,26 @@ Linux passes the rest of the shebang line to bash as one argument, which bash re
 Bash reads the letters left to right: a blank or a letter it does not know is an error at once, `o` takes the next argument at once, and `O` takes it once the letters are read. The options of a refused shebang are not on: neither when it is run directly nor by `bash script`.
 
 It suggests writing the options with `set` on the next line. `#!/bin/bash -eu` and `#!/usr/bin/env -S bash -e -u` work, and get no pitfall.
+
+### Warnings from the usability test of October 2026
+
+New warnings and caveats, agreed after the usability test of October 2026. What each says was checked in bash 5.2 and 5.3.
+
+| Written | Level | What it says | What bash does |
+| --- | --- | --- | --- |
+| `curl -fsSL URL \| bash`, `wget -qO- URL \| sudo sh -s`, `bash <(curl URL)`, `source <(curl URL)` | warning | The shell runs the download without anyone reading it, each line as it arrives; if the download breaks off, the lines that came still run, the last one perhaps cut short. Download to a file (`curl -o FILE`), check it, then run it. | `{ echo 'touch ran'; …wait for ran…; echo 'echo early'; } \| bash` prints `early`: the first line ran before the rest was sent. `printf 'echo one\necho tw' \| bash` prints `one` and `tw`. |
+| `sh -c "$(curl -fsSL URL)"`, `eval "$(curl URL)"` | warning | The same, without "as it arrives": the string is the whole download, run even when it broke off (`eval` suggests `source FILE`). | `sh -c "$(printf 'echo one\necho tw'; exit 18)"` prints `one` and `tw`. |
+| `trap 'echo bye' INT` (or `TERM`, `HUP`; `SIGINT`, `int`, `2` too) | information | When the signal comes, bash runs the action and goes on from where it was: the script does not stop. End the action with `exit 130` (128 + the signal's number); for several signals, a trap of each. | `trap 'echo caught' INT; kill -s INT $$; echo after` prints `caught` and `after`; with `exit 130` it ends with status 130. |
+| `[ -f x ] && echo found` as the last command of a script with a shebang | information | When the test fails, the script ends with its status, which CI, `make` or `./script && next` sees as a failure. Use `if …; then …; fi`, or end with `exit 0`. | Such a script exits with status 1; with `if` or `exit 0` after it, 0. |
+| `args=$@`, `a="$@"`, `x=${arr[@]}`, `local x="${arr[@]}"`, `x+=$@` | information | The arguments or elements are joined into one string, separated by spaces (whatever `IFS` is). Assign an array to keep them apart (`args=("$@")`), or write `"$*"` (`"${arr[*]}"`) when one string is meant. | `set -- 'a  b' c; x=$@` gives `x='a  b c'`; `x=("$@")` keeps `a  b` and `c` apart. |
+
+What the shell runs and what downloads come from the command specs, not from names: a shell that reads its script from stdin (`bash`, `sh -s`, `bash -`, also run by `sudo`), a file it runs (`bash FILE`, `source FILE`), a string it runs (`sh -c`, `eval`); a download that goes to stdout (`curl` without `-o` or `-O`, `wget -O -`). No warning for `curl -o f URL | bash`, `wget URL | sh` (wget saves to a file), `curl URL | bash script.sh`, `curl URL | bash < f`, `curl URL > f | bash`, or a function named `curl` or `bash`.
+
+The trap caveat is said only when the action's text is known and surely does not end the shell: not when it runs `exit`, `exec cmd`, `kill … $$` or `kill 0` (the signal again), or a function of the script that does, nor when it calls a name the script does not define (a function of a sourced file). Not for `trap '' INT` (ignore it) or `trap - INT`.
+
+The caveat on a script's last command follows the caveat and the warning on a function's last `test && cmd` (`function-last-test-returns-status`, `function-last-test-stops-script`): the left side is a test (`[ ]`, `[[ ]]`, `(( ))`, `test`, `grep -q`), not a command whose failure is an error (`mkdir d && cd d`). Only in a file with a shebang, which is run as a program; a file that is sourced, such as `.bashrc`, gets none. Nor for a command started with `&`.
+
+The joined array is not said for a count or the keys (`${#a[@]}`, `${!a[@]}`), a slice (`last=${@: -1}`), part of a string (`msg="args: $@"`), `export x=$@` (the environment holds strings), an assignment before a command (`x=$@ cmd`) or to an element (`a[0]=$@`), nor in a shell without arrays (sh, dash).
 
 ### The Reading view of the panel
 

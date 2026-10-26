@@ -198,6 +198,122 @@ describe('pitfalls', () => {
   });
 });
 
+/** The bashes the behaviour is checked with: the one on PATH (5.2), and bash 5.3 from `$BASH_EXPLAINER_BASH53` when set. */
+const bashes = (): (string | undefined)[] => [undefined, ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])];
+
+describe('a download run by a shell', () => {
+  const download = /runs the script `(curl|wget)` downloads without anyone reading it/;
+  const cases: [string, RegExp][] = [
+    ['curl -fsSL https://example.com/install.sh | bash', /^⚠ Pitfall: `bash` runs the script `curl` downloads without anyone reading it, each line as it arrives: if the download breaks off, the lines that came still run, the last one perhaps cut short\. Download it to a file first \(`curl -o FILE …`\), check it, then run the file \(`bash FILE`\)$/],
+    ['curl -fsSL https://x | sh -s -- --yes', /`sh` runs the script `curl` downloads/],
+    ['curl -fsSL https://x | bash -s stable', /`bash` runs the script `curl` downloads/],
+    ['curl -fsSL https://x | sudo -E bash -', /`bash` runs the script `curl` downloads/],
+    ['wget -O- https://x | sh', /`sh` runs the script `wget` downloads.*\(`wget -O FILE …`\), check it, then run the file \(`sh FILE`\)$/],
+    ['wget -qO- https://x | sudo bash', /`bash` runs the script `wget` downloads/],
+    ['wget --output-document=- https://x | bash', /`bash` runs the script `wget` downloads/],
+    ['curl -s https://x |\n  bash', /`bash` runs the script `curl` downloads/],
+    // A process substitution is read from a pipe as the download goes; a string runs once the download has ended.
+    ['bash <(curl -s https://x)', /`bash` runs the script `curl` downloads without anyone reading it, each line as it arrives/],
+    ['source <(curl -s https://x)', /`source` runs the script `curl` downloads.*then run the file \(`source FILE`\)$/],
+    ['sh -c "$(curl -fsSL https://x)"', /^⚠ Pitfall: `sh` runs the script `curl` downloads without anyone reading it: if the download breaks off, the part that came still runs\. Download it to a file first \(`curl -o FILE …`\), check it, then run the file \(`sh FILE`\)$/],
+    ['bash -c "$(wget -qO- https://x)"', /`bash` runs the script `wget` downloads without anyone reading it: if/],
+    ['eval "$(curl -fsSL https://x)"', /`eval` runs the script `curl` downloads.*then run the file \(`source FILE`\)$/],
+    ['eval $(curl -s https://x)', /`eval` runs the script `curl` downloads/],
+    // Where curl writes: `-o -` is stdout; an option it does not know changes nothing; stdin and stderr are not stdout.
+    ['curl -s -o - https://x | bash', /`bash` runs the script `curl` downloads/],
+    ['curl --nope=1 https://x | bash', /`bash` runs the script `curl` downloads/],
+    ['curl -s -K - https://x <<< "" | bash 2> err', /`bash` runs the script `curl` downloads/],
+  ];
+  for (const [src, expected] of cases) {
+    it(`points out ${JSON.stringify(src)}`, () => {
+      const said = notes(src, src.split('\n').length - 1).filter((n) => download.test(n));
+      assert.strictEqual(said.length, 1, notes(src).join('\n') || '(none)');
+      assert.match(said[0], expected);
+    });
+  }
+  // What is not run (a file, `-o`, `-O`, a pipe to another command), or not by a shell reading its script from the pipe.
+  const fine = [
+    'wget https://x | sh', 'curl -o i.sh https://x | bash', 'curl -O https://x | bash', 'curl -o "$f" https://x | bash', 'wget --spider https://x | sh',
+    'curl https://x | bash script.sh', "curl https://x | bash -c 'cat'", 'curl https://x > f | bash', 'curl https://x | bash < f', 'curl https://x | jq .',
+    'curl https://x | tee f', 'cat f | bash', 'bash <(echo hi)', 'bash <(curl -o f https://x)', 'sh -c "$(curl -o f https://x)"', 'sh -c "x $(curl https://x)"',
+    'curl() { :; }; curl https://x | bash', 'bash() { :; }; curl https://x | bash', 'curl -fsSL https://x -o install.sh', "trap \"$(curl -s https://x)\" EXIT",
+    "curl https://x | bash <<< 'echo'", 'curl https://x | bash <<EOF\necho\nEOF', 'bash -s | cat', '{ curl https://x; } | bash', 'sh -c "$cmd"', 'bash <(curl -s https://x; echo)',
+  ];
+  for (const src of fine) {
+    it(`says nothing about ${JSON.stringify(src)}`, () => assert.deepStrictEqual(notes(src).filter((n) => download.test(n)), []));
+  }
+  it('suggests the command that runs a file in this shell for a string this shell runs', () => {
+    assert.match(notes('eval "$(curl -s https://x)"', 0, 'en', 'bash')[0], /then run the file \(`source FILE`\)$/);
+    assert.match(notes('eval "$(curl -s https://x)"', 0, 'en', 'sh')[0], /then run the file \(`\. FILE`\)$/);
+  });
+  it('speaks Japanese', () => {
+    assert.deepStrictEqual(notes('curl -fsSL https://x | bash', 0, 'ja'), ['⚠ 落とし穴: `bash` は `curl` がダウンロードするスクリプトを、誰も読まないまま、届いた行から順に実行します。ダウンロードが途中で切れても、届いた行（途中で切れた最後の行も）は実行されます。先にファイルへダウンロードし（`curl -o ファイル …`）、中身を確かめてから実行します（`bash ファイル`）']);
+  });
+
+  // What the note says, in bash: a shell runs a script from a pipe as it arrives, and runs what came of a cut one.
+  for (const program of bashes()) {
+    const sh = (script: string) => runBash(script, { program, files: [] });
+    it(`a shell runs each line of a script from a pipe as it arrives (${program ? 'bash 5.3' : 'bash'})`, () => {
+      // (The first line has run before the rest is sent: the stage before waits for the file it makes.)
+      const r = sh(`{ echo 'touch ran'; for i in $(seq 100); do [ -e ran ] && break; sleep 0.05; done; [ -e ran ] && echo 'echo early'; echo 'echo end'; } | ${program ?? 'bash'}`);
+      assert.strictEqual(r.stdout, 'early\nend\n', r.stderr);
+    });
+    it(`a script cut short runs up to the cut, its last line too (${program ? 'bash 5.3' : 'bash'})`, () => {
+      const cut = "printf 'echo one\\necho tw'";
+      for (const run of [`${cut} | ${program ?? 'bash'}`, `${cut} | sh`, `${program ?? 'bash'} <(${cut})`, `sh -c "$(${cut}; exit 18)"`]) {
+        assert.strictEqual(sh(run).stdout, 'one\ntw\n', run);
+      }
+    });
+  }
+});
+
+describe('a trap that does not stop the script', () => {
+  const goesOn = /bash runs this action and then goes on with the script from where it was/;
+  it('says what bash does and how to stop, for one signal and for several', () => {
+    assert.deepStrictEqual(notes("trap 'echo bye' INT"), ['ⓘ Caveat: when `INT` (Ctrl+C) comes, bash runs this action and then goes on with the script from where it was, so the script does not stop. To stop it, end the action with `exit 130` (128 + 2, the number of `INT`)']);
+    assert.match(notes("trap 'rm -f \"$tmp\"' EXIT INT TERM").join('\n'), /when `INT` \(Ctrl\+C\) or `TERM` comes, .* end the action with `exit` and 128 \+ the signal's number, in a trap of each signal \(`exit 130` for `INT`, `exit 143` for `TERM`\)$/);
+    assert.match(notes("trap 'echo bye' HUP")[0], /when `HUP` comes, .*`exit 129` \(128 \+ 1, the number of `HUP`\)$/);
+    assert.deepStrictEqual(notes("trap 'echo bye' INT", 0, 'ja'), ['ⓘ 注意: `INT`（Ctrl+C）を受けると、bash はこの処理を実行したあと、スクリプトを中断したところから続けるので、スクリプトは止まりません。止めるには、処理の最後に `exit 130`（128 + `INT` の番号 2）を書きます']);
+    assert.deepStrictEqual(notes("trap 'echo bye' TERM", 0, 'ja'), ['ⓘ 注意: `TERM` を受けると、bash はこの処理を実行したあと、スクリプトを中断したところから続けるので、スクリプトは止まりません。止めるには、処理の最後に `exit 143`（128 + `TERM` の番号 15）を書きます']);
+    assert.deepStrictEqual(notes("trap 'echo bye' INT TERM", 0, 'ja'), ['ⓘ 注意: `INT`（Ctrl+C）・`TERM` を受けると、bash はこの処理を実行したあと、スクリプトを中断したところから続けるので、スクリプトは止まりません。止めるには、処理の最後に `exit` と 128 + シグナルの番号をシグナルごとの `trap` で書きます（`INT` は `exit 130`、`TERM` は `exit 143`）']);
+    // An action of assignments, a function that calls itself, a program on a path: none ends the shell.
+    for (const src of ["trap 'x=1' INT", 'f() { f; }; trap f INT', "trap '/usr/bin/echo bye' INT"]) assert.strictEqual(notes(src).filter((n) => goesOn.test(n)).length, 1, src);
+    // (A definition with no body yet, as the fuzz test found: the action ends nothing that is known.)
+    assert.strictEqual(notes('f()  f; }; trap f INT').filter((n) => goesOn.test(n)).length, 1);
+  });
+  // An action that ends the shell, one not known, or no action: nothing to say.
+  const fine = [
+    "trap 'echo bye; exit 130' INT", "trap 'echo bye; exit' INT TERM", "trap 'trap - INT; kill -s INT $$' INT", "trap 'kill -INT ${BASHPID}' INT", "trap 'exec sleep 1' INT",
+    "trap '' INT", 'trap - INT', 'trap INT', "trap 'echo bye' EXIT", "trap 'echo bye' USR1", 'trap -p INT', 'trap "$cmd" INT', 'trap cleanup INT', "trap 'cleanup' TERM",
+    'cleanup() { rm -f x; exit 1; }; trap cleanup INT TERM', 'f() { g; }; g() { exit 2; }; trap f INT', "shopt -s expand_aliases; alias q='exit 1'; trap q INT",
+    'trap() { :; }; trap "echo x" INT', 'sudo trap "echo x" INT', 'f() { unknown_cmd; }; trap f INT', "trap 'echo x' \"$sig\"", "trap 'echo x' 10",
+  ];
+  for (const src of fine) {
+    it(`says nothing about ${JSON.stringify(src)}`, () => assert.deepStrictEqual(notes(src).filter((n) => goesOn.test(n)), []));
+  }
+  // What bash does after each action for the signal: `after` is printed exactly when the note is said.
+  const traps: [string, string][] = [
+    ["trap 'echo caught' INT", 'INT'], ["trap 'echo caught' TERM", 'TERM'], ["trap 'echo caught' HUP", 'HUP'], ["trap 'echo caught' int", 'INT'],
+    ["trap 'echo caught' 2", 'INT'], ["trap 'echo caught' SIGTERM", 'TERM'], ["trap 'echo caught' EXIT INT", 'INT'], ['f() { echo caught; }; trap f INT', 'INT'],
+    ['f() { rm -f nofile; }; trap f TERM', 'TERM'], ["trap 'exec 2>&1' INT", 'INT'],
+    ["trap 'echo caught; exit 130' INT", 'INT'], ["trap 'echo caught; exit' TERM", 'TERM'], ["trap 'trap - INT; kill -s INT $$' INT", 'INT'],
+    ['f() { echo caught; exit 1; }; trap f INT TERM', 'TERM'], ['f() { g; }; g() { exit 2; }; trap f INT', 'INT'], ["trap 'exec echo replaced' INT", 'INT'],
+  ];
+  for (const program of bashes()) {
+    for (const [src, sig] of traps) {
+      it(`${src}, then ${sig}: ${program ? 'bash 5.3' : 'bash'} goes on exactly when the note says so`, () => {
+        const said = notes(src).some((n) => goesOn.test(n));
+        const r = runBash(`${src}\nkill -s ${sig} $$\necho after`, { program });
+        // (An EXIT trap runs again at the end.)
+        assert.strictEqual(r.stdout.includes('after\n'), said, `${JSON.stringify(r)}`);
+      });
+    }
+    it(`exit 130 in the action ends the script with 130 (${program ? 'bash 5.3' : 'bash'})`, () => {
+      assert.strictEqual(runBash("trap 'exit 130' INT; kill -s INT $$; echo after", { program }).status, 130);
+    });
+  }
+});
+
 describe('the spacing of [ ], against bash', () => {
   const bash = (cmd: string) => spawnSync('bash', ['-c', cmd], { encoding: 'utf8' });
   const have = spawnSync('bash', ['-c', ':']).status === 0;

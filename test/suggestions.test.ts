@@ -35,6 +35,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   // `a && b` as the last command → `if a; then b; fi`: the function's status is 0.
   'function-last-test-returns-status': 'mechanical',
   'function-last-test-stops-script': 'mechanical',
+  // `a && b` as the script's last command → `if a; then b; fi`: the script's status is 0.
+  'script-last-test-returns-status': 'mechanical',
   'keyword-needs-separator': 'none',
   'bracket-missing-close': 'none',
   // `[ -f $x]` → `[ -f $x ]`.
@@ -102,6 +104,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'for-over-ls-output': 'scenario',
   // `for a in $@` → `for a in "$@"`.
   'for-over-unquoted-args': 'mechanical',
+  // `a=$@` → `a=("$@")`: the arguments stay apart.
+  'array-joined-in-assignment': 'mechanical',
   'unquoted-variable-in-test': 'mechanical',
   // `${x:-}` for the unset variable (when the analyzer gives `fix`): `set -u` no longer stops and the value is empty.
   'nounset-unbound': 'mechanical',
@@ -154,6 +158,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 13, scenario: 24, prose: 12, none: 41 });
+      { mechanical: 15, scenario: 24, prose: 12, none: 41 });
   });
 });

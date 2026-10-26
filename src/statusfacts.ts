@@ -4,7 +4,8 @@
 // They are said only where `set -e` does something few expect: a `set -e` that runs inside a group or a function
 // where bash ignores it; a function, `( )` or `{ }` of several commands run where it is ignored; a `$( )` of several
 // commands, where bash turns it off; a declaration that hides the status of its `$( )`; the first pipeline that
-// hides a failure without pipefail; a function whose last command is `test && cmd`, called where `set -e` stops it.
+// hides a failure without pipefail; a function whose last command is `test && cmd`, called where `set -e` stops it,
+// and a script that ends with one.
 import { canonicalName } from './dict/aliases';
 import type { FactSpec, Words } from './messages';
 import { featureWorks, type Shell } from './dialect';
@@ -12,7 +13,7 @@ import { STATEMENTS } from './semantics/env';
 import { resolveName } from './semantics/names';
 import type { Decision, StateModel } from './semantics/state';
 import { type Ignored, lastStatements, type StatusModel, type StatusRule } from './semantics/status';
-import { ancestor, descendants, field, fields, substitutionForm, type SyntaxNode } from './syntax/tree';
+import { ancestor, descendants, field, fields, isShebang, substitutionForm, type SyntaxNode } from './syntax/tree';
 
 /** A fact and the statement it is about (where the part hover shows it). */
 export type StatusFact = FactSpec & { node: SyntaxNode };
@@ -139,6 +140,13 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         // The last command of a function, `test && cmd`: when the test fails, the function returns its status.
         if (!n.children.some((c) => c.type === '&&') || n.children.some((c) => c.type === '||')) break;
         const def = ancestor(n, (x) => x.type === 'function_definition');
+        // The last command of a script run as a program (it has a shebang): its status is the script's.
+        // (Not one started with `&`, whose status is not waited for: `( … ) &`.)
+        const background = status.status(n).kind === 'background' || !!ancestor(n, (x) => STATEMENTS.has(x.type) && status.status(x).kind === 'background');
+        if (!def && isShebang(root.namedChildren[0]) && lastStatements(root).includes(n) && !background && tests(n, state, status, shell)) {
+          add(n, { id: 'script-last-test-returns-status', params: { left: shorten(n.namedChildren[0].text) } });
+          break;
+        }
         const body = def && field(def, 'body');
         if (!body || !lastStatements(body).includes(n) || !tests(n, state, status, shell)) break;
         const call = [...state.calls.get(def)?.keys() ?? []].find((c) => status.errexit(c).active === 'on' && status.errexit(c).checked === true);
