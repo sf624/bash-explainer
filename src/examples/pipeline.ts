@@ -2,10 +2,11 @@
 import { awkExample, awkInvocation, runAwk } from './awk';
 import { utf8Length } from './bytes';
 import { perlExample, perlOptions, runPerl } from './perlrun';
-import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './regex';
-import { runSed, sedExample } from './sed';
+import { awkMarks, joinRanges, type LineMarks, type StageMarks } from './marks';
+import { grepWrap, JsRegex, literalRegex, posixMatches, regexExamples, toJsRegex } from './regex';
+import { runSed, sedExample, sedMarks } from './sed';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
-import { FILTERS, parseOptions, runSeq, sampleInput, shortKeys, sortsUnique, Unsupported } from './textfilters';
+import { cutMarks, FILTERS, parseOptions, runSeq, sampleInput, shortKeys, sortMarks, sortsUnique, Unsupported } from './textfilters';
 import { runXargs, showCommand } from './runtime';
 import { canonicalName, impliedWords } from '../dict/aliases';
 
@@ -46,27 +47,55 @@ function grepRegexes(words: (string | undefined)[], relax = false): { res: JsReg
   return { res, p };
 }
 
+/**
+ * The lines grep reads, in order, and whether it selects each (for `-v`, those that do not match); it stops reading at
+ * the limit `-m` gives, and `-q` at the first it selects.
+ */
+function grepReads(res: JsRegex[], p: ReturnType<typeof parseOptions>, input: string[]): boolean[] {
+  const has = (c: string) => p.opts.some(([n]) => n === c);
+  const max = p.opts.find(([n]) => n === 'm')?.[1];
+  const limit = has('q') ? 1 : max !== undefined ? Number(max) : Infinity;
+  const read: boolean[] = [];
+  let count = 0;
+  for (const line of input) {
+    if (count >= limit) break;
+    const hit = res.some((r) => new RegExp(r.source, r.flags).test(line));
+    read.push(hit !== has('v'));
+    if (hit !== has('v')) count++;
+  }
+  return read;
+}
+
 export function runGrep(words: (string | undefined)[], input: string[]): string[] {
   const { res, p } = grepRegexes(words);
   const has = (c: string) => p.opts.some(([n]) => n === c);
-  const max = p.opts.find(([n]) => n === 'm')?.[1];
-  const limit = max !== undefined ? Number(max) : Infinity;
-  const out: string[] = [];
-  let count = 0;
-  for (const [i, line] of input.entries()) {
-    if (count >= limit) break;
-    const hit = res.some((r) => new RegExp(r.source, r.flags).test(line));
-    if (hit === has('v')) continue;
-    count++;
-    if (has('q') || has('c')) continue;
+  const read = grepReads(res, p, input);
+  if (has('q')) return [];
+  if (has('c')) return [String(read.filter(Boolean).length)];
+  return read.flatMap((selected, i) => {
+    if (!selected) return [];
     const prefix = has('n') ? `${i + 1}:` : '';
     // `-o -v` prints nothing: the selected lines have no match to print.
-    if (has('o')) {
-      if (!has('v')) for (const r of res) for (const m of line.matchAll(new RegExp(r.source, r.flags + 'g'))) if (m[0]) out.push(prefix + m[0]);
-    } else out.push(prefix + line);
-  }
-  if (has('q')) return [];
-  return has('c') ? [String(count)] : out;
+    if (!has('o')) return [prefix + input[i]];
+    return has('v') ? [] : matchesOf(res, p, input[i]).map(([a, b]) => prefix + input[i].slice(a, b));
+  });
+}
+
+/** The non-empty matches of grep's patterns on a line, in order: POSIX's leftmost longest, PCRE's (`-P`) first. */
+const matchesOf = (res: JsRegex[], p: ReturnType<typeof parseOptions>, line: string) =>
+  posixMatches(res, line, !p.opts.some(([n]) => n === 'P')).filter(([a, b]) => b > a);
+
+/**
+ * What grep matches on each line it reads (all its matches, as `--color` and `-o` show them: POSIX's leftmost longest,
+ * PCRE's first), and the lines it leaves out: those it does not select, and those after its limit (`-m`), unread.
+ */
+export function grepMarks(words: (string | undefined)[], input: string[]): LineMarks {
+  const { res, p } = grepRegexes(words);
+  const read = grepReads(res, p, input);
+  return {
+    ranges: input.map((line, i) => (i < read.length ? matchesOf(res, p, line) : [])),
+    dropped: input.flatMap((_, i) => (read[i] ? [] : [i])),
+  };
 }
 
 const PREFIXES = ['disk ', 'net ', 'db ', 'cache '];
@@ -203,6 +232,26 @@ export function runner(stage: Stage): Runner | undefined {
 }
 
 /**
+ * What `stage` reads of `input`, the lines it is given (src/examples/marks.ts): grep's matches, sed's (a `p` or `d` at
+ * a regex, an `s`), awk's fields and regexes, what cut takes, the keys sort compares; and the lines it leaves out.
+ * Undefined for another command, or when it reads all of every line. Only for a stage that has run on `input`.
+ */
+export function stageMarks(stage: Stage, input: string[]): StageMarks | undefined {
+  const w = stage.words;
+  let m: LineMarks | undefined;
+  let kind: StageMarks['kind'] = 'match';
+  switch (canonicalName(stage.cmd)) {
+    case 'grep': m = grepMarks([...impliedWords(stage.cmd), ...w], input); break;
+    case 'sed': { const a = sedArgs(w); m = sedMarks(a.script, input, { quiet: a.quiet, extended: a.extended }); break; }
+    case 'awk': { const a = awkMarks(awkInvocation(w), input); m = a; kind = a.kind; break; }
+    case 'cut': m = cutMarks(w, input); kind = 'take'; break;
+    case 'sort': m = sortMarks(w, input); kind = 'key'; break;
+  }
+  if (!m || (!m.ranges.some((r) => r.length) && !m.dropped.length)) return undefined;
+  return { kind, ranges: m.ranges.map(joinRanges), dropped: m.dropped };
+}
+
+/**
  * What the stages print, when it is known: the first reads `given` (the text of a here-string or a here-document), or
  * else prints without reading input (echo, printf, seq). Undefined when a stage cannot be followed, or runs commands
  * (xargs), whose output is not known.
@@ -296,10 +345,14 @@ function inertStages(stages: Stage[], input: string[], limit = Infinity): number
 export interface PipelineStep {
   stage: Stage;
   output: string[];
+  /** What the next stage that does not copy its input (cat) reads of `output` (`stageMarks`). */
+  marks?: StageMarks;
 }
 
 export interface PipelineExample {
   input?: string[];
+  /** What the first stage that does not copy its input reads of `input`. */
+  inputMarks?: StageMarks;
   steps: PipelineStep[];
 }
 
@@ -355,14 +408,22 @@ export function pipelineExample(stages: Stage[], readsFile: boolean, given?: str
       if (firstIsCatFile) steps.push({ stage: first, output: input });
     }
     let data = src ?? input!;
+    let inputMarks: StageMarks | undefined;
     for (const [i, stage] of rest.entries()) {
       if (stage.cmd === 'xargs' && i !== rest.length - 1) return undefined;
       const run = runner(stage);
       if (!run) return undefined;
+      const before = data;
       data = run(data);
+      // The sections that show its input: the step before, and those before a stage that copies them (cat).
+      const marks = stageMarks(stage, before);
+      if (marks) {
+        for (let j = steps.length - 1; j >= 0 && (j === steps.length - 1 || steps[j + 1].stage.copies); j--) steps[j].marks = marks;
+        if (!src && steps.every((st) => st.stage.copies)) inputMarks = marks;
+      }
       steps.push({ stage, output: data });
     }
-    return { input: src ? undefined : input, steps };
+    return { input: src ? undefined : input, ...(inputMarks ? { inputMarks } : {}), steps };
   } catch (e) {
     // (`printf '\231' | …`: bashPrintf has no raw bytes to show; it throws its own kind.)
     if (e instanceof Unsupported || e instanceof ShellWordsUnsupported) return undefined;

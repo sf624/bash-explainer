@@ -15,6 +15,7 @@ import { awkInvocation, type AwkRunOptions } from '../examples/awk';
 import * as commandExamples from '../examples/commands';
 import * as patterns from '../examples/patterns';
 import * as pipelines from '../examples/pipeline';
+import { sectionMarks, type StageMarks } from '../examples/marks';
 import { MAX_SHOWN_LINES, pipedOutput, type Stage } from '../examples/pipeline';
 import { type JsRegex, regexExamples } from '../examples/regex';
 import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
@@ -298,7 +299,19 @@ function sampledPipeline(cx: Explainer, n: SyntaxNode, kind: Layout, stages: Sta
 
 /** The example of the whole pipeline `n`: the input boxes, then what each stage leaves. */
 function wholePipeline(cx: Explainer, n: SyntaxNode, ex: pipelines.PipelineExample, inputs: InputBox[], stages: Stage[], runs: ReadonlySet<Stage>, editable = true): Example {
-  const sections: ExampleSection[] = inputs.map((b) => ({ label: b.label, lines: cap(b.lines), empty: cx.s('（空）', '(empty)') }));
+  // What the next stage shown reads of a section is marked (src/examples/marks.ts), the lines of each input box apart.
+  const reader = (from: number) => ex.steps.slice(from).find((st, j) => !st.stage.copies || from + j === ex.steps.length - 1)!.stage.text;
+  const marked = (m: StageMarks | undefined, lines: string[], from: number, first = 0) => {
+    const part = m && { ...m, ranges: m.ranges.slice(first, first + lines.length), dropped: m.dropped.filter((k) => k >= first && k < first + lines.length).map((k) => k - first) };
+    if (!part || (!part.ranges.some((r) => r.length) && !part.dropped.length)) return {};
+    return { marks: sectionMarks(part, reader(from), cx.lang, lines.length > MAX_SHOWN_LINES ? MAX_SHOWN_LINES - 1 : Infinity) };
+  };
+  let first = 0;
+  const sections: ExampleSection[] = inputs.map((b) => {
+    const at = first;
+    first += b.lines.length;
+    return { label: b.label, lines: cap(b.lines), empty: cx.s('（空）', '(empty)'), ...marked(ex.inputMarks, b.lines, 0, at) };
+  });
   ex.steps.forEach((step, i) => {
     // `cat file` passes the input on unchanged.
     if (step.stage.copies && i < ex.steps.length - 1) return;
@@ -307,7 +320,7 @@ function wholePipeline(cx: Explainer, n: SyntaxNode, ex: pipelines.PipelineExamp
       ? cx.s(`\`${step.stage.text}\` が実行するコマンド`, `Commands run by \`${step.stage.text}\``)
       : last ? cx.s(`出力（\`${step.stage.text}\` の後）`, `Output (after \`${step.stage.text}\`)`)
         : cx.s(`\`${step.stage.text}\` の後`, `After \`${step.stage.text}\``);
-    sections.push({ label, lines: cap(step.output), empty: cx.s('（なし）', '(nothing)') });
+    sections.push({ label, lines: cap(step.output), empty: cx.s('（なし）', '(nothing)'), ...marked(step.marks, step.output, i + 1) });
   });
   // A pipeline in a command or process substitution (`echo $(a | b)`, `[[ $(a | b) == x ]]`, `for i in $(a | b)`) is
   // named in the title, not the command or statement around it.

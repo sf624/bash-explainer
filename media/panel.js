@@ -323,8 +323,10 @@
       label.append(...inline(sec.label));
       if (sec.words) return [label, wordList(sec, label)];
       const pre = document.createElement('pre');
-      if (sec.lines.length) pre.append(...withMarks(sec.lines.join('\n')));
-      else {
+      if (sec.lines.length) {
+        pre.append(...(sec.marks ? markedLines(sec.lines, sec.marks) : withMarks(sec.lines.join('\n'))));
+        sideways(pre);
+      } else {
         pre.textContent = sec.empty ?? '';
         pre.classList.add('example-empty');
       }
@@ -369,6 +371,84 @@
     }
     return box;
   }
+
+  /**
+   * The lines of a section that the next stage of a pipeline reads (`ExampleSection.marks`, src/examples/marks.ts): what
+   * it matches or takes in a mark, named for a screen reader before it ("matched by `grep nginx`"), and the lines it
+   * leaves out dimmer.
+   */
+  function markedLines(/** @type {string[]} */ lines, /** @type {any} */ marks) {
+    const out = [];
+    lines.forEach((line, i) => {
+      if (i) out.push('\n');
+      const row = document.createElement('span');
+      row.className = marks.dropped?.includes(i) ? 'ex-row ex-left-out' : 'ex-row';
+      let at = 0;
+      for (const [start, end] of marks.ranges[i] ?? []) {
+        row.append(...withMarks(line.slice(at, start)));
+        const m = document.createElement('mark');
+        m.className = 'ex-read';
+        m.title = marks.said.replace(/`/g, '');
+        const said = document.createElement('span');
+        said.className = 'sr-only';
+        said.append(...inline(marks.said), document.documentElement.lang === 'ja' ? '：' : ': ');
+        m.append(said, ...withMarks(line.slice(start, end)));
+        row.append(m);
+        at = end;
+      }
+      row.append(...withMarks(line.slice(at)));
+      out.push(row);
+    });
+    return out;
+  }
+
+  /**
+   * A section's lines scroll sideways when they are wider than it. It starts scrolled so that its first mark is in view,
+   * with the marks after it as far as they fit (the header row scrolls with the rows: they are one block), until the user
+   * scrolls it; and its edges fade where more lies beyond them (`ex-more-left`, `ex-more-right`).
+   */
+  function sideways(/** @type {HTMLElement} */ pre) {
+    const state = { placed: -1, user: false };
+    const edges = () => {
+      const max = pre.scrollWidth - pre.clientWidth;
+      pre.classList.toggle('ex-more-left', max > 1 && pre.scrollLeft > 1);
+      pre.classList.toggle('ex-more-right', max > 1 && pre.scrollLeft < max - 1);
+    };
+    const place = () => {
+      const marks = [...pre.querySelectorAll('mark.ex-read')];
+      if (!marks.length || state.user || !pre.clientWidth) return;
+      const box = pre.getBoundingClientRect();
+      const x = (/** @type {Element} */ m) => m.getBoundingClientRect().left - box.left + pre.scrollLeft;
+      const firstLeft = x(marks[0]);
+      const firstRight = firstLeft + marks[0].getBoundingClientRect().width;
+      const right = Math.max(...marks.map((m) => x(m) + m.getBoundingClientRect().width));
+      // A margin wider than the fade at an edge (2em, panel.css), so that no mark is under it.
+      const em = parseFloat(getComputedStyle(pre).fontSize);
+      const pad = em * 3;
+      const width = pre.clientWidth;
+      let left = Math.min(right + pad - width, firstLeft - pad);
+      if (firstRight + pad - width > left) left = firstLeft - pad;
+      // (No scroll of a few pixels: the marks are clear of the fade without it.)
+      if (left < pad && right <= width - em * 2.5) left = 0;
+      pre.scrollLeft = Math.max(0, Math.round(left));
+      state.placed = pre.scrollLeft;
+    };
+    pre.addEventListener('scroll', () => {
+      if (Math.abs(pre.scrollLeft - state.placed) > 1) state.user = true;
+      edges();
+    }, { passive: true });
+    sizes.observe(pre);
+    sized.set(pre, () => { place(); edges(); });
+  }
+
+  /** The sections that scroll sideways, placed again when their width changes (shown, or the panel resized). */
+  const sized = new WeakMap();
+  const sizes = new ResizeObserver((entries) => {
+    for (const e of entries) {
+      if (!e.target.isConnected) sizes.unobserve(e.target);
+      else sized.get(e.target)?.();
+    }
+  });
 
   /**
    * The inputs as editors (regex101's test string), one per file the command reads: a transparent textarea over a

@@ -2,6 +2,7 @@
  * Line-oriented coreutils (sort, uniq, cut, tr, head, tail) and argument-only commands
  * (seq, basename, dirname), simulated with GNU semantics in the C locale.
  */
+import type { LineMarks } from './marks';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 
 import { type ArgRole, type ArgvParse, interpret } from '../argv/interpret';
@@ -115,13 +116,15 @@ function fieldStarts(line: string, sep: string | undefined): number[] {
   return starts;
 }
 
-function keyText(line: string, k: SortKey, sep: string | undefined): string {
+/** Where key `k` of `line` starts and ends, `[start, end)`, as sort reads it (empty when the line has no such field). */
+function keyRange(line: string, k: SortKey, sep: string | undefined): [number, number] {
   const starts = fieldStarts(line, sep);
   const fieldEnd = (f: number) => (f < starts.length ? (starts[f] - (sep !== undefined ? 1 : 0)) : line.length);
-  if (k.sf > starts.length) return '';
+  if (k.sf > starts.length) return [line.length, line.length];
   let s = starts[k.sf - 1];
   if (k.opts.includes('b')) while (s < line.length && /[ \t]/.test(line[s])) s++;
-  s = Math.min(s + k.sc - 1, fieldEnd(k.sf));
+  // (A character position runs on past the end of its field, as far as the end of the line: GNU sort.)
+  s = Math.min(s + k.sc - 1, line.length);
   let e: number;
   if (!k.ef) e = line.length;
   else if (k.ef > starts.length) e = line.length;
@@ -129,23 +132,28 @@ function keyText(line: string, k: SortKey, sep: string | undefined): string {
   else {
     let fs = starts[k.ef - 1];
     if (k.opts.includes('b')) while (fs < line.length && /[ \t]/.test(line[fs])) fs++;
-    e = Math.min(fs + k.ec, fieldEnd(k.ef));
+    e = Math.min(fs + k.ec, line.length);
   }
-  return e > s ? line.slice(s, e) : '';
+  return e > s ? [s, e] : [s, s];
 }
 
-function numPrefix(s: string): number {
-  const m = /^\s*(-?\d*\.?\d+|-?\d+\.?)/.exec(s);
-  return m ? Number(m[1]) : 0;
-}
+const keyText = (line: string, k: SortKey, sep: string | undefined): string => line.slice(...keyRange(line, k, sep));
+
+/**
+ * The number `-n` reads at the start of a key, after blanks (`5.`, `.5`, `-0`), and with `suffix` (`-h`) the suffix
+ * right after it (`220 Mar` is 220; only `k` is also taken in lower case): the blanks, the number and the suffix.
+ * Undefined when there is none: `sort --debug` says "no match for key".
+ */
+const numberAt = (s: string, suffix: boolean) => (suffix ? /^([ \t]*)(-?(?:\d+\.?\d*|\.\d+))([KMGTPEZYRQk]?)/ : /^([ \t]*)(-?(?:\d+\.?\d*|\.\d+))()/).exec(s) ?? undefined;
+
+const numPrefix = (s: string): number => Number(numberAt(s, false)?.[2] ?? 0);
 
 /** How `sort -h` orders a key: by the order of its suffix, negative for a negative number (`0K` has none), then by the number. */
 function human(s: string): [number, number] {
-  // (The suffix follows the number at once: `220 Mar` is 220. Only `k` is also taken in lower case.)
-  const m = /^\s*(-?\d*\.?\d+)([kKMGTPEZYRQ]?)/.exec(s);
+  const m = numberAt(s, true);
   if (!m) return [0, 0];
-  const n = Number(m[1]);
-  return [m[2] ? ('KMGTPEZYRQ'.indexOf(m[2].toUpperCase()) + 1) * Math.sign(n) : 0, n];
+  const n = Number(m[2]);
+  return [m[3] ? ('KMGTPEZYRQ'.indexOf(m[3].toUpperCase()) + 1) * Math.sign(n) : 0, n];
 }
 
 const humanCmp = (a: string, b: string): number => {
@@ -185,12 +193,17 @@ function compareKey(a: string, b: string, opts: string): number {
   return opts.includes('r') ? -c : c;
 }
 
-export function runSort(words: (string | undefined)[], input: string[]): string[] {
+/** sort's options, its separator (`-t`), its keys (`-k`) and the ordering options of the whole line. */
+function sortOptions(words: (string | undefined)[]): { p: Parsed; global: string; sep?: string; keys: SortKey[] } {
   const p = parseOptions('sort', words, SORT);
   const global = p.opts.filter(([n]) => 'bdfghinrV'.includes(n)).map(([n]) => n).join('');
   const sep = value(p, 't');
   if (sep !== undefined && [...sep].length !== 1) throw new Unsupported('-t');
-  const keys = values(p, 'k').map((k) => parseKey(k, global));
+  return { p, global, sep, keys: values(p, 'k').map((k) => parseKey(k, global)) };
+}
+
+export function runSort(words: (string | undefined)[], input: string[]): string[] {
+  const { p, global, sep, keys } = sortOptions(words);
   const allKeys = keys.length ? keys : [{ sf: 1, sc: 1, ef: 0, ec: 0, opts: global }];
   const cmpKeys = (a: string, b: string) => {
     for (const k of allKeys) {
@@ -204,6 +217,25 @@ export function runSort(words: (string | undefined)[], input: string[]): string[
   const sorted = [...input].sort((a, b) => cmpKeys(a, b) || lastResort(a, b));
   if (!has(p, 'u')) return sorted;
   return sorted.filter((l, i) => i === 0 || cmpKeys(sorted[i - 1], l) !== 0);
+}
+
+/**
+ * The keys sort compares on each line (src/examples/marks.ts), as `sort --debug` underlines them: each key `-k` gives,
+ * or the number `-n` or `-h` reads there. A key `-g` orders, or `-n` with `-d` or `-i` (which drop characters before
+ * the number is read), is not marked. Undefined with no `-k`: the whole line is the key.
+ */
+export function sortMarks(words: (string | undefined)[], input: string[]): LineMarks | undefined {
+  const { sep, keys } = sortOptions(words);
+  if (!keys.length) return undefined;
+  const ranges = input.map((line) => keys.flatMap((k): [number, number][] => {
+    const [s, e] = keyRange(line, k, sep);
+    const numeric = /[nh]/.test(k.opts) && !k.opts.includes('g');
+    if (k.opts.includes('g') || (numeric && /[di]/.test(k.opts))) return [];
+    const m = numeric ? numberAt(line.slice(s, e), !k.opts.includes('n')) : undefined;
+    if (numeric) return m ? [[s + m[1].length, s + m[0].length]] : [];
+    return e > s ? [[s, e]] : [];
+  }));
+  return { ranges, dropped: [] };
 }
 
 // ---------------------------------------------------------------- uniq
@@ -260,39 +292,72 @@ function parseList(list: string): (i: number) => boolean {
   return (i) => ranges.some(([a, b]) => i >= a && i <= b);
 }
 
-export function runCut(words: (string | undefined)[], input: string[]): string[] {
+/**
+ * What cut takes: the fields (`-f`, with the delimiter `-d`) or the characters (`-c`, `-b`) its list selects (or, with
+ * `--complement`, does not), numbered from 1.
+ */
+function cutOptions(words: (string | undefined)[]): { p: Parsed; sel: (i: number) => boolean; d?: string } {
   const p = parseOptions('cut', words, CUT);
-  const complement = has(p, 'C');
-  const pick = (sel: (i: number) => boolean) => (i: number) => (complement ? !sel(i) : sel(i));
   const fields = value(p, 'f');
-  const chars = value(p, 'c') ?? value(p, 'b');
-  if (fields !== undefined) {
-    const d = value(p, 'd') ?? '\t';
-    if ([...d].length !== 1) throw new Unsupported('-d');
+  const list = fields ?? value(p, 'c') ?? value(p, 'b');
+  if (list === undefined) throw new Unsupported('cut needs -f, -c or -b');
+  const listed = parseList(list);
+  const sel = has(p, 'C') ? (i: number) => !listed(i) : listed;
+  if (fields === undefined) return { p, sel };
+  const d = value(p, 'd') ?? '\t';
+  if ([...d].length !== 1) throw new Unsupported('-d');
+  return { p, sel, d };
+}
+
+export function runCut(words: (string | undefined)[], input: string[]): string[] {
+  const { p, sel, d } = cutOptions(words);
+  if (d !== undefined) {
     const od = value(p, 'O') ?? d;
-    const sel = pick(parseList(fields));
     return input.flatMap((l) => {
       if (!l.includes(d)) return has(p, 's') ? [] : [l];
       return [l.split(d).filter((_, i) => sel(i + 1)).join(od)];
     });
   }
-  if (chars !== undefined) {
-    const sel = pick(parseList(chars));
-    const od = value(p, 'O');
-    return input.map((l) => {
-      const cs = [...l];
-      if (od === undefined) return cs.filter((_, i) => sel(i + 1)).join('');
-      // With --output-delimiter, separate ranges of selected characters.
-      let out = '';
-      cs.forEach((c, i) => {
-        if (!sel(i + 1)) return;
-        if (out && !sel(i)) out += od;
-        out += c;
-      });
-      return out;
+  const od = value(p, 'O');
+  return input.map((l) => {
+    const cs = [...l];
+    if (od === undefined) return cs.filter((_, i) => sel(i + 1)).join('');
+    // With --output-delimiter, separate ranges of selected characters.
+    let out = '';
+    cs.forEach((c, i) => {
+      if (!sel(i + 1)) return;
+      if (out && !sel(i)) out += od;
+      out += c;
     });
-  }
-  throw new Unsupported('cut needs -f, -c or -b');
+    return out;
+  });
+}
+
+/**
+ * What cut takes of each line (src/examples/marks.ts): the fields or characters it prints; a line without the delimiter
+ * whole, as cut prints it, or with `-s` none of it, as the line is left out.
+ */
+export function cutMarks(words: (string | undefined)[], input: string[]): LineMarks {
+  const { p, sel, d } = cutOptions(words);
+  const ranges: [number, number][][] = [];
+  const dropped: number[] = [];
+  input.forEach((l, k) => {
+    // (Each character of `-c` is a code point: its offsets are counted in UTF-16 units, as the line is shown.)
+    const parts = d === undefined ? [...l] : l.split(d);
+    const out: [number, number][] = [];
+    if (d !== undefined && parts.length === 1) {
+      if (has(p, 's')) dropped.push(k);
+      else if (l) out.push([0, l.length]);
+    } else {
+      let at = 0;
+      parts.forEach((part, i) => {
+        if (sel(i + 1) && part) out.push([at, at + part.length]);
+        at += part.length + (d?.length ?? 0);
+      });
+    }
+    ranges.push(out);
+  });
+  return { ranges, dropped };
 }
 
 // ---------------------------------------------------------------- tr

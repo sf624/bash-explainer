@@ -2,6 +2,7 @@
 import type { CommandSpec } from './argv/spec';
 import type { BashVersion } from './bashversion';
 import type { Shell } from './dialect';
+import type { SectionMarks } from './examples/marks';
 import type { Interactive } from './examples/rerun';
 import type { HostId } from './hosts';
 import type { LabelPart } from './label';
@@ -168,6 +169,8 @@ export interface ExampleSection {
    * A section of words with none has `empty`.
    */
   words?: { ends: SpaceEnds[]; spaceLabel?: string; after?: string };
+  /** What the next stage of a pipeline reads of the lines (src/examples/marks.ts); the panel marks it. */
+  marks?: SectionMarks;
 }
 
 /** What an example shows, so it can be turned off by kind (`bashExplainer.examples.disabled`). */

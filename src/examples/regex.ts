@@ -412,6 +412,57 @@ export function grepWrap(js: JsRegex, wholeLine: boolean, wholeWord: boolean): J
   return js;
 }
 
+/**
+ * The matches of the regexes on `line` one after another, as a POSIX tool finds them (grep's `-o`, sed's `s///g`): at
+ * each place, the leftmost match of any of them and, of those that start there, the longest (`longest`; PCRE's is the
+ * first its alternatives give, as JavaScript's), then again from its end; an empty match just after the one before is
+ * not one (GNU sed), and after an empty match the search goes on one character further. `[start, end)` each.
+ */
+export function posixMatches(res: JsRegex[], line: string, longest: boolean): [number, number][] {
+  const out: [number, number][] = [];
+  let at = 0;
+  let prevEnd = -1;
+  while (at <= line.length) {
+    let start = Infinity;
+    let end = -1;
+    for (const r of res) {
+      const m = longest ? posixExec(r, line, at) : firstExec(r, line, at);
+      if (m && (m.index < start || (m.index === start && m.index + m[0].length > end))) [start, end] = [m.index, m.index + m[0].length];
+    }
+    if (end < 0) break;
+    if (start === end && start === prevEnd) { at = start + 1; continue; }
+    out.push([start, end]);
+    prevEnd = end;
+    at = end > start ? end : start + 1;
+  }
+  return out;
+}
+
+/** JavaScript's match of `r` from `at` on. */
+function firstExec(r: JsRegex, line: string, at: number): RegExpExecArray | null {
+  const g = new RegExp(r.source, r.flags + 'g');
+  g.lastIndex = at;
+  return g.exec(line);
+}
+
+/**
+ * The match of `r` that a POSIX tool finds from `at` on: the leftmost and, of those there, the longest (JavaScript's is
+ * the first its alternatives give: `a\|ab` takes `a` of `ab`), with its groups; null when there is none.
+ */
+export function posixExec(r: JsRegex, line: string, at: number): RegExpExecArray | null {
+  const first = firstExec(r, line, at);
+  if (!first) return null;
+  let best: RegExpExecArray = first;
+  // A match at the same start that ends further on (the line seen whole, for `$` and lookarounds), until none does.
+  for (;;) {
+    const longer = new RegExp(`(?:${r.source})(?<=^[\\s\\S]{${best.index + best[0].length + 1},})`, r.flags + 'y');
+    longer.lastIndex = best.index;
+    const m = longer.exec(line);
+    if (!m) return best;
+    best = m;
+  }
+}
+
 function swapCase(s: string): string {
   return s.replace(/[a-zA-Z]/g, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
 }
