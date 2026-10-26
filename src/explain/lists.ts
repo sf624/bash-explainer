@@ -158,7 +158,7 @@ function grouping(n: SyntaxNode): string | undefined {
 }
 
 /** An AND/OR list (3.2.4: the model's `list`), shown as one sequence (`a && b || c`), left-nested as it is. */
-export function andOrList(cx: Explainer, n: SyntaxNode): Token {
+export function andOrList(cx: Explainer, n: SyntaxNode, other: (c: SyntaxNode) => Token | undefined): Token {
   // Flatten left-nested lists (`a && b || c`) into one sequence.
   const flatParts: SyntaxNode[] = [];
   const walk = (x: SyntaxNode) => {
@@ -168,8 +168,8 @@ export function andOrList(cx: Explainer, n: SyntaxNode): Token {
     }
   };
   walk(n);
-  // (Its operators are `&&` and `||` only.)
-  const children = parts(cx, flatParts, (c) => ({ ...cx.tok(c, 'operator', cx.t(listOps[c.type])), refs: ['3.2.4'] }));
+  // (Its operators; another token is one an unfinished construct left there, `while a do b; done && c`: `other` says it.)
+  const children = parts(cx, flatParts, (c) => (c.type === '&&' || c.type === '||' ? { ...cx.tok(c, 'operator', cx.t(listOps[c.type])), refs: ['3.2.4'] } : other(c)));
   const kind = andOrKind(n);
   const grouped = kind === 'both' ? grouping(n) : undefined;
   const text = kind === 'and'

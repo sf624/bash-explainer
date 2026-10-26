@@ -46,7 +46,7 @@ function explainNode(cx: Explainer, n: SyntaxNode): Token {
     case 'variable_assignment': return skeletal(assignment(cx, n), n, true);
     case 'pipeline': return pipeline(cx, n);
     case 'command_list': return commandList(cx, n);
-    case 'list': return andOrList(cx, n);
+    case 'list': return andOrList(cx, n, (c) => anon(cx, c));
     case 'redirected_statement': return redirected(cx, n);
     case 'file_redirect': return fileRedirect(cx, n);
     case 'heredoc_redirect': return heredoc(cx, n);
