@@ -21,7 +21,8 @@ import { statusModel } from './semantics/status';
 export { EXAMPLE_KINDS } from './analyzer-types';
 export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, ScriptProcess, Span, Token, TokenOrigin } from './analyzer-types';
 import type { ExplainOptions, LineExplanation, Span, Token } from './analyzer-types';
-import { argvLine } from './argvline';
+import { argvLine, condLine } from './argvline';
+import { lineSummary } from './linesummary';
 import { readingTree } from './reading';
 import { claim, dropLabelEcho } from './tokenmarks';
 import { LineExplainer, type Walk } from './explain/context';
@@ -134,6 +135,7 @@ export class Analyzer {
         lang: this.lang, resolve: resolveAt, meaning: (w) => wordMeaning(w, cx.state), extra: this.otherLines(tree, line, shell, opts, items),
         variable: (part) => variableFrom(cx, state, part), expands: (w) => wordExpands(state, w),
         tildes: (w) => wordTildes(state, w), argv: (c) => argvLine(c, state, this.lang, (name, at) => varDesc(cx, name, at)),
+        cond: (c) => condLine(c, state, this.lang, (name, at) => varDesc(cx, name, at)), summary: (tops) => lineSummary(tops, state, this.lang),
       });
     }
     return result;

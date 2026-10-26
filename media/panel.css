@@ -1990,3 +1990,181 @@ pre#line {
 #tree.u-stacked .u-l1 > .text.u-blank {
   display: none;
 }
+
+
+/* Round 6. The words a program receives: each a chip that never breaks across lines; a chip longer than the line is
+   cut, its whole text in its tooltip. A placeholder for any number of words is dashed. */
+.u-argv code.u-arg {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  line-height: 1.45;
+}
+.u-argv code.u-arg.u-many {
+  box-shadow: none;
+  outline: 1px dashed color-mix(in srgb, var(--c-recv) 80%, transparent);
+  outline-offset: -1px;
+}
+.u-row .u-argv0 {
+  font-size: 0.88em;
+}
+/* Structure (a pipeline, a list, a compound command, a simple command as a whole): a hollow bar, the code in the
+   text's own colour; a header's bar dashed. */
+.row.u-row.u-struct::before {
+  width: 6px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+.row.u-row.u-head.u-struct::before {
+  background: repeating-linear-gradient(to bottom, currentColor 0 3px, transparent 3px 5px);
+  box-shadow: none;
+  -webkit-mask: linear-gradient(to right, #000 0 1.5px, transparent 1.5px calc(100% - 1.5px), #000 calc(100% - 1.5px));
+  mask: linear-gradient(to right, #000 0 1.5px, transparent 1.5px calc(100% - 1.5px), #000 calc(100% - 1.5px));
+}
+.row.u-row.u-head {
+  font-size: inherit;
+}
+.row.u-row.u-head > .u-tok > .label {
+  color: var(--vscode-editor-foreground, var(--vscode-foreground));
+}
+/* A part bash handles itself (with the program's side): a small mark after its code; its text keeps its contrast. */
+.u-bmark {
+  display: inline-block;
+  vertical-align: 0.1em;
+  font-family: var(--vscode-font-family, sans-serif);
+  font-size: 10px;
+  line-height: 1.3;
+  padding: 0 0.3em;
+  border: 1px solid color-mix(in srgb, var(--c-muted) 70%, transparent);
+  border-radius: 3px;
+  color: var(--c-muted);
+  letter-spacing: 0.02em;
+}
+.u-key .u-bmark {
+  display: inline-block;
+}
+/* The chips and the link that say what is plain already: on hover or focus only (their place kept). */
+.u-row:not(:hover):not(.active):not(.u-focus) .u-hov {
+  visibility: hidden;
+}
+/* The role a program gives the word, after its role to bash: in sight. */
+.u-row .u-prog {
+  color: color-mix(in srgb, var(--l) 80%, var(--vscode-foreground));
+  font-weight: 600;
+}
+.u-row .u-prog .u-prog-who {
+  font-weight: normal;
+  color: var(--c-muted);
+}
+/* A group's code wraps only between its pieces: before an operator, after a `;`. */
+.u-row > .u-tok > .label .u-seg {
+  white-space: pre;
+}
+/* A caveat or a warning, folded to one line; open, its whole text. */
+.u-row details.u-problem {
+  display: block;
+}
+.u-row details.u-problem > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.u-row details.u-problem > summary::-webkit-details-marker {
+  display: none;
+}
+.u-row details.u-problem .u-problem-note {
+  display: flex;
+  gap: 0.35em;
+  align-items: flex-start;
+}
+.u-row details.u-problem:not([open]) .note-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* `[[ … ]]` with the program's side: no program runs; what bash evaluates. */
+.u-row .u-cond-line {
+  margin-top: 0.15rem;
+}
+.u-row .u-desc code.u-cond {
+  white-space: normal;
+}
+.u-cond .u-ph {
+  font-style: italic;
+  font-family: var(--vscode-font-family, sans-serif);
+}
+.u-cond .u-condmark {
+  font-family: var(--vscode-font-family, sans-serif);
+  color: var(--c-muted);
+}
+/* One sentence on the whole line, above the rows. */
+#u-summary {
+  margin: 0 0 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-left: 3px solid var(--vscode-focusBorder, #0078d4);
+  background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 6%, transparent);
+  line-height: 1.45;
+}
+#u-summary[hidden] {
+  display: none;
+}
+#u-summary code {
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
+  padding: 0 0.25em;
+  border-radius: 3px;
+}
+/* The depth control: the depth chosen filled, not ringed; a ring only for the keyboard's focus. */
+#layers button.step[aria-current="step"] {
+  background: var(--vscode-button-background, #0e639c);
+  border-color: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #fff);
+}
+#layers button.step[aria-current="step"] .num {
+  color: inherit;
+}
+#layers button.step:focus:not(:focus-visible) {
+  outline: none;
+}
+/* Narrow: the switch and the key on a line of their own, together; then the steps by their numbers only. */
+#layers .u-break {
+  display: none;
+}
+#layers.wrap .u-break {
+  display: block;
+  flex-basis: 100%;
+  height: 0;
+}
+#layers.wrap #key-button {
+  margin-left: 0.4rem;
+}
+#layers.tighter #steps .num {
+  display: inline;
+}
+#layers.tighter #steps .short {
+  display: none;
+}
+#layers #tp-back,
+#layers #tp-forward,
+#layers #step-menu {
+  display: none !important;
+}
+.u-swatch.u-swatch-hollow {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+  width: 4px;
+}
+.u-key .u-kbasic {
+  margin-top: 0.15rem;
+}
+.u-key details.u-kmore > summary {
+  cursor: pointer;
+  margin-top: 0.3rem;
+  color: var(--c-muted);
+}
+/* On a narrow view the chips are a line of their own: none at all while they are hidden. */
+#tree.u-stacked .u-row:not(:hover):not(.active):not(.u-focus) .u-side:not(:has(> :not(.u-hov))) {
+  display: none;
+}

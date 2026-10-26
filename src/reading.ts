@@ -26,7 +26,7 @@
 import type { Pos, ScriptProcess, Span, Token } from './analyzer-types';
 import { binaryTestOps, extendedEqualOps, unaryTestOps } from './dict/syntax';
 import type { Lang } from './i18n';
-import type { ArgvLine } from './argvline';
+import type { ArgvLine, ArgvPart } from './argvline';
 import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } from './refs';
 import type { NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
@@ -87,11 +87,15 @@ export interface ReadingNode {
   /** (Prototype B) On a parameter expansion: what the variable is (`$USER`), or the line that set it (`ReadingContext.variable`). */
   from?: { meaning?: string; line?: number; loop?: boolean };
   /** (Prototype B) On a word after the command name: what bash's expansions make of it before the command reads it. */
-  expands?: ('glob' | 'tilde' | 'split')[];
+  bashExpands?: ('glob' | 'tilde' | 'split')[];
   /** (Prototype B) On a word: its tilde prefixes (3.5.2), each with the text it is (`~`, `~user`). */
   tildes?: { span: Span; text: string; user: string }[];
   /** (Prototype B) On a simple command with a name: the words its program receives (src/argvline.ts). */
   argv?: ArgvLine;
+  /** (Prototype B) On `[[ … ]]`: what bash evaluates once it has expanded the words (src/argvline.ts `condLine`). */
+  cond?: ArgvPart[];
+  /** (Prototype B) On the root: one sentence on what the whole line does, where it is a pattern src/linesummary.ts knows. */
+  summary?: string;
   /** (Prototype B) On a compound command: its real code on one line, long inner parts cut (`if [[ … ]]; then source config.ini; fi`). */
   code?: string;
   /** On an `aliasWord`: the alias's text, which bash reads in its place. */
@@ -120,6 +124,10 @@ export interface ReadingContext {
   tildes?(word: SyntaxNode): { span: Span; text: string; user: string }[];
   /** (Prototype B) The words the program of a simple command receives. */
   argv?(cmd: SyntaxNode): ArgvLine | undefined;
+  /** (Prototype B) What bash evaluates in `[[ … ]]` after expansion. */
+  cond?(test: SyntaxNode): ArgvPart[] | undefined;
+  /** (Prototype B) What the line, whose statements are these, does, in one sentence (or nothing). */
+  summary?(tops: readonly SyntaxNode[]): string | undefined;
 }
 
 /** The texts the tree says itself, where no token says them. */
@@ -384,6 +392,10 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       return node(x, layer);
     });
     const n = shellNode(c, layer, kind, children);
+    if (c.type === 'extended_test' && layer === 'bash') {
+      const cond = cx.cond?.(c);
+      if (cond) n.cond = cond;
+    }
     // A skeleton names a compound command better than its first line (`if ‹condition› then … fi`).
     const t = tokenAt(n.span);
     if (t && kind !== 'list' && kind !== 'andList' && kind !== 'orList' && kind !== 'pipeline') {
@@ -546,7 +558,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     // (What bash does to it that no part shows: brace and tilde expansion, splitting, globbing, a pattern's matching.)
     n.refs = union(kind === 'argument' ? ['3.7.1'] : [], n.refs, expansionSections(cx.meaning(w)));
     const expands = kind === 'argument' ? cx.expands?.(w) : undefined;
-    if (expands?.length) n.expands = expands;
+    if (expands?.length) n.bashExpands = expands;
     const tildes = kind === 'argument' ? cx.tildes?.(w) : undefined;
     if (tildes?.length) n.tildes = tildes;
     // A language in a word no command reads, which bash reads itself (the regex of `=~`), is under the word.
@@ -746,7 +758,14 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     layer: 'language', kind: t.kind, label: t.label, span: t.span, text: t.explanation, reader, children: t.children.map((c) => langNode(c, reader)),
   });
 
-  return { layer: 'bash', kind: 'line', label: '', span: range, children: collect(tree.root, 'bash'), ...(cx.extra?.length ? { tokens: cx.extra } : {}) };
+  // (The statements of the line, whole: those the line's range holds.)
+  const tops = (n: SyntaxNode): SyntaxNode[] => withLists(n).flatMap((c) => {
+    const s = spanOf(c);
+    if (c.endIndex === c.startIndex || le(s.end, range.start) || le(range.end, s.start)) return [];
+    return within(s, range) ? [c] : tops(c);
+  });
+  const summary = cx.summary?.(tops(tree.root).filter((c) => c.named && c.type !== 'comment'));
+  return { layer: 'bash', kind: 'line', label: '', span: range, children: collect(tree.root, 'bash'), ...(cx.extra?.length ? { tokens: cx.extra } : {}), ...(summary ? { summary } : {}) };
 }
 
 /** (Prototype B) The types `compactCode` cuts first, and how: the delimiters kept around `…`. */

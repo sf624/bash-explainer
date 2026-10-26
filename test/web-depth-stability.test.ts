@@ -15,9 +15,9 @@ const SCRIPTS: { text: string; lines: number[]; argv?: Record<number, string[][]
   },
   {
     text: 'backup="${HOME}/backup-$(date +%F).tar.gz"\ntar -czf "$backup" ~/docs 2>/dev/null || echo "failed" >&2', lines: [1, 2],
-    argv: { 2: [['tar', '-czf', '‹home directory›/backup-‹output of date +%F›.tar.gz', '‹home directory›/docs'], ['echo', 'failed']] },
+    argv: { 2: [['tar', '-czf', '‹home directory›/backup-‹output of date +%F›.tar.gz', '‹home directory›/docs'], ['failed']] },
   },
-  { text: 'if [[ -f config.ini && $DEBUG == 1 ]]; then source config.ini; fi', lines: [1], argv: { 1: [['source', 'config.ini']] } },
+  { text: 'if [[ -f config.ini && $DEBUG == 1 ]]; then source config.ini; fi', lines: [1], argv: { 1: [['config.ini']] } },
 ];
 
 interface Row { text: string; kind: string; read: boolean }
@@ -43,6 +43,15 @@ describe('the web page: the depths of the explanation add, and never move a text
     words: [...l.querySelectorAll('.u-arg')].map((w) => w.textContent),
     spans: [...l.querySelectorAll('.u-arg')].map((w) => w.dataset.span),
   }))`) as Promise<{ words: string[]; spans: string[] }[]>;
+  /**
+   * The argv chips that are not one line high (round 6: a chip never breaks across lines; a long one is cut, with its
+   * whole text in its tooltip): their texts. A chip is one box, no higher than 1.8 times its font size.
+   */
+  const brokenChips = async (f: Frame): Promise<string[]> => f.evaluate(`[...document.querySelectorAll('#tree .u-arg')].filter((c) => {
+    const rects = c.getClientRects();
+    const size = parseFloat(getComputedStyle(c).fontSize);
+    return rects.length !== 1 || rects[0].height > size * 1.8;
+  }).map((c) => c.textContent)`) as Promise<string[]>;
   /** "1:2-1:4": its start, as a number that orders the ranges. */
   const startOf = (span: string): number => {
     const [l, c] = span.split('-')[0].split(':').map(Number);
@@ -102,11 +111,12 @@ describe('the web page: the depths of the explanation add, and never move a text
         const a2 = await argvs(f);
         assert.deepStrictEqual(a2, a1, `line ${line}: the argv lines at depth 1 and 2`);
         for (const a of a2) {
-          assert.ok(a.words.length > 0, `line ${line}: an empty argv line`);
+          // (A builtin's line, `source`, holds its arguments only: bash calls it with the words after its name.)
           const starts = a.spans.map(startOf);
           for (let i = 1; i < starts.length; i++) assert.ok(starts[i] >= starts[i - 1], `line ${line}: argv ${a.words.join(' ')} out of order`);
         }
         if (script.argv?.[line]) assert.deepStrictEqual(a2.map((a) => a.words), script.argv[line], `line ${line}: the argv lines`);
+        assert.deepStrictEqual(await brokenChips(f), [], `line ${line}: argv chips broken across lines`);
         byLine.push(await rows(f));
         // Every row drawn says something.
         for (const [span, r] of byLine[byLine.length - 1]) if (r.kind !== 'kind-simple') assert.ok(r.text, `line ${line}, ${span}: no text`);
@@ -126,4 +136,20 @@ describe('the web page: the depths of the explanation add, and never move a text
       await ctx.close();
     });
   }
+
+  it('never breaks an argv chip across lines, on a phone either', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    for (const script of SCRIPTS) {
+      for (const line of Object.keys(script.argv ?? {}).map(Number)) {
+        const f = await open(page, script.text, line);
+        for (const step of [1, 2]) {
+          await show(f, step, true);
+          assert.ok((await argvs(f)).length > 0);
+          assert.deepStrictEqual(await brokenChips(f), [], `${script.text.split('\n')[line - 1]}: depth ${step}`);
+        }
+      }
+    }
+    await ctx.close();
+  });
 });

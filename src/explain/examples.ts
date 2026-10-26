@@ -134,7 +134,26 @@ export function testExample(cx: Explainer, n: SyntaxNode, bracket: TestShape | u
  * A stage of a pipeline example; `runs`: its operands are a command it runs (xargs), so its step shows the commands;
  * `prints`: the layout of what it prints, when made-up lines of it can stand for its output (`ps aux`).
  */
-type PipelineStage = { stage: Stage; file: boolean; readsFile: boolean; source: InputSource; runs: boolean; layout?: Layout };
+type PipelineStage = { stage: Stage; file: boolean; readsFile: boolean; source: InputSource; runs: boolean; layout?: Layout; samples?: { code: string; value: string }[] };
+
+/**
+ * (Prototype B) Example values of well-known variables that a script does not set (their values come from the
+ * environment, known only when it runs): a pipeline example runs with them, and says so in its note.
+ */
+const SAMPLE_VALUES: Record<string, string> = { USER: 'alice', LOGNAME: 'alice', HOME: '/home/alice', HOSTNAME: 'host1' };
+
+/** The example value of a word that is only the expansion of such a variable (`$USER`, `"${USER}"`), with its code. */
+function sampleValue(cx: Explainer, w: SyntaxNode): { code: string; value: string } | undefined {
+  const x = w.type === 'string' && w.namedChildren.length === 1 ? w.namedChildren[0] : w;
+  if (x.type !== 'simple_expansion' && x.type !== 'expansion') return undefined;
+  const name = /^\$\{?([A-Z_]+)\}?$/.exec(x.text)?.[1];
+  const value = name && SAMPLE_VALUES[name];
+  if (!name || !value) return undefined;
+  // (A value the script sets, or may set, is not the environment's.)
+  const st = cx.state.at(x).run.variables.get(name);
+  if (st && st.set !== 'off' && st.at) return undefined;
+  return { code: `$${name}`, value };
+}
 
 /** The stages of pipelines read so far on the line (`pipelineStage`). */
 const PIPELINE_STAGES = memoKey<PipelineStage | undefined>('pipeline stages');
@@ -279,7 +298,12 @@ export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefin
   const ex = pipelines.pipelineExample(stages, readsFile || !!known, known);
   if (!ex) return undefined;
   const inputs: InputBox[] = ex.input ? shareOut(src, ex.input).map((lines, i) => ({ label: streamLabel(streams[i], cx.lang), lines })) : [];
-  return wholePipeline(cx, n, ex, inputs, stages, runs);
+  const whole = wholePipeline(cx, n, ex, inputs, stages, runs);
+  // (Prototype B) The example values it ran with, said under its title.
+  const said = [...new Map((p.samples ?? []).map((x) => [x.code, x])).values()];
+  if (!said.length) return whole;
+  const list = said.map((x) => cx.s(`\`${x.code}\` を \`${x.value}\``, `\`${x.code}\` is \`${x.value}\``)).join(cx.s('、', ', '));
+  return { ...whole, note: cx.s(`ここでは ${list} とした（例の値。実際の値は実行するまで分からない）`, `Here ${list}: an example value (the real one is known only when it runs)`) };
 }
 
 /** The lines of a section of the whole-pipeline example: at most `MAX_SHOWN_LINES`, control characters made visible. */
@@ -340,14 +364,15 @@ function wholePipeline(cx: Explainer, n: SyntaxNode, ex: pipelines.PipelineExamp
  * The stages of pipeline `n` (the first `count`), as the pipeline examples run them: whether each names a file to
  * read, whether the first reads one (`< f`), and what the first reads. Undefined for a stage they cannot follow.
  */
-function pipelineStages(cx: Explainer, n: SyntaxNode, count = n.namedChildren.length): { stages: Stage[]; files: boolean[]; readsFile: boolean; src: InputSource; runs: ReadonlySet<Stage>; layout?: Layout } | undefined {
+function pipelineStages(cx: Explainer, n: SyntaxNode, count = n.namedChildren.length): { stages: Stage[]; files: boolean[]; readsFile: boolean; src: InputSource; runs: ReadonlySet<Stage>; layout?: Layout; samples?: { code: string; value: string }[] } | undefined {
   const read: PipelineStage[] = [];
   for (const [i, cmd] of n.namedChildren.slice(0, count).entries()) {
     const st = pipelineStage(cx, n, cmd, i);
     if (!st) return undefined;
     read.push(st);
   }
-  return { stages: read.map((st) => st.stage), files: read.map((st) => st.file), readsFile: !!read[0]?.readsFile, src: read[0]?.source, runs: new Set(read.filter((st) => st.runs).map((st) => st.stage)), ...(read[0]?.layout ? { layout: read[0].layout } : {}) };
+  const samples = read.flatMap((st) => st.samples ?? []);
+  return { stages: read.map((st) => st.stage), files: read.map((st) => st.file), readsFile: !!read[0]?.readsFile, src: read[0]?.source, runs: new Set(read.filter((st) => st.runs).map((st) => st.stage)), ...(read[0]?.layout ? { layout: read[0].layout } : {}), ...(samples.length ? { samples } : {}) };
 }
 
 /**
@@ -377,13 +402,20 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     if (['function', 'alias'].includes(resolve(cx, name.text, name).kind)) return undefined;
     const args = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect');
     const spec = specFor(cx, name.text);
-    const stage: Stage = { cmd: name.text.split('/').pop()!, words: exampleWords(cx, args, !!spec?.prints).map((w) => w.value), text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}) };
+    const ew = exampleWords(cx, args, !!spec?.prints);
+    const samples: { code: string; value: string }[] = [];
+    const words = ew.map((w, k) => {
+      const sv = w.value === undefined && ew.length === args.length ? sampleValue(cx, args[k]) : undefined;
+      if (sv) samples.push(sv);
+      return sv ? sv.value : w.value;
+    });
+    const stage: Stage = { cmd: name.text.split('/').pop()!, words, text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}) };
     const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell)), { name: name.text, lookup: (x) => specFor(cx, x) });
     const source = inputSource(cx, cmd, parse, args, spec);
     // A stage that writes its output to a file (`sort -o f`) hands nothing on.
     const runs = !!spec?.operands?.some((alt) => alt.pattern.some((o) => o.command));
     const layout = i === 0 ? layoutOf(spec, parse) : undefined;
-    return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source, runs, ...(layout ? { layout } : {}) };
+    return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source, runs, ...(layout ? { layout } : {}), ...(samples.length ? { samples } : {}) };
   })();
   stages.set(cmd, read);
   return read;
