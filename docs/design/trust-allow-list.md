@@ -33,6 +33,17 @@ Status: proposed (2026-10-26). Values in Meaning, decided conditions and dead co
 
 None of these is exotic in bash's terms. Each is one row of a list the scan never read in full. The fix of each, one by one, would be the ninth, tenth and eleventh special case. The scan needs to fail toward "no value" for what it does not know.
 
+**And the review of this page found more.** A fresh review of the first draft tried to break its tables, and found six more ways the model is wrong today (each checked with bash 5.2 and 5.3; the model says the value from before):
+
+- A redirection that fails stops its command, with no option set: `x=1; { x=2; } < ./nofile; if [ "$x" = 2 ]; then echo two; else echo other; fi` prints `other`; the model decides the condition always true and marks `echo other` dead. The same with `declare x=2 < ./nofile`, a function call `> ./no/such/dir`, `2>&9` with fd 9 closed, and a function defined with a failing redirection. (A command with only assignments still assigns: `x=2 < ./nofile` sets 2, and the model agrees.)
+- `jobs -x eval x=2` runs `eval` in this shell; the spec already says so (`runs({ run: 'current-shell' })`), but the scan does not read it.
+- Options in the shebang: `#!/bin/bash -k`, `#!/bin/bash -C`, `#!/usr/bin/env -S bash -O compat31` and `#!/usr/bin/env -S BASH_COMPAT=42 bash` each give the wrong result of the table above, when the script is run as a program. The walk reads the shebang's `set` letters (`shebangStart`), the scan does not, and `-O` is read by neither.
+- A prefix assignment to another bash reaches its model: `BASH_COMPAT=31 bash -c '…'` with the `compat31` script of the table decides "always false"; bash takes `then`.
+- Values from the environment reach arithmetic through copies: with `b='y=5'` in the environment, `y=1; a="$b"; b="$a"; (( a ))` and `y=1; a="$b"; b=0; (( a ))` both set `y` to 5. The closure of names read as arithmetic is by name, not by position.
+- `exec {a[u=2]}>/dev/null` sets `u`: the scan takes only a plain name before `>`.
+
+So the tables of section 2 cannot be written from what the scan knows today. They must be written from bash's lists, from the specs (each option and slot), and from what the walk really follows; section 2 does so.
+
 ## 2. The allow-list
 
 **The rule.** The scan looks up every construct of the script in one table. Each entry gives the construct's *effect*:
@@ -42,7 +53,7 @@ None of these is exotic in bash's terms. Each is one row of a list the scan neve
 - `names N`: it may change the variables N, in a way the walk does not follow. Those names are not trusted (today's `write(…, plain: false)`).
 - `all`: it may change anything. Nothing is trusted (today's `blindFor`).
 
-A construct that is not in the table has the effect `all`. "Construct" means a member of one of these finite sets:
+A construct that is not in the table has the effect `all` (the variables are the one exception: see their table). "Construct" means a member of one of these finite sets:
 
 1. the node types of the syntax tree (`NodeType`, src/syntax/tree.ts);
 2. the command names: a function the script defines, a builtin (each by name), anything else (a program, or not found);
@@ -52,7 +63,7 @@ A construct that is not in the table has the effect `all`. "Construct" means a m
 6. the variables bash gives a meaning (`BASH_VARIABLES`, src/semantics/vars.ts);
 7. the redirection operators.
 
-Each set can be checked for completeness: the type checker for `NodeType`, and bash itself for the others (section 5).
+Each set can be checked for completeness: the type checker for `NodeType`, the manual's lists for the variables, and bash itself for the others (section 5).
 
 **The tables.** Each row says what the construct may change. "Today" means the scan already does this; "new" marks a change.
 
@@ -60,11 +71,13 @@ Each set can be checked for completeness: the type checker for `NodeType`, and b
 
 | Construct | Effect |
 | --- | --- |
-| `program`, `comment`, `command_name`, `pipeline`, `list`, `negated_command`, `compound_statement`, `subshell`, `do_group`, `if_statement`, `elif_clause`, `else_clause`, `while_statement`, `c_style_for_statement`, `time_statement`, `redirected_statement`, `arithmetic_command`, `extended_test`, the word and expression nodes | followed (the walk; the arithmetic, test and word parts below) |
+| `program`, `comment`, `command`, `command_name`, `variable_assignment`, `pipeline`, `list`, `negated_command`, `compound_statement`, `subshell`, `do_group`, `if_statement`, `elif_clause`, `else_clause`, `case_item`, `while_statement`, `c_style_for_statement`, `time_statement`, `arithmetic_command`, `extended_test`, the word and expression nodes | followed (the walk; the arithmetic, test and word parts below) |
+| The shebang (the first `comment`) | its options are looked up in the tables below as if set on the first line: `set` letters (`bash -k`), `-O name`, `-o name`, and the assignments of `env -S` (`BASH_COMPAT=42 bash`) (new) |
+| `redirected_statement`, and the redirect nodes (`file_redirect`, `file_descriptor`, `heredoc_redirect`, `heredoc_start`, `heredoc_body`, `heredoc_content`, `heredoc_end`, `herestring_redirect`) | the redirection rows below |
 | `function_definition` | followed; the function is closed only when every call is one the walk sees (today) |
 | `for_statement`, `select_statement` | names: the loop variable (and `REPLY` for `select`) (today) |
 | `coproc_statement` | names: the coprocess array and its `_PID` (today) |
-| `case_statement` | followed, precondition: no pattern after a `;&` or `;;&` reads a name that a list before it may write (a list that calls a function or runs a builtin that writes may write any). Else `all`, until the walk expands such patterns in the state after the list before them (new) |
+| `case_statement` | followed, once the walk expands a pattern after `;&` or `;;&` in the state after the list before it (new: today it uses the state before the `case`) |
 | `error` (text our parser could not read) | `all` (new): bash may read it otherwise |
 
 *Command names.*
@@ -76,11 +89,11 @@ Each set can be checked for completeness: the type checker for `NodeType`, and b
 | Any other static name (a program, or a name not found) | `none`: it runs in a child process. (`command_not_found_handle` also runs "in a separate execution environment", manual 3.7.2.) Its prefix assignments go to the child's environment only |
 | A name not known (`$cmd`) | today's rule (a variable the script sets only to safe commands or to functions), else `all` |
 
-*Builtins* (all 61 of `compgen -b`, the same in 5.2 and 5.3). An option the spec does not know makes the call `all` (new): bash may take it, and the scan cannot say what it does.
+*Builtins* (all 61 of `compgen -b`, the same in 5.2 and 5.3). The rows come from the specs where the specs say it, not from a list kept beside them (new): a command slot that runs in this shell (`runs({ run: 'current-shell' })`: `jobs -x`, `eval`, `command`, `builtin`) is `all` unless the walk walks it, and an option or operand that names a variable (`read x`, `printf -v x`, 5.3's `compgen -V x`) gives `names`. An option the spec does not know makes the call `all` (new): bash may take it, and the scan cannot say what it does. (Not for `echo`, `printf`, `:`, `true` and `false`, which print or ignore such a word.)
 
 | Builtins | Effect |
 | --- | --- |
-| `:`, `true`, `false`, `echo`, `printf` (no `-v`), `pwd`, `type`, `help`, `times`, `jobs`, `caller`, `dirs`, `disown`, `suspend`, `logout`, `ulimit`, `umask`, `hash`, `bind`, `history`, `kill`, `wait` (no `-p`), `bg`, `fg`, `complete`, `compopt` | `none` (a function named as a callback, `complete -F f`, is not closed: today) |
+| `:`, `true`, `false`, `echo`, `printf` (no `-v`), `pwd`, `type`, `help`, `times`, `jobs` (no `-x`), `caller`, `dirs`, `disown`, `suspend`, `logout`, `ulimit`, `umask`, `hash`, `bind`, `history`, `kill`, `wait` (no `-p`), `bg`, `fg`, `complete`, `compopt` | `none` (a function named as a callback, `complete -F f`, is not closed: today) |
 | `cd`, `pushd`, `popd`; `shift` | names: `PWD`, `OLDPWD`, `DIRSTACK`; the positional parameters (never trusted) |
 | `exit`, `return`, `break`, `continue` | followed (jumps; a count not known takes both paths) |
 | `declare`, `typeset`, `local`, `export`, `readonly` | followed for `x=w` with no option but `-r`, `-x`, `-g`; names for the other options the spec knows (`-i`, `-a`, `-A`, `-l`, `-u`, `-t`); the nameref rule for `-n`; `all` for a name not known (today), and for an option the spec lacks (`-I`: `declare -I x` in a function keeps the caller's value) |
@@ -91,12 +104,13 @@ Each set can be checked for completeness: the type checker for `NodeType`, and b
 | `source`, `.` | `all` (today) |
 | `trap` | followed for an action the walk reads (foreign text); `all` for DEBUG, RETURN, signals not known, or an action not known (today) |
 | `alias`, `unalias` | followed for static text; else `all` (today) |
-| `enable` | followed for `-n NAME`, `NAME`, and `-a` or `-p` that only print; `all` for `-f`, `-d`, other letters, or a name not known (#387 does most of this) |
+| `jobs -x` | `all` (new): it runs its command in this shell |
+| `enable` | followed as #387 reads it (`-n NAME`, `-ns NAME`, `-n -s NAME`, `-n -a NAME`, `NAME`; `-p` prints); `all` for `-f`, `-d`, or a name not known |
 | `set` | each option, by the table below; the positional parameters (never trusted) |
 | `shopt` | each option, by the table below; `all` for a name not known (new) |
-| `test`, `[` | followed, precondition: no word may be `-v` or `-R` with an operand that has a subscript. That is: no unquoted word that may split into such words, no `"$@"`, and no word that is not static text directly after one that may be an operator (#387); else `all` |
+| `test`, `[` | followed, precondition: no word may be `-v` with an operand that has a subscript (`-R` evaluates no subscript: `[ -R 'a[u=2]' ]` leaves `u`). That is: no unquoted word that may split into such words, no `"$@"`, and no word that is not static text directly after one that may be an operator (#387); else `all` |
 | `command`, `builtin` | the row of the command they run; `command -v`, `-V`: `none` (today) |
-| `compgen` | `none` for a quiet word list and no `-F` or `-C`; else `all` (today) |
+| `compgen` | `none` for a quiet word list and no `-F` or `-C`; else `all` (today); `-V x` (5.3): names `x` |
 | `fc` | `none` with `-l`; else `all` (today) |
 | `exec` | followed with no command (its redirections); with one, the shell ends there (the walk does not mark the code after it dead, which only says less) |
 
@@ -108,7 +122,7 @@ Each set can be checked for completeness: the type checker for `NodeType`, and b
 | `emacs`, `vi`, `ignoreeof`, `nolog`, `notify`, `verbose`, `hashall`, `physical`, `privileged`, `interactive-comments`, `errtrace`, `functrace` | `none` (`errtrace` and `functrace` only change where ERR, DEBUG and RETURN traps run; DEBUG and RETURN traps are `all`, and an ERR trap's action is foreign text) |
 | `histexpand`, `history` | `all` (new): `!!` runs an earlier line |
 | `keyword` | `all` (new): an assignment word anywhere in a command is an assignment for it (table of section 1) |
-| `noclobber` | `all` (new): a `>` to an existing file fails, so its command does not run (table of section 1) |
+| `noclobber` | followed by the redirection rule below: with it, a `>` may fail on any file (table of section 1) |
 | `noexec`, `onecmd` | `all` (new): the commands after it do not run |
 | `posix` (also `POSIXLY_CORRECT`) | `all` (new), until the POSIX-mode rows of [bash-versions.md](bash-versions.md), step 6, say which of the manual's differences (6.11) the walk follows |
 
@@ -122,35 +136,36 @@ Each set can be checked for completeness: the type checker for `NodeType`, and b
 | `compat31` … `compat44`, `extdebug`, `localvar_inherit`, `localvar_unset`, `assoc_expand_once`, `array_expand_once` | `all` when turned on (new; `compat31` and `compat42` in section 1, `localvar_inherit` in the review) |
 | `extquote`, `globasciiranges` | `all` when turned off (new): `$'…'` inside `"${x:-…}"`, and ranges in patterns by the locale |
 
-*Variables of bash.* `BASH_VARIABLES` gets a field `effect`, for what assigning the variable does to bash (new):
+*Variables of bash.* Here the default differs: a variable with no row is the script's own, a plain variable. So the rows must cover every variable bash gives a meaning: `BASH_VARIABLES` (the manual's sections 5.1 and 5.2, compared with bash by test/bash-variables.test.ts), plus those it lacks today: 5.3's `GLOBSORT`, `BASH_MONOSECONDS` and `BASH_TRAPSIG`, and `TEXTDOMAIN`, `TEXTDOMAINDIR`. Each gets a field `effect`, for what assigning it does to bash (new):
 
 | Variables | Effect of a write |
 | --- | --- |
 | `BASH_COMPAT`, `FUNCNEST`, `BASH_ALIASES`, `POSIXLY_CORRECT` | `all` (section 1; `POSIXLY_CORRECT` turns on POSIX mode) |
 | `LANG`, `LC_ALL`, `LC_CTYPE`, `LC_COLLATE` | `none` for `C`, `POSIX`, `C.UTF-8` or empty; else `all`: case conversion, character classes and ranges follow the locale (manual 5.2) |
-| `IFS`, `PS4`, `OPTIND`, `BASH_ENV`, `ENV`, the readonly ones (`SHELLOPTS`, `UID`…), the dynamic ones (`RANDOM`, `PWD`…) | followed (today: the word model, the PS4 rule, arithmetic, other shells' models, never trusted) |
-| The others (`PATH`, `CDPATH`, `HOME`, `GLOBIGNORE`, `TMOUT`, `HIST*`, `PS1`, `TIMEFORMAT`…) | `none` |
+| `IFS`, `PS4`, `OPTIND`, `HOME`, `BASH_ENV`, `ENV`, the readonly ones (`SHELLOPTS`, `UID`…), the dynamic ones (`RANDOM`, `PWD`…) | followed (today: the word model, the PS4 rule, arithmetic, the tilde, other shells' models, never trusted) |
+| The others (`PATH`, `CDPATH`, `GLOBIGNORE`, `TMOUT`, `HIST*`, `PS1`, `TIMEFORMAT`, `GLOBSORT`…) | `none` |
 
-A prefix assignment of a program (`LANG=de_DE.UTF-8 sort`) is `none`: it goes to the program's environment only.
+A prefix assignment of a program (`LANG=de_DE.UTF-8 sort`) is `none`: it goes to the program's environment only. Not so for another shell the model reads (`bash -c`, `sh -c`): what its model starts with (the values given or exported to it, and `SHELLOPTS` and `BASHOPTS` when exported) goes through this table, so `BASH_COMPAT=31 bash -c '…'` makes that model `all` (new).
 
 *Expansions.*
 
 | Construct | Effect |
 | --- | --- |
 | `$x`, `${x}`, `${#x}`, `${x-w}`, `${x:-w}`, `${x+w}`, `${x:+w}`, `${x?w}`, `${x:?w}`, `#`, `##`, `%`, `%%`, `/`, `//`, `/#`, `/%`, `^`, `^^`, `,`, `,,`, `~`, `~~` | `none` (`?` may end the shell: followed by src/semantics/stops.ts) |
-| `${x=w}`, `${x:=w}` | names: `x` (today). Its value is "kept": a set `x` keeps its value, which may come from the environment (new: read as arithmetic, it is `all`) |
+| `${x=w}`, `${x:=w}` | names: `x` (today). A set `x` keeps its value, which may come from the environment (see arithmetic) |
 | `${x:o:l}`, a subscript | arithmetic (below; a subscript of an associative array is a key) |
 | `${x@Q}`, `@E`, `@A`, `@a`, `@K`, `@k`, `@U`, `@u`, `@L` | `none` |
 | `${x@P}` | followed, precondition: every value the script gives `x` is quiet, and none is made with `+=` (new: `+=` joins texts that are quiet alone); else `all` |
-| `${!x}` and the other indirections | `all` (today); `${!a[@]}`, `${!p@}` with nothing after them: `none` |
+| `${!x}` and the other indirections | `all` (today); `${!a[@]}`, `${!a[*]}`, `${!p@}`, `${!p*}` with nothing after them: `none` |
 | `$(…)`, backquotes, `<(…)`, `>(…)` | `none` for this shell (a subshell); their own commands are looked up as well |
 | `${ …; }`, `${| …; }` (bash 5.3) | `all` (today) |
 | `$((…))`, `$[…]` | arithmetic |
-| `$"…"`, brace expansion, a tilde, a glob | `none` (never given as a value) |
+| A tilde | followed (the value of `~` is `HOME`'s, where the script sets it: `HOME=/a; x=~`) |
+| `$"…"`, brace expansion, a glob | `none` (never given as a value) |
 
-*Redirections.* `<`, `>`, `>>`, `<>`, `>|`, `&>`, `&>>`, `<&`, `>&`, here-documents and here-strings: `none` (their words are looked up as words). `{fd}>…`: names `fd` (today). (`set -C` is `all`, above.)
+*Redirections.* Here-documents, here-strings, `/dev/null`, and a copy of fd 0, 1 or 2: followed (they do not fail; their words are looked up as words). Any other `<`, `>`, `>>`, `<>`, `>|`, `&>`, `&>>`, `<&`, `>&` may fail, and then its command does not run: followed, with the command taken as "may not run" (the walk merges the state before it with the state after it), except for a command with only assignments, which assigns anyway (new: today the walk takes every redirection as made, [expansion-values.md](expansion-values.md), section 6). `{fd}>…`: names `fd` (today); `{a[i]}>…`: names `a`, and `i` is arithmetic (new).
 
-*Arithmetic* (`(( ))`, `$(( ))`, `let`, `for (( ))`, subscripts, offsets, integer variables, `[[ x -eq y ]]`). Followed, as today: the names it assigns are `names`, and the names it reads must have values the script wrote, since bash runs a value as an expression. The closure gets three more preconditions (new), each `all` when it fails: no value the script copies from the same variable (`n="$n"`), no value kept by `${n:=w}`, and no `+=` on a variable that arithmetic reads. With `localvar_inherit` (`all` above), a `local n` keeps the caller's value too.
+*Arithmetic* (`(( ))`, `$(( ))`, `let`, `for (( ))`, subscripts, offsets, integer variables, `[[ x -eq y ]]`). Followed, as today: the names it assigns are `names`, and the names it reads must have values the script wrote, since bash runs a value as an expression. The scan's closure is by name, so it cannot see order: `n="$n"`, `${n:=w}`, `n+=x`, `a="$b"; b=0` all let a value of the environment through. Instead of a special case for each, one rule moves to the walk (new): where arithmetic reads a name, its value must be known on every path there, as text the script wrote (no unknown part, nothing kept from before the script set it); else `Walker.found` walks the script again with nothing trusted, as it does today for a name no path has set.
 
 ## 3. How the model reads it
 
@@ -158,17 +173,17 @@ A prefix assignment of a program (`LANG=de_DE.UTF-8 sort`) is `none`: it goes to
 
 - A new module, src/semantics/allow.ts, holds the tables: `SYNTAX: Record<NodeType, Effect>` (the type checker makes it complete), `BUILTINS` (by name), `SET_OPTIONS`, `SHOPT_OPTIONS`, `EXPANSION_OPERATORS`, `REDIRECTIONS`, and the field `effect` of `BASH_VARIABLES`. `Effect` is `none`, `{ followed, unless?, otherwise }`, `{ names }` or `{ all: why }`.
 - `Scan.visit` asks the table first. `all` calls `blindFor(why)`, `names` calls `write(…, plain: false)`, and `followed` runs today's handler, which checks the precondition and falls back to `otherwise`. The `switch` of today becomes the handlers of the `followed` rows. A node type, builtin, option or operator with no row is `all`.
-- A precondition that needs the value at a point (an unquoted `$x` in `test` whose values have blanks: the walk knows how it splits there; a `${x@P}` whose value differs between paths) is checked by the walk, as arithmetic that reads a name no path has set is today: `Walker.found` walks the script again with nothing trusted.
+- A precondition that needs the value at a point (a name read as arithmetic; a `${x@P}` whose value differs between paths) is checked by the walk, as arithmetic that reads a name no path has set is today: `Walker.found` walks the script again with nothing trusted.
 
-**What it composes with.** The walk (src/semantics/state.ts, src/semantics/walk/) does not change for this plan. The table states what the walk claims to follow; each `followed` row names the probe rows and generator constructs that test it (section 5). A bug of the walk in a `followed` row (the recursion of `widen`, the patterns after `;;&`) is not caught by the table. The table makes the claim explicit, and the precondition of `case` stands in until the walk is fixed.
+**What it composes with.** The walk (src/semantics/state.ts, src/semantics/walk/) changes in three places only: redirections that may fail, the arithmetic rule above, and the patterns after `;&` and `;;&`. The table states what the walk claims to follow; each `followed` row names the probe rows and generator constructs that test it (section 5). A bug of the walk in a `followed` row (the recursion of `widen`, the patterns after `;;&`) is not caught by the table. The table makes the claim explicit, and its tests check it.
 
 [trust-per-position.md](trust-per-position.md) (deferred) is orthogonal: it would turn `all` into a taint on the paths after the construct, instead of the whole script. The kinds of that page (command, expansion, later) fit the rows here. Nothing here depends on it.
 
 ## 4. Cost, measured
 
-**Method.** A prototype of the rule on trust.ts (about 150 lines behind an environment switch, not committed): the rows marked "new" above, with `all` for each construct of section 1, the arithmetic preconditions, `${x@P}` with `+=`, the `case` precondition, unknown builtin options, and `error` nodes. It does not have the walk-side checks of section 3, so it is a little stricter than the plan. It was measured on two sets, read as data and never run:
+**Method.** A prototype of the first draft's rule on trust.ts (about 150 lines behind an environment switch, not committed): `all` for each construct of section 1's first table, for `histexpand`, `history`, `noclobber`, `keyword`, `noexec`, `onecmd`, the `shopt` rows marked `all`, a locale other than C, `BASH_COMPAT`, `FUNCNEST` and `BASH_ALIASES`; for unknown builtin options and `error` nodes; for `${x@P}` with `+=`; for a nameref that names a nameref; for `n="$n"`, `${n:=w}` and `+=` on a name read as arithmetic; and for a pattern after `;&` or `;;&` that reads a name a list before may write. It differs from the tables as they now stand: it lacks `set -o posix`, `POSIXLY_CORRECT` and an unknown `shopt` name (neither set writes them, but for sample.sh, which keeps its values), the shebang, child shells, `jobs -x`, `{a[i]}>`, redirections that may fail and the walk-side arithmetic rule; it has a `case` precondition instead of the walk fix; and it blinds a static glob in `[ ]`, which the tables do not. So this measures the first draft; step 3 (section 6) measures the walk changes. It was measured on two sets, read as data and never run:
 
-- (a) the repository's corpus (test/support/corpus.ts: the fixtures, the host files and the snippets of the tests, as test/snapshot.ts reads them; 1,502 inputs at #387's head);
+- (a) the repository's corpus (test/support/corpus.ts: the fixtures, the host files and the snippets of the tests, as test/snapshot.ts reads them; 1,499 inputs at a8dda2d8, 1,500 at step 0 and 1,502 at #387, as the tests grew);
 - (b) 802 real scripts on this machine: 616 files of /usr/share/bash-completion, 142 files of /usr/bin and /usr/sbin with a `bash`, `sh` or `dash` shebang, and 44 files of /etc (`*.sh`, `*.bash` or such a shebang).
 
 Counted per file: expansions with a value (`expansionValue` over every `simple_expansion` and `expansion`), decided conditions (`condition(n)` defined, over `if`, `elif`, `while`, `for (( ))`, `&&`/`||` lists and `case`), dead statements (`dead(n)`, the outermost only), and files that trust nothing (`blind`). (The review of #382 reported 436 values, 58 decisions and 32 dead marks on 2,310 files, with a counter of its own. Every column here comes from the one counter above, so the columns compare with each other, not with that tally.)
@@ -186,42 +201,43 @@ Counted per file: expansions with a value (`expansionValue` over every `simple_e
 
 **What the allow-list costs, on top of #387: no value, decision or dead mark.** It makes 51 more files blind, none of which had one:
 
-- corpus: 38 snippets with a parse error (`error`), 3 with a builtin option the spec does not know (`read` twice, `declare`), 1 with a glob in `[ ]`;
+- corpus: 38 snippets with a parse error (`error`), 3 with a builtin option the spec does not know (`read` twice, `declare`), 1 with a static glob in `[ ]` (the prototype's rule, not the tables');
 - real: 5 bash-completion files with `complete` options the spec does not know (`-f`, `-u`, `-X`…), 2 with `set -o noclobber` (`add-shell`, `remove-shell`; `gzexe` and `bzexe` were already blind), and 2 helpers in Perl and Python under bash-completion/helpers, which the collection took and our parser cannot read.
 
-The options the specs lack should be added first (section 6, step 1); then the cost is the parse errors and `noclobber` only.
+The options the specs lack should be added first (section 6, step 1); then the cost is the parse errors only. The rules the review added (redirections that may fail above all: `{ …; } > "$log"` is common) are not in this measure.
 
-**What #387 costs, for comparison.** On the real scripts, #387 takes 173 values to 69. Of the 104 lost, 76 are in `ncurses6-config` and `ncursesw6-config`: `[ $lib_first = yes ]`, where `lib_first` is only ever `yes` or `no`, but the script saves and restores IFS (`save_IFS="$IFS"; IFS=':'; …; IFS="$save_IFS"`), and #387 requires every value of IFS to be static text. The prototype follows copies (`IFS` from `save_IFS` from `IFS`) and keeps those 76. It also asks less: a value of `$x` that cannot hold `[` or a glob character cannot give `-v` an operand with a subscript, however it splits. The other 28 (`znew`, `service`, `xml2-config`, `select-editor`) are lost by both: their words come from `$1`, `read` or command output.
+**What #387 costs, for comparison.** On the real scripts, #387 takes 173 values to 69. Of the 104 lost, 76 are in `ncurses6-config` and `ncursesw6-config`: `[ $lib_first = yes ]`, where `lib_first` is only ever `yes` or `no`, but the script saves and restores IFS (`save_IFS="$IFS"; IFS=':'; …; IFS="$save_IFS"`), and #387 requires every value of IFS to be static text. On step 0 with a test-word rule of its own (instead of #387's), the prototype followed copies (`IFS` from `save_IFS` from `IFS`) and kept those 76 (145 values in 18 files, 676 blind). But that rule also asked less than #387's, and the review showed it unsound: `x=-v; [ $x 'a[u=2]' ]` sets `u`, since the `[` comes from the static word. The sound change is #387's check (no value may split into `-v`) with copies of IFS followed; it should keep the 76, but it is not measured. The other 28 (`znew`, `service`, `xml2-config`, `select-editor`) are lost either way: their words come from `$1`, `read` or command output.
 
-**The decisions' generator** (test/support/decisions.ts, `scripts(1, 120)`, the model only): step 0 decided 114 conditions and marked 966 statements dead, with 63 scripts blind; #387: 73, 598 and 78. The allow-list without its `case` precondition changes none of these; with it: 51, 450 and 87. The generator writes variables in `case` lists and reads them in patterns after `;;&` on purpose (that is how the review found the hole), so the precondition costs most there. The walk fix (step 4) gives those back.
+**The decisions' generator** (test/support/decisions.ts, `scripts(1, 120)`, the model only): step 0 decided 114 conditions and marked 966 statements dead, with 63 scripts blind; #387: 73, 598 and 78. The allow-list without its `case` precondition changes none of these; with it: 51, 450 and 87. The generator writes variables in `case` lists and reads them in patterns after `;;&` on purpose (that is how the review found the hole), so a precondition costs most there. So the plan fixes the walk instead (step 3), and puts no precondition on `case`.
 
 ## 5. Tests
 
-- **Completeness, against bash.** test/allow-list.test.ts runs bash 5.2 (and 5.3 from `$BASH_EXPLAINER_BASH53`) with an empty environment and compares the tables with `compgen -b`, `set -o` and `shopt`: every builtin and option has a row, and no row names one bash lacks. `BASH_VARIABLES` is already compared with bash (test/bash-variables.test.ts); each entry must now have an `effect`. `SYNTAX` is complete by its type. Each builtin's options are compared with what bash accepts (`help -s` and the usage bash prints for an invalid option), so `bopt` finds a missing option of a spec, not a wrong `all`.
+- **Completeness, against bash.** test/allow-list.test.ts runs bash 5.2 (and 5.3 from `$BASH_EXPLAINER_BASH53`) with an empty environment and compares the tables with `compgen -b`, `set -o` and `shopt`: every builtin and option has a row, and no row names one that bash lacks, except the rows marked for 5.3 only (`array_expand_once`, `bash_source_fullpath`) when it runs bash 5.2. `BASH_VARIABLES` is already compared with bash (test/bash-variables.test.ts); each entry must now have an `effect`. `SYNTAX` is complete by its type. Each builtin's options are compared with what bash accepts (`help -s` and the usage bash prints for an invalid option), so `bopt` finds a missing option of a spec, not a wrong `all`.
 - **Every `followed` row is tested.** Each row lists the probe rows (test/fixtures/probes/*.json) and the generator constructs that exercise it; a test fails on a `followed` row with none, and on a listed row that does not exist.
-- **The property.** For any script that holds a construct whose effect is `all`, the model gives no value, decides no condition and marks nothing dead. The generator checks it directly: test/decisions.test.ts gets "unknown construct" statements at random points (`shopt -s compat42`, `set -C`, `set -k`, `FUNCNEST=1`, `BASH_ALIASES[1]=…`, `set -o history -H` with a `!` line, `enable -ns exit`, `shopt -s localvar_inherit`, a builtin option no spec has), and asserts `blind` on those scripts, besides the existing differential check (no decision, value or dead mark that bash contradicts).
-- **Each finding and its variants.** Rows in values.json, recorded with bash: the six holes of section 1; the four open findings of the #382 review (`: "${n:=0}"`, `n="$n"`, `n+=x`, `localvar_inherit` read as arithmetic with `n='y=5'` in the environment; `x='\0'; x+='44((u=2))'` for `${x@P}`; `set -o history -H` with `!-2`; `;;&` with a pattern that a list before writes); and one variant each that is safe and keeps its value (a static pattern after `;;&`, `LC_ALL=C`, a prefix `LANG=… sort`, `IFS` saved and restored).
+- **The property.** For any script that holds a construct whose effect is `all`, the model gives no value, decides no condition and marks nothing dead. The generator checks it directly: test/decisions.test.ts gets "unknown construct" statements at random points (`shopt -s compat42`, `set -C`, `set -k`, `FUNCNEST=1`, `BASH_ALIASES[1]=…`, `set -o history -H` with a `!` line, `enable -ns exit`, `shopt -s localvar_inherit`, a builtin option no spec has), and asserts `blind` on those scripts, besides the existing differential check (no decision, value or dead mark that bash contradicts). Its floors (more than 50 decisions and 200 dead marks over 120 scripts) count only the scripts without such statements, and those statements go into a fifth of the scripts at most, so the floors keep their meaning.
+- **Each finding and its variants.** Rows in values.json, recorded with bash: the twelve holes of section 1; the four open findings of the #382 review (`: "${n:=0}"`, `n="$n"`, `n+=x`, `localvar_inherit` read as arithmetic with `n='y=5'` in the environment; `x='\0'; x+='44((u=2))'` for `${x@P}`; `set -o history -H` with `!-2`; `;;&` with a pattern that a list before writes); and one variant each that is safe and keeps its value (a static pattern after `;;&`, `LC_ALL=C`, a prefix `LANG=… sort`, `IFS` saved and restored, `> /dev/null`, a here-document, `HOME=/a; x=~`).
 - **The corpus**, before and after each step, with the counter of section 4 (the measuring script goes to scripts/, as [trust-per-position.md](trust-per-position.md), section 8, asks): no file may lose a value except for a row marked "new", and each loss is read by hand.
 
 ## 6. Steps
 
 Each step keeps every test passing.
 
-1. **The specs first.** Add the builtin options the specs lack (`complete -f`, `-u`, `-X` and the others, `declare -I`, and those the corpus snippets use with `read`), with test/builtins-real.test.ts. Nothing users see changes, except the explanation of those options.
+1. **The specs first.** Every builtin's options as bash 5.2 and 5.3 accept them (`complete -f`, `-u`, `-X` and the others, `declare -I`, those of `read` the corpus uses, and the rest the comparison of section 5 finds), with test/builtins-real.test.ts. Nothing users see changes, except the explanation of those options.
 2. **The table, with today's behaviour.** src/semantics/allow.ts with every row, and today's effect in each: `none` where the scan lets a construct through today. The scan reads the table; the default for a missing row is still `none`. Every explanation stays byte-identical (test/snapshot.ts). The completeness tests of section 5 land here.
-3. **The default flips.** A missing row is `all`, and the rows marked "new" take their effect: the options, the variables of bash, the arithmetic preconditions, `${x@P}` with `+=`, `error` nodes. Each with its probe rows and the generator's "unknown construct" statements. Users see fewer wrong values and dead marks (CHANGELOG "Fixed": one bullet, the details in docs/changes).
-4. **The walk-side preconditions**, and `case`: the patterns after `;&` and `;;&` expanded in the state after the list before them, so the `case` row loses its precondition; the test-word check of a value with blanks moved to the walk.
-5. **Docs**: [semantics.md](semantics.md) 4.14 ("What decisions trust": the table replaces the lists), [expansion-values.md](expansion-values.md) section 3, README's Limitations (the assumptions about the start, as [trust-per-position.md](trust-per-position.md) section 2 lists them), the roadmap and this page's status.
+3. **The walk.** Redirections that may fail make their command "may not run"; the patterns after `;&` and `;;&` are expanded in the state after the list before them; a name read as arithmetic must have a value known on every path there (`Walker.found` otherwise). Each with probe rows. Measure the corpus and the real scripts: the redirection rule may cost values after `{ …; } > "$log"`. Users see fewer wrong values and dead marks (CHANGELOG "Fixed").
+4. **The default flips.** A missing row is `all`, and the rows marked "new" take their effect: the options (also from the shebang), the variables of bash (also those given to another shell), `jobs -x`, `{a[i]}>`, `${x@P}` with `+=`, `error` nodes. Each with its probe rows and the generator's "unknown construct" statements. Users see fewer wrong values and dead marks (CHANGELOG "Fixed": one bullet, the details in docs/changes).
+5. **Docs**: [semantics.md](semantics.md) 4.14 ("What decisions trust": the table replaces the lists), [expansion-values.md](expansion-values.md) section 3, README's Limitations (the assumptions about the start: those of [trust-per-position.md](trust-per-position.md) section 2, `BASH_COMPAT`, `POSIXLY_CORRECT`, `FUNCNEST`, `BASHOPTS` and the locale from the environment, and how the script is started: `bash -k script`, `sh script`), the roadmap and this page's status.
 
 **Risks.**
 
 - **A wrong `followed` row.** The table can claim too much. The rows are checked against bash by their probe rows, and the generator's property covers the rest; the reviews should still try to find a construct the table follows wrongly.
 - **Upkeep.** A new option in a spec needs a row (or it is `all`), and so does a new builtin or shopt option of a later bash (the completeness test fails until it has one). That is the point of the plan, but it is work on every spec change.
+- **Subshells.** An `all` construct inside `( … )` or `$( )` blinds the whole script, though its effect stays in the subshell (`(umask 77; set -C; > "$tmp")` in zdiff). That is over-strict but safe; confining it is a refinement for later, or part of trust per position.
 - **Parse errors.** `error` as `all` blinds any script our parser cannot read in full. On the corpus this cost no value; if it does later, a narrower rule (only the statement that holds the error, and what follows it) can come with trust per position.
 - **Sample and examples.** The web page's sample must keep its values (test/expansion-values.test.ts checks it); #387 already changed its `[ $answer = yes ]` line. Step 3 checks the worked examples of every spec (src/examples/) for values they lose.
 
 ## 7. For the maintainer
 
-- The allow-list costs no value, decision or dead mark on either set, on top of #387. It closes the six holes of section 1 and the four findings of the #382 review that #387 leaves open, and it makes the next such hole fail toward "no value".
-- #387's rule for IFS loses 76 values in two real scripts that save and restore IFS; following copies keeps them (section 4). That can be done in #387 or in step 4 here.
+- The first draft of the allow-list cost no value, decision or dead mark on either set, on top of #387. The rules its review added (redirections that may fail, arithmetic values known at the point) are walk changes whose cost step 3 measures. Together they close the twelve holes of section 1 and the four findings of the #382 review that #387 leaves open, and they make the next such hole fail toward "no value".
+- #387's rule for IFS loses 76 values in two real scripts that save and restore IFS. Following copies of IFS, with #387's check kept, should keep them (section 4). That can be done in #387 or in step 3 here.
 - POSIX mode is `all` until the POSIX-mode rows of the roadmap's bash 5.3 item are done. Scripts that turn it on are rare; sh scripts, which start in it, keep their model.
