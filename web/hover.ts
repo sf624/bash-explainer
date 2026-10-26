@@ -149,8 +149,44 @@ function measureRoom(view: EditorView, pos: number): void {
   view.dom.style.setProperty('--bx-hover-width', `${Math.max(200, Math.round(Math.min(pane.width, window.innerWidth) - 16))}px`);
 }
 
+/**
+ * Round 4 (proto/chrome-4): the breadcrumb on one line, its last two parts only after a "…" ("… › grep › -rn"); a click
+ * on "…" shows the parts before them. The answer under it (the part and its meaning) then leads the card.
+ */
+function shortCrumbs(dom: HTMLElement, lang: Lang): void {
+  const small = dom.querySelector<HTMLElement>(':scope > p:first-child > small');
+  // (Only a part's card: its breadcrumb ends with "›" before the part. A line's card shows the line's structure.)
+  if (!small || small.lastElementChild?.textContent?.trim() !== '›') return;
+  small.classList.add('crumbs');
+  const crumbs = [...small.children].filter((e) => e.hasAttribute('title'));
+  if (crumbs.length <= 2) return;
+  const keepFrom = crumbs[crumbs.length - 2];
+  const rest = Object.assign(document.createElement('span'), { className: 'crumb-rest', hidden: true });
+  for (const n of [...small.childNodes]) {
+    if (n === keepFrom) break;
+    rest.append(n);
+  }
+  const more = Object.assign(document.createElement('button'), { type: 'button', className: 'crumb-more', textContent: '…' });
+  const name = CHROME[lang].crumbsMore;
+  more.title = name;
+  more.setAttribute('aria-label', name);
+  more.setAttribute('aria-expanded', 'false');
+  const lead = Object.assign(document.createElement('span'), { className: 'crumb-lead' });
+  lead.append(more, Object.assign(document.createElement('span'), { className: 'crumb-sep', textContent: ' › ' }));
+  // (The editor keeps the focus, as with the card's other links.)
+  more.addEventListener('mousedown', (e) => e.preventDefault());
+  more.addEventListener('click', (e) => {
+    e.stopPropagation();
+    rest.hidden = false;
+    lead.remove();
+    small.classList.add('open');
+  });
+  small.prepend(lead, rest);
+}
+
 function cardDom(host: HoverHost, view: EditorView, card: Card, pinned: boolean): HTMLElement {
   const dom = renderCard(card.md);
+  shortCrumbs(dom, host.lang());
   const act = (a: HTMLElement) => {
     const command = a.dataset.command;
     if (command === 'bashExplainer.explainLine' || command === 'bashExplainer.openPanel') wholeLineInPanel(view, card.line);

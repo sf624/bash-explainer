@@ -146,3 +146,23 @@ html.bx-blank #empty {
   line-height: 1.6;
   text-align: center;
 }
+
+/* ---- Prototype round 4 (proto/chrome-4): the phone's sheet below full has no line box (the editor shows the line just
+   above it, and the tab names it): `bx-compact`. The view row lies over the frame's top and scrolls away with the
+   explanation: `bx-lead` starts the explanation below it. The empty panel's message starts level with the empty
+   editor's block (`--bx-empty-top`, set by the page). */
+html.bx-compact pre#line {
+  display: none;
+}
+
+html.bx-compact #top {
+  padding: 4px 0 0;
+}
+
+html.bx-lead body {
+  padding-top: 36px;
+}
+
+html.bx-blank #empty {
+  margin-top: var(--bx-empty-top, 30vh);
+}

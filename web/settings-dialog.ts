@@ -133,16 +133,21 @@ export interface SettingsHost {
   setTheme(t: Theme): void;
 }
 
-type Section = 'display' | 'examples' | 'checks' | 'editor' | 'data';
-const SECTIONS: Section[] = ['display', 'examples', 'checks', 'editor', 'data'];
+// Round 4 (proto/chrome-4): Common (what most people change) first; the rest under Advanced, folded.
+type Section = 'common' | 'examples' | 'checks' | 'editor' | 'data';
+const SECTIONS: Section[] = ['common', 'examples', 'checks', 'editor', 'data'];
+/** The sections inside Advanced. */
+const ADVANCED: Section[] = ['examples', 'checks', 'editor', 'data'];
 /** The section of each setting that the page shows. */
 const SECTION_OF: Record<string, Section> = {
-  language: 'display', 'notes.idioms': 'display', 'notes.pitfalls': 'display',
-  'examples.enabled': 'examples', 'examples.disabled': 'examples', 'examples.placement': 'examples',
+  language: 'common', 'notes.idioms': 'common', 'notes.pitfalls': 'common', 'examples.enabled': 'common', 'hover.enabled': 'common', 'editor.wrap': 'common',
+  'examples.disabled': 'examples', 'examples.placement': 'examples',
   shell: 'checks', bashVersion: 'checks', 'yq.flavor': 'checks', 'diagnostics.enabled': 'checks', 'diagnostics.ignore': 'checks',
   'diagnostics.embedded': 'checks', 'diagnostics.pitfalls': 'checks', customCommands: 'checks',
-  'hover.enabled': 'editor', 'hints.names': 'editor', 'panel.animations': 'editor', 'editor.wrap': 'editor',
+  'hints.names': 'editor', 'panel.animations': 'editor',
 };
+/** The order of the common settings (the theme goes after the language). */
+const COMMON_ORDER = ['language', 'notes.idioms', 'notes.pitfalls', 'examples.enabled', 'hover.enabled', 'editor.wrap'];
 /** Settings that only a mouse hover or a desktop editor uses: marked on a touch-only device. */
 const MOUSE_ONLY = new Set(['hover.enabled']);
 const touchOnly = (): boolean => typeof matchMedia === 'function' && matchMedia('(hover: none)').matches;
@@ -197,6 +202,10 @@ export class SettingsDialog {
   private clearing: 'done' | 'reset' | undefined;
   /** The text in the search field. */
   private query = '';
+  /** Whether Advanced is unfolded (it unfolds by itself while a search is typed, or a link jumps into it). */
+  private advancedOpen = false;
+  /** Whether the long text of Export and import is shown. */
+  private ioMore = false;
 
   constructor(dialog: HTMLDialogElement, private host: SettingsHost) {
     this.dialog = dialog;
@@ -230,6 +239,8 @@ export class SettingsDialog {
     if (reopenSheet(this.dialog)) return;
     this.clearing = undefined;
     this.query = '';
+    this.advancedOpen = false;
+    this.ioMore = false;
     this.render();
     this.dialog.showModal();
     this.dialog.querySelector<HTMLElement>('.settings-body')?.scrollTo(0, 0);
@@ -326,9 +337,22 @@ export class SettingsDialog {
           el('code', { textContent: i.key }), ` — ${i.reason === 'invalid' ? t.reasons.invalid(i.detail!) : t.reasons[i.reason]()}`))));
       }
     }
+    // Round 4: one line, and "More" for the whole text.
+    const c = CHROME[lang];
+    const full = el('p', { className: 'setting-desc settings-io-more', id: 'settings-io-more', hidden: !this.ioMore }, ...rich(t.ioDesc));
+    const more = el('button', { type: 'button', className: 'link-btn', id: 'settings-io-more-btn', textContent: this.ioMore ? c.less : c.moreText });
+    more.setAttribute('aria-expanded', String(this.ioMore));
+    more.setAttribute('aria-controls', full.id);
+    more.addEventListener('click', () => {
+      this.ioMore = !this.ioMore;
+      full.hidden = !this.ioMore;
+      more.textContent = this.ioMore ? c.less : c.moreText;
+      more.setAttribute('aria-expanded', String(this.ioMore));
+    });
     return el('section', { className: 'settings-group settings-io' },
-      el('h3', { textContent: t.io }),
-      el('p', { className: 'setting-desc' }, ...rich(t.ioDesc)),
+      el('h4', { textContent: t.io }),
+      el('p', { className: 'setting-desc' }, c.ioShort, ' ', more),
+      full,
       el('div', { className: 'settings-io-buttons' },
         button('settings-export', t.exportFile, () => this.exportFile()),
         button('settings-copy', t.copy, () => void this.copy()),
@@ -355,7 +379,7 @@ export class SettingsDialog {
     });
     if (this.clearing === 'reset') status.append(el('p', { textContent: t.resetDone }));
     return el('section', { className: 'settings-group settings-clear settings-reset' },
-      el('h3', { textContent: t.reset }),
+      el('h4', { textContent: t.reset }),
       el('p', { className: 'setting-desc', textContent: t.resetDesc }),
       el('div', { className: 'settings-io-buttons' }, reset),
       status);
@@ -383,7 +407,7 @@ export class SettingsDialog {
     });
     if (this.clearing === 'done') status.append(el('p', { textContent: t.cleared }));
     return el('section', { className: 'settings-group settings-clear' },
-      el('h3', { textContent: t.clear }),
+      el('h4', { textContent: t.clear }),
       el('p', { className: 'setting-desc', textContent: t.clearDesc }),
       el('div', { className: 'settings-io-buttons' }, clear),
       status);
@@ -400,12 +424,19 @@ export class SettingsDialog {
     close.addEventListener('click', () => closeSheet(this.dialog));
     const elsewhere = SETTINGS.filter((x) => !x.surfaces.includes('web'));
     const rowOf = (spec: SettingSpec) => this.row(spec, s, spec.description ? { ...texts[spec.key], description: spec.description[lang === 'ja' ? 0 : 1] } : texts[spec.key], lang);
+    const c = CHROME[lang];
     const section = (id: Section, ...rows: HTMLElement[]) => {
-      const e = el('section', { className: 'settings-group', id: `settings-section-${id}` }, el('h3', { textContent: t.sections[id] }), ...rows);
+      // Common is a section heading (big); the parts of Advanced are sub-headings (small capitals).
+      const heading = id === 'common' ? el('h3', { className: 'settings-major', textContent: c.common }) : el('h4', { textContent: t.sections[id] });
+      const e = el('section', { className: `settings-group${id === 'common' ? ' settings-common' : ''}`, id: `settings-section-${id}` }, heading, ...rows);
       e.dataset.section = id;
       return e;
     };
     const inSection = (id: Section) => here.filter((x) => SECTION_OF[x.key] === id).map(rowOf);
+    const commonRows = () => {
+      const rows = here.filter((x) => SECTION_OF[x.key] === 'common').sort((a, b) => COMMON_ORDER.indexOf(a.key) - COMMON_ORDER.indexOf(b.key)).map(rowOf);
+      return [rows[0], this.themeRow(lang), ...rows.slice(1)];
+    };
     const io = this.io(lang);
     const clear = this.clear(lang);
     const reset = this.reset(lang);
@@ -424,22 +455,21 @@ export class SettingsDialog {
         this.filter();
       }
     });
-    const c = CHROME[lang];
     const nav = el('nav', { className: 'settings-nav' });
     nav.setAttribute('aria-label', t.sectionNav);
     // A row of plain links ("Jump to: Display · Examples · …"), not tabs: they scroll the one page of settings.
     nav.append(el('span', { className: 'settings-jump', textContent: c.jumpTo }));
     nav.append(...SECTIONS.map((id) => {
-      const a = el('a', { href: `#settings-section-${id}`, textContent: t.sections[id] });
+      const a = el('a', { href: `#settings-section-${id}`, textContent: id === 'common' ? c.common : t.sections[id] });
       a.addEventListener('click', (e) => {
         e.preventDefault();
+        if (ADVANCED.includes(id)) this.setAdvanced(true);
         const target = this.dialog.querySelector<HTMLElement>(`#settings-section-${id}`);
         if (target && !target.hidden) target.scrollIntoView({ block: 'start' });
         this.markSection(id);
       });
       return a;
     }));
-    const display = inSection('display');
     const none = el('p', { className: 'settings-nomatch', textContent: t.noMatch, hidden: true });
     none.setAttribute('role', 'status');
     this.dialog.replaceChildren(
@@ -448,20 +478,47 @@ export class SettingsDialog {
       el('div', { className: 'settings-body' },
         el('p', { className: 'settings-intro', textContent: `${t.intro}${lang === 'ja' ? '' : this.host.canSave() ? ' ' : ''}${this.host.canSave() ? t.saved : t.unsaved}` }),
         search,
-        this.namesSwitch(lang),
-        section('display', display[0], this.themeRow(lang), ...display.slice(1)),
-        section('examples', ...inSection('examples')),
-        section('checks', ...inSection('checks')),
-        section('editor', ...inSection('editor')),
-        section('data', io, reset, clear),
+        section('common', ...commonRows()),
+        this.advanced(lang,
+          this.namesSwitch(lang),
+          section('examples', ...inSection('examples')),
+          section('checks', ...inSection('checks')),
+          section('editor', ...inSection('editor')),
+          section('data', io, reset, clear),
+          el('p', { className: 'settings-elsewhere' }, t.notHere, ' ', ...elsewhere.flatMap((x, i) => [i ? ', ' : '', el('code', { textContent: x.key })]))),
         none,
-        el('p', { className: 'settings-elsewhere' }, t.notHere, ' ', ...elsewhere.flatMap((x, i) => [i ? ', ' : '', el('code', { textContent: x.key })])),
       ),
     );
     // No footer: X and Escape close, and every change applies at once. The section link of the part in view is marked.
     this.dialog.querySelector('.settings-body')?.addEventListener('scroll', () => this.markSection(), { passive: true });
     this.filter();
     this.markSection();
+  }
+
+  /** Advanced: a section heading that folds what most people leave as it is (folded when the dialog opens). */
+  private advanced(lang: Lang, ...parts: HTMLElement[]): HTMLElement {
+    const c = CHROME[lang];
+    const toggle = el('button', { type: 'button', id: 'settings-advanced-toggle', className: 'settings-fold' },
+      el('span', { className: 'fold-chev', textContent: '›' }), el('span', { textContent: c.advanced }));
+    toggle.setAttribute('aria-controls', 'settings-advanced-body');
+    toggle.addEventListener('click', () => this.setAdvanced(!this.advancedOpen));
+    const note = el('p', { className: 'settings-advanced-note', textContent: c.advancedNote });
+    const body = el('div', { id: 'settings-advanced-body', className: 'settings-advanced-body' }, ...parts);
+    return el('section', { id: 'settings-advanced', className: 'settings-advanced' }, el('h3', { className: 'settings-major' }, toggle), note, body);
+  }
+
+  /** Folds or unfolds Advanced (a search unfolds it while it is typed). */
+  private setAdvanced(open: boolean): void {
+    this.advancedOpen = open;
+    this.showAdvanced();
+  }
+
+  private showAdvanced(): void {
+    const open = this.advancedOpen || !!this.query.trim();
+    const body = this.dialog.querySelector<HTMLElement>('#settings-advanced-body');
+    if (body) body.hidden = !open;
+    this.dialog.querySelector('#settings-advanced-toggle')?.setAttribute('aria-expanded', String(open));
+    this.dialog.querySelector('#settings-advanced')?.classList.toggle('open', open);
   }
 
   /** "Show VS Code setting names": off by default on the web; the names are for those who copy settings to VS Code. */
@@ -483,14 +540,15 @@ export class SettingsDialog {
     if (!body || !this.dialog.open) return;
     let current: string | undefined = chosen;
     if (!current) {
-      const top = body.getBoundingClientRect().top + 24;
+      // (Round 4: the section whose heading has passed the upper quarter of the body.)
+      const top = body.getBoundingClientRect().top + Math.max(24, body.clientHeight * 0.25);
       for (const sec of body.querySelectorAll<HTMLElement>('.settings-group[data-section]')) {
-        if (sec.hidden) continue;
+        if (sec.hidden || !sec.getClientRects().length) continue;
         if (sec.getBoundingClientRect().top <= top || !current) current = sec.dataset.section;
       }
       // At the end of the scroll, the last section is the one in view.
       if (body.scrollTop + body.clientHeight >= body.scrollHeight - 2) {
-        const shown = [...body.querySelectorAll<HTMLElement>('.settings-group[data-section]')].filter((x) => !x.hidden);
+        const shown = [...body.querySelectorAll<HTMLElement>('.settings-group[data-section]')].filter((x) => !x.hidden && x.getClientRects().length);
         current = shown[shown.length - 1]?.dataset.section ?? current;
       }
     }
@@ -518,6 +576,10 @@ export class SettingsDialog {
     }
     const none = this.dialog.querySelector<HTMLElement>('.settings-nomatch');
     if (none) none.hidden = shown > 0;
+    this.showAdvanced();
+    // A search that matches nothing under Advanced hides it whole.
+    const adv = this.dialog.querySelector<HTMLElement>('#settings-advanced');
+    if (adv) adv.hidden = !!q && ![...adv.querySelectorAll<HTMLElement>('.settings-group[data-section]')].some((g) => !g.hidden);
     const elsewhere = this.dialog.querySelector<HTMLElement>('.settings-elsewhere');
     if (elsewhere) elsewhere.hidden = !!q;
     for (const a of this.dialog.querySelectorAll<HTMLElement>('.settings-nav a')) {

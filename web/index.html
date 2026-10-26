@@ -42,6 +42,7 @@
   <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M6.5 11.5l5.5-5.5 5.5 5.5M6.5 18l5.5-5.5 5.5 5.5"/></symbol>
   <symbol id="i-expand" viewBox="0 0 24 24"><path d="M6.5 6l5.5 5.5 5.5-5.5M6.5 12.5l5.5 5.5 5.5-5.5"/></symbol>
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 3.6 5.4 3.6 8.5s-1.1 5.9-3.6 8.5c-2.5-2.6-3.6-5.4-3.6-8.5s1.1-5.9 3.6-8.5z"/></symbol>
   <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11.5L20 7.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M8 4v5h7V4M7.5 20v-6.5h9V20"/></symbol>
 </svg>
 <div id="channel-banner" class="banner" role="note" hidden><span id="banner-text"></span> <a id="banner-release" href="../"></a> · <a id="banner-compare" href="compare.html"></a> · <a id="banner-pr" href="https://github.com/sf624/bash-explainer/pull/" hidden></a><span id="banner-pr-sep" hidden> · </span><a id="banner-commit" href="https://github.com/sf624/bash-explainer/commit/"></a></div>
@@ -114,14 +115,14 @@
           <button id="tab-ref" role="tab" type="button" aria-selected="false" aria-controls="panel" tabindex="-1">Reference</button>
         </div>
         <span class="panel-tools" id="panel-tools">
-          <span id="view-slot" class="view-slot"><span id="views-top" class="seg" role="group"><button id="view-list-top" type="button" aria-pressed="true">Meaning</button><button id="view-tree-top" type="button" aria-pressed="false">Reading</button></span></span>
+          <span id="view-slot" class="view-slot"><span id="views-top" class="seg" role="group"><button id="view-list-top" type="button" aria-pressed="true">Meaning</button><button id="view-tree-top" type="button" aria-pressed="false">Reading</button></span><span class="popbox view-drop"><button id="view-drop-top" class="view-drop-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu-top"><span class="vd-prefix"></span><span class="vd-value"></span><svg class="chev" aria-hidden="true" viewBox="0 0 12 12"><path d="M3 4.5l3 3 3-3"/></svg></button><span id="view-menu-top" class="popmenu right view-menu" role="menu" hidden><button id="view-pick-list-top" class="popitem" type="button" role="menuitemradio" aria-checked="true" data-view="list"><svg aria-hidden="true"><use href="#i-check"/></svg><span></span></button><button id="view-pick-tree-top" class="popitem" type="button" role="menuitemradio" aria-checked="false" data-view="tree"><svg aria-hidden="true"><use href="#i-check"/></svg><span></span></button></span></span></span>
           <span class="tools-div" aria-hidden="true"></span>
           <button id="pane-collapse" class="icon-btn tool-lbl" type="button"><svg class="glyph" aria-hidden="true"><use href="#i-collapse"/></svg><span id="pane-collapse-label" class="lbl">Collapse</span></button>
           <button id="pane-copy" class="icon-btn tool-lbl" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="pane-copy-label" class="lbl">Copy</span></button>
         </span>
       </div>
     </div>
-    <div id="view-row" class="view-row"><span id="views-phone" class="seg" role="group"><button id="view-list-phone" type="button" aria-pressed="true">Meaning</button><button id="view-tree-phone" type="button" aria-pressed="false">Reading</button></span></div>
+    <div id="view-row" class="view-row"><span class="popbox view-drop"><button id="view-drop-phone" class="view-drop-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu-phone"><span class="vd-prefix"></span><span class="vd-value"></span><svg class="chev" aria-hidden="true" viewBox="0 0 12 12"><path d="M3 4.5l3 3 3-3"/></svg></button><span id="view-menu-phone" class="popmenu view-menu" role="menu" hidden><button id="view-pick-list-phone" class="popitem" type="button" role="menuitemradio" aria-checked="true" data-view="list"><svg aria-hidden="true"><use href="#i-check"/></svg><span></span></button><button id="view-pick-tree-phone" class="popitem" type="button" role="menuitemradio" aria-checked="false" data-view="tree"><svg aria-hidden="true"><use href="#i-check"/></svg><span></span></button></span></span></div>
     <iframe id="panel" src="panel.html" title="Explanation"></iframe>
     <ul id="sheet-problem-list" class="problem-list sheet-problems" hidden></ul>
   </section>
@@ -159,12 +160,13 @@
     </section>
     <section class="menu-group">
       <h3 id="menu-h-prefs" class="menu-h">Preferences</h3>
-      <label class="field"><span id="lang-label">Language</span><select id="lang"><option value="auto">Auto (follows the browser)</option><option value="en">English</option><option value="ja">日本語</option></select></label>
-      <label class="field"><span id="theme-label">Theme</span><select id="theme"></select></label>
+      <button id="menu-look" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-globe"/></svg><span id="menu-look-label">Language and theme</span><span id="menu-look-note" class="menu-note"></span></button>
+      <label class="field r3-only"><span id="lang-label">Language</span><select id="lang"><option value="auto">Auto (follows the browser)</option><option value="en">English</option><option value="ja">日本語</option></select></label>
+      <label class="field r3-only"><span id="theme-label">Theme</span><select id="theme"></select></label>
       <!--switch--><label class="field"><span id="channel-label">Version</span><select id="channel"></select></label><!--/switch-->
       <button id="menu-settings" class="menu-item" type="button"><svg class="ico" data-icon="gear" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="menu-settings-label">All settings…</span></button>
     </section>
-    <section class="menu-group">
+    <section id="menu-g-help" class="menu-group">
       <h3 id="menu-h-help" class="menu-h">Help</h3>
       <details id="menu-keys" class="menu-keys"><summary><svg aria-hidden="true"><use href="#i-keyboard"/></svg><span id="menu-keys-label">Keyboard shortcuts</span></summary><dl id="menu-keys-list"></dl></details>
     </section>
