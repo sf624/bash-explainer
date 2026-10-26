@@ -169,6 +169,8 @@ describe('lists of commands in Meaning', () => {
       needed('done', ':'),
     ]);
     assert.deepStrictEqual(ops('for x; do :; done').slice(0, 1), ['Ends the name of `for` before `do`']);
+    // (With no `;` before `do`, `do` is one of the words, and the syntax error is a note of its own.)
+    assert.deepStrictEqual(ops('for x in a b do echo; done'), ['Ends the words of `for`; the `do` before it is one of the words']);
     assert.deepStrictEqual(ops('for x in a; { echo; }').slice(0, 1), ['Ends the words of `for` before `{` (a `;` or a newline is needed there)']);
     // (A function's definition with redirections ends with a word: `}` after it needs the `;`.)
     assert.deepStrictEqual(ops('{ f() { :; } >/dev/null; }').slice(1), [needed('}', 'f() { :; } >/dev/null')]);
