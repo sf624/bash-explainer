@@ -173,13 +173,19 @@ function redirEffect(r: SyntaxNode, prog: string, lang: Lang): { effect?: string
 export function condLine(test: SyntaxNode, model: StateModel, lang: Lang, describe: Ctx['describe']): ArgvPart[] | undefined {
   const cx: Ctx = { model, lang, describe };
   const out: ArgvPart[] = [];
-  const mark = { pattern: { ja: '（パターン）', en: ' (pattern)' }, regex: { ja: '（正規表現）', en: ' (regex)' } };
+  // (Round 10: the right side of `==` said in words: a pattern, and a plain comparison when it has no wildcard.)
+  const mark = {
+    pattern: { ja: '（右辺はパターン）', en: ' (the right side is a pattern)' },
+    plain: { ja: '（右辺はパターン。ワイルドカードがないので、ただの比較）', en: ' (the right side is a pattern; no wildcard here, so a plain comparison)' },
+    regex: { ja: '（正規表現）', en: ' (regex)' },
+  };
+  const wild = (c: SyntaxNode) => /[*?[]/.test(c.text.replace(/\\./g, '').replace(/'[^']*'|"[^"]*"/g, ''));
   const walk = (n: SyntaxNode): boolean => {
     if (['binary_expression', 'unary_expression', 'parenthesized_expression', 'negated_expression'].includes(n.type)) {
       const op = n.type === 'binary_expression' ? n.children.find((c) => c.field === 'operator')?.text : undefined;
       for (const c of n.children) {
         if (!walk(c)) return false;
-        if (c.field === 'right' && op && ['==', '=', '!='].includes(op)) out.push({ text: mark.pattern[lang], tight: true });
+        if (c.field === 'right' && op && ['==', '=', '!='].includes(op)) out.push({ text: mark[wild(c) ? 'pattern' : 'plain'][lang], tight: true });
         if (c.field === 'right' && op === '=~') out.push({ text: mark.regex[lang], tight: true });
       }
       return true;

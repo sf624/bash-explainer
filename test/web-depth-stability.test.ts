@@ -80,7 +80,7 @@ describe('the web page: the depths of the explanation add, and never move a text
   const oneHome = async (f: Frame): Promise<string[]> => f.evaluate(`(() => {
     const out = [];
     const panel = document.getElementById('main').innerText;
-    for (const t of [...document.querySelectorAll('#u-risks .note-text')].map((x) => x.innerText.replace(/^\\S+:\\s*/, '').trim())) {
+    for (const t of [...document.querySelectorAll('#u-risks .u-risk-head')].map((x) => x.innerText.trim())) {
       const n = panel.split(t).length - 1;
       if (n !== 1) out.push('risk said ' + n + ' times: ' + t.slice(0, 40));
     }
@@ -206,22 +206,26 @@ describe('the web page: the depths of the explanation add, and never move a text
   }
 
   /**
-   * (Round 9) The toolbar: its height (the controls and the legend's line), and the pairs of its boxes that overlap
-   * (the segments of the depth share their border: 1.5 px is allowed).
+   * (Round 9) The toolbar: its height, and the pairs of its boxes that overlap (the segments of the depth share their
+   * border: 1.5 px is allowed). Round 10: one row of controls (the depth, the switch, "Key"), no legend line; `rows`:
+   * how many rows its controls take (their middles apart by more than half a control's height).
    */
-  const toolbar = async (f: Frame): Promise<{ height: number; overlaps: string[] }> => f.evaluate(`(() => {
+  const toolbar = async (f: Frame): Promise<{ height: number; overlaps: string[]; rows: number }> => f.evaluate(`(() => {
     const vis = (e) => e.getClientRects().length > 0;
-    const height = Math.round(document.getElementById('layers').getBoundingClientRect().height + document.querySelector('#depth-caption .u-cap').getBoundingClientRect().height);
-    const boxes = [...document.querySelectorAll('#layers #layers-label, #layers button.step, #layers #who-toggle, #layers #kw-toggle, #depth-caption .u-cap .u-leg, #depth-caption .u-cap .u-leg-sep, #depth-caption #key-button, #depth-caption .u-cap-hide')]
+    const height = Math.round(document.getElementById('layers').getBoundingClientRect().height);
+    const boxes = [...document.querySelectorAll('#layers #layers-label, #layers button.step, #layers #who-toggle, #layers #key-button')]
       .filter(vis).map((e) => [e.id || e.className, e.getBoundingClientRect()]);
+    const mids = boxes.map(([, b]) => (b.top + b.bottom) / 2).sort((a, b) => a - b);
+    let rows = mids.length ? 1 : 0;
+    for (let i = 1; i < mids.length; i++) if (mids[i] - mids[i - 1] > 12) rows++;
     const overlaps = [];
     for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
       const [n1, a] = boxes[i];
       const [n2, b] = boxes[j];
       if (a.left < b.right - 1.5 && b.left < a.right - 1.5 && a.top < b.bottom - 1.5 && b.top < a.bottom - 1.5) overlaps.push(n1 + ' / ' + n2);
     }
-    return { height, overlaps };
-  })()`) as Promise<{ height: number; overlaps: string[] }>;
+    return { height, overlaps, rows };
+  })()`) as Promise<{ height: number; overlaps: string[]; rows: number }>;
 
   for (const lang of ['en', 'ja'] as const) {
     for (const width of [1280, 390]) {
@@ -237,8 +241,9 @@ describe('the web page: the depths of the explanation add, and never move a text
               const at = `${script.text.split('\n')[line - 1]}: depth ${step}${who ? ' with the program\'s side' : ''}`;
               const t = await toolbar(f);
               assert.deepStrictEqual(t.overlaps, [], `${at}: toolbar boxes overlap`);
-              // (The keywords' switch is there on every line, off and showing 0 where the line has none.)
-              assert.strictEqual(await f.evaluate("getComputedStyle(document.getElementById('kw-toggle')).display !== 'none'"), true, `${at}: the keywords' switch`);
+              // (Round 10: no switch of the keywords; one row of controls at a desktop width.)
+              assert.strictEqual(await f.evaluate("document.getElementById('kw-toggle')"), null, `${at}: the keywords' switch is gone`);
+              if (width >= 1280) assert.strictEqual(t.rows, 1, `${at}: the toolbar in one row`);
               const key = `${step}${who}`;
               if (!heights.has(key)) heights.set(key, t.height);
               assert.strictEqual(t.height, heights.get(key), `${at}: the toolbar's height`);
@@ -251,6 +256,70 @@ describe('the web page: the depths of the explanation add, and never move a text
       });
     }
   }
+
+  /**
+   * (Round 10) What the panel says once and what every row has: the definition of a simple command and the rule of
+   * double quotes at most once in the panel; at depth 2, exactly one chip of its role to bash on every row (none at
+   * depth 1); the descriptions starting at the same x on every row, line, depth and switch state at a given width.
+   */
+  const facts = async (f: Frame): Promise<{ simple: number; dquote: number; chips: string[]; xs: number[]; depth: string }> => f.evaluate(`(() => {
+    const text = document.getElementById('main').innerText;
+    const count = (t) => text.split(t).length - 1;
+    const rows = [...document.querySelectorAll('#tree .u-row')].filter((r) => r.getClientRects().length && !r.classList.contains('u-around'));
+    const depth = document.getElementById('main').dataset.depth;
+    const chips = rows.filter((r) => r.querySelectorAll('.u-side .u-role').length !== (depth === '2' ? 1 : 0)).map((r) => r.querySelector('.label').textContent + ': ' + r.querySelectorAll('.u-side .u-role').length);
+    const xs = [...new Set(rows.map((r) => Math.round(r.querySelector('.u-desc').getBoundingClientRect().left)))];
+    return { simple: count('Simple command:'), dquote: count('Double quotes:'), chips, xs, depth };
+  })()`) as Promise<{ simple: number; dquote: number; chips: string[]; xs: number[]; depth: string }>;
+
+  it('says each definition once, gives every row of depth 2 one role chip, and keeps the description column in place', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    const xs = new Set<number>();
+    for (const script of SCRIPTS) {
+      for (const line of script.lines) {
+        const f = await open(page, script.text, line);
+        for (const [step, who] of [[1, false], [2, false], [2, true], [1, true]] as const) {
+          await show(f, step, who);
+          const at = `${script.text.split('\n')[line - 1]}: depth ${step}${who ? ' with the program\'s side' : ''}`;
+          const x = await facts(f);
+          assert.ok(x.simple <= 1, `${at}: "Simple command:" said ${x.simple} times`);
+          assert.ok(x.dquote <= 1, `${at}: "Double quotes:" said ${x.dquote} times`);
+          assert.deepStrictEqual(x.chips, [], `${at}: rows without exactly one role chip`);
+          for (const v of x.xs) xs.add(v);
+        }
+      }
+    }
+    assert.strictEqual(xs.size, 1, `the description column's x: ${[...xs].join(', ')}`);
+    await ctx.close();
+  });
+
+  it('shows every reserved word and operator at depth 2, none at depth 1 but a line made of one', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    const labels = async (f: Frame): Promise<string[]> => f.evaluate(`[...document.querySelectorAll('#tree .u-row')].filter((r) => r.getClientRects().length && !r.classList.contains('u-around')).map((r) => r.querySelector('.label').textContent.trim())`) as Promise<string[]>;
+    const want: [number, number, string[]][] = [[0, 1, ['for', 'in', ';', 'do', 'done']], [1, 1, ['|', '|', '|', '|']], [2, 2, ['||']], [3, 1, ['[[', '&&', '==', ']]', ';', 'then', ';', 'fi']]];
+    const syntax = /^(for|in|do|done|if|then|fi|\[\[|\]\]|;|\||\|\||&&|==)$/;
+    for (const [i, line, words] of want) {
+      const f = await open(page, SCRIPTS[i].text, line);
+      await show(f, 2, true);
+      const got = (await labels(f)).filter((l) => syntax.test(l));
+      for (const w of words) assert.ok(got.includes(w), `${SCRIPTS[i].text.split('\n')[line - 1]}: ${w} at depth 2 (${got.join(' ')})`);
+      assert.strictEqual(got.filter((l) => l === '|').length, words.filter((w) => w === '|').length);
+      await show(f, 1, true);
+      assert.deepStrictEqual((await labels(f)).filter((l) => syntax.test(l)), [], `${SCRIPTS[i].text.split('\n')[line - 1]}: syntax rows at depth 1`);
+    }
+    // (A line that is only `done`: its row at depth 1, saying which loop it ends.)
+    const f = await open(page, SCRIPTS[0].text, 3);
+    await show(f, 1, false);
+    assert.deepStrictEqual(await labels(f), ['done']);
+    assert.match(await f.evaluate("document.querySelector('#tree .u-row:not(.u-around) .u-l1 > .text').textContent") as string, /End of the for loop that starts on line 1/);
+    // (The loop's body once at depth 2: no row of `do … done` besides its `do` and `done`.)
+    const g = await open(page, SCRIPTS[0].text, 1);
+    await show(g, 2, false);
+    assert.deepStrictEqual((await labels(g)).filter((l) => /^do\b[\s\S]*done$/.test(l)), []);
+    await ctx.close();
+  });
 
   it('never breaks an argv chip where it need not, on a phone either', async () => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: 'en-US' });

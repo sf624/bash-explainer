@@ -89,14 +89,17 @@ const S = {
     ja: (sub: string, cmd: string) => `${sub} は ${cmd} の出力に置き換わる`,
   },
   home: { en: (w: string) => `${w}: your home directory`, ja: (w: string) => `${w} はあなたのホームディレクトリ` },
-  /** A file named with no `/` in `source`: it is looked for in `$PATH` first (the caveat of that line). */
+  /**
+   * A file named with no `/` in `source`: it is looked for in `$PATH` first (the caveat of that line). (Round 10: the
+   * summary names it only; the risk is said in the list of risks, not here.)
+   */
   namedFile: {
-    en: (f: string) => `a file named ${f} (see the risk: it may be one found in \`$PATH\`)`,
-    ja: (f: string) => `${f} という名前のファイル（注意点を参照: \`$PATH\` で見つかったものかもしれない）`,
+    en: (f: string) => `a file named ${f}`,
+    ja: (f: string) => `${f} という名前のファイル`,
   },
   source: {
     en: (file: string, conds: string[]) => `Runs ${file} in this shell (\`source\`) if ${conds.join(' and ')}, so the variables and functions it sets stay; otherwise does nothing.`,
-    ja: (file: string, conds: string[]) => `${file}${file.endsWith('）') ? '' : ' '}をこのシェルで実行する（\`source\`）。実行するのは ${conds.join('で、かつ ')}${conds[conds.length - 1].endsWith('`') ? ' ' : ''}のときだけ。中で設定した変数や関数はこのシェルに残る。`,
+    ja: (file: string, conds: string[]) => `${file}${file.endsWith('`') ? ' ' : ''}をこのシェルで実行する（\`source\`）。実行するのは ${conds.join('で、かつ ')}${conds[conds.length - 1].endsWith('`') ? ' ' : ''}のときだけ。中で設定した変数や関数はこのシェルに残る。`,
   },
   tests: {
     '-f': { en: 'is an existing regular file', ja: '存在する通常のファイル' },

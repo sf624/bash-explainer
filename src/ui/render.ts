@@ -61,13 +61,13 @@ export const ui = {
           pwd: 'チルダ展開: bash が {code} を現在のディレクトリ（`$PWD`）に置き換える',
           oldpwd: 'チルダ展開: bash が {code} を直前のディレクトリ（`$OLDPWD`）に置き換える',
         },
-        pipe: 'パイプ: {left} の標準出力を {right} の標準入力へ渡す',
+        pipe: 'パイプ: {left} と {right} をつなぎ、同時に動かす',
         defs: {
           command: '単純コマンド: bash が単語を展開し、最初の単語をコマンド名（プログラムは自分の名前も argv[0] として受け取る）、残りを引数として実行する',
           keyword: 'コマンドではなく、bash の構文の一部',
         },
         form: '書式:', showKeywords: '予約語と区切りを表示（{n}）', hideKeywords: '予約語と区切りを隠す',
-        exampleTitle: '例: {code}', globTitle: '試す: {glob} に一致する名前',
+        exampleTitle: '例: {code}', globTitle: '{glob} に一致するファイル名は',
         madeUp: ' · 入力は例', editable: '・編集できる',
         redirFor: '{name} だけに働く: bash が {name} の起動前に設定する',
         context: 'この行を囲む{label}（{n} 行目）',
@@ -104,7 +104,12 @@ export const ui = {
         keywords: '予約語と区切り（{n}）', keywordsTitle: '予約語と区切り（if・then・;・fi・| など）を行として表示する。深さごとに覚える（K キー）', keywordsNone: 'この行には予約語や区切りがない',
         keywordsAt2: '予約語と区切り（{n}）: 深さ 2 で表示',
         riskMark: '{label}', riskMarkTitle: 'この{label}は上の「この行の注意点」にある（押すと移動）',
-        joins: 'つなぐ順:', tryIt: 'サンプルデータで試す',
+        joins: 'つなぐ順:', tryIt: '行全体をサンプル行で実行',
+        // (Round 10) The loop variable at depth 1, the row of a line that is one reserved word, the risks said short.
+        loopVar: 'ループ変数: 各単語が順に入る', loopVarGlob: 'ループ変数: 一致した名前が順に入る',
+        endOf: '{n} 行目から始まる{label}の終わり',
+        riskMore: '詳しく', copy: 'コピー', copied: 'コピーした', fixLine: '直し方（行全体。コピーできる）:', fixBody: '直し方（ループの本体の最初の行に追加）:',
+        pointer: '{n} 行目の注意点: {headline}', pointerTitle: '{n} 行目へ移動',
         simpleChip: '単純コマンド',
         chipNames: { loopBody: 'ループの本体', body: '本体', loopVar: 'ループ変数', varName: '変数名', funcName: '関数名', loopWords: '繰り返す値', operand: 'オペランド' },
         plain: [
@@ -122,8 +127,8 @@ export const ui = {
           why: { quoted: 'クォートの中', context: 'ここでは行わない', cond: '`[[ ]]` の中では行わない', assign: '代入では行わない', noglob: 'set -f', 'ifs-empty': 'IFS が空', 'posix-mode': 'POSIX モード', 'braceexpand-off': 'braceexpand がオフ', dialect: 'このシェルにはない', zsh: 'zsh' },
           nothing: { split: '分割するものがない', glob: 'ワイルドカードがない' },
         },
-        legend: { tint: '色付き = プログラムが受け取るもの', tintShort: '受け取るもの', bash: '= bash が自分で処理', box: '1 つのコマンド', bracket: 'つないだコマンド', show: '凡例を表示', key: '凡例の詳細' },
-        stepsTiny: ['何を', '読み方'], whoShort: '受け取るもの', keywordsShort: '予約語（{n}）',
+        legend: { tint: '色付き = プログラムが受け取るもの', tintShort: '受け取るもの', bash: '= bash が自分で処理', box: '1 つのコマンド', bracket: 'つないだコマンド', show: '凡例を表示', key: '凡例' },
+        stepsTiny: ['何を', 'どう読むか'], whoShort: '受け取るもの', keywordsShort: '予約語（{n}）',
         key: {
           title: '凡例',
           marks: '印',
@@ -139,12 +144,16 @@ export const ui = {
           ref: '§3.7.1: bash マニュアルの節（ほかの節はツールチップ）',
           problems: '注意点', warning: '警告: 失敗やデータの消失につながりうる', info: '注意: 知っておくとよいこと',
           keys: 'キー: `1`・`2` で深さ、`W` で「プログラムが受け取るもの」、`K` で予約語と区切り',
+          // (Round 10) The key's first view: the marks and the five colours of the bars; "more" for the rest.
+          tint10: 'プログラムが書いたとおりに受け取る単語', dashed: 'プログラムが変わった形で受け取る単語（何になるかは「受け取る単語」の行）',
+          kinds10: [['command', 'コマンド名'], ['argument', '引数・オプション'], ['variable', '展開（点線: グロブのパターン）'], ['operator', '予約語・演算子'], ['redirect', 'リダイレクト（二重線）']],
+          more: 'もっと見る', less: '少なく表示', keys10: 'キー: `1`・`2` で深さ、`W` で「プログラムが受け取るもの」、`Esc` で凡例を閉じる',
         },
       },
       tree: {
         label: '行の各部分を誰が読むか', show: '深さ',
         // (Prototype B) The depths of the one view: their short names (the buttons) and their names.
-        steps: [['何をするか', '各コマンドが何をするか'], ['bash の読み方', 'bash が行をどう読むか: 構文と単語の部品']],
+        steps: [['何をするか', '各コマンドが何をするか'], ['bash がどう読むか', 'bash が行をどう読むか: 構文と単語の部品']],
         stepper: {
           group: '深さ', back: '浅く', forward: '深く',
           step: '深さ {i}/{n}：{name}', empty: 'この行では増えるものなし', jump: '深さを選ぶ',
@@ -254,13 +263,13 @@ export const ui = {
           pwd: 'Tilde expansion: bash replaces {code} with the current directory (`$PWD`)',
           oldpwd: 'Tilde expansion: bash replaces {code} with the previous directory (`$OLDPWD`)',
         },
-        pipe: "Pipe: {left}'s stdout goes to {right}'s stdin",
+        pipe: 'Pipe: connects {left} to {right}; both run at the same time',
         defs: {
           command: 'Simple command: bash expands the words; the first is the command name (a program receives it too, as argv[0]), the rest its arguments',
           keyword: "part of bash's syntax, not a command",
         },
         form: 'Form:', showKeywords: 'Show the keywords ({n})', hideKeywords: 'Hide the keywords',
-        exampleTitle: 'Example: {code}', globTitle: 'Try it: which names match {glob}',
+        exampleTitle: 'Example: {code}', globTitle: 'Which file names would {glob} match',
         madeUp: ' · sample input', editable: ', editable',
         redirFor: 'For {name} only: bash sets it up before {name} starts',
         context: 'The {label} around this line (line {n})',
@@ -297,7 +306,12 @@ export const ui = {
         keywords: 'Keywords and separators ({n})', keywordsTitle: 'Show the reserved words and separators (if, then, ;, fi, |…) as rows; remembered for each depth (key K)', keywordsNone: 'This line has no reserved words or separators',
         keywordsAt2: 'Keywords and separators ({n}): shown at depth 2',
         riskMark: '{label}', riskMarkTitle: 'This {label} is in "Risks on this line" above (click to go there)',
-        joins: 'Joins:', tryIt: 'Try it with sample data',
+        joins: 'Joins:', tryIt: 'Run the whole line on sample lines',
+        // (Round 10) The loop variable at depth 1, the row of a line that is one reserved word, the risks said short.
+        loopVar: 'Loop variable: each word in turn', loopVarGlob: 'Loop variable: each matching name in turn',
+        endOf: 'End of the {label} that starts on line {n}',
+        riskMore: 'more', copy: 'Copy', copied: 'Copied', fixLine: 'Fix (the whole line, to copy):', fixBody: 'Fix (add as the first line of the loop body):',
+        pointer: 'Risk on line {n}: {headline}', pointerTitle: 'Go to line {n}',
         simpleChip: 'simple command',
         chipNames: { loopBody: 'loop body', body: 'body', loopVar: 'loop variable', varName: 'variable name', funcName: 'function name', loopWords: 'words to loop over', operand: 'operand' },
         plain: [
@@ -338,6 +352,10 @@ export const ui = {
           ref: '§3.7.1: the section of the bash manual (others in its tooltip)',
           problems: 'Risks', warning: 'Warning: can lead to a failure or lost data', info: 'Caveat: good to know',
           keys: 'Keys: `1` and `2` choose the depth, `W` turns What the program receives on and off, `K` the keywords and separators',
+          // (Round 10) The key's first view: the marks and the five colours of the bars; "more" for the rest.
+          tint10: 'the program receives this word exactly as written', dashed: 'the program receives this word changed (its receives line says what)',
+          kinds10: [['command', 'command name'], ['argument', 'argument or option'], ['variable', 'expansion (dotted: glob pattern)'], ['operator', 'reserved word or operator'], ['redirect', 'redirection (double bar)']],
+          more: 'More', less: 'Less', keys10: 'Keys: `1` and `2` choose the depth, `W` turns What the program receives on and off, `Esc` closes the key',
         },
       },
       tree: {

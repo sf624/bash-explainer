@@ -80,7 +80,7 @@ function manualLinks(lang: Lang, ex: LineExplanation, around: readonly AroundLin
 }
 
 /** (Prototype B) A line of a block around the line shown: its text, what the block is, and the problems on it, as the notes of a line are drawn. */
-export interface AroundLine { line: number; label: string; text: string; problems: { level: NoteLevel; text: string; label: string; body: string; refs: readonly string[] }[] }
+export interface AroundLine { line: number; label: string; text: string; problems: { level: NoteLevel; text: string; label: string; body: string; refs: readonly string[]; headline?: string; fix?: { code: string; where: 'line' | 'body' } }[] }
 
 /**
  * (Prototype B) The lines of the blocks around the line shown (the `for` of a loop body), with their problems: each as
@@ -94,7 +94,7 @@ export function aroundLines(ex: LineExplanation, issues: readonly DocumentIssue[
       line: c.line, label: c.label, text: textOf(c.line),
       problems: there.map((i) => {
         const n = own && notesByLevel(own).find((x) => x.text === i.message);
-        return n ? { level: n.level, text: n.text, label: n.label, body: n.body, refs: noteRefs(own, n.text) ?? [] } : { level: i.severity, text: i.message, label: '', body: i.message, refs: [] };
+        return n ? { level: n.level, text: n.text, label: n.label, body: n.body, refs: noteRefs(own, n.text) ?? [], headline: n.headline, fix: n.fix } : { level: i.severity, text: i.message, label: '', body: i.message, refs: [] };
       }),
     };
   });
@@ -137,7 +137,7 @@ export function panelUpdate(p: PanelLine) {
     contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
     // The notes as drawn: warnings first, each with its level and the word after its mark (src/messages.ts).
     // (Prototype B: and the ranges each is about, so that the panel says it on the row of its word.)
-    notes: notesByLevel(ex).map(({ text, level, label, body }) => ({ level, label, body, refs: noteRefs(ex, text) ?? [], spans: ex.anchors?.filter((a) => a.text === text).map((a) => a.span) ?? [] })),
+    notes: notesByLevel(ex).map(({ text, level, label, body, headline, fix }) => ({ level, label, body, headline, fix, refs: noteRefs(ex, text) ?? [], spans: ex.anchors?.filter((a) => a.text === text).map((a) => a.span) ?? [] })),
     around: p.around ?? [],
     levelLabels: lang === 'ja' ? { warning: '警告', info: '情報', note: '補足' } : { warning: 'Warning', info: 'Information', note: 'Note' },
     marks: p.marks ?? [],

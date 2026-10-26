@@ -499,7 +499,40 @@ export type Params<K extends FactId> = Parameters<(typeof MESSAGES)[K]['text']>[
  * editors (`DocumentIssue.code`: a fact's id, a style check, a dialect issue). The views read the level and the word
  * from here, never from the text.
  */
-export interface Note { text: string; level: NoteLevel; label: string; body: string; code?: string }
+export interface Note {
+  text: string; level: NoteLevel; label: string; body: string; code?: string;
+  /** (Prototype B, round 10) The risk said in one plain sentence, and a whole line to copy that avoids it (`where`: what the line is). */
+  headline?: string; fix?: { code: string; where: 'line' | 'body' };
+}
+
+/**
+ * (Prototype B, round 10) The headline of a risk, and its fix as a whole line to copy (when the params give one), for
+ * the panel's list of risks: the text stays its explanation.
+ */
+const HEADS: { [K in FactId]?: (p: Params<K>) => readonly [ja: string, en: string, fix?: { code: string; where: 'line' | 'body' }] } = {
+  'failure-reported-as-success': ({ where, name, left, fix, lead }) => {
+    const cmd = left.split(/\s+/)[0];
+    const exit = where === 'function' ? 'return 1' : 'exit 1';
+    const whole = lead ? { code: `${lead} || { ${fix}; ${exit}; }`, where: 'line' as const } : undefined;
+    return where === 'errexit'
+      ? [`\`${cmd}\` が失敗しても、\`set -e\` はスクリプトを止めない。`, `If \`${cmd}\` fails, \`set -e\` does not stop the script.`, whole]
+      : where === 'function'
+        ? [`\`${cmd}\` が失敗しても、\`${name}\` は成功（終了ステータス 0）を返す。`, `If \`${cmd}\` fails, \`${name}\` still returns success (status 0).`, whole]
+        : [`\`${cmd}\` が失敗しても、この行は成功（終了ステータス 0）を返す。`, `If \`${cmd}\` fails, this line still reports success (status 0).`, whole];
+  },
+  'unmatched-glob-runs-once': ({ glob, v }) => [
+    `\`${glob}\` に一致するファイルがないと、\`${v}\` が \`${glob}\` という文字列のままでループが1回実行される。`,
+    `If no file matches \`${glob}\`, the loop still runs once, with \`${v}\` set to the text \`${glob}\`.`,
+    { code: `[ -e "$${v}" ] || continue`, where: 'body' }],
+};
+
+/** The headline and the fix of a fact, when the catalog has them. */
+function headOf(lang: Lang, id: FactId, params: unknown): Pick<Note, 'headline' | 'fix'> {
+  const h = (HEADS as Record<string, ((p: unknown) => readonly [string, string, { code: string; where: 'line' | 'body' }?]) | undefined>)[id];
+  if (!h) return {};
+  const [ja, en, fix] = h(params);
+  return { headline: lang === 'ja' ? ja : en, ...(fix ? { fix } : {}) };
+}
 
 /** A fact as a note: its id (also its `code`), its kind, and the sections it cites. */
 export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly string[]; code: FactId }
@@ -542,7 +575,7 @@ export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> e
   const [ja, en] = e.text(params[0]);
   const level = typeof e.level === 'function' ? e.level(params[0]) : e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note');
   const { text, label, body } = marked(lang, level, lang === 'ja' ? ja : en, { kind: e.kind, heading: e.heading });
-  return { id, kind: e.kind, level, text, refs: e.refs, label, body, code: id };
+  return { id, kind: e.kind, level, text, refs: e.refs, label, body, code: id, ...headOf(lang, id, params[0]) };
 }
 
 /** Whether the note with `code` is a problem when it is a warning or a caveat: all are, but the facts that `notProblem` marks. */

@@ -1,3 +1,4 @@
+import type { Lang } from '../i18n';
 /** Brace expansion, glob matching examples and printf, as bash does them. */
 import { coreutilsRejects, type PrintfReader } from '../embedded/format';
 import { sprintf } from './awk';
@@ -254,6 +255,26 @@ export function globToRegex(pattern: string, mode: GlobMode, opts: GlobOpts = {}
 
 export function globMatches(pattern: string, name: string, mode: GlobMode, opts: GlobOpts = {}): boolean {
   return globToRegex(pattern, mode, opts)?.test(name) ?? false;
+}
+
+/**
+ * (Prototype B, round 10) Why a name does not match a glob, in a few words: a leading dot (unless dotglob), a `/`
+ * that `*` does not cross, or the literal text it starts or ends with. Empty when it matches.
+ */
+export function globMissReason(pattern: string, name: string, mode: GlobMode, opts: GlobOpts, lang: Lang): string {
+  const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
+  if (globMatches(pattern, name, mode, opts)) return '';
+  if (mode === 'file' && !opts.dotglob && globMatches(pattern, name, mode, { ...opts, dotglob: true })) {
+    return s('先頭の . には * が一致しない（dotglob がオフ）', 'leading dot, not matched by * (dotglob off)');
+  }
+  if (!/[()]/.test(pattern)) {
+    const tail = /[^*?\]]*$/.exec(pattern)?.[0] ?? '';
+    if (tail && !name.endsWith(tail)) return s(`終わりが ${tail} でない`, `different ending (not ${tail})`);
+    const head = /^[^*?[\\]*/.exec(pattern)?.[0] ?? '';
+    if (head && !name.startsWith(head)) return s(`始まりが ${head} でない`, `different start (not ${head})`);
+  }
+  if (mode === 'file' && !opts.globstar && pattern.split('/').length !== name.split('/').length) return s('* は / に一致しない', '* does not match /');
+  return s('パターンに合わない', 'does not fit the pattern');
 }
 
 const STARS = ['app', 'data', 'error', 'x'];

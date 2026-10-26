@@ -47,8 +47,8 @@ describe('the summary of an assignment', () => {
 describe('the summary of a sourced file', () => {
   const src = 'if [[ -f config.ini && $DEBUG == 1 ]]; then source config.ini; fi';
   it('points to the risk when the name has no slash, so `$PATH` is searched first', () => {
-    assert.strictEqual(summary(src, 1), 'Runs a file named `config.ini` (see the risk: it may be one found in `$PATH`) in this shell (`source`) if it is an existing regular file and `$DEBUG` is `1`, so the variables and functions it sets stay; otherwise does nothing.');
-    assert.strictEqual(summary(src, 1, 'ja'), '`config.ini` という名前のファイル（注意点を参照: `$PATH` で見つかったものかもしれない）をこのシェルで実行する（`source`）。実行するのは `config.ini` が存在する通常のファイルで、かつ `$DEBUG` が `1` のときだけ。中で設定した変数や関数はこのシェルに残る。');
+    assert.strictEqual(summary(src, 1), 'Runs a file named `config.ini` in this shell (`source`) if it is an existing regular file and `$DEBUG` is `1`, so the variables and functions it sets stay; otherwise does nothing.');
+    assert.strictEqual(summary(src, 1, 'ja'), '`config.ini` という名前のファイルをこのシェルで実行する（`source`）。実行するのは `config.ini` が存在する通常のファイルで、かつ `$DEBUG` が `1` のときだけ。中で設定した変数や関数はこのシェルに残る。');
   });
   it('is as before for a path, with `sourcepath` off, and in zsh', () => {
     assert.match(summary('if [[ -f ./config.ini ]]; then source ./config.ini; fi', 1)!, /^Runs `\.\/config\.ini` in this shell/);

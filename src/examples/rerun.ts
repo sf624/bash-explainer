@@ -10,7 +10,7 @@ import { pipelineExample, Stage, stageMarks } from './pipeline';
 import { JsRegex } from './regex';
 import { runXargs, showCommand } from './runtime';
 import { runSed } from './sed';
-import { globMatches, GlobMode, GlobOpts } from './shellwords';
+import { globMatches, globMissReason, GlobMode, GlobOpts } from './shellwords';
 import { FILTERS, perFile } from './textfilters';
 
 /**
@@ -140,8 +140,11 @@ export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResu
     }
     case 'glob': {
       const hit = input.filter((l) => globMatches(spec.pattern, l, spec.mode, spec.opts));
+      // (Round 10: and why each other name does not match.)
+      const why = input.filter((l) => l && !hit.includes(l)).map((l) => `${l}: ${globMissReason(spec.pattern, l, spec.mode, spec.opts ?? {}, lang)}`);
       return {
-        sections: [{ label: s('一致する名前', 'Matching names'), lines: hit, empty: s('（なし）', '(none)') }],
+        sections: [{ label: s('一致する名前', 'Matching names'), lines: hit, empty: s('（なし）', '(none)') },
+          ...(why.length ? [{ label: s('一致しない名前と、その理由', 'Not matching, and why'), lines: why }] : [])],
         marks: input.map((l) => (globMatches(spec.pattern, l, spec.mode, spec.opts) ? [{ start: 0, end: l.length, group: 0 }] : [])),
       };
     }

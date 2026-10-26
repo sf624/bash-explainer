@@ -271,8 +271,18 @@ const REGEX_SPECIAL = /[.[\]*^$\\+?(){}|]/;
 export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number, model: StateModel, shell: Shell | undefined): StyleFinding[] {
   const s = pick(lang);
   const found: StyleFinding[] = [];
-  const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string) => {
-    found.push({ ...marked(lang, STYLE_LEVELS[code], s(ja, en), { kind: 'pitfall' }), code, node });
+  const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string, head?: { ja: string; en: string; fix?: string }) => {
+    found.push({ ...marked(lang, STYLE_LEVELS[code], s(ja, en), { kind: 'pitfall' }), code, node,
+      ...(head ? { headline: s(head.ja, head.en), ...(head.fix ? { fix: { code: head.fix, where: 'line' as const } } : {}) } : {}) });
+  };
+  /**
+   * (Prototype B, round 10) The line of a node with `text` put in place of the range from `from` to `to` (columns of
+   * that row): the whole line to copy as a fix. None when the root is not the whole document or the range spans rows.
+   */
+  const lines = root.startIndex === 0 && root.startPosition.row === 0 ? root.text.split('\n') : undefined;
+  const fixLine = (at: SyntaxNode, from: number, to: number, text: string): string | undefined => {
+    const line = lines?.[at.startPosition.row];
+    return line === undefined ? undefined : `${line.slice(0, from)}${text}${line.slice(to)}`.trim();
   };
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row >= from && n.startPosition.row <= to) check(n);
@@ -391,12 +401,17 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         const cmd = `${r.name} ${file}`;
         const fix = s(`\`${r.name} ./${file}\` か、スクリプトのディレクトリからのパス（\`${r.name} "$(dirname "$0")/${file}"\`）を書きます`,
           `Write \`${r.name} ./${file}\`, or a path from the script's directory: \`${r.name} "$(dirname "$0")/${file}"\``);
+        const fw = r.run.args[word];
+        const sfix = fw.startPosition.row === fw.endPosition.row ? fixLine(fw, fw.startPosition.column, fw.endPosition.column, `./${file}`) : undefined;
+        const shead = posix
+          ? { ja: `\`${cmd}\` は \`${file}\` を \`$PATH\` からだけ探し、カレントディレクトリは探さない。`, en: `\`${cmd}\` looks for \`${file}\` only in \`$PATH\`, not in the current directory.`, fix: sfix }
+          : { ja: `\`${cmd}\` は、カレントディレクトリより先に \`$PATH\` で見つけた \`${file}\` を実行する。`, en: `\`${cmd}\` runs a \`${file}\` found in \`$PATH\` before the one in the current directory.`, fix: sfix };
         add('source-searches-path', r.run.args[word], posix
           ? `\`${cmd}\` は \`${file}\` を \`$PATH\` のディレクトリからだけ探し、カレントディレクトリは探しません（POSIX の動作）。\`$PATH\` になければ失敗し、あればそのファイルが実行されます。${fix}`
           : `\`${cmd}\` は \`${file}\` をまず \`$PATH\` のディレクトリから探し、見つからないときだけカレントディレクトリを探します。\`$PATH\` に同じ名前のファイルがあればそちらが実行され、カレントディレクトリはスクリプトの場所ではなく、起動したときの場所です（cron なら \`$HOME\`）。${fix}`,
         posix
           ? `\`${cmd}\` looks for \`${file}\` only in the directories of \`$PATH\`, not in the current directory (as POSIX says): it fails unless \`$PATH\` has it, and then runs the file found there. ${fix}`
-          : `\`${cmd}\` looks for \`${file}\` in the directories of \`$PATH\` first, and only then in the current directory: a file of that name in \`$PATH\` runs instead, and the current directory is where the script was started from, not where it lies (cron starts in \`$HOME\`). ${fix}`);
+          : `\`${cmd}\` looks for \`${file}\` in the directories of \`$PATH\` first, and only then in the current directory: a file of that name in \`$PATH\` runs instead, and the current directory is where the script was started from, not where it lies (cron starts in \`$HOME\`). ${fix}`, shead);
         return;
       }
     }
@@ -427,8 +442,11 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         const v = wholeVariable(w);
         const known = v && model.trusts(v.name) ? model.at(w).run.variables.get(v.name)?.value : undefined;
         if (!v || PATTERN_NAME.test(v.name) || (known !== undefined && REGEX_SPECIAL.test(known))) return;
+        const nw = r.run.nameWord;
+        const pfix = other === undefined && nw.startPosition.row === nw.endPosition.row ? fixLine(nw, nw.endPosition.column, nw.endPosition.column, ' -F') : undefined;
+        const phead = { ja: `\`${r.name}\` は \`${v.text}\` の値を、ただの文字列ではなく正規表現として読む。`, en: `\`${r.name}\` reads \`${v.text}\` as a regular expression, not as plain text.`, fix: pfix };
         add('pattern-from-variable', w, `\`${r.name}\` は \`${v.text}\` の値を、ただの文字列ではなく正規表現として読みます。長い文字列の一部にも一致し（\`bob\` は \`bobby\` にも一致）、値の中の \`.\`・\`*\`・\`[\` などは特別な意味を持ちます。値をそのまま探すには ${fixed}、意図に合わせて \`-w\`（単語全体）か \`-x\`（行全体）も付けます`,
-          `\`${r.name}\` reads the value of \`${v.text}\` as a regular expression, not as plain text: it matches inside longer text too (\`bob\` matches \`bobby\`), and \`.\`, \`*\`, \`[\` and the like in the value have their special meaning. To look for the value as it is, ${fixed}, and \`-w\` (whole words) or \`-x\` (whole lines) as meant`);
+          `\`${r.name}\` reads the value of \`${v.text}\` as a regular expression, not as plain text: it matches inside longer text too (\`bob\` matches \`bobby\`), and \`.\`, \`*\`, \`[\` and the like in the value have their special meaning. To look for the value as it is, ${fixed}, and \`-w\` (whole words) or \`-x\` (whole lines) as meant`, phead);
         return;
       }
     }

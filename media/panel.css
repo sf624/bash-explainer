@@ -2851,3 +2851,353 @@ body.vscode-high-contrast {
 #depth-caption .u-cap .u-leg-sep {
   margin: 0;
 }
+
+/* ---------------------------------------------------------------- prototype B, round 10 */
+/* Five colour groups for the bars, each with a shape too: a command (blue), an argument or option (green), an
+   expansion (red; a glob pattern dotted), bash's syntax (purple), a redirection (teal, a double bar). */
+#top,
+#main {
+  --c-option: var(--c-argument);
+  --c-name: var(--c-argument);
+  --c-pattern: var(--c-variable);
+}
+.row.u-row.kind-pattern::before,
+.u-kitem.kind-pattern .u-swatch,
+.u-kitem.kind-variable .u-swatch {
+  background: repeating-linear-gradient(to bottom, currentColor 0 2px, transparent 2px 4px);
+}
+.u-kitem.kind-variable .u-swatch {
+  background: linear-gradient(to bottom, currentColor 0 45%, transparent 45% 55%, currentColor 55%);
+}
+
+/* The toolbar: one row at desktop widths (the depth, the switch, "Key" at the right end). */
+#layers {
+  flex-wrap: nowrap;
+  position: sticky;
+}
+#layers #key-button {
+  flex: none;
+  margin-left: auto;
+  font: inherit;
+  padding: 0 0.5rem;
+  min-height: 24px;
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.4));
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-textLink-foreground, #006ab1);
+  cursor: pointer;
+}
+#layers #key-button[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 12%, transparent);
+}
+@media (max-width: 480px) {
+  #layers {
+    flex-wrap: wrap;
+  }
+}
+/* The key: over the view, under the toolbar at its right; on a phone, a sheet at the bottom. */
+#layers > #depth-caption {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  z-index: 5;
+  width: min(36rem, 100%);
+  margin: 0;
+  font-size: max(12px, 0.92em);
+  color: var(--vscode-foreground);
+}
+#layers > #depth-caption[hidden] {
+  display: none;
+}
+#depth-caption .u-key {
+  margin: 0;
+  max-height: min(70vh, 34rem);
+  overflow: auto;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background, #fff));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem 0.6rem;
+}
+#depth-caption .u-khead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#depth-caption .u-key-close {
+  font: inherit;
+  font-size: 1.2em;
+  line-height: 1;
+  min-width: 28px;
+  min-height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+#depth-caption .u-key-more {
+  margin-top: 0.4rem;
+  font: inherit;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--vscode-textLink-foreground, #006ab1);
+  cursor: pointer;
+}
+#depth-caption .u-kmean {
+  color: var(--vscode-foreground);
+}
+@media (max-width: 480px) {
+  #layers > #depth-caption {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: auto;
+  }
+  #depth-caption .u-key {
+    border-radius: 10px 10px 0 0;
+    max-height: 70vh;
+  }
+}
+.u-swatch-dashed {
+  display: inline-block;
+  width: 2em;
+  height: 1em;
+  vertical-align: -0.18em;
+  border: 1.5px dashed var(--c-recv);
+  border-radius: 2px;
+}
+
+/* A word the program receives changed: a dashed outline (solid tint: as written). */
+#main.u-who .row.u-row.u-readx > .u-tok > .label {
+  outline: 1.5px dashed color-mix(in srgb, var(--c-recv) 85%, var(--vscode-foreground));
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* The rows: the code column (a share of the panel's width), the text, and the sections of the manual at the right. */
+.row.u-row {
+  grid-template-columns: var(--codew, 12rem) minmax(0, 1fr) var(--refw, 0px);
+}
+#main[data-depth="2"] #tree {
+  --refw: 3.4rem;
+}
+.u-row > .u-refcol {
+  grid-column: 3;
+  text-align: right;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.u-row > .u-refcol a.u-ref {
+  color: var(--c-muted);
+  text-decoration-style: dotted;
+}
+#tree.u-stacked .row.u-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+#tree.u-stacked .u-row > .u-refcol {
+  grid-column: 1;
+  justify-self: end;
+}
+#tree.u-stacked .u-row > .u-refcol:empty {
+  display: none;
+}
+.u-row > .u-tok > .label {
+  overflow-wrap: break-word;
+}
+/* The chips: one line under the text, at a readable size. */
+.u-row .u-side {
+  float: none;
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0.05rem 0 0;
+  font-size: 12px;
+  white-space: normal;
+}
+.u-row .u-side > * {
+  white-space: nowrap;
+}
+.u-row .u-role.u-partrole {
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+/* Secondary text: never under 12 px, and legible. */
+.u-row .u-notes,
+.u-row .u-streams,
+.u-row .u-note,
+.u-row .u-val,
+.u-row .u-def,
+.u-row .u-partof,
+.u-row .u-prog .u-prog-who,
+.u-row .u-argv,
+#u-noprog {
+  font-size: max(12px, 0.92em);
+}
+.u-row .u-notes,
+.u-row .u-streams,
+.u-row .u-note,
+.u-row .u-def {
+  color: color-mix(in srgb, var(--vscode-foreground) 78%, transparent);
+}
+
+/* The steps bash takes on a word: a strip of boxes at the text's size. */
+.u-row .u-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.3rem;
+  margin: 0.15rem 0;
+  font-size: max(12px, 0.92em);
+  color: var(--vscode-foreground);
+}
+.u-row .u-strip-lead {
+  color: color-mix(in srgb, var(--vscode-foreground) 78%, transparent);
+}
+.u-row .u-step {
+  padding: 0 0.35em;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--c-muted) 55%, transparent);
+  white-space: nowrap;
+}
+.u-row .u-step-on {
+  background: color-mix(in srgb, var(--c-variable) 9%, transparent);
+  border-color: color-mix(in srgb, var(--c-variable) 45%, transparent);
+}
+.u-row .u-step-off {
+  color: color-mix(in srgb, var(--vscode-foreground) 75%, transparent);
+}
+.u-row .u-step-off s {
+  text-decoration-thickness: 1px;
+}
+.u-row .u-step-maybe {
+  border-style: dashed;
+}
+.u-row .u-strip-arrow {
+  color: var(--c-muted);
+}
+
+/* The risks: one sentence each, with the icon of its level; "more" holds the rest and the fix. */
+#u-risks .u-risks-title {
+  display: block;
+}
+#u-risks li.u-risk-item {
+  padding: 0.1rem 0;
+}
+#u-risks .u-risk {
+  display: flex;
+  gap: 0.35em;
+  align-items: flex-start;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0.05rem 0;
+}
+#u-risks button.u-risk {
+  cursor: pointer;
+}
+#u-risks button.u-risk:hover .u-risk-head,
+#u-risks button.u-risk:focus-visible .u-risk-head {
+  text-decoration: underline;
+}
+#u-risks .u-risk .note-icon {
+  flex: none;
+  margin-top: 0.2em;
+}
+#u-risks .u-risk-more {
+  margin: 0 0 0.1rem 1.35em;
+  font-size: max(12px, 0.92em);
+}
+#u-risks .u-risk-more > summary {
+  cursor: pointer;
+  color: var(--vscode-textLink-foreground, #006ab1);
+  width: max-content;
+}
+#u-risks .u-risk-more > p {
+  margin: 0.2rem 0;
+}
+#u-risks .u-fix-label {
+  display: block;
+  color: color-mix(in srgb, var(--vscode-foreground) 78%, transparent);
+}
+#u-risks .u-fix-code {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin-top: 0.15rem;
+}
+#u-risks .u-fix-code > code {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 0.2rem 0.4rem;
+  border-radius: 3px;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
+}
+#u-risks .u-copy {
+  flex: none;
+  font: inherit;
+  padding: 0 0.5rem;
+  min-height: 24px;
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.4));
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+#u-risks.u-pointers-only {
+  padding: 0;
+  border-left: 0;
+  background: none;
+}
+#u-risks .u-risk-pointer {
+  display: flex;
+  gap: 0.3em;
+  align-items: flex-start;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  color: var(--vscode-textLink-foreground, #006ab1);
+  background: none;
+  border: 0;
+  padding: 0.15rem 0;
+  cursor: pointer;
+}
+#u-risks .u-risk-pointer .note-icon {
+  flex: none;
+  margin-top: 0.2em;
+}
+#u-risks .u-risk-pointer:hover {
+  text-decoration: underline;
+}
+
+/* An example under a word inside a command's box stays inside the box. */
+#main[data-depth] #tree li.u-cmdbox .example {
+  margin-right: 8px;
+}
+/* The strip flows as text: each step a box that may wrap inside, an arrow kept with the step after it. */
+.u-row .u-strip {
+  display: block;
+  line-height: 1.75;
+}
+.u-row .u-strip-lead {
+  margin-right: 0.3em;
+}
+.u-row .u-stepbox {
+  margin-right: 0.3em;
+}
+.u-row .u-step {
+  white-space: normal;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+/* Each step box wraps as a whole (inside only when wider than the column). */
+.u-row .u-stepbox {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+}

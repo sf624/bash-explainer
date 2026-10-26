@@ -25,7 +25,7 @@ export type Found = Note & { node?: Placed };
 export function anchored(found: readonly Found[], anchors: NoteAnchor[], data: Map<string, Note>): string[] {
   for (const f of found) {
     if (f.node) anchors.push({ text: f.text, span: spanOf(f.node), ...(f.code ? { code: f.code } : {}) });
-    if (!data.has(f.text)) data.set(f.text, { text: f.text, level: f.level, label: f.label, body: f.body, ...(f.code ? { code: f.code } : {}) });
+    if (!data.has(f.text)) data.set(f.text, { text: f.text, level: f.level, label: f.label, body: f.body, ...(f.code ? { code: f.code } : {}), ...(f.headline ? { headline: f.headline } : {}), ...(f.fix ? { fix: f.fix } : {}) });
   }
   return [...new Set(found.map((f) => f.text))];
 }
