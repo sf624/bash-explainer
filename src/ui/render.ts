@@ -39,11 +39,22 @@ export const ui = {
       // (The fold button of a row with parts, named by the row's label; the links' note on where they open: `linkNote`, src/ui/panelView.ts.)
       partsOf: '{name} の内訳', opensTab: '（新しいタブで開く）', opensBrowser: '（ブラウザで開く）',
       views: '表示', listView: '意味', treeView: '読まれ方',
+      // (Prototype B) What each depth adds, the quoting notes of depth 1, and how a program's reading of a word is said.
+      depth: {
+        captions: ['各部分が何をするかを、例と注記つきで表示。', 'bash の構文を追加: 予約語・演算子・リストと、単純コマンドごとの単語。',
+          '各単語を誰が解釈するかを追加: シェルか、渡された先のプログラムか。', '単語の部品を追加: クォート・展開・文字列・パターン。'],
+        keepOne: 'ステップ 1 の内容もすべて含む。', keep: 'ステップ 1〜{p} の内容もすべて含む。',
+        quotes: {
+          double: 'ダブルクォートの中: 1つの単語のまま。`$` は展開される', single: 'シングルクォートの中: 1つの単語のまま、書いたとおり（何も展開されない）',
+          ansi: '`$\'…\'` の中: 1つの単語のまま。`\\n` などのバックスラッシュのエスケープが置き換わる',
+        },
+        readsAs: '{name} が{kind}として読む', madeUp: '（入力は仮）',
+      },
       tree: {
         label: '行の各部分を誰が読むか', show: '深さ',
         // (Prototype B) The depths of the one view: their short names (the buttons) and their names.
-        steps: [['何をするか', '各部分が何をするか（例つき）'], ['誰が読むか', '誰が読むか: bash か、コマンドか（役割）'], ['構文', 'bash の構文: 予約語・演算子・単純コマンド'],
-          ['単語の中', '単語の中: クォート・文字列・パターン']],
+        steps: [['何をするか', '各部分が何をするか（例つき）'], ['構文', 'bash の構文: 予約語・演算子・リスト・単純コマンド'],
+          ['シェルかプログラムか', '各単語を誰が解釈するか: シェルか、渡された先のプログラムか'], ['単語の部品', '単語の部品: クォート・展開・文字列・パターン']],
         stepper: {
           group: '深さ', back: '浅く', forward: '深く',
           step: '深さ {i}/{n}：{name}', empty: 'この行では増えるものなし', jump: '深さを選ぶ',
@@ -131,11 +142,21 @@ export const ui = {
       editHint: 'Editable; the result updates as you type', noMatch: 'Nothing found',
       partsOf: 'Parts of {name}', opensTab: '(opens in a new tab)', opensBrowser: '(opens in the browser)',
       views: 'View', listView: 'Meaning', treeView: 'Reading',
+      depth: {
+        captions: ['What each part does, with examples and notes.', "Adds bash's syntax: reserved words, operators, lists, and each simple command with its words.",
+          'Adds who interprets each word: the shell, or the program it is passed to.', 'Adds the parts of each word: quotes, expansions, literal text and patterns.'],
+        keepOne: 'Keeps everything of step 1.', keep: 'Keeps everything of steps 1–{p}.',
+        quotes: {
+          double: 'In double quotes: stays one word; `$` still expands', single: 'In single quotes: stays one word, as written (nothing expands)',
+          ansi: 'In `$\'…\'`: stays one word; backslash escapes such as `\\n` are replaced',
+        },
+        readsAs: '{name} reads it as {kind}', madeUp: ' · made-up input',
+      },
       tree: {
         label: 'Who reads each part of the line', show: 'Depth',
         // (Prototype B) The depths of the one view.
-        steps: [['What it does', 'what each part does, with examples'], ['Who reads it', 'who reads each part: bash or the command (roles)'],
-          ['Syntax', "bash's syntax: reserved words, operators, simple commands"], ['Inside words', 'inside the words: quotes, literal text, patterns']],
+        steps: [['What it does', 'what each part does, with examples'], ['Syntax', "bash's syntax: reserved words, operators, lists, simple commands"],
+          ['Shell or program', 'who interprets each word: the shell, or the program it is passed to'], ['Word parts', 'the parts of each word: quotes, expansions, literal text, patterns']],
         stepper: {
           group: 'Depth', back: 'Less detail', forward: 'More detail',
           step: 'Depth {i} of {n}: {name}', empty: 'Adds nothing on this line', jump: 'Choose a depth',

@@ -1448,33 +1448,134 @@ body.vscode-high-contrast-light #reading-tree li.band {
   }
 }
 
-/* Prototype B: the one view's roles and readers (media/panel.js, `chipEl`). A role is a small word in the colour of
-   its reader (bash's purple, a command's green); where a command or a language takes over, a framed "grep reads". */
+/* Prototype B: the one view (media/panel.js, `uitem`). Each row is a grid: the code in a column whose right edge is the
+   same for every row (--tokcol, set by `alignRows`), and what it says from that edge on; its roles and references on
+   one quiet line under its text. */
 .l-depth { --l: var(--vscode-focusBorder, #0078d4); }
-.row .u-chip {
-  color: var(--l);
-  font-size: 0.8em;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: help;
+.row.u-row {
+  display: grid;
+  grid-template-columns: var(--tokcol, 9rem) minmax(0, 1fr);
+  column-gap: 0.6rem;
+  align-items: baseline;
 }
-.row .u-reads {
-  color: var(--l);
-  font-size: 0.75em;
-  font-weight: 600;
+.u-row > .u-tok {
+  grid-column: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
   white-space: nowrap;
-  border: 1px solid color-mix(in srgb, var(--l) 60%, transparent);
-  background: color-mix(in srgb, var(--l) 8%, transparent);
-  border-radius: 3px;
-  padding: 0 0.3em;
 }
-.row .u-extra {
-  display: block;
+.u-row > .u-tok > .twisty {
+  margin-left: calc(-1 * var(--fold));
+}
+.u-row > .u-tok > .label {
+  flex: none;
+  overflow: visible;
+  max-width: none;
+  white-space: pre;
+}
+.u-row > .u-desc {
+  grid-column: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* A code longer than its column: on its own line, and the text under it from the same edge. */
+.u-row.u-long > .u-tok {
+  grid-column: 1 / -1;
+  white-space: normal;
+  flex-wrap: wrap;
+}
+.u-row.u-long > .u-tok > .label {
+  flex: 0 1 auto;
+  max-width: 100%;
+  white-space: pre-wrap;
+}
+.u-row .u-note {
+  color: var(--c-muted);
+  font-size: 0.9em;
+}
+.u-row .u-def {
+  color: var(--c-muted);
+  font-size: 0.9em;
+  font-style: italic;
+}
+.u-row .u-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.8em;
+  font-size: 0.78em;
   color: var(--c-muted);
 }
-.row .u-extra .u-chip {
-  margin-right: 0.2em;
+.u-row .u-meta .refs {
+  margin-left: auto;
+  font-size: 1em;
+}
+.u-row .u-role {
+  color: color-mix(in srgb, var(--l) 80%, var(--c-muted));
+}
+.u-row .u-reads {
+  color: var(--l);
+  font-weight: 600;
+}
+.u-row .u-sep,
+.u-row .u-arrow {
+  color: var(--c-muted);
+}
+
+/* The rows of a program's reading (from depth 3): a light tint behind them; what bash reads inside (an expansion) is not tinted. */
+#tree li.u-region {
+  background: color-mix(in srgb, var(--l) 7%, transparent);
+  border-radius: 3px;
+}
+#tree li.u-region li.u-plain {
+  background: var(--vscode-editor-background);
+}
+
+/* Indent guides from depth 2 (the syntax): a thin line beside the parts of a row, as in VS Code's trees. None at depth 1. */
+#main[data-depth] #tree li > .body::before {
+  display: none;
+}
+#main[data-depth="2"] #tree .body > ul,
+#main[data-depth="3"] #tree .body > ul,
+#main[data-depth="4"] #tree .body > ul {
+  margin-left: 0.7rem;
+  padding-left: 0.4rem;
+  border-left: 1px solid var(--vscode-tree-indentGuidesStroke, rgba(127, 127, 127, 0.4));
+}
+
+/* What the depth shown adds, under the control. */
+#depth-caption {
+  margin: -0.2rem 0 0.5rem;
+  font-size: 0.85em;
+  color: var(--c-muted);
+}
+#depth-caption .u-keep {
+  font-style: italic;
+}
+
+/* An example folds by its title; a made-up input is said after it. */
+.example .u-madeup {
+  font-weight: normal;
+  color: var(--c-muted);
+  font-size: 0.9em;
+}
+
+/* The line at the top wraps instead of being cut at the panel's edge. */
+pre#line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 #main > #layers {
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.2rem;
+}
+.example:not([open]) {
+  margin-top: 0.3rem;
+  padding-top: 0.25rem;
+}
+.u-row .u-desc code {
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
+  padding: 0 0.25em;
+  border-radius: 3px;
 }
