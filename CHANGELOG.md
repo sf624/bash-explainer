@@ -24,6 +24,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The web page opens files and saves them: **Open file…** in the menu, `Ctrl+O` or a drop on the editor opens one, with the kind from its name; `Ctrl+S` (`⌘S` on a Mac) or **Save** saves the script. The file stays in your browser.
 - On the web page, hovering a word in the editor shows its card, as in VS Code; `Ctrl+K Ctrl+I` shows the card at the cursor. Turn the cards off with `bashExplainer.hover.enabled`.
 - In a bats file, each test is explained as bats runs it: in a process of its own, with `set -e` on, after `setup`; what one test sets does not reach another. `setup`, `teardown`, `setup_file` and `teardown_file` say when bats calls them, and that `set -e` is ignored in `teardown`.
+- In a bats file, the tag comments `# bats test_tags=…` and `# bats file_tags=…` are explained (bash ignores them, bats reads them): which tests get which tags, `bats --filter-tags`, `bats:focus`, and a warning for a list bats refuses. A function marked `name() { # @test` is explained as a test, which bats renames.
 
 ### Changed
 

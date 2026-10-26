@@ -311,6 +311,29 @@ bats (1.13) reads a test file with `set -eET` on, then runs each test in a proce
 
 The definitions of `setup`, `teardown`, `setup_file` and `teardown_file` get a note on when bats calls them and in which process. A `setup_suite` in a test file is a pitfall: bats does not call it there and warns (BW03); it belongs in `setup_suite.bash`. The note on each `@test` adds that the code outside the tests runs again for each test.
 
+### Tag comments and marked functions in bats files
+
+To bash, `# bats test_tags=…` and `# bats file_tags=…` are comments. bats reads them, so the line says both, and which tests get the tags:
+
+| Line | What the explanation says |
+| --- | --- |
+| `# bats test_tags=a, b:c` | bash ignores it; bats gives the next test only the tags `a` and `b:c`, and runs it with `bats --filter-tags a` |
+| `# bats file_tags=slow` | every later test of the file gets `slow`; a later `# bats file_tags=` replaces it, and an empty one cancels it |
+| `# bats test_tags=bats:focus` | bats runs only the focused tests, and exits 1 even if they pass (`BATS_NO_FAIL_FOCUS_RUN=1` keeps 0) |
+| `# bats test_tags=a,,b`, `a b`, `,b` | a warning: bats refuses the list, so none of the tests of the file runs (`not ok 1 bats-gather-tests`) |
+
+A test has its `test_tags` and the `file_tags` in effect, sorted (`$BATS_TEST_TAGS`). Only a line that starts with the comment counts; bats reads it also inside a here-document, where the line is text to bash.
+
+The other form of a test, a function marked with a comment, is explained as a test too:
+
+```bash
+countdown() { # @test
+  true
+}
+```
+
+bats takes the function for a test named `countdown` and renames it `test_countdown` (so `countdown` is no longer a function; `-` and other characters in the name are written in hex, as for `@test "…"`). Before, such a function was a plain function with a comment. A line is a test only with parentheses or `function`, a blank before the `{` and nothing after `# @test`.
+
 ## Changed
 
 ### The inline summary was removed

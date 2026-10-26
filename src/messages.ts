@@ -357,6 +357,24 @@ export const MESSAGES = {
   'bats-test': note(['3.3', '4.3.1'], () => [
     'bats はテストを1つずつ別のプロセスで、`set -e` を有効にして実行する。途中のコマンドが失敗するとそこでテストは失敗し（`set -e` が無視される所、つまり条件・`&&` や `||` の左側・`!` のあとを除く）、最後のコマンドが失敗しても失敗する。テストで設定した変数は、ほかのテストには届かない。各プロセスはまずファイル全体を読み込むので、テストの外のコードはテストごとに実行される',
     'bats runs each test in a process of its own, with `set -e` on: a command that fails stops the test and fails it (except where `set -e` is ignored: in a condition, on the left of `&&` or `||`, after `!`), and so does a last command that fails. What a test sets does not reach the other tests. Each process first reads the whole file, so the code outside the tests runs again for each test']),
+  'bats-tags': note<{ scope: 'test' | 'file'; tags: readonly string[] }>(['3.1.3'], ({ scope, tags }) => {
+    const list = tags.map((t) => `\`${t}\``).join(', ');
+    const focus = tags.includes('bats:focus');
+    return [
+      `bash にとってはコメントで、無視される。bats がこの行を読み、${scope === 'test' ? '次のテストだけ' : 'このファイルのこれ以降のすべてのテスト'}に${tags.length ? `タグ ${list} を付ける` : 'タグを付けない（空のリスト）'}`
+        + (scope === 'test' ? '（そのあとのテストには付かない）' : tags.length ? '（あとの `# bats file_tags=` が置き換える）' : '（前の `file_tags` を無効にする）')
+        + (tags.length ? '。`bats --filter-tags タグ` で、タグでテストを選んで実行できる' : '')
+        + (focus ? '。`bats:focus` が付いたテストがあると、bats はそのテストだけを実行し、成功しても終了ステータスを 1 にする（`BATS_NO_FAIL_FOCUS_RUN=1` で 0 にできる）' : ''),
+      `to bash this is a comment, and it is ignored. bats reads the line and gives ${scope === 'test' ? 'the next test only' : 'every later test of the file'} ${tags.length ? `the ${tags.length > 1 ? 'tags' : 'tag'} ${list}` : 'no tags (an empty list)'}`
+        + (scope === 'test' ? ' (not the tests after it)' : tags.length ? ' (a later `# bats file_tags=` replaces them)' : ' (it cancels an earlier `file_tags`)')
+        + (tags.length ? '; `bats --filter-tags TAGS` runs only the tests with the tags given' : '')
+        + (focus ? '. When a test has `bats:focus`, bats runs only the focused tests, and exits with status 1 even if they pass (`BATS_NO_FAIL_FOCUS_RUN=1` keeps 0)' : '')];
+  }),
+  'bats-tags-invalid': failure<{ scope: 'test' | 'file'; why: 'empty' | 'syntax' }>(['3.1.3'], ({ scope, why }) => [
+    `\`${scope}_tags\` の書き方が正しくないので、bats はこのファイルのテストを1つも実行せずに失敗する。タグは英数字・\`-\`・\`_\`・\`:\` だけで書き、コンマ（前後の空白は可）で区切る。`
+      + (why === 'empty' ? '先頭のコンマで空のタグができている' : '空のタグ（`a,,b` や末尾のコンマ）や、空白や記号を含むタグは書けない'),
+    `The \`${scope}_tags\` list is not valid, so bats runs none of the tests of this file and fails. Tags are letters, digits, \`-\`, \`_\` and \`:\`, separated by commas (spaces around them are fine). `
+      + (why === 'empty' ? 'A leading comma makes an empty tag' : 'An empty tag (`a,,b`, a trailing comma) and a tag with a space or another character are errors')]),
   'bats-negation-ignored': pitfall<{ cmd: string; form: 'command' | 'pipeline' | 'other' }>(['4.3.1', '3.2.3'], ({ cmd, form }) => [
     `\`set -e\` は \`!\` のあとのコマンドの結果を無視するので、\`! ${cmd}\` はテストの最後のコマンドでない限り、\`${cmd}\` が成功してもテストを失敗させません。`
       + (form === 'command' ? `\`run ! ${cmd}\`（bats 1.5.0 から。\`bats_require_minimum_version 1.5.0\` と書く）か \`! ${cmd} || false\` と書きます`
