@@ -6,6 +6,7 @@ import { Analyzer } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
 import { documentIssues, explainDocumentLine, noteIssues, ShellDocument } from '../src/document';
 import { extractShell } from '../src/hosts';
+import { isProblem } from '../src/messages';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
@@ -152,6 +153,26 @@ describe('the pitfalls of a script, as problems', () => {
   for (const [text, want] of cases) {
     it(`${JSON.stringify(text)}: ${want.map((w) => w[0]).join(', ') || 'none'}`, () => assert.deepStrictEqual(found(text), want));
   }
+
+  // Caveats of the catalog that stay notes (`notProblem` in src/messages.ts): the explanations say them with their level, and no problem is made.
+  for (const [text, code] of [['ssh host "ls $dir"', 'ssh-local-expansion'], ['ls **/*.sh', 'globstar-not-found'], ['ls !(a)', 'extglob-not-found']]) {
+    it(`${JSON.stringify(text)}: a caveat in the explanation, no problem (${code})`, () => {
+      const doc = script(text);
+      const notes = explainDocumentLine(new Analyzer('en'), doc, 0, 'en', {}, {}).noteInfo.filter((n) => n.code === code);
+      assert.deepStrictEqual(notes.map((n) => n.level), ['info']);
+      assert.strictEqual(isProblem(code), false);
+      assert.deepStrictEqual(documentIssues(doc, 'en', {}).filter((i) => i.code === code), []);
+      assert.deepStrictEqual(noteIssues(doc, 'en', {}, {}).filter((i) => i.code === code), []);
+    });
+  }
+
+  it('keeps a problem for the facts of the catalog that are not marked as staying notes', () => {
+    assert.strictEqual(isProblem('declaration-masks-status'), true);
+    assert.strictEqual(isProblem('extglob-maybe-on'), true);
+    assert.strictEqual(isProblem('globstar-maybe-on'), true);
+    // (A code that is not a fact of the catalog: a style check, a dialect issue, a host's own.)
+    assert.strictEqual(isProblem('dockerPipefail'), true);
+  });
 
   it('says what the explanation of the line says, in either language', () => {
     for (const lang of ['en', 'ja'] as const) {

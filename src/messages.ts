@@ -38,6 +38,8 @@ interface Entry<P> {
   heading?: Text;
   /** The level (by default `warning` for a pitfall, `note` for a note); a function when it depends on the params. */
   level?: NoteLevel | ((p: P) => NoteLevel);
+  /** `false`: a warning or caveat that stays a note, never a problem in the editors (`notProblem`, `isProblem`). */
+  problem?: false;
 }
 
 const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text });
@@ -47,6 +49,12 @@ const pitfall = <P = Record<string, never>>(refs: readonly string[], text: (p: P
   ({ kind: 'pitfall', refs, text, ...(heading ? { heading } : {}), ...(level ? { level } : {}) });
 /** A pitfall at the level `info`: harmless with most values, systems or paths. */
 const caveat = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text): Entry<P> => pitfall(refs, text, heading, 'info');
+/**
+ * A caveat that stays a note: the panel, the hover and the CLI say it with its level, but it is no problem in the
+ * editors, since it is often meant, or wrong where a file is read after the option is set (docs/design/note-levels.md,
+ * "Notes as problems").
+ */
+const notProblem = <P>(e: Entry<P>): Entry<P> => ({ ...e, problem: false });
 
 /** Headings of pitfalls whose text names its own kind of problem. */
 const NO_HEADING: Text = { ja: '', en: '' };
@@ -209,9 +217,9 @@ export const MESSAGES = {
   'extglob-turned-off': pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
     `\`${use}\` のような拡張グロブは \`shopt -s extglob\` のあとでないと構文エラーになりますが、\`shopt -u extglob\` で無効にされています`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` is on, and \`shopt -u extglob\` turned it off`]),
-  'extglob-not-found': caveat<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
+  'extglob-not-found': notProblem(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
     `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。この行より前に見当たりません。\`source\` したファイルなどで有効にしているなら問題ありません`,
-    `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). It is not found before this line; fine if it is turned on elsewhere, as in a file read with \`source\``]),
+    `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). It is not found before this line; fine if it is turned on elsewhere, as in a file read with \`source\``])),
   'extglob-maybe-on-trap': caveat<{ use: string }>(['3.5.8.1', '4.3.2', '4.1'], ({ use }) => [
     `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。トラップの文字列はシグナルが来たときに読まれるので、\`extglob\` が有効になる前に来れば構文エラーになります`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`), and a trap's action is read when its signal comes: if that is before \`extglob\` is on, it is a syntax error`]),
@@ -221,9 +229,9 @@ export const MESSAGES = {
   'globstar-maybe-on': caveat<{ on: string }>(['3.5.8', '4.3.2'], ({ on }) => [
     `\`**\` がサブディレクトリまでたどるのは \`${on}\` のあとだけです。この前で有効にしているのは一部の経路（分岐やループ）だけなので、ほかの経路では \`*\` と同じく1階層分にしか一致しません`,
     `\`**\` reaches into subdirectories only after \`${on}\`, and only some paths before here (a branch or a loop) turn it on; on the others \`**\` is the same as \`*\` and matches one level only`]),
-  'globstar-not-found': caveat<{ on: string }>(['3.5.8', '4.3.2'], ({ on }) => [
+  'globstar-not-found': notProblem(caveat<{ on: string }>(['3.5.8', '4.3.2'], ({ on }) => [
     `\`**\` がサブディレクトリまでたどるのは \`${on}\` のあとだけです。この行より前に見当たらないので、このままでは \`*\` と同じく1階層分にしか一致しません。\`source\` したファイルなどで有効にしているなら問題ありません`,
-    `\`**\` reaches into subdirectories only after \`${on}\`. It is not found before this line, so as it stands \`**\` is the same as \`*\` and matches one level only. Fine if it is turned on elsewhere, as in a file read with \`source\``]),
+    `\`**\` reaches into subdirectories only after \`${on}\`. It is not found before this line, so as it stands \`**\` is the same as \`*\` and matches one level only. Fine if it is turned on elsewhere, as in a file read with \`source\``])),
   'globstar-unsupported': pitfall<{ shell: string }>(['3.5.8'], ({ shell }) => [
     `${shell} には globstar がなく、\`**\` は \`*\` と同じく1階層分にしか一致しません。サブディレクトリまでたどるには \`find\` を使います`,
     `${shell} has no globstar, so \`**\` is the same as \`*\` and matches one level only. To reach into subdirectories, use \`find\``]),
@@ -244,9 +252,9 @@ export const MESSAGES = {
   'builtin-or-function-as-program': pitfall<{ via: string; name: string; isFn: boolean; fix: Words }>(['3.7.3', '3.3'], ({ via, name, isFn, fix }) => [
     `\`${via}\` は \`${name}\` を別のプログラムとして起動するため、シェルの${isFn ? '関数' : '組み込みコマンド'}は実行できません（\`command not found\` になるか、今のシェルには効きません）。${fix.ja}`,
     `\`${via}\` starts \`${name}\` as a separate program, so it cannot run a shell ${isFn ? 'function' : 'builtin'} ("command not found", or no effect on the current shell). ${fix.en}`]),
-  'ssh-local-expansion': caveat<{ risky: string }>(['3.7.1', '3.7.3'], ({ risky }) => [
+  'ssh-local-expansion': notProblem(caveat<{ risky: string }>(['3.7.1', '3.7.3'], ({ risky }) => [
     `\`ssh\` に渡すコマンドのうち \`${risky}\` は、送られる前にこちらのシェルが展開します（\`$変数\`・\`$(…)\`・\`*\`・\`~\` はこちらの値になります）。リモートで展開したいときは全体をシングルクォートで囲みます: \`ssh host '…'\``,
-    `the local shell expands \`${risky}\` in the command given to \`ssh\` before it is sent (\`$var\`, \`$(…)\`, \`*\` and \`~\` take local values). To expand them on the remote side, single-quote the whole command: \`ssh host '…'\``]),
+    `the local shell expands \`${risky}\` in the command given to \`ssh\` before it is sent (\`$var\`, \`$(…)\`, \`*\` and \`~\` take local values). To expand them on the remote side, single-quote the whole command: \`ssh host '…'\``])),
   'function-not-on-remote': pitfall<{ name: string }>(['3.3', '3.7.3'], ({ name }) => [
     `リモートのシェルには、このスクリプトの関数 \`${name}\` はありません。中身を直接書くか、\`ssh host "$(declare -f ${name}); ${name}"\` のように定義ごと送ります`,
     `the remote shell does not have this script's function \`${name}\`. Write out its body, or send the definition too: \`ssh host "$(declare -f ${name}); ${name}"\``]),
@@ -497,6 +505,11 @@ export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> e
   const level = typeof e.level === 'function' ? e.level(params[0]) : e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note');
   const { text, label, body } = marked(lang, level, lang === 'ja' ? ja : en, { kind: e.kind, heading: e.heading });
   return { id, kind: e.kind, level, text, refs: e.refs, label, body, code: id };
+}
+
+/** Whether the note with `code` is a problem when it is a warning or a caveat: all are, but the facts that `notProblem` marks. */
+export function isProblem(code: string): boolean {
+  return (MESSAGES as Record<string, Entry<never>>)[code]?.problem !== false;
 }
 
 /** A fact before its language is chosen: its id and its params (language-free, or `Words`). */

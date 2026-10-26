@@ -79,11 +79,11 @@ The other warnings and caveats of the explanations are problems as well. Among t
 | `postfix-increment-status`, `postfix-decrement-status` | `set -e; i=0; (( i++ ))` (information without `set -e`) | warning |
 | `declaration-masks-status` | `local x=$(false)` | information |
 | `pipefail-missing` | `set -e; curl -s x \| sh` | information |
-| `extglob-not-found`, `extglob-maybe-on`, `globstar-not-found`, `globstar-maybe-on` | `ls !(a)`, `ls **/*.sh` with the option not turned on | information |
+| `extglob-maybe-on`, `globstar-maybe-on` | `ls !(a)`, `ls **/*.sh` with the option turned on on some paths only | information |
 | `unmatched-glob-runs-once` | `for f in *.log; do rm "$f"; done` | information |
-| `ssh-local-expansion` | `ssh host "echo $HOME"` | information |
 
 - They follow the same settings as the other problems: `bashExplainer.diagnostics.ignore` and `# bash-explainer disable=<code>` leave one out. The new `bashExplainer.diagnostics.pitfalls` (default on) leaves all of them out. With `bashExplainer.notes.pitfalls` off, the explanations leave out their pitfalls, and so do the problems; the notes that say a line fails when it runs (`[` without `]`) stay.
+- Three caveats stay notes and are not problems: `ssh-local-expansion` (`ssh host "echo $HOME"`: often meant), and `globstar-not-found` and `extglob-not-found` (`ls **/*.sh`, `ls !(a)` with no `shopt -s` before: the file may be read after the option is set). The panel, the hover and the CLI still show them as caveats. (To be confirmed by the maintainer.)
 - A problem is said once for each part it is about, however many lines say it (a statement over several lines), and once for each part where it is about several (`cp $a b; cp $a c`). In VS Code and on the web page, the hover then leaves the note out of its card, since the problem above it says it.
 - They follow the script's shell. In zsh, which does not split or glob an unquoted `$var`, `cp $a b` and `for a in $@` have none; `[ -n $x ]` keeps its pitfall, since zsh drops an empty unquoted word too, and says so. A line that zsh syntax leaves unreadable to bash gets none.
 - The notes that name a host's placeholder (a Makefile's `$(SRC)`, read as `${SRC}`) name it as the file writes it, in the explanations too.
