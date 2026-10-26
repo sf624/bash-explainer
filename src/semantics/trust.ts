@@ -41,10 +41,11 @@ import { prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import { staticWordValue, substitutionNames } from '../staticword';
 import { field, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
+import { builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
 import { aliasName, aliasOf, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
 import { testWordShape } from './testwords';
-import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, optionRoles, readDeclarationWords, type Declaration } from './vars';
+import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, optionRoles, readDeclarationWords, writeEffect, type Declaration } from './vars';
 
 export interface Trust {
   /** Why nothing is trusted (no decision at all), when so. */
@@ -73,19 +74,6 @@ const NAME = /^[A-Za-z_]\w*$/;
 const IDENTIFIERS = /(?<![\w#@.])[A-Za-z_]\w*/g;
 /** A `${…}` that arithmetic may paste: a value, an element, a length, or a default (`${x:-0}`). */
 const PASTE = /^\$\{#?[A-Za-z_]\w*(?:\[[^\]]*\])?(?::?-[^{}$`'"]*)?\}/;
-/** A parameter that expanding changes nothing: `$x`, `${x}`, `${#x}`, `${x[0]}`, `${x:-w}`, `${x:+w}` (w with no `$`). */
-const QUIET_PARAMETER = /\$(?:[A-Za-z_]\w*|[0-9@*#?$!_-]|\{#?(?:[A-Za-z_]\w*|[0-9@*#?$!_-])(?:\[(?:\d+|@|\*)\])?(?::?[-+?][^$`{}]*)?\})/g;
-/**
- * Whether the text of a prompt (`PS4`, `${x@P}`) runs nothing and assigns nothing when bash expands it: only
- * `QUIET_PARAMETER`s, nested in each other, and no octal escape (bash decodes `\044` to a `$` before it expands the
- * prompt: `x='\044((u=2))'; : "${x@P}"` sets `u`).
- */
-function quietPrompt(text: string): boolean {
-  if (/\\[0-7]/.test(text)) return false;
-  for (let before = ''; before !== text;) [before, text] = [text, text.replace(QUIET_PARAMETER, '')];
-  return !/[$`]/.test(text);
-}
-
 /** The builtins a command name read from a variable may be (`debug=false; $debug`): they change nothing. */
 const SAFE_BUILTINS = new Set(['true', 'false', ':', 'echo', 'test', '[']);
 
@@ -124,26 +112,6 @@ const ALIAS_EXPANSIONS = 1000;
 const NO_NAMES: ReadonlySet<string> = new Set();
 
 const identifiers = (text: string): string[] => text.match(IDENTIFIERS) ?? [];
-
-/**
- * Whether the expansion `n` is an indirection (`${!v}`, `${!1}`, `${!a[1]}`, `${!v@Q}`, `${!v:-x}`, `${!a[@]:-x}`): the
- * value it reads names the variable, and a subscript there is arithmetic, which may assign any variable. Not the keys
- * of an array (`${!a[@]}`) or the names with a prefix (`${!v@}`) with nothing after them, nor a special parameter
- * whose value is a number or the option letters (`${!#}`, `${!?}`, `${!-}`); `${!@}` and `${!*}` take `$1`'s value.
- */
-function indirect(n: SyntaxNode): boolean {
-  const kids = n.children;
-  if (kids[1]?.type !== '!') return false;
-  // (`${!}` is `$!`, with no `!` token; in `${!:-x}`, `!` is the name and `x` the operand.)
-  const name = kids[2];
-  const after = kids.slice(3).filter((c) => c.type !== '}').map((c) => c.type).join(' ');
-  switch (name?.type) {
-    case 'subscript': return !(['@', '*'].includes(field(name, 'index')!.text) && after === '');
-    case 'special_variable_name': return name.text === '@' || name.text === '*';
-    case 'variable_name': return after !== '@' && after !== '*';
-  }
-  return false;
-}
 
 /** The values of several words given in turn (a list of `for`, the elements of an array). */
 const joined = (values: Value[]): Value =>
@@ -227,7 +195,18 @@ class Scan {
     throw new StopScan();
   }
 
+  /**
+   * The effect of a construct, by its row of the allow-list (src/semantics/allow.ts): `all` trusts nothing; whether the
+   * scan reads it further (its handler), which `none` does not.
+   */
+  private apply(row: Row): boolean {
+    if (row.effect.kind === 'all') this.blindFor(row.effect.why);
+    return row.effect.kind !== 'none';
+  }
+
   private write(name: string, w: Where, plain: boolean, value: Value, nameref = false): void {
+    // (What a write of a variable of bash does to bash.)
+    this.apply(writeEffect(name));
     const list = this.writes.get(name) ?? [];
     list.push({ plain, value, fn: w.fn, foreign: w.foreign, ...(nameref ? { nameref } : {}) });
     this.writes.set(name, list);
@@ -327,6 +306,11 @@ class Scan {
 
   private visit(n: SyntaxNode, w: Where): void {
     if (w.rest && n.startIndex >= w.rest.at) w = w.rest.where;
+    // Each node by the row of its type: what changes nothing has no handler (its parts are read in turn).
+    if (n.named && !this.apply(syntaxRow(n.type))) {
+      for (const c of n.children) this.visit(c, w);
+      return;
+    }
     switch (n.type) {
       case 'function_definition': {
         this.changed(w);
@@ -356,6 +340,7 @@ class Scan {
         if (n.namedChildren[0]?.type === 'variable_name') this.reads.add(n.namedChildren[0].text);
         break;
       case 'expansion': {
+        this.apply(expansionRow(n));
         const name = n.namedChildren[0];
         const ops = n.children.filter((c) => !c.named).map((c) => c.type);
         if (indirect(n)) this.blindFor('indirect expansion');
@@ -409,6 +394,7 @@ class Scan {
         break;
       }
       case 'file_redirect': case 'heredoc_redirect': case 'herestring_redirect': {
+        this.apply(redirectionRow(n));
         const fd = /^\{([A-Za-z_]\w*)\}$/.exec(field(n, 'descriptor')?.text ?? '')?.[1];
         if (fd) this.write(fd, w, false, 'number');
         break;
@@ -653,6 +639,10 @@ class Scan {
     }
     for (const f of callbacks(parse, args)) this.callback(f);
     if (hosted) return;
+    // The rest by the builtin's row: an option the spec does not know, and the handler of a builtin the walk follows.
+    const row = builtinRow(name);
+    if (parse.roles.some((r) => r.role.role === 'unknown-option')) this.apply(row.unknownOption);
+    if (!this.apply(row)) return;
     // `test` and `[` (by their spec): `-v name` reads a variable.
     if (spec.operandParser === 'test-expression') {
       this.testWords(name === '[' && staticWordValue(args[args.length - 1] ?? c) === ']' ? args.slice(0, -1) : args, w);
@@ -699,7 +689,7 @@ class Scan {
         for (const r of parse.roles) {
           const v = staticWordValue(args[r.word]);
           if (r.role.role === 'operand') continue;
-          if (v === undefined || r.role.role === 'unknown-option' || (r.role.role === 'value' && ['-F', '-C'].includes(r.role.of))
+          if (v === undefined || (r.role.role === 'value' && ['-F', '-C'].includes(r.role.of))
             || (r.role.role === 'value' && r.role.of === '-W' && !quietPrompt(v))) this.blindFor('`compgen` expands a word list or runs a command the model does not read');
         }
         return;
@@ -717,10 +707,14 @@ class Scan {
       case 'unset':
         this.unset(args, w);
         return;
+      case 'shopt':
+        this.shopt(parse, args);
+        return;
       case 'set': {
         // `set -a`, `set -o allexport` (the last of them in the command wins), or options not known (a name of `-o`
         // not known, a word whose value is not known before the operands): functions defined after are exported.
         const writes = setOptionWrites(parse, args);
+        for (const o of writes) if (o.name !== undefined) this.apply(optionRow(SET_OPTIONS, o.name, o.on));
         const first = parse.roles.find((r) => r.role.role === 'end-of-options' || (r.role.role === 'operand' && staticWordValue(args[r.word]) !== undefined))?.word ?? args.length;
         if (writes.filter((o) => o.name === 'allexport').pop()?.on || writes.some((o) => o.name === undefined && o.on)
           || args.slice(0, first).some((a) => staticWordValue(a) === undefined)) this.exportAll = true;
@@ -728,6 +722,23 @@ class Scan {
       }
     }
     if (DECLARATIONS.has(name)) this.declaration(name, args, readDeclarationWords(name, args), w);
+  }
+
+  /**
+   * `shopt -s` and `-u`: each option by its row (`-o`: those of `set -o`). `shopt -so allexport` exports the functions
+   * defined after it, as `set -a` does; so may a name not known.
+   */
+  private shopt(parse: ReturnType<typeof builtinParse>, args: SyntaxNode[]): void {
+    const flags = optionRoles(parse).map((r) => r.flag);
+    const on = flags.includes('-s') ? true : flags.includes('-u') ? false : undefined;
+    if (on === undefined) return;
+    const set = flags.includes('-o');
+    for (const r of parse.roles) {
+      if (r.role.role !== 'operand') continue;
+      const name = staticWordValue(args[r.word]);
+      if (set && on && (name === undefined || name === 'allexport')) this.exportAll = true;
+      if (name !== undefined) this.apply(optionRow(set ? SET_OPTIONS : SHOPT_OPTIONS, name, on));
+    }
   }
 
   /** A function named to be run later by a builtin (`complete -F f`): any, when the name is not known. */

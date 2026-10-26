@@ -5,6 +5,7 @@ import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
 import { argWord } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import type { SyntaxNode } from '../syntax/tree';
+import { all, followed, FOLLOWED, none, type Row } from './allow';
 
 /** The names an arithmetic text assigns (`x = 1`, `a[i] += 2`, `i++`, `--j`): group 1 (with 2, a subscript), 3 or 4. */
 export const ARITH_ASSIGNED = /(?<![\w$])(?:([A-Za-z_]\w*)\s*(\[[^\]]*\])?\s*(?:[-+*/%&^|]|<<|>>)?=(?!=)|([A-Za-z_]\w*)\s*(?:\+\+|--)|(?:\+\+|--)\s*([A-Za-z_]\w*))/g;
@@ -24,89 +25,119 @@ export interface BashVariable {
   arithmetic?: true;
   /** What sets it without the script naming it: a builtin (`read` sets REPLY), a construct (`[[ =~ ]]`), the shell itself. */
   setBy?: readonly string[];
+  /** What a write of it does to bash, for the trust (its row of the allow-list, src/semantics/allow.ts). */
+  effect: Row;
 }
 
 const CD = ['cd', 'pushd', 'popd'];
 const COMPLETION = ['programmable completion'];
 const BIND = ['bind -x'];
 
+// The effects of a write (docs/design/trust-allow-list.md, section 2, "Variables of bash").
+/** It changes nothing a value or a decision reads (`PATH`: commands run in child processes). */
+const NONE = none();
+/** Bash sets it, or keeps its own: never trusted (`changedUnseen`). */
+const BASH_SETS = followed(['test/bash-variables.test.ts: marks readonly, numeric and dynamic variables as bash treats an assignment to them']);
+/** The word model splits with it (src/semantics/words.ts), and the test words check it (src/semantics/trust.ts). */
+const IFS = followed(['words: IFS=', 'values: IFS=']);
+/** `set -x` expands it before each command: it must be a quiet prompt. */
+const PS4 = followed(['values: PS4=', 'test/trust.test.ts: PS4=']);
+/** Bash reads its text as arithmetic. */
+const OPTIND = followed(['test/trust.test.ts: OPTIND=']);
+/** The value of `~`. */
+const HOME = followed(['words: HOME=']);
+/** Read by another shell the script starts (its model's start: `bash -c`, `sh -c`). */
+const SHELL_START = followed(['test/nested.test.ts: BASH_ENV=']);
+/** A locale: case conversion, character classes and ranges follow it (step 4: followed for `C`, `POSIX`, `C.UTF-8` or empty; else all). */
+const LOCALE = none(FOLLOWED);
+/** What bash does after it, the walk does not follow (step 4). */
+const later = (why: string): Row => none(all(why));
+
 /**
  * The variables bash knows, each with what bash does with it: every variable of the manual's two lists (bash 5.2),
- * and `TERM` and `COPROC_PID`, which bash also sets (`TERM` at start; `COPROC` stands for the name of a coprocess).
+ * `TERM` and `COPROC_PID`, which bash also sets (`TERM` at start; `COPROC` stands for the name of a coprocess), bash
+ * 5.3's `GLOBSORT`, `BASH_MONOSECONDS` and `BASH_TRAPSIG`, and `TEXTDOMAIN` and `TEXTDOMAINDIR` (`$"…"`, 3.1.2.5).
  */
 export const BASH_VARIABLES: Readonly<Record<string, BashVariable>> = {
   // 5.1 Bourne Shell Variables.
-  CDPATH: {}, HOME: {}, IFS: { start: '--' }, MAIL: {}, MAILPATH: {},
-  OPTARG: { setBy: ['getopts'] }, OPTIND: { start: '-i', numeric: true, arithmetic: true, setBy: ['getopts'] },
-  PATH: { start: '--' }, PS1: {}, PS2: {},
+  CDPATH: { effect: NONE }, HOME: { effect: HOME }, IFS: { effect: IFS, start: '--' }, MAIL: { effect: NONE }, MAILPATH: { effect: NONE },
+  OPTARG: { effect: BASH_SETS, setBy: ['getopts'] }, OPTIND: { effect: OPTIND, start: '-i', numeric: true, arithmetic: true, setBy: ['getopts'] },
+  PATH: { effect: NONE, start: '--' }, PS1: { effect: NONE }, PS2: { effect: NONE },
   // 5.2 Bash Variables.
-  _: { start: '--', dynamic: true },
-  BASH: { start: '--' },
-  BASHOPTS: { start: '-r', dynamic: true },
-  BASHPID: { start: '-i', dynamic: true, numeric: true },
-  BASH_ALIASES: { start: '-A', setBy: ['alias', 'unalias'] },
-  BASH_ARGC: { start: '-a', dynamic: true, numeric: true },
-  BASH_ARGV: { start: '-a', dynamic: true },
-  BASH_ARGV0: { start: '--' },
-  BASH_CMDS: { start: '-A', dynamic: true },
-  BASH_COMMAND: { start: '--', dynamic: true },
-  BASH_COMPAT: {}, BASH_ENV: {}, BASH_EXECUTION_STRING: {},
-  BASH_LINENO: { start: '-a', dynamic: true, numeric: true },
-  BASH_LOADABLES_PATH: { start: '--' },
-  BASH_REMATCH: { setBy: ['[[ =~ ]]'] },
-  BASH_SOURCE: { start: '-a', dynamic: true },
-  BASH_SUBSHELL: { start: '--', dynamic: true, numeric: true },
-  BASH_VERSINFO: { start: '-ar' },
-  BASH_VERSION: { start: '--' },
-  BASH_XTRACEFD: {}, CHILD_MAX: {},
-  COLUMNS: { setBy: ['checkwinsize'] },
-  COMP_CWORD: { setBy: COMPLETION }, COMP_LINE: { setBy: COMPLETION }, COMP_POINT: { setBy: COMPLETION },
-  COMP_TYPE: { setBy: COMPLETION }, COMP_KEY: { setBy: COMPLETION },
-  COMP_WORDBREAKS: { start: '--' },
-  COMP_WORDS: { setBy: COMPLETION }, COMPREPLY: {},
-  COPROC: { setBy: ['coproc'] }, COPROC_PID: { setBy: ['coproc'] },
-  DIRSTACK: { start: '-a', dynamic: true },
-  EMACS: {}, ENV: {},
-  EPOCHREALTIME: { start: '--', dynamic: true },
-  EPOCHSECONDS: { start: '--', dynamic: true, numeric: true },
-  EUID: { start: '-ir', numeric: true },
-  EXECIGNORE: {}, FCEDIT: {}, FIGNORE: {},
-  FUNCNAME: { dynamic: true },
-  FUNCNEST: {}, GLOBIGNORE: {},
-  GROUPS: { start: '-a', dynamic: true, numeric: true },
-  HISTCMD: { start: '-i', dynamic: true, numeric: true, arithmetic: true },
-  HISTCONTROL: {}, HISTFILE: {}, HISTFILESIZE: {}, HISTIGNORE: {}, HISTSIZE: {}, HISTTIMEFORMAT: {}, HOSTFILE: {},
-  HOSTNAME: { start: '--' }, HOSTTYPE: { start: '--' },
-  IGNOREEOF: {}, INPUTRC: {}, INSIDE_EMACS: {},
-  LANG: {}, LC_ALL: {}, LC_COLLATE: {}, LC_CTYPE: {}, LC_MESSAGES: {}, LC_NUMERIC: {}, LC_TIME: {},
-  LINENO: { start: '--', dynamic: true, numeric: true },
-  LINES: { setBy: ['checkwinsize'] },
-  MACHTYPE: { start: '--' },
-  MAILCHECK: {},
-  MAPFILE: { setBy: ['mapfile', 'readarray'] },
-  OLDPWD: { setBy: CD },
-  OPTERR: { start: '--' },
-  OSTYPE: { start: '--' },
-  PIPESTATUS: { dynamic: true, numeric: true },
-  POSIXLY_CORRECT: {},
-  PPID: { start: '-ir', numeric: true },
-  PROMPT_COMMAND: {}, PROMPT_DIRTRIM: {}, PS0: {}, PS3: {},
-  PS4: { start: '--' },
-  PWD: { start: '-x', setBy: CD },
-  RANDOM: { start: '-i', dynamic: true, numeric: true, arithmetic: true },
-  READLINE_ARGUMENT: { setBy: BIND }, READLINE_LINE: { setBy: BIND }, READLINE_MARK: { setBy: BIND }, READLINE_POINT: { setBy: BIND },
-  REPLY: { setBy: ['read', 'select'] },
-  SECONDS: { start: '-i', dynamic: true, numeric: true },
-  SHELL: { start: '--' },
-  SHELLOPTS: { start: '-r', dynamic: true },
-  SHLVL: { start: '-x' },
-  SRANDOM: { start: '-i', dynamic: true, numeric: true, arithmetic: true },
-  TERM: { start: '--' },
-  TIMEFORMAT: {}, TMOUT: {}, TMPDIR: {}, histchars: {},
-  UID: { start: '-ir', numeric: true },
+  _: { effect: BASH_SETS, start: '--', dynamic: true },
+  BASH: { effect: NONE, start: '--' },
+  BASHOPTS: { effect: BASH_SETS, start: '-r', dynamic: true },
+  BASHPID: { effect: BASH_SETS, start: '-i', dynamic: true, numeric: true },
+  BASH_ALIASES: { effect: later('`BASH_ALIASES` may define an alias'), start: '-A', setBy: ['alias', 'unalias'] },
+  BASH_ARGC: { effect: BASH_SETS, start: '-a', dynamic: true, numeric: true },
+  BASH_ARGV: { effect: BASH_SETS, start: '-a', dynamic: true },
+  BASH_ARGV0: { effect: NONE, start: '--' },
+  BASH_CMDS: { effect: BASH_SETS, start: '-A', dynamic: true },
+  BASH_COMMAND: { effect: BASH_SETS, start: '--', dynamic: true },
+  BASH_COMPAT: { effect: later('`BASH_COMPAT` changes how bash reads the script') }, BASH_ENV: { effect: SHELL_START }, BASH_EXECUTION_STRING: { effect: NONE },
+  BASH_LINENO: { effect: BASH_SETS, start: '-a', dynamic: true, numeric: true },
+  BASH_LOADABLES_PATH: { effect: NONE, start: '--' },
+  BASH_REMATCH: { effect: BASH_SETS, setBy: ['[[ =~ ]]'] },
+  BASH_SOURCE: { effect: BASH_SETS, start: '-a', dynamic: true },
+  BASH_SUBSHELL: { effect: BASH_SETS, start: '--', dynamic: true, numeric: true },
+  BASH_VERSINFO: { effect: BASH_SETS, start: '-ar' },
+  BASH_VERSION: { effect: NONE, start: '--' },
+  BASH_XTRACEFD: { effect: NONE }, CHILD_MAX: { effect: NONE },
+  COLUMNS: { effect: BASH_SETS, setBy: ['checkwinsize'] },
+  COMP_CWORD: { effect: BASH_SETS, setBy: COMPLETION }, COMP_LINE: { effect: BASH_SETS, setBy: COMPLETION }, COMP_POINT: { effect: BASH_SETS, setBy: COMPLETION },
+  COMP_TYPE: { effect: BASH_SETS, setBy: COMPLETION }, COMP_KEY: { effect: BASH_SETS, setBy: COMPLETION },
+  COMP_WORDBREAKS: { effect: NONE, start: '--' },
+  COMP_WORDS: { effect: BASH_SETS, setBy: COMPLETION }, COMPREPLY: { effect: NONE },
+  COPROC: { effect: BASH_SETS, setBy: ['coproc'] }, COPROC_PID: { effect: BASH_SETS, setBy: ['coproc'] },
+  DIRSTACK: { effect: BASH_SETS, start: '-a', dynamic: true },
+  EMACS: { effect: NONE }, ENV: { effect: SHELL_START },
+  EPOCHREALTIME: { effect: BASH_SETS, start: '--', dynamic: true },
+  EPOCHSECONDS: { effect: BASH_SETS, start: '--', dynamic: true, numeric: true },
+  EUID: { effect: BASH_SETS, start: '-ir', numeric: true },
+  EXECIGNORE: { effect: NONE }, FCEDIT: { effect: NONE }, FIGNORE: { effect: NONE },
+  FUNCNAME: { effect: BASH_SETS, dynamic: true },
+  FUNCNEST: { effect: later('`FUNCNEST` may stop a function call') }, GLOBIGNORE: { effect: NONE },
+  GROUPS: { effect: BASH_SETS, start: '-a', dynamic: true, numeric: true },
+  HISTCMD: { effect: BASH_SETS, start: '-i', dynamic: true, numeric: true, arithmetic: true },
+  HISTCONTROL: { effect: NONE }, HISTFILE: { effect: NONE }, HISTFILESIZE: { effect: NONE }, HISTIGNORE: { effect: NONE }, HISTSIZE: { effect: NONE }, HISTTIMEFORMAT: { effect: NONE }, HOSTFILE: { effect: NONE },
+  HOSTNAME: { effect: NONE, start: '--' }, HOSTTYPE: { effect: NONE, start: '--' },
+  IGNOREEOF: { effect: NONE }, INPUTRC: { effect: NONE }, INSIDE_EMACS: { effect: NONE },
+  LANG: { effect: LOCALE }, LC_ALL: { effect: LOCALE }, LC_COLLATE: { effect: LOCALE }, LC_CTYPE: { effect: LOCALE }, LC_MESSAGES: { effect: NONE }, LC_NUMERIC: { effect: NONE }, LC_TIME: { effect: NONE },
+  LINENO: { effect: BASH_SETS, start: '--', dynamic: true, numeric: true },
+  LINES: { effect: BASH_SETS, setBy: ['checkwinsize'] },
+  MACHTYPE: { effect: NONE, start: '--' },
+  MAILCHECK: { effect: NONE },
+  MAPFILE: { effect: BASH_SETS, setBy: ['mapfile', 'readarray'] },
+  OLDPWD: { effect: BASH_SETS, setBy: CD },
+  OPTERR: { effect: NONE, start: '--' },
+  OSTYPE: { effect: NONE, start: '--' },
+  PIPESTATUS: { effect: BASH_SETS, dynamic: true, numeric: true },
+  POSIXLY_CORRECT: { effect: later('`POSIXLY_CORRECT` turns on POSIX mode') },
+  PPID: { effect: BASH_SETS, start: '-ir', numeric: true },
+  PROMPT_COMMAND: { effect: NONE }, PROMPT_DIRTRIM: { effect: NONE }, PS0: { effect: NONE }, PS3: { effect: NONE },
+  PS4: { effect: PS4, start: '--' },
+  PWD: { effect: BASH_SETS, start: '-x', setBy: CD },
+  RANDOM: { effect: BASH_SETS, start: '-i', dynamic: true, numeric: true, arithmetic: true },
+  READLINE_ARGUMENT: { effect: BASH_SETS, setBy: BIND }, READLINE_LINE: { effect: BASH_SETS, setBy: BIND }, READLINE_MARK: { effect: BASH_SETS, setBy: BIND }, READLINE_POINT: { effect: BASH_SETS, setBy: BIND },
+  REPLY: { effect: BASH_SETS, setBy: ['read', 'select'] },
+  SECONDS: { effect: BASH_SETS, start: '-i', dynamic: true, numeric: true },
+  SHELL: { effect: NONE, start: '--' },
+  SHELLOPTS: { effect: BASH_SETS, start: '-r', dynamic: true },
+  SHLVL: { effect: NONE, start: '-x' },
+  SRANDOM: { effect: BASH_SETS, start: '-i', dynamic: true, numeric: true, arithmetic: true },
+  TERM: { effect: NONE, start: '--' },
+  TIMEFORMAT: { effect: NONE }, TMOUT: { effect: NONE }, TMPDIR: { effect: NONE }, histchars: { effect: NONE },
+  // Not in the lists of bash 5.2's manual: bash 5.3's (GLOBSORT orders the words of a glob; the others are dynamic there:
+  // DYNAMIC_SINCE_53), and the variables of `$"…"` (3.1.2.5).
+  GLOBSORT: { effect: NONE }, BASH_MONOSECONDS: { effect: BASH_SETS }, BASH_TRAPSIG: { effect: BASH_SETS },
+  TEXTDOMAIN: { effect: NONE }, TEXTDOMAINDIR: { effect: NONE },
+  UID: { effect: BASH_SETS, start: '-ir', numeric: true },
 };
 
 const known = (name: string): BashVariable | undefined => (Object.hasOwn(BASH_VARIABLES, name) ? BASH_VARIABLES[name] : undefined);
+
+/** What a write of the variable `name` does to bash (a variable of the script's own: nothing). */
+export const writeEffect = (name: string): Row => known(name)?.effect ?? NONE;
 
 /** Whether bash sets `name` when it starts a script, whatever the environment. */
 export const setAtStart = (name: string): boolean => known(name)?.start !== undefined;

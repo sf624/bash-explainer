@@ -2117,5 +2117,19 @@
       "status": 0,
       "stderr": "SCRIPT: line 1: -5: substring expression < 0"
     }
+  },
+  {
+    "manual": "3.6.6",
+    "snippet": "set -u; cat <<-E >/dev/null\n\t$h\n\tE\n@PROBE:a@ after",
+    "note": "`<<-` expands the body as `<<` does, with the leading tabs removed",
+    "facts": {
+      "a": [
+        [
+          "after"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: h: unbound variable"
+    }
   }
 ]

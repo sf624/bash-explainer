@@ -57,6 +57,15 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     assert.strictEqual(decided(`${body}; shopt -s expand_aliases; alias 'g/h=f'; eval f`), 'true');
   });
 
+  it('takes a function defined after `shopt -so allexport` as exported, as after `set -a`', () => {
+    // (bash exports it: another bash sees it. Before the allow-list, the scan read `set -a` but not `shopt -so`.)
+    assert.strictEqual(bash("shopt -so allexport; f() { :; }; bash -c 'declare -F f'"), 'f\n');
+    const body = 'x=0; f() { [ "$x" = 0 ] && :; }; f';
+    assert.strictEqual(decided(body), 'true');
+    for (const on of ['set -a', 'shopt -so allexport', 'shopt -s -o "$o"']) assert.strictEqual(decided(`${on}; ${body}`), undefined, on);
+    for (const off of ['shopt -so errexit', 'shopt -uo allexport', 'shopt -s extglob']) assert.strictEqual(decided(`${off}; ${body}`), 'true', off);
+  });
+
   it("reads the aliases the walk expands from the walk's own trees: the alias's text with the rest of the command", function () {
     this.timeout(60000);
     // (The key of an associative array is not arithmetic, also in an alias's text: `k` is not read. Before, that tree
