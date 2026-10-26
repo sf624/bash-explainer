@@ -15,7 +15,7 @@ import { BASH_VARIABLES } from '../src/semantics/vars';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
 import { runBash } from './support/bash';
-import { forModel, scripts } from './support/decisions';
+import { forModel, GENERATED, scripts } from './support/decisions';
 import { PROBE_KINDS, type ProbeKind, readProbeTable } from './support/probe';
 
 const parser = createUnbashParser();
@@ -116,18 +116,40 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
   });
 
   it('names what checks each row the walk follows, and each of those is there', () => {
-    const snippets = new Map<ProbeKind | 'generator', string[]>(PROBE_KINDS.map((k) => [k, readProbeTable(k).map((r) => r.snippet)]));
-    snippets.set('generator', scripts(1, 120).map((s) => forModel(s.text).src));
-    const missing: string[] = [];
+    const problems: string[] = [];
+    // The ids of the probe rows: unique in their table.
+    const ids = new Map<ProbeKind, Map<string, number>>();
+    for (const kind of PROBE_KINDS) {
+      const counts = new Map<string, number>();
+      for (const r of readProbeTable(kind)) if (r.id !== undefined) counts.set(r.id, (counts.get(r.id) ?? 0) + 1);
+      for (const [id, n] of counts) if (n > 1) problems.push(`${kind}#${id}: ${n} rows have this id`);
+      ids.set(kind, counts);
+    }
+    const files = new Map<string, string>();
+    const titled = (file: string, title: string): boolean => {
+      if (!files.has(file)) files.set(file, fs.existsSync(path.join(__dirname, '..', file)) ? fs.readFileSync(path.join(__dirname, '..', file), 'utf8') : '');
+      return ['\'', '"', '`'].some((q) => !title.includes(q) && files.get(file)!.includes(`it(${q}${title}${q}`));
+    };
     for (const { where, row } of allRows()) {
-      if (row.effect.kind === 'followed' && !row.tests?.length) missing.push(`${where}: followed, with no tests`);
+      if (row.effect.kind === 'followed' && !row.tests?.length) problems.push(`${where}: followed, with no tests`);
       for (const t of row.tests ?? []) {
-        const [, kind, text] = /^([\w/.-]+): (.*)$/s.exec(t)!;
-        const found = kind.startsWith('test/') ? fs.readFileSync(path.join(__dirname, '..', kind), 'utf8').includes(text) : (snippets.get(kind as ProbeKind) ?? []).some((s) => s.includes(text));
-        if (!found) missing.push(`${where}: ${t}`);
+        let m: RegExpExecArray | null;
+        if ((m = /^(\w+)#([\w-]+)$/.exec(t))) {
+          if (!PROBE_KINDS.includes(m[1] as ProbeKind) || ids.get(m[1] as ProbeKind)!.get(m[2]) !== 1) problems.push(`${where}: ${t} names no one row`);
+        } else if ((m = /^(test\/[\w.-]+\.test\.ts): (.+)$/s.exec(t))) {
+          if (!titled(m[1], m[2])) problems.push(`${where}: ${t} is no title of an it()`);
+        } else if ((m = /^generator: (.+)$/s.exec(t))) {
+          if (!Object.hasOwn(GENERATED, m[1])) problems.push(`${where}: ${t} is no key of GENERATED`);
+        } else problems.push(`${where}: ${t} is in no format`);
       }
     }
-    assert.deepStrictEqual(missing, []);
+    assert.deepStrictEqual(problems, []);
+  });
+
+  it('has a script the generator writes for each of its constructs a row names', () => {
+    const sources = scripts(1, 120).map((s) => forModel(s.text).src);
+    const unseen = Object.entries(GENERATED).filter(([, re]) => !sources.some((s) => re.test(s))).map(([name]) => name);
+    assert.deepStrictEqual(unseen, []);
   });
 
   it('agrees with the specs: a file run unread trusts nothing, and a command run in this shell is followed, or trusts nothing', () => {

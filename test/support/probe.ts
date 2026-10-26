@@ -334,6 +334,8 @@ export type ProbeKind = 'state' | 'env' | 'names' | 'words' | 'status' | 'values
 export const PROBE_KINDS: ProbeKind[] = ['state', 'env', 'names', 'words', 'status', 'values'];
 
 export interface ProbeRow {
+  /** A name other files refer to the row by (the allow-list's `kind#id`), unique in its table. */
+  id?: string;
   /** The section of the Bash manual the row is about ('3.2.3'). */
   manual: string;
   snippet: string;

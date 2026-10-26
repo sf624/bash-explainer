@@ -1,5 +1,6 @@
 [
   {
+    "id": "split-quoting",
     "manual": "3.5.7",
     "snippet": "x='a  b'; @PROBE:a@ $x \"$x\" ${x} \"${x}\"",
     "facts": {
@@ -17,6 +18,7 @@
     }
   },
   {
+    "id": "ifs-colon",
     "manual": "3.5.7",
     "snippet": "IFS=:; x='a::b:'; @PROBE:a@ $x \"$x\"",
     "facts": {
@@ -59,6 +61,7 @@
     }
   },
   {
+    "id": "ansi-c-ifs",
     "manual": "3.5.7",
     "snippet": "unset IFS; x=$' a\\tb\\nc '; @PROBE:a@ $x",
     "facts": {
@@ -199,6 +202,7 @@
     }
   },
   {
+    "id": "failglob",
     "manual": "3.5.8",
     "snippet": "shopt -s failglob; @PROBE:a@ *.zz; @PROBE:b@ ok",
     "facts": {
@@ -209,6 +213,7 @@
     }
   },
   {
+    "id": "noglob",
     "manual": "3.5.8",
     "snippet": "set -f; @PROBE:a@ *.txt",
     "facts": {
@@ -259,6 +264,7 @@
     }
   },
   {
+    "id": "extglob",
     "manual": "3.5.8.1",
     "snippet": "shopt -s extglob\n@PROBE:a@ !(*.txt) @(a|b).txt",
     "facts": {
@@ -344,6 +350,7 @@
     }
   },
   {
+    "id": "no-braceexpand",
     "manual": "3.5.1",
     "snippet": "set +B; @PROBE:a@ {a,b}",
     "facts": {
@@ -451,6 +458,7 @@
     }
   },
   {
+    "id": "redirect-word-split",
     "manual": "3.6",
     "snippet": "x='a b'; @PROBE:a@ > $x; @PROBE:b@ > *.log",
     "note": "a redirection target that is not one word is ambiguous",
@@ -866,6 +874,7 @@
     }
   },
   {
+    "id": "arith-ternary",
     "manual": "4.3.1",
     "snippet": "set -u; declare n; @PROBE:a@ $((1 || n)) $((0 ? n : 2)) $((n = 3))",
     "gaps": {
@@ -970,6 +979,7 @@
     }
   },
   {
+    "id": "heredoc-body",
     "manual": "4.3.1",
     "snippet": "set -u; cat <<E >/dev/null\n$h\nE\n@PROBE:a@ after",
     "facts": {
@@ -1012,6 +1022,7 @@
     }
   },
   {
+    "id": "redirect-input",
     "manual": "4.3.1",
     "snippet": "set -u; cat < \"$f\"; @PROBE:a@ after",
     "facts": {
@@ -1246,6 +1257,7 @@
     }
   },
   {
+    "id": "herestring",
     "manual": "4.3.1",
     "snippet": "set -u; command -p cat <<< \"$x\"; @PROBE:a@ after",
     "facts": {
@@ -1271,6 +1283,7 @@
     }
   },
   {
+    "id": "exec-redirect",
     "manual": "4.3.1",
     "snippet": "set -u; exec cat < \"$f\"; @PROBE:a@ after",
     "gaps": {
@@ -1461,6 +1474,7 @@
     }
   },
   {
+    "id": "redirect-fd-word",
     "manual": "3.6",
     "snippet": "x='*.log'; @PROBE:a@ > $x; y='a b'; @PROBE:b@ 2> $y; @PROBE:c@ > {p,q}; @PROBE:d@ > *.txt; @PROBE:e@ > ~+/e.out",
     "note": "A redirection target that does not become exactly one word is an ambiguous redirection; the command does not run, the script goes on.",
@@ -1756,6 +1770,7 @@
     }
   },
   {
+    "id": "concat-empty",
     "manual": "3.5.7",
     "snippet": "x=' a  b '; @PROBE:a@ $x\"\" \"\"$x a$x ${x}b; IFS=' ,'; y='a, ,b,'; @PROBE:b@ $y",
     "facts": {
@@ -1805,6 +1820,7 @@
     }
   },
   {
+    "id": "home-tilde",
     "manual": "3.5.2",
     "snippet": "HOME=h; mkdir -p a=h; case a=~/d in a=h/d) @PROBE:a@ case-word;; esac; case a=h/d in a=~/d) @PROBE:b@ case-pattern;; esac; [[ a=~/e == a=h/e ]] && @PROBE:c@ cond; @PROBE:d@ > a=~/f; u=; @PROBE:e@ <<< a=~/g ${u:-a=~/x}",
     "note": "In bash mode, a word that looks like an assignment has its tilde expanded in `case`, `[[ ]]` and a redirection target too; not in a here-string or the word of `${u:-…}`.",
@@ -1978,6 +1994,7 @@
     }
   },
   {
+    "id": "brace-redirect",
     "manual": "3.7.1",
     "snippet": "y=1; { @PROBE:b@ \"$y\"; } > h$(( y *= 5 ))",
     "note": "a compound command makes its redirections before it runs",
@@ -2119,6 +2136,7 @@
     }
   },
   {
+    "id": "heredoc-tab",
     "manual": "3.6.6",
     "snippet": "set -u; cat <<-E >/dev/null\n\t$h\n\tE\n@PROBE:a@ after",
     "note": "`<<-` expands the body as `<<` does, with the leading tabs removed",
