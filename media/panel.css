@@ -1449,11 +1449,61 @@ body.vscode-high-contrast-light #reading-tree li.band {
 }
 
 /* Prototype B: the one view (media/panel.js, `uitem`). The rows are drawn flat: every row is as wide as the view,
-   its code indented by its level (--lvl) inside a column of the same width on every row (--codew, `alignRows`), and
-   what it says from that column's edge on, so every text starts at one x and every section of the manual ends at one
-   right edge, at any level. A coloured bar at the indent says the kind of part; faint guides stand for the levels
-   above. A code wider than its column takes a line of its own (.u-long), and the text starts under it at the same
-   edge; on a narrow view every row is so, the text under the code. */
+   its code indented by its level (--lvl) inside a column of the same width on every row (--codew: as wide as the
+   widest code, up to a share of the view, `alignRows`); a longer code wraps inside its column. What a row says
+   starts at that column's edge: its text, and at the right of the text's first line its chips and one link to the
+   manual. A coloured bar at the indent says the kind of part; faint guides stand for the levels above. On a narrow
+   view every row has its text under its code, and its chips under its text. */
+
+/* The colours of the kinds the view tells apart: a redirection (teal) apart from an option (brown), a glob pattern
+   (magenta), and a name (slate: a variable's name, an assignment), which is not an expansion (red). */
+body {
+  --c-redirect: #00737a;
+  --c-pattern: #a3268f;
+  --c-name: #4b5f73;
+}
+@media (prefers-color-scheme: dark) {
+  body:not(.vscode-light):not(.vscode-high-contrast-light) {
+    --c-redirect: #3fc5b5;
+    --c-pattern: #e58ad6;
+    --c-name: #a7b8c8;
+  }
+}
+:root[data-theme="light"] body:not([class*="vscode-"]) {
+  --c-redirect: #00737a;
+  --c-pattern: #a3268f;
+  --c-name: #4b5f73;
+}
+:root[data-theme="dark"] body:not([class*="vscode-"]) {
+  --c-redirect: #3fc5b5;
+  --c-pattern: #e58ad6;
+  --c-name: #a7b8c8;
+}
+body.vscode-light {
+  --c-redirect: #00737a;
+  --c-pattern: #a3268f;
+  --c-name: #4b5f73;
+}
+body.vscode-dark {
+  --c-redirect: #3fc5b5;
+  --c-pattern: #e58ad6;
+  --c-name: #a7b8c8;
+}
+body.vscode-high-contrast {
+  --c-redirect: #5fe0d0;
+  --c-pattern: #f2a0e6;
+  --c-name: #c3d2e0;
+}
+body.vscode-high-contrast-light {
+  --c-redirect: #00585e;
+  --c-pattern: #7d1a6d;
+  --c-name: #34475a;
+}
+.kind-name, .kind-assignment { color: var(--c-name); }
+.kind-pattern { color: var(--c-pattern); }
+.kind-redirect { color: var(--c-redirect); }
+.kind-simple { color: color-mix(in srgb, var(--c-operator) 70%, var(--c-muted)); }
+
 .l-depth { --l: var(--vscode-focusBorder, #0078d4); }
 #main[data-depth] #tree ul {
   padding-left: 0;
@@ -1474,7 +1524,7 @@ body.vscode-high-contrast-light #reading-tree li.band {
   align-items: baseline;
   border-left: 0;
   margin: 0;
-  padding: 0.22rem 0.5rem 0.22rem 0;
+  padding: 0.18rem 0.5rem 0.18rem 0;
   background-image: repeating-linear-gradient(to right, var(--guide) 0 1px, transparent 1px var(--ind));
   background-size: var(--x) 100%;
   background-repeat: no-repeat;
@@ -1490,62 +1540,72 @@ body.vscode-high-contrast-light #reading-tree li.band {
   border-radius: 2px;
   background: currentColor;
 }
+/* A header (a simple command, from step 2): its bar dashed, its code quieter than the rows under it. */
+.row.u-row.u-head::before {
+  background: repeating-linear-gradient(to bottom, currentColor 0 3px, transparent 3px 5px);
+}
+.row.u-row.u-head {
+  padding-top: 0.08rem;
+  padding-bottom: 0.08rem;
+  font-size: 0.92em;
+}
+.row.u-row.u-head > .u-tok > .label {
+  color: color-mix(in srgb, var(--vscode-foreground) 75%, transparent);
+}
 .u-row > .u-tok {
   grid-column: 1;
   display: flex;
   align-items: baseline;
   gap: 0.4rem;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
   padding-left: calc(var(--x) + 3px + var(--fold) + 0.15rem);
 }
 .u-row > .u-tok > .twisty {
   margin-left: calc(-1 * var(--fold));
+  flex: none;
 }
 .u-row > .u-tok > .label {
-  flex: none;
-  overflow: visible;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: none;
+  overflow: visible;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#tree.u-measure .u-row > .u-tok > .label {
   white-space: pre;
+}
+.u-row .u-count {
+  margin-left: 0.4em;
+  font-size: 0.8em;
+  color: var(--c-muted);
+  font-family: var(--vscode-font-family);
 }
 .u-row > .u-desc {
   grid-column: 2;
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--vscode-foreground);
-  /* The roles and sections go on the line of the text when they fit there, at the right; under it when not. */
-  display: flex;
-  flex-wrap: wrap;
+}
+/* The first line: the text, and floating at its right the chips and the link to the manual (never a line of their
+   own); the text's next lines take the whole width under them. */
+.u-row .u-l1 {
+  display: flow-root;
+}
+.u-row .u-side {
+  float: right;
+  display: inline-flex;
   align-items: baseline;
-  column-gap: 0.8em;
+  gap: 0.3em;
+  margin: 0.1em 0 0 0.6em;
+  white-space: nowrap;
+  font-size: 0.78em;
+  color: var(--c-muted);
 }
-.u-row > .u-desc > * {
-  flex: 1 1 100%;
-  min-width: 0;
-}
-.u-row > .u-desc > .text:first-child {
-  flex: 1 1 auto;
-}
-.u-row > .u-desc > .u-meta {
-  flex: 0 1 auto;
-  margin-left: auto;
-}
-.u-row.u-long > .u-tok,
-#tree.u-stacked .u-row > .u-tok {
-  grid-column: 1 / -1;
-  white-space: normal;
-  flex-wrap: wrap;
-  overflow: visible;
-}
-.u-row.u-long > .u-tok > .label,
-#tree.u-stacked .u-row > .u-tok > .label {
-  flex: 0 1 auto;
-  max-width: 100%;
-  white-space: pre-wrap;
-}
-.u-row.u-long > .u-desc {
-  grid-column: 2;
+.u-row .u-side .refs a.u-ref {
+  font-size: 0.95em;
+  color: var(--c-muted);
+  text-decoration-style: dotted;
 }
 #tree.u-stacked .row.u-row {
   grid-template-columns: minmax(0, 1fr);
@@ -1554,17 +1614,46 @@ body.vscode-high-contrast-light #reading-tree li.band {
   grid-column: 1;
   padding-left: calc(var(--x) + 3px + var(--fold) + 0.15rem);
 }
+/* On a narrow view: the chips as one group under the text, wrapping as a group. */
+#tree.u-stacked .u-row .u-l1 {
+  display: flex;
+  flex-direction: column;
+}
+#tree.u-stacked .u-row .u-side {
+  float: none;
+  order: 2;
+  flex-wrap: wrap;
+  white-space: normal;
+  margin: 0.1rem 0 0;
+}
+#tree.u-stacked .u-row .u-side > * {
+  white-space: nowrap;
+}
 .u-row .u-text2 {
   color: color-mix(in srgb, var(--vscode-foreground) 82%, transparent);
 }
-.u-row .u-note {
+.u-row .u-note,
+.u-row .u-val {
   color: var(--c-muted);
   font-size: 0.92em;
+}
+.u-row .u-val {
+  color: color-mix(in srgb, var(--vscode-foreground) 78%, transparent);
 }
 .u-row .u-def {
   color: var(--c-muted);
   font-size: 0.9em;
   font-style: italic;
+  line-height: 1.35;
+}
+.u-row .u-note,
+.u-row .u-val {
+  line-height: 1.35;
+}
+.u-row .u-l1 > .text.u-def {
+  font-size: 0.9em;
+}
+.u-row .u-def.u-open {
   margin-top: 0.1rem;
 }
 .u-row .u-def[hidden] {
@@ -1583,28 +1672,8 @@ body.vscode-high-contrast-light #reading-tree li.band {
 }
 .u-row .u-problem.level-warning { border-left-color: var(--c-warning); }
 .u-row .u-problem.level-info { border-left-color: var(--c-info); }
-.u-row .u-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 0.8em;
-  row-gap: 0.1rem;
-  margin-top: 0.12rem;
-  font-size: 0.8em;
-  color: var(--c-muted);
-}
-.u-row .u-roles {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.25rem 0.35rem;
-}
-.u-row .u-meta .refs {
-  margin-left: auto;
-  font-size: 1em;
-}
 /* A role: a small chip in the colour of its reader, legible (not pale); it opens the role's definition. */
-.u-row .u-role {
+.u-role {
   font: inherit;
   line-height: 1.35;
   padding: 0 0.35em;
@@ -1619,19 +1688,32 @@ body.vscode-high-contrast-light #reading-tree li.band {
 .u-row button.u-role[aria-expanded="true"] {
   background: color-mix(in srgb, var(--l) 20%, transparent);
 }
-.u-row .u-reads {
+/* What bash runs for a name, where no badge of the name's facts says it. */
+.u-role.u-badge {
+  font-weight: 600;
+  border-style: dashed;
+}
+/* "bash": a part bash reads itself (the program's side), neutral. */
+.u-role.u-bash {
+  --l: var(--c-muted);
+  border-style: solid;
+  color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--c-muted) 14%, transparent);
+}
+.u-reads {
   color: color-mix(in srgb, var(--l) 80%, var(--vscode-foreground));
   font-weight: 600;
+  font-size: 0.92em;
 }
-.u-row .u-arrow {
-  color: var(--c-muted);
+.u-nowrap {
+  white-space: nowrap;
 }
 
-/* What a program reads (from step 3): a light green fill from the row's bar on; bash's own parts inside are not
-   filled, and nor are the examples. */
-.row.u-row.u-read {
+/* What a program receives (the program's side): a light green fill from the row's bar on; bash's own parts inside
+   are not filled, and nor are the examples. */
+#main.u-who .row.u-row.u-read {
   background-image: repeating-linear-gradient(to right, var(--guide) 0 1px, transparent 1px var(--ind)),
-    linear-gradient(to right, transparent var(--x), color-mix(in srgb, var(--l-command) 9%, transparent) var(--x));
+    linear-gradient(to right, transparent var(--x), color-mix(in srgb, var(--l-command) 10%, transparent) var(--x));
   background-size: var(--x) 100%, 100% 100%;
   background-position: 1px 0, 0 0;
 }
@@ -1649,32 +1731,86 @@ body.vscode-high-contrast-light #reading-tree li.band {
   margin: 0.3rem 0 0.4rem calc(var(--lvl, 1) * 1rem + 3px + 0.15rem);
 }
 
-/* What the step shown adds, under the control, and the key. */
+/* The program's side (a switch) and the key's button, at the right end of the controls. */
+#who-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: 0.6rem;
+}
+#who-toggle .u-switch {
+  position: relative;
+  width: 1.7em;
+  height: 0.95em;
+  border-radius: 1em;
+  background: color-mix(in srgb, var(--c-muted) 45%, transparent);
+  flex: none;
+}
+#who-toggle .u-switch::after {
+  content: "";
+  position: absolute;
+  top: 0.1em;
+  left: 0.1em;
+  width: 0.75em;
+  height: 0.75em;
+  border-radius: 50%;
+  background: var(--vscode-editor-background, #fff);
+}
+#who-toggle[aria-pressed="true"] {
+  border-color: var(--c-argument);
+  background: color-mix(in srgb, var(--l-command) 14%, transparent);
+}
+#who-toggle[aria-pressed="true"] .u-switch {
+  background: var(--c-argument);
+}
+#who-toggle[aria-pressed="true"] .u-switch::after {
+  left: auto;
+  right: 0.1em;
+}
+#key-button {
+  margin-left: auto;
+}
+#layers.wrap {
+  flex-wrap: wrap;
+  row-gap: 0.3rem;
+}
+#layers.wrap #who-toggle {
+  margin-left: 0;
+}
+
+/* What the step shown adds, on one line under the controls; the program's side says its colours; the key. */
 #depth-caption {
-  margin: -0.2rem 0 0.5rem;
+  margin: -0.1rem 0 0.5rem;
   font-size: 0.85em;
   color: var(--c-muted);
 }
-#depth-caption .u-keep {
-  font-style: italic;
+#depth-caption .u-cap-who code {
+  color: var(--vscode-foreground);
 }
 #depth-caption .u-key {
-  display: inline;
-}
-#depth-caption .u-key > summary {
-  display: inline;
-  cursor: pointer;
-  color: var(--vscode-textLink-foreground);
-}
-#depth-caption .u-key[open] {
-  display: block;
   margin-top: 0.3rem;
   padding: 0.3rem 0.5rem;
   border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
   border-radius: 3px;
+  color: var(--vscode-foreground);
 }
 #depth-caption .u-key > div {
-  margin-top: 0.15rem;
+  margin-top: 0.2rem;
+}
+.u-kitem {
+  white-space: nowrap;
+}
+.u-kitem code {
+  color: inherit;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.95em;
+}
+.u-kchips .u-role,
+.u-kchips .nk-badge {
+  font-size: 0.9em;
+}
+.u-kchips .u-role.l-bash {
+  --l: var(--l-bash);
 }
 .u-swatch {
   display: inline-block;
@@ -1685,15 +1821,19 @@ body.vscode-high-contrast-light #reading-tree li.band {
   border-radius: 1px;
   background: currentColor;
 }
+.u-kread {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.3em;
+  background: color-mix(in srgb, var(--l-command) 10%, transparent);
+}
 .u-swatch-fill {
   display: inline-block;
-  width: 1.4em;
+  width: 3px;
   height: 0.9em;
   margin-right: 0.35em;
-  vertical-align: -0.1em;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--l-command) 14%, transparent);
-  border-left: 3px solid var(--c-argument);
+  border-radius: 1px;
+  background: var(--c-argument);
 }
 
 /* An example folds by its title; a sample input is said after it. */
