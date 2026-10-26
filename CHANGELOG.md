@@ -29,7 +29,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A pipeline that starts with `ps aux`, `ps -ef`, `ls -l`, `df -h`, `who` or `env` gets a worked example: made-up lines in the real layout, then what each later command makes of them (`ps aux | grep nginx | awk '{print $2}'`).
 - The input of a worked example that comes through a pipe names the command it comes from, and says when its lines are made up (`curl -s url | jq .name`) or are a file passed on by `cat`.
 - In a pipeline's worked example, each section marks what the next command reads: the text `grep` or `sed` matches, the fields `awk` or `cut` takes, the key `sort` compares. Lines it leaves out are dimmer, and a wide table starts scrolled to the first mark.
-- The web page opens with its logo and a line of shell read as the explainer reads it: first bash's tokens, then what each part is, labelled with the explanation's own words. It covers the page while it starts (in full on the first load of a session, as a still picture after that and with reduced motion), and a key or a click ends it.
+- The web page opens with its logo and a line of shell read as the explainer reads it: first bash's tokens, then what each part is, labelled with the explanation's own words. It covers the page while it starts (in full on the first load of a session, as a still picture after that and with reduced motion; not on a link to a script), and a key or a click ends it.
 
 ### Changed
 

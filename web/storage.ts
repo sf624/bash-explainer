@@ -76,7 +76,10 @@ export function clearStoredData(): void {
   }
 }
 
-/** What a tab keeps for itself (sessionStorage), not for the next visit: the fragment of the link the tab was opened with. */
+/**
+ * What a tab keeps for itself (sessionStorage), not for the next visit: the fragment of the link the tab was opened with
+ * (theme-init.js reads it too, to leave the opening out, and repeats the name).
+ */
 const SESSION_LINK = 'bash-explainer-shared-link';
 /** The opening was shown in this tab, so later loads show it still (theme-init.js sets and reads it before the first paint, and repeats the name). */
 const SESSION_OPENING = 'bash-explainer-opening';

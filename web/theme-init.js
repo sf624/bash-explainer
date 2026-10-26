@@ -15,13 +15,28 @@
     apply(null);
   }
   // ?view=panel: the page shows its explanation panel only (page.css), to be filled by the page around it.
+  /**
+   * Whether the page shows a script from a link: one in its address, or, on a reload or a return through history,
+   * the link this tab kept (web/share.ts `readHash`, web/storage.ts; the key is repeated here).
+   */
+  function sharedScript() {
+    if (/[#&]z=/.test(location.hash)) return true;
+    const nav = /** @type {PerformanceNavigationTiming | undefined} */ (performance.getEntriesByType('navigation')[0]);
+    if (!nav || (nav.type !== 'reload' && nav.type !== 'back_forward')) return false;
+    try {
+      return /(^|&)z=/.test(sessionStorage.getItem('bash-explainer-shared-link') || '');
+    } catch {
+      return false;
+    }
+  }
   if (/[?&]view=panel(&|$)/.test(location.search)) root.classList.add('view-panel');
   // The opening (src/ui/opening.ts): the overlay of index.html covers the page from the first paint until the page is
   // ready, when web/opening.ts ends it. Only on the page whose script tag asks for it (index.html, not compare.html),
   // not in the panel view or in a frame, nor without JavaScript (this file does not run then, and the overlay stays
-  // hidden). It plays whole on the first load of a browser session; on later loads, on a link to a script and with
-  // reduced motion it is still: the finished picture, gone as soon as the page is ready.
-  else if (window.parent === window && document.currentScript && document.currentScript.hasAttribute('data-opening')) {
+  // hidden), nor on a link to a script: the script is there from the start. It plays whole on the first load of a
+  // browser session; on later loads and with reduced motion it is still: the finished picture, gone as soon as the
+  // page is ready.
+  else if (window.parent === window && document.currentScript && document.currentScript.hasAttribute('data-opening') && !sharedScript()) {
     let seen = false;
     try {
       seen = sessionStorage.getItem('bash-explainer-opening') === '1';
@@ -29,7 +44,7 @@
     } catch {
       // No storage: every load plays it whole.
     }
-    const still = seen || /[#&]z=/.test(location.hash) || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const still = seen || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     root.classList.add('opening-on', still ? 'opening-still' : 'opening-whole');
     // Its labels in the page's language, as web/main.ts picks it: the link's, the setting's, then the browser's.
     let lang = (/[#&]lang=(ja|en)(&|$)/.exec(location.hash) || [])[1];
