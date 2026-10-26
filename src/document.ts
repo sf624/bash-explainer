@@ -6,11 +6,12 @@ import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
-import { isProblem, severityOf } from './messages';
+import { fact, isProblem, severityOf } from './messages';
 import { type NestedScript, nestedScripts } from './semantics/nested';
+import { shellState } from './semantics/state';
 import { explainOptions, settingSpec } from './settings';
 import type { Settings, Surface } from './settings';
-import { descendants, type Point, type SyntaxTree } from './syntax/tree';
+import { descendants, type Point, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 
 // What the extension and the web page share: explaining a line and finding the problems of a
 // document, given its text and parse tree. Nothing here depends on VS Code.
@@ -128,6 +129,48 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
   return out;
 }
 
+/**
+ * A range the editor fades: code that never runs (`DiagnosticTag.Unnecessary`). Not a problem: it is not in the
+ * problem lists, the command-line tool's output or the panel's marks, only in the editor itself.
+ */
+export interface DeadRange { code: 'dead-code'; severity: 'hint'; message: string; startLine: number; startCol: number; endLine: number; endCol: number }
+
+/**
+ * The statements that never run (`shellState(...).dead(n)`, docs/design/highlighting.md), as ranges: the whole
+ * statement, over its lines; none inside another one (the first dead node on each path from the root is the one), and
+ * the dead statements that follow each other in a body are one range. Only a shell script has them: the shell parts
+ * of another file are explained one by one, with their own models. None where `# bash-explainer disable=dead-code`
+ * says so.
+ */
+export function deadCodeHints(doc: ShellDocument, lang: Lang, shells: Shells, ignore: readonly string[] = []): DeadRange[] {
+  if (doc.extracted || ignore.includes('dead-code')) return [];
+  const model = shellState(doc.tree, shells.forced ?? shells.detected);
+  const message = plain(fact(lang, 'dead-code').text);
+  const out: DeadRange[] = [];
+  const visit = (parent: SyntaxNode): void => {
+    let run: SyntaxNode[] = [];
+    const flush = (): void => {
+      if (!run.length) return;
+      const [a, b] = [run[0], run[run.length - 1]];
+      out.push({ code: 'dead-code', severity: 'hint', message, startLine: a.startPosition.row, startCol: a.startPosition.column, endLine: b.endPosition.row, endCol: b.endPosition.column });
+      run = [];
+    };
+    for (const c of parent.namedChildren) {
+      // (A comment between two dead statements does not end the run.)
+      if (c.type === 'comment') continue;
+      if (model.dead(c)) run.push(c);
+      else {
+        flush();
+        visit(c);
+      }
+    }
+    flush();
+  };
+  visit(doc.tree.root);
+  const directives = parseDirectives(doc.lines);
+  return out.filter((r) => !suppressed(directives, r.startLine, r.code));
+}
+
 /** A place in the document: its line and column, from 0. */
 interface Place { line: number; col: number }
 
@@ -144,7 +187,7 @@ function placeOf(starts: readonly number[], i: number): Place {
  * asked for; the codes the file itself turns off are left out in both). The warnings and caveats of the explanations
  * (`noteIssues`) are explained with the settings' options, and `explain` (the yq flavour a panel chose).
  */
-export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: (doc: ShellDocument) => Shells, lang: Lang, settings: Settings, surface: Surface, explain: ExplainOptions = {}): { readonly all: DocumentIssue[]; shown: DocumentIssue[] } {
+export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: (doc: ShellDocument) => Shells, lang: Lang, settings: Settings, surface: Surface, explain: ExplainOptions = {}): { readonly all: DocumentIssue[]; shown: DocumentIssue[]; readonly faded: DeadRange[] } {
   let doc: ShellDocument | undefined;
   let raw: DocumentIssue[] | undefined;
   let base: DocumentIssue[] | undefined;
@@ -175,7 +218,9 @@ export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: 
     const list = !settings['diagnostics.pitfalls'] ? without() : settings['notes.pitfalls'] ? all() : withNotes(false);
     return doc?.extracted !== undefined && !settings['diagnostics.embedded'] ? [] : list.filter((i) => !ignore.has(i.code));
   };
-  return { get all() { return all(); }, shown: shown() };
+  // (The faded ranges are no problems: they come apart from `shown`, where the surface draws them, if `hints.deadCode` is on.)
+  const faded = () => (settingSpec('hints.deadCode')!.surfaces.includes(surface) && settings['hints.deadCode'] && (doc ??= open()) ? deadCodeHints(doc, lang, shellsOf(doc), settings['diagnostics.ignore']) : []);
+  return { get all() { return all(); }, shown: shown(), get faded() { return faded(); } };
 }
 
 /**

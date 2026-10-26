@@ -201,6 +201,10 @@ export const MESSAGES = {
   'case-runs-none': note<{ values: Words }>(['3.2.5.2'], ({ values }) => [
     `ここでは ${values.ja}なので、この \`case\` のどのパターンにも一致せず、どの分岐も実行されない`,
     `${values.en} here, so no pattern of this \`case\` matches: none of its branches runs`]),
+  // (The hint that fades a statement that never runs, `deadCodeHints`, src/document.ts.)
+  'dead-code': note(['3.2.5.2', '3.2.4'], () => [
+    'ここは実行されない: 条件が成り立たない分岐、`&&` や `||` の実行されない側、または `break`・`continue`・`return`・`exit` の後にある',
+    'This never runs: it is in a branch whose condition is never met, on the side of `&&` or `||` that is skipped, or after `break`, `continue`, `return` or `exit`']),
 
   // ---------------------------------------------------------------- aliases (6.6)
   'alias-not-expanded-in-script': pitfall<{ name: string; value: string }>(['6.6', '4.3.2'], ({ name, value }) => [

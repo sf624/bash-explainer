@@ -19,7 +19,7 @@ Not painted from the specs: `test` and `[` (their words are an expression, whose
 
 In a host file, each shell (a workflow step, a recipe line, a GitLab job's script; a recipe with `.ONESHELL`, Markdown's blocks together) is read with its own tree and model (`scriptTree`, src/hosts/scripts.ts), as the explanations read it, and with the region's shell unless the user forced one. Nothing is painted over host syntax the extraction rewrote (`$(CC)`, `${{ }}`).
 
-Dead code (`.dead(n)`) is not faded yet: it would be a `DiagnosticTag.Unnecessary` hint, a diagnostic of its own with a message in the catalog, on every surface. It is listed in the roadmap.
+Dead code (`.dead(n)`) is faded as a hint, not painted by the tokens: `deadCodeHints` (src/document.ts) gives the whole dead statement as a range (the first dead node on each path, so none inside another; dead statements that follow each other in a body are one range), with the catalog's message `dead-code`. It is no problem (the problem lists, `--check` and the panel's marks never see it); `diagnosticsFor` gives it apart, as `faded`, where `hints.deadCode` is on (VS Code, web, LSP). VS Code and the Language Server send it as a hint with the tag `Unnecessary`; the web page's editor draws it as a CodeMirror hint range with the class `cm-bx-dead` (opacity 0.5, no underline, no gutter marker). The shell code of other files has none yet.
 
 ### The shebang
 

@@ -158,6 +158,8 @@ const editorTheme = EditorView.theme({
   ...shellColours,
   '.cm-tooltip': { backgroundColor: 'var(--vscode-input-background)', color: 'var(--vscode-foreground)', border: '1px solid var(--vscode-panel-border)' },
   ...levelStyles,
+  // Code that never runs (a hint tagged as unnecessary, as in VS Code): faded, with none of the hint's own underline.
+  '.cm-lintRange-hint.cm-bx-dead': { backgroundImage: 'none', opacity: '0.5' },
   '.cm-bx-level': { width: '14px', height: '14px', verticalAlign: '-2px', marginRight: '6px', flex: 'none' },
   '@media (forced-colors: active)': {
     '.cm-lint-marker': { backgroundColor: 'CanvasText', forcedColorAdjust: 'none' },
@@ -266,7 +268,12 @@ export class Editor {
       const found = diagnosticsFor(() => doc, () => host.shells(), lang, host.settings(), 'web');
       const list = found.shown;
       host.problems(list, [...new Set(found.all.map((i) => i.code))].sort());
-      return list.map((i) => ({
+      // Code that never runs: a hint, faded (as VS Code fades `DiagnosticTag.Unnecessary`); not in the Problems list.
+      const faded: Diagnostic[] = found.faded.map((r) => ({
+        from: pos(v.state, r.startLine, r.startCol), to: pos(v.state, r.endLine, r.endCol),
+        severity: 'hint', message: plain(r.message), markClass: 'cm-bx-dead', source: r.code,
+      }));
+      return [...faded, ...list.map((i): Diagnostic => ({
         from: pos(v.state, i.startLine, i.startCol),
         to: pos(v.state, i.endLine, i.endCol),
         severity: i.severity,
@@ -277,7 +284,7 @@ export class Editor {
           name: i.fix.title[lang === 'ja' ? 0 : 1],
           apply: (view: EditorView) => view.dispatch({ changes: i.fix!.edits.map((e) => ({ from: pos(view.state, e.startLine, e.startCol), to: pos(view.state, e.endLine, e.endCol), insert: e.text })) }),
         }] : undefined,
-      }));
+      }))];
     }, {
       delay: 300,
       // The problems depend on the shell and the language too, not only on the text.
@@ -293,7 +300,7 @@ export class Editor {
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
-          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter(), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []),
+          highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter({ markerFilter: (ds) => ds.filter((d) => d.severity !== 'hint') }), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []),
           EditorView.updateListener.of((u) => {
             host.changed(u);
             if (u.docChanged) {

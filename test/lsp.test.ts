@@ -176,6 +176,21 @@ describe('the Language Server', function () {
     client.notify('textDocument/didClose', { textDocument: { uri } });
   });
 
+  it('fades code that never runs: a hint tagged Unnecessary, unless hints.deadCode is off', async () => {
+    const uri = 'file:///work/dead.sh';
+    client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'shellscript', version: 1, text: '#!/bin/bash\nif false; then\n  echo a\n  echo b\nfi\nexit 0\necho c\n' } });
+    const d = await client.diagnostics(uri, (list) => list.length > 0);
+    assert.deepStrictEqual(d.map((x) => [x.code, x.severity, x.tags, x.range.start, x.range.end]), [
+      ['dead-code', 4, [1], { line: 2, character: 2 }, { line: 3, character: 8 }],
+      ['dead-code', 4, [1], { line: 6, character: 0 }, { line: 6, character: 6 }],
+    ]);
+    assert.match(d[0].message, /^This never runs/);
+    client.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { hints: { deadCode: false } } } });
+    await client.diagnostics(uri, (list) => list.length === 0);
+    client.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { hints: { deadCode: true } } } });
+    client.notify('textDocument/didClose', { textDocument: { uri } });
+  });
+
   it('reads the shell code in a Dockerfile', async () => {
     client.notify('textDocument/didOpen', { textDocument: { uri: dockerfile, languageId: 'dockerfile', version: 1, text: 'FROM alpine\nRUN curl -s x | sh\n' } });
     const d = await client.diagnostics(dockerfile, (list) => list.length > 0);

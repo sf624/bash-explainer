@@ -332,6 +332,11 @@
           "default": true,
           "markdownDescription": "%config.hints.names%"
         },
+        "bashExplainer.hints.deadCode": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.hints.deadCode%"
+        },
         "bashExplainer.inline.enabled": {
           "type": "boolean",
           "default": false,

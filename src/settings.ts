@@ -37,6 +37,7 @@ export interface Settings {
   'hover.followDelay': number;
   'hover.maxDepth': number;
   'hints.names': boolean;
+  'hints.deadCode': boolean;
   'inline.enabled': boolean;
   'inline.maxLength': number;
   'panel.autoOpen': boolean;
@@ -128,6 +129,10 @@ export const SETTINGS: readonly SettingSpec[] = [
   {
     key: 'hints.names', type: 'boolean', default: true, group: 'display', title: ['コマンド名のヒント', 'Name hints'], surfaces: ['vscode', 'web', 'lsp'],
     elsewhere: 'The command-line tool shows no inlay hints.',
+  },
+  {
+    key: 'hints.deadCode', type: 'boolean', default: true, group: 'display', title: ['実行されないコードを薄く表示', 'Fade code that never runs'], surfaces: ['vscode', 'web', 'lsp'],
+    elsewhere: 'The command-line tool draws nothing.',
   },
   {
     key: 'inline.enabled', type: 'boolean', default: false, group: 'display', title: ['インライン要約（廃止）', 'Inline summary (removed)'], surfaces: ['vscode'],

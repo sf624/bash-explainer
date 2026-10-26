@@ -217,6 +217,7 @@ Web 版のエディタでも同じカードを表示します（タッチ画面�
 | `bashExplainer.panel.colors` | `"classic"` | パネルで行の各部分に付ける色。`classic`（独自の6色）、`theme`（エディターのテーマの色。読みにくい色は除く）、`themeLike`（テーマの色。テーマが2種類の部分に同じ色を付けるところは新しい色）。リモートのウィンドウでは、拡張機能がローカル側に入っていれば（VS Code はそこに入れる）どのカラーテーマも、リモート側で動くときは VS Code の既定のカラーテーマだけ。VS Code だけ |
 | `bashExplainer.highlight.enabled` | `true` | 解説と同じ読み方でシェルのコードを色分け（エディタの色分けに重ねるセマンティックトークン）。コマンド名が実行するもの・オプション・読み取り専用の変数に色が付く。言語ごとに設定できる（下記）。Web 版は常にこの色分け |
 | `bashExplainer.hints.names` | `true` | 名前どおりのものを実行しないコマンド名の後ろにヒントを表示 |
+| `bashExplainer.hints.deadCode` | `true` | 実行されないコード（スクリプトが結果を決めている条件の分岐、`&&` や `||` の実行されない側、`exit`・`return`・`break`・`continue` の後）を薄く表示。警告ではなくヒント |
 | `bashExplainer.inline.enabled`・`bashExplainer.inline.maxLength` | | 削除済み。効果はない |
 | `bashExplainer.examples.enabled` | `true` | 具体例を表示する |
 | `bashExplainer.examples.disabled` | `[]` | 表示しない具体例の種類: `regex`・`sed`・`awk`・`jq`・`yq`・`perl`・`textFilters`・`pipeline`・`expansion`・`printf`・`glob`・`test`・`xargs`・`read`・`getopt`・`gitLog`・`date` |
@@ -285,7 +286,7 @@ Web 版のエディタでも同じカードを表示します（タッチ画面�
 | --- | --- | --- | --- |
 | `language`・`notes.idioms`・`notes.pitfalls`・`shell`・`bashVersion`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`diagnostics.pitfalls`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | （警告は `--check` で出す） | ✓ |
-| `hover.enabled`・`hints.names` | ✓ | | ✓ |
+| `hover.enabled`・`hints.names`・`hints.deadCode` | ✓ | | ✓ |
 | `examples.placement`・`panel.animations` | ✓ | | |
 | `editor.wrap`（Web 版だけの設定です。VS Code の設定にはなく、VS Code には `editor.wordWrap` があります） | ✓ | | |
 | `examples.inHover`・`hover.maxDepth`・`highlight.enabled`・`languages`・`embedded.files` | | | ✓ |
