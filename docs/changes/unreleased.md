@@ -504,7 +504,7 @@ A list (Bash manual 3.2.4) is pipelines separated by `;`, `&`, `&&` or `||`; `&&
 
 ### Reading as the Bash manual reads it
 
-Reading was checked against chapter 3 of the Bash manual, section by section (3.1 to 3.4 in this round). Each construct is now named and grouped as the manual does, and cites its section; every reserved word and operator of a statement is a row of its own. Meaning cites the same sections.
+Reading was checked against chapter 3 of the Bash manual, section by section (3.1 to 3.4 in a first round, 3.5 to 3.7 in a second). Each construct is now named and grouped as the manual does, and cites its section; every reserved word and operator of a statement, of a parameter or brace expansion and of a redirection is a row of its own. Meaning cites the same sections.
 
 | Section | Line | Before | Now |
 | --- | --- | --- | --- |
@@ -524,8 +524,18 @@ Reading was checked against chapter 3 of the Bash manual, section by section (3.
 | 3.4 | `x=1`, `y+=2` | the `=` and `+=` were not shown | an operator row each, citing 3.4 |
 | 3.4.1, 3.4.2 | `${10}`, `${#}` | 3.5.3 only | also 3.4.1 (a positional parameter) or 3.4.2 (a special one) |
 | 3.5.5 | `$((1 + $n))` | nothing under the expansion but `$n` | its expression, as in `(( ))`; the kind is "arithmetic expansion" |
+| 3.5, 3.5.1, 3.5.2, 3.5.7, 3.5.8 | `echo *.txt $x ~/a x=~/b`, `x=~/a:~/b` | the glob cited 3.5.8 only on the command's reading of it; `$x` cited 3.5.3 only; `x=~/b` and the assignment cited no tilde expansion | each word (and an assignment's value) cites what bash does to it that no part shows, as the word model says where it is: brace and tilde expansion, word splitting, filename expansion. `*.txt` cites 3.5.8 (not after `set -f`), `$x` 3.5.7 and 3.5.8 (no 3.5.7 with an empty `IFS`), `"$x"` neither |
+| 3.5.8.1 | `case $x in a*)`, `${x#*/}` | the pattern of `${x#…}` cited 3.2.5.2 (a regex) | a word matched as a pattern cites 3.5.8.1 |
+| 3.5.1 | `a{1..9..2}b`, `{a,b}{1..2}` | the braces cited no section; `{`, `..`, `,` and `}` were not shown | 3.5.1; an operator row each, and a row for each string of a list |
+| 3.5.3 | `${x:-$y}`, `${x//a/b}`, `${!x}`, `${x@Q}`, `${a[@]:i+1:2}` | one row, with only the expansions inside it | the parameter, each operator (citing 3.5.3), the word after it, a pattern (citing 3.5.8.1), or the arithmetic of a substring's offset and length (citing 6.5). `!` there is an operator, not the reserved word |
+| 3.5.4 | `echo "$(< f)"` | "runs the command and is replaced by its stdout", and inside it "Redirection applied to the command" | "replaced by the contents of the file `f` (trailing newlines removed), as `$(cat f)`, but without running `cat`", as bash does; `$(3< f)` and `$(< f; < g)`, which print nothing, are as before |
+| 3.6 | `cat 2> e {fd}>k <<< "$x"` | one row per redirection | its descriptor (`2`, `{fd}`, citing 3.6), its operator (citing the redirection's section) and its word, a row each |
+| 3.6.6 | `cat <<'E'` | the delimiter was not shown, the body cited no section | the delimiter is a row of its own kind, which bash does not expand; the body cites 3.6.6 |
+| 3.6.8 | `cat <&f` | 3.6 | 3.6.8: `<&` only duplicates or closes a descriptor |
+| 3.7.1 | `> f`, `x=$(ls) 2>/dev/null` | the command had no text, and the redirection said "Redirection applied to the command" (or to the assignments "as a whole") | the command says what bash does with the redirections of a command with no name (see "Tests and redirections as bash runs them"), and the redirection says what it is |
+| 3.7.3 | `echo $(a) <(b)` | the script of a substitution cited no section | 3.7.3 (a subshell's environment) |
 
-Left for the next round (3.5 and 3.6): the filename expansion of a word (3.5.8) is cited on the command's reading of it but not on bash's word; a redirection is one row, with no rows of its own for its descriptor, its operator and its word (3.6); the body of a here-document cites no section (3.6.6); `{a,b}` has no row of its own for the braces (3.5.1). The grouping is checked against bash's own parser (bash-ast), and the `select` text against bash.
+Left: `{a,b}` alone still has no row of its own for its braces (3.5.1), because the parser makes no node of it but next to a sequence (`{a,b}{1..2}`); quote removal (3.5.9) is not cited (the quotes cite their own sections). The grouping is checked against bash's own parser (bash-ast), the parts of each redirection too; the `select` text, the expansions of words, `$(< f)` and the redirections of a command with no name against bash.
 
 ### Note levels
 
@@ -704,7 +714,7 @@ Notes that name a line of the script name the line of the document: where a here
 - As in `$( )`, `set -e` is off inside them (unless `shopt -s inherit_errexit`), and the note now names the form used.
 - ksh93 and mksh have `${ cmd; }`, and mksh has `${| cmd; }` too; for the other shells (`sh`, dash, busybox ash, yash, zsh) they are warnings.
 - In bash 5.3 mode, a `}` right after a simple command (`${ echo a }`) is a warning (`funsubBrace`): bash reads that `}` as an argument of the command, and reports a syntax error. A `return` in `${ …; }` ends the substitution, and `local` in it is no pitfall.
-- Before, both were explained as `$( )`.
+- Before, both were explained as `$( )`. Reading said that a subshell runs their commands; it now says this shell does (a `$( )` in them still has its subshell).
 
 ### `test` and `[` in bash 5.3
 
@@ -879,6 +889,8 @@ A tilde before a glob is expanded, then the word is globbed:
 | `exec 3<>/dev/tcp/example.com/80`, `cat < /dev/udp/h/53`, `>&/dev/tcp/h/p`, `{s}<>/dev/tcp/h/p`, `> "/dev/tcp/h/80"` | bash connects (TCP or UDP), and fails if it cannot | "Connect to host `example.com`, port `80`, over TCP, and use the connection for reading and writing as file descriptor 3 (not a file …)" | "Open `/dev/tcp/example.com/80` for reading and writing" |
 | `> /dev/tcp/h/80/x`, `> /dev/tcp//80` | an error: no host and port | "The shell takes `/dev/tcp/h/80/x` as a network address (host `h`, port `80/x`), which is no valid host and port: the redirection fails" | the file |
 | the same in sh or dash | a path, usually missing ("No such file") | the file, "dash opens `/dev/tcp/…` as an ordinary path, usually missing (POSIX does not define it; bash, yash and ksh93 connect to the network)", and a portability warning | the file, no warning |
+| `x=$(ls /none) 2>/dev/null`, `x=$(cat) < f`, `> f` | a command with no name: bash opens the files and closes them again, and the redirections apply to nothing: `ls` still shows its error, and `cat` reads the shell's stdin (bash 5.2 and 5.3; dash applies them to the substitution) | "Redirections of a command with no name: bash opens the files (creating or emptying one for `>`) and closes them again. The shell's own input and output do not change, nor do they apply to the assignments `x=$(ls /none)` …" | "Redirection applied to `x=$(ls /none)` as a whole"; for `> f`, "Redirection applied to the command" |
+| `echo "$(< f)"`, `` echo `< f` `` | the contents of `f`; any other command with no name in it (`$(3< f)`, `$(< f; < g)`, `$(< f &)`) prints nothing | "Command substitution `$(< file)`: replaced by the contents of the file `f` (trailing newlines removed), as `$(cat f)`, but without running `cat`" | "runs the command and is replaced by its stdout" |
 
 Examples:
 

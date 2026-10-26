@@ -270,7 +270,7 @@ describe('lines no other test reaches', () => {
       ['if then fi\necho ok )\n  more (\nx', 1, /syntax error region|./],
       ['( cd /tmp && ls )', 0, /Subshell: runs `\( \)` in a child process/],
       ['declare -i n', 0, /n: Variable `n`/],
-      ['FOO=1 2>/dev/null', 0, /Redirection applied to `FOO=1` as a whole/],
+      ['FOO=1 2>/dev/null', 0, /nor do they apply to the assignments `FOO=1`/],
       ['(( n > 1 )) 2>/dev/null', 0, /test \(\( n > 1 \)\)|Arithmetic/],
       ["grep -v 'foo[0-9]' f", 0, /Printed \(lines that do not match\)/],
       ["jq --argjson n '{bad' '.a' f", 0, /./],

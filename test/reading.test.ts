@@ -124,9 +124,13 @@ describe('the reading tree of a line', () => {
       '  bash/command cat <<EOF > out.txt',
       '    bash/commandName cat',
       '    bash/redirect <<EOF',
+      '      bash/operator <<',
+      '      bash/delimiter EOF',
       '      bash/heredoc hello $USER',
       '        bash/expansion $USER',
       '    bash/redirect > out.txt',
+      '      bash/operator >',
+      '      bash/word out.txt',
     ];
     assert.deepStrictEqual(tree(src), expected);
     assert.deepStrictEqual(tree(src, 1), expected);
@@ -185,13 +189,20 @@ describe('the reading tree of a line', () => {
       '    bash/command sort < in.txt 2>/dev/null',
       '      bash/commandName sort',
       '      bash/redirect < in.txt',
+      '        bash/operator <',
+      '        bash/word in.txt',
       '      bash/redirect 2>/dev/null',
+      '        bash/descriptor 2',
+      '        bash/operator >',
+      '        bash/word /dev/null',
       '    bash/operator |',
       '    bash/command uniq -c > out.txt',
       '      bash/commandName uniq',
       '      bash/argument -c',
       '        command/option -c',
       '      bash/redirect > out.txt',
+      '        bash/operator >',
+      '        bash/word out.txt',
     ]);
     // The command around its redirections is explained by the token of the redirections.
     assert.match(find(r, 'sort < in.txt 2>/dev/null').text!, /^Redirection applied to `sort`/);
@@ -337,9 +348,11 @@ describe('the reading tree of a line', () => {
       '    bash/argument a',
       '      command/argument a',
       '    bash/redirect >f',
+      '      bash/operator >',
+      '      bash/word f',
     ]);
     // A command with no name: its assignments or redirections only.
-    assert.deepStrictEqual(tree('>f'), ['bash/line ', '  bash/command >f', '    bash/redirect >f']);
+    assert.deepStrictEqual(tree('>f'), ['bash/line ', '  bash/command >f', '    bash/redirect >f', '      bash/operator >', '      bash/word f']);
     // `[` is the command name, and `]` its last argument.
     assert.deepStrictEqual(tree('[ -f x ]'), [
       'bash/line ',
@@ -362,10 +375,10 @@ describe('the reading tree of a line', () => {
     assert.deepStrictEqual(names('f() { :; }; f; echo; ls; \\ls; ./a.sh'), [': builtin', 'f function', 'echo builtin', 'ls file', '\\ls file', './a.sh file']);
     assert.match(find(explain('ls -l a').reading!, 'ls').text!, /List directory contents/);
     assert.ok(find(explain('[ -f x ]').reading!, '[').refs!.includes('3.7.2'));
-    // `>f` alone: the redirection says what it is, once.
+    // `>f` alone: the command says what bash does with redirections and no name (3.7.1), the redirection what it is.
     const alone = explain('>f').reading!;
-    assert.strictEqual(find(alone, '>f', 'bash', 'command').text, undefined);
-    assert.match(find(alone, '>f', 'bash', 'redirect').text!, /Redirection/);
+    assert.match(find(alone, '>f', 'bash', 'command').text!, /^Redirections of a command with no name/);
+    assert.match(find(alone, '>f', 'bash', 'redirect').text!, /^Write stdout \(fd 1\) to file `f`/);
     // A quoted name reads its arguments as the command it spells.
     assert.strictEqual(find(explain('"ls" -l').reading!, '-l', 'command').reader, 'ls');
     assert.strictEqual(find(explain("'grep' x f").reading!, 'f', 'command').reader, 'grep');
@@ -569,21 +582,29 @@ describe('the reading tree of a line', () => {
       '    bash/argument "${y:-$(date +%F)}"',
       '      bash/quote "${y:-$(date +%F)}"',
       '        bash/expansion ${y:-$(date +%F)}',
-      '          bash/substitution $(date +%F)',
-      '            child/script date +%F',
-      '              child/command date +%F',
-      '                child/commandName date',
-      '                child/argument +%F',
-      '                  command/argument +%F',
-      '                    language/language date',
-      '                      language/operator +',
-      '                      language/variable %F',
+      // (The parts of `${ }`: the parameter, the operator, and the word bash expands when it is unset or empty.)
+      '          bash/name y',
+      '          bash/operator :-',
+      '          bash/word $(date +%F)',
+      '            bash/substitution $(date +%F)',
+      '              child/script date +%F',
+      '                child/command date +%F',
+      '                  child/commandName date',
+      '                  child/argument +%F',
+      '                    command/argument +%F',
+      '                      language/language date',
+      '                        language/operator +',
+      '                        language/variable %F',
       '      command/argument "${y:-$(date +%F)}"',
       '    bash/argument a{1..3}b',
       '      bash/brace {1..3}',
-      // (A sequence's start and end, which bash reads in the braces: tokens of its own, with no node.)
+      // (A sequence's start and end, which bash reads in the braces: tokens of its own, with no node; and the braces
+      // and `..` around them.)
+      '        bash/operator {',
       '        bash/number 1',
+      '        bash/operator ..',
       '        bash/number 3',
+      '        bash/operator }',
       '      command/argument a{1..3}b',
       '    bash/argument c$((1 + $n))',
       '      bash/arithmetic $((1 + $n))',
@@ -638,6 +659,9 @@ describe('the reading tree of a line', () => {
       '      command/argument $f',
       '    bash/argument ${a[0]:-def}',
       '      bash/expansion ${a[0]:-def}',
+      '        bash/name a[0]',
+      '        bash/operator :-',
+      '        bash/word def',
       '      command/argument ${a[0]:-def}',
       '    bash/argument ~',
       '      command/argument ~',
@@ -802,7 +826,7 @@ describe('the reading tree of a line', () => {
   it('is not made unless asked for, nor for a line with nothing to explain', () => {
     assert.strictEqual(analyzer.explainLine(parser.parse('echo a'), 0, 'bash').reading, undefined);
     assert.strictEqual(explain('echo a\n\n', 1).reading, undefined);
-    assert.strictEqual(readingTree(parser.parse(''), [], { lang: 'en', resolve: (name) => ({ kind: 'file', name, path: 'search', known: false }) }), undefined);
+    assert.strictEqual(readingTree(parser.parse(''), [], { lang: 'en', resolve: (name) => ({ kind: 'file', name, path: 'search', known: false }), meaning: () => undefined }), undefined);
   });
 });
 

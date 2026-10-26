@@ -73,7 +73,8 @@ describe('the parts of a sequence of braces', () => {
     };
     walk(e.reading, 0);
     const brace = outline.findIndex((l) => l.trim() === 'bash/brace {1..3}');
-    assert.deepStrictEqual(outline.slice(brace + 1, brace + 3).map((l) => l.trim()), ['bash/number 1', 'bash/number 3']);
+    // (Between the braces and `..`, which are rows of their own: 3.5.1.)
+    assert.deepStrictEqual(outline.slice(brace + 1, brace + 6).map((l) => l.trim()), ['bash/operator {', 'bash/number 1', 'bash/operator ..', 'bash/number 3', 'bash/operator }']);
   });
 });
 

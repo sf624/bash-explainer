@@ -870,7 +870,7 @@
   const BASH_STEP = /** @type {Record<string, number>} */ ({
     line: 1, list: 2, andList: 2, orList: 2, pipeline: 2, command: 3, compound: 3, clause: 3, coprocess: 3, function: 3, part: 3,
     commandName: 4, aliasWord: 4, expandedName: 4, option: 4, argument: 4, assignmentArgument: 4, word: 4, name: 4,
-    assignment: 4, redirect: 4, heredoc: 4, operator: 4, keyword: 4, comment: 4, shebang: 4, expression: 4,
+    assignment: 4, redirect: 4, heredoc: 4, operator: 4, keyword: 4, comment: 4, shebang: 4, expression: 4, descriptor: 4, delimiter: 4,
   });
   /** The step a node appears at by itself: in bash's reading by its kind (5: a part of a word), else its layer's. */
   const ownStep = (/** @type {any} */ n) => (n.layer === 'bash' ? BASH_STEP[n.kind] ?? 5 : LEVEL[n.layer] + 4);
@@ -960,7 +960,7 @@
     commandName: 'command', aliasWord: 'command', expandedName: 'variable', argument: 'argument', assignmentArgument: 'assignment',
     word: 'argument', name: 'variable', heredoc: 'redirect', quote: 'string', arithmetic: 'expansion', brace: 'expansion',
     list: 'operator', andList: 'operator', orList: 'operator', pipeline: 'operator', command: 'operator', compound: 'keyword', clause: 'keyword', coprocess: 'keyword',
-    function: 'keyword', script: 'substitution', part: 'operator', expression: 'operator',
+    function: 'keyword', script: 'substitution', part: 'operator', expression: 'operator', descriptor: 'redirect', delimiter: 'redirect',
   });
   const roleOf = (/** @type {any} */ n) => ROLES[n.kind] ?? n.kind;
 

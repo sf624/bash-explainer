@@ -24,11 +24,12 @@ describe('redirections of a simple command', () => {
 
   it('of a command with no name, around or between its assignments', () => {
     assert.equal(explain('a=1 >f b=2').items[0].explanation, 'Several variable assignments');
-    assert.match(explain('>f a=1').items[0].explanation, /Redirection applied to `a=1` as a whole/);
-    assert.match(explain('>f a=1 >g').items[0].explanation, /Redirection applied to `a=1` as a whole/);
-    assert.match(explain('a=1 b=2 >f').items[0].explanation, /Redirection applied to `a=1 b=2` as a whole/);
-    assert.match(explain('a=1 >f b=2 2>g').items[0].explanation, /Redirection applied to `a=1 >f b=2` as a whole/);
-    assert.equal(explain('>f').items[0].explanation, 'Redirection applied to the command');
+    // (In bash they apply to nothing, not to the assignments: 3.7.1, and test/reading-manual.test.ts against bash.)
+    assert.match(explain('>f a=1').items[0].explanation, /nor do they apply to the assignments `a=1`/);
+    assert.match(explain('>f a=1 >g').items[0].explanation, /nor do they apply to the assignments `a=1`/);
+    assert.match(explain('a=1 b=2 >f').items[0].explanation, /nor do they apply to the assignments `a=1 b=2`/);
+    assert.match(explain('a=1 >f b=2 2>g').items[0].explanation, /nor do they apply to the assignments `a=1 >f b=2`/);
+    assert.equal(explain('>f').items[0].explanation, 'Redirections of a command with no name: bash opens the files (creating or emptying one for `>`) and closes them again. The shell\'s own input and output do not change');
     assert.equal(explain('>f >g').items[0].children.length, 2);
   });
 

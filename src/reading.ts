@@ -29,8 +29,9 @@ import type { Lang } from './i18n';
 import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } from './refs';
 import type { NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
+import { type ExpansionStep, STEP_MANUAL, type StepKind, type WordMeaning } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { field, isShebang, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
+import { field, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
 
 /** Who reads a part: bash, bash again (a substitution, or a string a command gives a shell), the command, a language. */
 export type Layer = 'bash' | 'child' | 'command' | 'language';
@@ -53,6 +54,8 @@ export type ShellKind =
   | 'operator' | 'keyword' | 'comment'
   | 'shebang' // the first line `#!…`: to bash a comment (3.1.3), which the kernel reads when the file is run as a program
   | 'expression' // an expression of `[[ ]]` (a conditional expression, 6.4) or of arithmetic (6.5), and a number there
+  | 'descriptor' // the file descriptor a redirection is about, written before its operator: `2>`, `{fd}>` (3.6)
+  | 'delimiter' // the word after `<<`, which ends a here-document: not a word bash expands (3.6.6)
   | 'part'; // another part of a construct: the body of a loop, `do … done`
 
 export interface ReadingNode {
@@ -88,6 +91,8 @@ export interface ReadingContext {
   lang: Lang;
   /** What bash runs for the command name `name`, written as `word` (src/semantics/names.ts `resolveName`). */
   resolve(name: string, word: SyntaxNode): NameResolution;
+  /** What bash does to the word `w` in its context (src/semantics/words.ts `wordMeaning`). */
+  meaning(w: SyntaxNode): WordMeaning | undefined;
 }
 
 /** The texts the tree says itself, where no token says them. */
@@ -125,9 +130,11 @@ const PART_TOKENS = new Set(['string', 'pattern', 'operator', 'expansion', 'vari
 /** The clauses of a compound command (3.2.5.2): parts of it, not commands of their own. */
 const CLAUSES = new Set(['case_item', 'elif_clause', 'else_clause']);
 /** The delimiters of an arithmetic expansion, which are the expansion's own: `$(( ))`, `$[ ]`. */
-const DELIMITERS = new Set(['$((', '))', '$[', ']']);
+const DELIMITERS = new Set(['$((', '))', '$[', ']', '${', '}']);
 /** Where an arithmetic expression is read, with its parts as children (a number there is not a word). */
 const ARITHMETIC = new Set(['arithmetic_command', 'arithmetic_expansion', 'c_style_for_statement']);
+/** A substring expansion, `${x:i:n}`, whose offset and length are arithmetic (3.5.3). */
+const substring = (n: SyntaxNode): boolean => n.type === 'expansion' && n.children.some((c) => c.type === ':');
 
 const le = (a: Pos, b: Pos): boolean => a.line < b.line || (a.line === b.line && a.character <= b.character);
 const point = (row: number, column: number): Pos => ({ line: row, character: column });
@@ -141,6 +148,22 @@ const union = (...lists: (readonly string[] | undefined)[]): readonly string[] =
 export function short(text: string): string {
   const line = text.split('\n')[0];
   return line.length > 60 ? `${line.slice(0, 59)}…` : line;
+}
+
+/** The steps of the expansion of a word that no part of it shows (3.5): its parts show the expansions and quotes. */
+const UNSHOWN = new Set<StepKind>(['brace', 'tilde', 'split', 'glob']);
+
+/**
+ * The sections of what bash does to a word that no part of it shows: brace and tilde expansion, word splitting and
+ * filename expansion where they apply (or may: `$x`), and pattern matching where the word is a pattern (3.5.8.1:
+ * `case` and `[[ == ]]`, `${x#pat}`). (The word of `${x:-word}` is split and globbed with the word around it, which
+ * says so: `inherit`.)
+ */
+function expansionSections(m: WordMeaning | undefined): readonly string[] {
+  if (!m) return [];
+  const own = (s: ExpansionStep): boolean => (s.kind !== 'split' && s.kind !== 'glob') || m.rule[s.kind] !== 'inherit';
+  const steps = m.steps.filter((s) => UNSHOWN.has(s.kind) && s.applies !== false && own(s)).map((s) => STEP_MANUAL[s.kind]);
+  return m.rule.match === 'pattern' ? [...steps, '3.5.8.1'] : steps;
 }
 
 /** The kind of a construct: a pipeline with a reserved word (3.2.3), a clause, a coprocess (3.2.6), a compound command (3.2.5). */
@@ -172,14 +195,17 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   // bash's own tokens, by the text they are about.
   const shellAt = new Map<string, Token[]>();
   for (const t of all.filter((x) => x.origin === 'shell')) shellAt.set(keyOf(t.span), [...(shellAt.get(keyOf(t.span)) ?? []), t]);
-  const tokenAt = (s: Span, kinds?: Set<string> | ((kind: string) => boolean)): Token | undefined =>
-    shellAt.get(keyOf(s))?.find((t) => !kinds || (typeof kinds === 'function' ? kinds(t.kind) : kinds.has(t.kind)));
+  // (`last`: the innermost of those about the same text, a redirection's own under the command's: `>f`.)
+  const tokenAt = (s: Span, kinds?: Set<string> | ((kind: string) => boolean), last = false): Token | undefined => {
+    const found = shellAt.get(keyOf(s))?.filter((t) => !kinds || (typeof kinds === 'function' ? kinds(t.kind) : kinds.has(t.kind))) ?? [];
+    return last ? found[found.length - 1] : found[0];
+  };
   /** A token about the same text as a command's that is not the command's: a quote, an expansion (`"$@"`). */
   const notReader = (kind: string): boolean => !READERS.has(kind);
 
   /** A node of bash's reading (or bash's again), with the text and sections of its token if it has one. */
-  const shellNode = (n: SyntaxNode, layer: Layer, kind: ShellKind, children: ReadingNode[], tokenKinds?: Set<string> | ((kind: string) => boolean), span = spanOf(n)): ReadingNode => {
-    const t = tokenAt(span, tokenKinds);
+  const shellNode = (n: SyntaxNode, layer: Layer, kind: ShellKind, children: ReadingNode[], tokenKinds?: Set<string> | ((kind: string) => boolean), span = spanOf(n), last = false): ReadingNode => {
+    const t = tokenAt(span, tokenKinds, last);
     const refs = t?.refs ?? (n.named ? nodeSections(n) : anonSections(n));
     return {
       layer, kind, label: short(n.text), span, ...(t ? { text: t.explanation } : {}), ...(refs ? { refs } : {}),
@@ -200,8 +226,9 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   const node = (c: SyntaxNode, layer: Layer): ReadingNode[] => {
     if (!c.named) {
       // A reserved word (3.2.1), or an operator: `;` of a list or of the head of a `for`, `!` in an expression (the
-      // expression's: `[[ ! -f a ]]`). (Every token is a node: the parser makes none for a newline.)
-      const reserved = /^[a-z]|^[{}!]$|^\[\[$|^\]\]$/.test(c.type) && !isExpression(c.parent!);
+      // expression's: `[[ ! -f a ]]`), and in a word (`${!x}`, `{1..3}`). (Every token is a node: the parser makes none
+      // for a newline.)
+      const reserved = /^[a-z]|^[{}!]$|^\[\[$|^\]\]$/.test(c.type) && !isExpression(c.parent!) && !PARTS.has(c.parent!.type);
       const n = shellNode(c, layer, reserved ? 'keyword' : 'operator', [], new Set(['keyword', 'operator']));
       // An operator of a conditional expression in `[[ ]]` (6.4): what it tests. (Its sections are the expression's,
       // src/refs.ts: `&&` there is not a list's.)
@@ -214,7 +241,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     // An expression of `[[ ]]` or of arithmetic (6.4, 6.5). In arithmetic, a number is no word bash expands, nor is an
     // expansion part of one: bash expands it, then evaluates the expression (`$((1 + $n))`).
     if (isExpression(c)) return [construct(c, layer, 'expression')];
-    if (ARITHMETIC.has(c.parent!.type) || (isExpression(c.parent!) && expressionHost(c) !== 'extended_test')) {
+    if (ARITHMETIC.has(c.parent!.type) || (isExpression(c.parent!) && expressionHost(c) !== 'extended_test') || substring(c.parent!)) {
       if (c.type === 'number') return [shellNode(c, layer, 'expression', [])];
       if (PARTS.has(c.type)) return [part(c, layer)];
     }
@@ -375,7 +402,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     return {
       node: {
         layer, kind: 'commandName', label: short(w.text), span, ...(own ? { text: own.explanation } : {}),
-        refs: union(['3.7.1', '3.7.2'], own?.refs), resolves: res.kind, ...(own?.name ? { name: own.name } : {}), ...process, children: wordParts(w, layer),
+        refs: union(['3.7.1', '3.7.2'], own?.refs, expansionSections(cx.meaning(w))), resolves: res.kind, ...(own?.name ? { name: own.name } : {}), ...process, children: wordParts(w, layer),
       },
     };
   };
@@ -415,7 +442,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     // (A word that is one part, a quote or an expansion, has that part under it, with its explanation.)
     const one = PARTS.has(w.type);
     const n = shellNode(w, layer, kind, wordParts(w, layer), one ? new Set() : WORD_TOKENS);
-    if (kind === 'argument') n.refs = union(['3.7.1'], n.refs);
+    // (What bash does to it that no part shows: brace and tilde expansion, splitting, globbing, a pattern's matching.)
+    n.refs = union(kind === 'argument' ? ['3.7.1'] : [], n.refs, expansionSections(cx.meaning(w)));
     // A language in a word no command reads, which bash reads itself (the regex of `=~`), is under the word.
     if (w.parent!.type !== 'command' && w.parent!.type !== 'command_name') {
       for (const c of tokenAt(n.span, WORD_TOKENS)?.children ?? []) if (c.origin === 'embedded') language(n.children, c, 'bash');
@@ -470,15 +498,31 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       const text = p.text.slice(open.endIndex - p.startIndex, close.startIndex - p.startIndex);
       // (Its statements, with the lists of commands they make: `$(a; b &)`.)
       const children = withLists(p).filter((c) => c.named || c.type === ';' || c.type === '&').flatMap((c) => node(c, 'child'));
-      const script: ReadingNode = { layer: 'child', kind: 'script', label: short(text.trim()), span, process: 'subshell', children };
+      // (A subshell's environment, 3.7.3; but bash 5.3 runs `${ …; }` and `${| …; }` in this shell, and so what is in
+      // them, up to a substitution in them that has a subshell of its own.)
+      const same = p.type === 'command_substitution' && substitutionForm(p).startsWith('${');
+      const script: ReadingNode = { layer: 'child', kind: 'script', label: short(text.trim()), span, process: 'subshell', ...(same ? {} : { refs: ['3.7.3'] }), children };
+      if (same) {
+        const here = (n: ReadingNode): void => {
+          n.process = 'same';
+          n.children.filter((c) => c.layer === 'child' && c.kind !== 'script').forEach(here);
+        };
+        here(script);
+      }
       return shellNode(p, layer, 'substitution', [script]);
     }
     const kind: ShellKind = p.type === 'simple_expansion' || p.type === 'expansion' ? 'expansion'
       : p.type === 'arithmetic_expansion' ? 'arithmetic' : p.type === 'brace_expression' ? 'brace' : 'quote';
-    // (The expression of `$(( ))`, as that of `(( ))`: its operators, names and numbers.)
-    const parts = kind === 'arithmetic' ? p.children.filter((x) => !DELIMITERS.has(x.type)).flatMap((x) => node(x, layer)) : inner(p, layer);
+    // (The expression of `$(( ))`, as that of `(( ))`: its operators, names and numbers. The parts of `${ }` between
+    // its braces (3.5.3): the parameter, the operators, and a word (`${x:-$y}`), a pattern (`${x#*/}`) or the
+    // arithmetic of a substring (`${x:i+1:2}`). An element of an array, `${a[i]}`, is its name, as in an assignment.)
+    const parts = kind === 'arithmetic' || p.type === 'expansion'
+      ? p.children.filter((x) => !DELIMITERS.has(x.type)).flatMap((x) => (x.type === 'subscript' ? [shellNode(x, layer, 'name', [])] : node(x, layer)))
+      // (The braces, `..` and `,` of `{1..10..3}` and `{a,b}`, and the strings of a list; the numbers of a sequence have
+      // tokens, as the escapes of `$'…'` do.)
+      : kind === 'brace' ? p.children.filter((x) => x.type !== 'number').flatMap((x) => node(x, layer))
+      : inner(p, layer);
     // (Not the command's token, when the part is its name: `"$@"`.)
-    // (The parts of a sequence of braces, `{1..10..3}`, have tokens but no nodes, as the escapes of `$'…'`.)
     return shellNode(p, layer, kind, QUOTES.has(p.type) || kind === 'brace' ? withTokens(p, parts, layer) : parts, notReader);
   };
 
@@ -492,17 +536,32 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     // (An assignment of a simple command, before its name or with none: 3.7.1 says when it is made. One that is an
     // argument of a declaration builtin, 3.4 says, is expanded as an assignment.)
     if (kind === 'assignment' && a.parent!.type === 'command') n.refs = union(n.refs, ['3.7.1']);
+    // (What bash does to its value that no part shows: a tilde after `=` or `:`, `x=~/a:~/b`.)
+    if (value && value.type !== 'array') n.refs = union(n.refs, expansionSections(cx.meaning(value)));
     return n;
   };
 
+  /**
+   * A redirection as bash reads it (3.6): the descriptor written before its operator (`2>`, `{fd}>`), the operator, and
+   * the word after it, which bash expands; for a here-document, the delimiter, which it does not, then the body (3.6.6).
+   * Its text is its own token's, under that of a command it is all of (`>f`).
+   */
   const redirect = (r: SyntaxNode, layer: Layer): ReadingNode => {
+    const parts = r.children.flatMap((c): ReadingNode[] => {
+      if (!c.named) return [shellNode(c, layer, 'operator', [], new Set(['operator']))];
+      if (c.type === 'file_descriptor') return [shellNode(c, layer, 'descriptor', [], new Set())];
+      if (c.type === 'heredoc_start') return [shellNode(c, layer, 'delimiter', [], new Set())];
+      if (c.type === 'heredoc_body') return [shellNode(c, layer, 'heredoc', inner(c, layer))];
+      // (The line that ends a here-document: its delimiter says what it is.)
+      if (c.type === 'heredoc_end') return [];
+      return [word(c, layer, 'word')];
+    });
     // (`cat <<` while typing: a here-document with no delimiter yet, nor a body.)
     const start = r.type === 'heredoc_redirect' ? r.namedChildren.find((c) => c.type === 'heredoc_start') : undefined;
-    if (!start) return shellNode(r, layer, 'redirect', inner(r, layer), new Set(['redirect']));
-    // A here-document: the operator and its word on the line, then its body.
-    const body = r.namedChildren.find((c) => c.type === 'heredoc_body')!;
+    if (!start) return shellNode(r, layer, 'redirect', parts, new Set(['redirect']), spanOf(r), true);
+    // A here-document: the operator and its delimiter on the line, then its body.
     const span: Span = { start: point(r.startPosition.row, r.startPosition.column), end: point(start.endPosition.row, start.endPosition.column) };
-    const n = shellNode(r, layer, 'redirect', [shellNode(body, layer, 'heredoc', inner(body, layer))], new Set(['redirect']), span);
+    const n = shellNode(r, layer, 'redirect', parts, new Set(['redirect']), span, true);
     n.label = short(r.text.slice(0, start.endIndex - r.startIndex));
     return n;
   };

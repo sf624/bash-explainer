@@ -249,7 +249,7 @@ describe('lists of commands in Reading', () => {
     ]);
     // (A here-document's command and a comment after it: the line is read to the end of the here-document.)
     assert.deepStrictEqual(reading('cat <<E # c\nx\nE').map((l) => l.trim()).filter((l) => !l.includes('commandName')), [
-      'bash/line', 'bash/command cat <<E', 'bash/redirect <<E', 'bash/heredoc x', 'bash/comment # c',
+      'bash/line', 'bash/command cat <<E', 'bash/redirect <<E', 'bash/operator <<', 'bash/delimiter E', 'bash/heredoc x', 'bash/comment # c',
     ]);
     // (A body over several lines, read on the line of `{`: one list, whose newlines separate as `;` does.)
     assert.deepStrictEqual(reading('{\n  a\n  b &\n}').map((l) => l.trim()).filter((l) => !l.includes('commandName')), [

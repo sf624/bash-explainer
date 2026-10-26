@@ -1,13 +1,14 @@
 // The reading tree (src/reading.ts) against the Bash Reference Manual, chapter 3 (docs/roadmap.md): each construct
 // is named and grouped as the manual does and cites its section, every reserved word and operator bash reads in a
-// statement is a node of its own, and the grouping is bash's own where bash-ast shows it.
+// statement, a parameter or brace expansion and a redirection is a node of its own, and the grouping is bash's own
+// where bash-ast shows it.
 import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
 import { readingNodes, type ReadingNode } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { ui } from '../src/ui/render';
 import type { SyntaxNode } from '../src/syntax/tree';
-import { runBash } from './support/bash';
+import { type BashOptions, runBash } from './support/bash';
 import { findBashAst, runBashAst, type AstNode } from './support/bashast';
 
 const parser = createUnbashParser();
@@ -32,6 +33,16 @@ function statementTokens(n: SyntaxNode): SyntaxNode[] {
   if (INSIDE.has(n.type)) return [];
   return n.children.flatMap((c) => (c.named ? statementTokens(c) : c.type === '\n' ? [] : [c]));
 }
+
+/** The nodes whose operators are parts of a word or of a redirection (3.5.1, 3.5.3, 3.6). */
+const OWNERS = new Set(['expansion', 'brace_expression', 'file_redirect', 'heredoc_redirect', 'herestring_redirect']);
+/** Scripts with every parameter expansion, brace expansion and redirection of 3.5 and 3.6. */
+const WORD_SCRIPTS = [
+  'echo ${x:-$y} ${x#*/} ${x%%.*} ${!x} ${x^^} ${x,} ${x@Q} ${#x} ${x:i+1:2} ${!p*} ${!a[@]} ${a[@]:1} ${x:?m} ${x=d} ${x//a/b} ${x/#a} ${@:2} ${x:(-1)}',
+  'echo a{1..9..2}b {a,b}{1..2}',
+  'cat 2> e {fd}>k 1>&3- >"$f" <<< "$x" 5<&- &>i &>>j >&2 <&0 3<>h >|l <&f >>g 0<&4-',
+  'cat 3<<-E\n\tx\nE',
+];
 
 /** Scripts with every construct of chapter 3 (3.2 to 3.4), one statement a line. */
 const SCRIPTS = [
@@ -171,5 +182,147 @@ describe('the reading tree as the Bash manual reads a line (chapter 3)', () => {
     const r = runBash('select v in a b; do echo "[$v][$REPLY]"; done 2>/dev/null', { input: '2\nx\n' });
     // (At the end of its input, `select` prints a newline and ends.)
     assert.strictEqual(r.stdout, '[b][2]\n[][x]\n\n');
+  });
+  it('has every operator of a parameter expansion, a brace expansion and a redirection as a node (3.5.1, 3.5.3, 3.6)', () => {
+    /** The tokens of these nodes and of the expressions in them, but for the `${` and `}` of a parameter expansion. */
+    const own = (n: SyntaxNode): SyntaxNode[] => [
+      ...(OWNERS.has(n.type) || /expression$/.test(n.type) ? n.children.filter((c) => !c.named && c.type !== '${' && !(n.type === 'expansion' && c.type === '}')) : []),
+      ...n.namedChildren.flatMap(own),
+    ];
+    for (const src of WORD_SCRIPTS) {
+      const nodes = readingNodes(reading(src)).filter((n) => n.layer === 'bash');
+      for (const t of own(parser.parse(src).root)) {
+        const at = nodes.find((n) => n.span.start.character === t.startPosition.column && n.span.end.character === t.endPosition.column && n.label === t.type);
+        assert.ok(at, `${src}: \`${t.type}\` at ${t.startPosition.column}`);
+        assert.strictEqual(at.kind, 'operator', `${src}: \`${t.type}\``);
+        assert.ok(at.refs?.length, `${src}: \`${t.type}\` cites no section`);
+      }
+    }
+  });
+
+  it('cites on a word what bash does to it that no part shows: braces, a tilde, splitting, globbing, a pattern (3.5)', () => {
+    const r = reading('echo *.txt $x "$x" ~/a {a,b} x=~/b');
+    assert.deepStrictEqual(['*.txt', '$x', '"$x"', '~/a', '{a,b}', 'x=~/b'].map((w) => find(r, w, 'argument').refs), [
+      ['3.7.1', '3.5.8'], ['3.7.1', '3.5.3', '3.5.7', '3.5.8'], ['3.7.1', '3.1.2.3'], ['3.7.1', '3.5.2'], ['3.7.1', '3.5.1'], ['3.7.1', '3.5.2'],
+    ]);
+    // (As the model reads the shell's state: no globbing after `set -f`, no splitting with an empty IFS.)
+    assert.deepStrictEqual(find(reading('set -f\necho *.txt $x', 1), '*.txt', 'argument').refs, ['3.7.1']);
+    assert.deepStrictEqual(find(reading('IFS=\necho $x', 1), '$x', 'argument').refs, ['3.7.1', '3.5.3', '3.5.8']);
+    // A pattern is matched as 3.5.8.1 says, in `case`, `[[ == ]]` and `${x#pat}`; a tilde in an assignment's value.
+    assert.ok(find(reading('case $x in a*) ;; esac'), 'a*', 'word').refs!.includes('3.5.8.1'));
+    assert.deepStrictEqual(find(reading('echo ${x#*/}'), '*/', 'word').refs, ['3.5.3', '3.5.8.1']);
+    assert.deepStrictEqual(find(reading('x=~/a:~/b'), 'x=~/a:~/b', 'assignment').refs, ['3.4', '3.7.1', '3.5.2']);
+    // (What bash does: `*.txt` globs, `$x` splits and globs, `"$x"` does neither.)
+    const b = runBash('x="b.txt *.txt"; printf "[%s]" *.txt $x "$x"', { files: ['a.txt'] });
+    assert.strictEqual(b.stdout, '[a.txt][b.txt][a.txt][b.txt *.txt]');
+  });
+
+  it('reads a brace expansion (3.5.1): its braces, `..` and `,`, as bash expands it', () => {
+    const r = reading('echo a{1..9..4}b {x,y}{1..2}');
+    assert.deepStrictEqual(kids(find(r, '{1..9..4}', 'brace')), ['operator {', 'number 1', 'operator ..', 'number 9', 'operator ..', 'number 4', 'operator }']);
+    assert.deepStrictEqual(find(r, '{1..9..4}', 'brace').refs, ['3.5.1']);
+    assert.deepStrictEqual(kids(find(r, '{x,y}', 'brace')), ['operator {', 'word x', 'operator ,', 'word y', 'operator }']);
+    assert.strictEqual(runBash('echo a{1..9..4}b {x,y}{1..2}').stdout, 'a1b a5b a9b x1 x2 y1 y2\n');
+  });
+
+  it('reads the parts of a parameter expansion (3.5.3): the parameter, its operators, and a word, a pattern or arithmetic', () => {
+    const r = reading('echo ${x:-$y} ${x//a/b} ${!x} ${x@Q} ${a[@]:i+1:2}');
+    assert.deepStrictEqual(kids(find(r, '${x:-$y}', 'expansion')), ['name x', 'operator :-', 'word $y']);
+    assert.deepStrictEqual(kids(find(r, '${x//a/b}', 'expansion')), ['name x', 'operator //', 'word a', 'operator /', 'word b']);
+    // (`!` there is the expansion's operator, not the reserved word; `@` and its letter are two, as the manual writes them.)
+    assert.deepStrictEqual(kids(find(r, '${!x}', 'expansion')), ['operator !', 'name x']);
+    assert.deepStrictEqual(kids(find(r, '${x@Q}', 'expansion')), ['name x', 'operator @', 'operator Q']);
+    // The offset and length of a substring are arithmetic (6.5), as bash evaluates them.
+    const s = find(r, '${a[@]:i+1:2}', 'expansion');
+    assert.deepStrictEqual(kids(s), ['name a[@]', 'operator :', 'expression i+1', 'operator :', 'expression 2']);
+    assert.deepStrictEqual(find(r, 'i+1', 'expression').refs, ['3.5.3', '6.5']);
+    assert.strictEqual(runBash('a=(p q r s t); i=1; echo ${a[@]:i+1:2}').stdout, 'r s\n');
+  });
+
+  it('says what `$(< file)` is (3.5.4): the contents of the file, which bash reads itself', () => {
+    const r = reading('echo "$(< f)" $(3< f)');
+    assert.match(find(r, '$(< f)', 'substitution').text!, /^Command substitution `\$\(< file\)`: replaced by the contents of the file `f`/);
+    assert.match(readingNodes(r).find((n) => n.layer === 'child' && n.kind === 'command')!.text!, /^The redirection of `\$\(< file\)`/);
+    // (Any other command with no name prints nothing: `$(3< f)`.)
+    assert.match(find(r, '$(3< f)', 'substitution').text!, /runs the command/);
+    const b = runBash('printf "hi\\n" > f; printf "[%s]" "$(< f)" "$(3< f)" "$(< f;)" "$(< f; < f)" "`< f`" "$(< f &)" "$(0< f)" "$(x=1 < f)"', { files: [] });
+    assert.strictEqual(b.stdout, '[hi][][hi][][hi][][hi][]');
+    for (const [src, special] of [['echo $(< f;)', true], ['echo $(0< f)', true], ['echo $(< f; < f)', false], ['echo `< f`', true], ['echo $(< f &)', false], ['echo $(> f)', false], ['echo $(x=1 < f)', false]] as const) {
+      assert.strictEqual(/contents of the file/.test(readingNodes(reading(src)).find((n) => n.kind === 'substitution')!.text!), special, src);
+    }
+  });
+
+  it('says that a subshell runs the script of `$( )` and `<( )` (3.7.3), and this shell that of `${ }` (bash 5.3)', () => {
+    const r = reading('echo $(a) <(b)');
+    assert.deepStrictEqual(readingNodes(r).filter((n) => n.kind === 'script').map((n) => [n.process, n.refs]), [['subshell', ['3.7.3']], ['subshell', ['3.7.3']]]);
+    const f = analyzer.explainLine(parser.parse('echo ${ echo $(a); }'), 0, 'bash', { reading: true, bashVersion: '5.3' }).reading!;
+    const scripts = readingNodes(f).filter((n) => n.kind === 'script');
+    assert.deepStrictEqual(scripts.map((n) => n.process), ['same', 'subshell']);
+    const inner = new Set(readingNodes(scripts[1]));
+    assert.ok(readingNodes(scripts[0]).filter((n) => n.layer === 'child' && !inner.has(n)).every((n) => n.process === 'same'));
+  });
+
+  it('reads a redirection as bash does (3.6): its descriptor, its operator and its word, each a node', () => {
+    const r = reading('cat 2> e {fd}>k <<< "$x" >&2');
+    assert.deepStrictEqual(kids(find(r, '2> e', 'redirect')), ['descriptor 2', 'operator >', 'word e']);
+    assert.deepStrictEqual(kids(find(r, '{fd}>k', 'redirect')), ['descriptor {fd}', 'operator >', 'word k']);
+    assert.deepStrictEqual(kids(find(r, '<<< "$x"', 'redirect')), ['operator <<<', 'word "$x"']);
+    assert.deepStrictEqual(find(r, '{fd}', 'descriptor').refs, ['3.6']);
+    assert.deepStrictEqual(find(r, '>', 'operator').refs, ['3.6.2']);
+    // (`<&word` only duplicates or closes: 3.6.8.)
+    assert.deepStrictEqual(find(reading('cat <&f'), '<&f', 'redirect').refs, ['3.6.8']);
+    // A here-document: its delimiter, which bash does not expand, and its body (3.6.6).
+    const h = find(reading("cat 3<<-'E'\n\tx $y\nE"), "3<<-'E'", 'redirect');
+    assert.deepStrictEqual(kids(h), ['descriptor 3', 'operator <<-', "delimiter 'E'", 'heredoc x $y']);
+    assert.deepStrictEqual(h.children.slice(2).map((c) => c.refs), [['3.6.6'], ['3.6.6']]);
+    assert.strictEqual(runBash("y=1; cat <<'E'\n$y\nE\ncat <<E\n$y\nE").stdout, '$y\n1\n');
+    for (const kind of ['descriptor', 'delimiter']) assert.ok((ui.en.panel.tree.kinds as Record<string, string>)[kind], kind);
+  });
+
+  it('agrees with bash\'s parser on the parts of each redirection', function () {
+    const bin = findBashAst();
+    if (!bin) {
+      if (process.env.BASH_EXPLAINER_BASH_AST) assert.fail('BASH_EXPLAINER_BASH_AST is set, but bash-ast cannot be run (see $BASH_AST)');
+      this.skip();
+    }
+    /** The section of each kind of redirection bash-ast names (a duplication to a word that is no number is 3.6.4). */
+    const section = (d: { direction: string; target: string | number }): string => ({
+      input: '3.6.1', output: '3.6.2', clobber: '3.6.2', append: '3.6.3', err_and_out: '3.6.4', append_err_and_out: '3.6.5', here_doc: '3.6.6',
+      here_string: '3.6.7', dup_input: '3.6.8', close: '3.6.8', move_input: '3.6.9', move_output: '3.6.9', input_output: '3.6.10',
+      dup_output: typeof d.target === 'number' ? '3.6.8' : '3.6.4',
+    } as Record<string, string>)[d.direction];
+    for (const src of ['cat < a 2> e {fd}>k 1>&3- >"$f" <<< "$x" 5<&- &>i &>>j >&2 <&0 3<>h >|l <&f >>g 0<&4- >&o {v}>&-', "cat 3<<-'E' <<F\n\tx\nE\ny\nF"]) {
+      const ast = runBashAst(bin!, src);
+      assert.ok(ast.ok, src);
+      const theirs = ast.ast.redirects!;
+      const ours = readingNodes(reading(src)).filter((n) => n.kind === 'redirect');
+      assert.strictEqual(ours.length, theirs.length, src);
+      ours.forEach((r, i) => {
+        const d = theirs[i];
+        const part = (kind: string) => r.children.find((c) => c.kind === kind);
+        assert.deepStrictEqual(r.refs, [section(d)], `${src}: ${r.label}`);
+        // The descriptor written before the operator (bash-ast names `{v}` by none).
+        const fd = part('descriptor');
+        if (fd && !fd.label.startsWith('{')) assert.strictEqual(fd.label, String(d.source_fd), r.label);
+        if (d.direction === 'here_doc') assert.strictEqual(part('delimiter')!.label.replace(/['"\\]/g, ''), d.here_doc_eof, r.label);
+        else if (typeof d.target === 'string') assert.strictEqual(part('word')!.label, d.target, r.label);
+        else assert.strictEqual(part('word')!.label.replace(/-$/, ''), d.target < 0 ? '' : String(d.target), r.label);
+      });
+    }
+  });
+
+  it('says what the redirections of a command with no name do in bash (3.7.1): they apply to nothing', () => {
+    assert.match(find(reading('> f'), '> f', 'command').text!, /^Redirections of a command with no name: bash opens the files/);
+    // (With no shell named, the script is bash's. In sh it is said as before: dash applies them to the assignments.)
+    const of = (shell: 'sh' | undefined) => analyzer.explainLine(parser.parse('x=$(a) > f'), 0, shell, { reading: true }).reading!.children[0].text!;
+    assert.match(of(undefined), /^Redirections of a command with no name/);
+    assert.match(of('sh'), /^Redirection applied to `x=\$\(a\)` as a whole/);
+    assert.match(find(reading('x=$(ls /none) 2>/dev/null'), 'x=$(ls /none) 2>/dev/null', 'command').text!, /nor do they apply to the assignments `x=\$\(ls \/none\)`/);
+    // (In bash 5.2 and 5.3: the substitution's errors are still shown, and it reads the shell's stdin.)
+    const programs: BashOptions[] = [{}, ...(process.env.BASH_EXPLAINER_BASH53 ? [{ program: process.env.BASH_EXPLAINER_BASH53 }] : [])];
+    for (const p of programs) {
+      const b = runBash('x=$(echo err >&2; cat) 2>/dev/null < f; echo "[$x]"; > g; [ -e g ] && echo made', { ...p, files: ['f'], input: 'in\n' });
+      assert.deepStrictEqual([b.stdout, b.stderr], ['[in]\nmade\n', 'err\n'], p.program ?? 'bash');
+    }
   });
 });
