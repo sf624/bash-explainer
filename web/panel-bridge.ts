@@ -69,7 +69,11 @@ export class PanelBridge {
     }
     // The view switch: in the panel header's view slot, and in the phone's row over the explanation.
     for (const where of ['top', 'phone']) {
-      for (const v of ['list', 'tree'] as const) on(`view-${v}-${where}`, 'click', () => this.setView(v));
+      for (const v of ['list', 'tree'] as const) {
+        on(`view-${v}-${where}`, 'click', () => this.setView(v));
+        // Round 4: the same choice as a dropdown ("View: Meaning ▾") where the slot is narrow, and on a phone.
+        on(`view-pick-${v}-${where}`, 'click', () => this.setView(v));
+      }
     }
     this.showView();
   }
@@ -86,9 +90,36 @@ export class PanelBridge {
 
   /** The page's view switch shows the view chosen. */
   private showView(): void {
+    const tp = ui[this.host.lang()].panel;
+    const c = CHROME[this.host.lang()];
     for (const where of ['top', 'phone']) {
-      for (const v of ['list', 'tree']) document.getElementById(`view-${v}-${where}`)?.setAttribute('aria-pressed', String(this.view() === v));
+      for (const v of ['list', 'tree']) {
+        document.getElementById(`view-${v}-${where}`)?.setAttribute('aria-pressed', String(this.view() === v));
+        const pick = document.getElementById(`view-pick-${v}-${where}`);
+        pick?.setAttribute('aria-checked', String(this.view() === v));
+        const name = v === 'list' ? tp.listView : tp.treeView;
+        if (pick?.lastElementChild) pick.lastElementChild.textContent = name;
+      }
+      const drop = document.getElementById(`view-drop-${where}`);
+      if (drop) {
+        const value = this.view() === 'list' ? tp.listView : tp.treeView;
+        drop.querySelector('.vd-prefix')!.textContent = c.viewPrefix;
+        drop.querySelector('.vd-value')!.textContent = value;
+        drop.setAttribute('aria-label', `${c.viewLabel}: ${value}`);
+        document.getElementById(`view-menu-${where}`)?.setAttribute('aria-label', c.viewLabel);
+      }
     }
+  }
+
+  /**
+   * Round 4: the phone's sheet tells the frame how much room it has: below full (`bx-compact`) the line box goes (the
+   * editor shows the line just above, and the tab names it); with the view row over the frame's top (`bx-lead`) the
+   * explanation starts below it, so that the row scrolls away with it.
+   */
+  private sheetMarks = { compact: false, lead: false };
+  markSheet(compact: boolean, lead: boolean): void {
+    this.sheetMarks = { compact, lead };
+    this.markPhone();
   }
 
   private loaded(): void {
@@ -113,7 +144,10 @@ export class PanelBridge {
     // The panel's ⚙ button opens the settings dialog (it is hidden where there is none: in panel mode); its header is
     // the pane's header on the editor page. (Also when the frame was ready before this script: no `load` then.)
     if (this.controls) root.classList.add('bx-settings', 'bx-head');
-    root.classList.toggle('bx-phone', document.documentElement.classList.contains('narrow'));
+    const phone = document.documentElement.classList.contains('narrow');
+    root.classList.toggle('bx-phone', phone);
+    root.classList.toggle('bx-compact', phone && this.sheetMarks.compact);
+    root.classList.toggle('bx-lead', phone && this.sheetMarks.lead);
   }
 
   /**
@@ -127,6 +161,23 @@ export class PanelBridge {
     if (label) line.dataset.ln = label;
     else delete line.dataset.ln;
     doc.documentElement.classList.toggle('bx-blank', label === undefined);
+  }
+
+  /** Round 4: how far down the empty panel's message starts (px), level with the empty editor's block. */
+  setEmptyTop(px: number): void {
+    const doc = this.frame?.contentDocument;
+    const main = doc?.getElementById('main');
+    if (!doc || !main) return;
+    // What lies above the message in the frame (the box at its top, empty then) is taken off, so that the message's own
+    // top is at `px`.
+    // (Measured from the box above it: the message's margin collapses through #main, so #main's own top moves with it.)
+    const above = (doc.getElementById('top')?.getBoundingClientRect().bottom ?? 0) + parseFloat(getComputedStyle(main).paddingTop);
+    doc.documentElement.style.setProperty('--bx-empty-top', `${Math.max(0, Math.round(px - above))}px`);
+  }
+
+  /** The frame's window (round 4: the phone's view row follows its scroll). */
+  frameWindow(): Window | null {
+    return this.frame?.contentWindow ?? null;
   }
 
   /** Presses the panel's "Collapse all" (or "Expand all"). */
@@ -256,6 +307,7 @@ export class PanelBridge {
       put(`view-list-${where}`, tp.listView);
       put(`view-tree-${where}`, tp.treeView);
     }
+    this.showView();
     for (const [key, label] of [['shell', tp.shell], ['yq', tp.yq]]) {
       for (const id of [key, `${key}-top`, `scope-${key}`]) {
         put(`${id}-label`, label);

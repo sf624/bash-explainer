@@ -9,7 +9,7 @@ const openPops = new Set<() => void>();
  * them) or a little dialog (the kind-and-shell chip). A press outside, Escape, or choosing an item closes it.
  */
 export function popover(button: HTMLElement, pop: HTMLElement, opts: { closeOnPick?: boolean; onOpen?: () => void; scrim?: HTMLElement } = {}): { close(): void } {
-  const items = () => [...pop.querySelectorAll<HTMLElement>('[role="menuitem"]')].filter((i) => !i.hidden);
+  const items = () => [...pop.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')].filter((i) => !i.hidden);
   const close = (focusButton = false) => {
     if (pop.hidden) return;
     pop.hidden = true;
@@ -60,7 +60,7 @@ export function popover(button: HTMLElement, pop: HTMLElement, opts: { closeOnPi
   });
   if (opts.closeOnPick !== false) {
     pop.addEventListener('click', (e) => {
-      if ((e.target as Element).closest('[role="menuitem"]')) close(false);
+      if ((e.target as Element).closest('[role="menuitem"], [role="menuitemradio"]')) close(false);
     });
   }
   return { close: () => close(true) };
@@ -223,7 +223,7 @@ let measure: CanvasRenderingContext2D | null | undefined;
  * Sizes a native select to the option it shows (proto/chrome-3): the editor header's pickers fit their content
  * instead of the widest option. Its own padding (with the arrow) and borders are added to the text's width.
  */
-export function fitSelect(select: HTMLSelectElement): void {
+export function fitSelect(select: HTMLSelectElement, atLeast = ''): void {
   if (!select.isConnected || !select.offsetParent) return;
   measure ??= document.createElement('canvas').getContext('2d');
   if (!measure) return;
@@ -231,5 +231,7 @@ export function fitSelect(select: HTMLSelectElement): void {
   measure.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
   const text = select.selectedOptions[0]?.textContent ?? '';
   const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
-  select.style.width = `${Math.ceil(measure.measureText(text).width + pad + 2)}px`;
+  // Round 4: never narrower than the longest common value, so that choosing another value moves no other control.
+  const w = Math.max(measure.measureText(text).width, atLeast ? measure.measureText(atLeast).width : 0);
+  select.style.width = `${Math.ceil(w + pad + 2)}px`;
 }

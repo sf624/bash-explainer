@@ -104,6 +104,8 @@ const fileName = () => file?.name ?? draftName ?? kindInfo(kind).fileName;
 /** The name the page shows and a first save suggests: the file's, the name given, or the kind's (`script.sh`). */
 const shownName = () => file?.name ?? draftName ?? defaultName(kind);
 let shown: { explanation: LineExplanation; line: number } | undefined;
+/** The frame window whose scroll the phone's view row follows (round 4). */
+let scrollWatched: Window | null = null;
 
 const analyzer = () => analyzers.get(lang) ?? analyzers.set(lang, new Analyzer(lang)).get(lang)!;
 
@@ -168,13 +170,14 @@ const editor = new Editor({
   },
   changed(u: ViewUpdate) {
     // Undo would no longer undo the sample once the text changed again.
-    if (u.docChanged && undoOffered && !loadingSample) status('');
+    if (u.docChanged && (undoOffered || toastUntilEdit) && !loadingSample) status('');
     if (u.docChanged && !mode.panel) detectPasted(u);
     if (u.docChanged) {
       showFileSoon();
       showEmptyEditor();
     }
     if (u.selectionSet || u.docChanged) queueMicrotask(showProblemPosition);
+    if (u.selectionSet || u.docChanged || u.viewportChanged) queueMicrotask(placeToast);
     // In panel mode the page around sends every change as a message, which is handled at once.
     if (mode.panel || (!u.docChanged && !u.selectionSet)) return;
     clearTimeout(timer);
@@ -250,6 +253,8 @@ function updatePanel(): void {
   // The phone's tab says which line it explains ("Explanation · Ln 8").
   put('tab-explain-line', blank ? '' : ` · ${TEXT[lang].line(line + 1)}`);
   document.getElementById('panel-col')?.classList.toggle('blank', blank);
+  if (blank) queueMicrotask(alignEmpty);
+  markSheet();
 }
 
 function copyMarkdown(): void {
@@ -301,10 +306,13 @@ if (mode.compare) {
 let statusTimer: ReturnType<typeof setTimeout> | undefined;
 /** A toast's button; `untilEdit`: it undoes an edit, so the next edit hides it (the sample's Undo). */
 interface StatusAction { label: string; run: () => void; untilEdit?: boolean }
-function status(text: string, sticky = false, action?: StatusAction): void {
+/** Round 4: a toast that the next edit dismisses ("Opened a.sh."). */
+let toastUntilEdit = false;
+function status(text: string, sticky = false, action?: StatusAction, opts: { untilEdit?: boolean } = {}): void {
   const el = $('status');
   undoOffered = false;
-  el.replaceChildren(...(text ? [text] : []));
+  toastUntilEdit = !!(text && opts.untilEdit);
+  el.replaceChildren(...(text ? [Object.assign(document.createElement('span'), { className: 'status-text', textContent: text })] : []));
   if (text && action) {
     // A toast with one button (the sample's or the detected kind's "Undo"); it hides when the button runs.
     const button = document.createElement('button');
@@ -317,6 +325,14 @@ function status(text: string, sticky = false, action?: StatusAction): void {
     });
     el.append(button);
     undoOffered = action.untilEdit === true;
+  }
+  if (text && !mode.compare && !mode.panel) {
+    // Round 4: every toast can be dismissed (✕), in the same row.
+    const x = Object.assign(document.createElement('button'), { type: 'button', className: 'status-close' });
+    x.innerHTML = '<svg aria-hidden="true"><use href="#i-close"/></svg>';
+    x.setAttribute('aria-label', CHROME[lang].dismiss);
+    x.addEventListener('click', () => status(''));
+    el.append(x);
   }
   clearTimeout(statusTimer);
   if (!sticky && text) statusTimer = setTimeout(() => status(''), 6000);
@@ -431,6 +447,7 @@ function setTheme(next: Theme): void {
   else writeStored(STORAGE_KEYS.theme, theme);
   pushTheme();
   settingsDialog?.refresh();
+  showLook();
 }
 $<HTMLSelectElement>('theme').addEventListener('change', (e) => setTheme((e.target as HTMLSelectElement).value as Theme));
 
@@ -463,6 +480,7 @@ function changeSettings(next: Settings): void {
   // (The shell setting changes what a command name runs, and its colour.)
   editor.shade();
   editor.recheck();
+  showLook();
 }
 
 /** The shell or yq chosen in the panel's header ('auto' clears it). */
@@ -922,7 +940,8 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
   editor.openText(read.text);
   clean = editor.text;
   setKind(kindForFile(chosen.name, read.text));
-  status(read.mixed ? t.mixedEol(chosen.name, read.eol === '\n' ? 'LF' : 'CRLF') : t.opened(chosen.name));
+  // (Round 4: "Opened a.sh." goes at the first edit.)
+  status(read.mixed ? t.mixedEol(chosen.name, read.eol === '\n' ? 'LF' : 'CRLF') : t.opened(chosen.name), false, undefined, { untilEdit: true });
   editor.focusUnlessTouch();
 }
 
@@ -1125,8 +1144,13 @@ function chromeLanguage(): void {
   put('copy-script-label', c.copyScript);
   put('menu-h-help', c.menuHelp);
   put('menu-keys-label', c.keys);
-  // The shortcuts are open at once where there is a keyboard and a mouse.
+  // The shortcuts are open at once where there is a keyboard and a mouse; a touch screen without one has no Help group
+  // (round 4: its only item was the keyboard's shortcuts).
   if (!touchOnly()) document.getElementById('menu-keys')?.setAttribute('open', '');
+  const help = document.getElementById('menu-g-help');
+  if (help) help.hidden = touchOnly();
+  put('menu-look-label', c.look);
+  showLook();
   document.getElementById('menu-keys-list')?.replaceChildren(...c.keyRows.flatMap(([k, what]) => [
     Object.assign(document.createElement('dt'), { textContent: k }), Object.assign(document.createElement('dd'), { textContent: what }),
   ]));
@@ -1136,7 +1160,8 @@ function chromeLanguage(): void {
   editor.setPlaceholder(touchOnly() ? c.placeholderTouch : c.placeholder(shortcut('V')));
   document.getElementById('panel-tabs')?.setAttribute('aria-label', c.panelTabs);
   put('sample-label', t.sample);
-  put('open-btn-label', c.open);
+  // (Round 4: the header's Open has no "…"; the menu's keeps it.)
+  put('open-btn-label', c.openShort);
   put('save-btn-label', c.save);
   put('kind-prefix', c.typePrefix);
   put('shell-top-prefix', c.shellPrefix);
@@ -1152,8 +1177,8 @@ function chromeLanguage(): void {
   put('tab-explain-label', c.explain);
   put('tab-problems-label', c.problems);
   put('tab-ref', c.reference);
-  put('first-hint-text', narrow.matches ? (touchOnly() ? c.hintPhone : c.hintClick) : c.hintDesk);
-  put('hint-paste-label', narrow.matches ? c.useOwn : c.pasteOwn);
+  put('first-hint-text', narrow.matches ? (touchOnly() ? c.hintPhone : c.hintClick) : c.hintDesk4);
+  put('hint-paste-label', narrow.matches ? c.useOwn : c.useOwnDesk);
   // (The phone's hint has room for "Open a file" without the dots: it opens the chooser at once.)
   put('hint-open-label', narrow.matches ? c.openFileShort : c.openFile);
   const auto = document.querySelector<HTMLOptionElement>('#lang option[value="auto"]');
@@ -1257,6 +1282,7 @@ const sheet = sheetCol && !mode.compare && !mode.panel
   ? new BottomSheet(sheetCol, $('panel-head'), $('bsheet-handle'), () => $('ed-head').getBoundingClientRect().bottom, () => {
     editor.view.requestMeasure();
     placeToast();
+    markSheet();
   })
   : undefined;
 type Tab = 'explain' | 'problems' | 'ref';
@@ -1281,6 +1307,7 @@ function showTabs(): void {
   $('sheet-problem-list').hidden = tab !== 'problems';
   const tools = document.getElementById('panel-tools');
   if (tools) tools.hidden = tab !== 'explain';
+  markSheet();
 }
 panel.onActions = showTabs;
 narrow.addEventListener('change', showTabs);
@@ -1340,6 +1367,19 @@ function placeToast(): void {
   toast.style.right = '';
   toast.style.maxWidth = `${Math.round(Math.min(420, source.width - 24))}px`;
   toast.style.bottom = `${Math.round(window.innerHeight - floor + 12)}px`;
+  // Round 4: never over the cursor's line: then at the right of the pane, or above the line when that covers it too.
+  if (!toast.textContent) return;
+  const at = editor.view.coordsAtPos(editor.view.state.selection.main.head);
+  if (!at) return;
+  const covers = (r: DOMRect) => r.top < at.bottom + 2 && r.bottom > at.top - 2;
+  let box = toast.getBoundingClientRect();
+  if (!covers(box)) return;
+  toast.style.left = `${Math.round(source.right - 12 - box.width)}px`;
+  box = toast.getBoundingClientRect();
+  const line = editor.view.lineBlockAt(editor.view.state.selection.main.head);
+  const lineLeft = editor.view.contentDOM.getBoundingClientRect().left;
+  const textRight = lineLeft + editor.view.state.doc.lineAt(line.from).length * editor.view.defaultCharacterWidth;
+  if (covers(box) && box.left < textRight) toast.style.bottom = `${Math.round(window.innerHeight - at.top + 12)}px`;
 }
 const toast = document.getElementById('status');
 if (toast) new MutationObserver(placeToast).observe(toast, { childList: true });
@@ -1403,14 +1443,92 @@ function hideHover(): void {
 function fitPickers(): void {
   for (const id of ['shell-top', 'yq-top']) {
     const select = document.getElementById(id);
-    if (select instanceof HTMLSelectElement) fitSelect(select);
+    if (!(select instanceof HTMLSelectElement)) continue;
+    // Round 4: the longest common value: the shell's "Auto (POSIX sh)", yq's longest choice.
+    const auto = [...select.options].find((o) => o.value === 'auto')?.textContent ?? '';
+    const base = auto.replace(/\s*[(（].*$/, '');
+    const common = id === 'shell-top' ? (lang === 'ja' ? `${base}（POSIX sh）` : `${base} (POSIX sh)`) : [...select.options].map((o) => o.textContent ?? '').reduce((a, b) => (b.length > a.length ? b : a), '');
+    fitSelect(select, common);
   }
+  // (The file type needs no minimum: the pickers are anchored at the right, and the type is left of the shell, so a
+  // change of its width moves no other control; the spacer before it takes the difference.)
 }
 window.addEventListener('resize', fitPickers);
 for (const id of ['shell-top', 'yq-top']) on(id, 'change', () => queueMicrotask(fitPickers));
 
 // The full sheet's "↓ Script": back to half, the script above it.
 on('sheet-back', 'click', () => sheet?.set('half'));
+
+// ---- Round 4 (proto/chrome-4) ------------------------------------------------------------------------------------
+
+/** The menu's "Language and theme": the values set now, in one line ("English · Auto"); the item opens Settings at them. */
+function showLook(): void {
+  const t = TEXT[lang];
+  const c = CHROME[lang];
+  // (The language in effect, also when it follows the browser.)
+  const language = lang === 'ja' ? '日本語' : 'English';
+  put('menu-look-note', c.lookNote(language, theme === 'auto' ? c.auto : t.themes[theme]));
+}
+on('menu-look', 'click', () => {
+  drawer?.close();
+  settingsDialog?.show();
+  const first = document.getElementById('setting-language');
+  first?.focus();
+});
+
+/** The empty panel's message starts level with the empty editor's block: 30% down the editor (web/panel-page.css). */
+function alignEmpty(): void {
+  const ed = document.getElementById('editor');
+  const frame = document.getElementById('panel');
+  if (!ed || !frame) return;
+  const e = ed.getBoundingClientRect();
+  const top = e.top + e.height * 0.3;
+  document.documentElement.style.setProperty('--empty-top', `${Math.round(e.height * 0.3)}px`);
+  if (!narrow.matches) panel.setEmptyTop(Math.max(16, top - frame.getBoundingClientRect().top));
+  else panel.setEmptyTop(24);
+}
+window.addEventListener('resize', () => {
+  if (!editor.text.trim()) alignEmpty();
+});
+
+/**
+ * The phone's sheet tells the frame its room: below full no line box (`bx-compact`); on the Explanation tab of a script,
+ * the view row lies over the frame's top (`bx-lead`) and scrolls away with the explanation.
+ */
+function markSheet(): void {
+  if (!editor.text.trim()) alignEmpty();
+  if (!narrow.matches) return panel.markSheet(false, false);
+  const snap = document.documentElement.dataset.sheet;
+  const col = document.getElementById('panel-col');
+  // (At peek the sheet is a glance: the explanation alone, under the tabs; the view row comes at half and full.)
+  const lead = col?.dataset.tab === 'explain' && !col.classList.contains('blank') && snap !== 'peek';
+  panel.markSheet(snap !== 'full', !!lead);
+  followFrameScroll();
+}
+/** The view row follows the frame's scroll: it moves up as the explanation does, and comes back at the top. */
+function followFrameScroll(): void {
+  const w = panel.frameWindow();
+  const row = document.getElementById('view-row');
+  if (!w || !row) return;
+  const place = () => {
+    const y = narrow.matches ? Math.min(w.scrollY, row.offsetHeight) : 0;
+    row.style.transform = y ? `translateY(${-y}px)` : '';
+  };
+  if (w !== scrollWatched) {
+    scrollWatched = w;
+    w.addEventListener('scroll', place, { passive: true });
+  }
+  place();
+}
+document.getElementById('panel')?.addEventListener('load', () => queueMicrotask(markSheet));
+narrow.addEventListener('change', markSheet);
+
+// The view dropdown ("View: Meaning ▾"): in a narrow view slot, and in the phone's row.
+for (const where of ['top', 'phone']) {
+  const b = document.getElementById(`view-drop-${where}`);
+  const m = document.getElementById(`view-menu-${where}`);
+  if (b && m) popover(b, m);
+}
 
 // ---- Start ----------------------------------------------------------------------------------
 

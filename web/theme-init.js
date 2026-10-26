@@ -131,8 +131,12 @@
     // Another screen (a foldable opened, a mouse attached) is decided again; a zoom keeps the screen's shape.
     if (shape() !== seenShape) decide();
     root.classList.toggle('phone', phone);
+    // Prototype round 4 (proto/chrome-4): a touch screen up to 1024px wide held upright (a tablet in portrait) stacks
+    // the panes as a phone does: the editor on top, the explanation in the sheet below it.
+    const tablet = !phone && touch.matches && window.innerWidth <= 1024 && window.innerHeight > window.innerWidth;
+    root.classList.toggle('tablet-portrait', tablet);
     const was = root.classList.contains('narrow');
-    const now = phone || narrowWidth.matches;
+    const now = phone || tablet || narrowWidth.matches;
     root.classList.toggle('narrow', now);
     if (was !== now) root.dispatchEvent(new Event('narrowchange'));
   };

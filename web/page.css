@@ -4669,3 +4669,645 @@ html:not(.narrow) .pane-head .chip {
     border-color: var(--vscode-dropdown-border);
   }
 }
+
+/* ==== Prototype round 4 (proto/chrome-4): a 48px sheet header, the view control's contract, one count in the strip,
+   a stable editor header, Read | Edit on every touch screen, Common and Advanced settings, quiet focus and toasts ==== */
+
+/* ---- 1. The phone's sheet: one 48px header row; the grabber is drawn inside it and the whole row drags ---- */
+:where(html.narrow) .panel-head {
+  position: relative;
+  z-index: 3;
+  height: 48px;
+}
+
+:where(html.narrow) .panel-head .bsheet-handle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  width: 72px;
+  height: 12px;
+  align-items: flex-start;
+  transform: translateX(-50%);
+}
+
+:where(html.narrow) .bsheet-handle span {
+  width: 32px;
+  height: 4px;
+  margin-top: 5px;
+}
+
+/* Its tap target reaches above the sheet's edge, and only 12px into the row (the tabs keep theirs). */
+:where(html.narrow) .bsheet-handle::before {
+  top: -32px;
+  width: 120px;
+  height: 44px;
+}
+
+:where(html.narrow) .panel-bar {
+  height: 48px;
+  padding: 4px 0 0;
+}
+
+/* The tabs at fixed widths (40/32/28%): a new line number or count moves nothing. */
+:where(html.narrow) .panel-bar .tabs {
+  width: 100%;
+}
+
+:where(html.narrow) .panel-bar [role="tab"] {
+  flex: none;
+  justify-content: center;
+  min-width: 0;
+  height: 44px;
+  padding: 0 4px;
+  overflow: hidden;
+  font-size: 14px;
+}
+
+:where(html.narrow) #tab-explain {
+  width: 40%;
+}
+
+:where(html.narrow) #tab-problems {
+  width: 32%;
+}
+
+:where(html.narrow) #tab-ref {
+  width: 28%;
+}
+
+.tab-line,
+.panel-bar .count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Full: a 32px row above the tabs holds the grabber and "↓ Script". */
+:where(html.narrow[data-sheet="full"]) .panel-head {
+  height: 80px;
+  padding-top: 32px;
+}
+
+:where(html.narrow[data-sheet="full"]) .panel-head .bsheet-handle {
+  height: 16px;
+}
+
+:where(html.narrow[data-sheet="full"]) .sheet-back {
+  top: 3px;
+}
+
+/* The view control on a phone: the first thing in the explanation, a 36px row over the frame's top that scrolls away
+   with it (web/main.ts moves it as the frame scrolls; the frame starts its content below it, `bx-lead`). */
+:where(html.narrow) .panel-col[data-tab="explain"] .view-row {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 36px;
+  padding: 0 8px;
+  border-bottom: 0;
+  background: var(--vscode-editor-background);
+  will-change: transform;
+}
+
+:where(html.narrow[data-sheet="full"]) .panel-col[data-tab="explain"] .view-row {
+  top: 80px;
+}
+
+:where(html.narrow) .panel-col.blank .view-row,
+:where(html.narrow) .panel-col:not([data-tab="explain"]) .view-row {
+  display: none;
+}
+
+/* ---- 10. The view slot: segments up to 160px (panel ≥560px), 136px (430–560px); below 430px one dropdown ---- */
+.view-drop {
+  display: none;
+}
+
+.view-drop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  box-sizing: border-box;
+  height: 28px;
+  min-height: 0;
+  max-width: 160px;
+  padding: 0 6px 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 12.5px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.view-drop-btn .vd-prefix {
+  color: var(--vscode-descriptionForeground);
+}
+
+.view-drop-btn .vd-value {
+  font-weight: 600;
+}
+
+.view-drop-btn .chev {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+@media (hover: hover) {
+  .view-drop-btn:hover {
+    border-color: var(--vscode-dropdown-border);
+  }
+}
+
+.view-drop-btn:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.view-menu {
+  min-width: 10rem;
+}
+
+.view-menu .popitem svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  visibility: hidden;
+}
+
+.view-menu .popitem[aria-checked="true"] svg {
+  visibility: visible;
+  color: var(--vscode-textLink-foreground);
+}
+
+.view-slot .seg {
+  max-width: 160px;
+  overflow: hidden;
+}
+
+@container panelcol (min-width: 430px) and (max-width: 559.98px) {
+  .view-slot .seg {
+    max-width: 136px;
+  }
+
+  .view-slot .seg button {
+    padding: 0 6px;
+    font-size: 12px;
+  }
+}
+
+@container panelcol (max-width: 429.98px) {
+  .view-slot .seg {
+    display: none;
+  }
+
+  .view-slot .view-drop {
+    display: flex;
+  }
+}
+
+/* The phone's row: the same dropdown, 32px, with a 44px tap area. */
+:where(html.narrow) .view-row .view-drop {
+  display: flex;
+}
+
+:where(html.narrow) .view-row .view-drop-btn {
+  position: relative;
+  height: 32px;
+  padding: 0 8px 0 4px;
+  font-size: 14px;
+}
+
+:where(html.narrow) .view-row .view-drop-btn::before {
+  content: "";
+  position: absolute;
+  inset: -6px -4px;
+}
+
+:where(html.narrow) .view-menu .popitem {
+  min-height: 44px;
+  font-size: 15px;
+}
+
+/* ---- 2. The empty panel: no view control, Collapse or Copy; its message level with the editor's block ---- */
+.panel-col.blank .panel-tools {
+  display: none !important;
+}
+
+.empty-editor {
+  align-items: flex-start;
+}
+
+.empty-box {
+  margin-top: max(0px, calc(var(--empty-top, 30%) - 16px));
+}
+
+/* ---- 3. Problems: one count at the left ("Problems ⚠ 5 ⓘ 6"; Japanese "問題 ⚠5 ⓘ6") ---- */
+html[lang="ja"] #problems .sum .icon {
+  margin-right: 1px;
+}
+
+html[lang="ja"] #problems .summary {
+  gap: 8px;
+}
+
+.strip-nav .pos {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 4. The editor header: each picker at least as wide as its longest common value (web/main.ts), chevron at its end ---- */
+.pane-head .picker {
+  justify-content: flex-start;
+}
+
+.pane-head .picker .chev {
+  margin-left: auto;
+}
+
+/* ---- 5. Read | Edit on every touch screen: in the editor header beside the panes too ---- */
+@media (pointer: coarse) {
+  html:not(.narrow) .ed-head .modes {
+    display: inline-flex;
+    flex: none;
+    margin-right: 4px;
+    padding: 1px;
+    border: 1px solid var(--vscode-dropdown-border);
+    border-radius: 7px;
+    background: var(--vscode-dropdown-background);
+  }
+
+  html:not(.narrow) .ed-head .modes button {
+    width: auto;
+    height: 24px;
+    padding: 0 8px;
+    font-size: 12.5px;
+  }
+}
+
+/* A tablet held upright (stacked like a phone): Open and Save with words in the strip once it has room. */
+@container source (min-width: 560px) {
+  html.narrow .pane-head .tool-btn {
+    display: inline-flex;
+    width: auto;
+    height: 32px;
+    padding: 0 10px;
+  }
+
+  html.narrow .pane-head .tool-btn .lbl {
+    display: inline;
+  }
+}
+
+/* ---- 6. Settings: Common, then Advanced (folded); section headings over sub-headings; the current section underlined ---- */
+.settings-major {
+  margin: 22px 0 6px;
+  color: var(--vscode-foreground);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.settings-group h3.settings-major {
+  margin: 18px 0 2px;
+  color: var(--vscode-foreground);
+  font-size: 16px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.settings-group h4 {
+  margin: 20px 0 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.settings-io h4,
+.settings-clear h4 {
+  margin: 14px 0 2px;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.settings-advanced {
+  margin-top: 8px;
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.settings-advanced[hidden],
+.settings-advanced-body[hidden] {
+  display: none;
+}
+
+.settings-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin-left: -6px;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-fold .fold-chev {
+  display: inline-block;
+  width: 12px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 18px;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+
+.settings-advanced.open .fold-chev {
+  transform: rotate(90deg);
+}
+
+@media (hover: hover) {
+  .settings-fold:hover {
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+.settings-fold:focus-visible,
+.link-btn:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+.settings-advanced-note {
+  margin: 0 0 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 13px;
+}
+
+.settings-advanced.open .settings-advanced-note {
+  display: none;
+}
+
+.link-btn {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vscode-textLink-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .link-btn:hover {
+    text-decoration: underline;
+  }
+}
+
+:where(html.narrow) .settings-fold {
+  min-height: 44px;
+}
+
+#settings-dialog .settings-nav a[aria-current="true"] {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+  text-decoration-color: var(--tab-line);
+}
+
+/* ---- 7. Focus and toasts: no dotted ring on the editor (the caret shows it), a 2px accent line under its header ---- */
+#editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.source:has(.cm-editor.cm-focused) .ed-head {
+  box-shadow: inset 0 -2px 0 var(--page-accent);
+}
+
+.status-text {
+  min-width: 0;
+}
+
+.status-close {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  margin-right: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+
+.status-close svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+@media (hover: hover) {
+  .status-close:hover {
+    background: var(--vscode-list-hoverBackground);
+    color: var(--vscode-foreground);
+  }
+}
+
+.status-close:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+/* The phone's toast: one 48px row, text · Undo · ✕. */
+:where(html.narrow) body:not([data-page="compare"]) #status {
+  box-sizing: border-box;
+  min-height: 48px;
+  gap: 4px;
+  padding: 4px 4px 4px 14px;
+  font-size: 14px;
+}
+
+:where(html.narrow) .status-text {
+  display: -webkit-box;
+  flex: 1 1 auto;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+:where(html.narrow) .status-action {
+  min-height: 40px;
+}
+
+:where(html.narrow) .status-close {
+  width: 40px;
+  height: 40px;
+  margin: 0;
+}
+
+/* ---- 8. The desktop's first-run hint: one line, two tertiary text buttons, X ---- */
+html:not(.narrow) .first-hint {
+  min-height: 32px;
+  padding: 2px 4px 2px 12px;
+}
+
+html:not(.narrow) .first-hint p {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html:not(.narrow) .hint-btn {
+  height: 26px;
+  padding: 0 8px;
+  border-color: transparent;
+  background: transparent;
+  font-weight: 500;
+}
+
+html:not(.narrow) .hint-btn svg {
+  display: none;
+}
+
+@media (hover: hover) {
+  html:not(.narrow) .hint-btn:hover {
+    background: var(--accent-soft);
+  }
+}
+
+html:not(.narrow) .first-hint .icon-btn {
+  width: 26px;
+  height: 26px;
+}
+
+/* ---- 9. The hover card: the breadcrumb on one line ("… › grep › -rn"); the part's name leads the answer ---- */
+.cm-bx-hover > p:first-child > small.crumbs {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-line-clamp: unset;
+}
+
+.cm-bx-hover > p:first-child > small.crumbs.open {
+  white-space: normal;
+}
+
+.crumb-more {
+  min-height: 0;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.15));
+  color: var(--vscode-foreground);
+  font: inherit;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .crumb-more:hover {
+    background: var(--accent-soft);
+  }
+}
+
+.crumb-sep {
+  color: var(--vscode-descriptionForeground);
+}
+
+.crumb-rest[hidden] {
+  display: none;
+}
+
+.cm-bx-hover > p:nth-child(2) > b:first-child {
+  font-size: 1.2em;
+}
+
+/* ---- 11. Small: the menu's "Language and theme" (Settings has the controls); no Help on a touch screen without keys ---- */
+#drawer .r3-only {
+  display: none;
+}
+
+#menu-g-help[hidden] {
+  display: none;
+}
+
+#menu-look .menu-note {
+  margin-left: auto;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* At peek the sheet is a glance: no view row (it comes back at half and full). */
+:where(html.narrow[data-sheet="peek"]) .view-row {
+  display: none !important;
+}
+
+/* A tablet held upright: the strip has the chip, never the wide pickers. */
+html.narrow .ed-head .scope-wide {
+  display: none !important;
+}
+
+/* Japanese labels are wider: the editor header takes the chip below a 680px pane (a 640px pane would cut the name). */
+@container source (max-width: 680px) {
+  html[lang="ja"] .scope-wide {
+    display: none !important;
+  }
+
+  html[lang="ja"] .scope-narrow {
+    display: flex;
+  }
+}
+
+/* The desktop hint stays one row: the sentence gives way (…) before the buttons do. */
+html:not(.narrow) .first-hint {
+  flex-wrap: nowrap;
+}
+
+html:not(.narrow) .first-hint .hint-actions {
+  flex: none;
+  flex-wrap: nowrap;
+}
+
+/* A tab's words that do not fit are cut at their end, never at their start ("Explanation · Ln 120"). */
+:where(html.narrow) .panel-bar [role="tab"] {
+  justify-content: safe center;
+}
+
+/* The phone's settings: the section links on one row ("Jump to:" goes; the row scrolls sideways if it must). */
+:where(html.narrow) .settings-nav {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+:where(html.narrow) .settings-jump {
+  display: none;
+}
+
+:where(html.narrow) .settings-nav a {
+  flex: none;
+}
