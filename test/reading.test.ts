@@ -641,6 +641,8 @@ describe('the reading tree of a line', () => {
       '              child/quote "$@"',
       '                child/expansion $@',
       '              command/argument "$@"',
+      // (What `set` reads of the word: the positional parameters it gives.)
+      '      command/argument $(getopt ab: "$@")',
     ]);
   });
 

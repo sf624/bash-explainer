@@ -455,6 +455,8 @@ export interface NameFacts {
   noProgram?: boolean;
   /** The other meanings of the name, in bash's order (3.7.2): empty when it has none. */
   also: NameOther[];
+  /** It runs a POSIX special builtin (4.4): in POSIX mode, it differs from the other builtins. */
+  special?: true;
 }
 
 /** What the name `NAME` resolves to written in place of the command name, plain or as `\NAME` or `command NAME` (`nameFacts`). */
@@ -512,5 +514,5 @@ export function nameFacts(res: NameResolution, opts: {
     const path = opts.path?.(name);
     add({ kind: 'program', reach: reach.length ? reach : [`env ${name}`], ...(path ? { path } : {}) });
   }
-  return { name, runs, ...by, ...why, ...noProgram, also };
+  return { name, runs, ...by, ...why, ...noProgram, also, ...(res.kind === 'builtin' && res.special ? { special: true as const } : {}) };
 }

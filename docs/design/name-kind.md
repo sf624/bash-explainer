@@ -66,6 +66,7 @@ The maintainer chose C, always on (no setting).
 - The panel draws what it is given (media/panel.js `nameBadge`, `nameAlso`); it composes no text.
 - The badge replaces the kind in the text: the dictionary's "(shell builtin)" suffix is gone from the explanations, and the programs named like builtins say their package instead ("(from coreutils)", "(from procps; …)"). The outputs with no badge (the hover, the CLI's text and Markdown, Copy as Markdown) end the row with the kind from the same field, " (builtin)", " (program, run by `sudo`)"; the JSON output has the whole `name`. The line's summary (the inline hint) keeps a builtin's kind, as before.
 - An alias is a token kind of its own (`alias`), no longer `function`.
+- A POSIX special builtin (4.4: `set`, `export`, `exit`…, and `source` and `times`, which bash 5.2 treats so) keeps the badge "builtin", since it differs from the others in POSIX mode only; its tooltip names the class and what POSIX mode changes (`NameFacts.special`).
 
 ## Limits
 

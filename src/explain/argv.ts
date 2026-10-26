@@ -20,7 +20,7 @@ import { shorten } from '../label';
 import { fact } from '../messages';
 import { nameInfo } from '../namefacts';
 import { spanOf } from '../noteanchors';
-import { nodeSections } from '../refs';
+import { builtinSections, nodeSections } from '../refs';
 import { shellEffectOf, type SlotLink, slotEnvs } from '../semantics/env';
 import { type Missed, testSpecOf } from '../semantics/names';
 import { attribute, docLine } from '../semantics/state';
@@ -85,20 +85,21 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
   let joinedWhole = false;
   // Joined words not read as a script: the word that holds an expansion says why (`eval set -- "$args"`).
   let joinedNote: { at: SyntaxNode; note: string } | undefined;
-  const ordinals = new Map<OperandSpec, number>();
+  // The number of the next word of each operand (`$N`: `set -- a b`), and whether the words before it each gave one.
+  const ordinals = new Map<OperandSpec, { n: number; sure: boolean }>();
   cx.withCommand({ cmd: parse.command, args: words, parse, nodes, spec }, () => {
     for (const { word, role } of parse.roles) {
       const a = nodes[word];
       switch (role.role) {
         case 'end-of-options':
-          out.push(endOfOptions(cx, a));
+          out.push(endOfOptions(cx, a, spec));
           break;
         case 'option':
         case 'unknown-option':
         case 'cluster':
           disables = (role.role === 'cluster' ? role.letters[0] as { flag: string } : role).flag.startsWith('+');
-          // (A declaration builtin's options are explained by the attributes they give.)
-          out.push(declaresNames(spec) ? declarationOption(cx, a, role) : optionToken(cx, a, role, spec, parse));
+          // (A declaration builtin's options are explained by the attributes they give; one it does not have, as any builtin's.)
+          out.push(declaresNames(spec) && role.role !== 'unknown-option' ? declarationOption(cx, a, role) : optionToken(cx, a, role, spec, parse));
           break;
         case 'pattern-option':
           out.push(cx.tok(a, 'option', cx.t(role.text), wordParts(cx, a)));
@@ -132,9 +133,12 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             : cx.s('`-exec` の終わり: 見つかったファイル1件ごとにコマンドを実行（`;` はシェルに解釈されないようエスケープが必要）', 'End of `-exec`: run once per match (`;` must be escaped from the shell)')));
           break;
         case 'operand': {
-          const n = role.spec ? (ordinals.get(role.spec) ?? 0) + 1 : 0;
-          if (role.spec) ordinals.set(role.spec, n);
-          out.push(operandToken(cx, nodes, word, role, parse, spec, n, assigned, isFn));
+          // (A word that expands to another number of words, `$x` or `{a,b}`, shifts the numbers: from it on, they are not sure.)
+          const before = (role.spec && ordinals.get(role.spec)) || { n: 0, sure: true };
+          const count = countOf(a, cx.state.shell);
+          const gives = !count ? 1 : count.min === count.max ? count.min : undefined;
+          if (role.spec) ordinals.set(role.spec, { n: before.n + (gives ?? 1), sure: before.sure && gives !== undefined });
+          out.push(operandToken(cx, nodes, word, role, parse, spec, { n: before.n + 1, sure: before.sure && !count }, assigned, isFn));
           break;
         }
         case 'subcommand': {
@@ -187,8 +191,10 @@ function declarationOption(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, 
   return cx.tok(a, 'option', flags.length ? flags.map((f) => cx.t(f)).join(cx.s('、', ', ')) : cx.s('オプション', 'Option'));
 }
 
-/** The token of `--`, which ends the options of a builtin. */
-function endOfOptions(cx: Explainer, n: SyntaxNode): Token {
+/** The token of `--`, which ends the options of a builtin; what else it does, when the spec says (`set --` sets the positional parameters). */
+function endOfOptions(cx: Explainer, n: SyntaxNode, spec: CommandSpec): Token {
+  const own = spec.options?.find((o) => o.names.includes('--'));
+  if (own) return cx.tok(n, 'option', cx.t(own.text));
   return cx.tok(n, 'option', cx.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument'));
 }
 
@@ -203,6 +209,11 @@ function unknownOption(cx: Explainer, command: string, spec: CommandSpec, ambigu
   if (ambiguous) {
     const names = ambiguous.map((n) => `\`${n}\``).join(cx.s('、', ', '));
     return cx.s(`あいまいなオプション（先頭が同じ長いオプションが複数ある: ${names}）。${command.split(' ')[0]} は受け付けない`, `Ambiguous option (it starts several long options: ${names}); ${command.split(' ')[0]} refuses it`);
+  }
+  // (A builtin's spec has every option bash's builtin takes: any other is one it refuses before doing anything.)
+  if (spec.builtin) {
+    return cx.s(`bash の \`${command}\` にないオプション: bash は \`invalid option\` と表示し、\`${command}\` は何もせずに失敗する（終了ステータス 2。オプションは \`help ${command}\` にある）`,
+      `An option bash's \`${command}\` does not have: bash says \`invalid option\`, and \`${command}\` fails with status 2, doing nothing (\`help ${command}\` lists its options)`);
   }
   return cx.s(`オプション（辞書に未登録。\`man ${command.split(' ')[0]}\` を参照）`, `Option (not in the dictionary; see \`man ${command.split(' ')[0]}\`)`);
 }
@@ -380,7 +391,7 @@ function splicedNote(cx: Explainer, v: ValueRole): string {
 }
 
 /** The token of an operand: what the spec says it is, numbered (`$1`), or as a job spec, a shell option, an assignment. */
-function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Extract<ArgRole, { role: 'operand' }>, parse: ArgvParse, spec: CommandSpec, n: number, assigned: string[], isFn: boolean | 'maybe'): Token {
+function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Extract<ArgRole, { role: 'operand' }>, parse: ArgvParse, spec: CommandSpec, at: { n: number; sure: boolean }, assigned: string[], isFn: boolean | 'maybe'): Token {
   const a = nodes[word];
   const item = role.spec;
   // `unset NAME`, `declare NAME=value`: what the name stands for, as bash decides it here.
@@ -401,13 +412,19 @@ function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Ex
   else if (item?.values && Object.hasOwn(item.values, a.text)) desc = cx.t(item.values[a.text]);
   else if (role.assignment) desc = cx.t(item!.assignmentText!);
   else if (role.each) desc = eachText(cx, a, role.each);
-  else if (item) desc = cx.t(item.text).replace('`$N`', `\`$${n}\``);
+  else if (item) {
+    const text = cx.t(item.text);
+    desc = text.replace('`$N`', `\`$${at.n}\``);
+    if (desc !== text && !at.sure) desc += cx.s('（この語か前の語が展開で 1 語以外になると、番号もずれる）', ' (if this word or one before it expands to more or fewer words, the number shifts)');
+  }
   if (desc && role.several) {
     const roles = role.several.map((o) => cx.t(o.text)).join(cx.s('、', ', then '));
     desc = cx.s(`\`${a.text}\` が1語に展開されるなら${desc}、2語以上なら順に${roles}`, `${desc} when \`${a.text}\` expands to a single word; when it expands to more, they are ${roles}`);
   } else if (desc && role.otherwise) desc = uncertainText(cx, desc, cx.t(role.otherwise.text), parse, nodes);
   // (A function named like a declaration builtin, or `alias`, given `a=…`: bash's parser marked the word.)
-  if (a.type === 'variable_assignment') return markedAssignment(cx, a, desc ?? cx.s(`引数 \`${a.text}\``, `Argument \`${a.text}\``), parse.command, isFn);
+  // (Not the operand's meaning when bash assigns an array and passes only the name: `alias b=(1 2)`.)
+  const named = isFn || field(a, 'value')?.type !== 'array' ? desc : undefined;
+  if (a.type === 'variable_assignment') return markedAssignment(cx, a, named ?? cx.s(`引数 \`${a.text}\``, `Argument \`${a.text}\``), parse.command, isFn);
   return positional(cx, a, desc, isFn ? undefined : item?.lang);
 }
 
@@ -641,7 +658,7 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   const value = staticWordValue(first);
   const res = value === undefined ? undefined : resolve(cx, value, first, { env: cx.slotEnvs.get(first) });
   const test = res && testSpecOf(res);
-  const children = test ? testArgs(cx, first.parent!, commandTest(test, words.slice(1), bashTest(cx, test)), test.closingOperand !== undefined)
+  const children = test ? testArgs(cx, first.parent!, commandTest(test, words.slice(1), bashTest(cx, test)), test.closingOperand !== undefined, !!test.builtin)
     : render(cx, parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
   if (role.of) {
     // `{}` is replaced by find (and `xargs -I{}`) with each path.
@@ -657,7 +674,7 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   // (`builtin cd`, `command echo`: the builtin runs in this shell, as if bash ran it: no other command runs it.)
   const direct = role.slot.run === 'current-shell' && res?.kind === 'builtin';
   return {
-    kind, ...(res ? { name: nameInfo(cx.lang, res, cx, first, cx.slotEnvs.get(first)) } : {}),
+    kind, ...(res ? { name: nameInfo(cx.lang, res, cx, first, cx.slotEnvs.get(first)) } : {}), ...(direct ? { refs: builtinSections(res.name, res.special) } : {}),
     label: shorten(name),
     explanation: (role.of ? cx.s('実行するコマンド: ', 'Command to run: ') : '') + (direct ? '' : cx.s(`\`${name}\` を実行: `, `runs \`${name}\`: `)) + explanation,
     span, children, summary: `${name}: ${explanation}`,
@@ -753,7 +770,7 @@ function findExpression(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec): 
  * (`bracket`). Where the expression is not known to be read (bash fails on it, or a word is not known), the words
  * are plain arguments: no condition is explained that may never be evaluated.
  */
-export function testArgs(cx: Explainer, n: SyntaxNode, test: CommandTest, bracket: boolean): Token[] {
+export function testArgs(cx: Explainer, n: SyntaxNode, test: CommandTest, bracket: boolean, builtin: boolean): Token[] {
   const last = test.words[test.words.length - 1];
   // (`[ -f x]`, `[ -f $x]`: the `]` is glued to the last word. With a word not known, the pitfall says it.)
   const glued = bracket && !test.close && !!last && /\S\]$/.test(last.text);
@@ -766,7 +783,8 @@ export function testArgs(cx: Explainer, n: SyntaxNode, test: CommandTest, bracke
   let inner: Token[];
   if (test.test && !test.unclosed && !glued) {
     testExample(cx, n, bracketShape(test.test), '[');
-    inner = testTokens(cx, n, test.test, test.test.expr);
+    // (bash's builtin reads the words as 4.1 says, and its primaries are those of 6.4.)
+    inner = testTokens(cx, n, test.test, test.test.expr, builtin ? ['4.1', '6.4'] : undefined);
   } else inner = cx.subs(test.words);
   if (!test.close) return inner;
   return [...inner, cx.tok(test.close, 'argument', cx.s('`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）', 'The last argument passed to `[`. `[` checks it to find the end of the expression (without it, an error)'))];
