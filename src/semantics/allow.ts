@@ -120,13 +120,21 @@ export const SYNTAX: Readonly<Record<NodeType, Row>> = {
   error: none(all('text the parser could not read')),
 };
 
-/** A builtin: its own row, and that of an option its spec does not know (bash may take it). */
+/**
+ * A builtin: its own row, that of an option its spec does not know (bash may take it), and those of options that do
+ * more than the builtin's row says (`jobs -x`), by flag.
+ */
 export interface BuiltinRow extends Row {
   readonly unknownOption: Row;
+  readonly options?: Readonly<Record<string, Row>>;
 }
 
 const ANY_OPTION = all('an option of a builtin that the spec does not know');
-const builtin = (row: Row, unknownOption: Row = none(ANY_OPTION)): BuiltinRow => ({ ...row, unknownOption });
+const builtin = (row: Row, unknownOption: Row = none(ANY_OPTION), options?: Readonly<Record<string, Row>>): BuiltinRow => ({ ...row, unknownOption, ...(options ? { options } : {}) });
+/** `ulimit -n` and `-u` may lower a limit: then a redirection (even to /dev/null), a pipe of `$( )` or a fork fails. */
+const LIMITS = { effect: all('`ulimit -n` or `-u` may make a redirection, a pipe or a fork fail') };
+/** `mapfile -C` runs its text in this shell, as `eval` does (with the index and the line after it). */
+const MAPFILE_CALLBACK = { '-C': { effect: all('`mapfile -C` runs code in this shell') } };
 
 /**
  * Each of bash's 61 builtins (`compgen -b`, the same in 5.2 and 5.3). What their specs say is read from them, for
@@ -139,16 +147,19 @@ export const BUILTINS: Readonly<Record<string, BuiltinRow>> = {
   ':': builtin(none(), none()), true: builtin(none(), none()), false: builtin(none(), none()),
   echo: builtin(none(), none()), printf: builtin(none(), none()),
   pwd: builtin(none()), type: builtin(none()), help: builtin(none()), times: builtin(none()), caller: builtin(none()),
-  dirs: builtin(none()), disown: builtin(none()), suspend: builtin(none()), logout: builtin(none()), ulimit: builtin(none()),
+  dirs: builtin(none()), disown: builtin(none()), suspend: builtin(none()), logout: builtin(none()),
+  ulimit: builtin(none(), none(ANY_OPTION), { '-n': LIMITS, '-u': LIMITS }),
   umask: builtin(none()), hash: builtin(none()), bind: builtin(none()), history: builtin(none()), kill: builtin(none()),
   wait: builtin(none()), bg: builtin(none()), fg: builtin(none()),
-  // (A function named as a callback, `complete -F f`, is not closed.)
+  // (A function named as a callback, `complete -F f`, is not closed. `complete -C` and `-F` run when a command is
+  // completed, in an interactive shell only.)
   complete: builtin(none()), compopt: builtin(none()),
-  // (`jobs -x` runs its command in this shell: its spec's command slot.)
-  jobs: builtin(none(all('`jobs -x` runs a command in this shell'))),
+  // `jobs -x` runs its command in this shell (its spec's command slot).
+  jobs: builtin(none(), none(ANY_OPTION), { '-x': { effect: all('`jobs -x` runs a command in this shell') } }),
   // PWD, OLDPWD and DIRSTACK; the positional parameters (never trusted).
   cd: builtin(names()), pushd: builtin(names()), popd: builtin(names()), shift: builtin(names()),
-  read: builtin(names()), mapfile: builtin(names()), readarray: builtin(names()), getopts: builtin(names()),
+  read: builtin(names()), mapfile: builtin(names(), none(ANY_OPTION), MAPFILE_CALLBACK), readarray: builtin(names(), none(ANY_OPTION), MAPFILE_CALLBACK),
+  getopts: builtin(names()),
   // Jumps (a count not known takes both paths).
   exit: builtin(followed(['status: exit', 'generator: exit'])), return: builtin(followed(['status: return', 'generator: return'])),
   break: builtin(followed(['generator: break'])), continue: builtin(followed(['generator: continue'])),

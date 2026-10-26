@@ -642,6 +642,7 @@ class Scan {
     // The rest by the builtin's row: an option the spec does not know, and the handler of a builtin the walk follows.
     const row = builtinRow(name);
     if (parse.roles.some((r) => r.role.role === 'unknown-option')) this.apply(row.unknownOption);
+    for (const o of optionRoles(parse)) if (row.options && Object.hasOwn(row.options, o.flag)) this.apply(row.options[o.flag]);
     if (!this.apply(row)) return;
     // `test` and `[` (by their spec): `-v name` reads a variable.
     if (spec.operandParser === 'test-expression') {
@@ -689,7 +690,7 @@ class Scan {
         for (const r of parse.roles) {
           const v = staticWordValue(args[r.word]);
           if (r.role.role === 'operand') continue;
-          if (v === undefined || (r.role.role === 'value' && ['-F', '-C'].includes(r.role.of))
+          if (v === undefined || r.role.role === 'command' || (r.role.role === 'value' && r.role.of === '-F')
             || (r.role.role === 'value' && r.role.of === '-W' && !quietPrompt(v))) this.blindFor('`compgen` expands a word list or runs a command the model does not read');
         }
         return;
