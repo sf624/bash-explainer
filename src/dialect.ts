@@ -217,6 +217,14 @@ export function featureWorks(id: string, shell?: Shell): boolean {
   return !shell || (shell !== 'sh' && works(FEATURES[id], shell as RealShell));
 }
 
+/**
+ * Whether the shell brace-expands the word of plain text `text` (one that has a brace expansion): every kind in it must
+ * work there. (dash and POSIX sh have no brace expansion, mksh no ranges: `echo {a,b}` prints `{a,b}` in dash.)
+ */
+export function bracesWork(text: string, shell?: Shell): boolean {
+  return (!/\{[^{}]*,[^{}]*\}/.test(text) || featureWorks('braceList', shell)) && (!/\{[^{}]*\.\.[^{}]*\}/.test(text) || featureWorks('braceRange', shell));
+}
+
 /** Features used by the constructs starting on lines [from, to]. */
 export function collectFeatures(root: SyntaxNode, from: number, to: number): Found[] {
   const found: Found[] = [];

@@ -123,12 +123,14 @@ describe('old-style options: tar', () => {
   });
 
   it('leaves other first words alone', () => {
-    for (const src of ['tar --create -f a.tar d', 'tar -xf a.tar', 'tar a.tar', 'tar foo', 'tar cfq a', 'tar xf2 a', 'tar vf a.tar', 'tar $w a', 'tar zz a']) {
+    // (A first word of other characters, or of an unknown letter, is no bundle; tar refuses it: test/oldstyle-real.test.ts.)
+    for (const src of ['tar --create -f a.tar d', 'tar -xf a.tar', 'tar a.tar', 'tar cfq a', 'tar xf2 a', 'tar $w a']) {
       const first = top(src)[0];
       assert.notStrictEqual(first.kind === 'option' && first.explanation.startsWith('Old-style'), true, src);
     }
-    assert.strictEqual(top('tar foo')[0].explanation, 'Word `foo`');
     assert.strictEqual(top('tar a.tar')[0].explanation, 'Word `a.tar`');
+    // The first word is letters whether or not one of them is an operation (tar then asks for one).
+    for (const src of ['tar vf a.tar', 'tar zz a', 'tar f a.tar -t']) assert.match(top(src)[0].explanation, /^Old-style options/, src);
     // Only the first argument is a bundle.
     assert.strictEqual(top('tar -C d xf a.tar')[2].explanation, 'Word `xf`');
   });
@@ -147,7 +149,31 @@ describe('old-style options: ps', () => {
   it('leaves PIDs and UNIX options alone', () => {
     assert.strictEqual(top('ps 1234')[0].explanation, 'process ID (a bare number is a BSD-style PID selection)');
     assert.strictEqual(top('ps -ef')[0].explanation, 'Combined short options `-e` `-f`');
-    assert.strictEqual(top('ps u1')[0].explanation, 'Word `u1`');
+    // (A number must come last in a BSD word: `u1x` is an error in ps.)
+    assert.strictEqual(top('ps u1x')[0].explanation, 'Word `u1x`');
+  });
+
+  it('reads a number at the end of BSD letters as a PID list, or as the value of a letter that takes one', () => {
+    assert.deepStrictEqual(shape('ps u1'), [
+      'u1: BSD-style options (no dash; some mean something else than the UNIX forms with `-`): `u` `1`',
+      '  u: user-oriented format (user, CPU and memory share…)',
+      '  1: process IDs (a number after BSD letters is a PID list, the same as `p`)',
+    ]);
+    assert.deepStrictEqual(shape('ps ax1,2').slice(-1), ['  1,2: process IDs (a number after BSD letters is a PID list, the same as `p`)']);
+    assert.deepStrictEqual(shape('ps t1'), [
+      't1: BSD-style options (no dash; some mean something else than the UNIX forms with `-`): `t`',
+      '  t: only processes on these terminals',
+      '  1: Value for `t`',
+    ]);
+    assert.match(top('ps u1', 'ja')[0].children[1].explanation, /^プロセス ID を指定/);
+    // The words after it are PIDs too (`ps u1 2`).
+    assert.strictEqual(top('ps u1 2')[1].explanation, 'process ID (a bare number is a BSD-style PID selection)');
+    // A letter with a value before the number would read the rest of the word, the number too: not described.
+    assert.strictEqual(top('ps op1')[0].explanation, 'Word `op1`');
+    // A word that is quoted or not known is read as far as it can be.
+    assert.strictEqual(top("ps $'t1'")[0].kind, 'option');
+    assert.strictEqual(top('ps u"1"')[0].children.length, 2);
+    assert.strictEqual(top('ps $w')[0].kind, 'variable');
   });
 
   it('reads BSD letters after other options too, as procps does', () => {

@@ -3,7 +3,7 @@
 // source range of each character, and says which shell reads it; src/semantics/state.ts parses it and gives it a
 // model (`StateModel.script`).
 import { interpret } from '../argv/interpret';
-import { argWord } from '../argv/words';
+import { argWordFor } from '../argv/words';
 import { lookupCommand } from '../dict/aliases';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
@@ -114,7 +114,7 @@ export function nestedScripts(tree: SyntaxTree, shell?: Shell, descend: (script:
       const args = fields(cmd, 'argument');
       if (!spec || !args.length) continue;
       const strings = new Map<SyntaxNode, SyntaxNode[]>();
-      const envs = slotEnvs(model.env(cmd), interpret(spec, args.map(argWord), { name, lookup: lookupCommand }), spec, args, lookupCommand, strings);
+      const envs = slotEnvs(model.env(cmd), interpret(spec, args.map(argWordFor(model.shell)), { name, lookup: lookupCommand }), spec, args, lookupCommand, strings);
       for (const [first, words] of strings) {
         const script = model.script(words, envs.get(first)!);
         if ('why' in script) continue;

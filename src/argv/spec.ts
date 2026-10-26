@@ -320,6 +320,12 @@ export interface OldStyleSpec {
   style?: Text;
   /** Any word that is not an option or a value may be such letters, not only the first (procps reads `ps -p 1 u` as `ps u -p 1`). */
   anywhere?: boolean;
+  /**
+   * A number (or a comma-separated list) at the end of the word, after the letters. If the last letter takes a value,
+   * it is that value (`ps t1`, `ps p1,2`); else it is the value of `option`, a letter of `letters`, that `text` says
+   * (procps: `ps u1` is `ps u p1`).
+   */
+  numbers?: { option: string; text: Text };
 }
 
 /**

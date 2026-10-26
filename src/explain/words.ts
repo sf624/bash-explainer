@@ -139,9 +139,14 @@ export function shown(v: string): string {
   return visible(v).replace(/\n/g, '\\n');
 }
 
+/** Whether the word model lets the word `n` have brace expansion here (not in a shell without it, as dash; src/semantics/words.ts). */
+export function bracesHere(cx: Explainer, n: SyntaxNode): boolean {
+  return wordAt(cx, n)?.steps.find((s) => s.kind === 'brace')?.why !== 'dialect';
+}
+
 /** The words an unquoted word of plain text gives by brace expansion; undefined when it gives none (or too many to list). */
-export function braceWords(text: string): string[] | undefined {
-  return braceExpansion(text) ?? undefined;
+export function braceWords(cx: Explainer, n: SyntaxNode, text: string): string[] | undefined {
+  return bracesHere(cx, n) ? braceExpansion(text) ?? undefined : undefined;
 }
 
 /** A word with braces (`{a,b\,c}`, `{,}`, `{a..e..2}`), explained as the brace expansion it is (manual 3.5.1). */
@@ -154,7 +159,7 @@ export function braceWord(cx: Explainer, n: SyntaxNode): Token | undefined {
 
 function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
   const text = unquotedWord(n);
-  if (text === undefined) return undefined;
+  if (text === undefined || !bracesHere(cx, n)) return undefined;
   const words = braceExpansion(text);
   if (words === null) {
     return cx.tok(n, 'expansion', cx.s(`ブレース展開: \`${text}\` は多くの単語に展開される`, `Brace expansion: \`${text}\` expands to many words`));

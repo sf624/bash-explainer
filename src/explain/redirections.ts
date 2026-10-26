@@ -239,13 +239,9 @@ function bracedTarget(cx: Explainer, d: SyntaxNode): string | undefined {
   return words?.length === 1 && words[0] !== d.text ? words[0] : undefined;
 }
 
-/**
- * Whether the shell brace-expands the target here. (The word model expands braces in every shell; dash and POSIX sh
- * have no brace expansion, mksh no ranges: `> {a,}` writes `{a,}` in dash.)
- */
+/** Whether the shell brace-expands the target here (the word model says: not in dash, nor with `set +B`; `> {a,}` writes `{a,}` in dash). */
 function braceWorks(cx: Explainer, d: SyntaxNode): boolean {
-  if (wordAt(cx, d)!.steps.find((s) => s.kind === 'brace')!.applies !== true) return false;
-  return (!/\{[^{}]*,[^{}]*\}/.test(d.text) || featureWorks('braceList', cx.shell)) && (!/\{[^{}]*\.\.[^{}]*\}/.test(d.text) || featureWorks('braceRange', cx.shell));
+  return wordAt(cx, d)!.steps.find((s) => s.kind === 'brace')!.applies === true;
 }
 
 /**

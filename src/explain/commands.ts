@@ -255,7 +255,7 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
 
 function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedChildren[0]!): CommandHead {
   // `{echo,hi}` is a brace expansion first: the command is the first word it gives (`echo`), with the others as arguments.
-  const braced = isPlainWord(word) ? braceWords(word.text) : undefined;
+  const braced = isPlainWord(word) ? braceWords(cx, word, word.text) : undefined;
   if (braced?.length) {
     const head = commandHeadFor(cx, nameNode, word, braced[0]);
     head.explanation = cx.s(

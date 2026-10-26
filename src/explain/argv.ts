@@ -8,7 +8,7 @@ import type { ExplainOptions, Kind, Span, Token } from '../analyzer-types';
 import { type ArgRole, type ArgvParse, type CommandRole, interpret, type RoleAt, type ValueRole } from '../argv/interpret';
 import { declaresNames, namespaceOf } from '../argv/query';
 import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
-import { argWord, countOf } from '../argv/words';
+import { argWordFor, countOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import { describeFind, type FindNode, parseFind } from '../embedded/find';
 import { globIntro, hasGlob } from '../embedded/glob';
@@ -63,7 +63,7 @@ export function readArgs(cx: Explainer, known: CommandSpec | undefined, args: Sy
   // (A function's words are read with no spec: its options are unknown, and its operands are `$1`, `$2`….)
   const spec = known && !isFn ? known : NO_SPEC;
   const lookup = (name: string): CommandSpec | undefined => specFor(cx, name);
-  const parse = interpret(spec, args.map(argWord), { name: cmdName, lookup });
+  const parse = interpret(spec, args.map(argWordFor(cx.state.shell)), { name: cmdName, lookup });
   if (args.length) for (const [w, env] of slotEnvs(cx.state.env(args[0].parent!), parse, spec, args, lookup)) cx.slotEnvs.set(w, env);
   return { tokens: render(cx, parse, spec, args, args, isFn), parse };
 }
@@ -111,12 +111,18 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
           out.push(valueToken(cx, a, role, disables));
           break;
         case 'old-style': {
-          const parts = role.letters.map((l) => {
+          const parts = role.letters.flatMap((l) => {
             const letter = l as Extract<ArgRole, { role: 'option' }>;
-            return part(a, letter, letter.flag, cx.t(letter.text));
+            const own = part(a, letter, letter.flag, cx.t(letter.text));
+            // `ps t1`: the number is the value of the last letter, a token of its own.
+            if (!letter.value) return [own];
+            const lit = literalContent(a);
+            const text = (lit ? lit.text : a.text).slice(letter.value.attached);
+            return [own, span(a, letter.value.attached!, -1, 'argument', cx.s(`\`${letter.flag}\` の値`, `Value for \`${letter.flag}\``), text)];
           });
+          const letterTokens = parts.filter((p) => p.kind === 'option');
           const style = spec.oldStyle!.style ? cx.t(spec.oldStyle!.style) : cx.s('旧式のオプション（ハイフンなし）', 'Old-style options (no dash)');
-          out.push(cx.tok(a, 'option', `${style}: ${parts.map((p) => `\`${p.label}\``).join(' ')}`, parts));
+          out.push(cx.tok(a, 'option', `${style}: ${letterTokens.map((p) => `\`${p.label}\``).join(' ')}`, parts));
           break;
         }
         case 'terminator':
@@ -568,7 +574,7 @@ function nameGlob(cx: Explainer, a: SyntaxNode, name: string, text: string, acts
  */
 function uncertainText(cx: Explainer, desc: string, other: string, parse: ArgvParse, nodes: SyntaxNode[]): string {
   // (Any word may be the one: `bash -c $cmd _ a`, where the string is unquoted.)
-  const many = parse.roles.filter((r) => countOf(nodes[r.word])?.max !== countOf(nodes[r.word])?.min);
+  const many = parse.roles.filter((r) => countOf(nodes[r.word], cx.state.shell)?.max !== countOf(nodes[r.word], cx.state.shell)?.min);
   const list = many.map((r) => `\`${nodes[r.word].text}\``).join(cx.s('・', ', '));
   return cx.s(`${list} が1語に展開されるなら${desc}、2語以上なら${other}`, `${desc} when ${list} expands to a single word; ${other} when it expands to more`);
 }
@@ -590,7 +596,7 @@ function shellParams(cx: Explainer, role: CommandRole, parse: ArgvParse, nodes: 
   if (!role.slot.params) return undefined;
   const after = parse.roles.filter((r) => r.word > word && r.role.role === 'operand').map((r) => nodes[r.word]);
   // (`countOf` gives nothing for a word that stays one word.)
-  const known = after.findIndex((w) => { const c = countOf(w); return c !== undefined && c.max !== 1; });
+  const known = after.findIndex((w) => { const c = countOf(w, cx.state.shell); return c !== undefined && c.max !== 1; });
   const via = (cx.slotEnvs.get(nodes[word])!.links.at(-1) as SlotLink).via;
   return { via, words: (known < 0 ? after : after.slice(0, known)).map((w) => w.text), more: known >= 0 };
 }
@@ -691,7 +697,7 @@ function findExpression(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec): 
   const words = nodes.map((a) => staticWordValue(a) ?? a.text);
   const read = (from: number, to: number): Token[] => {
     const part = nodes.slice(from, to);
-    return render(cx, interpret(spec, part.map(argWord), { name: 'find', lookup: (name) => specFor(cx, name) }), spec, part, cx.command!.args);
+    return render(cx, interpret(spec, part.map(argWordFor(cx.state.shell)), { name: 'find', lookup: (name) => specFor(cx, name) }), spec, part, cx.command!.args);
   };
   // (No option of find has an optional value.)
   const tree = parseFind(words, (w) => {

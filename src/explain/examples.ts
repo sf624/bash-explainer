@@ -8,7 +8,7 @@ import type { Example, ExampleSection } from '../analyzer-types';
 import type { ArgvParse } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
 import type { CommandSpec } from '../argv/spec';
-import { argWord } from '../argv/words';
+import { argWordFor } from '../argv/words';
 import { visible } from '../ctlchars';
 import { awkInvocation, type AwkRunOptions } from '../examples/awk';
 import * as commandExamples from '../examples/commands';
@@ -32,7 +32,7 @@ import { intersects, onLine, same } from './nodes';
 import { given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
 import { operands, values } from '../argv/query';
 import { wordValue } from './values';
-import { braceExpansion } from './words';
+import { braceExpansion, bracesHere } from './words';
 
 /**
  * Strings that do and do not match `js` (as grep lines, inverted by -v, or `=~` values). `subject`: the left side of
@@ -335,7 +335,7 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     const args = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect');
     const spec = specFor(cx, name.text);
     const stage: Stage = { cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(stageText(cmd), 40), ...(spec?.copies ? { copies: true } : {}) };
-    const parse = interpret(spec ?? NO_SPEC, args.map(argWord), { name: name.text, lookup: (x) => specFor(cx, x) });
+    const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell)), { name: name.text, lookup: (x) => specFor(cx, x) });
     const source = inputSource(cx, cmd, parse, args, spec);
     // A stage that writes its output to a file (`sort -o f`) hands nothing on.
     const runs = !!spec?.operands?.some((alt) => alt.pattern.some((o) => o.command));
@@ -423,7 +423,7 @@ function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[]): void {
 export function wordExample(cx: Explainer, a: SyntaxNode): void {
   const text = unquotedWord(a);
   if (!text) return;
-  const words = braceExpansion(text);
+  const words = bracesHere(cx, a) ? braceExpansion(text) : undefined;
   if (words === null) return;
   if (words) {
     cx.example({ kind: 'glob',
