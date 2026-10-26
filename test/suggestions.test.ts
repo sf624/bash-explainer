@@ -61,6 +61,7 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'and-or-right-never-runs': 'none',
   'case-runs-only': 'none',
   'case-runs-none': 'none',
+  'dead-code': 'none',
   // `shopt -s expand_aliases` first, or a function: needs a stub for the aliased command.
   'alias-not-expanded-in-script': 'scenario',
   'alias-defined-same-unit': 'none',
@@ -153,6 +154,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 13, scenario: 24, prose: 12, none: 40 });
+      { mechanical: 13, scenario: 24, prose: 12, none: 41 });
   });
 });

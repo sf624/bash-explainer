@@ -100,20 +100,27 @@ export function startLanguageServer(io: Io): void {
 
   const shells = (doc: ShellDocument, uri: string) => shellsOf(doc.lines, fileName(uri), forcedShell(settings));
 
+  function found(doc: Doc) {
+    return diagnosticsFor(() => parse(doc), (d) => shells(d, doc.uri), lang, settings, 'lsp');
+  }
+
   function issues(doc: Doc): DocumentIssue[] {
-    return diagnosticsFor(() => parse(doc), (d) => shells(d, doc.uri), lang, settings, 'lsp').shown;
+    return found(doc).shown;
   }
 
   function publish(uri: string): void {
     const doc = docs.get(uri);
+    const both = doc ? found(doc) : undefined;
     send({
       method: 'textDocument/publishDiagnostics',
       params: {
         uri,
         version: doc?.version,
-        diagnostics: (doc ? issues(doc) : []).map((i) => ({
+        diagnostics: (both ? [...both.shown, ...both.faded] : []).map((i) => ({
           range: { start: { line: i.startLine, character: i.startCol }, end: { line: i.endLine, character: i.endCol } },
-          severity: i.severity === 'warning' ? 2 : 3,
+          // (A hint, tagged Unnecessary, which an editor fades: code that never runs.)
+          severity: i.severity === 'warning' ? 2 : i.severity === 'hint' ? 4 : 3,
+          ...(i.severity === 'hint' ? { tags: [1] } : {}),
           code: i.code,
           source: 'Bash Explainer',
           message: plain(i.message),

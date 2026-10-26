@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import { detectShell, Shell } from './dialect';
-import { DocumentIssue, diagnosticsFor, explainDocumentLine, ShellDocument, Shells } from './document';
+import { DeadRange, DocumentIssue, diagnosticsFor, explainDocumentLine, ShellDocument, Shells } from './document';
 import { HOST_LANGUAGES, HOST_PATTERNS, kindOfDocument, openDocument, semanticSelector } from './document-setup';
 import { Extracted, extractShell, HostKind } from './hosts';
 import { Lang, resolveLang } from './i18n';
@@ -184,6 +184,11 @@ export class ExplainService implements vscode.Disposable {
   /** Problems in the whole document for the Problems panel, with quick fixes for shell scripts. */
   issues(doc: vscode.TextDocument): DocumentIssue[] {
     return diagnosticsFor(() => this.document(doc), () => this.shells(doc), this.lang, this.settings, 'vscode', { yqFlavor: this.yqFlavorOf(doc) }).shown;
+  }
+
+  /** The ranges of code that never runs, which the editor fades (none with `hints.deadCode` off). */
+  faded(doc: vscode.TextDocument): DeadRange[] {
+    return diagnosticsFor(() => this.document(doc), () => this.shells(doc), this.lang, this.settings, 'vscode').faded;
   }
 
   forget(doc: vscode.TextDocument): void {

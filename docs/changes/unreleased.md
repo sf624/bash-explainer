@@ -21,6 +21,19 @@ A name the reader asked for gets none: `builtin cd`, `command ls`, `\ls`, `sudo 
 
 The web page's editor shows the same hints, muted after the name, on the lines in view: hover one for its tooltip, click it to explain its line in the panel. When long lines wrap, a long hint wraps with its line. `bashExplainer.hints.names` is in the page's settings too.
 
+### Dead code faded
+
+A statement the state model says never runs (`dead`) is a hint tagged `Unnecessary`, so the editor fades it:
+
+| Script | Faded |
+| --- | --- |
+| `if false; then echo x; fi` | `echo x` |
+| `x=1` then `if [ "$x" = 2 ]; then …; fi` | the body of the `then` |
+| `exit 1` then more statements | the statements after it, as one range |
+| `true \|\| echo no` | `echo no` |
+
+The range is the whole statement, over its lines, and nothing inside a faded statement is faded again; statements that follow each other in a body are one range. A script the model cannot trust (a `source`, an `eval`, `$cmd`) has none. VS Code and the Language Server send it as a hint (`DiagnosticTag.Unnecessary`, code `dead-code`), and the web page's editor fades the text (opacity 0.5), with the message in the tooltip. It is not a problem: it is not counted in the Problems panel or list, `--check` or SARIF. `bashExplainer.hints.deadCode` turns it off; so does `# bash-explainer disable=dead-code`. The shell code of other files (a Dockerfile, a workflow) has none yet.
+
 ### Warnings and caveats as problems
 
 Every warning (⚠) and caveat (ⓘ) that the explanation of a line points out is now a problem too; a plain fact (ℹ) is not, except the note that bash cannot read zsh syntax (`zshSyntax`), as before. Each has a code, shown in the Problems panel and in the output of `--check`, and its range is the part of the line it is about (the word `$DIR/*`, the `$(ls)` of a `for`, the whole `x = 1`).

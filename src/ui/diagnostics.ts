@@ -68,6 +68,14 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
       if (i.fix) fixes.push({ code: i.code, range, fix: i.fix });
       return d;
     });
+    // Code that never runs: a hint the editor fades (no problem: no squiggle, and not in the Problems panel by default).
+    for (const r of this.service.faded(doc)) {
+      const d = new vscode.Diagnostic(new vscode.Range(r.startLine, r.startCol, r.endLine, r.endCol), plain(r.message), vscode.DiagnosticSeverity.Hint);
+      d.source = DIAGNOSTIC_SOURCE;
+      d.code = r.code;
+      d.tags = [vscode.DiagnosticTag.Unnecessary];
+      diagnostics.push(d);
+    }
     this.collection.set(doc.uri, diagnostics);
     this.fixes.set(doc.uri.toString(), fixes);
   }
