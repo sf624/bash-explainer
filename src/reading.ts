@@ -122,8 +122,6 @@ const RUNS = new Set(['command', 'builtin']);
 const WORD_TOKENS = new Set(['string', 'variable', 'expansion', 'substitution', 'number', 'pattern']);
 /** The kinds of bash's tokens inside a word that have no node: a glob's parts, an escape, a tilde, a brace expansion. */
 const PART_TOKENS = new Set(['string', 'pattern', 'operator', 'expansion', 'variable', 'number']);
-/** Tokens that only end or separate: not shown. (`;` is an operator: of a list, or of the head of a `for`.) */
-const SEPARATORS = new Set(['\n']);
 /** The clauses of a compound command (3.2.5.2): parts of it, not commands of their own. */
 const CLAUSES = new Set(['case_item', 'elif_clause', 'else_clause']);
 /** The delimiters of an arithmetic expansion, which are the expansion's own: `$(( ))`, `$[ ]`. */
@@ -201,8 +199,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
 
   const node = (c: SyntaxNode, layer: Layer): ReadingNode[] => {
     if (!c.named) {
-      if (SEPARATORS.has(c.type)) return [];
-      // (A reserved word (3.2.1), or an operator: `!` in an expression is the expression's, `[[ ! -f a ]]`.)
+      // A reserved word (3.2.1), or an operator: `;` of a list or of the head of a `for`, `!` in an expression (the
+      // expression's: `[[ ! -f a ]]`). (Every token is a node: the parser makes none for a newline.)
       const reserved = /^[a-z]|^[{}!]$|^\[\[$|^\]\]$/.test(c.type) && !isExpression(c.parent!);
       const n = shellNode(c, layer, reserved ? 'keyword' : 'operator', [], new Set(['keyword', 'operator']));
       // An operator of a conditional expression in `[[ ]]` (6.4): what it tests. (Its sections are the expression's,
