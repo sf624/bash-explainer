@@ -2,11 +2,11 @@ import type { Lang } from './i18n';
 import { quoteExpansions } from './fixes';
 import { type Fact, fact } from './messages';
 import type { Shell } from './dialect';
-import { args, commandName, pathCommand } from './pitfalls';
+import { args, commandName, pathCommand, runCommands } from './pitfalls';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
 import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
-import { partMeaning } from './semantics/words';
+import { partMeaning, wordFields } from './semantics/words';
 import { staticWordValue } from './staticword';
 import { childrenOnRows, field, isShebang, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
@@ -110,13 +110,21 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
             break;
           }
         }
-        // Unquoted variables as paths of file commands.
+        // Unquoted variables as paths of file commands, also those another command runs (`sudo rm -rf $d/x`).
         // (What the name runs, from the model: a function of that name is not `cp`.)
-        const nameNode = field(n, 'name');
-        const ran = nameNode && /^[\w./+-]+$/.test(nameNode.text) ? ranName(resolveName(model, nameNode.text, nameNode, { shell, command: true })) : undefined;
-        if (ran && PATH_COMMANDS.has(ran)) {
-          const word = a.find((w) => bare(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => bare(c))));
-          if (word) add(fact(lang, 'unquoted-variable-as-path', { bare: word.text, quoted: quoteExpansions(word), ...(DESTRUCTIVE_COMMANDS.has(ran) ? { destroys: true } : {}) }), word);
+        for (const run of runCommands(n, model, shell)) {
+          const nameNode = run.nameWord;
+          const ran = /^[\w./+-]+$/.test(nameNode.text) ? ranName(resolveName(model, nameNode.text, nameNode, { shell, command: true, ...(run.env ? { env: run.env } : {}) })) : undefined;
+          if (!ran || !PATH_COMMANDS.has(ran)) continue;
+          const word = run.args.find((w) => bare(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => bare(c))));
+          if (!word) continue;
+          // A value the model knows that stays one word, with nothing to glob (`TS=2024; rm -rf /tmp/build-$TS`): no harm
+          // here, so a caveat; a value it does not know (`read`, `$1`, `$(date)`) may be anything.
+          const fields = wordFields(word, model).fields;
+          add(fact(lang, 'unquoted-variable-as-path', {
+            bare: word.text, quoted: quoteExpansions(word), ...(DESTRUCTIVE_COMMANDS.has(ran) ? { destroys: true } : {}), ...(fields?.length === 1 ? { known: fields[0] } : {}),
+          }), word);
+          break;
         }
         // `[ $x = y ]`: an empty or spaced value breaks the test. (When the name runs `[`: src/semantics/names.ts.)
         // The words of the test itself, not variables inside a `$(…)` in it.

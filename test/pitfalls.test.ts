@@ -46,6 +46,15 @@ describe('pitfalls', () => {
     // A path names the program of its last part, as the explanation reads it: `/bin/rm` is rm.
     ['/bin/rm -rf $DIR/*', /becomes `rm -r \/\*`, deleting from the root/],
     ['./rm -rf $DIR/*', /becomes `rm -r \/\*`, deleting from the root/],
+    // A command another one runs (its spec's command slot: sudo, env, nice, nohup, xargs, command…) gets the same checks.
+    ['sudo rm -rf $DIR/releases/$line', /if `DIR` is empty this becomes `rm -r \/releases\/\$line`, deleting from the root/],
+    ['sudo -u deploy rm -rf "$DIR"/*', /becomes `rm -r \/\*`, deleting from the root/],
+    ['env A=1 rm -rf $DIR/x', /if `DIR` is empty this becomes `rm -r \/x`/],
+    ['nice -n 10 nohup rm -rf $DIR/x', /if `DIR` is empty this becomes `rm -r \/x`/],
+    ['find . -name x | xargs rm -rf $DIR/x', /if `DIR` is empty this becomes `rm -r \/x`/],
+    ['command rm -rf $DIR/x', /if `DIR` is empty this becomes `rm -r \/x`/],
+    // (A subcommand's slot: `$DIR` is expanded here, and rm deletes in the container.)
+    ['docker exec web rm -rf $DIR/x', /if `DIR` is empty this becomes `rm -r \/x`/],
   ];
   for (const [src, expected] of cases) {
     it(`points out ${src}`, () => assert.ok(notes(src).some((n) => expected.test(n)), notes(src).join('\n') || '(none)'));
@@ -57,10 +66,16 @@ describe('pitfalls', () => {
     'local out', 'out=$(cmd)', 'echo 1 | sudo tee /proc/x', 'sudo cmd > /dev/null', 'sudo dmesg > dmesg.log', 'for a in "$@"; do :; done', 'cp "$src" "$dst"', 'echo $x',
     // A path runs that file, never a builtin (3.7.2); a function runs instead of the builtin.
     './read x', '/usr/local/bin/read x', 'read() { :; }; read x', 'enable -n read; read x', './x = 1', 'bin/x = 1',
+    // A string another shell runs is not this line's words; a function named sudo runs no command of its spec.
+    "sudo sh -c 'rm -rf $DIR/x'", 'sudo rm -rf "${DIR:?}/x"', 'sudo() { :; }; sudo rm -rf $DIR/x', 'sudo $cmd -rf $DIR/x',
   ];
   for (const src of fine) {
     it(`says nothing about ${src}`, () => assert.deepStrictEqual(notes(src), []));
   }
+  it('reads an alias named like a wrapper as the alias', () => {
+    assert.deepStrictEqual(notes('shopt -s expand_aliases\nalias sudo=echo\nsudo rm -rf $DIR/x', 2), []);
+    assert.strictEqual(notes('sudo rm -rf $DIR/x').length, 1);
+  });
 
   describe('`rm -r` of a path from a variable that may be empty, in bash', () => {
     // The word, and the value that leaves a path from the root (`DIR=/` for `${DIR%/}`: an empty value would too).

@@ -93,13 +93,29 @@ describe('word facts', () => {
     });
   });
   // (A wrong path given to a command that deletes or overwrites cannot be undone: a warning; to the others, a caveat.)
-  for (const [src, level] of [['rm $f', 'warning'], ['mv $a "$b"', 'warning'], ['cp -f "$a" $b', 'warning'], ['cat $f', 'info'], ['chmod +x $f', 'info'], ['cd $d', 'info']] as const) {
+  // (Also in a command another one runs: `sudo rm $f`.) A value the model knows that stays one word does no harm here: a
+  // caveat; one it does not know (`read`, `$(date)`, `$1`) may be anything.
+  for (const [src, level] of [['rm $f', 'warning'], ['mv $a "$b"', 'warning'], ['cp -f "$a" $b', 'warning'], ['cat $f', 'info'], ['chmod +x $f', 'info'], ['cd $d', 'info'],
+    ['sudo rm -rf $DIR/releases/$line', 'warning'], ['env A=1 cp $a b', 'warning'], ['sudo cat $f', 'info'], ['xargs rm $f', 'warning'],
+    ['TS=2024\nrm -rf /tmp/build-$TS', 'info'], ['TS=$(date +%s)\nrm -rf /tmp/build-$TS', 'warning'], ['read line\nrm -rf /tmp/$line', 'warning'], ['D="a b"\nrm -rf /tmp/$D', 'warning'],
+    ['if [ "$1" ]; then T=a; else T=b; fi\nrm -rf /tmp/$T', 'warning']] as const) {
     it(`gives an unquoted path in ${src} the level ${level}`, () => {
-      const f = facts(src).find((x) => x.id === 'unquoted-variable-as-path');
+      const lines = src.split('\n');
+      const f = facts(src, lines.length - 1).find((x) => x.id === 'unquoted-variable-as-path');
       assert.strictEqual(f?.level, level, src);
       assert.ok(f.text.startsWith(level === 'warning' ? '⚠ Pitfall: ' : 'ⓘ Caveat: '), f.text);
     });
   }
+
+  it('says when the value known here stays one argument, as bash splits it', () => {
+    const f = facts('TS=2024\nrm -rf /tmp/build-$TS', 1)[0];
+    assert.match(f.text, /^ⓘ Caveat: `\/tmp\/build-\$TS` is not quoted, .* \(with its value here it stays one argument, `\/tmp\/build-2024`, but another value breaks it\)\. Write `"\/tmp\/build-\$TS"`$/);
+    assert.match(facts('TS=2024\nrm -rf /tmp/build-$TS', 1, 'ja')[0].text, /（ここでの値では1つの引数 `\/tmp\/build-2024` のままだが、値が変わると壊れる）/);
+    // bash: one argument with the value known; two with a space in it; and the wrapped command gets the words the shell made.
+    assert.strictEqual(runBash('TS=2024; set -- /tmp/build-$TS; printf "%s|" "$#" "$@"').stdout, '1|/tmp/build-2024|');
+    assert.strictEqual(runBash('D="a b"; set -- /tmp/$D; printf "%s|" "$#" "$@"').stdout, '2|/tmp/a|b|');
+    assert.strictEqual(runBash('DIR=; line="x y"; env printf "[%s]" $DIR/releases/$line').stdout, '[/releases/x][y]');
+  });
 
   const fine = [
     'x=1', 'for f in *.txt; do :; done', '[ "$x" = y ]', '[[ $x = y ]]', '[ $? -eq 0 ]', '[ $# -gt 0 ]', '[ ${#a[@]} -eq 0 ]', '[ "$(stat -c %a $f)" -le 600 ]',

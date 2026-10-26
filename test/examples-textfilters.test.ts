@@ -1,8 +1,13 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { runBash } from './support/bash';
 import { run } from './support/run';
 import { Analyzer, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { commandExample, expandSet, FILTERS, parseOptions, runCut, runHead, runSeq, runSort, runTail, runTr, runUniq, sampleInput, Unsupported } from '../src/examples/textfilters';
+import { SYSTEM_FILES } from '../src/examples/systemfiles';
 import { allTokens } from './support/explain';
 
 /** The real command's output (GNU coreutils, C locale). */
@@ -132,4 +137,50 @@ describe('the explanation of a tr set follows the options as GNU tr reads them',
       assert.strictEqual(/characters to delete/.test(set.explanation), deleted, set.explanation);
     });
   }
+});
+
+describe('a well-known system file read shows lines of its own format, and the tools agree on them', () => {
+  const parser = createUnbashParser();
+  // Each line reads one of the files of src/examples/systemfiles.ts: the example's input is its sample, and the output
+  // is what the real tools (GNU coreutils, gawk, GNU sed and grep) print for it, run on a copy of the sample.
+  const lines: [string, string][] = [
+    ['cut -d: -f1,7 /etc/passwd', '/etc/passwd'],
+    ['cut -d: -f1 < /etc/passwd', '/etc/passwd'],
+    ['cat /etc/passwd | cut -d: -f1', '/etc/passwd'],
+    ['grep bash /etc/passwd | cut -d: -f1,6', '/etc/passwd'],
+    ["awk -F: '$3 >= 1000 {print $1}' /etc/passwd", '/etc/passwd'],
+    ['sort -t: -k3 -n /etc/passwd', '/etc/passwd'],
+    ['sed -n 1p /etc/passwd', '/etc/passwd'],
+    ['cut -d: -f1,4 /etc/group', '/etc/group'],
+    ["awk -F: '$2 !~ /^[!*]/ {print $1}' /etc/shadow", '/etc/shadow'],
+    ["awk '{print $1}' /etc/hosts", '/etc/hosts'],
+    ['head -2 /etc/hosts', '/etc/hosts'],
+    ["cut -d' ' -f2,3 /etc/fstab", '/etc/fstab'],
+  ];
+  for (const [line, file] of lines) {
+    it(line, () => {
+      const ex = new Analyzer('en').explainLine(parser.parse(line), 0).examples.find((x) => x.sections[0]?.label.includes(`\`${file}\``));
+      assert.ok(ex, 'has an example that reads the file');
+      assert.deepStrictEqual(ex.sections[0].lines, SYSTEM_FILES[file]);
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-system-files-'));
+      try {
+        fs.writeFileSync(path.join(dir, 'sample'), SYSTEM_FILES[file].join('\n') + '\n');
+        const out = runBash(line.split(file).join('./sample'), { cwd: dir }).stdout;
+        assert.deepStrictEqual(ex.sections[ex.sections.length - 1].lines, out.replace(/\n$/, '').split('\n'));
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+  it('says the lines are a sample, and keeps made-up lines for other files', () => {
+    const ja = new Analyzer('ja').explainLine(parser.parse('cut -d: -f1,7 /etc/passwd'), 0).examples[0];
+    assert.strictEqual(ja.sections[0].label, '入力: `/etc/passwd`（中身の例）');
+    assert.deepStrictEqual(ja.sections[1].lines, ['root:/bin/bash', 'daemon:/usr/sbin/nologin', 'nobody:/usr/sbin/nologin', 'alice:/bin/bash', 'bob:/bin/zsh']);
+    const other = new Analyzer('en').explainLine(parser.parse('cut -d: -f1,7 users.txt'), 0).examples[0];
+    assert.ok(!other.sections[0].lines.some((l) => l.startsWith('root:')));
+    // (With another file, each is a stream of its own: the other keeps made-up lines.)
+    const both = new Analyzer('en').explainLine(parser.parse('cut -d: -f1 users.txt /etc/passwd'), 0).examples[0];
+    assert.ok(!both.sections[0].lines.some((l) => l.startsWith('root:')));
+    assert.deepStrictEqual(both.sections[1].lines, SYSTEM_FILES['/etc/passwd']);
+  });
 });

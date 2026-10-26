@@ -121,7 +121,7 @@ describe('find in a command line', () => {
 describe('find numeric tests behave as the explanations say', () => {
   const fs = require('fs') as typeof import('fs');
   const os = require('os') as typeof import('os');
-  const { execFileSync } = require('child_process') as typeof import('child_process');
+  const { execFileSync, spawnSync } = require('child_process') as typeof import('child_process');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'find-num-'));
   after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const make = (name: string, size: number, ageDays: number, mode: number) => {
@@ -174,7 +174,43 @@ describe('find numeric tests behave as the explanations say', () => {
     assert.match(text('-perm 664'), /exactly 664/);
     assert.match(text('-perm -664'), /all the bits of 664/);
     assert.match(text('-perm /222'), /at least one of the bits of 222/);
-    assert.match(describeFind(parseFind(['-perm', '-664'], () => 1)!, 'ja'), /ビットがすべて/);
+    assert.match(describeFind(parseFind(['-perm', '-664'], () => 1)!, 'ja'), /664 のビット（[^）]*）がすべて/);
+  });
+  it('-perm names the bits of an octal mode: 4000 is SUID, 2000 SGID, 1000 the sticky bit; `+4000` is refused', () => {
+    const special = fs.mkdtempSync(path.join(os.tmpdir(), 'find-perm-'));
+    try {
+      for (const [name, mode] of [['suid', 0o4755], ['sgid', 0o2755], ['sticky', 0o1777], ['plain', 0o644]] as const) {
+        fs.writeFileSync(path.join(special, name), '');
+        fs.chmodSync(path.join(special, name), mode);
+      }
+      const ls = (...a: string[]) => execFileSync('find', [special, '-type', 'f', ...a]).toString().split('\n').filter(Boolean).map((x) => path.basename(x)).sort();
+      // (What `stat` calls the bits: `s` in the owner's and the group's execute place, `t` in the others'.)
+      assert.strictEqual(execFileSync('stat', ['-c', '%A', path.join(special, 'suid'), path.join(special, 'sgid'), path.join(special, 'sticky')]).toString(), '-rwsr-xr-x\n-rwxr-sr-x\n-rwxrwxrwt\n');
+      assert.deepStrictEqual(ls('-perm', '-4000'), ['suid']);
+      assert.match(text('-perm -4000'), /all the bits of 4000 \(SUID, set-user-ID\)/);
+      assert.deepStrictEqual(ls('-perm', '-2000'), ['sgid']);
+      assert.match(text('-perm -2000'), /\(SGID, set-group-ID\)/);
+      assert.deepStrictEqual(ls('-perm', '-1000'), ['sticky']);
+      assert.match(text('-perm -1000'), /\(the sticky bit\)/);
+      assert.deepStrictEqual(ls('-perm', '/6000'), ['sgid', 'suid']);
+      assert.match(text('-perm /6000'), /at least one of the bits of 6000 \(SUID, set-user-ID; SGID, set-group-ID\)/);
+      assert.deepStrictEqual(ls('-perm', '4755'), ['suid']);
+      assert.match(text('-perm 4755'), /exactly 4755 \(SUID, set-user-ID; owner read, write, execute; group read, execute; others read, execute\)/);
+      assert.match(text('-perm 644'), /exactly 644 \(owner read, write; group read; others read\)/);
+      assert.match(describeFind(parseFind(['-perm', '-4000'], () => 1)!, 'ja'), /4000 のビット（SUID: set-user-ID）がすべて立っている/);
+      assert.match(describeFind(parseFind(['-perm', '644'], () => 1)!, 'ja'), /644（所有者の読み・書き、グループの読み、その他の読み）/);
+      // A symbolic mode is not named; `-000` has no bits to name.
+      assert.match(text('-perm -u+s'), /all the bits of u\+s, whatever/);
+      assert.match(text('-perm -000'), /all the bits of 000, whatever/);
+      assert.deepStrictEqual(ls('-perm', '-u+s'), ['suid']);
+      // GNU find no longer takes `+mode`.
+      const r = spawnSync('find', [special, '-perm', '+4000'], { encoding: 'utf8' });
+      assert.notStrictEqual(r.status, 0);
+      assert.match(r.stderr, /invalid mode/);
+      assert.match(text('-perm +4000'), /GNU find rejects this form with "invalid mode"; any of the bits is `\/4000`/);
+    } finally {
+      fs.rmSync(special, { recursive: true, force: true });
+    }
   });
   it('-links, -samefile and -newerXY are explained', () => {
     assert.deepStrictEqual(find('-links', '1'), ['blk', 'empty', 'k100', 'm', 'one']);

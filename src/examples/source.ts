@@ -9,6 +9,7 @@ import type { CommandSpec, EachFile, IoUse } from '../argv/spec';
 import { pick } from '../embedded/types';
 import type { Lang } from '../i18n';
 import { field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
+import { systemFileLines } from './systemfiles';
 
 /** Where a command's standard input comes from. */
 export type Stdin =
@@ -155,6 +156,27 @@ export function shownSource(src: InputSource): InputSource {
   if (src.each !== 'apart' && src.each !== 'in-place') return src;
   const { reads: _reads, ...rest } = src;
   return { ...rest, streams: src.streams.slice(0, 1) };
+}
+
+/**
+ * The source with the sample contents of a well-known system file (`/etc/passwd`, src/examples/systemfiles.ts) as the
+ * lines of each stream that reads one: named on the line, given as standard input (`< /etc/passwd`), or copied by the
+ * stage before a pipe (`cat /etc/passwd |`). They are still samples: the labels say so.
+ */
+export function withSystemFiles(src: InputSource): InputSource {
+  const lines = (st: Stream): string[] | undefined => {
+    if (st.kind === 'file') return st.many || st.pipe || st.lines ? undefined : systemFileLines(st.name);
+    const i = st.stdin;
+    if (i.from === 'file') return i.pipe || i.lines ? undefined : systemFileLines(i.name);
+    return i.from === 'pipe' && i.file !== undefined && !i.lines ? systemFileLines(i.file) : undefined;
+  };
+  if (!src.streams.some(lines)) return src;
+  return { ...src, streams: src.streams.map((st): Stream => {
+    const known = lines(st);
+    if (!known) return st;
+    // (A pipe's lines are a sample of what the stage before copies.)
+    return st.kind === 'file' ? { ...st, lines: known } : { ...st, stdin: { ...st.stdin, lines: known, ...(st.stdin.from === 'pipe' ? { sample: true as const } : {}) } as Stdin };
+  }) };
 }
 
 /**

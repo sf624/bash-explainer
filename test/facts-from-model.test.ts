@@ -64,7 +64,10 @@ describe('an unquoted variable as a path follows the options in effect', () => {
     assert.strictEqual(asPath('shopt -s expand_aliases\nalias del=rm\ndel $a', 2), true);
     assert.strictEqual(asPath('shopt -s expand_aliases\nalias del=echo\ndel $a', 2), false);
     assert.strictEqual(asPath('/bin/rm $a'), true);
-    assert.strictEqual(asPath('command rm $a'), false); // (a wrapper: `command` is the name)
+    // A command another one runs is that command: `command rm $a` and `sudo rm $a` split `$a` before rm gets it.
+    assert.strictEqual(bash('f="a b"; command printf "[%s]" $f'), '[a][b]');
+    assert.strictEqual(asPath('command rm $a'), true);
+    assert.strictEqual(asPath('sudo rm $a'), true);
     assert.strictEqual(asPath('echo $a'), false);
   });
 });

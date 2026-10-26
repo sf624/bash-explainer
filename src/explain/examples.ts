@@ -22,7 +22,7 @@ import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
 import { globMatches, type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
 import * as sources from '../examples/source';
 import { layoutOf, layoutSample } from '../examples/layouts';
-import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines, writesElsewhere } from '../examples/source';
+import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines, withSystemFiles, writesElsewhere } from '../examples/source';
 import { type Text, tx } from '../i18n';
 import { shorten } from '../label';
 import { EMPTY_WORD, fact, shownWord, SPACE_MARK } from '../messages';
@@ -263,7 +263,9 @@ export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefin
   // A pipeline is explained on the line it is on, or whole (see sub).
   const p = pipelineStages(cx, n);
   if (!p) return undefined;
-  const { stages, files, readsFile, src, runs } = p;
+  const { stages, files, readsFile, runs } = p;
+  // (A well-known system file holds lines of its own format: `cat /etc/passwd | cut -d: -f1`.)
+  const src = withSystemFiles(p.src);
   // A later stage that reads a file does not read what the stages before it write (`printf … | grep -e -v foo`).
   if (files.slice(1).some(Boolean)) return undefined;
   // A first stage that prints a layout the examples make up (`ps aux`): its made-up lines go through the others.

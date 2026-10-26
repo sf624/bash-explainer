@@ -52,6 +52,21 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
     }
   });
 
+  it('set -e: the places where a failing command does not stop the shell, as the explanation lists them (manual 4.3.1)', () => {
+    const said = (line: string, lang: 'ja' | 'en') => {
+      const tokens = (t: Token[]): Token[] => t.flatMap((x) => [x, ...tokens(x.children)]);
+      return tokens(new Analyzer(lang).explainLine(createUnbashParser().parse(line), 0).items).map((t) => t.explanation).join('\n');
+    };
+    for (const line of ['set -e', 'set -o errexit']) {
+      assert.match(said(line, 'en'), /but not in the condition of `if`, `while` or `until`, in a `&&` or `||` list except its last command, in a pipeline except its last command \(unless `pipefail` is on\), after `!`, or in a function called from those places/, line);
+      assert.match(said(line, 'ja'), /ただし、`if`・`while`・`until` の条件、`&&`・`||` の最後以外のコマンド、`pipefail` なしならパイプラインの最後以外のコマンド、`!` を付けたコマンド、およびそこから呼んだ関数の中では終了しない/, line);
+    }
+    // Each place it names goes on; a plain failure, the last command of `&&`, and a pipeline with pipefail stop.
+    const goesOn = ['if false; then :; fi', 'while false; do :; done', 'until ! false; do :; done', 'false && true', 'false || true', 'false | true', '! true', 'f() { false; echo in-f; }; f && :', 'f() { false; echo in-f; }; if f; then :; fi'];
+    for (const s of goesOn) assert.match(bash(`set -e; ${s}; echo on`), /on\n$/, s);
+    for (const s of ['false', 'true && false', 'set -o pipefail; false | true', 'f() { false; echo in-f; }; f']) assert.strictEqual(bash(`set -e; ${s}; echo on`), '', s);
+  });
+
   it('read and mapfile: the variables they set', () => {
     for (const line of ['read -r a b', 'read -p P a b', 'read -t 5 -n 9 a b', 'read -d , a b', 'read -rs -- a b', 'read -a arr', 'read -u 0 a', 'mapfile -t -n 2 arr', 'readarray -d , arr', 'mapfile -s 1 -O 3 arr']) {
       const { parse, words } = parseOf(line);

@@ -1,8 +1,19 @@
 import type { CommandSpec } from '../argv/spec';
+import { tx } from '../i18n';
 import { cmd, OptSpec, pos } from './types';
 
 // Network tools and server administration from the LPIC-1/2 and LinuC-1/2 objectives: interface
 // and name configuration, diagnostics, packet capture, firewalls, DNS, web, Samba and VPN servers.
+
+/** `ssh -o Name=value`: the settings of ssh_config(5) that change how the host is checked. */
+const NO_HOST_CHECK = tx('ホスト鍵を確かめずに接続する。未知のホストの鍵は黙って登録し、鍵が変わったホストにも（一部の制限付きで）接続するので、なりすまし（中間者攻撃）に気づけない（注意）',
+  'connect without checking host keys: the keys of unknown hosts are added silently, and hosts whose key has changed are connected to (with some restrictions), so a man-in-the-middle goes unnoticed (careful)');
+export const SSH_OPTION_VALUES = {
+  'StrictHostKeyChecking=no': NO_HOST_CHECK,
+  'StrictHostKeyChecking=off': NO_HOST_CHECK,
+  'StrictHostKeyChecking=accept-new': tx('未知のホストの鍵は自動で登録するが、鍵が変わったホストには接続しない', 'add the keys of unknown hosts automatically, but refuse hosts whose key has changed'),
+  'UserKnownHostsFile=/dev/null': tx('既知のホストの鍵を記録しない。どのホストも毎回未知のホストになる（`StrictHostKeyChecking=no` と一緒だと、鍵を一切確かめない。注意）', 'keep no known host keys, so every host is unknown each time (with `StrictHostKeyChecking=no`, no key is ever checked; careful)'),
+};
 
 const host = pos('ホスト名または IP アドレス', 'host name or IP address');
 const user = pos('ユーザー名', 'user name');

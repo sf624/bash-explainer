@@ -4,7 +4,7 @@ import { args, cmd, operand, optionOf, OptSpec, runs, wordTable } from './types'
 import { declarationCommands, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags } from './syntax';
 
 export const shellOptions = {
-  errexit: tx('コマンドが失敗したら即座にスクリプトを終了（`-e` と同じ）', 'exit immediately when a command fails (same as `-e`)'),
+  errexit: tx('コマンドが失敗したら即座にスクリプトを終了する（`-e` と同じ。ただし、`if`・`while`・`until` の条件、`&&`・`||` の最後以外のコマンド、`pipefail` なしならパイプラインの最後以外のコマンド、`!` を付けたコマンド、およびそこから呼んだ関数の中では終了しない）', 'exit immediately when a command fails (same as `-e`; but not in the condition of `if`, `while` or `until`, in a `&&` or `||` list except its last command, in a pipeline except its last command (unless `pipefail` is on), after `!`, or in a function called from those places)'),
   nounset: tx('未定義の変数を参照したらエラー（`-u` と同じ）', 'error on unset variables (same as `-u`)'),
   pipefail: tx('パイプライン中のどれかが失敗したら、パイプライン全体を失敗扱いにする', 'a pipeline fails if any command in it fails'),
   xtrace: tx('実行するコマンドを表示する（`-x` と同じ）', 'print commands as they run (same as `-x`)'),
@@ -31,6 +31,9 @@ export const shellOptions = {
   keyword: tx('コマンド名の前だけでなく、どこにある `name=value` も環境変数として渡す（`-k` と同じ）', 'put every `name=value` in the words into the command\'s environment, not only those before its name (same as `-k`)'),
   'interactive-comments': tx('対話シェルでも `#` 以降をコメントとして扱う', 'treat `#` as a comment in an interactive shell too'),
 };
+
+/** `set +e`, `set +o errexit`: what turning errexit off does. */
+const ERREXIT_OFF = tx('コマンドが失敗しても終了しないようにする（既定）', 'go on when a command fails (the default)');
 
 /** Options of bash's `shopt`. */
 export const shoptOptions = {
@@ -315,14 +318,14 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   exit: special('シェル（スクリプト）を終了する', 'Exit the shell or script', [], { ...numeric(operand('STATUS', '終了ステータス（0 が成功、省略時は直前のコマンドのステータス）', 'exit status (0 = success; default: status of last command)')), ends: 'shell' }),
   return: special('関数から戻る', 'Return from a function', [], { ...numeric(operand('STATUS', '戻り値となる終了ステータス', 'exit status to return')), ends: 'function' }),
   set: actsOnShell(special('シェルオプションや位置パラメータを設定する', 'Set shell options or positional parameters', [
-    ['-e', 'コマンドが失敗したら即座にスクリプトを終了する', 'exit immediately if a command fails'],
+    { names: ['-e'], text: tx('コマンドが失敗したら即座にスクリプトを終了する（ただし、`if`・`while`・`until` の条件、`&&`・`||` の最後以外のコマンド、`pipefail` なしならパイプラインの最後以外のコマンド、`!` を付けたコマンド、およびそこから呼んだ関数の中では終了しない）', 'exit immediately if a command fails (but not in the condition of `if`, `while` or `until`, in a `&&` or `||` list except its last command, in a pipeline except its last command (unless `pipefail` is on), after `!`, or in a function called from those places)'), offText: ERREXIT_OFF },
     ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
     ['-x', '実行するコマンドを展開後の形で表示する（デバッグ用）', 'print each command after expansion (debugging)'],
     ['-v', '読み込んだ行をそのまま表示する', 'print input lines as they are read'],
     // `set -euo pipefail`: bash's `set` takes the name of `-o` from the next word, and reads the letters after it.
     {
       names: ['-o'], text: tx('名前でオプションを有効にする', 'enable an option by name'), offText: tx('名前で指定したオプションを無効にする', 'disable an option by name'),
-      value: { name: 'VALUE', how: 'next-only', values: shellOptions, offValues: { noglob: GLOB_AGAIN } },
+      value: { name: 'VALUE', how: 'next-only', values: shellOptions, offValues: { noglob: GLOB_AGAIN, errexit: ERREXIT_OFF } },
       noValue: {
         text: tx('`-o` だけ（名前なし）: 現在のオプションの設定（`allexport  off` など）を一覧表示する。何も変えない', '`-o` alone (no name): list the current option settings (`allexport  off`…); nothing is changed'),
         offText: tx('`+o` だけ（名前なし）: 現在の設定を再現するコマンド（`set +o allexport` など）を表示する。何も変えない', '`+o` alone (no name): print the commands that recreate the current settings (`set +o allexport`…); nothing is changed'),
