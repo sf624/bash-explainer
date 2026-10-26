@@ -188,7 +188,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
  */
 function expanded(cx: Explainer, a: SyntaxNode, t: Token): Token {
   if (t.kind !== 'argument') return t;
-  const steps = wordAt(cx, a)?.steps ?? [];
+  const steps = wordAt(cx, a)!.steps;
   const on = (k: StepKind): boolean => steps.some((x) => x.kind === k && x.applies === true);
   const kind = on('split') ? 'split' : on('glob') ? 'glob' : on('brace') ? 'brace' : undefined;
   return kind ? { ...t, expands: kind } : t;
