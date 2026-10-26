@@ -113,6 +113,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'bats-negation-ignored': 'scenario',
   'bats-run-in-pipeline-stage': 'scenario',
   'bats-run-in-pipeline': 'scenario',
+  'bats-hook': 'none',
+  'bats-setup-suite-in-test-file': 'scenario',
   // `[[ $x =~ \bfoo ]]` → `re='\bfoo'; [[ $x =~ $re ]]`: same matches over a set of strings.
   'regex-backslash-dropped': 'mechanical',
   'distro-alias-in-script': { kind: 'scenario', via: 'instead' },
@@ -147,6 +149,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 13, scenario: 22, prose: 12, none: 36 });
+      { mechanical: 13, scenario: 23, prose: 12, none: 37 });
   });
 });

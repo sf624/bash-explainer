@@ -355,8 +355,8 @@ export const MESSAGES = {
 
   // ---------------------------------------------------------------- bats test files (src/bats.ts; bash's side of what bats does)
   'bats-test': note(['3.3', '4.3.1'], () => [
-    'bats はテストを1つずつ別のプロセスで、`set -e` を有効にして実行する。途中のコマンドが失敗するとそこでテストは失敗し（`set -e` が無視される所、つまり条件・`&&` や `||` の左側・`!` のあとを除く）、最後のコマンドが失敗しても失敗する。テストで設定した変数は、ほかのテストには届かない',
-    'bats runs each test in a process of its own, with `set -e` on: a command that fails stops the test and fails it (except where `set -e` is ignored: in a condition, on the left of `&&` or `||`, after `!`), and so does a last command that fails. What a test sets does not reach the other tests']),
+    'bats はテストを1つずつ別のプロセスで、`set -e` を有効にして実行する。途中のコマンドが失敗するとそこでテストは失敗し（`set -e` が無視される所、つまり条件・`&&` や `||` の左側・`!` のあとを除く）、最後のコマンドが失敗しても失敗する。テストで設定した変数は、ほかのテストには届かない。各プロセスはまずファイル全体を読み込むので、テストの外のコードはテストごとに実行される',
+    'bats runs each test in a process of its own, with `set -e` on: a command that fails stops the test and fails it (except where `set -e` is ignored: in a condition, on the left of `&&` or `||`, after `!`), and so does a last command that fails. What a test sets does not reach the other tests. Each process first reads the whole file, so the code outside the tests runs again for each test']),
   'bats-negation-ignored': pitfall<{ cmd: string; form: 'command' | 'pipeline' | 'other' }>(['4.3.1', '3.2.3'], ({ cmd, form }) => [
     `\`set -e\` は \`!\` のあとのコマンドの結果を無視するので、\`! ${cmd}\` はテストの最後のコマンドでない限り、\`${cmd}\` が成功してもテストを失敗させません。`
       + (form === 'command' ? `\`run ! ${cmd}\`（bats 1.5.0 から。\`bats_require_minimum_version 1.5.0\` と書く）か \`! ${cmd} || false\` と書きます`
@@ -372,6 +372,22 @@ export const MESSAGES = {
   'bats-run-in-pipeline': pitfall<{ cmd: string }>(['3.2.3'], ({ cmd }) => [
     `パイプは \`run\` の出力を受け取りますが、\`run\` は \`${cmd}\` の出力を \`$output\` に入れるだけで何も出力しません。また、パイプラインのコマンドはサブシェルで実行されるので、\`run\` が設定した \`$status\` と \`$output\` はパイプラインが終わると消えます。パイプライン全体を \`run\` で実行するには \`run bats_pipe ${cmd} \\| …\` か \`run bash -c '… | …'\` と書きます`,
     `the pipe gets the output of \`run\`, but \`run\` writes nothing: it keeps the output of \`${cmd}\` in \`$output\`. And the commands of a pipeline run in subshells, so the \`$status\` and \`$output\` that \`run\` sets are gone when the pipeline ends. To run the whole pipeline under \`run\`, write \`run bats_pipe ${cmd} \\| …\` or \`run bash -c '… | …'\``]),
+  // (The hooks bats calls: libexec/bats-core/bats-exec-test and bats-exec-file of bats-core 1.13.)
+  'bats-hook': note<{ name: string; when: 'before' | 'after' | 'file-before' | 'file-after' }>(['3.3', '4.3.1'], ({ name, when }) => (when === 'before' ? [
+    `bats は \`${name}\` を各テストの前に、そのテストのプロセスで呼ぶ。ここで設定した変数はテストに届く。\`set -e\` が有効なので、失敗したコマンドがあるとそこで止まり、テストは実行されずに失敗する`,
+    `bats calls \`${name}\` before each test, in the test's own process: what it sets, the test sees. \`set -e\` is on, so a command that fails stops it there, and the test fails without running`]
+    : when === 'after' ? [
+      `bats は \`${name}\` を各テストの後に、そのテストのプロセスで呼ぶ（テストが失敗したときも）。\`${name} || …\` の形で呼ぶので、中では \`set -e\` が無視され、途中のコマンドが失敗しても止まらない。テストが失敗するのは、\`${name}\` が 0 以外の終了ステータス（最後のコマンドのもの）を返したときだけ`,
+      `bats calls \`${name}\` after each test, in the test's process (also when the test fails). It calls it as \`${name} || …\`, so \`set -e\` is ignored in it: a command that fails in the middle does not stop it, and the test fails only when \`${name}\` returns a status that is not 0 (that of its last command)`]
+    : when === 'file-before' ? [
+      `bats は \`${name}\` をこのファイルの最初のテストの前に1回だけ、別のプロセスで呼ぶ。テストに届くのは、ここで \`export\` した変数だけ。失敗したコマンドがあると（\`set -e\`）、ファイルのテストはどれも実行されない`,
+      `bats calls \`${name}\` once, before the first test of the file, in a process of its own: only the variables it exports (\`export\`) reach the tests. If a command in it fails (\`set -e\`), no test of the file runs`]
+    : [
+      `bats は \`${name}\` をこのファイルの最後のテストの後に1回だけ、\`setup_file\` と同じプロセスで呼ぶ。\`${name} || …\` の形で呼ぶので、中では \`set -e\` が無視され、途中のコマンドが失敗しても止まらない`,
+      `bats calls \`${name}\` once, after the last test of the file, in the process of \`setup_file\`. It calls it as \`${name} || …\`, so \`set -e\` is ignored in it: a command that fails in the middle does not stop it`])),
+  'bats-setup-suite-in-test-file': pitfall(['3.3'], () => [
+    'bats はテストファイルの `setup_suite` を呼ばず、警告(BW03)を出します。`setup_suite` は、テストと同じディレクトリのファイル `setup_suite.bash` に書きます',
+    'bats does not call a `setup_suite` of a test file, and warns (BW03). Put `setup_suite` in the file `setup_suite.bash`, next to the tests']),
   // ---------------------------------------------------------------- words and names
   'regex-backslash-dropped': pitfall<{ list: string }>(['3.5.9', '3.2.5.2'], ({ list }) => [
     `\`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）。演算子として使うには変数に入れる（\`re='\\bfoo'; [[ $x =~ $re ]]\`）か、\`[[:space:]]\` や \`[[:alnum:]_]\` のような書き方にする`,

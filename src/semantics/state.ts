@@ -31,6 +31,7 @@ import type { ShellState } from './shellstate';
 import { BLIND, type HostCommands, NO_HOST, scriptTrust, type StringTrees, type Trust, withinTrust } from './trust';
 import { type MappedText } from '../staticword';
 import { parser, WalkAgain } from './walk/shared';
+import { type HostCall, type HostRun, hostRunKey } from './walk/host';
 import { Walker } from './walk/walker';
 
 export {
@@ -75,6 +76,8 @@ export interface StateModel {
    * the command that runs it), and whether the function is surely defined there.
    */
   readonly calls: ReadonlyMap<SyntaxNode, ReadonlyMap<SyntaxNode, boolean>>;
+  /** The function definitions the host calls once the script has run (bats' tests and hooks), and how (src/semantics/walk/host.ts). */
+  readonly hostCalls: ReadonlyMap<SyntaxNode, HostCall>;
   /** The commands of the script that define each function and alias, in source order, wherever they run. */
   readonly definitions: { readonly functions: ReadonlyMap<string, readonly SyntaxNode[]>; readonly aliases: ReadonlyMap<string, readonly SyntaxNode[]> };
   /** The options a `set` command turns on or off (`set -e`: errexit on), on any walk; empty for another node. */
@@ -380,27 +383,29 @@ export function shebangPosix(root: SyntaxNode): boolean {
 /**
  * The shell state along `tree`, for `shell` (bash when absent; `posix`: `bash --posix`, read from the shebang when
  * absent (`shebangPosix`); `host`: the functions the file's host defines, bats' `run`…, which the walk reads by their
- * specs, as builtins: src/semantics/effects.ts). Cached per tree. The tree of a string read as a script
+ * specs, as builtins: src/semantics/effects.ts; `run`: what the host runs of the script, bats' tests, src/semantics/walk/
+ * host.ts, whose options replace the shebang's). Cached per tree. The tree of a string read as a script
  * (`StateModel.script`) has the model of that script: the outer one for `eval`.
  */
-export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean; host?: HostCommands } = {}): StateModel {
+export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean; host?: HostCommands; run?: HostRun } = {}): StateModel {
   const owner = owners.get(tree);
   if (owner) return owner.model;
   const host = opts.host ?? NO_HOST;
   const names = Object.keys(host);
-  const posix = opts.posix ?? ((!shell || shell === 'bash') && shebangPosix(tree.root));
-  const key = `${shell ?? 'bash'}${posix ? ' --posix' : ''}${names.length ? ` host:${names.sort().join(' ')}` : ''}`;
+  const run = opts.run;
+  const posix = opts.posix ?? ((!shell || shell === 'bash') && !run && shebangPosix(tree.root));
+  const key = `${shell ?? 'bash'}${posix ? ' --posix' : ''}${names.length ? ` host:${names.sort().join(' ')}` : ''}${run ? hostRunKey(run) : ''}`;
   let byKey = models.get(tree);
   if (!byKey) models.set(tree, (byKey = new Map()));
   const hit = byKey.get(key);
   if (hit) return hit;
   // (The `set` options of the shebang, `#!/bin/bash -eu`, when the script is bash's.)
-  const set = !shell || shell === 'bash' ? shebangStart(tree.root)?.set : undefined;
+  const set = run ? new Map(run.set.map((o) => [o, 'on' as const])) : !shell || shell === 'bash' ? shebangStart(tree.root)?.set : undefined;
   const start = (w: Walker): ShellState => {
     const st = w.initial(tree.root);
     return set?.size ? { ...st, set: st.set.withAll(set) } : st;
   };
-  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, undefined, host);
+  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, undefined, host, run);
   byKey.set(key, model);
   return model;
 }
@@ -412,11 +417,11 @@ const modelTrusts = new WeakMap<StateModel, Trust>();
  * The model of `tree`, whose root runs in `base`, from the state `start` gives; `depth` levels of strings deep;
  * `outer`: what the model of the script that starts this shell trusts; `host`: as for `shellState`.
  */
-function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust, host = NO_HOST): StateModel {
+function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust, host = NO_HOST, run?: HostRun): StateModel {
   const scripts = new Scripts(depth);
   const own = scriptTrust(tree.root, scripts, host);
   const trust = outer ? withinTrust(own, outer) : own;
-  let w = new Walker(shell, posix, scripts, trust, host);
+  let w = new Walker(shell, posix, scripts, trust, host, run);
   let initial!: ShellState;
   let end!: ShellState;
   try {
@@ -429,7 +434,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
   // (Arithmetic read text not known on the way, or a string the walk does not read: walked again, with nothing trusted.)
   const found = w.found;
   if (found) {
-    w = new Walker(shell, posix, scripts, BLIND, host);
+    w = new Walker(shell, posix, scripts, BLIND, host, run);
     initial = start(w);
     end = w.program(tree.root, initial);
   }
@@ -437,7 +442,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
   const closed = (name: string): boolean => !found && trust.closed(name);
   // (The model's `at` is defined below; the environments ask for it only later.)
   const envs = new EnvModel({
-    run: (n) => model.at(n).run, calls: w.calls, shell,
+    run: (n) => model.at(n).run, calls: w.calls, hostCalls: w.hostCalls, shell,
     closed,
     // (The root of a string this shell runs, `eval`'s, runs where the slot does; any other, where this tree does: a
     // function another shell imports.)
@@ -460,6 +465,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     closed,
     env: (n) => envs.at(n),
     calls: w.calls,
+    hostCalls: w.hostCalls,
     assigned: new Set([...w.lastChange.keys()].filter((k) => k.startsWith('variables ')).map((k) => k.slice('variables '.length))),
     definitions: { functions: w.functionDefs, aliases: w.aliases.defs },
     sources: w.sources,

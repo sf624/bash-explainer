@@ -9,7 +9,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import { batsTestName, explainHostedLine, extractShell } from '../src/hosts';
+import { shellState } from '../src/semantics/state';
+import { statusModel } from '../src/semantics/status';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { descendants } from '../src/syntax/tree';
 
 const BATS = path.join(__dirname, '..', 'node_modules', 'bats', 'bin', 'bats');
 const usable = fs.existsSync(BATS) && spawnSync('bash', ['--norc', '-c', 'true']).status === 0;
@@ -52,8 +55,15 @@ interface Row {
   files?: Record<string, string>;
   /** The body of a second test, run after the first, which bats passes. */
   next?: string[];
-  /** The conditions decided on lines of the head (0-based): the facts' ids. No other line has one. */
+  /**
+   * The conditions decided, by line of the file after its shebang (0-based: the head, the `@test` line, the body, its
+   * `}`, then the next test): the facts' ids. No other line has one.
+   */
   decides?: Record<number, string[]>;
+  /** The facts of bats said on lines of the head (0-based), as `says`. */
+  headSays?: Record<number, string[]>;
+  /** Whether `set -e` stops the shell when the statement on a line fails (`active`, src/semantics/status.ts), by line as for `decides`. */
+  errexit?: Record<number, 'on' | 'off' | 'unknown'>;
 }
 
 const ROWS: Row[] = [
@@ -209,6 +219,7 @@ const ROWS: Row[] = [
     body: ['true'],
     bats: 'not ok',
     next: ['true'],
+    headSays: { 0: ['bats-hook'] },
   },
   {
     title: 'load of a missing file at the top stops the whole file',
@@ -235,6 +246,7 @@ const ROWS: Row[] = [
     title: "run's command runs in a subshell: `x=2` there does not reach the test",
     body: ['x=1', "run bash -c 'x=2'", 'if [ "$x" = 1 ]; then true; else false; fi'],
     bats: 'ok',
+    decides: { 3: ['condition-always-true'] },
   },
   // The other functions set nothing a condition reads: a file that calls them gets the decisions it has without them.
   {
@@ -264,6 +276,71 @@ const ROWS: Row[] = [
     head: ['shopt -s lastpipe', 'x=1', 'bats_pipe echo 2 \\| read x', 'if [ "$x" = 1 ]; then exit 3; fi'],
     body: ['[ "$x" = 2 ]'],
     bats: 'ok',
+  },
+  // How bats runs the file: with `set -eET` from its first line, then each test in a process of its own, after
+  // `setup` and before `teardown` (bats-exec-test), which the model reads (src/semantics/walk/host.ts).
+  {
+    title: 'the code outside the tests runs with set -e: a command that fails there stops the file',
+    head: ['false'],
+    body: ['true'],
+    bats: 'not ok',
+    errexit: { 0: 'on' },
+  },
+  {
+    title: 'a test sees the variables of the file and of setup, and runs with set -e',
+    head: ['x=1', 'setup() {', '  y=2', '}'],
+    body: ['if [ "$x$y" = 12 ]; then :; else false; fi', 'false', 'true'],
+    bats: 'not ok',
+    headSays: { 1: ['bats-hook'] },
+    decides: { 5: ['condition-always-true'] },
+    errexit: { 2: 'on', 6: 'on' },
+  },
+  {
+    title: 'a test does not see what another test set',
+    head: ['x=0 y=0'],
+    body: ['x=1', 'export y=1'],
+    bats: 'ok',
+    next: ['if [ "$x$y" = 00 ]; then :; else false; fi'],
+    decides: { 6: ['condition-always-true'] },
+  },
+  {
+    title: 'setup stops at a command that fails, and the test does not run',
+    head: ['setup() {', '  false', '  touch ran', '}'],
+    body: ['true'],
+    bats: 'not ok',
+    headSays: { 0: ['bats-hook'] },
+    errexit: { 1: 'on' },
+  },
+  {
+    title: 'teardown is called on the left of ||: set -e is ignored in it',
+    head: ['teardown() {', '  false', '  true', '}'],
+    body: ['true'],
+    bats: 'ok',
+    headSays: { 0: ['bats-hook'] },
+    errexit: { 1: 'off' },
+  },
+  {
+    title: 'teardown fails the test when it returns a status that is not 0',
+    head: ['teardown() {', '  true', '  false', '}'],
+    body: ['true'],
+    bats: 'not ok',
+    headSays: { 0: ['bats-hook'] },
+  },
+  {
+    title: 'teardown runs after a test that set -e stopped, with what the test set',
+    head: ['teardown() {', '  if [ "$x" = 1 ]; then rm -f "$BATS_TEST_DIRNAME/mark"; fi', '}'],
+    body: ['touch "$BATS_TEST_DIRNAME/mark"', 'x=1', 'false'],
+    bats: 'not ok',
+    headSays: { 0: ['bats-hook'] },
+    next: ['[ ! -e "$BATS_TEST_DIRNAME/mark" ]'],
+  },
+  {
+    title: 'setup_file runs in a process of its own: only what it exports reaches the tests',
+    head: ['setup_file() {', '  export e=1', '  n=1', '}', 'teardown_file() {', '  false', '  [ "$n" = 1 ]', '}'],
+    body: ['[ "$e" = 1 ]', 'if [ -z "${n-}" ]; then :; else false; fi'],
+    bats: 'ok',
+    headSays: { 0: ['bats-hook'], 4: ['bats-hook'] },
+    errexit: { 1: 'on', 5: 'off' },
   },
 ];
 
@@ -310,6 +387,46 @@ describe('bats files agree with the real bats', function () {
     assert.match((await runBats(file)).out, /BW02: Using flags on `run` requires at least BATS_VERSION=1\.5\.0/);
   });
 
+  it('calls the hooks in the order, and in the processes, the model reads', async function () {
+    if (!usable) return this.skip();
+    const file = path.join(dir, 'hooks.bats');
+    // (bats gives the tests fd 3 for what they print; the code outside them prints to stderr.)
+    const mark = (what: string, fd = 3) => `echo "${what} $BASHPID $-" >&${fd}`;
+    const text = [`${mark('file', 2)}`, `setup_file() { ${mark('setup_file')}; }`, `teardown_file() { ${mark('teardown_file')}; }`,
+      `setup() { ${mark('setup')}; }`, `teardown() { ${mark('teardown')}; }`, `@test "a" { ${mark('a')}; }`, `@test "b" { ${mark('b')}; }`];
+    fs.writeFileSync(file, `${text.join('\n')}\n`);
+    // (bats reads the file again in each process: `file` is said once in the process of setup_file, and once in each
+    // test's process. It is said on stderr, which comes apart from the rest.)
+    const lines = (await runBats(file)).out.split('\n').filter((l) => /^(file|setup|teardown|setup_file|teardown_file|a|b) \d+ /.test(l)).map((l) => l.split(' '));
+    const ran = lines.filter((l) => l[0] !== 'file');
+    assert.deepStrictEqual(ran.map((l) => l[0]), ['setup_file', 'setup', 'a', 'teardown', 'setup', 'b', 'teardown', 'teardown_file']);
+    // (Each test in a process of its own, with its setup and teardown; setup_file and teardown_file in another.)
+    const pids = ran.map((l) => l[1]);
+    assert.deepStrictEqual([pids[0] === pids[7], pids[1] === pids[3], pids[4] === pids[6], new Set([pids[0], pids[1], pids[4]]).size], [true, true, true, 3]);
+    assert.deepStrictEqual(lines.filter((l) => l[0] === 'file').map((l) => l[1]).sort(), [pids[0], pids[1], pids[4]].sort());
+    // (`set -eET` in all of them.)
+    for (const l of lines) assert.match(l[2], /^(?=.*e)(?=.*E)(?=.*T)/, l.join(' '));
+    // The model: the hooks and the tests called by bats, as such.
+    const extracted = extractShell('bats', text.join('\n'));
+    const tree = createUnbashParser().parse(extracted.text);
+    const calls = shellState(tree, undefined, { host: extracted.regions[0].commands, run: extracted.regions[0].run }).hostCalls;
+    assert.deepStrictEqual([...calls].map(([d, c]) => `${d.startPosition.row}:${c.process}:${c.role}:${c.ignored}`).sort(),
+      ['1:file:before:false', '2:file:after:true', '3:test:before:false', '4:test:after:true', '5:test:test:false', '6:test:test:false']);
+  });
+
+  it('warns (BW03) about a setup_suite in a test file, and does not call it', async function () {
+    if (!usable) return this.skip();
+    const file = path.join(dir, 'bw03.bats');
+    fs.writeFileSync(file, 'setup_suite() { echo called >&3; }\n@test "a" {\n  true\n}\n');
+    const { out } = await runBats(file);
+    assert.match(out, /BW03: `setup_suite` is visible to test file/);
+    assert.doesNotMatch(out, /called/);
+    const text = ['setup_suite() { :; }'];
+    const extracted = extractShell('bats', text.join('\n'));
+    const ex = explainHostedLine(new Analyzer('en'), createUnbashParser().parse(extracted.text), extracted, text, 0, 'en')!;
+    assert.deepStrictEqual(ex.facts!.map((f) => f.id), ['bats-setup-suite-in-test-file']);
+  });
+
   for (const [i, row] of ROWS.entries()) {
     it(row.title, function () {
       if (!usable) return this.skip();
@@ -324,10 +441,18 @@ describe('bats files agree with the real bats', function () {
       for (let n = 0; n < text.length; n++) {
         const ex = explainHostedLine(new Analyzer('en'), tree, extracted, text, n, 'en')!;
         const ids = (ex.facts ?? []).map((f) => f.id).filter((id) => id.startsWith('bats-'));
-        const want = n === at || n === at + row.body.length + 2 ? ['bats-test'] : row.says?.[n - at - 1] ?? [];
+        const want = n === at || n === at + row.body.length + 2 ? ['bats-test'] : (n < at ? row.headSays?.[n - 1] : row.says?.[n - at - 1]) ?? [];
         assert.deepStrictEqual(ids, want, `line ${n + 1}: ${text[n]}`);
         // (The conditions decided, on the lines of the head the row names; none elsewhere.)
         assert.deepStrictEqual((ex.facts ?? []).map((f) => f.id).filter((id) => id.startsWith('condition-')), row.decides?.[n - 1] ?? [], `line ${n + 1}: ${text[n]}`);
+      }
+      // (Whether `set -e` stops the shell at the first statement of a line, in the model the explanation reads.)
+      const region = extracted.regions[0];
+      const status = statusModel(shellState(tree, undefined, { host: region.commands, run: region.run }));
+      for (const [k, want] of Object.entries(row.errexit ?? {})) {
+        const n = Number(k) + 1;
+        const stmt = descendants(tree.root, ['command']).find((c) => c.startPosition.row === n)!;
+        assert.strictEqual(status.errexit(stmt).active, want, `line ${n + 1}: ${text[n]}`);
       }
     });
   }

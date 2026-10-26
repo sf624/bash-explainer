@@ -54,11 +54,12 @@ export type StatusRule =
   | { readonly kind: 'definition' };
 
 /** Why bash ignores `set -e` for a statement. */
-export type IgnoreReason = 'condition' | 'and-or' | 'negated' | 'called-in-condition';
+/** (`called-by-host`: in a function the host calls where bash ignores it, bats' `teardown || …`: src/semantics/walk/host.ts.) */
+export type IgnoreReason = 'condition' | 'and-or' | 'negated' | 'called-in-condition' | 'called-by-host';
 
 export interface Ignored {
   readonly why: IgnoreReason;
-  /** The `if`, `while` or `until`; the list; the `!`; or a call of the function (for `called-in-condition`). */
+  /** The `if`, `while` or `until`; the list; the `!`; a call of the function (`called-in-condition`); the function (`called-by-host`). */
   readonly at: SyntaxNode;
   /** It is ignored on every path (false: a function called both where it is ignored and where it is not). */
   readonly sure: boolean;
@@ -348,12 +349,18 @@ class Statuses implements StatusModel {
     return out;
   }
 
-  /** `set -e` in the body of `def`: ignored when every call is where it is ignored; maybe when some are. */
+  /**
+   * `set -e` in the body of `def`: ignored when every call is where it is ignored; maybe when some are. The host's
+   * call counts as one more (bats' `teardown`, called on the left of `||`).
+   */
   private inCalls(def: SyntaxNode): Ignored | null {
     const sites = [...(this.state.calls.get(def)?.keys() ?? [])];
     const ignored = sites.map((at) => [at, this.ignored(at)] as const).filter(([, i]) => i);
+    const all = ignored.length === sites.length && ignored.every(([, i]) => i!.sure);
+    const host = this.state.hostCalls.get(def);
+    if (host?.ignored) return { why: 'called-by-host', at: def, sure: all };
     if (!ignored.length) return null;
-    return { why: 'called-in-condition', at: ignored[0][0], sure: ignored.length === sites.length && ignored.every(([, i]) => i!.sure) };
+    return { why: 'called-in-condition', at: ignored[0][0], sure: !host && all };
   }
 }
 

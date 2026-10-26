@@ -1,6 +1,7 @@
 import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
 import type { FactSpec } from '../messages';
+import type { HostRun } from '../semantics/walk/host';
 
 /** Kinds of files whose shell snippets are explained. */
 export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' | 'python' | 'jenkinsfile' | 'bats';
@@ -43,6 +44,8 @@ export interface ShellRegion {
    * where bats rewrites them too.
    */
   tests?: number[];
+  /** What the host runs of the script (bats: each test in a process of its own, with `set -eET`), which the model reads. */
+  run?: HostRun;
 }
 
 /** Something the host replaces before the shell sees it (`$(CC)` in make, `${{ … }}` in GitHub Actions). */

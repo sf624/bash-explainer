@@ -1,7 +1,6 @@
-// The walk of the shell state (docs/design/semantics.md, 4.3, 4.7 and step B1; src/semantics/state.ts builds the model
-// from it): the statements in the order bash runs them, the branches and loops merged, function bodies walked where
-// they are called. Its parts: the arithmetic (./arith.ts), the conditions (./conditions.ts), the builtin effects
-// (./builtins.ts) and the aliases (./aliases.ts).
+// The walk of the shell state (docs/design/semantics.md, 4.3, 4.7, B1; src/semantics/state.ts builds the model from it):
+// the statements in the order bash runs them, the branches and loops merged, function bodies walked where they are
+// called. Its parts: arithmetic (./arith.ts), conditions (./conditions.ts), builtins (./builtins.ts), aliases (./aliases.ts).
 import type { ArgvParse } from '../../argv/interpret';
 import type { Ends } from '../../argv/spec';
 import type { Shell } from '../../dialect';
@@ -24,6 +23,7 @@ import { temporariesUnset } from '../names';
 import { WalkBuiltins } from './builtins';
 import { WalkConditions } from './conditions';
 import { kept, temporaries } from './temporaries';
+import { type HostCall, hostRun, type HostRun } from './host';
 import { ArithError, ExpansionError, NAME, SUBSTITUTIONS, WalkAgain } from './shared';
 
 /** The shells that start in POSIX mode (for what the model follows: assignments before special builtins). */
@@ -115,6 +115,8 @@ export class Walker {
   readonly functionDefs = new Map<string, SyntaxNode[]>();
   /** The commands that call each function definition, and whether it is surely defined there on every walk. */
   readonly calls = new Map<SyntaxNode, Map<SyntaxNode, boolean>>();
+  /** The functions the host calls once the script has run (./host.ts), and how. */
+  readonly hostCalls = new Map<SyntaxNode, HostCall>();
   /** The `source` and `.` commands run. */
   readonly sources: SyntaxNode[] = [];
   /** The first top-level statement of the unit of each top-level statement. */
@@ -169,7 +171,7 @@ export class Walker {
   /** Whether the expression being run has read a name the script has not set, taken as unset (see `variableText`). */
   assumed = false;
   /** Where jumps go (see `Target`). */
-  private readonly targets: Target[] = [];
+  readonly targets: Target[] = [];
   /** Nothing is trusted (src/semantics/trust.ts): no condition is decided, and every jump may be made or not. */
   readonly blind: boolean;
   /**
@@ -197,7 +199,7 @@ export class Walker {
   private outside = 0;
 
   constructor(readonly shell: Shell | undefined, readonly posix: boolean, readonly scripts: Scripts, readonly trust: Trust,
-    readonly host: HostCommands = NO_HOST) {
+    readonly host: HostCommands = NO_HOST, readonly hosted?: HostRun) {
     this.bash = !shell || shell === 'bash';
     this.blind = trust.blind !== undefined;
   }
@@ -291,8 +293,7 @@ export class Walker {
       for (const [name, o] of outer[kind]) if (o === 'on' || o === 'unknown') opts.set(name, o === 'on' && bashLike === 'on' ? 'on' : 'unknown');
       st = { ...st, [kind]: st[kind].withAll(opts) };
     };
-    // The options it is started with: `-e`, `+x`, `-o pipefail`, `-O extglob` (bash), `--posix`; `-l` and `-i` read
-    // startup files.
+    // The options it is started with: `-e`, `+x`, `-o pipefail`, `-O extglob` (bash), `--posix`; `-l`, `-i` read startup files.
     let startup = false;
     for (const { flag, value } of pass.invocation) {
       const on = flag[0] === '-';
@@ -306,8 +307,7 @@ export class Walker {
     // (Then bash turns on the options an exported SHELLOPTS and BASHOPTS name, also those turned off above.)
     inherit('set', reach.options !== 'none');
     inherit('shopt', reachOf(env, exported('BASHOPTS')).options !== 'none');
-    // bash runs the file an exported BASH_ENV names before the string: what it sets is not known here, as for the
-    // startup files.
+    // bash runs the file an exported BASH_ENV names before the string: what it sets is not known, as for startup files.
     const bashEnv = st.variables.get('BASH_ENV');
     if (this.bash && bashEnv && bashEnv.set !== 'off' && bashEnv.value !== '') startup = true;
     if (startup) {
@@ -355,6 +355,8 @@ export class Walker {
     // (The script also ends at an `exit`.)
     end = merge([end, ...program.exits], this.posix);
     this.runTraps(end);
+    // (Then what the host calls, bats' tests: ./host.ts.)
+    hostRun(this, root, end);
     this.uncalled();
     return end;
   }
@@ -407,11 +409,8 @@ export class Walker {
     return true;
   }
 
-  /**
-   * `st` with the names in `keys` (`kind name`) taken as unknown; but a function surely defined by the top level
-   * (`sureLater`) is defined.
-   */
-  private widen(st: ShellState, keys: Set<string>): ShellState {
+  /** `st` with the names in `keys` (`kind name`) taken as unknown; but a function surely defined by the top level (`sureLater`) is. */
+  widen(st: ShellState, keys: Set<string>): ShellState {
     const changes = { set: new Map(), shopt: new Map(), variables: new Map(), functions: new Map(), aliases: new Map(), disabled: new Map(), hashed: new Map() } as { [K in Kind]: Map<string, Entry<K>> };
     let opaque = st.opaque;
     for (const key of keys) {
@@ -625,7 +624,7 @@ export class Walker {
   }
 
   /** Runs `run` where `set -e` does not stop the shell (a condition, the left side of `&&` or `||`, after `!`). */
-  private quietly<T>(run: () => T): T {
+  quietly<T>(run: () => T): T {
     this.mode.quiet++;
     try {
       return run();
@@ -968,10 +967,7 @@ export class Walker {
     return st;
   }
 
-  /**
-   * The redirections of the simple command `n`, made after its words are expanded (`program`: whether they are made in
-   * a process of its own).
-   */
+  /** The redirections of the simple command `n`, made after its words are expanded (`program`: in a process of its own). */
   private redirections(n: SyntaxNode, st: ShellState, program: Tri): ShellState {
     const all = redirectionsOf(n);
     return this.fdVariables(all, this.expandAll(all, st, program));
@@ -1315,7 +1311,7 @@ export class Walker {
    * walked again from `entry` with errexit as on both, until that adds nothing. Those walks only add run states to
    * the nodes of the body: the state after the call is the one of the walk from the call's own entry.
    */
-  private walkBody(def: SyntaxNode, entry: ShellState, frame: Frame): ShellState {
+  walkBody(def: SyntaxNode, entry: ShellState, frame: Frame): ShellState {
     const saved = new Map(frame.saved);
     let end: ShellState | undefined;
     try {
