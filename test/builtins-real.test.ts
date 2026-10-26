@@ -6,7 +6,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { Analyzer, lookupCommand, Token } from '../src/analyzer';
 import { ArgRole, ArgvParse, interpret } from '../src/argv/interpret';
-import { builtins, shellOptions } from '../src/dict/builtins';
+import { SHELL_OPTIONS_SINCE } from '../src/bashversion';
+import { builtins, shellOptions, shoptOptions } from '../src/dict/builtins';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { argWords } from './support/argwords';
 import { runBash } from './support/bash';
@@ -40,9 +41,13 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
   });
 
   it('set: the positional parameters it sets, and the option names it reads', () => {
-    for (const line of ['set a -b', 'set -- a -b', 'set -e a b', 'set -o pipefail x', 'set +o pipefail -- y', 'set -euo pipefail z', 'set -x -- -e', 'set -eu -- -a b', 'set -o noglob -o errexit c']) {
-      assert.strictEqual(bash(`${line}; set +ex; printf %s, "$@"`), printed(operands(line)), line);
+    for (const line of ['set a -b', 'set -- a -b', 'set -e a b', 'set -o pipefail x', 'set +o pipefail -- y', 'set -euo pipefail z', 'set -x -- -e', 'set -eu -- -a b', 'set -o noglob -o errexit c', 'set - a -b', 'set -e - -x']) {
+      assert.strictEqual(bash(`${line}; set +ex; printf %s, "$@"`), printed(operands(line, 'ARG')), line);
     }
+    // A lone `-` ends the options too, and turns `-x` and `-v` off; with no word after it, the parameters stay. `--` alone unsets them.
+    assert.deepStrictEqual(operands('set -x - a', '-'), ['-']);
+    assert.strictEqual(bash('set -xv - a 2>/dev/null; case $- in *[xv]*) echo on;; *) echo off;; esac; echo $1'), 'off\na\n');
+    assert.strictEqual(bash('set a b; set -; echo $#; set --; echo $#'), '2\n0\n');
     // `-o NAME` turns on the options its values name.
     for (const line of ['set -o pipefail', 'set -euo pipefail', 'set -o noglob -o errexit']) {
       const { parse, words } = parseOf(line);
@@ -185,6 +190,54 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
     // Without `-o`, `errexit` is no shopt name.
     assert.match(runBash('shopt errexit').stderr, /invalid shell option name/);
     assert.match(children('shopt -s extglob')[1].explanation, /^Shell option `extglob`/);
+  });
+
+  it('shopt: every option of bash 5.2 has a text, and every text is an option of bash (manual 4.3.2)', () => {
+    const names = bash('shopt').split('\n').filter(Boolean).map((l) => l.split(/\s+/)[0]);
+    assert.deepStrictEqual(names.filter((n) => !Object.hasOwn(shoptOptions, n)), []);
+    assert.deepStrictEqual(Object.keys(shoptOptions).filter((n) => !names.includes(n)), Object.keys(SHELL_OPTIONS_SINCE));
+    // (And those of `set -o`, `nolog` too, which bash takes and ignores.)
+    const setNames = bash('set -o').split('\n').filter(Boolean).map((l) => l.split(/\s+/)[0]);
+    assert.deepStrictEqual(setNames.filter((n) => !Object.hasOwn(shellOptions, n)), []);
+  });
+
+  it('hash, alias, unalias and enable: the names they take, as bash reads them (manual 4.1, 4.2)', () => {
+    // `hash -d` takes no value: every name after it is forgotten.
+    assert.deepStrictEqual(operands('hash -d a b', 'NAME'), ['a', 'b']);
+    assert.strictEqual(runBash('hash -p /bin/ls a; hash -p /bin/ls b; hash -d a b; hash -t a b').stderr.replace(/^bash: line \d+: /gm, ''), 'hash: a: not found\nhash: b: not found\n');
+    assert.deepStrictEqual(operands('hash -p /bin/ls a', 'NAME'), ['a']);
+    // `alias NAME=VALUE` defines, `alias NAME` prints (and fails when there is none).
+    const role = (line: string) => parseOf(line).parse.roles.flatMap(({ role: r }) => (r.role === 'operand' ? [r.spec!.name] : []));
+    assert.deepStrictEqual(role("alias a=b ..='cd ..'"), ['DEFINITION', 'DEFINITION']);
+    assert.deepStrictEqual(role('alias a b'), ['NAME', 'NAME']);
+    assert.strictEqual(runBash("alias a=b ..='cd ..'; alias a ..; alias c").stdout, "alias a='b'\nalias ..='cd ..'\n");
+    assert.deepStrictEqual(operands('unalias a b', 'NAME'), ['a', 'b']);
+    // `enable -n` turns the builtins it names off; with `-p` the names do nothing.
+    assert.deepStrictEqual(operands('enable -n kill test', 'NAME'), ['kill', 'test']);
+    assert.strictEqual(bash('enable -n kill test; enable -n -p'), 'enable -n kill\nenable -n test\n');
+    assert.strictEqual(bash('enable -n kill; enable -p kill >/dev/null; type -t kill'), 'file\n');
+    // `ulimit LIMIT`: with no option for a resource, the limit of file size.
+    assert.deepStrictEqual(operands('ulimit -S -c 0', 'LIMIT'), ['0']);
+    assert.strictEqual(bash('ulimit -S -c 0; ulimit -S -c; ulimit 0; ulimit -f'), '0\n0\n');
+  });
+
+  it('every builtin refuses an option it does not have as its spec says: "invalid option", or its own message (manual 4.1, 4.2)', () => {
+    const parser = createUnbashParser();
+    const all = bash("enable -a | awk '{print $2}'").split('\n').filter(Boolean);
+    let checked = 0;
+    for (const name of all) {
+      const spec = builtins[name];
+      // (`test` and `[` read an expression; `echo`, `:` and the numbers of `exit` take no options.)
+      if (spec?.operandParser || !parseOf(`${name} -Z x`).parse.roles.some((r) => r.role.role === 'unknown-option')) continue;
+      // (In a function, with job control: `local` needs one, `fg` and `bg` the other.)
+      const err = runBash(`set -m; f() { ${name} -Z x; }; f </dev/null`).stderr;
+      const said = new Analyzer('en').explainLine(parser.parse(`${name} -Z x`), 0).items[0].children.find((t) => t.label === '-Z')!.explanation;
+      const expected = spec.unknownOption ? /invalid signal specification|invalid number/.exec(spec.unknownOption.en)![0] : '-Z: invalid option';
+      assert.ok(err.includes(expected), `${name}: ${err}`);
+      assert.ok(said.includes(spec.unknownOption ? expected : '`invalid option`'), `${name}: ${said}`);
+      checked++;
+    }
+    assert.ok(checked > 40, String(checked));
   });
 
   it('jobs -x: the rest is a command run in this shell, with the job specs replaced', () => {

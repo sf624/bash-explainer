@@ -572,8 +572,14 @@ const NAME_KINDS: Record<NameKind, { word: Text; title: Text; other: Text }> = {
   },
 };
 
+/** The badge's tooltip on a POSIX special builtin (4.4; checked with bash 5.2 in test/name-kinds.test.ts). */
+const SPECIAL_TITLE: Text = {
+  ja: 'POSIX の特殊ビルトイン: bash に組み込まれたコマンドで、新しいプロセスなしで今のシェルで動く。POSIX モードでは、関数より先に見つかり、エラーになると非対話シェルが終了し、前に書いた代入がコマンドの後も残る',
+  en: 'a POSIX special builtin: a command built into bash, which runs in this shell with no new process. In POSIX mode, it is found before functions, an error in it exits a non-interactive shell, and the assignments before it stay after it',
+};
+
 /** The word of a kind of command name, as the badge says it ("builtin", "ビルトイン"). */
-export const nameKindWord = (lang: Lang, kind: NameKind): string => NAME_KINDS[kind].word[lang];
+export const nameKindWord =(lang: Lang, kind: NameKind): string => NAME_KINDS[kind].word[lang];
 
 /** What the panel and the other outputs say of a command name, in one language (`nameSaid`). */
 export interface NameSaid {
@@ -622,8 +628,10 @@ export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
       : `${f.by ? `\`${f.by}\`` : 'bash'} finds no command named \`${f.name}\` (bash says \`${f.name}: command not found\`)`)
     : (ja ? `\`${f.by ?? 'builtin'}\` が探しても \`${f.name}\` という名前のビルトインはない` : `\`${f.by ?? 'builtin'}\` finds no builtin named \`${f.name}\``))
     : f.by === undefined ? undefined : ja ? `\`${f.by}\` が実行` : `run by \`${f.by}\``;
+  // (A special builtin, as the manual names it (4.4), differs from the others in POSIX mode only.)
+  const title = f.special ? SPECIAL_TITLE[lang] : k.title[lang];
   return {
-    kind: k.word[lang], title: k.title[lang], ...(by ? { by } : {}), ...(lines.length ? { also: lines.join(ja ? '。' : '. ') } : {}),
+    kind: k.word[lang], title, ...(by ? { by } : {}), ...(lines.length ? { also: lines.join(ja ? '。' : '. ') } : {}),
     short: ja ? `（${k.word.ja}${by ? `。${by}` : ''}）` : ` (${k.word.en}${by ? `, ${by}` : ''})`,
     spoken: [k.word[lang], ...(by ? [by] : [])].join(ja ? '、' : ', ').replace(/`/g, ''),
   };

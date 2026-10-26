@@ -109,7 +109,8 @@ function redirectLayoutOf(cx: Explainer, n: SyntaxNode): Token | undefined {
 function splitCommand(cx: Explainer, whole: SyntaxNode, body: SyntaxNode, layout: Layout): Token {
   const effect = simulateRedirects(layout.redirs.map((r) => redirectInfo(r)), cx.lang);
   if (effect) cx.note(effect, layout.redirs);
-  const inner = cx.examplesOf(body, () => commandToken(cx, body, true), layout);
+  const tail: Tail = {};
+  const inner = cx.examplesOf(body, () => commandToken(cx, body, tail), layout);
   inner.span = layout.span;
   const redirToks = cx.subs(layout.redirs);
   const fds = new Set<string>();
@@ -121,7 +122,12 @@ function splitCommand(cx: Explainer, whole: SyntaxNode, body: SyntaxNode, layout
   }
   const names = [...fds].sort().map((fd) => fdName(fd, fd));
   const cmd = shorten(layout.text, 30);
-  const w = cx.tok(whole, 'redirect', cx.s(
+  const which = names.length > 1 ? `${names.slice(0, -1).map((x) => x.en).join(', ')} and ${names[names.length - 1].en}` : names[0]?.en;
+  // (`exec >log 2>&1`: with no command to run, `exec` applies them to this shell, for every command after it: 4.1.)
+  const w = cx.tok(whole, 'redirect', tail.toShell ? cx.s(
+    `コマンドのない \`${cmd}\` のリダイレクト: このシェル自体の${names.length ? names.map((x) => x.ja).join('・') : '入出力'}を切り替える。この後のコマンドもすべて、切り替えた先を使う`,
+    `Redirections of \`${cmd}\` with no command: they apply to this shell itself, so ${which ? `its ${which} ${names.length > 1 ? 'stay' : 'stays'} redirected` : 'they stay'} for every command after it`,
+  ) : cx.s(
     `入出力のリダイレクト: \`${cmd}\` の${names.length ? names.map((x) => x.ja).join('・') + 'を' : '入出力を'}切り替える。シェルがコマンドの起動前に設定するので、コマンド自身にはリダイレクトは見えない`,
     `Redirection applied to \`${cmd}\`${names.length ? `: its ${names.length > 1 ? `${names.slice(0, -1).map((x) => x.en).join(', ')} and ${names[names.length - 1].en}` : names[0].en} ${names.length > 1 ? 'are' : 'is'} redirected` : ''}. The shell sets this up before the command starts, so the command does not see the redirections`,
   ), sortTokens([inner, ...redirToks]));
@@ -129,11 +135,21 @@ function splitCommand(cx: Explainer, whole: SyntaxNode, body: SyntaxNode, layout
   return skeletal(w, whole);
 }
 
-function commandToken(cx: Explainer, n: SyntaxNode, redirsOut = false): Token {
+/**
+ * What the token of a command whose redirections are explained around it (`splitCommand`) tells them: `toShell`, it
+ * is a builtin whose command would replace the shell, given none (`exec >log`), so they apply to this shell (4.1).
+ */
+interface Tail { toShell?: boolean }
+
+/** A slot of `spec` that would replace the shell (`exec cmd`). */
+const replacesShell = (spec: CommandSpec): boolean => !!spec.operands?.some((alt) => alt.pattern.some((o) => o.command?.replacesShell));
+
+/** The token of a simple command; with `tail`, its redirections are explained around it, and left out here. */
+function commandToken(cx: Explainer, n: SyntaxNode, tail?: Tail): Token {
   const nameNode = field(n, 'name')!;
   const { prefix, args, redirs } = commandParts(cx, n, nameNode);
   // `time` is a keyword at the start of a pipeline (a `time_statement`); `FOO=1 time x` and `a | time x` run the program.
-  return commandTail(cx, n, nameNode, args, prefix, redirsOut ? [] : redirs);
+  return commandTail(cx, n, nameNode, args, prefix, tail ? [] : redirs, tail);
 }
 
 /** The assignments before the command name (as tokens), the arguments, and the redirections of a command. */
@@ -197,7 +213,7 @@ function localStops(cx: Explainer, n: SyntaxNode): false | 'script' | 'subshell'
   return p.kind === 'main' ? 'script' : p.kind === 'subshell' && p.sure ? 'subshell' : 'shell';
 }
 
-function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: SyntaxNode[], prefix: Token[], redirs: SyntaxNode[], word?: SyntaxNode): Token {
+function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: SyntaxNode[], prefix: Token[], redirs: SyntaxNode[], tail?: Tail, word?: SyntaxNode): Token {
   const head = commandHead(cx, nameNode, word);
   const yq = yqSpecsOf(head.name);
   if (yq) {
@@ -211,10 +227,11 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   if (head.kind === 'builtin' && onlyInFunction(head.spec!, cx.shell) && !inFunction(cx.state.env(n)) && scopeOf(n) !== 'substitution') cx.note(fact(cx.lang, 'local-outside-function', { stops: localStops(cx, n) }), n);
   if (head.kind === 'builtin' && head.spec!.ends === 'function') head.explanation = returnInSubstitution(cx, n) ?? head.explanation;
   const read = readArgs(cx, head.spec, args, head.runs ?? head.name, head.fn);
+  if (tail && head.kind === 'builtin' && replacesShell(head.spec!) && !read.parse.roles.some((r) => r.role.role === 'command')) tail.toShell = true;
   let argToks = read.tokens;
   // `test` and `[` read their words as an expression (src/testexpr.ts), when the name runs one of them.
   const bracket = head.test?.closingOperand !== undefined;
-  if (head.test) argToks = readByCommand(testArgs(cx, n, commandTest(head.test, args, bashTest(cx, head.test)), bracket));
+  if (head.test) argToks = readByCommand(testArgs(cx, n, commandTest(head.test, args, bashTest(cx, head.test)), bracket, !!head.test.builtin));
   // (A function of the script is not the command its name suggests: no example of that command.)
   if (!head.fn) {
     unreadStdin(cx, n, read.parse, args, head.name);
@@ -234,6 +251,8 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   if (name) (bracket ? nameToks[0] : t).name = name;
   t.summary = bracket ? cx.s(`条件判定 ${shorten(wordsText(n), 40)}`, `test ${shorten(wordsText(n), 40)}`) : `${head.name}: ${head.explanation}${name?.runs === 'builtin' ? name.said.short : ''}`;
   if (head.refs?.length) t.refs = bracket ? [...head.refs, '6.4'] : head.refs;
+  // (The name `[` is the builtin's, as `test` is: its section, 4.1.)
+  if (bracket && head.refs?.length) nameToks[0].refs = head.refs;
   // (The test itself: `[ a = b ]` of `[ a = b ] >o`.)
   const parts = bracket ? bracketLabel(n) : undefined;
   if (parts?.some((p) => p.placeholder)) {

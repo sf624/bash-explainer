@@ -326,3 +326,73 @@ describe('the reading tree as the Bash manual reads a line (chapter 3)', () => {
     }
   });
 });
+
+/** The builtins of chapter 4, in the section the manual (bash 5.2) lists each in. */
+const CHAPTER4: Record<string, readonly string[]> = {
+  '4.1': [':', '.', 'break', 'cd', 'continue', 'eval', 'exec', 'exit', 'export', 'getopts', 'hash', 'pwd', 'readonly', 'return', 'shift', 'test', '[', 'times', 'trap', 'umask', 'unset'],
+  '4.2': ['alias', 'bind', 'builtin', 'caller', 'command', 'declare', 'echo', 'enable', 'help', 'let', 'local', 'logout', 'mapfile', 'printf', 'read', 'readarray', 'source', 'type', 'typeset', 'ulimit', 'unalias'],
+  '4.3.1': ['set'],
+  '4.3.2': ['shopt'],
+};
+/**
+ * The POSIX special builtins (4.4). bash 5.2 also treats `source` and `times` as special, which its manual leaves out
+ * of the list and bash 5.3's lists.
+ */
+const SPECIAL = new Set(['break', ':', '.', 'source', 'continue', 'eval', 'exec', 'exit', 'export', 'readonly', 'return', 'set', 'shift', 'times', 'trap', 'unset']);
+
+describe('the reading tree as the Bash manual reads the builtins (chapter 4)', () => {
+  it('cites the section of each builtin, and 4.4 for a special builtin, whose badge says so', () => {
+    for (const [section, names] of Object.entries(CHAPTER4)) {
+      for (const name of names) {
+        const n = find(reading(name === '[' ? '[ x ]' : `${name} x`), name, 'commandName');
+        assert.deepStrictEqual(n.refs, ['3.7.1', '3.7.2', section, ...(SPECIAL.has(name) ? ['4.4'] : [])], name);
+        assert.strictEqual(n.name!.said.kind, 'builtin', name);
+        assert.strictEqual(/^a POSIX special builtin/.test(n.name!.said.title), SPECIAL.has(name), name);
+      }
+    }
+    // (In bash's POSIX mode, a function cannot have the name of a special builtin.)
+    for (const name of Object.values(CHAPTER4).flat().filter((x) => /^[a-z]/.test(x))) {
+      assert.strictEqual(/is a special builtin/.test(runBash(`set -o posix; ${name}() { :; }`).stderr), SPECIAL.has(name), name);
+    }
+  });
+
+  it('cites 4.1 and 6.4 on the expression of `test` and `[`, and the builtin\'s section on a name `builtin` or a string runs', () => {
+    for (const src of ['test ! -f a -a b', '[ ! -f a -a b ]']) {
+      const tests = readingNodes(reading(src)).filter((n) => n.layer === 'command' && n.kind === 'test');
+      assert.strictEqual(tests.length, 3, src);
+      for (const t of tests) assert.deepStrictEqual(t.refs, ['4.1', '6.4'], `${src}: ${t.label}`);
+    }
+    // (Not those of the program: `env [` runs coreutils' `[`.)
+    assert.ok(readingNodes(reading('env [ -f a ]')).filter((n) => n.kind === 'test').every((n) => !n.refs));
+    assert.deepStrictEqual(find(reading('builtin cd /'), 'cd', 'commandName').refs, ['4.1']);
+    const child = readingNodes(reading('eval "echo hi"')).find((n) => n.layer === 'child' && n.kind === 'commandName')!;
+    assert.deepStrictEqual(child.refs, ['3.7.1', '3.7.2', '4.2']);
+  });
+
+  it('reads the operands of `set` as the positional parameters, `-` and `--` as 4.3.1 says', () => {
+    const texts = (src: string) => readingNodes(reading(src)).filter((n) => n.layer === 'command').map((n) => `${n.label}: ${n.text}`);
+    assert.deepStrictEqual(texts('set -- a b'), [
+      '--: ends the options; the words after it become the positional parameters `$1`, `$2`…, even those that start with `-` (with none, the positional parameters are unset)',
+      'a: becomes the positional parameter `$1`', 'b: becomes the positional parameter `$2`',
+    ]);
+    assert.match(texts('set - a')[0], /^-: ends the options, and turns `-x` and `-v` off/);
+    assert.deepStrictEqual(texts('set a'), ['a: becomes the positional parameter `$1`']);
+    // (After a word that may expand to more or fewer words, the numbers shift: `b` is `$4` when `$x` is `1 2`.)
+    assert.deepStrictEqual(texts('set -- a $x b').slice(2), [
+      '$x: becomes the positional parameter `$2` (if this word or one before it expands to more or fewer words, the number shifts)',
+      'b: becomes the positional parameter `$3` (if this word or one before it expands to more or fewer words, the number shifts)',
+    ]);
+    assert.strictEqual(runBash('x="1 2"; set -- a $x b; echo "$4"').stdout, 'b\n');
+  });
+
+  it('says that the redirections of `exec` with no command apply to this shell (4.1), as bash does', () => {
+    const t = (src: string) => find(reading(src), src, 'command').text!;
+    assert.strictEqual(t('exec >log 2>&1'), 'Redirections of `exec` with no command: they apply to this shell itself, so its stdout (fd 1) and stderr (fd 2) stay redirected for every command after it');
+    assert.match(t('exec 3>&1'), /its file descriptor 3 stays redirected/);
+    assert.match(t('exec {fd}>f'), /this shell itself, so they stay for every command after it$/);
+    // (With a command, they are that command's, as for any other.)
+    assert.match(t('exec cat >log'), /^Redirection applied to `exec cat`/);
+    const b = runBash('exec 3>&2 >log 2>&1; echo a; ls /none; cat log >&3', { files: [] });
+    assert.match(b.stderr, /^a\nls: cannot access/);
+  });
+});

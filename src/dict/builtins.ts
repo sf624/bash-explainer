@@ -30,6 +30,7 @@ export const shellOptions = {
   onecmd: tx('1つコマンドを読んで実行したら終了する（`-t` と同じ）', 'exit after reading and running one command (same as `-t`)'),
   keyword: tx('コマンド名の前だけでなく、どこにある `name=value` も環境変数として渡す（`-k` と同じ）', 'put every `name=value` in the words into the command\'s environment, not only those before its name (same as `-k`)'),
   'interactive-comments': tx('対話シェルでも `#` 以降をコメントとして扱う', 'treat `#` as a comment in an interactive shell too'),
+  nolog: tx('何もしない（bash は受け付けるが無視する）', 'ignored (bash accepts it and does nothing)'),
 };
 
 /** `set +e`, `set +o errexit`: what turning errexit off does. */
@@ -47,6 +48,54 @@ export const shoptOptions = {
   inherit_errexit: tx('`$(…)` の中でも `set -e` を効かせる', 'keep `set -e` inside `$(…)`'),
   lastpipe: tx('パイプラインの最後のコマンドを今のシェルで実行する（`… | read x` の `x` が残る）', 'run the last command of a pipeline in the current shell (so `… | read x` keeps `x`)'),
   expand_aliases: tx('スクリプトの中でもエイリアスを展開する', 'expand aliases in scripts too'),
+  // (The others of the manual, 4.3.2.)
+  assoc_expand_once: tx('連想配列の添字を一度だけ展開する（算術式の中と、配列の要素を代入・参照する組み込みで）', 'expand the subscripts of associative arrays only once (in arithmetic, and in the builtins that assign or read array elements)'),
+  autocd: tx('ディレクトリの名前をコマンドとして入力すると、`cd` の引数として扱ってそこへ移動する（対話シェルだけ）', 'a command name that is a directory is run as `cd` to it (interactive shells only)'),
+  cdable_vars: tx('`cd` の引数がディレクトリでなければ、その名前の変数の値を移動先にする', 'an argument of `cd` that is not a directory is the name of a variable whose value is the directory'),
+  cdspell: tx('`cd` のディレクトリ名の小さな綴り間違い（2文字の入れ替わり、1文字の抜けや余分）を直して移動する（対話シェルだけ）', 'correct small spelling errors in the directory names given to `cd` (two letters swapped, one missing or one too many; interactive shells only)'),
+  checkhash: tx('ハッシュ表で覚えたコマンドがまだあるかを実行前に確かめ、なければ PATH から探し直す', 'check that a command remembered in the hash table still exists before running it, and search PATH again if not'),
+  checkjobs: tx('対話シェルの終了時に、停止中と実行中のジョブを表示する（実行中のジョブがあれば、もう一度 `exit` するまで終了しない）', 'list the stopped and running jobs when an interactive shell exits (with running jobs, it exits only at a second `exit`)'),
+  checkwinsize: tx('外部コマンドを実行するたびにウィンドウの大きさを調べ、`LINES` と `COLUMNS` を更新する（既定で有効）', 'check the window size after each external command, and update `LINES` and `COLUMNS` (on by default)'),
+  cmdhist: tx('複数行のコマンドを履歴の1つの項目に保存する（既定で有効。履歴が有効なときだけ効く）', 'save all lines of a multi-line command in one history entry (on by default; only with history on)'),
+  compat31: tx('bash 3.1 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 3.1 did where it differs (the manual lists how under Shell Compatibility Mode)'),
+  compat32: tx('bash 3.2 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 3.2 did where it differs (the manual lists how under Shell Compatibility Mode)'),
+  compat40: tx('bash 4.0 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 4.0 did where it differs (the manual lists how under Shell Compatibility Mode)'),
+  compat41: tx('bash 4.1 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 4.1 did where it differs (the manual lists how under Shell Compatibility Mode)'),
+  compat42: tx('bash 4.2 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 4.2 did where it differs (the manual lists how under Shell Compatibility Mode)'),
+  compat43: tx('bash 4.3 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 4.3 did where it differs (the manual lists how under Shell Compatibility Mode)'),
+  compat44: tx('bash 4.4 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 4.4 did where it differs (the manual lists how under Shell Compatibility Mode)'),
+  complete_fullquote: tx('補完したファイル名の中のシェルのメタ文字をすべてクォートする（既定で有効）', 'quote all shell metacharacters in file names when completing (on by default)'),
+  direxpand: tx('ファイル名の補完で、ディレクトリ名を展開した結果に置き換える', 'replace directory names with the result of their expansion when completing file names'),
+  dirspell: tx('単語の補完で、ディレクトリ名がなければ綴りを直そうとする', 'try to correct the spelling of a directory name that does not exist when completing a word'),
+  execfail: tx('`exec` がファイルを実行できなくても、非対話シェルを終了しない', 'a non-interactive shell does not exit when `exec` cannot run its file'),
+  extdebug: tx('デバッガ向けの動作を有効にする（`declare -F` が関数の定義のファイルと行を表示する、`DEBUG` トラップの終了ステータスで次のコマンドを飛ばせる、など）', 'turn on the behaviour meant for debuggers (`declare -F` prints the file and line of each function, the status of the `DEBUG` trap can skip the next command, and more)'),
+  extquote: tx('ダブルクォートの中の `${…}` でも `$\'…\'` と `$"…"` のクォートを行う（既定で有効）', 'perform `$\'…\'` and `$"…"` quoting inside `${…}` within double quotes (on by default)'),
+  force_fignore: tx('`FIGNORE` の接尾辞で終わる語を、ほかに候補がなくても補完で無視する（既定で有効）', 'ignore the words with the suffixes in `FIGNORE` when completing, even when they are the only candidates (on by default)'),
+  globasciiranges: tx('パターンの角括弧の範囲（`[a-z]` など）を、ロケールの照合順ではなく C ロケールの順で比べる（既定で有効）', 'compare the ranges of bracket expressions in patterns (`[a-z]`) in the order of the C locale, not the collation of the locale (on by default)'),
+  globskipdots: tx('ファイル名展開が、`.` で始まるパターンでも `.` と `..` には一致しない（既定で有効）', 'filename expansion never matches `.` and `..`, even with a pattern that starts with `.` (on by default)'),
+  gnu_errfmt: tx('シェルのエラーメッセージを GNU の標準の形式で出力する', 'write the error messages of the shell in the standard GNU format'),
+  histappend: tx('シェルの終了時に、履歴を `HISTFILE` のファイルに上書きせず追記する', 'append the history to the file `HISTFILE` names when the shell exits, instead of overwriting it'),
+  histreedit: tx('履歴展開に失敗した行を Readline でもう一度編集できるようにする', 'with Readline, let the user edit a failed history substitution again'),
+  histverify: tx('履歴展開の結果をすぐに実行せず、Readline の編集行に読み込む', 'with Readline, load the result of a history substitution into the editing line instead of running it at once'),
+  hostcomplete: tx('`@` を含む語の補完でホスト名を補完する（Readline。既定で有効）', 'complete host names in a word that contains `@` (with Readline; on by default)'),
+  huponexit: tx('対話的なログインシェルの終了時に、すべてのジョブに `SIGHUP` を送る', 'send `SIGHUP` to all jobs when an interactive login shell exits'),
+  interactive_comments: tx('対話シェルでも、`#` で始まる語から行末までをコメントとして無視する（既定で有効）', 'in an interactive shell too, a word that starts with `#` and the rest of the line are a comment (on by default)'),
+  lithist: tx('`cmdhist` が有効なとき、複数行のコマンドを `;` でつながず、改行のまま履歴に保存する', 'with `cmdhist` on, save multi-line commands in the history with their newlines instead of `;`'),
+  localvar_inherit: tx('関数のローカル変数が、値を代入されるまで、外側の同じ名前の変数の値と属性を受け継ぐ（nameref の属性は受け継がない）', 'a local variable takes the value and attributes of the variable of the same name in an outer scope until it is assigned (not the nameref attribute)'),
+  localvar_unset: tx('呼び出し元の関数のローカル変数を `unset` すると、その関数が戻るまで未設定に見える（今の関数のローカル変数と同じ）', '`unset` of a local variable of a calling function makes it look unset until that function returns, as for one of the current function'),
+  login_shell: tx('ログインシェルとして起動したときにシェルが設定する（変えられない）', 'set by the shell when it starts as a login shell (it cannot be changed)'),
+  mailwarn: tx('メールを確かめるファイルが前回の確認の後で読まれていたら、`The mail in … has been read` と表示する', 'print `The mail in … has been read` when a mail file bash checks was read since the last check'),
+  no_empty_cmd_completion: tx('空の行での補完で、PATH のコマンドを探さない（Readline）', 'do not search PATH for completions on an empty line (with Readline)'),
+  noexpand_translation: tx('`$"…"` の翻訳の結果を、ダブルクォートではなくシングルクォートで囲む', 'enclose the translated result of `$"…"` in single quotes instead of double quotes'),
+  patsub_replacement: tx('`${x/pat/rep}` の置換文字列の `&` を、パターンに一致した文字列に置き換える（既定で有効）', 'in `${x/pat/rep}`, a `&` in the replacement stands for the text the pattern matched (on by default)'),
+  progcomp: tx('プログラム可能な補完（`complete` で登録した補完）を有効にする（既定で有効）', 'turn on programmable completion (what `complete` registers; on by default)'),
+  progcomp_alias: tx('補完の登録がないコマンド名をエイリアスとして展開し、展開後のコマンドの補完を使う', 'complete a command name with no completion of its own as the command its alias expands to'),
+  promptvars: tx('プロンプトの文字列に、パラメータ展開・コマンド置換・算術展開とクォート除去を行う（既定で有効）', 'expand parameters, command substitutions and arithmetic in the prompt strings, and remove their quotes (on by default)'),
+  restricted_shell: tx('制限付きシェルとして起動したときにシェルが設定する（変えられない）', 'set by the shell when it starts in restricted mode (it cannot be changed)'),
+  shift_verbose: tx('`shift` の数が位置パラメータの数より大きいとき、エラーメッセージを表示する', '`shift` prints an error message when the count is greater than the number of positional parameters'),
+  sourcepath: tx('`.`（`source`）が、`/` のないファイル名を PATH から探す（既定で有効）', '`.` (`source`) looks for a file name with no `/` in PATH (on by default)'),
+  varredir_close: tx('`{変数名}` のリダイレクトで開いたファイル記述子を、コマンドの終わりに自動で閉じる', 'close the file descriptors opened by a `{varname}` redirection when the command ends'),
+  xpg_echo: tx('`echo` が既定でバックスラッシュエスケープを解釈する（`-e` を付けたのと同じ）', '`echo` reads backslash escapes by default (as with `-e`)'),
   // (bash 5.3's: SHELL_OPTIONS_SINCE in src/bashversion.ts.)
   array_expand_once: tx('bash 5.3: 配列の添字を一度だけ展開する（算術式の中と、配列の要素を代入・参照する組み込みで）。`assoc_expand_once` の新しい名前', 'bash 5.3: evaluate array subscripts only once (in arithmetic, and in builtins that assign or read elements); the new name of `assoc_expand_once`'),
   bash_source_fullpath: tx('bash 5.3: `BASH_SOURCE` にファイルのフルパスを入れる', 'bash 5.3: put the full path of each file in `BASH_SOURCE`'),
@@ -111,6 +160,8 @@ const COMPLETION_TARGETS: OptSpec[] = [
 const SIGNAL_NUMBER = /^0*(?:\d|[1-5]\d|6[0-4])$/;
 
 /** `+N` and `-N` of `pushd`, `popd` and `dirs`: a place in the directory stack, from the left (`+`) or the right (`-`) of what `dirs` prints. */
+/** `pushd -x`: a word with a dash is a place in the stack, and this one is no number (bash: `invalid number`, status 2). */
+const STACK_NUMBER = tx('bash は `-` で始まる語をスタックの位置（`-N`）として読むが、数ではない: `invalid number` と表示し、何もせずに失敗する（終了ステータス 2）', 'bash reads a word that starts with `-` as a place in the stack (`-N`), and this is no number: it says `invalid number`, and fails with status 2, doing nothing');
 /** The meanings of option names as the text of an operand: `Shell option \`x\`: …` (`OperandSpec.values`). */
 const named = (options: Record<string, Text>): Record<string, Text> =>
   Object.fromEntries(Object.entries(options).map(([name, t]) => [name, tx(`シェルオプション \`${name}\`: ${t.ja}`, `Shell option \`${name}\`: ${t.en}`)]));
@@ -346,8 +397,20 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-P', '`cd` でシンボリックリンクをたどらず物理パスで移動する', 'do not follow symlinks in `cd`'],
     ['-p', '特権モード（`$ENV` を読まず、環境の関数を取り込まない）', 'privileged mode (reads no `$ENV`, imports no functions)'],
     ['-t', '1つコマンドを読んで実行したら終了する', 'exit after reading and running one command'],
-    ['--', '以降の引数を位置パラメータ $1, $2... に設定する', 'set the remaining arguments as $1, $2…'],
-  ], { plusOptions: true }), (c) => c.operands.length > 0 || c.flags.some((f) => !c.bare.includes(f)), { alters: ['options'] }),
+    ['--', 'オプションの終わり。続く語は `-` で始まっていても位置パラメータ `$1`、`$2`… になる（なければ位置パラメータをすべて削除する）', 'ends the options; the words after it become the positional parameters `$1`, `$2`…, even those that start with `-` (with none, the positional parameters are unset)'],
+  ], {
+    plusOptions: true,
+    operands: [
+      // (`set - a b`: a lone `-` ends the options too, and turns `-x` and `-v` off.)
+      {
+        when: { operand: 0, matches: /^-$/ }, pattern: [
+          operand('-', 'オプションの終わり。`-x` と `-v` も無効にする。続く語が位置パラメータになる（なければ位置パラメータはそのまま）', 'ends the options, and turns `-x` and `-v` off; the words after it become the positional parameters (with none, they stay as they are)', { matches: /^-$/ }),
+          operand('ARG', '位置パラメータ `$N` になる', 'becomes the positional parameter `$N`', { repeat: '*' }),
+        ],
+      },
+      ...args(operand('ARG', '位置パラメータ `$N` になる', 'becomes the positional parameter `$N`')).operands!,
+    ],
+  }), (c) => c.operands.length > 0 || c.flags.some((f) => !c.bare.includes(f)), { alters: ['options'] }),
   shopt: actsOnShell(b('bash 固有のシェルオプションを設定・表示する', 'Set or show bash-specific shell options', [
     ['-s', 'オプションを有効にする', 'enable the options'],
     ['-u', 'オプションを無効にする', 'disable the options'],
@@ -423,6 +486,8 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     { names: ['-0'], text: tx('プロセスが存在するか確認するだけ', 'only check whether the process exists'), ...SIGNAL_GIVEN, inMode: { list: KILL_LISTING } },
   ], {
     program: PROGRAMS.kill, patternOptions: KILL_PATTERNS, modes: [{ name: 'list' }],
+    // (bash reads any other `-WORD` as a signal: `kill -Z 1`.)
+    unknownOption: tx('bash はシグナルの名前として読むが、その名前のシグナルはない: `invalid signal specification` と表示し、何も送らずに失敗する（終了ステータス 1）', 'bash reads it as the name of a signal, and there is none: it says `invalid signal specification`, and fails with status 1, sending nothing'),
     operands: [
       { when: { option: ['-l'] }, pattern: [operand('SIGNAL', '名前か番号に直すシグナル', 'signal to translate between name and number', { repeat: '*' })] },
       ...args(operand('PID', '対象のプロセス ID かジョブ指定（`%1`）', 'target PID or job spec (`%1`)', { type: 'job' })).operands!,
@@ -458,15 +523,23 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   ]),
   setopt: b('zsh のオプションを有効にする', 'Turn zsh options on', [], args(operand('OPTION', 'オプション名（`local_options`、`extended_glob`…）', 'option name (`local_options`, `extended_glob`…)'))),
   unsetopt: b('zsh のオプションを無効にする', 'Turn zsh options off', [], args(operand('OPTION', 'オプション名', 'option name'))),
-  true: b('何もせず成功（終了ステータス 0）を返す', 'Do nothing and succeed (exit 0)', [], { program: PROGRAMS.true }),
-  false: b('何もせず失敗（終了ステータス 1）を返す', 'Do nothing and fail (exit 1)', [], { program: PROGRAMS.false }),
-  ':': special('何もしないコマンド（常に成功）。無限ループ `while :` や引数の展開だけしたい時に使う', 'No-op that always succeeds; used in `while :` or to evaluate expansions'),
+  // (`:`, `true` and `false` take no options: `true -x` ignores its words, as any others.)
+  true: b('何もせず成功（終了ステータス 0）を返す', 'Do nothing and succeed (exit 0)', [], { program: PROGRAMS.true, parser: 'letters' }),
+  false: b('何もせず失敗（終了ステータス 1）を返す', 'Do nothing and fail (exit 1)', [], { program: PROGRAMS.false, parser: 'letters' }),
+  ':': special('何もしないコマンド（常に成功）。無限ループ `while :` や引数の展開だけしたい時に使う', 'No-op that always succeeds; used in `while :` or to evaluate expansions', [], { parser: 'letters' }),
   alias: actsOnShell(b('コマンドの別名を定義する', 'Define a command alias', [
     ['-p', '定義済みの別名を再入力できる形で表示する', 'print the aliases in a reusable form'],
-  ]), (c) => c.operands.some((o) => o === undefined || o.includes('=')), { alters: ['aliases'] }),
+  ], {
+    // `alias NAME=VALUE` defines, `alias NAME` prints; a line of both says both.
+    operands: [
+      { pattern: [operand('DEFINITION', '別名の定義: `=` の前の名前が、後ろの文字列を表す', 'an alias definition: the name before `=` stands for the text after it', { repeat: '+', matches: /^[^=]+=/ })] },
+      { pattern: [operand('NAME', '定義を表示する別名（なければ失敗する）', 'alias whose definition to print (it fails when there is none)', { repeat: '+', matches: /^[^=]*$/ })] },
+      ...args(operand('NAME', '`名前=値` なら別名の定義（`=` の前の名前が後ろの文字列を表す）、名前だけならその定義の表示', 'with `=`, an alias definition (the name stands for the text after `=`); a name alone prints its definition')).operands!,
+    ],
+  }), (c) => c.operands.some((o) => o === undefined || o.includes('=')), { alters: ['aliases'] }),
   unalias: actsOnShell(b('別名を削除する', 'Remove an alias', [
     ['-a', 'すべての別名を削除する', 'remove all aliases'],
-  ]), undefined, { alters: ['aliases'] }),
+  ], args(operand('NAME', '削除する別名', 'alias to remove'))), undefined, { alters: ['aliases'] }),
   type: b('コマンドの種類（ビルトイン・関数・外部コマンドなど）を表示する', 'Show how a name would be interpreted (builtin, function, file…)', [
     ['-t', '種類だけを1語で表示', 'print only the kind'],
     ['-a', '該当する全ての候補を表示', 'show all matches'],
@@ -489,11 +562,19 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   builtin: cmd('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { builtin: 'regular', optionsFirst: true, operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'builtins-only' })] }] }),
   hash: actsOnShell(b('コマンドのパスのキャッシュを操作する', 'Manage the command path cache', [
     ['-r', 'キャッシュを空にする（コマンドを移動・インストールした後に使う）', 'empty the cache (after moving or installing a command)'],
-    ['-d', '指定した名前をキャッシュから削除する', 'forget the given name', 'arg'],
+    ['-d', '名前をキャッシュから削除する', 'forget the names given'],
     ['-l', '再入力できる形で表示する', 'print in a reusable form'],
     ['-p', '名前に対応するパスを指定して覚えさせる', 'remember the given path for the name', 'arg'],
     ['-t', '覚えているパスを表示する', 'print the remembered path of each name'],
-  ]), (c) => !has(c, '-t', '-l') && (c.operands.length > 0 || has(c, '-r', '-d', '-p'))),
+  ], {
+    // (bash reads `-t` first, then `-p`, then `-d`; with none, it looks each name up in PATH.)
+    operands: [
+      { when: { option: ['-t'] }, pattern: [operand('NAME', '覚えているパスを表示する名前', 'name whose remembered path to print', { repeat: '*' })] },
+      { when: { option: ['-p'] }, pattern: [operand('NAME', '`-p` のパスを覚えさせる名前', 'name that gets the path of `-p`', { repeat: '*' })] },
+      { when: { option: ['-d'] }, pattern: [operand('NAME', 'キャッシュから削除する名前', 'name to forget', { repeat: '*' })] },
+      ...args(operand('NAME', 'PATH から探してパスを覚えるコマンド名（`hash -r` まで探し直さない）', 'command to look up in PATH now and remember (bash does not look it up again until `hash -r`)')).operands!,
+    ],
+  }), (c) => !has(c, '-t', '-l') && (c.operands.length > 0 || has(c, '-r', '-d', '-p'))),
   jobs: b('現在のジョブ一覧を表示する', 'List current jobs', [
     ['-l', 'プロセス ID も表示する', 'show process IDs too'],
     ['-p', 'プロセス ID だけを表示する', 'show only the process IDs'],
@@ -542,7 +623,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-b', 'ソケットバッファの最大サイズ', 'maximum socket buffer size'],
     ['-R', 'リアルタイムのプロセスがブロックせずに走れる時間（マイクロ秒）', 'time a real-time process may run without blocking (microseconds)'],
     // (bash also lists -k, -P and -T, which Linux lacks: "invalid option".)
-  ]), (c) => c.operands.length > 0),
+  ], args(operand('LIMIT', '新しい上限: 資源の単位の数（大きさは多くが KiB 単位。`ulimit -a` に単位がある）か、`unlimited`（上限なし）・`soft`・`hard`（今のソフトリミット・ハードリミット）。資源のオプションがなければファイルの大きさ（`-f`）の上限', 'the new limit: a number in the unit of the resource (most sizes in KiB; `ulimit -a` shows the units), or `unlimited`, `soft` or `hard` (the current soft or hard limit); with no option for a resource, the limit of file size (`-f`)'))), (c) => c.operands.length > 0),
   mapfile: actsOnShell(b('標準入力の各行を配列に読み込む', 'Read lines from stdin into an array', MAPFILE_OPTIONS, MAPFILE_OPERANDS), undefined, MAPFILE_DEFAULT),
   readarray: actsOnShell(b('標準入力の各行を配列に読み込む（mapfile と同じ）', 'Read lines from stdin into an array (same as mapfile)', MAPFILE_OPTIONS, MAPFILE_OPERANDS), undefined, MAPFILE_DEFAULT),
   // `let` has no options: `let -a` is an expression.
@@ -553,16 +634,16 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   }),
   pushd: actsOnShell(b('ディレクトリスタックに積んで移動する', 'Push a directory onto the stack and cd to it', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
-  ], { patternOptions: [stackPosition((side, n) => tx(`スタックを回して、\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）を先頭にして移動する`, `Rotate the stack so that entry ${n}, counted from the ${side} of \`dirs\` (from 0), is on top, and cd there`))] })),
+  ], { ...args(operand('DIR', 'スタックに積んで移動するディレクトリ', 'directory to push onto the stack and cd to')), unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`スタックを回して、\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）を先頭にして移動する`, `Rotate the stack so that entry ${n}, counted from the ${side} of \`dirs\` (from 0), is on top, and cd there`))] })),
   popd: actsOnShell(b('ディレクトリスタックから取り出してそこへ戻る', 'Pop the directory stack and cd to it', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
-  ], { patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）をスタックから取り除く`, `Remove entry ${n}, counted from the ${side} of \`dirs\` (from 0), from the stack`))] })),
+  ], { unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）をスタックから取り除く`, `Remove entry ${n}, counted from the ${side} of \`dirs\` (from 0), from the stack`))] })),
   dirs: b('ディレクトリスタックを表示する', 'Show the directory stack', [
     ['-c', 'スタックを空にする', 'clear the stack'],
     ['-l', '`~` を使わず、ホームからのパスを全部書く', 'print full paths, not `~`'],
     ['-p', '1行に1つずつ表示する', 'print one entry per line'],
     ['-v', '番号を付けて1行に1つずつ表示する', 'print one entry per line with its index'],
-  ], { patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）だけを表示する`, `Show only entry ${n}, counted from the ${side} (from 0)`))] }),
+  ], { unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）だけを表示する`, `Show only entry ${n}, counted from the ${side} (from 0)`))] }),
   break: special('ループを抜ける', 'Exit from a loop', [], { ...numeric(operand('N', '抜けるループの段数', 'number of loop levels')), ends: 'loop' }),
   continue: special('ループの次の繰り返しに進む', 'Skip to the next loop iteration', [], { ...numeric(operand('N', '対象のループの段数', 'number of loop levels')), ends: 'pass' }),
   unset: actsOnShell(special('変数や関数を削除する', 'Unset variables or functions', [
@@ -579,12 +660,21 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-s', 'POSIX の特殊ビルトインだけを対象にする', 'act on POSIX special builtins only'],
     ['-d', '`-f` で読み込んだビルトインを取り除く', 'remove a builtin loaded with `-f`'],
     ['-f', '共有オブジェクトからビルトインを読み込む', 'load a builtin from a shared object', 'arg'],
-  ]), (c) => c.operands.length > 0 && !has(c, '-p'), { alters: ['builtins'] }),
+  ], {
+    // (With `-p`, bash lists the builtins and does nothing with the names; then `-f`, `-d` and `-n`.)
+    operands: [
+      { when: { option: ['-p'] }, pattern: [operand('NAME', '無視される（`-p` があると、`enable` はビルトインの一覧を表示するだけ）', 'ignored: with `-p`, `enable` only lists the builtins', { repeat: '*' })] },
+      { when: { option: ['-f'] }, pattern: [operand('NAME', '共有オブジェクトから読み込むビルトインの名前', 'name of the builtin to load from the shared object', { repeat: '*' })] },
+      { when: { option: ['-d'] }, pattern: [operand('NAME', '取り除くビルトイン（`-f` で読み込んだもの）', 'builtin to remove (one loaded with `-f`)', { repeat: '*' })] },
+      { when: { option: ['-n'] }, pattern: [operand('NAME', '無効にするビルトイン（同じ名前の外部コマンドが動くようになる）', 'builtin to turn off (a program of that name runs instead)', { repeat: '*' })] },
+      ...args(operand('NAME', '有効にするビルトイン（`enable -n` で無効にしたものを戻す）', 'builtin to turn on (again, after `enable -n`)')).operands!,
+    ],
+  }), (c) => c.operands.length > 0 && !has(c, '-p'), { alters: ['builtins'] }),
   help: b('ビルトインのヘルプを表示する', 'Show help for builtins', [
     ['-d', '1行の説明だけを表示する', 'print a one-line description'],
     ['-m', 'man ページの形式で表示する', 'print in man page format'],
     ['-s', '使い方だけを表示する', 'print only the usage'],
-  ]),
+  ], args(operand('PATTERN', 'ヘルプを表示するビルトイン（グロブのパターンなら、一致するものすべて）', 'builtin to show the help of (with a glob pattern, every builtin it matches)'))),
   history: b('コマンド履歴を表示・操作する', 'Show or manipulate command history', [
     ['-c', '履歴をすべて削除する', 'clear the history'],
     ['-d', '指定した番号の履歴を1件削除する', 'delete the entry with the given number', 'arg'],
@@ -622,5 +712,5 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-f', 'ログインシェルでも停止する', 'suspend even a login shell'],
   ]),
   times: special('シェルと子プロセスの累積CPU時間を表示する', 'Print accumulated CPU times'),
-  caller: b('呼び出し元の行番号・関数名を表示する（デバッグ用）', 'Print the caller context (debugging)'),
+  caller: b('呼び出し元の行番号・関数名を表示する（デバッグ用）', 'Print the caller context (debugging)', [], args(operand('EXPR', '表示する呼び出しの深さ（0 は今の関数を呼んだところ）。指定すると行番号・関数名・ファイル名を表示する', 'which call to print, counted from the current one (0: where the current function was called); with it, `caller` prints the line, the function and the file of that call'))),
 });

@@ -44,13 +44,16 @@ export function test(cx: Explainer, n: SyntaxNode): Token {
   });
 }
 
-/** The tokens of a `[ ]` test read as bash reads it (see testexpr.ts). */
-export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: TestExpr): Token[] {
+/**
+ * The tokens of a `[ ]` test read as bash reads it (see testexpr.ts). `refs`: the sections of each expression, for
+ * bash's builtin (4.1, and 6.4 for the primaries).
+ */
+export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: TestExpr, refs?: readonly string[]): Token[] {
   const words = b.words;
   const slice = (from: number, to: number) => n.text.slice(words[from].nodes[0].startIndex - n.startIndex, words[to].nodes[words[to].nodes.length - 1].endIndex - n.startIndex);
   const [first, last] = testRange(e);
   const make = (kind: Kind, explanation: string, children: Token[]): Token => ({
-    kind, label: shorten(slice(first, last)), explanation, children,
+    kind, label: shorten(slice(first, last)), explanation, children, ...(refs ? { refs } : {}),
     span: { start: spanOf(words[first].nodes[0]).start, end: spanOf(words[last].nodes[words[last].nodes.length - 1]).end },
   });
   // Operators and parentheses are not nodes to explain; they get no token of their own, but a word that is one does.
@@ -60,7 +63,7 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
     case 'word': return wordTokens(e.at);
     case 'not': {
       const [from, to] = testRange(e.operand);
-      return [make('test', cx.s(`否定: \`${slice(from, to)}\` が偽なら真`, `Negation: true if \`${slice(from, to)}\` is false`), testTokens(cx, n, b, e.operand))];
+      return [make('test', cx.s(`否定: \`${slice(from, to)}\` が偽なら真`, `Negation: true if \`${slice(from, to)}\` is false`), testTokens(cx, n, b, e.operand, refs))];
     }
     case 'group': {
       // (bash 5.3 takes the truth of a group of one word from the first word of the test: `TestExpr`, `truth`.)
@@ -69,7 +72,7 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
         ? cx.s(`。ただし bash 5.3 はここで \`${slice(inner.at, inner.at)}\` ではなく、式の最初の語 \`${slice(inner.truth, inner.truth)}\` が空でないかを調べる（bash 5.3 の不具合）`,
           `. But bash 5.3 tests here whether the first word of the test, \`${slice(inner.truth, inner.truth)}\`, is not empty, not \`${slice(inner.at, inner.at)}\` (a bug of bash 5.3)`)
         : '';
-      return [make('operator', cx.s('括弧でまとめた式', 'Parenthesized expression') + odd, testTokens(cx, n, b, inner))];
+      return [make('operator', cx.s('括弧でまとめた式', 'Parenthesized expression') + odd, testTokens(cx, n, b, inner, refs))];
     }
     case 'unary': {
       const d = unaryTestOps[words[e.op].text!];
@@ -84,7 +87,7 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
       ), [...operandTokens(e.left, isPlainWord), ...operandTokens(e.right, isPlainWord)])];
     }
     default:
-      return [make('test', cx.t(binaryTestOps[e.type === 'and' ? '-a' : '-o']), [...testTokens(cx, n, b, e.left), ...testTokens(cx, n, b, e.right)])];
+      return [make('test', cx.t(binaryTestOps[e.type === 'and' ? '-a' : '-o']), [...testTokens(cx, n, b, e.left, refs), ...testTokens(cx, n, b, e.right, refs)])];
   }
 }
 

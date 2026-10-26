@@ -600,11 +600,16 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   });
 
   /** A token of a string a shell reads as a script; `process`: which shell. */
-  const scriptNode = (t: Token, process: ScriptProcess): ReadingNode => ({
-    layer: 'child', ...scriptKind(t), label: t.label, span: t.span, text: t.explanation, ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), process,
-    // (What is not the script's is what a command of it reads: `t` is that command.)
-    children: t.children.flatMap((c) => (c.origin === 'script' ? [scriptNode(c, process)] : readParts([c], false, t.label))),
-  });
+  const scriptNode = (t: Token, process: ScriptProcess): ReadingNode => {
+    const kind = scriptKind(t);
+    // (A command name there is one that shell looks up, as bash does one of this line: 3.7.1, 3.7.2.)
+    const refs = kind.kind === 'commandName' ? union(['3.7.1', '3.7.2'], t.refs) : t.refs;
+    return {
+      layer: 'child', ...kind, label: t.label, span: t.span, text: t.explanation, ...(refs ? { refs } : {}), ...(t.name ? { name: t.name } : {}), process,
+      // (What is not the script's is what a command of it reads: `t` is that command.)
+      children: t.children.flatMap((c) => (c.origin === 'script' ? [scriptNode(c, process)] : readParts([c], false, t.label))),
+    };
+  };
 
   /**
    * What a token of a script is, as the nodes of bash's reading say it: a command's token is its name (an alias, a
