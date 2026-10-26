@@ -31,7 +31,6 @@
 // the walk does not read (an expansion in it, a glob, too deep) makes it walk again with nothing trusted
 // (`Walker.found`), as does a trap's action that may leave what a signal interrupts.
 // Another shell's model (`bash -c`) trusts no more than the model of the script that starts it (`withinTrust`).
-import type { CommandSpec } from '../argv/spec';
 import { prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
@@ -42,40 +41,11 @@ import { STATEMENTS } from './env';
 import { localeWritten, openingBlinds, type Opening } from './opening';
 import { closesStandard } from './redirects';
 import { inExtendedTest, testSplits, testWordShape } from './testwords';
+import { BLIND, type HostCommands, NO_HOST, type StringTrees, type Trust } from './trustmodel';
 import { COPY, identifiers, joined, writtenValue, type WrittenValue } from './written';
 import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, localeVariable, optionRoles, readDeclarationWords, writeEffect, type Declaration } from './vars';
 
-export interface Trust {
-  /** Why nothing is trusted (no decision at all), when so. */
-  readonly blind: string | undefined;
-  /** Whether a decision may read the variable `name`. */
-  variable(name: string): boolean;
-  /** Whether every call of the function `name` is one the walk sees (a plain call in the script). */
-  closed(name: string): boolean;
-  /**
-   * The names that the statement `n` reads as arithmetic where the walk does not run it (a subscript, an offset,
-   * `[[ x -eq y ]]`, the value of an integer variable): each must have a value there (else it may come from the
-   * environment, as text bash runs).
-   */
-  arithNames(n: SyntaxNode): readonly string[] | undefined;
-  /**
-   * The variables whose values the statement `n` copies into IFS (`IFS=$save`), or splits in a word of `test` (`[ $x ]`),
-   * which the trust follows (see `testSplits`): each must have a value there that the script wrote.
-   */
-  copied(n: SyntaxNode): readonly string[] | undefined;
-  /** The arrays whose subscripts in the statement `n` are taken as keys (the script declares them associative): each must be so there. */
-  associative(n: SyntaxNode): readonly string[] | undefined;
-  /**
-   * Whether the statement `n` has arithmetic the walk does not run that may fail: a subscript or an offset that is not
-   * a plain number (`a[i]=x`, `${s:i}`). An error there discards the rest of the line.
-   */
-  mayFail(n: SyntaxNode): boolean;
-  /**
-   * Whether the script may close fd 0, 1 or 2 somewhere (`exec 2>&-`, `f >&-`, `exec 3>&1-`, `>&$x`, `unset
-   * BASH_XTRACEFD`): a copy of one of them (`2>&1`) may then fail, as a copy of any other descriptor may.
-   */
-  readonly fdsMayClose: boolean;
-}
+export { BLIND, type HostCommands, NO_HOST, type StringTrees, type Trust, withinTrust } from './trustmodel';
 
 const NAME = /^[A-Za-z_]\w*$/;
 /** A `${…}` that arithmetic may paste: a value, an element, a length, or a default (`${x:-0}`). */
@@ -186,9 +156,11 @@ class Scan {
     };
     defs(root);
     try {
-      // (What the shebang starts bash with, as if set on the first line.)
+      // (What the shebang starts bash with, as if set on the first line: `#!/bin/bash -a` exports the functions, as
+      // `set -a` does.)
       const why = opening && openingBlinds(opening);
       if (why) this.blindFor(why);
+      if (opening?.set?.get('allexport') === 'on') this.exportAll = true;
       this.visit(root, { fn: undefined, foreign: false, now: true });
       this.aliases();
       this.finish();
@@ -215,15 +187,20 @@ class Scan {
 
   /** `program`: a prefix assignment of a program (`LANG=de_DE.UTF-8 sort`), which changes its environment only. */
   private write(name: string, w: Where, plain: boolean, value: Value, nameref = false, program = false): void {
-    // (What a write of a variable of bash does to bash, by its row: a locale other than C trusts nothing. Unsetting
-    // BASH_XTRACEFD, or making it empty, closes the fd it named, which may be 1 or 2.)
-    if (!program && localeVariable(name)) {
-      if (!localeWritten(value)) this.blindFor(`\`${name}\` may be set to a locale other than C`);
-    } else if (!program) this.apply(writeEffect(name));
-    if (name === 'BASH_XTRACEFD') this.fdsClose = true;
+    if (!program) this.variableRow(name, value);
     const list = this.writes.get(name) ?? [];
     list.push({ plain, value, fn: w.fn, foreign: w.foreign, ...(nameref ? { nameref } : {}) });
     this.writes.set(name, list);
+  }
+
+  /**
+   * What a write of `value` to the variable `name` does to bash, by its row: a locale other than C trusts nothing.
+   * Unsetting BASH_XTRACEFD, or making it empty, closes the fd it named, which may be 1 or 2.
+   */
+  private variableRow(name: string, value: Value): void {
+    if (!localeVariable(name)) this.apply(writeEffect(name));
+    else if (!localeWritten(value)) this.blindFor(`\`${name}\` may be set to a locale other than C`);
+    if (name === 'BASH_XTRACEFD') this.fdsClose = true;
   }
 
   private changed(w: Where): void {
@@ -838,10 +815,30 @@ class Scan {
         }
       }
     }
+    // A write through a nameref is one of its targets, also through a chain, by their rows (`declare -n r=BASH_COMPAT;
+    // r=42`), and is read with their writes below (PS4, IFS).
+    const via = new Map<string, Write[]>();
+    for (const [r, targets] of this.refEdges) {
+      const reached = new Set(targets);
+      for (const todo = [...targets]; todo.length;) {
+        for (const t of this.refEdges.get(todo.pop()!) ?? []) {
+          if (reached.has(t)) continue;
+          reached.add(t);
+          todo.push(t);
+        }
+      }
+      for (const x of (this.writes.get(r) ?? []).filter((x) => !x.nameref)) {
+        for (const t of reached) {
+          this.variableRow(t, x.value);
+          via.set(t, [...(via.get(t) ?? []), x]);
+        }
+      }
+    }
+    const writesOf = (name: string): Write[] => [...(this.writes.get(name) ?? []), ...(via.get(name) ?? [])];
     // An unquoted expansion in a word of `test` or `[`: each value the script gives it must stay one word, and not be
     // `-v`, with every IFS the script sets (a number, with no IFS of digits or `-`).
     if (this.testNumbers || this.testSplits.length) {
-      const chain = testSplits((name) => (this.writes.get(name) ?? []).map((x) => (x.append && typeof x.value === 'object' ? { ...x.value, appended: true } : x.value)), this.testSplits.map((s) => s.name), this.testNumbers);
+      const chain = testSplits((name) => writesOf(name).map((x) => (x.append && typeof x.value === 'object' ? { ...x.value, appended: true } : x.value)), this.testSplits.map((s) => s.name), this.testNumbers);
       if (!chain) this.blindFor('`-v` may test a variable name not known');
       // (The walk checks that each copy of a value into IFS, and each variable a word of `test` splits, reads one the
       // script set there: see `Trust.copied`. `[ -n "$z" ] && x=a; [ $x … ]` may split `x` from the environment.)
@@ -878,20 +875,20 @@ class Scan {
       }
     }
     // A command named by a variable: each value the script gives it must be a command that changes nothing, or a
-    // function (which runs where the walk does not see it).
+    // function (which runs where the walk does not see it); unquoted, not empty (`cmd=; $cmd eval x=2` runs `eval`).
     for (const { name, quoted } of this.commandVariables) {
       const writes = this.writes.get(name) ?? [];
       if (!writes.length || (!quoted && this.writes.has('IFS'))) this.blindFor('a command name not known');
       for (const w of writes) {
         const v = w.value;
-        if (!w.plain || typeof v !== 'object' || !v.fixed || (!quoted && /[\s*?[]/.test(v.text))) this.blindFor('a command name not known');
+        if (!w.plain || typeof v !== 'object' || !v.fixed || (!quoted && (v.text === '' || /[\s*?[]/.test(v.text)))) this.blindFor('a command name not known');
         else if (this.functions.has(v.text)) this.callbacks.add(v.text);
         else if (builtins[v.text] && !SAFE_BUILTINS.has(v.text)) this.blindFor('a command name not known');
       }
     }
     // PS4 is expanded before each command `set -x` traces (also `bash -x script`): a value that may assign (arithmetic,
     // `${x:=w}`, a subscript) or run a command changes the shell where the walk does not see it.
-    for (const w of this.writes.get('PS4') ?? []) {
+    for (const w of writesOf('PS4')) {
       // (A value kept from the environment is assumed quiet: README, Limitations.)
       if (w.value !== 'none' && w.value !== 'kept' && w.value !== 'number' && (w.value === 'unknown' || !w.value.fixed || !quietPrompt(w.value.text))) this.blindFor('PS4, which `set -x` expands before each command, may assign or run a command');
     }
@@ -925,28 +922,6 @@ class Scan {
   }
 }
 
-/** The functions a file's host defines (bats' `run`, `load`…), by name, with their specs (src/dict/bats.ts). */
-export type HostCommands = Readonly<Record<string, CommandSpec>>;
-export const NO_HOST: HostCommands = {};
-
-/**
- * The trees of the strings the scan reads as part of the script: those of the model (`Scripts` in
- * src/semantics/state.ts), whose walk runs them. So each string is parsed once, and the facts of its statements are
- * the scan's.
- */
-export interface StringTrees {
-  /** The root of the string that `words` make (`eval a b`, a trap's action); undefined when its text is not known. */
-  script(words: readonly SyntaxNode[]): SyntaxNode | undefined;
-  /** The root of `text`, the value the word `word` of `alias` gives, read alone (for an alias no command names). */
-  alias(word: SyntaxNode, text: string): SyntaxNode;
-  /**
-   * The root of the alias text `text` with the rest of the simple command `command`: the tree the walk runs where it
-   * expands the alias there. Past the trees a model makes one per command (`ALIAS_TREES`), a tree shared by the
-   * commands of the same text, and `capped` is set.
-   */
-  expansion(command: SyntaxNode, text: string): SyntaxNode;
-  readonly capped: boolean;
-}
 
 /**
  * The trust of the decisions of a model over the script `root`, whose strings have the trees `strings` gives (once
@@ -981,19 +956,4 @@ export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HO
     mayFail: (n) => scan.fails.has(n),
     fdsMayClose: scan.fdsClose,
   };
-}
-
-/** Nothing trusted: for a walk that found, as it went, arithmetic reading text not known (see `Walker`). */
-export const BLIND: Trust = {
-  blind: 'arithmetic reads text not known', variable: () => false, closed: () => false, arithNames: () => undefined, copied: () => undefined, associative: () => undefined, mayFail: () => false,
-  fdsMayClose: true,
-};
-
-/**
- * What another shell's model trusts (`bash -c S`): its own script's trust, and no more than the outer model's, whose
- * values reach it (exported variables). Nothing, when the outer model trusts nothing.
- */
-export function withinTrust(own: Trust, outer: Trust): Trust {
-  if (outer.blind !== undefined) return { ...BLIND, blind: outer.blind };
-  return { ...own, variable: (name) => own.variable(name) && outer.variable(name), fdsMayClose: own.fdsMayClose || outer.fdsMayClose };
 }

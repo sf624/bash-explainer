@@ -291,6 +291,86 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
     assert.strictEqual(shebang('#!/usr/bin/env -S bash -O compat31', regex), 'yes\n');
   });
 
+  // The review of step 4, each checked with bash 5.2 below.
+  it('reads every option and start variable of a shell, writes through namerefs, and empty command names', function () {
+    const regex = 'x=abc; if [[ $x =~ "a.c" ]]; then y=yes; else y=no; fi; echo "$y"';
+    const keyword = 'f() { y=$x; }; x=1; f x=2; echo "$y"';
+    const model = (src: string): { blind: string | undefined; decided: boolean } => {
+      const tree = parser.parse(src);
+      const m = shellState(tree);
+      return { blind: m.blind, decided: descendants(tree.root, ['if_statement']).some((n) => m.condition(n)) };
+    };
+    const inner = (src: string): string | undefined => {
+      const tree = parser.parse(src);
+      const m = shellState(tree);
+      const c = descendants(tree.root, ['command']).find((x) => fields(x, 'argument').some((a) => a.text === '-c'))!;
+      const args = fields(c, 'argument');
+      const name = commandName(c)!;
+      const spec = lookupCommand(name)!;
+      const envs = slotEnvs(m.env(c), interpret(spec, args.map(argWord), { name, lookup: lookupCommand }), spec, args, lookupCommand);
+      const string = args[args.findIndex((a) => a.text === '-c') + 1];
+      const script = m.script([string], envs.get(string)!);
+      assert.ok(!('why' in script), src);
+      return script.model.blind;
+    };
+    const unlisted = (what: string): string => `the shell is started with \`${what}\`, which the allow-list does not have`;
+    // An empty command name, unquoted: the next word is the command (`eval`, `source`, `set -k`…).
+    for (const src of ['x=1; cmd=; $cmd eval x=2', 'x=1; declare cmd=; $cmd eval x=2', 'x=1; cmd=; ${cmd} eval x=2', "x=1; cmd=''; $cmd eval x=2", 'cmd=; $cmd set -k']) assert.strictEqual(model(src).blind, 'a command name not known', src);
+    assert.strictEqual(model('x=1; cmd=; "$cmd" eval x=2').blind, undefined);
+    // SHELLOPTS and BASHOPTS turn on the options they list when bash starts; POSIX_PEDANTIC, POSIX mode.
+    assert.strictEqual(model(`#!/usr/bin/env -S BASHOPTS=compat31 bash\n${regex}`).blind, '`shopt -s compat31` changes what bash does in ways the walk does not follow');
+    assert.strictEqual(model(`#!/usr/bin/env -S SHELLOPTS=keyword bash\n${keyword}`).blind, '`set -k` (keyword) makes every assignment word one for its command');
+    assert.deepStrictEqual(model(`#!/usr/bin/env -S SHELLOPTS=errexit:posix bash\n${regex}`), { blind: undefined, decided: true });
+    assert.strictEqual(model(`#!/usr/bin/env -S POSIX_PEDANTIC=1 bash\n${regex}`).blind, 'the shell is started with `POSIX_PEDANTIC`, which turns on options at its start');
+    for (const v of ['SHELLOPTS=keyword', 'BASHOPTS=compat31', 'POSIX_PEDANTIC=1']) assert.strictEqual(inner(`env ${v} bash -c '${regex}'`), `the shell is started with \`${v.split('=')[0]}\`, which turns on options at its start`, v);
+    assert.strictEqual(inner(`export SHELLOPTS; bash -c '${regex}'`), undefined);
+    assert.strictEqual(inner(`docker run --env-file f img bash -c '${regex}'`), 'the shell is started with variables not known');
+    // Options of a shell's start the table does not have, and `-o`, `-O` of a name not known.
+    assert.strictEqual(model(`#!/bin/bash -r\n${regex}`).blind, unlisted('-r'));
+    assert.strictEqual(model(`#!/bin/bash --debugger\n${regex}`).blind, unlisted('--debugger'));
+    for (const line of ['#!/bin/bash --norc', '#!/bin/bash -', '#!/usr/bin/env -S bash --noprofile -e']) assert.deepStrictEqual(model(`${line}\n${regex}`), { blind: undefined, decided: true }, line);
+    assert.strictEqual(model(`#!/usr/bin/env -S bash -i\n${regex}`).blind, unlisted('-i'));
+    assert.strictEqual(model(`#!/usr/bin/env -S bash --login\n${regex}`).blind, unlisted('--login'));
+    assert.strictEqual(model(`#!/usr/bin/env -S bash -o\n${regex}`).blind, unlisted('-o'));
+    assert.strictEqual(model(`#!/usr/bin/env -S bash -k extra\n${regex}`).blind, unlisted('extra'));
+    assert.strictEqual(inner(`bash -r -c '${regex}'`), unlisted('-r'));
+    assert.strictEqual(inner(`bash --debugger -c '${regex}'`), unlisted('--debugger'));
+    assert.strictEqual(inner(`bash --norc -c '${regex}'`), undefined);
+    assert.strictEqual(inner(`bash -O "$o" -c '${regex}'`), unlisted('-O …'));
+    assert.strictEqual(inner(`bash +o "$o" -c '${regex}'`), unlisted('+o …'));
+    // An `env -S` line not read in full.
+    assert.strictEqual(model(`#!/usr/bin/env -S -u LANG bash -k\n${keyword}`).blind, unlisted('-S -u LANG bash -k'));
+    assert.strictEqual(model(`#!/usr/bin/env -Sbash -k\n${keyword}`).blind, unlisted('-Sbash -k'));
+    assert.strictEqual(model(`#!/usr/bin/env -S python3\n${regex}`).decided, true);
+    // Writes through a nameref, also through a chain, by the target's row.
+    assert.strictEqual(model(`declare -n r=BASH_COMPAT; r=31; ${regex}`).blind, '`BASH_COMPAT` changes how bash reads the script');
+    assert.strictEqual(model('declare -n a=b; declare -n b=FUNCNEST; a=1').blind, '`FUNCNEST` may stop a function call');
+    assert.strictEqual(model('declare -n r=LC_ALL; r=de_DE.UTF-8').blind, '`LC_ALL` may be set to a locale other than C');
+    assert.strictEqual(model('declare -n r=LC_ALL; r=C; read r').blind, '`LC_ALL` may be set to a locale other than C');
+    assert.strictEqual(model("declare -n r=PS4; r='$((u=2))'; set -x").blind, 'PS4, which `set -x` expands before each command, may assign or run a command');
+    assert.strictEqual(model('declare -n r=LC_ALL; r=C; declare -n p=PS4; p=+; set -x').blind, undefined);
+    // `#!/bin/bash -a` exports the functions defined after it, as `set -a` does.
+    const exported = 'y=; f() { if [ -n "$y" ]; then echo set; else echo unset; fi; }; f; bash -c \'y=1; f\'';
+    assert.deepStrictEqual(model(`#!/bin/bash -a\n${exported}`), { blind: undefined, decided: false });
+    assert.deepStrictEqual(model(exported), { blind: undefined, decided: true });
+    // A quoted assignment of `env` is given to the shell; a word after the string is its parameter.
+    assert.strictEqual(inner(`env 'BASH_COMPAT=31' bash -c '${regex}'`), '`BASH_COMPAT` changes how bash reads the script');
+    assert.strictEqual(inner(`env LC_ALL=de_DE.UTF-8 bash -c '${regex}' LC_ALL=C`), '`LC_ALL` may be set to a locale other than C');
+    if (!hasBash) this.skip();
+    const run = (script: string): string => runBash(script, { files: [] }).stdout;
+    const shebang = (line: string, body: string): string => run(`printf '%s\\n' '${line}' '${body.replace(/'/g, "'\\''")}' > s; chmod +x s; ./s 2>/dev/null`);
+    assert.strictEqual(run("x=1; cmd=; $cmd eval x=2; echo $x; cmd=; $cmd set -k; f() { y=$x; }; f x=3; echo $y"), '2\n3\n');
+    assert.strictEqual(run(`env SHELLOPTS=keyword bash -c '${keyword}'; env BASHOPTS=compat31 bash -c '${regex}'; POSIX_PEDANTIC=1 bash -c 'shopt -qo posix && echo posix'`), '2\nyes\nposix\n');
+    assert.strictEqual(shebang('#!/usr/bin/env -S BASHOPTS=compat31 bash', regex), 'yes\n');
+    assert.strictEqual(shebang('#!/usr/bin/env -S SHELLOPTS=keyword bash', keyword), '2\n');
+    assert.strictEqual(shebang('#!/bin/bash -r', 'x=1; { x=2; } >/dev/null; echo $x'), '1\n');
+    assert.strictEqual(shebang('#!/usr/bin/env -S -u LANG bash -k', keyword), '2\n');
+    assert.strictEqual(shebang('#!/usr/bin/env -Sbash -k', keyword), '2\n');
+    assert.strictEqual(shebang('#!/bin/bash -a', exported), 'unset\nset\n');
+    assert.strictEqual(run(`declare -n r=BASH_COMPAT; r=31; ${regex}; u=1; declare -n p=PS4; p='$((u=2))'; set -x; : 2>/dev/null; set +x 2>/dev/null; echo $u`), 'yes\n2\n');
+    assert.strictEqual(run(`env 'BASH_COMPAT=31' bash -c '${regex}'`), 'yes\n');
+  });
+
   it('takes a locale of C, and empty or unset, as changing nothing (src/semantics/opening.ts)', () => {
     const kept: WrittenValue[] = ['none', 'kept', { names: [], text: 'C', fixed: true }, { names: [], text: 'C POSIX', each: ['C', 'POSIX'], fixed: true }];
     for (const v of kept) assert.ok(localeWritten(v), JSON.stringify(v));
@@ -303,7 +383,7 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
     assert.strictEqual(openingBlinds({ variables: [['LANG', null], ['PATH', undefined]], shopt: new Map([['compat31', 'off']]), set: new Map([['keyword', 'off'], ['errexit', 'on']]) }), undefined);
     assert.strictEqual(openingBlinds({ variables: [['LANG', undefined]] }), '`LANG` may be set to a locale other than C');
     assert.deepStrictEqual(childOpening([{ flag: '+o', value: 'keyword' }, { flag: '-o', value: 'posix' }, { flag: '+O', value: 'extquote' }, { flag: '-e' }, { flag: '-Z' }, { flag: '--norc' }], [['x', { set: 'on', value: '1' }], ['y', { set: 'off' }], ['z', { set: 'unknown' }], ['POSIXLY_CORRECT', { set: 'on', value: 'y' }]], true),
-      { set: new Map([['keyword', 'off'], ['errexit', 'on']]), shopt: new Map([['extquote', 'off']]), variables: [['x', '1'], ['y', null], ['z', undefined]] });
+      { set: new Map([['keyword', 'off'], ['errexit', 'on']]), shopt: new Map([['extquote', 'off']]), variables: [['x', '1'], ['y', null], ['z', undefined]], others: ['-Z'] });
   });
 
   it('trusts nothing in a script with a construct the table has no row for', () => {

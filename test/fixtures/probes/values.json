@@ -4181,6 +4181,7 @@
     "id": "locale-other",
     "manual": "5.2",
     "snippet": "LC_ALL=de_DE.UTF-8; x=abc; @PROBE:a@ \"${x^^}\"",
+    "note": "the machines that record the probes have no de_DE locale (bash warns, `cannot change locale`, and keeps C), so bash's output here shows no effect of the locale; the row checks that the model gives no value once the script sets a locale other than C",
     "none": {
       "a": "nothing is trusted: case conversion, character classes and ranges follow a locale other than C"
     },

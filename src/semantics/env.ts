@@ -477,8 +477,11 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
         const text = w.args[word].value?.slice(value.attached);
         if (text !== undefined) unsets.push(text);
       }
-      if (role.role === 'operand' && role.spec?.assignment) assigns.push(w.text(word).slice(0, w.text(word).indexOf('=')));
-      else if (role.role === 'subcommand') visit(outer, role.parse, role.spec, items(role.parse.roles, w, split));
+      if (role.role === 'operand' && role.spec?.assignment) {
+        // (By its value where it is static: `env 'BASH_COMPAT=31' bash -c …`.)
+        const text = w.args[word].value ?? w.text(word);
+        assigns.push(text.slice(0, text.indexOf('=')));
+      } else if (role.role === 'subcommand') visit(outer, role.parse, role.spec, items(role.parse.roles, w, split));
       else if (role.role === 'command') {
         const env = role.slot.envWith && flags.some((f) => role.slot.envWith!.options.includes(f)) ? role.slot.envWith.env : role.slot.env ?? 'exported';
         const program = (role.slot.run === 'shell-string' ? p.command.split(' ')[0].split('/').pop()! : '');
