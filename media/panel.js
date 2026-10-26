@@ -887,7 +887,9 @@
    * (quotes, expansions, the scripts of substitutions as bash reads them). Steps 6 to 8 add the other readers: the
    * scripts inside (a child shell), each command's reading of its arguments, and the languages.
    */
-  const STEPS = 3;
+  const STEPS = 2;
+  /** (Prototype B) Whether the program's side is shown: what each program receives, and what bash reads itself. */
+  let who = false;
   const BASH_STEP = /** @type {Record<string, number>} */ ({
     line: 1, list: 2, andList: 2, orList: 2, pipeline: 2, command: 3, compound: 3, clause: 3, coprocess: 3, function: 3, part: 3,
     commandName: 4, aliasWord: 4, expandedName: 4, option: 4, argument: 4, assignmentArgument: 4, word: 4, name: 4,
@@ -901,7 +903,7 @@
   /** Tells the host the choice: it keeps it for the next time (VS Code's global state, the web page's storage) and, in the list view, builds no tree. */
   function save() {
     // (`view: 'tree'`: the hosts build the reading tree, which the one view is drawn from.)
-    const state = { view: 'tree', depth: step, examples: examplesOpen ? 'open' : 'closed' };
+    const state = { view: 'tree', depth: step, who, examples: examplesOpen ? 'open' : 'closed' };
     vscode.setState(state);
     vscode.postMessage({ type: 'panelState', state });
   }
@@ -910,7 +912,10 @@
   function applyState(/** @type {any} */ state) {
     if (!state || typeof state !== 'object') return;
     // (Prototype B: one view, and the depth the viewer chose; the old view and its eight steps are not read.)
-    if (Number.isInteger(state.depth) && state.depth >= 1 && state.depth <= 3) step = state.depth;
+    // (Round 3's third depth, who reads each word, is now the program's side shown over depth 2.)
+    if (Number.isInteger(state.depth) && state.depth >= 1 && state.depth <= 3) step = Math.min(state.depth, STEPS);
+    if (typeof state.who === 'boolean') who = state.who;
+    else if (state.depth === 3) who = true;
     if (state.examples === 'open' || state.examples === 'closed') examplesOpen = state.examples === 'open';
   }
 
@@ -988,8 +993,8 @@
 
   /** The role a node's code is coloured with, as the list colours its tokens (`.kind-*`): a node of the other layers has its token's kind. */
   const ROLES = /** @type {Record<string, string>} */ ({
-    commandName: 'command', aliasWord: 'command', expandedName: 'variable', argument: 'argument', assignmentArgument: 'assignment',
-    word: 'argument', name: 'variable', heredoc: 'redirect', quote: 'string', arithmetic: 'expansion', brace: 'expansion',
+    commandName: 'command', aliasWord: 'command', expandedName: 'variable', argument: 'argument', assignmentArgument: 'name',
+    word: 'argument', name: 'name', heredoc: 'redirect', quote: 'string', arithmetic: 'expansion', brace: 'expansion',
     list: 'operator', andList: 'operator', orList: 'operator', pipeline: 'operator', command: 'operator', compound: 'keyword', clause: 'keyword', coprocess: 'keyword',
     function: 'keyword', script: 'substitution', part: 'operator', expression: 'operator', descriptor: 'redirect', delimiter: 'redirect',
   });
@@ -1124,20 +1129,19 @@
     return sp.start.line === shownLineNo && sp.end.line === shownLineNo ? shownText.slice(sp.start.character, sp.end.character) : n.label;
   }
 
-  /** The short note on a word in quotes (the quoting rule); none for `"$@"` and the like. */
-  function quoteNote(/** @type {any} */ q) {
-    const notes = labels.depth?.quotes;
-    if (!notes || q.label.includes('@')) return '';
-    if (q.label.startsWith("$'")) return notes.ansi;
-    if (q.label.startsWith('"')) return notes.double;
-    if (q.label.startsWith("'")) return notes.single;
+  /** The kind of quotes of a quote node: `double`, `single`, `ansi`; none for `"$@"` and the like. */
+  function quoteKind(/** @type {any} */ q) {
+    if (q.label.includes('@')) return '';
+    if (q.label.startsWith("$'")) return 'ansi';
+    if (q.label.startsWith('"')) return 'double';
+    if (q.label.startsWith("'")) return 'single';
     return '';
   }
 
   /** "an option": the kind with its article, in English. */
   const article = (/** @type {string} */ k) => (document.documentElement.lang === 'ja' ? k : `${/^[aeiou]/i.test(k) ? 'an' : 'a'} ${k}`);
-  /** What a kind is, short: the part of its general definition before the colon ("An argument", "引数"). */
-  const kindShort = (/** @type {string} */ about) => about.split(/[:：]/)[0];
+  /** Code in a text: `x`. */
+  const codeOf = (/** @type {string} */ s) => `\`${s}\``;
 
   /** A node and those about the same text under it, and the other parts in the order of the text. */
   function groupOf(/** @type {any} */ n) {
@@ -1165,114 +1169,226 @@
     return c ? `child:${c.process ?? 'subshell'}` : 'bash';
   }
 
+  /** The expansions bash makes in a group of nodes (not in what a command reads, nor in a script inside). */
+  function expansionsIn(/** @type {any[]} */ members) {
+    const out = /** @type {any[]} */ ([]);
+    const walk = (/** @type {any} */ x) => {
+      if (x.layer !== 'bash') return;
+      if (x.kind === 'expansion' || x.kind === 'substitution' || x.kind === 'arithmetic') out.push(x);
+      if (x.kind !== 'substitution') x.children.forEach(walk);
+    };
+    members.forEach(walk);
+    return [...new Set(out)];
+  }
+
+  /** Where the value of an expansion comes from, said short: "`$USER`: the user name", "`$backup`: set on line 1". */
+  function fromText(/** @type {any} */ x) {
+    const f = labels.depth.from;
+    const code = codeOf(x.label);
+    if (x.from.meaning) return f.meaning.replace('{code}', code).replace('{text}', x.from.meaning);
+    return (x.from.loop ? f.loop : f.line).replace('{code}', code).replace('{n}', String(x.from.line));
+  }
+
+  /**
+   * A text too long for one line, at step 1, with a remark in parentheses at its end ("Extended test `[[ ]]`:
+   * evaluates a condition (bash-only; …)"): its head at the step, and the remark from step 2 on, on a line of its own.
+   */
+  function splitLong(/** @type {string} */ text) {
+    if (text.length <= 90) return [text];
+    const m = /^(.{12,}?)\s*([(（][^]*[)）])$/.exec(text);
+    return m && m[1].length <= 80 ? [m[1], m[2].slice(1, -1)] : [text];
+  }
+
+  /** The texts of a row from the members that say something, the reader's first; their steps. */
+  function memberTexts(/** @type {any[]} */ members, /** @type {any} */ parent, /** @type {boolean} */ nameRow) {
+    const texts = /** @type {{ text: string, step: number, cls?: string }[]} */ ([]);
+    const said = new Set();
+    for (const m of [...members.filter(isReader).reverse(), ...members.filter((x) => !isReader(x))]) {
+      if (!hasText(m) || m.kind === 'quote' || said.has(m.text)) continue;
+      said.add(m.text);
+      const step = nameRow ? 1 : textStep(m, parent);
+      const [head, tail] = step === 1 && !texts.length ? splitLong(m.text) : [m.text];
+      texts.push({ text: head, step });
+      if (tail) texts.push({ text: tail, step: 2, cls: 'u-text2' });
+    }
+    return texts;
+  }
+
+  /** The kinds of rows that say where the values of the expansions in them come from (a word, an assignment). */
+  const VALUED = new Set(['argument', 'assignmentArgument', 'assignment', 'word', 'commandName', 'expandedName']);
+
+  /** A row: its parts are filled in by `plainRow` and `simpleRows`. */
+  function newRow(/** @type {any} */ primary, /** @type {any[]} */ members) {
+    return {
+      members, primary, span: primary.span, keys: new Set(members.map((m) => spanKey(m.span))),
+      label: '', labelParts: undefined, group: undefined, kind: '', name: undefined, value: undefined,
+      texts: /** @type {{ text: string, step: number, cls?: string }[]} */ ([]),
+      lines: /** @type {{ text: string, step: number, cls: string }[]} */ ([]),
+      chips: /** @type {any[]} */ ([]),
+      refs: /** @type {string[]} */ ([]),
+      reads: /** @type {{ text: string, layer: string } | null} */ (null),
+      bash: false, redir: '', read: false, also: null, badge: undefined, badgeText: '',
+      defKind: '', quote: '',
+      children: /** @type {any[]} */ ([]), examples: /** @type {any[]} */ ([]), problems: /** @type {any[]} */ ([]),
+      step: 9, forced: 9, promote: false, drop: false, count: 0,
+    };
+  }
+
   /**
    * The row of node `n` (and those about the same text), with its parts; `ctx`: who reads the row above, and the
-   * command whose redirections these are. Each thing a row says has the step it comes in at.
+   * command whose redirections these are. A simple command with a name is two rows (`simpleRows`).
    */
   function buildRow(/** @type {any} */ n, /** @type {any} */ parent, /** @type {any} */ ctx) {
+    const { members, rest } = groupOf(n);
+    if (isSimple(members[0])) {
+      const nameChild = rest.find((r) => NAMES.has(r.node.kind))?.node;
+      if (nameChild) return simpleRows(members[0], nameChild, rest, ctx);
+    }
+    return plainRow(members, rest, parent, ctx);
+  }
+
+  /**
+   * A simple command with a name: the row of its name says what the command does (from step 1, with what bash runs
+   * for it: a program, a builtin), and its arguments are under it. From step 2, a row of the whole command comes
+   * above it as a header, with its assignments and redirections beside the name; at step 1 they are drawn in its
+   * place. Nothing moves: the name's row says the same at every step.
+   */
+  function simpleRows(/** @type {any} */ cmd, /** @type {any} */ nameChild, /** @type {any[]} */ rest, /** @type {any} */ ctx) {
+    const t = labels.tree;
+    const tok = tokenAt.get(spanKey(cmd.span));
+    const inner = { readerKey: 'bash', redirectsOf: tok?.kind === 'redirect' ? sourceOf(nameChild) : undefined };
+    const i = rest.findIndex((r) => r.node === nameChild);
+    const before = rest.slice(0, i);
+    const after = rest.slice(i + 1);
+    const args = after.filter((r) => r.node.kind !== 'redirect');
+    const own = after.filter((r) => !args.includes(r));
+    const g = groupOf(nameChild);
+    const nameRow = plainRow(g.members, g.rest, cmd, { readerKey: 'bash', name: true });
+    nameRow.children.push(...args.map((r) => buildRow(r.node, r.parent, inner)));
+    // (The examples of the command are under its name's row: the header is not drawn at step 1.)
+    nameRow.keys.add(spanKey(cmd.span));
+    nameRow.value = nameRow.value ?? tok?.value;
+    const chip = { text: t.kinds.command, layer: 'bash', def: t.about.command, step: 2 };
+    const others = [...before, ...own].map((r) => buildRow(r.node, r.parent, inner));
+    if (!others.length && !args.length) {
+      // (A command that is its name alone: no header; the name's row says it is a simple command, in place of
+      // "command name".)
+      nameRow.chips = nameRow.chips.filter((/** @type {any} */ c) => c.text !== t.kinds[nameChild.kind]);
+      nameRow.chips.unshift(chip);
+      nameRow.refs = [...new Set([...(cmd.refs ?? []), ...nameRow.refs])];
+      nameRow.defKind = 'command';
+      return nameRow;
+    }
+    const head = newRow(cmd, [cmd]);
+    head.keys = new Set();
+    head.label = sourceOf(cmd);
+    head.kind = 'simple';
+    head.chips.push(chip);
+    head.refs = [...(cmd.refs ?? [])];
+    head.promote = true;
+    head.defKind = 'command';
+    head.children = [...others, nameRow].sort((a, b) => posCmp(a.span.start, b.span.start));
+    return head;
+  }
+
+  /** A row of nodes about the same text: what each says, its roles, and what a program reads of it. */
+  function plainRow(/** @type {any[]} */ members, /** @type {any[]} */ rest, /** @type {any} */ parent, /** @type {any} */ ctx) {
     const t = labels.tree;
     const d = labels.depth;
-    const { members, rest } = groupOf(n);
     const primary = members[0];
+    const row = newRow(primary, members);
     const tok = tokenAt.get(spanKey(primary.span));
-    const simple = isSimple(primary);
-    const nameChild = simple ? rest.find((r) => NAMES.has(r.node.kind))?.node : undefined;
     const readerKey = readerKeyOf(members);
     const reader = [...members].reverse().find(isReader);
     const takesOver = !!reader && readerKey !== ctx.readerKey;
-    /** @type {{ text: string, step: number }[]} */
-    const texts = [];
-    /** @type {{ text: string, step: number, cls: string }[]} */
-    const notes = [];
-    /** @type {{ text: string, layer: string, def: string, step: number }[]} */
-    const roles = [];
-    let reads = /** @type {{ text: string, layer: string } | null} */ (null);
-    // What the row says: a simple command, what its name does (its redirections say what they do); a command name
-    // under it, that it is the name (its command's row said what it does); the others, the text of each member, the
-    // reader's first. A word's quotes say their rule short (the general definition is the role's).
-    if (simple) {
-      if (nameChild && hasText(nameChild)) texts.push({ text: nameChild.text, step: 1 });
-      else if (hasText(primary) && tok?.kind !== 'redirect') texts.push({ text: primary.text, step: 1 });
-    } else if (ctx.nameOf === primary && primary.kind === 'commandName') {
-      texts.push({ text: d.nameRow, step: 2 });
-    } else {
-      const said = new Set();
-      for (const m of [...members.filter(isReader).reverse(), ...members.filter((x) => !isReader(x))]) {
-        if (!hasText(m) || m.kind === 'quote' || said.has(m.text)) continue;
-        said.add(m.text);
-        // (A command's first word, an alias or an expansion, comes in with the command's syntax.)
-        texts.push({ text: m.text, step: ctx.nameOf === primary ? 2 : textStep(m, parent) });
+    row.texts = memberTexts(members, parent, !!ctx.name);
+    // The values of the expansions in a word that says something at step 1: where each comes from.
+    if (members.some((m) => m.layer === 'bash' && VALUED.has(m.kind))) {
+      for (const x of expansionsIn(members.concat(rest.map((r) => r.node).filter((c) => c.layer === 'bash' && !NAMES.has(c.kind))))) {
+        if (x.from) row.lines.push({ text: fromText(x), step: 1, cls: 'u-val' });
       }
     }
-    const quote = members.find((m) => m.kind === 'quote');
-    if (quote && quoteNote(quote)) notes.push({ text: quoteNote(quote), step: 2, cls: 'u-note' });
     // A redirection of a command: bash sets it up before the command starts (`Redirection applied to …`, said once
-    // on the command's token), on the redirection's row.
-    if (primary.kind === 'redirect' && ctx.redirectsOf) notes.push({ text: d.redirNote.replaceAll('{name}', `\`${ctx.redirectsOf}\``), step: 3, cls: 'u-note' });
+    // on the command's token), on the redirection's row, when the program's side is shown.
+    if (primary.kind === 'redirect' && ctx.redirectsOf) row.redir = d.redirNote.replaceAll('{name}', codeOf(ctx.redirectsOf));
+    const quote = members.find((m) => m.kind === 'quote');
+    if (quote) row.quote = quoteKind(quote);
     for (const m of members) {
       if (isReader(m)) {
-        if (m !== reader) continue;
-        const kind = m.kind === 'language' ? '' : chipOf(m);
-        if (takesOver) {
-          reads = {
-            text: m.kind === 'language' ? t.readers.language.replace('{name}', m.reader ?? '') : d.readsAs.replace('{name}', m.reader ?? '').replace('{kind}', article(kind)),
-            layer: m.layer,
-          };
-        } else if (kind) roles.push({ text: kind, layer: m.layer, def: '', step: 3 });
+        if (m !== reader || !takesOver) continue;
+        if (m.kind === 'language') {
+          row.reads = { text: t.readers.language.replace('{name}', m.reader ?? ''), layer: m.layer };
+          continue;
+        }
+        // What the program reads: the word as bash expanded it (each file name a glob gives), as an option, an
+        // operand, the value of an option.
+        const kind = m.valueFor ? d.valueOf.replace('{flag}', codeOf(m.valueFor)) : article(chipOf(m));
+        const word = members.find((x) => x.layer === 'bash' && x.expands);
+        const glob = word?.expands.includes('glob');
+        const expanded = glob || word || expansionsIn(members).length > 0;
+        // (Japanese puts a space between code and kana: "tar が `-f` の値として読む".)
+        const spaced = document.documentElement.lang === 'ja' && kind.startsWith('`') ? ` ${kind}` : kind;
+        row.reads = { text: (glob ? d.readsGlob : expanded ? d.readsExpanded : d.readsAs).replaceAll('{name}', m.reader ?? '').replace('{kind}', spaced), layer: m.layer };
         continue;
       }
       if (m.kind === 'script') {
-        reads = { text: t.readers.child[m.process ?? 'subshell'], layer: 'child' };
+        row.reads = { text: t.readers.child[m.process ?? 'subshell'], layer: 'child' };
         continue;
       }
-      const about = t.about[aboutKey(m)] ?? '';
-      roles.push({ text: chipOf(m), layer: m.layer === 'child' ? 'bash' : m.layer, def: m.kind === 'quote' ? m.text : about, step: 2 });
-    }
-    // A row that says nothing of its own says what it is (the role's short name): every row says something.
-    if (!texts.length) {
-      const lang = primary.kind === 'language' ? (t.languages[primary.label] ?? primary.label) : '';
-      const about = t.about[aboutKey(primary)] ?? '';
-      const text = lang || (about ? kindShort(about) : chipOf(primary));
-      texts.push({ text, step: isReader(primary) ? 3 : 2 });
+      if (NAMES.has(m.kind)) {
+        row.chips.push({ text: t.kinds[m.kind] ?? chipOf(m), layer: 'bash', def: t.about[m.kind] ?? '', step: 2 });
+        continue;
+      }
+      const def = m.kind === 'quote' ? m.text : t.about[aboutKey(m)] ?? '';
+      row.chips.push({ text: chipOf(m), layer: m.layer === 'child' ? 'bash' : m.layer, def, step: 2 });
     }
     const lang = primary.kind === 'language' ? (t.languages[primary.label] ?? primary.label) : '';
-    const name = members.find((m) => m.name && m.kind !== 'keyword')?.name;
-    const refs = [...new Set(members.filter((m) => !isReader(m)).flatMap((m) => m.refs ?? []))];
-    const inner = {
-      readerKey, nameOf: nameChild,
-      redirectsOf: simple && tok?.kind === 'redirect' ? (nameChild ? sourceOf(nameChild) : sourceOf(primary)) : undefined,
-    };
-    const row = {
-      members, span: primary.span, keys: new Set(members.map((m) => spanKey(m.span))),
-      // (A simple command is named by its name at step 1, where its name has no row of its own; whole from step 2.)
-      label: lang || (simple ? sourceOf(primary) : (tok?.label ?? primary.label)),
-      shortLabel: simple && nameChild ? sourceOf(nameChild) : '',
-      labelParts: lang ? [{ text: lang, placeholder: true }] : simple ? undefined : tok?.labelParts,
-      group: simple ? undefined : tok?.group,
-      kind: simple ? 'operator' : tok?.kind ?? (NAMES.has(primary.kind) ? (name?.runs === 'builtin' ? 'builtin' : 'command') : roleOf(primary)),
-      shortKind: simple && nameChild ? (name?.runs === 'builtin' || nameChild.name?.runs === 'builtin' ? 'builtin' : 'command') : '',
-      texts, notes, roles, reads, name, value: tok?.value, refs,
-      // (What the command reads is filled green from step 3; bash's own parts inside it are not.)
-      read: readerKey.startsWith('command:') || readerKey.startsWith('language:'),
-      children: /** @type {any[]} */ ([]), examples: /** @type {any[]} */ ([]), step: 9, forced: 9,
-    };
+    if (!row.texts.length && lang) row.texts.push({ text: lang, step: isReader(primary) ? 1 : 2 });
+    row.name = members.find((m) => m.name && m.kind !== 'keyword')?.name;
+    const nameNode = members.find((m) => NAMES.has(m.kind));
+    if (nameNode) {
+      // What bash runs for the name: a program, a builtin, a function (from step 1); what else the name is (step 2).
+      // (Beside the name, in the code's column: the chips at the right are the roles.)
+      if (row.name) row.badge = row.name;
+      else if (nameNode.resolves && t.resolves[nameNode.resolves]) row.badgeText = t.resolves[nameNode.resolves];
+      if (row.name?.said.also) row.also = row.name.said.also;
+    }
+    row.refs = [...new Set(members.filter((m) => !isReader(m)).flatMap((m) => m.refs ?? []))];
+    row.label = lang || (ctx.name ? sourceOf(primary) : (tok?.label ?? primary.label));
+    row.labelParts = lang ? [{ text: lang, placeholder: true }] : ctx.name ? undefined : tok?.labelParts;
+    row.group = ctx.name ? undefined : tok?.group;
+    // (A variable's name is a name, not an expansion: the loop variable `f`, the name of an assignment.)
+    row.kind = ctx.name || NAMES.has(primary.kind) ? (row.name?.runs === 'builtin' || nameNode?.resolves === 'builtin' ? 'builtin' : 'command')
+      // (What the command reads it as, when no token of the line shown is about it: the body of a loop on its first line.)
+      : primary.kind === 'name' ? 'name' : tok?.kind ?? (reader?.layer === 'command' ? reader.kind : roleOf(primary));
+    row.value = tok?.value;
+    row.read = readerKey.startsWith('command:') || readerKey.startsWith('language:');
+    row.bash = !row.read && readerKey === 'bash' && !['list', 'andList', 'orList', 'pipeline', 'compound', 'part', 'line'].includes(primary.kind);
+    // (An argument is defined by the simple command's definition: "the rest its arguments".)
+    if (primary.kind === 'keyword') row.defKind = 'keyword';
+    else if (primary.kind === 'expansion') row.defKind = 'expansion';
+    const inner = { readerKey, redirectsOf: ctx.redirectsOf };
     row.children = rest.map((r) => buildRow(r.node, r.parent, inner));
     return row;
   }
+
+  /** Whether two texts say the same thing: one is the other, or holds it whole. */
+  const repeats = (/** @type {string} */ a, /** @type {string} */ b) => a === b || (a.length >= 8 && b.length >= 8 && (a.includes(b) || b.includes(a)));
 
   /** The rows of the line shown, with the examples on their rows, and the step each comes in at. */
   function buildRows() {
     if (!reading || !labels.tree || !labels.depth) return null;
     indexTokens();
-    const rows = reading.children.map((/** @type {any} */ c) => buildRow(c, reading, { readerKey: 'bash' }));
+    const d = labels.depth;
+    let rows = reading.children.map((/** @type {any} */ c) => buildRow(c, reading, { readerKey: 'bash' }));
     // A block around the line (the `for` of a loop body), with the problems on its line, first.
     const around = shownAround.map((a) => ({
-      members: [], span: { start: { line: a.line, character: 0 }, end: { line: a.line, character: a.text.length } }, keys: new Set(),
-      label: a.text.trim(), shortLabel: '', kind: 'keyword', shortKind: '',
-      texts: [{ text: labels.depth.context.replace('{label}', a.label).replace('{n}', String(a.line + 1)), step: 1 }],
-      notes: [], roles: [], reads: null, refs: [], read: false, children: [], examples: [], step: 1, forced: 1, around: true,
+      ...newRow({ span: { start: { line: a.line, character: 0 }, end: { line: a.line, character: a.text.length } } }, []),
+      keys: new Set(), label: a.text.trim(), kind: 'keyword',
+      texts: [{ text: d.context.replace('{label}', a.label).replace('{n}', String(a.line + 1)), step: 1 }],
+      step: 1, forced: 1, around: true,
       // (A problem's text starts with the mark of its level, which the icon stands for here.)
-      problems: a.problems.map((/** @type {any} */ p) => ({ level: p.level, label: '', body: p.text.replace(/^[⚠ⓘℹ]\uFE0F?\s*/u, ''), refs: [] })),
+      problems: a.problems.map((/** @type {any} */ p) => ({ level: p.level, label: '', body: p.text.replace(/^[⚠ⓘℹ]️?\s*/u, ''), refs: [] })),
     }));
     // Each example on the row of its range, else on the deepest row of step 1 around it; examples with neither, at the end.
     const all = /** @type {{ row: any, depth: number }[]} */ ([]);
@@ -1301,24 +1417,71 @@
       tok.children.forEach(visit);
     };
     shownItems.forEach(visit);
-    // A long text said again (each `|`, each command name) is said short the next times: its head, "as above".
-    const said = new Set();
-    const again = (/** @type {any} */ r) => {
-      const main = r.texts[0];
-      if (main && !r.around) {
-        const head = main.text.split(/[:：]/)[0];
-        if (said.has(main.text) && head.length <= 30 && main.text.length >= head.length + 15) main.text = labels.depth.again.replace('{text}', head);
-        else said.add(main.text);
+
+    // Nothing said twice. A text its parent row says already (or that says the parent's again) is left out; an
+    // operator said before (each `|` of a pipeline) is one row, counted; the literal pieces of a glob say nothing the
+    // glob does not. A row left with nothing to say gives its place to its parts.
+    const seenOps = new Map();
+    const prune = (/** @type {any} */ r, /** @type {any} */ parent) => {
+      const main = parent && !parent.promote ? parent.texts[0]?.text : undefined;
+      if (main) r.texts = r.texts.filter((/** @type {any} */ x) => !repeats(x.text, main));
+      if (!r.around && (r.primary?.kind === 'operator' || r.primary?.kind === 'keyword') && r.texts[0]) {
+        const key = `${r.label}\n${r.texts[0].text}`;
+        const first = seenOps.get(key);
+        if (first) {
+          first.count++;
+          r.drop = true;
+        } else {
+          seenOps.set(key, r);
+          r.count = 1;
+        }
       }
-      r.children.forEach(again);
+      if (r.primary?.kind === 'string' && r.primary.layer === 'bash' && !r.children.length && parent?.children.some((/** @type {any} */ c) => c.primary?.kind === 'pattern')) r.drop = true;
+      r.children.forEach((/** @type {any} */ c) => prune(c, r));
+      if (!r.around && !r.promote && !r.texts.length && !r.lines.length && !r.examples.length) r.drop = true;
     };
-    rows.forEach(again);
-    // A row comes in at the first step it says something, and no later than its parts.
+    rows.forEach((r) => prune(r, null));
+    // (A dropped row's parts take its place; a counted operator drops with no parts.)
+    const lift = (/** @type {any[]} */ list) => list.flatMap((/** @type {any} */ r) => {
+      r.children = lift(r.children);
+      return r.drop ? r.children : [r];
+    });
+    rows = lift(rows);
+    // The general definitions, once on the panel, from step 2: on the first simple command, argument, reserved
+    // word and expansion; the full rule of each kind of quotes on the first word in them.
+    const defs = new Set();
+    const quotes = new Set();
+    const define = (/** @type {any} */ r) => {
+      const def = d.defs[r.defKind];
+      if (def && !defs.has(r.defKind)) {
+        defs.add(r.defKind);
+        const code = r.defKind === 'expansion' ? codeOf(r.label) : '';
+        const text = def.replace('{code}', code);
+        // (An expansion whose meaning its word said at step 1 says what bash does with it instead.)
+        const said = r.defKind === 'expansion' && r.primary.from?.meaning;
+        if (said) r.texts = r.texts.filter((/** @type {any} */ x) => !repeats(x.text, r.primary.from.meaning));
+        // (An expansion that says what it expands to needs no definition besides.)
+        if (r.promote || !r.texts.length) r.texts.unshift({ text, step: 2, cls: 'u-def' });
+        else if (r.defKind !== 'expansion') r.lines.push({ text, step: 2, cls: 'u-def' });
+      } else if (r.defKind === 'expansion' && r.primary.from?.meaning) {
+        r.texts = r.texts.filter((/** @type {any} */ x) => !repeats(x.text, r.primary.from.meaning));
+        if (!r.texts.length) r.texts.push({ text: d.paramShort.replace('{code}', codeOf(r.label)), step: 2 });
+      }
+      if (r.quote && !quotes.has(r.quote)) {
+        quotes.add(r.quote);
+        r.lines.push({ text: d.quotes[r.quote], step: 2, cls: 'u-note' });
+      }
+      r.children.forEach(define);
+    };
+    rows.forEach(define);
+    // A row comes in at the first step it says something, and no later than its parts; a header (a simple command)
+    // comes in at step 2, and its parts take its place before.
     const stepOf = (/** @type {any} */ r) => {
       const kids = r.children.map(stepOf);
-      r.step = Math.min(r.forced, ...r.texts.map((/** @type {any} */ x) => x.step), ...kids);
+      if (r.promote) return (r.step = 2);
+      r.step = Math.min(r.forced, ...r.texts.map((/** @type {any} */ x) => x.step), ...r.lines.map((/** @type {any} */ x) => x.step), ...kids);
       // (A row its parts bring in early says its first text from then: every row drawn says something.)
-      if (!r.texts.some((/** @type {any} */ x) => x.step <= r.step)) r.texts[0].step = r.step;
+      if (r.texts.length && !r.texts.some((/** @type {any} */ x) => x.step <= r.step)) r.texts[0].step = r.step;
       return r.step;
     };
     rows.forEach(stepOf);
@@ -1327,14 +1490,12 @@
 
   /** How much each step adds to the line shown; a step that adds nothing is passed over by ◁ ▷. */
   function measureDepths() {
-    appear = new WeakMap();
-    aboutAt = new Set();
     added = new Array(STEPS).fill(0);
     built = buildRows();
     if (!built) return;
-    const count = (/** @type {any[]} */ rows, /** @type {number} */ s) => rows.filter((r) => r.step <= s).reduce((n, r) => n + 1
-      + r.texts.filter((/** @type {any} */ x) => x.step <= s).length + r.notes.filter((/** @type {any} */ x) => x.step <= s).length
-      + r.roles.filter((/** @type {any} */ x) => x.step <= s).length + (s >= 3 && (r.reads || r.name) ? 1 : 0) + (s >= 2 && r.refs.length ? 1 : 0)
+    const count = (/** @type {any[]} */ rows, /** @type {number} */ s) => rows.reduce((n, r) => n + (r.step <= s ? 1 : 0)
+      + r.texts.filter((/** @type {any} */ x) => x.step <= s).length + r.lines.filter((/** @type {any} */ x) => x.step <= s).length
+      + r.chips.filter((/** @type {any} */ x) => x.step <= s).length + (s >= 2 && r.refs.length ? 1 : 0)
       + count(r.children, s), 0);
     let last = 0;
     for (let s = 1; s <= STEPS; s++) {
@@ -1353,15 +1514,16 @@
       t.children.forEach(walk);
     };
     shownItems.forEach(walk);
+    // (And those of the other lines of a statement shown whole: a loop's body, on its first line.)
+    (reading?.tokens ?? []).forEach(walk);
   }
 
-  /** The rows of step `s`, as drawn: each with the label, kind and parts it has at that step. */
+  /** The rows of step `s`, as drawn: a header not drawn yet gives its place to its parts. */
   function viewOf(/** @type {any} */ r, /** @type {number} */ s) {
-    const short = s === 1 && r.shortLabel;
-    return {
-      ...r, label: short ? r.shortLabel : r.label, kind: short ? r.shortKind : r.kind, labelParts: short ? undefined : r.labelParts,
-      children: r.children.filter((/** @type {any} */ c) => c.step <= s).map((/** @type {any} */ c) => viewOf(c, s)), problems: [...(r.problems ?? [])],
-    };
+    return { ...r, children: viewList(r.children, s), problems: [...(r.problems ?? [])] };
+  }
+  function viewList(/** @type {any[]} */ rows, /** @type {number} */ s) {
+    return rows.flatMap((/** @type {any} */ c) => (c.step <= s ? [viewOf(c, s)] : c.promote ? viewList(c.children, s) : []));
   }
 
   /** Puts each note of the line that is about a range on the innermost row drawn around it; returns the others. */
@@ -1398,19 +1560,52 @@
     return p;
   }
 
+  /** The sections a row cites, as one small link to the first (`§3.7.1+`), the others named in its tooltip. */
+  function refLink(/** @type {string[]} */ refs) {
+    const known = refs.filter((id) => manual[id]);
+    if (!known.length) return null;
+    const m = manual[known[0]];
+    const a = /** @type {HTMLAnchorElement} */ (el('a', { href: m.url, target: '_blank', rel: 'noopener noreferrer', class: 'u-ref' }, `${m.text}${known.length > 1 ? '+' : ''}`));
+    a.title = known.map((id) => `${manual[id].text} ${manual[id].title}`).join('\n');
+    a.setAttribute('aria-label', `${known.map((id) => `${manual[id].text} ${manual[id].title}`).join(', ')}${linkNote.startsWith('(') ? ' ' : ''}${linkNote}`);
+    return el('span', { class: 'refs' }, a);
+  }
+
+  /** A role chip; with a definition, a button that opens it under the row. */
+  function chipNode(/** @type {any} */ c, /** @type {HTMLElement} */ side, /** @type {HTMLElement} */ defs) {
+    if (c.badge) return nameBadge(c.badge);
+    if (!c.def) return [el('span', { class: `u-role l-${c.layer}${c.cls ? ` ${c.cls}` : ''}` }, c.text)];
+    const chip = el('button', { type: 'button', class: `u-role l-${c.layer}`, 'aria-expanded': 'false', title: labels.depth.more }, c.text);
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = chip.getAttribute('aria-expanded') !== 'true';
+      side.querySelectorAll('button.u-role').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+      chip.setAttribute('aria-expanded', String(open));
+      defs.replaceChildren(...(open ? inline(c.def) : []));
+      defs.hidden = !open;
+    });
+    return [chip];
+  }
+
   /**
-   * A row of the one view, on a grid: the code (indented by its level, with its fold button and badge) in a column
-   * of the same width on every row, and what it says from that column's edge on: its texts, notes and problems, and a
-   * line with its roles (each opens its definition) and the sections of the manual, at the same right edge.
+   * A row of the one view, on a grid: the code (indented by its level, with its fold button) in a column of the same
+   * width on every row, and what it says from that column's edge on. Its first line holds the text, and at its right
+   * the chips (what bash runs for a name, the roles from step 2, "bash" where bash reads it itself) and one link to
+   * the manual; the lines under it, the values, notes, definitions and problems.
    */
   function uitem(/** @type {any} */ row, /** @type {string} */ path, /** @type {number} */ s, /** @type {number} */ lvl) {
+    const d = labels.depth;
     const li = document.createElement('li');
     li.dataset.path = path;
     const r = document.createElement('div');
     r.className = `row u-row kind-${row.kind}`;
+    r.dataset.span = spanKey(row.span);
     r.style.setProperty('--lvl', String(lvl));
-    if (row.read && s >= 3) r.classList.add('u-read');
+    if (row.read && who) r.classList.add('u-read');
     if (row.around) r.classList.add('u-around');
+    if (row.promote) r.classList.add('u-head');
+    // (A group's skeleton, `grep | sort | …`, `if ‹condition› then … fi`: its code may wrap in the column.)
+    if (row.promote || ['pipeline', 'list', 'andList', 'orList', 'compound', 'part', 'clause', 'function'].includes(row.primary?.kind)) r.classList.add('u-group');
     const folds = row.children.length > 0 || row.examples.length > 0;
     const twisty = document.createElement(folds ? 'button' : 'span');
     twisty.className = 'twisty';
@@ -1432,42 +1627,37 @@
       if (p.placeholder) label.append(el('span', { class: 'ph' }, p.text));
       else label.append(p.text);
     });
-    const tok = el('span', { class: 'u-tok' }, twisty, label, ...(s >= 3 ? nameBadge(row.name) : []));
+    if (row.count > 1 && s >= 2) label.append(el('span', { class: 'u-count' }, d.times.replace('{n}', String(row.count))));
+    const badge = row.badge ? nameBadge(row.badge) : row.badgeText ? [el('span', { class: 'nk-badge nk-program' }, row.badgeText)] : [];
+    const tok = el('span', { class: 'u-tok' }, twisty, label, ...badge);
     const desc = el('div', { class: 'u-desc' });
-    row.texts.filter((/** @type {any} */ x) => x.step <= s).forEach((/** @type {any} */ x, /** @type {number} */ i) => desc.append(el('div', { class: i ? 'text u-text2' : 'text' }, ...inline(x.text))));
-    if (s >= 3) {
-      const also = nameAlso(row.name);
-      if (also) desc.append(also);
+    const texts = row.texts.filter((/** @type {any} */ x) => x.step <= s);
+    const first = el('div', { class: 'u-l1' });
+    const main = el('span', { class: `text${texts[0]?.cls ? ` ${texts[0].cls}` : ''}` }, ...(texts[0] ? inline(texts[0].text) : []));
+    // What the program reads of the word, after its text: "→ grep reads it as an option".
+    if (who && row.reads) {
+      // (Short, it is kept on one line; longer, its first words are: "→ grep reads each".)
+      const [lead, ...more] = row.reads.text.length <= 40 ? [row.reads.text] : row.reads.text.split(/(?<=^\S+ \S+ \S+) /);
+      main.append(' ', el('span', { class: `u-reads l-${row.reads.layer}` }, el('span', { class: 'u-nowrap' }, '→ ', ...inline(lead)), ...(more.length ? [' ', ...inline(more.join(' '))] : [])));
     }
+    const side = el('span', { class: 'u-side' });
+    const defs = el('div', { class: 'u-def u-open', hidden: '' });
+    if (who && row.bash) side.append(el('span', { class: 'u-role u-bash', title: d.who.bashTitle }, d.who.bash));
+    for (const c of row.chips.filter((/** @type {any} */ c) => c.step <= s)) side.append(...chipNode(c, side, defs));
+    const link = s >= 2 ? refLink(row.refs) : null;
+    if (link) side.append(link);
+    // (The chips float at the right of the first line, so that the text's other lines take the whole width.)
+    if (side.childElementCount) first.append(side);
+    first.append(main);
+    desc.append(first);
+    texts.slice(1).forEach((/** @type {any} */ x) => desc.append(el('div', { class: `text ${x.cls ?? 'u-text2'}` }, ...inline(x.text))));
+    for (const x of row.lines) if (x.step <= s) desc.append(el('div', { class: x.cls }, ...inline(x.text)));
+    if (s >= 2 && row.also) desc.append(el('div', { class: 'u-note' }, ...inline(row.also)));
     const value = valueLine(row.value);
     if (value) desc.append(value);
-    for (const n of row.notes) if (n.step <= s) desc.append(el('div', { class: n.cls }, ...inline(n.text)));
+    if (who && row.redir) desc.append(el('div', { class: 'u-note u-redir' }, ...inline(row.redir)));
     for (const p of row.problems) desc.append(noteEl(p, 'div', 'u-problem'));
-    const roles = row.roles.filter((/** @type {any} */ c) => c.step <= s);
-    const reads = s >= 3 ? row.reads : null;
-    const links = s >= 2 ? refLinks(row.refs) : [];
-    if (roles.length || reads || links.length) {
-      const line = el('span', { class: 'u-roles' });
-      const defs = el('div', { class: 'u-def', hidden: '' });
-      roles.forEach((/** @type {any} */ c) => {
-        if (!c.def) return line.append(el('span', { class: `u-role l-${c.layer}` }, c.text));
-        const chip = el('button', { type: 'button', class: `u-role l-${c.layer}`, 'aria-expanded': 'false', title: labels.depth.more }, c.text);
-        chip.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const open = chip.getAttribute('aria-expanded') !== 'true';
-          line.querySelectorAll('button.u-role').forEach((b) => b.setAttribute('aria-expanded', 'false'));
-          chip.setAttribute('aria-expanded', String(open));
-          defs.replaceChildren(...(open ? inline(c.def) : []));
-          defs.hidden = !open;
-        });
-        line.append(chip);
-      });
-      if (reads) {
-        if (roles.length) line.append(el('span', { class: 'u-arrow', 'aria-hidden': 'true' }, '→'));
-        line.append(el('span', { class: `u-reads l-${reads.layer}` }, reads.text));
-      }
-      desc.append(el('div', { class: 'u-meta' }, line, ...links), defs);
-    }
+    desc.append(defs);
     r.append(tok, desc);
     li.append(r);
     if (folds && collapsedKeys.has(path)) setCollapsed(li, true);
@@ -1503,8 +1693,8 @@
   }
 
   /**
-   * The code column: the same width on every row (a share of the view's). A code wider than its column takes the
-   * row's first line, and the text starts under it at the column's edge; on a narrow view every row is so.
+   * The code column: as wide as the widest code drawn (with its indent), up to a share of the view; a code wider
+   * than that wraps inside the column. On a narrow view the text goes under the code on every row.
    */
   function alignRows() {
     const tree = $('tree');
@@ -1512,13 +1702,33 @@
     const width = tree.clientWidth;
     const stacked = width < 520;
     tree.classList.toggle('u-stacked', stacked);
-    tree.style.setProperty('--codew', `${Math.round(Math.max(150, Math.min(300, width * 0.37)))}px`);
-    for (const r of /** @type {HTMLElement[]} */ (Array.from(tree.querySelectorAll('.u-row')))) {
-      r.classList.remove('u-long');
-      if (stacked || !r.getClientRects().length) continue;
-      const tok = /** @type {HTMLElement} */ (r.querySelector('.u-tok'));
-      if (tok.scrollWidth > tok.clientWidth + 1) r.classList.add('u-long');
-    }
+    if (stacked) return;
+    // (The width is that of the deepest step, at every step: the texts start at the same x from step to step. It is
+    // reckoned from the rows of that step, as the code is set: a character's width, the indent of a level, a badge's.)
+    const tok = /** @type {HTMLElement | null} */ (tree.querySelector('.u-row > .u-tok'));
+    const label = /** @type {HTMLElement | null} */ (tok?.querySelector('.label') ?? null);
+    if (!tok || !label) return;
+    tree.classList.add('u-measure');
+    const ch = label.scrollWidth / Math.max(1, [...(label.textContent ?? '')].length);
+    tree.classList.remove('u-measure');
+    const ind = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const lvl = Number(/** @type {HTMLElement} */ (tok.parentElement).style.getPropertyValue('--lvl')) || 0;
+    const base = (parseFloat(getComputedStyle(tok).paddingLeft) || 0) - lvl * ind;
+    const badge = /** @type {HTMLElement | null} */ (tree.querySelector('.u-tok > .nk-badge'));
+    const badgeW = (badge?.offsetWidth ?? 64) + 6;
+    let need = 0;
+    const GROUPS = ['pipeline', 'list', 'andList', 'orList', 'compound', 'part', 'clause', 'function'];
+    const walk = (/** @type {any[]} */ rows, /** @type {number} */ l) => {
+      for (const r of rows) {
+        if (!r.promote && !GROUPS.includes(r.primary?.kind)) {
+          const text = (r.labelParts ?? [{ text: r.label }]).map((/** @type {any} */ p) => p.text).join(' ') + (r.count > 1 ? '  ×9' : '');
+          need = Math.max(need, base + l * ind + [...text].length * ch + (r.badge || r.badgeText ? badgeW : 0) + 4);
+        }
+        walk(r.children, l + 1);
+      }
+    };
+    walk(viewList(/** @type {any} */ (built).rows, STEPS), 0);
+    tree.style.setProperty('--codew', `${Math.round(Math.max(120, Math.min(need, width * 0.36, 340)))}px`);
   }
   new ResizeObserver(() => alignRows()).observe($('tree'));
 
@@ -1527,13 +1737,14 @@
     flat = [];
     editors.clear();
     const unified = !!built;
-    const views = unified ? /** @type {any} */ (built).rows.filter((/** @type {any} */ r) => r.step <= step).map((/** @type {any} */ r) => viewOf(r, step)) : shownItems;
+    const views = unified ? viewList(/** @type {any} */ (built).rows, step) : shownItems;
     const left = unified ? placeNotes(views) : shownNotes;
     $('tree').replaceChildren(...views.map((/** @type {any} */ t, /** @type {number} */ i) => (unified ? uitem(t, `${i}`, step, 0) : item(t, `${i}`))));
     renderLine(shownText, shownLineNo, views.filter((/** @type {any} */ v) => !v.around), shownMarks);
     $('notes').replaceChildren(...left.map((n) => noteEl(n)));
     $('examples').replaceChildren(...(unified ? /** @type {any} */ (built).rest : shownRest).map((/** @type {any} */ e) => example(e, false)));
     $('main').dataset.depth = String(unified ? step : 0);
+    $('main').classList.toggle('u-who', unified && who);
     alignRows();
   }
 
@@ -1580,6 +1791,9 @@
           el('span', { class: 'sm-count' }), ' ', el('span', { class: 'sm-name' }), el('span', { class: 'sm-caret', 'aria-hidden': 'true' }, '▾')),
         steps),
       el('button', { type: 'button', id: 'tp-forward' }, icon('▷')),
+      // (Prototype B: the program's side, over either depth, and the key, at the right end.)
+      el('button', { type: 'button', id: 'who-toggle', 'aria-pressed': 'false' }, el('span', { class: 'u-switch', 'aria-hidden': 'true' }), el('span', { class: 'who-text' })),
+      el('button', { type: 'button', id: 'key-button', 'aria-expanded': 'false', 'aria-controls': 'u-keybox' }),
       el('span', { id: 'tp-live', class: 'tp-live', 'aria-live': 'polite' }));
   }
 
@@ -1591,21 +1805,36 @@
     return { short, name, said, full: added[s - 1] || s === 1 ? said : `${said} (${t.stepper.empty})` };
   }
 
-  /** The key to the view (prototype B): the colours of the left bars, the green fill, the badges and the problems; folded. */
+  /**
+   * The key to the view (prototype B), opened by its button at the right of the controls: the colours of the kinds,
+   * the chips as they are drawn, the green fill and the `bash` chip of the program's side, the problems, the keys.
+   */
   let keyOpen = false;
   function keyEl(/** @type {any} */ k) {
-    const box = /** @type {HTMLDetailsElement} */ (el('details', { class: 'u-key' }, el('summary', {}, k.title)));
-    box.open = keyOpen;
-    box.addEventListener('toggle', () => {
-      keyOpen = box.open;
-    });
+    const d = labels.depth;
+    const box = el('div', { id: 'u-keybox', class: 'u-key' });
     const bars = el('div', {}, `${k.bars}: `);
     k.kinds.forEach((/** @type {string[]} */ [kind, name], /** @type {number} */ i) => {
       if (i) bars.append(' · ');
-      bars.append(el('span', { class: `u-swatch kind-${kind}`, 'aria-hidden': 'true' }), name);
+      bars.append(el('span', { class: `u-kitem kind-${kind}` }, el('span', { class: 'u-swatch', 'aria-hidden': 'true' }), el('code', {}, name)));
     });
-    box.append(bars, el('div', {}, el('span', { class: 'u-swatch-fill', 'aria-hidden': 'true' }), k.fill), el('div', {}, ...inline(k.badges)), el('div', {}, k.problems));
+    const chips = el('div', { class: 'u-kchips' }, `${k.chips}: `,
+      el('span', { class: 'u-role l-bash' }, k.role), ' ', k.roleText, ' · ',
+      el('span', { class: 'nk-badge nk-program' }, 'program'), ' ', ...inline(k.badgeText));
+    const side = el('div', { class: 'u-kchips' },
+      el('span', { class: 'u-role u-bash' }, d.who.bash), ' ', k.bashText, ' · ',
+      el('span', { class: 'u-kread' }, el('span', { class: 'u-swatch-fill', 'aria-hidden': 'true' }), el('span', { class: 'u-reads l-command' }, k.readsSample)), ' ', k.fill);
+    box.append(bars, chips, side, el('div', {}, k.problems), el('div', {}, ...inline(k.keys)));
     return box;
+  }
+
+  /** Turns the program's side on or off, and keeps the choice. */
+  function setWho(/** @type {boolean} */ on) {
+    if (on === who) return;
+    who = on;
+    drawList();
+    renderControls();
+    save();
   }
 
   /** Draws the controls as the step is now. */
@@ -1622,7 +1851,13 @@
     const cap = document.getElementById('depth-caption');
     if (d && cap) {
       cap.hidden = !reading;
-      cap.replaceChildren(el('span', {}, d.captions[step - 1]), ...(step > 1 ? [' ', el('span', { class: 'u-keep' }, (step === 2 ? d.keepOne : d.keep).replace('{p}', String(step - 1)))] : []), ' ', keyEl(d.key));
+      cap.replaceChildren(el('div', { class: 'u-cap' }, d.captions[step - 1]), ...(who ? [el('div', { class: 'u-cap u-cap-who' }, ...inline(d.who.caption))] : []), ...(keyOpen ? [keyEl(d.key)] : []));
+      const wt = $('who-toggle');
+      wt.setAttribute('aria-pressed', String(who));
+      wt.title = d.who.title;
+      /** @type {HTMLElement} */ (wt.querySelector('.who-text')).textContent = d.who.label;
+      $('key-button').textContent = d.key.title;
+      $('key-button').setAttribute('aria-expanded', String(keyOpen));
     }
     const here = stepWords(step);
     box.querySelectorAll('button.step').forEach((b) => {
@@ -1663,9 +1898,10 @@
     const box = $('layers');
     if (!document.getElementById('steps') || box.closest('[hidden]')) return;
     const open = box.classList.contains('open');
-    box.classList.remove('tight', 'tighter', 'compact', 'open');
-    // (Prototype B: the stepper keeps its label and ◁ ▷; the steps fold into the menu first.)
-    for (const level of ['compact', 'tight']) {
+    box.classList.remove('tight', 'tighter', 'compact', 'open', 'wrap');
+    // (Prototype B: the stepper keeps its label and ◁ ▷; the steps fold into the menu first; last, the toggle and
+    // the key go to a line of their own.)
+    for (const level of ['compact', 'tight', 'wrap']) {
       if (box.scrollWidth <= box.clientWidth + 1) break;
       box.classList.add(level);
     }
@@ -1763,6 +1999,21 @@
       else /** @type {HTMLElement | null} */ (box.querySelector('button.step[aria-current]'))?.focus(STAY);
     } else if (b.id === 'step-menu') stepMenu(!box.classList.contains('open'));
     else if (b.id === 'tp-back' || b.id === 'tp-forward') choose(stepFrom(b.id === 'tp-back' ? -1 : 1));
+    else if (b.id === 'who-toggle') setWho(!who);
+    else if (b.id === 'key-button') {
+      keyOpen = !keyOpen;
+      renderControls();
+    }
+  });
+  // (Prototype B) Keys, outside a text field: `1` and `2` choose the depth, `W` shows the program's side.
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || !reading || !built) return;
+    const t = e.target;
+    if (t instanceof Element && t.closest('input, textarea, select, [contenteditable="true"], .cm-editor')) return;
+    if (e.key === '1' || e.key === '2') choose(Number(e.key));
+    else if (e.key === 'w' || e.key === 'W') setWho(!who);
+    else return;
+    e.preventDefault();
   });
   // The arrows step (among the steps that add something), Home and End go to the line alone and to every layer. In
   // the menu of the steps, the arrows up and down move the focus, and Escape closes it.

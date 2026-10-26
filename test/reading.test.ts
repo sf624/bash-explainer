@@ -796,12 +796,12 @@ describe('the reading tree of a line', () => {
       '      bash/operator ;;',
       '    bash/keyword esac',
     ]);
-    // On its first line, the loop is explained whole: the commands in it have no tokens of their own there.
+    // On its first line, the loop is shown whole: the commands in it say what the explanations of their own lines
+    // say (prototype B).
     const whole = explain(src).reading!;
     const nested = find(whole, 'printf x');
-    assert.deepStrictEqual(outline(nested), ['bash/command printf x', '  bash/commandName printf', '  bash/argument x']);
-    assert.strictEqual(find(whole, 'if [[ $f == b ]]; then printf x; fi').text, undefined);
-    assert.strictEqual(find(whole, 'printf').text, undefined);
+    assert.deepStrictEqual(outline(nested), ['bash/command printf x', '  bash/commandName printf', '  bash/argument x', '    command/argument x', '      language/language printf', '        language/string x']);
+    assert.ok(find(whole, 'printf').text);
     assert.deepStrictEqual(find(whole, 'f').kind, 'name');
   });
 
@@ -1013,7 +1013,8 @@ describe('the reading tree in the panel and in host files', () => {
       assert.deepStrictEqual(reads('tar -czf out.tgz ~/docs'), ['out.tgz -f', '~/docs -']);
       assert.deepStrictEqual(reads('tar -czf out.tgz ~'), ['out.tgz -f', '~ -']);
       const r = explain('tar -czf out.tgz ~/docs').reading!;
-      assert.match(find(r, '~/docs', 'command').text!, /^Word `~\/docs`$/);
+      // (Prototype B: tar's spec says what its operands are when it creates an archive.)
+      assert.match(find(r, '~/docs', 'command').text!, /^files and directories to archive$/);
       assert.match(find(r, '~/docs', 'bash').text!, /^Tilde expansion/);
     });
   });
@@ -1082,5 +1083,32 @@ describe('the words of a conditional expression in the reading tree', () => {
     assert.strictEqual(text(']]', 'keyword'), 'Ends the conditional expression');
     // (As bash reads them: `==` matches a pattern, `-eq` evaluates its sides as arithmetic.)
     assert.strictEqual(bash('x=12; [[ $x == 1* ]] && echo m; n=1+1; [[ "$n" -eq 2 ]] && echo a'), 'm\na\n');
+  });
+
+  // (Prototype B) A statement the tree shows whole: each word of another line says what that line's explanation says.
+  it('explains the body of a loop on its first line as on the body\'s own line', () => {
+    const src = 'for f in *.txt; do\n  wc -l "$f"\ndone\n';
+    const said = (line: number) => new Map(readingNodes(explain(src, line).reading!).filter((n) => n.span.start.line >= 1).map((n) => [`${n.layer}/${n.kind}@${n.span.start.line}:${n.span.start.character}-${n.span.end.character}`, n.text]));
+    const first = said(0);
+    for (const line of [1, 2]) {
+      for (const [key, text] of said(line)) if (first.has(key)) assert.strictEqual(first.get(key), text, key);
+    }
+    assert.strictEqual(first.get('bash/commandName@1:2-4'), 'Count lines, words and bytes');
+    assert.strictEqual(first.get('command/option@1:5-7'), 'count lines');
+    assert.strictEqual(first.get('command/argument@1:8-12'), 'target file');
+    assert.strictEqual(first.get('bash/keyword@2:0-4'), 'End of the loop body');
+    // Where the value of `$f` comes from: the loop's variable, set on line 1.
+    assert.deepStrictEqual(find(explain(src, 0).reading!, '$f').from, { line: 1, loop: true });
+  });
+
+  it('says where the value of an expansion comes from, and what bash makes of a word', () => {
+    const src = 'backup="${HOME}/b.tar.gz"\ntar -czf "$backup" ~/docs /var/log/*.log; grep "$USER" x\n';
+    const r = explain(src, 1).reading!;
+    assert.deepStrictEqual(find(r, '$backup').from, { line: 1 });
+    assert.deepStrictEqual(find(r, '$USER').from, { meaning: 'Current user name' });
+    assert.deepStrictEqual(find(r, '~/docs', 'bash').expands, ['tilde']);
+    assert.deepStrictEqual(find(r, '/var/log/*.log', 'bash').expands, ['glob']);
+    assert.strictEqual(find(r, '~/docs', 'command').text, 'files and directories to archive');
+    assert.strictEqual(find(r, '"$backup"', 'command').valueFor, '-f');
   });
 });
