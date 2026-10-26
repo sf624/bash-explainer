@@ -967,3 +967,20 @@ A control character shown in a value, a note or the lines of an example was a Un
 | JSON of the command line | the picture, as the analyzer says it | the same |
 
 Example: `s=$'a\nb'; printf '\033[1m%s' OK` says "the string `a<LF>b`" in Markdown, and draws `a`, a box `LF` and `b` in the panel. The note that says what the marks stand for follows the same form: "`<LF>` is LF (line feed, newline)". The tab is `TAB`, not its code `HT`; the note says "`<TAB>` is HT (tab)". `␣` (a space at an end) and `∅` (an empty word) are as they were.
+
+### Keyboard and screen reader access (panel and web page)
+
+A keyboard and screen reader test of the web page found these; the panel's part is VS Code's panel too.
+
+| Where | Now | Before |
+| --- | --- | --- |
+| Meaning view (panel) | Each row with parts has a fold button (▾/▸) in the Tab order, named "Parts of `grep \| sort`" (「`grep \| sort` の内訳」), with its state in `aria-expanded`; Enter or Space folds and unfolds it. | The glyph was a plain mark: only a click folded the row. |
+| Problems list (web page) | Each problem is a button: Tab reaches it, Enter or Space puts the cursor on its line and the focus in the editor. Its icon is named (Warning, Information). | Only a click opened a problem; the list was one stop of Tab. |
+| Editor (web page) | Named "Script" (「スクリプト」), and described by how to leave it: "To leave the editor, press Escape, then Tab." The hint also shows for a few seconds at the editor's top right when the focus comes in by the keyboard. | Tab indents in the editor, and nothing said how to get out. |
+| Moving the cursor (web page) | A polite live region says the line, its first part and its warnings once the cursor rests on another line: "Line 3: (( count++ )), Arithmetic evaluation (( )); 1 warning". | A screen reader heard nothing of the explanation. |
+| `F6` (web page) | Goes from the editor (or anywhere on the page) to the explanation, and back: the Reading view's current item, else the explanation itself. **Go to the explanation and back** in the menu does the same, and shows the key next to `Ctrl+O` and `Ctrl+S`. | None. |
+| Hover card (web page) | `Ctrl+K Ctrl+I` worked on the built site; now a screen reader is also told that the card is shown, that the keys again move into it, and that Escape closes it. | The card opened without a word, the focus left in the editor. |
+| Example input boxes | Named by their label ("Input: `a.txt` (sample contents)"). | No name. |
+| Reading view | Arrow keys and Tab keep the focused item's row below the sticky line and steps. | Going up into a large item left its row above the screen, under the line. |
+| Forced colours (Windows High Contrast) | The current step of the Reading view is drawn in the system's highlight, and the editor's cursor line has a frame. | Both lost their only mark, a tint. |
+| Links to the manual | Their name says where they go and that they open in a new tab (the web page) or in the browser (VS Code): "§3.2.5.2 Compound Commands (opens in a new tab)". | "§3.2.5.2" only. |

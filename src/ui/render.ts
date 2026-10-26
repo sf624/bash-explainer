@@ -36,6 +36,8 @@ export const ui = {
       copy: 'Markdown でコピー', copied: '解説を Markdown としてコピーしました。', expandAll: 'すべて展開', collapseAll: 'すべて折りたたむ',
       reference: '早見表', search: '検索（例: ${、2>&1、-f、grep）', back: '← 解説に戻る', shell: 'シェル', yq: 'yq', auto: '自動',
       editHint: '書き換えられます（結果はその場で更新）', noMatch: '該当なし',
+      // (The fold button of a row with parts, named by the row's label; the links' note on where they open: `linkNote`, src/ui/panelView.ts.)
+      partsOf: '{name} の内訳', opensTab: '（新しいタブで開く）', opensBrowser: '（ブラウザで開く）',
       views: '表示', listView: '意味', treeView: '読まれ方',
       tree: {
         label: '行の各部分を誰が読むか', show: '表示',
@@ -122,6 +124,7 @@ export const ui = {
       copy: 'Copy as Markdown', copied: 'Copied the explanation as Markdown.', expandAll: 'Expand all', collapseAll: 'Collapse all',
       reference: 'Quick reference', search: 'Search (e.g. ${, 2>&1, -f, grep)', back: '← Back to the explanation', shell: 'Shell', yq: 'yq', auto: 'Auto',
       editHint: 'Editable; the result updates as you type', noMatch: 'Nothing found',
+      partsOf: 'Parts of {name}', opensTab: '(opens in a new tab)', opensBrowser: '(opens in the browser)',
       views: 'View', listView: 'Meaning', treeView: 'Reading',
       tree: {
         label: 'Who reads each part of the line', show: 'Show',

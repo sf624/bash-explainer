@@ -77,6 +77,15 @@ export const TEXT = {
     cancel: 'Cancel',
     /** After a file's name, for a screen reader and in the tooltip. */
     unsaved: ' (unsaved changes)',
+    /** How to leave the editor, which takes Tab (web/a11y.ts). */
+    editorHint: 'To leave the editor, press Escape, then Tab.',
+    /** What the live region says of the line the cursor moved to: its number, its first part, its warnings. */
+    lineSummary: (n: number, part: string, warnings: number) => `Line ${n}: ${part}${warnings ? `; ${warnings} warning${warnings === 1 ? '' : 's'}` : ''}`,
+    partSaid: (label: string, what: string) => `${label}, ${what}`,
+    /** The menu's item for the key that goes between the editor and the explanation. */
+    toPanel: 'Go to the explanation and back',
+    /** Said when Ctrl+K Ctrl+I shows a card. */
+    cardOpened: (keys: string) => `Card shown. Press ${keys} again to move into it; Escape closes it.`,
   },
   ja: {
     tagline: 'シェルスクリプトを1行ずつ解説します。知りたい行にカーソルを置いてください。',
@@ -150,5 +159,10 @@ export const TEXT = {
     discard: '破棄して開く',
     cancel: 'キャンセル',
     unsaved: '（未保存の変更あり）',
+    editorHint: 'エディタから出るには、Esc を押してから Tab を押します。',
+    lineSummary: (n: number, part: string, warnings: number) => `${n} 行目：${part}${warnings ? `。警告 ${warnings} 件` : ''}`,
+    partSaid: (label: string, what: string) => `${label}、${what}`,
+    toPanel: '解説とエディタを行き来する',
+    cardOpened: (keys: string) => `解説のカードを表示しました。もう一度 ${keys} を押すとカードに移り、Esc で閉じます。`,
   },
 };

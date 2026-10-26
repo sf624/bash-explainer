@@ -453,6 +453,29 @@ button {
   min-height: 0;
 }
 
+/* How to leave the editor (web/a11y.ts): the editor's description, shown at its top right for a few seconds when the
+   focus comes in by the keyboard. The pointer goes through it, and it never takes the focus. */
+.editor-hint {
+  position: absolute;
+  top: 6px;
+  right: 18px;
+  z-index: 5;
+  max-width: calc(100% - 36px);
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: var(--radius-sm);
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.editor-hint:not(.shown) {
+  display: none;
+}
+
 /* Over the editor while a file is dragged onto it (web/main.ts): a dashed frame and what a drop does. It lets the
    drag through to the editor below. */
 .drop-target {
@@ -695,16 +718,28 @@ body.resizing .problems-resize {
   padding: 0 6px 6px;
 }
 
-#problem-list li {
+/* Each problem is a button (web/problem-list.ts), drawn as a row of the list. */
+#problem-list .problem {
   display: flex;
   gap: 8px;
+  width: 100%;
   padding: 3px 6px;
+  border: 0;
   border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-#problem-list li:hover {
+#problem-list .problem:hover {
   background: var(--vscode-list-hoverBackground);
+}
+
+#problem-list .problem:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
 }
 
 #problem-list .where,
@@ -1327,7 +1362,7 @@ body.resizing .problems-resize {
   min-height: 40px;
 }
 
-:where(html.narrow) #problem-list li {
+:where(html.narrow) #problem-list .problem {
   padding-block: 8px;
 }
 

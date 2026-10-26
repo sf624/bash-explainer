@@ -18,6 +18,7 @@ import { detectKind } from '../src/hosts/detect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { lineMarks, panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
+import { editorAttributes, editorHint, isPaneKey, LineAnnouncer } from './a11y';
 import { CHANNEL, COMMIT, PR, UP, VERSION } from './build-info';
 import { Compare, receiveState, toParent } from './compare';
 import { $, on, put } from './dom';
@@ -126,6 +127,8 @@ let loadingSample = false;
 /** Whether the toast offers to undo the sample. */
 let undoOffered = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
+/** The live region that says what the line the cursor moved to is about (the editor page only). */
+let announcer: LineAnnouncer | undefined;
 
 const editor = new Editor({
   kind: () => kind,
@@ -157,9 +160,16 @@ const editor = new Editor({
     timer = setTimeout(updatePanel, u.docChanged ? 150 : 60);
   },
   openSettings: () => settingsDialog?.show(),
+  announce: (text) => announcer?.say(text),
 }, { parent: $('editor'), text: shared.text ?? kindInfo(kind).sample, readMode, problems: mode.hasChrome });
 editor.shade();
 editor.placeCursor(shared.text ? 1 : kindInfo(kind).cursorLine);
+{
+  const region = document.getElementById('announce');
+  if (region) announcer = new LineAnnouncer(region, editor.view);
+  const hint = document.getElementById('editor-hint');
+  if (hint) editorHint(editor.view, hint);
+}
 
 // ---- Panel ----------------------------------------------------------------------------------
 
@@ -198,10 +208,11 @@ function updatePanel(): void {
   const s = shells();
   const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: panel.view() === 'tree' });
   shown = { explanation, line };
+  announcer?.shown(explanation, line, lang);
   panel.show(panelUpdate({
     lang, explanation, file: fileName(), line, lineText: doc.lines[line] ?? '',
     choice: choice(), detected: s.detected, placement: settings['examples.placement'],
-    animations: settings['panel.animations'], marks: lineMarks(problemsShown, line),
+    animations: settings['panel.animations'], marks: lineMarks(problemsShown, line), web: true,
   }));
 }
 
@@ -294,6 +305,9 @@ function applyLanguage(): void {
   put('menu-sample-label', t.sample);
   put('menu-open-label', t.open);
   put('menu-save-label', t.save);
+  put('menu-panes-label', t.toPanel);
+  put('editor-hint', t.editorHint);
+  editor.setLabels(editorAttributes(lang));
   put('menu-open-key', shortcut('O'));
   put('menu-save-key', shortcut('S'));
   document.getElementById('menu-open-file')?.setAttribute('title', t.openTip);
@@ -791,6 +805,23 @@ function fileKeys(e: KeyboardEvent): void {
   void (key === 's' ? saveFile() : openFile());
 }
 
+/**
+ * F6 (or Shift+F6) goes from the editor, or anywhere on the page, to the explanation in the panel's frame, and from the
+ * frame back to the editor: as F6 moves between the parts of VS Code. `inFrame`: the key was pressed in the frame.
+ */
+function paneKeys(e: KeyboardEvent, inFrame: boolean): void {
+  if (!isPaneKey(e) || document.querySelector('dialog[open]')) return;
+  e.preventDefault();
+  if (inFrame) editor.view.focus();
+  else toPanel();
+}
+
+/** Puts the focus in the explanation: into the frame, then on what the panel shows (media/panel.js, `focusExplanation`). */
+function toPanel(): void {
+  (document.getElementById('panel') as HTMLIFrameElement | null)?.focus();
+  panel.send({ type: 'focus' });
+}
+
 /** Whether a drag carries files (not text dragged from the editor or another page). */
 const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
 
@@ -808,6 +839,7 @@ function refuseDrops(w: Window): void {
 
 if (withFiles) {
   window.addEventListener('keydown', fileKeys, true);
+  window.addEventListener('keydown', (e) => paneKeys(e, false), true);
   refuseDrops(window);
   // The panel's frame is a page of its own (the same origin): its keys and drops too, each time it loads.
   const frame = document.getElementById('panel') as HTMLIFrameElement | null;
@@ -815,6 +847,7 @@ if (withFiles) {
     const w = frame?.contentWindow;
     if (!w || w.location.href === 'about:blank') return;
     w.addEventListener('keydown', fileKeys, true);
+    w.addEventListener('keydown', (e) => paneKeys(e, true), true);
     refuseDrops(w);
   };
   frame?.addEventListener('load', watchFrame);
@@ -832,6 +865,10 @@ if (withFiles) {
   on('menu-save', 'click', () => {
     drawer?.close();
     void saveFile();
+  });
+  on('menu-panes', 'click', () => {
+    drawer?.close();
+    toPanel();
   });
 
   // A file dragged over the editor: the drop target shows while it is there, and a drop opens the file. Taken before

@@ -162,6 +162,8 @@ const editorTheme = EditorView.theme({
   '@media (forced-colors: active)': {
     '.cm-lint-marker': { backgroundColor: 'CanvasText', forcedColorAdjust: 'none' },
     '.cm-bx-level': { fill: 'CanvasText' },
+    // The active line's tint is gone with forced colours: a frame in the system's highlight shows the cursor's line.
+    '.cm-activeLine, .cm-activeLineGutter': { outline: '1px solid Highlight', outlineOffset: '-1px' },
   },
   // A name hint (web/name-hints.ts): muted, on a faint tint, as VS Code draws an inlay hint. Inline, so that it
   // wraps with the line when long lines wrap. Its padding and margin stay at its two ends (the default
@@ -219,6 +221,8 @@ export interface EditorHost {
   changed(u: ViewUpdate): void;
   /** The hover card's link "Settings" (web/hover.ts). */
   openSettings(): void;
+  /** Says a short message in the page's live region (web/a11y.ts). */
+  announce?(text: string): void;
 }
 
 export interface EditorInit {
@@ -240,6 +244,8 @@ export class Editor {
   /** Wrapping of long lines (the `editor.wrap` setting). */
   private readonly wrapMode = new Compartment();
   private readonly inputMode = new Compartment();
+  /** The text box's name and description (`setLabels`), in the page's language. */
+  private readonly labelMode = new Compartment();
   /** The undo history: emptied when a file is opened (openText). */
   private readonly historyMode = new Compartment();
   private readonly shadings = new WeakMap<ShellDocument, { shell: string; spans: Shading[] }>();
@@ -285,7 +291,7 @@ export class Editor {
         extensions: [
           lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), this.historyMode.of(history()),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-          this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
+          this.languageMode.of(modeFor(host.kind())), this.inputMode.of(inputModeFor(init.readMode)), this.labelMode.of([]), this.wrapMode.of(wrapFor(host.settings()['editor.wrap'])),
           syntaxHighlighting(highlightStyle), editorTheme,
           highlightField, Prec.highest(shading), ...(init.problems ? [problems, lintGutter(), nameHintsExtension(() => TEXT[host.lang()].hintClick), this.hover!.extension] : []),
           EditorView.updateListener.of((u) => {
@@ -391,6 +397,11 @@ export class Editor {
 
   setWrap(on: boolean): void {
     this.view.dispatch({ effects: this.wrapMode.reconfigure(wrapFor(on)) });
+  }
+
+  /** Names the text box for a screen reader (`aria-label`, `aria-describedby`: web/a11y.ts). */
+  setLabels(attrs: Record<string, string>): void {
+    this.view.dispatch({ effects: this.labelMode.reconfigure(EditorView.contentAttributes.of(attrs)) });
   }
 
   setReadMode(on: boolean): void {
