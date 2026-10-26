@@ -1,5 +1,5 @@
 import { Text, tx } from '../i18n';
-import type { BuiltinCall, CommandSpec, NameOptions, OperandSpec, OptionSpec, PatternOption, ValueSpec, ValueType, VariableSet } from '../argv/spec';
+import type { BuiltinCall, CommandSlot, CommandSpec, NameOptions, OperandSpec, OptionSpec, PatternOption, ValueSpec, ValueType, VariableSet } from '../argv/spec';
 import { args, cmd, operand, optionOf, OptSpec, runs, wordTable } from './types';
 import { declarationCommands, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags } from './syntax';
 
@@ -51,11 +51,20 @@ export const shoptOptions = {
 
 /**
  * An option whose value names a variable the builtin sets (`read -a NAME`, `printf -v NAME`; `sets`), or a function
- * it runs later (`mapfile -C f`, `complete -F f`): the effects src/semantics/effects.ts reads.
+ * it runs later (`complete -F f`, `compgen -F f`): the effects src/semantics/effects.ts reads.
  */
 function naming(opt: OptSpec, type: ValueType, sets?: VariableSet): OptionSpec {
   const o = optionOf(opt);
   return { ...o, value: { ...(o.value as ValueSpec), type, ...(sets ? { sets } : {}) } };
+}
+
+/**
+ * An option whose value is code bash runs (`mapfile -C 'cmd'`: this shell reads the text, with the index and the line
+ * after it, as `eval` does; `compgen -C cmd`: a subshell runs it, as `$( )` does).
+ */
+function running(opt: OptSpec, command: CommandSlot): OptionSpec {
+  const o = optionOf(opt);
+  return { ...o, value: { ...(o.value as ValueSpec), command } };
 }
 
 const MAPFILE_OPTIONS: (OptSpec | OptionSpec)[] = [
@@ -65,7 +74,8 @@ const MAPFILE_OPTIONS: (OptSpec | OptionSpec)[] = [
     ['-s', '最初に読み飛ばす行数', 'number of lines to skip first', 'arg'],
     ['-O', '代入を始める配列の添字（既定は 0）', 'index to start assigning at (default 0)', 'arg'],
     ['-u', '標準入力の代わりに読むファイルディスクリプタ', 'file descriptor to read instead of stdin', 'arg'],
-    naming(['-C', '`-c` 行ごとに呼び出すコールバック（実行する式）', 'callback to run every `-c` lines', 'arg'], 'function'),
+    // (bash reads the text with the index and the line appended, in this shell: `mapfile -C 'x=2; :'` sets `x`.)
+    running(['-C', '`-c` 行ごとに実行するコールバック（今のシェルが読み直して実行する文字列。添字と行が後ろに付く）', 'callback run every `-c` lines (a string the current shell reads again and runs, with the index and the line appended)', 'arg'], { run: 'current-shell' }),
     ['-c', '`-C` を呼び出す間隔の行数', 'number of lines between callbacks', 'arg'],
   ];
 
@@ -424,14 +434,14 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-o', '補完の動作オプション', 'completion option', 'arg'],
     // (`-F` runs the function in this shell, and bash warns that it "may not work as you expect" outside completion.)
     naming(['-F', '指定した関数を現在のシェルで実行し、`COMPREPLY` に入れた候補を使う', 'run the given function in the current shell and use the candidates it puts in `COMPREPLY`', 'arg'], 'function'),
-    ['-C', '指定したコマンドをサブシェルで実行し、その出力を候補にする', "run the given command in a subshell and use its output as candidates", 'arg'],
+    running(['-C', '指定したコマンドをサブシェルで実行し、その出力を候補にする', "run the given command in a subshell and use its output as candidates", 'arg'], { run: 'subshell' }),
     ...COMPLETION_FILTERS,
     naming(['-V', 'bash 5.3: 候補を表示せず、指定した名前の配列に入れる', 'bash 5.3: store the candidates in the named indexed array instead of printing them', 'arg since:5.3'], 'variable', 'array'),
   ], args(operand('WORD', '補完中の単語（これで始まる候補だけ）', 'word being completed (only candidates starting with it)'))),
   complete: b('コマンドの引数の補完方法を登録する', "Register how a command's arguments are completed", [
     naming(['-F', '指定した関数で候補を作る', 'use the given function to generate candidates', 'arg'], 'function'), ['-W', '指定した単語の一覧から候補を作る', 'candidates from the given word list', 'arg'],
-    // (A command, which may be a function of the script.)
-    naming(['-C', '指定したコマンドの出力を候補にする', "use the given command's output as candidates", 'arg'], 'function'), ['-o', '補完の動作オプション（`nospace`、`default`…）', 'completion option (`nospace`, `default`…)', 'arg'],
+    // (A command, which may be a function of the script, run in a subshell when the command is completed: never in a script.)
+    running(['-C', '指定したコマンドの出力を候補にする', "use the given command's output as candidates", 'arg'], { run: 'subshell' }), ['-o', '補完の動作オプション（`nospace`、`default`…）', 'completion option (`nospace`, `default`…)', 'arg'],
     ['-r', '登録を削除する', 'remove the registration'], ['-p', '登録を表示する', 'print the registrations'],
     ['-A', '候補の種類（`file`、`command`、`variable`…）', 'kind of candidates (`file`, `command`, `variable`…)', 'arg'],
     ['-G', '指定したグロブに合うファイル名を候補にする', 'file names matching the given glob', 'arg'],

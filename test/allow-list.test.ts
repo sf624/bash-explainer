@@ -130,15 +130,69 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
     assert.deepStrictEqual(missing, []);
   });
 
-  it('agrees with the specs: a file run unread trusts nothing, and a command run in this shell is followed (or will trust nothing)', () => {
+  it('agrees with the specs: a file run unread trusts nothing, and a command run in this shell is followed, or trusts nothing', () => {
+    const inShell: string[] = [];
     for (const [name, row] of Object.entries(BUILTINS)) {
       const spec = builtins[name];
       if (spec.shellEffect?.runsUnread) assert.deepStrictEqual(row.effect, { kind: 'all', why: 'a file is sourced' }, name);
-      const slots = (spec.operands ?? []).flatMap((alt) => alt.pattern).filter((o) => o.command?.run === 'current-shell');
-      if (slots.length) assert.ok(row.effect.kind === 'followed' || row.next?.kind === 'all', name);
+      // A slot of the operands (under an option, `jobs -x cmd`: that option's row), or of an option's value (`mapfile -C`).
+      for (const alt of spec.operands ?? []) {
+        if (!alt.pattern.some((o) => o.command?.run === 'current-shell')) continue;
+        inShell.push(name);
+        const when = alt.when && 'option' in alt.when ? alt.when.option : [];
+        assert.ok(row.effect.kind === 'followed' || row.effect.kind === 'all' || (when.length && when.every((o) => row.options?.[o]?.effect.kind === 'all')), name);
+      }
+      for (const o of spec.options ?? []) {
+        const values = [o.value ?? []].flat();
+        if (!values.some((v) => v.command?.run === 'current-shell')) continue;
+        inShell.push(`${name} ${o.names[0]}`);
+        assert.strictEqual(row.options?.[o.names[0]]?.effect.kind, 'all', `${name} ${o.names[0]}`);
+      }
     }
-    assert.deepStrictEqual(Object.keys(BUILTINS).filter((n) => (builtins[n].operands ?? []).some((alt) => alt.pattern.some((o) => o.command?.run === 'current-shell'))).sort(),
-      ['builtin', 'command', 'eval', 'jobs', 'trap']);
+    assert.deepStrictEqual(inShell.sort(), ['builtin', 'command', 'eval', 'jobs', 'mapfile -C', 'readarray -C', 'trap']);
+  });
+
+  // Every option or operand of a builtin that runs code later or elsewhere is typed as bash runs it: a function
+  // (`type: 'function'`), or code with a command slot that says where it runs; and bash runs it so.
+  it('types every callback of a builtin as bash runs it: a function, or code in this shell or a subshell', function () {
+    if (!hasBash) this.skip();
+    const typed = new Map<string, string>();
+    for (const [name, spec] of Object.entries(builtins)) {
+      if (!Object.hasOwn(BUILTINS, name)) continue;
+      for (const o of spec.options ?? []) {
+        for (const v of [o.value ?? []].flat()) {
+          if (v.type === 'function') typed.set(`${name} ${o.names[0]}`, 'function');
+          else if (v.command) typed.set(`${name} ${o.names[0]}`, `code: ${v.command.run}${v.command.later ? ', later' : ''}`);
+        }
+      }
+      for (const alt of spec.operands ?? []) {
+        for (const op of alt.pattern) {
+          if (op.type === 'function') typed.set(`${name} ${op.name}`, 'function');
+          else if (op.command) typed.set(`${name} ${op.name}`, `code: ${op.command.run}${op.command.later ? ', later' : ''}`);
+        }
+      }
+    }
+    const want: Record<string, string> = {
+      // In this shell, now: `mapfile -C` reads its text with the index and the line after it, as `eval` does.
+      'mapfile -C': 'code: current-shell', 'readarray -C': 'code: current-shell', 'compgen -F': 'function',
+      // In a subshell, as `$( )`; `complete`'s run when a command is completed, which a script never does.
+      'compgen -C': 'code: subshell', 'complete -C': 'code: subshell', 'complete -F': 'function',
+    };
+    for (const [k, v] of Object.entries(want)) assert.strictEqual(typed.get(k), v, k);
+    // (The command slots of the operands: `eval`, `trap`'s action (later), `command`, `builtin`, `jobs -x`, and the
+    // program `exec` runs in place of the shell.)
+    assert.deepStrictEqual([...typed].filter(([k]) => !Object.hasOwn(want, k)).map(([k, v]) => `${k}: ${v}`).sort(),
+      ['builtin COMMAND: code: current-shell', 'command COMMAND: code: current-shell', 'eval STRING: code: current-shell', 'exec COMMAND: code: exec', 'jobs COMMAND: code: current-shell',
+        'trap ACTION: code: current-shell, later']);
+    // What bash runs where: `x` is set by what runs in this shell only.
+    const ran = (src: string): string => runBash(`x=1; f() { x=2; COMPREPLY=(a); }; ${src} >/dev/null 2>&1; echo $x`).stdout.trim();
+    for (const src of ["mapfile -C 'x=2; :' -c 1 a <<< q", "readarray -C 'x=2; :' -c 1 a <<< q", 'compgen -F f w', 'jobs -x eval x=2', "trap 'x=2' USR1; kill -USR1 $$"]) assert.strictEqual(ran(src), '2', src);
+    for (const src of ["compgen -C 'x=2' w", "complete -C 'x=2' c; complete -F f d", "bind -x '\"\\C-a\":x=2'"]) assert.strictEqual(ran(src), '1', src);
+    // `bind -x` binds a key to a command (its value is `"keys":command`, text), and the prompts and PROMPT_COMMAND
+    // are read by an interactive shell only: a script runs none of them (their effect is none).
+    assert.strictEqual(ran("PROMPT_COMMAND='x=2'; PS0='$((x=3))'; PS1='$((x=4))'; PS2='$((x=5))'; true"), '1');
+    for (const v of ['PROMPT_COMMAND', 'PS0', 'PS1', 'PS2']) assert.strictEqual(BASH_VARIABLES[v].effect.effect.kind, 'none', v);
+    assert.strictEqual(typed.get('bind -x'), undefined);
   });
 
   it('is what the scan reads: a row of `all` trusts nothing, and `none` reads no further', () => {

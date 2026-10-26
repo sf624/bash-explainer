@@ -45,6 +45,8 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
       'set -o history\nu=1\nfc -s 1=2 u >/dev/null 2>&1\n',
       'g() { if [ "$d" = 1 ]; then d=2; g; return; fi; u=2; }; u=1; d=1; g',
       'g() { if [ "$d" = 1 ]; then d=2; h; return; fi; u=2; }; h() { g; }; u=1; d=1; g',
+      // (Callbacks that run code in this shell: docs/design/trust-allow-list.md, the review of steps 1 to 3.)
+      "u=1; mapfile -C 'u=2; :' -c 1 arr <<< q", "u=1; readarray -C 'u=2; :' -c 1 arr <<< q", 'u=1; jobs -x eval u=2',
     ].map((s) => ({ text: `${s}; ${test('u')}; : M4`.replace('\n; ', '\n'), constructs: [{ id: 1, type: 'if_statement' }] }));
     list.push({ text: 'enable -n exit; exit 2>/dev/null; : M1', constructs: [] });
     // (The recursive call runs the code after `return`, and what it calls: `h`'s body runs.)

@@ -131,6 +131,16 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
 
   // docs/design/trust-per-position.md, section 2: what changed `u` where the scan saw no write. bash's environment
   // here gives `n='u=2'` (a variable the script declares without a value keeps it).
+  it('trusts nothing after `ulimit -n` or `-u`, which may make a redirection or `$( )` fail', () => {
+    // (`> /dev/null` fails with "Too many open files", and so does the pipe of `$( )`.)
+    for (const src of ['ulimit -n 3; { u=2; } > /dev/null', 'ulimit -Sn 3; v=$(echo 2); u=${v:-1}']) {
+      assert.strictEqual(inherited(`u=1; ${src} 2>/dev/null\necho "$u"`), '1', src);
+      assert.strictEqual(decided(`u=1; ${src}\n[ "$u" = 2 ] && :`), undefined, src);
+    }
+    // (Other limits change nothing the model reads.)
+    assert.strictEqual(decided('u=1; ulimit -c 0; ulimit -f; { u=2; } > /dev/null\n[ "$u" = 2 ] && :'), 'true');
+  });
+
   it('trusts nothing where bash may run a subscript, a prompt, a word list or a history line, or an inherited value', () => {
     const changes: [string, string][] = [
       // A nameref whose target is not known, read: the target's subscript is arithmetic.
@@ -155,6 +165,9 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
       ['declare n; (( n ))', 'declare n'], ['declare -i n; n+=1', 'declare -i n; n+='], ['f() { declare -g n; }; f; (( n ))', 'declare -g n'], ['declare -i n+=1', 'declare -i n+=1'],
       // `declare -I` and `local -I` in a function keep the value from outside, also one from the environment.
       ['f() { declare -I n; (( n )); }; f', 'declare -I n'], ['f() { local -I n; (( n )); }; f', 'local -I n'],
+      // `mapfile -C` (and `readarray -C`) runs its text in this shell; `jobs -x` its command.
+      ["mapfile -C 'u=2; :' -c 1 arr <<< q", 'mapfile -C'], ["readarray -C 'u=2; :' -c 1 arr <<< q", 'readarray -C'], ['f() { u=2; }; mapfile -C f -c 1 arr <<< q', 'mapfile -C f'],
+      ['jobs -x eval u=2', 'jobs -x'],
     ];
     for (const [src, what] of changes) {
       assert.strictEqual(inherited(`u=1; ${src}\necho "$u"`), '2', what);
