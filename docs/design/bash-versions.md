@@ -2,7 +2,7 @@
 
 bash 5.2 stays the reference of the explanations. The explainer can also explain a script as bash 5.3 reads and runs it. This document says where the version comes from, how it reaches the explanations and the models, which differences of 5.3 we explain, and how they are tested.
 
-Status: steps 1 (#283), 2 and 7 of section 7 are done. Steps 3 to 6 are not started.
+Status: steps 1 (#283), 2, 4 and 7 of section 7 are done. Steps 3, 5 and 6 are not started.
 
 ## 1. Why
 
@@ -54,10 +54,10 @@ From NEWS, CHANGES (5.3-alpha to 5.3-rc2) and COMPAT of the bash-5.3 tarball, ea
 
 | Change | Today | Needed | Prio |
 | --- | --- | --- | --- |
-| `source -p PATH file` (and `. -p`): look for the file in PATH, not `$PATH`. 5.2: "invalid option", status 2. | "`-p`: option not in the dictionary" | Option in the spec of `source`/`.`, gated by version (a spec field `since`, read by the argument interpreter); issue in 5.2 mode | 2 |
-| `compgen -V var`: store the completions in the array `var`. 5.2: "invalid option", status 2. | `-V` unknown, and the words after it are taken for the word to complete (wrong) | Option in the spec, gated | 2 |
-| `trap -P sig`: print the action of each signal. 5.2: "invalid option". | `-P` unknown; `INT` is said to reset the trap (wrong with `-P`) | Option in the spec, gated | 2 |
-| `read -E`: read with readline and bash's completion. 5.2: "invalid option". | `-E` unknown | Option in the spec, gated | 3 |
+| `source -p PATH file` (and `. -p`): look for the file in PATH, not `$PATH`; an empty entry is the current directory, which is not searched otherwise. 5.2: "invalid option", status 2. | "`-p`: option not in the dictionary" | Done in step 4: the option in the spec of `source`/`.`, with `since: '5.3'`; issue in 5.2 mode | 2 |
+| `compgen -V var`: store the completions in the array `var` (a global one, also in a function). 5.2: "invalid option", status 2. | `-V` unknown, and the words after it are taken for the word to complete (wrong) | Done in step 4 | 2 |
+| `trap -P sig`: print the action of each signal (at least one; not with `-p`). 5.2: "invalid option", status 2. | `-P` unknown; `INT` is said to reset the trap (wrong with `-P`) | Done in step 4 | 2 |
+| `read -E`: read with readline and bash's completion. 5.2: "invalid option", status 2. | `-E` unknown | Done in step 4 | 3 |
 | `printf %#q` and `%#Q`: the alternate form forces single quotes (`'a b'`). In 5.2 the `#` has no effect (`a\ b`). | "with a 0x/0 prefix": wrong in both versions | Done in step 2: the meaning by version, also in the example | 1 |
 | `printf %ls`, `%lc` (`%S`, `%C`): wide strings and characters in a multibyte locale. 5.2 also accepts `%ls` (the `l` is ignored); `%S` and `%C` are "invalid format character" there, status 1. | "unknown conversion `l`": wrong in both versions | Done in step 2: the length modifiers of C are read (`%ld` was wrong too), the meaning by version; no example of a character that is not ASCII (it depends on the locale) | 2 |
 | `command declare a=(…)` keeps the assignment parsing of `declare` (POSIX). | Not checked | Check with both versions; the reading of `command`'s operands | 3 |
@@ -130,7 +130,7 @@ Each step is a PR that keeps every test green and coverage at 100%.
 1. Done (#283). The setting on every surface; `${ }` and `${| }` explained as bash 5.3 runs them, with the issue in 5.2 mode; their `FEATURES` entries; no subshell in the environment model and no decision in a script that has one; test/bash53.test.ts; CI builds bash 5.3.
 2. Done. Fixes that hold in both versions, found by the inventory: `printf %#q` (5.2: the `#` does nothing), `printf %ls` and `%lc`. The embedded explainers get the release whose builtin reads the text (`EmbeddedContext.bash()`; undefined for a program), and `explainPrintf` and `bashPrintf` a reader (`PrintfReader`: a bash release or coreutils; awk's printf as before). Found on the way, in both releases: `%Q` (bash 5.2 has it too), the length modifiers of C (`%ld`), precisions and widths in bytes, and what `%q` quotes (`,` and `^`; `#` and `~` only at the start of a word); and in coreutils printf, no `%#q`, `%Q`, `%S`, `%C` or `%(…)T`.
 3. The walk runs `${ }` in the current shell and keeps its changes (4.2); `${| }` gives `REPLY`.
-4. Version-gated options in the command specs (`since` on an option, read by the argument interpreter, with the issue in 5.2 mode): `source -p`, `compgen -V`, `trap -P`, `read -E`.
+4. Done. Version-gated options in the command specs, with the issue in 5.2 mode: `source -p`, `compgen -V`, `trap -P`, `read -E`. `OptionSpec.since` (the tuple flag `since:5.3`) names the release; the argument interpreter reads the option in every release, as it reads the options of the other shells, and the dialect check reads `since` (`laterOptions` in src/dialect.ts; the issue `laterOption`), so the explanation is the one of 5.3 and the issue says what 5.2 does, as for `${ }`. The model does not take the version (4.2): in 5.2 mode, `compgen -V arr` still counts as setting `arr`.
 5. Variables and shell options: `GLOBSORT` (and the glob examples), `BASH_TRAPSIG`, `BASH_MONOSECONDS`, `array_expand_once`, `bash_source_fullpath`.
 6. POSIX-mode and `test` differences, checked with generated cases against both versions.
 7. Done. test/manual.test.ts against the 5.3 bashref.texi too (5), in CI's `bash53` job.

@@ -113,9 +113,13 @@ function declarationSpec(name: string, flags: Record<string, Text>, options: Nam
   });
 }
 
-/** The signals `kill` knows by name (`-TERM`, `-SIGTERM`), as Linux and the BSDs name them. */
+/** `source -p PATH` (bash 5.3): the directories to look in, instead of `$PATH` (checked: test/bash53.test.ts). */
+const SOURCE_OPTIONS: OptSpec[] = [
+  ['-p', 'bash 5.3: ファイルを `$PATH` ではなく、指定したコロン区切りのディレクトリから探す（カレントディレクトリは、空の要素があるときだけ）', 'bash 5.3: look for the file in the given directories, separated by colons, instead of `$PATH` (the current directory only for an empty entry)', 'arg since:5.3'],
+];
 const SOURCE_OPERANDS = args(operand('FILE', '読み込むファイル', 'file to source'), operand('ARG', 'そのファイルに渡す引数（実行中は $1, $2…になる）', 'arguments passed to it (they are $1, $2… while it runs)'));
 
+/** The signals `kill` knows by name (`-TERM`, `-SIGTERM`), as Linux and the BSDs name them. */
 const SIGNALS = 'HUP|INT|QUIT|ILL|TRAP|ABRT|BUS|FPE|KILL|USR1|SEGV|USR2|PIPE|ALRM|TERM|STKFLT|CHLD|CONT|STOP|TSTP|TTIN|TTOU|URG|XCPU|XFSZ|VTALRM|PROF|WINCH|IO|PWR|SYS|EMT|INFO|POLL|CLD|IOT';
 /**
  * `kill -9 -1`: only the first signal is one; then a word like `-1` is a PID (bash's `saw_signal`). The
@@ -254,6 +258,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-N', '区切り文字に関係なく、ちょうど指定した文字数を読む', 'read exactly the given number of characters, whatever the delimiter', 'arg'],
     ['-i', '`-e` の編集行に最初から入れておく文字列', 'text to put in the `-e` edit line to begin with', 'arg'],
     ['-e', 'Readline で行編集しながら読む（対話シェル用）', 'read with Readline line editing (interactive shells)'],
+    ['-E', 'bash 5.3: Readline で行編集しながら読み、補完に bash の既定の補完を使う（対話シェル用）', "bash 5.3: read with Readline line editing and bash's own completion (interactive shells)", 'since:5.3'],
   ], {
     example: 'read',
     operands: [
@@ -334,11 +339,13 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   trap: actsOnShell(special('シグナルや終了時に実行するコマンドを登録する', 'Run a command when a signal or event occurs', [
     ['-l', 'シグナル名の一覧を表示', 'list signal names'],
     ['-p', '登録済みの trap を表示', 'show registered traps'],
+    ['-P', 'bash 5.3: 指定したシグナルに登録されたコマンドだけを表示する（シグナルが1つ以上必要。`-p` とは一緒に使えない）', 'bash 5.3: print only the command set for each signal given (at least one; not with `-p`)', 'since:5.3'],
   ], {
     operands: [
-      // `trap INT` (one word) resets the signal; with -p and -l the words are signals only.
-      { when: { not: { option: ['-p', '-l'] } }, pattern: [operand('SIGNAL', '既定の動作に戻すシグナル（コマンドを書かない `trap INT` は登録の解除）', 'signal to reset to its default (`trap INT`, with no command, removes the trap)')] },
+      // `trap INT` (one word) resets the signal; with -p, -P and -l the words are signals only.
+      { when: { not: { option: ['-p', '-P', '-l'] } }, pattern: [operand('SIGNAL', '既定の動作に戻すシグナル（コマンドを書かない `trap INT` は登録の解除）', 'signal to reset to its default (`trap INT`, with no command, removes the trap)')] },
       { when: { option: ['-p'] }, pattern: [operand('SIGNAL', '表示するシグナル（EXIT, ERR, INT, TERM など）', 'signal to show (EXIT, ERR, INT, TERM…)', { repeat: '*' })] },
+      { when: { option: ['-P'] }, pattern: [operand('SIGNAL', '登録されたコマンドを表示するシグナル', 'signal whose command to print', { repeat: '+' })] },
       { when: { option: ['-l'] }, pattern: [operand('SIGNAL', '名前か番号に直すシグナル', 'signal to translate between name and number', { repeat: '*' })] },
       // `trap 1 2`: a signal number first resets every signal named (bash reads it so for old scripts).
       { when: { operand: 0, matches: SIGNAL_NUMBER }, pattern: [operand('SIGNAL', '既定の動作に戻すシグナル（最初の語がシグナル番号なら、どの語もシグナル）', 'signal to reset to its default (when the first word is a signal number, every word is a signal)', { repeat: '+' })] },
@@ -346,9 +353,9 @@ export const builtins: Record<string, CommandSpec> = wordTable({
       { when: { operand: 0, matches: /^-$/ }, pattern: [operand('RESET', '`-`: 続くシグナルの動作を既定に戻す', '`-`: reset the signals that follow to their default action'), operand('SIGNAL', '既定の動作に戻すシグナル', 'signal to reset to its default', { repeat: '+' })] },
       ...args(operand('ACTION', '実行するコマンド（`-` でリセット、空文字で無視）', 'command to run (`-` resets, empty string ignores)', { command: { run: 'current-shell', later: true } }), operand('SIGNAL', '対象のシグナル（EXIT, ERR, INT, TERM など）', 'signal (EXIT, ERR, INT, TERM…)')).operands!,
     ],
-  }), (c) => (c.operands.length > 0 || has(c, '--')) && !has(c, '-p', '-l')),
-  source: actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', [], SOURCE_OPERANDS), undefined, { runsUnread: 'file' }),
-  '.': actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', [], SOURCE_OPERANDS), undefined, { runsUnread: 'file' }),
+  }), (c) => (c.operands.length > 0 || has(c, '--')) && !has(c, '-p', '-P', '-l')),
+  source: actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', SOURCE_OPTIONS, SOURCE_OPERANDS), undefined, { runsUnread: 'file' }),
+  '.': actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', SOURCE_OPTIONS, SOURCE_OPERANDS), undefined, { runsUnread: 'file' }),
   // The words are joined with spaces and read again as a command of this shell.
   eval: cmd('引数を連結して文字列をコマンドとして再解釈・実行する（注入に注意）', 'Concatenate arguments and execute the result as a command (beware of injection)', [], {
     builtin: 'special', optionsFirst: true, operands: [{ pattern: [operand('STRING', 'もう一度読んで実行する文字列', 'text to read and run again', { repeat: '?', command: { run: 'current-shell', joinsWords: true } })] }],
@@ -389,6 +396,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-W', '指定した単語の一覧から候補を作る', 'candidates from the given word list', 'arg'], ['-A', '候補の種類（`file`、`command`、`variable`…）', 'kind of candidates (`file`, `command`, `variable`…)', 'arg'],
     ['-f', 'ファイル名', 'file names'], ['-d', 'ディレクトリ名', 'directory names'], ['-c', 'コマンド名', 'command names'], ['-v', '変数名', 'variable names'],
     ['-o', '補完の動作オプション', 'completion option', 'arg'],
+    naming(['-V', 'bash 5.3: 候補を表示せず、指定した名前の配列に入れる', 'bash 5.3: store the candidates in the named indexed array instead of printing them', 'arg since:5.3'], 'variable', 'array'),
   ], args(operand('WORD', '補完中の単語（これで始まる候補だけ）', 'word being completed (only candidates starting with it)'))),
   complete: b('コマンドの引数の補完方法を登録する', "Register how a command's arguments are completed", [
     naming(['-F', '指定した関数で候補を作る', 'use the given function to generate candidates', 'arg'], 'function'), ['-W', '指定した単語の一覧から候補を作る', 'candidates from the given word list', 'arg'],

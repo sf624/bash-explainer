@@ -296,3 +296,61 @@ describe('bash 5.3 printf', () => {
     }
   });
 });
+
+/**
+ * Options of builtins that came in bash 5.3 (docs/design/bash-versions.md, 3.2): a script that uses one, what bash 5.3
+ * prints, what the explanation says of the option, and the command and flag the issue of bash 5.2 mode names. bash 5.2
+ * rejects each ("invalid option", status 2), and the builtin does nothing.
+ */
+const OPTIONS: { script: string; out: string; command: string; flag: string; says: RegExp }[] = [
+  { script: 'd=$(mktemp -d); mkdir "$d/a" "$d/b"; echo "echo in-b" > "$d/b/f.sh"; source -p "$d/a:$d/b" f.sh; echo "st=$?"; rm -r "$d"', out: 'in-b\nst=0\n', command: 'source', flag: '-p', says: /bash 5\.3: look for the file in the given directories, separated by colons, instead of `\$PATH`/ },
+  { script: 'd=$(mktemp -d); echo "echo in-cwd" > "$d/f.sh"; cd "$d"; . -p "" f.sh; . -p /nonexistent f.sh; echo "st=$?"; cd /; rm -r "$d"', out: 'in-cwd\nst=1\n', command: '.', flag: '-p', says: /the current directory only for an empty entry/ },
+  { script: 'f() { compgen -V arr -W "alpha beta gamma" -- b; }; f; echo "st=$? ${arr[*]} n=${#arr[@]}"', out: 'st=0 beta n=1\n', command: 'compgen', flag: '-V', says: /bash 5\.3: store the candidates in the named indexed array instead of printing them/ },
+  { script: 'trap "echo hi" INT USR1; trap -P INT USR1; echo "st=$?"; trap -P; echo "st=$?"', out: 'echo hi\necho hi\nst=0\nst=2\n', command: 'trap', flag: '-P', says: /bash 5\.3: print only the command set for each signal given/ },
+  { script: 'read -E x <<< line; echo "st=$? [$x]"', out: 'st=0 [line]\n', command: 'read', flag: '-E', says: /bash 5\.3: read with Readline line editing and bash's own completion/ },
+];
+
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+describe('bash 5.3 options of builtins', () => {
+  it('explains each one, with an issue in bash 5.2 mode (also without a bash 5.3)', () => {
+    for (const c of OPTIONS) {
+      assert.match(said(c.script).tokens, c.says, c.script);
+      const issues = (version: BashVersion) => documentIssues({ lines: [c.script], tree: parser.parse(c.script) }, 'en', {}, [], { pitfalls: false, bashVersion: version }).filter((i) => i.code === 'laterOption');
+      const found = issues('5.2');
+      assert.ok(found.length >= 1, c.script);
+      // (`source`, `.` and `trap` are special builtins: in POSIX mode, their error exits the shell.)
+      const special = ['source', '.', 'trap'].includes(c.command) ? '; an error of a special builtin, so in POSIX mode the shell exits' : '';
+      assert.strictEqual(found[0].message, `⚠ \`${c.command} ${c.flag}\` is a bash 5.3 option: bash 5.2 reports "invalid option", and \`${c.command}\` does nothing (status 2${special}).`, c.script);
+      // (On the option's word.)
+      assert.strictEqual(c.script.slice(found[0].startCol, found[0].endCol), c.flag, c.script);
+      assert.deepStrictEqual(issues('5.3'), [], c.script);
+    }
+    // A letter of a cluster; the note of the line, in Japanese.
+    assert.match(dialectNotes(parser.parse('trap -lP INT'), 0, 'bash', 'ja')[0], /^⚠ `trap -P` は bash 5\.3 からのオプションです。bash 5\.2 では「invalid option」のエラーになり、`trap` は何もしません（終了ステータス 2。特殊組み込みのエラーなので、POSIX モードではシェルが終了する）。$/);
+    assert.deepStrictEqual(dialectNotes(parser.parse('trap -lP INT'), 0, 'bash', 'en', '5.3'), []);
+    // Nothing for other words: an unknown option, a program, assignments alone.
+    for (const script of ['read -Z x', 'ls -p', 'x=1', 'source f']) assert.deepStrictEqual(dialectNotes(parser.parse(script), 0, 'bash', 'en'), [], script);
+    // The words after `trap -P` are signals: it sets no trap.
+    assert.doesNotMatch(said('trap -P INT').tokens, /command to run/);
+    assert.match(said('trap -P INT').tokens, /signal whose command to print/);
+  });
+
+  it('runs each one in bash 5.3 as we say', function () {
+    needBash53(this);
+    for (const c of OPTIONS) assert.strictEqual(runBash(c.script, { program: BASH53 }).stdout, c.out, c.script);
+  });
+
+  it('is rejected by bash 5.2, which then does nothing', function () {
+    if (releaseOf('bash') !== '5.2') this.skip();
+    for (const c of OPTIONS) {
+      const r = runBash(c.script);
+      assert.match(r.stderr, new RegExp(`${escape(c.command)}: ${c.flag}: invalid option`), c.script);
+      assert.match(r.stdout, /st=2/, c.script);
+      assert.doesNotMatch(r.stdout, /in-b|in-cwd|beta|echo hi|\[line\]/, c.script);
+    }
+    // In POSIX mode, the error of a special builtin exits the shell; of another builtin, it does not.
+    assert.deepStrictEqual([runBash('trap -P INT; echo next', { posix: true }).stdout, runBash('source -p /x f; echo next', { posix: true }).status], ['', 2]);
+    assert.strictEqual(runBash('compgen -V a -W x; echo next', { posix: true }).stdout, 'next\n');
+  });
+});

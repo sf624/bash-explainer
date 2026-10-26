@@ -1,6 +1,6 @@
 import { interpret } from './argv/interpret';
-import { type BashVersion, DEFAULT_BASH_VERSION, lacks, SINCE, unclosedBrace } from './bashversion';
-import { has, operands, values } from './argv/query';
+import { type BashVersion, DEFAULT_BASH_VERSION, earlier, lacks, laterOption, SINCE, unclosedBrace } from './bashversion';
+import { givenOptions, has, operands, values } from './argv/query';
 import { argWord } from './argv/words';
 import { builtins } from './dict/builtins';
 import { pick } from './embedded/types';
@@ -457,6 +457,27 @@ const ZSH_SYNTAX: [string, string] = [
 ];
 
 /**
+ * The options of bash's builtins on lines [from, to] that bash `version` lacks (`OptionSpec.since`): bash reports
+ * "invalid option" there, and the builtin does nothing.
+ */
+function laterOptions(tree: SyntaxTree, from: number, to: number, version: BashVersion, lang: Lang): Issue[] {
+  const out: Issue[] = [];
+  for (const c of descendants(tree.root, ['command'], { from, to })) {
+    const name = field(c, 'name');
+    if (!name || !Object.hasOwn(builtins, name.text)) continue;
+    const prefix = prefixAssignments(c);
+    const args = c.namedChildren.filter((x) => x !== name && !prefix.includes(x) && x.field !== 'redirect');
+    for (const { word, role } of givenOptions(interpret(builtins[name.text], args.map(argWord), { name: name.text }))) {
+      const since = role.role === 'option' ? role.spec.since : undefined;
+      if (!since || !earlier(version, since)) continue;
+      const text = laterOption(name.text, role.flag, since, version, builtins[name.text].builtin === 'special')[lang === 'ja' ? 0 : 1];
+      out.push({ id: 'laterOption', kind: 'unsupported', message: `⚠ ${text}${lang === 'ja' ? '。' : '.'}`, node: args[word], place: args[word] });
+    }
+  }
+  return out;
+}
+
+/**
  * Problems on lines [from, to] of a script written for `shell`; for bash, the constructs that bash `version` lacks
  * (src/bashversion.ts), and in a version that has `${ …; }`, the ones it does not close (`braceTakenAsWord`).
  */
@@ -470,7 +491,7 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
       const text = how && unclosedBrace(how, substitutionForm(n) === '${' ? '${ …; }' : '${| …; }', true)[lang === 'ja' ? 0 : 1];
       return text ? [{ id: 'funsubBrace', kind: 'unsupported', message: `⚠ ${text}${lang === 'ja' ? '。' : '.'}`, node: n, place: n.children[n.children.length - 1] }] : [];
     });
-    return [...lacking, ...unclosed];
+    return [...lacking, ...unclosed, ...laterOptions(tree, from, to, version, lang)];
   }
   const issues: Issue[] = [];
   if (shell === 'zsh') {

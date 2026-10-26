@@ -4,6 +4,7 @@
 //
 // Some fields serve one entry. Each was reviewed (docs/design/refactor.md, D8) and is kept because it states a
 // fact of that tool that no general field can, as its comment says; a second tool with the same fact uses it too.
+import type { BashVersion } from '../bashversion';
 import type { EmbeddedLang } from '../embedded/types';
 import type { Shell } from '../dialect';
 import type { Text } from '../i18n';
@@ -184,6 +185,11 @@ export interface BuiltinCall { flags: string[]; bare: string[]; operands: (strin
 export type SubcommandSpec = CommandSpec & { aliases?: string[] };
 
 export interface OptionSpec {
+  /**
+   * The bash release that brought a builtin's option (`source -p`: 5.3): an earlier bash reports "invalid option",
+   * and the dialect check says so in that release (`laterOptions` in src/dialect.ts).
+   */
+  since?: BashVersion;
   /** `['-f', '--file']`. */
   names: string[];
   text: Text;

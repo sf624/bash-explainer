@@ -47,8 +47,25 @@ export function unclosedBrace(how: 'argument' | 'misplaced', form: string, bash:
   return [`構文エラー${tag[0]}: ${what[0]}${then[0]}。\`}\` の前に \`;\` か改行を書く`, `Syntax error${tag[1]}: ${what[1]}${then[1]}. Write \`;\` or a newline before the \`}\``];
 }
 
+/** Whether release `version` comes before release `than`. */
+export function earlier(version: BashVersion, than: BashVersion): boolean {
+  return BASH_VERSIONS.indexOf(version) < BASH_VERSIONS.indexOf(than);
+}
+
 /** Whether bash `version` lacks feature `id` (one of SINCE). */
 export function lacks(id: string, version: BashVersion): boolean {
   const since = SINCE[id];
-  return !!since && BASH_VERSIONS.indexOf(version) < BASH_VERSIONS.indexOf(since.version);
+  return !!since && earlier(version, since.version);
+}
+
+/**
+ * What bash `version` does with the option `flag` of builtin `command`, which came in release `since`, [Japanese,
+ * English]; for a special builtin (`special`), also that POSIX mode exits there (checked with bash 5.2.21:
+ * test/bash53.test.ts).
+ */
+export function laterOption(command: string, flag: string, since: BashVersion, version: BashVersion, special = false): [string, string] {
+  return [
+    `\`${command} ${flag}\` は bash ${since} からのオプションです。bash ${version} では「invalid option」のエラーになり、\`${command}\` は何もしません（終了ステータス 2${special ? '。特殊組み込みのエラーなので、POSIX モードではシェルが終了する' : ''}）`,
+    `\`${command} ${flag}\` is a bash ${since} option: bash ${version} reports "invalid option", and \`${command}\` does nothing (status 2${special ? '; an error of a special builtin, so in POSIX mode the shell exits' : ''})`,
+  ];
 }
