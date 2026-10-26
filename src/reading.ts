@@ -77,6 +77,8 @@ export interface ReadingNode {
   reader?: string;
   /** In the layer `child`: which shell parses it (`ScriptProcess`). */
   process?: ScriptProcess;
+  /** On a word a command reads as an operand or a value: how bash changes it first, so the command gets other words (`Token.expands`). */
+  expands?: 'glob' | 'split' | 'brace';
   /** On a `commandName`: what bash runs for it (3.7.2), from the name resolution of src/semantics/names.ts. */
   resolves?: NameResolution['kind'];
   /** On a word a command reads as the value of an option: the option (`-f`, `--file`). */
@@ -593,7 +595,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
 
   /** A token the command reads, and the tokens under it by their own origins. (A command it runs reads what follows.) */
   const tokenNode = (t: Token, layer: Layer, reader: string): ReadingNode => ({
-    layer, kind: t.kind, label: t.label, span: t.span, reader, ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), ...(t.valueFor ? { valueFor: t.valueFor } : {}),
+    layer, kind: t.kind, label: t.label, span: t.span, reader, ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), ...(t.valueFor ? { valueFor: t.valueFor } : {}), ...(t.expands ? { expands: t.expands } : {}),
     // (A word the command reads as a script, which the analyzer says only is a word: `eval ls`.)
     text: t.explanation === TEXTS.word[cx.lang](t.label) && t.children.some((c) => c.origin === 'script') ? TEXTS.again[cx.lang] : t.explanation,
     children: readParts(t.children, false, RUNS.has(t.kind) ? t.label : reader),
