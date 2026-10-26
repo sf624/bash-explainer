@@ -1832,7 +1832,7 @@
       return;
     }
     let category = '';
-    for (const e of hits.slice(0, 300)) {
+    for (const e of hits) {
       if (e.category !== category) {
         category = e.category;
         const h = document.createElement('h3');

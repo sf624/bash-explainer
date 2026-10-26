@@ -57,6 +57,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- The quick reference lists every command, sorted by name. Before, it stopped after 300 entries (at `git`) without saying so, so most commands showed only when searched for.
 - The examples of `printf` and of pipelines run the words of a brace expansion: `printf '%s\n' {a,b}` prints `a` and `b`. Before, they printed `{a,b}`, and `printf '%s\n' *.txt` printed `*.txt`.
 - In the panel's Meaning view, a long label (a shebang, a long pipeline) no longer squeezes its explanation into a narrow column. The explanation keeps at least half of the row, or goes under the label, and the label is shown whole. Before, the label took up to 45% of the row and was cut with "…".
 - The `sort -h` example orders sizes as GNU sort does: `1.5K` before `8.3K`, and `220 Mar` as 220, not 220 megabytes. The `grep -o`, `sed s///` and `sort -k` examples also follow the GNU tools in edge cases.

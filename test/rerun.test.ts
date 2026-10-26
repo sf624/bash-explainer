@@ -62,4 +62,15 @@ describe('quick reference', () => {
     assert.ok(find('grep'));
     assert.ok(ref.length > 150);
   });
+
+  it('lists the builtins and the commands sorted by name, in both languages', () => {
+    for (const lang of ['en', 'ja'] as const) {
+      const ref = quickReference(lang);
+      for (const category of [...new Set(ref.map((e) => e.category))].slice(-2)) {
+        const names = ref.filter((e) => e.category === category).map((e) => e.syntax);
+        assert.ok(names.length > 50, category);
+        assert.deepStrictEqual(names, [...names].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)), `${lang} ${category}`);
+      }
+    }
+  });
 });
