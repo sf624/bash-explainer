@@ -1608,11 +1608,7 @@ html.view-panel .split {
 }
 
 .setting-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0 12px;
+  display: block;
 }
 
 .setting-head label {
@@ -1620,8 +1616,73 @@ html.view-panel .split {
 }
 
 .setting-key {
-  font-size: 0.8em;
+  margin: 0 0 6px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.78em;
   color: var(--vscode-descriptionForeground);
+  opacity: 0.8;
+}
+
+.setting-touch {
+  margin: 0 0 6px;
+  font-size: 0.85em;
+  font-style: italic;
+  color: var(--vscode-descriptionForeground);
+}
+
+.setting-touch-off > :not(.setting-touch) {
+  opacity: 0.55;
+}
+
+.settings-nav {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  padding: 4px 12px;
+  background: var(--page-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.settings-nav a {
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: var(--page-accent, var(--vscode-textLink-foreground));
+  text-decoration: none;
+}
+
+.settings-nav a:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
+}
+
+.settings-nav a.off {
+  opacity: 0.4;
+}
+
+#settings-search {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--control-h);
+  margin: 8px 0 4px;
+  font: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-dropdown-border));
+  border-radius: 4px;
+  padding: 0 8px;
+}
+
+.settings-group[hidden],
+.setting[hidden],
+.settings-nomatch[hidden],
+.settings-elsewhere[hidden] {
+  display: none;
+}
+
+.settings-nomatch {
+  color: var(--vscode-descriptionForeground);
+  margin: 16px 0;
 }
 
 .setting-desc {
