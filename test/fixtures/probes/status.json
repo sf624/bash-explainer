@@ -1,5 +1,6 @@
 [
   {
+    "id": "status-after-false",
     "manual": "4.3.1",
     "snippet": "false; @PROBE:a@",
     "facts": {
@@ -18,6 +19,7 @@
     }
   },
   {
+    "id": "and-list",
     "manual": "4.3.1",
     "snippet": "false && true; @PROBE:a@",
     "note": "a failure left of && does not exit",
@@ -38,6 +40,7 @@
     }
   },
   {
+    "id": "if-while-false",
     "manual": "4.3.1",
     "snippet": "if false; then :; fi; while false; do :; done; @PROBE:a@",
     "facts": {
@@ -48,6 +51,7 @@
     }
   },
   {
+    "id": "negation",
     "manual": "4.3.1",
     "snippet": "! true; @PROBE:a@",
     "facts": {
@@ -68,6 +72,7 @@
     }
   },
   {
+    "id": "pipefail",
     "manual": "3.2.3",
     "snippet": "set -o pipefail; false | true; @PROBE:a@",
     "facts": {
@@ -202,6 +207,7 @@
     }
   },
   {
+    "id": "inherit-errexit",
     "manual": "4.3.2",
     "snippet": "shopt -s inherit_errexit; x=$(false; @PROBE:in@); @PROBE:after@",
     "facts": {
@@ -235,6 +241,7 @@
     }
   },
   {
+    "id": "arith-command",
     "manual": "3.2.5.2",
     "snippet": "i=0; (( i++ )); @PROBE:a@",
     "note": "(( )) is 1 when the value is 0",
@@ -244,6 +251,7 @@
     }
   },
   {
+    "id": "let-assign",
     "manual": "4.2",
     "snippet": "let i=0; @PROBE:a@",
     "facts": {
@@ -299,6 +307,7 @@
     }
   },
   {
+    "id": "exit-status",
     "manual": "3.7.5",
     "snippet": "exit 256",
     "errexit": false,
@@ -531,6 +540,7 @@
     }
   },
   {
+    "id": "errexit-subshell",
     "manual": "4.3.1",
     "snippet": "( set -e; false; @PROBE:in@ ); @PROBE:after@",
     "errexit": false,
@@ -676,6 +686,7 @@
     }
   },
   {
+    "id": "brace-group",
     "manual": "4.3.1",
     "snippet": "{ false && true; }; @PROBE:a@",
     "note": "a group is not",
@@ -714,6 +725,7 @@
     }
   },
   {
+    "id": "while-until",
     "manual": "3.2.5.1",
     "snippet": "while false; do :; done; until true; do :; done; @PROBE:a@",
     "facts": {
@@ -752,6 +764,7 @@
     }
   },
   {
+    "id": "time-false",
     "manual": "3.2.3",
     "snippet": "{ time false; } 2>/dev/null; @PROBE:a@",
     "facts": {
@@ -877,6 +890,7 @@
     }
   },
   {
+    "id": "return-status",
     "manual": "3.3",
     "snippet": "f() { return 3; }; f; @PROBE:a@",
     "facts": {
@@ -919,6 +933,7 @@
     }
   },
   {
+    "id": "nounset-expansion",
     "manual": "4.3.1",
     "snippet": "set -u; : $nope; @PROBE:a@",
     "errexit": false,

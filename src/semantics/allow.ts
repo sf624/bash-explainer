@@ -5,9 +5,10 @@
 //
 // Each row holds the effect the scan gives the construct today. `next` is the effect the design gives it when the
 // default flips (its step 4: the rows marked "new"), and a construct with no row then trusts nothing; until then, it
-// changes nothing. A `followed` row names what checks it against bash (`tests`): rows of the probe tables
-// (test/fixtures/probes/*.json) or constructs of the decisions' generator (test/support/decisions.ts), each a part of
-// their text; test/allow-list.test.ts checks that each is there, and that every set is complete against bash.
+// changes nothing. A `followed` row names what checks it against bash (`tests`): a row of a probe table
+// (test/fixtures/probes/*.json, by its `id`), a construct of the decisions' generator (test/support/decisions.ts, by its
+// key in `GENERATED`), or a test of a test file (by its title); test/allow-list.test.ts checks that each names exactly
+// one, and that every set is complete against bash.
 import { field, type NodeType, type SyntaxNode } from '../syntax/tree';
 
 /** What a construct may change. */
@@ -22,8 +23,12 @@ export interface Row {
   /** The effect step 4 of the design gives it, where it differs from today's. */
   readonly next?: Effect;
   /**
-   * What checks a `followed` row against bash: `kind: text`, where `kind` is a probe table (`state`, `values`…) and
-   * `text` a part of one of its snippets, or `generator` and a part of a script the decisions' generator writes.
+   * What checks a `followed` row against bash, in one of three forms:
+   * - `kind#id`: the row of the probe table `kind` (`state`, `env`, `names`, `words`, `status` or `values`) whose `id`
+   *   is `id`;
+   * - `test/file.test.ts: title`: the `it` of that file with exactly that title;
+   * - `generator: name`: the construct `name` of the decisions' generator, a key of `GENERATED` in
+   *   test/support/decisions.ts.
    */
   readonly tests?: readonly string[];
 }
@@ -43,79 +48,79 @@ export const UNLISTED: Row = none(all('a construct the allow-list does not have'
 /** The node types of the syntax tree (src/syntax/tree.ts). */
 export const SYNTAX: Readonly<Record<NodeType, Row>> = {
   // The walk: statements and their parts.
-  program: followed(['state: x=1']),
+  program: followed(['state#prefix-assign']),
   comment: none(),
-  command: followed(['state: x=1']),
-  command_name: followed(['names: ']),
-  variable_assignment: followed(['values: x=']),
-  negated_command: followed(['status: ! ']),
+  command: followed(['state#prefix-assign']),
+  command_name: followed(['names#function-over-builtin']),
+  variable_assignment: followed(['values#assign-chain']),
+  negated_command: followed(['status#negation']),
   // (Its redirections: the redirection rows.)
-  redirected_statement: followed(['words: } >']),
-  pipeline: followed(['env: |']),
-  list: followed(['status: &&', 'generator: &&']),
-  command_list: followed(['status: ;']),
-  time_statement: followed(['status: time ']),
-  compound_statement: followed(['status: {', 'generator: { ']),
-  subshell: followed(['env: (', 'generator: ( ']),
-  do_group: followed(['generator: do ']),
-  if_statement: followed(['status: if ', 'generator: if ']),
-  elif_clause: followed(['generator: elif ']),
-  else_clause: followed(['generator: else ']),
-  case_item: followed(['generator: case ']),
-  while_statement: followed(['status: while ', 'generator: while ', 'generator: until ']),
-  c_style_for_statement: followed(['generator: for (( ']),
-  arithmetic_command: followed(['status: (( i++ ))', 'generator: (( ']),
-  extended_test: followed(['values: [[ ', 'generator: [[ ']),
+  redirected_statement: followed(['words#brace-redirect']),
+  pipeline: followed(['env#pipeline-stages']),
+  list: followed(['status#and-list', 'generator: list']),
+  command_list: followed(['status#status-after-false']),
+  time_statement: followed(['status#time-false']),
+  compound_statement: followed(['status#brace-group', 'generator: brace group']),
+  subshell: followed(['env#subshell-paren', 'generator: subshell']),
+  do_group: followed(['generator: do']),
+  if_statement: followed(['status#if-while-false', 'generator: if']),
+  elif_clause: followed(['generator: elif']),
+  else_clause: followed(['generator: else']),
+  case_item: followed(['generator: case']),
+  while_statement: followed(['status#while-until', 'generator: while', 'generator: until']),
+  c_style_for_statement: followed(['generator: for (( ))']),
+  arithmetic_command: followed(['status#arith-command', 'generator: (( ))']),
+  extended_test: followed(['values#test-n', 'generator: [[']),
   // A function: the walk walks each call it sees; one called otherwise is not closed (`Trust.closed`).
-  function_definition: followed(['env: f() ', 'generator: () { ']),
+  function_definition: followed(['env#function-call', 'generator: function definition']),
   // The patterns after `;&` and `;;&`: expanded in the state before the `case` (step 3 of the design fixes the walk).
-  case_statement: followed(['generator: case ']),
+  case_statement: followed(['generator: case']),
   // The loop variable; `select`'s is what the user types.
   for_statement: names(),
   select_statement: names(),
   // The coprocess's array and its `_PID`.
   coproc_statement: names(),
   // Words and their parts: the word model (src/semantics/words.ts).
-  word: followed(['words: ']),
-  concatenation: followed(['words: a$']),
-  string: followed(['words: "']),
-  string_content: followed(['words: "']),
-  raw_string: followed(["words: '"]),
-  ansi_c_string: followed(["words: $'"]),
-  number: followed(['values: 1']),
-  regex: followed(['generator: =~ ']),
-  array: followed(['values: =(']),
+  word: followed(['words#split-quoting']),
+  concatenation: followed(['words#concat-empty']),
+  string: followed(['words#split-quoting']),
+  string_content: followed(['words#split-quoting']),
+  raw_string: followed(['words#split-quoting']),
+  ansi_c_string: followed(['words#ansi-c-ifs']),
+  number: followed(['values#assign-chain']),
+  regex: followed(['generator: =~']),
+  array: followed(['values#array-declare-i']),
   // (Never given as a value: `$"…"`, a brace expansion, a glob.)
   translated_string: none(),
   brace_expression: none(),
   extglob_pattern: none(),
   // Expansions: the operators below.
-  simple_expansion: followed(['values: "$x"']),
-  expansion: followed(['values: "${']),
-  variable_name: followed(['values: "$x"']),
-  special_variable_name: followed(['values: "$#"']),
-  subscript: followed(['values: [']),
+  simple_expansion: followed(['values#split-unquoted']),
+  expansion: followed(['values#param-forms']),
+  variable_name: followed(['values#split-unquoted']),
+  special_variable_name: followed(['values#special-params']),
+  subscript: followed(['values#test-v-subscript']),
   // (`${ …; }` of bash 5.3, which the scan reads as `all`, runs in this shell; `$( )` in a subshell.)
-  command_substitution: followed(['values: $(', 'generator: $( ']),
+  command_substitution: followed(['values#command-subst', 'generator: command substitution']),
   // (A subshell: its own commands are looked up as well.)
   process_substitution: none(),
-  arithmetic_expansion: followed(['values: $((']),
+  arithmetic_expansion: followed(['values#arith-expansion']),
   // Expressions of tests and arithmetic.
-  binary_expression: followed(['generator: [[ $']),
+  binary_expression: followed(['generator: [[ $v op']),
   unary_expression: followed(['generator: [[ -z']),
-  parenthesized_expression: followed(['state: (( (']),
-  ternary_expression: followed(['values: ?']),
-  postfix_expression: followed(['generator: ++ ))']),
+  parenthesized_expression: followed(['state#arith-parens']),
+  ternary_expression: followed(['words#arith-ternary']),
+  postfix_expression: followed(['generator: (( v++ ))']),
   test_operator: followed(['generator: [[ -z']),
   // Redirections: the rows of REDIRECTIONS.
-  file_redirect: followed(['words: >']),
-  file_descriptor: followed(['words: 2>']),
-  heredoc_redirect: followed(['words: <<']),
-  heredoc_start: followed(['words: <<']),
-  heredoc_body: followed(['words: <<']),
-  heredoc_content: followed(['words: <<']),
-  heredoc_end: followed(['words: <<']),
-  herestring_redirect: followed(['words: <<<', 'generator: <<< ']),
+  file_redirect: followed(['words#redirect-word-split']),
+  file_descriptor: followed(['words#redirect-fd-word']),
+  heredoc_redirect: followed(['words#heredoc-body']),
+  heredoc_start: followed(['words#heredoc-body']),
+  heredoc_body: followed(['words#heredoc-body']),
+  heredoc_content: followed(['words#heredoc-body']),
+  heredoc_end: followed(['words#heredoc-body']),
+  herestring_redirect: followed(['words#herestring', 'generator: <<<']),
   // Text our parser could not read: bash may read it otherwise.
   error: none(all('text the parser could not read')),
 };
@@ -161,31 +166,31 @@ export const BUILTINS: Readonly<Record<string, BuiltinRow>> = {
   read: builtin(names()), mapfile: builtin(names(), none(ANY_OPTION), MAPFILE_CALLBACK), readarray: builtin(names(), none(ANY_OPTION), MAPFILE_CALLBACK),
   getopts: builtin(names()),
   // Jumps (a count not known takes both paths).
-  exit: builtin(followed(['status: exit', 'generator: exit'])), return: builtin(followed(['status: return', 'generator: return'])),
+  exit: builtin(followed(['status#exit-status', 'generator: exit'])), return: builtin(followed(['status#return-status', 'generator: return'])),
   break: builtin(followed(['generator: break'])), continue: builtin(followed(['generator: continue'])),
   // `x=w` with no option but -r, -x and -g; names for the other options; the nameref rule for -n; all for a name not known.
-  declare: builtin(followed(['values: declare ']), names()), typeset: builtin(followed(['state: typeset']), names()),
-  local: builtin(followed(['values: local ', 'generator: local ']), names()), export: builtin(followed(['values: export ', 'generator: export ']), names()),
-  readonly: builtin(followed(['values: readonly ']), names()),
-  unset: builtin(followed(['values: unset ', 'generator: unset '])),
-  let: builtin(followed(['status: let i=0', 'generator: let '])),
+  declare: builtin(followed(['values#declare-export-readonly']), names()), typeset: builtin(followed(['state#declare-attributes']), names()),
+  local: builtin(followed(['values#local-shadow', 'generator: local']), names()), export: builtin(followed(['values#declare-export-readonly', 'generator: export']), names()),
+  readonly: builtin(followed(['values#declare-export-readonly']), names()),
+  unset: builtin(followed(['values#unset-ifs', 'generator: unset'])),
+  let: builtin(followed(['status#let-assign', 'generator: let'])),
   // The string the walk reads; else all.
-  eval: builtin(followed(['values: eval '])),
+  eval: builtin(followed(['values#eval-string'])),
   source: builtin({ effect: all('a file is sourced') }), '.': builtin({ effect: all('a file is sourced') }),
   // An action the walk reads (foreign text); all for DEBUG, RETURN, or an action not known.
-  trap: builtin(followed(['values: trap '])),
-  alias: builtin(followed(['state: alias '])), unalias: builtin(followed(['state: unalias'])),
+  trap: builtin(followed(['values#trap-action'])),
+  alias: builtin(followed(['state#alias-unalias'])), unalias: builtin(followed(['state#alias-unalias'])),
   // `-n NAME`, `-ns NAME`, `-n -s NAME`, `-n -a NAME`, `NAME`; all for -f or a name not known.
-  enable: builtin(followed(['values: enable -n'])),
-  set: builtin(followed(['state: set -', 'generator: set -'])), shopt: builtin(followed(['state: shopt -s', 'generator: shopt -s'])),
+  enable: builtin(followed(['values#enable-n-exit'])),
+  set: builtin(followed(['state#set-euo-pipefail', 'generator: set option'])), shopt: builtin(followed(['state#shopt-extglob-nullglob', 'generator: shopt -s'])),
   // Precondition: no word may be `-v` with an operand that has a subscript.
-  test: builtin(followed(['generator: test '])), '[': builtin(followed(['generator: [ '])),
-  command: builtin(followed(['env: command @PROBE'])), builtin: builtin(followed(['env: builtin eval'])),
+  test: builtin(followed(['generator: test'])), '[': builtin(followed(['generator: [ test'])),
+  command: builtin(followed(['env#command-builtin-time'])), builtin: builtin(followed(['env#command-builtin-time'])),
   // A quiet word list and no -F or -C; else all.
-  compgen: builtin(followed(['values: compgen']), { effect: all('`compgen` expands a word list or runs a command the model does not read') }),
+  compgen: builtin(followed(['values#compgen-word-list']), { effect: all('`compgen` expands a word list or runs a command the model does not read') }),
   // `fc -l` lists; else all.
-  fc: builtin(followed(['values: fc '])),
-  exec: builtin(followed(['status: exec'])),
+  fc: builtin(followed(['values#fc-substitute'])),
+  exec: builtin(followed(['words#exec-redirect'])),
 };
 
 /** The options of `set -o` (the same 27 in bash 5.2 and 5.3), by what turning them on does (and off, `off`). */
@@ -195,11 +200,11 @@ export interface OptionRow extends Row {
 }
 
 export const SET_OPTIONS: Readonly<Record<string, OptionRow>> = {
-  allexport: followed(['state: set -a']), errexit: followed(['status: set -e', 'generator: set -e']), nounset: followed(['status: set -u', 'generator: set -u']),
-  noglob: followed(['words: set -f']), pipefail: followed(['status: pipefail', 'generator: set -o pipefail']), monitor: followed(['env: set -m']),
-  braceexpand: followed(['words: set +B']),
+  allexport: followed(['state#set-allexport']), errexit: followed(['status#errexit-subshell', 'generator: set -e']), nounset: followed(['status#nounset-expansion', 'generator: set -u']),
+  noglob: followed(['words#noglob']), pipefail: followed(['status#pipefail', 'generator: set -o pipefail']), monitor: followed(['env#monitor-lastpipe']),
+  braceexpand: followed(['words#no-braceexpand']),
   // (With the PS4 rule.)
-  xtrace: followed(['values: set -x']),
+  xtrace: followed(['values#xtrace-ps4']),
   // (errtrace and functrace only change where the ERR, DEBUG and RETURN traps run.)
   emacs: none(), vi: none(), ignoreeof: none(), nolog: none(), notify: none(), verbose: none(), hashall: none(), physical: none(),
   privileged: none(), 'interactive-comments': none(), errtrace: none(), functrace: none(),
@@ -217,8 +222,8 @@ export const SET_OPTIONS: Readonly<Record<string, OptionRow>> = {
 
 /** The options of `shopt` (57 in bash 5.2; 5.3 adds `array_expand_once` and `bash_source_fullpath`, SINCE in src/bashversion.ts). */
 export const SHOPT_OPTIONS: Readonly<Record<string, OptionRow>> = {
-  expand_aliases: followed(['state: expand_aliases']), extglob: followed(['words: extglob']), nocasematch: followed(['generator: nocasematch']),
-  lastpipe: followed(['env: lastpipe']), inherit_errexit: followed(['status: inherit_errexit']), failglob: followed(['words: failglob']),
+  expand_aliases: followed(['state#expand-aliases']), extglob: followed(['words#extglob']), nocasematch: followed(['generator: nocasematch']),
+  lastpipe: followed(['env#lastpipe']), inherit_errexit: followed(['status#inherit-errexit']), failglob: followed(['words#failglob']),
   // A value with a glob character is never given, and no decision reads a glob.
   nullglob: none(), dotglob: none(), globstar: none(), globskipdots: none(), nocaseglob: none(),
   // What they change is never given as a value, only printed, only interactive, or a variable bash sets itself.
@@ -241,30 +246,30 @@ export const SHOPT_OPTIONS: Readonly<Record<string, OptionRow>> = {
  * indirections `!` (`${!x}`), `!@` and `!*` (the names with a prefix) and `![@]` (the keys of an array).
  */
 export const EXPANSION_OPERATORS: Readonly<Record<string, Row>> = {
-  '': followed(['values: "$x"']), length: none(),
+  '': followed(['values#split-unquoted']), length: none(),
   '-': none(), ':-': none(), '+': none(), ':+': none(), '?': none(), ':?': none(),
   '#': none(), '##': none(), '%': none(), '%%': none(), '/': none(), '//': none(), '/#': none(), '/%': none(),
   '^': none(), '^^': none(), ',': none(), ',,': none(), '~': none(), '~~': none(),
   // The variable (`${x:=w}`): names. A set `x` keeps its value, which may come from the environment.
   '=': names(), ':=': names(),
   // Arithmetic.
-  ':': followed(['generator: ${s:']),
+  ':': followed(['generator: substring expansion']),
   '@Q': none(), '@E': none(), '@A': none(), '@a': none(), '@K': none(), '@k': none(), '@U': none(), '@u': none(), '@L': none(),
   // Precondition: every value the script gives it is quiet (step 4: and none is made with `+=`).
-  '@P': followed(['values: @P']),
+  '@P': followed(['values#prompt-expansion']),
   // `${!x}` and the other indirections: all; the keys and the names with a prefix, with nothing after them: none.
-  '!': followed(['values: ${!']), '!@': none(), '!*': none(), '![@]': none(),
+  '!': followed(['values#indirect']), '!@': none(), '!*': none(), '![@]': none(),
 };
 
 /** The redirection operators (3.6), as the parser gives them. */
 export const REDIRECTIONS: Readonly<Record<string, Row>> = {
   // A here-document and a here-string do not fail; their words are looked up as words.
-  '<<': followed(['words: <<']), '<<-': followed(['words: <<-E']), '<<<': followed(['words: <<<']),
+  '<<': followed(['words#heredoc-body']), '<<-': followed(['words#heredoc-tab']), '<<<': followed(['words#herestring']),
   // The others may fail, and then their command does not run (step 3 of the design: today the walk takes them as made).
   // `{fd}>…`: names `fd`.
-  '<': followed(['words: <']), '>': followed(['words: >']), '>>': followed(['test/tests-redirections-real.test.ts: >>']), '<>': followed(['test/tests-redirections-real.test.ts: <>']),
-  '>|': followed(['test/tests-redirections-real.test.ts: >|']), '&>': followed(['test/tests-redirections-real.test.ts: &>']), '&>>': followed(['test/redirections.test.ts: &>>']), '<&': followed(['env: <&']),
-  '>&': followed(['state: >&']),
+  '<': followed(['words#redirect-input']), '>': followed(['words#redirect-word-split']), '>>': followed(['test/tests-redirections-real.test.ts: a file is still opened, created or emptied']), '<>': followed(['test/tests-redirections-real.test.ts: a file is still opened, created or emptied']),
+  '>|': followed(['test/tests-redirections-real.test.ts: is not replaced when a redirection between copies it, or sets another descriptor']), '&>': followed(['test/tests-redirections-real.test.ts: is not replaced when a redirection between copies it, or sets another descriptor']), '&>>': followed(['test/redirections.test.ts: are explained with the command, wherever they are written']), '<&': followed(['env#process-subst-fd']),
+  '>&': followed(['state#redirect-dup-exec']),
 };
 
 const rowOf = <R>(table: Readonly<Record<string, R>>, key: string, unlisted: R): R => (Object.hasOwn(table, key) ? table[key] : unlisted);

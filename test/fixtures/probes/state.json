@@ -1,5 +1,6 @@
 [
   {
+    "id": "shopt-extglob-nullglob",
     "manual": "4.3.2",
     "snippet": "shopt -s extglob nullglob; shopt -u globskipdots",
     "facts": {
@@ -28,6 +29,7 @@
     }
   },
   {
+    "id": "set-euo-pipefail",
     "manual": "4.3.1",
     "snippet": "set -euo pipefail",
     "facts": {
@@ -56,6 +58,7 @@
     }
   },
   {
+    "id": "set-allexport",
     "manual": "4.3.1",
     "snippet": "set -a; x=1; set +a; y=2",
     "note": "allexport exports what is assigned while it is on",
@@ -128,6 +131,7 @@
     }
   },
   {
+    "id": "prefix-assign",
     "manual": "6.11",
     "snippet": "x=1 :; y=2 true",
     "posix": true,
@@ -313,6 +317,7 @@
     }
   },
   {
+    "id": "alias-unalias",
     "manual": "6.6",
     "snippet": "alias ll='ls -l' q='it'\\''s'; alias g=grep; unalias g",
     "facts": {
@@ -490,6 +495,7 @@
     }
   },
   {
+    "id": "redirect-dup-exec",
     "manual": "3.7.3",
     "snippet": "cd sub || exit; exec 3>&1; umask 077",
     "facts": {
@@ -618,6 +624,7 @@
     }
   },
   {
+    "id": "declare-attributes",
     "manual": "4.2",
     "snippet": "declare -n r=t; r=5; declare -a arr; arr+=(1); typeset -i n; n=1+1; unset -v n; export -n HOME; declare +x PATH; x=1; declare -x x",
     "facts": {
@@ -1119,6 +1126,7 @@
     }
   },
   {
+    "id": "expand-aliases",
     "manual": "6.6",
     "snippet": "shopt -s expand_aliases\nalias e='set -f' q=echo\nalias 'w=shopt -s dotglob'\ne\nw; alias r='set -C'; r\nv=$(r)",
     "note": "an alias that changes the state, once expanded; the same line is read before the alias exists, a command substitution after",
@@ -2368,6 +2376,7 @@
     }
   },
   {
+    "id": "arith-parens",
     "manual": "6.5",
     "snippet": "c=-2; (( a |= 2#101 >= c /= c &= 2 )); i=0; (( (i++)++ )); j=0; (( (j = 1) = 3 )); k=0; (( m = ++(k = 2) ))",
     "note": "assigning to what is no variable is an error, once its left side has run; ++ before what is no variable is two signs",

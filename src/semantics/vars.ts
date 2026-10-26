@@ -39,15 +39,15 @@ const NONE = none();
 /** Bash sets it, or keeps its own: never trusted (`changedUnseen`). */
 const BASH_SETS = followed(['test/bash-variables.test.ts: marks readonly, numeric and dynamic variables as bash treats an assignment to them']);
 /** The word model splits with it (src/semantics/words.ts), and the test words check it (src/semantics/trust.ts). */
-const IFS = followed(['words: IFS=', 'values: IFS=']);
+const IFS = followed(['words#ifs-colon', 'values#ifs-values']);
 /** `set -x` expands it before each command: it must be a quiet prompt. */
-const PS4 = followed(['values: PS4=', 'test/trust.test.ts: PS4=']);
+const PS4 = followed(['values#xtrace-ps4', 'test/trust.test.ts: trusts nothing where bash may run a subscript, a prompt, a word list or a history line, or an inherited value']);
 /** Bash reads its text as arithmetic. */
-const OPTIND = followed(['test/trust.test.ts: OPTIND=']);
+const OPTIND = followed(["test/trust.test.ts: reads bash's own variables from the catalog (src/semantics/vars.ts), as bash treats them"]);
 /** The value of `~`. */
-const HOME = followed(['words: HOME=']);
+const HOME = followed(['words#home-tilde']);
 /** Read by another shell the script starts (its model's start: `bash -c`, `sh -c`). */
-const SHELL_START = followed(['test/nested.test.ts: BASH_ENV=']);
+const SHELL_START = followed(['test/nested.test.ts: starts another shell with its options, without what a slot removes, and with what its startup files may set']);
 /** A locale: case conversion, character classes and ranges follow it (step 4: followed for `C`, `POSIX`, `C.UTF-8` or empty; else all). */
 const LOCALE = none(FOLLOWED);
 /** What bash does after it, the walk does not follow (step 4). */

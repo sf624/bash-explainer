@@ -28,6 +28,57 @@ interface Construct { id: number; type: Probed; until?: boolean }
 /** A generated script: its text with placeholders, the constructs probed, and the file it sources, if any. */
 export interface Script { text: string; constructs: Construct[]; lib?: string }
 
+/**
+ * The constructs the generator writes, each as a pattern that matches it in a script's text (`forModel(text).src`).
+ * The rows of the allow-list name them (`generator: <name>`, src/semantics/allow.ts); test/allow-list.test.ts checks
+ * that each pattern matches some generated script.
+ */
+export const GENERATED: Readonly<Record<string, RegExp>> = {
+  // Conditions and tests.
+  '[[': /\[\[ /,
+  '[[ -z': /\[\[ -z /,
+  '[[ $v op': /\[\[ \$\w+ (?:==|=~|-lt) /,
+  '[ test': /(?:^|[^[\w])\[ [-"$]/m,
+  test: /\btest "/,
+  '=~': /=~ /,
+  '(( ))': /(?<!\$|for )\(\( /,
+  '(( v++ ))': /\(\( \w+\+\+ \)\)/,
+  // Lists, groups and compound commands.
+  list: /(?:\]\]?|\)\)|\b(?:true|false|h|k|f|g|rc|run|debug)|:|null) (?:&&|\|\|) /,
+  'brace group': /(?:^|[;|&{] )\{ /m,
+  subshell: /(?<![$\w(=])\( /,
+  'function definition': /\b\w+\(\) \{ /,
+  if: /\bif /,
+  elif: /\belif /,
+  else: /\belse /,
+  case: /\bcase \S.* in /,
+  while: /\bwhile /,
+  until: /\buntil /,
+  'for (( ))': /\bfor \(\( /,
+  do: /; do /,
+  // Jumps.
+  break: /\bbreak\b/,
+  continue: /\bcontinue\b/,
+  return: /\breturn\b/,
+  exit: /\bexit\b/,
+  // Assignments and builtins that write.
+  local: /\blocal \w/,
+  export: /\bexport \w/,
+  unset: /\bunset /,
+  let: /\blet \w/,
+  // Options.
+  'set -e': /\bset -e(?=[;\s)]|$)/,
+  'set -u': /\bset -u(?=[;\s)]|$)/,
+  'set -o pipefail': /\bset -o pipefail\b/,
+  'set option': /\bset [-+](?:[aefu]\b|o )/,
+  'shopt -s': /\bshopt -s /,
+  nocasematch: /\bshopt -[su] nocasematch\b/,
+  // Expansions and redirections.
+  'command substitution': /\$\( /,
+  'substring expansion': /\$\{s:/,
+  '<<<': /<<< /,
+};
+
 /** The scripts' constructs: those of the reviews of the decisions (docs/design/semantics.md, 4.14). */
 class Generator {
   private n = 0;
