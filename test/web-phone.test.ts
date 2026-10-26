@@ -63,12 +63,13 @@ describe('the web page: touch screens, stored data and the window', function () 
     await page.locator('#settings-open').tap();
     await page.locator('#settings-clear').tap();
     // Asked first: a cancel changes nothing.
-    assert.match(await page.locator('#settings-dialog').innerText(), /This cannot be undone/);
+    assert.match(await page.locator('#clear-dialog').innerText(), /This cannot be undone/);
     await page.locator('#settings-clear-no').tap();
     assert.strictEqual(await page.locator('#settings-clear').isVisible(), true);
     assert.ok((await stored()).includes('bash-explainer-settings'));
     await page.locator('#settings-clear').tap();
     await page.locator('#settings-clear-yes').tap();
+    await page.locator('#settings-clear-status p').waitFor();
     assert.match(await page.locator('#settings-clear-status').innerText(), /Cleared/);
     // No reload: the dialog, the page and the storage are back to the defaults.
     assert.deepStrictEqual(await stored(), []);
@@ -94,6 +95,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     assert.strictEqual(await p2.locator('#settings-clear').textContent(), '保存したデータを消去');
     await p2.locator('#settings-clear').click();
     await p2.locator('#settings-clear-yes').click();
+    await p2.locator('#settings-clear-status p').waitFor();
     assert.match(await p2.locator('#settings-clear-status').innerText(), /消去しました/);
     assert.deepStrictEqual(errors, []);
     await bare.close();
