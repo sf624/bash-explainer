@@ -144,6 +144,8 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
       ['set -o history\nu=2\nu=1\nfc -s 1=2 u >/dev/null 2>&1\n', 'fc'],
       // `declare n` outside a function keeps the value from the environment, which arithmetic runs; so does `+=` of an integer.
       ['declare n; (( n ))', 'declare n'], ['declare -i n; n+=1', 'declare -i n; n+='], ['f() { declare -g n; }; f; (( n ))', 'declare -g n'], ['declare -i n+=1', 'declare -i n+=1'],
+      // `declare -I` and `local -I` in a function keep the value from outside, also one from the environment.
+      ['f() { declare -I n; (( n )); }; f', 'declare -I n'], ['f() { local -I n; (( n )); }; f', 'local -I n'],
     ];
     for (const [src, what] of changes) {
       assert.strictEqual(inherited(`u=1; ${src}\necho "$u"`), '2', what);
@@ -151,6 +153,8 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     }
     // Their quiet forms change nothing: a static name, a quiet prompt, a word list of plain words, `fc -l`, a local.
     const quiet = ['a=(1); [ -v u ]; [[ -v a[0] ]]; test -v a[0]; test -v 1x', "x='a \\u $u'; : \"${x@P}\"", "compgen -W 'a b $u' -- a >/dev/null", 'fc -l >/dev/null 2>&1',
+      // (`compgen -G`, `-X`, `-P` and `-S` take their words as text.)
+      "compgen -G '$((u=2))' -X '$((u=2))' -P '$((u=2))' -S '$((u=2))' -W 'a b' -- a >/dev/null",
       'f() { declare n; local -i m; m+=1; (( n )); }; f', 'declare n=0; (( n ))', 'enable -n echo',
       // (Words of `test` that are never `-v`, or are known: `[[ ]]` reads its operators before it expands.)
       "set -- a; x=abc; y='a b'; n=$((1+1)); [ \"$1\" = \"$u\" ]; [ $# -eq 1 ]; [ $x = abc ]; [ $y = a ] 2>/dev/null; [ $n -gt 1 ]; [ -n \"$1\" ]; [ x\"$1\" = xa ]; [ /*/ ] 2>/dev/null",
@@ -174,5 +178,8 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     // (`enable` of a name not known may turn off any builtin.)
     assert.strictEqual(decided('u=1; enable -n "$b"; [ "$u" = 1 ] && :'), undefined);
     assert.strictEqual(decided('u=1; compgen -W "$w" -- a; [ "$u" = 1 ] && :'), undefined);
+    // (`compgen -C` runs a command, and bash warns that `-C` and `-F` "may not work as you expect" outside completion.)
+    assert.match(bashErr('compgen -C true x'), /-C option may not work as you expect/);
+    assert.strictEqual(decided('u=1; compgen -C true x; [ "$u" = 1 ] && :'), undefined);
   });
 });

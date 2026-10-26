@@ -3979,5 +3979,26 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "f() { local -I x; @PROBE:a@ \"$x\"; declare -I y=1+1; @PROBE:b@ \"$y\"; }; x=5; declare -i y; f",
+    "none": {
+      "a": "`-I` starts the local variable with the value outside, which the walk does not follow",
+      "b": "`-I` gives the local variable the integer attribute outside, which runs `1+1`"
+    },
+    "facts": {
+      "a": [
+        [
+          "5"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

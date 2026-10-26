@@ -72,6 +72,28 @@ const MAPFILE_OPTIONS: (OptSpec | OptionSpec)[] = [
 const MAPFILE_OPERANDS = args(operand('ARRAY', '格納する配列名（省略時は MAPFILE）', 'array name (default MAPFILE)', { type: 'variable', sets: 'lines' }));
 const MAPFILE_DEFAULT = { byDefault: { name: 'MAPFILE', sets: 'lines' as const } };
 
+/** The kinds of candidates of `complete` and `compgen`, one letter each (`-A` names them too: `-A user` is `-u`). */
+const COMPLETION_ACTIONS: OptSpec[] = [
+  ['-a', 'エイリアス名', 'alias names'], ['-b', '組み込みコマンド名', 'builtin names'], ['-c', 'コマンド名', 'command names'],
+  ['-d', 'ディレクトリ名', 'directory names'], ['-e', 'エクスポートされた変数名', 'exported variable names'], ['-f', 'ファイル名', 'file names'],
+  ['-g', 'グループ名', 'group names'], ['-j', 'ジョブ名', 'job names'], ['-k', '予約語', 'reserved words'],
+  ['-s', 'サービス名', 'service names'], ['-u', 'ユーザー名', 'user names'], ['-v', '変数名', 'variable names'],
+];
+
+/** What `complete` and `compgen` do to the candidates: as text, with no expansion. */
+const COMPLETION_FILTERS: OptSpec[] = [
+  ['-X', '指定したパターンに合う候補を除く（先頭が `!` なら、合わない候補を除く）', 'remove the candidates that match the given pattern (with a leading `!`, those that do not)', 'arg'],
+  ['-P', '各候補の前に付ける文字列', 'text to put before each candidate', 'arg'],
+  ['-S', '各候補の後に付ける文字列', 'text to put after each candidate', 'arg'],
+];
+
+/** `complete -D`, `-E`, `-I` (also `compopt`): the completion of no command in particular. */
+const COMPLETION_TARGETS: OptSpec[] = [
+  ['-D', '補完の登録がないコマンドの既定の補完を対象にする', 'the default completion, for commands with no registration of their own'],
+  ['-E', '空の行での補完を対象にする', 'the completion of an empty line'],
+  ['-I', 'コマンド名の位置の単語の補完を対象にする', 'the completion of the word in the place of the command name'],
+];
+
 /** A signal number of Linux (0 to 64, leading zeros allowed), as `trap` checks its first word. */
 const SIGNAL_NUMBER = /^0*(?:\d|[1-5]\d|6[0-4])$/;
 
@@ -273,6 +295,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   cd: actsOnShell(b('カレントディレクトリを移動する', 'Change the current directory', [
     ['-P', 'シンボリックリンクを解決した物理パスに移動', 'use the physical path (resolve symlinks)'],
     ['-L', 'シンボリックリンクをたどる（既定）', 'follow symlinks (default)'],
+    ['-e', '`-P` と一緒に使い、移動後のカレントディレクトリが分からなければ失敗を返す', 'with `-P`, fail when the new current directory cannot be determined'],
   ], args(operand('DIR', '移動先のディレクトリ（`-` は直前のディレクトリ、省略時は $HOME）', 'target directory (`-` = previous, default $HOME)')))),
   pwd: b('カレントディレクトリのパスを表示する', 'Print the current directory', [
     ['-P', 'シンボリックリンクを解決した物理パスを表示', 'print the physical path'],
@@ -397,8 +420,12 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   compgen: b('補完の候補を生成して表示する（補完関数の中で使う）', 'Generate completion candidates (used in completion functions)', [
     ['-G', '指定したグロブに合うファイル名（`compgen -G パターン` は一致があるかの判定によく使う）', 'file names matching the given glob (`compgen -G pattern` is a common way to test for a match)', 'arg'],
     ['-W', '指定した単語の一覧から候補を作る', 'candidates from the given word list', 'arg'], ['-A', '候補の種類（`file`、`command`、`variable`…）', 'kind of candidates (`file`, `command`, `variable`…)', 'arg'],
-    ['-f', 'ファイル名', 'file names'], ['-d', 'ディレクトリ名', 'directory names'], ['-c', 'コマンド名', 'command names'], ['-v', '変数名', 'variable names'],
+    ...COMPLETION_ACTIONS,
     ['-o', '補完の動作オプション', 'completion option', 'arg'],
+    // (`-F` runs the function in this shell, and bash warns that it "may not work as you expect" outside completion.)
+    naming(['-F', '指定した関数を現在のシェルで実行し、`COMPREPLY` に入れた候補を使う', 'run the given function in the current shell and use the candidates it puts in `COMPREPLY`', 'arg'], 'function'),
+    ['-C', '指定したコマンドをサブシェルで実行し、その出力を候補にする', "run the given command in a subshell and use its output as candidates", 'arg'],
+    ...COMPLETION_FILTERS,
     naming(['-V', 'bash 5.3: 候補を表示せず、指定した名前の配列に入れる', 'bash 5.3: store the candidates in the named indexed array instead of printing them', 'arg since:5.3'], 'variable', 'array'),
   ], args(operand('WORD', '補完中の単語（これで始まる候補だけ）', 'word being completed (only candidates starting with it)'))),
   complete: b('コマンドの引数の補完方法を登録する', "Register how a command's arguments are completed", [
@@ -406,9 +433,15 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     // (A command, which may be a function of the script.)
     naming(['-C', '指定したコマンドの出力を候補にする', "use the given command's output as candidates", 'arg'], 'function'), ['-o', '補完の動作オプション（`nospace`、`default`…）', 'completion option (`nospace`, `default`…)', 'arg'],
     ['-r', '登録を削除する', 'remove the registration'], ['-p', '登録を表示する', 'print the registrations'],
+    ['-A', '候補の種類（`file`、`command`、`variable`…）', 'kind of candidates (`file`, `command`, `variable`…)', 'arg'],
+    ['-G', '指定したグロブに合うファイル名を候補にする', 'file names matching the given glob', 'arg'],
+    ...COMPLETION_ACTIONS,
+    ...COMPLETION_FILTERS,
+    ...COMPLETION_TARGETS,
   ], args(operand('NAME', '対象のコマンド名', 'command name'))),
   compopt: b('補完中に補完の動作オプションを変える', 'Change completion options while completing', [
     ['-o', 'オプションを有効にする（`nospace`、`nosort`…）', 'enable an option (`nospace`, `nosort`…)', 'arg'], ['+o', 'オプションを無効にする', 'disable an option', 'arg'],
+    ...COMPLETION_TARGETS,
   ]),
   setopt: b('zsh のオプションを有効にする', 'Turn zsh options on', [], args(operand('OPTION', 'オプション名（`local_options`、`extended_glob`…）', 'option name (`local_options`, `extended_glob`…)'))),
   unsetopt: b('zsh のオプションを無効にする', 'Turn zsh options off', [], args(operand('OPTION', 'オプション名', 'option name'))),
@@ -494,6 +527,8 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-i', '待機中のシグナルの最大数', 'maximum number of pending signals'],
     ['-r', 'リアルタイム優先度の上限', 'maximum real-time priority'],
     ['-b', 'ソケットバッファの最大サイズ', 'maximum socket buffer size'],
+    ['-R', 'リアルタイムのプロセスがブロックせずに走れる時間（マイクロ秒）', 'time a real-time process may run without blocking (microseconds)'],
+    // (bash also lists -k, -P and -T, which Linux lacks: "invalid option".)
   ]), (c) => c.operands.length > 0),
   mapfile: actsOnShell(b('標準入力の各行を配列に読み込む', 'Read lines from stdin into an array', MAPFILE_OPTIONS, MAPFILE_OPERANDS), undefined, MAPFILE_DEFAULT),
   readarray: actsOnShell(b('標準入力の各行を配列に読み込む（mapfile と同じ）', 'Read lines from stdin into an array (same as mapfile)', MAPFILE_OPTIONS, MAPFILE_OPERANDS), undefined, MAPFILE_DEFAULT),

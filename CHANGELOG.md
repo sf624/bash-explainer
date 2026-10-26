@@ -87,6 +87,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - After `alias ll='ls -l'; ll -h` on one line, `ll` is the command bash looks for, not the alias, and `-h` is no longer read as an option of `ls`.
 - `zsh`, `dash`, `ksh` and the other shells are named as themselves: `zsh -c …` said "Run the POSIX shell".
 - Words such as `toString` and `constructor` are read like any other: `toString x` runs an external command, not a builtin, `set -o constructor` and `> constructor` no longer say "undefined", and `jq 'constructor'` no longer leaves the line unexplained.
+- Every option of bash's builtins is explained: `complete -u`, `compgen -P`, `compopt -D`, `cd -e`, `ulimit -R`, `declare -I` and the others. Before, these said "not in the dictionary".
 - Combined short options listed as one are split as the others are: `docker run -it` and `docker exec -it` are `-i` and `-t`, `screen -dmS` and `usermod -aG` too.
 - `tar vf a.tar` (the first word is always letters, with or without an operation) and `ps u1` (a number after BSD letters lists PIDs, as `ps u -p 1`) are explained as the tools read them. Before, both were plain words.
 - In a script for dash, POSIX sh or busybox ash, `echo {a,b}` and `{1..3}` are plain words, as the shell prints them (mksh: only `{a,b}` expands). Before, they were explained as expanding, with a warning that the shell lacks it.

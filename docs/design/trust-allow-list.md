@@ -1,6 +1,6 @@
 # Trust as a strict allow-list
 
-Status: proposed (2026-10-26). Values in Meaning, decided conditions and dead code rest on the trust of src/semantics/trust.ts ([semantics.md](semantics.md), 4.14; [expansion-values.md](expansion-values.md), 3). This page proposes to turn its default around. Today a construct the scan does not recognise is taken to change nothing. With this plan, every construct is looked up in a table, and a construct that is not in the table changes anything. A new hole then gives no value, instead of a wrong one.
+Status: in progress (2026-10-26): step 1 done (section 6). Values in Meaning, decided conditions and dead code rest on the trust of src/semantics/trust.ts ([semantics.md](semantics.md), 4.14; [expansion-values.md](expansion-values.md), 3). This page proposes to turn its default around. Today a construct the scan does not recognise is taken to change nothing. With this plan, every construct is looked up in a table, and a construct that is not in the table changes anything. A new hole then gives no value, instead of a wrong one.
 
 ## 1. The failure pattern
 
@@ -222,7 +222,17 @@ The options the specs lack should be added first (section 6, step 1); then the c
 
 Each step keeps every test passing.
 
+| Step | Status |
+| --- | --- |
+| 1. The specs | Done (2026-10-26) |
+| 2. The table, with today's behaviour | Not started |
+| 3. The walk | Not started |
+| 4. The default flips | Not started (the maintainer decides when) |
+| 5. Docs | Not started |
+
 1. **The specs first.** Every builtin's options as bash 5.2 and 5.3 accept them (`complete -f`, `-u`, `-X` and the others, `declare -I`, those of `read` the corpus uses, and the rest the comparison of section 5 finds), with test/builtins-real.test.ts. Nothing users see changes, except the explanation of those options.
+
+   Done. test/builtins-real.test.ts compares each builtin's options with the letters of `help -s` in bash 5.2 and 5.3 (every builtin of `compgen -b`; the options a spec has beyond the usage line, such as `kill -9`, are listed with why). It found `complete` (`-abcdefgjksuv`, `-A`, `-G`, `-X`, `-P`, `-S`, `-D`, `-E`, `-I`), `compgen` (the same letters, `-F`, `-C`), `compopt` (`-D`, `-E`, `-I`), `cd -e`, `ulimit -R` and `declare`/`typeset`/`local -I`. bash lists `ulimit -k`, `-P`, `-T` and `cd -@` too, but refuses them on Linux; they stay out. `read -l`, `read -q`, `read -z` and `declare -Q`, the corpus's other unknown options, are refused by bash (snippets of tests, and a zsh branch in npm's completion). Two rows needed more than the spec: `compgen -F` and `-C`, now known options, still make the scan blind (`-F` runs its function in the shell); and `declare -I x` in a function keeps the value from outside (the scan writes `kept`, the walk takes the value as not known), where before the scan took it as a new local with no value.
 2. **The table, with today's behaviour.** src/semantics/allow.ts with every row, and today's effect in each: `none` where the scan lets a construct through today. The scan reads the table; the default for a missing row is still `none`. Every explanation stays byte-identical (test/snapshot.ts). The completeness tests of section 5 land here.
 3. **The walk.** Redirections that may fail make their command "may not run"; the patterns after `;&` and `;;&` are expanded in the state after the list before them; a name read as arithmetic must have a value known on every path there (`Walker.found` otherwise). Each with probe rows. Measure the corpus and the real scripts: the redirection rule may cost values after `{ …; } > "$log"`. Users see fewer wrong values and dead marks (CHANGELOG "Fixed").
 4. **The default flips.** A missing row is `all`, and the rows marked "new" take their effect: the options (also from the shebang), the variables of bash (also those given to another shell), `jobs -x`, `{a[i]}>`, `${x@P}` with `+=`, `error` nodes. Each with its probe rows and the generator's "unknown construct" statements. Users see fewer wrong values and dead marks (CHANGELOG "Fixed": one bullet, the details in docs/changes).

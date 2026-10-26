@@ -333,8 +333,9 @@ export class WalkBuiltins {
     const local = this.w.frames.length > 0 && spec.locals === 'unless-g' && !on.includes('g');
     const gives = builtin === 'export' ? (on.includes('n') ? '' : 'x') : builtin === 'readonly' ? 'r' : [...on].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
     const removes = builtin === 'export' && on.includes('n') ? 'x' : [...off].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
-    // (An option the spec does not know, `declare -c`, may change the values assigned: they are not known.)
-    const unknown = words.some((w) => roles.get(w)?.role === 'unknown-option');
+    // (An option the spec does not know, `declare -c`, may change the values assigned: they are not known. So does
+    // `-I`, with the attributes of the variable it hides: an integer one runs the value.)
+    const unknown = on.includes('I') || words.some((w) => roles.get(w)?.role === 'unknown-option');
     for (let o of operands) {
       if (unknown && o.assign) o = { ...o, assign: { ...o.assign, text: undefined, source: undefined } };
       // `declare a[1]=x` makes `a` an array.
@@ -354,7 +355,8 @@ export class WalkBuiltins {
         // localvar_inherit, it starts with the value and attributes of the one it hides: not followed. So does dash's
         // `local`, and sh may be dash: `local IFS` keeps the IFS of the caller there.)
         const x = hidden?.attrs.x;
-        const inherit = ['sh', 'dash', 'ash'].includes(this.w.shell ?? '') ? 'unknown' : option(st, 'shopt', 'localvar_inherit');
+        // (So does `declare -I`, and `local -I`.)
+        const inherit = ['sh', 'dash', 'ash'].includes(this.w.shell ?? '') || on.includes('I') ? 'unknown' : option(st, 'shopt', 'localvar_inherit');
         st = this.w.put(st, 'variables', name, { declared: 'on', set: inherit === 'off' || inherit === 'default' ? 'off' : 'unknown', attrs: x && x.state !== 'off' ? { x: { state: x.state, at: n } } : {}, at: n });
       }
       // `declare -g x` while `x` is local: the global one.

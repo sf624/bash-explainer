@@ -6,7 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { Analyzer, lookupCommand, Token } from '../src/analyzer';
 import { ArgRole, ArgvParse, interpret } from '../src/argv/interpret';
-import { shellOptions } from '../src/dict/builtins';
+import { builtins, shellOptions } from '../src/dict/builtins';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { argWords } from './support/argwords';
 import { runBash } from './support/bash';
@@ -240,6 +240,80 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
       }
     } finally {
       fs.rmSync(file, { force: true });
+    }
+  });
+});
+
+/** The option words a usage line of `help -s` names (`-abc` and `[-a]` give `-a`…; `+o`), without its placeholders. */
+function usageOptions(usage: string): Set<string> {
+  const out = new Set<string>();
+  // (`-sigspec` of kill and `-N` of the directory stack are placeholders.)
+  for (const m of usage.replace(/-sigspec|[+-]N(?=\s*[\]|])/g, '').matchAll(/(?<=^|[\s[|])([+-])([A-Za-z@]+)(?![\w-])/g)) {
+    for (const l of m[2]) out.add(`${m[1] === '+' && m[2] === 'o' ? '+' : '-'}${l}`);
+  }
+  return out;
+}
+
+/**
+ * The options of the specs that bash's usage line does not show, with why: each other option must be in both
+ * (docs/design/trust-allow-list.md, section 5).
+ */
+const NOT_IN_USAGE: Record<string, string[]> = {
+  // (Signals given as options: `kill -9`; and `-L`, which is `-l`.)
+  kill: ['-9', '-KILL', '-L', '-0'],
+  // (`local [option]`: the options of `declare`.)
+  local: ['-a', '-A', '-i', '-r', '-x', '-l', '-u', '-n', '-t', '-g', '-f', '-F', '-p', '-I'],
+  // (`set --` ends the options.)
+  set: ['--'],
+};
+/** Letters the usage shows that Linux lacks: bash says "invalid option" there. */
+const NOT_ON_LINUX: Record<string, string[]> = { ulimit: ['-k', '-P', '-T'], cd: ['-@'] };
+
+(hasBash ? describe : describe.skip)('the options of the builtins against bash', () => {
+  const programs = ['bash', ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])];
+  for (const program of programs) {
+    it(`every option of ${program === 'bash' ? 'bash' : 'bash 5.3'}'s usage of each builtin is in its spec, and no other`, () => {
+      const release = runBash('echo "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"', { program }).stdout.trim();
+      const names = runBash('compgen -b', { program }).stdout.trim().split('\n');
+      assert.strictEqual(names.length, 61, program);
+      const wrong: string[] = [];
+      for (const name of names) {
+        const spec = builtins[name];
+        assert.ok(spec, `${name} has a spec`);
+        // (`test` and `[` read their operands as an expression: their "options" are its operators.)
+        if (spec.operandParser === 'test-expression') continue;
+        const usage = runBash(`help -s ${name}`, { program }).stdout;
+        const shown = usageOptions(usage.replace(/^[^:]*:/, ''));
+        const known = new Set((spec.options ?? []).filter((o) => !o.since || release >= o.since).flatMap((o) => o.names));
+        const missing = [...shown].filter((o) => !known.has(o) && !(NOT_ON_LINUX[name] ?? []).includes(o));
+        const extra = [...known].filter((o) => !shown.has(o) && !(NOT_IN_USAGE[name] ?? []).includes(o));
+        if (missing.length || extra.length) wrong.push(`${name}: missing ${missing.join(' ')}; not in the usage ${extra.join(' ')} (${usage.trim()})`);
+      }
+      assert.deepStrictEqual(wrong, []);
+      // (The letters Linux lacks are refused: they stay out of the specs.)
+      for (const [name, flags] of Object.entries(NOT_ON_LINUX)) {
+        for (const f of flags) assert.match(runBash(`${name} ${f} /`, { program }).stderr, /invalid option/, `${name} ${f}`);
+      }
+    });
+  }
+
+  it('complete, compgen, compopt, cd, ulimit and declare -I: what the options do', () => {
+    // The kinds of candidates, and what is done to them, as `complete -p` prints them back (`-A file` is `-f`).
+    assert.strictEqual(bash("complete -a -b -c -d -e -g -j -k -s -u -v -A file -G '*' -X a -P p -S s y; complete -p y"),
+      "complete -a -b -c -d -e -f -g -j -k -s -u -v -G '*' -P 'p' -S 's' -X 'a' y\n");
+    assert.strictEqual(bash('complete -D -o nospace; complete -E -W x; complete -I -W y; complete -p -D; complete -p -E; complete -p -I'), "complete -o nospace -D\ncomplete -W 'x' -E\ncomplete -W 'y' -I\n");
+    // (`-G`, `-X`, `-P` and `-S` take their words as text; `-F` runs its function in this shell.)
+    assert.strictEqual(bash("u=1; compgen -G '$((u=2))'; compgen -X '!a*' -P '$((u=3))' -S '>' -W 'a b'; echo $u"), '$((u=3))a>\n1\n');
+    assert.strictEqual(bash('f() { u=2; COMPREPLY=(x); }; u=1; compgen -F f 2>/dev/null; echo $u'), 'x\n2\n');
+    assert.doesNotMatch(runBash('compopt -D -o nospace; compopt -E +o nospace; compopt -I -o nospace').stderr, /invalid option/);
+    assert.strictEqual(bash('cd -P -e / && pwd; ulimit -R'), '/\nunlimited\n');
+    // `declare -I` (and `local -I`) in a function: the local variable starts with the value and attributes outside.
+    assert.strictEqual(bash('f() { local -I x; declare -I y=1+1; echo "$x $y"; }; x=5; declare -i y; f'), '5 2\n');
+    const parser = createUnbashParser();
+    for (const [line, flag, re] of [['complete -u -X x c', '-u', /^user names$/], ['compgen -P p -W w', '-P', /^text to put before each candidate$/],
+      ['compopt -D -o nospace', '-D', /default completion/], ['cd -P -e /', '-e', /with `-P`/], ['ulimit -R', '-R', /real-time/], ['declare -I x', '-I', /starts with the value/]] as const) {
+      const t = new Analyzer('en').explainLine(parser.parse(line), 0).items[0].children.find((c) => c.label === flag)!;
+      assert.match(t.explanation, re, line);
     }
   });
 });

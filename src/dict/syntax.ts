@@ -394,6 +394,7 @@ export const declarationFlags: Record<string, Text> = {
   '-n': tx('名前参照（nameref）にする', 'make a name reference'),
   '-t': tx('trace 属性を付ける（関数では DEBUG・RETURN トラップを引き継ぐ）', 'give the trace attribute (a function inherits the DEBUG and RETURN traps)'),
   '-g': tx('関数内でもグローバル変数として宣言', 'declare global even inside a function'),
+  '-I': tx('関数内で作るローカル変数に、外側の同じ名前の変数の値と属性を引き継ぐ', 'a local variable made in a function starts with the value and attributes of the variable of the same name outside it'),
   '-f': tx('関数名を対象にする', 'operate on function names'),
   '-F': tx('関数名のみ表示', 'show function names only'),
   '-p': tx('属性と値を表示', 'print attributes and values'),
