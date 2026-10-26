@@ -384,15 +384,18 @@ function applyLanguage(): void {
 }
 
 // The colours are CSS variables (theme.css): the attribute switches them, the editor and the panel follow.
-$<HTMLSelectElement>('theme').addEventListener('change', (e) => {
-  theme = (e.target as HTMLSelectElement).value as Theme;
+function setTheme(next: Theme): void {
+  theme = next;
+  $<HTMLSelectElement>('theme').value = theme;
   if (theme === 'auto') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', theme);
   // When storage refuses, the choice lasts until the page is closed.
   if (theme === 'auto') removeStored(STORAGE_KEYS.theme);
   else writeStored(STORAGE_KEYS.theme, theme);
   pushTheme();
-});
+  settingsDialog?.refresh();
+}
+$<HTMLSelectElement>('theme').addEventListener('change', (e) => setTheme((e.target as HTMLSelectElement).value as Theme));
 
 // The language menu is the `language` setting.
 $<HTMLSelectElement>('lang').addEventListener('change', (e) => {
@@ -442,6 +445,8 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   canSave: () => canSave,
   codes: () => codesSeen,
   clearAll: clearEverything,
+  theme: () => theme,
+  setTheme,
 });
 
 /**

@@ -181,6 +181,7 @@ describe('the web page: resizing the panes and the Problems list', function () {
     await page.locator('#settings-open').click();
     await page.locator('#settings-clear').click();
     await page.locator('#settings-clear-yes').click();
+    await page.locator('#settings-clear-status p').waitFor();
     assert.deepStrictEqual(await page.evaluate('Object.keys(localStorage)'), []);
     await page.locator('#settings-done').click();
     assert.strictEqual(await page.locator('#problems-toggle').getAttribute('aria-expanded'), 'true');
