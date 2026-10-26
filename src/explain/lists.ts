@@ -168,7 +168,8 @@ export function andOrList(cx: Explainer, n: SyntaxNode): Token {
     }
   };
   walk(n);
-  const children = parts(cx, flatParts, (c) => (c.type === '&&' || c.type === '||' ? { ...cx.tok(c, 'operator', cx.t(listOps[c.type])), refs: ['3.2.4'] } : undefined));
+  // (Its operators are `&&` and `||` only.)
+  const children = parts(cx, flatParts, (c) => ({ ...cx.tok(c, 'operator', cx.t(listOps[c.type])), refs: ['3.2.4'] }));
   const kind = andOrKind(n);
   const grouped = kind === 'both' ? grouping(n) : undefined;
   const text = kind === 'and'
