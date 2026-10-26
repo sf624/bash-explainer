@@ -1,7 +1,8 @@
-import type { LineExplanation } from '../analyzer-types';
+import type { LineExplanation, Token } from '../analyzer-types';
 import { BATS_COMMANDS } from '../dict/bats';
 import type { Extracted } from './index';
 import { Builder } from './builder';
+import { COMMENT_TEST, tagComment } from './batstags';
 import type { HostRun } from '../semantics/walk/host';
 
 /**
@@ -32,25 +33,62 @@ const batsTestMeaning = (name: string): [string, string] => [
   `bats のテスト: bats はこれを関数 \`${name}\` に書き換えて、テストを実行するときに呼ぶ`,
   `bats test: bats rewrites it into the function \`${name}\`, which it calls to run the test`];
 
+/** A function marked `# @test`: bats makes the function the test, under another name. */
+const batsMarkedMeaning = (written: string, name: string): [string, string] => [
+  `bats のテスト: コメント \`# @test\` があるので、bats はこの関数をテストとして実行する。関数は \`${name}\` に改名されるので、\`${written}\` では呼べない`,
+  `bats test: because of the comment \`# @test\`, bats runs this function as a test. It renames the function \`${name}\`, so it can no longer be called as \`${written}\``];
+
+/** The comment commands of bats on a line, which bash ignores as comments: tags, and `# @test` after a function. */
+function batsComments(ex: LineExplanation, original: string, marked: boolean, lang: 'ja' | 'en'): void {
+  const tag = tagComment(original);
+  if (!tag && !marked) return;
+  const text = tag
+    ? lang === 'ja' ? `bats への指示コメント: bash は無視するが、bats が読んで${tag.scope === 'test' ? '次のテストだけ' : 'これ以降のすべてのテスト'}にタグを付ける` : `bats directive: bash ignores the comment, bats reads it and tags ${tag.scope === 'test' ? 'the next test only' : 'every later test'}`
+    : lang === 'ja' ? 'bats への指示コメント: bash は無視するが、bats は前の関数をテストとして登録する' : 'bats directive: bash ignores the comment, bats registers the function before it as a test';
+  const walk = (ts: Token[]): void => ts.forEach((t) => {
+    if (t.kind === 'comment' && t.span.start.line === ex.line) {
+      // (A line that is only this comment has its explanation as the summary.)
+      ex.summary = ex.summary.replace(t.explanation, () => text);
+      t.explanation = text;
+    }
+    walk(t.children);
+  });
+  walk(ex.items);
+}
+
+/** The head of the definition of a test: `@test "x"` and the function bash reads, or the name and the parentheses of a marked function. */
+function testHeads(original: string, shell: string): { written: string; head: string; name: string; marked: boolean } {
+  const line = original.replace(/\r$/, '');
+  if (BATS_TEST.test(line)) {
+    const name = /^\s*(\S+)\(\)/.exec(shell)![1];
+    return { written: testText(line), head: `${name}()`, name, marked: false };
+  }
+  const o = COMMENT_TEST.exec(line)!;
+  const c = COMMENT_TEST.exec(shell)!;
+  return { written: o[2] + o[3] + o[4], head: c[2] + c[3] + c[4], name: c[3], marked: true };
+}
+
 /**
  * The explanation of the line of a bats test, which bash reads as the definition of a function: the definition is
- * the test as written (`@test "x" { … }`), and the context shows the test rather than the function.
+ * the test as written (`@test "x" { … }`, or the function marked `# @test`), and the context shows the test rather
+ * than the function. Also the comments bats reads (tags, `# @test`), which bash ignores.
  */
 export function batsTestLine(ex: LineExplanation, extracted: Extracted, original: string[], tests: readonly number[], lang: 'ja' | 'en'): void {
   const shell = extracted.text.split('\n');
   for (const c of ex.context) {
-    const name = tests.includes(c.line) ? /^\s*(\S+)\(\)/.exec(shell[c.line])![1] : undefined;
-    if (name && c.label.includes(`\`${name}\``)) c.label = testText(original[c.line]);
+    if (!tests.includes(c.line)) continue;
+    const t = testHeads(original[c.line], shell[c.line]);
+    if (c.label.includes(`\`${t.name}\``)) c.label = t.marked ? t.written : testText(original[c.line]);
   }
-  if (!tests.includes(ex.line)) return;
-  const name = /^\s*(\S+)\(\)/.exec(shell[ex.line])![1];
+  const here = tests.includes(ex.line) ? testHeads(original[ex.line], shell[ex.line]) : undefined;
+  batsComments(ex, original[ex.line], !!here?.marked, lang);
+  if (!here) return;
   const def = ex.items.find((t) => t.kind === 'function' && t.span.start.line === ex.line)!;
-  const written = testText(original[ex.line]);
   const lines = /\s*[（(](?:行|lines?) [^)）]*[)）]$/.exec(def.explanation)?.[0] ?? '';
-  def.explanation = batsTestMeaning(name)[lang === 'ja' ? 0 : 1] + lines;
+  def.explanation = (here.marked ? batsMarkedMeaning(here.written.replace(/^function\s+|\(\)$/g, ''), here.name) : batsTestMeaning(here.name))[lang === 'ja' ? 0 : 1] + lines;
   def.summary = def.explanation;
-  def.label = def.label.replace(`${name}()`, written);
-  def.labelParts = def.labelParts!.map((p) => (p.text.startsWith(`${name}()`) ? { ...p, text: p.text.replace(`${name}()`, written) } : p));
+  def.label = def.label.replace(here.head, here.written);
+  def.labelParts = def.labelParts!.map((p) => (p.text.startsWith(here.head) ? { ...p, text: p.text.replace(here.head, here.written) } : p));
   ex.summary = def.explanation;
 }
 
@@ -70,7 +108,19 @@ export function bats(b: Builder): void {
   for (let i = 0; i < b.lines.length; i++) {
     const line = b.lines[i];
     const m = BATS_TEST.exec(line);
-    if (!m) { b.plain(i); continue; }
+    if (!m) {
+      // `name() { # @test`: bats makes the function a test under the name it gives `@test "name"`.
+      const c = COMMENT_TEST.exec(line);
+      if (!c || !(c[2] || c[4])) { b.plain(i); continue; }
+      const from = c[1].length + c[2].length;
+      const to = from + c[3].length;
+      const name = batsTestName(c[3].replace(/^['"]/, '').replace(/['"]$/, ''));
+      const o = b.plain(i, 0, from);
+      o.insert(name, from, to, [`bats がテストの関数に付ける名前（\`# @test\` のコメントがある関数の名前から作る）`, `the name bats gives the function of the test (made of the name of a function marked with \`# @test\`)`]);
+      o.copy(line, to, line.length);
+      tests.push(i);
+      continue;
+    }
     const [, indent, keyword, quoted, body] = m;
     // (One quote is taken off each end, as bats does.)
     const description = quoted.replace(/^['"]/, '').replace(/['"]$/, '');

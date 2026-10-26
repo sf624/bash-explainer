@@ -109,6 +109,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   // `… | sudo tee file`, with `sudo` stubbed.
   'redirect-by-your-shell': 'scenario',
   'bats-test': 'none',
+  'bats-tags': 'none',
+  'bats-tags-invalid': 'none',
   // bats-core is run by test/bats-real.test.ts.
   'bats-negation-ignored': 'scenario',
   'bats-run-in-pipeline-stage': 'scenario',
@@ -149,6 +151,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 13, scenario: 23, prose: 12, none: 37 });
+      { mechanical: 13, scenario: 23, prose: 12, none: 39 });
   });
 });

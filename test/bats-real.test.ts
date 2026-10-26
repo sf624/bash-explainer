@@ -11,6 +11,7 @@ import { Analyzer } from '../src/analyzer';
 import { batsTestName, explainHostedLine, extractShell } from '../src/hosts';
 import { shellState } from '../src/semantics/state';
 import { statusModel } from '../src/semantics/status';
+import { tagComment } from '../src/hosts/batstags';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
 
@@ -21,9 +22,9 @@ const usable = fs.existsSync(BATS) && spawnSync('bash', ['--norc', '-c', 'true']
  * Runs bats on a file and gives the TAP lines of its tests: in a process group of its own, killed whole on a
  * timeout, with FUNCNEST set so that a runaway recursion stops.
  */
-function runBats(file: string, locale = 'C', timeout = 30000): Promise<{ tap: string[]; out: string }> {
+function runBats(file: string, locale = 'C', timeout = 30000, args: string[] = [], env: Record<string, string> = {}): Promise<{ tap: string[]; out: string; code: number | null }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(BATS, ['--tap', file], { cwd: path.dirname(file), detached: true, env: { ...process.env, FUNCNEST: '20', LC_ALL: locale }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(BATS, ['--tap', ...args, file], { cwd: path.dirname(file), detached: true, env: { ...process.env, FUNCNEST: '20', LC_ALL: locale, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
     child.stdout.on('data', (d: Buffer) => { out += d; });
@@ -33,9 +34,9 @@ function runBats(file: string, locale = 'C', timeout = 30000): Promise<{ tap: st
       reject(new Error(`bats timed out on ${file}\n${out}${err}`));
     }, timeout);
     child.on('error', (e) => { clearTimeout(timer); reject(e); });
-    child.on('close', () => {
+    child.on('close', (code) => {
       clearTimeout(timer);
-      resolve({ tap: out.split('\n').filter((l) => /^(not )?ok \d/.test(l)), out: out + err });
+      resolve({ tap: out.split('\n').filter((l) => /^(not )?ok \d/.test(l)), out: out + err, code });
     });
   });
 }
@@ -456,4 +457,143 @@ describe('bats files agree with the real bats', function () {
       }
     });
   }
+});
+
+// Tag comments (`# bats test_tags=…`, `# bats file_tags=…`) and the other form of a test (`name() { # @test`).
+describe('bats tags and marked functions agree with the real bats', function () {
+  this.timeout(120000);
+  let dir: string;
+  before(function () {
+    if (!usable) return this.skip();
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-bats-tags-'));
+  });
+  after(() => {
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const write = (name: string, lines: string[]): string => {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, [...lines, ''].join('\n'));
+    return file;
+  };
+  /** Our explanation of a line of a bats file. */
+  const explain = (lines: string[], line: number, lang: 'ja' | 'en' = 'en') => {
+    const extracted = extractShell('bats', lines.join('\n'));
+    const tree = createUnbashParser().parse(extracted.text);
+    return explainHostedLine(new Analyzer(lang), tree, extracted, lines, line, lang)!;
+  };
+  /** What we say of the tags of each test of a file, read from the tag comments as we explain them: the sorted tags. */
+  const sayTags = (lines: string[]): string[] => {
+    let file: string[] = [];
+    let test: string[] = [];
+    const out: string[] = [];
+    lines.forEach((l, n) => {
+      const c = tagComment(l);
+      if (c) {
+        // (We say the same on the line: the tags in code spans.)
+        const said = explain(lines, n).facts!.find((f) => f.id === 'bats-tags')!;
+        assert.ok(c.tags.every((t) => said.text.includes(`\`${t}\``)), said.text);
+        if (c.scope === 'test') test = c.tags; else file = c.tags;
+      } else if (/^@test |# @test$/.test(l)) {
+        out.push([...test, ...file].sort().join(' '));
+        test = [];
+      }
+    });
+    return out;
+  };
+
+  it('gives test_tags to the next test only, and file_tags to every later test, sorted (BATS_TEST_TAGS)', async function () {
+    if (!usable) return this.skip();
+    const show = ['  echo "T:${BATS_TEST_TAGS[*]}" >&3', '}'];
+    const lines = [
+      '# bats file_tags=z, y', '# bats test_tags=b,a:1', '@test "one" {', ...show, '@test "two" {', ...show,
+      '# bats file_tags=', '# bats test_tags=q', '# bats test_tags=r', '@test "three" {', ...show,
+      '# bats file_tags=f', 'marked() { # @test', ...show,
+    ];
+    const { out, tap } = await runBats(write('tags.bats', lines));
+    assert.strictEqual(tap.length, 4, out);
+    assert.deepStrictEqual(out.split('\n').filter((l) => l.startsWith('T:')).map((l) => l.slice(2)), sayTags(lines));
+    assert.deepStrictEqual(sayTags(lines), ['a:1 b y z', 'y z', 'r', 'f']);
+  });
+
+  it('selects tests with --filter-tags: all the tags, !tag, several options as alternatives, an empty list for untagged tests', async function () {
+    if (!usable) return this.skip();
+    const lines = ['# bats file_tags=z', '# bats test_tags=a', '@test "A" {', '  :', '}', '# bats test_tags=a,b', '@test "AB" {', '  :', '}', '@test "Z" {', '  :', '}', '# bats file_tags=', '@test "none" {', '  :', '}'];
+    const file = write('filter.bats', lines);
+    const ran = async (...filters: string[]) => (await runBats(file, 'C', 30000, filters.flatMap((f) => ['--filter-tags', f]))).tap.map((l) => l.replace(/^ok \d+ /, ''));
+    assert.deepStrictEqual(sayTags(lines), ['a z', 'a b z', 'z', '']);
+    assert.deepStrictEqual(await ran('a,b'), ['AB']);
+    assert.deepStrictEqual(await ran('z,!b'), ['A', 'Z']);
+    assert.deepStrictEqual(await ran('b', '!a,z'), ['AB', 'Z']);
+    assert.deepStrictEqual(await ran(''), ['none']);
+  });
+
+  const LISTS: [list: string, valid: true | 'syntax' | 'empty'][] = [
+    ['', true], ['a', true], [' a , b ', true], ['a-b:c_d,E9', true],
+    ['a,,b', 'syntax'], ['a,', 'syntax'], ['a b', 'syntax'], ['a;b', 'syntax'], ['a,  ,c', 'syntax'], [',b', 'empty'],
+  ];
+  for (const [list, valid] of LISTS) {
+    for (const scope of ['test', 'file'] as const) {
+      it(`${scope}_tags=${JSON.stringify(list)}: ${valid === true ? 'bats accepts it' : 'bats refuses the whole file'}`, async function () {
+        if (!usable) return this.skip();
+        const lines = [`# bats ${scope}_tags=${list}`, '@test "one" {', '  :', '}'];
+        const { tap, out, code } = await runBats(write(`list-${scope}.bats`, lines));
+        const ours = explain(lines, 0).facts!.filter((f) => f.id.startsWith('bats-tags'));
+        if (valid === true) {
+          assert.deepStrictEqual(tap, ['ok 1 one']);
+          assert.deepStrictEqual(ours.map((f) => f.id), ['bats-tags']);
+        } else {
+          // (Nothing runs: bats fails in gathering the tests, and says which tag list is wrong.)
+          assert.match(out, /^not ok 1 bats-gather-tests$/m);
+          assert.notStrictEqual(code, 0);
+          assert.match(out, valid === 'empty' ? /Tags must not be empty/ : /Valid tags must match/);
+          assert.deepStrictEqual(ours.map((f) => f.id), ['bats-tags-invalid']);
+          assert.strictEqual(ours[0].level, 'warning');
+          assert.match(ours[0].text, valid === 'empty' ? /leading comma/ : /not valid/);
+        }
+      });
+    }
+  }
+
+  it('bats:focus runs only the focused tests and makes the run exit 1, unless BATS_NO_FAIL_FOCUS_RUN=1', async function () {
+    if (!usable) return this.skip();
+    const lines = ['@test "other" {', '  :', '}', '# bats test_tags=bats:focus', '@test "focused" {', '  :', '}'];
+    const file = write('focus.bats', lines);
+    const strict = await runBats(file);
+    assert.deepStrictEqual(strict.tap, ['ok 1 focused'], strict.out);
+    assert.strictEqual(strict.code, 1);
+    const relaxed = await runBats(file, 'C', 30000, [], { BATS_NO_FAIL_FOCUS_RUN: '1' });
+    assert.deepStrictEqual([relaxed.tap, relaxed.code], [['ok 1 focused'], 0]);
+    const said = explain(lines, 3).facts!.find((f) => f.id === 'bats-tags')!.text;
+    assert.match(said, /bats:focus.*only the focused tests.*status 1.*BATS_NO_FAIL_FOCUS_RUN=1/);
+    // (Not said of other tags.)
+    assert.doesNotMatch(explain(['# bats test_tags=a'], 0).facts!.find((f) => f.id === 'bats-tags')!.text, /focus/);
+  });
+
+  it('runs a function marked `# @test` as a test under the name bats gives @test "name", renamed', async function () {
+    if (!usable) return this.skip();
+    const lines = [
+      'my-test() { # @test', '  echo "N:$BATS_TEST_NAME|$BATS_TEST_DESCRIPTION|$(declare -F my-test || echo undefined)" >&3', '}',
+      'function other {   #   @test', '  echo "N:$BATS_TEST_NAME|$BATS_TEST_DESCRIPTION" >&3', '}',
+    ];
+    const { tap, out } = await runBats(write('marked.bats', lines), 'C.UTF-8');
+    assert.deepStrictEqual(tap, ['ok 1 my-test', 'ok 2 other'], out);
+    assert.deepStrictEqual(out.split('\n').filter((l) => l.startsWith('N:')), [`N:${batsTestName('my-test')}|my-test|undefined`, `N:${batsTestName('other')}|other`]);
+    // We read the lines as bats does: the function is renamed in the code bash reads, and the line is a test.
+    const extracted = extractShell('bats', lines.join('\n'));
+    assert.deepStrictEqual([extracted.text.split('\n')[0], extracted.text.split('\n')[3]], [`${batsTestName('my-test')}() { # @test`, `function ${batsTestName('other')} {   #   @test`]);
+    assert.deepStrictEqual(extracted.regions[0].tests, [0, 3]);
+    for (const [n, name] of [[0, 'my-test'], [3, 'other']] as const) {
+      const ex = explain(lines, n);
+      assert.ok(ex.facts!.some((f) => f.id === 'bats-test'));
+      assert.ok(ex.summary.startsWith(`bats test: because of the comment \`# @test\`, bats runs this function as a test. It renames the function \`${batsTestName(name)}\``), ex.summary);
+    }
+  });
+
+  it('does not take a line as a test that bats does not take: no parentheses or function, text after the comment, no blank before the brace', function () {
+    for (const line of ['plain { # @test', 'f() { # @test later', 'f(){ # @test', 'f() { #@testx']) {
+      assert.deepStrictEqual(extractShell('bats', line).regions[0].tests, [], line);
+    }
+    assert.deepStrictEqual(extractShell('bats', 'f() {   #@test  ').regions[0].tests, [0]);
+  });
 });

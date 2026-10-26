@@ -11,6 +11,7 @@ import { batsFacts, batsTests } from '../bats';
 import { type Fact, type FactSpec, factOf, said, severityOf } from '../messages';
 import type { ShellRegion, Extracted } from './index';
 import { batsTestLine } from './bats';
+import { tagFacts } from './batstags';
 
 /**
  * Move every position in an explanation of the extracted shell text back to the original
@@ -126,7 +127,7 @@ export function explainHostedLine(
   // (The lines bats rewrites where bash then reads a function: not one inside a here-document or a string.)
   const tests = region.tests && batsTests(tree, region.tests);
   if (tests) {
-    const facts = said(batsFacts(tree, region, tests, line, lang), opts.pitfalls);
+    const facts = said([...batsFacts(tree, region, tests, line, lang), ...tagFacts(original[line], lang)], opts.pitfalls);
     notes.push(...facts.map((f) => f.text));
     hostFacts.push(...facts);
   }

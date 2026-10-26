@@ -562,6 +562,47 @@ describe('bats', () => {
     assert.strictEqual(allTokens(explain('test.bats', 9, 'ja')!.items)[1].explanation, 'テストの名前: bats はこの名前から関数名 `test_addition_works` を作る');
   });
 
+  it('explains the tag comments: bash ignores them, bats reads them (ja and en)', () => {
+    const doc = ['# bats file_tags=a, bats:focus', '# bats test_tags=', '#bats   test_tags=x,y', '@test "t" {', '  :', '}', '  # bats file_tags=', '# bats file_tags=,x', '# bats color=red'];
+    const text = (line: number, lang: 'ja' | 'en' = 'en') => bats(doc, line, lang).notes.join('\n');
+    assert.match(text(1), /^ℹ to bash this is a comment, and it is ignored\. bats reads the line and gives every later test of the file the tags `a`, `bats:focus` \(a later `# bats file_tags=` replaces them\); `bats --filter-tags TAGS` runs only the tests with the tags given\. When a test has `bats:focus`, bats runs only the focused tests, and exits with status 1/);
+    assert.match(text(2), /gives the next test only no tags \(an empty list\) \(not the tests after it\)$/);
+    assert.match(text(3), /gives the next test only the tags `x`, `y` \(not the tests after it\); `bats --filter-tags/);
+    assert.match(text(7), /gives every later test of the file no tags \(an empty list\) \(it cancels an earlier `file_tags`\)$/);
+    assert.match(text(8), /^⚠ The `file_tags` list is not valid, so bats runs none of the tests of this file and fails\..*A leading comma makes an empty tag$/);
+    assert.match(text(1, 'ja'), /^ℹ bash にとってはコメントで、無視される。bats がこの行を読み、このファイルのこれ以降のすべてのテストにタグ `a`, `bats:focus` を付ける/);
+    assert.match(text(3, 'ja'), /次のテストだけにタグ `x`, `y` を付ける（そのあとのテストには付かない）/);
+    assert.match(text(8, 'ja'), /^⚠ `file_tags` の書き方が正しくない/);
+    // The comment token says it too (and the line's summary, when the comment is all of it); other comments are plain.
+    assert.strictEqual(bats(doc, 1).summary, 'bats directive: bash ignores the comment, bats reads it and tags every later test');
+    assert.strictEqual(bats(doc, 3, 'ja').summary, 'bats への指示コメント: bash は無視するが、bats が読んで次のテストだけにタグを付ける');
+    assert.strictEqual(bats(doc, 7).items[0].explanation, 'bats directive: bash ignores the comment, bats reads it and tags every later test');
+    assert.strictEqual(bats(doc, 9).summary, 'Comment: everything after `#` is ignored');
+    assert.deepStrictEqual(ids(bats(doc, 9)), []);
+    // (A tag command after code is no tag command: bats reads only lines that start with the comment.)
+    assert.deepStrictEqual(bats(['echo x # bats test_tags=a'], 1).facts?.map((f) => f.id), undefined);
+  });
+
+  it('explains a function marked `# @test` as a test, renamed as bats renames it (ja and en)', () => {
+    const doc = ['my-test() { # @test', '  true', '}', 'function other {   #   @test', '  true', '}', 'plain() { # @test later', '}'];
+    assert.deepStrictEqual(extractShell('bats', doc.join('\n')).regions[0].tests, [0, 3]);
+    const en = bats(doc, 1);
+    assert.strictEqual(en.summary, `bats test: because of the comment \`# @test\`, bats runs this function as a test. It renames the function \`${batsTestName('my-test')}\`, so it can no longer be called as \`my-test\` (lines 1–3)`);
+    assert.deepStrictEqual(ids(en), ['bats-test']);
+    assert.deepStrictEqual(allTokens(en.items).filter((t) => t.kind === 'comment').map((t) => t.explanation), ['bats directive: bash ignores the comment, bats registers the function before it as a test']);
+    assert.deepStrictEqual(en.items[0].label, 'my-test() { ‹commands› }');
+    assert.match(allTokens(en.items)[1].explanation, /^The name bats gives the function of the test/);
+    assert.deepStrictEqual(bats(doc, 2).context.map((c) => c.label), ['bats test file', 'my-test()', '{ } group']);
+    assert.match(bats(doc, 4, 'ja').summary, /^bats のテスト: コメント `# @test` があるので、bats はこの関数をテストとして実行する。関数は `test_other` に改名されるので、`other` では呼べない（行 4〜6）$/);
+    assert.deepStrictEqual(bats(doc, 4).items[0].label, 'function other { ‹commands› }');
+    // Not a test: the comment has text after it. It is a plain function, and its comment a plain comment.
+    assert.deepStrictEqual(ids(bats(doc, 7)), []);
+    assert.match(bats(doc, 7).summary, /^Defines function `plain`/);
+    // (A line split at LF only keeps its CR.)
+    const crlf = ['f() { # @test\r', '  true\r', '}\r'];
+    assert.deepStrictEqual(ids(explainHostedLine(new Analyzer('en'), parser.parse(extractShell('bats', crlf.join('\n')).text), extractShell('bats', crlf.join('\n')), crlf, 0, 'en')!), ['bats-test']);
+  });
+
   it('reads run, load, skip and the other functions of bats with their specs', () => {
     const tokens = (line: number) => allTokens(explain('test.bats', line)!.items).map((t) => `${t.kind} ${t.label}: ${t.explanation.slice(0, 40)}`);
     assert.deepStrictEqual(tokens(16).slice(0, 3), [
