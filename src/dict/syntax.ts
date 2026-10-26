@@ -357,7 +357,7 @@ export const listOps: Record<string, Text> = {
 };
 
 export const keywords: Record<string, Text> = {
-  if: tx('条件分岐の開始。続くコマンドの終了ステータスが 0 なら then 節を実行', 'Start a conditional; run the `then` branch if the condition exits 0'),
+  if: tx('条件の始まり: `then` までのコマンドの終了ステータスが 0 なら `then` 節を実行', 'Starts the condition: the commands up to `then`; if they exit 0, the `then` branch runs'),
   then: tx('条件が真のときに実行する部分の開始', 'Start of the branch run when the condition is true'),
   elif: tx('前の条件が偽のとき、次の条件を判定', 'Test another condition if the previous ones were false'),
   else: tx('どの条件も偽のときに実行する部分', 'Branch run when no condition was true'),

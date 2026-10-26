@@ -80,14 +80,16 @@ export function listOperatorToken(cx: Explainer, op: SyntaxNode): Token | undefi
   if (!closer) return { ...cx.tok(op, 'operator', cx.s(`リストの終わり: ${waitJa}`, `End of the list: ${waitEn}`)), refs: ['3.2.4'] };
   // A reserved word is one only where a command can start: after a simple command's words it would be one more word
   // (`if a then`), but after a compound command it may follow at once (`if [[ a ]] then`).
-  const ja = `\`${closer}\` の前でリストを終え、${waitJa}`;
-  const en = `End the list before \`${closer}\` and ${waitEn}`;
+  // (Before a reserved word, `;` ends the commands of the part: what it says is that `closer` can be read there, not
+  // that bash waits, which every list of commands does.)
+  const ja = co ? `\`${closer}\` の前でリストを終え、${waitJa}` : `\`${closer}\` の前でコマンドの並びを終える`;
+  const en = co ? `End the list before \`${closer}\` and ${waitEn}` : `Ends the commands before \`${closer}\``;
   const ends = endOf(at.part);
   return { ...cx.tok(op, 'operator', ends === 'words'
     ? cx.s(`${ja}（ここに \`;\` か改行がないと、\`${closer}\` は予約語として読まれない）`, `${en} (without a \`;\` or a newline here, \`${closer}\` would not be read as a reserved word)`)
     : ends === 'coproc'
       ? cx.s(`${ja}（\`coproc\` と単語1つの後では bash が予約語を読むので、ここでは省いてもよい）`, `${en} (bash reads a reserved word after \`coproc\` and one word, so it may be left out here)`)
-      : cx.s(`${ja}（複合コマンドの後なので省いてもよい）`, `${en} (it may be left out after a compound command)`)), refs: ['3.2.4'] };
+      : cx.s(`${ja}（複合コマンドの後では bash が \`${closer}\` を予約語として読むので、省いてもよい）`, `${en} (it may be left out: after a compound command, bash reads \`${closer}\` as a reserved word)`)), refs: ['3.2.4'] };
 }
 
 /**
