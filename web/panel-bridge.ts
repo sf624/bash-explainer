@@ -58,8 +58,8 @@ export class PanelBridge {
     }
     // The panel's own header has these buttons (shown on the page, web/panel-page.css); the menu, the share menu and
     // the phone's bottom sheet press the same ones, which keep the state.
-    for (const [id, act] of [['copy-md', () => host.copy()], ['menu-copy', () => host.copy()], ['bsheet-copy', () => host.copy()],
-      ['menu-collapse', () => this.pressToggle()], ['bsheet-collapse', () => this.pressToggle()], ['menu-ref', () => this.pressRef()]] as const) {
+    for (const [id, act] of [['copy-md', () => host.copy()], ['menu-copy', () => host.copy()], ['pane-copy', () => host.copy()],
+      ['menu-collapse', () => this.pressToggle()], ['pane-collapse', () => this.pressToggle()], ['menu-ref', () => this.pressRef()]] as const) {
       on(id, 'click', () => {
         // The menu's item closes the menu first, as the others do.
         if (id.startsWith('menu-')) (document.getElementById('drawer') as HTMLDialogElement | null)?.close();
@@ -218,13 +218,13 @@ export class PanelBridge {
     const tp = ui[this.host.lang()].panel;
     const open = this.frame?.contentDocument?.getElementById('reference')?.hidden === false;
     const toggleName = this.button('toggle')?.getAttribute('aria-label') || tp.collapseAll;
-    for (const [button, name] of [['bsheet-collapse', toggleName], ['bsheet-copy', tp.copy]]) {
+    for (const [button, name] of [['pane-collapse', toggleName], ['pane-copy', tp.copy]]) {
       document.getElementById(button)?.setAttribute('aria-label', name);
       document.getElementById(button)?.setAttribute('title', name);
     }
     put('menu-collapse-label', toggleName);
     put('menu-ref-label', this.button('ref')?.getAttribute('aria-label') || tp.reference);
-    for (const [button, theirs] of [['bsheet-collapse', 'toggle'], ['menu-collapse', 'toggle'], ['menu-ref', 'ref']] as const) {
+    for (const [button, theirs] of [['pane-collapse', 'toggle'], ['menu-collapse', 'toggle'], ['menu-ref', 'ref']] as const) {
       const icon = this.button(theirs)?.querySelector('svg')?.getAttribute('data-icon');
       const svg = document.querySelector(`#${button} svg`);
       if (icon && svg) drawIcon(svg, icon);
