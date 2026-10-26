@@ -33,7 +33,7 @@ import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
 import { given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
-import { operands, values } from '../argv/query';
+import { givenOptions, operands, values } from '../argv/query';
 import { wordValue } from './values';
 import { braceExpansion, bracesHere } from './words';
 
@@ -303,7 +303,28 @@ export function pipelineExample(cx: Explainer, n: SyntaxNode): Example | undefin
   const said = [...new Map((p.samples ?? []).map((x) => [x.code, x])).values()];
   if (!said.length) return whole;
   const list = said.map((x) => cx.s(`\`${x.code}\` を \`${x.value}\``, `\`${x.code}\` is \`${x.value}\``)).join(cx.s('、', ', '));
-  return { ...whole, note: cx.s(`ここでは ${list} とした（例の値。実際の値は実行するまで分からない）`, `Here ${list}: an example value (the real one is known only when it runs)`) };
+  const left = leftOut(cx, ex, said);
+  return { ...whole, note: cx.s(`ここでは ${list} とした（例の値。実際の値は実行するまで分からない）`, `Here ${list}: an example value (the real one is known only when it runs)`) + (left ? cx.s(`。${left.ja}`, `. ${left.en}`) : '') };
+}
+
+/**
+ * What the example shows of a `grep` that reads a pattern from a variable (an example value): the lines of the input it
+ * leaves out, which do not contain the whole value, and, when the pattern is read as a regular expression, a line that
+ * has it inside a longer word. Both come from the example's own input and the output of grep.
+ */
+function leftOut(cx: Explainer, ex: pipelines.PipelineExample, said: { code: string; value: string }[]): { ja: string; en: string } | undefined {
+  const reader = ex.steps.find((st) => !st.stage.copies);
+  const value = reader && said.find((x) => reader.stage.words.includes(x.value))?.value;
+  if (!reader || !value || !ex.input || !reader.stage.inside || !ex.inputMarks) return undefined;
+  const optionsOnly = reader.stage.words.every((w) => w === undefined ? false : !w.startsWith('-') || /^-[hFEns]+$/.test(w));
+  if (!optionsOnly) return undefined;
+  const dropped = [...new Set(ex.inputMarks.dropped.map((k) => ex.input![k]))].filter((l) => !l.includes(value)).slice(0, 3);
+  const inside = reader.output.find((l) => l !== value && l.includes(value));
+  if (!dropped.length && !inside) return undefined;
+  const list = dropped.map((l) => `\`${l}\``).join(cx.s('、', ', '));
+  const ja = [dropped.length ? `\`${value}\` という文字列を丸ごと含まない行（${list}）は除かれる。` : '', inside ? `\`${inside}\` も一致する。grep は \`${value}\` を長い文字列の中にも見つける（注意点を参照）。` : ''].filter(Boolean).join('');
+  const en = [dropped.length ? `Lines without the whole text \`${value}\` (${list}) are left out.` : '', inside ? `\`${inside}\` matches too: grep finds \`${value}\` inside longer text (see the risk).` : ''].filter(Boolean).join(' ');
+  return { ja, en };
 }
 
 /** The lines of a section of the whole-pipeline example: at most `MAX_SHOWN_LINES`, control characters made visible. */
@@ -404,13 +425,17 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     const spec = specFor(cx, name.text);
     const ew = exampleWords(cx, args, !!spec?.prints);
     const samples: { code: string; value: string }[] = [];
+    const sampled = new Set<number>();
     const words = ew.map((w, k) => {
       const sv = w.value === undefined && ew.length === args.length ? sampleValue(cx, args[k]) : undefined;
-      if (sv) samples.push(sv);
+      if (sv) { samples.push(sv); sampled.add(k); }
       return sv ? sv.value : w.value;
     });
-    const stage: Stage = { cmd: name.text.split('/').pop()!, words, text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}) };
     const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell)), { name: name.text, lookup: (x) => specFor(cx, x) });
+    // A pattern that is such a value, read as a regular expression (the caveat `pattern-from-variable`: not with a fixed string, -w or -x).
+    const pattern = parse.roles.some(({ word, role }) => sampled.has(word) && (role.role === 'operand' || role.role === 'value') && role.spec?.lang === 'regex');
+    const fixedOrWhole = parse.refused || parse.mode === 'fixed' || givenOptions(parse).some(({ role }) => role.role === 'option' && (role.spec.selects === 'fixed' || role.spec.whole));
+    const stage: Stage = { cmd: name.text.split('/').pop()!, words, text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}), ...(pattern && !fixedOrWhole ? { inside: true } : {}) };
     const source = inputSource(cx, cmd, parse, args, spec);
     // A stage that writes its output to a file (`sort -o f`) hands nothing on.
     const runs = !!spec?.operands?.some((alt) => alt.pattern.some((o) => o.command));

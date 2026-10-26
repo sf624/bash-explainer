@@ -257,7 +257,7 @@ function failureReported(n: SyntaxNode, root: SyntaxNode, state: StateModel, sta
   if (background) return undefined;
   const def = ancestor(n, (x) => x.type === 'function_definition');
   const body = def && field(def, 'body');
-  let where: 'function' | 'script' | 'errexit';
+  let where: 'function' | 'script' | 'fragment' | 'errexit';
   if (body && lastStatements(body).includes(n)) {
     const calls = [...state.calls.get(def)?.keys() ?? []];
     if (!calls.length || calls.some((c) => ancestor(c, (x) => x.type === 'command_substitution' || x.type === 'process_substitution'))) return undefined;
@@ -266,12 +266,27 @@ function failureReported(n: SyntaxNode, root: SyntaxNode, state: StateModel, sta
     where = 'script';
   } else if (status.errexit(n).active === 'on') {
     where = 'errexit';
+  } else if (!def && lastStatements(root).includes(n)) {
+    // (No shebang: the file may be a fragment that another script sources, so the note is conditional.)
+    where = 'fragment';
   } else return undefined;
   // (The message goes to stderr in the rewrite, unless its output is sent somewhere already.)
   const msg = prints[prints.length - 1];
   const fix = shorten(msg.text) + (redirectionsOf(msg).length ? '' : ' >&2');
   const quiet = (left.type === 'command' || left.type === 'redirected_statement') && outputsOf(left).err === '/dev/null' ? redirectionsOf(left).map((r) => r.text).join(' ') : '';
-  return { id: 'failure-reported-as-success', params: { where, name: def ? field(def, 'name')!.text : '', left: shorten(left.text), right: shorten(msg.text), quiet, fix } };
+  return { id: 'failure-reported-as-success', params: { where, name: def ? field(def, 'name')!.text : '', left: uncut(left, state, shell, 30), right: uncut(msg, state, shell, 60), quiet, fix } };
+}
+
+/**
+ * The text of a statement for a note, never cut in the middle of a word: when it does not fit, the name of its command
+ * (a simple command, or one with redirections: `tar -czf "$b" ~/docs 2>/dev/null` is `tar`), else it is shortened.
+ */
+function uncut(n: SyntaxNode, state: StateModel, shell: Shell | undefined, max: number): string {
+  const one = n.text.includes('\n') ? undefined : n.text;
+  if (one !== undefined && one.length <= max) return one;
+  const c = n.type === 'redirected_statement' ? field(n, 'body') : n;
+  const name = c?.type === 'command' ? commandName(c) : undefined;
+  return name ?? shorten(n.text);
 }
 
 /**

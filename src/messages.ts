@@ -111,16 +111,18 @@ export const MESSAGES = {
     `this is the last command of the script, so when \`${left}\` fails, the script ends with its non-zero status, which its caller (CI, \`make\`, \`./script && next\`) sees as a failure. Write \`if …; then …; fi\`, or end the script with \`exit 0\``]),
   // `cmd || echo "msg"` where its status matters: the end of a function or of a script, or where `set -e` stops the
   // script (`where`). `quiet`: the redirections of `cmd` that discard its own error message (`2>/dev/null`), or ''.
-  'failure-reported-as-success': caveat<{ where: 'function' | 'script' | 'errexit'; name: string; left: string; right: string; quiet: string; fix: string }>(['3.2.4', '3.7.5', '4.3.1'], ({ where, name, left, right, quiet, fix }) => {
+  'failure-reported-as-success': caveat<{ where: 'function' | 'script' | 'fragment' | 'errexit'; name: string; left: string; right: string; quiet: string; fix: string }>(['3.2.4', '3.7.5', '4.3.1'], ({ where, name, left, right, quiet, fix }) => {
     const exit = where === 'function' ? 'return 1' : 'exit 1';
     const ja = {
       function: `これは関数 \`${name}\` の最後のコマンドなので、\`${left}\` が失敗しても \`${name}\` は \`${right}\` の終了ステータス 0 を返し、呼び出し元には成功に見えます。`,
       script: `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗してもスクリプトは \`${right}\` の終了ステータス 0 で終わり、呼び出し元（cron や CI、\`./script && next\`）には成功に見えます。`,
+      fragment: `このファイルをスクリプトとして実行すると、これが最後のコマンドなので、\`${left}\` が失敗してもスクリプトは \`${right}\` の終了ステータス 0 で終わり、呼び出し元（cron や CI、\`./script && next\`）には成功に見えます。`,
       errexit: `\`${left}\` が失敗しても、\`||\` の左側の失敗では \`set -e\` は止まらず、\`${right}\` が成功するので、スクリプトはそのまま続きます。`,
     }[where];
     const en = {
       function: `this is the last command of \`${name}\`, so when \`${left}\` fails, \`${name}\` still returns 0, the status of \`${right}\`: its caller sees success.`,
       script: `this is the last command of the script, so when \`${left}\` fails, the script still ends with status 0, the status of \`${right}\`: what runs it (cron, CI, \`./script && next\`) sees success.`,
+      fragment: `if this file is run as a script, this is its last command, so when \`${left}\` fails, the script still ends with status 0, the status of \`${right}\`: what runs it (cron, CI, \`./script && next\`) sees success.`,
       errexit: `when \`${left}\` fails, \`set -e\` does not stop the script (a failure on the left of \`||\` is ignored), and \`${right}\` succeeds, so the script goes on.`,
     }[where];
     return [

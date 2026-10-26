@@ -18,6 +18,11 @@ export interface Stage {
   text: string;
   /** It prints what it reads as it is (`CommandSpec.copies`: cat): no step of its own is shown, but for the last. */
   copies?: boolean;
+  /**
+   * Its pattern is the example value of a variable that grep reads as a regular expression (no `-F`, `-w`, `-x`): the
+   * sample shows that it also matches inside a longer word.
+   */
+  inside?: boolean;
 }
 
 type Runner = (input: string[]) => string[];
@@ -110,7 +115,7 @@ function matchesAny(res: JsRegex[], line: string): boolean {
  * Sample lines for grep: matching and non-matching ones, a line that shows what -i, -w or -x
  * changes, and `more` extra matching lines (for the limits and counts further down a pipeline).
  */
-function grepSample(words: (string | undefined)[], more = 0): string[] | undefined {
+function grepSample(words: (string | undefined)[], more = 0, inside = false): string[] | undefined {
   const { res, p } = grepRegexes(words);
   const inverted = p.opts.some(([n]) => n === 'v');
   const ex = regexExamples(res[0], 3);
@@ -134,6 +139,11 @@ function grepSample(words: (string | undefined)[], more = 0): string[] | undefin
     for (const pre of PREFIXES) for (const suf of SUFFIXES) extras.push(pre + b + suf);
   }
   const out = [...new Set(lines)];
+  // The value inside a longer word: grep matches it there too (a pattern from a variable is a regular expression).
+  if (inside && !inverted) {
+    const longer = `m${base}`;
+    if (matchesAny(res, longer) && !out.includes(longer)) out.splice(Math.min(2, out.length), 0, longer);
+  }
   let added = 0;
   for (const e of extras) {
     if (added >= more) break;
@@ -300,7 +310,7 @@ function sampleFor(stage: Stage, more = 0): string[] | undefined {
   const w = stage.words;
   switch (canonicalName(stage.cmd)) {
     case 'grep':
-      return grepSample([...impliedWords(stage.cmd), ...w], more);
+      return grepSample([...impliedWords(stage.cmd), ...w], more, stage.inside);
     case 'sed': {
       const a = sedArgs(w);
       return sedExample(a.script, { quiet: a.quiet, extended: a.extended })?.input;

@@ -135,7 +135,7 @@ export class Analyzer {
         lang: this.lang, resolve: resolveAt, meaning: (w) => wordMeaning(w, cx.state), extra: this.otherLines(tree, line, shell, opts, items),
         variable: (part) => variableFrom(cx, state, part), expands: (w) => wordExpands(state, w),
         tildes: (w) => wordTildes(state, w), argv: (c) => argvLine(c, state, this.lang, (name, at) => varDesc(cx, name, at)),
-        cond: (c) => condLine(c, state, this.lang, (name, at) => varDesc(cx, name, at)), summary: (tops) => lineSummary(tops, state, this.lang, statusModel(state, shell)),
+        cond: (c) => condLine(c, state, this.lang, (name, at) => varDesc(cx, name, at)), summary: (tops) => lineSummary(tops, state, this.lang, statusModel(state, shell), shell),
       });
     }
     return result;

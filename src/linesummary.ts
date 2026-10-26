@@ -10,7 +10,9 @@ import { staticWordValue } from './staticword';
 import type { StateModel } from './semantics/state';
 import type { StatusModel } from './semantics/status';
 import { wordMeaning } from './semantics/words';
-import { field, fields, redirectionsOf, type SyntaxNode } from './syntax/tree';
+import type { Shell } from './dialect';
+import { pitfallFindings } from './pitfalls';
+import { descendants, field, fields, redirectionsOf, type SyntaxNode } from './syntax/tree';
 
 const code = (t: string): string => `\`${t}\``;
 const nameOf = (c: SyntaxNode): string | undefined => {
@@ -68,9 +70,33 @@ const S = {
     en: (glob: string, plain: boolean) => `Prints the number of lines of each file matching ${glob}, one file at a time (\`wc -l\`)${plain ? `; if none matches, \`wc\` is run once on the name ${glob} itself` : ''}.`,
     ja: (glob: string, plain: boolean) => `${glob} に一致する各ファイルの行数を、1つずつ表示する（\`wc -l\`）${plain ? `。一致しなければ、\`wc\` は名前 ${glob} そのもので1回実行される` : ''}。`,
   },
+  /** `wc -l WORD` in a loop: the file counted. */
+  counts: {
+    en: (file: string) => `Counts the lines of ${file}.`,
+    ja: (file: string) => `${file} の行数を数える。`,
+  },
+  currentFile: {
+    en: (v: string, line: number) => `the current file ${v} (from the loop on line ${line})`,
+    ja: (v: string, line: number) => `ループ（${line} 行目）の今のファイル ${v}`,
+  },
+  sets: {
+    en: (name: string, value: string, remarks: string[]) => `Sets the variable ${name} to ${value}${remarks.length ? ` (${remarks.join('; ')})` : ''}.`,
+    ja: (name: string, value: string, remarks: string[]) => `変数 ${name} に ${value} を代入する${remarks.length ? `（${remarks.join('。')}）` : ''}。`,
+  },
+  emptyValue: { en: 'an empty value', ja: '空' },
+  substituted: {
+    en: (sub: string, cmd: string) => `${sub} is replaced by the output of ${cmd}`,
+    ja: (sub: string, cmd: string) => `${sub} は ${cmd} の出力に置き換わる`,
+  },
+  home: { en: (w: string) => `${w}: your home directory`, ja: (w: string) => `${w} はあなたのホームディレクトリ` },
+  /** A file named with no `/` in `source`: it is looked for in `$PATH` first (the caveat of that line). */
+  namedFile: {
+    en: (f: string) => `a file named ${f} (see the risk: it may be one found in \`$PATH\`)`,
+    ja: (f: string) => `${f} という名前のファイル（注意点を参照: \`$PATH\` で見つかったものかもしれない）`,
+  },
   source: {
     en: (file: string, conds: string[]) => `Runs ${file} in this shell (\`source\`) if ${conds.join(' and ')}, so the variables and functions it sets stay; otherwise does nothing.`,
-    ja: (file: string, conds: string[]) => `${file} をこのシェルで実行する（\`source\`）。実行するのは ${conds.join('で、かつ ')}${conds[conds.length - 1].endsWith('`') ? ' ' : ''}のときだけ。中で設定した変数や関数はこのシェルに残る。`,
+    ja: (file: string, conds: string[]) => `${file}${file.endsWith('）') ? '' : ' '}をこのシェルで実行する（\`source\`）。実行するのは ${conds.join('で、かつ ')}${conds[conds.length - 1].endsWith('`') ? ' ' : ''}のときだけ。中で設定した変数や関数はこのシェルに残る。`,
   },
   tests: {
     '-f': { en: 'is an existing regular file', ja: '存在する通常のファイル' },
@@ -84,11 +110,11 @@ const S = {
 };
 
 /** The summary of the line whose statements are `tops`, or undefined when it is not a pattern this file knows. */
-export function lineSummary(tops: readonly SyntaxNode[], model: StateModel, lang: Lang, status?: StatusModel): string | undefined {
+export function lineSummary(tops: readonly SyntaxNode[], model: StateModel, lang: Lang, status?: StatusModel, shell?: Shell): string | undefined {
   if (tops.length !== 1) return undefined;
   const n = tops[0];
   const tar = tarCreate(n, lang);
-  return countPipeline(n, lang) ?? orReport(n, lang, status) ?? (tar && `${tar}${lang === 'ja' ? '。' : '.'}`) ?? globLoop(n, model, lang) ?? sourceIf(n, lang);
+  return countPipeline(n, lang) ?? orReport(n, lang, status) ?? (tar && `${tar}${lang === 'ja' ? '。' : '.'}`) ?? globLoop(n, model, lang) ?? sourceIf(n, lang, model, shell) ?? wcLoop(n, lang) ?? assignment(n, lang);
 }
 
 /** Options of a command, each a word `-abc` of the letters `allowed` (and no operand): its letters, or undefined. */
@@ -213,7 +239,7 @@ function globLoop(n: SyntaxNode, model: StateModel, lang: Lang): string | undefi
 }
 
 /** `if [[ -f F && … ]]; then source F; fi`: a file run in this shell when a test finds it. */
-function sourceIf(n: SyntaxNode, lang: Lang): string | undefined {
+function sourceIf(n: SyntaxNode, lang: Lang, model: StateModel, shell?: Shell): string | undefined {
   if (n.type !== 'if_statement' || n.namedChildren.some((c) => c.type === 'elif_clause' || c.type === 'else_clause')) return undefined;
   const cond = n.namedChildren.find((c) => c.field === 'condition');
   const body = n.namedChildren.filter((c) => c !== cond && c.field !== 'condition');
@@ -231,14 +257,49 @@ function sourceIf(n: SyntaxNode, lang: Lang): string | undefined {
   split(inner[0]);
   const test = terms.find((t) => t.type === 'unary_expression' && S.tests[t.children[0]?.text] && t.namedChildren[1]?.text === file[0].text);
   if (!test) return undefined;
-  const f = code(file[0].text);
+  let f = code(file[0].text);
+  // (A name with no `/`: `source` looks in `$PATH` first, as the caveat on this line says; the summary must not say otherwise.)
+  let root = n;
+  while (root.parent) root = root.parent;
+  const row = body[0].startPosition.row;
+  if (pitfallFindings(root, lang, row, row, model, shell).some((x) => x.code === 'source-searches-path' && x.node.startIndex >= body[0].startIndex && x.node.endIndex <= body[0].endIndex)) f = S.namedFile[lang](f);
   // (`$X == word` with no glob character in the word: the pattern matches that text only, 3.2.5.2.)
   const conds = [test, ...terms.filter((t) => t !== test)].map((t) => {
-    if (t === test) return S.fileIs[lang](f, S.tests[test.children[0].text][lang]);
+    if (t === test) return S.fileIs[lang](code(file[0].text), S.tests[test.children[0].text][lang]);
     const op = t.type === 'binary_expression' ? t.children.find((c) => c.field === 'operator')?.text : undefined;
     const [l, r] = [t.children.find((c) => c.field === 'left'), t.children.find((c) => c.field === 'right')];
     if (op && ['==', '='].includes(op) && l && r && !r.namedChildren.length && /^[\w.\/-]+$/.test(r.text)) return S.equals[lang](code(l.text), code(r.text));
     return S.isTrue[lang](code(flat(t.text)));
   });
   return S.source[lang](f, conds);
+}
+
+/** `wc -l WORD` alone: the lines of a file counted; where the word is the variable of an enclosing `for`, which file. */
+function wcLoop(n: SyntaxNode, lang: Lang): string | undefined {
+  if (n.type !== 'command' || nameOf(n) !== 'wc' || redirectionsOf(n).length) return undefined;
+  const args = argsOf(n);
+  if (args.length !== 2 || args[0].text !== '-l' || args[1].text.startsWith('-')) return undefined;
+  const w = args[1];
+  const inner = w.type === 'string' && w.namedChildren.length === 1 && w.text === `"${w.namedChildren[0].text}"` ? w.namedChildren[0] : w;
+  const v = /^\$(\w+)$/.exec(inner.text)?.[1] ?? /^\$\{(\w+)\}$/.exec(inner.text)?.[1];
+  for (let x = v ? n.parent : null; x; x = x.parent) {
+    if (x.type === 'for_statement' && field(x, 'variable')?.text === v) return S.counts[lang](S.currentFile[lang](code(`$${v}`), x.startPosition.row + 1));
+  }
+  return S.counts[lang](shown(w));
+}
+
+/** `name=value` alone: the variable set, to the value as written, with what its command substitutions and `$HOME` are. */
+function assignment(n: SyntaxNode, lang: Lang): string | undefined {
+  if (n.type !== 'command' || field(n, 'name') || redirectionsOf(n).length) return undefined;
+  const sets = n.namedChildren.filter((c) => c.type === 'variable_assignment');
+  if (sets.length !== 1 || n.namedChildren.length !== 1 || !sets[0].children.some((c) => c.type === '=')) return undefined;
+  const name = field(sets[0], 'name')?.text;
+  const value = field(sets[0], 'value');
+  if (!name || (value && value.type === 'array')) return undefined;
+  const remarks = value ? descendants(value, ['command_substitution']).filter((c) => c.text.startsWith('$(')).slice(0, 2).map((c) => S.substituted[lang](code(c.text), code(c.text.slice(2, -1).trim()))) : [];
+  if (value) {
+    const home = descendants(value, ['expansion', 'simple_expansion']).find((x) => x.text === '${HOME}' || x.text === '$HOME')?.text ?? (/^~(\/|$)/.test(value.text) ? '~' : undefined);
+    if (home) remarks.push(S.home[lang](code(home)));
+  }
+  return S.sets[lang](code(name), value && value.text ? code(value.text) : S.emptyValue[lang], remarks);
 }

@@ -487,9 +487,21 @@ describe('a failure reported with `|| echo` where the status matters', () => {
     // (A comment after `||`: the right side is on the next line.)
     assert.match(notes('#!/bin/bash\ncp a b || # c\necho x', 1).join('\n'), /the script still ends with status 0, the status of `echo x`/);
   });
+  it('says it conditionally for a file with no shebang, and names a long command instead of cutting it', () => {
+    assert.deepStrictEqual(said('cp a b || echo failed'), ['ⓘ Caveat: if this file is run as a script, this is its last command, so when `cp a b` fails, the script still ends with status 0, the status of `echo failed`: what runs it (cron, CI, `./script && next`) sees success. To pass the failure on, write `… || { echo failed >&2; exit 1; }`']);
+    assert.match(said('cp a b || echo failed', 'ja')[0], /このファイルをスクリプトとして実行すると、これが最後のコマンドなので、`cp a b` が失敗してもスクリプトは `echo failed` の終了ステータス 0 で終わり、呼び出し元（cron や CI、`.\/script && next`）には成功に見えます。失敗を伝えるには `… \|\| \{ echo failed >&2; exit 1; \}` と書きます/);
+    // (Not the last command of the file.)
+    assert.deepStrictEqual(said('cp a b || echo failed\nls'), []);
+    const long = 'tar -czf "$backup" ~/docs 2>/dev/null || echo "failed" >&2';
+    for (const head of ['', '#!/bin/bash\n']) {
+      const [note] = said(head + long);
+      assert.match(note, /when `tar` fails/);
+      assert.doesNotMatch(note, /[^ `]…/);
+    }
+  });
   // Deliberate ignores, tests, values printed in `$( )`, and where the status is not used.
   for (const src of ['#!/bin/bash\ncp a b || true', '#!/bin/bash\ncp a b || :', '#!/bin/bash\n[ -f a ] || echo none', '#!/bin/bash\ngrep -q x f || echo none',
-    '#!/bin/bash\ncp a b || { echo failed >&2; exit 1; }', '#!/bin/bash\ncp a b || echo failed; exit 0', 'cp a b || echo failed', '#!/bin/bash\ncp a b || echo failed &',
+    '#!/bin/bash\ncp a b || { echo failed >&2; exit 1; }', '#!/bin/bash\ncp a b || echo failed; exit 0', '#!/bin/bash\ncp a b || echo failed &',
     '#!/bin/bash\ncp a b || printf "%d\\n" "$n"', '#!/bin/bash\ncp a b || printf -v x failed', '#!/bin/bash\necho() { return 1; }\ncp a b || echo failed',
     '#!/bin/bash\ncp a b || echo failed | tee log', '#!/bin/bash\ncp a b && echo done', 'v() {\n  cat V 2>/dev/null || echo none\n}\nx=$(v)', 'v() {\n  cp a b || echo failed\n}',
     'f() {\n  cp a b || echo failed\n  return 0\n}\nf', 'set -e\nif cp a b || echo failed; then :; fi', 'set -e\nx=$(cp a b || echo failed)', '#!/bin/bash\ntrue || echo never',
