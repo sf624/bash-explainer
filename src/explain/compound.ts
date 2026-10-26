@@ -10,19 +10,20 @@ import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { anonSections } from '../refs';
 import { definitionFails } from '../semantics/names';
-import { field, fields, isShebang, strayKeyword, type SyntaxNode } from '../syntax/tree';
+import { field, fields, isShebang, strayKeyword, type SyntaxNode, withLists } from '../syntax/tree';
 import { detectShell, SHELL_NAMES } from '../dialect';
 import type { Explainer } from './context';
 import { caseExample, pipelineExample } from './examples';
-import { has, intersects, isBlockLike, same, skeletal, sortTokens, summaryOf } from './nodes';
+import { listOperatorToken } from './lists';
+import { has, intersects, same, skeletal, sortTokens, summaryOf } from './nodes';
 import { specFor } from './reads';
 import { groupSubshell } from './where';
 import { casePattern } from './words';
 
-/** Children (keywords and named nodes) in source order, filtered to the current line. */
+/** Children (keywords and named nodes, the lists of commands of a body as one) in source order, filtered to the current line. */
 function ordered(cx: Explainer, n: SyntaxNode, skip: (c: SyntaxNode) => boolean = () => false): Token[] {
   const out: Token[] = [];
-  for (const c of n.children) {
+  for (const c of withLists(n)) {
     if (skip(c)) continue;
     if (c.named) out.push(...cx.sub(c));
     else out.push(...anonOnLine(cx, [c]));
@@ -35,6 +36,11 @@ export function anon(cx: Explainer, n: SyntaxNode): Token | undefined {
   if (n.type === '{' && n.parent?.type === 'compound_statement' && groupSubshell(cx, n.parent)) {
     return { ...cx.tok(n, 'keyword', cx.s('コマンドグループの開始（ここではサブシェルで実行される）', 'Start of a command group (here it runs in a subshell)')), refs: ['3.2.5.3', '3.7.3'] };
   }
+  if (n.type === ';' || n.type === '&') {
+    // (Of a list, or of the head of a `for`; else the operator's own text, as after text the parser could not read.)
+    const t = listOperatorToken(cx, n) ?? headSemicolon(cx, n);
+    if (t) return t;
+  }
   const k = keywords[n.type];
   const op = listOps[n.type];
   const t = k ? cx.tok(n, 'keyword', cx.t(k)) : op ? cx.tok(n, 'operator', cx.t(op)) : undefined;
@@ -46,8 +52,29 @@ export function anon(cx: Explainer, n: SyntaxNode): Token | undefined {
 function anonOnLine(cx: Explainer, nodes: SyntaxNode[]): Token[] {
   return nodes
     .filter((c) => cx.onLine(c))
-    .map((c) => (c.type === ';' ? undefined : anon(cx, c)))
+    .map((c) => anon(cx, c))
     .filter((t): t is Token => !!t);
+}
+
+/**
+ * A `;` in the head of a `for` (3.2.5.1): between the expressions of `(( ))`, or before `do`, which needs a `;` or a
+ * newline after the words (`for x in a b; do`; after `))` it may be left out). Undefined for any other `;`.
+ */
+function headSemicolon(cx: Explainer, n: SyntaxNode): Token | undefined {
+  const p = n.parent!;
+  if (p.type !== 'for_statement' && p.type !== 'select_statement' && p.type !== 'c_style_for_statement') return undefined;
+  const kids = p.children;
+  const inArith = p.type === 'c_style_for_statement' && kids.findIndex((c) => c.type === '))') > kids.indexOf(n);
+  // (The body may be a group: `for x in a; { …; }`.)
+  const body = kids.slice(kids.indexOf(n) + 1).find((c) => c.named)?.type === 'compound_statement' ? '{' : 'do';
+  const text = inArith
+    ? cx.s('`(( ))` の3つの式（初期化・条件・更新）の区切り', 'Separates the three expressions of `(( ))`: start, test and step')
+    : p.type === 'c_style_for_statement'
+      ? cx.s(`\`${body}\` の前で \`(( ))\` を終える（\`))\` の後では省いてもよい）`, `Ends the \`(( ))\` before \`${body}\` (it may be left out after \`))\`)`)
+      : kids.some((c) => c.type === 'in')
+        ? cx.s(`\`${body}\` の前で \`${kids[0].type}\` の単語の並びを終える（ここには \`;\` か改行が必要）`, `Ends the words of \`${kids[0].type}\` before \`${body}\` (a \`;\` or a newline is needed there)`)
+        : cx.s(`\`${body}\` の前で \`${kids[0].type}\` の名前を終える`, `Ends the name of \`${kids[0].type}\` before \`${body}\``);
+  return { ...cx.tok(n, 'operator', text), refs: anonSections(n)! };
 }
 
 export function block(cx: Explainer, n: SyntaxNode, kind: Kind, explanation: string): Token {
@@ -296,29 +323,7 @@ export function pipeline(cx: Explainer, n: SyntaxNode): Token {
     `Pipeline: each command's stdout feeds the next command's stdin; they run concurrently`,
   ), children);
   t.summary = cmds.map(summaryOf).join(' | ');
-  return skeletal(t, n);
-}
-
-export function list(cx: Explainer, n: SyntaxNode): Token {
-  // Flatten left-nested lists (`a && b || c`) into one sequence.
-  const parts: SyntaxNode[] = [];
-  const walk = (x: SyntaxNode) => {
-    for (const c of x.children) {
-      if (c.type === 'list' && !isBlockLike(c)) walk(c);
-      else parts.push(c);
-    }
-  };
-  walk(n);
-  const children: Token[] = [];
-  for (const c of parts) {
-    if (c.named) children.push(...cx.sub(c));
-    else children.push(...anonOnLine(cx, [c]));
-  }
-  const t = cx.tok(n, 'operator', cx.s(
-    'コマンドリスト: `&&`（成功したら次へ）や `||`（失敗したら次へ）で条件付きにつないだコマンド列',
-    'Command list joined by `&&` (run next on success) or `||` (run next on failure)',
-  ), children);
-  t.summary = children.map((c) => (c.kind === 'operator' && !c.children.length ? c.label : summaryOf(c))).join(' ');
+  t.grammar = 'pipeline';
   return skeletal(t, n);
 }
 

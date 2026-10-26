@@ -13,7 +13,7 @@ import type { Token } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import type { SyntaxNode } from '../src/syntax/tree';
-import { hasError } from '../src/syntax/tree';
+import { commandLists, hasError } from '../src/syntax/tree';
 import { corpus } from './support/corpus';
 import { findBashAst, runBashAst, shapeOfAst } from './support/bashast';
 import type { Shape } from './support/shape';
@@ -195,7 +195,7 @@ describe('command tokens: each token of an explanation lies in one command of ba
     const { files, snippets } = corpus();
     const known: Known = JSON.parse(fs.readFileSync(knownFile, 'utf8'));
     const used = new Set<Finding>();
-    const counts = { inputs: 0, scripts: 0, lines: 0, tokens: 0, separators: 0, known: 0 };
+    const counts = { inputs: 0, scripts: 0, lines: 0, tokens: 0, separators: 0, lists: 0, known: 0 };
     const pinned: Known['counts'] = { skipped: {}, shapesDiffer: 0, inSubstitution: 0, inHeredoc: 0 };
     const skip = (why: string): void => { pinned.skipped[why] = (pinned.skipped[why] ?? 0) + 1; };
     const fresh: string[] = [];
@@ -218,6 +218,8 @@ describe('command tokens: each token of an explanation lies in one command of ba
       const offset = (p: { line: number; character: number }): number => lineStarts[p.line] + p.character;
       const rowOf = (i: number): number => lineStarts.filter((s) => s <= i).length - 1;
       const all = descendants(tree.root);
+      // The lists of commands the explanations show (`;` and `&` joining statements: bash's connections).
+      const lists = all.flatMap(commandLists);
 
       // Each script bash parses: the input, and the text of each substitution (bash parses it again, in the child).
       const top = runBashAst(bin!, text);
@@ -307,9 +309,11 @@ describe('command tokens: each token of an explanation lies in one command of ba
           } else {
             own = innermost(commands.filter((c) => scopeOfCommand.get(c) === where), a, b);
             if (!own) {
-              // `;` and `&` after a statement of a script belong to its sequence (bash's connection), not to a node of ours.
+              // `;` and `&` after a statement of a script belong to its sequence (bash's connection), not to a node of
+              // ours; so does the token of the list they make (`a; b &`), over its statements.
               const after = where.node.namedChildren.some((c) => scopeOfCommand.has(c) && c.endIndex <= a);
               if ((t.label === ';' || t.label === '&') && after) counts.separators++;
+              else if (lists.some((l) => l.startIndex === a && l.endIndex === b && l.parent === where.node)) counts.lists++;
               else report(name, `in no command of ${where.name}`);
               continue;
             }
@@ -323,7 +327,7 @@ describe('command tokens: each token of an explanation lies in one command of ba
         }
       }
     }
-    console.log(`      command tokens: ${counts.inputs} inputs (${counts.scripts} scripts with the substitutions), ${counts.lines} lines, ${counts.tokens} tokens (${counts.separators} separators), ${JSON.stringify(pinned)}, ${counts.known} known findings, ${fresh.length} new, in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+    console.log(`      command tokens: ${counts.inputs} inputs (${counts.scripts} scripts with the substitutions), ${counts.lines} lines, ${counts.tokens} tokens (${counts.separators} separators, ${counts.lists} lists), ${JSON.stringify(pinned)}, ${counts.known} known findings, ${fresh.length} new, in ${((Date.now() - started) / 1000).toFixed(1)} s`);
     const stale = known.findings.filter((k) => !used.has(k)).map((k) => `stale: ${JSON.stringify(k.input).slice(0, 80)} ${k.token}: ${k.problem}`);
     assert.deepEqual([...fresh, ...stale], []);
     // Pinned, so that a change moves them on purpose (in test/fixtures/command-tokens-known.json).

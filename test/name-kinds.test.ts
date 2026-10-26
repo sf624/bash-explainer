@@ -305,9 +305,10 @@ describe('what a command name is, in the outputs with no badge and in the readin
     const e = ex('sudo echo hi; cd /');
     assert.ok(!allTokens(e.items).some((t) => /shell builtin|coreutils program/.test(t.explanation)));
     const md = toPlainMarkdown(e, 'sudo echo hi; cd /', 'a.sh:1');
-    assert.match(md, /^- `sudo` — Run a command as another user \(root by default\) \(program\)$/m);
-    assert.match(md, /^ {2}- `echo` — runs `echo`: .* \(from coreutils\) \(program, run by `sudo`\)$/m);
-    assert.match(md, /^- `cd` — Change the current directory \(builtin\)/m);
+    // (In the list `sudo echo hi; cd /`.)
+    assert.match(md, /^ {2}- `sudo` — Run a command as another user \(root by default\) \(program\)$/m);
+    assert.match(md, /^ {4}- `echo` — runs `echo`: .* \(from coreutils\) \(program, run by `sudo`\)$/m);
+    assert.match(md, /^ {2}- `cd` — Change the current directory \(builtin\)/m);
     // The hover says it with a badge.
     assert.match(wholeLine({ ex: e, lang: 'en', theme: 'dark', lineText: 'sudo echo hi; cd /', placement: 'first', panelLink: 'command:x', lineLink: 'command:l', keys: 'K' }), /&nbsp;builtin&nbsp;<\/span><\/span> — Change the current directory/);
     assert.match(toPlainMarkdown(ex('cd /', 'ja'), 'cd /', 'a.sh:1', 'ja'), /— カレントディレクトリを移動する（ビルトイン）/);

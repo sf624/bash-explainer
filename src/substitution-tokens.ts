@@ -4,8 +4,9 @@
 import type { Token } from './analyzer-types';
 import { unclosedBrace } from './bashversion';
 import type { Explainer } from './explain/context';
+import { statementTokens } from './explain/lists';
 import { substitutionStatus } from './explain/status';
-import { ancestor, braceTakenAsWord, substitutionForm, type SyntaxNode } from './syntax/tree';
+import { ancestor, braceTakenAsWord, substitutionForm, type SyntaxNode, withLists } from './syntax/tree';
 
 const isBash = (h: Explainer) => h.shell === undefined || h.shell === 'bash';
 
@@ -37,7 +38,7 @@ export function explainCommandSubstitution(h: Explainer, n: SyntaxNode): Token {
   // (A `}` that does not end it: a syntax error.)
   const brace = braceTakenAsWord(n);
   if (brace) return h.tok(n, 'error', h.s(...unclosedBrace(brace, substitutionForm(n) === '${' ? '${ …; }' : '${| …; }', isBash(h))), h.subs(n.namedChildren));
-  return h.tok(n, 'substitution', meaning(h, n) + substitutionStatus(h, n), h.subs(n.namedChildren));
+  return h.tok(n, 'substitution', meaning(h, n) + substitutionStatus(h, n), statementTokens(h, withLists(n)));
 }
 
 /**
@@ -61,5 +62,5 @@ export function explainProcessSubstitution(h: Explainer, n: SyntaxNode): Token {
   return h.tok(n, 'substitution', out
     ? h.s('プロセス置換 `>(…)`: 書き込むと中のコマンドの標準入力に渡るファイル名（/dev/fd/N）に置き換わる', 'Process substitution `>(…)`: a file name whose writes go to the command\'s stdin')
     : h.s('プロセス置換 `<(…)`: 中のコマンドの出力を、ファイルのように読めるファイル名（/dev/fd/N）に置き換える', 'Process substitution `<(…)`: a file name from which the command\'s output can be read'),
-  h.subs(n.namedChildren));
+  statementTokens(h, withLists(n)));
 }

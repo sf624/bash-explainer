@@ -5,7 +5,7 @@ import type { Pos, Span, Token, TokenOrigin } from '../analyzer-types';
 import type { EmbeddedToken } from '../embedded/types';
 import { labelText, shorten, skeleton } from '../label';
 import { type Literal, sourceIndex } from '../staticword';
-import { descendants } from '../syntax/tree';
+import { descendants, listOverLines } from '../syntax/tree';
 import type { NodeType, SyntaxNode } from '../syntax/tree';
 
 /** A set of node types, checked against the model's: a name that is not a NodeType does not compile. */
@@ -17,7 +17,7 @@ const BLOCKS = types(
   'subshell', 'do_group', 'error', 'arithmetic_command', 'select_statement',
 );
 /** Nodes that just combine statements; they count as blocks only when they contain one. */
-const WRAPPERS = types('list', 'pipeline', 'redirected_statement', 'negated_command', 'program', 'time_statement');
+const WRAPPERS = types('command_list', 'list', 'pipeline', 'redirected_statement', 'negated_command', 'program', 'time_statement');
 
 export const effEndRow = (n: SyntaxNode) =>
   n.endPosition.column === 0 && n.endPosition.row > n.startPosition.row ? n.endPosition.row - 1 : n.endPosition.row;
@@ -27,6 +27,8 @@ export const intersects = (n: SyntaxNode, line: number) => n.startPosition.row <
 /** Whether each line of the node explains only its own part (a block over several lines); otherwise `sub` explains it whole. */
 export function isBlockLike(n: SyntaxNode): boolean {
   if (BLOCKS.has(n.type)) return isMultiline(n);
+  // (A list of a body over several lines, a newline between its commands, is a block too: `{ a⏎ b & }`.)
+  if (n.type === 'command_list' && listOverLines(n)) return true;
   if (WRAPPERS.has(n.type)) return n.namedChildren.some(isBlockLike);
   return false;
 }

@@ -33,7 +33,7 @@ describe('the reading tree of a line', () => {
   it('reads an assignment of `$( )`, then a test: bash, the subshell in `$( )`, grep\'s arguments, its regex, and `[`\'s', () => {
     assert.deepStrictEqual(tree('x=$(grep -c foo f) && [ "$x" -gt 0 ]'), [
       'bash/line ',
-      '  bash/list x=$(grep -c foo f) && [ "$x" -gt 0 ]',
+      '  bash/andList x=$(grep -c foo f) && [ "$x" -gt 0 ]',
       '    bash/command x=$(grep -c foo f)',
       '      bash/assignment x=$(grep -c foo f)',
       '        bash/name x',
@@ -134,7 +134,9 @@ describe('the reading tree of a line', () => {
     assert.deepStrictEqual(find(r, '<<EOF').refs, ['3.6.6']);
     // A command after it on the line: the line reads to the end of the here-document.
     const two = explain('cat <<E; echo b\nx\nE\n').reading!;
-    assert.deepStrictEqual(two.children.map((c) => c.label), ['cat <<E', 'echo b']);
+    // (One list, `;` between its commands; its text goes on to the end of the here-document.)
+    assert.deepStrictEqual(two.children.map((c) => c.label), ['cat <<E; echo b …']);
+    assert.deepStrictEqual(two.children[0].children.map((c) => c.label), ['cat <<E', ';', 'echo b']);
     assert.deepStrictEqual(two.span.end, { line: 2, character: 1 });
   });
 
@@ -167,6 +169,7 @@ describe('the reading tree of a line', () => {
       '                  language/operator /',
       '                  language/string b',
       '                  language/operator /',
+      '      bash/operator ;',
       '      bash/keyword }',
     ]);
   });
@@ -226,7 +229,7 @@ describe('the reading tree of a line', () => {
       "    bash/argument 'echo a | wc -l'",
       "      bash/quote 'echo a | wc -l'",
       "      command/argument 'echo a | wc -l'",
-      '        child/operator echo | wc',
+      '        child/pipeline echo | wc',
       '          child/commandName echo',
       '            command/argument a',
       '          child/operator |',
@@ -249,26 +252,29 @@ describe('the reading tree of a line', () => {
     const r = explain("eval \"ls; echo hi\"; trap 'rm -f x' EXIT").reading!;
     assert.deepStrictEqual(outline(r), [
       'bash/line ',
-      '  bash/command eval "ls; echo hi"',
-      '    bash/commandName eval',
-      '    bash/argument "ls; echo hi"',
-      '      bash/quote "ls; echo hi"',
+      `  bash/list eval "ls; echo hi"; trap 'rm -f x' EXIT`,
+      '    bash/command eval "ls; echo hi"',
+      '      bash/commandName eval',
+      '      bash/argument "ls; echo hi"',
+      '        bash/quote "ls; echo hi"',
       // (eval reads its operand as a script, which the shell that runs it reads again.)
-      '      command/argument "ls; echo hi"',
-      '        child/commandName ls',
-      '        child/operator ;',
-      '        child/commandName echo',
-      '          command/argument hi',
-      "  bash/command trap 'rm -f x' EXIT",
-      '    bash/commandName trap',
-      "    bash/argument 'rm -f x'",
-      "      bash/quote 'rm -f x'",
-      "      command/argument 'rm -f x'",
-      '        child/commandName rm',
-      '          command/option -f',
-      '          command/argument x',
-      '    bash/argument EXIT',
-      '      command/argument EXIT',
+      '        command/argument "ls; echo hi"',
+      '          child/list ls; echo',
+      '            child/commandName ls',
+      '            child/operator ;',
+      '            child/commandName echo',
+      '              command/argument hi',
+      '    bash/operator ;',
+      "    bash/command trap 'rm -f x' EXIT",
+      '      bash/commandName trap',
+      "      bash/argument 'rm -f x'",
+      "        bash/quote 'rm -f x'",
+      "        command/argument 'rm -f x'",
+      '          child/commandName rm',
+      '            command/option -f',
+      '            command/argument x',
+      '      bash/argument EXIT',
+      '        command/argument EXIT',
     ]);
     assert.deepStrictEqual([find(r, 'ls', 'child').process, find(r, 'echo', 'child').process, find(r, 'rm', 'child').process], ['same', 'same', 'same']);
     assert.strictEqual(find(explain("bash -c 'ls'").reading!, 'ls', 'child').process, 'shell');
@@ -289,7 +295,8 @@ describe('the reading tree of a line', () => {
     assert.deepStrictEqual(operand("f() { :; }; eval f '$x'").map((x) => x.split(' > ')[1]), ['child/commandName f']);
     assert.deepStrictEqual(operand("eval '$x y'").map((x) => x.split(' > ')[1]), ['child/expandedName $x']);
     assert.deepStrictEqual(operand('eval "ls"'), ['"ls": Text to read and run again > child/commandName ls']);
-    assert.deepStrictEqual(operand("eval 'ls; echo hi'"), ["'ls; echo hi': Text to read and run again > child/commandName ls, child/operator ;, child/commandName echo"]);
+    // (The list `ls; echo hi` in it, named as bash's own lists are.)
+    assert.deepStrictEqual(operand("eval 'ls; echo hi'"), ["'ls; echo hi': Text to read and run again > child/list ls; echo"]);
     assert.strictEqual(find(new Analyzer('ja').explainLine(parser.parse('eval "ls"'), 0, 'bash', { reading: true }).reading!, '"ls"', 'command').text, 'もう一度読んで実行する文字列');
     // In a pipeline or a `$( )`, eval runs in a subshell, and that shell reads the string: no new process, but not
     // the script's own shell. The tree says "the shell that runs it".
@@ -484,14 +491,16 @@ describe('the reading tree of a line', () => {
     // `$e` expands to nothing: the name is `echo`, which comes after.
     assert.deepStrictEqual(tree('e=; $e echo hi'), [
       'bash/line ',
-      '  bash/command e=',
-      '    bash/assignment e=',
-      '      bash/name e',
-      '  bash/command $e echo hi',
-      '    bash/expandedName $e',
-      '      bash/expansion $e',
-      '    bash/word echo',
-      '    bash/word hi',
+      '  bash/list e=; $e echo hi',
+      '    bash/command e=',
+      '      bash/assignment e=',
+      '        bash/name e',
+      '    bash/operator ;',
+      '    bash/command $e echo hi',
+      '      bash/expandedName $e',
+      '        bash/expansion $e',
+      '      bash/word echo',
+      '      bash/word hi',
     ]);
     assert.strictEqual(bash('e=; $e echo hi'), 'hi\n');
   });
@@ -499,41 +508,45 @@ describe('the reading tree of a line', () => {
   it('reads the arguments of a declaration builtin that are assignments, and the elements of an array', () => {
     assert.deepStrictEqual(tree('local x=$(ls) y; export X=1; declare -a arr=(1 "$y" *.txt); a=(p q)'), [
       'bash/line ',
-      '  bash/command local x=$(ls) y',
-      '    bash/commandName local',
-      '    bash/assignmentArgument x=$(ls)',
-      '      bash/name x',
-      '      bash/substitution $(ls)',
-      '        child/script ls',
-      '          child/command ls',
-      '            child/commandName ls',
-      '      command/assignment x=$(ls)',
-      '    bash/argument y',
-      '      command/variable y',
-      '  bash/command export X=1',
-      '    bash/commandName export',
-      '    bash/assignmentArgument X=1',
-      '      bash/name X',
-      '      command/assignment X=1',
-      '  bash/command declare -a arr=(1 "$y" *.txt)',
-      '    bash/commandName declare',
-      '    bash/argument -a',
-      '      command/option -a',
-      '    bash/assignmentArgument arr=(1 "$y" *.txt)',
-      '      bash/name arr',
-      '      bash/word 1',
-      '      bash/word "$y"',
-      '        bash/quote "$y"',
-      '          bash/expansion $y',
-      '      bash/word *.txt',
-      '        bash/pattern *',
-      '        bash/string .txt',
-      '      command/assignment arr=(1 "$y" *.txt)',
-      '  bash/command a=(p q)',
-      '    bash/assignment a=(p q)',
-      '      bash/name a',
-      '      bash/word p',
-      '      bash/word q',
+      '  bash/list local x=$(ls) y; export X=1; declare -a arr=(1 "$y" *.txt);…',
+      '    bash/command local x=$(ls) y',
+      '      bash/commandName local',
+      '      bash/assignmentArgument x=$(ls)',
+      '        bash/name x',
+      '        bash/substitution $(ls)',
+      '          child/script ls',
+      '            child/command ls',
+      '              child/commandName ls',
+      '        command/assignment x=$(ls)',
+      '      bash/argument y',
+      '        command/variable y',
+      '    bash/operator ;',
+      '    bash/command export X=1',
+      '      bash/commandName export',
+      '      bash/assignmentArgument X=1',
+      '        bash/name X',
+      '        command/assignment X=1',
+      '    bash/operator ;',
+      '    bash/command declare -a arr=(1 "$y" *.txt)',
+      '      bash/commandName declare',
+      '      bash/argument -a',
+      '        command/option -a',
+      '      bash/assignmentArgument arr=(1 "$y" *.txt)',
+      '        bash/name arr',
+      '        bash/word 1',
+      '        bash/word "$y"',
+      '          bash/quote "$y"',
+      '            bash/expansion $y',
+      '        bash/word *.txt',
+      '          bash/pattern *',
+      '          bash/string .txt',
+      '        command/assignment arr=(1 "$y" *.txt)',
+      '    bash/operator ;',
+      '    bash/command a=(p q)',
+      '      bash/assignment a=(p q)',
+      '        bash/name a',
+      '        bash/word p',
+      '        bash/word q',
     ]);
     // (3.4: such an argument is expanded as an assignment; it is not one made before the command, 3.7.1.)
     assert.deepStrictEqual(find(explain('local x=1').reading!, 'x=1').refs, ['3.4']);
@@ -669,7 +682,8 @@ describe('the reading tree of a line', () => {
     ]);
     // No command reads it: bash does (its regex matching).
     assert.deepStrictEqual(readingNodes(re).slice(1).map((n) => n.reader), ['bash', 'bash', 'bash', 'bash', 'bash']);
-    assert.deepStrictEqual(r.children.map((c) => `${c.kind} ${c.label}`), ['compound [[ $x =~ ^a+$ ]]', 'pipeline echo ab | grep b']);
+    assert.deepStrictEqual(r.children.map((c) => `${c.kind} ${c.label}`), ['list [[ $x =~ ^a+$ ]]; echo ab | grep b']);
+    assert.deepStrictEqual(r.children[0].children.map((c) => `${c.kind} ${c.label}`), ['compound [[ $x =~ ^a+$ ]]', 'operator ;', 'pipeline echo ab | grep b']);
     assert.strictEqual(find(r, '[[').refs!.length > 0, true);
     assert.match(find(r, '=~').text!, /matches the regex/);
     assert.deepStrictEqual(tree('[[ -f $f && $a == b* ]]'), [
@@ -704,14 +718,15 @@ describe('the reading tree of a line', () => {
   });
 
   it('names pipelines with a reserved word, clauses and coprocesses as the manual does', () => {
-    assert.deepStrictEqual(explain('! a | b; time ls; coproc cat').reading!.children.map((c) => `${c.kind} ${c.label}`), [
-      'pipeline ! a | b', 'pipeline time ls', 'coprocess coproc cat',
+    assert.deepStrictEqual(explain('! a | b; time ls; coproc cat').reading!.children[0].children.map((c) => `${c.kind} ${c.label}`), [
+      'pipeline ! a | b', 'operator ;', 'pipeline time ls', 'operator ;', 'coprocess coproc cat',
     ]);
     const r = explain('if a; then b; elif c; then d; else e; fi; case x in y) z ;; esac').reading!;
     assert.deepStrictEqual(readingNodes(r).filter((n) => n.kind === 'clause').map((n) => n.label), [
       'elif ‹condition› then ‹commands›', 'else ‹commands›', 'y) ‹commands› ;;',
     ]);
-    assert.deepStrictEqual(r.children.map((c) => c.kind), ['compound', 'compound']);
+    assert.deepStrictEqual(r.children.map((c) => c.kind), ['list']);
+    assert.deepStrictEqual(r.children[0].children.map((c) => c.kind), ['compound', 'operator', 'compound']);
   });
 
   it('reads the line of a block: the block\'s parts on it, and a block on its first line whole', () => {
@@ -750,11 +765,13 @@ describe('the reading tree of a line', () => {
     const r = explain(long).reading!;
     assert.deepStrictEqual(outline(r).map((l) => l.slice(0, 40)), [
       'bash/line ',
-      `  bash/command echo ${'a'.repeat(20)}`,
-      '    bash/commandName echo',
-      `    bash/argument ${'a'.repeat(22)}`,
-      `      command/argument ${'a'.repeat(17)}`,
-      '  bash/operator &',
+      // (A list of one command, ended by `&`.)
+      `  bash/list echo ${'a'.repeat(23)}`,
+      `    bash/command echo ${'a'.repeat(18)}`,
+      '      bash/commandName echo',
+      `      bash/argument ${'a'.repeat(20)}`,
+      `        command/argument ${'a'.repeat(15)}`,
+      '    bash/operator &',
       '  bash/comment # done',
     ]);
     assert.strictEqual(r.children[0].label.length, 60);
@@ -862,7 +879,7 @@ describe('the reading tree in the panel and in host files', () => {
     const lines = hosted('makefile', 'all:\n\t$(CC) -o $@ $< && echo $$HOME\n', 1);
     assert.deepStrictEqual(lines.map((l) => l.replace(/ :: .*/, '')), [
       'bash/line  [$(CC) -o $@ $< && echo $$HOME]',
-      '  bash/list $(CC) -o $@ $< && echo $$HOME [$(CC) -o $@ $< && echo $$HOME]',
+      '  bash/andList $(CC) -o $@ $< && echo $$HOME [$(CC) -o $@ $< && echo $$HOME]',
       '    bash/command $(CC) -o $@ $< [$(CC) -o $@ $<]',
       '      bash/expandedName $(CC) [$(CC)]',
       '      bash/word -o [-o]',

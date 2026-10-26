@@ -13,7 +13,7 @@ import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
 import { docLine, type StateModel } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
-import type { SyntaxNode, SyntaxTree } from '../syntax/tree';
+import { listOverLines, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { effEndRow, intersects, isBlockLike } from './nodes';
 
 /**
@@ -223,7 +223,8 @@ export class LineExplainer implements Explainer, LineOutput {
     if (this.current === null) return [this.walk.explain(n)];
     if (!intersects(n, this.current)) return [];
     if (isBlockLike(n)) {
-      return n.startPosition.row === this.current ? [this.walk.explain(n)] : this.walk.flatten(n);
+      // (A list over several lines of a body has no line of its own: each line explains its part, `{ a⏎ b & }`.)
+      return n.startPosition.row === this.current && !(n.type === 'command_list' && listOverLines(n)) ? [this.walk.explain(n)] : this.walk.flatten(n);
     }
     // A multi-line statement that is not a block (`\` continuation, heredoc…) is explained whole.
     return [this.full(n)];

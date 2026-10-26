@@ -34,7 +34,8 @@ describe('shapes (no bash-ast needed)', () => {
         bg: true,
         cmd: {
           k: 'and-or',
-          first: {
+          op: '&&',
+          left: {
             k: 'pipeline', negated: false,
             stages: [
               { k: 'simple', line: 1, assignments: [], words: ['a'], redirects: [] },
@@ -42,9 +43,21 @@ describe('shapes (no bash-ast needed)', () => {
               { k: 'simple', line: 1, assignments: [], words: ['c'], redirects: [] },
             ],
           },
-          rest: [{ op: '&&', cmd: { k: 'simple', line: 1, assignments: [], words: ['d'], redirects: [] } }],
+          right: { k: 'simple', line: 1, assignments: [], words: ['d'], redirects: [] },
         },
       }],
+    });
+  });
+
+  it('nests AND and OR lists from the left, and marks the part before each `&` alone as run in the background', () => {
+    const simple = (w: string) => ({ k: 'simple', line: 1, assignments: [], words: [w], redirects: [] });
+    assert.deepEqual(shape('a; b & c && d || e'), {
+      k: 'seq',
+      items: [
+        { cmd: simple('a'), bg: false },
+        { cmd: simple('b'), bg: true },
+        { cmd: { k: 'and-or', op: '||', left: { k: 'and-or', op: '&&', left: simple('c'), right: simple('d') }, right: simple('e') }, bg: false },
+      ],
     });
   });
 
@@ -102,5 +115,23 @@ describe('bash-ast: our syntax tree against bash\'s parser', function () {
     console.log(`      bash-ast: ${counts.compared} compared (${counts.equal} equal), skipped ${JSON.stringify(counts.skipped)}, ${counts.known} known differences, ${counts.fresh} new`);
     const stale = known.filter((k) => !used.has(k)).map((k) => `stale: ${JSON.stringify(k.input).slice(0, 80)} ${k.path}`);
     assert.deepEqual([...fresh, ...stale], []);
+  });
+
+  // The lists of commands of the explanations (`commandLists`, src/syntax/tree.ts) give each statement its `&` (the
+  // shapes mark a statement as run in the background from them) and nest AND and OR lists from the left: here on
+  // inputs made for it (they are also in the corpus, through snippets.json). bash regroups `a; b &` so that `&`
+  // applies to `b` alone (`connect_async_list`), and gives a newline in a body as a `;`.
+  it('groups lists of commands as bash does: `&` applies to the part before it alone, `&&` and `||` from the left', () => {
+    const ub = createUnbashParser();
+    for (const text of [
+      'a; b & c && d || e', 'a && b &', 'a || b; c', '{ a; b; } &', 'if a; then b & fi', 'a & b & c; d && e || f && g &',
+      '{\n  a\n  b &\n  c; d\n}', 'x=$(a; b &); ( c & d ) &', 'a &&\n  b || c &\nd', 'while a; b & do c && d & done &',
+      'case x in y) a; b & ;; z) c &\n d ;; esac', 'f() { a & b; } &', '! a | b && c & d',
+    ]) {
+      const tree = ub.parse(text);
+      const r = runBashAst(bin!, text);
+      if (!r.ok) assert.fail(`${text}: ${r.message}`);
+      assert.deepEqual(diffShapes(shapeOfTree(tree.root), shapeOfAst(r.ast)), [], text);
+    }
   });
 });

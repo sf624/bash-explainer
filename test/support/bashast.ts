@@ -106,13 +106,7 @@ export function shapeOfAst(n: AstNode): Shape {
     case 'pipeline': return pipeline(!!n.negated, n.commands!.map(shapeOfAst));
     case 'list': {
       if (n.op === 'semi' || n.op === 'amp') return seq(items(n))!;
-      const rest: { op: '&&' | '||'; cmd: Shape }[] = [];
-      let cur: AstNode = n;
-      while (cur.type === 'list' && (cur.op === 'and' || cur.op === 'or')) {
-        rest.unshift({ op: cur.op === 'and' ? '&&' : '||', cmd: shapeOfAst(cur.right!) });
-        cur = cur.left!;
-      }
-      return andOr(shapeOfAst(cur), rest);
+      return andOr(n.op === 'and' ? '&&' : '||', shapeOfAst(n.left!), shapeOfAst(n.right!));
     }
     case 'subshell': case 'group': return { k: n.type, body: body(n.body), redirects: rd };
     case 'if': return { k: 'if', cond: body(n.condition), then: body(n.then_branch), else: body(n.else_branch), redirects: rd };

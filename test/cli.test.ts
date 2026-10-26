@@ -42,8 +42,9 @@ describe('the command-line tool', function () {
 
   it('says what each command name is, as the panel\'s badge does: in the text, in Markdown, and in JSON', () => {
     const text = run(['-e', 'sudo echo hi; echo hi', '--no-color']).out;
-    assert.match(text, /^ {4}echo {2}runs echo: Print arguments to stdout, separated by spaces \(from coreutils\) \(program, run by sudo\)$/m);
-    assert.match(text, /^ {2}echo {2}Print arguments to stdout, separated by spaces \(builtin\) \(Bash manual 4\.2\)$/m);
+    // (In the list `sudo echo hi; echo hi`.)
+    assert.match(text, /^ {6}echo {2}runs echo: Print arguments to stdout, separated by spaces \(from coreutils\) \(program, run by sudo\)$/m);
+    assert.match(text, /^ {4}echo {2}Print arguments to stdout, separated by spaces \(builtin\) \(Bash manual 4\.2\)$/m);
     assert.match(run(['-e', 'cd /', '--no-color', '--lang', 'ja']).out, /^ {2}cd {2}カレントディレクトリを移動する（ビルトイン）/m);
     assert.match(run(['--format', 'markdown', '-e', 'time ls']).out, /^ {2}- `time` — .* \(keyword\)$/m);
     const json = JSON.parse(run(['--format', 'json', '-e', 'echo hi']).out);

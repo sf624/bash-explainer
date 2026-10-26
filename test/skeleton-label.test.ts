@@ -125,7 +125,7 @@ describe('the label of a construct', () => {
     assert.deepStrictEqual(explain(src, 2).items.map((t) => t.label), ['elif ‹condition› then ‹commands›']);
     assert.deepStrictEqual(explain(src, 4).items.map((t) => t.label), ['else ‹commands›']);
     const loop = explain('for f in a; do\n  b\ndone');
-    assert.deepStrictEqual(loop.items[0].children.map((t) => t.label), ['for', 'f', 'in', 'a', 'do ‹commands› done']);
+    assert.deepStrictEqual(loop.items[0].children.map((t) => t.label), ['for', 'f', 'in', 'a', ';', 'do ‹commands› done']);
   });
 
   it('labels the branches of a case by their patterns', () => {

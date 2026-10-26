@@ -30,7 +30,7 @@ import { anonSections, CONSTRUCTS, nodeSections } from './refs';
 import type { NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
 import { staticWordValue } from './staticword';
-import { field, isShebang, type SyntaxNode, type SyntaxTree } from './syntax/tree';
+import { field, isShebang, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
 
 /** Who reads a part: bash, bash again (a substitution, or a string a command gives a shell), the command, a language. */
 export type Layer = 'bash' | 'child' | 'command' | 'language';
@@ -39,7 +39,9 @@ export type Layer = 'bash' | 'child' | 'command' | 'language';
 export type ShellKind =
   | 'line' // the line as bash reads it: the root
   | 'script' // the text of a substitution, as the subshell parses it
-  | 'list' | 'pipeline' | 'command' | 'compound' | 'clause' | 'coprocess' | 'function'
+  | 'list' // a list of commands (3.2.4): pipelines and AND/OR lists joined by `;` and `&` (and newlines, in a body)
+  | 'andList' | 'orList' // an AND list (`a && b`) or an OR list (`a || b`); `a && b || c` is an OR list in which `a && b` is an AND list
+  | 'pipeline' | 'command' | 'compound' | 'clause' | 'coprocess' | 'function'
   | 'commandName' // the first word of a simple command, when it is the command name as written
   | 'aliasWord' // the first word, when it is an alias: bash replaces it with its text when it reads the line (6.6)
   | 'expandedName' // the first word, when it has an expansion: the name is known only when it runs
@@ -119,8 +121,8 @@ const RUNS = new Set(['command', 'builtin']);
 const WORD_TOKENS = new Set(['string', 'variable', 'expansion', 'substitution', 'number', 'pattern']);
 /** The kinds of bash's tokens inside a word that have no node: a glob's parts, an escape, a tilde, a brace expansion. */
 const PART_TOKENS = new Set(['string', 'pattern', 'operator', 'expansion', 'variable', 'number']);
-/** Tokens that only end or separate: not shown. */
-const SEPARATORS = new Set([';', '\n']);
+/** Tokens that only end or separate: not shown. (`;` is an operator: of a list, or of the head of a `for`.) */
+const SEPARATORS = new Set(['\n']);
 /** The clauses of a compound command (3.2.5.2): parts of it, not commands of their own. */
 const CLAUSES = new Set(['case_item', 'elif_clause', 'else_clause']);
 /** The expressions of `[[ ]]`, whose operators are those of conditional expressions (6.4). */
@@ -185,7 +187,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   };
 
   /** The parts of the line in `n` that the explanation covers; `layer`: who reads `n`. */
-  const collect = (n: SyntaxNode, layer: Layer): ReadingNode[] => n.children.flatMap((c) => {
+  const collect = (n: SyntaxNode, layer: Layer): ReadingNode[] => withLists(n).flatMap((c) => {
     const s = spanOf(c);
     if (c.endIndex === c.startIndex || le(s.end, range.start) || le(range.end, s.start)) return [];
     if (within(s, range)) return node(c, layer);
@@ -213,7 +215,9 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       case 'command': return [simple(c, layer)];
       case 'comment': return [shellNode(c, layer, isShebang(c) ? 'shebang' : 'comment', [])];
       case 'variable_name': case 'special_variable_name': return [shellNode(c, layer, 'name', [])];
-      case 'list': return [construct(c, layer, 'list')];
+      case 'command_list': return [construct(c, layer, 'list')];
+      // (Nested from the left: `a && b || c` is an OR list whose first part is the AND list `a && b`.)
+      case 'list': return [construct(c, layer, c.children.some((x) => x.type === '||') ? 'orList' : 'andList')];
       case 'pipeline': return [construct(c, layer, 'pipeline')];
       case 'function_definition': return [construct(c, layer, 'function')];
       case 'test_operator': {
@@ -239,7 +243,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
 
   /** A compound command, a list, a pipeline, a function: its parts in order, keywords and operators included. */
   const construct = (c: SyntaxNode, layer: Layer, kind: ShellKind): ReadingNode => {
-    const children = c.children.flatMap((x) => {
+    const children = withLists(c).flatMap((x) => {
       if (x.field === 'name' && kind === 'function') return [shellNode(x, layer, 'name', [])];
       // (`time -p`: the option of the reserved word, which bash reads as written, not a word it expands.)
       if (x.field === 'option' && c.type === 'time_statement') return [{ ...shellNode(x, layer, 'option', [], new Set(['option'])), refs: ['3.2.3'] }];
@@ -248,7 +252,9 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const n = shellNode(c, layer, kind, children);
     // A skeleton names a compound command better than its first line (`if ‹condition› then … fi`).
     const t = tokenAt(n.span);
-    if (t && kind !== 'list' && kind !== 'pipeline') n.label = t.label;
+    if (t && kind !== 'list' && kind !== 'andList' && kind !== 'orList' && kind !== 'pipeline') n.label = t.label;
+    // (A list over several lines, as the labels of the list view say it: `a …`.)
+    else if (kind === 'list' && c.text.includes('\n')) n.label = `${n.label} …`;
     return n;
   };
 
@@ -437,7 +443,9 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       const close = p.children[p.children.length - 1];
       const span: Span = { start: point(open.endPosition.row, open.endPosition.column), end: point(close.startPosition.row, close.startPosition.column) };
       const text = p.text.slice(open.endIndex - p.startIndex, close.startIndex - p.startIndex);
-      const script: ReadingNode = { layer: 'child', kind: 'script', label: short(text.trim()), span, process: 'subshell', children: p.namedChildren.flatMap((c) => node(c, 'child')) };
+      // (Its statements, with the lists of commands they make: `$(a; b &)`.)
+      const children = withLists(p).filter((c) => c.named || c.type === ';' || c.type === '&').flatMap((c) => node(c, 'child'));
+      const script: ReadingNode = { layer: 'child', kind: 'script', label: short(text.trim()), span, process: 'subshell', children };
       return shellNode(p, layer, 'substitution', [script]);
     }
     const kind: ShellKind = p.type === 'simple_expansion' || p.type === 'expansion' ? 'expansion'
@@ -514,6 +522,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
    * builtin, a function; a name known only when it runs), and the others have their token's kind.
    */
   const scriptKind = (t: Token): { kind: string; resolves?: NameResolution['kind'] } => {
+    // (A list, an AND or OR list, a pipeline: as bash's own nodes are named, not as their tokens' kind, `operator`.)
+    if (t.grammar) return { kind: t.grammar };
     if (t.kind === 'builtin') return { kind: 'commandName', resolves: 'builtin' };
     if (t.kind === 'alias') return { kind: 'aliasWord' };
     if (t.kind === 'function') return { kind: 'commandName', resolves: 'function' };

@@ -67,7 +67,7 @@ describe('the web page: the tree view of the panel', function () {
     await tree.locator('li[tabindex="0"]').focus();
     assert.deepStrictEqual(await focused(panel), { role: 'treeitem', level: '1', expanded: 'true', name: 'bash reads the line' });
     await page.keyboard.press('ArrowDown');
-    assert.deepStrictEqual(await focused(panel), { role: 'treeitem', level: '2', expanded: 'true', name: 'list x=$(grep -c foo f) && [ "$x" -gt 0 ]' });
+    assert.deepStrictEqual(await focused(panel), { role: 'treeitem', level: '2', expanded: 'true', name: 'AND list x=$(grep -c foo f) && [ "$x" -gt 0 ]' });
     // The focused part is marked in the line at the top.
     await frames(panel);
     assert.strictEqual(await panel.locator('#line span.mark').count() > 0, true);

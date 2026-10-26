@@ -1175,10 +1175,9 @@ class Converter {
       const m = this.node('case_item', it.pos, it.end, null, n);
       it.pattern.forEach((w, k) => this.addWord(m, w, k < it.pattern.length - 1 ? 'casealt' : 'case', 'value'));
       this.list(m, it.body, inner);
-      if (it.terminator) {
-        const kind: FieldName | null = it === c.items[c.items.length - 1] ? null : it.terminator === ';;' ? 'termination' : 'fallthrough';
-        this.tok(it.terminator, it.end - it.terminator.length, m, kind);
-      }
+      // (A last item with no `;;` keeps the `;` that ends the list of its body: `y) a; esac`.)
+      if (!it.terminator) this.terminate(m, inner);
+      else this.tok(it.terminator, it.end - it.terminator.length, m, it === c.items[c.items.length - 1] ? null : it.terminator === ';;' ? 'termination' : 'fallthrough');
       this.fill(m);
       this.newline(m);
     }

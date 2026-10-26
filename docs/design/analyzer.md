@@ -185,7 +185,8 @@ Sizes are estimates, with doc comments.
 | src/explain/assignments.ts | `assignment`, `assignments`, `assignmentList` | 150 | state, vars |
 | src/explain/argv.ts | `args`, `render`, options, values, operands (with `declaredOperand`, `unsetOperand`, `markedAssignment`, `nameGlob`, `findExpression`), `wrapped`, `positional`, `testArgs`; may split into options.ts and operands.ts | 600 | ArgvParse, argv query, effects |
 | src/explain/commands.ts | `command`, `commandParts`, `commandTail`, `commandHead`, `commandHeadFor`, `functionCall`, `missedNote`, `timed`, `splitCommand`, `redirectLayout` | 450 | names (`resolveName`, `assignmentsOf`), spec |
-| src/explain/compound.ts | loops, `if`, `case`, functions, coproc, pipelines and lists, groups, comments and the shebang | 270 | env, state |
+| src/explain/compound.ts | loops, `if`, `case`, functions, coproc, pipelines, groups, comments and the shebang | 270 | env, state |
+| src/explain/lists.ts | lists of commands (3.2.4): `commandList` (the `;` and `&` lists of `commandLists`), `andOrList`, the `;` and `&` of a list (`listOperatorToken`), `statementTokens` (a substitution's body) | 160 | the syntax tree (`commandLists`, `listOperator`) |
 | src/explain/line-notes.ts | notes on the line as a whole: here-document and continuation notes, `statusNotes`, the pitfalls from the models (`pipeSubshellPitfalls`, `unmatchedGlobPitfalls`, `extglobPitfalls`), `globOptionNote`, `starStarNote` | 320 | state, env, status |
 | src/explain/dispatch.ts | `explainNode`, `explain`, `sub`, `flatten`, `ordered`, `anon`, `contextLabel` | 260 | the syntax tree, refs |
 | src/analyzer.ts | `Analyzer` (constructor, `explainLine`), `isBlockLike`, the re-exports | 150 | — |
