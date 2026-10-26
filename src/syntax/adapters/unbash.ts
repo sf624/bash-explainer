@@ -1176,7 +1176,7 @@ class Converter {
       it.pattern.forEach((w, k) => this.addWord(m, w, k < it.pattern.length - 1 ? 'casealt' : 'case', 'value'));
       this.list(m, it.body, inner);
       // (A last item with no `;;` keeps the `;` that ends the list of its body: `y) a; esac`.)
-      if (!it.terminator) this.terminate(m, inner);
+      if (!it.terminator) this.terminate(m, c.items[c.items.indexOf(it) + 1]?.pos ?? inner);
       else this.tok(it.terminator, it.end - it.terminator.length, m, it === c.items[c.items.length - 1] ? null : it.terminator === ';;' ? 'termination' : 'fallthrough');
       this.fill(m);
       this.newline(m);
