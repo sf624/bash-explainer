@@ -2607,3 +2607,247 @@ pre#line {
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------- prototype B, round 9 */
+/* The controls: two groups, each whole (the depth; the two switches), that wrap by the panel's width alone. Nothing in
+   them changes with the line shown, so they never gain or lose a row as the cursor moves; they never overlap. */
+#layers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.9rem;
+}
+#layers .u-tb {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+  min-width: 0;
+  white-space: nowrap;
+}
+#layers #who-toggle,
+#layers #kw-toggle {
+  margin-left: 0;
+  flex: none;
+}
+#kw-toggle[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: default;
+}
+#kw-toggle[aria-disabled="true"] .u-switch {
+  background: color-mix(in srgb, var(--c-muted) 30%, transparent);
+}
+#steps .tiny,
+#layers .u-short {
+  display: none;
+}
+/* A phone: the depth's segments and the switches in short words, so each group fits on one line. */
+@media (max-width: 480px) {
+  #layers #steps .short {
+    display: none;
+  }
+  #layers #steps .tiny {
+    display: inline;
+  }
+  #layers .u-full {
+    display: none;
+  }
+  #layers .u-short {
+    display: inline;
+  }
+  #layers {
+    gap: 0.35rem 0.6rem;
+  }
+}
+
+/* The legend: one line, never wrapping; "Key" at its end opens the key under it; the marks fold to one word. */
+#depth-caption .u-cap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  min-height: 1.6em;
+}
+#depth-caption .u-leg-items {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#depth-caption .u-cap-folded .u-cap-hide {
+  font-size: 1em;
+  padding-left: 0;
+}
+#depth-caption #key-button {
+  flex: none;
+  font: inherit;
+  padding: 0 0.45rem;
+  line-height: 1.5;
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.4));
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-textLink-foreground, #006ab1);
+  cursor: pointer;
+}
+#depth-caption .u-cap-hide {
+  flex: none;
+}
+@media (max-width: 480px) {
+  #depth-caption .u-cap-who .u-leg-more {
+    display: none;
+  }
+}
+/* No keys on a touch screen or a phone. */
+@media (hover: none), (pointer: coarse), (max-width: 480px) {
+  .u-key .u-kkeys {
+    display: none;
+  }
+}
+
+/* The swatches: a box with a command in it (not a checkbox), and a bracket. */
+.u-swatch-box {
+  position: relative;
+  display: inline-block;
+  width: 2em;
+  height: 1em;
+  vertical-align: -0.18em;
+  border: 1px solid color-mix(in srgb, var(--c-muted) 80%, transparent);
+  border-radius: 4px;
+  background: none;
+}
+.u-swatch-box::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--c-command);
+}
+.u-swatch-box::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 4px;
+  top: calc(50% - 1px);
+  height: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--c-muted) 60%, transparent);
+}
+.u-swatch-bracket {
+  display: inline-block;
+  width: 0.4em;
+  height: 1em;
+  vertical-align: -0.18em;
+  border: 2px solid var(--c-operator);
+  border-right: 0;
+  border-radius: 3px 0 0 3px;
+}
+
+/* Boxes: a simple or compound command; one inside another keeps its right edge apart. The rows' bars end inside. */
+#main[data-depth] #tree li.u-cmdbox {
+  padding-bottom: 3px;
+}
+#main[data-depth] #tree li.u-cmdbox::after {
+  right: calc(var(--bx, 0) * 5px);
+}
+/* A bracket at the left of commands joined (a pipeline, a list), over all their rows; its own row has no bar. */
+#main[data-depth] #tree li.u-bracket {
+  position: relative;
+}
+#main[data-depth] #tree li.u-bracket::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--lvl, 0) * 1rem);
+  top: 0.2rem;
+  bottom: 0.2rem;
+  width: 6px;
+  border: 2px solid var(--c-operator);
+  border-right: 0;
+  border-radius: 3px 0 0 3px;
+  pointer-events: none;
+}
+.row.u-row.u-bracketed::before {
+  display: none;
+}
+/* Every other row of structure (a compound command, a loop's body): a solid bar, as any row. */
+.row.u-row.u-struct::before,
+.row.u-row.u-head.u-struct::before {
+  width: 3px;
+  background: currentColor;
+  box-shadow: none;
+  -webkit-mask: none;
+  mask: none;
+}
+
+/* The bars' colours apart: a glob pattern pink (not the purple of reserved words), a redirection a double bar. */
+body {
+  --c-pattern: #c2185b;
+}
+@media (prefers-color-scheme: dark) {
+  body:not(.vscode-light):not(.vscode-high-contrast-light) {
+    --c-pattern: #f06292;
+  }
+}
+:root[data-theme="light"] body:not([class*="vscode-"]),
+body.vscode-light {
+  --c-pattern: #c2185b;
+}
+:root[data-theme="dark"] body:not([class*="vscode-"]),
+body.vscode-dark,
+body.vscode-high-contrast {
+  --c-pattern: #f06292;
+}
+.row.u-row.kind-redirect::before,
+.u-kitem.kind-redirect .u-swatch {
+  width: 5px;
+  background: linear-gradient(to right, currentColor 0 2px, transparent 2px 3px, currentColor 3px 5px);
+}
+
+/* Following a risk to its row, or a row's marker to its risk: a fill that fades. */
+@keyframes u-fill {
+  0%, 35% { background-color: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 28%, transparent); }
+  100% { background-color: transparent; }
+}
+.row.u-row.u-flash,
+#u-risks li.u-flash {
+  animation: u-fill 2.2s ease-out;
+}
+
+/* The notes of a row: one grey paragraph, its items apart by a dot. */
+.u-row .u-notes {
+  font-size: 0.88em;
+  color: var(--c-muted);
+  line-height: 1.45;
+}
+.u-row .u-notes > span {
+  font-style: normal;
+}
+.u-row .u-notes .u-def {
+  font-style: italic;
+}
+:lang(ja) .u-row .u-notes .u-def {
+  font-style: normal;
+}
+.u-row .u-notes code {
+  color: var(--vscode-foreground);
+}
+.u-row .u-streams {
+  font-size: 0.88em;
+  color: var(--c-muted);
+}
+.u-row .u-streams code {
+  color: var(--vscode-foreground);
+}
+#u-noprog {
+  margin: 0 0 0.5rem;
+  color: var(--c-muted);
+}
+#u-noprog[hidden] {
+  display: none;
+}
+#depth-caption .u-cap .u-leg-sep {
+  margin: 0;
+}

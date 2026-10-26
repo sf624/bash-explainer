@@ -15,7 +15,8 @@ const SCRIPTS: { text: string; lines: number[]; argv?: Record<number, string[][]
   },
   {
     text: 'backup="${HOME}/backup-$(date +%F).tar.gz"\ntar -czf "$backup" ~/docs 2>/dev/null || echo "failed" >&2', lines: [1, 2],
-    argv: { 2: [['tar', '-czf', '‹home directory›/backup-‹output of date +%F›.tar.gz', '‹home directory›/docs'], ['failed']] },
+    // (Round 9: a command in `$( )` has its receives line too.)
+    argv: { 1: [['date', '+%F']], 2: [['tar', '-czf', '‹home directory›/backup-‹output of date +%F›.tar.gz', '‹home directory›/docs'], ['failed']] },
   },
   { text: 'if [[ -f config.ini && $DEBUG == 1 ]]; then source config.ini; fi', lines: [1], argv: { 1: [['config.ini']] } },
 ];
@@ -73,7 +74,8 @@ describe('the web page: the depths of the explanation add, and never move a text
   /**
    * (Round 8) One home per risk: each text of the box "Risks on this line" appears once in the panel (its rows have
    * a marker only); no text is cut inside a word with "…"; and the tint follows the line "X receives:": a row's code
-   * is tinted only when the word is in its command's receives line. Returns the problems found.
+   * is tinted only when the word is in its command's receives line (round 9: as the very text written there, so the
+   * tint never says other than the chips). Returns the problems found.
    */
   const oneHome = async (f: Frame): Promise<string[]> => f.evaluate(`(() => {
     const out = [];
@@ -85,8 +87,11 @@ describe('the web page: the depths of the explanation add, and never move a text
     if (document.querySelector('#tree .u-problem.level-info, #tree .u-problem.level-warning, #notes .level-info, #notes .level-warning')) out.push('a risk drawn outside the box');
     for (const m of panel.match(/[\\p{L}\\p{N}]…/gu) ?? []) out.push('cut word: ' + m);
     if (document.getElementById('main').classList.contains('u-who')) {
-      const got = new Set([...document.querySelectorAll('#tree .u-argv .u-arg')].map((w) => w.dataset.span));
-      for (const r of document.querySelectorAll('#tree .u-row.u-read')) if (!got.has(r.dataset.span)) out.push('tinted, not received: ' + r.dataset.span);
+      const got = new Map([...document.querySelectorAll('#tree .u-argv .u-arg')].map((w) => [w.dataset.span, w.textContent]));
+      for (const r of document.querySelectorAll('#tree .u-row.u-read')) {
+        if (!got.has(r.dataset.span)) out.push('tinted, not received: ' + r.dataset.span);
+        else if (got.get(r.dataset.span) !== r.querySelector('.label').textContent.trim()) out.push('tinted, received as other text: ' + r.querySelector('.label').textContent + ' / ' + got.get(r.dataset.span));
+      }
     }
     return out;
   })()`) as Promise<string[]>;
@@ -198,6 +203,53 @@ describe('the web page: the depths of the explanation add, and never move a text
       }
       await ctx.close();
     });
+  }
+
+  /**
+   * (Round 9) The toolbar: its height (the controls and the legend's line), and the pairs of its boxes that overlap
+   * (the segments of the depth share their border: 1.5 px is allowed).
+   */
+  const toolbar = async (f: Frame): Promise<{ height: number; overlaps: string[] }> => f.evaluate(`(() => {
+    const vis = (e) => e.getClientRects().length > 0;
+    const height = Math.round(document.getElementById('layers').getBoundingClientRect().height + document.querySelector('#depth-caption .u-cap').getBoundingClientRect().height);
+    const boxes = [...document.querySelectorAll('#layers #layers-label, #layers button.step, #layers #who-toggle, #layers #kw-toggle, #depth-caption .u-cap .u-leg, #depth-caption .u-cap .u-leg-sep, #depth-caption #key-button, #depth-caption .u-cap-hide')]
+      .filter(vis).map((e) => [e.id || e.className, e.getBoundingClientRect()]);
+    const overlaps = [];
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const [n1, a] = boxes[i];
+      const [n2, b] = boxes[j];
+      if (a.left < b.right - 1.5 && b.left < a.right - 1.5 && a.top < b.bottom - 1.5 && b.top < a.bottom - 1.5) overlaps.push(n1 + ' / ' + n2);
+    }
+    return { height, overlaps };
+  })()`) as Promise<{ height: number; overlaps: string[] }>;
+
+  for (const lang of ['en', 'ja'] as const) {
+    for (const width of [1280, 390]) {
+      it(`keeps the toolbar the same on every line, with no box over another (${lang}, ${width} px)`, async () => {
+        const ctx = await browser.newContext({ viewport: { width, height: 900 }, locale: lang === 'ja' ? 'ja-JP' : 'en-US' });
+        const page = await ctx.newPage();
+        const heights = new Map<string, number>();
+        for (const script of SCRIPTS) {
+          for (const line of script.lines) {
+            const f = await open(page, script.text, line);
+            for (const [step, who] of [[1, false], [2, false], [2, true], [1, true]] as const) {
+              await show(f, step, who);
+              const at = `${script.text.split('\n')[line - 1]}: depth ${step}${who ? ' with the program\'s side' : ''}`;
+              const t = await toolbar(f);
+              assert.deepStrictEqual(t.overlaps, [], `${at}: toolbar boxes overlap`);
+              // (The keywords' switch is there on every line, off and showing 0 where the line has none.)
+              assert.strictEqual(await f.evaluate("getComputedStyle(document.getElementById('kw-toggle')).display !== 'none'"), true, `${at}: the keywords' switch`);
+              const key = `${step}${who}`;
+              if (!heights.has(key)) heights.set(key, t.height);
+              assert.strictEqual(t.height, heights.get(key), `${at}: the toolbar's height`);
+            }
+          }
+        }
+        // (And the same with the switch on and off, at either depth.)
+        assert.strictEqual(new Set(heights.values()).size, 1, `the toolbar's heights: ${JSON.stringify([...heights])}`);
+        await ctx.close();
+      });
+    }
   }
 
   it('never breaks an argv chip where it need not, on a phone either', async () => {

@@ -308,8 +308,11 @@ export class LineExplainer implements Explainer, LineOutput {
     const value = f();
     const one = whole();
     if (one) {
+      // (Prototype B, round 9: the names a glob of a stage matches stay, a playground of their own under the word;
+      // the whole example replaces the examples of what the stages do.)
+      const kept = this.examples.slice(before).filter((e) => e.kind === 'glob');
       this.examples.length = before;
-      this.examples.push(one);
+      this.examples.push(...kept, one);
     }
     return value;
   }

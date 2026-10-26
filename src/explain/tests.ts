@@ -239,9 +239,14 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
     if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
       return cx.tok(n, 'test', cx.t(binaryTestOps[op]), cx.subs([left, ...rights]));
     }
+    // (Round 9) A pattern with no wildcard (`[[ $DEBUG == 1 ]]`): a plain comparison here, said so; `*` only where there is one.
+    const literalPattern = ['=', '==', '!='].includes(op) && !!ancestor(n, (a) => a.type === 'extended_test') && rights.every((x) => isPlainWord(x) && !hasGlob(x.text))
+      ? cx.s(op === '!=' ? '文字列が等しくない（右辺はパターン。ワイルドカードがないので、ここでは普通の比較）' : '文字列が等しい（右辺はパターン。ワイルドカードがないので、ここでは普通の比較）',
+        op === '!=' ? 'strings differ (the right side is a pattern; with no wildcard here it is a plain comparison)' : 'strings are equal (the right side is a pattern; with no wildcard here it is a plain comparison)')
+      : undefined;
     return cx.tok(n, 'test', cx.s(
-      `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${quotedPatternNote(cx, n, op, rights) ?? cx.t(extendedEqualOps[op] ?? binaryTestOps[op])}${num}`,
-      `Condition: \`${left?.text}\` vs \`${rightText}\` — ${quotedPatternNote(cx, n, op, rights) ?? cx.t(extendedEqualOps[op] ?? binaryTestOps[op])}${num}`,
+      `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${quotedPatternNote(cx, n, op, rights) ?? literalPattern ?? cx.t(extendedEqualOps[op] ?? binaryTestOps[op])}${num}`,
+      `Condition: \`${left?.text}\` vs \`${rightText}\` — ${quotedPatternNote(cx, n, op, rights) ?? literalPattern ?? cx.t(extendedEqualOps[op] ?? binaryTestOps[op])}${num}`,
     ), operands);
   }
   const assignOps = ['=', '+=', '-=', '*=', '/=', '%='];

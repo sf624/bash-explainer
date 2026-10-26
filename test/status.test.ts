@@ -469,8 +469,8 @@ describe('the notes on status and errexit', () => {
 describe('a failure reported with `|| echo` where the status matters', () => {
   const said = (src: string, lang: 'en' | 'ja' = 'en', shell?: Shell) => notes(src, src.split('\n').length - 1, lang, shell).filter((n) => /status 0|returns 0|goes on|終了ステータス 0|そのまま続き/.test(n));
   it('says that the script ends with status 0, and that `2>/dev/null` leaves only the message', () => {
-    assert.deepStrictEqual(said('#!/bin/bash\ncp a b 2>/dev/null || echo "copy failed"'), ['ⓘ Caveat: this is the last command of the script, so when `cp a b 2>/dev/null` fails, the script still ends with status 0, the status of `echo "copy failed"`: what runs it (cron, CI, `./script && next`) sees success. And `2>/dev/null` discards the error message of the command itself, so only this message is left to say why. To pass the failure on, write `… || { echo "copy failed" >&2; exit 1; }`']);
-    assert.deepStrictEqual(said('#!/bin/bash\ncp a b 2>/dev/null || echo "copy failed"', 'ja'), ['ⓘ 注意: これはスクリプトの最後のコマンドなので、`cp a b 2>/dev/null` が失敗してもスクリプトは `echo "copy failed"` の終了ステータス 0 で終わり、呼び出し元（cron や CI、`./script && next`）には成功に見えます。また、`2>/dev/null` でコマンド自身のエラーメッセージも捨てられるので、理由を伝えるのはこのメッセージだけです。失敗を伝えるには `… || { echo "copy failed" >&2; exit 1; }` と書きます']);
+    assert.deepStrictEqual(said('#!/bin/bash\ncp a b 2>/dev/null || echo "copy failed"'), ['ⓘ Caveat: this is the last command of the script, so when `cp a b 2>/dev/null` fails, the script still ends with status 0, the status of `echo "copy failed"`: what runs it (cron, CI, `./script && next`) sees success. And `2>/dev/null` discards the error message of the command itself, so only this message is left to say why. To pass the failure on, write `cp a b 2>/dev/null || { echo "copy failed" >&2; exit 1; }`']);
+    assert.deepStrictEqual(said('#!/bin/bash\ncp a b 2>/dev/null || echo "copy failed"', 'ja'), ['ⓘ 注意: これはスクリプトの最後のコマンドなので、`cp a b 2>/dev/null` が失敗してもスクリプトは `echo "copy failed"` の終了ステータス 0 で終わり、呼び出し元（cron や CI、`./script && next`）には成功に見えます。また、`2>/dev/null` でコマンド自身のエラーメッセージも捨てられるので、理由を伝えるのはこのメッセージだけです。失敗を伝えるには `cp a b 2>/dev/null || { echo "copy failed" >&2; exit 1; }` と書きます']);
     // (`&>/dev/null` and `>/dev/null 2>&1` discard it too; `>/dev/null` alone does not.)
     assert.match(said('#!/bin/bash\ncp a b &>/dev/null || echo failed')[0], /And `&>\/dev\/null` discards the error message/);
     assert.match(said('#!/bin/bash\ncp a b >/dev/null 2>&1 || echo failed')[0], /And `>\/dev\/null 2>&1` discards the error message/);
@@ -478,9 +478,9 @@ describe('a failure reported with `|| echo` where the status matters', () => {
     assert.match(said('#!/bin/bash\n{ cp a b; } 2>/dev/null || echo failed')[0], /when `\{ cp a b; \} 2>\/dev\/null` fails.* And `2>\/dev\/null` discards/);
   });
   it('says that a function returns 0, and that `set -e` goes on', () => {
-    assert.deepStrictEqual(notes('f() {\n  cp a b || echo "copy failed" >&2\n}\nf', 1).filter((n) => /returns 0/.test(n)), ['ⓘ Caveat: this is the last command of `f`, so when `cp a b` fails, `f` still returns 0, the status of `echo "copy failed" >&2`: its caller sees success. To pass the failure on, write `… || { echo "copy failed" >&2; return 1; }`']);
-    assert.match(notes('f() {\n  cp a b || echo failed\n}\nf', 1, 'ja').join('\n'), /`f` は `echo failed` の終了ステータス 0 を返し、呼び出し元には成功に見えます。失敗を伝えるには `… \|\| \{ echo failed >&2; return 1; \}` と書きます/);
-    assert.deepStrictEqual(said("set -e\ncp a b || printf 'failed\\n'"), ["ⓘ Caveat: when `cp a b` fails, `set -e` does not stop the script (a failure on the left of `||` is ignored), and `printf 'failed\\n'` succeeds, so the script goes on. To stop the script, write `… || { printf 'failed\\n' >&2; exit 1; }`"]);
+    assert.deepStrictEqual(notes('f() {\n  cp a b || echo "copy failed" >&2\n}\nf', 1).filter((n) => /returns 0/.test(n)), ['ⓘ Caveat: this is the last command of `f`, so when `cp a b` fails, `f` still returns 0, the status of `echo "copy failed" >&2`: its caller sees success. To pass the failure on, write `cp a b || { echo "copy failed" >&2; return 1; }`']);
+    assert.match(notes('f() {\n  cp a b || echo failed\n}\nf', 1, 'ja').join('\n'), /`f` は `echo failed` の終了ステータス 0 を返し、呼び出し元には成功に見えます。失敗を伝えるには `cp a b \|\| \{ echo failed >&2; return 1; \}` と書きます/);
+    assert.deepStrictEqual(said("set -e\ncp a b || printf 'failed\\n'"), ["ⓘ Caveat: when `cp a b` fails, `set -e` does not stop the script (a failure on the left of `||` is ignored), and `printf 'failed\\n'` succeeds, so the script goes on. To stop the script, write `cp a b || { printf 'failed\\n' >&2; exit 1; }`"]);
     assert.match(said('set -e\ncp a b || echo failed', 'ja')[0], /`\|\|` の左側の失敗では `set -e` は止まらず、`echo failed` が成功するので、スクリプトはそのまま続きます。スクリプトを止めるには/);
     // (`a && b || echo`: either failing; `/bin/echo`, the program.)
     assert.strictEqual(said('#!/bin/sh\nmkdir d && cd d || /bin/echo failed').length, 1);
@@ -488,8 +488,8 @@ describe('a failure reported with `|| echo` where the status matters', () => {
     assert.match(notes('#!/bin/bash\ncp a b || # c\necho x', 1).join('\n'), /the script still ends with status 0, the status of `echo x`/);
   });
   it('says it conditionally for a file with no shebang, and names a long command instead of cutting it', () => {
-    assert.deepStrictEqual(said('cp a b || echo failed'), ['ⓘ Caveat: if this file is run as a script, this is its last command, so when `cp a b` fails, the script still ends with status 0, the status of `echo failed`: what runs it (cron, CI, `./script && next`) sees success. To pass the failure on, write `… || { echo failed >&2; exit 1; }`']);
-    assert.match(said('cp a b || echo failed', 'ja')[0], /このファイルをスクリプトとして実行すると、これが最後のコマンドなので、`cp a b` が失敗してもスクリプトは `echo failed` の終了ステータス 0 で終わり、呼び出し元（cron や CI、`.\/script && next`）には成功に見えます。失敗を伝えるには `… \|\| \{ echo failed >&2; exit 1; \}` と書きます/);
+    assert.deepStrictEqual(said('cp a b || echo failed'), ['ⓘ Caveat: if this file is run as a script, this is its last command, so when `cp a b` fails, the script still ends with status 0, the status of `echo failed`: what runs it (cron, CI, `./script && next`) sees success. To pass the failure on, write `cp a b || { echo failed >&2; exit 1; }`']);
+    assert.match(said('cp a b || echo failed', 'ja')[0], /このファイルをスクリプトとして実行すると、これが最後のコマンドなので、`cp a b` が失敗してもスクリプトは `echo failed` の終了ステータス 0 で終わり、呼び出し元（cron や CI、`.\/script && next`）には成功に見えます。失敗を伝えるには `cp a b \|\| \{ echo failed >&2; exit 1; \}` と書きます/);
     // (Not the last command of the file.)
     assert.deepStrictEqual(said('cp a b || echo failed\nls'), []);
     const long = 'tar -czf "$backup" ~/docs 2>/dev/null || echo "failed" >&2';

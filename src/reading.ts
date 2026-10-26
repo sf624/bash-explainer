@@ -32,7 +32,7 @@ import type { NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
 import { type ExpansionStep, STEP_MANUAL, type StepKind, type WordMeaning } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { field, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
+import { ancestor, field, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
 
 /** Who reads a part: bash, bash again (a substitution, or a string a command gives a shell), the command, a language. */
 export type Layer = 'bash' | 'child' | 'command' | 'language';
@@ -90,6 +90,8 @@ export interface ReadingNode {
   bashExpands?: ('glob' | 'tilde' | 'split')[];
   /** (Prototype B) On a word: its tilde prefixes (3.5.2), each with the text it is (`~`, `~user`). */
   tildes?: { span: Span; text: string; user: string }[];
+  /** (Round 9) On a word that expands: the steps bash takes on it, in order (3.5), from the word model. */
+  steps?: WordStep[];
   /** (Prototype B) On a simple command with a name: the words its program receives (src/argvline.ts). */
   argv?: ArgvLine;
   /** (Prototype B) On `[[ … ]]`: what bash evaluates once it has expanded the words (src/argvline.ts `condLine`). */
@@ -141,6 +143,10 @@ const TEXTS = {
   /** (Prototype B) An operator of `[[ ]]` as a row of its own (`testRow`). */
   testUnary: { ja: (t: string) => `検査: オペランドが${t}なら真`, en: (t: string) => `Test: true if its operand ${t}` },
   testBinary: { ja: (t: string) => `検査: ${t}なら真`, en: (t: string) => `Test: true if ${t}` },
+  plainMatch: {
+    ja: (not: boolean) => (not ? '文字列が等しくない（ワイルドカードがないので普通の比較）' : '文字列が等しい（ワイルドカードがないので普通の比較）'),
+    en: (not: boolean) => (not ? 'strings differ (the right side is a pattern; with no wildcard here, a plain comparison)' : 'strings are equal (the right side is a pattern; with no wildcard here, a plain comparison)'),
+  },
   join: {
     and: { ja: 'かつ: 両辺が真なら真。右辺は左辺が真のときだけ評価する', en: 'And: true if both sides are true; the right side is evaluated only if the left one is true' },
     or: { ja: 'または: どちらかが真なら真。右辺は左辺が偽のときだけ評価する', en: 'Or: true if either side is true; the right side is evaluated only if the left one is false' },
@@ -164,11 +170,44 @@ const TEXTS = {
       ja: (op: string) => `\`${op}\` の右辺のパターン: 左辺がこれにグロブパターンとして一致するかを調べる（クォートした部分は書いたとおりに一致）`,
       en: (op: string) => `The pattern on the right of \`${op}\`: the left side is matched against it as a glob pattern (a quoted part matches as written)`,
     },
+    literal: {
+      ja: (op: string) => `\`${op}\` の右辺のパターン: ワイルドカードがないので、左辺がこの文字列と同じときだけ一致する`,
+      en: (op: string) => `The pattern on the right of \`${op}\`: with no wildcard, the left side matches it only when it is the same text`,
+    },
     plain: { ja: (op: string) => `\`${op}\` で比べる文字列`, en: (op: string) => `A string \`${op}\` compares` },
     number: { ja: (op: string) => `\`${op}\` で比べる値: 算術式として評価する`, en: (op: string) => `A value \`${op}\` compares: evaluated as an arithmetic expression` },
     files: { ja: (op: string) => `\`${op}\` で比べるファイル`, en: (op: string) => `A file \`${op}\` compares` },
   },
 };
+
+/**
+ * (Round 9) A step of bash's expansion of a word (3.5), as the panel says it: one that acts on it, or splitting and
+ * globbing with why they do not (`quoted`, `context`: not in this place, `nothing`: no unquoted expansion or no wildcard).
+ */
+export interface WordStep { kind: StepKind; applies: boolean | 'unknown'; why?: string }
+
+/** The steps bash takes on a word with an expansion or a wildcard (none for a word bash only removes quotes from). */
+export function wordSteps(w: SyntaxNode, m: WordMeaning | undefined): WordStep[] | undefined {
+  if (!m) return undefined;
+  const step = (k: StepKind) => m.steps.find((s) => s.kind === k);
+  const acts = (['brace', 'tilde', 'parameter', 'command', 'arithmetic', 'process'] as const)
+    .filter((k) => { const s = step(k); return !!s && s.applies !== false && (k === 'tilde' ? m.tildes.length > 0 : s.parts.length > 0); });
+  const glob = step('glob');
+  const wild = !!glob && glob.parts.some((p) => !['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion'].includes(p.type));
+  if (!acts.length && !wild) return undefined;
+  const out: WordStep[] = acts.map((k) => ({ kind: k, applies: step(k)!.applies === 'unknown' ? 'unknown' : true }));
+  const expands = acts.some((k) => k === 'parameter' || k === 'command' || k === 'arithmetic');
+  for (const k of ['split', 'glob'] as const) {
+    const s = step(k);
+    if (!s) continue;
+    const place = m.context.startsWith('cond') ? 'cond' : m.context === 'assignment-value' ? 'assign' : 'context';
+    if (s.applies === false) out.push({ kind: k, applies: false, why: s.why === 'context' || (!s.why && !m.rule[k]) ? place : s.why ?? (expands ? 'quoted' : 'nothing') });
+    else if (s.parts.length) out.push({ kind: k, applies: s.applies });
+    else out.push({ kind: k, applies: false, why: expands ? 'quoted' : 'nothing' });
+  }
+  if (/["'\\]/.test(w.text)) out.push({ kind: 'quote-removal', applies: true });
+  return out;
+}
 
 /** The kind of operand of each operator of a conditional expression (6.4), for `TEXTS.operand`. */
 const OPERANDS: Record<string, keyof typeof TEXTS.operand> = {
@@ -354,7 +393,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const opNode = p.children.find((x) => x.field === 'operator' || x.type === 'test_operator');
     const op = opNode?.text;
     if (!op) return undefined;
-    if (p.type === 'binary_expression' && ['=', '==', '!='].includes(op)) return TEXTS.operand[c.field === 'right' ? 'pattern' : 'compared'][cx.lang](op);
+    // (Round 9: a right side with no wildcard and no expansion matches only itself, and is said so.)
+    if (p.type === 'binary_expression' && ['=', '==', '!='].includes(op)) return TEXTS.operand[c.field === 'right' ? (/[*?[$`\\'"]/.test(c.text) ? 'pattern' : 'literal') : 'compared'][cx.lang](op);
     const kind = OPERANDS[op];
     // (`=~`: the regex on the right is a language of its own; the left side is the string matched.)
     if (op === '=~') return c.field === 'left' ? TEXTS.operand.compared[cx.lang](op) : undefined;
@@ -377,6 +417,9 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const inDouble = c.parent!.type === 'binary_expression' && ['=', '==', '!='].includes(c.type);
     const op = c.type === 'test_operator' ? c.text : c.type;
     const text = c.parent!.type === 'unary_expression' && op !== '!' ? unaryTestOps[op] : inDouble ? extendedEqualOps[op] : binaryTestOps[op];
+    // (Round 9: a right side with no wildcard and no expansion: a plain comparison here.)
+    const right = inDouble ? c.parent!.children.find((x) => x.field === 'right') : undefined;
+    if (right && !/[*?[$`\\'"]/.test(right.text)) return TEXTS.plainMatch[cx.lang](op === '!=');
     return text?.[cx.lang];
   };
 
@@ -475,7 +518,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const ends = c.namedChildren.map((x) => ((x.type === 'heredoc_redirect' && x.namedChildren.find((h) => h.type === 'heredoc_start')) || x).endIndex);
     n.label = short(c.text.slice(0, Math.max(...ends) - c.startIndex));
     n.refs = union(['3.2.2', '3.7.1'], n.refs);
-    const argv = named && layer === 'bash' ? cx.argv?.(c) : undefined;
+    // (Round 9: a command in `$( )` too: `date` receives `date +%F`.)
+    const argv = named && (layer === 'bash' || (layer === 'child' && !!ancestor(c, (x) => x.type === 'command_substitution'))) ? cx.argv?.(c) : undefined;
     if (argv) n.argv = argv;
     return n;
   };
@@ -561,6 +605,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     if (expands?.length) n.bashExpands = expands;
     const tildes = kind === 'argument' ? cx.tildes?.(w) : undefined;
     if (tildes?.length) n.tildes = tildes;
+    const steps = wordSteps(w, cx.meaning(w));
+    if (steps) n.steps = steps;
     // A language in a word no command reads, which bash reads itself (the regex of `=~`), is under the word.
     if (w.parent!.type !== 'command' && w.parent!.type !== 'command_name') {
       for (const c of tokenAt(n.span, WORD_TOKENS)?.children ?? []) if (c.origin === 'embedded') language(n.children, c, 'bash');
@@ -658,6 +704,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     if (kind === 'assignment' && a.parent!.type === 'command') n.refs = union(n.refs, ['3.7.1']);
     // (What bash does to its value that no part shows: a tilde after `=` or `:`, `x=~/a:~/b`.)
     if (value && value.type !== 'array') n.refs = union(n.refs, expansionSections(cx.meaning(value)));
+    const steps = value && value.type !== 'array' ? wordSteps(value, cx.meaning(value)) : undefined;
+    if (steps) n.steps = steps;
     return n;
   };
 

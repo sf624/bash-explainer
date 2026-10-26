@@ -111,7 +111,7 @@ export const MESSAGES = {
     `this is the last command of the script, so when \`${left}\` fails, the script ends with its non-zero status, which its caller (CI, \`make\`, \`./script && next\`) sees as a failure. Write \`if …; then …; fi\`, or end the script with \`exit 0\``]),
   // `cmd || echo "msg"` where its status matters: the end of a function or of a script, or where `set -e` stops the
   // script (`where`). `quiet`: the redirections of `cmd` that discard its own error message (`2>/dev/null`), or ''.
-  'failure-reported-as-success': caveat<{ where: 'function' | 'script' | 'fragment' | 'errexit'; name: string; left: string; right: string; quiet: string; fix: string }>(['3.2.4', '3.7.5', '4.3.1'], ({ where, name, left, right, quiet, fix }) => {
+  'failure-reported-as-success': caveat<{ where: 'function' | 'script' | 'fragment' | 'errexit'; name: string; left: string; right: string; quiet: string; fix: string; lead?: string }>(['3.2.4', '3.7.5', '4.3.1'], ({ where, name, left, right, quiet, fix, lead }) => {
     const exit = where === 'function' ? 'return 1' : 'exit 1';
     const ja = {
       function: `これは関数 \`${name}\` の最後のコマンドなので、\`${left}\` が失敗しても \`${name}\` は \`${right}\` の終了ステータス 0 を返し、呼び出し元には成功に見えます。`,
@@ -126,8 +126,8 @@ export const MESSAGES = {
       errexit: `when \`${left}\` fails, \`set -e\` does not stop the script (a failure on the left of \`||\` is ignored), and \`${right}\` succeeds, so the script goes on.`,
     }[where];
     return [
-      `${ja}${quiet ? `また、\`${quiet}\` でコマンド自身のエラーメッセージも捨てられるので、理由を伝えるのはこのメッセージだけです。` : ''}${where === 'errexit' ? 'スクリプトを止めるには' : '失敗を伝えるには'} \`… || { ${fix}; ${exit}; }\` と書きます`,
-      `${en}${quiet ? ` And \`${quiet}\` discards the error message of the command itself, so only this message is left to say why.` : ''} ${where === 'errexit' ? 'To stop the script' : 'To pass the failure on'}, write \`… || { ${fix}; ${exit}; }\``];
+      `${ja}${quiet ? `また、\`${quiet}\` でコマンド自身のエラーメッセージも捨てられるので、理由を伝えるのはこのメッセージだけです。` : ''}${where === 'errexit' ? 'スクリプトを止めるには' : '失敗を伝えるには'}${lead ? ` \`${lead} || { ${fix}; ${exit}; }\` と書きます` : `、\`||\` 以降を \`|| { ${fix}; ${exit}; }\` にします`}`,
+      `${en}${quiet ? ` And \`${quiet}\` discards the error message of the command itself, so only this message is left to say why.` : ''} ${where === 'errexit' ? 'To stop the script' : 'To pass the failure on'}, ${lead ? `write \`${lead} || { ${fix}; ${exit}; }\`` : `end it with \`|| { ${fix}; ${exit}; }\` instead`}`];
   }),
 
   // ---------------------------------------------------------------- functions and what runs instead (3.3, 3.7.2)

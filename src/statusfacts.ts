@@ -272,9 +272,11 @@ function failureReported(n: SyntaxNode, root: SyntaxNode, state: StateModel, sta
   } else return undefined;
   // (The message goes to stderr in the rewrite, unless its output is sent somewhere already.)
   const msg = prints[prints.length - 1];
-  const fix = shorten(msg.text) + (redirectionsOf(msg).length ? '' : ' >&2');
+  // (Round 9: the fix is a whole line to copy, never cut: the left side as written, when it is one short line.)
+  const fix = (msg.text.includes('\n') ? shorten(msg.text) : msg.text) + (redirectionsOf(msg).length ? '' : ' >&2');
+  const lead = !left.text.includes('\n') && left.text.length <= 90 ? left.text : '';
   const quiet = (left.type === 'command' || left.type === 'redirected_statement') && outputsOf(left).err === '/dev/null' ? redirectionsOf(left).map((r) => r.text).join(' ') : '';
-  return { id: 'failure-reported-as-success', params: { where, name: def ? field(def, 'name')!.text : '', left: uncut(left, state, shell, 30), right: uncut(msg, state, shell, 60), quiet, fix } };
+  return { id: 'failure-reported-as-success', params: { where, name: def ? field(def, 'name')!.text : '', left: uncut(left, state, shell, 30), right: uncut(msg, state, shell, 60), quiet, fix, lead } };
 }
 
 /**

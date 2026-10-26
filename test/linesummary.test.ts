@@ -63,7 +63,8 @@ describe('the note of a pipeline example whose pattern is a variable', () => {
     assert.deepStrictEqual(notes(src, 1, 'ja'), ['ここでは `$USER` を `alice` とした（例の値。実際の値は実行するまで分からない）。`alice` という文字列を丸ごと含まない行（`alic`、`lice`）は除かれる。`malice` も一致する。grep は `alice` を長い文字列の中にも見つける（注意点を参照）。']);
   });
   it('shows the longer line in the input and in the output of grep', () => {
-    const ex = new Analyzer('en').explainLine(parser.parse(src), 0, 'bash')!.examples[0];
+    // (Round 9: the glob's names to try stay too; the pipeline's example is the one of kind `pipeline`.)
+    const ex = new Analyzer('en').explainLine(parser.parse(src), 0, 'bash')!.examples.find((e) => e.kind === 'pipeline')!;
     assert.ok(ex.sections[0].lines.includes('malice'));
     assert.ok(ex.sections[1].lines.includes('malice'));
   });
