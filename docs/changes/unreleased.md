@@ -320,9 +320,9 @@ To bash, `# bats test_tags=…` and `# bats file_tags=…` are comments. bats re
 | `# bats test_tags=a, b:c` | bash ignores it; bats gives the next test only the tags `a` and `b:c`, and runs it with `bats --filter-tags a` |
 | `# bats file_tags=slow` | every later test of the file gets `slow`; a later `# bats file_tags=` replaces it, and an empty one cancels it |
 | `# bats test_tags=bats:focus` | bats runs only the focused tests, and exits 1 even if they pass (`BATS_NO_FAIL_FOCUS_RUN=1` keeps 0) |
-| `# bats test_tags=a,,b`, `a b`, `,b` | a warning: bats refuses the list, so none of the tests of the file runs (`not ok 1 bats-gather-tests`) |
+| `# bats test_tags=a,,b`, `a b`, `,b`, ` ` (only spaces), `x²` | a warning: bats refuses the list, so none of the tests of the file runs (`not ok 1 bats-gather-tests`) |
 
-A test has its `test_tags` and the `file_tags` in effect, sorted (`$BATS_TEST_TAGS`). Only a line that starts with the comment counts; bats reads it also inside a here-document, where the line is text to bash.
+A test has its `test_tags` and the `file_tags` in effect, sorted (`$BATS_TEST_TAGS`); of two `test_tags` lines before one test, the later one counts. A tag is made of `-`, `_`, `:`, letters and digits of any script (`é`, `٣`), as glibc reads `[[:alnum:]]` in a UTF-8 locale, but not `²` or `½`. Only a line that starts with the comment counts; bats reads it also inside a here-document or a string, where the line is text to bash, and the note says so.
 
 The other form of a test, a function marked with a comment, is explained as a test too:
 
@@ -332,7 +332,7 @@ countdown() { # @test
 }
 ```
 
-bats takes the function for a test named `countdown` and renames it `test_countdown` (so `countdown` is no longer a function; `-` and other characters in the name are written in hex, as for `@test "…"`). Before, such a function was a plain function with a comment. A line is a test only with parentheses or `function`, a blank before the `{` and nothing after `# @test`.
+bats takes the function for a test named `countdown` and renames it `test_countdown` (so `countdown` is no longer a function; `-` and other characters in the name are written in hex, as for `@test "…"`). The name of `@test "x²"` is now `test_x-b2`, as bats writes it (before, `test_x²`: `²` is no digit to bash's `[[:alnum:]]`). Before, such a function was a plain function with a comment. As for bats, the parentheses and `function` are optional (`countdown { # @test` is a test too), the line needs a blank before the `{` and nothing after `# @test`, and a test defined inside a function counts only when the function runs as the file is read (the same holds for `@test "…"`). bats replaces the whole line with the test's definition, so text before the name, as in `echo hi; f() { # @test`, never runs: a warning says so.
 
 ## Changed
 

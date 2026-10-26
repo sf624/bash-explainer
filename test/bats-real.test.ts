@@ -376,9 +376,11 @@ describe('bats files agree with the real bats', function () {
   it('names a test as bats does in a UTF-8 locale', async function () {
     if (!usable) return this.skip();
     const file = path.join(dir, 'name.bats');
-    fs.writeFileSync(file, '@test "café ü-x" {\n  echo "name=$BATS_TEST_NAME" >&3\n}\n');
+    // (`Ⓐ` is a letter, `٣` a digit, `²` and `½` neither: glibc's `[[:alnum:]]`.)
+    fs.writeFileSync(file, '@test "café ü-x²Ⓐ٣½" {\n  echo "name=$BATS_TEST_NAME" >&3\n}\n');
     const { out } = await runBats(file, 'C.UTF-8');
-    assert.match(out, new RegExp(`^name=${batsTestName('café ü-x')}$`, 'm'));
+    assert.match(out, new RegExp(`^name=${batsTestName('café ü-x²Ⓐ٣½')}$`, 'm'));
+    assert.strictEqual(batsTestName('x²Ⓐ٣½'), 'test_x-b2Ⓐ٣-bd');
   });
 
   it('warns (BW02) about any option of run without bats_require_minimum_version 1.5.0', async function () {
@@ -508,12 +510,17 @@ describe('bats tags and marked functions agree with the real bats', function () 
     const lines = [
       '# bats file_tags=z, y', '# bats test_tags=b,a:1', '@test "one" {', ...show, '@test "two" {', ...show,
       '# bats file_tags=', '# bats test_tags=q', '# bats test_tags=r', '@test "three" {', ...show,
+      '# bats test_tags=s', '# bats test_tags=', '@test "four" {', ...show,
       '# bats file_tags=f', 'marked() { # @test', ...show,
     ];
     const { out, tap } = await runBats(write('tags.bats', lines));
-    assert.strictEqual(tap.length, 4, out);
+    assert.strictEqual(tap.length, 5, out);
     assert.deepStrictEqual(out.split('\n').filter((l) => l.startsWith('T:')).map((l) => l.slice(2)), sayTags(lines));
-    assert.deepStrictEqual(sayTags(lines), ['a:1 b y z', 'y z', 'r', 'f']);
+    assert.deepStrictEqual(sayTags(lines), ['a:1 b y z', 'y z', 'r', '', 'f']);
+    // (Of two `test_tags` lines before one test, bats keeps the last: the first says so, and an empty one cancels.)
+    const said = (n: number) => explain(lines, n).facts!.find((f) => f.id === 'bats-tags')!.text;
+    assert.match(said(lines.indexOf('# bats test_tags=q')), /a later `# bats test_tags=` line before the same test replaces them/);
+    assert.match(said(lines.indexOf('# bats test_tags=')), /cancels an earlier `test_tags` before the same test/);
   });
 
   it('selects tests with --filter-tags: all the tags, !tag, several options as alternatives, an empty list for untagged tests', async function () {
@@ -530,7 +537,7 @@ describe('bats tags and marked functions agree with the real bats', function () 
 
   const LISTS: [list: string, valid: true | 'syntax' | 'empty'][] = [
     ['', true], ['a', true], [' a , b ', true], ['a-b:c_d,E9', true],
-    ['a,,b', 'syntax'], ['a,', 'syntax'], ['a b', 'syntax'], ['a;b', 'syntax'], ['a,  ,c', 'syntax'], [',b', 'empty'],
+    ['a,,b', 'syntax'], ['a,', 'syntax'], ['a b', 'syntax'], ['a;b', 'syntax'], ['a,  ,c', 'syntax'], [',b', 'empty'], [' ', 'empty'], ['  ', 'empty'],
   ];
   for (const [list, valid] of LISTS) {
     for (const scope of ['test', 'file'] as const) {
@@ -549,7 +556,9 @@ describe('bats tags and marked functions agree with the real bats', function () 
           assert.match(out, valid === 'empty' ? /Tags must not be empty/ : /Valid tags must match/);
           assert.deepStrictEqual(ours.map((f) => f.id), ['bats-tags-invalid']);
           assert.strictEqual(ours[0].level, 'warning');
-          assert.match(ours[0].text, valid === 'empty' ? /leading comma/ : /not valid/);
+          assert.match(ours[0].text, valid === 'empty' ? /leading comma, or a list of only spaces/ : /not valid/);
+          // (The comment says so too, not what tags it gives.)
+          assert.match(explain(lines, 0).summary, /refuses its list of tags, and runs none of the tests of this file/);
         }
       });
     }
@@ -570,30 +579,97 @@ describe('bats tags and marked functions agree with the real bats', function () 
     assert.doesNotMatch(explain(['# bats test_tags=a'], 0).facts!.find((f) => f.id === 'bats-tags')!.text, /focus/);
   });
 
+  it('takes a tag of letters and digits of any script, as glibc in a UTF-8 locale, and refuses an other number', async function () {
+    if (!usable) return this.skip();
+    for (const tag of ['é', 'Ⓐ', '٣', 'Ⅳ', 'x²', '½']) {
+      const lines = [`# bats test_tags=${tag}`, '@test "one" {', '  :', '}'];
+      const { tap } = await runBats(write('utf8-tag.bats', lines), 'C.UTF-8');
+      const valid = tap[0] === 'ok 1 one';
+      assert.strictEqual(tagComment(lines[0])!.invalid === undefined, valid, `${tag}: ${tap}`);
+      assert.strictEqual(valid, !['x²', '½'].includes(tag), tag);
+    }
+  });
+
+  it('reads a tag line in a here-document or a string, where bash reads it as text, and says so', async function () {
+    if (!usable) return this.skip();
+    const lines = ['cat <<EOF >/dev/null', '# bats test_tags=h', 'EOF', 'x="', '# bats file_tags=s', '"', '@test "one" {', '  echo "T:${BATS_TEST_TAGS[*]}" >&3', '}'];
+    const { out } = await runBats(write('text-tags.bats', lines));
+    assert.deepStrictEqual(out.split('\n').filter((l) => l.startsWith('T:')), ['T:h s']);
+    const said = (n: number) => explain(lines, n).facts!.find((f) => f.id === 'bats-tags')!.text;
+    assert.match(said(1), /^ℹ to bash this line is text of a here-document, not a command\. bats reads the line/);
+    assert.match(said(4), /^ℹ to bash this line is text of a string, not a command\. bats reads the line/);
+    assert.match(explain(['# bats test_tags=a'], 0).facts![0].text, /^ℹ to bash this is a comment/);
+    // (In a `$( )` of a string, the line is a comment again.)
+    assert.match(explain(['x="$(', '# bats test_tags=a', ')"'], 1).facts![0].text, /^ℹ to bash this is a comment/);
+  });
+
   it('runs a function marked `# @test` as a test under the name bats gives @test "name", renamed', async function () {
     if (!usable) return this.skip();
     const lines = [
       'my-test() { # @test', '  echo "N:$BATS_TEST_NAME|$BATS_TEST_DESCRIPTION|$(declare -F my-test || echo undefined)" >&3', '}',
       'function other {   #   @test', '  echo "N:$BATS_TEST_NAME|$BATS_TEST_DESCRIPTION" >&3', '}',
+      // (The parentheses are optional, and blanks may come before them: bats normalizes the head.)
+      'nomark { # @test', '  echo "N:$BATS_TEST_NAME" >&3', '}',
+      'sp () { # @test', '  echo "N:$BATS_TEST_NAME" >&3', '}',
+      'function  fk { # @test', '  echo "N:$BATS_TEST_NAME" >&3', '}',
     ];
     const { tap, out } = await runBats(write('marked.bats', lines), 'C.UTF-8');
-    assert.deepStrictEqual(tap, ['ok 1 my-test', 'ok 2 other'], out);
-    assert.deepStrictEqual(out.split('\n').filter((l) => l.startsWith('N:')), [`N:${batsTestName('my-test')}|my-test|undefined`, `N:${batsTestName('other')}|other`]);
+    assert.deepStrictEqual(tap, ['ok 1 my-test', 'ok 2 other', 'ok 3 nomark', 'ok 4 sp', 'ok 5 fk'], out);
+    assert.deepStrictEqual(out.split('\n').filter((l) => l.startsWith('N:')), [
+      `N:${batsTestName('my-test')}|my-test|undefined`, `N:${batsTestName('other')}|other`, ...['nomark', 'sp', 'fk'].map((n) => `N:${batsTestName(n)}`)]);
     // We read the lines as bats does: the function is renamed in the code bash reads, and the line is a test.
     const extracted = extractShell('bats', lines.join('\n'));
-    assert.deepStrictEqual([extracted.text.split('\n')[0], extracted.text.split('\n')[3]], [`${batsTestName('my-test')}() { # @test`, `function ${batsTestName('other')} {   #   @test`]);
-    assert.deepStrictEqual(extracted.regions[0].tests, [0, 3]);
-    for (const [n, name] of [[0, 'my-test'], [3, 'other']] as const) {
+    assert.deepStrictEqual([0, 3, 6, 9, 12].map((n) => extracted.text.split('\n')[n]), [
+      `${batsTestName('my-test')}() { # @test`, `function ${batsTestName('other')} {   #   @test`, `${batsTestName('nomark')}() { # @test`,
+      `${batsTestName('sp')}() { # @test`, `function  ${batsTestName('fk')} { # @test`]);
+    assert.deepStrictEqual(extracted.regions[0].tests, [0, 3, 6, 9, 12]);
+    for (const [n, name, head] of [[0, 'my-test', 'my-test()'], [3, 'other', 'function other'], [6, 'nomark', 'nomark'], [9, 'sp', 'sp()'], [12, 'fk', 'function fk']] as const) {
       const ex = explain(lines, n);
       assert.ok(ex.facts!.some((f) => f.id === 'bats-test'));
-      assert.ok(ex.summary.startsWith(`bats test: because of the comment \`# @test\`, bats runs this function as a test. It renames the function \`${batsTestName(name)}\``), ex.summary);
+      assert.strictEqual(ex.summary, `bats test: because of the comment \`# @test\`, bats runs this function as a test. It renames the function \`${batsTestName(name)}\`, so it can no longer be called as \`${name}\` (lines ${n + 1}–${n + 3})`);
+      // (The definition and the context show the head as written, without its blanks.)
+      assert.strictEqual(ex.items[0].label, `${head} { ‹commands› }`);
+      assert.deepStrictEqual(explain(lines, n + 1).context.map((c) => c.label).slice(1, 2), [head]);
     }
   });
 
-  it('does not take a line as a test that bats does not take: no parentheses or function, text after the comment, no blank before the brace', function () {
-    for (const line of ['plain { # @test', 'f() { # @test later', 'f(){ # @test', 'f() { #@testx']) {
-      assert.deepStrictEqual(extractShell('bats', line).regions[0].tests, [], line);
+  it('runs a marked function after other text on its line as a test, and drops the text, as bats does', async function () {
+    if (!usable) return this.skip();
+    const mark = path.join(dir, 'dropped.mark');
+    const lines = [': >dropped.mark; inl() { # @test', '  echo "N:$BATS_TEST_NAME" >&3', '}'];
+    const { tap, out } = await runBats(write('dropped.bats', lines));
+    assert.deepStrictEqual(tap, ['ok 1 inl'], out);
+    assert.deepStrictEqual(out.split('\n').filter((l) => l.startsWith('N:')), [`N:${batsTestName('inl')}`]);
+    assert.ok(!fs.existsSync(mark));
+    const ex = explain(lines, 0);
+    assert.deepStrictEqual(ex.facts!.map((f) => f.id), ['bats-test', 'bats-test-line-dropped']);
+    assert.match(ex.facts![1].text, /`: >dropped\.mark;` before the function's name never runs\. Put it on a line of its own/);
+    // (bash reads no `:` there: what bats drops is blanked out.)
+    assert.strictEqual(extractShell('bats', lines.join('\n')).text.split('\n')[0], `${' '.repeat(17)}${batsTestName('inl')}() { # @test`);
+    // The rewrite: on a line of its own, the text runs.
+    const fixed = [': >dropped.mark', ...lines.map((l, n) => (n ? l : 'inl() { # @test'))];
+    const after = await runBats(write('dropped-fixed.bats', fixed));
+    assert.deepStrictEqual(after.tap, ['ok 1 inl'], after.out);
+    assert.ok(fs.existsSync(mark));
+    assert.deepStrictEqual(explain(fixed, 1).facts!.map((f) => f.id), ['bats-test']);
+  });
+
+  it('takes as a test a definition inside a function only when that function runs as the file is read', async function () {
+    if (!usable) return this.skip();
+    const body = ['  inner() { # @test', '    :', '  }', '  @test "nested" {', '    :', '  }'];
+    for (const called of [false, true]) {
+      const lines = ['outer() {', ...body, '}', ...(called ? ['outer'] : []), '@test "plain" {', '  :', '}'];
+      const { tap, out } = await runBats(write('nested.bats', lines));
+      assert.deepStrictEqual(tap, called ? ['ok 1 inner', 'ok 2 nested', 'ok 3 plain'] : ['ok 1 plain'], out);
+      for (const n of [1, 4]) assert.strictEqual((explain(lines, n).facts ?? []).some((f) => f.id === 'bats-test'), called, `${called}: ${lines[n]}`);
     }
-    assert.deepStrictEqual(extractShell('bats', 'f() {   #@test  ').regions[0].tests, [0]);
+  });
+
+  it('does not take a line as a test that bats does not take: text after the comment, no blank before the brace or the comment', async function () {
+    if (!usable) return this.skip();
+    const lines = ['f(){ # @test', '  :', '}', 'g() { # @test later', '  :', '}', 'h() { #@testx', '  :', '}', 'm() {   #@test  ', '  :', '}'];
+    const { tap, out } = await runBats(write('not-marked.bats', lines));
+    assert.deepStrictEqual(tap, ['ok 1 m'], out);
+    assert.deepStrictEqual(extractShell('bats', lines.join('\n')).regions[0].tests, [9]);
   });
 });

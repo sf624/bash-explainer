@@ -566,12 +566,12 @@ describe('bats', () => {
     const doc = ['# bats file_tags=a, bats:focus', '# bats test_tags=', '#bats   test_tags=x,y', '@test "t" {', '  :', '}', '  # bats file_tags=', '# bats file_tags=,x', '# bats color=red'];
     const text = (line: number, lang: 'ja' | 'en' = 'en') => bats(doc, line, lang).notes.join('\n');
     assert.match(text(1), /^ℹ to bash this is a comment, and it is ignored\. bats reads the line and gives every later test of the file the tags `a`, `bats:focus` \(a later `# bats file_tags=` replaces them\); `bats --filter-tags TAGS` runs only the tests with the tags given\. When a test has `bats:focus`, bats runs only the focused tests, and exits with status 1/);
-    assert.match(text(2), /gives the next test only no tags \(an empty list\) \(not the tests after it\)$/);
-    assert.match(text(3), /gives the next test only the tags `x`, `y` \(not the tests after it\); `bats --filter-tags/);
+    assert.match(text(2), /gives the next test no tags \(an empty list\) \(it cancels an earlier `test_tags` before the same test\)$/);
+    assert.match(text(3), /gives the next test only the tags `x`, `y` \(a later `# bats test_tags=` line before the same test replaces them; the tests after it do not get them\); `bats --filter-tags/);
     assert.match(text(7), /gives every later test of the file no tags \(an empty list\) \(it cancels an earlier `file_tags`\)$/);
-    assert.match(text(8), /^⚠ The `file_tags` list is not valid, so bats runs none of the tests of this file and fails\..*A leading comma makes an empty tag$/);
+    assert.match(text(8), /^⚠ The `file_tags` list is not valid, so bats runs none of the tests of this file and fails\..*A leading comma, or a list of only spaces, makes an empty tag \(for no tags, nothing follows the `=`\)$/);
     assert.match(text(1, 'ja'), /^ℹ bash にとってはコメントで、無視される。bats がこの行を読み、このファイルのこれ以降のすべてのテストにタグ `a`, `bats:focus` を付ける/);
-    assert.match(text(3, 'ja'), /次のテストだけにタグ `x`, `y` を付ける（そのあとのテストには付かない）/);
+    assert.match(text(3, 'ja'), /次のテストだけにタグ `x`, `y` を付ける（同じテストの前にあとの `# bats test_tags=` の行があると、そちらが置き換える。そのあとのテストには付かない）/);
     assert.match(text(8, 'ja'), /^⚠ `file_tags` の書き方が正しくない/);
     // The comment token says it too (and the line's summary, when the comment is all of it); other comments are plain.
     assert.strictEqual(bats(doc, 1).summary, 'bats directive: bash ignores the comment, bats reads it and tags every later test');
