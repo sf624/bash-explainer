@@ -1,5 +1,6 @@
 [
  "\n\n\ncat <<EOF\nx\nEOF",
+ " #!/bin/bash",
  "!",
  "! ! ! ! !",
  "! ! a -o b",
@@ -65,7 +66,6 @@
  "#!/bin/sh\r\n# a\r\necho \"PV \" x\r\n",
  "#!/bin/sh -e -u",
  "#!/bin/zsh\n",
- "#!/usr/bin/env",
  "#!/usr/bin/env -S\n",
  "#!/usr/bin/env -S bash --posix\nx=1 :",
  "#!/usr/bin/env -S bash -e -u",
@@ -666,6 +666,9 @@
  "dockerfile",
  "echo",
  "echo\n",
+ "echo\n#!/bin/bash",
+ "echo\n#!/bin/sh",
+ "echo\n﻿#!/bin/bash",
  "echo ",
  "echo \"$(a > f && b | c)\" <(d 2>&1) `e | f`",
  "echo \"$x\"\nx=1",
@@ -1434,5 +1437,7 @@
  "{echo,hi}",
  "{ls,-l}",
  "{oops",
- "~"
+ "~",
+ "﻿#!/bin/bash\necho hi",
+ "﻿#!bash"
 ]

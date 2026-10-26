@@ -1,5 +1,5 @@
 import { BUILTIN_SECTIONS } from './manual';
-import { field, type SyntaxNode } from './syntax/tree';
+import { field, isShebang, type SyntaxNode } from './syntax/tree';
 
 // The sections of the Bash manual (src/manual.ts) a token is about, from its node: a construct, an operator, a
 // quote, an expansion or a redirection. The command tokens take theirs from the name resolution (the analyzer's
@@ -65,7 +65,8 @@ export function nodeSections(n: SyntaxNode): readonly string[] | undefined {
   if (n.type === 'simple_expansion') return parameterSections(n.text);
   // (A command with no name: its tokens have the sections of its assignments; around them, redirections have none.)
   if (n.type === 'command' && !field(n, 'name')) return undefined;
-  if (n.type === 'comment') return n.startPosition.row === 0 && n.text.startsWith('#!') ? ['3.8'] : undefined;
+  // (The shebang: what the kernel does with it, and to bash a comment.)
+  if (n.type === 'comment') return isShebang(n) ? ['3.8', '3.1.3', 'execve(2)'] : undefined;
   return NODES[n.type];
 }
 

@@ -80,7 +80,7 @@ By role (a role holds the kinds the panel colours alike): command 15.2% of the s
 
 ## themeLike
 
-The panel's distinctions are its groups, the roles its own palette colours alike: command (with builtin), option, text (argument, string, number), keyword (with operator), redirect (with pattern), variable (with assignment), comment. Text the theme leaves in the foreground counts as text.
+The panel's distinctions are its groups, the roles its own palette colours alike: command (with builtin and the shebang), option, text (argument, string, number), keyword (with operator), redirect (with pattern), variable (with assignment), comment. Text the theme leaves in the foreground counts as text. The shebang comes last, after the comment: a theme that draws it as a comment (most do) gives it the command's colour, and one with a colour of its own for it (a rule for `meta.shebang` or the token `shebang`) keeps that colour.
 
 1. The foreground is placed first, as text.
 2. In order of frequency, each role takes the theme's colour, made readable if needed (its lightness moved in OKLCH, hue and chroma kept, until it reaches 4.5:1, or 7:1, on every surface). It keeps it unless that colour is closer than ΔE<sub>OK</sub> 8 (×100) to a role of another group placed before it; for a frequent role the bar is 5, so that a theme's command colour stays even when it is near the foreground (Dark Modern's #DCDCAA against #CCCCCC is 7.5).

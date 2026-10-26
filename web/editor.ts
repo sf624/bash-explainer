@@ -116,7 +116,7 @@ const highlightStyle = HighlightStyle.define([
 ]);
 
 const shellColours = {
-  ...Object.fromEntries(HIGHLIGHT_KINDS.map((k) => [`.cm-bx-${k}`, { color: kindColour(k), ...(k === 'comment' ? { fontStyle: 'italic' } : {}) }])),
+  ...Object.fromEntries(HIGHLIGHT_KINDS.map((k) => [`.cm-bx-${k}`, { color: kindColour(k), ...(k === 'comment' || k === 'shebang' ? { fontStyle: 'italic' } : {}) }])),
   // A readonly variable in bold, an exported one underlined (dotted): the palette keeps the variable's colour.
   '.cm-bx-readonly': { fontWeight: 'bold' },
   '.cm-bx-exported': { textDecoration: 'underline dotted' },

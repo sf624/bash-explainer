@@ -91,6 +91,7 @@ const CLASSIC_OF: Record<Role, [string, string]> = {
   command: ['command', 'charts.blue'], builtin: ['command', 'charts.blue'], option: ['option', 'charts.orange'], argument: ['argument', 'charts.green'],
   string: ['argument', 'charts.green'], number: ['argument', 'charts.green'], keyword: ['keyword', 'charts.purple'], operator: ['keyword', 'charts.purple'],
   redirect: ['redirect', 'charts.yellow'], pattern: ['redirect', 'charts.yellow'], variable: ['variable', 'charts.red'], assignment: ['variable', 'charts.red'], comment: ['comment', 'descriptionForeground'],
+  shebang: ['command', 'charts.blue'],
 };
 
 /** What the webview would report in a theme (as far as the theme's file says; VS Code's defaults for the rest). */

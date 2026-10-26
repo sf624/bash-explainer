@@ -12,12 +12,13 @@ import type { Extracted } from './hosts';
 import { scriptTree } from './hosts/scripts';
 import { type HighlightModifier, semanticFacts } from './semanticFacts';
 import { shellState } from './semantics/state';
-import { field, type SyntaxNode, type SyntaxTree } from './syntax/tree';
+import { field, isShebang, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
 /** What a span of the script is. A small, stable set: the web page has a class for each. */
 export type HighlightKind =
   | 'comment'
+  | 'shebang' // the first line `#!…`: a comment to bash, which the kernel reads when the file is run as a program
   | 'keyword' // if, then, for, case, function, time, !, {, }, [[, ]], ((, ))
   | 'builtin' // a command bash runs itself (cd, echo, local, [, …)
   | 'command' // the name of a program (any other command)
@@ -49,7 +50,7 @@ export interface HighlightSpan {
 
 /** The kinds in a fixed order: index 0 is "nothing". */
 const KINDS: readonly (HighlightKind | null)[] = [null, 'comment', 'keyword', 'builtin', 'command', 'function', 'alias', 'functionName', 'option', 'argument',
-  'string', 'heredoc', 'heredocDelimiter', 'variable', 'assignment', 'substitution', 'number', 'operator', 'redirect', 'glob', 'error'];
+  'string', 'heredoc', 'heredocDelimiter', 'variable', 'assignment', 'substitution', 'number', 'operator', 'redirect', 'glob', 'error', 'shebang'];
 const MODIFIERS: readonly HighlightModifier[] = ['readonly', 'exported'];
 /** Every kind. */
 export const HIGHLIGHT_KINDS = KINDS.slice(1) as HighlightKind[];
@@ -151,7 +152,7 @@ function childArith(n: SyntaxNode, c: SyntaxNode, arith: boolean): boolean {
 /** The kind of a whole named node (its children may paint over it), null to clear it, undefined to leave it. */
 function nodeKind(n: SyntaxNode, arith: boolean): HighlightKind | null | undefined {
   switch (n.type) {
-    case 'comment': return 'comment';
+    case 'comment': return isShebang(n) ? 'shebang' : 'comment';
     case 'error': return 'error';
     case 'string': case 'raw_string': case 'ansi_c_string': case 'translated_string': return 'string';
     case 'heredoc_body': return 'heredoc';

@@ -3,13 +3,15 @@
 import * as assert from 'assert';
 import { fact, factOf, MESSAGES, noteLevel, notePrefix, PORTABILITY, severityOf, splitNote, type FactId } from '../src/messages';
 import { SECTIONS } from '../src/manual';
+import { reference } from '../src/references';
 import { explain } from './support/explain';
 
 describe('the message catalog', () => {
-  it('cites only sections of the manual, and at least one', () => {
+  it('cites only known references (sections of the manual, manual pages), and at least one section', () => {
     for (const [id, e] of Object.entries(MESSAGES)) {
       assert.ok(e.refs.length >= 1 && e.refs.length <= 3, id);
-      for (const r of e.refs) assert.ok(SECTIONS.has(r), `${id}: ${r}`);
+      assert.ok(e.refs.some((r) => SECTIONS.has(r)), id);
+      for (const r of e.refs) assert.ok(reference(r), `${id}: ${r}`);
     }
   });
 

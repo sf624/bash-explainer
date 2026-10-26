@@ -128,7 +128,9 @@ describe('highlight', () => {
   });
 
   it('tells comments from # inside words', () => {
-    assert.deepEqual(spans('#!/bin/bash\necho a#b ${x#y} # c'), ['comment:#!/bin/bash', 'builtin:echo', 'variable:${x#y}', 'comment:# c']);
+    assert.deepEqual(spans('#!/bin/bash\necho a#b ${x#y} # c'), ['shebang:#!/bin/bash', 'builtin:echo', 'variable:${x#y}', 'comment:# c']);
+    // Only the first two bytes make a shebang: not after a blank, nor on a later line.
+    assert.deepEqual(spans(' #!/bin/bash\n#!/bin/sh'), ['comment:#!/bin/bash', 'comment:#!/bin/sh']);
   });
 
   it('colours heredocs: a quoted delimiter keeps the body plain, an unquoted one expands in it', () => {

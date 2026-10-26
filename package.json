@@ -663,6 +663,13 @@
         }
       }
     },
+    "semanticTokenTypes": [
+      {
+        "id": "shebang",
+        "superType": "comment",
+        "description": "%semanticTokenTypes.shebang%"
+      }
+    ],
     "semanticTokenModifiers": [
       {
         "id": "exported",
@@ -679,6 +686,9 @@
         "scopes": {
           "comment": [
             "comment.line.number-sign.shell"
+          ],
+          "shebang": [
+            "comment.line.number-sign.shell meta.shebang.shell"
           ],
           "keyword": [
             "keyword.control.shell"
@@ -730,6 +740,9 @@
           "comment": [
             "comment.line.number-sign.shell"
           ],
+          "shebang": [
+            "comment.line.number-sign.shell meta.shebang.shell"
+          ],
           "keyword": [
             "keyword.control.shell"
           ],
@@ -779,6 +792,9 @@
         "scopes": {
           "comment": [
             "comment.line.number-sign.shell"
+          ],
+          "shebang": [
+            "comment.line.number-sign.shell meta.shebang.shell"
           ],
           "keyword": [
             "keyword.control.shell"
@@ -830,6 +846,9 @@
           "comment": [
             "comment.line.number-sign.shell"
           ],
+          "shebang": [
+            "comment.line.number-sign.shell meta.shebang.shell"
+          ],
           "keyword": [
             "keyword.control.shell"
           ],
@@ -879,6 +898,9 @@
         "scopes": {
           "comment": [
             "comment.line.number-sign.shell"
+          ],
+          "shebang": [
+            "comment.line.number-sign.shell meta.shebang.shell"
           ],
           "keyword": [
             "keyword.control.shell"
@@ -930,6 +952,9 @@
           "comment": [
             "comment.line.number-sign.shell"
           ],
+          "shebang": [
+            "comment.line.number-sign.shell meta.shebang.shell"
+          ],
           "keyword": [
             "keyword.control.shell"
           ],
@@ -979,6 +1004,9 @@
         "scopes": {
           "comment": [
             "comment.line.number-sign.shell"
+          ],
+          "shebang": [
+            "comment.line.number-sign.shell meta.shebang.shell"
           ],
           "keyword": [
             "keyword.control.shell"
@@ -1030,6 +1058,9 @@
           "comment": [
             "comment.line.number-sign.shell"
           ],
+          "shebang": [
+            "comment.line.number-sign.shell meta.shebang.shell"
+          ],
           "keyword": [
             "keyword.control.shell"
           ],
@@ -1079,6 +1110,9 @@
         "scopes": {
           "comment": [
             "comment.line.number-sign.shell"
+          ],
+          "shebang": [
+            "comment.line.number-sign.shell meta.shebang.shell"
           ],
           "keyword": [
             "keyword.control.shell"

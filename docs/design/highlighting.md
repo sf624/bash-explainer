@@ -21,6 +21,20 @@ In a host file, each shell (a workflow step, a recipe line, a GitLab job's scrip
 
 Dead code (`.dead(n)`) is not faded yet: it would be a `DiagnosticTag.Unnecessary` hint, a diagnostic of its own with a message in the catalog, on every surface. It is listed in the roadmap.
 
+### The shebang
+
+The first line `#!…` (only as the file's first two bytes, `isShebang` in src/syntax/tree.ts, as execve(2) reads it) is its own kind, `shebang`: to bash a comment, but the line the kernel reads to start the program it names. So it is drawn apart from comments, as the program it names:
+
+| Surface | How |
+| --- | --- |
+| Panel (Meaning, Reading) | the token kind and the Reading kind `shebang`; `.kind-shebang` takes `--c-shebang`, which defaults to the command's colour (media/panel.css) |
+| `panel.colors` | the role `shebang` (src/ui/themeTokens.ts), in the group of the command (src/ui/themePalette.ts) and last in `ROLE_ORDER`: `theme` takes the editor's colour of the line where it is readable (a comment's in most themes), `themeLike` gives way to the command's when the theme colours it as the comment |
+| VS Code | our token type `shebang` (package.json `semanticTokenTypes`, `superType: comment`), mapped to the grammar's `comment.line.number-sign.shell meta.shebang.shell` |
+| Language Server | `shebang` in the legend; sent as `comment` to a client whose `tokenTypes` does not list it (`SUPER_TYPES`, src/semanticTokens.ts) |
+| Web page | the class `cm-bx-shebang`: the command's colour, in italics like a comment |
+
+The editor gets no colour of ours by default. A theme with no rule for `shebang` colours it through the super type and the grammar's scope, as a comment, as before. `semanticTokenScopes` can only name scopes, which themes colour as comments. `configurationDefaults` could set a default of `editor.semanticTokenColorCustomizations` (VS Code 1.143 takes defaults for any setting), but only a fixed colour for every theme, or one per theme by name: not one that fits each theme, and it would change a setting of VS Code's own. So the user or the theme chooses: `"editor.semanticTokenColorCustomizations": { "rules": { "shebang": "#4ec9b0" } }`.
+
 ## Why semantic tokens, not a TextMate injection
 
 - A grammar reads a line at a time with regular expressions. It cannot know where bash ends a here-document whose delimiter is quoted, what a name runs (a function defined above, an alias only with `expand_aliases`, a builtin of bash only), or which words a command takes as options. The tree and the models know, and the explanations already rely on them.

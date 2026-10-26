@@ -3,7 +3,7 @@ import { Example, Kind, LineExplanation, Pos, Span, Token, ValueInfo } from '../
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { codeSpan, joinParts, LabelPart, labelParts } from '../label';
-import { manualLabel, SECTIONS } from '../manual';
+import { referencesWith } from '../references';
 import { noteLevel, type NoteLevel, splitNote } from '../messages';
 import { errorColour, Role, roleColour, ThemeKind } from './palette';
 
@@ -61,14 +61,14 @@ export const ui = {
           clause: '節', coprocess: 'コプロセス', function: '関数', commandName: 'コマンド名', aliasWord: 'エイリアス（読むときに置き換わる）', expandedName: '最初の単語', option: 'オプション', argument: '引数',
           assignmentArgument: '代入の引数', word: '単語', name: '名前', assignment: '代入', redirect: 'リダイレクト', heredoc: 'ヒアドキュメント', quote: 'クォート',
           expansion: '展開', substitution: '置換', arithmetic: '算術式展開', brace: 'ブレース展開', operator: '演算子', keyword: 'キーワード',
-          comment: 'コメント', part: '部分',
+          comment: 'コメント', shebang: 'シバン（bash にとってはコメント）', part: '部分',
         },
         commandKinds: { argument: 'オペランド' },
         resolves: { alias: 'エイリアス', keyword: '予約語', function: '関数', builtin: 'ビルトイン', file: '外部コマンド', none: '実行されない' },
         tokenKinds: {
           command: '実行', subcommand: 'サブコマンド', builtin: 'ビルトイン', function: '関数', alias: 'エイリアス', keyword: 'キーワード', option: 'オプション', argument: '引数',
           operator: '演算子', redirect: 'リダイレクト', variable: '変数', expansion: '展開', substitution: '置換', string: 'リテラル',
-          number: '数値', comment: 'コメント', assignment: '代入', test: '条件', pattern: 'パターン', block: 'ブロック', error: 'エラー',
+          number: '数値', comment: 'コメント', shebang: 'シバン', assignment: '代入', test: '条件', pattern: 'パターン', block: 'ブロック', error: 'エラー',
         },
         about: {
           line: 'bash はこの行をコマンドに分け、単純コマンドをさらに代入・単語・リダイレクトに分ける。',
@@ -143,14 +143,14 @@ export const ui = {
           clause: 'clause', coprocess: 'coprocess', function: 'function', commandName: 'command name', aliasWord: 'alias, replaced when the line is read', expandedName: 'first word', option: 'option', argument: 'argument',
           assignmentArgument: 'assignment argument', word: 'word', name: 'name', assignment: 'assignment', redirect: 'redirection', heredoc: 'here-document', quote: 'quotes',
           expansion: 'expansion', substitution: 'substitution', arithmetic: 'arithmetic', brace: 'brace expansion', operator: 'operator', keyword: 'keyword',
-          comment: 'comment', part: 'part',
+          comment: 'comment', shebang: 'shebang, a comment to bash', part: 'part',
         },
         commandKinds: { argument: 'operand' },
         resolves: { alias: 'alias', keyword: 'reserved word', function: 'function', builtin: 'builtin', file: 'program', none: 'nothing runs' },
         tokenKinds: {
           command: 'runs', subcommand: 'subcommand', builtin: 'builtin', function: 'function', alias: 'alias', keyword: 'keyword', option: 'option', argument: 'argument',
           operator: 'operator', redirect: 'redirection', variable: 'variable', expansion: 'expansion', substitution: 'substitution', string: 'literal',
-          number: 'number', comment: 'comment', assignment: 'assignment', test: 'condition', pattern: 'pattern', block: 'block', error: 'error',
+          number: 'number', comment: 'comment', shebang: 'shebang', assignment: 'assignment', test: 'condition', pattern: 'pattern', block: 'block', error: 'error',
         },
         about: {
           line: 'bash splits the line into commands, then each simple command into assignments, words and redirections.',
@@ -190,15 +190,14 @@ export function notesByLevel(notes: readonly string[]): string[] {
   return notes.map((n, i) => ({ n, i, r: RANK[noteLevel(n)] })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.n);
 }
 
-/** "Bash manual [3.2.5.2](…), [6.4](…)": the sections as Markdown links, after the words "Bash manual". */
+/** "Bash manual [3.2.5.2](…), [6.4](…); [execve(2)](…)": the references as Markdown links (src/references.ts). */
 export function refsMarkdown(lang: Lang, refs: readonly string[]): string {
-  const [first, ...rest] = refs.map((id) => `[${id}](${SECTIONS.get(id)!.url} "${SECTIONS.get(id)!.title}")`);
-  return [manualLabel(lang, [first]), ...rest].join(', ');
+  return referencesWith(lang, refs, (r, shown) => `[${shown}](${r.url} "${r.title}")`);
 }
 
-/** " (Bash manual 3.7.2)", after a row that cites sections. */
+/** " (Bash manual 3.7.2; execve(2))", after a row that cites references. */
 export function refsText(lang: Lang, refs: readonly string[]): string {
-  return ` (${manualLabel(lang, refs)})`;
+  return ` (${referencesWith(lang, refs, (_, shown) => shown)})`;
 }
 
 /**
@@ -266,6 +265,8 @@ const KIND_ROLE: Record<Kind, Role | 'comment' | 'error'> = {
   redirect: 'redirect', pattern: 'redirect',
   variable: 'variable', expansion: 'variable', substitution: 'variable', assignment: 'variable',
   comment: 'comment',
+  // (The shebang names the program that runs the file: drawn as a command name, not as a comment.)
+  shebang: 'command',
   error: 'error',
 };
 

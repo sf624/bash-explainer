@@ -8,6 +8,8 @@ import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
 import { BUILTIN_SECTIONS, manualLabel, manualUrl, MANUAL_VERSION, SECTIONS } from '../src/manual';
 import { MESSAGES } from '../src/messages';
+import { reference, referenceLabel, referencesWith, REFERENCE_URLS } from '../src/references';
+import { refsMarkdown, refsText } from '../src/ui/render';
 import { CONSTRUCTS, NODES, OPERATORS } from '../src/refs';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import type { BashParser } from '../src/syntax/tree';
@@ -27,6 +29,29 @@ function refsOf(src: string, label: string, line = 0): (readonly string[] | unde
   const refs = found.map((t) => t.refs).filter((r) => r);
   return refs.length ? refs : [undefined];
 }
+
+describe('the references', () => {
+  const EXECVE = 'https://man7.org/linux/man-pages/man2/execve.2.html';
+
+  it('names a section of the manual and a manual page, and nothing else', () => {
+    assert.deepStrictEqual(reference('3.8'), { id: '3.8', kind: 'bash', text: '§3.8', title: 'Shell Scripts', url: manualUrl('3.8') });
+    assert.deepStrictEqual(reference('execve(2)'), { id: 'execve(2)', kind: 'man', text: 'execve(2)', title: 'Interpreter scripts', url: EXECVE });
+    assert.strictEqual(reference('rm(1)'), undefined);
+    assert.strictEqual(referenceLabel('en', reference('execve(2)')!), 'Linux manual page execve(2)');
+    assert.strictEqual(referenceLabel('ja', reference('3.8')!), 'Bash マニュアル 3.8');
+    assert.ok(REFERENCE_URLS.has(EXECVE) && REFERENCE_URLS.has(manualUrl('3.8')));
+    // (The pages of the sections, some shared by several, and the one manual page.)
+    assert.strictEqual(REFERENCE_URLS.size, new Set([...SECTIONS.values()].map((s) => s.url)).size + 1);
+  });
+
+  it('writes the sections after "Bash manual", then the manual pages', () => {
+    const ids = ['3.8', '3.1.3', 'execve(2)'];
+    assert.strictEqual(refsText('en', ids), ' (Bash manual 3.8, 3.1.3; execve(2))');
+    assert.strictEqual(refsText('ja', ['execve(2)']), ' (execve(2))');
+    assert.strictEqual(refsMarkdown('en', ids), `Bash manual [3.8](${manualUrl('3.8')} "Shell Scripts"), [3.1.3](${manualUrl('3.1.3')} "Comments"); [execve(2)](${EXECVE} "Interpreter scripts")`);
+    assert.strictEqual(referencesWith('en', ['3.8'], (r) => r.url), `Bash manual ${manualUrl('3.8')}`);
+  });
+});
 
 describe('the manual table', () => {
   it('has a page on gnu.org for every section, numbered as in bash 5.2', () => {
@@ -49,7 +74,7 @@ describe('the manual table', () => {
       ...Object.values(CONSTRUCTS), ...Object.values(NODES), ...Object.values(OPERATORS),
       ...Object.values(BUILTIN_SECTIONS).map((s) => [s]), ...Object.values(MESSAGES).map((m) => m.refs), ['4.4', '3.7.1', '3.7.2', '3.7.4', '6.6', '3.3'],
     ];
-    for (const refs of cited) for (const id of refs) assert.ok(SECTIONS.has(id), id);
+    for (const refs of cited) for (const id of refs) assert.ok(reference(id), id);
   });
 
   it('gives every token of the sample a known section', () => {
@@ -60,7 +85,7 @@ describe('the manual table', () => {
     src.split('\n').forEach((_, line) => {
       for (const t of tokens(analyzer.explainLine(tree, line).items)) {
         for (const id of t.refs ?? []) {
-          assert.ok(SECTIONS.has(id), `${t.label}: ${id}`);
+          assert.ok(reference(id), `${t.label}: ${id}`);
           seen.add(id);
         }
       }
@@ -93,7 +118,7 @@ describe('the sections of tokens', () => {
     assert.deepStrictEqual(refsOf("echo 'a' \"$1\" $'\\n' $? ${x}", '$?'), [['3.4.2']]);
     assert.deepStrictEqual(refsOf("echo 'a' \"$1\" $'\\n' $? ${x}", '${x}'), [['3.5.3']]);
     assert.deepStrictEqual(refsOf('echo $(date) $((1+2)) <(ls)', '$(date)'), [['3.5.4']]);
-    assert.deepStrictEqual(refsOf('#!/bin/bash', '#!/bin/bash'), [['3.8']]);
+    assert.deepStrictEqual(refsOf('#!/bin/bash', '#!/bin/bash'), [['3.8', '3.1.3', 'execve(2)']]);
     assert.deepStrictEqual(refsOf('echo $# $10', '$#'), [['3.4.2']]);
     // (bash 5.2's manual has `$_` with the Bash variables; `$_x` is a variable like any other.)
     assert.deepStrictEqual(refsOf('echo $_ $_x', '$_'), [['5.2']]);

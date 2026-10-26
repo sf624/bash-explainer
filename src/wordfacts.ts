@@ -8,7 +8,7 @@ import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
 import { partMeaning } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { field, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
+import { field, isShebang, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a
@@ -97,6 +97,8 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         const a = args(n);
         // `FOO=1 echo $FOO`: the shell expands `$FOO` before the command sees the new value (whatever it runs: `./x`).
         const written = field(n, 'name')?.text;
+        // A shebang after a byte order mark: bash runs it as a command (the kernel reads `#!` only as the first two bytes).
+        if (n.startIndex === 0 && written?.startsWith('\uFEFF#!')) add(fact(lang, 'shebang-bom', { word: written.slice(1), slash: written.includes('/') }), field(n, 'name')!);
         const prefix = prefixAssignments(n).map((c) => field(c, 'name')?.text).filter((v): v is string => !!v);
         for (const v of prefix) {
           const use = a.find((w) => readsVariable(w, v));
@@ -141,7 +143,7 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
       }
       case 'comment': {
         // A shebang whose options bash refuses: the script stops before its first line when run directly.
-        const refused = n.startPosition.row === 0 ? shebangRefused(n.text) : undefined;
+        const refused = isShebang(n) ? shebangRefused(n.text) : undefined;
         if (refused) add(fact(lang, 'shebang-refused', refused));
         break;
       }

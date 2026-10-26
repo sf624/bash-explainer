@@ -759,6 +759,11 @@ describe('the reading tree of a line', () => {
     ]);
     assert.strictEqual(r.children[0].label.length, 60);
     assert.ok(r.children[0].label.endsWith('…'));
+    // The shebang: a comment to bash, of a kind of its own, with its token's text and references.
+    const shebang = explain('#!/bin/sh').reading!.children[0];
+    assert.deepStrictEqual([shebang.kind, shebang.label, shebang.refs], ['shebang', '#!/bin/sh', ['3.8', '3.1.3', 'execve(2)']]);
+    assert.match(shebang.text!, /^Shebang: when the file is run as a program/);
+    assert.strictEqual(explain('echo\n#!/bin/sh', 1).reading!.children[0].kind, 'comment');
   });
 
   it('is not made unless asked for, nor for a line with nothing to explain', () => {

@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { HighlightKind } from '../src/highlight';
-import { decodeTokens, encodeTokens, LEGEND, semanticTokens, TOKEN_MODIFIERS, TOKEN_OF, TOKEN_TYPES } from '../src/semanticTokens';
+import { decodeTokens, encodeTokens, LEGEND, semanticTokens, SUPER_TYPES, TOKEN_MODIFIERS, TOKEN_OF, TOKEN_TYPES } from '../src/semanticTokens';
 import { TOKEN_SETTINGS } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
@@ -15,9 +15,12 @@ describe('semantic tokens', () => {
       'event', 'function', 'method', 'macro', 'keyword', 'modifier', 'comment', 'string', 'number', 'regexp', 'operator', 'decorator', 'label'];
     const standardModifiers = ['declaration', 'definition', 'readonly', 'static', 'deprecated', 'abstract', 'async', 'modification', 'documentation', 'defaultLibrary'];
     assert.deepEqual(LEGEND, { tokenTypes: [...TOKEN_TYPES], tokenModifiers: [...TOKEN_MODIFIERS] });
-    for (const t of LEGEND.tokenTypes) assert.ok(standardTypes.includes(t), t);
-    // Our own modifiers are declared in package.json, with a description.
+    // Our own types and modifiers are declared in package.json, with a description, and each type with its standard super type.
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    const ownTypes: { id: string; superType: string; description: string }[] = pkg.contributes.semanticTokenTypes;
+    assert.deepEqual(Object.fromEntries(ownTypes.map((t) => [t.id, t.superType])), SUPER_TYPES);
+    for (const t of ownTypes) assert.ok(standardTypes.includes(t.superType) && t.description, t.id);
+    for (const t of LEGEND.tokenTypes) assert.ok(standardTypes.includes(t) || t in SUPER_TYPES, t);
     const own: { id: string; description: string }[] = pkg.contributes.semanticTokenModifiers;
     assert.deepEqual(own.map((m) => m.id), ['exported', 'unquoted']);
     for (const m of LEGEND.tokenModifiers) assert.ok(standardModifiers.includes(m) || own.some((o) => o.id === m), m);
@@ -38,6 +41,11 @@ describe('semantic tokens', () => {
       1, 1, 1, TOKEN_TYPES.indexOf('regexp'), 0,
     ]);
     assert.deepEqual(encodeTokens([]), []);
+    // The shebang is a type of our own: a client that does not list it gets a comment, the standard types stay.
+    const first = [span(0, 0, 11, 'shebang'), span(1, 0, 4, 'builtin')];
+    assert.deepEqual(encodeTokens(first), [0, 0, 11, TOKEN_TYPES.indexOf('shebang'), 0, 1, 0, 4, TOKEN_TYPES.indexOf('function'), 0b100]);
+    assert.deepEqual(encodeTokens(first, ['comment', 'function']), [0, 0, 11, TOKEN_TYPES.indexOf('comment'), 0, 1, 0, 4, TOKEN_TYPES.indexOf('function'), 0b100]);
+    assert.deepEqual(encodeTokens(first, ['shebang']), encodeTokens(first));
   });
 
   it('gives the tokens of a document, or of some of its lines', () => {
