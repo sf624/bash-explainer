@@ -15,6 +15,7 @@ import { shellState } from '../src/semantics/state';
 import { expansionValue } from '../src/semantics/values';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
+import { bashPrintf, ShellWordsUnsupported } from '../src/examples/shellwords';
 import { runBash } from './support/bash';
 import { allTokens, explain } from './support/explain';
 
@@ -227,5 +228,71 @@ describe('bash 5.3 command substitutions', () => {
     // Another shell: the dialect check of that shell.
     assert.match(dialectNotes(tree, 0, 'sh', 'en')[0], /is not POSIX sh \(it fails in dash and busybox ash\)/);
     assert.deepStrictEqual(dialectNotes(parser.parse('x=${ echo a; }'), 0, 'ksh', 'en'), []);
+  });
+});
+
+/**
+ * printf of bash 5.3 and bash 5.2 (docs/design/bash-versions.md, 3.2), in a UTF-8 locale: what each prints (`null`:
+ * printf fails with "invalid format character", status 1), what the explanation says in each mode, and in which the
+ * example shows nothing (`unshown`: the output depends on the locale or the release, or bash fails).
+ */
+const PRINTF: { args: string[]; out: Record<BashVersion, string | null>; says: Record<BashVersion, RegExp>; unshown?: BashVersion[] }[] = [
+  // `%#q` (and `%#Q`): bash 5.3 quotes in single quotes; bash 5.2 ignores the `#`.
+  { args: ['%#q|%q\\n', 'a b', 'a b'], out: { '5.2': 'a\\ b|a\\ b\n', '5.3': "'a b'|a\\ b\n" }, says: { '5.2': /the `#` changes nothing in bash 5\.2; bash 5\.3 quotes in single quotes/, '5.3': /in single quotes: `'a b'`/ } },
+  { args: ['%#Q|%#q|%#q|%#q\\n', "it's", "'", '', 'x=~a'], out: { '5.2': "it\\'s|\\'|''|x=\\~a\n", '5.3': "'it'\\''s'|\\'|''|'x=~a'\n" }, says: { '5.2': /changes nothing in bash 5\.2/, '5.3': /in single quotes/ } },
+  // The precision: of the quoted text with `%q`, of the value with `%Q`.
+  { args: ['%#.3q|%#.2Q|%.2Q|\\n', 'abcdef', 'abc', 'a b c'], out: { '5.2': 'abc|ab|a\\ |\n', '5.3': "'ab|'ab'|a\\ |\n" }, says: { '5.2': /at most 3 bytes\)[^]*at most 2 bytes of the value, before it is quoted/, '5.3': /in single quotes: .*, at most 3 bytes\)/ } },
+  // `%ls`: characters in bash 5.3, bytes in bash 5.2 (the `l` is ignored).
+  { args: ['%ls|%5ls|%.3ls|%5s|\\n', 'héllo', 'é', 'héllo', 'é'], out: { '5.2': 'héllo|   é|hé|   é|\n', '5.3': 'héllo|    é|hél|   é|\n' }, says: { '5.2': /the `l` changes nothing in bash 5\.2; bash 5\.3 counts characters, not bytes/, '5.3': /the width and precision count characters, not bytes/ }, unshown: ['5.2', '5.3'] },
+  { args: ['%lc|%ls|%5ls|\\n', 'ab', 'cd', 'ef'], out: { '5.2': 'a|cd|   ef|\n', '5.3': 'a|cd|   ef|\n' }, says: { '5.2': /changes nothing in bash 5\.2/, '5.3': /the first character, not its first byte/ } },
+  // `%S` and `%C` are `%ls` and `%lc` in bash 5.3; bash 5.2 has neither.
+  { args: ['%S|%C|%-3C|\\n', 'héllo', 'é', 'x'], out: { '5.2': null, '5.3': 'héllo|é|x  |\n' }, says: { '5.2': /bash 5\.2 has no conversion `S` \(printf reports "invalid format character" and stops, status 1\); bash 5\.3 reads it as `%ls`/, '5.3': /the same as `%ls`: in a multibyte locale/ }, unshown: ['5.3'] },
+  { args: ['%S|%C|\\n', 'ab', 'c'], out: { '5.2': null, '5.3': 'ab|c|\n' }, says: { '5.2': /bash 5\.2 has no conversion `C`/, '5.3': /the same as `%lc`/ } },
+  // `%Q` with a precision from an argument: bash 5.2 reads it and ignores it.
+  { args: ['%.*Q|%*.*Q|\\n', '1', 'a b', '6', '1', 'a b'], out: { '5.2': 'a\\ b|  a\\ b|\n', '5.3': 'a|     a|\n' }, says: { '5.2': /a precision from an argument changes nothing in bash 5\.2 \(the argument is still read\)/, '5.3': /at most as many bytes of the value as an argument says, before it is quoted/ } },
+  // `%lc` with a precision: bash 5.3 takes it (0 prints nothing), bash 5.2 ignores it.
+  { args: ['%.0lc|%.1lc|%3.0lc|%.0lc|\\n', 'a', 'b', 'd', ''], out: { '5.2': 'a|b|  d|\0|\n', '5.3': '|b|   ||\n' }, says: { '5.2': /the precision changes nothing here/, '5.3': /at most 0 characters, in a multibyte locale/ } },
+  // The length modifiers of C change nothing else.
+  { args: ['%ld|%hhd|%lu|%zx|%jo|%Lf|%lld\\n', '5', '300', '7', '255', '8', '1.5', '9'], out: { '5.2': '5|300|7|ff|10|1.500000|9\n', '5.3': '5|300|7|ff|10|1.500000|9\n' }, says: { '5.2': /value 1 as an integer \(decimal\) \(the `l` changes nothing\)/, '5.3': /value 2 as an integer \(decimal\) \(the `hh` changes nothing\)/ } },
+];
+
+const quoted = (args: string[]) => args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+const UTF8 = { env: { LC_ALL: 'C.UTF-8' } };
+
+/** What the example of `printf ARGS…` shows as `version` runs it, or undefined when it shows nothing. */
+function shown(args: string[], version: BashVersion): string | undefined {
+  try {
+    return bashPrintf(args[0], args.slice(1), version);
+  } catch (e) {
+    if (e instanceof ShellWordsUnsupported) return undefined;
+    /* c8 ignore next */
+    throw e;
+  }
+}
+
+describe('bash 5.3 printf', () => {
+  it('explains each format as each release reads it, and shows what it prints (also without a bash 5.3)', () => {
+    for (const c of PRINTF) {
+      for (const version of ['5.2', '5.3'] as const) {
+        const script = `printf ${quoted(c.args)}`;
+        assert.match(said(script, version).tokens, c.says[version], `${version}: ${script}`);
+        const expected = c.unshown?.includes(version) ? undefined : c.out[version] ?? undefined;
+        assert.strictEqual(shown(c.args, version), expected, `${version}: ${script}`);
+      }
+    }
+  });
+
+  it('prints in bash 5.3 what we say', function () {
+    needBash53(this);
+    for (const c of PRINTF) assert.strictEqual(runBash(`printf ${quoted(c.args)}`, { program: BASH53, ...UTF8 }).stdout, c.out['5.3'], c.args.join(' '));
+  });
+
+  it('prints in bash 5.2 what we say', function () {
+    if (releaseOf('bash') !== '5.2') this.skip();
+    for (const c of PRINTF) {
+      const r = runBash(`printf ${quoted(c.args)}`, UTF8);
+      if (c.out['5.2'] === null) assert.deepStrictEqual([r.status, /invalid format character/.test(r.stderr)], [1, true], c.args.join(' '));
+      else assert.strictEqual(r.stdout, c.out['5.2'], c.args.join(' '));
+    }
   });
 });

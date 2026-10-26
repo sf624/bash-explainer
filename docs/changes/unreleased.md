@@ -428,6 +428,24 @@ Notes that name a line of the script name the line of the document: where a here
 - In bash 5.3 mode, a `}` right after a simple command (`${ echo a }`) is a warning (`funsubBrace`): bash reads that `}` as an argument of the command, and reports a syntax error. A `return` in `${ …; }` ends the substitution, and `local` in it is no pitfall.
 - Before, both were explained as `$( )`.
 
+### printf formats
+
+Each was checked with bash 5.2 and bash 5.3 (test/bash53.test.ts) and, for `env printf`, with coreutils.
+
+| Written | Shown now | Shown before |
+| --- | --- | --- |
+| `printf '%ld\n' 5`, `%hhd`, `%zx`, `%Lf` | "value 1 as an integer (decimal) (the `l` changes nothing)" | "unknown conversion `l`" |
+| `printf '%#q\n' 'a b'` | bash 5.3: "in single quotes: `'a b'`"; bash 5.2: "the `#` changes nothing in bash 5.2" | "with a 0x/0 prefix" |
+| `%#x`, `%#o`, `%#f`, `%#g` | "with a 0x prefix (none for 0)", "with a leading 0", "always with a decimal point" (and "trailing zeros kept" for `%#g`) | "with a 0x/0 prefix" for each |
+| `printf '%ls\n' "$s"` | bash 5.3: "in a multibyte locale such as UTF-8, the width and precision count characters, not bytes" (`%lc`: the first character, not its first byte); bash 5.2: "the `l` changes nothing in bash 5.2" | "unknown conversion `l`" |
+| `printf '%S\n' "$s"`, `%C` | bash 5.3: "the same as `%ls`"; bash 5.2: an error, as bash 5.2 says "invalid format character" and stops with status 1 | "unknown conversion `S`" in both |
+| `printf '%.2Q\n' 'a b c'` | "at most 2 bytes of the value, before it is quoted" (bash 5.2 has `%Q` too) | "unknown conversion `Q`" |
+| `printf '%.3s'` | "at most 3 bytes" (bash counts bytes; awk's printf counts characters, as before) | "at most 3 characters" |
+| `env printf '%#q'`, `%Q`, `%S`, `%(%F)T`, `%5q`, `%-b`, `%#d`, `%05s` | an error: coreutils printf rejects them ("invalid conversion specification") | explained as bash's |
+| `%.*f`, `%.*s`, `%.*Q` | "taken from an argument" (bash 5.2 reads the argument of `%.*Q` and ignores it; `%.Q` prints nothing) | "* digits", "at most * characters" |
+
+The examples follow too: `printf '%#q' 'a b'` shows `'a b'` in bash 5.3 and `a\ b` in bash 5.2; `printf '%#.0f' 3` shows `3.` (also in awk); widths and precisions count bytes (`printf '%5s|' é` pads with three spaces); `%q` puts a backslash before `,` and `^` but not before a `#` or `~` inside a word (`a#b`, `a~b`), as bash does. An output that depends on the locale (`%ls` or `%c` of a character that is not ASCII, `%q` of one) or on a release not known (the pipeline examples) is not shown.
+
 ### The options of a shebang
 
 A shebang that starts bash with options turns them on, as the kernel passes them: `#!/bin/bash -eu` is `set -e` and `set -u` from the first line, and so is `#!/usr/bin/env -S bash -e -u`. Before, only `--posix` was read from a shebang. `bash script.sh` ignores the options of the shebang: the state is read as a script run directly. The options of a shebang that starts another shell (`#!/bin/sh -e`) are not read.

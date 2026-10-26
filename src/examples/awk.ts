@@ -546,7 +546,7 @@ export function sprintf(fmt: string, args: Val[]): string {
     if (ai >= args.length) throw new Unsupported('not enough arguments');
     return args[ai++];
   };
-  return fmt.replace(/%([-+ #0]*)(\*|\d+)?(?:\.(\*|\d*))?([diouxXcseEfFgG%])/g, (whole, flags: string, w: string | undefined, p: string | undefined, conv: string) => {
+  return fmt.replace(/%([-+ #0]*)(\*|\d+)?(?:\.(\*|\d*))?([diouxXcseEfFgG%])/g, (_whole, flags: string, w: string | undefined, p: string | undefined, conv: string) => {
     if (conv === '%') return '%';
     const width = w === '*' ? toNum(nextArg()) : w ? Number(w) : 0;
     const prec = p === '*' ? toNum(nextArg()) : p !== undefined ? Number(p || 0) : undefined;
@@ -588,7 +588,6 @@ export function sprintf(fmt: string, args: Val[]): string {
       else if (flags.includes('0') && /[diouxXeEfFgG]/.test(conv) && !(prec !== undefined && /[diouxX]/.test(conv))) out = sign + body.padStart(width - sign.length, '0');
       else out = out.padStart(width);
     }
-    void whole;
     return out;
   });
 }
@@ -644,7 +643,8 @@ function formatFloat(n: number, conv: string, prec: number, alt: boolean): strin
       if (!alt && s.includes('.')) s = s.replace(/\.?0+$/, '');
     }
   }
-  return upper ? s.toUpperCase() : s;
+  // (`#`: always a decimal point: `%#.0f` of 3 is `3.`, `%#.0e` is `3.e+00`.)
+  return (alt && !s.includes('.') ? s.replace(/^(\d+)/, '$1.') : s)[upper ? 'toUpperCase' : 'toString']();
 }
 
 // ---------------------------------------------------------------- interpreter

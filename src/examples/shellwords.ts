@@ -1,4 +1,5 @@
 /** Brace expansion, glob matching examples and printf, as bash does them. */
+import { coreutilsRejects, type PrintfReader } from '../embedded/format';
 import { sprintf } from './awk';
 import { bracketEnd, bracketRegex } from '../bracket';
 import { Unsupported as RunnerUnsupported } from './unsupported';
@@ -391,11 +392,37 @@ function unescape(s: string): [string, boolean] {
   return [out, false];
 }
 
-/** printf %q: quote so the shell reads the word back unchanged. */
-function shellQuote(s: string): string {
+/** The characters `printf %q` puts a backslash before, wherever they are. */
+const QUOTED = /[ !"$&'()*,;<>?[\\\]^`{|}]/g;
+
+/**
+ * printf %q: quote so the shell reads the word back unchanged, with backslashes; with `single` (bash 5.3's `%#q`), in
+ * single quotes. `#` is quoted at the start of the word, `~` there and after `:` or `=`. A character that is not ASCII
+ * is quoted by the locale, and a control character with `$'…'`; neither is shown.
+ */
+function shellQuote(s: string, single = false): string {
   if (s === '') return "''";
   if (/[\x00-\x1f\x7f]/.test(s)) throw new Unsupported('%q with control characters');
-  return s.replace(/[^A-Za-z0-9_\-.,:/@%+=^]/g, '\\$&');
+  if (/[^\x00-\x7f]/.test(s)) throw new Unsupported('%q of a character that is not ASCII');
+  if (single) return s === "'" ? "\\'" : `'${s.replace(/'/g, "'\\''")}'`;
+  return s.replace(QUOTED, '\\$&').replace(/^#/, '\\#').replace(/(^|[:=])~/g, '$1\\~');
+}
+
+const encoder = new TextEncoder();
+const bytes = (s: string) => encoder.encode(s).length;
+
+/**
+ * A string in a field of `width` bytes (left-aligned for a negative one or with `-`), cut to `prec` bytes first, as
+ * bash's printf counts them; a cut through a character would print a broken one, which is not shown.
+ */
+function stringField(text: string, flags: string, width: number | undefined, prec: number | undefined): string {
+  if (prec !== undefined && prec >= 0 && prec < bytes(text)) {
+    const cut = encoder.encode(text).slice(0, prec);
+    text = new TextDecoder().decode(cut);
+    if (bytes(text) !== prec) throw new Unsupported('precision cuts a character');
+  }
+  const pad = ' '.repeat(Math.max(0, Math.abs(width ?? 0) - bytes(text)));
+  return flags.includes('-') || (width ?? 0) < 0 ? text + pad : pad + text;
 }
 
 /**
@@ -416,8 +443,12 @@ function numberArg(a: string | undefined, integer = false): number {
   return n;
 }
 
-/** The output of bash's `printf FORMAT ARGS…` (the format is reused while arguments remain). */
-export function bashPrintf(format: string, args: string[]): string {
+/**
+ * The output of bash's `printf FORMAT ARGS…` (the format is reused while arguments remain), for `reader` (the bash
+ * release whose builtin runs, or the coreutils program). What depends on what is not given (the release, the program
+ * or the locale) is not shown: bash 5.3's `%#q`, `%S` and `%C`, and `%ls` or `%lc` of a character that is not ASCII.
+ */
+export function bashPrintf(format: string, args: string[], reader?: PrintfReader): string {
   let out = '';
   let ai = 0;
   for (let round = 0; round < 50; round++) {
@@ -433,25 +464,49 @@ export function bashPrintf(format: string, args: string[]): string {
         continue;
       }
       if (c !== '%') { out += c; i++; continue; }
-      const m = /^%([-+ #0']*)(\*|\d+)?(?:\.(\*|\d*))?([diouxXeEfFgGcsbq%])/.exec(format.slice(i));
+      if (format[i + 1] === '%') { out += '%'; i += 2; continue; }
+      const m = /^%([-+ #0']*)(\*|\d+)?(?:\.(\*|\d*))?([hjlLtz]*)([diouxXeEfFgGcsbqQSC])/.exec(format.slice(i));
       if (!m) throw new Unsupported('format');
       i += m[0].length;
-      const [, flags, w, p, conv] = m;
-      if (conv === '%') { out += '%'; continue; }
-      const width = w === '*' ? numberArg(args[ai++], true) : w;
-      const prec = p === '*' ? numberArg(args[ai++], true) : p;
-      const spec = `%${flags.replace("'", '')}${width ?? ''}${prec !== undefined ? '.' + prec : ''}`;
+      const [, flags, w, p, length, written] = m;
+      // (coreutils quotes in another way, and has no `%Q`, `%S` or `%C`; bash 5.2 has no `%S` or `%C`.)
+      if (reader === 'coreutils' && (/[qQSC]/.test(written) || coreutilsRejects(flags, w, p, length, written))) throw new Unsupported(`coreutils %${written}`);
+      if (/[SC]/.test(written) && reader !== '5.3') throw new Unsupported(`%${written}`);
+      const conv = written === 'S' ? 's' : written === 'C' ? 'c' : written;
+      const wide = length.includes('l') || conv !== written;
+      const width = w === '*' ? numberArg(args[ai++], true) : w === undefined ? undefined : Number(w);
+      const prec = p === '*' ? numberArg(args[ai++], true) : p === undefined ? undefined : Number(p || 0);
+      // (`%Q`: bash 5.2 reads the argument of a `*` precision and ignores it; `%.Q` prints nothing, in both.)
+      if (written === 'Q' && p === '*' && reader !== '5.2' && reader !== '5.3') throw new Unsupported('%.*Q');
+      if (written === 'Q' && p === '' && w !== undefined) throw new Unsupported('%N.Q');
       const arg = args[ai++];
+      if (wide && /[sc]/.test(conv) && /[^\x00-\x7f]/.test(arg ?? '')) throw new Unsupported('a wide string');
       if (conv === 'b') {
         const [text, stop] = unescape(arg ?? '');
-        out += sprintf(`${spec}s`, [text]);
+        out += stringField(text, flags, width, prec);
         if (stop) { stopped = true; break; }
         continue;
       }
-      if (conv === 'q') { out += sprintf(`${spec}s`, [shellQuote(arg ?? '')]); continue; }
-      if (conv === 's') { out += sprintf(`${spec}s`, [arg ?? '']); continue; }
-      // An empty argument prints a NUL byte.
-      if (conv === 'c') { out += sprintf(`${spec}s`, [(arg ?? '').slice(0, 1) || '\0']); continue; }
+      if (conv === 'q' || conv === 'Q') {
+        // bash 5.3's `#` quotes in single quotes; bash 5.2 ignores it.
+        if (flags.includes('#') && reader !== '5.2' && reader !== '5.3' && arg) throw new Unsupported('%#q');
+        const single = flags.includes('#') && reader === '5.3';
+        // `%Q` cuts the value before it quotes it, and prints all of the quoted text.
+        if (conv === 'Q' && p === '') continue;
+        const cut = p === '*' && reader === '5.2' ? undefined : prec;
+        if (conv === 'Q') out += stringField(shellQuote(stringField(arg ?? '', '', undefined, cut), single), flags, width, undefined);
+        else out += stringField(shellQuote(arg ?? '', single), flags, width, prec);
+        continue;
+      }
+      if (conv === 's') { out += stringField(arg ?? '', flags, width, prec); continue; }
+      // An empty argument prints a NUL byte; a character that is not ASCII would print its first byte.
+      if (conv === 'c') {
+        if (/^[^\x00-\x7f]/.test(arg ?? '')) throw new Unsupported('%c of a character that is not ASCII');
+        // (bash 5.3's `%lc` takes the precision: 0 prints nothing.)
+        out += stringField((arg ?? '').slice(0, 1) || '\0', flags, width, wide && reader === '5.3' ? prec : undefined);
+        continue;
+      }
+      const spec = `%${flags.replace("'", '')}${width ?? ''}${prec !== undefined ? '.' + prec : ''}`;
       out += sprintf(`${spec}${conv}`, [numberArg(arg, /[diouxX]/.test(conv))]);
     }
     if (stopped) return out;

@@ -1,3 +1,4 @@
+import type { BashVersion } from '../bashversion';
 import type { Lang } from '../i18n';
 import { controlSuffix } from '../ctlchars';
 import { EmbeddedToken, pick } from './types';
@@ -144,12 +145,20 @@ const CONVERSIONS: Record<string, [string, string]> = {
 };
 
 /**
- * Explain a printf format string: `%[flags][width][.precision]conversion` specifiers, escapes and
+ * Who reads a printf format: the builtin of a bash release, or the coreutils program (`env printf`); awk's printf
+ * when it is left out.
+ */
+export type PrintfReader = BashVersion | 'coreutils';
+
+/**
+ * Explain a printf format string: `%[flags][width][.precision][length]conversion` specifiers, escapes and
  * literal text. `note` describes how the format is reused when there are more arguments.
  */
-export function explainPrintf(src: string, lang: Lang): EmbeddedToken[] {
+export function explainPrintf(src: string, lang: Lang, reader?: PrintfReader): EmbeddedToken[] {
   const s = pick(lang);
   const out: EmbeddedToken[] = [];
+  // (bash and coreutils skip the length modifiers of C, `%ld`, `%hhd`, `%ls`; awk's are not read here.)
+  const re = reader ? /^%([-+ #0']*)(\*|\d+)?(?:\.(\*|\d*))?([hjlLtz]*)(\([^)]*\)T|[a-zA-Z])/ : /^%([-+ #0']*)(\*|\d+)?(?:\.(\*|\d*))?()(\([^)]*\)T|[a-zA-Z])/;
   let text = 0;
   let i = 0;
   let argNo = 0;
@@ -173,14 +182,14 @@ export function explainPrintf(src: string, lang: Lang): EmbeddedToken[] {
       text = i;
       continue;
     }
-    const m = /^%([-+ #0']*)(\*|\d+)?(?:\.(\*|\d*))?(\([^)]*\)T|[a-zA-Z])/.exec(src.slice(i));
+    const m = re.exec(src.slice(i));
     if (!m) {
       out.push({ start: i, end: i + 1, kind: 'error', explanation: s('`%` の後の書式指定が不正', 'Invalid conversion after `%`'), children: [] });
       i++;
       text = i;
       continue;
     }
-    out.push(spec(m, i, ++argNo, s));
+    out.push(spec(m, i, ++argNo, s, reader));
     i += m[0].length;
     text = i;
   }
@@ -188,42 +197,103 @@ export function explainPrintf(src: string, lang: Lang): EmbeddedToken[] {
   return out;
 }
 
-function spec(m: RegExpExecArray, start: number, argNo: number, s: S): EmbeddedToken {
-  const [whole, flags, width, precision, conv] = m;
-  const parts: string[] = [];
-  if (conv.startsWith('(')) {
-    const fmt = conv.slice(1, -2);
-    return { start, end: start + whole.length, kind: 'variable', explanation: s(`\`${whole}\`: ${argNo} 番目の引数（UNIX 時刻）を日時書式 \`${fmt}\` で表示する（-1 は現在時刻）`, `\`${whole}\`: argument ${argNo} (a UNIX time) formatted with \`${fmt}\` (-1 means now)`), children: [] };
+/** What bash 5.3 does with a `%ls` or `%lc` (and `%S`, `%C`): characters, not bytes. */
+function wide(conv: string, s: S): string {
+  return /[sS]/.test(conv)
+    ? s('マルチバイトのロケール（UTF-8 など）では幅と精度をバイトでなく文字で数える', 'in a multibyte locale such as UTF-8, the width and precision count characters, not bytes')
+    : s('マルチバイトのロケール（UTF-8 など）では最初のバイトでなく最初の文字', 'in a multibyte locale such as UTF-8, the first character, not its first byte');
+}
+
+/** What the flag `#` does to a conversion (C's alternate form; bash 5.3's single quotes for `%q`). */
+function altForm(conv: string, reader: PrintfReader | undefined, s: S): string {
+  if (conv === 'x' || conv === 'X') return s(`先頭に 0${conv} を付ける（値が 0 のときは付けない）`, `with a 0${conv} prefix (none for 0)`);
+  if (conv === 'o') return s('先頭に 0 を付ける', 'with a leading 0');
+  if (/[aAeEfF]/.test(conv)) return s('小数点を必ず付ける', 'always with a decimal point');
+  if (/[gG]/.test(conv)) return s('小数点を必ず付け、末尾の 0 も残す', 'always with a decimal point, trailing zeros kept');
+  if (/[qQ]/.test(conv) && reader === '5.3') return s("シングルクォートで囲む: `'a b'`。制御文字があれば `$'…'`", "in single quotes: `'a b'`, or `$'…'` when it has control characters");
+  if (/[qQ]/.test(conv) && reader === '5.2') return s('`#` は bash 5.2 では何も変えない。bash 5.3 ではシングルクォートで囲む', 'the `#` changes nothing in bash 5.2; bash 5.3 quotes in single quotes');
+  return s('`#` はここでは何も変えない', 'the `#` changes nothing here');
+}
+
+/**
+ * Whether coreutils printf rejects a specifier ("invalid conversion specification"; checked: test/format.test.ts):
+ * `%b` and `%q` take nothing before the letter, `#` is only for numbers that are not decimal integers, `'` only for
+ * decimal ones, and `%c` and `%s` take no `0` (nor `%c` a precision).
+ */
+export function coreutilsRejects(flags: string, width: string | undefined, precision: string | undefined, length: string, conv: string): boolean {
+  if (/[bq]/.test(conv)) return !!(flags || width !== undefined || precision !== undefined || length);
+  return (flags.includes('#') && /[diucs]/.test(conv)) || (flags.includes("'") && /[oxXeEaAcs]/.test(conv))
+    || (flags.includes('0') && /[cs]/.test(conv)) || (precision !== undefined && conv === 'c');
+}
+
+/**
+ * What the precision of a specifier does (`*`: taken from an argument). bash's counts bytes, unless bash 5.3 reads a
+ * wide string (`long`); awk's counts characters. `%Q` cuts the value before it is quoted: bash 5.2 ignores a `*` there,
+ * and an empty precision (`%.Q`) prints nothing in both releases. `%c` ignores it, except bash 5.3's `%lc`.
+ */
+function precisionText(precision: string, conv: string, written: string, reader: PrintfReader | undefined, long: boolean, s: S): string {
+  const star = precision === '*';
+  const p = precision === '' ? '0' : precision;
+  if (/[fFeEaA]/.test(conv)) return star ? s('小数点以下の桁数は引数で指定', 'the digits after the decimal point taken from an argument') : s(`小数点以下 ${p} 桁`, `${p} digits after the decimal point`);
+  if (/[gG]/.test(conv)) return star ? s('有効数字の桁数は引数で指定', 'the significant digits taken from an argument') : s(`有効数字 ${p} 桁`, `${p} significant digits`);
+  if (written === 'Q') {
+    if (precision === '') return s('空の精度: 何も出力しない', 'an empty precision: it prints nothing');
+    if (star && reader === '5.2') return s('引数で指定した精度は bash 5.2 では何も変えない（その引数は読む）。bash 5.3 ではクォートする前の値をその長さで切る', 'a precision from an argument changes nothing in bash 5.2 (the argument is still read); bash 5.3 cuts the value to it before quoting');
+    return star ? s('クォートする前の値の最大バイト数は引数で指定', 'at most as many bytes of the value as an argument says, before it is quoted') : s(`クォートする前の値の最大 ${p} バイトまで`, `at most ${p} bytes of the value, before it is quoted`);
   }
-  const what = CONVERSIONS[conv];
-  if (!what) return { start, end: start + whole.length, kind: 'error', explanation: s(`\`${whole}\`: 不明な変換文字 \`${conv}\``, `\`${whole}\`: unknown conversion \`${conv}\``), children: [] };
+  const unit = reader && !long ? s('バイト', 'bytes') : s('文字', 'characters');
+  if (/[sbq]/.test(conv) || (conv === 'c' && long)) return star ? s(`最大${unit}数は引数で指定`, `at most as many ${unit} as an argument says`) : s(`最大 ${p} ${unit}まで`, `at most ${p} ${unit}`);
+  if (conv === 'c' && reader) return s('精度はここでは何も変えない', 'the precision changes nothing here');
+  return star ? s('最低桁数は引数で指定（足りなければ 0 で埋める）', 'at least as many digits as an argument says') : s(`最低 ${p} 桁（足りなければ 0 で埋める）`, `at least ${p} digits`);
+}
+
+function spec(m: RegExpExecArray, start: number, argNo: number, s: S, reader: PrintfReader | undefined): EmbeddedToken {
+  const [whole, flags, width, precision, length, written] = m;
+  const end = start + whole.length;
+  const error = (explanation: string): EmbeddedToken => ({ start, end, kind: 'error', explanation, children: [] });
+  const parts: string[] = [];
+  if (written.startsWith('(')) {
+    if (reader === 'coreutils') return error(s(`\`${whole}\`: coreutils の printf にはない書式（bash の組み込みの printf のもの）`, `\`${whole}\`: coreutils printf has no such conversion (bash's builtin printf has)`));
+    const fmt = written.slice(1, -2);
+    return { start, end, kind: 'variable', explanation: s(`\`${whole}\`: ${argNo} 番目の引数（UNIX 時刻）を日時書式 \`${fmt}\` で表示する（-1 は現在時刻）`, `\`${whole}\`: argument ${argNo} (a UNIX time) formatted with \`${fmt}\` (-1 means now)`), children: [] };
+  }
+  const bash = reader === '5.2' || reader === '5.3';
+  // bash 5.3 reads `%S` and `%C` as `%ls` and `%lc`; bash 5.2 and coreutils do not have them.
+  if ((written === 'S' || written === 'C') && reader === '5.2') {
+    return error(s(`\`${whole}\`: bash 5.2 には変換 \`${written}\` がない（「invalid format character」と表示して止まり、終了ステータスは 1）。bash 5.3 では \`%l${written.toLowerCase()}\` と同じ`, `\`${whole}\`: bash 5.2 has no conversion \`${written}\` (printf reports "invalid format character" and stops, status 1); bash 5.3 reads it as \`%l${written.toLowerCase()}\``));
+  }
+  const conv = (written === 'S' || written === 'C') && reader === '5.3' ? written.toLowerCase() : written;
+  const what = written === 'Q' && !bash ? undefined : written === 'Q' ? CONVERSIONS.q : CONVERSIONS[conv];
+  if (!what || (reader === 'coreutils' && (written === 'S' || written === 'C'))) return error(s(`\`${whole}\`: 不明な変換文字 \`${written}\``, `\`${whole}\`: unknown conversion \`${written}\``));
+  if (reader === 'coreutils' && coreutilsRejects(flags, width, precision, length, conv)) {
+    return error(s(`\`${whole}\`: coreutils の printf はこの書き方を受け付けない（invalid conversion specification）`, `\`${whole}\`: coreutils printf rejects it ("invalid conversion specification")`));
+  }
   const numeric = /[diouxXfFeEgGaA]/.test(conv);
+  // In bash 5.3, `l` before `s` or `c` (and `%S`, `%C`) counts characters.
+  const long = reader === '5.3' && /[sc]/.test(conv) && (length.includes('l') || conv !== written);
   if (width === '*') parts.push(s('幅は引数で指定', 'width taken from an argument'));
   else if (width) parts.push(flags.includes('-') ? s(`幅 ${width} で左寄せ`, `left-aligned in ${width} columns`) : s(`幅 ${width} で右寄せ`, `right-aligned in ${width} columns`));
   else if (flags.includes('-')) parts.push(s('左寄せ', 'left-aligned'));
   if (flags.includes('0') && width && numeric) parts.push(s('空きは 0 で埋める', 'padded with zeros'));
   if (flags.includes('+')) parts.push(s('正の数にも + を付ける', 'always show the sign'));
   if (flags.includes(' ')) parts.push(s('正の数の前に空白を置く', 'a space before positive numbers'));
-  if (flags.includes('#')) parts.push(s('0x などの接頭辞を付ける', 'with a 0x/0 prefix'));
+  if (flags.includes('#')) parts.push(altForm(conv, reader, s));
   if (flags.includes("'")) parts.push(s('3桁ごとに区切る', 'with thousands separators'));
-  if (precision !== undefined) {
-    const p = precision === '' ? '0' : precision;
-    if (/[fFeEaA]/.test(conv)) parts.push(s(`小数点以下 ${p} 桁`, `${p} digits after the decimal point`));
-    else if (/[gG]/.test(conv)) parts.push(s(`有効数字 ${p} 桁`, `${p} significant digits`));
-    else if (/[sbq]/.test(conv)) parts.push(s(`最大 ${p} 文字まで`, `at most ${p} characters`));
-    else parts.push(s(`最低 ${p} 桁（足りなければ 0 で埋める）`, `at least ${p} digits`));
-  }
+  if (precision !== undefined) parts.push(precisionText(precision, conv, written, reader, long, s));
+  if (long) parts.push(conv === written ? wide(conv, s) : s(`\`%l${conv}\` と同じ: ${wide(conv, s)}`, `the same as \`%l${conv}\`: ${wide(conv, s)}`));
+  else if (length && reader === '5.2' && /[sc]/.test(conv)) parts.push(s(`\`${length}\` は bash 5.2 では何も変えない。bash 5.3 ではマルチバイトのロケールでバイトでなく文字で数える`, `the \`${length}\` changes nothing in bash 5.2; bash 5.3 counts characters, not bytes, in a multibyte locale`));
+  else if (length) parts.push(s(`\`${length}\` は何も変えない`, `the \`${length}\` changes nothing`));
   const detail = parts.length ? s(`（${parts.join('、')}）`, ` (${parts.join(', ')})`) : '';
   return {
-    start, end: start + whole.length, kind: 'variable', children: [],
+    start, end, kind: 'variable', children: [],
     explanation: s(`\`${whole}\`: ${argNo} 番目の値を${what[0]}として出力${detail}`, `\`${whole}\`: value ${argNo} as ${what[1]}${detail}`),
   };
 }
 
 /** How bash printf behaves with the given number of arguments for `src`. */
-export function printfNote(src: string, lang: Lang): string | undefined {
+export function printfNote(src: string, lang: Lang, reader?: PrintfReader): string | undefined {
   const s = pick(lang);
-  const count = explainPrintf(src, lang).filter((t) => t.kind === 'variable').length;
+  const count = explainPrintf(src, lang, reader).filter((t) => t.kind === 'variable').length;
   if (!count) return undefined;
   return s(`値の指定 ${count} 個。引数がこれより多いと、書式を繰り返し使って残りも出力する`, `${count} value${count > 1 ? 's' : ''} per use; extra arguments reuse the format`);
 }

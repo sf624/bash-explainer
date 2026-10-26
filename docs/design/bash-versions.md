@@ -2,7 +2,7 @@
 
 bash 5.2 stays the reference of the explanations. The explainer can also explain a script as bash 5.3 reads and runs it. This document says where the version comes from, how it reaches the explanations and the models, which differences of 5.3 we explain, and how they are tested.
 
-Status: step 1 of section 7 is done (#283). Steps 2 to 7 are not started.
+Status: steps 1 (#283) and 2 of section 7 are done. Steps 3 to 7 are not started.
 
 ## 1. Why
 
@@ -58,8 +58,8 @@ From NEWS, CHANGES (5.3-alpha to 5.3-rc2) and COMPAT of the bash-5.3 tarball, ea
 | `compgen -V var`: store the completions in the array `var`. 5.2: "invalid option", status 2. | `-V` unknown, and the words after it are taken for the word to complete (wrong) | Option in the spec, gated | 2 |
 | `trap -P sig`: print the action of each signal. 5.2: "invalid option". | `-P` unknown; `INT` is said to reset the trap (wrong with `-P`) | Option in the spec, gated | 2 |
 | `read -E`: read with readline and bash's completion. 5.2: "invalid option". | `-E` unknown | Option in the spec, gated | 3 |
-| `printf %#q` and `%#Q`: the alternate form forces single quotes (`'a b'`). In 5.2 the `#` has no effect (`a\ b`). | "with a 0x/0 prefix": wrong in both versions | Fix now for 5.2 (a bug, independent of this plan); the 5.3 meaning by version | 1 |
-| `printf %ls`, `%lc` (`%S`, `%C`): wide strings and characters in a multibyte locale. 5.2 also accepts `%ls` (the `l` is ignored). | "unknown conversion `l`": wrong in both versions | Fix the format reader (a bug); the 5.3 meaning by version | 2 |
+| `printf %#q` and `%#Q`: the alternate form forces single quotes (`'a b'`). In 5.2 the `#` has no effect (`a\ b`). | "with a 0x/0 prefix": wrong in both versions | Done in step 2: the meaning by version, also in the example | 1 |
+| `printf %ls`, `%lc` (`%S`, `%C`): wide strings and characters in a multibyte locale. 5.2 also accepts `%ls` (the `l` is ignored); `%S` and `%C` are "invalid format character" there, status 1. | "unknown conversion `l`": wrong in both versions | Done in step 2: the length modifiers of C are read (`%ld` was wrong too), the meaning by version; no example of a character that is not ASCII (it depends on the locale) | 2 |
 | `command declare a=(…)` keeps the assignment parsing of `declare` (POSIX). | Not checked | Check with both versions; the reading of `command`'s operands | 3 |
 | `test` with more than 4 arguments and parentheses: a parenthesized part of 4 or fewer arguments is read with the POSIX rules (as coreutils does). `BASH_COMPAT=52` restores the old algorithm. | src/testexpr.ts reads the 5.2 way | Compare src/testexpr.ts with both versions on generated expressions; differ only where they differ | 3 |
 | `[[ =~ ]]` prints an error when the regex does not compile | Status only | A note in 5.3 mode, if the regex reader can tell | 3 |
@@ -128,7 +128,7 @@ bash is GPL-3.0. We run it only as a separate program. We never vendor, link or 
 Each step is a PR that keeps every test green and coverage at 100%.
 
 1. Done (#283). The setting on every surface; `${ }` and `${| }` explained as bash 5.3 runs them, with the issue in 5.2 mode; their `FEATURES` entries; no subshell in the environment model and no decision in a script that has one; test/bash53.test.ts; CI builds bash 5.3.
-2. Fixes that hold in both versions, found by the inventory: `printf %#q` (5.2: the `#` does nothing), `printf %ls` and `%lc`.
+2. Done. Fixes that hold in both versions, found by the inventory: `printf %#q` (5.2: the `#` does nothing), `printf %ls` and `%lc`. The embedded explainers get the release whose builtin reads the text (`EmbeddedContext.bash()`; undefined for a program), and `explainPrintf` and `bashPrintf` a reader (`PrintfReader`: a bash release or coreutils; awk's printf as before). Found on the way, in both releases: `%Q` (bash 5.2 has it too), the length modifiers of C (`%ld`), precisions and widths in bytes, and what `%q` quotes (`,` and `^`; `#` and `~` only at the start of a word); and in coreutils printf, no `%#q`, `%Q`, `%S`, `%C` or `%(…)T`.
 3. The walk runs `${ }` in the current shell and keeps its changes (4.2); `${| }` gives `REPLY`.
 4. Version-gated options in the command specs (`since` on an option, read by the argument interpreter, with the issue in 5.2 mode): `source -p`, `compgen -V`, `trap -P`, `read -E`.
 5. Variables and shell options: `GLOBSORT` (and the glob examples), `BASH_TRAPSIG`, `BASH_MONOSECONDS`, `array_expand_once`, `bash_source_fullpath`.

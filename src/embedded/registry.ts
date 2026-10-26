@@ -1,6 +1,7 @@
 // The embedded languages, one explainer each with one return shape: the tokens of the text, and a note on the whole.
 // What an explainer needs of the command around the text (the regex flavor its options choose, the role of a `tr`
 // set, perl's letters) it asks of the context; the worked examples are the analyzer's (src/explain/embedded.ts).
+import type { BashVersion } from '../bashversion';
 import type { Lang } from '../i18n';
 import { explainArith } from './arith';
 import { explainAwk } from './awk';
@@ -33,6 +34,8 @@ export interface EmbeddedContext {
   letters(): Set<string>;
   /** Whether one of these options is given, in any of its spellings (`sed -n` is `--quiet` too). */
   given(...names: string[]): boolean;
+  /** The bash release whose builtin reads the text; undefined when a program does (`env printf`). */
+  bash(): BashVersion | undefined;
 }
 
 type Explainer = (text: string, cx: EmbeddedContext) => Embedded | undefined;
@@ -50,7 +53,10 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   yq4: (text, cx) => ({ tokens: explainJq(text, cx.lang, 'yq') }),
   yq3path: (text, cx) => explainYq3Path(text, cx.lang),
   awk: (text, cx) => ({ tokens: explainAwk(text, cx.lang) }),
-  printf: (text, cx) => ({ tokens: explainPrintf(text, cx.lang), note: printfNote(text, cx.lang) }),
+  printf: (text, cx) => {
+    const reader = cx.bash() ?? 'coreutils';
+    return { tokens: explainPrintf(text, cx.lang, reader), note: printfNote(text, cx.lang, reader) };
+  },
   echo: (text, cx) => ({ tokens: explainEscapes(text, cx.lang, 'echo') }),
   mode: (text, cx) => explainMode(text, cx.lang),
   umask: (text, cx) => explainUmask(text, cx.lang),
