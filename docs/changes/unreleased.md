@@ -296,6 +296,21 @@ When the script's value shows no effect of the operator, a sample that shows it 
 
 What is shown and why: [docs/design/expansion-values.md](../design/expansion-values.md).
 
+### bats: each test as bats runs it, and the hooks
+
+bats (1.13) reads a test file with `set -eET` on, then runs each test in a process of its own: the process reads the whole file again, calls `setup`, the test, and `teardown`. `setup_file` and `teardown_file` run once, in one more process, before the first test and after the last. The model of a bats file now follows this:
+
+| Script | Now |
+| --- | --- |
+| `x=1` at the top, then in a test `if [ "$x" = 1 ]` | the condition is always true (before, nothing was decided in a test) |
+| `setup() { y=2; }`, then in a test `[ "$y" = 2 ]` | `$y` is `2` in the test |
+| `x=1` in one test, `x` read in the next | the next test does not see it: it has the value of the file (`x=0` at the top) |
+| `z=$(false; echo a)` in a test | the note that `set -e` is off inside `$( )` |
+| `false` in `teardown`, then more commands | bats calls `teardown` as `teardown \|\| …`, so `set -e` is ignored in it: the note on `teardown` says so |
+| a variable `setup_file` sets | not known in the tests: only what it exports reaches them |
+
+The definitions of `setup`, `teardown`, `setup_file` and `teardown_file` get a note on when bats calls them and in which process. A `setup_suite` in a test file is a pitfall: bats does not call it there and warns (BW03); it belongs in `setup_suite.bash`. The note on each `@test` adds that the code outside the tests runs again for each test.
+
 ## Changed
 
 ### The inline summary was removed

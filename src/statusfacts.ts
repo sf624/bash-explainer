@@ -37,6 +37,10 @@ function where(ig: Ignored): Words {
     const op = ig.at.children.find((c) => c.type === '&&' || c.type === '||')!.type;
     return { ja: `\`${op}\` の左側`, en: `on the left side of \`${op}\`` };
   }
+  if (ig.why === 'called-by-host') {
+    const name = field(ig.at, 'name')!.text;
+    return { ja: `\`${name}\` の中（\`||\` の左側で呼ばれる）`, en: `in \`${name}\`, which is called on the left of \`||\`` };
+  }
   return { ja: '`!` のあと', en: 'after `!`' };
 }
 
@@ -114,7 +118,8 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         if (statements(n).length < 2 || n.parent?.type === 'function_definition') break;
         const ctx = status.errexit(n);
         const ig = ctx.ignored;
-        if (ctx.errexit !== 'on' || !ig?.sure || ig.why === 'called-in-condition' || !plain(n) || turnsOn(n)) break;
+        // (A function called where it is ignored has a note on its definition: the host's, bats' `teardown`, too.)
+        if (ctx.errexit !== 'on' || !ig?.sure || ig.why === 'called-in-condition' || ig.why === 'called-by-host' || !plain(n) || turnsOn(n)) break;
         const what = n.type === 'subshell' ? '`( )`' : '`{ }`';
         const w = where(ig);
         add(n, { id: 'errexit-group-where-ignored', params: { what, where: w } });

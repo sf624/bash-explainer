@@ -6,6 +6,7 @@ import { lastStatements, statusModel } from './semantics/status';
 import { builtinParse, commandName } from './semantics/effects';
 import { processOf, STATEMENTS } from './semantics/env';
 import { BATS_COMMANDS } from './dict/bats';
+import type { ShellRegion } from './hosts';
 import { assignmentsOnly, descendants, field, fields, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 
 // What bats adds to a test file, said on its lines (docs/design/bats.md): the note on each `@test`, and two pitfalls
@@ -41,14 +42,23 @@ export function batsTests(tree: SyntaxTree, candidates: readonly number[]): numb
 
 /**
  * The facts of `line` of a bats file whose tests start on the lines `tests` (in the extracted text, where they are
- * functions). The caller filters them by the `notes.pitfalls` setting (`said`).
+ * functions); `region` gives bats' functions and how bats runs the file, as the analyzer reads them. The caller
+ * filters them by the `notes.pitfalls` setting (`said`).
  */
-export function batsFacts(tree: SyntaxTree, tests: readonly number[], line: number, lang: Lang): Fact[] {
+export function batsFacts(tree: SyntaxTree, region: Pick<ShellRegion, 'commands' | 'run'>, tests: readonly number[], line: number, lang: Lang): Fact[] {
   const out: Fact[] = [];
   if (tests.includes(line)) out.push(fact(lang, 'bats-test'));
   // (The model the analyzer reads for a bats file, which reads bats' functions by their specs.)
-  const state = shellState(tree, undefined, { host: BATS_COMMANDS });
+  const state = shellState(tree, undefined, { host: region.commands, run: region.run });
   const status = statusModel(state);
+  // The hooks bats calls once the file has run (src/semantics/walk/host.ts), said on their definitions.
+  for (const [def, call] of state.hostCalls) {
+    if (call.role === 'test' || def.startPosition.row !== line) continue;
+    const when = call.process === 'test' ? call.role : call.role === 'before' ? 'file-before' : 'file-after';
+    out.push(fact(lang, 'bats-hook', { name: field(def, 'name')!.text, when }));
+  }
+  // (bats calls `setup_suite` only from setup_suite.bash: of a test file, it warns.)
+  if (descendants(tree.root, ['function_definition']).some((d) => d.startPosition.row === line && field(d, 'name')!.text === 'setup_suite')) out.push(fact(lang, 'bats-setup-suite-in-test-file'));
   // `! cmd` in a test, not its last command: bash ignores `set -e` after `!`, so it fails nothing.
   for (const def of descendants(tree.root, ['function_definition'])) {
     if (!tests.includes(def.startPosition.row)) continue;

@@ -23,7 +23,7 @@ Nothing started: the first item of "Next" comes next.
 7. bash 5.3, step 3 of [design/bash-versions.md](design/bash-versions.md), the walk of `${ }` (the substitution walk moved out of src/semantics/walk/walker.ts first), and the POSIX-mode rows of step 6.
 8. Run-based oracles, steps 2–10 of [design/oracles.md](design/oracles.md): argv capture, checking suggestions in bash, the normal-forms audit.
 9. Pipeline examples: show the shape of the input each stage reads (item 3 of the external review of October 2026).
-10. bats, what [design/bats.md](design/bats.md) lists as not done: a model per test (its own process, `set -e`), hooks, bats-assert, tags.
+10. bats, what [design/bats.md](design/bats.md) lists as not done: a model per test (its own process, `set -e`), hooks, bats-assert, tags (the model per test and the hooks: PR `bats/model`).
 11. Dead code faded in the editor: a `DiagnosticTag.Unnecessary` hint on a statement that never runs (`shellState(...).dead(n)`), with its message in the catalog and on every surface ([design/highlighting.md](design/highlighting.md)).
 12. Values of a whole word (`"$dir/$f"`), arrays, and per-call values in functions: after items 4 and 5; the corpus shows little gain ([design/expansion-values.md](design/expansion-values.md), section 6).
 13. The leftovers of the small gaps (A3): the readers of arguments that have no shell at hand (`argWord` in src/semantics/env.ts, effects.ts, vars.ts, src/idioms.ts, src/semanticFacts.ts) count the words of a brace expansion in every shell; and a BSD letter of ps with a value takes the rest of its word (`ps opid,comm`, `ps Uroot`), which the argument interpreter reads as the next word.

@@ -11,6 +11,8 @@
 // - A slot link comes from a command slot (src/argv/spec.ts) that runs a command: a program (`sudo cmd`, `xargs
 //   cmd`), another shell (`bash -c`, `su -c`, `ssh host cmd`), the current shell again (`eval`, `command`) or a
 //   subshell of it (bats `run`).
+// - A host link: a function the host calls once the script has run, bats' tests and hooks, in a process of its own
+//   (src/semantics/walk/host.ts): a bash that has read the whole script, like the script's own shell.
 //   What reaches the command is what every link on the way passes on (`env -i bash -c f`: no function).
 import type { ArgRole, ArgvParse, ArgWord, CommandRole, RoleAt, ValueRole } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
@@ -20,6 +22,7 @@ import { shellFromName } from '../dialect';
 import type { Shell } from '../dialect';
 import { field, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import type { ShellState, Tri } from './state';
+import type { HostCall } from './walk/host';
 
 /** Why a node runs in a subshell. */
 export type SubshellReason = 'parentheses' | 'command-substitution' | 'process-substitution' | 'background' | 'coproc' | 'pipeline-stage';
@@ -50,7 +53,9 @@ export interface CallSite { readonly at: SyntaxNode; readonly env: ExecEnv; read
  * or it is never called (then the links before this one are where it is defined).
  */
 export interface CallLink { readonly kind: 'call'; readonly def: SyntaxNode; readonly sites: readonly CallSite[]; readonly unsure: boolean }
-export type EnvLink = SubshellLink | SlotLink | CallLink;
+/** A function body the host calls (and nothing else does), in a process of its own: bats' tests and hooks. */
+export interface HostLink { readonly kind: 'host'; readonly def: SyntaxNode; readonly call: HostCall }
+export type EnvLink = SubshellLink | SlotLink | CallLink | HostLink;
 
 /** Where a node runs: the links from the main shell to it, outermost first (none: the main shell). */
 export interface ExecEnv { readonly links: readonly EnvLink[] }
@@ -120,6 +125,8 @@ export interface WalkFacts {
   run(n: SyntaxNode): ShellState;
   /** The commands that call each function definition, and whether it is surely defined there. */
   readonly calls: ReadonlyMap<SyntaxNode, ReadonlyMap<SyntaxNode, boolean>>;
+  /** The function definitions the host calls once the script has run, and how. */
+  readonly hostCalls: ReadonlyMap<SyntaxNode, HostCall>;
   readonly shell?: Shell;
   /** Whether every call of the function `name` is one the walk sees (src/semantics/trust.ts, `Trust.closed`). */
   closed(name: string): boolean;
@@ -173,9 +180,12 @@ export class EnvModel {
   /**
    * Where the body of `def` runs: at each of its calls. The functions that call each other (a component of the
    * call graph) run where a call from outside the component runs, with the subshells of the calls inside it on
-   * top (`f() { g | cat; }`). A function no call reaches runs where it is defined, but `unsure`.
+   * top (`f() { g | cat; }`). A function no call reaches runs where it is defined, but `unsure`; one only the host
+   * calls, in the process the host starts for it.
    */
   private body(def: SyntaxNode): ExecEnv {
+    const host = this.walk.hostCalls.get(def);
+    if (host && !this.walk.calls.get(def)?.size) return { links: [{ kind: 'host', def, call: host }] };
     const component = this.component(def);
     // The calls into the component from outside it: where they run is known without it.
     const entries: CallSite[] = [];
@@ -195,7 +205,7 @@ export class EnvModel {
         for (const e of entries) sites.push({ at, env: inner.length ? { links: [...e.env.links, ...inner] } : e.env, sure: sure && e.sure });
       }
     }
-    const unsure = !sites.length || !this.walk.closed(field(def, 'name')!.text);
+    const unsure = !sites.length || !!host || !this.walk.closed(field(def, 'name')!.text);
     const link: CallLink = { kind: 'call', def, sites, unsure };
     return { links: sites.length ? [link] : [...this.at(def).links, link] };
   }
@@ -271,6 +281,9 @@ export function processOf(env: ExecEnv): Process {
       out = calls.shell ? { kind: 'shell', sure: !l.unsure, link: l }
         : !calls.some ? { kind: 'main', sure: out.sure && !l.unsure }
         : { kind: 'subshell', sure: calls.all && !l.unsure, link: l };
+    } else if (l.kind === 'host') {
+      // (A test runs in a bash of its own that has read the whole file: as the script's shell is, to what runs in it.)
+      out = { kind: 'main', sure: true };
     } else if (l.kind === 'slot') {
       if (l.slot.run === 'subshell') out = { kind: 'subshell', sure: true, link: l };
       else if (l.slot.run !== 'current-shell') out = { kind: l.slot.run === 'exec' ? 'program' : 'shell', sure: true, link: l };
@@ -360,7 +373,7 @@ export function ownSubshells(env: ExecEnv, n: SyntaxNode): SubshellLink[] {
 export function inFunction(env: ExecEnv): boolean {
   for (let i = env.links.length - 1; i >= 0; i--) {
     const l = env.links[i];
-    if (l.kind === 'call') return true;
+    if (l.kind === 'call' || l.kind === 'host') return true;
     if (l.kind === 'slot' && (l.slot.later || (l.slot.run !== 'current-shell' && l.slot.run !== 'subshell'))) return false;
   }
   return false;

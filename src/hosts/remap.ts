@@ -112,7 +112,7 @@ export function explainHostedLine(
   const region = extracted.regions.find((r) => r.start <= line && line <= r.end);
   if (!region) return undefined;
   tree = scriptTree(tree, extracted, region);
-  const ex = analyzer.explainLine(tree, line, shell ?? region.shell, { ...opts, host: region.host, ...(region.commands ? { hostCommands: region.commands } : {}) });
+  const ex = analyzer.explainLine(tree, line, shell ?? region.shell, { ...opts, host: region.host, ...(region.commands ? { hostCommands: region.commands } : {}), ...(region.run ? { hostRun: region.run } : {}) });
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   // (The catalog facts of the host go through `said`, like the analyzer's, so `notes.pitfalls` off leaves out their pitfalls.)
@@ -126,7 +126,7 @@ export function explainHostedLine(
   // (The lines bats rewrites where bash then reads a function: not one inside a here-document or a string.)
   const tests = region.tests && batsTests(tree, region.tests);
   if (tests) {
-    const facts = said(batsFacts(tree, tests, line, lang), opts.pitfalls);
+    const facts = said(batsFacts(tree, region, tests, line, lang), opts.pitfalls);
     notes.push(...facts.map((f) => f.text));
     hostFacts.push(...facts);
   }

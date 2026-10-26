@@ -9,6 +9,7 @@ import type { Fact, SpaceEnds, ValueSaid } from './messages';
 import type { NameInfo } from './namefacts';
 import type { ReadingNode } from './reading';
 import type { ExpansionValue } from './semantics/values';
+import type { HostRun } from './semantics/walk/host';
 
 export type Kind =
   | 'command' | 'subcommand' | 'builtin' | 'function' | 'alias' | 'keyword' | 'option' | 'argument' | 'operator'
@@ -107,6 +108,8 @@ export interface ExplainOptions {
   customCommands?: Record<string, unknown>;
   /** Commands the host file defines for its scripts (a bats file: `run`, `load`…), read before the dictionary. */
   hostCommands?: Record<string, CommandSpec>;
+  /** What the host runs of the script (a bats file: its tests, each in a process of its own, with `set -eET`). */
+  hostRun?: HostRun;
   /** Also build the reading tree of the line (`LineExplanation.reading`), for the panel's tree view. */
   reading?: boolean;
   /**

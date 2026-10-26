@@ -2,6 +2,18 @@ import type { LineExplanation } from '../analyzer-types';
 import { BATS_COMMANDS } from '../dict/bats';
 import type { Extracted } from './index';
 import { Builder } from './builder';
+import type { HostRun } from '../semantics/walk/host';
+
+/**
+ * How bats-core 1.13 runs a test file (libexec/bats-core/bats-exec-file, bats-exec-test): it sources the file with
+ * `set -eET`, then calls each test (the functions on the rows `tests`) in a process of its own, after `setup` and
+ * before `teardown`; `setup_file` and `teardown_file` run in one more process, before the tests and after them. It
+ * calls `teardown` and `teardown_file` on the left of `||`.
+ */
+export const batsRun = (tests: readonly number[]): HostRun => ({
+  set: ['errexit', 'errtrace', 'functrace'], tests,
+  each: { before: 'setup', after: 'teardown' }, file: { before: 'setup_file', after: 'teardown_file' },
+});
 
 /** A test of bats-core's preprocessor (bats-preprocess): `@test NAME {` and the rest of the line, the start of the body. */
 export const BATS_TEST = /^([ \t]*)(@test[ \t]+)(.*[^ \t])[ \t]+\{(.*)$/;
@@ -77,6 +89,6 @@ export function bats(b: Builder): void {
   }
   // (The whole file is one region: bats runs it with bash.)
   b.region(0, b.lines.length - 1, ['bats のテストファイル', 'bats test file']);
-  Object.assign(b.regions[0], { commands: BATS_COMMANDS, tests });
+  Object.assign(b.regions[0], { commands: BATS_COMMANDS, tests, run: batsRun(tests) });
 }
 
