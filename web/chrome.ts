@@ -223,15 +223,18 @@ let measure: CanvasRenderingContext2D | null | undefined;
  * Sizes a native select to the option it shows (proto/chrome-3): the editor header's pickers fit their content
  * instead of the widest option. Its own padding (with the arrow) and borders are added to the text's width.
  */
-export function fitSelect(select: HTMLSelectElement, atLeast = ''): void {
-  if (!select.isConnected || !select.offsetParent) return;
+export function fitSelect(select: HTMLSelectElement, atLeast = '', extra = 0): number | undefined {
+  if (!select.isConnected || !select.offsetParent) return undefined;
   measure ??= document.createElement('canvas').getContext('2d');
-  if (!measure) return;
+  if (!measure) return undefined;
   const cs = getComputedStyle(select);
   measure.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
   const text = select.selectedOptions[0]?.textContent ?? '';
   const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
   // Round 4: never narrower than the longest common value, so that choosing another value moves no other control.
-  const w = Math.max(measure.measureText(text).width, atLeast ? measure.measureText(atLeast).width : 0);
-  select.style.width = `${Math.ceil(w + pad + 2)}px`;
+  const own = measure.measureText(text).width;
+  const w = Math.max(own, atLeast ? measure.measureText(atLeast).width : 0);
+  // (Round 5: `extra`, room after the longest value for an arrow drawn right after the value shown.)
+  select.style.width = `${Math.ceil(w + pad + 2 + extra)}px`;
+  return own;
 }

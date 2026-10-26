@@ -209,6 +209,9 @@ export class SettingsDialog {
 
   constructor(dialog: HTMLDialogElement, private host: SettingsHost) {
     this.dialog = dialog;
+    window.addEventListener('resize', () => {
+      if (this.dialog.open) this.fitDescs();
+    });
     dialog.addEventListener('close', () => {
       this.draft = undefined;
       this.status = undefined;
@@ -245,6 +248,7 @@ export class SettingsDialog {
     this.dialog.showModal();
     this.dialog.querySelector<HTMLElement>('.settings-body')?.scrollTo(0, 0);
     this.markSection();
+    this.fitDescs();
   }
 
   /** Draws the dialog again, after a change made in it or elsewhere (keeping the focus). */
@@ -380,7 +384,7 @@ export class SettingsDialog {
     if (this.clearing === 'reset') status.append(el('p', { textContent: t.resetDone }));
     return el('section', { className: 'settings-group settings-clear settings-reset' },
       el('h4', { textContent: t.reset }),
-      el('p', { className: 'setting-desc', textContent: t.resetDesc }),
+      this.descLine(el('p', { className: 'setting-desc', textContent: t.resetDesc }), lang),
       el('div', { className: 'settings-io-buttons' }, reset),
       status);
   }
@@ -408,7 +412,7 @@ export class SettingsDialog {
     if (this.clearing === 'done') status.append(el('p', { textContent: t.cleared }));
     return el('section', { className: 'settings-group settings-clear' },
       el('h4', { textContent: t.clear }),
-      el('p', { className: 'setting-desc', textContent: t.clearDesc }),
+      this.descLine(el('p', { className: 'setting-desc', textContent: t.clearDesc }), lang),
       el('div', { className: 'settings-io-buttons' }, clear),
       status);
   }
@@ -432,9 +436,11 @@ export class SettingsDialog {
       e.dataset.section = id;
       return e;
     };
-    const inSection = (id: Section) => here.filter((x) => SECTION_OF[x.key] === id).map(rowOf);
+    // Round 5: a setting that does nothing on this device (the hover cards on a touch screen) is not shown.
+    const useful = (x: SettingSpec) => !(MOUSE_ONLY.has(x.key) && touchOnly());
+    const inSection = (id: Section) => here.filter((x) => SECTION_OF[x.key] === id && useful(x)).map(rowOf);
     const commonRows = () => {
-      const rows = here.filter((x) => SECTION_OF[x.key] === 'common').sort((a, b) => COMMON_ORDER.indexOf(a.key) - COMMON_ORDER.indexOf(b.key)).map(rowOf);
+      const rows = here.filter((x) => SECTION_OF[x.key] === 'common' && useful(x)).sort((a, b) => COMMON_ORDER.indexOf(a.key) - COMMON_ORDER.indexOf(b.key)).map(rowOf);
       return [rows[0], this.themeRow(lang), ...rows.slice(1)];
     };
     const io = this.io(lang);
@@ -493,6 +499,7 @@ export class SettingsDialog {
     this.dialog.querySelector('.settings-body')?.addEventListener('scroll', () => this.markSection(), { passive: true });
     this.filter();
     this.markSection();
+    this.fitDescs();
   }
 
   /** Advanced: a section heading that folds what most people leave as it is (folded when the dialog opens). */
@@ -519,6 +526,7 @@ export class SettingsDialog {
     if (body) body.hidden = !open;
     this.dialog.querySelector('#settings-advanced-toggle')?.setAttribute('aria-expanded', String(open));
     this.dialog.querySelector('#settings-advanced')?.classList.toggle('open', open);
+    this.fitDescs();
   }
 
   /** "Show VS Code setting names": off by default on the web; the names are for those who copy settings to VS Code. */
@@ -588,6 +596,36 @@ export class SettingsDialog {
     }
   }
 
+  /**
+   * Round 5: a setting's description on one line, cut at its end, with "More" after it when it is longer (the button
+   * shows the whole text; "Less" folds it again). `fitDescs` hides "More" where the line holds the whole text.
+   */
+  private descLine(desc: HTMLElement, lang: Lang): HTMLElement {
+    const c = CHROME[lang];
+    desc.classList.add('clamp');
+    const more = el('button', { type: 'button', className: 'link-btn desc-more', textContent: c.moreText });
+    more.setAttribute('aria-expanded', 'false');
+    more.addEventListener('click', () => {
+      const open = !desc.classList.contains('open');
+      desc.classList.toggle('open', open);
+      more.textContent = open ? c.less : c.moreText;
+      more.setAttribute('aria-expanded', String(open));
+    });
+    return el('div', { className: 'desc-line' }, desc, more);
+  }
+
+  /** Hides "More" after a description that its one line holds whole (measured once the dialog shows, and on a resize). */
+  fitDescs(): void {
+    for (const line of this.dialog.querySelectorAll<HTMLElement>('.desc-line')) {
+      const desc = line.firstElementChild as HTMLElement | null;
+      const more = line.querySelector<HTMLElement>('.desc-more');
+      if (!desc || !more || desc.classList.contains('open') || !desc.clientWidth) continue;
+      more.hidden = desc.scrollWidth <= desc.clientWidth + 1;
+      // (A cut line fades out at its end rather than ending in "…", which would cut a code chip in two.)
+      desc.classList.toggle('cut', !more.hidden);
+    }
+  }
+
   /** The theme: the same state as the menu's select. */
   private themeRow(lang: Lang): HTMLElement {
     const t = TEXT[lang];
@@ -602,7 +640,7 @@ export class SettingsDialog {
       this.host.setTheme(select.value as Theme);
       this.refresh();
     });
-    const row = el('div', { className: 'setting setting-string' }, el('div', { className: 'setting-head' }, el('label', { htmlFor: id, textContent: names.theme })), desc, select);
+    const row = el('div', { className: 'setting setting-string' }, el('div', { className: 'setting-head' }, el('label', { htmlFor: id, textContent: names.theme })), this.descLine(desc, lang), select);
     row.dataset.key = 'theme';
     return row;
   }
@@ -625,10 +663,10 @@ export class SettingsDialog {
       const box = el('input', { type: 'checkbox', id, checked: value as boolean });
       describe(box);
       box.addEventListener('change', () => this.change(spec.key, box.checked));
-      row.append(el('div', { className: 'setting-head' }, el('label', { htmlFor: id }, box, ' ', title)), desc, key, ...touch);
+      row.append(el('div', { className: 'setting-head' }, el('label', { htmlFor: id }, box, ' ', title)), this.descLine(desc, lang), key, ...touch);
       return row;
     }
-    row.append(el('div', { className: 'setting-head' }, el('label', { htmlFor: id, id: `${id}-label`, textContent: title })), desc, key, ...touch);
+    row.append(el('div', { className: 'setting-head' }, el('label', { htmlFor: id, id: `${id}-label`, textContent: title })), this.descLine(desc, lang), key, ...touch);
 
     if (spec.type === 'string') {
       const labels: Record<string, string> = { ...text.values, ...(spec.key === 'language' ? { auto: t.browser } : {}) };

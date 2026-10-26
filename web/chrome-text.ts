@@ -127,6 +127,13 @@ export const CHROME = {
     ioShort: 'Save the settings you changed as JSON, for VS Code or the command-line tool.',
     moreText: 'More',
     less: 'Less',
+    // Round 5 (proto/chrome-5)
+    showScript: 'Show the script',
+    copyMd5: 'Copy as Markdown',
+    keyHelp: ['?', 'Show these shortcuts'] as [string, string],
+    pasteRefused5: (key: string) => `The browser blocked the clipboard. Press ${key} in the editor to paste.`,
+    lineTab: (n: number) => `${n}`,
+    lineTabLabel: (n: number) => `Explanation, line ${n}`,
   },
   ja: {
     typePrefix: '種類:',
@@ -251,5 +258,11 @@ export const CHROME = {
     ioShort: '変更した設定を JSON に保存し、VS Code やコマンドラインツールで使えます。',
     moreText: '詳しく',
     less: '閉じる',
+    showScript: 'スクリプトを表示',
+    copyMd5: 'Markdown でコピー',
+    keyHelp: ['?', 'このショートカット一覧を表示'] as [string, string],
+    pasteRefused5: (key: string) => `ブラウザがクリップボードの読み取りを許可しませんでした。エディターで ${key} を押して貼り付けてください。`,
+    lineTab: (n: number) => `${n}`,
+    lineTabLabel: (n: number) => `説明、${n} 行目`,
   },
 };

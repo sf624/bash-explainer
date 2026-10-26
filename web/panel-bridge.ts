@@ -160,6 +160,10 @@ export class PanelBridge {
     if (!doc || !line) return;
     if (label) line.dataset.ln = label;
     else delete line.dataset.ln;
+    // Round 5: the label is a fixed cell at the left of the box (web/panel-page.css draws it on the box's container).
+    const top = doc.getElementById('top');
+    if (top && label) top.dataset.ln = label;
+    else if (top) delete top.dataset.ln;
     doc.documentElement.classList.toggle('bx-blank', label === undefined);
   }
 
@@ -284,7 +288,8 @@ export class PanelBridge {
     const open = this.frame?.contentDocument?.getElementById('reference')?.hidden === false;
     const c = CHROME[this.host.lang()];
     const toggleName = this.button('toggle')?.getAttribute('aria-label') || tp.collapseAll;
-    for (const [button, name] of [['pane-collapse', toggleName], ['pane-copy', c.copyMdTip]]) {
+    // Round 5: one name for copying the explanation, the panel's own ("Copy as Markdown"), here and in the phone's menu.
+    for (const [button, name] of [['pane-collapse', toggleName], ['pane-copy', tp.copy]]) {
       document.getElementById(button)?.setAttribute('aria-label', name);
       document.getElementById(button)?.setAttribute('title', name);
     }
@@ -295,7 +300,7 @@ export class PanelBridge {
     const expand = this.button('toggle')?.querySelector('svg')?.getAttribute('data-icon') === 'expand-all';
     for (const button of ['pane-collapse', 'menu-collapse']) document.querySelector(`#${button} use`)?.setAttribute('href', expand ? '#i-expand' : '#i-collapse');
     put('pane-collapse-label', expand ? c.expandShort : c.collapseShort);
-    put('pane-copy-label', c.copyShort);
+    put('pane-copy-label', tp.copy);
     const icon = this.button('ref')?.querySelector('svg')?.getAttribute('data-icon');
     const refSvg = document.querySelector('#menu-ref svg');
     if (icon && refSvg) drawIcon(refSvg, icon);

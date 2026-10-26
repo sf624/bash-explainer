@@ -118,7 +118,8 @@ function pageCard(md: string, chain: Token[], x: HoverInput, line: number, canHi
   const last = lines.length - 1;
   const open = /\[\$\(comment-discussion\)[^\]]*\]\([^)]*\)/.exec(lines[last])?.[0];
   if (open && lines[last - 1] === '---') {
-    const hide = canHide ? ` &nbsp;·&nbsp; [${CHROME[x.lang].hideHover}](command:bashExplainer.hideHover)` : '';
+    // (Round 5: "Hide hover cards" goes to the far right of the footer, apart from the line's links: web/page.css.)
+    const hide = canHide ? ` [${CHROME[x.lang].hideHover}](command:bashExplainer.hideHover)` : '';
     lines[last] = `<small>${ui[x.lang].line(line + 1)}</small> &nbsp;·&nbsp; ${open}${hide}`;
   }
   return lines.join('\n');
@@ -158,6 +159,10 @@ function shortCrumbs(dom: HTMLElement, lang: Lang): void {
   // (Only a part's card: its breadcrumb ends with "›" before the part. A line's card shows the line's structure.)
   if (!small || small.lastElementChild?.textContent?.trim() !== '›') return;
   small.classList.add('crumbs');
+  // Round 5: no "›" after the last part (the part itself is the card's heading, under it).
+  small.lastElementChild?.remove();
+  while (small.lastChild?.nodeType === Node.TEXT_NODE && !small.lastChild.textContent?.trim()) small.lastChild.remove();
+  if (small.lastChild?.nodeType === Node.TEXT_NODE) small.lastChild.textContent = small.lastChild.textContent!.trimEnd();
   const crumbs = [...small.children].filter((e) => e.hasAttribute('title'));
   if (crumbs.length <= 2) return;
   const keepFrom = crumbs[crumbs.length - 2];
@@ -187,6 +192,12 @@ function shortCrumbs(dom: HTMLElement, lang: Lang): void {
 function cardDom(host: HoverHost, view: EditorView, card: Card, pinned: boolean): HTMLElement {
   const dom = renderCard(card.md);
   shortCrumbs(dom, host.lang());
+  // Round 5: the footer "Line 8 · Open in panel" at the left, "Hide hover cards" alone at the right.
+  const hide = dom.querySelector<HTMLElement>('a[data-command="bashExplainer.hideHover"]');
+  if (hide?.parentElement) {
+    hide.parentElement.classList.add('card-foot');
+    hide.classList.add('card-hide');
+  }
   const act = (a: HTMLElement) => {
     const command = a.dataset.command;
     if (command === 'bashExplainer.explainLine' || command === 'bashExplainer.openPanel') wholeLineInPanel(view, card.line);

@@ -166,3 +166,44 @@ html.bx-lead body {
 html.bx-blank #empty {
   margin-top: var(--bx-empty-top, 30vh);
 }
+
+/* ---- Prototype round 5 (proto/chrome-5): the line box's "Ln 8" in a fixed cell at its left, with a 1px divider; only
+   the code to its right scrolls sideways (the page puts the label on the box's container too, `#top[data-ln]`). ---- */
+html.bx-head pre#line[data-ln]::before {
+  content: none;
+}
+
+html.bx-head:not(.bx-phone) #top[data-ln] {
+  display: flex;
+  align-items: stretch;
+}
+
+html.bx-head:not(.bx-phone) #top[data-ln]::before {
+  content: attr(data-ln);
+  flex: none;
+  box-sizing: border-box;
+  min-width: 4.4em;
+  padding: 0.6rem 9px 0 12px;
+  border-right: 1px solid var(--vscode-panel-border);
+  border-radius: 8px 0 0 8px;
+  background:
+    linear-gradient(var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1)), var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1))),
+    var(--vscode-editor-background);
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-font-family);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: calc(var(--vscode-editor-font-size, 13px) * 1.5);
+  white-space: nowrap;
+}
+
+html.bx-head:not(.bx-phone) #top[data-ln] pre#line {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-radius: 0 8px 8px 0;
+}
+
+html.bx-compact #top[data-ln]::before,
+html.bx-blank #top::before {
+  display: none;
+}

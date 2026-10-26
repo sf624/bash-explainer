@@ -5311,3 +5311,481 @@ html:not(.narrow) .first-hint .hint-actions {
 :where(html.narrow) .settings-nav a {
   flex: none;
 }
+
+/* ==== Prototype round 5 (proto/chrome-5): pickers that read as controls, a toast docked in the Problems strip, the
+   phone's keyboard, one 48px sheet header, tabs sized to their content, one model of the file name, one Copy as
+   Markdown, the hover card's footer, one-line setting descriptions ==== */
+
+/* ---- 1. Pickers: a quiet fill at rest (the whole control shows its extent), the arrow right after the value; each at
+   least as wide as its longest common value (web/main.ts), the spare room after the arrow, inside the fill ---- */
+.pane-head .picker,
+.pane-head .pick,
+.pane-head .chip {
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+}
+
+.pane-head .picker {
+  justify-content: flex-start;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border-radius: 6px;
+}
+
+.pane-head .picker .chev {
+  margin-left: 0;
+}
+
+.pane-head .pick {
+  position: relative;
+  height: 28px;
+  padding-left: 8px;
+  border-radius: 6px;
+}
+
+.pane-head .pick select {
+  height: 26px;
+  padding: 0 10px 0 5px;
+  background-image: none;
+  background-color: transparent;
+}
+
+.pane-head .pick-chev {
+  position: absolute;
+  top: 50%;
+  left: var(--chev-x, calc(100% - 20px));
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--vscode-descriptionForeground);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.pane-head .chip {
+  justify-content: flex-start;
+  gap: 5px;
+  border-radius: 15px;
+}
+
+@media (hover: hover) {
+  .pane-head .picker:hover,
+  .pane-head .pick:hover,
+  .pane-head .chip:hover {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--vscode-foreground) 11%, transparent);
+  }
+}
+
+.pane-head .picker[aria-expanded="true"],
+.pane-head .chip[aria-expanded="true"] {
+  border-color: var(--vscode-focusBorder);
+}
+
+/* ---- 2. Toasts: docked in the Problems strip on the desktop, over its left part, one line; the longer text in a bubble ---- */
+body:not([data-page="compare"]) #status.docked {
+  box-sizing: border-box;
+  max-width: none;
+  gap: 2px;
+  padding: 0 4px 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--page-background);
+  box-shadow: inset 3px 0 0 var(--page-accent);
+  font-size: 12.5px;
+  transform: none;
+  transition: opacity 0.15s;
+}
+
+body:not([data-page="compare"]) #status.docked:empty {
+  transform: none;
+}
+
+#status .status-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#status.docked .status-action {
+  min-height: 24px;
+  padding: 2px 8px;
+}
+
+#status.docked .status-close {
+  width: 24px;
+  height: 24px;
+  margin: 0 0 0 auto;
+}
+
+.status-more[aria-expanded="true"] {
+  text-decoration: underline;
+}
+
+.status-detail {
+  position: fixed;
+  z-index: 21;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--radius);
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.status-detail[hidden] {
+  display: none;
+}
+
+/* The phone's toast: one line too (round 4 allowed two). */
+:where(html.narrow) #status .status-text {
+  display: block;
+  -webkit-line-clamp: unset;
+}
+
+/* ---- 3. The phone's Edit mode: the accent line only with the focus in Edit mode; the keyboard folds the sheet ---- */
+html.read-mode .source:has(.cm-editor.cm-focused) .ed-head {
+  box-shadow: none;
+}
+
+html.narrow.kb-open {
+  --sheet-h: 48px !important;
+}
+
+html.narrow.kb-open .panel-col {
+  bottom: var(--kb-overlap, 0px);
+  transition: none;
+}
+
+html.narrow.kb-open .source {
+  padding-bottom: calc(48px + var(--kb-overlap, 0px));
+  transition: none;
+}
+
+html.narrow.kb-open .panel-head .bsheet-handle {
+  visibility: hidden;
+}
+
+/* ---- 4. The sheet's header is 48px at every snap; at full, "↓" (44px, "Show the script") ends the tabs row ---- */
+:where(html.narrow[data-sheet="full"]) .panel-head {
+  height: 48px;
+  padding-top: 0;
+}
+
+:where(html.narrow[data-sheet="full"]) .panel-head .bsheet-handle {
+  height: 12px;
+}
+
+:where(html.narrow[data-sheet="full"]) .panel-col[data-tab="explain"] .view-row {
+  top: 48px;
+}
+
+:where(html.narrow[data-sheet="full"]) .sheet-back {
+  position: relative;
+  top: auto;
+  right: auto;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+}
+
+:where(html.narrow[data-sheet="full"]) .sheet-back::before {
+  content: none;
+}
+
+:where(html.narrow[data-sheet="full"]) .sheet-back svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ---- 5. The phone's tabs size to their content (at least 96px), the spare width shared; in steps when they do not fit
+   (web/main.ts, `fitTabs`): `snug` 13px, `icons` Problems and Reference as their icons ---- */
+:where(html.narrow) .panel-bar .tabs {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+:where(html.narrow) .panel-bar [role="tab"],
+:where(html.narrow) #tab-explain,
+:where(html.narrow) #tab-problems,
+:where(html.narrow) #tab-ref {
+  flex: 1 0 auto;
+  width: auto;
+  min-width: 96px;
+  padding: 0 10px;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.tab-ico {
+  display: none;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+:where(html.narrow) #panel-tabs[data-fit="snug"] [role="tab"],
+:where(html.narrow) #panel-tabs[data-fit="icons"] [role="tab"] {
+  min-width: 72px;
+  padding: 0 6px;
+  font-size: 13px;
+}
+
+:where(html.narrow) #panel-tabs[data-fit="icons"] #tab-problems,
+:where(html.narrow) #panel-tabs[data-fit="icons"] #tab-ref {
+  min-width: 52px;
+  gap: 4px;
+}
+
+:where(html.narrow) #panel-tabs[data-fit="icons"] .tab-ico {
+  display: inline-block;
+}
+
+:where(html.narrow) #panel-tabs[data-fit="icons"] .tab-word {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- 6. The file name: normal weight, a pencil on hover or focus; a script never saved is "untitled.sh" in muted text
+   (no italics); "●" after the name of a file with changes not saved ---- */
+.file-name.draft,
+#drawer .menu-file.draft #menu-file-name {
+  color: var(--vscode-descriptionForeground);
+  font-style: normal;
+}
+
+.menu-file.draft > span {
+  font-style: normal;
+}
+
+.file-name {
+  gap: 4px;
+  cursor: pointer;
+}
+
+.file-pencil {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--vscode-descriptionForeground);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+}
+
+.file-name:focus-visible .file-pencil,
+.menu-file:focus-visible .file-pencil {
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .file-name:hover .file-pencil,
+  .menu-file:hover .file-pencil {
+    opacity: 1;
+  }
+}
+
+/* The menu: titled "Bash Explainer"; the script's name is the first row of SCRIPT (a button: rename). */
+.drawer-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.menu-file-row {
+  display: flex;
+  min-width: 0;
+}
+
+#drawer .menu-file {
+  flex: 1 1 auto;
+  gap: 12px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+#drawer .menu-file > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#drawer .menu-file .file-dot {
+  margin-left: -6px;
+}
+
+#drawer .menu-file .file-pencil {
+  margin-left: auto;
+}
+
+.menu-file-input {
+  flex: 1 1 auto;
+  margin: 4px 0 4px 38px;
+}
+
+.menu-file-input[hidden] {
+  display: none;
+}
+
+/* ---- 7. Copy as Markdown: the panel's button, with its words from a 760px panel; an icon with that tooltip below ---- */
+#pane-copy .lbl {
+  display: none !important;
+}
+
+#pane-copy.tool-lbl {
+  width: 28px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+}
+
+@container panelcol (min-width: 760px) {
+  #pane-copy .lbl {
+    display: inline !important;
+  }
+
+  #pane-copy.tool-lbl {
+    width: auto;
+    gap: 5px;
+    padding: 0 9px 0 7px;
+  }
+}
+
+/* ---- 9. The hover card's footer: "Line 8 · Open in panel" at the left, "Hide hover cards" alone at the far right ---- */
+.cm-bx-hover .card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.cm-bx-hover .card-foot .card-hide {
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+/* ---- 10. Settings: one line of description, "More" after it when it is longer ---- */
+.desc-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.desc-line .setting-desc.clamp {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.desc-line .setting-desc.clamp.open {
+  white-space: normal;
+}
+
+.desc-line .desc-more {
+  flex: none;
+  font-size: 13px;
+}
+
+.desc-line .desc-more[hidden] {
+  display: none;
+}
+
+/* ---- 11. Small: Open and Save with words from a 480px pane; the About links as 32px rows ---- */
+@container source (min-width: 481px) {
+  .pane-head .tool-btn .lbl {
+    display: inline;
+  }
+
+  .pane-head .tool-btn {
+    width: auto;
+    padding: 0 8px;
+  }
+}
+
+.about .menu-version {
+  margin: 0 0 4px;
+}
+
+.about .menu-row {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  color: var(--vscode-textLink-foreground);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .about .menu-row:hover {
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+.about .menu-row:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+/* A phone's About rows: 44px to tap. */
+:where(html.narrow) .about .menu-row {
+  min-height: 44px;
+}
+
+/* (While the tabs are measured, the "↓" takes its room at every height: web/main.ts, `fitTabs`.) */
+:where(html.narrow) .panel-bar.fit-test .sheet-back {
+  display: inline-grid;
+  flex: none;
+  width: 44px;
+}
+
+/* The toast's ✕ at its right end, on a phone too. */
+#status .status-close {
+  margin-left: auto;
+}
+
+/* The product's name never wraps (130% text on a phone). */
+.brand-name {
+  white-space: nowrap;
+}
+
+.desc-line .setting-desc.clamp.cut:not(.open) {
+  text-overflow: clip;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+}
