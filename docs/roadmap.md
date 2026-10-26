@@ -15,7 +15,7 @@ Keep it current:
 ## Next, in this order
 
 1. Audit Reading against the Bash Reference Manual, section by section (chapter 3 first): every construct Reading shows is named and grouped as the manual does, and every operator and reserved word appears in the tree. Findings fixed as explanation bugs, with tests against bash or bash-ast. Raised by the maintainer 2026-10-26. Started: 3.1 to 3.4 done (branch `explain/reading-audit`; the findings in docs/changes/unreleased.md, "Reading as the Bash manual reads it"; test/reading-manual.test.ts). Left from chapter 3: a word that bash globs cites 3.5.8 on bash's row (today only on the command's reading of it); a redirection's descriptor (or `{var}`), operator and word as rows of their own, the delimiter of a here-document not being a word bash expands (3.6, 3.6.6); the here-document's body citing 3.6.6; the braces of `{a,b}` as a row (3.5.1); then 3.7, and chapters 4 to 6.
-2. Values of top-level constants inside functions (assigned once before any call, no other writer).
+2. Values of top-level constants inside functions (assigned once before any call, no other writer). Design: [design/function-constants.md](design/function-constants.md) (proposed): a body the walk follows at every call has values today; the rule covers the others (more than four calls with different states, recursion, `trap cleanup EXIT` as an option), for variables and options that only the top level sets, before every call. Measured gain: none on the corpus and on 802 real scripts, whose function bodies lose their values to blindness (`source`, `eval`); waits on the maintainer's choice (section 10 there).
 3. The basis of an explanation, as data, after the analyzer is thinned: an explanation that rests on bash's behaviour rather than the manual gets a chip ("Not in the manual · checked with bash 5.2", or "Differs from the manual"), and a folded "Try it in your terminal" with a command and its output, taken from the probe that checks it in CI (look A of the prototype on branch `proto/basis`). A setting turns the chips and the try-its off. Other kinds of basis (another tool's spec, convention) are data only for now.
 4. bash 5.3, step 3 of [design/bash-versions.md](design/bash-versions.md), the walk of `${ }` (the substitution walk moved out of src/semantics/walk/walker.ts first), and the POSIX-mode rows of step 6.
 5. Run-based oracles, steps 2–10 of [design/oracles.md](design/oracles.md): argv capture, checking suggestions in bash, the normal-forms audit.
@@ -26,7 +26,7 @@ Keep it current:
 
 ## Waiting on the maintainer
 
-Nothing at the moment.
+- Constants inside functions ([design/function-constants.md](design/function-constants.md), section 10): build the rule now for short hand-written scripts, though it gains nothing on the corpus and the real scripts, or leave it until sourced files are read; and whether `trap cleanup EXIT` (step 3) comes with it.
 
 ## Not decided
 
