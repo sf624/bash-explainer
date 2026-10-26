@@ -75,6 +75,8 @@ Information, for what goes wrong only with some values, and where the damage is 
 | `read-without-r` | `read line` |
 | `trap-goes-on` | `trap 'echo bye' INT` |
 | `array-joined-in-assignment` | `args=$@`, `x=${arr[@]}` |
+| `source-searches-path` | `source lib.sh` |
+| `pattern-from-variable` | `grep "$USER" /etc/passwd` |
 
 The other warnings and caveats of the explanations are problems as well. Among them:
 
@@ -98,6 +100,7 @@ The other warnings and caveats of the explanations are problems as well. Among t
 | `extglob-maybe-on`, `globstar-maybe-on` | `ls !(a)`, `ls **/*.sh` with the option turned on on some paths only | information |
 | `unmatched-glob-runs-once` | `for f in *.log; do rm "$f"; done` | information |
 | `script-last-test-returns-status` | `[ -f x ] && echo found` as the last line of a script with a shebang | information |
+| `failure-reported-as-success` | `cp a b \|\| echo "copy failed"` as the last line of a script with a shebang | information |
 
 - They follow the same settings as the other problems: `bashExplainer.diagnostics.ignore` and `# bash-explainer disable=<code>` leave one out. The new `bashExplainer.diagnostics.pitfalls` (default on) leaves all of them out. With `bashExplainer.notes.pitfalls` off, the explanations leave out their pitfalls, and so do the problems; the notes that say a line fails when it runs (`[` without `]`) stay.
 - Three caveats stay notes and are not problems: `ssh-local-expansion` (`ssh host "echo $HOME"`: often meant), and `globstar-not-found` and `extglob-not-found` (`ls **/*.sh`, `ls !(a)` with no `shopt -s` before: the file may be read after the option is set). The panel, the hover and the CLI still show them as caveats. (To be confirmed by the maintainer.)
@@ -107,6 +110,18 @@ The other warnings and caveats of the explanations are problems as well. Among t
 - They are found in shell scripts, in the strings a script runs as scripts (`bash -c 'x = 1'`, `eval '…'`, `trap '…' EXIT`), at their place in the string, and in the shell code inside other files (Dockerfiles, Makefiles, CI YAML, bats files…), at its place in the file (`bashExplainer.diagnostics.embedded` leaves those out).
 - The note on a missing `;` before `then` or `do` now cites the manual's sections on loops and conditionals.
 - **Compatibility:** `--check` prints these lines, but its exit status does not change: a warning on a pitfall makes it exit 1 only with the new `--strict`. The GitHub Action has a `strict` input (default `'false'`) for it; with a `package:` pin to a tool without `--strict`, the step fails and says so. Its `warnings` output counts the warnings that fail the step (those on pitfalls only with `strict`), as before; the new `pitfalls` output counts the pitfalls, warnings and notices. The annotations of pitfalls are titled `Bash Explainer (pitfall): <code>`, and `--format github` prints those that fail the check first, since GitHub shows only the first annotations of each kind in a step. SARIF has them as `warning` and `note` results. Before, `--check` reported only what the script's shell lacks and the risks in embedded shell code.
+
+### Failures reported as success, files sourced from `$PATH`, patterns from variables
+
+Three caveats asked for in the usability test of October 2026. What each says was checked in bash 5.2 and 5.3, and with GNU grep.
+
+| Written | What it says | What bash or grep does |
+| --- | --- | --- |
+| `cp a b 2>/dev/null \|\| echo "copy failed"` as the last command of a script with a shebang, or of a function; any `cmd \|\| echo "msg"` under `set -e` | When `cmd` fails, the script still ends with status 0 (the function returns 0, or `set -e` goes on): the status of `echo`, which succeeds. With `2>/dev/null` (or `&>/dev/null`), the command's own error message is gone too, so only the message says why. Write `… \|\| { echo "msg" >&2; exit 1; }` (`return 1` in a function). | `false 2>/dev/null \|\| echo x; echo $?` prints `x` and `0`; `set -e; false \|\| echo msg; echo after` prints both. |
+| `source lib.sh`, `. lib.sh` | bash looks for `lib.sh` in `$PATH` first, and only then in the current directory, which is where the script was started from (cron starts in `$HOME`); in POSIX mode and in sh, only in `$PATH`. Write `source ./lib.sh`, or `source "$(dirname "$0")/lib.sh"`. | With `lib.sh` in a directory of `PATH` and in the current one, `[ -f lib.sh ] && source lib.sh` runs the one in `PATH`; `bash --posix -c '. lib.sh'` fails with "file not found" when only the current directory has it. |
+| `grep "$USER" /etc/passwd`, `grep -e "$x" f` | grep reads the value as a regular expression: it matches inside longer text, and `.`, `*`, `[` in it are special. Add `-F` (in place of `-E` or `-P`; `grep -F` in place of `egrep`), and `-w` or `-x` as meant. | `grep bob` prints `bobby:…` too, `grep -Fw bob` only `bob:…`; `grep a.c` matches `abc`. |
+
+Not for `\|\| true` or `\|\| :` (a failure ignored on purpose), a test on the left (`[ -f x ] \|\| echo none`), a function whose output is read by `$( )` (`v=$(cat f \|\| echo none)` gives a value), a line in the middle of a script without `set -e`, or `\|\| { echo msg >&2; exit 1; }`. Not for `source ./lib.sh`, a name whose value is not known, `source -p` (bash 5.3), `shopt -u sourcepath`, or zsh and ksh. Not for `grep -F`, `fgrep`, `grep -w`, `grep -x`, a pattern with text of its own (`"^$USER:"`), `"$1"`, a variable named as a pattern (`"$pattern"`, `"$re"`), or one whose value, set in the script, has regex characters. The command that prints the message, the file a builtin looks for in `$PATH`, and the operand read as a regex come from the command specs (`prints`, `searchesPath`, `lang: 'regex'`, and `whole` on `-w` and `-x`), not from names.
 
 ### An unset variable under `set -u`
 

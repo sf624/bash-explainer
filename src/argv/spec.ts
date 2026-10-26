@@ -243,6 +243,11 @@ export interface OptionSpec {
   unlessMarked?: string;
   /** Given, the command works on its input files so (`EachFile`): `sed -s` reads each apart, `sed -i` and `perl -i` rewrite each. */
   eachFile?: EachFile;
+  /**
+   * Given, a pattern (an operand or a value in `lang: 'regex'`) matches only a whole word (`grep -w`) or a whole line
+   * (`grep -x`), not a part of a longer one.
+   */
+  whole?: 'word' | 'line';
 }
 
 export interface ValueSpec {
@@ -417,6 +422,12 @@ export interface OperandSpec {
   assignmentText?: Text;
   /** Only a word that names this option of the command fits, and it is read as that option (`flock FILE -c CMD`). */
   option?: string;
+  /**
+   * A name with no `/` is looked for in the directories of `$PATH` while the shell option `shopt` is on, and then in
+   * the current directory, except in POSIX mode (bash's `.` and `source`: `sourcepath`); an option of `instead` gives
+   * the directories to look in (`source -p`, bash 5.3).
+   */
+  searchesPath?: { shopt: string; instead: string[] };
 }
 
 /**

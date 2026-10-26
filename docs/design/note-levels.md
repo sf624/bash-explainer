@@ -114,6 +114,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `declaration-masks-status` | A failure in `$( )` goes unnoticed. |
 | `pipefail-missing`, `dockerfile-pipefail-missing` | A failure before the last command of a pipeline goes unnoticed. |
 | `function-last-test-returns-status`, `script-last-test-returns-status` | Only the script's exit status is wrong, and only when the test fails. |
+| `failure-reported-as-success` | A failure goes unnoticed: the status is 0 when the command on the left of `\|\| echo` fails. |
 | `posix-special-function-name-maybe` | Only on the paths that turn POSIX mode on. |
 | `postfix-increment-status`, `postfix-decrement-status`, when `set -e` is not surely on there | Only when the value is 0, and only the status. |
 | `extglob-maybe-on`, `extglob-maybe-on-trap` | A syntax error only on some paths, or if the signal comes early. |
@@ -128,6 +129,8 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `nounset-unbound`, when only the command fails | A redirection of a program (`cat < "$f"`): that command fails with status 1, and the script goes on. |
 | Style: `read-without-r` | Only input with a backslash. |
 | Style: `trap-goes-on` | Only when the signal comes, and often meant: the script goes on after the action (`trap 'echo bye' INT`). |
+| Style: `source-searches-path` | Only when `$PATH` has a file of the name, or the script is started from another directory. |
+| Style: `pattern-from-variable` | Only values that are part of longer text on a line, or that hold regex characters. |
 | Dialect: `behaviour` | The construct works, differently, in some shells ("Portability"). |
 
 ## Changes from the prototype
