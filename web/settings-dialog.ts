@@ -2,6 +2,9 @@
 // (src/settings.ts), one control each, applied at once. The page keeps them (localStorage).
 import { closeSheet, reopenSheet } from './layout';
 import { Lang } from '../src/i18n';
+import { ask } from './kind-dialog';
+import { Theme, THEMES } from './protocol';
+import { TEXT as PAGE_TEXT } from './text';
 import { checkValue, exportSettings, Ignored, importSettings, parseJsonc, Settings, SettingSpec, SettingText, SETTINGS, settingsFor } from '../src/settings';
 
 /** The name of an exported settings file. */
@@ -16,7 +19,12 @@ const TEXT = {
     intro: 'The settings of the VS Code extension that apply on this page, and the page\'s own. They take effect at once.',
     saved: 'They are kept in this browser.',
     unsaved: 'This browser does not let the page keep them: they last until the page is closed.',
-    groups: { display: 'Display', checks: 'Checks', files: 'Files', dictionary: 'Dictionary' },
+    sections: { display: 'Display', examples: 'Examples', checks: 'Checks', editor: 'Editor', data: 'Data' },
+    sectionNav: 'Sections',
+    search: 'Search settings',
+    noMatch: 'No setting matches.',
+    notTouch: 'Not on touch screens',
+    themeDesc: 'The colours of the page: follow the system, or always light or dark.',
     reset: 'Reset to defaults',
     clear: 'Clear stored data',
     clearDesc: 'Removes everything this page keeps in this browser: the settings, the theme, the size of the panes, read mode and the first-run tips. They go back to their defaults at once.',
@@ -56,7 +64,12 @@ const TEXT = {
     intro: 'VS Code 拡張の設定のうち、このページで使えるものと、このページだけの設定です。変更はすぐに反映されます。',
     saved: '設定はこのブラウザに保存されます。',
     unsaved: 'このブラウザではページが設定を保存できません。ページを閉じるまで有効です。',
-    groups: { display: '表示', checks: 'チェック', files: 'ファイル', dictionary: '辞書' },
+    sections: { display: '表示', examples: '具体例', checks: 'チェック', editor: 'エディター', data: 'データ' },
+    sectionNav: 'セクション',
+    search: '設定を検索',
+    noMatch: '一致する設定はありません。',
+    notTouch: 'タッチ操作の画面では使われません',
+    themeDesc: 'ページの配色です。システムに合わせるか、常にライトまたはダークにします。',
     reset: '既定値に戻す',
     clear: '保存したデータを消去',
     clearDesc: 'このページがこのブラウザに保存しているものをすべて消します。設定、テーマ、画面の分割の大きさ、閲覧モード、初回のヒントです。すぐに既定の状態に戻ります。',
@@ -105,7 +118,24 @@ export interface SettingsHost {
   clearAll(): void;
   /** Warning codes to suggest (those in the script now). */
   codes(): string[];
+  /** The page's theme, the same as the menu's. */
+  theme(): Theme;
+  setTheme(t: Theme): void;
 }
+
+type Section = 'display' | 'examples' | 'checks' | 'editor' | 'data';
+const SECTIONS: Section[] = ['display', 'examples', 'checks', 'editor', 'data'];
+/** The section of each setting that the page shows. */
+const SECTION_OF: Record<string, Section> = {
+  language: 'display', 'notes.idioms': 'display', 'notes.pitfalls': 'display',
+  'examples.enabled': 'examples', 'examples.disabled': 'examples', 'examples.placement': 'examples',
+  shell: 'checks', bashVersion: 'checks', 'yq.flavor': 'checks', 'diagnostics.enabled': 'checks', 'diagnostics.ignore': 'checks',
+  'diagnostics.embedded': 'checks', 'diagnostics.pitfalls': 'checks', customCommands: 'checks',
+  'hover.enabled': 'editor', 'hints.names': 'editor', 'panel.animations': 'editor', 'editor.wrap': 'editor',
+};
+/** Settings that only a mouse hover or a desktop editor uses: marked on a touch-only device. */
+const MOUSE_ONLY = new Set(['hover.enabled']);
+const touchOnly = (): boolean => typeof matchMedia === 'function' && matchMedia('(hover: none)').matches;
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -154,13 +184,16 @@ export class SettingsDialog {
   /** The paste box: open or not, and its text. */
   private paste = { open: false, text: '' };
   /** Clearing the stored data: asked for, then done. */
-  private clearing: 'ask' | 'done' | undefined;
+  private clearing: 'done' | undefined;
+  /** The text in the search field. */
+  private query = '';
 
   constructor(dialog: HTMLDialogElement, private host: SettingsHost) {
     this.dialog = dialog;
     dialog.addEventListener('close', () => {
       this.draft = undefined;
       this.status = undefined;
+      this.query = '';
       this.paste = { open: false, text: '' };
     });
     // A settings file dropped on the dialog is imported.
@@ -186,6 +219,7 @@ export class SettingsDialog {
   show(): void {
     if (reopenSheet(this.dialog)) return;
     this.clearing = undefined;
+    this.query = '';
     this.render();
     this.dialog.showModal();
     this.dialog.querySelector<HTMLElement>('.settings-body')?.scrollTo(0, 0);
@@ -292,7 +326,7 @@ export class SettingsDialog {
       details, status);
   }
 
-  /** The "Clear stored data" group: a button, then a confirmation in the dialog before anything is removed. */
+  /** The "Clear stored data" group: a button, then the page's modal question before anything is removed. */
   private clear(lang: Lang): HTMLElement {
     const t = TEXT[lang];
     const button = (id: string, text: string, fn: () => void) => {
@@ -300,26 +334,23 @@ export class SettingsDialog {
       b.addEventListener('click', fn);
       return b;
     };
-    const ask = (state: 'ask' | undefined) => {
-      this.clearing = state;
-      this.refresh();
-      document.getElementById(state ? 'settings-clear-yes' : 'settings-clear')?.focus();
-    };
     const status = el('div', { id: 'settings-clear-status', className: 'settings-io-status' });
     status.setAttribute('role', 'status');
-    const buttons = this.clearing === 'ask'
-      ? [el('span', { textContent: t.clearAsk }), button('settings-clear-yes', t.clearYes, () => {
-        this.draft = undefined;
-        this.host.clearAll();
-        this.clearing = 'done';
-        this.refresh();
-      }), button('settings-clear-no', t.clearNo, () => ask(undefined))]
-      : [button('settings-clear', t.clear, () => ask('ask'))];
+    const clear = button('settings-clear', t.clear, () => {
+      void ask({ id: 'clear', title: t.clearAsk, message: t.clearDesc, confirm: { id: 'settings-clear-yes', text: t.clearYes }, cancel: { id: 'settings-clear-no', text: t.clearNo } }, clear)
+        .then((yes) => {
+          if (!yes) return;
+          this.draft = undefined;
+          this.host.clearAll();
+          this.clearing = 'done';
+          this.refresh();
+        });
+    });
     if (this.clearing === 'done') status.append(el('p', { textContent: t.cleared }));
     return el('section', { className: 'settings-group settings-clear' },
       el('h3', { textContent: t.clear }),
       el('p', { className: 'setting-desc', textContent: t.clearDesc }),
-      el('div', { className: 'settings-io-buttons' }, ...buttons),
+      el('div', { className: 'settings-io-buttons' }, clear),
       status);
   }
 
@@ -329,7 +360,6 @@ export class SettingsDialog {
     const texts = __SETTING_TEXT__[lang];
     const s = this.host.get();
     const here = settingsFor('web');
-    const groups = [...new Set(here.map((x) => x.group))];
     const close = el('button', { type: 'button', className: 'icon-btn settings-x', textContent: '×', title: t.close });
     close.setAttribute('aria-label', t.close);
     close.addEventListener('click', () => closeSheet(this.dialog));
@@ -342,29 +372,118 @@ export class SettingsDialog {
     const done = el('button', { type: 'button', id: 'settings-done', textContent: t.close });
     done.addEventListener('click', () => this.dialog.close());
     const elsewhere = SETTINGS.filter((x) => !x.surfaces.includes('web'));
+    const rowOf = (spec: SettingSpec) => this.row(spec, s, spec.description ? { ...texts[spec.key], description: spec.description[lang === 'ja' ? 0 : 1] } : texts[spec.key], lang);
+    const section = (id: Section, ...rows: HTMLElement[]) => {
+      const e = el('section', { className: 'settings-group', id: `settings-section-${id}` }, el('h3', { textContent: t.sections[id] }), ...rows);
+      e.dataset.section = id;
+      return e;
+    };
+    const inSection = (id: Section) => here.filter((x) => SECTION_OF[x.key] === id).map(rowOf);
+    const io = this.io(lang);
+    const clear = this.clear(lang);
+    const search = el('input', { type: 'search', id: 'settings-search', placeholder: t.search, value: this.query, autocomplete: 'off', spellcheck: false });
+    search.setAttribute('aria-label', t.search);
+    search.addEventListener('input', () => {
+      this.query = search.value;
+      this.filter();
+    });
+    search.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && search.value) {
+        e.preventDefault();
+        e.stopPropagation();
+        search.value = '';
+        this.query = '';
+        this.filter();
+      }
+    });
+    const nav = el('nav', { className: 'settings-nav' });
+    nav.setAttribute('aria-label', t.sectionNav);
+    nav.append(...SECTIONS.map((id) => {
+      const a = el('a', { href: `#settings-section-${id}`, textContent: t.sections[id] });
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const target = this.dialog.querySelector<HTMLElement>(`#settings-section-${id}`);
+        if (target && !target.hidden) target.scrollIntoView({ block: 'start' });
+      });
+      return a;
+    }));
+    const display = inSection('display');
+    const none = el('p', { className: 'settings-nomatch', textContent: t.noMatch, hidden: true });
+    none.setAttribute('role', 'status');
     this.dialog.replaceChildren(
       el('header', { className: 'settings-head' }, el('h2', { id: 'settings-title', textContent: t.title }), close),
+      nav,
       el('div', { className: 'settings-body' },
         el('p', { className: 'settings-intro', textContent: `${t.intro} ${this.host.canSave() ? t.saved : t.unsaved}` }),
-        this.io(lang),
-        ...groups.map((g) => el('section', { className: 'settings-group' },
-          el('h3', { textContent: t.groups[g] }),
-          ...here.filter((x) => x.group === g).map((spec) => this.row(spec, s, spec.description ? { ...texts[spec.key], description: spec.description[lang === 'ja' ? 0 : 1] } : texts[spec.key], lang)))),
-        this.clear(lang),
+        search,
+        section('display', display[0], this.themeRow(lang), ...display.slice(1)),
+        section('examples', ...inSection('examples')),
+        section('checks', ...inSection('checks')),
+        section('editor', ...inSection('editor')),
+        section('data', io, clear),
+        none,
         el('p', { className: 'settings-elsewhere' }, t.notHere, ' ', ...elsewhere.flatMap((x, i) => [i ? ', ' : '', el('code', { textContent: x.key })])),
       ),
       el('footer', { className: 'settings-foot' }, reset, done),
     );
+    this.filter();
+  }
+
+  /** Hides the rows (and sections) that the search text does not match. */
+  private filter(): void {
+    const q = this.query.trim().toLowerCase();
+    let shown = 0;
+    for (const group of this.dialog.querySelectorAll<HTMLElement>('.settings-group[data-section]')) {
+      const items = [...group.querySelectorAll<HTMLElement>('.setting, .settings-io, .settings-clear')];
+      let any = false;
+      for (const item of items) {
+        const hit = !q || (item.textContent ?? '').toLowerCase().includes(q);
+        item.hidden = !hit;
+        any ||= hit;
+      }
+      group.hidden = !any;
+      if (any) shown++;
+    }
+    const none = this.dialog.querySelector<HTMLElement>('.settings-nomatch');
+    if (none) none.hidden = shown > 0;
+    const elsewhere = this.dialog.querySelector<HTMLElement>('.settings-elsewhere');
+    if (elsewhere) elsewhere.hidden = !!q;
+    for (const a of this.dialog.querySelectorAll<HTMLElement>('.settings-nav a')) {
+      const target = this.dialog.querySelector<HTMLElement>(a.getAttribute('href')!);
+      a.classList.toggle('off', !!target?.hidden);
+    }
+  }
+
+  /** The theme: the same state as the menu's select. */
+  private themeRow(lang: Lang): HTMLElement {
+    const t = TEXT[lang];
+    const names = PAGE_TEXT[lang];
+    const id = 'setting-theme';
+    const desc = el('p', { className: 'setting-desc', id: `${id}-desc`, textContent: t.themeDesc });
+    const select = el('select', { id });
+    select.setAttribute('aria-describedby', desc.id);
+    const current = this.host.theme();
+    select.append(...THEMES.map((x) => new Option(names.themes[x], x, false, x === current)));
+    select.addEventListener('change', () => {
+      this.host.setTheme(select.value as Theme);
+      this.refresh();
+    });
+    const row = el('div', { className: 'setting setting-string' }, el('div', { className: 'setting-head' }, el('label', { htmlFor: id, textContent: names.theme })), desc, select);
+    row.dataset.key = 'theme';
+    return row;
   }
 
   private row(spec: SettingSpec, s: Settings, text: SettingText, lang: Lang): HTMLElement {
     const t = TEXT[lang];
     const id = `setting-${spec.key.replace(/\./g, '-')}`;
     const title = spec.title[lang === 'ja' ? 0 : 1];
-    const key = el('code', { className: 'setting-key', textContent: `bashExplainer.${spec.key}` });
+    const key = el('p', { className: 'setting-key', textContent: `bashExplainer.${spec.key}` });
     const desc = el('p', { className: 'setting-desc', id: `${id}-desc` }, ...rich(text.description));
     const row = el('div', { className: `setting setting-${spec.type}` });
     row.dataset.key = spec.key;
+    const note = MOUSE_ONLY.has(spec.key) && touchOnly();
+    if (note) row.classList.add('setting-touch-off');
+    const touch = note ? [el('p', { className: 'setting-touch', textContent: t.notTouch })] : [];
     const value = s[spec.key];
     const describe = (c: HTMLElement) => c.setAttribute('aria-describedby', desc.id);
 
@@ -372,10 +491,10 @@ export class SettingsDialog {
       const box = el('input', { type: 'checkbox', id, checked: value as boolean });
       describe(box);
       box.addEventListener('change', () => this.change(spec.key, box.checked));
-      row.append(el('div', { className: 'setting-head' }, el('label', { htmlFor: id }, box, ' ', title), key), desc);
+      row.append(el('div', { className: 'setting-head' }, el('label', { htmlFor: id }, box, ' ', title)), desc, key, ...touch);
       return row;
     }
-    row.append(el('div', { className: 'setting-head' }, el('label', { htmlFor: id, id: `${id}-label`, textContent: title }), key), desc);
+    row.append(el('div', { className: 'setting-head' }, el('label', { htmlFor: id, id: `${id}-label`, textContent: title })), desc, key, ...touch);
 
     if (spec.type === 'string') {
       const labels: Record<string, string> = { ...text.values, ...(spec.key === 'language' ? { auto: t.browser } : {}) };
