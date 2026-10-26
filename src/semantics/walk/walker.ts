@@ -21,7 +21,7 @@ import { WalkAliases } from './aliases';
 import { WalkArith } from './arith';
 import { temporariesUnset } from '../names';
 import { WalkBuiltins } from './builtins';
-import { redirectionMayFail, WalkConditions } from './conditions';
+import { WalkConditions } from './conditions';
 import { kept, temporaries } from './temporaries';
 import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
@@ -620,8 +620,8 @@ export class Walker {
     // associative here, else it is arithmetic too. One that may fail may discard the rest of the line: see `abort`.
     // The trust scan read the trees of the strings and of the aliases the walk runs too: `StringTrees`.)
     for (const name of this.trust.arithNames(n) ?? []) this.unsetRead(st, name);
-    // (A copy into IFS that the trust follows: `IFS=$save`.)
-    for (const name of this.trust.copied(n) ?? []) this.unsetRead(st, name, 'IFS is copied from');
+    // (A copy into IFS that the trust follows, `IFS=$save`, and a variable a word of `test` splits, `[ $x ]`.)
+    for (const name of this.trust.copied(n) ?? []) this.unsetRead(st, name, 'IFS or a word of `test` reads');
     if (this.trust.mayFail(n)) this.abort(st, false);
     for (const name of this.trust.associative(n) ?? []) {
       if (!this.mode.dead && !this.blind && attribute(st, name, 'A') !== 'on') this.walkAgain(`\`${name}\` may not be associative where its subscript is read`);
@@ -681,7 +681,7 @@ export class Walker {
         for (const r of redirs) this.substitutions(r, st);
         // (A subshell makes them in its own process: `( : ) > $(( n = 3 ))` leaves n.)
         st = this.fdVariables(redirs, this.expandAll(redirs, st, field(n, 'body')!.type === 'subshell' ? 'on' : 'off'));
-        return this.mayNotRun(redirs, st, this.sequence(n.children.filter((c) => c.field !== 'redirect'), st));
+        return this.conditions.mayNotRun(redirs, st, this.sequence(n.children.filter((c) => c.field !== 'redirect'), st));
       }
       case 'subshell':
         return this.sequence(n.children, st);
@@ -1379,19 +1379,11 @@ export class Walker {
     const fn = this.functionCalled(name, st);
     // (`declare() { …; }; declare b=(1 2)`: bash assigns the array, and passes the name.)
     const called = fn && withStatus(this.call(fn, this.builtins.markedArrays(name, fields(n, 'argument'), n, st), assignments), undefined);
-    if (called && fn.state === 'on') return this.mayNotRun(redirectionsOf(n), unrun, called);
+    if (called && fn.state === 'on') return this.conditions.mayNotRun(redirectionsOf(n), unrun, called);
     if (!special) st = this.builtins.appendArith(assignments, n, st);
     const ran = withStatus(kept(this, n, temps, this.builtins.builtin(name, fields(n, 'argument'), n, st, true)), this.conditions.simpleStatus(n, before));
     // (A function defined on some paths only: on the others, the builtin or the program runs.)
-    return this.mayNotRun(redirectionsOf(n), unrun, called ? merge([called, ran], this.posix) : ran);
-  }
-
-  /**
-   * What a command with the redirections `redirects` leaves: `ran`, or when one of them may fail, maybe `unrun`, the
-   * state after them, with status 1 (bash runs no command after a redirection that fails).
-   */
-  private mayNotRun(redirects: readonly SyntaxNode[], unrun: ShellState, ran: ShellState): ShellState {
-    return redirects.some(redirectionMayFail) ? merge([withStatus(unrun, 1), ran], this.posix) : ran;
+    return this.conditions.mayNotRun(redirectionsOf(n), unrun, called ? merge([called, ran], this.posix) : ran);
   }
 
   /** The function a command named `name` calls in `st`: none when POSIX mode finds a special builtin of that name first. */

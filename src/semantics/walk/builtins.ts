@@ -7,7 +7,7 @@ import type { CommandSpec } from '../../argv/spec';
 import { actedNames, onlyInFunction } from '../../argv/query';
 import { prefixOf } from '../../argv/words';
 import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
-import { staticWordValue } from '../../staticword';
+import { staticWordValue, tildeParts, tildeSpots } from '../../staticword';
 import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
 import { parseExpansion } from '../../expansion';
 import { expansionFailure, sameInEveryLocale, substring } from '../chars';
@@ -460,15 +460,21 @@ export class WalkBuiltins {
   /**
    * Whether the word `w` reads a variable whose value the script may not have written in `st`: one it has not set
    * there (it may come from the environment), or one `kept` (see `VariableState.kept`). Not bash's own (`RANDOM`),
-   * nor IFS, which bash sets when it starts whatever the environment says.
+   * nor IFS, which bash sets when it starts whatever the environment says. A tilde reads HOME (`m=~`), and `~user` a
+   * home not known.
    */
   private readsUnwritten(w: SyntaxNode, st: ShellState): boolean {
-    return [w, ...descendants(w, ['simple_expansion', 'expansion'])].some((e) => {
-      const name = (e.type === 'simple_expansion' || e.type === 'expansion') ? e.namedChildren[0] : undefined;
-      if (name?.type !== 'variable_name') return false;
-      const target = this.resolve(st, name.text) ?? name.text;
+    const unwritten = (name: string): boolean => {
+      const target = this.resolve(st, name) ?? name;
       const v = st.variables.get(target);
       return !changedByBash(target) && target !== 'IFS' && (!v || !!v.kept);
+    };
+    // (Each element of `a=(~ x)` starts a word of its own.)
+    const tildes = (w.type === 'array' ? w.namedChildren : [w]).flatMap((e) => tildeSpots(tildeParts([e]), 'assignment'));
+    if (tildes.some((t) => t.user !== '' || unwritten('HOME'))) return true;
+    return [w, ...descendants(w, ['simple_expansion', 'expansion'])].some((e) => {
+      const name = (e.type === 'simple_expansion' || e.type === 'expansion') ? e.namedChildren[0] : undefined;
+      return name?.type === 'variable_name' && unwritten(name.text);
     });
   }
 
@@ -567,7 +573,9 @@ export class WalkBuiltins {
     // A readonly variable keeps its value.
     if (prev?.attrs.r?.state === 'on' && !declaring) return st;
     if (subscript || how.array) {
-      st = this.setVariable(st, target, at, undefined, false, true);
+      // (An array is `kept` when one of its elements may be: an element, or `+=`, keeps what the others were.)
+      const kept = !!how.kept || ((subscript || how.append) && !!prev?.kept);
+      st = this.setVariable(st, target, at, undefined, false, true, undefined, kept);
       return attribute(st, target, 'A') === 'off' ? this.giveAttribute(st, target, 'a', at) : st;
     }
     let text = how.text;

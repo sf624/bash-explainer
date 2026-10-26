@@ -85,6 +85,13 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     const nocase = 'case a in a) shopt -s nocasematch ;;& A) echo 2 ;; esac';
     assert.strictEqual(bash(nocase), '2\n');
     assert.strictEqual(shellState(parser.parse(nocase)).condition(descendants(parser.parse(nocase).root, ['case_statement'])[0]), undefined);
+    // (Nor after one that may do more than assign, by the rows of the allow-list: `jobs -x` runs `shopt` in this shell.)
+    const jobs = 'case a in a) jobs -x shopt -s nocasematch ;;& A) echo 2 ;; esac';
+    assert.strictEqual(bash(jobs), '2\n');
+    for (const list of ['jobs -x shopt -s nocasematch', 'eval :', 'declare x=1', 'complete -F f c', 'IFS=:']) {
+      const t = parser.parse(`f() { :; }; case a in a) ${list} ;;& A) echo 2 ;; esac`);
+      assert.strictEqual(shellState(t).condition(descendants(t.root, ['case_statement'])[0]), undefined, list);
+    }
     // (A pattern after `;;&` that assigns, `${p:=b}`, is expanded after the list before it.)
     const assigns = 'case b in b) p= ;;& ${p:=b}) y=1 ;; esac';
     assert.strictEqual(bash(`${assigns}; echo "$p $y"`), 'b 1\n');
@@ -111,6 +118,74 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     for (const src of ['f() { s=$IFS; }; [ "$z" ] && f; IFS=$s', 'IFS=$s; s=:', 'IFS=$s', 's=:; IFS="$s$s"']) assert.strictEqual(decided(`u=1; ${src}; x=a; [ $x = a ]; [ "$u" = 1 ] && :`), undefined, src);
     // (bash ignores an IFS in the environment.)
     assert.strictEqual(spawnSync('bash', ['-c', 'printf %q "$IFS"'], { env: { PATH: '/usr/bin:/bin', IFS: '9' }, encoding: 'utf8' }).stdout, "$' \\t\\n'");
+  });
+
+  it('splits the words of `test` by each IFS the script may set, also one copied through `for`, an array or `$(( ))`', () => {
+    // Each of these makes IFS `0` or `:` where `$x` splits into `-v` and its subscript runs (the review of step 3).
+    for (const src of ["s=$IFS; s=( 0 ); IFS=$s; x='-v0'; [ $x 'a[u=2]' ]", "for s in 0; do :; done; IFS=$s; x='-v0'; [ $x 'a[u=2]' ]",
+      "s=$((0)); IFS=$s; x='-v0'; [ $x 'a[u=2]' ]", "IFS=$((0)); x='-v0'; [ $x 'a[u=2]' ]", "for IFS in 0; do :; done; x='-v0'; [ $x 'a[u=2]' ]",
+      // (Split by both `v` and `:`, `-v:` gives no `-v`; by `:` alone, it does.)
+      "IFS=v; IFS=:; x='-v:'; test $x 'a[u=2]'",
+      // (`+=` adds to a value: `x` is `-v`.)
+      "x=-; x+=v; [ $x 'a[u=2]' ]"]) {
+      assert.strictEqual(bash(`u=1; ${src}; echo $u`), '2\n', src);
+      assert.strictEqual(decided(`u=1; ${src}; [ "$u" = 1 ] && :`), undefined, src);
+    }
+    // A variable a word of `[` splits must be set there on every path: else it may be `-v` from the environment.
+    for (const src of ["[ -n \"$1\" ] && x=a; [ $x 'a[u=2]' ]", "f() { x=a; }; [ $x 'a[u=2]' ] 2>/dev/null; f", "x+=a; [ $x 'a[u=2]' ] 2>/dev/null"]) {
+      const out = spawnSync('bash', ['-c', `u=1; ${src}; echo $u`], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C', x: '-v' }, encoding: 'utf8' }).stdout;
+      assert.strictEqual(out, src.startsWith('x+=') ? '1\n' : '2\n', src);
+      assert.strictEqual(decided(`u=1; ${src}; [ "$u" = 1 ] && :`), undefined, src);
+    }
+    // (`+=` of text with no `-` gives no `-v`: decided, where the variable is set before.)
+    assert.strictEqual(decided("u=1; x=a; x+=b; [ $x = ab ]; [ \"$u\" = 1 ] && :"), 'true');
+    assert.strictEqual(decided("u=1; x=a; x+=b; unset x; x=ab; [ $x = ab ]; [ \"$u\" = 1 ] && :"), 'true');
+    // IFS saved and restored, unset first: decided as before.
+    const restore = 'unset IFS; save=$IFS; IFS=:; IFS=$save; x=yes';
+    assert.strictEqual(bash(`u=1; ${restore}; [ $x = yes ] && echo $u`), '1\n');
+    assert.strictEqual(decided(`u=1; ${restore}; [ $x = yes ]; [ "$u" = 1 ] && :`), 'true');
+  });
+
+  it('takes a copy of fd 0, 1 or 2 as a redirection that may fail where the script may close them (the review of step 3)', () => {
+    // bash: "Bad file descriptor", and the group does not run. (Output goes to fd 3 or 2 where 1 is closed.)
+    const after = (src: string): string => spawnSync('bash', ['-c', `exec 3>&1; x=1; ${src}; echo "$x" >&3`], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' }, encoding: 'utf8' }).stdout;
+    for (const src of ['exec 1>&-; { x=2; } 2>&1', 'exec 2>&-; { x=2; } >&2', 'exec 0<&-; { x=2; } 1<&0', 'exec <&-; { x=2; } 1<&0', 'v=1; exec {v}>&-; { x=2; } 2>&1', 'exec 4>&1 1>&-; { x=2; } 2>&1', '{ x=2; } >&- 2>&1',
+      'f() { { x=2; } 2>&1; }; f >&-', 'BASH_XTRACEFD=1; unset BASH_XTRACEFD; { x=2; } 2>&1', 'BASH_XTRACEFD=1; BASH_XTRACEFD=; { x=2; } 2>&1', 'exec 1>&2-; { x=2; } >&2', 'exec 4>&1-; { x=2; } 2>&1']) {
+      assert.strictEqual(after(src), '1\n', src);
+      assert.strictEqual(decided(`x=1; ${src}; [ "$x" = 2 ] && :`), undefined, src);
+    }
+    // (Closing another descriptor leaves them open.)
+    assert.strictEqual(after('exec 4>&-; { x=2; } 2>&1'), '2\n');
+    assert.strictEqual(decided('x=1; exec 4>&-; { x=2; } 2>&1; [ "$x" = 2 ] && :'), 'true');
+  });
+
+  it('takes a redirection that fails under `set -e` as the end of the shell, where `set -e` is not ignored (the review of step 3)', () => {
+    const run = (src: string): string => spawnSync('bash', ['-c', `cd "$(mktemp -d)" || exit; x=1; ${src}; echo "$x"`], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' }, encoding: 'utf8' }).stdout;
+    // The code after it runs only when the command ran: `x` is 2 there.
+    for (const src of ['set -e; { x=2; } > out.txt', 'set -e; f() { x=2; }; f > out.txt', 'set -e; true && { x=2; } > out.txt', 'set -e; { x=2; } > ./no/such/dir']) {
+      assert.strictEqual(run(src), src.includes('no/such') ? '' : '2\n', src);
+      assert.strictEqual(decided(`x=1; ${src}; [ "$x" = 2 ] && :`), 'true', src);
+    }
+    // Where `set -e` is ignored (a condition, the left of `||`, `!`, a function called there), or off (`$( )`), it may not run.
+    for (const src of ['set -e; if { x=2; } > ./no/such/dir; then :; fi', 'set -e; { x=2; } > ./no/such/dir || :', 'set -e; ! { x=2; } > ./no/such/dir',
+      'set -e; g() { { x=2; } > ./no/such/dir; }; g || :', 'set -e; set +e; { x=2; } > ./no/such/dir']) {
+      assert.strictEqual(run(`${src} 2>/dev/null`), '1\n', src);
+      assert.strictEqual(decided(`x=1; ${src}; [ "$x" = 2 ] && :`), undefined, src);
+    }
+  });
+
+  it('takes an array with an element the script may not have written, or a tilde, as a value arithmetic may run (the review of step 3)', () => {
+    // With `q='y=5'` and `HOME='y=5'` in the environment, each sets `y`.
+    const env = (code: string): string => spawnSync('bash', ['-c', code], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C', q: 'y=5', HOME: 'y=5' }, encoding: 'utf8' }).stdout.trim();
+    for (const src of ['a=(0); a[0]=$q; q=0; (( a[0] ))', 'a=("$q"); q=0; (( a[0] ))', 'a=(); a+=("$q"); q=0; (( a[0] ))', 'a=(0); a[0]=$q; q=0; (( a ))',
+      'declare -a a=([0]="$q"); q=0; (( a[0] ))', 'm=~; (( m ))', 'declare m=~; (( m ))', 'export m=~; (( m ))', 'm=~; : ${a[m]}', 'm=(~); (( m ))']) {
+      assert.strictEqual(env(`y=1; ${src}; echo $y`), '5', src);
+      assert.strictEqual(decided(`y=1; ${src}; [ "$y" = 1 ] && :`), undefined, src);
+    }
+    // (`~user` is a home the model does not know: bash reads it from the system's user database.)
+    assert.strictEqual(decided('y=1; m=~nobody; (( m )) 2>/dev/null; [ "$y" = 1 ] && :'), undefined);
+    // (A HOME the script sets is followed.)
+    assert.strictEqual(decided('y=1; HOME=0; m=~; (( m )); [ "$y" = 1 ] && :'), 'true');
   });
 
   it('takes a function defined after `shopt -so allexport` as exported, as after `set -a`', () => {

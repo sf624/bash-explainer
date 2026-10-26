@@ -5,51 +5,39 @@ import { parseExpansion } from '../../expansion';
 import { staticWordValue, substitutionNames } from '../../staticword';
 import { assignmentsOnly, descendants, field, fields, prefixAssignments, type SyntaxNode } from '../../syntax/tree';
 import { compareIntegers, patternMatches, plainRegex, testStatus, type TestEnv, unaryTest } from '../conditions';
-import { attribute, EMPTY, option, type ShellState, type Tri } from '../shellstate';
+import { attribute, EMPTY, merge, option, type ShellState, type Tri, withStatus } from '../shellstate';
 import type { Decision } from '../state';
 import { actedNames, namespaceOf } from '../../argv/query';
 import { builtins } from '../../dict/builtins';
-import { builtinParse, commandName } from '../effects';
+import { builtinRow, type Row } from '../allow';
+import { builtinParse, callbacks, commandName } from '../effects';
+import { writeEffect } from '../vars';
 import { testSpec } from '../names';
 import { type WalkSource, wordIn } from '../words';
+import { redirectionMayFail, safeRedirect } from '../redirects';
 import { ArithError, NAME, SUBSTITUTIONS } from './shared';
 import type { Walker } from './walker';
-
-/**
- * Whether the redirection `r` cannot fail: to or from `/dev/null`, or a copy of fd 1 or 2 (`2>&1`, `>&2`), with an fd
- * given as a number if any.
- */
-function safeRedirect(r: SyntaxNode): boolean {
-  if (r.type !== 'file_redirect' || (field(r, 'descriptor') && field(r, 'descriptor')!.type !== 'file_descriptor')) return false;
-  const op = r.children.find((c) => !c.named)?.type;
-  const to = field(r, 'destination');
-  const target = to && staticWordValue(to);
-  if (target === '/dev/null') return ['>', '>>', '&>', '&>>', '>|', '<'].includes(op!);
-  return op === '>&' && (target === '1' || target === '2');
-}
-
-/**
- * Whether the redirection `r` may fail, so that its command does not run (docs/design/trust-allow-list.md, section 2:
- * a file not found, a directory, `set -C`, a descriptor not open). A here-document and a here-string do not; nor
- * `safeRedirect`'s, a copy of fd 0, 1 or 2 (`<&0`), or closing a descriptor (`3>&-`).
- */
-export function redirectionMayFail(r: SyntaxNode): boolean {
-  // (Nor one from or to a process substitution, `< <(cmd)`: a pipe bash makes itself.)
-  if (r.type !== 'file_redirect' || safeRedirect(r) || field(r, 'destination')?.type === 'process_substitution') return false;
-  const op = r.children.find((c) => !c.named)!.type;
-  // (One with no word yet, `> >g` while typing, is an error.)
-  const to = field(r, 'destination');
-  const target = to && staticWordValue(to);
-  return !((op === '<&' || op === '>&') && ['0', '1', '2', '-'].includes(target ?? ''));
-}
 
 const INTEGER_TESTS = new Set(['-eq', '-ne', '-lt', '-le', '-gt', '-ge']);
 
 /** The parts of a word that expand to text not written in it. */
 const EXPANDING = ['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution'];
 
-/** The builtins that may change an option a pattern reads, or run text the walk reads elsewhere (see `samePatterns`). */
-const OPTION_CHANGERS: ReadonlySet<string> = new Set(['shopt', 'eval', 'source', '.', 'builtin', 'command', 'trap']);
+/**
+ * Whether the simple command `c` (with a static name, `name`) changes no more than variables, by the rows of the
+ * allow-list (src/semantics/allow.ts): the builtin's, and that of each variable it assigns, `none` or `names`; and no
+ * callback (`complete -F f`). A `followed` row is a construct the walk follows in order (`shopt`, `eval`, `declare`),
+ * which a decision made before it runs does not see. (A row of `all`, also one of an option, `jobs -x`, trusts
+ * nothing: no decision is made at all.) A program changes nothing of this shell.
+ */
+function changesOnlyNames(c: SyntaxNode, name: string): boolean {
+  const quiet = (row: Row): boolean => row.effect.kind === 'none' || row.effect.kind === 'names';
+  if (!prefixAssignments(c).every((a) => quiet(writeEffect(field(a, 'name')!.text)))) return false;
+  if (!Object.hasOwn(builtins, name)) return true;
+  const args = fields(c, 'argument');
+  const parse = builtinParse(name, args);
+  return quiet(builtinRow(name)) && callbacks(parse, args).length === 0;
+}
 
 /** What the walk decides of its conditions, and the values they read (src/semantics/words.ts evaluates their words). */
 export class WalkConditions {
@@ -69,6 +57,23 @@ export class WalkConditions {
     } finally {
       this.reading.pop();
     }
+  }
+
+  /**
+   * What a command with the redirections `redirects` leaves: `ran`, or when one of them may fail, maybe `unrun`, the
+   * state after them, with status 1 (bash runs no command after a redirection that fails). Under `set -e` (surely on,
+   * and not ignored there: see `Walker.quietly`), that ends the shell (the subshell): what comes after runs only when
+   * the command ran.
+   */
+  mayNotRun(redirects: readonly SyntaxNode[], unrun: ShellState, ran: ShellState): ShellState {
+    if (!redirects.some((r) => redirectionMayFail(r, this.w.trust.fdsMayClose))) return ran;
+    if (!this.w.mode.quiet && option(unrun, 'set', 'errexit') === 'on' && this.w.jump('shell', undefined, withStatus(unrun, 1)).unreachable) return ran;
+    return merge([withStatus(unrun, 1), ran], this.w.posix);
+  }
+
+  /** Whether the redirection `r` cannot fail (`safeRedirect`), with what the script may close. */
+  private safe(r: SyntaxNode): boolean {
+    return safeRedirect(r, this.w.trust.fdsMayClose);
   }
 
   /** Records what the condition of `n` decided on this walk (undefined: nothing), with what it read. */
@@ -96,7 +101,7 @@ export class WalkConditions {
    * whose value is not known (its expansion may fail).
    */
   simpleStatus(n: SyntaxNode, st: ShellState): number | undefined {
-    if (!this.w.bash || prefixAssignments(n).length || !fields(n, 'redirect').every(safeRedirect)) return undefined;
+    if (!this.w.bash || prefixAssignments(n).length || !fields(n, 'redirect').every((r) => this.safe(r))) return undefined;
     const name = wordIn(field(n, 'name')!.namedChildren[0], st, this.values(st), 'fields', this.ifsFollowed(st));
     // (The walk builds the state that `resolveName` reads (src/semantics/names.ts), so it cannot ask it: it looks at
     // the functions and the `enable -n` of `st` itself. An alias does not get here: the walk runs its text instead,
@@ -157,13 +162,13 @@ export class WalkConditions {
    * last one's (see `sequence`).
    */
   statusOf(n: SyntaxNode, st: ShellState, after: ShellState): number | undefined {
-    if (assignmentsOnly(n)) return fields(n, 'redirect').every(safeRedirect) ? this.assignmentStatus(n, prefixAssignments(n), st) : undefined;
+    if (assignmentsOnly(n)) return fields(n, 'redirect').every((r) => this.safe(r)) ? this.assignmentStatus(n, prefixAssignments(n), st) : undefined;
     switch (n.type) {
       case 'command': case 'arithmetic_command': case 'list': case 'if_statement': case 'case_statement': case 'pipeline':
       case 'compound_statement': case 'subshell': case 'time_statement':
         return after.status;
       case 'negated_command': return after.status === undefined ? undefined : Number(after.status === 0);
-      case 'redirected_statement': return fields(n, 'redirect').every(safeRedirect) ? after.status : undefined;
+      case 'redirected_statement': return fields(n, 'redirect').every((r) => this.safe(r)) ? after.status : undefined;
       case 'extended_test': {
         const v = this.w.bash && n.namedChildren.length === 1 ? this.condExpr(n.namedChildren[0], st) : undefined;
         return v === undefined ? undefined : Number(!v);
@@ -380,18 +385,18 @@ export class WalkConditions {
    */
   /**
    * Whether the patterns of the case items `rest` match after the lists of `ran` as they do before them: each is static
-   * text, and each command of those lists has a static name that is no function or alias here, nor a builtin that may
-   * change an option a pattern reads (`shopt -s nocasematch`, `extglob`) or run other text.
+   * text, and each command of those lists has a static name that is no function or alias here, and changes no more
+   * than variables (`changesOnlyNames`: not `shopt -s nocasematch`, `jobs -x`, `mapfile -C`, `eval`).
    */
   private samePatterns(ran: readonly SyntaxNode[], rest: readonly SyntaxNode[], st: ShellState): boolean {
     // (A pattern with no expansion, and no tilde, whose `HOME` a list may set.)
     const plain = (v: SyntaxNode): boolean => !v.text.startsWith('~') && ![v, ...descendants(v, EXPANDING)].some((x) => EXPANDING.includes(x.type));
     if (!rest.every((item) => fields(item, 'value').every(plain))) return false;
     return ran.every((item) => descendants(item, ['command']).every((c) => {
-      // (Assignments alone are fine.)
-      if (!field(c, 'name')) return true;
       const name = commandName(c);
-      return name !== undefined && !OPTION_CHANGERS.has(name) && !st.functions.get(name) && !st.aliases.get(name);
+      // (Assignments alone: by the rows of the variables they assign.)
+      if (!field(c, 'name')) return changesOnlyNames(c, '');
+      return name !== undefined && !st.functions.get(name) && !st.aliases.get(name) && changesOnlyNames(c, name);
     }));
   }
 

@@ -440,6 +440,8 @@ export class WalkArith {
       // An element of an array, once its index has run: its value is not followed (see `unsure`).
       case 'subscript': {
         const after = this.subscriptIndex(e, st, at);
+        // (Its value runs as an expression: one the script may not have written may assign any variable.)
+        this.w.unsetRead(after, field(e, 'name')!.text);
         this.markUnsure();
         return { st: after };
       }

@@ -39,12 +39,14 @@
 import type { CommandSpec } from '../argv/spec';
 import { prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
-import { staticWordValue, substitutionNames } from '../staticword';
+import { staticWordValue } from '../staticword';
 import { field, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
 import { aliasName, aliasOf, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
-import { COPY, testSplits, testWordShape } from './testwords';
+import { closesStandard } from './redirects';
+import { testSplits, testWordShape } from './testwords';
+import { COPY, identifiers, joined, writtenValue, type WrittenValue } from './written';
 import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, optionRoles, readDeclarationWords, writeEffect, type Declaration } from './vars';
 
 export interface Trust {
@@ -61,8 +63,8 @@ export interface Trust {
    */
   arithNames(n: SyntaxNode): readonly string[] | undefined;
   /**
-   * The variables whose values the statement `n` copies into IFS (`IFS=$save`), which the trust follows (see
-   * `testSplits`): each must have a value there that the script wrote.
+   * The variables whose values the statement `n` copies into IFS (`IFS=$save`), or splits in a word of `test` (`[ $x ]`),
+   * which the trust follows (see `testSplits`): each must have a value there that the script wrote.
    */
   copied(n: SyntaxNode): readonly string[] | undefined;
   /** The arrays whose subscripts in the statement `n` are taken as keys (the script declares them associative): each must be so there. */
@@ -72,11 +74,14 @@ export interface Trust {
    * a plain number (`a[i]=x`, `${s:i}`). An error there discards the rest of the line.
    */
   mayFail(n: SyntaxNode): boolean;
+  /**
+   * Whether the script may close fd 0, 1 or 2 somewhere (`exec 2>&-`, `f >&-`, `exec 3>&1-`, `>&$x`, `unset
+   * BASH_XTRACEFD`): a copy of one of them (`2>&1`) may then fail, as a copy of any other descriptor may.
+   */
+  readonly fdsMayClose: boolean;
 }
 
 const NAME = /^[A-Za-z_]\w*$/;
-/** The names in an arithmetic text or a value read as one (not the digits of `0x1f` or `16#ff`, nor `${#x}`'s). */
-const IDENTIFIERS = /(?<![\w#@.])[A-Za-z_]\w*/g;
 /** A `${…}` that arithmetic may paste: a value, an element, a length, or a default (`${x:-0}`). */
 const PASTE = /^\$\{#?[A-Za-z_]\w*(?:\[[^\]]*\])?(?::?-[^{}$`'"]*)?\}/;
 /** The builtins a command name read from a variable may be (`debug=false; $debug`): they change nothing. */
@@ -84,9 +89,9 @@ const SAFE_BUILTINS = new Set(['true', 'false', ':', 'echo', 'test', '[']);
 
 /**
  * What a write gives a variable: a number, nothing (unset), the value it had (`declare x` outside a function: maybe
- * one from the environment), text with these names in it, or text not known.
+ * one from the environment), text with these names in it (see `WrittenValue`), or text not known.
  */
-type Value = 'number' | 'none' | 'kept' | 'unknown' | { names: string[]; text: string; fixed?: true };
+type Value = WrittenValue;
 
 interface Write {
   /** A plain assignment (see the head of this file). */
@@ -116,11 +121,6 @@ interface Where { fn: string | undefined; foreign: boolean; now: boolean; rest?:
 const ALIAS_EXPANSIONS = 1000;
 const NO_NAMES: ReadonlySet<string> = new Set();
 
-const identifiers = (text: string): string[] => text.match(IDENTIFIERS) ?? [];
-
-/** The values of several words given in turn (a list of `for`, the elements of an array). */
-const joined = (values: Value[]): Value =>
-  (values.every((v): v is Extract<Value, object> => typeof v === 'object') ? { names: values.flatMap((v) => v.names), text: '' } : 'unknown');
 
 /** An alias an `alias` command defines: its name and text, the word that gives them, and where the command is. */
 interface AliasDef { name: string; value: string; word: SyntaxNode; where: Where }
@@ -151,6 +151,8 @@ class Scan {
   private readonly prompts = new Set<string>();
   readonly exported = new Set<string>();
   exportAll = false;
+  /** Whether the script may close fd 0, 1 or 2 (see `Trust.fdsMayClose`). */
+  fdsClose = false;
   readonly functions = new Set<string>();
   /** Whether the script runs `alias` or `enable`, which may make `$(true)` print something (see `value`). */
   private renames = false;
@@ -165,9 +167,9 @@ class Scan {
   private readonly refEdges = new Map<string, Set<string>>();
   /**
    * The variables expanded unquoted in a word of `test` or `[` (`[ $x = y ]`), and whether such a word is a number
-   * (`$#`): no word of their values may be `-v` (see `testWords`).
+   * (`$#`): no word of their values may be `-v` (see `testWords`); with the statements that split them.
    */
-  private readonly testSplits: string[] = [];
+  private readonly testSplits: { name: string; owner: SyntaxNode }[] = [];
   private testNumbers = false;
   /** The assignments that copy a variable (`IFS=$save`), and the statements where those that IFS takes are checked. */
   private readonly copies: { owner: SyntaxNode; target: string; source: string }[] = [];
@@ -213,8 +215,10 @@ class Scan {
   }
 
   private write(name: string, w: Where, plain: boolean, value: Value, nameref = false): void {
-    // (What a write of a variable of bash does to bash.)
+    // (What a write of a variable of bash does to bash: unsetting BASH_XTRACEFD, or making it empty, closes the fd it
+    // named, which may be 1 or 2.)
     this.apply(writeEffect(name));
+    if (name === 'BASH_XTRACEFD') this.fdsClose = true;
     const list = this.writes.get(name) ?? [];
     list.push({ plain, value, fn: w.fn, foreign: w.foreign, ...(nameref ? { nameref } : {}) });
     this.writes.set(name, list);
@@ -254,33 +258,9 @@ class Scan {
     for (const m of text.matchAll(ARITH_ASSIGNED)) this.write(m[1] ?? m[3] ?? m[4], w, false, 'number');
   }
 
-  /** What the word `v` assigns (undefined: the empty value). */
+  /** What the word `v` assigns (`writtenValue`). */
   private value(v: SyntaxNode | undefined): Value {
-    if (!v) return { names: [], text: '' };
-    // (`$(true)` prints nothing only when `true` is the builtin: not when the script defines a function or an alias of it.)
-    const s = substitutionNames(v).some((x) => this.renames || this.functions.has(x)) ? undefined : staticWordValue(v, true);
-    if (s !== undefined) return { names: identifiers(s), text: s, fixed: true };
-    const names: string[] = [];
-    const parts: string[] = [];
-    const known = (n: SyntaxNode): boolean => {
-      switch (n.type) {
-        case 'word': case 'number': case 'raw_string': case 'string_content':
-          parts.push(n.text);
-          names.push(...identifiers(n.text));
-          return true;
-        case 'string': case 'concatenation': return n.namedChildren.every(known);
-        case 'simple_expansion': case 'expansion': {
-          const m = /^\$\{?([A-Za-z_]\w*)\}?$/.exec(n.text);
-          if (m) names.push(m[1]);
-          parts.push(n.text);
-          return !!m;
-        }
-        // (A number.)
-        case 'arithmetic_expansion': return true;
-      }
-      return false;
-    };
-    return known(v) ? { names, text: parts.join('') } : 'unknown';
+    return writtenValue(v, (x) => this.renames || this.functions.has(x));
   }
 
   /** Records the text assigned to `name` (read as arithmetic if it is an integer). */
@@ -405,6 +385,7 @@ class Scan {
         this.apply(redirectionRow(n));
         const fd = /^\{([A-Za-z_]\w*)\}$/.exec(field(n, 'descriptor')?.text ?? '')?.[1];
         if (fd) this.write(fd, w, false, 'number');
+        if (closesStandard(n)) this.fdsClose = true;
         break;
       }
       case 'variable_assignment':
@@ -453,7 +434,7 @@ class Scan {
         return;
       }
       if (typeof shape === 'object') {
-        this.testSplits.push(shape.variable);
+        this.testSplits.push({ name: shape.variable, owner: this.owner(a)! });
         return;
       }
       // (A word that starts with text other than `-` is never `-v`: `"x$1"`, `/tmp/*`.)
@@ -847,13 +828,14 @@ class Scan {
     // An unquoted expansion in a word of `test` or `[`: each value the script gives it must stay one word, and not be
     // `-v`, with every IFS the script sets (a number, with no IFS of digits or `-`).
     if (this.testNumbers || this.testSplits.length) {
-      const chain = testSplits((name) => (this.writes.get(name) ?? []).map((x) => x.value), this.testSplits, this.testNumbers);
+      const chain = testSplits((name) => (this.writes.get(name) ?? []).map((x) => (x.append && typeof x.value === 'object' ? { ...x.value, appended: true } : x.value)), this.testSplits.map((s) => s.name), this.testNumbers);
       if (!chain) this.blindFor('`-v` may test a variable name not known');
-      // (The walk checks that each copy of a value into IFS reads one the script set there: see `Trust.copied`.)
-      for (const c of this.copies) {
-        if (!chain.has(c.target) || c.source === 'IFS') continue;
+      // (The walk checks that each copy of a value into IFS, and each variable a word of `test` splits, reads one the
+      // script set there: see `Trust.copied`. `[ -n "$z" ] && x=a; [ $x … ]` may split `x` from the environment.)
+      const copied = [...this.copies.filter((c) => chain.has(c.target) && c.source !== 'IFS').map((c) => ({ owner: c.owner, name: c.source })), ...this.testSplits];
+      for (const c of copied) {
         const set = this.copied.get(c.owner) ?? new Set<string>();
-        set.add(c.source);
+        set.add(c.name);
         this.copied.set(c.owner, set);
       }
     }
@@ -982,12 +964,14 @@ export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HO
       return names && [...names];
     },
     mayFail: (n) => scan.fails.has(n),
+    fdsMayClose: scan.fdsClose,
   };
 }
 
 /** Nothing trusted: for a walk that found, as it went, arithmetic reading text not known (see `Walker`). */
 export const BLIND: Trust = {
   blind: 'arithmetic reads text not known', variable: () => false, closed: () => false, arithNames: () => undefined, copied: () => undefined, associative: () => undefined, mayFail: () => false,
+  fdsMayClose: true,
 };
 
 /**
@@ -996,5 +980,5 @@ export const BLIND: Trust = {
  */
 export function withinTrust(own: Trust, outer: Trust): Trust {
   if (outer.blind !== undefined) return { ...BLIND, blind: outer.blind };
-  return { ...own, variable: (name) => own.variable(name) && outer.variable(name) };
+  return { ...own, variable: (name) => own.variable(name) && outer.variable(name), fdsMayClose: own.fdsMayClose || outer.fdsMayClose };
 }
