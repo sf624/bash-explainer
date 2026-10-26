@@ -4,14 +4,14 @@ import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import { detectShell, type Shell } from '../src/dialect';
 import { type DocumentIssue, documentIssues, explainDocumentLine, type ShellDocument } from '../src/document';
-import { severityOf } from '../src/messages';
+import { isProblem, severityOf } from '../src/messages';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import type { BashParser as Parser } from '../src/syntax/tree';
 
 // The warnings and caveats of the explanations as problems (src/document.ts, `noteIssues`) and the explanations say the
 // same, over the corpus: each such problem is a note of a line, at the level of its severity, on a node the note was
-// found on; each warning or caveat a line says on a node is a problem there; a plain fact never is. For the shell each
-// script says, and as sh and zsh.
+// found on; each warning or caveat a line says on a node is a problem there; a plain fact never is, nor is a caveat the
+// catalog keeps a note (`isProblem`). For the shell each script says, and as sh and zsh.
 
 const root = path.join(__dirname, '..');
 const fixture = (name: string) => fs.readFileSync(path.join(root, 'test/fixtures', name), 'utf8');
@@ -52,6 +52,11 @@ describe('the problems of the notes and the explanations agree', () => {
             here.forEach((i) => said.add(i));
             if (n.level === 'note') {
               if (here.length) problems.push(`${where}\n  a plain fact is a problem: ${n.text}`);
+              continue;
+            }
+            // (A caveat the catalog keeps a note is no problem either.)
+            if (!isProblem(n.code!)) {
+              if (here.length) problems.push(`${where}\n  a note that stays a note is a problem: ${n.text}`);
               continue;
             }
             // (The problem's severity and code are the note's: docs/design/note-levels.md.)

@@ -6,7 +6,7 @@ import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
-import { severityOf } from './messages';
+import { isProblem, severityOf } from './messages';
 import { type NestedScript, nestedScripts } from './semantics/nested';
 import { explainOptions, settingSpec } from './settings';
 import type { Settings, Surface } from './settings';
@@ -83,9 +83,10 @@ const noteIssueCache = new WeakMap<SyntaxTree, Map<string, DocumentIssue[]>>();
  * The warnings and caveats the explanations of a document say, as problems (docs/design/note-levels.md, "Notes as
  * problems"): every note of a line at the level `warning` or `info` (`LineExplanation.noteInfo`), with its code, on
  * the range of each node it was found on (`LineExplanation.anchors`, cut to the line it starts on), `pitfall: true`.
- * A plain fact is never one. The same note on the same node is one problem, whichever lines say it (a statement over
- * several lines says its notes on each); one on two nodes is a problem on each. A note about no node is about its line:
- * only a host file has such warnings (a CI step, a Dockerfile `RUN`), which `hostIssues` already gives. The notes of a
+ * A plain fact is never one, nor is a note the catalog keeps a note (`isProblem`). The same note on the same node is
+ * one problem, whichever lines say it (a statement over several lines says its notes on each); one on two nodes is a
+ * problem on each. A note about no node is about its line: only a host file has such warnings (a CI step, a Dockerfile
+ * `RUN`), which `hostIssues` already gives. The notes of a
  * string run as a script (`bash -c '…'`, `$( )`) are on its words, in the document. None on a line `others` (the
  * other problems) says is not parsed, and none where one of them already says the same.
  */
@@ -105,7 +106,8 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
   for (let line = 0; line < doc.lines.length; line++) {
     const ex = explainDocumentLine(analyzer, doc, line, lang, shells, lean);
     for (const n of ex.noteInfo) {
-      if (n.level === 'note') continue;
+      // (A plain fact is no problem; nor is a caveat the catalog keeps a note, `ssh-local-expansion`, the `…-not-found` of an option.)
+      if (n.level === 'note' || !isProblem(n.code!)) continue;
       for (const { span } of ex.anchors?.filter((a) => a.text === n.text) ?? []) {
         const at = span.start.line;
         const issue: DocumentIssue = {

@@ -183,6 +183,17 @@ describe('diagnosticsFor', () => {
     const quiet = openDocument('# bash-explainer disable=bracket-missing-close\n[ -f a\n', 'shell', parse);
     assert.deepStrictEqual(run(quiet, {}, defaultSettings(), 'web').all, []);
   });
+
+  it('keeps the caveats that stay notes out of the problems, on every surface, and the other caveats in', () => {
+    // `ssh-local-expansion`, `globstar-not-found` and `extglob-not-found` are notes only; `declaration-masks-status` is a problem.
+    const d = openDocument('#!/bin/bash\nssh host "ls $dir"\nls **/*.sh\nls !(a)\nf() {\n  local x=$(false)\n}\n', 'shell', parse);
+    const sh = shellsOf(d.lines, 'a.sh', undefined);
+    for (const surface of ['vscode', 'lsp', 'web', 'cli'] as const) {
+      const r = run(d, sh, defaultSettings(), surface);
+      assert.deepStrictEqual(codes(r.shown), ['declaration-masks-status'], surface);
+      assert.deepStrictEqual(codes(r.all), ['declaration-masks-status'], surface);
+    }
+  });
 });
 
 describe('plain', () => {
