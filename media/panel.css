@@ -1461,43 +1461,51 @@ body {
   --c-redirect: #00737a;
   --c-pattern: #a3268f;
   --c-name: #4b5f73;
+  --c-recv: #c99700;
 }
 @media (prefers-color-scheme: dark) {
   body:not(.vscode-light):not(.vscode-high-contrast-light) {
     --c-redirect: #3fc5b5;
     --c-pattern: #e58ad6;
     --c-name: #a7b8c8;
+  --c-recv: #e3b341;
   }
 }
 :root[data-theme="light"] body:not([class*="vscode-"]) {
   --c-redirect: #00737a;
   --c-pattern: #a3268f;
   --c-name: #4b5f73;
+  --c-recv: #c99700;
 }
 :root[data-theme="dark"] body:not([class*="vscode-"]) {
   --c-redirect: #3fc5b5;
   --c-pattern: #e58ad6;
   --c-name: #a7b8c8;
+  --c-recv: #e3b341;
 }
 body.vscode-light {
   --c-redirect: #00737a;
   --c-pattern: #a3268f;
   --c-name: #4b5f73;
+  --c-recv: #c99700;
 }
 body.vscode-dark {
   --c-redirect: #3fc5b5;
   --c-pattern: #e58ad6;
   --c-name: #a7b8c8;
+  --c-recv: #e3b341;
 }
 body.vscode-high-contrast {
   --c-redirect: #5fe0d0;
   --c-pattern: #f2a0e6;
   --c-name: #c3d2e0;
+  --c-recv: #e3b341;
 }
 body.vscode-high-contrast-light {
   --c-redirect: #00585e;
   --c-pattern: #7d1a6d;
   --c-name: #34475a;
+  --c-recv: #c99700;
 }
 .kind-name, .kind-assignment { color: var(--c-name); }
 .kind-pattern { color: var(--c-pattern); }
@@ -1599,11 +1607,11 @@ body.vscode-high-contrast-light {
   gap: 0.3em;
   margin: 0.1em 0 0 0.6em;
   white-space: nowrap;
-  font-size: 0.78em;
+  font-size: max(11px, 0.78em);
   color: var(--c-muted);
 }
 .u-row .u-side .refs a.u-ref {
-  font-size: 0.95em;
+  font-size: 11px;
   color: var(--c-muted);
   text-decoration-style: dotted;
 }
@@ -1713,7 +1721,7 @@ body.vscode-high-contrast-light {
    are not filled, and nor are the examples. */
 #main.u-who .row.u-row.u-read {
   background-image: repeating-linear-gradient(to right, var(--guide) 0 1px, transparent 1px var(--ind)),
-    linear-gradient(to right, transparent var(--x), color-mix(in srgb, var(--l-command) 10%, transparent) var(--x));
+    linear-gradient(to right, transparent var(--x), color-mix(in srgb, var(--c-recv) 16%, transparent) var(--x));
   background-size: var(--x) 100%, 100% 100%;
   background-position: 1px 0, 0 0;
 }
@@ -1757,11 +1765,11 @@ body.vscode-high-contrast-light {
   background: var(--vscode-editor-background, #fff);
 }
 #who-toggle[aria-pressed="true"] {
-  border-color: var(--c-argument);
-  background: color-mix(in srgb, var(--l-command) 14%, transparent);
+  border-color: var(--c-recv);
+  background: color-mix(in srgb, var(--c-recv) 16%, transparent);
 }
 #who-toggle[aria-pressed="true"] .u-switch {
-  background: var(--c-argument);
+  background: var(--c-recv);
 }
 #who-toggle[aria-pressed="true"] .u-switch::after {
   left: auto;
@@ -1825,7 +1833,10 @@ body.vscode-high-contrast-light {
   display: inline-flex;
   align-items: center;
   padding: 0 0.3em;
-  background: color-mix(in srgb, var(--l-command) 10%, transparent);
+  background: color-mix(in srgb, var(--c-recv) 16%, transparent);
+}
+.u-kmute {
+  color: var(--c-muted);
 }
 .u-swatch-fill {
   display: inline-block;
@@ -1862,4 +1873,120 @@ pre#line {
 }
 .u-row .u-problem .refs {
   margin-left: 0.5em;
+}
+
+
+/* Round 5. The program's side: the words a simple command's program receives, on one line under the command (its
+   header at depth 2, its name's row at depth 1), each word a chip in the tint of what a program receives, a value
+   known only when it runs a placeholder in ‹›; then what bash took out. Rows bash handles itself are grey. */
+.u-row .u-argv {
+  margin: 0.2rem 0 0.05rem;
+  line-height: 1.7;
+}
+.u-argv-lead {
+  color: var(--c-muted);
+  font-size: 0.92em;
+  margin-right: 0.15em;
+}
+.u-argv code.u-arg {
+  display: inline;
+  padding: 0.05em 0.35em;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--c-recv) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-recv) 45%, transparent);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.95em;
+  color: var(--vscode-foreground);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.u-argv .u-ph {
+  font-style: italic;
+  font-family: var(--vscode-font-family, sans-serif);
+  color: color-mix(in srgb, var(--vscode-foreground) 80%, transparent);
+}
+.u-row .u-argv-removed {
+  font-size: 0.88em;
+}
+#main.u-who .row.u-row.u-mute > .u-tok,
+#main.u-who .row.u-row.u-mute > .u-desc > :not(.u-problem) {
+  opacity: 0.55;
+}
+#main.u-who .row.u-row.u-mute > .u-desc {
+  color: var(--c-muted);
+}
+#main.u-who .row.u-row.u-mute > .u-desc > .u-problem {
+  color: var(--vscode-foreground);
+}
+/* A space in the code of an example's title is as wide as the text's (a monospace space reads as two). */
+.example > summary > h3 code {
+  word-spacing: -0.3ch;
+}
+#main.u-who .row.u-row.u-mute::before {
+  opacity: 0.45;
+}
+.u-row .u-form code {
+  background: none;
+  padding: 0;
+}
+.u-row .u-form .ph {
+  font-style: italic;
+}
+
+/* The depth control: one colour for the depth chosen; the arrows only with the stepper (a phone). */
+#layers button.step.passed {
+  background: transparent;
+}
+#layers button.step[aria-current="step"] {
+  --l: var(--vscode-focusBorder, #0078d4);
+}
+#layers:not(.compact) #tp-back,
+#layers:not(.compact) #tp-forward {
+  display: none;
+}
+#layers.compact #step-menu {
+  --l: var(--vscode-focusBorder, #0078d4);
+}
+
+/* The line under the controls: one line, with a button that hides it for good (the key keeps it). */
+#depth-caption .u-cap {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+#depth-caption .u-cap > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#depth-caption .u-cap-hide {
+  flex: none;
+  font: inherit;
+  line-height: 1;
+  padding: 0 0.3rem;
+  border: 0;
+  background: transparent;
+  color: var(--c-muted);
+  cursor: pointer;
+}
+#depth-caption .u-cap-hide:hover {
+  color: var(--vscode-foreground);
+}
+.u-swatch.u-swatch-dot {
+  background: repeating-linear-gradient(to bottom, currentColor 0 2px, transparent 2px 4px);
+  margin-right: 0.3em;
+}
+.u-key .u-argv-sample {
+  margin: 0;
+}
+#layers-label {
+  margin-right: 0.4rem;
+}
+/* The section a caveat cites, legible as the rows' links. */
+.u-problem .refs a,
+#notes .refs a {
+  font-size: 11px;
+}
+/* On a narrow view, a header with no text yet has no empty line: its chip comes under its code. */
+#tree.u-stacked .u-l1 > .text.u-blank {
+  display: none;
 }

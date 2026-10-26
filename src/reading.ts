@@ -26,6 +26,7 @@
 import type { Pos, ScriptProcess, Span, Token } from './analyzer-types';
 import { binaryTestOps, extendedEqualOps, unaryTestOps } from './dict/syntax';
 import type { Lang } from './i18n';
+import type { ArgvLine } from './argvline';
 import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } from './refs';
 import type { NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
@@ -85,6 +86,12 @@ export interface ReadingNode {
   from?: { meaning?: string; line?: number; loop?: boolean };
   /** (Prototype B) On a word after the command name: what bash's expansions make of it before the command reads it. */
   expands?: ('glob' | 'tilde' | 'split')[];
+  /** (Prototype B) On a word: its tilde prefixes (3.5.2), each with the text it is (`~`, `~user`). */
+  tildes?: { span: Span; text: string; user: string }[];
+  /** (Prototype B) On a simple command with a name: the words its program receives (src/argvline.ts). */
+  argv?: ArgvLine;
+  /** (Prototype B) On a compound command: its real code on one line, long inner parts cut (`if [[ … ]]; then source config.ini; fi`). */
+  code?: string;
   /** On an `aliasWord`: the alias's text, which bash reads in its place. */
   replacement?: string;
   /** On a command name (and the reserved word `time`): what the name is, and what else (`Token.name`). */
@@ -107,6 +114,10 @@ export interface ReadingContext {
   variable?(part: SyntaxNode): { meaning?: string; line?: number; loop?: boolean } | undefined;
   /** (Prototype B) What bash's expansions make of a word. */
   expands?(word: SyntaxNode): ('glob' | 'tilde' | 'split')[];
+  /** (Prototype B) The tilde prefixes of a word (src/semantics/words.ts `WordMeaning.tildes`). */
+  tildes?(word: SyntaxNode): { span: Span; text: string; user: string }[];
+  /** (Prototype B) The words the program of a simple command receives. */
+  argv?(cmd: SyntaxNode): ArgvLine | undefined;
 }
 
 /** The texts the tree says itself, where no token says them. */
@@ -117,6 +128,13 @@ const TEXTS = {
   again: { ja: 'もう一度読んで実行する文字列', en: 'Text to read and run again' },
   /** The text of the analyzer for a word it says nothing more of (`Analyzer.word`). */
   word: { ja: (w: string) => `文字列 \`${w}\``, en: (w: string) => `Word \`${w}\`` },
+  /** (Prototype B) An operator of `[[ ]]` as a row of its own (`testRow`). */
+  testUnary: { ja: (t: string) => `検査: オペランドが${t}なら真`, en: (t: string) => `Test: true if its operand ${t}` },
+  testBinary: { ja: (t: string) => `検査: ${t}なら真`, en: (t: string) => `Test: true if ${t}` },
+  join: {
+    and: { ja: 'かつ: 両辺が真なら真。右辺は左辺が真のときだけ評価する', en: 'And: true if both sides are true; the right side is evaluated only if the left one is true' },
+    or: { ja: 'または: どちらかが真なら真。右辺は左辺が偽のときだけ評価する', en: 'Or: true if either side is true; the right side is evaluated only if the left one is false' },
+  },
   /** The delimiters of `[[ ]]` (3.2.5.2), which no token explains. */
   testOpen: { ja: '条件式の始まり', en: 'Starts the conditional expression' },
   testClose: { ja: '条件式の終わり', en: 'Ends the conditional expression' },
@@ -282,7 +300,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       // src/refs.ts: `&&` there is not a list's.)
       if (isExpression(c.parent!) && c.field === 'operator' && expressionHost(c) === 'extended_test' && !n.text) {
         const op = testOperator(c);
-        if (op) n.text = op;
+        if (op) n.text = testRow(c, op);
       }
       return [n];
     }
@@ -307,7 +325,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
         // (Only in `[[ ]]`: `-f`, `-eq`.)
         const n = shellNode(c, layer, 'operator', []);
         const op = testOperator(c);
-        if (op && !n.text) n.text = op;
+        if (op && !n.text) n.text = testRow(c, op);
         return [n];
       }
     }
@@ -333,6 +351,17 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     return kind && TEXTS.operand[kind][cx.lang](op);
   };
 
+  /**
+   * (Prototype B) The row of an operator of `[[ ]]` (6.4, 3.2.5.2): a test, said apart from the condition it makes
+   * (`-f`: true if its operand is an existing regular file), or how `&&` and `||` join two (the right side is
+   * evaluated only when the left does not decide).
+   */
+  const testRow = (c: SyntaxNode, op: string): string => {
+    const t = c.type === 'test_operator' ? c.text : c.type;
+    if (t === '&&' || t === '||') return TEXTS.join[t === '&&' ? 'and' : 'or'][cx.lang];
+    return (c.parent!.type === 'unary_expression' ? TEXTS.testUnary : TEXTS.testBinary)[cx.lang](op);
+  };
+
   /** What the operator of a conditional expression tests (`-f`: is an existing regular file; `==` in `[[ ]]`: a glob match). */
   const testOperator = (c: SyntaxNode): string | undefined => {
     const inDouble = c.parent!.type === 'binary_expression' && ['=', '==', '!='].includes(c.type);
@@ -355,7 +384,10 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const n = shellNode(c, layer, kind, children);
     // A skeleton names a compound command better than its first line (`if ‹condition› then … fi`).
     const t = tokenAt(n.span);
-    if (t && kind !== 'list' && kind !== 'andList' && kind !== 'orList' && kind !== 'pipeline') n.label = t.label;
+    if (t && kind !== 'list' && kind !== 'andList' && kind !== 'orList' && kind !== 'pipeline') {
+      n.label = t.label;
+      n.code = compactCode(c);
+    }
     // (A list over several lines, as the labels of the list view say it: `a …`.)
     else if (kind === 'list' && c.text.includes('\n')) n.label = `${n.label} …`;
     return n;
@@ -429,6 +461,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const ends = c.namedChildren.map((x) => ((x.type === 'heredoc_redirect' && x.namedChildren.find((h) => h.type === 'heredoc_start')) || x).endIndex);
     n.label = short(c.text.slice(0, Math.max(...ends) - c.startIndex));
     n.refs = union(['3.2.2', '3.7.1'], n.refs);
+    const argv = named && layer === 'bash' ? cx.argv?.(c) : undefined;
+    if (argv) n.argv = argv;
     return n;
   };
 
@@ -511,6 +545,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     n.refs = union(kind === 'argument' ? ['3.7.1'] : [], n.refs, expansionSections(cx.meaning(w)));
     const expands = kind === 'argument' ? cx.expands?.(w) : undefined;
     if (expands?.length) n.expands = expands;
+    const tildes = kind === 'argument' ? cx.tildes?.(w) : undefined;
+    if (tildes?.length) n.tildes = tildes;
     // A language in a word no command reads, which bash reads itself (the regex of `=~`), is under the word.
     if (w.parent!.type !== 'command' && w.parent!.type !== 'command_name') {
       for (const c of tokenAt(n.span, WORD_TOKENS)?.children ?? []) if (c.origin === 'embedded') language(n.children, c, 'bash');
@@ -704,6 +740,36 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   });
 
   return { layer: 'bash', kind: 'line', label: '', span: range, children: collect(tree.root, 'bash'), ...(cx.extra?.length ? { tokens: cx.extra } : {}) };
+}
+
+/** (Prototype B) The types `compactCode` cuts first, and how: the delimiters kept around `…`. */
+const CUT: Record<string, (c: SyntaxNode) => string> = {
+  test_command: (c) => `${c.children[0].text} … ${c.children[c.children.length - 1].text}`,
+  extended_test: (c) => `${c.children[0].text} … ${c.children[c.children.length - 1].text}`,
+  do_group: () => 'do … done',
+  compound_statement: () => '{ …; }',
+  subshell: () => '( … )',
+};
+const KEYWORDS_BEFORE = new Set(['if', 'then', 'else', 'elif', 'do', 'while', 'until', '{', '(', 'in', ';', '&&', '||', '|', '!']);
+
+/**
+ * (Prototype B) The real code of a compound command on one line, at most `max` characters where it can: its parts
+ * as written, a line break as `;` (none after a reserved word that starts a part), and when it is too long the
+ * parts `CUT` names cut to their delimiters, then other commands to `…`.
+ */
+function compactCode(c: SyntaxNode, max = 44): string {
+  if (!c.text.includes('\n') && c.text.length <= max) return c.text;
+  const kids = c.children;
+  const join = (texts: string[]): string => texts.reduce((out, t, i) => {
+    if (!i) return t;
+    const gap = c.text.slice(kids[i - 1].endIndex - c.startIndex, kids[i].startIndex - c.startIndex);
+    const sep = !gap.includes('\n') ? gap.replace(/\s+/g, ' ') : KEYWORDS_BEFORE.has(kids[i - 1].text) || t === ';' ? ' ' : '; ';
+    return out + sep + t;
+  }, '');
+  let texts = kids.map((k) => (k.text.includes('\n') ? (CUT[k.type]?.(k) ?? '…') : k.text));
+  if (join(texts).length > max) texts = kids.map((k, i) => (CUT[k.type] ? CUT[k.type](k) : texts[i]));
+  if (join(texts).length > max) texts = kids.map((k, i) => (k.named && !CUT[k.type] && k.type !== 'variable_name' && k.field !== 'value' ? '…' : texts[i]));
+  return join(texts);
 }
 
 /** Every node of a reading tree, depth first. */

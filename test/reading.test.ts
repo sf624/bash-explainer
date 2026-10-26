@@ -749,9 +749,11 @@ describe('the reading tree of a line', () => {
       '    bash/keyword ]]',
     ]);
     const t = explain('[[ -f $f && $a == b* || ! a -eq 1 ]]').reading!;
-    assert.strictEqual(find(t, '-f').text, 'is an existing regular file');
-    assert.strictEqual(find(t, '-eq').text, 'numbers are equal');
-    assert.strictEqual(find(t, '==').text, 'strings are equal (the right side is a glob pattern)');
+    // (Prototype B: each operator a row of its own, said apart from the condition it makes.)
+    assert.strictEqual(find(t, '-f').text, 'Test: true if its operand is an existing regular file');
+    assert.strictEqual(find(t, '-eq').text, 'Test: true if numbers are equal');
+    assert.strictEqual(find(t, '==').text, 'Test: true if strings are equal (the right side is a glob pattern)');
+    assert.strictEqual(find(t, '&&').text, 'And: true if both sides are true; the right side is evaluated only if the left one is true');
     assert.strictEqual(find(t, '!').text, undefined);
     // (`&&` in `[[ ]]` is not a list's; nor in `(( ))`, where `==` is arithmetic and says nothing of strings.)
     assert.deepStrictEqual(find(t, '&&').refs, ['3.2.5.2', '6.4']);

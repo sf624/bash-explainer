@@ -34,7 +34,7 @@ export type FromPanel =
  * What the panel remembers per viewer: the list or the tree view, and the step of the tree it shows (1–8: the line
  * alone up to every layer). `level` (1–4: the layers) is what it kept before the steps, read when there is no step.
  */
-export interface PanelState { view?: 'list' | 'tree'; level?: number; step?: number; /** Prototype B: the depth of the one view (1–2). */ depth?: number; /** Prototype B: whether the program's side is shown. */ who?: boolean; /** Prototype B: whether the examples are drawn open. */ examples?: 'open' | 'closed' }
+export interface PanelState { view?: 'list' | 'tree'; level?: number; step?: number; /** Prototype B: the depth of the one view (1–2). */ depth?: number; /** Prototype B: whether the program's side is shown. */ who?: boolean; /** Prototype B: whether the examples are drawn open. */ examples?: 'open' | 'closed'; /** Prototype B: the line under the controls hidden. */ captions?: 'hidden' }
 
 export interface PanelLine {
   lang: Lang;
@@ -62,8 +62,10 @@ export interface PanelLine {
  * The references the rows and notes cite (src/references.ts), for their links: the link's text (§3.7.2, execve(2)),
  * the label ("Bash manual 3.7.2"), what it is about and its page.
  */
-function manualLinks(lang: Lang, ex: LineExplanation): Record<string, { text: string; label: string; title: string; url: string }> {
+function manualLinks(lang: Lang, ex: LineExplanation, around: readonly AroundLine[] = []): Record<string, { text: string; label: string; title: string; url: string }> {
   const ids = new Set<string>(ex.notes.flatMap((n) => noteRefs(ex, n) ?? []));
+  // (Prototype B: and those of the problems of the lines around, drawn as the line's own.)
+  for (const a of around) for (const p of a.problems) for (const id of p.refs) ids.add(id);
   const walk = (t: Token): void => {
     for (const id of t.refs ?? []) ids.add(id);
     t.children.forEach(walk);
@@ -77,15 +79,25 @@ function manualLinks(lang: Lang, ex: LineExplanation): Record<string, { text: st
   }));
 }
 
-/** (Prototype B) A line of a block around the line shown: its text, what the block is, and the problems on it. */
-export interface AroundLine { line: number; label: string; text: string; problems: { level: NoteLevel; text: string }[] }
+/** (Prototype B) A line of a block around the line shown: its text, what the block is, and the problems on it, as the notes of a line are drawn. */
+export interface AroundLine { line: number; label: string; text: string; problems: { level: NoteLevel; text: string; label: string; body: string; refs: readonly string[] }[] }
 
-/** (Prototype B) The lines of the blocks around the line shown (the `for` of a loop body), with their problems. */
-export function aroundLines(ex: LineExplanation, issues: readonly DocumentIssue[], textOf: (line: number) => string): AroundLine[] {
-  return ex.context.map((c) => ({
-    line: c.line, label: c.label, text: textOf(c.line),
-    problems: issues.filter((i) => i.startLine === c.line).map((i) => ({ level: i.severity, text: i.message })),
-  }));
+/**
+ * (Prototype B) The lines of the blocks around the line shown (the `for` of a loop body), with their problems: each as
+ * the note of its line says it (`explainAt`: its level, its heading, its sections), else as the editor does.
+ */
+export function aroundLines(ex: LineExplanation, issues: readonly DocumentIssue[], textOf: (line: number) => string, explainAt?: (line: number) => LineExplanation): AroundLine[] {
+  return ex.context.map((c) => {
+    const there = issues.filter((i) => i.startLine === c.line);
+    const own = there.length && explainAt ? explainAt(c.line) : undefined;
+    return {
+      line: c.line, label: c.label, text: textOf(c.line),
+      problems: there.map((i) => {
+        const n = own && notesByLevel(own).find((x) => x.text === i.message);
+        return n ? { level: n.level, text: n.text, label: n.label, body: n.body, refs: noteRefs(own, n.text) ?? [] } : { level: i.severity, text: i.message, label: '', body: i.message, refs: [] };
+      }),
+    };
+  });
 }
 
 /** The problems on `line`, as the panel underlines them in its copy of the line (to its end when they go on). */
@@ -117,7 +129,7 @@ export function panelUpdate(p: PanelLine) {
     lineLabel: t.line(p.line + 1) + (ex.shell ? ` · ${t.forShell(SHELL_NAMES[ex.shell])}` : ''),
     lineText: p.lineText,
     explanation: p.placement === 'bottom' ? ex : placeExamples(ex),
-    manual: manualLinks(lang, ex),
+    manual: manualLinks(lang, ex, p.around),
     // (Said after a link's name, for a screen reader: the links open outside the panel.)
     linkNote: p.web ? tp.opensTab : tp.opensBrowser,
     examplesFirst: p.placement === 'first',
