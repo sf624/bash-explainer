@@ -94,7 +94,7 @@ The review of #356 found more, fixed in the same PR: prefix assignments read the
 
 ## 6. A corpus, and the decisions
 
-A corpus of 536 real scripts from 23 repositories (October 2026) measured what the rules give: of 37,674 parameter expansions, 69 (0.18%) got a value, and none of the 69 was misleading when read by hand. 60% of the scripts are wholly blind (a `source`, an `eval`, a `$cmd`), and of about 790 reads of a constant the script sets once, 651 lost their value to that alone. So the next gain is trust per position, not more forms: the roadmap's "Next" has it, then the values of top-level constants inside functions, then whole words, arrays and per-call values (little gain in the corpus).
+A corpus of 536 real scripts from 23 repositories (October 2026) measured what the rules give: of 37,674 parameter expansions, 69 (0.18%) got a value, and none of the 69 was misleading when read by hand. 60% of the scripts are wholly blind (a `source`, an `eval`, a `$cmd`), and of about 790 reads of a constant the script sets once, 651 lost their value to that alone. So the next gain is trust per position, not more forms: the roadmap's "Next" has it, then the values of top-level constants inside functions, then whole words, arrays and per-call values (little gain in the corpus). Measured again with a prototype ([trust-per-position.md](trust-per-position.md), section 8), trust per position gains less than this suggests: most of those reads are in functions, or after a `source` near the top.
 
 The questions of the first set, as the maintainer decided them (2026-10-26):
 
