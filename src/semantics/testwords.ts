@@ -27,3 +27,57 @@ export function testWordShape(word: SyntaxNode): 'one' | 'glob' | 'number' | 'sp
   }
   return shape;
 }
+
+/** What a write gives a variable, as src/semantics/trust.ts reads it (its `Value`). */
+export type WrittenValue = 'number' | 'none' | 'kept' | 'unknown' | { names: string[]; text: string; fixed?: true };
+
+/** A value that is a copy of one variable (`$save`, `${IFS}`, quoted or not): its name. */
+export const COPY = /^\$\{?([A-Za-z_]\w*)\}?$/;
+
+/**
+ * Whether no unquoted expansion of the variables `splits` in a word of `test` or `[` may give `-v` or more words than
+ * one, with every IFS the script may set; and when `numbers` (`[ $# -eq 1 ]`), whether no IFS splits a number. Each
+ * value the script gives those variables must be text it wrote, split by every such IFS. `writes`: the values each
+ * variable is given. IFS may also be a copy of a variable (`IFS=$save`) whose values are such text or copies of IFS
+ * (`save=$IFS`), which starts as space, tab and newline. The variables IFS takes copies from (and IFS itself), for the
+ * walk to check that each copy reads a value the script set there; undefined when a word may be `-v`.
+ */
+export function testSplits(writes: (name: string) => readonly WrittenValue[], splits: readonly string[], numbers: boolean): ReadonlySet<string> | undefined {
+  const chain = new Set<string>(['IFS']);
+  const texts: string[] = [];
+  for (const queue = ['IFS']; queue.length;) {
+    const name = queue.pop()!;
+    const values = writes(name);
+    // (A variable the script never sets may come from the environment; IFS does not: bash sets it.)
+    if (!values.length && name !== 'IFS') return undefined;
+    for (const v of values) {
+      if (v === 'none') continue;
+      if (typeof v !== 'object') return undefined;
+      const copy = COPY.exec(v.text)?.[1];
+      // (An empty value is the one value with no `fixed`, but no names either.)
+      if (v.fixed || !v.names.length) texts.push(v.text);
+      else if (copy && v.names.length === 1) {
+        if (copy === 'IFS') texts.push(' \t\n');
+        else if (!chain.has(copy)) queue.push(copy);
+        chain.add(copy);
+      } else return undefined;
+    }
+  }
+  const separators = texts.join('');
+  const digits = /[\d-]/.test(separators);
+  if (numbers && digits) return undefined;
+  // (Text the script gives splits into words it knows, none of them `-v` unless one is: with any blank or IFS
+  // character as a separator, a word `-v` stays one. Text with numbers of `$(( ))` in it, which the value leaves
+  // out, too. Unset, the variable gives no word.)
+  const notV = (v: WrittenValue): boolean => {
+    if (v === 'none') return true;
+    if (v === 'number') return !digits;
+    if (typeof v !== 'object' || (!v.fixed && (v.names.length > 0 || digits)) || /[*?[]/.test(v.text)) return false;
+    return !v.text.split(/\s/).some((x) => [...separators].reduce((ws, c) => ws.flatMap((y) => y.split(c)), [x]).includes('-v'));
+  };
+  for (const name of splits) {
+    const values = writes(name);
+    if (!values.length || values.some((v) => !notV(v))) return undefined;
+  }
+  return chain;
+}

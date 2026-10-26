@@ -1818,6 +1818,9 @@
     "manual": "3.7.1",
     "snippet": "x=1; : $(( x++ )) > f$(( x *= 3 )); a=1; b=$(( a *= 3 )) : > f$(( a++ )); c=1; d=$(( c *= 3 )) : $(( c++ ))\ne=1; let e*=3 > f$(( e++ )); i=5; i=$(( i = 9 ))x; j=5; declare j=$(( j = 9 ))x\nk=1; k=5 > f$(( k *= 2 )); m=1; declare n=$(( m *= 3 )) > f$(( m++ )); p=1; { p=2; } > f$(( p *= 5 ))",
     "note": "a simple command expands its words, then the values of its assignments, then its redirections; a compound command makes its redirections first",
+    "gaps": {
+      "end.variables.n": "a redirection to a file may fail, and then its command does not run: the model takes `declare n=…` as one that may not run"
+    },
     "facts": {
       "end": {
         "variables": {

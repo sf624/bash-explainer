@@ -197,7 +197,9 @@ describe('shell state: paths', () => {
       assert.strictEqual(set(end(src), 'noglob'), 'default', src);
     }
     assert.strictEqual(set(before('x=$(set -f; echo)', 'echo'), 'noglob'), 'on');
-    for (const src of ['! set -f', 'time set -f', '{ set -f; } > out', 'set -f 2>/dev/null']) assert.strictEqual(set(end(src), 'noglob'), 'on', src);
+    for (const src of ['! set -f', 'time set -f', '{ set -f; } > /dev/null', 'set -f 2>/dev/null']) assert.strictEqual(set(end(src), 'noglob'), 'on', src);
+    // (A redirection to a file may fail, and then the group does not run: docs/design/trust-allow-list.md, section 2.)
+    assert.strictEqual(set(end('{ set -f; } > out'), 'noglob'), 'unknown');
   });
   it('the last stage of a pipeline runs in the shell with lastpipe, unless job control is on; always in zsh and ksh', () => {
     assert.strictEqual(variable(end('shopt -s lastpipe; echo | read v'), 'v')?.set, 'on');

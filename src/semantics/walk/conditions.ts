@@ -9,7 +9,7 @@ import { attribute, EMPTY, option, type ShellState, type Tri } from '../shellsta
 import type { Decision } from '../state';
 import { actedNames, namespaceOf } from '../../argv/query';
 import { builtins } from '../../dict/builtins';
-import { builtinParse } from '../effects';
+import { builtinParse, commandName } from '../effects';
 import { testSpec } from '../names';
 import { type WalkSource, wordIn } from '../words';
 import { ArithError, NAME, SUBSTITUTIONS } from './shared';
@@ -28,7 +28,28 @@ function safeRedirect(r: SyntaxNode): boolean {
   return op === '>&' && (target === '1' || target === '2');
 }
 
+/**
+ * Whether the redirection `r` may fail, so that its command does not run (docs/design/trust-allow-list.md, section 2:
+ * a file not found, a directory, `set -C`, a descriptor not open). A here-document and a here-string do not; nor
+ * `safeRedirect`'s, a copy of fd 0, 1 or 2 (`<&0`), or closing a descriptor (`3>&-`).
+ */
+export function redirectionMayFail(r: SyntaxNode): boolean {
+  // (Nor one from or to a process substitution, `< <(cmd)`: a pipe bash makes itself.)
+  if (r.type !== 'file_redirect' || safeRedirect(r) || field(r, 'destination')?.type === 'process_substitution') return false;
+  const op = r.children.find((c) => !c.named)!.type;
+  // (One with no word yet, `> >g` while typing, is an error.)
+  const to = field(r, 'destination');
+  const target = to && staticWordValue(to);
+  return !((op === '<&' || op === '>&') && ['0', '1', '2', '-'].includes(target ?? ''));
+}
+
 const INTEGER_TESTS = new Set(['-eq', '-ne', '-lt', '-le', '-gt', '-ge']);
+
+/** The parts of a word that expand to text not written in it. */
+const EXPANDING = ['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution'];
+
+/** The builtins that may change an option a pattern reads, or run text the walk reads elsewhere (see `samePatterns`). */
+const OPTION_CHANGERS: ReadonlySet<string> = new Set(['shopt', 'eval', 'source', '.', 'builtin', 'command', 'trap']);
 
 /** What the walk decides of its conditions, and the values they read (src/semantics/words.ts evaluates their words). */
 export class WalkConditions {
@@ -357,6 +378,23 @@ export class WalkConditions {
    * The items of the `case` statement `n` whose lists run, in order, when the word and the patterns tried are known from
    * `st` (bash: the patterns are tried in turn; `;;` ends, `;&` runs the next list, `;;&` tries the patterns after it).
    */
+  /**
+   * Whether the patterns of the case items `rest` match after the lists of `ran` as they do before them: each is static
+   * text, and each command of those lists has a static name that is no function or alias here, nor a builtin that may
+   * change an option a pattern reads (`shopt -s nocasematch`, `extglob`) or run other text.
+   */
+  private samePatterns(ran: readonly SyntaxNode[], rest: readonly SyntaxNode[], st: ShellState): boolean {
+    // (A pattern with no expansion, and no tilde, whose `HOME` a list may set.)
+    const plain = (v: SyntaxNode): boolean => !v.text.startsWith('~') && ![v, ...descendants(v, EXPANDING)].some((x) => EXPANDING.includes(x.type));
+    if (!rest.every((item) => fields(item, 'value').every(plain))) return false;
+    return ran.every((item) => descendants(item, ['command']).every((c) => {
+      // (Assignments alone are fine.)
+      if (!field(c, 'name')) return true;
+      const name = commandName(c);
+      return name !== undefined && !OPTION_CHANGERS.has(name) && !st.functions.get(name) && !st.aliases.get(name);
+    }));
+  }
+
   caseRuns(n: SyntaxNode, items: readonly SyntaxNode[], st: ShellState): number[] | undefined {
     const nocase = option(st, 'shopt', 'nocasematch');
     const { value: runs, reads } = this.reads((): number[] | undefined => {
@@ -382,6 +420,10 @@ export class WalkConditions {
         const end = (item: SyntaxNode): string | undefined => item.children.find((c) => c.type === ';&' || c.type === ';;&')?.type;
         while (end(items[k]) === ';&' && k + 1 < items.length) out.push(++k);
         if (end(items[k]) !== ';;&') break;
+        // (bash tests the patterns after it in the state the lists that ran leave, which this decision does not
+        // follow: it is not made, unless those patterns are static text and the lists change no option they read.
+        // The walk expands them there: see the walker's `case_statement`.)
+        if (k + 1 < items.length && !this.samePatterns(items.slice(found, k + 1), items.slice(k + 1), st)) return undefined;
         i = k + 1;
       }
       return out;

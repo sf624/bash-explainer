@@ -2,7 +2,7 @@
   "//": "Files in src/ over 1,000 lines, each with a ceiling at its current length. A ceiling may only go down (docs/design/analyzer.md, 3.1); when a file fits under 1,000 lines, remove its entry.",
   "src/dict/commands.ts": 2101,
   "src/examples/jq.ts": 1847,
-  "src/semantics/walk/walker.ts": 1490,
+  "src/semantics/walk/walker.ts": 1469,
   "src/syntax/adapters/unbash.ts": 1420,
   "src/examples/awk.ts": 1387,
   "src/semantics/words.ts": 1136

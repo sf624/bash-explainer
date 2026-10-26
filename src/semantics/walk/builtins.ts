@@ -14,7 +14,7 @@ import { expansionFailure, sameInEveryLocale, substring } from '../chars';
 import { temporariesUnset } from '../names';
 import { aliasOf, builtinParse, commandName, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
 import { attribute, type Attribute, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy } from '../shellstate';
-import { optionRoles, readDeclarationWords, type Declaration } from '../vars';
+import { changedByBash, optionRoles, readDeclarationWords, type Declaration } from '../vars';
 import { ExpansionError, NAME, type Operand } from './shared';
 import type { Walker } from './walker';
 
@@ -272,8 +272,9 @@ export class WalkBuiltins {
         const nameNode = field(w, 'name')!;
         const value = field(w, 'value');
         const subscript = nameNode.type === 'subscript';
+        const text = value ? this.w.conditions.staticText(value, st, true) : '';
         out.push({ node: w, name: subscript ? field(nameNode, 'name')!.text : nameNode.text, subscript,
-          assign: { append: w.children.some((c) => c.type === '+='), text: value ? this.w.conditions.staticText(value, st, true) : '', array: value?.type === 'array', source: value } });
+          assign: { append: w.children.some((c) => c.type === '+='), text, array: value?.type === 'array', source: value, kept: !!value && this.readsUnwritten(value, st) } });
         continue;
       }
       // A word: `x`, `a[1]` (a glob that matches no file, as the walk takes it), `y=2` in `command declare y=2`; `"c"=$x`
@@ -384,7 +385,8 @@ export class WalkBuiltins {
     for (const l of removes) attrs[l] = { state: 'off', at: n };
     // (A name the script has not set may come from the environment: by custom, those are in capitals.)
     const set: Tri = prev ? prev.set : /^[A-Z_][A-Z0-9_]*$/.test(name) ? 'unknown' : 'off';
-    st = this.w.put(st, 'variables', name, { declared: 'on', set, attrs, value: prev?.value, at: n });
+    // (One the script has not set keeps a value from the environment: `export n`, `declare n` outside a function.)
+    st = this.w.put(st, 'variables', name, { declared: 'on', set, attrs, value: prev?.value, at: n, ...(!prev || prev.kept ? { kept: true as const } : {}) });
     // (A variable readonly before the declaration keeps its value; `readonly r=1` sets it.)
     if (!o.assign || prev?.attrs.r?.state === 'on') return st;
     // (The state of an assignment in a declaration has the attributes the declaration gives, and the values from before
@@ -455,6 +457,21 @@ export class WalkBuiltins {
     return st;
   }
 
+  /**
+   * Whether the word `w` reads a variable whose value the script may not have written in `st`: one it has not set
+   * there (it may come from the environment), or one `kept` (see `VariableState.kept`). Not bash's own (`RANDOM`),
+   * nor IFS, which bash sets when it starts whatever the environment says.
+   */
+  private readsUnwritten(w: SyntaxNode, st: ShellState): boolean {
+    return [w, ...descendants(w, ['simple_expansion', 'expansion'])].some((e) => {
+      const name = (e.type === 'simple_expansion' || e.type === 'expansion') ? e.namedChildren[0] : undefined;
+      if (name?.type !== 'variable_name') return false;
+      const target = this.resolve(st, name.text) ?? name.text;
+      const v = st.variables.get(target);
+      return !changedByBash(target) && target !== 'IFS' && (!v || !!v.kept);
+    });
+  }
+
   /** The variable that `name` stands for, following namerefs; undefined when it is not known. */
   resolve(st: ShellState, name: string): string | undefined {
     const seen = new Set<string>();
@@ -476,9 +493,10 @@ export class WalkBuiltins {
     const subscript = nameNode.type === 'subscript';
     const name = subscript ? field(nameNode, 'name')!.text : nameNode.text;
     const text = value ? this.w.conditions.staticText(value, st, true) : '';
+    const kept = !!value && this.readsUnwritten(value, st);
     // (dash ends the shell on a prefix assignment to a readonly variable too: `r=2 true`.)
     if (statement || !this.w.bash) this.assignmentError(st, name, value?.type === 'array' ? '' : text, a);
-    return this.assign(st, name, subscript, { append: a.children.some((c) => c.type === '+='), text, array: value?.type === 'array', source: value }, a, false, false, temporary);
+    return this.assign(st, name, subscript, { append: a.children.some((c) => c.type === '+='), text, array: value?.type === 'array', source: value, kept }, a, false, false, temporary);
   }
 
   /**
@@ -568,7 +586,9 @@ export class WalkBuiltins {
     if (is('n') && !nameref && (text === undefined || !NAME.test(text))) return st;
     // (An integer or a case attribute changes the value: then the word alone does not give it.)
     const source = text === undefined && !how.append && !['i', 'l', 'u'].some(is) ? how.source : undefined;
-    st = this.setVariable(st, target, at, text, false, is('a') || is('A'), source);
+    // (Text made of a value the script may not have written, or added to one: `kept`.)
+    const kept = !!how.kept || (how.append && (!prev || !!prev.kept));
+    st = this.setVariable(st, target, at, text, false, is('a') || is('A'), source, kept);
     return temporary ? this.withoutCase(st, target) : st;
   }
 
@@ -580,9 +600,9 @@ export class WalkBuiltins {
   }
 
   /** Sets `name` (to `value`, when known), exporting it under `set -a` (not an array: bash cannot export one). */
-  setVariable(st: ShellState, name: string, at: SyntaxNode, value: string | undefined, plain = false, array = false, source?: SyntaxNode): ShellState {
+  setVariable(st: ShellState, name: string, at: SyntaxNode, value: string | undefined, plain = false, array = false, source?: SyntaxNode, kept = false): ShellState {
     const prev = st.variables.get(name);
-    st = this.w.put(st, 'variables', name, { declared: 'on', set: 'on', attrs: prev?.attrs ?? {}, value, ...(source ? { source } : {}), at });
+    st = this.w.put(st, 'variables', name, { declared: 'on', set: 'on', attrs: prev?.attrs ?? {}, value, ...(source ? { source } : {}), at, ...(kept ? { kept: true as const } : {}) });
     // Assigning PATH empties the table of remembered paths.
     if (name === 'PATH') st = this.forgetHashed(st);
     if (name === 'POSIXLY_CORRECT' && !plain && this.w.bash && option(st, 'set', 'posix') !== 'on') st = this.setPosix(st, true, at, true);

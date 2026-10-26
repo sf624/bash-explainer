@@ -4021,5 +4021,128 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.6",
+    "snippet": "x=1; { x=2; } < ./nofile 2>/dev/null; @PROBE:a@ \"$x\"; declare x=3 < ./nofile 2>/dev/null; @PROBE:b@ \"$x\"",
+    "none": {
+      "a": "the redirection may fail, and then the group does not run",
+      "b": "the redirection may fail, and then `declare` does not run"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: ./nofile: No such file or directory"
+    }
+  },
+  {
+    "manual": "3.6",
+    "snippet": "f() { x=2; }; x=1; f > ./no/such/dir 2>/dev/null; @PROBE:a@ \"$x\"; g() { x=3; } 2>&9; g 2>/dev/null; @PROBE:b@ \"$x\"",
+    "none": {
+      "a": "the redirection may fail, and then the function does not run",
+      "b": "a redirection of the definition may fail at each call (fd 9 is not open)"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: ./no/such/dir: No such file or directory"
+    }
+  },
+  {
+    "manual": "3.6",
+    "snippet": "x=1; x=2 < ./nofile 2>/dev/null; @PROBE:a@ \"$x\"; { x=3; } > /dev/null 2>&1; @PROBE:b@ \"$x\"; { x=4; } <<E\nhi\nE\n@PROBE:c@ \"$x\"; { x=5; } <<< hi; @PROBE:d@ \"$x\"; { x=6; } <&0 >&2 3>&-; @PROBE:e@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "3"
+        ]
+      ],
+      "c": [
+        [
+          "4"
+        ]
+      ],
+      "d": [
+        [
+          "5"
+        ]
+      ],
+      "e": [
+        [
+          "6"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: ./nofile: No such file or directory"
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "x=b; case b in b) x=c ;;& \"$x\") y=1 ;; *) y=2 ;; esac; @PROBE:a@ \"$y\"",
+    "none": {
+      "a": "the pattern after `;;&` is tested with the `x` the list before it set"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "x=b; case b in b) x=c ;;& c) y=1 ;; *) y=2 ;; esac; @PROBE:a@ \"$y\"; case b in b) z=1 ;; \"$x\") z=2 ;; esac; @PROBE:b@ \"$z\"",
+    "note": "static patterns after `;;&` match as they would before the list: the decision stands",
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "save=$IFS; IFS=:; x=a; IFS=$save; [ $x = a ]; @PROBE:a@ \"$x\"",
+    "note": "IFS saved and restored: the trust follows the copy, and `$x` keeps its value (a word of `[` that may split into `-v` would trust nothing)",
+    "facts": {
+      "a": [
+        [
+          "a"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

@@ -567,6 +567,19 @@ A condition was said to be always true or false, or code to never run, where bas
 
 The same holds after `test -v "$1"`, `[[ -v $x ]]`, `[ "$1" "$2" ]` or `test "$@"` (with `-v` and `a[u=2]`), an unquoted word of `[` or `test` that may split into `-v` and a name (`[ $x ]`, `[ -z $1 ]`), a read of a nameref whose target is not known (`declare -n r=$1; : "$r"`; also through another nameref, `declare -n a=r`, and its assignment or `unset`), `${x@P}` of a value that may run code, `compgen -W '$((u=2))'`, `fc -s`, `declare n; (( n ))` with `n='u=2'` in the environment (also `declare -I n` or `local -I n` in a function, which keep the value from outside), a function defined after `shopt -so allexport` (exported, as after `set -a`), `enable -f` (a builtin loaded from a shared object), `mapfile -C 'x=2; :'` and `readarray -C` (bash runs the callback's text in this shell), `jobs -x eval x=2`, and `ulimit -n` or `-u` (a redirection, even to `/dev/null`, or the pipe of `$( )` may then fail). `enable -d x` reads `x` as the builtin to remove; before, as the value of `-d`. A recursive call may also give or take attributes (`readonly x`, `declare -gi x`). A function called only from code that a recursive call, or a call the model does not follow, may run is no longer said to never run. Past 64 nested calls, what the deeper functions change is taken as not known; before, it was taken as unchanged.
 
+### Redirections that fail, `case … ;;&`, arithmetic of values from the environment, and saved IFS
+
+A value, a decided condition or code that never runs was said where bash does otherwise (bash 5.2 and 5.3):
+
+| Script | bash | Said before | Said now |
+| --- | --- | --- | --- |
+| `x=1; { x=2; } < ./nofile`, then `if [ "$x" = 2 ]` | "No such file or directory": the group does not run, `x` is 1 | `$x` is 2; always true; the `else` never runs | nothing |
+| `x=1; declare x=2 < ./nofile` (also a function called with `> ./no/dir/f`, or defined with `2>&9` while fd 9 is closed) | the same | the same | nothing |
+| `x=b; case b in b) x=c ;;& "$x") y=1 ;; *) y=2 ;; esac` | `"$x"` is tested after `x=c`: `y` is 2 | `y` is 1 | nothing |
+| `[ -n "$z" ] && n=0; (( n ))`, with `n='u=2'` in the environment | `u` is 2 | `$u` keeps its value | nothing |
+
+The same holds for `n="$n"`, `: "${n:=0}"`, `n+=''`, `a="$n"; n=0; (( a ))` and `export n` before `(( n ))`: arithmetic runs the value from the environment as an expression. A redirection that cannot fail keeps the values: a here-document, a here-string, `/dev/null`, a copy of fd 0, 1 or 2 (`2>&1`), closing a descriptor (`3>&-`), `< <(cmd)`, and assignments alone (`x=2 < ./nofile` sets 2). Static patterns after `;;&` are still decided when the lists before them change no option (`case a in a) echo 1 ;;& b) …`). `IFS=$save`, where `save=$IFS` was set before on every path, no longer makes the whole script trust nothing: `ncurses6-config` shows its values again (`$prefix` is `/usr`).
+
 ### Shell code in host files
 
 A YAML block scalar is read as YAML gives it to the runner: without the indentation of its first line, or of the indicator (`run: |2`). So an indented `EOF` ends a here-document, and `<<-` strips the tabs after the indentation:
