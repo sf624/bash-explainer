@@ -109,6 +109,24 @@ export const MESSAGES = {
   'script-last-test-returns-status': caveat<{ left: string }>(['3.7.5', '3.8'], ({ left }) => [
     `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗すると、スクリプトはその終了ステータス（0 以外）で終わり、呼び出し元（CI や \`make\`、\`./script && next\`）には失敗に見えます。\`if …; then …; fi\` と書くか、最後に \`exit 0\` を置きます`,
     `this is the last command of the script, so when \`${left}\` fails, the script ends with its non-zero status, which its caller (CI, \`make\`, \`./script && next\`) sees as a failure. Write \`if …; then …; fi\`, or end the script with \`exit 0\``]),
+  // `cmd || echo "msg"` where its status matters: the end of a function or of a script, or where `set -e` stops the
+  // script (`where`). `quiet`: the redirections of `cmd` that discard its own error message (`2>/dev/null`), or ''.
+  'failure-reported-as-success': caveat<{ where: 'function' | 'script' | 'errexit'; name: string; left: string; right: string; quiet: string; fix: string }>(['3.2.4', '3.7.5', '4.3.1'], ({ where, name, left, right, quiet, fix }) => {
+    const exit = where === 'function' ? 'return 1' : 'exit 1';
+    const ja = {
+      function: `これは関数 \`${name}\` の最後のコマンドなので、\`${left}\` が失敗しても \`${name}\` は \`${right}\` の終了ステータス 0 を返し、呼び出し元には成功に見えます。`,
+      script: `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗してもスクリプトは \`${right}\` の終了ステータス 0 で終わり、呼び出し元（cron や CI、\`./script && next\`）には成功に見えます。`,
+      errexit: `\`${left}\` が失敗しても、\`||\` の左側の失敗では \`set -e\` は止まらず、\`${right}\` が成功するので、スクリプトはそのまま続きます。`,
+    }[where];
+    const en = {
+      function: `this is the last command of \`${name}\`, so when \`${left}\` fails, \`${name}\` still returns 0, the status of \`${right}\`: its caller sees success.`,
+      script: `this is the last command of the script, so when \`${left}\` fails, the script still ends with status 0, the status of \`${right}\`: what runs it (cron, CI, \`./script && next\`) sees success.`,
+      errexit: `when \`${left}\` fails, \`set -e\` does not stop the script (a failure on the left of \`||\` is ignored), and \`${right}\` succeeds, so the script goes on.`,
+    }[where];
+    return [
+      `${ja}${quiet ? `また、\`${quiet}\` でコマンド自身のエラーメッセージも捨てられるので、理由を伝えるのはこのメッセージだけです。` : ''}${where === 'errexit' ? 'スクリプトを止めるには' : '失敗を伝えるには'} \`… || { ${fix}; ${exit}; }\` と書きます`,
+      `${en}${quiet ? ` And \`${quiet}\` discards the error message of the command itself, so only this message is left to say why.` : ''} ${where === 'errexit' ? 'To stop the script' : 'To pass the failure on'}, write \`… || { ${fix}; ${exit}; }\``];
+  }),
 
   // ---------------------------------------------------------------- functions and what runs instead (3.3, 3.7.2)
   'keyword-needs-separator': failure<{ kw: string }>(['3.2.5.1', '3.2.5.2'], ({ kw }) => [

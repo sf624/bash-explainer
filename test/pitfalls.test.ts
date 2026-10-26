@@ -413,3 +413,112 @@ describe('the pitfall gate', () => {
     }
   });
 });
+
+/** bash on PATH, and bash 5.3 when `$BASH_EXPLAINER_BASH53` names one. */
+const BASHES = ['bash', ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])];
+
+describe('pitfalls: a file sourced by a name with no `/`', () => {
+  const found = (src: string, lang: 'en' | 'ja' = 'en', shell?: Shell) => notes(src, src.split('\n').length - 1, lang, shell).filter((n) => /`\$PATH`/.test(n));
+  it('says that bash looks in PATH first, then in the current directory, in both languages', () => {
+    assert.deepStrictEqual(found('source lib.sh'), ['ⓘ Caveat: `source lib.sh` looks for `lib.sh` in the directories of `$PATH` first, and only then in the current directory: a file of that name in `$PATH` runs instead, and the current directory is where the script was started from, not where it lies (cron starts in `$HOME`). Write `source ./lib.sh`, or a path from the script\'s directory: `source "$(dirname "$0")/lib.sh"`']);
+    assert.deepStrictEqual(found('source lib.sh', 'ja'), ['ⓘ 注意: `source lib.sh` は `lib.sh` をまず `$PATH` のディレクトリから探し、見つからないときだけカレントディレクトリを探します。`$PATH` に同じ名前のファイルがあればそちらが実行され、カレントディレクトリはスクリプトの場所ではなく、起動したときの場所です（cron なら `$HOME`）。`source ./lib.sh` か、スクリプトのディレクトリからのパス（`source "$(dirname "$0")/lib.sh"`）を書きます']);
+    assert.strictEqual(found('source lib.sh', 'en', 'bash').length, 1);
+    assert.strictEqual(found('shopt -s sourcepath\nsource lib.sh').length, 1);
+    // (`command` and `builtin` run the builtin in this shell.)
+    assert.strictEqual(found('command source lib.sh').length, 1);
+    assert.strictEqual(found('builtin . lib.sh').length, 1);
+    assert.match(found('[ -f lib.sh ] && . "lib.sh"')[0], /^ⓘ Caveat: `\. lib\.sh` looks for `lib\.sh` in the directories of `\$PATH` first.* Write `\. \.\/lib\.sh`/);
+  });
+  it('says that only PATH is searched in POSIX mode and in sh', () => {
+    for (const [src, shell] of [['set -o posix\n. lib.sh', undefined], ['. lib.sh', 'sh'], ['. lib.sh', 'dash'], ['. lib.sh', 'ash']] as const) {
+      assert.match(found(src, 'en', shell)[0], /`\. lib\.sh` looks for `lib\.sh` only in the directories of `\$PATH`, not in the current directory \(as POSIX says\): it fails unless `\$PATH` has it/, src);
+    }
+    assert.match(found('. lib.sh', 'ja', 'sh')[0], /`\$PATH` のディレクトリからだけ探し、カレントディレクトリは探しません（POSIX の動作）。`\$PATH` になければ失敗し/);
+  });
+  // A path, a name not known, `-p` (bash 5.3), sourcepath off or not known to be on, a function named source.
+  for (const src of ['source ./lib.sh', 'source /etc/profile', 'source "$f"', 'source ~/.bashrc', 'source "$(dirname "$0")/lib.sh"', 'source -p /x lib.sh', 'shopt -u sourcepath\nsource lib.sh',
+    'if c; then shopt -u sourcepath; fi\nsource lib.sh', 'source() { :; }\nsource lib.sh', 'echo source lib.sh', 'source', 'sudo source lib.sh']) {
+    it(`says nothing about ${JSON.stringify(src)}`, () => assert.deepStrictEqual(found(src), []));
+  }
+  it('says nothing in zsh or ksh, whose `.` searches otherwise', () => {
+    assert.deepStrictEqual(found('. lib.sh', 'en', 'zsh'), []);
+    assert.deepStrictEqual(found('. lib.sh', 'en', 'ksh'), []);
+  });
+  // A file of the name in PATH runs before the one in the current directory; with sourcepath off, or with `./`, the
+  // current directory's; in POSIX mode, only PATH; started from another directory, the script's own directory finds its file.
+  for (const program of BASHES) {
+    it(`agrees with ${program === 'bash' ? 'bash' : 'bash 5.3'}`, function () {
+      if (runBash(':', { program }).status !== 0) return this.skip();
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-source-'));
+      try {
+        fs.mkdirSync(path.join(dir, 'bin'));
+        fs.mkdirSync(path.join(dir, 'empty'));
+        fs.writeFileSync(path.join(dir, 'bin', 'lib.sh'), 'echo from-PATH\n');
+        fs.writeFileSync(path.join(dir, 'lib.sh'), 'echo from-cwd\n');
+        fs.writeFileSync(path.join(dir, 's.sh'), 'source "$(dirname "$0")/lib.sh"\nsource lib.sh\n');
+        const run = (script: string, bin = 'bin', posix = false) => runBash(script, { program, cwd: dir, posix, env: { PATH: `${path.join(dir, bin)}:/usr/bin:/bin` } });
+        assert.strictEqual(run('[ -f lib.sh ] && source lib.sh').stdout, 'from-PATH\n');
+        assert.strictEqual(run('. lib.sh').stdout, 'from-PATH\n');
+        assert.strictEqual(run('command source lib.sh; builtin . lib.sh').stdout, 'from-PATH\nfrom-PATH\n');
+        assert.strictEqual(run('shopt -u sourcepath; source lib.sh').stdout, 'from-cwd\n');
+        assert.strictEqual(run('source ./lib.sh').stdout, 'from-cwd\n');
+        assert.strictEqual(run('source lib.sh', 'empty').stdout, 'from-cwd\n');
+        assert.strictEqual(run('. lib.sh', 'bin', true).stdout, 'from-PATH\n');
+        const posix = run('. lib.sh', 'empty', true);
+        assert.strictEqual(posix.stdout, '');
+        assert.match(posix.stderr, /lib\.sh: file not found/);
+        const away = runBash(`cd / && "$0" ${JSON.stringify(path.join(dir, 's.sh'))}`, { program, env: { PATH: `${path.join(dir, 'empty')}:/usr/bin:/bin` } });
+        assert.strictEqual(away.stdout, 'from-cwd\n');
+        assert.match(away.stderr, /lib\.sh: No such file or directory/);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+describe('pitfalls: a regex pattern that is a variable', () => {
+  const found = (src: string, lang: 'en' | 'ja' = 'en') => notes(src, src.split('\n').length - 1, lang).filter((n) => /regular expression|正規表現/.test(n));
+  it('says that the value is read as a regex, in both languages', () => {
+    assert.deepStrictEqual(found('grep "$USER" /etc/passwd'), ['ⓘ Caveat: `grep` reads the value of `$USER` as a regular expression, not as plain text: it matches inside longer text too (`bob` matches `bobby`), and `.`, `*`, `[` and the like in the value have their special meaning. To look for the value as it is, add `-F`, and `-w` (whole words) or `-x` (whole lines) as meant']);
+    assert.deepStrictEqual(found('grep "$USER" /etc/passwd', 'ja'), ['ⓘ 注意: `grep` は `$USER` の値を、ただの文字列ではなく正規表現として読みます。長い文字列の一部にも一致し（`bob` は `bobby` にも一致）、値の中の `.`・`*`・`[` などは特別な意味を持ちます。値をそのまま探すには `-F` を付け、意図に合わせて `-w`（単語全体）か `-x`（行全体）も付けます']);
+    for (const src of ['grep -e "$x" f', 'grep -ve "$x" f', 'grep -c ${x} f', 'ps aux | grep "$name"', 'sudo grep -q "$entry" /etc/hosts', 'x=bob\ngrep "$x" f', 'grep -i -- "$x" f',
+      // (An option grep does not know; a value not trusted after `eval`.)
+      'grep --bogus "$x" f', 'eval "$y"\nx="a.*"\ngrep "$x" f']) {
+      assert.strictEqual(found(src).length, 1, src);
+    }
+    // (`egrep -F` is refused, and `-F` with `-E` or `-P` by older greps: `-F` goes in their place.)
+    assert.match(found('grep -E "$x" f')[0], /To look for the value as it is, write `-F` in place of `-E`, and/);
+    assert.match(found('grep -iP "$x" f')[0], /write `-F` in place of `-P`/);
+    assert.match(found('egrep "$x" f')[0], /^ⓘ Caveat: `egrep` reads the value of `\$x`.* use `grep -F` in place of `egrep`, and/);
+    assert.match(found('egrep "$x" f', 'ja')[0], /`egrep` の代わりに `grep -F` を使い、/);
+  });
+  // A fixed string, whole words or lines, a pattern with text of its own, a positional parameter, a variable named as a
+  // pattern or holding special characters, an expansion with an operator, a function named grep, a pattern from a file.
+  for (const src of ['grep -F "$x" f', 'grep --fixed-strings "$x" f', 'fgrep "$x" f', 'grep -w "$x" f', 'grep -x "$x" f', 'grep -Fx -- "$x" f', 'grep --word-regexp "$x" f',
+    'grep "^$USER:" f', 'grep "$1" f', 'grep "$@" f', 'grep "$pattern" f', 'grep "$re" f', 'grep "$EXPR" f', 'x="a.*b"\ngrep "$x" f', 'grep "${x:-y}" f', 'grep "${a[0]}" f', 'grep "${#x}" f', 'grep "${!x}" f', 'grep "${1}" f',
+    'grep() { :; }\ngrep "$x" f', 'grep -f "$x" f', 'grep foo "$x"', 'echo "$x"', 'grep -E -F "$x" f']) {
+    it(`says nothing about ${JSON.stringify(src)}`, () => assert.deepStrictEqual(found(src), []));
+  }
+  // GNU grep: a value matches inside longer text, and its regex characters are special; `-F`, `-w` and `-x` as said.
+  it('agrees with grep', function () {
+    if (spawnSync('grep', ['--version']).status !== 0) return this.skip();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-grep-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'passwd'), 'bobby:x:1001\nbob:x:1000\n');
+      fs.writeFileSync(path.join(dir, 'dots'), 'abc\na.c\n');
+      const grep = (...args: string[]) => spawnSync('grep', args, { cwd: dir, encoding: 'utf8', env: { LC_ALL: 'C', PATH: process.env.PATH } });
+      assert.strictEqual(grep('bob', 'passwd').stdout, 'bobby:x:1001\nbob:x:1000\n');
+      assert.strictEqual(grep('-e', 'bob', 'passwd').stdout, 'bobby:x:1001\nbob:x:1000\n');
+      assert.strictEqual(grep('-F', 'bob', 'passwd').stdout, 'bobby:x:1001\nbob:x:1000\n');
+      assert.strictEqual(grep('-Fw', 'bob', 'passwd').stdout, 'bob:x:1000\n');
+      assert.strictEqual(grep('a.c', 'dots').stdout, 'abc\na.c\n');
+      assert.strictEqual(grep('-F', 'a.c', 'dots').stdout, 'a.c\n');
+      assert.strictEqual(grep('-Fx', 'a.c', 'dots').stdout, 'a.c\n');
+      assert.strictEqual(grep('[', 'dots').status, 2);
+      assert.strictEqual(grep('-F', '[', 'dots').status, 1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -466,6 +466,53 @@ describe('the notes on status and errexit', () => {
   });
 });
 
+describe('a failure reported with `|| echo` where the status matters', () => {
+  const said = (src: string, lang: 'en' | 'ja' = 'en', shell?: Shell) => notes(src, src.split('\n').length - 1, lang, shell).filter((n) => /status 0|returns 0|goes on|終了ステータス 0|そのまま続き/.test(n));
+  it('says that the script ends with status 0, and that `2>/dev/null` leaves only the message', () => {
+    assert.deepStrictEqual(said('#!/bin/bash\ncp a b 2>/dev/null || echo "copy failed"'), ['ⓘ Caveat: this is the last command of the script, so when `cp a b 2>/dev/null` fails, the script still ends with status 0, the status of `echo "copy failed"`: what runs it (cron, CI, `./script && next`) sees success. And `2>/dev/null` discards the error message of the command itself, so only this message is left to say why. To pass the failure on, write `… || { echo "copy failed" >&2; exit 1; }`']);
+    assert.deepStrictEqual(said('#!/bin/bash\ncp a b 2>/dev/null || echo "copy failed"', 'ja'), ['ⓘ 注意: これはスクリプトの最後のコマンドなので、`cp a b 2>/dev/null` が失敗してもスクリプトは `echo "copy failed"` の終了ステータス 0 で終わり、呼び出し元（cron や CI、`./script && next`）には成功に見えます。また、`2>/dev/null` でコマンド自身のエラーメッセージも捨てられるので、理由を伝えるのはこのメッセージだけです。失敗を伝えるには `… || { echo "copy failed" >&2; exit 1; }` と書きます']);
+    // (`&>/dev/null` and `>/dev/null 2>&1` discard it too; `>/dev/null` alone does not.)
+    assert.match(said('#!/bin/bash\ncp a b &>/dev/null || echo failed')[0], /And `&>\/dev\/null` discards the error message/);
+    assert.match(said('#!/bin/bash\ncp a b >/dev/null 2>&1 || echo failed')[0], /And `>\/dev\/null 2>&1` discards the error message/);
+    assert.doesNotMatch(said('#!/bin/bash\ncp a b >/dev/null || echo failed')[0], /discards/);
+    assert.match(said('#!/bin/bash\n{ cp a b; } 2>/dev/null || echo failed')[0], /when `\{ cp a b; \} 2>\/dev\/null` fails.* And `2>\/dev\/null` discards/);
+  });
+  it('says that a function returns 0, and that `set -e` goes on', () => {
+    assert.deepStrictEqual(notes('f() {\n  cp a b || echo "copy failed" >&2\n}\nf', 1).filter((n) => /returns 0/.test(n)), ['ⓘ Caveat: this is the last command of `f`, so when `cp a b` fails, `f` still returns 0, the status of `echo "copy failed" >&2`: its caller sees success. To pass the failure on, write `… || { echo "copy failed" >&2; return 1; }`']);
+    assert.match(notes('f() {\n  cp a b || echo failed\n}\nf', 1, 'ja').join('\n'), /`f` は `echo failed` の終了ステータス 0 を返し、呼び出し元には成功に見えます。失敗を伝えるには `… \|\| \{ echo failed >&2; return 1; \}` と書きます/);
+    assert.deepStrictEqual(said("set -e\ncp a b || printf 'failed\\n'"), ["ⓘ Caveat: when `cp a b` fails, `set -e` does not stop the script (a failure on the left of `||` is ignored), and `printf 'failed\\n'` succeeds, so the script goes on. To stop the script, write `… || { printf 'failed\\n' >&2; exit 1; }`"]);
+    assert.match(said('set -e\ncp a b || echo failed', 'ja')[0], /`\|\|` の左側の失敗では `set -e` は止まらず、`echo failed` が成功するので、スクリプトはそのまま続きます。スクリプトを止めるには/);
+    // (`a && b || echo`: either failing; `/bin/echo`, the program.)
+    assert.strictEqual(said('#!/bin/sh\nmkdir d && cd d || /bin/echo failed').length, 1);
+    // (A comment after `||`: the right side is on the next line.)
+    assert.match(notes('#!/bin/bash\ncp a b || # c\necho x', 1).join('\n'), /the script still ends with status 0, the status of `echo x`/);
+  });
+  // Deliberate ignores, tests, values printed in `$( )`, and where the status is not used.
+  for (const src of ['#!/bin/bash\ncp a b || true', '#!/bin/bash\ncp a b || :', '#!/bin/bash\n[ -f a ] || echo none', '#!/bin/bash\ngrep -q x f || echo none',
+    '#!/bin/bash\ncp a b || { echo failed >&2; exit 1; }', '#!/bin/bash\ncp a b || echo failed; exit 0', 'cp a b || echo failed', '#!/bin/bash\ncp a b || echo failed &',
+    '#!/bin/bash\ncp a b || printf "%d\\n" "$n"', '#!/bin/bash\ncp a b || printf -v x failed', '#!/bin/bash\necho() { return 1; }\ncp a b || echo failed',
+    '#!/bin/bash\ncp a b || echo failed | tee log', '#!/bin/bash\ncp a b && echo done', 'v() {\n  cat V 2>/dev/null || echo none\n}\nx=$(v)', 'v() {\n  cp a b || echo failed\n}',
+    'f() {\n  cp a b || echo failed\n  return 0\n}\nf', 'set -e\nif cp a b || echo failed; then :; fi', 'set -e\nx=$(cp a b || echo failed)', '#!/bin/bash\ntrue || echo never',
+    '#!/bin/bash\ncp a b || $say failed', '#!/bin/bash\ncp a b || printf', '#!/bin/bash\ncp a b || printf "$fmt"', '#!/bin/bash\n( cp a b || echo failed ) &', '#!/bin/bash\ncp a b || { }',
+    '#!/bin/bash\ncp a b || ( )', '#!/bin/bash\ncp a b ||', '#!/bin/bash\ncp a b || notify failed', 'f() {\n  cp a b || echo failed\n}\ndiff <(f) x']) {
+    it(`says nothing about ${JSON.stringify(src)}`, () => assert.deepStrictEqual(src.split('\n').flatMap((_, i) => notes(src, i)).filter((n) => /status 0|returns 0|goes on/.test(n)), []));
+  }
+  // In bash 5.2 and 5.3: the list's status is echo's, also with the error message discarded; a function returns it, and
+  // `set -e` goes on; the rewrite fails with status 1 and the message on stderr.
+  for (const program of ['bash', ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])]) {
+    it(`agrees with ${program === 'bash' ? 'bash' : 'bash 5.3'}`, function () {
+      const run = (script: string) => runBash(script, { program });
+      if (run(':').status !== 0) return this.skip();
+      assert.deepStrictEqual(run('false 2>/dev/null || echo x; echo $?'), { stdout: 'x\n0\n', stderr: '', status: 0 });
+      assert.deepStrictEqual(run('#!/bin/bash\nls /nonexistent 2>/dev/null || echo "copy failed"'), { stdout: 'copy failed\n', stderr: '', status: 0 });
+      assert.strictEqual(run('f() {\n  false || echo failed >&2\n}\nf; echo "f=$?"').stdout, 'f=0\n');
+      assert.strictEqual(run("set -e\nfalse || printf 'failed\\n'\necho after").stdout, 'failed\nafter\n');
+      assert.deepStrictEqual(run('set -e\nfalse || { echo "copy failed" >&2; exit 1; }\necho never'), { stdout: '', stderr: 'copy failed\n', status: 1 });
+      assert.strictEqual(run('f() {\n  false || { echo failed >&2; return 1; }\n}\nf; echo "f=$?"').stdout, 'f=1\n');
+    });
+  }
+});
+
 describe('what surely succeeds (`succeeds`), as bash runs it', () => {
   /** Whether the last statement of `src` surely succeeds. */
   const succeeds = (src: string, shell?: Shell): boolean => {

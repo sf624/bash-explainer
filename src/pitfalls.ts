@@ -1,13 +1,13 @@
 import { interpret, type ArgvParse } from './argv/interpret';
-import { downloadsTo, readsScriptFromStdin } from './argv/query';
+import { downloadsTo, givenOptions, has, readsScriptFromStdin } from './argv/query';
 import type { CommandSpec, OptionSpec } from './argv/spec';
 import { argWordFor } from './argv/words';
 import type { Shell } from './dialect';
-import { lookupCommand } from './dict/aliases';
+import { canonicalName, impliedWords, lookupCommand } from './dict/aliases';
 import { Lang } from './i18n';
 import { type ExecEnv, runsString, slotEnvs } from './semantics/env';
 import { resolveName } from './semantics/names';
-import type { StateModel } from './semantics/state';
+import { option, type StateModel } from './semantics/state';
 import { childrenOnRows, descendants, field, fields, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
@@ -140,7 +140,7 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
 /** The codes of the style checks, as diagnostics show them (`# bash-explainer disable=<code>`). */
 export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-no-space' | 'brace-close-no-separator'
   | 'rm-empty-variable-root' | 'read-without-r' | 'redirect-in-bracket' | 'bracket-close-in-word' | 'and-or-in-bracket'
-  | 'download-run-by-shell' | 'trap-goes-on';
+  | 'download-run-by-shell' | 'trap-goes-on' | 'source-searches-path' | 'pattern-from-variable';
 
 /**
  * The level of each style check (src/messages.ts, `NoteLevel`): `warning` when the line breaks as written, `info` when
@@ -149,7 +149,8 @@ export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-n
 export const STYLE_LEVELS: Record<StyleCode, NoteLevel> = {
   'bracket-no-space': 'warning', 'assignment-with-spaces': 'warning', 'brace-no-space': 'warning', 'brace-close-no-separator': 'warning',
   'rm-empty-variable-root': 'warning', 'read-without-r': 'info', 'redirect-in-bracket': 'warning', 'bracket-close-in-word': 'warning',
-  'and-or-in-bracket': 'warning', 'download-run-by-shell': 'warning', 'trap-goes-on': 'info',
+  'and-or-in-bracket': 'warning', 'download-run-by-shell': 'warning', 'trap-goes-on': 'info', 'source-searches-path': 'info',
+  'pattern-from-variable': 'info',
 };
 
 /** A style check found: its code, the node it is about, its level and its note. */
@@ -247,6 +248,25 @@ function signalName(v: string | undefined): keyof typeof STOPS | undefined {
   return name !== undefined && name in STOPS ? name as keyof typeof STOPS : undefined;
 }
 
+/**
+ * The variable a word is, when it is all the word holds (`$x`, `"$x"`, `${x}`, `"${x}"`): a named variable, not a
+ * positional or special parameter, an element, or an expansion with an operator.
+ */
+function wholeVariable(w: SyntaxNode): { name: string; text: string } | undefined {
+  const e = w.type === 'string' && w.namedChildren.length === 1 && w.text === `"${w.namedChildren[0].text}"` ? w.namedChildren[0] : w;
+  if (e.type === 'simple_expansion') {
+    const v = e.namedChildren[0];
+    return v?.type === 'variable_name' && /^[A-Za-z_]\w*$/.test(v.text) ? { name: v.text, text: e.text } : undefined;
+  }
+  const p = e.type === 'expansion' ? parseExpansion(e.text) : undefined;
+  return p && !p.op && !p.prefix && p.subscript === undefined && /^[A-Za-z_]\w*$/.test(p.name) ? { name: p.name, text: e.text } : undefined;
+}
+
+/** A variable named as a pattern (`pattern`, `regex`, `re`, `expr`): its value is meant as one. */
+const PATTERN_NAME = /pat|regexp?|(^|_)re(_|$)|expr/i;
+/** The characters of a regular expression that are special (in a BRE, an ERE or a PCRE). */
+const REGEX_SPECIAL = /[.[\]*^$\\+?(){}|]/;
+
 /** The style checks whose node starts on a line from `from` to `to`, in one walk of the tree, with the model of the tree and its shell. */
 export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number, model: StateModel, shell: Shell | undefined): StyleFinding[] {
   const s = pick(lang);
@@ -301,6 +321,8 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         }
         downloadRun(n);
         trapGoesOn(n);
+        sourceSearchesPath(n);
+        patternFromVariable(n);
         break;
       }
     }
@@ -341,6 +363,73 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         const slot = role.role === 'command' && runsString(role.slot) && !role.slot.later ? role.slot : undefined;
         const dl = downloader(piped ?? (slot && substitutedCommand(w, 'command_substitution')), model, shell);
         if (dl) return say(w, r.name, dl, !!piped, slot?.run === 'current-shell' ? (shell === undefined || shell === 'bash' ? 'source' : '.') : r.name);
+      }
+    }
+  };
+
+  /**
+   * `source lib.sh`, `. lib.sh`: a name with no `/` is looked for in the directories of `$PATH` first (the operand's
+   * `searchesPath`, while `sourcepath` is on), and then in the current directory, which is where the script was
+   * started from (in POSIX mode, and in sh, only in `$PATH`). Not for a path (`./lib.sh`), a name whose value is not
+   * known, with `-p` (bash 5.3: the directories are given), with `sourcepath` off or not known to be on, nor in zsh
+   * or ksh, whose `.` searches otherwise.
+   */
+  const sourceSearchesPath = (n: SyntaxNode) => {
+    const posixShell = shell === 'sh' || shell === 'dash' || shell === 'ash';
+    if (shell !== undefined && shell !== 'bash' && !posixShell) return;
+    for (const r of specRuns(n, model, shell)) {
+      for (const { word, role } of r.parse.roles) {
+        const search = role.role === 'operand' ? role.spec?.searchesPath : undefined;
+        const file = r.values[word];
+        if (!search || !file || file.includes('/') || has(r.parse, ...search.instead)) continue;
+        // (Only the builtin searches: `sudo source f` starts a program of that name, which the wrappers' note is about.)
+        if (resolveName(model, r.run.nameWord.text, r.run.nameWord, { shell, command: true, ...(r.run.env ? { env: r.run.env } : {}) }).kind !== 'builtin') return;
+        const st = model.at(n).run;
+        const on = option(st, 'shopt', search.shopt);
+        if (!posixShell && on !== 'on' && on !== 'default') return;
+        const posix = posixShell || option(st, 'set', 'posix') === 'on';
+        const cmd = `${r.name} ${file}`;
+        const fix = s(`\`${r.name} ./${file}\` か、スクリプトのディレクトリからのパス（\`${r.name} "$(dirname "$0")/${file}"\`）を書きます`,
+          `Write \`${r.name} ./${file}\`, or a path from the script's directory: \`${r.name} "$(dirname "$0")/${file}"\``);
+        add('source-searches-path', r.run.args[word], posix
+          ? `\`${cmd}\` は \`${file}\` を \`$PATH\` のディレクトリからだけ探し、カレントディレクトリは探しません（POSIX の動作）。\`$PATH\` になければ失敗し、あればそのファイルが実行されます。${fix}`
+          : `\`${cmd}\` は \`${file}\` をまず \`$PATH\` のディレクトリから探し、見つからないときだけカレントディレクトリを探します。\`$PATH\` に同じ名前のファイルがあればそちらが実行され、カレントディレクトリはスクリプトの場所ではなく、起動したときの場所です（cron なら \`$HOME\`）。${fix}`,
+        posix
+          ? `\`${cmd}\` looks for \`${file}\` only in the directories of \`$PATH\`, not in the current directory (as POSIX says): it fails unless \`$PATH\` has it, and then runs the file found there. ${fix}`
+          : `\`${cmd}\` looks for \`${file}\` in the directories of \`$PATH\` first, and only then in the current directory: a file of that name in \`$PATH\` runs instead, and the current directory is where the script was started from, not where it lies (cron starts in \`$HOME\`). ${fix}`);
+        return;
+      }
+    }
+  };
+
+  /**
+   * `grep "$USER" f`, `grep -e "$x" f`: a pattern (an operand or a value in `lang: 'regex'`) that is only a variable is
+   * read as a regular expression, so it matches inside longer text, and its special characters have their meaning.
+   * Not with a fixed string (`-F`, `fgrep`: the mode `fixed`), an option that matches only whole words or lines
+   * (`whole`: `-w`, `-x`), a pattern with text of its own (`"^$USER:"`), a positional parameter (`"$1"`, often meant
+   * as a pattern), a variable named as a pattern (`"$pattern"`), nor one whose known value has special characters.
+   */
+  const patternFromVariable = (n: SyntaxNode) => {
+    for (const r of specRuns(n, model, shell)) {
+      // (The options an alias implies are in the spec of the command it is: `egrep`, `-E` of grep.)
+      const implied = impliedWords(r.name).map((w) => r.spec.options!.find((o) => o.names.includes(w))!);
+      const given = givenOptions(r.parse).map(({ role }) => role);
+      const specs = [...given.map((o) => (o.role === 'option' ? o.spec : undefined)), ...implied];
+      if (r.parse.refused || r.parse.mode === 'fixed' || specs.some((o) => o?.selects === 'fixed' || o?.whole)) continue;
+      // (`-F` with an option that selects another mode is refused: it goes in its place, `grep -F` in place of `egrep`.)
+      const other = given.find((o) => o.role === 'option' && o.spec.selects)?.flag ?? (implied.some((o) => o.selects) ? r.name : undefined);
+      const fixed = other === undefined ? s('`-F` を付け', 'add `-F`')
+        : other === r.name ? s(`\`${r.name}\` の代わりに \`${canonicalName(r.name)} -F\` を使い`, `use \`${canonicalName(r.name)} -F\` in place of \`${r.name}\``)
+        : s(`\`${other}\` の代わりに \`-F\` を付け`, `write \`-F\` in place of \`${other}\``);
+      for (const { word, role } of r.parse.roles) {
+        if ((role.role !== 'operand' && role.role !== 'value') || role.spec?.lang !== 'regex') continue;
+        const w = r.run.args[word];
+        const v = wholeVariable(w);
+        const known = v && model.trusts(v.name) ? model.at(w).run.variables.get(v.name)?.value : undefined;
+        if (!v || PATTERN_NAME.test(v.name) || (known !== undefined && REGEX_SPECIAL.test(known))) return;
+        add('pattern-from-variable', w, `\`${r.name}\` は \`${v.text}\` の値を、ただの文字列ではなく正規表現として読みます。長い文字列の一部にも一致し（\`bob\` は \`bobby\` にも一致）、値の中の \`.\`・\`*\`・\`[\` などは特別な意味を持ちます。値をそのまま探すには ${fixed}、意図に合わせて \`-w\`（単語全体）か \`-x\`（行全体）も付けます`,
+          `\`${r.name}\` reads the value of \`${v.text}\` as a regular expression, not as plain text: it matches inside longer text too (\`bob\` matches \`bobby\`), and \`.\`, \`*\`, \`[\` and the like in the value have their special meaning. To look for the value as it is, ${fixed}, and \`-w\` (whole words) or \`-x\` (whole lines) as meant`);
+        return;
       }
     }
   };

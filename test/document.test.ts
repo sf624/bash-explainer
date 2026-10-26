@@ -117,6 +117,10 @@ describe('the pitfalls of a script, as problems', () => {
     ['[ -f $x]', [['bracket-close-in-word', 'warning', 0, 5, 0, 8]]],
     // (`&&` ends the command `[ a`, which then has no `]`: a failure note, said too.)
     ['[ a && b ]', [['bracket-missing-close', 'warning', 0, 0, 0, 3], ['and-or-in-bracket', 'warning', 0, 4, 0, 6]]],
+    ['source lib.sh', [['source-searches-path', 'info', 0, 7, 0, 13]]],
+    ['grep "$x" f', [['pattern-from-variable', 'info', 0, 5, 0, 9]]],
+    // src/statusfacts.ts
+    ['#!/bin/bash\ncp a b || echo failed', [['failure-reported-as-success', 'info', 1, 0, 1, 21]]],
     // src/wordfacts.ts
     ['FOO=1 echo $FOO', [['prefix-assignment-expanded-first', 'warning', 0, 11, 0, 15]]],
     ['cp $a b', [['unquoted-variable-as-path', 'warning', 0, 3, 0, 5]]],
