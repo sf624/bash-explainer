@@ -1781,7 +1781,15 @@
   /** (Round 7) One risk of the line in the list under "In short": its icon, its word and its first sentence; it goes to `at`. */
   function riskEl(/** @type {any} */ p, /** @type {HTMLElement} */ at) {
     const body = String(p.body ?? '');
-    const head = body.split(/(?<=[.。])\s+|(?<=。)/)[0] ?? body;
+    // (Its headline: up to the end of the first sentence, or to a colon outside code, which starts the details.)
+    const sentence = body.split(/(?<=[.。])\s+|(?<=。)/)[0] ?? body;
+    let ticks = 0;
+    let cut = -1;
+    for (let i = 0; i < sentence.length && cut < 0; i++) {
+      if (sentence[i] === '`') ticks++;
+      else if (!(ticks % 2) && i > 20 && /^(: |：)/.test(sentence.slice(i, i + 2))) cut = i;
+    }
+    const head = cut < 0 ? sentence : sentence.slice(0, cut);
     const b = el('button', { type: 'button', class: `u-risk level-${p.level}`, title: labels.depth.riskJump.replace('{label}', p.label || (levelLabels[p.level] ?? '')) });
     const icon = noteEl({ level: p.level, label: p.label, body: head, refs: [] }, 'span', 'u-risk-note');
     b.append(icon);
