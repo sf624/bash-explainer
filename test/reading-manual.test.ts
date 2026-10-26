@@ -367,6 +367,9 @@ describe('the reading tree as the Bash manual reads the builtins (chapter 4)', (
     assert.deepStrictEqual(find(reading('builtin cd /'), 'cd', 'commandName').refs, ['4.1']);
     const child = readingNodes(reading('eval "echo hi"')).find((n) => n.layer === 'child' && n.kind === 'commandName')!;
     assert.deepStrictEqual(child.refs, ['3.7.1', '3.7.2', '4.2']);
+    // (The other nodes of such a string keep their tokens' sections, and a value cites none: `eval 'x=1'`.)
+    const parts = readingNodes(reading("eval 'x=1'")).filter((n) => n.layer === 'child').map((n) => [n.kind, n.label, n.refs]);
+    assert.deepStrictEqual(parts, [['assignment', 'x=1', ['3.4']], ['number', '1', undefined]]);
   });
 
   it('reads the operands of `set` as the positional parameters, `-` and `--` as 4.3.1 says', () => {

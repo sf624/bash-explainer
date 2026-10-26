@@ -142,13 +142,12 @@ export class WalkBuiltins {
       case 'hash': {
         if (has('-r')) st = this.forgetHashed(st);
         const path = valueOf('-p');
-        const forget = valueOf('-d');
-        if (forget) st = this.unhash(st, forget, n);
+        // (`-d` takes no value: it forgets every name after it.)
         for (const o of operands) {
           const b = staticWordValue(o);
           if (!b) continue;
           if (path) st = this.w.put(st, 'hashed', b, { state: 'on', value: staticWordValue(path) ?? '', at: n });
-          else if (has('-d')) st = this.unhash(st, o, n);
+          else if (has('-d')) st = this.unhash(st, b, n);
         }
         return st;
       }
@@ -192,10 +191,9 @@ export class WalkBuiltins {
     return st;
   }
 
-  private unhash(st: ShellState, w: SyntaxNode, at: SyntaxNode): ShellState {
-    const name = staticWordValue(w);
-    const e = name ? st.hashed.get(name) : undefined;
-    return e ? this.w.put(st, 'hashed', name!, { ...e, state: 'off', at }) : st;
+  private unhash(st: ShellState, name: string, at: SyntaxNode): ShellState {
+    const e = st.hashed.get(name);
+    return e ? this.w.put(st, 'hashed', name, { ...e, state: 'off', at }) : st;
   }
 
   /**
