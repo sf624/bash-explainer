@@ -252,6 +252,36 @@ export function braceTakenAsWord(n: SyntaxNode): 'argument' | 'misplaced' | unde
   return last?.type === 'command' ? 'argument' : !last || last.type === 'redirected_statement' ? 'misplaced' : undefined;
 }
 
+/**
+ * `if [ -f a ] then …`, `while [ x ] do …`, `for x in a b do …` (`n`): with no `;` or newline before it, `then` / `do` is
+ * an ordinary word of the condition (or of the list), so the construct lacks its keyword and bash stops with a syntax
+ * error. Returns that keyword, or undefined when `n` is not such a construct.
+ */
+export function strayKeyword(n: SyntaxNode): 'then' | 'do' | undefined {
+  if (!n.incomplete) return undefined;
+  const kw = n.type === 'if_statement' || n.type === 'elif_clause' ? 'then' : n.type === 'while_statement' || n.type === 'for_statement' || n.type === 'select_statement' ? 'do' : undefined;
+  if (!kw) return undefined;
+  const head = strayHead(n);
+  return head.some((h) => [h, ...descendants(h, ['word'])].some((w) => w.type === 'word' && w.text === kw)) ? kw : undefined;
+}
+
+function strayHead(n: SyntaxNode): readonly SyntaxNode[] {
+  return n.type === 'for_statement' || n.type === 'select_statement' ? n.namedChildren : n.namedChildren.slice(0, 1);
+}
+
+/**
+ * Whether `n` lies in the condition of a construct that lacks its `then` / `do` for this reason (`strayKeyword`). Bash
+ * rejects the whole construct when it reads it, so nothing in that condition runs, and a note on what a command there
+ * does "when it runs" would be false.
+ */
+export function inStrayHead(n: SyntaxNode): boolean {
+  for (let c = n; c.parent; c = c.parent) {
+    const p = c.parent;
+    if (strayKeyword(p) && strayHead(p).some((h) => h.startIndex === c.startIndex && h.endIndex === c.endIndex && h.type === c.type)) return true;
+  }
+  return false;
+}
+
 /** Whether `n` or anything under it is an `error` node or incomplete. */
 export function hasError(n: SyntaxNode): boolean {
   return n.type === 'error' || n.incomplete || n.children.some(hasError);

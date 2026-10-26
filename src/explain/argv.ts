@@ -25,7 +25,7 @@ import { type Missed, testSpecOf } from '../semantics/names';
 import { attribute, docLine } from '../semantics/state';
 import { readDeclarationWords } from '../semantics/vars';
 import { isPlainWord, type Literal, literalContent, staticWordText, staticWordValue } from '../staticword';
-import { field, fields, prefixAssignments, type SyntaxNode } from '../syntax/tree';
+import { field, fields, inStrayHead, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { bracketShape, type CommandTest, commandTest } from '../testexpr';
 import { readByCommand } from '../tokenmarks';
 import { assignment } from './assignments';
@@ -747,9 +747,12 @@ export function testArgs(cx: Explainer, n: SyntaxNode, test: CommandTest, bracke
   const last = test.words[test.words.length - 1];
   // (`[ -f x]`, `[ -f $x]`: the `]` is glued to the last word. With a word not known, the pitfall says it.)
   const glued = bracket && !test.close && !!last && /\S\]$/.test(last.text);
-  if (test.unclosed && glued) cx.note(fact(cx.lang, 'bracket-close-glued', { word: last.text }), last);
-  else if (test.unclosed) cx.note(fact(cx.lang, 'bracket-missing-close'), n);
-  if (test.malformed) cx.note(fact(cx.lang, 'test-malformed', { name: bracket ? '[' : 'test' }), n);
+  // (In the condition of `if [ -f a ] then`, bash stops at the syntax error: the command never runs, and the syntax error is what is said.)
+  if (!inStrayHead(n)) {
+    if (test.unclosed && glued) cx.note(fact(cx.lang, 'bracket-close-glued', { word: last.text }), last);
+    else if (test.unclosed) cx.note(fact(cx.lang, 'bracket-missing-close'), n);
+    if (test.malformed) cx.note(fact(cx.lang, 'test-malformed', { name: bracket ? '[' : 'test' }), n);
+  }
   let inner: Token[];
   if (test.test && !test.unclosed && !glued) {
     testExample(cx, n, bracketShape(test.test), '[');

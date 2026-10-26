@@ -205,6 +205,33 @@ describe('shell audit fixes', () => {
     assert.match(notes('local y=1', 'ksh'), /`local` is not available in ksh93/);
   });
 
+  // Bash reads `then` / `do` without a `;` as an argument of the last command, so the construct has no keyword and the
+  // whole construct is a syntax error: the condition never runs, and no note says what `[` or `test` does "when it runs".
+  it('in a condition without its then / do, [ and test get the syntax-error note only', () => {
+    const notes = (src: string) => explain(src, 0, 'en').notes.join('\n');
+    const broken = [
+      'if [ -f a ] then echo x; fi', 'if test -f a then echo x; fi', 'if ! [ -f a ] then echo x; fi', 'if [ -f a ] && [ -d b ] then echo x; fi',
+      'if [ -f a ]; then echo x; elif [ -d b ] then echo y; fi', 'while [ x ] do echo y; done', 'until [ x ] do echo y; done',
+      'if [ a = ] then echo x; fi', 'if [ -f a ] then echo x',
+    ];
+    for (const src of broken) {
+      const r = runBash(src);
+      assert.strictEqual(r.status, 2, src);
+      assert.match(r.stderr, /syntax error near unexpected token|unexpected end of file/, src);
+      assert.match(notes(src), /Syntax error: a `;` or a newline is needed before `(then|do)`/, src);
+      assert.doesNotMatch(notes(src), /when it runs|at run time/, src);
+    }
+    // With the `;`, the same command runs: bash reports the error of `[` / `test`, and we say so.
+    for (const src of ['if [ -f a; then echo x; fi', 'if test -f a ] = ; then echo x; fi']) {
+      const r = runBash(src);
+      assert.doesNotMatch(r.stderr, /syntax error/, src);
+      assert.match(notes(src), /fails when it runs/, src);
+    }
+    // `[[ ]]` is syntax: a reserved word may follow its `]]`, so `then` is read as the keyword.
+    assert.strictEqual(runBash('if [[ -f a ]] then echo x; fi').status, 0);
+    assert.doesNotMatch(notes('if [[ -f a ]] then echo x; fi'), /needed before/);
+  });
+
   it('a missing ; or newline before then / do is a syntax error', () => {
     const note = (src: string, lang: 'ja' | 'en' = 'en') => explain(src, 0, lang).notes.join('\n');
     assert.match(note('if [ -f a ] then echo x; fi'), /a `;` or a newline is needed before `then`/);

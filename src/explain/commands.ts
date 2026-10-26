@@ -379,11 +379,12 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
         : cx.t(spec.summary),
     };
   }
+  // (A quoted name is never an alias: bash looks up no alias for `"ll"` or `\ll`, so only a function of a system stays.)
   const distro = Object.hasOwn(distroAliases, name) ? distroAliases[name] : undefined;
-  if (distro) {
+  if (distro && (sv === undefined || distro.kind === 'function')) {
     const where = distro.definitions.map(([os]) => os).join(cx.s('・', ', '));
     const defs = distro.definitions.map(([os, v]) => `${os}: \`${v}\``).join(cx.s('、', ', '));
-    const whatText = distro.kind === 'alias' ? tx('エイリアス', 'alias') : tx('関数', 'function');
+    const whatText = distro.kind === 'alias' ? tx('エイリアス', 'an alias') : tx('関数', 'a function');
     const what = cx.t(whatText);
     // In a README the commands are typed into a terminal, where the alias may exist.
     const interactive = cx.opts.host?.kind === 'markdown';
