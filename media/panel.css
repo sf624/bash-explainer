@@ -356,6 +356,46 @@ code {
   font-style: italic;
 }
 
+/* The words of a brace expansion (media/panel.js `wordList`): chips with an edge in a row, as the words of a value
+   (`.ev-word`), so that they read as separate arguments, not as lines of output; then the cut, muted. */
+.example-words {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.6rem;
+}
+
+.example-words.example-empty {
+  color: var(--c-muted);
+  font-style: italic;
+}
+
+.example-words ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.example-words code.ev-word {
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
+  border: 1px solid var(--c-muted);
+  border-radius: 3px;
+  padding: 0.1em 0.45em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.example-words-after {
+  color: var(--c-muted);
+  font-size: 0.9em;
+}
+
 /* An example placed under its token: indented with the token's children, set off by a left rule. */
 .example.nested {
   margin: 0.5rem 0 0.5rem 1.1rem;
@@ -1255,8 +1295,13 @@ body.vscode-high-contrast-light #reading-tree li.band {
     color: CanvasText;
   }
 
-  .text code.ev-word {
+  .text code.ev-word,
+  .example-words code.ev-word {
     border-color: CanvasText;
+  }
+
+  .example-words-after {
+    color: CanvasText;
   }
 
   .trow .band-label {

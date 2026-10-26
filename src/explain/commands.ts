@@ -221,7 +221,7 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
     commandExampleFor(cx, n, head.spec, args, read.parse);
   }
   for (const a of args) {
-    cx.examplesAt(a, () => wordExample(cx, a));
+    cx.examplesAt(a, () => wordExample(cx, a, { name: head.name, node: n, args, ...(head.fn ? {} : { spec: head.spec }) }));
   }
   // `[` is a command and `]` its last argument: they get tokens of their own, around the condition.
   const nameToks = bracket ? [cx.tok(word ?? nameNode, head.kind, head.kind === 'builtin'

@@ -5,7 +5,7 @@ import type { Shell } from './dialect';
 import type { Interactive } from './examples/rerun';
 import type { HostId } from './hosts';
 import type { LabelPart } from './label';
-import type { Fact, ValueSaid } from './messages';
+import type { Fact, SpaceEnds, ValueSaid } from './messages';
 import type { NameInfo } from './namefacts';
 import type { ReadingNode } from './reading';
 import type { ExpansionValue } from './semantics/values';
@@ -152,6 +152,14 @@ export interface ExampleSection {
   lines: string[];
   /** Shown instead when `lines` is empty (e.g. "(no output)"). */
   empty?: string;
+  /**
+   * The lines are separate words, not lines of text: the words bash makes of a word (brace expansion), which a command
+   * gets as separate arguments, shown as `shownWord` makes them (`␣` at an end, `∅` for an empty one). The panel and the
+   * hover draw them as chips in a row, the other outputs as code spans on one line. `ends`: the marks of a space at the
+   * ends of each; `spaceLabel`: what a drawn mark is called; `after`: inline Markdown after the words (the cut, the marks).
+   * A section of words with none has `empty`.
+   */
+  words?: { ends: SpaceEnds[]; spaceLabel?: string; after?: string };
 }
 
 /** What an example shows, so it can be turned off by kind (`bashExplainer.examples.disabled`). */

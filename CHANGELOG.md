@@ -41,9 +41,11 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The shebang (`#!/usr/bin/env bash`) says it works only when the file is run as a program (`./script.sh`), and is a comment to `bash script.sh` and `source`, with a colour of its own. Before, it said "run this script with `/usr/bin/env bash`", coloured as a comment.
 - The web page's menu no longer has the Version switch or the link to the development version; the development and preview pages keep the switch.
 - Syntax colouring follows the explanations: aliases, readonly variables and the words a command reads as data get their colours, in shell scripts and the shell code of other files (not Python files and Dockerfiles). **Compatibility:** `bashExplainer.highlight.enabled` is now `true` by default, also in the Language Server (before, `false`); set it to `false` to turn it off.
+- The example of a brace expansion shows the words as separate chips in a row (`1` `4` `7` `10`), and under them what `echo` or `printf` prints. Before, it listed one word per line, which read like output.
 
 ### Fixed
 
+- The examples of `printf` and of pipelines run the words of a brace expansion: `printf '%s\n' {a,b}` prints `a` and `b`. Before, they printed `{a,b}`, and `printf '%s\n' *.txt` printed `*.txt`.
 - Other languages' semantic colours are back to normal: a TypeScript parameter is no longer drawn in keyword blue. Before, the scope mappings of our syntax colouring applied to every language, even with `bashExplainer.highlight.enabled` off.
 - The web page keeps the phone layout on a phone at every zoom. Before, zooming out far enough switched it to the desktop layout, with the editor and the explanation side by side. The browser's desktop-site mode (Chrome's **Desktop site**, Safari's **Request Desktop Website**) shows the desktop layout.
 - The `set` options of a shebang count: `#!/bin/bash -eu` turns on `set -e` and `set -u` for the script.

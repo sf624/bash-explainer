@@ -153,6 +153,11 @@ export interface CommandSpec {
   copies?: boolean;
   /** Its program can read the name of the file it reads (awk's `FILENAME`): the example tells it the names. */
   fileName?: boolean;
+  /**
+   * What it prints is made of its words: joined with spaces (`words`: echo), or by its first word as a format (`format`:
+   * printf). The example of a brace expansion in its words shows what it prints, and a word bash globs has no known value.
+   */
+  prints?: 'words' | 'format';
 }
 
 /**

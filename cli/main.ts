@@ -13,7 +13,7 @@ import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../s
 import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { splitNote } from '../src/messages';
-import { explained, noteRefs, notesByLevel, refsText, toPlainMarkdown } from '../src/ui/render';
+import { explained, noteRefs, notesByLevel, refsText, toPlainMarkdown, wordsMarkdown } from '../src/ui/render';
 import { startLanguageServer } from './lsp';
 import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
 
@@ -292,7 +292,9 @@ function exampleText(e: Example, paint: (code: string | undefined, s: string) =>
   if (e.note) out.push(`    ${paint('90', pictureText(e.note))}`);
   for (const s of e.sections) {
     out.push(`    ${paint('90', s.label)}`);
-    for (const l of s.lines.length ? s.lines : [s.empty ?? '']) out.push(`      ${pictureText(l)}`);
+    // (The words of a brace expansion on one line, each in backticks, so that they read as separate words, not lines of output.)
+    if (s.words) out.push(`      ${wordsMarkdown(s)}`);
+    else for (const l of s.lines.length ? s.lines : [s.empty ?? '']) out.push(`      ${pictureText(l)}`);
   }
   return out;
 }

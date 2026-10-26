@@ -618,7 +618,8 @@ describe('tricky lines (round 3)', () => {
     assert.strictEqual(bash('echo {1..x}'), '{1..x}\n');
     assert.match(find('echo {1..03}', '{1..03}').explanation, /pads/);
     assert.match(find(src, '{01..10..3}', 'ja').explanation, /桁数をそろえて 0 で埋める/);
-    assert.deepStrictEqual(examplesOf('echo {Z..a}')[0].sections[0].lines, ['Z', '[', "''", ']', '^', '_', '`', 'a']);
+    // (The example shows the empty word as `∅`, as the words of a value.)
+    assert.deepStrictEqual(examplesOf('echo {Z..a}')[0].sections[0].lines, ['Z', '[', '∅', ']', '^', '_', '`', 'a']);
     assert.strictEqual(bash("printf '<%s>' {Z..a} {01..10..3} {10..1..4} {-2..2..2}"), '<Z><[><><]><^><_><`><a><01><04><07><10><10><6><2><-2><0><2>');
     assert.deepStrictEqual(braceExpand('{Z..a}'), ['Z', '[', '', ']', '^', '_', '`', 'a']);
     assert.deepStrictEqual(braceExpand('x{a,\\\\}'), ['xa', 'x\\']);
