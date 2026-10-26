@@ -649,7 +649,8 @@ export class WalkBuiltins {
   /**
    * The failures of the expansion `e` of `${…}` that do not depend on whether its variable is set or empty: a
    * substring whose numbers may fail discards the rest of the line; a transformation bash lacks (`${x@Z}`) ends the
-   * shell where the variable is set (unset, it gives nothing).
+   * shell where the variable is set (unset, it gives nothing). (Such an operator has no row in the allow-list, so the
+   * model trusts nothing there: the walk takes the shell as one that may end, never as one that surely does.)
    */
   expansionFails(e: SyntaxNode, st: ShellState): void {
     const fails = expansionFailure(e.text);
@@ -664,7 +665,6 @@ export class WalkBuiltins {
     }
     if (fails !== 'shell') return;
     if (v?.set === 'off' && v.declared !== 'unknown') return;
-    if (v?.set === 'on' && v.declared !== 'unknown' && this.w.trust.variable(name)) throw new ExpansionError(st, true, true);
     this.w.jump('shell', undefined, st, false);
   }
 

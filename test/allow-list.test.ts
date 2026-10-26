@@ -328,6 +328,8 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
     // Options of a shell's start the table does not have, and `-o`, `-O` of a name not known.
     assert.strictEqual(model(`#!/bin/bash -r\n${regex}`).blind, unlisted('-r'));
     assert.strictEqual(model(`#!/bin/bash --debugger\n${regex}`).blind, unlisted('--debugger'));
+    // (A word that is no option: bash reads it as the script, and the script's path as `$1`.)
+    assert.strictEqual(model(`#!/bin/bash other\n${regex}`).blind, unlisted('other'));
     for (const line of ['#!/bin/bash --norc', '#!/bin/bash -', '#!/usr/bin/env -S bash --noprofile -e']) assert.deepStrictEqual(model(`${line}\n${regex}`), { blind: undefined, decided: true }, line);
     assert.strictEqual(model(`#!/usr/bin/env -S bash -i\n${regex}`).blind, unlisted('-i'));
     assert.strictEqual(model(`#!/usr/bin/env -S bash --login\n${regex}`).blind, unlisted('--login'));
@@ -336,6 +338,7 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
     assert.strictEqual(inner(`bash -r -c '${regex}'`), unlisted('-r'));
     assert.strictEqual(inner(`bash --debugger -c '${regex}'`), unlisted('--debugger'));
     assert.strictEqual(inner(`bash --norc -c '${regex}'`), undefined);
+    assert.strictEqual(inner(`LC_ALL= LANG=C bash -c '${regex}'`), undefined);
     assert.strictEqual(inner(`bash -O "$o" -c '${regex}'`), unlisted('-O …'));
     assert.strictEqual(inner(`bash +o "$o" -c '${regex}'`), unlisted('+o …'));
     // An `env -S` line not read in full.

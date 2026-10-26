@@ -827,7 +827,8 @@ class Scan {
           todo.push(t);
         }
       }
-      for (const x of (this.writes.get(r) ?? []).filter((x) => !x.nameref)) {
+      // (Each nameref has the write of its declaration.)
+      for (const x of this.writes.get(r)!.filter((x) => !x.nameref)) {
         for (const t of reached) {
           this.variableRow(t, x.value);
           via.set(t, [...(via.get(t) ?? []), x]);
