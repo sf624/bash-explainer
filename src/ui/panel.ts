@@ -85,7 +85,7 @@ export class PanelController implements vscode.Disposable {
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       { enableScripts: true, localResourceRoots: [media], retainContextWhenHidden: true },
     );
-    this.panel.iconPath = vscode.Uri.joinPath(media, 'icon.svg');
+    this.panel.iconPath = { light: vscode.Uri.joinPath(media, 'mark-light.svg'), dark: vscode.Uri.joinPath(media, 'mark-dark.svg') };
     this.panel.webview.html = this.html(this.panel.webview, media);
     this.panel.webview.onDidReceiveMessage((m: FromPanel) => this.onMessage(m), undefined, this.disposables);
     this.panel.onDidDispose(() => {

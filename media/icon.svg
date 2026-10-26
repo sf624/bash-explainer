@@ -1,31 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#232937"/>
-      <stop offset="1" stop-color="#151a24"/>
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="128" height="128" rx="26" fill="url(#bg)"/>
-  <rect x="1" y="1" width="126" height="126" rx="25" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="2"/>
-
-  <!-- prompt -->
-  <path d="M15 24 L24 31 L15 38" fill="none" stroke="#8b98ad" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-
-  <!-- tokens -->
-  <rect x="31" y="23" width="32" height="16" rx="5" fill="#a6e3a1"/>
-  <rect x="67" y="23" width="20" height="16" rx="5" fill="#89b4fa"/>
-  <rect x="91" y="23" width="23" height="16" rx="5" fill="#fab387"/>
-
-  <!-- tree -->
-  <path d="M24 50 V100 M24 64 H36 M24 82 H36 M24 100 H36" fill="none" stroke="#4b5568" stroke-width="3.5" stroke-linecap="round"/>
-
-  <!-- explanation rows -->
-  <rect x="39" y="58" width="12" height="12" rx="3.5" fill="#a6e3a1"/>
-  <rect x="57" y="60" width="54" height="8" rx="4" fill="#5c667b"/>
-
-  <rect x="39" y="76" width="12" height="12" rx="3.5" fill="#89b4fa"/>
-  <rect x="57" y="78" width="40" height="8" rx="4" fill="#5c667b"/>
-
-  <rect x="39" y="94" width="12" height="12" rx="3.5" fill="#fab387"/>
-  <rect x="57" y="96" width="47" height="8" rx="4" fill="#5c667b"/>
+<rect width="128" height="128" rx="26" fill="#1b2130"/>
+<rect x="1" y="1" width="126" height="126" rx="25" fill="none" stroke="#fff" stroke-opacity="0.06" stroke-width="2"/>
+<g transform="translate(20 20) scale(2.75)"><path d="M10.60 3.70H3.70V21.60H14.20" stroke="#89b4fa" stroke-width="3.4" fill="none" stroke-linejoin="round" stroke-linecap="butt"/>
+<path d="M21.40 3.70H28.30V21.60H19.20" stroke="#89b4fa" stroke-width="3.4" fill="none" stroke-linejoin="round" stroke-linecap="butt"/>
+<path d="M6.20 22.70H13.60L5.60 29.20Z" fill="#89b4fa" stroke="#89b4fa" stroke-width="1" stroke-linejoin="round"/>
+<path d="M10.00 8.65L14.00 12.65L10.00 16.65" stroke="#e6e9ef" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M17.40 16.65H22.60" stroke="#e6e9ef" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
 </svg>

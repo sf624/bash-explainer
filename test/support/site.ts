@@ -11,10 +11,10 @@ import type { Browser, Page } from 'playwright-core';
 
 export const root = path.join(__dirname, '..', '..');
 const TYPES: Record<string, string> = {
-  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png',
+  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
 };
 /** What the page may load: its own files, nothing else. */
-export const FILES = ['/', '/app.js', '/icon.png', '/icons.js', '/page.css', '/panel-host.js', '/panel-page.css', '/panel.css', '/panel.html', '/panel.js', '/theme.css', '/theme-init.js'];
+export const FILES = ['/', '/app.js', '/favicon.ico', '/favicon.svg', '/icons.js', '/page.css', '/panel-host.js', '/panel-page.css', '/panel.css', '/panel.html', '/panel.js', '/theme.css', '/theme-init.js'];
 /** Typed into the editor: it must not appear in any request. */
 export const MARKER = 'secret-7f3a9c';
 

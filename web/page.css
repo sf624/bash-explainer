@@ -200,8 +200,16 @@ button {
   white-space: nowrap;
 }
 
-.brand img {
-  border-radius: 6px;
+.brand .logo {
+  flex: none;
+}
+
+.logo-accent {
+  color: var(--logo-accent);
+}
+
+.logo-ink {
+  color: var(--logo-ink);
 }
 
 .kind {
@@ -1390,7 +1398,7 @@ body.resizing .problems-resize {
     margin-inline: 2px;
   }
 
-  .brand img {
+  .brand .logo {
     width: 24px;
     height: 24px;
   }
