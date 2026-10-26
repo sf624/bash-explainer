@@ -17,8 +17,10 @@ const ENV = { ...process.env, LC_ALL: 'C', TZ: 'UTC', COLUMNS: '200' };
 const BUILDS: Record<string, RegExp> = { tar: /GNU tar/, ar: /GNU ar/, ps: /procps/ };
 const usable = (tool: string): boolean => has(tool) && BUILDS[tool].test(spawnSync(tool, ['--version'], { env: ENV, encoding: 'utf8' }).stdout ?? '');
 /** Runs a line of bash in `cwd`. */
-const run = (line: string, cwd: string): { out: string; err: string; status: number | null } => {
-  const r = spawnSync('bash', ['--norc', '-c', line], { cwd, env: ENV, encoding: 'utf8', timeout: 60000 });
+const run = (line: string, cwd: string): { out: string; err: string; status: number } => {
+  const r = spawnSync('bash', ['--norc', '-c', line], { cwd, env: ENV, encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
+  // A killed or unstarted process has no status: say why, not only `null !== 0`.
+  if (r.status === null) throw new Error(`${line}: no exit status (signal ${r.signal}, error ${r.error?.message}); stderr: ${r.stderr}`);
   return { out: r.stdout, err: r.stderr, status: r.status };
 };
 const parseOf = (line: string): { parse: ArgvParse; words: string[] } => {
@@ -225,6 +227,12 @@ describe('ps: a bare number starts a list of PIDs that ends the line', () => {
 });
 
 describe('ar agrees with the real ar', () => {
+  // GNU ar loads the large plugins of /usr/lib/bfd-plugins on every run: load them once, before the tests' own timeouts.
+  before(function () {
+    this.timeout(120000);
+    if (usable('ar')) spawnSync('ar', ['--version'], { env: ENV, stdio: 'ignore', timeout: 110000 });
+  });
+
   (usable('ar') ? it : it.skip)('every letter ar --help lists has a meaning', function () {
     // (See test/oldstyle.test.ts: the first run of ar may load large plugins.)
     this.timeout(60000);

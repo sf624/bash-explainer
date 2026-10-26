@@ -13,6 +13,7 @@ jobs:
   test:
     name: Test (Node.js ${{ matrix.node }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -46,6 +47,13 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      # apt downloads from the runner's mirror sometimes stall for minutes: give apt timeouts and retries, also
+      # for the apt-get that `--with-deps` runs itself.
+      - name: Make apt retry and time out
+        if: matrix.node == 24
+        run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/99-ci-retries
 
       - name: Install Chromium for the web page test
         if: matrix.node == 24
@@ -111,6 +119,7 @@ jobs:
     # Linux the whole VS Code runs in a network namespace of its own, with no network at all.
     name: VS Code ${{ matrix.vscode }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -145,8 +154,8 @@ jobs:
         env:
           BASH_EXPLAINER_NO_NETWORK: '1'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends xvfb
           # Ubuntu 24.04 keeps unprivileged users out of new namespaces unless told otherwise.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           unshare -rn xvfb-run -a node --import tsx integration/run.ts --executable="${{ steps.vscode.outputs.path }}"
@@ -160,10 +169,17 @@ jobs:
     # The web bundle in VS Code for the Web (as on vscode.dev and github.dev), in Chromium.
     name: VS Code for the Web
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: ./.github/actions/setup
+
+      # apt downloads from the runner's mirror sometimes stall for minutes: give apt timeouts and retries, also
+      # for the apt-get that `--with-deps` runs itself.
+      - name: Make apt retry and time out
+        run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/99-ci-retries
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
@@ -176,6 +192,7 @@ jobs:
     # packed from this commit instead of the published one.
     name: GitHub Action
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -335,6 +352,7 @@ jobs:
     # its JSON on a pipe. We never redistribute it: no artifact, cache, commit, release or bundle.
     name: Syntax tree against bash-ast
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       BASH_AST_VERSION: v0.3.3
       BASH_AST_SHA256: e38481887369559f493bbbceb43214fd7a5bc7238f0bc8fdf2d6cd4699d6925f
