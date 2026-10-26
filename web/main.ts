@@ -33,6 +33,7 @@ import { Picker } from './picker';
 import { showProblems } from './problem-list';
 import { CopyState, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
+import { openingReady } from './opening';
 import { SettingsDialog } from './settings-dialog';
 import { takeLinkFromAddress, inflate, readHash, scriptParams } from './share';
 import { clearStoredData, readStored, removeStored, STORAGE_KEYS, writeStored } from './storage';
@@ -923,6 +924,8 @@ async function start(): Promise<void> {
   showFile();
   updatePanel();
   editor.recheck();
+  // The page is ready: the opening labels its line and leaves.
+  openingReady();
   // In panel mode: tell the page around that this copy is ready for a script.
   if (mode.panel) toParent({ type: 'bx-ready', channel: CHANNEL, version: VERSION, pr: PR, commit: COMMIT });
 }

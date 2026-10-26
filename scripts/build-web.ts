@@ -10,6 +10,9 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { settingTexts } from '../src/settings';
 import { PANEL_BODY } from '../src/ui/panelView';
+import { Analyzer } from '../src/analyzer';
+import { OPENING_LINE, openingHtml, openingParts } from '../src/ui/opening';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
 const outdir = path.resolve(root, process.argv.find((a) => a.startsWith('--outdir='))?.slice('--outdir='.length) ?? 'site');
@@ -84,7 +87,15 @@ async function main(): Promise<void> {
   if (metafile) fs.writeFileSync(metafile, JSON.stringify(result.metafile));
   const copy = (from: string, to = path.basename(from)) => fs.copyFileSync(path.join(root, from), path.join(outdir, to));
   // The development version and the previews ask search engines to leave them out, so that the released page is the one they find.
-  const index = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8').replace('<!--robots-->', channel !== 'release' ? '<meta name="robots" content="noindex">' : '')
+  const page = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8');
+  // The opening (src/ui/opening.ts): its line explained now, in both languages, and the logo of the page's header.
+  // Its prompt's cursor is a path of its own, which blinks.
+  const header = /<svg class="logo"[\s\S]*?<\/svg>/.exec(page)![0];
+  const logo = header.replace('class="logo"', 'class="opening-logo"').replace(/(<path class="logo-ink" d="[^"]*?)(M17\.4 16\.65H22\.6)("[^>]*\/>)/, '$1$3<path class="logo-ink opening-cursor" d="$2$3');
+  if (!logo.includes('opening-cursor')) throw new Error('The opening could not find the cursor of the logo in web/index.html');
+  const opening = openingHtml(openingParts(OPENING_LINE, createUnbashParser().parse(OPENING_LINE), { en: new Analyzer('en'), ja: new Analyzer('ja') }), logo);
+  const index = page.replace('<!--robots-->', channel !== 'release' ? '<meta name="robots" content="noindex">' : '')
+    .replace('<!--opening-->', opening)
     // Only the development version and the previews have the version switch in the menu; the release page leaves it out of the markup.
     .replace(/<!--switch-->(.*?)<!--\/switch-->/s, channel === 'release' ? '' : '$1');
   fs.writeFileSync(path.join(outdir, 'index.html'), index);
