@@ -78,11 +78,17 @@ export interface ReadingNode {
   resolves?: NameResolution['kind'];
   /** On a word a command reads as the value of an option: the option (`-f`, `--file`). */
   valueFor?: string;
+  /** (Prototype B) On a parameter expansion: what the variable is (`$USER`), or the line that set it (`ReadingContext.variable`). */
+  from?: { meaning?: string; line?: number; loop?: boolean };
+  /** (Prototype B) On a word after the command name: what bash's expansions make of it before the command reads it. */
+  expands?: ('glob' | 'tilde' | 'split')[];
   /** On an `aliasWord`: the alias's text, which bash reads in its place. */
   replacement?: string;
   /** On a command name (and the reserved word `time`): what the name is, and what else (`Token.name`). */
   name?: NameInfo;
   children: ReadingNode[];
+  /** (Prototype B) On the root: the tokens of the other lines of the statement shown (`ReadingContext.extra`), for the panel's labels and colours. */
+  tokens?: readonly Token[];
 }
 
 /** What the reading tree asks of the analyzer. */
@@ -90,6 +96,12 @@ export interface ReadingContext {
   lang: Lang;
   /** What bash runs for the command name `name`, written as `word` (src/semantics/names.ts `resolveName`). */
   resolve(name: string, word: SyntaxNode): NameResolution;
+  /** (Prototype B) The tokens of the other lines of the statement shown (a loop's body, when the line is its first). */
+  extra?: readonly Token[];
+  /** (Prototype B) Where the value of a parameter expansion comes from. */
+  variable?(part: SyntaxNode): { meaning?: string; line?: number; loop?: boolean } | undefined;
+  /** (Prototype B) What bash's expansions make of a word. */
+  expands?(word: SyntaxNode): ('glob' | 'tilde' | 'split')[];
 }
 
 /** The texts the tree says itself, where no token says them. */
@@ -202,6 +214,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     t.children.forEach(walk);
   };
   items.forEach(walk);
+  (cx.extra ?? []).forEach(walk);
+  const sources = [...items, ...(cx.extra ?? [])];
   // bash's own tokens, by the text they are about.
   const shellAt = new Map<string, Token[]>();
   for (const t of all.filter((x) => x.origin === 'shell')) shellAt.set(keyOf(t.span), [...(shellAt.get(keyOf(t.span)) ?? []), t]);
@@ -467,6 +481,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const one = PARTS.has(w.type);
     const n = shellNode(w, layer, kind, wordParts(w, layer), one ? new Set() : WORD_TOKENS);
     if (kind === 'argument') n.refs = union(['3.7.1'], n.refs);
+    const expands = kind === 'argument' ? cx.expands?.(w) : undefined;
+    if (expands?.length) n.expands = expands;
     // A language in a word no command reads, which bash reads itself (the regex of `=~`), is under the word.
     if (w.parent!.type !== 'command' && w.parent!.type !== 'command_name') {
       for (const c of tokenAt(n.span, WORD_TOKENS)?.children ?? []) if (c.origin === 'embedded') language(n.children, c, 'bash');
@@ -501,7 +517,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
         else look(t.children);
       }
     };
-    look(items);
+    look(sources);
     return [...parts, ...found].sort((a, b) => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character);
   };
 
@@ -530,7 +546,10 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const parts = kind === 'arithmetic' ? p.children.filter((x) => !DELIMITERS.has(x.type)).flatMap((x) => node(x, layer)) : inner(p, layer);
     // (Not the command's token, when the part is its name: `"$@"`.)
     // (The parts of a sequence of braces, `{1..10..3}`, have tokens but no nodes, as the escapes of `$'…'`.)
-    return shellNode(p, layer, kind, QUOTES.has(p.type) || kind === 'brace' ? withTokens(p, parts, layer) : parts, notReader);
+    const n = shellNode(p, layer, kind, QUOTES.has(p.type) || kind === 'brace' ? withTokens(p, parts, layer) : parts, notReader);
+    const from = kind === 'expansion' ? cx.variable?.(p) : undefined;
+    if (from) n.from = from;
+    return n;
   };
 
   const assignment = (a: SyntaxNode, layer: Layer, kind: 'assignment' | 'assignmentArgument'): ReadingNode => {
@@ -625,7 +644,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     layer: 'language', kind: t.kind, label: t.label, span: t.span, text: t.explanation, reader, children: t.children.map((c) => langNode(c, reader)),
   });
 
-  return { layer: 'bash', kind: 'line', label: '', span: range, children: collect(tree.root, 'bash') };
+  return { layer: 'bash', kind: 'line', label: '', span: range, children: collect(tree.root, 'bash'), ...(cx.extra?.length ? { tokens: cx.extra } : {}) };
 }
 
 /** Every node of a reading tree, depth first. */
