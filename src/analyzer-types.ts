@@ -57,6 +57,12 @@ export interface Token {
   children: Token[];
   /** One-line summary used for the inline display; falls back to `explanation`. */
   summary?: string;
+  /**
+   * What bash's grammar makes of the part, where its kind does not say it: a list of commands (3.2.4: `;`, `&`), an
+   * AND or OR list (`&&`, `||`; `a && b || c` is an OR list), or a pipeline, which have the kind `operator`. The reading
+   * tree names the nodes of a string read as a script with it (`eval 'a; b'`).
+   */
+  grammar?: 'list' | 'andList' | 'orList' | 'pipeline';
   /** Worked examples shown right under this token (see `placeExamples`). */
   examples?: Example[];
   /** A regex capture group (or a reference to one), coloured alike in the panel and the examples. */

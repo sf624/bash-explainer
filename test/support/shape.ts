@@ -2,12 +2,12 @@
 // pipelines, compound commands, the words of each simple command as written, redirections). Both our
 // syntax tree and the JSON of bash-ast (test/support/bashast.ts) are turned into it, then compared.
 import type { SyntaxNode } from '../../src/syntax/tree';
-import { field, fields, token } from '../../src/syntax/tree';
+import { field, fields, inBackground, token } from '../../src/syntax/tree';
 
 export interface Redir { fd: number | null; op: string; target: string }
 export type Shape =
   | { k: 'seq'; items: { cmd: Shape; bg: boolean }[] }
-  | { k: 'and-or'; first: Shape; rest: { op: '&&' | '||'; cmd: Shape }[] }
+  | { k: 'and-or'; op: '&&' | '||'; left: Shape; right: Shape }
   | { k: 'pipeline'; negated: boolean; stages: Shape[] }
   | { k: 'simple'; line: number | null; assignments: string[]; words: string[]; redirects: Redir[] }
   | { k: 'subshell' | 'group'; body: Shape | null; redirects: Redir[] }
@@ -39,9 +39,9 @@ export function pipeline(negated: boolean, stages: Shape[]): Shape {
   return !negated && stages.length === 1 ? stages[0] : { k: 'pipeline', negated, stages };
 }
 
-/** `a && b || c` as the first command and the rest, whatever way the parser nested it. */
-export function andOr(first: Shape, rest: { op: '&&' | '||'; cmd: Shape }[]): Shape {
-  return rest.length ? { k: 'and-or', first, rest } : first;
+/** `a && b`, `a || b`: an AND or OR list, nested as the parser nests it (`a && b || c` is `(a && b) || c`, from the left). */
+export function andOr(op: '&&' | '||', left: Shape, right: Shape): Shape {
+  return { k: 'and-or', op, left, right };
 }
 
 // --- Our syntax tree ---
@@ -116,15 +116,12 @@ function redirectsOf(n: SyntaxNode): Redir[] {
   return fields(n, 'redirect').flatMap(redirectOf);
 }
 
-/** Statements in a run of children, with `&` marking the one before it as a background command. */
+/**
+ * Statements in a run of children, each marked as a background command when the list it is in runs it so: as
+ * `commandLists` of src/syntax/tree.ts reads them, for the explanations (`&` applies to the part before it alone).
+ */
 function itemsOf(children: readonly SyntaxNode[]): { cmd: Shape; bg: boolean }[] {
-  const items: { cmd: Shape; bg: boolean }[] = [];
-  for (const c of children) {
-    if (!c.named) {
-      if (c.type === '&' && items.length) items[items.length - 1].bg = true;
-    } else if (isStatement(c)) items.push({ cmd: fromNode(c), bg: false });
-  }
-  return items;
+  return children.filter(isStatement).map((c) => ({ cmd: fromNode(c), bg: inBackground(c) }));
 }
 
 const bodyOf = (n: SyntaxNode | undefined): Shape | null => (n ? seq(itemsOf(n.children)) : null);
@@ -226,24 +223,9 @@ function shapeOfNode(n: SyntaxNode, extra: Redir[]): Shape {
       return pipeline(false, stages);
     }
     case 'list': {
-      const rest: { op: '&&' | '||'; cmd: Shape }[] = [];
-      let first: Shape | null = null;
-      const walk = (l: SyntaxNode): void => {
-        let pending: '&&' | '||' | null = null;
-        for (const c of l.children) {
-          if (!c.named) {
-            if (c.type === '&&' || c.type === '||') pending = c.type;
-          } else if (c.type === 'list' && !pending) walk(c);
-          else if (!isStatement(c)) continue;
-          else if (!pending) first = fromNode(c);
-          else {
-            rest.push({ op: pending, cmd: fromNode(c) });
-            pending = null;
-          }
-        }
-      };
-      walk(n);
-      return andOr(first!, rest);
+      // (An AND or OR list of two parts, the first of which may be one too: `a && b || c` is `(a && b) || c`.)
+      const [left, right] = n.namedChildren.filter(isStatement);
+      return andOr(n.children.find((c) => c.type === '&&' || c.type === '||')!.type as '&&' | '||', fromNode(left), fromNode(right));
     }
     case 'subshell': case 'compound_statement':
       return { k: n.type === 'subshell' ? 'subshell' : 'group', body: bodyOf(n), redirects: extra };

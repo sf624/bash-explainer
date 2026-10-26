@@ -830,7 +830,7 @@
    */
   const STEPS = 8;
   const BASH_STEP = /** @type {Record<string, number>} */ ({
-    line: 1, list: 2, pipeline: 2, command: 3, compound: 3, clause: 3, coprocess: 3, function: 3,
+    line: 1, list: 2, andList: 2, orList: 2, pipeline: 2, command: 3, compound: 3, clause: 3, coprocess: 3, function: 3,
     commandName: 4, aliasWord: 4, expandedName: 4, option: 4, argument: 4, assignmentArgument: 4, word: 4, name: 4,
     assignment: 4, redirect: 4, heredoc: 4, operator: 4, keyword: 4, comment: 4, shebang: 4,
   });
@@ -921,7 +921,7 @@
   const ROLES = /** @type {Record<string, string>} */ ({
     commandName: 'command', aliasWord: 'command', expandedName: 'variable', argument: 'argument', assignmentArgument: 'assignment',
     word: 'argument', name: 'variable', heredoc: 'redirect', quote: 'string', arithmetic: 'expansion', brace: 'expansion',
-    list: 'operator', pipeline: 'operator', command: 'operator', compound: 'keyword', clause: 'keyword', coprocess: 'keyword',
+    list: 'operator', andList: 'operator', orList: 'operator', pipeline: 'operator', command: 'operator', compound: 'keyword', clause: 'keyword', coprocess: 'keyword',
     function: 'keyword', script: 'substitution', part: 'operator',
   });
   const roleOf = (/** @type {any} */ n) => ROLES[n.kind] ?? n.kind;

@@ -180,7 +180,7 @@ describe('statements as bash reads them', () => {
   it('a redirection after the last command of a list or pipeline belongs to that command', () => {
     const e = explain('echo A && echo B > f');
     assert.strictEqual(e.items.length, 1);
-    assert.match(e.items[0].explanation, /^Command list/);
+    assert.match(e.items[0].explanation, /^AND list/);
     assert.deepStrictEqual(labels(e.items[0]), ['echo', '&&', 'echo > f']);
     assert.strictEqual(spanText('echo A && echo B > f', e.items[0].children[0]), 'echo A');
     // The command and the redirection are siblings under the redirect token.
@@ -218,7 +218,7 @@ describe('statements as bash reads them', () => {
   it('the rest of a heredoc line is explained: later stages and commands', () => {
     const e = explain('cat <<EOF | tr a-z A-Z && echo after\nhello\nEOF');
     const list = e.items[0];
-    assert.match(list.explanation, /^Command list/);
+    assert.match(list.explanation, /^AND list/);
     assert.deepStrictEqual(labels(list).filter((l) => l !== '&&'), ['cat | tr', 'echo']);
     assert.ok(find(e, 'tr'));
     assert.match(find(e, 'tr').explanation, /Translate or delete/);
@@ -277,7 +277,9 @@ describe('statements as bash reads them', () => {
   it('ends the delimiter of a here-document at the `;`, and goes on with the next command', () => {
     // bash: the delimiter is `EOF`, and `echo after` runs once the body has been read.
     const e = explain('cat <<EOF; echo after\nbody\nEOF');
-    assert.deepStrictEqual(e.items.map((t) => t.label), ['cat <<EOF', ';', 'echo']);
+    // (One list of two commands, `;` between them.)
+    assert.deepStrictEqual(e.items.map((t) => t.label), ['cat; echo']);
+    assert.deepStrictEqual(labels(e.items[0]), ['cat <<EOF', ';', 'echo']);
     assert.match(find(e, '<<EOF').explanation, /up to a line containing only `EOF`/);
   });
   it('adds " …" to a label only when the text goes on in a later line, not for blanks at its end', () => {
@@ -347,8 +349,8 @@ describe('input that is not finished', () => {
   });
   it('explains a construct without its closing keyword, with the parts it has', () => {
     const shape = (src: string, line = 0) => explain(src, line).items.map((t) => [t.kind, t.label, t.children.map((c) => c.label)]);
-    assert.deepStrictEqual(shape('if true; then'), [['keyword', 'if ‹condition› then', ['if', 'true', 'then']]]);
-    assert.deepStrictEqual(shape('select x in a; do'), [['keyword', 'select x in ‹words› do', ['select', 'x', 'in', 'a', 'do']]]);
+    assert.deepStrictEqual(shape('if true; then'), [['keyword', 'if ‹condition› then', ['if', 'true', ';', 'then']]]);
+    assert.deepStrictEqual(shape('select x in a; do'), [['keyword', 'select x in ‹words› do', ['select', 'x', 'in', 'a', ';', 'do']]]);
     assert.deepStrictEqual(shape('x=(1'), [['assignment', 'x=(1', ['(1']]]);
     assert.deepStrictEqual(shape('echo $(foo'), [['builtin', 'echo', ['$(foo']]]);
     // The other constructs are explained with the parts they have, too.
@@ -356,7 +358,7 @@ describe('input that is not finished', () => {
     assert.deepStrictEqual(shape('case $x in'), [['keyword', 'case $x in', ['case', '$x', 'in']]]);
     assert.deepStrictEqual(shape('echo "abc'), [['builtin', 'echo', ['"abc']]]);
     const loop = 'for f in *.sh; do\n  echo $f';
-    assert.deepStrictEqual(shape(loop), [['keyword', 'for f in ‹words› do ‹commands›', ['for', 'f', 'in', '*.sh', 'do ‹commands›']]]);
+    assert.deepStrictEqual(shape(loop), [['keyword', 'for f in ‹words› do ‹commands›', ['for', 'f', 'in', '*.sh', ';', 'do ‹commands›']]]);
     assert.deepStrictEqual(shape(loop, 1), [['builtin', 'echo', ['$f']]]);
     assert.match(explain('if true; then').summary, /^if statement: runs the `then` branch/);
     assert.match(explain('{ echo').summary, /^Command group/);

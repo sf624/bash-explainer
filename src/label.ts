@@ -172,11 +172,26 @@ function stage(n: SyntaxNode): LabelPart[] {
 
 function sequence(n: SyntaxNode): LabelPart[] {
   const out: LabelPart[] = [];
+  // (A list's `;` goes right after the command before it: `a; b`.)
+  const semicolon = (): void => {
+    const last = out[out.length - 1];
+    if (last && !last.placeholder) out[out.length - 1] = { ...last, text: `${last.text};` };
+    else out.push({ ...code(';'), tight: true });
+  };
   const walk = (x: SyntaxNode) => {
+    let part = false;
     for (const c of x.children) {
       if (c.type === 'list' && x.type === 'list') walk(c);
-      else if (c.named) out.push(...stage(c));
-      else if (c.type === '|' || c.type === '|&' || c.type === '&&' || c.type === '||') out.push(code(c.type));
+      else if (c.type === 'comment') continue;
+      else if (c.named) {
+        // (Two parts of a list with no operator between them are on two lines: the newline separates them as `;` does.)
+        if (part && x.type === 'command_list') semicolon();
+        out.push(...stage(c));
+        part = true;
+        continue;
+      } else if (c.type === '|' || c.type === '|&' || c.type === '&&' || c.type === '||' || c.type === '&') out.push(code(c.type));
+      else if (c.type === ';') semicolon();
+      part = false;
     }
   };
   walk(n);
@@ -210,7 +225,7 @@ export function skeleton(n: SyntaxNode): LabelPart[] {
     case 'c_style_for_statement': return cStyleFor(n);
     case 'case_item': return caseItem(n);
     case 'function_definition': return functionDef(n);
-    case 'pipeline': case 'list': return sequence(n);
+    case 'pipeline': case 'list': case 'command_list': return sequence(n);
     case 'redirected_statement': {
       return [...skeleton(field(n, 'body')!), ...redirectionsOf(n).filter((c) => c.children.length).flatMap(redirectParts)];
     }

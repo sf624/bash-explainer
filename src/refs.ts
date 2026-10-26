@@ -14,7 +14,7 @@ export const CONSTRUCTS: Readonly<Record<string, readonly string[]>> = {
   function_definition: ['3.3'],
   coproc_statement: ['3.2.6'],
   time_statement: ['3.2.3'], pipeline: ['3.2.3'], negated_command: ['3.2.3'],
-  list: ['3.2.4'],
+  list: ['3.2.4'], command_list: ['3.2.4'],
   extended_test: ['3.2.5.2', '6.4'], arithmetic_command: ['3.2.5.2', '6.5'],
 };
 
@@ -70,11 +70,15 @@ export function nodeSections(n: SyntaxNode): readonly string[] | undefined {
   return NODES[n.type];
 }
 
+const HEADS = new Set(['for_statement', 'select_statement', 'c_style_for_statement']);
+
 /** The sections of a keyword or an operator: its own, or the construct's it belongs to (`then`, `do`, `}`). */
 export function anonSections(n: SyntaxNode): readonly string[] | undefined {
   let construct: string | undefined;
   for (let p = n.parent; p && !construct; p = p.parent) if (CONSTRUCTS[p.type]) construct = p.type;
-  // (The operators inside `[[ ]]` and `(( ))` are parts of their expressions, not tokens of their own.)
+  // (The operators inside `[[ ]]` and `(( ))` are parts of their expressions, not tokens of their own. A `;` in the
+  // head of a `for` is the loop's, not a list's: `for x in a; do`, `for ((i = 0; i < 3; i++))`.)
+  if (n.type === ';' && construct && HEADS.has(n.parent!.type)) return CONSTRUCTS[construct];
   return OPERATORS[n.type] ?? (construct ? CONSTRUCTS[construct] : undefined);
 }
 

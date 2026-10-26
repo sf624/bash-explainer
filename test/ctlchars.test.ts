@@ -243,7 +243,8 @@ describe('the control pictures in the outputs', () => {
     assert.ok(md.includes('`<ESC>` is ESC (escape)') && md.includes('`<TAB>` is HT (tab)'), md);
     assert.ok(md.includes('`a<LF>b`'), md);
     assert.ok(!PICTURE.test(md), md);
-    const part = ex.items.flatMap((t) => [t, ...t.children]).find((t) => t.explanation.includes('a␊b'))!;
+    const all = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
+    const part = all(ex.items).find((t) => t.explanation.includes('a␊b'))!;
     const lsp = plainPartHover(ex, [part], 'en', 'W');
     assert.ok(lsp.includes('`a<LF>b`') && !PICTURE.test(lsp), lsp);
   });

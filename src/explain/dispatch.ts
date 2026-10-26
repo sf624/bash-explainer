@@ -9,16 +9,17 @@ import type { Token } from '../analyzer-types';
 import { explainExpansion } from '../expansion-tokens';
 import { nodeSections } from '../refs';
 import { explainCommandSubstitution, explainProcessSubstitution } from '../substitution-tokens';
-import { assignmentsOnly, childrenOnRows, fields, type SyntaxNode } from '../syntax/tree';
+import { assignmentsOnly, childrenOnRows, fields, type SyntaxNode, withLists } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import { assignment, assignments } from './assignments';
 import { command, timeStatement } from './commands';
 import {
   anon, caseItem, caseStatement, comment, contextLabel, coprocStatement, cStyleFor, doGroup, elifClause, elseClause, forStatement, functionDef,
-  group, ifStatement, list, missingKeyword, negated, pipeline, subshell, whileStatement,
+  group, ifStatement, missingKeyword, negated, pipeline, subshell, whileStatement,
 } from './compound';
 import type { Explainer } from './context';
 import { ansiCString } from './embedded';
+import { andOrList, commandList } from './lists';
 import { has, skeletal } from './nodes';
 import { fileRedirect, heredoc, herestring, redirected } from './redirections';
 import { withValue } from './values';
@@ -44,7 +45,8 @@ function explainNode(cx: Explainer, n: SyntaxNode): Token {
     case 'time_statement': return timeStatement(cx, n);
     case 'variable_assignment': return skeletal(assignment(cx, n), n, true);
     case 'pipeline': return pipeline(cx, n);
-    case 'list': return list(cx, n);
+    case 'command_list': return commandList(cx, n);
+    case 'list': return andOrList(cx, n);
     case 'redirected_statement': return redirected(cx, n);
     case 'file_redirect': return fileRedirect(cx, n);
     case 'heredoc_redirect': return heredoc(cx, n);
@@ -110,8 +112,9 @@ export function flatten(cx: Explainer, n: SyntaxNode): Token[] {
   // patterns, `|` and `)` of the branch, which are not words, pipes and the end of a subshell.
   const patterns = n.type === 'case_item' ? fields(n, 'value') : [];
   // (Only the children that may lie on the line: the statements of a long script are not each looked at. A line is
-  // flattened only while there is one: the root of `explainLine`, and a block the line is inside, `Explainer.sub`.)
-  for (const c of childrenOnRows(n.children, cx.line!, cx.line!)) {
+  // flattened only while there is one: the root of `explainLine`, and a block the line is inside, `Explainer.sub`.
+  // The lists of commands are among them, as one node each: `withLists` gives the same array every time.)
+  for (const c of childrenOnRows(withLists(n), cx.line!, cx.line!)) {
     if (!cx.onLine(c)) continue;
     if (has(patterns, c)) out.push(casePattern(cx, c));
     else if (patterns.length && (c.type === '|' || c.type === ')' || c.type === '(')) continue;

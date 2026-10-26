@@ -437,6 +437,25 @@ Any hover with a position explains the part there: a word, an option, an operato
 - `hover.followCursor` shows the part at the cursor.
 - The Language Server's hover (`textDocument/hover`) starts with the part at the position, in plain Markdown, with its notes, then the whole line below a rule, with all of them. Its range is the part.
 
+### Lists of commands
+
+A list (Bash manual 3.2.4) is pipelines separated by `;`, `&`, `&&` or `||`; `&&` and `||` bind tighter than `;` and `&`. Meaning and Reading now show it so:
+
+| Line | Meaning | Reading |
+| --- | --- | --- |
+| `a; b & c && d \|\| e` | one **List** over `a`, `;`, `b`, `&` and the AND and OR lists `c && d \|\| e`, "read from the left as `(c && d) \|\| e`" | `list` › `a`, `;`, `b`, `&`, `orList` › (`andList` › `c && d`), `\|\|`, `e` |
+| `a && b &` | **List of one command ended by `&`**; the `&` says "Run the whole AND list `a && b` in the background" | `list` › `andList`, `&` |
+| `a \| b & c` | the `&` runs "the whole pipeline `a \| b`" in the background | |
+| `{ a; b; } &` | the list `a; b;` inside the group, and the group with `&` | the same, nested |
+| `if a; then b & fi` | the `;` ends the list before `then` (without it, `then` would not be read as a reserved word); `b &` is a list | every `;` and `&` |
+| `x=$(a; b &)` | the list in `$( )`, with its `&` (before, the `&` was left out) | the list in the subshell's script |
+
+- `&&` and `||` alone are an **AND list** and an **OR list** (both: "AND and OR lists"); before, a "Command list joined by `&&` or `||`". Reading names them `andList` and `orList`, nested from the left.
+- Each `;` says what it waits for: "Separator: wait for `a` to end, then run the next", or, at the end, "End of the list". After `coproc`, it says that the shell does not wait. Before a reserved word (`then`, `do`, `done`, `fi`, `elif`, `else`, `}`, `esac`), it says that without a `;` or a newline the word would not be read as a reserved word, or that it may be left out after a compound command (`if [[ a ]] then`). Before, every `;` said "Command separator; run the next command regardless of the result", and the `;` inside a compound command was not shown.
+- In Reading, a string a shell reads again (`bash -c 'a; b | c'`) names its lists and pipelines as bash's own (`list`, `andList`, `orList`, `pipeline`); before, they were operators.
+- The `;` of the head of a `for` is the loop's: it ends the words before `do` (or `{`), or separates the three expressions of `(( ))`. Reading shows it too.
+- At the top of a script, a newline ends a list: bash reads and runs a script one line at a time. In a body (`{ }`, `( )`, `$( )`, the parts of `if`, `while` and `case`), a newline separates commands as `;` does, and the body's list is shown on the line of the construct in Reading; each line of it shows its own part.
+
 ### Note levels
 
 A note says how much it matters, with a mark, a word and a colour:

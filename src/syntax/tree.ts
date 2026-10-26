@@ -22,7 +22,10 @@ export type NodeType =
   | 'negated_command' // ! pipeline
   | 'redirected_statement' // a compound statement with redirections (or `time >o`); a simple command's redirections are its children
   | 'pipeline'
-  | 'list' // && and ||
+  | 'list' // an AND or OR list (3.2.4): && and ||, nested from the left (`a && b || c` is a list in a list)
+  // A list of commands (3.2.4): pipelines and AND/OR lists joined by `;` and `&`. Never in the tree, whose bodies hold
+  // their statements and those tokens as children; `commandLists` makes one over them (see there).
+  | 'command_list'
   | 'time_statement' // time [-p] pipeline
   | 'coproc_statement'
   // Compound statements
@@ -317,6 +320,159 @@ export function inStrayHead(n: SyntaxNode): boolean {
     if (strayKeyword(p) && strayHead(p).some((h) => h.startIndex === c.startIndex && h.endIndex === c.endIndex && h.type === c.type)) return true;
   }
   return false;
+}
+
+// Lists of commands (3.2.4). The tree keeps the statements of a script or a body, and the `;` and `&` between and
+// after them, as children of that node, as the semantic models read them. The manual reads them as lists: pipelines
+// separated by `;`, `&` and newlines, where `&&` and `||` bind tighter (an AND/OR list, the model's `list`, is one
+// part), and `&` applies to the part before it alone (bash's parser regroups `a; b &` so). `commandLists` gives those
+// lists as nodes of their own, for the explanations: a node whose children are the parts (the statements, their `;`
+// and `&`, and the comments between them), which keep their own parent. In a body (`{ }`, `( )`, `$( )`, the parts of
+// `if`, `while`, `case`), a newline separates as `;` does, and the whole body is one list. At the top of a script, a
+// newline ends the list: bash reads and runs the script one line at a time ("Bash always reads at least one complete
+// line of input … before executing any of the commands on that line", 6.6), and a compound command over several
+// lines is one part of the list of the line where it ends.
+
+/** The nodes whose statements make lists: a script, and the bodies of the compound commands and substitutions. */
+const LIST_HOLDERS = new Set<string>([
+  'program', 'compound_statement', 'subshell', 'do_group', 'if_statement', 'elif_clause', 'else_clause', 'while_statement', 'case_item',
+  'command_substitution', 'process_substitution',
+]);
+/** The nodes that can be a part of a list: a pipeline (a command, compound or not, is one of a single stage) or an AND/OR list. */
+const LIST_PARTS = new Set<string>([
+  'command', 'pipeline', 'list', 'negated_command', 'redirected_statement', 'time_statement', 'coproc_statement', 'compound_statement',
+  'subshell', 'if_statement', 'case_statement', 'for_statement', 'select_statement', 'c_style_for_statement', 'while_statement',
+  'function_definition', 'arithmetic_command', 'extended_test',
+]);
+
+/** Whether `n` is a part of a list of commands: a pipeline or an AND/OR list among the statements of a script or a body. */
+export function isListPart(n: SyntaxNode): boolean {
+  return n.named && LIST_PARTS.has(n.type) && !!n.parent && LIST_HOLDERS.has(n.parent.type);
+}
+
+/** Whether only blanks and line continuations lie between offsets `from` and `to` of the text of `holder` (no newline). */
+function sameLine(holder: SyntaxNode, from: number, to: number): boolean {
+  return !/\n/.test(holder.text.slice(from - holder.startIndex, to - holder.startIndex).replace(/\\\n/g, ''));
+}
+
+interface Run { parts: SyntaxNode[]; elements: SyntaxNode[] }
+
+/** The runs of `holder`'s children that make one list each (one part alone, with no `&`, included). */
+function runsOf(holder: SyntaxNode): Run[] {
+  if (!LIST_HOLDERS.has(holder.type)) return [];
+  const runs: Run[] = [];
+  let run: Run | undefined;
+  let pending: SyntaxNode[] = [];
+  let after = false;
+  for (const c of holder.children) {
+    const last = run?.parts[run.parts.length - 1];
+    if (c.named && LIST_PARTS.has(c.type)) {
+      // A part goes on the list after a `;` or `&` or a newline in a body; at the top, not after a newline.
+      // (Two parts with neither between them are on two lines.)
+      const goesOn = run && (holder.type !== 'program' || (after && sameLine(holder, Math.min(last!.endIndex, c.startIndex), c.startIndex)));
+      if (!goesOn) {
+        run = { parts: [], elements: [] };
+        runs.push(run);
+      } else run!.parts.push(...pending);
+      run!.parts.push(c);
+      run!.elements.push(c);
+      pending = [];
+      after = false;
+    } else if (!c.named && (c.type === ';' || c.type === '&') && run && !after && !pending.length) {
+      run.parts.push(c);
+      after = true;
+    } else if (c.type === 'comment' && run && holder.type !== 'program') pending.push(c);
+    else {
+      run = undefined;
+      pending = [];
+      after = false;
+    }
+  }
+  return runs;
+}
+
+/** The lists of a holder, made once: its lists of commands, and where each child is (its run, its place in it, its list). */
+interface Lists { lists: SyntaxNode[]; at: Map<SyntaxNode, { run: Run; index: number; list?: SyntaxNode }>; grouped?: readonly SyntaxNode[] }
+const listCache = new WeakMap<SyntaxNode, Lists>();
+
+function listsOf(holder: SyntaxNode): Lists {
+  let found = listCache.get(holder);
+  if (found) return found;
+  const made: Lists = { lists: [], at: new Map() };
+  for (const run of runsOf(holder)) {
+    const list = run.elements.length > 1 || run.parts.some((p) => p.type === '&') ? listNode(holder, run) : undefined;
+    if (list) made.lists.push(list);
+    run.parts.forEach((p, index) => made.at.set(p, { run, index, list }));
+  }
+  listCache.set(holder, made);
+  return made;
+}
+
+/**
+ * The lists of commands among the children of `holder` that are more than one part alone: two parts or more, or a
+ * part with `&` (`a &`, which bash's parser makes a list too; `a;` is just `a`). Each is a `command_list` node over
+ * its parts, made once (the same object every time), whose parent is `holder`; its children keep `holder` as theirs.
+ */
+export function commandLists(holder: SyntaxNode): SyntaxNode[] {
+  return listsOf(holder).lists;
+}
+
+function listNode(holder: SyntaxNode, r: Run): SyntaxNode {
+  const first = r.parts[0];
+  const last = r.parts.reduce((a, p) => (p.endIndex > a.endIndex ? p : a));
+  return {
+    type: 'command_list', named: true, field: null, incomplete: false, parent: holder,
+    text: holder.text.slice(first.startIndex - holder.startIndex, last.endIndex - holder.startIndex),
+    startIndex: first.startIndex, endIndex: last.endIndex, startPosition: first.startPosition, endPosition: last.endPosition,
+    children: r.parts, namedChildren: r.parts.filter((p) => p.named),
+  };
+}
+
+/**
+ * The children of `n`, with the parts of each of its lists of commands (`commandLists`) in one `command_list` node:
+ * the same array every time (`childrenOnRows` keeps what it reads of an array).
+ */
+export function withLists(n: SyntaxNode): readonly SyntaxNode[] {
+  const found = listsOf(n);
+  if (found.grouped) return found.grouped;
+  if (!found.lists.length) return (found.grouped = n.children);
+  const out: SyntaxNode[] = [];
+  for (const c of n.children) {
+    const l = found.at.get(c)?.list;
+    if (!l) out.push(c);
+    else if (l.children[0] === c) out.push(l);
+  }
+  return (found.grouped = out);
+}
+
+/** The parts of a list of commands, without the operators and comments: its pipelines and AND/OR lists. */
+export function listElements(l: SyntaxNode): SyntaxNode[] {
+  return l.namedChildren.filter((c) => c.type !== 'comment');
+}
+
+/** Whether a newline separates two parts of the list `l` (in a body: `{ a⏎ b; }`), as `;` does. */
+export function listOverLines(l: SyntaxNode): boolean {
+  const parts = l.children.filter((c) => c.type !== 'comment');
+  return parts.some((p, i) => i > 0 && !sameLine(l.parent!, Math.min(parts[i - 1].endIndex, p.startIndex), p.startIndex));
+}
+
+/**
+ * What a `;` or `&` among the statements of a script or a body is to its list: the part it follows, and the part after
+ * it in the same list (none: it ends the list). Undefined for a `;` that is not a list's (`for x in a; do`, `(( ; ; ))`).
+ * (`op` is a token: the callers pass only `;` and `&`.)
+ */
+export function listOperator(op: SyntaxNode): { part: SyntaxNode; next?: SyntaxNode } | undefined {
+  const at = listsOf(op.parent!).at.get(op);
+  if (!at) return undefined;
+  const part = at.run.parts[at.index - 1];
+  const next = at.run.parts.slice(at.index + 1).find((p) => p.named && p.type !== 'comment');
+  return next ? { part, next } : { part };
+}
+
+/** Whether the statement `n` is run in the background: a `&` follows it in its list. */
+export function inBackground(n: SyntaxNode): boolean {
+  const at = n.parent && isListPart(n) ? listsOf(n.parent).at.get(n) : undefined;
+  return !!at && at.run.parts[at.index + 1]?.type === '&';
 }
 
 /** Whether `n` or anything under it is an `error` node or incomplete. */
