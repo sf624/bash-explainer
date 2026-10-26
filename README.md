@@ -1,4 +1,4 @@
-# Bash Explainer
+# <picture><source media="(prefers-color-scheme: dark)" srcset="images/readme/logo-dark.png"><img src="images/readme/logo-light.png" alt="Bash Explainer" width="228" height="44"></picture>
 
 [![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version/shun-fujioka.bash-explainer.svg)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
 [![Open VSX](https://img.shields.io/open-vsx/v/shun-fujioka/bash-explainer?label=Open%20VSX)](https://open-vsx.org/extension/shun-fujioka/bash-explainer)

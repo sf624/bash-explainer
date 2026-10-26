@@ -2,9 +2,11 @@
 // Open VSX). vsce rewrites the README's and the changelog's relative links and images to absolute
 // ones; by default it points them at HEAD, so a page would show the newest images from main, not the
 // ones of its version. Here they are pinned to the tag of the version (`--githubBranch v<version>`).
-// The README also loses its note about the development version (scripts/readme-pins.ts): a package
-// page describes a release. vsce reads the README by its name, so the package is made from a copy of
-// the files it would contain (`vsce ls`) in a temporary directory, the README replaced in the copy.
+// The README is pinned before vsce reads it (pinReadme, as for the npm package): vsce leaves the
+// srcset of a <picture>'s <source> relative (the logo at its top has one for dark themes). It also
+// loses its note about the development version (scripts/readme-pins.ts): a package page describes a
+// release. vsce reads the README by its name, so the package is made from a copy of the files it
+// would contain (`vsce ls`) in a temporary directory, the README replaced in the copy.
 //
 // Usage: npx tsx scripts/package-vsix.ts [--out <file>]     (run `node esbuild.mjs --production` first)
 //        --root <dir>  package another directory than the repository (test/readme-pins.test.ts)
@@ -12,7 +14,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { stripDevelopmentNote } from './readme-pins';
+import { pinReadme, stripDevelopmentNote } from './readme-pins';
 
 const vsce = path.join(__dirname, '..', 'node_modules', '@vscode', 'vsce', 'vsce');
 
@@ -31,7 +33,7 @@ function main(): void {
       fs.copyFileSync(path.join(root, file), path.join(staging, file));
     }
     fs.copyFileSync(path.join(root, '.vscodeignore'), path.join(staging, '.vscodeignore'));
-    fs.writeFileSync(path.join(staging, 'README.md'), stripDevelopmentNote(fs.readFileSync(path.join(root, 'README.md'), 'utf8')));
+    fs.writeFileSync(path.join(staging, 'README.md'), pinReadme(stripDevelopmentNote(fs.readFileSync(path.join(root, 'README.md'), 'utf8')), '.', `v${version}`));
     process.stdout.write(run(staging, 'package', '--no-dependencies', '--githubBranch', `v${version}`, '-o', out));
   } finally {
     fs.rmSync(staging, { recursive: true, force: true });

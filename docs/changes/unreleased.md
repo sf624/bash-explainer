@@ -417,6 +417,15 @@ When a section is wider than the panel (`ps aux`, `ls -l` on a phone), it starts
 
 ## Changed
 
+### A new logo
+
+The logo is a speech bubble whose sides are the brackets `[ ]`, with a prompt `>_` inside: a script, explained. Before, it was a dark tile with coloured tokens over a tree of rows.
+
+- The extension's icon (Marketplace, Open VSX, the Extensions view) is the mark on a dark rounded tile.
+- The panel's tab icon and the web page's tab icon are drawn on the pixel grid at 16 px, so they stay sharp at that size, and on a 32 px grid when larger. The panel's follows the editor's light or dark theme, the web page's the system's.
+- The web page's top bar shows the mark in the colours of the page's theme.
+- The README starts with the mark and the name, in a light and a dark version.
+
 ### Share links keep the script out of the address bar (web page)
 
 - **Copy link** (the top bar's button and the menu's item) copies the link and does nothing else. Before, it also put the whole `#lang=…&kind=…&z=…` fragment into the address bar.

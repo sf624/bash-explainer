@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+<style>.a{color:#005fb8}.i{color:#1f2328}.s{display:none}@media (max-width:23.9px){.s{display:inline}.l{display:none}}</style>
+<!-- Bash Explainer's mark, hinted: below 24 px on the 16 px grid, else on the 32 px grid. -->
+<g class="s"><path class="a" fill="currentColor" d="M2 2H10V6H6V20H14V24H2ZM30 2H22V6H26V20H20V24H30ZM6 24H12V26H10V28H8V30H6Z"/><path class="i" fill="currentColor" d="M8 8H12V10H14V12H16V14H14V16H12V18H8V16H10V14H12V12H10V10H8ZM16 14H24V18H16Z"/></g>
+<g class="l"><g class="a"><path d="M11 3.5H3.5V21.5H14M21 3.5H28.5V21.5H19" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="M6 22.5H13.5L5.5 29Z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/></g><g class="i"><path d="M10 8.5L14 12.5L10 16.5M17.5 16.5H22.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+</svg>

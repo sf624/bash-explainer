@@ -2,8 +2,8 @@
 // published with, so every link and image that points into this repository is pinned to the
 // release's tag (v0.9.0), not to a branch (main, HEAD). Relative links would resolve to HEAD there.
 //
-//   pin:   vsce does it for the extension (`--githubBranch <tag>`, see scripts/package-vsix.ts);
-//          pinReadme() does it for the npm package (scripts/build-cli.ts --tag=<tag>).
+//   pin:   pinReadme() does it for the extension's README (scripts/package-vsix.ts) and the npm
+//          package (scripts/build-cli.ts --tag=<tag>); vsce does it for the changelog (`--githubBranch <tag>`).
 //   note:  README.md opens with a note that it describes the development version (main), between
 //          <!-- development-note --> markers; the package carries the README without it
 //          (stripDevelopmentNote(), used by scripts/package-vsix.ts).

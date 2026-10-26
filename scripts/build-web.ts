@@ -98,7 +98,10 @@ async function main(): Promise<void> {
   copy('media/panel.css');
   copy('media/icons.js');
   copy('media/panel.js');
-  copy('media/icon.png');
+  // The tab icon: the mark drawn on the 16 px grid below 24 px, in the colours of the system's theme;
+  // favicon.ico (16 and 32 px, light) for the browsers that take no SVG icon.
+  copy('web/favicon.svg');
+  copy('web/favicon.ico');
   // The licenses of what the page includes, linked from its footer.
   copy('LICENSE', 'LICENSE.txt');
   copy('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.txt');

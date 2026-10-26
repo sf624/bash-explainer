@@ -201,7 +201,7 @@ describe('the web page: the top bar', function () {
       assert.strictEqual(await page.locator('#github').getAttribute('aria-label'), 'GitHub repository');
       assert.strictEqual(await page.locator('#github').getAttribute('href'), 'https://github.com/sf624/bash-explainer');
       // The same size as the other buttons, and smaller than the page's own logo.
-      const [gh, share, logo] = await Promise.all(['#github', '#share', '.brand img'].map(async (s) => (await page.locator(s).boundingBox())!));
+      const [gh, share, logo] = await Promise.all(['#github', '#share', '.brand .logo'].map(async (s) => (await page.locator(s).boundingBox())!));
       assert.ok(gh.width === share.width && gh.height === share.height && logo.height > 18, JSON.stringify([gh, share, logo]));
       await page.locator('#menu-open').click();
       assert.deepStrictEqual(await look('#menu-github'), [fill, 'none', 18, 18, '#i-github']);

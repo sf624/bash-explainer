@@ -304,7 +304,7 @@ describe('the web page: the file kind', function () {
         const m = (await page.evaluate(`(() => {
           const t = document.querySelector('.top');
           const boxes = ${JSON.stringify(ids)}.map((id) => { const e = document.getElementById(id); const r = e.getBoundingClientRect(); return [id, e.getClientRects().length > 0, r.left, r.right, r.width, r.height]; });
-          const name = document.querySelector('.brand-name'), brand = document.querySelector('.brand'), img = document.querySelector('.brand img');
+          const name = document.querySelector('.brand-name'), brand = document.querySelector('.brand'), img = document.querySelector('.brand .logo');
           const shown = (sel) => document.querySelector(sel).getClientRects().length > 0;
           return { h: t.getBoundingClientRect().height, bar: t.scrollWidth <= t.clientWidth, page: document.documentElement.scrollWidth <= document.documentElement.clientWidth, boxes,
             brand: [brand.getBoundingClientRect().left, brand.getBoundingClientRect().right, img.getBoundingClientRect().width], whole: name.scrollWidth <= name.clientWidth, text: name.textContent, rows: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)),
