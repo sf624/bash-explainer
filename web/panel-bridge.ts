@@ -13,6 +13,7 @@ import { on, put } from './dom';
 import { drawIcon } from './icons';
 import { Theme } from './protocol';
 import { readStoredObject, STORAGE_KEYS, writeStored } from './storage';
+import { wrapLineBox } from './word-wrap';
 
 type Dialect = ReturnType<typeof panelUpdate>['dialect'];
 
@@ -148,6 +149,79 @@ export class PanelBridge {
     root.classList.toggle('bx-phone', phone);
     root.classList.toggle('bx-compact', phone && this.sheetMarks.compact);
     root.classList.toggle('bx-lead', phone && this.sheetMarks.lead);
+    root.classList.toggle('bx-wrap', this.wrap);
+    this.watchLine();
+  }
+
+  /** Round 7: whether the line box wraps between shell words (the `editor.wrap` setting, on by default). */
+  private wrap = true;
+  setWrap(on: boolean): void {
+    this.wrap = on;
+    this.markPhone();
+    this.wrapLine();
+  }
+
+  private lineWatched: HTMLElement | undefined;
+  private lineObserver: MutationObserver | undefined;
+  private lineResize: ResizeObserver | undefined;
+  private lineWidth = -1;
+  /** The line box is drawn again by the panel at each line: wrap it each time, and when its width changes. */
+  private watchLine(): void {
+    const pre = this.frame?.contentDocument?.getElementById('line');
+    if (!pre || pre === this.lineWatched) return;
+    this.lineWatched = pre;
+    this.lineObserver?.disconnect();
+    this.lineResize?.disconnect();
+    const w = this.frame!.contentWindow! as Window & typeof globalThis;
+    this.lineObserver = new w.MutationObserver(() => {
+      // A new line: the box is closed again (three rows at most).
+      pre.classList.remove('bx-line-open');
+      this.wrapLine();
+    });
+    this.lineObserver!.observe(pre, { childList: true });
+    this.lineResize = new w.ResizeObserver(() => {
+      if (Math.abs(pre.clientWidth - this.lineWidth) > 1) this.wrapLine();
+    });
+    this.lineResize!.observe(pre);
+    // A tap on a box cut at three rows opens it whole (the parts can be tapped then).
+    pre.addEventListener('click', (e) => {
+      if (!pre.classList.contains('bx-line-clamp') || pre.classList.contains('bx-line-open')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pre.classList.add('bx-line-open');
+    }, true);
+  }
+
+  /** Splits the line box's text at the blanks between shell words (web/word-wrap.ts) and marks its rows after the first with ↪. */
+  wrapLine(): void {
+    const pre = this.lineWatched;
+    const doc = this.frame?.contentDocument;
+    if (!pre || !doc || !pre.isConnected) return;
+    const w = doc.defaultView!;
+    this.lineObserver?.disconnect();
+    try {
+      if (!this.wrap || !pre.getClientRects().length) {
+        pre.classList.remove('bx-line-clamp');
+        pre.style.removeProperty('--bx-marks');
+        // (Hidden: wrapped again when it shows, at whatever width.)
+        this.lineWidth = -1;
+        return;
+      }
+      const cs = w.getComputedStyle(pre);
+      const ctx = doc.createElement('canvas').getContext('2d');
+      if (!ctx) return;
+      ctx.font = `${cs.fontSize} ${cs.fontFamily}`;
+      const cw = ctx.measureText('M'.repeat(20)).width / 20 || 8;
+      this.lineWidth = pre.clientWidth;
+      const room = Math.floor((pre.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 1) / cw) + 2;
+      wrapLineBox(pre, room);
+      const lh = parseFloat(cs.lineHeight) || 20;
+      const rows = Math.max(1, Math.round((pre.scrollHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)) / lh));
+      pre.classList.toggle('bx-line-clamp', rows > 3);
+      pre.style.setProperty('--bx-marks', rows > 1 ? `"${Array(rows - 1).fill('↪').join('\\A ')}"` : '""');
+    } finally {
+      this.lineObserver?.observe(pre, { childList: true });
+    }
   }
 
   /**

@@ -216,3 +216,50 @@ const theme = EditorView.baseTheme({
 
 /** Wrapping between shell words, with the hanging indent and the gutter's marks. */
 export const wordWrap = [EditorView.lineWrapping, wordMarks, wrapGutter, theme];
+
+/**
+ * Round 7: the panel's line box wraps between shell words too (desktop, and the phone's full sheet). The box keeps
+ * `white-space: pre` (web/panel-page.css, `bx-wrap`); the blanks between words are put in `.bx-gap` spans that may
+ * break (`pre-wrap`), so a row ends only there. A word wider than a row may break at its own blanks, and a run with
+ * no blank that is still too wide anywhere (`.bx-any`). Only the text nodes are split: the panel's spans, and their
+ * listeners, stay as they are, and the box's text is unchanged. `room` is a row's width in columns.
+ */
+export function wrapLineBox(pre: HTMLElement, room: number): void {
+  const doc = pre.ownerDocument;
+  // (Again from the text: a box already split is put back first.)
+  for (const s of [...pre.querySelectorAll('span.bx-gap, span.bx-any')]) s.replaceWith(...s.childNodes);
+  pre.normalize();
+  const text = pre.textContent ?? '';
+  // Each character: 0 a word kept whole, 1 a blank where the row may end, 2 may break anywhere.
+  const kind = new Uint8Array(text.length).fill(1);
+  const fit = Math.max(4, room - HANG);
+  for (const [s, e] of shellWords(text)) {
+    const word = text.slice(s, e);
+    if (columns(word) <= fit) {
+      kind.fill(0, s, e);
+      continue;
+    }
+    const runs = /[^ \t]+/g;
+    for (let m = runs.exec(word); m; m = runs.exec(word)) kind.fill(columns(m[0]) <= fit ? 0 : 2, s + m.index, s + m.index + m[0].length);
+  }
+  const walker = doc.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text);
+  let at = 0;
+  for (const node of nodes) {
+    const data = node.data;
+    const parts: Node[] = [];
+    let i = 0;
+    while (i < data.length) {
+      const k = kind[at + i];
+      let j = i;
+      while (j < data.length && kind[at + j] === k) j++;
+      const piece = data.slice(i, j);
+      if (k === 0) parts.push(doc.createTextNode(piece));
+      else parts.push(Object.assign(doc.createElement('span'), { className: k === 1 ? 'bx-gap' : 'bx-any', textContent: piece }));
+      i = j;
+    }
+    at += data.length;
+    if (parts.length !== 1 || parts[0].nodeType !== Node.TEXT_NODE) node.replaceWith(...parts);
+  }
+}

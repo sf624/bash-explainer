@@ -6055,3 +6055,575 @@ html .ed-head.tight .tool-btn {
 .ed-head.no-name .file-name-box {
   display: none;
 }
+
+/* ==== Prototype round 7 (proto/chrome-7): one header row in the phone's sheet, wrap on everywhere, one scope control,
+   "Code ⌄", the keyboard's summary row, toasts never cut, settings sections, the empty state, the phone's lists ===== */
+
+/* ---- 3. One scope control at every width: the chip, and one popover of radio lists (a sheet on a phone) ---- */
+.ed-head .scope-narrow {
+  display: flex !important;
+}
+
+.ed-head .scope-wide {
+  display: none !important;
+}
+
+.ed-head .file-name > #file-name {
+  text-overflow: clip;
+}
+
+.popmenu.scope-pop {
+  gap: 6px;
+  width: min(31rem, calc(100vw - 24px));
+  min-width: 0;
+  max-height: calc(100dvh - 120px);
+  padding: 10px 10px 12px;
+  overflow: auto;
+}
+
+.scope-pop[hidden] {
+  display: none !important;
+}
+
+/* (The desktop's popover: its two headings say it; the title names it for screen readers.) */
+html:not(.narrow) .scope-pop .pop-head {
+  display: none;
+}
+
+.scope-lists {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 4px 14px;
+}
+
+.scope-h {
+  margin: 4px 0 4px 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scope-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.scope-sub {
+  margin-top: 8px;
+}
+
+.scope-sub[hidden] {
+  display: none;
+}
+
+.scope-opt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .scope-opt:hover {
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+.scope-opt:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+.scope-opt[aria-checked="true"] {
+  font-weight: 600;
+}
+
+.scope-dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--vscode-descriptionForeground);
+  border-radius: 50%;
+}
+
+.scope-opt[aria-checked="true"] .scope-dot {
+  border-color: var(--page-accent);
+  background: radial-gradient(circle, var(--page-accent) 0 3.5px, transparent 4px);
+}
+
+.scope-name {
+  min-width: 0;
+}
+
+.scope-note {
+  color: var(--vscode-descriptionForeground);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+:where(html.narrow) .popmenu.scope-pop {
+  width: auto;
+  max-height: 82dvh;
+}
+
+:where(html.narrow) .scope-lists {
+  gap: 4px 8px;
+}
+
+:where(html.narrow) .scope-opt {
+  min-height: 44px;
+  padding: 4px 6px;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+/* (The Auto item's reason goes under its name in a phone's narrow column.) */
+:where(html.narrow) .scope-opt {
+  flex-wrap: wrap;
+  column-gap: 9px;
+  row-gap: 0;
+}
+
+:where(html.narrow) .scope-name {
+  flex: 1 1 0;
+}
+
+:where(html.narrow) .scope-note {
+  flex-basis: 100%;
+  padding-left: 23px;
+  font-size: 13px;
+}
+
+:where(html.narrow) .scope-h {
+  font-size: 12px;
+}
+
+/* ---- 1. The phone's sheet: one header row. The view control (or, in Reading, the stepper) sits in the tabs row at the
+   right, 44px to tap; no view row; no line box below full (web/panel-page.css) ---- */
+:where(html.narrow) .view-row {
+  display: none !important;
+}
+
+:where(html.narrow) .panel-bar {
+  gap: 0;
+}
+
+:where(html.narrow) .panel-tools {
+  display: flex;
+  flex: none;
+  order: 2;
+  align-items: center;
+  height: 44px;
+  margin: 0;
+}
+
+:where(html.narrow) .view-slot .vd-value {
+  font-weight: 500;
+}
+
+:where(html.narrow) .panel-tools[hidden],
+:where(html.narrow) .panel-col.blank .panel-tools {
+  display: none;
+}
+
+:where(html.narrow) .panel-bar.fit-test-tools .panel-tools[hidden] {
+  display: flex;
+}
+
+:where(html.narrow) .panel-tools .tools-div,
+:where(html.narrow) #pane-collapse,
+:where(html.narrow) #pane-copy {
+  display: none !important;
+}
+
+:where(html.narrow) .view-slot {
+  display: flex;
+  width: auto;
+}
+
+:where(html.narrow) .view-slot .seg {
+  display: none;
+}
+
+:where(html.narrow) .view-slot .view-drop {
+  display: flex;
+}
+
+:where(html.narrow) .view-slot.stepping .view-drop {
+  display: none;
+}
+
+:where(html.narrow) .view-slot .vd-prefix {
+  display: none;
+}
+
+:where(html.narrow) .view-slot .view-drop-btn {
+  height: 44px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  font-size: 14px;
+}
+
+:where(html.narrow) #panel-tabs[data-fit="snug"] ~ .panel-tools .view-drop-btn,
+:where(html.narrow) #panel-tabs[data-fit="noline"] ~ .panel-tools .view-drop-btn,
+:where(html.narrow) #panel-tabs[data-fit="icons"] ~ .panel-tools .view-drop-btn {
+  padding: 0 6px 0 8px;
+  font-size: 13px;
+}
+
+:where(html.narrow) .sheet-back {
+  order: 3;
+}
+
+.step-proxy {
+  display: none;
+}
+
+:where(html.narrow) .step-proxy:not([hidden]) {
+  display: flex;
+  align-items: center;
+}
+
+.step-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 44px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+}
+
+.step-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.step-btn[aria-disabled="true"] {
+  opacity: 0.35;
+}
+
+.step-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 44px;
+  min-height: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.step-count .chev {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.step-menu-page {
+  min-width: 14rem;
+  max-height: 60dvh;
+  overflow: auto;
+}
+
+.step-menu-page[hidden] {
+  display: none;
+}
+
+.step-menu-h {
+  display: block;
+  padding: 6px 12px 2px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.step-menu-page .step-empty {
+  opacity: 0.6;
+}
+
+/* ---- 9. The tabs: before the icons, the Explanation tab drops its line number; at `icons` Reference keeps a word ---- */
+:where(html.narrow) #panel-tabs[data-fit="noline"] [role="tab"] {
+  min-width: 72px;
+  padding: 0 6px;
+  font-size: 13px;
+}
+
+:where(html.narrow) #panel-tabs[data-fit="noline"] .tab-line,
+:where(html.narrow) #panel-tabs[data-fit="icons"] .tab-line {
+  display: none;
+}
+
+.tab-short {
+  display: none;
+}
+
+:where(html.narrow) #panel-tabs[data-fit="icons"] #tab-ref .tab-ico {
+  display: none;
+}
+
+:where(html.narrow) #panel-tabs[data-fit="icons"] #tab-ref .tab-short {
+  display: inline;
+}
+
+:where(html.narrow) .panel-bar[data-fit="noline"] .sheet-back {
+  padding: 0 6px 0 8px;
+  font-size: 13px;
+}
+
+/* ---- 4. "Code ⌄" (round 6's "Script ⌄" read like the chip and the menu's SCRIPT); at `icons` the chevron over a
+   smaller word, 44px wide, never a bare chevron ---- */
+:where(html.narrow) .panel-bar[data-fit="icons"] .sheet-back {
+  flex-direction: column;
+  gap: 0;
+  width: 44px;
+  padding: 0;
+}
+
+:where(html.narrow) .panel-bar[data-fit="icons"] .sheet-back .lbl {
+  display: block !important;
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+:where(html.narrow) .panel-bar[data-fit="icons"] .sheet-back .back-chev {
+  order: -1;
+  width: 16px;
+  height: 16px;
+}
+
+/* ---- 5. The phone's keyboard: no app bar (the strip stays), and the folded sheet's row is a summary of the cursor's
+   line; a tap on it closes the keyboard and opens the sheet at half ---- */
+html.narrow.kb-open body:not([data-page="compare"]) .top {
+  display: none;
+}
+
+.kb-summary {
+  display: none;
+}
+
+html.narrow.kb-open .kb-summary {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 0;
+  padding: 0 14px;
+  border: 0;
+  border-top: 1px solid var(--vscode-panel-border);
+  background: var(--page-background);
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+}
+
+html.narrow.kb-open .panel-bar {
+  visibility: hidden;
+}
+
+.kb-ln {
+  flex: none;
+  color: var(--vscode-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.kb-icon {
+  flex: none;
+}
+
+.kb-icon.warning {
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.kb-icon.info {
+  color: var(--vscode-editorInfo-foreground);
+}
+
+.kb-icon:empty {
+  display: none;
+}
+
+.kb-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kb-summary .chev {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+/* ---- 6. Toasts: an accent icon; a docked toast with under 240px of text floats 8px above the strip across the pane;
+   on a phone just above the sheet's tabs row, and over the strip when the sheet is full ---- */
+.status-icon {
+  flex: none;
+  margin-right: 2px;
+  color: var(--page-accent);
+  font-weight: 700;
+}
+
+.status-icon.info {
+  color: var(--vscode-editorInfo-foreground);
+}
+
+body:not([data-page="compare"]) #status.floating {
+  box-sizing: border-box;
+  max-width: none;
+  padding: 4px 4px 4px 12px;
+  box-shadow: inset 3px 0 0 var(--page-accent), var(--shadow);
+  font-size: 13px;
+  transform: none;
+}
+
+#status.floating .status-close {
+  width: 28px;
+  height: 28px;
+  margin: 0 0 0 auto;
+}
+
+:where(html.narrow) body:not([data-page="compare"]) #status.over-strip {
+  z-index: 30;
+  min-height: 0;
+  padding: 0 2px 0 12px;
+  border-radius: 8px;
+  box-shadow: inset 3px 0 0 var(--page-accent), var(--shadow);
+}
+
+:where(html.narrow) #status.over-strip .status-action,
+:where(html.narrow) #status.over-strip .status-close {
+  min-height: 0;
+  height: 32px;
+}
+
+/* ---- 7. Settings: the sections after Common each folded under their own heading (Jump to opens them) ---- */
+.settings-fold-body[hidden],
+.settings-folded[hidden] {
+  display: none;
+}
+
+.settings-fold-body > .settings-group > h4 {
+  display: none;
+}
+
+.settings-folded {
+  margin-top: 0;
+}
+
+.settings-folded + .settings-show-keys {
+  margin-top: 12px;
+}
+
+/* ---- 8. The empty editor: the strip says "No script yet" (no ✓) ---- */
+#problems.no-script .strip-title::before {
+  content: none;
+}
+
+#problems.no-script .strip-title {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ---- 9. The Problems lists: the line in a fixed column with tabular figures; the menu's first row in the normal
+   weight, its pencil always shown ---- */
+.problem-list .problem .icon {
+  flex: none;
+  width: 1.15em;
+  text-align: center;
+}
+
+.problem-list .problem .where {
+  flex: none;
+  min-width: 3.9em;
+  font-variant-numeric: tabular-nums;
+}
+
+#drawer .menu-file,
+#drawer .menu-file > span {
+  font-weight: 400;
+}
+
+#drawer .menu-file .file-pencil {
+  opacity: 1;
+}
+
+/* ---- 10. A dialog closed with the mouse: the button that opened it keeps the focus without a ring (web/main.ts) ---- */
+.no-ring:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* A toast in the folded sheet's row (the keyboard open) lies over the summary: the summary waits under it, unseen. */
+html.narrow.kb-open:has(#status.in-tabs:not(:empty)) .kb-summary {
+  visibility: hidden;
+}
+
+/* With larger text, last: the view control as its icon (its name says the view), the stepper as its count alone. */
+.vd-icon {
+  display: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+:where(html.narrow) .panel-bar[data-tools="compact"] .view-drop-btn .vd-icon {
+  display: block;
+}
+
+:where(html.narrow) .panel-bar[data-tools="compact"] .view-drop-btn .vd-value {
+  display: none;
+}
+
+:where(html.narrow) .panel-bar[data-tools="compact"] .view-drop-btn {
+  gap: 2px;
+  padding: 0 6px;
+}
+
+:where(html.narrow) .panel-bar[data-tools="compact"] .step-btn {
+  display: none;
+}

@@ -230,7 +230,7 @@ describe('settingsFromEditor', () => {
     assert.strictEqual(s['inline.maxLength'], 120);
     assert.strictEqual(s['hover.followDelay'], 400);
     // A setting VS Code does not have (the web page's) is not asked for.
-    assert.strictEqual(s['editor.wrap'], false);
+    assert.strictEqual(s['editor.wrap'], true);
     assert.ok(!asked.includes('editor.wrap'));
   });
 

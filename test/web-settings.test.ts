@@ -111,7 +111,7 @@ describe('the web page: theme and settings', function () {
     }
   });
 
-  it('wraps long lines in the editor when the editor.wrap setting is on: kept, exported, imported and reset', async () => {
+  it('wraps long lines between words by default (the editor.wrap setting, on), and scrolls sideways when it is off: kept, exported, imported and reset', async () => {
     const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 360, height: 740 } });
     const page = await ctx.newPage();
     const errors: string[] = [];
@@ -127,44 +127,52 @@ describe('the web page: theme and settings', function () {
       if (lines.length !== 3) return { height: 0, short: 0, over: false };
       return { height: lines[1].getBoundingClientRect().height, short: lines[0].getBoundingClientRect().height, over: sc.scrollWidth > sc.clientWidth + 1 };
     })()`) as Promise<{ height: number; short: number; over: boolean }>;
-    const off = await until('the three lines', metrics, (m) => m.height > 0);
-    assert.ok(off.over && off.height < off.short * 1.5, 'off: one row, scrolls sideways');
-    await page.locator('#settings-open').click();
-    assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), false);
-    assert.match(await page.locator('[data-key="editor.wrap"]').innerText(), /Wrap long lines/);
-    await page.locator('#setting-editor-wrap').check();
-    await page.locator('#settings-done').click();
-    const on = await until('the wrapped line', metrics, (m) => !m.over);
+    const closeSettings = () => page.locator('#settings-dialog .settings-x').click();
+    // On by default: wrapped, no sideways scroll, and the setting says so.
+    const on = await until('the wrapped line', metrics, (m) => m.height > 0 && !m.over);
     assert.ok(on.height > on.short * 2 && !on.over, `on: wrapped, no horizontal scroll ${JSON.stringify(on)}`);
+    // Each row ends between words: no word is cut over two rows.
+    const cut = await page.evaluate(`(() => { const l = document.querySelectorAll('.cm-line')[1]; const t = l.textContent; const r = document.createRange(); const tops = []; const w = document.createTreeWalker(l, NodeFilter.SHOW_TEXT); let at = 0; for (let n = w.nextNode(); n; n = w.nextNode()) { for (let i = 0; i < n.length; i++) { r.setStart(n, i); r.setEnd(n, i + 1); const b = r.getClientRects()[0]; tops[at + i] = b ? Math.round(b.top) : undefined; } at += n.length; } for (let i = 1; i < t.length; i++) if (t[i - 1] !== ' ' && t[i] !== ' ' && tops[i] !== undefined && tops[i - 1] !== undefined && tops[i] > tops[i - 1]) return t.slice(i - 3, i + 3); return null; })()`);
+    assert.strictEqual(cut, null);
     // Clicking the start of the line puts the cursor on it, and the active line is the whole wrapped line.
     const box = (await page.locator('.cm-line').nth(1).boundingBox())!;
     await page.mouse.click(box.x + 2, box.y + 4);
     assert.match(await page.locator('.cm-activeLine').innerText(), /^echo word0 /);
+    await page.locator('#settings-open').click();
+    assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), true);
+    assert.match(await page.locator('[data-key="editor.wrap"]').innerText(), /Wrap long lines/);
+    await page.locator('#setting-editor-wrap').uncheck();
+    await closeSettings();
+    const off = await until('one row', metrics, (m) => m.over);
+    assert.ok(off.over && off.height < off.short * 1.5, 'off: one row, scrolls sideways');
     // Kept across a reload, and in the export.
     await page.reload();
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText(`echo first\n${long}\necho last`);
-    const again = await until('wrapping after reload', metrics, (m) => m.height > 0 && !m.over);
-    assert.ok(again.height > again.short || again.height > 30);
+    await until('one row after reload', metrics, (m) => m.height > 0 && m.over);
     await page.locator('#settings-open').click();
-    assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), true);
+    assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), false);
     const text = await page.evaluate('localStorage.getItem("bash-explainer-settings")') as string;
-    assert.deepStrictEqual(JSON.parse(text), { 'bashExplainer.editor.wrap': true });
+    assert.deepStrictEqual(JSON.parse(text), { 'bashExplainer.editor.wrap': false });
+    await page.locator('#settings-fold-data').click();
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#settings-export').click()]);
     const file = await download.path();
-    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { 'bashExplainer.editor.wrap': true });
-    // Reset turns it off; importing the file turns it on again.
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { 'bashExplainer.editor.wrap': false });
+    // Reset turns it on again; importing the file turns it off.
     await page.locator('#settings-reset').click();
-    assert.strictEqual(await page.evaluate('localStorage.getItem("bash-explainer-settings")'), null);
-    assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), false);
-    await page.locator('#settings-done').click();
-    assert.ok((await metrics()).over, 'reset: sideways scroll again');
+    const yes = page.locator('#settings-reset-yes');
+    if (await yes.count()) await yes.click();
+    await until('the reset', () => page.evaluate('localStorage.getItem("bash-explainer-settings")'), (v) => v === null);
+    assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), true);
+    await closeSettings();
+    await until('wrapped after the reset', metrics, (m) => !m.over);
     await page.locator('#settings-open').click();
+    await page.locator('#settings-fold-data').click();
     await page.locator('#settings-file').setInputFiles(file);
-    await until('the import', () => page.locator('#setting-editor-wrap').isChecked(), (c) => c);
-    await page.locator('#settings-done').click();
-    assert.ok(!(await metrics()).over);
+    await until('the import', () => page.locator('#setting-editor-wrap').isChecked(), (c) => !c);
+    await closeSettings();
+    assert.ok((await until('one row after the import', metrics, (m) => m.over)).over);
     assert.deepStrictEqual(errors, []);
     await ctx.close();
   });

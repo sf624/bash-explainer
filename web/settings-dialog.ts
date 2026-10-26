@@ -144,10 +144,10 @@ const SECTION_OF: Record<string, Section> = {
   'examples.disabled': 'examples', 'examples.placement': 'examples',
   shell: 'checks', bashVersion: 'checks', 'yq.flavor': 'checks', 'diagnostics.enabled': 'checks', 'diagnostics.ignore': 'checks',
   'diagnostics.embedded': 'checks', 'diagnostics.pitfalls': 'checks', customCommands: 'checks',
-  'hints.names': 'editor', 'panel.animations': 'editor',
+  'hints.names': 'editor', 'panel.animations': 'common',
 };
 /** The order of the common settings (the theme goes after the language). */
-const COMMON_ORDER = ['language', 'notes.idioms', 'notes.pitfalls', 'examples.enabled', 'hover.enabled', 'editor.wrap'];
+const COMMON_ORDER = ['language', 'notes.idioms', 'notes.pitfalls', 'examples.enabled', 'hover.enabled', 'editor.wrap', 'panel.animations'];
 /** Settings that only a mouse hover or a desktop editor uses: marked on a touch-only device. */
 const MOUSE_ONLY = new Set(['hover.enabled']);
 const touchOnly = (): boolean => typeof matchMedia === 'function' && matchMedia('(hover: none)').matches;
@@ -202,8 +202,12 @@ export class SettingsDialog {
   private clearing: 'done' | 'reset' | undefined;
   /** The text in the search field. */
   private query = '';
-  /** Whether Advanced is unfolded (it unfolds by itself while a search is typed, or a link jumps into it). */
-  private advancedOpen = false;
+  /**
+   * Round 7: the sections after Common, each folded under its own heading (round 4 had one "Advanced" fold, whose groups
+   * Jump to could not show); a section unfolds when its heading or its Jump to link is pressed, and all while a search
+   * is typed.
+   */
+  private openSections = new Set<Section>();
 
   constructor(dialog: HTMLDialogElement, private host: SettingsHost) {
     this.dialog = dialog;
@@ -240,7 +244,7 @@ export class SettingsDialog {
     if (reopenSheet(this.dialog)) return;
     this.clearing = undefined;
     this.query = '';
-    this.advancedOpen = false;
+    this.openSections.clear();
     this.render();
     this.dialog.showModal();
     this.dialog.querySelector<HTMLElement>('.settings-body')?.scrollTo(0, 0);
@@ -456,8 +460,9 @@ export class SettingsDialog {
       const a = el('a', { href: `#settings-section-${id}`, textContent: id === 'common' ? c.common : t.sections[id] });
       a.addEventListener('click', (e) => {
         e.preventDefault();
-        if (ADVANCED.includes(id)) this.setAdvanced(true);
-        const target = this.dialog.querySelector<HTMLElement>(`#settings-section-${id}`);
+        if (ADVANCED.includes(id)) this.setOpen(id, true);
+        // (Round 7: a folded section's own heading comes first.)
+        const target = this.dialog.querySelector<HTMLElement>(`#settings-folded-${id}`) ?? this.dialog.querySelector<HTMLElement>(`#settings-section-${id}`);
         if (target && !target.hidden) target.scrollIntoView({ block: 'start' });
         this.markSection(id);
       });
@@ -472,13 +477,12 @@ export class SettingsDialog {
         el('p', { className: 'settings-intro', textContent: `${t.intro}${lang === 'ja' ? '' : this.host.canSave() ? ' ' : ''}${this.host.canSave() ? t.saved : t.unsaved}` }),
         search,
         section('common', ...commonRows()),
-        this.advanced(lang,
-          this.namesSwitch(lang),
-          section('examples', ...inSection('examples')),
-          section('checks', ...inSection('checks')),
-          section('editor', ...inSection('editor')),
-          section('data', io, reset, clear),
-          el('p', { className: 'settings-elsewhere' }, t.notHere, ' ', ...elsewhere.flatMap((x, i) => [i ? ', ' : '', el('code', { textContent: x.key })]))),
+        this.fold('examples', section('examples', ...inSection('examples'))),
+        this.fold('checks', section('checks', ...inSection('checks'))),
+        this.fold('editor', section('editor', ...inSection('editor'))),
+        this.fold('data', section('data', io, reset, clear)),
+        this.namesSwitch(lang),
+        el('p', { className: 'settings-elsewhere' }, t.notHere, ' ', ...elsewhere.flatMap((x, i) => [i ? ', ' : '', el('code', { textContent: x.key })])),
         none,
       ),
     );
@@ -489,30 +493,36 @@ export class SettingsDialog {
     this.fitDescs();
   }
 
-  /** Advanced: a section heading that folds what most people leave as it is (folded when the dialog opens). */
-  private advanced(lang: Lang, ...parts: HTMLElement[]): HTMLElement {
-    const c = CHROME[lang];
-    const toggle = el('button', { type: 'button', id: 'settings-advanced-toggle', className: 'settings-fold' },
-      el('span', { className: 'fold-chev', textContent: '›' }), el('span', { textContent: c.advanced }));
-    toggle.setAttribute('aria-controls', 'settings-advanced-body');
-    toggle.addEventListener('click', () => this.setAdvanced(!this.advancedOpen));
-    const note = el('p', { className: 'settings-advanced-note', textContent: c.advancedNote });
-    const body = el('div', { id: 'settings-advanced-body', className: 'settings-advanced-body' }, ...parts);
-    return el('section', { id: 'settings-advanced', className: 'settings-advanced' }, el('h3', { className: 'settings-major' }, toggle), note, body);
+  /** A section after Common: its heading folds it (folded when the dialog opens). */
+  private fold(id: Section, group: HTMLElement): HTMLElement {
+    const lang = this.host.lang();
+    const toggle = el('button', { type: 'button', id: `settings-fold-${id}`, className: 'settings-fold' },
+      el('span', { className: 'fold-chev', textContent: '›' }), el('span', { textContent: TEXT[lang].sections[id as Exclude<Section, 'common'>] }));
+    toggle.setAttribute('aria-controls', `settings-fold-body-${id}`);
+    toggle.addEventListener('click', () => this.setOpen(id, !this.openSections.has(id)));
+    const body = el('div', { id: `settings-fold-body-${id}`, className: 'settings-fold-body' }, group);
+    const sec = el('section', { className: 'settings-advanced settings-folded', id: `settings-folded-${id}` }, el('h3', { className: 'settings-major' }, toggle), body);
+    sec.dataset.fold = id;
+    return sec;
   }
 
-  /** Folds or unfolds Advanced (a search unfolds it while it is typed). */
-  private setAdvanced(open: boolean): void {
-    this.advancedOpen = open;
+  /** Folds or unfolds a section (a search unfolds them all while it is typed). */
+  private setOpen(id: Section, open: boolean): void {
+    if (open) this.openSections.add(id);
+    else this.openSections.delete(id);
     this.showAdvanced();
   }
 
   private showAdvanced(): void {
-    const open = this.advancedOpen || !!this.query.trim();
-    const body = this.dialog.querySelector<HTMLElement>('#settings-advanced-body');
-    if (body) body.hidden = !open;
-    this.dialog.querySelector('#settings-advanced-toggle')?.setAttribute('aria-expanded', String(open));
-    this.dialog.querySelector('#settings-advanced')?.classList.toggle('open', open);
+    const searching = !!this.query.trim();
+    for (const sec of this.dialog.querySelectorAll<HTMLElement>('.settings-folded')) {
+      const id = sec.dataset.fold as Section;
+      const open = searching || this.openSections.has(id);
+      const body = sec.querySelector<HTMLElement>('.settings-fold-body');
+      if (body) body.hidden = !open;
+      sec.querySelector('.settings-fold')?.setAttribute('aria-expanded', String(open));
+      sec.classList.toggle('open', open);
+    }
     this.fitDescs();
   }
 
@@ -525,6 +535,8 @@ export class SettingsDialog {
     box.addEventListener('change', () => {
       writeStored(STORAGE_KEYS.settingNames, box.checked ? '1' : '0');
       this.dialog.classList.toggle('show-keys', box.checked);
+      // (Round 7: the values' names, "first — …", show with the setting names only.)
+      this.refresh();
     });
     return el('label', { className: 'settings-show-keys', htmlFor: 'settings-show-keys' }, box, ' ', CHROME[lang].showKeys);
   }
@@ -572,9 +584,10 @@ export class SettingsDialog {
     const none = this.dialog.querySelector<HTMLElement>('.settings-nomatch');
     if (none) none.hidden = shown > 0;
     this.showAdvanced();
-    // A search that matches nothing under Advanced hides it whole.
-    const adv = this.dialog.querySelector<HTMLElement>('#settings-advanced');
-    if (adv) adv.hidden = !!q && ![...adv.querySelectorAll<HTMLElement>('.settings-group[data-section]')].some((g) => !g.hidden);
+    // A search that matches nothing in a folded section hides it whole.
+    for (const sec of this.dialog.querySelectorAll<HTMLElement>('.settings-folded')) {
+      sec.hidden = !!q && ![...sec.querySelectorAll<HTMLElement>('.settings-group[data-section]')].some((g) => !g.hidden);
+    }
     const elsewhere = this.dialog.querySelector<HTMLElement>('.settings-elsewhere');
     if (elsewhere) elsewhere.hidden = !!q;
     for (const a of this.dialog.querySelectorAll<HTMLElement>('.settings-nav a')) {
@@ -680,9 +693,11 @@ export class SettingsDialog {
       const labels: Record<string, string> = { ...text.values, ...(spec.key === 'language' ? { auto: t.browser } : {}) };
       const select = el('select', { id });
       describe(select);
+      // Round 7: a value's own name ("first") only with the setting names; its words alone otherwise.
+      const keysShown = readStored(STORAGE_KEYS.settingNames) === '1';
       // The language: the same words as the menu's ("Auto (follows the browser)", "English", "日本語").
       const languageName: Record<string, string> = { auto: CHROME[lang].autoBrowser, en: 'English', ja: '日本語' };
-      select.append(...spec.enum!.map((v) => new Option(spec.key === 'language' && languageName[v] ? languageName[v] : labels[v] && labels[v] !== v ? `${v} — ${labels[v].replace(/`/g, '')}` : v, v, false, v === value)));
+      select.append(...spec.enum!.map((v) => new Option(spec.key === 'language' && languageName[v] ? languageName[v] : labels[v] && labels[v] !== v ? (keysShown ? `${v} — ${labels[v].replace(/`/g, '')}` : labels[v].replace(/`/g, '')) : v, v, false, v === value)));
       select.addEventListener('change', () => this.change(spec.key, select.value));
       row.append(select);
     } else if (spec.type === 'number') {

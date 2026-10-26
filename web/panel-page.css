@@ -273,3 +273,77 @@ html.bx-phone #bx-empty-more {
   outline: 2px solid var(--vscode-focusBorder);
   outline-offset: 0;
 }
+
+/* ---- Prototype round 7 (proto/chrome-7) ---- */
+/* The line box wraps between shell words (the page splits its text: web/word-wrap.ts, `wrapLineBox`): rows end only at
+   `.bx-gap`, a run too wide for a row breaks anywhere (`.bx-any`). The rows after the first hang 2ch in, with a faint ↪
+   in that room (`--bx-marks`, set by the page). Three rows at most; then a fade, and a tap opens the box whole. */
+html.bx-wrap pre#line {
+  --bx-lh: 1.5;
+  position: relative;
+  overflow: hidden;
+  padding-left: calc(0.8rem + 2ch);
+  text-indent: -2ch;
+  white-space: pre;
+  line-height: var(--bx-lh);
+}
+
+html.bx-wrap pre#line .bx-gap {
+  white-space: pre-wrap;
+}
+
+html.bx-wrap pre#line .bx-any {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+html.bx-wrap pre#line::after {
+  content: var(--bx-marks, "");
+  position: absolute;
+  top: calc(0.6rem + var(--bx-lh) * 1em);
+  left: 0.8rem;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.55;
+  font-size: 0.85em;
+  line-height: calc(var(--bx-lh) * 1em / 0.85);
+  text-indent: 0;
+  white-space: pre;
+  pointer-events: none;
+}
+
+html.bx-wrap pre#line.bx-line-clamp:not(.bx-line-open) {
+  max-height: calc(3 * var(--bx-lh) * 1em + 0.6rem);
+  cursor: pointer;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent);
+}
+
+html.bx-wrap pre#line.bx-line-open {
+  max-height: none;
+}
+
+/* The phone's full sheet: the same, with its smaller padding. */
+html.bx-wrap.bx-phone pre#line {
+  padding-left: calc(0.7rem + 2ch);
+}
+
+html.bx-wrap.bx-phone pre#line::after {
+  top: calc(0.35rem + var(--bx-lh) * 1em);
+  left: 0.7rem;
+}
+
+html.bx-wrap.bx-phone pre#line.bx-line-clamp:not(.bx-line-open) {
+  max-height: calc(3 * var(--bx-lh) * 1em + 0.35rem);
+}
+
+/* The phone's sheet below full has no line box (the editor shows the line, wrapped, right above it), and the view
+   control is in the sheet's tabs row: the explanation starts at the frame's top. In Reading the stepper is there too
+   (the page's copy of it drives the panel's own buttons). */
+html.bx-phone.bx-compact #top {
+  padding: 0;
+}
+
+html.bx-phone.bx-steps-out #layers {
+  display: none !important;
+}

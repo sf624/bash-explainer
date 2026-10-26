@@ -10,7 +10,7 @@
 import { undo } from '@codemirror/commands';
 import { EditorView, ViewUpdate } from '@codemirror/view';
 import { Analyzer, LineExplanation } from '../src/analyzer';
-import { DocumentIssue, explainDocumentLine, ShellDocument, Shells } from '../src/document';
+import { DocumentIssue, explainDocumentLine, plain, ShellDocument, Shells } from '../src/document';
 import { openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
@@ -34,6 +34,7 @@ import { nextProblem, showPosition, showProblems } from './problem-list';
 import { BottomSheet, closePopovers, fitSelect, popover, setUpTooltips } from './chrome';
 import { CHROME } from './chrome-text';
 import { CopyState, Theme, THEMES } from './protocol';
+import { ui } from '../src/ui/render';
 import { Kind, KINDS } from './samples';
 import { openingReady } from './opening';
 import { SettingsDialog } from './settings-dialog';
@@ -175,6 +176,8 @@ const editor = new Editor({
       }
     });
     showProblemPosition();
+    showNoScript();
+    queueMicrotask(showKbSummary);
   },
   changed(u: ViewUpdate) {
     // Undo would no longer undo the sample once the text changed again.
@@ -184,6 +187,7 @@ const editor = new Editor({
     if (u.docChanged) {
       showFileSoon();
       showEmptyEditor();
+      showNoScript();
     }
     if (u.selectionSet || u.docChanged) queueMicrotask(showProblemPosition);
     // In panel mode the page around sends every change as a message, which is handled at once.
@@ -228,6 +232,7 @@ const panel = new PanelBridge({
   reveal: mode.panel ? (span, preserveFocus) => toParent({ type: 'bx-reveal', span, preserveFocus }) : (span, preserveFocus) => editor.selectSpan(span, preserveFocus),
   highlight: mode.panel ? (span) => toParent({ type: 'bx-highlight', span }) : (span) => editor.highlight(span),
 }, document.getElementById('panel') as HTMLIFrameElement | null, mode.hasChrome);
+panel.setWrap(wrapOn());
 
 /** Shows the theme in the panel, and in the copies on the compare page. */
 function pushTheme(): void {
@@ -254,7 +259,7 @@ function updatePanel(): void {
   });
   // An empty script: the panel says where to start instead of "Nothing to explain on this line" over an empty line box.
   const blank = !mode.compare && !mode.panel && !editor.text.trim();
-  if (blank) message.emptyMessage = narrow.matches ? CHROME[lang].panelEmptyPhone : CHROME[lang].panelEmpty;
+  if (blank) message.emptyMessage = narrow.matches ? CHROME[lang].panelEmptyPhone : CHROME[lang].panelEmpty7;
   panel.show(message);
   fitPickers();
   panel.markLine(blank ? undefined : TEXT[lang].line(line + 1));
@@ -266,6 +271,7 @@ function updatePanel(): void {
   document.getElementById('panel-col')?.classList.toggle('blank', blank);
   if (blank) queueMicrotask(alignEmpty);
   markSheet();
+  queueMicrotask(showKbSummary);
 }
 
 function copyMarkdown(): void {
@@ -321,7 +327,7 @@ interface StatusAction { label: string; run: () => void; untilEdit?: boolean }
  * Round 5: `untilEdit`: the next edit dismisses the toast ("Opened a.sh."); `detail`: a longer text, behind a button
  * (`detailLabel`, "More" by default) that shows it in a bubble over the toast. The toast itself is always one line.
  */
-interface StatusOpts { untilEdit?: boolean; detail?: string; detailLabel?: string }
+interface StatusOpts { untilEdit?: boolean; detail?: string; detailLabel?: string; icon?: 'ok' | 'undo' | 'info' }
 /** Round 4: a toast that the next edit dismisses ("Opened a.sh."). */
 let toastUntilEdit = false;
 function status(text: string, sticky = false, action?: StatusAction, opts: StatusOpts = {}): void {
@@ -331,6 +337,13 @@ function status(text: string, sticky = false, action?: StatusAction, opts: Statu
   const bubble = document.getElementById('status-detail');
   if (bubble) bubble.hidden = true;
   el.replaceChildren(...(text ? [Object.assign(document.createElement('span'), { className: 'status-text', textContent: text })] : []));
+  // Round 7: an accent icon, so that a docked toast registers: ↶ when it can be undone, ✓ when done, ⓘ for a refusal.
+  const icon = opts.icon ?? (action?.label === TEXT[lang].undo ? 'undo' : 'ok');
+  if (text && !mode.compare && !mode.panel) {
+    const mark = Object.assign(document.createElement('span'), { className: `status-icon ${icon}`, textContent: icon === 'undo' ? '↶' : icon === 'info' ? 'ⓘ' : '✓' });
+    mark.setAttribute('aria-hidden', 'true');
+    el.prepend(mark);
+  }
   if (text && action) {
     // A toast with one button (the sample's or the detected kind's "Undo"); it hides when the button runs.
     const button = document.createElement('button');
@@ -511,11 +524,6 @@ function applyLanguage(): void {
   }
   $<HTMLSelectElement>('lang').value = mode.compare ? lang : settings.language === 'auto' ? 'auto' : lang;
   kindPicker?.set(KINDS.map((k) => ({ value: k.kind, name: t.kinds[k.kind] ?? k.name, short: SHORT_KIND[k.kind] })), kind, mode.compare ? t.kind : CHROME[lang].fileType);
-  const scopeKind = document.getElementById('scope-kind') as HTMLSelectElement | null;
-  if (scopeKind) {
-    scopeKind.replaceChildren(...KINDS.map((k) => new Option(t.kinds[k.kind] ?? k.name, k.kind)));
-    scopeKind.value = kind;
-  }
   showScope();
   // The same choice as a select in the menu, for a phone.
   const menuKind = document.getElementById('kind-menu') as HTMLSelectElement | null;
@@ -554,6 +562,7 @@ function changeSettings(next: Settings): void {
   const languageChanged = next.language !== settings.language;
   settings = next;
   editor.setWrap(wrapOn());
+  panel.setWrap(wrapOn());
   // When storage refuses, they last until the page is closed.
   const changed = changedSettings(settings, 'web');
   if (Object.keys(changed).length) writeStored(STORAGE_KEYS.settings, JSON.stringify(changed));
@@ -729,9 +738,6 @@ narrow.addEventListener('change', () => {
   editor.keepCursorInView();
 });
 
-on('scope-kind', 'change', (e) => {
-  chooseKind((e.target as HTMLSelectElement).value as Kind);
-});
 on('kind-menu', 'change', (e) => {
   chooseKind((e.target as HTMLSelectElement).value as Kind);
 });
@@ -758,8 +764,6 @@ function setKind(k: Kind, then?: () => void): void {
   kind = k;
   const menuKind = document.getElementById('kind-menu') as HTMLSelectElement | null;
   if (menuKind) menuKind.value = k;
-  const scopeKind = document.getElementById('scope-kind') as HTMLSelectElement | null;
-  if (scopeKind) scopeKind.value = k;
   kindPicker?.show(k);
   editor.setKind(kind);
   showFile();
@@ -1017,17 +1021,17 @@ function showFileSoon(): void {
  */
 async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElement | null): Promise<void> {
   const t = TEXT[lang];
-  if (chosen.size > MAX_BYTES) return status(t.tooLarge(chosen.name));
+  if (chosen.size > MAX_BYTES) return status(t.tooLarge(chosen.name), false, undefined, { icon: 'info' });
   let bytes: ArrayBuffer;
   try {
     bytes = await chosen.arrayBuffer();
   } catch {
     // A folder dropped, or a file changed or gone since it was chosen.
-    return status(t.notRead(chosen.name));
+    return status(t.notRead(chosen.name), false, undefined, { icon: 'info' });
   }
   const read = decodeText(new Uint8Array(bytes));
-  if (read === 'binary') return status(t.notText(chosen.name));
-  if (read === 'cr') return status(t.loneCr(chosen.name));
+  if (read === 'binary') return status(t.notText(chosen.name), false, undefined, { icon: 'info' });
+  if (read === 'cr') return status(t.loneCr(chosen.name), false, undefined, { icon: 'info' });
   if (unsaved()) {
     const discard = await ask({
       id: 'discard', title: t.discardTitle, message: t.discardMessage(chosen.name, window.matchMedia('(pointer: fine)').matches ? shortcut('S') : t.saveInMenu),
@@ -1216,14 +1220,11 @@ if (withFiles) {
 // ---- The chrome prototype (proto/chrome-1): app bar, panes' headers, Problems strip, the phone's sheet --------
 
 /**
- * Whether the editor wraps long lines: the setting, and on a phone by default (no sideways scroll on a tap) unless the
- * stored settings say otherwise.
+ * Whether the editor and the line box wrap long lines: the setting, on by default everywhere (round 7; round 6 turned it
+ * on for a phone only, so that the settings showed it off while the page wrapped). Never in panel mode's copies.
  */
 function wrapOn(): boolean {
-  if (settings['editor.wrap']) return true;
-  if (!narrow.matches || mode.panel) return false;
-  const raw = readStored(STORAGE_KEYS.settings);
-  return !(raw && raw.includes('"editor.wrap"'));
+  return settings['editor.wrap'] && !mode.panel;
 }
 
 /** The texts of the chrome, in the page's language. */
@@ -1248,7 +1249,6 @@ function chromeLanguage(): void {
     Object.assign(document.createElement('dt'), { textContent: k }), Object.assign(document.createElement('dd'), { textContent: what }),
   ]));
   put('scope-done', c.done);
-  put('scope-help', c.autoHelp);
   // (The compare page has no empty-editor block: it keeps the placeholder.)
   editor.setPlaceholder(touchOnly() ? c.placeholderTouch : c.placeholder(shortcut('V')));
   document.getElementById('panel-tabs')?.setAttribute('aria-label', c.panelTabs);
@@ -1259,7 +1259,7 @@ function chromeLanguage(): void {
   put('kind-prefix', c.typePrefix);
   put('shell-top-prefix', c.shellPrefix);
   put('yq-top-prefix', c.yqPrefix);
-  put('scope-pop-title', c.script);
+  put('scope-pop-title', c.scopeTitle);
   put('scope-kind-label', c.fileType);
   put('scope-shell-label', c.shell);
   put('menu-h-script', c.menuScript);
@@ -1270,6 +1270,7 @@ function chromeLanguage(): void {
   put('tab-explain-label', c.explain);
   put('tab-problems-label', c.problems);
   put('tab-ref-label', c.reference);
+  put('tab-ref-short', c.refShort);
   document.getElementById('tab-ref')?.setAttribute('title', c.reference);
   queueMicrotask(fitTabs);
   put('first-hint-text', narrow.matches ? (touchOnly() ? c.hintPhone : c.hintClick) : c.hintDesk4);
@@ -1290,7 +1291,7 @@ function chromeLanguage(): void {
   document.getElementById('sheet-back')?.setAttribute('aria-label', c.showScript);
   document.getElementById('sheet-back')?.setAttribute('title', c.showScript);
   // Round 6: the full sheet's way back is labelled ("Script ⌄"); ⋯ has Rename… and Copy the script; the Shell picker.
-  put('sheet-back-label', c.script);
+  put('sheet-back-label', c.code);
   put('more-rename-label', c.renameMore);
   put('more-copy-script-label', c.copyScript);
   put('shell-pick-prefix', c.shellPrefix);
@@ -1322,55 +1323,133 @@ function chromeLanguage(): void {
   showFile();
 }
 
-/** The chip that stands for the kind and the shell where the editor's header has no room for both pickers: "Shell script · bash". */
+/**
+ * Round 7: one scope control everywhere: the chip "Shell script · bash (auto)" ("(auto)": the shell comes from the #!
+ * line, the name or the default, not from a choice), at every width and in both languages; it opens one popover (a
+ * sheet from the bottom on a phone) with two lists of radio items, File type and Shell (and yq when the script uses it).
+ * Where the header is short of room, in this order: the chip drops "(auto)" (its name and the popover keep it), then
+ * says "Script · bash", then Open and Save become icons (`tight`), then the chip says the shell alone ("bash"); the file
+ * name meanwhile is cut in its middle ("deplo…ght.sh"), never shorter than that; with no room even for that, the name
+ * leaves the strip for the menu's first row (`no-name`).
+ */
+function scopeWords(): { kindName: string; shellName: string; auto: boolean; from: 'hashbang' | 'name' | 'default' } {
+  const t = TEXT[lang];
+  const kindName = t.kinds[kind] ?? kindInfo(kind).name;
+  const s = shells();
+  const shellName = s.forced ?? s.detected ?? 'bash';
+  const first = editor.view.state.doc.lines ? editor.view.state.doc.line(1).text : '';
+  const from = s.detected ? (first.startsWith('#!') ? 'hashbang' : 'name') : 'default';
+  return { kindName, shellName, auto: !s.forced, from };
+}
+
+/** The shortest a file name is cut to, in characters kept around "…" ("deplo…ght.sh"); a shorter name is never cut. */
+const NAME_MIN = 11;
+/** Puts the file name in its box, cut in its middle when it does not fit; false when even the shortest cut does not fit. */
+function fitName(): boolean {
+  const el = document.getElementById('file-name');
+  if (!el || el.offsetParent === null) return true;
+  const full = shownName();
+  el.textContent = full;
+  const fits = () => el.scrollWidth <= el.clientWidth + 1;
+  if (fits()) return true;
+  for (let k = full.length - 1; k >= NAME_MIN; k--) {
+    const head = Math.floor(k / 2);
+    el.textContent = `${full.slice(0, head)}…${full.slice(full.length - (k - head))}`;
+    if (fits()) return true;
+  }
+  return false;
+}
+
 function showScope(): void {
   const chip = document.getElementById('scope-chip-text');
   if (!chip) return;
-  const t = TEXT[lang];
   const c = CHROME[lang];
-  const kindName = t.kinds[kind] ?? kindInfo(kind).name;
-  // Round 6: always "<type> · <the shell the script is read as>": the shell chosen, or the one its #! line names
-  // ("Shell script · bash", "Shell script · sh"); with neither, bash, marked "(auto)" ("Shell script · bash (auto)").
-  const s = shells();
-  const shellName = s.forced ?? s.detected ?? 'bash';
-  const auto = !s.forced && !s.detected;
-  const shellText = auto ? `${shellName}${lang === 'ja' ? '' : ' '}${c.autoMark}` : shellName;
-  chip.textContent = `${kindName} · ${shellText}`;
-  // A chip with no room for the type's name shows its short one: never "sh" for a shell script, which reads as the
-  // shell ("Script · bash", "スクリプト · bash").
-  // Where the chip shows, the file name comes first: while the name is cut (or the chip is), the header takes less room
-  // in steps: the chip's short form ("Script · bash"; it leaves "(auto)" to its name and tooltip), Open and Save as
-  // icons (`tight`), the shell alone in the chip ("bash"), and last, with no room for even part of the name (larger
-  // text on a phone), no name: it stays in the menu's first row (`no-name`).
+  const { kindName, shellName, auto, from } = scopeWords();
+  const autoText = auto ? `${lang === 'ja' ? '' : ' '}${c.autoMark}` : '';
   const head = document.getElementById('ed-head');
   head?.classList.remove('no-name', 'tight');
-  const name = document.getElementById('file-name');
-  const chipShown = chip.offsetParent !== null;
-  const nameCut = () => chipShown && !!name && name.offsetParent !== null && name.scrollWidth > name.clientWidth + 1;
-  const fits = () => !nameCut() && chip.scrollWidth <= chip.clientWidth + 1;
+  chip.textContent = `${kindName} · ${shellName}${autoText}`;
+  const chipFits = () => chip.scrollWidth <= chip.clientWidth + 1 && (!head || head.scrollWidth <= head.clientWidth + 1);
+  const fits = () => fitName() && chipFits();
   const steps = [
+    () => { chip.textContent = `${kindName} · ${shellName}`; },
     () => { chip.textContent = `${kind === 'shell' ? c.script : SHORT_KIND[kind]} · ${shellName}`; },
     () => head?.classList.add('tight'),
-    () => { if (kind === 'shell') chip.textContent = shellName; },
-    () => {
-      const box = document.getElementById('file-name-btn')?.getBoundingClientRect();
-      if (box && box.width < 72) head?.classList.add('no-name');
-    },
+    () => { chip.textContent = shellName; },
+    () => head?.classList.add('no-name'),
   ];
   for (const step of steps) {
     if (fits()) break;
     step();
   }
-  document.getElementById('scope-chip')?.setAttribute('aria-label', `${c.script}: ${kindName} · ${shellText}`);
-  document.getElementById('scope-chip')?.setAttribute('title', auto ? `${c.fileType}, ${c.shell}. ${c.autoMarkTip}` : `${c.fileType}, ${c.shell}`);
+  const said = `${kindName} · ${shellName}${auto ? ` ${c.autoFrom[from]}` : ''}`;
+  document.getElementById('scope-chip')?.setAttribute('aria-label', `${c.scopeTitle}: ${said}`);
+  document.getElementById('scope-chip')?.setAttribute('title', said);
+  renderScopeLists();
 }
+
+/** The popover's lists: File type (every kind), Shell (Auto first, saying what it resolves to and why), yq when used. */
+function renderScopeLists(): void {
+  const kinds = document.getElementById('scope-kind-items');
+  const shellsBox = document.getElementById('scope-shell-items');
+  if (!kinds || !shellsBox) return;
+  const t = TEXT[lang];
+  const c = CHROME[lang];
+  const { shellName, from } = scopeWords();
+  const select = (id: string) => document.getElementById(id) as HTMLSelectElement | null;
+  const shellSel = select('scope-shell');
+  const yqSel = select('scope-yq');
+  const yqShown = document.getElementById('scope-yq-box')?.hidden === false;
+  const radio = (group: string, value: string, label: string, checked: boolean, note?: string) => {
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'scope-opt' });
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(checked));
+    b.dataset.group = group;
+    b.dataset.value = value;
+    const mark = Object.assign(document.createElement('span'), { className: 'scope-dot' });
+    mark.setAttribute('aria-hidden', 'true');
+    b.append(mark, Object.assign(document.createElement('span'), { className: 'scope-name', textContent: label }));
+    if (note) b.append(Object.assign(document.createElement('span'), { className: 'scope-note', textContent: note }));
+    return b;
+  };
+  const key = JSON.stringify([lang, kind, shellName, from, shellSel?.value, [...(shellSel?.options ?? [])].map((o) => o.value), yqShown, yqSel?.value]);
+  if (kinds.dataset.key === key) return;
+  kinds.dataset.key = key;
+  kinds.replaceChildren(...KINDS.map((k) => radio('kind', k.kind, t.kinds[k.kind] ?? k.name, k.kind === kind)));
+  const shellValue = shellSel?.value || 'auto';
+  const options = shellSel?.options.length ? [...shellSel.options].map((o) => [o.value, o.text] as const) : [['auto', 'Auto'] as const];
+  shellsBox.replaceChildren(...options.map(([v, text]) => (v === 'auto'
+    ? radio('shell', v, c.autoShell(shellName), shellValue === v, c.autoFrom[from])
+    : radio('shell', v, text, shellValue === v))));
+  const yqList = document.getElementById('scope-yq-list');
+  const yqItems = document.getElementById('scope-yq-items');
+  if (yqList && yqItems) {
+    yqList.hidden = !yqShown;
+    yqItems.replaceChildren(...(yqShown && yqSel ? [...yqSel.options].map((o) => radio('yq', o.value, o.text, o.value === yqSel.value)) : []));
+  }
+}
+document.getElementById('scope-pop')?.addEventListener('click', (e) => {
+  const b = (e.target as Element).closest<HTMLElement>('.scope-opt');
+  if (!b || b.getAttribute('aria-checked') === 'true') return;
+  const { group, value } = b.dataset;
+  if (group === 'kind') chooseKind(value as Kind);
+  else if (group === 'shell' || group === 'yq') setChoice(group, value!);
+  queueMicrotask(showScope);
+});
 
 // The popovers: Share (app bar), ⋯ (editor's header), the kind-and-shell chip.
 for (const [button, pop, pick] of [['share-open', 'share-menu', true], ['ed-more', 'ed-more-menu', true], ['scope-chip', 'scope-pop', false]] as const) {
   const b = document.getElementById(button);
   const p = document.getElementById(pop);
   const scrim = pop === 'scope-pop' ? document.getElementById('scope-scrim') ?? undefined : undefined;
-  const pops = b && p ? popover(b, p, { closeOnPick: pick, scrim }) : undefined;
+  // (Round 7: the scope popover is wider than the chip; in a narrow pane it moves right so as to stay on the screen.)
+  const keepInView = () => {
+    if (!p || getComputedStyle(p).position === 'fixed') return;
+    p.style.right = '';
+    const r = p.getBoundingClientRect();
+    if (r.left < 8) p.style.right = `${Math.round(r.left - 8)}px`;
+  };
+  const pops = b && p ? popover(b, p, { closeOnPick: pick, scrim, onOpen: pop === 'scope-pop' ? keepInView : undefined }) : undefined;
   if (pop === 'scope-pop') on('scope-done', 'click', () => pops?.close());
 }
 
@@ -1501,7 +1580,7 @@ function placeToast(): void {
   toast.style.top = '';
   toast.style.width = '';
   toast.style.height = '';
-  toast.classList.remove('in-tabs');
+  toast.classList.remove('in-tabs', 'over-strip', 'floating');
   const stripEl = document.querySelector<HTMLElement>('#problems .problems-strip');
   // Round 6: the strip makes room for the toast between its counts and its position (web/page.css, `with-toast`).
   stripEl?.classList.toggle('with-toast', !narrow.matches && !!toast.textContent);
@@ -1524,9 +1603,19 @@ function placeToast(): void {
     toast.style.left = '12px';
     toast.style.right = '12px';
     toast.style.maxWidth = '';
-    // (A full sheet leaves no room above it: the toast sits at the bottom of the screen, over the explanation.)
+    // Round 7: just above the sheet's tabs row (6px), never over the explanation; a full sheet leaves no room above it
+    // but the strip, so the toast lies over the strip (the name and the chip come back when it goes).
     const full = document.documentElement.dataset.sheet === 'full' && !document.documentElement.classList.contains('kb-open');
-    toast.style.bottom = full ? '12px' : `${Math.round(window.innerHeight - top + 12)}px`;
+    if (full) {
+      const strip = $('ed-head').getBoundingClientRect();
+      toast.style.bottom = '';
+      toast.style.top = `${Math.round(strip.top + 2)}px`;
+      toast.style.height = `${Math.round(strip.height - 4)}px`;
+      toast.classList.add('over-strip');
+    } else {
+      toast.classList.remove('over-strip');
+      toast.style.bottom = `${Math.round(window.innerHeight - top + 6)}px`;
+    }
     return placeBubble();
   }
   const strip = stripEl;
@@ -1540,13 +1629,32 @@ function placeToast(): void {
     // (The toggle's last thing shown: the counts, or "✓ No problems".)
     const ends = [...(strip.querySelector('#problems-toggle')?.children ?? [])].map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0).map((b) => b.right);
     const left = ends.length ? Math.max(...ends) + 10 : r.left;
+    // Round 7: a docked toast whose text would get under 240px floats instead, 8px above the strip, across the pane, so
+    // that it is never cut.
+    const room = navLeft - left - 6;
+    const own = [...toast.children].filter((e) => !e.classList.contains('status-text')).reduce((w, e) => w + e.getBoundingClientRect().width, 0);
+    toast.classList.remove('floating');
+    if (room - own - 24 < 240) {
+      const pane = $('source').getBoundingClientRect();
+      toast.classList.remove('docked');
+      toast.classList.add('floating');
+      toast.style.left = `${Math.round(pane.left + 8)}px`;
+      toast.style.right = '';
+      toast.style.top = '';
+      toast.style.height = '';
+      toast.style.width = `${Math.round(pane.width - 16)}px`;
+      toast.style.maxWidth = '';
+      toast.style.bottom = `${Math.round(window.innerHeight - r.top + 8)}px`;
+      stripEl?.classList.remove('with-toast');
+      return placeBubble();
+    }
     toast.classList.add('docked');
     toast.style.left = `${Math.round(left)}px`;
     toast.style.right = '';
     toast.style.top = `${Math.round(r.top + 4)}px`;
     toast.style.bottom = '';
     toast.style.height = `${Math.round(r.height - 8)}px`;
-    toast.style.width = `${Math.max(120, Math.round(navLeft - left - 6))}px`;
+    toast.style.width = `${Math.max(120, Math.round(room))}px`;
     toast.style.maxWidth = '';
     return placeBubble();
   }
@@ -1611,7 +1719,7 @@ async function pasteScript(): Promise<void> {
   if (text === undefined) {
     // Refused, or a browser without the API: the editor takes the focus, and the toast says which key pastes.
     editor.view.focus();
-    return status(CHROME[lang].pasteRefused5(shortcut('V')));
+    return status(CHROME[lang].pasteRefused5(shortcut('V')), false, undefined, { icon: 'info' });
   }
   if (!text) return editor.view.focus();
   editor.view.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: text }, selection: { anchor: 0 }, userEvent: 'input.paste', scrollIntoView: true });
@@ -1678,24 +1786,8 @@ function syncShellPicker(): void {
   }
 }
 
-/**
- * Round 6: the editor header shows the Type and Shell pickers when they fit with the file name, and the chip when they
- * do not: measured, in every language (no width threshold per language). A stacked layout always has the chip.
- */
+/** Round 7: the chip everywhere (round 6 measured whether the pickers fit): only the chip's and the name's steps. */
 function fitScope(): void {
-  const head = document.getElementById('ed-head');
-  if (!head || mode.compare || mode.panel) return showScope();
-  head.classList.remove('use-chip');
-  if (!narrow.matches) {
-    const name = document.getElementById('file-name');
-    const nameButton = document.getElementById('file-name-btn');
-    // The name is cut although it has not reached its own largest width, or the header overflows.
-    const maxName = nameButton ? parseFloat(getComputedStyle(nameButton).maxWidth) || Infinity : Infinity;
-    const nameCut = !!name && !!nameButton && !nameButton.hidden && name.scrollWidth > name.clientWidth + 1 && nameButton.getBoundingClientRect().width < maxName - 1;
-    const spacer = head.querySelector<HTMLElement>('.spacer');
-    const over = head.scrollWidth > head.clientWidth + 1 || nameCut || (spacer !== null && spacer.getBoundingClientRect().width < 4 && nameCut);
-    head.classList.toggle('use-chip', over);
-  }
   showScope();
 }
 window.addEventListener('resize', fitPickers);
@@ -1745,11 +1837,12 @@ function markSheet(): void {
   if (!narrow.matches) return panel.markSheet(false, false);
   const snap = document.documentElement.dataset.sheet;
   const col = document.getElementById('panel-col');
-  // (At peek the sheet is a glance: the explanation alone, under the tabs; the view row comes at half and full.)
-  const lead = col?.dataset.tab === 'explain' && !col.classList.contains('blank') && snap !== 'peek';
-  // Round 6: the same order at half and full: the line box (one compact row), then the view row; at peek neither.
-  panel.markSheet(snap === 'peek', !!lead);
+  // Round 7: one header row: the view control is in the tabs row, so no view row lies over the frame; the line box shows
+  // at full only (at peek and half the editor shows the line, wrapped, right above the sheet).
+  void col;
+  panel.markSheet(snap !== 'full', false);
   followFrameScroll();
+  syncSteps();
 }
 /** The view row follows the frame's scroll: it moves up as the explanation does, and comes back at the top. */
 function followFrameScroll(): void {
@@ -1796,16 +1889,22 @@ function fitTabs(): void {
     return;
   }
   const fits = () => tabs.scrollWidth <= tabs.clientWidth + 1 && [...tabs.querySelectorAll<HTMLElement>('[role="tab"]')].every((b) => b.scrollWidth <= b.clientWidth + 1);
-  // (Measured with the full sheet's "↓" in the row, at every height: the tabs keep one size as the sheet moves.)
+  // (Round 7: with the view control in the row too, the full sheet's "Code ⌄" is measured at full only: at half the
+  // tabs keep their words. The view control is measured on every tab, so a change of tab moves nothing.)
   const bar = tabs.parentElement;
-  bar?.classList.add('fit-test');
-  for (const fit of ['wide', 'snug', 'icons']) {
-    tabs.dataset.fit = fit;
-    // Round 6: "Script ⌄" keeps its word at `wide` and `snug`, and is its icon alone at `icons`.
-    if (bar) bar.dataset.fit = fit;
+  bar?.classList.toggle('fit-test', document.documentElement.dataset.sheet === 'full');
+  bar?.classList.add('fit-test-tools');
+  // Round 7: before the icons, the Explanation tab drops its line number (`noline`); at `icons` Reference keeps a word.
+  // (Last, with larger text: the view control as its icon, ◁ ▷ of the stepper left to its menu: `compact`.)
+  for (const fit of ['wide', 'snug', 'noline', 'icons', 'compact']) {
+    tabs.dataset.fit = fit === 'compact' ? 'icons' : fit;
+    if (bar) bar.dataset.fit = tabs.dataset.fit;
+    if (bar) bar.dataset.tools = fit === 'compact' ? 'compact' : '';
     if (fits()) break;
   }
-  bar?.classList.remove('fit-test');
+  // The view control's icon says which view is on.
+  document.querySelector('#view-drop-top .vd-icon use')?.setAttribute('href', panel.view() === 'tree' ? '#i-view-tree' : '#i-view-list');
+  bar?.classList.remove('fit-test', 'fit-test-tools');
 }
 window.addEventListener('resize', fitTabs);
 narrow.addEventListener('change', fitTabs);
@@ -1897,8 +1996,163 @@ on('more-rename', 'click', () => setTimeout(() => {
 }, 0));
 on('more-copy-script', 'click', () => document.getElementById('copy-script')?.click());
 
-// The empty panel (desktop): a one-line preview of what it will show, and "Try the sample".
-panel.onEmpty = () => ({ preview: CHROME[lang].emptyPreview, link: CHROME[lang].trySample, run: () => loadSample(ownText()) });
+// (Round 7: the empty panel has no "Try the sample" of its own: its text points to the editor's block, which has the one
+// "Load the sample".)
+
+// ---- Round 7 (proto/chrome-7) ------------------------------------------------------------------------------------
+
+/**
+ * The phone's Reading view: the panel's stepper (◁ 8/8 Languages ▷, its own row in the frame) is drawn in the sheet's
+ * tabs row instead, in the view control's slot: ◁, "8/8 ⌄" (a menu with the two views and the steps), ▷. The page's
+ * buttons press the panel's own (they keep the state); the frame's row is hidden (`bx-steps-out`).
+ */
+let stepsWatched: Element | null = null;
+let stepsObserver: MutationObserver | undefined;
+function frameSteps(): { layers: HTMLElement; doc: Document } | undefined {
+  const doc = panel.frameWindow()?.document;
+  const layers = doc?.getElementById('layers');
+  if (!doc || !layers || !doc.getElementById('steps')) return undefined;
+  return { layers, doc };
+}
+function syncSteps(): void {
+  const proxy = document.getElementById('step-proxy');
+  const fdoc = panel.frameWindow()?.document;
+  const root = fdoc?.documentElement;
+  if (!proxy) return;
+  const layers = fdoc?.getElementById('layers');
+  if (layers && layers !== stepsWatched) {
+    stepsWatched = layers;
+    stepsObserver?.disconnect();
+    stepsObserver = new MutationObserver(() => syncSteps());
+    stepsObserver.observe(layers, { subtree: true, childList: true, attributes: true, characterData: true });
+    const readingBox = fdoc!.getElementById('reading');
+    if (readingBox) stepsObserver.observe(readingBox, { attributes: true, attributeFilter: ['hidden'] });
+  }
+  const f = frameSteps();
+  const reading = f?.doc.getElementById('reading');
+  const on = narrow.matches && !!f && reading?.hidden === false && panel.view() === 'tree';
+  proxy.hidden = !on;
+  const slot = document.getElementById('view-slot');
+  if (slot && slot.classList.contains('stepping') !== on) {
+    slot.classList.toggle('stepping', on);
+    queueMicrotask(fitTabs);
+  }
+  root?.classList.toggle('bx-steps-out', on);
+  if (!on || !f) return;
+  const c = CHROME[lang];
+  const menu = f.doc.getElementById('step-menu');
+  put('step-count', menu?.querySelector('.sm-count')?.textContent ?? '');
+  const open = document.getElementById('step-open');
+  open?.setAttribute('aria-label', `${c.viewLabel}: ${ui[lang].panel.treeView}. ${menu?.getAttribute('aria-label') ?? ''}`);
+  if (open) open.title = c.steps;
+  for (const [id, frameId, name] of [['step-back', 'tp-back', c.stepBack], ['step-fwd', 'tp-forward', c.stepForward]] as const) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    b.setAttribute('aria-label', name);
+    b.title = name;
+    b.setAttribute('aria-disabled', f.doc.getElementById(frameId)?.getAttribute('aria-disabled') ?? 'false');
+  }
+}
+on('step-back', 'click', () => (frameSteps()?.doc.getElementById('tp-back') as HTMLElement | null)?.click());
+on('step-fwd', 'click', () => (frameSteps()?.doc.getElementById('tp-forward') as HTMLElement | null)?.click());
+{
+  const button = document.getElementById('step-open');
+  const menu = document.getElementById('step-menu-page');
+  if (button && menu) {
+    popover(button, menu, {
+      onOpen() {
+        const f = frameSteps();
+        const c = CHROME[lang];
+        const tp = ui[lang].panel;
+        const item = (label: string, checked: boolean, run: () => void, extra = '') => {
+          const b = Object.assign(document.createElement('button'), { type: 'button', className: `popitem ${extra}` });
+          b.setAttribute('role', 'menuitemradio');
+          b.setAttribute('aria-checked', String(checked));
+          b.innerHTML = '<svg aria-hidden="true"><use href="#i-check"/></svg>';
+          b.append(Object.assign(document.createElement('span'), { textContent: label }));
+          b.addEventListener('click', run);
+          return b;
+        };
+        const head = (text: string) => Object.assign(document.createElement('span'), { className: 'step-menu-h', textContent: text });
+        const steps = f ? [...f.layers.querySelectorAll<HTMLElement>('button.step')] : [];
+        menu.replaceChildren(
+          head(c.viewShort),
+          item(tp.listView, panel.view() === 'list', () => document.getElementById('view-pick-list-top')?.click()),
+          item(tp.treeView, panel.view() === 'tree', () => document.getElementById('view-pick-tree-top')?.click()),
+          Object.assign(document.createElement('span'), { className: 'popsep' }),
+          head(c.steps),
+          ...steps.map((s) => item(`${s.dataset.step}  ${s.querySelector('.short')?.textContent ?? ''}`, s.hasAttribute('aria-current'), () => s.click(), s.classList.contains('empty') ? 'step-empty' : '')),
+        );
+      },
+    });
+  }
+}
+
+/**
+ * The phone's keyboard (round 7): the app bar goes (the 40px strip stays, with Read | Edit, the name and the chip), and
+ * the folded sheet's row says what the cursor's line is: "Ln 20 ⚠ …" (its first problem) or its first part's summary.
+ * A tap on it closes the keyboard and opens the sheet at half, its tabs one tap away.
+ */
+function showKbSummary(): void {
+  const box = document.getElementById('kb-summary');
+  if (!box) return;
+  const line = editor.cursorLine();
+  const c = CHROME[lang];
+  const problem = problemsShown.filter((i) => i.startLine === line).sort((a, b) => (a.severity === b.severity ? a.startCol - b.startCol : a.severity === 'warning' ? -1 : 1))[0];
+  const first = shown?.line === line ? shown.explanation.items[0] : undefined;
+  const words = problem ? plain(problem.message) : first ? `${first.label}: ${first.summary ?? first.explanation}` : '';
+  put('kb-ln', c.lineShort(line + 1));
+  put('kb-icon', problem ? (problem.severity === 'warning' ? '⚠' : 'ⓘ') : '');
+  $('kb-icon').className = `kb-icon ${problem?.severity ?? ''}`;
+  put('kb-text', words.replace(/`/g, ''));
+  box.setAttribute('aria-label', `${c.lineShort(line + 1)}: ${words.replace(/`/g, '')}. ${c.kbSummaryTip}`);
+  box.title = c.kbSummaryTip;
+}
+on('kb-summary', 'click', () => {
+  editor.view.contentDOM.blur();
+  setTimeout(() => sheet?.set('half'), 0);
+});
+
+/**
+ * Item 10: a dialog closed with the mouse gives the focus back to the button that opened it (⚙, ≡), which then showed
+ * its focus ring as if it had been reached with a key. The ring is kept for the keyboard (Escape, Tab) only: after a
+ * pointer the button keeps the focus without the ring, until the next key.
+ */
+let lastInputPointer = false;
+document.addEventListener('pointerdown', () => { lastInputPointer = true; }, true);
+document.addEventListener('keydown', () => {
+  lastInputPointer = false;
+  for (const e of document.querySelectorAll('.no-ring')) e.classList.remove('no-ring');
+}, true);
+document.addEventListener('close', (e) => {
+  if (!(e.target instanceof HTMLDialogElement) || !lastInputPointer) return;
+  setTimeout(() => {
+    const el = document.activeElement;
+    if (!(el instanceof HTMLElement) || el === document.body) return;
+    el.classList.add('no-ring');
+    el.addEventListener('blur', () => el.classList.remove('no-ring'), { once: true });
+  }, 0);
+}, true);
+
+/** While the editor is empty, the strip says "No script yet", not "✓ No problems". */
+function showNoScript(): void {
+  const box = document.getElementById('problems');
+  const title = document.getElementById('problems-title');
+  if (!box || !title || mode.compare) return;
+  const none = !editor.text.trim();
+  box.classList.toggle('no-script', none);
+  if (none) title.textContent = CHROME[lang].noScript;
+  else if (box.classList.contains('none')) title.textContent = CHROME[lang].noProblems;
+  const toggle = document.getElementById('problems-toggle');
+  if (none) toggle?.setAttribute('aria-label', CHROME[lang].noScript);
+  // (Nothing to show: the strip's button is disabled, and has no "Show the problems" tooltip then.)
+  if (toggle?.hasAttribute('disabled')) {
+    toggle.removeAttribute('title');
+    delete toggle.dataset.tip;
+  } else {
+    showProblemsToggle();
+  }
+}
 
 // ---- Start ----------------------------------------------------------------------------------
 
@@ -1914,6 +2168,7 @@ async function start(): Promise<void> {
   showEmptyEditor();
   updatePanel();
   editor.recheck();
+  showNoScript();
   // The page is ready: the opening labels its line and leaves.
   openingReady();
   // In panel mode: tell the page around that this copy is ready for a script.

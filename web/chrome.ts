@@ -9,7 +9,7 @@ const openPops = new Set<() => void>();
  * them) or a little dialog (the kind-and-shell chip). A press outside, Escape, or choosing an item closes it.
  */
 export function popover(button: HTMLElement, pop: HTMLElement, opts: { closeOnPick?: boolean; onOpen?: () => void; scrim?: HTMLElement } = {}): { close(): void } {
-  const items = () => [...pop.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')].filter((i) => !i.hidden);
+  const items = () => [...pop.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"], [role="radio"]')].filter((i) => !i.hidden && i.offsetParent !== null);
   const close = (focusButton = false) => {
     if (pop.hidden) return;
     pop.hidden = true;
@@ -28,7 +28,8 @@ export function popover(button: HTMLElement, pop: HTMLElement, opts: { closeOnPi
     button.setAttribute('aria-expanded', 'true');
     openPops.add(closer);
     opts.onOpen?.();
-    (items()[0] ?? pop.querySelector<HTMLElement>('select, button, input'))?.focus();
+    // (Round 7: in lists of radio items, the one chosen.)
+    (items().find((i) => (i.getAttribute('role') === 'radio' || i.getAttribute('role') === 'menuitemradio') && i.getAttribute('aria-checked') === 'true') ?? items()[0] ?? pop.querySelector<HTMLElement>('select, button, input'))?.focus();
   };
   button.addEventListener('click', () => (pop.hidden ? open() : close(true)));
   document.addEventListener('pointerdown', (e) => {
