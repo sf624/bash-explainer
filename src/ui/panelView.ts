@@ -34,7 +34,7 @@ export type FromPanel =
  * What the panel remembers per viewer: the list or the tree view, and the step of the tree it shows (1–8: the line
  * alone up to every layer). `level` (1–4: the layers) is what it kept before the steps, read when there is no step.
  */
-export interface PanelState { view?: 'list' | 'tree'; level?: number; step?: number }
+export interface PanelState { view?: 'list' | 'tree'; level?: number; step?: number; /** Prototype B: the depth of the one view (1–4). */ depth?: number }
 
 export interface PanelLine {
   lang: Lang;
@@ -148,10 +148,10 @@ export const PANEL_BODY = `<div id="top">
 <pre id="line"></pre>
 </div>
 <main id="main">
+  <div id="layers" role="group" hidden><span id="layers-label"></span></div>
   <div id="notes"></div>
   <ul id="tree"></ul>
   <section id="reading" hidden>
-    <div id="layers" role="group"><span id="layers-label"></span></div>
     <ul id="reading-tree" role="tree"></ul>
   </section>
   <div id="examples"></div>

@@ -58,9 +58,12 @@
   /** @type {Array<{ category: string, syntax: string, meaning: string }> | undefined} */
   let reference;
 
-  /** The view shown ('list' or 'tree') and the step of the tree shown (1–8, see STEPS): what the viewer chose last. */
+  /**
+   * The view shown: always the one view (prototype B, `drawList`), drawn in the list (`#tree`); 'tree' is the old
+   * reading tree, no longer offered. `step` is the depth shown (1–4, see STEPS): what the viewer chose last.
+   */
   let view = 'list';
-  let step = 8;
+  let step = 1;
   applyState(vscode.getState());
   /** The reading tree of the line shown (LineExplanation.reading), if any. */
   let reading = /** @type {any} */ (null);
@@ -152,10 +155,13 @@
     }
     if (msg.type === 'focus') focusExplanation();
     if (msg.type === 'panelState') {
-      const was = view;
+      const was = step;
       applyState(msg.state);
-      // (The web page's own switch of views: the room kept below the other view goes, as with the panel's buttons.)
-      if (view !== was) dropSpacer();
+      if (step !== was) {
+        dropSpacer();
+        collapsedKeys = new Set();
+        drawList();
+      }
       applyView();
       renderReading();
     }
@@ -171,7 +177,8 @@
     $('examples').replaceChildren();
     $('reading-tree').replaceChildren();
     reading = null;
-    measureSteps();
+    shownItems = [];
+    measureDepths();
     dropSpacer();
     $('reading').hidden = true;
     $('empty').textContent = message;
@@ -213,16 +220,18 @@
     shownLine = where;
     shownLineNo = ex.line;
     reading = ex.reading ?? null;
-    measureSteps();
+    shownItems = ex.items;
+    shownRest = ex.examples ?? [];
+    shownText = msg.lineText;
+    shownMarks = msg.marks ?? [];
+    measureDepths();
+    drawList();
     const tree = $('tree');
-    tree.replaceChildren(...ex.items.map((t, i) => item(t, `${i}`)));
     if (kept) {
       const row = tree.querySelector(`li[data-path="${kept.path}"] > .row`);
       const target = row && (kept.link < 0 ? row.querySelector(':scope > button.twisty') : row.querySelectorAll('.refs a')[kept.link]);
       if (target instanceof HTMLElement) target.focus({ preventScroll: true });
     }
-
-    renderLine(msg.lineText, ex.line, ex.items, msg.marks ?? []);
 
     // Each note with the icon of its level (src/messages.ts, `NoteLevel`) in place of its mark, and the word that
     // names the level in bold: the icon's shape and the word say it without the colour.
@@ -247,7 +256,6 @@
       p.append(svg, text);
       return p;
     }));
-    $('examples').replaceChildren(...(ex.examples ?? []).map((e) => example(e, false)));
     $('empty').textContent = msg.emptyMessage;
     $('empty').hidden = ex.items.length > 0;
     applyView();
@@ -312,11 +320,15 @@
 
   /** One worked example: a heading, then a labelled block per section with one line per row. */
   function example(ex, nested) {
-    const box = document.createElement('section');
+    // (Prototype B: an example folds by its title, open at first.)
+    const box = /** @type {HTMLDetailsElement} */ (document.createElement('details'));
+    box.open = true;
     box.className = nested ? 'example nested' : 'example';
     const h = document.createElement('h3');
     h.append(...inline(ex.title));
-    box.append(h);
+    const summary = document.createElement('summary');
+    summary.append(h);
+    box.append(summary);
     if (ex.note) {
       const note = document.createElement('p');
       note.className = 'example-note';
@@ -641,6 +653,14 @@
     return d;
   }
 
+  /** A role (`u-chip`), or where a reader takes over (`u-reads`: "grep reads"), in the colour of its reader. */
+  function chipEl(/** @type {any} */ c) {
+    if (c.reads) return el('span', { class: `u-reads l-${c.layer}` }, c.reads);
+    const e = el('span', { class: `u-chip l-${c.layer}` }, c.text);
+    if (c.title) e.title = c.title;
+    return e;
+  }
+
   /** What the badge says, for a screen reader: "builtin, run by sudo" (`NameSaid.spoken`). */
   const nameSpoken = (/** @type {any} */ name) => (name ? name.said.spoken : '');
 
@@ -687,7 +707,13 @@
     if (also) text.append(also);
     const value = valueLine(token.value);
     if (value) text.append(value);
-    row.append(twisty, label, ...nameBadge(token.name), text, ...refLinks(token.refs));
+    // (Prototype B: the roles from depth 2 on, and the texts of the other readers of the same part, each with its role.)
+    for (const x of token.extra ?? []) {
+      const line = el('span', { class: 'u-extra' }, chipEl(x.chip));
+      if (x.text) line.append(' ', ...inline(x.text));
+      text.append(line);
+    }
+    row.append(twisty, label, ...nameBadge(token.name), ...(token.chips ?? []).map(chipEl), text, ...refLinks(token.refs));
     li.append(row);
     if (token.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
     // Examples placed under this token go before (first) or after (last) its parts.
@@ -793,7 +819,7 @@
     top.classList.toggle('stuck', window.scrollY > 0);
     // (And the tree view's steps, which stay under them: a row scrolled into view goes below both.)
     const steps = $('layers');
-    const on = !$('reading').hidden;
+    const on = !$('layers').hidden;
     document.documentElement.style.setProperty('--controls-h', `${on ? steps.offsetHeight : 0}px`);
     steps.classList.toggle('stuck', on && window.scrollY > 0 && steps.getBoundingClientRect().top <= top.offsetHeight + 1);
   }
@@ -866,7 +892,7 @@
    * (quotes, expansions, the scripts of substitutions as bash reads them). Steps 6 to 8 add the other readers: the
    * scripts inside (a child shell), each command's reading of its arguments, and the languages.
    */
-  const STEPS = 8;
+  const STEPS = 4;
   const BASH_STEP = /** @type {Record<string, number>} */ ({
     line: 1, list: 2, andList: 2, orList: 2, pipeline: 2, command: 3, compound: 3, clause: 3, coprocess: 3, function: 3, part: 3,
     commandName: 4, aliasWord: 4, expandedName: 4, option: 4, argument: 4, assignmentArgument: 4, word: 4, name: 4,
@@ -879,8 +905,8 @@
 
   /** Tells the host the choice: it keeps it for the next time (VS Code's global state, the web page's storage) and, in the list view, builds no tree. */
   function save() {
-    // (`level` too: what the panel kept before the steps.)
-    const state = { view, step, level: levelOf(step) };
+    // (`view: 'tree'`: the hosts build the reading tree, which the one view is drawn from.)
+    const state = { view: 'tree', depth: step };
     vscode.setState(state);
     vscode.postMessage({ type: 'panelState', state });
   }
@@ -888,15 +914,17 @@
   /** The view and step the viewer chose (VS Code's webview state; on the web page, the page sends them). */
   function applyState(/** @type {any} */ state) {
     if (!state || typeof state !== 'object') return;
-    if (state.view === 'tree' || state.view === 'list') view = state.view;
-    // (Before the steps, the panel kept the layers shown, 1–4: each is the last step of its layer.)
-    if (Number.isInteger(state.step) && state.step >= 1 && state.step <= 8) step = state.step;
-    else if ([1, 2, 3, 4].includes(state.level)) step = state.level + 4;
+    // (Prototype B: one view, and the depth the viewer chose; the old view and its eight steps are not read.)
+    if (Number.isInteger(state.depth) && state.depth >= 1 && state.depth <= 4) step = state.depth;
   }
 
   /** Shows the list or the tree view. */
   function applyView() {
-    const tree = view === 'tree';
+    // (Prototype B: no switch of views; the depth control stands in for it, shown when there is a reading tree.)
+    view = 'list';
+    $('views').hidden = true;
+    $('layers').hidden = !reading;
+    const tree = false;
     const t = labels.tree;
     if (t) {
       $('views').setAttribute('aria-label', labels.views);
@@ -1036,6 +1064,233 @@
     }
   }
 
+  // ---------------------------------------------------------------- one view with a depth (prototype B)
+
+  /*
+   * Prototype B: one view, drawn in the list (`#tree`) from the reading tree (src/reading.ts), with the depth chosen.
+   * A node of the tree comes into the view at the depth its kind belongs to (`depthOf`); one that does not yet is
+   * passed over, its parts going to the row above. Nodes about the same text (bash's argument, its quotes, and the
+   * command's operand) are one row, each saying its part: a text is said once, at its depth. The rows take the
+   * label, colour, examples and values of the list's tokens about the same text.
+   */
+
+  /** The tokens, the examples left for the end, the text and the problems of the line shown: drawn again at another depth. */
+  let shownItems = /** @type {any[]} */ ([]);
+  let shownRest = /** @type {any[]} */ ([]);
+  let shownText = '';
+  let shownMarks = /** @type {any[]} */ ([]);
+  /** The outermost token of the list for each range of the line shown. */
+  let tokenAt = /** @type {Map<string, any>} */ (new Map());
+
+  const spanKey = (/** @type {any} */ s) => `${s.start.line}:${s.start.character}-${s.end.line}:${s.end.character}`;
+  const posCmp = (/** @type {any} */ a, /** @type {any} */ b) => a.line - b.line || a.character - b.character;
+  const spanCovers = (/** @type {any} */ outer, /** @type {any} */ inner) => posCmp(outer.start, inner.start) <= 0 && posCmp(inner.end, outer.end) <= 0;
+  /** The kinds of the first word of a simple command: one row with the command. */
+  const NAMES = new Set(['commandName', 'aliasWord', 'expandedName']);
+  /** The kinds whose parts are parts of a word (an operator there is an escape or a glob's, not bash's syntax). */
+  const WORDISH = new Set(['argument', 'assignmentArgument', 'word', 'quote', 'expansion', 'substitution', 'arithmetic', 'brace', 'commandName', 'expandedName', 'string']);
+  const hasText = (/** @type {any} */ n) => typeof n.text === 'string' && n.text !== '';
+
+  /**
+   * The depth at which a node comes into the view. 1, what it does: each part that says what it does (a text of
+   * its own). 2, who reads it: the roles, where a command or a language takes over, a script read again. 3, bash's
+   * syntax: reserved words, operators, the structure with no text of its own. 4, inside the words: quotes, literal
+   * text and patterns, the words with no text.
+   */
+  function depthOf(/** @type {any} */ n, /** @type {any} */ parent) {
+    const has = hasText(n);
+    if (n.layer === 'language') return n.kind === 'language' ? 2 : has ? 1 : 4;
+    if (n.layer === 'command') return has ? 1 : 2;
+    switch (n.kind) {
+      case 'line': return Infinity;
+      case 'script': return 2;
+      case 'keyword': return 3;
+      case 'operator': return parent && WORDISH.has(parent.kind) ? 4 : 3;
+      case 'quote': case 'string': case 'pattern': case 'number': return 4;
+      case 'commandName': case 'aliasWord': case 'comment': case 'shebang': return 1;
+      case 'argument': case 'assignmentArgument': case 'word': case 'expansion': case 'substitution': case 'arithmetic': case 'brace': case 'expression': case 'expandedName':
+        return has ? 1 : 4;
+      default: return has ? 1 : 3;
+    }
+  }
+
+  /** The depth at which a node's role is shown: from 2 on; a simple command's (the structure) at 3. */
+  function chipDepthOf(/** @type {any} */ n, /** @type {any} */ parent) {
+    if (n.layer !== 'command' && n.layer !== 'language' && n.kind === 'command') return 3;
+    if (!hasText(n) && ['argument', 'assignmentArgument', 'word'].includes(n.kind)) return 2;
+    return Math.max(2, depthOf(n, parent));
+  }
+
+  /** A node and those about the same text under it (a command without a text of its own takes its name), and the other parts. */
+  function groupOf(/** @type {any} */ n) {
+    const members = [n];
+    const rest = /** @type {{ node: any, parent: any }[]} */ ([]);
+    const visit = (/** @type {any} */ x) => {
+      for (const c of x.children) {
+        const same = spanKey(c.span) === spanKey(x.span) || (x.kind === 'command' && x.layer !== 'command' && !hasText(x) && NAMES.has(c.kind));
+        if (same) {
+          members.push(c);
+          visit(c);
+        } else rest.push({ node: c, parent: x });
+      }
+    };
+    visit(n);
+    rest.sort((a, b) => posCmp(a.node.span.start, b.node.span.start));
+    return { members, rest };
+  }
+
+  /** Who reads a row: bash, the command or language that takes over, or the shell that parses a script again. */
+  function readerKeyOf(/** @type {any[]} */ members) {
+    const r = [...members].reverse().find((m) => m.layer === 'command' || m.layer === 'language');
+    if (r) return `${r.layer}:${r.reader ?? ''}`;
+    const c = members.find((m) => m.layer === 'child');
+    return c ? `child:${c.process ?? 'subshell'}` : 'bash';
+  }
+
+  /** The rows of a node at depth `s`: its own, or (before its depth) those of its parts. */
+  function rowsOf(/** @type {any} */ n, /** @type {any} */ parent, /** @type {number} */ s, /** @type {any} */ ctx) {
+    const { members, rest } = groupOf(n);
+    const depth = Math.min(...members.map((m) => depthOf(m, parent)));
+    if (depth > s) return rest.flatMap((r) => rowsOf(r.node, r.parent, s, ctx));
+    const row = makeRow(members, parent, depth, s, ctx);
+    const inner = { ...ctx, readerKey: row.readerKey, parentText: row.explanation || ctx.parentText };
+    row.children = rest.flatMap((r) => rowsOf(r.node, r.parent, s, inner));
+    return [row];
+  }
+
+  /** A chip: the role of a node, with what the role is in general as its tooltip. */
+  function chipFor(/** @type {any} */ m) {
+    const t = labels.tree;
+    return { text: chipOf(m), layer: m.layer === 'child' ? 'bash' : m.layer, title: t.about[aboutKey(m)] ?? '' };
+  }
+
+  /** The row of the nodes `members` (about the same text) at depth `s`. */
+  function makeRow(/** @type {any[]} */ members, /** @type {any} */ parent, /** @type {number} */ depth, /** @type {number} */ s, /** @type {any} */ ctx) {
+    const t = labels.tree;
+    const primary = members[0];
+    const tok = tokenAt.get(spanKey(primary.span));
+    const nameNode = members.find((m) => NAMES.has(m.kind));
+    const name = members.find((m) => m.name && m.kind !== 'keyword')?.name;
+    const facets = members.map((m) => ({ m, d: depthOf(m, parent), c: chipDepthOf(m, parent) }));
+    // The row's text: the most specific one (the last reader's) among those that come in at the row's depth.
+    const main = [...facets].reverse().find((f) => hasText(f.m) && f.d === depth);
+    const syntax = (/** @type {any} */ m) => ['operator', 'keyword', 'quote'].includes(m.kind);
+    /** A text said once: the same as the row above's, or a syntax text said already, is left out. */
+    const once = (/** @type {any} */ m) => {
+      const text = m.text;
+      if (text === ctx.parentText) return '';
+      if (syntax(m)) {
+        if (ctx.seen.has(text)) return '';
+        ctx.seen.add(text);
+      }
+      return text;
+    };
+    const explanation = main ? once(main.m) : '';
+    const readerKey = readerKeyOf(members);
+    const chips = [];
+    const extra = [];
+    if (s >= 2) {
+      const reader = [...members].reverse().find((m) => m.layer === 'command' || m.layer === 'language');
+      const script = members.find((m) => m.layer === 'child' && m.kind === 'script');
+      let pillDone = false;
+      for (const f of facets) {
+        const takesOver = (f.m.layer === 'command' || f.m.layer === 'language') && readerKey !== ctx.readerKey;
+        if (takesOver && !pillDone && reader) {
+          pillDone = true;
+          chips.push({ reads: t.reads.replace('{name}', reader.reader ?? ''), layer: reader.layer });
+        }
+        if (f.m === script && readerKey !== ctx.readerKey) chips.push({ reads: t.bands.child[script.process ?? 'subshell'], layer: 'child' });
+        if (f.c > s) continue;
+        // (A language's root says only who reads it: its name is the row's label.)
+        if (f.m.kind === 'language') continue;
+        if (f !== main && hasText(f.m) && f.d <= s) extra.push({ chip: chipFor(f.m), text: once(f.m) });
+        else chips.push(chipFor(f.m));
+      }
+    }
+    const lang = primary.kind === 'language' ? (t.languages[primary.label] ?? primary.label) : '';
+    const label = lang || (nameNode && (!tok || primary.kind === 'command') ? (tok?.label ?? nameNode.label) : (tok?.label ?? primary.label));
+    const kind = tok?.kind ?? (nameNode ? (name?.runs === 'builtin' ? 'builtin' : 'command') : roleOf(primary));
+    const refs = s >= 2 ? [...new Set(facets.filter((f) => f.d <= s || f.c <= s).flatMap((f) => f.m.refs ?? []))] : undefined;
+    return {
+      kind, label, labelParts: lang ? [{ text: lang, placeholder: true }] : tok?.labelParts, group: tok?.group,
+      span: primary.span, explanation, name, value: tok?.value, refs, chips, extra, readerKey,
+      keys: new Set(members.map((m) => spanKey(m.span))), children: /** @type {any[]} */ ([]), examples: /** @type {any[] | undefined} */ (undefined),
+    };
+  }
+
+  /** The rows of the line shown at depth `s` (the list's tokens when there is no reading tree). */
+  function displayRows(/** @type {number} */ s) {
+    if (!reading || !labels.tree) return shownItems;
+    return rowsOf(reading, null, s, { readerKey: 'bash', parentText: '', seen: new Set() });
+  }
+
+  /** Puts each token's examples on the row about its text (the outermost), else the innermost row around it; returns those left. */
+  function attachExamples(/** @type {any[]} */ rows) {
+    const rest = [...shownRest];
+    const all = /** @type {{ row: any, depth: number }[]} */ ([]);
+    const walk = (/** @type {any} */ r, /** @type {number} */ d) => {
+      all.push({ row: r, depth: d });
+      r.children.forEach((/** @type {any} */ c) => walk(c, d + 1));
+    };
+    rows.forEach((r) => walk(r, 0));
+    const visit = (/** @type {any} */ tok) => {
+      if (tok.examples?.length) {
+        const key = spanKey(tok.span);
+        let target = all.find((x) => x.row.keys.has(key))?.row;
+        if (!target) {
+          let best = /** @type {{ row: any, depth: number } | undefined} */ (undefined);
+          for (const x of all) if (spanCovers(x.row.span, tok.span) && (!best || x.depth >= best.depth)) best = x;
+          target = best?.row;
+        }
+        if (target) (target.examples ??= []).push(...tok.examples);
+        else rest.push(...tok.examples);
+      }
+      tok.children.forEach(visit);
+    };
+    shownItems.forEach(visit);
+    return rest;
+  }
+
+  /** How much each depth adds to the line shown (rows, roles and texts); a depth that adds nothing is passed over by ◁ ▷. */
+  function measureDepths() {
+    appear = new WeakMap();
+    aboutAt = new Set();
+    added = new Array(STEPS).fill(0);
+    if (!reading || !labels.tree) return;
+    indexTokens();
+    const count = (/** @type {any[]} */ rows) => rows.reduce((n, r) => n + 1 + r.chips.length + r.extra.length + (r.explanation ? 1 : 0) + count(r.children), 0);
+    let last = 0;
+    for (let s = 1; s <= STEPS; s++) {
+      const n = count(displayRows(s));
+      added[s - 1] = s === 1 ? n : Math.max(0, n - last);
+      last = n;
+    }
+  }
+
+  /** Finds the outermost token for each range of the line shown. */
+  function indexTokens() {
+    tokenAt = new Map();
+    const walk = (/** @type {any} */ t) => {
+      const k = spanKey(t.span);
+      if (!tokenAt.has(k)) tokenAt.set(k, t);
+      t.children.forEach(walk);
+    };
+    shownItems.forEach(walk);
+  }
+
+  /** Draws the one view at the depth chosen: its rows, the line at the top, and the examples left for the end. */
+  function drawList() {
+    flat = [];
+    editors.clear();
+    indexTokens();
+    const rows = displayRows(step);
+    const rest = reading && labels.tree ? attachExamples(rows) : shownRest;
+    $('tree').replaceChildren(...rows.map((t, i) => item(t, `${i}`)));
+    renderLine(shownText, shownLineNo, rows, shownMarks);
+    $('examples').replaceChildren(...rest.map((e) => example(e, false)));
+    $('main').dataset.depth = String(step);
+  }
+
   // ---------------------------------------------------------------- the steps of the tree
 
   /** The steps that add something to the line shown (the line itself always), in order. */
@@ -1059,7 +1314,8 @@
   };
   const icon = (/** @type {string} */ text) => el('span', { class: 'tp-icon', 'aria-hidden': 'true' }, text);
   const LAYERS = ['bash', 'child', 'command', 'language'];
-  const layerOfStep = (/** @type {number} */ s) => LAYERS[levelOf(s) - 1];
+  // (Prototype B: the depths' tints: the meaning, the command's reading, bash's syntax, bash's reading of words.)
+  const layerOfStep = (/** @type {number} */ s) => ['depth', 'command', 'bash', 'bash'][s - 1] ?? LAYERS[0];
 
   /**
    * Makes the controls (once): step back, a button per step, and step forward; where the buttons do not fit, a
@@ -1138,7 +1394,8 @@
     if (!document.getElementById('steps') || box.closest('[hidden]')) return;
     const open = box.classList.contains('open');
     box.classList.remove('tight', 'tighter', 'compact', 'open');
-    for (const level of ['tight', 'tighter', 'compact']) {
+    // (Prototype B: the stepper keeps its label and ◁ ▷; the steps fold into the menu first.)
+    for (const level of ['compact', 'tight']) {
       if (box.scrollWidth <= box.clientWidth + 1) break;
       box.classList.add(level);
     }
@@ -1187,6 +1444,16 @@
    */
   function setStep(/** @type {number} */ s) {
     s = Math.max(1, Math.min(STEPS, s));
+    // (Prototype B: the one view is drawn again at the depth chosen, its folds reset; no motion.)
+    if (s !== step) {
+      step = s;
+      collapsedKeys = new Set();
+      dropSpacer();
+      drawList();
+      if (reading) announce(stepWords(s).full);
+      renderControls();
+      return;
+    }
     if (flushMotion()) renderReading();
     const was = step;
     if (s !== was && view === 'tree' && reading) hold(firstRowKept(s), stuckRange(), $('layers').getBoundingClientRect().bottom);

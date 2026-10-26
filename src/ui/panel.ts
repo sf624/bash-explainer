@@ -151,7 +151,7 @@ export class PanelController implements vscode.Disposable {
       return;
     }
     const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);
-    const ex = this.service.explain(ed.document, line, this.state.view === 'tree');
+    const ex = this.service.explain(ed.document, line, true);
     this.panel.title = `${t.title}: ${fileName(ed.document)}:${line + 1}`;
     void this.panel.webview.postMessage(panelUpdate({
       lang,
