@@ -8,6 +8,9 @@ export const NAME = /^[A-Za-z_]\w*$/;
 
 export const SUBSTITUTIONS = ['command_substitution', 'process_substitution'];
 
+/** The change (see `Walker.put`) of a path that ran what the walk does not read (`Walker.opaque`). */
+export const OPAQUE = 'opaque';
+
 let textParser: BashParser | undefined;
 /** The parser of the texts the model reads besides the script: strings, aliases, arithmetic. */
 export const parser = (): BashParser => (textParser ??= createUnbashParser());

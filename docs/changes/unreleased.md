@@ -115,7 +115,7 @@ It is not said:
 - after a statement before it that tests the name (`-v x`, or `${x-w}`, `${x:-w}`, `${x+w}`, `${x:+w}`, `declare -p x` in a test or a condition) or ends the shell when it is unset (`${x?w}`, `${x:?w}`), in the script or, for a read in a function, anywhere outside the function: such a test is often followed by `exit` or `return` when it fails (`[[ -v x ]] || exit 1`, `if [ -z "${x:-}" ]; then return 1; fi`), and which way the flow goes through it is not followed. So a read after a test that does not stop is not said either, though bash fails there (`[[ -v x ]] && echo "$x"; echo "$x"`);
 - for special and positional parameters (`$1`), and for names in capitals, which may come from the environment;
 - where the variable is set on some path only (`if …; then x=1; fi`), or in a function called both before and after it is set;
-- where the script runs code that cannot be read (`source`, `eval "$s"`, `$cmd`), or arithmetic reads a variable it never sets (`$((n + 1))`: its value may come from the environment), and in a function that may be called from elsewhere (`export -f`, a trap);
+- where the script runs code that cannot be read (`source`, `eval "$s"`, `$cmd`), or arithmetic reads a variable it never sets or declares without a value outside a function (`$((n + 1))`, `declare n; echo $((n + 1))`: its value may come from the environment), and in a function that may be called from elsewhere (`export -f`, a trap);
 - in a here-document or a redirection in a shell other than bash (dash goes on after a here-document, and exits on a redirection of a program);
 - in a redirection of `command command cat`, `command exec cat` or `: < "$f"`, nor of a function (`command f` runs no function).
 
@@ -300,7 +300,7 @@ The token of an expansion says its value where the script fixes it, under its me
 | `IFS=:; p='a:b c'; echo $p` | `a:b c`, split into `a` and `b c` |
 | `f() { echo "$x"; }; x=1; f` | `1` in the body |
 
-Nothing is shown where the value is not sure: a variable the script does not set (it may come from the environment: `$HOME`), one that `read`, `mapfile`, arithmetic, `${x:=…}`, a trap or an `eval` string may set, a loop that changes it, a function called with two values, a branch whose condition is not known, code that never runs, a script that runs `source`, positional parameters, arrays, and strings another shell runs (`bash -c '…'`). Nor is it shown where bash reads the text by the locale (text other than ASCII, beyond a plain copy: `${#e}`, `${e^^}` of `e=é`), after a word of the same command that may fail first (`e=; echo ${e:?} "$e"`), where bash fails (`${x:2:-5}`: "substring expression < 0"), in a script whose `PS4` may assign (`PS4='$((n++))'`, for `bash -x`), or in a function that only uncalled functions call. A part of a longer word (`$x/c`, `a$e`) shows its value only: its words join the text around it (`x='a b'; echo $x/c` gives `a` and `b/c`).
+Nothing is shown where the value is not sure: a variable the script does not set (it may come from the environment: `$HOME`), one that `read`, `mapfile`, arithmetic, `${x:=…}`, a trap or an `eval` string may set, a loop that changes it, a function called with two values, a branch whose condition is not known, code that never runs, a script that runs `source`, positional parameters, arrays, and strings another shell runs (`bash -c '…'`). Nor is it shown where bash reads the text by the locale (text other than ASCII, beyond a plain copy: `${#e}`, `${e^^}` of `e=é`), after a word of the same command that may fail first (`e=; echo ${e:?} "$e"`), where bash fails (`${x:2:-5}`: "substring expression < 0"), in a script whose `PS4` may assign (`PS4='$((n++))'`, for `bash -x`), or in a function that only uncalled functions call. Nor in a script where bash may change a variable unseen: it reads a nameref whose target is not known (`declare -n r=$1; : "$r"`: with `$1` = `a[u=2]`, the subscript sets `u`), tests `-v` of a name not known (`[ -v "$1" ]`, `[[ -v $x ]]`), expands a value as a prompt that may run code (`${x@P}` of `$((u=2))`, or of `\044((u=2))`, which bash decodes to `$`), runs `compgen -W` with an expansion in the list, or `fc` other than `fc -l`, or reads in arithmetic a variable declared without a value outside a function (`declare n; (( n ))`, `declare -i n; n+=1`: a value from the environment runs as an expression). After a recursive call, what the function changes after the call is not known either (`g() { if [ "$d" = 1 ]; then d=2; g; return; fi; x=2; }`: bash's `x` is 2 after `g`). A part of a longer word (`$x/c`, `a$e`) shows its value only: its words join the text around it (`x='a b'; echo $x/c` gives `a` and `b/c`).
 
 A space at either end of a value is marked, an empty word is shown as `∅`, and a bidi control or zero-width character as its code (`<U+202E>`), named after the value; a long value is cut on a character. In the hover, a value with a backtick reads as it is. The mark of a space is drawn, not typed as a character, in the panel, the web page and VS Code's hover: a real space in a box with a bottom edge (panel), or on the badge background (hover), named "space" (`空白`) for a screen reader or as a tooltip. The symbol for a space (`␠`, U+2420) is a box on a machine with few fonts. In the outputs that are text only (the CLI, the Markdown of the language server and of Copy as Markdown) the mark is `␣` (open box, U+2423), which far more fonts have, and the note says `␣` is a space at an end.
 
@@ -483,6 +483,19 @@ The example of a brace expansion shows the words bash makes as chips in a row, e
 - Before, "Resulting words" listed one word per line, and `printf` had an example of its own that printed the braces as they are (`{a,b}{1,2}`). The examples of `printf` and of pipelines now run the words of the expansion (`echo {a,b} | tr a-z A-Z` shows `A B`), and `printf '%s\n' *.txt` or `printf '%s\n' ~/x` has no example, as the files and the home directory are not known. After `set +B`, braces do not expand, and there is no example.
 
 ## Fixed
+
+### Conditions and code that never runs
+
+A condition was said to be always true or false, or code to never run, where bash does otherwise (bash 5.2):
+
+| Script | bash | Said before | Said now |
+| --- | --- | --- | --- |
+| `g() { if [ "$d" = 1 ]; then d=2; g; return; fi; x=2; }; x=1; d=1; g` then `if [ "$x" = 1 ]` | `x` is 2: the recursive call runs `x=2` | always true | nothing |
+| the same `g`, with `h` instead of `x=2` | the recursive call runs `h` | the body of `h` never runs | nothing |
+| `enable -n exit; exit; echo after` | "exit: command not found", then `after` | `echo after` never runs | nothing |
+| `u=1; [ -v "$1" ]` with `$1` = `a[u=2]`, then `if [ "$u" = 1 ]` | `u` is 2: the subscript is arithmetic | always true | nothing |
+
+The same holds after `test -v "$1"`, `[[ -v $x ]]`, a read of a nameref whose target is not known (`declare -n r=$1; : "$r"`), `${x@P}` of a value that may run code, `compgen -W '$((u=2))'`, `fc -s`, and `declare n; (( n ))` with `n='u=2'` in the environment. A function called only from code that a recursive call, or a call the model does not follow, may run is no longer said to never run. Past 64 nested calls, what the deeper functions change is taken as not known; before, it was taken as unchanged.
 
 ### Shell code in host files
 

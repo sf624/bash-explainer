@@ -163,7 +163,7 @@ class Generator {
   private stmt(inLoop: number, inFn: boolean): string {
     const body = (): string => this.block(inLoop, inFn);
     const loopBody = (): string => this.block(inLoop + 1, inFn);
-    switch (Math.floor(this.r() * (this.depth > 3 ? 8 : 34))) {
+    switch (Math.floor(this.r() * (this.depth > 3 ? 8 : 35))) {
       case 0: case 1: case 2: return this.assign();
       case 3: case 4: return this.otherWrite();
       case 5: return this.cond();
@@ -227,6 +227,11 @@ class Generator {
       // (Then an assignment on the same line, which an error there discards.)
       case 31: return `kill -USR1 $$; ${this.assign()}`;
       case 32: return `eval '${this.pick(['arr=([1/0]=1)', 'arr=( [n]=1 )', 'arr=([1 / n]=1); mode=c'])}'; ${this.assign()}`;
+      case 33: {
+        // A function that calls itself once, guarded by `d`: what its body changes after the call, the call changes too.
+        if (!this.fns.includes('rc')) this.fns.push('rc');
+        return `⟦D⟧rc() { if [ "$d" = 1 ]; then d=2; rc; ${this.pick(['return', ':', `${this.test()} && return`])}; fi; ${this.block(0, true)}; }⟦E⟧; d=1; rc`;
+      }
       default: return this.mark();
     }
   }

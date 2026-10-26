@@ -175,6 +175,9 @@ export function docLine(n: SyntaxNode): number {
  */
 export const ALIAS_TREES = 20_000;
 
+/** How many times a script is walked again for its recursive functions (`Walker.short`), before nothing is trusted. */
+const REWALKS = 4;
+
 /**
  * The strings a model reads as scripts (`StateModel.script`), by their first word, and the trees of those that run in
  * its own shell (`eval`, a trap's action), by root: the walk runs them, so their nodes are in this model. Also the trees
@@ -430,6 +433,24 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
   } catch (e) {
     /* c8 ignore next -- only `WalkAgain` is thrown out of a walk on purpose */
     if (!(e instanceof WalkAgain)) throw e;
+  }
+  // (A call not walked took less as changed than its body changes: walked again, with what each body changes. Each
+  // walk again finds more; past `REWALKS`, nothing is trusted.)
+  for (let round = 0; !w.found && w.short; round++) {
+    /* c8 ignore start -- a guard on the cost: each walk again adds what the one before found, and none in the tests needs more than one */
+    if (round === REWALKS) {
+      w.found = 'a recursive function changes more than its walk follows';
+      break;
+    }
+    /* c8 ignore stop */
+    w = new Walker(shell, posix, scripts, trust, host, run, w);
+    try {
+      initial = start(w);
+      end = w.program(tree.root, initial);
+    } catch (e) {
+      /* c8 ignore next -- only `WalkAgain` is thrown out of a walk on purpose */
+      if (!(e instanceof WalkAgain)) throw e;
+    }
   }
   // (Arithmetic read text not known on the way, or a string the walk does not read: walked again, with nothing trusted.)
   const found = w.found;

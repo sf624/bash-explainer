@@ -91,6 +91,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The Marketplace, Open VSX and npm pages show the images and links of the version they describe. Before, they showed the newest images from `main`, and one was missing.
 - The hover no longer repeats a problem that VS Code shows above it: the part leaves out that note. The notes that stay, and the notes of examples, line up with the hover's text. Before, the same pitfall came twice, the second time indented.
 - A control character in a value or an example (a newline, a tab, an escape) is a small box with its name (`LF`, `TAB`, `ESC`) in the panel, the web page and the hover, and `<LF>`, `<TAB>`, `<ESC>` in the command line and Markdown. Before, it was a Unicode control picture (`␊`, `␛`), which is an empty box where no font has it (Consolas and Segoe UI do not).
+- Fewer wrong notes that a condition is always true or false, or that code never runs: after a recursive call, after `enable -n exit`, and in scripts with `[ -v "$1" ]`, `${x@P}`, `compgen -W`, `fc -s` or another way to change variables unseen.
 
 ## 0.8.0
 

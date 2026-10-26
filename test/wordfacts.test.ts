@@ -222,8 +222,8 @@ describe('word facts: an unset variable under set -u', () => {
     ['set -u\nunset x && echo $x', 1, 'x', true, S],
     ['set -u\necho ${b[0]}', 1, 'b[0]', true, S],
     ['set -u\ndeclare -A m\necho "${m[k]}"', 2, 'm[k]', true, S],
-    ['set -u\ndeclare n\necho $((n + 1))', 2, 'n', false, S],
-    ['set -u\ndeclare n\necho $(( (n) ? 1 : 2 )) $(( -n ))', 2, 'n', false, S],
+    ['set -u\nf() {\n  declare n\n  echo $((n + 1))\n}\nf', 3, 'n', false, S, false],
+    ['set -u\nf() {\n  local n\n  echo $(( (n) ? 1 : 2 )) $(( -n ))\n}\nf', 3, 'n', false, S, false],
     ['set -u\nf() { local v; echo "$v"; }\nf', 1, 'v', true, S, false],
     ['set -u\nf() { declare v; echo "$v"; }\nf', 1, 'v', true, S, false],
     ['set -u\nf() { declare -g v; echo "$v"; }\nf', 1, 'v', true, S],
@@ -303,8 +303,10 @@ describe('word facts: an unset variable under set -u', () => {
     'set -u\nif [ -e f ]; then c=1; fi\necho "$c"', 'set -u\nif false; then\n  echo "$c"\nfi', 'set -u\nwhile read -r w; do echo "$q"; q=1; done',
     'set -u\nread -r z\necho "$z"', 'set -u\na1=1 a2=$a1', 'set -u\nsource ./lib.sh\necho $x', 'set -u\neval "$cmd"\necho $x',
     'set -u\ncat <<\'E\'\n$hd\nE', 'set -u\nf() { echo "$y"; }', 'set -u\nf() { echo "$y"; }\nexport -f f\nf', 'set -u\nf() { echo "$y"; }\nf\ny=1\nf',
-    'set -u\ndeclare -n r\necho $r', 'set -u\ndeclare n\necho $(( 1 || n )) $(( 0 && n )) $(( 0 ? n : 1 )) $(( 1 ? 1 : n )) $(( n = 1 ))',
-    'set -u\necho $(( k = 2, k + 1 ))', 'set -u\necho ${x:=1} $x', 'set -u\necho $(( nn + 1 ))', "set -u\ntrap 't=1' USR1\necho $t",
+    'set -u\ndeclare -n r\necho $r', 'set -u\nf() {\n  local n\n  echo $(( 1 || n )) $(( 0 && n )) $(( 0 ? n : 1 )) $(( 1 ? 1 : n )) $(( n = 1 ))\n}\nf',
+    'set -u\necho $(( k = 2, k + 1 ))', 'set -u\necho ${x:=1} $x', 'set -u\necho $(( nn + 1 ))',
+    // (Outside a function, `declare n` keeps a value from the environment, which arithmetic runs: nothing is trusted.)
+    'set -u\ndeclare n\necho $((n + 1))', 'set -u\ndeclare n\necho $(( (n) ? 1 : 2 )) $(( -n ))', "set -u\ntrap 't=1' USR1\necho $t",
     'set -u\necho ${x[$i]} ${x[@]}', 'set -u\necho ${!x}', 'set -u\necho ${x\n}', 'set -u\nx=1 y=$x cmd',
     'set -u\n$cmd > "$f"', "set -u\n'e'cho hi > \"$f\"", 'set -u\n\'e\'cho hi > "$f"',
     // (A test before the read reads the name: it may be what keeps the read from running unset.)

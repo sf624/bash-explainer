@@ -33,6 +33,16 @@ export class WalkBuiltins {
     const hosted = host && Object.hasOwn(this.w.host, name) ? this.w.host[name] : undefined;
     if (hosted) return this.effects(hosted, builtinParse(name, args, hosted), args, n, st, true);
     if (!builtins[name] || !this.bashBuiltin(name)) return st;
+    // A builtin turned off (`enable -n exit`) runs the program of its name, or fails: it changes nothing here, and
+    // `exit` ends nothing. Where it may be off, both.
+    const off = st.disabled.get(name)?.state;
+    if (off === 'on') return st;
+    if (off === 'unknown') return merge([st, this.builtinOn(name, args, n, st)], this.w.posix);
+    return this.builtinOn(name, args, n, st);
+  }
+
+  /** The builtin `name` run with `args` (see `builtin`), when it is not turned off. */
+  private builtinOn(name: string, args: SyntaxNode[], n: SyntaxNode, st: ShellState): ShellState {
     // `command set -f`, `builtin shopt -s x`: the builtin runs (`command -v` only looks it up).
     if (name === 'command' || name === 'builtin') {
       const inner = wrapped(name, args);
