@@ -289,15 +289,25 @@ Each step keeps every test passing.
    - *Names not known.* `set -o "$x"`, `shopt -s "$x"`, and a word not known before the operands of `set` (`set $x`, which may be `-k`) trust nothing; before, they only exported the functions defined after them.
    - *Builtins' options.* The unknown option of `test` and `[` is `none`: their words are the expression's (`[ -a file ]`, `[ -o errexit ]`). That of the declarations (`declare -Q`) is `all`, as the table says, instead of `names`. A name of the dictionary that is no builtin of bash (zsh's `setopt`, `print`) runs a program in bash: `none` (`PROGRAM`).
    - An empty assignment (`x=`) gives a value known in full (`writtenValue`), so `LC_ALL=` keeps the trust.
+   - *The review of step 4* found these, each checked with bash 5.2 (test/allow-list.test.ts, test/decisions.test.ts), and fixed here:
+     - An empty command name, unquoted (`cmd=; $cmd eval x=2`): the next word is the command. The empty value above made it look safe; an unquoted command variable must now be non-empty.
+     - At its start, bash turns on the options SHELLOPTS and BASHOPTS list, and POSIX mode for POSIX_PEDANTIC. In a shebang's `env -S`, SHELLOPTS and BASHOPTS are read as those options (the walk starts with them) and go through the option tables; POSIX_PEDANTIC, and the three given to another shell (`env SHELLOPTS=keyword bash -c`), trust nothing. An exported SHELLOPTS still passes the outer model's options.
+     - Every start option the table does not have trusts nothing (`Opening.others`): `-r` (a redirection fails in a restricted shell), `-i`, `-l`, `--login`, `--debugger`, `-s`, a word left before the script's path. `-c`, `--norc`, `--noprofile`, `--noediting`, `--posix`, `-` and `--` change nothing else (`HARMLESS_START`). So do `-o` and `-O` with a name not known (`bash -O "$o" -c`), and an `env -S` line not read in full (`-S -u LANG bash`, `-Sbash`).
+     - A write through a nameref is one of its targets, also through a chain, by the target's row (`declare -n r=BASH_COMPAT; r=31`), and the PS4 check and the words of `test` read those writes too.
+     - `#!/bin/bash -a` exports the functions defined after it, as `set -a` does.
+     - `env 'BASH_COMPAT=31' bash -c`: a quoted assignment of `env` is given by its value (src/semantics/env.ts).
+     - The values given to another shell are taken from its assignments only, not from the words after the string (`bash -c '…' LC_ALL=C` is a parameter); names not known (`docker run --env-file f`) trust nothing.
+     - The probe row `values#locale-other` shows no effect of the locale in bash's output: the machines that record the probes have no German locale. It checks only that the model gives no value.
+     - To keep trust.ts under 1,000 lines, the `Trust` interface, `HostCommands`, `StringTrees`, `BLIND` and `withinTrust` moved to src/semantics/trustmodel.ts.
 
-   test/allow-list.test.ts checks that a construct with no row (a node type no parser gives, an option, an operator) trusts nothing, and the start of a shell against bash (a shebang run as a program, `BASH_COMPAT=31 bash -c`). values.json has rows for the holes of section 1 (each recorded with bash), for a locale of C, and for a prefix assignment of a program. The decisions' generator puts an unknown construct (`UNKNOWN_CONSTRUCTS`, test/support/decisions.ts: `shopt -s compat42`, `BASH_COMPAT=42`, `set -k`, `FUNCNEST=1`, `BASH_ALIASES[1]=…`, `set -o history -H`, `shopt -s localvar_inherit`, `read -Q`, `set -o posix`, `shopt -u extquote`, a locale, `shopt -s nosuch`, `${v@Z}`) into a fifth of the scripts of `withUnknown`, by a generator of its own; test/decisions.test.ts checks that each such script is blind, decides nothing and marks nothing dead, and that bash contradicts none of them. `scripts(seed, n)` is unchanged, so its floors keep their meaning.
+   test/allow-list.test.ts checks that a construct with no row (a node type no parser gives, an option, an operator) trusts nothing, and the start of a shell against bash (a shebang run as a program, `BASH_COMPAT=31 bash -c`). values.json has rows for the holes of section 1 (each recorded with bash), for a locale of C, and for a prefix assignment of a program. The decisions' generator puts an unknown construct (`UNKNOWN_CONSTRUCTS`, test/support/decisions.ts: `shopt -s compat42`, `BASH_COMPAT=42`, `set -k`, `FUNCNEST=1`, `BASH_ALIASES[1]=…`, `set -o history -H`, `shopt -s localvar_inherit`, `read -Q`, `set -o posix`, `shopt -u extquote`, a locale, `shopt -s nosuch`, `${v@Z}`) into a fifth of the scripts of `withUnknown`, by a generator of its own; test/decisions.test.ts checks that each such script is blind, decides nothing and marks nothing dead, and that bash contradicts none of them. This mostly restates the rows; it would catch a row the scan does not reach. `scripts(seed, n)` is unchanged, so its floors keep their meaning.
 
-   Measured against step 3 (the counter of section 4; the corpus as at step 3):
+   Measured against step 3 (the counter of section 4; both on the corpus of this step, whose snippets of the tests differ from those of step 3 by one, so step 3 counts 160 blind inputs here and 161 in its own table):
 
    | Set | Values (files) | Decisions | Dead | Blind |
    | --- | --- | --- | --- | --- |
-   | Corpus (1,518 inputs), step 3 | 32 (13) | 26 | 9 | 161 |
-   | Corpus, step 4 | 32 (13) | 25 | 9 | 214 |
+   | Corpus (1,518 inputs), step 3 | 32 (13) | 26 | 9 | 160 |
+   | Corpus, step 4 | 32 (13) | 25 | 9 | 213 |
    | Real scripts (802), step 3 | 145 (18) | 0 | 0 | 665 |
    | Real scripts, step 4 | 145 (18) | 0 | 0 | 667 |
    | Generated (`scripts(1, 1000)`), step 3 and step 4 | 746 | 534 | 4,663 | 641 |

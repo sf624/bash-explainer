@@ -28,7 +28,7 @@ import { SET_LETTERS } from './effects';
 import { EnvModel, type ExecEnv, MAIN_SHELL, type SlotLink } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
 import type { ShellState } from './shellstate';
-import { childOpening, type Opening, openingBlinds } from './opening';
+import { childOpening, HARMLESS_START, type Opening, openingBlinds } from './opening';
 import { BLIND, type HostCommands, NO_HOST, scriptTrust, type StringTrees, type Trust, withinTrust } from './trust';
 import { type MappedText, staticWordValue } from '../staticword';
 import { parser, WalkAgain } from './walk/shared';
@@ -305,7 +305,8 @@ function childModel(script: NestedScript): StateModel {
   const pass = { given: [...given], removed, invocation: links[links.length - 1].invocation ?? [] };
   // (What the shell is started with goes through the allow-list of the trust: `bash -O compat31 -c`, `BASH_COMPAT=31
   // bash -c`. A row of `all` walks it again with nothing trusted.)
-  // (The values given, where they are static text: `LC_ALL=C bash -c`, `env LC_ALL=C bash -c`.)
+  // (The values given, where they are static text: `LC_ALL=C bash -c`, `env LC_ALL=C bash -c`; not the words after the
+  // string, its positional parameters.)
   const values = new Map<string, string | undefined>();
   for (const c of cmd.namedChildren) {
     if (c.type === 'variable_assignment') {
@@ -313,12 +314,16 @@ function childModel(script: NestedScript): StateModel {
       values.set(field(c, 'name')!.text, value ? staticWordValue(value) : '');
       continue;
     }
-    const m = /^([A-Za-z_]\w*)=(.*)$/s.exec(staticWordValue(c) ?? '');
+    const m = c.startIndex < first.startIndex ? /^([A-Za-z_]\w*)=(.*)$/s.exec(staticWordValue(c) ?? '') : null;
     if (m) values.set(m[1], m[2]);
   }
   const start = (w: Walker): ShellState => {
     const st = w.childStart(outer, script.env, pass, first);
-    const vars = [...st.variables].map(([name, v]) => [name, given.has(name) ? { set: 'on', value: values.get(name) } : v] as const);
+    // (SHELLOPTS and BASHOPTS not given are bash's own: an exported one passes options the outer model has read.)
+    const vars = [...st.variables].filter(([name]) => given.has(name) || !['SHELLOPTS', 'BASHOPTS'].includes(name))
+      .map(([name, v]) => [name, given.has(name) ? { set: 'on', value: values.get(name) } : v] as const)
+      // (`env -S`'s or `docker run --env-file`'s names not known: `*`.)
+      .concat(given.has('*') ? [['*', { set: 'on', value: undefined }] as const] : []);
     const why = w.blind ? undefined : openingBlinds(childOpening(pass.invocation, vars, st.set.get('posix') === 'on'));
     return why ? w.walkAgain(why) : st;
   };
@@ -329,9 +334,11 @@ const models = new WeakMap<SyntaxTree, Map<string, StateModel>>();
 
 /**
  * What the shebang of a script gives the shell it starts: POSIX mode, the `set` options of its letters (`-eu`), and
- * through `env -S`, `shopt` options (`-O extglob`) and the variables it assigns (`BASH_COMPAT=42 bash`).
+ * through `env -S`, `shopt` options (`-O extglob`), those SHELLOPTS and BASHOPTS list, and the other variables it
+ * assigns (`BASH_COMPAT=42 bash`); `others`, what else it gives that the allow-list does not have (`-r`, `--login`,
+ * an `env -S` line not read in full).
  */
-interface ShebangStart { posix: boolean; set: Map<string, 'on' | 'off'>; shopt: Map<string, 'on' | 'off'>; variables: Map<string, string> }
+interface ShebangStart { posix: boolean; set: Map<string, 'on' | 'off'>; shopt: Map<string, 'on' | 'off'>; variables: Map<string, string>; others: string[] }
 
 /**
  * What the shebang starts bash with: the kernel passes the rest of the line as one argument, so `#!/bin/bash -eu`
@@ -345,28 +352,43 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
   const m = /^#![ \t]*(\S+)[ \t]*([^\n]*?)[ \t]*(?:\n|$)/.exec(root.text);
   if (!m) return undefined;
   const base = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
-  const set = new Map<string, 'on' | 'off'>();
-  const shopt = new Map<string, 'on' | 'off'>();
-  const variables = new Map<string, string>();
+  const start: ShebangStart = { posix: false, set: new Map(), shopt: new Map(), variables: new Map(), others: [] };
   const letters = (cluster: string): void => {
-    for (const letter of cluster.slice(1)) if (SET_LETTERS[letter]) set.set(SET_LETTERS[letter], cluster[0] === '-' ? 'on' : 'off');
+    for (const letter of cluster.slice(1)) {
+      if (SET_LETTERS[letter]) start.set.set(SET_LETTERS[letter], cluster[0] === '-' ? 'on' : 'off');
+      else if (letter !== 'o' && letter !== 'O') start.others.push(`${cluster[0]}${letter}`);
+    }
+  };
+  // (A long option: POSIX mode, one that changes nothing here, or one the table does not have: `--debugger`.)
+  const long = (option: string): void => {
+    if (option === '--posix') start.posix = true;
+    else if (!HARMLESS_START.has(option)) start.others.push(option);
   };
   if (base(m[1]) === 'bash') {
     // (Not when bash refuses them: then no option is on, run directly or by `bash script`.)
-    if (/^[-+][a-zA-Z]+$/.test(m[2]) && !shebangRefused(root.text)) letters(m[2]);
-    return { posix: m[2] === '--posix', set, shopt, variables };
+    if (!m[2] || shebangRefused(root.text)) return start;
+    if (/^[-+][a-zA-Z]+$/.test(m[2])) letters(m[2]);
+    else if (m[2].startsWith('-')) long(m[2]);
+    else start.others.push(m[2]);
+    return start;
   }
   const words = m[2].split(/[ \t]+/);
-  if (base(m[1]) !== 'env' || words[0] !== '-S') return undefined;
+  if (base(m[1]) !== 'env') return undefined;
+  // (`env -S` with options of its own, or joined to its value: `-S -u LANG bash`, `-Sbash`.)
+  if (words[0] !== '-S') return /^-[^-]*S/.test(words[0]) ? { ...start, others: [m[2]] } : undefined;
   let i = 1;
-  let posix = false;
   for (; /^\w+=/.test(words[i] ?? ''); i++) {
     const at = words[i].indexOf('=');
-    if (words[i].startsWith('POSIXLY_CORRECT=')) posix = true;
-    else variables.set(words[i].slice(0, at), words[i].slice(at + 1));
+    const [name, value] = [words[i].slice(0, at), words[i].slice(at + 1)];
+    // (bash turns on the options SHELLOPTS and BASHOPTS list when it starts.)
+    if (name === 'POSIXLY_CORRECT') start.posix = true;
+    else if (name === 'SHELLOPTS') for (const o of value.split(':').filter(Boolean)) o === 'posix' ? (start.posix = true) : start.set.set(o, 'on');
+    else if (name === 'BASHOPTS') for (const o of value.split(':').filter(Boolean)) start.shopt.set(o, 'on');
+    else start.variables.set(name, value);
   }
+  if (words[i]?.startsWith('-')) return { ...start, others: [m[2]] };
   if (base(words[i] ?? '') !== 'bash') return undefined;
-  for (i++; words[i]?.startsWith('--') && words[i] !== '--'; i++) posix ||= words[i] === '--posix';
+  for (i++; words[i]?.startsWith('--') && words[i] !== '--'; i++) long(words[i]);
   // (Then the short options: each `o` or `O` of a cluster takes the next word, `-ox posix` too.)
   for (; /^[-+][a-zA-Z]+$/.test(words[i] ?? ''); i++) {
     const cluster = words[i];
@@ -374,13 +396,16 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
     for (const letter of cluster.slice(1)) {
       if (letter !== 'o' && letter !== 'O') continue;
       const name = words[++i];
-      if (letter === 'O') {
-        if (name) shopt.set(name, cluster[0] === '-' ? 'on' : 'off');
-      } else if (name === 'posix') posix = cluster[0] === '-';
-      else if (name) set.set(name, cluster[0] === '-' ? 'on' : 'off');
+      const state = cluster[0] === '-' ? 'on' : 'off';
+      if (name === undefined) start.others.push(cluster);
+      else if (letter === 'O') start.shopt.set(name, state);
+      else if (name === 'posix') start.posix = state === 'on';
+      else start.set.set(name, state);
     }
   }
-  return { posix, set, shopt, variables };
+  // (A word left, before the script's path: bash reads it as the script.)
+  if (words[i] !== undefined) start.others.push(words[i]);
+  return start;
 }
 
 /** The letters bash takes as options when it starts (`set`'s, and `-c`, `-i`, `-l`, `-r`, `-s`, `-D`, `-o`, `-O`). */
@@ -443,7 +468,7 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
     const st = w.initial(tree.root);
     return { ...st, ...(set?.size ? { set: st.set.withAll(set) } : {}), ...(shopt?.size ? { shopt: st.shopt.withAll(shopt) } : {}) };
   };
-  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, undefined, host, run, { set, shopt, variables: shebang?.variables });
+  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, undefined, host, run, { set, shopt, variables: shebang?.variables, others: shebang?.others });
   byKey.set(key, model);
   return model;
 }
