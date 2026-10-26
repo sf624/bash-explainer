@@ -59,14 +59,59 @@ function parameterSections(text: string): readonly string[] {
   return ['3.5.3'];
 }
 
+/** The nodes of an expression, of `[[ ]]` (6.4) or of arithmetic (6.5). */
+const EXPRESSIONS = new Set(['binary_expression', 'unary_expression', 'parenthesized_expression', 'ternary_expression', 'postfix_expression']);
+
+/**
+ * Where an expression is read, and the sections of it: `[[ ]]` reads a conditional expression (6.4); `(( ))`, the
+ * head of `for (( ))`, `$(( ))`, the offset and length of `${x:i:n}` and an array's index, an arithmetic one (6.5).
+ */
+const EXPRESSION_HOSTS: Readonly<Record<string, readonly string[]>> = {
+  extended_test: CONSTRUCTS.extended_test, arithmetic_command: CONSTRUCTS.arithmetic_command,
+  c_style_for_statement: ['3.2.5.1', '6.5'], arithmetic_expansion: ['3.5.5', '6.5'], expansion: ['3.5.3', '6.5'], subscript: ['6.7', '6.5'],
+};
+/** The tokens of the head of `for (( ))` that are arithmetic's: around its expressions, and the `,` between two. */
+const ARITH_HEAD = new Set(['((', '))', ',']);
+
+/** Whether `n` is a part of an expression: an expression, or an assignment in the head of `for (( ))` (`i = 0`). */
+export function isExpression(n: SyntaxNode): boolean {
+  return EXPRESSIONS.has(n.type) || (n.type === 'variable_assignment' && n.parent!.type === 'c_style_for_statement');
+}
+
+/** Where the expression `n` is in is read: the type of its host (`EXPRESSION_HOSTS`), `extended_test` for `[[ ]]`. */
+export function expressionHost(n: SyntaxNode): string {
+  // (The parser makes expressions only in these.)
+  let p = n.parent!;
+  while (!EXPRESSION_HOSTS[p.type]) p = p.parent!;
+  return p.type;
+}
+
+/** The sections of the expression `n` is in: those of where it is read. */
+export function expressionSections(n: SyntaxNode): readonly string[] {
+  return EXPRESSION_HOSTS[expressionHost(n)];
+}
+
+/** A word with a backslash that is not in quotes: an escape character, or a line continuation (3.1.2.1). */
+function escaped(n: SyntaxNode): boolean {
+  if (n.type === 'concatenation') return n.namedChildren.some(escaped);
+  return n.type === 'word' && n.text.includes('\\');
+}
+
 /** The sections a node's token is about, or undefined (a plain word, a program's option…). */
 export function nodeSections(n: SyntaxNode): readonly string[] | undefined {
   if (n.type === 'file_redirect') return redirectSections(n);
+  if (isExpression(n) || n.type === 'test_operator') return expressionSections(n);
+  // (The body of a loop: `do … done`.)
+  if (n.type === 'do_group') return CONSTRUCTS[n.parent!.type];
+  if (escaped(n)) return ['3.1.2.1'];
   if (n.type === 'simple_expansion') return parameterSections(n.text);
+  // (`${10}`, `${#}`: a positional or special parameter in braces, which the manual says to write so, 3.4.1.)
+  const braced = n.type === 'expansion' && /^\$\{(\d+|[-*@#?$!_])\}$/.exec(n.text);
+  if (braced) return [...parameterSections(`$${braced[1]}`), '3.5.3'];
   // (A command with no name: its tokens have the sections of its assignments; around them, redirections have none.)
   if (n.type === 'command' && !field(n, 'name')) return undefined;
   // (The shebang: what the kernel does with it, and to bash a comment.)
-  if (n.type === 'comment') return isShebang(n) ? ['3.8', '3.1.3', 'execve(2)'] : undefined;
+  if (n.type === 'comment') return isShebang(n) ? ['3.8', '3.1.3', 'execve(2)'] : ['3.1.3'];
   return NODES[n.type];
 }
 
@@ -74,10 +119,16 @@ const HEADS = new Set(['for_statement', 'select_statement', 'c_style_for_stateme
 
 /** The sections of a keyword or an operator: its own, or the construct's it belongs to (`then`, `do`, `}`). */
 export function anonSections(n: SyntaxNode): readonly string[] | undefined {
+  const parent = n.parent!;
+  // An operator of an expression is the expression's, not a list's or a pipeline's (`[[ a && b ]]`, `$((1 + 2))`).
+  if (isExpression(parent) || parent.type === 'arithmetic_expansion' || (parent.type === 'c_style_for_statement' && ARITH_HEAD.has(n.type))) return expressionSections(n);
+  // (`=` and `+=` of an assignment, 3.4.)
+  if (parent.type === 'variable_assignment') return NODES.variable_assignment;
+  // (The `|` between the patterns of a `case` clause: not a pipe.)
+  if (n.type === '|' && parent.type === 'case_item') return CONSTRUCTS.case_item;
   let construct: string | undefined;
   for (let p = n.parent; p && !construct; p = p.parent) if (CONSTRUCTS[p.type]) construct = p.type;
-  // (The operators inside `[[ ]]` and `(( ))` are parts of their expressions, not tokens of their own. A `;` in the
-  // head of a `for` is the loop's, not a list's: `for x in a; do`, `for ((i = 0; i < 3; i++))`.)
+  // (A `;` in the head of a `for` is the loop's, not a list's: `for x in a; do`, `for ((i = 0; i < 3; i++))`.)
   if (n.type === ';' && construct && HEADS.has(n.parent!.type)) return CONSTRUCTS[construct];
   return OPERATORS[n.type] ?? (construct ? CONSTRUCTS[construct] : undefined);
 }

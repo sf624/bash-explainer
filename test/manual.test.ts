@@ -126,7 +126,12 @@ describe('the sections of tokens', () => {
     assert.deepStrictEqual(refsOf('echo ~/x {a,b}', '~/x'), [['3.5.2']]);
     assert.deepStrictEqual(refsOf('echo ~/x {a,b}', '{a,b}'), [['3.5.1']]);
     assert.deepStrictEqual(refsOf('ls *.txt', '*.txt'), [['3.5.8']]);
-    assert.deepStrictEqual(refsOf('# a comment', '# a comment'), [undefined]);
+    assert.deepStrictEqual(refsOf('# a comment', '# a comment'), [['3.1.3']]);
+    // (The `|` between the patterns of a case clause is the clause's, not a pipe; `&&` in `[[ ]]` the expression's.)
+    assert.deepStrictEqual(refsOf('[[ -n $a && -n $b ]]', '-n $a && -n $b'), [['3.2.5.2', '6.4']]);
+    assert.deepStrictEqual(refsOf('(( i++ ))', 'i++'), [['3.2.5.2', '6.5']]);
+    assert.deepStrictEqual(refsOf('echo $((1 + 2))', '1 + 2'), [['3.5.5', '6.5']]);
+    assert.deepStrictEqual(refsOf('for x in a; do :; done', 'do ‹commands› done'), [['3.2.5.1']]);
   });
 
   it('cites what a command name runs: a builtin, a special builtin, a function, an alias', () => {
