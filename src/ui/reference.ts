@@ -51,7 +51,9 @@ export function quickReference(lang: Lang): ReferenceEntry[] {
   const kw = s('構文', 'Syntax');
   for (const [k, x] of Object.entries(keywords)) add(kw, k, t(x));
 
-  for (const [name, doc] of Object.entries(builtins)) add(s('組み込みコマンド', 'Builtins'), name, t(doc.summary));
-  for (const [name, doc] of Object.entries(commands)) add(s('コマンド', 'Commands'), name, t(doc.summary));
+  // By name, in code point order: the same in every locale, in VS Code and on the web page.
+  const byName = <T>(table: Record<string, T>) => Object.entries(table).sort(([a], [b]) => (a < b ? -1 : 1));
+  for (const [name, doc] of byName(builtins)) add(s('組み込みコマンド', 'Builtins'), name, t(doc.summary));
+  for (const [name, doc] of byName(commands)) add(s('コマンド', 'Commands'), name, t(doc.summary));
   return out;
 }
