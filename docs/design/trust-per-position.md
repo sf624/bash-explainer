@@ -1,6 +1,6 @@
 # Trust per position instead of per script
 
-Status: planned. The roadmap's item "Trust per position" ([../roadmap.md](../roadmap.md), "Next"). This page says what each cause of "nothing is trusted" can change in bash, and from where. It gives the rule that replaces "the whole script is blind", the change of the data model, the tests and the steps. It ends with the gain, measured again with a prototype. The gain is smaller than the roadmap expected (section 8). The maintainer decides whether the item keeps its place (section 10).
+Status: deferred (2026-10-26). The roadmap's item "Trust per position" ([../roadmap.md](../roadmap.md)) is now at the end of "Next", for its small gain; step 0 is done separately. This page says what each cause of "nothing is trusted" can change in bash, and from where. It gives the rule that replaces "the whole script is blind", the change of the data model, the tests and the steps. It ends with the gain, measured again with a prototype. The gain is smaller than the roadmap expected (section 8), so the maintainer deferred steps 1–4 (section 10).
 
 ## 1. Today
 
