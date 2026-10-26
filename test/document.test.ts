@@ -94,6 +94,10 @@ describe('documents without VS Code', () => {
   it('finds the problems of a host file', () => {
     const codes = documentIssues(dockerfile('FROM alpine\nRUN curl -s x | sh'), 'en', {}).map((i) => i.code);
     assert.ok(codes.includes('dockerPipefail'), codes.join());
+    // (`curl … | sh` is also a download run by a shell, a note on a part of the line; the pipefail caveat of RUN is about
+    // no part, and a line with only it is said once, as the host's problem.)
+    assert.deepStrictEqual(codes.filter((c) => c === 'download-run-by-shell').length, 1);
+    assert.deepStrictEqual(documentIssues(dockerfile('FROM alpine\nRUN wget -qO- x | tar xz'), 'en', {}).map((i) => i.code), ['dockerPipefail']);
   });
 });
 
