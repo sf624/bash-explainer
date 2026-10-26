@@ -34,7 +34,7 @@ export type FromPanel =
  * What the panel remembers per viewer: the list or the tree view, and the step of the tree it shows (1–8: the line
  * alone up to every layer). `level` (1–4: the layers) is what it kept before the steps, read when there is no step.
  */
-export interface PanelState { view?: 'list' | 'tree'; level?: number; step?: number; /** Prototype B: the depth of the one view (1–4). */ depth?: number; /** Prototype B: whether the examples are drawn open. */ examples?: 'open' | 'closed' }
+export interface PanelState { view?: 'list' | 'tree'; level?: number; step?: number; /** Prototype B: the depth of the one view (1–3). */ depth?: number; /** Prototype B: whether the examples are drawn open. */ examples?: 'open' | 'closed' }
 
 export interface PanelLine {
   lang: Lang;
@@ -52,6 +52,8 @@ export interface PanelLine {
   animations: boolean;
   /** The problems on the line, as the editor underlines them: columns from 0, and the level of each. */
   marks?: { from: number; to: number; level: NoteLevel }[];
+  /** (Prototype B) The lines of the blocks around the line (`LineExplanation.context`), with the problems on each. */
+  around?: AroundLine[];
   /** The web page's panel, whose links open in a new tab (VS Code opens them in the browser). */
   web?: boolean;
 }
@@ -72,6 +74,17 @@ function manualLinks(lang: Lang, ex: LineExplanation): Record<string, { text: st
   return Object.fromEntries([...ids].map((id) => {
     const r = reference(id)!;
     return [id, { text: r.text, label: referenceLabel(lang, r), title: r.title, url: r.url }];
+  }));
+}
+
+/** (Prototype B) A line of a block around the line shown: its text, what the block is, and the problems on it. */
+export interface AroundLine { line: number; label: string; text: string; problems: { level: NoteLevel; text: string }[] }
+
+/** (Prototype B) The lines of the blocks around the line shown (the `for` of a loop body), with their problems. */
+export function aroundLines(ex: LineExplanation, issues: readonly DocumentIssue[], textOf: (line: number) => string): AroundLine[] {
+  return ex.context.map((c) => ({
+    line: c.line, label: c.label, text: textOf(c.line),
+    problems: issues.filter((i) => i.startLine === c.line).map((i) => ({ level: i.severity, text: i.message })),
   }));
 }
 
@@ -111,7 +124,9 @@ export function panelUpdate(p: PanelLine) {
     animations: p.animations,
     contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
     // The notes as drawn: warnings first, each with its level and the word after its mark (src/messages.ts).
-    notes: notesByLevel(ex).map(({ text, level, label, body }) => ({ level, label, body, refs: noteRefs(ex, text) ?? [] })),
+    // (Prototype B: and the ranges each is about, so that the panel says it on the row of its word.)
+    notes: notesByLevel(ex).map(({ text, level, label, body }) => ({ level, label, body, refs: noteRefs(ex, text) ?? [], spans: ex.anchors?.filter((a) => a.text === text).map((a) => a.span) ?? [] })),
+    around: p.around ?? [],
     levelLabels: lang === 'ja' ? { warning: '警告', info: '情報', note: '補足' } : { warning: 'Warning', info: 'Information', note: 'Note' },
     marks: p.marks ?? [],
     emptyMessage: t.empty,

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Span } from '../analyzer-types';
 import { ExplainService } from '../service';
 import { toPlainMarkdown, ui } from './render';
-import { FromPanel, lineMarks, PANEL_BODY, PanelState, panelUpdate } from './panelView';
+import { aroundLines, FromPanel, lineMarks, PANEL_BODY, PanelState, panelUpdate } from './panelView';
 import { isPanelQuestion, panelReply } from './panelReply';
 import { unreadableThemeNotice } from './builtinThemes';
 import { THEME_SETTINGS, themeRoleColours } from './themeColours';
@@ -164,6 +164,7 @@ export class PanelController implements vscode.Disposable {
       placement: this.service.examplePlacement,
       animations: this.service.panelAnimations,
       marks: lineMarks(this.service.issues(ed.document), line),
+      around: aroundLines(ex, this.service.issues(ed.document), (n) => ed.document.lineAt(n).text),
     }));
   }
 
