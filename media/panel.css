@@ -347,6 +347,20 @@ code {
   margin: 0 0 0.4rem;
 }
 
+/* Prototype B: an example folds by its title. */
+.example > summary {
+  cursor: pointer;
+}
+.example > summary > h3 {
+  display: inline;
+}
+.example[open] > summary {
+  margin-bottom: 0.4rem;
+}
+.row .refs {
+  font-size: 0.75em;
+}
+
 .example-label {
   color: var(--c-muted);
   font-size: 0.9em;
@@ -1432,4 +1446,35 @@ body.vscode-high-contrast-light #reading-tree li.band {
   .trow .chip {
     white-space: normal;
   }
+}
+
+/* Prototype B: the one view's roles and readers (media/panel.js, `chipEl`). A role is a small word in the colour of
+   its reader (bash's purple, a command's green); where a command or a language takes over, a framed "grep reads". */
+.l-depth { --l: var(--vscode-focusBorder, #0078d4); }
+.row .u-chip {
+  color: var(--l);
+  font-size: 0.8em;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: help;
+}
+.row .u-reads {
+  color: var(--l);
+  font-size: 0.75em;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid color-mix(in srgb, var(--l) 60%, transparent);
+  background: color-mix(in srgb, var(--l) 8%, transparent);
+  border-radius: 3px;
+  padding: 0 0.3em;
+}
+.row .u-extra {
+  display: block;
+  color: var(--c-muted);
+}
+.row .u-extra .u-chip {
+  margin-right: 0.2em;
+}
+#main > #layers {
+  margin-bottom: 0.4rem;
 }
