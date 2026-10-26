@@ -225,6 +225,9 @@ describe('unbash adapter: tokens and comments', () => {
     const items = first(text).namedChildren.filter((n) => n.type === 'case_item');
     assert.deepEqual(items.map(toks), [seq(text, '|', ')', ';;'), ['(@20', ')@22', ';&@25'], [')@29', ';;&@32'], [')@37']]);
     assert.deepEqual(items.map((i) => field(i, 'termination')?.text ?? field(i, 'fallthrough')?.text ?? null), [';;', ';&', ';;&', null]);
+    // (An item with no `;;` before another, which bash rejects and unbash reads: the `;` of its list stays in it.)
+    const open = 'case x in a) b; c) d; esac';
+    assert.deepEqual(toks(first(open).namedChildren.find((n) => n.type === 'case_item')!), seq(open, ')', ';'));
   });
   it('every operator is a token: ;  &  &&  ||  |  |&', () => {
     const t = tree('a && b || c; d | e |& f &\ng');
