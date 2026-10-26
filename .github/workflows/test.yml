@@ -27,6 +27,31 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
+      - name: Find the playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")" >> "$GITHUB_OUTPUT"; echo "image=$ImageVersion" >> "$GITHUB_OUTPUT"
+
+      # apt downloads from the runner's mirror sometimes stall for minutes, or crawl at a few dozen kB/s: give apt
+      # timeouts and retries (also for the apt-get that `--with-deps` runs itself), keep the downloaded .deb files, and
+      # cache them (in a directory of the runner's; apt gets copies) so that a later run needs no download.
+      - name: Configure apt
+        run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAPT::Keep-Downloaded-Packages "true";\n' | sudo tee /etc/apt/apt.conf.d/99-ci-retries
+          sudo rm -f /etc/apt/apt.conf.d/docker-clean
+          mkdir -p "$HOME/apt-debs"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: apt-cache
+        with:
+          path: ~/apt-debs
+          key: apt-${{ runner.os }}-${{ steps.playwright.outputs.image }}-node${{ matrix.node }}-pw${{ steps.playwright.outputs.version }}-${{ hashFiles('.github/actions/install-tools/action.yml') }}
+
+      - name: Use the cached .deb files
+        if: steps.apt-cache.outputs.cache-hit == 'true'
+        run: |
+          ls "$HOME/apt-debs" | wc -l
+          sudo cp -n "$HOME"/apt-debs/*.deb /var/cache/apt/archives/
+
       - uses: ./.github/actions/install-tools
 
       # test/fixtures/snippets.json (the inputs of the syntax tests and the fuzz) must hold the snippets of the tests as they are now.
@@ -37,27 +62,19 @@ jobs:
       # The web page test drives Chromium; playwright needs Node.js 20 or later. The browser is cached by
       # the playwright version (`install` then finds it and downloads nothing); the system libraries
       # (`--with-deps`) are installed every time.
-      - name: Find the playwright version
-        if: matrix.node == 24
-        id: playwright
-        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")" >> "$GITHUB_OUTPUT"
-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: matrix.node == 24
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
 
-      # apt downloads from the runner's mirror sometimes stall for minutes: give apt timeouts and retries, also
-      # for the apt-get that `--with-deps` runs itself.
-      - name: Make apt retry and time out
-        if: matrix.node == 24
-        run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/99-ci-retries
-
       - name: Install Chromium for the web page test
         if: matrix.node == 24
         run: npx playwright-core install --with-deps chromium-headless-shell
+
+      - name: Keep the downloaded .deb files for the cache
+        if: steps.apt-cache.outputs.cache-hit != 'true'
+        run: cp -n /var/cache/apt/archives/*.deb "$HOME/apt-debs/"
 
       - name: Type check and unit tests
         if: matrix.node != 24
