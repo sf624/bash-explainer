@@ -12,7 +12,7 @@ import { type Redirect, simulateRedirects } from '../idioms';
 import { shorten } from '../label';
 import { spanOf } from '../noteanchors';
 import { isPlainWord, staticWordValue } from '../staticword';
-import { field, fields, redirectionsOf, type SyntaxNode } from '../syntax/tree';
+import { field, fields, fileContentsOf, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { isBlockLike, same, skeletal, sortTokens, summaryOf } from './nodes';
 import { globOff, wordAt } from './reads';
@@ -57,12 +57,27 @@ export function redirectedWhole(cx: Explainer, n: SyntaxNode, body: SyntaxNode |
   }
   // `f() { …; } >&2`: the redirection belongs to the function, not to its definition.
   const ofFunction = n.parent?.type === 'function_definition';
-  const w = cx.tok(n, 'redirect', cx.s(
+  const w = cx.tok(n, 'redirect', n.type === 'command' && (cx.shell ?? 'bash') === 'bash' ? nameless(cx, n, text) : cx.s(
     `入出力のリダイレクト: ${text !== undefined ? `\`${shorten(text, 30)}\` 全体` : 'コマンド'}の入出力を切り替える${ofFunction ? '。関数に付けたリダイレクトは関数と一緒に保存され、関数を呼ぶたびに適用される' : ''}`,
     `Redirection applied to ${text !== undefined ? `\`${shorten(text, 30)}\` as a whole` : 'the command'}${ofFunction ? '. A redirection on a function is stored with it and applied each time the function is called' : ''}`,
   ), sortTokens([...bodyToks, ...redirToks]));
   w.summary = [...bodyToks.map(summaryOf), ...redirToks.map((r) => r.label)].join(' ');
   return skeletal(w, n);
+}
+
+/**
+ * The redirections of a command with no name in bash (3.7.1): it opens the files and closes them again, and they apply
+ * to nothing, not even to the command substitutions of the assignments (`x=$(ls) 2>/dev/null` still shows the errors
+ * of `ls`; checked with bash 5.2 and 5.3). The one command of `$(< f)` is read by the substitution: bash puts the file
+ * there. `text`: the assignments.
+ */
+function nameless(cx: Explainer, n: SyntaxNode, text: string | undefined): string {
+  const sub = n.parent!;
+  if (fileContentsOf(sub)) return cx.s('`$(< ファイル)` のリダイレクト: bash がファイルを読み、その中身でコマンド置換を置き換える', 'The redirection of `$(< file)`: bash reads the file and puts its contents in place of the command substitution');
+  return cx.s(
+    `コマンド名のないコマンドのリダイレクト: bash はファイルを開き（\`>\` なら作るか空にし）、すぐに閉じる。シェル自身の入出力は変わらない${text !== undefined ? `。\`${shorten(text, 30)}\` の代入にも効かない（その中のコマンド置換のコマンドは、シェルの標準入力と標準エラー出力をそのまま使う。\`x=$(ls) 2>/dev/null\` でも \`ls\` のエラーは表示される）` : ''}`,
+    `Redirections of a command with no name: bash opens the files (creating or emptying one for \`>\`) and closes them again. The shell's own input and output do not change${text !== undefined ? `, nor do they apply to the assignments \`${shorten(text, 30)}\` (the commands of a command substitution there keep the shell's standard input and standard error: in \`x=$(ls) 2>/dev/null\`, the errors of \`ls\` are still shown)` : ''}`,
+  );
 }
 
 /** Operator, descriptor and target of a redirection node, for `simulateRedirects`. */

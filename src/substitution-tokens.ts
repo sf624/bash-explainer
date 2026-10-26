@@ -6,7 +6,7 @@ import { unclosedBrace } from './bashversion';
 import type { Explainer } from './explain/context';
 import { statementTokens } from './explain/lists';
 import { substitutionStatus } from './explain/status';
-import { ancestor, braceTakenAsWord, substitutionForm, type SyntaxNode, withLists } from './syntax/tree';
+import { ancestor, braceTakenAsWord, field, fileContentsOf, substitutionForm, type SyntaxNode, withLists } from './syntax/tree';
 
 const isBash = (h: Explainer) => h.shell === undefined || h.shell === 'bash';
 
@@ -18,6 +18,14 @@ const isBash = (h: Explainer) => h.shell === undefined || h.shell === 'bash';
 function meaning(h: Explainer, n: SyntaxNode): string {
   const form = substitutionForm(n);
   const own = form === '${' ? h.shell === 'ksh' || h.shell === 'mksh' : h.shell === 'mksh';
+  // (`$(< f)`: bash reads the file itself.)
+  const file = isBash(h) ? fileContentsOf(n) : undefined;
+  if (file) {
+    const f = field(file, 'destination')!.text;
+    const shown = form === '`' ? '`` `< file` ``' : '`$(< file)`';
+    return h.s(`コマンド置換 ${shown.replace('file', 'ファイル')}: ファイル \`${f}\` の中身（末尾の改行は除く）に置き換える。\`$(cat ${f})\` と同じだが、\`cat\` を実行しない`,
+      `Command substitution ${shown}: replaced by the contents of the file \`${f}\` (trailing newlines removed), as \`$(cat ${f})\`, but without running \`cat\``);
+  }
   switch (form) {
     case '`': return h.s('コマンド置換 `` `…` ``（旧式。`$(…)` 推奨）: 中のコマンドを実行し、その標準出力（末尾の改行は除く）に置き換える', 'Command substitution `` `…` `` (legacy; prefer `$(…)`): runs the command and is replaced by its stdout (trailing newlines removed)');
     case '$(': return h.s('コマンド置換 `$(…)`: 中のコマンドを実行し、その標準出力（末尾の改行は除く）に置き換える', 'Command substitution `$(…)`: runs the command and is replaced by its stdout (trailing newlines removed)');

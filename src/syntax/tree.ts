@@ -276,6 +276,22 @@ export function substitutionForm(n: SyntaxNode): '$(' | '`' | '${' | '${|' {
 }
 
 /**
+ * The redirection of `$(< file)` (or `` `< file` ``): a command substitution whose one command is a `<` from the standard
+ * input alone, which bash replaces with the contents of the file, as `$(cat file)`, but without running `cat` (3.5.4).
+ * Undefined for any other: `$(3< f)`, `$(x=1 < f)`, `$(< f &)` and `$(< f; < g)` run a command with no name, which
+ * prints nothing.
+ */
+export function fileContentsOf(n: SyntaxNode): SyntaxNode | undefined {
+  if (n.type !== 'command_substitution' || substitutionForm(n).startsWith('${') || n.children.some((c) => c.type === '&')) return undefined;
+  const commands = n.namedChildren.filter((c) => c.type !== 'comment');
+  if (commands.length !== 1 || commands[0].type !== 'command' || commands[0].namedChildren.length !== 1) return undefined;
+  const r = commands[0].namedChildren[0];
+  if (r.type !== 'file_redirect' || r.children.find((c) => !c.named)!.type !== '<') return undefined;
+  const fd = field(r, 'descriptor');
+  return !fd || fd.text === '0' ? r : undefined;
+}
+
+/**
  * How the shell reads the `}` that ends a `${ …; }` or `${| …; }` (`n`) when only blanks part it from the command
  * before it, since `}` is a reserved word only where a command can start (after `;`, `&`, a newline, or a compound
  * command): after a simple command, as one more word of it (`${ echo a }`); after the redirections of a compound

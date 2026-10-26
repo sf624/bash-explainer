@@ -23,7 +23,9 @@ export const NODES: Readonly<Record<string, readonly string[]>> = {
   ...CONSTRUCTS,
   variable_assignment: ['3.4'],
   heredoc_redirect: ['3.6.6'], herestring_redirect: ['3.6.7'],
-  expansion: ['3.5.3'],
+  // (The descriptor before a redirection operator, `2>` or `{fd}>`, and a here-document's delimiter and body.)
+  file_descriptor: ['3.6'], heredoc_start: ['3.6.6'], heredoc_body: ['3.6.6'],
+  expansion: ['3.5.3'], brace_expression: ['3.5.1'],
   command_substitution: ['3.5.4'], arithmetic_expansion: ['3.5.5'], process_substitution: ['3.5.6'],
   string: ['3.1.2.3'], raw_string: ['3.1.2.2'], ansi_c_string: ['3.1.2.4'], translated_string: ['3.1.2.5'],
   array: ['6.7'], subscript: ['6.7'],
@@ -43,6 +45,8 @@ function redirectSections(n: SyntaxNode): readonly string[] {
   const op = n.children.find((c) => !c.named)!.type;
   const dest = field(n, 'destination')?.text ?? '';
   if ((op === '>&' || op === '<&') && /^(\d+-?|-|\$\w+|\$\{\w+\})$/.test(dest)) return [/^\d+-$/.test(dest) ? '3.6.9' : '3.6.8'];
+  // (`<&word` only duplicates or closes: a word that is not a descriptor is an error, 3.6.8.)
+  if (op === '<&') return ['3.6.8'];
   const sub: Record<string, string> = { '<': '3.6.1', '>': '3.6.2', '>|': '3.6.2', '>>': '3.6.3', '&>': '3.6.4', '>&': '3.6.4', '&>>': '3.6.5', '<>': '3.6.10' };
   return [sub[op] ?? '3.6'];
 }
@@ -104,6 +108,9 @@ export function nodeSections(n: SyntaxNode): readonly string[] | undefined {
   // (The body of a loop: `do … done`.)
   if (n.type === 'do_group') return CONSTRUCTS[n.parent!.type];
   if (escaped(n)) return ['3.1.2.1'];
+  // (The pattern of `${x#pat}` or `${x/pat/s}` is a word of the parameter expansion; the word-meaning model adds what
+  // reads it as a pattern, 3.5.8.1.)
+  if (n.type === 'regex' && n.parent!.type === 'expansion') return NODES.expansion;
   if (n.type === 'simple_expansion') return parameterSections(n.text);
   // (`${10}`, `${#}`: a positional or special parameter in braces, which the manual says to write so, 3.4.1.)
   const braced = n.type === 'expansion' && /^\$\{(\d+|[-*@#?$!_])\}$/.exec(n.text);
@@ -115,6 +122,7 @@ export function nodeSections(n: SyntaxNode): readonly string[] | undefined {
   return NODES[n.type];
 }
 
+const REDIRECTS = new Set(['file_redirect', 'heredoc_redirect', 'herestring_redirect']);
 const HEADS = new Set(['for_statement', 'select_statement', 'c_style_for_statement']);
 
 /** The sections of a keyword or an operator: its own, or the construct's it belongs to (`then`, `do`, `}`). */
@@ -122,8 +130,9 @@ export function anonSections(n: SyntaxNode): readonly string[] | undefined {
   const parent = n.parent!;
   // An operator of an expression is the expression's, not a list's or a pipeline's (`[[ a && b ]]`, `$((1 + 2))`).
   if (isExpression(parent) || parent.type === 'arithmetic_expansion' || (parent.type === 'c_style_for_statement' && ARITH_HEAD.has(n.type))) return expressionSections(n);
-  // (`=` and `+=` of an assignment, 3.4.)
-  if (parent.type === 'variable_assignment') return NODES.variable_assignment;
+  // (`=` and `+=` of an assignment, 3.4; the operators of a parameter expansion, `:-` or `#`, 3.5.3; the braces and
+  // `..` of a brace expansion, 3.5.1; the operator of a redirection, as the redirection, 3.6.)
+  if (parent.type === 'variable_assignment' || parent.type === 'expansion' || parent.type === 'brace_expression' || REDIRECTS.has(parent.type)) return nodeSections(parent);
   // (The `|` between the patterns of a `case` clause: not a pipe.)
   if (n.type === '|' && parent.type === 'case_item') return CONSTRUCTS.case_item;
   let construct: string | undefined;
