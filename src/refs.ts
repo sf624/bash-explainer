@@ -47,8 +47,9 @@ function redirectSections(n: SyntaxNode): readonly string[] {
   if ((op === '>&' || op === '<&') && /^(\d+-?|-|\$\w+|\$\{\w+\})$/.test(dest)) return [/^\d+-$/.test(dest) ? '3.6.9' : '3.6.8'];
   // (`<&word` only duplicates or closes: a word that is not a descriptor is an error, 3.6.8.)
   if (op === '<&') return ['3.6.8'];
+  // (Every other operator the parser gives a file redirection: unbash's `RedirectOperator`, and `&>>` of `&>> >(tee)`.)
   const sub: Record<string, string> = { '<': '3.6.1', '>': '3.6.2', '>|': '3.6.2', '>>': '3.6.3', '&>': '3.6.4', '>&': '3.6.4', '&>>': '3.6.5', '<>': '3.6.10' };
-  return [sub[op] ?? '3.6'];
+  return [sub[op]];
 }
 
 /**
