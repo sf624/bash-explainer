@@ -79,8 +79,15 @@ const T = {
   fdOf: { ja: (s: string, n: string) => `${s}(fd ${n})`, en: (s: string, n: string) => `${s} (fd ${n})` },
 };
 
-/** Text as a placeholder shows it: short (a long command or expansion is cut). */
-const short = (s: string): string => (s.length > 24 ? `${s.slice(0, 22)}…` : s);
+/**
+ * Text as a placeholder shows it: short (a long command or expansion is cut after a whole word, never inside one;
+ * round 8). A text with no space early enough stays whole.
+ */
+const short = (s: string): string => {
+  if (s.length <= 24) return s;
+  const at = s.lastIndexOf(' ', 22);
+  return at > 0 ? `${s.slice(0, at)} …` : s;
+};
 
 interface Ctx {
   model: StateModel;

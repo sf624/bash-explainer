@@ -70,6 +70,27 @@ describe('the web page: the depths of the explanation add, and never move a text
   /** (Round 7) The code spans of the texts broken across lines (a long one, `.u-long`, and a form's may wrap): their texts. */
   const brokenCode = async (f: Frame): Promise<string[]> => f.evaluate(`(() => { ${LINES} return [...document.querySelectorAll('#tree .u-desc code, #u-summary code, #u-risks code')]
     .filter((c) => c.getClientRects().length && !c.classList.contains('u-long') && !c.closest('.u-argv, .u-form, .u-cond') && lines(c).length > 1).map((c) => c.textContent); })()`) as Promise<string[]>;
+  /**
+   * (Round 8) One home per risk: each text of the box "Risks on this line" appears once in the panel (its rows have
+   * a marker only); no text is cut inside a word with "…"; and the tint follows the line "X receives:": a row's code
+   * is tinted only when the word is in its command's receives line. Returns the problems found.
+   */
+  const oneHome = async (f: Frame): Promise<string[]> => f.evaluate(`(() => {
+    const out = [];
+    const panel = document.getElementById('main').innerText;
+    for (const t of [...document.querySelectorAll('#u-risks .note-text')].map((x) => x.innerText.replace(/^\\S+:\\s*/, '').trim())) {
+      const n = panel.split(t).length - 1;
+      if (n !== 1) out.push('risk said ' + n + ' times: ' + t.slice(0, 40));
+    }
+    if (document.querySelector('#tree .u-problem.level-info, #tree .u-problem.level-warning, #notes .level-info, #notes .level-warning')) out.push('a risk drawn outside the box');
+    for (const m of panel.match(/[\\p{L}\\p{N}]…/gu) ?? []) out.push('cut word: ' + m);
+    if (document.getElementById('main').classList.contains('u-who')) {
+      const got = new Set([...document.querySelectorAll('#tree .u-argv .u-arg')].map((w) => w.dataset.span));
+      for (const r of document.querySelectorAll('#tree .u-row.u-read')) if (!got.has(r.dataset.span)) out.push('tinted, not received: ' + r.dataset.span);
+    }
+    return out;
+  })()`) as Promise<string[]>;
+
   /** "1:2-1:4": its start, as a number that orders the ranges. */
   const startOf = (span: string): number => {
     const [l, c] = span.split('-')[0].split(':').map(Number);
@@ -135,6 +156,11 @@ describe('the web page: the depths of the explanation add, and never move a text
         }
         if (script.argv?.[line]) assert.deepStrictEqual(a2.map((a) => a.words), script.argv[line], `line ${line}: the argv lines`);
         assert.deepStrictEqual(await brokenChips(f), [], `line ${line}: argv chips broken across lines`);
+        for (const [step, who] of [[1, false], [2, false], [2, true], [1, true]] as const) {
+          await show(f, step, who);
+          assert.deepStrictEqual(await oneHome(f), [], `line ${line}, depth ${step}${who ? ' with the program\'s side' : ''}`);
+        }
+        await show(f, 2, true);
         byLine.push(await rows(f));
         // Every row drawn says something.
         for (const [span, r] of byLine[byLine.length - 1]) if (r.kind !== 'kind-simple') assert.ok(r.text, `line ${line}, ${span}: no text`);

@@ -2411,3 +2411,199 @@ pre#line {
   font-weight: 600;
   color: color-mix(in srgb, var(--c-argument) 80%, var(--vscode-foreground));
 }
+
+/* ---------------------------------------------------------------- prototype B, round 8 */
+/* The tint follows the line "X receives:": its chips, and the code of the words whose result is there; never a
+   whole row (a caveat or a note of bash's own is never inside it). */
+#main.u-who .row.u-row.u-read {
+  background-image: repeating-linear-gradient(to right, var(--guide) 0 1px, transparent 1px var(--ind));
+  background-size: var(--x) 100%;
+  background-position: 1px 0;
+}
+#main.u-who .row.u-row.u-read > .u-tok > .label {
+  background: color-mix(in srgb, var(--c-recv) 22%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-recv) 22%, transparent);
+  border-radius: 2px;
+}
+/* One box, one command: around the rows of a simple command, from its indentation to the right edge. */
+#main[data-depth] #tree li.u-cmdbox {
+  position: relative;
+}
+#main[data-depth] #tree li.u-cmdbox::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--lvl, 0) * 1rem - 3px);
+  right: 0;
+  top: 1px;
+  bottom: 1px;
+  border: 1px solid color-mix(in srgb, var(--c-muted) 45%, transparent);
+  border-radius: 5px;
+  pointer-events: none;
+}
+#main[data-depth] #tree li.u-cmdbox + li.u-cmdbox {
+  margin-top: 3px;
+}
+.u-swatch-box {
+  display: inline-block;
+  width: 1.2em;
+  height: 0.8em;
+  vertical-align: -0.05em;
+  border: 1px solid color-mix(in srgb, var(--c-muted) 75%, transparent);
+  border-radius: 3px;
+}
+/* A risk's marker on its row: its icon and word, a link to its one home, the box "Risks on this line". */
+.u-row .u-rmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15em;
+  font: inherit;
+  font-size: 0.82em;
+  font-weight: 600;
+  line-height: 1.25;
+  padding: 0 0.35em;
+  margin-left: 0.15em;
+  border: 1px solid var(--c-info);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--c-info) 8%, transparent);
+  color: var(--c-info);
+  cursor: pointer;
+  white-space: nowrap;
+  vertical-align: 0.05em;
+}
+.u-row .u-rmark.level-warning {
+  border-color: var(--c-warning);
+  background: color-mix(in srgb, var(--c-warning) 12%, transparent);
+  color: var(--c-warning);
+}
+.u-row .u-rmark .note-icon {
+  width: 0.95em;
+  height: 0.95em;
+}
+#u-risks li.u-flash {
+  animation: u-flash 1.4s ease-out;
+}
+#u-risks div.u-risk {
+  padding: 0.1rem 0;
+}
+#u-risks li + li {
+  margin-top: 0.2rem;
+}
+/* A pipeline's pipes, on its row: each arrow a pipe, its text in the tooltip. */
+.u-row .u-joins code {
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+.u-row .u-joins .u-join {
+  font: inherit;
+  padding: 0 0.1em;
+  border: 0;
+  border-radius: 2px;
+  background: none;
+  color: var(--c-operator, inherit);
+  cursor: help;
+}
+.u-row .u-joins .u-join:hover,
+.u-row .u-joins .u-join.active {
+  background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 18%, transparent);
+}
+/* The example of the whole pipeline, folded, right under "In short". */
+#u-tryit {
+  margin: 0 0 0.5rem;
+}
+#u-tryit[hidden] {
+  display: none;
+}
+#u-tryit > .example {
+  margin: 0;
+}
+/* The toggle of the keywords and separators: a switch, like the program's side. */
+#kw-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: 0.6rem;
+}
+#kw-toggle[hidden] {
+  display: none !important;
+}
+#kw-toggle .u-switch {
+  position: relative;
+  width: 1.7em;
+  height: 0.95em;
+  border-radius: 1em;
+  background: color-mix(in srgb, var(--c-muted) 45%, transparent);
+  flex: none;
+}
+#kw-toggle .u-switch::after {
+  content: "";
+  position: absolute;
+  top: 0.1em;
+  left: 0.1em;
+  width: 0.75em;
+  height: 0.75em;
+  border-radius: 50%;
+  background: var(--vscode-editor-background, #fff);
+}
+#kw-toggle[aria-pressed="true"] .u-switch {
+  background: var(--vscode-focusBorder, #0078d4);
+}
+#kw-toggle[aria-pressed="true"] .u-switch::after {
+  left: auto;
+  right: 0.1em;
+}
+#kw-toggle.u-off-depth {
+  opacity: 0.7;
+}
+/* Narrow: the depth and the program's side on the first line, the keywords and the key on the next. */
+#layers.wrap #who-toggle { order: 1; }
+#layers.wrap .u-break { order: 2; }
+#layers.wrap #kw-toggle { order: 3; margin-left: 0; }
+#layers.wrap #key-button { order: 4; }
+#layers.wrap #tp-live { order: 5; }
+/* The key: short sections, each a grid of a swatch and its meaning; two sections side by side where they fit. */
+#depth-caption .u-key .u-kcols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.4rem 1rem;
+  margin-top: 0.2rem;
+}
+#depth-caption .u-key .u-ksec > strong {
+  display: block;
+  margin-bottom: 0.1rem;
+}
+#depth-caption .u-key .u-kgrid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem 0.5rem;
+  align-items: baseline;
+}
+#depth-caption .u-key .u-ksw {
+  justify-self: start;
+}
+#depth-caption .u-key p {
+  margin: 0.3rem 0 0;
+}
+#depth-caption .u-key .u-ref {
+  font-size: 0.9em;
+}
+/* The mark "done by bash" after its code, in its flow (never over the code). */
+.u-row > .u-tok > .label > .u-bmark {
+  white-space: nowrap;
+  font-style: normal;
+}
+#u-risks .note-text .refs {
+  margin-left: 0.35em;
+}
+/* A phone: the legend's button is its cross alone (its words in its tooltip), so the legend stays one line. */
+@media (max-width: 480px) {
+  #depth-caption .u-cap .u-hide-word {
+    display: none;
+  }
+  #depth-caption .u-cap .u-leg-sep {
+    margin: 0 -0.1em;
+  }
+}
+@media (max-width: 480px) {
+  #depth-caption .u-cap.u-cap-who .u-leg-box {
+    display: none;
+  }
+}
