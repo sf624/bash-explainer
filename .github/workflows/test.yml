@@ -410,8 +410,8 @@ jobs:
           # (Its manual, for test/manual.test.ts.)
           echo "BASH53_SOURCE_DIR=$src/bash-5.3" >> "$GITHUB_ENV"
 
-      - name: Run test/bash53.test.ts and test/manual.test.ts
+      - name: Run test/bash53.test.ts, test/manual.test.ts and test/testexpr.test.ts
         env:
           # Fail instead of skipping when bash 5.3 or its manual is missing.
           BASH_EXPLAINER_BASH53_REQUIRED: '1'
-        run: npx mocha --no-config --node-option import=tsx --timeout 10000 test/bash53.test.ts test/manual.test.ts
+        run: npx mocha --no-config --node-option import=tsx --timeout 10000 test/bash53.test.ts test/manual.test.ts test/testexpr.test.ts

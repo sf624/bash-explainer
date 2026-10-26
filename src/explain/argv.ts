@@ -7,6 +7,7 @@
 import type { ExplainOptions, Kind, Span, Token } from '../analyzer-types';
 import { type ArgRole, type ArgvParse, type CommandRole, interpret, type RoleAt, type ValueRole } from '../argv/interpret';
 import { declaresNames, namespaceOf } from '../argv/query';
+import { DEFAULT_BASH_VERSION } from '../bashversion';
 import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
 import { argWordFor, countOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
@@ -26,7 +27,7 @@ import { attribute, docLine } from '../semantics/state';
 import { readDeclarationWords } from '../semantics/vars';
 import { isPlainWord, type Literal, literalContent, staticWordText, staticWordValue } from '../staticword';
 import { field, fields, inStrayHead, prefixAssignments, type SyntaxNode } from '../syntax/tree';
-import { bracketShape, type CommandTest, commandTest } from '../testexpr';
+import { bracketShape, type CommandTest, commandTest, type TestRules } from '../testexpr';
 import { readByCommand } from '../tokenmarks';
 import { assignment } from './assignments';
 import type { Explainer } from './context';
@@ -768,7 +769,10 @@ export function testArgs(cx: Explainer, n: SyntaxNode, test: CommandTest, bracke
   return [...inner, cx.tok(test.close, 'argument', cx.s('`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）', 'The last argument passed to `[`. `[` checks it to find the end of the expression (without it, an error)'))];
 }
 
-/** Whether `test` (its spec, `testSpecOf`) is bash's builtin, which reads its words by bash's rules (`commandTest`). */
-export function bashTest(cx: Explainer, test: CommandSpec): boolean {
-  return !!test.builtin && (!cx.shell || cx.shell === 'bash');
+/**
+ * The bash release whose builtin `test` (its spec, `testSpecOf`) reads its words by bash's rules (`commandTest`), or
+ * false when it is not bash's builtin.
+ */
+export function bashTest(cx: Explainer, test: CommandSpec): TestRules | false {
+  return !!test.builtin && (!cx.shell || cx.shell === 'bash') && (cx.opts.bashVersion ?? DEFAULT_BASH_VERSION);
 }

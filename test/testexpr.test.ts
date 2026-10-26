@@ -6,7 +6,9 @@ import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { parseTest, TestExpr, testFails, testRange } from '../src/testexpr';
+import { descendants } from '../src/syntax/tree';
+import { allTokens } from './support/explain';
+import { parseTest, TestExpr, testFails, testRange, type TestRules } from '../src/testexpr';
 import { spawnSync } from 'child_process';
 import { shellState } from '../src/semantics/state';
 import { statusModel } from '../src/semantics/status';
@@ -24,9 +26,9 @@ before(async () => {
 after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 /** Exit statuses of bash's `[` for each script line (a command each), run in `dir` with the given variables. */
-function bashStatuses(lines: string[], vars: Record<string, string> = {}): number[] {
+function bashStatuses(lines: string[], vars: Record<string, string> = {}, bash = 'bash'): number[] {
   const script = lines.map((l) => `${l}\necho $?`).join('\n');
-  const out = run('bash', ['-s'], { cwd: dir, input: script, env: { ...process.env, ...vars }, ignoreStderr: true, maxBuffer: 1 << 28, check: true }).stdout.toString();
+  const out = run(bash, ['-s'], { cwd: dir, input: script, env: { ...process.env, ...vars }, ignoreStderr: true, maxBuffer: 1 << 28, check: true }).stdout.toString();
   return out.split('\n').filter((l) => l !== '').map(Number);
 }
 
@@ -35,7 +37,7 @@ const quote = (w: string) => `'${w}'`;
 /** The text of a parse, fully parenthesised. */
 function show(e: TestExpr, w: string[]): string {
   switch (e.type) {
-    case 'word': return w[e.at];
+    case 'word': return e.truth === undefined ? w[e.at] : `${w[e.at]}@${w[e.truth]}`;
     case 'unary': return `${w[e.op]} ${w[e.arg]}`;
     case 'binary': return `${w[e.left]} ${w[e.op]} ${w[e.right]}`;
     case 'not': return `!(${show(e.operand, w)})`;
@@ -43,9 +45,9 @@ function show(e: TestExpr, w: string[]): string {
     default: return `(${show(e.left, w)} ${w[e.op]} ${show(e.right, w)})`;
   }
 }
-const parsed = (src: string) => {
+const parsed = (src: string, rules: TestRules = '5.2') => {
   const w = src === '' ? [] : src.split(' ');
-  const e = parseTest(w);
+  const e = parseTest(w, rules);
   return e && show(e, w);
 };
 
@@ -59,7 +61,7 @@ function evaluate(e: TestExpr, w: string[]): boolean {
     try { return s === '' ? undefined : fs.statSync(path.join(dir, s)); } catch { return undefined; }
   };
   switch (e.type) {
-    case 'word': return w[e.at] !== '';
+    case 'word': return w[e.truth ?? e.at] !== '';
     case 'not': return !evaluate(e.operand, w);
     case 'group': return evaluate(e.inner, w);
     case 'and': { const l = evaluate(e.left, w); const r = evaluate(e.right, w); return l && r; }
@@ -137,6 +139,45 @@ describe('[ ] arguments are read as bash reads them', () => {
     assert.strictEqual(parsed('-o noclobber'), '-o noclobber');
     assert.strictEqual(parsed('-a file -a -o noclobber'), '(-a file -a -o noclobber)');
     assert.strictEqual(parsed('-n x -o -a y'), '(-n x -o -a y)');
+  });
+
+  it('reads a group of up to four words in a longer test by its count in bash 5.3 (the last test runs them)', () => {
+    // Three words: `! -a f` is `!` AND `f` (both not empty), not NOT `-a f`.
+    assert.strictEqual(parsed('( ! -a f )', '5.3'), '((! -a f))');
+    assert.strictEqual(parsed('( ! -a f )'), '(!(-a f))');
+    // One word: bash 5.3 takes the truth of the first word of the test (`x@a`: the word `x`, read as `a`).
+    assert.strictEqual(parsed('a -o ( x )', '5.3'), '(a -o (x@a))');
+    assert.strictEqual(parsed('a -o ( x )'), '(a -o (x))');
+    // Two and four words; more than four, or no `)`, as before.
+    assert.strictEqual(parsed('a -a ( -n b )', '5.3'), '(a -a (-n b))');
+    assert.strictEqual(parsed('a -a ( ! b = c )', '5.3'), '(a -a (!(b = c)))');
+    assert.strictEqual(parsed('a -a ( b = c -o d )', '5.3'), '(a -a ((b = c -o d)))');
+    assert.strictEqual(parsed('a -a ( b = c -o d = e )', '5.3'), '(a -a ((b = c -o d = e)))');
+    assert.strictEqual(parsed('a -a ( b -o', '5.3'), undefined);
+    // Nested groups count; the first word inside is not looked at.
+    assert.strictEqual(parsed('a -a ( ( b ) )', '5.3'), undefined);
+    assert.strictEqual(parsed('a -a ( ( ( b ) ) )', '5.3'), undefined);
+    assert.strictEqual(parsed('a -a ( ) b )', '5.3'), undefined);
+    assert.strictEqual(parsed('a -a ( x -a ) )', '5.3'), undefined);
+    // What both releases read alike, for the models; where they differ, neither.
+    assert.strictEqual(parsed('a -a ( -n b )', 'both'), '(a -a (-n b))');
+    assert.strictEqual(parsed('a -o ( x )', 'both'), undefined);
+    assert.strictEqual(testFails(['a', '-a', '(', 'x', '-a', ')', ')'], '5.3'), true);
+    assert.strictEqual(testFails(['a', '-a', '(', 'x', '-a', ')', ')'], '5.2'), false);
+    assert.strictEqual(testFails(['a', '-a', '(', 'x', '-a', ')', ')'], 'both'), false);
+    assert.strictEqual(testFails(['a', '&&', 'b'], 'both'), true);
+    // `-t` in a group is not followed (bash 5.3: `[ \( -t x \) -a y ]` is "integer expected").
+    assert.strictEqual(parsed('( -t x ) -a y', '5.3'), undefined);
+    assert.strictEqual(testFails(['(', '-t', 'x', ')', '-a', 'y'], '5.3'), false);
+  });
+
+  it('says in bash 5.3 mode what a group of one word tests there', () => {
+    const said = (version: '5.2' | '5.3') => allTokens(new Analyzer('en').explainLine(parser.parse('[ "$a" -o \\( x \\) ]'), 0, undefined, { bashVersion: version }).items).map((t) => t.explanation).join('\n');
+    assert.match(said('5.3'), /Parenthesized expression\. But bash 5\.3 tests here whether the first word of the test, `"\$a"`, is not empty, not `x` \(a bug of bash 5\.3\)/);
+    assert.doesNotMatch(said('5.2'), /bash 5\.3/);
+    // The models decide only what both releases read alike.
+    const tree = parser.parse('if [ "" -o \\( x \\) ]; then echo y; fi');
+    assert.strictEqual(shellState(tree).condition(descendants(tree.root, ['if_statement'])[0]), undefined);
   });
 
   it('gives up where bash reports an error, and for -t without a number', () => {
@@ -217,6 +258,58 @@ describe('[ ] arguments are read as bash reads them', () => {
       if (testFails(l) !== parseError) wrong.push(`[ ${l.join(' ')} ]: testFails ${testFails(l)}`);
     });
     assert.deepStrictEqual(wrong.slice(0, 40), []);
+  });
+
+  it('agrees with bash 5.3 and with bash 5.2 on groups of up to four words in longer tests', function () {
+    // bash 5.3 (docs/design/bash-versions.md, 3.2) reads such a group by its count; what the models read (`both`)
+    // holds in each release. Every list of five words over a few words, and longer ones with a group. Skipped without
+    // a bash 5.3.
+    const bash53 = process.env.BASH_EXPLAINER_BASH53;
+    if (!bash53) this.skip();
+    this.timeout(120000);
+    const vocabulary = ['', 'x', 'f', '!', '(', ')', '-a', '-o', '-n', '='];
+    let lists: string[][] = [[]];
+    for (let len = 1; len <= 5; len++) lists = lists.flatMap((l) => vocabulary.map((w) => [...l, w]));
+    let seed = 7;
+    const random = (n: number) => {
+      // (mulberry32)
+      seed = (seed + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * n);
+    };
+    for (let k = 0; k < 5000; k++) {
+      const l = Array.from({ length: 6 + random(4) }, () => vocabulary[random(vocabulary.length)]);
+      const at = random(l.length - 1);
+      l[at] = '(';
+      l[Math.min(l.length - 1, at + 1 + random(5))] = ')';
+      lists.push(l);
+    }
+    const lines = lists.map((l) => `[ ${l.map(quote).join(' ')} ]`);
+    const real = bashStatuses(lines);
+    const real53 = bashStatuses(lines, {}, bash53!);
+    const status = (l: string[], rules: TestRules) => {
+      const e = parseTest(l, rules);
+      try {
+        return !e ? 2 : evaluate(e, l) ? 0 : 1;
+      } catch {
+        return 2;
+      }
+    };
+    const wrong: string[] = [];
+    let differ = 0;
+    lists.forEach((l, i) => {
+      if (real53[i] !== real[i]) differ++;
+      if (status(l, '5.3') !== real53[i]) wrong.push(`[ ${l.join(' ')} ]: bash 5.3 ${real53[i]}, here ${status(l, '5.3')}`);
+      if (status(l, '5.2') !== real[i]) wrong.push(`[ ${l.join(' ')} ]: bash 5.2 ${real[i]}, here ${status(l, '5.2')}`);
+      if (testFails(l, '5.3') !== !parseTest(l, '5.3')) wrong.push(`[ ${l.join(' ')} ]: testFails 5.3 ${testFails(l, '5.3')}`);
+      const both = parseTest(l, 'both');
+      if (both && (real[i] !== real53[i] || status(l, 'both') !== real[i])) wrong.push(`[ ${l.join(' ')} ]: both ${status(l, 'both')}, bash 5.2 ${real[i]}, 5.3 ${real53[i]}`);
+      if (testFails(l, 'both') && (real[i] !== 2 || real53[i] !== 2)) wrong.push(`[ ${l.join(' ')} ]: testFails both, bash 5.2 ${real[i]}, 5.3 ${real53[i]}`);
+    });
+    assert.deepStrictEqual(wrong.slice(0, 40), []);
+    // (The lists reach what differs: hundreds of them.)
+    assert.ok(differ > 100, `${differ}`);
   });
 });
 

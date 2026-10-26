@@ -67,9 +67,10 @@ function unary(op: string, arg: string, env: TestEnv): boolean {
  */
 export function testStatus(args: readonly string[], env: TestEnv): number | undefined {
   if (!args.length) return 1;
-  const e = parseTest([...args]);
+  // (The model does not take the release: a reading bash 5.2 and 5.3 share.)
+  const e = parseTest([...args], 'both');
   // (`parseTest` does not follow `-t` in a long test; what else it rejects is bash's error: `testFails`.)
-  if (!e) return testFails(args) ? 2 : undefined;
+  if (!e) return testFails(args, 'both') ? 2 : undefined;
   try {
     return evaluate(e, args, env) ? 0 : 1;
   } catch (err) {

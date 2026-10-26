@@ -219,7 +219,8 @@ class Statuses implements StatusModel {
         // (`test` and `[`, the builtins or the programs.)
         const test = res && testSpecOf(res);
         if (test) {
-          const read = commandTest(test, args, !!test.builtin && (!this.shell || this.shell === 'bash'));
+          // (The model does not take the release: what it says holds in bash 5.2 and in 5.3.)
+          const read = commandTest(test, args, !!test.builtin && (!this.shell || this.shell === 'bash') && 'both');
           return read.unclosed || read.malformed ? { kind: 'test', fails: true } : { kind: 'test' };
         }
         if (res?.kind !== 'builtin') return { kind: 'command', functions: this.calledBy(n) };
