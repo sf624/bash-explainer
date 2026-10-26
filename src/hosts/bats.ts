@@ -1,5 +1,6 @@
 import type { LineExplanation, Token } from '../analyzer-types';
-import { BATS_COMMANDS } from '../dict/bats';
+import { BATS_ASSERT_COMMANDS, BATS_COMMANDS, BATS_FILE_COMMANDS, BATS_SUPPORT_COMMANDS } from '../dict/bats';
+import type { CommandSpec } from '../argv/spec';
 import type { Extracted } from './index';
 import { Builder } from './builder';
 import { ALNUM, COMMENT_TEST, droppedBefore, tagComment } from './batstags';
@@ -117,6 +118,30 @@ const testText = (line: string): string => {
   return keyword + quoted;
 };
 
+const LIBRARIES: [string, Record<string, CommandSpec>][] = [
+  ['bats-support', BATS_SUPPORT_COMMANDS], ['bats-assert', BATS_ASSERT_COMMANDS], ['bats-file', BATS_FILE_COMMANDS]];
+
+/**
+ * The commands bats defines in a file, and the functions of the libraries it can have. bats-support, bats-assert
+ * and bats-file are not part of bats: a file has them only when it loads them. A `load` or `bats_load_library` that
+ * names one (a path with the component `bats-assert`…) gives that library; one that names no library may load a
+ * helper that loads them (the bats-core tutorial does: `load 'test_helper/common-setup'`), so then every library is
+ * possible. With no load at all, none is. The lines are scanned as text, with no tree, because the extractor has none;
+ * a `load` in a comment or in a string is read as one too, and then a library may be explained that is not there.
+ */
+export function batsCommands(lines: readonly string[]): Record<string, CommandSpec> {
+  const have = new Set<string>();
+  let other = false;
+  for (const line of lines) {
+    for (const m of line.matchAll(/(?:^|[;&|({])[ \t]*(?:load|bats_load_library)[ \t]+([^;&|)\n]*)/g)) {
+      const names = LIBRARIES.filter(([lib]) => new RegExp(`(?:^|[/'"\\s])${lib}(?:$|[/'"\\s])`).test(m[1]));
+      if (names.length) names.forEach(([lib]) => have.add(lib));
+      else other = true;
+    }
+  }
+  return Object.assign(Object.create(null) as Record<string, CommandSpec>, BATS_COMMANDS, ...LIBRARIES.filter(([lib]) => other || have.has(lib)).map(([, table]) => table));
+}
+
 /**
  * A bats test file: bash, with each `@test "description" {` rewritten into the function bats makes of it (as its
  * preprocessor does, line for line), `test_description() {`. The function's name stands for `@test "description"`.
@@ -160,6 +185,6 @@ export function bats(b: Builder): void {
   }
   // (The whole file is one region: bats runs it with bash.)
   b.region(0, b.lines.length - 1, ['bats のテストファイル', 'bats test file']);
-  Object.assign(b.regions[0], { commands: BATS_COMMANDS, tests, run: batsRun(tests) });
+  Object.assign(b.regions[0], { commands: batsCommands(b.lines), tests, run: batsRun(tests) });
 }
 

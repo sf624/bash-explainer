@@ -334,6 +334,21 @@ countdown() { # @test
 
 bats takes the function for a test named `countdown` and renames it `test_countdown` (so `countdown` is no longer a function; `-` and other characters in the name are written in hex, as for `@test "…"`). The name of `@test "x²"` is now `test_x-b2`, as bats writes it (before, `test_x²`: `²` is no digit to bash's `[[:alnum:]]`). Before, such a function was a plain function with a comment. As for bats, the parentheses and `function` are optional (`countdown { # @test` is a test too), the line needs a blank before the `{` and nothing after `# @test`, and a test defined inside a function counts only when the function runs as the file is read (the same holds for `@test "…"`). bats replaces the whole line with the test's definition, so text before the name, as in `echo hi; f() { # @test`, never runs: a warning says so.
 
+### Helpers of the bats libraries
+
+The functions of bats-support, bats-assert and bats-file are explained in a bats file as what they are: what they check, what they read (`$output`, `$status`, `$lines`, `$stderr` that `run` set), and that on failure they print a report to stderr and return 1, which fails the test (bats runs a test with `set -e`). Before, they were "external commands not in the dictionary".
+
+| Line | Explained as |
+| --- | --- |
+| `assert_output --partial 'ok'` | `$output` contains `ok`; `--partial` is a substring match |
+| `assert_output -` (or `--stdin`) with a here-document | the expected text is read from stdin |
+| `assert_line --index 0 'x'` | only the line 0 of `$lines` is compared (empty lines are not in `$lines`) |
+| `assert_failure 2` | `$status` has to be 2 (with no argument: any non-zero) |
+| `assert_file_exists "$f"` | a regular file exists at the path |
+| `dir=$(temp_make -p x)` | makes a directory in `$BATS_TMPDIR` and prints its path |
+
+They are explained only where the file can have the library: a `load` or `bats_load_library` that names it (a path with the component `bats-assert`, `bats-support` or `bats-file`) gives that library; a `load` of anything else (`load 'test_helper/common-setup'`, which may load them) gives all three; with no `load` at all, bats does not define them, and they are programs as before. A function of the file with the same name stays the file's own. The texts come from the libraries' READMEs; they are not tested against the libraries, which are not installed here.
+
 ## Changed
 
 ### The inline summary was removed
