@@ -1027,6 +1027,7 @@
  "ll",
  "ll /tmp",
  "ll() { ls -l \"$@\"; }\nll",
+ "load 'bats-assert/load'\nassert_output x",
  "local x=$(date)",
  "local x=1",
  "local y",

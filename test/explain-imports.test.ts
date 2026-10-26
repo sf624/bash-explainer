@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import { builtins } from '../src/dict/builtins';
 import { commands, core } from '../src/dict/commands';
-import { BATS_COMMANDS } from '../src/dict/bats';
+import { BATS_ASSERT_COMMANDS, BATS_COMMANDS, BATS_FILE_COMMANDS, BATS_SUPPORT_COMMANDS } from '../src/dict/bats';
 import { commandAliases } from '../src/dict/aliases';
 
 // Guards for src/explain/ (docs/design/analyzer.md, 3.2 and 3.3): no import cycles, no import of
@@ -212,7 +212,7 @@ function nameComparisons(checker: ts.TypeChecker, sf: ts.SourceFile, names: Read
  * those that say something else of a command (`commandAliases`, `declarationCommands`, `distroAliases`).
  */
 const RECORDS = new Set([
-  'builtins', 'commands', 'core', 'basic', 'admin', 'storage', 'netadmin', 'ops', 'macos', 'distro', 'system', 'monitor', 'BATS_COMMANDS', 'YQ_SPECS',
+  'builtins', 'commands', 'core', 'basic', 'admin', 'storage', 'netadmin', 'ops', 'macos', 'distro', 'system', 'monitor', 'BATS_COMMANDS', 'BATS_SUPPORT_COMMANDS', 'BATS_ASSERT_COMMANDS', 'BATS_FILE_COMMANDS', 'YQ_SPECS',
   'commandAliases', 'declarationCommands', 'distroAliases',
 ]);
 const dictDir = path.join(base, 'src', 'dict') + path.sep;
@@ -384,7 +384,7 @@ describe('src/explain guards', function () {
   });
 
   it('compares nothing with the name of a dictionary command, nor looks one up by name, except the known ones', () => {
-    const names = new Set([...Object.keys(commands), ...Object.keys(builtins), ...Object.keys(core), ...Object.keys(BATS_COMMANDS), ...Object.keys(commandAliases)]);
+    const names = new Set([...Object.keys(commands), ...Object.keys(builtins), ...Object.keys(core), ...Object.keys(BATS_COMMANDS), ...Object.keys(BATS_SUPPORT_COMMANDS), ...Object.keys(BATS_ASSERT_COMMANDS), ...Object.keys(BATS_FILE_COMMANDS), ...Object.keys(commandAliases)]);
     assert.ok(names.has('sed') && names.has('declare') && names.has('run') && names.has('egrep'));
     const p = program();
     const checker = p.getTypeChecker();

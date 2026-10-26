@@ -603,6 +603,88 @@ describe('bats', () => {
     assert.deepStrictEqual(ids(explainHostedLine(new Analyzer('en'), parser.parse(extractShell('bats', crlf.join('\n')).text), extractShell('bats', crlf.join('\n')), crlf, 0, 'en')!), ['bats-test']);
   });
 
+  it('explains the functions of bats-support, bats-assert and bats-file only where the file can have the library', () => {
+    const body = (load: string[], cmd: string, lang: 'ja' | 'en' = 'en') => allTokens(bats([...load, '@test "a" {', `  ${cmd}`, '}'], load.length + 2, lang).items);
+    const first = (load: string[], cmd: string) => body(load, cmd)[0].explanation;
+    const ext = /^Run the external command/;
+    // Each library, with the option forms.
+    const lib = ['load test_helper/bats-assert/load'];
+    const opts = (cmd: string) => body(lib, cmd).filter((t) => t.kind === 'option').map((t) => `${t.label}: ${t.explanation.slice(0, 16)}`);
+    assert.match(first(lib, 'assert_output "x"'), /^bats-assert function: checks that `\$output` \(what `run` kept\) matches the text given; with no argument, it checks that it is not empty; the argument `-` reads the text from stdin; if it does not hold, it prints a report to stderr and returns 1, which fails the test/);
+    assert.match(first(lib, 'refute_output'), /does not match the text given; with no argument, it checks that it is empty/);
+    assert.deepStrictEqual(opts('assert_output -p x'), ['-p: the text only ha']);
+    assert.deepStrictEqual(opts('assert_output --regexp x'), ['--regexp: match with the t']);
+    assert.deepStrictEqual(opts('refute_output --partial -'), ['--partial: the text only ha']);
+    assert.deepStrictEqual(opts('assert_output --stdin <<< x'), ['--stdin: read the text fr']);
+    assert.deepStrictEqual(opts('assert_output -- -p'), ['--: End of options: ']);
+    assert.match(first(lib, 'assert_line --index 1 x'), /a line of `\$lines` \(the output split into lines by `run`; empty lines are left out/);
+    assert.deepStrictEqual(opts('assert_line -n 1 -e x'), ['-n: the number of th', '-e: match with the t']);
+    assert.match(first(lib, 'refute_line --partial x'), /no line of `\$lines`/);
+    assert.match(first(lib, 'assert_stderr_line x'), /`\$stderr_lines` .*needs `run --separate-stderr`/);
+    assert.match(first(lib, 'refute_stderr x'), /does not match/);
+    assert.match(first(lib, 'assert_stderr'), /`\$stderr` \(the stderr that `run --separate-stderr` kept/);
+    assert.match(first(lib, 'assert_success'), /checks that `\$status` \(the exit status `run` kept\) is 0/);
+    assert.match(first(lib, 'assert_failure 2'), /with a status given, that it equals it/);
+    assert.match(body(lib, 'assert_failure 2')[1].explanation, /^the exit status expected/);
+    assert.match(first(lib, 'assert_equal a b'), /^bats-assert function: checks that the two values are equal/);
+    assert.match(first(lib, 'assert_not_equal a b'), /not equal/);
+    assert.match(first(lib, 'assert [ -f x ]'), /fails the test if it is false/);
+    assert.match(first(lib, 'refute true'), /fails the test if it is true/);
+    assert.match(first(lib, 'assert_regex a b'), /sets `BASH_REMATCH`/);
+    assert.match(first(lib, 'refute_regex a b'), /the opposite of `assert_regex`/);
+    assert.match(body(lib, 'assert_output x', 'ja')[0].explanation, /^bats-assert の関数: `\$output`/);
+    // bats-support and bats-file.
+    const support = ['bats_load_library bats-support'];
+    assert.match(first(support, 'fail "boo"'), /^bats-support function: prints the message .* always fails \(returns 1\)/);
+    assert.match(first(support, 'batslib_is_caller --indirect setup'), /^bats-support function: looks at the call stack/);
+    assert.strictEqual(body(support, 'batslib_is_caller --indirect setup')[1].kind, 'option');
+    assert.match(first(support, 'batslib_decorate ERROR'), /^bats-support function: wraps the message/);
+    const file = ["load '../bats-file/load'"];
+    assert.match(first(file, 'assert_file_exists "$f"'), /^bats-file function: checks that a regular file exists at the path/);
+    assert.match(first(file, 'assert_dir_not_exists "$f"'), /a directory does not exist at the path/);
+    assert.match(first(file, 'assert_not_exists "$f"'), /a file or a directory does not exist/);
+    assert.match(first(file, 'assert_file_contains f x egrep'), /matches the regular expression/);
+    assert.match(first(file, 'assert_file_not_contains f x'), /does not match the regular expression/);
+    assert.match(first(file, 'assert_file_empty f'), /is empty \(the report shows its content\)/);
+    assert.match(first(file, 'assert_file_permission 755 f'), /has the permission given/);
+    assert.match(first(file, 'assert_symlink_to t l'), /pointing to the target/);
+    assert.match(first(file, 'assert_files_equal a b'), /the same content/);
+    assert.match(first(file, 'assert_file_size_equals f 3'), /number of bytes/);
+    assert.match(first(file, 'assert_sticky_bit d'), /sticky bit is set/);
+    assert.match(first(file, 'assert_file_owner root f'), /owns the file/);
+    assert.match(first(file, 'temp_del "$d"'), /^bats-file function: deletes a file or directory/);
+    const make = body(file, 'd=$(temp_make -p x)');
+    assert.deepStrictEqual(make.filter((t) => t.label === 'temp_make' || t.label === '-p').map((t) => t.kind), ['command', 'option']);
+    assert.match(make.find((t) => t.label === 'temp_make')!.explanation, /^bats-file function: makes a temporary directory in `\$BATS_TMPDIR`/);
+    // Only the library that is loaded: bats-assert alone does not give bats-file's functions.
+    assert.match(first(lib, 'assert_file_exists f'), ext);
+    assert.match(first(file, 'assert_output x'), ext);
+    assert.match(first(support, 'assert_equal a b'), ext);
+    // Without a load, none; with a load of something else, which may load them, all; a load in other places of a line.
+    assert.match(first([], 'assert_output x'), ext);
+    assert.match(first(['x=1'], 'fail x'), ext);
+    for (const other of ["load 'test_helper/common-setup'", 'load helper; true', 'true && bats_load_library my-lib', '{ load helper; }', '(load helper)']) {
+      assert.match(first([other], 'assert_output x'), /^bats-assert function/, other);
+      assert.match(first([other], 'assert_file_exists f'), /^bats-file function/, other);
+    }
+    for (const named of ['load "bats-assert/load"', 'load bats-assert', 'load /usr/lib/bats-assert/load.bash', 'load test_helper/bats-support/load ; load x/bats-assert/load']) {
+      assert.match(first([named], 'assert_output x'), /^bats-assert function/, named);
+    }
+    assert.match(first(['load test_helper/bats-support/load'], 'assert_output x'), ext);
+    assert.match(first(['load test_helper/bats-support/load'], 'fail x'), /^bats-support function/);
+    // A load in a comment is not one.
+    assert.match(first(['# load helper'], 'assert_output x'), ext);
+    // In a shell script (not a bats file), they are ordinary commands.
+    const plain = new Analyzer('en').explainLine(parser.parse("load 'bats-assert/load'\nassert_output x"), 1);
+    assert.match(plain.items[0].explanation, ext);
+    // A function of the file with the same name stays the file's own.
+    const own = ['load bats-assert/load', 'assert_output() { :; }', 'fail() { :; }', '@test "a" {', '  assert_output x', '  fail y', '}'];
+    for (const line of [5, 6]) {
+      assert.match(bats(own, line).items[0].explanation, /function/i);
+      assert.doesNotMatch(bats(own, line).items[0].explanation, /^bats-/);
+    }
+  });
+
   it('reads run, load, skip and the other functions of bats with their specs', () => {
     const tokens = (line: number) => allTokens(explain('test.bats', line)!.items).map((t) => `${t.kind} ${t.label}: ${t.explanation.slice(0, 40)}`);
     assert.deepStrictEqual(tokens(16).slice(0, 3), [
