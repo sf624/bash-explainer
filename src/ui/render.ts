@@ -87,6 +87,7 @@ export const ui = {
           comment: 'コメント', shebang: 'シバン（bash にとってはコメント）', expression: '式', part: '部分',
         },
         commandKinds: { argument: 'オペランド' },
+        valueFor: '{flag} の値',
         resolves: { alias: 'エイリアス', keyword: '予約語', function: '関数', builtin: 'ビルトイン', file: '外部コマンド', none: '実行されない' },
         tokenKinds: {
           command: '実行', subcommand: 'サブコマンド', builtin: 'ビルトイン', function: '関数', alias: 'エイリアス', keyword: 'キーワード', option: 'オプション', argument: '引数',
@@ -196,6 +197,7 @@ export const ui = {
           comment: 'comment', shebang: 'shebang, a comment to bash', expression: 'expression', part: 'part',
         },
         commandKinds: { argument: 'operand' },
+        valueFor: 'value of {flag}',
         resolves: { alias: 'alias', keyword: 'reserved word', function: 'function', builtin: 'builtin', file: 'program', none: 'nothing runs' },
         tokenKinds: {
           command: 'runs', subcommand: 'subcommand', builtin: 'builtin', function: 'function', alias: 'alias', keyword: 'keyword', option: 'option', argument: 'argument',
