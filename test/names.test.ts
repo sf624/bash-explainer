@@ -169,7 +169,7 @@ describe('NameResolution', () => {
     assert.strictEqual(short(resolve('x', 'x', { name: '[' })), 'builtin');
     assert.strictEqual(short(resolve('hash -p /bin/echo e\ne', 'e')), 'file:hashed');
     assert.strictEqual(short(resolve('hash -p /x/y e\ne', 'e')), 'file:hashed-unknown');
-    for (const forget of ['hash -r', 'hash -d e', 'PATH=/bin', 'hash -d x e']) assert.strictEqual(short(resolve(`hash -p /bin/echo e\n${forget}\ne`, 'e')), 'file:search-unknown', forget);
+    for (const forget of ['hash -r', 'hash -d e', 'PATH=/bin', 'hash -d x e', 'hash -d e x']) assert.strictEqual(short(resolve(`hash -p /bin/echo e\n${forget}\ne`, 'e')), 'file:search-unknown', forget);
     assert.strictEqual(short(resolve('[ "$x" ] && hash -p /bin/echo e\ne', 'e')), 'file:search-unknown');
     assert.strictEqual(short(resolve('/bin/ls', '/bin/ls')), 'file:given');
     // (Words not known here are left alone.)
