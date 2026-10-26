@@ -1108,8 +1108,8 @@ describe('the words of a conditional expression in the reading tree', () => {
     const r = explain(src, 1).reading!;
     assert.deepStrictEqual(find(r, '$backup').from, { line: 1 });
     assert.deepStrictEqual(find(r, '$USER').from, { meaning: 'Current user name' });
-    assert.deepStrictEqual(find(r, '~/docs', 'bash').expands, ['tilde']);
-    assert.deepStrictEqual(find(r, '/var/log/*.log', 'bash').expands, ['glob']);
+    assert.deepStrictEqual(find(r, '~/docs', 'bash').bashExpands, ['tilde']);
+    assert.deepStrictEqual(find(r, '/var/log/*.log', 'bash').bashExpands, ['glob']);
     assert.strictEqual(find(r, '~/docs', 'command').text, 'files and directories to archive');
     assert.strictEqual(find(r, '"$backup"', 'command').valueFor, '-f');
   });

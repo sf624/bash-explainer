@@ -13,11 +13,27 @@ import { partMeaning, trustedFields, wordMeaning, type WordMeaning } from './sem
 import { parseExpansion } from './expansion';
 
 /** A piece of a word the program receives: text as it is, or a placeholder (`ph`) for a value not known here, with what it is (`title`). */
-export interface ArgvPart { text: string; ph?: true; title?: string }
-/** One word the program receives (or, for a placeholder of several, the words one source word gives), and the word it comes from. */
-export interface ArgvWord { span: Span; parts: ArgvPart[] }
-/** The words a simple command's program receives, and what bash took out first: assignments, redirections (their text), and quotes. */
-export interface ArgvLine { words: ArgvWord[]; removed: string[]; quotes: boolean; empty: string[] }
+export interface ArgvPart {
+  text: string; ph?: true; title?: string;
+  /** A placeholder for any number of words (the fields of an unquoted expansion). */
+  many?: true;
+  /** (In `condLine`) Glued to the part before it. */
+  tight?: true;
+  /** (In `condLine`) A word, as its parts. */
+  word?: ArgvPart[];
+}
+/**
+ * One word the program receives (or, for a placeholder of several, the words one source word gives), and the word it
+ * comes from; `many`: the placeholder stands for any number of words (the names a glob matches, the fields of a split).
+ */
+export interface ArgvWord { span: Span; parts: ArgvPart[]; many?: true }
+/**
+ * A part of a simple command that bash handles itself, not in the program's arguments: an assignment, or a redirection
+ * with what it does (`effect`: "stderr → `/dev/null`") and how the program finds it when it starts (`already`).
+ */
+export interface ArgvRemoved { text: string; span: Span; kind: 'redirect' | 'assignment'; effect?: string; already?: string }
+/** The words a simple command's program receives, and what bash took out first: assignments, redirections, and quotes. */
+export interface ArgvLine { words: ArgvWord[]; removed: ArgvRemoved[]; quotes: boolean; empty: string[] }
 
 const T = {
   valueOf: { ja: (c: string) => `${c} の値`, en: (c: string) => `value of ${c}` },
@@ -38,6 +54,19 @@ const T = {
     unknown: { ja: (p: string) => `${p} に一致する名前`, en: (p: string) => `The names matching ${p}` },
   },
   processFile: { ja: (c: string) => `${c} のファイル名`, en: (c: string) => `a file name for ${c}` },
+  streams: { ja: ['標準入力', '標準出力', '標準エラー出力'], en: ['stdin', 'stdout', 'stderr'] },
+  fd: { ja: (n: string) => `fd ${n}`, en: (n: string) => `fd ${n}` },
+  both: { ja: '標準出力と標準エラー出力', en: 'stdout and stderr' },
+  append: { ja: '（追記）', en: ' (appended)' },
+  closed: { ja: '閉じる', en: 'closed' },
+  heredoc: { ja: 'ヒアドキュメント', en: 'the here-document' },
+  herestring: { ja: 'ヒアストリング', en: 'the here-string' },
+  already: {
+    ja: (name: string, stream: string, to: string) => `${name} の起動時には、${stream}がすでに${to.startsWith('`') ? ` ${to} ` : to}になっている`,
+    en: (name: string, stream: string, to: string) => `${name}'s ${stream} is already ${to} when it starts`,
+  },
+  alreadyClosed: { ja: (name: string, stream: string) => `${name} の起動時には、${stream}がすでに閉じている`, en: (name: string, stream: string) => `${name}'s ${stream} is already closed when it starts` },
+  assigned: { ja: '変数の代入', en: 'a variable assignment' },
 };
 
 /** Text as a placeholder shows it: short (a long command or expansion is cut). */
@@ -70,8 +99,90 @@ export function argvLine(cmd: SyntaxNode, model: StateModel, lang: Lang, describ
     if (!got.length) empty.push(w.text);
     out.push(...got);
   }
-  const removed = [...prefixAssignments(cmd), ...redirectionsOf(cmd)].sort((a, b) => a.startIndex - b.startIndex).map((x) => x.text);
+  const prog = name.text;
+  const removed = [...prefixAssignments(cmd), ...redirectionsOf(cmd)].sort((a, b) => a.startIndex - b.startIndex)
+    .map((x): ArgvRemoved => (x.type === 'variable_assignment'
+      ? { text: x.text, span: spanOf(x), kind: 'assignment', effect: T.assigned[lang] }
+      : { text: x.text, span: spanOf(x), kind: 'redirect', ...redirEffect(x, prog, lang) }));
   return { words: out, removed, quotes, empty };
+}
+
+/**
+ * What a redirection does (3.6), said short: the stream it changes and where it goes (`2>/dev/null`: stderr →
+ * `/dev/null`; `>&2`: stdout → stderr), and how the program `prog` finds that stream when it starts.
+ */
+function redirEffect(r: SyntaxNode, prog: string, lang: Lang): { effect?: string; already?: string } {
+  const op = r.children.find((c) => !c.named)?.type ?? '';
+  const fdText = r.children.find((c) => c.field === 'descriptor')?.text;
+  const dest = r.children.find((c) => c.field === 'destination');
+  const streamOf = (n: string): string => (/^[012]$/.test(n) ? T.streams[lang][Number(n)] : T.fd[lang](n));
+  const code = (t: string) => `\`${t}\``;
+  const name = code(prog);
+  if (fdText !== undefined && !/^\d+$/.test(fdText)) return {};
+  if (r.type === 'heredoc_redirect' || r.type === 'herestring_redirect') {
+    const stream = streamOf(fdText ?? '0');
+    const what = r.type === 'heredoc_redirect' ? T.heredoc[lang] : T.herestring[lang];
+    return { effect: `${stream} ← ${what}`, already: T.already[lang](name, stream, what) };
+  }
+  if (r.type !== 'file_redirect' || !dest) return {};
+  const to = dest.text;
+  if (op === '&>' || op === '&>>') {
+    const both = T.both[lang];
+    return { effect: `${both} → ${code(to)}${op === '&>>' ? T.append[lang] : ''}`, already: T.already[lang](name, both, code(to)) };
+  }
+  if (op === '>&' || op === '<&') {
+    const stream = streamOf(fdText ?? (op === '<&' ? '0' : '1'));
+    if (to === '-') return { effect: `${stream}: ${T.closed[lang]}`, already: T.alreadyClosed[lang](name, stream) };
+    if (/^\d+$/.test(to)) return { effect: `${stream} → ${streamOf(to)}`, already: T.already[lang](name, stream, streamOf(to)) };
+    return {};
+  }
+  if (op === '<') {
+    const stream = streamOf(fdText ?? '0');
+    return { effect: `${stream} ← ${code(to)}`, already: T.already[lang](name, stream, code(to)) };
+  }
+  if (op === '>' || op === '>|' || op === '>>') {
+    const stream = streamOf(fdText ?? '1');
+    return { effect: `${stream} → ${code(to)}${op === '>>' ? T.append[lang] : ''}`, already: T.already[lang](name, stream, code(to)) };
+  }
+  return {};
+}
+
+/**
+ * (Prototype B) What bash evaluates in `[[ … ]]` once it has expanded the words (3.2.5.2: tilde, parameter and
+ * variable expansion, arithmetic and command substitution, quote removal; no word splitting or globbing): its
+ * operators as written, each word as the program's side shows a word, the right side of `==` and `!=` marked as a
+ * pattern and that of `=~` as a regex.
+ */
+export function condLine(test: SyntaxNode, model: StateModel, lang: Lang, describe: Ctx['describe']): ArgvPart[] | undefined {
+  const cx: Ctx = { model, lang, describe };
+  const out: ArgvPart[] = [];
+  const mark = { pattern: { ja: '（パターン）', en: ' (pattern)' }, regex: { ja: '（正規表現）', en: ' (regex)' } };
+  const walk = (n: SyntaxNode): boolean => {
+    if (['binary_expression', 'unary_expression', 'parenthesized_expression', 'negated_expression'].includes(n.type)) {
+      const op = n.type === 'binary_expression' ? n.children.find((c) => c.field === 'operator')?.text : undefined;
+      for (const c of n.children) {
+        if (!walk(c)) return false;
+        if (c.field === 'right' && op && ['==', '=', '!='].includes(op)) out.push({ text: mark.pattern[lang], tight: true });
+        if (c.field === 'right' && op === '=~') out.push({ text: mark.regex[lang], tight: true });
+      }
+      return true;
+    }
+    if (n.type === '[[' || n.type === ']]') return true;
+    if (!n.named || n.type === 'test_operator') {
+      out.push({ text: n.text });
+      return true;
+    }
+    if (n.type === 'regex') {
+      out.push({ text: n.text });
+      return true;
+    }
+    const parts = symbolic(n, cx, false, 0, wordMeaning(n, model));
+    if (!parts.length) return false;
+    out.push({ text: '', word: parts });
+    return true;
+  };
+  for (const c of test.children) if (!walk(c)) return undefined;
+  return out.length ? out : undefined;
 }
 
 /** Whether bash removes quotes (or backslashes) from the word. */
@@ -101,9 +212,9 @@ function wordArgv(w: SyntaxNode, cx: Ctx): ArgvWord[] {
     const p = parts.map((x) => (x.ph ? `‹${x.text}›` : x.text)).join('');
     const g = m.glob;
     const kind = g.failglob === 'on' ? 'failglob' : g.nullglob === 'on' ? 'nullglob' : g.nullglob === 'off' && g.failglob === 'off' ? 'plain' : 'unknown';
-    return [{ span, parts: [{ text: T.glob.short[cx.lang](p), ph: true, title: T.glob[kind][cx.lang](p) }] }];
+    return [{ span, parts: [{ text: T.glob.short[cx.lang](p), ph: true, title: T.glob[kind][cx.lang](p) }], many: true }];
   }
-  return [{ span, parts }];
+  return [{ span, parts, ...(parts.some((x) => x.many) ? { many: true as const } : {}) }];
 }
 
 /** The expansions of a word (not those inside a command substitution's script). */
@@ -139,7 +250,8 @@ function symbolic(n: SyntaxNode, cx: Ctx, quoted: boolean, depth: number, m: Wor
     case 'command_substitution': {
       const body = n.namedChildren.map((c) => c.text).join(' ').trim();
       const text = T.outputOf[lang](short(body));
-      return [{ text: quoted || !split(n, cx) ? text : T.fieldsOf[lang](`$(${short(body)})`), ph: true, title: T.outputOf[lang](n.text) }];
+      const splits = !quoted && split(n, cx);
+      return [{ text: splits ? T.fieldsOf[lang](`$(${short(body)})`) : text, ph: true, title: T.outputOf[lang](n.text), ...(splits ? { many: true as const } : {}) }];
     }
     case 'arithmetic_expansion':
       return [{ text: T.valueOf[lang](short(n.text)), ph: true }];
@@ -189,7 +301,7 @@ function parameter(n: SyntaxNode, cx: Ctx, quoted: boolean, depth: number): Argv
     const meaning = cx.describe(name, n);
     if (meaning) {
       const text = lower(lang, meaning);
-      return [{ text: splits ? T.fieldsOf[lang](code) : text, ph: true, title: T.meaning[lang](code, meaning) }];
+      return [{ text: splits ? T.fieldsOf[lang](code) : text, ph: true, title: T.meaning[lang](code, meaning), ...(splits ? { many: true as const } : {}) }];
     }
     if (/^[A-Za-z_]\w*$/.test(name) && !splits) {
       const st = cx.model.at(n).run.variables.get(name);
@@ -208,5 +320,5 @@ function parameter(n: SyntaxNode, cx: Ctx, quoted: boolean, depth: number): Argv
       }
     }
   }
-  return [{ text: splits ? T.fieldsOf[lang](code) : T.valueOf[lang](code), ph: true }];
+  return [{ text: splits ? T.fieldsOf[lang](code) : T.valueOf[lang](code), ph: true, ...(splits ? { many: true as const } : {}) }];
 }
