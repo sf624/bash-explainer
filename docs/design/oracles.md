@@ -10,7 +10,7 @@ The review proposed three checks:
 
 This page checks what exists, takes an inventory for each check, and plans the work in steps. Each step is a PR that keeps every test passing and 100% coverage of `src/`.
 
-Status: step 1 (the inventory of B) is done (#273), and step 2 (argv capture over the fixtures, A1) is done (#NNN; section 2.6). Steps 3 to 10 are not started: there is no `Fact.rewrite` and no normal-forms table yet (section 6). The panel redesign builds on step 2 (its P4a) and on steps 4–6 for four notes (its P3; [panel-redesign.md](panel-redesign.md)).
+Status: step 1 (the inventory of B) is done (#273), and step 2 (argv capture over the fixtures, A1) is done (#432; section 2.6). Steps 3 to 10 are not started: there is no `Fact.rewrite` and no normal-forms table yet (section 6). The panel redesign builds on step 2 (its P4a) and on steps 4–6 for four notes (its P3; [panel-redesign.md](panel-redesign.md)).
 
 ## 1. What runs bash today
 
@@ -224,7 +224,7 @@ Then a generator, seeded, makes more forms of each word than a table can hold: q
 Each step is a PR. Each keeps every test passing and 100% coverage of `src/`. The order puts the cheap, high-value ones first. Steps 1 and 2 are done; steps 3 to 10 are not started.
 
 1. **B1, inventory.** Done (#273). This page, and test/suggestions.test.ts: every catalog entry classified, checked against its English text, and the counts pinned.
-2. **A1, argv over sample.sh and the fixtures.** Done (#NNN; 2.6). test/support/argv.ts makes the markers of 2.2 and reuses the probe harness and the alignment rule of word-probes (`alignRuns`, moved to test/support/probe.ts so that both use it). test/argv.test.ts runs the fixtures (not the snippets yet) in one sandboxed batch. Known differences go in test/fixtures/argv-known.json, with the counts; the fixtures show none. Bugs it finds are fixed in their own PRs, each with a CHANGELOG line. The panel redesign's P4a ([panel-redesign.md](panel-redesign.md)).
+2. **A1, argv over sample.sh and the fixtures.** Done (#432; 2.6). test/support/argv.ts makes the markers of 2.2 and reuses the probe harness and the alignment rule of word-probes (`alignRuns`, moved to test/support/probe.ts so that both use it). test/argv.test.ts runs the fixtures (not the snippets yet) in one sandboxed batch. Known differences go in test/fixtures/argv-known.json, with the counts; the fixtures show none. Bugs it finds are fixed in their own PRs, each with a CHANGELOG line. The panel redesign's P4a ([panel-redesign.md](panel-redesign.md)).
 3. **A2, the snippets and the fuzz inputs.** The same test over a seeded sample of the snippets in CI, and over all 1,220 snippets and 200 fuzz inputs in a script run by hand (section 7), with the two environments of 2.3, the pinned count of unknown words, and the "could know" report. It starts with the differences of 2.6.
 4. **B2, rewrite data for the catalog.** `Fact.rewrite` (3.2) for the 12 mechanical ids; the notes render their suggestion from it. src/wordfacts.ts and src/statusfacts.ts emit it. The panel redesign's P3 needs it first for `failure-reported-as-success` and `unmatched-glob-runs-once` (and B4 for two style checks).
 5. **B3, run the rewrites.** test/rewrites.test.ts: the states and oracles of 3.3 for each mechanical id, and the two cheap checks for all. The inventory test then requires a rewrite on every mechanical fact.

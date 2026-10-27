@@ -155,7 +155,7 @@ Risks: two of these notes change level with the three levels (decision 4); this 
 
 ### P4. What the program receives, as data
 
-P4a. Oracles.md step 2 (A1), done (#NNN; oracles.md 2.6). Roadmap item 4 does it before this series (decision 5); if it has not, it lands here as its own PR first: argv capture over sample.sh and the fixtures, with a stub program that prints its argv, in a sandbox (cgroup, `FUNCNEST`, a process group killed on timeout). It is a pure test of `wordFields`. Known differences in test/fixtures/argv-known.json, each with a reason. The bugs it finds are fixed in their own PRs, each with a Fixed line.
+P4a. Oracles.md step 2 (A1), done (#432; oracles.md 2.6). Roadmap item 4 does it before this series (decision 5); if it has not, it lands here as its own PR first: argv capture over sample.sh and the fixtures, with a stub program that prints its argv, in a sandbox (cgroup, `FUNCNEST`, a process group killed on timeout). It is a pure test of `wordFields`. Known differences in test/fixtures/argv-known.json, each with a reason. The bugs it finds are fixed in their own PRs, each with a Fixed line.
 
 P4b. src/argvline.ts rebuilt on top. For each simple command: the words its program receives after expansions, quote removal, splitting and globbing (from `wordFields` and `wordMeaning`), placeholders for values known only at run time ("‹current user name›", "‹each name matching *.log›"), and what bash took out (assignments, redirections with their effect). Data on the explanation, not yet drawn.
 
