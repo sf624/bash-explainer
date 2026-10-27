@@ -947,7 +947,8 @@
   function readerOf(n) {
     const r = labels.tree.readers;
     if (n.layer === 'child') return r.child[n.process ?? 'subshell'];
-    if (n.layer === 'language' && n.reader === 'bash') return r.bashLanguage;
+    // (bash reads two languages itself: the regex of `=~`, and a prompt string, the value of `PS1` or `PS4`.)
+    if (n.layer === 'language' && n.reader === 'bash') return n.label === 'prompt' ? r.promptLanguage : r.bashLanguage;
     return r[n.layer].replace('{name}', n.reader ?? '');
   }
 
@@ -981,7 +982,7 @@
   let aboutAt = /** @type {Set<object>} */ (new Set());
 
   // (A language's own tokens have no general text: its `keyword` is not bash's reserved word.)
-  const aboutKey = (/** @type {any} */ n) => (n.kind === 'language' ? (n.reader === 'bash' ? 'bashLanguage' : 'language') : n.layer === 'language' ? '' : n.kind);
+  const aboutKey = (/** @type {any} */ n) => (n.kind === 'language' ? (n.reader === 'bash' ? (n.label === 'prompt' ? 'promptLanguage' : 'bashLanguage') : 'language') : n.layer === 'language' ? '' : n.kind);
 
   /** Reads the steps of the line shown: when each node appears, what each step adds, and where the general texts go. */
   function measureSteps() {

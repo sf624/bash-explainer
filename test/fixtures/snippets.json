@@ -1339,6 +1339,7 @@
  "set -o posix\n. lib.sh",
  "set -o posix\nV=1 :",
  "set -o posix\nalias [=echo\n[ -f c ]",
+ "set -o posix\nkill -SIGTERM 1; time",
  "set -o posix\nx=1 $cmd",
  "set -u\ncat < \"$f\"",
  "set -u\necho \"$a\" \"$b\"\necho \"$c\"\n[ -e /no ] && echo \"$d\"; x=$e echo \"$f\"",

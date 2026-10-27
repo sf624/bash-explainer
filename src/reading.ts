@@ -30,7 +30,7 @@ import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } 
 import { aliasesAfter, type AliasResolution, type NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
 import { type ExpansionStep, STEP_MANUAL, type StepKind, type WordMeaning } from './semantics/words';
-import { setsElement, splitElement, staticWordValue } from './staticword';
+import { setsElement, splitElement, stackTilde, staticWordValue } from './staticword';
 import { field, isShebang, substitutionForm, type SyntaxNode, type SyntaxTree, withLists } from './syntax/tree';
 
 /** Who reads a part: bash, bash again (a substitution, or a string a command gives a shell), the command, a language. */
@@ -175,6 +175,8 @@ function expansionSections(m: WordMeaning | undefined): readonly string[] {
   if (!m) return [];
   const own = (s: ExpansionStep): boolean => (s.kind !== 'split' && s.kind !== 'glob') || m.rule[s.kind] !== 'inherit';
   const steps = m.steps.filter((s) => UNSHOWN.has(s.kind) && s.applies !== false && own(s)).map((s) => STEP_MANUAL[s.kind]);
+  // (A tilde prefix that names an entry of the directory stack, `~1`: 6.8 too.)
+  if (m.tildes.some((t) => stackTilde(t.user))) steps.push('6.8');
   return m.rule.match === 'pattern' ? [...steps, '3.5.8.1'] : steps;
 }
 
@@ -641,6 +643,9 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const value = field(a, 'value');
     // (The list of a compound assignment, `a=(x "$y" *.txt)`: `array`.)
     const parts = !value ? [] : value.type === 'array' ? [array(value, layer)] : isPart(value) ? [part(value, layer)] : withTokens(value, inner(value, layer), layer);
+    // (A language bash reads in the value each time it uses it, a prompt string, `PS1='\u@\h'` (6.9), is under the
+    // value, which is one part.)
+    if (value && value.type !== 'array' && parts.length === 1) for (const c of tokenAt(spanOf(value), WORD_TOKENS)?.children ?? []) if (c.origin === 'embedded') language(parts[0].children, c, 'bash');
     // (Its operator, `=` or `+=`, between the name and the value: 3.4.)
     const op = a.children.find((c) => !c.named && c.type.endsWith('='))!;
     const name = field(a, 'name')!;
@@ -683,12 +688,16 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
    * scripts a command gives a shell (`script`). Bash's parts of a word are already in its layer: their tokens give way to
    * what is under them, but for a substitution, whose commands are under its subshell. `top`: the command's own
    * token's parts, where bash's tokens are its name, assignments and redirections. `reader`: the command that reads.
+   * `languages`: false under an assignment a command reads (`export PS1='\u'`), whose value's language is bash's (a
+   * prompt string), under the value in bash's layer.
    */
-  const readParts = (tokens: readonly Token[], top: boolean, reader: string): ReadingNode[] => {
+  const readParts = (tokens: readonly Token[], top: boolean, reader: string, languages = true): ReadingNode[] => {
     const out: ReadingNode[] = [];
     for (const t of tokens) {
       if (t.origin === 'argv') out.push(tokenNode(t, 'command', reader));
-      else if (t.origin === 'embedded') language(out, t, reader);
+      else if (t.origin === 'embedded') {
+        if (languages) language(out, t, reader);
+      }
       else if (t.origin === 'script') out.push(scriptNode(t, t.process ?? 'shell'));
       // (At the top, bash's tokens are the command's name, assignments and redirections, and the words it takes as
       // they are, with what is under them: the script of `eval "ls"`.)
@@ -696,7 +705,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       // script, as an unquoted one is (`eval ls`).
       else if (top && t.kind === 'string' && t.children.some((c) => c.origin === 'script')) {
         out.push({ layer: 'command', kind: 'argument', label: t.label, span: t.span, text: TEXTS.again[cx.lang], reader, children: readParts(t.children, false, reader) });
-      } else if (t.kind !== 'substitution' && (!top || WORD_TOKENS.has(t.kind))) out.push(...readParts(t.children, false, reader));
+      } else if (t.kind !== 'substitution' && (!top || WORD_TOKENS.has(t.kind))) out.push(...readParts(t.children, false, reader, languages));
     }
     return out;
   };
@@ -706,7 +715,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     layer, kind: t.kind, label: t.label, span: t.span, reader, ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), ...(t.valueFor ? { valueFor: t.valueFor } : {}), ...(t.expands ? { expands: t.expands } : {}),
     // (A word the command reads as a script, which the analyzer says only is a word: `eval ls`.)
     text: t.explanation === TEXTS.word[cx.lang](t.label) && t.children.some((c) => c.origin === 'script') ? TEXTS.again[cx.lang] : t.explanation,
-    children: readParts(t.children, false, RUNS.has(t.kind) ? t.label : reader),
+    children: readParts(t.children, false, RUNS.has(t.kind) ? t.label : reader, t.kind !== 'assignment'),
   });
 
   /** A token of a string a shell reads as a script; `process`: which shell. */

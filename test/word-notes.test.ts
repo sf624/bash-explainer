@@ -77,8 +77,8 @@ describe('word notes: tildes', () => {
     assert.deepStrictEqual(labels('x=~/a:~/b', '~'), ['Tilde expansion: `~` becomes the home directory (`$HOME`)', 'Tilde expansion (after `:`): `~` becomes the home directory (`$HOME`)']);
     assert.match(expl('x=~/a:~/b', '~/a:~/b', 'ja'), /^代入する値/);
     assert.strictEqual(bash('x=a:~/b; echo $x'), 'a:/home/w/b\n');
-    // `~1` is the directory stack: not explained.
-    assert.deepStrictEqual(labels('echo ~1', '~1'), ['text to print']);
+    // `~1` is an entry of the directory stack (6.8).
+    assert.deepStrictEqual(labels('echo ~1', '~1'), ['text to print', 'Tilde expansion: `~1` becomes entry 1 of the directory stack, counted from the left of `dirs` from 0 (what `dirs +1` shows; unchanged if there is no such entry)']);
   });
 });
 

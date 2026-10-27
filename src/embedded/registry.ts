@@ -17,6 +17,7 @@ import { explainPerl, perlLoopNote } from './perl';
 import { explainRegex, Flavor, flavorName } from './regex';
 import { explainSed } from './sed';
 import { explainCutList, explainSortKey, explainTrSet, trSummary } from './textutils';
+import { explainPrompt, promptNote } from './prompt';
 import { EmbeddedLang, EmbeddedToken, pick } from './types';
 import { explainYq3Path } from './yq';
 
@@ -82,6 +83,8 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
     return note ? { tokens: explainGlob(text, cx.lang), note } : undefined;
   },
   arith: (text, cx) => explainArith(text, cx.lang),
+  // (The value of PS0, PS1, PS2 or PS4: bash reads it each time it prints the prompt, 6.9.)
+  prompt: (text, cx) => ({ tokens: explainPrompt(text, cx.lang), note: promptNote(cx.lang) }),
   // Only `+FORMAT` is a format; other date arguments set the clock.
   date: (text, cx) => (text.startsWith('+') ? { tokens: explainDate(text, cx.lang) } : undefined),
 };

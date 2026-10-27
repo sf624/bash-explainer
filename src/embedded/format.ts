@@ -121,7 +121,7 @@ function sgrParts(params: string, s: S): string[] | undefined {
 }
 
 /** The ANSI escape sequence (`ESC [ params final`) starting at `at`, as a token over [from, end) holding `kids`; undefined when none. */
-function ansiSequence(src: string, from: number, at: number, kids: EmbeddedToken[], s: S): EmbeddedToken | undefined {
+export function ansiSequence(src: string, from: number, at: number, kids: EmbeddedToken[], s: S): EmbeddedToken | undefined {
   const m = /^\[([0-9;?]*)([@-~])/.exec(src.slice(at));
   if (!m) return undefined;
   const end = at + m[0].length;

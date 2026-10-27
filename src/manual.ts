@@ -207,6 +207,24 @@ export const PARAMETER_ALSO: Readonly<Record<string, string>> = wordTable({
 
 
 /**
+ * The options of `set -o` and `shopt` whose effect a section of chapter 6 describes: the word that names one, as the
+ * value of `set -o` or `bash -O` or an operand of `shopt`, cites it (`set -o posix`: 6.11). The others are described
+ * where `set` and `shopt` list them (4.3.1, 4.3.2), which the builtin cites.
+ */
+export const OPTION_SECTIONS: Readonly<Record<string, string>> = wordTable({
+  expand_aliases: '6.6', promptvars: '6.9', restricted_shell: '6.10', posix: '6.11',
+  compat31: '6.12', compat32: '6.12', compat40: '6.12', compat41: '6.12', compat42: '6.12', compat43: '6.12', compat44: '6.12',
+});
+
+/**
+ * The section of chapter 6 that describes what a variable of chapter 5 does, after the section of its item there:
+ * the prompt strings (6.9), the directory stack (6.8), POSIX mode (6.11) and the compatibility level (6.12).
+ */
+export const VARIABLE_FEATURE_SECTIONS: Readonly<Record<string, string>> = wordTable({
+  DIRSTACK: '6.8', PROMPT_COMMAND: '6.9', PS0: '6.9', PS1: '6.9', PS2: '6.9', PS4: '6.9', POSIXLY_CORRECT: '6.11', BASH_COMPAT: '6.12',
+});
+
+/**
  * The section that describes each variable of chapter 5 (an item of its variable table): 5.1 "Bourne Shell
  * Variables" and 5.2 "Bash Variables". test/reading-manual.test.ts checks the lists against the manual.
  */

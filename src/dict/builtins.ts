@@ -1,5 +1,5 @@
 import { Text, tx } from '../i18n';
-import type { BuiltinCall, CommandSlot, CommandSpec, NameOptions, OperandSpec, OptionSpec, PatternOption, ValueSpec, ValueType, VariableSet } from '../argv/spec';
+import type { BuiltinCall, CommandSlot, CommandSpec, NameOptions, OperandAlt, OperandSpec, OptionSpec, PatternOption, ShellVariant, ValueSpec, ValueType, VariableSet } from '../argv/spec';
 import { args, cmd, operand, optionOf, OptSpec, runs, wordTable } from './types';
 import { declarationCommands, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags } from './syntax';
 
@@ -18,7 +18,7 @@ export const shellOptions = {
   noglob: tx('グロブ（ワイルドカード展開）を無効化（`-f` と同じ）', 'disable globbing (same as `-f`)'),
   vi: tx('行編集を vi モードにする', 'use vi-style line editing'),
   emacs: tx('行編集を emacs モードにする', 'use emacs-style line editing'),
-  posix: tx('POSIX 互換モードにする', 'POSIX compatibility mode'),
+  posix: tx('POSIX モード: bash の既定が POSIX と違うところで POSIX に従う（違いはマニュアルの Bash POSIX Mode にある）。`POSIXLY_CORRECT` も設定する', 'POSIX mode: bash follows POSIX where its default differs (the manual lists how under Bash POSIX Mode); it also sets `POSIXLY_CORRECT`'),
   allexport: tx('代入した変数を自動でエクスポートする（`-a` と同じ）', 'export every variable that is set (same as `-a`)'),
   errtrace: tx('`ERR` トラップを関数やサブシェルの中でも効かせる（`-E` と同じ）', 'make the `ERR` trap work in functions and subshells too (same as `-E`)'),
   functrace: tx('`DEBUG` と `RETURN` のトラップを関数の中でも効かせる（`-T` と同じ）', 'make the `DEBUG` and `RETURN` traps work in functions too (same as `-T`)'),
@@ -42,6 +42,14 @@ export const shellOptions = {
 /** `set +e`, `set +o errexit`: what turning errexit off does. */
 const ERREXIT_OFF = tx('コマンドが失敗しても終了しないようにする（既定）', 'go on when a command fails (the default)');
 
+/**
+ * A `compatNN` option of `shopt` (manual 6.12): the compatibility level NN, and the first change the table of 6.12
+ * lists for it. A level also brings back what the later levels change, and there is one level at a time.
+ */
+const compat = (version: string, ja: string, en: string) => tx(
+  `互換レベルを bash ${version} にする: ${ja}。後の版のレベルが戻す動作も戻す。レベルは同時に1つだけで、有効にするとほかの \`compat\` オプションは無効になる（\`BASH_COMPAT\` も変わる）`,
+  `compatibility level bash ${version}: ${en}; it also brings back what the later levels do. There is one level at a time: turning it on turns the other \`compat\` options off (and sets \`BASH_COMPAT\`)`);
+
 /** Options of bash's `shopt`. */
 export const shoptOptions = {
   globstar: tx('`**` が任意の深さのディレクトリに一致する（`**/*.sh` でサブディレクトリの中まで）', '`**` matches directories at any depth (`**/*.sh` reaches into subdirectories)'),
@@ -63,13 +71,13 @@ export const shoptOptions = {
   checkjobs: tx('対話シェルの終了時に、停止中と実行中のジョブを表示する（実行中のジョブがあれば、もう一度 `exit` するまで終了しない）', 'list the stopped and running jobs when an interactive shell exits (with running jobs, it exits only at a second `exit`)'),
   checkwinsize: tx('外部コマンドを実行するたびにウィンドウの大きさを調べ、`LINES` と `COLUMNS` を更新する（既定で有効）', 'check the window size after each external command, and update `LINES` and `COLUMNS` (on by default)'),
   cmdhist: tx('複数行のコマンドを履歴の1つの項目に保存する（既定で有効。履歴が有効なときだけ効く）', 'save all lines of a multi-line command in one history entry (on by default; only with history on)'),
-  compat31: tx('bash 3.1 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 3.1 did where it differs (the manual lists how under Shell Compatibility Mode)'),
-  compat32: tx('bash 3.2 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 3.2 did where it differs (the manual lists how under Shell Compatibility Mode)'),
-  compat40: tx('bash 4.0 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 4.0 did where it differs (the manual lists how under Shell Compatibility Mode)'),
-  compat41: tx('bash 4.1 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 4.1 did where it differs (the manual lists how under Shell Compatibility Mode)'),
-  compat42: tx('bash 4.2 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 4.2 did where it differs (the manual lists how under Shell Compatibility Mode)'),
-  compat43: tx('bash 4.3 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 4.3 did where it differs (the manual lists how under Shell Compatibility Mode)'),
-  compat44: tx('bash 4.4 の動作に合わせる互換モード（変わる点はマニュアルの Shell Compatibility Mode にある）', 'compatibility mode: behave as bash 4.4 did where it differs (the manual lists how under Shell Compatibility Mode)'),
+  compat31: compat('3.1', '`[[ ]]` の `=~` の右辺は、クォートしても正規表現として読む', 'a quoted right side of `=~` in `[[ ]]` is still read as a regex'),
+  compat32: compat('3.2', '`a; b; c` のようなリストのコマンドを割り込みで止めても、次のコマンドに進む', 'interrupting a command of a list such as `a; b; c` goes on with the next one'),
+  compat40: compat('4.0', '`[[ ]]` の `<` と `>` は、ロケールではなく ASCII の順で文字列を比べる', '`<` and `>` of `[[ ]]` compare strings in ASCII order, not the locale\'s'),
+  compat41: compat('4.1', 'POSIX モードでも、`time` の後ろにオプションがあれば予約語として読み、ダブルクォートの中の `${…}` の単語でシングルクォートがクォートになる', 'in POSIX mode, `time` followed by an option is still the reserved word, and single quotes quote in the word of a double-quoted `${…}`'),
+  compat42: compat('4.2', 'ダブルクォートの中のパターン置換 `"${x/a/\'b\'}"` の置き換える文字列でクォートを取り除かない', 'the replacement of a double-quoted pattern substitution (`"${x/a/\'b\'}"`) keeps its quotes'),
+  compat43: compat('4.3', '関数の中の `break` と `continue` は、呼び出し元のループに効く', '`break` and `continue` in a function act on the loops of its caller'),
+  compat44: compat('4.4', 'サブシェルは周りのループを受け継ぐので、その中の `break` や `continue` でサブシェルが終わる', 'a subshell inherits the loops around it, so `break` or `continue` in it ends the subshell'),
   complete_fullquote: tx('補完したファイル名の中のシェルのメタ文字をすべてクォートする（既定で有効）', 'quote all shell metacharacters in file names when completing (on by default)'),
   direxpand: tx('ファイル名の補完で、ディレクトリ名を展開した結果に置き換える', 'replace directory names with the result of their expansion when completing file names'),
   dirspell: tx('単語の補完で、ディレクトリ名がなければ綴りを直そうとする', 'try to correct the spelling of a directory name that does not exist when completing a word'),
@@ -165,12 +173,48 @@ const COMPLETION_TARGETS: OptSpec[] = [
 /** A signal number of Linux (0 to 64, leading zeros allowed), as `trap` checks its first word. */
 const SIGNAL_NUMBER = /^0*(?:\d|[1-5]\d|6[0-4])$/;
 
+/** The operands of `trap` but a lone word (`trap INT`), which POSIX mode reads otherwise. */
+const TRAP_OPERANDS: OperandAlt[] = [
+  { when: { option: ['-p'] }, pattern: [operand('SIGNAL', '表示するシグナル（EXIT, ERR, INT, TERM など）', 'signal to show (EXIT, ERR, INT, TERM…)', { repeat: '*' })] },
+  { when: { option: ['-P'] }, pattern: [operand('SIGNAL', '登録されたコマンドを表示するシグナル', 'signal whose command to print', { repeat: '+' })] },
+  { when: { option: ['-l'] }, pattern: [operand('SIGNAL', '名前か番号に直すシグナル', 'signal to translate between name and number', { repeat: '*' })] },
+  // `trap 1 2`: a signal number first resets every signal named (bash reads it so for old scripts).
+  { when: { operand: 0, matches: SIGNAL_NUMBER }, pattern: [operand('SIGNAL', '既定の動作に戻すシグナル（最初の語がシグナル番号なら、どの語もシグナル）', 'signal to reset to its default (when the first word is a signal number, every word is a signal)', { repeat: '+' })] },
+  // `trap - INT`: `-` resets the signals to their defaults (no command runs).
+  { when: { operand: 0, matches: /^-$/ }, pattern: [operand('RESET', '`-`: 続くシグナルの動作を既定に戻す', '`-`: reset the signals that follow to their default action'), operand('SIGNAL', '既定の動作に戻すシグナル', 'signal to reset to its default', { repeat: '+' })] },
+  ...args(operand('ACTION', '実行するコマンド（`-` でリセット、空文字で無視）', 'command to run (`-` resets, empty string ignores)', { command: { run: 'current-shell', later: true } }), operand('SIGNAL', '対象のシグナル（EXIT, ERR, INT, TERM など）', 'signal (EXIT, ERR, INT, TERM…)')).operands!,
+];
+
+/**
+ * bash's `trap` in POSIX mode (6.11): a lone word is a signal to reset only when it is a number (`trap 2`); `trap INT`
+ * is a usage error (status 2), which ends a POSIX shell, as an error of a special builtin does.
+ */
+const TRAP_POSIX: ShellVariant = {
+  set: ['posix'],
+  spec: {
+    operands: [
+      ...TRAP_OPERANDS.slice(0, 4),
+      { when: { not: { option: ['-p', '-P', '-l'] } }, pattern: [operand('SIGNAL', 'POSIX モードの bash は、番号でない1語だけをリセットするシグナルとして読まない: 使い方の誤り（終了ステータス 2）になり、特殊組み込みコマンドのエラーなのでシェルが終了する。前に `-` を書く（`trap - INT`）', 'In POSIX mode bash does not read a lone word as a signal to reset unless it is a number: this is a usage error (status 2), and as an error of a special builtin it ends the shell. Write `-` before it (`trap - INT`)')] },
+      ...TRAP_OPERANDS.slice(4),
+    ],
+  },
+  text: tx('POSIX モードなので、1語だけの `trap INT` は登録の解除にならない（`trap - INT` か、番号の `trap 2` で解除する）', 'In POSIX mode, a lone `trap INT` does not reset the signal (`trap - INT` does, and so does a number, `trap 2`)'),
+};
+
 /** `+N` and `-N` of `pushd`, `popd` and `dirs`: a place in the directory stack, from the left (`+`) or the right (`-`) of what `dirs` prints. */
 /** `pushd -x`: a word with a dash is a place in the stack, and this one is no number (bash: `invalid number`, status 2). */
 const STACK_NUMBER = tx('bash は `-` で始まる語をスタックの位置（`-N`）として読むが、数ではない: `invalid number` と表示し、何もせずに失敗する（終了ステータス 2）', 'bash reads a word that starts with `-` as a place in the stack (`-N`), and this is no number: it says `invalid number`, and fails with status 2, doing nothing');
 /** The meanings of option names as the text of an operand: `Shell option \`x\`: …` (`OperandSpec.values`). */
 const named = (options: Record<string, Text>): Record<string, Text> =>
   Object.fromEntries(Object.entries(options).map(([name, t]) => [name, tx(`シェルオプション \`${name}\`: ${t.ja}`, `Shell option \`${name}\`: ${t.en}`)]));
+/** The options of `set -o` and `shopt` as the operands of `shopt` name them. */
+const SET_OPTION_NAMES = named(shellOptions);
+const SHOPT_OPTION_NAMES = named(shoptOptions);
+/**
+ * The tables of values that are the names of shell options (the value of `set -o`, `bash -o` and `-O`, an operand of
+ * `shopt`): a word that names one cites the section of chapter 6 that describes it (`OPTION_SECTIONS`).
+ */
+export const SHELL_OPTION_TABLES: ReadonlySet<object> = new Set([shellOptions, shoptOptions, SET_OPTION_NAMES, SHOPT_OPTION_NAMES]);
 const SIDE_JA = { left: '左', right: '右' };
 const stackPosition = (text: (side: 'left' | 'right', n: string) => Text): PatternOption => ({
   pattern: /^([+-])(\d+)$/,
@@ -212,7 +256,11 @@ function declarationSpec(name: string, flags: Record<string, Text>, options: Nam
 const SOURCE_OPTIONS: OptSpec[] = [
   ['-p', 'bash 5.3: ファイルを `$PATH` ではなく、指定したコロン区切りのディレクトリから探す（カレントディレクトリは、空の要素があるときだけ）', 'bash 5.3: look for the file in the given directories, separated by colons, instead of `$PATH` (the current directory only for an empty entry)', 'arg since:5.3'],
 ];
-const SOURCE_OPERANDS = args(operand('FILE', '読み込むファイル', 'file to source', { io: 'run', searchesPath: { shopt: 'sourcepath', instead: ['-p'] } }), operand('ARG', 'そのファイルに渡す引数（実行中は $1, $2…になる）', 'arguments passed to it (they are $1, $2… while it runs)'));
+const SOURCE_OPERANDS: Rest = {
+  ...args(operand('FILE', '読み込むファイル', 'file to source', { io: 'run', searchesPath: { shopt: 'sourcepath', instead: ['-p'] } }), operand('ARG', 'そのファイルに渡す引数（実行中は $1, $2…になる）', 'arguments passed to it (they are $1, $2… while it runs)')),
+  // (A file not found ends a POSIX shell, 6.11: `. ./lib.sh` then runs nothing after it.)
+  inShell: [{ set: ['posix'], spec: {}, text: tx('POSIX モードなので、ファイルが見つからなければシェルが終了する（終了ステータス 1）', 'In POSIX mode, a file it does not find ends the shell (status 1)') }],
+};
 
 /** The signals `kill` knows by name (`-TERM`, `-SIGTERM`), as Linux and the BSDs name them. */
 const SIGNALS = 'HUP|INT|QUIT|ILL|TRAP|ABRT|BUS|FPE|KILL|USR1|SEGV|USR2|PIPE|ALRM|TERM|STKFLT|CHLD|CONT|STOP|TSTP|TTIN|TTOU|URG|XCPU|XFSZ|VTALRM|PROF|WINCH|IO|PWR|SYS|EMT|INFO|POLL|CLD|IOT';
@@ -242,6 +290,28 @@ const KILL_PATTERNS: PatternOption[] = [
   },
 ];
 
+/**
+ * bash's `kill` in POSIX mode (6.11): a signal name with `SIG` is refused (`-SIGTERM`, `-s SIGTERM`, `-l SIGTERM`:
+ * `invalid signal specification`, status 1).
+ */
+const KILL_POSIX: ShellVariant = {
+  set: ['posix'],
+  spec: {
+    patternOptions: [KILL_PATTERNS[0], KILL_PATTERNS[1], {
+      pattern: new RegExp(`^-(?!s[A-Za-z])${anyCase('SIG')}(${anyCase(SIGNALS)})$`), ...SIGNAL_GIVEN,
+      text: ([w]) => tx(`POSIX モードの bash は \`SIG\` で始まるシグナル名を受け付けない: \`${w.slice(1)}: invalid signal specification\` と表示し、何も送らずに失敗する（終了ステータス 1）。\`-${w.slice(4).toUpperCase()}\` と書く`,
+        `In POSIX mode bash refuses a signal name that starts with \`SIG\`: it says \`${w.slice(1)}: invalid signal specification\`, and fails with status 1, sending nothing. Write \`-${w.slice(4).toUpperCase()}\``),
+    }, KILL_PATTERNS[2]],
+  },
+  text: tx('POSIX モードなので、`SIG` で始まるシグナル名（`-SIGTERM`、`-s SIGTERM`）は受け付けない', 'In POSIX mode, it refuses a signal name that starts with `SIG` (`-SIGTERM`, `-s SIGTERM`)'),
+};
+
+/** bash's `ulimit` in POSIX mode (6.11): `-c` and `-f` count blocks of 512 bytes, not 1024. */
+const ULIMIT_POSIX: ShellVariant = {
+  set: ['posix'], spec: {},
+  text: tx('POSIX モードなので、`-c` と `-f`（資源の指定がないときも）の大きさは 512 バイト単位（POSIX モードでなければ 1024 バイト単位）', 'In POSIX mode, the sizes of `-c` and `-f` (also with no resource given) count blocks of 512 bytes (1024 bytes out of POSIX mode)'),
+};
+
 /** procps kill: `-N` is `-s N`, and a name may start with `s` (`/bin/kill -stop` sends STOP). */
 const PROCPS_KILL_PATTERNS: PatternOption[] = [
   { ...KILL_PATTERNS[0], text: ([, n]) => tx(`送るシグナルの番号 ${n}（\`-s ${n}\` と同じ。\`kill -l ${n}\` で名前がわかる）`, `Send signal number ${n} (same as \`-s ${n}\`; \`kill -l ${n}\` prints its name)`) },
@@ -254,13 +324,32 @@ const ECHO_OPTIONS: OptionSpec[] = [
   { names: ['-e'], text: tx('`\\n` などのバックスラッシュエスケープを解釈する', 'interpret backslash escapes like `\\n`'), selects: 'escapes' },
   { names: ['-E'], text: tx('バックスラッシュエスケープを解釈しない（既定）', 'do not interpret escapes (default)'), selects: 'plain' },
 ];
+const ECHO_TEXT = operand('TEXT', '表示する文字列', 'text to print', { repeat: '*', lang: 'echo' });
 const ECHO_READING: Rest = {
   parser: 'letters', dashDash: 'literal', modes: [{ name: 'escapes' }, { name: 'plain', default: true }], lastModeWins: true, prints: 'words',
   operands: [
-    { when: { mode: 'escapes' }, pattern: [operand('TEXT', '表示する文字列', 'text to print', { repeat: '*', lang: 'echo' })] },
+    { when: { mode: 'escapes' }, pattern: [ECHO_TEXT] },
     { pattern: [operand('TEXT', '表示する文字列', 'text to print', { repeat: '*' })] },
   ],
 };
+/**
+ * bash's `echo` with `shopt -s xpg_echo`: it reads escapes unless `-E` is given; in POSIX mode too, it takes no options
+ * at all (6.11: `echo -n x` prints `-n x`).
+ */
+const ECHO_IN_SHELL: ShellVariant[] = [
+  {
+    set: ['posix'], shopt: ['xpg_echo'], spec: { options: [], operands: [{ pattern: [ECHO_TEXT] }] },
+    text: tx('POSIX モードで `xpg_echo` が有効なので、オプションを取らず（`-n` もそのまま表示する）、バックスラッシュのエスケープを解釈する', 'In POSIX mode with `xpg_echo` on, it takes no options (it prints `-n` too) and reads backslash escapes'),
+  },
+  {
+    shopt: ['xpg_echo'],
+    spec: {
+      modes: [{ name: 'escapes', default: true }, { name: 'plain' }],
+      options: [ECHO_OPTIONS[0], { ...ECHO_OPTIONS[1], text: tx('`\\n` などのバックスラッシュエスケープを解釈する（`xpg_echo` が有効なので既定）', 'interpret backslash escapes like `\\n` (the default, with `xpg_echo` on)') }, { ...ECHO_OPTIONS[2], text: tx('バックスラッシュエスケープを解釈しない', 'do not interpret escapes') }],
+    },
+    text: tx('`xpg_echo` が有効なので、`-E` がなければバックスラッシュのエスケープを解釈する', 'With `xpg_echo` on, it reads backslash escapes unless `-E` is given'),
+  },
+];
 const TEST_OPTIONS: OptSpec[] = [
   ['-z', '文字列が空なら真', 'true if the string is empty'], ['-n', '文字列が空でなければ真', 'true if the string is not empty'],
   ['-e', 'ファイルが存在すれば真', 'true if the file exists'], ['-f', '通常のファイルなら真', 'true if it is a regular file'],
@@ -337,7 +426,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   local: actsOnShell(declarationSpec('local', declarationFlags, DECLARE_NAMES, { plusOptions: true, scope: { only: 'function', except: ['zsh', 'mksh', 'yash', 'ksh'] }, locals: 'unless-g', localOptions: true }, declarationOffFlags), (c) => c.operands.length > 0),
   // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word, `--` too, is text to print.
   // The last of `-e` and `-E` decides whether backslash escapes are read.
-  echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', ECHO_OPTIONS, { program: PROGRAMS.echo, ...ECHO_READING }),
+  echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', ECHO_OPTIONS, { program: PROGRAMS.echo, ...ECHO_READING, inShell: ECHO_IN_SHELL }),
   printf: b('書式を指定して文字列を出力する（`%s` 文字列, `%d` 整数, `\\n` 改行 など）', 'Print formatted output (`%s` string, `%d` integer, `\\n` newline…)', [
     naming(['-v', '出力せず、結果を指定した変数に代入する', 'assign the output to a variable instead of printing', 'arg'], 'variable', 'string'),
   ], { program: PROGRAMS.printf, example: 'printf', prints: 'format', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')) }),
@@ -432,8 +521,8 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   ], {
     operands: [
       // With `-o` the names are those of `set -o`.
-      { when: { option: ['-o'] }, pattern: [operand('OPTNAME', '`set -o` のオプション名（例: errexit, pipefail, noglob）', '`set -o` option name (e.g. errexit, pipefail, noglob)', { repeat: '*', values: named(shellOptions) })] },
-      ...args(operand('OPTNAME', 'オプション名（例: nullglob, globstar, extglob）', 'option name (e.g. nullglob, globstar, extglob)', { type: 'shell-option', values: named(shoptOptions) })).operands!,
+      { when: { option: ['-o'] }, pattern: [operand('OPTNAME', '`set -o` のオプション名（例: errexit, pipefail, noglob）', '`set -o` option name (e.g. errexit, pipefail, noglob)', { repeat: '*', values: SET_OPTION_NAMES })] },
+      ...args(operand('OPTNAME', 'オプション名（例: nullglob, globstar, extglob）', 'option name (e.g. nullglob, globstar, extglob)', { type: 'shell-option', values: SHOPT_OPTION_NAMES })).operands!,
     ],
   }), (c) => has(c, '-s', '-u') && !has(c, '-p') && c.operands.length > 0, { alters: ['options'] }),
   print: b('引数を表示する（ksh・mksh・zsh の組み込み。bash にはない。`echo` と違いオプションの扱いが決まっている）', 'Print the arguments (a ksh, mksh and zsh builtin, not in bash; unlike `echo` its options are well defined)', [
@@ -458,15 +547,9 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     operands: [
       // `trap INT` (one word) resets the signal; with -p, -P and -l the words are signals only.
       { when: { not: { option: ['-p', '-P', '-l'] } }, pattern: [operand('SIGNAL', '既定の動作に戻すシグナル（コマンドを書かない `trap INT` は登録の解除）', 'signal to reset to its default (`trap INT`, with no command, removes the trap)')] },
-      { when: { option: ['-p'] }, pattern: [operand('SIGNAL', '表示するシグナル（EXIT, ERR, INT, TERM など）', 'signal to show (EXIT, ERR, INT, TERM…)', { repeat: '*' })] },
-      { when: { option: ['-P'] }, pattern: [operand('SIGNAL', '登録されたコマンドを表示するシグナル', 'signal whose command to print', { repeat: '+' })] },
-      { when: { option: ['-l'] }, pattern: [operand('SIGNAL', '名前か番号に直すシグナル', 'signal to translate between name and number', { repeat: '*' })] },
-      // `trap 1 2`: a signal number first resets every signal named (bash reads it so for old scripts).
-      { when: { operand: 0, matches: SIGNAL_NUMBER }, pattern: [operand('SIGNAL', '既定の動作に戻すシグナル（最初の語がシグナル番号なら、どの語もシグナル）', 'signal to reset to its default (when the first word is a signal number, every word is a signal)', { repeat: '+' })] },
-      // `trap - INT`: `-` resets the signals to their defaults (no command runs).
-      { when: { operand: 0, matches: /^-$/ }, pattern: [operand('RESET', '`-`: 続くシグナルの動作を既定に戻す', '`-`: reset the signals that follow to their default action'), operand('SIGNAL', '既定の動作に戻すシグナル', 'signal to reset to its default', { repeat: '+' })] },
-      ...args(operand('ACTION', '実行するコマンド（`-` でリセット、空文字で無視）', 'command to run (`-` resets, empty string ignores)', { command: { run: 'current-shell', later: true } }), operand('SIGNAL', '対象のシグナル（EXIT, ERR, INT, TERM など）', 'signal (EXIT, ERR, INT, TERM…)')).operands!,
+      ...TRAP_OPERANDS,
     ],
+    inShell: [TRAP_POSIX],
   }), (c) => (c.operands.length > 0 || has(c, '--')) && !has(c, '-p', '-P', '-l')),
   source: actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', SOURCE_OPTIONS, { ...SOURCE_OPERANDS, restricted: { slash: 'operand' } }), undefined, { runsUnread: 'file' }),
   '.': actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', SOURCE_OPTIONS, { ...SOURCE_OPERANDS, restricted: { slash: 'operand' } }), undefined, { runsUnread: 'file' }),
@@ -497,7 +580,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     { names: ['-l', '-L'], text: tx('シグナル一覧を表示（番号や名前を渡すと、もう一方に直す）', 'list signals (given a number or a name, print the other one)'), selects: 'list' },
     { names: ['-0'], text: tx('プロセスが存在するか確認するだけ', 'only check whether the process exists'), ...SIGNAL_GIVEN, inMode: { list: KILL_LISTING } },
   ], {
-    program: PROGRAMS.kill, patternOptions: KILL_PATTERNS, modes: [{ name: 'list' }],
+    program: PROGRAMS.kill, patternOptions: KILL_PATTERNS, modes: [{ name: 'list' }], inShell: [KILL_POSIX],
     // (bash reads any other `-WORD` as a signal: `kill -Z 1`.)
     unknownOption: tx('bash はシグナルの名前として読むが、その名前のシグナルはない: `invalid signal specification` と表示し、何も送らずに失敗する（終了ステータス 1）', 'bash reads it as the name of a signal, and there is none: it says `invalid signal specification`, and fails with status 1, sending nothing'),
     operands: [
@@ -650,7 +733,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-b', 'ソケットバッファの最大サイズ', 'maximum socket buffer size'],
     ['-R', 'リアルタイムのプロセスがブロックせずに走れる時間（マイクロ秒）', 'time a real-time process may run without blocking (microseconds)'],
     // (bash also lists -k, -P and -T, which Linux lacks: "invalid option".)
-  ], args(operand('LIMIT', '新しい上限: 資源の単位の数（大きさは多くが KiB 単位。`ulimit -a` に単位がある）か、`unlimited`（上限なし）・`soft`・`hard`（今のソフトリミット・ハードリミット）。資源のオプションがなければファイルの大きさ（`-f`）の上限', 'the new limit: a number in the unit of the resource (most sizes in KiB; `ulimit -a` shows the units), or `unlimited`, `soft` or `hard` (the current soft or hard limit); with no option for a resource, the limit of file size (`-f`)'))), (c) => c.operands.length > 0),
+  ], { ...args(operand('LIMIT', '新しい上限: 資源の単位の数（大きさは多くが KiB 単位。`ulimit -a` に単位がある）か、`unlimited`（上限なし）・`soft`・`hard`（今のソフトリミット・ハードリミット）。資源のオプションがなければファイルの大きさ（`-f`）の上限', 'the new limit: a number in the unit of the resource (most sizes in KiB; `ulimit -a` shows the units), or `unlimited`, `soft` or `hard` (the current soft or hard limit); with no option for a resource, the limit of file size (`-f`)')), inShell: [ULIMIT_POSIX] }), (c) => c.operands.length > 0),
   mapfile: actsOnShell(b('標準入力の各行を配列に読み込む', 'Read lines from stdin into an array', MAPFILE_OPTIONS, MAPFILE_OPERANDS), undefined, MAPFILE_DEFAULT),
   readarray: actsOnShell(b('標準入力の各行を配列に読み込む（mapfile と同じ）', 'Read lines from stdin into an array (same as mapfile)', MAPFILE_OPTIONS, MAPFILE_OPERANDS), undefined, MAPFILE_DEFAULT),
   // `let` has no options: `let -a` is an expression.
@@ -659,10 +742,12 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ...args(operand('EXPR', '算術式（引数ごとに1つ。左から順に評価され、前の結果が後ろの式から見える）',
       'arithmetic expression (one per argument, evaluated left to right, so later ones see earlier results)', { type: 'arith', lang: 'arith' })),
   }),
-  pushd: actsOnShell(b('ディレクトリスタックに積んで移動する', 'Push a directory onto the stack and cd to it', [
+  // (With no operand, `pushd` exchanges the top two entries; `pushd` and `popd` print the stack as `dirs` does when
+  // they succeed, which is why scripts send them to `/dev/null`: 6.8.1.)
+  pushd: actsOnShell(b('ディレクトリスタックに積んで移動する（引数がなければ先頭の2つを入れ替える）。成功するとスタックを `dirs` と同じ形で表示する', 'Push a directory onto the stack and cd to it (with no argument, exchange the top two entries); on success, print the stack as `dirs` does', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
   ], { ...args(operand('DIR', 'スタックに積んで移動するディレクトリ', 'directory to push onto the stack and cd to')), restricted: { unless: ['-n'] }, unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`スタックを回して、\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）を先頭にして移動する`, `Rotate the stack so that entry ${n}, counted from the ${side} of \`dirs\` (from 0), is on top, and cd there`))] })),
-  popd: actsOnShell(b('ディレクトリスタックから取り出してそこへ戻る', 'Pop the directory stack and cd to it', [
+  popd: actsOnShell(b('ディレクトリスタックの先頭を取り除き、新しい先頭へ移動する。成功するとスタックを `dirs` と同じ形で表示する', 'Remove the top of the directory stack and cd to the new top; on success, print the stack as `dirs` does', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
   ], { restricted: { unless: ['-n'], unlessWord: /^(?:\+0*[1-9]\d*|-\d+)$/ }, unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）をスタックから取り除く`, `Remove entry ${n}, counted from the ${side} of \`dirs\` (from 0), from the stack`))] })),
   dirs: b('ディレクトリスタックを表示する', 'Show the directory stack', [

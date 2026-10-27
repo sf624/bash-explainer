@@ -94,6 +94,13 @@ export interface CommandSpec {
   lateOption?: Text;
   builtin?: 'special' | 'regular';
   /**
+   * How a builtin reads its words where shell options are on (manual 6.11): the first entry whose options are all
+   * on at the command replaces these fields of the spec, and its `text` is added to the summary. `kill` in POSIX mode
+   * refuses a signal name with `SIG`; `echo` with `xpg_echo` reads escapes by default, and in POSIX mode takes no
+   * options at all.
+   */
+  inShell?: readonly ShellVariant[];
+  /**
    * What a builtin ends, where the path goes on after it: `loop`, the loop it runs in (`break`); `pass`, the pass of
    * that loop, which goes on with the next one (`continue`); `function`, the function that runs it or a file that
    * `source` reads (`return`); `shell`, the shell, or the subshell it runs in (`exit`). Outside a loop, `break` and
@@ -404,6 +411,16 @@ export interface OldStyleSpec {
  * `run`, it runs the commands the file holds, as a script of its own (`bash FILE`, `source FILE`).
  */
 export type IoUse = 'input' | 'read' | 'write' | 'run';
+
+/** A builtin's spec where the options of `set -o` and `shopt` named are all on (`CommandSpec.inShell`). */
+export interface ShellVariant {
+  set?: readonly string[];
+  shopt?: readonly string[];
+  /** The fields that change. */
+  spec: Partial<CommandSpec>;
+  /** What changes, added to the summary. */
+  text: Text;
+}
 
 /** One way to read the operands: it applies when `when` holds and the pattern fits. */
 export interface OperandAlt {

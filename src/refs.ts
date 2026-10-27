@@ -1,4 +1,4 @@
-import { BUILTIN_SECTIONS, PARAMETER_ALSO, PROGRAM_SECTIONS, VARIABLE_SECTIONS } from './manual';
+import { BUILTIN_SECTIONS, PARAMETER_ALSO, PROGRAM_SECTIONS, VARIABLE_FEATURE_SECTIONS, VARIABLE_SECTIONS } from './manual';
 import { field, isShebang, type SyntaxNode } from './syntax/tree';
 
 // The sections of the Bash manual (src/manual.ts) a token is about, from its node: a construct, an operator, a
@@ -72,10 +72,14 @@ export function programSections(name: string): readonly string[] {
   return PROGRAM_SECTIONS[name.slice(name.lastIndexOf('/') + 1)] ?? [];
 }
 
-/** The section of chapter 5 that describes the variable `name` (`PATH`: 5.1), if bash's manual lists it there. */
+/**
+ * The section of chapter 5 that describes the variable `name` (`PATH`: 5.1), if bash's manual lists it there, and the
+ * section of chapter 6 that describes what it does (`PS1`: 6.9, `BASH_COMPAT`: 6.12).
+ */
 export function variableSections(name: string): readonly string[] {
   const own = VARIABLE_SECTIONS[name];
-  return own ? [own] : [];
+  const feature = VARIABLE_FEATURE_SECTIONS[name];
+  return own ? [own, ...(feature ? [feature] : [])] : [];
 }
 
 /** The nodes of an expression, of `[[ ]]` (6.4) or of arithmetic (6.5). */

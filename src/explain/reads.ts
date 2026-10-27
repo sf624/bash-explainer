@@ -4,14 +4,14 @@
 // end of a note on a word that is not globbed.
 import { givenOptions, has as hasOption, operands, restrictedRefusal, values } from '../argv/query';
 import type { ArgvParse } from '../argv/interpret';
-import type { CommandSpec } from '../argv/spec';
+import type { CommandSpec, ShellVariant } from '../argv/spec';
 import { impliedWords, lookupCommand } from '../dict/aliases';
 import { customCommandSpec } from '../dict/custom';
 import type { Flavor } from '../embedded/regex';
 import { isProgram } from '../namefacts';
 import type { ExecEnv } from '../semantics/env';
 import { type NameResolution, resolveName } from '../semantics/names';
-import { attribute, type OptionState, shoptIn } from '../semantics/state';
+import { attribute, option, type OptionState, shoptIn } from '../semantics/state';
 import { type ExpansionStep, ifsOf, type WordMeaning, wordMeaning } from '../semantics/words';
 import { literalContent, staticWordValue, surelyHasSlash } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
@@ -32,6 +32,16 @@ export function resolve(cx: Explainer, name: string, at: SyntaxNode, opts: { quo
 /** The spec of a command a wrapper runs: from the customCommands setting, the host, or the dictionary. */
 export function specFor(cx: Explainer, name: string): CommandSpec | undefined {
   return customCommandSpec(cx.opts.customCommands?.[name.split('/').pop()!]) ?? hostCommand(cx, name) ?? lookupCommand(name);
+}
+
+/**
+ * The variant of the builtin spec `spec` for the shell options on at `n` (`CommandSpec.inShell`: `kill` in POSIX mode,
+ * 6.11), or undefined. Only bash's: another shell's builtin is its own.
+ */
+export function shellVariant(cx: Explainer, n: SyntaxNode, spec: CommandSpec): ShellVariant | undefined {
+  if (!spec.inShell || (cx.shell && cx.shell !== 'bash')) return undefined;
+  const st = cx.state.at(n).run;
+  return spec.inShell.find((v) => (v.set ?? []).every((o) => option(st, 'set', o) === 'on') && (v.shopt ?? []).every((o) => option(st, 'shopt', o) === 'on'));
 }
 
 /** The spec of a command with none: no options, no operands. */

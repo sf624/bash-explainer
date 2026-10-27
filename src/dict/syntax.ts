@@ -1,4 +1,5 @@
 import { Text, tx } from '../i18n';
+import type { EmbeddedLang } from '../embedded/types';
 import { splitReplacement } from '../expansion';
 import { messageText, unquoteWord } from '../staticword';
 import { wordTable } from '../wordtable';
@@ -390,7 +391,7 @@ export const variableAssignments: Record<string, Text> = wordTable({
   BASH_ALIASES: tx('要素を加えるとエイリアスが定義される（要素を削除しても、エイリアスは残る）', 'Adding an element defines an alias (unsetting one does not remove it)'),
   BASH_ARGV0: tx('`$0` にも同じ値が入る', '`$0` is set to the same value'),
   BASH_CMDS: tx('要素を加えると、`hash` が覚えるコマンドになる（要素を削除しても残る）', 'Adding an element adds a command `hash` remembers (unsetting one does not remove it)'),
-  BASH_COMPAT: tx('これ以降、bash はその版との互換モードで動く（`42` なら `shopt -s compat42` と同じ）', 'From here, bash behaves as that release in compatibility mode (`42`: as `shopt -s compat42`)'),
+  BASH_COMPAT: tx('これ以降、互換レベルはその版になり、bash はそれより後の版で変わった動作を元に戻す（`4.2` か `42` なら `shopt -s compat42` と同じ。`50` と `51` には `shopt` のオプションがない）。レベルは同時に1つだけ', 'From here, the compatibility level is that release: bash brings back what later releases changed (`4.2` or `42`: as `shopt -s compat42`; `50` and `51` have no `shopt` option). There is one level at a time'),
   BASH_ENV: tx('`export` すると、このスクリプトが起動する非対話の bash が、このファイルを先に読む', 'Exported, it makes a non-interactive bash this script starts read this file first'),
   BASH_XTRACEFD: tx('これ以降、`set -x` のトレースはこのファイルディスクリプタに書かれる（前に書いていたディスクリプタは開いたまま）', 'From here, `set -x` writes its trace to this file descriptor (the one it wrote to before stays open)'),
   EXECIGNORE: tx('これ以降、`PATH` でコマンドを探すとき、これらに一致するファイルは飛ばす', 'From here, the search in `PATH` skips the files that match'),
@@ -411,6 +412,12 @@ export const variableAssignments: Record<string, Text> = wordTable({
   LC_ALL: tx('これ以降、bash はすべてのカテゴリーにこのロケールを使う（`export` されていれば、起動するコマンドも）', 'From here, bash uses this locale for every category (and so do the commands it starts, if it is exported)'),
   LC_CTYPE: tx('これ以降、`LC_ALL` がなければ、bash はこのロケールで文字を読む（`export` されていれば、起動するコマンドも）', 'From here, unless `LC_ALL` is set, bash reads characters in this locale (and so do the commands it starts, if it is exported)'),
 });
+
+/**
+ * The variables whose value bash reads in a language of its own each time it uses it: the prompt strings PS0, PS1,
+ * PS2 and PS4 (manual 6.9; not PS3, which `select` prints as it is). Their assignments show the value read so.
+ */
+export const variableLanguages: Readonly<Record<string, EmbeddedLang>> = wordTable({ PS0: 'prompt', PS1: 'prompt', PS2: 'prompt', PS4: 'prompt' });
 
 /**
  * What an empty value does, where it differs from what `variableAssignments` says (`BASH_XTRACEFD=`). test/reading-manual.test.ts

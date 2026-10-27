@@ -513,6 +513,32 @@
     }
   },
   {
+    "manual": "6.8",
+    "snippet": "@PROBE:a@ ~0 ~+0/x x=~+0 ~00; @PROBE:b@ ~1 ~+1 ~-1 ~-0",
+    "facts": {
+      "a": [
+        [
+          "/BOX",
+          "/BOX/x",
+          "x=/BOX",
+          "/BOX"
+        ]
+      ],
+      "b": [
+        [
+          "~1",
+          "~+1",
+          "~-1",
+          "/BOX"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "b": "the directory stack is not followed: only entry 0 from the left, the current directory"
+    }
+  },
+  {
     "manual": "3.4",
     "snippet": "x=*.txt; z='a  b'; w=$z; t=~/t; @PROBE:a@ \"$x\" \"$w\" \"$t\"",
     "facts": {
