@@ -29,7 +29,7 @@ export function quickReference(lang: Lang): ReferenceEntry[] {
 
   const vars = s('特殊変数', 'Special variables');
   for (const [name, x] of Object.entries(specialVariables)) add(vars, `$${name}`, t(x));
-  for (const [name, x] of Object.entries(wellKnownVariables)) add(s('よく使う変数', 'Common variables'), `$${name}`, t(x));
+  for (const [name, x] of Object.entries(wellKnownVariables)) add(s('シェル変数', 'Shell variables'), `$${name}`, t(x));
 
   const red = s('リダイレクト', 'Redirections');
   for (const [op, f] of Object.entries(redirects)) {

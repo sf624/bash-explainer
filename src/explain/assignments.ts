@@ -4,11 +4,14 @@
 // what `IFS` is for.
 import type { Token } from '../analyzer-types';
 import { evalArith } from '../arith';
+import { variableAssignments } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { shorten } from '../label';
+import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { nodeSections } from '../refs';
 import { attribute, docLine } from '../semantics/state';
+import { assignmentIgnored } from '../semantics/vars';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { assignmentSpan, field, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
@@ -111,6 +114,20 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
         ? cx.s('。`IFS` が空だと単語分割がされなくなる（`"${a[*]}"` と `"$*"` の要素は区切りなしでつながる）', '. An empty `IFS` turns word splitting off (the elements of `"${a[*]}"` and `"$*"` are joined with nothing between them)')
         : cx.s(`。\`IFS\` は単語分割（と \`read\`）が区切りに使う文字の一覧: これ以降、クォートしない展開は \`${shown(v)}\` で分割される。\`"\${a[*]}"\` と \`"$*"\` は先頭の文字 \`${shown(v[0])}\` で要素をつなぐ`,
           `. \`IFS\` lists the characters word splitting (and \`read\`) split on: from here, unquoted expansions are split on \`${shown(v)}\`. \`"\${a[*]}"\` and \`"$*"\` join their elements with the first character, \`${shown(v[0])}\``);
+  }
+  // What it changes when it is a variable of bash's (`PATH=…`, `OPTIND=1`): from here on, unless it is assigned for
+  // one command only (`PATH=/x cmd`). (Not in arithmetic: `for ((OPTIND = 1; …))`.)
+  const own = name.type === 'subscript' ? field(name, 'name')!.text : nm;
+  const prefix = n.field !== 'argument' && n.parent?.type === 'command' && !!field(n.parent, 'name');
+  if (n.parent?.type === 'command' && !prefix) {
+    if (assignmentIgnored(own)) expl += cx.s(`。bash はこの代入を無視する（\`${own}\` の値は bash が決める）`, `. Bash ignores this assignment (it sets \`${own}\` itself)`);
+    else if (Object.hasOwn(variableAssignments, own)) expl += cx.s(`。${cx.t(variableAssignments[own])}`, `. ${cx.t(variableAssignments[own])}`);
+  }
+  // A read-only variable (`UID`, or after `readonly x`) keeps its value: bash refuses the assignment. (Not in a
+  // declaration, whose state has the attributes it gives: `readonly x=1`.)
+  if (n.parent?.type === 'command' && n.field !== 'argument' && attribute(st, own, 'r') === 'on') {
+    cx.note(fact(cx.lang, 'assign-readonly', { name: own }), n);
+    expl = cx.s(`\`${own}\` は読み取り専用なので、この代入はエラーになり、値は変わらない`, `\`${own}\` is read-only, so this assignment fails and its value stays`);
   }
   const children: Token[] = [];
   if (value) {

@@ -24,7 +24,7 @@ import { builtinSections, nodeSections } from '../refs';
 import { shellEffectOf, type SlotLink, slotEnvs } from '../semantics/env';
 import { type Missed, testSpecOf } from '../semantics/names';
 import { attribute, docLine } from '../semantics/state';
-import { readDeclarationWords } from '../semantics/vars';
+import { readDeclarationWords, unsetEndsSpecial } from '../semantics/vars';
 import { isPlainWord, type Literal, literalContent, staticWordText, staticWordValue } from '../staticword';
 import { field, fields, inStrayHead, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { bracketShape, type CommandTest, commandTest, type TestRules } from '../testexpr';
@@ -571,6 +571,10 @@ function unsetOperand(cx: Explainer, nodes: SyntaxNode[], word: number, item: Op
         text = cx.s(`変数 \`${name}\` は読み取り専用なので削除されない（エラー、終了ステータス 1）`, `The variable \`${name}\` is read-only, so it is not unset (an error, status 1)`);
       } else if (readonly === 'unknown') {
         text += cx.s(`。ただし、この前の一部の経路では読み取り専用になっていて、そこでは削除されずエラーになる（終了ステータス 1）`, `. But some paths before here make it read-only, and there it is not unset (an error, status 1)`);
+      } else if (kind !== 'function' && space !== 'nameref' && unsetEndsSpecial(name)) {
+        // (`RANDOM`, `SECONDS`…: bash's own behaviour ends with it, src/semantics/vars.ts.)
+        cx.note(fact(cx.lang, 'unset-ends-special', { name }), a);
+        text += cx.s(`。\`${name}\` の bash の特別な働きもなくなる（あとで代入しても普通の変数）`, `. \`${name}\` also loses what bash does with it (set again, it is a plain variable)`);
       }
     }
   }

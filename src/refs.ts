@@ -1,4 +1,4 @@
-import { BUILTIN_SECTIONS } from './manual';
+import { BUILTIN_SECTIONS, VARIABLE_SECTIONS } from './manual';
 import { field, isShebang, type SyntaxNode } from './syntax/tree';
 
 // The sections of the Bash manual (src/manual.ts) a token is about, from its node: a construct, an operator, a
@@ -54,14 +54,21 @@ function redirectSections(n: SyntaxNode): readonly string[] {
 
 /**
  * `$1` and `$10` (3.4.1), `$?`, `$@`, `$$` and the other special parameters (3.4.2), `$_` (bash 5.2's manual lists
- * it with the Bash variables, 5.2), or a variable (3.5.3; `$_x` too).
+ * it with the Bash variables, 5.2, and says what it expands to), or a variable (3.5.3; `$_x` too), and the section of
+ * chapter 5 that describes a variable of bash's (`$PATH`: 5.1, `$RANDOM`: 5.2).
  */
 function parameterSections(text: string): readonly string[] {
   const name = text.slice(1);
   if (/^\d/.test(name)) return ['3.4.1'];
   if (name === '_') return ['5.2'];
   if (/^[-*@#?$!]/.test(name)) return ['3.4.2'];
-  return ['3.5.3'];
+  return ['3.5.3', ...variableSections(name)];
+}
+
+/** The section of chapter 5 that describes the variable `name` (`PATH`: 5.1), if bash's manual lists it there. */
+export function variableSections(name: string): readonly string[] {
+  const own = VARIABLE_SECTIONS[name];
+  return own ? [own] : [];
 }
 
 /** The nodes of an expression, of `[[ ]]` (6.4) or of arithmetic (6.5). */
@@ -116,6 +123,10 @@ export function nodeSections(n: SyntaxNode): readonly string[] | undefined {
   // (`${10}`, `${#}`: a positional or special parameter in braces, which the manual says to write so, 3.4.1.)
   const braced = n.type === 'expansion' && /^\$\{(\d+|[-*@#?$!_])\}$/.exec(n.text);
   if (braced) return [...parameterSections(`$${braced[1]}`), '3.5.3'];
+  // (The name of a variable of bash's, in an assignment, a parameter expansion or arithmetic: `PATH=…`, `${HOME}`,
+  // `$((RANDOM % 6))`; an element of one, `${BASH_SOURCE[0]}`, is an array's too.)
+  if (n.type === 'variable_name' && VARIABLE_SECTIONS[n.text]) return variableSections(n.text);
+  if (n.type === 'subscript' && VARIABLE_SECTIONS[field(n, 'name')!.text]) return [...NODES.subscript, ...variableSections(field(n, 'name')!.text)];
   // (A command with no name: its tokens have the sections of its assignments; around them, redirections have none.)
   if (n.type === 'command' && !field(n, 'name')) return undefined;
   // (The shebang: what the kernel does with it, and to bash a comment.)

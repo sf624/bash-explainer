@@ -350,7 +350,7 @@ describe('tricky lines (round 2)', () => {
   });
 
   it('describes the arrays the shell fills in', () => {
-    assert.match(find('echo ${PIPESTATUS[*]}', 'PIPESTATUS').explanation, /Exit statuses of each command in the last pipeline/);
+    assert.match(find('echo ${PIPESTATUS[*]}', 'PIPESTATUS').explanation, /Exit statuses of each command in the last foreground pipeline/);
     assert.match(find('echo ${BASH_REMATCH[1]}', '[1]').explanation, /group 1, the 1st `\( \)` of the regex/);
     assert.match(find('echo ${BASH_REMATCH[0]}', '[0]').explanation, /whole text/);
     assert.match(find('echo ${BASH_REMATCH[1]}', '[1]', 'ja').explanation, /1 番目の括弧/);
