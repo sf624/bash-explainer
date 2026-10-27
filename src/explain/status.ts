@@ -3,6 +3,7 @@
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { shorten } from '../label';
 import { fact } from '../messages';
+import { inPlaceOf, replaceNode } from '../rewrite';
 import { STATEMENTS } from '../semantics/env';
 import { ancestor, field, fields, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
@@ -14,7 +15,12 @@ export function postfixStatusNote(cx: Explainer, n: SyntaxNode): void {
   const [, v, op] = m;
   // (Where bash surely ignores `set -e`, `((i++)) || true`, the status 1 is the intent.)
   const { ignored, active, stops } = cx.status.errexit(n); if (ignored?.sure) return;
-  cx.note(fact(cx.lang, op === '++' ? 'postfix-increment-status' : 'postfix-decrement-status', { v, errexit: active === 'on', stops }), n);
+  const errexit = active === 'on';
+  if (op === '--') return cx.note(fact(cx.lang, 'postfix-decrement-status', { v, errexit, stops }), n);
+  // The rewrites: an assignment, whose status is 0 whatever the value; `((++v))`, 1 only when the new value is 0 (from
+  // -1); and where `set -e` stops there, the status ignored (`|| true`), in a group where a list would take it in.
+  const rewrite = [replaceNode(n, `${v}=$((${v}+1))`), replaceNode(n, `((++${v}))`), ...(errexit ? [replaceNode(n, inPlaceOf(n, `${n.text} || true`))] : [])];
+  cx.note(fact(cx.lang, 'postfix-increment-status', { v, errexit, stops, rewrite }), n);
 }
 
 /**

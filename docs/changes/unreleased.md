@@ -181,7 +181,7 @@ New warnings and caveats, agreed after the usability test of October 2026. What 
 | `curl -fsSL URL \| bash`, `wget -qO- URL \| sudo sh -s`, `bash <(curl URL)`, `source <(curl URL)` | warning | The shell runs the download without anyone reading it, each line as it arrives; if the download breaks off, the lines that came still run, the last one perhaps cut short. Download to a file (`curl -o FILE`), check it, then run it. | `{ echo 'touch ran'; …wait for ran…; echo 'echo early'; } \| bash` prints `early`: the first line ran before the rest was sent. `printf 'echo one\necho tw' \| bash` prints `one` and `tw`. |
 | `sh -c "$(curl -fsSL URL)"`, `eval "$(curl URL)"` | warning | The same, without "as it arrives": the string is the whole download, run even when it broke off (`eval` suggests `source FILE`). | `sh -c "$(printf 'echo one\necho tw'; exit 18)"` prints `one` and `tw`. |
 | `trap 'echo bye' INT` (or `TERM`, `HUP`; `SIGINT`, `int`, `2` too) | information | When the signal comes, bash runs the action and goes on from where it was: the script does not stop. End the action with `exit 130` (128 + the signal's number); for several signals, a trap of each. | `trap 'echo caught' INT; kill -s INT $$; echo after` prints `caught` and `after`; with `exit 130` it ends with status 130. |
-| `[ -f x ] && echo found` as the last command of a script with a shebang | information | When the test fails, the script ends with its status, which CI, `make` or `./script && next` sees as a failure. Use `if …; then …; fi`, or end with `exit 0`. | Such a script exits with status 1; with `if` or `exit 0` after it, 0. |
+| `[ -f x ] && echo found` as the last command of a script with a shebang | information | When the test fails, the script ends with its status, which CI, `make` or `./script && next` sees as a failure. Use `if [ -f x ]; then echo found; fi`, or end with `exit 0`. | Such a script exits with status 1; with `if` or `exit 0` after it, 0. |
 | `args=$@`, `a="$@"`, `x=${arr[@]}`, `local x="${arr[@]}"`, `x+=$@` | information | The arguments or elements are joined into one string, separated by spaces (whatever `IFS` is). Assign an array to keep them apart (`args=("$@")`), or write `"$*"` (`"${arr[*]}"`) when one string is meant. | `set -- 'a  b' c; x=$@` gives `x='a  b c'`; `x=("$@")` keeps `a  b` and `c` apart. |
 
 What the shell runs and what downloads come from the command specs, not from names: a shell that reads its script from stdin (`bash`, `sh -s`, `bash -`, also run by `sudo`), a file it runs (`bash FILE`, `source FILE`), a string it runs (`sh -c`, `eval`); a download that goes to stdout (`curl` without `-o` or `-O`, `wget -O -`). No warning for `curl -o f URL | bash`, `wget URL | sh` (wget saves to a file), `curl URL | bash script.sh`, `curl URL | bash < f`, `curl URL > f | bash`, or a function named `curl` or `bash`.
@@ -832,6 +832,24 @@ The example of a brace expansion shows the words bash makes as chips in a row, e
 - The command-line tool and Markdown write the words on one line as code spans: `` `1` `4` `7` `10` ``. The VS Code hover shows them as code, side by side. In the panel they are a list, named by the label, so a screen reader says how many words there are.
 - Before, "Resulting words" listed one word per line, and `printf` had an example of its own that printed the braces as they are (`{a,b}{1,2}`). The examples of `printf` and of pipelines now run the words of the expansion (`echo {a,b} | tr a-z A-Z` shows `A B`), and `printf '%s\n' *.txt` or `printf '%s\n' ~/x` has no example, as the files and the home directory are not known. After `set +B`, braces do not expand, and there is no example.
 
+### The code the status notes suggest
+
+The notes on exit statuses show the code to write for their line. The same data is applied and run in bash 5.2 and 5.3 by a test (docs/design/oracles.md, 3.2).
+
+| Line | The note suggests |
+| --- | --- |
+| `local x=$(g)` | `local x; x=$(g)` |
+| `local u=$(g) \|\| return` | `local u; u=$(g) \|\| return` |
+| `export a=$(g) b=$a` | `export a b=$a; a=$(g)`: only the words with `$( )` move. bash expands every word before it declares, so `b=$a` still reads the `a` from before. |
+| `true && export q=$(g)` | `true && { export q; q=$(g); }` |
+| `((i++))` under `set -e` | `i=$((i+1))`, `((++i))` or `((i++)) \|\| true` (in a group after `&&`) |
+| `[ -f x ] && echo y`, last in a function | `if [ -f x ]; then echo y; fi`, or `return 0` after it |
+| `[ -f x ] && echo found`, last in a script | `if [ -f x ]; then echo found; fi`, or `exit 0` after it |
+
+- `i=$((i+1))` now comes first: an assignment with no command substitution has status 0 for every value. `((++i))` has status 1 when the new value is 0 (from -1).
+- With a here-document, `fi` and `return 0` go before its body: `f() { [[ -f x ]] && cat <<EOF; }` becomes `f() { if [[ -f x ]]; then cat <<EOF; fi; }`.
+- Before, the notes said `local x`, then `x=$(…)`, and `if …; then …; fi`.
+
 ## Fixed
 
 ### Conditions and code that never runs
@@ -1364,3 +1382,15 @@ The notes of `wrapper-assignment-expanded-first`, `regex-backslash-dropped`, `br
 | `[[ $x =~ ^\d+$ ]]`, `[[ $x =~ ^[\s]+$ ]]` | `[[ $x =~ ^[0-9]+$ ]]` (`[^0-9]` for `\D`; with `\s` too, in the variable: `re='a\s[0-9]'`). Inside a bracket expression, `[\s]`, no fix: a backslash there is no operator, even from a variable, so the note says to use `[[:space:]]`. | `re='^\d+$'; [[ $x =~ $re ]]`, which matches `ddd` and not `123` (glibc's regexes have no `\d`), and `re='^[\s]+$'`, which matches `s` and `\`. |
 | `[ -f a.txt]` | `a.txt ]`. With the `]` escaped, `[ a = b\]`, no fix: `[ a = b\ ]` still misses its `]`, so the note says to end the test with another `]`. | "`]` needs a space before it". |
 | `$a[1]` | `${a[1]}`, also for `$a[@]` and `$m[k]`. | The same. |
+
+### Read-only declarations
+
+The note on a declaration that hides the status of its `$( )` told to declare first, then assign. For a read-only name, bash refuses that: `readonly x; x=$(g)` says "x: readonly variable". The note now sets the name first:
+
+| Line | The note suggests |
+| --- | --- |
+| `readonly z=$(g) w=1` | `z=$(g); readonly z w=1` |
+| `local -r a=1 b=$(g) c` | `local a=1 b c; b=$(g); readonly a b c` |
+| `declare -ri y=$(g)` | `declare -i y; y=$(g); readonly y` |
+
+`readonly` makes the local read-only, and leaves a global of the same name as it was (bash 5.2 and 5.3). First in a list (`readonly r=$(g) || exit`), `||` would test `readonly`: the note shows the code, but carries no rewrite.

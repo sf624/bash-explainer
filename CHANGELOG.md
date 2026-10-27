@@ -64,6 +64,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Every variable of bash's says what it is (`$PS4`, `$BASHPID`), and an assignment to one says what it changes (`PATH=…`, `OPTIND=1`) or that bash ignores it (`BASHPID=1`). Before, 85 had no explanation.
 - On the web page, the address bar no longer shows the script: **Copy link** only copies the link, and opening a link takes the script off the address bar. Share links work as before, and a reload keeps the script.
 - The notes of `sudo v=1 cmd $v`, `[[ $x =~ \bfoo ]]`, `[ -f a.txt]` and `$a[1]` show the fix written for your line, not a pattern: `sudo v=… sh -c 'cmd $v'`, `re='\bfoo'; [[ $x =~ $re ]]` (with a variable name your script does not use), `a.txt ]`, `${a[1]}`. For `\d` the note says `[0-9]`: no POSIX regex has `\d`, even from a variable. Before, it said to put the regex in a variable.
+- The notes on `local x=$(cmd)`, `((i++))` and a function or script that ends with `test && cmd` show the code to write for that line: `local x; x=$(cmd)`, `if [ -f x ]; then echo found; fi`. The note on `((i++))` now suggests `i=$((i+1))` first: its status is 0 for every value. Before, they showed a pattern (`if …; then …; fi`).
 
 ### Fixed
 
@@ -125,6 +126,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The panel and the web page work with the keyboard and a screen reader: the Meaning view folds with buttons, a problem opens with Enter, `F6` goes between the editor and the explanation, and the editor says how to leave it. Before, folding and the Problems list needed a mouse.
 - The web page's tab icon is legible in a dark browser theme.
 - Pitfalls are found in a command that another one runs: `sudo rm -rf $DIR/releases/$line` (and the same under `env`, `nice`, `nohup`, `xargs` or `command`) gets the warnings of `rm -rf $DIR/…`. An unquoted path whose value the script sets to one word (`TS=2024`) is a caveat, not a warning.
+- The note on `readonly x=$(cmd)` and `local -r x=$(cmd)` says to set the name first and make it read-only after: `x=$(cmd); readonly x`. Before, it said to write `readonly x`, then `x=$(cmd)`, which bash refuses ("x: readonly variable").
 
 ## 0.8.0
 

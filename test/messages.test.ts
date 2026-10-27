@@ -49,25 +49,27 @@ describe('the message catalog', () => {
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x' }).level, 'warning');
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'X', environment: 'maybe' }).level, 'info');
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x', environment: 'unlikely' }).level, 'warning');
+    // (The increment's params carry its rewrites, `incr`; the text renders their code.)
+    const incr = (v: string) => ({ v, rewrite: [`${v}=$((${v}+1))`, `((++${v}))`, `((${v}++)) || true`].map((code) => ({ code, edits: [] })) });
     for (const id of ['postfix-increment-status', 'postfix-decrement-status'] as const) {
-      assert.strictEqual(fact('en', id, { v: 'i', errexit: true }).level, 'warning', id);
-      assert.strictEqual(fact('en', id, { v: 'i' }).level, 'info', id);
+      assert.strictEqual(fact('en', id, { ...incr('i'), errexit: true }).level, 'warning', id);
+      assert.strictEqual(fact('en', id, incr('i')).level, 'info', id);
     }
     // (The warning leads with the consequence and the reason: `set -e` is on, so the shell stops there.)
-    assert.strictEqual(fact('en', 'postfix-increment-status', { v: 'count', errexit: true }).text, '⚠ Pitfall: `set -e` is on here, so the script stops at this line when `count` is 0: `((count++))` gives the value before the increment, and 0 is a failure status. Write `((++count))`, `count=$((count+1))` or `((count++)) || true`');
-    assert.strictEqual(fact('ja', 'postfix-increment-status', { v: 'count', errexit: true, stops: 'subshell' }).text, '⚠ 落とし穴: ここでは `set -e` が効いているので、`count` が 0 のときこの行でサブシェルが終わる。`((count++))` の値は増やす前の値で、0 は失敗の終了ステータスになるため。`((++count))` か `count=$((count+1))` か `((count++)) || true` と書く');
+    assert.strictEqual(fact('en', 'postfix-increment-status', { ...incr('count'), errexit: true }).text, '⚠ Pitfall: `set -e` is on here, so the script stops at this line when `count` is 0: `((count++))` gives the value before the increment, and 0 is a failure status. Write `count=$((count+1))`, `((++count))` or `((count++)) || true`');
+    assert.strictEqual(fact('ja', 'postfix-increment-status', { ...incr('count'), errexit: true, stops: 'subshell' }).text, '⚠ 落とし穴: ここでは `set -e` が効いているので、`count` が 0 のときこの行でサブシェルが終わる。`((count++))` の値は増やす前の値で、0 は失敗の終了ステータスになるため。`count=$((count+1))` か `((++count))` か `((count++)) || true` と書く');
     assert.match(fact('en', 'postfix-decrement-status', { v: 'n', errexit: true, stops: 'unknown' }).text, /^⚠ Pitfall: `set -e` is on here, so the shell running it stops at this line when `n` is 0/);
     // Every shell that `set -e` stops, in both languages and for both operators.
     const ends = { script: ['スクリプトが止まる', 'the script stops'], subshell: ['サブシェルが終わる', 'the subshell ends'], unknown: ['これを実行するシェルが止まる', 'the shell running it stops'] } as const;
     for (const id of ['postfix-increment-status', 'postfix-decrement-status'] as const) {
       for (const [stops, [ja, en]] of Object.entries(ends)) {
-        assert.ok(fact('ja', id, { v: 'n', errexit: true, stops: stops as keyof typeof ends }).text.includes(`この行で${ja}`), `${id} ja ${stops}`);
-        assert.ok(fact('en', id, { v: 'n', errexit: true, stops: stops as keyof typeof ends }).text.includes(`so ${en} at this line`), `${id} en ${stops}`);
+        assert.ok(fact('ja', id, { ...incr('n'), errexit: true, stops: stops as keyof typeof ends }).text.includes(`この行で${ja}`), `${id} ja ${stops}`);
+        assert.ok(fact('en', id, { ...incr('n'), errexit: true, stops: stops as keyof typeof ends }).text.includes(`so ${en} at this line`), `${id} en ${stops}`);
       }
-      assert.ok(fact('ja', id, { v: 'n', errexit: true }).text.includes('この行でスクリプトが止まる'), `${id} ja default`);
-      assert.ok(fact('en', id, { v: 'n', errexit: true }).text.includes('so the script stops at this line'), `${id} en default`);
-      assert.ok(!fact('en', id, { v: 'n' }).text.includes('set -e` is on here'), `${id} en plain`);
-      assert.ok(!fact('ja', id, { v: 'n' }).text.includes('が効いているので'), `${id} ja plain`);
+      assert.ok(fact('ja', id, { ...incr('n'), errexit: true }).text.includes('この行でスクリプトが止まる'), `${id} ja default`);
+      assert.ok(fact('en', id, { ...incr('n'), errexit: true }).text.includes('so the script stops at this line'), `${id} en default`);
+      assert.ok(!fact('en', id, incr('n')).text.includes('set -e` is on here'), `${id} en plain`);
+      assert.ok(!fact('ja', id, incr('n')).text.includes('が効いているので'), `${id} ja plain`);
     }
     assert.match(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true }).text, /file names, and this command then deletes or overwrites files it should not$/);
     assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true }).level, 'warning');
@@ -82,8 +84,8 @@ describe('the message catalog', () => {
   });
 
   it('starts a note with the mark of its level, and a pitfall with the word of its level too', () => {
-    assert.ok(fact('en', 'declaration-masks-status', { kw: 'local', v: 'x' }).text.startsWith('ⓘ Caveat: the status of'));
-    assert.ok(fact('ja', 'declaration-masks-status', { kw: 'local', v: 'x' }).text.startsWith('ⓘ 注意: '));
+    assert.ok(fact('en', 'declaration-masks-status', { kw: 'local', v: 'x', rewrite: [{ code: 'local x; x=$(f)', edits: [] }] }).text.startsWith('ⓘ Caveat: the status of'));
+    assert.ok(fact('ja', 'declaration-masks-status', { kw: 'local', v: 'x', rewrite: [{ code: 'local x; x=$(f)', edits: [] }] }).text.startsWith('ⓘ 注意: '));
     assert.ok(fact('en', 'unset-readonly', { name: 'x' }).text.startsWith('⚠ The variable `x` is read-only'));
     // (A heading of its own in place of the word.)
     assert.ok(fact('en', 'python-shell-injection').text.startsWith('⚠ Shell injection risk: '));
@@ -96,7 +98,7 @@ describe('the message catalog', () => {
     const { text, level, label, body, code } = fact('en', 'local-outside-function', { stops: false });
     assert.deepStrictEqual({ level, label, code }, { level: 'warning', label: 'Pitfall:', code: 'local-outside-function' });
     assert.strictEqual(text, `⚠ Pitfall: ${body}`);
-    const caveat = fact('ja', 'declaration-masks-status', { kw: 'local', v: 'x' });
+    const caveat = fact('ja', 'declaration-masks-status', { kw: 'local', v: 'x', rewrite: [{ code: 'local x; x=$(f)', edits: [] }] });
     assert.deepStrictEqual([caveat.level, caveat.label], ['info', '注意:']);
     const risk = fact('en', 'python-shell-injection');
     assert.deepStrictEqual([risk.level, risk.label], ['warning', 'Shell injection risk:']);

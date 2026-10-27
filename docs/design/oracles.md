@@ -147,15 +147,15 @@ The catalog's classification is in test/suggestions.test.ts (#273), one line per
 | `for-over-unquoted-args` | `for a in $@` → `for a in "$@"` | arguments with spaces, empty, a `*` |
 | `prefix-assignment-expanded-first` | `v=1 cmd $v` → `v=1 sh -c '… "$v"'` | `v` set before, unset |
 | `wrapper-assignment-expanded-first` | `sudo v=1 cmd $v` → `sudo v=1 sh -c 'cmd $v'` (no edits where the string has another expansion), sudo stubbed by `env` | as above |
-| `declaration-masks-status` | `local x=$(f)` → `local x; x=$(f)` | `f` fails, succeeds; with `set -e` |
-| `postfix-increment-status` | `((i++))` → `((++i))`, `i=$((i+1))` | `i` 0, 1, unset; with `set -e` |
-| `function-last-test-returns-status`, `-stops-script` | `a && b` last → `if a; then b; fi` | `a` fails, succeeds; with `set -e` |
+| `declaration-masks-status` | `local x=$(f)` → `local x; x=$(f)` (only the words with `$( )` move); read-only names are set first: `x=$(f); readonly x`, and `local -r x=$(f)` → `local x; x=$(f); readonly x`; in a group after `&&` or in a pipeline | `f` fails, succeeds; with `set -e` |
+| `postfix-increment-status` | `((i++))` → `i=$((i+1))` (0 for every value), `((++i))` (1 when the new value is 0); with `set -e`, also `((i++)) \|\| true` | `i` 0, 1, unset; with `set -e` |
+| `function-last-test-returns-status`, `-stops-script` | `a && b` last → `if a; then b; fi`; `return 0` after it (both before the bodies of here-documents) | `a` fails, succeeds; with `set -e` |
 | `failure-reported-as-success` | `a \|\| echo m` → `a \|\| { echo m >&2; exit 1; }` (`return 1` in a function; `return 1 2>/dev/null \|\| exit 1` in a file that may be sourced, 3.2) | `a` fails, succeeds; last of a script, of a function; with `set -e`; the file run, sourced, sourced in a function |
 | `unmatched-glob-runs-once` | `[ -e "$f" ] \|\| continue` first; `shopt -s nullglob` | matching files, none |
 | `regex-backslash-dropped` | `[[ $x =~ \bfoo ]]` → `re='\bfoo'; [[ $x =~ $re ]]`; `\d` → `[0-9]`, `\D` → `[^0-9]` (no POSIX regex has them, even from a variable); none for an escape in a bracket expression (`[\s]`) | strings that match and do not |
 | `nounset-unbound` | `$x` → `${x:-}` (when the analyzer gives `fix`) | unset, empty, set; with `set -u` |
 | `bracket-close-glued` | `[ -f a.txt]` → `[ -f a.txt ]` (with a variable, `[ -f $x]`, the style check of src/pitfalls.ts says it; none when the `]` is escaped, `b\]`) | file present, absent |
-| `script-last-test-returns-status` | `[ -f x ] && cmd` last → `if [ -f x ]; then cmd; fi` | the test true, false |
+| `script-last-test-returns-status` | `[ -f x ] && cmd` last → `if [ -f x ]; then cmd; fi`; `exit 0` after it | the test true, false |
 | `unbraced-element` | `$a[1]` → `${a[1]}` | an array of two elements; files that match `$a[1]` as a glob |
 | `array-joined-in-assignment` | `x=$@` → `x=("$@")`, or `x="$*"` when one string is meant | arguments with spaces, none |
 
