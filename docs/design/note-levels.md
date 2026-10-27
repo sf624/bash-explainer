@@ -85,12 +85,12 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `bracket-missing-close`, `bracket-close-glued`, `test-malformed` | `[` or `test` fails every time it runs (status 2), and the condition is never evaluated. |
 | `unset-readonly`, `unset-function-and-variable` | `unset` fails every time (status 1), and nothing is unset. |
 | `assign-readonly` | The assignment fails every time, and bash abandons the rest of the command it is in (or, before a command name, runs the command without it). |
-| `local-outside-function` | `local` fails every time outside a function. |
+| `local-outside-function`, when the file runs as a script (a shebang, a host's step, a `bash -c` string) | `local` fails every time outside a function. |
 | `posix-special-function-name` | bash stops the script at the definition. |
-| `alias-not-expanded-in-script` | The alias is "command not found" in a script. |
+| `alias-not-expanded-in-script` | The alias is "command not found" in a script. Said only where the code runs as a script (a shebang, a host's step, a `bash -c` string): not in a file with no shebang, which may be `.bashrc`, nor in a README's code blocks, typed into a terminal (src/semantics/env.ts, `readAs`). |
 | `extglob-in-same-block`, `extglob-turned-off`, `extglob-not-in-new-shell` | A syntax error, every time. |
 | `globstar-unsupported` | `**` never reaches into subdirectories in that shell. |
-| `variable-not-in-remote-shell`, `variable-not-passed-by-wrapper`, `variable-not-exported` | The variable is empty where the string runs, every time. |
+| `variable-not-in-remote-shell`, `variable-not-passed-by-wrapper`, `variable-not-exported` | The variable is empty where the string runs, every time. (Not for a name sudo keeps, `TERM`, `TZ`: `CommandSlot.keeps`; `variable-not-exported` of a name that may come from the environment is a caveat.) |
 | `function-not-in-container`, `builtin-or-function-as-program`, `function-not-on-remote`, `function-not-in-new-shell-blocked`, `function-not-in-new-shell`, `function-not-imported`, `function-not-in-new-shell-export` | The function or builtin is not there: "command not found", or no effect. |
 | `wrapper-assignment-expanded-first`, `prefix-assignment-expanded-first` | The word never sees the value it was meant to. |
 | `pipeline-subshell-variable` | The variable set in the pipeline is gone after it, every time (also when only some paths turn `lastpipe` on: the others lose it). |
@@ -118,6 +118,8 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `pipefail-missing`, `dockerfile-pipefail-missing` | A failure before the last command of a pipeline goes unnoticed. |
 | `function-last-test-returns-status`, `script-last-test-returns-status` | Only the script's exit status is wrong, and only when the test fails. |
 | `failure-reported-as-success` | A failure goes unnoticed: the status is 0 when the command on the left of `\|\| echo` fails. |
+| `local-outside-function`, in a file with no shebang | Fine when a function reads the file with `source`. |
+| `variable-not-exported`, of a name in capitals the script set with no `unset` or declaration first (`mayBeInherited`) | Fine when the variable came from the environment, which exports it. |
 | `posix-special-function-name-maybe` | Only on the paths that turn POSIX mode on. |
 | `postfix-increment-status`, `postfix-decrement-status`, when `set -e` is not surely on there | Only when the value is 0, and only the status. |
 | `extglob-maybe-on`, `extglob-maybe-on-trap` | A syntax error only on some paths, or if the signal comes early. |

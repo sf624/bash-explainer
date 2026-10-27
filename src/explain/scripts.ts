@@ -11,7 +11,8 @@ import { shorten } from '../label';
 import { VARIABLE_SECTIONS } from '../manual';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
-import { type ExecEnv, reachOf, type SlotLink, whereOf } from '../semantics/env';
+import { droppedBy, type ExecEnv, reachOf, type SlotLink, whereOf } from '../semantics/env';
+import { mayBeInherited } from '../semantics/shellstate';
 import type { Missed } from '../semantics/names';
 import { type NestedScript, plainReads, scriptSourceIndex } from '../semantics/nested';
 import { givenToEveryShell } from '../semantics/vars';
@@ -215,7 +216,8 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
 /**
  * `x=1; bash -c 'echo "$x"'`: a variable of this script that a string run by another shell reads (in single
  * quotes, so that shell expands it), which that shell does not get: it is not exported, or a link on the way
- * passes no variables (`env -i`, sudo, ssh: src/semantics/env.ts). Not one the string sets itself, nor one the
+ * passes no variables (`env -i`, sudo, ssh: src/semantics/env.ts; but sudo keeps `TERM`, `TZ`…: `droppedBy`). A
+ * variable in capitals the script set but did not export may come from the environment, exported: a caveat (`mayBeInherited`). Not one the string sets itself, nor one the
  * command or a wrapper sets for it (`x=1 bash -c …`, `env x=1 …`), nor one from the environment or set by that shell (`$_`).
  */
 function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): void {
@@ -225,7 +227,7 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
   if ('why' in script) return;
   const cmd = ancestor(words[0], (x) => x.type === 'command')!;
   const st = cx.state.at(cmd).run;
-  const { variables, blocker } = reachOf(env);
+  const { variables } = reachOf(env);
   const remote = whereOf(env) === 'remote';
   // (Only `$v` and `${v}`: `${v:-x}`, `${v+x}` and `${#v}` are fine with no value. A file of variables may give any.)
   if (env.links.some((l) => l.kind === 'slot' && l.assigns.includes('*'))) return;
@@ -236,14 +238,17 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
     const given = Object.hasOwn(VARIABLE_SECTIONS, v) ? givenToEveryShell(v) : !!wellKnownVariables[v];
     if (!x || x.set !== 'on' || given || specialVariables[v] || script.model.at(e).run.variables.has(v)) continue;
     const exported = x.attrs.x?.state ?? 'off';
-    if (variables === 'none') {
+    // (sudo still passes a few variables of the environment, `TERM`, `TZ`: then it is as with no wrapper.)
+    const dropped = variables === 'none' ? droppedBy(env, v) : undefined;
+    if (dropped) {
       cx.note(remote
         ? fact(cx.lang, 'variable-not-in-remote-shell', { v })
-        : fact(cx.lang, 'variable-not-passed-by-wrapper', { v, via: blocker!.via }), words[0]);
+        : fact(cx.lang, 'variable-not-passed-by-wrapper', { v, via: dropped.via, keeps: !!dropped.slot.keeps }), words[0]);
       return;
     }
     if (exported === 'off') {
-      cx.note(fact(cx.lang, 'variable-not-exported', { v }), words[0]);
+      // (`FOO=1` is exported when `FOO` came from the environment: `env FOO=x bash script`.)
+      cx.note(fact(cx.lang, 'variable-not-exported', { v, environment: mayBeInherited(x) }), words[0]);
       return;
     }
   }

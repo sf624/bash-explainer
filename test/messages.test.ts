@@ -42,7 +42,12 @@ describe('the message catalog', () => {
       assert.strictEqual(e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note'), want, id);
     }
     // The ones whose level depends on the case: an unquoted path given to `rm`, `mv` or `cp`; an unset read that stops a shell.
-    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['postfix-increment-status', 'postfix-decrement-status', 'unquoted-variable-as-path', 'nounset-unbound']);
+    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['local-outside-function', 'postfix-increment-status', 'postfix-decrement-status', 'variable-not-exported', 'unquoted-variable-as-path', 'nounset-unbound']);
+    // `local` in a file with no shebang, which a function may source; a name that may come from the environment, exported.
+    assert.strictEqual(fact('en', 'local-outside-function', { stops: false }).level, 'warning');
+    assert.strictEqual(fact('en', 'local-outside-function', { stops: false, sourced: true }).level, 'info');
+    assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x' }).level, 'warning');
+    assert.strictEqual(fact('en', 'variable-not-exported', { v: 'X', environment: true }).level, 'info');
     for (const id of ['postfix-increment-status', 'postfix-decrement-status'] as const) {
       assert.strictEqual(fact('en', id, { v: 'i', errexit: true }).level, 'warning', id);
       assert.strictEqual(fact('en', id, { v: 'i' }).level, 'info', id);

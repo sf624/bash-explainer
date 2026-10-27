@@ -21,7 +21,7 @@ import { bracket as bracketLabel, labelText, shorten } from '../label';
 import { fact } from '../messages';
 import { nameInfo } from '../namefacts';
 import { builtinSections } from '../refs';
-import { inFunction, processOf, shellEffectOf } from '../semantics/env';
+import { inFunction, processOf, readAs, shellEffectOf } from '../semantics/env';
 import { assignmentsOf, type Missed, type NameResolution, testSpecOf } from '../semantics/names';
 import { docLine } from '../semantics/state';
 import { isPlainWord, literalContent, staticWordValue } from '../staticword';
@@ -224,7 +224,11 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
     // A command over several lines is explained whole, so it always starts on the line explained.
     for (const text of yqNotes(verdict, cx.lang)) cx.note(text, n);
   }
-  if (head.kind === 'builtin' && onlyInFunction(head.spec!, cx.shell) && !inFunction(cx.state.env(n)) && scopeOf(n) !== 'substitution') cx.note(fact(cx.lang, 'local-outside-function', { stops: localStops(cx, n) }), n);
+  if (head.kind === 'builtin' && onlyInFunction(head.spec!, cx.shell) && !inFunction(cx.state.env(n)) && scopeOf(n) !== 'substitution') {
+    // (A file with no shebang may be read with `source` by a function, where `local` works: a caveat.)
+    const sourced = readAs(cx.state.env(n), cx.read) === 'unknown';
+    cx.note(fact(cx.lang, 'local-outside-function', { stops: localStops(cx, n), ...(sourced ? { sourced } : {}) }), n);
+  }
   if (head.kind === 'builtin' && head.spec!.ends === 'function') head.explanation = returnInSubstitution(cx, n) ?? head.explanation;
   const read = readArgs(cx, head.spec, args, head.runs ?? head.name, head.fn);
   if (tail && head.kind === 'builtin' && replacesShell(head.spec!) && !read.parse.roles.some((r) => r.role.role === 'command')) tail.toShell = true;
@@ -345,6 +349,18 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     const first = missed.def.startPosition.row;
     if (missed.why === 'expand_aliases') {
       const value = cx.state.at(nameNode).expand.aliases.get(name)!.value;
+      // (Only a script surely runs without aliases: a file with no shebang may be `.bashrc`, a README is typed into a terminal.)
+      const read = readAs(cx.state.env(nameNode), cx.read);
+      if (read !== 'script') {
+        return {
+          name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
+          explanation: read === 'terminal'
+            ? cx.s(`行 ${first + 1} で定義したエイリアス \`${name}\`: \`${value}\` に置き換わる（端末で対話シェルに打つ行では、エイリアスが展開される。スクリプトの中では \`shopt -s expand_aliases\` がないと展開されない）`,
+              `The alias \`${name}\` defined on line ${first + 1}: replaced by \`${value}\` (typed into an interactive shell, aliases are expanded; a script expands them only with \`shopt -s expand_aliases\`)`)
+            : cx.s(`このファイルの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。対話シェルがこのファイルを読むとき（\`.bashrc\` や、端末で打つ \`source\`）は \`${value}\` に置き換わる。スクリプトとして実行すると、bash はエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので「command not found」になる`,
+              `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`): replaced by \`${value}\` when an interactive shell reads this file (\`.bashrc\`, or \`source\` typed in a terminal). Run as a script, bash does not expand aliases (no \`shopt -s expand_aliases\`), so there it is "command not found"`),
+        };
+      }
       cx.note(fact(cx.lang, 'alias-not-expanded-in-script', { name, value }), nameNode);
       return {
         name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],

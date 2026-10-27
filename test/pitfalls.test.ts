@@ -36,7 +36,7 @@ describe('pitfalls', () => {
     ['rm -rf "$DIR"/*', /becomes `rm -r \/\*`, deleting from the root. Write `"\$\{DIR:\?\}"\/\*` to stop/],
     ['[-f x]', /`\[` is an ordinary command, so a space must follow it \(`\[-f` reads as another command name\)/],
     // (`[ -f x]`, with a last word of known text, is the analyzer's note: test/testexpr.test.ts.)
-    ['[ -f $x]', /the `\]` in `\$x\]` is read as part of the word/],
+    ['[ -f $x]', /the `\]` in `\$x\]` is part of the word\. When `\$x` is empty, the word is `\]` alone and closes `\[`, which tests `\[ -f \]`/],
     ['[ "$a" < "$b" ]', /`<` inside `\[ \]` is read as a redirection, not a comparison/],
     ['[ -f x && -n y ]', /`&&` inside `\[ \]` is not an argument of `\[`/],
     ['while read line; do :; done < f', /without `-r`, backslashes/],

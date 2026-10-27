@@ -20,8 +20,9 @@ import type { BuiltinCall, CommandSlot, CommandSpec } from '../argv/spec';
 import { argWordFor } from '../argv/words';
 import { shellFromName } from '../dialect';
 import type { Shell } from '../dialect';
-import { field, substitutionForm, type SyntaxNode } from '../syntax/tree';
+import { field, isShebang, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { staticWordValue } from '../staticword';
+import type { HostId } from '../hosts';
 import type { ShellState, Tri } from './state';
 import type { HostCall } from './walk/host';
 
@@ -357,6 +358,42 @@ export function reachOf(env: ExecEnv, shellopts = false): { functions: Reach; va
     if (functions === 'none') blocker ??= l;
   }
   return { functions, variables, options, aliases, ...(blocker ? { blocker } : {}) };
+}
+
+/**
+ * The first link on the way to code in `env` that does not pass on the exported variable `name` (`reachOf`: one that
+ * runs it on another machine or in a container, or resets the environment), unless it keeps that name
+ * (`CommandSlot.keeps`: sudo keeps `TERM`, `TZ`, `LANG`…); undefined when the variable reaches it.
+ */
+export function droppedBy(env: ExecEnv, name: string): SlotLink | undefined {
+  const kept = (l: SlotLink): boolean => !!l.slot.keeps?.some((k) => (k.endsWith('*') ? name.startsWith(k.slice(0, -1)) : k === name));
+  return env.links.find((l): l is SlotLink => l.kind === 'slot'
+    && (l.slot.where === 'remote' || l.slot.where === 'container' || ((l.env === 'reset' || l.env === 'none') && !kept(l))));
+}
+
+/**
+ * How a shell reads a file of code: `script`, run as a program by a shell that is not interactive (it has a shebang,
+ * or a host hands it to a shell: a CI step, a Dockerfile `RUN`, a recipe, an npm script, a bats file), so aliases are
+ * not expanded and `local` fails outside a function; `terminal`, typed into an interactive shell (the code blocks of a
+ * README); `unknown`, a file with no shebang, which may be run (`bash f.sh`), or read with `source` by an interactive
+ * shell (`.bashrc`) or by a function.
+ */
+export type FileRead = 'script' | 'terminal' | 'unknown';
+
+/** How the file whose tree is `root` is read (`FileRead`), as part of `host` when it is one. */
+export function fileRead(root: SyntaxNode, host?: HostId): FileRead {
+  if (host) return host.kind === 'markdown' ? 'terminal' : 'script';
+  const first = root.namedChildren[0];
+  return first && isShebang(first) ? 'script' : 'unknown';
+}
+
+/**
+ * How the shell that runs code in `env` reads it, in a file read as `file`: another shell started for it (`bash -c
+ * '…'`, `sudo bash -c`) reads its string as a script; the file's own shell, and its subshells, read it as the file is.
+ */
+export function readAs(env: ExecEnv, file: FileRead): FileRead {
+  const p = processOf(env);
+  return p.kind === 'shell' || p.kind === 'program' ? 'script' : file;
 }
 
 /** The subshell links `n` itself starts (a pipeline stage, `( )`, `&`…). */

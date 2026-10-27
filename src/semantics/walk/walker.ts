@@ -12,7 +12,7 @@ import { commandName } from '../effects';
 import { lastStageInShell, slotEnvs, STATEMENTS, subshellReasons } from '../env';
 import { NESTED_DEPTH, type NestedScript, type NotRead } from '../nested';
 import {
-  attribute, EMPTY, type Entry, type FunctionState, type Kind, merge, mergeErrexitWhy, mergeOption, NameMap, option,
+  attribute, EMPTY, type Entry, type FunctionState, type Kind, mayComeFromEnvironment, merge, mergeErrexitWhy, mergeOption, NameMap, option,
   POSIX_ON, reached, type ShellState, sameState, tri, type Tri, unreachable, type VariableState, withoutErrexitWhy, withStatus,
 } from '../shellstate';
 import type { Scripts } from '../state';
@@ -763,7 +763,7 @@ export class Walker {
     // (A name the script has not set may come from the environment: by custom, those are in capitals. Once a file
     // was sourced, a string run with `eval` or a trap set, it may come from there.)
     if (!v) {
-      if (/^[A-Z_][A-Z0-9_]*$/.test(target) || st.opaque) return undefined;
+      if (mayComeFromEnvironment(target) || st.opaque) return undefined;
       // (Taken as unset here, but not for deciding conditions: see `markAssumed`.)
       this.markAssumed();
       return unset;

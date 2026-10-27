@@ -9,6 +9,7 @@ import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax
 import { processOf, STATEMENTS } from './env';
 import { resolveName } from './names';
 import { attribute, option, type StateModel } from './state';
+import { mayComeFromEnvironment } from './shellstate';
 import { conditionOf, statusModel } from './status';
 import { unreliableNames } from './words';
 
@@ -69,7 +70,7 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
     if (n.type !== 'variable_name' || !(x.parent?.type === 'arithmetic_expansion' || x.parent?.type === 'arithmetic_command')) return undefined;
     name = shown = n.text;
   }
-  if (!/^[A-Za-z_]\w*$/.test(name) || name === name.toUpperCase()) return undefined;
+  if (!/^[A-Za-z_]\w*$/.test(name) || mayComeFromEnvironment(name)) return undefined;
   const bash = !shell || shell === 'bash';
   if (!bash && ancestor(n, (a) => a.type === 'heredoc_body')) return undefined;
   const st = model.at(n).run;

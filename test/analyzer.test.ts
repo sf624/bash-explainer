@@ -728,8 +728,8 @@ describe('pipelines and aliases', () => {
     assert.ok(!new Analyzer('en').explainLine(tree, 0, 'zsh').notes.some((n) => /pipeline/.test(n)));
   });
   it('explains an alias defined in the script, with a pitfall without expand_aliases', () => {
-    const e = explain('alias ll="ls -l"\nll /tmp', 1);
-    assert.match(find(e, 'll').explanation, /alias `ll` defined on line 1 \(`ls -l`\)\. But bash does not expand aliases in a script.*"command not found"/);
+    const e = explain('#!/bin/bash\nalias ll="ls -l"\nll /tmp', 2);
+    assert.match(find(e, 'll').explanation, /alias `ll` defined on line 2 \(`ls -l`\)\. But bash does not expand aliases in a script.*"command not found"/);
     assert.match(find(explain('shopt -s expand_aliases\nalias ll="ls -l"\nll', 2), 'll').explanation, /alias `ll` defined on line 2: replaced by `ls -l`/);
     assert.ok(e.notes.some((n) => /bash does not expand aliases in scripts/.test(n)));
     assert.ok(!explain('shopt -s expand_aliases\nalias ll="ls -l"\nll', 2).notes.some((n) => /aliases/.test(n)));
@@ -784,7 +784,7 @@ describe('the state along the script (src/semantics/state.ts)', () => {
     assert.match(find(explain('#!/usr/bin/env -S bash --posix\nx=1 :', 1), 'x=1').explanation, /POSIX special builtin/);
     assert.match(find(explain('awk --posix 1\nx=1 :', 1), 'x=1').explanation, /only for this command/);
     // Aliases expand only when expand_aliases was on when the line was read.
-    assert.ok(notes('alias ll="ls -l"\nll\nshopt -s expand_aliases', 1).some((n) => /bash does not expand aliases in scripts/.test(n)));
+    assert.ok(notes('#!/bin/bash\nalias ll="ls -l"\nll\nshopt -s expand_aliases', 2).some((n) => /bash does not expand aliases in scripts/.test(n)));
     // A function exported only after the command that needs it.
     assert.ok(notes('f() { :; }\nbash -c f\nexport -f f', 1).some((n) => /does not have this script's function `f`/.test(n)));
     assert.ok(!notes('f() { :; }\nexport -f f\nbash -c f', 2).some((n) => /function `f`/.test(n)));

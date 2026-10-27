@@ -459,6 +459,11 @@ export interface CommandSlot {
    * sudo), nothing. A slot inside another one gets only what each slot on the way passes on (`env -i bash -c f`).
    */
   env?: 'exported' | 'variables' | 'reset' | 'none';
+  /**
+   * With `reset`: the variables of the caller's environment that still reach the command, when they are exported
+   * (sudo's defaults: `SUDO_KEEPS`, src/dict/types.ts); a name that ends in `*` stands for every name it starts (`LC_*`).
+   */
+  keeps?: readonly string[];
   /** `command`, `builtin`. */
   lookup?: 'no-functions' | 'builtins-only';
   /**
