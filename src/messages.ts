@@ -2,8 +2,9 @@ import { basisOf, type Basis, type BasisSpec, type TryIt } from './basis';
 import type { ConventionId } from './conventions';
 import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
-import { codeSpan } from './label';
+import { codeSpan, shorten } from './label';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
+import type { Rewrite } from './rewrite';
 import type { NameFacts, NameKind } from './semantics/names';
 import type { ShebangRefusal } from './semantics/state';
 import type { ExpansionValue } from './semantics/values';
@@ -53,6 +54,8 @@ interface Entry<P> {
    * table of src/conventions.ts (`withConvention`). The basis stays the fact's.
    */
   convention?: ConventionId;
+  /** The rewrites the fact carries (`Fact.rewrite`, docs/design/oracles.md 3.2), from the params, as `suggests` gives them. */
+  rewrite?: (p: P) => readonly Rewrite[];
 }
 
 const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text });
@@ -72,6 +75,8 @@ const notProblem = <P>(e: Entry<P>): Entry<P> => ({ ...e, problem: false });
 const withBasis = <P>(e: Entry<P>, basis: BasisSpec | ((p: P) => BasisSpec | undefined)): Entry<P> => ({ ...e, basis });
 /** A pitfall whose advice is a habit, beside the fact it states (src/conventions.ts). */
 const withConvention = <P>(e: Entry<P>, convention: ConventionId): Entry<P> => ({ ...e, convention });
+/** An entry whose suggestion is rewrites: its params carry them (`rewrite`), its text renders their code, its fact those with edits. */
+const suggests = <P extends { rewrite: readonly Rewrite[] }>(e: Entry<P>): Entry<P> => ({ ...e, rewrite: (p) => p.rewrite.filter((r) => r.edits.length) });
 
 /** `local-outside-function` in a file with no shebang (`sourced`): a function may read it with `source`, and `local` then works. */
 const withSourced =(sourced: boolean | undefined, [ja, en]: readonly [string, string]): readonly [string, string] => (sourced ? [
@@ -147,27 +152,29 @@ export const MESSAGES = {
   'script-last-test-returns-status': caveat<{ left: string }>(['3.2.4', '6.1', '3.7.5'], ({ left }) => [
     `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗すると、スクリプトはその終了ステータス（0 以外）で終わり、呼び出し元（CI や \`make\`、\`./script && next\`）には失敗に見えます。\`if …; then …; fi\` と書くか、最後に \`exit 0\` を置きます`,
     `this is the last command of the script, so when \`${left}\` fails, the script ends with its non-zero status, which its caller (CI, \`make\`, \`./script && next\`) sees as a failure. Write \`if …; then …; fi\`, or end the script with \`exit 0\``]),
-  // `cmd || echo "msg"` where its status matters: the end of a function or of a script, or where `set -e` stops the
-  // script (`where`). `quiet`: the redirections of `cmd` that discard its own error message (`2>/dev/null`), or ''.
-  // (3.2.4: a list's status is that of its last command; 3.3: a function's, that of its last command; 4.3.1: a failure
-  // left of `||` does not stop `set -e`. A script's status (6.1) and the redirection (3.6) are not cited: an entry cites
-  // at most three sections.)
-  'failure-reported-as-success': caveat<{ where: 'function' | 'script' | 'errexit'; name: string; left: string; right: string; quiet: string; fix: string }>(['3.2.4', '3.3', '4.3.1'], ({ where, name, left, right, quiet, fix }) => {
-    const exit = where === 'function' ? 'return 1' : 'exit 1';
+  // `cmd || echo "msg"` where its status matters: the end of a function or of a script (`fragment`: a file with no
+  // shebang, which may be run as one), or where `set -e` stops the script (`where`). `quiet`: the redirections of `cmd`
+  // that discard its own error message (`2>/dev/null`), or ''. `rewrite`: src/statusfacts.ts; `sourced`: it ends with
+  // `return 1 2>/dev/null || exit 1`. (3.2.4: a list's status is that of its last command; 3.3: a function's, that of
+  // its last command; 4.3.1: a failure left of `||` does not stop `set -e`. 6.1, 3.6, 4.1 not cited: at most three.)
+  'failure-reported-as-success': suggests(caveat<{ where: 'function' | 'script' | 'fragment' | 'errexit'; name: string; left: string; right: string; quiet: string; sourced: boolean; rewrite: readonly Rewrite[] }>(['3.2.4', '3.3', '4.3.1'], ({ where, name, left, right, quiet, sourced, rewrite }) => {
     const ja = {
       function: `これは関数 \`${name}\` の最後のコマンドなので、\`${left}\` が失敗しても \`${name}\` は \`${right}\` の終了ステータス 0 を返し、呼び出し元には成功に見えます。`,
       script: `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗してもスクリプトは \`${right}\` の終了ステータス 0 で終わり、呼び出し元（cron や CI、\`./script && next\`）には成功に見えます。`,
+      fragment: `このファイルをスクリプトとして実行すると、これが最後のコマンドなので、\`${left}\` が失敗してもスクリプトは \`${right}\` の終了ステータス 0 で終わり、呼び出し元（cron や CI、\`./script && next\`）には成功に見えます。`,
       errexit: `\`${left}\` が失敗しても、\`||\` の左側の失敗では \`set -e\` は止まらず、\`${right}\` が成功するので、スクリプトはそのまま続きます。`,
     }[where];
     const en = {
       function: `this is the last command of \`${name}\`, so when \`${left}\` fails, \`${name}\` still returns 0, the status of \`${right}\`: its caller sees success.`,
       script: `this is the last command of the script, so when \`${left}\` fails, the script still ends with status 0, the status of \`${right}\`: what runs it (cron, CI, \`./script && next\`) sees success.`,
+      fragment: `if this file is run as a script, this is its last command, so when \`${left}\` fails, the script still ends with status 0, the status of \`${right}\`: what runs it (cron, CI, \`./script && next\`) sees success.`,
       errexit: `when \`${left}\` fails, \`set -e\` does not stop the script (a failure on the left of \`||\` is ignored), and \`${right}\` succeeds, so the script goes on.`,
     }[where];
+    const fix = shorten(rewrite[0].code, Infinity); // (a group over several lines: its first line)
     return [
-      `${ja}${quiet ? `また、\`${quiet}\` でコマンド自身のエラーメッセージも捨てられるので、理由を伝えるのはこのメッセージだけです。` : ''}${where === 'errexit' ? 'スクリプトを止めるには' : '失敗を伝えるには'} \`… || { ${fix}; ${exit}; }\` と書きます`,
-      `${en}${quiet ? ` And \`${quiet}\` discards the error message of the command itself, so only this message is left to say why.` : ''} ${where === 'errexit' ? 'To stop the script' : 'To pass the failure on'}, write \`… || { ${fix}; ${exit}; }\``];
-  }),
+      `${ja}${quiet ? `また、\`${quiet}\` でコマンド自身のエラーメッセージも捨てられるので、理由を伝えるのはこのメッセージだけです。` : ''}${where === 'errexit' ? 'スクリプトを止めるには' : '失敗を伝えるには'} \`… || ${fix}\` と書きます${sourced ? '。ファイルが `source` で読み込まれたときは `return` で戻り、実行されたときは `exit` で終わります' : ''}`,
+      `${en}${quiet ? ` And \`${quiet}\` discards the error message of the command itself, so only this message is left to say why.` : ''} ${where === 'errexit' ? 'To stop the script' : 'To pass the failure on'}, write \`… || ${fix}\`${sourced ? ': it returns when the file is sourced, and exits when it is run' : ''}`];
+  })),
 
   // ---------------------------------------------------------------- functions and what runs instead (3.3, 3.7.2)
   // (3.2.1: a reserved word is one only as the first word of a command. That bash then stops a script with a syntax
@@ -480,9 +487,10 @@ export const MESSAGES = {
       + (partial ? '（この前で `shopt -s lastpipe` を有効にしているのは一部の経路だけです）' : ''),
     `the commands of a pipeline (\`|\`) run in subshells, so \`${used}\` set on the right side is gone when the pipeline ends; the later \`$${used}\` does not see it. ${fix.en}`
       + (partial ? ' (only some paths before here turn `shopt -s lastpipe` on)' : '')]),
-  'unmatched-glob-runs-once': withConvention(caveat<{ glob: string; v: string; nullglob: boolean }>(['3.5.8'], ({ glob, v, nullglob }) => [
-    `\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に \`${glob}\` という文字列がそのまま入って1回実行されます。本体の先頭に \`[ -e "$${v}" ] || continue\` を${nullglob ? '書くか、ループの前で `shopt -s nullglob` にします' : '書きます'}`,
-    `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to the text \`${glob}\` itself. Start the body with \`[ -e "$${v}" ] || continue\`${nullglob ? ', or turn on `shopt -s nullglob` before the loop' : ''}`]), 'guard-unmatched-glob'),
+  // `rewrite`: `[ -e "$f" ] || continue` first in the body, and, where the shell has it, `shopt -s nullglob` before the loop.
+  'unmatched-glob-runs-once': withConvention(suggests(caveat<{ glob: string; v: string; rewrite: readonly Rewrite[] }>(['3.5.8'], ({ glob, v, rewrite: [first, nullglob] }) => [
+    `\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に \`${glob}\` という文字列がそのまま入って1回実行されます。本体の先頭に \`${first.code}\` を${nullglob ? `書くか、ループの前で \`${nullglob.code}\` にします` : '書きます'}`,
+    `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to the text \`${glob}\` itself. Start the body with \`${first.code}\`${nullglob ? `, or turn on \`${nullglob.code}\` before the loop` : ''}`])), 'guard-unmatched-glob'),
   // (The shell sets the standard input up, but a command given a file to read reads that instead: jq, sort, cat…)
   'stdin-not-read': note<{ cmd: string; file: string; stdin: Words }>(['3.2.3', '3.6'], ({ cmd, file, stdin }) => [
     `\`${cmd}\` には読むファイル（\`${file}\`）が指定されているので、標準入力（${stdin.ja}）は読まない（\`-\` を指定すると標準入力も読む）`,
@@ -680,9 +688,11 @@ export interface Note { text: string; level: NoteLevel; label: string; body: str
 /**
  * A fact as a note: its id (also its `code`), its kind, and the sections it cites; where it is bash's behaviour rather
  * than the manual's, its `basis` (none: the manual's sections in `refs`, `basisFor`), and a command that shows it
- * (`tryIt`), both from the probe row that checks it (src/basis.ts); a pitfall whose advice is a habit, its `convention`.
+ * (`tryIt`), both from the probe row that checks it (src/basis.ts); a pitfall whose advice is a habit, its `convention`;
+ * where it suggests mechanical rewrites, those (`rewrite`: alternatives, each complete, the first recommended;
+ * src/rewrite.ts), which its text renders.
  */
-export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly string[]; code: FactId; basis?: Basis; tryIt?: TryIt }
+export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly string[]; code: FactId; basis?: Basis; tryIt?: TryIt; rewrite?: readonly Rewrite[] }
 
 /** The mark a note starts with, one per level. */
 export const MARKS: Record<NoteLevel, string> = { warning: '⚠', info: 'ⓘ', note: 'ℹ' };
@@ -723,7 +733,8 @@ export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> e
   const level = typeof e.level === 'function' ? e.level(params[0]) : e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note');
   const { text, label, body } = marked(lang, level, lang === 'ja' ? ja : en, { kind: e.kind, heading: e.heading });
   const { basis, tryIt } = basisOf(typeof e.basis === 'function' ? e.basis(params[0]) : e.basis);
-  return { id, kind: e.kind, level, text, refs: e.refs, label, body, code: id, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}), ...(e.convention ? { convention: e.convention } : {}) };
+  const rewrite = e.rewrite?.(params[0]);
+  return { id, kind: e.kind, level, text, refs: e.refs, label, body, code: id, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}), ...(e.convention ? { convention: e.convention } : {}), ...(rewrite?.length ? { rewrite } : {}) };
 }
 
 /** Whether the note with `code` is a problem when it is a warning or a caveat: all are, but the facts that `notProblem` marks. */

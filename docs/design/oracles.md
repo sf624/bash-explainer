@@ -10,7 +10,7 @@ The review proposed three checks:
 
 This page checks what exists, takes an inventory for each check, and plans the work in steps. Each step is a PR that keeps every test passing and 100% coverage of `src/`.
 
-Status: step 1 (the inventory of B) is done (#273), step 2 (argv capture over the fixtures, A1) is done (#432; section 2.6), and step 3 (the snippets and the fuzz inputs, A2) is done (#449; section 2.7). Steps 4 to 10 are not started: there is no `Fact.rewrite` and no normal-forms table yet (section 6). The panel redesign builds on step 2 (its P4a) and on steps 4–6 for four notes (its P3; [panel-redesign.md](panel-redesign.md)).
+Status: step 1 (the inventory of B) is done (#273), step 2 (argv capture over the fixtures, A1) is done (#432; section 2.6), and step 3 (the snippets and the fuzz inputs, A2) is done (#449; section 2.7). Step 4 (rewrite data) is in progress: `Fact.rewrite` exists (section 3.2), and 2 of the 17 mechanical ids carry it (PR_NUMBER). Steps 5 to 10 are not started: there is no normal-forms table yet (section 6). The panel redesign builds on step 2 (its P4a) and on steps 4–6 for four notes (its P3; [panel-redesign.md](panel-redesign.md)).
 
 ## 1. What runs bash today
 
@@ -133,12 +133,12 @@ Every note that tells the user to write something else, classified by how a run 
 
 | source | entries | suggest a rewrite | mechanical | scenario | prose | already run in bash |
 |---|---|---|---|---|---|---|
-| src/messages.ts (the catalog; used by src/wordfacts.ts, src/statusfacts.ts, src/analyzer.ts) | 82 | 46 | 13 | 22 | 11 | `unquoted-variable-as-path` (PR #271) |
+| src/messages.ts (the catalog; used by src/wordfacts.ts, src/statusfacts.ts, src/analyzer.ts) | 104 | 56 | 17 | 25 | 14 | `unquoted-variable-as-path` (PR #271); `failure-reported-as-success`, `unmatched-glob-runs-once` (test/rewrites.test.ts) |
 | src/pitfalls.ts (style checks, no ids) | 9 | 9 | 9 | 0 | 0 | the `rm -rf "${DIR:?}"/*` rewrite (PR #271) |
 | src/dialect.ts (`altEn` of the features) | 33 | 33 | 7 with a quick fix, 8 more | 0 | 18 | the 7 quick fixes (test/fixes.test.ts, bash and dash) |
 | inline texts in src/analyzer.ts | 4 | 4 | 1 (`'a[1]'` for `unset a[1]`) | 2 (`env -S` in a shebang) | 1 (`eval`, `seq` for `{1..$n}`) | none |
 
-The catalog's classification is in test/suggestions.test.ts (#273), one line per entry; its type makes a new entry fail to compile until it is classified. The catalog's mechanical entries:
+The catalog's classification is in test/suggestions.test.ts (#273), one line per entry; its type makes a new entry fail to compile until it is classified. The counts are those it pins (the first inventory had 82 entries and 13 mechanical ones; entries added since brought `script-last-test-returns-status`, `unbraced-element` and `array-joined-in-assignment`). The catalog's mechanical entries:
 
 | id | the rewrite | states to run |
 |---|---|---|
@@ -150,25 +150,35 @@ The catalog's classification is in test/suggestions.test.ts (#273), one line per
 | `declaration-masks-status` | `local x=$(f)` → `local x; x=$(f)` | `f` fails, succeeds; with `set -e` |
 | `postfix-increment-status` | `((i++))` → `((++i))`, `i=$((i+1))` | `i` 0, 1, unset; with `set -e` |
 | `function-last-test-returns-status`, `-stops-script` | `a && b` last → `if a; then b; fi` | `a` fails, succeeds; with `set -e` |
-| `failure-reported-as-success` | `a \|\| echo m` → `a \|\| { echo m >&2; exit 1; }` (`return 1` in a function) | `a` fails, succeeds; last of a script, of a function; with `set -e` |
+| `failure-reported-as-success` | `a \|\| echo m` → `a \|\| { echo m >&2; exit 1; }` (`return 1` in a function; `return 1 2>/dev/null \|\| exit 1` in a file that may be sourced, 3.2) | `a` fails, succeeds; last of a script, of a function; with `set -e`; the file run, sourced, sourced in a function |
 | `unmatched-glob-runs-once` | `[ -e "$f" ] \|\| continue` first; `shopt -s nullglob` | matching files, none |
 | `regex-backslash-dropped` | `[[ $x =~ \bfoo ]]` → `re='\bfoo'; [[ $x =~ $re ]]` | strings that match and do not |
 | `nounset-unbound` | `$x` → `${x:-}` (when the analyzer gives `fix`) | unset, empty, set; with `set -u` |
 | `bracket-close-glued` | `[ -f $x]` → `[ -f $x ]` | file present, absent |
+| `script-last-test-returns-status` | `[ -f x ] && cmd` last → `if [ -f x ]; then cmd; fi` | the test true, false |
+| `unbraced-element` | `$a[1]` → `${a[1]}` | an array of two elements; files that match `$a[1]` as a glob |
+| `array-joined-in-assignment` | `x=$@` → `x=("$@")`, or `x="$*"` when one string is meant | arguments with spaces, none |
 
 The style checks of src/pitfalls.ts are mechanical: `[-f x]` → `[ -f x ]`, `x = 1` → `x=1`, `{echo a;}` → `{ echo a; }`, `}` after a command → `; }`, `rm -rf $D/…` → `"${D:?}"/…`, `read x` → `read -r x`, `<` in `[ ]` → `\<`, `$x]` → `$x ]`, `&&` in `[ ]` → `] && [`. Two give advice instead, whose rewrite changes what runs as meant: `source lib.sh` → `source ./lib.sh` (another file when `$PATH` has one of the name), and a regex pattern that is a variable → `-F`, `-w` or `-x`.
 
 ### 3.2 The data
 
-A fact (and a style check) that suggests a mechanical rewrite carries it:
+A fact (and a style check) that suggests a mechanical rewrite carries it (src/rewrite.ts, src/messages.ts):
 
 ```ts
+// src/rewrite.ts
+export interface TextEdit { start: number; end: number; text: string }   // offsets in the text explained
+export interface Rewrite { code: string; edits: readonly TextEdit[] }
 // src/messages.ts
-export interface Rewrite { start: number; end: number; text: string }   // offsets in the tree's text
-export interface Fact { id: FactId; kind: FactKind; text: string; refs: readonly string[]; rewrite?: Rewrite[] }
+export interface Fact { id: FactId; /* … */ rewrite?: readonly Rewrite[] }
 ```
 
-The text of the note is rendered from the same rewrite, so the two cannot disagree. The style checks get ids, as the catalog's entries have, so that the test can name them; they stay in src/pitfalls.ts. Quick fixes for these notes in the editor are then a small step (src/fixes.ts already turns `Edit`s into code actions), but that is a feature of its own and not part of this plan.
+- **A list of alternatives.** Each `Rewrite` is complete in itself: its edits, applied together, make the rewritten script. The first is the one the note recommends; the others are other ways to the same end. `unmatched-glob-runs-once` has two: `[ -e "$f" ] || continue` first in the body, and `shopt -s nullglob` before the statement that holds the loop (none in sh, and none before a loop that is a function's body).
+- **One source.** The params of the fact carry the rewrites (`rewrite`), its text renders their `code` (the code the edits add or put in place, as the user would type it), and `fact()` copies them to `Fact.rewrite` (`Entry.rewrite`, set by `suggests`). The emitter builds the edits from the same `code` (`replaceNode`, `statementBefore`), so the note and the edits cannot disagree.
+- **A file that may be sourced.** A fix that ends the script must not end the shell that sources the file. `failure-reported-as-success` reads how the file is read (`StateModel.read`, `readAs` for the node): in a function, `return 1`; in a file run as a script (a shebang, or a host that runs it: a CI step, a Dockerfile `RUN`), `exit 1`; in a file with no shebang, which may be run or sourced, `return 1 2>/dev/null || exit 1`, which returns when the file is sourced and exits when it is run (in a function there, `return 1`: where `set -e` is on, it then stops at the call). Both forms were run in bash 5.2 and 5.3 (and dash): run as `bash f.sh` and as `./f.sh`, sourced at the top level, sourced inside a function; the caller sees status 1 each time, and a shell that sources the file goes on. Under `set -e` in a sourced file, `source` returning 1 stops the shell that sourced it, as the failure would without `||`.
+- **Strings read as scripts.** In a string another command reads as a script (`bash -c '…'`), the code would need quoting to go back in: the rewrite has no edits there, the note still shows its code, and the fact carries none.
+
+The style checks get ids, as the catalog's entries have, so that the test can name them; they stay in src/pitfalls.ts. Quick fixes for these notes in the editor are then a small step (src/fixes.ts already turns `Edit`s into code actions), but that is a feature of its own and not part of this plan (the panel redesign's P3).
 
 ### 3.3 The test
 
@@ -232,12 +242,12 @@ Then a generator, seeded, makes more forms of each word than a table can hold: q
 
 ## 6. Steps
 
-Each step is a PR. Each keeps every test passing and 100% coverage of `src/`. The order puts the cheap, high-value ones first. Steps 1 to 3 are done; steps 4 to 10 are not started.
+Each step is a PR. Each keeps every test passing and 100% coverage of `src/`. The order puts the cheap, high-value ones first. Steps 1 to 3 are done; step 4 is in progress; steps 5 to 10 are not started.
 
 1. **B1, inventory.** Done (#273). This page, and test/suggestions.test.ts: every catalog entry classified, checked against its English text, and the counts pinned.
 2. **A1, argv over sample.sh and the fixtures.** Done (#432; 2.6). test/support/argv.ts makes the markers of 2.2 and reuses the probe harness and the alignment rule of word-probes (`alignRuns`, moved to test/support/probe.ts so that both use it). test/argv.test.ts runs the fixtures (not the snippets yet) in one sandboxed batch. Known differences go in test/fixtures/argv-known.json, with the counts; the fixtures show none. Bugs it finds are fixed in their own PRs, each with a CHANGELOG line. The panel redesign's P4a ([panel-redesign.md](panel-redesign.md)).
 3. **A2, the snippets and the fuzz inputs.** Done (#449; 2.7). The same test over a seeded sample of the snippets in CI, and over all the snippets and 200 fuzz inputs in a script run by hand (scripts/argv-corpus.ts; section 7), with the two environments of 2.3, the pinned count of unknown words, and the "could know" report. It starts with the differences of 2.6. The check of 2.3 that an unknown word's tokens state no field count is left to step 9, with the other renderings.
-4. **B2, rewrite data for the catalog.** `Fact.rewrite` (3.2) for the 12 mechanical ids; the notes render their suggestion from it. src/wordfacts.ts and src/statusfacts.ts emit it. The panel redesign's P3 needs it first for `failure-reported-as-success` and `unmatched-glob-runs-once` (and B4 for two style checks).
+4. **B2, rewrite data for the catalog.** `Fact.rewrite` (3.2) for the 17 mechanical ids; the notes render their suggestion from it. src/wordfacts.ts, src/statusfacts.ts and src/explain/ emit it. Each id's rewrites are run in bash as they land (test/rewrites.test.ts: the oracle of 3.3 on hand-written inputs, 5.2 and 5.3, with recorders for the commands that would act), and test/suggestions.test.ts lists the mechanical ids still without them. Started (PR_NUMBER): the type, the plumbing, `failure-reported-as-success` and `unmatched-glob-runs-once`, which the panel redesign's P3 needs first (with B4 for two style checks). Left: the other 15, in follow-up PRs.
 5. **B3, run the rewrites.** test/rewrites.test.ts: the states and oracles of 3.3 for each mechanical id, and the two cheap checks for all. The inventory test then requires a rewrite on every mechanical fact.
 6. **B4, the style checks.** Ids and rewrite data for the nine checks of src/pitfalls.ts, then the same test.
 7. **C1, the normal-forms table.** test/fixtures/oracles/normal-forms.json with rows for each normalizer of 4.1, and the two-sided test. It starts with the near-misses of 4.1; those that bash runs differently from what we say are fixed in their own PRs.

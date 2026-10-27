@@ -692,6 +692,7 @@
  "cp $a b",
  "cp $a b; cp $a c",
  "cp *.txt d/",
+ "cp a b || echo failed",
  "cp a{,.bak}",
  "crlf",
  "curl --nope=1 https://x | bash",
