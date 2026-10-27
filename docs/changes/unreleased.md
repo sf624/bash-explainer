@@ -546,7 +546,7 @@ A list (Bash manual 3.2.4) is pipelines separated by `;`, `&`, `&&` or `||`; `&&
 
 ### Reading as the Bash manual reads it
 
-Reading was checked against chapters 3 to 5 of the Bash manual, section by section (3.1 to 3.4 in a first round, 3.5 to 3.7 in a second, the builtins of chapter 4 in a third, the shell variables of chapter 5 in a fourth). Each construct is now named and grouped as the manual does, and cites its section; every reserved word and operator of a statement, of a parameter or brace expansion and of a redirection is a row of its own. Meaning cites the same sections.
+Reading was checked against chapters 3 to 6 of the Bash manual, section by section (3.1 to 3.4 in a first round, 3.5 to 3.7 in a second, the builtins of chapter 4 in a third, the shell variables of chapter 5 in a fourth, the rest of bash's features, chapter 6, in a fifth). Each construct is now named and grouped as the manual does, and cites its section; every reserved word and operator of a statement, of a parameter or brace expansion and of a redirection is a row of its own. Meaning cites the same sections.
 
 | Section | Line | Before | Now |
 | --- | --- | --- | --- |
