@@ -120,6 +120,13 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
       const n = descendants(parser.parse(`: ${e}`).root, ['expansion'])[0];
       assert.deepStrictEqual(expansionRow(n).effect, { kind: 'all', why: `the parameter expansion \`${e}\`, which the allow-list does not have` }, e);
     }
+    // (An unclosed `${s@${`, which bash cannot parse: the operand of `@` is the token `${`, which is not read as one,
+    // so `@` has nothing after it. The fuzz test found it. Not a literal argument of `parse`, so that the snippets, and
+    // with them the fuzz test's inputs, stay as they are.)
+    const text = 'echo ${s@${';
+    const unclosed = descendants(parser.parse(text).root, ['expansion'])[0];
+    assert.strictEqual(expansionOperator(unclosed), '@');
+    assert.deepStrictEqual(expansionRow(unclosed).effect, { kind: 'all', why: 'the parameter expansion `${s@${`, which the allow-list does not have' });
     // (A long one is named by its operator.)
     const long = descendants(parser.parse(`: \${x${'y'.repeat(40)}@Z}`).root, ['expansion'])[0];
     assert.deepStrictEqual(expansionRow(long).effect, { kind: 'all', why: 'the operator `@Z` of a parameter expansion, which the allow-list does not have' });
