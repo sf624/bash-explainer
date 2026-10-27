@@ -11,7 +11,7 @@ import { canonicalName, lookupCommand } from './dict/aliases';
 import type { FactSpec, Words } from './messages';
 import { featureWorks, type Shell } from './dialect';
 import { outputsOf } from './idioms';
-import { replaceNode } from './rewrite';
+import { asIf, changed, inPlaceOf, replaceNode, type Rewrite, statementAfter } from './rewrite';
 import { commandName } from './semantics/effects';
 import { readAs, STATEMENTS } from './semantics/env';
 import { resolveName } from './semantics/names';
@@ -90,7 +90,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
           if (rule.kind === 'masked') {
             // The keyword: local, export, declare, readonly or typeset.
             const kw = rule.by;
-            add(n, { id: 'declaration-masks-status', params: { kw, v: rule.name } });
+            add(n, { id: 'declaration-masks-status', params: { kw, v: rule.name, rewrite: [splitDeclaration(n, rule)] } });
           }
         }
         // (The cheap tests first: this runs on every command of the script.)
@@ -151,7 +151,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         // (Not one started with `&`, whose status is not waited for: `( … ) &`.)
         const background = status.status(n).kind === 'background' || !!ancestor(n, (x) => STATEMENTS.has(x.type) && status.status(x).kind === 'background');
         if (!def && isShebang(root.namedChildren[0]) && lastStatements(root).includes(n) && !background && tests(n, state, status, shell)) {
-          add(n, { id: 'script-last-test-returns-status', params: { left: shorten(n.namedChildren[0].text) } });
+          add(n, { id: 'script-last-test-returns-status', params: { left: shorten(n.namedChildren[0].text), rewrite: [asIf(n), statementAfter(n, 'exit 0')] } });
           break;
         }
         const body = def && field(def, 'body');
@@ -161,13 +161,45 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         const name = field(def, 'name')!.text;
         // (The script's last command: its status is the script's.)
         const end = lastStatements(root).some((s) => s === call || s === call.parent);
-        add(n, { id: end ? 'function-last-test-returns-status' : 'function-last-test-stops-script', params: { name, line: row(call) } });
+        add(n, { id: end ? 'function-last-test-returns-status' : 'function-last-test-stops-script', params: { name, line: row(call), rewrite: [asIf(n), statementAfter(n, 'return 0')] } });
         break;
       }
     }
   }
   for (const [n, spec] of conditionFacts(root, state)) add(n, spec);
   return out;
+}
+
+/**
+ * The rewrite of `local x=$(cmd)`: the declaration with the names alone, then the assignments, whose status is that of
+ * their `$( )` (`local x; x=$(cmd)`). Only the words with a `$( )` move: bash expands every word before it declares,
+ * so `b=$a` in `local a=$(f) b=$a` reads the value `a` had before, as it still does in `local a b=$a; a=$(f)`. Names
+ * are made read-only after they are set: `x=$(cmd); readonly x`; for `local -r` and `declare -r`, the declaration
+ * without `r`, the assignments, then `readonly` of all its names. (Not followed: a word that reads a name a moved word
+ * sets, after it, `local a=$(f) b=$(g "$a")`, or in `readonly`, then reads the new value; and `declare -g x=$(cmd)` in
+ * a function, whose assignment sets a caller's local `x`, if one has it.)
+ */
+function splitDeclaration(n: SyntaxNode, rule: Extract<StatusRule, { kind: 'masked' }>): Rewrite {
+  const moved = rule.operands.filter((o) => rule.substitutions.some((s) => o.word.startIndex <= s.startIndex && s.endIndex <= o.word.endIndex));
+  // The changes to the text of `n`: each word moved becomes its name; `r` leaves the options (`-r`, `-ri`) of `local` or `declare`.
+  const changes = moved.map((o) => ({ start: o.word.startIndex, end: o.word.endIndex, text: o.name }));
+  const args = fields(n, 'argument');
+  const late = rule.readOnly && rule.by !== 'readonly';
+  if (late) {
+    for (const [i, w] of args.slice(0, args.indexOf(rule.operands[0].word)).entries()) {
+      if (!/^-[A-Za-z]*r/.test(w.text)) continue;
+      const left = w.text.replace(/r/g, '');
+      changes.push(left === '-' ? { start: w.startIndex, end: args[i + 1].startIndex, text: '' } : { start: w.startIndex, end: w.endIndex, text: left });
+    }
+  }
+  const decl = changed(n, changes);
+  const assigns = moved.map((o) => o.word.text).join('; ');
+  const names = [...new Set(rule.operands.map((o) => o.name))].join(' ');
+  if (!rule.readOnly) return replaceNode(n, inPlaceOf(n, `${decl}; ${assigns}`));
+  const code = late ? `${decl}; ${assigns}; readonly ${names}` : `${assigns}; ${decl}`;
+  // (First in a list, `readonly x=$(cmd) || exit`, the `||` would then test `readonly`, whose status is 0, and in a
+  // group as well: the note shows the code, the fact carries no edits; `x=$(cmd) || exit; readonly x` is to be written.)
+  return n.parent!.type === 'list' && n.parent!.namedChildren[0] === n ? { code, edits: [] } : replaceNode(n, inPlaceOf(n, code));
 }
 
 /**

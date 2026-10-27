@@ -345,8 +345,8 @@ describe('the notes on status and errexit', () => {
 
   it('points out a script run as a program that ends with `test && cmd`', () => {
     const last = (src: string, lang: 'en' | 'ja' = 'en') => notes(src, src.split('\n').length - 1, lang).filter((n) => /last command of the script|スクリプトの最後のコマンド/.test(n));
-    assert.deepStrictEqual(last('#!/bin/bash\necho start\n[ -f x ] && echo found'), ['ⓘ Caveat: this is the last command of the script, so when `[ -f x ]` fails, the script ends with its non-zero status, which its caller (CI, `make`, `./script && next`) sees as a failure. Write `if …; then …; fi`, or end the script with `exit 0`']);
-    assert.deepStrictEqual(last('#!/bin/bash\n[ -f x ] && echo found', 'ja'), ['ⓘ 注意: これはスクリプトの最後のコマンドなので、`[ -f x ]` が失敗すると、スクリプトはその終了ステータス（0 以外）で終わり、呼び出し元（CI や `make`、`./script && next`）には失敗に見えます。`if …; then …; fi` と書くか、最後に `exit 0` を置きます']);
+    assert.deepStrictEqual(last('#!/bin/bash\necho start\n[ -f x ] && echo found'), ['ⓘ Caveat: this is the last command of the script, so when `[ -f x ]` fails, the script ends with its non-zero status, which its caller (CI, `make`, `./script && next`) sees as a failure. Write `if [ -f x ]; then echo found; fi`, or end the script with `exit 0`']);
+    assert.deepStrictEqual(last('#!/bin/bash\n[ -f x ] && echo found', 'ja'), ['ⓘ 注意: これはスクリプトの最後のコマンドなので、`[ -f x ]` が失敗すると、スクリプトはその終了ステータス（0 以外）で終わり、呼び出し元（CI や `make`、`./script && next`）には失敗に見えます。`if [ -f x ]; then echo found; fi` と書くか、最後に `exit 0` を置きます']);
     for (const src of ['#!/bin/sh\nset -e\n[[ -n $v ]] && echo v', '#!/bin/bash\n{ echo a; (( n )) && echo n; }', '#!/bin/bash\ngrep -q x f && echo x', '#!/bin/bash\n[ -f x ] && [ -r x ] && cat x']) {
       assert.strictEqual(last(src).length, 1, src);
     }

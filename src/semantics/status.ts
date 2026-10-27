@@ -12,7 +12,7 @@ import { canonicalName } from '../dict/aliases';
 import { builtins } from '../dict/builtins';
 import type { Shell } from '../dialect';
 import { assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from '../syntax/tree';
-import { actedNames, declaresNames } from '../argv/query';
+import { actedNames, declaresNames, has } from '../argv/query';
 import { builtinParse, commandName, wrapped } from './effects';
 import { processOf, STATEMENTS } from './env';
 import { resolveName, testSpecOf } from './names';
@@ -24,14 +24,20 @@ export type ExitRefusal = Exclude<ReturnType<typeof exitRefusal>, 'unknown' | un
 import { type ErrexitWhy, modelVersion, option, type ShellState, type StateModel, type Tri } from './state';
 import { type WordEnv, wordFields, type WordFailure, wordOf } from './words';
 
+/** A word of a declaration builtin that declares a name (`x`, `x=$(cmd)`), and the name (without a subscript). */
+export interface DeclaredOperand { readonly word: SyntaxNode; readonly name: string }
+
 /** What the exit status of a statement is (manual 3.7.5). */
 export type StatusRule =
   /** Its own: a builtin's or a program's (127 not found, 126 not executable, 128+n killed by signal n); a function's last command. `functions`: the definitions it calls. */
   | { readonly kind: 'command'; readonly functions: readonly SyntaxNode[] }
   /** Only assignments (`x=$(cmd)`): the status of the last command substitution, or 0 without one (`at`). */
   | { readonly kind: 'last-substitution'; readonly at?: SyntaxNode }
-  /** A declaration builtin with command substitutions in its assignments (`local x=$(cmd)`): its own status hides theirs. */
-  | { readonly kind: 'masked'; readonly by: string; readonly name: string; readonly substitutions: readonly SyntaxNode[] }
+  /**
+   * A declaration builtin with command substitutions in its assignments (`local x=$(cmd)`): its own status hides theirs.
+   * `operands`: the words that declare names; `readOnly`: it makes them read-only (`readonly`, `-r`).
+   */
+  | { readonly kind: 'masked'; readonly by: string; readonly name: string; readonly substitutions: readonly SyntaxNode[]; readonly operands: readonly DeclaredOperand[]; readonly readOnly: boolean }
   /** A pipeline: its last stage's status, or with pipefail the last one that is not 0; `!` negates it. */
   | { readonly kind: 'pipeline'; readonly stages: readonly SyntaxNode[]; readonly pipefail: Tri; readonly negated: boolean }
   /** `(( ))` and `let`: 1 when the value is 0, else 0. */
@@ -255,13 +261,15 @@ class Statuses implements StatusModel {
         if (name === 'let') return { kind: 'arith' };
         // `local x=$(cmd)`, `\local x=$(cmd)`: the declaration's own status, whatever the substitution's (its operands
         // that declare names, `OperandSpec.acts`).
-        const assigned = !declaresNames(spec) ? [] : actedNames(builtinParse(res.name, args, this.shell)).filter((o) => o.acts === 'declares').map(({ word }) => args[word])
-          .filter((a) => a.type === 'variable_assignment' || ASSIGNMENT.test(a.text));
+        const parse = declaresNames(spec) ? builtinParse(res.name, args, this.shell) : undefined;
+        const declared = !parse ? [] : actedNames(parse).filter((o) => o.acts === 'declares').map(({ word }) => args[word]);
+        const assigned = declared.filter((a) => a.type === 'variable_assignment' || ASSIGNMENT.test(a.text));
         const subs = assigned.flatMap(outerSubstitutions);
         if (subs.length) {
+          const nameOf = (a: SyntaxNode): string => (a.type === 'variable_assignment' ? field(a, 'name')!.text : ASSIGNMENT.exec(a.text)?.[1] ?? a.text);
           const a = assigned.find((x) => outerSubstitutions(x).length)!;
-          const v = a.type === 'variable_assignment' ? field(a, 'name')!.text : ASSIGNMENT.exec(a.text)![1];
-          return { kind: 'masked', by: res.name, name: v, substitutions: subs };
+          const operands = declared.map((word) => ({ word, name: nameOf(word).replace(/\[.*$/, '') }));
+          return { kind: 'masked', by: res.name, name: nameOf(a), substitutions: subs, operands, readOnly: res.name === 'readonly' || has(parse!, '-r') };
         }
         if (name === 'wait') {
           const all = !args.length;

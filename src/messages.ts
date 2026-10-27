@@ -135,24 +135,24 @@ export const MESSAGES = {
     `${where.ja}で実行されるので、${what}の中でも \`set -e\` は無視される。途中のコマンドが失敗しても止まらず、次のコマンドに進む`,
     `\`set -e\` is ignored in this ${what}, since it runs ${where.en}: a command that fails in the middle does not stop it`]),
   // (4.2 says that `local` and `declare` (`typeset`) return 0 unless an option, a name or a readonly variable is wrong,
-  // 4.1 the same of `export` and `readonly`: a failed command substitution is not among the reasons.)
-  'declaration-masks-status': withConvention(caveat<{ kw: string; v: string }>(['4.2', '4.1', '4.3.1'], ({ kw, v }) => [
-    `\`${kw} ${v}=$(…)\` の終了ステータスは \`${kw}\` 自身のもの（成功）になり、\`$(…)\` の中の失敗が隠れます（\`set -e\` でも止まりません）。\`${kw} ${v}\` と \`${v}=$(…)\` の2行に分けます`,
-    `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: \`${kw} ${v}\`, then \`${v}=$(…)\``]), 'declare-then-assign'),
+  // 4.1 the same of `export` and `readonly`: a failed command substitution is not among the reasons. `rewrite`: src/statusfacts.ts.)
+  'declaration-masks-status': withConvention(suggests(caveat<{ kw: string; v: string; rewrite: readonly Rewrite[] }>(['4.2', '4.1', '4.3.1'], ({ kw, v, rewrite }) => [
+    `\`${kw} ${v}=$(…)\` の終了ステータスは \`${kw}\` 自身のもの（成功）になり、\`$(…)\` の中の失敗が隠れます（\`set -e\` でも止まりません）。${codeSpan(shorten(rewrite[0].code, Infinity))} と分けて書きます`,
+    `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: ${codeSpan(shorten(rewrite[0].code, Infinity))}`])), 'declare-then-assign'),
   'pipefail-missing': withConvention(caveat<{ last: string }>(['3.2.3', '4.3.1'], ({ last }) => [
     `\`set -o pipefail\` が無いので、パイプラインの終了ステータスは最後のコマンド（\`${last}\`）のものだけになる。前のコマンドが失敗しても \`set -e\` では止まらない（このスクリプトのほかのパイプラインも同じ）`,
     `without \`set -o pipefail\`, the status of a pipeline is that of its last command (\`${last}\`) alone, so \`set -e\` does not stop the script when a command before it fails (the same holds for the other pipelines of the script)`]), 'pipefail'),
   // (3.2.4: the status of a list is that of its last command run; 3.3: a function's is that of the last command of its
-  // body; 6.1: a script's is that of its last command.)
-  'function-last-test-returns-status': caveat<{ name: string; line: number }>(['3.3', '3.2.4', '6.1'], ({ name, line }) => [
-    `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、行 ${line} の呼び出しで終わるスクリプトもその終了ステータスになる。\`if …; then …; fi\` と書くか、最後に \`return 0\` を置く`,
-    `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status, and so does the script, which ends with the call on line ${line}. Write \`if …; then …; fi\`, or end the function with \`return 0\``]),
-  'function-last-test-stops-script': pitfall<{ name: string; line: number }>(['3.3', '3.2.4', '4.3.1'], ({ name, line }) => [
-    `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、\`set -e\` により行 ${line} の呼び出しでスクリプトが止まる。\`if …; then …; fi\` と書くか、最後に \`return 0\` を置く`,
-    `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status and \`set -e\` stops the script at the call on line ${line}. Write \`if …; then …; fi\`, or end the function with \`return 0\``]),
-  'script-last-test-returns-status': caveat<{ left: string }>(['3.2.4', '6.1', '3.7.5'], ({ left }) => [
-    `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗すると、スクリプトはその終了ステータス（0 以外）で終わり、呼び出し元（CI や \`make\`、\`./script && next\`）には失敗に見えます。\`if …; then …; fi\` と書くか、最後に \`exit 0\` を置きます`,
-    `this is the last command of the script, so when \`${left}\` fails, the script ends with its non-zero status, which its caller (CI, \`make\`, \`./script && next\`) sees as a failure. Write \`if …; then …; fi\`, or end the script with \`exit 0\``]),
+  // body; 6.1: a script's is that of its last command. `rewrite`: an `if`, then `return 0` or `exit 0`; src/statusfacts.ts.)
+  'function-last-test-returns-status': suggests(caveat<{ name: string; line: number; rewrite: readonly Rewrite[] }>(['3.3', '3.2.4', '6.1'], ({ name, line, rewrite: r }) => [
+    `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、行 ${line} の呼び出しで終わるスクリプトもその終了ステータスになる。${codeSpan(shorten(r[0].code, Infinity))} と書くか、最後に \`${r[1].code}\` を置く`,
+    `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status, and so does the script, which ends with the call on line ${line}. Write ${codeSpan(shorten(r[0].code, Infinity))}, or end the function with \`${r[1].code}\``])),
+  'function-last-test-stops-script': suggests(pitfall<{ name: string; line: number; rewrite: readonly Rewrite[] }>(['3.3', '3.2.4', '4.3.1'], ({ name, line, rewrite: r }) => [
+    `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、\`set -e\` により行 ${line} の呼び出しでスクリプトが止まる。${codeSpan(shorten(r[0].code, Infinity))} と書くか、最後に \`${r[1].code}\` を置く`,
+    `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status and \`set -e\` stops the script at the call on line ${line}. Write ${codeSpan(shorten(r[0].code, Infinity))}, or end the function with \`${r[1].code}\``])),
+  'script-last-test-returns-status': suggests(caveat<{ left: string; rewrite: readonly Rewrite[] }>(['3.2.4', '6.1', '3.7.5'], ({ left, rewrite: r }) => [
+    `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗すると、スクリプトはその終了ステータス（0 以外）で終わり、呼び出し元（CI や \`make\`、\`./script && next\`）には失敗に見えます。${codeSpan(shorten(r[0].code, Infinity))} と書くか、最後に \`${r[1].code}\` を置きます`,
+    `this is the last command of the script, so when \`${left}\` fails, the script ends with its non-zero status, which its caller (CI, \`make\`, \`./script && next\`) sees as a failure. Write ${codeSpan(shorten(r[0].code, Infinity))}, or end the script with \`${r[1].code}\``])),
   // `cmd || echo "msg"` where its status matters: the end of a function or of a script (`fragment`: a file with no
   // shebang, which may be run as one), or where `set -e` stops the script (`where`). `quiet`: the redirections of `cmd`
   // that discard its own error message (`2>/dev/null`), or ''. `rewrite`: src/statusfacts.ts; `sourced`: it ends with
@@ -315,14 +315,14 @@ export const MESSAGES = {
 
   // ---------------------------------------------------------------- arithmetic and status (6.5, 4.3.1)
   // (`errexit`: `set -e` surely stops the shell there, the warning: the text leads with that and why. `stops`: the shell
-  // it stops, from the status model; none means the script.)
+  // it stops, from the status model; none means the script. `rewrite`: src/explain/status.ts.)
   // (6.5: the operators' values are those of C; 3.2.5.2: `(( ))` is 1 when the value is 0. That an assignment with no
   // command substitution is 0 is 3.7.1's, not cited: an entry cites at most three sections.)
-  'postfix-increment-status': pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown' }>(['6.5', '3.2.5.2', '4.3.1'], ({ v, errexit, stops }) => errexit ? [
-    `ここでは \`set -e\` が効いているので、\`${v}\` が 0 のときこの行で${stops === 'subshell' ? 'サブシェルが終わる' : stops === 'unknown' ? 'これを実行するシェルが止まる' : 'スクリプトが止まる'}。\`((${v}++))\` の値は増やす前の値で、0 は失敗の終了ステータスになるため。\`((++${v}))\` か \`${v}=$((${v}+1))\` か \`((${v}++)) || true\` と書く`,
-    `\`set -e\` is on here, so ${stops === 'subshell' ? 'the subshell ends' : stops === 'unknown' ? 'the shell running it stops' : 'the script stops'} at this line when \`${v}\` is 0: \`((${v}++))\` gives the value before the increment, and 0 is a failure status. Write \`((++${v}))\`, \`${v}=$((${v}+1))\` or \`((${v}++)) || true\``] : [
-    `\`((${v}++))\` の値は増やす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）。\`((++${v}))\` や \`${v}=$((${v}+1))\` なら 0 になる`,
-    `the value of \`((${v}++))\` is the value before the increment, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops). \`((++${v}))\` and \`${v}=$((${v}+1))\` give status 0`], undefined, postfixLevel),
+  'postfix-increment-status': suggests(pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown'; rewrite: readonly Rewrite[] }>(['6.5', '3.2.5.2', '4.3.1'], ({ v, errexit, stops, rewrite: r }) => errexit ? [
+    `ここでは \`set -e\` が効いているので、\`${v}\` が 0 のときこの行で${stops === 'subshell' ? 'サブシェルが終わる' : stops === 'unknown' ? 'これを実行するシェルが止まる' : 'スクリプトが止まる'}。\`((${v}++))\` の値は増やす前の値で、0 は失敗の終了ステータスになるため。\`${r[0].code}\` か \`${r[1].code}\` か \`${r[2].code}\` と書く`,
+    `\`set -e\` is on here, so ${stops === 'subshell' ? 'the subshell ends' : stops === 'unknown' ? 'the shell running it stops' : 'the script stops'} at this line when \`${v}\` is 0: \`((${v}++))\` gives the value before the increment, and 0 is a failure status. Write \`${r[0].code}\`, \`${r[1].code}\` or \`${r[2].code}\``] : [
+    `\`((${v}++))\` の値は増やす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）。\`${r[0].code}\` や \`${r[1].code}\` なら 0 になる`,
+    `the value of \`((${v}++))\` is the value before the increment, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops). \`${r[0].code}\` and \`${r[1].code}\` give status 0`], undefined, postfixLevel)),
   'postfix-decrement-status': pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown' }>(['6.5', '3.2.5.2', '4.3.1'], ({ v, errexit, stops }) => errexit ? [
     `ここでは \`set -e\` が効いているので、\`${v}\` が 0 のときこの行で${stops === 'subshell' ? 'サブシェルが終わる' : stops === 'unknown' ? 'これを実行するシェルが止まる' : 'スクリプトが止まる'}。\`((${v}--))\` の値は減らす前の値で、0 は失敗の終了ステータスになるため`,
     `\`set -e\` is on here, so ${stops === 'subshell' ? 'the subshell ends' : stops === 'unknown' ? 'the shell running it stops' : 'the script stops'} at this line when \`${v}\` is 0: \`((${v}--))\` gives the value before the decrement, and 0 is a failure status`] : [
