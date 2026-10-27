@@ -4,7 +4,8 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { examplesMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, toPlainMarkdown } from '../src/ui/render';
-import { wholeLine } from '../src/ui/hoverView';
+import { partHover, plainPartHover, wholeLine } from '../src/ui/hoverView';
+import { readingNodes } from '../src/reading';
 import { lineMarks, panelUpdate } from '../src/ui/panelView';
 import type { DocumentIssue } from '../src/document';
 import type { NoteLevel } from '../src/messages';
@@ -136,6 +137,30 @@ describe('links to the Bash manual', () => {
     assert.ok(!off.facts![0].basis && !off.facts![0].tryIt);
     assert.ok(!toPlainMarkdown(off, 'exit 300', 'a.sh:1').includes('Not in the manual'));
     assert.ok(!('basis' in panelUpdate({ lang: 'en', explanation: off, file: 'a.sh', line: 0, lineText: 'exit 300', choice: {}, detected: 'bash', placement: 'first', animations: true }).notes[0]));
+  });
+
+  // docs/design/basis.md, step 4: a part whose text rests on bash's behaviour, as a note does.
+  it('says under a part that rests on bash\'s behaviour what it rests on, with the try-it: the hover, its plain form and the panel', () => {
+    const line = "Differs from the manual · checked with bash 5.2 and 5.3 · Try it in your terminal: `bash -c 'exec 3>/dev/null 4>/dev/null; BASH_XTRACEFD=3; BASH_XTRACEFD=4; echo hi >&3 && echo \"fd 3 is still open\"'` → `fd 3 is still open`";
+    // (The whole line: the block of a top-level part; a row of a block's table.)
+    const { ex, md } = hover('BASH_XTRACEFD=7');
+    assert.ok(md.includes(`<br><small>${line}</small>`), md);
+    const row = hover('echo hi; f() { local RANDOM=3; }').md;
+    assert.match(row, /<tr><td>.*RANDOM=3.*<\/td><td>.*a plain variable.*<br><small>Not in the manual · checked with bash 5\.2 and 5\.3 · Try it in your terminal: /, row);
+    // (The part under the mouse, and the Language Server's plain hover.)
+    const chain = [ex.items[0]];
+    assert.ok(partHover({ ex, lang: 'en', theme: 'dark', lineText: 'BASH_XTRACEFD=7', placement: 'first', panelLink: 'command:x', lineLink: 'command:l', keys: 'K' }, chain).includes(`<br><small>${line}</small>`));
+    assert.ok(plainPartHover(ex, chain, 'en', '').includes(`\n_${line}_\n`));
+    const prefix = new Analyzer('en').explainLine(parser.parse('UID=0 echo hi'), 0);
+    assert.match(plainPartHover(prefix, [prefix.items[0]], 'en', ''), /^- `UID=0` — .*\\\n {2}_Differs from the manual · checked with bash 5\.2 and 5\.3 · Try it in your terminal: /m);
+    // The panel's rows and Reading's nodes, with the chip's words in the panel's language.
+    const msg = panelUpdate({ lang: 'ja', explanation: new Analyzer('ja').explainLine(parser.parse('BASH_XTRACEFD=7'), 0, 'bash', { reading: true }), file: 'a.sh', line: 0, lineText: 'BASH_XTRACEFD=7', choice: {}, detected: 'bash', placement: 'first', animations: true });
+    const shown = msg.explanation.items[0] as { basisShown?: { label: string; tryIt: { output: string } } };
+    assert.deepStrictEqual([shown.basisShown?.label, shown.basisShown?.tryIt.output], ['マニュアルの記述と異なる・bash 5.2・5.3 で確認', 'fd 3 is still open']);
+    assert.ok(readingNodes(msg.explanation.reading!).some((n) => (n as { basisShown?: unknown }).basisShown));
+    // With the setting off, none.
+    const off = new Analyzer('en').explainLine(parser.parse('BASH_XTRACEFD=7'), 0, 'bash', { basis: false });
+    assert.ok(!toPlainMarkdown(off, 'BASH_XTRACEFD=7', 'a.sh:1').includes('Differs from the manual'));
   });
 
   it('links the sections in the plain Markdown, in the language of the explanation', () => {

@@ -24,6 +24,7 @@
 // The layers come from the tree and from `Token.origin`, never from a label or an explanation. The explanations of
 // the nodes are those of the tokens about the same text: bash's own (`shell`) for the nodes bash reads.
 import type { Pos, ScriptProcess, Span, Token } from './analyzer-types';
+import type { Basis, TryIt } from './basis';
 import { binaryTestOps, extendedEqualOps, unaryTestOps } from './dict/syntax';
 import type { Lang } from './i18n';
 import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } from './refs';
@@ -87,8 +88,14 @@ export interface ReadingNode {
   replacement?: string;
   /** On a command name (and the reserved word `time`): what the name is, and what else (`Token.name`). */
   name?: NameInfo;
+  /** With `text`: what it rests on where it states bash's behaviour, and a command that shows it (`Token.basis`, `Token.tryIt`). */
+  basis?: Basis;
+  tryIt?: TryIt;
   children: ReadingNode[];
 }
+
+/** The text of a token for a node, with its basis and try-it when it has them (docs/design/basis.md, step 4). */
+const saidBy = (t: Token): Pick<ReadingNode, 'text' | 'basis' | 'tryIt'> => ({ text: t.explanation, ...(t.basis ? { basis: t.basis } : {}), ...(t.tryIt ? { tryIt: t.tryIt } : {}) });
 
 /** What the reading tree asks of the analyzer. */
 export interface ReadingContext {
@@ -222,7 +229,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const t = tokenAt(span, tokenKinds, last);
     const refs = t?.refs ?? (n.named ? nodeSections(n) : anonSections(n));
     return {
-      layer, kind, label: short(n.text), span, ...(t ? { text: t.explanation } : {}), ...(refs ? { refs } : {}),
+      layer, kind, label: short(n.text), span, ...(t ? saidBy(t) : {}), ...(refs ? { refs } : {}),
       ...(layer === 'child' ? { process: 'subshell' as const } : {}), ...(t?.name && kind === 'keyword' ? { name: t.name } : {}), children,
     };
   };
@@ -419,14 +426,14 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       const n = word(w, layer, 'expandedName');
       n.refs = union(['3.7.1'], n.refs);
       // (What the command's token says, `"$@"`: the word runs what it expands to.)
-      if (own) n.text = own.explanation;
+      if (own) Object.assign(n, saidBy(own));
       return { node: n };
     }
     const res = cx.resolve(name, w);
     if (res.kind === 'alias') return { ...aliasWord(w, res, own, process), res };
     return {
       node: {
-        layer, kind: 'commandName', label: short(w.text), span, ...(own ? { text: own.explanation } : {}),
+        layer, kind: 'commandName', label: short(w.text), span, ...(own ? saidBy(own) : {}),
         refs: union(['3.7.1', '3.7.2'], own?.refs, expansionSections(cx.meaning(w))), resolves: res.kind, ...(own?.name ? { name: own.name } : {}), ...process, children: wordParts(w, layer),
       },
     };
@@ -451,12 +458,12 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const children: ReadingNode[] = (words ?? []).map((x, i) => ({
       layer, kind: i || !first ? 'argument' : 'commandName', label: x, span, ...process,
       // (A first word of plain text is one the resolution follows: `target`.)
-      ...(i || !first ? { refs: ['3.7.1'] } : { refs: ['3.7.1', '3.7.2'], resolves: res.target!.kind, ...(aliasText ? {} : { text: own!.explanation }) }),
+      ...(i || !first ? { refs: ['3.7.1'] } : { refs: ['3.7.1', '3.7.2'], resolves: res.target!.kind, ...(aliasText ? {} : saidBy(own!)) }),
       children: [],
     }));
     return {
       node: {
-        layer, kind: 'aliasWord', label: short(w.text), span, text: aliasText ? own!.explanation : TEXTS.alias[cx.lang](w.text, value),
+        layer, kind: 'aliasWord', label: short(w.text), span, ...(aliasText ? saidBy(own!) : { text: TEXTS.alias[cx.lang](w.text, value) }),
         // (The token of an alias as the command name has its name's facts: the analyzer resolves it.)
         refs: ['6.6'], replacement: value, ...(own?.name ? { name: own.name } : {}), ...process, children,
       },
@@ -520,7 +527,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   /** A token of bash's reading in a word, with the tokens of bash's under it. */
   const partToken = (t: Token, layer: Layer): ReadingNode => ({
     // (They cite no sections of their own: the word, or the quote around them, does.)
-    layer, kind: t.kind, label: t.label, span: t.span, text: t.explanation, ...(layer === 'child' ? { process: 'subshell' as const } : {}),
+    layer, kind: t.kind, label: t.label, span: t.span, ...saidBy(t), ...(layer === 'child' ? { process: 'subshell' as const } : {}),
     children: t.children.filter((c) => c.origin === 'shell').map((c) => partToken(c, layer)),
   });
 
@@ -569,7 +576,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const ix = field(s, 'index')!;
     const brackets = s.children.filter((c) => !c.named);
     // (What the explanation says of the index with its brackets: `[i+1]` of `${a[i+1]}`.)
-    const said = tokenAt({ start: spanOf(brackets[0]).start, end: spanOf(brackets[brackets.length - 1]).end })?.explanation;
+    const said = tokenAt({ start: spanOf(brackets[0]).start, end: spanOf(brackets[brackets.length - 1]).end });
     const children = s.children.map((c) => (c === ix ? index(field(s, 'name')!.text, s, ix, layer, said)
       : c.named ? shellNode(c, layer, 'name', []) : shellNode(c, layer, 'operator', [], new Set(['operator']))));
     return shellNode(s, layer, 'name', children);
@@ -581,20 +588,20 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
    * read as `(( ))` reads one (6.5); that of an associative array, a key, is a word bash expands. Where the kind of the
    * array is not known here, a word, which the explanation says may be either. `said`: what the explanation says of it.
    */
-  const index = (name: string, owner: SyntaxNode, ix: SyntaxNode | { start: number; end: number }, layer: Layer, said?: string): ReadingNode => {
+  const index = (name: string, owner: SyntaxNode, ix: SyntaxNode | { start: number; end: number }, layer: Layer, said?: Token): ReadingNode => {
     const at = 'type' in ix ? { start: ix.startIndex, end: ix.endIndex } : ix;
     const text = owner.text.slice(at.start - owner.startIndex, at.end - owner.startIndex);
     const span: Span = { start: posIn(owner, at.start), end: posIn(owner, at.end) };
-    if (text === '@' || text === '*') return { layer, kind: 'operator', label: text, span, ...(said ? { text: said } : {}), refs: ['6.7'], children: [] };
+    if (text === '@' || text === '*') return { layer, kind: 'operator', label: text, span, ...(said ? saidBy(said) : {}), refs: ['6.7'], children: [] };
     const expr = cx.arrayKind(name, owner) !== 'indexed' ? undefined
       : 'type' in ix && (ix.type === 'number' || isExpression(ix)) ? ix : tree.arithmetic(owner, at.start, at.end);
     if (expr) {
       const [n] = expr.type === 'number' ? [shellNode(expr, layer, 'expression', [])] : PARTS.has(expr.type) ? [part(expr, layer)] : node(expr, layer);
-      return { ...n, ...(n.text || !said ? {} : { text: said }), refs: union(['6.7', '6.5'], n.refs) };
+      return { ...n, ...(n.text || !said ? {} : saidBy(said)), refs: union(['6.7', '6.5'], n.refs) };
     }
     if ('type' in ix) {
       const n = word(ix, layer, 'word');
-      return { ...n, ...(said ? { text: said } : {}), refs: union(['6.7'], n.refs) };
+      return { ...n, ...(said ? saidBy(said) : {}), refs: union(['6.7'], n.refs) };
     }
     return { layer, kind: 'word', label: short(text), span, refs: ['6.7'], children: inner(owner, layer).filter((p) => within(p.span, span)) };
   };
@@ -620,7 +627,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       // (A key or a value of an associative array, which the explanation says it is: not a plain `Word`.)
       const [n] = node(e, layer);
       const t = tokenAt(n.span, new Set(['argument', 'error']));
-      return [t && !n.text && t.explanation !== TEXTS.word[cx.lang](e.text) ? { ...n, text: t.explanation } : n];
+      return [t && !n.text && t.explanation !== TEXTS.word[cx.lang](e.text) ? { ...n, ...saidBy(t) } : n];
     }
     const range = (from: number, to: number): Span => ({ start: posIn(e, from), end: posIn(e, to) });
     const op = (from: number, label: string): ReadingNode => ({ layer, kind: 'operator', label, span: range(from, from + label.length), refs: ['6.7'], children: [] });
@@ -714,7 +721,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   const tokenNode = (t: Token, layer: Layer, reader: string): ReadingNode => ({
     layer, kind: t.kind, label: t.label, span: t.span, reader, ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), ...(t.valueFor ? { valueFor: t.valueFor } : {}), ...(t.expands ? { expands: t.expands } : {}),
     // (A word the command reads as a script, which the analyzer says only is a word: `eval ls`.)
-    text: t.explanation === TEXTS.word[cx.lang](t.label) && t.children.some((c) => c.origin === 'script') ? TEXTS.again[cx.lang] : t.explanation,
+    ...(t.explanation === TEXTS.word[cx.lang](t.label) && t.children.some((c) => c.origin === 'script') ? { text: TEXTS.again[cx.lang] } : saidBy(t)),
     children: readParts(t.children, false, RUNS.has(t.kind) ? t.label : reader, t.kind !== 'assignment'),
   });
 
@@ -724,7 +731,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     // (A command name there is one that shell looks up, as bash does one of this line: 3.7.1, 3.7.2.)
     const refs = kind.kind === 'commandName' ? union(['3.7.1', '3.7.2'], t.refs) : t.refs;
     return {
-      layer: 'child', ...kind, label: t.label, span: t.span, text: t.explanation, ...(refs ? { refs } : {}), ...(t.name ? { name: t.name } : {}), process,
+      layer: 'child', ...kind, label: t.label, span: t.span, ...saidBy(t), ...(refs ? { refs } : {}), ...(t.name ? { name: t.name } : {}), process,
       // (What is not the script's is what a command of it reads: `t` is that command.)
       children: t.children.flatMap((c) => (c.origin === 'script' ? [scriptNode(c, process)] : readParts([c], false, t.label))),
     };
@@ -756,7 +763,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     } else out.push({ layer: 'language', kind: 'language', label: t.language!, span: t.span, reader, children: [node] });
   };
   const langNode = (t: Token, reader: string): ReadingNode => ({
-    layer: 'language', kind: t.kind, label: t.label, span: t.span, text: t.explanation, reader, children: t.children.map((c) => langNode(c, reader)),
+    layer: 'language', kind: t.kind, label: t.label, span: t.span, ...saidBy(t), reader, children: t.children.map((c) => langNode(c, reader)),
   });
 
   const root: ReadingNode = { layer: 'bash', kind: 'line', label: '', span: range, children: collect(tree.root, 'bash') };

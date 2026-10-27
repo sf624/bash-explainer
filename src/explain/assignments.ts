@@ -14,6 +14,7 @@ import { attribute, docLine, option } from '../semantics/state';
 import { assignmentIgnored, unsetEndsSpecial } from '../semantics/vars';
 import { isPlainWord, splitElement, staticWordValue } from '../staticword';
 import { assignmentSpan, field, type SyntaxNode } from '../syntax/tree';
+import { tokenBasisOf } from '../tokenbases';
 import type { Explainer } from './context';
 import { embeddedValue } from './embedded';
 import { skeletal } from './nodes';
@@ -104,8 +105,8 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     } else if (idx === '@' || idx === '*') {
       // (`@` and `*` are all the elements, which an assignment cannot name: 6.7. An associative array's are keys.)
       const maybe = arrayKind(cx, arr, n) === 'unknown';
-      expl = cx.s(`bash はこの代入を受け付けない: \`${idx}\` はインデックス配列の添字にならない（「bad array subscript」で終了ステータス 1${maybe ? `。\`${arr}\` が連想配列ならキー \`${idx}\` の要素に代入する` : ''}）`,
-        `Bash refuses this assignment: \`${idx}\` is no index of an indexed array ("bad array subscript", status 1${maybe ? `; if \`${arr}\` is associative, it sets the element with the key \`${idx}\`` : ''})`);
+      expl = cx.rests(cx.s(`bash はこの代入を受け付けない: \`${idx}\` はインデックス配列の添字にならない（「bad array subscript」で終了ステータス 1${maybe ? `。\`${arr}\` が連想配列ならキー \`${idx}\` の要素に代入する` : ''}）`,
+        `Bash refuses this assignment: \`${idx}\` is no index of an indexed array ("bad array subscript", status 1${maybe ? `; if \`${arr}\` is associative, it sets the element with the key \`${idx}\`` : ''})`), 'array-at-subscript');
     } else {
       const el = v !== undefined && String(v) !== idx
         ? cx.s(`配列 \`${arr}\` の要素 \`[${idx}]\`（算術式として計算すると ${v}）`, `element \`[${idx}]\` of array \`${arr}\` (an arithmetic expression: ${v})`)
@@ -132,8 +133,13 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
   const prefix = n.field !== 'argument' && n.parent?.type === 'command' && !!field(n.parent, 'name');
   if (n.parent?.type === 'command' && !prefix) {
     if (unsetEndsSpecial(own) && cx.state.local(n, own)) {
-      if (!assignmentIgnored(own)) expl += cx.s(`。ここの \`${own}\` は関数のローカル変数で、普通の変数（bash の特別な働きはない。関数の外の \`${own}\` はそのまま）`, `. Here \`${own}\` is a local of the function, a plain variable: bash does nothing special with it (the \`${own}\` outside keeps its role)`);
-    } else if (assignmentIgnored(own)) expl += cx.s(`。bash はこの代入を無視する（\`${own}\` の値は bash が決める）`, `. Bash ignores this assignment (it sets \`${own}\` itself)`);
+      if (!assignmentIgnored(own)) expl += cx.rests(cx.s(`。ここの \`${own}\` は関数のローカル変数で、普通の変数（bash の特別な働きはない。関数の外の \`${own}\` はそのまま）`, `. Here \`${own}\` is a local of the function, a plain variable: bash does nothing special with it (the \`${own}\` outside keeps its role)`), 'local-special-plain');
+    } else if (assignmentIgnored(own)) {
+      // (The manual says it of some of them only: `tokenBasisOf`, src/tokenbases.ts.)
+      const ignored = cx.s(`。bash はこの代入を無視する（\`${own}\` の値は bash が決める）`, `. Bash ignores this assignment (it sets \`${own}\` itself)`);
+      const id = tokenBasisOf('ignored', own);
+      expl += id ? cx.rests(ignored, id) : ignored;
+    }
     else if (Object.hasOwn(variableAssignments, own)) {
       // (An empty value may do something else: `BASH_XTRACEFD=`.)
       const said = (!value || staticWordValue(value) === '') && Object.hasOwn(variableEmptied, own) ? variableEmptied[own] : variableAssignments[own];
@@ -154,9 +160,10 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     const then = exits ?? (!known ? undefined : prefix ? 'runs' : inSubshell(cx, n)?.sure ? 'subshell' : 'abandons');
     cx.note(fact(cx.lang, 'assign-readonly', { name: own, then }), n);
     expl = cx.s(`\`${own}\` は読み取り専用なので、この代入はエラーになり、値は変わらない`, `\`${own}\` is read-only, so this assignment fails and its value stays`)
-      + (then === 'abandons' ? cx.s('。bash はそれを含むスクリプトのコマンドの残り（この行、または囲む繰り返しや関数呼び出し）を中断する（終了ステータス 1）', ': bash abandons the rest of the command of the script it is in (the line, or the loop or function call around it), status 1')
-        : then === 'subshell' ? cx.s('。サブシェルはそこで終わる（終了ステータス 1）', ': the subshell ends there, status 1')
-          : then === 'runs' ? cx.s('。コマンドは、この代入なしで実行される', ': the command still runs, without it')
+      + (then === 'abandons' ? cx.rests(cx.s('。bash はそれを含むスクリプトのコマンドの残り（この行、または囲む繰り返しや関数呼び出し）を中断する（終了ステータス 1）', ': bash abandons the rest of the command of the script it is in (the line, or the loop or function call around it), status 1'), 'readonly-abandons')
+        : then === 'subshell' ? cx.rests(cx.s('。サブシェルはそこで終わる（終了ステータス 1）', ': the subshell ends there, status 1'), 'readonly-subshell')
+          : then === 'runs' ? cx.rests(cx.s('。コマンドは、この代入なしで実行される', ': the command still runs, without it'), 'readonly-prefix-runs')
+            // (In POSIX mode, 6.11 says the shell exits: the manual's, as for the fact `assign-readonly`.)
             : then === 'exits' ? cx.s('。POSIX モードなので、bash はここでスクリプトを止める（終了ステータス 1）', ': in POSIX mode, bash stops the script here, status 1') : '');
   } else if (readonly === 'unknown') {
     expl += cx.s('。ただし、この前の一部の経路では読み取り専用になっていて、そこではこの代入はエラーになる', '. But some paths before here make it read-only, and there this assignment fails');

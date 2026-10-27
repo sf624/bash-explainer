@@ -175,6 +175,265 @@
       "output": "declare -ax a=([0]=\"x\" [1]=\"y\")\nstatus 1"
     }
   },
+  "state#columns-at-start": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'echo \"COLUMNS=${COLUMNS-unset} LINES=${LINES-unset}\"'",
+      "output": "COLUMNS=unset LINES=unset"
+    }
+  },
+  "state#rematch-failed": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c '[[ ab =~ (b) ]]; echo \"after a match: ${#BASH_REMATCH[@]} elements\"; [[ ab =~ z ]]; echo \"after a failed one: ${#BASH_REMATCH[@]}\"'",
+      "output": "after a match: 2 elements\nafter a failed one: 0"
+    }
+  },
+  "state#xtracefd-old-open": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'exec 3>/dev/null 4>/dev/null; BASH_XTRACEFD=3; BASH_XTRACEFD=4; echo hi >&3 && echo \"fd 3 is still open\"'",
+      "output": "fd 3 is still open"
+    }
+  },
+  "state#funcnest-abandons": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'cat > s.sh <<\"EOF\"\nFUNCNEST=2\nf() { f; }\nf; echo same line\necho \"next line, status $?\"\nEOF\nbash s.sh'",
+      "output": "s.sh: line 2: f: maximum function nesting level exceeded (2)\nnext line, status 1"
+    }
+  },
+  "state#path-hash": {
+    "manual": "5.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'hash -p /bin/ls ls; hash -t ls; PATH=$PATH; hash -t ls'",
+      "output": "/bin/ls\nbash: line 1: hash: ls: not found"
+    }
+  },
+  "state#pwd-assign": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'cd /; PWD=/x; pwd; echo \"$PWD\"'",
+      "output": "/\n/x"
+    }
+  },
+  "state#posixly-correct-unset": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'POSIXLY_CORRECT=1; shopt -po posix; unset POSIXLY_CORRECT; shopt -po posix'",
+      "output": "set -o posix\nset +o posix"
+    }
+  },
+  "state#local-random": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'f() { local RANDOM=3; echo $RANDOM $RANDOM; }; f'",
+      "output": "3 3"
+    }
+  },
+  "state#ignored-lineno": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'LINENO=5; echo \"line $LINENO\"; BASH_COMMAND=x; echo \"$BASH_COMMAND\"'",
+      "output": "line 1\necho \"$BASH_COMMAND\""
+    }
+  },
+  "state#bash-invalid-option": {
+    "manual": "6.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'bash -Z 2>/dev/null; echo \"status $?\"; bash -x --posix -c true 2>/dev/null; echo \"status $?\"; bash -e -Z; echo \"status $?\"'",
+      "output": "status 2\nstatus 2\nbash: -Z: invalid option\nstatus 1"
+    }
+  },
+  "state#bash-lone-plus": {
+    "manual": "6.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'bash + -c \"echo ran\"'",
+      "output": "ran"
+    }
+  },
+  "state#alias-refused": {
+    "manual": "6.6",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'alias a/b=x; echo \"status $?\"; alias =x; echo \"status $?\"'",
+      "output": "bash: line 1: alias: `a/b': invalid alias name\nstatus 1\nbash: line 1: alias: =x: not found\nstatus 1"
+    }
+  },
+  "state#alias-in-alias": {
+    "manual": "6.6",
+    "bash": [
+      "5.2"
+    ],
+    "try": {
+      "code": "bash -c 'shopt -s expand_aliases\nalias t=s s=\"echo \" w=word\nt w'",
+      "output": "w"
+    }
+  },
+  "state#array-at-assign": {
+    "manual": "6.7",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'a[@]=x; echo same line\necho \"next line, status $?\"'",
+      "output": "bash: line 1: a[@]: bad array subscript\nnext line, status 1"
+    }
+  },
+  "state#subscript-words": {
+    "manual": "6.7",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'export e[1]; echo \"status $?\"; a=(x y); declare -p a[1]; echo \"status $?\"'",
+      "output": "bash: line 1: export: `e[1]': not a valid identifier\nstatus 1\nbash: line 1: declare: a[1]: not found\nstatus 1"
+    }
+  },
+  "state#assoc-missing-subscript": {
+    "manual": "6.7",
+    "bash": [
+      "5.2"
+    ],
+    "try": {
+      "code": "bash -c 'declare -A m=([a]=1 b); echo \"status $?, keys: ${!m[*]}\"'",
+      "output": "bash: line 1: m: 'b': must use subscript when assigning associative array\nstatus 0, keys: a"
+    }
+  },
+  "state#array-brace-value": {
+    "manual": "6.7",
+    "bash": [
+      "5.2"
+    ],
+    "try": {
+      "code": "bash -c 'x=([4]={a,b}); declare -p x'",
+      "output": "declare -a x=([0]=\"[4]=a\" [1]=\"[4]=b\")"
+    }
+  },
+  "state#assoc-tilde": {
+    "manual": "6.7",
+    "bash": [
+      "5.2"
+    ],
+    "try": {
+      "code": "bash -c 'declare -A m=(k ~); echo \"${m[k]}\"'",
+      "output": "~"
+    }
+  },
+  "state#kill-posix-sig": {
+    "manual": "6.11",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'set -o posix; kill -SIGTERM $$; echo \"status $?\"'",
+      "output": "bash: line 1: kill: SIGTERM: invalid signal specification\nstatus 1"
+    }
+  },
+  "state#posix-indirect-hash": {
+    "manual": "6.11",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'set -o posix; set -- a b; echo \"[${!#}]\"'",
+      "output": "[]"
+    }
+  },
+  "state#trap-posix": {
+    "manual": "6.11",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'bash -c \"set -o posix; trap INT; echo not reached\" 2>/dev/null; echo \"status $?\"'",
+      "output": "status 2"
+    }
+  },
+  "state#time-alone": {
+    "manual": "3.2.3",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'time'",
+      "output": "\nreal\t0m0.000s\nuser\t0m0.000s\nsys\t0m0.000s"
+    }
+  },
+  "state#arith-syntax-error": {
+    "manual": "6.5",
+    "bash": [
+      "5.2"
+    ],
+    "try": {
+      "code": "bash -c '((2 *)); echo \"status $?\"; echo $((1 +)); echo same line\necho \"next line, status $?\"'",
+      "output": "bash: line 1: ((: 2 *: syntax error: operand expected (error token is \"*\")\nstatus 1\nbash: line 1: 1 +: syntax error: operand expected (error token is \"+\")\nnext line, status 1"
+    }
+  },
+  "words#underscore-after-assignment": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'true x; echo \"[$_]\"; a=1; echo \"[$_]\"'",
+      "output": "[x]\n[]"
+    }
+  },
   "words#bash-subshell-stage": {
     "manual": "5.2",
     "bash": [

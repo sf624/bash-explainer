@@ -2,6 +2,7 @@
 // (Other shells take the options of `sh`: src/dict/aliases.ts.)
 import type { CommandSpec, OperandAlt, OperandSpec, ValueSpec } from '../argv/spec';
 import { tx } from '../i18n';
+import { based } from '../tokenbases';
 import { builtins, shellOptions, shoptOptions } from './builtins';
 import { cmd, operand, type OptSpec, optionOf, wordTable } from './types';
 
@@ -75,10 +76,10 @@ const BASH: CommandSpec = cmd('bash シェルを起動する（スクリプト�
   parser: 'bash', plusOptions: true,
   operands: SHELL_OPERANDS,
   // (`bash + -c 'cmd'`: a `+` alone is a word of options with no letters.)
-  patternOptions: [{ pattern: /^\+$/, text: () => tx('`+` だけ: 文字がないので何も変えない（bash は読み飛ばす）', 'A lone `+`: no letters, so it changes nothing (bash skips it)') }],
-  unknownOption: tx(`bash にないオプション: bash は \`invalid option\` と使い方を表示し、${REFUSED[0]}`, `An option bash does not have: bash says \`invalid option\`, prints its usage, and ${REFUSED[1]}`),
-  lateOption: tx(`1文字のオプションの後の長いオプション: bash は長いオプションをほかより前でしか読まないので、この語を文字 \`-\`… の並びとして読み、\`--: invalid option\` と表示して、${REFUSED[0]}`,
-    `A long option after a single-letter one: bash reads long options only before the others, so it reads this word as the letters \`-\`…, says \`--: invalid option\` and ${REFUSED[1]}`),
+  patternOptions: [{ pattern: /^\+$/, text: () => based(tx('`+` だけ: 文字がないので何も変えない（bash は読み飛ばす）', 'A lone `+`: no letters, so it changes nothing (bash skips it)'), 'bash-lone-plus') }],
+  unknownOption: based(tx(`bash にないオプション: bash は \`invalid option\` と使い方を表示し、${REFUSED[0]}`, `An option bash does not have: bash says \`invalid option\`, prints its usage, and ${REFUSED[1]}`), 'bash-refuses-option'),
+  lateOption: based(tx(`1文字のオプションの後の長いオプション: bash は長いオプションをほかより前でしか読まないので、この語を文字 \`-\`… の並びとして読み、\`--: invalid option\` と表示して、${REFUSED[0]}`,
+    `A long option after a single-letter one: bash reads long options only before the others, so it reads this word as the letters \`-\`…, says \`--: invalid option\` and ${REFUSED[1]}`), 'bash-refuses-option'),
 });
 
 /**

@@ -11,7 +11,7 @@ import { pictureLabel, pictureText, splitPictures } from '../ctlchars';
 import { isCommand, partNotes, ProblemAt, sameSpan, shown, valueOf } from './hoverParts';
 import { type Note, type NoteLevel, SPACE_MARK, type SpaceEnds, type ValueSaid } from '../messages';
 import { levelColour, ThemeKind } from './palette';
-import { basisLine, colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteBasis, noteRefs, notesByLevel, placeExamples, plainNotes, refsMarkdown, ui, valueMarkdown } from './render';
+import { basisLine, basisMarkdown, colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteBasis, noteRefs, notesByLevel, partBasis, placeExamples, plainNotes, refsMarkdown, ui, valueMarkdown } from './render';
 
 /** What every view of the hover needs. */
 export interface HoverInput {
@@ -191,8 +191,14 @@ function refsHtml(lang: Lang, refs?: readonly string[]): string {
   return ` <small>${referencesWith(lang, refs, (r, shown) => `<a href="${r.url}" title="${attr(r.title)}">${shown}</a>`)}</small>`;
 }
 
+/** What a part rests on where it is bash's behaviour rather than the manual (`partBasis`), small, on a line of its own. */
+const rests = (tok: Token, lang: Lang) => {
+  const b = partBasis(tok, lang);
+  return b ? `<br><small>${md(basisLine(lang, b, codeSpan))}</small>` : '';
+};
+
 /** A part as a row's text: its meaning, badge, sections and other meanings. */
-const about = (tok: Token, lang: Lang) => `${prose(tok.explanation)}${badge(tok)}${refsHtml(lang, tok.refs)}${also(tok)}${value(tok)}`;
+const about = (tok: Token, lang: Lang) => `${prose(tok.explanation)}${badge(tok)}${refsHtml(lang, tok.refs)}${also(tok)}${value(tok)}${rests(tok, lang)}`;
 
 /** The rows of the parts under a token, `depth` levels deep, indented with non-breaking spaces; `stop` keeps a part out (with its own parts). */
 function rows(items: Token[], depth: number, stop: (t: Token) => boolean): { rows: { tok: Token; level: number }[]; hidden: number } {
@@ -306,7 +312,7 @@ export function partHover(x: HoverInput, chain: Token[]): string {
   const crumbs = chain.slice(0, -1).map((c) => crumbPart(c, x.theme));
   out.push(`${crumbs.length ? `<small>${crumbs.join(sep('›'))}${sep('›')}</small> &nbsp; ` : ''}${lineLink(x)}`, '');
   out.push(`<b>${label(part, x.theme, 48)}</b>${badge(part)}`, '');
-  out.push(`${md(part.explanation)}${part.refs?.length ? ` <small>${refsMarkdown(x.lang, part.refs)}</small>` : ''}${also(part)}`, '');
+  out.push(`${md(part.explanation)}${part.refs?.length ? ` <small>${refsMarkdown(x.lang, part.refs)}</small>` : ''}${also(part)}${rests(part, x.lang)}`, '');
   const v = valueOf(part);
   if (v) out.push(valueHtml(v.said), '');
   const own = rows(shown(part), 1, () => false);
@@ -367,7 +373,7 @@ export function wholeLine(x: HoverInput): string {
   let hidden = 0;
   for (const { tok, path } of blocks) {
     const at = path.filter((p) => !sameSpan(p.span, tok.span)).map((p) => crumbPart(p, theme)).join(sep('›'));
-    out.push(`<b>${label(tok, theme, 40)}</b>${badge(tok)} — ${md(tok.explanation)}${tok.refs?.length ? ` <small>${refsMarkdown(lang, tok.refs)}</small>` : ''}${at ? `<br><small>${muted(t.hover.in)}${at}</small>` : ''}${also(tok)}`, '');
+    out.push(`<b>${label(tok, theme, 40)}</b>${badge(tok)} — ${md(tok.explanation)}${tok.refs?.length ? ` <small>${refsMarkdown(lang, tok.refs)}</small>` : ''}${at ? `<br><small>${muted(t.hover.in)}${at}</small>` : ''}${also(tok)}${rests(tok, lang)}`, '');
     const r = rows(shown(tok), 2, isBlock);
     hidden += r.hidden;
     const examples = placed && blockExamples(placed.items, tok, r.rows.map((row) => row.tok));
@@ -401,11 +407,13 @@ export function plainPartHover(ex: LineExplanation, chain: Token[], lang: Lang, 
   const s = part.name?.said;
   out.push(`**${flat(part)}**${s ? ` · _${s.kind}_${s.by ? `, ${s.by}` : ''}` : ''}`, '');
   out.push(`${pictureText(part.explanation)}${part.refs?.length ? ` (${refsMarkdown(lang, part.refs)})` : ''}`, '');
+  const b = partBasis(part, lang);
+  if (b) out.push(`_${basisLine(lang, b, codeSpan)}_`, '');
   if (s?.also) out.push(`_${s.also}_`, '');
   const v = valueOf(part);
   if (v) out.push(pictureText(v.said.text), '');
   const kids = shown(part);
-  if (kids.length) out.push(...kids.map((k) => `- ${flat(k)} — ${explained(k)}${valueMarkdown(valueOf(k), '  ')}`), '');
+  if (kids.length) out.push(...kids.map((k) => `- ${flat(k)} — ${explained(k)}${valueMarkdown(valueOf(k), '  ')}${basisMarkdown(k, lang, '  ')}`), '');
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));
   if (command) out.push(`${t.command}${flat(command)} — ${explained(command)}`, '');
   out.push(...plainNotes(ex, partNotes(ex, part).about, lang));

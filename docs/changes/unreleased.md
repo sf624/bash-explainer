@@ -548,6 +548,26 @@ Differs from the manual:
 
 Some notes now link the sections that state what they say: the status of a function or a script ends with that of its last command (3.2.4, 3.3, 6.1), `export x=$(cmd)` hides the failure (4.1), `(( i++ ))` is 1 when `i` is 0 (3.2.5.2), a `then` read as an argument (3.2.1), `[` without `]` fails with status 2 (3.7.5: a builtin used wrongly returns 2).
 
+The explanations of the parts of a line carry the same chip where their text says what bash does beyond the manual: the rows of Meaning and the nodes of Reading, the hover's rows, Copy as Markdown and the command-line tool (its JSON gives the tokens a `basis` and a `tryIt`). They were checked against the manual as the notes were, among the texts of the chapter 5 and 6 audits (below, "Reading as the Bash manual reads it"). Not in the manual:
+
+- `$_` after a command of assignments only is empty (`a=1; echo "$_"`).
+- `$COLUMNS` and `$LINES` are not set when bash starts: until a program ends at a terminal, only the environment gives them.
+- `$BASH_REMATCH` is empty after a match that fails.
+- `FUNCNEST=10`: a deeper call abandons the rest of the command, with status 1 (the manual: "the current command to abort").
+- `PATH=…` makes bash forget the commands `hash` remembered; `PWD=…` changes only the variable; unsetting `POSIXLY_CORRECT` turns POSIX mode off.
+- `local RANDOM=3` is a plain variable; bash ignores `LINENO=5` and `BASH_COMMAND=x` (the manual says so of `BASHPID` and others, not of these two).
+- An assignment to a read-only variable abandons the rest of the line, or ends a subshell, with status 1.
+- `bash -Z` and `bash -x --posix` exit with status 2 (1 after `-e`); a lone `+` among bash's options is skipped.
+- `alias a/b=x` and `alias =x` fail with status 1; `a[@]=x` is refused with status 1; `export e[1]` and `declare -p a[1]` fail with status 1.
+- Of an alias whose text is an alias ending with a blank, bash 5.3 checks the next word, 5.2 does not. bash 5.2 brace-expands `[4]={a,b}` in an array's list, 5.3 does not; bash 5.3 expands `~` in an associative array's list, 5.2 does not; after a value with no `[key]=` in that list, bash 5.3 also abandons the line. These chips name bash 5.2, whose output their try-it shows.
+- In POSIX mode: `kill -SIGTERM` fails with status 1; `${!#}` expands to nothing; `trap INT` is a usage error (status 2) that ends the shell. `time` alone prints zero times.
+- An arithmetic syntax error (`$((1 +))`) abandons the rest of the line, status 1; `((2 *))` fails with status 1.
+
+Differs from the manual:
+
+- `BASH_XTRACEFD=7` leaves the descriptor named before open. The manual says it is closed when the variable is assigned a new value.
+- `x=2 cmd`, where `x` is read-only, still runs `cmd`: the row of `x=2` says so too.
+
 Under the chip, "Try it in your terminal" (「端末で試す」) opens a command to copy and what it prints:
 
 ```

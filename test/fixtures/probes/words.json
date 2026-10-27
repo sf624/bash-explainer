@@ -2226,6 +2226,7 @@
     }
   },
   {
+    "id": "underscore-after-assignment",
     "manual": "5.2",
     "snippet": "true x; a=1 >/dev/null b=2; @PROBE:a@ \"$_\"",
     "facts": {
@@ -2235,6 +2236,14 @@
         ]
       ],
       "status": 0
+    },
+    "try": {
+      "code": "bash -c 'true x; echo \"[$_]\"; a=1; echo \"[$_]\"'",
+      "output": "[x]\n[]",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
     }
   },
   {

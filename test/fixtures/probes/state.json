@@ -5353,5 +5353,778 @@
       },
       "status": 0
     }
+  },
+  {
+    "id": "columns-at-start",
+    "manual": "5.2",
+    "snippet": "@PROBE:a@\ntrue\n/bin/true\n@PROBE:b@",
+    "note": "bash does not set COLUMNS and LINES when it starts: only the environment gives them (checkwinsize sets them after a program, at a terminal)",
+    "try": {
+      "code": "bash -c 'echo \"COLUMNS=${COLUMNS-unset} LINES=${LINES-unset}\"'",
+      "output": "COLUMNS=unset LINES=unset",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "a": {},
+      "b": {},
+      "end": {},
+      "status": 0
+    }
+  },
+  {
+    "id": "rematch-failed",
+    "manual": "5.2",
+    "snippet": "[[ ab =~ (b) ]]; n=${#BASH_REMATCH[@]}; [[ ab =~ z ]]; m=${#BASH_REMATCH[@]}",
+    "note": "a match that fails empties BASH_REMATCH",
+    "try": {
+      "code": "bash -c '[[ ab =~ (b) ]]; echo \"after a match: ${#BASH_REMATCH[@]} elements\"; [[ ab =~ z ]]; echo \"after a failed one: ${#BASH_REMATCH[@]}\"'",
+      "output": "after a match: 2 elements\nafter a failed one: 0",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "BASH_REMATCH": {
+            "attrs": "a",
+            "value": "()"
+          },
+          "m": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "n": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.variables.BASH_REMATCH": "the model does not follow what `[[ =~ ]]` sets"
+    }
+  },
+  {
+    "id": "xtracefd-old-open",
+    "manual": "5.2",
+    "snippet": "exec 3>/dev/null 4>/dev/null; BASH_XTRACEFD=3; BASH_XTRACEFD=4; echo hi >&3",
+    "note": "a new value of BASH_XTRACEFD leaves the descriptor it named before open; the manual says it is closed",
+    "try": {
+      "code": "bash -c 'exec 3>/dev/null 4>/dev/null; BASH_XTRACEFD=3; BASH_XTRACEFD=4; echo hi >&3 && echo \"fd 3 is still open\"'",
+      "output": "fd 3 is still open",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "BASH_XTRACEFD": {
+            "attrs": "-",
+            "value": "\"4\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "funcnest-abandons",
+    "manual": "5.2",
+    "snippet": "FUNCNEST=2\nf() { f; }\nf; y=1\nz=1",
+    "note": "a call deeper than FUNCNEST abandons the rest of the command of the script it is in, status 1",
+    "try": {
+      "code": "bash -c 'cat > s.sh <<\"EOF\"\nFUNCNEST=2\nf() { f; }\nf; echo same line\necho \"next line, status $?\"\nEOF\nbash s.sh'",
+      "output": "s.sh: line 2: f: maximum function nesting level exceeded (2)\nnext line, status 1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "FUNCNEST": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 2: f: maximum function nesting level exceeded (2)"
+    },
+    "gaps": {
+      "end.variables.y": "the model does not stop at a call deeper than `FUNCNEST`, which abandons the rest of the line"
+    }
+  },
+  {
+    "id": "path-hash",
+    "manual": "5.1",
+    "snippet": "hash -p /bin/ls ls; PATH=$PATH; hash -t ls",
+    "note": "an assignment to PATH empties the table of remembered commands",
+    "try": {
+      "code": "bash -c 'hash -p /bin/ls ls; hash -t ls; PATH=$PATH; hash -t ls'",
+      "output": "/bin/ls\nbash: line 1: hash: ls: not found",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {},
+      "status": 0,
+      "stderr": "SCRIPT: line 1: hash: ls: not found"
+    }
+  },
+  {
+    "id": "pwd-assign",
+    "manual": "5.2",
+    "snippet": "cd /; PWD=/x; p=$(pwd)",
+    "note": "an assignment to PWD changes the variable, not the directory",
+    "try": {
+      "code": "bash -c 'cd /; PWD=/x; pwd; echo \"$PWD\"'",
+      "output": "/\n/x",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "OLDPWD": {
+            "attrs": "x",
+            "value": "\"/BOX\""
+          },
+          "PWD": {
+            "attrs": "x",
+            "value": "\"/x\""
+          },
+          "p": {
+            "attrs": "-",
+            "value": "\"/\""
+          }
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.variables.OLDPWD": "the model does not follow the current directory (cd, pushd, popd)",
+      "end.variables.PWD.attrs": "the model does not follow the current directory (cd, pushd, popd), nor that `PWD` stays exported"
+    }
+  },
+  {
+    "id": "posixly-correct-unset",
+    "manual": "5.2",
+    "snippet": "POSIXLY_CORRECT=1\n@PROBE:a@\nunset POSIXLY_CORRECT",
+    "note": "unsetting POSIXLY_CORRECT turns POSIX mode off",
+    "try": {
+      "code": "bash -c 'POSIXLY_CORRECT=1; shopt -po posix; unset POSIXLY_CORRECT; shopt -po posix'",
+      "output": "set -o posix\nset +o posix",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "a": {
+        "shopt": {
+          "expand_aliases": true,
+          "inherit_errexit": true,
+          "shift_verbose": true
+        },
+        "set": {
+          "posix": true
+        },
+        "variables": {
+          "POSIXLY_CORRECT": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "end": {
+        "shopt": {
+          "inherit_errexit": true
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "local-random",
+    "manual": "5.2",
+    "snippet": "f() { local RANDOM=3; a=$RANDOM; b=$RANDOM; }; f",
+    "note": "a local of RANDOM is a plain variable",
+    "try": {
+      "code": "bash -c 'f() { local RANDOM=3; echo $RANDOM $RANDOM; }; f'",
+      "output": "3 3",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"3\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "ignored-lineno",
+    "manual": "5.2",
+    "snippet": "LINENO=5; l=$LINENO; BASH_COMMAND=x; c=$BASH_COMMAND",
+    "note": "assignments to LINENO and BASH_COMMAND change nothing",
+    "try": {
+      "code": "bash -c 'LINENO=5; echo \"line $LINENO\"; BASH_COMMAND=x; echo \"$BASH_COMMAND\"'",
+      "output": "line 1\necho \"$BASH_COMMAND\"",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "c": {
+            "attrs": "-",
+            "value": "\"c=\\$BASH_COMMAND\""
+          },
+          "l": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.variables.BASH_COMMAND": "bash ignores the assignment and sets `BASH_COMMAND` itself; the model takes the assignment",
+      "end.variables.LINENO": "bash ignores the assignment and sets `LINENO` itself; the model takes the assignment"
+    }
+  },
+  {
+    "id": "bash-invalid-option",
+    "manual": "6.1",
+    "snippet": "bash -Z 2>/dev/null; a=$?; bash -x --posix -c true 2>/dev/null; b=$?; bash -e -Z 2>/dev/null; c=$?",
+    "note": "bash started with an option it does not have, or a long option after a short one, exits with status 2 (1 after -e)",
+    "try": {
+      "code": "bash -c 'bash -Z 2>/dev/null; echo \"status $?\"; bash -x --posix -c true 2>/dev/null; echo \"status $?\"; bash -e -Z; echo \"status $?\"'",
+      "output": "status 2\nstatus 2\nbash: -Z: invalid option\nstatus 1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "c": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "bash-lone-plus",
+    "manual": "6.1",
+    "snippet": "v=$(bash + -c \"echo ran\")",
+    "note": "a lone + among the options of bash is skipped",
+    "try": {
+      "code": "bash -c 'bash + -c \"echo ran\"'",
+      "output": "ran",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"ran\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "alias-refused",
+    "manual": "6.6",
+    "snippet": "alias a/b=x; a=$?; alias =x; b=$?",
+    "note": "alias refuses a name with / (invalid alias name) and a word with no name (not found), status 1",
+    "try": {
+      "code": "bash -c 'alias a/b=x; echo \"status $?\"; alias =x; echo \"status $?\"'",
+      "output": "bash: line 1: alias: `a/b': invalid alias name\nstatus 1\nbash: line 1: alias: =x: not found\nstatus 1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: alias: `a/b': invalid alias name"
+    }
+  },
+  {
+    "id": "alias-in-alias",
+    "manual": "6.6",
+    "snippet": "shopt -s expand_aliases\nalias t=s s=\"echo \" w=word\nv=$(t w)",
+    "note": "bash 5.2 does not check the word after an alias whose text is an alias ending with a blank; bash 5.3 does",
+    "try": {
+      "code": "bash -c 'shopt -s expand_aliases\nalias t=s s=\"echo \" w=word\nt w'",
+      "output": "w",
+      "bash": [
+        "5.2"
+      ]
+    },
+    "facts": {
+      "end": {
+        "shopt": {
+          "expand_aliases": true
+        },
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"w\""
+          }
+        },
+        "aliases": {
+          "s": "echo ",
+          "t": "s",
+          "w": "word"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "alias-in-alias-53",
+    "manual": "6.6",
+    "bash": "5.3",
+    "snippet": "shopt -s expand_aliases\nalias t=s s=\"echo \" w=word\nv=$(t w)",
+    "note": "bash 5.3 checks the word after an alias whose text is an alias ending with a blank",
+    "facts": {
+      "end": {
+        "shopt": {
+          "expand_aliases": true
+        },
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"word\""
+          }
+        },
+        "aliases": {
+          "s": "echo ",
+          "t": "s",
+          "w": "word"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "array-at-assign",
+    "manual": "6.7",
+    "snippet": "a[@]=x; y=1\nz=1",
+    "note": "a[@]=x is refused (bad array subscript), and abandons the rest of the line, status 1",
+    "try": {
+      "code": "bash -c 'a[@]=x; echo same line\necho \"next line, status $?\"'",
+      "output": "bash: line 1: a[@]: bad array subscript\nnext line, status 1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "z": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: a[@]: bad array subscript"
+    },
+    "gaps": {
+      "end.variables.a": "the model does not know that bash refuses `a[@]=x` (bad array subscript)",
+      "end.variables.y": "the model does not know that bash refuses `a[@]=x` and abandons the rest of the line"
+    }
+  },
+  {
+    "id": "subscript-words",
+    "manual": "6.7",
+    "snippet": "export e[1]; a=$?; x=(1 2); declare -p x[1]; b=$?",
+    "note": "export refuses a word with a subscript, and declare -p finds no such name, status 1",
+    "try": {
+      "code": "bash -c 'export e[1]; echo \"status $?\"; a=(x y); declare -p a[1]; echo \"status $?\"'",
+      "output": "bash: line 1: export: `e[1]': not a valid identifier\nstatus 1\nbash: line 1: declare: a[1]: not found\nstatus 1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "x": {
+            "attrs": "a",
+            "value": "([0]=\"1\" [1]=\"2\")"
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: export: `e[1]': not a valid identifier"
+    },
+    "gaps": {
+      "end.variables.e": "the model does not know that `export` refuses a word with a subscript"
+    }
+  },
+  {
+    "id": "assoc-missing-subscript",
+    "manual": "6.7",
+    "snippet": "declare -A m=([a]=1 b); s=$?",
+    "note": "bash 5.2 says that a value of an associative array with no [key]= after one with it needs one, and goes on",
+    "try": {
+      "code": "bash -c 'declare -A m=([a]=1 b); echo \"status $?, keys: ${!m[*]}\"'",
+      "output": "bash: line 1: m: 'b': must use subscript when assigning associative array\nstatus 0, keys: a",
+      "bash": [
+        "5.2"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "m": {
+            "attrs": "A",
+            "value": "([a]=\"1\" )"
+          },
+          "s": {
+            "attrs": "-",
+            "value": "\"0\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: m: 'b': must use subscript when assigning associative array"
+    }
+  },
+  {
+    "id": "assoc-missing-subscript-53",
+    "manual": "6.7",
+    "bash": "5.3",
+    "snippet": "declare -A m=([a]=1 b); s=$?\nn=1",
+    "note": "bash 5.3 also abandons the rest of the line, status 1",
+    "facts": {
+      "end": {
+        "variables": {
+          "m": {
+            "attrs": "A",
+            "value": "([a]=\"1\" )"
+          },
+          "n": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: m: 'b': must use subscript when assigning associative array"
+    },
+    "gaps": {
+      "end.variables.s": "the model does not know that bash 5.3 abandons the rest of the line after a value with no `[key]=`"
+    }
+  },
+  {
+    "id": "array-brace-value",
+    "manual": "6.7",
+    "snippet": "x=([4]={a,b})",
+    "note": "bash 5.2 brace-expands [4]={a,b} into plain values",
+    "try": {
+      "code": "bash -c 'x=([4]={a,b}); declare -p x'",
+      "output": "declare -a x=([0]=\"[4]=a\" [1]=\"[4]=b\")",
+      "bash": [
+        "5.2"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "a",
+            "value": "([0]=\"[4]=a\" [1]=\"[4]=b\")"
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "array-brace-value-53",
+    "manual": "6.7",
+    "bash": "5.3",
+    "snippet": "x=([4]={a,b})",
+    "note": "bash 5.3 does not brace-expand [4]={a,b}",
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "a",
+            "value": "([4]=\"{a,b}\")"
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "assoc-tilde",
+    "manual": "6.7",
+    "snippet": "declare -A m=(k ~)",
+    "note": "bash 5.2 keeps a ~ in the list of an associative array as it is",
+    "try": {
+      "code": "bash -c 'declare -A m=(k ~); echo \"${m[k]}\"'",
+      "output": "~",
+      "bash": [
+        "5.2"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "m": {
+            "attrs": "A",
+            "value": "([k]=\"~\" )"
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "assoc-tilde-53",
+    "manual": "6.7",
+    "bash": "5.3",
+    "snippet": "declare -A m=(k ~)",
+    "note": "bash 5.3 expands a ~ in the list of an associative array",
+    "facts": {
+      "end": {
+        "variables": {
+          "m": {
+            "attrs": "A",
+            "value": "([k]=\"/home/probe\" )"
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "kill-posix-sig",
+    "manual": "6.11",
+    "snippet": "set -o posix; kill -SIGTERM $$; s=$?",
+    "note": "in POSIX mode kill refuses a signal name with SIG, status 1",
+    "try": {
+      "code": "bash -c 'set -o posix; kill -SIGTERM $$; echo \"status $?\"'",
+      "output": "bash: line 1: kill: SIGTERM: invalid signal specification\nstatus 1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "shopt": {
+          "expand_aliases": true,
+          "inherit_errexit": true,
+          "shift_verbose": true
+        },
+        "set": {
+          "posix": true
+        },
+        "variables": {
+          "POSIXLY_CORRECT": {
+            "attrs": "-",
+            "value": "\"y\""
+          },
+          "s": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: kill: SIGTERM: invalid signal specification"
+    }
+  },
+  {
+    "id": "posix-indirect-hash",
+    "manual": "6.11",
+    "snippet": "set -o posix; set -- a b; v=${!#}",
+    "note": "in POSIX mode ${!#} expands to nothing",
+    "try": {
+      "code": "bash -c 'set -o posix; set -- a b; echo \"[${!#}]\"'",
+      "output": "[]",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "shopt": {
+          "expand_aliases": true,
+          "inherit_errexit": true,
+          "shift_verbose": true
+        },
+        "set": {
+          "posix": true
+        },
+        "variables": {
+          "POSIXLY_CORRECT": {
+            "attrs": "-",
+            "value": "\"y\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "trap-posix",
+    "manual": "6.11",
+    "snippet": "set -o posix; trap INT; y=1",
+    "note": "in POSIX mode trap with one word that is not a number is a usage error, status 2, which ends the shell",
+    "try": {
+      "code": "bash -c 'bash -c \"set -o posix; trap INT; echo not reached\" 2>/dev/null; echo \"status $?\"'",
+      "output": "status 2",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "status": 2,
+      "stderr": "trap: usage: trap [-lp] [[arg] signal_spec ...]"
+    }
+  },
+  {
+    "id": "time-alone",
+    "manual": "3.2.3",
+    "snippet": "time",
+    "note": "time with no pipeline prints zero times",
+    "try": {
+      "code": "bash -c 'time'",
+      "output": "\nreal\t0m0.000s\nuser\t0m0.000s\nsys\t0m0.000s",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {},
+      "status": 0,
+      "stderr": "real\t0m0.000s"
+    }
+  },
+  {
+    "id": "arith-syntax-error",
+    "manual": "6.5",
+    "snippet": "((2 *)); s=$?; x=$((1 +)); y=1\nz=1",
+    "note": "an arithmetic syntax error fails `(( ))` with status 1, and in $(( )) abandons the rest of the line, status 1",
+    "try": {
+      "code": "bash -c '((2 *)); echo \"status $?\"; echo $((1 +)); echo same line\necho \"next line, status $?\"'",
+      "output": "bash: line 1: ((: 2 *: syntax error: operand expected (error token is \"*\")\nstatus 1\nbash: line 1: 1 +: syntax error: operand expected (error token is \"+\")\nnext line, status 1",
+      "bash": [
+        "5.2"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "s": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: ((: 2 *: syntax error: operand expected (error token is \"*\")"
+    },
+    "gaps": {
+      "end.variables.x": "the model does not know that an arithmetic syntax error abandons the rest of the line",
+      "end.variables.y": "the model does not know that an arithmetic syntax error abandons the rest of the line"
+    }
   }
 ]

@@ -649,7 +649,7 @@ export function variableNote(cx: Explainer, n: SyntaxNode, name: string): string
     return cx.s(`。\`${name}\` は配列なので、\`$${name}\` は${arr.assoc ? 'キー 0 の要素' : '先頭の要素'}だけ（\`${first}\`）になる。全要素は \`"\${${name}[@]}"\``, `. \`${name}\` is an array, so \`$${name}\` is only ${arr.assoc ? 'the element with key 0' : 'its first element'} (\`${first}\`); all of them are \`"\${${name}[@]}"\``);
   }
   if (name === '_' && underscoreValue(n, cx.state) === '') {
-    return cx.s('。直前のコマンドは代入だけなので、`$_` は空になる', '. The command before is only an assignment, so `$_` is empty');
+    return cx.rests(cx.s('。直前のコマンドは代入だけなので、`$_` は空になる', '. The command before is only an assignment, so `$_` is empty'), 'underscore-after-assignment');
   }
   if (inArithmetic(n) && pastedValue(cx, n, name) !== undefined) {
     const v = shown(pastedValue(cx, n, name)!);
@@ -676,14 +676,14 @@ function pastedValue(cx: Explainer, n: SyntaxNode, name: string): string | undef
 function arrayValue(cx: Explainer, n: SyntaxNode): Token | undefined {
   const kind = arrayKind(cx, field(n.parent!.parent!, 'name')!.text, n);
   const tilde = kind === 'assoc' && /(?:^|\[|=)~/.test(n.text)
-    ? cx.s('。`~` は bash 5.2 では書いたままの文字列で、bash 5.3 ではホームディレクトリに展開される', '. bash 5.2 keeps the `~` as written; bash 5.3 expands it to the home directory') : '';
+    ? cx.rests(cx.s('。`~` は bash 5.2 では書いたままの文字列で、bash 5.3 ではホームディレクトリに展開される', '. bash 5.2 keeps the `~` as written; bash 5.3 expands it to the home directory'), 'assoc-tilde') : '';
   if (setsElement(n, kind === 'assoc')) return arrayElement(cx, n, kind, tilde);
   if (kind !== 'assoc') return undefined;
   const values = n.parent!.namedChildren.filter((c) => c.type !== 'comment');
   // (After a first value `[k]=v`, each needs its `[k]=`.)
   if (splitElement(values[0].text)) {
-    return cx.tok(n, 'error', cx.s(`bash はこの値を受け付けない: 最初の値が \`[キー]=\` で始まるので、どの値にも \`[キー]=\` が要る（「must use subscript when assigning associative array」）。bash 5.2 はそう表示して続けるが、bash 5.3 はさらにこの行の残りを実行しない（終了ステータス 1）`,
-      `Bash refuses this value: the first value starts with \`[key]=\`, so each one needs its \`[key]=\` ("must use subscript when assigning associative array"). bash 5.2 says so and goes on; bash 5.3 also abandons the rest of the line (status 1)`));
+    return cx.tok(n, 'error', cx.rests(cx.s(`bash はこの値を受け付けない: 最初の値が \`[キー]=\` で始まるので、どの値にも \`[キー]=\` が要る（「must use subscript when assigning associative array」）。bash 5.2 はそう表示して続けるが、bash 5.3 はさらにこの行の残りを実行しない（終了ステータス 1）`,
+      `Bash refuses this value: the first value starts with \`[key]=\`, so each one needs its \`[key]=\` ("must use subscript when assigning associative array"). bash 5.2 says so and goes on; bash 5.3 also abandons the rest of the line (status 1)`), 'assoc-missing-subscript'));
   }
   const i = values.indexOf(n);
   const what = (i % 2 === 0 ? cx.s(`キー \`${n.text}\``, `Key \`${n.text}\``) : cx.s(`キー \`${values[i - 1].text}\` の値 \`${n.text}\``, `Value \`${n.text}\` of the key \`${values[i - 1].text}\``)) + tilde;
@@ -698,8 +698,8 @@ function arrayElement(cx: Explainer, n: SyntaxNode, kind: 'assoc' | 'indexed' | 
   // (bash 5.2 brace-expands the word first, into values with no index of their own.)
   const braces = wordAt(cx, n)!.steps.find((s) => s.kind === 'brace')!.applies === true ? braceExpansion(n) : undefined;
   if (braces) {
-    return cx.tok(n, 'argument', cx.s(`bash 5.2 はこの語を先にブレース展開し、${braces.map((w) => `\`${w}\``).join('・')} という添字のない値にする（それぞれが次の要素になる）。bash 5.3 はブレース展開せず、添字 \`${e.key}\` の要素に \`${e.value}\` を${e.plus ? '追記' : '代入'}する`,
-      `bash 5.2 brace-expands this word first, into the values ${braces.map((w) => `\`${w}\``).join(', ')}, with no index of their own (each is the next element); bash 5.3 does not, and ${e.plus ? 'appends' : 'sets'} \`${e.value}\` ${e.plus ? 'to' : 'as'} the element with the index \`${e.key}\``));
+    return cx.tok(n, 'argument', cx.rests(cx.s(`bash 5.2 はこの語を先にブレース展開し、${braces.map((w) => `\`${w}\``).join('・')} という添字のない値にする（それぞれが次の要素になる）。bash 5.3 はブレース展開せず、添字 \`${e.key}\` の要素に \`${e.value}\` を${e.plus ? '追記' : '代入'}する`,
+      `bash 5.2 brace-expands this word first, into the values ${braces.map((w) => `\`${w}\``).join(', ')}, with no index of their own (each is the next element); bash 5.3 does not, and ${e.plus ? 'appends' : 'sets'} \`${e.value}\` ${e.plus ? 'to' : 'as'} the element with the index \`${e.key}\``), 'array-brace-value'));
   }
   // The key as bash reads it once the quotes are removed (`["a b"]` is `a b`); as written when it holds an expansion.
   const key = unquoteWord(e.key) ?? e.key;

@@ -4,7 +4,9 @@ import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { codeSpan, joinParts, LabelPart, labelParts } from '../label';
 import { referencesWith } from '../references';
+import type { Basis, TryIt } from '../basis';
 import { basisSaid, type BasisSaid, MARKS, type Note, type NoteLevel } from '../messages';
+import type { ReadingNode } from '../reading';
 import { errorColour, Role, roleColour, ThemeKind } from './palette';
 
 /** (Moved to src/label.ts, which the message catalog reads too.) */
@@ -222,11 +224,38 @@ export interface NoteBasis extends BasisSaid { tryIt: { code: string; output: st
  */
 export function noteBasis(ex: LineExplanation, note: string, lang: Lang): NoteBasis | undefined {
   const f = ex.facts?.find((g) => g.text === note);
-  const said = basisSaid(lang, f?.basis);
+  return f && partBasis(f, lang);
+}
+
+/**
+ * The basis a view marks on a fact, a token or a node of Reading (`basis`, `tryIt`: docs/design/basis.md, step 4), as
+ * on a note: for `checked` and `differs` only, with the try-it.
+ */
+export function partBasis(x: { basis?: Basis; tryIt?: TryIt }, lang: Lang): NoteBasis | undefined {
+  const said = basisSaid(lang, x.basis);
   if (!said) return undefined;
-  // (A fact gets its basis and its try-it from the same probe row: one with a basis has a try-it, src/basis.ts.)
-  const { code, output } = f!.tryIt!;
+  // (A basis and its try-it come from the same probe row: one with a basis has a try-it, src/basis.ts.)
+  const { code, output } = x.tryIt!;
   return { ...said, tryIt: { code, output } };
+}
+
+/** A token or a node of Reading as the panel draws it: with the chip and the try-it of its basis (`partBasis`), if any. */
+export type BasisShown<T> = T & { basisShown?: NoteBasis };
+
+/**
+ * The explanation as the panel draws it: each token and each node of Reading with its chip and try-it in the language
+ * (`basisShown`), where it rests on bash's behaviour rather than the manual.
+ */
+export function withBasisShown(ex: LineExplanation, lang: Lang): LineExplanation {
+  // (A part with nothing to show, and nothing under it, is the same object: the line is sent as it was.)
+  const shown = <T extends { basis?: Basis; tryIt?: TryIt; children: T[] }>(x: T): BasisShown<T> => {
+    const b = partBasis(x, lang);
+    const children = x.children.map(shown);
+    return b || children.some((c, i) => c !== x.children[i]) ? { ...x, ...(b ? { basisShown: b } : {}), children } : x;
+  };
+  const items = ex.items.map(shown);
+  const reading = ex.reading && shown<ReadingNode>(ex.reading);
+  return items.some((t, i) => t !== ex.items[i]) || reading !== ex.reading ? { ...ex, items, ...(reading ? { reading } : {}) } : ex;
 }
 
 /**
@@ -277,6 +306,15 @@ export function explained(tok: Token): string {
  */
 export function valueMarkdown(value: ValueInfo | undefined, indent: string): string {
   return value ? `\\\n${indent}${pictureText(value.said.text)}` : '';
+}
+
+/**
+ * What a part rests on where it is bash's behaviour rather than the manual (`partBasis`), for a row of a Markdown list:
+ * a hard line break, then the chip's words and the try-it in italics, indented by `indent`. Empty without one.
+ */
+export function basisMarkdown(x: { basis?: Basis; tryIt?: TryIt }, lang: Lang, indent: string): string {
+  const b = partBasis(x, lang);
+  return b ? `\\\n${indent}_${basisLine(lang, b, codeSpan)}_` : '';
 }
 
 /** Display features that can each be turned on or off. */
@@ -447,7 +485,7 @@ export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: st
   const links = (refs: readonly string[] | undefined) => (refs?.length ? ` (${refsMarkdown(lang, refs)})` : '');
   out.push(...plainNotes(ex, ex.notes, lang));
   const walk = (tok: Token, depth: number) => {
-    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${explained(tok)}${links(tok.refs)}${valueMarkdown(tok.value, '  '.repeat(depth + 1))}`);
+    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${explained(tok)}${links(tok.refs)}${valueMarkdown(tok.value, '  '.repeat(depth + 1))}${basisMarkdown(tok, lang, '  '.repeat(depth + 1))}`);
     for (const c of tok.children) walk(c, depth + 1);
   };
   for (const item of ex.items) walk(item, 0);

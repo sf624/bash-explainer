@@ -88,6 +88,15 @@ describe('the command-line tool', function () {
     assert.ok(!('basis' in off[0].explanation.facts[0]) && !('tryIt' in off[0].explanation.facts[0]));
   });
 
+  it('says under a row that rests on bash\'s behaviour what it rests on, with the try-it: in the text and in JSON (docs/design/basis.md, step 4)', () => {
+    const text = run(['-e', 'BASH_XTRACEFD=7', '--no-color']).out;
+    assert.match(text, /^ {2}BASH_XTRACEFD=7 {2}Assign .*\n {4}\[Differs from the manual · checked with bash 5\.2 and 5\.3\]\n {4}Try it in your terminal: bash -c 'exec 3>\/dev\/null .*'\n {6}fd 3 is still open$/m);
+    const json = JSON.parse(run(['--format', 'json', '-e', 'BASH_XTRACEFD=7']).out);
+    assert.deepStrictEqual([json[0].explanation.items[0].basis, json[0].explanation.items[0].tryIt.probe], [{ kind: 'differs', bash: ['5.2', '5.3'], probes: ['state#xtracefd-old-open'] }, 'state#xtracefd-old-open']);
+    assert.doesNotMatch(run(['-e', 'BASH_XTRACEFD=7', '--no-color', '--set', 'notes.basis=false']).out, /Differs from the manual|Try it/);
+    assert.ok(!('basis' in JSON.parse(run(['--format', 'json', '-e', 'BASH_XTRACEFD=7', '--set', 'notes.basis=false']).out)[0].explanation.items[0]));
+  });
+
   it('labels a command with its name, and its arguments as before', () => {
     const r = run(['-e', "grep -E '^[A-Z]{3}-[0-9]+$' ids.txt", '--no-color', '--no-examples']);
     assert.strictEqual(r.code, 0, r.err);
