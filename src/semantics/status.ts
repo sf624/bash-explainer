@@ -187,7 +187,7 @@ class Statuses implements StatusModel {
     let args = fields(n, 'argument');
     let res = resolveName(this.state, name, at, { shell: this.shell, command: true });
     while (res.kind === 'builtin' && (res.name === 'command' || res.name === 'builtin')) {
-      const inner = wrapped(res.name, args);
+      const inner = wrapped(res.name, args, this.shell);
       if ('lookup' in inner || inner.name === undefined) return false;
       args = inner.args;
       res = resolveName(this.state, inner.name, at, { shell: this.shell, command: true, lookup: res.name === 'command' ? 'no-functions' : 'builtins-only' });
@@ -235,7 +235,7 @@ class Statuses implements StatusModel {
         if (name === 'let') return { kind: 'arith' };
         // `local x=$(cmd)`, `\local x=$(cmd)`: the declaration's own status, whatever the substitution's (its operands
         // that declare names, `OperandSpec.acts`).
-        const assigned = !declaresNames(spec) ? [] : actedNames(builtinParse(res.name, args)).filter((o) => o.acts === 'declares').map(({ word }) => args[word])
+        const assigned = !declaresNames(spec) ? [] : actedNames(builtinParse(res.name, args, this.shell)).filter((o) => o.acts === 'declares').map(({ word }) => args[word])
           .filter((a) => a.type === 'variable_assignment' || ASSIGNMENT.test(a.text));
         const subs = assigned.flatMap(outerSubstitutions);
         if (subs.length) {

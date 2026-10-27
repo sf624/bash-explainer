@@ -1193,7 +1193,7 @@ export class Walker {
     if (special) {
       let kept = st;
       // (`x=1 unset x` removes the temporary `x`, which then does not stay.)
-      const unset = temporariesUnset(name!, fields(n, 'argument'), n);
+      const unset = temporariesUnset(name!, fields(n, 'argument'), n, this.shell);
       for (const a of assignments.filter((a) => temporary(a) && !unset.has(field(a, 'name')!.text))) kept = this.builtins.giveAttribute(this.builtins.assignNode(a, kept), field(a, 'name')!.text, 'x', a);
       st = posix === 'on' ? kept : merge([this.builtins.appendArith(assignments, n, st), kept], this.posix);
     }
@@ -1276,7 +1276,7 @@ export class Walker {
   /** The string of `words`, which this shell runs: now (`eval`) or later (a trap's action). */
   script(words: SyntaxNode[], kind: 'current' | 'later', n: SyntaxNode, parse: ArgvParse, args: SyntaxNode[]): NestedScript | NotRead {
     const name = parse.command;
-    const script = this.scripts.read(words, kind, () => slotEnvs(this.scripts.model.env(n), parse, builtins[name], args).get(words[0])!, { shell: this.shell, known: true });
+    const script = this.scripts.read(words, kind, () => slotEnvs(this.scripts.model.env(n), parse, builtins[name], args, undefined, undefined, this.shell).get(words[0])!, { shell: this.shell, known: true });
     if (!('why' in script)) this.collectDefinitions(script.tree.root);
     return script;
   }

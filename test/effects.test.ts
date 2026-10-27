@@ -68,15 +68,28 @@ describe('builtin effects from the spec (src/semantics/effects.ts)', () => {
   });
   it('reads the words of `command` and `builtin` by the command slot of their specs', () => {
     const args = (src: string) => fields(parser.parse(src).root.namedChildren[0], 'argument');
-    assert.deepStrictEqual(wrapped('command', args('command -p read x')), { name: 'read', args: args('command -p read x').slice(2) });
-    assert.deepStrictEqual(wrapped('command', args('command -pv read')), { lookup: true });
-    assert.deepStrictEqual(wrapped('command', args('command')), { lookup: true });
+    assert.deepStrictEqual(wrapped('command', args('command -p read x'), undefined), { name: 'read', args: args('command -p read x').slice(2) });
+    assert.deepStrictEqual(wrapped('command', args('command -pv read'), undefined), { lookup: true });
+    assert.deepStrictEqual(wrapped('command', args('command'), undefined), { lookup: true });
     // (A word whose value is not known is the command: an option of `command` only if it expands to one.)
-    assert.strictEqual((wrapped('command', args('command "$c" read x')) as { name?: string }).name, undefined);
+    assert.strictEqual((wrapped('command', args('command "$c" read x'), undefined) as { name?: string }).name, undefined);
     assert.ok(shellState(parser.parse('x=1; command "$c" read x; [ "$x" = 1 ] && :')).blind);
     // (The parse gives each variable its word.)
     const words = args('read -ra arr x');
-    assert.deepStrictEqual(variableWrites(builtins.read, builtinParse('read', words), words).map((v) => [v.name, v.sets]), [['arr', 'array']]);
+    assert.deepStrictEqual(variableWrites(builtins.read, builtinParse('read', words, undefined), words).map((v) => [v.name, v.sets]), [['arr', 'array']]);
+  });
+  it('counts the words of a brace expansion only in a shell that has it, where the readers of arguments are given the shell', () => {
+    // `trap {x,EXIT}` is the action `x` and the signal `EXIT` in bash, and one word, a signal that is not one, in dash and sh.
+    const words = fields(parser.parse('trap {x,EXIT}').root.namedChildren[0], 'argument');
+    const roles = (shell: Parameters<typeof builtinParse>[2]) => builtinParse('trap', words, shell).roles.map(({ role }) => role.role);
+    assert.deepStrictEqual(roles(undefined), ['command']);
+    assert.deepStrictEqual(roles('bash'), ['command']);
+    assert.deepStrictEqual(roles('dash'), ['operand']);
+    assert.deepStrictEqual(roles('sh'), ['operand']);
+    const printed = (shell: string) => spawnSync(shell, ['-c', "printf '<%s>' {x,EXIT}"], { encoding: 'utf8' });
+    assert.strictEqual(printed('bash').stdout, '<x><EXIT>');
+    const dash = printed('dash');
+    if (!dash.error) assert.strictEqual(dash.stdout, '<{x,EXIT}>');
   });
   it('follows `set -a` as bash reads the words of `set`: the last one wins, and an operand is no option', () => {
     // bash exports `f` only after an allexport left on.

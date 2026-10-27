@@ -67,7 +67,7 @@ export function readArgs(cx: Explainer, known: CommandSpec | undefined, args: Sy
   const spec = known && !isFn ? known : NO_SPEC;
   const lookup = (name: string): CommandSpec | undefined => specFor(cx, name);
   const parse = interpret(spec, args.map(argWordFor(cx.state.shell)), { name: cmdName, lookup });
-  if (args.length) for (const [w, env] of slotEnvs(cx.state.env(args[0].parent!), parse, spec, args, lookup)) cx.slotEnvs.set(w, env);
+  if (args.length) for (const [w, env] of slotEnvs(cx.state.env(args[0].parent!), parse, spec, args, lookup, undefined, cx.state.shell)) cx.slotEnvs.set(w, env);
   return { tokens: render(cx, parse, spec, args, args, isFn), parse };
 }
 
@@ -456,7 +456,7 @@ function markedAssignment(cx: Explainer, a: SyntaxNode, desc: string, command: s
   const sentences: string[] = [];
   if (value?.type === 'array') {
     // (`declare -g b=(…)`: the options count, as for the builtin.)
-    const global = readDeclarationWords('declare', fields(a.parent!, 'argument')).on.includes('g');
+    const global = readDeclarationWords('declare', fields(a.parent!, 'argument'), cx.state.shell).on.includes('g');
     const assigns = !builtins[command]?.locals
       ? cx.s(`bash は配列 \`${name}\` を代入する。代入先はここで見える変数（関数のローカル変数があればそれ、なければグローバル変数）で、属性は付かない`,
         `bash assigns the array \`${name}\`. It is the variable visible here: a local one if there is one, else the global one, with no attribute`)

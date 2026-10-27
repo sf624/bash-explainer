@@ -35,7 +35,7 @@ export function temporaries(w: Walker, assignments: readonly SyntaxNode[], st: S
  * those it may keep are not known after it. Not when the builtin is turned off (`enable -n export`: a program runs).
  */
 export function kept(w: Walker, n: SyntaxNode, temps: ShellState, after: ShellState): ShellState {
-  const { builtin, names } = keptPrefixes(n, (word) => w.conditions.staticText(word, after));
+  const { builtin, names } = keptPrefixes(n, (word) => w.conditions.staticText(word, after), w.shell);
   const off = builtin ? after.disabled.get(builtin)?.state ?? 'off' : 'off';
   if (off === 'on') return after;
   for (const [v, sure] of names) {

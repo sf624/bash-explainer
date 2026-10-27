@@ -31,7 +31,7 @@ export class WalkBuiltins {
    */
   builtin(name: string, args: SyntaxNode[], n: SyntaxNode, st: ShellState, host = false): ShellState {
     const hosted = host && Object.hasOwn(this.w.host, name) ? this.w.host[name] : undefined;
-    if (hosted) return this.effects(hosted, builtinParse(name, args, hosted), args, n, st, true);
+    if (hosted) return this.effects(hosted, builtinParse(name, args, this.w.shell, hosted), args, n, st, true);
     if (!builtins[name] || !this.bashBuiltin(name)) return st;
     // A builtin turned off (`enable -n exit`) runs the program of its name, or fails: it changes nothing here, and
     // `exit` ends nothing. Where it may be off, both.
@@ -45,13 +45,13 @@ export class WalkBuiltins {
   private builtinOn(name: string, args: SyntaxNode[], n: SyntaxNode, st: ShellState): ShellState {
     // `command set -f`, `builtin shopt -s x`: the builtin runs (`command -v` only looks it up).
     if (name === 'command' || name === 'builtin') {
-      const inner = wrapped(name, args);
+      const inner = wrapped(name, args, this.w.shell);
       return 'lookup' in inner || inner.name === undefined ? st : this.builtin(inner.name, inner.args, n, st);
     }
-    if (DECLARATIONS.has(name)) return this.declare(name, args, readDeclarationWords(name, args), n, st);
+    if (DECLARATIONS.has(name)) return this.declare(name, args, readDeclarationWords(name, args, this.w.shell), n, st);
     if (name === 'unset') return this.unset(args, n, st);
     const spec = builtins[name];
-    const parse = builtinParse(name, args);
+    const parse = builtinParse(name, args, this.w.shell);
     st = this.effects(spec, parse, args, n, st);
     const operands = parse.roles.filter((r) => r.role.role === 'operand').map((r) => args[r.word]);
     const valueOf = (flag: string): SyntaxNode | undefined => {
@@ -206,7 +206,7 @@ export class WalkBuiltins {
     let args = fields(c, 'argument');
     let fn = true;
     while (name === 'command') {
-      const inner = wrapped(name, args);
+      const inner = wrapped(name, args, this.w.shell);
       if ('lookup' in inner) return 'off';
       ({ name, args } = inner);
       fn = false;
@@ -299,7 +299,7 @@ export class WalkBuiltins {
     const arrays = words.filter((w) => w.type === 'variable_assignment' && field(w, 'value')?.type === 'array');
     if (!arrays.length) return st;
     if (!builtins[command]?.locals) return arrays.reduce((s, a) => this.assignNode(a, s), st);
-    return this.declare(command, arrays, readDeclarationWords(command, [...words]), n, st);
+    return this.declare(command, arrays, readDeclarationWords(command, [...words], this.w.shell), n, st);
   }
 
   declare(builtin: string, words: SyntaxNode[], { roles, on, off }: Declaration, n: SyntaxNode, st: ShellState): ShellState {
@@ -402,14 +402,14 @@ export class WalkBuiltins {
   unset(words: readonly SyntaxNode[], n: SyntaxNode, st: ShellState): ShellState {
     // The options and the names, read with unset's spec.
     const ws = words.filter((w) => !w.type.endsWith('redirect'));
-    const parse = builtinParse('unset', ws);
+    const parse = builtinParse('unset', ws, this.w.shell);
     const names = actedNames(parse);
     // What the names stand for, by unset's options (its spec): the same for every name.
     const space = names[0]?.space;
     const all = names.map(({ word }) => ({ node: ws[word], text: staticWordValue(ws[word]) ?? ws[word].text }));
     // (`unset -fv` is an error: nothing is unset.)
     if (space === 'none') return st;
-    const temporary = temporariesUnset('unset', ws, n, parse);
+    const temporary = temporariesUnset('unset', ws, n, this.w.shell, parse);
     for (const { node, text } of all) {
       if (staticWordValue(node) === undefined) {
         // A name not known here: a variable that `${u:=u}` in it sets may be the one it names.
@@ -533,7 +533,7 @@ export class WalkBuiltins {
     let name = field(n, 'name')!.text;
     let args = fields(n, 'argument');
     while (name === 'command' || name === 'builtin') {
-      const inner = wrapped(name, args);
+      const inner = wrapped(name, args, this.w.shell);
       if ('lookup' in inner || inner.name === undefined) break;
       ({ name, args } = inner);
     }

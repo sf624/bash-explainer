@@ -494,7 +494,7 @@ const modelVersions = new WeakMap<StateModel, BashVersion | undefined>();
  */
 function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening, version?: BashVersion): StateModel {
   const scripts = new Scripts(depth);
-  const own = scriptTrust(tree.root, scripts, host, opening, version);
+  const own = scriptTrust(tree.root, scripts, host, opening, shell, version);
   const trust = outer ? withinTrust(own, outer) : own;
   let w = new Walker(shell, posix, scripts, trust, host, run);
   let initial!: ShellState;

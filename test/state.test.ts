@@ -225,7 +225,7 @@ describe('shell state: variables', () => {
     assert.deepStrictEqual([attribute(st, 'e', 'x'), attribute(st, 'f', 'x'), attribute(st, 'g', 'x'), attribute(st, 'g', 'i'), attribute(st, 'r', 'r'), attribute(st, 't', 'r')], ['on', 'off', 'on', 'off', 'on', 'on']);
     // (`declare "s=1"` assigns, as bash does; `$x` is not known.)
     assert.strictEqual(variable(st, 's')?.value, '1');
-    assert.deepStrictEqual(readDeclarationWords('declare', fields(parser.parse('declare -ix +r a').root.namedChildren[0], 'argument')).on, 'ix');
+    assert.deepStrictEqual(readDeclarationWords('declare', fields(parser.parse('declare -ix +r a').root.namedChildren[0], 'argument'), undefined).on, 'ix');
   });
   it('a nameref passes its assignments on', () => {
     assert.strictEqual(variable(end('declare -n r=t; r=5'), 't')?.value, '5');
