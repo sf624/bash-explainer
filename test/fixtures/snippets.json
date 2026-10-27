@@ -734,6 +734,7 @@
  "echo \"$x\" | grep -c a",
  "echo \"${@:2}\"",
  "echo \"${BASH_SOURCE[0]}\"",
+ "echo \"${GLOBSORT[0]}\"",
  "echo \"${X:-def}\"",
  "echo \"${a:-\nb}\"",
  "echo \"${a[@]~~}\" \"${@~}\"",
