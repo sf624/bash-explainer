@@ -10,6 +10,7 @@ import { OPTION_SECTIONS } from '../src/manual';
 import { readingNodes, type ReadingNode } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { type BashOptions, runBash } from './support/bash';
+import { allTokens } from './support/explain';
 
 const parser = createUnbashParser();
 const analyzer = new Analyzer('en');
@@ -249,6 +250,23 @@ describe('the reading tree as the Bash manual reads chapter 6 (6.8, 6.9, 6.11, 6
       const b = runBash('HOME=/h; echo ~99999999999999999999999 "${u:-~1}" "${u:-~}"; shopt -s posix 2>&1\necho $((1 +)); echo no\necho "a=$?"; ((2 *)); echo "b=$?"', p);
       assert.match(b.stdout, /^~99999999999999999999999 ~1 ~\n.*posix: invalid shell option name\na=1\nb=1\n$/s, who);
       assert.match(b.stderr, /1 \+: (arithmetic )?syntax error: operand expected/, who);
+    });
+  });
+
+  it('reads `command export x=$v` as an assignment in POSIX mode, and as a word out of it (6.11)', () => {
+    const word = (src: string, w: string) => allTokens(explain(src, src.split('\n').length - 1).items).find((t) => t.label === w)!.explanation;
+    assert.match(word('set -o posix\ncommand export x=$v', 'x=$v'), /In POSIX mode, bash expands it as an assignment after `command` too \(no word splitting or globbing\)$/);
+    assert.match(word('set -o posix\ncommand command readonly x=$v', 'x=$v'), /In POSIX mode, bash expands it as an assignment/);
+    for (const src of ['command export x=$v', 'set -o posix\ncommand -p export x=$v', 'set -o posix\ncommand builtin export x=$v', 'set -o posix\ncommand -- export x=$v']) {
+      assert.match(word(src, 'x=$v'), /: an unquoted expansion in it is split and globbed$/, src);
+    }
+    // (Words that are no assignment, or no declaration after `command`: as before.)
+    assert.match(word('set -o posix\ncommand export "w"=$v', '"w"=$v'), /^Concatenation: /);
+    assert.ok(explain('set -o posix\ncommand command', 1).items.length);
+    each((p, who) => {
+      const out = (posix: boolean) => runBash('v="a b"; command export x=$v; command -p export y=$v; command command alias z=$v; command export "w"=$v; command -- export u=$v; echo "[$x] [$y] [$w] [$u]"; alias z', { ...p, posix }).stdout;
+      assert.strictEqual(out(true), "[a b] [a] [a] [a]\nz='a b'\n", who);
+      assert.strictEqual(out(false), "[a] [a] [a] [a]\nalias z='a'\n", who);
     });
   });
 });

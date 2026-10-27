@@ -2223,9 +2223,6 @@
         ]
       ],
       "status": 0
-    },
-    "gaps": {
-      "a": "in POSIX mode, bash keeps the declaration rule after `command` (`command declare a=$v` does not split `$v`): the model follows only bash's default mode, where it splits"
     }
   },
   {
