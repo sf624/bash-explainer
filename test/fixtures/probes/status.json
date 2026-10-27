@@ -1709,6 +1709,140 @@
     }
   },
   {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "snippet": "set -o >/dev/null\n@PROBE:a@",
+    "note": "`set -o` alone lists the options: no error",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "set -o >/dev/null\n@PROBE:a@",
+    "note": "`set -o` alone lists the options: no error (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "snippet": "set -o -e >/dev/null; set +e\n@PROBE:a@",
+    "note": "a word that starts with `-` is no name for `set -o`: it lists the options, then sets `-e`",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "set -o -e >/dev/null; set +e\n@PROBE:a@",
+    "note": "a word that starts with `-` is no name for `set -o`: it lists the options, then sets `-e` (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "errexit": false,
+    "snippet": "exit x\n@PROBE:a@",
+    "note": "`exit` with a word that is no number: bash 5.2 exits (status 2), bash 5.3 goes on outside POSIX mode",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: exit: x: numeric argument required"
+    }
+  },
+  {
+    "manual": "4.1",
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "exit x\n@PROBE:a@",
+    "note": "`exit` with a word that is no number: bash 5.2 exits (status 2), bash 5.3 goes on outside POSIX mode (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: exit: x: numeric argument required"
+    }
+  },
+  {
+    "manual": "4.1",
+    "errexit": false,
+    "snippet": "exit 1 2\n@PROBE:a@",
+    "note": "`exit` with more than one word: \"too many arguments\", and the shell goes on",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: exit: too many arguments"
+    }
+  },
+  {
+    "manual": "4.1",
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "exit 1 2\n@PROBE:a@",
+    "note": "`exit` with more than one word: \"too many arguments\", and the shell goes on (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: exit: too many arguments"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "snippet": "exit x || @PROBE:a@\n@PROBE:b@",
+    "note": "in POSIX mode, bash 5.3 exits on `exit x` only where set -e would stop it; bash 5.2 exits anywhere",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: exit: x: numeric argument required"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "exit x || @PROBE:a@\n@PROBE:b@",
+    "note": "in POSIX mode, bash 5.3 exits on `exit x` only where set -e would stop it; bash 5.2 exits anywhere (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a",
+        "b"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: exit: x: numeric argument required"
+    }
+  },
+  {
     "manual": "6.11",
     "posix": true,
     "snippet": "false; true; v=$(false) w=$?; @PROBE:a@",

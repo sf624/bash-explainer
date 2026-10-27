@@ -218,6 +218,7 @@ class Run {
     switch (rule.kind) {
       case 'given': throw rule.ends === 'shell' ? new Exit(rule.value) : new Return(rule.value);
       case 'previous': throw rule.ends === 'shell' ? new Exit(this.last) : new Return(this.last);
+      case 'refused': return rule.value;
       case 'wait': return rule.all ? 0 : rule.job && this.jobs.has(rule.job) ? this.jobs.get(rule.job)! : (() => { throw new Unknown('wait'); })();
       // (`test` and `[`: status 2 when the model says it fails; else the words of `[` up to its `]`.)
       case 'test': {

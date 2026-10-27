@@ -36,7 +36,7 @@ import { commandExampleFor, unreadStdin, wordExample } from './examples';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
 import { redirectInfo, redirectParts } from './redirections';
 import { hostCommand, NO_SPEC, resolve, restrictedAt, restrictedCall, shellVariant, specFor, unquotedWord } from './reads';
-import { posixExitNote, statusRangeNote } from './status';
+import { exitRefusedNote, posixExitNote, statusRangeNote } from './status';
 import { shellEffectNote } from './where';
 import { bracesHere, braceWord, braceWords, bracesMaybeOff, plainText, shown } from './words';
 
@@ -65,6 +65,10 @@ const subcommandOf = (p: ArgvParse) => p.roles.find((r): r is { word: number; ro
 interface Layout { redirs: SyntaxNode[]; span: Span; text: string }
 
 export function command(cx: Explainer, n: SyntaxNode): Token {
+  // (What the status says, also of a command with redirections: `exit 256 2>/dev/null`, `export 1x 2>/dev/null`.)
+  statusRangeNote(cx, n);
+  exitRefusedNote(cx, n);
+  posixExitNote(cx, n);
   // `>f echo x`, `<<<'1 2' read a b`: redirections before the words.
   const split = redirectLayoutOf(cx, n);
   if (split) return split;
@@ -72,10 +76,7 @@ export function command(cx: Explainer, n: SyntaxNode): Token {
   const effect = simulateRedirects(redirectionsOf(n).map((r) => redirectInfo(r)), cx.lang);
   if (effect) cx.note(effect, redirectionsOf(n));
   return cx.examplesOf(n, () => {
-    const t = commandToken(cx, n);
-    statusRangeNote(cx, n);
-    posixExitNote(cx, n);
-    return t;
+    return commandToken(cx, n);
   });
 }
 

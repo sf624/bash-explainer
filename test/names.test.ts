@@ -392,7 +392,7 @@ describe('the analyzer says what a name runs', () => {
   });
 
   it('a function named like a special builtin in POSIX mode stops bash', () => {
-    assert.match(notes('set -o posix\neval() { :; }', 1), /bash stops the script here with the error "is a special builtin"\. Use another name/);
+    assert.match(notes('set -o posix\neval() { :; }', 1), /bash says "is a special builtin" and stops the script here\. Use another name/);
     assert.match(notes('set -o posix\neval() { :; }', 1, 'ja'), /スクリプトを止めます。別の名前/);
     assert.match(notes('[ "$x" ] && set -o posix\neval() { :; }', 1), /only some paths before here turn POSIX mode on/);
     assert.match(notes('[ "$x" ] && set -o posix\neval() { :; }', 1, 'ja'), /一部の経路だけ/);

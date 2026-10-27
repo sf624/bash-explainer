@@ -221,7 +221,7 @@ export function functionDef(cx: Explainer, n: SyntaxNode): Token {
   const fails = exit ? exit.active : definitionFails(cx.state, n);
   if (fails !== 'off') {
     const id = exit?.exit.why === 'function-name' ? 'posix-function-name' : 'posix-special-function-name';
-    cx.note(fact(cx.lang, fails === 'on' ? id : `${id}-maybe`), nameNode);
+    cx.note(fact(cx.lang, fails === 'on' ? id : `${id}-maybe`, exit ? { stops: exit.stops } : {}), nameNode);
   }
   return skeletal(cx.tok(n, 'function', cx.s(
     `関数 \`${name}\` の定義: 以後 \`${name}\` をコマンドのように呼び出せる（引数は関数内で $1, $2… になる）${stored}${cx.lineRef(n)}`,

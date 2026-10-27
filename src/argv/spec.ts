@@ -298,6 +298,8 @@ export interface ValueSpec {
   optional?: boolean;
   /** With `optional`, the next word is the value when it matches (`journalctl -b -1`). */
   next?: RegExp;
+  /** A next word whose text matches is no value: the option has none there (`set -o -e` lists the options, then sets `-e`). */
+  notValue?: RegExp;
   /**
    * With `optional`, the rest of a cluster is the value only when it matches; otherwise the letters after the option
    * are options too (perl's `-l0` and `-0777` take octal digits, `-lne` is `-l -n -e`). (perl only: its switches
