@@ -476,57 +476,58 @@ export const MESSAGES = {
     `\`${cmd}\` is given a file to read (\`${file}\`), so it does not read its stdin (${stdin.en}); \`-\` would make it read stdin too`]),
 
   // ---------------------------------------------------------------- words (3.7.1, 3.5.7, 3.4.2, 3.6; src/wordfacts.ts)
-  'prefix-assignment-expanded-first': pitfall<{ v: string; name: string; use: string }>(['3.7.1', '3.7.4'], ({ v, name, use }) => [
-    `\`${v}=…\` は \`${name}\` の環境にだけ入ります。\`${use}\` は、その前に今のシェルが展開します（今の値で、なければ空）。新しい値を使うなら \`${v}=… sh -c '… "\$${v}"'\` のようにシェル経由にします`,
-    `\`${v}=…\` is set only in the environment of \`${name}\`; the current shell expands \`${use}\` before that (to its present value, or nothing). To use the new value, go through a shell: \`${v}=… sh -c '… "\$${v}"'\``]),
-  // (`quoted`: the word with only its expansions in quotes, so a glob or a tilde in it still works: `"$DIR"/*`; none
+  // (`rewrite`: the command through `sh -c`, src/wordfacts.ts, `throughShell`.)
+  'prefix-assignment-expanded-first': suggests(pitfall<{ v: string; name: string; use: string; rewrite: readonly Rewrite[] }>(['3.7.1', '3.7.4'], ({ v, name, use, rewrite: [sh] }) => [
+    `\`${v}=…\` は \`${name}\` の環境にだけ入ります。\`${use}\` は、その前に今のシェルが展開します（今の値で、なければ空）。新しい値を使うなら \`${v}=… ${sh.code}\` のようにシェル経由にします`,
+    `\`${v}=…\` is set only in the environment of \`${name}\`; the current shell expands \`${use}\` before that (to its present value, or nothing). To use the new value, go through a shell: \`${v}=… ${sh.code}\``])),
+  // (`rewrite`: the word with only its expansions in quotes, so a glob or a tilde in it still works: `"$DIR"/*`; none
   // when quotes would change it, as in `${x:-*.txt}`.)
   // (`destroys`: the command deletes or overwrites what the word names, `rm`, `mv`, `cp`: a wrong name cannot be undone.)
   // (`known`: the one word the model knows it gives here; then it does no harm as it is, and is a caveat.)
-  'unquoted-variable-as-path': withConvention(pitfall<{ bare: string; quoted?: string; destroys?: boolean; known?: string }>(['3.5.7', '3.5.8'], ({ bare, quoted, destroys, known }) => [
-    `\`${bare}\` をクォートしていないので、値に空白や \`*\` があると別々の引数に分かれたり、ファイル名に展開されたりする${destroys ? '。このコマンドは意図しないファイルを削除したり上書きしたりすることになる' : ''}${known !== undefined ? `（ここでの値では1つの引数 \`${known}\` のままだが、値が変わると壊れる）` : ''}${quoted ? `。\`${quoted}\` と書く` : ''}`,
-    `\`${bare}\` is not quoted, so a value with spaces or \`*\` is split into several arguments or expanded to file names${destroys ? ', and this command then deletes or overwrites files it should not' : ''}${known !== undefined ? ` (with its value here it stays one argument, \`${known}\`, but another value breaks it)` : ''}${quoted ? `. Write \`${quoted}\`` : ''}`],
-  undefined, ({ destroys, known }) => (destroys && known === undefined ? 'warning' : 'info')), 'quote-expansions'),
+  'unquoted-variable-as-path': withConvention(suggests(pitfall<{ bare: string; rewrite: readonly Rewrite[]; destroys?: boolean; known?: string }>(['3.5.7', '3.5.8'], ({ bare, rewrite: [quoted], destroys, known }) => [
+    `\`${bare}\` をクォートしていないので、値に空白や \`*\` があると別々の引数に分かれたり、ファイル名に展開されたりする${destroys ? '。このコマンドは意図しないファイルを削除したり上書きしたりすることになる' : ''}${known !== undefined ? `（ここでの値では1つの引数 \`${known}\` のままだが、値が変わると壊れる）` : ''}${quoted ? `。\`${quoted.code}\` と書く` : ''}`,
+    `\`${bare}\` is not quoted, so a value with spaces or \`*\` is split into several arguments or expanded to file names${destroys ? ', and this command then deletes or overwrites files it should not' : ''}${known !== undefined ? ` (with its value here it stays one argument, \`${known}\`, but another value breaks it)` : ''}${quoted ? `. Write \`${quoted.code}\`` : ''}`],
+  undefined, ({ destroys, known }) => (destroys && known === undefined ? 'warning' : 'info'))), 'quote-expansions'),
   'for-over-ls-output': withConvention(caveat<{ cmd: string }>(['3.5.7'], ({ cmd }) => [
     `\`$(${cmd} …)\` の結果は空白や改行で区切られるので、空白を含むファイル名が壊れます。${cmd === 'ls' ? '`for f in *.txt` のようにグロブを使います' : '`find … -print0 | while IFS= read -r -d \'\' f` や `find -exec` を使います'}`,
     `the output of \`$(${cmd} …)\` is split on spaces and newlines, so file names with spaces break. ${cmd === 'ls' ? 'Use a glob, as in `for f in *.txt`' : "Use `find … -print0 | while IFS= read -r -d '' f` or `find -exec`"}`]), 'no-loop-over-command-output'),
-  'for-over-unquoted-args': withConvention(caveat<{ value: string }>(['3.4.2', '3.5.7'], ({ value }) => [
-    `\`${value}\` をクォートしないと、空白を含む引数が分かれてしまいます。\`for a in "$@"\`（または \`for a\` だけ）と書きます`,
-    `unquoted \`${value}\` splits arguments that contain spaces. Write \`for a in "$@"\` (or just \`for a\`)`]), 'quote-all-arguments'),
+  'for-over-unquoted-args': withConvention(suggests(caveat<{ value: string; rewrite: readonly Rewrite[] }>(['3.4.2', '3.5.7'], ({ value, rewrite: [quoted, bare] }) => [
+    `\`${value}\` をクォートしないと、空白を含む引数が分かれてしまいます。\`${quoted.code}\`${bare ? `（または \`${bare.code}\` だけ）` : ' '}と書きます`,
+    `unquoted \`${value}\` splits arguments that contain spaces. Write \`${quoted.code}\`${bare ? ` (or just \`${bare.code}\`)` : ''}`])), 'quote-all-arguments'),
   // (`args`: `$@`, which 3.4.2 states: "In contexts where word splitting is not performed, this expands to a single word
   // with each positional parameter separated by a space" (3.4: no word splitting in an assignment). For an array,
   // 6.7 says only that `${a[@]}` "is analogous to the expansion of the special parameters": checked.)
-  'array-joined-in-assignment': withConvention(withBasis(caveat<{ v: string; op: string; word: string; args: boolean; list: string; string: string }>(['3.4', '3.4.2', '6.7'], ({ v, op, word, args, list, string }) => [
-    `\`${v}${op}${word}\` では${args ? '引数' : '要素'}が空白で区切られて1つの文字列につながり、\`${v}\` はただの文字列になります（空白を含む${args ? '引数' : '要素'}は元に戻せません）。別々に残すには配列にして \`${v}${op}${list}\` と書き、1つの文字列にするつもりなら \`${v}${op}${string}\` と書きます`,
-    `\`${v}${op}${word}\` joins the ${args ? 'arguments' : 'elements'} into one string, separated by spaces: \`${v}\` is a plain string, and ${args ? 'arguments' : 'elements'} with spaces cannot be told apart again. To keep them apart, assign an array: \`${v}${op}${list}\`; if one string is meant, write \`${v}${op}${string}\``]),
+  'array-joined-in-assignment': withConvention(withBasis(suggests(caveat<{ v: string; op: string; word: string; args: boolean; rewrite: readonly Rewrite[] }>(['3.4', '3.4.2', '6.7'], ({ v, op, word, args, rewrite: r }) => [
+    `\`${v}${op}${word}\` では${args ? '引数' : '要素'}が空白で区切られて1つの文字列につながり、\`${v}\` はただの文字列になります（空白を含む${args ? '引数' : '要素'}は元に戻せません）。別々に残すには配列にして \`${v}${op}${r[0].code}\` と書${r[1] ? `き、1つの文字列にするつもりなら \`${v}${op}${r[1].code}\` と書きます` : 'きます'}`,
+    `\`${v}${op}${word}\` joins the ${args ? 'arguments' : 'elements'} into one string, separated by spaces: \`${v}\` is a plain string, and ${args ? 'arguments' : 'elements'} with spaces cannot be told apart again. To keep them apart, assign an array: \`${v}${op}${r[0].code}\`${r[1] ? `; if one string is meant, write \`${v}${op}${r[1].code}\`` : ''}`])),
   ({ args }) => (args ? { kind: 'manual', probe: 'state#assign-at' } : { kind: 'checked', probe: 'state#assign-array' })), 'array-for-a-list'),
   // (`zsh`: the shell is zsh, not bash. For bash, 4.1 says that `[ -n ]` (one argument, not null) is true, and that two
   // arguments whose first is no unary operator are false, where bash fails with status 2 (`[ = y ]`): differs.)
-  'unquoted-variable-in-test': withConvention(withBasis(caveat<{ bare: string; zsh?: boolean }>(['3.5.7', '4.1'], ({ bare, zsh }) => zsh ? [
-    `\`[ ]\` の中の \`${bare}\` をクォートしないと、zsh では空白で分かれはしませんが、値が空のときは引数ごと消えるので条件式が壊れます（\`[ -n $x ]\` は空でも真になります）。\`"${bare}"\` と書きます`,
-    `unquoted \`${bare}\` inside \`[ ]\` is not split in zsh, but an empty value drops the word, which breaks the test (an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``] : [
-    `\`[ ]\` の中の \`${bare}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` などのエラーや、誤った結果。空の \`[ -n $x ]\` は真になります）。\`"${bare}"\` と書きます`,
-    `unquoted \`${bare}\` inside \`[ ]\` breaks the test when the value is empty or has spaces (an error such as "unary operator expected", or a wrong result: an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``]),
+  'unquoted-variable-in-test': withConvention(withBasis(suggests(caveat<{ bare: string; zsh?: boolean; rewrite: readonly Rewrite[] }>(['3.5.7', '4.1'], ({ bare, zsh, rewrite: [q] }) => zsh ? [
+    `\`[ ]\` の中の \`${bare}\` をクォートしないと、zsh では空白で分かれはしませんが、値が空のときは引数ごと消えるので条件式が壊れます（\`[ -n $x ]\` は空でも真になります）${q ? `。\`${q.code}\` と書きます` : ''}`,
+    `unquoted \`${bare}\` inside \`[ ]\` is not split in zsh, but an empty value drops the word, which breaks the test (an empty \`[ -n $x ]\` is true)${q ? `. Write \`${q.code}\`` : ''}`] : [
+    `\`[ ]\` の中の \`${bare}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` などのエラーや、誤った結果。空の \`[ -n $x ]\` は真になります）${q ? `。\`${q.code}\` と書きます` : ''}`,
+    `unquoted \`${bare}\` inside \`[ ]\` breaks the test when the value is empty or has spaces (an error such as "unary operator expected", or a wrong result: an empty \`[ -n $x ]\` is true)${q ? `. Write \`${q.code}\`` : ''}`])),
   ({ zsh }) => (zsh ? undefined : { kind: 'differs', probe: 'state#test-empty-operand' })), 'quote-expansions'),
   // (`set -u` on every path, and no value on every path: src/semantics/unbound.ts, `unboundRead`. `shell`: the
   // messages of bash and dash are quoted, another shell's are not.)
   // (4.3.1: with `-u`, "a non-interactive shell will exit". Where bash fails only the command (`exits: 'command'`, a
   // redirection of a program), and goes on, it differs.)
-  'nounset-unbound': withBasis(pitfall<{
-    v: string; name: string; exits: 'script' | 'subshell' | 'shell' | 'command'; shell: 'bash' | 'dash' | 'other'; environment: 'maybe' | 'unlikely' | 'no'; errexit?: 'script' | 'subshell'; fix?: string;
-  }>(['4.3.1', '3.5.3'], ({ v, name, exits, shell, environment, errexit, fix }) => {
+  'nounset-unbound': withBasis(suggests(pitfall<{
+    v: string; name: string; exits: 'script' | 'subshell' | 'shell' | 'command'; shell: 'bash' | 'dash' | 'other'; environment: 'maybe' | 'unlikely' | 'no'; errexit?: 'script' | 'subshell'; rewrite: readonly Rewrite[];
+  }>(['4.3.1', '3.5.3'], ({ v, name, exits, shell, environment, errexit, rewrite: [fix] }) => {
     const message = `${v}: ${shell === 'bash' ? 'unbound variable' : 'parameter not set'}`;
     return [
       `ここでは \`${v}\` に値が設定されていない${errexit ? `ので、${errexit === 'script' ? 'スクリプト' : 'これを実行するサブシェル'}が終了する` : ''}。\`set -u\` が有効なので、${shell === 'other' ? '読むとエラーになり' : `${shell} は \`${message}\` のエラーを出し`}、`
         + `${exits === 'script' ? 'スクリプトが終了する' : exits === 'subshell' ? 'これを実行するサブシェルが終了する' : exits === 'shell' ? 'これを実行するシェルが終了する' : `このコマンドは実行されず、終了ステータス 1 で失敗する${errexit ? `。\`set -e\` がこの失敗で${errexit === 'script' ? 'スクリプト' : 'これを実行するサブシェル'}を止める` : ''}`}`
-        + `${environment !== 'no' ? `（\`${name}\` が環境変数から来るときを除く）` : ''}。${fix ? `設定されていないことがあるなら \`${fix}\` と書く` : 'この前で値を設定しておく'}`,
+        + `${environment !== 'no' ? `（\`${name}\` が環境変数から来るときを除く）` : ''}。${fix ? `設定されていないことがあるなら \`${fix.code}\` と書く` : 'この前で値を設定しておく'}`,
       `\`${v}\` is not set here${errexit ? `, so ${errexit === 'script' ? 'the script' : 'the subshell running it'} stops` : ''}: with \`set -u\` on, ${shell === 'other' ? 'reading it is an error, and' : `${shell} fails with "${message}" and`} `
         + `${exits === 'script' ? 'the script exits' : exits === 'subshell' ? 'the subshell running it exits' : exits === 'shell' ? 'the shell running it exits' : `the command does not run: it fails with status 1${errexit ? `, and \`set -e\` stops ${errexit === 'script' ? 'the script' : 'the subshell running it'} on that failure` : ''}`}`
-        + `${environment !== 'no' ? ` (unless \`${name}\` comes from the environment)` : ''}. ${fix ? `If it may be unset, write \`${fix}\`` : 'Set it before this line'}`];
+        + `${environment !== 'no' ? ` (unless \`${name}\` comes from the environment)` : ''}. ${fix ? `If it may be unset, write \`${fix.code}\`` : 'Set it before this line'}`];
   }, undefined,
   // (Only the command fails, and the shell goes on: an unset read in a redirection of a program, `cat < "$f"` with `set -u`.)
   // (A name in capitals, which by custom the environment may have: a caveat, src/semantics/shellstate.ts, `fromEnvironment`.)
-  ({ exits, errexit, environment }) => (environment === 'maybe' || (exits === 'command' && !errexit) ? 'info' : 'warning')),
+  ({ exits, errexit, environment }) => (environment === 'maybe' || (exits === 'command' && !errexit) ? 'info' : 'warning'))),
   ({ exits, shell }) => (exits === 'command' && shell === 'bash' ? { kind: 'differs', probe: 'state#nounset-redirect' } : undefined)),
   // (src/semantics/state.ts, `shebangRefused`.)
   'shebang-refused': pitfall<ShebangRefusal>(['6.1', '3.8', 'execve(2)'], (r) => [

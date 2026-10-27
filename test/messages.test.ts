@@ -71,10 +71,10 @@ describe('the message catalog', () => {
       assert.ok(!fact('en', id, incr('n')).text.includes('set -e` is on here'), `${id} en plain`);
       assert.ok(!fact('ja', id, incr('n')).text.includes('が効いているので'), `${id} ja plain`);
     }
-    assert.match(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true }).text, /file names, and this command then deletes or overwrites files it should not$/);
-    assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true }).level, 'warning');
-    assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f' }).level, 'info');
-    const unset = { v: 'x', name: 'x', shell: 'bash', environment: 'no' } as const;
+    assert.match(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true, rewrite: [] }).text, /file names, and this command then deletes or overwrites files it should not$/);
+    assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true, rewrite: [] }).level, 'warning');
+    assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f', rewrite: [] }).level, 'info');
+    const unset = { v: 'x', name: 'x', shell: 'bash', environment: 'no', rewrite: [] } as const;
     assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'script' }).level, 'warning');
     assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'command', errexit: 'script' }).level, 'warning');
     assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'command' }).level, 'info');

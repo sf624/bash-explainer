@@ -2,14 +2,16 @@ import type { Lang } from './i18n';
 import { quoteExpansions } from './fixes';
 import { type Fact, fact, type Params } from './messages';
 import { featureWorks, type Shell } from './dialect';
+import { builtins } from './dict/builtins';
 import { parseExpansion } from './expansion';
 import { args, commandName, pathCommand, runCommands } from './pitfalls';
+import { replaceNode, replaceSpan, type Rewrite } from './rewrite';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
 import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
-import { partMeaning, wordFields, wordOf } from './semantics/words';
+import { partMeaning, wordFields, wordMeaning, wordOf } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { childrenOnRows, field, isShebang, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
+import { childrenOnRows, field, fields, isShebang, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a
@@ -57,9 +59,10 @@ function alwaysNumber(n: SyntaxNode): boolean {
  * joins into one string there (src/semantics/words.ts: no word splitting in `assignment-value`), with what to write
  * instead. Not a count or the keys (`${#a[@]}`, `${!a[@]}`), a slice (`${@: -1}`, often one element), an assignment
  * that is a prefix of a command (`x=$@ cmd`) or an argument of `export` (the environment holds strings), one to an
- * element (`a[0]=$@`), nor in a shell without arrays.
+ * element (`a[0]=$@`), nor in a shell without arrays. The rewrites: an array, `x=("$@")`; and `x="$*"`, the same
+ * string where the IFS in effect starts with a space (`"$*"` joins with its first character, the assignment with a space).
  */
-function joinedArray(n: SyntaxNode, shell: Shell | undefined): Params<'array-joined-in-assignment'> | undefined {
+function joinedArray(n: SyntaxNode, model: StateModel, shell: Shell | undefined): Params<'array-joined-in-assignment'> | undefined {
   if (!featureWorks('array', shell)) return undefined;
   const p = n.type === 'expansion' ? parseExpansion(n.text) : undefined;
   const all = n.type === 'simple_expansion' ? n.text === '$@' : !!p && !p.prefix && p.op !== ':' && (p.subscript === undefined ? p.name === '@' : p.subscript === '@');
@@ -77,7 +80,44 @@ function joinedArray(n: SyntaxNode, shell: Shell | undefined): Params<'array-joi
   // (`=` or `+=`.)
   const op = a.text.slice(name.endIndex - a.startIndex, value.startIndex - a.startIndex);
   const starred = n.text === '$@' ? '$*' : n.text.replace(/^\$\{@/, '${*').replace('[@]', '[*]');
-  return { v: name.text, op, word: value.text, args: !p?.subscript, list: `("${n.text}")`, string: `"${starred}"` };
+  const ifs = wordMeaning(n, model)!.ifs;
+  const spaced = ifs.kind === 'default' || (ifs.kind === 'value' && ifs.value.startsWith(' '));
+  return { v: name.text, op, word: value.text, args: !p?.subscript, rewrite: [replaceNode(value, `("${n.text}")`), ...(spaced ? [replaceNode(value, `"${starred}"`)] : [])] };
+}
+
+/** Literal text that the shell reads the same in any context, unquoted or in single quotes. */
+const PLAIN = /^[\w@%+=:,./-]+$/;
+
+/**
+ * `v=1 cmd $v`: the command, from its name to its last word, through `sh -c`, which expands `$v` once `v` is set:
+ * `v=1 sh -c 'cmd "$v"'`. Mechanical only where `sh` runs the same command with the same words: the name runs a
+ * program, or a builtin that is one too (`echo`, `printf`; not `cd` or `read`, which would act on that shell, nor a
+ * function or an alias, which it has not), and no redirection is among the words; each word is plain text, an
+ * expansion of the prefix's variables (`vars`, put in double quotes), text in double quotes with only such expansions,
+ * or text in single quotes that reads the same in double quotes (`'%s\n'`), as the words go inside single quotes. No
+ * other expansion, which that shell would expand, and no glob or brace, which it may expand otherwise. Else the note
+ * shows the form, with no edits. (dash's `echo` reads backslashes in the value, bash's does not.)
+ */
+function throughShell(n: SyntaxNode, vars: readonly string[], v: string, model: StateModel, shell: Shell | undefined): Rewrite {
+  const name = field(n, 'name')!;
+  const words = args(n);
+  const last = words[words.length - 1];
+  const prefixed = (x: SyntaxNode): boolean => isExpansion(x) && vars.some((w) => x.text === `$${w}` || x.text === `\${${w}}`);
+  /** The word as the script of `sh -c` holds it, or undefined. */
+  const inner = (x: SyntaxNode): string | undefined => {
+    if (x.type === 'word') return PLAIN.test(x.text) ? x.text : undefined;
+    if (prefixed(x)) return `"${x.text}"`;
+    if (x.type === 'string') return !x.text.includes("'") && x.namedChildren.every((c) => c.type === 'string_content' || prefixed(c)) ? x.text : undefined;
+    if (x.type === 'raw_string') return /^'([^$`"\\]|\\[^$`"\\\n])*'$/.test(x.text) ? `"${x.text.slice(1, -1)}"` : undefined;
+    const parts = x.type === 'concatenation' ? x.namedChildren.map(inner) : [undefined];
+    return parts.every((p) => p !== undefined) ? parts.join('') : undefined;
+  };
+  const r = resolveName(model, name.text, name, { shell, command: true });
+  const runs = r.kind === 'file' || (r.kind === 'builtin' && !!builtins[r.name].program);
+  const among = redirectionsOf(n).some((d) => d.startIndex < last.endIndex && d.endIndex > name.startIndex);
+  const script = words.map(inner);
+  if (!runs || among || !PLAIN.test(name.text) || script.includes(undefined)) return { code: `sh -c '… "$${v}"'`, edits: [] };
+  return replaceSpan(name, last, `sh -c '${[name.text, ...script].join(' ')}'`);
 }
 
 /** The facts (pitfalls) about words whose node starts on `line`. */
@@ -119,10 +159,10 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
           const plain = n.type === 'simple_expansion' || n.text === `\${${u.shown}}`;
           const said = !shell || shell === 'bash' ? 'bash' : shell === 'dash' ? 'dash' : 'other';
           add(fact(lang, 'nounset-unbound', {
-            v: u.shown, name: u.name, exits: u.exits, shell: said, environment: u.environment, ...(errexit ? { errexit } : {}), ...(plain ? { fix: `\${${u.shown}:-}` } : {}),
+            v: u.shown, name: u.name, exits: u.exits, shell: said, environment: u.environment, ...(errexit ? { errexit } : {}), rewrite: plain ? [replaceNode(n, `\${${u.shown}:-}`)] : [],
           }), n);
         }
-        const joined = joinedArray(n, shell);
+        const joined = joinedArray(n, model, shell);
         if (joined) add(fact(lang, 'array-joined-in-assignment', joined), n);
         break;
       }
@@ -137,7 +177,7 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         for (const v of prefix) {
           const use = a.find((w) => readsVariable(w, v));
           if (written && use) {
-            add(fact(lang, 'prefix-assignment-expanded-first', { v, name: written, use: use.text }), use);
+            add(fact(lang, 'prefix-assignment-expanded-first', { v, name: written, use: use.text, rewrite: [throughShell(n, prefix, v, model, shell)] }), use);
             break;
           }
         }
@@ -152,8 +192,9 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
           // A value the model knows that stays one word, with nothing to glob (`TS=2024; rm -rf /tmp/build-$TS`): no harm
           // here, so a caveat; a value it does not know (`read`, `$1`, `$(date)`) may be anything.
           const fields = wordFields(word, model).fields;
+          const quoted = quoteExpansions(word);
           add(fact(lang, 'unquoted-variable-as-path', {
-            bare: word.text, quoted: quoteExpansions(word), ...(DESTRUCTIVE_COMMANDS.has(ran) ? { destroys: true } : {}), ...(fields?.length === 1 ? { known: fields[0] } : {}),
+            bare: word.text, rewrite: quoted ? [replaceNode(word, quoted)] : [], ...(DESTRUCTIVE_COMMANDS.has(ran) ? { destroys: true } : {}), ...(fields?.length === 1 ? { known: fields[0] } : {}),
           }), word);
           break;
         }
@@ -163,7 +204,9 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         if (testSpecAt(model, n, shell)?.closingOperand) {
           const word = a.find((e) => isExpansion(e) && !alwaysNumber(e));
           // (zsh does not split it, but drops it all the same when it is empty.)
-          if (word) add(fact(lang, 'unquoted-variable-in-test', { bare: word.text, zsh: shell === 'zsh' }), word);
+          // (`"$x"` as written, also for `$*`, which in a test is meant as one word; none where quotes change the value, as in
+          // `${x:-'a b'}`: src/fixes.ts, `quoteExpansions`.)
+          if (word) add(fact(lang, 'unquoted-variable-in-test', { bare: word.text, zsh: shell === 'zsh', rewrite: quoteExpansions(word) ? [replaceNode(word, `"${word.text}"`)] : [] }), word);
         }
         // `sudo cmd > file`: the redirection is done by your shell, without sudo's rights.
         // Only for files that need root: system directories, not your logs or /dev/null. (The path after quote removal,
@@ -187,7 +230,12 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         const cmd = value.type === 'command_substitution' && value.namedChildren[0]?.type === 'command' ? commandName(value.namedChildren[0]) : undefined;
         if (cmd === 'ls' || cmd === 'find') add(fact(lang, 'for-over-ls-output', { cmd }), value);
         // `for a in $*` / `for a in $@` (zsh gives each argument as one word, unsplit)
-        if (shell !== 'zsh' && value.type === 'simple_expansion' && /^\$[*@]$/.test(value.text)) add(fact(lang, 'for-over-unquoted-args', { value: value.text }), value);
+        // The rewrites: `for a in "$@"`, and `for a` alone where `$@` is the only word of the list.
+        if (shell !== 'zsh' && value.type === 'simple_expansion' && /^\$[*@]$/.test(value.text)) {
+          const head = n.text.slice(0, field(n, 'variable')!.endIndex - n.startIndex);
+          const rewrite = [replaceSpan(n, value, `${head} in "$@"`), ...(fields(n, 'value').length === 1 ? [replaceSpan(n, value, head)] : [])];
+          add(fact(lang, 'for-over-unquoted-args', { value: value.text, rewrite }), value);
+        }
         break;
       }
       case 'comment': {

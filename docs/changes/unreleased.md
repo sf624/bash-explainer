@@ -850,6 +850,17 @@ The notes on exit statuses show the code to write for their line. The same data 
 - With a here-document, `fi` and `return 0` go before its body: `f() { [[ -f x ]] && cat <<EOF; }` becomes `f() { if [[ -f x ]]; then cat <<EOF; fi; }`.
 - Before, the notes said `local x`, then `x=$(…)`, and `if …; then …; fi`.
 
+### The fixes of the notes on words
+
+The notes on words suggest the fix for the line as it is written; a test runs each fix in bash 5.2 and 5.3.
+
+| Written | Before | Now |
+| --- | --- | --- |
+| `for f in $*`, `select x in $@` | Write `for a in "$@"` (or just `for a`) | Write `for f in "$@"` (or just `for f`); `select x in "$@"` (or just `select x`). With more words in the list (`for a in $@ end`), only `for a in "$@"`, since `for a` would drop them. |
+| `FOO=1 echo $FOO` | go through a shell: `FOO=… sh -c '… "$FOO"'` | `FOO=… sh -c 'echo "$FOO"'`: the command with its words, the expansions of the prefix's variables in double quotes, a word in single quotes in double quotes (`printf '%s\n'` becomes `printf "%s\n"`). Where `sh` would not run the same command with the same words, the note still shows `sh -c '… "$FOO"'`: a builtin that acts on the shell (`cd`, `read`) or that has no program, a function or an alias, a redirection among the words, another expansion (`$BAR`, `$(…)`), a glob or braces. |
+| `IFS=:` then `t=${a[@]}` | … if one string is meant, write `t="${a[*]}"` | Only the array, `t=("${a[@]}")`. In an assignment bash joins `${a[@]}` with a space; `"${a[*]}"` joins with the first character of `IFS` (`x  y:b`, not `x  y b`). The string is still suggested where the `IFS` is the default or starts with a space. |
+| `[ ${x:-'a b'} = y ]` | Write `"${x:-'a b'}"` | No fix: in double quotes, the quotes in the default value are kept as text. As for an unquoted path, the fix is left out where quotes would change the value. |
+
 ## Fixed
 
 ### Conditions and code that never runs
