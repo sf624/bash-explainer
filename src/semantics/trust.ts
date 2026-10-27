@@ -150,7 +150,7 @@ class Scan {
   /** The aliases each tree of an alias expanded at a command comes from (bash does not expand an alias in itself). */
   private readonly expanding = new Map<SyntaxNode, ReadonlySet<string>>();
 
-  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening?: Opening, private readonly shell?: Shell, private readonly version?: BashVersion) {
+  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening: Opening | undefined, private readonly shell: Shell | undefined, private readonly version?: BashVersion) {
     const defs = (n: SyntaxNode): void => {
       if (n.type === 'function_definition') this.functions.add(field(n, 'name')!.text);
       if (n.type === 'command' && ['alias', 'enable'].includes(commandName(n) ?? '')) this.renames = true;
@@ -932,7 +932,7 @@ class Scan {
  * the file's host defines (a bats file: `run`, `load`…), read by their specs. `opening`: what the shebang starts bash
  * with (`#!/bin/bash -k`).
  */
-export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST, opening?: Opening, shell?: Shell, version?: BashVersion): Trust {
+export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST, opening: Opening | undefined, shell: Shell | undefined, version?: BashVersion): Trust {
   const scan = new Scan(root, strings, host, opening, shell, version);
   if (scan.blind) return { ...BLIND, blind: scan.blind };
   const unseen = new Set<string>();

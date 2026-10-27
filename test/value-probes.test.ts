@@ -48,7 +48,7 @@ function markers(root: SyntaxNode, model: StateModel): SyntaxNode[] {
       if (!('why' in script)) out.push(...markers(script.tree.root, model));
     } else if (name === 'bash') {
       const spec = lookupCommand('bash')!;
-      const envs = slotEnvs(model.env(c), interpret(spec, args.map(argWord), { name, lookup: lookupCommand }), spec, args, lookupCommand);
+      const envs = slotEnvs(model.env(c), interpret(spec, args.map(argWord), { name, lookup: lookupCommand }), spec, args, 'bash', lookupCommand);
       // (The string is the word after `-c`: `bash -O compat31 -c '…'`.)
       const string = args[args.findIndex((a) => a.text === '-c') + 1];
       const script = model.script([string], envs.get(string)!);

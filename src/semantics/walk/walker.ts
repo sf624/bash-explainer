@@ -1276,7 +1276,7 @@ export class Walker {
   /** The string of `words`, which this shell runs: now (`eval`) or later (a trap's action). */
   script(words: SyntaxNode[], kind: 'current' | 'later', n: SyntaxNode, parse: ArgvParse, args: SyntaxNode[]): NestedScript | NotRead {
     const name = parse.command;
-    const script = this.scripts.read(words, kind, () => slotEnvs(this.scripts.model.env(n), parse, builtins[name], args, undefined, undefined, this.shell).get(words[0])!, { shell: this.shell, known: true });
+    const script = this.scripts.read(words, kind, () => slotEnvs(this.scripts.model.env(n), parse, builtins[name], args, this.shell).get(words[0])!, { shell: this.shell, known: true });
     if (!('why' in script)) this.collectDefinitions(script.tree.root);
     return script;
   }

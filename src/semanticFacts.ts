@@ -73,7 +73,7 @@ function command(c: SyntaxNode, model: StateModel, shell: Shell | undefined, out
   let envs: ReturnType<typeof slotEnvs> | undefined;
   roles(parse, spec, args, (w) => {
     // (A plain word, so it has a value; slotEnvs keys the first word of each command a slot runs.)
-    const env = (envs ??= slotEnvs(model.env(c), parse, spec, args, lookupCommand, undefined, shell)).get(w)!;
+    const env = (envs ??= slotEnvs(model.env(c), parse, spec, args, shell, lookupCommand)).get(w)!;
     return nameKind(resolveName(model, staticWordValue(w)!, w, { ...resolveOpts(shell), env }));
   }, out, shell);
 }

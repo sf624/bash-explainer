@@ -202,7 +202,7 @@ describe('nested scripts: the model', () => {
     const cmd = descendants(tree.root, ['command'])[0];
     const args = fields(cmd, 'argument');
     const spec = lookupCommand('sudo')!;
-    const envs = slotEnvs(model.env(cmd), interpret(spec, args.map(argWord), { name: 'sudo', lookup: lookupCommand }), spec, args, lookupCommand);
+    const envs = slotEnvs(model.env(cmd), interpret(spec, args.map(argWord), { name: 'sudo', lookup: lookupCommand }), spec, args, 'bash', lookupCommand);
     assert.deepStrictEqual(model.script([args[1]], envs.get(args[1])!), { why: 'not-run' });
   });
 

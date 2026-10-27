@@ -44,7 +44,7 @@ function slots(src: string, text: string, spec?: CommandSpec, lookup: typeof loo
   const words = fields(node, 'argument');
   spec ??= lookup(name)!;
   const parse = interpret(spec, words.map(argWord), { name, lookup });
-  return new Map([...slotEnvs(env, parse, spec, words, lookup)].map(([w, e]) => [w.text, e]));
+  return new Map([...slotEnvs(env, parse, spec, words, 'bash', lookup)].map(([w, e]) => [w.text, e]));
 }
 
 describe('execution environments: the shell a program name stands for', () => {
