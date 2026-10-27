@@ -17,7 +17,11 @@ export interface Convention {
   sources: readonly string[];
 }
 
-export const CONVENTIONS = {
+/** Types a table by its keys (a union) and checks each value. The table's last line is a bare `});`, which the coverage
+ * report leaves out: tsx's export annotation maps there (scripts/coverage-report.mjs). */
+const table = <K extends string>(t: Record<K, Convention>): Record<K, Convention> => t;
+
+export const CONVENTIONS = table({
   // SC2086: "Double quote to prevent globbing and word splitting."
   'quote-expansions': { habit: 'Double-quote every expansion: "$x", not $x', sources: ['ShellCheck SC2086'] },
   // SC2068: "Double quote array expansions to avoid re-splitting elements." SC2048: "Use "$@" (with quotes) to
@@ -46,7 +50,7 @@ export const CONVENTIONS = {
   'quote-for-shell-in-python': { habit: 'Quote values with shlex.quote(), or pass a list without shell=True', sources: ['Python documentation: subprocess, Security Considerations'] },
   // (GitHub's guide recommends an intermediate environment variable for an untrusted expression.)
   'actions-expression-through-env': { habit: 'Pass an expression to a script through env:, and use it as "$VAR"', sources: ['GitHub Docs: Security hardening for GitHub Actions'] },
-} as const satisfies Record<string, Convention>;
+});
 
 /** A habit of the table, by its id. */
 export type ConventionId = keyof typeof CONVENTIONS;
