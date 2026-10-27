@@ -20,6 +20,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 - Prefer tests that compare with the real tool: GNU sed, gawk, perl, jq, bash, git, GNU coreutils, PyYAML for kislyuk/yq. Most `test/examples-*.test.ts` already hold such tables; add cases there. These tests have found many bugs, so when the tool disagrees, fix the code (with a CHANGELOG line under "Unreleased") rather than the expectation.
 - Behaviour that differs between tool releases (jq 1.7 vs 1.7.1, mawk vs gawk) is left out of the comparisons and tested on its own.
 - A branch no input can reach is removed (or becomes a non-null assertion when the grammar guarantees the node); a guard against a bug elsewhere gets `/* c8 ignore … */` with a comment. Put `/* c8 ignore start */` before `} catch`, so the catch's own branch is left out too.
+- A branch that only the seeded fuzz test reaches loses its coverage when the snippets change (a new test adds a snippet, and the fuzz inputs move), and CI then fails a PR that never touched that code. Give such a branch a direct test of the input that reaches it (October 2026: `src/semantics/allow.ts` via `echo ${s@${`; `declare +g` in #416).
 
 ## Explanations
 
@@ -33,6 +34,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 ## Design
 
 - [docs/roadmap.md](docs/roadmap.md) holds the agreed order of the work, and what waits on the maintainer. Read it before starting or proposing work; update it in the same PR that starts, finishes or drops an item, and add an item whenever the maintainer agrees to a plan that is not done at once.
+- Refer to roadmap items by their name, not only their number, in other documents and PRs: the items are renumbered whenever one finishes, and every PR that changed a number conflicted with the others (October 2026).
 - [docs/design/README.md](docs/design/README.md) is the index of the design documents, with the status of each. When a document's status changes (a step done, a plan finished), update its row there in the same PR.
 - [docs/design/semantics.md](docs/design/semantics.md) is the plan: A, command specs read by one argument interpreter (`src/argv/`); B, a semantic model after the manual (`src/semantics/`); C, the bash-ast test. Do not add one-off fields to `src/dict/types.ts` or name checks to `src/explain/`; extend the spec or the model instead, or say why not.
 
@@ -65,6 +67,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 ## Stacked PRs
 
 - `test/fixtures/snippets.json` is generated from the tests: when PRs are stacked, regenerate it at every level, since CI checks each level.
+- GitHub's "Update branch" (and the update that merge-when-green makes) rebases without regenerating generated files: afterwards `test/fixtures/snippets.json` and the pinned counts in `test/fixtures/command-tokens-known.json` can be stale, and CI fails. When a PR adds snippets and main has moved, rebase locally, regenerate, and push instead.
 
 ## The semantic model
 
