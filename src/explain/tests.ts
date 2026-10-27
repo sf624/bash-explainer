@@ -192,20 +192,13 @@ const DIGITS: Record<string, string | undefined> = { d: '[0-9]', D: '[^0-9]' };
 function droppedEscapes(text: string): Escape[] {
   const out: Escape[] = [];
   let bracket = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '\\') {
-      if (/[bBwWsSdD<>]/.test(text.charAt(i + 1))) out.push({ at: i, x: text[i + 1], bracket });
-      i++;
-    } else if (!bracket && c === '[') {
-      // (A `]` first in a bracket expression, after its `^` if any, is a member, not its end.)
-      bracket = true;
-      if (text.charAt(i + 1) === '^') i++;
-      if (text.charAt(i + 1) === ']') i++;
-    } else if (bracket && c === '[' && text.charAt(i + 1) === ':') {
-      // (A class inside it, `[:space:]`, ends with its own `]`.)
-      i = Math.max(i, text.indexOf(':]', i + 2) + 1);
-    } else if (c === ']') bracket = false;
+  // (The parts: an escape; a class, `[:space:]`, whose `]` ends no bracket expression; a `[` that opens one, with its
+  // `^` and a first `]`, which is a member; a `]`; other text.)
+  for (const m of text.matchAll(/\\[\s\S]|\[:\w*:\]|\[\^?\]?|\]|[^\\[\]]+/g)) {
+    const t = m[0];
+    if (/^\\[bBwWsSdD<>]/.test(t)) out.push({ at: m.index, x: t[1], bracket });
+    else if (/^\[\^?\]?$/.test(t)) bracket = true;
+    else if (/^\]$/.test(t)) bracket = false;
   }
   return out;
 }
