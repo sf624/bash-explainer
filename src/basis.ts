@@ -26,14 +26,14 @@ export type BashRelease = '5.2' | '5.3';
  *   `probes` (in CI: every row in 5.2, the rows of 5.3's constructs in 5.3, and the try-it in each release listed).
  * - `differs`: bash's behaviour where the manual says otherwise, checked the same way.
  * - `spec`: what another program does (an option of `grep`), from its command spec in src/dict/.
- * - `convention`: a habit of shell scripts, not a rule of bash (capitals for the environment).
- * Only `checked` and `differs` are given by the catalog today; the others are the default or not given yet.
+ * Only `checked` and `differs` are given by the catalog today; the others are the default or not given yet. A habit of
+ * shell scripts is not a basis: a note whose advice is one names it beside its basis (`convention`, src/conventions.ts;
+ * docs/design/basis-spec-convention.md, decision 1).
  */
 export type Basis =
   | { kind: 'manual'; sections: readonly string[] }
   | { kind: 'checked' | 'differs'; bash: readonly BashRelease[]; probes: readonly ProbeRef[] }
-  | { kind: 'spec'; command: string }
-  | { kind: 'convention' };
+  | { kind: 'spec'; command: string };
 
 /**
  * A command for the reader to run in a terminal, and what it printed when the probe ran it (stdout and stderr). It may

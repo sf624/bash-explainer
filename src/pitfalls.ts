@@ -14,6 +14,7 @@ import { bracketWords, testFails, writtenAsBracket } from './testexpr';
 import { staticWordValue, unquoteWord } from './staticword';
 import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
+import type { ConventionId } from './conventions';
 import { marked, type Note, type NoteLevel } from './messages';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
@@ -153,6 +154,75 @@ export const STYLE_LEVELS: Record<StyleCode, NoteLevel> = {
   'pattern-from-variable': 'info',
 };
 
+/**
+ * The habit each style check's advice is, when it is one (docs/design/basis-spec-convention.md, 2.3: the checks sorted
+ * "both"): its fact bites only with values or a setup the line does not control, and the advice rules it out beyond
+ * this line. `null`: the advice is how to write what was meant (sorted "fact"). Total, so that a new check must decide.
+ */
+export const STYLE_CONVENTIONS: Record<StyleCode, ConventionId | null> = {
+  'bracket-no-space': null, 'assignment-with-spaces': null, 'brace-no-space': null, 'brace-close-no-separator': null,
+  // (It bites only when the variable is empty.)
+  'rm-empty-variable-root': 'guard-empty-path',
+  // (Only when the input has a backslash.)
+  'read-without-r': 'read-r',
+  'redirect-in-bracket': null, 'bracket-close-in-word': null, 'and-or-in-bracket': null,
+  // (Only when the download is cut, or is not what was meant.)
+  'download-run-by-shell': 'read-before-run',
+  'trap-goes-on': null,
+  // (Only when `$PATH` has the name, or the script is started from another directory.)
+  'source-searches-path': 'source-by-script-path',
+  // (Only with a character special in a regex, or a value that is part of a longer text.)
+  'pattern-from-variable': 'grep-fixed-strings',
+};
+
+/**
+ * The sections of the bash 5.2 manual each style check's fact is about (src/manual.ts), as the catalog's entries cite
+ * theirs: data for now, as the basis of the check (docs/design/basis-spec-convention.md, decision 5). Each was checked
+ * against the manual of the bash-doc package (bash 5.2); the comment quotes the sentence the check rests on. None for
+ * `pattern-from-variable`, which is about grep, not bash.
+ */
+export const STYLE_REFS: Record<StyleCode, readonly string[]> = {
+  // 4.1 (`test`): "Each operator and operand must be a separate argument." 3.7.2: "If that function is not defined,
+  // the shell prints an error message and returns an exit status of 127."
+  'bracket-no-space': ['4.1', '3.7.2'],
+  // 3.4: "A variable may be assigned to by a statement of the form name=[value]". 3.7.1: "If any words remain after
+  // expansion, the first word is taken to be the name of the command and the remaining words are the arguments."
+  'assignment-with-spaces': ['3.4', '3.7.1'],
+  // 3.2.5.3: "The braces are reserved words, so they must be separated from the list by blanks or other shell
+  // metacharacters."
+  'brace-no-space': ['3.2.5.3'],
+  // 3.2.5.3: "{ list; }" … "The semicolon (or newline) following list is required."
+  'brace-close-no-separator': ['3.2.5.3'],
+  // 3.5.3, `${parameter:?word}`: "If parameter is null or unset, the expansion of word … is written to the standard
+  // error and the shell, if it is not interactive, exits." 3.5.8: the word is "replaced with an alphabetically sorted
+  // list of filenames matching the pattern".
+  'rm-empty-variable-root': ['3.5.3', '3.5.8'],
+  // 4.2 (`read`): "The backslash character ‘\’ may be used to remove any special meaning for the next character read
+  // and for line continuation." `-r`: "If this option is given, backslash does not act as an escape character."
+  'read-without-r': ['4.2'],
+  // 3.6: "Before a command is executed, its input and output may be redirected using a special notation interpreted
+  // by the shell." 3.2.5.2: "When used with [[, the ‘<’ and ‘>’ operators sort lexicographically using the current
+  // locale."
+  'redirect-in-bracket': ['3.6', '3.2.5.2'],
+  // 4.1: "When the [ form is used, the last argument to the command must be a ]." 3.5.7: "Unquoted implicit null
+  // arguments, resulting from the expansion of parameters that have no values, are removed" (`$v]` is not one).
+  'bracket-close-in-word': ['4.1', '3.5.7'],
+  // 3.2.4: "AND and OR lists are sequences of one or more pipelines separated by the control operators ‘&&’ and
+  // ‘||’". 4.1: "When the [ form is used, the last argument to the command must be a ]."
+  'and-or-in-bracket': ['3.2.4', '4.1'],
+  // 6.1, `-s`: "If this option is present, or if no arguments remain after option processing, then commands are read
+  // from the standard input."
+  'download-run-by-shell': ['6.1'],
+  // 4.1 (`trap`): "The commands in arg are to be read and executed when the shell receives signal sigspec." 3.7.6:
+  // "The shell exits by default upon receipt of a SIGHUP." (That the script then goes on is implied, not stated.)
+  'trap-goes-on': ['4.1', '3.7.6'],
+  // 4.1 (`.`): "If filename does not contain a slash, the PATH variable is used to find filename … When Bash is not in
+  // POSIX mode, it searches the current directory if filename is not found in $PATH." 6.11: "The . and source builtins
+  // do not search the current directory for the filename argument if it is not found by searching PATH."
+  'source-searches-path': ['4.1', '6.11'],
+  'pattern-from-variable': [],
+};
+
 /** A style check found: its code, the node it is about, its level and its note. */
 /** A style check found on a node: its note, whose code is the check's. */
 export interface StyleFinding extends Note { code: StyleCode; node: SyntaxNode }
@@ -290,7 +360,8 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
   const s = pick(lang);
   const found: StyleFinding[] = [];
   const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string) => {
-    found.push({ ...marked(lang, STYLE_LEVELS[code], s(ja, en), { kind: 'pitfall' }), code, node });
+    const convention = STYLE_CONVENTIONS[code];
+    found.push({ ...marked(lang, STYLE_LEVELS[code], s(ja, en), { kind: 'pitfall' }), code, node, ...(convention ? { convention } : {}) });
   };
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row >= from && n.startPosition.row <= to) check(n);

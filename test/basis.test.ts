@@ -6,6 +6,11 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import { Analyzer } from '../src/analyzer';
 import { basisFor, basisOf, type BasisSpec, PROBE_COPY, type ProbeRef } from '../src/basis';
+import { type Convention, CONVENTIONS, type ConventionId } from '../src/conventions';
+import { documentIssues, explainDocumentLine } from '../src/document';
+import { openDocument } from '../src/document-setup';
+import { SECTIONS } from '../src/manual';
+import { STYLE_CONVENTIONS, STYLE_LEVELS, STYLE_REFS } from '../src/pitfalls';
 import type { Shell } from '../src/shellfeatures';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { basisGate, basisSaid, fact, type FactId, MESSAGES } from '../src/messages';
@@ -305,5 +310,101 @@ describe('basis: what an explanation rests on', () => {
     assert.strictEqual(basisMarkdown(tok, 'en', '  '), `\\\n  _${basisLine('en', b, (c) => `\`${c}\``)}_`);
     assert.strictEqual(basisMarkdown({}, 'en', '  '), '');
     assert.match(toPlainMarkdown(ex, 'BASH_XTRACEFD=7', 'x.sh:1'), /- `BASH_XTRACEFD=7` — .*\\\n +_Differs from the manual · checked with bash 5\.2 and 5\.3 · Try it in your terminal: `bash -c '[^`]*'` → `fd 3 is still open`_/);
+  });
+});
+
+// Step 5b (docs/design/basis-spec-convention.md): the habit a note's advice is, beside its basis, from
+// src/conventions.ts; and the sections of the style checks.
+describe('conventions: the habit a note recommends', () => {
+  const parser = createUnbashParser();
+  const conventionOfEntry = (id: FactId) => (MESSAGES[id] as { convention?: ConventionId }).convention;
+
+  // The audit of section 2.3: every pitfall of the catalog and every style check is a fact, or a fact whose advice is a
+  // habit (sorted "both"): then the id of its habit. A new pitfall or style check must be sorted here.
+  it('sorts every pitfall and every style check as the audit did: a fact, or the habit its advice is', () => {
+    const both: Partial<Record<FactId, ConventionId>> = {
+      'declaration-masks-status': 'declare-then-assign',
+      'pipefail-missing': 'pipefail',
+      'unmatched-glob-runs-once': 'guard-unmatched-glob',
+      'unquoted-variable-as-path': 'quote-expansions',
+      'for-over-ls-output': 'no-loop-over-command-output',
+      'for-over-unquoted-args': 'quote-all-arguments',
+      'array-joined-in-assignment': 'array-for-a-list',
+      'unquoted-variable-in-test': 'quote-expansions',
+      'dockerfile-pipefail-missing': 'pipefail',
+      'python-shell-injection': 'quote-for-shell-in-python',
+      'actions-script-injection': 'actions-expression-through-env',
+    };
+    const pitfalls = (Object.keys(MESSAGES) as FactId[]).filter((id) => MESSAGES[id].kind === 'pitfall');
+    assert.strictEqual(pitfalls.length, 63, 'a new pitfall: sort it in this test (fact, or the habit of its advice)');
+    for (const id of Object.keys(MESSAGES) as FactId[]) assert.strictEqual(conventionOfEntry(id) ?? 'fact', both[id] ?? 'fact', id);
+    assert.deepStrictEqual(STYLE_CONVENTIONS, {
+      'bracket-no-space': null, 'assignment-with-spaces': null, 'brace-no-space': null, 'brace-close-no-separator': null,
+      'rm-empty-variable-root': 'guard-empty-path', 'read-without-r': 'read-r', 'redirect-in-bracket': null,
+      'bracket-close-in-word': null, 'and-or-in-bracket': null, 'download-run-by-shell': 'read-before-run', 'trap-goes-on': null,
+      'source-searches-path': 'source-by-script-path', 'pattern-from-variable': 'grep-fixed-strings',
+    });
+    assert.deepStrictEqual(Object.keys(STYLE_CONVENTIONS), Object.keys(STYLE_LEVELS));
+  });
+
+  it('names each habit once, used by some note, with its sources as plain strings', () => {
+    const used = new Set([...(Object.keys(MESSAGES) as FactId[]).map(conventionOfEntry), ...Object.values(STYLE_CONVENTIONS)]);
+    assert.deepStrictEqual(Object.keys(CONVENTIONS).filter((id) => !used.has(id as ConventionId)), []);
+    for (const [id, c] of Object.entries(CONVENTIONS) as [ConventionId, Convention][]) {
+      assert.ok(c.habit.length > 0, id);
+      for (const s of c.sources) assert.match(s, /^(ShellCheck SC\d{4}|Hadolint DL\d{4}|Python documentation: .+|GitHub Docs: .+)$/, `${id}: ${s}`);
+    }
+  });
+
+  it('cites sections of the bash 5.2 manual for every style check but one about grep', () => {
+    assert.deepStrictEqual(Object.keys(STYLE_REFS), Object.keys(STYLE_LEVELS));
+    for (const [code, refs] of Object.entries(STYLE_REFS)) for (const r of refs) assert.ok(SECTIONS.has(r), `${code}: ${r}`);
+    assert.deepStrictEqual(Object.entries(STYLE_REFS).filter(([, refs]) => !refs.length).map(([code]) => code), ['pattern-from-variable']);
+  });
+
+  it('gives a fact and a style check their habit, beside the basis, and none with `notes.basis` off', () => {
+    const local = fact('en', 'declaration-masks-status', { kw: 'local', v: 'v' });
+    assert.strictEqual(local.convention, 'declare-then-assign');
+    assert.ok(!('basis' in local));
+    assert.ok(!('convention' in basisGate(local, false)));
+    assert.strictEqual(basisGate(local, true), local);
+    // (A habit beside a basis of its own: both are kept, and both go with the setting off.)
+    const test = fact('en', 'unquoted-variable-in-test', { bare: '$x' });
+    assert.deepStrictEqual([test.basis?.kind, test.convention], ['differs', 'quote-expansions']);
+    assert.ok(!('convention' in basisGate(test, false)) && !('basis' in basisGate(test, false)));
+    assert.ok(!('convention' in fact('en', 'pipeline-subshell-variable', { used: 'n', fix: { ja: '', en: '' }, partial: false })));
+
+    const src = 'f() { local v=$(false); read line; [-f x]; }';
+    const on = explain(src);
+    assert.deepStrictEqual(on.facts?.filter((f) => f.kind === 'pitfall').map((f) => [f.id, f.convention]), [['declaration-masks-status', 'declare-then-assign']]);
+    assert.deepStrictEqual(on.noteInfo.filter((n) => n.code).map((n) => `${n.code} ${n.convention ?? '-'}`).sort(), [
+      'bracket-no-space -', 'declaration-masks-status declare-then-assign', 'read-without-r read-r',
+    ]);
+    const off = explain(src, 0, 'en', { basis: false });
+    assert.deepStrictEqual([...off.facts!, ...off.noteInfo].filter((n) => 'convention' in n), []);
+    assert.strictEqual(off.notes.length, on.notes.length);
+  });
+
+  it('gives the habit of a host file\'s note, in its facts, its notes and its problems', () => {
+    const lines = (kind: 'dockerfile' | 'yaml' | 'python', text: string, line: number, basis?: boolean) => {
+      const doc = openDocument(text, kind, (t) => parser.parse(t));
+      return { ex: explainDocumentLine(new Analyzer('en'), doc, line, 'en', {}, { basis }), issues: documentIssues(doc, 'en', {}) };
+    };
+    const docker = lines('dockerfile', 'FROM alpine\nRUN wget -qO- x | tar x\n', 1);
+    assert.deepStrictEqual(docker.ex.facts?.map((f) => [f.id, f.convention]), [['dockerfile-pipefail-missing', 'pipefail']]);
+    assert.ok(docker.ex.noteInfo.some((n) => n.code === 'dockerPipefail' && n.convention === 'pipefail'));
+    assert.deepStrictEqual(docker.issues.map((i) => [i.code, i.convention]), [['dockerPipefail', 'pipefail']]);
+    const off = lines('dockerfile', 'FROM alpine\nRUN wget -qO- x | tar x\n', 1, false);
+    assert.deepStrictEqual([...off.ex.facts!, ...off.ex.noteInfo].filter((n) => 'convention' in n), []);
+
+    const actions = lines('yaml', 'on: issues\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo "${{ github.event.issue.title }}"\n', 5);
+    assert.deepStrictEqual(actions.ex.facts?.map((f) => [f.id, f.convention]), [['actions-script-injection', 'actions-expression-through-env']]);
+    assert.ok(actions.issues.some((i) => i.code === 'injection' && i.convention === 'actions-expression-through-env'));
+
+    const python = lines('python', 'import subprocess\nname = "x"\nsubprocess.run(f"echo {name}", shell=True)\n', 2);
+    assert.ok(python.ex.facts?.some((f) => f.id === 'python-shell-injection' && f.convention === 'quote-for-shell-in-python'));
+    assert.ok(python.issues.some((i) => i.code === 'pythonInjection' && i.convention === 'quote-for-shell-in-python'));
+    // (A note with no habit makes a problem with none.)
+    assert.ok(documentIssues(openDocument('[[ -f x ]]', 'shell', (t) => parser.parse(t)), 'en', { forced: 'sh' }).every((i) => !('convention' in i)));
   });
 });

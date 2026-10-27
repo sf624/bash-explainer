@@ -6,7 +6,7 @@ import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
-import { fact, isProblem, severityOf } from './messages';
+import { conventionOf, fact, isProblem, severityOf } from './messages';
 import { type NestedScript, nestedScripts } from './semantics/nested';
 import { shellState } from './semantics/state';
 import { explainOptions, settingSpec } from './settings';
@@ -112,7 +112,7 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
       for (const { span } of ex.anchors?.filter((a) => a.text === n.text) ?? []) {
         const at = span.start.line;
         const issue: DocumentIssue = {
-          code: n.code!, severity: severityOf(n.level), message: n.text, pitfall: true,
+          code: n.code!, severity: severityOf(n.level), message: n.text, pitfall: true, ...conventionOf(n),
           startLine: at, startCol: span.start.character, endLine: at, endCol: span.end.line === at ? span.end.character : doc.lines[at].length,
         };
         const id = `${issue.code} ${at}:${issue.startCol}-${issue.endCol}`;

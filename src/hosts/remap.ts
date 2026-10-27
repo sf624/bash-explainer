@@ -10,7 +10,8 @@ import { fileRead } from '../semantics/env';
 import { shellState } from '../semantics/state';
 import { statusModel } from '../semantics/status';
 import { batsFacts, batsTests } from '../bats';
-import { type Fact, type FactSpec, factOf, type Note, plainNote, said, severityOf } from '../messages';
+import type { ConventionId } from '../conventions';
+import { basisGate, conventionOf, type Fact, type FactSpec, factOf, type Note, plainNote, said, severityOf } from '../messages';
 import type { ShellRegion, Extracted } from './index';
 import { batsTestLine } from './bats';
 import { batsCommentFacts } from './batstags';
@@ -103,8 +104,8 @@ export function substitutionNotes(extracted: Extracted, line: number, lang: 'ja'
     ]);
 }
 
-/** A fact's note, without what only the fact has (its id, kind and sections). */
-const noteData = ({ text, level, label, body, code }: Fact): Note => ({ text, level, label, body, code });
+/** A fact's note, without what only the fact has (its id, kind, sections, basis and try-it). */
+const noteData = (f: Fact): Note => ({ text: f.text, level: f.level, label: f.label, body: f.body, code: f.code, ...conventionOf(f) });
 
 const PIPEFAIL: FactSpec = { id: 'dockerfile-pipefail-missing', params: {} };
 
@@ -170,9 +171,10 @@ export function explainHostedLine(
     hostFacts.push(...found.map((f) => f.fact));
     ex.anchors = [...(ex.anchors ?? []), ...found.filter((f) => f.node).map((f) => ({ text: f.fact.text, span: spanOf(f.node!), code: f.fact.code }))];
   }
-  if (hostFacts.length) ex.facts = [...(ex.facts ?? []), ...hostFacts];
+  // (Through the gate of `notes.basis`, as the analyzer's.)
+  if (hostFacts.length) ex.facts = [...(ex.facts ?? []), ...hostFacts.map((f) => basisGate(f, opts.basis))];
   ex.notes.unshift(...notes.map((n) => n.text));
-  ex.noteInfo.unshift(...notes);
+  ex.noteInfo.unshift(...notes.map((n) => basisGate(n, opts.basis)));
   const out = remapExplanation(ex, extracted, original, lang);
   if (tests) batsTestLine(out, extracted, original, tests, lang);
   return out;
@@ -184,6 +186,8 @@ export interface DocIssue {
   severity: 'warning' | 'info';
   message: string;
   startLine: number; startCol: number; endLine: number; endCol: number;
+  /** The habit the advice is, when it is one (`Note.convention`, src/conventions.ts). */
+  convention?: ConventionId;
 }
 
 /** All problems in the shell parts of a host document (one pass, for diagnostics). */
@@ -207,21 +211,21 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
         if (!pipeWithoutPipefail(own, region, line)) continue;
         const pipe = original[line].search(/(?<!\|)\|(?!\|)/);
         const f = factOf(lang, PIPEFAIL);
-        out.push({ code: 'dockerPipefail', severity: severityOf(f.level), message: f.text, startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1 });
+        out.push({ code: 'dockerPipefail', severity: severityOf(f.level), message: f.text, startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1, ...conventionOf(f) });
       }
     }
     for (const n of region.notes ?? []) {
       if (Array.isArray(n)) continue;
       const first = extracted.maps[region.start];
       const f = factOf(lang, n.spec);
-      out.push({ code: n.code, severity: severityOf(f.level), message: f.text, startLine: region.start, startCol: first[0], endLine: region.start, endCol: first[first.length - 1] });
+      out.push({ code: n.code, severity: severityOf(f.level), message: f.text, startLine: region.start, startCol: first[0], endLine: region.start, endCol: first[first.length - 1], ...conventionOf(f) });
     }
   }
   for (const sub of extracted.substitutions) {
     if (!sub.warning) continue;
     const c = Math.max(0, original[sub.line].indexOf(sub.text));
     const f = factOf(lang, sub.warning);
-    out.push({ code: 'injection', severity: severityOf(f.level), message: f.text, startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length });
+    out.push({ code: 'injection', severity: severityOf(f.level), message: f.text, startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length, ...conventionOf(f) });
   }
   return out;
 }

@@ -585,6 +585,25 @@ The hover and Copy as Markdown say both on one line in italics. The command-line
 
 `bashExplainer.notes.basis` (on by default; `--set notes.basis=false` for the command-line tool) turns the chips and the try-its off, in every output, the JSON included.
 
+Some warnings and caveats state a fact of bash that bites only with some values, and advise a common habit that rules it out: quote expansions, write `read -r`, `set -o pipefail`. The command-line tool's JSON names that habit, as data: a fact gets a `convention` (`"convention": "declare-then-assign"`), and so does a problem of `--check --format json` (`{"code": "read-without-r", …, "convention": "read-r"}`). No view shows it, and `notes.basis` off leaves it out. The habits, and who states them, are listed in src/conventions.ts:
+
+| `convention` | Habit | Notes |
+| --- | --- | --- |
+| `quote-expansions` | Quote every expansion (ShellCheck SC2086) | an unquoted variable as a path, or in `[ ]` |
+| `quote-all-arguments` | `"$@"` (SC2068, SC2048) | `for a in $@` |
+| `array-for-a-list` | An array, or `*` for one string (SC2124) | `v=$@` |
+| `no-loop-over-command-output` | A glob, or `find -print0` (SC2045, SC2044) | `for f in $(ls)` |
+| `guard-unmatched-glob` | `[ -e "$f" ] \|\| continue`, or `nullglob` | a loop over a glob |
+| `read-r` | `read -r` (SC2162) | `read` without `-r` |
+| `declare-then-assign` | Declare and assign apart (SC2155) | `local v=$(cmd)` |
+| `pipefail` | `set -o pipefail` (Hadolint DL4006) | a pipeline without it; a Dockerfile `RUN` with a pipe |
+| `guard-empty-path` | `${v:?}` (SC2115) | `rm -rf $DIR/…` |
+| `read-before-run` | Download, read, then run | `curl … \| sh` |
+| `source-by-script-path` | A path from the script's directory | `. lib.sh` |
+| `grep-fixed-strings` | `grep -F` for plain text | `grep "$pattern"` |
+| `quote-for-shell-in-python` | `shlex.quote()`, or a list (Python's documentation) | `subprocess.run(f"…", shell=True)` |
+| `actions-expression-through-env` | Pass it through `env:` (GitHub's security hardening guide) | `${{ github.event.issue.title }}` in `run:` |
+
 ## Changed
 
 ### A new logo

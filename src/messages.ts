@@ -1,4 +1,5 @@
 import { basisOf, type Basis, type BasisSpec, type TryIt } from './basis';
+import type { ConventionId } from './conventions';
 import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
 import { codeSpan } from './label';
@@ -47,6 +48,11 @@ interface Entry<P> {
    * it (src/basis.ts, `withBasis`); a function when it depends on the params. None: the manual's sections in `refs`.
    */
   basis?: BasisSpec | ((p: P) => BasisSpec | undefined);
+  /**
+   * A pitfall whose advice is a habit (sorted "both": docs/design/basis-spec-convention.md, 2.3): the habit, from the
+   * table of src/conventions.ts (`withConvention`). The basis stays the fact's.
+   */
+  convention?: ConventionId;
 }
 
 const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text });
@@ -64,6 +70,8 @@ const caveat = <P = Record<string, never>>(refs: readonly string[], text: (p: P)
 const notProblem = <P>(e: Entry<P>): Entry<P> => ({ ...e, problem: false });
 /** An entry with its basis: the probe row that checks it and gives a try-it (src/basis.ts, docs/design/basis.md). */
 const withBasis = <P>(e: Entry<P>, basis: BasisSpec | ((p: P) => BasisSpec | undefined)): Entry<P> => ({ ...e, basis });
+/** A pitfall whose advice is a habit, beside the fact it states (src/conventions.ts). */
+const withConvention = <P>(e: Entry<P>, convention: ConventionId): Entry<P> => ({ ...e, convention });
 
 /** `local-outside-function` in a file with no shebang (`sourced`): a function may read it with `source`, and `local` then works. */
 const withSourced =(sourced: boolean | undefined, [ja, en]: readonly [string, string]): readonly [string, string] => (sourced ? [
@@ -122,12 +130,12 @@ export const MESSAGES = {
     `\`set -e\` is ignored in this ${what}, since it runs ${where.en}: a command that fails in the middle does not stop it`]),
   // (4.2 says that `local` and `declare` (`typeset`) return 0 unless an option, a name or a readonly variable is wrong,
   // 4.1 the same of `export` and `readonly`: a failed command substitution is not among the reasons.)
-  'declaration-masks-status': caveat<{ kw: string; v: string }>(['4.2', '4.1', '4.3.1'], ({ kw, v }) => [
+  'declaration-masks-status': withConvention(caveat<{ kw: string; v: string }>(['4.2', '4.1', '4.3.1'], ({ kw, v }) => [
     `\`${kw} ${v}=$(…)\` の終了ステータスは \`${kw}\` 自身のもの（成功）になり、\`$(…)\` の中の失敗が隠れます（\`set -e\` でも止まりません）。\`${kw} ${v}\` と \`${v}=$(…)\` の2行に分けます`,
-    `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: \`${kw} ${v}\`, then \`${v}=$(…)\``]),
-  'pipefail-missing': caveat<{ last: string }>(['3.2.3', '4.3.1'], ({ last }) => [
+    `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: \`${kw} ${v}\`, then \`${v}=$(…)\``]), 'declare-then-assign'),
+  'pipefail-missing': withConvention(caveat<{ last: string }>(['3.2.3', '4.3.1'], ({ last }) => [
     `\`set -o pipefail\` が無いので、パイプラインの終了ステータスは最後のコマンド（\`${last}\`）のものだけになる。前のコマンドが失敗しても \`set -e\` では止まらない（このスクリプトのほかのパイプラインも同じ）`,
-    `without \`set -o pipefail\`, the status of a pipeline is that of its last command (\`${last}\`) alone, so \`set -e\` does not stop the script when a command before it fails (the same holds for the other pipelines of the script)`]),
+    `without \`set -o pipefail\`, the status of a pipeline is that of its last command (\`${last}\`) alone, so \`set -e\` does not stop the script when a command before it fails (the same holds for the other pipelines of the script)`]), 'pipefail'),
   // (3.2.4: the status of a list is that of its last command run; 3.3: a function's is that of the last command of its
   // body; 6.1: a script's is that of its last command.)
   'function-last-test-returns-status': caveat<{ name: string; line: number }>(['3.3', '3.2.4', '6.1'], ({ name, line }) => [
@@ -472,9 +480,9 @@ export const MESSAGES = {
       + (partial ? '（この前で `shopt -s lastpipe` を有効にしているのは一部の経路だけです）' : ''),
     `the commands of a pipeline (\`|\`) run in subshells, so \`${used}\` set on the right side is gone when the pipeline ends; the later \`$${used}\` does not see it. ${fix.en}`
       + (partial ? ' (only some paths before here turn `shopt -s lastpipe` on)' : '')]),
-  'unmatched-glob-runs-once': caveat<{ glob: string; v: string; nullglob: boolean }>(['3.5.8'], ({ glob, v, nullglob }) => [
+  'unmatched-glob-runs-once': withConvention(caveat<{ glob: string; v: string; nullglob: boolean }>(['3.5.8'], ({ glob, v, nullglob }) => [
     `\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に \`${glob}\` という文字列がそのまま入って1回実行されます。本体の先頭に \`[ -e "$${v}" ] || continue\` を${nullglob ? '書くか、ループの前で `shopt -s nullglob` にします' : '書きます'}`,
-    `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to the text \`${glob}\` itself. Start the body with \`[ -e "$${v}" ] || continue\`${nullglob ? ', or turn on `shopt -s nullglob` before the loop' : ''}`]),
+    `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to the text \`${glob}\` itself. Start the body with \`[ -e "$${v}" ] || continue\`${nullglob ? ', or turn on `shopt -s nullglob` before the loop' : ''}`]), 'guard-unmatched-glob'),
   // (The shell sets the standard input up, but a command given a file to read reads that instead: jq, sort, cat…)
   'stdin-not-read': note<{ cmd: string; file: string; stdin: Words }>(['3.2.3', '3.6'], ({ cmd, file, stdin }) => [
     `\`${cmd}\` には読むファイル（\`${file}\`）が指定されているので、標準入力（${stdin.ja}）は読まない（\`-\` を指定すると標準入力も読む）`,
@@ -488,31 +496,31 @@ export const MESSAGES = {
   // when quotes would change it, as in `${x:-*.txt}`.)
   // (`destroys`: the command deletes or overwrites what the word names, `rm`, `mv`, `cp`: a wrong name cannot be undone.)
   // (`known`: the one word the model knows it gives here; then it does no harm as it is, and is a caveat.)
-  'unquoted-variable-as-path': pitfall<{ bare: string; quoted?: string; destroys?: boolean; known?: string }>(['3.5.7', '3.5.8'], ({ bare, quoted, destroys, known }) => [
+  'unquoted-variable-as-path': withConvention(pitfall<{ bare: string; quoted?: string; destroys?: boolean; known?: string }>(['3.5.7', '3.5.8'], ({ bare, quoted, destroys, known }) => [
     `\`${bare}\` をクォートしていないので、値に空白や \`*\` があると別々の引数に分かれたり、ファイル名に展開されたりする${destroys ? '。このコマンドは意図しないファイルを削除したり上書きしたりすることになる' : ''}${known !== undefined ? `（ここでの値では1つの引数 \`${known}\` のままだが、値が変わると壊れる）` : ''}${quoted ? `。\`${quoted}\` と書く` : ''}`,
     `\`${bare}\` is not quoted, so a value with spaces or \`*\` is split into several arguments or expanded to file names${destroys ? ', and this command then deletes or overwrites files it should not' : ''}${known !== undefined ? ` (with its value here it stays one argument, \`${known}\`, but another value breaks it)` : ''}${quoted ? `. Write \`${quoted}\`` : ''}`],
-  undefined, ({ destroys, known }) => (destroys && known === undefined ? 'warning' : 'info')),
-  'for-over-ls-output': caveat<{ cmd: string }>(['3.5.7'], ({ cmd }) => [
+  undefined, ({ destroys, known }) => (destroys && known === undefined ? 'warning' : 'info')), 'quote-expansions'),
+  'for-over-ls-output': withConvention(caveat<{ cmd: string }>(['3.5.7'], ({ cmd }) => [
     `\`$(${cmd} …)\` の結果は空白や改行で区切られるので、空白を含むファイル名が壊れます。${cmd === 'ls' ? '`for f in *.txt` のようにグロブを使います' : '`find … -print0 | while IFS= read -r -d \'\' f` や `find -exec` を使います'}`,
-    `the output of \`$(${cmd} …)\` is split on spaces and newlines, so file names with spaces break. ${cmd === 'ls' ? 'Use a glob, as in `for f in *.txt`' : "Use `find … -print0 | while IFS= read -r -d '' f` or `find -exec`"}`]),
-  'for-over-unquoted-args': caveat<{ value: string }>(['3.4.2', '3.5.7'], ({ value }) => [
+    `the output of \`$(${cmd} …)\` is split on spaces and newlines, so file names with spaces break. ${cmd === 'ls' ? 'Use a glob, as in `for f in *.txt`' : "Use `find … -print0 | while IFS= read -r -d '' f` or `find -exec`"}`]), 'no-loop-over-command-output'),
+  'for-over-unquoted-args': withConvention(caveat<{ value: string }>(['3.4.2', '3.5.7'], ({ value }) => [
     `\`${value}\` をクォートしないと、空白を含む引数が分かれてしまいます。\`for a in "$@"\`（または \`for a\` だけ）と書きます`,
-    `unquoted \`${value}\` splits arguments that contain spaces. Write \`for a in "$@"\` (or just \`for a\`)`]),
+    `unquoted \`${value}\` splits arguments that contain spaces. Write \`for a in "$@"\` (or just \`for a\`)`]), 'quote-all-arguments'),
   // (`args`: `$@`, which 3.4.2 states: "In contexts where word splitting is not performed, this expands to a single word
   // with each positional parameter separated by a space" (3.4: no word splitting in an assignment). For an array,
   // 6.7 says only that `${a[@]}` "is analogous to the expansion of the special parameters": checked.)
-  'array-joined-in-assignment': withBasis(caveat<{ v: string; op: string; word: string; args: boolean; list: string; string: string }>(['3.4', '3.4.2', '6.7'], ({ v, op, word, args, list, string }) => [
+  'array-joined-in-assignment': withConvention(withBasis(caveat<{ v: string; op: string; word: string; args: boolean; list: string; string: string }>(['3.4', '3.4.2', '6.7'], ({ v, op, word, args, list, string }) => [
     `\`${v}${op}${word}\` では${args ? '引数' : '要素'}が空白で区切られて1つの文字列につながり、\`${v}\` はただの文字列になります（空白を含む${args ? '引数' : '要素'}は元に戻せません）。別々に残すには配列にして \`${v}${op}${list}\` と書き、1つの文字列にするつもりなら \`${v}${op}${string}\` と書きます`,
     `\`${v}${op}${word}\` joins the ${args ? 'arguments' : 'elements'} into one string, separated by spaces: \`${v}\` is a plain string, and ${args ? 'arguments' : 'elements'} with spaces cannot be told apart again. To keep them apart, assign an array: \`${v}${op}${list}\`; if one string is meant, write \`${v}${op}${string}\``]),
-  ({ args }) => (args ? { kind: 'manual', probe: 'state#assign-at' } : { kind: 'checked', probe: 'state#assign-array' })),
+  ({ args }) => (args ? { kind: 'manual', probe: 'state#assign-at' } : { kind: 'checked', probe: 'state#assign-array' })), 'array-for-a-list'),
   // (`zsh`: the shell is zsh, not bash. For bash, 4.1 says that `[ -n ]` (one argument, not null) is true, and that two
   // arguments whose first is no unary operator are false, where bash fails with status 2 (`[ = y ]`): differs.)
-  'unquoted-variable-in-test': withBasis(caveat<{ bare: string; zsh?: boolean }>(['3.5.7', '4.1'], ({ bare, zsh }) => zsh ? [
+  'unquoted-variable-in-test': withConvention(withBasis(caveat<{ bare: string; zsh?: boolean }>(['3.5.7', '4.1'], ({ bare, zsh }) => zsh ? [
     `\`[ ]\` の中の \`${bare}\` をクォートしないと、zsh では空白で分かれはしませんが、値が空のときは引数ごと消えるので条件式が壊れます（\`[ -n $x ]\` は空でも真になります）。\`"${bare}"\` と書きます`,
     `unquoted \`${bare}\` inside \`[ ]\` is not split in zsh, but an empty value drops the word, which breaks the test (an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``] : [
     `\`[ ]\` の中の \`${bare}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` などのエラーや、誤った結果。空の \`[ -n $x ]\` は真になります）。\`"${bare}"\` と書きます`,
     `unquoted \`${bare}\` inside \`[ ]\` breaks the test when the value is empty or has spaces (an error such as "unary operator expected", or a wrong result: an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``]),
-  ({ zsh }) => (zsh ? undefined : { kind: 'differs', probe: 'state#test-empty-operand' })),
+  ({ zsh }) => (zsh ? undefined : { kind: 'differs', probe: 'state#test-empty-operand' })), 'quote-expansions'),
   // (`set -u` on every path, and no value on every path: src/semantics/unbound.ts, `unboundRead`. `shell`: the
   // messages of bash and dash are quoted, another shell's are not.)
   // (4.3.1: with `-u`, "a non-interactive shell will exit". Where bash fails only the command (`exits: 'command'`, a
@@ -642,18 +650,18 @@ export const MESSAGES = {
     `環境依存: \`${name}\` は ${where} が対話シェル用に定義する${what.ja}で、ほかの環境にはありません。どこでも動かすには${portable ? ` \`${portable}\` と書きます` : '、したいことに合ったコマンドをそのまま書きます'}`,
     `System-dependent: \`${name}\` is ${what.en} ${where} define${many ? '' : 's'} for interactive shells; other systems lack it. ${portable ? `Write \`${portable}\` to work everywhere` : 'To work everywhere, write the command you mean'}`]),
   // ---------------------------------------------------------------- host files (src/hosts.ts)
-  'dockerfile-pipefail-missing': caveat<Record<string, never>>(['3.2.3', '4.3.1'], () => [
+  'dockerfile-pipefail-missing': withConvention(caveat<Record<string, never>>(['3.2.3', '4.3.1'], () => [
     'パイプの途中のコマンドが失敗しても、RUN は最後のコマンドの結果だけで成功扱いになり、ビルドは止まりません。先に `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` と書くと失敗を検出できます。',
-    'If a command in the middle of the pipe fails, RUN still succeeds with the status of the last command, and the build goes on. Put `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` first to catch such failures.'], NO_HEADING),
+    'If a command in the middle of the pipe fails, RUN still succeeds with the status of the last command, and the build goes on. Put `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` first to catch such failures.'], NO_HEADING), 'pipefail'),
   'python-string-without-shell': pitfall<Record<string, never>>(['3.7.2'], () => [
     'shell=True なしで文字列を渡すと、文字列全体が1つのプログラム名として扱われます（引数やパイプは使えず、多くの場合 FileNotFoundError）。`["cmd", "arg"]` のようなリストで渡すか、shell=True を付けます。',
     'Without shell=True the whole string is taken as one program name (no arguments or pipes; usually FileNotFoundError). Pass a list like `["cmd", "arg"]`, or add shell=True.'], NO_HEADING),
-  'python-shell-injection': pitfall<Record<string, never>>(['3.1.1', '3.1.2'], () => [
+  'python-shell-injection': withConvention(pitfall<Record<string, never>>(['3.1.1', '3.1.2'], () => [
     'Python の値を埋め込んだ文字列をシェルが実行します。値に `;` や `$(…)` が含まれると任意のコマンドが実行されます。`shlex.quote()` でクォートするか、shell=True をやめてリストで渡してください。',
-    'the shell runs a string with Python values pasted in, so a value containing `;` or `$(…)` runs arbitrary commands. Quote it with `shlex.quote()`, or drop shell=True and pass a list.'], { ja: 'シェルインジェクションの危険: ', en: 'Shell injection risk: ' }),
-  'actions-script-injection': pitfall<{ expr: string }>(['3.1.1', '3.1.2'], ({ expr }) => [
+    'the shell runs a string with Python values pasted in, so a value containing `;` or `$(…)` runs arbitrary commands. Quote it with `shlex.quote()`, or drop shell=True and pass a list.'], { ja: 'シェルインジェクションの危険: ', en: 'Shell injection risk: ' }), 'quote-for-shell-in-python'),
+  'actions-script-injection': withConvention(pitfall<{ expr: string }>(['3.1.1', '3.1.2'], ({ expr }) => [
     `\`${expr}\` は外部の人が自由に書ける値で、そのままスクリプトに埋め込まれます（\`"; curl … | sh #\` のような値で任意のコマンドが実行される）。\`env:\` で環境変数に渡し、\`"$変数"\` として使ってください。`,
-    `\`${expr}\` can be set by anyone and is pasted into the script as it is (a value like \`"; curl … | sh #\` runs arbitrary commands). Pass it through \`env:\` and use it as \`"$VAR"\`.`], { ja: 'スクリプトインジェクションの危険: ', en: 'Script injection risk: ' }),
+    `\`${expr}\` can be set by anyone and is pasted into the script as it is (a value like \`"; curl … | sh #\` runs arbitrary commands). Pass it through \`env:\` and use it as \`"$VAR"\`.`], { ja: 'スクリプトインジェクションの危険: ', en: 'Script injection risk: ' }), 'actions-expression-through-env'),
 } satisfies Record<string, Entry<never>>;
 
 export type FactId = keyof typeof MESSAGES;
@@ -664,14 +672,15 @@ export type Params<K extends FactId> = Parameters<(typeof MESSAGES)[K]['text']>[
  * the word, the body), its level, the word after the mark that names the level or the kind of problem ("Pitfall:",
  * "Caveat:", "Script injection risk:"; empty when there is none), and the rest. `code`: the problem it is, in the
  * editors (`DocumentIssue.code`: a fact's id, a style check, a dialect issue). The views read the level and the word
- * from here, never from the text.
+ * from here, never from the text. `convention`: the habit its advice is, beside the fact it states (src/conventions.ts;
+ * data only, no view shows it).
  */
-export interface Note { text: string; level: NoteLevel; label: string; body: string; code?: string }
+export interface Note { text: string; level: NoteLevel; label: string; body: string; code?: string; convention?: ConventionId }
 
 /**
  * A fact as a note: its id (also its `code`), its kind, and the sections it cites; where it is bash's behaviour rather
  * than the manual's, its `basis` (none: the manual's sections in `refs`, `basisFor`), and a command that shows it
- * (`tryIt`), both from the probe row that checks it (src/basis.ts).
+ * (`tryIt`), both from the probe row that checks it (src/basis.ts); a pitfall whose advice is a habit, its `convention`.
  */
 export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly string[]; code: FactId; basis?: Basis; tryIt?: TryIt }
 
@@ -714,7 +723,7 @@ export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> e
   const level = typeof e.level === 'function' ? e.level(params[0]) : e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note');
   const { text, label, body } = marked(lang, level, lang === 'ja' ? ja : en, { kind: e.kind, heading: e.heading });
   const { basis, tryIt } = basisOf(typeof e.basis === 'function' ? e.basis(params[0]) : e.basis);
-  return { id, kind: e.kind, level, text, refs: e.refs, label, body, code: id, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}) };
+  return { id, kind: e.kind, level, text, refs: e.refs, label, body, code: id, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}), ...(e.convention ? { convention: e.convention } : {}) };
 }
 
 /** Whether the note with `code` is a problem when it is a warning or a caveat: all are, but the facts that `notProblem` marks. */
@@ -741,13 +750,18 @@ export function said(facts: readonly Fact[], pitfalls: boolean | undefined): Fac
 }
 
 /**
- * The one gate of the `notes.basis` setting (docs/design/basis.md, 4): the fact as the explanation carries it, with no
- * basis and no try-it when the setting is off, as `said` leaves the pitfalls out.
+ * The one gate of the `notes.basis` setting (docs/design/basis.md, 4): the fact, or a note's data, as the explanation
+ * carries it, with no basis, no try-it and no convention when the setting is off, as `said` leaves the pitfalls out.
  */
-export function basisGate(f: Fact, basis: boolean | undefined): Fact {
-  if (basis !== false || (!f.basis && !f.tryIt)) return f;
-  const { basis: _b, tryIt: _t, ...rest } = f;
-  return rest;
+export function basisGate<N extends Note & { basis?: Basis; tryIt?: TryIt }>(f: N, basis: boolean | undefined): N {
+  if (basis !== false || (!f.basis && !f.tryIt && !f.convention)) return f;
+  const { basis: _b, tryIt: _t, convention: _c, ...rest } = f;
+  return rest as N;
+}
+
+/** A note's convention, as a field of another record (a problem of `--check`): none when it has none. */
+export function conventionOf({ convention }: Note): { convention?: ConventionId } {
+  return convention ? { convention } : {};
 }
 
 // ---------------------------------------------------------------- what an explanation rests on (docs/design/basis.md)
