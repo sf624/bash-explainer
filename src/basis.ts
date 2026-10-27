@@ -106,17 +106,20 @@ const WORD_KINDS = new Set(['argument', 'string', 'variable', 'expansion', 'numb
  * The basis of a token, with the tokens `above` it (the outermost first, its parent last): its own; else, for a token
  * of origin `argv` or `embedded`, the `spec` of the command that reads it, the nearest command token above it (only a
  * program's has one: a builtin's, a function's, bash's are the manual's); else the manual's sections (`basisFor`).
- * The argv tokens, and the tokens of a word (`"a+"`, the quotes of `grep -E "a+"`), lie between a token and its
- * command; any other token above it (`[[ ]]`, a redirection) ends the search with no command. Nothing but the command
- * token stores the `spec`: the row model and a reader of the JSON apply this rule (docs/design/basis-spec-convention.md, 1.4).
+ * The argv tokens, the tokens of an embedded language (sed's `/x/d`, awk's `getline x`), and the tokens of a word
+ * (`"a+"`, the quotes of `grep -E "a+"`) lie between a token and its command; any other token above it (`[[ ]]`, a
+ * redirection) ends the search with no command. A command another runs (`sudo rm`, `env bash`) rests on its own spec,
+ * never on its runner's: on its own basis, else the manual's, and its words rest on it as on a command bash runs.
+ * Nothing but the command token stores the `spec`: the row model and a reader of the JSON apply this rule
+ * (docs/design/basis-spec-convention.md, 1.4).
  */
 export function tokenBasisFor(t: BasisPart, above: readonly BasisPart[]): Basis {
-  if (t.basis) return t.basis;
-  if (t.origin === 'argv' || t.origin === 'embedded') {
+  const runs = t.origin === 'argv' && RUN_KINDS.has(t.kind);
+  if (!t.basis && !runs && (t.origin === 'argv' || t.origin === 'embedded')) {
     for (let i = above.length - 1; i >= 0; i--) {
       const a = above[i];
-      const read = a.origin === 'argv' || a.origin === 'embedded';
-      if (read ? !RUN_KINDS.has(a.kind) : WORD_KINDS.has(a.kind)) continue;
+      const between = a.origin === 'embedded' || (a.origin === 'argv' ? !RUN_KINDS.has(a.kind) : WORD_KINDS.has(a.kind));
+      if (between) continue;
       if (a.basis?.kind === 'spec') return a.basis;
       break;
     }

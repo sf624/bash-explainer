@@ -6,7 +6,7 @@ import { givenOptions, has as hasOption, operands, restrictedRefusal, values } f
 import type { ArgvParse } from '../argv/interpret';
 import type { CommandSpec, ShellVariant } from '../argv/spec';
 import type { Basis } from '../basis';
-import { canonicalName, impliedWords, lookupCommand } from '../dict/aliases';
+import { impliedWords, lookupCommand, specName } from '../dict/aliases';
 import { customCommandSpec } from '../dict/custom';
 import type { Flavor } from '../embedded/regex';
 import { isProgram } from '../namefacts';
@@ -38,14 +38,17 @@ export function specFor(cx: Explainer, name: string): CommandSpec | undefined {
 
 /**
  * What the token of a command `name` that runs the program of `spec` rests on (docs/design/basis-spec-convention.md,
- * 1.1): the spec, by the dictionary's name of it (`/bin/rm` is `rm`, `egrep` is `grep`; a host's command by its own).
- * None for a builtin's spec, a program the manual describes (bash's options are 6.1's), a command of the
- * customCommands setting (the reader wrote its text), or no spec.
+ * 1.1): the spec, by the dictionary's name of it (`specName`: `/bin/rm` is `rm`, `egrep` is `grep`, `dash` and `zsh`,
+ * read with the options of `sh`, are `sh`; a host's command by its own). None for a builtin's spec, a program the
+ * manual describes, by that name (`bash`, `bash5.2`, `rbash`: its options are 6.1's), a command of the customCommands
+ * setting (the reader wrote its text), or no spec.
  */
 export function programBasis(cx: Explainer, name: string, spec: CommandSpec | undefined): Basis | undefined {
   const base = name.slice(name.lastIndexOf('/') + 1);
-  if (!spec || spec.builtin || programSections(base).length || customCommandSpec(cx.opts.customCommands?.[base])) return undefined;
-  return { kind: 'spec', command: hostCommand(cx, name) === spec ? name : canonicalName(base) };
+  if (!spec || spec.builtin || customCommandSpec(cx.opts.customCommands?.[base])) return undefined;
+  if (hostCommand(cx, name) === spec) return { kind: 'spec', command: name };
+  const command = specName(base);
+  return programSections(command).length ? undefined : { kind: 'spec', command };
 }
 
 /**

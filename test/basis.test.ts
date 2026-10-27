@@ -334,17 +334,36 @@ describe('basis: what an explanation rests on', () => {
     ]);
     // (Reading copies it to the node of the command's name.)
     assert.deepStrictEqual(readingNodes(ex.reading!).filter((n) => n.basis).map((n) => [n.kind, n.label, n.basis]), [['commandName', 'grep', spec('grep')]]);
-    // By the dictionary's name: a path, a name the dictionary reads as another, a program `hash -p` or `enable -n` names.
-    for (const [src, line, command] of [['/bin/sed -n p f', 0, 'sed'], ['egrep x f', 0, 'grep'], ['hash -p /bin/ls l\nl -l', 1, 'ls'], ['enable -n echo\necho hi', 1, 'echo']] as const) {
+    // By the dictionary's name: a path, a name the dictionary reads as another, a program `hash -p` or `enable -n` names,
+    // a shell read with the options of `sh` (`zsh`, `posh`: sh's entry), the program of a builtin's name.
+    for (const [src, line, command] of [
+      ['/bin/sed -n p f', 0, 'sed'], ['egrep x f', 0, 'grep'], ['hash -p /bin/ls l\nl -l', 1, 'ls'], ['enable -n echo\necho hi', 1, 'echo'],
+      ['dash -c ls', 0, 'sh'], ['/bin/zsh -c ls', 0, 'sh'], ['mksh -c ls', 0, 'sh'], ['posh -c ls', 0, 'sh'], ['/bin/kill -9 1', 0, 'kill'],
+    ] as const) {
       assert.deepStrictEqual(explain(src, line).items.map((t) => t.basis), [spec(command)], src);
     }
     // A command another runs has its own spec (`rm`), not that of the command that runs it; bash's are the manual's.
     assert.deepStrictEqual(rests('sudo rm -rf x'), ['sudo: spec sudo', 'rm: spec rm', '-rf: spec rm', '-r: spec rm', '-f: spec rm', 'x: spec rm']);
-    assert.deepStrictEqual(rests('env X=1 bash -c ls').slice(0, 4), ['env: spec env', 'X=1: spec env', 'bash: spec env', '-c: manual']);
+    // (One with no spec of its own, and its words, are the manual's, as when bash runs it: never its runner's spec.)
+    assert.deepStrictEqual(rests('env X=1 bash -c ls').slice(0, 5), ['env: spec env', 'X=1: spec env', 'bash: manual', '-c: manual', 'ls: manual']);
+    assert.deepStrictEqual(rests('sudo bash -c ls').slice(0, 3), ['sudo: spec sudo', 'bash: manual', '-c: manual']);
+    assert.deepStrictEqual(rests('sudo frobnicate -x'), ['sudo: spec sudo', 'frobnicate: manual', '-x: manual']);
+    assert.deepStrictEqual(rests('frobnicate -x'), ['frobnicate: manual', '-x: manual']);
+    assert.deepStrictEqual(rests('f() { :; }\ntimeout 5 f -x', 1), ['timeout: spec timeout', '5: spec timeout', 'f: manual', '-x: manual']);
+    assert.deepStrictEqual(rests('f() { :; }\nxargs f -x', 1), ['xargs: spec xargs', 'f: manual', '-x: manual']);
     assert.deepStrictEqual(rests('xargs printf "%s"').filter((r) => r.startsWith('%s') || r.startsWith('printf')), ['printf: spec printf', '%s: spec printf']);
     // (The regex of `=~` is bash's; that of `grep -E` grep's, in a word of several parts too.)
     assert.deepStrictEqual(rests('[[ x =~ a+ ]]').filter((r) => /^(a|\+):/.test(r)), ['a: manual', '+: manual']);
     assert.deepStrictEqual(rests('grep -E x"a+" f').filter((r) => /^(x|a|\+):/.test(r)), ['x: manual', 'x: spec grep', 'a: spec grep', '+: spec grep']);
+    // (The tokens of an embedded language rest on its command, under its tokens of kind `command` too: sed's `/x/d`,
+    // awk's `getline x`, perl's `print`.)
+    assert.deepStrictEqual(rests("sed -e '/x/d' f").filter((r) => !r.startsWith("'")), [
+      'sed: spec sed', '-e: spec sed', '/x/d: spec sed', '/x/: spec sed', 'x: spec sed', 'd: spec sed', 'f: spec sed',
+    ]);
+    assert.deepStrictEqual(rests("awk '{print $1; getline x}' f").filter((r) => !r.startsWith("'")), [
+      'awk: spec awk', '{print $1; getline x}: spec awk', 'print $1: spec awk', '$1: spec awk', 'getline x: spec awk', 'getline: spec awk', 'f: spec awk',
+    ]);
+    assert.ok(rests("perl -ne 'print if /x/' f").filter((r) => !r.startsWith("'")).every((r) => r.endsWith('spec perl')));
   });
 
   it('gives no spec to a builtin, bash, a function, an alias, an unknown or a custom command; bats\' own commands have bats\'', () => {
@@ -355,6 +374,8 @@ describe('basis: what an explanation rests on', () => {
     none('read -r x');
     none("bash -c 'echo hi'");
     none('/bin/bash --posix x.sh');
+    none("bash5.2 -c 'echo hi'");
+    none("/bin/rbash -c 'echo hi'");
     none('f() { :; }\nf -x', 1);
     none("shopt -s expand_aliases\nalias l='ls -l'\nl /", 2);
     none('shopt -s expand_aliases\nalias g=grep\ng -n x f', 2);
@@ -363,9 +384,9 @@ describe('basis: what an explanation rests on', () => {
     none('grep -n x f', 0, { customCommands: { grep: { summary: 'My grep' } } });
     none('builtin ls');
     none('command cd /');
-    assert.deepStrictEqual(rests('sudo "$cmd" x').slice(0, 2), ['sudo: spec sudo', '"$cmd": spec sudo']);
+    assert.deepStrictEqual(rests('sudo "$cmd" x'), ['sudo: spec sudo', '"$cmd": manual', 'x: manual']);
     assert.ok(!allTokens(explain('sudo "$cmd" x').items[0].children).some((t) => t.basis));
-    assert.deepStrictEqual(rests('sudo tool -a x', 0, { customCommands: { tool: { summary: 'T' } } }).slice(0, 2), ['sudo: spec sudo', 'tool: spec sudo']);
+    assert.deepStrictEqual(rests('sudo tool -a x', 0, { customCommands: { tool: { summary: 'T' } } }), ['sudo: spec sudo', 'tool: manual', '-a: manual', 'x: manual']);
     // (An alias explained as the command it runs, with its words after the alias's, says that command's spec.)
     assert.deepStrictEqual(explain("shopt -s expand_aliases\nalias ls='ls -F'\nls /", 2).items[0].basis, spec('ls'));
     const lines = ['@test "a" {', '  run grep -n x f', '}'];
