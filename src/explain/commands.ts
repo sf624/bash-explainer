@@ -22,7 +22,7 @@ import { fact } from '../messages';
 import { nameInfo } from '../namefacts';
 import { builtinSections, programSections } from '../refs';
 import { inFunction, processOf, readAs, shellEffectOf } from '../semantics/env';
-import { assignmentsOf, type Missed, type NameResolution, testSpecOf } from '../semantics/names';
+import { type AliasResolution, aliasesAfter, assignmentsOf, type Missed, type NameResolution, testSpecOf } from '../semantics/names';
 import { docLine, option } from '../semantics/state';
 import { isPlainWord, literalContent, staticWordValue, surelyHasSlash } from '../staticword';
 import { returnInSubstitution, scopeOf } from '../substitution-tokens';
@@ -152,6 +152,25 @@ function commandToken(cx: Explainer, n: SyntaxNode, tail?: Tail): Token {
   return commandTail(cx, n, nameNode, args, prefix, tail ? [] : redirs, tail);
 }
 
+/**
+ * `toks`, the tokens of the words of the command `n`, with those of the words after the alias `res` that bash reads as
+ * aliases too (6.6: `alias s='sudo '`, `s ll`) saying so.
+ */
+function aliasArguments(cx: Explainer, n: SyntaxNode, res: AliasResolution, toks: Token[]): Token[] {
+  const after = aliasesAfter(n, res, (name, w) => resolve(cx, name, w));
+  return toks.map((t) => {
+    const a = after.find((x) => x.word.startPosition.row === t.span.start.line && x.word.startPosition.column === t.span.start.character && x.word.text === t.label);
+    if (!a) return t;
+    const { name, alias } = a.res;
+    const line = docLine(alias.at) + 1;
+    return {
+      ...cx.tok(a.word, 'alias', cx.s(`行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる。前のエイリアスの置き換え先が空白で終わるので、bash はこの単語もエイリアスか調べる`,
+        `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`. The text of the alias before it ends with a blank, so bash checks this word for an alias too`)),
+      refs: ['6.6'],
+    };
+  });
+}
+
 /** The assignments before the command name (as tokens), the arguments, and the redirections of a command. */
 function commandParts(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode): { prefix: Token[]; args: SyntaxNode[]; redirs: SyntaxNode[] } {
   const prefix: Token[] = [];
@@ -238,6 +257,8 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   if (refused) cx.note(fact(cx.lang, 'restricted-refused', { kind: head.kind === 'command' ? 'slash' : 'builtin', name: head.name, ...refused }), n);
   if (tail && head.kind === 'builtin' && replacesShell(head.spec!) && !read.parse.roles.some((r) => r.role.role === 'command')) tail.toShell = true;
   let argToks = read.tokens;
+  // (After an alias whose text ends with a blank, bash reads the next word as an alias too: 6.6.)
+  if (head.res?.kind === 'alias') argToks = aliasArguments(cx, n, head.res, argToks);
   // `test` and `[` read their words as an expression (src/testexpr.ts), when the name runs one of them.
   const bracket = head.test?.closingOperand !== undefined;
   if (head.test) argToks = readByCommand(testArgs(cx, n, commandTest(head.test, args, bashTest(cx, head.test)), bracket, !!head.test.builtin));

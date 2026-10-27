@@ -287,6 +287,9 @@ export const MESSAGES = {
   'alias-defined-same-unit': note<{ name: string; line: number }>(['6.6'], ({ name, line }) => [
     `\`${name}\` は行 ${line} で \`alias\` として定義されますが、bash は行（複合コマンドや関数の本体も）をまとめて読んでから実行するので、同じ行で定義したエイリアスはまだ使えません。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
     `\`${name}\` is defined as an alias on line ${line}, but bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`]),
+  'unbraced-element': pitfall<{ name: string; sub: string }>(['6.7'], ({ name, sub }) => [
+    `\`$${name}${sub}\` は配列の要素ではありません: \`$${name}\`（\`\${${name}[0]}\` と同じ）の後に文字列 \`${sub}\` が続きます（クォートしなければグロブにもなります）。要素は \`\${${name}${sub}}\` と波かっこで囲んで書きます`,
+    `\`$${name}${sub}\` is not an element of the array: it is \`$${name}\` (that is \`\${${name}[0]}\`) followed by the text \`${sub}\` (a glob too, unquoted). For the element, write \`\${${name}${sub}}\` with braces`]),
   'alias-defined-later': note<{ name: string; line: number }>(['6.6'], ({ name, line }) => [
     `\`${name}\` は行 ${line} で \`alias\` として定義されますが、これはその前に読まれ、エイリアスは実行された後に読まれるものにだけ効きます。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
     `\`${name}\` is defined as an alias on line ${line}, but this is read before that, and an alias works only on what is read after it ran. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`]),

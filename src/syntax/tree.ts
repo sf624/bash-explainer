@@ -136,6 +136,14 @@ export interface SyntaxTree {
    * and every position stays. Undefined when there were none (or the adapter does not mask).
    */
   readonly carriageReturns?: readonly number[];
+  /**
+   * The text of `owner` from `start` to `end` read as an arithmetic expression, as bash reads the index of an indexed
+   * array when it runs (6.7): the index of a subscript (`i+1` of `a[i+1]`), or of a value `[i+1]=x` of a compound
+   * assignment. bash does not parse an index with the line: the array's kind decides, when it runs, whether it is
+   * arithmetic or a key (`m[a b]`). So this node is not in the tree: its parent is `owner`, whose children do not have
+   * it. Undefined when the text is no expression of one part (`x y`, `1,2`).
+   */
+  readonly arithmetic: (owner: SyntaxNode, start: number, end: number) => SyntaxNode | undefined;
 }
 
 /** What every adapter provides. Parsing is synchronous. */

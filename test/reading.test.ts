@@ -557,21 +557,27 @@ describe('the reading tree of a line', () => {
       '      bash/assignmentArgument arr=(1 "$y" *.txt)',
       '        bash/name arr',
       '        bash/operator =',
-      '        bash/word 1',
-      '        bash/word "$y"',
-      '          bash/quote "$y"',
-      '            bash/expansion $y',
-      '        bash/word *.txt',
-      '          bash/pattern *',
-      '          bash/string .txt',
+      '        bash/part (1 "$y" *.txt)',
+      '          bash/operator (',
+      '          bash/word 1',
+      '          bash/word "$y"',
+      '            bash/quote "$y"',
+      '              bash/expansion $y',
+      '          bash/word *.txt',
+      '            bash/pattern *',
+      '            bash/string .txt',
+      '          bash/operator )',
       '        command/assignment arr=(1 "$y" *.txt)',
       '    bash/operator ;',
       '    bash/command a=(p q)',
       '      bash/assignment a=(p q)',
       '        bash/name a',
       '        bash/operator =',
-      '        bash/word p',
-      '        bash/word q',
+      '        bash/part (p q)',
+      '          bash/operator (',
+      '          bash/word p',
+      '          bash/word q',
+      '          bash/operator )',
     ]);
     // (3.4: such an argument is expanded as an assignment; it is not one made before the command, 3.7.1.)
     assert.deepStrictEqual(find(explain('local x=1').reading!, 'x=1').refs, ['3.4']);
@@ -665,6 +671,10 @@ describe('the reading tree of a line', () => {
       '    bash/argument ${a[0]:-def}',
       '      bash/expansion ${a[0]:-def}',
       '        bash/name a[0]',
+      '          bash/name a',
+      '          bash/operator [',
+      '          bash/expression 0',
+      '          bash/operator ]',
       '        bash/operator :-',
       '        bash/word def',
       '      command/argument ${a[0]:-def}',
@@ -837,7 +847,7 @@ describe('the reading tree of a line', () => {
   it('is not made unless asked for, nor for a line with nothing to explain', () => {
     assert.strictEqual(analyzer.explainLine(parser.parse('echo a'), 0, 'bash').reading, undefined);
     assert.strictEqual(explain('echo a\n\n', 1).reading, undefined);
-    assert.strictEqual(readingTree(parser.parse(''), [], { lang: 'en', resolve: (name) => ({ kind: 'file', name, path: 'search', known: false }), meaning: () => undefined }), undefined);
+    assert.strictEqual(readingTree(parser.parse(''), [], { lang: 'en', resolve: (name) => ({ kind: 'file', name, path: 'search', known: false }), meaning: () => undefined, arrayKind: () => 'unknown' }), undefined);
   });
 });
 

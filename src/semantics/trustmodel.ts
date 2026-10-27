@@ -51,11 +51,12 @@ export interface StringTrees {
   /** The root of `text`, the value the word `word` of `alias` gives, read alone (for an alias no command names). */
   alias(word: SyntaxNode, text: string): SyntaxNode;
   /**
-   * The root of the alias text `text` with the rest of the simple command `command`: the tree the walk runs where it
-   * expands the alias there. Past the trees a model makes one per command (`ALIAS_TREES`), a tree shared by the
-   * commands of the same text, and `capped` is set.
+   * The root of the alias text `text` with the rest of the simple command `command` (from the offset `rest`, the end of
+   * its name unless bash read the words after it as aliases too: `aliasTexts`): the tree the walk runs where it expands
+   * the alias there. Past the trees a model makes one per command (`ALIAS_TREES`), a tree shared by the commands of the
+   * same text, and `capped` is set.
    */
-  expansion(command: SyntaxNode, text: string): SyntaxNode;
+  expansion(command: SyntaxNode, text: string, rest: number): SyntaxNode;
   readonly capped: boolean;
 }
 

@@ -39,7 +39,7 @@ import type { BashVersion } from '../bashversion';
 import { field, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { bracedWords } from './brace';
 import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
-import { aliasName, aliasOf, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
+import { aliasName, aliasOf, aliasTexts, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
 import { localeWritten, openingBlinds, type Opening } from './opening';
 import { closesStandard } from './redirects';
@@ -745,10 +745,10 @@ class Scan {
   /**
    * The aliases, read where the walk may run them: at each command named like an alias the script defines, the tree of
    * each text the alias may have there with the rest of the command (the walk's: `StringTrees.expansion`), with the
-   * commands in it in turn, but not in an alias it comes from. Its text is foreign (bash also expands an alias after
-   * one whose text ends with a blank, which the walk does not follow), and the rest of the command is read where the
-   * command is, now as part of that tree: the facts of its statements are the walk's. An alias no command names is
-   * read alone, as foreign text.
+   * commands in it in turn, but not in an alias it comes from; when its text ends with a blank, also with the words
+   * after it replaced by the texts of the aliases they name (6.6). Its text is foreign, and the rest of the command is
+   * read where the command is, now as part of that tree: the facts of its statements are the walk's. An alias no
+   * command names is read alone, as foreign text.
    */
   private aliases(): void {
     const read = new Set<AliasDef>();
@@ -776,13 +776,17 @@ class Scan {
           texts.add(d.value);
           read.add(d);
           more = true;
-          const tree = this.strings.expansion(c, d.value);
-          if (this.strings.capped) this.blindFor('too many aliases expanded');
-          this.expanding.set(tree, new Set([...from, name]));
-          origin.set(tree, top);
-          // (A command in an alias's text is foreign: so is the rest of it, in the tree of an alias expanded there.)
-          const { rest: _, ...outer } = where;
-          this.visit(tree, { fn: where.fn, foreign: true, now: false, rest: { at: d.value.length, where: outer } });
+          // (With the words after it read as aliases too, when its text ends with a blank, and as they are: 6.6.)
+          const values = (word: string): string[] => [...new Set(this.aliasDefs.filter((x) => x.name === word).map((x) => x.value))];
+          for (const { text, rest } of aliasTexts(c, d.value, values, true)) {
+            const tree = this.strings.expansion(c, text, rest);
+            if (this.strings.capped) this.blindFor('too many aliases expanded');
+            this.expanding.set(tree, new Set([...from, name]));
+            origin.set(tree, top);
+            // (A command in an alias's text is foreign: so is the rest of it, in the tree of an alias expanded there.)
+            const { rest: _, ...outer } = where;
+            this.visit(tree, { fn: where.fn, foreign: true, now: false, rest: { at: text.length, where: outer } });
+          }
         }
       }
     }

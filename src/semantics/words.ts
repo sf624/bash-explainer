@@ -12,7 +12,7 @@ import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellw
 import { patsubMiscounts } from '../bracket';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
-import { ansiCValue, decodedSlice, decodedText, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
+import { ansiCValue, decodedSlice, decodedText, elementClose, plainWords, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, sameInEveryLocale, substring } from './chars';
 import { bracedWords, braceStep, wordAlternatives } from './brace';
@@ -26,7 +26,7 @@ export { underscoreValue, unreliableNames };
 
 /** Where a word is: its context decides which expansions it undergoes. */
 export type WordContext =
-  | 'command-name' | 'argument' | 'assignment-value' | 'array-element' | 'declaration-argument'
+  | 'command-name' | 'argument' | 'assignment-value' | 'declaration-argument' | 'array-element' | 'array-element-assignment' | 'array-element-assoc'
   | 'cond-operand' | 'cond-pattern' | 'cond-regex'                    // [[ ]]
   | 'case-word' | 'case-pattern' | 'for-list'
   | 'redirect-target' | 'heredoc-body' | 'herestring'
@@ -66,6 +66,8 @@ export const CONTEXTS: Readonly<Record<WordContext, ContextRule>> = {
   'for-list': { ...ARGUMENT, manual: '3.2.5.1' },
   // (`a=(x=~/y)` keeps its tilde: only an argument that looks like an assignment has one after `=`.)
   'array-element': { ...ARGUMENT, tilde: 'start', manual: '6.7' },
+  'array-element-assignment': { brace: true, tilde: 'assignment', split: false, glob: false, fields: 'many', manual: '6.7' }, // `a=([0]=$x [1]=*)` (bash 5.2 brace-expands `[2]={a,b}` to the values `[2]=a`, `[2]=b`)
+  'array-element-assoc': { ...ONE, tilde: 'none', manual: '6.7' }, // `m=(k {a,b} $x *)` in an associative array (bash 5.3 expands a tilde there, 5.2 not)
   // A declaration builtin's word that looks like an assignment is one (the parser gives it as such); the others are arguments.
   'declaration-argument': { ...ARGUMENT, manual: '4.2' },
   'assignment-value': { ...ONE, tilde: 'assignment', manual: '3.4' },
@@ -188,7 +190,7 @@ function contextOf(w: SyntaxNode): WordContext | undefined {
     case 'command_name': return 'command-name';
     case 'command': return w.field !== 'argument' ? undefined : declarationContext(p, w) ?? 'argument';
     case 'variable_assignment': return w.field === 'value' ? 'assignment-value' : undefined;
-    case 'array': return 'array-element';
+    case 'array': return elementClose(w.text) ? 'array-element-assignment' : 'array-element';
     case 'for_statement': case 'select_statement': return w.field === 'value' ? 'for-list' : undefined;
     case 'case_statement': return w.field === 'value' ? 'case-word' : undefined;
     case 'case_item': return w.field === 'value' ? 'case-pattern' : undefined;
@@ -282,12 +284,6 @@ function nearestQuote(n: SyntaxNode): boolean {
   let a = n.parent!;
   while (a.type === 'concatenation' || a.type === 'translated_string') a = a.parent!;
   return a.type === 'string' || a.type === 'heredoc_body';
-}
-
-/** The plain words (unquoted text) of a word. */
-function plainWords(nodes: readonly SyntaxNode[]): SyntaxNode[] {
-  return nodes.flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n]))
-    .filter((n) => n.type === 'word' || n.type === 'extglob_pattern' || n.type === 'brace_expression');
 }
 
 /** The tilde prefixes of a word, as its context and the mode read them (manual 3.5.2; src/staticword.ts `tildeSpots`). */
@@ -385,9 +381,10 @@ function optionsOf(st: ShellState, shell?: Shell): WordOptions {
 
 /** The meaning of a word where it runs; `whole`: also its `value` and `failure` (the walk's conditions need neither). */
 function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: Shell | undefined, whole = true): WordMeaning {
-  // A subscript of an associative array is a key; of an indexed one (or one not known as associative), arithmetic.
+  // A subscript of an associative array is a key; of an indexed one (or one not known as associative), arithmetic. (So
+  // is a value in the list of an associative array.)
   const sub = found === 'subscript-indexed' ? nodes[0].parent! : undefined;
-  const context: WordContext = sub && attribute(st, field(sub, 'name')!.text, 'A') === 'on' ? 'subscript-assoc' : found;
+  const context: WordContext = sub && attribute(st, field(sub, 'name')!.text, 'A') === 'on' ? 'subscript-assoc' : found.startsWith('array-element') && attribute(st, field(nodes[0].parent!.parent!, 'name')!.text, 'A') === 'on' ? 'array-element-assoc' : found;
   const { posix, glob, ifs, braceOpt } = optionsOf(st);
   const rule = CONTEXTS[context];
   const shape = shapeOf(nodes);

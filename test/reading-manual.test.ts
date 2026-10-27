@@ -8,6 +8,7 @@ import { Analyzer, type Token } from '../src/analyzer';
 import { variableAssignments, variableEmptied, wellKnownVariables } from '../src/dict/syntax';
 import { VARIABLE_SECTIONS } from '../src/manual';
 import { readingNodes, type ReadingNode } from '../src/reading';
+import { shellState } from '../src/semantics/state';
 import { BASH_VARIABLES, readonlyAtStart } from '../src/semantics/vars';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { ui } from '../src/ui/render';
@@ -172,7 +173,7 @@ describe('the reading tree as the Bash manual reads a line (chapter 3)', () => {
 
   it('shows the operator of an assignment (3.4), and cites a positional or special parameter in braces (3.4.1, 3.4.2)', () => {
     const r = reading('x=1 y+=(2) cmd');
-    assert.deepStrictEqual(kids(find(r, 'y+=(2)', 'assignment')), ['name y', 'operator +=', 'word 2']);
+    assert.deepStrictEqual(kids(find(r, 'y+=(2)', 'assignment')), ['name y', 'operator +=', 'part (2)']);
     assert.deepStrictEqual(find(r, '=', 'operator').refs, ['3.4']);
     // (In an `if`, too: the operator is the assignment's, not the construct's.)
     assert.deepStrictEqual(find(reading('if a; then x=1; fi'), '=', 'operator').refs, ['3.4']);
@@ -633,6 +634,187 @@ describe('the reading tree as the Bash manual reads the shell variables (chapter
       assert.strictEqual(b(`echo '${lib}' > lib; printf 'echo "[\${FUNCNAME[*]}]"; . ./lib; f x; echo "\${BASH_SOURCE[0]##*/}"' > main; ${p.program ?? 'bash'} main`, { files: [] }), '[]\nf main lib 1\nmain\n');
       // `BASH_REMATCH`: empty after a match that fails. `BASHPID`: a subshell's own. `PS1`, `HISTFILE`: not set in a script.
       assert.strictEqual(b('[[ ab =~ (b) ]]; [[ ab =~ z ]]; echo "${#BASH_REMATCH[@]}"; [ $BASHPID = $(echo $BASHPID) ] || echo own; echo "[${PS1-unset}][${HISTFILE-unset}]"'), '0\nown\n[unset][unset]\n');
+    }
+  });
+});
+
+describe('the reading tree as the Bash manual reads aliases and arrays (chapter 6, 6.6 and 6.7)', () => {
+  const programs: BashOptions[] = [{}, ...(process.env.BASH_EXPLAINER_BASH53 ? [{ program: process.env.BASH_EXPLAINER_BASH53 }] : [])];
+  const all = (src: string, line = 0) => readingNodes(reading(src, line)).filter((n) => n.layer === 'bash');
+  const node = (src: string, label: string, kind?: string, line = 0) => all(src, line).find((n) => n.label === label && (!kind || n.kind === kind))!;
+  const said = (src: string, label: string, line = 0) => readingNodes(reading(src, line)).filter((n) => n.layer === 'command' && n.label === label).map((n) => n.text).join('\n');
+  const notes = (src: string, line = 0) => explain(src, line).notes.join('\n');
+
+  it('reads an element of an array as its name, `[`, the index and `]` (6.7); an indexed array\'s index as arithmetic (6.5)', () => {
+    const src = 'a=(x y); echo ${a[i+1]} ${a[-1]} ${a[1]} ${a[$i]} ${a[i]} "${a[@]}" ${#a[*]} ${a[b[1]+2]} ${a[x y]}';
+    assert.deepStrictEqual(kids(node(src, 'a[i+1]', 'name')), ['name a', 'operator [', 'expression i+1', 'operator ]']);
+    assert.deepStrictEqual(node(src, '[', 'operator').refs, ['6.7']);
+    const ix = node(src, 'i+1', 'expression');
+    assert.deepStrictEqual([ix.refs, ix.text, kids(ix)], [['6.7', '6.5'], 'Index `i+1` (an arithmetic expression)', ['name i', 'operator +', 'expression 1']]);
+    assert.deepStrictEqual(node(src, '+', 'operator').refs, ['6.7', '6.5']);
+    assert.deepStrictEqual(kids(node(src, '-1', 'expression')), ['operator -', 'expression 1']);
+    assert.strictEqual(node(src, '-1', 'expression').text, 'Index -1: the last element');
+    assert.deepStrictEqual(kids(node(src, 'a[1]', 'name')), ['name a', 'operator [', 'expression 1', 'operator ]']);
+    assert.deepStrictEqual(kids(node(src, 'a[$i]', 'name')), ['name a', 'operator [', 'expansion $i', 'operator ]']);
+    assert.deepStrictEqual(kids(node(src, 'a[i]', 'name')), ['name a', 'operator [', 'name i', 'operator ]']);
+    // `@` and `*`: all the elements, a node of their own.
+    assert.deepStrictEqual(kids(node(src, 'a[@]', 'name')), ['name a', 'operator [', 'operator @', 'operator ]']);
+    assert.deepStrictEqual([node(src, '@', 'operator').refs, node(src, '*', 'operator').text], [['6.7'], 'applies to every element of the array']);
+    // (An element in the index, and an index that is no expression: a word, as bash would fail on it.)
+    assert.deepStrictEqual(kids(node(src, 'b[1]+2', 'expression')), ['name b[1]', 'operator +', 'expression 2']);
+    assert.deepStrictEqual(kids(node(src, 'b[1]', 'name')), ['name b', 'operator [', 'expression 1', 'operator ]']);
+    assert.deepStrictEqual(node(src, 'x y', 'word').refs, ['6.7']);
+    // An assignment's name, and arithmetic: the same parts.
+    assert.deepStrictEqual(kids(node('a[i+1]=x', 'a[i+1]', 'name')), ['name a', 'operator [', 'expression i+1', 'operator ]']);
+    assert.deepStrictEqual(kids(node('(( a[i]++ ))', 'a[i]', 'name')), ['name a', 'operator [', 'name i', 'operator ]']);
+    assert.deepStrictEqual(kids(node('echo $((a[1] * 2))', 'a[1]', 'name')), ['name a', 'operator [', 'expression 1', 'operator ]']);
+    // (A hexadecimal index says its value.)
+    assert.match(node('(( a[0x10] ))', '0x10', 'expression').text!, /= 16 in decimal/);
+    for (const p of programs) {
+      assert.strictEqual(runBash('a=(x y z); i=0; echo ${a[i+1]} ${a[-1]} ${a[1+1]}; (( a[i]++ )); declare -p a', p).stdout, 'y z z\ndeclare -a a=([0]="1" [1]="y" [2]="z")\n');
+      assert.strictEqual(runBash('declare -A m; k="a b"; m[$k]=1; m[i+1]=2; echo "${m[a b]} ${m[i+1]}"', p).stdout, '1 2\n');
+    }
+  });
+
+  it('reads the index of an associative array as a key, a word bash expands, and says so where the kind is not known', () => {
+    const src = 'declare -A m; m[$k]=1; echo "${m[$k]}" ${m[a b]}';
+    assert.deepStrictEqual(kids(node(src, 'm[$k]', 'name')), ['name m', 'operator [', 'word $k', 'operator ]']);
+    const key = all(src).filter((n) => n.label === '$k' && n.kind === 'word');
+    assert.deepStrictEqual(key.map((n) => [n.refs, n.text, kids(n)]), [
+      [['6.7', '3.5.3'], undefined, ['expansion $k']],
+      [['6.7', '3.5.3'], 'Key `$k` (the keys of an associative array are strings, not evaluated)', ['expansion $k']],
+    ]);
+    assert.strictEqual(node(src, 'a b', 'word').text, 'Key `a b` (the keys of an associative array are strings, not evaluated)');
+    // (After `source`, the array may be associative: a word.)
+    const maybe = node('source f; echo ${a[i+1]}', 'i+1');
+    assert.deepStrictEqual([maybe.kind, maybe.text], ['word', 'Index (or key, for associative arrays) `i+1`']);
+  });
+
+  it('shows the list of a compound assignment (6.7): its parentheses, its values, and `[k]=v` as its parts', () => {
+    const src = 'a=(one $x [5]=five [i+1]+=six [1]= "[2]=z" *.txt)';
+    const list = node(src, '(one $x [5]=five [i+1]+=six [1]= "[2]=z" *.txt)', 'part');
+    assert.deepStrictEqual([list.refs, list.text], [['6.7'], 'Array: built from the elements inside `( )`']);
+    assert.deepStrictEqual(kids(list), ['operator (', 'word one', 'word $x', 'word [5]=five', 'word [i+1]+=six', 'word [1]=', 'word "[2]=z"', 'word *.txt', 'operator )']);
+    assert.deepStrictEqual(node(src, ')', 'operator').refs, ['6.7']);
+    // Each value undergoes the expansions (3.5): `$x` is split and globbed, as bash does; `one` cites nothing.
+    assert.deepStrictEqual([node(src, 'one', 'word').refs, node(src, '$x', 'word').refs], [undefined, ['3.5.3', '3.5.7', '3.5.8']]);
+    const five = node(src, '[5]=five', 'word');
+    assert.deepStrictEqual([five.text, kids(five)], ['Element with index `5`: set it to `five`', ['operator [', 'expression 5', 'operator ]', 'operator =', 'word five']]);
+    assert.deepStrictEqual(kids(node(src, '[i+1]+=six', 'word')), ['operator [', 'expression i+1', 'operator ]', 'operator +=', 'word six']);
+    assert.deepStrictEqual(kids(node(src, 'i+1', 'expression')), ['name i', 'operator +', 'expression 1']);
+    assert.deepStrictEqual(kids(node(src, '[1]=', 'word')), ['operator [', 'expression 1', 'operator ]', 'operator =']);
+    // (In an associative array's list, the key is a word; with an expansion, its part. A key that is no expression is a word too.)
+    const assoc = 'declare -A m=([$k]=v [x y]=z)';
+    assert.deepStrictEqual(kids(node(assoc, '[$k]=v', 'word')), ['operator [', 'word $k', 'operator ]', 'operator =', 'word v']);
+    assert.deepStrictEqual(kids(node(assoc, '$k', 'word')), ['expansion $k']);
+    assert.deepStrictEqual(node(assoc, 'x y', 'word').refs, ['6.7']);
+    assert.deepStrictEqual(kids(node('a=([x y]=1)', '[x y]=1', 'word')), ['operator [', 'word x y', 'operator ]', 'operator =', 'word 1']);
+    // (A value over two lines.)
+    assert.deepStrictEqual(node('a=([3]="p\nq")', '"p', 'word').span, { start: { line: 0, character: 7 }, end: { line: 1, character: 2 } });
+    for (const p of programs) {
+      assert.strictEqual(runBash('a=(one [5]=five six); a+=(seven [1]=x eight); i=1; b=([i+1]=y z); declare -p a b', p).stdout,
+        'declare -a a=([0]="one" [1]="x" [2]="eight" [5]="five" [6]="six" [7]="seven")\ndeclare -a b=([2]="y" [3]="z")\n');
+    }
+  });
+
+  it('says what array a compound assignment makes (6.7), as bash does', () => {
+    const text = (src: string, label: string) => all(src).find((n) => n.kind === 'assignment' && n.label === label)!.text;
+    assert.strictEqual(text('a=(x [3]=y)', 'a=(x [3]=y)'), 'Assign to `a` an indexed array of the values in `( )` (from index 0; its old elements are removed); `[n]=value` sets index n, and the values after it go on from n+1');
+    assert.strictEqual(text('a=(x); a+=(y)', 'a+=(y)'), 'Append the values in `( )` to the array `a`, after its last index');
+    assert.strictEqual(text('a=()', 'a=()'), 'Make `a` an empty array');
+    assert.strictEqual(text('a+=()', 'a+=()'), 'Add nothing to the array `a`');
+    assert.match(text('source f; b=(x)', 'b=(x)')!, /\. If `b` is associative here, the values are its keys and values instead$/);
+    assert.strictEqual(said('declare -A m=([k]=v)', 'm=([k]=v)'), 'Assign to the associative array `m` (its old elements are removed): each `[key]=value` sets a key');
+    assert.strictEqual(said('declare -A m=(k1 v1)', 'm=(k1 v1)'), 'Assign to the associative array `m` (its old elements are removed): the values are keys and values in turn (`k1` is a key, `v1` its value; the first value has no `[key]=`, so a `[key]=value` is a key or a value too)');
+    assert.match(said('declare -A m=(k)', 'm=(k)'), /\(`k` is a key, with an empty value;/);
+    assert.strictEqual(said('declare -A m=()', 'm=()'), 'Empty the associative array `m` (it stays associative)');
+    assert.strictEqual(text('declare -A m; m+=([j]=w)', 'm+=([j]=w)'), 'Add keys to the associative array `m` (a key it has gets the new value): each `[key]=value` sets a key');
+    assert.strictEqual(text('declare -A m; m+=()', 'm+=()'), 'Add nothing to the associative array `m`');
+    // In the list of keys and values, `[k]=v` is a key; after a first `[k]=v`, a value with none is refused.
+    const pairs = 'declare -A m=(k1 v1 [k2]=v2 7)';
+    assert.deepStrictEqual(['k1', 'v1', '[k2]=v2', '7'].map((w) => [node(pairs, w).text, kids(node(pairs, w))]), [
+      ['Key `k1`', []], ['Value `v1` of the key `k1`', []], ['Key `[k2]=v2`', []], ['Value `7` of the key `[k2]=v2`', []],
+    ]);
+    assert.match(node('declare -A h=([a]=1 b)', 'b').text!, /^Bash refuses this value: the first value starts with `\[key\]=`, so each one needs its `\[key\]=`/);
+    for (const p of programs) {
+      const b = (s: string) => runBash(s, p);
+      // (The keys, sorted: bash lists them in an order of its own.)
+      const keys = 'for k in "${!m[@]}"; do echo "$k=${m[$k]}"; done | sort';
+      assert.strictEqual(b(`declare -A m=([a]=1); m=([b]=2); ${keys}; m+=([b]=3 [c]=4); ${keys}; m=(); declare -p m`).stdout, 'b=2\nb=3\nc=4\ndeclare -A m=()\n');
+      assert.strictEqual(b(`declare -A m=(k1 v1 [k2]=v2 7); ${keys}; declare -A o=(k); declare -p o`).stdout, '[k2]=v2=7\nk1=v1\ndeclare -A o=([k]="" )\n');
+      assert.match(b('declare -A h=([a]=1 b)').stderr, /b': must use subscript when assigning associative array/);
+      assert.strictEqual(b('a=(1 2); a=(); a+=(); declare -p a').stdout, 'declare -a a=()\n');
+    }
+  });
+
+  it('reads a value `[k]=v` as an assignment does: no splitting or globbing; nor in an associative array\'s list', () => {
+    const src = 'a=([0]=$x [1]=host* y$x)';
+    assert.deepStrictEqual([node(src, '$x', 'word').refs, node(src, 'host*', 'word').refs, node(src, '[1]=host*', 'word').text], [undefined, undefined, 'Element with index `1`: set it to `host*`']);
+    assert.deepStrictEqual(node(src, 'y$x', 'word').refs, ['3.5.7', '3.5.8']);
+    assert.deepStrictEqual(node('declare -A m=(k $x *)', '$x', 'word').refs, ['3.5.3']);
+    assert.deepStrictEqual(node('declare -A m=(k $x *)', '*', 'word').refs, undefined);
+    for (const p of programs) {
+      assert.strictEqual(runBash('x="p q"; a=([0]=$x [1]=* y$x); declare -A m=(k $x [*]=*); declare -p a; echo "${m[k]}|${m[[*]=*]-unset}|${#m[@]}"', { ...p, files: ['f1', 'f2'] }).stdout,
+        'declare -a a=([0]="p q" [1]="*" [2]="yp" [3]="q")\np q||2\n');
+    }
+  });
+
+  it('says what bash does with `a[@]=x`, `unset \'a[@]\'`, `declare x[3]` and `$a[1]` (6.7)', () => {
+    assert.match(node('a=(1); a[@]=x', 'a[@]=x', 'assignment').text!, /^Bash refuses this assignment: `@` is no index of an indexed array \("bad array subscript", status 1\)$/);
+    assert.match(node('source f; a[*]=x', 'a[*]=x', 'assignment').text!, /status 1; if `a` is associative, it sets the element with the key `\*`\)$/);
+    assert.match(node('declare -A m; m[@]=x', 'm[@]=x', 'assignment').text!, /with the key `@`/);
+    assert.deepStrictEqual(kids(node('a=(1); a[@]=x', 'a[@]', 'name')), ['name a', 'operator [', 'operator @', 'operator ]']);
+    assert.strictEqual(said("declare -A m; unset 'm[@]'", "'m[@]'"), 'Unset the element of the associative array `m` with the key `@` (not all the elements)');
+    assert.strictEqual(said("a=(1); unset 'a[@]'", "'a[@]'"), 'Remove all the elements of the array `a` (it stays, empty)');
+    assert.strictEqual(said("source f; unset 'a[*]'", "'a[*]'"), 'Remove all the elements of the array `a` (it stays, empty; if it is associative, only the element with the key `*`)');
+    assert.strictEqual(said("a=(1); unset 'a[-1]'", "'a[-1]'"), 'Unset the element `a[-1]` of the array `a` (the other elements keep their indices; a negative index counts back from the end)');
+    assert.match(said('declare -a x[3]', 'x[3]'), /^Declare the array `x` \(bash ignores the subscript `\[3\]`\)/);
+    assert.match(said('export e[1]', 'e[1]'), /^Bash refuses this word: it is not a valid variable name \("not a valid identifier", status 1\)/);
+    assert.match(said('declare -p a[1]', 'a[1]'), /^No variable is named `a\[1\]`: nothing is printed \("not found", status 1\)/);
+    // `$a[1]` is `$a`, then the text `[1]`, where `a` is an array: also in double quotes, and in an associative array.
+    assert.match(notes('a=(x y); echo $a[1] "$a[i]"'), /`\$a\[1\]` is not an element of the array: it is `\$a` \(that is `\$\{a\[0\]\}`\) followed by the text `\[1\]`[^\n]*`\$\{a\[1\]\}`[^\n]*\n.*`\$a\[i\]`/);
+    assert.match(notes('declare -A h; echo $h[k]'), /`\$h\[k\]` is not an element/);
+    assert.doesNotMatch(notes('x=1; echo $x[1] $1[2] ${x}[1]'), /is not an element/);
+    for (const p of programs) {
+      const b = (s: string) => runBash(s, p);
+      assert.match(b('a=(1); a[@]=x').stderr, /a\[@\]: bad array subscript/);
+      assert.strictEqual(b("a=(1 2 3); unset 'a[-1]'; declare -p a; unset 'a[@]'; declare -p a; declare -A m=([@]=x [y]=z); unset 'm[@]'; declare -p m").stdout,
+        'declare -a a=([0]="1" [1]="2")\ndeclare -a a=()\ndeclare -A m=([y]="z" )\n');
+      assert.strictEqual(b("declare -a x[3]; declare -p x; declare -p 'a[1]'; echo $?").stdout, 'declare -a x\n1\n');
+      assert.match(b("export 'e[1]'; echo $?").stderr, /`e\[1\]': not a valid identifier/);
+      assert.strictEqual(b('a=(x y); echo $a[1] "$a[i]"').stdout, 'x[1] x[i]\n');
+    }
+  });
+
+  it('reads the word after an alias whose text ends with a blank as an alias too (6.6), as bash does', () => {
+    const src = "shopt -s expand_aliases\nalias s='sudo ' ll='ls -l' n='s ' t='echo T'\ns ll x\ns n ll\ns x ll\nt ll\ns >/dev/null ll\nalias a/b=x\nalias s='sudo '";
+    assert.deepStrictEqual(kids(node(src, 's ll x', 'command', 2)), ['aliasWord s', 'aliasWord ll', 'argument x']);
+    const ll = node(src, 'll', 'aliasWord', 2);
+    assert.deepStrictEqual([ll.refs, ll.replacement, kids(ll), ll.text], [['6.6'], 'ls -l', ['argument ls', 'argument -l'],
+      'The alias `ll` defined on line 2: replaced by `ls -l`. The text of the alias before it ends with a blank, so bash checks this word for an alias too']);
+    assert.deepStrictEqual(kids(node(src, 's n ll', 'command', 3)), ['aliasWord s', 'aliasWord n', 'aliasWord ll']);
+    // Not after a word that is no alias, an alias whose text ends otherwise, or a redirection.
+    assert.deepStrictEqual(kids(node(src, 's x ll', 'command', 4)), ['aliasWord s', 'argument x', 'argument ll']);
+    assert.deepStrictEqual(kids(node(src, 't ll', 'command', 5)), ['aliasWord t', 'argument ll']);
+    assert.deepStrictEqual(kids(node(src, 's >/dev/null ll', 'command', 6)), ['aliasWord s', 'redirect >/dev/null', 'argument ll']);
+    // The definitions say so, and that bash refuses a name with `/`.
+    assert.match(said(src, 'a/b=x', 7), /^a definition bash refuses: an alias name may not have `\/`, `\$`, a backquote, a quote, a blank or a metacharacter \("invalid alias name", status 1\)$/);
+    assert.match(said(src, "s='sudo '", 8), /The text ends with a blank, so bash checks the word after this alias for an alias too/);
+    // The state follows it: `c d` runs `command declare x=1`; not in a file that may not expand aliases.
+    const tree = parser.parse("#!/bin/bash\nshopt -s expand_aliases\nalias c='command ' d='declare x=1'\nc d\necho \"[$x]\"");
+    assert.strictEqual(shellState(tree).at(tree.root.namedChildren[4]).run.variables.get('x')?.value, '1');
+    const maybe = parser.parse("alias c='command ' d='declare x=1'\nc d\necho \"[$x]\"");
+    assert.notStrictEqual(shellState(maybe).at(maybe.root.namedChildren[2]).run.variables.get('x')?.set, 'on');
+    for (const p of programs) {
+      const b = (s: string) => runBash(`shopt -s expand_aliases\nalias s='echo S ' ll='echo LL' n='s ' t='echo T' c='command ' d='declare x=1'\n${s}`, p);
+      assert.strictEqual(b('s ll x\ns n ll\ns x ll\nt ll\ns >&1 ll\nc d\necho "[$x]"').stdout, 'S echo LL x\nS echo S echo LL\nS x ll\nT ll\nS ll\n[1]\n');
+      assert.match(b("alias 'a/b=x'; echo $?").stderr, /`a\/b': invalid alias name/);
+    }
+  });
+
+  it('cites no empty list of sections', () => {
+    for (const src of ['a=(one two)', 'echo "${x:-\'a\'}"', 'declare -A m=(k v)', 'cat < f']) {
+      assert.deepStrictEqual(readingNodes(reading(src)).filter((n) => n.refs && !n.refs.length).map((n) => n.label), [], src);
     }
   });
 });

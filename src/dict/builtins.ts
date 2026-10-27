@@ -3,6 +3,12 @@ import type { BuiltinCall, CommandSlot, CommandSpec, NameOptions, OperandSpec, O
 import { args, cmd, operand, optionOf, OptSpec, runs, wordTable } from './types';
 import { declarationCommands, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags } from './syntax';
 
+/**
+ * An alias name (6.6): text without a `/`, `$`, backquote, `=`, quote, blank or metacharacter (bash's
+ * `legal_alias_name`). `[`, `{` and `a!b` are names too.
+ */
+export const ALIAS_NAME = String.raw`[^\s/$\`='"\\()<>;&|]+`;
+
 export const shellOptions = {
   errexit: tx('コマンドが失敗したら即座にスクリプトを終了する（`-e` と同じ。ただし、`if`・`while`・`until` の条件、`&&`・`||` の最後以外のコマンド、`pipefail` なしならパイプラインの最後以外のコマンド、`!` を付けたコマンド、およびそこから呼んだ関数の中では終了しない）', 'exit immediately when a command fails (same as `-e`; but not in the condition of `if`, `while` or `until`, in a `&&` or `||` list except its last command, in a pipeline except its last command (unless `pipefail` is on), after `!`, or in a function called from those places)'),
   nounset: tx('未定義の変数を参照したらエラー（`-u` と同じ）', 'error on unset variables (same as `-u`)'),
@@ -536,8 +542,17 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   alias: actsOnShell(b('コマンドの別名を定義する', 'Define a command alias', [
     ['-p', '定義済みの別名を再入力できる形で表示する', 'print the aliases in a reusable form'],
   ], {
-    // `alias NAME=VALUE` defines, `alias NAME` prints; a line of both says both.
+    // `alias NAME=VALUE` defines, `alias NAME` prints; a line of both says both. A name bash refuses, and a text that
+    // ends with a blank, say so when every definition of the line is one (6.6).
     operands: [
+      {
+        pattern: [operand('DEFINITION', 'bash が受け付けない定義: エイリアス名には `/`、`$`、バッククォート、クォート、空白、メタ文字を使えない（「invalid alias name」で終了ステータス 1）',
+          'a definition bash refuses: an alias name may not have `/`, `$`, a backquote, a quote, a blank or a metacharacter ("invalid alias name", status 1)', { repeat: '+', matches: new RegExp(`^(?!${ALIAS_NAME}=)[^=]*=`) })],
+      },
+      {
+        pattern: [operand('DEFINITION', '別名の定義: `=` の前の名前が、後ろの文字列を表す。文字列が空白で終わるので、この別名の次の単語も bash がエイリアスか調べる（`alias sudo=\'sudo \'` なら `sudo ll` でもエイリアス `ll` が使える）',
+          'an alias definition: the name before `=` stands for the text after it. The text ends with a blank, so bash checks the word after this alias for an alias too (with `alias sudo=\'sudo \'`, `sudo ll` uses the alias `ll`)', { repeat: '+', matches: new RegExp(`^${ALIAS_NAME}=[^]*[ \\t]$`) })],
+      },
       { pattern: [operand('DEFINITION', '別名の定義: `=` の前の名前が、後ろの文字列を表す', 'an alias definition: the name before `=` stands for the text after it', { repeat: '+', matches: /^[^=]+=/ })] },
       { pattern: [operand('NAME', '定義を表示する別名（なければ失敗する）', 'alias whose definition to print (it fails when there is none)', { repeat: '+', matches: /^[^=]*$/ })] },
       ...args(operand('NAME', '`名前=値` なら別名の定義（`=` の前の名前が後ろの文字列を表す）、名前だけならその定義の表示', 'with `=`, an alias definition (the name stands for the text after `=`); a name alone prints its definition')).operands!,

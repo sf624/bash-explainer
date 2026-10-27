@@ -100,6 +100,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `bats-negation-ignored` | The test never fails on that line: the assertion is dead. |
 | `bats-run-in-pipeline-stage`, `bats-run-in-pipeline` | `$status` and `$output` are gone, or the pipe reads nothing, every time. |
 | `regex-backslash-dropped` | The regex never means what is written. |
+| `unbraced-element` | `$a[1]` of an array never names the element: it is the first element, then the text `[1]` (6.7). |
 | `distro-alias-in-script` | "command not found" in a script, on every system. |
 | `python-string-without-shell` | Python runs the whole string as one program name: FileNotFoundError. |
 | `python-shell-injection`, `actions-script-injection` | A value can run any command: damage that cannot be undone. |

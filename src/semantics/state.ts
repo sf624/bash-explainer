@@ -238,13 +238,13 @@ export class Scripts implements StringTrees {
     return root;
   }
 
-  expansion(command: SyntaxNode, text: string): SyntaxNode {
+  expansion(command: SyntaxNode, text: string, rest: number): SyntaxNode {
     let byText = this.expansions.get(command);
     if (!byText) this.expansions.set(command, (byText = new Map()));
-    let root = byText.get(text);
+    // (The rest of the command: what follows its name, or the words read as aliases, read with the aliases' text, as bash reads it.)
+    const full = text + command.text.slice(rest - command.startIndex);
+    let root = byText.get(full);
     if (!root) {
-      // (The rest of the command: what follows its name, read with the alias's text, as bash reads it.)
-      const full = text + command.text.slice(field(command, 'name')!.endIndex - command.startIndex);
       if (this.expansionCount >= ALIAS_TREES) {
         // (The walk still runs what the alias does, in a tree it shares with the other commands of the same text;
         // the trust scan, which tells the trees apart, trusts nothing then.)
@@ -254,7 +254,7 @@ export class Scripts implements StringTrees {
         return root;
       }
       this.expansionCount++;
-      byText.set(text, (root = parser().parse(full).root));
+      byText.set(full, (root = parser().parse(full).root));
     }
     return root;
   }

@@ -12,11 +12,11 @@ import { spanOf } from '../noteanchors';
 import { nodeSections } from '../refs';
 import { attribute, docLine, option } from '../semantics/state';
 import { assignmentIgnored, unsetEndsSpecial } from '../semantics/vars';
-import { isPlainWord, staticWordValue } from '../staticword';
+import { isPlainWord, splitElement, staticWordValue } from '../staticword';
 import { assignmentSpan, field, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { skeletal } from './nodes';
-import { isAssoc, unquotedWord, wordAt } from './reads';
+import { arrayKind, isAssoc, unquotedWord, wordAt } from './reads';
 import { redirectedWhole } from './redirections';
 import { inSubshell } from './where';
 import { arithNumber, bash53Variable, notGlobbedHere, shown } from './words';
@@ -59,6 +59,8 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     : value
       ? (n.parent?.type === 'c_style_for_statement' ? cx.s(`変数 \`${nm}\` に算術式の値を代入する（算術式の中なので、\`=\` の前後に空白を入れてよい）`, `Assign the value of the arithmetic expression to variable \`${nm}\` (in arithmetic, spaces around \`=\` are allowed)`) : cx.s(`変数 \`${nm}\` に値を代入する（\`=\` の前後に空白は入れられない）`, `Assign a value to variable \`${nm}\` (no spaces around \`=\`)`))
       : cx.s(`変数 \`${nm}\` に空文字を代入する`, `Set variable \`${nm}\` to the empty string`);
+  // (A compound assignment, `a=(…)`: what array it makes, 6.7.)
+  if (value?.type === 'array' && name.type !== 'subscript') expl = arrayAssignment(cx, n, nm, value, op === '+=');
   // (A variable bash 5.3 reads or sets: what it is.)
   const later = bash53Variable(cx, nm);
   if (later) expl += cx.s(`。\`${nm}\`: ${later}`, `. \`${nm}\`: ${later}`);
@@ -98,6 +100,11 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
       const key = cx.s(`連想配列 \`${arr}\` のキー \`${idx}\`（文字列で、計算はされない）の要素`, `the element of associative array \`${arr}\` with the key \`${idx}\` (a string, not evaluated)`);
       expl = cx.s(`${key}${verb('に代入する', 'に値を追記する（文字列の連結）', 'に値を足す（`-i` が付いているので算術式の足し算）')}`,
         `${verb('Assign to ', 'Append to ', 'Add to ')}${key}${add && !toInt ? ' (text is appended to the existing value)' : toInt ? ' (it has `-i`, so this adds numbers)' : ''}`);
+    } else if (idx === '@' || idx === '*') {
+      // (`@` and `*` are all the elements, which an assignment cannot name: 6.7. An associative array's are keys.)
+      const maybe = arrayKind(cx, arr, n) === 'unknown';
+      expl = cx.s(`bash はこの代入を受け付けない: \`${idx}\` はインデックス配列の添字にならない（「bad array subscript」で終了ステータス 1${maybe ? `。\`${arr}\` が連想配列ならキー \`${idx}\` の要素に代入する` : ''}）`,
+        `Bash refuses this assignment: \`${idx}\` is no index of an indexed array ("bad array subscript", status 1${maybe ? `; if \`${arr}\` is associative, it sets the element with the key \`${idx}\`` : ''})`);
     } else {
       const el = v !== undefined && String(v) !== idx
         ? cx.s(`配列 \`${arr}\` の要素 \`[${idx}]\`（算術式として計算すると ${v}）`, `element \`[${idx}]\` of array \`${arr}\` (an arithmetic expression: ${v})`)
@@ -160,6 +167,35 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     }
   }
   return cx.tok(n, 'assignment', expl, children);
+}
+
+/**
+ * `a=(…)` and `a+=(…)` (6.7): an indexed array of the values, from index 0 (or after the last index, with `+=`), where
+ * `[n]=v` sets index `n` and the values after it count on from there; for an associative array, `[k]=v` sets the key
+ * `k`, and values with no `[k]=` at the start are keys and values in turn (`m=(k1 v1 k2 v2)`, bash 5.1). `=` replaces
+ * what the array had. Checked with bash 5.2 and 5.3.
+ */
+function arrayAssignment(cx: Explainer, n: SyntaxNode, nm: string, value: SyntaxNode, add: boolean): string {
+  const values = value.namedChildren.filter((c) => c.type !== 'comment');
+  const keyed = values.map((v) => !!splitElement(v.text));
+  const kind = arrayKind(cx, nm, n);
+  if (kind === 'assoc') {
+    if (!values.length) return add ? cx.s(`連想配列 \`${nm}\` に何も足さない`, `Add nothing to the associative array \`${nm}\``) : cx.s(`連想配列 \`${nm}\` を空にする（連想配列のまま）`, `Empty the associative array \`${nm}\` (it stays associative)`);
+    // (The first value decides: `[k]=v` makes every value an assignment; else keys and values in turn.)
+    const how = keyed[0]
+      ? cx.s('`[キー]=値` がそれぞれキーに値を設定する', 'each `[key]=value` sets a key')
+      : cx.s(`値は順にキーと値の組になる（\`${values[0].text}\` がキー${values.length > 1 ? `、\`${values[1].text}\` がその値` : '、値は空'}。最初の値に \`[キー]=\` がないので、\`[キー]=値\` もキーか値の文字列になる）`,
+        `the values are keys and values in turn (\`${values[0].text}\` is a key${values.length > 1 ? `, \`${values[1].text}\` its value` : ', with an empty value'}; the first value has no \`[key]=\`, so a \`[key]=value\` is a key or a value too)`);
+    return add ? cx.s(`連想配列 \`${nm}\` にキーを追加する（既にあるキーなら値を置き換える）: ${how}`, `Add keys to the associative array \`${nm}\` (a key it has gets the new value): ${how}`)
+      : cx.s(`連想配列 \`${nm}\` に代入する（前の要素は消える）: ${how}`, `Assign to the associative array \`${nm}\` (its old elements are removed): ${how}`);
+  }
+  if (!values.length) return add ? cx.s(`配列 \`${nm}\` に何も足さない`, `Add nothing to the array \`${nm}\``) : cx.s(`\`${nm}\` を空の配列にする`, `Make \`${nm}\` an empty array`);
+  const indexes = keyed.some((k) => k)
+    ? cx.s('。`[n]=値` は添字 n に設定し、その後の値は n+1 から続く', '; `[n]=value` sets index n, and the values after it go on from n+1')
+    : '';
+  const assoc = kind === 'unknown' ? cx.s(`。ここで \`${nm}\` が連想配列なら、値はキーと値になる`, `. If \`${nm}\` is associative here, the values are its keys and values instead`) : '';
+  return (add ? cx.s(`配列 \`${nm}\` の最後の添字の後に、\`( )\` の値を要素として追加する`, `Append the values in \`( )\` to the array \`${nm}\`, after its last index`)
+    : cx.s(`\`( )\` の値を要素とするインデックス配列を \`${nm}\` に代入する（添字は 0 から。前の要素は消える）`, `Assign to \`${nm}\` an indexed array of the values in \`( )\` (from index 0; its old elements are removed)`)) + indexes + assoc;
 }
 
 /**
