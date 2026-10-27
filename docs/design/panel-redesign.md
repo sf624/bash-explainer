@@ -109,11 +109,11 @@ Each step is a PR from the latest main, useful on its own. A step with letters i
 
 ### P1. The view slot contract
 
-What: `viewControl(state, lang)` in src/ui/panelView.ts describes the panel's view control as data (section 6.1). The page draws its view slot from it; the panel draws its own header from it. It still returns Meaning | Reading.
+What: `viewControl(state, lang)` in src/ui/panelView.ts describes the panel's view control as data (section 6.1). The page draws its view switch from it (today's switch in the top bar; the view slot from C7 of the chrome plan on); the panel draws its own header from it. It still returns Meaning | Reading.
 
 Users: nothing changes. No CHANGELOG line.
 
-Tests: unit tests of `viewControl`. A web test: a press in the page's slot changes the panel, and the choice is kept after a reload.
+Tests: unit tests of `viewControl`. A web test: a press in the page's view switch changes the panel, and the choice is kept after a reload.
 
 Risks: the chrome series edits web/panel-bridge.ts too. P1 starts after roadmap items 1 to 8, like the other steps (decision 5). It lands before C7 of [chrome-redesign.md](chrome-redesign.md), which draws the slot from `viewControl`. Keep the PR small.
 
@@ -253,9 +253,9 @@ Tests: test/file-length.test.ts; the coverage gate.
 The web page's chrome is redesigned beside this plan: [chrome-redesign.md](chrome-redesign.md), from prototype round 8 (`proto/chrome-8`). There, the panel header has a "view slot" of fixed width. It holds one control at every width: "Depth", then segments with digits, the selected one with its short name; below about 240 px of slot, a menu "Depth 1 ⌄". On a phone it is the same control, a 44 px pill in the tabs row (chrome-redesign.md, decision 4, step C7). The two series meet only here:
 
 - **The panel owns the view state.** `PanelState` holds it (`depth`, `receives`; today `view`, `step`). The panel applies it. VS Code keeps it in the extension's `globalState` (src/ui/panel.ts) and in the webview's state; the page keeps it in storage (`STORAGE_KEYS.panel`). Both send it with the existing `panelState` messages, in both directions.
-- **The control is data.** `viewControl(state, lang)` gives the label, and for each option its id, icon, short name, full name and pressed state, and optional steps (Reading's eight, until P8). The page draws the slot from it, as segments, as a menu or as the icon alone; the VS Code panel draws its own header from it. A press sets the state and sends it. The page never knows what the options mean.
+- **The control is data.** `viewControl(state, lang)` gives the label, and for each option its id, icon, short name, full name and pressed state, and optional steps (Reading's eight, until P8). The page draws the slot from it, as segments or as a menu; the VS Code panel draws its own header from it. Never as an icon alone (chrome-redesign.md, decision 11). Which form fits is a list of candidates from src/ui, widest first; each host takes the first that fits (chrome-redesign.md, C7). A press sets the state and sends it. The page never knows what the options mean.
 - **What to compute is decided in src/ui, not in the page.** Today the hosts build the reading tree only when `view === 'tree'` (web/panel-bridge.ts, src/ui/panel.ts). A function of src/ui says, from the state, which data the explanation needs (the reading tree at depth 2, argv with the switch on). Both hosts call it.
-- **The fit is chrome's; the words are the panel's.** Each short name fits its segment at the slot's widths, in both languages and with the CJK fonts (a web test, from P1 on). The full name is the tooltip and the accessible name. The switch "What the program receives" and the Key stay in the panel's own row, under the line box, not in the slot.
+- **The fit is chrome's; the words are the panel's.** Each short name fits its segment at the slot's widths, in both languages and with the CJK fonts (a web test, from C7 on: before C7 there is no slot, only today's view switch in the top bar). The full name is the tooltip and the accessible name. The switch "What the program receives" and the Key stay in the panel's own row, under the line box, not in the slot.
 
 The panel handles keys 1, 2 and W when the focus is in it. The page binds none of them. The page's Help list of shortcuts names them, "in the panel".
 
@@ -277,7 +277,7 @@ After P10 and the chrome series ([chrome-redesign.md](chrome-redesign.md), C9), 
   5. Say which file names the glob matches, and why one does not.
   6. Say whether the script runs in POSIX sh, and what would fail.
 - **Scoring:** first, task success against the key: each user solves at least 5 of tasks 1 to 6. Second, each user gives an overall score out of 10, with the three things that cost the most.
-- **Baseline:** the same protocol runs on today's main (before P1 and the chrome's C1) first, with other agents. The report sets both side by side.
+- **Baseline:** the same protocol runs, with other agents, on a pinned commit: the last release tag before P1 and the chrome's C1a land. So it can run at any time. The report sets both side by side.
 - **Goal:** every user passes the task gate, and the average score is 9/10 or more. Below it, the findings become explanation bugs or panel PRs, and the test runs again with new agents. After two runs below the goal, the maintainer decides.
 - **People:** a short session with real people, if the maintainer can arrange one, before the README claims anything about usability.
 
