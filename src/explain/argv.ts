@@ -10,7 +10,8 @@ import { declaresNames, namespaceOf } from '../argv/query';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
 import { argWordFor, countOf } from '../argv/words';
-import { builtins } from '../dict/builtins';
+import { builtins, SHELL_OPTION_TABLES } from '../dict/builtins';
+import { OPTION_SECTIONS } from '../manual';
 import { describeFind, type FindNode, parseFind } from '../embedded/find';
 import { globIntro, hasGlob } from '../embedded/glob';
 import type { EmbeddedLang } from '../embedded/types';
@@ -54,6 +55,15 @@ function jobSpec(text: string): { ja: string; en: string } | undefined {
 
 /** The entry of a table of a spec for a word of the script (`set -o constructor` finds none). */
 const own = <T>(table: Readonly<Record<string, T>> | undefined, word: string): T | undefined => (table && Object.hasOwn(table, word) ? table[word] : undefined);
+
+/**
+ * The section of chapter 6 that describes the shell option `word`, when `values` are the names of shell options
+ * (`set -o posix`: 6.11; `SHELL_OPTION_TABLES`, `OPTION_SECTIONS`).
+ */
+function optionRefs(values: object | undefined, word: string): { refs?: string[] } {
+  const section = values && SHELL_OPTION_TABLES.has(values) ? own(OPTION_SECTIONS, word) : undefined;
+  return section ? { refs: [section] } : {};
+}
 
 /** `+x` (an option turned off) is written as `-x` in texts. */
 const dash = (flag: string): string => flag.replace(/^\+/, '-');
@@ -379,6 +389,7 @@ function valueToken(cx: Explainer, v: SyntaxNode, role: ValueRole, disables: boo
     t = cx.tok(v, 'argument', known
       ? `${v.text}: ${disables ? turnedOff(cx, v.text, cx.t(known), true, own(spec!.offValues, v.text)) : cx.t(known)}`
       : valueFor, wordParts(cx, v));
+    if (known) Object.assign(t, optionRefs(spec!.values, v.text));
   }
   // `jq --arg NAME VALUE`: two words follow; the first is the name.
   if (Array.isArray(role.option?.value) && role.option.value.length === 2) {
@@ -476,7 +487,8 @@ function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Ex
   // (Not the operand's meaning when bash assigns an array and passes only the name: `alias b=(1 2)`.)
   const named = isFn || field(a, 'value')?.type !== 'array' ? desc : undefined;
   if (a.type === 'variable_assignment') return markedAssignment(cx, a, named ?? cx.s(`引数 \`${a.text}\``, `Argument \`${a.text}\``), parse.command, isFn);
-  return positional(cx, a, desc, isFn ? undefined : item?.lang);
+  const t = positional(cx, a, desc, isFn ? undefined : item?.lang);
+  return isFn ? t : { ...t, ...optionRefs(item?.values, a.text) };
 }
 
 /**

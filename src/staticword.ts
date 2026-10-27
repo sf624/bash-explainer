@@ -195,6 +195,17 @@ export function tildeSpots(parts: readonly { text: string; plain: boolean }[], m
   return out;
 }
 
+/**
+ * The entry of the directory stack a tilde prefix names (`~1`, `~+1`: from the left of `dirs`; `~-1`: from the right;
+ * from 0): `n`, and `at`, the operand of `dirs` that shows it (`+1`, `-1`); undefined for another prefix (3.5.2, 6.8).
+ */
+export function stackTilde(user: string): { n: string; right: boolean; at: string } | undefined {
+  const m = /^([+-]?)(\d+)$/.exec(user);
+  if (!m) return undefined;
+  const n = String(Number(m[2]));
+  return { n, right: m[1] === '-', at: `${m[1] === '-' ? '-' : '+'}${n}` };
+}
+
 /** The parts of a word node, for `tildeSpots`. */
 export const tildeParts = (nodes: readonly SyntaxNode[]): { node: SyntaxNode; text: string; plain: boolean }[] =>
   nodes.flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n])).map((n) => ({ node: n, text: n.text, plain: n.type === 'word' }));

@@ -12,7 +12,7 @@ import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellw
 import { patsubMiscounts } from '../bracket';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
-import { ansiCValue, decodedSlice, decodedText, elementClose, plainWords, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
+import { ansiCValue, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, sameInEveryLocale, substring } from './chars';
 import { bracedWords, braceStep, wordAlternatives } from './brace';
@@ -567,9 +567,9 @@ class ModelValues implements ValueSource {
     return r.kind === 'builtin' && !r.missed && !r.disabled;
   }
 
-  /** `~+` and `~-` not after a `cd` anywhere. */
+  /** `~+` and `~-` not after a `cd` anywhere; `~0` and `~+0`, entry 0 of the directory stack, are `~+` (6.8). */
   tilde(user: string): string | undefined {
-    const name = user === '' ? 'HOME' : user === '+' ? 'PWD' : user === '-' ? 'OLDPWD' : undefined;
+    const name = user === '' ? 'HOME' : user === '+' || stackTilde(user)?.at === '+0' ? 'PWD' : user === '-' ? 'OLDPWD' : undefined;
     if (!name || (name !== 'HOME' && changesDirectory(this.w.nodes[0])) || (this.trusted && !this.model.trusts(name))) return undefined;
     if (name === 'PWD') return this.env?.pwd;
     const v = this.w.state.variables.get(name);

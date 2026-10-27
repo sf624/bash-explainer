@@ -4,7 +4,7 @@
 // what `IFS` is for.
 import type { Token } from '../analyzer-types';
 import { evalArith } from '../arith';
-import { variableAssignments, variableEmptied } from '../dict/syntax';
+import { variableAssignments, variableEmptied, variableLanguages } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { shorten } from '../label';
 import { fact } from '../messages';
@@ -15,6 +15,7 @@ import { assignmentIgnored, unsetEndsSpecial } from '../semantics/vars';
 import { isPlainWord, splitElement, staticWordValue } from '../staticword';
 import { assignmentSpan, field, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
+import { embeddedValue } from './embedded';
 import { skeletal } from './nodes';
 import { arrayKind, isAssoc, unquotedWord, wordAt } from './reads';
 import { redirectedWhole } from './redirections';
@@ -164,6 +165,13 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     for (const t of cx.sub(value)) {
       if (!(t.kind === 'expansion' && expands) && unquotedWord(value) !== undefined && !arithNumber(cx, value)) t.explanation = intValueText ? `\`${value.text}\`: ${intValueText}` : cx.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``) + (hasGlob(value.text) ? notGlobbedHere(cx, value) : '');
       children.push(t);
+    }
+    // The value of a prompt string (`PS1`, `PS4`…), as bash reads it each time it prints it (6.9): under the value.
+    const lang = name.type !== 'subscript' && value.type !== 'array' && children.length === 1 ? variableLanguages[nm] : undefined;
+    const emb = lang && embeddedValue(cx, value, lang);
+    if (emb) {
+      children[0].children.push(...emb.tokens);
+      children[0].explanation += ` — ${emb.note!}`;
     }
   }
   return cx.tok(n, 'assignment', expl, children);

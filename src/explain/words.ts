@@ -21,7 +21,7 @@ import { braceTexts } from '../semantics/brace';
 import { attribute, docLine } from '../semantics/state';
 import { readonlyAtStart } from '../semantics/vars';
 import { CONTEXTS, partMeaning, underscoreValue, wordOf } from '../semantics/words';
-import { decodedText, isPlainWord, setsElement, splitElement, staticWordValue, unquoteWord } from '../staticword';
+import { decodedText, isPlainWord, setsElement, splitElement, stackTilde, staticWordValue, unquoteWord } from '../staticword';
 import { ancestor, assignmentsOnly, braceKind, descendants, field, type SyntaxNode, wordBraces } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
@@ -276,15 +276,28 @@ function braceVarNote(cx: Explainer, n: SyntaxNode): string {
     `. \`${text}\` is not a range: braces are expanded before variables, so the text stays \`{…}\` with only the variable replaced (for example the string \`{1..3}\`). To get a range, use \`eval\`, \`seq\` or a \`for ((…))\` loop`);
 }
 
-/** What a tilde prefix becomes (`~`, `~+`, `~-`, `~user`); undefined for the others (`~1`, the directory stack). */
+/**
+ * What a tilde prefix becomes (`~`, `~+`, `~-`, `~user`, an entry of the directory stack: `~1`, `~+1`, `~-1`);
+ * undefined for the others (`~1x`).
+ */
 function tildeTarget(cx: Explainer, user: string): string | undefined {
   if (user === '+') return cx.s('`~+` はカレントディレクトリ（`$PWD`）', '`~+` becomes the current directory (`$PWD`)');
   if (user === '-') return cx.s('`~-` は直前のディレクトリ（`$OLDPWD`）', '`~-` becomes the previous directory (`$OLDPWD`)');
+  const stack = stackTilde(user);
+  if (stack) {
+    const { n, right, at } = stack;
+    return cx.s(
+      `\`~${user}\` はディレクトリスタックの、\`dirs\` の${right ? '右' : '左'}から ${n} 番目（0 始まり）の項目（\`dirs ${at}\` が表示するもの${at === '+0' ? '。0 番目はカレントディレクトリ' : ''}。その項目がなければそのまま）`,
+      `\`~${user}\` becomes entry ${n} of the directory stack, counted from the ${right ? 'right' : 'left'} of \`dirs\` from 0 (what \`dirs ${at}\` shows${at === '+0' ? ': entry 0 is the current directory' : ''}; unchanged if there is no such entry)`);
+  }
   if (user && !/^[A-Za-z_][\w.-]*$/.test(user)) return undefined;
   return user
     ? cx.s(`\`~${user}\` はユーザー \`${user}\` のホームディレクトリ（そのユーザーがいなければそのまま）`, `\`~${user}\` becomes the home directory of the user \`${user}\` (unchanged if there is no such user)`)
     : cx.s('`~` はホームディレクトリ（`$HOME`）', '`~` becomes the home directory (`$HOME`)');
 }
+
+/** The directory stack's section (6.8), for a tilde prefix that is an entry of it. */
+const stackSection = (user: string): string[] => (stackTilde(user) ? ['6.8'] : []);
 
 /**
  * Tilde expansion in a plain word (src/semantics/words.ts): at its start (`~`, `~/x`, `~user/x`, `~+`), after the
@@ -309,7 +322,7 @@ export function tilde(cx: Explainer, n: SyntaxNode): Token | undefined {
       ? cx.s(`。続く \`${rest}\` にはワイルドカードがあるので、展開後のパスがグロブとして一致するファイル名に置き換わる`, `. The rest, \`${rest}\`, has wildcards: the expanded path is then a glob, replaced by the file names it matches`)
       : rest ? cx.s(`。残りの \`${rest}\` はそのまま続く`, `. The rest, \`${rest}\`, stays as it is`) : '';
     return { origin: 'shell', ...cx.tok(n, 'expansion', cx.s(`チルダ展開: ${tildeTarget(cx, first.user)}に置き換わる`, `Tilde expansion: ${tildeTarget(cx, first.user)}`)
-      + after + (hasGlob(n.text) ? notGlobbedHere(cx, n) + globOff(cx, n) : ''), globbed ? globChildren(cx, n, rest, first.end) : []), refs: ['3.5.2', ...(globbed ? ['3.5.8'] : [])] };
+      + after + (hasGlob(n.text) ? notGlobbedHere(cx, n) + globOff(cx, n) : ''), globbed ? globChildren(cx, n, rest, first.end) : []), refs: ['3.5.2', ...stackSection(first.user), ...(globbed ? ['3.5.8'] : [])] };
   }
   const row = n.startPosition.row;
   const col = n.startPosition.column;

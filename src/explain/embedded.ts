@@ -17,7 +17,7 @@ import { grepWrap, literalRegex, toJsRegex } from '../examples/regex';
 import type { RerunSpec } from '../examples/rerun';
 import { sedExample, sedPattern } from '../examples/sed';
 import { NO_INPUT } from '../examples/source';
-import { type Literal, literalContent } from '../staticword';
+import { type Literal, literalContent, staticWordText } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { awkOptions, dateRun, globExample, inputSource, ioExample, pushExample, regexExample, sedScripts } from './examples';
@@ -34,6 +34,15 @@ import { valueNote } from './words';
 export function embedded(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): { tokens: Token[]; note?: string } | undefined {
   const lit = literalContent(a, lang);
   return lit && embeddedText(cx, lit, lang, a);
+}
+
+/**
+ * Explain the value of an assignment that bash reads in a language of its own when it uses it (a prompt string,
+ * `PS1='\u@\h:\w\$ '`): its text after quote removal, when that is known (`"\[\e[1m\]\u"`, but not `"$USER"`).
+ */
+export function embeddedValue(cx: Explainer, value: SyntaxNode, lang: EmbeddedLang): { tokens: Token[]; note?: string } | undefined {
+  const m = staticWordText(value, cx.shell);
+  return m && embeddedText(cx, { text: m.text, offsets: m.starts.map((s) => s - value.startIndex) }, lang, value);
 }
 
 /** Explain `lit.text`, which sits inside `a` as `lit` describes (e.g. after `-k` in `-k3,3n`). */

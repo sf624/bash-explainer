@@ -14,6 +14,7 @@ import { hasExtglob } from './examples/shellwords';
 import { ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformOf } from './expansion';
 import { Lang, ordinal, Text } from './i18n';
 import { isPlainWord, messageText, unquoteWord } from './staticword';
+import { option } from './semantics/state';
 import { field, type SyntaxNode } from './syntax/tree';
 
 /** Nodes inside an expansion's argument that get their own explanation. */
@@ -47,9 +48,11 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   const parsed = n.startPosition.row === n.endPosition.row ? parseExpansion(text) : undefined;
   if (!parsed) return summary;
   summary.explanation += orderNote(h, n, parsed.name);
-  const special = specialExpansion(h, parsed, text);
+  const special = specialExpansion(h, parsed, text, n);
   if (special) {
     summary.explanation = special;
+    // (What POSIX mode changes cites its section: `${!#}`.)
+    if (parsed.prefix === '!' && ['on', 'unknown'].includes(option(h.state.at(n).run, 'set', 'posix'))) summary.refs = ['3.5.3', '6.11'];
     if (!parsed.prefix && !parsed.op) summary.kind = 'variable';
   }
   const tf = parsed.op === '@' ? transformOf(parsed.parts.find((p) => p.role === 'transform')?.text ?? '', parsed) : undefined;
@@ -91,7 +94,7 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
 }
 
 /** `${#}`, `${##}`, `${#@}`, `${#-x}`…: the special parameters with a `#` or an operator, which are easy to misread. Undefined for the other expansions. */
-function specialExpansion(h: Explainer, p: ParsedExpansion, text: string): string | undefined {
+function specialExpansion(h: Explainer, p: ParsedExpansion, text: string, n: SyntaxNode): string | undefined {
   const shownName = `$${p.name}`;
   if (p.prefix === '#' && !p.subscript && (p.name === '@' || p.name === '*')) {
     return h.s(`位置パラメータの個数（\`$#\` と同じ。文字数ではない）`, 'Number of positional parameters (the same as `$#`, not a length in characters)');
@@ -102,6 +105,10 @@ function specialExpansion(h: Explainer, p: ParsedExpansion, text: string): strin
       : h.s(`\`${shownName}\` の文字数（長さ）`, `Length of \`${shownName}\` in characters`);
   }
   if (p.prefix === '!' && p.name === '#' && !p.subscript && !p.op) {
+    // (In POSIX mode, bash applies no indirection to `#` and `?`, 6.11: `${!#}` is empty.)
+    const posix = option(h.state.at(n).run, 'set', 'posix');
+    if (posix === 'on') return h.s('POSIX モードの bash は `#` を間接参照しないので、`${!#}` は空になる（最後の引数は `${@: -1}` で取り出せる）', 'In POSIX mode bash applies no indirection to `#`: `${!#}` expands to nothing (`${@: -1}` gives the last argument)');
+    if (posix === 'unknown') return h.s('間接参照: `$#`（引数の個数）を番号とみなし、その位置パラメータ、つまり最後の引数を取り出す（引数が 3 個なら `$3`）。ただし、一部の経路で有効な POSIX モードでは空になる', 'Indirection through `$#`: the positional parameter numbered `$#` is the last argument (`$3` when there are 3). But in POSIX mode, on on some paths here, it expands to nothing');
     return h.s('間接参照: `$#`（引数の個数）を番号とみなし、その位置パラメータ、つまり最後の引数を取り出す（引数が 3 個なら `$3`）', 'Indirection through `$#`: the positional parameter numbered `$#` is the last argument (`$3` when there are 3)');
   }
   if (p.prefix || !/^[#?$!@*-]$/.test(p.name)) return undefined;

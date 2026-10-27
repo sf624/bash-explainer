@@ -35,7 +35,7 @@ import type { Explainer } from './context';
 import { commandExampleFor, unreadStdin, wordExample } from './examples';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
 import { redirectInfo, redirectParts } from './redirections';
-import { hostCommand, NO_SPEC, resolve, restrictedAt, restrictedCall, specFor, unquotedWord } from './reads';
+import { hostCommand, NO_SPEC, resolve, restrictedAt, restrictedCall, shellVariant, specFor, unquotedWord } from './reads';
 import { statusRangeNote } from './status';
 import { shellEffectNote } from './where';
 import { bracesHere, braceWord, braceWords, bracesMaybeOff, plainText, shown } from './words';
@@ -252,6 +252,12 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
     cx.note(fact(cx.lang, 'local-outside-function', { stops: localStops(cx, n), ...(sourced ? { sourced } : {}) }), n);
   }
   if (head.kind === 'builtin' && head.spec!.ends === 'function') head.explanation = returnInSubstitution(cx, n) ?? head.explanation;
+  // (A builtin that reads its words otherwise in the shell options on here: `kill` in POSIX mode, 6.11.)
+  const variant = head.kind === 'builtin' ? shellVariant(cx, n, head.spec!) : undefined;
+  if (variant) {
+    head.spec = { ...head.spec!, ...variant.spec };
+    head.explanation += cx.s(`。${cx.t(variant.text)}`, `. ${cx.t(variant.text)}`);
+  }
   const read = readArgs(cx, head.spec, args, head.runs ?? head.name, head.fn);
   // A restricted shell refuses some calls of builtins, and command names with a `/` (6.10).
   // (A name with a `/` only inside an expansion may have none: `"${tool##*/}"`.)
@@ -540,7 +546,14 @@ export function timeStatement(cx: Explainer, n: SyntaxNode): Token {
 function timed(cx: Explainer, n: SyntaxNode): Token {
   const lead = timeLead(cx, token(n, 'time')!, field(n, 'option'));
   const cmd = field(n, 'body');
-  if (!cmd) return skeletal(cx.tok(n, 'keyword', lead[0].explanation, lead), n);
+  if (!cmd) {
+    // `time` alone: an empty pipeline, timed; in POSIX mode, the times of the shell and its children so far (6.11).
+    const posix = (!cx.shell || cx.shell === 'bash') && option(cx.state.at(n).run, 'set', 'posix') === 'on';
+    const t = cx.tok(n, 'keyword', posix
+      ? cx.s('パイプラインのない `time`: POSIX モードなので、このシェルと終了した子プロセスがここまでに使ったユーザー時間とシステム時間を表示する', '`time` with no pipeline: in POSIX mode, it prints the user and system time this shell and its finished children have used so far')
+      : cx.s('パイプラインのない `time`: 何も計測せず、0 の時間を表示する（POSIX モードなら、シェルがここまでに使った時間）', '`time` with no pipeline: it times nothing, and prints zero times (in POSIX mode, the times the shell has used so far)'), lead);
+    return skeletal(posix ? { ...t, refs: ['3.2.3', '6.11'] } : t, n);
+  }
   // What `time` times, a command or a whole pipeline, is explained as it would be on its own.
   const inner = cx.sub(cmd);
   const text = shorten(n.text.slice(cmd.startIndex - n.startIndex).replace(/\s*\\\n\s*/g, ' '), 40);
