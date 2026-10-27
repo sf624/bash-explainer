@@ -37,7 +37,7 @@ export interface Collation { order: 'locale' | 'bytes' | 'unknown'; why?: 'posix
  * `posix` and the `shopt` option that sets level 4.0 or lower (`compat`: `compat31`, `compat32` or `compat40`) where it
  * runs (manual 4.1, 6.4, 6.11, 6.12). `[[ ]]` uses the locale, but bytes at level 4.0 or lower (not in bash 5.3's POSIX
  * mode); `test` uses bytes, and the locale in bash 5.3's POSIX mode. Checked with bash 5.2.21 and 5.3 in en_US.UTF-8
- * (test/test-collation.test.ts).
+ * (test/testexpr.test.ts).
  */
 export function collation(double: boolean, version: BashVersion, posix: 'on' | 'off' | 'unknown', compat: 'on' | 'off' | 'unknown'): Collation {
   const posixLocale = version === '5.2' ? 'off' : posix;

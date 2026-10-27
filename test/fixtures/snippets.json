@@ -267,6 +267,8 @@
  "@foo",
  "America/New_York",
  "Asia/Tokyo",
+ "BASH_COMPAT=40; unset BASH_COMPAT\n[[ a < b ]]",
+ "BASH_COMPAT=bogus\n[[ a < b ]]",
  "BEGIN { $n = 0 ",
  "BUILD_DIR=\"$SCRIPT_DIR/build\"\nrm -rf $BUILD_DIR/*",
  "D=\"$A$B\"\nrm -rf $D/*",
