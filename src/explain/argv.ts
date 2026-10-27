@@ -35,7 +35,7 @@ import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
-import { globOff, NO_SPEC, resolve, restrictedAt, restrictedCall, shoptAt, specFor, wordAt } from './reads';
+import { arrayKind, globOff, NO_SPEC, resolve, restrictedAt, restrictedCall, shoptAt, specFor, wordAt } from './reads';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
 import { inSubshell } from './where';
@@ -558,9 +558,12 @@ function declaredOperand(cx: Explainer, a: SyntaxNode, space: ReturnType<typeof 
   if (space === 'function' || !element) {
     return cx.tok(a, 'variable', space === 'function' ? cx.s(`関数 \`${a.text}\` を対象にする`, `Function \`${a.text}\``) : cx.s(`変数 \`${a.text}\` を対象にする`, `Variable \`${a.text}\``));
   }
-  const text = element[2] === '@' || element[2] === '*'
-    ? cx.s(`配列 \`${element[1]}\` の全要素`, `All elements of array \`${element[1]}\``)
-    : cx.s(`配列 \`${element[1]}\` の要素 \`[${element[2]}]\``, `Element \`[${element[2]}]\` of array \`${element[1]}\``);
+  // `declare x[3]` declares the array `x`, and bash ignores the subscript (6.7); `export` and `readonly` refuse the word,
+  // and `declare -p` finds no such name. Checked with bash 5.2 and 5.3.
+  const text = readDeclarationWords(command, fields(a.parent!, 'argument'), cx.state.shell).on.includes('p')
+    ? cx.s(`\`${a.text}\` という名前の変数はないので、何も表示しない（「not found」で終了ステータス 1）`, `No variable is named \`${a.text}\`: nothing is printed ("not found", status 1)`)
+    : builtins[command]?.locals ? cx.s(`配列 \`${element[1]}\` を宣言する（bash は添字 \`[${element[2]}]\` を無視する）`, `Declare the array \`${element[1]}\` (bash ignores the subscript \`[${element[2]}]\`)`)
+    : cx.s('bash はこの語を受け付けない: 変数の名前として正しくない（「not a valid identifier」で終了ステータス 1）', 'Bash refuses this word: it is not a valid variable name ("not a valid identifier", status 1)');
   // (Unquoted, it is a glob first: `declare a[1]` with a file `a1` here declares the variable `a1`.)
   return wordAt(cx, a)?.steps.find((g) => g.kind === 'glob')?.applies !== false ? positional(cx, a, nameGlob(cx, a, a.text, text, 'declares')) : cx.tok(a, 'variable', text);
 }
@@ -649,9 +652,16 @@ function unsetOperand(cx: Explainer, nodes: SyntaxNode[], word: number, item: Op
   let text: string;
   if (fn) text = cx.s(`関数 \`${name}\` を削除する`, `Remove the function \`${name}\``);
   else if (element) {
-    text = element[2] === '@' || element[2] === '*'
-      ? cx.s(`配列 \`${element[1]}\` の要素をすべて削除する（配列は空で残る）`, `Remove all the elements of the array \`${element[1]}\` (it stays, empty)`)
-      : cx.s(`配列 \`${element[1]}\` の要素 \`${name}\` を削除する（ほかの要素の添字はそのまま）`, `Unset the element \`${name}\` of the array \`${element[1]}\` (the other elements keep their indices)`);
+    // (`@` and `*` are all the elements of an indexed array, but keys of an associative one: 6.7. A negative index counts
+    // back from the end.)
+    const kind = arrayKind(cx, element[1], a.parent!);
+    const all = element[2] === '@' || element[2] === '*';
+    text = all && kind === 'assoc'
+      ? cx.s(`連想配列 \`${element[1]}\` のキー \`${element[2]}\` の要素を削除する（全要素ではない）`, `Unset the element of the associative array \`${element[1]}\` with the key \`${element[2]}\` (not all the elements)`)
+      : all ? cx.s(`配列 \`${element[1]}\` の要素をすべて削除する（配列は空で残る${kind === 'unknown' ? `。連想配列ならキー \`${element[2]}\` の要素だけ` : ''}）`,
+        `Remove all the elements of the array \`${element[1]}\` (it stays, empty${kind === 'unknown' ? `; if it is associative, only the element with the key \`${element[2]}\`` : ''})`)
+      : cx.s(`配列 \`${element[1]}\` の要素 \`${name}\` を削除する（ほかの要素の添字はそのまま${kind === 'indexed' && /^-\d+$/.test(element[2]) ? '。負の添字は末尾から数える' : ''}）`,
+        `Unset the element \`${name}\` of the array \`${element[1]}\` (the other elements keep their indices${kind === 'indexed' && /^-\d+$/.test(element[2]) ? '; a negative index counts back from the end' : ''})`);
     // (Unquoted, it is a glob first: `unset a[1]` with a file `a1` here unsets the variable `a1`.)
     if (plain && hasGlob(a.text) && wordAt(cx, a)?.steps.find((g) => g.kind === 'glob')?.applies !== false) text = nameGlob(cx, a, name, text, 'unsets');
   } else {

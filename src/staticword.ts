@@ -374,6 +374,21 @@ export function splitElement(text: string): { key: string; plus: string; value: 
   return e && { key: text.slice(1, e.close), plus: e.plus, value: text.slice(e.close + 2 + e.plus.length) };
 }
 
+/**
+ * Whether the value `e` of a compound assignment sets an element by its index or key (`[k]=v`, 6.7), in the list of an
+ * associative array (`assoc`) or of an indexed one. In an associative array's, the first value decides: with no `[k]=`
+ * there, every value is a key or a value, in turn (`m=(k1 v1 [k2]=v2)` has the key `[k2]=v2`).
+ */
+export function setsElement(e: SyntaxNode, assoc: boolean): boolean {
+  return !!elementClose(e.text) && (!assoc || !!elementClose(e.parent!.namedChildren.find((c) => c.type !== 'comment')!.text));
+}
+
+/** The plain words (unquoted text) of a word. */
+export function plainWords(nodes: readonly SyntaxNode[]): SyntaxNode[] {
+  return nodes.flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n]))
+    .filter((n) => n.type === 'word' || n.type === 'extglob_pattern' || n.type === 'brace_expression');
+}
+
 /** A plain word or a number: no quotes, expansions or other parts. */
 export const isPlainWord = (n: SyntaxNode): boolean => n.type === 'word' || n.type === 'number';
 

@@ -6,7 +6,7 @@ import type { Kind, Span, Token } from './analyzer-types';
 import { evalArith, intValue } from './arith';
 import { cannotAssign, expansionOps, wellKnownVariables } from './dict/syntax';
 import type { Explainer } from './explain/context';
-import { isAssoc, shoptAt } from './explain/reads';
+import { arrayKind, isAssoc, shoptAt } from './explain/reads';
 import { scriptValue } from './explain/values';
 import { globChildren, joinedNote, orderNote, variableNote, varDesc } from './explain/words';
 import { globIntro, hasGlob } from './embedded/glob';
@@ -79,7 +79,7 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   const extglob = shoptAt(h, n).extglob;
   const plainExt = extglob === 'off' || extglob === 'default' ? extglob : undefined;
   summary.children = parsed.parts.flatMap((part) => {
-    const expl = expansionPart(h, parsed, part, part === mainOp, isAssoc(h, parsed.name, n), plainExt, !!joined);
+    const expl = expansionPart(h, parsed, part, part === mainOp, arrayKind(h, parsed.name, n), plainExt, !!joined);
     if (!expl || !part.text) return [];
     const span: Span = { start: { line: row, character: col + part.start }, end: { line: row, character: col + part.end } };
     const nested = nestedIn(h, n, col + part.start, col + part.end);
@@ -155,7 +155,7 @@ function nestedIn(h: Explainer, n: SyntaxNode, from: number, to: number): Token[
   return found.map((c) => h.full(c));
 }
 
-function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, isMainOp: boolean, assoc: boolean, plainExt: 'off' | 'default' | undefined, joined: boolean): [Kind, string] | undefined {
+function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, isMainOp: boolean, kind: 'assoc' | 'indexed' | 'unknown', plainExt: 'off' | 'default' | undefined, joined: boolean): [Kind, string] | undefined {
   const t = part.text;
   const s = (ja: string, en: string): string => h.s(ja, en);
   switch (part.role) {
@@ -183,7 +183,7 @@ function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, is
           ? s('インデックス 0: `=~` で一致した全体', 'Index 0: the whole text the `=~` matched')
           : s(`インデックス ${idx}: 正規表現の ${idx} 番目の括弧 \`( )\` に一致した部分`, `Index ${idx}: the text matched by group ${idx}, the ${ordinal(Number(idx))} \`( )\` of the regex`)];
       }
-      if (assoc) return ['variable', s(`キー \`${idx}\`（連想配列のキーは文字列で、計算されない）`, `Key \`${idx}\` (the keys of an associative array are strings, not evaluated)`)];
+      if (kind === 'assoc') return ['variable', s(`キー \`${idx}\`（連想配列のキーは文字列で、計算されない）`, `Key \`${idx}\` (the keys of an associative array are strings, not evaluated)`)];
       const i = evalArith(idx);
       if (i !== undefined) {
         // The index is an arithmetic expression: `1+1` is 2, `010` is 8.
@@ -192,7 +192,8 @@ function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, is
           ? s(`インデックス ${idx}${calc}: 末尾から ${-i} 番目の要素`, `Index ${idx}${calc}: ${i === -1 ? 'the last element' : `the ${ordinal(-i)} element from the end`}`)
           : s(`インデックス ${idx}${calc}: ${i + 1} 番目の要素（0 始まり）`, `Index ${idx}${calc}: the ${ordinal(i + 1)} element (0-based)`)];
       }
-      return ['variable', s(`インデックス（連想配列ならキー） \`${idx}\``, `Index (or key, for associative arrays) \`${idx}\``)];
+      return ['variable', kind === 'indexed' ? s(`インデックス \`${idx}\`（算術式として計算される）`, `Index \`${idx}\` (an arithmetic expression)`)
+        : s(`インデックス（連想配列ならキー） \`${idx}\``, `Index (or key, for associative arrays) \`${idx}\``)];
     }
     case 'op':
       if (!isMainOp) {

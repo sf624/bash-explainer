@@ -182,7 +182,7 @@ describe('declaration builtins as plain commands, and related fixes', () => {
     // (bash 5.2 makes the arrays: test/fixtures/probes/state.json.)
     for (const c of ['x=1 declare g=(1 2)', '>o declare g=(1 2)', 'x=1 >o local g=(1 2)']) {
       const g = all(one(c)).find((t) => t.label === 'g=(1 2)')!;
-      assert.match(g.explanation, /^Assign a value to variable `g`/, c);
+      assert.match(g.explanation, /^Assign to `g` an indexed array of the values in `\( \)`/, c);
       assert.match(g.children[0].explanation, /^Array/, c);
     }
     assert.strictEqual(bash('x=1 declare g=(1 2); >/dev/null declare h=(3); echo "${g[1]} $h"').stdout, '2 3\n');
@@ -206,12 +206,12 @@ describe('declaration builtins as plain commands, and related fixes', () => {
     } finally {
       fs.rmSync(dir, { recursive: true });
     }
-    assert.match(one('declare a[1]').children[0].explanation, /^Element `\[1\]` of array `a`\. Unquoted, it is a glob pattern first: if a file matches it, that file's name is declared instead \(write `'a\[1\]'`\)/);
+    assert.match(one('declare a[1]').children[0].explanation, /^Declare the array `a` \(bash ignores the subscript `\[1\]`\)\. Unquoted, it is a glob pattern first: if a file matches it, that file's name is declared instead \(write `'a\[1\]'`\)/);
     const word = (src: string, label: string) => new Analyzer('en').explainLine(parser.parse(src), src.split('\n').length - 1).items.flatMap(all).find((t) => t.label === label)!.explanation;
     assert.match(word('shopt -s nullglob; declare a[1]', 'a[1]'), /nullglob makes the word go away and nothing is declared/);
     assert.match(word('shopt -s failglob; declare a[1]', 'a[1]'), /failglob makes it an error \(`no match`\) and nothing is declared/);
     assert.match(word('[ "$x" ] && shopt -s nullglob\ndeclare a[1]', 'a[1]'), /on the paths where nullglob or failglob is on, nothing is declared/);
-    assert.match(word('set -f; declare a[@]', 'a[@]'), /^All elements of array `a`$/);
+    assert.match(word('set -f; declare a[@]', 'a[@]'), /^Declare the array `a` \(bash ignores the subscript `\[@\]`\)$/);
     assert.match(one("declare 'a[1]'").children[0].explanation, /Single-quoted/);
     assert.match(one('declare a[1]', undefined, 'ja').children[0].explanation, /その名前を宣言する/);
   });

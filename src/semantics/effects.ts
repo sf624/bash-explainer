@@ -6,7 +6,7 @@ import type { CommandSpec, ValueSpec, VariableSet } from '../argv/spec';
 import { declaresNames } from '../argv/query';
 import { argWordFor } from '../argv/words';
 import type { Shell } from '../dialect';
-import { builtins } from '../dict/builtins';
+import { ALIAS_NAME, builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
 import { field, type SyntaxNode } from '../syntax/tree';
 
@@ -41,15 +41,49 @@ export function aliasName(c: SyntaxNode): string | undefined {
   return word.type === 'word' && word.text === name ? name : undefined;
 }
 
+/** Whether bash checks the word after an alias of text `value` for an alias too (6.6): the text ends with a blank. */
+export const aliasExpandsNext = (value: string): boolean => /[ \t]$/.test(value);
+
 /**
- * `alias name=value` (or `'name=value'`): the name and what it stands for (static, or the text without its outer quotes).
- * A name is any text without a `/`, `$`, backquote, `=`, quote, blank or metacharacter (bash's `legal_alias_name`):
- * `[`, `{` and `a!b` are names too.
+ * The words after the name of the simple command `c` that bash may read as aliases (6.6: after an alias whose text ends
+ * with a blank): the words up to the first that is not a plain word (a quote, an expansion, a redirection). Which of
+ * them are aliases depends on the aliases there.
  */
+export function wordsAfterAlias(c: SyntaxNode): SyntaxNode[] {
+  const parts = c.namedChildren;
+  const out: SyntaxNode[] = [];
+  for (const w of parts.slice(parts.indexOf(field(c, 'name')!) + 1)) {
+    if (w.type !== 'word' || staticWordValue(w) !== w.text) break;
+    out.push(w);
+  }
+  return out;
+}
+
+/**
+ * The texts bash reads for the simple command `c` whose name is an alias of text `value` (6.6): that text, then the
+ * rest of the command; while what is read so far ends with a blank, the next word is replaced by its alias's text,
+ * for each of the texts `values` gives it (none: it is no alias), also kept as it is when `keep` (it may be none).
+ * `rest`: where in the command's text the rest starts.
+ */
+export function aliasTexts(c: SyntaxNode, value: string, values: (name: string) => readonly string[], keep = false): { text: string; rest: number }[] {
+  const name = field(c, 'name')!;
+  const out: { text: string; rest: number }[] = [];
+  const next = (text: string, rest: number, words: SyntaxNode[]): void => {
+    const [w, ...more] = words;
+    const vs = w && aliasExpandsNext(text) ? values(w.text) : [];
+    if (!vs.length || keep) out.push({ text, rest });
+    for (const v of vs) next(text + c.text.slice(rest - c.startIndex, w.startIndex - c.startIndex) + v, w.endIndex, more);
+  };
+  next(value, name.endIndex, wordsAfterAlias(c));
+  return out;
+}
+
+/** `alias name=value` (or `'name=value'`): the name (`ALIAS_NAME`) and what it stands for (static, or the text without its outer quotes). */
+const DEFINITION = new RegExp(`^(${ALIAS_NAME})=(['"]?)([\\s\\S]*)\\2$`);
 export function aliasOf(a: SyntaxNode): { name: string; value: string } | undefined {
   const v = staticWordValue(a);
   const text = v ?? a.text;
-  const m = /^([^\s/$`='"\\()<>;&|]+)=(['"]?)([\s\S]*)\2$/.exec(text);
+  const m = DEFINITION.exec(text);
   if (!m) return undefined;
   return { name: m[1], value: v !== undefined ? v.slice(v.indexOf('=') + 1) : m[3] };
 }

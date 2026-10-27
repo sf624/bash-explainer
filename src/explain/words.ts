@@ -21,7 +21,7 @@ import { braceTexts } from '../semantics/brace';
 import { attribute, docLine } from '../semantics/state';
 import { readonlyAtStart } from '../semantics/vars';
 import { CONTEXTS, partMeaning, underscoreValue, wordOf } from '../semantics/words';
-import { decodedText, isPlainWord, splitElement, staticWordValue, unquoteWord } from '../staticword';
+import { decodedText, isPlainWord, setsElement, splitElement, staticWordValue, unquoteWord } from '../staticword';
 import { ancestor, assignmentsOnly, braceKind, descendants, field, type SyntaxNode, wordBraces } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
@@ -35,6 +35,10 @@ export function braceExpansion(n: SyntaxNode): string[] | undefined | null {
 }
 
 export function word(cx: Explainer, n: SyntaxNode): Token {
+  // (`[1]=*.txt` in `( )`: an element with an index of its own, whose value is not globbed; a key or a value of an
+  // associative array.)
+  const value = arrayValue(cx, n);
+  if (value) return value;
   const text = n.text;
   const t = tilde(cx, n);
   if (t) return t;
@@ -56,6 +60,7 @@ export function string(cx: Explainer, n: SyntaxNode): Token {
   // `"$@"`, `"${a[@]}"`, `"${!pre@}"`, `"${@:2}"` give one word per element, also inside double quotes (not one in a
   // `$( )` in the string: the substitution gives one word), where the word may be many (not an assignment's value).
   const perElement = n.namedChildren.some(eachElement) && manyFields(n);
+  unbracedElement(cx, n);
   return cx.tok(n, 'string', (perElement ? cx.s(
     'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開され、単語分割やグロブ展開はされない。ただし `"$@"` や `"${配列[@]}"` は、クォートの中でも要素ごとに別々の単語になる（要素が無ければ単語は0個）',
     'Double-quoted string: `$vars` and `$(…)` expand, with no word splitting or globbing. But `"$@"` and `"${array[@]}"` still give one word per element, even inside the quotes (no word at all when there are none)',
@@ -650,13 +655,31 @@ function pastedValue(cx: Explainer, n: SyntaxNode, name: string): string | undef
   return value !== undefined && !/^\s*[-+]?\d+\s*$/.test(value) ? value : undefined;
 }
 
-/** `[7]=z` in `( )`: an element with an index of its own. */
-export function arrayElement(cx: Explainer, n: SyntaxNode): Token {
+/**
+ * A value of a compound assignment that says more than a word (6.7): `[7]=z`, an element with an index of its own, or
+ * in the list of an associative array with no `[k]=` first, a key or the value of the key before it.
+ */
+function arrayValue(cx: Explainer, n: SyntaxNode): Token | undefined {
+  if (n.parent!.type !== 'array') return undefined;
+  const kind = arrayKind(cx, field(n.parent!.parent!, 'name')!.text, n);
+  if (setsElement(n, kind === 'assoc')) return arrayElement(cx, n, kind);
+  if (kind !== 'assoc') return undefined;
+  const values = n.parent!.namedChildren.filter((c) => c.type !== 'comment');
+  // (After a first value `[k]=v`, each needs its `[k]=`.)
+  if (splitElement(values[0].text)) {
+    return cx.tok(n, 'error', cx.s(`bash はこの値を受け付けない: 最初の値が \`[キー]=\` で始まるので、どの値にも \`[キー]=\` が要る（「must use subscript when assigning associative array」）`,
+      `Bash refuses this value: the first value starts with \`[key]=\`, so each one needs its \`[key]=\` ("must use subscript when assigning associative array")`));
+  }
+  const i = values.indexOf(n);
+  return cx.tok(n, 'argument', i % 2 === 0 ? cx.s(`キー \`${n.text}\``, `Key \`${n.text}\``) : cx.s(`キー \`${values[i - 1].text}\` の値 \`${n.text}\``, `Value \`${n.text}\` of the key \`${values[i - 1].text}\``));
+}
+
+/** `[7]=z` in `( )`: an element with an index of its own; `kind`: the array's. */
+function arrayElement(cx: Explainer, n: SyntaxNode, kind: 'assoc' | 'indexed' | 'unknown'): Token {
   const e = splitElement(n.text)!;
   // The key as bash reads it once the quotes are removed (`["a b"]` is `a b`); as written when it holds an expansion.
   const key = unquoteWord(e.key) ?? e.key;
   const m = ['', key, e.plus, e.value];
-  const kind = arrayKind(cx, field(n.parent!.parent!, 'name')!.text, n);
   // The subscript of an associative array is a key (a string); that of an indexed array is arithmetic (`1+1` is 2).
   // (Arithmetic only when the array is surely not associative: `declare -A` may be in a file read with `source`.)
   const v = evalArith(m[1]);
@@ -734,9 +757,25 @@ export function rawString(cx: Explainer, n: SyntaxNode): Token {
   return cx.tok(n, 'string', cx.s('シングルクォート文字列: 中身は一切展開されず、そのままの文字列になる', 'Single-quoted string: taken literally, nothing is expanded'));
 }
 
+/**
+ * `$a[1]` (also in double quotes), where `a` is an array: `$a`, then the text `[1]`, not the element (6.7: the braces
+ * are required, `${a[1]}`).
+ */
+function unbracedElement(cx: Explainer, n: SyntaxNode): void {
+  n.namedChildren.forEach((k, i) => {
+    const sub = /^\[[^\]]*\]/.exec(n.namedChildren[i + 1]?.text ?? '')?.[0];
+    const name = k.text.slice(1);
+    const st = cx.state.at(k).run;
+    if (k.type !== 'simple_expansion' || !sub || !/^[A-Za-z_]\w*$/.test(name)) return;
+    if (attribute(st, name, 'a') !== 'off' || attribute(st, name, 'A') !== 'off') cx.note(fact(cx.lang, 'unbraced-element', { name, sub }), k);
+  });
+}
+
 /** A word of several parts (`a"b"$c`): an element of an array assignment that bash splits, a brace expansion, or the parts joined. */
 export function concatenation(cx: Explainer, n: SyntaxNode): Token {
-  if (n.parent!.type === 'array' && splitElement(n.text)) return arrayElement(cx, n);
+  unbracedElement(cx, n);
+  const value = arrayValue(cx, n);
+  if (value) return value;
   // (A word of plain text with braces that do not expand here, `x{a,b}` in dash, is one word.)
   if (plainText(n)) return braceWord(cx, n) ?? word(cx, n);
   return cx.tok(n, 'argument', concatenationNote(cx, n) + valueNote(cx, n) + braceVarNote(cx, n), cx.subs(n.namedChildren));
@@ -744,7 +783,7 @@ export function concatenation(cx: Explainer, n: SyntaxNode): Token {
 
 /** A number: a constant of arithmetic that is not plain decimal, with its value (`arithNumber`), or a plain number. */
 export function number(cx: Explainer, n: SyntaxNode): Token {
-  return arithNumber(cx, n) ?? cx.tok(n, 'number', cx.s('数値', 'Number'));
+  return arrayValue(cx, n) ?? arithNumber(cx, n) ?? cx.tok(n, 'number', cx.s('数値', 'Number'));
 }
 
 /** `( … )` of an array assignment. */

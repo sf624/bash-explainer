@@ -421,7 +421,8 @@ describe('tricky lines (round 2)', () => {
     assert.match(find('echo ${a[-1]}', '[-1]').explanation, /Index -1: the last element/);
     assert.match(find('echo ${a[-2]}', '[-2]').explanation, /Index -2: the 2nd element from the end/);
     assert.match(find('echo ${a[2]}', '[2]').explanation, /Index 2: the 3rd element \(0-based\)/);
-    assert.match(find('echo ${a[i]}', '[i]').explanation, /Index \(or key/);
+    assert.match(find('echo ${a[i]}', '[i]').explanation, /^Index `i` \(an arithmetic expression\)$/);
+    assert.match(find('source f; echo ${a[i]}', '[i]').explanation, /Index \(or key/);
     assert.match(find('echo ${a[1+1]}', '[1+1]', 'ja').explanation, /算術式として計算すると 2/);
     const exprs = ['1+1', '2*3+4', '7/2', '-7/2', '-7%3', '2**3**2', '-2**2', '(1+2)*3', '010+1', '0x10-1', '2#101', '1 + 2', '5/0', '5%0', '2**-1', '1+', '(1', '1)', 'x+1', '', '1 2', '9223372036854775807+1', '2**64', '3**4', '2**200', '(-2)**200', '0**200', '1**200', '-1**201', '08'];
     for (const e of exprs) {
@@ -1227,7 +1228,7 @@ describe('tricky lines (round 5)', () => {
     // Values, as bash gives them.
     assert.strictEqual(bash(src), 'a bx c 3\n[] 1\n');
     assert.strictEqual(bash('a=(x); a+=(y z); echo ${a[@]}'), 'x y z\n');
-    assert.match(el('a=(x); a+=(y z)', 'a+=(y z)'), /^Append to variable `a` \(adds elements for arrays\)$/);
+    assert.match(el('a=(x); a+=(y z)', 'a+=(y z)'), /^Append the values in `\( \)` to the array `a`, after its last index$/);
   });
 
   it('does not claim more than bash does for the other lines', () => {

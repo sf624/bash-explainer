@@ -83,11 +83,13 @@ const EXPRESSIONS = new Set(['binary_expression', 'unary_expression', 'parenthes
 
 /**
  * Where an expression is read, and the sections of it: `[[ ]]` reads a conditional expression (6.4); `(( ))`, the
- * head of `for (( ))`, `$(( ))`, the offset and length of `${x:i:n}` and an array's index, an arithmetic one (6.5).
+ * head of `for (( ))`, `$(( ))`, the offset and length of `${x:i:n}` and an array's index, an arithmetic one (6.5): that of
+ * a subscript (`a[i+1]`), or of a value `[i+1]=x` in the list of a compound assignment (`SyntaxTree.arithmetic`).
  */
 const EXPRESSION_HOSTS: Readonly<Record<string, readonly string[]>> = {
   extended_test: CONSTRUCTS.extended_test, arithmetic_command: CONSTRUCTS.arithmetic_command,
   c_style_for_statement: ['3.2.5.1', '6.5'], arithmetic_expansion: ['3.5.5', '6.5'], expansion: ['3.5.3', '6.5'], subscript: ['6.7', '6.5'],
+  array: ['6.7', '6.5'],
 };
 /** The tokens of the head of `for (( ))` that are arithmetic's: around its expressions, and the `,` between two. */
 const ARITH_HEAD = new Set(['((', '))', ',']);
@@ -152,6 +154,8 @@ export function anonSections(n: SyntaxNode): readonly string[] | undefined {
   // (`=` and `+=` of an assignment, 3.4; the operators of a parameter expansion, `:-` or `#`, 3.5.3; the braces and
   // `..` of a brace expansion, 3.5.1; the operator of a redirection, as the redirection, 3.6.)
   if (parent.type === 'variable_assignment' || parent.type === 'expansion' || parent.type === 'brace_expression' || REDIRECTS.has(parent.type)) return nodeSections(parent);
+  // (The brackets of an array's subscript, `a[i]`, also in arithmetic, and the parentheses of a compound assignment: 6.7.)
+  if (parent.type === 'subscript' || parent.type === 'array') return NODES[parent.type];
   // (The `|` between the patterns of a `case` clause: not a pipe.)
   if (n.type === '|' && parent.type === 'case_item') return CONSTRUCTS.case_item;
   let construct: string | undefined;

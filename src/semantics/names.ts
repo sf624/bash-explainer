@@ -17,7 +17,7 @@ import { staticWordValue } from '../staticword';
 import type { ArgvParse } from '../argv/interpret';
 import { actedNames, actsOnNames } from '../argv/query';
 import { field, fields, prefixAssignments, type SyntaxNode } from '../syntax/tree';
-import { builtinParse, wrapped } from './effects';
+import { aliasExpandsNext, builtinParse, wordsAfterAlias, wrapped } from './effects';
 import { type ExecEnv, reachOf, type SlotLink, subshellReasons } from './env';
 import { type AliasState, type CommandEntry, type FunctionState, option, type ShellState, type StateModel, type Tri } from './state';
 import { docIndex } from './state';
@@ -174,6 +174,28 @@ interface Place {
   sourced?: SyntaxNode;
   /** `PATH=… cmd`: the command is looked up with that PATH, and the paths of `hash -p` are forgotten. */
   pathPrefix: boolean;
+}
+
+/** An alias that is expanded here (`NameResolution`). */
+export type AliasResolution = Extract<NameResolution, { kind: 'alias' }>;
+
+/**
+ * The words after the name of the simple command `c` that bash reads as aliases (6.6): when the text of the alias the
+ * name is (`first`) ends with a blank, the next word if it is an alias there (`resolve`: as a command name), and so on
+ * while the text of the one found ends with a blank too. `alias s='sudo '`: `s ll` runs `sudo ls -l`. (Not after an
+ * alias whose text is another alias ending so, `alias a=s`: bash 5.2 checks no word after `a`; 5.3 does.)
+ */
+export function aliasesAfter(c: SyntaxNode, first: AliasResolution, resolve: (name: string, at: SyntaxNode) => NameResolution): { word: SyntaxNode; res: AliasResolution }[] {
+  const out: { word: SyntaxNode; res: AliasResolution }[] = [];
+  let res = first;
+  for (const word of wordsAfterAlias(c)) {
+    if (!aliasExpandsNext(res.alias.value)) break;
+    const next = resolve(word.text, word);
+    if (next.kind !== 'alias') break;
+    out.push({ word, res: next });
+    res = next;
+  }
+  return out;
 }
 
 /**

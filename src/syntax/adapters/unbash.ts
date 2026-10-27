@@ -6,6 +6,7 @@ import { forEachChild, parse } from 'unbash';
 import type * as U from 'unbash';
 import type { BashParser, FieldName, Point, SyntaxError, SyntaxNode, SyntaxTree } from '../tree';
 import { type BraceBuilder, bracePieces, type Range } from './braces';
+import { extglobLike, NUMBER } from './extglob';
 import { scanGap } from './tokens';
 import { splitElement } from '../../staticword';
 
@@ -19,7 +20,6 @@ type Mut = {
 
 // (The parser's own list, for the node it builds: the syntax layer does not import the semantic model's, src/semantics/effects.ts.)
 const DECLARATIONS = new Set(['declare', 'typeset', 'export', 'readonly', 'local']);
-const NUMBER = /^-?\d+$/;
 type ArithCtx = 'cmd' | 'slice';
 /** A word part that is a node of its own, not a run of plain text. */
 type Part = Exclude<U.WordPart, U.LiteralPart | U.GlobPart | U.ExtendedGlobPart | U.BraceExpansionPart>;
@@ -35,26 +35,6 @@ const BLANKS = /(?:\s|\\\n|#[^\n]*)*/y;
 /** Blanks that do not end a line, and line continuations. */
 const HORIZONTAL = /(?:[ \t]|\\\n)*/y;
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-/**
- * Whether a plain run of text is an `extglob_pattern` rather than a word in the model. The choice follows
- * the scanner of the grammar used before (tree-sitter-bash), so that the explanations stay the same: it takes a
- * run that starts with a letter or a glob character, whose second character goes on as a word, and that has
- * something besides letters, dots and backslashes in it.
- * `alone` is a run that is a whole pattern. A run before a `|` is always one.
- */
-function extglobLike(t: string, alone: boolean, alternative: boolean, closedByParen: boolean): boolean {
-  // The scanner starts only on a letter or one of these.
-  if (!/^[A-Za-z?*+@!\\\-).[]/.test(t)) return false;
-  // A backslash starts it only before a blank or a quote.
-  if (t[0] === '\\' && !/^\\["\s]/.test(t)) return false;
-  if (/[*?[]/.test(t)) return t.length < 2 || t[0] === '[' || /[A-Za-z0-9("[?/\\_*|]/.test(t[1]);
-  if (alternative) return true;
-  if (!alone || NUMBER.test(t)) return false;
-  if (t.length === 1) return closedByParen ? !/[A-Za-z]/.test(t) : true;
-  if (!/[A-Za-z0-9("[?/\\_*]/.test(t[1])) return false;
-  return !/[A-Za-z]/.test(t[0]) || [...t.slice(1)].some((c) => !/[A-Za-z.\\]/.test(c));
-}
 
 /**
  * The errors of a script and of the scripts of the substitutions in it (a backquote with escapes is parsed
@@ -197,7 +177,22 @@ class Converter {
     root.startIndex = Math.min(...root.children.map((c) => c.startIndex), this.text.length);
     this.seal(root, null);
     this.errors.sort((x, y) => x.startIndex - y.startIndex || x.endIndex - y.endIndex);
-    return { text: this.original, root, errors: this.errors };
+    return { text: this.original, root, errors: this.errors, arithmetic: (owner, start, end) => this.arithmetic(owner as Mut, start, end) };
+  }
+
+  /** `SyntaxTree.arithmetic`: the text read as `(( ))` reads its expression, placed where it is, under `owner`. */
+  arithmetic(owner: Mut, start: number, end: number): SyntaxNode | undefined {
+    const tree = new Converter(`((${this.text.slice(start, end)}))`).run();
+    const [cmd, more] = tree.root.namedChildren;
+    // (Text unbash does not read as an expression is one `word`: `x y`.)
+    if (tree.errors.length || more || cmd.type !== 'arithmetic_command' || cmd.namedChildren.length !== 1 || cmd.namedChildren[0].type === 'word') return undefined;
+    const place = (m: Mut, parent: Mut): Mut => {
+      Object.assign(m, { startIndex: m.startIndex + start - 2, endIndex: m.endIndex + start - 2, parent });
+      Object.assign(m, { startPosition: this.point(m.startIndex), endPosition: this.point(m.endIndex) });
+      m.children.forEach((c) => place(c, m));
+      return m;
+    };
+    return place(cmd.namedChildren[0] as Mut, owner);
   }
 
   /**

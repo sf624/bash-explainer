@@ -393,8 +393,9 @@ describe('the specs of the dictionary', () => {
           : !alt.when || 'not' in alt.when || 'operand' in alt.when ? []
           : 'option' in alt.when ? optionWords(find((o) => o.names.includes((alt.when as { option: string[] }).option[0])) ?? { names: alt.when.option, text: tx('', '') })
           : optionWords(find((o) => o.selects === (alt.when as { mode: string }).mode));
-        // (An item that only some words fit takes the first such of these: `alias a=b` defines, `alias a` prints.)
-        const item = (o: (typeof alt.pattern)[number]) => (o.assignment ? 'A=1' : o.option ?? (o.command ? 'true' : o.matches ? ['w0rd', 'A=1'].find((w) => o.matches!.test(w))! : 'w0rd'));
+        // (An item that only some words fit takes the first such of these: `alias a=b` defines, `alias a` prints, `alias a='b '`
+        // checks the next word too, `alias a/b=1` is refused.)
+        const item = (o: (typeof alt.pattern)[number]) => (o.assignment ? 'A=1' : o.option ?? (o.command ? 'true' : o.matches ? ['w0rd', 'A=1', 'A=1 ', 'a/b=1'].find((w) => o.matches!.test(w))! : 'w0rd'));
         const once = alt.pattern.flatMap((o) => (o.repeat === '?' || o.repeat === '*' ? [] : [item(o)]));
         const each = alt.pattern.flatMap((o) => (o.repeat === '?' || o.repeat === '*' ? [item(o)] : [item(o)]));
         const twice = alt.pattern.flatMap((o) => (o.repeat === '*' || o.repeat === '+' ? [item(o), item(o)] : [item(o)]));

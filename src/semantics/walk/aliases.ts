@@ -2,7 +2,7 @@
 // a command whose name is an alias, which runs the alias's text with the rest of the command, read again. The trees of
 // those texts are the model's (`Scripts.expansion`): the trust scan reads the same ones (src/semantics/trust.ts).
 import { fields, type SyntaxNode } from '../../syntax/tree';
-import { aliasName, aliasOf, commandName } from '../effects';
+import { aliasName, aliasOf, aliasTexts, commandName } from '../effects';
 import { type AliasState, merge, option, type ShellState, withStatus } from '../shellstate';
 import type { Walker } from './walker';
 
@@ -43,7 +43,8 @@ export class WalkAliases {
   /**
    * The state after the simple command `n`, run from `st` once its words are expanded, when its name is an alias that
    * may be expanded (in the state its aliases come from, `Walker.expand`): the alias's text, then the rest of the
-   * command, read and run instead. Undefined otherwise.
+   * command, read and run instead. When the text ends with a blank, a word after it that is an alias here is replaced
+   * by its text too (6.6: `alias s='sudo '`, `s ll`), when it surely is one. Undefined otherwise.
    */
   expand(n: SyntaxNode, st: ShellState): ShellState | undefined {
     const name = aliasName(n);
@@ -51,7 +52,12 @@ export class WalkAliases {
     const alias = name !== undefined && !this.expanding.has(name) ? from.aliases.get(name) : undefined;
     const expands = !this.w.bash ? 'on' : option(from, 'shopt', 'expand_aliases');
     if (!alias || alias.state === 'off' || !(expands === 'on' || expands === 'unknown')) return undefined;
-    const root = this.w.scripts.expansion(n, alias.value);
+    const values = (word: string): string[] => {
+      const a = from.aliases.get(word);
+      return a?.state === 'on' && expands === 'on' ? [a.value] : [];
+    };
+    const [{ text, rest }] = aliasTexts(n, alias.value, values);
+    const root = this.w.scripts.expansion(n, text, rest);
     this.expanding.add(name!);
     const host = this.w.aliasHost;
     this.w.aliasHost ??= n;
