@@ -36,7 +36,7 @@ const SAMPLES: Partial<Record<FactId, unknown[]>> = {
   ],
   'variable-not-exported': [{ v: 'a', array: true }, { v: 'a' }],
   'array-joined-in-assignment': [
-    { v: 'v', op: '=', word: '$@', args: true, list: '("$@")', string: '"$*"' }, { v: 'v', op: '=', word: '${a[@]}', args: false, list: '("${a[@]}")', string: '"${a[*]}"' },
+    { v: 'v', op: '=', word: '$@', args: true, rewrite: [] }, { v: 'v', op: '=', word: '${a[@]}', args: false, rewrite: [] },
   ],
 };
 

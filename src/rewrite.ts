@@ -146,3 +146,8 @@ export function around(n: SyntaxNode, changes: readonly TextEdit[], before: stri
   const head = headEnd(n);
   return changed(n, [{ start: n.startIndex, end: n.startIndex, text: `${group ? '{ ' : ''}${before}` }, ...changes, { start: head, end: head, text: `${after}${group ? '; }' : ''}` }]);
 }
+
+/** The rewrite that puts `code` in place of the text from the start of node `from` to the end of node `to`, a later one of the same tree. */
+export function replaceSpan(from: SyntaxNode, to: SyntaxNode, code: string): Rewrite {
+  return { code, edits: treeOf(from).own ? [{ start: from.startIndex, end: to.endIndex, text: code }] : [] };
+}

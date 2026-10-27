@@ -142,10 +142,10 @@ The catalog's classification is in test/suggestions.test.ts (#273), one line per
 
 | id | the rewrite | states to run |
 |---|---|---|
-| `unquoted-variable-as-path` | `$x` → `"$x"`, only the expansions quoted (`"$d"/*`) | values with a space, a `*`, empty; files present and absent |
-| `unquoted-variable-in-test` | `[ $x = y ]` → `[ "$x" = y ]` | empty, unset, a space, `-n`, `=` |
-| `for-over-unquoted-args` | `for a in $@` → `for a in "$@"` | arguments with spaces, empty, a `*` |
-| `prefix-assignment-expanded-first` | `v=1 cmd $v` → `v=1 sh -c '… "$v"'` | `v` set before, unset |
+| `unquoted-variable-as-path` | `$x` → `"$x"`, only the expansions quoted (`"$d"/*`); none where quotes change the value (`${x:-*.txt}`) | values with a space, a `*`, empty; files present and absent |
+| `unquoted-variable-in-test` | `[ $x = y ]` → `[ "$x" = y ]`; none where quotes change the value (`${x:-'a b'}`) | empty, unset, a space, `-n`, `=` |
+| `for-over-unquoted-args` | `for a in $@` → `for a in "$@"`, or `for a` where `$@` is the whole list (also `select`) | arguments with spaces, empty, a `*` |
+| `prefix-assignment-expanded-first` | `v=1 cmd $v` → `v=1 sh -c 'cmd "$v"'`, where `sh` runs the same command with the same words (a program, or a builtin that is one too; plain words, the prefix's variables, quotes that go in double quotes); else the form, no edits | `v` set before, unset |
 | `wrapper-assignment-expanded-first` | `sudo v=1 cmd $v` → `sudo v=1 sh -c 'cmd $v'` (no edits where the string has another expansion), sudo stubbed by `env` | as above |
 | `declaration-masks-status` | `local x=$(f)` → `local x; x=$(f)` (only the words with `$( )` move); read-only names are set first: `x=$(f); readonly x`, and `local -r x=$(f)` → `local x; x=$(f); readonly x`; in a group after `&&` or in a pipeline | `f` fails, succeeds; with `set -e` |
 | `postfix-increment-status` | `((i++))` → `i=$((i+1))` (0 for every value), `((++i))` (1 when the new value is 0); with `set -e`, also `((i++)) \|\| true`; no assignment where the subscript acts (`a[i++]`) | `i` 0, 1, unset; with `set -e` |
@@ -157,7 +157,7 @@ The catalog's classification is in test/suggestions.test.ts (#273), one line per
 | `bracket-close-glued` | `[ -f a.txt]` → `[ -f a.txt ]` (with a variable, `[ -f $x]`, the style check of src/pitfalls.ts says it; none when the `]` is escaped, `b\]`) | file present, absent |
 | `script-last-test-returns-status` | `[ -f x ] && cmd` last → `if [ -f x ]; then cmd; fi`; `exit 0` after it | the test true, false |
 | `unbraced-element` | `$a[1]` → `${a[1]}` | an array of two elements; files that match `$a[1]` as a glob |
-| `array-joined-in-assignment` | `x=$@` → `x=("$@")`, or `x="$*"` when one string is meant | arguments with spaces, none |
+| `array-joined-in-assignment` | `x=$@` → `x=("$@")`, or `x="$*"` when one string is meant (only where the IFS starts with a space: `"$*"` joins with its first character) | arguments with spaces, none |
 
 The style checks of src/pitfalls.ts are mechanical: `[-f x]` → `[ -f x ]`, `x = 1` → `x=1`, `{echo a;}` → `{ echo a; }`, `}` after a command → `; }`, `rm -rf $D/…` → `"${D:?}"/…`, `read x` → `read -r x`, `<` in `[ ]` → `\<`, `$x]` → `$x ]`, `&&` in `[ ]` → `] && [`. Two give advice instead, whose rewrite changes what runs as meant: `source lib.sh` → `source ./lib.sh` (another file when `$PATH` has one of the name), and a regex pattern that is a variable → `-F`, `-w` or `-x`.
 

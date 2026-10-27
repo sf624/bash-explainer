@@ -413,16 +413,16 @@ describe('word facts: an array joined in an assignment', () => {
   it('says nothing in a shell without arrays', () => assert.deepStrictEqual(joined('a=$@', 'en', 'sh'), []));
 
   // In bash: the value is one string, joined with spaces (whatever IFS is), the array keeps the words apart, and the
-  // string form gives the same string.
+  // string form gives the same string. (With IFS=:, `"$*"` joins with `:`: the note gives no string form there.)
   const cases: string[] = ['a=$@', 'a="$@"', 'a=${@}', 'a=${arr[@]}', 'a="${arr[@]}"', 'a+=$@', 'declare a=${arr[@]/b/B}', 'readonly a=$@', 'IFS=:; a=$@', 'f() { local a=$@; declare -p a; }; f "$@"'];
   const programs = [undefined, ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])];
   for (const program of programs) {
     for (const src of cases) {
       it(`${src}: one string in ${program ? 'bash 5.3' : 'bash'}, and the rewrites do what the note says`, () => {
         const text = joined(src).join('');
-        const [, list] = /assign an array: `a\+?=(.*?)`;/.exec(text) ?? [];
+        const [, list] = /assign an array: `a\+?=(.*?)`(?:;|$)/.exec(text) ?? [];
         const [, string] = /if one string is meant, write `a\+?=(.*?)`$/.exec(text) ?? [];
-        assert.ok(list && string, text || '(none)');
+        assert.ok(list && !string === src.startsWith('IFS'), text || '(none)');
         const setup = "set -- 'a  b' c; arr=('a  b' c); ";
         const bash = (script: string) => runBash(setup + script, { program }).stdout;
         // (`local` is said in the function, and checked there.)
@@ -434,8 +434,7 @@ describe('word facts: an array joined in an assignment', () => {
         const after = local ? src.slice(src.indexOf(';')) : '';
         const items = bash(`${before}a${op}${list}${after.replace('declare -p a', 'printf "<%s>" "${a[@]}"')}${local ? '' : '; printf "<%s>" "${a[@]}"'}`);
         assert.strictEqual(items, src.includes('/b/B') ? '<a  B><c>' : '<a  b><c>', src);
-        // (With IFS=:, `"$*"` joins with `:`: the string form is the same only with the default IFS.)
-        if (!src.startsWith('IFS')) assert.strictEqual(bash(`${before}a${op}${string}${after}${local ? '' : '; declare -p a'}`), original, src);
+        if (string) assert.strictEqual(bash(`${before}a${op}${string}${after}${local ? '' : '; declare -p a'}`), original, src);
       });
     }
   }
