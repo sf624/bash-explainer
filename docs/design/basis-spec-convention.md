@@ -1,6 +1,6 @@
 # Spec and convention, as data
 
-Status: proposed (2026-10-28). The design of step 5 of [basis.md](basis.md): the two kinds of basis that steps 1 to 4 left in the type only. Data only: no view shows them (basis.md, section 6). Its questions are in section 5.
+Status: proposed (2026-10-28, #450). The design of step 5 of [basis.md](basis.md): the two kinds of basis that steps 1 to 4 left in the type only. Data only: no view shows them (basis.md, section 6). Its questions are in section 5.
 
 Steps 1 to 4 gave a basis to what bash does: the manual's sections, or a probe row (`checked`, `differs`). Two kinds are still empty:
 
