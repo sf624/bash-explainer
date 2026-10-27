@@ -522,8 +522,8 @@ describe('the reading tree as the Bash manual reads the shell variables (chapter
     assert.match(explain('UID=0 echo hi').notes.join('\n'), /keeps its value; the command still runs, without it$/);
     // (A function called in a subshell and outside it: what the main shell does.)
     assert.match(find(reading('f() { UID=0; }; f; (f)'), 'UID=0', 'assignment').text!, /: bash abandons/);
-    // (In POSIX mode, and in dash, the shell ends there instead: not said.)
-    assert.strictEqual(find(reading('set -o posix; UID=0'), 'UID=0', 'assignment').text, '`UID` is read-only, so this assignment fails and its value stays');
+    // (In POSIX mode the script ends there (test/posix-exits.test.ts); in dash too, which is not said.)
+    assert.strictEqual(find(reading('set -o posix; UID=0'), 'UID=0', 'assignment').text, '`UID` is read-only, so this assignment fails and its value stays: in POSIX mode, bash stops the script here, status 1');
     const dash = analyzer.explainLine(parser.parse('readonly x=1; x=2'), 0, 'dash', { reading: true }).reading!;
     assert.strictEqual(find(dash, 'x=2', 'assignment').text, '`x` is read-only, so this assignment fails and its value stays');
     // (Read-only on some paths only: said so, with no warning.)

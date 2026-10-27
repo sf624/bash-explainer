@@ -36,7 +36,7 @@ import { commandExampleFor, unreadStdin, wordExample } from './examples';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
 import { redirectInfo, redirectParts } from './redirections';
 import { hostCommand, NO_SPEC, resolve, restrictedAt, restrictedCall, shellVariant, specFor, unquotedWord } from './reads';
-import { statusRangeNote } from './status';
+import { posixExitNote, statusRangeNote } from './status';
 import { shellEffectNote } from './where';
 import { bracesHere, braceWord, braceWords, bracesMaybeOff, plainText, shown } from './words';
 
@@ -74,6 +74,7 @@ export function command(cx: Explainer, n: SyntaxNode): Token {
   return cx.examplesOf(n, () => {
     const t = commandToken(cx, n);
     statusRangeNote(cx, n);
+    posixExitNote(cx, n);
     return t;
   });
 }

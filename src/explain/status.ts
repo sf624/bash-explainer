@@ -16,6 +16,17 @@ export function postfixStatusNote(cx: Explainer, n: SyntaxNode): void {
   cx.note(fact(cx.lang, op === '++' ? 'postfix-increment-status' : 'postfix-decrement-status', { v, errexit: active === 'on', stops }), n);
 }
 
+/**
+ * In POSIX mode, an error of a special builtin that ends the shell (`posixExit` of the status model: an option it does
+ * not have, a name it refuses…); an assignment to a readonly variable before it is said by the assignment.
+ */
+export function posixExitNote(cx: Explainer, n: SyntaxNode): void {
+  const p = cx.status.posixExit(n);
+  if (!p || p.active === 'off' || p.exit.why === 'readonly-assignment') return;
+  const { why, word, status, at, since } = p.exit;
+  cx.note(fact(cx.lang, p.active === 'on' ? 'posix-special-builtin-error' : 'posix-special-builtin-error-maybe', { name: field(n, 'name')!.text, why, word, status, stops: p.stops, ...(since ? { since } : {}) }), at);
+}
+
 /** `exit 256` and `return 300`: the status is taken modulo 256. */
 export function statusRangeNote(cx: Explainer, n: SyntaxNode): void {
   const rule = cx.status.status(n);

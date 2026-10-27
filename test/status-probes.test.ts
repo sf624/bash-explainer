@@ -74,6 +74,17 @@ class Run {
   }
 
   /**
+   * In POSIX mode, an error the words decide that ends the shell (a function name, a special builtin's error); where
+   * it does not (`set -o bogus || …`), its status.
+   */
+  private posixExit(n: SyntaxNode): number | undefined {
+    const p = this.status.posixExit(n);
+    if (p?.active === 'unknown') throw new Unknown(`POSIX mode may end the shell at ${n.text}`);
+    if (p?.active === 'on') throw new Exit(p.exit.status);
+    return p?.exit.status;
+  }
+
+  /**
    * The command substitutions of `n`, run in order (each in a subshell; bash 5.3's `${ …; }` in the shell, where
    * `return` ends it): the status of the last one (and of each, in `ran`).
    */
@@ -162,12 +173,13 @@ class Run {
         }
         return 0;
       }
-      case 'function_definition': return 0;
+      case 'function_definition': this.posixExit(n); return 0;
       case 'command': if (field(n, 'name')) return this.command(n); {
         // (Assignments alone: the status of the substitution the model says runs last, `at`.)
         this.expansionError(n);
         const ran = new Map<SyntaxNode, number>();
         this.substitutions(n, ran);
+        this.posixExit(n);
         return rule.kind === 'last-substitution' && rule.at ? ran.get(rule.at)! : 0;
       }
       case 'arithmetic_command': {
@@ -199,6 +211,8 @@ class Run {
     const rule = this.status.status(n);
     this.expansionError(n);
     const s = this.substitutions(n);
+    const failed = this.posixExit(n);
+    if (failed !== undefined) return failed;
     const name = field(n, 'name')!.text;
     const args = fields(n, 'argument');
     switch (rule.kind) {

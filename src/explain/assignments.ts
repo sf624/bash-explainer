@@ -148,12 +148,16 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
   if (readonly === 'on') {
     const posix = option(st, 'set', 'posix');
     const known = (!cx.shell || cx.shell === 'bash') && (posix === 'off' || posix === 'default');
-    const then = !known ? undefined : prefix ? 'runs' : inSubshell(cx, n)?.sure ? 'subshell' : 'abandons';
+    // (In POSIX mode, one alone or before a special builtin ends the shell: the status model.)
+    const exit = cx.status.posixExit(n.parent!);
+    const exits = exit?.exit.why === 'readonly-assignment' && exit.active === 'on' ? (exit.stops === 'script' ? 'exits' : exit.stops === 'subshell' ? 'subshell' : undefined) : undefined;
+    const then = exits ?? (!known ? undefined : prefix ? 'runs' : inSubshell(cx, n)?.sure ? 'subshell' : 'abandons');
     cx.note(fact(cx.lang, 'assign-readonly', { name: own, then }), n);
     expl = cx.s(`\`${own}\` は読み取り専用なので、この代入はエラーになり、値は変わらない`, `\`${own}\` is read-only, so this assignment fails and its value stays`)
       + (then === 'abandons' ? cx.s('。bash はそれを含むスクリプトのコマンドの残り（この行、または囲む繰り返しや関数呼び出し）を中断する（終了ステータス 1）', ': bash abandons the rest of the command of the script it is in (the line, or the loop or function call around it), status 1')
         : then === 'subshell' ? cx.s('。サブシェルはそこで終わる（終了ステータス 1）', ': the subshell ends there, status 1')
-          : then === 'runs' ? cx.s('。コマンドは、この代入なしで実行される', ': the command still runs, without it') : '');
+          : then === 'runs' ? cx.s('。コマンドは、この代入なしで実行される', ': the command still runs, without it')
+            : then === 'exits' ? cx.s('。POSIX モードなので、bash はここでスクリプトを止める（終了ステータス 1）', ': in POSIX mode, bash stops the script here, status 1') : '');
   } else if (readonly === 'unknown') {
     expl += cx.s('。ただし、この前の一部の経路では読み取り専用になっていて、そこではこの代入はエラーになる', '. But some paths before here make it read-only, and there this assignment fails');
   }

@@ -14,7 +14,8 @@ import { parseExpansion } from '../../expansion';
 import { expansionFailure, sameInEveryLocale, substring } from '../chars';
 import { temporariesUnset } from '../names';
 import { aliasOf, builtinParse, commandName, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
-import { attribute, type Attribute, environmentHas, exportFromEnvironment, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy } from '../shellstate';
+import { attribute, type Attribute, environmentHas, exportFromEnvironment, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy, withStatus } from '../shellstate';
+import { builtinExit, definitionExit } from '../posixexits';
 import { changedByBash, optionRoles, readDeclarationWords, type Declaration } from '../vars';
 import { ExpansionError, NAME, type Operand } from './shared';
 import { restrictedFromHere } from './child';
@@ -708,6 +709,20 @@ export class WalkBuiltins {
     if (fails !== 'shell') return;
     if (v?.set === 'off' && v.declared !== 'unknown') return;
     this.w.jump('shell', undefined, st, false);
+  }
+
+  /**
+   * The state after statement `n` (a function definition or a simple command), run from `st` and leaving `after`: in
+   * POSIX mode, an error the words decide (src/semantics/posixexits.ts) ends the shell (its subshell), surely where POSIX
+   * mode is surely on; a builtin's error not where bash ignores `set -e` (`quiet`). Bash only.
+   */
+  posixExit(n: SyntaxNode, st: ShellState, after: ShellState): ShellState {
+    const posix = this.posixMode(st);
+    const name = n.type === 'command' ? commandName(n) : undefined;
+    if (!this.w.bash || posix === 'off' || (n.type === 'command' && name === undefined)) return after;
+    const exit = name === undefined ? definitionExit(n, this.w.version) : builtinExit(n, name, fields(n, 'argument'), st, this.w.version, this.w.shell);
+    if (!exit || (exit.ignorable && this.w.mode.quiet)) return after;
+    return this.w.jump('shell', undefined, withStatus(after, exit.status), posix === 'on');
   }
 
   /** Whether bash is in POSIX mode at `st`, where an arithmetic or assignment error ends the shell, not only the line. */

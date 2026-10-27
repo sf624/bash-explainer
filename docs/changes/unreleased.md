@@ -249,6 +249,30 @@ script.sh:4:8: warning: source -p is a bash 5.3 option: bash 5.2 reports "invali
 
 The plan, and the list of what else changed in bash 5.3, are in [docs/design/bash-versions.md](../design/bash-versions.md).
 
+### Where POSIX mode stops the script
+
+In POSIX mode (`set -o posix`, `#!/bin/bash --posix`, `bash --posix`), an error of a special builtin ends a shell that is not interactive (Bash manual 4.4, 6.11). Where the words written decide it, the line gets a warning (a caveat where POSIX mode is on some paths only), and the code after it is faded when the script's values are trusted. bash goes on where `set -e` would not stop it: in a condition, on the left of `&&` or `||`, after `!`, and in a function called there; behind `command` it is no special builtin. In a subshell, only the subshell ends. Each row was checked with bash 5.2.21 and 5.3, with a script read line by line (test/posix-exits.test.ts, probes/status.json).
+
+| Written, in POSIX mode | bash 5.2 | bash 5.3 | Said now |
+| --- | --- | --- | --- |
+| `set -Z`, `export -Z x`, `times -x`, `. -Z f` | exits, status 2 ("invalid option") | the same | "here `set` has no option `-Z`, so bash stops the script here (status 2)" |
+| `set -o nosuch`, `set -euo nosuch` | exits, status 2 | the same | "`nosuch` is no option name of `set -o`" |
+| `exec -a`, `.` or `source` alone, `trap INT`, `trap -- INT` | exits, status 2 (a usage error) | the same | "`-a` has no value", "`.` is given no file to read", "a lone word that is no signal number" |
+| `source -p dir f` | exits, status 2 (an option of bash 5.3) | reads `f` | the warning `laterOption` says so in 5.2 mode, and now the note too |
+| `export 1x=2`, `readonly a-b`, `export -n 1x`, `unset -v a-b` | "not a valid identifier", status 1, goes on | exits, status 1 | in 5.3 mode, "`1x=2` is not a valid name, so bash stops the script here (status 1; bash 5.3 on: bash 5.2 goes on, with status 1)" |
+| `readonly r; unset r` | "cannot unset: readonly variable", status 1, goes on | exits, status 1 | in 5.3 mode, "`r` is a read-only variable" |
+| `shift x` | "numeric argument required", status 1, goes on | exits, status 2 | in 5.3 mode, "`x` is no number" |
+| `readonly r=1; r=2 :` (an assignment before a special builtin) | exits, status 1, also on the left of `\|\|` | the same | the assignment's note: "in POSIX mode, bash stops the script here, status 1" |
+| `a-b() { :; }`, `a.b() { :; }` | "not a valid identifier": exits, status 2, wherever it is | defines the function | in 5.2 mode, "in POSIX mode bash 5.2 refuses a function name that is not a valid name: it stops the script here … (status 2; bash 5.3 defines the function)" |
+| `export() { :; }` | "is a special builtin": exits, status 2 | the same | as before; the code after it is faded now |
+| `set -Z \|\| :`, `if export 1x; then …`, `command set -Z`, `trap 2`, `unset a-b`, `export -f a-b` | goes on | goes on | nothing |
+
+Not decided from the words, so not said: a file `.` does not find (said by `.` itself), a redirection that fails, `eval` of text with a syntax error, `return x` in a function (bash 5.3 exits), `export a[1]=x`.
+
+The operands bash refuses as names are said so: `export 1x=2`, `readonly -p a-b`, `declare a.b` and `local -n 2r` are "Bash refuses this word: it is not a valid variable name ("not a valid identifier", status 1)". Before, they were "Variable `1x=2`".
+
+In bash 5.3's POSIX mode, a `$( )` does not change `$?` until the command is done, so the walk follows `$?` across it: after `false`, `[ "$(true)$?" = 1 ]` is true there, and the `else` branch is faded in a script that starts in POSIX mode. In bash 5.2, and out of POSIX mode, `$?` there is the substitution's status, not decided.
+
 ### What a command name is
 
 In both views of the panel, every command name has a badge after it: keyword, builtin, special builtin, function, alias or program (a program's badge has a dashed edge). A POSIX special builtin (`:`, `.`, `break`, `continue`, `eval`, `exec`, `exit`, `export`, `readonly`, `return`, `set`, `shift`, `source`, `times`, `trap`, `unset`: the list of `enable -s` in bash 5.2) says "special builtin" (`特殊ビルトイン`) where the other builtins say "builtin"; its tooltip says what the class means. The hover, Copy as Markdown and the command line end its row with " (special builtin)". When another command looks the name up, the badge says so: `sudo echo hi` shows `echo` as a program, run by `sudo`. A subcommand (`git commit`) has none: bash does not look it up.

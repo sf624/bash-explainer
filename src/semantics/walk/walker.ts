@@ -168,7 +168,7 @@ export class Walker {
   private outside = 0;
 
   constructor(readonly shell: Shell | undefined, readonly posix: boolean, readonly scripts: Scripts, readonly trust: Trust,
-    readonly host: HostCommands = NO_HOST, readonly hosted?: HostRun, seed?: Walker) {
+    readonly host: HostCommands = NO_HOST, readonly hosted?: HostRun, seed?: Walker, readonly version: import('../../bashversion').BashVersion = '5.2') {
     this.bash = !shell || shell === 'bash';
     this.blind = trust.blind !== undefined;
     // (With the nodes of those changes, for a call widened before the walk makes them.)
@@ -974,10 +974,10 @@ export class Walker {
   private functionDefinition(n: SyntaxNode, st: ShellState): ShellState {
     const name = field(n, 'name')!.text;
     const prev = st.functions.get(name);
-    // A readonly function cannot be defined again; in POSIX mode, nor can one named like a special builtin (bash
-    // stops the script there).
+    // A readonly function cannot be defined again; in POSIX mode, nor can one named like a special builtin, nor in bash
+    // 5.2 one whose name is no valid name: bash stops the script there (src/semantics/posixexits.ts).
     if (prev?.state === 'on' && prev.readonly === 'on') return st;
-    if (builtins[name]?.builtin === 'special' && option(st, 'set', 'posix') === 'on') return st;
+    if ((st = this.builtins.posixExit(n, st, st)).unreachable || (builtins[name]?.builtin === 'special' && option(st, 'set', 'posix') === 'on')) return st;
     this.changeAtDefinition.set(n, this.changeCount);
     // Under `set -a`, a function defined is exported.
     const all = option(st, 'set', 'allexport');
@@ -1203,7 +1203,7 @@ export class Walker {
     const called = fn && withStatus(this.call(fn, this.builtins.markedArrays(name, fields(n, 'argument'), n, st), assignments), undefined);
     if (called && fn.state === 'on') return this.conditions.mayNotRun(redirectionsOf(n), unrun, called);
     if (!special) st = this.builtins.appendArith(assignments, n, st);
-    const ran = withStatus(kept(this, n, temps, this.builtins.builtin(name, fields(n, 'argument'), n, st, true)), this.conditions.simpleStatus(n, before));
+    const ran = this.builtins.posixExit(n, before, withStatus(kept(this, n, temps, this.builtins.builtin(name, fields(n, 'argument'), n, st, true)), this.conditions.simpleStatus(n, before)));
     // (A function defined on some paths only: on the others, the builtin or the program runs.)
     return this.conditions.mayNotRun(redirectionsOf(n), unrun, called ? merge([called, ran], this.posix) : ran);
   }

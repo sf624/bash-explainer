@@ -4,7 +4,7 @@ import type { Shell } from '../../dialect';
 import { evalArith } from '../../arith';
 import { parseExpansion } from '../../expansion';
 import { staticWordValue, substitutionNames } from '../../staticword';
-import { assignmentsOnly, descendants, field, fields, prefixAssignments, type SyntaxNode } from '../../syntax/tree';
+import { assignmentsOnly, descendants, field, fields, prefixAssignments, substitutionForm, type SyntaxNode } from '../../syntax/tree';
 import { compareIntegers, patternMatches, plainRegex, testStatus, type TestEnv, unaryTest } from '../conditions';
 import { attribute, EMPTY, merge, option, type ShellState, type Tri, withStatus } from '../shellstate';
 import type { Decision } from '../state';
@@ -373,9 +373,13 @@ export class WalkConditions {
     return !st.variables.get('IFS') && this.w.trust.variable('IFS');
   }
 
-  /** `$?` in the statement being run, from `st`; not known in a statement with a substitution, which changes it. */
+  /**
+   * `$?` in the statement being run, from `st`; not known in a statement with a substitution, which changes it, but in
+   * bash 5.3's POSIX mode a `$( )` does not (manual 6.11; probes/status.json): only a `${ …; }` would.
+   */
   lastStatus(st: ShellState): string | undefined {
-    if (st.status === undefined || descendants(this.w.node!, SUBSTITUTIONS).length) return undefined;
+    const kept = this.w.version !== '5.2' && option(st, 'set', 'posix') === 'on';
+    if (st.status === undefined || descendants(this.w.node!, SUBSTITUTIONS).some((s) => !kept || s.type !== 'command_substitution' || substitutionForm(s).startsWith('${'))) return undefined;
     if (!this.w.mode.dead) for (const r of this.reading) r.set('?', String(st.status));
     return String(st.status);
   }

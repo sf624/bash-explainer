@@ -568,6 +568,11 @@ function declaredOperand(cx: Explainer, a: SyntaxNode, space: ReturnType<typeof 
   if (braces && braces.applies !== false) return positional(cx, a, bracedDeclare(cx, a, braces, command));
   if (a.type !== 'word') return cx.explain(a);
   const element = /^([A-Za-z_]\w*)\[(.+)\]$/s.exec(a.text);
+  // (`export 1x=2`, `readonly -p a-b`: no variable's name; `declare -p 1x` says "not found", as below. Checked with bash
+  // 5.2 and 5.3; in POSIX mode bash 5.3 exits, as a note says.)
+  if (space !== 'function' && !element && !/^[A-Za-z_]\w*$/.test(a.text) && !(builtins[command].locals && readDeclarationWords(command, fields(a.parent!, 'argument'), cx.state.shell).on.includes('p'))) {
+    return cx.tok(a, 'variable', cx.s('bash はこの語を受け付けない: 変数の名前として正しくない（「not a valid identifier」で終了ステータス 1）', 'Bash refuses this word: it is not a valid variable name ("not a valid identifier", status 1)'));
+  }
   if (space === 'function' || !element) {
     return cx.tok(a, 'variable', space === 'function' ? cx.s(`関数 \`${a.text}\` を対象にする`, `Function \`${a.text}\``) : cx.s(`変数 \`${a.text}\` を対象にする`, `Variable \`${a.text}\``));
   }

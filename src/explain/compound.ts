@@ -215,10 +215,13 @@ export function functionDef(cx: Explainer, n: SyntaxNode): Token {
   // A redirection after the body is part of the function: it is applied on every call.
   const redirected = n.namedChildren.some((c) => c.type === 'file_redirect' || c.type === 'heredoc_redirect' || c.type === 'herestring_redirect' || c.type === 'redirected_statement');
   const stored = redirected ? cx.s('。本体のあとのリダイレクトは、定義した時ではなく関数を呼ぶたびに適用される', '. The redirection after the body is applied each time the function is called, not when it is defined') : '';
-  // In POSIX mode a function cannot have the name of a special builtin.
-  const fails = definitionFails(cx.state, n);
+  // In POSIX mode a function cannot have the name of a special builtin, nor in bash 5.2 a name that is not valid (the
+  // status model; in another shell, a special builtin's name: `definitionFails`).
+  const exit = cx.status.posixExit(n);
+  const fails = exit ? exit.active : definitionFails(cx.state, n);
   if (fails !== 'off') {
-    cx.note(fact(cx.lang, fails === 'on' ? 'posix-special-function-name' : 'posix-special-function-name-maybe'), nameNode);
+    const id = exit?.exit.why === 'function-name' ? 'posix-function-name' : 'posix-special-function-name';
+    cx.note(fact(cx.lang, fails === 'on' ? id : `${id}-maybe`), nameNode);
   }
   return skeletal(cx.tok(n, 'function', cx.s(
     `関数 \`${name}\` の定義: 以後 \`${name}\` をコマンドのように呼び出せる（引数は関数内で $1, $2… になる）${stored}${cx.lineRef(n)}`,

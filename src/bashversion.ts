@@ -58,6 +58,18 @@ export function lacks(id: string, version: BashVersion): boolean {
   return !!since && earlier(version, since.version);
 }
 
+/**
+ * In POSIX mode, a function name that is not a valid name (`a-b() { :; }`): bash 5.2 refuses it ("not a valid
+ * identifier") and exits; from this release, bash accepts it (src/semantics/posixexits.ts; probes/status.json).
+ */
+export const POSIX_FUNCTION_NAMES_SINCE: BashVersion = '5.3';
+
+/**
+ * The errors of special builtins (`PosixExitWhy` in src/semantics/posixexits.ts) that end the shell in POSIX mode only
+ * from a release on; bash 5.2 goes on there, with status 1 (checked: probes/status.json).
+ */
+export const POSIX_EXITS_SINCE: Readonly<Record<string, BashVersion>> = { identifier: '5.3', readonly: '5.3', numeric: '5.3' };
+
 /** The `shopt` options that came in a later release (checked: test/bash53.test.ts). */
 export const SHELL_OPTIONS_SINCE: Readonly<Record<string, BashVersion>> = { array_expand_once: '5.3', bash_source_fullpath: '5.3' };
 
