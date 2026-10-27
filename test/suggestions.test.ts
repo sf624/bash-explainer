@@ -149,7 +149,7 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
 };
 
 /** Words of the English texts that tell the user what to write instead. */
-const SUGGESTS = /\b(Write|write it|write `|Use|use `|use a|Put|Run `|Pass|Quote it|Split it|Start the body|Keep the regex|Turn it on|single-quote|go through a shell|instead\b|give status 0|needs a space before it|would make it|Save the file)/;
+const SUGGESTS = /\b(Write|write it|write `|Use|use `|use a|Put|Run `|Pass|Quote it|Split it|Start the body|Keep the regex|Turn it on|single-quote|go through a shell|assign it first|instead\b|give status 0|needs a space before it|would make it|Save the file)/;
 
 /** Any parameter: a string `X` wherever it is read (also as `{ ja, en }`, a list of one, or a call). */
 const ANY: unknown = new Proxy(function () { /* placeholder */ }, {

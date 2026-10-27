@@ -178,20 +178,51 @@ describe('the rewrites of `for-over-unquoted-args`', () => {
 
 describe('the rewrites of `prefix-assignment-expanded-first`', () => {
   const id = 'prefix-assignment-expanded-first';
-  it('run the command through `sh -c`, its words as that shell reads them', () => {
-    assert.deepStrictEqual(rewrites('FOO=1 echo $FOO', id), [[`sh -c 'echo "$FOO"'`, `FOO=1 sh -c 'echo "$FOO"'`]]);
+  it('run the command through the shell of the script, its words as that shell reads them', () => {
+    assert.deepStrictEqual(rewrites('FOO=1 echo $FOO', id), [[`bash -c 'echo "$FOO"'`, `FOO=1 bash -c 'echo "$FOO"'`]]);
     // (A word in single quotes goes in double quotes; an expansion of each variable of the prefix in quotes; redirections stay outside.)
-    assert.deepStrictEqual(scripts("FOO=new A=2 printf '<%s>\\n' \"$FOO a\" ${FOO}/b $A >o", id), [`FOO=new A=2 sh -c 'printf "<%s>\\n" "$FOO a" "\${FOO}"/b "$A"' >o`]);
-    assert.deepStrictEqual(scripts('FOO=1 ./show x"$FOO"', id), [`FOO=1 sh -c './show x"$FOO"'`]);
+    assert.deepStrictEqual(scripts("FOO=new A=2 printf '<%s>\\n' \"$FOO a\" ${FOO}/b $A >o", id), [`FOO=new A=2 bash -c 'printf "<%s>\\n" "$FOO a" "\${FOO}"/b "$A"' >o`]);
+    assert.deepStrictEqual(scripts('FOO=1 ./show x"$FOO"', id), [`FOO=1 bash -c './show x"$FOO"'`]);
+    // (Before, `sh -c` in every script: dash's `echo` prints `-e bar`, and its `printf` has no `%q`.)
+    assert.deepStrictEqual(scripts('FOO=bar echo -e $FOO', id), [`FOO=bar bash -c 'echo -e "$FOO"'`]);
+    assert.deepStrictEqual(scripts('#!/bin/dash\nFOO=1 echo -n $FOO', id, 'dash'), [`#!/bin/dash\nFOO=1 dash -c 'echo -n "$FOO"'`]);
+  });
+  it('in sh, which may be dash: only a program, or `echo` and `printf` with no option and no `%q` or `%b`', () => {
+    assert.deepStrictEqual(scripts('#!/bin/sh\nFOO=1 echo $FOO', id, 'sh'), [`#!/bin/sh\nFOO=1 sh -c 'echo "$FOO"'`]);
+    assert.deepStrictEqual(scripts('#!/bin/sh\nFOO=1 ./show "$FOO"', id, 'sh'), [`#!/bin/sh\nFOO=1 sh -c './show "$FOO"'`]);
+    for (const src of ['#!/bin/sh\nFOO=bar echo -e $FOO', "#!/bin/sh\nFOO=bar printf '%q\\n' $FOO", "#!/bin/sh\nFOO=bar printf '%b' \"$FOO\"", '#!/bin/sh\nFOO=bar echo "-n" $FOO', '#!/bin/sh\nFOO=1 test -n $FOO']) {
+      const f = only(src, id, 'en', 'sh');
+      assert.strictEqual(f.rewrite, undefined, src);
+      assert.match(f.text, /go through a shell: `FOO=… sh -c '… "\$FOO"'`$/, src);
+    }
   });
   it('are what the note says', () => {
-    assert.match(only('FOO=1 echo $FOO', id).text, /To use the new value, go through a shell: `FOO=… sh -c 'echo "\$FOO"'`$/);
-    assert.match(only('FOO=1 echo $FOO', id, 'ja').text, /新しい値を使うなら `FOO=… sh -c 'echo "\$FOO"'` のようにシェル経由にします$/);
+    assert.match(only('FOO=1 echo $FOO', id).text, /To use the new value, go through a shell: `FOO=… bash -c 'echo "\$FOO"'`$/);
+    assert.match(only('FOO=1 echo $FOO', id, 'ja').text, /新しい値を使うなら `FOO=… bash -c 'echo "\$FOO"'` のようにシェル経由にします$/);
   });
-  // Where `sh -c` would not run the same command with the same words, the note shows the form, with no edits.
+  // A builtin that acts on the shell, and one with no program of its name; a function; an alias: no other shell has
+  // them, so the value is set first. (Before, `sh -c '… "$FOO"'`, where `cd` would change that shell's directory.)
+  for (const [src, name] of [['FOO=1 cd $FOO', 'cd'], ['FOO=1 read $FOO', 'read'], ['f() { :; }\nFOO=1 f $FOO', 'f'], ['shopt -s expand_aliases\nalias e=echo\nFOO=1 e $FOO', 'e']]) {
+    it(`set the value first, with no edits: ${JSON.stringify(src)}`, () => {
+      const f = only(src, id);
+      assert.strictEqual(f.rewrite, undefined);
+      assert.match(f.text, new RegExp(`To use the new value, assign it first, apart: \`FOO=…; ${name} … "\\$FOO"\`$`));
+    });
+  }
+  it('say so in Japanese', () => {
+    assert.match(only('FOO=1 cd $FOO', id, 'ja').text, /新しい値を使うなら、先に `FOO=…; cd … "\$FOO"` のように別に代入します$/);
+  });
+  for (const { name, program } of programs) {
+    it(`set first, \`cd\` goes to the new value in ${name}`, async () => {
+      // (What the note says to write, in place of the line.)
+      const src = 'FOO=/ cd $FOO\necho "@pwd=$PWD"\n';
+      const apart = src.replace('FOO=/ cd $FOO', 'FOO=/; cd "$FOO"');
+      assert.match((await run(program, src, driver(), { env: { FOO: '/tmp' }, recorders: '' })).out, /^@pwd=\/tmp$/m);
+      assert.match((await run(program, apart, driver(), { env: { FOO: '/tmp' }, recorders: '' })).out, /^@pwd=\/$/m);
+    });
+  }
+  // Where the shell would not run the same command with the same words, the note shows the form, with no edits.
   for (const src of [
-    // A builtin that acts on the shell, and one with no program of its name; a function; an alias.
-    'FOO=1 cd $FOO', 'FOO=1 read $FOO', 'f() { :; }\nFOO=1 f $FOO', 'shopt -s expand_aliases\nalias e=echo\nFOO=1 e $FOO',
     // A name that is not plain text; a redirection among the words.
     'FOO=1 \\echo $FOO', 'FOO=1 echo $FOO >o x',
     // Another expansion, which that shell would expand; a glob or a brace; quotes that would end the script's.
@@ -201,13 +232,13 @@ describe('the rewrites of `prefix-assignment-expanded-first`', () => {
     it(`show the form, with no edits: ${JSON.stringify(src)}`, () => {
       const f = only(src, id);
       assert.strictEqual(f.rewrite, undefined);
-      assert.match(f.text, /go through a shell: `FOO=… sh -c '… "\$FOO"'`$/);
+      assert.match(f.text, /go through a shell: `FOO=… bash -c '… "\$FOO"'`$/);
     });
   }
   it('in a string another shell runs: said, not carried as edits', () => {
     const f = only("bash -c 'FOO=1 echo $FOO'", id);
     assert.strictEqual(f.rewrite, undefined);
-    assert.match(f.text, /`FOO=… sh -c 'echo "\$FOO"'`$/);
+    assert.match(f.text, /`FOO=… bash -c 'echo "\$FOO"'`$/);
   });
 
   // Each input, and the values the author had in mind: those of its prefix.
@@ -216,6 +247,7 @@ describe('the rewrites of `prefix-assignment-expanded-first`', () => {
     { src: 'FOO=1 echo $FOO\n', meant: { FOO: '1' } },
     { src: "FOO=new printf '<%s>\\n' \"$FOO a\" $FOO\n", meant: { FOO: 'new' } },
     { src: 'FOO=1 A=2 ./show "$FOO" $A/b c\n', meant: { FOO: '1', A: '2' } },
+    { src: 'FOO=bar echo -e $FOO\n', meant: { FOO: 'bar' } },
   ];
   for (const { name, program } of programs) {
     for (const { src, meant } of inputs) {
