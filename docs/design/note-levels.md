@@ -84,6 +84,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `keyword-needs-separator` | `then` or `do` with no `;` or newline before it is an argument: a syntax error, every time. |
 | `bracket-missing-close`, `bracket-close-glued`, `test-malformed` | `[` or `test` fails every time it runs (status 2), and the condition is never evaluated. |
 | `unset-readonly`, `unset-function-and-variable` | `unset` fails every time (status 1), and nothing is unset. |
+| `assign-readonly` | The assignment fails every time, and bash abandons the rest of the command it is in (or, before a command name, runs the command without it). |
 | `local-outside-function` | `local` fails every time outside a function. |
 | `posix-special-function-name` | bash stops the script at the definition. |
 | `alias-not-expanded-in-script` | The alias is "command not found" in a script. |

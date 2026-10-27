@@ -271,9 +271,9 @@ export const wellKnownVariables: Record<string, Text> = wordTable({
   ),
   BASH_REMATCH: tx(
     '直前の `[[ =~ ]]` の結果の配列: 要素 0 が一致した全体、要素 1 以降が括弧のグループ（一致しなかったときは空）',
-    'Result of the last `[[ =~ ]]`: element 0 is the whole match, elements 1 and up are the parenthesized groups (empty after a match that fails)',
+    'Array of the results of the last `[[ =~ ]]`: element 0 is the whole match, elements 1 and up are the parenthesized groups (empty after a match that fails)',
   ),
-  PIPESTATUS: tx('直前のフォアグラウンドのパイプラインの各コマンドの終了ステータスの配列（コマンドが1つでも要素が1つある）', 'Exit statuses of each command in the last foreground pipeline (one element for a single command)'),
+  PIPESTATUS: tx('直前のフォアグラウンドのパイプラインの各コマンドの終了ステータスの配列。コマンドが1つでも要素が1つある', 'Array of the exit statuses of each command in the last foreground pipeline: one element for a single command'),
   COPROC: tx('`coproc` が作る配列: `[0]` がコプロセスの出力を読むファイルディスクリプタ、`[1]` がその入力に書くファイルディスクリプタ', 'Array made by `coproc`: `[0]` is the descriptor that reads the co-process output, `[1]` the one that writes to its input'),
   COPROC_PID: tx('`coproc` が起動したコプロセスのプロセス ID', 'Process ID of the co-process started by `coproc`'),
   REPLY: tx('変数名を渡さない `read` が読んだ行（前後の空白も残る）と、`select` で入力された行', 'The line `read` reads when given no name (with its leading and trailing spaces), and the line typed to `select`'),
@@ -311,7 +311,7 @@ export const wellKnownVariables: Record<string, Text> = wordTable({
   BASH_VERSION: tx('この bash のバージョン（`5.2.21(1)-release` など）', 'Version of this bash (such as `5.2.21(1)-release`)'),
   BASH_XTRACEFD: tx('`set -x` がトレースを書くファイルディスクリプタ（未設定か空なら標準エラー出力(fd 2)）', 'File descriptor `set -x` writes its trace to (stderr when it is unset or empty)'),
   CHILD_MAX: tx('シェルが覚えておく、終了した子プロセスの終了ステータスの数', 'Number of exited child processes whose status the shell remembers'),
-  COLUMNS: tx('端末の幅。`select` がメニューを並べるのに使う（端末では `checkwinsize` が設定する）', 'Width of the terminal, which `select` uses to lay out its menu (at a terminal, `checkwinsize` sets it)'),
+  COLUMNS: tx('端末の幅。`select` がメニューを並べるのに使う（端末では、実行したプログラムが終わるたびに bash が設定する: `checkwinsize`。それまでは環境にあるときだけ）', 'Width of the terminal, which `select` uses to lay out its menu (at a terminal, bash sets it each time a program it ran ends, `checkwinsize`; before that, only the environment gives it)'),
   COMP_CWORD: tx('補完関数の中で: カーソルがある単語の、`COMP_WORDS` の添字', 'In a completion function: the index in `COMP_WORDS` of the word at the cursor'),
   COMP_LINE: tx('補完関数の中で: 入力中のコマンドライン', 'In a completion function: the current command line'),
   COMP_POINT: tx('補完関数の中で: コマンドラインの先頭から数えたカーソルの位置', 'In a completion function: the position of the cursor from the start of the line'),
@@ -350,11 +350,11 @@ export const wellKnownVariables: Record<string, Text> = wordTable({
   LC_MESSAGES: tx('`$"…"` の文字列の翻訳に使うロケール', 'Locale used to translate `$"…"` strings'),
   LC_NUMERIC: tx('数値の書式のロケール', 'Locale of number formatting'),
   LC_TIME: tx('日付と時刻の書式のロケール', 'Locale of date and time formatting'),
-  LINES: tx('端末の高さ。`select` がメニューを並べるのに使う（端末では `checkwinsize` が設定する）', 'Height of the terminal, which `select` uses to lay out its menu (at a terminal, `checkwinsize` sets it)'),
+  LINES: tx('端末の高さ。`select` がメニューを並べるのに使う（端末では、実行したプログラムが終わるたびに bash が設定する: `checkwinsize`。それまでは環境にあるときだけ）', 'Height of the terminal, which `select` uses to lay out its menu (at a terminal, bash sets it each time a program it ran ends, `checkwinsize`; before that, only the environment gives it)'),
   MACHTYPE: tx('bash が動いているシステムの種類（`x86_64-pc-linux-gnu` のような cpu-company-system の形式）', 'System type bash runs on, as cpu-company-system (such as `x86_64-pc-linux-gnu`)'),
   MAILCHECK: tx('対話シェルがメールを確かめる間隔の秒数（既定は 60）', 'How often, in seconds, an interactive shell checks for mail (60 by default)'),
   MAPFILE: tx('変数名を渡さない `mapfile`（`readarray`）が行を入れる配列', 'Array `mapfile` (`readarray`) fills when given no name'),
-  OPTERR: tx('1（既定）なら `getopts` がエラーメッセージを表示する', 'When 1 (the default), `getopts` prints its error messages'),
+  OPTERR: tx('0 でなければ `getopts` がエラーメッセージを表示する（既定は 1）', 'Unless it is 0, `getopts` prints its error messages (it is 1 by default)'),
   OSTYPE: tx('bash が動いている OS（`linux-gnu` など）', 'Operating system bash runs on (such as `linux-gnu`)'),
   POSIXLY_CORRECT: tx('設定されていると、bash は POSIX モードで動く', 'When it is set, bash runs in POSIX mode'),
   PPID: tx('シェルの親プロセスのプロセス ID', "Process ID of the shell's parent process"),
@@ -383,7 +383,7 @@ export const variableAssignments: Record<string, Text> = wordTable({
   CDPATH: tx('これ以降、`cd dir` は `dir` をこれらのディレクトリでも探す（そこで見つけたときは、移動先を表示する）', 'From here, `cd dir` also looks for `dir` in these directories (and prints the directory when it finds it there)'),
   HOME: tx('これ以降、引数なしの `cd` と `~` はこのディレクトリになる', 'From here, `cd` with no argument and `~` use this directory'),
   OPTIND: tx('`getopts` はこの位置の引数から読む。`OPTIND=1` で `$1` から読み直す', '`getopts` reads from this argument on: `OPTIND=1` makes it start again at `$1`'),
-  OPTERR: tx('これ以降、`getopts` は値が 1 のときだけエラーメッセージを表示する', 'From here, `getopts` prints its error messages only when this is 1'),
+  OPTERR: tx('これ以降、値が 0 なら `getopts` はエラーメッセージを表示しない', 'From here, `getopts` prints no error messages when this is 0'),
   PATH: tx('これ以降、コマンドはこれらのディレクトリから順に探される（覚えていたコマンドのパスは忘れる。`hash`）', 'From here, commands are looked up in these directories, in order (and bash forgets the paths of commands it remembered, `hash`)'),
   OLDPWD: tx('これ以降、`cd -` はこのディレクトリに移動する', 'From here, `cd -` goes to this directory'),
   PWD: tx('変数が変わるだけで、カレントディレクトリは変わらない（移動するのは `cd`）', 'Only the variable changes, not the current directory (`cd` changes both)'),
@@ -392,7 +392,7 @@ export const variableAssignments: Record<string, Text> = wordTable({
   BASH_CMDS: tx('要素を加えると、`hash` が覚えるコマンドになる（要素を削除しても残る）', 'Adding an element adds a command `hash` remembers (unsetting one does not remove it)'),
   BASH_COMPAT: tx('これ以降、bash はその版との互換モードで動く（`42` なら `shopt -s compat42` と同じ）', 'From here, bash behaves as that release in compatibility mode (`42`: as `shopt -s compat42`)'),
   BASH_ENV: tx('`export` すると、このスクリプトが起動する非対話の bash が、このファイルを先に読む', 'Exported, it makes a non-interactive bash this script starts read this file first'),
-  BASH_XTRACEFD: tx('これ以降、`set -x` のトレースはこのファイルディスクリプタに書かれる', 'From here, `set -x` writes its trace to this file descriptor'),
+  BASH_XTRACEFD: tx('これ以降、`set -x` のトレースはこのファイルディスクリプタに書かれる（前に書いていたディスクリプタは開いたまま）', 'From here, `set -x` writes its trace to this file descriptor (the one it wrote to before stays open)'),
   EXECIGNORE: tx('これ以降、`PATH` でコマンドを探すとき、これらに一致するファイルは飛ばす', 'From here, the search in `PATH` skips the files that match'),
   FUNCNEST: tx('これ以降、この深さを超える関数呼び出しはエラーになり、bash はそれを含むスクリプトのコマンドごと中断する（終了ステータス 1）', 'From here, a function call deeper than this is an error, and bash abandons the command of the script it is in (status 1)'),
   GLOBIGNORE: tx(
@@ -410,6 +410,17 @@ export const variableAssignments: Record<string, Text> = wordTable({
   LANG: tx('これ以降、bash は `LC_` の変数で決めないカテゴリーにこのロケールを使う（`export` されていれば、起動するコマンドも）', 'From here, bash uses this locale for the categories no `LC_` variable sets (and so do the commands it starts, if it is exported)'),
   LC_ALL: tx('これ以降、bash はすべてのカテゴリーにこのロケールを使う（`export` されていれば、起動するコマンドも）', 'From here, bash uses this locale for every category (and so do the commands it starts, if it is exported)'),
   LC_CTYPE: tx('これ以降、`LC_ALL` がなければ、bash はこのロケールで文字を読む（`export` されていれば、起動するコマンドも）', 'From here, unless `LC_ALL` is set, bash reads characters in this locale (and so do the commands it starts, if it is exported)'),
+});
+
+/**
+ * What an empty value does, where it differs from what `variableAssignments` says (`BASH_XTRACEFD=`). test/reading-manual.test.ts
+ * checks each with bash.
+ */
+export const variableEmptied: Record<string, Text> = wordTable({
+  BASH_XTRACEFD: tx(
+    'これ以降、`set -x` のトレースは標準エラー出力に戻り、bash はそれまで書いていたディスクリプタを閉じる（2 でも閉じる）',
+    'From here, `set -x` writes its trace to stderr again, and bash closes the descriptor it wrote to (even 2)',
+  ),
 });
 
 /**

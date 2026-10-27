@@ -284,6 +284,10 @@ describe('explanations from the execution environment', () => {
       "set -a; name=x\nbash -c 'echo $name'", "export name=x\nx | env name=$name bash -c 'echo $name'", "[ \"$1\" ] && export name\nname=x\nbash -c 'echo $name'"]) {
       assert.deepStrictEqual(pitfalls(src, 'en', 1), [], src);
     }
+    // A variable of bash's: not one every bash has (`PS4`, `BASH_ARGV0`) or gets exported (`OLDPWD`, `HOME`), but one
+    // that only a builtin or a terminal sets (`COLUMNS`, `REPLY`).
+    for (const v of ['PS4', 'BASH_ARGV0', 'OLDPWD', 'HOME']) assert.deepStrictEqual(pitfalls(`${v}=/tmp\nbash -c 'echo "$${v}"'`, 'en', 1), [], v);
+    for (const v of ['COLUMNS', 'LINES', 'REPLY', 'OPTARG']) assert.match(pitfalls(`${v}=1\nbash -c 'echo "$${v}"'`, 'en', 1)[0], /is not exported, so it is empty there/, v);
     // A read before the string sets the variable counts; one with a default or a length does not.
     assert.strictEqual(pitfalls("x=1\nbash -c 'echo $x; x=2'", 'en', 1).length, 1);
     assert.deepStrictEqual(pitfalls("y=1\nbash -c 'echo ${y:-none} ${#y} ${y+set} ${y:=d} ${y?}'", 'en', 1), []);
@@ -303,6 +307,7 @@ describe('explanations from the execution environment', () => {
     assert.strictEqual(pitfalls("export x=1\ndocker run -e y img sh -c 'echo $x'", 'en', 1).length, 1);
     if (!hasBash) this.skip();
     assert.strictEqual(bash("x=1; bash -c 'echo \"[$x]\"; x=2'; y=1; bash -c 'echo ${y:-none} ${#y} ${y+set}'"), '[]\nnone 0\n');
+    assert.strictEqual(bash("PS4=/tmp; OLDPWD=/tmp; COLUMNS=1; REPLY=1; bash -c 'echo \"[$PS4] [$OLDPWD] [$COLUMNS] [$REPLY]\"'"), '[+ ] [/tmp] [] []\n');
     // (`$_` starts as the shell's path. The `; true` keeps bash from running the last command in place, which
     // leaves another value in `_`, never `1`.)
     assert.match(bash("_=1; bash -c 'echo \"[${_}] [$_]\"'; true"), /^\[\/\S+\] \[\/\S+\]\n$/);

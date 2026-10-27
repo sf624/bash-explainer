@@ -4,7 +4,7 @@
 // the line's context (src/explain/context.ts) and its readers (src/explain/reads.ts: the attributes in effect).
 import type { Kind, Span, Token } from './analyzer-types';
 import { evalArith, intValue } from './arith';
-import { cannotAssign, expansionOps } from './dict/syntax';
+import { cannotAssign, expansionOps, wellKnownVariables } from './dict/syntax';
 import type { Explainer } from './explain/context';
 import { isAssoc, shoptAt } from './explain/reads';
 import { scriptValue } from './explain/values';
@@ -168,7 +168,8 @@ function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, is
     case 'name': {
       const d = varDesc(h, t);
       if (p.prefix === '!' && (p.op === '*' || p.op === '@')) return ['variable', s(`変数名の接頭辞 \`${t}\``, `Variable name prefix \`${t}\``)];
-      if (p.subscript !== undefined) return ['variable', d ? s(`配列 \`${t}\`: ${d}`, `Array \`${t}\`: ${d}`) : s(`配列 \`${t}\``, `Array \`${t}\``)];
+      // (One of bash's says itself that it is an array: `BASH_SOURCE`.)
+      if (p.subscript !== undefined) return ['variable', d ? (Object.hasOwn(wellKnownVariables, t) ? `\`${t}\`: ${d}` : s(`配列 \`${t}\`: ${d}`, `Array \`${t}\`: ${d}`)) : s(`配列 \`${t}\``, `Array \`${t}\``)];
       return ['variable', d ? `\`$${t}\`: ${d}` : s(`変数 \`${t}\``, `Variable \`${t}\``)];
     }
     case 'subscript': {

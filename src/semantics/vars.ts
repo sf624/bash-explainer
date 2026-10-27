@@ -23,7 +23,10 @@ export interface BashVariable {
   numeric?: true;
   /** The text the script assigns to it is read as arithmetic, as for `declare -i` (`OPTIND='x=5'` sets x). */
   arithmetic?: true;
-  /** The environment usually has it, exported (`HOME`, set at login): a shell the script starts gets it. */
+  /**
+   * The environment usually has it, exported (`HOME`, set at login), or bash exports it from the start with no value
+   * (`OLDPWD`: `declare -x OLDPWD`): a shell the script starts gets what the script assigns to it.
+   */
   environment?: true;
   /** Bash ignores what the script assigns to it: it keeps its own value (`BASHPID`, `LINENO`). */
   ignored?: true;
@@ -117,7 +120,7 @@ export const BASH_VARIABLES: Readonly<Record<string, BashVariable>> = {
   MACHTYPE: { effect: NONE, start: '--' },
   MAILCHECK: { effect: NONE },
   MAPFILE: { effect: BASH_SETS, setBy: ['mapfile', 'readarray'] },
-  OLDPWD: { effect: BASH_SETS, setBy: CD },
+  OLDPWD: { effect: BASH_SETS, setBy: CD, environment: true },
   OPTERR: { effect: NONE, start: '--' },
   OSTYPE: { effect: NONE, start: '--' },
   PIPESTATUS: { effect: BASH_SETS, dynamic: true, numeric: true },
@@ -171,10 +174,11 @@ export const INTEGERS_AT_START: readonly string[] = Object.keys(BASH_VARIABLES).
 export const readonlyAtStart = (name: string): boolean => known(name)?.start?.includes('r') ?? false;
 
 /**
- * Whether a shell the script starts has `name` whatever the script does: bash sets it at start, or it is set without
- * the script naming it, or the environment usually has it (`HOME`).
+ * Whether a shell the script starts has `name` whatever the script does: bash sets it at start (`PS4`), or computes
+ * it (`FUNCNAME`), or the environment usually has it (`HOME`). Not one that only a builtin or a terminal sets
+ * (`REPLY`, `COLUMNS`): a `bash -c` has it empty until then.
  */
-export const givenToEveryShell = (name: string): boolean => setAtStart(name) || changedUnseen(name) || !!known(name)?.environment;
+export const givenToEveryShell = (name: string): boolean => setAtStart(name) || !!known(name)?.dynamic || !!known(name)?.environment;
 
 /** Whether bash ignores what the script assigns to `name` (`BASHPID`, `LINENO`): it keeps its own value. */
 export const assignmentIgnored = (name: string): boolean => !!known(name)?.ignored;

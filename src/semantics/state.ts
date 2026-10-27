@@ -87,6 +87,11 @@ export interface StateModel {
   setWrites(n: SyntaxNode): ReadonlyMap<string, 'on' | 'off'>;
   /** The variables the statement `n` sets itself, on any walk (`n=1`, `read n`, `((n++))`, `printf -v n`); not those of the statements inside it. */
   writes(n: SyntaxNode): ReadonlySet<string>;
+  /**
+   * Whether the statement around `n` sets `name` only as a local of the function that runs it, on every walk that sets
+   * it (`local RANDOM=3`, or `RANDOM=3` and `unset RANDOM` after it): a local of bash's own variables is a plain one.
+   */
+  local(n: SyntaxNode, name: string): boolean;
   /** The `source` and `.` commands that run (their files are not read). */
   readonly sources: readonly SyntaxNode[];
   /** The first statement of the unit bash reads at once that holds `n`: a line of top-level statements, or a compound command. */
@@ -563,7 +568,15 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
       return w.unitStart.get(top) ?? top;
     },
     setWrites: (n) => w.setWrites.get(n) ?? new Map(),
-    writes: (n) => w.varWrites.get(n) ?? new Set(),
+    writes: (n) => w.varWrites.shell.get(n) ?? new Set(),
+    local(n, name) {
+      for (let x: SyntaxNode | null = n; x; x = x.parent) {
+        const local = w.varWrites.local.get(x)?.has(name);
+        const shell = w.varWrites.shell.get(x)?.has(name);
+        if (local || shell) return !shell;
+      }
+      return false;
+    },
     condition: (n) => w.conditions.decision(n),
     dead: (n) => w.runAt(n) !== undefined && !w.live.has(n) && w.everywhere(n),
     settled: (n) => w.everywhere(n),

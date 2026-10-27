@@ -4,11 +4,11 @@
 // where bash-ast shows it.
 import * as assert from 'assert';
 import * as fs from 'fs';
-import { Analyzer } from '../src/analyzer';
-import { variableAssignments, wellKnownVariables } from '../src/dict/syntax';
+import { Analyzer, type Token } from '../src/analyzer';
+import { variableAssignments, variableEmptied, wellKnownVariables } from '../src/dict/syntax';
 import { VARIABLE_SECTIONS } from '../src/manual';
 import { readingNodes, type ReadingNode } from '../src/reading';
-import { readonlyAtStart } from '../src/semantics/vars';
+import { BASH_VARIABLES, readonlyAtStart } from '../src/semantics/vars';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { ui } from '../src/ui/render';
 import type { SyntaxNode } from '../src/syntax/tree';
@@ -413,7 +413,8 @@ const ASSIGNMENT_PROBES: Record<string, { script: string; stdout?: string | RegE
   CDPATH: { script: 'mkdir -p d/sub; CDPATH=d; cd sub; basename "$PWD"', stdout: /\/d\/sub\nsub\n$/ },
   HOME: { script: 'HOME=/tmp; cd; pwd; echo ~', stdout: '/tmp\n/tmp\n' },
   OPTIND: { script: 'set -- -a; getopts a o; getopts a o; echo $?; OPTIND=1; getopts a o; echo "$? $o"', stdout: '1\n0 a\n' },
-  OPTERR: { script: 'set -- -z; OPTERR=0; getopts a o; OPTIND=1; OPTERR=1; getopts a o', stderr: /^[^\n]*illegal option -- z\n$/ },
+  // (Silent only at 0: 2 prints too.)
+  OPTERR: { script: 'set -- -z; OPTERR=0; getopts a o; OPTIND=1; OPTERR=2; getopts a o', stderr: /^[^\n]*illegal option -- z\n$/ },
   // (An empty entry is the current directory.)
   PATH: { script: 'hash -p /bin/ls ls; hash -t ls; PATH=$PATH; hash -t ls; printf "#!/bin/sh\\necho mine\\n" > c; chmod +x c; PATH=:/usr/bin:/bin; c', stdout: '/bin/ls\nmine\n', stderr: /hash: ls: not found\n$/ },
   OLDPWD: { script: 'OLDPWD=/; cd - >/dev/null; pwd', stdout: '/\n' },
@@ -423,7 +424,8 @@ const ASSIGNMENT_PROBES: Record<string, { script: string; stdout?: string | RegE
   BASH_CMDS: { script: 'BASH_CMDS[zz]=/bin/echo; hash -t zz; unset "BASH_CMDS[zz]"; hash -t zz', stdout: '/bin/echo\n/bin/echo\n' },
   BASH_COMPAT: { script: 'BASH_COMPAT=44; shopt -p compat44', stdout: 'shopt -s compat44\n' },
   BASH_ENV: { script: 'echo "echo from-env" > e; BASH_ENV=$PWD/e; bash -c "echo run"; export BASH_ENV; bash -c "echo run"', stdout: 'run\nfrom-env\nrun\n' },
-  BASH_XTRACEFD: { script: 'exec 3>t; BASH_XTRACEFD=3; set -x; : hi; set +x; cat t', stdout: '+ : hi\n+ set +x\n', stderr: '' },
+  // (The descriptor written to before stays open.)
+  BASH_XTRACEFD: { script: 'exec 3>t 4>/dev/null; BASH_XTRACEFD=4; BASH_XTRACEFD=3; [ -e /dev/fd/4 ] && echo open; set -x; : hi; set +x; cat t', stdout: 'open\n+ : hi\n+ set +x\n', stderr: '' },
   EXECIGNORE: { script: 'EXECIGNORE="*/ls"; ls / >/dev/null; echo $?', stdout: '127\n' },
   // (In a script: `bash -c` ends there in bash 5.3.)
   FUNCNEST: { script: 'printf \'FUNCNEST=3\\nf() { f; }\\ng() { f; echo in; }\\ng || echo or\\necho "status $?"\\n\' > s; "$BASH" s', stdout: 'status 1\n', stderr: /maximum function nesting level exceeded \(3\)/ },
@@ -478,19 +480,50 @@ describe('the reading tree as the Bash manual reads the shell variables (chapter
       const text = find(reading(`echo $${name}`), `$${name}`, 'expansion').text!;
       assert.ok(text.startsWith(wellKnownVariables[name].en + (readonlyAtStart(name) ? ' (read-only)' : '')), `${name}: ${text}`);
     }
+    // An array of bash's says itself that it is one: its name in `${BASH_SOURCE[0]}` is its description alone.
+    const arrays = names.filter((n) => /[aA]/.test(BASH_VARIABLES[n].start ?? '')).concat(['BASH_REMATCH', 'PIPESTATUS', 'FUNCNAME', 'COPROC', 'MAPFILE', 'COMP_WORDS', 'COMPREPLY']);
+    for (const name of arrays) assert.ok(/\barray\b/i.test(wellKnownVariables[name].en) && wellKnownVariables[name].ja.includes('配列'), name);
+    const tokens = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...tokens(t.children)]);
+    assert.strictEqual(tokens(explain('echo "${BASH_SOURCE[0]}"').items).find((t) => t.label === 'BASH_SOURCE')!.explanation, wellKnownVariables.BASH_SOURCE.en);
     // The read-only ones: an assignment fails, and the variable keeps its value; bash goes on (a command after a
     // prefix assignment runs too).
     const readonly = names.filter(readonlyAtStart);
     assert.deepStrictEqual(readonly, ['BASHOPTS', 'BASH_VERSINFO', 'EUID', 'PPID', 'SHELLOPTS', 'UID']);
-    for (const name of readonly) assert.strictEqual(find(reading(`${name}=1`), `${name}=1`, 'assignment').text, `\`${name}\` is read-only, so this assignment fails and its value stays`);
-    assert.match(explain('UID=0').notes.join('\n'), /The variable `UID` is read-only, so this assignment fails \(`readonly variable`\) and `UID` keeps its value/);
-    assert.match(find(reading('readonly x=1\nx=2', 1), 'x=2', 'assignment').text!, /^`x` is read-only/);
+    // An assignment of its own abandons the rest of the command of the script it is in: the line, or the loop or
+    // function call around it; the next line runs, with status 1. In a subshell, the subshell ends. Before a command
+    // name, the command still runs.
+    const abandons = 'bash abandons the rest of the command of the script it is in (the line, or the loop or function call around it), status 1';
+    for (const name of readonly) assert.strictEqual(find(reading(`${name}=1`), `${name}=1`, 'assignment').text, `\`${name}\` is read-only, so this assignment fails and its value stays: ${abandons}`);
+    assert.match(explain('UID=0').notes.join('\n'), /The variable `UID` is read-only, so this assignment fails \(`readonly variable`\) and `UID` keeps its value; bash also abandons the rest of the command of the script it is in \(the line, or the loop or function call around it\) and goes on with the next one, status 1$/);
+    assert.match(find(reading('readonly x=1\nx=2', 1), 'x=2', 'assignment').text!, /^`x` is read-only, so this assignment fails and its value stays: bash abandons/);
+    assert.match(find(reading('for i in 1 2; do UID=0; done'), 'UID=0', 'assignment').text!, /: bash abandons/);
+    assert.match(find(reading('(UID=0; echo in)'), 'UID=0', 'assignment').text!, /its value stays: the subshell ends there, status 1$/);
+    assert.match(explain('x=$(UID=0)').notes.join('\n'), /keeps its value; the subshell ends there, status 1$/);
+    assert.match(find(reading('UID=0 echo hi'), 'UID=0', 'assignment').text!, /its value stays: the command still runs, without it$/);
+    assert.match(explain('UID=0 echo hi').notes.join('\n'), /keeps its value; the command still runs, without it$/);
+    // (A function called in a subshell and outside it: what the main shell does.)
+    assert.match(find(reading('f() { UID=0; }; f; (f)'), 'UID=0', 'assignment').text!, /: bash abandons/);
+    // (In POSIX mode, and in dash, the shell ends there instead: not said.)
+    assert.strictEqual(find(reading('set -o posix; UID=0'), 'UID=0', 'assignment').text, '`UID` is read-only, so this assignment fails and its value stays');
+    const dash = analyzer.explainLine(parser.parse('readonly x=1; x=2'), 0, 'dash', { reading: true }).reading!;
+    assert.strictEqual(find(dash, 'x=2', 'assignment').text, '`x` is read-only, so this assignment fails and its value stays');
+    // (Read-only on some paths only: said so, with no warning.)
+    const some = explain('[ "$1" ] && readonly x=1\nx=2', 1);
+    assert.match(find(some.reading!, 'x=2', 'assignment').text!, /\. But some paths before here make it read-only, and there this assignment fails$/);
+    assert.doesNotMatch(some.notes.join('\n'), /read-only/);
     // (Not the declaration that makes it read-only.)
     assert.doesNotMatch(readingNodes(reading('readonly x=1')).map((n) => n.text ?? '').join('\n'), /read-only, so/);
     for (const p of programs) {
       for (const name of readonly) assert.match(runBash(`${name}=1`, p).stderr, new RegExp(`${name}: readonly variable`), name);
       const b = runBash('u=$UID\nUID=0\necho "$? $((UID == u))"\nUID=0 /bin/echo ran', p);
       assert.deepStrictEqual(b.stdout, '1 1\nran\n', p.program ?? 'bash');
+      const run = (script: string) => runBash(script, p).stdout;
+      assert.strictEqual(run('UID=0; echo after\necho "next $?"'), 'next 1\n', p.program ?? 'bash');
+      assert.strictEqual(run('for i in 1 2; do echo "iter $i"; UID=0; echo after; done; echo "after loop"\necho next'), 'iter 1\nnext\n', p.program ?? 'bash');
+      assert.strictEqual(run('f() { echo in-f; UID=0; echo after; }; f; echo same\necho next'), 'in-f\nnext\n', p.program ?? 'bash');
+      assert.strictEqual(run('(UID=0; echo in); echo "out $?"; x=$(UID=0; echo in); echo "[$x] $?"'), 'out 1\n[] 1\n', p.program ?? 'bash');
+      assert.strictEqual(run('UID=0 echo hi; echo "status $?"'), 'hi\nstatus 0\n', p.program ?? 'bash');
+      assert.strictEqual(run('set -o posix; UID=0\necho next'), '', p.program ?? 'bash');
     }
   });
 
@@ -519,6 +552,36 @@ describe('the reading tree as the Bash manual reads the shell variables (chapter
     // (Also an assignment a declaration builtin reads.)
     const local = readingNodes(reading('f() { local OPTIND=1; }')).find((n) => n.layer === 'command' && n.kind === 'assignment')!;
     assert.match(local.text!, /`OPTIND=1` makes it start again at `\$1`$/);
+    // An empty value may do something else: `BASH_XTRACEFD=` sends the trace back to stderr, and closes the
+    // descriptor (even 2).
+    assert.deepStrictEqual(Object.keys(variableEmptied).filter((n) => !Object.hasOwn(variableAssignments, n)), []);
+    for (const src of ['BASH_XTRACEFD=', "BASH_XTRACEFD=''"]) assert.ok(find(reading(src), src, 'assignment').text!.endsWith(`. ${variableEmptied.BASH_XTRACEFD.en}`), src);
+    assert.ok(find(reading('PATH='), 'PATH=', 'assignment').text!.endsWith(`. ${variableAssignments.PATH.en}`));
+    for (const p of programs) {
+      const b = runBash('exec 3>/dev/null; BASH_XTRACEFD=3; BASH_XTRACEFD=; [ -e /dev/fd/3 ] || echo closed; set -x; : hi; set +x; exec 5>&2; BASH_XTRACEFD=2; BASH_XTRACEFD=; echo gone >&2', p);
+      assert.deepStrictEqual([b.stdout, b.stderr], ['closed\n', '+ : hi\n+ set +x\n'], p.program ?? 'bash');
+    }
+  });
+
+  it('says that a local of a variable bash computes is a plain one, as bash does', () => {
+    // `local RANDOM`, `declare SECONDS` in a function, and an assignment to it after: no seed, no count. (Bash's
+    // other ones still do what they do: `local OPTIND=1`, above.)
+    const plain = (name: string) => `. Here \`${name}\` is a local of the function, a plain variable: bash does nothing special with it (the \`${name}\` outside keeps its role)`;
+    const text = (src: string, label: string) => readingNodes(reading(src)).find((n) => n.kind === 'assignment' && n.label === label)!.text!;
+    assert.ok(text('f() { local RANDOM=3; }', 'RANDOM=3').endsWith(plain('RANDOM')));
+    assert.ok(text('f() { declare SECONDS=100; }', 'SECONDS=100').endsWith(plain('SECONDS')));
+    assert.ok(text('f() { local RANDOM; RANDOM=3; }; f', 'RANDOM=3').endsWith(plain('RANDOM')));
+    assert.ok(text('f() { RANDOM=3; }; f', 'RANDOM=3').endsWith(`. ${variableAssignments.RANDOM.en}`));
+    // (Nor does bash ignore one it would ignore outside: `local LINENO=5` is 5.)
+    assert.strictEqual(text('f() { local LINENO=5; }', 'LINENO=5'), 'Assign a value to variable `LINENO` (no spaces around `=`)');
+    // Unset there, the one outside keeps its role: no note.
+    const r = explain('f() { local RANDOM; unset RANDOM; }; f');
+    assert.doesNotMatch(r.notes.join('\n'), /loses/);
+    for (const p of programs) {
+      const b = (script: string) => runBash(script, p).stdout;
+      assert.strictEqual(b('f() { local RANDOM=3; echo $RANDOM $RANDOM; declare SECONDS=100; sleep 1.1; echo $SECONDS; local LINENO=5; echo $LINENO; }; f'), '3 3\n100\n5\n', p.program ?? 'bash');
+      assert.strictEqual(b('f() { local RANDOM; unset RANDOM; }; f; RANDOM=7; a=$RANDOM; RANDOM=7; [ $a = $RANDOM ] && [ $a != 7 ] && echo seeded'), 'seeded\n', p.program ?? 'bash');
+    }
   });
 
   it('says that `unset` ends what bash does with a variable of the manual\'s list', () => {
@@ -531,6 +594,15 @@ describe('the reading tree as the Bash manual reads the shell variables (chapter
       'Unset the variable `PATH` (it becomes undefined)',
     ]);
     assert.strictEqual(runBash('unset RANDOM; RANDOM=5; echo $RANDOM $RANDOM').stdout, '5 5\n');
+    // In a subshell, there only.
+    const sub = explain('( unset RANDOM ); echo $RANDOM');
+    assert.match(sub.notes.join('\n'), /Once unset, `RANDOM` loses what bash does with it in this subshell \(`\( \)`\): set again there, it is a plain variable \(the shell outside keeps its `RANDOM`\)/);
+    assert.match(readingNodes(sub.reading!).find((n) => n.layer === 'command' && n.label === 'RANDOM')!.text!, /\. In this subshell, `RANDOM` also loses what bash does with it \(set again there, it is a plain variable\)$/);
+    for (const p of programs) {
+      assert.strictEqual(runBash('( unset RANDOM; RANDOM=5; echo $RANDOM $RANDOM ); RANDOM=7; a=$RANDOM; RANDOM=7; [ $a = $RANDOM ] && [ $a != 7 ] && echo seeded', p).stdout, '5 5\nseeded\n', p.program ?? 'bash');
+    }
+    // (A function called in a subshell and outside it: what the main shell does.)
+    assert.match(explain('f() { unset RANDOM; }; f; (f)').notes.join('\n'), /Once unset, `RANDOM` loses what bash does with it: set again later/);
   });
 
   it('describes what bash does with a variable as bash does', () => {

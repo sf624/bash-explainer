@@ -4,20 +4,21 @@
 // what `IFS` is for.
 import type { Token } from '../analyzer-types';
 import { evalArith } from '../arith';
-import { variableAssignments } from '../dict/syntax';
+import { variableAssignments, variableEmptied } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { nodeSections } from '../refs';
-import { attribute, docLine } from '../semantics/state';
-import { assignmentIgnored } from '../semantics/vars';
+import { attribute, docLine, option } from '../semantics/state';
+import { assignmentIgnored, unsetEndsSpecial } from '../semantics/vars';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { assignmentSpan, field, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { skeletal } from './nodes';
 import { isAssoc, wordAt } from './reads';
 import { redirectedWhole } from './redirections';
+import { inSubshell } from './where';
 import { arithNumber, bash53Variable, notGlobbedHere, shown } from './words';
 
 /**
@@ -116,18 +117,37 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
           `. \`IFS\` lists the characters word splitting (and \`read\`) split on: from here, unquoted expansions are split on \`${shown(v)}\`. \`"\${a[*]}"\` and \`"$*"\` join their elements with the first character, \`${shown(v[0])}\``);
   }
   // What it changes when it is a variable of bash's (`PATH=…`, `OPTIND=1`): from here on, unless it is assigned for
-  // one command only (`PATH=/x cmd`). (Not in arithmetic: `for ((OPTIND = 1; …))`.)
+  // one command only (`PATH=/x cmd`). (Not in arithmetic: `for ((OPTIND = 1; …))`.) A local of one bash computes
+  // (`local RANDOM=3`, `RANDOM` once local) is a plain variable; bash's other ones (`local PATH`, `local OPTIND`) still
+  // do what they do.
   const own = name.type === 'subscript' ? field(name, 'name')!.text : nm;
   const prefix = n.field !== 'argument' && n.parent?.type === 'command' && !!field(n.parent, 'name');
   if (n.parent?.type === 'command' && !prefix) {
-    if (assignmentIgnored(own)) expl += cx.s(`。bash はこの代入を無視する（\`${own}\` の値は bash が決める）`, `. Bash ignores this assignment (it sets \`${own}\` itself)`);
-    else if (Object.hasOwn(variableAssignments, own)) expl += cx.s(`。${cx.t(variableAssignments[own])}`, `. ${cx.t(variableAssignments[own])}`);
+    if (unsetEndsSpecial(own) && cx.state.local(n, own)) {
+      if (!assignmentIgnored(own)) expl += cx.s(`。ここの \`${own}\` は関数のローカル変数で、普通の変数（bash の特別な働きはない。関数の外の \`${own}\` はそのまま）`, `. Here \`${own}\` is a local of the function, a plain variable: bash does nothing special with it (the \`${own}\` outside keeps its role)`);
+    } else if (assignmentIgnored(own)) expl += cx.s(`。bash はこの代入を無視する（\`${own}\` の値は bash が決める）`, `. Bash ignores this assignment (it sets \`${own}\` itself)`);
+    else if (Object.hasOwn(variableAssignments, own)) {
+      // (An empty value may do something else: `BASH_XTRACEFD=`.)
+      const said = (!value || staticWordValue(value) === '') && Object.hasOwn(variableEmptied, own) ? variableEmptied[own] : variableAssignments[own];
+      expl += cx.s(`。${cx.t(said)}`, `. ${cx.t(said)}`);
+    }
   }
   // A read-only variable (`UID`, or after `readonly x`) keeps its value: bash refuses the assignment. (Not in a
-  // declaration, whose state has the attributes it gives: `readonly x=1`.)
-  if (n.parent?.type === 'command' && n.field !== 'argument' && attribute(st, own, 'r') === 'on') {
-    cx.note(fact(cx.lang, 'assign-readonly', { name: own }), n);
-    expl = cx.s(`\`${own}\` は読み取り専用なので、この代入はエラーになり、値は変わらない`, `\`${own}\` is read-only, so this assignment fails and its value stays`);
+  // declaration, whose state has the attributes it gives: `readonly x=1`.) In bash out of POSIX mode, an assignment of
+  // its own then abandons the command of the script it is in (status 1), or ends the subshell; one before a command
+  // name leaves the command to run.
+  const readonly = n.parent?.type === 'command' && n.field !== 'argument' ? attribute(st, own, 'r') : 'off';
+  if (readonly === 'on') {
+    const posix = option(st, 'set', 'posix');
+    const known = (!cx.shell || cx.shell === 'bash') && (posix === 'off' || posix === 'default');
+    const then = !known ? undefined : prefix ? 'runs' : inSubshell(cx, n)?.sure ? 'subshell' : 'abandons';
+    cx.note(fact(cx.lang, 'assign-readonly', { name: own, then }), n);
+    expl = cx.s(`\`${own}\` は読み取り専用なので、この代入はエラーになり、値は変わらない`, `\`${own}\` is read-only, so this assignment fails and its value stays`)
+      + (then === 'abandons' ? cx.s('。bash はそれを含むスクリプトのコマンドの残り（この行、または囲む繰り返しや関数呼び出し）を中断する（終了ステータス 1）', ': bash abandons the rest of the command of the script it is in (the line, or the loop or function call around it), status 1')
+        : then === 'subshell' ? cx.s('。サブシェルはそこで終わる（終了ステータス 1）', ': the subshell ends there, status 1')
+          : then === 'runs' ? cx.s('。コマンドは、この代入なしで実行される', ': the command still runs, without it') : '');
+  } else if (readonly === 'unknown') {
+    expl += cx.s('。ただし、この前の一部の経路では読み取り専用になっていて、そこではこの代入はエラーになる', '. But some paths before here make it read-only, and there this assignment fails');
   }
   const children: Token[] = [];
   if (value) {

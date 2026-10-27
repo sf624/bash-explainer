@@ -65,8 +65,8 @@ export class Walker {
   private readonly runStates = new Map<SyntaxNode, ShellState[]>();
   /** The `set` commands, with the options they turn on or off (on any walk). */
   readonly setWrites = new Map<SyntaxNode, Map<string, 'on' | 'off'>>();
-  /** The variables each statement sets itself (on any walk), not those of the statements inside it, and not locals. */
-  readonly varWrites = new Map<SyntaxNode, Set<string>>();
+  /** The variables each statement sets itself (on any walk), not those of the statements inside it: the shell's own, and the locals of a function being run (`local RANDOM=3`, or `RANDOM=3` after it), gone when it returns. */
+  readonly varWrites = { shell: new Map<SyntaxNode, Set<string>>(), local: new Map<SyntaxNode, Set<string>>() };
   readonly parseAt = new Map<SyntaxNode, ShellState>();
   readonly functionDefs = new Map<string, SyntaxNode[]>();
   /** The commands that call each function definition, and whether it is surely defined there on every walk. */
@@ -194,8 +194,8 @@ export class Walker {
       this.lastAt.set(k, this.node!);
       for (const c of this.collecting) c.add(k);
     }
-    // (A local of a function being run is gone when it returns: not a write of the shell's own.)
-    if (kind === 'variables' && !this.frames.some((f) => f.saved.has(name))) this.varWrites.set(this.node!, (this.varWrites.get(this.node!) ?? new Set<string>()).add(name));
+    const writes = kind === 'variables' ? this.varWrites[this.frames.some((f) => f.saved.has(name)) ? 'local' : 'shell'] : undefined;
+    writes?.set(this.node!, (writes.get(this.node!) ?? new Set<string>()).add(name));
     return { ...st, [kind]: (st[kind] as NameMap<Entry<K>>).with(name, value) };
   }
 
