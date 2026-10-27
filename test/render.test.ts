@@ -80,7 +80,7 @@ describe('the levels of the notes', () => {
     assert.ok(info.startsWith('> ⓘ **Caveat:** without `-r`'), info);
     assert.ok(note.startsWith('> ℹ An exit status'), note);
     const ja = notes(toPlainMarkdown(new Analyzer('ja').explainLine(parser.parse(src), 0), src, 'a.sh:1', 'ja'));
-    assert.deepStrictEqual(ja.map((l) => l.split(' ').slice(0, 3).join(' ')), ['> ⚠ **落とし穴:**', '> ⓘ **注意:**', '> ℹ 終了ステータスは', '> _マニュアルに記述なし・bash 5.2']);
+    assert.deepStrictEqual(ja.map((l) => l.split(' ').slice(0, 3).join(' ')), ['> ⚠ **落とし穴:**', '> ⓘ **注意:**', '> ℹ 終了ステータスは', '> _マニュアルに記述なし・bash 5.2・5.3']);
   });
 
   it('gives the panel each note with its level, its word and the rest, warnings first', () => {
@@ -115,20 +115,20 @@ describe('links to the Bash manual', () => {
   // docs/design/basis.md, step 2: a note that rests on bash's behaviour has the chip's words and its try-it.
   it('says under a note that rests on bash\'s behaviour what it rests on, with the try-it: the hover, Markdown and the panel', () => {
     const { md } = hover('exit 300');
-    assert.ok(md.includes("\n\n<small>Not in the manual · checked with bash 5.2 · Try it in your terminal: `bash -c '(exit 300); echo $?'` → `44`</small>\n"), md);
+    assert.ok(md.includes("\n\n<small>Not in the manual · checked with bash 5.2 and 5.3 · Try it in your terminal: `bash -c '(exit 300); echo $?'` → `44`</small>\n"), md);
     const tree = parser.parse('exit 300');
     const plain = toPlainMarkdown(new Analyzer('en').explainLine(tree, 0), 'exit 300', 'a.sh:1');
-    assert.ok(plain.includes("(Bash manual [3.7.5](https://www.gnu.org/software/bash/manual/html_node/Exit-Status.html \"Exit Status\"))\n>\n> _Not in the manual · checked with bash 5.2 · Try it in your terminal: `bash -c '(exit 300); echo $?'` → `44`_\n"), plain);
+    assert.ok(plain.includes("(Bash manual [3.7.5](https://www.gnu.org/software/bash/manual/html_node/Exit-Status.html \"Exit Status\"))\n>\n> _Not in the manual · checked with bash 5.2 and 5.3 · Try it in your terminal: `bash -c '(exit 300); echo $?'` → `44`_\n"), plain);
     const ja = toPlainMarkdown(new Analyzer('ja').explainLine(tree, 0), 'exit 300', 'a.sh:1', 'ja');
-    assert.ok(ja.includes("> _マニュアルに記述なし・bash 5.2 で確認 · 端末で試す: `bash -c '(exit 300); echo $?'` → `44`_"), ja);
+    assert.ok(ja.includes("> _マニュアルに記述なし・bash 5.2・5.3 で確認 · 端末で試す: `bash -c '(exit 300); echo $?'` → `44`_"), ja);
     // (Several lines of output are joined, as a code span holds one.)
     const unset = toPlainMarkdown(new Analyzer('en').explainLine(parser.parse('unset -fv x'), 0), 'unset -fv x', 'a.sh:1');
     assert.ok(unset.includes('→ `bash: line 1: unset: cannot simultaneously unset a function and a variable ⏎ status 1, x=1 ⏎ function`_'), unset);
     const ex = new Analyzer('en').explainLine(tree, 0);
     const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: 'exit 300', choice: {}, detected: 'bash', placement: 'first', animations: true });
     assert.deepStrictEqual(msg.notes[0].basis, {
-      kind: 'checked', label: 'Not in the manual · checked with bash 5.2',
-      title: "bash's actual behaviour, which the Bash manual does not state: checked by running bash 5.2 (messages as with `LC_ALL=C`)",
+      kind: 'checked', label: 'Not in the manual · checked with bash 5.2 and 5.3',
+      title: "bash's actual behaviour, which the Bash manual does not state: checked by running bash 5.2 and 5.3 (messages as with `LC_ALL=C`)",
       tryIt: { code: "bash -c '(exit 300); echo $?'", output: '44' },
     });
     // With the setting off, the explanation carries no basis, and no output shows one.

@@ -451,7 +451,7 @@ jobs:
           BASH_EXPLAINER_BASH53_REQUIRED: '1'
         run: npx mocha --no-config --node-option import=tsx --timeout 10000 test/bash53.test.ts test/manual.test.ts test/testexpr.test.ts
 
-      - name: Run the probe rows of bash 5.3 (test/probe.test.ts)
+      - name: Run the probe rows of bash 5.3, and every try-it in bash 5.3 (test/probe.test.ts)
         env:
           BASH_EXPLAINER_BASH53_REQUIRED: '1'
         run: npx mocha --no-config --node-option import=tsx --timeout 60000 test/probe.test.ts --grep 'bash 5\.3'

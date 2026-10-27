@@ -4,7 +4,7 @@
 // check that the facts are still what it does, and that each row's try-it prints what it recorded (the explanations show
 // it: docs/design/basis.md).
 import * as assert from 'assert';
-import { factsOf, hasBash53, hasRequired, instrument, pooled, PROBE_KINDS, probeEnv, probeSkipReason, probeState, probeWords, readProbeTable, tryOutput } from './support/probe';
+import { factsOf, hasBash53, hasRequired, instrument, pooled, PROBE_KINDS, probeEnv, probeSkipReason, probeState, probeWords, readProbeTable, releaseOf, tryOutput, tryReleases } from './support/probe';
 
 describe('probes: the harness', () => {
   it('numbers the markers that have no id, and keeps the lines', () => {
@@ -84,6 +84,28 @@ describe('probes: the harness', () => {
           if (row.try) assert.strictEqual(outputs[i], row.try.output, `try-it: ${row.try.code}`);
         });
       });
+    });
+  }
+});
+
+// Every try-it of bash 5.2 runs in bash 5.3 too (CI's `bash53` job, which runs the tests named "bash 5.3"): the copy
+// lists 5.3 as a release the try-it was checked in (`Basis.bash`, the chip's words) exactly when it prints the same.
+describe('probes: the try-its in bash 5.3', function () {
+  this.timeout(60000);
+  const rows = PROBE_KINDS.flatMap((kind) => readProbeTable(kind).filter((row) => row.try && releaseOf(row) === '5.2').map((row) => ({ kind, row })));
+
+  it('lists the releases of each try-it: its own row\'s first, then 5.3 or nothing', () => {
+    for (const { kind, row } of rows) assert.ok(['5.2', '5.2,5.3'].includes(tryReleases(row).join()), `${kind}#${row.id}: ${tryReleases(row).join()}`);
+  });
+
+  for (const { kind, row } of rows) {
+    it(`${kind}#${row.id} prints the same in bash 5.3 exactly when it lists 5.3`, async function () {
+      if (!hasBash53) {
+        if (process.env.BASH_EXPLAINER_BASH53_REQUIRED) assert.fail('BASH_EXPLAINER_BASH53_REQUIRED is set, but $BASH_EXPLAINER_BASH53 is not a bash 5.3');
+        this.skip();
+      }
+      const output = await tryOutput(row, undefined, '5.3');
+      assert.strictEqual(output === row.try!.output, tryReleases(row).includes('5.3'), `try-it: ${row.try!.code}\n  bash 5.3: ${JSON.stringify(output)}`);
     });
   }
 });

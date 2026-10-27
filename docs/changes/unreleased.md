@@ -488,10 +488,30 @@ The labels are taken from the explanation when the page is built, so they say wh
 
 ### What a note rests on
 
-Most notes say what the Bash manual says, and link its sections. A few say what bash does where the manual is silent. For these, a chip after the note says "Not in the manual · checked with bash 5.2" (「マニュアルに記述なし・bash 5.2 で確認」). Its tooltip says that messages are as with `LC_ALL=C`.
+Most notes say what the Bash manual says, and link its sections. A few say what bash does where the manual is silent. For these, a chip after the note says "Not in the manual · checked with bash 5.2 and 5.3" (「マニュアルに記述なし・bash 5.2・5.3 で確認」). Where the manual says otherwise, it says "Differs from the manual · checked with bash 5.2 and 5.3" (「マニュアルの記述と異なる・bash 5.2・5.3 で確認」). The chip names only the releases the command below it was run in, and printed the same in. Its tooltip says that messages are as with `LC_ALL=C`.
+
+Every note was checked against the Bash 5.2 manual, section by section. Not in the manual:
 
 - `exit 300` gives 44. The manual's sections 2 and 3.7.5 imply it without stating it for `exit`. `return 300` gives 44 too, but section 4.1 states that for `return`, so its note has no chip.
 - `unset -fv x f` is an error, and nothing is unset. Section 4.1 describes `-f` and `-v` one at a time.
+- `[` without `]` as its last argument (`[ -n x`, `[ a = a]`) fails with status 2. Section 4.1 only says the `]` must be there.
+- `unset` of a read-only variable fails with status 1; the manual says "non-zero".
+- `x=1` where `x` is read-only abandons the rest of the line (or the subshell) with status 1.
+- A restricted shell (`set -r`, `rbash`) refuses with status 1.
+- In POSIX mode, a function named like a special builtin (`eval() { …; }`) stops the script.
+- A missing `;` before `then` or `do`, and an extended glob such as `@(a|b)` without `shopt -s extglob`, are syntax errors that stop the script. A shell started by the script (`bash -c`) has `extglob` off again.
+- `v=$@` and `v=${arr[@]}` join with spaces, whatever `IFS` is.
+- `export` of an array exports nothing.
+- In bash 5.3's `${ …; }`, `set -e` is off: only bash 5.3 is named on this chip.
+
+Differs from the manual:
+
+- `[ a b ]` and `[ a b c ]` fail with status 2 ("unary operator expected", "binary operator expected"). Section 4.1 says such tests are false. So does `[ $x = y ]` when `x` is empty, in the caveat on unquoted variables in `[ ]`.
+- `x=2 cmd`, where `x` is read-only, still runs `cmd` (status 0). Section 3.7.1 says the command exits with a non-zero status.
+- With `set -u`, an unset variable in the redirection of a program (`cat < "$f"`) fails that command with status 1, and the script goes on. Section 4.3.1 says a non-interactive shell exits.
+- `$BASH_SUBSHELL` is not counted in a simple command of a pipeline (the new note). Section 5.2 says it is incremented in each subshell.
+
+Some notes now link the sections that state what they say: the status of a function or a script ends with that of its last command (3.2.4, 3.3, 6.1), `export x=$(cmd)` hides the failure (4.1), `(( i++ ))` is 1 when `i` is 0 (3.2.5.2), a `then` read as an argument (3.2.1).
 
 Under the chip, "Try it in your terminal" (「端末で試す」) opens a command to copy and what it prints:
 
@@ -502,7 +522,7 @@ status 1, x=1
 function
 ```
 
-The command starts a bash of its own, so it prints the same when typed into zsh or fish. The explainer never runs it. The output is the one recorded by the project's tests, which run the command again in bash 5.2 on every change.
+The command starts a bash of its own, so it prints the same when typed into zsh or fish. The explainer never runs it. The output is the one recorded by the project's tests, which run the command again in bash 5.2 and 5.3 on every change.
 
 The hover and Copy as Markdown say both on one line in italics. The command-line tool prints them under the note. Its JSON gives each fact a `basis` and a `tryIt`.
 

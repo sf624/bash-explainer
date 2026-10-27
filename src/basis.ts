@@ -13,14 +13,17 @@ export type ProbeTable = (typeof PROBE_TABLES)[number];
 /** A probe row: `<table>#<id>` (`status#exit-status`), its `id` in its table. */
 export type ProbeRef = `${ProbeTable}#${string}`;
 
-/** The bash releases the probes run: 5.2 (every row), 5.3 (the rows of its constructs, `"bash": "5.3"`). */
+/**
+ * The bash releases the probes run: 5.2 (every row), 5.3 (the rows of its constructs, `"bash": "5.3"`, and every
+ * try-it, in CI's `bash53` job).
+ */
 export type BashRelease = '5.2' | '5.3';
 
 /**
  * What an explanation rests on:
  * - `manual`: what the manual's `sections` say (the default: a fact's or a token's `refs`).
  * - `checked`: bash's behaviour where the manual does not say it, checked by running the releases `bash` on the
- *   `probes` (in CI: every row in 5.2, the rows of 5.3's constructs in 5.3).
+ *   `probes` (in CI: every row in 5.2, the rows of 5.3's constructs in 5.3, and the try-it in each release listed).
  * - `differs`: bash's behaviour where the manual says otherwise, checked the same way.
  * - `spec`: what another program does (an option of `grep`), from its command spec in src/dict/.
  * - `convention`: a habit of shell scripts, not a rule of bash (capitals for the environment).
@@ -56,12 +59,13 @@ export interface BasisSpec {
 }
 
 /**
- * A row of the copy: the section it is about (test/basis.test.ts checks that the facts that show it cite it), the bash
- * it ran in, and its try-it.
+ * A row of the copy: the section it is about (test/basis.test.ts checks that the facts that show it cite it), the
+ * releases its try-it printed `output` in (the row's own first: 5.2, or 5.3 for a row of its constructs; then 5.3 when
+ * the `bash53` job prints the same there), and its try-it.
  */
 export interface ProbeCopy {
   manual: string;
-  bash: BashRelease;
+  bash: readonly BashRelease[];
   try: { code: string; output: string };
 }
 
@@ -78,9 +82,9 @@ export const PROBE_COPY = copied as Readonly<Record<CopiedRef, ProbeCopy>>;
 export function basisOf(spec: BasisSpec | undefined): { basis?: Basis; tryIt?: TryIt } {
   if (!spec) return {};
   const row = PROBE_COPY[spec.probe];
-  const tryIt: TryIt = { code: row.try.code, output: row.try.output, bash: row.bash, probe: spec.probe };
+  const tryIt: TryIt = { code: row.try.code, output: row.try.output, bash: row.bash[0], probe: spec.probe };
   if (spec.kind === 'manual') return { tryIt };
-  return { basis: { kind: spec.kind, bash: [row.bash], probes: [spec.probe, ...(spec.also ?? [])] }, tryIt };
+  return { basis: { kind: spec.kind, bash: row.bash, probes: [spec.probe, ...(spec.also ?? [])] }, tryIt };
 }
 
 /** The basis of an explanation with `refs` and maybe a `basis` of its own: the manual's sections when it has none. */

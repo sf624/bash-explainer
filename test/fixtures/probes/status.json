@@ -313,7 +313,11 @@
     "errexit": false,
     "try": {
       "code": "bash -c '(exit 300); echo $?'",
-      "output": "44"
+      "output": "44",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
     },
     "facts": {
       "ran": [],
@@ -1296,6 +1300,13 @@
     "bash": "5.3",
     "snippet": "v=${ false; @PROBE:a@; }; @PROBE:b@; false; @PROBE:c@",
     "note": "set -e is off in ${ cmd; }, and on again after it (bash 5.3)",
+    "try": {
+      "code": "bash -c 'set -e; v=${ false; echo still runs; }; echo \"$v\"; false; echo not reached'",
+      "output": "still runs",
+      "bash": [
+        "5.3"
+      ]
+    },
     "facts": {
       "ran": [
         "a",

@@ -8,6 +8,7 @@ import { cannotAssign, expansionOps, wellKnownVariables } from './dict/syntax';
 import type { Explainer } from './explain/context';
 import { arrayKind, isAssoc, shoptAt } from './explain/reads';
 import { scriptValue } from './explain/values';
+import { stageCountNote } from './explain/where';
 import { globChildren, joinedNote, orderNote, variableNote, varDesc } from './explain/words';
 import { globIntro, hasGlob } from './embedded/glob';
 import { hasExtglob } from './examples/shellwords';
@@ -48,6 +49,7 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   const parsed = n.startPosition.row === n.endPosition.row ? parseExpansion(text) : undefined;
   if (!parsed) return summary;
   summary.explanation += orderNote(h, n, parsed.name);
+  if (!parsed.prefix && !parsed.subscript) stageCountNote(h, n, parsed.name);
   const special = specialExpansion(h, parsed, text, n);
   if (special) {
     summary.explanation = special;

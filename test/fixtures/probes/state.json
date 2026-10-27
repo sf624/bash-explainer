@@ -3796,7 +3796,11 @@
     "note": "unset -fv is an error: nothing is unset",
     "try": {
       "code": "bash -c 'f() { :; }; x=1; unset -fv x f; echo \"status $?, x=$x\"; type -t f'",
-      "output": "bash: line 1: unset: cannot simultaneously unset a function and a variable\nstatus 1, x=1\nfunction"
+      "output": "bash: line 1: unset: cannot simultaneously unset a function and a variable\nstatus 1, x=1\nfunction",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
     },
     "facts": {
       "end": {
@@ -4991,6 +4995,326 @@
           "foo": {
             "attrs": "-",
             "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "keyword-separator",
+    "manual": "3.2.1",
+    "snippet": "if true then :; fi",
+    "note": "`then` after a command is its argument: `if` has no `then`, a syntax error that ends the script",
+    "try": {
+      "code": "bash -c 'if true then echo yes; fi; echo after'",
+      "output": "bash: -c: line 1: syntax error near unexpected token `fi'\nbash: -c: line 1: `if true then echo yes; fi; echo after'",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "status": 2,
+      "stderr": "SCRIPT: line 1: syntax error near unexpected token `fi'"
+    }
+  },
+  {
+    "id": "bracket-missing",
+    "manual": "4.1",
+    "snippet": "[ -n x",
+    "note": "`[` without `]` as its last argument fails with status 2",
+    "try": {
+      "code": "bash -c '[ -n x; echo \"status $?\"; [ a = a]; echo \"status $?\"'",
+      "output": "bash: line 1: [: missing `]'\nstatus 2\nbash: line 1: [: missing `]'\nstatus 2",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {},
+      "status": 0,
+      "stderr": "SCRIPT: line 1: [: missing `]'"
+    }
+  },
+  {
+    "id": "test-malformed",
+    "manual": "4.1",
+    "snippet": "[ a b ]",
+    "note": "the manual says two or three arguments that are no expression are false (status 1); bash fails with status 2",
+    "try": {
+      "code": "bash -c '[ a b ]; echo \"status $?\"; [ a b c ]; echo \"status $?\"'",
+      "output": "bash: line 1: [: a: unary operator expected\nstatus 2\nbash: line 1: [: b: binary operator expected\nstatus 2",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {},
+      "status": 0,
+      "stderr": "SCRIPT: line 1: [: a: unary operator expected"
+    }
+  },
+  {
+    "id": "test-empty-operand",
+    "manual": "4.1",
+    "snippet": "x=; [ $x = y ]",
+    "note": "an empty unquoted operand is dropped: `[ = y ]` fails with status 2, and `[ -n ]` is true",
+    "try": {
+      "code": "bash -c 'x=; [ $x = y ]; echo \"status $?\"; [ -n $x ]; echo \"status $?\"'",
+      "output": "bash: line 1: [: =: unary operator expected\nstatus 2\nstatus 0",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: [: =: unary operator expected"
+    }
+  },
+  {
+    "id": "unset-readonly",
+    "manual": "4.1",
+    "snippet": "readonly x=1; unset x",
+    "note": "unset of a readonly variable fails with status 1",
+    "try": {
+      "code": "bash -c 'readonly x=1; unset x; echo \"status $?, x=$x\"'",
+      "output": "bash: line 1: unset: x: cannot unset: readonly variable\nstatus 1, x=1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "r",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: unset: x: cannot unset: readonly variable"
+    }
+  },
+  {
+    "id": "readonly-prefix",
+    "manual": "3.7.1",
+    "snippet": "readonly x=1; x=2 true",
+    "note": "the manual says the command exits with a non-zero status; bash runs it, without the assignment",
+    "try": {
+      "code": "bash -c 'readonly x=1; x=2 echo runs; echo \"status $?\"'",
+      "output": "bash: line 1: x: readonly variable\nruns\nstatus 0",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "r",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: x: readonly variable"
+    }
+  },
+  {
+    "id": "readonly-abandons",
+    "manual": "3.7.1",
+    "snippet": "readonly x=1\nx=2; y=1\n(x=3; exit 0)\nz=1",
+    "note": "an assignment of its own to a readonly variable abandons the rest of the line; in a subshell it ends the subshell, status 1",
+    "try": {
+      "code": "bash -c 'readonly x=1\nx=2; echo not run\n(x=3; echo not run either)\necho \"next line, status $?\"'",
+      "output": "bash: line 2: x: readonly variable\nbash: line 3: x: readonly variable\nnext line, status 1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "r",
+            "value": "\"1\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 2: x: readonly variable"
+    }
+  },
+  {
+    "id": "restricted",
+    "manual": "6.10",
+    "snippet": "set -r; cd /",
+    "note": "a restricted shell refuses a builtin, a `/` in a command name and an output redirection, with status 1",
+    "try": {
+      "code": "bash -c 'set -r; cd /; echo \"status $?\"; /bin/true; echo \"status $?\"; echo x > f; echo \"status $?\"'",
+      "output": "bash: line 1: cd: restricted\nstatus 1\nbash: line 1: /bin/true: restricted: cannot specify `/' in command names\nstatus 1\nbash: line 1: f: restricted: cannot redirect output\nstatus 1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "status": 1,
+      "stderr": "SCRIPT: line 1: cd: restricted"
+    }
+  },
+  {
+    "id": "posix-special-function",
+    "manual": "6.11",
+    "posix": true,
+    "snippet": "eval() { :; }\nx=1",
+    "note": "in POSIX mode, defining a function named as a special builtin ends the script",
+    "try": {
+      "code": "bash -c 'set -o posix; eval() { :; }; echo not reached'",
+      "output": "bash: line 1: `eval': is a special builtin",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "status": 2,
+      "stderr": "SCRIPT: line 1: `eval': is a special builtin"
+    }
+  },
+  {
+    "id": "extglob-off",
+    "manual": "3.5.8.1",
+    "snippet": "echo @(a|b)",
+    "note": "an extended glob without extglob is a syntax error, which ends the script",
+    "try": {
+      "code": "bash -c 'echo @(a|b); echo after'",
+      "output": "bash: -c: line 1: syntax error near unexpected token `('\nbash: -c: line 1: `echo @(a|b); echo after'",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "status": 2,
+      "stderr": "SCRIPT: line 1: syntax error near unexpected token `('"
+    }
+  },
+  {
+    "id": "extglob-new-shell",
+    "manual": "4.3.2",
+    "snippet": "shopt -s extglob; bash -c 'shopt -q extglob'",
+    "note": "a new shell starts with extglob off",
+    "try": {
+      "code": "bash -c 'shopt -s extglob; shopt -p extglob; bash -c \"shopt -p extglob\"'",
+      "output": "shopt -s extglob\nshopt -u extglob",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "shopt": {
+          "extglob": true
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "assign-at",
+    "manual": "3.4",
+    "snippet": "set -- 'a b' c; v=$@",
+    "note": "`$@` in an assignment joins the arguments with spaces",
+    "try": {
+      "code": "bash -c 'set -- \"a b\" c; v=$@; declare -p v'",
+      "output": "declare -- v=\"a b c\"",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"a b c\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "nounset-redirect",
+    "manual": "4.3.1",
+    "snippet": "set -u; cat < \"$nope\"; x=1",
+    "note": "an unset variable in the redirection of a program fails that command (status 1) and the script goes on, where the manual says the shell exits",
+    "try": {
+      "code": "bash -c 'cat > s.sh <<\"EOF\"\nset -u\ncat < \"$nope\"\necho \"after $?\"\nEOF\nbash s.sh'",
+      "output": "s.sh: line 2: nope: unbound variable\nafter 1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "set": {
+          "nounset": true
+        },
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: nope: unbound variable"
+    }
+  },
+  {
+    "id": "export-array",
+    "manual": "3.7.4",
+    "snippet": "a=(x y); export a; printenv a",
+    "note": "an array is not exported, even with `export`",
+    "try": {
+      "code": "bash -c 'a=(x y); export a; declare -p a; printenv a; echo \"status $?\"'",
+      "output": "declare -ax a=([0]=\"x\" [1]=\"y\")\nstatus 1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "ax",
+            "value": "([0]=\"x\" [1]=\"y\")"
           }
         }
       },

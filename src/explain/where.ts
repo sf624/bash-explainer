@@ -1,7 +1,9 @@
 // Where code runs, as the explanations say it (docs/design/analyzer.md, step 3): why a `{ }` group or a command runs
 // in a subshell, and what that does to a builtin that acts on its shell and to `$$`. The links come from the
 // environment model (src/semantics/env.ts); this module puts them in words.
+import { fact } from '../messages';
 import { type EnvLink, groupSubshellLink, processOf, type SubshellLink } from '../semantics/env';
+import { stageUncounted } from '../semantics/vars';
 import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 
@@ -70,6 +72,16 @@ export function shellEffectNote(cx: Explainer, n: SyntaxNode, effect: 'changes' 
       : cx.s(`。サブシェル（${why}）で実行されることがあり、そのとき終わるのはサブシェルだけ（スクリプト全体は終わらない）`, `. It may run in a subshell (${why}); then it ends only the subshell, not the script`))
     : (sure ? cx.s(`。サブシェル（${why}）で実行されるので、この変更はサブシェルの中だけで、サブシェルが終わると消える`, `. It runs in a subshell (${why}), so the change stays in the subshell and is gone when it ends`)
       : cx.s(`。サブシェル（${why}）で実行されることがあり、そのときこの変更はサブシェルの中だけで、サブシェルが終わると消える`, `. It may run in a subshell (${why}); then the change stays in the subshell and is gone when it ends`));
+}
+
+/**
+ * A variable that counts subshells (`$BASH_SUBSHELL`, src/semantics/vars.ts) read in a simple command that is a stage
+ * of a pipeline: bash runs the stage in a subshell, but does not count it.
+ */
+export function stageCountNote(cx: Explainer, n: SyntaxNode, name: string): void {
+  if (!stageUncounted(name) || (cx.shell && cx.shell !== 'bash')) return;
+  const l = processOf(cx.state.env(n)).link;
+  if (l?.kind === 'subshell' && l.why === 'pipeline-stage' && l.at.type === 'command') cx.note(fact(cx.lang, 'bash-subshell-not-counted'), n);
 }
 
 /** `$$` in a subshell: still the PID of the script's shell (bash gives the subshell's in `$BASHPID`). */

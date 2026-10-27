@@ -27,7 +27,7 @@ import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
 import { fromEmbedded, same, sibling, sortTokens } from './nodes';
 import { arrayKind, globOff, globState, inArithmetic, isAssoc, shoptAt, unquotedWord, wordAt } from './reads';
-import { pidNote } from './where';
+import { pidNote, stageCountNote } from './where';
 
 /** The words of the brace expansion of the word `n`: undefined when it has none, null when it gives too many words to list. */
 export function braceExpansion(n: SyntaxNode): string[] | undefined | null {
@@ -507,6 +507,7 @@ function stringParam(cx: Explainer, k: number, at: SyntaxNode): string | undefin
 }
 
 export function variable(cx: Explainer, name: string, n: SyntaxNode): Token {
+  stageCountNote(cx, n, name);
   const d = varDesc(cx, name, n);
   return cx.tok(n, 'variable', d ? `\`$${name}\`: ${d}` : cx.s(`変数 \`${name}\``, `Variable \`${name}\``));
 }
@@ -517,6 +518,7 @@ export function simpleExpansion(cx: Explainer, n: SyntaxNode): Token {
   const joined = name === '@' || name === '*' ? joinedNote(cx, n, name, true) : undefined;
   const d = joined ? cx.s('全ての位置パラメータ', 'All positional parameters') : varDesc(cx, name, n);
   const note = splitNote(cx, n);
+  stageCountNote(cx, n, name);
   const t = cx.tok(n, 'variable', d ?? (note
     ? cx.s(`変数 \`${name}\` の値に置き換わる（クォートしないと${note.ja.startsWith('`') ? ' ' : ''}${note.ja}）`, `Expands to the value of \`${name}\` (unquoted, ${note.en})`)
     : cx.s(`変数 \`${name}\` の値に置き換わる`, `Expands to the value of \`${name}\``)));

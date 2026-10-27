@@ -1,6 +1,7 @@
 // Records what bash does with the rows of the probe tables (test/fixtures/probes/*.json): runs each row's
 // snippet with its probe (test/support/probe.ts) and writes the facts into the row, and the output of its try-it
-// (`try`), if any; then writes the copy of the rows with a try-it that the explanations read (src/basis-probes.json,
+// (`try`), if any, with the releases it prints that in (bash 5.3 too, from $BASH_EXPLAINER_BASH53, when it prints the
+// same); then writes the copy of the rows with a try-it that the explanations read (src/basis-probes.json,
 // docs/design/basis.md). test/probe.test.ts checks that bash still does the same.
 //
 //   npx tsx scripts/record-probes.ts [kind…]           rewrite the facts (of these kinds, or all)
@@ -9,7 +10,7 @@
 // To add a row, add `{ "manual": "3.5.7", "snippet": "…" }` to a table and run the script; then read the
 // facts it wrote before committing them.
 import * as fs from 'fs';
-import { BASIS_COPY, basisCopy, factsOf, hasRequired, pooled, PROBE_KINDS, probeFile, ProbeKind, probeSkipReason, readProbeTable, tryOutput } from '../test/support/probe';
+import { BASIS_COPY, basisCopy, factsOf, hasRequired, pooled, PROBE_KINDS, probeFile, ProbeKind, probeSkipReason, readProbeTable, releasesOf, tryOutput } from '../test/support/probe';
 
 const args = process.argv.slice(2);
 const check = args.includes('--check');
@@ -27,11 +28,13 @@ for (const k of kinds) if (!PROBE_KINDS.includes(k)) throw new Error(`unknown pr
     // (A row whose program is missing keeps its facts.)
     const facts = await pooled(rows.map((row) => () => (hasRequired(row) ? factsOf(kind, row) : Promise.resolve(row.facts))));
     const outputs = await pooled(rows.map((row) => () => (row.try && hasRequired(row) ? tryOutput(row) : Promise.resolve(row.try?.output))));
-    const next = rows.map((row, i) => ({ ...row, ...(row.try ? { try: { code: row.try.code, output: outputs[i] } } : {}), facts: facts[i] }));
+    // (The releases the try-it prints the same in: bash 5.3 too, when it is here; else those recorded.)
+    const releases = await pooled(rows.map((row, i) => () => (row.try && hasRequired(row) ? releasesOf(row, outputs[i]!) : Promise.resolve(row.try?.bash))));
+    const next = rows.map((row, i) => ({ ...row, ...(row.try ? { try: { code: row.try.code, output: outputs[i], ...(releases[i] ? { bash: releases[i] } : {}) } } : {}), facts: facts[i] }));
     const json = `${JSON.stringify(next, null, 2)}\n`;
     if (check) {
       next.forEach((row, i) => {
-        if (JSON.stringify(row.facts) !== JSON.stringify(rows[i].facts) || row.try?.output !== rows[i].try?.output) {
+        if (JSON.stringify(row.facts) !== JSON.stringify(rows[i].facts) || row.try?.output !== rows[i].try?.output || JSON.stringify(row.try?.bash) !== JSON.stringify(rows[i].try?.bash)) {
           stale++;
           console.error(`${kind}.json: ${JSON.stringify(row.snippet)}\n  recorded: ${JSON.stringify(rows[i].facts)} ${JSON.stringify(rows[i].try?.output ?? '')}\n  bash:     ${JSON.stringify(row.facts)} ${JSON.stringify(row.try?.output ?? '')}`);
         }

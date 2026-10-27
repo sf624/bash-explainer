@@ -769,6 +769,7 @@
  "echo $(echo a | tr a b) | cat",
  "echo $(yq .a f.yml) \\\n  x",
  "echo $?",
+ "echo $BASH_SUBSHELL | cat",
  "echo $x",
  "echo ${ echo $(a); }",
  "echo ${!zq@}",

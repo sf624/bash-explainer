@@ -36,6 +36,11 @@ export interface BashVariable {
    * `unset RANDOM; RANDOM=5` is a plain variable.
    */
   unsetEnds?: true;
+  /**
+   * Its value counts the subshells it runs in, but not the one of a simple command in a pipeline, which bash does not
+   * count (`echo $BASH_SUBSHELL | cat` prints 0; the manual says it is incremented in each subshell).
+   */
+  stageUncounted?: true;
   /** What sets it without the script naming it: a builtin (`read` sets REPLY), a construct (`[[ =~ ]]`), the shell itself. */
   setBy?: readonly string[];
   /** What a write of it does to bash, for the trust (its row of the allow-list, src/semantics/allow.ts). */
@@ -92,7 +97,7 @@ export const BASH_VARIABLES: Readonly<Record<string, BashVariable>> = {
   BASH_LOADABLES_PATH: { effect: NONE, start: '--' },
   BASH_REMATCH: { effect: BASH_SETS, setBy: ['[[ =~ ]]'] },
   BASH_SOURCE: { effect: BASH_SETS, start: '-a', dynamic: true },
-  BASH_SUBSHELL: { effect: BASH_SETS, start: '--', dynamic: true, numeric: true, unsetEnds: true },
+  BASH_SUBSHELL: { effect: BASH_SETS, start: '--', dynamic: true, numeric: true, unsetEnds: true, stageUncounted: true },
   BASH_VERSINFO: { effect: BASH_SETS, start: '-ar' },
   BASH_VERSION: { effect: NONE, start: '--' },
   BASH_XTRACEFD: { effect: NONE }, CHILD_MAX: { effect: NONE },
@@ -201,6 +206,9 @@ export const RESTRICTED_READONLY: readonly string[] = ['SHELL', 'PATH', 'HISTFIL
 
 /** Whether bash ignores what the script assigns to `name` (`BASHPID`, `LINENO`): it keeps its own value. */
 export const assignmentIgnored = (name: string): boolean => !!known(name)?.ignored;
+
+/** Whether `name` counts subshells, but not that of a simple command in a pipeline (`BASH_SUBSHELL`). */
+export const stageUncounted = (name: string): boolean => !!known(name)?.stageUncounted;
 
 /** Whether `name` loses its special behaviour once unset, even if it is set again (`RANDOM`, `SECONDS`). */
 export const unsetEndsSpecial = (name: string): boolean => !!known(name)?.unsetEnds;

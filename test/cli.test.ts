@@ -71,16 +71,16 @@ describe('the command-line tool', function () {
   it('says under a note that rests on bash\'s behaviour what it rests on, with the try-it: in the text and in JSON, unless `notes.basis` is off', () => {
     const text = run(['-e', 'unset -fv x', '--no-color']).out;
     assert.ok(text.includes([
-      '    [Not in the manual · checked with bash 5.2]',
+      '    [Not in the manual · checked with bash 5.2 and 5.3]',
       "    Try it in your terminal: bash -c 'f() { :; }; x=1; unset -fv x f; echo \"status $?, x=$x\"; type -t f'",
       '      bash: line 1: unset: cannot simultaneously unset a function and a variable',
       '      status 1, x=1',
       '      function',
     ].join('\n')), text);
-    assert.match(run(['-e', 'exit 300', '--no-color', '--lang', 'ja']).out, /^ {4}\[マニュアルに記述なし・bash 5\.2 で確認\]\n {4}端末で試す: bash -c '\(exit 300\); echo \$\?'\n {6}44$/m);
+    assert.match(run(['-e', 'exit 300', '--no-color', '--lang', 'ja']).out, /^ {4}\[マニュアルに記述なし・bash 5\.2・5\.3 で確認\]\n {4}端末で試す: bash -c '\(exit 300\); echo \$\?'\n {6}44$/m);
     const json = JSON.parse(run(['--format', 'json', '-e', 'exit 300']).out);
     assert.deepStrictEqual([json[0].explanation.facts[0].basis, json[0].explanation.facts[0].tryIt], [
-      { kind: 'checked', bash: ['5.2'], probes: ['status#exit-status', 'status#exit-negative'] },
+      { kind: 'checked', bash: ['5.2', '5.3'], probes: ['status#exit-status', 'status#exit-negative'] },
       { code: "bash -c '(exit 300); echo $?'", output: '44', bash: '5.2', probe: 'status#exit-status' },
     ]);
     assert.doesNotMatch(run(['-e', 'exit 300', '--no-color', '--set', 'notes.basis=false']).out, /Not in the manual|Try it/);
