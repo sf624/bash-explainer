@@ -2,6 +2,7 @@ import { type Shell, shellFromName } from '../dialect';
 import { tx, type Text } from '../i18n';
 import { builtins } from './builtins';
 import { commands } from './commands';
+import { shAttached } from './shells';
 import type { CommandSpec } from '../argv/spec';
 
 /**
@@ -70,6 +71,7 @@ function shellSpec(shell: Shell): CommandSpec {
   const summary = SHELL_SUMMARIES[shell];
   if (!summary) return commands.sh;
   let spec = shellSpecs.get(shell);
-  if (!spec) shellSpecs.set(shell, (spec = { ...commands.sh, summary }));
+  // (dash's `-o` takes the next word; the shells not checked keep the POSIX reading, a name in the same word too: shells.ts.)
+  if (!spec) shellSpecs.set(shell, (spec = { ...(shell === 'dash' ? commands.sh : shAttached), summary }));
   return spec;
 }

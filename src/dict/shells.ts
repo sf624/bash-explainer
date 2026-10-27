@@ -3,7 +3,7 @@
 import type { CommandSpec, OperandAlt, OperandSpec } from '../argv/spec';
 import { tx } from '../i18n';
 import { builtins, shellOptions, shoptOptions } from './builtins';
-import { cmd, operand, type OptSpec, wordTable } from './types';
+import { cmd, operand, type OptSpec, optionOf, wordTable } from './types';
 
 /** The words a shell takes as its positional parameters. */
 const shellArgs = (ja: string, en: string): OperandSpec => operand('ARG', ja, en, { repeat: '*' });
@@ -79,28 +79,41 @@ const BASH: CommandSpec = cmd('bash シェルを起動する（スクリプト�
     `A long option after a single-letter one: bash reads long options only before the others, so it reads this word as the letters \`-\`…, says \`--: invalid option\` and ${REFUSED[1]}`),
 });
 
+/**
+ * The POSIX `sh`, with the way its `-o` takes the name. dash (`sh` on Debian and Ubuntu; checked against dash 0.5.12) takes the
+ * next word always: `sh -onounset -c f` gives `-o` the word `-c`, and dash refuses it (`Illegal option -o -c`, status 2).
+ * The other shells of src/dict/aliases.ts (ash, yash, ksh, mksh, zsh) have not been checked: they keep the reading POSIX
+ * allows, a name in the same word too (`-opipefail`).
+ */
+function posixShell(how: 'next-only' | 'attached-or-next'): CommandSpec {
+  return cmd('POSIX シェルを起動する', 'Run the POSIX shell', [
+      SHELL_C,
+      ['-s', 'コマンドを標準入力から読む（スクリプトの引数は `$1`… になる）', 'read commands from stdin (the arguments become `$1`…)'],
+      ['-i', '対話シェルとして起動', 'act as an interactive shell'],
+      ['-l', 'ログインシェルとして起動', 'act as a login shell'],
+      ['-e', 'エラーで即終了', 'exit on error'],
+      ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
+      ['-x', '実行するコマンドを表示', 'trace commands'],
+      ['-n', '構文チェックのみ', 'syntax check only'],
+      ['-v', '読み込んだ行をそのまま表示する', 'print input lines as they are read'],
+      ['-a', '代入した変数を自動でエクスポートする', 'export every variable that is set'],
+      ['-C', '`>` で既存ファイルを上書きしない', 'do not overwrite files with `>`'],
+      ['-f', 'グロブ（ワイルドカード展開）を無効にする', 'disable globbing'],
+      ['-b', 'バックグラウンドジョブの終了をすぐに知らせる', 'report the end of background jobs at once'],
+      ['-m', 'ジョブ制御を有効にする', 'turn on job control'],
+      ['-p', '実効ユーザー ID が実ユーザー ID と違っても、実効 ID を戻さない（setuid の権限を捨てない）', 'keep the effective user ID when it differs from the real one (do not drop setuid privileges)'],
+      { ...optionOf(['-o', '名前でオプションを有効にする（`set -o` と同じ）', 'enable an option by name (as `set -o`)', 'arg', shellOptions]), value: { name: 'VALUE', values: shellOptions, how } },
+    ], {
+      optionsFirst: true, plusOptions: true,
+      operands: SHELL_OPERANDS,
+    });
+}
+
+/** The `sh` of the shells that have not been checked (see `posixShell`). */
+export const shAttached: CommandSpec = posixShell('attached-or-next');
+
 export const shells: Record<string, CommandSpec> = wordTable({
   bash: BASH,
   rbash: { ...BASH, summary: tx('制限付きシェル（`rbash` の名前で起動した bash。`bash -r` と同じ）を起動する', 'Run the restricted shell (bash started with the name `rbash`: as `bash -r`)') },
-  sh: cmd('POSIX シェルを起動する', 'Run the POSIX shell', [
-    SHELL_C,
-    ['-s', 'コマンドを標準入力から読む（スクリプトの引数は `$1`… になる）', 'read commands from stdin (the arguments become `$1`…)'],
-    ['-i', '対話シェルとして起動', 'act as an interactive shell'],
-    ['-l', 'ログインシェルとして起動', 'act as a login shell'],
-    ['-e', 'エラーで即終了', 'exit on error'],
-    ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
-    ['-x', '実行するコマンドを表示', 'trace commands'],
-    ['-n', '構文チェックのみ', 'syntax check only'],
-    ['-v', '読み込んだ行をそのまま表示する', 'print input lines as they are read'],
-    ['-a', '代入した変数を自動でエクスポートする', 'export every variable that is set'],
-    ['-C', '`>` で既存ファイルを上書きしない', 'do not overwrite files with `>`'],
-    ['-f', 'グロブ（ワイルドカード展開）を無効にする', 'disable globbing'],
-    ['-b', 'バックグラウンドジョブの終了をすぐに知らせる', 'report the end of background jobs at once'],
-    ['-m', 'ジョブ制御を有効にする', 'turn on job control'],
-    ['-p', '実効ユーザー ID が実ユーザー ID と違っても、実効 ID を戻さない（setuid の権限を捨てない）', 'keep the effective user ID when it differs from the real one (do not drop setuid privileges)'],
-    ['-o', '名前でオプションを有効にする（`set -o` と同じ）', 'enable an option by name (as `set -o`)', 'arg', shellOptions],
-  ], {
-    optionsFirst: true, plusOptions: true,
-    operands: SHELL_OPERANDS,
-  }),
+  sh: posixShell('next-only'),
 });

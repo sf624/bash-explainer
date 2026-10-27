@@ -6,6 +6,7 @@ import { execFileSync, spawnSync } from 'child_process';
 import { Analyzer, type Token } from '../src/analyzer';
 import { aliasOf, canonicalName, impliedWords, lookupCommand } from '../src/dict/aliases';
 import { commands } from '../src/dict/commands';
+import { shAttached } from '../src/dict/shells';
 import { runner } from '../src/examples/pipeline';
 import { shellFromName } from '../src/dialect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -56,8 +57,10 @@ describe('shells other than bash take the options of sh', () => {
     for (const n of ['dash', 'zsh', 'ksh', 'ksh93', 'mksh', 'lksh', 'pdksh', 'oksh', 'posh', 'yash', 'ash', '/bin/dash']) {
       assert.ok(shellFromName(n.split('/').pop()!), n);
       // (The options of `sh`; the summary says which shell it is: zsh is no POSIX shell.)
-      assert.strictEqual(lookupCommand(n)!.options, commands.sh.options, n);
-      assert.strictEqual(lookupCommand(n)!.operands, commands.sh.operands, n);
+      // (dash's `-o` takes the next word; the others are not checked, and keep the name attached: src/dict/shells.ts.)
+      const same = /^(\/bin\/dash|dash|posh)$/.test(n) ? commands.sh : shAttached;
+      assert.strictEqual(lookupCommand(n)!.options, same.options, n);
+      assert.strictEqual(lookupCommand(n)!.operands, same.operands, n);
     }
     assert.strictEqual(lookupCommand('busybox'), undefined);
     assert.strictEqual(lookupCommand('posh'), commands.sh);

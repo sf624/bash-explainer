@@ -176,9 +176,19 @@ describe('execution environments: command slots', () => {
       const u = slots(src, src).get("'f'")! as ExecEnv;
       assert.deepStrictEqual(u.links.map((l) => (l.kind === 'slot' ? (l.invocation ?? []).map((o) => o.flag).join('') : l.kind)), [flags], src);
     }
-    // (A value attached to its option, as POSIX lets `sh -opipefail` write it; bash's `-o` takes the next word.)
-    const attached = slots("sh -opipefail -c 'f'", "sh -opipefail -c 'f'").get("'f'")! as ExecEnv;
-    assert.deepStrictEqual(attached.links.map((l) => (l.kind === 'slot' ? l.invocation : undefined)), [[{ flag: '-o', value: 'pipefail' }, { flag: '-c' }]]);
+    // (dash's `-o` takes the next word, as bash's does: `sh -onounset -c f` gives `-o` the word `-c`, and `f` is a script. A shell not checked, zsh here, keeps the name attached: `zsh -opipefail`.)
+    const invocationOf = (src: string, word: string) => (slots(src, src).get(word)! as ExecEnv).links.map((l) => (l.kind === 'slot' ? l.invocation : undefined));
+    assert.deepStrictEqual(invocationOf("sh -o pipefail -c 'f'", "'f'"), [[{ flag: '-o', value: 'pipefail' }, { flag: '-c' }]]);
+    assert.deepStrictEqual(invocationOf("dash -eo nounset -c 'f'", "'f'"), [[{ flag: '-e' }, { flag: '-o', value: 'nounset' }, { flag: '-c' }]]);
+    // (`-c` is then the value of `-o`, and `'f'` a script file: no string runs.)
+    assert.strictEqual(slots("sh -onounset -c 'f'", "sh -onounset -c 'f'").get("'f'"), undefined);
+    assert.deepStrictEqual(invocationOf("zsh -opipefail -c 'f'", "'f'"), [[{ flag: '-o', value: 'pipefail' }, { flag: '-c' }]]);
+    const real = (args: string[]) => spawnSync('dash', args, { encoding: 'utf8', input: '' });
+    const attachedRun = real(['-onounset', '-c', 'f']);
+    assert.deepStrictEqual([attachedRun.status, attachedRun.stderr.includes('Illegal option -o -c')], [2, true]);
+    const separateRun = real(['-o', 'nounset', '-c', 'echo "[${x}]"']);
+    assert.deepStrictEqual([separateRun.status, separateRun.stderr.includes('x: parameter not set')], [2, true]);
+    assert.strictEqual(real(['-eo', 'nounset', '-c', 'echo ok']).stdout, 'ok\n');
     const re = slots("run eval 'f'", "run eval 'f'", BATS_COMMANDS.run).get("'f'")!;
     assert.deepStrictEqual([re.links.map((l) => (l.kind === 'slot' ? l.slot.run : l.kind)), processOf(re).kind, reachOf(re).functions], [['subshell', 'current-shell'], 'subshell', 'all']);
     // su keeps the environment, unless it starts a login shell; docker run -e passes a variable.
