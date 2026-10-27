@@ -55,7 +55,7 @@ describe('the command-line tool', function () {
     const text = run(['-e', 'exit 300', '--no-color']).out;
     assert.match(text, /ℹ An exit status is 0–255, so `300` becomes 44 \(the value modulo 256\) \(Bash manual 3\.7\.5\)$/m);
     assert.match(text, /exit  Exit the shell or script \(special builtin\) \(Bash manual 4\.1, 4\.4\)$/m);
-    assert.match(run(['-e', 'exit 300', '--no-color', '--lang', 'ja']).out, /（特殊組み込み）/);
+    assert.match(run(['-e', 'exit 300', '--no-color', '--lang', 'ja']).out, /（特殊ビルトイン）/);
     assert.match(run(['-e', 'exit 300', '--no-color', '--lang', 'ja']).out, /\(Bash マニュアル 3\.7\.5\)$/m);
     // In colour, the numbers are dim; a row with none ends with its explanation.
     const color = run(['-e', 'exit 300', '--color']).out;

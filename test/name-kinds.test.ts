@@ -325,9 +325,9 @@ describe('what a command name is, in the outputs with no badge and in the readin
     assert.match(hover, /&nbsp;builtin&nbsp;<\/span><\/span> — Change the current directory/);
     const said = (lang: 'en' | 'ja') => allTokens(ex(src, lang).items).find((t) => t.label === 'export')!.name!.said;
     assert.deepStrictEqual([said('en').kind, said('en').short, said('en').spoken], ['special builtin', ' (special builtin)', 'special builtin']);
-    assert.deepStrictEqual([said('ja').kind, said('ja').short, said('ja').spoken], ['特殊組み込み', '（特殊組み込み）', '特殊組み込み']);
+    assert.deepStrictEqual([said('ja').kind, said('ja').short, said('ja').spoken], ['特殊ビルトイン', '（特殊ビルトイン）', '特殊ビルトイン']);
     assert.match(said('en').title, /^a POSIX special builtin/);
-    assert.match(toPlainMarkdown(ex(src, 'ja'), src, 'a.sh:1', 'ja'), /^ {2}- `export` — .*（特殊組み込み）/m);
+    assert.match(toPlainMarkdown(ex(src, 'ja'), src, 'a.sh:1', 'ja'), /^ {2}- `export` — .*（特殊ビルトイン）/m);
     // (The facts say it is a builtin still; only the word differs.)
     const n = readingNodes(ex(src).reading!).find((x) => x.label === 'export' && x.name)!;
     assert.deepStrictEqual([n.name!.runs, n.name!.said.kind], ['builtin', 'special builtin']);

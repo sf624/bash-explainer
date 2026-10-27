@@ -603,7 +603,7 @@ const SPECIAL_TITLE: Text = {
 };
 
 /** The badge of a POSIX special builtin (4.4): its own word, in place of the builtin's. */
-const SPECIAL_WORD: Text = { ja: '特殊組み込み', en: 'special builtin' };
+const SPECIAL_WORD: Text = { ja: '特殊ビルトイン', en: 'special builtin' };
 
 /** The word of a kind of command name, as the badge says it ("builtin", "ビルトイン"). */
 export const nameKindWord =(lang: Lang, kind: NameKind): string => NAME_KINDS[kind].word[lang];
