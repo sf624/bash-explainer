@@ -1,6 +1,6 @@
 # Spec and convention, as data
 
-Status: proposed (2026-10-28, #450). The design of step 5 of [basis.md](basis.md): the two kinds of basis that steps 1 to 4 left in the type only. Data only: no view shows them (basis.md, section 6). Its questions are in section 5.
+Status: decided (2026-10-28, #450); steps 5a and 5b not started. The design of step 5 of [basis.md](basis.md): the two kinds of basis that steps 1 to 4 left in the type only. Data only: no view shows them (basis.md, section 6). The maintainer's decisions are in section 5.
 
 Steps 1 to 4 gave a basis to what bash does: the manual's sections, or a probe row (`checked`, `differs`). Two kinds are still empty:
 
@@ -26,7 +26,7 @@ It is never the basis of:
 
 ### 1.2 Where it comes from
 
-One source: the command spec, by the dictionary's name for it (`lookupCommand`; `/bin/rm` is `rm`, as `pathCommand` reads it). The specs do not cite their sources today: `CommandSpec` has no field for a man page, a `--help` text or a version. The tests that compare a spec with the real tool are the check (test/parsers-real.test.ts, test/subcommands-real.test.ts, test/wrappers-real.test.ts, test/examples-*.test.ts with GNU sed, gawk, perl, jq and coreutils). They check many specs, not all, and per table, not per text. So the basis names the command only: `{ kind: 'spec', command: 'grep' }`, as the type has it. Naming the implementation or the tests is left (section 5, question 4).
+One source: the command spec, by the dictionary's name for it (`lookupCommand`; `/bin/rm` is `rm`, as `pathCommand` reads it). The specs do not cite their sources today: `CommandSpec` has no field for a man page, a `--help` text or a version. The tests that compare a spec with the real tool are the check (test/parsers-real.test.ts, test/subcommands-real.test.ts, test/wrappers-real.test.ts, test/examples-*.test.ts with GNU sed, gawk, perl, jq and coreutils). They check many specs, not all, and per table, not per text. So the basis names the command only: `{ kind: 'spec', command: 'grep' }`, as the type has it. Naming the implementation or the tests is left (section 5, decision 4).
 
 ### 1.3 What carries it
 
@@ -53,7 +53,7 @@ Measured on `test/fixtures/sample.sh` (`npx tsx cli/main.ts --format json`, 123 
 
 Per token, the same value repeats up to five times under one command (`grep -rn`: `-rn`, `-r`, `-n`, the pattern, the path), and says nothing a reader cannot derive.
 
-**Proposal: the command token only.** A program's command token gets `basis: { kind: 'spec', command }`. A token of origin `argv` or `embedded` with no basis of its own rests on the basis of the nearest command token above it: a rule, as the manual's basis is the default from `refs` and nothing is stored (src/basis.ts, `basisFor`). One helper gives it (`tokenBasisFor(token, above)`), so that the row model of the panel redesign (P7a) and a reader of the JSON apply the same rule. The cost is 0.8%, and the field already exists (`Token.basis`, step 4).
+**Decided: the command token only** (section 5, decision 2). A program's command token gets `basis: { kind: 'spec', command }`. A token of origin `argv` or `embedded` with no basis of its own rests on the basis of the nearest command token above it: a rule, as the manual's basis is the default from `refs` and nothing is stored (src/basis.ts, `basisFor`). One helper gives it (`tokenBasisFor(token, above)`), so that the row model of the panel redesign (P7a) and a reader of the JSON apply the same rule. The cost is 0.8%, and the field already exists (`Token.basis`, step 4).
 
 Where it is set: where the command token is made (src/explain/commands.ts), which has the spec it read the words with. The name does not travel down to each token: that was the cost the last step found. As in step 4, the analyzer gives it after the line is explained, and only with `notes.basis` on (one gate for every kind).
 
@@ -77,7 +77,7 @@ Every style check of src/pitfalls.ts (13 codes) and every pitfall of the catalog
 
 **Result: 60 fact, 0 convention, 16 both.** No note rests on a convention alone. 32 notes also rest on another program.
 
-Style checks (src/pitfalls.ts, no catalog entry, no sections today; the sections are proposed for step 5b):
+Style checks (src/pitfalls.ts, no catalog entry, no sections today; step 5b gives them these, section 5, decision 5):
 
 | Code | Level | Kind | Sections | Also rests on | Why / habit |
 | --- | --- | --- | --- | --- | --- |
@@ -167,7 +167,7 @@ The catalog (src/messages.ts and src/messages-posix.ts; sections are the entries
 
 - **A convention is not the basis of a claim.** Every claim of these notes rests on bash, or on the program named: no note would get `convention` as its basis. And a note sorted *both* keeps the basis of its fact: `unquoted-variable-in-test` and `array-joined-in-assignment` are `differs` and `checked` with a try-it; a `convention` basis in their place would drop the chip.
 - **So the habit is a field of its own, beside the basis.** A note sorted *both* names its habit: `convention: ConventionId`, an id into a table (src/conventions.ts) that says the habit and who states it (`sources`: `'ShellCheck SC2086'`, `'Hadolint DL4006'`, Python's documentation), with a comment, as `TOKEN_BASES` does for tokens. One habit serves several notes: `quote-expansions` serves `unquoted-variable-as-path` and `unquoted-variable-in-test`; `pipefail` serves `pipefail-missing` and `dockerfile-pipefail-missing`.
-- **The `convention` kind leaves `Basis`.** It is a placeholder that nothing gives and no view reads; the row model of P7a is not written yet. Removing it now keeps `Basis` to what a claim rests on (section 5, question 1).
+- **The `convention` kind leaves `Basis`.** It is a placeholder that nothing gives and no view reads; the row model of P7a is not written yet. Removing it now keeps `Basis` to what a claim rests on (section 5, decision 1).
 - **Where it is given.** A catalog entry with `withConvention(entry, id)`, as `withBasis`. A style check with a table by code beside `STYLE_LEVELS` (`STYLE_CONVENTIONS: Record<StyleCode, ConventionId | null>`): total, so that a new code must decide. The style checks also get the sections of the table above (`STYLE_REFS`), so that their fact has a basis like the catalog's.
 - **What carries it.** `Fact.convention` and `Note.convention` (the `noteInfo` of a line, which holds the style checks), behind the same gate as the basis (`notes.basis`). The JSON: `facts[].convention`, and the records of `--check --format json`, which already carry each note's `code` (a field added, nothing removed). The explanation's JSON lists style checks only as text (`notes`); it stays so.
 
@@ -191,15 +191,17 @@ None, as basis.md says (section 1, step 5). The audit gives no reason to change 
 Each step is a PR that keeps every test passing. 5a and 5b are independent: plain PRs from main, in either order.
 
 1. **5a, `spec` on command tokens.** A program's command token gets `basis: { kind: 'spec', command }`, set where the token is made (src/explain/commands.ts) and given after the line is explained, with `notes.basis` on. `tokenBasisFor` in src/basis.ts gives the basis of a token of origin `argv` or `embedded` from the nearest command token above it; the reading tree copies the command token's basis to its node, as it copies `basis` now. Not for builtins, bash, functions, aliases, unknown or custom commands; for bats' host commands. Tests (test/basis.test.ts): the basis of `grep -rn x .`'s token and the rule for its options and pattern; none for `read -r`, `bash -c`, `f` a function, `ls` an alias, a custom command; a text with a basis of its own keeps it (`alias a/b=x`); none with the setting off; `partBasis` shows nothing for `spec`; the CLI's JSON (test/cli.test.ts). No view changes. The details file (docs/changes/unreleased.md) adds to the basis entry that the CLI's JSON names the spec on a command's token; no new CHANGELOG bullet.
-2. **5b, conventions.** src/conventions.ts (the ids, the habits, their sources, each checked: the ShellCheck and Hadolint codes against their own lists); `withConvention` on the 11 catalog entries sorted *both*; `STYLE_CONVENTIONS` (5 codes) and `STYLE_REFS` (12 codes; `pattern-from-variable` has none) in src/pitfalls.ts; `Fact.convention`, `Note.convention`; the JSON's facts and the `--check` records; `convention` removed from `Basis` (if question 1 is agreed). test/basis.test.ts pins the kind of every pitfall and style check, as the table of section 2.3 (fact, or the id of its habit), so that a new pitfall must be sorted; the sections of every style check are in src/manual.ts. The details file, as in 5a.
+2. **5b, conventions.** src/conventions.ts (the ids, the habits, their sources, each checked: the ShellCheck and Hadolint codes against their own lists); `withConvention` on the 11 catalog entries sorted *both*; `STYLE_CONVENTIONS` (5 codes) and `STYLE_REFS` (12 codes; `pattern-from-variable` has none) in src/pitfalls.ts; `Fact.convention`, `Note.convention`; the JSON's facts and the `--check` records; `convention` removed from `Basis` (decision 1). test/basis.test.ts pins the kind of every pitfall and style check, as the table of section 2.3 (fact, or the id of its habit), so that a new pitfall must be sorted; the sections of every style check are in src/manual.ts. The details file, as in 5a.
 3. **Then** P7a takes `basis`, `tryIt` and `convention` as row data, and shows the chip of `checked` and `differs` only.
 
 basis.md, the design index and the roadmap item are updated in each.
 
-## 5. Questions for the maintainer
+## 5. Decisions
 
-1. **`convention` as a field, not a kind of basis.** The audit found no note that rests on a convention alone; 16 notes state a fact and recommend a habit. Their basis must stay the fact's (two of them show a chip). *Recommendation:* remove `convention` from `Basis`, and give such notes `convention: ConventionId` beside their basis.
-2. **`spec` on the command token only.** Per token, the JSON of sample.sh grows by 5.9%, and the value repeats under each command; on the command token, by 0.8%, with a rule for the tokens under it. *Recommendation:* the command token, and the rule in one helper.
-3. **Sources of the habits.** A habit can name who states it: ShellCheck's and Hadolint's codes, Python's and GitHub's documentation. That is data only; nothing is fetched or linked. *Recommendation:* name them where one exists, as plain strings; ShellCheck is only cited, never run or bundled.
-4. **What a `spec` names.** The specs do not say which implementation and version they describe, nor which test compares them with it. *Recommendation:* not now. The dictionary describes GNU/Linux by default and says where BSD or macOS differ; add the implementation to a spec only when a view needs it.
-5. **The style checks' sections.** Twelve of the 13 style checks are facts of bash, but have no `refs`, so their basis is the manual with no section. *Recommendation:* give them the sections of section 2.3 in step 5b (`STYLE_REFS`), checked against the bash 5.2 manual; they stay in src/pitfalls.ts, as CLAUDE.md says.
+Decided by the maintainer on 2026-10-28, after #450: each recommendation of the design, as written.
+
+1. **`convention` is a field beside the basis, not a kind of it.** The audit found no note that rests on a convention alone; 16 notes state a fact and recommend a habit, and their basis stays the fact's (two of them show a chip). `convention` leaves `Basis`; such a note gets `convention: ConventionId` beside its basis.
+2. **`spec` goes on the program's command token only.** Per token, the JSON of sample.sh would grow by 5.9%, with the value repeated under each command; on the command token, by 0.8%. The tokens under it rest on it by a rule, in one helper (`tokenBasisFor`).
+3. **A habit names its sources, as plain strings.** ShellCheck's and Hadolint's codes, Python's and GitHub's documentation, where one exists. Data only: nothing is fetched, linked, run or bundled (ShellCheck is GPL, and only cited). Step 5b checks each ShellCheck and Hadolint code against its own list.
+4. **A `spec` names the command only.** No implementation, version or test, for now. The dictionary describes GNU/Linux by default and says where BSD or macOS differ; the implementation is added to a spec only when a view needs it.
+5. **The style checks get sections in step 5b** (`STYLE_REFS`): those of section 2.3, checked against the bash 5.2 manual. They stay in src/pitfalls.ts, as CLAUDE.md says.
