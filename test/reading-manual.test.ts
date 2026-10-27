@@ -485,6 +485,8 @@ describe('the reading tree as the Bash manual reads the shell variables (chapter
     for (const name of arrays) assert.ok(/\barray\b/i.test(wellKnownVariables[name].en) && wellKnownVariables[name].ja.includes('配列'), name);
     const tokens = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...tokens(t.children)]);
     assert.strictEqual(tokens(explain('echo "${BASH_SOURCE[0]}"').items).find((t) => t.label === 'BASH_SOURCE')!.explanation, wellKnownVariables.BASH_SOURCE.en);
+    // (Another variable with a description keeps the word: bash 5.3's `GLOBSORT`, a plain one to bash 5.2.)
+    assert.match(tokens(explain('echo "${GLOBSORT[0]}"').items).find((t) => t.label === 'GLOBSORT')!.explanation, /^Array `GLOBSORT`: A plain variable in bash 5\.2/);
     // The read-only ones: an assignment fails, and the variable keeps its value; bash goes on (a command after a
     // prefix assignment runs too).
     const readonly = names.filter(readonlyAtStart);
