@@ -187,7 +187,7 @@ function arrayAssignment(cx: Explainer, n: SyntaxNode, nm: string, value: Syntax
       : cx.s(`値は順にキーと値の組になる（\`${values[0].text}\` がキー${values.length > 1 ? `、\`${values[1].text}\` がその値` : '、値は空'}。最初の値に \`[キー]=\` がないので、\`[キー]=値\` もキーか値の文字列になる）`,
         `the values are keys and values in turn (\`${values[0].text}\` is a key${values.length > 1 ? `, \`${values[1].text}\` its value` : ', with an empty value'}; the first value has no \`[key]=\`, so a \`[key]=value\` is a key or a value too)`);
     return add ? cx.s(`連想配列 \`${nm}\` にキーを追加する（既にあるキーなら値を置き換える）: ${how}`, `Add keys to the associative array \`${nm}\` (a key it has gets the new value): ${how}`)
-      : cx.s(`連想配列 \`${nm}\` に代入する（前の要素は消える）: ${how}`, `Assign to the associative array \`${nm}\` (its old elements are removed): ${how}`);
+      : cx.s(`連想配列 \`${nm}\` に代入する（前の要素は削除される）: ${how}`, `Assign to the associative array \`${nm}\` (its old elements are removed): ${how}`);
   }
   if (!values.length) return add ? cx.s(`配列 \`${nm}\` に何も足さない`, `Add nothing to the array \`${nm}\``) : cx.s(`\`${nm}\` を空の配列にする`, `Make \`${nm}\` an empty array`);
   const indexes = keyed.some((k) => k)
@@ -195,7 +195,7 @@ function arrayAssignment(cx: Explainer, n: SyntaxNode, nm: string, value: Syntax
     : '';
   const assoc = kind === 'unknown' ? cx.s(`。ここで \`${nm}\` が連想配列なら、値はキーと値になる`, `. If \`${nm}\` is associative here, the values are its keys and values instead`) : '';
   return (add ? cx.s(`配列 \`${nm}\` の最後の添字の後に、\`( )\` の値を要素として追加する`, `Append the values in \`( )\` to the array \`${nm}\`, after its last index`)
-    : cx.s(`\`( )\` の値を要素とするインデックス配列を \`${nm}\` に代入する（添字は 0 から。前の要素は消える）`, `Assign to \`${nm}\` an indexed array of the values in \`( )\` (from index 0; its old elements are removed)`)) + indexes + assoc;
+    : cx.s(`\`( )\` の値を要素とするインデックス配列を \`${nm}\` に代入する（添字は 0 から。前の要素は削除される）`, `Assign to \`${nm}\` an indexed array of the values in \`( )\` (from index 0; its old elements are removed)`)) + indexes + assoc;
 }
 
 /**

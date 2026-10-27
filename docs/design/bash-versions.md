@@ -89,6 +89,19 @@ From NEWS, CHANGES (5.3-alpha to 5.3-rc2) and COMPAT of the bash-5.3 tarball, ea
 | `exit` and `return` with no status in a trap: interp 1602 | The status model of traps follows 5.2 | Check with both versions | 3 |
 | Special builtins exit the shell in POSIX mode on more errors | Nothing said | Check what the status model says | 3 |
 
+### 3.5 Aliases and arrays
+
+Found in the audit of chapter 6 (6.6, 6.7), each checked with bash 5.2.21 and 5.3. The explanations follow 5.2 and say where 5.3 differs; the word model has no switch by release (`CONTEXTS` in src/semantics/words.ts holds 5.2's rules).
+
+| Change | Today | Needed | Prio |
+| --- | --- | --- | --- |
+| An alias whose text is another alias whose text ends with a blank (`alias t=s s='echo '`; `t e b`): 5.3 checks the word after `t` for an alias, 5.2 does not. | The explanation follows 5.2 and says that 5.3 checks it; the walk (`WalkAliases.expand`) follows 5.3, since it reads the alias's text with the rest of the command again | Both by release, if a script needs it | 3 |
+| A `~` in the list of an associative array (`declare -A m=(t ~)`, `m=([t]=~)`): 5.3 expands it, 5.2 keeps it. | The word model has no tilde there (5.2); the value's text says 5.3 expands it | A tilde rule by release | 3 |
+| A value `[k]=v` with braces in an indexed array (`a=([4]={a,b})`): 5.2 brace-expands the word into plain values (`[4]=a`, `[4]=b`, at the next indexes); 5.3 does not, and sets index 4 to `{a,b}`. | The word model brace-expands it (5.2); the element's text says both | A brace rule by release | 3 |
+| After a value with no `[k]=` in an associative array's list whose first value has one (`declare -A m=([k]=v x)`): both print "must use subscript when assigning associative array"; 5.2 goes on (status 0), 5.3 abandons the rest of the line (status 1). Keys given are kept in both. | The value's text says both | The status model by release | 3 |
+| `a=([-1]=x)` on an empty array: "bad array subscript" in both; 5.2 goes on, 5.3 abandons the rest of the line. | Explained as an element with index -1 | A note for a negative index of an array the model knows empty | 3 |
+| `declare -a -A x` (or `-aA`): 5.2 makes `x` associative, prints "cannot convert associative to indexed array" and returns 1; 5.3 refuses the options ("-a: invalid option", status 2), against its manual ("`-A` takes precedence"). | Both options are explained, each for itself | A note for the combination, by release | 3 |
+
 Left out: readline and completion changes, job notifications, messages, `$BASH` for `su`, the loadable builtins (`kv`, `strptime`, `fltexpr`), build options.
 
 ## 4. The semantic model

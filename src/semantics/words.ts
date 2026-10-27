@@ -393,7 +393,7 @@ function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: S
   let tildes = shape.tildes.get(key);
   if (!tildes) shape.tildes.set(key, (tildes = tildesOf(nodes, rule, posix)));
   const steps: ExpansionStep[] = [];
-  const braces = bracesInContext(nodes[0]);
+  const braces = context === found ? bracesInContext(nodes[0]) : rule.brace; // (an associative array's list or key: none)
   const brace = braces && shape.braced.length > 0;
   steps.push(mk(braceStep(shape.braced, braces, braceOpt, shell, shape.plain)));
   steps.push(mk({ kind: 'tilde', applies: tildes.length > 0, parts: [...new Set(tildes.map((t) => t.node))] }));

@@ -35,10 +35,6 @@ export function braceExpansion(n: SyntaxNode): string[] | undefined | null {
 }
 
 export function word(cx: Explainer, n: SyntaxNode): Token {
-  // (`[1]=*.txt` in `( )`: an element with an index of its own, whose value is not globbed; a key or a value of an
-  // associative array.)
-  const value = arrayValue(cx, n);
-  if (value) return value;
   const text = n.text;
   const t = tilde(cx, n);
   if (t) return t;
@@ -657,26 +653,39 @@ function pastedValue(cx: Explainer, n: SyntaxNode, name: string): string | undef
 
 /**
  * A value of a compound assignment that says more than a word (6.7): `[7]=z`, an element with an index of its own, or
- * in the list of an associative array with no `[k]=` first, a key or the value of the key before it.
+ * in the list of an associative array with no `[k]=` first, a key or the value of the key before it (with the tokens of
+ * its parts, but for a plain word). bash 5.2 and 5.3 differ on a few (checked with both): bash 5.2 brace-expands
+ * `[4]={a,b}` into plain values; a `~` in an associative array's list is expanded by 5.3 only; after a value with no
+ * `[k]=` there, 5.3 also abandons the rest of the line.
  */
 function arrayValue(cx: Explainer, n: SyntaxNode): Token | undefined {
-  if (n.parent!.type !== 'array') return undefined;
   const kind = arrayKind(cx, field(n.parent!.parent!, 'name')!.text, n);
-  if (setsElement(n, kind === 'assoc')) return arrayElement(cx, n, kind);
+  const tilde = kind === 'assoc' && /(?:^|\[|=)~/.test(n.text)
+    ? cx.s('。`~` は bash 5.2 では書いたままの文字列で、bash 5.3 ではホームディレクトリに展開される', '. bash 5.2 keeps the `~` as written; bash 5.3 expands it to the home directory') : '';
+  if (setsElement(n, kind === 'assoc')) return arrayElement(cx, n, kind, tilde);
   if (kind !== 'assoc') return undefined;
   const values = n.parent!.namedChildren.filter((c) => c.type !== 'comment');
   // (After a first value `[k]=v`, each needs its `[k]=`.)
   if (splitElement(values[0].text)) {
-    return cx.tok(n, 'error', cx.s(`bash はこの値を受け付けない: 最初の値が \`[キー]=\` で始まるので、どの値にも \`[キー]=\` が要る（「must use subscript when assigning associative array」）`,
-      `Bash refuses this value: the first value starts with \`[key]=\`, so each one needs its \`[key]=\` ("must use subscript when assigning associative array")`));
+    return cx.tok(n, 'error', cx.s(`bash はこの値を受け付けない: 最初の値が \`[キー]=\` で始まるので、どの値にも \`[キー]=\` が要る（「must use subscript when assigning associative array」）。bash 5.2 はそう表示して続けるが、bash 5.3 はさらにこの行の残りを実行しない（終了ステータス 1）`,
+      `Bash refuses this value: the first value starts with \`[key]=\`, so each one needs its \`[key]=\` ("must use subscript when assigning associative array"). bash 5.2 says so and goes on; bash 5.3 also abandons the rest of the line (status 1)`));
   }
   const i = values.indexOf(n);
-  return cx.tok(n, 'argument', i % 2 === 0 ? cx.s(`キー \`${n.text}\``, `Key \`${n.text}\``) : cx.s(`キー \`${values[i - 1].text}\` の値 \`${n.text}\``, `Value \`${n.text}\` of the key \`${values[i - 1].text}\``));
+  const what = (i % 2 === 0 ? cx.s(`キー \`${n.text}\``, `Key \`${n.text}\``) : cx.s(`キー \`${values[i - 1].text}\` の値 \`${n.text}\``, `Value \`${n.text}\` of the key \`${values[i - 1].text}\``)) + tilde;
+  // (A value of one part, `$x` or `"a b"`, whose token says it too; braces are text there, `{a,b}`.)
+  const [part] = n.type === 'concatenation' || n.type === 'brace_expression' || isPlainWord(n) ? [] : cx.sub(n);
+  return part ? { ...part, explanation: `${what}: ${part.explanation}` } : cx.tok(n, 'argument', what, n.type === 'concatenation' ? cx.sub(n) : []);
 }
 
-/** `[7]=z` in `( )`: an element with an index of its own; `kind`: the array's. */
-function arrayElement(cx: Explainer, n: SyntaxNode, kind: 'assoc' | 'indexed' | 'unknown'): Token {
+/** `[7]=z` in `( )`: an element with an index of its own; `kind`: the array's; `more`: what to add. */
+function arrayElement(cx: Explainer, n: SyntaxNode, kind: 'assoc' | 'indexed' | 'unknown', more: string): Token {
   const e = splitElement(n.text)!;
+  // (bash 5.2 brace-expands the word first, into values with no index of their own.)
+  const braces = wordAt(cx, n)!.steps.find((s) => s.kind === 'brace')!.applies === true ? braceExpansion(n) : undefined;
+  if (braces) {
+    return cx.tok(n, 'argument', cx.s(`bash 5.2 はこの語を先にブレース展開し、${braces.map((w) => `\`${w}\``).join('・')} という添字のない値にする（それぞれが次の要素になる）。bash 5.3 はブレース展開せず、添字 \`${e.key}\` の要素に \`${e.value}\` を${e.plus ? '追記' : '代入'}する`,
+      `bash 5.2 brace-expands this word first, into the values ${braces.map((w) => `\`${w}\``).join(', ')}, with no index of their own (each is the next element); bash 5.3 does not, and ${e.plus ? 'appends' : 'sets'} \`${e.value}\` ${e.plus ? 'to' : 'as'} the element with the index \`${e.key}\``));
+  }
   // The key as bash reads it once the quotes are removed (`["a b"]` is `a b`); as written when it holds an expansion.
   const key = unquoteWord(e.key) ?? e.key;
   const m = ['', key, e.plus, e.value];
@@ -693,7 +702,7 @@ function arrayElement(cx: Explainer, n: SyntaxNode, kind: 'assoc' | 'indexed' | 
   return cx.tok(n, 'argument', cx.s(
     `${what}${what.endsWith('`') ? ' ' : ''}の要素に \`${m[3]}\` を${m[2] ? '追記' : '代入'}する`,
     `Element with ${what}: ${m[2] ? 'append' : 'set it to'} \`${m[3]}\``,
-  ));
+  ) + more);
 }
 
 export function subscript(cx: Explainer, n: SyntaxNode): Token {
@@ -767,15 +776,13 @@ function unbracedElement(cx: Explainer, n: SyntaxNode): void {
     const name = k.text.slice(1);
     const st = cx.state.at(k).run;
     if (k.type !== 'simple_expansion' || !sub || !/^[A-Za-z_]\w*$/.test(name)) return;
-    if (attribute(st, name, 'a') !== 'off' || attribute(st, name, 'A') !== 'off') cx.note(fact(cx.lang, 'unbraced-element', { name, sub }), k);
+    if (attribute(st, name, 'a') !== 'off' || attribute(st, name, 'A') !== 'off') cx.note(fact(cx.lang, 'unbraced-element', { name, sub, ...(wordAt(cx, n)!.steps.find((s) => s.kind === 'glob')!.applies === false ? {} : { glob: true }) }), k);
   });
 }
 
 /** A word of several parts (`a"b"$c`): an element of an array assignment that bash splits, a brace expansion, or the parts joined. */
 export function concatenation(cx: Explainer, n: SyntaxNode): Token {
   unbracedElement(cx, n);
-  const value = arrayValue(cx, n);
-  if (value) return value;
   // (A word of plain text with braces that do not expand here, `x{a,b}` in dash, is one word.)
   if (plainText(n)) return braceWord(cx, n) ?? word(cx, n);
   return cx.tok(n, 'argument', concatenationNote(cx, n) + valueNote(cx, n) + braceVarNote(cx, n), cx.subs(n.namedChildren));
@@ -783,10 +790,12 @@ export function concatenation(cx: Explainer, n: SyntaxNode): Token {
 
 /** A number: a constant of arithmetic that is not plain decimal, with its value (`arithNumber`), or a plain number. */
 export function number(cx: Explainer, n: SyntaxNode): Token {
-  return arrayValue(cx, n) ?? arithNumber(cx, n) ?? cx.tok(n, 'number', cx.s('数値', 'Number'));
+  return arithNumber(cx, n) ?? cx.tok(n, 'number', cx.s('数値', 'Number'));
 }
 
-/** `( … )` of an array assignment. */
+/** `( … )` of an array assignment: its values, which say more than words where `arrayValue` does. */
 export function array(cx: Explainer, n: SyntaxNode): Token {
-  return cx.tok(n, 'expansion', cx.s('配列: `( )` 内の要素から配列を作る', 'Array: built from the elements inside `( )`'), cx.subs(n.namedChildren));
+  // (A list over several lines is explained whole: every value is on the line.)
+  const values = n.namedChildren.flatMap((c) => (c.type === 'comment' ? cx.sub(c) : [arrayValue(cx, c) ?? cx.full(c)]));
+  return cx.tok(n, 'expansion', cx.s('配列: `( )` 内の要素から配列を作る', 'Array: built from the elements inside `( )`'), values);
 }

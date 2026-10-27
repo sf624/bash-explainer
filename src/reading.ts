@@ -473,6 +473,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     // (A word that is one part, a quote or an expansion, has that part under it, with its explanation.)
     const one = isPart(w);
     const n = shellNode(w, layer, kind, wordParts(w, layer), one ? new Set() : WORD_TOKENS);
+    // (Braces that bash does not expand here are text: `m=(k {a,b})` of an associative array.)
+    if (w.type === 'brace_expression' && !one) delete n.refs;
     // (What bash does to it that no part shows: brace and tilde expansion, splitting, globbing, a pattern's matching.
     // An item of a brace expression is a piece of the word, which cites them.)
     if (w.parent!.type !== 'brace_expression') n.refs = union(kind === 'argument' ? ['3.7.1'] : [], n.refs, expansionSections(cx.meaning(w)));
@@ -605,11 +607,13 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   /**
    * A value of a compound assignment written `[k]=v` (6.7): the brackets and the index (or key) between them, `=` (or
    * `+=`), and the value, which bash expands as that of an assignment (3.4: no splitting, no globbing). Others are words
-   * (and so is `[k]=v` in the list of keys and values of an associative array: `setsElement`).
+   * (and so is `[k]=v` in the list of keys and values of an associative array, `setsElement`, and one bash 5.2
+   * brace-expands into values, `[4]={a,b}`).
    */
   const element = (e: SyntaxNode, layer: Layer): ReadingNode[] => {
     const name = field(e.parent!.parent!, 'name')!.text;
-    const m = (e.type === 'word' || e.type === 'concatenation') && setsElement(e, cx.arrayKind(name, e) === 'assoc') ? splitElement(e.text)! : undefined;
+    const braced = cx.meaning(e)!.steps.find((s) => s.kind === 'brace')!.applies === true;
+    const m = (e.type === 'word' || e.type === 'concatenation') && !braced && setsElement(e, cx.arrayKind(name, e) === 'assoc') ? splitElement(e.text)! : undefined;
     if (!m) {
       // (A key or a value of an associative array, which the explanation says it is: not a plain `Word`.)
       const [n] = node(e, layer);

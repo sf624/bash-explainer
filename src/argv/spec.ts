@@ -442,8 +442,10 @@ export interface OperandSpec {
   command?: CommandSlot;
   /** The meaning of particular values (`shopt -o errexit`: the names of `set -o`), shown in front of the operand's text. */
   values?: Record<string, Text>;
-  /** Only a word whose text matches fits; a word whose text is not known fits too. */
+  /** Only a word whose text matches fits; a word whose text is not known fits too, unless `known`. */
   matches?: RegExp;
+  /** With `matches`, a word whose text is not known does not fit: the item says something only a known text shows (`alias a/b=x`). */
+  known?: boolean;
   /** Only a `NAME=value` word fits: a variable for the command that follows (`env A=1 cmd`). */
   assignment?: boolean;
   /**
