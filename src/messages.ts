@@ -3,6 +3,7 @@ import type { ConventionId } from './conventions';
 import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
+import { extglobText, globstarText } from './messages-glob';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
 import type { Rewrite } from './rewrite';
 import type { NameFacts, NameKind } from './semantics/names';
@@ -383,36 +384,14 @@ export const MESSAGES = {
   // the manual does not say: checked. A new shell starts with its own options (3.7.3 lists what a command run apart
   // gets, and `shopt` options are not among them); the try-it shows it.)
   // (3.5.8.1: with globstar, `**` matches "zero or more directories"; without it, two `*`, each of which matches no `/`.)
-  'extglob-in-same-block': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
-    `bash は関数や \`if\`・\`{ }\` などのまとまりを最後まで読んでから実行します。そのため、同じまとまりの中の \`shopt -s extglob\` は \`${use}\` を読む時点ではまだ効いておらず、構文エラーになります。\`shopt -s extglob\` は、まとまりの外のそれより前の行に書きます`,
-    `bash reads a whole function or block (\`if\`, \`{ }\`…) before running it, so a \`shopt -s extglob\` inside the same block is not yet on when it reads \`${use}\`: a syntax error. Put \`shopt -s extglob\` on an earlier line, outside the block`]),
-  { kind: 'checked', probe: 'state#extglob-off' }),
-  'extglob-maybe-on': withBasis(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
-    `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。この前で有効にしているのは一部の経路（分岐やループ）だけなので、ほかの経路では構文エラーになります`,
-    `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`), and only some paths before here (a branch or a loop) turn it on`]),
-  { kind: 'checked', probe: 'state#extglob-off' }),
-  'extglob-turned-off': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
-    `\`${use}\` のような拡張グロブは \`shopt -s extglob\` のあとでないと構文エラーになりますが、\`shopt -u extglob\` で無効にされています`,
-    `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` is on, and \`shopt -u extglob\` turned it off`]),
-  { kind: 'checked', probe: 'state#extglob-off' }),
-  'extglob-not-found': withBasis(notProblem(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
-    `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。この行より前に見当たりません。\`source\` したファイルなどで有効にしているなら問題ありません`,
-    `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). It is not found before this line; fine if it is turned on elsewhere, as in a file read with \`source\``])),
-  { kind: 'checked', probe: 'state#extglob-off' }),
-  'extglob-maybe-on-trap': withBasis(caveat<{ use: string }>(['3.5.8.1', '4.3.2', '4.1'], ({ use }) => [
-    `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。トラップの文字列はシグナルが来たときに読まれるので、\`extglob\` が有効になる前に来れば構文エラーになります`,
-    `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`), and a trap's action is read when its signal comes: if that is before \`extglob\` is on, it is a syntax error`]),
-  { kind: 'checked', probe: 'state#extglob-off' }),
-  'extglob-not-in-new-shell': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2', '3.7.3'], ({ use }) => [
-    `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。新しいシェルは \`extglob\` が無効の状態で始まり、このスクリプトの \`shopt\` は引き継がれません。文字列の中で、グロブより前の行で \`shopt -s extglob\` するか、\`bash -O extglob -c\` で起動します`,
-    `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). The new shell starts with \`extglob\` off: this script's \`shopt\` does not reach it. Turn it on in the string, on a line before the glob, or start the shell with \`bash -O extglob -c\``]),
-  { kind: 'checked', probe: 'state#extglob-new-shell', also: ['state#extglob-off'] }),
-  'globstar-maybe-on': caveat<{ on: string }>(['3.5.8', '4.3.2'], ({ on }) => [
-    `\`**\` がサブディレクトリまでたどるのは \`${on}\` のあとだけです。この前で有効にしているのは一部の経路（分岐やループ）だけなので、ほかの経路では \`*\` と同じく1階層分にしか一致しません`,
-    `\`**\` reaches into subdirectories only after \`${on}\`, and only some paths before here (a branch or a loop) turn it on; on the others \`**\` is the same as \`*\` and matches one level only`]),
-  'globstar-not-found': notProblem(caveat<{ on: string }>(['3.5.8', '4.3.2'], ({ on }) => [
-    `\`**\` がサブディレクトリまでたどるのは \`${on}\` のあとだけです。この行より前に見当たらないので、このままでは \`*\` と同じく1階層分にしか一致しません。\`source\` したファイルなどで有効にしているなら問題ありません`,
-    `\`**\` reaches into subdirectories only after \`${on}\`. It is not found before this line, so as it stands \`**\` is the same as \`*\` and matches one level only. Fine if it is turned on elsewhere, as in a file read with \`source\``])),
+  'extglob-in-same-block': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('in-same-block')), { kind: 'checked', probe: 'state#extglob-off' }),
+  'extglob-maybe-on': withBasis(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('maybe-on')), { kind: 'checked', probe: 'state#extglob-off' }),
+  'extglob-turned-off': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('turned-off')), { kind: 'checked', probe: 'state#extglob-off' }),
+  'extglob-not-found': withBasis(notProblem(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('not-found'))), { kind: 'checked', probe: 'state#extglob-off' }),
+  'extglob-maybe-on-trap': withBasis(caveat<{ use: string }>(['3.5.8.1', '4.3.2', '4.1'], extglobText('maybe-on-trap')), { kind: 'checked', probe: 'state#extglob-off' }),
+  'extglob-not-in-new-shell': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2', '3.7.3'], extglobText('not-in-new-shell')), { kind: 'checked', probe: 'state#extglob-new-shell', also: ['state#extglob-off'] }),
+  'globstar-maybe-on': caveat<{ on: string }>(['3.5.8', '4.3.2'], globstarText('maybe-on')),
+  'globstar-not-found': notProblem(caveat<{ on: string }>(['3.5.8', '4.3.2'], globstarText('not-found'))),
   'globstar-unsupported': pitfall<{ shell: string }>(['3.5.8'], ({ shell }) => [
     `${shell} には globstar がなく、\`**\` は \`*\` と同じく1階層分にしか一致しません。サブディレクトリまでたどるには \`find\` を使います`,
     `${shell} has no globstar, so \`**\` is the same as \`*\` and matches one level only. To reach into subdirectories, use \`find\``]),
