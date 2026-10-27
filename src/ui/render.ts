@@ -4,7 +4,7 @@ import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { codeSpan, joinParts, LabelPart, labelParts } from '../label';
 import { referencesWith } from '../references';
-import { MARKS, type Note, type NoteLevel } from '../messages';
+import { basisSaid, type BasisSaid, MARKS, type Note, type NoteLevel } from '../messages';
 import { errorColour, Role, roleColour, ThemeKind } from './palette';
 
 /** (Moved to src/label.ts, which the message catalog reads too.) */
@@ -36,6 +36,8 @@ export const ui = {
       copy: 'Markdown でコピー', copied: '解説を Markdown としてコピーしました。', expandAll: 'すべて展開', collapseAll: 'すべて折りたたむ',
       reference: '早見表', search: '検索（例: ${、2>&1、-f、grep）', back: '← 解説に戻る', shell: 'シェル', yq: 'yq', auto: '自動',
       editHint: '書き換えられます（結果はその場で更新）', noMatch: '該当なし',
+      // (A note's try-it, docs/design/basis.md: the command is for the reader's terminal; the panel never runs it.)
+      tryIt: '端末で試す', tryItHint: '端末に貼り付けて実行するコマンド。ここでは実行しない', prints: '出力', copyCode: 'コピー', copiedCode: 'コピーしました',
       // (The fold button of a row with parts, named by the row's label; the links' note on where they open: `linkNote`, src/ui/panelView.ts.)
       partsOf: '{name} の内訳', opensTab: '（新しいタブで開く）', opensBrowser: '（ブラウザで開く）',
       views: '表示', listView: '意味', treeView: '読まれ方',
@@ -133,6 +135,7 @@ export const ui = {
       copy: 'Copy as Markdown', copied: 'Copied the explanation as Markdown.', expandAll: 'Expand all', collapseAll: 'Collapse all',
       reference: 'Quick reference', search: 'Search (e.g. ${, 2>&1, -f, grep)', back: '← Back to the explanation', shell: 'Shell', yq: 'yq', auto: 'Auto',
       editHint: 'Editable; the result updates as you type', noMatch: 'Nothing found',
+      tryIt: 'Try it in your terminal', tryItHint: 'A command to paste into your terminal; it is not run here', prints: 'Output', copyCode: 'Copy', copiedCode: 'Copied',
       partsOf: 'Parts of {name}', opensTab: '(opens in a new tab)', opensBrowser: '(opens in the browser)',
       views: 'View', listView: 'Meaning', treeView: 'Reading',
       tree: {
@@ -208,6 +211,31 @@ export const ui = {
 /** The sections of the manual a note cites: those of the fact it says (`LineExplanation.facts`), if it is one. */
 export function noteRefs(ex: LineExplanation, note: string): readonly string[] | undefined {
   return ex.facts?.find((f) => f.text === note)?.refs;
+}
+
+/** What a view marks on a note that rests on bash's behaviour (docs/design/basis.md, 3): the chip, and the try-it. */
+export interface NoteBasis extends BasisSaid { tryIt: { code: string; output: string } }
+
+/**
+ * The basis a view marks on a note: on a fact that is `checked` or `differs` only, with its try-it (a try-it with no
+ * chip is not shown: docs/design/basis.md, decision 3). None when the setting `notes.basis` is off: the fact has none.
+ */
+export function noteBasis(ex: LineExplanation, note: string, lang: Lang): NoteBasis | undefined {
+  const f = ex.facts?.find((g) => g.text === note);
+  const said = basisSaid(lang, f?.basis);
+  if (!said) return undefined;
+  // (A fact gets its basis and its try-it from the same probe row: one with a basis has a try-it, src/basis.ts.)
+  const { code, output } = f!.tryIt!;
+  return { ...said, tryIt: { code, output } };
+}
+
+/**
+ * A note's basis in one line, for the outputs with no chip (the hover, Markdown, the CLI's text): the chip's words,
+ * then the try-it, its code and its output (lines joined by ⏎). `code` wraps a code: a code span, or nothing.
+ */
+export function basisLine(lang: Lang, b: NoteBasis, code: (text: string) => string): string {
+  const t = ui[lang].panel;
+  return `${b.label} · ${t.tryIt}: ${code(b.tryIt.code)} → ${code(b.tryIt.output.replace(/\n/g, ' ⏎ '))}`;
 }
 
 const RANK: Record<NoteLevel, number> = { warning: 0, info: 1, note: 2 };
@@ -401,12 +429,15 @@ export function labelMarkdown(parts: readonly LabelPart[]): string {
 
 /**
  * Notes of a line as plain Markdown quotes, warnings first: each keeps its mark, and its word in bold
- * (`> ⚠ **Pitfall:** …`), with the sections of the manual it cites.
+ * (`> ⚠ **Pitfall:** …`), with the sections of the manual it cites, and, where it rests on bash's behaviour rather
+ * than the manual, a line in italics with the chip's words and the try-it (`noteBasis`).
  */
 export function plainNotes(ex: LineExplanation, notes: readonly string[], lang: Lang): string[] {
   return notesByLevel(ex, notes).flatMap(({ text, level, label, body }) => {
     const refs = noteRefs(ex, text);
-    return [`> ${pictureText(label ? `${MARKS[level]} **${label}** ${body}` : text)}${refs?.length ? ` (${refsMarkdown(lang, refs)})` : ''}`, ''];
+    const basis = noteBasis(ex, text, lang);
+    return [`> ${pictureText(label ? `${MARKS[level]} **${label}** ${body}` : text)}${refs?.length ? ` (${refsMarkdown(lang, refs)})` : ''}`,
+      ...(basis ? ['>', `> _${basisLine(lang, basis, codeSpan)}_`] : []), ''];
   });
 }
 

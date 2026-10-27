@@ -269,6 +269,109 @@ ul#tree {
   margin-left: 0.5em;
 }
 
+/*
+ * What a note rests on where it is bash's behaviour rather than the manual (media/panel.js `basisParts`,
+ * docs/design/basis.md): a quiet chip after the text, in the foreground on a tint of the muted colour (not a level's
+ * colour: it is no problem; not an outlined box: those are the name kinds' badges), and the try-it folded under it.
+ */
+.basis {
+  display: inline-block;
+  margin-left: 0.5em;
+  padding: 0 0.5em;
+  font-size: 0.85em;
+  line-height: 1.5;
+  color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--c-muted) 18%, transparent);
+  border-radius: 999px;
+  overflow-wrap: anywhere;
+}
+
+.tryit {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.92em;
+}
+
+summary.tryit-head {
+  color: var(--c-muted);
+  cursor: pointer;
+  width: fit-content;
+}
+
+details.tryit[open] > summary.tryit-head {
+  margin-bottom: 0.25rem;
+}
+
+.tryit-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.25rem 0.5rem;
+  align-items: baseline;
+}
+
+.tryit-line {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.tryit-code,
+.tryit-output {
+  display: block;
+  min-width: 0;
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-foreground);
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.tryit-code {
+  flex: 1 1 auto;
+}
+
+.tryit-prints {
+  color: var(--c-muted);
+}
+
+.tryit-copy {
+  flex: none;
+  min-height: 24px;
+  padding: 0 0.6em;
+  font: inherit;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 1px solid var(--c-muted);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.tryit-copy:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.15));
+}
+
+/* (On a touch screen, and on the web page's phone layout, the targets are taller.) */
+@media (pointer: coarse) {
+  .tryit-copy { min-height: 40px; }
+  summary.tryit-head { padding-block: 0.6rem; }
+}
+
+@media (max-width: 520px) {
+  html.bx-web .tryit-copy { min-height: 40px; }
+  html.bx-web summary.tryit-head { padding-block: 0.6rem; }
+}
+
+@media (forced-colors: active) {
+  .basis { border: 1px solid CanvasText; color: CanvasText; }
+  summary.tryit-head, .tryit-prints { color: CanvasText; }
+  .tryit-copy { border-color: ButtonText; color: ButtonText; }
+}
+
 .refs a {
   color: var(--c-muted);
   text-decoration: none;

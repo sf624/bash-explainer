@@ -21,6 +21,7 @@ export interface Settings {
   language: 'auto' | 'en' | 'ja';
   'notes.idioms': boolean;
   'notes.pitfalls': boolean;
+  'notes.basis': boolean;
   shell: 'auto' | Shell;
   bashVersion: BashVersion;
   'yq.flavor': 'auto' | 'mikefarah4' | 'kislyuk' | 'mikefarah3';
@@ -86,6 +87,7 @@ export const SETTINGS: readonly SettingSpec[] = [
   { key: 'language', type: 'string', default: 'auto', enum: ['auto', 'ja', 'en'], group: 'display', title: ['言語', 'Language'], surfaces: ALL },
   { key: 'notes.idioms', type: 'boolean', default: true, group: 'display', title: ['定番の書き方の補足', 'Notes on idioms'], surfaces: ALL },
   { key: 'notes.pitfalls', type: 'boolean', default: true, group: 'display', title: ['よくある間違いの指摘', 'Pitfalls'], surfaces: ALL },
+  { key: 'notes.basis', type: 'boolean', default: true, group: 'display', title: ['マニュアルにない動きの印と試し方', 'Behaviour not in the manual'], surfaces: ALL },
   { key: 'shell', type: 'string', default: 'auto', enum: SHELLS, group: 'checks', title: ['対象シェル', 'Shell'], surfaces: ALL },
   { key: 'bashVersion', type: 'string', default: DEFAULT_BASH_VERSION, enum: BASH_VERSIONS, group: 'checks', title: ['bash のバージョン', 'bash version'], surfaces: ALL },
   { key: 'yq.flavor', type: 'string', default: 'auto', enum: ['auto', 'mikefarah4', 'kislyuk', 'mikefarah3'], group: 'checks', title: ['yq の種類', 'yq flavor'], surfaces: ALL },
@@ -387,6 +389,7 @@ export function explainOptions(s: Settings): ExplainOptions {
     examples: { enabled: s['examples.enabled'], disabled: s['examples.disabled'] },
     idioms: s['notes.idioms'],
     pitfalls: s['notes.pitfalls'],
+    basis: s['notes.basis'],
     customCommands: s.customCommands,
   };
 }

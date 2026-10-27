@@ -226,6 +226,7 @@ The panel works like regex101:
 | `bashExplainer.language` | `auto` | `auto` (follow VS Code), `en` or `ja` |
 | `bashExplainer.notes.idioms` | `true` | Notes about well-known idioms (strict mode, `IFS= read -r`…) |
 | `bashExplainer.notes.pitfalls` | `true` | Point out common mistakes and how to avoid them (`x = 1`, unquoted variables, `for f in $(ls)`…) |
+| `bashExplainer.notes.basis` | `true` | Mark a note that rests on bash's behaviour rather than the manual ("Not in the manual · checked with bash 5.2"), with a command to try it in your terminal |
 | **Checks** | | |
 | `bashExplainer.shell` | `auto` | The shell scripts are written for: `auto`, `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh` |
 | `bashExplainer.bashVersion` | `5.2` | The bash release to explain for: `5.2` or `5.3`. A construct of bash 5.3 (`${ cmd; }`) is explained as 5.3 runs it, and is a warning with `5.2` |
@@ -284,7 +285,7 @@ The same settings work on the web page, in the command-line tool and in the Lang
 
 | Settings (`bashExplainer.`…) | Web page | Command line | Language Server |
 | --- | --- | --- | --- |
-| `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `bashVersion`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled`, `customCommands` | ✓ | ✓ | ✓ |
+| `language`, `notes.idioms`, `notes.pitfalls`, `notes.basis`, `shell`, `bashVersion`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled`, `customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | (`--check` asks for the warnings) | ✓ |
 | `hover.enabled`, `hints.names`, `hints.deadCode` | ✓ | | ✓ |
 | `examples.placement`, `panel.animations` | ✓ | | |

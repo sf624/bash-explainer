@@ -486,6 +486,28 @@ The labels are taken from the explanation when the page is built, so they say wh
 - It is hidden from screen readers, and nothing in it takes the focus.
 - It is not shown in `?view=panel` (the page embedded as a panel), and not without JavaScript.
 
+### What a note rests on
+
+Most notes say what the Bash manual says, and link its sections. A few say what bash does where the manual is silent. For these, a chip after the note says "Not in the manual · checked with bash 5.2" (「マニュアルに記述なし・bash 5.2 で確認」). Its tooltip says that messages are as with `LC_ALL=C`.
+
+- `exit 300` gives 44. The manual's sections 2 and 3.7.5 imply it without stating it for `exit`. `return 300` gives 44 too, but section 4.1 states that for `return`, so its note has no chip.
+- `unset -fv x f` is an error, and nothing is unset. Section 4.1 describes `-f` and `-v` one at a time.
+
+Under the chip, "Try it in your terminal" (「端末で試す」) opens a command to copy and what it prints:
+
+```
+bash -c 'f() { :; }; x=1; unset -fv x f; echo "status $?, x=$x"; type -t f'
+bash: line 1: unset: cannot simultaneously unset a function and a variable
+status 1, x=1
+function
+```
+
+The command starts a bash of its own, so it prints the same when typed into zsh or fish. The explainer never runs it. The output is the one recorded by the project's tests, which run the command again in bash 5.2 on every change.
+
+The hover and Copy as Markdown say both on one line in italics. The command-line tool prints them under the note. Its JSON gives each fact a `basis` and a `tryIt`.
+
+`bashExplainer.notes.basis` (on by default; `--set notes.basis=false` for the command-line tool) turns the chips and the try-its off, in every output, the JSON included.
+
 ## Changed
 
 ### A new logo

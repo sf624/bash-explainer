@@ -246,7 +246,7 @@ describe('the settings module', () => {
     assert.strictEqual(forcedShell(s), 'sh');
     assert.strictEqual(forcedShell(defaultSettings()), undefined);
     assert.deepStrictEqual(explainOptions(s), {
-      yqFlavor: 'auto', bashVersion: '5.2', examples: { enabled: true, disabled: [] }, idioms: false, pitfalls: true, customCommands: {},
+      yqFlavor: 'auto', bashVersion: '5.2', examples: { enabled: true, disabled: [] }, idioms: false, pitfalls: true, basis: true, customCommands: {},
     });
     assert.deepStrictEqual(changedSettings(s), { 'bashExplainer.notes.idioms': false, 'bashExplainer.shell': 'sh' });
     assert.deepStrictEqual(changedSettings(mergeSettings({ 'panel.autoOpen': true, shell: 'sh' }), 'web'), { 'bashExplainer.shell': 'sh' });
