@@ -20,6 +20,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 - Prefer tests that compare with the real tool: GNU sed, gawk, perl, jq, bash, git, GNU coreutils, PyYAML for kislyuk/yq. Most `test/examples-*.test.ts` already hold such tables; add cases there. These tests have found many bugs, so when the tool disagrees, fix the code (with a CHANGELOG line under "Unreleased") rather than the expectation.
 - Behaviour that differs between tool releases (jq 1.7 vs 1.7.1, mawk vs gawk) is left out of the comparisons and tested on its own.
 - A branch no input can reach is removed (or becomes a non-null assertion when the grammar guarantees the node); a guard against a bug elsewhere gets `/* c8 ignore … */` with a comment. Put `/* c8 ignore start */` before `} catch`, so the catch's own branch is left out too.
+- A template literal with `\n` in the last statement of a file (`` `${a}\n${b}` ``) shifts tsx's source map: its `0 && (module.exports = …)` then maps inside that line, and CI reports a branch no test can take (seen October 2026 in src/rewrite.ts). Write `a + '\n' + b` there.
 - A branch that only the seeded fuzz test reaches loses its coverage when the snippets change (a new test adds a snippet, and the fuzz inputs move), and CI then fails a PR that never touched that code. Give such a branch a direct test of the input that reaches it (October 2026: `src/semantics/allow.ts` via `echo ${s@${`; `declare +g` in #416).
 
 ## Explanations
