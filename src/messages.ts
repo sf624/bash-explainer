@@ -192,9 +192,9 @@ export const MESSAGES = {
     '`[` は最後の引数が `]` でないので、実行するとエラーになり、条件は評価されません（`[: missing \']\'`、終了ステータス 2）。構文エラーではなく、コマンド `[` が実行時に出すエラーです',
     '`[` has no `]` as its last argument, so it fails when it runs, without evaluating the condition (`[: missing \']\'`, status 2). This is not a syntax error but an error of the command `[` at run time']),
   { kind: 'manual', probe: 'state#bracket-missing' }),
-  'bracket-close-glued': withBasis(failure<{ word: string }>(['4.1', '3.7.5', '6.4'], ({ word }) => [
-    `\`${word}\` の \`]\` は単語の一部なので、\`[\` の最後の引数は \`]\` ではありません。実行するとエラーになり、条件は評価されません（\`[: missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります`,
-    `The \`]\` in \`${word}\` is part of the word, so \`[\` has no \`]\` as its last argument: it fails when it runs, without evaluating the condition (\`[: missing ']'\`, status 2). \`]\` needs a space before it`]),
+  'bracket-close-glued': withBasis(suggests(failure<{ word: string; rewrite: readonly Rewrite[] }>(['4.1', '3.7.5', '6.4'], ({ word, rewrite: [fix] }) => [
+    `\`${word}\` の \`]\` は単語の一部なので、\`[\` の最後の引数は \`]\` ではありません。実行するとエラーになり、条件は評価されません（\`[: missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります（\`${fix.code}\`）`,
+    `The \`]\` in \`${word}\` is part of the word, so \`[\` has no \`]\` as its last argument: it fails when it runs, without evaluating the condition (\`[: missing ']'\`, status 2). \`]\` needs a space before it (\`${fix.code}\`)`])),
   { kind: 'manual', probe: 'state#bracket-missing' }),
   // (4.1: `test` and `[` "return a status of 0 (true) or 1 (false)", and two arguments whose first is no unary
   // operator, or three that are no binary test, `!` or `( )`, are false. bash fails with status 2 ("unary operator
@@ -371,9 +371,9 @@ export const MESSAGES = {
   'alias-defined-same-unit': note<{ name: string; line: number }>(['6.6'], ({ name, line }) => [
     `\`${name}\` は行 ${line} で \`alias\` として定義されますが、bash は行（複合コマンドや関数の本体も）をまとめて読んでから実行するので、同じ行で定義したエイリアスはまだ使えません。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
     `\`${name}\` is defined as an alias on line ${line}, but bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`]),
-  'unbraced-element': pitfall<{ name: string; sub: string; glob?: boolean }>(['6.7'], ({ name, sub, glob }) => [
-    `\`$${name}${sub}\` は配列の要素ではありません: \`$${name}\`（\`\${${name}[0]}\` と同じ）の後に文字列 \`${sub}\` が続きます${glob ? '（ここではグロブにもなります）' : ''}。要素は \`\${${name}${sub}}\` と波かっこで囲んで書きます`,
-    `\`$${name}${sub}\` is not an element of the array: it is \`$${name}\` (that is \`\${${name}[0]}\`) followed by the text \`${sub}\`${glob ? ' (a glob too, here)' : ''}. For the element, write \`\${${name}${sub}}\` with braces`]),
+  'unbraced-element': suggests(pitfall<{ name: string; sub: string; glob?: boolean; rewrite: readonly Rewrite[] }>(['6.7'], ({ name, sub, glob, rewrite: [fix] }) => [
+    `\`$${name}${sub}\` は配列の要素ではありません: \`$${name}\`（\`\${${name}[0]}\` と同じ）の後に文字列 \`${sub}\` が続きます${glob ? '（ここではグロブにもなります）' : ''}。要素は \`${fix.code}\` と波かっこで囲んで書きます`,
+    `\`$${name}${sub}\` is not an element of the array: it is \`$${name}\` (that is \`\${${name}[0]}\`) followed by the text \`${sub}\`${glob ? ' (a glob too, here)' : ''}. For the element, write \`${fix.code}\` with braces`])),
   'alias-defined-later': note<{ name: string; line: number }>(['6.6'], ({ name, line }) => [
     `\`${name}\` は行 ${line} で \`alias\` として定義されますが、これはその前に読まれ、エイリアスは実行された後に読まれるものにだけ効きます。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
     `\`${name}\` is defined as an alias on line ${line}, but this is read before that, and an alias works only on what is read after it ran. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`]),
@@ -449,9 +449,9 @@ export const MESSAGES = {
   'function-not-imported-sh': caveat<{ via: string; fn: string }>(['3.3', '3.7.3'], ({ via, fn }) => [
     `\`${via}\` はコマンドを sh で実行します。Debian や Ubuntu の sh は dash で、dash は bash がエクスポートした関数を読まないので、このスクリプトの関数 \`${fn}\` は使えないことがあります。\`bash -c\` を使います`,
     `\`${via}\` runs the command in sh, which is dash on Debian and Ubuntu, and dash does not read the functions bash exports, so this script's function \`${fn}\` may not be there. Use \`bash -c\``]),
-  'wrapper-assignment-expanded-first': pitfall<{ use: string; via: string; v: string }>(['3.7.1', '3.7.4'], ({ use, via, v }) => [
-    `\`${use}\` は、\`${via}\` が \`${v}\` を設定する前に今のシェルが展開します（今の値で、なければ空）。設定した値を使うなら \`${via} ${v}=… sh -c '… "\$${v}"'\` のようにシェル経由にします`,
-    `the current shell expands \`${use}\` before \`${via}\` sets \`${v}\` (to its present value, or nothing). To use the value it sets, go through a shell: \`${via} ${v}=… sh -c '… "\$${v}"'\``]),
+  'wrapper-assignment-expanded-first': suggests(pitfall<{ use: string; via: string; v: string; rewrite: readonly Rewrite[] }>(['3.7.1', '3.7.4'], ({ use, via, v, rewrite: [fix] }) => [
+    `\`${use}\` は、\`${via}\` が \`${v}\` を設定する前に今のシェルが展開します（今の値で、なければ空）。設定した値を使うなら \`${via} ${v}=… ${fix.code}\` のようにシェル経由にします`,
+    `the current shell expands \`${use}\` before \`${via}\` sets \`${v}\` (to its present value, or nothing). To use the value it sets, go through a shell: \`${via} ${v}=… ${fix.code}\``])),
 
   // ---------------------------------------------------------------- pipelines and globs (3.2.3, 3.7.3, 3.5.8)
   // (5.2 says that `BASH_SUBSHELL` is "incremented by one within each subshell", and 3.2.3 that each command of a
@@ -627,9 +627,9 @@ export const MESSAGES = {
     'bats はテストファイルの `setup_suite` を呼ばず、警告(BW03)を出します。`setup_suite` は、テストと同じディレクトリのファイル `setup_suite.bash` に書きます',
     'bats does not call a `setup_suite` of a test file, and warns (BW03). Put `setup_suite` in the file `setup_suite.bash`, next to the tests']),
   // ---------------------------------------------------------------- words and names
-  'regex-backslash-dropped': pitfall<{ list: string }>(['3.5.9', '3.2.5.2'], ({ list }) => [
-    `\`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）。演算子として使うには変数に入れる（\`re='\\bfoo'; [[ $x =~ $re ]]\`）か、\`[[:space:]]\` や \`[[:alnum:]_]\` のような書き方にする`,
-    `In \`[[ =~ ]]\`, an unquoted ${list} loses its backslash to quote removal and is an ordinary character, not a regex operator. Keep the regex in a variable (\`re='\\bfoo'; [[ $x =~ $re ]]\`) or use \`[[:space:]]\` or \`[[:alnum:]_]\` instead`], NO_HEADING),
+  'regex-backslash-dropped': suggests(pitfall<{ list: string; rewrite: readonly Rewrite[] }>(['3.5.9', '3.2.5.2'], ({ list, rewrite: [fix] }) => [
+    `\`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）。演算子として使うには変数に入れる（\`${fix.code}\`）か、\`[[:space:]]\` や \`[[:alnum:]_]\` のような書き方にする`,
+    `In \`[[ =~ ]]\`, an unquoted ${list} loses its backslash to quote removal and is an ordinary character, not a regex operator. Keep the regex in a variable (\`${fix.code}\`) or use \`[[:space:]]\` or \`[[:alnum:]_]\` instead`], NO_HEADING)),
   'distro-alias-in-script': pitfall<{ name: string; where: string; what: Words; many: boolean; instead: Words }>(['6.6'], ({ name, where, what, many, instead }) => [
     `\`${name}\` は ${where} が対話シェル用に定義する${what.ja}で、コマンドではありません。ほかの環境にはなく、スクリプトの中では${many ? 'これらの' : 'その'}環境でも使えません（command not found）。${instead.ja}`,
     `\`${name}\` is ${what.en} ${where} define${many ? '' : 's'} for interactive shells, not a command. Other systems lack it, and scripts do not have it even there ("command not found"). ${instead.en}`], SYSTEM_DEPENDENT),

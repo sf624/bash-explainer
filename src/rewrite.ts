@@ -47,3 +47,23 @@ export function statementBefore(n: SyntaxNode, code: string): Rewrite {
     edits: own ? [{ start: n.startIndex, end: n.startIndex, text }] : [],
   };
 }
+
+/** The text of the document from the start of `first` to the end of `last` (nodes of one tree, `first` before `last`). */
+export function textBetween(first: SyntaxNode, last: SyntaxNode): string {
+  const { root } = treeOf(first);
+  return root.text.slice(first.startIndex - root.startIndex, last.endIndex - root.startIndex);
+}
+
+/** The rewrite that puts `code` in place of the text from `start` to `end` (offsets in the tree of `n`, a node of it). */
+export function replaceRange(n: SyntaxNode, start: number, end: number, code: string): Rewrite {
+  return { code, edits: treeOf(n).own ? [{ start, end, text: code }] : [] };
+}
+
+/** A name for a variable the rewrite adds, that the document does not use: `base`, else `base2`, `base3`… */
+export function unusedName(n: SyntaxNode, base: string): string {
+  const text = documentRoot(n).text;
+  for (let i = 1; ; i++) {
+    const name = i === 1 ? base : `${base}${i}`;
+    if (!new RegExp(`(?<!\\w)${name}(?!\\w)`).test(text)) return name;
+  }
+}

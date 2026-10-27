@@ -146,7 +146,7 @@ The catalog's classification is in test/suggestions.test.ts (#273), one line per
 | `unquoted-variable-in-test` | `[ $x = y ]` → `[ "$x" = y ]` | empty, unset, a space, `-n`, `=` |
 | `for-over-unquoted-args` | `for a in $@` → `for a in "$@"` | arguments with spaces, empty, a `*` |
 | `prefix-assignment-expanded-first` | `v=1 cmd $v` → `v=1 sh -c '… "$v"'` | `v` set before, unset |
-| `wrapper-assignment-expanded-first` | `sudo v=1 cmd $v` → `sudo v=1 sh -c '…'`, sudo stubbed by `env` | as above |
+| `wrapper-assignment-expanded-first` | `sudo v=1 cmd $v` → `sudo v=1 sh -c 'cmd $v'` (no edits where the string has another expansion), sudo stubbed by `env` | as above |
 | `declaration-masks-status` | `local x=$(f)` → `local x; x=$(f)` | `f` fails, succeeds; with `set -e` |
 | `postfix-increment-status` | `((i++))` → `((++i))`, `i=$((i+1))` | `i` 0, 1, unset; with `set -e` |
 | `function-last-test-returns-status`, `-stops-script` | `a && b` last → `if a; then b; fi` | `a` fails, succeeds; with `set -e` |
@@ -154,7 +154,7 @@ The catalog's classification is in test/suggestions.test.ts (#273), one line per
 | `unmatched-glob-runs-once` | `[ -e "$f" ] \|\| continue` first; `shopt -s nullglob` | matching files, none |
 | `regex-backslash-dropped` | `[[ $x =~ \bfoo ]]` → `re='\bfoo'; [[ $x =~ $re ]]` | strings that match and do not |
 | `nounset-unbound` | `$x` → `${x:-}` (when the analyzer gives `fix`) | unset, empty, set; with `set -u` |
-| `bracket-close-glued` | `[ -f $x]` → `[ -f $x ]` | file present, absent |
+| `bracket-close-glued` | `[ -f a.txt]` → `[ -f a.txt ]` (with a variable, `[ -f $x]`, the style check of src/pitfalls.ts says it) | file present, absent |
 | `script-last-test-returns-status` | `[ -f x ] && cmd` last → `if [ -f x ]; then cmd; fi` | the test true, false |
 | `unbraced-element` | `$a[1]` → `${a[1]}` | an array of two elements; files that match `$a[1]` as a glob |
 | `array-joined-in-assignment` | `x=$@` → `x=("$@")`, or `x="$*"` when one string is meant | arguments with spaces, none |

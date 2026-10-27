@@ -18,6 +18,7 @@ import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { braceTexts } from '../semantics/brace';
+import { replaceRange } from '../rewrite';
 import { attribute, docLine } from '../semantics/state';
 import { readonlyAtStart } from '../semantics/vars';
 import { CONTEXTS, partMeaning, underscoreValue, wordOf } from '../semantics/words';
@@ -791,7 +792,7 @@ function unbracedElement(cx: Explainer, n: SyntaxNode): void {
     const name = k.text.slice(1);
     const st = cx.state.at(k).run;
     if (k.type !== 'simple_expansion' || !sub || !/^[A-Za-z_]\w*$/.test(name)) return;
-    if (attribute(st, name, 'a') !== 'off' || attribute(st, name, 'A') !== 'off') cx.note(fact(cx.lang, 'unbraced-element', { name, sub, ...(wordAt(cx, n)!.steps.find((s) => s.kind === 'glob')!.applies === false ? {} : { glob: true }) }), k);
+    if (attribute(st, name, 'a') !== 'off' || attribute(st, name, 'A') !== 'off') cx.note(fact(cx.lang, 'unbraced-element', { name, sub, ...(wordAt(cx, n)!.steps.find((s) => s.kind === 'glob')!.applies === false ? {} : { glob: true }), rewrite: [replaceRange(k, k.startIndex, k.endIndex + sub.length, `\${${name}${sub}}`)] }), k);
   });
 }
 
