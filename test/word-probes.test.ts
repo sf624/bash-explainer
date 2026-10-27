@@ -14,7 +14,7 @@ import { descendants, field, fields } from '../src/syntax/tree';
 import { shellState } from '../src/semantics/state';
 import { unboundRead } from '../src/semantics/unbound';
 import { wordFields, type WordEnv } from '../src/semantics/words';
-import { BOX, FILES, instrument, PROBE_ENV, readProbeTable } from './support/probe';
+import { alignRuns, BOX, FILES, instrument, PROBE_ENV, readProbeTable } from './support/probe';
 
 interface WordRow { manual: string; snippet: string; posix?: boolean; bash?: BashVersion; note?: string; gaps?: Record<string, string>; unbound?: string[]; facts: Record<string, unknown> }
 
@@ -53,12 +53,7 @@ describe('the word model against bash (probes/words.json)', () => {
         const unknown = words.filter((_, i) => !results[i].fields);
         if (unknown.length) {
           // The words before the first unknown one and after the last one must still be bash's.
-          const first = known.findIndex((r) => !r.fields);
-          const last = known.length - 1 - [...known].reverse().findIndex((r) => !r.fields);
-          const head = known.slice(0, first < 0 ? known.length : first).flatMap((r) => r.fields!);
-          const tail = first < 0 ? [] : known.slice(last + 1).flatMap((r) => r.fields!);
-          const fits = runs.every((run) => JSON.stringify(run.slice(0, head.length)) === JSON.stringify(head)
-            && (!tail.length || JSON.stringify(run.slice(-tail.length)) === JSON.stringify(tail)));
+          const { head, tail, fits } = alignRuns(known, runs);
           found.set(id.text, fits ? `model: unknown (${unknown.map((w) => w.text).join(' ')})` : `model: ${JSON.stringify(head)}…${JSON.stringify(tail)}, bash: ${JSON.stringify(runs)}`);
           continue;
         }

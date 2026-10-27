@@ -10,7 +10,7 @@ The review proposed three checks:
 
 This page checks what exists, takes an inventory for each check, and plans the work in steps. Each step is a PR that keeps every test passing and 100% coverage of `src/`.
 
-Status: step 1 (the inventory of B) is done (#273). Steps 2 to 10 are not started: there is no argv capture, no `Fact.rewrite`, and no normal-forms table yet (section 6). The panel redesign builds on step 2 (its P4a) and on steps 4–6 for four notes (its P3; [panel-redesign.md](panel-redesign.md)).
+Status: step 1 (the inventory of B) is done (#273), and step 2 (argv capture over the fixtures, A1) is done (#NNN; section 2.6). Steps 3 to 10 are not started: there is no `Fact.rewrite` and no normal-forms table yet (section 6). The panel redesign builds on step 2 (its P4a) and on steps 4–6 for four notes (its P3; [panel-redesign.md](panel-redesign.md)).
 
 ## 1. What runs bash today
 
@@ -90,6 +90,25 @@ Two checks build on 2.3:
 
 - **The renderings.** For each word with known fields, the tokens must agree with them: "stays one argument" when there is one field, "expands to N words" with N fields, a glob example only when the glob step applies.
 - **The roles.** The argument interpreter reads words, not fields (`cp $x d` gives `$x` one role). Where the fields are known and a word gives several, feed the interpreter bash's argv and compare the roles with the ones the explanation shows. A role that changes with the field count must be explained with that hedge (`{1,2}` in `cp` already says "when it expands to a single word").
+
+### 2.6 As built (step 2)
+
+test/support/argv.ts makes the markers and runs the batch; test/argv.test.ts checks the fixtures. Where it differs from 2.2 to 2.4:
+
+- **Inputs.** sample.sh and coverage.sh; each section of sample.sh alone, in place (under its `set -e`, the whole file stops at the `[[ … ]]` of its last section); and the shell code of each host fixture that bash runs, with the model the explanation builds for it (its region's `provided` variables, `fileRead`). posix.sh, ksh.ksh, the regions of sh and bats are not run: they need dash or bats around the script.
+- **Markers.** `__probe ID` replaces a command; `__probe_r ID` logs the words and then runs `[`, `test`, `true`, `false`, `:` or `printf -v`. A recorded command in the condition of a `while` returns 0 the first time and 1 after (`__probe_w`), and in an `until` the other way round (`__probe_u`), so that such a loop runs its body once. `getopts` runs as it is, with the builtins of 2.2 that change state. A call of a function gets no marker when the model is sure it is defined and its definition is in the script's tree; one that `eval` would define gets a marker, since `eval` is recorded.
+- **Redirections.** Every file redirection goes to `/dev/null`, so the run reads and writes no file and opens no `/dev/tcp`. On a recorded command, the target moves into the argv between the words `@@R@@` and `@@E@@`, where bash expands it as it would for the redirection; where the model says a target is ambiguous, bash must give other than one field. Duplications (`2>&1`, `<&3`), process substitutions and redirections before the name stay out of the comparison.
+- **Environments.** `probe`: PATH a directory that does not exist, HOME and the current directory the run's directory (BOX), `LC_ALL=C`, `FUNCNEST=100`. `values`: also every variable the input reads that bash and its host do not set gets `a b`, `*.txt` or an empty value in turn (also those the script sets, which the model reads the same way), two positional parameters (`a b`, `*`), and three lines on stdin, so that a `read` under `set -e` does not stop the script. The variables a host sets get a value the model does not know, in both.
+- **Walls.** As 2.4. Wall 2 does not catch a command named by a path (`/bin/rm`), which bash runs without a PATH search: those rely on wall 1. A marker that runs 50 times in one shell stops that shell, for a loop no recorder ends. Without `systemd-run --user`, the driver sets `ulimit -v`, and `ulimit -u` a few hundred above the user's processes.
+- **Result.** In each environment, 365 commands get a marker; 99 and 209 of them run, with 345 and 676 words the model knows and 11 and 37 it does not. No difference: test/fixtures/argv-known.json pins these counts and lists no finding. The batch takes about half a second.
+
+A first run over the snippets, by hand (the input of step 3: 1,588 snippets that parse, both environments, 13 s), found these differences, left for step 3:
+
+1. Backquotes: bash removes the backslash of `\$`, `` \` `` and `\\` before it reads the command inside (`` x=`eval 'a\$b'` `` runs `eval` with `a$b`); the model keeps `a\$b`.
+2. A recursive function that changes a variable before it calls itself (`g() { if [ "$d" = 1 ]; then d=2; g; return; fi; }; d=1; g`): the model gives `$d` the value 1 in the body, which the second call sees as 2.
+3. A glob in another directory (`$D/*` with `D=''`, `/var/log/*.log`): given the files of the current directory (`WordEnv.files`, which only the tests give), the model takes it as matching nothing and keeps it as written; it should be unknown.
+4. A CR before a LF: the model reads the masked text (`crlf`); bash gives the word with its CR. An accepted difference.
+5. `a\` at the end of the input: unbash keeps the backslash (README Limitations; test/fixtures/bash-ast-known.json).
 
 ## 3. B: suggestion verification
 
@@ -202,11 +221,11 @@ Then a generator, seeded, makes more forms of each word than a table can hold: q
 
 ## 6. Steps
 
-Each step is a PR. Each keeps every test passing and 100% coverage of `src/`. The order puts the cheap, high-value ones first. Step 1 is done; steps 2 to 10 are not started.
+Each step is a PR. Each keeps every test passing and 100% coverage of `src/`. The order puts the cheap, high-value ones first. Steps 1 and 2 are done; steps 3 to 10 are not started.
 
 1. **B1, inventory.** Done (#273). This page, and test/suggestions.test.ts: every catalog entry classified, checked against its English text, and the counts pinned.
-2. **A1, argv over sample.sh and the fixtures.** test/support/argv.ts makes the markers of 2.2 and reuses the probe harness and the comparison of word-probes (moved to test/support/probe.ts so that both use it). test/argv.test.ts runs the fixtures (not the snippets yet) in one sandboxed batch. Known differences go in test/fixtures/argv-known.json. Bugs it finds are fixed in their own PRs, each with a CHANGELOG line. The panel redesign's P4a ([panel-redesign.md](panel-redesign.md)).
-3. **A2, the snippets and the fuzz inputs.** The same test over a seeded sample of the snippets in CI, and over all 1,220 snippets and 200 fuzz inputs in a script run by hand (section 7), with the two environments of 2.3, the pinned count of unknown words, and the "could know" report.
+2. **A1, argv over sample.sh and the fixtures.** Done (#NNN; 2.6). test/support/argv.ts makes the markers of 2.2 and reuses the probe harness and the alignment rule of word-probes (`alignRuns`, moved to test/support/probe.ts so that both use it). test/argv.test.ts runs the fixtures (not the snippets yet) in one sandboxed batch. Known differences go in test/fixtures/argv-known.json, with the counts; the fixtures show none. Bugs it finds are fixed in their own PRs, each with a CHANGELOG line. The panel redesign's P4a ([panel-redesign.md](panel-redesign.md)).
+3. **A2, the snippets and the fuzz inputs.** The same test over a seeded sample of the snippets in CI, and over all 1,220 snippets and 200 fuzz inputs in a script run by hand (section 7), with the two environments of 2.3, the pinned count of unknown words, and the "could know" report. It starts with the differences of 2.6.
 4. **B2, rewrite data for the catalog.** `Fact.rewrite` (3.2) for the 12 mechanical ids; the notes render their suggestion from it. src/wordfacts.ts and src/statusfacts.ts emit it. The panel redesign's P3 needs it first for `failure-reported-as-success` and `unmatched-glob-runs-once` (and B4 for two style checks).
 5. **B3, run the rewrites.** test/rewrites.test.ts: the states and oracles of 3.3 for each mechanical id, and the two cheap checks for all. The inventory test then requires a rewrite on every mechanical fact.
 6. **B4, the style checks.** Ids and rewrite data for the nine checks of src/pitfalls.ts, then the same test.
@@ -236,7 +255,7 @@ In total about 7 s in CI. The model side is small: `wordFields` over the whole c
 ## 8. Risks and open questions
 
 - **Stubbing changes the run.** External commands return 0 and print nothing, so later values that depend on them differ from a real run. The model gives those values as unknown, so the comparison stays sound; but a bug in what the model calls unknown could hide. The "could know" report shows where the model is more cautious than it needs to be.
-- **systemd-run in CI.** GitHub's runners may not offer a user scope. The fallback is `ulimit`; to be checked in A1.
+- **systemd-run in CI.** GitHub's runners may not offer a user scope. The fallback is `ulimit` (2.6); the test gives the same counts with and without the scope.
 - **Bash versions.** The probes need bash 5.2 (`probeSkipReason`). CI has it; a developer without it skips the run-based tests, as today.
 - **The corpus changes the inputs.** Adding snippets can expose a latent bug, as with the fuzz test. Fix the bug; do not drop the input.
 - **Oracles of B are written by hand.** A wrong oracle can accept a wrong rewrite. Each oracle is small and states the benign state it compares with; a review checks them.
