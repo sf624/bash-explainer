@@ -89,16 +89,17 @@ function joinedArray(n: SyntaxNode, model: StateModel, shell: Shell | undefined)
 const PLAIN = /^[\w@%+=:,./-]+$/;
 
 /**
- * `v=1 cmd $v`: the command, from its name to its last word, through `sh -c`, which expands `$v` once `v` is set:
- * `v=1 sh -c 'cmd "$v"'`. Mechanical only where `sh` runs the same command with the same words: the name runs a
- * program, or a builtin that is one too (`echo`, `printf`; not `cd` or `read`, which would act on that shell, nor a
- * function or an alias, which it has not), and no redirection is among the words; each word is plain text, an
- * expansion of the prefix's variables (`vars`, put in double quotes), text in double quotes with only such expansions,
- * or text in single quotes that reads the same in double quotes (`'%s\n'`), as the words go inside single quotes. No
- * other expansion, which that shell would expand, and no glob or brace, which it may expand otherwise. Else the note
- * shows the form, with no edits. (dash's `echo` reads backslashes in the value, bash's does not.)
+ * `v=1 cmd $v`: the command, from its name to its last word, through the shell of the script (`bash -c`, `sh -c`…),
+ * which expands `$v` once `v` is set: `v=1 bash -c 'cmd "$v"'`. Mechanical only where that shell runs the same command
+ * with the same words: the name runs a program, or a builtin that is one too (`echo`, `printf`), and no redirection is
+ * among the words; each word is plain text, an expansion of the prefix's variables (`vars`, put in double quotes), text
+ * in double quotes with only such expansions, or text in single quotes that reads the same in double quotes
+ * (`'%s\n'`), as the words go inside single quotes. No other expansion, which that shell would expand, and no glob or
+ * brace, which it may expand otherwise. `sh` may be dash: there only a program, or `echo` and `printf` with no option
+ * and no `%q` or `%b`. Else the note shows the form, with no edits. A builtin that acts on this shell (`cd`, `read`), a
+ * function or an alias, which no other shell has: the value set apart, first (`apart`), with no edits.
  */
-function throughShell(n: SyntaxNode, vars: readonly string[], v: string, model: StateModel, shell: Shell | undefined): Rewrite {
+function throughShell(n: SyntaxNode, vars: readonly string[], v: string, model: StateModel, shell: Shell | undefined): { rewrite: Rewrite; apart: boolean } {
   const name = field(n, 'name')!;
   const words = args(n);
   const last = words[words.length - 1];
@@ -113,11 +114,13 @@ function throughShell(n: SyntaxNode, vars: readonly string[], v: string, model: 
     return parts.every((p) => p !== undefined) ? parts.join('') : undefined;
   };
   const r = resolveName(model, name.text, name, { shell, command: true });
-  const runs = r.kind === 'file' || (r.kind === 'builtin' && !!builtins[r.name].program);
+  if (r.kind === 'function' || r.kind === 'alias' || (r.kind === 'builtin' && !builtins[r.name].program)) return { rewrite: { code: `${v}=…; ${name.text} … "$${v}"`, edits: [] }, apart: true };
+  const program = !shell ? 'bash' : shell;
+  const same = r.kind === 'file' || (r.kind === 'builtin' && (shell !== 'sh' || (!!builtins[r.name].prints && !words.some((w) => /^['"]?-|%[qb]/.test(w.text)))));
   const among = redirectionsOf(n).some((d) => d.startIndex < last.endIndex && d.endIndex > name.startIndex);
   const script = words.map(inner);
-  if (!runs || among || !PLAIN.test(name.text) || script.includes(undefined)) return { code: `sh -c '… "$${v}"'`, edits: [] };
-  return replaceSpan(name, last, `sh -c '${[name.text, ...script].join(' ')}'`);
+  if (!same || among || !PLAIN.test(name.text) || script.includes(undefined)) return { rewrite: { code: `${program} -c '… "$${v}"'`, edits: [] }, apart: false };
+  return { rewrite: replaceSpan(name, last, `${program} -c '${[name.text, ...script].join(' ')}'`), apart: false };
 }
 
 /** The facts (pitfalls) about words whose node starts on `line`. */
@@ -177,7 +180,8 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         for (const v of prefix) {
           const use = a.find((w) => readsVariable(w, v));
           if (written && use) {
-            add(fact(lang, 'prefix-assignment-expanded-first', { v, name: written, use: use.text, rewrite: [throughShell(n, prefix, v, model, shell)] }), use);
+            const { rewrite, apart } = throughShell(n, prefix, v, model, shell);
+            add(fact(lang, 'prefix-assignment-expanded-first', { v, name: written, use: use.text, apart, rewrite: [rewrite] }), use);
             break;
           }
         }

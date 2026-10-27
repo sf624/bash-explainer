@@ -471,7 +471,7 @@ describe('conventions: the habit a note recommends', () => {
     assert.ok(!('convention' in basisGate(local, false)));
     assert.strictEqual(basisGate(local, true), local);
     // (A habit beside a basis of its own: both are kept, and both go with the setting off.)
-    const test = fact('en', 'unquoted-variable-in-test', { bare: '$x' });
+    const test = fact('en', 'unquoted-variable-in-test', { bare: '$x', rewrite: [{ code: '"$x"', edits: [] }] });
     assert.deepStrictEqual([test.basis?.kind, test.convention], ['differs', 'quote-expansions']);
     assert.ok(!('convention' in basisGate(test, false)) && !('basis' in basisGate(test, false)));
     assert.ok(!('convention' in fact('en', 'pipeline-subshell-variable', { used: 'n', fix: { ja: '', en: '' }, partial: false })));

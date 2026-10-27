@@ -477,9 +477,10 @@ export const MESSAGES = {
 
   // ---------------------------------------------------------------- words (3.7.1, 3.5.7, 3.4.2, 3.6; src/wordfacts.ts)
   // (`rewrite`: the command through `sh -c`, src/wordfacts.ts, `throughShell`.)
-  'prefix-assignment-expanded-first': suggests(pitfall<{ v: string; name: string; use: string; rewrite: readonly Rewrite[] }>(['3.7.1', '3.7.4'], ({ v, name, use, rewrite: [sh] }) => [
-    `\`${v}=…\` は \`${name}\` の環境にだけ入ります。\`${use}\` は、その前に今のシェルが展開します（今の値で、なければ空）。新しい値を使うなら \`${v}=… ${sh.code}\` のようにシェル経由にします`,
-    `\`${v}=…\` is set only in the environment of \`${name}\`; the current shell expands \`${use}\` before that (to its present value, or nothing). To use the new value, go through a shell: \`${v}=… ${sh.code}\``])),
+  // (`apart`: the command acts on this shell, `cd`, or is a function or an alias, which no other shell has: set it first.)
+  'prefix-assignment-expanded-first': suggests(pitfall<{ v: string; name: string; use: string; apart: boolean; rewrite: readonly Rewrite[] }>(['3.7.1', '3.7.4'], ({ v, name, use, apart, rewrite: [sh] }) => [
+    `\`${v}=…\` は \`${name}\` の環境にだけ入ります。\`${use}\` は、その前に今のシェルが展開します（今の値で、なければ空）。新しい値を使うなら${apart ? `、先に \`${sh.code}\` のように別に代入します` : ` \`${v}=… ${sh.code}\` のようにシェル経由にします`}`,
+    `\`${v}=…\` is set only in the environment of \`${name}\`; the current shell expands \`${use}\` before that (to its present value, or nothing). To use the new value, ${apart ? `assign it first, apart: \`${sh.code}\`` : `go through a shell: \`${v}=… ${sh.code}\``}`])),
   // (`rewrite`: the word with only its expansions in quotes, so a glob or a tilde in it still works: `"$DIR"/*`; none
   // when quotes would change it, as in `${x:-*.txt}`.)
   // (`destroys`: the command deletes or overwrites what the word names, `rm`, `mv`, `cp`: a wrong name cannot be undone.)
