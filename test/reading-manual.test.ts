@@ -861,9 +861,12 @@ describe('the reading tree as the Bash manual reads aliases and arrays (chapter 
     const braced = node(src, '[4]={a,b}', 'word');
     assert.deepStrictEqual([kids(braced), braced.text], [['brace {a,b}'], 'bash 5.2 brace-expands this word first, into the values `[4]=a`, `[4]=b`, with no index of their own (each is the next element); bash 5.3 does not, and sets `{a,b}` as the element with the index `4`']);
     assert.match(node('declare -A h=([a]=1 b)', 'b').text!, /bash 5\.2 says so and goes on; bash 5\.3 also abandons the rest of the line \(status 1\)$/);
+    // (With `+=`, 5.3 appends to the element; a list starts the array again, so to an empty one.)
+    assert.strictEqual(node('a=([4]+={a,b})', '[4]+={a,b}', 'word').text, 'bash 5.2 brace-expands this word first, into the values `[4]+=a`, `[4]+=b`, with no index of their own (each is the next element); bash 5.3 does not, and appends `{a,b}` to the element with the index `4`');
     for (const p of programs) {
       const five2 = minor(p) === '2';
       assert.strictEqual(runBash('a=([4]={a,b}); declare -p a', p).stdout, five2 ? 'declare -a a=([0]="[4]=a" [1]="[4]=b")\n' : 'declare -a a=([4]="{a,b}")\n');
+      assert.strictEqual(runBash('a=([4]+={a,b}); declare -p a', p).stdout, five2 ? 'declare -a a=([0]="[4]+=a" [1]="[4]+=b")\n' : 'declare -a a=([4]="{a,b}")\n');
       assert.strictEqual(runBash('declare -A h=([a]=1 b); echo same; declare -p h\necho next', p).stdout, five2 ? 'same\ndeclare -A h=([a]="1" )\nnext\n' : 'next\n');
     }
   });
