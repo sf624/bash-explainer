@@ -34,6 +34,7 @@ import { type MappedText, staticWordValue } from '../staticword';
 import { parser, WalkAgain } from './walk/shared';
 import { type HostCall, type HostRun, hostRunKey } from './walk/host';
 import { Walker } from './walk/walker';
+import { childStart } from './walk/child';
 
 export {
   attribute, type AliasState, type Attribute, type CommandEntry, defaultOn, type ErrexitWhy, type FunctionState, merge, NameMap, option,
@@ -318,7 +319,7 @@ function childModel(script: NestedScript): StateModel {
     if (m) values.set(m[1], m[2]);
   }
   const start = (w: Walker): ShellState => {
-    const st = w.childStart(outer, script.env, pass, first);
+    const st = childStart(w, outer, script.env, pass, first);
     // (SHELLOPTS and BASHOPTS not given are bash's own: an exported one passes options the outer model has read.)
     const vars = [...st.variables].filter(([name]) => given.has(name) || !['SHELLOPTS', 'BASHOPTS'].includes(name))
       .map(([name, v]) => [name, given.has(name) ? { set: 'on', value: values.get(name) } : v] as const)

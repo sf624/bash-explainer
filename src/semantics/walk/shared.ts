@@ -80,7 +80,7 @@ export interface ChildPass {
 
 export const passedMemo = new WeakMap<object, ReadonlyMap<string, VariableState>>();
 /**
- * What of a variable of the script reaches another shell (`Walker.childStart`): undefined when it does not (not
+ * What of a variable of the script reaches another shell (`childStart`, ./child.ts): undefined when it does not (not
  * exported, unset, an array, or IFS, which a shell sets itself when it starts). Kept per bucket of the script's
  * variables, which the states along the script share, so that many strings cost little (`NameMap.mapped`).
  */
