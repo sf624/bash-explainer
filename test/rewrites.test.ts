@@ -3,59 +3,14 @@
 // inputs, and the rewritten scripts run in bash (5.2, and 5.3 when `$BASH_EXPLAINER_BASH53` names one) in a cgroup:
 // the meaning is kept (in the state the author had in mind, the rewrite does what the original does), the hazard is
 // gone (in the other states, none of its signs), the rewrite parses (`bash -n`), and explaining it raises no fact of
-// the same id. Commands that would act (`cp`, `rm`, `tar`) are recorders, defined through BASH_ENV.
+// the same id. Commands that would act (`cp`, `rm`, `tar`) are recorders, defined through BASH_ENV (test/support/rewrites.ts).
 import * as assert from 'assert';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
-import type { Fact, FactId } from '../src/messages';
-import type { Rewrite } from '../src/rewrite';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { runBash } from './support/bash';
-import { runContained } from './support/contained';
+import { factsOf, programs, type Ran, rewrites, run } from './support/rewrites';
 
 const parser = createUnbashParser();
-const BASH53 = process.env.BASH_EXPLAINER_BASH53;
-const programs = [...(runBash('true').status === 0 ? [{ name: 'bash 5.2', program: 'bash' }] : []), ...(BASH53 ? [{ name: 'bash 5.3', program: BASH53 }] : [])];
-
-/** The facts of id `id` on every line of `src`. */
-function factsOf(src: string, id: FactId, shell?: Shell): Fact[] {
-  const tree = parser.parse(src);
-  return src.split('\n').flatMap((_, i) => new Analyzer('en').explainLine(tree, i, shell).facts ?? []).filter((f) => f.id === id);
-}
-
-/** `text` with the edits of `r` made. */
-function applied(text: string, r: Rewrite): string {
-  return [...r.edits].sort((a, b) => b.start - a.start).reduce((t, e) => t.slice(0, e.start) + e.text + t.slice(e.end), text);
-}
-
-/** The rewritten scripts of the one fact of `id` in `src`, each with the code its note shows. */
-function rewrites(src: string, id: FactId, shell?: Shell): [code: string, script: string][] {
-  const facts = factsOf(src, id, shell);
-  assert.strictEqual(facts.length, 1, `one fact of ${id} in ${JSON.stringify(src)}`);
-  return facts[0].rewrite!.map((r) => [r.code, applied(src, r)]);
-}
-
-/** The recorders: they say what they were given, and `cp` and `tar` fail when `RW_FAIL` is 1. */
-const RECORDERS = 'cp() { echo "@cp $*"; return "${RW_FAIL:-0}"; }\ntar() { echo "@tar"; return "${RW_FAIL:-0}"; }\nrm() { echo "@rm $*"; }\n';
-
-interface Ran { out: string; err: string; status: number | null }
-
-/** Runs `driver` in bash `program`, in a new directory holding `f.sh` (`script`), the recorders and `files`. */
-async function run(program: string, script: string, driver: string, env: Record<string, string> = {}, files: readonly string[] = []): Promise<Ran> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-rewrites-'));
-  try {
-    fs.writeFileSync(path.join(dir, 'f.sh'), script);
-    fs.writeFileSync(path.join(dir, 'rec.sh'), RECORDERS);
-    for (const f of files) fs.writeFileSync(path.join(dir, f), '');
-    const r = await runContained([program, '--norc', '--noprofile', '-c', driver], dir, { BASH_ENV: path.join(dir, 'rec.sh'), ...env });
-    return { out: r.stdout, err: r.stderr, status: r.status };
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-}
 
 describe('the rewrites of `failure-reported-as-success`', () => {
   const fix = (src: string, shell?: Shell): string[] => rewrites(src, 'failure-reported-as-success', shell).map(([, s]) => s);
@@ -117,7 +72,7 @@ describe('the rewrites of `failure-reported-as-success`', () => {
       it(`pass the failure on in ${name}: ${JSON.stringify(src)}`, async () => {
         const [[, script]] = rewrites(src, 'failure-reported-as-success');
         const fail = { RW_FAIL: '1' };
-        const [before, after, beforeOk, afterOk] = await Promise.all([run(program, src, driver(sourced), fail), run(program, script, driver(sourced), fail),
+        const [before, after, beforeOk, afterOk] = await Promise.all([run(program, src, driver(sourced), { env: fail }), run(program, script, driver(sourced), { env: fail }),
           run(program, src, driver(sourced)), run(program, script, driver(sourced))]);
         // (The meaning is kept: when the command succeeds, the rewrite runs as the original does; when it fails, it says the same.)
         assert.deepStrictEqual(afterOk, beforeOk);
@@ -179,11 +134,11 @@ describe('the rewrites of `unmatched-glob-runs-once`', () => {
       it(`never give the loop the pattern in ${name}: ${JSON.stringify(src)}`, async () => {
         const driver = '"$BASH" -n f.sh || echo @syntax; "$BASH" f.sh; echo "@run=$?"';
         const none = await run(program, src, driver);
-        const some = await run(program, src, driver, {}, ['a.log', 'b.log']);
+        const some = await run(program, src, driver, { files: ['a.log', 'b.log'] });
         assert.match(none.out, /\*\.log/);
         for (const [code, script] of fix(src)) {
           // (The meaning is kept: with files that match, the rewrite runs as the original does.)
-          assert.deepStrictEqual(await run(program, script, driver, {}, ['a.log', 'b.log']), some, code);
+          assert.deepStrictEqual(await run(program, script, driver, { files: ['a.log', 'b.log'] }), some, code);
           // (The hazard is gone: with none, the body never runs.)
           const after = await run(program, script, driver);
           assert.doesNotMatch(after.out + after.err, /\*\.log|@rm|@got|@syntax/, code);
