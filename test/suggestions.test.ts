@@ -151,9 +151,9 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
 /** Words of the English texts that tell the user what to write instead. */
 const SUGGESTS = /\b(Write|write it|write `|Use|use `|use a|Put|Run `|Pass|Quote it|Split it|Start the body|Keep the regex|Turn it on|single-quote|go through a shell|instead\b|give status 0|needs a space before it|would make it|Save the file)/;
 
-/** Any parameter: a string `X` wherever it is read (also as `{ ja, en }`, a list or a call). */
+/** Any parameter: a string `X` wherever it is read (also as `{ ja, en }`, a list of one, or a call). */
 const ANY: unknown = new Proxy(function () { /* placeholder */ }, {
-  get: (_t, k) => (k === Symbol.toPrimitive ? () => 'X' : ANY),
+  get: (_t, k) => (k === Symbol.toPrimitive ? () => 'X' : k === Symbol.iterator ? function* () { yield ANY; } : ANY),
   apply: () => ANY,
 });
 
@@ -167,6 +167,19 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
       return typeof k === 'string' ? reads !== (k !== 'none') : reads;
     });
     assert.deepStrictEqual(wrong, []);
+  });
+
+  // (docs/design/oracles.md, step 4: an entry whose suggestion is mechanical renders it from rewrites its fact carries,
+  // `Entry.rewrite`, and test/rewrites.test.ts runs them in bash. The ids still without, until the list is empty.)
+  it('gives the mechanical entries their rewrites, and only those', () => {
+    const kind = (id: FactId): Kind => { const k = SUGGESTIONS[id]; return typeof k === 'string' ? k : k.kind; };
+    const ids = Object.keys(MESSAGES) as FactId[];
+    const rewrites = (id: FactId): boolean => 'rewrite' in MESSAGES[id];
+    assert.deepStrictEqual(ids.filter((id) => rewrites(id) && kind(id) !== 'mechanical'), []);
+    assert.deepStrictEqual(ids.filter((id) => !rewrites(id) && kind(id) === 'mechanical').sort(), [
+      'array-joined-in-assignment', 'bracket-close-glued', 'declaration-masks-status', 'for-over-unquoted-args', 'function-last-test-returns-status',
+      'function-last-test-stops-script', 'nounset-unbound', 'postfix-increment-status', 'prefix-assignment-expanded-first', 'regex-backslash-dropped',
+      'script-last-test-returns-status', 'unbraced-element', 'unquoted-variable-as-path', 'unquoted-variable-in-test', 'wrapper-assignment-expanded-first']);
   });
 
   it('counts them', () => {

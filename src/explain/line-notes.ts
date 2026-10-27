@@ -7,6 +7,8 @@ import type { Token } from '../analyzer-types';
 import { hasExtglob, isGlob } from '../examples/shellwords';
 import { tx } from '../i18n';
 import { fact, factOf, MESSAGES } from '../messages';
+import { statementBefore } from '../rewrite';
+import { STATEMENTS } from '../semantics/env';
 import { lostVariable } from '../semantics/pipeline';
 import { docLine } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
@@ -85,6 +87,9 @@ export function pipeSubshellPitfalls(cx: Explainer, root: SyntaxNode, line: numb
   return [];
 }
 
+/** The statements a loop can be part of, before which another statement cannot go: `a && for …`, `for … | sort`, `time for …`. */
+const HOLDERS: ReadonlySet<string> = new Set(['list', 'pipeline', 'redirected_statement', 'negated_command', 'time_statement', 'coproc_statement']);
+
 /**
  * `for f in *.log`: when nothing matches, the loop runs once with `*.log` itself (unless nullglob or
  * failglob is on, or zsh, where it is an error). Quiet when the body checks that the file exists.
@@ -104,8 +109,16 @@ export function unmatchedGlobPitfalls(cx: Explainer, root: SyntaxNode, line: num
     if (!bodyNode) continue;
     const body = bodyNode.text;
     if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
-    const nullglob = shopt.nullglob !== 'unsupported';
-    return cx.say(fact(cx.lang, 'unmatched-glob-runs-once', { glob: glob.text, v, nullglob }), glob);
+    // The rewrites: a test first in the body (`do` with no command is a syntax error: nothing runs once); and where
+    // the shell has nullglob, `shopt -s nullglob` before the statement that holds the loop (`a && for … | sort`),
+    // unless the loop is a function's body (`f() for …`).
+    const first = bodyNode.namedChildren.find((c) => STATEMENTS.has(c.type));
+    if (!first) continue;
+    let holder = loop;
+    while (HOLDERS.has(holder.parent!.type)) holder = holder.parent!;
+    const rewrite = [statementBefore(first, `[ -e "$${v}" ] || continue`)];
+    if (shopt.nullglob !== 'unsupported' && holder.parent!.type !== 'function_definition') rewrite.push(statementBefore(holder, 'shopt -s nullglob'));
+    return cx.say(fact(cx.lang, 'unmatched-glob-runs-once', { glob: glob.text, v, rewrite }), glob);
   }
   return [];
 }

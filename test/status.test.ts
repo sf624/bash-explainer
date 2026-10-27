@@ -480,8 +480,8 @@ describe('a failure reported with `|| echo` where the status matters', () => {
   it('says that a function returns 0, and that `set -e` goes on', () => {
     assert.deepStrictEqual(notes('f() {\n  cp a b || echo "copy failed" >&2\n}\nf', 1).filter((n) => /returns 0/.test(n)), ['ⓘ Caveat: this is the last command of `f`, so when `cp a b` fails, `f` still returns 0, the status of `echo "copy failed" >&2`: its caller sees success. To pass the failure on, write `… || { echo "copy failed" >&2; return 1; }`']);
     assert.match(notes('f() {\n  cp a b || echo failed\n}\nf', 1, 'ja').join('\n'), /`f` は `echo failed` の終了ステータス 0 を返し、呼び出し元には成功に見えます。失敗を伝えるには `… \|\| \{ echo failed >&2; return 1; \}` と書きます/);
-    assert.deepStrictEqual(said("set -e\ncp a b || printf 'failed\\n'"), ["ⓘ Caveat: when `cp a b` fails, `set -e` does not stop the script (a failure on the left of `||` is ignored), and `printf 'failed\\n'` succeeds, so the script goes on. To stop the script, write `… || { printf 'failed\\n' >&2; exit 1; }`"]);
-    assert.match(said('set -e\ncp a b || echo failed', 'ja')[0], /`\|\|` の左側の失敗では `set -e` は止まらず、`echo failed` が成功するので、スクリプトはそのまま続きます。スクリプトを止めるには/);
+    assert.deepStrictEqual(notes("#!/bin/bash\nset -e\ncp a b || printf 'failed\\n'\nls", 2).filter((n) => /goes on/.test(n)), ["ⓘ Caveat: when `cp a b` fails, `set -e` does not stop the script (a failure on the left of `||` is ignored), and `printf 'failed\\n'` succeeds, so the script goes on. To stop the script, write `… || { printf 'failed\\n' >&2; exit 1; }`"]);
+    assert.match(notes('#!/bin/bash\nset -e\ncp a b || echo failed\nls', 2, 'ja').join('\n'), /`\|\|` の左側の失敗では `set -e` は止まらず、`echo failed` が成功するので、スクリプトはそのまま続きます。スクリプトを止めるには/);
     // (`a && b || echo`: either failing; `/bin/echo`, the program.)
     assert.strictEqual(said('#!/bin/sh\nmkdir d && cd d || /bin/echo failed').length, 1);
     // (A comment after `||`: the right side is on the next line.)
@@ -489,7 +489,7 @@ describe('a failure reported with `|| echo` where the status matters', () => {
   });
   // Deliberate ignores, tests, values printed in `$( )`, and where the status is not used.
   for (const src of ['#!/bin/bash\ncp a b || true', '#!/bin/bash\ncp a b || :', '#!/bin/bash\n[ -f a ] || echo none', '#!/bin/bash\ngrep -q x f || echo none',
-    '#!/bin/bash\ncp a b || { echo failed >&2; exit 1; }', '#!/bin/bash\ncp a b || echo failed; exit 0', 'cp a b || echo failed', '#!/bin/bash\ncp a b || echo failed &',
+    '#!/bin/bash\ncp a b || { echo failed >&2; exit 1; }', '#!/bin/bash\ncp a b || echo failed; exit 0', '#!/bin/bash\ncp a b || echo failed &',
     '#!/bin/bash\ncp a b || printf "%d\\n" "$n"', '#!/bin/bash\ncp a b || printf -v x failed', '#!/bin/bash\necho() { return 1; }\ncp a b || echo failed',
     '#!/bin/bash\ncp a b || echo failed | tee log', '#!/bin/bash\ncp a b && echo done', 'v() {\n  cat V 2>/dev/null || echo none\n}\nx=$(v)', 'v() {\n  cp a b || echo failed\n}',
     'f() {\n  cp a b || echo failed\n  return 0\n}\nf', 'set -e\nif cp a b || echo failed; then :; fi', 'set -e\nx=$(cp a b || echo failed)', '#!/bin/bash\ntrue || echo never',

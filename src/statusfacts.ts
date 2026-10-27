@@ -11,8 +11,9 @@ import { canonicalName, lookupCommand } from './dict/aliases';
 import type { FactSpec, Words } from './messages';
 import { featureWorks, type Shell } from './dialect';
 import { outputsOf } from './idioms';
+import { replaceNode } from './rewrite';
 import { commandName } from './semantics/effects';
-import { STATEMENTS } from './semantics/env';
+import { readAs, STATEMENTS } from './semantics/env';
 import { resolveName } from './semantics/names';
 import type { Decision, StateModel } from './semantics/state';
 import { type Ignored, lastStatements, type StatusModel, type StatusRule } from './semantics/status';
@@ -242,7 +243,8 @@ function conditionFacts(root: SyntaxNode, state: StateModel): [SyntaxNode, FactS
  * `cmd || echo "msg"`: the list's status is that of the command on the right, which prints a message and succeeds, so a
  * failure of `cmd` is seen as a success where the status matters: at the end of a function (called, and not only in
  * `$( )`, where what it prints is a value: `v=$(cat f || echo none)`), at the end of a script run as a program (it has
- * a shebang), or where `set -e` is on and would have stopped the script. Not when the left side is a test (`[ -f x ]
+ * a shebang, or a host runs it) or of a file with no shebang, which may be run as one, or where `set -e` is on and
+ * would have stopped the script. Not when the left side is a test (`[ -f x ]
  * || echo none`), nor for `|| true` or `|| :`, which mean to ignore the failure.
  */
 function failureReported(n: SyntaxNode, root: SyntaxNode, state: StateModel, status: StatusModel, shell?: Shell): FactSpec | undefined {
@@ -257,21 +259,30 @@ function failureReported(n: SyntaxNode, root: SyntaxNode, state: StateModel, sta
   if (background) return undefined;
   const def = ancestor(n, (x) => x.type === 'function_definition');
   const body = def && field(def, 'body');
-  let where: 'function' | 'script' | 'errexit';
+  // (How the file is read: run as a script, typed into a terminal, or either run or sourced; a string another shell runs is a script.)
+  const read = readAs(state.env(n), state.read);
+  let where: 'function' | 'script' | 'fragment' | 'errexit';
   if (body && lastStatements(body).includes(n)) {
     const calls = [...state.calls.get(def)?.keys() ?? []];
     if (!calls.length || calls.some((c) => ancestor(c, (x) => x.type === 'command_substitution' || x.type === 'process_substitution'))) return undefined;
     where = 'function';
-  } else if (!def && isShebang(root.namedChildren[0]) && lastStatements(root).includes(n)) {
-    where = 'script';
+  } else if (!def && read !== 'terminal' && lastStatements(root).includes(n)) {
+    where = read === 'script' ? 'script' : 'fragment';
   } else if (status.errexit(n).active === 'on') {
     where = 'errexit';
   } else return undefined;
-  // (The message goes to stderr in the rewrite, unless its output is sent somewhere already.)
+  // The rewrite: the right side in a group that passes the failure on, with its message on stderr unless its output is
+  // sent somewhere already (`echo m >> log`, `{ echo m; } > log`). It ends with `return 1` in a function, `exit 1` in a file run as a script.
+  // In a file that may be sourced, `exit 1` would end the shell that sources it: in a function, `return 1` (where
+  // `set -e` is on, it then stops at the call); outside, `return 1`, which fails when the file is run, then `exit 1`.
   const msg = prints[prints.length - 1];
-  const fix = shorten(msg.text) + (redirectionsOf(msg).length ? '' : ' >&2');
+  const at = msg.endIndex - right.startIndex;
+  const sent = (x: SyntaxNode): boolean => redirectionsOf(x).length > 0 || (x !== right && sent(x.parent!));
+  const said = sent(msg) ? right.text : `${right.text.slice(0, at)} >&2${right.text.slice(at)}`;
+  const sourced = !def && read !== 'script';
+  const end = sourced ? 'return 1 2>/dev/null || exit 1' : where === 'function' || read !== 'script' ? 'return 1' : 'exit 1';
   const quiet = (left.type === 'command' || left.type === 'redirected_statement') && outputsOf(left).err === '/dev/null' ? redirectionsOf(left).map((r) => r.text).join(' ') : '';
-  return { id: 'failure-reported-as-success', params: { where, name: def ? field(def, 'name')!.text : '', left: shorten(left.text), right: shorten(msg.text), quiet, fix } };
+  return { id: 'failure-reported-as-success', params: { where, name: def ? field(def, 'name')!.text : '', left: shorten(left.text), right: shorten(msg.text), quiet, sourced, rewrite: [replaceNode(right, `{ ${said}; ${end}; }`)] } };
 }
 
 /**
