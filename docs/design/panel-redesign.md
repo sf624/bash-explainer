@@ -42,7 +42,7 @@ From the maintainer, 2026-10-27:
 The answers to the plan's questions, from the maintainer, 2026-10-27:
 
 4. **Note levels.** Three levels will come, in a plan of their own (a revision of docs/design/note-levels.md): Error (red, "fails every time as written"), Warning (yellow: damage that cannot be undone, or the script's own exit status turned into success) and Info (blue). `failure-reported-as-success` and `source-searches-path` become Warning there. This plan depends on none of it: the panel reads each problem's level, mark and word from the catalog.
-5. **Order.** P1 to P10 start after roadmap items 1 to 8 are done. Studies that can run in parallel may (a measure, a sketch, a prototype that lands nothing).
+5. **Order.** P1 to P10 start after roadmap items 1 to 7 are done. Studies that can run in parallel may (a measure, a sketch, a prototype that lands nothing).
 6. **Short names in the view slot.** "1 Does" / "2 Reads" (「1 何をする」/「2 読まれ方」). The full names ("What it does", "How bash reads it") are the tooltip and the accessible name.
 7. **Copy as Markdown and the hover** stay as today's list of parts. No step changes them.
 8. **The no-shebang case** of `failure-reported-as-success` stays: the note keeps that case. A user who does not want it changes the script (a shebang, or a fix). Its fix must not end the caller's shell when the file is sourced (P3).
@@ -115,7 +115,7 @@ Users: nothing changes. No CHANGELOG line.
 
 Tests: unit tests of `viewControl`. A web test: a press in the page's view switch changes the panel, and the choice is kept after a reload.
 
-Risks: the chrome series edits web/panel-bridge.ts too. P1 starts after roadmap items 1 to 8, like the other steps (decision 5). It lands before C7 of [chrome-redesign.md](chrome-redesign.md), which draws the slot from `viewControl`. Keep the PR small.
+Risks: the chrome series edits web/panel-bridge.ts too. P1 starts after roadmap items 1 to 7, like the other steps (decision 5). It lands before C7 of [chrome-redesign.md](chrome-redesign.md), which draws the slot from `viewControl`. Keep the PR small.
 
 ### P2. Explanation fixes found by the prototype
 
@@ -261,7 +261,7 @@ The panel handles keys 1, 2 and W when the focus is in it. The page binds none o
 
 ## 7. The usability test
 
-After P10 and the chrome series ([chrome-redesign.md](chrome-redesign.md), C9), as roadmap item 11. The users are simulated: agents, not people. So the test shows what an agent can find and do in the panel. It is not a measure of human usability. VS Code is not tested: the users drive the web page.
+After P10 and the chrome series ([chrome-redesign.md](chrome-redesign.md), C9), as roadmap item 10. The users are simulated: agents, not people. So the test shows what an agent can find and do in the panel. It is not a measure of human usability. VS Code is not tested: the users drive the web page.
 
 - **Users:** five simulated users (fresh agents with no project context): a beginner, a certification learner (LPIC/LinuC), a sysadmin, a developer and a UX designer, the personas of the usability test of October 2026. At least two models among them; the report gives the spread by model.
 - **Briefing:** each agent gets its persona, the page and the tasks. It is not told the goal score, that the panel was redesigned, or what the earlier rounds found.
