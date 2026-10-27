@@ -2,6 +2,8 @@
 
 How much a note matters, and how every output shows it. Built in #320; the prototype was commit 8371ef7 (branch `proto/note-levels`).
 
+Planned: a third level, Error, above the warnings ([three-levels.md](three-levels.md)). This page describes what is built.
+
 ## The levels
 
 A note has one of three levels (`NoteLevel` in [src/messages.ts](../../src/messages.ts)):
