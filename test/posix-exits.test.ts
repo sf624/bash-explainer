@@ -203,6 +203,19 @@ describe('what ends the shell in POSIX mode (6.11, 4.4)', function () {
     // (A body no call reached: decided from where it is.)
     const uncalled = parser.parse(`${POSIX}f() { set -Z; }`);
     assert.strictEqual(statusModel(shellState(uncalled, 'bash')).posixExit(descendants(uncalled.root, ['command'])[0])?.active, 'on');
+    const activeIn = (src: string, posix = true) => {
+      const tree = parser.parse(src);
+      const m = statusModel(shellState(tree, 'bash', { posix }));
+      return descendants(tree.root, ['command']).map((c) => m.posixExit(c)?.active).filter((a) => a);
+    };
+    assert.deepStrictEqual(activeIn('f() { set -Z || :; }'), ['off']);
+    // (Code that never runs: the walk decides nothing there.)
+    assert.deepStrictEqual(activeIn('exit\ntrap INT || :\ntrap INT'), ['off', 'on']);
+    assert.deepStrictEqual(activeIn('if [ "$1" ]; then set -o posix; fi\nf() { set -Z; }', false), ['unknown']);
+    // (A body run where bash ignores the error and where it does not: on some walks; twice alike: as once.)
+    assert.deepStrictEqual(activeIn('f() { set -Z; }\nf || :\nf'), ['unknown']);
+    assert.deepStrictEqual(activeIn('f() { set -Z; }\nf || :\nf || :'), ['off']);
+    assert.strictEqual(exitRefusal(words('exit 1 "$x"'), '5.2') !== 'unknown' && (exitRefusal(words('exit 1 "$x"'), '5.2') as { word: string }).word, '"$x"');
     // (`local -` makes the options local, and `export x\=1` exports `x`: no names bash refuses.)
     const token = (src: string, label: string) => JSON.stringify(new Analyzer('en').explainLine(parser.parse(src), 0, 'bash').items).includes(`"label":"${label}","explanation":"Bash refuses`);
     assert.deepStrictEqual([token('f() { local -; }', '-'), token('export x\\=1', 'x\\\\=1'), token('export "$v" 1x', '1x')], [false, false, true]);

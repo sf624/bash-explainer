@@ -300,7 +300,8 @@ class Statuses implements StatusModel {
     if (!exit) return undefined;
     // (What the walk decided where it ran `n`, which sees the `eval` around a string too; else from where `n` is.)
     const ignored = exit.ignorable ? this.ignored(n) : null;
-    const active = this.state.posixExit(n) ?? (ignored?.sure ? 'off' : posix === 'unknown' || ignored ? 'unknown' : 'on');
+    // (A node the walk did not run, a body no call reached: where bash may ignore it, nothing is said.)
+    const active = this.state.posixExit(n) ?? (ignored ? 'off' : posix);
     // (In a trap's action, it ends the shell when the trap runs.)
     const trap = this.state.env(n).links.some((l) => l.kind === 'slot' && !!l.slot.later);
     return { exit, active, stops: this.errexit(n).stops, trap };
