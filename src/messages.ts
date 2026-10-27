@@ -160,23 +160,26 @@ export const MESSAGES = {
 
   // ---------------------------------------------------------------- functions and what runs instead (3.3, 3.7.2)
   // (3.2.1: a reserved word is one only as the first word of a command. That bash then stops a script with a syntax
-  // error, the manual does not say outside POSIX mode: checked.)
+  // error, the manual only implies: 6.3.3, item 19, says that in an interactive shell "Parser syntax errors will not
+  // cause the shell to exit". Checked.)
   'keyword-needs-separator': withBasis(failure<{ kw: string }>(['3.2.1', '3.2.5.1', '3.2.5.2'], ({ kw }) => [
     `構文エラー: \`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash は「syntax error near unexpected token」で止まる`,
     `Syntax error: a \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash stops with "syntax error near unexpected token"`]),
   { kind: 'checked', probe: 'state#keyword-separator' }),
-  // (4.1: "the last argument to the command must be a `]`", and `test` returns 0 or 1. What `[` does without it, an
-  // error with status 2, the manual does not say: checked.)
-  'bracket-missing-close': withBasis(failure(['4.1', '6.4'], () => [
+  // (4.1: "When the [ form is used, the last argument to the command must be a ]"; 3.7.5: "All builtins return an exit
+  // status of 2 to indicate incorrect usage, generally invalid options or missing arguments". The manual's; the probe
+  // row's try-it is kept as data, which the views do not show for the manual's facts.)
+  'bracket-missing-close': withBasis(failure(['4.1', '3.7.5', '6.4'], () => [
     '`[` は最後の引数が `]` でないので、実行するとエラーになり、条件は評価されません（`[: missing \']\'`、終了ステータス 2）。構文エラーではなく、コマンド `[` が実行時に出すエラーです',
     '`[` has no `]` as its last argument, so it fails when it runs, without evaluating the condition (`[: missing \']\'`, status 2). This is not a syntax error but an error of the command `[` at run time']),
-  { kind: 'checked', probe: 'state#bracket-missing' }),
-  'bracket-close-glued': withBasis(failure<{ word: string }>(['4.1', '6.4'], ({ word }) => [
+  { kind: 'manual', probe: 'state#bracket-missing' }),
+  'bracket-close-glued': withBasis(failure<{ word: string }>(['4.1', '3.7.5', '6.4'], ({ word }) => [
     `\`${word}\` の \`]\` は単語の一部なので、\`[\` の最後の引数は \`]\` ではありません。実行するとエラーになり、条件は評価されません（\`[: missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります`,
     `The \`]\` in \`${word}\` is part of the word, so \`[\` has no \`]\` as its last argument: it fails when it runs, without evaluating the condition (\`[: missing ']'\`, status 2). \`]\` needs a space before it`]),
-  { kind: 'checked', probe: 'state#bracket-missing' }),
-  // (4.1 says that two arguments whose first is no unary operator, or three that are no binary test, `!` or `( )`, are
-  // false: status 1. bash fails with status 2 ("unary operator expected"): differs.)
+  { kind: 'manual', probe: 'state#bracket-missing' }),
+  // (4.1: `test` and `[` "return a status of 0 (true) or 1 (false)", and two arguments whose first is no unary
+  // operator, or three that are no binary test, `!` or `( )`, are false. bash fails with status 2 ("unary operator
+  // expected"): differs. With four or more, 4.1 says only that they are "parsed and evaluated according to precedence".)
   'test-malformed': withBasis(failure<{ name: string }>(['4.1', '6.4'], ({ name }) => [
     `\`${name}\` はこの引数を条件式として読めないので、実行するとエラーになり、条件は評価されません（\`unary operator expected\`、\`binary operator expected\`、\`too many arguments\` など、終了ステータス 2）。構文エラーではなく、コマンド \`${name}\` が実行時に出すエラーです`,
     `\`${name}\` cannot read these arguments as a conditional expression, so it fails when it runs, without evaluating anything ("unary operator expected", "binary operator expected", "too many arguments"…, status 2). This is not a syntax error but an error of the command \`${name}\` at run time`]),
@@ -398,8 +401,9 @@ export const MESSAGES = {
   }),
   // (`environment`: the script set it with no `unset`, `local` or `export -n` before, so it is exported when it came
   // from the environment, `maybe` (capitals) or `unlikely` (lower case): src/semantics/shellstate.ts, `fromEnvironment`.)
-  // (`array`: bash exports no array, even one `export` marks, `declare -p` showing `-ax`. The manual does not say it:
-  // checked. Without it, 3.7.3 and 3.7.4 say that a command run apart gets only what is exported.)
+  // (`array`: bash exports no array, even one `export` marks, `declare -p` showing `-ax`. The Reference Manual does not
+  // say it (the man page does, under BUGS: "Array variables may not (yet) be exported"): checked. Without it, 3.7.3 and
+  // 3.7.4 say that a command run apart gets only what is exported.)
   'variable-not-exported': withBasis(pitfall<{ v: string; environment?: 'maybe' | 'unlikely'; array?: boolean }>(['3.7.3', '3.7.4'], ({ v, environment, array }) => (array ? [
     `文字列の中の \`$${v}\` は新しいシェルが展開しますが、\`${v}\` は配列で、bash は配列をエクスポートできない（\`export\` しても渡らない）ので、そこでは空です。値を渡すなら、\`"\${${v}[*]}"\` を引数として渡すか、文字列の変数にします`,
     `the new shell expands \`$${v}\` in the string, but \`${v}\` is an array, and bash cannot export an array (not even with \`export\`), so it is empty there. To pass its values, give \`"\${${v}[*]}"\` as an argument, or use a string variable`] : environment === 'maybe' ? [
@@ -442,10 +446,11 @@ export const MESSAGES = {
 
   // ---------------------------------------------------------------- pipelines and globs (3.2.3, 3.7.3, 3.5.8)
   // (5.2 says that `BASH_SUBSHELL` is "incremented by one within each subshell", and 3.2.3 that each command of a
-  // pipeline runs in its own subshell; bash does not count the subshell of a simple command in a pipeline: differs.)
+  // pipeline runs in its own subshell; bash does not count the subshell of a simple command in a pipeline while it
+  // expands the command's words (what the command runs, an `eval` string or a function, sees it counted): differs.)
   'bash-subshell-not-counted': withBasis(note(['5.2', '3.2.3'], () => [
-    'パイプラインの中の単純コマンドはサブシェルで実行される（最後のコマンドは `shopt -s lastpipe` が無いとき）が、bash はこのサブシェルを `$BASH_SUBSHELL` に数えないので、値はパイプラインの外のシェルと同じになる。サブシェルかどうかは `$BASHPID` と `$$` を比べて確かめる',
-    'A simple command in a pipeline runs in a subshell (the last one, unless `shopt -s lastpipe` is on), but bash does not count this subshell in `$BASH_SUBSHELL`: the value is that of the shell around the pipeline. To tell whether code runs in a subshell, compare `$BASHPID` with `$$`']),
+    'パイプラインの中の単純コマンドはサブシェルで実行される（最後のコマンドは、`shopt -s lastpipe` が有効でジョブ制御が無効のとき以外）が、bash はこのサブシェルを `$BASH_SUBSHELL` に数えないので、値はパイプラインの外のシェルと同じになる。サブシェルかどうかは `$BASHPID` と `$$` を比べて確かめる',
+    'A simple command in a pipeline runs in a subshell (the last one too, unless `shopt -s lastpipe` is on and job control is off), but bash does not count this subshell in `$BASH_SUBSHELL`: the value is that of the shell around the pipeline. To tell whether code runs in a subshell, compare `$BASHPID` with `$$`']),
   { kind: 'differs', probe: 'words#bash-subshell-stage' }),
   'pipeline-subshell-variable': pitfall<{ used: string; fix: Words; partial: boolean }>(['3.2.3', '3.7.3'], ({ used, fix, partial }) => [
     `パイプ（\`|\`）でつないだコマンドはサブシェルで実行されるので、右側で設定した \`${used}\` はパイプラインが終わると消え、あとの \`$${used}\` には届きません。${fix.ja}`
@@ -478,12 +483,13 @@ export const MESSAGES = {
   'for-over-unquoted-args': caveat<{ value: string }>(['3.4.2', '3.5.7'], ({ value }) => [
     `\`${value}\` をクォートしないと、空白を含む引数が分かれてしまいます。\`for a in "$@"\`（または \`for a\` だけ）と書きます`,
     `unquoted \`${value}\` splits arguments that contain spaces. Write \`for a in "$@"\` (or just \`for a\`)`]),
-  // (3.4: an assignment's value has no word splitting; 3.4.2 says how `"$*"` is joined, but not how `$@` or `${a[@]}`
-  // are in an assignment, with a space whatever `IFS` is: checked.)
+  // (`args`: `$@`, which 3.4.2 states: "In contexts where word splitting is not performed, this expands to a single word
+  // with each positional parameter separated by a space" (3.4: no word splitting in an assignment). For an array,
+  // 6.7 says only that `${a[@]}` "is analogous to the expansion of the special parameters": checked.)
   'array-joined-in-assignment': withBasis(caveat<{ v: string; op: string; word: string; args: boolean; list: string; string: string }>(['3.4', '3.4.2', '6.7'], ({ v, op, word, args, list, string }) => [
     `\`${v}${op}${word}\` では${args ? '引数' : '要素'}が空白で区切られて1つの文字列につながり、\`${v}\` はただの文字列になります（空白を含む${args ? '引数' : '要素'}は元に戻せません）。別々に残すには配列にして \`${v}${op}${list}\` と書き、1つの文字列にするつもりなら \`${v}${op}${string}\` と書きます`,
     `\`${v}${op}${word}\` joins the ${args ? 'arguments' : 'elements'} into one string, separated by spaces: \`${v}\` is a plain string, and ${args ? 'arguments' : 'elements'} with spaces cannot be told apart again. To keep them apart, assign an array: \`${v}${op}${list}\`; if one string is meant, write \`${v}${op}${string}\``]),
-  { kind: 'checked', probe: 'state#assign-at' }),
+  ({ args }) => (args ? { kind: 'manual', probe: 'state#assign-at' } : { kind: 'checked', probe: 'state#assign-array' })),
   // (`zsh`: the shell is zsh, not bash. For bash, 4.1 says that `[ -n ]` (one argument, not null) is true, and that two
   // arguments whose first is no unary operator are false, where bash fails with status 2 (`[ = y ]`): differs.)
   'unquoted-variable-in-test': withBasis(caveat<{ bare: string; zsh?: boolean }>(['3.5.7', '4.1'], ({ bare, zsh }) => zsh ? [

@@ -2585,5 +2585,27 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "5.2",
+    "snippet": "eval '@PROBE:a@ \"$BASH_SUBSHELL\" \"$(( BASHPID != $$ ))\"' | cat\nf() { @PROBE:b@ \"$BASH_SUBSHELL\"; }; f | cat",
+    "note": "what a simple command in a pipeline runs (an eval string, a function's body) sees the subshell counted: only the stage's own words see 0",
+    "gaps": {
+      "b": "the values of BASH_SUBSHELL and BASHPID are bash's, which change as the script runs: the model does not know them"
+    },
+    "facts": {
+      "a": [
+        [
+          "1",
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]
