@@ -1,7 +1,29 @@
 {
   "counts": {
-    "probe": { "commands": 365, "ran": 99, "words": 345, "unknown": 11, "failing": 3 },
-    "values": { "commands": 365, "ran": 209, "words": 676, "unknown": 37, "failing": 1 }
+    "fixtures": {
+      "probe": { "commands": 365, "ran": 99, "words": 345, "unknown": 11, "failing": 3 },
+      "values": { "commands": 365, "ran": 209, "words": 676, "unknown": 37, "failing": 1 }
+    },
+    "snippets": {
+      "probe": { "commands": 339, "ran": 303, "words": 731, "unknown": 39, "failing": 2 },
+      "values": { "commands": 339, "ran": 303, "words": 736, "unknown": 32, "failing": 0 }
+    }
   },
-  "known": []
+  "known": [
+    {
+      "input": "#!/bin/bash\nshopt -s expand_aliases\nalias c='command ' d='declare x=1'\nc d\necho \"[$x]\"",
+      "command": "echo \"[$x]\"",
+      "reason": "The harness, not the model: the recorder replaces the alias `c`, so the alias `d` after it is not expanded and its `declare x=1` does not run. In bash, `c d` runs `command declare x=1`, as the model says."
+    },
+    {
+      "input": "#!/bin/sh\r\n# a\r\necho \"PV \" x\r\n",
+      "command": "echo \"PV \" x",
+      "reason": "A CR before a LF: the model reads the text with each such CR masked as a space (`crlf`, which warns); bash gives the word its CR (oracles.md 2.6, 4)."
+    },
+    {
+      "input": "a\\",
+      "command": "a\\",
+      "reason": "A backslash at the very end of the input: unbash keeps it, bash drops it (README Limitations; test/fixtures/bash-ast-known.json; oracles.md 2.6, 5)."
+    }
+  ]
 }
