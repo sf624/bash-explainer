@@ -7,6 +7,7 @@ import { Analyzer, Token } from '../src/analyzer';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
+import { runBash } from './support/bash';
 import { allTokens } from './support/explain';
 import { parseTest, TestExpr, testFails, testRange, type TestRules } from '../src/testexpr';
 import { spawnSync } from 'child_process';
@@ -559,4 +560,54 @@ describe('a command named [ is explained as what bash runs', () => {
     assert.strictEqual(e.notes.filter((n) => n.includes('`]`')).length, 1);
     assert.ok(!all.some((t) => t.explanation.startsWith('Condition: `')));
   });
+});
+
+// `<` and `>` compare by the locale's collation order or by bytes (manual 4.1, 6.4, 6.11, 6.12; `collation`), checked in
+// a locale where the two differ: en_US.UTF-8 sorts `a` before `B`, bytes put `B` (66) before `a` (97). The locale comes
+// from the system, or from `$BASH_EXPLAINER_LOCPATH` (a directory `localedef` wrote it to: CI's `bash53` job); without
+// it, the comparisons with bash are skipped (and fail when `$BASH_EXPLAINER_LOCPATH` is set).
+describe('`<` and `>` compare as bash does, by the locale or by bytes', () => {
+  const analyzer = new Analyzer('en');
+  const conditions = (src: string, version: '5.2' | '5.3', shell = 'bash' as const) => allTokens(analyzer.explainLine(parser.parse(src), src.split('\n').length - 1, shell, { bashVersion: version }).items)
+    .filter((t) => t.explanation.startsWith('Condition: ')).map((t) => t.explanation);
+  const condition = (src: string, version: '5.2' | '5.3') => conditions(src, version)[0];
+  const env = { LC_ALL: 'en_US.UTF-8', ...(process.env.BASH_EXPLAINER_LOCPATH ? { LOCPATH: process.env.BASH_EXPLAINER_LOCPATH } : {}) };
+  const CASES = [
+    'test a "<" B', '[ a \\< B ]', '[[ a < B ]]', 'test B ">" a', '[[ B > a ]]',
+    'set -o posix\ntest a "<" B', 'set -o posix\n[ B \\> a ]', 'set -o posix\n[[ a < B ]]',
+    'shopt -s compat40\n[[ a < B ]]', 'shopt -s compat31\n[[ B > a ]]', 'set -o posix; shopt -s compat40\n[[ a < B ]]',
+    'set -o posix; shopt -s compat32\ntest a "<" B',
+  ];
+  /** The status the explanation implies: 0 when it says the locale's order (where `a` sorts before `B`), else 1. */
+  const implied = (src: string, version: '5.2' | '5.3') => (/^Condition: .* — sorts (before|after), compared in the locale's collation order/.test(condition(src, version)) ? 0 : 1);
+
+  it('says which order each release uses', () => {
+    assert.strictEqual(condition('[ "$a" \\< "$b" ]', '5.2'), 'Condition: `"$a"` vs `"$b"` — sorts before, compared by byte values, not in the locale\'s collation order');
+    assert.strictEqual(condition('set -o posix\n[ a \\> b ]', '5.2'), 'Condition: `a` vs `b` — sorts after, compared by byte values, not in the locale\'s collation order (in POSIX mode, bash 5.3 uses that order)');
+    assert.strictEqual(condition('set -o posix\n[ a \\> b ]', '5.3'), 'Condition: `a` vs `b` — sorts after, compared in the locale\'s collation order (`LC_COLLATE`), as bash 5.3 does in POSIX mode (outside it, and in bash 5.2, `test` compares byte values)');
+    assert.strictEqual(condition('[[ a > b ]]', '5.2'), 'Condition: `a` vs `b` — sorts after, compared in the locale\'s collation order (`LC_COLLATE`)');
+    assert.strictEqual(condition('shopt -s compat40\n[[ a > b ]]', '5.3'), 'Condition: `a` vs `b` — sorts after, compared by byte values, not in the locale\'s collation order, at compatibility level 4.0 or lower');
+    // (Where a setting is made on some paths only.)
+    assert.match(condition('if x; then set -o posix; fi; test a "<" b', '5.3'), /— sorts before, compared by byte values; where POSIX mode is on \(on some paths\), bash 5\.3 compares in the locale's collation order$/);
+    assert.match(condition('if x; then shopt -s compat40; fi; [[ a < b ]]', '5.2'), /— sorts before, compared in the locale's collation order; where the compatibility level is 4\.0 or lower \(on some paths\), by byte values$/);
+    // (A backslash quotes the character after it: `\<` is the operator; a word with a `$` is not known.)
+    assert.strictEqual(condition('[ a\\b = ab ]', '5.2'), 'Condition: `a\\b` vs `ab` — strings are equal (the right side is plain text, not a pattern)');
+    assert.strictEqual(condition('[ a\\b$ \\< c ]', '5.2'), 'Condition: `a\\b$` vs `c` — sorts before, compared by byte values, not in the locale\'s collation order');
+    assert.deepStrictEqual(runBash('[ a\\b = ab ] && [ "a\\b$" \\< c ]').status, 0);
+    // (Another shell's: the operator only.)
+    assert.deepStrictEqual(conditions('[[ a < b ]]', '5.2', 'ksh' as 'bash'), ['Condition: `a` vs `b` — sorts before (lexicographically)']);
+    assert.deepStrictEqual(conditions('[ a \\< b ]', '5.2', 'dash' as 'bash'), ['Condition: `a` vs `b` — sorts before (lexicographically)']);
+  });
+
+  for (const [version, program] of [['5.2', 'bash'], ['5.3', process.env.BASH_EXPLAINER_BASH53]] as const) {
+    it(`agrees with bash ${version} in en_US.UTF-8`, function () {
+      if (!program) this.skip();
+      const probe = runBash('[[ a < B ]]', { program, env });
+      if (probe.status !== 0) {
+        assert.ok(!process.env.BASH_EXPLAINER_LOCPATH, `the locale en_US.UTF-8 does not sort a before B: ${probe.stderr}`);
+        this.skip();
+      }
+      for (const src of CASES) assert.strictEqual(runBash(src, { program, env }).status, implied(src, version), `${src} (bash ${version})`);
+    });
+  }
 });

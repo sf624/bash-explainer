@@ -487,6 +487,20 @@ export const extendedEqualOps: Record<string, Text> = {
   '!=': tx('文字列が等しくない（右辺はグロブパターン。パターンに一致すれば偽）', 'strings differ (the right side is a glob pattern; a match makes it false)'),
 };
 
+/**
+ * How bash's `<` and `>` compare (`collation` in src/testexpr.ts, by its `order` and `why`), after the operator's text.
+ * Checked with bash 5.2.21 and 5.3 in en_US.UTF-8 (test/test-collation.test.ts).
+ */
+export const collationTexts: Record<string, Text> = {
+  'locale': tx('ロケールの照合順序（`LC_COLLATE`）で比べる', 'compared in the locale\'s collation order (`LC_COLLATE`)'),
+  'locale posix': tx('ロケールの照合順序（`LC_COLLATE`）で比べる（POSIX モードの bash 5.3 の比べ方。POSIX モードの外と bash 5.2 では、バイトの値で比べる）', 'compared in the locale\'s collation order (`LC_COLLATE`), as bash 5.3 does in POSIX mode (outside it, and in bash 5.2, `test` compares byte values)'),
+  'bytes': tx('ロケールの照合順序ではなく、バイトの値で比べる', 'compared by byte values, not in the locale\'s collation order'),
+  'bytes posix-5.2': tx('ロケールの照合順序ではなく、バイトの値で比べる（POSIX モードの bash 5.3 はロケールの照合順序で比べる）', 'compared by byte values, not in the locale\'s collation order (in POSIX mode, bash 5.3 uses that order)'),
+  'bytes compat': tx('compat レベルが 4.0 以下なので、ロケールの照合順序ではなく、バイトの値で比べる', 'compared by byte values, not in the locale\'s collation order, at compatibility level 4.0 or lower'),
+  'unknown posix': tx('バイトの値で比べる。POSIX モードになっている経路では、bash 5.3 はロケールの照合順序で比べる', 'compared by byte values; where POSIX mode is on (on some paths), bash 5.3 compares in the locale\'s collation order'),
+  'unknown compat': tx('ロケールの照合順序で比べる。compat レベルを 4.0 以下にする経路では、バイトの値で比べる', 'compared in the locale\'s collation order; where the compatibility level is 4.0 or lower (on some paths), by byte values'),
+};
+
 export const binaryTestOps: Record<string, Text> = {
   '=': tx('文字列が等しい（右辺もただの文字列で、パターンではない）', 'strings are equal (the right side is plain text, not a pattern)'),
   '==': tx('文字列が等しい（右辺もただの文字列で、パターンではない）', 'strings are equal (the right side is plain text, not a pattern)'),

@@ -25,6 +25,31 @@ export type TestExpr =
 const BINARY = new Set(['=', '==', '!=', '<', '>', '-eq', '-ne', '-lt', '-le', '-gt', '-ge', '-nt', '-ot', '-ef']);
 const UNARY = new Set([...'abcdefghknoprstuvwxzGLNORS'].map((c) => `-${c}`));
 
+/**
+ * How bash's `<` and `>` compare two strings: by the locale's collation order (`LC_COLLATE`) or by byte values; why
+ * (`posix`: bash 5.3's `test` in POSIX mode, `posix-5.2`: bash 5.2's `test`, which compares bytes in POSIX mode too,
+ * `compat`: `[[ ]]` at compatibility level 4.0 or lower); `unknown` where a setting that decides it is on some paths only.
+ */
+export interface Collation { order: 'locale' | 'bytes' | 'unknown'; why?: 'posix' | 'posix-5.2' | 'compat' }
+
+/**
+ * The collation of `<` and `>` in `[[ ]]` (`double`) or in bash's `test` and `[`, in release `version`, with POSIX mode
+ * `posix` and the `shopt` option that sets level 4.0 or lower (`compat`: `compat31`, `compat32` or `compat40`) where it
+ * runs (manual 4.1, 6.4, 6.11, 6.12). `[[ ]]` uses the locale, but bytes at level 4.0 or lower (not in bash 5.3's POSIX
+ * mode); `test` uses bytes, and the locale in bash 5.3's POSIX mode. Checked with bash 5.2.21 and 5.3 in en_US.UTF-8
+ * (test/test-collation.test.ts).
+ */
+export function collation(double: boolean, version: BashVersion, posix: 'on' | 'off' | 'unknown', compat: 'on' | 'off' | 'unknown'): Collation {
+  const posixLocale = version === '5.2' ? 'off' : posix;
+  if (!double) {
+    if (posixLocale === 'on') return { order: 'locale', why: 'posix' };
+    if (posixLocale === 'unknown') return { order: 'unknown', why: 'posix' };
+    return posix === 'off' ? { order: 'bytes' } : { order: 'bytes', why: 'posix-5.2' };
+  }
+  if (posixLocale === 'on' || compat === 'off') return { order: 'locale' };
+  return posixLocale === 'off' && compat === 'on' ? { order: 'bytes', why: 'compat' } : { order: 'unknown', why: 'compat' };
+}
+
 /** The first and last word a test covers. */
 export function testRange(e: TestExpr): [number, number] {
   switch (e.type) {
@@ -268,7 +293,8 @@ function fieldText(x: SyntaxNode): string | null {
 /** A word of `test` after quote removal (`\(` is `(`), or null when it depends on an expansion. */
 function wordText(x: SyntaxNode): string | null {
   if (x.type === 'number') return x.text;
-  if (x.text === '\\(' || x.text === '\\)') return x.text[1];
+  // (`\(`, `\<`: a backslash quotes the character after it.)
+  if (x.type === 'word' && x.text.includes('\\') && /^(?:\\[^\n]|[^\\'"$`])*$/.test(x.text)) return x.text.replace(/\\(.)/g, '$1');
   return literalContent(x)?.text ?? null;
 }
 

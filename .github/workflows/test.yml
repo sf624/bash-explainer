@@ -445,6 +445,12 @@ jobs:
           # (Its manual, for test/manual.test.ts.)
           echo "BASH53_SOURCE_DIR=$src/bash-5.3" >> "$GITHUB_ENV"
 
+      - name: Build the locale en_US.UTF-8 (`<` and `>` of `test` in test/testexpr.test.ts)
+        run: |
+          mkdir -p "$RUNNER_TEMP/locales"
+          localedef -i en_US -f UTF-8 "$RUNNER_TEMP/locales/en_US.UTF-8"
+          echo "BASH_EXPLAINER_LOCPATH=$RUNNER_TEMP/locales" >> "$GITHUB_ENV"
+
       - name: Run test/bash53.test.ts, test/manual.test.ts and test/testexpr.test.ts
         env:
           # Fail instead of skipping when bash 5.3 or its manual is missing.
