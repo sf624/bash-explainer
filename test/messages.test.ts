@@ -33,7 +33,7 @@ describe('the message catalog', () => {
   const CAVEATS = ['declaration-masks-status', 'pipefail-missing', 'function-last-test-returns-status', 'failure-reported-as-success', 'posix-special-function-name-maybe',
     'extglob-maybe-on', 'extglob-not-found', 'extglob-maybe-on-trap', 'globstar-maybe-on',
     'globstar-not-found', 'ssh-local-expansion', 'function-not-imported-sh', 'unmatched-glob-runs-once', 'for-over-ls-output', 'for-over-unquoted-args',
-    'unquoted-variable-in-test', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment'];
+    'unquoted-variable-in-test', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment', 'alias-maybe-not-expanded'];
   const FAILURES = ['keyword-needs-separator', 'bracket-missing-close', 'bracket-close-glued', 'test-malformed', 'unset-readonly', 'assign-readonly', 'unset-function-and-variable', 'bats-tags-invalid'];
   it('gives each entry the level of the design: warning, info or note', () => {
     for (const [id, e] of Object.entries(MESSAGES) as [FactId, { kind: string; level?: unknown }][]) {
@@ -47,7 +47,8 @@ describe('the message catalog', () => {
     assert.strictEqual(fact('en', 'local-outside-function', { stops: false }).level, 'warning');
     assert.strictEqual(fact('en', 'local-outside-function', { stops: false, sourced: true }).level, 'info');
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x' }).level, 'warning');
-    assert.strictEqual(fact('en', 'variable-not-exported', { v: 'X', environment: true }).level, 'info');
+    assert.strictEqual(fact('en', 'variable-not-exported', { v: 'X', environment: 'maybe' }).level, 'info');
+    assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x', environment: 'unlikely' }).level, 'warning');
     for (const id of ['postfix-increment-status', 'postfix-decrement-status'] as const) {
       assert.strictEqual(fact('en', id, { v: 'i', errexit: true }).level, 'warning', id);
       assert.strictEqual(fact('en', id, { v: 'i' }).level, 'info', id);
@@ -71,10 +72,13 @@ describe('the message catalog', () => {
     assert.match(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true }).text, /file names, and this command then deletes or overwrites files it should not$/);
     assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true }).level, 'warning');
     assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f' }).level, 'info');
-    const unset = { v: 'x', name: 'x', shell: 'bash', environment: false } as const;
+    const unset = { v: 'x', name: 'x', shell: 'bash', environment: 'no' } as const;
     assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'script' }).level, 'warning');
     assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'command', errexit: 'script' }).level, 'warning');
     assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'command' }).level, 'info');
+    // (A name in capitals may come from the environment: a caveat; one in lower case keeps the warning, with a clause.)
+    assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'script', environment: 'maybe' }).level, 'info');
+    assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'script', environment: 'unlikely' }).level, 'warning');
   });
 
   it('starts a note with the mark of its level, and a pitfall with the word of its level too', () => {

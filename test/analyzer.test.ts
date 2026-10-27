@@ -733,7 +733,7 @@ describe('pipelines and aliases', () => {
     assert.match(find(explain('shopt -s expand_aliases\nalias ll="ls -l"\nll', 2), 'll').explanation, /alias `ll` defined on line 2: replaced by `ls -l`/);
     assert.ok(e.notes.some((n) => /bash does not expand aliases in scripts/.test(n)));
     assert.ok(!explain('shopt -s expand_aliases\nalias ll="ls -l"\nll', 2).notes.some((n) => /aliases/.test(n)));
-    assert.ok(!explain('alias grep=ggrep\ngrep x f', 1).notes.some((n) => /aliases/.test(n)));
+    assert.ok(!explain('#!/bin/bash\nalias grep=ggrep\ngrep x f', 2).notes.some((n) => /aliases/.test(n)));
   });
 });
 
@@ -743,7 +743,7 @@ describe('the state along the script (src/semantics/state.ts)', () => {
     assert.ok(notes('if a; then shopt -s globstar; fi\nls **/*.ts', 1).some((n) => /only after `shopt -s globstar`, and only some paths before here \(a branch or a loop\) turn it on/.test(n)));
     assert.ok(!notes('if a; then shopt -s globstar; fi\nls **/*.ts', 1, { pitfalls: false }).some((n) => /globstar/.test(n)));
     assert.ok(notes('if a; then shopt -s extglob; fi\nrm !(keep).log', 1).some((n) => /unless `shopt -s extglob` comes first .*, and only some paths before here/.test(n)));
-    assert.match(find(explain('if a; then shopt -s expand_aliases; fi\nalias ll="ls -l"\nll', 2), 'll').explanation, /replaced by `ls -l`, but only when `shopt -s expand_aliases` is on/);
+    assert.match(find(explain('#!/bin/bash\nif a; then shopt -s expand_aliases; fi\nalias ll="ls -l"\nll', 3), 'll').explanation, /replaced by `ls -l`, but only when `shopt -s expand_aliases` is on/);
     assert.match(find(explain('if a; then IFS=,; fi\necho $x', 1), '$x', 'variable').explanation, /set on line 1 to a value not known here/);
   });
   it('says "may" for a pipeline stage and an array that depend on the path', () => {

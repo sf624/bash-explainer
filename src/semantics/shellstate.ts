@@ -2,6 +2,7 @@
 // entries at a place, as persistent maps, and how the states of several paths merge.
 import type { SyntaxNode } from '../syntax/tree';
 import type { Shell } from '../dialect';
+import { usualEnvironment } from '../dict/syntax';
 
 /** On, off, or decided at run time (a branch, a loop, a function that may be defined). */
 export type Tri = 'on' | 'off' | 'unknown';
@@ -12,7 +13,13 @@ export type Tri = 'on' | 'off' | 'unknown';
 export type OptionState = Tri | 'default';
 
 /** An attribute of a variable (a letter of `declare -p`: a, A, i, n, r, x, l, u, t) and the node that last gave or removed it. */
-export interface Attribute { readonly state: Tri; readonly at: SyntaxNode }
+/**
+ * The state of an attribute, and the node that set it. `environment`, of the export attribute (`x`) only: the
+ * script had neither set nor declared the variable before (no `unset`, `local`, `export -n` on the way), so it may be
+ * the variable the shell got from the environment, which is exported (`environmentHas`: how likely); the state is
+ * then `unknown`, or `off` for a name the environment is unlikely to have (one in lower case).
+ */
+export interface Attribute { readonly state: Tri; readonly at: SyntaxNode; readonly environment?: Exclude<FromEnvironment, 'no'> }
 
 export interface VariableState {
   /** Whether it exists (`declare -p` shows it): declared, with or without a value. */
@@ -32,12 +39,6 @@ export interface VariableState {
    * or made from such a value (`a="$b"`, `n+=1`, `${n:=0}`). Arithmetic must not read it (`Walker.unsetRead`).
    */
   readonly kept?: true;
-  /**
-   * It may still be the variable the shell got from the environment, which is exported (`env FOO=x bash script`): a
-   * name that may come from there (`mayComeFromEnvironment`), assigned with no `unset` or declaration before it, on
-   * some path. Its export attribute is then not known unless the script set it (`mayBeInherited`).
-   */
-  readonly inherits?: true;
   /** The node that last changed it (after a merge, the latest in the source). */
   readonly at: SyntaxNode;
 }
@@ -292,20 +293,37 @@ export function shoptIn(st: ShellState, name: string, shell: Shell | undefined):
 }
 
 /**
- * Whether a variable the script has not set may come from the environment (and is then exported): by custom, those
- * are in capitals. The walk, the unset reads of `set -u` (src/semantics/unbound.ts) and the variables a new shell
- * gets read it the same.
+ * Whether a variable may come from the environment, and how likely: `usually`, a name the environment almost always
+ * has (`HOME`, `PATH`, `TERM`: `usualEnvironment`); `maybe`, another name in capitals, which by custom is the
+ * environment's; `unlikely`, a name with lower case, which POSIX leaves to the script's own variables (bash still
+ * passes `env foo=x`); `no`, the script removed it (`unset`, `local`, `export -n`) or it is an array, which is never
+ * exported.
  */
-export function mayComeFromEnvironment(name: string): boolean {
-  return /^[A-Z_][A-Z0-9_]*$/.test(name);
+export type FromEnvironment = 'usually' | 'maybe' | 'unlikely' | 'no';
+
+/** How likely the environment has a variable named `name`, by its name alone (`FromEnvironment`). */
+export function environmentHas(name: string): Exclude<FromEnvironment, 'no'> {
+  return usualEnvironment.has(name) ? 'usually' : /^[A-Z_][A-Z0-9_]*$/.test(name) ? 'maybe' : 'unlikely';
+}
+
+/** The export attribute a variable the script had neither set nor declared gets when it first sets it, at `at` (`Attribute.environment`). */
+export function exportFromEnvironment(name: string, at: SyntaxNode): Attribute {
+  const environment = environmentHas(name);
+  return { state: environment === 'unlikely' ? 'off' : 'unknown', at, environment };
 }
 
 /**
- * Whether the variable `v` may be exported because it came from the environment (`env FOO=x bash script`), although
- * the script never exports it: it `inherits`, and nothing in the script turned its export attribute on or off.
+ * Whether the variable `name` may come from the environment in `st`, and how likely (`FromEnvironment`): the only
+ * source of this fact. Two facts are kept apart: its `value`, where the script gave it none (`set -u`'s unset reads:
+ * not after `unset` or `local`; `declare x` keeps the environment's), and its `export` attribute, where the script set
+ * it without exporting it (`local FOO` keeps the export of the environment's `FOO`, not its value).
  */
-export function mayBeInherited(v: VariableState): boolean {
-  return !v.attrs.x && !!v.inherits;
+export function fromEnvironment(name: string, st: ShellState, what: 'value' | 'export'): FromEnvironment {
+  const v = st.variables.get(name);
+  if (!v) return environmentHas(name);
+  if (['a', 'A'].some((l) => (v.attrs[l]?.state ?? 'off') !== 'off')) return 'no';
+  if (what === 'value') return v.kept && v.set !== 'on' ? environmentHas(name) : 'no';
+  return v.attrs.x?.environment ?? 'no';
 }
 
 /** The state of attribute `letter` of variable `name`. */
@@ -351,17 +369,18 @@ function mergeVariable(a: VariableState | undefined, b: VariableState | undefine
   if (!a || !b) {
     const v = (a ?? b)!;
     const attrs: Record<string, Attribute> = {};
-    for (const [l, x] of Object.entries(v.attrs)) attrs[l] = { state: tri(x.state, 'off'), at: x.at };
-    return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true, ...(v.inherits ? { inherits: true as const } : {}) };
+    for (const [l, x] of Object.entries(v.attrs)) attrs[l] = { state: tri(x.state, 'off'), at: x.at, ...(x.environment ? { environment: x.environment } : {}) };
+    return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true };
   }
   const attrs: Record<string, Attribute> = {};
   for (const l of new Set([...Object.keys(a.attrs), ...Object.keys(b.attrs)])) {
     const x = a.attrs[l];
     const y = b.attrs[l];
-    attrs[l] = x && y ? { state: tri(x.state, y.state), at: later(x.at, y.at) } : { state: tri((x ?? y)!.state, 'off'), at: (x ?? y)!.at };
+    // (From the environment only when it may be on both paths.)
+    attrs[l] = x && y ? { state: tri(x.state, y.state), at: later(x.at, y.at), ...(x.environment && y.environment ? { environment: x.environment } : {}) } : { state: tri((x ?? y)!.state, 'off'), at: (x ?? y)!.at };
   }
   const source = a.source === b.source ? a.source : undefined;
-  return { declared: tri(a.declared, b.declared), set: tri(a.set, b.set), attrs, value: a.value === b.value ? a.value : undefined, ...(source ? { source } : {}), at: later(a.at, b.at), ...(a.kept || b.kept ? { kept: true as const } : {}), ...(a.inherits || b.inherits ? { inherits: true as const } : {}) };
+  return { declared: tri(a.declared, b.declared), set: tri(a.set, b.set), attrs, value: a.value === b.value ? a.value : undefined, ...(source ? { source } : {}), at: later(a.at, b.at), ...(a.kept || b.kept ? { kept: true as const } : {}) };
 }
 
 function mergeFunction(a: FunctionState | undefined, b: FunctionState | undefined): FunctionState {
@@ -423,7 +442,7 @@ export function sameState(a: ShellState, b: ShellState): boolean {
     return k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state);
   };
   return a === b || (a.status === b.status && !a.unreachable === !b.unreachable && !a.opaque === !b.opaque && a.errexitWhy === b.errexitWhy && NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
-    && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && !x.kept === !y.kept && !x.inherits === !y.inherits && attrs(x, y)))
+    && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && !x.kept === !y.kept && attrs(x, y)))
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
     && NameMap.same(a.disabled, b.disabled, (x, y) => x === y || x.state === y.state)

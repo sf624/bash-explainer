@@ -235,10 +235,10 @@ describe('word facts: an unset variable under set -u', () => {
     ['set -u\ndeclare x\necho ${#x}', 2, 'x', false, S],
     ['set -u\nx=1; unset x\necho ${x:1} ${x#a}', 2, 'x', false, S, false],
     ['set -u\n{ unset x; }\necho $x', 2, 'x', true, S, false],
-    ['set -u\nif true; then unset x; fi\necho $x', 2, 'x', true, S],
-    ['set -u\nunset x && echo $x', 1, 'x', true, S],
+    ['set -u\nif true; then unset x; fi\necho $x', 2, 'x', true, S, false],
+    ['set -u\nunset x && echo $x', 1, 'x', true, S, false],
     ['set -u\necho ${b[0]}', 1, 'b[0]', true, S],
-    ['set -u\ndeclare -A m\necho "${m[k]}"', 2, 'm[k]', true, S],
+    ['set -u\ndeclare -A m\necho "${m[k]}"', 2, 'm[k]', true, S, false],
     ['set -u\nf() {\n  declare n\n  echo $((n + 1))\n}\nf', 3, 'n', false, S, false],
     ['set -u\nf() {\n  local n\n  echo $(( (n) ? 1 : 2 )) $(( -n ))\n}\nf', 3, 'n', false, S, false],
     ['set -u\nf() { local v; echo "$v"; }\nf', 1, 'v', true, S, false],
@@ -316,7 +316,7 @@ describe('word facts: an unset variable under set -u', () => {
   }
   const quiet = [
     'echo "$dir"', 'set -u\nset +u\necho $dir', 'set -u\ndir=1\necho $dir', 'set -u\necho "${x:-}" "${x-d}" "${x+p}" "${x:+p}" "${x?}" "${x=v}"',
-    'set -u\na=()\necho "${a[@]}" "${a[*]}" ${#a[@]} ${!a}', 'set -u\n[[ -v x ]]', 'set -u\necho "$1" "$@" "$*" $# $?', 'set -u\necho $HOMEDIR',
+    'set -u\na=()\necho "${a[@]}" "${a[*]}" ${#a[@]} ${!a}', 'set -u\n[[ -v x ]]', 'set -u\necho "$1" "$@" "$*" $# $?', 'set -u\necho "$TERM" "$LOGNAME"',
     'set -u\nif [ -e f ]; then c=1; fi\necho "$c"', 'set -u\nif false; then\n  echo "$c"\nfi', 'set -u\nwhile read -r w; do echo "$q"; q=1; done',
     'set -u\nread -r z\necho "$z"', 'set -u\na1=1 a2=$a1', 'set -u\nsource ./lib.sh\necho $x', 'set -u\neval "$cmd"\necho $x',
     'set -u\ncat <<\'E\'\n$hd\nE', 'set -u\nf() { echo "$y"; }', 'set -u\nf() { echo "$y"; }\nexport -f f\nf', 'set -u\nf() { echo "$y"; }\nf\ny=1\nf',

@@ -62,6 +62,8 @@ export interface ProbeOptions {
   errexit?: boolean;
   /** The bash to run (`PROBE_BASH53` for a row of bash 5.3); `PROBE_BASH` when absent. */
   program?: string;
+  /** Variables of the environment the run starts with, on top of PROBE_ENV (they are exported). */
+  environment?: Record<string, string>;
   timeout?: number;
 }
 
@@ -128,7 +130,7 @@ export function runProbe(snippet: string, body: string, opts: ProbeOptions = {})
   fs.writeFileSync(log, '');
   const fn = `() { ${logged}\n}`;
   const args = opts.dash ? [scriptFile] : ['--norc', '--noprofile', ...shebangArgs(snippet), ...(opts.posix ? ['--posix'] : []), ...(opts.errexit ? ['-e'] : []), scriptFile];
-  const env = opts.dash ? PROBE_ENV : { ...PROBE_ENV, 'BASH_FUNC___probe%%': fn };
+  const env = { ...PROBE_ENV, ...opts.environment, ...(opts.dash ? {} : { 'BASH_FUNC___probe%%': fn }) };
   const normalize = (s: string): string => s.split(box).join(BOX).split(scriptFile).join(SCRIPT);
   return new Promise((resolve) => {
     const child = execFile(opts.dash ? 'dash' : opts.program ?? PROBE_BASH, args, { cwd: box, env, timeout: opts.timeout ?? 5000, encoding: 'utf8', maxBuffer: 1 << 24 }, (_err, stdout, stderr) => {
@@ -238,7 +240,7 @@ export interface StateDiff {
 const baselines = new Map<string, Promise<StateFacts>>();
 /** The state at the end of an empty snippet. */
 export function baselineState(opts: ProbeOptions = {}): Promise<StateFacts> {
-  const key = JSON.stringify({ posix: !!opts.posix, errexit: !!opts.errexit, program: opts.program });
+  const key = JSON.stringify({ posix: !!opts.posix, errexit: !!opts.errexit, program: opts.program, environment: opts.environment ?? {} });
   let b = baselines.get(key);
   if (!b) {
     b = probeState('', opts).then((r) => r.states.end);
@@ -356,6 +358,8 @@ export interface ProbeRow {
   snippet: string;
   /** state: `bash --posix`. */
   posix?: boolean;
+  /** state: variables of the environment the run starts with (`ProbeOptions.environment`). */
+  environment?: Record<string, string>;
   /** status: false to run without `-e`. */
   errexit?: boolean;
   /** names: the names to look up at each marker. */
@@ -382,7 +386,7 @@ export async function factsOf(kind: ProbeKind, row: ProbeRow): Promise<unknown> 
   const program = row.bash === '5.3' ? PROBE_BASH53 : undefined;
   switch (kind) {
     case 'state': {
-      const opts = { posix: row.posix, program };
+      const opts = { posix: row.posix, program, ...(row.environment ? { environment: row.environment } : {}) };
       const [{ states, run }, base] = await Promise.all([probeState(row.snippet, opts), baselineState(opts)]);
       return { ...Object.fromEntries(Object.entries(states).map(([id, s]) => [id, diffState(base, s)])), status: run.status, ...firstError(run) };
     }

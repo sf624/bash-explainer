@@ -75,7 +75,7 @@ describe('the values of expansions against bash (probes/values.json)', () => {
   for (const row of rows) {
     it(`${row.manual}: ${JSON.stringify(row.snippet)}`, () => {
       const tree = parser.parse(instrument(row.snippet).script);
-      const state = shellState(tree, row.shell ?? 'bash');
+      const state = shellState(tree, row.shell ?? 'bash', { read: 'script' });
       const found = new Map<string, string>();
       const globbed: string[] = [];
       for (const c of markers(tree.root, state)) {

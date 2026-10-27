@@ -179,8 +179,10 @@ describe('date examples print what GNU date prints', () => {
     assert.deepStrictEqual(labels('date -r "$f" +%T')[1], 'Modification time of `"$f"` (made up, UTC)');
     assert.deepStrictEqual(labels('date --reference=f +%T')[1], 'Modification time of `f` (made up, UTC)');
     assert.deepStrictEqual(labels('date -f a +%F'), ['Example', 'Input: `a` (sample contents)', 'Output (if the local zone is UTC)']);
-    // A TZ unset, or one the script does not export, or one a wrapper removes: the local zone.
-    for (const line of ['unset TZ; date +%T', 'TZ=Asia/Tokyo; date +%T', 'TZ=Asia/Tokyo env -u TZ date +%T', 'env -i date +%T', 'xargs date +%T', 'ssh h date +%T']) {
+    // A TZ unset, or one a wrapper removes: the local zone. (One the script sets without exporting it is exported when
+    // the environment had TZ: the zone is not known, and no example is made.)
+    assert.strictEqual(explain('TZ=Asia/Tokyo; date +%T').examples.find((e) => e.kind === 'date'), undefined);
+    for (const line of ['unset TZ; date +%T', 'TZ=Asia/Tokyo env -u TZ date +%T', 'env -i date +%T', 'xargs date +%T', 'ssh h date +%T']) {
       assert.deepStrictEqual(explain(line).examples.find((e) => e.kind === 'date')?.sections.map((s) => s.label), ['When it runs (made up, UTC)', 'Output (if the local zone is UTC)'], line);
     }
     assert.deepStrictEqual(labels('sudo TZ=Asia/Tokyo date +%T')[2], 'Output (the time in the zone `Asia/Tokyo`)');

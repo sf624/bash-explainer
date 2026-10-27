@@ -10,7 +10,7 @@ import { resolveName } from './semantics/names';
 import { option, type StateModel } from './semantics/state';
 import { childrenOnRows, descendants, field, fields, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
-import { bracketWords, writtenAsBracket } from './testexpr';
+import { bracketWords, testFails, writtenAsBracket } from './testexpr';
 import { staticWordValue, unquoteWord } from './staticword';
 import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
@@ -174,14 +174,15 @@ function neverEmpty(model: StateModel, name: string, at: SyntaxNode): boolean {
 
 /**
  * Whether the part `p` of a word may expand to nothing: an expansion (a variable unless the model knows it has some
- * text, `neverEmpty`; not a length, `${#x}`, nor a default of plain text, `${x:-d}`), or quotes around such parts
- * (`"$x"`, `''`); not text of its own (`hasStaticText`).
+ * text, `neverEmpty`; not a length, `${#x}`, a default of plain text, `${x:-d}`, nor `${x:?}`, which fails when empty),
+ * or quotes around such parts (`"$x"`, `''`); not text of its own (`hasStaticText`), nor `$(( ))`, a number.
  */
 function mayBeEmpty(model: StateModel, p: SyntaxNode): boolean {
+  if (p.type === 'arithmetic_expansion') return false;
   if (p.type === 'simple_expansion' || p.type === 'expansion') {
     const e = p.type === 'expansion' ? parseExpansion(p.text) : undefined;
     const word = e?.parts.find((x) => x.role === 'word')?.text;
-    if (e?.prefix === '#' || ((e?.op === ':-' || e?.op === ':=') && word && /^[\w./-]+$/.test(word))) return false;
+    if (e?.prefix === '#' || e?.op === ':?' || ((e?.op === ':-' || e?.op === ':=') && word && /^[\w./-]+$/.test(word))) return false;
     const name = p.namedChildren.length === 1 && p.namedChildren[0].type === 'variable_name' ? p.namedChildren[0].text : undefined;
     return !name || !neverEmpty(model, name, p);
   }
@@ -568,12 +569,21 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
       if (staticWordValue(last) !== undefined) return;
       // (When what is before the `]` may be empty, `"$x"]` may be `]` alone, which closes `[`: one argument fewer.)
       const parts = last.type === 'concatenation' ? last.namedChildren : [last];
-      const before = parts.at(-1)!.text === ']' ? parts.slice(0, -1) : [];
+      // (`"$x"\]` too: the `]` is quoted, still one character.)
+      const before = staticWordValue(parts.at(-1)!) === ']' ? parts.slice(0, -1) : [];
       if (before.length && before.every((p) => mayBeEmpty(model, p))) {
         const v = before.map((p) => p.text).join('');
-        const runs = `[ ${[...words.slice(0, -1).map((w) => w.text), ']'].join(' ')}`;
-        add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部です。\`${v}\` が空のときは単語が \`]\` だけになって \`[\` を閉じ、\`${runs}\` として、その引数のない条件を評価します（意図した条件ではありません）。値があるときは閉じの \`]\` がなく、エラーになります（\`missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります`,
-          `the \`]\` in \`${last.text}\` is part of the word. When \`${v}\` is empty, the word is \`]\` alone and closes \`[\`, which tests \`${runs}\`, without that argument: not the condition meant. With a value, \`[\` has no closing \`]\` and fails ("missing ']'", status 2). \`]\` needs a space before it`);
+        const earlier = words.slice(0, -1);
+        const runs = `[ ${[...earlier.map((w) => w.text), ']'].join(' ')}`;
+        // What that shorter test does, read as `test` reads it (src/testexpr.ts): a word in double quotes is one operand.
+        const texts = earlier.map((w) => staticWordValue(w) ?? (w.type === 'string' ? 'x' : null));
+        const outcome = texts.includes(null) ? undefined : !texts.length ? 'false' : testFails(texts) ? 'error' : texts.length === 1 ? 'true' : undefined;
+        const [ja, en] = outcome === 'false' ? ['偽（終了ステータス 1）になります（単語のない条件は偽）', 'false (status 1), as a test of no words is']
+          : outcome === 'error' ? ['「unary operator expected」などのエラーになります（終了ステータス 2）', 'an error such as "unary operator expected" (status 2)']
+          : outcome === 'true' ? ['真になります（単語1つだけの条件は、空でなければ真）。意図した条件ではありません', 'true, as one word alone is when it is not empty: not the condition meant']
+          : ['その引数のない条件になり、意図した条件ではありません', 'a test without that argument: not the condition meant'];
+        add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部です。\`${v}\` が空のときは単語が \`]\` だけになって \`[\` を閉じ、\`${runs}\` は${ja}。値があるときは閉じの \`]\` がなく、エラーになります（\`missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります`,
+          `the \`]\` in \`${last.text}\` is part of the word. When \`${v}\` is empty, the word is \`]\` alone and closes \`[\`, and \`${runs}\` is ${en}. With a value, \`[\` has no closing \`]\` and fails ("missing ']'", status 2). \`]\` needs a space before it`);
         return;
       }
       add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部として読まれ、閉じの \`]\` がありません（\`missing ']'\`）。\`]\` の前に空白が要ります`,

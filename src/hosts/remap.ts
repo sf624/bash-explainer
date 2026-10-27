@@ -6,6 +6,7 @@ import type { ReadingNode } from '../reading';
 import { descendants, type SyntaxTree } from '../syntax/tree';
 import { spanOf } from '../noteanchors';
 import { scriptTree } from './scripts';
+import { fileRead } from '../semantics/env';
 import { shellState } from '../semantics/state';
 import { statusModel } from '../semantics/status';
 import { batsFacts, batsTests } from '../bats';
@@ -112,7 +113,7 @@ const PIPEFAIL: FactSpec = { id: 'dockerfile-pipefail-missing', params: {} };
  * its own shell runs (a RUN instruction), so `set -o pipefail` counts from where it runs, and not in a comment.
  */
 function pipeWithoutPipefail(tree: SyntaxTree, region: ShellRegion, line: number): boolean {
-  const model = shellState(tree, region.shell);
+  const model = shellState(tree, region.shell, { read: fileRead(tree.root, region.host) });
   const statuses = statusModel(model, region.shell);
   return descendants(tree.root, ['pipeline']).some((p) => {
     const rule = statuses.status(p);

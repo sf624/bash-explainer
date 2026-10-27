@@ -26,7 +26,7 @@ describe('the word model against bash (probes/words.json)', () => {
   for (const row of rows) {
     it(`${row.manual}: ${JSON.stringify(row.snippet)}${row.posix ? ' (bash --posix)' : ''}${row.bash ? ` (bash ${row.bash})` : ''}`, () => {
       const tree = parser.parse(instrument(row.snippet).script);
-      const state = shellState(tree, 'bash', { posix: row.posix, version: row.bash });
+      const state = shellState(tree, 'bash', { posix: row.posix, version: row.bash, read: 'script' });
       const markers = descendants(tree.root, ['command']).filter((c) => field(c, 'name')?.text === '__probe');
       const found = new Map<string, string>();
       let stopped = false;

@@ -2,14 +2,13 @@
 // the shell state (src/semantics/state.ts) and said by src/wordfacts.ts (`nounset-unbound`, src/messages.ts).
 // test/fixtures/probes/words.json checks it against bash (each row's `unbound`).
 import type { Shell } from '../dialect';
-import { actsOnNames } from '../argv/query';
-import { builtins } from '../dict/builtins';
 import { parseExpansion } from '../expansion';
 import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { processOf, STATEMENTS } from './env';
 import { resolveName } from './names';
 import { attribute, option, type StateModel } from './state';
-import { mayComeFromEnvironment } from './shellstate';
+import { type FromEnvironment, fromEnvironment } from './shellstate';
+import { changedUnseen, setAtStart } from './vars';
 import { conditionOf, statusModel } from './status';
 import { unreliableNames } from './words';
 
@@ -26,8 +25,11 @@ export interface UnboundRead {
    * which), or only the command, which fails with status 1 (a redirection of a program, made in its own process).
    */
   exits: 'script' | 'subshell' | 'shell' | 'command';
-  /** Whether the variable may still come from the environment: not after `unset x`, nor in a function after `local x`. */
-  environment: boolean;
+  /**
+   * Whether its value may still come from the environment (src/semantics/shellstate.ts, `fromEnvironment`): `maybe`
+   * for a name in capitals, `unlikely` for one in lower case, `no` after `unset x`, or in a function after `local x`.
+   */
+  environment: Exclude<FromEnvironment, 'usually'>;
 }
 
 /** The redirections whose words, or here-document, the shell expands for the command. */
@@ -42,7 +44,8 @@ const REDIRECTS = new Set(['file_redirect', 'herestring_redirect', 'heredoc_redi
  * nothing it does not read ran on the way; a function body only when every call is seen), nothing earlier in the
  * same command sets it (`a=1 b=$a`, `${x:=1} $x`), no condition that the read depends on reads the name (`[[ -v x
  * ]] && echo "$x"`: the script tests it first), and no statement before it tests the name (`testedBefore`). A name
- * in capitals, which may come from the environment (as the variables bash sets itself), is left out. In a redirection or a here-document of a program (`cat < "$f"`), bash
+ * the environment almost always has (`HOME`, `fromEnvironment`), and one bash sets itself or a command may set unseen
+ * (`BASH_VERSION`, `OPTARG`), are left out. In a redirection or a here-document of a program (`cat < "$f"`), bash
  * fails in the program's own process: only the command fails, with status 1; other shells (dash) differ there, so a
  * redirection or a here-document is read for bash only (and a redirection of a builtin elsewhere).
  */
@@ -70,7 +73,7 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
     if (n.type !== 'variable_name' || !(x.parent?.type === 'arithmetic_expansion' || x.parent?.type === 'arithmetic_command')) return undefined;
     name = shown = n.text;
   }
-  if (!/^[A-Za-z_]\w*$/.test(name) || mayComeFromEnvironment(name)) return undefined;
+  if (!/^[A-Za-z_]\w*$/.test(name) || setAtStart(name) || changedUnseen(name)) return undefined;
   const bash = !shell || shell === 'bash';
   if (!bash && ancestor(n, (a) => a.type === 'heredoc_body')) return undefined;
   const st = model.at(n).run;
@@ -95,9 +98,11 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
   const v = st.variables.get(name);
   // (Unset on every path. A nameref is left out: what it reads is its target's.)
   if (v && (v.set !== 'off' || attribute(st, name, 'n') !== 'off')) return undefined;
+  const environment = fromEnvironment(name, st, 'value');
+  if (environment === 'usually') return undefined;
   const p = processOf(model.env(n));
   const exits = program ? 'command' : !p.sure ? 'shell' : p.kind === 'main' ? 'script' : p.kind === 'subshell' ? 'subshell' : 'shell';
-  return { shown, name, exits, environment: !v || !removed(v.at, n) };
+  return { shown, name, exits, environment };
 }
 
 const firstCache = new WeakMap<StateModel, Map<string, WeakMap<SyntaxNode, SyntaxNode | undefined>>>();
@@ -272,23 +277,3 @@ function inTest(d: SyntaxNode): boolean {
   return false;
 }
 
-/**
- * Whether the command `at` that left the variable without a value surely ran before `n` and leaves none from the
- * environment: `unset x` (`OperandSpec.acts`), or `local x` (`declare x` in a function, `CommandSpec.locals`) where
- * `n` reads the local one. A `declare x` outside a function keeps a value the variable has from the environment.
- */
-function removed(at: SyntaxNode, n: SyntaxNode): boolean {
-  const command = at.type === 'command' ? at : ancestor(at, (a) => a.type === 'command');
-  const name = command && field(command, 'name')?.text;
-  const spec = builtins[name!];
-  const local = spec?.locals === 'unless-g' && !!ancestor(command!, (a) => a.type === 'function_definition')
-    && !command!.namedChildren.some((c) => c.field === 'argument' && /^-[a-zA-Z]*g/.test(c.text));
-  if (!(spec && actsOnNames(spec, 'unsets')) && !local) return false;
-  // (It runs on every path to `n`: a statement of a list that holds `n`, before it.)
-  let x = command!;
-  while (x.parent && !(x.parent.startIndex <= n.startIndex && n.endIndex <= x.parent.endIndex)) {
-    if (x.parent.type !== 'compound_statement' && x.parent.type !== 'redirected_statement') return false;
-    x = x.parent;
-  }
-  return x.endIndex <= n.startIndex && ['program', 'compound_statement', 'do_group'].includes(x.parent!.type);
-}

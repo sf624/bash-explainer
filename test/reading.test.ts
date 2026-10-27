@@ -422,7 +422,7 @@ describe('the reading tree of a line', () => {
     assert.strictEqual(find(assign, 'a', 'command').reader, 'FOO=1 ls');
     // An alias in a string `eval` reads again; with no `expand_aliases`, bash looks up the name as written.
     assert.strictEqual(find(explain("shopt -s expand_aliases\nalias ll='ls -l'\neval ll", 2).reading!, 'll', 'child').kind, 'aliasWord');
-    assert.strictEqual(find(explain("alias ll='ls -l'\nll x", 1).reading!, 'll').kind, 'commandName');
+    assert.strictEqual(find(explain("#!/bin/bash\nalias ll='ls -l'\nll x", 2).reading!, 'll').kind, 'commandName');
     // In a `$( )`, the subshell replaces it the same way.
     assert.deepStrictEqual(outline(find(explain("shopt -s expand_aliases\nalias ll='ls -l'\nx=$(ll a)", 2).reading!, 'll', 'child')), [
       'child/aliasWord ll', '  child/commandName ls', '  child/argument -l',

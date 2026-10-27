@@ -470,7 +470,7 @@ export interface CommandSlot {
    * With an option among `options`, `env` is this instead (`su -c`: the environment is kept; with `su -l -c`, it
    * starts afresh). (`su -c` only: a value's slot has no alternatives of operands to put this `when` in.)
    */
-  envWith?: { options: string[]; env: 'exported' | 'variables' | 'reset' | 'none' };
+  envWith?: { options: string[]; env: 'exported' | 'variables' | 'reset' | 'none'; keeps?: readonly string[] };
   /** `exec cmd`: nothing after it runs. */
   replacesShell?: boolean;
   /** With `shell-string`: the operands after the string are its `$0`, `$1`… (`sh -c '…' sh "$msg"`). */

@@ -80,7 +80,9 @@ describe('NameResolution', () => {
     assert.ok(d.kind === 'alias' && d.target?.kind === 'file');
     assert.strictEqual(short(resolve(`${on}\\ls`, '\\ls', { name: 'ls', quoted: true })), 'file:search<alias:quoted');
     // Without expand_aliases, bash does not expand them; sh does, and POSIX mode turns it on.
-    assert.strictEqual(short(resolve('alias ll=\'ls -l\'\nll', 'll')), 'file:search-unknown<alias:expand_aliases');
+    assert.strictEqual(short(resolve('#!/bin/bash\nalias ll=\'ls -l\'\nll', 'll')), 'file:search-unknown<alias:expand_aliases');
+    // (A file with no shebang may be `.bashrc`, read by an interactive shell: the alias may be expanded.)
+    assert.strictEqual(short(resolve('alias ll=\'ls -l\'\nll', 'll')), 'alias?');
     assert.strictEqual(short(resolve('alias ll=\'ls -l\'\nll', 'll', { shell: 'sh' })), 'alias');
     assert.strictEqual(short(resolve('alias ll=\'ls -l\'\nll', 'll', { posix: true })), 'alias');
     // On some paths only: the alias, or expand_aliases.

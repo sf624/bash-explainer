@@ -226,7 +226,7 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   }
   if (head.kind === 'builtin' && onlyInFunction(head.spec!, cx.shell) && !inFunction(cx.state.env(n)) && scopeOf(n) !== 'substitution') {
     // (A file with no shebang may be read with `source` by a function, where `local` works: a caveat.)
-    const sourced = readAs(cx.state.env(n), cx.read) === 'unknown';
+    const sourced = readAs(cx.state.env(n), cx.state.read) === 'unknown';
     cx.note(fact(cx.lang, 'local-outside-function', { stops: localStops(cx, n), ...(sourced ? { sourced } : {}) }), n);
   }
   if (head.kind === 'builtin' && head.spec!.ends === 'function') head.explanation = returnInSubstitution(cx, n) ?? head.explanation;
@@ -332,10 +332,17 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     const chain = res.target?.kind === 'alias'
       ? cx.s(`（\`${res.target.name}\` もエイリアスで、\`${res.target.alias.value}\` に置き換わる）`, ` (\`${res.target.name}\` is an alias too, for \`${res.target.alias.value}\`)`)
       : '';
+    // (A file with no shebang: aliases are expanded only when an interactive shell reads it, `.bashrc`; the model
+    // starts it with expand_aliases not known, src/semantics/state.ts.)
+    const maybeSourced = !res.sure && alias.state === 'on' && readAs(cx.state.env(nameNode), cx.state.read) === 'unknown';
+    if (maybeSourced) cx.note(fact(cx.lang, 'alias-maybe-not-expanded', { name, value: alias.value }), nameNode);
     return {
       name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'], spec, ...(target ? { runs: runs!.name } : {}),
       explanation: res.sure
         ? cx.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}`)
+        : maybeSourced
+          ? cx.s(`このファイルの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは対話シェルがこのファイルを読むとき（\`.bashrc\` や、端末で打つ \`source\`）か、\`shopt -s expand_aliases\` の後だけ。スクリプトとして実行すると、bash はエイリアスを展開しない`,
+            `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}, but only when an interactive shell reads this file (\`.bashrc\`, or \`source\` typed in a terminal), or after \`shopt -s expand_aliases\`. Run as a script, bash does not expand aliases`)
         : alias.state === 'on'
           ? cx.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは \`shopt -s expand_aliases\` が効いているときだけで、この前で有効にしているのは一部の経路（分岐やループ）だけ`,
             `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}, but only when \`shopt -s expand_aliases\` is on, and only some paths before here (a branch or a loop) turn it on`)
@@ -349,18 +356,6 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     const first = missed.def.startPosition.row;
     if (missed.why === 'expand_aliases') {
       const value = cx.state.at(nameNode).expand.aliases.get(name)!.value;
-      // (Only a script surely runs without aliases: a file with no shebang may be `.bashrc`, a README is typed into a terminal.)
-      const read = readAs(cx.state.env(nameNode), cx.read);
-      if (read !== 'script') {
-        return {
-          name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
-          explanation: read === 'terminal'
-            ? cx.s(`行 ${first + 1} で定義したエイリアス \`${name}\`: \`${value}\` に置き換わる（端末で対話シェルに打つ行では、エイリアスが展開される。スクリプトの中では \`shopt -s expand_aliases\` がないと展開されない）`,
-              `The alias \`${name}\` defined on line ${first + 1}: replaced by \`${value}\` (typed into an interactive shell, aliases are expanded; a script expands them only with \`shopt -s expand_aliases\`)`)
-            : cx.s(`このファイルの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。対話シェルがこのファイルを読むとき（\`.bashrc\` や、端末で打つ \`source\`）は \`${value}\` に置き換わる。スクリプトとして実行すると、bash はエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので「command not found」になる`,
-              `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`): replaced by \`${value}\` when an interactive shell reads this file (\`.bashrc\`, or \`source\` typed in a terminal). Run as a script, bash does not expand aliases (no \`shopt -s expand_aliases\`), so there it is "command not found"`),
-        };
-      }
       cx.note(fact(cx.lang, 'alias-not-expanded-in-script', { name, value }), nameNode);
       return {
         name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],

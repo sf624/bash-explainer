@@ -87,10 +87,10 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `assign-readonly` | The assignment fails every time, and bash abandons the rest of the command it is in (or, before a command name, runs the command without it). |
 | `local-outside-function`, when the file runs as a script (a shebang, a host's step, a `bash -c` string) | `local` fails every time outside a function. |
 | `posix-special-function-name` | bash stops the script at the definition. |
-| `alias-not-expanded-in-script` | The alias is "command not found" in a script. Said only where the code runs as a script (a shebang, a host's step, a `bash -c` string): not in a file with no shebang, which may be `.bashrc`, nor in a README's code blocks, typed into a terminal (src/semantics/env.ts, `readAs`). |
+| `alias-not-expanded-in-script` | The alias is "command not found" in a script. Said where bash surely expands no alias: a shebang, a host's step, a `bash -c` string, or after `shopt -u expand_aliases` (the state's `expand_aliases`, which starts `on` in a README's code blocks and with `bash -i`, and not known in a file with no shebang: src/semantics/state.ts, `StateModel.read`). |
 | `extglob-in-same-block`, `extglob-turned-off`, `extglob-not-in-new-shell` | A syntax error, every time. |
 | `globstar-unsupported` | `**` never reaches into subdirectories in that shell. |
-| `variable-not-in-remote-shell`, `variable-not-passed-by-wrapper`, `variable-not-exported` | The variable is empty where the string runs, every time. (Not for a name sudo keeps, `TERM`, `TZ`: `CommandSlot.keeps`; `variable-not-exported` of a name that may come from the environment is a caveat.) |
+| `variable-not-in-remote-shell`, `variable-not-passed-by-wrapper`, `variable-not-exported` | The variable is empty where the string runs, every time. (Not for a name sudo keeps, `TERM`, `TZ`: `SlotLink.keeps`. `variable-not-exported` follows `fromEnvironment`: no note for a name the environment almost always has, a caveat for one in capitals, a clause for one in lower case.) |
 | `function-not-in-container`, `builtin-or-function-as-program`, `function-not-on-remote`, `function-not-in-new-shell-blocked`, `function-not-in-new-shell`, `function-not-imported`, `function-not-in-new-shell-export` | The function or builtin is not there: "command not found", or no effect. |
 | `wrapper-assignment-expanded-first`, `prefix-assignment-expanded-first` | The word never sees the value it was meant to. |
 | `pipeline-subshell-variable` | The variable set in the pipeline is gone after it, every time (also when only some paths turn `lastpipe` on: the others lose it). |
@@ -119,7 +119,9 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `function-last-test-returns-status`, `script-last-test-returns-status` | Only the script's exit status is wrong, and only when the test fails. |
 | `failure-reported-as-success` | A failure goes unnoticed: the status is 0 when the command on the left of `\|\| echo` fails. |
 | `local-outside-function`, in a file with no shebang | Fine when a function reads the file with `source`. |
-| `variable-not-exported`, of a name in capitals the script set with no `unset` or declaration first (`mayBeInherited`) | Fine when the variable came from the environment, which exports it. |
+| `variable-not-exported`, of a name in capitals the script set with no `unset` or `export -n` first (`fromEnvironment`: `maybe`) | Fine when the variable came from the environment, which exports it. |
+| `nounset-unbound`, of a name in capitals (`fromEnvironment`: `maybe`) | Fine when the environment has it. |
+| `alias-maybe-not-expanded` | A file with no shebang: fine when an interactive shell reads it (`.bashrc`); "command not found" when it runs as a script. |
 | `posix-special-function-name-maybe` | Only on the paths that turn POSIX mode on. |
 | `postfix-increment-status`, `postfix-decrement-status`, when `set -e` is not surely on there | Only when the value is 0, and only the status. |
 | `extglob-maybe-on`, `extglob-maybe-on-trap` | A syntax error only on some paths, or if the signal comes early. |
