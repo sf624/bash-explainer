@@ -55,7 +55,7 @@ export function countOf(n: SyntaxNode, shell?: Shell): ArgWord['count'] {
 
 /** The words of the command line as the interpreter reads them, in a script for `shell` (bash when absent). */
 export const argWordFor = (shell?: Shell) => (n: SyntaxNode): ArgWord => {
-  const value = staticWordValue(n);
+  const value = staticWordValue(n, false, shell);
   const count = countOf(n, shell);
   return { ...(value !== undefined ? { value } : { prefix: prefixOf(n) }), ...(count ? { count } : {}) };
 };

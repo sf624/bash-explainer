@@ -5,6 +5,7 @@ import { system } from './system';
 import type { CommandSpec, OperandAlt, OperandSpec, OptionSpec, PatternOption } from '../argv/spec';
 import { tx } from '../i18n';
 import { basic } from './basic';
+import { psLetters } from './psletters';
 import { storage } from './storage';
 import { admin } from './admin';
 import { netadmin, SSH_OPTION_VALUES } from './netadmin';
@@ -1512,7 +1513,7 @@ export const core: Record<string, CommandSpec> = {
     ['-T', 'スレッドを表示する', 'show threads'],
     ['-H', 'プロセスの階層を字下げで表示', 'show the process hierarchy'],
     ['-C', 'コマンド名で絞る', 'select by command name', 'arg'],
-    ['-U', '実ユーザーで絞る', 'select by real user', 'arg'],
+    ['-U|--User', '実ユーザーで絞る', 'select by real user', 'arg'],
     ['-G', '実グループで絞る', 'select by real group', 'arg'],
     ['-g', 'グループで絞る', 'select by group', 'arg'],
     ['-t', '端末で絞る', 'select by terminal', 'arg'],
@@ -1541,37 +1542,7 @@ export const core: Record<string, CommandSpec> = {
     oldStyle: {
       anywhere: true, attachedValues: true, numbers: { option: 'p', text: tx('プロセス ID を指定（数字は BSD 形式の文字のあとに続けて書くと PID の指定になる。`p` と同じ）', 'process IDs (a number after BSD letters is a PID list, the same as `p`)') },
       style: tx('BSD 形式のオプション（ハイフンなし。`-` 付きの UNIX 形式とは意味が違うものがある）', 'BSD-style options (no dash; some mean something else than the UNIX forms with `-`)'),
-      letters: letters([
-        ['a', '端末につながったプロセスを、ほかのユーザーのものも含めて表示（`x` と合わせて全プロセス）', "show processes that have a terminal, other users' included (with `x`: all processes)"],
-        ['x', '端末につながっていないプロセスも表示', 'also show processes that have no terminal'],
-        ['u', 'ユーザー名・CPU・メモリの使用率などを並べたユーザー向けの形式で表示', 'user-oriented format (user, CPU and memory share…)'],
-        ['j', 'ジョブ制御の形式（PPID・PGID・SID など）で表示', 'job-control format (PPID, PGID, SID…)'],
-        ['f', 'プロセスの親子関係を、枝分かれの罫線で表示', 'draw the parent and child processes as an ASCII-art tree'],
-        ['l', '長い形式（UID・PPID・優先度・サイズなど）で表示', 'long format (UID, PPID, priority, size…)'],
-        ['v', '仮想メモリの形式で表示', 'virtual-memory format'],
-        ['s', 'シグナルの形式（保留・遮断・無視・捕捉）で表示', 'signal format (pending, blocked, ignored, caught)'],
-        ['X', 'レジスタの形式で表示', 'register format'],
-        ['Z', 'セキュリティコンテキストの列を加える', 'add a column with the security context'],
-        ['w', '幅広く表示（2回付けると幅を制限しない）', 'wide output (twice: no width limit)'],
-        ['h', 'ヘッダー行を付けない', 'no header line'],
-        ['r', '実行中のプロセスだけ表示', 'only running processes'],
-        ['T', 'この端末のプロセスをすべて表示', 'all processes on this terminal'],
-        ['g', '（古い指定）セッションリーダーも含めて表示', '(obsolete) include session leaders too'],
-        ['m', 'スレッドをプロセスの後ろに表示', 'show threads after their processes'],
-        ['H', 'スレッドをプロセスのように1行ずつ表示', 'show threads as if they were processes'],
-        ['n', 'ユーザーと待機先を名前でなく数値で表示', 'numbers instead of names for the user and the wait channel'],
-        ['c', 'コマンド名を実行ファイルの名前だけで表示', 'show the executable name only as the command'],
-        ['e', 'コマンドの後ろに環境変数を表示', 'show the environment after the command'],
-        ['S', '終了した子プロセスの CPU 時間なども合計する', "add up the CPU time of dead children"],
-        ['L', '指定できる出力列の名前を一覧表示', 'list the output column names'],
-        ['V', 'バージョンを表示', 'print the version'],
-        ['o', '表示する列を指定（`o pid,comm`）', 'output columns (`o pid,comm`)', 'arg'],
-        ['O', '標準の列に続けて表示する列を指定', 'extra columns after the default ones', 'arg'],
-        ['k', '並べ替えの指定（`k -rss`）', 'sort order (`k -rss`)', 'arg'],
-        ['p', '指定した PID だけ表示', 'only these PIDs', 'arg'],
-        ['t', '指定した端末のプロセスだけ表示', 'only processes on these terminals', 'arg'],
-        ['U', '指定したユーザーのプロセスだけ表示', 'only processes of these users', 'arg'],
-      ]),
+      letters: psLetters,
     },
   }),
   ar: cmd('静的ライブラリ（.a）などのアーカイブを作る・取り出す', 'Create, modify and extract archives such as static libraries (.a)', [

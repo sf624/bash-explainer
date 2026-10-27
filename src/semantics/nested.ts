@@ -63,10 +63,10 @@ export function plainReads(script: NestedScript): { name: string; at: SyntaxNode
 }
 
 /** The text of `words` joined with spaces (`eval a b`), each character with its source range; a space spans the gap between two words. */
-export function scriptText(words: readonly SyntaxNode[]): MappedText | undefined {
+export function scriptText(words: readonly SyntaxNode[], shell: Shell | undefined): MappedText | undefined {
   const out: MappedText = { text: '', starts: [], ends: [] };
   for (const [i, w] of words.entries()) {
-    const part = staticWordText(w);
+    const part = staticWordText(w, shell);
     if (!part) return undefined;
     if (i > 0) {
       out.text += ' ';
