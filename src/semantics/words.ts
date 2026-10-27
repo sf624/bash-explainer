@@ -491,7 +491,7 @@ export interface WordEnv {
   variables?: Readonly<Record<string, string>>;
   /** The current directory (`~+`). */
   pwd?: string;
-  /** The files of the current directory (a directory ends with `/`). */
+  /** The files of the current directory and under it (a directory ends with `/`): a pattern elsewhere is not decided from them. */
   files?: readonly string[];
 }
 
@@ -1101,10 +1101,10 @@ function globField(w: WordMeaning, f: Char[], env: WordEnv | undefined): string[
   if (step.applies === 'unknown' || !env?.files || changesDirectory(w.nodes[0])) return undefined;
   if (hasExtglob(pattern) && g.extglob !== 'on') return undefined;
   if ([g.nullglob, g.failglob, g.dotglob, g.nocaseglob, g.globstar, g.extglob, g.globskipdots].includes('unknown') || g.globignore === 'unknown') return undefined;
-  // `./*.log`: the names under the current directory, with `./` before them; `sub/../*` is not followed.
+  // `./*.log`: the names under the current directory, with `./` before them; neither `sub/../*` nor `/var/log/*` is followed.
   const prefix = /^(?:\.\/)*/.exec(pattern)![0];
   const rest = pattern.slice(prefix.length);
-  if (rest.split('/').some((seg) => seg === '.' || seg === '..') || (g.globskipdots === 'off' && rest.includes('/'))) return undefined;
+  if (rest.startsWith('/') || rest.split('/').some((seg) => seg === '.' || seg === '..') || (g.globskipdots === 'off' && rest.includes('/'))) return undefined;
   const matched = matchFiles(w, rest, env.files);
   if (!matched) return undefined;
   if (prefix && g.globstar === 'on' && rest === '**') matched.unshift('');

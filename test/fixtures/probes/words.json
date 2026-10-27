@@ -2028,6 +2028,22 @@
     }
   },
   {
+    "manual": "3.5.8",
+    "snippet": "D=''; @PROBE:a@ $D/dev/nul? /dev/nul[l]",
+    "gaps": {
+      "a": "a pattern from the root is not matched: the model knows the files of the current directory only"
+    },
+    "facts": {
+      "a": [
+        [
+          "/dev/null",
+          "/dev/null"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
     "manual": "3.5.3",
     "snippet": "shopt -s nocasematch; x=ABC; @PROBE:a@ ${x/b/-} ${x#a} ${x%c} ${x//[b]/-}; shopt -u nocasematch; @PROBE:b@ ${x/b/-}",
     "facts": {
