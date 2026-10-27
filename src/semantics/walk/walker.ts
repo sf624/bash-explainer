@@ -17,7 +17,7 @@ import {
 } from '../shellstate';
 import type { Scripts } from '../state';
 import { type HostCommands, NO_HOST, type Trust } from '../trust';
-import { alwaysNumeric, changedByBash, INTEGERS_AT_START, READONLY_AT_START } from '../vars';
+import { alwaysNumeric, changedByBash, EXPORTED_AT_START, INTEGERS_AT_START, READONLY_AT_START } from '../vars';
 import { WalkAliases } from './aliases';
 import { WalkArith } from './arith';
 import { temporariesUnset } from '../names';
@@ -224,7 +224,7 @@ export class Walker {
     if (this.bash) {
       const attrs = { i: { state: 'on' as const, at } };
       st = { ...st, variables: st.variables.withAll(new Map(INTEGERS_AT_START.map((name) => [name, { declared: 'on', set: 'on', attrs, at }]))) };
-      for (const [name, letters] of READONLY_AT_START) st = { ...st, variables: st.variables.with(name, { declared: 'on', set: 'on', attrs: Object.fromEntries([...letters].map((l) => [l, { state: 'on' as const, at }])), at }) };
+      for (const [name, letters] of [...READONLY_AT_START, ...EXPORTED_AT_START.map((n) => [n, 'x'] as const)]) st = { ...st, variables: st.variables.with(name, { declared: 'on', set: letters === 'x' ? 'off' : 'on', attrs: Object.fromEntries([...letters].map((l) => [l, { state: 'on' as const, at }])), at }) };
     }
     if (this.posix) {
       for (const kind of ['set', 'shopt'] as const) for (const name of POSIX_ON[kind]) st = { ...st, [kind]: st[kind].with(name, 'on') };

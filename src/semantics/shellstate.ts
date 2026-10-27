@@ -3,6 +3,7 @@
 import type { SyntaxNode } from '../syntax/tree';
 import type { Shell } from '../dialect';
 import { usualEnvironment } from '../dict/syntax';
+import { usuallyInEnvironment } from './vars';
 
 /** On, off, or decided at run time (a branch, a loop, a function that may be defined). */
 export type Tri = 'on' | 'off' | 'unknown';
@@ -294,7 +295,7 @@ export function shoptIn(st: ShellState, name: string, shell: Shell | undefined):
 
 /**
  * Whether a variable may come from the environment, and how likely: `usually`, a name the environment almost always
- * has (`HOME`, `PATH`, `TERM`: `usualEnvironment`); `maybe`, another name in capitals, which by custom is the
+ * has (bash's `HOME`, `PATH`, `TERM`: `BashVariable.environment`; and `USER`: `usualEnvironment`); `maybe`, another name in capitals, which by custom is the
  * environment's; `unlikely`, a name with lower case, which POSIX leaves to the script's own variables (bash still
  * passes `env foo=x`); `no`, the script removed it (`unset`, `local`, `export -n`) or it is an array, which is never
  * exported.
@@ -303,7 +304,7 @@ export type FromEnvironment = 'usually' | 'maybe' | 'unlikely' | 'no';
 
 /** How likely the environment has a variable named `name`, by its name alone (`FromEnvironment`). */
 export function environmentHas(name: string): Exclude<FromEnvironment, 'no'> {
-  return usualEnvironment.has(name) ? 'usually' : /^[A-Z_][A-Z0-9_]*$/.test(name) ? 'maybe' : 'unlikely';
+  return usuallyInEnvironment(name) || usualEnvironment.has(name) ? 'usually' : /^[A-Z_][A-Z0-9_]*$/.test(name) ? 'maybe' : 'unlikely';
 }
 
 /** The export attribute a variable the script had neither set nor declared gets when it first sets it, at `at` (`Attribute.environment`). */

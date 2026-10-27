@@ -252,6 +252,32 @@ describe('pitfalls that bash contradicted', function () {
       }
     });
 
+    it('bash\'s own names the environment usually has, and those bash sets in every shell', async () => {
+      // (`HOME`, `PATH`, `LANG`, `TMPDIR`: exported from the environment, so a child bash gets what the script assigns.)
+      const env = { HOME: '/h', LANG: 'C', TMPDIR: '/t' };
+      for (const v of ['HOME', 'PATH', 'LANG', 'TMPDIR']) {
+        const value = v === 'PATH' ? '/usr/bin:/bin' : '/v';
+        const script = `#!/bin/bash\n${v}=${value}\nbash -c 'echo "[$${v}]"'\n`;
+        write(`usual-${v}.sh`, script);
+        assert.strictEqual((await bash([`usual-${v}.sh`], env)).stdout, `[${value}]\n`, v);
+        assert.deepStrictEqual(explain(script, 2).noteInfo.filter((n) => /^variable-not/.test(n.code ?? '')), [], v);
+        // (Unless a link on the way drops it.)
+        const dropped = `#!/bin/bash\n${v}=${value}\nenv -i /bin/bash -c 'echo "[$${v}]"'\n`;
+        write(`dropped-${v}.sh`, dropped);
+        // (bash sets a PATH of its own when the environment has none.)
+        assert.strictEqual((await bash([`dropped-${v}.sh`], env)).stdout === `[${value}]\n`, false, v);
+        // (Not of `PATH`: bash sets one of its own then, as it sets `TERM`.)
+        assert.strictEqual(!!noteOf(dropped, 'variable-not-passed-by-wrapper', 2), v !== 'PATH', v);
+      }
+      // (`OLDPWD`: bash exports it from the start with no value; a child bash keeps one that names a directory.)
+      const oldpwd = '#!/bin/bash\ndeclare -p OLDPWD\nOLDPWD=/tmp\nbash -c \'echo "[$OLDPWD]"\'\n';
+      write('oldpwd.sh', oldpwd);
+      assert.strictEqual((await bash(['oldpwd.sh'])).stdout, 'declare -x OLDPWD\n[/tmp]\n');
+      assert.deepStrictEqual(explain(oldpwd, 3).noteInfo.filter((n) => /^variable-not/.test(n.code ?? '')), []);
+      const tree = createUnbashParser().parse(':');
+      assert.strictEqual(attribute(shellState(tree).at(tree.root.namedChildren[0]).run, 'OLDPWD', 'x'), 'on');
+    });
+
     it('a name the environment almost always has: no note', async () => {
       const script = '#!/bin/bash\nTERM=dumb\nbash -c \'echo "[$TERM]"\'\n';
       write('term.sh', script);
@@ -387,7 +413,7 @@ describe('pitfalls that bash contradicted', function () {
       assert.strictEqual(noteOf('export TZ=UTC; sudo -i bash -c "date; echo \\$TZ"', 'variable-not-passed-by-wrapper', 0), undefined);
     });
 
-    it('still warns of a name sudo does not keep, and of one `env -i` drops on the way', () => {
+    it('still warns of a name sudo does not keep, and of one `env -i` drops on the way', async () => {
       const note = noteOf('export X=1; sudo bash -c "echo \\$X"', 'variable-not-passed-by-wrapper', 0)!;
       assert.match(note.body, /`sudo` passes none of this script's variables \(not even exported ones, but for a few such as `TERM` and `LANG`\)/);
       assert.match(explain('export X=1; sudo bash -c "echo \\$X"', 0, 'ja').notes.join('\n'), /`TERM` や `LANG` などいくつかを除いて/);
@@ -397,7 +423,9 @@ describe('pitfalls that bash contradicted', function () {
       assert.match(noteOf("export X=1; su - -c 'echo $X'", 'variable-not-passed-by-wrapper', 0)!.body, /`su -c` passes none of this script's variables \(not even exported ones, but for `TERM`\)/);
       assert.match(explain("export X=1; su - -c 'echo $X'", 0, 'ja').notes.join('\n'), /（エクスポートしたものも、`TERM` を除いて）/);
       assert.strictEqual(noteOf("export TERM=dumb; su - -c 'echo $TERM'", 'variable-not-passed-by-wrapper', 0), undefined);
-      assert.ok(noteOf("export TERM=dumb; env -i bash -c 'echo $TERM'", 'variable-not-passed-by-wrapper', 0));
+      // (bash sets `TERM` to `dumb` when the environment has none: no note of it.)
+      assert.strictEqual(noteOf("export TERM=xterm; env -i bash -c 'echo $TERM'", 'variable-not-passed-by-wrapper', 0), undefined);
+      assert.strictEqual((await bash(['-c', 'export TERM=xterm; env -i /bin/bash -c \'echo "[$TERM]"\''])).stdout, '[dumb]\n');
     });
   });
 });
