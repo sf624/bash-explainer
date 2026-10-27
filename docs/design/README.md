@@ -15,7 +15,7 @@ Design documents and plans for Bash Explainer. The code is the authority: when a
 | --- | --- | --- |
 | [refactor.md](refactor.md) | One source per fact: the 55 review findings and the steps that fixed them | Built. All steps done (last: #253); kept as the record |
 | [analyzer.md](analyzer.md) | Thinning `src/analyzer.ts` into modules in `src/explain/` | Built. All steps done (last: step 9, the dispatch, #354): `src/analyzer.ts` is the orchestration only (100 lines); kept as the record of the moves |
-| [oracles.md](oracles.md) | Checks against real bash for the layers above the syntax: argv capture, suggestion verification, normalization audit | In progress. Step 1 (inventory) done (#273), step 2 (argv capture over the fixtures) done (#432), step 3 (the snippets and the fuzz inputs) done (#449); step 4 (rewrite data) in progress: 11 of 17 ids (#453, #454, #STATUS); steps 5–10 not started. The panel redesign builds on steps 2 and 4–6 ([panel-redesign.md](panel-redesign.md), P3 and P4) |
+| [oracles.md](oracles.md) | Checks against real bash for the layers above the syntax: argv capture, suggestion verification, normalization audit | In progress. Step 1 (inventory) done (#273), step 2 (argv capture over the fixtures) done (#432), step 3 (the snippets and the fuzz inputs) done (#449); step 4 (rewrite data) in progress: 11 of 17 ids (#453, #454, #455); steps 5–10 not started. The panel redesign builds on steps 2 and 4–6 ([panel-redesign.md](panel-redesign.md), P3 and P4) |
 | [bash-versions.md](bash-versions.md) | Explaining a script as bash 5.3 runs it, beside the 5.2 reference | Done. Steps 1 (#283) to 7; step 6 (POSIX mode) finished in #443, #444, #445. Smaller differences left are listed in its section 3 |
 
 ## Features
