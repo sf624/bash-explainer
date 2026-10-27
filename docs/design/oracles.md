@@ -10,7 +10,7 @@ The review proposed three checks:
 
 This page checks what exists, takes an inventory for each check, and plans the work in steps. Each step is a PR that keeps every test passing and 100% coverage of `src/`.
 
-Status: step 1 (the inventory of B) is done (#273). Steps 2 to 10 are not started: there is no argv capture, no `Fact.rewrite`, and no normal-forms table yet (section 6).
+Status: step 1 (the inventory of B) is done (#273). Steps 2 to 10 are not started: there is no argv capture, no `Fact.rewrite`, and no normal-forms table yet (section 6). The panel redesign builds on step 2 (its P4a) and on steps 4–6 for four notes (its P3; [panel-redesign.md](panel-redesign.md)).
 
 ## 1. What runs bash today
 
@@ -205,9 +205,9 @@ Then a generator, seeded, makes more forms of each word than a table can hold: q
 Each step is a PR. Each keeps every test passing and 100% coverage of `src/`. The order puts the cheap, high-value ones first. Step 1 is done; steps 2 to 10 are not started.
 
 1. **B1, inventory.** Done (#273). This page, and test/suggestions.test.ts: every catalog entry classified, checked against its English text, and the counts pinned.
-2. **A1, argv over sample.sh and the fixtures.** test/support/argv.ts makes the markers of 2.2 and reuses the probe harness and the comparison of word-probes (moved to test/support/probe.ts so that both use it). test/argv.test.ts runs the fixtures (not the snippets yet) in one sandboxed batch. Known differences go in test/fixtures/argv-known.json. Bugs it finds are fixed in their own PRs, each with a CHANGELOG line.
+2. **A1, argv over sample.sh and the fixtures.** test/support/argv.ts makes the markers of 2.2 and reuses the probe harness and the comparison of word-probes (moved to test/support/probe.ts so that both use it). test/argv.test.ts runs the fixtures (not the snippets yet) in one sandboxed batch. Known differences go in test/fixtures/argv-known.json. Bugs it finds are fixed in their own PRs, each with a CHANGELOG line. The panel redesign's P4a ([panel-redesign.md](panel-redesign.md)).
 3. **A2, the snippets and the fuzz inputs.** The same test over a seeded sample of the snippets in CI, and over all 1,220 snippets and 200 fuzz inputs in a script run by hand (section 7), with the two environments of 2.3, the pinned count of unknown words, and the "could know" report.
-4. **B2, rewrite data for the catalog.** `Fact.rewrite` (3.2) for the 12 mechanical ids; the notes render their suggestion from it. src/wordfacts.ts and src/statusfacts.ts emit it.
+4. **B2, rewrite data for the catalog.** `Fact.rewrite` (3.2) for the 12 mechanical ids; the notes render their suggestion from it. src/wordfacts.ts and src/statusfacts.ts emit it. The panel redesign's P3 needs it first for `failure-reported-as-success` and `unmatched-glob-runs-once` (and B4 for two style checks).
 5. **B3, run the rewrites.** test/rewrites.test.ts: the states and oracles of 3.3 for each mechanical id, and the two cheap checks for all. The inventory test then requires a rewrite on every mechanical fact.
 6. **B4, the style checks.** Ids and rewrite data for the nine checks of src/pitfalls.ts, then the same test.
 7. **C1, the normal-forms table.** test/fixtures/oracles/normal-forms.json with rows for each normalizer of 4.1, and the two-sided test. It starts with the near-misses of 4.1; those that bash runs differently from what we say are fixed in their own PRs.
