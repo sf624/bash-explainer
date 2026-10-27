@@ -18,7 +18,7 @@ import { givenToEveryShell } from '../semantics/vars';
 import { type ExpansionStep, wordMeaning } from '../semantics/words';
 import { isPlainWord, literalContent, staticWordValue } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, readsVariable, type SyntaxNode } from '../syntax/tree';
-import { replaceRange, textBetween } from '../rewrite';
+import { replaceRange, stringShell, textBetween } from '../rewrite';
 import { readAsScript, scriptProcess } from '../tokenmarks';
 import type { Explainer } from './context';
 import { lineStarts, posOf, sameSpan, sortTokens } from './nodes';
@@ -207,12 +207,14 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
   for (const v of assigned) {
     const use = words.find((w) => readsVariable(w, v));
     if (use) {
-      // The rewrite: the command and its arguments become the string of `sh -c`, which the new shell reads. Its edit is
-      // left out where the string has an expansion other than `$v` (`$other`, `$(…)`): that shell would expand it instead of this one.
+      // The rewrite: the command and its arguments become the string of a new shell, the script's own (`stringShell`:
+      // `bash -c`; in sh, which may be dash, not for `echo -e` or `printf %q`). Its edit is left out where the string has
+      // an expansion other than `$v` (`$other`, `$(…)`): that shell would expand it instead of this one.
       const last = words[words.length - 1];
       const inner = textBetween(first, last);
-      const code = `sh -c '${inner.replace(/'/g, "'\\''")}'`;
-      const own = !/[$`]/.test(inner.replace(new RegExp(`\\$(\\{${v}\\}|${v}(?!\\w))`, 'g'), ''));
+      const program = stringShell(cx.shell, first.text, words.map((w) => w.text));
+      const code = program ? `${program} -c '${inner.replace(/'/g, "'\\''")}'` : `${cx.shell} -c '…'`;
+      const own = !!program && !/[$`]/.test(inner.replace(new RegExp(`\\$(\\{${v}\\}|${v}(?!\\w))`, 'g'), ''));
       cx.note(fact(cx.lang, 'wrapper-assignment-expanded-first', { use: use.text, via, v, rewrite: [own ? replaceRange(first, first.startIndex, last.endIndex, code) : { code, edits: [] }] }), use);
       break;
     }

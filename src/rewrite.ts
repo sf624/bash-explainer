@@ -1,5 +1,7 @@
 // The rewrites a fact suggests, as data (docs/design/oracles.md, 3.2): the note renders its suggestion from them, and a
 // test applies them and runs both scripts in bash (test/rewrites.test.ts). Quick fixes can come from the same data.
+import type { Shell } from './dialect';
+import { builtins } from './dict/builtins';
 import { STATEMENTS } from './semantics/env';
 import { documentRoot } from './semantics/state';
 import { descendants, type SyntaxNode } from './syntax/tree';
@@ -150,4 +152,15 @@ export function around(n: SyntaxNode, changes: readonly TextEdit[], before: stri
 /** The rewrite that puts `code` in place of the text from the start of node `from` to the end of node `to`, a later one of the same tree. */
 export function replaceSpan(from: SyntaxNode, to: SyntaxNode, code: string): Rewrite {
   return { code, edits: treeOf(from).own ? [{ start: from.startIndex, end: to.endIndex, text: code }] : [] };
+}
+
+/**
+ * The shell to give a command line as a string (`bash -c 'echo "$v"'`), where a variable set first is to be read: the
+ * shell of the script (bash when not known), which runs a builtin as the script does. `sh` may be dash, whose `echo`
+ * and `printf` take no options and lack `%q` and `%b`: there, a program (a name that is no builtin), or a builtin that
+ * prints (`echo`, `printf`) with no option word and no such format; else undefined, for no edits.
+ */
+export function stringShell(shell: Shell | undefined, name: string, words: readonly string[]): string | undefined {
+  if (shell !== 'sh') return shell ?? 'bash';
+  return !Object.hasOwn(builtins, name) || (!!builtins[name].prints && !words.some((w) => /^['"]?-|%[qb]/.test(w))) ? 'sh' : undefined;
 }
