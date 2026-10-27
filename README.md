@@ -360,6 +360,7 @@ npm test           # type check + unit tests
 npm run coverage   # unit tests with coverage (report in coverage/index.html)
 npm run package    # build a .vsix
 npx tsx scripts/extract-snippets.ts   # after changing the scripts in the tests: rewrite test/fixtures/snippets.json, the inputs of the syntax tests and the fuzz (CI runs it with --check)
+npx tsx scripts/argv-corpus.ts   # before a release, or after changing the word model: the argv check of test/argv.test.ts over every snippet and 200 fuzz inputs (CI runs a sample)
 npm run test:integration   # run the extension in VS Code (downloaded into .vscode-test/)
 npm run test:integration:web   # …and in VS Code for the Web (needs `npx playwright install chromium`)
 ```

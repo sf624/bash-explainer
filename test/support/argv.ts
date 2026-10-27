@@ -11,27 +11,37 @@
 //   runs, so that conditions take the branches bash takes;
 // - a command in the condition of a `while` loop returns 0 the first time it runs and 1 after (`__probe_w`), and
 //   one in the condition of an `until` loop the other way round (`__probe_u`), so that such a loop runs its body once;
-// - every file redirection is sent to /dev/null, so that nothing outside the run's directory is read or written (and
-//   no `/dev/tcp` is opened). On a command with a marker, the target is moved into the argv, between the words
-//   `@@R@@` and `@@E@@`, where bash expands it as it would have for the redirection; a duplication (`2>&1`, `<&3`)
-//   and a process substitution stay as they are.
+// - every file redirection is sent to /dev/null (as a duplication of a descriptor the set-up opened on it, `toNull`),
+//   so that no file is read or written (and no `/dev/tcp` is opened). On a command with a marker, the target is moved
+//   into the argv, between the words `@@R@@` and `@@E@@`, where bash expands it as it would have for the redirection;
+//   a duplication (`2>&1`, `<&3`) and a process substitution stay as they are.
 //
 // `runArgvBatch` runs the scripts in one `runContained` (a cgroup when `systemd-run --user` works, a process group
 // killed on a timeout), each under `timeout`, with `FUNCNEST` and `ulimit -f`, in a fresh directory holding FILES,
 // stdin from /dev/null (or a file of the job's lines). A file read through BASH_ENV defines the recorders, then sets
 // PATH to a directory that does not exist, defines `command_not_found_handle` to log `ESCAPED name` (a command that
 // reached a PATH search, which the test fails on), and turns off with `enable -n` the builtins that reach outside the
-// shell. A command named by a path (`/bin/rm`) needs no PATH search: only the markers keep it from running.
+// shell. The script then runs restricted (`bash -r`, after the set-up): no command named by a path (`/bin/rm`, which
+// needs no PATH search), no change of PATH, no file opened for output, no `cd`. So a command that the markers missed
+// (in text that bash reads as code at run time: an arithmetic subscript, a here-document) reaches only builtins.
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { extractShell, hostKind } from '../../src/hosts';
+import { hostProvided } from '../../src/hosts/remap';
+import { scriptTree } from '../../src/hosts/scripts';
+import { fileRead } from '../../src/semantics/env';
 import { resolveName } from '../../src/semantics/names';
 import type { StateModel } from '../../src/semantics/state';
 import { BASH_VARIABLES } from '../../src/semantics/vars';
 import { wordFields, type WordEnv } from '../../src/semantics/words';
 import { staticWordValue } from '../../src/staticword';
-import { descendants, field, fields, type SyntaxNode, type SyntaxTree } from '../../src/syntax/tree';
+import { shellState } from '../../src/semantics/state';
+import { createUnbashParser } from '../../src/syntax/adapters/unbash';
+import { descendants, field, fields, hasError, type SyntaxNode, type SyntaxTree } from '../../src/syntax/tree';
 import { runContained, scoped } from './contained';
+import { corpus } from './corpus';
+import { fuzzInputs } from './fuzz';
 import { alignRuns, BOX, FILES, PROBE_BASH, SCRIPT } from './probe';
 
 /** The builtins that change state the model follows: they run as they are, and their words are not logged. */
@@ -92,6 +102,21 @@ function redirectRule(r: SyntaxNode): 'capture' | 'null' | 'keep' {
   return 'capture';
 }
 
+/** The descriptors the set-up opens: the log (appended to) and /dev/null (read and write). */
+const LOG_FD = 96;
+const NULL_FD = 97;
+
+/**
+ * What stands for a file redirection to /dev/null, given its operator (with its descriptor: `2>`, `{fd}>>`, `&>`): a
+ * duplication of NULL_FD, since a restricted shell opens no file for output (`>&97` is allowed, `>/dev/null` is not).
+ */
+export function toNull(op: string): string {
+  const [, fd, o] = /^(\{\w+\}|\d*)(.*)$/.exec(op)!;
+  if (o === '<' || o === '<>') return `${fd}<&${NULL_FD}`;
+  if (o === '&>' || o === '&>>') return `>&${NULL_FD} 2>&${NULL_FD}`;
+  return `${fd}>&${NULL_FD}`;
+}
+
 /** Whether `n` is a node of `tree` (not of a string read as a script). */
 function inTree(n: SyntaxNode, tree: SyntaxTree): boolean {
   let top = n;
@@ -132,7 +157,7 @@ export function instrumentArgv(tree: SyntaxTree, model: StateModel, shell?: 'bas
       const dest = field(r, 'destination')!;
       const op = tree.text.slice(r.startIndex, dest.startIndex).trimEnd();
       edits.push({ start: r.startIndex, end: dest.startIndex, text: ` ${REDIRECT_START} ` });
-      edits.push({ start: dest.endIndex, end: dest.endIndex, text: ` ${REDIRECT_END} ${op}/dev/null` });
+      edits.push({ start: dest.endIndex, end: dest.endIndex, text: ` ${REDIRECT_END} ${toNull(op)}` });
       targets.push(dest);
     }
     markers.push({ id, kind, command: c, words: [nameWord, ...args], targets });
@@ -144,8 +169,7 @@ export function instrumentArgv(tree: SyntaxTree, model: StateModel, shell?: 'bas
   for (const r of descendants(tree.root, ['file_redirect'])) {
     if (captured.has(r) || redirectRule(r) === 'keep') continue;
     const dest = field(r, 'destination')!;
-    const op = tree.text.slice(r.startIndex, dest.startIndex).trimEnd().replace(/^(\d*|\{\w+\})>&$/, '$1>');
-    whole.push({ start: r.startIndex, end: r.endIndex, text: ` ${op}/dev/null` });
+    whole.push({ start: r.startIndex, end: r.endIndex, text: ` ${toNull(tree.text.slice(r.startIndex, dest.startIndex).trimEnd())}` });
   }
   const inside = (e: Edit): boolean => whole.some((w) => w.start <= e.start && e.end <= w.end && w !== e);
   const all = [...edits.filter((e) => !inside(e)), ...whole.filter((e) => !inside(e))].sort((a, b) => b.start - a.start || b.end - a.end);
@@ -185,17 +209,18 @@ const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 /** The text read through BASH_ENV: the recorders, then the walls (see the top of this file). */
 function setup(log: string): string {
   const L = quote(log);
-  return `__probe_log() {
-  builtin printf '%s\\037' "$@" $'\\036' >>${L}
+  return `exec ${LOG_FD}>>${L} ${NULL_FD}<>/dev/null
+__probe_log() {
+  builtin printf '%s\\037' "$@" $'\\036' >&${LOG_FD}
   __probe_v="__probe_n_$1"
   builtin printf -v "$__probe_v" %s "$(( \${!__probe_v:-0} + 1 ))"
-  if builtin [ "\${!__probe_v}" -gt ${CAP} ]; then builtin printf 'CAPPED\\037%s\\037\\036\\037' "$1" >>${L}; builtin exit 98; fi
+  if builtin [ "\${!__probe_v}" -gt ${CAP} ]; then builtin printf 'CAPPED\\037%s\\037\\036\\037' "$1" >&${LOG_FD}; builtin exit 98; fi
 }
 __probe() { __probe_log "$@"; }
 __probe_w() { __probe_log "$@"; builtin [ "\${!__probe_v}" -eq 1 ]; }
 __probe_u() { __probe_log "$@"; builtin [ "\${!__probe_v}" -ne 1 ]; }
 __probe_r() { __probe_log "$@"; builtin shift; builtin "$@"; }
-command_not_found_handle() { builtin printf 'ESCAPED\\037%s\\037\\036\\037' "$1" >>${L}; builtin exit 99; }
+command_not_found_handle() { builtin printf 'ESCAPED\\037%s\\037\\036\\037' "$1" >&${LOG_FD}; builtin exit 99; }
 ulimit -f 20000
 PATH=${NO_PATH}
 unset BASH_ENV XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS __probe_v
@@ -226,7 +251,7 @@ export async function runArgvBatch(jobs: readonly ArgvJob[], { perJob = 10, prog
       if (job.stdin !== undefined) fs.writeFileSync(stdin, job.stdin);
       const env = { ...ARGV_ENV, PATH: '/usr/bin:/bin', HOME: box, BASH_ENV: path.join(dir, 'setup.sh'), ...job.variables };
       const assigns = Object.entries(env).map(([k, v]) => quote(`${k}=${v}`)).join(' ');
-      const argv = ['--norc', '--noprofile', path.join(dir, 'script.sh'), ...(job.args ?? [])].map(quote).join(' ');
+      const argv = ['--norc', '--noprofile', '-r', path.join(dir, 'script.sh'), ...(job.args ?? [])].map(quote).join(' ');
       lines.push(`(cd ${quote(box)} && exec env -i ${assigns} timeout -k 2 ${perJob} ${quote(program)} ${argv}) <${quote(stdin)} >/dev/null 2>${quote(path.join(dir, 'stderr'))}; echo $? >${quote(path.join(dir, 'status'))}`);
     });
     fs.writeFileSync(path.join(root, 'driver.sh'), `${lines.join('\n')}\n`);
@@ -344,26 +369,183 @@ export function compareMarker(m: ArgvMarker, model: StateModel, env: WordEnv, ru
   return out;
 }
 
-/** Runs each input in each environment, in one batch, and compares: the differences, the commands that escaped, the counts. */
-export async function checkArgv(inputs: readonly ArgvInput[]): Promise<{ found: ArgvFinding[]; escaped: string[]; counts: Record<ArgvEnvName, ArgvCounts> }> {
+/**
+ * A word the model gives no fields for, while bash gave it the same fields on every run in every environment: a word
+ * the model could know (oracles.md, 2.3). Only in commands with one unknown word, whose fields are what lies between the
+ * known head and tail; not a word with a command substitution, a process substitution or `$?`, which the recorders
+ * decide (their output is empty, their status 0).
+ */
+export interface ArgvCandidate { input: string; command: string; word: string; fields: string[] }
+
+/** Whether what bash gives `word` comes from the recorders: a substitution's output, or `$?`. */
+const recorded = (word: SyntaxNode): boolean => descendants(word, ['command_substitution', 'process_substitution', 'special_variable_name'])
+  .some((n) => n.type !== 'special_variable_name' || n.text === '?');
+
+/**
+ * Runs each input in each environment, in `jobs` batches at once, and compares: the differences, the commands that
+ * escaped, the counts, and the words the model could know.
+ */
+export async function checkArgv(inputs: readonly ArgvInput[], { jobs = 1 } = {}): Promise<{ found: ArgvFinding[]; escaped: string[]; counts: Record<ArgvEnvName, ArgvCounts>; candidates: ArgvCandidate[] }> {
   const plans = inputs.flatMap((input) => {
     const inst = instrumentArgv(input.tree, input.model);
     return ARGV_ENVS.map((env) => ({ input, inst, env, ...argvJob(input, inst.script, env) }));
   });
-  const runs = await runArgvBatch(plans.map((p) => p.job));
+  const chunks: number[][] = Array.from({ length: Math.max(1, Math.min(jobs, plans.length)) }, () => []);
+  plans.forEach((_, i) => chunks[i % chunks.length].push(i));
+  const batches = await Promise.all(chunks.map((c) => runArgvBatch(c.map((i) => plans[i].job))));
+  const runs: ArgvRun[] = [];
+  chunks.forEach((c, k) => c.forEach((i, j) => { runs[i] = batches[k][j]; }));
   const counts = Object.fromEntries(ARGV_ENVS.map((e) => [e, { commands: 0, ran: 0, words: 0, unknown: 0, failing: 0 }])) as Record<ArgvEnvName, ArgvCounts>;
   const found: ArgvFinding[] = [];
   const escaped: string[] = [];
+  // The fields bash gave the one unknown word of a marker, per input and marker, in each environment (`undefined`
+  // once they differ).
+  const middles = new Map<ArgvInput, Map<ArgvMarker, Map<ArgvEnvName, string[] | undefined>>>();
+  const unknownWord = new Map<ArgvMarker, string>();
   plans.forEach((p, i) => {
     const run = runs[i];
     escaped.push(...run.escaped.map((n) => `${p.input.name} (${p.env}): ${n}`));
     const env: WordEnv = { variables: { ...ARGV_ENV, ...p.variables }, pwd: BOX, files: FILES };
     for (const m of p.inst.markers) {
       counts[p.env].commands++;
-      for (const what of compareMarker(m, p.input.model, env, run.records.get(m.id) ?? [], counts[p.env])) {
+      const records = run.records.get(m.id) ?? [];
+      for (const what of compareMarker(m, p.input.model, env, records, counts[p.env])) {
         found.push({ input: p.input.name, env: p.env, command: m.command.text, what });
       }
+      const results = m.words.map((w) => wordFields(w, p.input.model, env));
+      if (!records.length || results.filter((r) => !r.fields).length !== 1 || results.some((r) => r.error)) continue;
+      const { head, tail, fits } = alignRuns(results, records.map((r) => splitTargets(r).argv));
+      const word = m.words[results.findIndex((r) => !r.fields)];
+      if (!fits || recorded(word)) continue;
+      unknownWord.set(m, word.text);
+      const got = records.map((r) => JSON.stringify(splitTargets(r).argv.slice(head.length, -tail.length || undefined)));
+      const byInput = middles.get(p.input) ?? new Map<ArgvMarker, Map<ArgvEnvName, string[] | undefined>>();
+      middles.set(p.input, byInput);
+      const byEnv = byInput.get(m) ?? new Map<ArgvEnvName, string[] | undefined>();
+      byInput.set(m, byEnv);
+      byEnv.set(p.env, got.every((g) => g === got[0]) ? JSON.parse(got[0]) as string[] : undefined);
     }
   });
-  return { found, escaped, counts };
+  const candidates: ArgvCandidate[] = [];
+  for (const [input, byInput] of middles) {
+    for (const [m, byEnv] of byInput) {
+      const all = ARGV_ENVS.map((e) => byEnv.get(e));
+      if (all.some((a) => !a) || all.some((a) => JSON.stringify(a) !== JSON.stringify(all[0]))) continue;
+      candidates.push({ input: input.name, command: m.command.text, word: unknownWord.get(m)!, fields: all[0]! });
+    }
+  }
+  return { found, escaped, counts, candidates };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// The inputs: the fixtures (step 2), the snippets of the tests and the fuzz inputs (step 3).
+
+const FIXTURES = path.join(__dirname, '..', 'fixtures');
+
+/**
+ * The fixtures bash runs, each with the model the explanation reads (src/analyzer.ts, src/hosts/remap.ts): sample.sh and
+ * coverage.sh; each section of sample.sh on its own (in place, the other lines blank), since `set -e` stops the whole
+ * file early; and the shell code of the host fixtures that bash runs. (Not posix.sh, ksh.ksh, nor the regions of sh
+ * and of bats: another shell, or bats around the script.)
+ */
+export function fixtureInputs(): ArgvInput[] {
+  const parser = createUnbashParser();
+  const out: ArgvInput[] = [];
+  const add = (name: string, text: string): void => {
+    const tree = parser.parse(text);
+    out.push({ name, tree, model: shellState(tree, 'bash'), provided: [] });
+  };
+  for (const name of ['sample.sh', 'coverage.sh']) add(name, fs.readFileSync(path.join(FIXTURES, name), 'utf8'));
+  const lines = fs.readFileSync(path.join(FIXTURES, 'sample.sh'), 'utf8').split('\n');
+  const heads = lines.flatMap((l, i) => (/^# --- .* ---$/.test(l) ? [i] : []));
+  heads.forEach((from, k) => {
+    const to = heads[k + 1] ?? lines.length;
+    add(`sample.sh ${lines[from]}`, lines.map((l, i) => (i >= from && i < to ? l : '')).join('\n'));
+  });
+  for (const file of fs.readdirSync(path.join(FIXTURES, 'hosts')).sort()) {
+    const extracted = extractShell(hostKind('', file)!, fs.readFileSync(path.join(FIXTURES, 'hosts', file), 'utf8'));
+    const whole = parser.parse(extracted.text);
+    const seen = new Set<SyntaxTree>();
+    for (const region of extracted.regions) {
+      if ((region.shell ?? 'bash') !== 'bash' || region.run || region.commands) continue;
+      const tree = scriptTree(whole, extracted, region);
+      if (seen.has(tree)) continue;
+      seen.add(tree);
+      const provided = hostProvided(extracted, region);
+      const model = shellState(tree, region.shell, { read: fileRead(tree.root, region.host), ...(provided.length ? { provided } : {}) });
+      out.push({ name: `hosts/${file}:${region.start + 1}`, tree, model, provided });
+    }
+  }
+  return out;
+}
+
+/** The input of a script read as bash: its tree and the model the explanation builds; none when it does not parse. */
+function bashInput(name: string, text: string, parser = createUnbashParser()): ArgvInput | undefined {
+  const tree = parser.parse(text);
+  if (tree.errors.length || hasError(tree.root)) return undefined;
+  return { name, tree, model: shellState(tree, 'bash'), provided: [] };
+}
+
+/** The sample of the snippets the test runs (test/argv.test.ts); all of them run by hand (scripts/argv-corpus.ts). */
+export const SNIPPET_SAMPLE = { share: 0.19, seed: 1 };
+
+/** A 32-bit hash of `text` with `seed` (FNV-1a), for a sample that a new snippet changes only by itself. */
+function hash(text: string, seed: number): number {
+  let h = (0x811c9dc5 ^ seed) >>> 0;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return h;
+}
+
+/**
+ * The snippets of the tests (test/fixtures/snippets.json) that parse, each a bash script named by its text; with
+ * `share`, those whose hash with `seed` falls in that share (0 to 1), so that adding a snippet adds at most itself.
+ */
+export function snippetInputs({ share = 1, seed = 0 } = {}): ArgvInput[] {
+  const parser = createUnbashParser();
+  return corpus().snippets.flatMap((s) => (share >= 1 || hash(s.text, seed) / 2 ** 32 < share ? [bashInput(s.text, s.text, parser) ?? []].flat() : []));
+}
+
+/**
+ * `n` of the fuzz inputs (test/support/fuzz.ts) that parse and are not snippets, chosen by their hash with `seed`. Not
+ * one cut after a backslash: unbash keeps a backslash at the end of the input, which bash drops (a known difference,
+ * README Limitations), and the fuzz inputs change with every snippet, too often for entries of argv-known.json.
+ */
+export function fuzzArgvInputs(n: number, seed = 0): ArgvInput[] {
+  const snippets = new Set(corpus().snippets.map((s) => s.text));
+  const texts = [...new Set(fuzzInputs())].filter((t) => !snippets.has(t) && !/(^|[^\\])(\\\\)*\\$/.test(t)).sort((a, b) => hash(a, seed) - hash(b, seed) || (a < b ? -1 : 1));
+  const parser = createUnbashParser();
+  const out: ArgvInput[] = [];
+  for (const t of texts) {
+    if (out.length >= n) break;
+    const input = bashInput(t, t, parser);
+    if (input) out.push(input);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// The accepted differences (test/fixtures/argv-known.json).
+
+/** An accepted difference: the input (its name: a fixture's, or a snippet's text), the command, the environment (both when absent), why. */
+export interface ArgvKnown { input: string; command: string; env?: ArgvEnvName; reason: string }
+
+/** The known differences and the pinned counts of each set of inputs the test runs (`fixtures`, `snippets`: the sample). */
+export interface ArgvKnownFile { counts: Record<string, Record<ArgvEnvName, ArgvCounts>>; known: ArgvKnown[] }
+
+export const ARGV_KNOWN = path.join(FIXTURES, 'argv-known.json');
+
+/**
+ * The differences no entry of `known` accepts, and the entries that are stale: those of an input in `inputs` that
+ * accept no difference. (Entries of inputs not run are neither.)
+ */
+export function matchKnown(found: readonly ArgvFinding[], known: readonly ArgvKnown[], inputs: readonly ArgvInput[]): { unexplained: string[]; stale: string[] } {
+  const used = new Set<number>();
+  const unexplained = found.filter((f) => {
+    const k = known.findIndex((e) => e.input === f.input && e.command === f.command && (!e.env || e.env === f.env));
+    if (k >= 0) used.add(k);
+    return k < 0;
+  }).map((f) => `${JSON.stringify(f.input)} (${f.env}): ${f.command}\n    ${f.what}`);
+  const names = new Set(inputs.map((i) => i.name));
+  const stale = known.filter((e, k) => names.has(e.input) && !used.has(k)).map((e) => `${JSON.stringify(e.input)}: ${e.command}`);
+  return { unexplained, stale };
 }

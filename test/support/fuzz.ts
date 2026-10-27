@@ -3,7 +3,7 @@ import type { SyntaxNode, SyntaxTree } from '../../src/syntax/tree';
 import { corpus, invariants } from './corpus';
 
 /** A small, fast generator with a fixed seed (mulberry32). */
-function random(seed: number): () => number {
+export function random(seed: number): () => number {
   let a = seed;
   return () => {
     a = (a + 0x6d2b79f5) | 0;
