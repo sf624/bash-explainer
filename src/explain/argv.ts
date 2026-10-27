@@ -25,7 +25,7 @@ import { shellEffectOf, type SlotLink, slotEnvs } from '../semantics/env';
 import { type Missed, testSpecOf } from '../semantics/names';
 import { attribute, docLine } from '../semantics/state';
 import { readDeclarationWords, unsetEndsSpecial } from '../semantics/vars';
-import { isPlainWord, type Literal, literalContent, staticWordText, staticWordValue } from '../staticword';
+import { isPlainWord, type Literal, literalContent, staticWordText, staticWordValue, surelyHasSlash } from '../staticword';
 import { field, fields, inStrayHead, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { bracketShape, type CommandTest, commandTest, type TestRules } from '../testexpr';
 import { readByCommand } from '../tokenmarks';
@@ -35,7 +35,7 @@ import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
-import { globOff, NO_SPEC, resolve, restrictedAt, shoptAt, specFor, wordAt } from './reads';
+import { globOff, NO_SPEC, resolve, restrictedAt, restrictedCall, shoptAt, specFor, wordAt } from './reads';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
 import { inSubshell } from './where';
@@ -221,11 +221,7 @@ function wordParts(cx: Explainer, a: SyntaxNode): Token[] {
 /** The text of an option not in the dictionary. */
 function unknownOption(cx: Explainer, command: string, spec: CommandSpec, ambiguous?: string[], late?: boolean): string {
   // (`bash -x --posix`: long options only before the others, the parser rule `longFirst`.)
-  if (late) {
-    const name = command.split(' ')[0];
-    return cx.s(`1文字のオプションの後の長いオプション: ${name} は長いオプションをほかより前でしか読まないので、この語を文字 \`-\`… の並びとして読み、\`--: invalid option\` と表示して、何も実行せずに終了する（終了ステータス 2。前に \`-e\` があれば 1）`,
-      `A long option after a single-letter one: ${name} reads long options only before the others, so it reads this word as the letters \`-\`…, says \`--: invalid option\` and exits, running nothing (status 2; 1 after \`-e\`)`);
-  }
+  if (late) return cx.t(spec.lateOption!);
   if (spec.unknownOption) return cx.t(spec.unknownOption);
   if (ambiguous) {
     const names = ambiguous.map((n) => `\`${n}\``).join(cx.s('、', ', '));
@@ -808,8 +804,11 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
   // (`builtin cd`, `command echo`: the builtin runs in this shell, as if bash ran it: no other command runs it.)
   const direct = role.slot.run === 'current-shell' && res?.kind === 'builtin';
-  // (`command /bin/ls`: this shell runs the name, which a restricted one refuses with a `/`, 6.10.)
-  if (role.slot.run === 'current-shell' && res?.kind === 'file' && name.includes('/') && restrictedAt(cx, first)) cx.note(fact(cx.lang, 'restricted-refused', { kind: 'slash', name }), first);
+  // (`command /bin/ls`: this shell runs the name, which a restricted one refuses with a `/`; `builtin cd /`: what it
+  // refuses of the builtin, 6.10.)
+  const refused = direct ? restrictedCall(cx, first, role.spec!, parse, words.slice(1))
+    : role.slot.run === 'current-shell' && res?.kind === 'file' && surelyHasSlash(first) && restrictedAt(cx, first) ? {} : undefined;
+  if (refused) cx.note(fact(cx.lang, 'restricted-refused', { kind: direct ? 'builtin' : 'slash', name, ...refused }), first);
   // (A program the manual describes: `sudo bash -c`, `exec bash --login`, 6.1.)
   const program = res?.kind === 'file' ? programSections(res.name) : [];
   return {

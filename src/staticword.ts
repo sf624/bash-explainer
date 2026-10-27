@@ -210,6 +210,18 @@ function globbed(n: SyntaxNode, text: string): boolean {
 }
 
 /**
+ * Whether the word surely holds a `/` once bash expands it: one in its own text, quoted or not (`"$d/lib.sh"`, `~/x`,
+ * `\/z`), never one inside an expansion or a substitution (`${t#…}`, `$(dirname x)`), whose result may have none.
+ */
+export function surelyHasSlash(n: SyntaxNode): boolean {
+  switch (n.type) {
+    case 'word': case 'raw_string': case 'string_content': case 'ansi_c_string': return n.text.includes('/');
+    case 'string': case 'concatenation': return n.namedChildren.some(surelyHasSlash);
+    default: return false;
+  }
+}
+
+/**
  * What a word becomes after quote removal, when that is known without running anything:
  * `h\i` is `hi`, `"a"'b'` is `ab`, `$'\x24HOME'` is `$HOME`, `$(:)e` is `e`. Undefined if any part
  * depends on a variable, a command, a glob, a brace expansion or a tilde. `assignment`: the word is the value of an

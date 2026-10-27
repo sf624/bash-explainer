@@ -2,7 +2,8 @@
 // command, the shell options and the meaning of a word where a node is, and what the options of the command whose
 // words are explained (`Explainer.command`) give. They read the models; the one text they make is `globOff`'s, the
 // end of a note on a word that is not globbed.
-import { givenOptions, has as hasOption, operands, values } from '../argv/query';
+import { givenOptions, has as hasOption, operands, restrictedRefusal, values } from '../argv/query';
+import type { ArgvParse } from '../argv/interpret';
 import type { CommandSpec } from '../argv/spec';
 import { impliedWords, lookupCommand } from '../dict/aliases';
 import { customCommandSpec } from '../dict/custom';
@@ -12,7 +13,7 @@ import type { ExecEnv } from '../semantics/env';
 import { type NameResolution, resolveName } from '../semantics/names';
 import { attribute, type OptionState, shoptIn } from '../semantics/state';
 import { type ExpansionStep, ifsOf, type WordMeaning, wordMeaning } from '../semantics/words';
-import { literalContent } from '../staticword';
+import { literalContent, staticWordValue, surelyHasSlash } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { same } from './nodes';
@@ -48,6 +49,16 @@ export function hostCommand(cx: Explainer, name: string): CommandSpec | undefine
  */
 export function restrictedAt(cx: Explainer, n: SyntaxNode): boolean {
   return shoptIn(cx.state.at(n).run, 'restricted_shell', cx.shell) === 'on';
+}
+
+/**
+ * What a restricted shell refuses of this call of a builtin at `at` (`restrictedRefusal`): the word bash names, or
+ * undefined. `words` are those after its name; a file is named with a `/` when its word surely has one, known or not
+ * (`. "$d/lib.sh"`, `. ~/x`: `surelyHasSlash`).
+ */
+export function restrictedCall(cx: Explainer, at: SyntaxNode, spec: CommandSpec, parse: ArgvParse, words: readonly SyntaxNode[]): { word?: string } | undefined {
+  if (!restrictedAt(cx, at)) return undefined;
+  return restrictedRefusal(spec, parse, words.map((a) => staticWordValue(a) ?? (surelyHasSlash(a) ? a.text : undefined)));
 }
 
 /** The shell options at `n` (src/semantics/state.ts): when it runs, or (`parse`) when bash read it. */

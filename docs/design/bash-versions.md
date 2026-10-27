@@ -65,6 +65,7 @@ From NEWS, CHANGES (5.3-alpha to 5.3-rc2) and COMPAT of the bash-5.3 tarball, ea
 | `[[ =~ ]]` prints an error when the regex does not compile | Status only | A note in 5.3 mode, if the regex reader can tell | 3 |
 | `type -a -P` reports hashed paths and the `$PATH` search; `umask` POSIX additions; `wait -n` returns process substitutions and notified jobs; `bind -p/-P` names; `complete -o fullquote` | Generic or none | Option descriptions where a spec exists; nothing for job control | 3 |
 | `MULTIPLE_COPROCS` on by default | Nothing said about several coprocs | Check whether any note assumes one coproc | 3 |
+| `set -r` (restricted from there on, 6.10) also makes `SHELL`, `PATH`, `HISTFILE`, `ENV` and `BASH_ENV` read-only, as `bash -r` does. Checked: `bash -c 'set -r; PATH=/x; echo $?'` prints 0 in 5.2; 5.3 says "PATH: readonly variable" and abandons the line. In both, `cd` is refused after it and `shopt restricted_shell` stays off. | The model follows 5.2: the shell is restricted from there on (`restrictedFromHere`), its variables as they were; the text of `set -r` names the difference | The read-only variables after `set -r` in 5.3 mode, once the walk knows the release | 3 |
 
 ### 3.3 Variables and shell options
 

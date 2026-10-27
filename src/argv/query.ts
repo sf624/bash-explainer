@@ -70,8 +70,11 @@ export function restrictedRefusal(spec: CommandSpec, parse: ArgvParse, words: re
   const r = spec.restricted;
   if (!r) return undefined;
   const option = r.options && givenOptions(parse).find(({ role }) => named(role, r.options!));
-  if ((r.options && !option) || (r.unless && has(parse, ...r.unless))) return undefined;
-  if (r.command && !parse.roles.some(({ role }) => role.role === 'command')) return undefined;
+  // (An option missing its value is a usage error first: `enable -f`.)
+  if ((r.options && (!option || (option.role as { missing?: boolean }).missing)) || (r.unless && has(parse, ...r.unless))) return undefined;
+  if (r.command && !parse.roles.some(({ role }) => role.role === 'command' || role.role === 'operand')) return undefined;
+  // (`popd +1` removes an entry below the top, and does not change directory.)
+  if (r.unlessWord && parse.roles.some(({ role }) => role.role === 'pattern-option' && r.unlessWord!.test(role.flag))) return undefined;
   if (r.slash) {
     const value = r.slash === 'operand' ? undefined : values(parse, r.slash)[0];
     const at = r.slash === 'operand' ? operands(parse)[0]?.word : value?.word;

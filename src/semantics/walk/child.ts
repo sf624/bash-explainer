@@ -21,7 +21,16 @@ export function restrictedStart(st: ShellState, at: SyntaxNode): ShellState {
     const set: Tri = v ? v.set : name === 'SHELL' || name === 'PATH' ? 'on' : 'unknown';
     variables = variables.with(name, { ...(v ?? { declared: 'on', at }), set, attrs: { ...v?.attrs, r: { state: 'on', at } } });
   }
-  return { ...st, shopt: st.shopt.with('restricted_shell', 'on'), variables };
+  return restrictedFromHere({ ...st, variables });
+}
+
+/**
+ * `set -r`: the shell is restricted from here on (6.10), its variables as they were, as bash 5.2 does (5.3 also makes
+ * those of `RESTRICTED_READONLY` read-only: docs/design/bash-versions.md). The state marks it with `shopt
+ * restricted_shell` on, which bash itself leaves off after `set -r`.
+ */
+export function restrictedFromHere(st: ShellState): ShellState {
+  return { ...st, shopt: st.shopt.with('restricted_shell', 'on') };
 }
 
 /**

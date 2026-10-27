@@ -405,6 +405,8 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
   }
   const words = m[2].split(/[ \t]+/);
   if (base(m[1]) !== 'env') return undefined;
+  // (`#!/usr/bin/env rbash`: bash as `rbash`, restricted.)
+  if (words.length === 1 && bash(words[0]) && start.restricted) return start;
   // (`env -S` with options of its own, or joined to its value: `-S -u LANG bash`, `-Sbash`.)
   if (words[0] !== '-S') return /^-[^-]*S/.test(words[0]) ? { ...start, others: [m[2]] } : undefined;
   let i = 1;
