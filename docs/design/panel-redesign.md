@@ -115,7 +115,7 @@ Users: nothing changes. No CHANGELOG line.
 
 Tests: unit tests of `viewControl`. A web test: a press in the page's slot changes the panel, and the choice is kept after a reload.
 
-Risks: the chrome series edits web/panel-bridge.ts too. P1 starts after roadmap items 1 to 8, like the other steps (decision 5). If chrome PRs touch the slot before it, P1 moves what they draw there to `viewControl`. Keep the PR small.
+Risks: the chrome series edits web/panel-bridge.ts too. P1 starts after roadmap items 1 to 8, like the other steps (decision 5). It lands before C7 of [chrome-redesign.md](chrome-redesign.md), which draws the slot from `viewControl`. Keep the PR small.
 
 ### P2. Explanation fixes found by the prototype
 
@@ -196,7 +196,7 @@ Risks: an example value could be read as the real one. The note says it is an ex
 
 Three PRs:
 
-- **P7a. The row model.** `src/ui/panelRows.ts`: a pure function of the explanation, the depth and the switch. It builds the rows, the text of each depth, the boxes, the role ids, the marks and the Key entries. Data only, drawn by nothing yet, with its tests. It stays under the 1,000 lines of test/file-length.test.ts (split by part if it grows).
+- **P7a. The row model.** `src/ui/panelRows.ts`: a pure function of the explanation, the depth and the switch. It builds the rows, the text of each depth, the boxes, the role ids, the marks and the Key entries. Data only, drawn by nothing yet, with its tests. It stays under the 1,000 lines of test/file-length.test.ts (split by part if it grows). The basis chips of roadmap item 2 ("Not in the manual · checked with bash 5.2", "Try it") are row data here, as item 2 lands before P7 (section 8, decision 3).
 - **P7b. The problems box, in today's Meaning.** Each warning and caveat gets a headline: one sentence in its catalog entry or style check, required by the type (as test/suggestions.test.ts requires a class), and per params where the text has cases. The box "Problems on this line": each item with its level's mark and word from the catalog, the headline, "more" with the whole text and the fix to copy (P3), and chips that link each row to its problem and back. A line inside a construct gets a pointer to the problem on the construct's line, with the level's word and the line number.
 - **P7c. The grid and the boxes.** The Meaning tab becomes depth 1 of the new view: "In short", the problems box, the folded whole-line example, the grid, a box per command. Reading stays as the second tab.
 
@@ -230,7 +230,7 @@ What: the switch, on by default, remembered once chosen (key W). Under each comm
 
 The mark "handled by bash", by one rule: once per construct that no program receives (not in any argv of P4, not a command name), on its first row, at both depths, only with the switch on. An `if … fi` gets one mark, not one on `if`, `then`, `;` and `fi`.
 
-The mark "not in POSIX sh", on the construct only, where it uses a feature of `FEATURES` (src/dialect.ts). The table holds no feature of POSIX sh, so the mark says "not in POSIX sh", not "fails in dash": dash has some of them (`local`). Whether it shows on a bash script, where today's dialect issues do not, is open question 2.
+The mark "not in POSIX sh", on the construct only, where it uses a feature of `FEATURES` (src/dialect.ts). The table holds no feature of POSIX sh, so the mark says "not in POSIX sh", not "fails in dash": dash has some of them (`local`). It shows on a bash script too, as a quiet mark (section 8, decision 2); the dialect issues still show only for the target shell.
 
 The Key lists the marks drawn, the level marks included, inline in the panel.
 
@@ -250,7 +250,7 @@ Tests: test/file-length.test.ts; the coverage gate.
 
 ### 6.1 The view slot contract
 
-The web page's chrome is redesigned in parallel (prototype rounds on `proto/chrome-1` to `proto/chrome-7`; round 8 in progress). There, the panel header has a fixed-width "view slot": 160, 136 or 104 px by the panel's width, segments from 430 px, a menu below. On a phone it is a 44 px control in the tabs row; with 130% text, that control shows only its icon and ⌄. The two series meet only here:
+The web page's chrome is redesigned beside this plan: [chrome-redesign.md](chrome-redesign.md), from prototype round 8 (`proto/chrome-8`). There, the panel header has a "view slot" of fixed width. It holds one control at every width: "Depth", then segments with digits, the selected one with its short name; below about 240 px of slot, a menu "Depth 1 ⌄". On a phone it is the same control, a 44 px pill in the tabs row (chrome-redesign.md, decision 4, step C7). The two series meet only here:
 
 - **The panel owns the view state.** `PanelState` holds it (`depth`, `receives`; today `view`, `step`). The panel applies it. VS Code keeps it in the extension's `globalState` (src/ui/panel.ts) and in the webview's state; the page keeps it in storage (`STORAGE_KEYS.panel`). Both send it with the existing `panelState` messages, in both directions.
 - **The control is data.** `viewControl(state, lang)` gives the label, and for each option its id, icon, short name, full name and pressed state, and optional steps (Reading's eight, until P8). The page draws the slot from it, as segments, as a menu or as the icon alone; the VS Code panel draws its own header from it. A press sets the state and sends it. The page never knows what the options mean.
@@ -261,7 +261,7 @@ The panel handles keys 1, 2 and W when the focus is in it. The page binds none o
 
 ## 7. The usability test
 
-After P10, as roadmap item 10. The users are simulated: agents, not people. So the test shows what an agent can find and do in the panel. It is not a measure of human usability. VS Code is not tested: the users drive the web page.
+After P10 and the chrome series ([chrome-redesign.md](chrome-redesign.md), C9), as roadmap item 11. The users are simulated: agents, not people. So the test shows what an agent can find and do in the panel. It is not a measure of human usability. VS Code is not tested: the users drive the web page.
 
 - **Users:** five simulated users (fresh agents with no project context): a beginner, a certification learner (LPIC/LinuC), a sysadmin, a developer and a UX designer, the personas of the usability test of October 2026. At least two models among them; the report gives the spread by model.
 - **Briefing:** each agent gets its persona, the page and the tasks. It is not told the goal score, that the panel was redesigned, or what the earlier rounds found.
@@ -277,12 +277,14 @@ After P10, as roadmap item 10. The users are simulated: agents, not people. So t
   5. Say which file names the glob matches, and why one does not.
   6. Say whether the script runs in POSIX sh, and what would fail.
 - **Scoring:** first, task success against the key: each user solves at least 5 of tasks 1 to 6. Second, each user gives an overall score out of 10, with the three things that cost the most.
-- **Baseline:** the same protocol runs on today's main (before P1) first, with other agents. The report sets both side by side.
+- **Baseline:** the same protocol runs on today's main (before P1 and the chrome's C1) first, with other agents. The report sets both side by side.
 - **Goal:** every user passes the task gate, and the average score is 9/10 or more. Below it, the findings become explanation bugs or panel PRs, and the test runs again with new agents. After two runs below the goal, the maintainer decides.
 - **People:** a short session with real people, if the maintainer can arrange one, before the README claims anything about usability.
 
-## 8. Open questions for the maintainer
+## 8. The open questions, answered
 
-1. **The CLI.** Should its output follow the depth and the switch, or stay as today's list of parts (as Copy as Markdown and the hover do, decision 7)?
-2. **"Not in POSIX sh" on a bash script.** Today the dialect issues show only for the target shell. Should the panel's mark show on a bash script too (a fact of the construct), or only when the target is sh?
-3. **The roadmap's item 2 and P7.** Item 2 (basis chips and "Try it") comes before P7 by the order (decision 5), so P7's row model takes its chips as row data. Is that the intended order?
+The maintainer answered the plan's three open questions on 2026-10-27:
+
+1. **The CLI.** Its output stays as today's list of parts, like Copy as Markdown and the hover (decision 7). It follows neither the depth nor the switch. No step changes it.
+2. **"Not in POSIX sh" on a bash script.** The mark shows on a bash script too, as a quiet mark. It is a fact of the construct: useful when moving a script to sh, and for learners. The dialect issues (the problems) still show only for the target shell (P9).
+3. **Roadmap item 2 before P7.** Yes. Item 2 (the basis chips and "Try it") lands before P7, so P7's row model takes its chips as row data (P7a).
