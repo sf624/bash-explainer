@@ -1,6 +1,6 @@
 # Three note levels
 
-The plan to split today's warnings into errors and warnings, as VS Code and SARIF do. The levels were decided by the maintainer on 2026-10-27. Status: planned; revised after an independent review (PR #419). Its place in the roadmap is proposed, and the order is to confirm.
+The plan to split today's warnings into errors and warnings, as VS Code and SARIF do. The levels were decided by the maintainer on 2026-10-27. Status: planned (decided 2026-10-27); revised after an independent review (PR #419). It is roadmap item 8: after items 1–7, before the panel redesign.
 
 [note-levels.md](note-levels.md) is the record of what is built (#320): two levels of problems, `warning` and `info`, and the plain fact `note`. This plan adds `error` above them. When it is built, note-levels.md takes its tables, and this page stays as the record of the change.
 
@@ -70,8 +70,8 @@ Every row of note-levels.md's "Warnings" table goes to Error or Warning, and two
 | `variable-not-exported` | Error only when the name cannot come from the environment; decided after the fix | `FOO=1; bash -c 'echo "[$FOO]"'` prints `[]`, but `[1]` when the parent exported `FOO`: a variable from the environment is already exported. The rule is the one of `nounset-unbound` (its `environment` param); today the two disagree on the same name. Fixed first (below). |
 | `function-not-in-container`, `builtin-or-function-as-program`, `function-not-on-remote`, `function-not-in-new-shell-blocked`, `function-not-in-new-shell`, `function-not-imported`, `function-not-in-new-shell-export` | Error | The function or builtin is not there: "command not found", or no effect, every time. |
 | `wrapper-assignment-expanded-first`, `prefix-assignment-expanded-first` | Error | The word never sees the value it was meant to. |
-| `pipeline-subshell-variable` | Error; Info when `partial` | Gone after the pipeline, every time. With `partial` (only some paths turn `lastpipe` on), only on the other paths, as `extglob-maybe-on`. **Moves down in that case (a proposal).** |
-| `redirect-by-your-shell` | Error with `file`; Info without | With `file` (a path only root writes), "Permission denied" every time it is run as meant (not as root: section 2). Without it, only when the file is root's, and nothing is damaged (`sudo dmesg > out.txt` works). **Moves down in that case (a proposal).** |
+| `pipeline-subshell-variable` | Error; Info when `partial` | Gone after the pipeline, every time. With `partial` (only some paths turn `lastpipe` on), only on the other paths, as `extglob-maybe-on`. **Moves down in that case (decided 2026-10-27, section 10).** |
+| `redirect-by-your-shell` | Error with `file`; Info without | With `file` (a path only root writes), "Permission denied" every time it is run as meant (not as root: section 2). Without it, only when the file is root's, and nothing is damaged (`sudo dmesg > out.txt` works). **Moves down in that case (decided 2026-10-27, section 10).** |
 | `shebang-refused` | Error | Run directly, the script never starts. |
 | `shebang-bom` *new row* | Error | The first line is no shebang, and runs as a command that is not found, every time. |
 | `bats-tags-invalid` *new row* | Error | bats runs none of the file's tests, and fails. It is one of the 7 `failure()` facts. |
@@ -91,7 +91,7 @@ Every row of note-levels.md's "Warnings" table goes to Error or Warning, and two
 | Style: `bracket-close-in-word` | Error only when the part before `]` is never empty; decided after the fix | The check fires on words whose value is not static (src/pitfalls.ts). With an empty value, `"$x"]` becomes `]`, and the test runs: `x=""; [ -z "$x"]` is true, and `[ -n "$x"]` is wrongly true. So it is an Error only when the model knows the part is not empty on every path. The text's "missing ']'" is wrong for an empty value, and is reworded in the fix (below). |
 | Style: `rm-empty-variable-root` | Warning | With an empty variable, `rm -r` deletes from the root. |
 | Style: `download-run-by-shell` | Warning | A script nobody read runs (`curl … \| sh`). |
-| Dialect: `unsupported` | Error | The construct fails in the target shell, or the bash release lacks it (`laterOption`, `funsubBrace`). For `sh`, a proposal: Error only when dash lacks it (sections 2 and 10). |
+| Dialect: `unsupported` | Error | The construct fails in the target shell, or the bash release lacks it (`laterOption`, `funsubBrace`). For `sh`, as decided in section 10: Error only when dash lacks it (sections 2 and 10). |
 | Problem: `crlf` | Error | Run directly (section 2), the shebang's interpreter gets a CR, and `then` and `fi` are not found, every time. |
 | Problem: `pythonNoShell` (host code of `python-string-without-shell`) | Error | As the note. |
 | Problem: `injection`, `pythonInjection` (host codes) | Warning | As the notes. |
@@ -182,7 +182,7 @@ The panel's `--c-error` (a part that cannot be read) already has these values in
 
 ## 6. Compatibility
 
-The proposal: an Error fails `--check` by default, as a dialect issue or `crlf` does today. A Warning fails only with `--strict`. An Info never fails.
+Decided: an Error fails `--check` by default, as a dialect issue or `crlf` does today. A Warning fails only with `--strict`. An Info never fails.
 
 What fails `--check` (and the Action) now, without `--strict`, that did not:
 
@@ -193,7 +193,7 @@ What fails `--check` (and the Action) now, without `--strict`, that did not:
 What no longer fails without `--strict`:
 
 - `injection` (a GitHub Actions expression in `run:`) and `pythonInjection`. They are host problems with no `pitfall` mark, so they fail today. They become Warnings, like the other pitfalls (an open question, section 10).
-- With the `sh` proposal of section 10: `local`, `echo -n`, `read -p` and `set -E` in a `#!/bin/sh` script become Info, and fail no more, even with `--strict`.
+- With the `sh` decision of section 10: `local`, `echo -n`, `read -p` and `set -E` in a `#!/bin/sh` script become Info, and fail no more, even with `--strict`.
 
 Unchanged: every other Warning fails only with `--strict`; Info never fails; dialect `unsupported`, `crlf` and `pythonNoShell` fail by default, as before.
 
@@ -251,27 +251,27 @@ Each step is one PR that keeps every test passing, with 100% coverage in CI. Eac
 - **Red beside red.** The error colour is close to the variable's colour: #d0020f for both in the light classic palette, and #fd6358 beside #ff5c65 in the dark one. The icon and the word tell them apart. To check with screenshots, with forced colours too.
 - **Red and yellow for colour-blind users.** The icon's shape and the word differ for each level.
 - **"Error: Syntax error: …"**. Texts that name their own error are reworded in step 1a, where they change level.
-- **The panel redesign** (#418) touches the same views. Proposed: this plan goes first; the order is to confirm with the maintainer. The redesign reads the level, the mark and the word from the catalog, so it needs no change either way.
+- **The panel redesign** (#418) touches the same views. Decided 2026-10-27: this plan goes first (roadmap item 8, before the panel redesign). The redesign reads the level, the mark and the word from the catalog, so it needs no change either way.
 
-## 10. Open questions
+## 10. Decisions
 
-Each has the review's recommendation as "Proposed:". They wait on the maintainer.
+The maintainer decided every question on 2026-10-27, as the review proposed.
 
-1. **The mark.** ⓧ (proposed), or another (✖, ⊗)?
-   Proposed: ⓧ. It is in the same block as ⓘ (Enclosed Alphanumerics). ✖ (U+2716) can show as an emoji.
-2. **`sh` scripts.** "Any POSIX sh" is no one shell: on Fedora it is bash, where every construct works. Proposed: Error when dash lacks the construct (dash is `/bin/sh` on Debian and Ubuntu); Info ("Portability") when dash has it but POSIX does not (`local`, `echo -n`, `read -p`, `set -E`). Or Error for all, as today's warning?
-   Proposed: Error where dash (and busybox ash) lacks the construct, Info "Portability" otherwise. The Action exists to catch bashisms, so `[[` keeps failing. Dash is the assumed system (section 2). dash 0.5.12 accepts `local` inside a function, `echo -n`, `read -p` and `set -E`.
+1. **The mark.** ⓧ, or another (✖, ⊗)?
+   Decided 2026-10-27: ⓧ. It is in the same block as ⓘ (Enclosed Alphanumerics). ✖ (U+2716) can show as an emoji.
+2. **`sh` scripts.** "Any POSIX sh" is no one shell: on Fedora it is bash, where every construct works. The options were: Error when dash lacks the construct (dash is `/bin/sh` on Debian and Ubuntu); Info ("Portability") when dash has it but POSIX does not (`local`, `echo -n`, `read -p`, `set -E`). Or Error for all, as today's warning?
+   Decided 2026-10-27: Error where dash (and busybox ash) lacks the construct, Info "Portability" otherwise. The Action exists to catch bashisms, so `[[` keeps failing. Dash is the assumed system (section 2). dash 0.5.12 accepts `local` inside a function, `echo -n`, `read -p` and `set -E`.
 3. **A stop halfway is a Warning.** `function-last-test-stops-script`, the postfix notes under `set -e`, and `nounset-unbound` with `environment` stop the script only under some values. The plan counts a stop halfway as damage that cannot be undone. Or Info?
-   Proposed: Warning. It is the rule's own wording (question 2), and half-done work is the damage. Where the stop is certain, Error (a postfix on a value known to be 0, section 3).
+   Decided 2026-10-27: Warning. It is the rule's own wording (question 2), and half-done work is the damage. Where the stop is certain, Error (a postfix on a value known to be 0, section 3).
 4. **Two rows move down to Info** in one case each: `pipeline-subshell-variable` with `partial`, `redirect-by-your-shell` without a known root path. Or keep them Warning?
-   Proposed: both move down. `partial` is a "maybe" case, like `extglob-maybe-on`. Without a root path, nothing is damaged.
+   Decided 2026-10-27: both move down. `partial` is a "maybe" case, like `extglob-maybe-on`. Without a root path, nothing is damaged.
 5. **`failure-reported-as-success` under `set -e`** (`where: 'errexit'`): the script goes on past the failure. `set -e; false || echo failed; echo done` exits 0, where without the `||` it would stop with 1. So the caller sees success where it would have seen a failure. The whole id moves to Warning, as decided; should this case stay Info?
-   Proposed: keep it Warning.
+   Decided 2026-10-27: keep it Warning.
 6. **Host injection** (`injection`, `pythonInjection`) fails `--check` by default today. As Warnings, it would fail only with `--strict`. Keep it failing by default?
-   Proposed: follow the rule (Warning, fails only with `--strict`), and name it in the CHANGELOG. `python-shell-injection` and `download-run-by-shell` already pass without `--strict`; the host codes were the odd ones.
+   Decided 2026-10-27: follow the rule (Warning, fails only with `--strict`), and name it in the CHANGELOG. `python-shell-injection` and `download-run-by-shell` already pass without `--strict`; the host codes were the odd ones.
 7. **The pitfalls off.** `notes.pitfalls` and `diagnostics.pitfalls` off no longer hide an Error. Agreed?
-   Proposed: yes. An Error is a bug, not advice, as the `failure()` notes are today.
+   Decided 2026-10-27: yes. An Error is a bug, not advice, as the `failure()` notes are today.
 8. **The Action's names.** The input `fail-on-warning` and the output `warnings` keep their names, and mean "what fails the step"; `errors` is new. Rename them in a later major version?
-   Proposed: keep them, add `errors`, and rename in a major release. Document that `fail-on-warning: 'false'` lets errors pass too.
+   Decided 2026-10-27: keep them, add `errors`, and rename in a major release. Document that `fail-on-warning: 'false'` lets errors pass too.
 9. **`pipefail-missing` at the end of a script**, and `dockerfile-pipefail-missing` (the RUN succeeds): by the Warning rule, a failure becomes the exit status. They stay Info, as decided; a function of the params later?
-   Proposed: keep them Info, and add a "Not decided" roadmap item for a level by params. A push towards `pipefail` brings false failures from SIGPIPE (`… | head`).
+   Decided 2026-10-27: keep them Info, and add a "Not decided" roadmap item for a level by params. A push towards `pipefail` brings false failures from SIGPIPE (`… | head`).
