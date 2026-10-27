@@ -929,6 +929,7 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 | `[[ $x == ~ ]]`, `[ "$x" = ~ ]` | `~` is the home directory: `x='~'` makes it false | no example | "True when `x="~"`" |
 | `${t//[\!]/x}`, `${t//['a-c']/x}` | a quoted `!` or `-` in brackets is the character: `!`; `a`, `-`, `c` | the example replaces those characters | "any character but…", and the range `a-c` |
 | `a=1; declare a=5 b=$a`, `local x=$x` | the words are expanded before the builtin runs: `b` is `1`, and the local `x` gets the caller's value | the values that follow from them (the words of `$b`, the value of `$x`) | `b` was `5`, the local `x` empty |
+| ``x=`printf '%s' 'a\$b'` ``, ``x=`eval 'a\$b'` `` | in backquotes bash removes the backslash before `$`, `` ` `` and `\` first: `printf` gets `a$b` | no example; the words are `a$b` (in the values and the conditions the model follows) | the example printed `a\$b`; the word was `a\$b` |
 
 `[[ $x == "$q" ]]` already said that a quoted right side is literal text.
 

@@ -2402,6 +2402,59 @@
     }
   },
   {
+    "manual": "3.5.4",
+    "snippet": "b=B; x=`@PROBE:a@ 'a\\$b' a\\$b \"a\\$b\" \"a\\\\\\$b\" 'a\\`b' $'a\\$b' \"\\\\\\\\\" 'a\\nb' ${u:-a\\$b} \"${u:-\\$b}\" ~/a\\$b`",
+    "facts": {
+      "a": [
+        [
+          "a$b",
+          "aB",
+          "aB",
+          "a$b",
+          "a`b",
+          "a$b",
+          "\\",
+          "a\\nb",
+          "aB",
+          "B",
+          "/home/probe/aB"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "snippet": "x=\"`@PROBE:a@ 'a\\\"b' \"a\\\\\\\"b\"`\"",
+    "facts": {
+      "a": [
+        [
+          "a\"b",
+          "a\"b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "snippet": "x=`y=\\`@PROBE:a@ 'a\\\\\\$b' \\\\\\\\\\`; @PROBE:b@ 'a\\\\$b'`",
+    "facts": {
+      "a": [
+        [
+          "a$b",
+          "\\"
+        ]
+      ],
+      "b": [
+        [
+          "a\\$b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
     "manual": "6.11",
     "posix": true,
     "snippet": "false; true; @PROBE:a@ $(false) \"$?\"; v=$(false) @PROBE:b@ \"$?\"",

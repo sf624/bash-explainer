@@ -418,6 +418,23 @@ describe('words: fields', () => {
     assert.deepStrictEqual(fieldsOf("cat <<'E'\na \\$ $HOME\nE", 'a \\$ $HOME\n').fields, ['a \\$ $HOME\n']);
   });
 
+  it('reads a word in backquotes after bash removes the backslashes before `$`, a backquote and a backslash', () => {
+    const bash = (src: string): string => execFileSync('bash', ['--norc', '--noprofile', '-c', `${src}; echo "$x"`]).toString();
+    const printed = (tree: ReturnType<typeof parser.parse>): (string[] | undefined)[] => {
+      const model = shellState(tree, 'bash');
+      const printf = descendants(tree.root, ['command']).find((c) => c.namedChildren[0].text === 'printf')!;
+      return printf.namedChildren.slice(2).map((w) => wordFields(w, model, ENV).fields);
+    };
+    assert.strictEqual(bash('b=B; x=`printf "<%s>" \'a\\$b\' a\\$b "a\\$b" "a\\\\\\$b" \'a\\`b\' "\\\\\\\\" ${u:-a\\$b} "${u:-\\$b}"`'), '<a$b><aB><aB><a$b><a`b><\\><aB><B>\n');
+    assert.deepStrictEqual(printed(parser.parse('b=B; x=`printf "<%s>" \'a\\$b\' a\\$b "a\\$b" "a\\\\\\$b" \'a\\`b\' "\\\\\\\\" ${u:-a\\$b} "${u:-\\$b}"`')),
+      [['a$b'], ['aB'], ['aB'], ['a$b'], ['a`b'], ['\\'], ['aB'], ['B']]);
+    // In double quotes, also the backslash before a double quote; in a here-document, the body as bash reads it.
+    assert.strictEqual(bash('x="`printf "<%s>" \'a\\"b\'`"'), '<a"b>\n');
+    assert.deepStrictEqual(printed(parser.parse('x="`printf "<%s>" \'a\\"b\'`"')), [['a"b']]);
+    assert.strictEqual(bash("x=`cat <<'E'\na\\$b\nE`"), 'a$b\n');
+    assert.deepStrictEqual(fieldsOf("x=`cat <<'E'\na\\$b\nE`", 'a\\$b\n').fields, ['a$b\n']);
+  });
+
   it('gives an ambiguous redirection for a target that is not one word', () => {
     assert.deepStrictEqual(fieldsOf("x='a b'; cat > $x", '$x'), { error: 'ambiguous-redirect' });
     assert.deepStrictEqual(fieldsOf('x=; cat > $x', '$x'), { error: 'ambiguous-redirect' });
