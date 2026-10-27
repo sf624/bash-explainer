@@ -379,9 +379,10 @@ export interface ProbeRow {
    * would type it, one word `bash -c '…'` with no `'` or `\` inside, so that any shell they type it in (bash, zsh,
    * fish) runs the same bash script (test/basis.test.ts checks it), and `output`, what it printed (stdout and stderr, as a terminal shows them; `tryOutput`). scripts/record-probes.ts writes `output`
    * and the copy src/basis-probes.json, which the explanations read; test/probe.test.ts runs `code` again. A row with
-   * a try-it has an `id`.
+   * a try-it has an `id`. `bash`: the releases it printed `output` in, written by scripts/record-probes.ts: the row's own
+   * (5.2, or 5.3 for a row of bash 5.3), then 5.3 when bash 5.3 prints the same (CI's `bash53` job checks it).
    */
-  try?: { code: string; output?: string };
+  try?: { code: string; output?: string; bash?: BashRelease[] };
   facts?: unknown;
 }
 
@@ -454,11 +455,11 @@ function programPath(name: string): string {
  * reader's shell) in a fresh directory holding FILES, with the environment of the probes, and the row's bash first on
  * PATH as `bash` (so `bash -c '…'` in the code runs it). stdout and stderr go to one file, in the order they are
  * written; the last newline is dropped. The directory is written as BOX, and the one that holds the row's bash (first
- * on PATH) as BIN. When the shell ends, what it left running (a job in the background) is killed with it: its process
+ * on PATH) as BIN. `release`: run it in another release than the row's (5.3 for a row of 5.2). When the shell ends, what it left running (a job in the background) is killed with it: its process
  * group; so is all of it on a timeout.
  */
-export function tryOutput(row: ProbeRow, timeout = 5000): Promise<string> {
-  const program = programPath(row.bash === '5.3' ? PROBE_BASH53! : PROBE_BASH);
+export function tryOutput(row: ProbeRow, timeout = 5000, release: BashRelease = releaseOf(row)): Promise<string> {
+  const program = programPath(release === '5.3' ? PROBE_BASH53! : PROBE_BASH);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-try-'));
   const [box, bin, out] = ['box', 'bin', 'out'].map((d) => path.join(root, d));
   fs.mkdirSync(box);
@@ -509,6 +510,19 @@ export function tryOutput(row: ProbeRow, timeout = 5000): Promise<string> {
 /** The release a row runs in. */
 export const releaseOf = (row: ProbeRow): BashRelease => row.bash ?? '5.2';
 
+/** The releases a row's try-it printed its output in, as recorded: its own release when none is. */
+export const tryReleases = (row: ProbeRow): BashRelease[] => row.try?.bash ?? [releaseOf(row)];
+
+/**
+ * The releases a try-it prints `output` in: the row's own, then 5.3 for a row of 5.2 when bash 5.3 prints the same.
+ * Without a bash 5.3, the releases recorded (`ProbeRow.try.bash`).
+ */
+export async function releasesOf(row: ProbeRow, output: string): Promise<BashRelease[]> {
+  if (releaseOf(row) === '5.3') return ['5.3'];
+  if (!hasBash53) return tryReleases(row);
+  return (await tryOutput(row, undefined, '5.3')) === output ? ['5.2', '5.3'] : ['5.2'];
+}
+
 /** The copy of the rows with a try-it that the explanations read (src/basis-probes.json), from the tables. */
 export function basisCopy(): Record<string, ProbeCopy> {
   const copy: Record<string, ProbeCopy> = {};
@@ -516,7 +530,7 @@ export function basisCopy(): Record<string, ProbeCopy> {
     for (const row of readProbeTable(kind)) {
       if (!row.try) continue;
       if (!row.id || row.try.output === undefined) throw new Error(`${kind}: ${row.snippet}: a row with a try-it needs an id and a recorded output (scripts/record-probes.ts)`);
-      copy[`${kind}#${row.id}`] = { manual: row.manual, bash: releaseOf(row), try: { code: row.try.code, output: row.try.output } };
+      copy[`${kind}#${row.id}`] = { manual: row.manual, bash: tryReleases(row), try: { code: row.try.code, output: row.try.output } };
     }
   }
   return copy;

@@ -92,9 +92,13 @@ export const MESSAGES = {
   ({ ends }) => (ends === 'shell' ? { kind: 'checked', probe: 'status#exit-status', also: ['status#exit-negative'] } : undefined)),
 
   // ---------------------------------------------------------------- errexit (4.3.1, 4.3.2)
-  'errexit-off-in-substitution': note<{ first: string; form: string }>(['4.3.1', '4.3.2'], ({ first, form }) => [
+  // (`form`: `$( )`, or bash 5.3's `${ …; }` and `${| …; }`. For `$( )`, 3.7.3 and 4.3.2 (`inherit_errexit`) say that
+  // bash unsets `-e` in a command substitution's subshell. bash 5.3's forms run in the shell itself, and neither manual
+  // says what `set -e` does there: checked, with bash 5.3.)
+  'errexit-off-in-substitution': withBasis(note<{ first: string; form: string }>(['4.3.1', '4.3.2', '3.5.4'], ({ first, form }) => [
     `bash は \`${form}\` の中では \`set -e\` を切る（\`shopt -s inherit_errexit\` が無いとき）。\`${first}\` が失敗しても、あとのコマンドは実行される`,
     `bash turns \`set -e\` off inside \`${form}\` (without \`shopt -s inherit_errexit\`): if \`${first}\` fails, the commands after it still run`]),
+  ({ form }) => (form === '$( )' ? undefined : { kind: 'checked', probe: 'status#funsub-errexit' })),
   'errexit-set-called-where-ignored': note<{ name: string; line: number }>(['4.3.1'], ({ name, line }) => [
     `この \`set -e\` は \`${name}\` の呼び出しが終わるまで効かない: \`${name}\` は \`set -e\` が無視される所（行 ${line}）から呼ばれる`,
     `This \`set -e\` takes effect only when the call of \`${name}\` returns: \`${name}\` is called where \`set -e\` is ignored (line ${line})`]),
@@ -113,24 +117,31 @@ export const MESSAGES = {
   'errexit-group-where-ignored': note<{ what: string; where: Words }>(['4.3.1'], ({ what, where }) => [
     `${where.ja}で実行されるので、${what}の中でも \`set -e\` は無視される。途中のコマンドが失敗しても止まらず、次のコマンドに進む`,
     `\`set -e\` is ignored in this ${what}, since it runs ${where.en}: a command that fails in the middle does not stop it`]),
-  'declaration-masks-status': caveat<{ kw: string; v: string }>(['4.2', '4.3.1'], ({ kw, v }) => [
+  // (4.2 says that `local` and `declare` (`typeset`) return 0 unless an option, a name or a readonly variable is wrong,
+  // 4.1 the same of `export` and `readonly`: a failed command substitution is not among the reasons.)
+  'declaration-masks-status': caveat<{ kw: string; v: string }>(['4.2', '4.1', '4.3.1'], ({ kw, v }) => [
     `\`${kw} ${v}=$(…)\` の終了ステータスは \`${kw}\` 自身のもの（成功）になり、\`$(…)\` の中の失敗が隠れます（\`set -e\` でも止まりません）。\`${kw} ${v}\` と \`${v}=$(…)\` の2行に分けます`,
     `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: \`${kw} ${v}\`, then \`${v}=$(…)\``]),
   'pipefail-missing': caveat<{ last: string }>(['3.2.3', '4.3.1'], ({ last }) => [
     `\`set -o pipefail\` が無いので、パイプラインの終了ステータスは最後のコマンド（\`${last}\`）のものだけになる。前のコマンドが失敗しても \`set -e\` では止まらない（このスクリプトのほかのパイプラインも同じ）`,
     `without \`set -o pipefail\`, the status of a pipeline is that of its last command (\`${last}\`) alone, so \`set -e\` does not stop the script when a command before it fails (the same holds for the other pipelines of the script)`]),
-  'function-last-test-returns-status': caveat<{ name: string; line: number }>(['3.3', '3.7.5', '4.3.1'], ({ name, line }) => [
+  // (3.2.4: the status of a list is that of its last command run; 3.3: a function's is that of the last command of its
+  // body; 6.1: a script's is that of its last command.)
+  'function-last-test-returns-status': caveat<{ name: string; line: number }>(['3.3', '3.2.4', '6.1'], ({ name, line }) => [
     `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、行 ${line} の呼び出しで終わるスクリプトもその終了ステータスになる。\`if …; then …; fi\` と書くか、最後に \`return 0\` を置く`,
     `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status, and so does the script, which ends with the call on line ${line}. Write \`if …; then …; fi\`, or end the function with \`return 0\``]),
-  'function-last-test-stops-script': pitfall<{ name: string; line: number }>(['3.3', '3.7.5', '4.3.1'], ({ name, line }) => [
+  'function-last-test-stops-script': pitfall<{ name: string; line: number }>(['3.3', '3.2.4', '4.3.1'], ({ name, line }) => [
     `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、\`set -e\` により行 ${line} の呼び出しでスクリプトが止まる。\`if …; then …; fi\` と書くか、最後に \`return 0\` を置く`,
     `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status and \`set -e\` stops the script at the call on line ${line}. Write \`if …; then …; fi\`, or end the function with \`return 0\``]),
-  'script-last-test-returns-status': caveat<{ left: string }>(['3.7.5', '3.8'], ({ left }) => [
+  'script-last-test-returns-status': caveat<{ left: string }>(['3.2.4', '6.1', '3.7.5'], ({ left }) => [
     `これはスクリプトの最後のコマンドなので、\`${left}\` が失敗すると、スクリプトはその終了ステータス（0 以外）で終わり、呼び出し元（CI や \`make\`、\`./script && next\`）には失敗に見えます。\`if …; then …; fi\` と書くか、最後に \`exit 0\` を置きます`,
     `this is the last command of the script, so when \`${left}\` fails, the script ends with its non-zero status, which its caller (CI, \`make\`, \`./script && next\`) sees as a failure. Write \`if …; then …; fi\`, or end the script with \`exit 0\``]),
   // `cmd || echo "msg"` where its status matters: the end of a function or of a script, or where `set -e` stops the
   // script (`where`). `quiet`: the redirections of `cmd` that discard its own error message (`2>/dev/null`), or ''.
-  'failure-reported-as-success': caveat<{ where: 'function' | 'script' | 'errexit'; name: string; left: string; right: string; quiet: string; fix: string }>(['3.2.4', '3.7.5', '4.3.1'], ({ where, name, left, right, quiet, fix }) => {
+  // (3.2.4: a list's status is that of its last command; 3.3: a function's, that of its last command; 4.3.1: a failure
+  // left of `||` does not stop `set -e`. A script's status (6.1) and the redirection (3.6) are not cited: an entry cites
+  // at most three sections.)
+  'failure-reported-as-success': caveat<{ where: 'function' | 'script' | 'errexit'; name: string; left: string; right: string; quiet: string; fix: string }>(['3.2.4', '3.3', '4.3.1'], ({ where, name, left, right, quiet, fix }) => {
     const exit = where === 'function' ? 'return 1' : 'exit 1';
     const ja = {
       function: `これは関数 \`${name}\` の最後のコマンドなので、\`${left}\` が失敗しても \`${name}\` は \`${right}\` の終了ステータス 0 を返し、呼び出し元には成功に見えます。`,
@@ -148,18 +159,28 @@ export const MESSAGES = {
   }),
 
   // ---------------------------------------------------------------- functions and what runs instead (3.3, 3.7.2)
-  'keyword-needs-separator': failure<{ kw: string }>(['3.2.5.1', '3.2.5.2'], ({ kw }) => [
+  // (3.2.1: a reserved word is one only as the first word of a command. That bash then stops a script with a syntax
+  // error, the manual does not say outside POSIX mode: checked.)
+  'keyword-needs-separator': withBasis(failure<{ kw: string }>(['3.2.1', '3.2.5.1', '3.2.5.2'], ({ kw }) => [
     `構文エラー: \`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash は「syntax error near unexpected token」で止まる`,
     `Syntax error: a \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash stops with "syntax error near unexpected token"`]),
-  'bracket-missing-close': failure(['4.1', '6.4'], () => [
+  { kind: 'checked', probe: 'state#keyword-separator' }),
+  // (4.1: "the last argument to the command must be a `]`", and `test` returns 0 or 1. What `[` does without it, an
+  // error with status 2, the manual does not say: checked.)
+  'bracket-missing-close': withBasis(failure(['4.1', '6.4'], () => [
     '`[` は最後の引数が `]` でないので、実行するとエラーになり、条件は評価されません（`[: missing \']\'`、終了ステータス 2）。構文エラーではなく、コマンド `[` が実行時に出すエラーです',
     '`[` has no `]` as its last argument, so it fails when it runs, without evaluating the condition (`[: missing \']\'`, status 2). This is not a syntax error but an error of the command `[` at run time']),
-  'bracket-close-glued': failure<{ word: string }>(['4.1', '6.4'], ({ word }) => [
+  { kind: 'checked', probe: 'state#bracket-missing' }),
+  'bracket-close-glued': withBasis(failure<{ word: string }>(['4.1', '6.4'], ({ word }) => [
     `\`${word}\` の \`]\` は単語の一部なので、\`[\` の最後の引数は \`]\` ではありません。実行するとエラーになり、条件は評価されません（\`[: missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります`,
     `The \`]\` in \`${word}\` is part of the word, so \`[\` has no \`]\` as its last argument: it fails when it runs, without evaluating the condition (\`[: missing ']'\`, status 2). \`]\` needs a space before it`]),
-  'test-malformed': failure<{ name: string }>(['4.1', '6.4'], ({ name }) => [
+  { kind: 'checked', probe: 'state#bracket-missing' }),
+  // (4.1 says that two arguments whose first is no unary operator, or three that are no binary test, `!` or `( )`, are
+  // false: status 1. bash fails with status 2 ("unary operator expected"): differs.)
+  'test-malformed': withBasis(failure<{ name: string }>(['4.1', '6.4'], ({ name }) => [
     `\`${name}\` はこの引数を条件式として読めないので、実行するとエラーになり、条件は評価されません（\`unary operator expected\`、\`binary operator expected\`、\`too many arguments\` など、終了ステータス 2）。構文エラーではなく、コマンド \`${name}\` が実行時に出すエラーです`,
     `\`${name}\` cannot read these arguments as a conditional expression, so it fails when it runs, without evaluating anything ("unary operator expected", "binary operator expected", "too many arguments"…, status 2). This is not a syntax error but an error of the command \`${name}\` at run time`]),
+  { kind: 'differs', probe: 'state#test-malformed' }),
   'function-defined-later': note<{ name: string; line: number; runs: Words }>(['3.3'], ({ name, line, runs }) => [
     `\`${name}\` は行 ${line} で関数として定義されますが、この行はその前に実行されるので、まだ関数ではありません（${runs.ja}）`,
     `\`${name}\` is defined as a function on line ${line}, but this runs before that, so it is not the function yet (${runs.en})`]),
@@ -183,14 +204,20 @@ export const MESSAGES = {
     '`unset` に `-f` と `-v` を同時に指定するとエラーになり（`cannot simultaneously unset a function and a variable`、終了ステータス 1）、何も削除されません',
     '`unset` with both `-f` and `-v` is an error (`cannot simultaneously unset a function and a variable`, status 1): nothing is unset']),
   { kind: 'checked', probe: 'state#unset-fv' }),
-  'unset-readonly': failure<{ name: string }>(['4.1', '4.2'], ({ name }) => [
+  // (4.1: "Readonly variables and functions may not be unset", and the status is then not zero; that it is 1, the
+  // manual does not say: checked.)
+  'unset-readonly': withBasis(failure<{ name: string }>(['4.1', '4.2'], ({ name }) => [
     `変数 \`${name}\` は読み取り専用なので、\`unset\` はエラーになり（\`cannot unset: readonly variable\`、終了ステータス 1）、\`${name}\` は削除されません`,
     `The variable \`${name}\` is read-only, so \`unset\` fails (\`cannot unset: readonly variable\`, status 1) and \`${name}\` stays`]),
+  { kind: 'checked', probe: 'state#unset-readonly' }),
   // (A variable bash makes read-only, `UID`, or the script: `readonly x`. `then`: what bash does next, when it is
   // known (bash, not in POSIX mode, where an assignment that is not before a command name ends the script): an
   // assignment of its own abandons the command of the script it is in, or ends the subshell it runs in; one before a
-  // command name (`UID=0 echo hi`) leaves the command to run.)
-  'assign-readonly': failure<{ name: string; then?: 'abandons' | 'subshell' | 'runs' }>(['3.4', '4.1'], ({ name, then }) => [
+  // command name (`UID=0 echo hi`) leaves the command to run. 4.1 says that a readonly value "may not be changed by
+  // subsequent assignment", and 3.7.1 that such an assignment is an error and "the command exits with a non-zero status":
+  // for one before a command name, bash runs the command (differs); what bash abandons after one of its own, the manual
+  // does not say outside POSIX mode (checked).)
+  'assign-readonly': withBasis(failure<{ name: string; then?: 'abandons' | 'subshell' | 'runs' }>(['3.4', '4.1', '3.7.1'], ({ name, then }) => [
     `変数 \`${name}\` は読み取り専用なので、この代入はエラーになり（\`readonly variable\`）、\`${name}\` の値は変わりません${then === 'abandons'
       ? '。bash はそれを含むスクリプトのコマンドの残り（この行、または囲む繰り返しや関数呼び出し）を中断し、次のコマンドから続けます（終了ステータス 1）'
       : then === 'subshell' ? '。サブシェルはそこで終わります（終了ステータス 1）'
@@ -199,12 +226,13 @@ export const MESSAGES = {
       ? '; bash also abandons the rest of the command of the script it is in (the line, or the loop or function call around it) and goes on with the next one, status 1'
       : then === 'subshell' ? '; the subshell ends there, status 1'
         : then === 'runs' ? '; the command still runs, without it' : ''}`]),
+  ({ then }) => (then === 'runs' ? { kind: 'differs', probe: 'state#readonly-prefix' } : then ? { kind: 'checked', probe: 'state#readonly-abandons' } : undefined)),
   // (What a restricted shell refuses, 6.10, where the state says the shell is one (src/explain/reads.ts,
   // `restrictedAt`): a builtin's call (`CommandSpec.restricted`: `name` the builtin, `word` what bash names after it), a
   // command name with a `/` (`name` the name), an output redirection (`name` its operator, `word` its target). Each
   // fails with status 1 (which `set -e` stops at, as any failure); a refused name or redirection leaves the command
-  // not run. Checked with bash 5.2 and 5.3.)
-  'restricted-refused': failure<{ kind: 'builtin' | 'slash' | 'redirect'; name: string; word?: string }>(['6.10'], ({ kind, name, word }) => {
+  // not run. 6.10 lists what is refused, but not the status: checked.)
+  'restricted-refused': withBasis(failure<{ kind: 'builtin' | 'slash' | 'redirect'; name: string; word?: string }>(['6.10'], ({ kind, name, word }) => {
     const shell = ['制限付きシェル（`bash -r`・`rbash`）なので、bash は', 'This is a restricted shell (`bash -r`, `rbash`), so bash refuses'];
     if (kind === 'builtin') {
       const said = `\`${name}: ${word ? `${word}: ` : ''}restricted\``;
@@ -217,10 +245,10 @@ export const MESSAGES = {
     }
     return [`${shell[0]}出力のリダイレクト \`${name}\` を拒否し（\`${word}: restricted: cannot redirect output\`、終了ステータス 1）、コマンドを実行しません`,
       `${shell[1]} the output redirection \`${name}\` (\`${word}: restricted: cannot redirect output\`, status 1) and does not run the command`];
-  }),
+  }), { kind: 'checked', probe: 'state#restricted' }),
   // (`RANDOM`, `SECONDS` and the other variables the manual says "lose their special properties" when unset;
   // `subshell`: why the `unset` runs in a subshell, which alone loses it.)
-  'unset-ends-special': note<{ name: string; subshell?: string }>(['5.2'], ({ name, subshell }) => subshell ? [
+  'unset-ends-special': note<{ name: string; subshell?: string }>(['5.2', '3.7.3'], ({ name, subshell }) => subshell ? [
     `\`${name}\` は \`unset\` すると、このサブシェル（${subshell}）では bash の特別な働きがなくなり、あとで値を代入しても普通の変数になります（外のシェルの \`${name}\` はそのまま）`,
     `Once unset, \`${name}\` loses what bash does with it in this subshell (${subshell}): set again there, it is a plain variable (the shell outside keeps its \`${name}\`)`] : [
     `\`${name}\` は \`unset\` すると bash の特別な働きがなくなり、あとで値を代入しても普通の変数になります`,
@@ -240,22 +268,28 @@ export const MESSAGES = {
   ({ sourced }) => (sourced ? 'info' : 'warning')),
 
   // ---------------------------------------------------------------- POSIX mode (6.11, 4.4)
-  'posix-special-function-name': pitfall(['6.11', '4.4'], () => [
+  // (6.11: "Function names may not be the same as one of the POSIX special builtins". That the definition then ends the
+  // script, the manual does not say: checked.)
+  'posix-special-function-name': withBasis(pitfall(['6.11', '4.4'], () => [
     `POSIX モードでは特殊ビルトインと同じ名前の関数は定義できず、bash はここで「is a special builtin」のエラーになってスクリプトを止めます。別の名前にします`,
     `in POSIX mode a function cannot have the name of a special builtin: bash stops the script here with the error "is a special builtin". Use another name`]),
-  'posix-special-function-name-maybe': caveat(['6.11', '4.4'], () => [
+  { kind: 'checked', probe: 'state#posix-special-function' }),
+  'posix-special-function-name-maybe': withBasis(caveat(['6.11', '4.4'], () => [
     `POSIX モードでは特殊ビルトインと同じ名前の関数は定義できず、bash はここで「is a special builtin」のエラーになってスクリプトを止めます（この前で POSIX モードにしているのは一部の経路だけ）。別の名前にします`,
     `in POSIX mode a function cannot have the name of a special builtin: bash stops the script here with the error "is a special builtin" (only some paths before here turn POSIX mode on). Use another name`]),
+  { kind: 'checked', probe: 'state#posix-special-function' }),
 
   // ---------------------------------------------------------------- arithmetic and status (6.5, 4.3.1)
   // (`errexit`: `set -e` surely stops the shell there, the warning: the text leads with that and why. `stops`: the shell
   // it stops, from the status model; none means the script.)
-  'postfix-increment-status': pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown' }>(['6.5', '4.3.1'], ({ v, errexit, stops }) => errexit ? [
+  // (6.5: the operators' values are those of C; 3.2.5.2: `(( ))` is 1 when the value is 0. That an assignment with no
+  // command substitution is 0 is 3.7.1's, not cited: an entry cites at most three sections.)
+  'postfix-increment-status': pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown' }>(['6.5', '3.2.5.2', '4.3.1'], ({ v, errexit, stops }) => errexit ? [
     `ここでは \`set -e\` が効いているので、\`${v}\` が 0 のときこの行で${stops === 'subshell' ? 'サブシェルが終わる' : stops === 'unknown' ? 'これを実行するシェルが止まる' : 'スクリプトが止まる'}。\`((${v}++))\` の値は増やす前の値で、0 は失敗の終了ステータスになるため。\`((++${v}))\` か \`${v}=$((${v}+1))\` か \`((${v}++)) || true\` と書く`,
     `\`set -e\` is on here, so ${stops === 'subshell' ? 'the subshell ends' : stops === 'unknown' ? 'the shell running it stops' : 'the script stops'} at this line when \`${v}\` is 0: \`((${v}++))\` gives the value before the increment, and 0 is a failure status. Write \`((++${v}))\`, \`${v}=$((${v}+1))\` or \`((${v}++)) || true\``] : [
     `\`((${v}++))\` の値は増やす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）。\`((++${v}))\` や \`${v}=$((${v}+1))\` なら 0 になる`,
     `the value of \`((${v}++))\` is the value before the increment, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops). \`((++${v}))\` and \`${v}=$((${v}+1))\` give status 0`], undefined, postfixLevel),
-  'postfix-decrement-status': pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown' }>(['6.5', '4.3.1'], ({ v, errexit, stops }) => errexit ? [
+  'postfix-decrement-status': pitfall<{ v: string; errexit?: boolean; stops?: 'script' | 'subshell' | 'unknown' }>(['6.5', '3.2.5.2', '4.3.1'], ({ v, errexit, stops }) => errexit ? [
     `ここでは \`set -e\` が効いているので、\`${v}\` が 0 のときこの行で${stops === 'subshell' ? 'サブシェルが終わる' : stops === 'unknown' ? 'これを実行するシェルが止まる' : 'スクリプトが止まる'}。\`((${v}--))\` の値は減らす前の値で、0 は失敗の終了ステータスになるため`,
     `\`set -e\` is on here, so ${stops === 'subshell' ? 'the subshell ends' : stops === 'unknown' ? 'the shell running it stops' : 'the script stops'} at this line when \`${v}\` is 0: \`((${v}--))\` gives the value before the decrement, and 0 is a failure status`] : [
     `\`((${v}--))\` の値は減らす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）`,
@@ -311,24 +345,35 @@ export const MESSAGES = {
     `\`${name}\` is defined as an alias on line ${line}, but this is read before that, and an alias works only on what is read after it ran. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`]),
 
   // ---------------------------------------------------------------- extended globs and globstar (3.5.8.1, 3.5.8, 4.3.2)
-  'extglob-in-same-block': pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
+  // (3.5.8.1: extglob "changes the behavior of the parser", so it must be on "before parsing constructs containing the
+  // patterns, including shell functions". That a pattern read without it is a syntax error, which stops the script,
+  // the manual does not say: checked. A new shell starts with its own options (3.7.3 lists what a command run apart
+  // gets, and `shopt` options are not among them); the try-it shows it.)
+  // (3.5.8.1: with globstar, `**` matches "zero or more directories"; without it, two `*`, each of which matches no `/`.)
+  'extglob-in-same-block': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
     `bash は関数や \`if\`・\`{ }\` などのまとまりを最後まで読んでから実行します。そのため、同じまとまりの中の \`shopt -s extglob\` は \`${use}\` を読む時点ではまだ効いておらず、構文エラーになります。\`shopt -s extglob\` は、まとまりの外のそれより前の行に書きます`,
     `bash reads a whole function or block (\`if\`, \`{ }\`…) before running it, so a \`shopt -s extglob\` inside the same block is not yet on when it reads \`${use}\`: a syntax error. Put \`shopt -s extglob\` on an earlier line, outside the block`]),
-  'extglob-maybe-on': caveat<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
+  { kind: 'checked', probe: 'state#extglob-off' }),
+  'extglob-maybe-on': withBasis(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
     `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。この前で有効にしているのは一部の経路（分岐やループ）だけなので、ほかの経路では構文エラーになります`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`), and only some paths before here (a branch or a loop) turn it on`]),
-  'extglob-turned-off': pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
+  { kind: 'checked', probe: 'state#extglob-off' }),
+  'extglob-turned-off': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
     `\`${use}\` のような拡張グロブは \`shopt -s extglob\` のあとでないと構文エラーになりますが、\`shopt -u extglob\` で無効にされています`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` is on, and \`shopt -u extglob\` turned it off`]),
-  'extglob-not-found': notProblem(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
+  { kind: 'checked', probe: 'state#extglob-off' }),
+  'extglob-not-found': withBasis(notProblem(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
     `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。この行より前に見当たりません。\`source\` したファイルなどで有効にしているなら問題ありません`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). It is not found before this line; fine if it is turned on elsewhere, as in a file read with \`source\``])),
-  'extglob-maybe-on-trap': caveat<{ use: string }>(['3.5.8.1', '4.3.2', '4.1'], ({ use }) => [
+  { kind: 'checked', probe: 'state#extglob-off' }),
+  'extglob-maybe-on-trap': withBasis(caveat<{ use: string }>(['3.5.8.1', '4.3.2', '4.1'], ({ use }) => [
     `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。トラップの文字列はシグナルが来たときに読まれるので、\`extglob\` が有効になる前に来れば構文エラーになります`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`), and a trap's action is read when its signal comes: if that is before \`extglob\` is on, it is a syntax error`]),
-  'extglob-not-in-new-shell': pitfall<{ use: string }>(['3.5.8.1', '4.3.2', '3.7.3'], ({ use }) => [
+  { kind: 'checked', probe: 'state#extglob-off' }),
+  'extglob-not-in-new-shell': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2', '3.7.3'], ({ use }) => [
     `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。新しいシェルは \`extglob\` が無効の状態で始まり、このスクリプトの \`shopt\` は引き継がれません。文字列の中で、グロブより前の行で \`shopt -s extglob\` するか、\`bash -O extglob -c\` で起動します`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). The new shell starts with \`extglob\` off: this script's \`shopt\` does not reach it. Turn it on in the string, on a line before the glob, or start the shell with \`bash -O extglob -c\``]),
+  { kind: 'checked', probe: 'state#extglob-new-shell', also: ['state#extglob-off'] }),
   'globstar-maybe-on': caveat<{ on: string }>(['3.5.8', '4.3.2'], ({ on }) => [
     `\`**\` がサブディレクトリまでたどるのは \`${on}\` のあとだけです。この前で有効にしているのは一部の経路（分岐やループ）だけなので、ほかの経路では \`*\` と同じく1階層分にしか一致しません`,
     `\`**\` reaches into subdirectories only after \`${on}\`, and only some paths before here (a branch or a loop) turn it on; on the others \`**\` is the same as \`*\` and matches one level only`]),
@@ -353,8 +398,9 @@ export const MESSAGES = {
   }),
   // (`environment`: the script set it with no `unset`, `local` or `export -n` before, so it is exported when it came
   // from the environment, `maybe` (capitals) or `unlikely` (lower case): src/semantics/shellstate.ts, `fromEnvironment`.)
-  // (`array`: bash exports no array, even one `export` marks, `declare -p` showing `-ax`.)
-  'variable-not-exported': pitfall<{ v: string; environment?: 'maybe' | 'unlikely'; array?: boolean }>(['3.7.3', '3.7.4'], ({ v, environment, array }) => (array ? [
+  // (`array`: bash exports no array, even one `export` marks, `declare -p` showing `-ax`. The manual does not say it:
+  // checked. Without it, 3.7.3 and 3.7.4 say that a command run apart gets only what is exported.)
+  'variable-not-exported': withBasis(pitfall<{ v: string; environment?: 'maybe' | 'unlikely'; array?: boolean }>(['3.7.3', '3.7.4'], ({ v, environment, array }) => (array ? [
     `文字列の中の \`$${v}\` は新しいシェルが展開しますが、\`${v}\` は配列で、bash は配列をエクスポートできない（\`export\` しても渡らない）ので、そこでは空です。値を渡すなら、\`"\${${v}[*]}"\` を引数として渡すか、文字列の変数にします`,
     `the new shell expands \`$${v}\` in the string, but \`${v}\` is an array, and bash cannot export an array (not even with \`export\`), so it is empty there. To pass its values, give \`"\${${v}[*]}"\` as an argument, or use a string variable`] : environment === 'maybe' ? [
     `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトで設定していますが、エクスポートしていないので、そこに値が届くのは \`${v}\` が初めから環境変数にあったとき（環境変数から来た変数はエクスポートされています）だけで、そうでなければ空です。先に \`export ${v}\` します`,
@@ -362,6 +408,7 @@ export const MESSAGES = {
     `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です${environment ? `（環境変数に初めから \`${v}\` があるときを除く）` : ''}。先に \`export ${v}\` します`,
     `the new shell expands \`$${v}\` in the string, and \`${v}\` is a variable of this script that is not exported, so it is empty there${environment ? ` (unless the environment already has \`${v}\`)` : ''}. Run \`export ${v}\` first`]), undefined,
   ({ environment }) => (environment === 'maybe' ? 'info' : 'warning')),
+  ({ array }) => (array ? { kind: 'checked', probe: 'state#export-array' } : undefined)),
   'function-not-in-container': pitfall<{ via: string; name: string }>(['3.3', '3.7.3'], ({ via, name }) => [
     `\`${via}\` は \`${name}\` をコンテナの中で実行します。このスクリプトの関数はコンテナの中にはないので使えません。関数の中身を直接書きます`,
     `\`${via}\` runs \`${name}\` inside the container, and a function from this script is not available in the container. Write out its body instead`]),
@@ -394,6 +441,12 @@ export const MESSAGES = {
     `the current shell expands \`${use}\` before \`${via}\` sets \`${v}\` (to its present value, or nothing). To use the value it sets, go through a shell: \`${via} ${v}=… sh -c '… "\$${v}"'\``]),
 
   // ---------------------------------------------------------------- pipelines and globs (3.2.3, 3.7.3, 3.5.8)
+  // (5.2 says that `BASH_SUBSHELL` is "incremented by one within each subshell", and 3.2.3 that each command of a
+  // pipeline runs in its own subshell; bash does not count the subshell of a simple command in a pipeline: differs.)
+  'bash-subshell-not-counted': withBasis(note(['5.2', '3.2.3'], () => [
+    'パイプラインの中の単純コマンドはサブシェルで実行される（最後のコマンドは `shopt -s lastpipe` が無いとき）が、bash はこのサブシェルを `$BASH_SUBSHELL` に数えないので、値はパイプラインの外のシェルと同じになる。サブシェルかどうかは `$BASHPID` と `$$` を比べて確かめる',
+    'A simple command in a pipeline runs in a subshell (the last one, unless `shopt -s lastpipe` is on), but bash does not count this subshell in `$BASH_SUBSHELL`: the value is that of the shell around the pipeline. To tell whether code runs in a subshell, compare `$BASHPID` with `$$`']),
+  { kind: 'differs', probe: 'words#bash-subshell-stage' }),
   'pipeline-subshell-variable': pitfall<{ used: string; fix: Words; partial: boolean }>(['3.2.3', '3.7.3'], ({ used, fix, partial }) => [
     `パイプ（\`|\`）でつないだコマンドはサブシェルで実行されるので、右側で設定した \`${used}\` はパイプラインが終わると消え、あとの \`$${used}\` には届きません。${fix.ja}`
       + (partial ? '（この前で `shopt -s lastpipe` を有効にしているのは一部の経路だけです）' : ''),
@@ -425,17 +478,25 @@ export const MESSAGES = {
   'for-over-unquoted-args': caveat<{ value: string }>(['3.4.2', '3.5.7'], ({ value }) => [
     `\`${value}\` をクォートしないと、空白を含む引数が分かれてしまいます。\`for a in "$@"\`（または \`for a\` だけ）と書きます`,
     `unquoted \`${value}\` splits arguments that contain spaces. Write \`for a in "$@"\` (or just \`for a\`)`]),
-  'array-joined-in-assignment': caveat<{ v: string; op: string; word: string; args: boolean; list: string; string: string }>(['3.4', '3.4.2', '6.7'], ({ v, op, word, args, list, string }) => [
+  // (3.4: an assignment's value has no word splitting; 3.4.2 says how `"$*"` is joined, but not how `$@` or `${a[@]}`
+  // are in an assignment, with a space whatever `IFS` is: checked.)
+  'array-joined-in-assignment': withBasis(caveat<{ v: string; op: string; word: string; args: boolean; list: string; string: string }>(['3.4', '3.4.2', '6.7'], ({ v, op, word, args, list, string }) => [
     `\`${v}${op}${word}\` では${args ? '引数' : '要素'}が空白で区切られて1つの文字列につながり、\`${v}\` はただの文字列になります（空白を含む${args ? '引数' : '要素'}は元に戻せません）。別々に残すには配列にして \`${v}${op}${list}\` と書き、1つの文字列にするつもりなら \`${v}${op}${string}\` と書きます`,
     `\`${v}${op}${word}\` joins the ${args ? 'arguments' : 'elements'} into one string, separated by spaces: \`${v}\` is a plain string, and ${args ? 'arguments' : 'elements'} with spaces cannot be told apart again. To keep them apart, assign an array: \`${v}${op}${list}\`; if one string is meant, write \`${v}${op}${string}\``]),
-  'unquoted-variable-in-test': caveat<{ bare: string; zsh?: boolean }>(['3.5.7'], ({ bare, zsh }) => zsh ? [
+  { kind: 'checked', probe: 'state#assign-at' }),
+  // (`zsh`: the shell is zsh, not bash. For bash, 4.1 says that `[ -n ]` (one argument, not null) is true, and that two
+  // arguments whose first is no unary operator are false, where bash fails with status 2 (`[ = y ]`): differs.)
+  'unquoted-variable-in-test': withBasis(caveat<{ bare: string; zsh?: boolean }>(['3.5.7', '4.1'], ({ bare, zsh }) => zsh ? [
     `\`[ ]\` の中の \`${bare}\` をクォートしないと、zsh では空白で分かれはしませんが、値が空のときは引数ごと消えるので条件式が壊れます（\`[ -n $x ]\` は空でも真になります）。\`"${bare}"\` と書きます`,
     `unquoted \`${bare}\` inside \`[ ]\` is not split in zsh, but an empty value drops the word, which breaks the test (an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``] : [
     `\`[ ]\` の中の \`${bare}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` などのエラーや、誤った結果。空の \`[ -n $x ]\` は真になります）。\`"${bare}"\` と書きます`,
     `unquoted \`${bare}\` inside \`[ ]\` breaks the test when the value is empty or has spaces (an error such as "unary operator expected", or a wrong result: an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``]),
+  ({ zsh }) => (zsh ? undefined : { kind: 'differs', probe: 'state#test-empty-operand' })),
   // (`set -u` on every path, and no value on every path: src/semantics/unbound.ts, `unboundRead`. `shell`: the
   // messages of bash and dash are quoted, another shell's are not.)
-  'nounset-unbound': pitfall<{
+  // (4.3.1: with `-u`, "a non-interactive shell will exit". Where bash fails only the command (`exits: 'command'`, a
+  // redirection of a program), and goes on, it differs.)
+  'nounset-unbound': withBasis(pitfall<{
     v: string; name: string; exits: 'script' | 'subshell' | 'shell' | 'command'; shell: 'bash' | 'dash' | 'other'; environment: 'maybe' | 'unlikely' | 'no'; errexit?: 'script' | 'subshell'; fix?: string;
   }>(['4.3.1', '3.5.3'], ({ v, name, exits, shell, environment, errexit, fix }) => {
     const message = `${v}: ${shell === 'bash' ? 'unbound variable' : 'parameter not set'}`;
@@ -450,6 +511,7 @@ export const MESSAGES = {
   // (Only the command fails, and the shell goes on: an unset read in a redirection of a program, `cat < "$f"` with `set -u`.)
   // (A name in capitals, which by custom the environment may have: a caveat, src/semantics/shellstate.ts, `fromEnvironment`.)
   ({ exits, errexit, environment }) => (environment === 'maybe' || (exits === 'command' && !errexit) ? 'info' : 'warning')),
+  ({ exits, shell }) => (exits === 'command' && shell === 'bash' ? { kind: 'differs', probe: 'state#nounset-redirect' } : undefined)),
   // (src/semantics/state.ts, `shebangRefused`.)
   'shebang-refused': pitfall<ShebangRefusal>(['6.1', '3.8', 'execve(2)'], (r) => [
     `Linux ではシバンのインタープリタの後ろの \`${r.rest}\` 全体が bash への1つの引数になり、bash はそれを受け付けない（${r.why === 'blank' ? '空白はオプションではない'

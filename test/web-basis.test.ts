@@ -45,8 +45,8 @@ describe('the web page: what a note rests on', function () {
       const ja = locale === 'ja-JP';
       const { ctx, panel, errors } = await open(width, locale);
       const chips = await panel().locator('#notes .basis').allTextContents();
-      assert.deepStrictEqual(chips, Array(2).fill(ja ? 'マニュアルに記述なし・bash 5.2 で確認' : 'Not in the manual · checked with bash 5.2'));
-      assert.match(await panel().locator('#notes .basis').first().getAttribute('title') ?? '', ja ? /bash 5\.2 で実行して確かめた/ : /checked by running bash 5\.2/);
+      assert.deepStrictEqual(chips, Array(2).fill(ja ? 'マニュアルに記述なし・bash 5.2・5.3 で確認' : 'Not in the manual · checked with bash 5.2 and 5.3'));
+      assert.match(await panel().locator('#notes .basis').first().getAttribute('title') ?? '', ja ? /bash 5\.2・5\.3 で実行して確かめた/ : /checked by running bash 5\.2 and 5\.3/);
       // Folded at first; a click opens it, and a click in it does not fold it again.
       const heads = panel().locator('#notes summary.tryit-head');
       assert.deepStrictEqual(await heads.allTextContents(), Array(2).fill(ja ? '端末で試す' : 'Try it in your terminal'));

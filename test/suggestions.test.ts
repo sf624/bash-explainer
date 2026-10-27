@@ -101,6 +101,7 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'function-not-imported-sh': 'scenario',
   // `sudo v=1 cmd $v` → `sudo v=1 sh -c '… "$v"'`, with `sudo` stubbed by `env`.
   'wrapper-assignment-expanded-first': 'mechanical',
+  'bash-subshell-not-counted': 'none',
   'pipeline-subshell-variable': { kind: 'scenario', via: 'fix' },
   // `[ -e "$f" ] || continue`, or `shopt -s nullglob`: with and without matching files.
   'unmatched-glob-runs-once': 'mechanical',
@@ -166,6 +167,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 17, scenario: 25, prose: 12, none: 44 });
+      { mechanical: 17, scenario: 25, prose: 12, none: 45 });
   });
 });

@@ -2545,5 +2545,45 @@
       ],
       "status": 0
     }
+  },
+  {
+    "id": "bash-subshell-stage",
+    "manual": "5.2",
+    "snippet": "@PROBE:a@ \"$BASH_SUBSHELL\" \"$(( BASHPID != $$ ))\" | cat\n{ @PROBE:b@ \"$BASH_SUBSHELL\" \"$(( BASHPID != $$ ))\"; } | cat\ncat </dev/null | @PROBE:c@ \"$BASH_SUBSHELL\" \"$(( BASHPID != $$ ))\"",
+    "note": "a simple command in a pipeline runs in a subshell, but bash does not count it in BASH_SUBSHELL; a group in a pipeline it counts",
+    "gaps": {
+      "a": "the values of BASH_SUBSHELL and BASHPID are bash's, which change as the script runs: the model does not know them",
+      "b": "the values of BASH_SUBSHELL and BASHPID are bash's, which change as the script runs: the model does not know them",
+      "c": "the values of BASH_SUBSHELL and BASHPID are bash's, which change as the script runs: the model does not know them"
+    },
+    "try": {
+      "code": "bash -c 'echo \"BASH_SUBSHELL=$BASH_SUBSHELL subshell=$(( BASHPID != $$ ))\" | cat; { echo \"BASH_SUBSHELL=$BASH_SUBSHELL subshell=$(( BASHPID != $$ ))\"; } | cat'",
+      "output": "BASH_SUBSHELL=0 subshell=1\nBASH_SUBSHELL=1 subshell=1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "a": [
+        [
+          "0",
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "1",
+          "1"
+        ]
+      ],
+      "c": [
+        [
+          "0",
+          "1"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

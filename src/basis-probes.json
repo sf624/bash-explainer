@@ -1,18 +1,199 @@
 {
   "state#unset-fv": {
     "manual": "4.1",
-    "bash": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
     "try": {
       "code": "bash -c 'f() { :; }; x=1; unset -fv x f; echo \"status $?, x=$x\"; type -t f'",
       "output": "bash: line 1: unset: cannot simultaneously unset a function and a variable\nstatus 1, x=1\nfunction"
     }
   },
+  "state#keyword-separator": {
+    "manual": "3.2.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'if true then echo yes; fi; echo after'",
+      "output": "bash: -c: line 1: syntax error near unexpected token `fi'\nbash: -c: line 1: `if true then echo yes; fi; echo after'"
+    }
+  },
+  "state#bracket-missing": {
+    "manual": "4.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c '[ -n x; echo \"status $?\"; [ a = a]; echo \"status $?\"'",
+      "output": "bash: line 1: [: missing `]'\nstatus 2\nbash: line 1: [: missing `]'\nstatus 2"
+    }
+  },
+  "state#test-malformed": {
+    "manual": "4.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c '[ a b ]; echo \"status $?\"; [ a b c ]; echo \"status $?\"'",
+      "output": "bash: line 1: [: a: unary operator expected\nstatus 2\nbash: line 1: [: b: binary operator expected\nstatus 2"
+    }
+  },
+  "state#test-empty-operand": {
+    "manual": "4.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'x=; [ $x = y ]; echo \"status $?\"; [ -n $x ]; echo \"status $?\"'",
+      "output": "bash: line 1: [: =: unary operator expected\nstatus 2\nstatus 0"
+    }
+  },
+  "state#unset-readonly": {
+    "manual": "4.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'readonly x=1; unset x; echo \"status $?, x=$x\"'",
+      "output": "bash: line 1: unset: x: cannot unset: readonly variable\nstatus 1, x=1"
+    }
+  },
+  "state#readonly-prefix": {
+    "manual": "3.7.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'readonly x=1; x=2 echo runs; echo \"status $?\"'",
+      "output": "bash: line 1: x: readonly variable\nruns\nstatus 0"
+    }
+  },
+  "state#readonly-abandons": {
+    "manual": "3.7.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'readonly x=1\nx=2; echo not run\n(x=3; echo not run either)\necho \"next line, status $?\"'",
+      "output": "bash: line 2: x: readonly variable\nbash: line 3: x: readonly variable\nnext line, status 1"
+    }
+  },
+  "state#restricted": {
+    "manual": "6.10",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'set -r; cd /; echo \"status $?\"; /bin/true; echo \"status $?\"; echo x > f; echo \"status $?\"'",
+      "output": "bash: line 1: cd: restricted\nstatus 1\nbash: line 1: /bin/true: restricted: cannot specify `/' in command names\nstatus 1\nbash: line 1: f: restricted: cannot redirect output\nstatus 1"
+    }
+  },
+  "state#posix-special-function": {
+    "manual": "6.11",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'set -o posix; eval() { :; }; echo not reached'",
+      "output": "bash: line 1: `eval': is a special builtin"
+    }
+  },
+  "state#extglob-off": {
+    "manual": "3.5.8.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'echo @(a|b); echo after'",
+      "output": "bash: -c: line 1: syntax error near unexpected token `('\nbash: -c: line 1: `echo @(a|b); echo after'"
+    }
+  },
+  "state#extglob-new-shell": {
+    "manual": "4.3.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'shopt -s extglob; shopt -p extglob; bash -c \"shopt -p extglob\"'",
+      "output": "shopt -s extglob\nshopt -u extglob"
+    }
+  },
+  "state#assign-at": {
+    "manual": "3.4",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'set -- \"a b\" c; v=$@; declare -p v'",
+      "output": "declare -- v=\"a b c\""
+    }
+  },
+  "state#nounset-redirect": {
+    "manual": "4.3.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'cat > s.sh <<\"EOF\"\nset -u\ncat < \"$nope\"\necho \"after $?\"\nEOF\nbash s.sh'",
+      "output": "s.sh: line 2: nope: unbound variable\nafter 1"
+    }
+  },
+  "state#export-array": {
+    "manual": "3.7.4",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'a=(x y); export a; declare -p a; printenv a; echo \"status $?\"'",
+      "output": "declare -ax a=([0]=\"x\" [1]=\"y\")\nstatus 1"
+    }
+  },
+  "words#bash-subshell-stage": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'echo \"BASH_SUBSHELL=$BASH_SUBSHELL subshell=$(( BASHPID != $$ ))\" | cat; { echo \"BASH_SUBSHELL=$BASH_SUBSHELL subshell=$(( BASHPID != $$ ))\"; } | cat'",
+      "output": "BASH_SUBSHELL=0 subshell=1\nBASH_SUBSHELL=1 subshell=1"
+    }
+  },
   "status#exit-status": {
     "manual": "3.7.5",
-    "bash": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
     "try": {
       "code": "bash -c '(exit 300); echo $?'",
       "output": "44"
+    }
+  },
+  "status#funsub-errexit": {
+    "manual": "3.5.4",
+    "bash": [
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'set -e; v=${ false; echo still runs; }; echo \"$v\"; false; echo not reached'",
+      "output": "still runs"
     }
   }
 }
