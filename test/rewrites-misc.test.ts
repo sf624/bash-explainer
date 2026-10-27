@@ -143,6 +143,32 @@ describe('the rewrite of `regex-backslash-dropped`', () => {
     const ja = new Analyzer('ja').explainLine(parser.parse('[[ $x =~ \\bfoo ]]'), 0).facts!.find((f) => f.id === ID)!;
     assert.match(ja.text, /変数に入れる（`re='\\bfoo'; \[\[ \$x =~ \$re \]\]`）か/);
   });
+  it('writes `\\d` and `\\D` as `[0-9]` and `[^0-9]`, which no variable makes of them', () => {
+    // (From a variable, `^\d+$` matches `ddd` and not `123`, in bash 5.2 and 5.3: glibc's regexes have no `\d`.)
+    assert.deepStrictEqual(rewrites('[[ $x =~ ^\\d+$ ]]', ID), [['[[ $x =~ ^[0-9]+$ ]]', '[[ $x =~ ^[0-9]+$ ]]']]);
+    assert.deepStrictEqual(codes('[[ $x =~ ^\\D"a" ]]', ID), ['[[ $x =~ ^[^0-9]"a" ]]']);
+    assert.deepStrictEqual(codes('[[ $x =~ a\\s\\d ]]', ID), ["re='a\\s[0-9]'; [[ $x =~ $re ]]"]);
+    assert.match(factsOf('[[ $x =~ ^\\d+$ ]]', ID)[0].text, /POSIX regexes have no `\\d`: even from a variable it is the letter `d`\. Write `\[0-9\]` for `\\d` and `\[\^0-9\]` for `\\D` \(`\[\[ \$x =~ \^\[0-9\]\+\$ \]\]`\)$/);
+    assert.match(factsOf('[[ $x =~ a\\s\\d ]]', ID)[0].text, /`\[\^0-9\]` for `\\D`\. Keep the regex in a variable \(`re='a\\s\[0-9\]'; /);
+    const ja = new Analyzer('ja').explainLine(parser.parse('[[ $x =~ ^\\d+$ ]]'), 0).facts!.find((f) => f.id === ID)!;
+    assert.match(ja.text, /POSIX の正規表現には `\\d` がなく、変数に入れても `d` という文字になるので、`\\d` は `\[0-9\]`、`\\D` は `\[\^0-9\]` と書く（`\[\[ \$x =~ \^\[0-9\]\+\$ \]\]`）$/);
+    // (An escaped backslash before the letter is no `\d`.)
+    assert.deepStrictEqual(factsOf('[[ $x =~ a\\\\d ]]', ID), []);
+  });
+  it('gives none for an escape inside a bracket expression, where a backslash is no operator, even from a variable', () => {
+    // (`re='^[\s]+$'; [[ $x =~ $re ]]` matches `s` and `\`, not a space, in bash 5.2 and 5.3.)
+    for (const src of ['[[ $x =~ ^[\\s]+$ ]]', '[[ $x =~ [^\\s] ]]', '[[ $x =~ []\\s] ]]', '[[ $x =~ [[:alpha:]\\s] ]]', '[[ $x =~ [\\d] ]]']) {
+      const [f] = factsOf(src, ID);
+      assert.strictEqual(f.rewrite, undefined, src);
+      assert.doesNotMatch(f.text, /variable \(/, src);
+    }
+    assert.match(factsOf('[[ $x =~ ^[\\s]+$ ]]', ID)[0].text, /not a regex operator\. Use `\[\[:space:\]\]` or `\[\[:alnum:\]_\]` instead \(inside `\[ \]`, a backslash is no operator, even from a variable\)$/);
+    assert.match(factsOf('[[ $x =~ [\\d] ]]', ID)[0].text, /Write `\[0-9\]` for `\\d` and `\[\^0-9\]` for `\\D`$/);
+    const ja = new Analyzer('ja').explainLine(parser.parse('[[ $x =~ ^[\\s]+$ ]]'), 0).facts!.find((f) => f.id === ID)!;
+    assert.match(ja.text, /`\[ \]` の中のバックスラッシュは、変数に入れても演算子にならない）$/);
+    // (After a class, the bracket expression ends with its own `]`.)
+    assert.deepStrictEqual(codes('[[ $x =~ [[:alpha:]]\\s ]]', ID), ["re='[[:alpha:]]\\s'; [[ $x =~ $re ]]"]);
+  });
 
   // Each input, and the pattern `grep -E` reads for what the author meant.
   const inputs: [src: string, pattern: string][] = [
@@ -150,8 +176,10 @@ describe('the rewrite of `regex-backslash-dropped`', () => {
     ['if false; then :; elif [[ $x =~ a\\sb ]]; then echo match; else echo no; fi\n', 'a\\sb'],
     ['[[ $x =~ \\bfoo"x" ]] && echo match || echo no\n', '\\bfoox'],
     ['re=keep\n[[ $x =~ \\<foo\\> ]] && echo match || echo no\necho "re=$re"\n', '\\<foo\\>'],
+    ['[[ $x =~ ^\\d+$ ]] && echo match || echo no\n', '^[0-9]+$'],
+    ['[[ $x =~ a\\s\\d ]] && echo match || echo no\n', 'a\\s[0-9]'],
   ];
-  const strings = ['a foo', 'foo', 'bfoo', 'foobar', 'xfoo', 'a b', 'asb', 'ab', 'a foox', 'foox', 'bfoox'];
+  const strings = ['a foo', 'foo', 'bfoo', 'foobar', 'xfoo', 'a b', 'asb', 'ab', 'a foox', 'foox', 'bfoox', '123', 'ddd', 'a 1', 'asd'];
   for (const { name, program } of programs) {
     for (const [src, pattern] of inputs) {
       it(`reads the backslash as a regex operator in ${name}: ${JSON.stringify(src)}`, async () => {
@@ -184,6 +212,16 @@ describe('the rewrite of `bracket-close-glued`', () => {
     assert.deepStrictEqual(rewrites('[ -f a.txt]', ID), [['a.txt ]', '[ -f a.txt ]']]);
     assert.deepStrictEqual(fix('if [ -n "a b"]; then\n  echo y\nfi', ID), ['if [ -n "a b" ]; then\n  echo y\nfi']);
     assert.deepStrictEqual(fix('[ a = a] && echo y', ID), ['[ a = a ] && echo y']);
+    // (After an escaped backslash, the `]` is not escaped.)
+    assert.deepStrictEqual(fix('[ a = b\\\\]', ID), ['[ a = b\\\\ ]']);
+  });
+  it('gives none when the `]` is escaped, which a space before it leaves a character of the word', () => {
+    // (`[ a = b\ ]` still fails with "missing `]'", status 2, in bash 5.2 and 5.3.)
+    const [f] = factsOf('[ a = b\\]', ID);
+    assert.strictEqual(f.rewrite, undefined);
+    assert.match(f.text, /status 2\)\. This `\]` is escaped \(`\\\]`\): with a space before it, it is still a character of the word\. End the test with another `\]`, after a space$/);
+    const ja = new Analyzer('ja').explainLine(parser.parse('[ a = b\\]'), 0).facts!.find((x) => x.id === ID)!;
+    assert.match(ja.text, /この `\]` はエスケープされている（`\\\]`）ので、空白を入れても単語の文字のままです。/);
   });
   it('is said, but not carried as edits, in a string another command reads as a script', () => {
     const [f] = factsOf("bash -c '[ -f a.txt]'", ID);

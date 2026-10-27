@@ -1361,5 +1361,6 @@ The notes of `wrapper-assignment-expanded-first`, `regex-backslash-dropped`, `br
 |---|---|---|
 | `sudo v=1 echo got $v` | `sudo v=… sh -c 'echo got $v'`: the command and its arguments become the string; a quote in it is escaped (`'\''`). With another expansion in the string (`$HOME`, `$(date)`), the note shows it, but the editor offers no edit: the new shell would expand it, not this one. | `sudo v=… sh -c '… "$v"'` |
 | `[[ $x =~ \bfoo ]]` | `re='\bfoo'; [[ $x =~ $re ]]`, the variable before the statement that holds the test (before the whole `if` for an `elif`). The name is `re`, or `re2`, `re3`… when the script uses it. | The same line for every script, with `re`. |
-| `[ -f a.txt]` | `a.txt ]`. | "`]` needs a space before it". |
+| `[[ $x =~ ^\d+$ ]]`, `[[ $x =~ ^[\s]+$ ]]` | `[[ $x =~ ^[0-9]+$ ]]` (`[^0-9]` for `\D`; with `\s` too, in the variable: `re='a\s[0-9]'`). Inside a bracket expression, `[\s]`, no fix: a backslash there is no operator, even from a variable, so the note says to use `[[:space:]]`. | `re='^\d+$'; [[ $x =~ $re ]]`, which matches `ddd` and not `123` (glibc's regexes have no `\d`), and `re='^[\s]+$'`, which matches `s` and `\`. |
+| `[ -f a.txt]` | `a.txt ]`. With the `]` escaped, `[ a = b\]`, no fix: `[ a = b\ ]` still misses its `]`, so the note says to end the test with another `]`. | "`]` needs a space before it". |
 | `$a[1]` | `${a[1]}`, also for `$a[@]` and `$m[k]`. | The same. |

@@ -966,7 +966,8 @@ export function testArgs(cx: Explainer, n: SyntaxNode, test: CommandTest, bracke
   const glued = bracket && !test.close && !!last && /\S\]$/.test(last.text);
   // (In the condition of `if [ -f a ] then`, bash stops at the syntax error: the command never runs, and the syntax error is what is said.)
   if (!inStrayHead(n)) {
-    if (test.unclosed && glued) cx.note(fact(cx.lang, 'bracket-close-glued', { word: last.text, rewrite: [replaceNode(last, `${last.text.slice(0, -1)} ]`)] }), last);
+    // (The rewrite puts a space before the `]`; none when the `]` is escaped, `b\]`, which a space leaves a character.)
+    if (test.unclosed && glued) cx.note(fact(cx.lang, 'bracket-close-glued', { word: last.text, rewrite: /(^|[^\\])(\\\\)*\\\]$/.test(last.text) ? [] : [replaceNode(last, `${last.text.slice(0, -1)} ]`)] }), last);
     else if (test.unclosed) cx.note(fact(cx.lang, 'bracket-missing-close'), n);
     if (test.malformed) cx.note(fact(cx.lang, 'test-malformed', { name: bracket ? '[' : 'test' }), n);
   }
