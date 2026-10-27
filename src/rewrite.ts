@@ -1,7 +1,7 @@
 // The rewrites a fact suggests, as data (docs/design/oracles.md, 3.2): the note renders its suggestion from them, and a
 // test applies them and runs both scripts in bash (test/rewrites.test.ts). Quick fixes can come from the same data.
 import { documentRoot } from './semantics/state';
-import type { SyntaxNode } from './syntax/tree';
+import { descendants, type SyntaxNode } from './syntax/tree';
 
 /** A change to the text explained (the document): the text from `start` to `end` (offsets, `end` exclusive) becomes `text`. */
 export interface TextEdit { start: number; end: number; text: string }
@@ -10,7 +10,9 @@ export interface TextEdit { start: number; end: number; text: string }
  * One rewrite a fact suggests, complete in itself: its edits, applied together, and the code the note shows for it
  * (`code`: what the edits add or put in place, as the user would type it). A fact's rewrites are alternatives, the
  * first the one it recommends (`Fact.rewrite`). In a string another command reads as a script (`bash -c '…'`), where
- * the code would need quoting, a rewrite has no edits: the note shows its code, and the fact does not carry it.
+ * the code would need quoting, a rewrite has no edits: the note shows its code, and the fact does not carry it. The
+ * facts of a host file (a Dockerfile, a workflow, a Makefile) carry no rewrites: the edits are in the extracted text,
+ * not the file (src/hosts/remap.ts).
  */
 export interface Rewrite { code: string; edits: readonly TextEdit[] }
 
@@ -21,9 +23,13 @@ function treeOf(n: SyntaxNode): { root: SyntaxNode; own: boolean } {
   return { root, own: documentRoot(n) === root };
 }
 
-/** The rewrite that puts `code` in place of node `n`. */
+/**
+ * The rewrite that puts `code` in place of node `n`. Not as edits when `n` holds a here-document: its body is in the
+ * text of `n`, and the code would put it before what follows (`{ echo x <<EOF⏎body⏎EOF; exit 1; }` is not closed).
+ */
 export function replaceNode(n: SyntaxNode, code: string): Rewrite {
-  return { code, edits: treeOf(n).own ? [{ start: n.startIndex, end: n.endIndex, text: code }] : [] };
+  const edits = treeOf(n).own && !descendants(n, ['heredoc_redirect']).length;
+  return { code, edits: edits ? [{ start: n.startIndex, end: n.endIndex, text: code }] : [] };
 }
 
 /**
