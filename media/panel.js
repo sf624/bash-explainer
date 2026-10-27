@@ -268,6 +268,21 @@
     return [chip, tryItBox(b.tryIt)];
   }
 
+  /**
+   * Code split for wrapping: each run of non-blanks in a span that wraps only when it is wider than the box
+   * (media/panel.css `.tryit-word`), the blanks between them as text. A browser breaks a line after a hyphen, and
+   * `unset -` / `fv` would read as two words; here a line breaks only between words.
+   */
+  function shellWords(/** @type {string} */ text) {
+    return text.split(/(\s+)/).filter((s) => s !== '').map((s) => {
+      if (/^\s+$/.test(s)) return document.createTextNode(s);
+      const w = document.createElement('span');
+      w.className = 'tryit-word';
+      w.textContent = s;
+      return w;
+    });
+  }
+
   /** The try-its the reader opened, by their code: an update of the panel (the same line again) keeps them open. */
   const openTryIts = new Set();
 
@@ -285,7 +300,7 @@
     head.title = labels.tryItHint ?? '';
     const code = document.createElement('code');
     code.className = 'tryit-code';
-    code.textContent = t.code;
+    code.append(...shellWords(t.code));
     const copy = document.createElement('button');
     copy.type = 'button';
     copy.className = 'tryit-copy';
@@ -308,7 +323,7 @@
     prints.textContent = labels.prints ?? 'Output';
     const output = document.createElement('code');
     output.className = 'tryit-output';
-    output.textContent = t.output;
+    output.append(...shellWords(t.output));
     const body = document.createElement('div');
     body.className = 'tryit-body';
     body.append(line, prints, output);

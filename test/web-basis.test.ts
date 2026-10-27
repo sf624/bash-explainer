@@ -71,6 +71,30 @@ describe('the web page: what a note rests on', function () {
         assert.ok(b.output.top >= b.code.bottom - 0.5, `note ${i}: the output is under the code`);
       }
       assert.ok(await panel().evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), 'the panel scrolls sideways');
+      // The code and the output wrap only between words: no line ends inside one, as after the `-` of `-fv`
+      // (`unset -` / `fv` would read as two words). Each line is the characters drawn at one height.
+      const breaks = await panel().evaluate(`[...document.querySelectorAll('#notes .tryit-code, #notes .tryit-output')].flatMap((box) => {
+        const text = box.textContent;
+        const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+        const tops = [];
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          for (let i = 0; i < node.length; i++) {
+            const r = document.createRange();
+            r.setStart(node, i);
+            r.setEnd(node, i + 1);
+            const rect = r.getClientRects()[0];
+            tops.push(rect ? Math.round(rect.top) : null);
+          }
+        }
+        // (A break is where the next drawn character is lower; one inside a word has no blank on either side.)
+        const out = [];
+        for (let i = 1; i < text.length; i++) {
+          if (tops[i] === null || tops[i - 1] === null || tops[i] <= tops[i - 1]) continue;
+          if (!/\\s/.test(text[i - 1]) && !/\\s/.test(text[i])) out.push(text.slice(Math.max(0, i - 8), i) + '|' + text.slice(i, i + 8));
+        }
+        return out;
+      })`) as string[];
+      assert.deepStrictEqual(breaks, [], 'a line breaks inside a word');
       if (process.env.BASH_EXPLAINER_SHOTS) {
         // (One note at a time: a frame's screenshot holds only what its viewport shows.)
         for (let i = 0; i < 2; i++) {
