@@ -370,7 +370,7 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     // (`alias a=b b='echo B'`: `a` runs the alias `b`.)
     // (When that one's text ends with a blank and this one's does not, bash 5.3 checks the next word, 5.2 does not.)
     const later = res.target?.kind === 'alias' && aliasExpandsNext(res.target.alias.value) && !aliasExpandsNext(alias.value)
-      ? cx.s(`。その置き換え先は空白で終わるが、次の単語がエイリアスか調べるのは bash 5.3 だけで、bash 5.2 は調べない`, `; its text ends with a blank, but only bash 5.3 then checks the next word for an alias, not bash 5.2`) : '';
+      ? cx.rests(cx.s(`。その置き換え先は空白で終わるが、次の単語がエイリアスか調べるのは bash 5.3 だけで、bash 5.2 は調べない`, `; its text ends with a blank, but only bash 5.3 then checks the next word for an alias, not bash 5.2`), 'alias-in-alias-blank') : '';
     const chain = res.target?.kind === 'alias'
       ? cx.s(`（\`${res.target.name}\` もエイリアスで、\`${res.target.alias.value}\` に置き換わる${later}）`, ` (\`${res.target.name}\` is an alias too, for \`${res.target.alias.value}\`${later})`)
       : '';
@@ -556,9 +556,9 @@ function timed(cx: Explainer, n: SyntaxNode): Token {
   if (!cmd) {
     // `time` alone: an empty pipeline, timed; in POSIX mode, the times of the shell and its children so far (6.11).
     const posix = option(cx.state.at(n).run, 'set', 'posix') === 'on';
-    const t = cx.tok(n, 'keyword', posix
+    const t = cx.tok(n, 'keyword', cx.rests(posix
       ? cx.s('パイプラインのない `time`: POSIX モードなので、このシェルと終了した子プロセスがここまでに使ったユーザー時間とシステム時間を表示する', '`time` with no pipeline: in POSIX mode, it prints the user and system time this shell and its finished children have used so far')
-      : cx.s('パイプラインのない `time`: 何も計測せず、0 の時間を表示する（POSIX モードなら、シェルがここまでに使った時間）', '`time` with no pipeline: it times nothing, and prints zero times (in POSIX mode, the times the shell has used so far)'), lead);
+      : cx.s('パイプラインのない `time`: 何も計測せず、0 の時間を表示する（POSIX モードなら、シェルがここまでに使った時間）', '`time` with no pipeline: it times nothing, and prints zero times (in POSIX mode, the times the shell has used so far)'), 'time-alone'), lead);
     return skeletal(posix ? { ...t, refs: ['3.2.3', '6.11'] } : t, n);
   }
   // What `time` times, a command or a whole pipeline, is explained as it would be on its own.

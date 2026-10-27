@@ -14,6 +14,7 @@ import type { NestedScript } from '../semantics/nested';
 import { docLine, type StateModel } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
 import { listOverLines, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
+import { isBased, type RestingText, type TokenBasisId } from '../tokenbases';
 import { effEndRow, intersects, isBlockLike } from './nodes';
 
 /**
@@ -45,7 +46,13 @@ export interface Walk {
 export interface Explainer {
   readonly lang: Lang;
   s(ja: string, en: string): string;
+  /** A text in the line's language; one that states bash's behaviour (`based`, src/tokenbases.ts) is recorded as `rests` records it. */
   t(text: Text): string;
+  /**
+   * `text`, which states what the entry `id` of src/tokenbases.ts says: recorded for the line, so that the tokens that
+   * show it get its basis and try-it (`withTokenBases`, docs/design/basis.md, step 4).
+   */
+  rests(text: string, id: TokenBasisId): string;
   tok(n: SyntaxNode, kind: Kind, explanation: string, children?: Token[], label?: string): Token;
   /**
    * The lines a construct over several lines covers (` (lines 3–5)`), from `n` to the end of `to`; for one line, empty,
@@ -129,6 +136,8 @@ export interface LineOutput {
   readonly anchors: readonly NoteAnchor[];
   /** Worked examples produced while explaining (grep, sed, awk, jq). */
   readonly examples: readonly Example[];
+  /** The texts said on this line that state bash's behaviour, with what they rest on (`rests`). */
+  readonly rested: readonly RestingText[];
   /** Enclosing constructs, outermost first. */
   readonly context: ContextEntry[];
   /** The texts of notes found on nodes, each once; each is recorded in the anchors (see `anchored`), with its data. */
@@ -168,6 +177,7 @@ export class LineExplainer implements Explainer, LineOutput {
   /** The data of the notes said on this line, by their text. */
   private readonly data = new Map<string, Note>();
   readonly examples: Example[] = [];
+  readonly rested: RestingText[] = [];
   readonly context: ContextEntry[] = [];
   readonly slotEnvs = new Map<SyntaxNode, ExecEnv>();
   command: CommandContext | undefined = undefined;
@@ -190,7 +200,12 @@ export class LineExplainer implements Explainer, LineOutput {
   }
 
   t(text: Text): string {
-    return text[this.lang];
+    return isBased(text) ? this.rests(text[this.lang], text.basis) : text[this.lang];
+  }
+
+  rests(text: string, id: TokenBasisId): string {
+    this.rested.push({ text, id });
+    return text;
   }
 
   tok(n: SyntaxNode, kind: Kind, explanation: string, children: Token[] = [], label = shorten(n.text)): Token {

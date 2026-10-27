@@ -9,8 +9,10 @@ import { basisFor, basisOf, type BasisSpec, PROBE_COPY, type ProbeRef } from '..
 import type { Shell } from '../src/shellfeatures';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { basisGate, basisSaid, fact, type FactId, MESSAGES } from '../src/messages';
-import { basisLine, noteBasis } from '../src/ui/render';
-import { explain } from './support/explain';
+import { readingNodes } from '../src/reading';
+import { TOKEN_BASES, type TokenBasisId } from '../src/tokenbases';
+import { basisLine, basisMarkdown, noteBasis, partBasis, toPlainMarkdown, withBasisShown } from '../src/ui/render';
+import { allTokens, explain } from './support/explain';
 import { BASIS_COPY, basisCopy, PROBE_KINDS, type ProbeKind, readProbeTable } from './support/probe';
 
 type Spec = BasisSpec | ((p: unknown) => BasisSpec | undefined);
@@ -59,7 +61,7 @@ describe('basis: what an explanation rests on', () => {
     assert.strictEqual(fs.readFileSync(BASIS_COPY, 'utf8'), `${JSON.stringify(basisCopy(), null, 2)}\n`, 'run npx tsx scripts/record-probes.ts');
   });
 
-  it('names rows that exist, the first with a try-it about a section the fact cites; and every try-it is shown by a fact', () => {
+  it('names rows that exist, the first with a try-it about a section the fact cites; and every try-it is shown by a fact or a token', () => {
     assert.ok(entries.length >= 2);
     const shown = new Set<string>();
     for (const [id, e] of entries) {
@@ -70,7 +72,14 @@ describe('basis: what an explanation rests on', () => {
         shown.add(spec.probe);
       }
     }
-    assert.deepStrictEqual(Object.keys(PROBE_COPY).filter((k) => !shown.has(k)), [], 'a try-it no fact shows');
+    // (A token's text: its row need not be about a section the token cites, as a token cites its construct's, 3.4 for
+    // an assignment; its sample, below, shows that the token has it.)
+    for (const [id, spec] of Object.entries(TOKEN_BASES) as [TokenBasisId, BasisSpec][]) {
+      assert.ok(PROBE_COPY[spec.probe], `${id}: ${spec.probe} has no try-it in the copy`);
+      for (const ref of spec.also ?? []) assert.ok(rowExists(ref), `${id}: no row ${ref}`);
+      shown.add(spec.probe);
+    }
+    assert.deepStrictEqual(Object.keys(PROBE_COPY).filter((k) => !shown.has(k)), [], 'a try-it no fact or token shows');
   });
 
   it('gives a try-it as one word for bash, `bash -c \'…\'`, which any shell (bash, zsh, fish) passes on as it is', () => {
@@ -194,5 +203,101 @@ describe('basis: what an explanation rests on', () => {
     const f = explain('echo $BASH_SUBSHELL | cat').facts!.find((x) => x.id === 'bash-subshell-not-counted')!;
     assert.deepStrictEqual(f.basis, { kind: 'differs', bash: ['5.2', '5.3'], probes: ['words#bash-subshell-stage'] });
     assert.deepStrictEqual(f.refs, ['5.2', '3.2.3']);
+  });
+
+  // Step 4: the texts of tokens (src/tokenbases.ts), audited against the manual (the audit is in the PR of step 4).
+  /** A line where a token shows each entry's text: the line, its number (0-based), and the token's label. */
+  const TOKEN_SAMPLES: Record<TokenBasisId, [string, number, string]> = {
+    'underscore-after-assignment': ['a=1; echo "$_"', 0, '$_'],
+    'columns-from-environment': ['echo "$COLUMNS"', 0, '$COLUMNS'],
+    'rematch-empty-after-failure': ['echo "$BASH_REMATCH"', 0, '$BASH_REMATCH'],
+    'xtracefd-old-stays-open': ['BASH_XTRACEFD=7', 0, 'BASH_XTRACEFD=7'],
+    'funcnest-status': ['FUNCNEST=10', 0, 'FUNCNEST=10'],
+    'path-forgets-hash': ['PATH=/x:$PATH', 0, 'PATH=/x:$PATH'],
+    'pwd-variable-only': ['PWD=/x', 0, 'PWD=/x'],
+    'posixly-correct-unset': ['POSIXLY_CORRECT=1', 0, 'POSIXLY_CORRECT=1'],
+    'local-special-plain': ['f() { local RANDOM=3; }', 0, 'RANDOM=3'],
+    'ignored.LINENO': ['LINENO=5', 0, 'LINENO=5'],
+    'ignored.BASH_COMMAND': ['BASH_COMMAND=x', 0, 'BASH_COMMAND=x'],
+    'readonly-abandons': ['UID=0', 0, 'UID=0'],
+    'readonly-subshell': ['(UID=0; echo in)', 0, 'UID=0'],
+    'readonly-prefix-runs': ['UID=0 echo hi', 0, 'UID=0'],
+    'bash-refuses-option': ['bash -x --posix -c true', 0, '--posix'],
+    'bash-lone-plus': ["bash + -c 'echo ran'", 0, '+'],
+    'alias-invalid-name': ['alias a/b=x', 0, 'a/b=x'],
+    'alias-no-name': ['alias =x', 0, '=x'],
+    'alias-in-alias-blank': ["shopt -s expand_aliases\nalias t=s s='echo '\nt w", 2, 't'],
+    'array-at-subscript': ['a[@]=x', 0, 'a[@]=x'],
+    'export-subscript-refused': ['export e[1]', 0, 'e[1]'],
+    'declare-p-subscript': ['declare -p a[1]', 0, 'a[1]'],
+    'assoc-missing-subscript': ['declare -A m=([a]=1 b)', 0, 'b'],
+    'array-brace-value': ['x=([4]={a,b})', 0, '[4]={a,b}'],
+    'assoc-tilde': ['declare -A m=(k ~)', 0, '~'],
+    'kill-posix-sig': ['set -o posix\nkill -SIGTERM $$', 1, '-SIGTERM'],
+    'posix-indirect-hash': ['set -o posix\necho "${!#}"', 1, '${!#}'],
+    'trap-posix-signal': ['set -o posix\ntrap INT', 1, 'INT'],
+    'time-alone': ['time', 0, 'time'],
+    'arith-syntax-abandons': ['echo $((1 +)); ((2 *))', 0, '1 +'],
+  };
+
+  it('gives the tokens whose text states bash\'s behaviour the basis the audit found, and Reading\'s nodes too', () => {
+    const audit: Record<TokenBasisId, string> = {
+      'underscore-after-assignment': 'checked', 'columns-from-environment': 'checked', 'rematch-empty-after-failure': 'checked',
+      'xtracefd-old-stays-open': 'differs', 'funcnest-status': 'checked', 'path-forgets-hash': 'checked', 'pwd-variable-only': 'checked',
+      'posixly-correct-unset': 'checked', 'local-special-plain': 'checked', 'ignored.LINENO': 'checked', 'ignored.BASH_COMMAND': 'checked',
+      'readonly-abandons': 'checked', 'readonly-subshell': 'checked', 'readonly-prefix-runs': 'differs', 'bash-refuses-option': 'checked',
+      'bash-lone-plus': 'checked', 'alias-invalid-name': 'checked', 'alias-no-name': 'checked', 'alias-in-alias-blank': 'checked',
+      'array-at-subscript': 'checked', 'export-subscript-refused': 'checked', 'declare-p-subscript': 'checked', 'assoc-missing-subscript': 'checked',
+      'array-brace-value': 'checked', 'assoc-tilde': 'checked', 'kill-posix-sig': 'checked', 'posix-indirect-hash': 'checked',
+      'trap-posix-signal': 'checked', 'time-alone': 'checked', 'arith-syntax-abandons': 'checked',
+    };
+    assert.deepStrictEqual(Object.fromEntries(Object.entries(TOKEN_BASES).map(([id, spec]) => [id, spec.kind])), audit);
+    assert.deepStrictEqual(Object.keys(TOKEN_SAMPLES).sort(), Object.keys(TOKEN_BASES).sort());
+    for (const [id, [src, line, label]] of Object.entries(TOKEN_SAMPLES) as [TokenBasisId, [string, number, string]][]) {
+      const spec: BasisSpec = TOKEN_BASES[id];
+      for (const lang of ['en', 'ja'] as const) {
+        const ex = explain(src, line, lang, { reading: true });
+        const tok = allTokens(ex.items).find((t) => t.label === label && t.tryIt?.probe === spec.probe);
+        assert.ok(tok, `${id} (${lang}): no token \`${label}\` with ${spec.probe}: ${allTokens(ex.items).map((t) => t.label).join(' ')}`);
+        assert.deepStrictEqual(tok.basis, basisOf(spec).basis, id);
+        const node = readingNodes(ex.reading!).find((n) => n.label === label && n.text === tok.explanation);
+        assert.deepStrictEqual([node?.basis, node?.tryIt], [tok.basis, tok.tryIt], `${id} (${lang}): Reading's node`);
+      }
+    }
+    // (Not where the text is not said: `$_` after a command with arguments, `PATH` for one command, `time` with a
+    // pipeline, a variable whose text the manual states, the declaration that makes a variable read-only.)
+    for (const src of ['true x; echo "$_"', 'PATH=/x cmd', 'time ls', 'echo "$HOME"', 'readonly x=1', 'BASHPID=1']) {
+      assert.deepStrictEqual(allTokens(explain(src).items).filter((t) => t.basis || t.tryIt).map((t) => t.label), [], src);
+    }
+  });
+
+  it('leaves the tokens\' basis and try-it out with `notes.basis` off', () => {
+    const ex = explain('UID=0; echo "$COLUMNS"', 0, 'en', { reading: true, basis: false });
+    assert.deepStrictEqual(allTokens(ex.items).filter((t) => t.basis || t.tryIt), []);
+    assert.deepStrictEqual(readingNodes(ex.reading!).filter((n) => n.basis || n.tryIt), []);
+  });
+
+  it('marks a token in the views as a note: the panel\'s rows and Reading, Markdown', () => {
+    const ex = explain('BASH_XTRACEFD=7; echo "$HOME"', 0, 'en', { reading: true });
+    const tok = allTokens(ex.items).find((t) => t.label === 'BASH_XTRACEFD=7')!;
+    const b = partBasis(tok, 'en')!;
+    assert.strictEqual(b.label, 'Differs from the manual · checked with bash 5.2 and 5.3');
+    assert.deepStrictEqual(b.tryIt, { code: PROBE_COPY['state#xtracefd-old-open'].try.code, output: 'fd 3 is still open' });
+    assert.strictEqual(partBasis(allTokens(ex.items).find((t) => t.label === '$HOME')!, 'en'), undefined);
+    // (A basis of the manual's with a try-it: none shown, as for a note.)
+    assert.strictEqual(partBasis({ tryIt: tok.tryIt }, 'en'), undefined);
+    const shown = withBasisShown(ex, 'ja');
+    const row = allTokens(shown.items).find((t) => t.label === 'BASH_XTRACEFD=7') as { basisShown?: { label: string } };
+    assert.strictEqual(row.basisShown?.label, 'マニュアルの記述と異なる・bash 5.2・5.3 で確認');
+    const node = readingNodes(shown.reading!).find((n) => n.label === 'BASH_XTRACEFD=7' && n.basis) as { basisShown?: { label: string } };
+    assert.strictEqual(node.basisShown?.label, 'マニュアルの記述と異なる・bash 5.2・5.3 で確認');
+    assert.ok(!('basisShown' in allTokens(shown.items).find((t) => t.label === '$HOME')!));
+    // (Without Reading, the rows only; a line with nothing to show is sent as it is.)
+    assert.ok(!('reading' in withBasisShown(explain('BASH_XTRACEFD=7'), 'en')));
+    const plain = explain('echo hi', 0, 'en', { reading: true });
+    assert.strictEqual(withBasisShown(plain, 'en'), plain);
+    assert.strictEqual(basisMarkdown(tok, 'en', '  '), `\\\n  _${basisLine('en', b, (c) => `\`${c}\``)}_`);
+    assert.strictEqual(basisMarkdown({}, 'en', '  '), '');
+    assert.match(toPlainMarkdown(ex, 'BASH_XTRACEFD=7', 'x.sh:1'), /- `BASH_XTRACEFD=7` — .*\\\n +_Differs from the manual · checked with bash 5\.2 and 5\.3 · Try it in your terminal: `bash -c '[^`]*'` → `fd 3 is still open`_/);
   });
 });

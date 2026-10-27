@@ -6,7 +6,7 @@ import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
 import type { DocumentIssue } from '../document';
 import type { NoteLevel } from '../messages';
-import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, ui } from './render';
+import { ExamplePlacement, noteBasis, noteRefs, notesByLevel, placeExamples, ui, withBasisShown } from './render';
 import { reference, referenceLabel } from '../references';
 import { readingNodes } from '../reading';
 import type { PanelBase } from './themePalette';
@@ -103,7 +103,8 @@ export function panelUpdate(p: PanelLine) {
     file: p.file,
     lineLabel: t.line(p.line + 1) + (ex.shell ? ` · ${t.forShell(SHELL_NAMES[ex.shell])}` : ''),
     lineText: p.lineText,
-    explanation: p.placement === 'bottom' ? ex : placeExamples(ex),
+    // (Each row and node of Reading with the chip and try-it of what it rests on, in the panel's language.)
+    explanation: withBasisShown(p.placement === 'bottom' ? ex : placeExamples(ex), lang),
     manual: manualLinks(lang, ex),
     // (Said after a link's name, for a screen reader: the links open outside the panel.)
     linkNote: p.web ? tp.opensTab : tp.opensBrowser,

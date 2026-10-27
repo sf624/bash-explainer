@@ -109,8 +109,8 @@ function specialExpansion(h: Explainer, p: ParsedExpansion, text: string, n: Syn
   if (p.prefix === '!' && p.name === '#' && !p.subscript && !p.op) {
     // (In POSIX mode, bash applies no indirection to `#` and `?`, 6.11: `${!#}` is empty.)
     const posix = option(h.state.at(n).run, 'set', 'posix');
-    if (posix === 'on') return h.s('POSIX モードの bash は `#` を間接参照しないので、`${!#}` は空になる（最後の引数は `${@: -1}` で取り出せる）', 'In POSIX mode bash applies no indirection to `#`: `${!#}` expands to nothing (`${@: -1}` gives the last argument)');
-    if (posix === 'unknown') return h.s('間接参照: `$#`（引数の個数）を番号とみなし、その位置パラメータ、つまり最後の引数を取り出す（引数が 3 個なら `$3`）。ただし、一部の経路で有効な POSIX モードでは空になる', 'Indirection through `$#`: the positional parameter numbered `$#` is the last argument (`$3` when there are 3). But in POSIX mode, which is on on some paths here, it expands to nothing');
+    if (posix === 'on') return h.rests(h.s('POSIX モードの bash は `#` を間接参照しないので、`${!#}` は空になる（最後の引数は `${@: -1}` で取り出せる）', 'In POSIX mode bash applies no indirection to `#`: `${!#}` expands to nothing (`${@: -1}` gives the last argument)'), 'posix-indirect-hash');
+    if (posix === 'unknown') return h.rests(h.s('間接参照: `$#`（引数の個数）を番号とみなし、その位置パラメータ、つまり最後の引数を取り出す（引数が 3 個なら `$3`）。ただし、一部の経路で有効な POSIX モードでは空になる', 'Indirection through `$#`: the positional parameter numbered `$#` is the last argument (`$3` when there are 3). But in POSIX mode, which is on on some paths here, it expands to nothing'), 'posix-indirect-hash');
     return h.s('間接参照: `$#`（引数の個数）を番号とみなし、その位置パラメータ、つまり最後の引数を取り出す（引数が 3 個なら `$3`）', 'Indirection through `$#`: the positional parameter numbered `$#` is the last argument (`$3` when there are 3)');
   }
   if (p.prefix || !/^[#?$!@*-]$/.test(p.name)) return undefined;

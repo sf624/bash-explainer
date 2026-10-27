@@ -1,4 +1,5 @@
 import { Text, tx } from '../i18n';
+import { based, basedSpec } from '../tokenbases';
 import type { BuiltinCall, CommandSlot, CommandSpec, NameOptions, OperandAlt, OperandSpec, OptionSpec, PatternOption, ShellVariant, ValueSpec, ValueType, VariableSet } from '../argv/spec';
 import { args, cmd, operand, optionOf, OptSpec, runs, wordTable } from './types';
 import { declarationCommands, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags } from './syntax';
@@ -194,7 +195,7 @@ const TRAP_POSIX: ShellVariant = {
   spec: {
     operands: [
       ...TRAP_OPERANDS.slice(0, 4),
-      { when: { not: { option: ['-p', '-P', '-l'] } }, pattern: [operand('SIGNAL', 'POSIX モードの bash は、番号でない1語だけをリセットするシグナルとして読まない: 使い方の誤り（終了ステータス 2）になり、特殊組み込みコマンドのエラーなのでシェルが終了する。前に `-` を書く（`trap - INT`）', 'In POSIX mode bash does not read a lone word as a signal to reset unless it is a number: this is a usage error (status 2), and as an error of a special builtin it ends the shell. Write `-` before it (`trap - INT`)')] },
+      { when: { not: { option: ['-p', '-P', '-l'] } }, pattern: [basedSpec(operand('SIGNAL', 'POSIX モードの bash は、番号でない1語だけをリセットするシグナルとして読まない: 使い方の誤り（終了ステータス 2）になり、特殊組み込みコマンドのエラーなのでシェルが終了する。前に `-` を書く（`trap - INT`）', 'In POSIX mode bash does not read a lone word as a signal to reset unless it is a number: this is a usage error (status 2), and as an error of a special builtin it ends the shell. Write `-` before it (`trap - INT`)'), 'trap-posix-signal')] },
       ...TRAP_OPERANDS.slice(4),
     ],
   },
@@ -306,8 +307,8 @@ const KILL_POSIX: ShellVariant = {
     ],
     patternOptions: [KILL_PATTERNS[0], KILL_PATTERNS[1], {
       pattern: new RegExp(`^-(?!s[A-Za-z])${anyCase('SIG')}(${anyCase(SIGNALS)})$`), ...SIGNAL_GIVEN,
-      text: ([w]) => tx(`POSIX モードの bash は \`SIG\` で始まるシグナル名を受け付けない: \`${w.slice(1)}: invalid signal specification\` と表示し、何も送らずに失敗する（終了ステータス 1）。\`-${w.slice(4).toUpperCase()}\` と書く`,
-        `In POSIX mode bash refuses a signal name that starts with \`SIG\`: it says \`${w.slice(1)}: invalid signal specification\`, and fails with status 1, sending nothing. Write \`-${w.slice(4).toUpperCase()}\``),
+      text: ([w]) => based(tx(`POSIX モードの bash は \`SIG\` で始まるシグナル名を受け付けない: \`${w.slice(1)}: invalid signal specification\` と表示し、何も送らずに失敗する（終了ステータス 1）。\`-${w.slice(4).toUpperCase()}\` と書く`,
+        `In POSIX mode bash refuses a signal name that starts with \`SIG\`: it says \`${w.slice(1)}: invalid signal specification\`, and fails with status 1, sending nothing. Write \`-${w.slice(4).toUpperCase()}\``), 'kill-posix-sig'),
     }, KILL_PATTERNS[2]],
   },
   text: tx('POSIX モードなので、`SIG` で始まるシグナル名（`-SIGTERM`、`-s SIGTERM`、`-n SIGTERM`、`-l SIGTERM`）は受け付けない', 'In POSIX mode, it refuses a signal name that starts with `SIG` (`-SIGTERM`, `-s SIGTERM`, `-n SIGTERM`, `-l SIGTERM`)'),
@@ -639,12 +640,12 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     // ends with a blank, say so when every definition of the line is one (6.6).
     operands: [
       {
-        pattern: [operand('DEFINITION', 'bash が受け付けない定義: エイリアス名には `/`、`$`、バッククォート、クォート、バックスラッシュ、空白、メタ文字を使えない（「invalid alias name」で終了ステータス 1）',
-          'a definition bash refuses: an alias name may not have `/`, `$`, a backquote, a quote, a backslash, a blank or a metacharacter ("invalid alias name", status 1)', { repeat: '+', matches: new RegExp(`^(?!${ALIAS_NAME}=)[^=]+=`), known: true })],
+        pattern: [basedSpec(operand('DEFINITION', 'bash が受け付けない定義: エイリアス名には `/`、`$`、バッククォート、クォート、バックスラッシュ、空白、メタ文字を使えない（「invalid alias name」で終了ステータス 1）',
+          'a definition bash refuses: an alias name may not have `/`, `$`, a backquote, a quote, a backslash, a blank or a metacharacter ("invalid alias name", status 1)', { repeat: '+', matches: new RegExp(`^(?!${ALIAS_NAME}=)[^=]+=`), known: true }), 'alias-invalid-name')],
       },
       {
-        pattern: [operand('NAME', '`=` の前に名前がないので、bash はこの語全体を表示する別名の名前として探し、見つからずに失敗する（「not found」で終了ステータス 1）',
-          'no name before `=`: bash looks for an alias named by the whole word to print it, finds none, and fails ("not found", status 1)', { repeat: '+', matches: /^=/, known: true })],
+        pattern: [basedSpec(operand('NAME', '`=` の前に名前がないので、bash はこの語全体を表示する別名の名前として探し、見つからずに失敗する（「not found」で終了ステータス 1）',
+          'no name before `=`: bash looks for an alias named by the whole word to print it, finds none, and fails ("not found", status 1)', { repeat: '+', matches: /^=/, known: true }), 'alias-no-name')],
       },
       {
         pattern: [operand('DEFINITION', '別名の定義: `=` の前の名前が、後ろの文字列を表す。文字列が空白で終わるので、この別名の次の単語も bash がエイリアスか調べる（`alias sudo=\'sudo \'` なら `sudo ll` でもエイリアス `ll` が使える）',

@@ -256,9 +256,9 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
   const op = field(n, 'operator')!.text;
   // `$((1 +))`, `((2 *))`: an operator with no operand after it, which the parser keeps. bash refuses the expression.
   if (inArithmetic(n) && !rightFields.length && left && rights[0].startIndex === left.startIndex) {
-    return cx.tok(n, 'error', cx.s(
+    return cx.tok(n, 'error', cx.rests(cx.s(
       `算術式の構文エラー: \`${op}\` の後ろに被演算子がない。bash は \`syntax error: operand expected\` と表示し${expressionHost(n) === 'arithmetic_expansion' ? '、それを含むスクリプトのコマンドの残り（この行、または囲む繰り返しや関数呼び出し）を中断する（終了ステータス 1。POSIX モードではスクリプトが終了する）' : '、このコマンドは失敗する（終了ステータス 1）'}`,
-      `Arithmetic syntax error: \`${op}\` has no operand after it. bash says \`syntax error: operand expected\`${expressionHost(n) === 'arithmetic_expansion' ? ', and abandons the rest of the command of the script it is in (the line, or the loop or function call around it), status 1 (in POSIX mode, a script ends there)' : ', and the command fails (status 1)'}`));
+      `Arithmetic syntax error: \`${op}\` has no operand after it. bash says \`syntax error: operand expected\`${expressionHost(n) === 'arithmetic_expansion' ? ', and abandons the rest of the command of the script it is in (the line, or the loop or function call around it), status 1 (in POSIX mode, a script ends there)' : ', and the command fails (status 1)'}`), 'arith-syntax-abandons'));
   }
   // The grammar reads even a plain `a` after `=`, `==` and `!=` as a pattern; it is only a word to explain, and in `[ ]` any text is.
   // (A constant such as `0x1F` is not plain in arithmetic: it has a value to show.)

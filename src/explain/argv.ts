@@ -583,9 +583,9 @@ function declaredOperand(cx: Explainer, a: SyntaxNode, space: ReturnType<typeof 
   // `declare x[3]` declares the array `x`, and bash ignores the subscript (6.7); `export` and `readonly` refuse the word,
   // and `declare -p` finds no such name. Checked with bash 5.2 and 5.3.
   const text = readDeclarationWords(command, fields(a.parent!, 'argument'), cx.state.shell).on.includes('p')
-    ? cx.s(`\`${a.text}\` という名前の変数はないので、何も表示しない（「not found」で終了ステータス 1）`, `No variable is named \`${a.text}\`: nothing is printed ("not found", status 1)`)
+    ? cx.rests(cx.s(`\`${a.text}\` という名前の変数はないので、何も表示しない（「not found」で終了ステータス 1）`, `No variable is named \`${a.text}\`: nothing is printed ("not found", status 1)`), 'declare-p-subscript')
     : builtins[command].locals ? cx.s(`配列 \`${element[1]}\` を宣言する（bash は添字 \`[${element[2]}]\` を無視する）`, `Declare the array \`${element[1]}\` (bash ignores the subscript \`[${element[2]}]\`)`)
-    : cx.s('bash はこの語を受け付けない: 変数の名前として正しくない（「not a valid identifier」で終了ステータス 1）', 'Bash refuses this word: it is not a valid variable name ("not a valid identifier", status 1)');
+    : cx.rests(cx.s('bash はこの語を受け付けない: 変数の名前として正しくない（「not a valid identifier」で終了ステータス 1）', 'Bash refuses this word: it is not a valid variable name ("not a valid identifier", status 1)'), 'export-subscript-refused');
   // (Unquoted, it is a glob first: `declare a[1]` with a file `a1` here declares the variable `a1`.)
   return wordAt(cx, a)?.steps.find((g) => g.kind === 'glob')?.applies !== false ? positional(cx, a, nameGlob(cx, a, a.text, text, 'declares')) : cx.tok(a, 'variable', text);
 }

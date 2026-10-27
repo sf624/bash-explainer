@@ -1,5 +1,6 @@
 // The public types of an explanation (src/analyzer.ts makes them; the products, the panel and the hosts read them).
 import type { CommandSpec } from './argv/spec';
+import type { Basis, TryIt } from './basis';
 import type { BashVersion } from './bashversion';
 import type { Shell } from './dialect';
 import type { SectionMarks } from './examples/marks';
@@ -101,6 +102,13 @@ export interface Token {
    * it for sure (docs/design/expansion-values.md), with what the outputs say of it.
    */
   value?: ValueInfo;
+  /**
+   * What the text rests on where it states bash's behaviour that the manual does not state, or states otherwise
+   * (src/tokenbases.ts, docs/design/basis.md): as `Fact.basis`. None with `notes.basis` off.
+   */
+  basis?: Basis;
+  /** A command that shows that behaviour, and what it printed (`Fact.tryIt`), with the basis. */
+  tryIt?: TryIt;
 }
 
 /** The value of an expansion (`Token.value`): the model's (src/semantics/values.ts, `expansionValue`), and its texts. */

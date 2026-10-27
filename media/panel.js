@@ -292,8 +292,11 @@
     box.className = 'tryit';
     box.open = openTryIts.has(t.code);
     box.addEventListener('toggle', () => (box.open ? openTryIts.add(t.code) : openTryIts.delete(t.code)));
-    // (A click in it is not a click on the note.)
+    // (A click in it is not a click on the note or the row; Enter and Space on it are its own, not the tree's.)
     box.addEventListener('click', (e) => e.stopPropagation());
+    box.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+    });
     const head = document.createElement('summary');
     head.className = 'tryit-head';
     head.textContent = labels.tryIt ?? 'Try it in your terminal';
@@ -764,7 +767,11 @@
     if (also) text.append(also);
     const value = valueLine(token.value);
     if (value) text.append(value);
-    row.append(twisty, label, ...nameBadge(token.name), text, ...refLinks(token.refs));
+    // Where the text rests on bash's behaviour rather than the manual: its chip after the text, as a note's, and its
+    // try-it under the row, as wide as the row (beside the label, the text's column is narrow on a phone).
+    const [chip, ...tryIt] = basisParts(token.basisShown);
+    if (chip) text.append(chip);
+    row.append(twisty, label, ...nameBadge(token.name), text, ...refLinks(token.refs), ...tryIt);
     li.append(row);
     if (token.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
     // Examples placed under this token go before (first) or after (last) its parts.
@@ -1653,7 +1660,7 @@
     const text = document.createElement('span');
     // (What the kind is in general, where no token says more: quieter than an explanation.)
     text.className = n.text === undefined ? 'text about' : 'text';
-    text.append(...inline(about));
+    text.append(...inline(about), ...(n.text === undefined ? [] : basisParts(n.basisShown)));
     const links = refLinks(n.refs);
     links.forEach((l) => l.querySelectorAll('a').forEach((a) => { a.tabIndex = -1; }));
     const right = document.createElement('span');
