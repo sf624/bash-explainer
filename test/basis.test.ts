@@ -26,6 +26,9 @@ const SAMPLES: Partial<Record<FactId, unknown[]>> = {
     { v: 'x', name: 'x', exits: 'command', shell: 'dash', environment: 'no' },
   ],
   'variable-not-exported': [{ v: 'a', array: true }, { v: 'a' }],
+  'array-joined-in-assignment': [
+    { v: 'v', op: '=', word: '$@', args: true, list: '("$@")', string: '"$*"' }, { v: 'v', op: '=', word: '${a[@]}', args: false, list: '("${a[@]}")', string: '"${a[*]}"' },
+  ],
 };
 
 /** The kind of basis an entry gives for each of its samples (or its one spec), `manual` where it gives none. */
@@ -150,8 +153,6 @@ describe('basis: what an explanation rests on', () => {
       'exit-modulo': ['checked', 'manual'],
       'errexit-off-in-substitution': ['manual', 'checked'],
       'keyword-needs-separator': ['checked'],
-      'bracket-missing-close': ['checked'],
-      'bracket-close-glued': ['checked'],
       'test-malformed': ['differs'],
       'unset-function-and-variable': ['checked'],
       'unset-readonly': ['checked'],
@@ -167,7 +168,7 @@ describe('basis: what an explanation rests on', () => {
       'extglob-not-in-new-shell': ['checked'],
       'variable-not-exported': ['checked', 'manual'],
       'bash-subshell-not-counted': ['differs'],
-      'array-joined-in-assignment': ['checked'],
+      'array-joined-in-assignment': ['manual', 'checked'],
       'unquoted-variable-in-test': ['differs', 'manual'],
       'nounset-unbound': ['differs', 'manual', 'manual'],
     };
@@ -182,10 +183,10 @@ describe('basis: what an explanation rests on', () => {
 
   it('says that bash does not count the subshell of a simple command in a pipeline in `$BASH_SUBSHELL`', () => {
     const noted = (src: string, shell?: Shell) => (new Analyzer('en').explainLine(createUnbashParser().parse(src), 0, shell).facts ?? []).some((f) => f.id === 'bash-subshell-not-counted');
-    for (const src of ['echo "$BASH_SUBSHELL" | cat', 'echo ${BASH_SUBSHELL:-0} | cat', 'cat </dev/null | echo $BASH_SUBSHELL', 'x=$(echo $BASH_SUBSHELL | cat)', 'echo $(( BASH_SUBSHELL + 1 )) | cat']) assert.ok(noted(src), src);
-    // (A group in a pipeline is counted; so is `$( )`, `( )` and `&`; and the shell itself is 0. A function called in a
-    // stage is not said.)
-    for (const src of ['{ echo $BASH_SUBSHELL; } | cat', 'f() { echo $BASH_SUBSHELL; }; f | cat', 'y=$(echo $BASH_SUBSHELL) | cat', '(echo $BASH_SUBSHELL)', 'echo $BASH_SUBSHELL', 'echo $BASHPID | cat', 'echo ${#BASH_SUBSHELL} | cat']) assert.ok(!noted(src), src);
+    for (const src of ['echo "$BASH_SUBSHELL" | cat', 'eval "echo $BASH_SUBSHELL" | cat', 'f "$BASH_SUBSHELL" | cat', 'echo ${BASH_SUBSHELL:-0} | cat', 'cat </dev/null | echo $BASH_SUBSHELL', 'x=$(echo $BASH_SUBSHELL | cat)', 'echo $(( BASH_SUBSHELL + 1 )) | cat']) assert.ok(noted(src), src);
+    // (A group in a pipeline is counted; so is `$( )`, `( )` and `&`; and the shell itself is 0. What the stage's command
+    // runs, a function's body, an `eval` string or a trap's action, sees the subshell counted: a row of words.json checks that bash prints 1 there.)
+    for (const src of ['{ echo $BASH_SUBSHELL; } | cat', 'f() { echo $BASH_SUBSHELL; }; f | cat', "eval 'echo $BASH_SUBSHELL' | cat", "trap 'echo $BASH_SUBSHELL' EXIT | cat", 'y=$(echo $BASH_SUBSHELL) | cat', '(echo $BASH_SUBSHELL)', 'echo $BASH_SUBSHELL', 'echo $BASHPID | cat', 'echo ${#BASH_SUBSHELL} | cat']) assert.ok(!noted(src), src);
     // (Only bash has it; with lastpipe on, the last stage runs in the shell.)
     assert.ok(noted('echo $BASH_SUBSHELL | cat', 'bash'));
     assert.ok(!noted('echo $BASH_SUBSHELL | cat', 'sh'));

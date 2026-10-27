@@ -4,7 +4,7 @@
 import { fact } from '../messages';
 import { type EnvLink, groupSubshellLink, processOf, type SubshellLink } from '../semantics/env';
 import { stageUncounted } from '../semantics/vars';
-import type { SyntaxNode } from '../syntax/tree';
+import { ancestor, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 
 /**
@@ -75,13 +75,16 @@ export function shellEffectNote(cx: Explainer, n: SyntaxNode, effect: 'changes' 
 }
 
 /**
- * A variable that counts subshells (`$BASH_SUBSHELL`, src/semantics/vars.ts) read in a simple command that is a stage
- * of a pipeline: bash runs the stage in a subshell, but does not count it.
+ * A variable that counts subshells (`$BASH_SUBSHELL`, src/semantics/vars.ts) read in a word of a simple command that is
+ * a stage of a pipeline: bash runs the stage in a subshell, but does not count it while it expands the stage's words.
+ * Code the command runs (an `eval` string, a trap's action, a function's body) sees the subshell counted: there the
+ * word is not in the stage's own tree (`eval 'echo $BASH_SUBSHELL' | cat` prints 1).
  */
 export function stageCountNote(cx: Explainer, n: SyntaxNode, name: string): void {
   if (!stageUncounted(name) || (cx.shell && cx.shell !== 'bash')) return;
   const l = processOf(cx.state.env(n)).link;
-  if (l?.kind === 'subshell' && l.why === 'pipeline-stage' && l.at.type === 'command') cx.note(fact(cx.lang, 'bash-subshell-not-counted'), n);
+  if (l?.kind !== 'subshell' || l.why !== 'pipeline-stage' || l.at.type !== 'command') return;
+  if (ancestor(n, (a) => a === l.at)) cx.note(fact(cx.lang, 'bash-subshell-not-counted'), n);
 }
 
 /** `$$` in a subshell: still the PID of the script's shell (bash gives the subshell's in `$BASHPID`). */

@@ -494,14 +494,13 @@ Every note was checked against the Bash 5.2 manual, section by section. Not in t
 
 - `exit 300` gives 44. The manual's sections 2 and 3.7.5 imply it without stating it for `exit`. `return 300` gives 44 too, but section 4.1 states that for `return`, so its note has no chip.
 - `unset -fv x f` is an error, and nothing is unset. Section 4.1 describes `-f` and `-v` one at a time.
-- `[` without `]` as its last argument (`[ -n x`, `[ a = a]`) fails with status 2. Section 4.1 only says the `]` must be there.
 - `unset` of a read-only variable fails with status 1; the manual says "non-zero".
 - `x=1` where `x` is read-only abandons the rest of the line (or the subshell) with status 1.
 - A restricted shell (`set -r`, `rbash`) refuses with status 1.
 - In POSIX mode, a function named like a special builtin (`eval() { …; }`) stops the script.
 - A missing `;` before `then` or `do`, and an extended glob such as `@(a|b)` without `shopt -s extglob`, are syntax errors that stop the script. A shell started by the script (`bash -c`) has `extglob` off again.
-- `v=$@` and `v=${arr[@]}` join with spaces, whatever `IFS` is.
-- `export` of an array exports nothing.
+- `v=${arr[@]}` joins the elements with spaces, whatever `IFS` is. Section 3.4.2 says it of `v=$@`; section 6.7 only calls `${arr[@]}` "analogous".
+- `export` of an array exports nothing. The man page says so under BUGS; the Reference Manual does not.
 - In bash 5.3's `${ …; }`, `set -e` is off: only bash 5.3 is named on this chip.
 
 Differs from the manual:
@@ -509,9 +508,9 @@ Differs from the manual:
 - `[ a b ]` and `[ a b c ]` fail with status 2 ("unary operator expected", "binary operator expected"). Section 4.1 says such tests are false. So does `[ $x = y ]` when `x` is empty, in the caveat on unquoted variables in `[ ]`.
 - `x=2 cmd`, where `x` is read-only, still runs `cmd` (status 0). Section 3.7.1 says the command exits with a non-zero status.
 - With `set -u`, an unset variable in the redirection of a program (`cat < "$f"`) fails that command with status 1, and the script goes on. Section 4.3.1 says a non-interactive shell exits.
-- `$BASH_SUBSHELL` is not counted in a simple command of a pipeline (the new note). Section 5.2 says it is incremented in each subshell.
+- `$BASH_SUBSHELL` in the words of a simple command of a pipeline is not counted (the new note): `echo $BASH_SUBSHELL | cat` prints 0. Section 5.2 says it is incremented in each subshell. What the command runs counts it: `eval 'echo $BASH_SUBSHELL' | cat` prints 1, and there is no note.
 
-Some notes now link the sections that state what they say: the status of a function or a script ends with that of its last command (3.2.4, 3.3, 6.1), `export x=$(cmd)` hides the failure (4.1), `(( i++ ))` is 1 when `i` is 0 (3.2.5.2), a `then` read as an argument (3.2.1).
+Some notes now link the sections that state what they say: the status of a function or a script ends with that of its last command (3.2.4, 3.3, 6.1), `export x=$(cmd)` hides the failure (4.1), `(( i++ ))` is 1 when `i` is 0 (3.2.5.2), a `then` read as an argument (3.2.1), `[` without `]` fails with status 2 (3.7.5: a builtin used wrongly returns 2).
 
 Under the chip, "Try it in your terminal" (「端末で試す」) opens a command to copy and what it prints:
 

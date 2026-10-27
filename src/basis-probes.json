@@ -142,6 +142,17 @@
       "output": "declare -- v=\"a b c\""
     }
   },
+  "state#assign-array": {
+    "manual": "6.7",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'IFS=,; a=(\"a b\" c); v=${a[@]}; declare -p v'",
+      "output": "declare -- v=\"a b c\""
+    }
+  },
   "state#nounset-redirect": {
     "manual": "4.3.1",
     "bash": [
