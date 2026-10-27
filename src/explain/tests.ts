@@ -13,7 +13,7 @@ import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { expressionHost } from '../refs';
-import { option } from '../semantics/state';
+import { option, type ShellState } from '../semantics/state';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { type BracketTest, collation, type TestExpr, testRange } from '../testexpr';
@@ -26,20 +26,36 @@ import { arithChildren, arithNumber, commaNote, globToken } from './words';
 
 /**
  * The text of the binary operator `op` of a test at `n`: for `<` and `>` in bash, with how they compare there
- * (`collation`: `[[ ]]` when `double`, else the builtin `test` and `[`; `builtin`, false for the program).
+ * (`collation`: `[[ ]]` when `double`, else the builtin `test` and `[`; `builtin`, false for the program, which GNU
+ * coreutils' `test` is: it has no `<` nor `>`, checked with coreutils 9.4).
  */
 function binaryText(cx: Explainer, n: SyntaxNode, op: string, double: boolean, builtin: boolean): string {
-  if (!builtin || (cx.shell && cx.shell !== 'bash') || (op !== '<' && op !== '>')) return cx.t(binaryTestOps[op]);
+  if (op !== '<' && op !== '>') return cx.t(binaryTestOps[op]);
+  if (!builtin) {
+    return cx.s(`${cx.t(binaryTestOps[op])}。ただし GNU coreutils の \`test\` にこの演算子はなく、「binary operator expected」のエラーになる（終了ステータス 2）`,
+      `${cx.t(binaryTestOps[op])}. But GNU coreutils' \`test\` has no such operator: it says "binary operator expected" (status 2)`);
+  }
+  if (cx.shell && cx.shell !== 'bash') return cx.t(binaryTestOps[op]);
   const st = cx.state.at(n).run;
   const on = (kind: 'set' | 'shopt', name: string): 'on' | 'off' | 'unknown' => {
     const v = option(st, kind, name);
     return v === 'default' ? 'off' : v;
   };
-  // (Level 4.0 or lower: `compat31`, `compat32` or `compat40`.)
-  const levels = ['compat31', 'compat32', 'compat40'].map((o) => on('shopt', o));
+  // (Level 4.0 or lower: `compat31`, `compat32` or `compat40`, or `BASH_COMPAT` of 4.0 or lower: `40`, `4.0`, `31`…;
+  // another value keeps the current level.)
+  const levels = [...['compat31', 'compat32', 'compat40'].map((o) => on('shopt', o)), compatVariable(st)];
   const c = collation(double, cx.opts.bashVersion ?? DEFAULT_BASH_VERSION, on('set', 'posix'), levels.includes('on') ? 'on' : levels.includes('unknown') ? 'unknown' : 'off');
   const how = cx.t(collationTexts[c.why ? `${c.order} ${c.why}` : c.order]);
   return op === '<' ? cx.s(`辞書順で左が小さい。${how}`, `sorts before, ${how}`) : cx.s(`辞書順で左が大きい。${how}`, `sorts after, ${how}`);
+}
+
+/** Whether `BASH_COMPAT` in `st` sets level 4.0 or lower (checked with bash 5.2 and 5.3: `40`, `4.0`, `31`, `3.2`). */
+function compatVariable(st: ShellState): 'on' | 'off' | 'unknown' {
+  const v = st.variables.get('BASH_COMPAT');
+  if (!v || v.set === 'off') return 'off';
+  if (v.set === 'unknown' || v.value === undefined) return 'unknown';
+  const m = /^(\d)\.?(\d)$/.exec(v.value);
+  return m && Number(m[1] + m[2]) <= 40 ? 'on' : 'off';
 }
 
 function arithTestExplanation(cx: Explainer): string {

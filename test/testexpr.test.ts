@@ -576,7 +576,8 @@ describe('`<` and `>` compare as bash does, by the locale or by bytes', () => {
     'test a "<" B', '[ a \\< B ]', '[[ a < B ]]', 'test B ">" a', '[[ B > a ]]',
     'set -o posix\ntest a "<" B', 'set -o posix\n[ B \\> a ]', 'set -o posix\n[[ a < B ]]',
     'shopt -s compat40\n[[ a < B ]]', 'shopt -s compat31\n[[ B > a ]]', 'set -o posix; shopt -s compat40\n[[ a < B ]]',
-    'set -o posix; shopt -s compat32\ntest a "<" B',
+    'set -o posix; shopt -s compat32\ntest a "<" B', 'BASH_COMPAT=40\n[[ a < B ]]', 'BASH_COMPAT=3.2\n[[ B > a ]]', 'BASH_COMPAT=41\n[[ a < B ]]',
+    'set -o posix; BASH_COMPAT=4.0\n[[ a < B ]]', 'BASH_COMPAT=40; unset BASH_COMPAT\n[[ a < B ]]', 'BASH_COMPAT=bogus\n[[ a < B ]]',
   ];
   /** The status the explanation implies: 0 when it says the locale's order (where `a` sorts before `B`), else 1. */
   const implied = (src: string, version: '5.2' | '5.3') => (/^Condition: .* — sorts (before|after), compared in the locale's collation order/.test(condition(src, version)) ? 0 : 1);
@@ -594,6 +595,13 @@ describe('`<` and `>` compare as bash does, by the locale or by bytes', () => {
     assert.strictEqual(condition('[ a\\b = ab ]', '5.2'), 'Condition: `a\\b` vs `ab` — strings are equal (the right side is plain text, not a pattern)');
     assert.strictEqual(condition('[ a\\b$ \\< c ]', '5.2'), 'Condition: `a\\b$` vs `c` — sorts before, compared by byte values, not in the locale\'s collation order');
     assert.deepStrictEqual(runBash('[ a\\b = ab ] && [ "a\\b$" \\< c ]').status, 0);
+    // (`BASH_COMPAT` of a value not known here: either.)
+    assert.match(condition('BASH_COMPAT=$1\n[[ a < b ]]', '5.2'), /where the compatibility level is 4\.0 or lower \(on some paths\), by byte values$/);
+    // (A value bash does not take, or `BASH_COMPAT` unset: the current level, here the locale's.)
+    for (const src of ['BASH_COMPAT=bogus\n[[ a < b ]]', 'BASH_COMPAT=40; unset BASH_COMPAT\n[[ a < b ]]']) assert.match(condition(src, '5.2'), /compared in the locale's collation order \(`LC_COLLATE`\)$/, src);
+    // (The program `test` of GNU coreutils has no `<`.)
+    assert.strictEqual(condition('/usr/bin/test a "<" b', '5.2'), 'Condition: `a` vs `b` — sorts before (lexicographically). But GNU coreutils\' `test` has no such operator: it says "binary operator expected" (status 2)');
+    assert.strictEqual(runBash('/usr/bin/test a "<" b; echo $?; env [ a \\> b ]; echo $?').stdout, '2\n2\n');
     // (Another shell's: the operator only.)
     assert.deepStrictEqual(conditions('[[ a < b ]]', '5.2', 'ksh' as 'bash'), ['Condition: `a` vs `b` — sorts before (lexicographically)']);
     assert.deepStrictEqual(conditions('[ a \\< b ]', '5.2', 'dash' as 'bash'), ['Condition: `a` vs `b` — sorts before (lexicographically)']);

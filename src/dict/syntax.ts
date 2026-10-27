@@ -489,7 +489,7 @@ export const extendedEqualOps: Record<string, Text> = {
 
 /**
  * How bash's `<` and `>` compare (`collation` in src/testexpr.ts, by its `order` and `why`), after the operator's text.
- * Checked with bash 5.2.21 and 5.3 in en_US.UTF-8 (test/test-collation.test.ts).
+ * Checked with bash 5.2.21 and 5.3 in en_US.UTF-8 (test/testexpr.test.ts).
  */
 export const collationTexts: Record<string, Text> = {
   'locale': tx('ロケールの照合順序（`LC_COLLATE`）で比べる', 'compared in the locale\'s collation order (`LC_COLLATE`)'),
