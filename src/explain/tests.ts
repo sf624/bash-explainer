@@ -4,7 +4,8 @@
 // examples of a test (values that make it true, that match a pattern or a regex) come from src/explain/examples.ts.
 import type { Kind, Token } from '../analyzer-types';
 import { arithLiteral, evalArith, invalidLiteral } from '../arith';
-import { binaryTestOps, extendedEqualOps, unaryTestOps } from '../dict/syntax';
+import { DEFAULT_BASH_VERSION } from '../bashversion';
+import { binaryTestOps, collationTexts, extendedEqualOps, unaryTestOps } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { explainRegex } from '../embedded/regex';
 import { toJsRegex } from '../examples/regex';
@@ -12,15 +13,34 @@ import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { expressionHost } from '../refs';
+import { option } from '../semantics/state';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
-import { type BracketTest, type TestExpr, testRange } from '../testexpr';
+import { type BracketTest, collation, type TestExpr, testRange } from '../testexpr';
 import type { Explainer } from './context';
 import { matchExample, regexExample, testExample } from './examples';
 import { fromEmbedded, same, skeletal, sortTokens } from './nodes';
 import { inArithmetic } from './reads';
 import { postfixStatusNote } from './status';
 import { arithChildren, arithNumber, commaNote, globToken } from './words';
+
+/**
+ * The text of the binary operator `op` of a test at `n`: for `<` and `>` in bash, with how they compare there
+ * (`collation`: `[[ ]]` when `double`, else the builtin `test` and `[`; `builtin`, false for the program).
+ */
+function binaryText(cx: Explainer, n: SyntaxNode, op: string, double: boolean, builtin: boolean): string {
+  if (!builtin || (cx.shell && cx.shell !== 'bash') || (op !== '<' && op !== '>')) return cx.t(binaryTestOps[op]);
+  const st = cx.state.at(n).run;
+  const on = (kind: 'set' | 'shopt', name: string): 'on' | 'off' | 'unknown' => {
+    const v = option(st, kind, name);
+    return v === 'default' ? 'off' : v;
+  };
+  // (Level 4.0 or lower: `compat31`, `compat32` or `compat40`.)
+  const levels = ['compat31', 'compat32', 'compat40'].map((o) => on('shopt', o));
+  const c = collation(double, cx.opts.bashVersion ?? DEFAULT_BASH_VERSION, on('set', 'posix'), levels.includes('on') ? 'on' : levels.includes('unknown') ? 'unknown' : 'off');
+  const how = cx.t(collationTexts[c.why ? `${c.order} ${c.why}` : c.order]);
+  return op === '<' ? cx.s(`辞書順で左が小さい。${how}`, `sorts before, ${how}`) : cx.s(`辞書順で左が大きい。${how}`, `sorts after, ${how}`);
+}
 
 function arithTestExplanation(cx: Explainer): string {
   return cx.s('算術評価 `(( ))`: 式を計算し、結果が 0 以外なら成功(0)を返す', 'Arithmetic evaluation `(( ))`: succeeds if the result is non-zero');
@@ -82,9 +102,11 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
     case 'binary': {
       const op = words[e.op].text!;
       const num = numericTestNote(cx, op, [slice(e.left, e.left), slice(e.right, e.right)], false);
+      // (`refs`: bash's builtin, or another shell's.)
+      const text = binaryText(cx, n, op, false, !!refs);
       return [make('test', cx.s(
-        `条件: \`${slice(e.left, e.left)}\` と \`${slice(e.right, e.right)}\` を比較 — ${cx.t(binaryTestOps[op])}${num}`,
-        `Condition: \`${slice(e.left, e.left)}\` vs \`${slice(e.right, e.right)}\` — ${cx.t(binaryTestOps[op])}${num}`,
+        `条件: \`${slice(e.left, e.left)}\` と \`${slice(e.right, e.right)}\` を比較 — ${text}${num}`,
+        `Condition: \`${slice(e.left, e.left)}\` vs \`${slice(e.right, e.right)}\` — ${text}${num}`,
       ), [...operandTokens(e.left, isPlainWord), ...operandTokens(e.right, isPlainWord)])];
     }
     default:
@@ -246,9 +268,10 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
     if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
       return cx.tok(n, 'test', cx.t(binaryTestOps[op]), cx.subs([left, ...rights]));
     }
+    const text = quotedPatternNote(cx, n, op, rights) ?? (extendedEqualOps[op] ? cx.t(extendedEqualOps[op]) : binaryText(cx, n, op, true, true));
     return cx.tok(n, 'test', cx.s(
-      `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${quotedPatternNote(cx, n, op, rights) ?? cx.t(extendedEqualOps[op] ?? binaryTestOps[op])}${num}`,
-      `Condition: \`${left?.text}\` vs \`${rightText}\` — ${quotedPatternNote(cx, n, op, rights) ?? cx.t(extendedEqualOps[op] ?? binaryTestOps[op])}${num}`,
+      `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${text}${num}`,
+      `Condition: \`${left?.text}\` vs \`${rightText}\` — ${text}${num}`,
     ), operands);
   }
   const assignOps = ['=', '+=', '-=', '*=', '/=', '%='];
