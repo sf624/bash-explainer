@@ -77,7 +77,7 @@ export class Analyzer {
       items,
       context: cx.context,
       notes,
-      noteInfo: notes.map((n) => cx.noteOf(n)),
+      noteInfo: notes.map((n) => basisGate(cx.noteOf(n), cx.opts.basis)),
       ...(facts.length ? { facts } : {}),
       ...(cx.anchors.some((a) => notes.includes(a.text)) ? { anchors: cx.anchors.filter((a) => notes.includes(a.text)) } : {}),
       // Each -e of sed explains the same combined script, at the command: drop repeated examples.

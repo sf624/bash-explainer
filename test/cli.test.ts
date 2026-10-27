@@ -178,6 +178,19 @@ describe('the command-line tool', function () {
     assert.deepStrictEqual(json.map((i: { code: string }) => i.code), ['dbracket']);
   });
 
+  it('names in JSON the habit a note advises, in the facts and the records of --check, unless `notes.basis` is off (docs/design/basis-spec-convention.md, step 5b)', () => {
+    const src = 'f() { local v=$(false); read line; }';
+    const facts = JSON.parse(run(['--format', 'json', '-e', src]).out)[0].explanation.facts;
+    assert.deepStrictEqual(facts.map((f: { id: string; convention?: string }) => [f.id, f.convention]), [['declaration-masks-status', 'declare-then-assign']]);
+    const check = JSON.parse(run(['--check', '--format', 'json', '-e', `${src}\n[-f x]`]).out);
+    assert.deepStrictEqual(check.map((i: { code: string; convention?: string }) => [i.code, i.convention ?? null]), [
+      ['declaration-masks-status', 'declare-then-assign'], ['read-without-r', 'read-r'], ['bracket-no-space', null],
+    ]);
+    const off = (args: string[]) => run([...args, '--set', 'notes.basis=false']).out;
+    assert.doesNotMatch(off(['--format', 'json', '-e', src]), /convention/);
+    assert.doesNotMatch(off(['--check', '--format', 'json', '-e', src]), /convention/);
+  });
+
   it('--sarif writes the SARIF file from the same run that prints the annotations', () => {
     const file = path.join(dir, 'out.sarif');
     const both = run(['--check', '--format', 'github', '--sarif', file, fixture('posix.sh')]);

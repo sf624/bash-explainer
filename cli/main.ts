@@ -358,7 +358,7 @@ function sarif(problems: Problem[]) {
 // what a fact rests on where it is not the manual, and its try-it: docs/design/basis.md.)
 const forJson = ({ anchors: _, noteInfo: _n, ...ex }: LineExplanation) => ({
   ...ex,
-  ...(ex.facts ? { facts: ex.facts.map(({ id, kind, level, text, refs, basis, tryIt }) => ({ id, kind, level, text, refs, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}) })) } : {}),
+  ...(ex.facts ? { facts: ex.facts.map(({ id, kind, level, text, refs, basis, tryIt, convention }) => ({ id, kind, level, text, refs, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}), ...(convention ? { convention } : {}) })) } : {}),
   examples: ex.examples.map(({ interactive: _i, ...e }) => e),
 });
 
@@ -400,7 +400,7 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
       // (A pitfall fails the check only with --strict: its warnings came later, and must not fail a CI that passed.)
       const fails = (i: DocumentIssue) => i.severity === 'warning' && (o.strict || !i.pitfall);
       warnings += issues.filter(fails).length;
-      if (o.format === 'json' || o.format === 'sarif' || o.sarifFile !== undefined) json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }) })));
+      if (o.format === 'json' || o.format === 'sarif' || o.sarifFile !== undefined) json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }), ...(i.convention && o.settings['notes.basis'] !== false ? { convention: i.convention } : {}) })));
       if (o.format === 'github') for (const i of issues) (fails(i) ? failing : chunks).push(annotation(input.name, i));
       else if (o.format !== 'json' && o.format !== 'sarif') chunks.push(...issues.map((i) => issueText(input.name, i, o.color)));
     } else {
