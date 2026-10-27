@@ -1,6 +1,6 @@
 # The basis of an explanation, as data
 
-Status: planned (2026-10-27). Step 1 (the data model and its source) in progress. Roadmap item "The basis of an explanation, as data".
+Status: planned (2026-10-27). Step 1 (the data model and its source) done (#441). Roadmap item "The basis of an explanation, as data".
 
 Most of what the explainer says is what the Bash manual says, and the sections it cites (`refs`) are the basis. Some of it is bash's behaviour where the manual is silent (`exit 300` exits with 44), or where the manual says otherwise (`$BASH_SUBSHELL` in a pipeline stage). A reader who checks such a line against the manual finds nothing, or the opposite, and may think we are wrong. The roadmap item asks for:
 
@@ -69,7 +69,7 @@ Changed: the prototype wrote each try-it's code and output in the catalog, and a
 
 Each step is a PR that keeps every test passing.
 
-1. **The data model and its source** (this PR). src/basis.ts (the types, `basisOf`, `basisFor`), `withBasis` in the catalog, `Fact.basis` and `Fact.tryIt`; the probe rows' `try`, recorded and checked (test/support/probe.ts, scripts/record-probes.ts, test/probe.test.ts), the copy src/basis-probes.json, test/basis.test.ts. Two facts: `exit-modulo` for `exit` (`status#exit-status`, also `status#exit-negative`) and `unset-function-and-variable` (`state#unset-fv`), both `checked`. No view change, no CHANGELOG.
+1. **The data model and its source** (#441). src/basis.ts (the types, `basisOf`, `basisFor`), `withBasis` in the catalog, `Fact.basis` and `Fact.tryIt`; the probe rows' `try`, recorded and checked (test/support/probe.ts, scripts/record-probes.ts, test/probe.test.ts), the copy src/basis-probes.json, test/basis.test.ts. Two facts: `exit-modulo` for `exit` (`status#exit-status`, also `status#exit-negative`) and `unset-function-and-variable` (`state#unset-fv`), both `checked`. No view change, no CHANGELOG.
 2. **The views and the setting.** The catalog's words for the chips and the try-it, the panel (Meaning and Reading), the hover, Copy as Markdown, the CLI (text and JSON), the web page; `bashExplainer.notes.basis`. Layout tests: the chip does not break, at three widths, in both languages, with CI's CJK fonts. CHANGELOG (New): "An explanation that rests on bash's behaviour rather than the manual says so, with a command to try it in your terminal."
 3. **More facts.** The catalog, section by section against the manual: each entry is the manual's, `checked` or `differs`, with a probe row and a try-it for the last two. Among them the new note on `$BASH_SUBSHELL` in a simple command of a pipeline (`differs`; a fact users see, so a CHANGELOG bullet). The `bash53` job runs every try-it in bash 5.3 too, so a chip can say both releases when both agree.
 4. **Tokens.** `Token.basis` and `Token.tryIt` for texts that state bash's behaviour (`$_` after assignments only), from a table keyed as the catalog is, read where the token's text is chosen; the reading tree copies them. No name checks in src/explain/: the table is keyed by the fact, not by a command.
