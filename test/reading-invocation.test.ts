@@ -38,7 +38,8 @@ describe('the reading tree as the Bash manual reads bash itself (chapter 6: 6.1,
       assert.deepStrictEqual([...names].filter((n) => /^-\w$/.test(n)).map((n) => n[1]).sort(), [...letters].sort());
     }
     // The letters of `set` mean what they mean to `set` (one source: its spec).
-    for (const o of builtins.set.options!.filter((x) => /^-[a-zA-Z]$/.test(x.names[0]))) assert.strictEqual(spec.options!.find((x) => x.names.includes(o.names[0])), o, o.names[0]);
+    // (`set -r` is not `bash -r`, which makes the variables read-only too.)
+    for (const o of builtins.set.options!.filter((x) => /^-[a-zA-Z]$/.test(x.names[0]) && x.names[0] !== '-r')) assert.strictEqual(spec.options!.find((x) => x.names.includes(o.names[0])), o, o.names[0]);
     each('for l in a b e f h k m n p t u v x B C E H P T; do "$BASH" -$l -c : </dev/null 2>/dev/null || echo "$l failed"; done', (r, which) => assert.strictEqual(r.stdout, '', which));
   });
 
@@ -54,11 +55,11 @@ describe('the reading tree as the Bash manual reads bash itself (chapter 6: 6.1,
   });
 
   it('reads long options only before the others, and refuses what bash refuses (6.1)', () => {
-    assert.match(said("bash -x --posix -c 'echo hi'", '--posix'), /^A long option after a single-letter one: bash reads long options only before the others, so it reads this word as the letters `-`…, says `--: invalid option` and exits, running nothing \(status 2; 1 after `-e`\)$/);
+    assert.match(said("bash -x --posix -c 'echo hi'", '--posix'), /^A long option after a single-letter one: bash reads long options only before the others, so it reads this word as the letters `-`…, says `--: invalid option` and exits, running nothing \(status 2; after `-e`, status 1, with no usage\)$/);
     // (Before them, `-login` is `--login` too; after them, it is letters.)
     assert.strictEqual(said("bash -login -c 'echo x'", '-login'), said("bash --login -c 'echo x'", '--login'));
     assert.match(said('bash -x -login', '-login'), /^Combined short options `-l` `-o` `-g` `-i` `-n`$/);
-    const invalid = /^An option bash does not have: bash says `invalid option`, prints its usage, and exits, running nothing \(status 2; 1 after `-e`\)$/;
+    const invalid = /^An option bash does not have: bash says `invalid option`, prints its usage, and exits, running nothing \(status 2; after `-e`, status 1, with no usage\)$/;
     assert.match(said("bash --rcfile=f -c 'echo x'", '--rcfile=f'), invalid);
     assert.match(said("bash -y -c 'echo x'", '-y'), invalid);
     // (`--rcfile` takes the next word: the words after it stay options.)
@@ -89,8 +90,16 @@ describe('the reading tree as the Bash manual reads bash itself (chapter 6: 6.1,
   });
 
   it('says what the startup options change (6.1, 6.2, 6.3.1)', () => {
-    assert.match(said("bash -i -c 'll'", '-i'), /^act as an interactive shell \(it reads `~\/\.bashrc` at start and expands aliases; `\$-` contains `i`\)$/);
-    assert.match(said('bash -l x', '-l'), /^act as a login shell \(at start it reads `\/etc\/profile`, then the first of `~\/\.bash_profile`, `~\/\.bash_login` and `~\/\.profile` that exists, even when not interactive\)$/);
+    assert.match(said("bash -i -c 'll'", '-i'), /^act as an interactive shell \(at start it reads `~\/\.bashrc`, but a login shell reads its login files instead, and POSIX mode `\$ENV`; it expands aliases, and `\$-` contains `i`\)$/);
+    assert.match(said('bash -l x', '-l'), /even when not interactive; not in POSIX mode\)$/);
+    assert.strictEqual(said("bash --pretty-print -c 'x'", '--pretty-print'), 'print the script file reformatted instead of running it (a `-c` string still runs)');
+    // (`-i -l` reads the login files only; POSIX mode reads `$ENV`, and no login files.)
+    each([
+      'echo "echo RC" > .bashrc; echo "echo PROFILE" > .profile; echo "echo ENVF" > envf; export HOME=$PWD',
+      '"$BASH" -i -l -c : </dev/null 2>/dev/null | grep -E "^(RC|PROFILE)$"', 'ENV=$PWD/envf "$BASH" --posix -i -c : </dev/null 2>/dev/null',
+      '"$BASH" --posix -l -c "echo none" </dev/null', 'printf "echo f1\\n" > s; "$BASH" --pretty-print -c "echo hi"; "$BASH" --pretty-print s',
+    ].join('\n'), (r, which) => assert.strictEqual(r.stdout, 'PROFILE\nENVF\nnone\nhi\necho f1\n\n', which));
+    assert.match(said('bash -l x', '-l'), /^act as a login shell \(at start it reads `\/etc\/profile`, then the first of `~\/\.bash_profile`, `~\/\.bash_login` and `~\/\.profile` that exists, even when not interactive; not in POSIX mode\)$/);
     assert.match(said('bash -s a', '-s'), /^read the commands from stdin \(also the default when no operand is left\); the operands become `\$1`…$/);
     assert.match(said('bash --version', '--version'), /nothing else runs$/);
     // A HOME with a `.bashrc` that defines an alias, and a `.profile`: `-i` reads one, `-l` the other.
@@ -155,7 +164,10 @@ describe('the reading tree as the Bash manual reads bash itself (chapter 6: 6.1,
     // Each line, and the word bash's message names: the builtin, a command name with `/`, an output redirection.
     const refused: [string, RegExp][] = [
       ['cd /', /bash refuses this `cd` \(`cd: restricted`\): it does nothing, and fails with status 1/],
-      ['pushd /tmp', /`pushd: restricted`/], ['pushd -n /tmp; popd', /`popd: restricted`/],
+      ['pushd /tmp', /`pushd: restricted`/], ['pushd -n /tmp; popd', /`popd: restricted`/], ['pushd -n /tmp; popd +0', /`popd: restricted`/],
+      ['command -pv ls', /`command: -p: restricted`/], ['builtin cd /', /`cd: restricted`/], ['command cd /', /`cd: restricted`/],
+      ['d=/tmp; . "$d/nosuch"', /`\.: "\$d\/nosuch": restricted`/], ['. ~/x', /`\.: ~\/x: restricted`/], ['history -r ~/h', /`history: ~\/h: restricted`/], ['hash -p ~/bin/ls ls', /`hash: ~\/bin\/ls: restricted`/],
+      ['d=/bin; "$d/echo" x', /`"\$d\/echo": restricted`: no `\/` in command names/],
       ['exec true', /`exec: restricted`/],
       ['/bin/echo x', /bash refuses a command name with a `\/` \(`\/bin\/echo: restricted`: no `\/` in command names, status 1\) and does not run `\/bin\/echo`/],
       ['./s.sh', /`\.\/s\.sh: restricted`/], ['command /bin/echo x', /`\/bin\/echo: restricted`/],
@@ -166,7 +178,8 @@ describe('the reading tree as the Bash manual reads bash itself (chapter 6: 6.1,
       ['echo hi >> f', /`>>`/], ['echo hi >| f', /`>\|`/], ['cat <> f', /`<>`/], ['echo hi &> f', /`&>`/], ['echo hi &>> f', /`&>>`/], ['echo hi >& f', /`>&` \(`f:/],
       ['exec 3> f', /`f: restricted: cannot redirect output`/],
     ];
-    const fine = ['pushd -n /tmp', 'echo hi >&2', 'echo hi 2>&1', 'echo hi >&-', 'fd=2; echo hi >&$fd', 'exec 3< /dev/null', 'exec', 'command -v ls', 'command ls', 'hash -p ls ls2',
+    const fine = ['pushd -n /tmp', 'pushd -n /tmp; pushd -n /usr; popd +1', 'pushd -n /tmp; pushd -n /usr; popd -0', 'command -p', 'hash -p /bin/ls', 'enable -f',
+      'f() { :; } > g', 'tool=/bin/echo; "${tool##*/}" x', 'cmd=ecxo; ${cmd/x/h} x', 'echo hi >&2', 'echo hi 2>&1', 'echo hi >&-', 'fd=2; echo hi >&$fd', 'exec 3< /dev/null', 'exec', 'command -v ls', 'command ls', 'hash -p ls ls2',
       'history -s /tmp/h', 'history -r', 'enable -n echo', 'echo hi | cat', 'cat <<< hi'];
     for (const [line, says] of refused) {
       assert.match(notes(script(line), 1), says, line);
@@ -182,7 +195,7 @@ describe('the reading tree as the Bash manual reads bash itself (chapter 6: 6.1,
     assert.match(notes("export PATH=/x; bash -r -c 'PATH=/y'"), /The variable `PATH` is read-only/);
     assert.doesNotMatch(notes("bash -c 'cd /'"), /restricted/);
     for (const src of ["bash -r -c 'cd /'", "bash --restricted -c 'cd /'", "bash -er -c 'cd /'", "rbash -c 'cd /'"]) assert.match(notes(src), /`cd: restricted`/, src);
-    for (const start of ['#!/bin/rbash', '#!/usr/bin/env -S bash -r', '#!/bin/bash --restricted']) assert.match(notes(`${start}\ncd /\n`, 1), /`cd: restricted`/, start);
+    for (const start of ['#!/bin/rbash', '#!/usr/bin/env rbash', '#!/usr/bin/env -S bash -r', '#!/bin/bash --restricted']) assert.match(notes(`${start}\ncd /\n`, 1), /`cd: restricted`/, start);
     // `shopt -u restricted_shell` changes nothing; the variables bash makes read-only.
     assert.match(notes(script('shopt -u restricted_shell\ncd /'), 2), /`cd: restricted`/);
     assert.match(notes(script('PATH=/x'), 1), /The variable `PATH` is read-only, so this assignment fails/);
@@ -197,6 +210,32 @@ describe('the reading tree as the Bash manual reads bash itself (chapter 6: 6.1,
     each('"$BASH" -r -c \'PATH=/x; echo same\'; echo "s$?"; "$BASH" -r -c \'shopt -u restricted_shell; echo "$?"; shopt -q restricted_shell && echo still; set +r; echo "set $?"\' 2>/dev/null; "$BASH" -r -c \'declare -p SHELL PATH HISTFILE ENV BASH_ENV\' | cut -c1-11', (r, which) => {
       assert.strictEqual(r.stdout, 's1\n0\nstill\nset 1\ndeclare -r \ndeclare -rx\ndeclare -r \ndeclare -r \ndeclare -r \n', which);
       assert.match(r.stderr, /PATH: readonly variable/, which);
+    });
+  });
+
+  it('makes the shell restricted from `set -r` on, as bash 5.2 does (6.10)', () => {
+    assert.match(said('set -r', '-r'), /^make the shell restricted from here on .*bash 5\.3 also makes `PATH` and the like read-only\)$/);
+    assert.match(said('set +r', '+r'), /nothing in a shell that is not restricted; a restricted one refuses it \(`set: \+r: invalid option`, status 1\)$/);
+    assert.doesNotMatch(notes('set -r\ncd /'), /restricted/);
+    assert.match(notes('set -r\ncd /', 1), /`cd: restricted`/);
+    assert.doesNotMatch(notes('set +r\ncd /', 1), /restricted/);
+    // (Not read-only there, as bash 5.2: docs/design/bash-versions.md has the 5.3 difference.)
+    assert.doesNotMatch(notes('set -r\nPATH=/x', 1), /read-only/);
+    each('"$BASH" -c \'set +r; echo "a $?"; set -r; echo "b $? $-"; cd /; echo "c $?"; set +r; echo "e $?"\' 2>&1 | grep -v usage', (r, which) => {
+      assert.match(r.stdout, /^a 0\nb 0 hrBc\n.*cd: restricted\nc 1\n.*set: \+r: invalid option\ne 1\n$/, which);
+    });
+    each('"$BASH" -c \'set -r; PATH=/x; echo "p $?"\' 2>&1', (r, which) => assert.match(r.stdout, which === 'bash' ? /^p 0\n$/ : /PATH: readonly variable\n$/, which));
+  });
+
+  it('reads `+c`, `+l`, `+s`, `+D` as their `-` forms, and skips a lone `+` (6.1)', () => {
+    assert.strictEqual(said("bash +c 'echo ran'", '+c'), said("bash -c 'echo ran'", '-c'));
+    assert.match(said("bash +c 'echo ran'", "'echo ran'"), /^The command string/);
+    assert.strictEqual(said('bash +l x', '+l'), said('bash -l x', '-l'));
+    assert.deepStrictEqual(readingNodes(reading("bash +lc 'x'")).find((n) => n.layer === 'command' && n.label === '+lc')!.children.map((c) => c.text), [said('bash -l x', '-l'), said("bash -c 'x'", '-c')]);
+    assert.strictEqual(said("bash + -c 'echo lone'", '+'), 'A lone `+`: no letters, so it changes nothing (bash skips it)');
+    assert.match(said("bash + -c 'echo lone'", "'echo lone'"), /^The command string/);
+    each(`"$BASH" +c 'echo ran'; "$BASH" +l -c 'shopt -q login_shell && echo L' </dev/null; echo 'echo x' | "$BASH" +s; "$BASH" + -c 'echo lone'; "$BASH" -e -y -c : 2>&1; echo "s$?"`, (r, which) => {
+      assert.match(r.stdout, /^ran\nL\nx\nlone\n.*-y: invalid option\ns1\n$/, which);
     });
   });
 });

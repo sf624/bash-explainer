@@ -87,6 +87,11 @@ export interface CommandSpec {
    * option, so an unknown one is only "not in the dictionary".)
    */
   unknownOption?: Text;
+  /**
+   * What a long option after a short one does, with the parser rule `longFirst` (bash: `--: invalid option`). (bash
+   * only, the one parser with that rule.)
+   */
+  lateOption?: Text;
   builtin?: 'special' | 'regular';
   /**
    * What a builtin ends, where the path goes on after it: `loop`, the loop it runs in (`break`); `pass`, the pass of
@@ -183,13 +188,14 @@ export interface CommandSpec {
 
 /**
  * The calls of a builtin a restricted shell refuses: every call (`{}`: `cd`), but with an option of `unless` (`pushd
- * -n`); only with an option of `options` (`command -p`, `enable -f`, `history -r`); only one that runs a command
- * (`command`: `exec cmd`); only one whose file is named with a `/` (`slash`): its first operand (`. ./f`, `history -r
- * /tmp/h`), or the value of that option (`hash -p /bin/ls ls`). bash names that file in its message (`.: ./f:
- * restricted`), or the option with `namesOption` (`command: -p: restricted`, but `enable: restricted`). Each checked
- * with bash 5.2 and 5.3.
+ * -n`) or a word of its own options that `unlessWord` matches (`popd +1`); only with an option of `options`, given
+ * its value (`command -p`, `enable -f x`, `history -r`); only one with a word after its options (`command`: `exec cmd`,
+ * `command -p ls`, `hash -p /bin/ls ls`); only one whose file is named with a `/` (`slash`): its first operand (`. ./f`,
+ * `history -r /tmp/h`), or the value of that option (`hash -p /bin/ls ls`). bash names that file in its message (`.:
+ * ./f: restricted`), or the option with `namesOption` (`command: -p: restricted`, but `enable: restricted`). Each
+ * checked with bash 5.2 and 5.3.
  */
-export interface Restriction { options?: string[]; unless?: string[]; command?: true; slash?: 'operand' | string; namesOption?: true }
+export interface Restriction { options?: string[]; unless?: string[]; unlessWord?: RegExp; command?: true; slash?: 'operand' | string; namesOption?: true }
 
 /** The layouts of output that src/examples/layouts.ts makes up. */
 export type Layout = 'ps' | 'ps-bsd-u' | 'ps-full' | 'ls' | 'ls-long' | 'ls-long-all' | 'ls-long-human' | 'df-human' | 'who' | 'env';
@@ -240,6 +246,11 @@ export interface OptionSpec {
   value?: ValueSpec | ValueSpec[];
   /** Inherited by subcommands (`kubectl -n`). */
   persistent?: boolean;
+  /**
+   * Written with `+` instead of `-`, it is the same option, not undone (bash's `+c`, `+l`, `+s`, `+D` when it starts:
+   * shell.c reads the sign only for the letters of `set`). (bash's invocation only.)
+   */
+  signless?: boolean;
   /** The mode it selects (`-q` selects 'query'). */
   selects?: string;
   /** Its meaning in a mode (`rpm -i` is information when querying). */

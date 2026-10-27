@@ -6,7 +6,7 @@
 // redirections set up first, the command inside); and the keyword `time`.
 import type { Kind, Span, Token } from '../analyzer-types';
 import type { ArgRole, ArgvParse } from '../argv/interpret';
-import { onlyInFunction, restrictedRefusal } from '../argv/query';
+import { onlyInFunction } from '../argv/query';
 import type { CommandSpec } from '../argv/spec';
 import { argWord } from '../argv/words';
 import { lookupCommand } from '../dict/aliases';
@@ -24,7 +24,7 @@ import { builtinSections, programSections } from '../refs';
 import { inFunction, processOf, readAs, shellEffectOf } from '../semantics/env';
 import { assignmentsOf, type Missed, type NameResolution, testSpecOf } from '../semantics/names';
 import { docLine, option } from '../semantics/state';
-import { isPlainWord, literalContent, staticWordValue } from '../staticword';
+import { isPlainWord, literalContent, staticWordValue, surelyHasSlash } from '../staticword';
 import { returnInSubstitution, scopeOf } from '../substitution-tokens';
 import { field, fields, redirectionsOf, type SyntaxNode, token, wordsText } from '../syntax/tree';
 import { commandTest } from '../testexpr';
@@ -34,7 +34,7 @@ import type { Explainer } from './context';
 import { commandExampleFor, unreadStdin, wordExample } from './examples';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
 import { redirectInfo, redirectParts } from './redirections';
-import { hostCommand, NO_SPEC, resolve, restrictedAt, specFor, unquotedWord } from './reads';
+import { hostCommand, NO_SPEC, resolve, restrictedAt, restrictedCall, specFor, unquotedWord } from './reads';
 import { statusRangeNote } from './status';
 import { shellEffectNote } from './where';
 import { bracesHere, braceWord, braceWords, bracesMaybeOff, plainText, shown } from './words';
@@ -232,10 +232,10 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   if (head.kind === 'builtin' && head.spec!.ends === 'function') head.explanation = returnInSubstitution(cx, n) ?? head.explanation;
   const read = readArgs(cx, head.spec, args, head.runs ?? head.name, head.fn);
   // A restricted shell refuses some calls of builtins, and command names with a `/` (6.10).
-  if ((head.kind === 'builtin' || (head.kind === 'command' && head.name.includes('/'))) && restrictedAt(cx, n)) {
-    const refused = head.kind === 'command' ? {} : restrictedRefusal(head.spec!, read.parse, args.map((a) => staticWordValue(a)));
-    if (refused) cx.note(fact(cx.lang, 'restricted-refused', { kind: head.kind === 'command' ? 'slash' : 'builtin', name: head.name, ...refused }), n);
-  }
+  // (A name with a `/` only inside an expansion may have none: `"${tool##*/}"`.)
+  const refused = head.kind === 'builtin' ? restrictedCall(cx, n, head.spec!, read.parse, args)
+    : head.kind === 'command' && surelyHasSlash(word ?? nameNode.namedChildren[0]!) && restrictedAt(cx, n) ? {} : undefined;
+  if (refused) cx.note(fact(cx.lang, 'restricted-refused', { kind: head.kind === 'command' ? 'slash' : 'builtin', name: head.name, ...refused }), n);
   if (tail && head.kind === 'builtin' && replacesShell(head.spec!) && !read.parse.roles.some((r) => r.role.role === 'command')) tail.toShell = true;
   let argToks = read.tokens;
   // `test` and `[` read their words as an expression (src/testexpr.ts), when the name runs one of them.

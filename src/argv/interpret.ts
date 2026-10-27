@@ -421,7 +421,7 @@ class Reader {
       const exact = findOption(options, longName ?? text, rules.longPrefixes);
       if (exact) {
         if (blocked(exact)) return -1;
-        const role: ArgRole = { role: 'option', flag: written, spec: exact, text: exact.text, ...(disables ? { disables } : {}) };
+        const role: ArgRole = { role: 'option', flag: written, spec: exact, text: exact.text, ...(disables && !exact.signless ? { disables } : {}) };
         roles.set(i, role);
         given.specs.push(exact);
         given.flags.push(text);
@@ -487,7 +487,7 @@ class Reader {
         letters.push({ role: 'unknown-option', flag: as, part });
         continue;
       }
-      const role: ArgRole = { role: 'option', flag: as, spec: opt, text: opt.text, part, ...(disables ? { disables } : {}) };
+      const role: ArgRole = { role: 'option', flag: as, spec: opt, text: opt.text, part, ...(disables && !opt.signless ? { disables } : {}) };
       letters.push(role);
       given.push(opt);
       const values = valuesOf(opt);

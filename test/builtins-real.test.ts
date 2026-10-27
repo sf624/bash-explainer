@@ -331,8 +331,8 @@ const NOT_IN_USAGE: Record<string, string[]> = {
   kill: ['-9', '-KILL', '-L', '-0'],
   // (`local [option]`: the options of `declare`.)
   local: ['-a', '-A', '-i', '-r', '-x', '-l', '-u', '-n', '-t', '-g', '-f', '-F', '-p', '-I'],
-  // (`set --` ends the options.)
-  set: ['--'],
+  // (`set --` ends the options; `set -r` makes the shell restricted, 6.10, though the usage does not show it.)
+  set: ['--', '-r'],
 };
 /** Letters the usage shows that Linux lacks: bash says "invalid option" there. */
 const NOT_ON_LINUX: Record<string, string[]> = { ulimit: ['-k', '-P', '-T'], cd: ['-@'] };

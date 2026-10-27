@@ -4,7 +4,7 @@
 import { evalArithWrapping } from '../../arith';
 import type { ArgRole, ArgvParse } from '../../argv/interpret';
 import type { CommandSpec } from '../../argv/spec';
-import { actedNames, onlyInFunction } from '../../argv/query';
+import { actedNames, has, onlyInFunction } from '../../argv/query';
 import { prefixOf } from '../../argv/words';
 import { bracesMayWork } from '../../shellfeatures';
 import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
@@ -17,6 +17,7 @@ import { aliasOf, builtinParse, commandName, DECLARATIONS, setOptionWrites, vari
 import { attribute, type Attribute, environmentHas, exportFromEnvironment, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy } from '../shellstate';
 import { changedByBash, optionRoles, readDeclarationWords, type Declaration } from '../vars';
 import { ExpansionError, NAME, type Operand } from './shared';
+import { restrictedFromHere } from './child';
 import type { Walker } from './walker';
 
 /** The attributes the declaration builtins give with their options. */
@@ -264,6 +265,8 @@ export class WalkBuiltins {
   }
 
   private setCommand(st: ShellState, parse: ArgvParse, args: SyntaxNode[]): ShellState {
+    // (`set -r`: restricted from here on; `set +r` changes nothing, or is refused.)
+    if (this.w.bash && has(parse, '-r')) st = restrictedFromHere(st);
     for (const { name, on } of setOptionWrites(parse, args, this.w.shell)) {
       if (!name) continue;
       const writes = this.w.setWrites.get(this.w.node!) ?? new Map<string, 'on' | 'off'>();

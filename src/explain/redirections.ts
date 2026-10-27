@@ -122,7 +122,8 @@ export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
   }
   const children = dests.filter((d) => !isPlainWord(d)).flatMap((d) => cx.sub(d));
   // A restricted shell refuses to open a file for output (6.10); duplicating or closing a descriptor is fine (`>&2`, `>&-`).
-  if (OUTPUT.has(op) && !(op === '>&' && /^(\d+-?|-)$/.test(target)) && !/^>&[$`]/.test(op + dest) && restrictedAt(cx, n)) {
+  // (Not said of a function's own redirection, which applies, and fails, at each call: `f() { …; } > g`.)
+  if (OUTPUT.has(op) && !(op === '>&' && /^(\d+-?|-)$/.test(target)) && !/^>&[$`]/.test(op + dest) && !(n.parent!.type === 'redirected_statement' && n.parent!.parent!.type === 'function_definition') && restrictedAt(cx, n)) {
     cx.note(fact(cx.lang, 'restricted-refused', { kind: 'redirect', name: op, word: target }), n);
   }
   if (dests.length === 1 && unquotedWord(dests[0]) !== undefined && /[*?[{]/.test(dests[0].text)) expl += redirectTargetNote(cx, dests[0]);

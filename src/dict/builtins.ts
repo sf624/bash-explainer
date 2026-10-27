@@ -397,6 +397,12 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-P', '`cd` でシンボリックリンクをたどらず物理パスで移動する', 'do not follow symlinks in `cd`'],
     ['-p', '特権モード（`$ENV` を読まず、環境の関数を取り込まない）', 'privileged mode (reads no `$ENV`, imports no functions)'],
     ['-t', '1つコマンドを読んで実行したら終了する', 'exit after reading and running one command'],
+    // (Not in `help set`'s usage, but bash takes it: 6.10. bash 5.3 also makes PATH and the like read-only, 5.2 not.)
+    {
+      names: ['-r'], text: tx('ここから制限付きシェルにする（`cd`、`/` を含むコマンド名、出力のリダイレクトなどを拒否する。元に戻せない。bash 5.3 では `PATH` なども読み取り専用になる）',
+        'make the shell restricted from here on (it refuses `cd`, command names with a `/`, output redirections…; it cannot be undone; bash 5.3 also makes `PATH` and the like read-only)'),
+      offText: tx('制限付きシェルでなければ何もしない。制限付きシェルでは拒否される（`set: +r: invalid option`、終了ステータス 1）', 'nothing in a shell that is not restricted; a restricted one refuses it (`set: +r: invalid option`, status 1)'),
+    },
     ['--', 'オプションの終わり。続く語は `-` で始まっていても位置パラメータ `$1`、`$2`… になる（なければ位置パラメータをすべて削除する）', 'ends the options; the words after it become the positional parameters `$1`, `$2`…, even those that start with `-` (with none, the positional parameters are unset)'],
   ], {
     plusOptions: true,
@@ -558,7 +564,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
       { when: { option: ['-v', '-V'] }, pattern: [operand('NAME', '調べる名前', 'name to look up', { repeat: '*' })] },
       { pattern: [runs({ run: 'current-shell', lookup: 'no-functions' })] },
     ],
-    restricted: { options: ['-p'], namesOption: true },
+    restricted: { options: ['-p'], command: true, namesOption: true },
   }),
   builtin: cmd('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { builtin: 'regular', optionsFirst: true, operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'builtins-only' })] }] }),
   hash: actsOnShell(b('コマンドのパスのキャッシュを操作する', 'Manage the command path cache', [
@@ -568,7 +574,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-p', '名前に対応するパスを指定して覚えさせる', 'remember the given path for the name', 'arg'],
     ['-t', '覚えているパスを表示する', 'print the remembered path of each name'],
   ], {
-    restricted: { slash: '-p' },
+    restricted: { slash: '-p', command: true },
     // (bash reads `-t` first, then `-p`, then `-d`; with none, it looks each name up in PATH.)
     operands: [
       { when: { option: ['-t'] }, pattern: [operand('NAME', '覚えているパスを表示する名前', 'name whose remembered path to print', { repeat: '*' })] },
@@ -639,7 +645,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   ], { ...args(operand('DIR', 'スタックに積んで移動するディレクトリ', 'directory to push onto the stack and cd to')), restricted: { unless: ['-n'] }, unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`スタックを回して、\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）を先頭にして移動する`, `Rotate the stack so that entry ${n}, counted from the ${side} of \`dirs\` (from 0), is on top, and cd there`))] })),
   popd: actsOnShell(b('ディレクトリスタックから取り出してそこへ戻る', 'Pop the directory stack and cd to it', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
-  ], { restricted: { unless: ['-n'] }, unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）をスタックから取り除く`, `Remove entry ${n}, counted from the ${side} of \`dirs\` (from 0), from the stack`))] })),
+  ], { restricted: { unless: ['-n'], unlessWord: /^(?:\+0*[1-9]\d*|-\d+)$/ }, unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）をスタックから取り除く`, `Remove entry ${n}, counted from the ${side} of \`dirs\` (from 0), from the stack`))] })),
   dirs: b('ディレクトリスタックを表示する', 'Show the directory stack', [
     ['-c', 'スタックを空にする', 'clear the stack'],
     ['-l', '`~` を使わず、ホームからのパスを全部書く', 'print full paths, not `~`'],
