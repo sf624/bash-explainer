@@ -335,6 +335,14 @@ details.tryit[open] > summary.tryit-head {
   flex: 1 1 auto;
 }
 
+/* (A word of code moves to the next line whole; one wider than the box breaks anywhere in it: media/panel.js `shellWords`.) */
+.tryit-word {
+  display: inline-block;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .tryit-prints {
   color: var(--c-muted);
 }
