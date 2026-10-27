@@ -57,7 +57,7 @@ From the maintainer, 2026-10-27:
 
 1. The prototype rounds stop. Round 8 is the base design.
 2. It is rebuilt as a series of real PRs (section 6), with the fixes below. Nothing is merged from the prototype branches as they are.
-3. Implementation starts after roadmap items 1 to 8 (item 8 is the three note levels: C2 reads the level table). It fits with the panel redesign's order (section 7). Studies may run in parallel (a measure, a sketch, a prototype that lands nothing).
+3. Implementation starts after roadmap items 1 to 7 (item 7 is the three note levels: C2 reads the level table). It fits with the panel redesign's order (section 7). Studies may run in parallel (a measure, a sketch, a prototype that lands nothing).
 
 The fixes of the last review (round 8), part of the design. Decisions 4 and 6 to 12 were revised after the plan's review:
 
@@ -386,7 +386,7 @@ Who owns what:
 | The summary row's text | src/ui (C8b) | P5 and P7b improve it. |
 | Toasts, the strip, the app bar, the editor's header, settings, the sheet | The chrome | |
 
-The order. Both series start after roadmap items 1 to 8 (item 8 is the three note levels: C2 reads the level table). They mostly touch different files: the chrome web/ and src/ui's page rules; the panel's steps P2 to P6 src/ and the dictionary. So they may run side by side. These must hold:
+The order. Both series start after roadmap items 1 to 7 (item 7 is the three note levels: C2 reads the level table). They mostly touch different files: the chrome web/ and src/ui's page rules; the panel's steps P2 to P6 src/ and the dictionary. So they may run side by side. These must hold:
 
 - C0 comes first in the chrome series.
 - The usability test's baseline (panel-redesign.md, section 7) is pinned to a commit: the last release tag before C1a and P1 land. So it can run at any time, and needs no place in the order.
