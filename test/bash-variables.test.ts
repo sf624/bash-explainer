@@ -109,7 +109,10 @@ describe('the variables bash sets (src/semantics/vars.ts)', () => {
     assert.ok(unsetEndsSpecial('COMP_WORDBREAKS'));
     // What the special behaviour was, for those whose value also stays when assigned: `SECONDS` counts, `BASH_ARGV0`
     // sets `$0`, `BASH_ALIASES` and `BASH_CMDS` define aliases and remembered commands, `BASH_SUBSHELL` counts subshells.
-    assert.strictEqual(cleanRun('SECONDS=7; unset BASH_ARGV0 BASH_ALIASES BASH_CMDS BASH_SUBSHELL; BASH_ARGV0=x; BASH_ALIASES[ll]=y; BASH_CMDS[zz]=/bin/echo; BASH_SUBSHELL=0\n'
-      + 'sleep 1.1; echo "$SECONDS $0"; alias ll 2>&1 | grep -c "not found"; hash -t zz 2>&1 | grep -c "not found"; (echo $BASH_SUBSHELL)\n').replace(/ \S*script\n/, ' script\n'), '8 script\n1\n1\n0\n');
+    // (Bash counts whole seconds of the clock from the assignment: 1.1 s later, `SECONDS` is 8, or 9 when it was set
+    // late in a second. A plain variable stays 7.)
+    const out = cleanRun('SECONDS=7; unset BASH_ARGV0 BASH_ALIASES BASH_CMDS BASH_SUBSHELL; BASH_ARGV0=x; BASH_ALIASES[ll]=y; BASH_CMDS[zz]=/bin/echo; BASH_SUBSHELL=0\n'
+      + 'sleep 1.1; echo "$SECONDS $0"; alias ll 2>&1 | grep -c "not found"; hash -t zz 2>&1 | grep -c "not found"; (echo $BASH_SUBSHELL)\n').replace(/ \S*script\n/, ' script\n');
+    assert.match(out, /^[89] script\n1\n1\n0\n$/);
   });
 });
