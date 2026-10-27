@@ -27,9 +27,8 @@ export function testWordShape(word: SyntaxNode): 'one' | 'glob' | 'number' | 'sp
       // (`"$@"`, `"${a[@]}"` and `"${!p@}"` give a word per element.)
       if (/\$\{?[!#]?(?:@|[A-Za-z_]\w*\[@\])|\$\{![A-Za-z_]\w*@\}/.test(p.text)) return 'split';
     } else if (p.type === 'word' || p.type === 'number') {
-      // (A brace expansion gives several words; a glob, names of files; a tilde, one word.)
+      // (A glob gives names of files; a tilde, one word. A brace expansion, a node of its own, gives several words.)
       if (staticWordValue(p) !== undefined) continue;
-      if (p.text.includes('{')) return 'split';
       if (/[*?[]/.test(p.text)) shape = 'glob';
     } else if (p.type !== 'raw_string' && p.type !== 'ansi_c_string') return 'split';
   }

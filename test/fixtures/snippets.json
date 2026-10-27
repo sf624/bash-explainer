@@ -943,6 +943,7 @@
  "find . -name '*.txt'",
  "find . -name '[é]'",
  "find . -name 'a?c'",
+ "find . -name *.txt -exec rm $opt {} ;",
  "find . -name x -exec rm {} ;",
  "find . -name x -o",
  "find . -name x | xargs rm -rf $DIR/x",

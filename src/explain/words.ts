@@ -239,7 +239,8 @@ const LATER = ['simple_expansion', 'expansion', 'command_substitution', 'arithme
 function braceWithExpansion(n: SyntaxNode): string | undefined {
   let open = -1;
   let later = false;
-  for (const p of n.type === 'concatenation' ? n.namedChildren : [n]) {
+  // (Such a word is a concatenation: of plain text and the expansions.)
+  for (const p of n.namedChildren) {
     if (p.type !== 'word' && p.type !== 'number') {
       later ||= open >= 0 && (LATER.includes(p.type) || descendants(p, LATER).length > 0);
       continue;
