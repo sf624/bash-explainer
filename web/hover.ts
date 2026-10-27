@@ -144,10 +144,22 @@ function wholeLineInPanel(view: EditorView, line: number): void {
  */
 function measureRoom(view: EditorView, pos: number): void {
   const pane = view.dom.getBoundingClientRect();
-  const at = view.coordsAtPos(pos);
-  const room = at ? Math.max(at.top - pane.top, pane.bottom - at.bottom) - 12 : 300;
+  // Round 8: the room above the line's first row or below its last (a wrapped line is one: the card never covers it).
+  const at = lineRows(view, pos);
+  const room = Math.max(at.top - pane.top, pane.bottom - at.bottom) - 12;
   view.dom.style.setProperty('--bx-hover-room', `${Math.max(120, Math.round(room))}px`);
   view.dom.style.setProperty('--bx-hover-width', `${Math.max(200, Math.round(Math.min(pane.width, window.innerWidth) - 16))}px`);
+}
+
+/**
+ * Round 8: where a card for `pos` is anchored: the whole logical line the position is on, from the top of its first
+ * visual row to the bottom of its last (a wrapped line counts as one), at the position's own left. A card goes below
+ * the line, or above its first row when there is no room below (CodeMirror flips it), never over a row of the line.
+ */
+function lineRows(view: EditorView, pos: number): { left: number; right: number; top: number; bottom: number } {
+  const block = view.lineBlockAt(pos);
+  const at = view.coordsAtPos(pos) ?? view.coordsAtPos(block.from) ?? { left: 0, right: 0 };
+  return { left: at.left, right: at.right, top: view.documentTop + block.top, bottom: view.documentTop + block.bottom };
 }
 
 /**
@@ -254,7 +266,7 @@ function pinnedField(host: HoverHost) {
           create: (view) => {
             // (From the keyboard no lint tooltip shows: the card keeps every note.)
             const c = cardAt(host, view, pos, []);
-            return { dom: c ? cardDom(host, view, c, true) : document.createElement('div') };
+            return { dom: c ? cardDom(host, view, c, true) : document.createElement('div'), getCoords: (at: number) => lineRows(view, at) };
           },
         };
       }
@@ -333,7 +345,8 @@ export function webHover(host: HoverHost): WebHover {
       const c = cardAt(host, view, pos, problemsAt(view, pos, side));
       if (!c) return null;
       measureRoom(view, pos);
-      return { pos: c.from, end: c.to, above: true, create: () => ({ dom: cardDom(host, view, c, false) }) };
+      // Round 8: below the hovered line's last row (above its first when there is no room below): never over the line.
+      return { pos: c.from, end: c.to, above: false, create: () => ({ dom: cardDom(host, view, c, false), getCoords: (at: number) => lineRows(view, at) }) };
     }, { hoverTime: 350 }),
     Prec.highest(compartment.of(host.settings()['hover.enabled'] ? keys : [])),
     EditorView.theme({

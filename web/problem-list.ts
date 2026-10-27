@@ -55,7 +55,13 @@ export function showProblems(list: DocumentIssue[], lang: Lang, pick: (issue: Do
     b?.toggleAttribute('disabled', list.length === 0);
   }
   const count = document.getElementById('tab-problems-count');
-  if (count) count.textContent = list.length ? String(list.length) : '';
+  // Round 8: the phone's tab is "⚠ 11", and "⚠ 0" (muted) when there are none, never a bare icon.
+  if (count) {
+    count.textContent = String(list.length);
+    count.classList.toggle('zero', list.length === 0);
+  }
+  // Round 8: the phone's tab shows "⚠ 11"; its name says it: "Problems, 11".
+  document.getElementById('tab-problems')?.setAttribute('aria-label', c.problemsTab(list.length));
   const build = () => list.map((i) => {
     const li = document.createElement('li');
     const button = Object.assign(document.createElement('button'), { type: 'button', className: 'problem' });

@@ -165,10 +165,16 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string,
  * the setting in code style, and a link that scrolls to it when the dialog has that setting;
  * `[text](https://…)` is a link, and `[text](command:…)` (which only VS Code can follow) is its text.
  */
-export function rich(text: string): Node[] {
+export function rich(text: string, lang?: Lang): Node[] {
   const setting = (key: string): Node => {
-    const code = el('code', { textContent: `bashExplainer.${key}` });
-    if (!settingsFor('web').some((x) => x.key === key)) return code;
+    // Round 8: the VS Code name (`bashExplainer.bashVersion`) only with "Show VS Code setting names"; otherwise the
+    // setting's own title, as a link to it ("bash version").
+    const spec = settingsFor('web').find((x) => x.key === key);
+    const named = !lang || readStored(STORAGE_KEYS.settingNames) === '1' || !spec;
+    // (On a touch screen the title is plain text: a link inside a sentence would be a target far under 44px.)
+    const touch = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+    const code = named ? el('code', { textContent: `bashExplainer.${key}` }) : el('span', { className: 'setting-title-link', textContent: spec.title[lang === 'ja' ? 0 : 1] });
+    if (!spec || (touch && !named)) return code;
     const a = el('a', { href: `#setting-${key.replace(/\./g, '-')}`, className: 'setting-link' }, code);
     a.addEventListener('click', (e) => {
       e.preventDefault();
@@ -345,7 +351,7 @@ export class SettingsDialog {
     // Round 6: the same two lines and "More" as every other description.
     return el('section', { className: 'settings-group settings-io' },
       el('h4', { textContent: t.io }),
-      this.descLine(el('p', { className: 'setting-desc' }, ...rich(t.ioDesc)), lang),
+      this.descLine(el('p', { className: 'setting-desc' }, ...rich(t.ioDesc, lang)), lang),
       el('div', { className: 'settings-io-buttons' },
         button('settings-export', t.exportFile, () => this.exportFile()),
         button('settings-copy', t.copy, () => void this.copy()),
@@ -597,8 +603,8 @@ export class SettingsDialog {
   }
 
   /**
-   * Round 5: a setting's description on one line, cut at its end, with "More" after it when it is longer (the button
-   * shows the whole text; "Less" folds it again). `fitDescs` hides "More" where the line holds the whole text.
+   * Round 5: a setting's description cut at its end, with "More" after it when it is longer (the button shows the
+   * whole text; "Less" folds it again). `fitDescs` decides where the text is cut, and places the button.
    */
   private descLine(desc: HTMLElement, lang: Lang): HTMLElement {
     const c = CHROME[lang];
@@ -610,40 +616,82 @@ export class SettingsDialog {
       desc.classList.toggle('open', open);
       more.textContent = open ? c.less : c.moreText;
       more.setAttribute('aria-expanded', String(open));
+      this.fitDescs();
+      more.focus();
     });
     return el('div', { className: 'desc-line' }, desc, more);
   }
 
+  /** Round 8: each description's own nodes, kept whole while `fitDescs` cuts what it shows. */
+  private wholeText = new WeakMap<HTMLElement, Node[]>();
+
   /**
-   * Round 6: a description shows two lines; "More" (at the end of the second line, at the right) only when the text
-   * really takes more than two lines at the dialog's width. The cut falls between lines, and a code chip never wraps,
-   * so no chip is cut in two. On a touch screen the whole text shows, with no "More".
+   * Round 6: a description shows two lines; "More" only when the text really takes more than two lines at the dialog's
+   * width. On a touch screen the whole text shows, with no "More". Round 8: "More" comes inline, right after the last
+   * word shown ("… pointed out as… More"), not at the line's right end: the text is cut at the last place (a blank, a
+   * Japanese character, before a code chip: a chip is never cut) where it and "… More" still fit in two lines; the rest
+   * stays for screen readers (visually hidden). "Less" follows the whole text.
    */
   fitDescs(): void {
     const touch = window.matchMedia('(pointer: coarse)').matches;
     for (const line of this.dialog.querySelectorAll<HTMLElement>('.desc-line')) {
-      const desc = line.firstElementChild as HTMLElement | null;
+      const desc = line.querySelector<HTMLElement>('.setting-desc');
       const more = line.querySelector<HTMLElement>('.desc-more');
-      if (!desc || !more || desc.classList.contains('open') || !desc.clientWidth) continue;
-      // Measured whole, at the full width. A chip wider than most of the line may wrap (it would run past the edge).
+      if (!desc || !more) continue;
+      if (!this.wholeText.has(desc)) this.wholeText.set(desc, [...desc.childNodes].filter((n) => n !== more));
+      const whole = this.wholeText.get(desc)!;
+      desc.replaceChildren(...whole);
+      line.append(more);
       desc.classList.remove('cut');
       desc.style.maxHeight = '';
+      if (!desc.clientWidth) continue;
       const chips = [...desc.querySelectorAll<HTMLElement>('code')];
       for (const code of chips) code.classList.remove('long');
       for (const code of chips) code.classList.toggle('long', code.getBoundingClientRect().width > desc.clientWidth * 0.7);
       const lh = parseFloat(getComputedStyle(desc).lineHeight) || 18;
       const long = !touch && desc.scrollHeight > lh * 2 + 2;
       more.hidden = !long;
-      desc.classList.toggle('cut', long);
       if (!long) continue;
-      // A wrapping chip that starts on the second line and goes on past it: the text ends before it, after one line.
-      const top = desc.getBoundingClientRect().top;
-      for (const code of chips) {
-        const rects = code.getClientRects();
-        if (rects.length < 2) continue;
-        const line = Math.floor((rects[0].top - top + 2) / lh);
-        if (line === 1) desc.style.maxHeight = `${lh}px`;
+      if (desc.classList.contains('open')) {
+        desc.append(' ', more);
+        continue;
       }
+      // The places the text may be cut at: (child, offset in its text), or before a child that is an element.
+      const cuts: [number, number][] = [];
+      whole.forEach((n, i) => {
+        if (n.nodeType !== Node.TEXT_NODE) return cuts.push([i, 0]);
+        const text = (n as Text).data;
+        for (let k = 1; k < text.length; k++) {
+          if (/\s/.test(text[k]) || /[　-鿿＀-￯]/.test(text[k - 1])) cuts.push([i, k]);
+        }
+      });
+      const rest = el('span', { className: 'sr-only desc-rest' });
+      const ell = el('span', { className: 'desc-ell', textContent: '… ' });
+      ell.setAttribute('aria-hidden', 'true');
+      const cutAt = ([i, k]: [number, number]) => {
+        const n = whole[i];
+        const text = n.nodeType === Node.TEXT_NODE ? (n as Text).data : undefined;
+        const head = text === undefined ? [] : [document.createTextNode(text.slice(0, k).trimEnd())];
+        const tail = text === undefined ? whole.slice(i) : [document.createTextNode(text.slice(k)), ...whole.slice(i + 1)];
+        rest.replaceChildren(...tail);
+        desc.replaceChildren(...whole.slice(0, i), ...head, ell, more, rest);
+        return desc.scrollHeight <= lh * 2 + 2;
+      };
+      // The last place that fits (binary search: the text's height grows with the place).
+      let lo = 0;
+      let hi = cuts.length - 1;
+      let best = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (cutAt(cuts[mid])) {
+          best = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      cutAt(cuts[Math.max(0, best)]);
+      desc.classList.add('cut');
     }
   }
 
@@ -671,7 +719,7 @@ export class SettingsDialog {
     const id = `setting-${spec.key.replace(/\./g, '-')}`;
     const title = spec.title[lang === 'ja' ? 0 : 1];
     const key = el('p', { className: 'setting-key', textContent: `bashExplainer.${spec.key}` });
-    const desc = el('p', { className: 'setting-desc', id: `${id}-desc` }, ...rich(text.description));
+    const desc = el('p', { className: 'setting-desc', id: `${id}-desc` }, ...rich(text.description, lang));
     const row = el('div', { className: `setting setting-${spec.type}` });
     row.dataset.key = spec.key;
     const note = MOUSE_ONLY.has(spec.key) && touchOnly();
@@ -697,7 +745,9 @@ export class SettingsDialog {
       const keysShown = readStored(STORAGE_KEYS.settingNames) === '1';
       // The language: the same words as the menu's ("Auto (follows the browser)", "English", "日本語").
       const languageName: Record<string, string> = { auto: CHROME[lang].autoBrowser, en: 'English', ja: '日本語' };
-      select.append(...spec.enum!.map((v) => new Option(spec.key === 'language' && languageName[v] ? languageName[v] : labels[v] && labels[v] !== v ? (keysShown ? `${v} — ${labels[v].replace(/`/g, '')}` : labels[v].replace(/`/g, '')) : v, v, false, v === value)));
+      // Round 8: the Shell's values in the chip's words: "Auto (from #!, file name or default)", then the shells' names.
+      const shellName = (v: string) => (v === 'auto' ? CHROME[lang].shellAuto8 : v);
+      select.append(...spec.enum!.map((v) => new Option(spec.key === 'shell' && !keysShown ? shellName(v) : spec.key === 'language' && languageName[v] ? languageName[v] : labels[v] && labels[v] !== v ? (keysShown ? `${v} — ${labels[v].replace(/`/g, '')}` : labels[v].replace(/`/g, '')) : v, v, false, v === value)));
       select.addEventListener('change', () => this.change(spec.key, select.value));
       row.append(select);
     } else if (spec.type === 'number') {
@@ -711,14 +761,18 @@ export class SettingsDialog {
     } else if (spec.type === 'array' && spec.items) {
       // A fixed list of values: a checkbox each.
       const list = value as string[];
-      const fieldset = el('fieldset', { className: 'setting-choices', id });
+      // Round 8: one column, each row the value's chip and a one-line description (every row has one).
+      const fieldset = el('fieldset', { className: 'setting-choices one-col', id });
       describe(fieldset);
       fieldset.setAttribute('aria-labelledby', `${id}-label`);
       fieldset.append(...spec.items.map((v) => {
         const box = el('input', { type: 'checkbox', id: `${id}-${v}`, checked: list.includes(v) });
         box.addEventListener('change', () => this.change(spec.key, spec.items!.filter((x) => (x === v ? box.checked : list.includes(x)))));
-        const label = text.values?.[v];
-        return el('label', { htmlFor: box.id }, box, ' ', el('code', { textContent: v }), ...(label && label !== v ? [' ', ...rich(label)] : []));
+        const own = text.values?.[v];
+        const label = own && own !== v ? own : CHROME[lang].kindDesc[v] ?? '';
+        const desc = el('span', { className: 'choice-desc' }, ...rich(label, lang));
+        desc.title = label.replace(/`/g, '');
+        return el('label', { htmlFor: box.id }, box, el('code', { textContent: v }), desc);
       }));
       row.append(fieldset);
     } else if (spec.type === 'array') {

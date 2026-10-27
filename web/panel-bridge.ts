@@ -91,23 +91,63 @@ export class PanelBridge {
 
   /** The page's view switch shows the view chosen. */
   private showView(): void {
-    const tp = ui[this.host.lang()].panel;
     const c = CHROME[this.host.lang()];
+    // Round 8: the view slot holds a mock of the coming depth control: "1 What it does | 2 How bash reads it" (the
+    // segments on the desktop; "Depth 1 ⌄" and a menu of the two where the slot is narrow, and on a phone). Until the
+    // panel has depths, 1 shows the current Meaning view and 2 the Reading view.
+    const depth = this.view() === 'list' ? 1 : 2;
+    const lang = this.host.lang();
+    // (The nodes are made once per language: a click on one of them is still going up through it while this runs, and
+    // the menu closes on that click.)
+    const fill = (box: Element | null | undefined, n: number) => {
+      if (!box || (box as HTMLElement).dataset.lang === lang) return;
+      (box as HTMLElement).dataset.lang = lang;
+      box.replaceChildren(...segment(n));
+    };
+    const segment = (n: number) => {
+      const digit = Object.assign(document.createElement('span'), { className: 'dg', textContent: String(n) });
+      // (Both texts in the bold weight too, hidden: the segment keeps one width, pressed or not.)
+      const name = Object.assign(document.createElement('span'), { className: 'dn', textContent: c.depthNames[n - 1] });
+      name.dataset.text = c.depthNames[n - 1];
+      return [digit, name];
+    };
     for (const where of ['top', 'phone']) {
       for (const v of ['list', 'tree']) {
-        document.getElementById(`view-${v}-${where}`)?.setAttribute('aria-pressed', String(this.view() === v));
+        const n = v === 'list' ? 1 : 2;
+        const seg = document.getElementById(`view-${v}-${where}`);
+        if (seg) {
+          fill(seg, n);
+          seg.setAttribute('aria-pressed', String(depth === n));
+          seg.setAttribute('aria-label', `${c.depth} ${n}: ${c.depthNames[n - 1]}`);
+        }
         const pick = document.getElementById(`view-pick-${v}-${where}`);
-        pick?.setAttribute('aria-checked', String(this.view() === v));
-        const name = v === 'list' ? tp.listView : tp.treeView;
-        if (pick?.lastElementChild) pick.lastElementChild.textContent = name;
+        pick?.setAttribute('aria-checked', String(depth === n));
+        if (pick?.lastElementChild) {
+          fill(pick.lastElementChild, n);
+          pick.lastElementChild.className = 'depth-item';
+        }
       }
+      document.getElementById(`views-${where}`)?.setAttribute('aria-label', c.depthLabel);
       const drop = document.getElementById(`view-drop-${where}`);
       if (drop) {
-        const value = this.view() === 'list' ? tp.listView : tp.treeView;
-        drop.querySelector('.vd-prefix')!.textContent = c.viewPrefix;
-        drop.querySelector('.vd-value')!.textContent = value;
-        drop.setAttribute('aria-label', `${c.viewLabel}: ${value}`);
-        document.getElementById(`view-menu-${where}`)?.setAttribute('aria-label', c.viewLabel);
+        drop.querySelector('.vd-prefix')!.textContent = c.depth;
+        drop.querySelector('.vd-value')!.textContent = String(depth);
+        // (A mid-width desktop slot shows the depth's name: both names are laid out in one cell, the other unseen, so
+        // the control keeps one width.)
+        const names = drop.querySelector<HTMLElement>('.vd-name');
+        if (names && names.dataset.lang !== lang) {
+          names.dataset.lang = lang;
+          names.replaceChildren(...[1, 2].map((n) => {
+            const name = document.createElement('span');
+            name.append(...segment(n));
+            return name;
+          }));
+        }
+        names?.querySelectorAll(':scope > span').forEach((x, i) => x.classList.toggle('on', i + 1 === depth));
+        // (The visible words lead the name: "Depth 1", then what it is.)
+        drop.setAttribute('aria-label', `${c.depth} ${depth}: ${c.depthNames[depth - 1]}`);
+        drop.title = `${c.depthLabel}: ${depth} ${c.depthNames[depth - 1]}`;
+        document.getElementById(`view-menu-${where}`)?.setAttribute('aria-label', c.depthLabel);
       }
     }
   }
@@ -401,19 +441,15 @@ export class PanelBridge {
     const expand = this.button('toggle')?.querySelector('svg')?.getAttribute('data-icon') === 'expand-all';
     for (const button of ['pane-collapse', 'menu-collapse']) document.querySelector(`#${button} use`)?.setAttribute('href', expand ? '#i-expand' : '#i-collapse');
     put('pane-collapse-label', expand ? c.expandShort : c.collapseShort);
-    // Round 6: the word is "Copy" (its name and tooltip say "as Markdown"), shown from a 560px panel as Collapse's is.
-    put('pane-copy-label', c.copyShort);
+    // Round 8: the words are the whole name, "Copy as Markdown", from a 560px panel; below it the icon with "MD" under it.
+    put('pane-copy-label', tp.copy);
+    put('pane-copy-md', c.copyMdShort);
     const icon = this.button('ref')?.querySelector('svg')?.getAttribute('data-icon');
     const refSvg = document.querySelector('#menu-ref svg');
     if (icon && refSvg) drawIcon(refSvg, icon);
     document.getElementById('menu-ref')?.setAttribute('aria-pressed', String(open));
     put('views-menu-label', tp.views);
-    document.getElementById('views-top')?.setAttribute('aria-label', tp.views);
     this.onActions?.();
-    for (const where of ['top', 'phone']) {
-      put(`view-list-${where}`, tp.listView);
-      put(`view-tree-${where}`, tp.treeView);
-    }
     this.showView();
     for (const [key, label] of [['shell', tp.shell], ['yq', tp.yq]]) {
       for (const id of [key, `${key}-top`, `scope-${key}`]) {

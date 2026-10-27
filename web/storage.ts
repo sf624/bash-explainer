@@ -28,6 +28,8 @@ export const STORAGE_KEYS = {
   panel: 'bash-explainer-panel',
   /** The settings dialog shows the VS Code names of the settings (prototype; off by default). */
   settingNames: 'bash-explainer-setting-names',
+  /** The phone's one-time hint that a tap on the sheet's bar changes its height was seen (prototype). */
+  sheetHint: 'bash-explainer-sheet-hint',
 } as const;
 
 /** The value kept under `key`: null when there is none, undefined when storage is unavailable. */

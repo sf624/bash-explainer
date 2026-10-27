@@ -347,3 +347,20 @@ html.bx-phone.bx-compact #top {
 html.bx-phone.bx-steps-out #layers {
   display: none !important;
 }
+
+/* ---- Prototype round 8 (proto/chrome-8) ---- */
+/* Reading's steps (legacy: the depth control replaces them) are the panel's own first row, sticky under the line box,
+   on the desktop and the phone alike: never in the page's header. */
+html.bx-steps-sticky #layers {
+  position: sticky;
+  top: var(--line-h, 0px);
+  z-index: 1;
+  margin: 0 -2px 0.5rem;
+  padding: 4px 2px 6px;
+  background: var(--vscode-editor-background);
+  box-shadow: 0 1px 0 var(--vscode-panel-border);
+}
+
+html.bx-steps-sticky.bx-compact #layers {
+  top: 0;
+}

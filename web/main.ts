@@ -327,11 +327,14 @@ interface StatusAction { label: string; run: () => void; untilEdit?: boolean }
  * Round 5: `untilEdit`: the next edit dismisses the toast ("Opened a.sh."); `detail`: a longer text, behind a button
  * (`detailLabel`, "More" by default) that shows it in a bubble over the toast. The toast itself is always one line.
  */
-interface StatusOpts { untilEdit?: boolean; detail?: string; detailLabel?: string; icon?: 'ok' | 'undo' | 'info' }
+interface StatusOpts { untilEdit?: boolean; detail?: string; detailLabel?: string; icon?: 'ok' | 'undo' | 'info'; anchor?: HTMLElement }
+/** Round 8: the control that caused the toast shown (Share's Copy a link): the toast shows under it. */
+let toastAnchor: HTMLElement | undefined;
 /** Round 4: a toast that the next edit dismisses ("Opened a.sh."). */
 let toastUntilEdit = false;
 function status(text: string, sticky = false, action?: StatusAction, opts: StatusOpts = {}): void {
   const el = $('status');
+  toastAnchor = text ? opts.anchor : undefined;
   undoOffered = false;
   toastUntilEdit = !!(text && opts.untilEdit);
   const bubble = document.getElementById('status-detail');
@@ -875,12 +878,16 @@ for (const [id, href] of [['banner-compare', 'compare.html'], ['back', './']]) {
   });
 }
 
-on('share', 'click', async () => {
+async function copyLink(anchor?: HTMLElement): Promise<void> {
   const params = await scriptParams(lang, kind, editor.text);
   const url = `${location.origin}${location.pathname}#${params}`;
   await navigator.clipboard.writeText(url);
-  status(TEXT[lang].shared);
-});
+  status(TEXT[lang].shared, false, undefined, { anchor });
+}
+on('share', 'click', () => void copyLink());
+// Round 8: the app bar's Share is one plain button, "Copy a link" (Copy the script is in ⋯ only); its toast shows
+// under it, where the eye is.
+on('share-open', 'click', () => void copyLink(document.getElementById('share-open') ?? undefined));
 
 // ---- Files: open one into the editor, save the editor's text to one (web/file-io.ts) ----------------
 
@@ -1231,7 +1238,7 @@ function wrapOn(): boolean {
 function chromeLanguage(): void {
   const c = CHROME[lang];
   const t = TEXT[lang];
-  put('share-open-label', c.share);
+  put('share-open-label', c.copyLink8);
   put('share-label', c.copyLink);
   put('clear-label', c.clear);
   put('menu-clear-label', c.clear);
@@ -1295,17 +1302,13 @@ function chromeLanguage(): void {
   put('more-rename-label', c.renameMore);
   put('more-copy-script-label', c.copyScript);
   put('shell-pick-prefix', c.shellPrefix);
-  for (const where of ['top', 'phone']) {
-    put(`view-list-${where}`, c.viewMeaning);
-    put(`view-tree-${where}`, c.viewReading);
-    document.getElementById(`views-${where}`)?.setAttribute('aria-label', c.viewLabel);
-  }
+  // (Round 8: the view slot's depth control is labelled by the panel bridge, `showView`.)
   // The empty editor's block says it all: CodeMirror's placeholder would say it twice.
   if (document.getElementById('empty-editor')) editor.setPlaceholder('');
   const named: [string, string, string?][] = [
     ['open-btn', `${t.openTip}`, shortcut('O')], ['save-btn', c.saveAs(shownName()), shortcut('S')], ['ed-more', c.more],
     ['problem-prev', c.prevProblem, 'Shift+F8'], ['problem-next', c.nextProblem, 'F8'], ['bsheet-handle', c.sheet],
-    ['first-hint-close', c.close], ['share-open', c.share],
+    ['first-hint-close', c.close], ['share-open', c.copyLink],
   ];
   for (const [id, name, key] of named) {
     const el = document.getElementById(id);
@@ -1384,7 +1387,8 @@ function showScope(): void {
   }
   const said = `${kindName} · ${shellName}${auto ? ` ${c.autoFrom[from]}` : ''}`;
   document.getElementById('scope-chip')?.setAttribute('aria-label', `${c.scopeTitle}: ${said}`);
-  document.getElementById('scope-chip')?.setAttribute('title', said);
+  // Round 8: the tooltip says what the chip is for; its name keeps what it says now.
+  document.getElementById('scope-chip')?.setAttribute('title', c.chipTip);
   renderScopeLists();
 }
 
@@ -1438,7 +1442,7 @@ document.getElementById('scope-pop')?.addEventListener('click', (e) => {
 });
 
 // The popovers: Share (app bar), ⋯ (editor's header), the kind-and-shell chip.
-for (const [button, pop, pick] of [['share-open', 'share-menu', true], ['ed-more', 'ed-more-menu', true], ['scope-chip', 'scope-pop', false]] as const) {
+for (const [button, pop, pick] of [['ed-more', 'ed-more-menu', true], ['scope-chip', 'scope-pop', false]] as const) {
   const b = document.getElementById(button);
   const p = document.getElementById(pop);
   const scrim = pop === 'scope-pop' ? document.getElementById('scope-scrim') ?? undefined : undefined;
@@ -1485,11 +1489,14 @@ if (mode.hasChrome && !mode.compare) {
 // column is a bottom sheet at three heights). Collapse all and Copy act on the explanation, so show in its tab only.
 const sheetCol = document.getElementById('panel-col');
 const sheet = sheetCol && !mode.compare && !mode.panel
-  ? new BottomSheet(sheetCol, $('panel-head'), $('bsheet-handle'), () => $('ed-head').getBoundingClientRect().bottom, () => {
+  ? new BottomSheet(sheetCol, $('panel-head'), $('bsheet-handle'), () => (narrow.matches ? $('ed-head').offsetHeight : $('ed-head').getBoundingClientRect().bottom), () => {
+    // Round 8: at full the app bar slides away (as with the keyboard): the full sheet reaches up to the strip, which
+    // is then at the window's top (`top()` is the strip's height on a phone); it comes back below full.
     editor.view.requestMeasure();
     placeToast();
     markSheet();
     fitTabs();
+    sheetHint();
   })
   : undefined;
 type Tab = 'explain' | 'problems' | 'ref';
@@ -1512,8 +1519,8 @@ function showTabs(): void {
   }
   sheetCol.dataset.tab = tab;
   $('sheet-problem-list').hidden = tab !== 'problems';
-  const tools = document.getElementById('panel-tools');
-  if (tools) tools.hidden = tab !== 'explain';
+  // Round 8: the depth control keeps its slot on every tab (hidden, not gone), so the header's boxes never move.
+  document.getElementById('panel-tools')?.classList.toggle('tools-off', tab !== 'explain');
   markSheet();
 }
 panel.onActions = showTabs;
@@ -1619,6 +1626,41 @@ function placeToast(): void {
     return placeBubble();
   }
   const strip = stripEl;
+  toast.classList.remove('anchored');
+  // Round 8: a toast caused by a control far from the strip (Share's Copy a link) shows under that control.
+  if (toastAnchor && toastAnchor.offsetParent !== null && toast.textContent) {
+    const a = toastAnchor.getBoundingClientRect();
+    toast.classList.remove('docked');
+    toast.classList.add('anchored');
+    stripEl?.classList.remove('with-toast');
+    toast.style.top = `${Math.round(a.bottom + 6)}px`;
+    toast.style.bottom = 'auto';
+    toast.style.height = '';
+    toast.style.width = '';
+    toast.style.maxWidth = `${Math.min(420, window.innerWidth - 16)}px`;
+    toast.style.right = '';
+    const w = toast.getBoundingClientRect().width;
+    toast.style.left = `${Math.round(Math.max(8, Math.min(window.innerWidth - w - 8, a.right - w)))}px`;
+    return placeBubble();
+  }
+  // Round 8: a toast with something to press (Undo, Why?, More) is not docked: it floats 8px above the strip at the
+  // pane's left, with the toast's fill and shadow, as wide as its words. Only passive messages (Copied, Downloaded) dock.
+  const acts = !!toast.querySelector('.status-action');
+  if (strip && strip.getClientRects().length && acts) {
+    const r = strip.getBoundingClientRect();
+    const pane = $('source').getBoundingClientRect();
+    toast.classList.remove('docked');
+    toast.classList.add('floating');
+    stripEl?.classList.remove('with-toast');
+    toast.style.left = `${Math.round(pane.left + 8)}px`;
+    toast.style.right = '';
+    toast.style.top = '';
+    toast.style.height = '';
+    toast.style.width = '';
+    toast.style.maxWidth = `${Math.round(Math.min(480, pane.width - 16))}px`;
+    toast.style.bottom = `${Math.round(window.innerHeight - r.top + 8)}px`;
+    return placeBubble();
+  }
   if (strip && strip.getClientRects().length) {
     const r = strip.getBoundingClientRect();
     const nav = strip.querySelector<HTMLElement>('.strip-nav');
@@ -1888,18 +1930,32 @@ function fitTabs(): void {
     delete tabs.dataset.fit;
     return;
   }
-  const fits = () => tabs.scrollWidth <= tabs.clientWidth + 1 && [...tabs.querySelectorAll<HTMLElement>('[role="tab"]')].every((b) => b.scrollWidth <= b.clientWidth + 1);
-  // (Round 7: with the view control in the row too, the full sheet's "Code ⌄" is measured at full only: at half the
-  // tabs keep their words. The view control is measured on every tab, so a change of tab moves nothing.)
+  const fits = () => {
+    const row = tabs.parentElement;
+    return tabs.scrollWidth <= tabs.clientWidth + 1 && (!row || row.scrollWidth <= row.clientWidth + 1)
+      && [...tabs.querySelectorAll<HTMLElement>('[role="tab"]')].every((b) => b.scrollWidth <= b.clientWidth + 1);
+  };
   const bar = tabs.parentElement;
-  bar?.classList.toggle('fit-test', document.documentElement.dataset.sheet === 'full');
+  // Round 8: ONE layout for every snap, tab and view: "Explanation · 8", "⚠ 11", "Ref", then the depth control in its
+  // fixed slot. Nothing in the row depends on the snap any more (no "Code ⌄": a tap on the grabber or on the open tab
+  // goes back), the depth control is measured on every tab (it keeps its room on Problems and Reference), and the line
+  // number keeps the room of the script's longest one, so the boxes never move. Steps, the first that fits: the line
+  // number dropped (`data-line="off"`), then the depth control stacked ("Depth" over "1 ⌄", `compact`), then less padding.
   bar?.classList.add('fit-test-tools');
-  // Round 7: before the icons, the Explanation tab drops its line number (`noline`); at `icons` Reference keeps a word.
-  // (Last, with larger text: the view control as its icon, ◁ ▷ of the stepper left to its menu: `compact`.)
-  for (const fit of ['wide', 'snug', 'noline', 'icons', 'compact']) {
-    tabs.dataset.fit = fit === 'compact' ? 'icons' : fit;
-    if (bar) bar.dataset.fit = tabs.dataset.fit;
-    if (bar) bar.dataset.tools = fit === 'compact' ? 'compact' : '';
+  tabs.style.setProperty('--ln-ch', String(String(Math.max(1, editor.view.state.doc.lines)).length));
+  // (The open tab's words are bold: every tab's words are laid out bold too, unseen, so that no box changes width.)
+  for (const id of ['tab-explain-label', 'tab-explain-line', 'tab-ref-short', 'tab-problems-count']) {
+    const words = document.getElementById(id);
+    if (!words) continue;
+    words.classList.add('r8b');
+    words.dataset.text = words.textContent ?? '';
+  }
+  tabs.dataset.fit = 'icons';
+  if (bar) bar.dataset.fit = 'icons';
+  for (const [line, tools, tight] of [['on', '', ''], ['off', '', ''], ['off', 'compact', ''], ['off', 'compact', 'tight']]) {
+    tabs.dataset.line = line;
+    tabs.dataset.tight = tight;
+    if (bar) bar.dataset.tools = tools;
     if (fits()) break;
   }
   // The view control's icon says which view is on.
@@ -2029,8 +2085,10 @@ function syncSteps(): void {
     if (readingBox) stepsObserver.observe(readingBox, { attributes: true, attributeFilter: ['hidden'] });
   }
   const f = frameSteps();
-  const reading = f?.doc.getElementById('reading');
-  const on = narrow.matches && !!f && reading?.hidden === false && panel.view() === 'tree';
+  // Round 8: the steps (legacy: they go with the depth control) stay in the panel's own first row, sticky under the
+  // line box, on the desktop and the phone alike; the header's slot holds the depth control alone, never "8/8 ⌄".
+  root?.classList.add('bx-steps-sticky');
+  const on = false as boolean;
   proxy.hidden = !on;
   const slot = document.getElementById('view-slot');
   if (slot && slot.classList.contains('stepping') !== on) {
@@ -2152,6 +2210,29 @@ function showNoScript(): void {
   } else {
     showProblemsToggle();
   }
+}
+
+// ---- Round 8 (proto/chrome-8) ------------------------------------------------------------------------------------
+
+/**
+ * The phone's grabber: the handle's button is the whole sheet header behind the tabs and the depth control (a 48px
+ * target, never 12px), and a tap on it goes peek → half → full → peek (web/chrome.ts). With "Code ⌄" gone from the
+ * tabs row, the first time the sheet is full a one-time hint says so, under the grabber; it goes at the next tap or
+ * after 6 s, and is not shown again.
+ */
+let sheetHinted = false;
+function sheetHint(): void {
+  // (The sheet is made, at peek, before this part of the module runs: the snap is read first.)
+  if (document.documentElement.dataset.sheet !== 'full' || !narrow.matches || sheetHinted) return;
+  if (readStored(STORAGE_KEYS.sheetHint) === '1') return;
+  sheetHinted = true;
+  writeStored(STORAGE_KEYS.sheetHint, '1');
+  const hint = Object.assign(document.createElement('p'), { id: 'sheet-hint', className: 'sheet-hint', textContent: CHROME[lang].sheetHint8 });
+  hint.setAttribute('role', 'status');
+  $('panel-head').append(hint);
+  const done = () => hint.remove();
+  setTimeout(done, 6000);
+  setTimeout(() => document.addEventListener('pointerdown', done, { once: true, capture: true }), 0);
 }
 
 // ---- Start ----------------------------------------------------------------------------------

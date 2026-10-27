@@ -6627,3 +6627,723 @@ html.narrow.kb-open:has(#status.in-tabs:not(:empty)) .kb-summary {
 :where(html.narrow) .panel-bar[data-tools="compact"] .step-btn {
   display: none;
 }
+
+/* ==== Prototype round 8 (proto/chrome-8): one tabs row for every snap, one depth control in the view slot, hover
+   cards off the whole line, toasts by kind, the app bar away at full, touch targets, the chip at rest, one place per
+   action, settings as a page of links and lists, problems in full ==== */
+
+/* ---- 1. The phone's tabs row: one layout everywhere. "Explanation · 8", "⚠ 11", "Ref", each sized to its content
+   (the line number keeps the room of the script's longest one), the depth control at the right; no "Code ⌄". The
+   grabber's button is the header itself, behind the tabs: a tap on any free part of it cycles the heights. ---- */
+:where(html.narrow) .sheet-back {
+  display: none !important;
+}
+
+:where(html.narrow) .panel-head .bsheet-handle {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  border-radius: 14px 14px 0 0;
+  transform: none;
+}
+
+:where(html.narrow) .bsheet-handle::before {
+  display: none;
+}
+
+:where(html.narrow) .bsheet-handle span {
+  margin-top: 5px;
+}
+
+:where(html.narrow) .bsheet-handle:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+:where(html.narrow) .panel-bar {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+:where(html.narrow) .panel-bar > *,
+:where(html.narrow) #panel-tabs [role="tab"] {
+  pointer-events: auto;
+}
+
+html.narrow #panel-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  min-width: 0;
+  width: auto;
+  pointer-events: none;
+}
+
+html.narrow #panel-tabs [role="tab"] {
+  flex: none !important;
+  width: auto !important;
+  min-width: 0 !important;
+  padding: 0 10px !important;
+  font-size: 14px !important;
+  gap: 4px;
+}
+
+html.narrow #panel-tabs[data-tight="tight"] [role="tab"] {
+  padding: 0 7px !important;
+  font-size: 13px !important;
+}
+
+html.narrow #panel-tabs [role="tab"][aria-selected="true"]::after {
+  left: 8px;
+  right: 8px;
+}
+
+html.narrow #panel-tabs[data-fit="icons"]:not([data-line="off"]) .tab-line {
+  display: inline-block;
+  min-width: calc((var(--ln-ch, 1) + 2) * 1ch);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  white-space: pre;
+}
+
+html.narrow #panel-tabs .count {
+  font-variant-numeric: tabular-nums;
+}
+
+:where(html.narrow) .panel-tools {
+  margin-left: auto;
+  padding-right: 4px;
+}
+
+/* (On Problems and Reference the depth control keeps its room, unseen: nothing in the row moves.) */
+.panel-tools.tools-off {
+  visibility: hidden;
+}
+
+/* The one-time hint under the grabber, the first time the sheet is full. */
+.sheet-hint {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 6;
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  background: var(--vscode-foreground);
+  color: var(--vscode-editor-background);
+  font-size: 13px;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.sheet-hint::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  border: 5px solid transparent;
+  border-top: 0;
+  border-bottom-color: var(--vscode-foreground);
+  transform: translateX(-50%);
+}
+
+/* ---- 2 and 7. The view slot holds one control of a fixed width: the depth control (a mock until the panel has
+   depths). The desktop: "1 What it does | 2 How bash reads it" as segments where the panel has room, "Depth 1 ⌄" (a
+   menu of the two) below; the phone: "Depth 1 ⌄", 44px high, and with larger text "Depth" over "1 ⌄". ---- */
+.view-slot .dg {
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 15px;
+  height: 15px;
+  margin-right: 5px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.view-menu .depth-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.view-menu .depth-item .dg {
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Pressed (bold) or not, a segment keeps one width: its words are laid out bold too, unseen. */
+.view-slot .dn {
+  display: inline-flex;
+  flex-direction: column;
+}
+
+.view-slot .dn::after {
+  content: attr(data-text);
+  height: 0;
+  overflow: hidden;
+  font-weight: 600;
+  visibility: hidden;
+}
+
+html:not(.narrow) .view-slot .seg button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px 0 6px;
+  font-size: 12.5px;
+}
+
+html:not(.narrow) .view-slot .seg {
+  max-width: none;
+}
+
+html:not(.narrow) .view-slot .vd-icon {
+  display: none;
+}
+
+html:not(.narrow) .view-slot .vd-prefix {
+  display: inline;
+}
+
+/* Widths, by the panel's: the two segments from 700px (the slot 292px); "1 What it does ⌄" from 520px (196px: the
+   longer name's width, whichever is chosen); "Depth 1 ⌄" below (96px). Collapse has its word from 760px. */
+html:not(.narrow) .view-slot {
+  justify-content: flex-end;
+  width: 96px;
+}
+
+html:not(.narrow) .view-slot .seg {
+  display: none;
+}
+
+html:not(.narrow) .view-slot .view-drop {
+  display: flex;
+}
+
+html:not(.narrow) .view-slot .view-drop-btn {
+  width: 96px;
+  max-width: none;
+  justify-content: center;
+  border-color: var(--vscode-dropdown-border);
+  background: var(--vscode-dropdown-background);
+}
+
+.view-drop-btn .vd-name {
+  display: none;
+}
+
+.vd-name > span {
+  display: inline-flex;
+  align-items: center;
+  grid-area: 1 / 1;
+}
+
+.vd-name > span:not(.on) {
+  visibility: hidden;
+}
+
+@container panelcol (min-width: 520px) {
+  html:not(.narrow) .view-slot {
+    width: 196px;
+  }
+
+  html:not(.narrow) .view-slot .view-drop-btn {
+    width: 196px;
+    justify-content: space-between;
+    padding: 0 7px 0 8px;
+  }
+
+  html:not(.narrow) .view-slot .vd-prefix,
+  html:not(.narrow) .view-slot .vd-value {
+    display: none;
+  }
+
+  html:not(.narrow) .view-slot .vd-name {
+    display: inline-grid;
+  }
+
+  html:not(.narrow) .view-slot .vd-name .dn {
+    font-weight: 600;
+  }
+}
+
+@container panelcol (min-width: 700px) {
+  html:not(.narrow) .view-slot {
+    width: 292px;
+  }
+
+  html:not(.narrow) .view-slot .seg {
+    display: inline-flex;
+  }
+
+  html:not(.narrow) .view-slot .view-drop {
+    display: none;
+  }
+}
+
+@container panelcol (max-width: 759.98px) {
+  html:not(.narrow) #pane-collapse .lbl {
+    display: none !important;
+  }
+
+  html:not(.narrow) #pane-collapse.tool-lbl {
+    width: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+
+/* The phone: "Depth 1 ⌄" in the tabs row, 44px high, its words always shown. */
+:where(html.narrow) .view-slot .vd-prefix {
+  display: inline;
+  color: var(--vscode-descriptionForeground);
+  font-weight: 400;
+}
+
+:where(html.narrow) .view-slot .vd-value {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+:where(html.narrow) .view-slot .vd-icon {
+  display: none !important;
+}
+
+html.narrow .view-slot .view-drop-btn {
+  gap: 4px;
+  height: 44px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  font-size: 14px;
+}
+
+html.narrow .panel-bar[data-tools="compact"] .view-drop-btn {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: 0 3px;
+  width: 52px;
+  padding: 0 4px;
+}
+
+html.narrow .panel-bar[data-tools="compact"] .view-drop-btn .vd-prefix {
+  display: block !important;
+  flex-basis: 100%;
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+html.narrow .panel-bar[data-tools="compact"] .view-drop-btn .vd-value {
+  display: inline !important;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+/* ---- 3. Reading's steps: in the panel's own sticky first row (web/panel-page.css); the page's copy is gone ---- */
+.step-proxy,
+:where(html.narrow) .step-proxy:not([hidden]) {
+  display: none;
+}
+
+/* ---- 4. Toasts by kind: a passive message docks in the strip, in white with an accent border; one with a button
+   floats 8px above the strip at the pane's left, with the toast's fill and shadow; one from a control far away
+   (Copy a link) shows under it ---- */
+body:not([data-page="compare"]) #status.docked {
+  border: 1px solid var(--page-accent);
+  border-radius: 6px;
+  background: var(--vscode-editor-background);
+  box-shadow: none;
+}
+
+body:not([data-page="compare"]) #status.floating,
+body:not([data-page="compare"]) #status.anchored {
+  box-sizing: border-box;
+  width: max-content;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--radius);
+  background: var(--vscode-editor-background);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  transform: none;
+}
+
+body:not([data-page="compare"]) #status.anchored {
+  min-height: 36px;
+}
+
+#status.floating .status-text,
+#status.anchored .status-text {
+  white-space: normal;
+}
+
+#status.anchored .status-close {
+  width: 28px;
+  height: 28px;
+  margin: 0 0 0 4px;
+}
+
+#status.floating .status-close {
+  margin: 0 0 0 4px;
+}
+
+/* ---- 5. At full, the app bar slides away (as with the keyboard): only the strip stays; it comes back below full ---- */
+:where(html.narrow) body:not([data-page="compare"]) .top {
+  transition: margin-top 0.25s var(--ease), visibility 0s;
+}
+
+html.narrow[data-sheet="full"]:not(.kb-open) body:not([data-page="compare"]) .top {
+  margin-top: calc(-1 * var(--bar-h));
+  visibility: hidden;
+  transition: margin-top 0.25s var(--ease), visibility 0s linear 0.25s;
+}
+
+/* ---- 6. Touch targets: 44px at least. The strip's segments, name and chip are drawn 32px with 44px hit areas
+   (round 7); the grabber is the whole header (1); the settings' rows and fields grow to 44px on a touch screen. ---- */
+@media (pointer: coarse) {
+  #settings-dialog .setting-head label,
+  #settings-dialog .settings-show-keys,
+  #settings-dialog .setting-choices label {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  #settings-dialog select,
+  #settings-dialog input[type="text"],
+  #settings-dialog input[type="search"],
+  #settings-dialog input[type="number"],
+  #settings-dialog .settings-io-buttons button,
+  #settings-dialog .setting-add button,
+  #settings-dialog summary {
+    min-height: 44px;
+  }
+
+  #settings-dialog .settings-fold {
+    min-height: 44px;
+  }
+
+  #settings-dialog .setting-list button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  #settings-dialog .settings-nav a {
+    min-height: 44px;
+  }
+
+  #settings-dialog .setting-link {
+    display: inline-block;
+    min-height: 0;
+  }
+}
+
+/* ---- 8. The desktop chip at rest: a quiet fill (as on the phone), its caret kept ---- */
+html:not(.narrow) .pane-head .chip {
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
+  padding: 0 8px 0 11px;
+}
+
+@media (hover: hover) {
+  html:not(.narrow) .pane-head .chip:hover {
+    background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+  }
+}
+
+/* ---- 9. Copy as Markdown: the whole name from a 560px panel; below it the icon with "MD" under it. Share is one
+   plain "Copy a link" button. ---- */
+#pane-copy .md-mark {
+  display: none;
+}
+
+html:not(.narrow) #pane-copy.tool-lbl {
+  flex-direction: column;
+  gap: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  justify-content: center;
+}
+
+html:not(.narrow) #pane-copy .md-mark {
+  display: block;
+  margin-top: -1px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+html:not(.narrow) #pane-copy.tool-lbl .ico {
+  width: 14px;
+  height: 14px;
+}
+
+@container panelcol (min-width: 560px) {
+  html:not(.narrow) #pane-copy.tool-lbl {
+    flex-direction: row;
+    gap: 5px;
+    width: auto;
+    height: 28px;
+    padding: 0 9px 0 7px;
+  }
+
+  html:not(.narrow) #pane-copy .md-mark {
+    display: none;
+  }
+
+  html:not(.narrow) #pane-copy .lbl {
+    display: inline !important;
+  }
+
+  html:not(.narrow) #pane-copy.tool-lbl .ico {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+#share-open .chev {
+  display: none;
+}
+
+/* ---- 10. Settings: "Jump to" is a list of in-page links (no tab underline; on a phone it wraps, it is no tab bar);
+   the kinds of examples in one column, the chip and a one-line description each; the selects as wide as their
+   values; "More" right after the last word shown ---- */
+#settings-dialog .settings-nav {
+  flex-wrap: wrap;
+  overflow: visible;
+  gap: 0 4px;
+}
+
+#settings-dialog .settings-nav a,
+#settings-dialog .settings-nav a[aria-current="true"] {
+  flex: none;
+  padding: 2px 4px;
+  border: 0;
+  box-shadow: none;
+  color: var(--vscode-textLink-foreground);
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+#settings-dialog .settings-nav a::after {
+  display: none;
+}
+
+#settings-dialog .settings-jump {
+  display: inline;
+}
+
+#settings-dialog .setting-choices.one-col {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+#settings-dialog .setting-choices.one-col label {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 13px;
+}
+
+#settings-dialog .setting-choices.one-col code {
+  justify-self: start;
+}
+
+#settings-dialog .choice-desc {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#settings-dialog .choice-desc code {
+  font-size: 0.95em;
+}
+
+#settings-dialog .setting-string select {
+  width: auto;
+  max-width: 100%;
+}
+
+#settings-dialog a .setting-title-link {
+  color: var(--vscode-textLink-foreground);
+}
+
+.desc-line .setting-desc.clamp.cut:not(.open) {
+  max-height: none;
+  padding-right: 0;
+  overflow: visible;
+}
+
+.desc-line .setting-desc .desc-more {
+  position: static;
+  display: inline;
+  margin: 0;
+  padding: 0;
+  line-height: inherit;
+  vertical-align: baseline;
+}
+
+.desc-line .setting-desc .desc-ell {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ---- 11. The Problems list: the rule id at the right from a 520px pane, none below (the tooltip keeps it); the whole
+   message in the tooltip on hover, and on the item at the cursor or in focus ---- */
+@container source (min-width: 520px) {
+  #problem-list .problem .text {
+    flex-direction: row;
+    gap: 10px;
+  }
+}
+
+@container source (max-width: 519.98px) {
+  #problem-list .problem .code {
+    display: none;
+  }
+}
+
+/* (1. The open tab's words are bold: each tab's words are laid out bold too, unseen, so that no box changes width.) */
+html.narrow #panel-tabs .r8b {
+  display: inline-flex;
+  flex-direction: column;
+}
+
+html.narrow #panel-tabs .r8b::after {
+  content: attr(data-text);
+  height: 0;
+  overflow: hidden;
+  font-weight: 700;
+  white-space: pre;
+  visibility: hidden;
+}
+
+html.narrow #panel-tabs[data-fit="icons"]:not([data-line="off"]) .tab-line.r8b {
+  display: inline-flex;
+}
+
+html.narrow #panel-tabs[data-line="off"] .tab-line.r8b {
+  display: none;
+}
+
+/* (10. The kinds' descriptions start at one x: the rows share the fieldset's columns.) */
+#settings-dialog .setting-choices.one-col {
+  grid-template-columns: auto max-content minmax(0, 1fr);
+  column-gap: 8px;
+}
+
+#settings-dialog .setting-choices.one-col label {
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
+/* ---- 6. Touch targets (after the inventory's hit areas): the phone's strip is 48px, and Read | Edit, the name and the
+   chip are 44px boxes, drawn smaller inside them (transparent borders) ---- */
+:where(html.narrow) .pane-head.ed-head {
+  height: 48px;
+}
+
+html.narrow .ed-head .modes {
+  position: relative;
+  padding: 0 1px;
+  border: 0;
+  background: transparent;
+}
+
+html.narrow .ed-head .modes::before {
+  content: "";
+  position: absolute;
+  inset: 5px 0;
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: 8px;
+  background: var(--vscode-dropdown-background);
+}
+
+html.narrow .ed-head .modes button {
+  position: relative;
+  height: 44px;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  background-clip: padding-box;
+}
+
+html.narrow .ed-head .modes button::before,
+html.narrow .ed-head .chip::before,
+html.narrow .ed-head .file-name::after {
+  display: none;
+}
+
+html.narrow .ed-head .file-name {
+  height: 44px;
+}
+
+html.narrow .ed-head .chip {
+  box-sizing: border-box;
+  height: 44px;
+  border: 0 solid transparent;
+  border-width: 6px 0;
+  background-clip: padding-box;
+}
+
+@media (pointer: coarse) {
+  #settings-dialog .setting-choices.one-col label {
+    min-height: 44px;
+  }
+
+  #settings-dialog .settings-nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+  }
+
+  #settings-dialog details button {
+    min-height: 44px;
+  }
+}
+
+/* (1. No problems: "⚠ 0", muted; with no script the depth control keeps its room, unseen.) */
+html.narrow #panel-tabs .count.zero {
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-weight: 400;
+}
+
+html.narrow .panel-col.blank .panel-tools {
+  display: flex;
+  visibility: hidden;
+}
+
+html.narrow #panel-tabs .r8b::after {
+  display: block;
+}

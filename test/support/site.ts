@@ -141,6 +141,11 @@ export async function menuItem(page: Page, id: string): Promise<void> {
 /** Chooses the panel's view in the page's switch: in the top bar, or on a phone in the menu (closed again after). */
 export async function chooseView(page: Page, view: 'list' | 'tree'): Promise<void> {
   if (await page.locator(`#view-${view}-top`).isVisible()) return page.locator(`#view-${view}-top`).click();
+  // (Prototype round 8: a mid-width panel has the depth control as a dropdown: 1 is the list view, 2 the tree view.)
+  if (await page.locator('#view-drop-top').isVisible()) {
+    await page.locator('#view-drop-top').click();
+    return page.locator(`#view-pick-${view}-top`).click();
+  }
   await menuItem(page, `#view-${view}-menu`);
   await page.evaluate("document.getElementById('drawer').close()");
 }
