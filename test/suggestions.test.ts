@@ -176,10 +176,24 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     const ids = Object.keys(MESSAGES) as FactId[];
     const rewrites = (id: FactId): boolean => 'rewrite' in MESSAGES[id];
     assert.deepStrictEqual(ids.filter((id) => rewrites(id) && kind(id) !== 'mechanical'), []);
+    // (One per line: each PR that gives an id its rewrites removes its line.)
     assert.deepStrictEqual(ids.filter((id) => !rewrites(id) && kind(id) === 'mechanical').sort(), [
-      'array-joined-in-assignment', 'bracket-close-glued', 'declaration-masks-status', 'for-over-unquoted-args', 'function-last-test-returns-status',
-      'function-last-test-stops-script', 'nounset-unbound', 'postfix-increment-status', 'prefix-assignment-expanded-first', 'regex-backslash-dropped',
-      'script-last-test-returns-status', 'unbraced-element', 'unquoted-variable-as-path', 'unquoted-variable-in-test', 'wrapper-assignment-expanded-first']);
+      'array-joined-in-assignment',
+      'bracket-close-glued',
+      'declaration-masks-status',
+      'for-over-unquoted-args',
+      'function-last-test-returns-status',
+      'function-last-test-stops-script',
+      'nounset-unbound',
+      'postfix-increment-status',
+      'prefix-assignment-expanded-first',
+      'regex-backslash-dropped',
+      'script-last-test-returns-status',
+      'unbraced-element',
+      'unquoted-variable-as-path',
+      'unquoted-variable-in-test',
+      'wrapper-assignment-expanded-first',
+    ]);
   });
 
   it('counts them', () => {
