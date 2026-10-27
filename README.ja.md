@@ -226,6 +226,7 @@ Web 版のエディタでも同じカードを表示します（タッチ画面�
 | `bashExplainer.language` | `auto` | `auto`（VS Code の表示言語に合わせる）・`ja`・`en` |
 | `bashExplainer.notes.idioms` | `true` | 定番の書き方（strict mode、`IFS= read -r` など）の補足を表示する |
 | `bashExplainer.notes.pitfalls` | `true` | よくある間違いと避け方を注記する（`x = 1`、クォートしていない変数、`for f in $(ls)` など） |
+| `bashExplainer.notes.basis` | `true` | マニュアルではなく bash の実際の動きに基づく注記に印（「マニュアルに記述なし・bash 5.2 で確認」）を付け、端末で試すコマンドを添える |
 | **確認** | | |
 | `bashExplainer.shell` | `auto` | スクリプトの対象シェル: `auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh` |
 | `bashExplainer.bashVersion` | `5.2` | 解説の対象にする bash のバージョン: `5.2`・`5.3`。bash 5.3 の書き方（`${ cmd; }` など）は 5.3 での動きを解説し、`5.2` では警告にする |
@@ -284,7 +285,7 @@ Web 版のエディタでも同じカードを表示します（タッチ画面�
 
 | 設定（`bashExplainer.`…） | Web 版 | コマンドライン | Language Server |
 | --- | --- | --- | --- |
-| `language`・`notes.idioms`・`notes.pitfalls`・`shell`・`bashVersion`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`diagnostics.pitfalls`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
+| `language`・`notes.idioms`・`notes.pitfalls`・`notes.basis`・`shell`・`bashVersion`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`diagnostics.pitfalls`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | （警告は `--check` で出す） | ✓ |
 | `hover.enabled`・`hints.names`・`hints.deadCode` | ✓ | | ✓ |
 | `examples.placement`・`panel.animations` | ✓ | | |

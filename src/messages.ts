@@ -657,6 +657,41 @@ export function said(facts: readonly Fact[], pitfalls: boolean | undefined): Fac
   return facts.filter((f) => f.kind !== 'pitfall' || pitfalls !== false);
 }
 
+/**
+ * The one gate of the `notes.basis` setting (docs/design/basis.md, 4): the fact as the explanation carries it, with no
+ * basis and no try-it when the setting is off, as `said` leaves the pitfalls out.
+ */
+export function basisGate(f: Fact, basis: boolean | undefined): Fact {
+  if (basis !== false || (!f.basis && !f.tryIt)) return f;
+  const { basis: _b, tryIt: _t, ...rest } = f;
+  return rest;
+}
+
+// ---------------------------------------------------------------- what an explanation rests on (docs/design/basis.md)
+
+/** A basis the views mark, in a language: the chip's words and its tooltip. */
+export interface BasisSaid { kind: 'checked' | 'differs'; label: string; title: string }
+
+/** The releases a try-it passed: "5.2", "5.2 and 5.3" / 「5.2・5.3」. */
+const releases = (lang: Lang, bash: readonly string[]): string => (lang === 'ja' ? bash.join('・') : bash.join(' and '));
+
+/**
+ * The chip of a basis the views mark (`checked`, `differs`; none for the others): the releases are those the try-it
+ * passed in CI (`Basis.bash`), whatever `bashVersion` is set to.
+ */
+export function basisSaid(lang: Lang, b: Basis | undefined): BasisSaid | undefined {
+  if (b?.kind !== 'checked' && b?.kind !== 'differs') return undefined;
+  const r = releases(lang, b.bash);
+  const [label, title] = b.kind === 'checked'
+    ? (lang === 'ja'
+      ? [`マニュアルに記述なし・bash ${r} で確認`, `Bash マニュアルに書かれていない bash の実際の動き。bash ${r} で実行して確かめた（メッセージは \`LC_ALL=C\` のときのもの）`]
+      : [`Not in the manual · checked with bash ${r}`, `bash's actual behaviour, which the Bash manual does not state: checked by running bash ${r} (messages as with \`LC_ALL=C\`)`])
+    : (lang === 'ja'
+      ? [`マニュアルの記述と異なる・bash ${r} で確認`, `Bash マニュアルの記述とは異なる bash の実際の動き。bash ${r} で実行して確かめた（メッセージは \`LC_ALL=C\` のときのもの）`]
+      : [`Differs from the manual · checked with bash ${r}`, `bash's actual behaviour, which differs from what the Bash manual says: checked by running bash ${r} (messages as with \`LC_ALL=C\`)`]);
+  return { kind: b.kind, label, title };
+}
+
 // ---------------------------------------------------------------- what a command name is (3.7.2; src/semantics/names.ts `nameFacts`)
 
 /** The words of the kinds of a command name: the badge (`word`), what the kind is (`title`), and how a line on the other meanings names it (`other`). */

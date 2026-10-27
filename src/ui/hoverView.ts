@@ -5,13 +5,13 @@
 import { Example, ExampleSection, LineExplanation, Token } from '../analyzer-types';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
-import { joinParts, labelParts } from '../label';
+import { codeSpan, joinParts, labelParts } from '../label';
 import { referencesWith } from '../references';
 import { pictureLabel, pictureText, splitPictures } from '../ctlchars';
 import { isCommand, partNotes, ProblemAt, sameSpan, shown, valueOf } from './hoverParts';
 import { type Note, type NoteLevel, SPACE_MARK, type SpaceEnds, type ValueSaid } from '../messages';
 import { levelColour, ThemeKind } from './palette';
-import { colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, plainNotes, refsMarkdown, ui, valueMarkdown } from './render';
+import { basisLine, colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteBasis, noteRefs, notesByLevel, placeExamples, plainNotes, refsMarkdown, ui, valueMarkdown } from './render';
 
 /** What every view of the hover needs. */
 export interface HoverInput {
@@ -267,7 +267,10 @@ function noteMarkdown({ level, label, body }: Note, theme: ThemeKind): string {
 function notes(ex: LineExplanation, lang: Lang, theme: ThemeKind, list: readonly string[] = ex.notes): string[] {
   return notesByLevel(ex, list).flatMap((n) => {
     const refs = noteRefs(ex, n.text);
-    return [`${noteMarkdown(n, theme)}${refs?.length ? ` <small>${refsMarkdown(lang, refs)}</small>` : ''}`, ''];
+    // (Where the note rests on bash's behaviour: the chip's words and the try-it, small, under it.)
+    const basis = noteBasis(ex, n.text, lang);
+    return [`${noteMarkdown(n, theme)}${refs?.length ? ` <small>${refsMarkdown(lang, refs)}</small>` : ''}`, '',
+      ...(basis ? [`<small>${md(basisLine(lang, basis, codeSpan))}</small>`, ''] : [])];
   });
 }
 

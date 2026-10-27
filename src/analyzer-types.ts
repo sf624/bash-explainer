@@ -124,6 +124,8 @@ export interface ExplainOptions {
   idioms?: boolean;
   /** Notes about common mistakes (unquoted variables, `x = 1`…); on unless false. */
   pitfalls?: boolean;
+  /** What a fact rests on where it is not the manual, with a command to try it (`Fact.basis`, `Fact.tryIt`); on unless false. */
+  basis?: boolean;
   /** The `bashExplainer.customCommands` setting: commands the dictionary does not know. */
   customCommands?: Record<string, unknown>;
   /** Commands the host file defines for its scripts (a bats file: `run`, `load`…), read before the dictionary. */

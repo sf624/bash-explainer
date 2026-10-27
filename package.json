@@ -152,6 +152,11 @@
           "default": true,
           "markdownDescription": "%config.notes.pitfalls%"
         },
+        "bashExplainer.notes.basis": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.notes.basis%"
+        },
         "bashExplainer.shell": {
           "type": "string",
           "enum": [

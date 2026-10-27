@@ -12,7 +12,7 @@ import { Lang, resolveLang } from '../src/i18n';
 import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
 import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { explained, noteRefs, notesByLevel, refsText, toPlainMarkdown, wordsMarkdown } from '../src/ui/render';
+import { explained, noteBasis, noteRefs, notesByLevel, refsText, toPlainMarkdown, ui, wordsMarkdown } from '../src/ui/render';
 import { startLanguageServer } from './lsp';
 import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
 
@@ -269,6 +269,12 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
     const head = n.slice(0, n.length - body.length).trimEnd();
     const shown = head ? `${paint(NOTE_ANSI[level], level === 'note' ? head : paint('1', head))} ${pictureText(body)}` : pictureText(body);
     out.push(`  ${shown}${refs(noteRefs(ex, n))}`);
+    // (Where the note rests on bash's behaviour: the chip's words, dim, then the try-it and its output.)
+    const basis = noteBasis(ex, n, lang);
+    if (basis) {
+      out.push(`    ${paint('90', `[${basis.label}]`)}`, `    ${paint('90', `${ui[lang].panel.tryIt}:`)} ${basis.tryIt.code}`,
+        ...basis.tryIt.output.split('\n').map((l) => `      ${paint('90', l)}`));
+    }
   }
   const walk = (t: Token, depth: number) => {
     // Code parts in the colour of the kind; a placeholder in italics and dim (or ‹name› when there is no colour).
@@ -345,10 +351,11 @@ function sarif(problems: Problem[]) {
 }
 
 /** Without what only the editor's views use: the examples' reruns, the ranges of the notes (for the part hover). */
-// (The anchors and the notes' data are for the views: the JSON keeps what it had, the notes and the facts' ids.)
+// (The anchors and the notes' data are for the views: the JSON keeps what it had, the notes and the facts' ids, with
+// what a fact rests on where it is not the manual, and its try-it: docs/design/basis.md.)
 const forJson = ({ anchors: _, noteInfo: _n, ...ex }: LineExplanation) => ({
   ...ex,
-  ...(ex.facts ? { facts: ex.facts.map(({ id, kind, level, text, refs }) => ({ id, kind, level, text, refs })) } : {}),
+  ...(ex.facts ? { facts: ex.facts.map(({ id, kind, level, text, refs, basis, tryIt }) => ({ id, kind, level, text, refs, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}) })) } : {}),
   examples: ex.examples.map(({ interactive: _i, ...e }) => e),
 });
 

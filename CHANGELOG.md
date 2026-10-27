@@ -6,6 +6,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### New
 
+- A note that rests on bash's behaviour rather than the Bash manual says so with a chip: "Not in the manual · checked with bash 5.2" (`unset -fv`, `exit 300`). Under it, "Try it in your terminal" opens a command to copy and what it prints. The new setting `bashExplainer.notes.basis` turns both off.
 - A command name that does not run what it suggests gets a hint after it: a function or an alias that hides a builtin or a program, a builtin turned off by `enable -n`, an alias bash does not expand, `sudo cd`. The Language Server and the web page's editor give the same hints; turn them off with `bashExplainer.hints.names`.
 - Code that never runs is faded in the editor: a branch whose condition the script has already decided (`if false; then …`), the skipped side of `&&` or `||`, and what follows `exit`, `return`, `break` or `continue`. VS Code, the Language Server and the web page's editor show it as a hint, not a warning; turn it off with `bashExplainer.hints.deadCode`.
 - Every warning and caveat the explanations point out (`x = 1`, `rm -rf $DIR/*`, `[` without `]`, `local x=$(cmd)`, `(( i++ ))` under `set -e`…) is also a problem, with a code each, in the Problems panel, `--check`, SARIF and the GitHub Action, also in the shell code of other files. Turn them off with `bashExplainer.diagnostics.pitfalls`.

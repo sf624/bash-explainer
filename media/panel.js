@@ -226,7 +226,7 @@
 
     // Each note with the icon of its level (src/messages.ts, `NoteLevel`) in place of its mark, and the word that
     // names the level in bold: the icon's shape and the word say it without the colour.
-    $('notes').replaceChildren(...(msg.notes ?? []).map((/** @type {{ level: string, label: string, body: string, refs: string[] }} */ n) => {
+    $('notes').replaceChildren(...(msg.notes ?? []).map((/** @type {{ level: string, label: string, body: string, refs: string[], basis?: any }} */ n) => {
       const p = document.createElement('p');
       p.className = `note level-${n.level}`;
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -243,7 +243,7 @@
         label.textContent = n.label;
         text.append(label, ' ');
       }
-      text.append(...inline(n.body), ...refLinks(n.refs));
+      text.append(...inline(n.body), ...refLinks(n.refs), ...basisParts(n.basis));
       p.append(svg, text);
       return p;
     }));
@@ -252,6 +252,68 @@
     $('empty').hidden = ex.items.length > 0;
     applyView();
     renderReading();
+  }
+
+  /**
+   * What a note rests on where it is bash's behaviour rather than the manual (src/ui/render.ts `noteBasis`,
+   * docs/design/basis.md): a quiet chip with the words the extension gives (its tooltip says what it means), and the
+   * try-it folded under it: a command for the reader's terminal, never run here, with a copy button, and its output.
+   */
+  function basisParts(/** @type {{ kind: string, label: string, title: string, tryIt: { code: string, output: string } } | undefined} */ b) {
+    if (!b) return [];
+    const chip = document.createElement('span');
+    chip.className = `basis basis-${b.kind}`;
+    chip.title = b.title;
+    chip.textContent = b.label;
+    return [chip, tryItBox(b.tryIt)];
+  }
+
+  /** The try-its the reader opened, by their code: an update of the panel (the same line again) keeps them open. */
+  const openTryIts = new Set();
+
+  /** A try-it, folded: "Try it in your terminal", then the command with a copy button, and what it printed. */
+  function tryItBox(/** @type {{ code: string, output: string }} */ t) {
+    const box = document.createElement('details');
+    box.className = 'tryit';
+    box.open = openTryIts.has(t.code);
+    box.addEventListener('toggle', () => (box.open ? openTryIts.add(t.code) : openTryIts.delete(t.code)));
+    // (A click in it is not a click on the note.)
+    box.addEventListener('click', (e) => e.stopPropagation());
+    const head = document.createElement('summary');
+    head.className = 'tryit-head';
+    head.textContent = labels.tryIt ?? 'Try it in your terminal';
+    head.title = labels.tryItHint ?? '';
+    const code = document.createElement('code');
+    code.className = 'tryit-code';
+    code.textContent = t.code;
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'tryit-copy';
+    copy.textContent = labels.copyCode ?? 'Copy';
+    copy.addEventListener('click', () => {
+      const done = () => {
+        copy.textContent = labels.copiedCode ?? 'Copied';
+        setTimeout(() => { copy.textContent = labels.copyCode ?? 'Copy'; }, 1500);
+      };
+      // (Where the page may not write to the clipboard, the code is selected, for the reader to copy.)
+      const select = () => getSelection()?.selectAllChildren(code);
+      if (navigator.clipboard) navigator.clipboard.writeText(t.code).then(done, select);
+      else select();
+    });
+    const line = document.createElement('span');
+    line.className = 'tryit-line';
+    line.append(code, copy);
+    const prints = document.createElement('span');
+    prints.className = 'tryit-prints';
+    prints.textContent = labels.prints ?? 'Output';
+    const output = document.createElement('code');
+    output.className = 'tryit-output';
+    output.textContent = t.output;
+    const body = document.createElement('div');
+    body.className = 'tryit-body';
+    body.append(line, prints, output);
+    box.append(head, body);
+    return box;
   }
 
   /**

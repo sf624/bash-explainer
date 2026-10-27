@@ -8,7 +8,7 @@ import { pitfallFindings } from './pitfalls';
 import { wordFindings } from './wordfacts';
 import type { SyntaxNode, SyntaxTree } from './syntax/tree';
 import { lookupCommand } from './dict/aliases';
-import { plainNote } from './messages';
+import { basisGate, plainNote } from './messages';
 import { pictureNote } from './ctlchars';
 import { dialectFound, Shell } from './dialect';
 import { fileRead } from './semantics/env';
@@ -67,7 +67,7 @@ export class Analyzer {
       ...statusNotes(cx, line, true),
     ];
     // (A fact said twice, or left out with the pitfalls, is listed once, or not.)
-    const facts = cx.facts.filter((f, i, all) => notes.includes(f.text) && all.findIndex((g) => g.text === f.text) === i);
+    const facts = cx.facts.filter((f, i, all) => notes.includes(f.text) && all.findIndex((g) => g.text === f.text) === i).map((f) => basisGate(f, cx.opts.basis));
     const result: LineExplanation = {
       line,
       ...(shell && shell !== 'bash' ? { shell } : {}),

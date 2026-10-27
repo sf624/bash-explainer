@@ -5,7 +5,8 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import { basisFor, basisOf, type BasisSpec, PROBE_COPY, type ProbeRef } from '../src/basis';
-import { fact, type FactId, MESSAGES } from '../src/messages';
+import { basisGate, basisSaid, fact, type FactId, MESSAGES } from '../src/messages';
+import { basisLine, noteBasis } from '../src/ui/render';
 import { explain } from './support/explain';
 import { BASIS_COPY, basisCopy, PROBE_KINDS, type ProbeKind, readProbeTable } from './support/probe';
 
@@ -84,5 +85,44 @@ describe('basis: what an explanation rests on', () => {
       ['An exit status is 0–255, so `return 300` gives 44 (the value modulo 256)', undefined],
       ['An exit status is 0–255, so `exit 300` gives 44 (the value modulo 256)', 'checked'],
     ]);
+  });
+
+  // Step 2: the words of the views, and the setting.
+  it('words the chip of `checked` and `differs`, with the releases the try-it passed, and none for the others', () => {
+    const checked = { kind: 'checked', bash: ['5.2'], probes: ['status#exit-status'] } as const;
+    assert.strictEqual(basisSaid('en', checked)?.label, 'Not in the manual · checked with bash 5.2');
+    assert.strictEqual(basisSaid('ja', checked)?.label, 'マニュアルに記述なし・bash 5.2 で確認');
+    assert.match(basisSaid('ja', checked)!.title, /^Bash マニュアルに書かれていない bash の実際の動き。/);
+    const differs = { kind: 'differs', bash: ['5.2', '5.3'], probes: ['status#exit-status'] } as const;
+    assert.deepStrictEqual(basisSaid('en', differs), {
+      kind: 'differs', label: 'Differs from the manual · checked with bash 5.2 and 5.3',
+      title: "bash's actual behaviour, which differs from what the Bash manual says: checked by running bash 5.2 and 5.3 (messages as with `LC_ALL=C`)",
+    });
+    assert.deepStrictEqual(basisSaid('ja', differs), {
+      kind: 'differs', label: 'マニュアルの記述と異なる・bash 5.2・5.3 で確認',
+      title: 'Bash マニュアルの記述とは異なる bash の実際の動き。bash 5.2・5.3 で実行して確かめた（メッセージは `LC_ALL=C` のときのもの）',
+    });
+    assert.strictEqual(basisSaid('en', { kind: 'manual', sections: ['3.7.5'] }), undefined);
+    assert.strictEqual(basisSaid('en', undefined), undefined);
+  });
+
+  it('leaves the basis and the try-it out with `notes.basis` off, and only then', () => {
+    const exit = fact('en', 'exit-modulo', { command: 'exit', value: '300', status: 44, ends: 'shell' });
+    assert.strictEqual(basisGate(exit, true), exit);
+    assert.strictEqual(basisGate(exit, undefined), exit);
+    const off = basisGate(exit, false);
+    assert.ok(!('basis' in off) && !('tryIt' in off) && off.text === exit.text);
+    const plain = fact('en', 'exit-modulo', { command: 'return', value: '300', status: 44, ends: 'function' });
+    assert.strictEqual(basisGate(plain, false), plain);
+  });
+
+  it('marks a note in the views only where it is not the manual\'s, and says it in one line for the outputs with no chip', () => {
+    const ex = explain('f() { return 300; }; exit 300', 0);
+    const [ret, exit] = ex.notes;
+    assert.strictEqual(noteBasis(ex, ret, 'en'), undefined);
+    const b = noteBasis(ex, exit, 'en')!;
+    assert.deepStrictEqual(b.tryIt, { code: "bash -c '(exit 300); echo $?'", output: '44' });
+    assert.strictEqual(basisLine('en', b, (s) => `[${s}]`), "Not in the manual · checked with bash 5.2 · Try it in your terminal: [bash -c '(exit 300); echo $?'] → [44]");
+    assert.strictEqual(noteBasis({ ...ex, facts: undefined }, exit, 'en'), undefined);
   });
 });
