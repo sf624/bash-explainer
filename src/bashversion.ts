@@ -76,7 +76,7 @@ export function laterShellOption(name: string, since: BashVersion, version: Bash
  */
 export function laterOption(command: string, flag: string, since: BashVersion, version: BashVersion, special = false): [string, string] {
   return [
-    `\`${command} ${flag}\` は bash ${since} からのオプションです。bash ${version} では「invalid option」のエラーになり、\`${command}\` は何もしません（終了ステータス 2${special ? '。特殊組み込みのエラーなので、POSIX モードではシェルが終了する' : ''}）`,
+    `\`${command} ${flag}\` は bash ${since} からのオプションです。bash ${version} では「invalid option」のエラーになり、\`${command}\` は何もしません（終了ステータス 2${special ? '。特殊ビルトインのエラーなので、POSIX モードではシェルが終了する' : ''}）`,
     `\`${command} ${flag}\` is a bash ${since} option: bash ${version} reports "invalid option", and \`${command}\` does nothing (status 2${special ? '; an error of a special builtin, so in POSIX mode the shell exits' : ''})`,
   ];
 }

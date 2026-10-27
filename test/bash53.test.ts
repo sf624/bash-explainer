@@ -327,7 +327,7 @@ describe('bash 5.3 options of builtins', () => {
       assert.deepStrictEqual(issues('5.3'), [], c.script);
     }
     // A letter of a cluster; the note of the line, in Japanese.
-    assert.match(dialectNotes(parser.parse('trap -lP INT'), 0, 'bash', 'ja')[0], /^⚠ `trap -P` は bash 5\.3 からのオプションです。bash 5\.2 では「invalid option」のエラーになり、`trap` は何もしません（終了ステータス 2。特殊組み込みのエラーなので、POSIX モードではシェルが終了する）。$/);
+    assert.match(dialectNotes(parser.parse('trap -lP INT'), 0, 'bash', 'ja')[0], /^⚠ `trap -P` は bash 5\.3 からのオプションです。bash 5\.2 では「invalid option」のエラーになり、`trap` は何もしません（終了ステータス 2。特殊ビルトインのエラーなので、POSIX モードではシェルが終了する）。$/);
     assert.deepStrictEqual(dialectNotes(parser.parse('trap -lP INT'), 0, 'bash', 'en', '5.3'), []);
     // Nothing for other words: an unknown option, a program, assignments alone.
     for (const script of ['read -Z x', 'ls -p', 'x=1', 'source f']) assert.deepStrictEqual(dialectNotes(parser.parse(script), 0, 'bash', 'en'), [], script);
