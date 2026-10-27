@@ -36,6 +36,12 @@ export const azureVariables: Record<string, Text> = {
   'Pipeline.Workspace': tx('パイプラインの作業ディレクトリ（成果物のダウンロード先など）', 'the pipeline\'s workspace (where artifacts are downloaded…)'),
 };
 
+/**
+ * The variables a CI system sets for every script, for the model (`ShellRegion.provided`): those of `ciVariables`, and
+ * the prefixes of the families each system documents (a name that ends in `*`).
+ */
+export const CI_PROVIDED = (): string[] => [...Object.keys(ciVariables), 'GITHUB_*', 'RUNNER_*', 'CI_*', 'CIRCLE_*', 'BITBUCKET_*', 'BUILD_*', 'AGENT_*', 'SYSTEM_*', 'JENKINS_*'];
+
 /** Environment variables CI systems set, by name. */
 export const ciVariables: Record<string, CiVariable> = {
   CI: { ci: 'GitHub Actions, GitLab CI/CD, CircleCI…', meaning: tx('CI で実行しているときに `true` になる', '`true` when running in CI') },

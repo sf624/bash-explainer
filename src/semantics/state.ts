@@ -71,6 +71,11 @@ export interface StateModel {
    */
   readonly read: FileRead;
   /**
+   * Whether the host gives the script the variable `name` (`ShellRegion.provided`, and its placeholders): read by
+   * `fromEnvironment` as one the environment has. None outside a host file.
+   */
+  provides(name: string): boolean;
+  /**
    * Whether what the model says of the variable `name` may be relied on (src/semantics/trust.ts): every command that
    * may write it is one the walk reads, and nothing makes the model blind.
    */
@@ -343,7 +348,7 @@ function childModel(script: NestedScript): StateModel {
     const why = w.blind ? undefined : openingBlinds(childOpening(pass.invocation, vars, st.set.get('posix') === 'on'));
     return why ? w.walkAgain(why) : st;
   };
-  return buildModel(script.tree, script.shell, false, script.depth, script.env, start, script.outer.read, modelTrusts.get(script.outer), undefined, undefined, undefined, modelVersions.get(script.outer));
+  return buildModel(script.tree, script.shell, false, script.depth, script.env, start, script.outer, modelTrusts.get(script.outer), undefined, undefined, undefined, modelVersions.get(script.outer));
 }
 
 const models = new WeakMap<SyntaxTree, Map<string, StateModel>>();
@@ -464,7 +469,7 @@ export function shebangPosix(root: SyntaxNode): boolean {
  * bash expands aliases when it is typed into a terminal, and may when a file with no shebang may be `.bashrc`). Cached per tree. The tree of a string read as a script
  * (`StateModel.script`) has the model of that script: the outer one for `eval`.
  */
-export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean; host?: HostCommands; run?: HostRun; version?: BashVersion; read?: FileRead } = {}): StateModel {
+export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean; host?: HostCommands; run?: HostRun; version?: BashVersion; read?: FileRead; provided?: readonly string[] } = {}): StateModel {
   const owner = owners.get(tree);
   if (owner) return owner.model;
   const host = opts.host ?? NO_HOST;
@@ -472,7 +477,7 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
   const run = opts.run;
   const read = opts.read ?? fileRead(tree.root);
   const posix = opts.posix ?? ((!shell || shell === 'bash') && !run && shebangPosix(tree.root));
-  const key = `${shell ?? 'bash'}${posix ? ' --posix' : ''}${names.length ? ` host:${names.sort().join(' ')}` : ''}${run ? hostRunKey(run) : ''}${opts.version === '5.3' ? ' 5.3' : ''} ${read}`;
+  const key = `${shell ?? 'bash'}${posix ? ' --posix' : ''}${names.length ? ` host:${names.sort().join(' ')}` : ''}${run ? hostRunKey(run) : ''}${opts.version === '5.3' ? ' 5.3' : ''} ${read}${opts.provided?.length ? ` given:${[...opts.provided].sort().join(' ')}` : ''}`;
   let byKey = models.get(tree);
   if (!byKey) models.set(tree, (byKey = new Map()));
   const hit = byKey.get(key);
@@ -490,9 +495,16 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
     if (aliases) st = { ...st, shopt: st.shopt.withAll(aliases) };
     return { ...st, ...(set?.size ? { set: st.set.withAll(set) } : {}), ...(shopt?.size ? { shopt: st.shopt.withAll(shopt) } : {}) };
   };
-  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, read, undefined, host, run, { set, shopt, variables: shebang?.variables, others: shebang?.others }, opts.version);
+  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, { read, provides: provider(opts.provided ?? []) }, undefined, host, run, { set, shopt, variables: shebang?.variables, others: shebang?.others }, opts.version);
   byKey.set(key, model);
   return model;
+}
+
+/** Whether a name is among `names`, or starts one of them that ends in `*` (`StateModel.provides`). */
+function provider(names: readonly string[]): (name: string) => boolean {
+  const exact = new Set(names.filter((n) => !n.endsWith('*')));
+  const prefixes = names.filter((n) => n.endsWith('*')).map((n) => n.slice(0, -1));
+  return (name) => exact.has(name) || prefixes.some((x) => name.startsWith(x));
 }
 
 /** What the decisions of each model trust (src/semantics/trust.ts): another shell's model trusts no more than its outer one. */
@@ -505,7 +517,7 @@ const modelVersions = new WeakMap<StateModel, BashVersion | undefined>();
  * `outer`: what the model of the script that starts this shell trusts; `host`: as for `shellState`; `opening`: what the
  * shebang starts it with.
  */
-function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, read: FileRead, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening, version?: BashVersion): StateModel {
+function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, file: Pick<StateModel, 'read' | 'provides'>, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening, version?: BashVersion): StateModel {
   const scripts = new Scripts(depth, shell);
   const own = scriptTrust(tree.root, scripts, host, opening, shell, version);
   const trust = outer ? withinTrust(own, outer) : own;
@@ -566,7 +578,8 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     },
     end,
     shell,
-    read,
+    read: file.read,
+    provides: file.provides,
     trusts: (name) => !found && trust.variable(name),
     blind: found ?? trust.blind,
     closed,

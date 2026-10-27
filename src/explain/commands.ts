@@ -23,7 +23,7 @@ import { nameInfo } from '../namefacts';
 import { builtinSections } from '../refs';
 import { inFunction, processOf, readAs, shellEffectOf } from '../semantics/env';
 import { assignmentsOf, type Missed, type NameResolution, testSpecOf } from '../semantics/names';
-import { docLine } from '../semantics/state';
+import { docLine, option } from '../semantics/state';
 import { isPlainWord, literalContent, staticWordValue } from '../staticword';
 import { returnInSubstitution, scopeOf } from '../substitution-tokens';
 import { field, fields, redirectionsOf, type SyntaxNode, token, wordsText } from '../syntax/tree';
@@ -356,7 +356,16 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     const first = missed.def.startPosition.row;
     if (missed.why === 'expand_aliases') {
       const value = cx.state.at(nameNode).expand.aliases.get(name)!.value;
-      cx.note(fact(cx.lang, 'alias-not-expanded-in-script', { name, value }), nameNode);
+      // (Turned off by the script, `shopt -u expand_aliases`: also in an interactive shell.)
+      const off = option(cx.state.at(nameNode).expand, 'shopt', 'expand_aliases') === 'off';
+      cx.note(fact(cx.lang, 'alias-not-expanded-in-script', { name, value, ...(off ? { off } : {}) }), nameNode);
+      if (off) {
+        return {
+          name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
+          explanation: cx.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし、ここでは \`shopt -u expand_aliases\` でエイリアスの展開が無効なので、対話シェルでも「command not found」になる`,
+            `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But alias expansion is off here (\`shopt -u expand_aliases\`), so this is "command not found", also in an interactive shell`),
+        };
+      }
       return {
         name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
         explanation: cx.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる。sh や dash なら \`${value}\` に置き換わる`,

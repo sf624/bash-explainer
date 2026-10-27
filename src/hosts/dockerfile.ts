@@ -90,6 +90,13 @@ export function dockerfile(b: Builder): void {
       notShell = /mcr\.microsoft\.com\/(windows|powershell)|\b(windowsservercore|nanoserver|servercore|ltsc\d{4})\b/i.test(from[1]);
       continue;
     }
+    // (`ARG V=1`, `ENV A=1 B=2`, `ENV A 1`: variables the instructions after it run with.)
+    const declared = /^\s*(ARG|ENV)\s+(.*)$/i.exec(line);
+    if (declared) {
+      const words = declared[2].trim().split(/\s+/);
+      b.provided.push(...(declared[1].toUpperCase() === 'ARG' || words[0].includes('=') ? words.map((w) => /^([A-Za-z_]\w*)/.exec(w)?.[1]).filter((n): n is string => !!n) : [words[0]]));
+      continue;
+    }
     const m = /^(\s*)(RUN|CMD|ENTRYPOINT|SHELL)(\s+(?:--[\w-]+(?:=\S*)?\s+)*)/i.exec(line);
     if (!m) continue;
     const at = m[0].length;

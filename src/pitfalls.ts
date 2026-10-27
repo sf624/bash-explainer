@@ -579,7 +579,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         const texts = earlier.map((w) => staticWordValue(w) ?? (w.type === 'string' ? 'x' : null));
         const outcome = texts.includes(null) ? undefined : !texts.length ? 'false' : testFails(texts) ? 'error' : texts.length === 1 ? 'true' : undefined;
         const [ja, en] = outcome === 'false' ? ['偽（終了ステータス 1）になります（単語のない条件は偽）', 'false (status 1), as a test of no words is']
-          : outcome === 'error' ? ['「unary operator expected」などのエラーになります（終了ステータス 2）', 'an error such as "unary operator expected" (status 2)']
+          : outcome === 'error' ? ['たいてい「unary operator expected」などのエラーになります（終了ステータス 2）', 'usually an error such as "unary operator expected" (status 2)']
           : outcome === 'true' ? ['真になります（単語1つだけの条件は、空でなければ真）。意図した条件ではありません', 'true, as one word alone is when it is not empty: not the condition meant']
           : ['その引数のない条件になり、意図した条件ではありません', 'a test without that argument: not the condition meant'];
         add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部です。\`${v}\` が空のときは単語が \`]\` だけになって \`[\` を閉じ、\`${runs}\` は${ja}。値があるときは閉じの \`]\` がなく、エラーになります（\`missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります`,

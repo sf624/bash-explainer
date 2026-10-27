@@ -11,6 +11,8 @@ import { attribute, fromEnvironment } from '../src/semantics/shellstate';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
+import { Analyzer } from '../src/analyzer';
+import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { explain } from './support/explain';
 import { runContained } from './support/contained';
 
@@ -40,7 +42,7 @@ describe('pitfalls that bash contradicted', function () {
       assert.match(note.body, /When `"\$x"` is empty, the word is `\]` alone and closes `\[`, and `\[ -n \]` is true, as one word alone is when it is not empty: not the condition meant\. With a value, `\[` has no closing `\]` and fails/);
       // (An error, a false test, and a test the model cannot read: what bash does with each.)
       const cases: [string, string, RegExp][] = [
-        ['a=x; b=""; [ "$a" = "$b"]', '2', /`\[ "\$a" = \]` is an error such as "unary operator expected" \(status 2\)/],
+        ['a=x; b=""; [ "$a" = "$b"]', '2', /`\[ "\$a" = \]` is usually an error such as "unary operator expected" \(status 2\)/],
         ['x=""; [ "$x"]', '1', /`\[ \]` is false \(status 1\), as a test of no words is/],
         ['x=""; [ -z "$x"]', '0', /`\[ -z \]` is true/],
         ['x=""; y=""; [ -n $y "$x"]', '0', /`\[ -n \$y \]` is a test without that argument: not the condition meant/],
@@ -121,6 +123,9 @@ describe('pitfalls that bash contradicted', function () {
         const ex = explain(off, 2, 'en', opts);
         assert.strictEqual(ex.noteInfo.find((n) => n.code === 'alias-not-expanded-in-script')!.level, 'warning', JSON.stringify(opts));
         assert.strictEqual(ex.items[0].name!.runs, 'program');
+        // (Turned off by the script: "command not found" in an interactive shell too.)
+        assert.match(ex.noteInfo.find((n) => n.code === 'alias-not-expanded-in-script')!.body, /alias expansion is turned off \(`shopt -u expand_aliases`\), so `a` is "command not found", also in an interactive shell/);
+        assert.match(ex.items[0].explanation, /alias expansion is off here \(`shopt -u expand_aliases`\), so this is "command not found", also in an interactive shell/);
       }
     });
 
@@ -207,11 +212,38 @@ describe('pitfalls that bash contradicted', function () {
       assert.match(explain(script, 2, 'ja').notes.join('\n'), /（環境変数に初めから `foo` があるときを除く）/);
     });
 
-    it('removed first, or an array: the plain warning', async () => {
+    it('`env -u FOO` removes it, whatever the environment had', async () => {
+      const script = '#!/bin/bash\nFOO=1\nenv -u FOO bash -c \'echo "[$FOO]"\'\n';
+      assert.deepStrictEqual(await both('env-u.sh', script), ['[]\n', '[]\n']);
+      const note = exported(script)!;
+      assert.strictEqual(note.level, 'warning');
+      assert.doesNotMatch(note.body, /environment/);
+    });
+
+    it('an array, exported or not: bash cannot export it', async () => {
+      for (const [name, script] of [
+        ['array-x.sh', '#!/bin/bash\nFOO=(a b)\nexport FOO\nbash -c \'echo "[$FOO]"\'\n'],
+        ['array.sh', '#!/bin/bash\nFOO=(a b)\nbash -c \'echo "[$FOO]"\'\n'],
+      ]) {
+        assert.deepStrictEqual(await both(name, script), ['[]\n', '[]\n'], name);
+        const note = exported(script)!;
+        assert.strictEqual(note.level, 'warning', name);
+        assert.match(note.body, /`FOO` is an array, and bash cannot export an array \(not even with `export`\), so it is empty there\. To pass its values, give `"\$\{FOO\[\*\]\}"` as an argument/, name);
+      }
+      assert.match(explain('FOO=(a b)\nexport FOO\nbash -c \'echo "$FOO"\'', 2, 'ja').notes.join('\n'), /`FOO` は配列で、bash は配列をエクスポートできない/);
+    });
+
+    it('after `${FOO:?}`, the variable surely came from the environment, exported', async () => {
+      const script = '#!/bin/bash\n: "${FOO:?}"\nbash -c \'echo "[$FOO]"\'\n';
+      write('checked.sh', script);
+      assert.strictEqual((await bash(['checked.sh'], { FOO: 'x' })).stdout, '[x]\n');
+      assert.strictEqual(exported(script), undefined);
+    });
+
+    it('removed first: the plain warning', async () => {
       for (const [name, script] of [
         ['unset.sh', '#!/bin/bash\nunset FOO\nFOO=1\nbash -c \'echo "[$FOO]"\'\n'],
         ['unexported.sh', '#!/bin/bash\nFOO=1\nexport -n FOO\nbash -c \'echo "[$FOO]"\'\n'],
-        ['array.sh', '#!/bin/bash\nFOO=(a b)\nbash -c \'echo "[$FOO]"\'\n'],
       ]) {
         assert.deepStrictEqual(await both(name, script), ['[]\n', '[]\n'], name);
         const note = exported(script)!;
@@ -258,6 +290,40 @@ describe('pitfalls that bash contradicted', function () {
     });
   });
 
+  describe('variables a host gives its scripts (`StateModel.provides`)', () => {
+    const parser = createUnbashParser();
+    /** The codes of the notes on `line` of `src`, read as the file `file`. */
+    const codes = (file: string, src: string, line: number): string[] => {
+      const extracted = extractShell(hostKind('', file)!, src);
+      const ex = explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, src.split('\n'), line, 'en')!;
+      return ex.noteInfo.map((n) => n.code ?? '').filter(Boolean);
+    };
+    const workflow = (step: string, env = '') => `on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n${env}    steps:\n      - run: |\n          set -u\n          ${step}\n`;
+
+    it('never reports a placeholder, nor what the CI, an `env:` map or a Dockerfile sets', () => {
+      // (The host replaces a placeholder before bash runs: bash reads no variable there.)
+      assert.ok(!codes('.github/workflows/ci.yml', workflow('echo "${{ matrix.node }}"'), 7).includes('nounset-unbound'));
+      assert.ok(!codes('Makefile', 'all:\n\tset -u; echo $(OUT) $@\n', 1).includes('nounset-unbound'));
+      // (Actions sets `GITHUB_*`, `RUNNER_*` and `CI` for every step; a job's `env:` sets its keys.)
+      assert.ok(!codes('.github/workflows/ci.yml', workflow('echo "$GITHUB_SHA $RUNNER_OS $CI"'), 7).includes('nounset-unbound'));
+      assert.ok(!codes('.github/workflows/ci.yml', workflow('echo "$DEPLOY_ENV"', '    env:\n      DEPLOY_ENV: prod\n'), 9).includes('nounset-unbound'));
+      // (`ARG` and `ENV` set the variables the `RUN` after them runs with.)
+      assert.ok(!codes('Dockerfile', 'FROM debian\nARG VERSION=1\nENV A=1 B=2\nRUN set -u; echo "$VERSION $A $B"\n', 3).includes('nounset-unbound'));
+      // (Another name keeps the caveat.)
+      assert.ok(codes('Dockerfile', 'FROM debian\nRUN set -u; echo "$OTHER"\n', 1).includes('nounset-unbound'));
+      assert.ok(codes('.github/workflows/ci.yml', workflow('echo "$OTHER"'), 7).includes('nounset-unbound'));
+      assert.ok(codes('Makefile', 'all:\n\tset -u; echo $$OTHER\n', 1).includes('nounset-unbound'));
+      // (A map's keys at its first indent: not a nested map's, nor a comment.)
+      const nested = '    env:\n      # the stage\n      STAGE: prod\n      OPTS:\n        DEEP: 1\n';
+      assert.ok(!codes('.github/workflows/ci.yml', workflow('echo "$STAGE"', nested), 12).includes('nounset-unbound'));
+      assert.ok(codes('.github/workflows/ci.yml', workflow('echo "$DEEP"', nested), 12).includes('nounset-unbound'));
+      // (`ENV A 1`, the older form; a word that names no variable.)
+      assert.ok(!codes('Dockerfile', 'FROM debian\nENV A 1\nARG B=2 \\\nRUN set -u; echo "$A $B"\n', 3).includes('nounset-unbound'));
+      // (One the CI gives, which the script sets again: still the environment's, exported.)
+      assert.ok(!codes('.github/workflows/ci.yml', workflow("CI=1; bash -c 'echo \"$CI\"'"), 7).includes('variable-not-exported'));
+    });
+  });
+
   describe('the model facts these notes read', () => {
     const parser = createUnbashParser();
     it('tells a file run as a script from one that may be sourced, and a string another shell runs (`fileRead`, `readAs`)', () => {
@@ -286,6 +352,7 @@ describe('pitfalls that bash contradicted', function () {
         ['declare FOO=1', 'FOO', 'export', 'maybe'], ['declare foo=1', 'foo', 'export', 'unlikely'], ['foo=1', 'foo', 'export', 'unlikely'],
         ['TERM=x', 'TERM', 'export', 'usually'], ['declare +x FOO=1', 'FOO', 'export', 'no'], ['FOO=1; export FOO', 'FOO', 'export', 'no'],
         ['unset FOO; FOO=1', 'FOO', 'export', 'no'], ['FOO=(a b)', 'FOO', 'export', 'no'], ['FOO=1; export -n FOO', 'FOO', 'export', 'no'],
+        [': "${FOO:?}"\n:', 'FOO', 'export', 'no'], ['source ./x; : "${FOO:?}"\n:', 'FOO', 'export', 'maybe'],
         ['if [ "$1" ]; then FOO=1; fi', 'FOO', 'export', 'maybe'], ['if [ "$1" ]; then FOO=1; else FOO=2; fi', 'FOO', 'export', 'maybe'],
         ['if [ "$1" ]; then FOO=1; else unset FOO; FOO=2; fi', 'FOO', 'export', 'no'],
         // (`local` keeps the export of what it hides: from the environment, or not.)

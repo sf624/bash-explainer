@@ -316,14 +316,17 @@ export function exportFromEnvironment(name: string, at: SyntaxNode): Attribute {
  * Whether the variable `name` may come from the environment in `st`, and how likely (`FromEnvironment`): the only
  * source of this fact. Two facts are kept apart: its `value`, where the script gave it none (`set -u`'s unset reads:
  * not after `unset` or `local`; `declare x` keeps the environment's), and its `export` attribute, where the script set
- * it without exporting it (`local FOO` keeps the export of the environment's `FOO`, not its value).
+ * it without exporting it (`local FOO` keeps the export of the environment's `FOO`, not its value). A name the host
+ * gives (`StateModel.provides`: a CI's `GITHUB_SHA`, a Dockerfile's `ARG`, a placeholder) is `usually` the
+ * environment's, unless the script removed it.
  */
-export function fromEnvironment(name: string, st: ShellState, what: 'value' | 'export'): FromEnvironment {
+export function fromEnvironment(name: string, st: ShellState, what: 'value' | 'export', provides: (name: string) => boolean = () => false): FromEnvironment {
   const v = st.variables.get(name);
-  if (!v) return environmentHas(name);
+  const has = provides(name) ? 'usually' : environmentHas(name);
+  if (!v) return has;
   if (['a', 'A'].some((l) => (v.attrs[l]?.state ?? 'off') !== 'off')) return 'no';
-  if (what === 'value') return v.kept && v.set !== 'on' ? environmentHas(name) : 'no';
-  return v.attrs.x?.environment ?? 'no';
+  if (what === 'value') return v.kept && v.set !== 'on' ? has : 'no';
+  return v.attrs.x?.environment ? (provides(name) ? 'usually' : v.attrs.x.environment) : 'no';
 }
 
 /** The state of attribute `letter` of variable `name`. */
@@ -439,7 +442,7 @@ export function mergeErrexitWhy(a: ErrexitWhy | undefined, b: ErrexitWhy | undef
 export function sameState(a: ShellState, b: ShellState): boolean {
   const attrs = (x: VariableState, y: VariableState): boolean => {
     const k = Object.keys(x.attrs);
-    return k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state);
+    return k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state && x.attrs[l].environment === y.attrs[l]?.environment);
   };
   return a === b || (a.status === b.status && !a.unreachable === !b.unreachable && !a.opaque === !b.opaque && a.errexitWhy === b.errexitWhy && NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
     && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && !x.kept === !y.kept && attrs(x, y)))

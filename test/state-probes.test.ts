@@ -70,8 +70,9 @@ function compare(id: string, st: ShellState, facts: StateDiff, posix: boolean, e
     if ((v.set === 'on') !== (has === 'set')) say(`variables.${name}.set`, v.set === 'on' ? 'set' : 'declared', has);
     const attrs = new Set([...(BASELINE_ATTRS[name] ?? '')]);
     for (const [l, a] of Object.entries(v.attrs)) {
-      // (An export the model takes from the environment, `Attribute.environment`: on when the run's environment has the name.)
-      const state = a.environment ? (name in PROBE_ENV || name in environment ? 'on' : 'off') : a.state;
+      // (An export the model does not know, as it may come from the environment, `Attribute.environment`: on when the
+      // run's environment has the name. One it takes as off, a name in lower case, is compared as it is: a gap.)
+      const state = a.state === 'unknown' && a.environment ? (name in PROBE_ENV || name in environment ? 'on' : 'off') : a.state;
       if (state === 'unknown') say(`variables.${name}.${l}`, 'unknown', bash.attrs.includes(l) ? 'on' : 'off');
       if (state === 'on') attrs.add(l);
       else attrs.delete(l);

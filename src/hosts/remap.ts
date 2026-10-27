@@ -121,6 +121,17 @@ function pipeWithoutPipefail(tree: SyntaxTree, region: ShellRegion, line: number
   });
 }
 
+/**
+ * The variables the host gives the shell code of `region` (`ShellRegion.provided`), and the names of the placeholders in
+ * the file (`${{ matrix.node }}` read as `${MATRIX_NODE}`, make's `$(OUT)` as `${OUT}`): the host replaces those
+ * before the shell runs, so bash never reads them as variables.
+ */
+export function hostProvided(extracted: Extracted, region: ShellRegion): string[] {
+  const rows = extracted.text.split('\n');
+  const names = extracted.inserted.flatMap((ranges, i) => ranges.flatMap(([from, to]) => [...rows[i].slice(from, to).matchAll(/\$\{?([A-Za-z_]\w*)/g)].map((m) => m[1])));
+  return [...new Set([...(region.provided ?? []), ...names])];
+}
+
 /** Explain `line` of a host document whose shell parts were extracted and parsed into `tree`. */
 export function explainHostedLine(
   analyzer: { explainLine(tree: SyntaxTree, line: number, shell?: Shell, opts?: ExplainOptions): LineExplanation },
@@ -129,7 +140,10 @@ export function explainHostedLine(
   const region = extracted.regions.find((r) => r.start <= line && line <= r.end);
   if (!region) return undefined;
   tree = scriptTree(tree, extracted, region);
-  const ex = analyzer.explainLine(tree, line, shell ?? region.shell, { ...opts, host: region.host, ...(region.commands ? { hostCommands: region.commands } : {}), ...(region.run ? { hostRun: region.run } : {}) });
+  const provided = hostProvided(extracted, region);
+  const ex = analyzer.explainLine(tree, line, shell ?? region.shell, {
+    ...opts, host: region.host, ...(region.commands ? { hostCommands: region.commands } : {}), ...(region.run ? { hostRun: region.run } : {}), ...(provided.length ? { hostProvided: provided } : {}),
+  });
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   // (The catalog facts of the host go through `said`, like the analyzer's, so `notes.pitfalls` off leaves out their pitfalls.)
