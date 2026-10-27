@@ -1352,3 +1352,14 @@ A keyboard and screen reader test of the web page found these; the panel's part 
 | Reading view | Arrow keys and Tab keep the focused item's row below the sticky line and steps. | Going up into a large item left its row above the screen, under the line. |
 | Forced colours (Windows High Contrast) | The current step of the Reading view is drawn in the system's highlight, and the editor's cursor line has a frame. | Both lost their only mark, a tint. |
 | Links to the manual | Their name says where they go and that they open in a new tab (the web page) or in the browser (VS Code): "§3.2.5.2 Compound Commands (opens in a new tab)". | "§3.2.5.2" only. |
+
+### The fix in four notes is the line's own
+
+The notes of `wrapper-assignment-expanded-first`, `regex-backslash-dropped`, `bracket-close-glued` and `unbraced-element` are rendered from the rewrite they carry (docs/design/oracles.md, 3.2), checked in bash 5.2 and 5.3.
+
+| Note | The fix shown | Before |
+|---|---|---|
+| `sudo v=1 echo got $v` | `sudo v=… sh -c 'echo got $v'`: the command and its arguments become the string; a quote in it is escaped (`'\''`). With another expansion in the string (`$HOME`, `$(date)`), the note shows it, but the editor offers no edit: the new shell would expand it, not this one. | `sudo v=… sh -c '… "$v"'` |
+| `[[ $x =~ \bfoo ]]` | `re='\bfoo'; [[ $x =~ $re ]]`, the variable before the statement that holds the test (before the whole `if` for an `elif`). The name is `re`, or `re2`, `re3`… when the script uses it. | The same line for every script, with `re`. |
+| `[ -f a.txt]` | `a.txt ]`. | "`]` needs a space before it". |
+| `$a[1]` | `${a[1]}`, also for `$a[@]` and `$m[k]`. | The same. |

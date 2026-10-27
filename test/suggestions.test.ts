@@ -179,7 +179,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     // (One per line: each PR that gives an id its rewrites removes its line.)
     assert.deepStrictEqual(ids.filter((id) => !rewrites(id) && kind(id) === 'mechanical').sort(), [
       'array-joined-in-assignment',
-      'bracket-close-glued',
       'declaration-masks-status',
       'for-over-unquoted-args',
       'function-last-test-returns-status',
@@ -187,12 +186,9 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
       'nounset-unbound',
       'postfix-increment-status',
       'prefix-assignment-expanded-first',
-      'regex-backslash-dropped',
       'script-last-test-returns-status',
-      'unbraced-element',
       'unquoted-variable-as-path',
       'unquoted-variable-in-test',
-      'wrapper-assignment-expanded-first',
     ]);
   });
 

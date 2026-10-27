@@ -28,6 +28,7 @@ import { type Missed, testSpecOf } from '../semantics/names';
 import { attribute, docLine } from '../semantics/state';
 import { readDeclarationWords, unsetEndsSpecial } from '../semantics/vars';
 import { isPlainWord, type Literal, literalContent, staticWordText, staticWordValue, surelyHasSlash } from '../staticword';
+import { replaceNode } from '../rewrite';
 import { field, fields, inStrayHead, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { bracketShape, type CommandTest, commandTest, type TestRules } from '../testexpr';
 import { readByCommand } from '../tokenmarks';
@@ -965,7 +966,7 @@ export function testArgs(cx: Explainer, n: SyntaxNode, test: CommandTest, bracke
   const glued = bracket && !test.close && !!last && /\S\]$/.test(last.text);
   // (In the condition of `if [ -f a ] then`, bash stops at the syntax error: the command never runs, and the syntax error is what is said.)
   if (!inStrayHead(n)) {
-    if (test.unclosed && glued) cx.note(fact(cx.lang, 'bracket-close-glued', { word: last.text }), last);
+    if (test.unclosed && glued) cx.note(fact(cx.lang, 'bracket-close-glued', { word: last.text, rewrite: [replaceNode(last, `${last.text.slice(0, -1)} ]`)] }), last);
     else if (test.unclosed) cx.note(fact(cx.lang, 'bracket-missing-close'), n);
     if (test.malformed) cx.note(fact(cx.lang, 'test-malformed', { name: bracket ? '[' : 'test' }), n);
   }

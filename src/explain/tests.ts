@@ -13,6 +13,8 @@ import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { expressionHost } from '../refs';
+import { replaceNode, statementBefore, unusedName } from '../rewrite';
+import { STATEMENTS } from '../semantics/env';
 import { option, type ShellState } from '../semantics/state';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
@@ -174,6 +176,9 @@ function numericTestNote(cx: Explainer, op: string, operands: string[], double: 
   return notes.length ? cx.s('。', '. ') + notes.join(cx.s('。', '. ')) : '';
 }
 
+/** The statements a test of `[[ ]]` can be a part of, up to the one the rewrite of `regex-backslash-dropped` goes before (not a block's: `{ }`, `( )`). */
+const STATEMENT_PARTS: ReadonlySet<string> = new Set([...STATEMENTS, 'elif_clause', 'else_clause', 'case_item'].filter((t) => t !== 'compound_statement' && t !== 'subshell'));
+
 /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
 export function regexNode(cx: Explainer, n: SyntaxNode): Token {
   // (A `regex` node is only the plain right side of `=~`, without quotes: expansions and quotes make other nodes.)
@@ -184,7 +189,17 @@ export function regexNode(cx: Explainer, n: SyntaxNode): Token {
   const dropped = [...new Set([...n.text.matchAll(/\\([bBwWsSdD<>])/g)].filter((m) => text !== n.text).map((m) => '\\' + m[1]))];
   if (dropped.length) {
     const list = dropped.map((d) => `\`${d}\``).join(cx.s('、', ', '));
-    cx.note(fact(cx.lang, 'regex-backslash-dropped', { list }), n);
+    // The rewrite: the regex goes in a variable (`re`, or a name the document does not use) before the statement that
+    // holds the test (the outermost one it is part of), and `$re` takes its place in the right side.
+    const bin = n.parent!.type === 'concatenation' ? n.parent!.parent! : n.parent!;
+    let stmt = ancestor(bin, (a) => a.type === 'extended_test')!;
+    while (STATEMENT_PARTS.has(stmt.parent!.type)) stmt = stmt.parent!;
+    const name = unusedName(n, 're');
+    const right = field(bin, 'right')!;
+    const rest = `${right.text.slice(0, n.startIndex - right.startIndex)}$${name}${right.text.slice(n.endIndex - right.startIndex)}`;
+    const assign = statementBefore(stmt, `${name}='${n.text.replace(/'/g, "'\\''")}'`);
+    const code = `${assign.code}; [[ ${field(bin, 'left')!.text} =~ ${rest} ]]`;
+    cx.note(fact(cx.lang, 'regex-backslash-dropped', { list, rewrite: [{ code, edits: [...assign.edits, ...replaceNode(n, `$${name}`).edits] }] }), n);
   }
   // (A part of a right side with quotes or expansions: the example is the whole regex's, made by `binary`.)
   if (js && n.parent?.type !== 'concatenation') regexExample(cx, js, 'values', field(n.parent!, 'left')!);
