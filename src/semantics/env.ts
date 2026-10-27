@@ -43,6 +43,8 @@ export type ShellKind = Shell | 'unknown';
  */
 export interface SlotLink {
   readonly kind: 'slot'; readonly slot: CommandSlot; readonly via: string; readonly at: SyntaxNode; readonly assigns: readonly string[];
+  /** With `env` `reset`: the variables of the environment it keeps (`CommandSlot.keeps`, or those of `envWith`). */
+  readonly keeps?: readonly string[];
   readonly unsets?: readonly string[];
   readonly env: NonNullable<CommandSlot['env']>; readonly shell?: ShellKind;
   readonly invocation?: readonly { readonly flag: string; readonly value?: string }[];
@@ -363,20 +365,21 @@ export function reachOf(env: ExecEnv, shellopts = false): { functions: Reach; va
 /**
  * The first link on the way to code in `env` that does not pass on the exported variable `name` (`reachOf`: one that
  * runs it on another machine or in a container, or resets the environment), unless it keeps that name
- * (`CommandSlot.keeps`: sudo keeps `TERM`, `TZ`, `LANG`…); undefined when the variable reaches it.
+ * (`SlotLink.keeps`: sudo keeps `TERM`, `TZ`, `LANG`…, `su -l` `TERM`); undefined when the variable reaches it.
  */
 export function droppedBy(env: ExecEnv, name: string): SlotLink | undefined {
-  const kept = (l: SlotLink): boolean => !!l.slot.keeps?.some((k) => (k.endsWith('*') ? name.startsWith(k.slice(0, -1)) : k === name));
+  const kept = (l: SlotLink): boolean => !!l.keeps?.some((k) => (k.endsWith('*') ? name.startsWith(k.slice(0, -1)) : k === name));
   return env.links.find((l): l is SlotLink => l.kind === 'slot'
     && (l.slot.where === 'remote' || l.slot.where === 'container' || ((l.env === 'reset' || l.env === 'none') && !kept(l))));
 }
 
 /**
- * How a shell reads a file of code: `script`, run as a program by a shell that is not interactive (it has a shebang,
- * or a host hands it to a shell: a CI step, a Dockerfile `RUN`, a recipe, an npm script, a bats file), so aliases are
- * not expanded and `local` fails outside a function; `terminal`, typed into an interactive shell (the code blocks of a
- * README); `unknown`, a file with no shebang, which may be run (`bash f.sh`), or read with `source` by an interactive
- * shell (`.bashrc`) or by a function.
+ * How a shell reads a file of code (`StateModel.read`): `script`, run by a shell that is not interactive (it has a
+ * shebang, or a host hands it to a shell: a CI step, a Dockerfile `RUN`, a recipe, an npm script, a bats file), which
+ * expands no alias; `terminal`, typed into an interactive shell (the code blocks of a README), which does; `unknown`,
+ * a file with no shebang, which may be run (`bash f.sh`), or read with `source` by an interactive shell (`.bashrc`) or
+ * by a function. (A file with a shebang may be sourced too, and bats sources a test file inside a function: taken as
+ * run, by convention.)
  */
 export type FileRead = 'script' | 'terminal' | 'unknown';
 
@@ -389,7 +392,8 @@ export function fileRead(root: SyntaxNode, host?: HostId): FileRead {
 
 /**
  * How the shell that runs code in `env` reads it, in a file read as `file`: another shell started for it (`bash -c
- * '…'`, `sudo bash -c`) reads its string as a script; the file's own shell, and its subshells, read it as the file is.
+ * '…'`, `sudo bash -c`) reads a string, not a file sourced by a function (`bash -i -c` is interactive, which its
+ * state says: it expands aliases); the file's own shell, and its subshells, read it as the file is.
  */
 export function readAs(env: ExecEnv, file: FileRead): FileRead {
   const p = processOf(env);
@@ -521,12 +525,14 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
         assigns.push(text.slice(0, text.indexOf('=')));
       } else if (role.role === 'subcommand') visit(outer, role.parse, role.spec, items(role.parse.roles, w, split));
       else if (role.role === 'command') {
-        const env = role.slot.envWith && flags.some((f) => role.slot.envWith!.options.includes(f)) ? role.slot.envWith.env : role.slot.env ?? 'exported';
+        const withOption = role.slot.envWith && flags.some((f) => role.slot.envWith!.options.includes(f)) ? role.slot.envWith : undefined;
+        const env = withOption ? withOption.env : role.slot.env ?? 'exported';
+        const keeps = withOption ? withOption.keeps : role.slot.keeps;
         const program = (role.slot.run === 'shell-string' ? p.command.split(' ')[0].split('/').pop()! : '');
         const shell: ShellKind | undefined = role.slot.run !== 'shell-string' ? undefined : role.slot.shell ?? (!role.slot.joinsWords ? shellFromName(program) : undefined) ?? 'unknown';
         // (The options of a shell started by its name: not those of `su -l -c` or of `watch`.)
         const invocation = shell && shell !== 'unknown' && !role.slot.shell ? shellInvocation(all) : [];
-        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: w.node(word), assigns, env, ...(unsets.length ? { unsets } : {}),
+        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: w.node(word), assigns, env, ...(keeps ? { keeps } : {}), ...(unsets.length ? { unsets } : {}),
           ...(shell ? { shell } : {}), ...(invocation.length ? { invocation } : {}) });
         if (!split) out.set(w.node(word), inner);
         // (The words a slot joins are those after it that it marks `joined`.)

@@ -13,7 +13,7 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields } from '../src/syntax/tree';
 import { defaultOn, option, shellState, ShellState } from '../src/semantics/state';
 import { INTEGERS_AT_START, READONLY_AT_START } from '../src/semantics/vars';
-import { instrument, readProbeTable, StateDiff } from './support/probe';
+import { instrument, PROBE_ENV, readProbeTable, StateDiff } from './support/probe';
 
 /**
  * The attributes bash gives its own variables (as in the baseline of the probes): the integers and the readonly ones,
@@ -30,7 +30,7 @@ const quoted = (v: string): string => (/[\x00-\x1f\x7f]/.test(v)
   : `"${v.replace(/(["\\$`])/g, '\\$1')}"`);
 
 /** The differences between the model's state and bash's facts at one marker: path → what each says. */
-function compare(id: string, st: ShellState, facts: StateDiff, posix: boolean): Map<string, string> {
+function compare(id: string, st: ShellState, facts: StateDiff, posix: boolean, environment: Record<string, string> = {}): Map<string, string> {
   const out = new Map<string, string>();
   const say = (path: string, model: string, bash: string): void => void out.set(`${id}.${path}`, `model: ${model}, bash: ${bash}`);
   for (const kind of ['set', 'shopt'] as const) {
@@ -70,8 +70,10 @@ function compare(id: string, st: ShellState, facts: StateDiff, posix: boolean): 
     if ((v.set === 'on') !== (has === 'set')) say(`variables.${name}.set`, v.set === 'on' ? 'set' : 'declared', has);
     const attrs = new Set([...(BASELINE_ATTRS[name] ?? '')]);
     for (const [l, a] of Object.entries(v.attrs)) {
-      if (a.state === 'unknown') say(`variables.${name}.${l}`, 'unknown', bash.attrs.includes(l) ? 'on' : 'off');
-      if (a.state === 'on') attrs.add(l);
+      // (An export the model takes from the environment, `Attribute.environment`: on when the run's environment has the name.)
+      const state = a.environment ? (name in PROBE_ENV || name in environment ? 'on' : 'off') : a.state;
+      if (state === 'unknown') say(`variables.${name}.${l}`, 'unknown', bash.attrs.includes(l) ? 'on' : 'off');
+      if (state === 'on') attrs.add(l);
       else attrs.delete(l);
     }
     const model = [...attrs].sort().join('') || '-';
@@ -96,22 +98,22 @@ function compare(id: string, st: ShellState, facts: StateDiff, posix: boolean): 
   return out;
 }
 
-interface StateRow { manual: string; snippet: string; posix?: boolean; bash?: BashVersion; note?: string; gaps?: Record<string, string>; facts: Record<string, unknown> }
+interface StateRow { manual: string; snippet: string; posix?: boolean; bash?: BashVersion; environment?: Record<string, string>; note?: string; gaps?: Record<string, string>; facts: Record<string, unknown> }
 
 describe('the shell state model against bash (probes/state.json)', () => {
   const parser = createUnbashParser();
   const rows = readProbeTable('state') as StateRow[];
   for (const row of rows) {
-    it(`${row.manual}: ${JSON.stringify(row.snippet)}${row.posix ? ' (bash --posix)' : ''}${row.bash ? ` (bash ${row.bash})` : ''}`, () => {
+    it(`${row.manual}: ${JSON.stringify(row.snippet)}${row.posix ? ' (bash --posix)' : ''}${row.bash ? ` (bash ${row.bash})` : ''}${row.environment ? ` (with ${Object.keys(row.environment).join(' ')} in the environment)` : ''}`, () => {
       const tree = parser.parse(instrument(`${row.snippet}\n@PROBE:end@\n`).script);
-      const model = shellState(tree, 'bash', { posix: row.posix, version: row.bash });
+      const model = shellState(tree, 'bash', { posix: row.posix, version: row.bash, read: 'script' });
       const markers = new Map(descendants(tree.root, ['command'])
         .filter((c) => field(c, 'name')?.text === '__probe')
         .map((c) => [fields(c, 'argument')[0].text, c]));
       const found = new Map<string, string>();
       for (const [id, facts] of Object.entries(row.facts)) {
         if (id === 'status' || id === 'stderr') continue;
-        for (const [k, v] of compare(id, model.at(markers.get(id)!).run, facts as StateDiff, !!row.posix)) found.set(k, v);
+        for (const [k, v] of compare(id, model.at(markers.get(id)!).run, facts as StateDiff, !!row.posix, row.environment)) found.set(k, v);
       }
       const gaps = row.gaps ?? {};
       const unexplained = [...found].filter(([k]) => !(k in gaps)).map(([k, v]) => `${k}: ${v}`);

@@ -258,6 +258,10 @@ export const MESSAGES = {
   'alias-not-expanded-in-script': pitfall<{ name: string; value: string }>(['6.6', '4.3.2'], ({ name, value }) => [
     `bash はスクリプトの中ではエイリアスを展開しないので、\`${name}\` は「command not found」になります。\`shopt -s expand_aliases\` を \`alias\` より前に書くか、関数 \`${name}() { ${value} "$@"; }\` にします（\`.bashrc\` など対話シェルで読むファイルなら問題ありません）`,
     `bash does not expand aliases in scripts, so \`${name}\` is "command not found". Put \`shopt -s expand_aliases\` before the \`alias\`, or make it a function: \`${name}() { ${value} "$@"; }\` (fine in files read by interactive shells, such as \`.bashrc\`)`]),
+  // (A file with no shebang, which bash may run as a script or an interactive shell may read: src/semantics/state.ts.)
+  'alias-maybe-not-expanded': caveat<{ name: string; value: string }>(['6.6', '4.3.2'], ({ name, value }) => [
+    `このファイルにはシバンがありません。\`.bashrc\` のように対話シェルが読むなら \`${name}\` は展開されますが、スクリプトとして実行すると（\`bash ファイル\`）bash はエイリアスを展開しないので「command not found」になります。スクリプトなら \`shopt -s expand_aliases\` を \`alias\` より前に書くか、関数 \`${name}() { ${value} "$@"; }\` にします`,
+    `this file has no shebang. Read by an interactive shell, as \`.bashrc\` is, \`${name}\` is expanded; but run as a script (\`bash file\`), bash does not expand aliases, so it is "command not found". Put \`shopt -s expand_aliases\` before the \`alias\` in a script, or make it a function: \`${name}() { ${value} "$@"; }\``]),
   'alias-defined-same-unit': note<{ name: string; line: number }>(['6.6'], ({ name, line }) => [
     `\`${name}\` は行 ${line} で \`alias\` として定義されますが、bash は行（複合コマンドや関数の本体も）をまとめて読んでから実行するので、同じ行で定義したエイリアスはまだ使えません。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
     `\`${name}\` is defined as an alias on line ${line}, but bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`]),
@@ -298,18 +302,22 @@ export const MESSAGES = {
   'variable-not-in-remote-shell': pitfall<{ v: string }>(['3.7.3', '3.7.4'], ({ v }) => [
     `\`$${v}\` はリモートのシェルが展開しますが、リモートにはこのスクリプトの変数 \`${v}\` はありません。値を送るなら、こちらで展開されるようダブルクォートの中に書きます`,
     `the remote shell expands \`$${v}\`, but it does not have \`${v}\`, a variable of this script. To send its value, write it in double quotes, so that it is expanded here`]),
-  // (`keeps`: the wrapper passes a few variables of the environment all the same, sudo's `TERM`, `LANG`: src/dict/types.ts, `SUDO_KEEPS`.)
-  'variable-not-passed-by-wrapper': pitfall<{ v: string; via: string; keeps?: boolean }>(['3.7.3', '3.7.4'], ({ v, via, keeps }) => [
-    `文字列の中の \`$${v}\` は新しいシェルが展開しますが、\`${via}\` はこのスクリプトの変数を（エクスポートしたものも${keeps ? '、`TERM` や `LANG` などいくつかを除いて' : ''}）渡さないので、そこには \`${v}\` はありません。値を使うなら、こちらで展開されるようダブルクォートの中に書きます`,
-    `the new shell expands \`$${v}\` in the string, but \`${via}\` passes none of this script's variables (not even exported ones${keeps ? ', but for a few such as `TERM` and `LANG`' : ''}), so \`${v}\` is not there. To use its value, write it in double quotes, so that it is expanded here`]),
-  // (`environment`: a name in capitals the script set with no `unset` or declaration before, which is exported when
-  // it came from the environment: src/semantics/shellstate.ts, `mayBeInherited`.)
-  'variable-not-exported': pitfall<{ v: string; environment?: boolean }>(['3.7.3', '3.7.4'], ({ v, environment }) => (environment ? [
+  // (`keeps`: what the wrapper still passes of the environment, up to two names: sudo's `TERM`, `LANG`, `su -l`'s
+  // `TERM`; `SlotLink.keeps`.)
+  'variable-not-passed-by-wrapper': pitfall<{ v: string; via: string; keeps?: readonly string[] }>(['3.7.3', '3.7.4'], ({ v, via, keeps = [] }) => {
+    const [a, b] = keeps.map((k) => `\`${k}\``);
+    return [
+      `文字列の中の \`$${v}\` は新しいシェルが展開しますが、\`${via}\` はこのスクリプトの変数を（エクスポートしたものも${b ? `、${a} や ${b} などいくつかを除いて` : a ? `、${a} を除いて` : ''}）渡さないので、そこには \`${v}\` はありません。値を使うなら、こちらで展開されるようダブルクォートの中に書きます`,
+      `the new shell expands \`$${v}\` in the string, but \`${via}\` passes none of this script's variables (not even exported ones${b ? `, but for a few such as ${a} and ${b}` : a ? `, but for ${a}` : ''}), so \`${v}\` is not there. To use its value, write it in double quotes, so that it is expanded here`];
+  }),
+  // (`environment`: the script set it with no `unset`, `local` or `export -n` before, so it is exported when it came
+  // from the environment, `maybe` (capitals) or `unlikely` (lower case): src/semantics/shellstate.ts, `fromEnvironment`.)
+  'variable-not-exported': pitfall<{ v: string; environment?: 'maybe' | 'unlikely' }>(['3.7.3', '3.7.4'], ({ v, environment }) => (environment === 'maybe' ? [
     `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトで設定していますが、エクスポートしていないので、そこに値が届くのは \`${v}\` が初めから環境変数にあったとき（環境変数から来た変数はエクスポートされています）だけで、そうでなければ空です。先に \`export ${v}\` します`,
     `the new shell expands \`$${v}\` in the string, and \`${v}\` is set by this script but not exported: its value gets there only when \`${v}\` was in the environment already (a variable from the environment is exported), and it is empty otherwise. Run \`export ${v}\` first`] : [
-    `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です。先に \`export ${v}\` します`,
-    `the new shell expands \`$${v}\` in the string, and \`${v}\` is a variable of this script that is not exported, so it is empty there. Run \`export ${v}\` first`]), undefined,
-  ({ environment }) => (environment ? 'info' : 'warning')),
+    `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です${environment ? `（環境変数に初めから \`${v}\` があるときを除く）` : ''}。先に \`export ${v}\` します`,
+    `the new shell expands \`$${v}\` in the string, and \`${v}\` is a variable of this script that is not exported, so it is empty there${environment ? ` (unless the environment already has \`${v}\`)` : ''}. Run \`export ${v}\` first`]), undefined,
+  ({ environment }) => (environment === 'maybe' ? 'info' : 'warning')),
   'function-not-in-container': pitfall<{ via: string; name: string }>(['3.3', '3.7.3'], ({ via, name }) => [
     `\`${via}\` は \`${name}\` をコンテナの中で実行します。このスクリプトの関数はコンテナの中にはないので使えません。関数の中身を直接書きます`,
     `\`${via}\` runs \`${name}\` inside the container, and a function from this script is not available in the container. Write out its body instead`]),
@@ -384,19 +392,20 @@ export const MESSAGES = {
   // (`set -u` on every path, and no value on every path: src/semantics/unbound.ts, `unboundRead`. `shell`: the
   // messages of bash and dash are quoted, another shell's are not.)
   'nounset-unbound': pitfall<{
-    v: string; name: string; exits: 'script' | 'subshell' | 'shell' | 'command'; shell: 'bash' | 'dash' | 'other'; environment: boolean; errexit?: 'script' | 'subshell'; fix?: string;
+    v: string; name: string; exits: 'script' | 'subshell' | 'shell' | 'command'; shell: 'bash' | 'dash' | 'other'; environment: 'maybe' | 'unlikely' | 'no'; errexit?: 'script' | 'subshell'; fix?: string;
   }>(['4.3.1', '3.5.3'], ({ v, name, exits, shell, environment, errexit, fix }) => {
     const message = `${v}: ${shell === 'bash' ? 'unbound variable' : 'parameter not set'}`;
     return [
       `ここでは \`${v}\` に値が設定されていない${errexit ? `ので、${errexit === 'script' ? 'スクリプト' : 'これを実行するサブシェル'}が終了する` : ''}。\`set -u\` が有効なので、${shell === 'other' ? '読むとエラーになり' : `${shell} は \`${message}\` のエラーを出し`}、`
         + `${exits === 'script' ? 'スクリプトが終了する' : exits === 'subshell' ? 'これを実行するサブシェルが終了する' : exits === 'shell' ? 'これを実行するシェルが終了する' : `このコマンドは実行されず、終了ステータス 1 で失敗する${errexit ? `。\`set -e\` がこの失敗で${errexit === 'script' ? 'スクリプト' : 'これを実行するサブシェル'}を止める` : ''}`}`
-        + `${environment ? `（\`${name}\` が環境変数から来るときを除く）` : ''}。${fix ? `設定されていないことがあるなら \`${fix}\` と書く` : 'この前で値を設定しておく'}`,
+        + `${environment !== 'no' ? `（\`${name}\` が環境変数から来るときを除く）` : ''}。${fix ? `設定されていないことがあるなら \`${fix}\` と書く` : 'この前で値を設定しておく'}`,
       `\`${v}\` is not set here${errexit ? `, so ${errexit === 'script' ? 'the script' : 'the subshell running it'} stops` : ''}: with \`set -u\` on, ${shell === 'other' ? 'reading it is an error, and' : `${shell} fails with "${message}" and`} `
         + `${exits === 'script' ? 'the script exits' : exits === 'subshell' ? 'the subshell running it exits' : exits === 'shell' ? 'the shell running it exits' : `the command does not run: it fails with status 1${errexit ? `, and \`set -e\` stops ${errexit === 'script' ? 'the script' : 'the subshell running it'} on that failure` : ''}`}`
-        + `${environment ? ` (unless \`${name}\` comes from the environment)` : ''}. ${fix ? `If it may be unset, write \`${fix}\`` : 'Set it before this line'}`];
+        + `${environment !== 'no' ? ` (unless \`${name}\` comes from the environment)` : ''}. ${fix ? `If it may be unset, write \`${fix}\`` : 'Set it before this line'}`];
   }, undefined,
   // (Only the command fails, and the shell goes on: an unset read in a redirection of a program, `cat < "$f"` with `set -u`.)
-  ({ exits, errexit }) => (exits === 'command' && !errexit ? 'info' : 'warning')),
+  // (A name in capitals, which by custom the environment may have: a caveat, src/semantics/shellstate.ts, `fromEnvironment`.)
+  ({ exits, errexit, environment }) => (environment === 'maybe' || (exits === 'command' && !errexit) ? 'info' : 'warning')),
   // (src/semantics/state.ts, `shebangRefused`.)
   'shebang-refused': pitfall<ShebangRefusal>(['6.1', '3.8', 'execve(2)'], (r) => [
     `Linux ではシバンのインタープリタの後ろの \`${r.rest}\` 全体が bash への1つの引数になり、bash はそれを受け付けない（${r.why === 'blank' ? '空白はオプションではない'

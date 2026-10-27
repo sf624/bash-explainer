@@ -70,6 +70,7 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'dead-code': 'none',
   // `shopt -s expand_aliases` first, or a function: needs a stub for the aliased command.
   'alias-not-expanded-in-script': 'scenario',
+  'alias-maybe-not-expanded': 'scenario',
   'alias-defined-same-unit': 'none',
   'alias-defined-later': 'none',
   // Move `shopt -s extglob` out of the block: the block parses.
@@ -162,6 +163,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 16, scenario: 24, prose: 12, none: 43 });
+      { mechanical: 16, scenario: 25, prose: 12, none: 43 });
   });
 });

@@ -12,7 +12,7 @@ import { VARIABLE_SECTIONS } from '../manual';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { droppedBy, type ExecEnv, reachOf, type SlotLink, whereOf } from '../semantics/env';
-import { mayBeInherited } from '../semantics/shellstate';
+import { fromEnvironment } from '../semantics/shellstate';
 import type { Missed } from '../semantics/names';
 import { type NestedScript, plainReads, scriptSourceIndex } from '../semantics/nested';
 import { givenToEveryShell } from '../semantics/vars';
@@ -216,9 +216,10 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
 /**
  * `x=1; bash -c 'echo "$x"'`: a variable of this script that a string run by another shell reads (in single
  * quotes, so that shell expands it), which that shell does not get: it is not exported, or a link on the way
- * passes no variables (`env -i`, sudo, ssh: src/semantics/env.ts; but sudo keeps `TERM`, `TZ`…: `droppedBy`). A
- * variable in capitals the script set but did not export may come from the environment, exported: a caveat (`mayBeInherited`). Not one the string sets itself, nor one the
- * command or a wrapper sets for it (`x=1 bash -c …`, `env x=1 …`), nor one from the environment or set by that shell (`$_`).
+ * passes no variables (`env -i`, sudo, ssh: src/semantics/env.ts; but sudo keeps `TERM`, `TZ`…: `droppedBy`). Whether
+ * its export may come from the environment is `fromEnvironment`'s: not said of one the environment almost always has
+ * (`TERM`), a caveat for one in capitals, a clause for one in lower case. Not one the string sets itself, nor one the
+ * command or a wrapper sets for it (`x=1 bash -c …`, `env x=1 …`), nor one set by that shell (`$_`).
  */
 function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): void {
   // The string, read as the script it is (src/semantics/state.ts): the variables it reads, and whether each
@@ -236,19 +237,25 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
     // (Not one bash or the environment gives every shell, `$HOME`, nor one the environment usually has that is not
     // bash's, `$USER`.)
     const given = Object.hasOwn(VARIABLE_SECTIONS, v) ? givenToEveryShell(v) : !!wellKnownVariables[v];
-    if (!x || x.set !== 'on' || given || specialVariables[v] || script.model.at(e).run.variables.has(v)) continue;
+    // (Set by the string itself before the read, or given to it exported, by the slot or this shell: not one passed
+    // with an export not known, from the environment.)
+    const own = script.model.at(e).run.variables.get(v);
+    if (!x || x.set !== 'on' || given || specialVariables[v] || (own && (own.attrs.x?.state === 'on' || script.tree.root === ancestor(own.at, (a) => !a.parent)))) continue;
     const exported = x.attrs.x?.state ?? 'off';
     // (sudo still passes a few variables of the environment, `TERM`, `TZ`: then it is as with no wrapper.)
     const dropped = variables === 'none' ? droppedBy(env, v) : undefined;
     if (dropped) {
       cx.note(remote
         ? fact(cx.lang, 'variable-not-in-remote-shell', { v })
-        : fact(cx.lang, 'variable-not-passed-by-wrapper', { v, via: dropped.via, keeps: !!dropped.slot.keeps }), words[0]);
+        : fact(cx.lang, 'variable-not-passed-by-wrapper', { v, via: dropped.via, ...(dropped.keeps ? { keeps: dropped.keeps.slice(0, 2) } : {}) }), words[0]);
       return;
     }
-    if (exported === 'off') {
-      // (`FOO=1` is exported when `FOO` came from the environment: `env FOO=x bash script`.)
-      cx.note(fact(cx.lang, 'variable-not-exported', { v, environment: mayBeInherited(x) }), words[0]);
+    const environment = fromEnvironment(v, st, 'export');
+    if (environment === 'usually') continue;
+    // (An array is never exported. `FOO=1` is, when `FOO` came from the environment: `env FOO=x bash script`.)
+    const array = ['a', 'A'].some((l) => (x.attrs[l]?.state ?? 'off') !== 'off');
+    if (exported === 'off' || array || environment === 'maybe') {
+      cx.note(fact(cx.lang, 'variable-not-exported', { v, ...(environment === 'maybe' || environment === 'unlikely' ? { environment } : {}) }), words[0]);
       return;
     }
   }

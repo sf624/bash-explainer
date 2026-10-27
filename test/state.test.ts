@@ -458,7 +458,9 @@ describe('shell state: more builtins', () => {
   });
   it('an alias that is expanded runs its text', () => {
     assert.strictEqual(set(end("shopt -s expand_aliases\nalias e='set -f'\ne"), 'noglob'), 'on');
-    assert.strictEqual(set(end("alias e='set -f'\ne"), 'noglob'), 'default');
+    assert.strictEqual(set(end("#!/bin/bash\nalias e='set -f'\ne"), 'noglob'), 'default');
+    // (A file with no shebang may be `.bashrc`, read by an interactive shell, which expands aliases.)
+    assert.strictEqual(set(end("alias e='set -f'\ne"), 'noglob'), 'unknown');
     assert.strictEqual(set(end("shopt -s expand_aliases; alias e='set -f'; e"), 'noglob'), 'default');
     assert.strictEqual(set(end("a && shopt -s expand_aliases\nalias e='set -f'\ne"), 'noglob'), 'unknown');
     assert.strictEqual(set(end("alias e='set -f'\ne", 'sh'), 'noglob'), 'on');

@@ -50,7 +50,7 @@ function kindOf(r: NameResolution, path: string | undefined | null): Kind {
 /** The model's kind of each name at each marker of `script`. */
 function modelKinds(script: string, ids: string[], names: string[], posix: boolean): Record<string, Record<string, Kind>> {
   const tree = createUnbashParser().parse(script);
-  const model = shellState(tree, undefined, { posix });
+  const model = shellState(tree, undefined, { posix, read: 'script' });
   const commands = descendants(tree.root, ['command']);
   const out: Record<string, Record<string, Kind>> = {};
   for (const id of ids) {
@@ -104,7 +104,7 @@ describe('assignments before a command against bash (test/fixtures/probes/state.
   for (const row of rows) {
     it(`${row.posix ? '--posix: ' : ''}${row.snippet}`, () => {
       const tree = createUnbashParser().parse(row.snippet);
-      const model = shellState(tree, undefined, { posix: !!row.posix });
+      const model = shellState(tree, undefined, { posix: !!row.posix, read: 'script' });
       const assigned = row.facts.end?.variables ?? {};
       for (const c of descendants(tree.root, ['command'])) {
         // (Assignments alone have no name: they are the shell's.)

@@ -266,14 +266,14 @@ describe('explanations from the execution environment', () => {
     assert.strictEqual(bash('[ "$(echo $$)" = "$$" ] && [ "$(echo $BASHPID)" != "$$" ] && echo ok'), 'ok\n');
   });
   it('says when a shell run by a slot does not get a variable its string reads', function () {
-    assert.deepStrictEqual(pitfalls("name=x\nbash -c 'echo \"$name\"'", 'en', 1), ['⚠ Pitfall: the new shell expands `$name` in the string, and `name` is a variable of this script that is not exported, so it is empty there. Run `export name` first']);
-    assert.deepStrictEqual(pitfalls("name=x\nbash -c 'echo \"$name\"'", 'ja', 1), ['⚠ 落とし穴: 文字列の中の `$name` は新しいシェルが展開します。`name` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です。先に `export name` します']);
+    assert.deepStrictEqual(pitfalls("name=x\nbash -c 'echo \"$name\"'", 'en', 1), ['⚠ Pitfall: the new shell expands `$name` in the string, and `name` is a variable of this script that is not exported, so it is empty there (unless the environment already has `name`). Run `export name` first']);
+    assert.deepStrictEqual(pitfalls("name=x\nbash -c 'echo \"$name\"'", 'ja', 1), ['⚠ 落とし穴: 文字列の中の `$name` は新しいシェルが展開します。`name` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です（環境変数に初めから `name` があるときを除く）。先に `export name` します']);
     assert.deepStrictEqual(pitfalls("export name=x\nenv -i bash -c 'echo $name'", 'en', 1), ["⚠ Pitfall: the new shell expands `$name` in the string, but `env` passes none of this script's variables (not even exported ones), so `name` is not there. To use its value, write it in double quotes, so that it is expanded here"]);
     assert.deepStrictEqual(pitfalls("export name=x\nsudo bash -c 'echo $name'", 'ja', 1), ['⚠ 落とし穴: 文字列の中の `$name` は新しいシェルが展開しますが、`sudo` はこのスクリプトの変数を（エクスポートしたものも、`TERM` や `LANG` などいくつかを除いて）渡さないので、そこには `name` はありません。値を使うなら、こちらで展開されるようダブルクォートの中に書きます']);
     assert.strictEqual(pitfalls("name=x\nx | bash -c 'echo $name'", 'en', 1).length, 1);
     // A variable set by arithmetic is the script's too; not in a subshell.
     for (const src of ['(( n = 1 ))', 'let n++', 'for (( n = 0; n < 3; n++ )); do :; done', ': $(( n = 2 ))']) {
-      assert.deepStrictEqual(pitfalls(`${src}\nbash -c 'echo $n'`, 'en', 1), ['⚠ Pitfall: the new shell expands `$n` in the string, and `n` is a variable of this script that is not exported, so it is empty there. Run `export n` first'], src);
+      assert.deepStrictEqual(pitfalls(`${src}\nbash -c 'echo $n'`, 'en', 1), ['⚠ Pitfall: the new shell expands `$n` in the string, and `n` is a variable of this script that is not exported, so it is empty there (unless the environment already has `n`). Run `export n` first'], src);
     }
     assert.deepStrictEqual(pitfalls("( (( n = 1 )) )\nbash -c 'echo $n'", 'en', 1), []);
     assert.deepStrictEqual(pitfalls("name=x\nssh host 'echo $name'", 'en', 1), ['⚠ Pitfall: the remote shell expands `$name`, but it does not have `name`, a variable of this script. To send its value, write it in double quotes, so that it is expanded here']);

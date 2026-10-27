@@ -9,7 +9,7 @@ import type { Lang, Text } from '../i18n';
 import { shorten } from '../label';
 import { type Fact, type Note, plainNote, said } from '../messages';
 import { anchored, type Found, spanOf } from '../noteanchors';
-import type { ExecEnv, FileRead } from '../semantics/env';
+import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
 import { docLine, type StateModel } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
@@ -65,8 +65,6 @@ export interface Explainer {
   readonly root: SyntaxNode;
   /** The kind of string explained, when the line is in a string read as a script (src/semantics/nested.ts). */
   readonly nested: NestedScript['kind'] | undefined;
-  /** How the file is read: run as a script, typed into a terminal, or not known (src/semantics/env.ts, `fileRead`; `readAs` for a node). */
-  readonly read: FileRead;
 
   /** The line explained, or null while a construct is explained whole; only `full` changes it. */
   readonly line: number | null;
@@ -150,7 +148,6 @@ export interface LineInit {
   readonly root: SyntaxNode;
   readonly line: number;
   readonly nested: NestedScript['kind'] | undefined;
-  readonly read: FileRead;
 }
 
 /**
@@ -165,7 +162,6 @@ export class LineExplainer implements Explainer, LineOutput {
   readonly source: string;
   readonly root: SyntaxNode;
   readonly nested: NestedScript['kind'] | undefined;
-  readonly read: FileRead;
   readonly notes: string[] = [];
   readonly facts: Fact[] = [];
   readonly anchors: NoteAnchor[] = [];
@@ -187,7 +183,6 @@ export class LineExplainer implements Explainer, LineOutput {
     this.source = init.root.text;
     this.current = init.line;
     this.nested = init.nested;
-    this.read = init.read;
   }
 
   s(ja: string, en: string): string {

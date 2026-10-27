@@ -34,7 +34,7 @@ function factOf(env: ExecEnv, slotted: boolean): Fact {
 /** The model's fact for each marker of `script` (the snippet with its markers made calls of `__probe`). */
 export function modelFacts(script: string, ids: string[], version?: BashVersion): Record<string, Fact> {
   const tree = createUnbashParser().parse(script);
-  const model = shellState(tree, undefined, { version });
+  const model = shellState(tree, undefined, { version, read: 'script' });
   const commands = descendants(tree.root, ['command']);
   const out: Record<string, Fact> = {};
   for (const id of ids) {

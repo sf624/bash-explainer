@@ -11,6 +11,7 @@ import { builtins } from './dict/builtins';
 import type { Extracted } from './hosts';
 import { scriptTree } from './hosts/scripts';
 import { type HighlightModifier, semanticFacts } from './semanticFacts';
+import { fileRead, type FileRead } from './semantics/env';
 import { shellState } from './semantics/state';
 import type { HostRun } from './semantics/walk/host';
 import { field, isShebang, type SyntaxNode, type SyntaxTree } from './syntax/tree';
@@ -75,6 +76,8 @@ export interface HighlightOptions {
   readonly host?: Record<string, CommandSpec>;
   /** What the host runs of the script (bats' tests), which the model reads. */
   readonly run?: HostRun;
+  /** How the file is read (`fileRead`: a file with no shebang may be `.bashrc`, a host's code is run or typed into a terminal); from its shebang when absent. */
+  readonly read?: FileRead;
 }
 
 /**
@@ -119,7 +122,7 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
   visit(tree.root, false);
   // What the models say (command names, options by the specs, variables' attributes) paints over the tree's guess.
   const mods = new Uint8Array(text.length);
-  const model = shellState(tree, options.shell, { ...(options.host ? { host: options.host } : {}), ...(options.run ? { run: options.run } : {}) });
+  const model = shellState(tree, options.shell, { ...(options.host ? { host: options.host } : {}), ...(options.run ? { run: options.run } : {}), ...(options.read ? { read: options.read } : {}) });
   for (const f of semanticFacts(tree, model, options.shell, { from, to })) {
     if (f.kind) set(f.from, f.to, f.kind);
     if (f.modifiers) mods.fill(f.modifiers.reduce((bits, m) => bits | (1 << MODIFIERS.indexOf(m)), 0), Math.max(f.from, from), Math.min(f.to, to));
@@ -353,7 +356,7 @@ export function documentHighlight(doc: ShellDocument, opts: DocumentHighlightOpt
     done.add(own);
     const starts = lineStarts(own.text);
     const range = opts.lines && offsetsOf(starts, own.text.length, opts.lines);
-    lines.push(...lineSpans(highlight(own, { range, shell: forced ?? region.shell, ...(region.commands ? { host: region.commands } : {}), ...(region.run ? { run: region.run } : {}) }), own.text, starts));
+    lines.push(...lineSpans(highlight(own, { range, shell: forced ?? region.shell, read: fileRead(own.root, region.host), ...(region.commands ? { host: region.commands } : {}), ...(region.run ? { run: region.run } : {}) }), own.text, starts));
   }
   // (Each shell of a host file has lines of its own: put together, their spans are in order once sorted by line.)
   if (done.size > 1) lines.sort((a, b) => a.line - b.line || a.from - b.from);

@@ -249,7 +249,7 @@ export function evaluate(row: StatusRow): { ran: string[]; status: number } | { 
   // (`bash -e` is `set -e` before the first line: on the same line, so that the lines keep their numbers.)
   const script = `${row.errexit === false ? '' : 'set -e; '}${instrument(row.snippet).script}`;
   const tree = createUnbashParser().parse(script);
-  const state = shellState(tree, 'bash', { posix: row.posix, version: row.bash });
+  const state = shellState(tree, 'bash', { posix: row.posix, version: row.bash, read: 'script' });
   const run = new Run(state, statusModel(state));
   try {
     const status = run.block(tree.root.namedChildren);

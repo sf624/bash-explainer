@@ -4761,5 +4761,126 @@
       },
       "status": 0
     }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "FOO=1; foo=1; TERM=dumb\n@PROBE:set@\nf() { local BAR; BAR=2; @PROBE:local@; }\nf",
+    "environment": {
+      "FOO": "x",
+      "foo": "x",
+      "BAR": "y",
+      "TERM": "xterm"
+    },
+    "note": "a variable from the environment is exported: an assignment keeps it so, and so does `local` (not its value)",
+    "facts": {
+      "set": {
+        "variables": {
+          "FOO": {
+            "attrs": "x",
+            "value": "\"1\""
+          },
+          "TERM": {
+            "attrs": "x",
+            "value": "\"dumb\""
+          },
+          "foo": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        }
+      },
+      "local": {
+        "variables": {
+          "BAR": {
+            "attrs": "x",
+            "value": "\"2\""
+          },
+          "FOO": {
+            "attrs": "x",
+            "value": "\"1\""
+          },
+          "TERM": {
+            "attrs": "x",
+            "value": "\"dumb\""
+          },
+          "foo": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "FOO": {
+            "attrs": "x",
+            "value": "\"1\""
+          },
+          "TERM": {
+            "attrs": "x",
+            "value": "\"dumb\""
+          },
+          "foo": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "unset FOO; FOO=1; A=(a b); B=1; export -n B",
+    "environment": {
+      "FOO": "x",
+      "A": "x",
+      "B": "x"
+    },
+    "note": "`unset` and `export -n` drop the export of the environment's variable; an array keeps `-x` in `declare -p`, but is not exported",
+    "facts": {
+      "end": {
+        "variables": {
+          "A": {
+            "attrs": "ax",
+            "value": "([0]=\"a\" [1]=\"b\")"
+          },
+          "B": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "FOO": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "FOO=1; foo=1",
+    "note": "without them in the environment, the same assignments are not exported",
+    "facts": {
+      "end": {
+        "variables": {
+          "FOO": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "foo": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
   }
 ]

@@ -160,7 +160,8 @@ describe('what a command name is, against bash', () => {
     it(row.script.replace(/\n/g, '; '), () => {
       const script = row.script.replace('@BIN@', bin);
       const lines = script.split('\n');
-      const ex = new Analyzer('en').explainLine(parser.parse(script), lines.length - 1);
+      // (bash runs it as a script, with no alias expanded: the explanation reads it so, with a shebang.)
+      const ex = new Analyzer('en').explainLine(parser.parse(`#!/bin/bash\n${script}`), lines.length);
       const t = allTokens(ex.items).find((x: Token) => x.label === row.label && x.name);
       assert.ok(t, JSON.stringify(allTokens(ex.items).map((x) => [x.label, x.name?.runs])));
       const n = t.name!;
@@ -205,7 +206,7 @@ describe('what a command name is, in the model and the texts', () => {
     assert.strictEqual(t.kind, 'alias');
     assert.strictEqual(t.name!.runs, 'alias');
     // (Not expanded, the alias is still the token's kind; bash looks for a program.)
-    const off = tokens('alias ll=\'ls -l\'\nll', 1)[0];
+    const off = tokens('#!/bin/bash\nalias ll=\'ls -l\'\nll', 2)[0];
     assert.strictEqual(off.kind, 'alias');
     assert.strictEqual(off.name!.runs, 'program');
   });
@@ -242,8 +243,8 @@ describe('what a command name is, in the model and the texts', () => {
     assert.strictEqual(said('sudo cd /', 'cd', 'ja').also, '`sudo` が名前を探すので、bash のビルトインは動かない。この名前のプログラムはふつうない');
     assert.strictEqual(said('enable -n cd\ncd /', 'cd', 'ja').also, 'この名前のプログラムはふつうない。同じ名前で、ほかに: bash のビルトイン（`enable -n` で無効。`enable cd` で有効に戻る）');
     assert.strictEqual(said('enable -n cd\ncd /', 'cd').also, 'There is usually no program of this name. Same name, also: bash\'s builtin, turned off by `enable -n` (`enable cd` turns it on again)');
-    assert.strictEqual(said('alias ll=\'ls -l\'\nll', 'll').also, 'Same name, also: an alias, not expanded in a script (needs `shopt -s expand_aliases`)');
-    assert.strictEqual(said('alias ll=\'ls -l\'\nll', 'll', 'ja').also, '同じ名前で、ほかに: エイリアス（スクリプトの中では展開されない。`shopt -s expand_aliases` が要る）');
+    assert.strictEqual(said('#!/bin/bash\nalias ll=\'ls -l\'\nll', 'll').also, 'Same name, also: an alias, not expanded in a script (needs `shopt -s expand_aliases`)');
+    assert.strictEqual(said('#!/bin/bash\nalias ll=\'ls -l\'\nll', 'll', 'ja').also, '同じ名前で、ほかに: エイリアス（スクリプトの中では展開されない。`shopt -s expand_aliases` が要る）');
     assert.strictEqual(said('useradd() { :; }\nuseradd x', 'useradd').also, 'Same name, also: a program in PATH (run with `command useradd`)');
     assert.strictEqual(said('useradd() { :; }\nuseradd x', 'useradd', 'ja').also, '同じ名前で、ほかに: PATH の中のプログラム（`command useradd` で動く）');
   });

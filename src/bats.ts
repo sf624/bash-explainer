@@ -37,7 +37,7 @@ const testLines = new WeakMap<SyntaxTree, number[]>();
 export function batsTests(tree: SyntaxTree, region: Pick<ShellRegion, 'commands' | 'run'> & { tests: readonly number[] }): number[] {
   let out = testLines.get(tree);
   if (!out) {
-    const called = new Set([...shellState(tree, undefined, { host: region.commands, run: region.run }).hostCalls].filter(([, c]) => c.role === 'test').map(([d]) => d));
+    const called = new Set([...shellState(tree, undefined, { host: region.commands, run: region.run, read: 'script' }).hostCalls].filter(([, c]) => c.role === 'test').map(([d]) => d));
     const rows = new Set(descendants(tree.root, ['function_definition'])
       .filter((d) => called.has(d) || !ancestor(d, (a) => a.type === 'function_definition')).map((d) => d.startPosition.row));
     testLines.set(tree, (out = region.tests.filter((l) => rows.has(l))));
@@ -55,7 +55,7 @@ export function batsFacts(tree: SyntaxTree, region: Pick<ShellRegion, 'commands'
   const def0 = tests.includes(line) && descendants(tree.root, ['function_definition']).find((d) => d.startPosition.row === line);
   if (def0) out.push({ fact: fact(lang, 'bats-test'), node: def0 });
   // (The model the analyzer reads for a bats file, which reads bats' functions by their specs.)
-  const state = shellState(tree, undefined, { host: region.commands, run: region.run });
+  const state = shellState(tree, undefined, { host: region.commands, run: region.run, read: 'script' });
   const status = statusModel(state);
   // The hooks bats calls once the file has run (src/semantics/walk/host.ts), said on their definitions.
   for (const [def, call] of state.hostCalls) {

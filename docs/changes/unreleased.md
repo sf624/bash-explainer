@@ -60,7 +60,7 @@ Warnings, for what breaks the script as written or does damage that cannot be un
 | `prefix-assignment-expanded-first` | `FOO=1 echo $FOO` |
 | `unquoted-variable-as-path` | `rm $f`, `mv $a $b`, `cp $src /tmp/` |
 | `redirect-by-your-shell` | `sudo cmd > /etc/x` |
-| `nounset-unbound` | `set -u; echo "$dir"` (information when only the command fails: `cat < "$f"`) |
+| `nounset-unbound` | `set -u; echo "$dir"` (information when only the command fails, `cat < "$f"`, and for a name in capitals, `echo "$CI"`) |
 | `shebang-refused` | `#!/bin/bash -e -u` |
 | `download-run-by-shell` | `curl -fsSL URL \| bash`, `sh -c "$(curl URL)"` |
 
@@ -87,9 +87,9 @@ The other warnings and caveats of the explanations are problems as well. Among t
 | `unset-readonly`, `unset-function-and-variable` | `readonly x=1; unset x`, `unset -f -v x` | warning |
 | `assign-readonly` | `UID=0`, `readonly x=1; x=2` | warning |
 | `local-outside-function` | `local x=1` outside a function (information in a file with no shebang) | warning |
-| `alias-not-expanded-in-script`, `distro-alias-in-script` | `alias ll='ls -l'` then `ll` in a script with a shebang; `ll /tmp` | warning |
+| `alias-not-expanded-in-script`, `distro-alias-in-script` | `alias ll='ls -l'` then `ll` in a script with a shebang (`alias-maybe-not-expanded`, information, in a file with no shebang); `ll /tmp` | warning |
 | `extglob-turned-off`, `extglob-in-same-block`, `extglob-not-in-new-shell` | `shopt -u extglob`, then `ls !(a)` on a later line | warning |
-| `variable-not-exported`, `variable-not-passed-by-wrapper`, `variable-not-in-remote-shell` | `x=1; bash -c 'echo $x'` (information for a name that may come from the environment: `FOO=1`) | warning |
+| `variable-not-exported`, `variable-not-passed-by-wrapper`, `variable-not-in-remote-shell` | `x=1; bash -c 'echo $x'` (information for a name in capitals, which may come from the environment: `FOO=1`) | warning |
 | `builtin-or-function-as-program`, `function-not-in-new-shell-export`, `function-not-on-remote`… | `f() { :; }; sudo f` | warning |
 | `wrapper-assignment-expanded-first` | `sudo X=1 echo $X` | warning |
 | `pipeline-subshell-variable` | `… \| while read -r l; do n=1; done; echo "$n"` | warning |
@@ -857,11 +857,13 @@ Five pitfalls that bash 5.2 contradicted (found in a review, each checked in bas
 
 | Written | Before | Now | What bash does |
 | --- | --- | --- | --- |
-| `alias hi='echo hi'` then `hi`, in a file with no shebang (`.bashrc`, `~/.bash_aliases`), or in a README's code block | Warning: "command not found" in a script | No note; the explanation of `hi` says that an interactive shell that reads the file replaces it, and a script does not. A file with a shebang, a CI step, a Dockerfile `RUN` and a `bash -c` string keep the warning. | `bash -ic 'source f.sh'` prints `hi`; `bash f.sh` says "hi: command not found". |
+| `alias hi='echo hi'` then `hi`, in a file with no shebang (`.bashrc`, `~/.bash_aliases`) | Warning: "command not found" in a script | Caveat: expanded when an interactive shell reads the file, "command not found" when it runs as a script; the explanation of `hi` says the same. A file with a shebang, a CI step, a Dockerfile `RUN` and a `bash -c` string keep the warning; a README's code block (typed into a terminal) and `bash -i -c` expand it, with no note. `shopt -u expand_aliases` wins everywhere. | `bash -ic 'source f.sh'` prints `hi`; `bash f.sh` says "hi: command not found". |
 | `local v=7` outside a function, in a file with no shebang | Warning: it fails | Caveat: it fails, but works when a function reads the file with `source`. A file with a shebang, and a `bash -c` string, keep the warning. | `f() { source lib.sh; }; f` prints `v=7`, status 0; `bash lib.sh` says "can only be used in a function". |
-| `FOO=1; bash -c 'echo "$FOO"'` | Warning: empty there | Caveat: empty unless `FOO` was in the environment already, which exports it. A name in lower case, or one the script `unset` or `export -n` first, keeps the warning. | `bash s.sh` prints `[]`; `env FOO=x bash s.sh` prints `[1]`. |
-| `TERM=dumb; sudo bash -c "echo \$TERM"`, also `TZ`, `LANG`, `LC_*`, `DISPLAY` | Warning: sudo passes no variable | As without sudo: nothing when exported, the caveat above when not. sudo's defaults keep these names (sudoers(5): `env_reset`, `env_check`, `env_keep`). Another name keeps the warning, which now says that sudo keeps "a few such as `TERM` and `LANG`". | — (sudo needs a password here; the names come from sudoers(5) and sudo 1.9.15's defaults.) |
-| `[ -n "$x"]` | Warning: "missing `]`" | Warning: when `"$x"` is empty, the word is `]` and closes `[`, which tests `[ -n ]`: not the condition meant; with a value, "missing `]`". A word with text of its own before the `]` (`"$x/a"]`), `${#x}` or `${x:-none}`, or a variable set to text, keeps the old note. | `x=""; [ -n "$x"]; echo $?` prints `0` and no error; with `x=a`, `[: missing ']'` and `2`. |
+| `FOO=1; bash -c 'echo "$FOO"'` | Warning: empty there | Caveat: empty unless `FOO` was in the environment already, which exports it (also after `local FOO`). `foo=1` (lower case) keeps the warning, with "(unless the environment already has `foo`)". After `unset FOO` or `export -n FOO`, and for an array, the warning has no clause. `TERM=dumb`, `HOME=…` (names the environment almost always has): no note. | `bash s.sh` prints `[]`; `env FOO=x bash s.sh` prints `[1]`, `env foo=x` too; after `unset FOO`, or for `FOO=(a b)`, `[]`. |
+| `TERM=dumb; sudo bash -c "echo \$TERM"`, also `TZ`, `LANG`, `LC_*`, `DISPLAY`, `DPKG_COLORS`; `su - -c` with `TERM` | Warning: sudo passes no variable | As without sudo: the rows above. sudo's default lists keep these names (sudoers(5): `env_check`, `env_keep`; a sudoers file may change them), and `su -l` keeps `TERM` (su(1)). Another name keeps the warning, which now names what is kept ("but for a few such as `TERM` and `LANG`", "but for `TERM`"). | — (sudo needs a password here; the names come from sudoers(5) and sudo 1.9.15's defaults.) |
+| `[ -n "$x"]` | Warning: "missing `]`" | Warning: when `"$x"` is empty, the word is `]` and closes `[`, and the note says what the shorter test does: `[ -n ]` is true, `[ "$a" = ]` an error ("unary operator expected", status 2), `[ ]` false. With a value, "missing `]`". `"$x"\]` is read the same. A word with text of its own before the `]` (`"$x/a"]`), `${#x}`, `${x:-none}`, `${x:?}`, `$((n))`, or a variable set to text, keeps the old note. | `x=""; [ -n "$x"]; echo $?` prints `0` and no error; `[ "$a" = "$b"]` with `b` empty, `2`; with `x=a`, `[: missing ']'` and `2`. |
+
+Whether a variable may come from the environment is now one rule, which `set -u`'s note follows too: a name the environment almost always has (`HOME`, `PATH`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `LANG`) gets no note; another name in capitals, a caveat; one in lower case, the warning with a clause; one the script removed (`unset`, `local` for its value, `export -n`), or an array, the plain warning. So `set -u; echo "$CI"` is now a caveat (it was no note), and `unset FOO; set -u; echo "$FOO"` a warning. `TZ=Asia/Tokyo; date +%T` gets no example, since the zone depends on whether the environment had `TZ` (it said "if the local zone is UTC").
 
 The name kind of an alias that is not expanded reads "not expanded in a script" (it said "not expanded here").
 

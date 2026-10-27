@@ -493,8 +493,9 @@ describe('a command named [ is explained as what bash runs', () => {
     ['set -o posix\nalias [=echo\n[ -f c ]', '-f c ]\n', true],
     ['shopt -s expand_aliases\nalias echo=printf\necho %s x', 'x', true],
     ["shopt -s expand_aliases\nalias echo='echo -n'\necho x", 'x', false],
-    ['alias [=echo\n[ -f c ]', '', false],
-    ['alias echo=printf\necho %s x', '%s x\n', false],
+    // (A script: a file with no shebang may be `.bashrc`, where aliases are expanded.)
+    ['#!/bin/bash\nalias [=echo\n[ -f c ]', '', false],
+    ['#!/bin/bash\nalias echo=printf\necho %s x', '%s x\n', false],
   ] as const) {
     it(`${JSON.stringify(src)}: ${alias ? 'the alias' : 'the builtin'}`, () => {
       assert.strictEqual(run('bash', ['-s'], { cwd: dir, input: src }).stdout.toString(), out);
