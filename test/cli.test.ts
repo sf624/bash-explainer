@@ -97,6 +97,16 @@ describe('the command-line tool', function () {
     assert.ok(!('basis' in JSON.parse(run(['--format', 'json', '-e', 'BASH_XTRACEFD=7', '--set', 'notes.basis=false']).out)[0].explanation.items[0]));
   });
 
+  it('names in JSON the spec a program\'s command token rests on, on that token only; the text shows nothing of it (docs/design/basis-spec-convention.md, 5a)', () => {
+    const json = JSON.parse(run(['--format', 'json', '-e', 'grep -n x f']).out);
+    const grep = json[0].explanation.items[0];
+    assert.deepStrictEqual(grep.basis, { kind: 'spec', command: 'grep' });
+    assert.ok(grep.children.every((c: { basis?: unknown }) => !('basis' in c)));
+    assert.ok(!('basis' in JSON.parse(run(['--format', 'json', '-e', 'read -r x']).out)[0].explanation.items[0]));
+    assert.ok(!('basis' in JSON.parse(run(['--format', 'json', '-e', 'grep -n x f', '--set', 'notes.basis=false']).out)[0].explanation.items[0]));
+    assert.doesNotMatch(run(['-e', 'grep -n x f', '--no-color']).out, /spec|manual ·/);
+  });
+
   it('labels a command with its name, and its arguments as before', () => {
     const r = run(['-e', "grep -E '^[A-Z]{3}-[0-9]+$' ids.txt", '--no-color', '--no-examples']);
     assert.strictEqual(r.code, 0, r.err);
