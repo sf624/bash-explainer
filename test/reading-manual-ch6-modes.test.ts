@@ -93,7 +93,7 @@ describe('the reading tree as the Bash manual reads chapter 6 (6.8, 6.9, 6.11, 6
     const posix = (line: string) => `set -o posix\n${line}`;
     // `kill -SIGTERM`: a name with `SIG` is refused.
     assert.match(find(posix('kill -SIGTERM 1'), '-SIGTERM', 'command', undefined, 1).text!, /^In POSIX mode bash refuses a signal name that starts with `SIG`: it says `SIGTERM: invalid signal specification`, and fails with status 1, sending nothing. Write `-TERM`$/);
-    assert.match(find(posix('kill -s SIGTERM 1'), 'kill', 'bash', 'commandName', 1).text!, /\. In POSIX mode, it refuses a signal name that starts with `SIG` \(`-SIGTERM`, `-s SIGTERM`\)$/);
+    assert.match(find(posix('kill -s SIGTERM 1'), 'kill', 'bash', 'commandName', 1).text!, /\. In POSIX mode, it refuses a signal name that starts with `SIG` \(`-SIGTERM`, `-s SIGTERM`, `-n SIGTERM`, `-l SIGTERM`\)$/);
     assert.match(find('kill -SIGTERM 1', '-SIGTERM', 'command').text!, /^Send the signal `TERM`/);
     // `echo` with `xpg_echo`: escapes by default; in POSIX mode, no options.
     assert.strictEqual(find(posix('shopt -s xpg_echo; echo -n "a\\tb"'), '-n', 'command', undefined, 1).text, 'text to print');
@@ -106,12 +106,12 @@ describe('the reading tree as the Bash manual reads chapter 6 (6.8, 6.9, 6.11, 6
     // `${!#}`: no indirection.
     assert.strictEqual(find(posix('echo "${!#}"'), '${!#}', 'bash', 'expansion', 1).text, 'In POSIX mode bash applies no indirection to `#`: `${!#}` expands to nothing (`${@: -1}` gives the last argument)');
     assert.deepStrictEqual(find(posix('echo "${!#}"'), '${!#}', 'bash', 'expansion', 1).refs, ['3.5.3', '6.11']);
-    assert.match(find('[ "$1" ] && set -o posix; echo "${!#}"', '${!#}', 'bash', 'expansion').text!, /But in POSIX mode, on on some paths here, it expands to nothing$/);
+    assert.match(find('[ "$1" ] && set -o posix; echo "${!#}"', '${!#}', 'bash', 'expansion').text!, /But in POSIX mode, which is on on some paths here, it expands to nothing$/);
     // `trap INT`: a usage error, which ends the shell; `trap 2` still resets.
     assert.match(find(posix('trap INT'), 'INT', 'command', undefined, 1).text!, /^In POSIX mode bash does not read a lone word as a signal to reset unless it is a number: this is a usage error \(status 2\)/);
     assert.match(find(posix('trap 2'), '2', 'command', undefined, 1).text!, /^signal to reset to its default/);
     // `. file`: a file not found ends the shell. `time` alone: the shell's times.
-    assert.match(find(posix('. ./lib.sh'), '.', 'bash', 'commandName', 1).text!, /\. In POSIX mode, a file it does not find ends the shell \(status 1\)$/);
+    assert.match(find(posix('. ./lib.sh'), '.', 'bash', 'commandName', 1).text!, /\. In POSIX mode, a file it does not find ends a shell that is not interactive, as one running a script \(status 1\)$/);
     assert.match(find(posix('time'), 'time', 'bash', 'keyword', 1).text!, /^`time` with no pipeline: in POSIX mode, it prints the user and system time/);
     assert.match(find('time', 'time', 'bash', 'keyword').text!, /^`time` with no pipeline: it times nothing, and prints zero times/);
     // (Only bash's builtins: another shell's `kill` and `time` are its own.)
@@ -177,5 +177,78 @@ describe('the reading tree as the Bash manual reads chapter 6 (6.8, 6.9, 6.11, 6
     each((p, who) => assert.strictEqual(runBash('set -o posix; echo "[${POSIXLY_CORRECT-unset}]"', p).stdout, '[y]\n', who));
     // (The builtins whose words POSIX mode or `xpg_echo` changes say so only there: `kill`, `echo`, `ulimit`, `trap`, `.`, `source`.)
     assert.deepStrictEqual(Object.keys(builtins).filter((n) => builtins[n].inShell).sort(), ['.', 'echo', 'kill', 'source', 'trap', 'ulimit']);
+  });
+
+  it('reads what the expansion of a prompt string does with backslashes and `!`, as bash does (6.9, 6.11)', () => {
+    const of = (text: string) => explainPrompt(text, 'en').map((t) => `${text.slice(t.start, t.end)} ${t.explanation}`);
+    const src = '[\\"a\\"|\\\\$|\\\\$HOME|\\\\\\\\|\\\\x|\\12|\\\\\\q|$HOME|\'s\'|"d"|\\\\\\\\$HOME]';
+    const t = of(src);
+    assert.match(t[0], /^\\" `\\"`: not an escape of a prompt, so decoding keeps it; then the expansion removes the backslash, and `"` is printed$/);
+    assert.match(t[2], /^\\\\\$ `\\\\\$`: decoding makes `\\\\` one backslash, which quotes the `\$` after it: the expansion removes the backslash, and `\$` is printed as it is$/);
+    assert.ok(!t.some((x) => x.startsWith('$HOME') && t.indexOf(x) < 6), 'the quoted `$HOME` is no expansion');
+    assert.match(t[4], /^\\\\ `\\\\`: a backslash, which quotes the backslash after it when bash expands the prompt/);
+    assert.deepStrictEqual(of('a\\\nb').map((x) => x.slice(0, 2)), ['\\\n']);
+    assert.match(of('a\\\\\nb')[0], /`\\\\` and a newline: the expansion removes both/);
+    assert.match(of('\\`')[0], /^\\` `\\``: not an escape of a prompt/);
+    assert.match(of('!! !')[0], /^!! `!!`: in PS1 and PS2 in POSIX mode, a single `!`/);
+    assert.match(of('!! !')[1], /^! `!`: in PS1 and PS2 in POSIX mode, the history number/);
+    // (The note: what the expansion removes, and that POSIX mode expands PS1 and PS2 whatever `promptvars` says.)
+    assert.match(find("PS1='\\u'", "'\\u'", 'bash', 'quote').text!, /a backslash before `\$`, a backquote, `"`, `\\` or a newline is removed, and quote characters stay\)\. `shopt -u promptvars` turns the expansion off, but in POSIX mode PS1 and PS2 are expanded all the same/);
+    each((p, who) => {
+      const b = runBash(`HOME=/h; x='${src.replace(/'/g, "'\\''")}'; printf '%s\\n' "\${x@P}"; x='a\\\nb'; printf '%s\\n' "\${x@P}"`, p);
+      assert.strictEqual(b.stdout, '["a"|$|$HOME|\\|\\x|\\12|\\q|/h|\'s\'|"d"|\\/h]\nab\n', who);
+      const c = runBash("HOME=/h; x='$HOME ! !!'; printf '%s\\n' \"${x@P}\"; set -o posix; shopt -u promptvars; printf '%s\\n' \"${x@P}\"", p);
+      assert.match(c.stdout, /^\/h ! !!\n\/h \d+ !\n$/, who);
+    });
+  });
+
+  it('follows the review of the POSIX-mode texts: `time -p`, wrappers, and what ends a shell (6.11)', () => {
+    // `time -p` on a line bash reads in POSIX mode is the program `time` (on the line that turns POSIX mode on, the
+    // reserved word: bash read it before); at compatibility level 41, the reserved word.
+    const program = /^In POSIX mode bash does not read `time` before a word that starts with `-` as the reserved word: this runs the program `time`/;
+    assert.match(find('set -o posix\ntime -p g x', 'time', 'bash', 'keyword', 1).text!, program);
+    assert.match(find('set -o posix\ntime -p', 'time', 'bash', 'keyword', 1).text!, /With no command to run, it fails/);
+    assert.match(find('set -o posix; time -p g', 'time -p g', 'bash', 'pipeline').text!, /^Time `g`/);
+    assert.match(find('set -o posix\nshopt -s compat41\ntime -p g', 'time -p g', 'bash', 'pipeline', 2).text!, /^Time `g`/);
+    assert.match(find('time -p g', 'time -p g', 'bash', 'pipeline').text!, /^Time `g`/);
+    assert.match(find('set -o posix\n[ "$1" ] && shopt -s compat41\ntime -p g', 'time -p g', 'bash', 'pipeline', 2).text!, /^Time `g`/);
+    assert.match(find('set -o posix\nBASH_COMPAT=41\ntime -p g', 'time -p g', 'bash', 'pipeline', 2).text!, /^Time `g`/);
+    assert.match(find('set -o posix\ntime -p a | b', 'time', 'bash', 'keyword', 1).text!, program);
+    // (In another shell, `time` alone is not said to print the shell's times.)
+    const sh = analyzer.explainLine(parser.parse('time'), 0, 'sh', { reading: true }).reading!;
+    assert.doesNotMatch(readingNodes(sh).map((n) => n.text ?? '').join('\n'), /POSIX mode|zero times/);
+    // `command kill`, `builtin kill`: the builtin's variant; `command .` is a regular builtin, whose error ends nothing.
+    assert.match(find('set -o posix\ncommand kill -SIGTERM 1', '-SIGTERM', 'command', undefined, 1).text!, /^In POSIX mode bash refuses/);
+    assert.match(find('set -o posix\nbuiltin kill -SIGTERM 1', '-SIGTERM', 'command', undefined, 1).text!, /^In POSIX mode bash refuses/);
+    assert.match(find('set -o posix\nkill -l SIGTERM', 'SIGTERM', 'command', undefined, 1).text!, /in POSIX mode, a name that starts with `SIG`, as `SIGTERM`, is refused/);
+    assert.match(find('set -o posix\nulimit -f 1', '1', 'command', undefined, 1).text!, /in POSIX mode, blocks of 512 bytes for `-c` and `-f`/);
+    const dot = (src: string) => nodes(src, 1).filter((n) => n.kind === 'commandName' && n.label === '.').map((n) => n.text!).join('');
+    assert.doesNotMatch(dot('set -o posix\ncommand . ./x.sh'), /POSIX/);
+    assert.match(dot('set -o posix\nbuiltin . ./x.sh'), /In POSIX mode, a file it does not find ends a shell that is not interactive/);
+    each((p, who) => {
+      const run = (script: string) => runBash(script, { ...p, files: [] });
+      let b = run('g() { :; }\nset -o posix; time -p g 2>/dev/null; echo "t=$?"\ntime -p g 2>/dev/null; echo "s=$?"');
+      assert.strictEqual(b.stdout, 't=0\ns=127\n', who);
+      b = run('set -o posix\ncommand kill -SIGTERM $$; echo "a $?"; builtin kill -SIGTERM $$; echo "b $?"; kill -l SIGTERM; echo "c $?"\ncommand . ./none.sh; echo "d $?"\nbuiltin . ./none.sh; echo after');
+      assert.deepStrictEqual([b.stdout, b.status], ['a 1\nb 1\nc 1\nd 1\n', 1], who);
+    });
+  });
+
+  it('follows the review of the other texts: tildes, option names, compat levels, arithmetic', () => {
+    // A number past intmax is no entry of the stack; a tilde in a double-quoted `${x:-word}` is not expanded.
+    assert.deepStrictEqual(find('echo ~99999999999999999999999', '~99999999999999999999999', 'bash', 'argument').refs, ['3.7.1', '3.5.2']);
+    assert.strictEqual(find('echo "${u:-~1}"', '~1', 'bash', 'word').refs, undefined);
+    assert.deepStrictEqual(find('echo ${u:-~1}', '~1', 'bash', 'word').refs, ['3.5.2', '6.8']);
+    // An option name the table does not have cites nothing: `shopt -s posix` is an error.
+    assert.strictEqual(find('shopt -s posix', 'posix', 'command').refs, undefined);
+    assert.match(find('shopt -s compat43', 'compat43', 'command').text!, /`break` and `continue` in a function act on the loops of its caller, among others;/);
+    // `$((1 +))`: an operator with no operand.
+    assert.match(find('echo $((1 +))', '1 +', 'bash', 'expression').text!, /^Arithmetic syntax error: `\+` has no operand after it\. bash says `syntax error: operand expected`, and abandons the rest of the command of the script it is in/);
+    assert.match(find('((2 *))', '2 *', 'bash', 'expression').text!, /, and the command fails \(status 1\)$/);
+    each((p, who) => {
+      const b = runBash('HOME=/h; echo ~99999999999999999999999 "${u:-~1}" "${u:-~}"; shopt -s posix 2>&1\necho $((1 +)); echo no\necho "a=$?"; ((2 *)); echo "b=$?"', p);
+      assert.match(b.stdout, /^~99999999999999999999999 ~1 ~\n.*posix: invalid shell option name\na=1\nb=1\n$/s, who);
+      assert.match(b.stderr, /1 \+: (arithmetic )?syntax error: operand expected/, who);
+    });
   });
 });

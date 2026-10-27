@@ -153,7 +153,7 @@ describe('the reading tree as the Bash manual reads bash itself (chapter 6: 6.1,
     const node = (label: string) => readingNodes(r).find((n) => n.label === label && n.kind === 'expansion')!;
     assert.deepStrictEqual(node('$-').refs, ['3.4.2', '6.3.2']);
     assert.match(node('$-').text!, /The letters of the shell options in effect \(`e` after `set -e`, `i` in an interactive shell…\)$/);
-    assert.deepStrictEqual(node('$PS1').refs, ['3.5.3', '5.1', '6.3.2']);
+    assert.deepStrictEqual(node('$PS1').refs, ['3.5.3', '5.1', '6.9', '6.3.2']);
     assert.match(node('$PS1').text!, /^Prompt of an interactive shell \(a shell that is not interactive, as one running a script, leaves it unset, even when the environment gives it: `\[ -z "\$PS1" \]` tells which it is\)$/);
     // `i` only in an interactive shell; PS1 unset in one that is not, even exported.
     each('export PS1=x; "$BASH" -c \'echo "$- ${PS1-unset}"\'; "$BASH" --norc -i -c \'echo "$- ${PS1-unset}"\' </dev/null 2>/dev/null | tail -1',(b, which) => assert.strictEqual(b.stdout, 'hBc unset\nhiBHc x\n', which));

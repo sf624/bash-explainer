@@ -286,9 +286,9 @@ function nearestQuote(n: SyntaxNode): boolean {
   return a.type === 'string' || a.type === 'heredoc_body';
 }
 
-/** The tilde prefixes of a word, as its context and the mode read them (manual 3.5.2; src/staticword.ts `tildeSpots`). */
+/** The tilde prefixes of a word, as its context and the mode read them (3.5.2; `tildeSpots`); none in `"${x:-~}"`. */
 function tildesOf(nodes: readonly SyntaxNode[], rule: ContextRule, posix: Tri): TildePrefix[] {
-  if (rule.tilde === 'none') return [];
+  if (rule.tilde === 'none' || (rule === CONTEXTS['param-word'] && nodes[0].parent?.parent?.type === 'string')) return [];
   const parts = tildeParts(nodes);
   const mode = rule.tilde === 'declaration' ? 'argument' : rule.tilde === 'argument' ? (posix === 'on' ? 'start' : 'argument') : rule.tilde;
   return tildeSpots(parts, mode).map((t) => ({ node: parts[t.part].node, start: t.start, end: t.end, user: t.user, after: t.after }));

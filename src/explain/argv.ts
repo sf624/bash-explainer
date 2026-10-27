@@ -36,7 +36,7 @@ import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
-import { arrayKind, globOff, NO_SPEC, resolve, restrictedAt, restrictedCall, shoptAt, specFor, wordAt } from './reads';
+import { arrayKind, globOff, NO_SPEC, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
 import { inSubshell } from './where';
@@ -61,7 +61,8 @@ const own = <T>(table: Readonly<Record<string, T>> | undefined, word: string): T
  * (`set -o posix`: 6.11; `SHELL_OPTION_TABLES`, `OPTION_SECTIONS`).
  */
 function optionRefs(values: object | undefined, word: string): { refs?: string[] } {
-  const section = values && SHELL_OPTION_TABLES.has(values) ? own(OPTION_SECTIONS, word) : undefined;
+  // (Only a name the table has: `shopt -s posix` is no `shopt` option.)
+  const section = values && SHELL_OPTION_TABLES.has(values) && Object.hasOwn(values, word) ? own(OPTION_SECTIONS, word) : undefined;
   return section ? { refs: [section] } : {};
 }
 
@@ -811,8 +812,15 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   const value = staticWordValue(first);
   const res = value === undefined ? undefined : resolve(cx, value, first, { env: cx.slotEnvs.get(first) });
   const test = res && testSpecOf(res);
+  // (The builtin run in this shell, `command kill`, `builtin echo`, reads its words as it would on its own in the shell
+  // options there (`CommandSpec.inShell`, 6.11); behind `command`, not a variant of a special builtin's errors.)
+  const own = role.slot.run === 'current-shell' && res?.kind === 'builtin' && role.spec ? shellVariant(cx, first.parent!, role.spec) : undefined;
+  const variant = own && !(own.special && role.slot.lookup === 'no-functions') ? own : undefined;
+  if (variant) explanation += cx.s(`。${cx.t(variant.text)}`, `. ${cx.t(variant.text)}`);
+  const vspec = variant ? { ...role.spec!, ...variant.spec } : undefined;
   const children = test ? testArgs(cx, first.parent!, commandTest(test, words.slice(1), bashTest(cx, test)), test.closingOperand !== undefined, !!test.builtin)
-    : render(cx, parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
+    : vspec ? render(cx, interpret(vspec, words.slice(1).map(argWordFor(cx.state.shell)), { name, lookup: (x) => specFor(cx, x) }), vspec, words.slice(1), words.slice(1))
+      : render(cx, parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
   if (role.of) {
     // `{}` is replaced by find (and `xargs -I{}`) with each path.
     const mark = (ts: Token[]) => ts.forEach((t) => {

@@ -43,20 +43,62 @@ export const PROMPT_ESCAPES: Readonly<Record<string, readonly [ja: string, en: s
 export function explainPrompt(src: string, lang: Lang): EmbeddedToken[] {
   const s = pick(lang);
   const out: EmbeddedToken[] = [];
+  // (Whether the backslash of the escape at `i` is quoted by the `\\` before it, when bash expands the prompt.)
+  let quoted = false;
   let i = 0;
   while (i < src.length) {
     const c = src[i];
     if (c === '\\' && i + 1 < src.length) {
-      const t = escapeAt(src, i, lang);
+      const t = backslashAt(src, i, lang, quoted);
+      quoted = !quoted && src.startsWith('\\\\\\', i);
       out.push(t);
       i = t.end;
     } else if ((c === '$' && i + 1 < src.length) || c === '`') {
       const e = expansionAt(src, i, s);
       if (e) out.push(e);
       i = e ? e.end : i + 1;
+    } else if (c === '!') {
+      // (In POSIX mode, `!` in PS1 and PS2 is the history number, and `!!` a `!` (6.11).)
+      const end = src[i + 1] === '!' ? i + 2 : i + 1;
+      out.push({ start: i, end, kind: 'operator', children: [], explanation: end > i + 1
+        ? s('`!!`: POSIX モードの PS1 と PS2 では `!` 1つになる（それ以外ではそのまま表示される）', '`!!`: in PS1 and PS2 in POSIX mode, a single `!` (elsewhere it is printed as it is)')
+        : s('`!`: POSIX モードの PS1 と PS2 では、このコマンドの履歴番号（`\\!` と同じ。それ以外ではそのまま表示される）', '`!`: in PS1 and PS2 in POSIX mode, the history number of this command (as `\\!`; elsewhere it is printed as it is)') });
+      i = end;
     } else i++;
   }
   return out;
+}
+
+/** Characters a backslash quotes when bash expands the decoded prompt, as in double quotes (besides `\\` itself). */
+const DQ_SPECIAL = /[$`"\n]/;
+
+/**
+ * The escape at `src[i]` and what the expansion after decoding does with its backslash (`quoted`: the `\\` before it
+ * quotes it, so it is printed). Decoding keeps the backslash of an escape it does not know (`\\"`) and makes `\\\\` one
+ * backslash; the expansion then removes a backslash before `$`, a backquote, `"`, `\\` or a newline, and prints that
+ * character as it is (`\\\\$HOME` prints `$HOME`, `\\"` prints `"`).
+ */
+function backslashAt(src: string, i: number, lang: Lang, quoted: boolean): EmbeddedToken {
+  const s = pick(lang);
+  const c = src[i + 1];
+  const next = src[i + 2];
+  if (!quoted && c === '\\' && DQ_SPECIAL.test(next)) {
+    // `\\$`: the backslash decoding gives quotes the character after it.
+    const shown = next === '\n' ? '' : next;
+    return { start: i, end: i + 3, kind: 'string', children: [], explanation: next === '\n'
+      ? s('`\\\\` と改行: 展開のときに、バックスラッシュと改行が取り除かれる（行の継続）', '`\\\\` and a newline: the expansion removes both (a line continuation)')
+      : s(`\`\\\\${shown}\`: 置き換えで \`\\\\\` はバックスラッシュ1つになり、それが続く \`${shown}\` をクォートするので、展開のときにバックスラッシュは取り除かれ、\`${shown}\` はそのまま表示される`,
+        `\`\\\\${shown}\`: decoding makes \`\\\\\` one backslash, which quotes the \`${shown}\` after it: the expansion removes the backslash, and \`${shown}\` is printed as it is`) };
+  }
+  if (!quoted && c === '\\' && next === '\\') {
+    return { start: i, end: i + 2, kind: 'operator', children: [], explanation: s('`\\\\`: バックスラッシュ。ただし、続くバックスラッシュを展開のときにクォートするので、取り除かれる（2つで1つ表示される）', '`\\\\`: a backslash, which quotes the backslash after it when bash expands the prompt: it is removed, and one backslash is printed for both') };
+  }
+  if (!quoted && DQ_SPECIAL.test(c) && c !== '$') {
+    return { start: i, end: i + 2, kind: 'string', children: [], explanation: c === '\n'
+      ? s('バックスラッシュと改行: 展開のときに両方取り除かれる（行の継続）', 'A backslash and a newline: the expansion removes both (a line continuation)')
+      : s(`\`\\${c}\`: プロンプトのエスケープではないので置き換えでは残るが、展開のときにバックスラッシュが取り除かれ、\`${c}\` が表示される`, `\`\\${c}\`: not an escape of a prompt, so decoding keeps it; then the expansion removes the backslash, and \`${c}\` is printed`) };
+  }
+  return escapeAt(src, i, lang);
 }
 
 type S = (ja: string, en: string) => string;
@@ -148,6 +190,6 @@ function closing(src: string, from: number, open: string, close: string, depth: 
 /** What bash does with a prompt string as a whole (6.9), the note of the language. */
 export function promptNote(lang: Lang): string {
   return pick(lang)(
-    'プロンプト文字列: bash は表示するたびにバックスラッシュのエスケープを置き換え、その結果をダブルクォートの中のように展開する（パラメータ展開・コマンド置換・算術式展開。クォートは残る。`shopt -u promptvars` なら展開しない）。展開を表示のときにさせるため、値はシングルクォートで書く',
-    'A prompt string: each time bash prints it, it replaces the backslash escapes, then expands the result as in double quotes (parameter expansion, command substitution, arithmetic expansion; quotes stay; no expansion with `shopt -u promptvars`). So the value is written in single quotes, for the expansions to happen when it is printed');
+    'プロンプト文字列: bash は表示するたびにバックスラッシュのエスケープを置き換え、その結果をダブルクォートの中のように展開する（パラメータ展開・コマンド置換・算術式展開。`$`・`` ` ``・`"`・`\\`・改行の前のバックスラッシュは取り除かれ、クォートの文字は残る）。`shopt -u promptvars` なら展開しないが、POSIX モードの PS1 と PS2 は展開する。展開を表示のときにさせるには、代入ではその展開をクォートする（シングルクォートで書くなど）',
+    'A prompt string: each time bash prints it, it replaces the backslash escapes, then expands the result as in double quotes (parameter expansion, command substitution, arithmetic expansion; a backslash before `$`, a backquote, `"`, `\\` or a newline is removed, and quote characters stay). `shopt -u promptvars` turns the expansion off, but in POSIX mode PS1 and PS2 are expanded all the same. For an expansion to happen when the prompt is printed, the assignment must quote it (single quotes, for instance)');
 }

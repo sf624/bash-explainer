@@ -420,6 +420,8 @@ export interface ShellVariant {
   spec: Partial<CommandSpec>;
   /** What changes, added to the summary. */
   text: Text;
+  /** It is about what an error of a special builtin does: not behind `command`, which makes the builtin a regular one. */
+  special?: true;
 }
 
 /** One way to read the operands: it applies when `when` holds and the pattern fits. */
