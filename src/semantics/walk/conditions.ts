@@ -359,7 +359,7 @@ export class WalkConditions {
 
   /** The text of the word `w`, when nothing in it varies from `st`: `$(true)` prints nothing only when `true` runs the builtin. */
   staticText(w: SyntaxNode, st: ShellState, assignment = false): string | undefined {
-    const v = staticWordValue(w, assignment);
+    const v = staticWordValue(w, assignment, this.w.shell);
     return v !== undefined && substitutionNames(w).every((x) => this.builtinRuns(x, st)) ? v : undefined;
   }
 

@@ -37,6 +37,7 @@ import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
 import type { BashVersion } from '../bashversion';
 import { field, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
+import { bracedWords } from './brace';
 import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
 import { aliasName, aliasOf, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
@@ -503,8 +504,8 @@ class Scan {
         this.assignment(o, w, plain, on.includes('A'));
       } else {
         // A word: `x`, `a[1]` (a glob that matches no file, as the walk takes it), `'x=1'`, `"$v"=1` (a name with a value
-        // not known), `$v` (a name not known).
-        const text = staticWordValue(o) ?? (o.type === 'word' ? o.text : undefined);
+        // not known), `$v` (a name not known), `{a,b}` (names the braces give where they expand).
+        const text = staticWordValue(o, false, this.shell) ?? (o.type === 'word' && !bracedWords([o]).length ? o.text : undefined);
         const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(text ?? prefixOf(o).replace(/=.*/s, '='));
         if (!m || (text === undefined && !m[3])) {
           // (`local -`: the options, not a variable.)

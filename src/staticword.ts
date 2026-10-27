@@ -1,6 +1,6 @@
 import { visible } from './ctlchars';
 import type { EmbeddedLang } from './embedded/types';
-import type { Shell } from './dialect';
+import { bracesMayWork, type Shell } from './shellfeatures';
 import type { SyntaxNode } from './syntax/tree';
 
 /** The characters `$'…'` turns a one-letter escape into. */
@@ -183,18 +183,13 @@ export const tildeParts = (nodes: readonly SyntaxNode[]): { node: SyntaxNode; te
   nodes.flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n])).map((n) => ({ node: n, text: n.text, plain: n.type === 'word' }));
 
 /**
- * The shells with no brace expansion at all (neither `{a,b}` nor `{1..3}`: `braceList` and `braceRange` of FEATURES in
- * src/dialect.ts, which test/shell-braces.test.ts compares; dialect.ts imports this file, so it cannot be read here).
- */
-const NO_BRACES: ReadonlySet<Shell> = new Set(['sh', 'dash', 'ash', 'yash']);
-
-/**
  * Whether the text of the word part `n` has an unescaped `*`, `?` or `{`, or a `[` with a `]` after it: a glob or a
- * brace that may change the word (a brace only where `shell` has brace expansion: in dash `{x,EXIT}` is text). (bash's `glob_pattern_p`: a `[` with no `]` after it is no pattern, and stays as it
- * is: `[ -f x ]`, `echo [`. In a part of a concatenation, the `]` may be in another part: `a["x"]`.)
+ * brace that may change the word (a brace only where `shell` may expand it, by the table of src/shellfeatures.ts: in
+ * dash `{x,EXIT}` is text, in mksh `{1..3}`). (bash's `glob_pattern_p`: a `[` with no `]` after it is no pattern, and
+ * stays as it is: `[ -f x ]`, `echo [`. In a part of a concatenation, the `]` may be in another part: `a["x"]`.)
  */
 function globbed(n: SyntaxNode, text: string, shell: Shell | undefined): boolean {
-  return /(^|[^\\])(\\\\)*([*?]|\[.*\])/s.test(text) || (/(^|[^\\])(\\\\)*\{/s.test(text) && !(shell && NO_BRACES.has(shell))) || (n.parent?.type === 'concatenation' && /(^|[^\\])(\\\\)*\[/.test(text));
+  return /(^|[^\\])(\\\\)*([*?]|\[.*\])/s.test(text) || (/(^|[^\\])(\\\\)*\{/s.test(text) && bracesMayWork(text, shell)) || (n.parent?.type === 'concatenation' && /(^|[^\\])(\\\\)*\[/.test(text));
 }
 
 /**
@@ -211,7 +206,7 @@ export function staticWordValue(n: SyntaxNode, assignment = false, shell?: Shell
 function literalValue(n: SyntaxNode, assignment: boolean, shell: Shell | undefined): string | undefined {
   const text = decodedText(n);
   switch (n.type) {
-    case 'word': case 'number': {
+    case 'word': case 'number': case 'brace_expression': {
       // An unescaped glob or brace is not text yet; in the value of an assignment, they are text.
       if (!assignment && globbed(n, text, shell)) return undefined;
       return text.replace(/\\\n/g, '').replace(/\\(.)/gs, '$1');
@@ -244,7 +239,7 @@ function literalValue(n: SyntaxNode, assignment: boolean, shell: Shell | undefin
  */
 export interface MappedText { text: string; starts: number[]; ends: number[] }
 
-export function staticWordText(n: SyntaxNode, shell?: Shell): MappedText | undefined {
+export function staticWordText(n: SyntaxNode, shell: Shell | undefined): MappedText | undefined {
   if (decodedText(n) !== n.text || tildeSpots(tildeParts([n]), 'start').length) return undefined;
   const out: MappedText = { text: '', starts: [], ends: [] };
   return mappedValue(n, out, shell) ? out : undefined;
@@ -268,7 +263,7 @@ function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined): 
     }
   };
   switch (n.type) {
-    case 'word': case 'number':
+    case 'word': case 'number': case 'brace_expression':
       if (globbed(n, src, shell)) return false;
       unescape(0, src.length, /[\s\S]/);
       return true;

@@ -43,7 +43,7 @@ describe('nested scripts: the text of a string, as bash reads it', () => {
     `$'\\c?x'`, `$'a\\c@b'c`, `$'\\c\\\\x'`]) {
     it(`reads ${JSON.stringify(w)} as bash does`, function () {
       const { args } = argsOf(`eval ${w}`);
-      const text = staticWordText(args[0]);
+      const text = staticWordText(args[0], undefined);
       assert.ok(text, w);
       assert.strictEqual(text.starts.length, text.text.length);
       assert.strictEqual(text.ends.length, text.text.length);
@@ -62,7 +62,7 @@ describe('nested scripts: the text of a string, as bash reads it', () => {
     assert.deepStrictEqual(sources(src, t), ['a', '\\$', 'b', ' ', 'c', 'd']);
     // (A backslash-newline is removed; an escape of $'…' is the source of what it gives.)
     const ansi = `eval $'\\x41\\n'`;
-    const a = staticWordText(argsOf(ansi).args[0])!;
+    const a = staticWordText(argsOf(ansi).args[0], undefined)!;
     assert.deepStrictEqual(sources(ansi, a), ['\\x41', '\\n']);
   });
 
@@ -76,10 +76,10 @@ describe('nested scripts: the text of a string, as bash reads it', () => {
   });
 
   it('is not known with an expansion, a glob, a brace, a tilde, a byte above 0x7f, or inside backquotes', () => {
-    for (const w of ['"$x"', 'a*', '{a,b}', '~/x', `$'\\xe3'`, '$"x"']) assert.strictEqual(staticWordText(argsOf(`eval ${w}`).args[0]), undefined, w);
+    for (const w of ['"$x"', 'a*', '{a,b}', '~/x', `$'\\xe3'`, '$"x"']) assert.strictEqual(staticWordText(argsOf(`eval ${w}`).args[0], undefined), undefined, w);
     const tree = parser.parse('x=`eval \'a\\$b\'`');
     const inner = descendants(tree.root, ['raw_string'])[0];
-    assert.strictEqual(staticWordText(inner), undefined);
+    assert.strictEqual(staticWordText(inner, undefined), undefined);
     assert.strictEqual(scriptText([argsOf('eval a "$x"').args[0], argsOf('eval a "$x"').args[1]], undefined), undefined);
   });
 });

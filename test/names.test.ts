@@ -472,7 +472,7 @@ describe('the analyzer says what a name runs', () => {
       ['f=1', 'f', 'variable', '', /Unset the variable `f`/],
       [':', 'f', 'variable', '', /Unset the variable `f`/],
       // (`-n` without a name reference: bash does not fall back to the function.)
-      ['f() { :; }', '-n f', 'variable', 'function', /Unset the name reference `f`/],
+      ['f() { :; }', '-n f', 'variable', 'function', /`f` is not a name reference, so nothing is unset/],
       // (A variable that is only maybe set: the variable, or, if there is none, the function.)
       ['f() { :; }; if [ -n "$1" ]; then f=1; fi', 'f', 'variable', 'function', /Unset the variable `f`.*If there is no such variable, the function `f`/],
     ];

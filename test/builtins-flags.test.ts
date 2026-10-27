@@ -126,7 +126,9 @@ describe('declare, export, unset', () => {
   it('unset -n unsets the reference itself', () => {
     const p = parts('unset -n ref');
     assert.match(p['-n'], /name reference itself/);
-    assert.match(p.ref, /name reference `ref` itself/);
+    // (`ref` is no name reference here: nothing is unset, as in bash, where `a=1; unset -n a` keeps `a`.)
+    assert.match(p.ref, /`ref` is not a name reference, so nothing is unset/);
+    assert.strictEqual(bash('a=1; unset -n a; declare -p a').stdout, 'declare -- a="1"\n');
     assert.strictEqual(bash('a=1; declare -n r=a; unset -n r; declare -p a').stdout, 'declare -- a="1"\n');
   });
 });

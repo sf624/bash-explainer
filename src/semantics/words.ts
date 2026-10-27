@@ -991,14 +991,14 @@ function patternOfChars(f: readonly Char[]): string {
   return f.map((c) => (c.quoted && /[\\*?[\]()|!@+]/.test(c.c) ? `\\${c.c}` : c.c)).join('');
 }
 
-/** The word, or after brace expansion each word it gives (as text: only a word of plain text is expanded here). */
+/** The word, or after brace expansion each word it gives (as text: only a word of plain text; unbash leaves `$v` of `{a,$v}b` as text). */
 function braceAlternatives(w: WordMeaning): (SyntaxNode | string)[][] | undefined {
   const brace = w.steps[0];
   if (brace.applies === false) return [[...w.nodes]];
   if (brace.applies === 'unknown') return undefined;
   const plainOnly = w.nodes.length === 1 && (plainWords(w.nodes).length === 1 && plainWords(w.nodes)[0] === w.nodes[0]
     || (w.nodes[0].type === 'concatenation' && w.nodes[0].namedChildren.every((c) => ['word', 'brace_expression', 'number'].includes(c.type))));
-  if (!plainOnly) return undefined;
+  if (!plainOnly || /(^|[^\\])(\\\\)*[$`'"]/.test(w.nodes[0].text)) return undefined;
   try {
     return braceExpand(w.nodes[0].text, true)!.map((t) => [t]);
   } catch {
