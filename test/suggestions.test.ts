@@ -58,6 +58,10 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'local-outside-function': 'none',
   'posix-special-function-name': 'prose',
   'posix-special-function-name-maybe': 'prose',
+  'posix-function-name': 'prose',
+  'posix-function-name-maybe': 'prose',
+  'posix-special-builtin-error': 'none',
+  'posix-special-builtin-error-maybe': 'none',
   // `((i++))` → `((++i))` or `i=$((i+1))`: same value of `i`, status 0.
   'postfix-increment-status': 'mechanical',
   'postfix-decrement-status': 'none',
@@ -167,6 +171,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 17, scenario: 25, prose: 12, none: 45 });
+      { mechanical: 17, scenario: 25, prose: 14, none: 47 });
   });
 });

@@ -22,7 +22,7 @@
 // The model is built once per tree (and shell) and cached.
 //
 // The walk is in src/semantics/walk/ (walker.ts and its parts); the state it carries, in src/semantics/shellstate.ts.
-import type { BashVersion } from '../bashversion';
+import { type BashVersion, DEFAULT_BASH_VERSION } from '../bashversion';
 import { restrictedByName, type Shell } from '../dialect';
 import { ancestor, field, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { SET_LETTERS } from './effects';
@@ -526,6 +526,9 @@ const modelTrusts = new WeakMap<StateModel, Trust>();
 /** The bash release each model is of (another bash it starts is of the same one). */
 const modelVersions = new WeakMap<StateModel, BashVersion | undefined>();
 
+/** The bash release model `model` is of (5.2 when none was given). */
+export const modelVersion = (model: StateModel): BashVersion => modelVersions.get(model) ?? DEFAULT_BASH_VERSION;
+
 /**
  * The model of `tree`, whose root runs in `base`, from the state `start` gives; `depth` levels of strings deep;
  * `outer`: what the model of the script that starts this shell trusts; `host`: as for `shellState`; `opening`: what the
@@ -535,7 +538,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
   const scripts = new Scripts(depth, shell);
   const own = scriptTrust(tree.root, scripts, host, opening, shell, version);
   const trust = outer ? withinTrust(own, outer) : own;
-  let w = new Walker(shell, posix, scripts, trust, host, run);
+  let w = new Walker(shell, posix, scripts, trust, host, run, undefined, version);
   let initial!: ShellState;
   let end!: ShellState;
   try {
@@ -554,7 +557,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
       break;
     }
     /* c8 ignore stop */
-    w = new Walker(shell, posix, scripts, trust, host, run, w);
+    w = new Walker(shell, posix, scripts, trust, host, run, w, version);
     try {
       initial = start(w);
       end = w.program(tree.root, initial);
@@ -566,7 +569,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
   // (Arithmetic read text not known on the way, or a string the walk does not read: walked again, with nothing trusted.)
   const found = w.found;
   if (found) {
-    w = new Walker(shell, posix, scripts, BLIND, host, run);
+    w = new Walker(shell, posix, scripts, BLIND, host, run, undefined, version);
     initial = start(w);
     end = w.program(tree.root, initial);
   }

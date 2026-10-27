@@ -2486,8 +2486,8 @@
     "snippet": "false; true; @PROBE:a@ $(false) \"$?\"; v=$(false) @PROBE:b@ \"$?\"",
     "note": "in POSIX mode, bash 5.2 sets $? at each command substitution (5.3 only in a command of assignments alone: the next row)",
     "gaps": {
-      "a": "`$?` in a command with a command substitution is not followed (in POSIX mode, bash 5.2 sets it at each substitution, 5.3 only in a command of assignments alone)",
-      "b": "`$?` in a command with a command substitution is not followed (in POSIX mode, bash 5.2 sets it at each substitution, 5.3 only in a command of assignments alone)"
+      "a": "the word model does not follow `$?` (in POSIX mode, bash 5.2 sets it at each substitution, 5.3 only once a command of assignments alone is done; the walk's conditions follow it in 5.3)",
+      "b": "the word model does not follow `$?` (in POSIX mode, bash 5.2 sets it at each substitution, 5.3 only once a command of assignments alone is done; the walk's conditions follow it in 5.3)"
     },
     "facts": {
       "a": [
@@ -2510,8 +2510,8 @@
     "snippet": "false; true; @PROBE:a@ $(false) \"$?\"; v=$(false) @PROBE:b@ \"$?\"",
     "note": "in POSIX mode, bash 5.3 sets $? at a command substitution only in a command of assignments alone (bash 5.3)",
     "gaps": {
-      "a": "`$?` in a command with a command substitution is not followed (in POSIX mode, bash 5.2 sets it at each substitution, 5.3 only in a command of assignments alone)",
-      "b": "`$?` in a command with a command substitution is not followed (in POSIX mode, bash 5.2 sets it at each substitution, 5.3 only in a command of assignments alone)"
+      "a": "the word model does not follow `$?` (in POSIX mode, bash 5.2 sets it at each substitution, 5.3 only once a command of assignments alone is done; the walk's conditions follow it in 5.3)",
+      "b": "the word model does not follow `$?` (in POSIX mode, bash 5.2 sets it at each substitution, 5.3 only once a command of assignments alone is done; the walk's conditions follow it in 5.3)"
     },
     "facts": {
       "a": [

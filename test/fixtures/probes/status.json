@@ -385,7 +385,6 @@
     "snippet": "readonly r=1\nr=2\n@PROBE:a@",
     "errexit": false,
     "posix": true,
-    "gaps": "an assignment to a readonly variable is B3 (AssignmentMeaning.readonly): it abandons the line, or the script in POSIX mode or under set -e",
     "facts": {
       "ran": [],
       "status": 1,
@@ -435,7 +434,6 @@
     "errexit": false,
     "posix": true,
     "note": "an error in a special builtin ends a script in POSIX mode",
-    "gaps": "an error in a special builtin ends the script in POSIX mode (B3)",
     "facts": {
       "ran": [],
       "status": 2,
@@ -1384,7 +1382,6 @@
     "errexit": false,
     "snippet": "a-b() { @PROBE:a@; }; a-b; @PROBE:b@",
     "note": "in POSIX mode, bash 5.2 refuses a function name that is not an identifier, and exits (5.3 accepts it: the next row)",
-    "gaps": "the model reads the definition as bash 5.3 does (docs/design/bash-versions.md, 3.4): bash 5.2 in POSIX mode refuses the name, and exits",
     "facts": {
       "ran": [],
       "status": 2,
@@ -1404,6 +1401,311 @@
         "b"
       ],
       "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "errexit": false,
+    "snippet": "false || a-b() { :; }\n@PROBE:a@",
+    "note": "bash 5.2 refuses a function name that is not a valid name and exits, also on the right of `||` (bash 5.3 defines it)",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: `a-b': not a valid identifier"
+    }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "false || a-b() { :; }\n@PROBE:a@",
+    "note": "bash 5.2 refuses a function name that is not a valid name and exits, also on the right of `||` (bash 5.3 defines it) (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "errexit": false,
+    "snippet": "export() { :; }\n@PROBE:a@",
+    "note": "a function cannot have the name of a special builtin: bash exits",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: `export': is a special builtin"
+    }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "export() { :; }\n@PROBE:a@",
+    "note": "a function cannot have the name of a special builtin: bash exits (bash 5.3)",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: `export': is a special builtin"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "snippet": "set -Z\n@PROBE:a@",
+    "note": "an option a special builtin does not have is a usage error, which ends the shell",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: set: -Z: invalid option"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "set -Z\n@PROBE:a@",
+    "note": "an option a special builtin does not have is a usage error, which ends the shell (bash 5.3)",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: set: -Z: invalid option"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "snippet": "set -o bogus || @PROBE:a@\n@PROBE:b@",
+    "note": "a special builtin's error does not end the shell where set -e would not stop it",
+    "facts": {
+      "ran": [
+        "a",
+        "b"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: set: bogus: invalid option name"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "set -o bogus || @PROBE:a@\n@PROBE:b@",
+    "note": "a special builtin's error does not end the shell where set -e would not stop it (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a",
+        "b"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: set: bogus: invalid option name"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "snippet": "export -Z x\n@PROBE:a@",
+    "note": "an option `export` does not have",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: export: -Z: invalid option"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "snippet": "exec -a\n@PROBE:a@",
+    "note": "an option without its value",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: exec: -a: option requires an argument"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "snippet": ".\n@PROBE:a@",
+    "note": "`.` with no file to read",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: .: filename argument required"
+    }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "errexit": false,
+    "snippet": "trap -- INT\n@PROBE:a@",
+    "note": "in POSIX mode, a lone word given to `trap` that is no signal number is a usage error",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "trap: usage: trap [-lp] [[arg] signal_spec ...]"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "snippet": "( set -Z )\n@PROBE:a@",
+    "note": "in a subshell, the error ends the subshell",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: set: -Z: invalid option"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "snippet": "export 1x=2\n@PROBE:a@",
+    "note": "bash 5.3 exits on a name `export` refuses; bash 5.2 goes on",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: export: `1x=2': not a valid identifier"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "export 1x=2\n@PROBE:a@",
+    "note": "bash 5.3 exits on a name `export` refuses; bash 5.2 goes on (bash 5.3)",
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: export: `1x=2': not a valid identifier"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "snippet": "true && readonly a-b\n@PROBE:a@",
+    "note": "bash 5.3 exits on a name `readonly` refuses, at the end of an AND list",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: readonly: `a-b': not a valid identifier"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "true && readonly a-b\n@PROBE:a@",
+    "note": "bash 5.3 exits on a name `readonly` refuses, at the end of an AND list (bash 5.3)",
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: readonly: `a-b': not a valid identifier"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "snippet": "f() { export 1x; @PROBE:a@; }; f || @PROBE:b@\n@PROBE:c@",
+    "note": "not in a function called on the left of `||`",
+    "facts": {
+      "ran": [
+        "a",
+        "c"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: export: `1x': not a valid identifier"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "f() { export 1x; @PROBE:a@; }; f || @PROBE:b@\n@PROBE:c@",
+    "note": "not in a function called on the left of `||` (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a",
+        "c"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: export: `1x': not a valid identifier"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "unset -v a-b\n@PROBE:a@",
+    "note": "bash 5.3 exits on a name `unset -v` refuses",
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: unset: `a-b': not a valid identifier"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "readonly r; unset r\n@PROBE:a@",
+    "note": "bash 5.3 exits when `unset` meets a readonly variable",
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: unset: r: cannot unset: readonly variable"
+    }
+  },
+  {
+    "manual": "4.4",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "shift x\n@PROBE:a@",
+    "note": "bash 5.3 exits when `shift` is given a word that is no number",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: shift: x: numeric argument required"
+    }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "errexit": false,
+    "snippet": "readonly r=1\nr=2 : || @PROBE:a@\n@PROBE:b@",
+    "note": "an assignment to a readonly variable before a special builtin ends the shell, also on the left of `||`",
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 2: r: readonly variable"
     }
   },
   {

@@ -65,7 +65,34 @@ const notProblem = <P>(e: Entry<P>): Entry<P> => ({ ...e, problem: false });
 const withBasis = <P>(e: Entry<P>, basis: BasisSpec | ((p: P) => BasisSpec | undefined)): Entry<P> => ({ ...e, basis });
 
 /** `local-outside-function` in a file with no shebang (`sourced`): a function may read it with `source`, and `local` then works. */
-const withSourced = (sourced: boolean | undefined, [ja, en]: readonly [string, string]): readonly [string, string] => (sourced ? [
+/** An error of a special builtin that ends the shell in POSIX mode (`PosixExit` of src/semantics/posixexits.ts). */
+interface PosixExitParams { name: string; why: string; word: string; status: number; stops: 'script' | 'subshell' | 'unknown'; since?: string }
+
+/** What the error is (`why`), [ja, en]: each part ends where "so" follows. */
+function posixExitWhat({ name, why, word }: PosixExitParams): readonly [string, string] {
+  switch (why) {
+    case 'invalid-option': return [`\`${name}\` に \`${word}\` というオプションはない`, `\`${name}\` has no option \`${word}\``];
+    case 'option-value': return [`\`${word}\` の値がない`, `\`${word}\` has no value`];
+    case 'option-name': return [`\`${word}\` は \`set -o\` のオプション名ではない`, `\`${word}\` is no option name of \`set -o\``];
+    case 'no-file': return [`\`${name}\` に読むファイルの指定がない`, `\`${name}\` is given no file to read`];
+    case 'trap-word': return [`\`trap\` にシグナル番号でない語が1つだけ渡されている（使い方の誤り）`, `\`trap\` is given a lone word that is no signal number (a usage error)`];
+    case 'identifier': return [`\`${word}\` は名前として正しくない`, `\`${word}\` is not a valid name`];
+    case 'readonly': return [`\`${word}\` は読み取り専用の変数である`, `\`${word}\` is a read-only variable`];
+    default: return [`\`${word}\` は数ではない`, `\`${word}\` is no number`];
+  }
+}
+
+function posixExitText(p: PosixExitParams, maybe: boolean): readonly [string, string] {
+  const [ja, en] = posixExitWhat(p);
+  const where: readonly [string, string] = p.stops === 'subshell' ? ['このサブシェルを終わらせます', 'ends this subshell'] : p.stops === 'unknown' ? ['止まります（サブシェルの中なら、そのサブシェルだけ）', 'stops here (in a subshell, only the subshell)'] : ['スクリプトを止めます', 'stops the script here'];
+  const since: readonly [string, string] = p.since ? [`。bash ${p.since} から。bash 5.2 は終了ステータス 1 で続ける`, `; bash ${p.since} on: bash 5.2 goes on, with status 1`] : ['', ''];
+  const paths: readonly [string, string] = maybe ? ['。そうなるのは一部の経路だけ（POSIX モードの経路、または `set -e` が無視されない呼び出し）', '; on some paths only (where POSIX mode is on, or a call where bash does not ignore `set -e`)'] : ['', ''];
+  return [
+    `POSIX モードでは特殊ビルトインのエラーで非対話シェルが終了します。ここでは ${ja}ため、bash は${where[0]}（終了ステータス ${p.status}${since[0]}${paths[0]}）`,
+    `in POSIX mode an error of a special builtin ends a shell that is not interactive: here ${en}, so bash ${where[1]} (status ${p.status}${since[1]}${paths[1]})`];
+}
+
+const withSourced =(sourced: boolean | undefined, [ja, en]: readonly [string, string]): readonly [string, string] => (sourced ? [
   `${ja}。ただし、このファイルにはシバンがないので、関数の中から \`source\` で読み込まれたときは、\`local\` はその関数のローカル変数を宣言します`,
   `${en}. But this file has no shebang: when a function reads it with \`source\`, \`local\` works there, and declares a variable of that function`] : [ja, en]);
 
@@ -220,16 +247,19 @@ export const MESSAGES = {
   // subsequent assignment", and 3.7.1 that such an assignment is an error and "the command exits with a non-zero status":
   // for one before a command name, bash runs the command (differs); what bash abandons after one of its own, the manual
   // does not say outside POSIX mode (checked).)
-  'assign-readonly': withBasis(failure<{ name: string; then?: 'abandons' | 'subshell' | 'runs' }>(['3.4', '4.1', '3.7.1'], ({ name, then }) => [
+  'assign-readonly': withBasis(failure<{ name: string; then?: 'abandons' | 'subshell' | 'runs' | 'exits' }>(['3.4', '4.1', '3.7.1'], ({ name, then }) => [
     `変数 \`${name}\` は読み取り専用なので、この代入はエラーになり（\`readonly variable\`）、\`${name}\` の値は変わりません${then === 'abandons'
       ? '。bash はそれを含むスクリプトのコマンドの残り（この行、または囲む繰り返しや関数呼び出し）を中断し、次のコマンドから続けます（終了ステータス 1）'
       : then === 'subshell' ? '。サブシェルはそこで終わります（終了ステータス 1）'
-        : then === 'runs' ? '。コマンドは、この代入なしで実行されます' : ''}`,
+        : then === 'runs' ? '。コマンドは、この代入なしで実行されます'
+          : then === 'exits' ? '。POSIX モードなので、bash はここでスクリプトを止めます（終了ステータス 1）' : ''}`,
     `The variable \`${name}\` is read-only, so this assignment fails (\`readonly variable\`) and \`${name}\` keeps its value${then === 'abandons'
       ? '; bash also abandons the rest of the command of the script it is in (the line, or the loop or function call around it) and goes on with the next one, status 1'
       : then === 'subshell' ? '; the subshell ends there, status 1'
-        : then === 'runs' ? '; the command still runs, without it' : ''}`]),
-  ({ then }) => (then === 'runs' ? { kind: 'differs', probe: 'state#readonly-prefix' } : then ? { kind: 'checked', probe: 'state#readonly-abandons' } : undefined)),
+        : then === 'runs' ? '; the command still runs, without it'
+          : then === 'exits' ? '; in POSIX mode, bash stops the script here, status 1' : ''}`]),
+  // (In POSIX mode, 6.11 says the shell exits: `exits` is the manual's.)
+  ({ then }) => (then === 'runs' ? { kind: 'differs', probe: 'state#readonly-prefix' } : then && then !== 'exits' ? { kind: 'checked', probe: 'state#readonly-abandons' } : undefined)),
   // (What a restricted shell refuses, 6.10, where the state says the shell is one (src/explain/reads.ts,
   // `restrictedAt`): a builtin's call (`CommandSpec.restricted`: `name` the builtin, `word` what bash names after it), a
   // command name with a `/` (`name` the name), an output redirection (`name` its operator, `word` its target). Each
@@ -281,6 +311,15 @@ export const MESSAGES = {
     `POSIX モードでは特殊ビルトインと同じ名前の関数は定義できず、bash はここで「is a special builtin」のエラーになってスクリプトを止めます（この前で POSIX モードにしているのは一部の経路だけ）。別の名前にします`,
     `in POSIX mode a function cannot have the name of a special builtin: bash stops the script here with the error "is a special builtin" (only some paths before here turn POSIX mode on). Use another name`]),
   { kind: 'checked', probe: 'state#posix-special-function' }),
+
+  'posix-function-name': pitfall(['6.11', '3.3'], () => [
+    `POSIX モードの bash 5.2 は、名前として正しくない関数名を受け付けず、ここで「not a valid identifier」のエラーになってスクリプトを止めます（終了ステータス 2。bash 5.3 は定義する）。英数字と \`_\` だけの名前にします`,
+    `in POSIX mode bash 5.2 refuses a function name that is not a valid name: it stops the script here with the error "not a valid identifier" (status 2; bash 5.3 defines the function). Use a name of letters, digits and \`_\``]),
+  'posix-function-name-maybe': caveat(['6.11', '3.3'], () => [
+    `POSIX モードの bash 5.2 は、名前として正しくない関数名を受け付けず、ここで「not a valid identifier」のエラーになってスクリプトを止めます（この前で POSIX モードにしているのは一部の経路だけ。bash 5.3 は定義する）。英数字と \`_\` だけの名前にします`,
+    `in POSIX mode bash 5.2 refuses a function name that is not a valid name: it stops the script here with the error "not a valid identifier" (only some paths before here turn POSIX mode on; bash 5.3 defines the function). Use a name of letters, digits and \`_\``]),
+  'posix-special-builtin-error': pitfall<PosixExitParams>(['4.4', '6.11'], (p) => posixExitText(p, false)),
+  'posix-special-builtin-error-maybe': caveat<PosixExitParams>(['4.4', '6.11'], (p) => posixExitText(p, true)),
 
   // ---------------------------------------------------------------- arithmetic and status (6.5, 4.3.1)
   // (`errexit`: `set -e` surely stops the shell there, the warning: the text leads with that and why. `stops`: the shell

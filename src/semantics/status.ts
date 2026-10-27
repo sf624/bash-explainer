@@ -17,7 +17,8 @@ import { builtinParse, commandName, wrapped } from './effects';
 import { processOf, STATEMENTS } from './env';
 import { resolveName, testSpecOf } from './names';
 import { commandTest } from '../testexpr';
-import { type ErrexitWhy, option, type ShellState, type StateModel, type Tri } from './state';
+import { assignmentExit, builtinExit, definitionExit, type PosixExit } from './posixexits';
+import { type ErrexitWhy, modelVersion, option, type ShellState, type StateModel, type Tri } from './state';
 import { type WordEnv, wordFields, type WordFailure, wordOf } from './words';
 
 /** What the exit status of a statement is (manual 3.7.5). */
@@ -152,6 +153,13 @@ export interface StatusModel {
    * (`n` is undefined where nothing is written yet: `a ||`.)
    */
   succeeds(n: SyntaxNode | undefined): boolean;
+  /**
+   * An error that ends the shell at statement `n` in POSIX mode, as the words written decide it (a function name bash
+   * refuses, an error of a special builtin: src/semantics/posixexits.ts), and whether it ends the shell there: POSIX
+   * mode on (`unknown` when on some paths only), and for a builtin's error, not where bash ignores `set -e`; the shell
+   * it ends (the script, or a subshell: `stops`, as for `set -e`). Bash only.
+   */
+  posixExit(n: SyntaxNode): { exit: PosixExit; active: Tri; stops: ErrexitContext['stops'] } | undefined;
 }
 
 const models = new WeakMap<StateModel, StatusModel>();
@@ -262,6 +270,24 @@ class Statuses implements StatusModel {
       case 'function_definition': return { kind: 'definition' };
     }
     return { kind: 'last-run' };
+  }
+
+  posixExit(n: SyntaxNode): { exit: PosixExit; active: Tri; stops: ErrexitContext['stops'] } | undefined {
+    if (this.shell && this.shell !== 'bash') return undefined;
+    const posix = optionOn(this.state.at(n).run, 'set', 'posix');
+    if (posix === 'off') return undefined;
+    let exit: PosixExit | undefined;
+    if (n.type === 'function_definition') exit = definitionExit(n, modelVersion(this.state));
+    else if (n.type === 'command' && assignmentsOnly(n)) exit = assignmentExit(n, this.state.at(n).run);
+    else if (n.type === 'command' && commandName(n) !== undefined) {
+      // (The special builtin as written, not a function: in POSIX mode bash finds it first.)
+      const name = commandName(n)!;
+      const res = resolveName(this.state, name, field(n, 'name')!, { shell: this.shell, command: true });
+      if (res.kind === 'builtin' && !res.disabled) exit = builtinExit(n, name, fields(n, 'argument'), this.state.at(n).run, modelVersion(this.state), this.shell);
+    }
+    if (!exit) return undefined;
+    const ignored = exit.ignorable ? this.ignored(n) : null;
+    return { exit, active: ignored?.sure ? 'off' : posix === 'unknown' || ignored ? 'unknown' : 'on', stops: this.errexit(n).stops };
   }
 
   /** The statement started with `&` before `n` in its list (what `$!` names), if it is in the same block. */
