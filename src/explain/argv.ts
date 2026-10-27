@@ -34,7 +34,7 @@ import type { Explainer } from './context';
 import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
-import { type StepKind, wordFields } from '../semantics/words';
+import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
 import { globOff, NO_SPEC, resolve, shoptAt, specFor, wordAt } from './reads';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -161,7 +161,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             slotNotes(cx, role, cx.slotEnvs.get(a)!, words, assigned);
             const script = scriptTokens(cx, words, cx.slotEnvs.get(a)!);
             joinedWhole = words.length > 1 && !!script.tokens.length;
-            const at = script.note && !script.tokens.length ? words.find((w) => !staticWordText(w)) ?? a : a;
+            const at = script.note && !script.tokens.length ? words.find((w) => !staticWordText(w, cx.shell)) ?? a : a;
             if (at !== a) joinedNote = { at, note: script.note! };
             out.push(joinedWhole ? joinedScript(cx, words, joined, script) : withScript(positional(cx, a, joined), at === a ? script : { tokens: [] }));
           } else if (!role.parse) {
@@ -476,6 +476,30 @@ function markedAssignment(cx: Explainer, a: SyntaxNode, desc: string, command: s
   return cx.tok(a, 'argument', [desc, ...sentences].join(cx.s('。', '. ')), cx.sub(value));
 }
 
+/** What a declaration builtin `command` does with its word `a`, whose braces bash expands or may expand (`local {a,b}`, see `bracedUnset`). */
+function bracedDeclare(cx: Explainer, a: SyntaxNode, step: ExpansionStep, command: string): string {
+  if (step.applies === 'unknown') {
+    return step.why === 'braceexpand-off'
+      ? cx.s(`ブレース展開が行われれば、展開後の各語を \`${command}\` が受け取る。${OFF_JA}、そのときは \`${a.text}\` を1語のまま受け取る`,
+        `If brace expansion takes place here, \`${command}\` takes each word it gives. ${OFF_EN}, and then it takes \`${a.text}\` as one word`)
+      : cx.s(`ブレース展開後の各語を \`${command}\` が受け取る（${WHICH_JA}）`, `\`${command}\` takes each word the braces give (${WHICH_EN})`);
+  }
+  const names = wordFields(a, cx.state).fields;
+  if (!names) return cx.s(`ブレース展開のあと、各語を \`${command}\` が受け取る（ここでは語が決まらない）`, `The braces expand first, and \`${command}\` takes each word (the words are not known here)`);
+  if (!names.length) return noWord(cx);
+  return cx.s(`ブレース展開のあと、各語を \`${command}\` が受け取る: ${names.map((n) => `\`${n}\``).join('・')}`, `The braces expand first, and \`${command}\` takes each word: ${names.map((n) => `\`${n}\``).join(', ')}`);
+}
+
+/** A word whose braces give only empty words, which are dropped (`{,}`). */
+const noWord = (cx: Explainer): string => cx.s('ブレース展開で空の語だけになり、取り除かれるので、何も渡らない', 'The braces give only empty words, which are dropped: nothing is passed');
+
+// Why brace expansion may not take place (`step.applies` unknown): `set +B` on some paths, or a word of kinds this shell
+// expands only some of (mksh: `{a,b}`, not `{1..2}`).
+const OFF_JA = '行われないこともあり（この前の一部の経路で `set +B` によって無効になっている）';
+const OFF_EN = 'It may not (`set +B` turns it off on some paths before)';
+const WHICH_JA = 'このシェルがどのブレースを展開するかは、ここでは分からない';
+const WHICH_EN = 'which of them this shell expands is not known here';
+
 /**
  * A name that a declaration builtin declares (`OperandSpec.acts`): `declare a=1` assigns it (a nameref's target with
  * `-n`), `declare x` names the variable, `declare -f f` the function. A word that is not a plain name is explained
@@ -489,6 +513,9 @@ function declaredOperand(cx: Explainer, a: SyntaxNode, space: ReturnType<typeof 
   }
   const assigned = space === 'function' ? undefined : argumentAssignment(cx, a, command);
   if (assigned) return assigned;
+  // `local {a,b}`, `local a{1..3}`: bash expands the braces first, and the builtin takes each word.
+  const braces = wordAt(cx, a)?.steps.find((g) => g.kind === 'brace');
+  if (braces && braces.applies !== false) return positional(cx, a, bracedDeclare(cx, a, braces, command));
   if (a.type !== 'word') return cx.explain(a);
   const element = /^([A-Za-z_]\w*)\[(.+)\]$/s.exec(a.text);
   if (space === 'function' || !element) {
@@ -522,11 +549,41 @@ function argumentAssignment(cx: Explainer, a: SyntaxNode, command: string): Toke
   ), a.type === 'concatenation' ? cx.sub(a).flatMap((t) => t.children) : []);
 }
 
-/** The words the braces of `a` give where the shell expands them and all are known (`{a,b}`: `a`, `b`); undefined otherwise. */
-function bracedNames(cx: Explainer, a: SyntaxNode): string[] | undefined {
-  if (wordAt(cx, a)?.steps.find((g) => g.kind === 'brace')?.applies !== true) return undefined;
+/**
+ * What `unset` does with its word `a`, whose braces bash expands (`applies`: true) or may expand (`'unknown'`: `set +B` on
+ * some paths before): each word they give is a name (`unset {a,b}` unsets `a` and `b`), listed when the word model knows them.
+ */
+function bracedUnset(cx: Explainer, a: SyntaxNode, step: ExpansionStep, space: ReturnType<typeof namespaceOf>): string {
+  if (step.applies === 'unknown') {
+    return step.why === 'braceexpand-off'
+      ? cx.s(`ブレース展開が行われれば、展開後の各語を名前として削除する。${OFF_JA}、そのときは \`${a.text}\` が1つの名前になる`,
+        `If brace expansion takes place here, each word it gives is a name to unset. ${OFF_EN}, and then \`${a.text}\` is one name`)
+      : cx.s(`ブレース展開後の各語を名前として削除する（${WHICH_JA}）`, `Each word the braces give is a name to unset (${WHICH_EN})`);
+  }
   const names = wordFields(a, cx.state).fields;
-  return names && names.length ? names : undefined;
+  if (!names) return cx.s('ブレース展開のあと、各語を名前として削除する（ここでは語が決まらない）', 'The braces expand first, and each word is a name to unset (the words are not known here)');
+  if (!names.length) return noWord(cx);
+  const ja = names.map((n) => `\`${n}\``).join('・');
+  const en = names.map((n) => `\`${n}\``).join(', ');
+  const many = names.length > 1;
+  return space === 'function'
+    ? cx.s(`ブレース展開のあと、関数 ${ja} を削除する`, `The braces expand first: remove the function${many ? 's' : ''} ${en}`)
+    : space === 'nameref'
+      ? cx.s(`ブレース展開のあと、名前参照 ${ja} そのものを削除する（参照先の変数は残る。名前参照でない変数は削除されない）`,
+        `The braces expand first: unset the name reference${many ? 's' : ''} ${en} ${many ? 'themselves' : 'itself'} (${many ? 'the variables they point to stay' : 'the variable it points to stays'}; a variable that is not a name reference is not unset)`)
+      : cx.s(`ブレース展開のあと、変数 ${ja} を削除する（未定義の状態に戻す）`, `The braces expand first: unset the variable${many ? 's' : ''} ${en} (${many ? 'they become' : 'it becomes'} undefined)`);
+}
+
+/** `unset` of a name no variable can have (`{a,b}` with no brace expansion, `1a`), in the namespace `space`. */
+function badName(cx: Explainer, name: string, space: ReturnType<typeof namespaceOf>): string {
+  // (dash and POSIX sh: an error of a special builtin, which ends the shell.)
+  if (['sh', 'dash', 'ash'].includes(cx.shell ?? '')) {
+    return cx.s(`\`${name}\` は変数名にならないので、エラーになりシェルが終了する（dash では \`bad variable name\`）`, `\`${name}\` is not a valid variable name: an error, and the shell exits (dash: "bad variable name")`);
+  }
+  if (space === 'variable') return cx.s(`\`${name}\` は変数名にならないので、何も削除しない（エラー、終了ステータス 1）`, `\`${name}\` is not a valid variable name, so nothing is unset (an error, status 1)`);
+  return space === 'either'
+    ? cx.s(`\`${name}\` は変数名にならないので、変数は削除しない（その名前の関数があれば、それを削除する）`, `No variable can have the name \`${name}\`, so no variable is unset (a function of that name, if any, is removed)`)
+    : cx.s(`\`${name}\` は変数名にならないので、何も削除しない`, `No variable can have the name \`${name}\`, so nothing is unset`);
 }
 
 /**
@@ -545,18 +602,11 @@ function unsetOperand(cx: Explainer, nodes: SyntaxNode[], word: number, item: Op
     return positional(cx, a, cx.s('削除する名前（`-f` と `-v` を同時に指定しているので、何も削除されない）', 'Name to unset (with both `-f` and `-v`, nothing is unset)'));
   }
   // `unset {a,b}`: bash expands the braces first, and unsets each word (dash does not: the name is `{a,b}`).
-  const braced = bracedNames(cx, a);
-  if (braced) {
-    const list = braced.map((n) => `\`${n}\``).join(', ');
-    return positional(cx, a, fn
-      ? cx.s(`ブレース展開で ${braced.length} 語になり、関数 ${list} を削除する`, `The braces expand to ${braced.length} words first: remove the functions ${list}`)
-      : space === 'nameref'
-        ? cx.s(`ブレース展開で ${braced.length} 語になり、名前参照 ${list} そのものを削除する（参照先の変数は残る）`, `The braces expand to ${braced.length} words first: unset the name references ${list} themselves (the variables they point to stay)`)
-        : cx.s(`ブレース展開で ${braced.length} 語になり、変数 ${list} を削除する（未定義の状態に戻す）`, `The braces expand to ${braced.length} words first: unset the variables ${list} (they become undefined)`));
-  }
+  const braces = wordAt(cx, a)?.steps.find((g) => g.kind === 'brace');
+  if (braces && braces.applies !== false) return positional(cx, a, bracedUnset(cx, a, braces, space));
   const plain = isPlainWord(a);
   // (An unquoted glob has no value known here: its text, which bash uses when no file matches.)
-  const name = staticWordValue(a) ?? (plain ? a.text : undefined);
+  const name = staticWordValue(a, false, cx.shell) ?? (plain ? a.text : undefined);
   if (name === undefined) return positional(cx, a, cx.t(item.text));
   const element = /^([A-Za-z_]\w*)\[(.+)\]$/s.exec(name);
   let text: string;
@@ -578,9 +628,13 @@ function unsetOperand(cx: Explainer, nodes: SyntaxNode[], word: number, item: Op
       const declared = st.variables.get(name)?.declared ?? 'off';
       const kind = space !== 'either' || (st.functions.get(name)?.state ?? 'off') === 'off' ? 'variable'
         : declared === 'off' ? 'function' : declared === 'unknown' ? 'maybe' : 'variable';
+      if (kind !== 'function' && !/^[A-Za-z_]\w*$/.test(name)) return positional(cx, a, badName(cx, name, space));
+      // (`unset -n a` unsets only a name reference: a variable that is not one stays.)
+      const ref = space === 'nameref' ? attribute(st, name, 'n') : 'on';
       text = kind === 'function' ? cx.s(`関数 \`${name}\` を削除する`, `Remove the function \`${name}\``)
-        : space === 'nameref' ? cx.s(`名前参照 \`${name}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${name}\` itself (the variable it points to stays)`)
-          : cx.s(`変数 \`${name}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${name}\` (it becomes undefined)`);
+        : ref === 'off' ? cx.s(`\`${name}\` は名前参照ではないので、何も削除しない（\`-n\` は名前参照だけを削除する）`, `\`${name}\` is not a name reference, so nothing is unset (\`-n\` unsets only a name reference)`)
+          : space === 'nameref' ? cx.s(`名前参照 \`${name}\` そのものを削除する（参照先の変数は残る${ref === 'unknown' ? '。名前参照でなければ何も削除しない' : ''}）`, `Unset the name reference \`${name}\` itself (the variable it points to stays${ref === 'unknown' ? '; if it is not a name reference, nothing is unset' : ''})`)
+            : cx.s(`変数 \`${name}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${name}\` (it becomes undefined)`);
       if (kind === 'maybe') text += cx.s(`。変数がなければ、代わりに関数 \`${name}\` を削除する`, `. If there is no such variable, the function \`${name}\` is removed instead`);
       // A read-only variable stays: bash refuses (status 1).
       const readonly = kind === 'function' ? 'off' : attribute(st, name, 'r');

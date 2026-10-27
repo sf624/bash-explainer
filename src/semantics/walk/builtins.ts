@@ -7,8 +7,6 @@ import type { CommandSpec } from '../../argv/spec';
 import { actedNames, onlyInFunction } from '../../argv/query';
 import { prefixOf } from '../../argv/words';
 import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
-import { bracesWork } from '../../dialect';
-import { braceExpand } from '../../examples/shellwords';
 import { staticWordValue, tildeParts, tildeSpots } from '../../staticword';
 import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
 import { parseExpansion } from '../../expansion';
@@ -35,6 +33,15 @@ export class WalkBuiltins {
     const hosted = host && Object.hasOwn(this.w.host, name) ? this.w.host[name] : undefined;
     if (hosted) return this.effects(hosted, builtinParse(name, args, this.w.shell, hosted), args, n, st, true);
     if (!builtins[name] || !this.bashBuiltin(name)) return st;
+    // Where brace expansion may be on or off (`set +B` on some paths before), a word with braces gives other words
+    // (`unset {a,b}`: `a` and `b`, or the name `{a,b}`): both are followed.
+    if (option(st, 'set', 'braceexpand') === 'unknown') {
+      const [on, off] = (['on', 'off'] as const).map((v): ShellState => ({ ...st, set: st.set.with('braceexpand', v) }));
+      const words = args.filter((a) => !a.type.endsWith('redirect'));
+      if (words.some((a) => String(this.w.conditions.fieldsOf(a, on)) !== String(this.w.conditions.fieldsOf(a, off)))) {
+        return merge([this.builtin(name, args, n, on), this.builtin(name, args, n, off)], this.w.posix);
+      }
+    }
     // A builtin turned off (`enable -n exit`) runs the program of its name, or fails: it changes nothing here, and
     // `exit` ends nothing. Where it may be off, both.
     const off = st.disabled.get(name)?.state;
@@ -279,8 +286,9 @@ export class WalkBuiltins {
       }
       // A word: `x`, `a[1]` (a glob that matches no file, as the walk takes it), `y=2` in `command declare y=2`; `"c"=$x`
       // (whose value is not known here). It is expanded as any argument: `\declare a=$v` declares a name in each field.
-      const text = this.w.conditions.staticText(w, st) ?? (w.type === 'word' ? w.text : undefined);
-      const texts = text !== undefined ? [text] : this.w.conditions.fieldsOf(w, st) ?? [undefined];
+      // (`local {a,b}` declares `a` and `b` where the shell expands braces; an unquoted `a[1]` that matches no file is itself.)
+      const text = this.w.conditions.staticText(w, st);
+      const texts = text !== undefined ? [text] : this.w.conditions.fieldsOf(w, st) ?? [w.type === 'word' ? w.text : undefined];
       for (const t of texts) {
         const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(t ?? prefixOf(w).replace(/=.*/s, '='));
         if (!m || (t === undefined && !m[3])) continue;
@@ -405,21 +413,17 @@ export class WalkBuiltins {
     // The options and the names, read with unset's spec.
     const ws = words.filter((w) => !w.type.endsWith('redirect'));
     const parse = builtinParse('unset', ws, this.w.shell);
-    const names = actedNames(parse);
+    const acted = actedNames(parse);
     // What the names stand for, by unset's options (its spec): the same for every name.
-    const space = names[0]?.space;
-    const braces = ['default', 'on'].includes(option(st, 'set', 'braceexpand'));
-    // (`unset {a,b}` unsets `a` and `b` in a shell with brace expansion: the words bash passes, as `wordFields` gives them.)
-    const all = names.flatMap(({ word }) => {
-      const node = ws[word];
-      const words = braces && node.type === 'word' && bracesWork(node.text, this.w.shell) ? bracedWords(node.text) : undefined;
-      return words ? words.map((text) => ({ node, text, known: true })) : [{ node, text: staticWordValue(node, false, this.w.shell) ?? node.text, known: false }];
-    });
+    const space = acted[0]?.space;
     // (`unset -fv` is an error: nothing is unset.)
     if (space === 'none') return st;
     const temporary = temporariesUnset('unset', ws, n, this.w.shell, parse);
-    for (const { node, text, known } of all) {
-      if (!known && staticWordValue(node, false, this.w.shell) === undefined) {
+    for (const node of acted.map(({ word }) => ws[word])) {
+      // The names the word gives, from the word model: `unset {a,b}` unsets `a` and `b` where the shell expands braces.
+      const value = staticWordValue(node, false, this.w.shell);
+      const texts = value !== undefined ? [value] : this.w.conditions.fieldsOf(node, st);
+      if (!texts) {
         // A name not known here: a variable that `${u:=u}` in it sets may be the one it names.
         for (const e of descendants(node, ['expansion'])) {
           const name = e.namedChildren[0];
@@ -428,39 +432,55 @@ export class WalkBuiltins {
         }
         continue;
       }
-      const fn = st.functions.get(text);
-      if (space === 'function') {
-        if (fn) st = this.w.put(st, 'functions', text, { ...fn, state: 'off', removed: n });
-        continue;
+      for (const text of texts) {
+        const fn = st.functions.get(text);
+        if (space === 'function') {
+          if (fn) st = this.w.put(st, 'functions', text, { ...fn, state: 'off', removed: n });
+          continue;
+        }
+        // `unset 'a[1]'` removes an element; `x=1 unset x` the `x` of the command, and the one from before stays.
+        if (text.includes('[') || temporary.has(text)) continue;
+        const v = st.variables.get(text);
+        // With no -v, a name with no variable is a function.
+        if (space === 'either' && (!v || v.declared === 'off') && fn && fn.state !== 'off') {
+          st = this.w.put(st, 'functions', text, { ...fn, state: 'off', removed: n });
+          continue;
+        }
+        // No variable has a name such as `{a,b}` (`set +B`): bash unsets nothing; dash ends the shell ("bad variable name").
+        if (!NAME.test(text)) {
+          if (['sh', 'dash', 'ash'].includes(this.w.shell ?? '')) return this.w.abort(st, true);
+          continue;
+        }
+        // `unset -n r` unsets the nameref itself, and a variable that is not one stays (bash 5.2 and 5.3).
+        const ref = space === 'nameref' ? attribute(st, text, 'n') : 'on';
+        if (ref === 'off') continue;
+        // A readonly variable stays; `unset r` of a nameref unsets the variable it names.
+        const target = space === 'nameref' ? text : this.resolve(st, text);
+        // (dash ends the shell there: "unset: r: is read only".)
+        if (target && !this.w.bash && attribute(st, target, 'r') === 'on') return this.w.abort(st, true);
+        if (target && !this.w.bash && attribute(st, target, 'r') === 'unknown') this.w.abort(st, false);
+        if (!target || attribute(st, target, 'r') === 'on') continue;
+        const after = this.unsetVariable(st, target, node);
+        st = ref === 'unknown' ? merge([st, after], this.w.posix) : after;
       }
-      // `unset 'a[1]'` removes an element; `x=1 unset x` the `x` of the command, and the one from before stays.
-      if (text.includes('[') || temporary.has(text)) continue;
-      const v = st.variables.get(text);
-      // With no -v, a name with no variable is a function.
-      if (space === 'either' && (!v || v.declared === 'off') && fn && fn.state !== 'off') {
-        st = this.w.put(st, 'functions', text, { ...fn, state: 'off', removed: n });
-        continue;
-      }
-      // A readonly variable stays; `unset r` of a nameref unsets the variable it names (`unset -n r`: the nameref).
-      const target = space === 'nameref' ? text : this.resolve(st, text);
-      // (dash ends the shell there: "unset: r: is read only".)
-      if (target && !this.w.bash && attribute(st, target, 'r') === 'on') return this.w.abort(st, true);
-      if (target && !this.w.bash && attribute(st, target, 'r') === 'unknown') this.w.abort(st, false);
-      if (!target || attribute(st, target, 'r') === 'on') continue;
-      // The local of a calling function: unset removes it, and the variable outside shows again (it is no longer restored).
-      const top = this.w.frames[this.w.frames.length - 1];
-      const outer = this.w.frames.find((f) => f !== top && f.saved.has(target));
-      if (outer && !top.saved.has(target)) {
-        st = this.w.put(st, 'variables', target, outer.saved.get(target));
-        outer.saved.delete(target);
-        continue;
-      }
-      if (target === 'POSIXLY_CORRECT' && this.w.bash) st = this.setPosix(st, false, node, true);
-      // Unsetting GLOBIGNORE turns dotglob off (setting it turned it on).
-      if (target === 'GLOBIGNORE' && this.w.bash) st = this.w.put(st, 'shopt', 'dotglob', 'off');
-      st = this.w.put(st, 'variables', target, { declared: 'off', set: 'off', attrs: {}, at: node });
     }
     return st;
+  }
+
+  /** `st` with the variable `target` unset by the word `node` of `unset`. */
+  private unsetVariable(st: ShellState, target: string, node: SyntaxNode): ShellState {
+    // The local of a calling function: unset removes it, and the variable outside shows again (it is no longer restored).
+    const top = this.w.frames[this.w.frames.length - 1];
+    const outer = this.w.frames.find((f) => f !== top && f.saved.has(target));
+    if (outer && !top.saved.has(target)) {
+      st = this.w.put(st, 'variables', target, outer.saved.get(target));
+      outer.saved.delete(target);
+      return st;
+    }
+    if (target === 'POSIXLY_CORRECT' && this.w.bash) st = this.setPosix(st, false, node, true);
+    // Unsetting GLOBIGNORE turns dotglob off (setting it turned it on).
+    if (target === 'GLOBIGNORE' && this.w.bash) st = this.w.put(st, 'shopt', 'dotglob', 'off');
+    return this.w.put(st, 'variables', target, { declared: 'off', set: 'off', attrs: {}, at: node });
   }
 
   /**
@@ -678,15 +698,5 @@ export class WalkBuiltins {
   posixMode(st: ShellState): Tri {
     const p = option(st, 'set', 'posix');
     return p === 'default' ? 'off' : p;
-  }
-}
-
-/** The words the braces of the plain word `text` give; undefined when it has none, a glob character stays in a word, or they are too many. */
-function bracedWords(text: string): string[] | undefined {
-  try {
-    const words = braceExpand(text);
-    return words && words.length && !words.some((w) => /[*?[\\'"$`~]/.test(w)) ? words : undefined;
-  } catch {
-    return undefined;
   }
 }

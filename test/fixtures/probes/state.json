@@ -4664,5 +4664,102 @@
       "status": 0,
       "stderr": "SCRIPT: line 1: 1 / 0 : division by 0 (error token is \"0 \")"
     }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "a=1 b=2 c1=1 c2=2 c3=3; unset {a,b} c{1..3}",
+    "note": "unset gets the words of a brace expansion: a list and a range",
+    "facts": {
+      "end": {},
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "set +B; a=1; unset {a,b}",
+    "note": "with braceexpand off, {a,b} is one name, which no variable has",
+    "facts": {
+      "end": {
+        "set": {
+          "braceexpand": false
+        },
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "set +B; set -o braceexpand; a=1; unset {a,b}",
+    "note": "set -o braceexpand turns brace expansion on again",
+    "facts": {
+      "end": {},
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "f() { :; }; g() { :; }; h() { :; }; unset -f {f,g}",
+    "note": "unset -f of the words of a brace expansion",
+    "facts": {
+      "end": {
+        "functions": {
+          "h": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "a=1; declare -n r=x; x=2; unset -n a r",
+    "note": "unset -n unsets a name reference itself; a variable that is not one stays",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "declare {c,d}=1; f() { local {a,b}=2; g=$a$b; }; f",
+    "note": "a declaration gets the words of a brace expansion",
+    "facts": {
+      "end": {
+        "variables": {
+          "c": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "d": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "g": {
+            "attrs": "-",
+            "value": "\"22\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
   }
 ]
