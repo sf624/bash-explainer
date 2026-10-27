@@ -1,17 +1,18 @@
 // The walk of the shell state (docs/design/semantics.md, 4.3, 4.7, B1; src/semantics/state.ts builds the model from it):
 // the statements in the order bash runs them, the branches and loops merged, function bodies walked where they are
-// called. Its parts: arithmetic (./arith.ts), conditions (./conditions.ts), builtins (./builtins.ts), aliases (./aliases.ts).
+// called. Its parts: arithmetic (./arith.ts), conditions (./conditions.ts), builtins (./builtins.ts), aliases (./aliases.ts),
+// expansions (./expansions.ts), the state another shell starts with (./child.ts).
 import type { ArgvParse } from '../../argv/interpret';
 import type { Ends } from '../../argv/spec';
 import type { Shell } from '../../dialect';
 import { builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
 import { assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from '../../syntax/tree';
-import { commandName, SET_LETTERS } from '../effects';
-import { type ExecEnv, lastStageInShell, reachOf, slotEnvs, STATEMENTS, subshellReasons } from '../env';
+import { commandName } from '../effects';
+import { lastStageInShell, slotEnvs, STATEMENTS, subshellReasons } from '../env';
 import { NESTED_DEPTH, type NestedScript, type NotRead } from '../nested';
 import {
-  attribute, EMPTY, type Entry, type FunctionState, type Kind, merge, mergeErrexitWhy, mergeOption, NameMap, option, type OptionState,
+  attribute, EMPTY, type Entry, type FunctionState, type Kind, merge, mergeErrexitWhy, mergeOption, NameMap, option,
   POSIX_ON, reached, type ShellState, sameState, tri, type Tri, unreachable, type VariableState, withoutErrexitWhy, withStatus,
 } from '../shellstate';
 import type { Scripts } from '../state';
@@ -22,17 +23,16 @@ import { WalkArith } from './arith';
 import { temporariesUnset } from '../names';
 import { WalkBuiltins } from './builtins';
 import { WalkConditions } from './conditions';
+import { WalkExpansions } from './expansions';
 import { kept, temporaries } from './temporaries';
 import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
-import { ArithError, type ChildPass, ExpansionError, type Frame, NAME, numberOfLengths, OPAQUE, passed, passedMemo, SUBSTITUTIONS, type Target, WalkAgain } from './shared';
+import { ExpansionError, type Frame, OPAQUE, type Target, WalkAgain } from './shared';
 
 export type { ChildPass, Frame, Target } from './shared';
 
 /** The shells that start in POSIX mode (for what the model follows: assignments before special builtins). */
 const POSIX_SHELLS = new Set<Shell>(['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh']);
-/** Where an expression is arithmetic: an arithmetic expansion in it is run with the expression. */
-const ARITH_HOSTS = ['arithmetic_expansion', 'arithmetic_command', 'c_style_for_statement'];
 /** The statements whose failure stops the shell under `set -e` (a compound command stops in the command that fails). */
 const ERREXIT_STOPS = new Set(['command', 'extended_test', 'arithmetic_command', 'subshell', 'pipeline']);
 
@@ -59,6 +59,7 @@ export class Walker {
   readonly conditions = new WalkConditions(this);
   readonly builtins = new WalkBuiltins(this);
   readonly aliases = new WalkAliases(this);
+  readonly expansions = new WalkExpansions(this);
 
   /** The states each node was run with (more than one in a loop or a function called more than once); merged when asked. */
   private readonly runStates = new Map<SyntaxNode, ShellState[]>();
@@ -232,76 +233,8 @@ export class Walker {
     return st;
   }
 
-  /**
-   * The state another shell starts with (`bash -c`, docs/design/semantics.md 4.13): the variables of `outer` that
-   * reach it through `env` (exported, with a value: an array is not passed), and those the slots set (`given`); the
-   * exported functions, when it is bash and every link passes them; the set options with an exported SHELLOPTS, the
-   * shopt options with an exported BASHOPTS (bash); then the options it is started with (`bash -e -O extglob -c`). A
-   * shell that reads startup files (`-l`, `-i`, an exported BASH_ENV) may have any name the script has.
-   */
-  childStart(outer: ShellState, env: ExecEnv, pass: ChildPass, at: SyntaxNode): ShellState {
-    let st = this.initial(at);
-    const exported = (name: string): boolean => (outer.variables.get(name)?.attrs.x?.state ?? 'off') === 'on';
-    const reach = reachOf(env, exported('SHELLOPTS'));
-    // (`sh` may be bash, which reads exported functions, SHELLOPTS and BASHOPTS, or dash, which reads none.)
-    const bashLike: Tri = this.bash ? 'on' : this.shell === 'sh' ? 'unknown' : 'off';
-    if (reach.variables !== 'none') {
-      let vars = outer.variables.mapped(passed, passedMemo);
-      for (const name of pass.removed) vars = vars.with(name, undefined);
-      // (bash sets its own at start, whatever the environment gives.)
-      st = { ...st, variables: vars.withAll(new Map(st.variables)) };
-    }
-    // (`env -i x=1 bash -c …` passes `x`.)
-    for (const name of pass.given) if (NAME.test(name)) st = { ...st, variables: st.variables.with(name, { declared: 'on', set: 'on', attrs: { x: { state: 'on', at } }, at }) };
-    if (reach.functions === 'exported' && bashLike !== 'off') {
-      const fns = new Map<string, FunctionState>();
-      for (const [name, f] of outer.functions) {
-        if (f.state === 'off' || f.exported === 'off') continue;
-        fns.set(name, { state: f.state === 'on' && f.exported === 'on' && bashLike === 'on' ? 'on' : 'unknown', def: f.def, exported: 'on', readonly: 'off', ...(bashLike === 'unknown' ? { imported: 'sh' as const } : {}) });
-        // (Its body is walked where this shell calls it.)
-        this.collectDefinitions(f.def);
-      }
-      st = { ...st, functions: st.functions.withAll(fns) };
-    }
-    // (bash turns on the options SHELLOPTS and BASHOPTS name; it turns none off.)
-    const inherit = (kind: 'set' | 'shopt', on: boolean): void => {
-      if (!on || bashLike === 'off') return;
-      const opts = new Map<string, OptionState>();
-      for (const [name, o] of outer[kind]) if (o === 'on' || o === 'unknown') opts.set(name, o === 'on' && bashLike === 'on' ? 'on' : 'unknown');
-      st = { ...st, [kind]: st[kind].withAll(opts) };
-    };
-    // The options it is started with: `-e`, `+x`, `-o pipefail`, `-O extglob` (bash), `--posix`; `-l`, `-i` read startup files.
-    let startup = false;
-    for (const { flag, value } of pass.invocation) {
-      const on = flag[0] === '-';
-      const letter = flag.slice(1);
-      if (flag === '--posix') st = this.builtins.setPosix(st, true, at);
-      else if (['-l', '--login', '-i'].includes(flag)) startup = true;
-      else if (/^[-+]o$/.test(flag) && value) st = value === 'posix' ? this.builtins.setPosix(st, on, at) : { ...st, set: st.set.with(value, on ? 'on' : 'off') };
-      else if (/^[-+]O$/.test(flag) && value) st = { ...st, shopt: st.shopt.with(value, on ? 'on' : 'off') };
-      else if (SET_LETTERS[letter]) st = { ...st, set: st.set.with(SET_LETTERS[letter], on ? 'on' : 'off') };
-    }
-    // (Then bash turns on the options an exported SHELLOPTS and BASHOPTS name, also those turned off above.)
-    inherit('set', reach.options !== 'none');
-    inherit('shopt', reachOf(env, exported('BASHOPTS')).options !== 'none');
-    // bash runs the file an exported BASH_ENV names before the string: what it sets is not known, as for startup files.
-    const bashEnv = st.variables.get('BASH_ENV');
-    if (this.bash && bashEnv && bashEnv.set !== 'off' && bashEnv.value !== '') startup = true;
-    if (startup) {
-      st = this.opaque(st);
-      // (What they run is not read: nothing is trusted.)
-      if (!this.blind) this.walkAgain('another shell runs its startup files first');
-      const vars = new Map<string, VariableState>();
-      for (const [name, v] of outer.variables) if (!st.variables.has(name)) vars.set(name, { declared: 'unknown', set: 'unknown', attrs: {}, at: v.at });
-      const fns = new Map<string, FunctionState>();
-      for (const [name, f] of outer.functions) if (!st.functions.has(name)) fns.set(name, { state: 'unknown', def: f.def, exported: 'unknown', readonly: 'off', imported: 'startup' });
-      st = { ...st, variables: st.variables.withAll(vars), functions: st.functions.withAll(fns) };
-    }
-    return st;
-  }
-
   /** Records the function definitions and the `alias` commands under `root`; gives the nodes of `types` there. */
-  private collectDefinitions(root: SyntaxNode, types = ['function_definition', 'command']): SyntaxNode[] {
+  collectDefinitions(root: SyntaxNode, types = ['function_definition', 'command']): SyntaxNode[] {
     const nodes = descendants(root, types);
     for (const f of nodes) {
       if (f.type !== 'function_definition') continue;
@@ -663,12 +596,12 @@ export class Walker {
     switch (n.type) {
       case 'command': return assignmentsOnly(n) ? this.assignments(n, st) : this.command(n, st);
       case 'extended_test':
-        this.substitutions(n, st);
-        return this.defaults(n, st);
+        this.expansions.substitutions(n, st);
+        return this.expansions.defaults(n, st);
       case 'arithmetic_command': {
-        this.substitutions(n, st);
+        this.expansions.substitutions(n, st);
         // (`(( ))` with nothing in it is not decided.)
-        const r = this.conditions.arithStatus(n.namedChildren, this.defaults(n, st));
+        const r = this.conditions.arithStatus(n.namedChildren, this.expansions.defaults(n, st));
         return withStatus(r.st, n.namedChildren.length ? r.status : undefined);
       }
       case 'negated_command': return this.quietly(() => this.sequence(n.children, st));
@@ -678,9 +611,9 @@ export class Walker {
         // A compound command makes its redirections first; a simple command, whose redirections are its own, expands its
         // words first (see `redirections`), and assignments alone are made before them (see `assignments`).
         const redirs = redirectionsOf(n);
-        for (const r of redirs) this.substitutions(r, st);
+        for (const r of redirs) this.expansions.substitutions(r, st);
         // (A subshell makes them in its own process: `( : ) > $(( n = 3 ))` leaves n.)
-        st = this.fdVariables(redirs, this.expandAll(redirs, st, field(n, 'body')!.type === 'subshell' ? 'on' : 'off'));
+        st = this.expansions.fdVariables(redirs, this.expansions.expandAll(redirs, st, field(n, 'body')!.type === 'subshell' ? 'on' : 'off'));
         return this.conditions.mayNotRun(redirs, st, this.sequence(n.children.filter((c) => c.field !== 'redirect'), st));
       }
       case 'subshell':
@@ -712,14 +645,14 @@ export class Walker {
       case 'if_statement': return this.ifStatement(n, st);
       case 'case_statement': {
         const before = st;
-        this.substitutions(field(n, 'value')!, st);
-        st = this.defaults(field(n, 'value')!, st);
+        this.expansions.substitutions(field(n, 'value')!, st);
+        st = this.expansions.defaults(field(n, 'value')!, st);
         // The patterns are expanded in turn until one matches: the first one always, the others may be.
         const items = n.namedChildren.filter((c) => c.type === 'case_item');
         items.flatMap((item) => fields(item, 'value')).forEach((v, i) => {
-          this.substitutions(v, st);
+          this.expansions.substitutions(v, st);
           // (Like a word that may not be expanded: an error there may not happen.)
-          const after = this.defaults(v, st, i === 0 ? 'off' : 'unknown');
+          const after = this.expansions.defaults(v, st, i === 0 ? 'off' : 'unknown');
           st = i === 0 || after === st ? after : merge([st, after], this.posix);
         });
         const runs = this.conditions.caseRuns(n, items, before);
@@ -744,7 +677,7 @@ export class Walker {
           if (tested.length) {
             const at = merge([st, ...tested], this.posix);
             for (const v of fields(item, 'value')) {
-              const after = this.defaults(v, at, 'unknown');
+              const after = this.expansions.defaults(v, at, 'unknown');
               if (after !== at) st = merge([st, after], this.posix);
             }
           }
@@ -770,7 +703,7 @@ export class Walker {
       case 'for_statement': case 'select_statement': return this.forStatement(n, st);
       case 'c_style_for_statement': {
         // The initializer, then the condition, the body and the update, again and again; the loop ends after a condition.
-        for (const c of n.namedChildren) if (c.type !== 'do_group') this.substitutions(c, st);
+        for (const c of n.namedChildren) if (c.type !== 'do_group') this.expansions.substitutions(c, st);
         // (When the initializer may fail, bash runs neither the condition nor the update: what they assign may be.)
         let unsure = false;
         const part = (f: 'initializer' | 'update') => (s: ShellState): ShellState => this.arith.arithRun((x) => this.arith.arithScript(fields(n, f), x, unsure).st, s);
@@ -792,151 +725,6 @@ export class Walker {
     /* c8 ignore next 2 -- every statement type is handled above */
     return st;
   }
-
-  /**
-   * The state a command substitution `c` starts with: bash turns `set -e` off in it, unless inherit_errexit is on
-   * (POSIX mode turns it on). It says why (`errexitWhy`) when errexit is on or unknown around it.
-   */
-  private substitutionState(c: SyntaxNode, st: ShellState): ShellState {
-    if (c.type !== 'command_substitution' || !this.bash) return st;
-    const rest = withoutErrexitWhy(st);
-    const errexit = option(st, 'set', 'errexit');
-    if (errexit === 'off' || errexit === 'default') return rest;
-    const inherit = option(st, 'shopt', 'inherit_errexit');
-    if (inherit === 'on') return { ...rest, errexitWhy: option(st, 'set', 'posix') === 'on' ? 'posix' : 'inherit_errexit' };
-    return { ...rest, set: st.set.with('errexit', inherit === 'unknown' ? 'unknown' : 'off'), errexitWhy: 'off-in-substitution' };
-  }
-
-  /** Walks the command and process substitutions in `n` (not those of statements under it): each is a subshell. */
-  private substitutions(n: SyntaxNode, st: ShellState): void {
-    const sub = (c: SyntaxNode): void => {
-      this.record(c, st);
-      // A command substitution is read again when it runs: its aliases are those of the state then.
-      const outer = this.expand;
-      if (c.type === 'command_substitution') this.expand = st;
-      this.targets.push({ kind: 'subshell' });
-      try {
-        this.sequence(c.children, this.substitutionState(c, st));
-      } finally {
-        this.targets.pop();
-        this.expand = outer;
-      }
-    };
-    const visit = (x: SyntaxNode): void => {
-      for (const c of x.children) {
-        if (SUBSTITUTIONS.includes(c.type)) sub(c);
-        else if (!STATEMENTS.has(c.type)) visit(c);
-      }
-    };
-    if (SUBSTITUTIONS.includes(n.type)) sub(n);
-    else visit(n);
-  }
-
-  /**
-   * `${x:=word}` and `${x=word}` in the words of `n` set `x` (to a value not known here); an arithmetic expansion
-   * runs its assignments (`$(( n = 3 ))`), unless it is in an arithmetic expression, which runs it. Some run only
-   * when bash gets to them, so what they assign may be: in an operand of `${…}` (`${s:$(( k = 1 ))}`), on the right
-   * of `&&` or `||` in `[[ ]]`. The redirections of a program are expanded in its own process (`program`: whether
-   * `n` is one of them). An error in an arithmetic expansion discards the rest of the command (`ExpansionError`).
-   */
-  private defaults(n: SyntaxNode, st: ShellState, program: Tri = 'off'): ShellState {
-    let found = descendants(n, ['expansion', 'arithmetic_expansion']);
-    // An assignment expands its value before its subscript (`a[$(( i++ ))]=$(( j = i ))` gives j=0; not with `declare`).
-    const value = n.type === 'variable_assignment' && n.field !== 'argument' ? field(n, 'value') : undefined;
-    if (value) {
-      const inValue = (e: SyntaxNode): boolean => e.startIndex >= value.startIndex && e.endIndex <= value.endIndex;
-      found = [...found.filter(inValue), ...found.filter((e) => !inValue(e))];
-    }
-    for (const e of found) {
-      let skip = false;
-      let maybe = false;
-      for (let x = e; x !== n; x = x.parent!) {
-        const up = x.parent!;
-        if (SUBSTITUTIONS.includes(up.type) || (e.type === 'arithmetic_expansion' && ARITH_HOSTS.includes(up.type))) skip = true;
-        // (The word of `${y:-w}` is expanded only when `y` is not set or empty, of `${y:+w}` only when it is, and so on.)
-        const operand = up.type !== 'expansion' ? 'on' : e.type === 'arithmetic_expansion' ? 'unknown' : x === up.namedChildren[0] ? 'on' : this.conditions.operandRuns(up, st);
-        if (operand === 'off') skip = true;
-        if (operand === 'unknown' || (up.type === 'binary_expression' && x.field === 'right' && ['&&', '||'].includes(field(up, 'operator')!.type))) maybe = true;
-      }
-      if (skip || program === 'on') continue;
-      if (program === 'unknown') maybe = true;
-      let after: ShellState;
-      if (e.type === 'arithmetic_expansion') {
-        // (Whether it read values decisions do not trust: see `markAssumed`.)
-        const assumed = this.assumed;
-        this.assumed = false;
-        try {
-          const r = this.arith.arithScript(e.namedChildren, st);
-          after = r.st;
-          // (A value not known may come from an error: a division by 0, text that is no expression.)
-          if ((r.value === undefined || this.arith.unsure) && !numberOfLengths(e)) this.abort(st, false);
-        } catch (err) {
-          /* c8 ignore next -- only an arithmetic error is thrown on purpose */
-          if (!(err instanceof ArithError)) throw err;
-          const posix = this.builtins.posixMode(st);
-          throw new ExpansionError(maybe ? merge([st, err.st], this.posix) : err.st, !maybe && !this.assumed && posix !== 'unknown', posix !== 'off');
-        } finally {
-          this.assumed ||= assumed;
-        }
-      } else {
-        this.unsetError(e, st, maybe);
-        this.builtins.expansionFails(e, st);
-        after = this.builtins.checkedSet(this.defaultOf(e, st), e);
-      }
-      st = maybe && after !== st ? merge([st, after], this.posix) : after;
-    }
-    return st;
-  }
-
-  /**
-   * `${x?word}` of an unset `x` (`${x:?word}`: or empty) ends the shell (bash: "parameter null or not set"), when the
-   * state knows it is so; when that is not sure (a value decisions do not trust, a word that may not be expanded),
-   * the shell may end there.
-   */
-  private unsetError(e: SyntaxNode, st: ShellState, maybe: boolean): void {
-    const name = e.namedChildren[0];
-    const colon = e.children.some((c) => c.type === ':?');
-    if (name?.type !== 'variable_name' || !(colon || e.children.some((c) => c.type === '?'))) return;
-    const target = this.builtins.resolve(st, name.text);
-    const v = target === undefined ? undefined : st.variables.get(target);
-    if (!v || !(v.set === 'off' || (colon && v.set === 'on' && v.value === '')) || v.declared === 'unknown') return;
-    if (!maybe && this.trust.variable(name.text) && this.trust.variable(target!)) throw new ExpansionError(st, true, true);
-    this.jump('shell', undefined, st, false);
-  }
-
-  /** `${x:=word}` sets `x`. */
-  private defaultOf(e: SyntaxNode, st: ShellState): ShellState {
-    const name = e.namedChildren[0];
-    if (!e.children.some((c) => c.type === ':=' || c.type === '=') || name?.type !== 'variable_name') return st;
-    // (A variable the script has not set keeps a value from the environment.)
-    const prev = st.variables.get(name.text);
-    return this.builtins.setVariable(st, name.text, e, undefined, false, false, undefined, !prev || !!prev.kept);
-  }
-
-  /** `defaults` of each of `nodes`, in turn. */
-  private expandAll(nodes: readonly SyntaxNode[], st: ShellState, program: Tri = 'off'): ShellState {
-    for (const r of nodes) st = this.defaults(r, st, program);
-    return st;
-  }
-
-  /** The redirections of the simple command `n`, made after its words are expanded (`program`: in a process of its own). */
-  private redirections(n: SyntaxNode, st: ShellState, program: Tri): ShellState {
-    const all = redirectionsOf(n);
-    return this.fdVariables(all, this.expandAll(all, st, program));
-  }
-
-  /**
-   * `{name}>file` puts the number of the fd it opens in `name`: set, to a value not known here (may be: a program makes
-   * its redirections in its own process).
-   */
-  private fdVariables(redirects: readonly SyntaxNode[], st: ShellState): ShellState {
-    for (const r of redirects) {
-      const name = /^\{([A-Za-z_]\w*)\}$/.exec(field(r, 'descriptor')?.text ?? '')?.[1];
-      if (name) st = merge([st, this.builtins.setVariable(st, name, r, undefined)], this.posix);
-    }
-    return st;
-  }
-
   /** The value of the variable `name` as text; null when it is unset (and `set -u` is off), undefined when not known here. */
   variableText(st: ShellState, name: string): string | null | undefined {
     this.arith.noteRead(st, name);
@@ -1138,8 +926,8 @@ export class Walker {
   private forStatement(n: SyntaxNode, st: ShellState): ShellState {
     const values = fields(n, 'value');
     for (const v of values) {
-      this.substitutions(v, st);
-      st = this.defaults(v, st);
+      this.expansions.substitutions(v, st);
+      st = this.expansions.defaults(v, st);
     }
     const variable = field(n, 'variable');
     // (A readonly variable: bash fails at the first word, and the body does not run; it may be.)
@@ -1331,17 +1119,17 @@ export class Walker {
    * redirections are made (their command substitutions run first). Its status is set by `statusOf`.
    */
   private assignments(n: SyntaxNode, st: ShellState): ShellState {
-    for (const r of redirectionsOf(n)) this.substitutions(r, st);
+    for (const r of redirectionsOf(n)) this.expansions.substitutions(r, st);
     for (const a of prefixAssignments(n)) {
       this.record(a, st);
-      this.substitutions(a, st);
-      st = this.builtins.assignNode(a, this.defaults(a, st), true);
+      this.expansions.substitutions(a, st);
+      st = this.builtins.assignNode(a, this.expansions.defaults(a, st), true);
     }
-    return withStatus(this.redirections(n, st, 'off'), st.status);
+    return withStatus(this.expansions.redirections(n, st, 'off'), st.status);
   }
 
   private command(n: SyntaxNode, st: ShellState): ShellState {
-    this.substitutions(n, st);
+    this.expansions.substitutions(n, st);
     const name = commandName(n);
     const nameNode = field(n, 'name')!;
     const assignments = prefixAssignments(n);
@@ -1351,15 +1139,15 @@ export class Walker {
     if (name === '' && !descendants(word, ['string', 'raw_string', 'ansi_c_string']).length && !['string', 'raw_string', 'ansi_c_string'].includes(word.type)) {
       for (const a of assignments) {
         this.record(a, st);
-        st = this.builtins.assignNode(a, this.defaults(a, st), true);
+        st = this.builtins.assignNode(a, this.expansions.defaults(a, st), true);
       }
-      return withStatus(this.redirections(n, st, 'off'), undefined);
+      return withStatus(this.expansions.redirections(n, st, 'off'), undefined);
     }
     // The words are expanded, then the values of the assignments, then the redirections are made.
     const before = st;
-    st = this.expandAll(n.namedChildren.filter((c) => !assignments.includes(c) && c.field !== 'redirect'), st);
+    st = this.expansions.expandAll(n.namedChildren.filter((c) => !assignments.includes(c) && c.field !== 'redirect'), st);
     const temps = temporaries(this, assignments, st);
-    st = this.redirections(n, this.expandAll(assignments, st), this.builtins.runsProgram(n, st));
+    st = this.expansions.redirections(n, this.expansions.expandAll(assignments, st), this.builtins.runsProgram(n, st));
     const unrun = st;
     // A prefix assignment to PATH empties the table of remembered paths too.
     if (assignments.some((a) => field(a, 'name')!.text === 'PATH')) st = this.builtins.forgetHashed(st);

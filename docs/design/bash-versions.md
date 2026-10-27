@@ -101,7 +101,7 @@ Left out: readline and completion changes, job notifications, messages, `$BASH` 
 ### 4.2 Steps for the model
 
 - Step 1 (done, #283): no subshell in the environment model, and the decisions trust nothing in a script that has one (src/semantics/trust.ts makes the script blind). The walk still drops what it changes, as for `$( )`; with nothing trusted, no condition or dead code is decided from that.
-- Step 3 (not started): the walk runs a `${ }` in the current shell with a function-like scope (locals, `return`), and keeps the state after it; `${| }` gives `REPLY`'s value. Then the trust rule can be lifted. src/semantics/walk/walker.ts is at its length ceiling, so this needs the substitution walk moved out first.
+- Step 3 (not started): the walk runs a `${ }` in the current shell with a function-like scope (locals, `return`), and keeps the state after it; `${| }` gives `REPLY`'s value. Then the trust rule can be lifted. src/semantics/walk/walker.ts was at its length ceiling, so the substitution walk moved out first, to src/semantics/walk/expansions.ts (with the start of another shell, to src/semantics/walk/child.ts).
 - Bash 5.2 mode does not change the model: the explanation of the construct is the one of 5.3, and the issue says what bash 5.2 does instead. Modelling the failure (the rest of the line and of the compound command around it is skipped, status 1, the shell exits under `set -e` and in POSIX mode) is left out: a script for bash 5.2 with this construct is broken anyway, and the issue says so.
 
 ## 5. Manual citations

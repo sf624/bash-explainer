@@ -54,7 +54,7 @@ export function openingBlinds(o: Opening): string | undefined {
 }
 
 /**
- * What another shell is started with (`bash -c`, `Walker.childStart`): the options of its invocation (`-k`, `-o name`,
+ * What another shell is started with (`bash -c`, `childStart`): the options of its invocation (`-k`, `-o name`,
  * `-O name`), and the variables it starts with. POSIX mode, which its walk follows from the start (`posix`: it starts
  * in it), is left out, and so is the POSIXLY_CORRECT it sets.
  */
