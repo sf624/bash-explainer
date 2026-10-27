@@ -259,7 +259,7 @@ describe('declaration builtins as plain commands, and related fixes', () => {
     }
   });
   it('every declaration builtin is tagged, including unset', () => {
-    for (const c of ['export a', 'readonly a', 'declare a', 'local a', 'unset a']) assert.strictEqual(one(c).name?.said.short, ' (builtin)', c);
+    for (const c of ['export a', 'readonly a', 'declare a', 'local a', 'unset a']) assert.strictEqual(one(c).name?.said.short, c.startsWith('declare') || c.startsWith('local') ? ' (builtin)' : ' (special builtin)', c);
   });
   it('>& file redirects stdout and stderr', () => {
     assert.match(one('cmd >& out').explanation, /stdout \(fd 1\) and stderr \(fd 2\)/);

@@ -250,7 +250,7 @@ The plan, and the list of what else changed in bash 5.3, are in [docs/design/bas
 
 ### What a command name is
 
-In both views of the panel, every command name has a badge after it: keyword, builtin, function, alias or program (a program's badge has a dashed edge). When another command looks the name up, the badge says so: `sudo echo hi` shows `echo` as a program, run by `sudo`. A subcommand (`git commit`) has none: bash does not look it up.
+In both views of the panel, every command name has a badge after it: keyword, builtin, special builtin, function, alias or program (a program's badge has a dashed edge). A POSIX special builtin (`:`, `.`, `break`, `continue`, `eval`, `exec`, `exit`, `export`, `readonly`, `return`, `set`, `shift`, `source`, `times`, `trap`, `unset`: the list of `enable -s` in bash 5.2) says "special builtin" (`特殊組み込み`) where the other builtins say "builtin"; its tooltip says what the class means. The hover, Copy as Markdown and the command line end its row with " (special builtin)". When another command looks the name up, the badge says so: `sudo echo hi` shows `echo` as a program, run by `sudo`. A subcommand (`git commit`) has none: bash does not look it up.
 
 A name that is also something else gets one muted line, with the code that runs the other meaning:
 

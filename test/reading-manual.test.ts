@@ -346,10 +346,14 @@ describe('the reading tree as the Bash manual reads the builtins (chapter 4)', (
       for (const name of names) {
         const n = find(reading(name === '[' ? '[ x ]' : `${name} x`), name, 'commandName');
         assert.deepStrictEqual(n.refs, ['3.7.1', '3.7.2', section, ...(SPECIAL.has(name) ? ['4.4'] : [])], name);
-        assert.strictEqual(n.name!.said.kind, 'builtin', name);
+        assert.strictEqual(n.name!.runs, 'builtin', name);
+        assert.strictEqual(n.name!.said.kind, SPECIAL.has(name) ? 'special builtin' : 'builtin', name);
         assert.strictEqual(/^a POSIX special builtin/.test(n.name!.said.title), SPECIAL.has(name), name);
       }
     }
+    // The class is the one bash lists with `enable -s` (bash 5.2; the same list as `SPECIAL`).
+    const listed = runBash('enable -s').stdout.split('\n').filter(Boolean).map((l) => l.replace(/^enable /, '')).sort();
+    assert.deepStrictEqual(listed, [...SPECIAL].sort());
     // (In bash's POSIX mode, a function cannot have the name of a special builtin.)
     for (const name of Object.values(CHAPTER4).flat().filter((x) => /^[a-z]/.test(x))) {
       assert.strictEqual(/is a special builtin/.test(runBash(`set -o posix; ${name}() { :; }`).stderr), SPECIAL.has(name), name);
