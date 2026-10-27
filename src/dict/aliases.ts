@@ -38,6 +38,19 @@ export function impliedWords(name: string): string[] {
 }
 
 /**
+ * The dictionary's name of the spec `lookupCommand` gives a program `name` (docs/design/basis-spec-convention.md,
+ * 1.1): a name of the table, the program it is an alias of (`egrep` is `grep`), `bash` for bash by a name with its
+ * version (`bash5.2`), `sh` for a shell read with the options of `sh` (`dash`, `zsh`, `posh`); else the name itself
+ * (`/bin/kill`: the program of a builtin's name). Only for a name `lookupCommand` finds (`busybox` is none).
+ */
+export function specName(name: string): string {
+  const base = name.slice(name.lastIndexOf('/') + 1);
+  if (Object.prototype.hasOwnProperty.call(commands, base)) return base;
+  const shell = shellFromName(base);
+  return aliasOf(base)?.as ?? (shell === 'bash' ? 'bash' : shell ? 'sh' : base);
+}
+
+/**
  * The spec of a command name: a builtin, `/bin/kill` (a path runs the program of a builtin's name), a command,
  * an alias of the table, or a shell other than bash (`dash`, `zsh`, `ksh93`, `mksh`…: the name mapping of
  * dialect.ts) that takes the options of `sh`. `busybox` is no shell by itself: its applet is its first argument.
