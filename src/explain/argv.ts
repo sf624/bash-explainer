@@ -38,6 +38,7 @@ import type { StepKind } from '../semantics/words';
 import { globOff, NO_SPEC, resolve, shoptAt, specFor, wordAt } from './reads';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
+import { inSubshell } from './where';
 import { braceVarNote, braceWord, globChildren, globNotes, tilde, tildeNote, valueNote, word } from './words';
 
 /** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
@@ -571,10 +572,15 @@ function unsetOperand(cx: Explainer, nodes: SyntaxNode[], word: number, item: Op
         text = cx.s(`変数 \`${name}\` は読み取り専用なので削除されない（エラー、終了ステータス 1）`, `The variable \`${name}\` is read-only, so it is not unset (an error, status 1)`);
       } else if (readonly === 'unknown') {
         text += cx.s(`。ただし、この前の一部の経路では読み取り専用になっていて、そこでは削除されずエラーになる（終了ステータス 1）`, `. But some paths before here make it read-only, and there it is not unset (an error, status 1)`);
-      } else if (kind !== 'function' && space !== 'nameref' && unsetEndsSpecial(name)) {
-        // (`RANDOM`, `SECONDS`…: bash's own behaviour ends with it, src/semantics/vars.ts.)
-        cx.note(fact(cx.lang, 'unset-ends-special', { name }), a);
-        text += cx.s(`。\`${name}\` の bash の特別な働きもなくなる（あとで代入しても普通の変数）`, `. \`${name}\` also loses what bash does with it (set again, it is a plain variable)`);
+      } else if (kind !== 'function' && space !== 'nameref' && unsetEndsSpecial(name) && !cx.state.local(a, name)) {
+        // (`RANDOM`, `SECONDS`…: bash's own behaviour ends with it, src/semantics/vars.ts; in a subshell, there only.
+        // Not a local of a function, `local RANDOM`, which is a plain variable: the one outside keeps it.)
+        const sub = inSubshell(cx, a);
+        const subshell = sub?.sure ? sub.why : undefined;
+        cx.note(fact(cx.lang, 'unset-ends-special', { name, subshell }), a);
+        text += subshell
+          ? cx.s(`。このサブシェルでは \`${name}\` の bash の特別な働きもなくなる（そこであとで代入しても普通の変数）`, `. In this subshell, \`${name}\` also loses what bash does with it (set again there, it is a plain variable)`)
+          : cx.s(`。\`${name}\` の bash の特別な働きもなくなる（あとで代入しても普通の変数）`, `. \`${name}\` also loses what bash does with it (set again, it is a plain variable)`);
       }
     }
   }

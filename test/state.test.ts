@@ -1195,3 +1195,24 @@ describe('shell state: what decisions trust (src/semantics/trust.ts, docs/design
     assert.strictEqual(inner(`export x=1\nbash -l -c '[ "$x" = 1 ] && :'`), undefined);
   });
 });
+
+describe('the variables a statement sets as locals (StateModel.local)', () => {
+  /** Whether the command `text` of `src` sets `name` only as a local of the function that runs it. */
+  const local = (src: string, text: string, name: string): boolean => {
+    const tree = parser.parse(src);
+    return shellState(tree).local(descendants(tree.root, ['command']).find((c) => c.text === text)!, name);
+  };
+  it('tells a local apart from the variable outside, as bash scopes them', () => {
+    // A declaration in a function, and a later assignment or `unset` there; a function its caller's local reaches.
+    assert.ok(local('f() { local RANDOM=3; }; f', 'local RANDOM=3', 'RANDOM'));
+    assert.ok(local('f() { declare RANDOM; RANDOM=5; }; f', 'RANDOM=5', 'RANDOM'));
+    assert.ok(local('f() { local RANDOM; unset RANDOM; }; f', 'unset RANDOM', 'RANDOM'));
+    assert.ok(local('g() { RANDOM=5; }; f() { local RANDOM; g; }; f', 'RANDOM=5', 'RANDOM'));
+    // Not one outside a function, nor `declare -g`, nor one a call sets as a local and another as the shell's own.
+    assert.ok(!local('RANDOM=5', 'RANDOM=5', 'RANDOM'));
+    assert.ok(!local('f() { declare -g RANDOM=5; }; f', 'declare -g RANDOM=5', 'RANDOM'));
+    assert.ok(!local('g() { RANDOM=5; }; f() { local RANDOM; g; }; f; g', 'RANDOM=5', 'RANDOM'));
+    // (A command that does not set it.)
+    assert.ok(!local('f() { local RANDOM; echo $RANDOM; }; f', 'echo $RANDOM', 'RANDOM'));
+  });
+});

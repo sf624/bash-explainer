@@ -165,13 +165,24 @@ export const MESSAGES = {
   'unset-readonly': failure<{ name: string }>(['4.1', '4.2'], ({ name }) => [
     `変数 \`${name}\` は読み取り専用なので、\`unset\` はエラーになり（\`cannot unset: readonly variable\`、終了ステータス 1）、\`${name}\` は削除されません`,
     `The variable \`${name}\` is read-only, so \`unset\` fails (\`cannot unset: readonly variable\`, status 1) and \`${name}\` stays`]),
-  // (A variable bash makes read-only, `UID`, or the script: `readonly x`. Bash says so and goes on; in POSIX mode an
-  // assignment that is not before a command name ends the script.)
-  'assign-readonly': failure<{ name: string }>(['3.4', '4.1'], ({ name }) => [
-    `変数 \`${name}\` は読み取り専用なので、この代入はエラーになり（\`readonly variable\`）、\`${name}\` の値は変わりません`,
-    `The variable \`${name}\` is read-only, so this assignment fails (\`readonly variable\`) and \`${name}\` keeps its value`]),
-  // (`RANDOM`, `SECONDS` and the other variables the manual says "lose their special properties" when unset.)
-  'unset-ends-special': note<{ name: string }>(['5.2'], ({ name }) => [
+  // (A variable bash makes read-only, `UID`, or the script: `readonly x`. `then`: what bash does next, when it is
+  // known (bash, not in POSIX mode, where an assignment that is not before a command name ends the script): an
+  // assignment of its own abandons the command of the script it is in, or ends the subshell it runs in; one before a
+  // command name (`UID=0 echo hi`) leaves the command to run.)
+  'assign-readonly': failure<{ name: string; then?: 'abandons' | 'subshell' | 'runs' }>(['3.4', '4.1'], ({ name, then }) => [
+    `変数 \`${name}\` は読み取り専用なので、この代入はエラーになり（\`readonly variable\`）、\`${name}\` の値は変わりません${then === 'abandons'
+      ? '。bash はそれを含むスクリプトのコマンドの残り（この行、または囲む繰り返しや関数呼び出し）を中断し、次のコマンドから続けます（終了ステータス 1）'
+      : then === 'subshell' ? '。サブシェルはそこで終わります（終了ステータス 1）'
+        : then === 'runs' ? '。コマンドは、この代入なしで実行されます' : ''}`,
+    `The variable \`${name}\` is read-only, so this assignment fails (\`readonly variable\`) and \`${name}\` keeps its value${then === 'abandons'
+      ? '; bash also abandons the rest of the command of the script it is in (the line, or the loop or function call around it) and goes on with the next one, status 1'
+      : then === 'subshell' ? '; the subshell ends there, status 1'
+        : then === 'runs' ? '; the command still runs, without it' : ''}`]),
+  // (`RANDOM`, `SECONDS` and the other variables the manual says "lose their special properties" when unset;
+  // `subshell`: why the `unset` runs in a subshell, which alone loses it.)
+  'unset-ends-special': note<{ name: string; subshell?: string }>(['5.2'], ({ name, subshell }) => subshell ? [
+    `\`${name}\` は \`unset\` すると、このサブシェル（${subshell}）では bash の特別な働きがなくなり、あとで値を代入しても普通の変数になります（外のシェルの \`${name}\` はそのまま）`,
+    `Once unset, \`${name}\` loses what bash does with it in this subshell (${subshell}): set again there, it is a plain variable (the shell outside keeps its \`${name}\`)`] : [
     `\`${name}\` は \`unset\` すると bash の特別な働きがなくなり、あとで値を代入しても普通の変数になります`,
     `Once unset, \`${name}\` loses what bash does with it: set again later, it is a plain variable`]),
   // (`stops`: in dash and busybox ash, which stop the shell that runs it there, the script, a subshell (which ends
