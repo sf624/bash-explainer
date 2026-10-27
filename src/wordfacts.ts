@@ -5,7 +5,7 @@ import { featureWorks, type Shell } from './dialect';
 import { builtins } from './dict/builtins';
 import { parseExpansion } from './expansion';
 import { args, commandName, pathCommand, runCommands } from './pitfalls';
-import { replaceNode, replaceSpan, type Rewrite } from './rewrite';
+import { replaceNode, replaceSpan, type Rewrite, stringShell } from './rewrite';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
 import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
@@ -115,11 +115,10 @@ function throughShell(n: SyntaxNode, vars: readonly string[], v: string, model: 
   };
   const r = resolveName(model, name.text, name, { shell, command: true });
   if (r.kind === 'function' || r.kind === 'alias' || (r.kind === 'builtin' && !builtins[r.name].program)) return { rewrite: { code: `${v}=…; ${name.text} … "$${v}"`, edits: [] }, apart: true };
-  const program = !shell ? 'bash' : shell;
-  const same = r.kind === 'file' || (r.kind === 'builtin' && (shell !== 'sh' || (!!builtins[r.name].prints && !words.some((w) => /^['"]?-|%[qb]/.test(w.text)))));
+  const program = r.kind === 'file' || r.kind === 'builtin' ? stringShell(shell, name.text, words.map((w) => w.text)) : undefined;
   const among = redirectionsOf(n).some((d) => d.startIndex < last.endIndex && d.endIndex > name.startIndex);
   const script = words.map(inner);
-  if (!same || among || !PLAIN.test(name.text) || script.includes(undefined)) return { rewrite: { code: `${program} -c '… "$${v}"'`, edits: [] }, apart: false };
+  if (!program || among || !PLAIN.test(name.text) || script.includes(undefined)) return { rewrite: { code: `${shell ?? 'bash'} -c '… "$${v}"'`, edits: [] }, apart: false };
   return { rewrite: replaceSpan(name, last, `${program} -c '${[name.text, ...script].join(' ')}'`), apart: false };
 }
 

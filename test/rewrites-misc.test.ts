@@ -5,42 +5,56 @@
 // it raises no fact of the same id. `sudo` is a stand-in that runs its command through `env`.
 import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
+import type { Shell } from '../src/dialect';
 import type { FactId } from '../src/messages';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { factsOf, programs, RECORDERS, rewrites, run } from './support/rewrites';
 
 const parser = createUnbashParser();
-const fix = (src: string, id: FactId): string[] => rewrites(src, id).map(([, s]) => s);
+const fix = (src: string, id: FactId, shell?: Shell): string[] => rewrites(src, id, shell).map(([, s]) => s);
 const codes = (src: string, id: FactId): string[] => rewrites(src, id).map(([c]) => c);
 const SYNTAX = '"$BASH" -n f.sh || echo @syntax; ';
 
 describe('the rewrite of `wrapper-assignment-expanded-first`', () => {
   const ID = 'wrapper-assignment-expanded-first';
-  it('puts the command and its arguments in the string of `sh -c`', () => {
-    assert.deepStrictEqual(rewrites('sudo v=1 echo got $v', ID), [["sh -c 'echo got $v'", "sudo v=1 sh -c 'echo got $v'"]]);
+  it('puts the command and its arguments in the string of the script\'s own shell', () => {
+    assert.deepStrictEqual(rewrites('sudo v=1 echo got $v', ID), [["bash -c 'echo got $v'", "sudo v=1 bash -c 'echo got $v'"]]);
     // (Quotes inside the string are made safe; the quotes the author wrote stay as they are; `${v}` is the same variable.)
-    assert.deepStrictEqual(fix("sudo v=1 printf '%s|' \"a b\" \"${v}\"\necho x", ID), ["sudo v=1 sh -c 'printf '\\''%s|'\\'' \"a b\" \"${v}\"'\necho x"]);
-    assert.deepStrictEqual(fix('f() {\n  sudo -E v=1 cmd ${v}x\n}', ID), ["f() {\n  sudo -E v=1 sh -c 'cmd ${v}x'\n}"]);
+    assert.deepStrictEqual(fix("sudo v=1 printf '%s|' \"a b\" \"${v}\"\necho x", ID), ["sudo v=1 bash -c 'printf '\\''%s|'\\'' \"a b\" \"${v}\"'\necho x"]);
+    assert.deepStrictEqual(fix('f() {\n  sudo -E v=1 cmd ${v}x\n}', ID), ["f() {\n  sudo -E v=1 bash -c 'cmd ${v}x'\n}"]);
+    // (Before, `sh -c` in every script: dash's `echo` prints `-e bar`, and its `printf` has no `%q`.)
+    assert.deepStrictEqual(fix('sudo FOO=bar echo -e $FOO', ID), ["sudo FOO=bar bash -c 'echo -e $FOO'"]);
+    assert.deepStrictEqual(fix("sudo FOO=bar printf '%q\\n' $FOO", ID), ["sudo FOO=bar bash -c 'printf '\\''%q\\n'\\'' $FOO'"]);
+    assert.deepStrictEqual(fix('#!/bin/dash\nsudo v=1 echo $v', ID, 'dash'), ["#!/bin/dash\nsudo v=1 dash -c 'echo $v'"]);
+  });
+  it('in sh, which may be dash: only a program, or `echo` and `printf` with no option and no `%q` or `%b`', () => {
+    assert.deepStrictEqual(fix('#!/bin/sh\nsudo v=1 ./show $v', ID, 'sh'), ["#!/bin/sh\nsudo v=1 sh -c './show $v'"]);
+    assert.deepStrictEqual(fix('#!/bin/sh\nsudo v=1 echo got $v', ID, 'sh'), ["#!/bin/sh\nsudo v=1 sh -c 'echo got $v'"]);
+    for (const src of ['#!/bin/sh\nsudo FOO=bar echo -e $FOO', "#!/bin/sh\nsudo FOO=bar printf '%q\\n' $FOO", '#!/bin/sh\nsudo FOO=1 test -n $FOO']) {
+      const [f] = factsOf(src, ID, 'sh');
+      assert.strictEqual(f.rewrite, undefined, src);
+      assert.match(f.text, /go through a shell: `sudo FOO=… sh -c '…'`$/, src);
+    }
   });
   it('is said, but not carried as edits, where the string would be expanded by another shell than this one', () => {
     // (`$HOME` and `$(…)` are expanded here now; in the string, the new shell would expand them.)
     for (const src of ['sudo v=1 echo $v $HOME', 'sudo v=1 echo $v $(date)', 'sudo v=1 echo `date` $v', 'sudo v=1 echo ${v:-x}']) {
       const [f] = factsOf(src, ID);
       assert.strictEqual(f.rewrite, undefined, src);
-      assert.match(f.text, /go through a shell: `sudo v=… sh -c '.*'`$/, src);
+      assert.match(f.text, /go through a shell: `sudo v=… bash -c '.*'`$/, src);
     }
     // (And in a string another command reads as a script, where the code would need quoting.)
     const [g] = factsOf("bash -c 'sudo v=1 echo got $v'", ID);
     assert.strictEqual(g.rewrite, undefined);
-    assert.match(g.text, /go through a shell: `sudo v=… sh -c 'echo got \$v'`$/);
+    assert.match(g.text, /go through a shell: `sudo v=… bash -c 'echo got \$v'`$/);
   });
   it('is what the note says', () => {
-    assert.match(factsOf('sudo v=1 echo got $v', ID)[0].text, /go through a shell: `sudo v=… sh -c 'echo got \$v'`$/);
+    assert.match(factsOf('sudo v=1 echo got $v', ID)[0].text, /go through a shell: `sudo v=… bash -c 'echo got \$v'`$/);
     const ja = new Analyzer('ja').explainLine(parser.parse('sudo v=1 echo got $v'), 0).facts!.find((f) => f.id === ID)!;
-    assert.match(ja.text, /設定した値を使うなら `sudo v=… sh -c 'echo got \$v'` のようにシェル経由にします$/);
+    assert.match(ja.text, /設定した値を使うなら `sudo v=… bash -c 'echo got \$v'` のようにシェル経由にします$/);
   });
 
-  const inputs = ['echo got $v', 'echo got "$v"', "printf '%s|' \"a b\" $v"].map((c) => `sudo v=1 ${c}\n`);
+  const inputs = ['echo got $v', 'echo got "$v"', "printf '%s|' \"a b\" $v", 'echo -e "|$v|"'].map((c) => `sudo v=1 ${c}\n`);
   const states = [['v unset', 'unset v\n'], ['v set before', 'v=old\n']];
   for (const { name, program } of programs) {
     for (const cmd of inputs) {
