@@ -16,10 +16,11 @@
 // A values row can be about dash (`"shell": "dash"`) or sh (`"shell": "sh"`: dash, and `bash --posix`, which sh is
 // on systems where it is not dash). dash reads no function from the environment, so it gets `__probe` defined at the
 // start of the first line (`__probe() { …; }; `), which keeps the lines of the snippet where they are.
-import { execFile, spawnSync } from 'child_process';
+import { execFile, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { BashRelease, ProbeCopy } from '../../src/basis';
 
 /** The bash the probes run: `$BASH_EXPLAINER_BASH`, else `bash` on PATH. */
 export const PROBE_BASH = process.env.BASH_EXPLAINER_BASH || 'bash';
@@ -372,6 +373,14 @@ export interface ProbeRow {
   shell?: 'dash' | 'sh';
   /** A row of a construct of bash 5.3 (`${ cmd; }`): run with `PROBE_BASH53`, and kept as recorded without it. */
   bash?: '5.3';
+  /**
+   * A command that shows the reader what the row checks, in their terminal (docs/design/basis.md): `code` as they
+   * would type it, starting a bash of its own (`bash -c '…'`) so that it prints the same from zsh, and `output`, what
+   * it printed (stdout and stderr, as a terminal shows them; `tryOutput`). scripts/record-probes.ts writes `output`
+   * and the copy src/basis-probes.json, which the explanations read; test/probe.test.ts runs `code` again. A row with
+   * a try-it has an `id`.
+   */
+  try?: { code: string; output?: string };
   facts?: unknown;
 }
 
@@ -430,6 +439,69 @@ export function hasRequired(row: ProbeRow): boolean {
 export const PROBE_DIR = path.join(__dirname, '..', 'fixtures', 'probes');
 export const probeFile = (kind: ProbeKind): string => path.join(PROBE_DIR, `${kind}.json`);
 export const readProbeTable = (kind: ProbeKind): ProbeRow[] => JSON.parse(fs.readFileSync(probeFile(kind), 'utf8')) as ProbeRow[];
+
+/** The path of a program: `name` itself when it has a `/`, else the first on PATH. */
+function programPath(name: string): string {
+  if (name.includes('/')) return path.resolve(name);
+  const dir = (process.env.PATH ?? '').split(':').find((d) => d && fs.existsSync(path.join(d, name)));
+  if (!dir) throw new Error(`${name} is not on PATH`);
+  return path.join(dir, name);
+}
+
+/**
+ * What a row's try-it prints, as the reader's terminal shows it: `code` run by `bash --norc --noprofile -c` (the
+ * reader's shell) in a fresh directory holding FILES, with the environment of the probes, and the row's bash first on
+ * PATH as `bash` (so `bash -c '…'` in the code runs it). stdout and stderr go to one file, in the order they are
+ * written; the last newline is dropped, and the directory is written as BOX. On a timeout the process group is killed.
+ */
+export function tryOutput(row: ProbeRow, timeout = 5000): Promise<string> {
+  const program = programPath(row.bash === '5.3' ? PROBE_BASH53! : PROBE_BASH);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-try-'));
+  const [box, bin, out] = ['box', 'bin', 'out'].map((d) => path.join(root, d));
+  fs.mkdirSync(box);
+  fs.mkdirSync(bin);
+  for (const f of FILES) {
+    if (f.endsWith('/')) fs.mkdirSync(path.join(box, f));
+    else fs.writeFileSync(path.join(box, f), '');
+  }
+  fs.symlinkSync(program, path.join(bin, 'bash'));
+  // (`pwd` prints the directory with no symbolic link in it.)
+  const real = fs.realpathSync(box);
+  const fd = fs.openSync(out, 'w');
+  return new Promise((resolve, reject) => {
+    const child = spawn(program, ['--norc', '--noprofile', '-c', row.try!.code], {
+      cwd: box, env: { ...PROBE_ENV, PATH: `${bin}:${PROBE_ENV.PATH}` }, stdio: ['ignore', fd, fd], detached: true,
+    });
+    const timer = setTimeout(() => process.kill(-child.pid!, 'SIGKILL'), timeout);
+    child.on('exit', (_code, signal) => {
+      clearTimeout(timer);
+      fs.closeSync(fd);
+      const text = fs.readFileSync(out, 'utf8').split(real).join(BOX).split(box).join(BOX).replace(/\n$/, '');
+      fs.rmSync(root, { recursive: true, force: true });
+      if (signal === 'SIGKILL') reject(new Error(`the try-it timed out: ${row.try!.code}`));
+      else resolve(text);
+    });
+  });
+}
+
+/** The release a row runs in. */
+export const releaseOf = (row: ProbeRow): BashRelease => row.bash ?? '5.2';
+
+/** The copy of the rows with a try-it that the explanations read (src/basis-probes.json), from the tables. */
+export function basisCopy(): Record<string, ProbeCopy> {
+  const copy: Record<string, ProbeCopy> = {};
+  for (const kind of PROBE_KINDS) {
+    for (const row of readProbeTable(kind)) {
+      if (!row.try) continue;
+      if (!row.id || row.try.output === undefined) throw new Error(`${kind}: ${row.snippet}: a row with a try-it needs an id and a recorded output (scripts/record-probes.ts)`);
+      copy[`${kind}#${row.id}`] = { manual: row.manual, bash: releaseOf(row), try: { code: row.try.code, output: row.try.output } };
+    }
+  }
+  return copy;
+}
+
+/** Where the copy is. */
+export const BASIS_COPY = path.join(__dirname, '..', '..', 'src', 'basis-probes.json');
 
 /** Runs `tasks` with at most `limit` at a time. */
 export async function pooled<T>(tasks: (() => Promise<T>)[], limit = Math.max(4, os.cpus().length * 2)): Promise<T[]> {

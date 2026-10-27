@@ -311,12 +311,17 @@
     "manual": "3.7.5",
     "snippet": "exit 256",
     "errexit": false,
+    "try": {
+      "code": "bash -c 'exit 300'; echo $?",
+      "output": "44"
+    },
     "facts": {
       "ran": [],
       "status": 0
     }
   },
   {
+    "id": "exit-negative",
     "manual": "3.7.5",
     "snippet": "exit -1",
     "errexit": false,

@@ -3790,9 +3790,14 @@
     }
   },
   {
+    "id": "unset-fv",
     "manual": "4.1",
     "snippet": "f() { :; }; x=1; unset -fv x f",
     "note": "unset -fv is an error: nothing is unset",
+    "try": {
+      "code": "bash -c 'f() { :; }; x=1; unset -fv x f; echo \"status $?, x=$x\"; type -t f'",
+      "output": "bash: line 1: unset: cannot simultaneously unset a function and a variable\nstatus 1, x=1\nfunction"
+    },
     "facts": {
       "end": {
         "variables": {
