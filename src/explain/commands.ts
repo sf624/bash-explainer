@@ -583,7 +583,7 @@ function timeIsProgram(st: ShellState): boolean {
 /** `time -p cmd` in POSIX mode: the program `time`, with its options and the command it runs (as a program). */
 function timeProgram(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode | undefined): Token {
   const time = token(n, 'time')!;
-  const words = [field(n, 'option')!, ...(cmd?.type === 'command' ? [field(cmd, 'name')!.namedChildren[0] ?? field(cmd, 'name')!, ...fields(cmd, 'argument')] : [])];
+  const words = [field(n, 'option')!, ...(cmd?.type === 'command' ? [field(cmd, 'name')!.namedChildren[0]!, ...fields(cmd, 'argument')] : [])];
   const kw = cx.tok(time, 'keyword', cx.s(
     'POSIX モードの bash は、`-` で始まる語が続く `time` を予約語として読まない: これはプログラムの `time`（ふつうは `/usr/bin/time`）を実行するコマンドで、関数や組み込みコマンドは実行できない（`cannot run`）',
     'In POSIX mode bash does not read `time` before a word that starts with `-` as the reserved word: this runs the program `time` (usually `/usr/bin/time`), which cannot run a function or a builtin (`cannot run`)')
