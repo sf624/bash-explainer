@@ -141,9 +141,21 @@ export function shown(v: string): string {
   return visible(v).replace(/\n/g, '\\n');
 }
 
-/** Whether the word model lets the word `n` have brace expansion here (not in a shell without it, as dash; src/semantics/words.ts). */
+/**
+ * Whether the word model lets the word `n` have brace expansion here (src/semantics/words.ts): not in a shell without
+ * it, as dash, nor after `set +B`. Where `set +B` is on some paths only, it may (see `bracesMaybeOff`).
+ */
 export function bracesHere(cx: Explainer, n: SyntaxNode): boolean {
-  return wordAt(cx, n)?.steps.find((s) => s.kind === 'brace')?.why !== 'dialect';
+  const step = wordAt(cx, n)?.steps.find((s) => s.kind === 'brace');
+  return step?.why !== 'dialect' && !(step?.why === 'braceexpand-off' && step.applies === false);
+}
+
+/** What to add where brace expansion of `n` may be off (`set +B` on some paths before): a parenthesis; else nothing. */
+export function bracesMaybeOff(cx: Explainer, n: SyntaxNode): string {
+  const step = wordAt(cx, n)?.steps.find((s) => s.kind === 'brace');
+  return step?.why === 'braceexpand-off' && step.applies === 'unknown'
+    ? cx.s('（ブレース展開が有効な場合。この前の一部の経路では `set +B` で無効になっていて、そのときは書いたままの1語）', ' (where brace expansion is on: `set +B` turns it off on some paths before, and there the word stays as it is)')
+    : '';
 }
 
 /** The words an unquoted word of plain text gives by brace expansion; undefined when it gives none (or too many to list). */
@@ -174,10 +186,10 @@ function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
   // `{01..10..3}`: a number with a leading 0 makes every number as wide as the widest.
   const pad = /\{-?0\d+\.\./.test(text) || /\.\.-?0\d+(?:\.\.|\})/.test(text);
   const parts = sequenceParts(cx, text).map((t) => fromEmbedded(t, n, { text, base: 0 }, 'shell'));
-  return cx.tok(n, 'expansion', words.length
+  return cx.tok(n, 'expansion', (words.length
     ? cx.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}${pad ? '（先頭が 0 の数があるので、桁数をそろえて 0 で埋める）' : ''}`,
       `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}${pad ? ' (a number with a leading 0 pads all of them with zeros to the same width)' : ''}`)
-    : cx.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`), parts);
+    : cx.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`)) + bracesMaybeOff(cx, n), parts);
 }
 
 /** A sequence expression of braces, `{x..y[..incr]}` (3.5.1): two integers, or two letters, and an integer step. */

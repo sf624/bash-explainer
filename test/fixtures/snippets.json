@@ -1066,6 +1066,7 @@
  "if . then 1",
  "if :; then\n  echo | while read l; do n=1; done\n  echo $n\nfi",
  "if [ \"\" -o \\( x \\) ]; then echo y; fi",
+ "if [ -n \"$x\" ]; then set +B; fi\n{echo,hi}",
  "if a; b",
  "if a; then IFS=,; fi\necho $x",
  "if a; then b; elif c; then d; else e; fi; case x in y) z ;; esac",
