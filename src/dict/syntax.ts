@@ -396,7 +396,7 @@ export const variableAssignments: Record<string, Text> = wordTable({
   BASH_ENV: tx('`export` すると、このスクリプトが起動する非対話の bash が、このファイルを先に読む', 'Exported, it makes a non-interactive bash this script starts read this file first'),
   BASH_XTRACEFD: based(tx('これ以降、`set -x` のトレースはこのファイルディスクリプタに書かれる（前に書いていたディスクリプタは開いたまま）', 'From here, `set -x` writes its trace to this file descriptor (the one it wrote to before stays open)'), 'xtracefd-old-stays-open'),
   EXECIGNORE: tx('これ以降、`PATH` でコマンドを探すとき、これらに一致するファイルは飛ばす', 'From here, the search in `PATH` skips the files that match'),
-  FUNCNEST: based(tx('これ以降、この深さを超える関数呼び出しはエラーになり、bash はそれを含むスクリプトのコマンドごと中断する（終了ステータス 1）', 'From here, a function call deeper than this is an error, and bash abandons the command of the script it is in (status 1)'), 'funcnest-status'),
+  FUNCNEST: based(tx('これ以降、この深さを超える関数呼び出しはエラーになり、bash はそれを含むスクリプトのコマンドごと中断する（終了ステータス 1。bash 5.3 では、`bash -c` の文字列ならシェルがそこで終わる）', 'From here, a function call deeper than this is an error, and bash abandons the command of the script it is in (status 1; in bash 5.3, a `bash -c` string ends there instead)'), 'funcnest-status'),
   GLOBIGNORE: tx(
     'これ以降、ファイル名の展開はこれらに一致する名前を除く。空でない値は `dotglob` も有効にする（`.` で始まる名前も一致するが、`.` と `..` は除く）',
     'From here, filename expansion leaves out the names that match; a value that is not empty also turns `dotglob` on (names starting with `.` match too, but never `.` and `..`)',

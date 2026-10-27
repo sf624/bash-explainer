@@ -5472,6 +5472,24 @@
     }
   },
   {
+    "id": "funcnest-string-53",
+    "manual": "5.2",
+    "bash": "5.3",
+    "snippet": "v=$(\"$BASH\" -c 'FUNCNEST=2; f() { f; }; f; echo same line\necho next line' 2>/dev/null)",
+    "note": "bash 5.3 ends a `bash -c` string at a call deeper than FUNCNEST (a script file goes on with its next line)",
+    "facts": {
+      "end": {
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
     "id": "path-hash",
     "manual": "5.1",
     "snippet": "hash -p /bin/ls ls; PATH=$PATH; hash -t ls",

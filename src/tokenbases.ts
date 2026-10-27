@@ -43,8 +43,8 @@ export const TOKEN_BASES = {
   // leaves the descriptor it named before open when it is given a new value.
   'xtracefd-old-stays-open': { kind: 'differs', probe: 'state#xtracefd-old-open' },
   // 5.2 `FUNCNEST`: "Function invocations that exceed this nesting level will cause the current command to abort." The
-  // status, 1, is not said.
-  'funcnest-status': { kind: 'checked', probe: 'state#funcnest-abandons' },
+  // status, 1, is not said, nor that bash 5.3 ends a `bash -c` string there (a script file goes on with its next line).
+  'funcnest-status': { kind: 'checked', probe: 'state#funcnest-abandons', also: ['state#funcnest-string-53'] },
   // 5.1 `PATH`, 3.7.2 and 4.1 `hash` say what the table of remembered commands is, not that an assignment to `PATH`
   // empties it.
   'path-forgets-hash': { kind: 'checked', probe: 'state#path-hash' },

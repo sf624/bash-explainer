@@ -554,7 +554,7 @@ The explanations of the parts of a line carry the same chip where their text say
 - `$COLUMNS` and `$LINES` are not set when bash starts: until a program ends at a terminal, only the environment gives them.
 - `$BASH_REMATCH` is empty after a match that fails; `${BASH_SOURCE[0]}` outside a function is the file running; a script has no `$HISTFILE`; `$OPTERR` is 1 at start, and `getopts` prints its messages unless it is 0.
 - `RANDOM=7` gives the same numbers each time.
-- `FUNCNEST=10`: a deeper call abandons the rest of the command, with status 1 (the manual: "the current command to abort").
+- `FUNCNEST=10`: a deeper call abandons the rest of the command, with status 1 (the manual: "the current command to abort"). In bash 5.3, a `bash -c` string ends there instead; a script file goes on with its next line.
 - `PATH=…` makes bash forget the commands `hash` remembered; `PWD=…` changes only the variable; unsetting `POSIXLY_CORRECT` turns POSIX mode off.
 - `local RANDOM=3` is a plain variable; bash ignores `LINENO=5` and `BASH_COMMAND=x` (the manual says so of `BASHPID` and others, not of these two).
 - An assignment to a read-only variable abandons the rest of the line, or ends a subshell, with status 1.
