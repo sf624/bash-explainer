@@ -442,12 +442,20 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     };
   };
 
+  /**
+   * Whether `c` is a part of a word bash reads: a quote, an expansion, a brace expression where bash expands it (not
+   * in dash, nor in the value of an assignment, `x={a,b}`: there its braces are text).
+   */
+  const isPart = (c: SyntaxNode): boolean =>
+    PARTS.has(c.type) && (c.type !== 'brace_expression' || cx.meaning(c)!.steps.find((s) => s.kind === 'brace')!.applies !== false);
+
   const word = (w: SyntaxNode, layer: Layer, kind: ShellKind): ReadingNode => {
     // (A word that is one part, a quote or an expansion, has that part under it, with its explanation.)
-    const one = PARTS.has(w.type);
+    const one = isPart(w);
     const n = shellNode(w, layer, kind, wordParts(w, layer), one ? new Set() : WORD_TOKENS);
-    // (What bash does to it that no part shows: brace and tilde expansion, splitting, globbing, a pattern's matching.)
-    n.refs = union(kind === 'argument' ? ['3.7.1'] : [], n.refs, expansionSections(cx.meaning(w)));
+    // (What bash does to it that no part shows: brace and tilde expansion, splitting, globbing, a pattern's matching.
+    // An item of a brace expression is a piece of the word, which cites them.)
+    if (w.parent!.type !== 'brace_expression') n.refs = union(kind === 'argument' ? ['3.7.1'] : [], n.refs, expansionSections(cx.meaning(w)));
     // A language in a word no command reads, which bash reads itself (the regex of `=~`), is under the word.
     if (w.parent!.type !== 'command' && w.parent!.type !== 'command_name') {
       for (const c of tokenAt(n.span, WORD_TOKENS)?.children ?? []) if (c.origin === 'embedded') language(n.children, c, 'bash');
@@ -457,14 +465,14 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
 
   /** The parts bash reads in a word: the word itself when it is one part; else its parts, and bash's tokens in its text. */
   const wordParts = (w: SyntaxNode, layer: Layer): ReadingNode[] => {
-    if (PARTS.has(w.type)) return [part(w, layer)];
+    if (isPart(w)) return [part(w, layer)];
     if (w.type === 'array') return w.namedChildren.flatMap((e) => node(e, layer));
     return withTokens(w, inner(w, layer), layer);
   };
 
   /** The parts under `n`, outermost first. */
   const inner = (n: SyntaxNode, layer: Layer): ReadingNode[] =>
-    n.namedChildren.flatMap((c) => (PARTS.has(c.type) ? [part(c, layer)] : inner(c, layer)));
+    n.namedChildren.flatMap((c) => (isPart(c) ? [part(c, layer)] : inner(c, layer)));
 
   /**
    * `parts` of `n`, with bash's tokens in its text that no part has: the parts of a glob (`*`, `.txt`), the escapes of
@@ -533,7 +541,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   const assignment = (a: SyntaxNode, layer: Layer, kind: 'assignment' | 'assignmentArgument'): ReadingNode => {
     const value = field(a, 'value');
     // (The elements of an array are words, each expanded: `a=(x "$y" *.txt)`.)
-    const parts = !value ? [] : value.type === 'array' ? wordParts(value, layer) : PARTS.has(value.type) ? [part(value, layer)] : withTokens(value, inner(value, layer), layer);
+    const parts = !value ? [] : value.type === 'array' ? wordParts(value, layer) : isPart(value) ? [part(value, layer)] : withTokens(value, inner(value, layer), layer);
     // (Its operator, `=` or `+=`, between the name and the value: 3.4.)
     const op = a.children.find((c) => !c.named && c.type.endsWith('='))!;
     const n = shellNode(a, layer, kind, [shellNode(field(a, 'name')!, layer, 'name', []), shellNode(op, layer, 'operator', []), ...parts], new Set(['assignment']));

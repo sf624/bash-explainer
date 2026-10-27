@@ -1,7 +1,7 @@
 // The words of a command as the argument interpreter (src/argv/interpret.ts) takes them: their value after
 // quote removal when it is known, the start that is known otherwise, and how many words they become.
-import { bracesWork, type Shell } from '../dialect';
-import { braceExpand } from '../examples/shellwords';
+import { bracesWork, type Shell } from '../shellfeatures';
+import { braceTexts } from '../semantics/brace';
 import { staticWordValue } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import type { ArgWord } from './interpret';
@@ -39,13 +39,9 @@ export function countOf(n: SyntaxNode, shell?: Shell): ArgWord['count'] {
   const many = (c: SyntaxNode): boolean => c.type === 'string' && c.namedChildren.some((e) => e.text === '$@' || /^\$\{[^}]*\[@\]\}$/.test(e.text));
   if (parts.some((c) => UNQUOTED_EXPANSION.has(c.type) || many(c))) return { min: 0 };
   if (parts.every(plainPart)) {
-    let words: string[] | undefined;
-    try {
-      words = bracesWork(n.text, shell) ? braceExpand(n.text) : undefined;
-    } catch {
-      // Too many words to list (`{1..100000}`).
-      return { min: 1 };
-    }
+    const words = bracesWork(n, shell) ? braceTexts([n]) : undefined;
+    // (Too many words to list: `{1..100000}`.)
+    if (words === null) return { min: 1 };
     // (`{a,b}*.txt`: each word is a glob, which gives at least one.)
     if (words && words.length !== 1) return words.some((w) => /(^|[^\\])[*?[]/.test(w)) ? { min: words.length } : { min: words.length, max: words.length };
     if (/(^|[^\\])[*?[]/.test(n.text)) return { min: 1 };

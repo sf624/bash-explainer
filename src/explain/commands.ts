@@ -34,10 +34,10 @@ import type { Explainer } from './context';
 import { commandExampleFor, unreadStdin, wordExample } from './examples';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
 import { redirectInfo, redirectParts } from './redirections';
-import { hostCommand, NO_SPEC, resolve, specFor } from './reads';
+import { hostCommand, NO_SPEC, resolve, specFor, unquotedWord } from './reads';
 import { statusRangeNote } from './status';
 import { shellEffectNote } from './where';
-import { braceWord, braceWords, bracesMaybeOff, shown } from './words';
+import { bracesHere, braceWord, braceWords, bracesMaybeOff, plainText, shown } from './words';
 
 interface CommandHead {
   /** `res`: what bash runs for the name (src/semantics/names.ts), whose facts the badge shows (src/namefacts.ts). */
@@ -278,7 +278,7 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
 
 function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedChildren[0]!): CommandHead {
   // `{echo,hi}` is a brace expansion first: the command is the first word it gives (`echo`), with the others as arguments.
-  const braced = isPlainWord(word) ? braceWords(cx, word, word.text) : undefined;
+  const braced = unquotedWord(word) !== undefined ? braceWords(cx, word) : undefined;
   if (braced?.length) {
     const head = commandHeadFor(cx, nameNode, word, braced[0]);
     head.explanation = cx.s(
@@ -305,7 +305,9 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
   const spelled = staticWordValue(word);
   const sv = spelled && spelled !== word.text ? spelled : undefined;
   const name = as ?? sv ?? (isPlainWord(word) ? word.text : nameNode.text);
-  if (sv === undefined && !isPlainWord(word) && word.type !== 'raw_string') {
+  // (A word of plain text with braces is the first word they give, `as`; where they do not expand, `{echo,hi}` in dash, it is a name as written.)
+  const plain = isPlainWord(word) || (plainText(word) && (as !== undefined || !bracesHere(cx, word)));
+  if (sv === undefined && !plain && word.type !== 'raw_string') {
     return {
       name, kind: 'command', nameTokens: cx.sub(word), refs: ['3.7.1'],
       explanation: cx.s('変数（展開結果）をコマンド名として実行する', 'Run the expanded value as a command'),

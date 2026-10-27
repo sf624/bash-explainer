@@ -1,5 +1,6 @@
-// The shells a script can be written for, and where each feature of bash works in them: a leaf module, so that
-// src/staticword.ts (which src/dialect.ts imports) reads the same table as the dialect checks.
+// The shells a script can be written for, and where each feature of bash works in them: a leaf module (but for the
+// syntax tree's helpers), so that src/staticword.ts (which src/dialect.ts imports) reads the same table as the dialect checks.
+import { braceKind, type SyntaxNode, wordBraces } from './syntax/tree';
 
 /** Shells a script can be written for. `sh` means "any POSIX sh" (dash, busybox ash, …). */
 export type Shell = 'bash' | 'sh' | 'dash' | 'ash' | 'yash' | 'ksh' | 'mksh' | 'zsh';
@@ -94,21 +95,18 @@ export function featureWorks(id: string, shell?: Shell): boolean {
   return !shell || (shell !== 'sh' && works(FEATURES[id], shell as RealShell));
 }
 
-/**
- * Whether the shell brace-expands the word of plain text `text` (one that has a brace expansion): every kind in it must
- * work there. (dash and POSIX sh have no brace expansion, mksh no ranges: `echo {a,b}` prints `{a,b}` in dash.)
- */
-export function bracesWork(text: string, shell?: Shell): boolean {
-  return (!/\{[^{}]*,[^{}]*\}/.test(text) || featureWorks('braceList', shell)) && (!/\{[^{}]*\.\.[^{}]*\}/.test(text) || featureWorks('braceRange', shell));
-}
+/** The feature of a brace expression: a list (`{a,b}`) or a sequence (`{1..3}`). */
+const braceFeature = (b: SyntaxNode): string => (braceKind(b) === 'sequence' ? 'braceRange' : 'braceList');
 
 /**
- * Whether `shell` may brace-expand the plain text `text`, which holds a `{`: the text has a kind of brace expansion the
- * shell has (dash: none; mksh: `{a,b}`, not `{1..3}`), or a `{` that is neither kind where the shell has one (not read here).
+ * Whether the shell brace-expands the word `n`: every kind of brace expression in it must work there. (dash and POSIX
+ * sh have no brace expansion, mksh no ranges: `echo {a,b}` prints `{a,b}` in dash.)
  */
-export function bracesMayWork(text: string, shell?: Shell): boolean {
-  const list = /\{[^{}]*,[^{}]*\}/.test(text);
-  const range = /\{[^{}]*\.\.[^{}]*\}/.test(text);
-  if (list || range) return (list && featureWorks('braceList', shell)) || (range && featureWorks('braceRange', shell));
-  return featureWorks('braceList', shell) || featureWorks('braceRange', shell);
+export function bracesWork(n: SyntaxNode, shell?: Shell): boolean {
+  return wordBraces(n).every((b) => featureWorks(braceFeature(b), shell));
+}
+
+/** Whether `shell` may brace-expand the word `n`: a kind of brace expression in it works there (dash: none; mksh: `{a,b}`, not `{1..3}`). */
+export function bracesMayWork(n: SyntaxNode, shell?: Shell): boolean {
+  return wordBraces(n).some((b) => featureWorks(braceFeature(b), shell));
 }

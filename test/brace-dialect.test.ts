@@ -4,7 +4,7 @@
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import { Analyzer } from '../src/analyzer';
-import type { Shell } from '../src/dialect';
+import { dialectNotes, type Shell } from '../src/dialect';
 import { shellState } from '../src/semantics/state';
 import { wordFields, wordMeaning } from '../src/semantics/words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -97,6 +97,26 @@ describe('what we say of a word with braces in a shell without them', () => {
     // A command name is not the first word of the expansion either: `{echo,hi}` is a word, so a file name.
     assert.ok(!/Brace expansion/.test(tokens('{echo,hi}', 'dash').map((x) => x.explanation).join('\n')));
     assert.match(tokens('{echo,hi}', 'bash').map((x) => x.explanation).join('\n'), /Brace expansion turns `\{echo,hi\}` into `echo hi`/);
+  });
+
+  it('reads braces that stay as text, with the quotes in them, and cites no brace expansion there', () => {
+    // (The word model: dash prints `{a,b}` for `{a,"b"}`; with a substitution in it, the value is not known.)
+    assert.deepStrictEqual(modelOf('echo {a,"b"}', '{a,"b"}', 'dash').fields, ['{a,b}']);
+    assert.strictEqual(modelOf('echo {a,$(x)}', '{a,$(x)}', 'dash').fields, undefined);
+    if (have('dash')) assert.deepStrictEqual(printed('dash', '{a,"b"}'), ['{a,b}']);
+    // (A command named `{echo,hi}` is a file of that name; the words of a `for` are words, a glob a glob.)
+    assert.match(tokens('{echo,hi}', 'dash')[0].explanation, /^Run the external command `\{echo,hi\}`/);
+    const words = tokens('for i in {a,b} x{c,d} {*.c,*.h}; do :; done', 'dash');
+    assert.deepStrictEqual(['{a,b}', 'x{c,d}'].map((w) => words.find((t) => t.label === w)!.refs), [undefined, undefined]);
+    assert.deepStrictEqual(words.find((t) => t.label === '{*.c,*.h}')!.refs, ['3.5.8']);
+  });
+
+  it('says brace expansion is not POSIX only where bash would expand the braces', () => {
+    const braceNote = (src: string) => dialectNotes(parser.parse(src), 0, 'sh', 'en').some((t) => /brace/.test(t));
+    // (Not in an assignment's value, a here-string or the word of `case`: bash keeps those braces as they are too.)
+    for (const src of ['x={1..3} y={a,b}', 'cat <<< {a,b}', 'case {a,b} in x) ;; esac']) assert.ok(!braceNote(src), src);
+    for (const src of ['echo {a,b}', 'echo x{1..3}', 'declare x={a,b}', 'for i in {a,b}; do :; done']) assert.ok(braceNote(src), src);
+    assert.deepStrictEqual(spawnSync('bash', ['-c', 'x={1..3}; cat <<< {a,b}; case {a,b} in "{a,b}") echo same;; esac; echo "$x"'], { encoding: 'utf8' }).stdout, '{a,b}\nsame\n{1..3}\n');
   });
 
   it('keeps the expansion of a range in mksh only for lists', () => {

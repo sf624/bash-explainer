@@ -64,9 +64,9 @@ describe('unset with a brace expansion', () => {
     assert.match(label(local, '{a,b}')!, /^If brace expansion takes place here, `local` takes each word it gives\. It may not \(`set \+B`/);
   });
   it('does not take a `$` in the braces as text (`{a,$v}b`)', () => {
-    // (unbash leaves `$v` as text in the word: bash expands `$vb` after the braces, and it is empty here.)
+    // (Once the braces are gone, bash reads `$vb`, which is empty here: the word model does not read the words again.)
     assert.strictEqual(runBash('ab=1 b=2 vb=; unset {a,$v}b; echo "[${ab-U}${b-U}]"').stdout, '[U2]\n');
-    const word = descendants(parser.parse('unset {a,$v}b').root, ['word']).find((w) => w.text === '{a,$v}b')!;
+    const word = descendants(parser.parse('unset {a,$v}b').root, ['word', 'concatenation', 'brace_expression']).find((w) => w.text === '{a,$v}b')!;
     assert.deepStrictEqual(wordFields(word, shellState(parser.parse('unset {a,$v}b'))), {});
     assert.strictEqual(label('unset {a,$v}b', '{a,$v}b'), 'The braces expand first, and each word is a name to unset (the words are not known here)');
     assert.strictEqual(label('declare {a,$v}b', '{a,$v}b'), 'The braces expand first, and `declare` takes each word (the words are not known here)');
@@ -141,20 +141,21 @@ describe('a declaration with a brace expansion', () => {
 describe('a word with a brace in dash', () => {
   it('lists the shells with no brace expansion as the dialect table does', () => {
     const none = (['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh', 'zsh', 'bash'] as const).filter((sh) => !featureWorks('braceList', sh) && !featureWorks('braceRange', sh));
-    const word = descendants(parser.parse('echo {a,b}').root, ['word']).find((w) => w.text === '{a,b}')!;
+    const word = descendants(parser.parse('echo {a,b}').root, ['word', 'concatenation', 'brace_expression']).find((w) => w.text === '{a,b}')!;
     const plain = (['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh', 'zsh', 'bash'] as const).filter((sh) => staticWordValue(word, false, sh) !== undefined);
     assert.deepStrictEqual(plain, none);
   });
   it('takes a brace as text where the shell has none of its kinds', () => {
-    // (src/shellfeatures.ts: dash has no brace expansion, mksh no ranges; a `{` of neither kind counts where the shell has one.)
+    // (src/shellfeatures.ts: dash has no brace expansion, mksh no ranges; a `{` that is no brace expansion is text everywhere.)
     const rows: [string, Shell | undefined, boolean][] = [
       ['{a,b}', undefined, true], ['{a,b}', 'dash', false], ['{1..3}', 'mksh', false], ['{a,b}', 'mksh', true], ['{1..3}{a,b}', 'mksh', true],
-      ['{1..3}', 'zsh', true], ['a{b', 'dash', false], ['a{b', 'mksh', true], ['a{b', 'bash', true],
+      ['{1..3}', 'zsh', true], ['a{b', 'dash', false], ['a{b', 'mksh', false], ['a{b', 'bash', false],
     ];
-    for (const [text, shell, may] of rows) assert.strictEqual(bracesMayWork(text, shell), may, `${text} ${shell}`);
+    const wordOfText = (text: string) => parser.parse(`echo ${text}`).root.namedChildren[0].namedChildren[1];
+    for (const [text, shell, may] of rows) assert.strictEqual(bracesMayWork(wordOfText(text), shell), may, `${text} ${shell}`);
   });
   it('has a value there, not in bash', () => {
-    const word = (src: string) => descendants(parser.parse(src).root, ['word']).find((w) => w.text === '{x,EXIT}')!;
+    const word = (src: string) => descendants(parser.parse(src).root, ['word', 'concatenation', 'brace_expression']).find((w) => w.text === '{x,EXIT}')!;
     assert.strictEqual(staticWordValue(word('trap {x,EXIT} INT'), false, 'dash'), '{x,EXIT}');
     assert.strictEqual(staticWordValue(word('trap {x,EXIT} INT'), false, 'sh'), '{x,EXIT}');
     assert.strictEqual(staticWordValue(word('trap {x,EXIT} INT')), undefined);

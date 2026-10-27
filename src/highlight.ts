@@ -205,7 +205,7 @@ function words(w: SyntaxNode, set: Painter): void {
     return;
   }
   let at: SyntaxNode = w;
-  while (at.parent!.type === 'concatenation') at = at.parent!;
+  while (at.parent!.type === 'concatenation' || at.parent!.type === 'brace_expression') at = at.parent!;
   const q = at.parent!.type;
   const expanded = (q === 'command' && at.field === 'argument') || ((q === 'for_statement' || q === 'select_statement') && at.field === 'value')
     || q === 'case_item' || (p.type === 'file_redirect' && w.field === 'destination') || isPattern(at);

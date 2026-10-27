@@ -25,7 +25,8 @@ import { describeGlob, exampleFor, globParts, parseExpansion } from '../src/expa
 import { explainJq } from '../src/embedded/jq';
 import { explainYq3Path, judgeYq as judge, yqNotes, yqSameAsJq as sameAsJq } from '../src/embedded/yq';
 import { explainSed } from '../src/embedded/sed';
-import { bashPrintf, braceExpand, extglobs, globExamples, globMatches, ShellWordsUnsupported } from '../src/examples/shellwords';
+import { bashPrintf, extglobs, globExamples, globMatches, ShellWordsUnsupported } from '../src/examples/shellwords';
+import { braceTexts } from '../src/semantics/brace';
 import { literalRegex, regexExamples, toJsRegex } from '../src/examples/regex';
 import { explainAwk } from '../src/embedded/awk';
 import { explainDate, explainPrintf } from '../src/embedded/format';
@@ -362,8 +363,8 @@ describe('branches no other test takes', () => {
   });
 
   it('shell words: what the simulations give up on, and globs with odd parts', () => {
-    assert.throws(() => braceExpand('{1..30}{1..30}'), ShellWordsUnsupported);
-    assert.throws(() => braceExpand('{1..600}'), ShellWordsUnsupported);
+    // (Brace expansion past 500 words: not listed.)
+    for (const w of ['{1..30}{1..30}', '{1..600}', '{{1..300},{1..300}}', 'x{a,{1..600}}']) assert.strictEqual(braceTexts([parser.parse(`echo ${w}`).root.namedChildren[0].namedChildren[1]]), null, w);
     assert.throws(() => bashPrintf('%q', ['a\tb']), ShellWordsUnsupported);
     assert.throws(() => bashPrintf('%d', ['abc']), ShellWordsUnsupported);
     // Bash rejects these, or writes bytes that are not text.

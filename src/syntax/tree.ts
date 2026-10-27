@@ -55,7 +55,7 @@ export type NodeType =
   | 'number'
   | 'extglob_pattern'
   | 'regex' // the right side of =~
-  | 'brace_expression' // {1..3}
+  | 'brace_expression' // {1..3}, {a,b}
   | 'array' // ( … ) on the right of an assignment
   // Expansions
   | 'simple_expansion' // $v
@@ -289,6 +289,17 @@ export function fileContentsOf(n: SyntaxNode): SyntaxNode | undefined {
   if (r.type !== 'file_redirect' || r.children.find((c) => !c.named)!.type !== '<') return undefined;
   const fd = field(r, 'descriptor');
   return !fd || fd.text === '0' ? r : undefined;
+}
+
+/** The kind of a brace expression (3.5.1): a list (`{a,b}`, items between `,`) or a sequence (`{1..3}`). */
+export function braceKind(n: SyntaxNode): 'list' | 'sequence' {
+  return n.children.some((c) => c.type === '..') ? 'sequence' : 'list';
+}
+
+/** The brace expressions of the word `n`, the nested ones too (not those of its quotes and substitutions: other words). */
+export function wordBraces(n: SyntaxNode): SyntaxNode[] {
+  if (n.type === 'brace_expression') return [n, ...n.namedChildren.flatMap(wordBraces)];
+  return n.type === 'concatenation' ? n.namedChildren.flatMap(wordBraces) : [];
 }
 
 /**

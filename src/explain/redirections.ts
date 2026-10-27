@@ -15,7 +15,7 @@ import { isPlainWord, staticWordValue } from '../staticword';
 import { field, fields, fileContentsOf, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { isBlockLike, same, skeletal, sortTokens, summaryOf } from './nodes';
-import { globOff, wordAt } from './reads';
+import { globOff, unquotedWord, wordAt } from './reads';
 import { braceExpansion } from './words';
 
 /** The operator and destination of a file redirection (`>&-` and `<&-`, which close a descriptor, are `>&` and `<&` to `-`). */
@@ -120,7 +120,7 @@ export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
       'Send stdout to stderr (the usual way to print an error message)');
   }
   const children = dests.filter((d) => !isPlainWord(d)).flatMap((d) => cx.sub(d));
-  if (dests.length === 1 && (isPlainWord(dests[0]) || dests[0].type === 'brace_expression') && /[*?[{]/.test(dests[0].text)) expl += redirectTargetNote(cx, dests[0]);
+  if (dests.length === 1 && unquotedWord(dests[0]) !== undefined && /[*?[{]/.test(dests[0].text)) expl += redirectTargetNote(cx, dests[0]);
   const later = OPENS_FILE.has(op) ? replacedBy(n) : undefined;
   if (later) expl += replacedFile(cx, op, fd, n, dests, later);
   return cx.tok(n, 'redirect', expl, children);
@@ -248,9 +248,9 @@ function replacedFile(cx: Explainer, op: string, fd: string, n: SyntaxNode, dest
 
 /** The one word brace expansion makes of a redirection target that differs from it (`{a,}` is `a`: an empty word is dropped). */
 function bracedTarget(cx: Explainer, d: SyntaxNode): string | undefined {
-  if (!(isPlainWord(d) || d.type === 'brace_expression') || !d.text.includes('{')) return undefined;
+  if (unquotedWord(d) === undefined || !d.text.includes('{')) return undefined;
   if (!braceWorks(cx, d)) return undefined;
-  const words = braceExpansion(d.text);
+  const words = braceExpansion(d);
   return words?.length === 1 && words[0] !== d.text ? words[0] : undefined;
 }
 
@@ -267,7 +267,7 @@ function redirectTargetNote(cx: Explainer, d: SyntaxNode): string {
   const w = wordAt(cx, d);
   const step = (kind: string) => w?.steps.find((s) => s.kind === kind);
   if (braceWorks(cx, d)) {
-    const words = braceExpansion(d.text);
+    const words = braceExpansion(d);
     if (words?.length === 0) return cx.s('。ブレース展開で空の単語だけになって単語が残らないので、bash は「ambiguous redirect」のエラーにする', '. Brace expansion leaves no word of it (empty words are dropped), so bash reports "ambiguous redirect"');
     if (!words || words.length !== 1) return cx.s('。ブレース展開で複数の単語になるので、bash は「ambiguous redirect」のエラーにする', '. Brace expansion makes several words of it, so bash reports "ambiguous redirect"');
   }

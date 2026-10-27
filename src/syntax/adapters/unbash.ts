@@ -5,6 +5,7 @@
 import { forEachChild, parse } from 'unbash';
 import type * as U from 'unbash';
 import type { BashParser, FieldName, Point, SyntaxError, SyntaxNode, SyntaxTree } from '../tree';
+import { type BraceBuilder, bracePieces, type Range } from './braces';
 import { scanGap } from './tokens';
 import { splitElement } from '../../staticword';
 
@@ -15,17 +16,16 @@ type Mut = {
   lineEnd?: number;
 };
 
-/** A range of the text. */
-interface Range { pos: number; end: number }
 
 // (The parser's own list, for the node it builds: the syntax layer does not import the semantic model's, src/semantics/effects.ts.)
 const DECLARATIONS = new Set(['declare', 'typeset', 'export', 'readonly', 'local']);
 const NUMBER = /^-?\d+$/;
-const BRACE_RANGE = /^\{(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])(\.\.-?\d+)?\}$/;
 type ArithCtx = 'cmd' | 'slice';
 /** A word part that is a node of its own, not a run of plain text. */
 type Part = Exclude<U.WordPart, U.LiteralPart | U.GlobPart | U.ExtendedGlobPart | U.BraceExpansionPart>;
 const PLAIN = new Set(['Literal', 'Glob', 'ExtendedGlob', 'BraceExpansion']);
+/** The roles of the words bash never brace-expands: patterns, the operands of `[[ ]]` and of `${x:-word}`, arithmetic. */
+const NO_BRACES = new Set(['pattern', 'case', 'casealt', 'regex', 'test', 'operand', 'arith', 'index']);
 /** What the pattern of ${a#…} may hold and still be one regex. */
 const WORDS = new Set(['word', 'number', 'string', 'concatenation']);
 const PATTERN_PARTS = new Set(['Literal', 'Glob', 'SimpleExpansion', 'ParameterExpansion']);
@@ -555,9 +555,29 @@ class Converter {
 
   // Words
 
-  /** The pieces of a word: runs of plain text, quoted strings and expansions, in order. */
+  /** The pieces of a word: runs of plain text, quoted strings, expansions and brace expressions, in order. */
   pieces(w: U.Word, role: string): Mut[] {
     const parts = w.parts;
+    // Where bash expands braces, the braces of the word are read as bash does (./braces.ts), around its parts.
+    if (!NO_BRACES.has(role) && this.text.slice(w.pos, w.end).includes('{')) {
+      const opaque = new Map<number, Part>();
+      const nodes = new Set<number>();
+      // (The quotes and expansions inside braces, a bracket or an extended glob are parts too, `["{a,b}"]`, `@(${v:-a,b})`;
+      // those of a glob stay in its text.)
+      const visit = (ps: readonly U.WordPart[], glob: boolean): void => ps.forEach((p) => {
+        if (isPart(p)) {
+          opaque.set(p.pos, p);
+          if (!glob) nodes.add(p.pos);
+        } else if (p.type !== 'Literal') visit(p.parts ?? [], glob || p.type !== 'BraceExpansion');
+      });
+      visit(parts ?? [], false);
+      const builder: BraceBuilder<Mut> = {
+        text: this.text, node: (t, a, b, parent) => this.node(t, a, b, null, parent), tok: (t, a, parent) => this.tok(t, a, parent),
+        add: (parent, c) => this.add(parent, c), joined: (a, b, ps) => this.joined(a, b, ps), part: (at) => this.part(opaque.get(at)!),
+        plain: (a, b) => this.plain(a, b, role, false),
+      };
+      return bracePieces(builder, w.pos, w.end, opaque, nodes);
+    }
     if (!parts) return [this.plain(w.pos, w.end, role)];
     const alone = parts.every((x) => !isPart(x));
     const out: Mut[] = [];
@@ -567,13 +587,8 @@ class Converter {
       if (plainStart >= 0) out.push(this.plain(plainStart, plainEnd, role, alone));
       plainStart = -1;
     };
-    // Beside a range, a list `{a,b}` is a brace expression too; alone, it stays part of the word.
-    const ranged = parts.some((x) => x.type === 'BraceExpansion' && BRACE_RANGE.test(x.text));
     for (const p of parts) {
-      if (p.type === 'BraceExpansion' && (BRACE_RANGE.test(p.text) || (ranged && /^\{.*,.*\}$/s.test(p.text)))) {
-        flush();
-        out.push(BRACE_RANGE.test(p.text) ? this.braceRange(p) : this.braceList(p));
-      } else if (!isPart(p)) {
+      if (!isPart(p)) {
         if (plainStart < 0) plainStart = p.pos;
         plainEnd = p.end;
       } else {
@@ -585,53 +600,15 @@ class Converter {
     return out;
   }
 
-  braceRange(p: U.BraceExpansionPart): Mut {
-    const n = this.node('brace_expression', p.pos, p.end);
-    this.tok('{', p.pos, n);
-    const dots = p.text.indexOf('..');
-    const second = p.text.indexOf('..', dots + 2);
-    const num = (a: number, b: number): void => { this.node(NUMBER.test(this.text.slice(a, b)) ? 'number' : 'word', a, b, null, n); };
-    num(p.pos + 1, p.pos + dots);
-    this.tok('..', p.pos + dots, n);
-    num(p.pos + dots + 2, second < 0 ? p.end - 1 : p.pos + second);
-    if (second >= 0) {
-      this.tok('..', p.pos + second, n);
-      num(p.pos + second + 2, p.end - 1);
-    }
-    this.tok('}', p.end - 1, n);
-    return n;
-  }
-
-  /** `{a,b}` next to a range: the items are words, between `,` tokens. */
-  braceList(p: U.BraceExpansionPart): Mut {
-    const n = this.node('brace_expression', p.pos, p.end);
-    this.tok('{', p.pos, n);
-    let start = p.pos + 1;
-    let depth = 0;
-    const item = (end: number): void => {
-      if (end > start) this.node('word', start, end, null, n);
-    };
-    for (let i = p.pos + 1; i < p.end - 1; i++) {
-      const c = this.text[i];
-      if (c === '\\') i++;
-      else if (c === '{') depth++;
-      else if (c === '}') depth--;
-      else if (c === ',' && depth === 0) {
-        item(i);
-        this.tok(',', i, n);
-        start = i + 1;
-      }
-    }
-    item(p.end - 1);
-    this.tok('}', p.end - 1, n);
-    return n;
-  }
-
   /** A word as the node that stands for it: a leaf, a quoted string, an expansion, or a concatenation of these. */
   word(w: U.Word, role: string): Mut {
-    const pieces = this.pieces(w, role);
+    return this.joined(w.pos, w.end, this.pieces(w, role));
+  }
+
+  /** The node of a word made of `pieces`: the piece, or a concatenation of them. */
+  joined(pos: number, end: number, pieces: Mut[]): Mut {
     if (pieces.length === 1) return pieces[0];
-    const c = this.node('concatenation', w.pos, w.end);
+    const c = this.node('concatenation', pos, end);
     for (const p of pieces) this.add(c, p);
     return c;
   }

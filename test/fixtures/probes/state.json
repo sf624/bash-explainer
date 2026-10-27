@@ -317,6 +317,40 @@
     }
   },
   {
+    "id": "brace-declarations",
+    "manual": "3.5.1",
+    "snippet": "declare x={a,b}; f() { local y=p{1..3}; g=$y; }; f; export P=/a/{b,c}; alias z={a,b}",
+    "note": "an assignment that is an argument of a declaration builtin, and a definition of alias, are words bash brace-expands: declare x=a x=b",
+    "gaps": {
+      "end.aliases.z": "the definitions of an alias word with braces are not followed (alias z={a,b} is alias z=a z=b): the alias is not known"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "P": {
+            "attrs": "x",
+            "value": "\"/a/c\""
+          },
+          "g": {
+            "attrs": "-",
+            "value": "\"p3\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"b\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        },
+        "aliases": {
+          "z": "b"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
     "id": "alias-unalias",
     "manual": "6.6",
     "snippet": "alias ll='ls -l' q='it'\\''s'; alias g=grep; unalias g",

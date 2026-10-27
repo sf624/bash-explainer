@@ -16,7 +16,7 @@ import { isPlainWord, staticWordValue } from '../staticword';
 import { assignmentSpan, field, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { skeletal } from './nodes';
-import { isAssoc, wordAt } from './reads';
+import { isAssoc, unquotedWord, wordAt } from './reads';
 import { redirectedWhole } from './redirections';
 import { inSubshell } from './where';
 import { arithNumber, bash53Variable, notGlobbedHere, shown } from './words';
@@ -151,9 +151,11 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
   }
   const children: Token[] = [];
   if (value) {
-    // (A `~` that bash expands keeps its own explanation: `x=~` is the home directory.)
+    // (A `~` that bash expands keeps its own explanation: `x=~` is the home directory; so do braces, `declare x={a,b}`.)
+    const w = wordAt(cx, value);
+    const expands = !!w && (w.tildes.length > 0 || w.steps[0].applies !== false);
     for (const t of cx.sub(value)) {
-      if (!(t.kind === 'expansion' && wordAt(cx, value)?.tildes.length) && isPlainWord(value) && !arithNumber(cx, value)) t.explanation = intValueText ? `\`${value.text}\`: ${intValueText}` : cx.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``) + (hasGlob(value.text) ? notGlobbedHere(cx, value) : '');
+      if (!(t.kind === 'expansion' && expands) && unquotedWord(value) !== undefined && !arithNumber(cx, value)) t.explanation = intValueText ? `\`${value.text}\`: ${intValueText}` : cx.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``) + (hasGlob(value.text) ? notGlobbedHere(cx, value) : '');
       children.push(t);
     }
   }

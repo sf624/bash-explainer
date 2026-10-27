@@ -8,14 +8,14 @@
 // A step that depends on a state the model has as unknown (`set -f` on some paths, an IFS set to a value not
 // known here, an attribute given on some paths) "may" apply: `'unknown'`.
 import { evalArith } from '../arith';
-import { braceExpand, globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
+import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { patsubMiscounts } from '../bracket';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
 import { ansiCValue, decodedText, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, sameInEveryLocale, substring } from './chars';
-import { bracedWords, braceStep } from './brace';
+import { bracedWords, braceStep, wordAlternatives } from './brace';
 import { DECLARATIONS } from './effects';
 import { resolveName } from './names';
 import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
@@ -80,7 +80,8 @@ export const CONTEXTS: Readonly<Record<WordContext, ContextRule>> = {
   arith: { ...ONE, tilde: 'none', manual: '6.5' },
   'subscript-indexed': { ...ONE, tilde: 'none', manual: '6.7' },
   'subscript-assoc': { ...ONE, tilde: 'none', manual: '6.7' },
-  'declaration-assignment': { ...ONE, tilde: 'declaration', manual: '4.2' },
+  // (bash brace-expands it as a word: `alias z={a,b}` is `alias z=a z=b`.)
+  'declaration-assignment': { ...ONE, brace: true, tilde: 'declaration', manual: '4.2' },
   'param-word': { brace: false, tilde: 'start', split: 'inherit', glob: 'inherit', fields: 'many', manual: '3.5.3' },
   'param-pattern': { ...ONE, tilde: 'start', match: 'pattern', manual: '3.5.3' },
 };
@@ -156,7 +157,7 @@ export interface PartMeaning {
 // ---------------------------------------------------------------------------------------------------
 // Finding the word and its context.
 
-const IN_WORD = new Set(['concatenation', 'string', 'translated_string', 'heredoc_body']);
+const IN_WORD = new Set(['concatenation', 'brace_expression', 'string', 'translated_string', 'heredoc_body']);
 const EXPRESSIONS = new Set(['binary_expression', 'unary_expression', 'parenthesized_expression', 'ternary_expression', 'postfix_expression']);
 const PATTERN_OPS = new Set(['=', '==', '!=']);
 
@@ -208,6 +209,12 @@ function contextOf(w: SyntaxNode): WordContext | undefined {
     if (PATTERN_OPS.has(op)) return 'cond-pattern';
   }
   return 'cond-operand';
+}
+
+/** Whether bash brace-expands the word that holds `n` where it is (not by the shell or `set +B`): also an assignment given to `declare` (`x={a,b}` is `x=b`). */
+export function bracesInContext(n: SyntaxNode): boolean {
+  const w = wordOf(n);
+  return !!w && (CONTEXTS[w.context].brace || (w.context === 'assignment-value' && w.nodes[0].parent!.field === 'argument'));
 }
 
 /** The word that holds `n` (an expansion, a string, a word), with its nodes and context; undefined outside a word. */
@@ -389,8 +396,9 @@ function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: S
   let tildes = shape.tildes.get(key);
   if (!tildes) shape.tildes.set(key, (tildes = tildesOf(nodes, rule, posix)));
   const steps: ExpansionStep[] = [];
-  const brace = rule.brace && shape.braced.length > 0;
-  steps.push(mk(braceStep(shape.braced, rule.brace, braceOpt, shell, shape.plain)));
+  const braces = bracesInContext(nodes[0]);
+  const brace = braces && shape.braced.length > 0;
+  steps.push(mk(braceStep(shape.braced, braces, braceOpt, shell, shape.plain)));
   steps.push(mk({ kind: 'tilde', applies: tildes.length > 0, parts: [...new Set(tildes.map((t) => t.node))] }));
   for (const kind of ['parameter', 'command', 'arithmetic', 'process'] as const) {
     const parts = expansions.filter((e) => STEP_OF[e.type] === kind);
@@ -597,8 +605,13 @@ class Evaluator {
   /** The pieces of a node of the word, or undefined when they are not known here. */
   pieces(n: SyntaxNode, quoted: boolean): Piece[] | undefined {
     switch (n.type) {
-      case 'word': case 'number': case 'extglob_pattern': case 'variable_name': case 'brace_expression': case 'regex':
+      case 'word': case 'number': case 'extglob_pattern': case 'variable_name': case 'regex':
         return plain(decodedText(n));
+      case 'brace_expression': case 'concatenation': {
+        // (Braces that are not expanded here are text, around the parts in them: `{a,"b c"}` in dash.)
+        const ps = n.children.map((c) => (c.named ? this.pieces(c, quoted) : plain(c.type)));
+        return ps.every((p) => p) ? (ps as Piece[][]).flat() : undefined;
+      }
       case 'raw_string': return [{ text: n.text.slice(1, -1), quoted: true, expanded: false }];
       case 'ansi_c_string': {
         const v = ansiCValue(n.text.slice(2, -1));
@@ -925,7 +938,7 @@ function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, ex
 
 /** The fields of the word before pathname expansion (brace expansion, the expansions, word splitting); throws a `Failure`. */
 function splitFields(w: WordMeaning, ev: Evaluator): Char[][] | undefined {
-  const alternatives = braceAlternatives(w);
+  const alternatives = wordAlternatives(w);
   if (!alternatives) return undefined;
   const out: Char[][] = [];
   for (const nodes of alternatives) {
@@ -989,21 +1002,6 @@ const PLAIN_TEXT = /^[\w.,:/@%+=-]+$/;
 /** A field as a pattern for globToRegex: quoted characters escaped. */
 function patternOfChars(f: readonly Char[]): string {
   return f.map((c) => (c.quoted && /[\\*?[\]()|!@+]/.test(c.c) ? `\\${c.c}` : c.c)).join('');
-}
-
-/** The word, or after brace expansion each word it gives (as text: only a word of plain text; unbash leaves `$v` of `{a,$v}b` as text). */
-function braceAlternatives(w: WordMeaning): (SyntaxNode | string)[][] | undefined {
-  const brace = w.steps[0];
-  if (brace.applies === false) return [[...w.nodes]];
-  if (brace.applies === 'unknown') return undefined;
-  const plainOnly = w.nodes.length === 1 && (plainWords(w.nodes).length === 1 && plainWords(w.nodes)[0] === w.nodes[0]
-    || (w.nodes[0].type === 'concatenation' && w.nodes[0].namedChildren.every((c) => ['word', 'brace_expression', 'number'].includes(c.type))));
-  if (!plainOnly || /(^|[^\\])(\\\\)*[$`'"]/.test(w.nodes[0].text)) return undefined;
-  try {
-    return braceExpand(w.nodes[0].text, true)!.map((t) => [t]);
-  } catch {
-    return undefined;
-  }
 }
 
 type Char = { c: string; quoted: boolean; split: boolean };

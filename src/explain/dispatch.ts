@@ -34,7 +34,9 @@ export function explain(cx: Explainer, n: SyntaxNode): Token {
   const t = claim(explainNode(cx, n), 'shell');
   if (n.type === 'simple_expansion' || n.type === 'expansion') withValue(cx, n, t);
   const refs = t.refs ?? nodeSections(n);
-  if (refs) t.refs = refs;
+  if (refs?.length) t.refs = refs;
+  // (A token that cites nothing: braces that do not expand here.)
+  else delete t.refs;
   return t;
 }
 
@@ -70,10 +72,13 @@ function explainNode(cx: Explainer, n: SyntaxNode): Token {
     // (The model has the `$` and the string in one node; the string takes the `$` in.)
     case 'translated_string': return string(cx, n.namedChildren[0]);
     case 'concatenation': return concatenation(cx, n);
-    case 'word': return braceWord(cx, n) ?? word(cx, n);
+    case 'word': return word(cx, n);
     case 'number': return number(cx, n);
-    // (`{1..x}` is not a brace expansion: it stays a word.)
-    case 'brace_expression': return braceWord(cx, n) ?? word(cx, n);
+    // (Where braces do not expand, as in dash or `x={a,b}`, they are text: a word.)
+    case 'brace_expression': {
+      const t = braceWord(cx, n) ?? word(cx, n);
+      return t.refs ? t : { ...t, refs: [] };
+    }
     case 'array': return array(cx, n);
     case 'subscript': return subscript(cx, n);
     case 'regex': return regexNode(cx, n);

@@ -363,6 +363,118 @@
     }
   },
   {
+    "id": "brace-lists",
+    "manual": "3.5.1",
+    "snippet": "x='p q'; @PROBE:a@ {a,\"b c\"} {a,$x} x{a,{b,c}}y {{a,b}} {a,b\\}c} {[a,b],c} \\${a,b} {a,b}$x {a\\,b} {a,{b,c} {x,{y} {,} {a,} {\"a,b\"} {a,'}'}",
+    "facts": {
+      "a": [
+        [
+          "a",
+          "b c",
+          "a",
+          "p",
+          "q",
+          "xay",
+          "xby",
+          "xcy",
+          "{a}",
+          "{b}",
+          "a",
+          "b}c",
+          "[a",
+          "b]",
+          "c",
+          "$a",
+          "$b",
+          "ap",
+          "q",
+          "bp",
+          "q",
+          "{a,b}",
+          "{a,b",
+          "{a,c",
+          "{x,{y}",
+          "a",
+          "{a,b}",
+          "a",
+          "}"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "brace-rejoined",
+    "manual": "3.5.1",
+    "snippet": "x=p; @PROBE:a@ {a,$x}- x{a,b}\"$x\" {a,b}${x}c; @PROBE:b@ {,$x}a {a$,b}x",
+    "gaps": {
+      "b": "once the braces are gone, the text after `$x` lengthens its name (`{,$x}a` gives `$xa`), and the text after a `$` makes an expansion (`{a$,b}x` gives `a$x`): the model does not read the words again"
+    },
+    "facts": {
+      "a": [
+        [
+          "a-",
+          "p-",
+          "xap",
+          "xbp",
+          "apc",
+          "bpc"
+        ]
+      ],
+      "b": [
+        [
+          "a",
+          "ap",
+          "bx"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "brace-unexpanded",
+    "manual": "3.5.1",
+    "snippet": "n=3; v=V; @PROBE:a@ {1..$n} e{..\"$v\"} $n-{1..$n} [{a,b}]",
+    "facts": {
+      "a": [
+        [
+          "{1..3}",
+          "e{..V}",
+          "3-{1..3}",
+          "[a]",
+          "[b]"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "brace-sequences",
+    "manual": "3.5.1",
+    "snippet": "@PROBE:a@ {x..{a,b}} {x..\"a,b\"} {x..{1..2}} {+1..3} {1..b}{x,y} {1..3..+1} {x\\..{a,b}}",
+    "facts": {
+      "a": [
+        [
+          "x..a",
+          "x..b",
+          "x..a,b",
+          "{x..{1..2}}",
+          "1",
+          "2",
+          "3",
+          "{1..b}x",
+          "{1..b}y",
+          "1",
+          "2",
+          "3",
+          "{x..a}",
+          "{x..b}"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
     "manual": "3.5.2",
     "snippet": "@PROBE:a@ ~ ~/x ~+ \"~\" \\~ x=~/y a:~/b ~nope",
     "facts": {

@@ -4,14 +4,20 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { PrintfReader } from '../src/embedded/format';
-import { bashPrintf, braceExpand, globExamples, globMatches, GlobOpts, ShellWordsUnsupported } from '../src/examples/shellwords';
+import { bashPrintf, globExamples, globMatches, GlobOpts, ShellWordsUnsupported } from '../src/examples/shellwords';
+import { braceTexts } from '../src/semantics/brace';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const bash = (script: string, ...args: string[]) => execFileSync('bash', ['-c', script, '_', ...args]).toString();
 
 describe('brace expansion agrees with bash', () => {
+  const parser = createUnbashParser();
+  /** The words brace expansion makes of `w`, read as an argument (src/semantics/brace.ts). */
+  const braceExpand = (w: string) => braceTexts([parser.parse(`echo ${w}`).root.namedChildren[0].namedChildren[1]]);
   const words = ['{1..5}', 'file{,.bak}', 'img_{a,b}{1,2}.png', '{01..10..3}', '{a..e}', 'x{a,{b,c}}y', '{10..1..4}', '{a}', '{}', 'a{b..x..5}',
     '{-2..2}', 'dir_{a,b}/{src,test}', '{a,b', 'pre{1..3}post', '\\{a,b\\}', '{,x}{,y}',
-    '{a\\,b,c}', 'x{a,b\\}c}', '{1..5..0}', '{-05..3}', '{a..e..2}', '{e..a}', '{e..a..2}', '{a..e..0}'];
+    '{a\\,b,c}', 'x{a,b\\}c}', '{1..5..0}', '{-05..3}', '{a..e..2}', '{e..a}', '{e..a..2}', '{a..e..0}',
+    '{{a,b}}', '{a,{b,c}', '{a}b,c}', 'x{},a}', '{},a}', '{..},}', '{x..{a,b}}', '{x..{1..2}}', '{+1..3}', '{1..3..+1}', '{1..b}{x,y}'];
   for (const w of words) {
     it(w, () => {
       assert.strictEqual((braceExpand(w) ?? [w.replace(/\\(.)/g, '$1')]).join(' '), bash(`echo ${w}`).trim());

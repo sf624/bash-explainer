@@ -11,6 +11,7 @@ import { corpus, invariants } from './support/corpus';
 import { soundness } from './support/fuzz';
 import { fastest } from './support/growth';
 import { diffShapes, shapeOfTree } from './support/shape';
+import { runBash } from './support/bash';
 
 // The unbash adapter builds the model of a script. The first part holds the expected trees of the inputs
 // that tree-sitter (the parser used before) read wrongly, the invariants of the trees of the fixtures and
@@ -701,7 +702,7 @@ describe('unbash adapter: words, assignments and redirections', () => {
       '(program (command (command_name @name (word "echo")) (string @argument "\\"" (string_content "a") (simple_expansion "$" (variable_name "b")) (string_content " c") "\\"") '
       + '(raw_string @argument "\'d\'") (ansi_c_string @argument "$\'e\\\\n\'") (word @argument "~/x") (word @argument "a=b") '
       + '(concatenation @argument (string "\\"" (string_content "p") "\\"") (word "q")) (translated_string @argument "$" (string "\\"" (string_content "r") "\\"")) '
-      + '(brace_expression @argument "{" (number "1") ".." (number "3") "}") (brace_expression @argument "{" (word "a") ".." (word "e") ".." (number "2") "}") (word @argument "{a,b}")))');
+      + '(brace_expression @argument "{" (number "1") ".." (number "3") "}") (brace_expression @argument "{" (word "a") ".." (word "e") ".." (number "2") "}") (brace_expression @argument "{" (word "a") "," (word "b") "}")))');
     assert.equal(o('echo 5 -3 0x1f 1.5 007'),
       '(program (command (command_name @name (word "echo")) (number @argument "5") (number @argument "-3") (word @argument "0x1f") (word @argument "1.5") (number @argument "007")))');
   });
@@ -1043,7 +1044,7 @@ describe('unbash adapter: tricky lines found by evaluation', () => {
     const w = first('echo {1..3}{,} x{,}').namedChildren[1];
     assert.deepEqual(w.namedChildren.map((c) => c.type), ['brace_expression', 'brace_expression']);
     assert.equal(w.namedChildren[1].text, '{,}');
-    assert.equal(first('echo x{,}').namedChildren[1].type, 'word');
+    assert.deepEqual(first('echo x{,}').namedChildren[1].namedChildren.map((c) => c.type), ['word', 'brace_expression']);
   });
   it('a backquote escaped inside backquotes starts at its backslash', () => {
     const t = tree('echo `echo \\`echo x\\``');
@@ -1074,5 +1075,55 @@ describe('unbash adapter: branches of the shapes', () => {
   it('an elif without then, whether or not it has commands', () => {
     assert.equal(errorsOf('if a; then b\nelif c; then\nelse d\nfi').includes('missing'), false);
     assert.equal(errorsOf('if a; then b\nelif c\nelse d\nfi'), 'missing@19-19');
+  });
+});
+
+describe('unbash adapter: brace expressions as bash finds them (3.5.1)', () => {
+  /** The brace expressions of the word `w`, the outermost (its own pieces), by their text. */
+  const braces = (w: string): string[] => {
+    const arg = first(`echo ${w}`).namedChildren[1];
+    return (arg.type === 'concatenation' ? arg.namedChildren : [arg]).filter((c) => c.type === 'brace_expression').map((c) => c.text);
+  };
+  // [word, its brace expressions]. (Most were found by comparing random words with bash.)
+  const CASES: [string, string[]][] = [
+    ['{a,b}', ['{a,b}']], ['{a,}', ['{a,}']], ['{,}', ['{,}']], ['{a,{b,c}}', ['{a,{b,c}}']], ['x{a,b}y', ['{a,b}']], ['{{a,b}}', ['{a,b}']],
+    ['{a,b}{1..2}', ['{a,b}', '{1..2}']], ['{a,"b c"}', ['{a,"b c"}']], ['{a,$x}', ['{a,$x}']], ['{a,b\\}c}', ['{a,b\\}c}']],
+    ['{[a,b],c}', ['{[a,b],c}']], ['\\${a,b}', ['{a,b}']], ['{a,{b,c}', ['{b,c}']], ['{+1..3}', ['{+1..3}']],
+    // (A `}` before the first `,` or `..` does not close the braces; a `{` that starts a word and a `}` follows is no brace.)
+    ['{a}b,c}', ['{a}b,c}']], ['x{},a}', ['{},a}']], ['{},a}', []], ['{..},}', ['{..},}']], ['{a}..c}', []],
+    // (Braces with a `..` that hold no sequence: they stay, with what is in them, unless a comma is deeper inside.)
+    ['{x..{a,b}}', ['{x..{a,b}}']], ['{x.."a,b"}', ['{x.."a,b"}']], ['{x..{1..2}}', []], ['{1..b}', []], ['{x\\..{a,b}}', ['{a,b}']],
+    ['{a}', []], ['{}', []], ['{a,b', []], ['"{a,b}"', []], ["'{a,b}'", []], ['\\{a,b}', []], ['{a\\,b}', []], ['{"a,b"}', []], ['${x,y}', []], ['{x,{y}', []],
+    // (Quotes and expansions in a bracket or an extended glob are opaque; braces there are braces.)
+    ['["{a,b}"]', []], ['[{"a,b"}]', []], ['a[{"x,y"}]b', []], ['[${v:-a,b}]', []], ['@(${v:-a,b}|x)', []], ['[{a,b}]', ['{a,b}']], ['@({a,b}|x)', ['{a,b}']],
+  ];
+
+  it('makes one of each brace expansion bash makes, and of nothing else', () => {
+    for (const [w, want] of CASES) assert.deepStrictEqual(braces(w), want, w);
+    // What bash prints for each word, with brace expansion and with `set +B`: they differ where it expands braces.
+    const lines = runBash(['shopt -s extglob', ...CASES.map(([w]) => `printf '<%s>' ${w}; printf ' ~~ '; set +B; printf '<%s>' ${w}; set -B; echo`)].join('\n'), { files: [] }).stdout.split('\n');
+    CASES.forEach(([w, want], i) => {
+      const [on, off] = lines[i].split(' ~~ ');
+      assert.strictEqual(on !== off, want.length > 0, `${w}: ${lines[i]}`);
+    });
+  });
+
+  it('nests at most 64 lists, so that the readers can walk a deep word', () => {
+    const src = `echo ${'{a,'.repeat(3000)}b${'}'.repeat(3000)}`;
+    let depth = 0;
+    for (let n: SyntaxNode | undefined = first(src).namedChildren[1]; n; n = n.namedChildren.find((c) => c.type === 'brace_expression')) depth++;
+    assert.strictEqual(depth, 64);
+    assert.doesNotThrow(() => new Analyzer('en').explainLine(tree(src), 0));
+  });
+
+  it('reads the items of a list: words, quotes, expansions and lists in them', () => {
+    assert.equal(o('echo x{a,"b c",$v,{d,e}f,}'), '(program (command (command_name @name (word "echo")) (concatenation @argument (word "x") (brace_expression "{" (word "a") "," '
+      + '(string "\\"" (string_content "b c") "\\"") "," (simple_expansion "$" (variable_name "v")) "," (concatenation (brace_expression "{" (word "d") "," (word "e") "}") (word "f")) "," "}"))))');
+    // (A `}` that is text, and braces that stay text with the parts in them: `$n` of `{1..$n}`, but not those of a glob.)
+    assert.equal(o('echo {a}b,c} {1..$n} ["{a,b}"]'), '(program (command (command_name @name (word "echo")) (brace_expression @argument "{" (word "a}b") "," (word "c") "}") '
+      + '(concatenation @argument (word "{1..") (simple_expansion "$" (variable_name "n")) (word "}")) (word @argument "[\\"{a,b}\\"]")))');
+    // (No brace expression where bash never expands braces: a pattern, `[[ ]]`, an operand of `${ }`.)
+    assert.equal(types(tree('case x in {a,b}) ;; esac; [[ {a,b} == {c,d} ]]; echo ${x:-{a,b}}').root, 'brace_expression').length, 0);
+    assert.strictEqual(runBash('case a in {a,b}) echo m;; *) echo n;; esac; [[ {a,b} == {a,b} ]] && echo t; echo ${x:-{a,b}}').stdout, 'n\nt\n{a,b}\n');
   });
 });

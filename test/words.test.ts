@@ -4,7 +4,7 @@
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import { shellState, type StateModel } from '../src/semantics/state';
-import { CONTEXTS, partMeaning, underscoreValue, wordFields, wordMeaning, wordOf, type WordEnv } from '../src/semantics/words';
+import { bracesInContext, CONTEXTS, partMeaning, underscoreValue, wordFields, wordMeaning, wordOf, type WordEnv } from '../src/semantics/words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, type SyntaxNode } from '../src/syntax/tree';
 import { staticWordValue } from '../src/staticword';
@@ -42,6 +42,25 @@ const fieldsOf = (src: string, text: string, env: WordEnv | null = ENV, nth = 0,
 };
 
 describe('words: contexts', () => {
+  it('has no brace expression in the roles where bash never expands braces, whose contexts say so (unbash.ts, NO_BRACES)', () => {
+    // [script, the word]: a pattern of `case`, `[[ == ]]`, `[[ ]]`, `=~`, arithmetic, an index; and the word of `${x:-…}`.
+    const cases: [string, string][] = [
+      ['case a in {a,b}) ;; esac', '{a,b}'], ['case a in x|{a,b}) ;; esac', '{a,b}'], ['[[ x == {a,b} ]]', '{a,b}'], ['[[ {a,b} ]]', '{a,b}'],
+      ['[[ x =~ {a,b} ]]', '{a,b}'], ['echo $(( {1,2} ))', '{1,2}'], ['a[{1,2}]=x', '{1,2}'],
+    ];
+    for (const [src, text] of cases) {
+      const { node } = find(src, text);
+      assert.deepStrictEqual([CONTEXTS[wordOf(node)!.context].brace, descendants(parser.parse(src).root, ['brace_expression']).length], [false, 0], src);
+    }
+    assert.strictEqual(descendants(parser.parse('echo ${x:-{a,b}} ${x#{a,b}} ${a[{1,2}]}').root, ['brace_expression']).length, 0);
+    // (Where bash does expand them, the context says so: an argument, a `for` list, an array's element, a redirection, an
+    // assignment given to `declare`, a definition of `alias`.)
+    for (const [src, text] of [['echo {a,b}', '{a,b}'], ['for i in {a,b}; do :; done', '{a,b}'], ['a=({a,b})', '{a,b}'], ['cat > {a,b}', '{a,b}'], ['declare x={a,b}', '{a,b}'], ['alias z={a,b}', 'z={a,b}']]) {
+      assert.ok(bracesInContext(find(src, text).node), src);
+    }
+    assert.ok(!bracesInContext(find('x={a,b}', '{a,b}').node) && !bracesInContext(find('cat <<< {a,b}', '{a,b}').node));
+  });
+
   it('finds the context of a word from where it is', () => {
     const cases: [string, string, string | undefined][] = [
       ['echo $x', '$x', 'argument'], ['$c a', '$c', undefined], ['$c a', 'c', undefined], ['x=$y', '$y', 'assignment-value'], ['a=(1 $y)', '$y', 'array-element'],
@@ -343,7 +362,7 @@ describe('words: fields', () => {
     assert.deepStrictEqual(fieldsOf('echo {a,b}{1..2}', '{a,b}{1..2}').fields, ['a1', 'a2', 'b1', 'b2']);
     assert.deepStrictEqual(fieldsOf('echo a{b,c}d', 'a{b,c}d').fields, ['abd', 'acd']);
     assert.deepStrictEqual(fieldsOf('echo {1..9999}', '{1..9999}'), {});
-    assert.deepStrictEqual(fieldsOf('echo {a,b}$x', '{a,b}$x'), {});
+    assert.deepStrictEqual(fieldsOf('echo {a,b}$x', '{a,b}$x').fields, ['a', 'b']);
     assert.deepStrictEqual(fieldsOf('if a; then set +B; fi; echo {a,b}', '{a,b}'), {});
     assert.deepStrictEqual(fieldsOf('set +B; echo {a,b}', '{a,b}').fields, ['{a,b}']);
     assert.deepStrictEqual(fieldsOf("echo $'a\\tb' $\"c\" \"d\\\"e\\\\\"", "$'a\\tb'").fields, ['a\tb']);

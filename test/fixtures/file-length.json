@@ -3,7 +3,7 @@
   "src/dict/commands.ts": 2072,
   "src/examples/jq.ts": 1847,
   "src/semantics/walk/walker.ts": 1283,
-  "src/syntax/adapters/unbash.ts": 1420,
+  "src/syntax/adapters/unbash.ts": 1397,
   "src/examples/awk.ts": 1387,
-  "src/semantics/words.ts": 1130
+  "src/semantics/words.ts": 1128
 }
