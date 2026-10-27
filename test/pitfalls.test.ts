@@ -402,7 +402,7 @@ describe('the pitfall gate', () => {
     });
   }
   it('said keeps the notes with pitfalls off and the pitfalls with them on', () => {
-    const fs2 = [fact('en', 'exit-modulo', { value: '256', status: 0 }), fact('en', 'local-outside-function', { stops: false })];
+    const fs2 = [fact('en', 'exit-modulo', { command: 'exit', value: '256', status: 0, ends: 'shell' }), fact('en', 'local-outside-function', { stops: false })];
     assert.deepStrictEqual(said(fs2, false).map((f) => f.id), ['exit-modulo']);
     assert.deepStrictEqual(said(fs2, true).map((f) => f.id), ['exit-modulo', 'local-outside-function']);
     assert.deepStrictEqual(said(fs2, undefined).length, 2);

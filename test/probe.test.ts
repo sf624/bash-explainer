@@ -15,9 +15,14 @@ describe('probes: the harness', () => {
 
   it('runs a try-it as a terminal shows it: stdout and stderr in order, the row\'s bash as `bash`', async function () {
     if (probeSkipReason) this.skip();
-    const out = await tryOutput({ manual: '', snippet: '', try: { code: "echo out; echo err >&2; bash -c 'echo \"${BASH_VERSINFO[0]}\"'; pwd" } });
-    assert.strictEqual(out, 'out\nerr\n5\n/BOX');
-    await assert.rejects(tryOutput({ manual: '', snippet: '', try: { code: 'sleep 5' } }, 100), /timed out/);
+    const run = (code: string, timeout?: number) => tryOutput({ manual: '', snippet: '', try: { code } }, timeout);
+    assert.strictEqual(await run(`echo out; echo err >&2; bash -c 'echo "\${BASH_VERSINFO[0]}"'; pwd; echo "$PATH"`), 'out\nerr\n5\n/BOX\nBIN:/usr/bin:/bin');
+    await assert.rejects(run('sleep 5', 100), /timed out/);
+    // (A shell killed by itself has not timed out; a job left in the background is killed with the shell.)
+    assert.strictEqual(await run('echo before; kill -9 $$'), 'before');
+    const pid = Number(await run('sleep 30 & echo $!'));
+    await new Promise((r) => setTimeout(r, 100));
+    assert.throws(() => process.kill(pid, 0), /ESRCH/);
   });
 
   it('reads every table: a manual section, a snippet with markers, and recorded facts', () => {

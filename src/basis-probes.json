@@ -11,7 +11,7 @@
     "manual": "3.7.5",
     "bash": "5.2",
     "try": {
-      "code": "bash -c 'exit 300'; echo $?",
+      "code": "bash -c '(exit 300); echo $?'",
       "output": "44"
     }
   }

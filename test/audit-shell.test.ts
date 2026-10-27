@@ -148,8 +148,8 @@ describe('shell audit fixes', () => {
     assert.match(explain('((a[1]++))', 0, 'ja').notes.join(), /終了ステータスは 1/);
     assert.doesNotMatch(explain('((++i))').notes.join(), /Pitfall/);
     assert.strictEqual(spawnSync('bash', ['-c', 'set -e; i=0; ((i++)); echo no']).stdout.toString(), '');
-    assert.match(explain('exit 256').notes.join(), /`256` becomes 0/);
-    assert.match(explain('f() { return 300; }').notes.join(), /`300` becomes 44/);
+    assert.match(explain('exit 256').notes.join(), /`exit 256` gives 0/);
+    assert.match(explain('f() { return 300; }').notes.join(), /`return 300` gives 44/);
     assert.match(explain('exit -1', 0, 'ja').notes.join(), /255/);
     assert.doesNotMatch(explain('exit 255').notes.join(), /modulo/);
     assert.doesNotMatch(explain('exit $?').notes.join(), /modulo/);

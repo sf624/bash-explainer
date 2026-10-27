@@ -312,7 +312,7 @@
     "snippet": "exit 256",
     "errexit": false,
     "try": {
-      "code": "bash -c 'exit 300'; echo $?",
+      "code": "bash -c '(exit 300); echo $?'",
       "output": "44"
     },
     "facts": {

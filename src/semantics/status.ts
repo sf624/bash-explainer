@@ -40,10 +40,10 @@ export type StatusRule =
   /** Lists, `{ }`, `( )`, `if`, `case`, loops, `time`: the status of the last command run (0 when none ran). */
   | { readonly kind: 'last-run' }
   /**
-   * `exit N` and `return N` (what they end, `CommandSpec.ends`: the shell or the function): N modulo 256 (with a word
-   * that is not a number, the rule is `command`).
+   * `exit N` and `return N` (what they end, `CommandSpec.ends`: the shell or the function; `builtin`, its name): N
+   * modulo 256 (with a word that is not a number, the rule is `command`).
    */
-  | { readonly kind: 'given'; readonly ends: 'shell' | 'function'; readonly value: number }
+  | { readonly kind: 'given'; readonly ends: 'shell' | 'function'; readonly builtin: string; readonly value: number }
   /** `exit` and `return` with no number: the status of the command before. */
   | { readonly kind: 'previous'; readonly ends: 'shell' | 'function' }
   /** `wait`: the status of the job waited for (`job`, the statement `$!` started, when known); 0 with no operand. */
@@ -230,7 +230,7 @@ class Statuses implements StatusModel {
           const v = args[0]?.text;
           if (v === undefined) return { kind: 'previous', ends: spec.ends };
           // (`exit $code`: the value is not known here.)
-          return /^-?\d+$/.test(v) ? { kind: 'given', ends: spec.ends, value: ((Number(v) % 256) + 256) % 256 } : { kind: 'command', functions: [] };
+          return /^-?\d+$/.test(v) ? { kind: 'given', ends: spec.ends, builtin: res.name, value: ((Number(v) % 256) + 256) % 256 } : { kind: 'command', functions: [] };
         }
         if (name === 'let') return { kind: 'arith' };
         // `local x=$(cmd)`, `\local x=$(cmd)`: the declaration's own status, whatever the substitution's (its operands

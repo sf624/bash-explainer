@@ -53,7 +53,7 @@ describe('the command-line tool', function () {
 
   it('names the sections of the Bash manual: numbers in the text, links in Markdown, ids in JSON', () => {
     const text = run(['-e', 'exit 300', '--no-color']).out;
-    assert.match(text, /ℹ An exit status is 0–255, so `300` becomes 44 \(the value modulo 256\) \(Bash manual 3\.7\.5\)$/m);
+    assert.match(text, /ℹ An exit status is 0–255, so `exit 300` gives 44 \(the value modulo 256\) \(Bash manual 3\.7\.5\)$/m);
     assert.match(text, /exit  Exit the shell or script \(special builtin\) \(Bash manual 4\.1, 4\.4\)$/m);
     assert.match(run(['-e', 'exit 300', '--no-color', '--lang', 'ja']).out, /（特殊ビルトイン）/);
     assert.match(run(['-e', 'exit 300', '--no-color', '--lang', 'ja']).out, /\(Bash マニュアル 3\.7\.5\)$/m);

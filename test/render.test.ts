@@ -105,7 +105,7 @@ describe('links to the Bash manual', () => {
 
   it('ends a note and the head of a block of the hover with their sections, small', () => {
     const { md } = hover('exit 300');
-    assert.ok(md.includes(`\n<span style="color:var(--vscode-descriptionForeground);">$(info)</span> An exit status is 0–255, so \`300\` becomes 44 (the value modulo 256) <small>Bash manual [3.7.5](${exitStatus} "Exit Status")</small>`), md);
+    assert.ok(md.includes(`\n<span style="color:var(--vscode-descriptionForeground);">$(info)</span> An exit status is 0–255, so \`exit 300\` gives 44 (the value modulo 256) <small>Bash manual [3.7.5](${exitStatus} "Exit Status")</small>`), md);
     assert.match(md, /— Exit the shell or script <small>Bash manual \[4\.1\]\(https:\/\/www\.gnu\.org\/software\/bash\/manual\/html_node\/Bourne-Shell-Builtins\.html "Bourne Shell Builtins"\), \[4\.4\]\(https:\/\/www\.gnu\.org\/software\/bash\/manual\/html_node\/Special-Builtins\.html "Special Builtins"\)<\/small>$/m);
     // A program and its words are not parts of bash: no link.
     const grep = hover('grep -q x').md.split('\n').filter((l) => l.startsWith('<b>') || l.startsWith('<tr>'));

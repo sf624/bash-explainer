@@ -81,11 +81,14 @@ const postfixLevel = ({ errexit }: { errexit?: boolean }): NoteLevel => (errexit
 
 export const MESSAGES = {
   // ---------------------------------------------------------------- exit status (3.7.5)
-  // (`ends`: what the builtin ends, from the status model: `exit` the shell, `return` a function. 4.1 says that `return`
-  // keeps the least significant 8 bits of its argument; nothing says what `exit 300` does.)
-  'exit-modulo': withBasis(note<{ value: string; status: number; ends?: 'shell' | 'function' }>(['3.7.5'], ({ value, status }) => [
-    `終了ステータスは 0〜255 なので、\`${value}\` は 256 で割った余りの ${status} になる`,
-    `An exit status is 0–255, so \`${value}\` becomes ${status} (the value modulo 256)`]),
+  // (`command`: the builtin's name as written; `ends`: what it ends, from the status model: `exit` the shell, `return` a
+  // function or a sourced file. The manual's section 2 says an exit status is restricted to eight bits, and 3.7.5 that
+  // it falls between 0 and 255: that implies, without stating it, what `exit 300` and `exit -1` give. 4.1 states it for
+  // `return` (its least significant 8 bits), so only `exit` is checked. The builtin is in the text, so that `exit 300`
+  // and `return 300` on one line are two notes, each with its basis.)
+  'exit-modulo': withBasis(note<{ command: string; value: string; status: number; ends: 'shell' | 'function' }>(['3.7.5'], ({ command, value, status }) => [
+    `終了ステータスは 0〜255 なので、\`${command} ${value}\` では 256 で割った余りの ${status} になる`,
+    `An exit status is 0–255, so \`${command} ${value}\` gives ${status} (the value modulo 256)`]),
   ({ ends }) => (ends === 'shell' ? { kind: 'checked', probe: 'status#exit-status', also: ['status#exit-negative'] } : undefined)),
 
   // ---------------------------------------------------------------- errexit (4.3.1, 4.3.2)
