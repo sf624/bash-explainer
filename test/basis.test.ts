@@ -144,7 +144,7 @@ describe('basis: what an explanation rests on', () => {
     assert.strictEqual(noteBasis({ ...ex, facts: undefined }, exit, 'en'), undefined);
   });
 
-  // Step 3: the catalog, section by section against the manual (the audit is in the PR of step 3, #PR).
+  // Step 3: the catalog, section by section against the manual (the audit is in the PR of step 3, #447).
   it('gives the basis the audit found, per case of the params', () => {
     const audit: Partial<Record<FactId, string[]>> = {
       'exit-modulo': ['checked', 'manual'],
