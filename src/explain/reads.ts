@@ -42,6 +42,14 @@ export function hostCommand(cx: Explainer, name: string): CommandSpec | undefine
   return host && Object.hasOwn(host, name) ? host[name] : undefined;
 }
 
+/**
+ * Whether `n` runs in a restricted shell (`#!/bin/bash -r`, `bash -r -c`, `rbash`: Bash manual 6.10), from the state
+ * there: `shopt restricted_shell` is on (src/semantics/walk/child.ts, `restrictedStart`).
+ */
+export function restrictedAt(cx: Explainer, n: SyntaxNode): boolean {
+  return shoptIn(cx.state.at(n).run, 'restricted_shell', cx.shell) === 'on';
+}
+
 /** The shell options at `n` (src/semantics/state.ts): when it runs, or (`parse`) when bash read it. */
 export function shoptAt(cx: Explainer, n: SyntaxNode, when: 'run' | 'parse' = 'run'): ShoptStates {
   const st = cx.state.at(n)[when];

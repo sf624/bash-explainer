@@ -1,8 +1,8 @@
-import { shellOptions, shoptOptions } from './builtins';
+import { shells } from './shells';
 import { ops } from './ops';
 import { distro } from './distro';
 import { system } from './system';
-import type { CommandSpec, OperandAlt, OperandSpec, OptionSpec, PatternOption } from '../argv/spec';
+import type { CommandSpec, OperandSpec, OptionSpec, PatternOption } from '../argv/spec';
 import { tx } from '../i18n';
 import { basic } from './basic';
 import { psLetters } from './psletters';
@@ -195,26 +195,8 @@ const dockerSubs: Record<string, CommandSpec> = {
 };
 
 /** The commands written in this file; the other tables are spread after them. */
-const shellArgs = (ja: string, en: string): OperandSpec => operand('ARG', ja, en, { repeat: '*' });
 /** A word of digits only. */
 const BARE_NUMBER = /^\d+$/;
-/**
- * The operands of a shell: `bash -c 'cmd' NAME ARG…` (the string runs in a new shell; `NAME` is its `$0`),
- * `bash -s ARG…`, and `bash SCRIPT ARG…` (`$N`: the number of the positional parameter).
- */
-const SHELL_OPERANDS: OperandAlt[] = [
-  {
-    when: { option: ['-c'] },
-    pattern: [
-      operand('COMMAND_STRING', '実行するコマンド文字列', 'command string to run', { command: { run: 'shell-string', env: 'exported', params: true } }),
-      operand('NAME', '`$0` になる名前（スクリプト名の代わり。エラーメッセージにも出る）。引数ではない', 'Becomes `$0`, the name in place of a script name (shown in error messages); not an argument', { repeat: '?' }),
-      shellArgs('コマンド文字列の位置パラメータ `$N`', 'Positional parameter `$N` of the command string'),
-    ],
-  },
-  { when: { option: ['-s'] }, pattern: [shellArgs('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)')], stdin: 'script' },
-  { pattern: [operand('SCRIPT', '実行するスクリプト', 'Script to run', { repeat: '?', type: 'file', io: 'run' }), shellArgs('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)')], stdin: 'script' },
-];
-
 /** `head -5`, `tail -5`: the old way to write `-n 5`. */
 const LINE_COUNT = countOption(
   (n) => pos(`${n} 行（\`-n ${n}\` の古い書き方）`, `${n} line${n === '1' ? '' : 's'} (old way to write \`-n ${n}\`)`),
@@ -1810,45 +1792,6 @@ export const core: Record<string, CommandSpec> = {
     ['-i|--ignore-garbage', 'デコードで、アルファベット以外の文字を無視する', 'when decoding, ignore characters outside the alphabet'],
     ...GNU_INFO,
   ], { parser: 'getopt_long' }),
-  bash: cmd('bash シェルを起動する（スクリプトやコマンド文字列を実行）', 'Run the bash shell (a script or a command string)', [
-    ['-c', '続く文字列をコマンドとして実行', 'run the following string as a command'],
-    ['-e', 'エラーで即終了', 'exit on error'],
-    ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
-    ['-x', '実行するコマンドを表示', 'trace commands'],
-    ['-n', '構文チェックのみ', 'syntax check only'],
-    ['-o', '名前でオプションを有効にする（`set -o` と同じ）', 'enable an option by name (as `set -o`)', 'arg', shellOptions],
-    ['-O', '名前で `shopt` のオプションを有効にする（`+O` で無効）', 'enable a `shopt` option by name (`+O` disables it)', 'arg', shoptOptions],
-    ['--posix', 'POSIX モードで起動する（`set -o posix` と同じ）', 'start in POSIX mode (as `set -o posix`)'],
-    ['-l|--login', 'ログインシェルとして起動', 'act as a login shell'],
-    ['-i', '対話シェルとして起動', 'act as an interactive shell'],
-    ['-s', 'コマンドを標準入力から読む', 'read commands from stdin'],
-    ['--norc', '~/.bashrc を読まない', 'do not read ~/.bashrc'],
-    ['--noprofile', 'ログイン時の設定ファイルを読まない', 'do not read the login profile files'],
-  ], {
-    optionsFirst: true, plusOptions: true,
-    operands: SHELL_OPERANDS,
-  }),
-  sh: cmd('POSIX シェルを起動する', 'Run the POSIX shell', [
-    ['-c', '続く文字列をコマンドとして実行', 'run the following string as a command'],
-    ['-s', 'コマンドを標準入力から読む（スクリプトの引数は `$1`… になる）', 'read commands from stdin (the arguments become `$1`…)'],
-    ['-i', '対話シェルとして起動', 'act as an interactive shell'],
-    ['-l', 'ログインシェルとして起動', 'act as a login shell'],
-    ['-e', 'エラーで即終了', 'exit on error'],
-    ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
-    ['-x', '実行するコマンドを表示', 'trace commands'],
-    ['-n', '構文チェックのみ', 'syntax check only'],
-    ['-v', '読み込んだ行をそのまま表示する', 'print input lines as they are read'],
-    ['-a', '代入した変数を自動でエクスポートする', 'export every variable that is set'],
-    ['-C', '`>` で既存ファイルを上書きしない', 'do not overwrite files with `>`'],
-    ['-f', 'グロブ（ワイルドカード展開）を無効にする', 'disable globbing'],
-    ['-b', 'バックグラウンドジョブの終了をすぐに知らせる', 'report the end of background jobs at once'],
-    ['-m', 'ジョブ制御を有効にする', 'turn on job control'],
-    ['-p', '実効ユーザー ID が実ユーザー ID と違っても、実効 ID を戻さない（setuid の権限を捨てない）', 'keep the effective user ID when it differs from the real one (do not drop setuid privileges)'],
-    ['-o', '名前でオプションを有効にする（`set -o` と同じ）', 'enable an option by name (as `set -o`)', 'arg', shellOptions],
-  ], {
-    optionsFirst: true, plusOptions: true,
-    operands: SHELL_OPERANDS,
-  }),
   perl: cmd('Perl を実行する（`-e` でその場のコードを実行。sed や awk の代わりのワンライナーによく使う）', 'Run Perl (`-e` runs code given on the command line; common for one-liners instead of sed/awk)', [
     ['-e', '実行する Perl のコード', 'Perl code to run', 'arg fills lang:perl'],
     ['-E', '実行する Perl のコード（say などの新機能を有効にして）', 'Perl code to run, with newer features like say', 'arg fills lang:perl'],
@@ -2059,6 +2002,7 @@ export const core: Record<string, CommandSpec> = {
 
 export const commands: Record<string, CommandSpec> = wordTable({
   ...core,
+  ...shells,
   ...distro,
   ...system,
   ...basic,

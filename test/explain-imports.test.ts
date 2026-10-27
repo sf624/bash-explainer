@@ -212,7 +212,7 @@ function nameComparisons(checker: ts.TypeChecker, sf: ts.SourceFile, names: Read
  * those that say something else of a command (`commandAliases`, `declarationCommands`, `distroAliases`).
  */
 const RECORDS = new Set([
-  'builtins', 'commands', 'core', 'basic', 'admin', 'storage', 'netadmin', 'ops', 'macos', 'distro', 'system', 'monitor', 'BATS_COMMANDS', 'BATS_SUPPORT_COMMANDS', 'BATS_ASSERT_COMMANDS', 'BATS_FILE_COMMANDS', 'YQ_SPECS',
+  'builtins', 'commands', 'core', 'shells', 'basic', 'admin', 'storage', 'netadmin', 'ops', 'macos', 'distro', 'system', 'monitor', 'BATS_COMMANDS', 'BATS_SUPPORT_COMMANDS', 'BATS_ASSERT_COMMANDS', 'BATS_FILE_COMMANDS', 'YQ_SPECS',
   'commandAliases', 'declarationCommands', 'distroAliases',
 ]);
 const dictDir = path.join(base, 'src', 'dict') + path.sep;

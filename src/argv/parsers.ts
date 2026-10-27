@@ -28,8 +28,12 @@ import type { CommandSpec } from './spec';
  * - `git`: git's own, before its subcommand: a short option is a whole word, with no cluster (`git -pP`) and no
  *   attached value (`-C.`, `-c=x`); long options keep `--name=value`.
  * - `dpkg`: dpkg's own (`myopt`): the rules of `gnu`, and `-f=x` gives `-f` the value `x` (`dpkg-query -f=…`).
+ * - `bash`: bash's own when it starts (shell.c, `parse_long_options` and `parse_shell_options`; Bash manual 6.1): the
+ *   rules of `jq` (no `--name=value`: `--rcfile=f` is an invalid option), with the long options only before the
+ *   others, where `-login` is `--login` too; after a word of short options, `--posix` is the letters `-`, `p`…, and
+ *   `-` is no option (`--: invalid option`). The first operand ends the options, and so does a lone `-`, as `--` does.
  */
-export type OptionParser = 'gnu' | 'getopt_long' | 'single-dash' | 'openssl' | 'letters' | 'cobra' | 'iproute2' | 'jq' | 'git' | 'dpkg';
+export type OptionParser = 'gnu' | 'getopt_long' | 'single-dash' | 'openssl' | 'letters' | 'cobra' | 'iproute2' | 'jq' | 'git' | 'dpkg' | 'bash';
 
 /** What a preset does, as the interpreter (src/argv/interpret.ts) reads it. */
 export interface ParserRules {
@@ -51,10 +55,18 @@ export interface ParserRules {
   optionsFirst: boolean;
   /** The subcommand is found as cobra does. */
   cobra: boolean;
+  /**
+   * Long options come first: before any other option, `-name` is the long option `--name` too; after one, a word
+   * `--name` is read as letters, which the program refuses (the role `unknown-option` with `late`).
+   */
+  longFirst: boolean;
+  /** A word `-` alone ends the options, as `--` does. */
+  loneDashEnds: boolean;
 }
 
 const GNU: ParserRules = {
   longPrefixes: false, longEquals: true, shortClusters: true, shortEquals: false, singleDash: false, doubleDash: false, letters: false, optionsFirst: false, cobra: false,
+  longFirst: false, loneDashEnds: false,
 };
 
 export const PARSERS: Record<OptionParser, ParserRules> = {
@@ -68,6 +80,7 @@ export const PARSERS: Record<OptionParser, ParserRules> = {
   jq: { ...GNU, longEquals: false },
   git: { ...GNU, shortClusters: false },
   dpkg: { ...GNU, shortEquals: true },
+  bash: { ...GNU, longEquals: false, optionsFirst: true, longFirst: true, loneDashEnds: true },
 };
 
 /**

@@ -82,8 +82,9 @@ export interface CommandSpec {
   /** With `operandParser`: the spec the words of the expression are read with (find's tests and actions, `-name x`, `-exec … ;`). */
   expressionSpec?: CommandSpec;
   /**
-   * What an option the spec does not list does, when the command refuses every other option (bats `run`: an error).
-   * (bats' `run` only: other entries do not list every option, so an unknown one is only "not in the dictionary".)
+   * What an option the spec does not list does, when the command refuses every other option (bats `run`: an error;
+   * bash when it starts: `invalid option`, status 2). (bats' `run` and bash only: other entries do not list every
+   * option, so an unknown one is only "not in the dictionary".)
    */
   unknownOption?: Text;
   builtin?: 'special' | 'regular';
@@ -173,7 +174,22 @@ export interface CommandSpec {
    * file it names itself, or fetches nothing to print (`curl -O`, `wget --spider`).
    */
   downloads?: { to: 'stdout' | 'file'; elsewhere: string[] };
+  /**
+   * What a restricted shell (`bash -r`, `rbash`: Bash manual 6.10) refuses of this builtin, which then fails with
+   * status 1 and does nothing (`Restriction`). Absent: nothing.
+   */
+  restricted?: Restriction;
 }
+
+/**
+ * The calls of a builtin a restricted shell refuses: every call (`{}`: `cd`), but with an option of `unless` (`pushd
+ * -n`); only with an option of `options` (`command -p`, `enable -f`, `history -r`); only one that runs a command
+ * (`command`: `exec cmd`); only one whose file is named with a `/` (`slash`): its first operand (`. ./f`, `history -r
+ * /tmp/h`), or the value of that option (`hash -p /bin/ls ls`). bash names that file in its message (`.: ./f:
+ * restricted`), or the option with `namesOption` (`command: -p: restricted`, but `enable: restricted`). Each checked
+ * with bash 5.2 and 5.3.
+ */
+export interface Restriction { options?: string[]; unless?: string[]; command?: true; slash?: 'operand' | string; namesOption?: true }
 
 /** The layouts of output that src/examples/layouts.ts makes up. */
 export type Layout = 'ps' | 'ps-bsd-u' | 'ps-full' | 'ls' | 'ls-long' | 'ls-long-all' | 'ls-long-human' | 'df-human' | 'who' | 'env';

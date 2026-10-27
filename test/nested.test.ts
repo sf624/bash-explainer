@@ -256,7 +256,8 @@ describe('nested scripts: the model', () => {
     assert.strictEqual(option(start(`bash -O extglob -c ':'`), 'shopt', 'extglob'), 'on');
     assert.strictEqual(option(start(`bash --posix -c ':'`), 'set', 'posix'), 'on');
     assert.strictEqual(option(start(`bash -o posix -c ':'`), 'shopt', 'inherit_errexit'), 'on');
-    assert.strictEqual(option(start(`bash -onounset -c ':'`), 'set', 'nounset'), 'on');
+    // (Not `bash -onounset -c`: `o` takes the next word, `-c`, as bash does, which refuses it: test/reading-invocation.test.ts.)
+    assert.strictEqual(option(start(`bash -euo nounset -c ':'`), 'set', 'nounset'), 'on');
     // (An option after the string is an argument.)
     assert.strictEqual(option(start(`bash -c ':' -e`), 'set', 'errexit'), 'default');
     // (An exported BASHOPTS turns on the shopt options it names, after the options given: `+O` does not turn them off.)

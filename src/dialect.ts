@@ -48,7 +48,7 @@ export function detectShell(text: string, fileName = ''): Shell | undefined {
 /** The shell a program name stands for (`dash`, `ksh93`, `lksh`, `busybox`, `posh`…); the one mapping every reader uses. */
 export function shellFromName(name: string): Shell | undefined {
   const n = name.replace(/\d+(\.\d+)*$/, '');
-  if (n === 'bash') return 'bash';
+  if (n === 'bash' || restrictedByName(n)) return 'bash';
   if (n === 'sh' || n === 'posh') return 'sh';
   if (n === 'dash') return 'dash';
   if (n === 'ash' || n === 'busybox') return 'ash';
@@ -57,6 +57,11 @@ export function shellFromName(name: string): Shell | undefined {
   if (n === 'mksh' || n === 'lksh' || n === 'pdksh' || n === 'oksh') return 'mksh';
   if (n === 'zsh') return 'zsh';
   return undefined;
+}
+
+/** Whether bash started with this program name is a restricted shell: `rbash` (Bash manual 6.10), as `bash -r`. */
+export function restrictedByName(name: string): boolean {
+  return name.slice(name.lastIndexOf('/') + 1) === 'rbash';
 }
 
 /**

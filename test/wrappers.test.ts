@@ -80,7 +80,8 @@ describe('the command a wrapper runs', () => {
     assert.match(ran('timeout 5 ls', 'ls'), /runs `ls`/);
     assert.match(ran('chroot /new cmd arg', 'cmd'), /runs `cmd`/);
     assert.match(ran('flock /tmp/l cmd arg', 'cmd'), /runs `cmd`/);
-    assert.match(about("flock -n /tmp/l -c 'cmd'", "'cmd'"), /^Value for `-c`/);
+    // (What the operand after `-c` is, from flock's spec.)
+    assert.match(about("flock -n /tmp/l -c 'cmd'", "'cmd'"), /^command to run\. /);
   });
   it('env, sudo and doas: NAME=value words are assignments, not the command', () => {
     assert.match(about('env -i A=1 cmd arg', 'A=1'), /^Sets the variable `A`/);

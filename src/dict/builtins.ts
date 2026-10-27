@@ -360,7 +360,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-P', 'シンボリックリンクを解決した物理パスに移動', 'use the physical path (resolve symlinks)'],
     ['-L', 'シンボリックリンクをたどる（既定）', 'follow symlinks (default)'],
     ['-e', '`-P` と一緒に使い、移動後のカレントディレクトリが分からなければ失敗を返す', 'with `-P`, fail when the new current directory cannot be determined'],
-  ], args(operand('DIR', '移動先のディレクトリ（`-` は直前のディレクトリ、省略時は $HOME）', 'target directory (`-` = previous, default $HOME)')))),
+  ], { ...args(operand('DIR', '移動先のディレクトリ（`-` は直前のディレクトリ、省略時は $HOME）', 'target directory (`-` = previous, default $HOME)')), restricted: {} })),
   pwd: b('カレントディレクトリのパスを表示する', 'Print the current directory', [
     ['-P', 'シンボリックリンクを解決した物理パスを表示', 'print the physical path'],
     ['-L', 'シンボリックリンクを含んだ論理パスを表示（既定）', 'print the logical path, with symlinks (default)'],
@@ -456,8 +456,8 @@ export const builtins: Record<string, CommandSpec> = wordTable({
       ...args(operand('ACTION', '実行するコマンド（`-` でリセット、空文字で無視）', 'command to run (`-` resets, empty string ignores)', { command: { run: 'current-shell', later: true } }), operand('SIGNAL', '対象のシグナル（EXIT, ERR, INT, TERM など）', 'signal (EXIT, ERR, INT, TERM…)')).operands!,
     ],
   }), (c) => (c.operands.length > 0 || has(c, '--')) && !has(c, '-p', '-P', '-l')),
-  source: actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', SOURCE_OPTIONS, SOURCE_OPERANDS), undefined, { runsUnread: 'file' }),
-  '.': actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', SOURCE_OPTIONS, SOURCE_OPERANDS), undefined, { runsUnread: 'file' }),
+  source: actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', SOURCE_OPTIONS, { ...SOURCE_OPERANDS, restricted: { slash: 'operand' } }), undefined, { runsUnread: 'file' }),
+  '.': actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', SOURCE_OPTIONS, { ...SOURCE_OPERANDS, restricted: { slash: 'operand' } }), undefined, { runsUnread: 'file' }),
   // The words are joined with spaces and read again as a command of this shell.
   eval: cmd('引数を連結して文字列をコマンドとして再解釈・実行する（注入に注意）', 'Concatenate arguments and execute the result as a command (beware of injection)', [], {
     builtin: 'special', optionsFirst: true, operands: [{ pattern: [operand('STRING', 'もう一度読んで実行する文字列', 'text to read and run again', { repeat: '?', command: { run: 'current-shell', joinsWords: true } })] }],
@@ -466,7 +466,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-a', 'コマンドに 0 番目の引数（`$0`）として渡す名前', 'name to pass as the zeroth argument (`$0`) of the command', 'arg'],
     ['-c', '環境変数を空にしてコマンドを実行する', 'run the command with an empty environment'],
     ['-l', 'コマンドの 0 番目の引数の先頭に `-` を付ける（ログインシェルのように）', 'put a `-` in front of the zeroth argument (as a login shell has)'],
-  ], { builtin: 'special', optionsFirst: true, operands: [{ pattern: [runs({ run: 'exec', replacesShell: true })] }] }),
+  ], { builtin: 'special', optionsFirst: true, operands: [{ pattern: [runs({ run: 'exec', replacesShell: true })] }], restricted: { command: true } }),
   shift: actsOnShell(special('位置パラメータを左にずらす（$2 が $1 になる）', 'Shift positional parameters left ($2 becomes $1)', [], numeric(operand('N', 'ずらす数（省略時は 1）', 'how many (default 1)')))),
   getopts: actsOnShell(b('スクリプトのオプション引数を1つずつ解析する（`while getopts … ; do case … esac; done` の形で使い、次に読む位置は $OPTIND）', 'Parse script options one at a time (used as `while getopts …; do case … esac; done`; $OPTIND tracks the position)', [], args(
     operand('OPTSTRING', '受け付けるオプション文字（`:` 付きは引数を取る）', 'option letters (`:` means takes an argument)', { lang: 'getopts' }),
@@ -558,6 +558,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
       { when: { option: ['-v', '-V'] }, pattern: [operand('NAME', '調べる名前', 'name to look up', { repeat: '*' })] },
       { pattern: [runs({ run: 'current-shell', lookup: 'no-functions' })] },
     ],
+    restricted: { options: ['-p'], namesOption: true },
   }),
   builtin: cmd('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { builtin: 'regular', optionsFirst: true, operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'builtins-only' })] }] }),
   hash: actsOnShell(b('コマンドのパスのキャッシュを操作する', 'Manage the command path cache', [
@@ -567,6 +568,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-p', '名前に対応するパスを指定して覚えさせる', 'remember the given path for the name', 'arg'],
     ['-t', '覚えているパスを表示する', 'print the remembered path of each name'],
   ], {
+    restricted: { slash: '-p' },
     // (bash reads `-t` first, then `-p`, then `-d`; with none, it looks each name up in PATH.)
     operands: [
       { when: { option: ['-t'] }, pattern: [operand('NAME', '覚えているパスを表示する名前', 'name whose remembered path to print', { repeat: '*' })] },
@@ -634,10 +636,10 @@ export const builtins: Record<string, CommandSpec> = wordTable({
   }),
   pushd: actsOnShell(b('ディレクトリスタックに積んで移動する', 'Push a directory onto the stack and cd to it', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
-  ], { ...args(operand('DIR', 'スタックに積んで移動するディレクトリ', 'directory to push onto the stack and cd to')), unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`スタックを回して、\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）を先頭にして移動する`, `Rotate the stack so that entry ${n}, counted from the ${side} of \`dirs\` (from 0), is on top, and cd there`))] })),
+  ], { ...args(operand('DIR', 'スタックに積んで移動するディレクトリ', 'directory to push onto the stack and cd to')), restricted: { unless: ['-n'] }, unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`スタックを回して、\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）を先頭にして移動する`, `Rotate the stack so that entry ${n}, counted from the ${side} of \`dirs\` (from 0), is on top, and cd there`))] })),
   popd: actsOnShell(b('ディレクトリスタックから取り出してそこへ戻る', 'Pop the directory stack and cd to it', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
-  ], { unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）をスタックから取り除く`, `Remove entry ${n}, counted from the ${side} of \`dirs\` (from 0), from the stack`))] })),
+  ], { restricted: { unless: ['-n'] }, unknownOption: STACK_NUMBER, patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）をスタックから取り除く`, `Remove entry ${n}, counted from the ${side} of \`dirs\` (from 0), from the stack`))] })),
   dirs: b('ディレクトリスタックを表示する', 'Show the directory stack', [
     ['-c', 'スタックを空にする', 'clear the stack'],
     ['-l', '`~` を使わず、ホームからのパスを全部書く', 'print full paths, not `~`'],
@@ -661,6 +663,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-d', '`-f` で読み込んだビルトインを取り除く', 'remove a builtin loaded with `-f`'],
     ['-f', '共有オブジェクトからビルトインを読み込む', 'load a builtin from a shared object', 'arg'],
   ], {
+    restricted: { options: ['-f', '-d'] },
     // (With `-p`, bash lists the builtins and does nothing with the names; then `-f`, `-d` and `-n`.)
     operands: [
       { when: { option: ['-p'] }, pattern: [operand('NAME', '無視される（`-p` があると、`enable` はビルトインの一覧を表示するだけ）', 'ignored: with `-p`, `enable` only lists the builtins', { repeat: '*' })] },
@@ -684,7 +687,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-n', '履歴ファイルの未読分を読み込む', 'read the lines of the history file not yet read'],
     ['-p', '履歴展開した結果を表示するだけで、履歴には入れない', 'print the result of history expansion without saving it'],
     ['-s', '引数を履歴の最後の1件として追加する', 'add the arguments as one entry to the history'],
-  ]),
+  ], { restricted: { options: ['-a', '-r', '-w', '-n'], slash: 'operand' } }),
   fc: b('履歴のコマンドを一覧したり、エディタで編集して再実行する', 'List history commands, or edit and re-run one in an editor', [
     ['-l', '編集せずに一覧を表示する', 'list instead of editing'],
     ['-n', '一覧に番号を付けない', 'omit the numbers in the list'],

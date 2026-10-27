@@ -543,7 +543,7 @@ describe('robustness', () => {
       explain(line, 0, lang).items.forEach(walk);
       return out[0];
     };
-    assert.match(value("env -S'-i A=1 bash -e' s", '-i A=1 bash -e'), /env splits it into words and reads them here as its own arguments: `-i` \(start with an empty environment\), `A=1` \(variable for the command\), `bash` \(the command to run: .*\), `-e` \(exit on error\)$/);
+    assert.match(value("env -S'-i A=1 bash -e' s", '-i A=1 bash -e'), /env splits it into words and reads them here as its own arguments: `-i` \(start with an empty environment\), `A=1` \(variable for the command\), `bash` \(the command to run: .*\), `-e` \(exit immediately if a command fails .*\)$/);
     assert.match(value("env -S'-i A=1 bash -e' s", '-i A=1 bash -e', 'ja'), /env はこれを単語に分けて、この位置で自分の引数として読む: `-i`（空の環境から始める）、`A=1`（コマンドの環境に入れる変数）/);
     assert.match(value("env -S 'bash -e' s", "'bash -e'"), /`bash` \(the command to run/);
     assert.match(value("env --split-string='-u HOME -- cmd' s", "--split-string='-u HOME -- cmd'"), /`-u` \(remove a variable\), `HOME` \(value for `-u`\), `--` \(end of options\), `cmd` \(the command to run\)$/);

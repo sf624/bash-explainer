@@ -8,10 +8,11 @@ import { keywords, listOps } from '../dict/syntax';
 import { DIRECTIVE } from '../directives';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
-import { anonSections } from '../refs';
+import { anonSections, programSections } from '../refs';
 import { definitionFails } from '../semantics/names';
 import { field, fields, isShebang, strayKeyword, type SyntaxNode, withLists } from '../syntax/tree';
 import { detectShell, SHELL_NAMES } from '../dialect';
+import { shebangOptionTokens } from './argv';
 import type { Explainer } from './context';
 import { caseExample, pipelineExample } from './examples';
 import { listOperatorToken } from './lists';
@@ -138,7 +139,26 @@ function shebang(cx: Explainer, n: SyntaxNode): Token {
     `Shebang: when the file is run as a program (\`./script.sh\`, or a command found on PATH), the kernel (or bash, on a system whose kernel does not) runs \`${shown} ./script.sh args…\``
       + `${oneArg ? ` (on Linux the whole rest of the line, \`${arg}\`, is one argument)` : ''}${relative[1]}${env ? `, and \`env\` finds \`${arg}\` on PATH and runs it` : ''}${notes}`
       + `. To bash this line is a comment: \`bash script.sh\`, \`sh script.sh\`, \`source script.sh\` and \`. script.sh\` ignore it${dialect[1]}`,
-  ));
+  ), shebangParts(cx, n, interp, arg));
+}
+
+/**
+ * What the interpreter reads the one word after it as, from its spec (`#!/bin/bash -eu`: `-e` and `-u`, Bash manual
+ * 6.1; `#!/usr/bin/awk -f`: `-f`, whose value is the script's path): the kernel passes that word, then the script's
+ * path. Nothing when the rest has blanks (one argument all the same: the text and `shebang-refused` say what then).
+ */
+function shebangParts(cx: Explainer, n: SyntaxNode, interp: string, arg: string): Token[] {
+  const name = interp.slice(interp.lastIndexOf('/') + 1);
+  const spec = arg && !/\s/.test(arg) ? specFor(cx, name) : undefined;
+  if (!spec) return [];
+  const parse = interpret(spec, [{ value: arg }, { value: './script.sh' }], { name, lookup: (x) => specFor(cx, x) });
+  const role = parse.roles.find((r) => r.word === 0)!.role;
+  const start = n.text.indexOf(arg, n.text.indexOf(interp) + interp.length);
+  const { row, column } = n.startPosition;
+  const refs = programSections(name);
+  const parts = shebangOptionTokens(cx, role, spec, name, arg, (from, to) => ({ start: { line: row, character: column + start + from }, end: { line: row, character: column + start + to } }));
+  if (refs.length) for (const t of parts) t.refs = refs;
+  return parts;
 }
 
 /**

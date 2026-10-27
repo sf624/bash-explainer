@@ -183,6 +183,25 @@ export const MESSAGES = {
       ? '; bash also abandons the rest of the command of the script it is in (the line, or the loop or function call around it) and goes on with the next one, status 1'
       : then === 'subshell' ? '; the subshell ends there, status 1'
         : then === 'runs' ? '; the command still runs, without it' : ''}`]),
+  // (What a restricted shell refuses, 6.10, where the state says the shell is one (src/explain/reads.ts,
+  // `restrictedAt`): a builtin's call (`CommandSpec.restricted`: `name` the builtin, `word` what bash names after it), a
+  // command name with a `/` (`name` the name), an output redirection (`name` its operator, `word` its target). Each
+  // fails with status 1 (which `set -e` stops at, as any failure); a refused name or redirection leaves the command
+  // not run. Checked with bash 5.2 and 5.3.)
+  'restricted-refused': failure<{ kind: 'builtin' | 'slash' | 'redirect'; name: string; word?: string }>(['6.10'], ({ kind, name, word }) => {
+    const shell = ['制限付きシェル（`bash -r`・`rbash`）なので、bash は', 'This is a restricted shell (`bash -r`, `rbash`), so bash refuses'];
+    if (kind === 'builtin') {
+      const said = `\`${name}: ${word ? `${word}: ` : ''}restricted\``;
+      return [`${shell[0]}この \`${name}\` を拒否します（${said}）。何もせずに、終了ステータス 1 で失敗します`,
+        `${shell[1]} this \`${name}\` (${said}): it does nothing, and fails with status 1`];
+    }
+    if (kind === 'slash') {
+      return [`${shell[0]} \`/\` を含むコマンド名を拒否し（\`${name}: restricted\`、コマンド名に \`/\` は使えない。終了ステータス 1）、\`${name}\` を実行しません`,
+        `${shell[1]} a command name with a \`/\` (\`${name}: restricted\`: no \`/\` in command names, status 1) and does not run \`${name}\``];
+    }
+    return [`${shell[0]}出力のリダイレクト \`${name}\` を拒否し（\`${word}: restricted: cannot redirect output\`、終了ステータス 1）、コマンドを実行しません`,
+      `${shell[1]} the output redirection \`${name}\` (\`${word}: restricted: cannot redirect output\`, status 1) and does not run the command`];
+  }),
   // (`RANDOM`, `SECONDS` and the other variables the manual says "lose their special properties" when unset;
   // `subshell`: why the `unset` runs in a subshell, which alone loses it.)
   'unset-ends-special': note<{ name: string; subshell?: string }>(['5.2'], ({ name, subshell }) => subshell ? [

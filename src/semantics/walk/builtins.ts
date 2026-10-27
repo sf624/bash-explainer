@@ -22,6 +22,9 @@ import type { Walker } from './walker';
 /** The attributes the declaration builtins give with their options. */
 export const ATTRIBUTE_LETTERS: ReadonlySet<string> = new Set(['a', 'A', 'i', 'l', 'n', 'r', 't', 'u', 'x']);
 
+/** The `shopt` options bash sets when it starts, which `shopt -s` and `-u` leave as they are (and succeed; bash 5.2 and 5.3). */
+export const STARTUP_SHOPT: ReadonlySet<string> = new Set(['login_shell', 'restricted_shell']);
+
 /** What builtins and assignments change in the state, for the walk. */
 export class WalkBuiltins {
   constructor(private readonly w: Walker) {}
@@ -120,7 +123,7 @@ export class WalkBuiltins {
         for (const o of operands) {
           const opt = staticWordValue(o);
           if (opt === 'posix' && has('-o')) st = this.setPosix(st, on === 'on', n);
-          else if (opt) st = this.w.put(st, has('-o') ? 'set' : 'shopt', opt, on);
+          else if (opt && (has('-o') || !STARTUP_SHOPT.has(opt))) st = this.w.put(st, has('-o') ? 'set' : 'shopt', opt, on);
         }
         return st;
       }

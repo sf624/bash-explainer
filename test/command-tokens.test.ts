@@ -278,10 +278,13 @@ describe('command tokens: each token of an explanation lies in one command of ba
       for (let line = 0; line < lineStarts.length; line++) {
         if (skipRows.has(line)) continue;
         counts.lines++;
-        for (const t of allTokens(analyzer.explainLine(tree, line, shell).items)) {
-          if (t.kind === 'comment' || t.kind === 'shebang') continue;
+        const tokens = allTokens(analyzer.explainLine(tree, line, shell).items);
+        // (A comment is in no command, nor is what a shebang's interpreter reads in it: `-eu` of `#!/bin/bash -eu`.)
+        const comments = tokens.filter((t) => t.kind === 'comment' || t.kind === 'shebang').map((t) => [offset(t.span.start), offset(t.span.end)]);
+        for (const t of tokens) {
           const a = offset(t.span.start);
           const b = offset(t.span.end);
+          if (comments.some(([x, y]) => x <= a && b <= y)) continue;
           const name = `${t.label} (${t.span.start.line + 1}:${t.span.start.character + 1})`;
           const id = `${a}:${b}:${t.label}`;
           if (seen.has(id)) continue;

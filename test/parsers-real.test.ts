@@ -173,6 +173,18 @@ describe('option parser presets agree with a real parser of their family', () =>
       ['git -C. version', 'fails', 'error'],
       ['git --git-dir=/nonexistent version', /^git version/, '--git-dir /nonexistent -- version'],
     ] },
+    // bash when it starts (6.1): long options only first (`-login` too), no `--name=value`, the string of `-c` is the
+    // first operand (a command, not listed), `-o` and `-O` take the next word, a lone `-` ends the options.
+    { parser: 'bash', tool: 'bash', rows: [
+      ["bash -c -u 'echo $-' a", /^\w*u\w*\n$/, '-c -u -- a'],
+      ["bash -login -norc -c 'shopt -q login_shell && echo L'", /^L\n$/, '-login -norc -c --'],
+      ["bash -x --posix -c 'echo hi'", 'fails', 'error'],
+      ["bash --rcfile=f -c 'echo hi'", 'fails', 'error'],
+      ["bash --norc -O extglob -c 'shopt extglob'", /extglob\s+on/, '--norc -O extglob -c --'],
+      ["bash -ox posix -c 'shopt -qo posix && echo P'", /P\n/, '-o -x posix -c --'],
+      ["bash -c - 'echo $0' zero", /^zero\n$/, '-c -- zero'],
+      ["bash --nosuch -c 'echo hi'", 'fails', 'error'],
+    ] },
     // dpkg's myopt: `-f=x` gives `x`.
     { parser: 'dpkg', tool: 'dpkg-query', rows: [
       ['dpkg-query -f=\'${Package}\\n\' -W dpkg', /^dpkg\n$/, '-f ${Package}\\n -W -- dpkg'],

@@ -18,7 +18,7 @@ import type { ArgRole, ArgvParse, ArgWord, CommandRole, RoleAt, ValueRole } from
 import { interpret } from '../argv/interpret';
 import type { BuiltinCall, CommandSlot, CommandSpec } from '../argv/spec';
 import { argWordFor } from '../argv/words';
-import { shellFromName } from '../dialect';
+import { restrictedByName, shellFromName } from '../dialect';
 import type { Shell } from '../dialect';
 import { field, isShebang, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { staticWordValue } from '../staticword';
@@ -530,8 +530,8 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
         const keeps = withOption ? withOption.keeps : role.slot.keeps;
         const program = (role.slot.run === 'shell-string' ? p.command.split(' ')[0].split('/').pop()! : '');
         const shell: ShellKind | undefined = role.slot.run !== 'shell-string' ? undefined : role.slot.shell ?? (!role.slot.joinsWords ? shellFromName(program) : undefined) ?? 'unknown';
-        // (The options of a shell started by its name: not those of `su -l -c` or of `watch`.)
-        const invocation = shell && shell !== 'unknown' && !role.slot.shell ? shellInvocation(all) : [];
+        // (The options of a shell started by its name: not those of `su -l -c` or of `watch`. `rbash` is `bash -r`.)
+        const invocation = shell && shell !== 'unknown' && !role.slot.shell ? [...(restrictedByName(program) ? [{ flag: '-r' }] : []), ...shellInvocation(all)] : [];
         const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: w.node(word), assigns, env, ...(keeps ? { keeps } : {}), ...(unsets.length ? { unsets } : {}),
           ...(shell ? { shell } : {}), ...(invocation.length ? { invocation } : {}) });
         if (!split) out.set(w.node(word), inner);

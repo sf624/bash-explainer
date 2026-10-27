@@ -189,6 +189,22 @@ export const BUILTIN_SECTIONS: Readonly<Record<string, string>> = wordTable({
   history: '9.2',
 });
 
+/** The sections that describe a program the manual is about: bash itself (6.1 Invoking Bash), and bash as `rbash` (6.10). */
+export const PROGRAM_SECTIONS: Readonly<Record<string, readonly string[]>> = wordTable({
+  bash: ['6.1'],
+  rbash: ['6.1', '6.10'],
+});
+
+/**
+ * Parameters that a section besides their own tells how to read: `$-` and `PS1`, which 6.3.2 ("Is this Shell
+ * Interactive?") tests in a startup file (`case $- in *i*)`, `[ -z "$PS1" ]`): `$-` holds `i` in an interactive
+ * shell, and `PS1` is unset in a shell that is not.
+ */
+export const PARAMETER_ALSO: Readonly<Record<string, string>> = wordTable({
+  '-': '6.3.2',
+  PS1: '6.3.2',
+});
+
 
 /**
  * The section that describes each variable of chapter 5 (an item of its variable table): 5.1 "Bourne Shell

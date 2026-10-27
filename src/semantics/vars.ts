@@ -191,6 +191,14 @@ export const usuallyInEnvironment = (name: string): boolean => !!known(name)?.en
  */
 export const EXPORTED_AT_START: readonly string[] = ['OLDPWD'];
 
+/**
+ * The variables a restricted shell (`bash -r`, `rbash`: Bash manual 6.10) makes read-only when it starts: a script may
+ * not set or unset them (`declare -p PATH` is `declare -rx PATH=…`; `PATH=/x` is "readonly variable", in bash 5.2
+ * and 5.3). `SHELL` and `PATH` have a value then (bash sets one if the environment gives none); the others only when
+ * the environment gives them.
+ */
+export const RESTRICTED_READONLY: readonly string[] = ['SHELL', 'PATH', 'HISTFILE', 'ENV', 'BASH_ENV'];
+
 /** Whether bash ignores what the script assigns to `name` (`BASHPID`, `LINENO`): it keeps its own value. */
 export const assignmentIgnored = (name: string): boolean => !!known(name)?.ignored;
 

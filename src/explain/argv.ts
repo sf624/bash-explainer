@@ -20,7 +20,7 @@ import { shorten } from '../label';
 import { fact } from '../messages';
 import { nameInfo } from '../namefacts';
 import { spanOf } from '../noteanchors';
-import { builtinSections, nodeSections } from '../refs';
+import { builtinSections, nodeSections, programSections } from '../refs';
 import { shellEffectOf, type SlotLink, slotEnvs } from '../semantics/env';
 import { type Missed, testSpecOf } from '../semantics/names';
 import { attribute, docLine } from '../semantics/state';
@@ -35,7 +35,7 @@ import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
-import { globOff, NO_SPEC, resolve, shoptAt, specFor, wordAt } from './reads';
+import { globOff, NO_SPEC, resolve, restrictedAt, shoptAt, specFor, wordAt } from './reads';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
 import { inSubshell } from './where';
@@ -165,9 +165,10 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             if (at !== a) joinedNote = { at, note: script.note! };
             out.push(joinedWhole ? joinedScript(cx, words, joined, script) : withScript(positional(cx, a, joined), at === a ? script : { tokens: [] }));
           } else if (!role.parse) {
-            // A command string (`bash -c 'cmd'`, `su -c 'cmd'`): the value of the option.
+            // A command string: the value of an option (`su -c 'cmd'`), or an operand (`bash -c 'cmd'`, `watch 'cmd'`).
             slotNotes(cx, role, cx.slotEnvs.get(a)!, [a], assigned);
-            out.push(withScript(valueToken(cx, a, { role: 'value', of: role.of ?? '-c', index: 0 }, false), scriptTokens(cx, [a], cx.slotEnvs.get(a)!, shellParams(cx, role, parse, nodes, word))));
+            const string = role.of ? valueToken(cx, a, { role: 'value', of: role.of, index: 0 }, false) : cx.tok(a, 'argument', cx.t(role.item!.text), wordParts(cx, a));
+            out.push(withScript(string, scriptTokens(cx, [a], cx.slotEnvs.get(a)!, shellParams(cx, role, parse, nodes, word))));
           } else out.push(wrapped(cx, nodes, word, role, assigned));
           break;
         case 'joined':
@@ -218,7 +219,13 @@ function wordParts(cx: Explainer, a: SyntaxNode): Token[] {
 }
 
 /** The text of an option not in the dictionary. */
-function unknownOption(cx: Explainer, command: string, spec: CommandSpec, ambiguous?: string[]): string {
+function unknownOption(cx: Explainer, command: string, spec: CommandSpec, ambiguous?: string[], late?: boolean): string {
+  // (`bash -x --posix`: long options only before the others, the parser rule `longFirst`.)
+  if (late) {
+    const name = command.split(' ')[0];
+    return cx.s(`1文字のオプションの後の長いオプション: ${name} は長いオプションをほかより前でしか読まないので、この語を文字 \`-\`… の並びとして読み、\`--: invalid option\` と表示して、何も実行せずに終了する（終了ステータス 2。前に \`-e\` があれば 1）`,
+      `A long option after a single-letter one: ${name} reads long options only before the others, so it reads this word as the letters \`-\`…, says \`--: invalid option\` and exits, running nothing (status 2; 1 after \`-e\`)`);
+  }
   if (spec.unknownOption) return cx.t(spec.unknownOption);
   if (ambiguous) {
     const names = ambiguous.map((n) => `\`${n}\``).join(cx.s('、', ', '));
@@ -242,6 +249,40 @@ function turnedOff(cx: Explainer, flag: string, what: string, value = false, off
   return value ? on : cx.s(`\`${flag}\` を解除: ${on}`, `Undo \`${flag}\`: ${on}`);
 }
 
+/**
+ * What a program reads in a word that no word of the shell holds, as tokens over its characters: the argument of a
+ * shebang, which the kernel passes as one word, before the script's path (`#!/bin/bash -eu`: `-e` and `-u`). `role` is
+ * the word's role in a parse of the word and the path; `at` places its characters `from` to `to`. A value the option
+ * takes from the next word is the script's path, which the text says. Nothing for a word that is not options.
+ */
+export function shebangOptionTokens(cx: Explainer, role: ArgRole, spec: CommandSpec, command: string, text: string, at: (from: number, to: number) => Span): Token[] {
+  const tok = (from: number, to: number, label: string, explanation: string, children: Token[] = []): Token => ({ kind: 'option', label, explanation, span: at(from, to), children, origin: 'argv' });
+  const path = cx.s('（値は次の引数のスクリプトのパス）', ' (its value is the next argument, the script\'s path)');
+  /** One option, over the characters `from` to `to` (a letter of a cluster, with a value written after it). */
+  const one = (l: Extract<ArgRole, { role: 'option' | 'unknown-option' }>, from: number, to: number): Token => {
+    const label = l.part ? dash(l.flag) : text;
+    if (l.role === 'unknown-option') return tok(from, to, label, unknownOption(cx, command, spec, l.ambiguous, l.late));
+    const said = l.disables ? turnedOff(cx, dash(l.flag), cx.t(l.text), false, l.spec.offText) : cx.t(l.text);
+    // (`#!/usr/bin/awk -f`: the value is the next word, the script's path, unless a letter before took it (`-oO`); one
+    // written in the word is its rest, `-i.bak`.)
+    const value = l.value ? cx.s(`（値は \`${text.slice(l.value.attached)}\`）`, ` (value: \`${text.slice(l.value.attached)}\`)`) : l.spec.value && !l.missing ? path : '';
+    return tok(from, to, label, said + value);
+  };
+  switch (role.role) {
+    case 'option': case 'unknown-option': return [one(role, 0, text.length)];
+    case 'end-of-options': return [tok(0, text.length, text, cx.s('オプションの終わり', 'End of options'))];
+    case 'cluster': {
+      const letters = role.letters.map((l) => {
+        const o = l as Extract<ArgRole, { role: 'option' | 'unknown-option' }>;
+        return one(o, o.part![0], o.role === 'option' && o.value ? text.length : o.part![1]);
+      });
+      const names = letters.map((p) => `\`${p.label}\``).join(' ');
+      return [tok(0, text.length, text, cx.s(`短いオプション ${names} をまとめて指定`, `Combined short options ${names}`), letters)];
+    }
+    default: return [];
+  }
+}
+
 /** The token of an option word: one option, `--name=value`, or short options together (`-rn`, `-n5`, `-F'|'`). */
 function optionToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-option' | 'cluster' }>, spec: CommandSpec, parse: ArgvParse): Token {
   if (role.role !== 'cluster' && role.value && !role.part) return equalsToken(cx, a, role, spec, parse);
@@ -253,7 +294,7 @@ function optionToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
       ? cx.s(`短いオプション ${flags.map((p) => `\`${p.label}\``).join(' ')} をまとめて指定`, `Combined short options ${flags.map((p) => `\`${p.label}\``).join(' ')}`)
       : flags[0].explanation, flags.length > 1 ? parts : parts.filter((p) => p.kind === 'argument'));
   }
-  if (role.role === 'unknown-option') return cx.tok(a, 'option', unknownOption(cx, parse.command, spec, role.ambiguous));
+  if (role.role === 'unknown-option') return cx.tok(a, 'option', unknownOption(cx, parse.command, spec, role.ambiguous, role.late));
   const flag = dash(role.flag);
   // `set -o` with no name lists the settings; `set +o` prints commands that restore them.
   const alone = role.missing ? role.spec.noValue : undefined;
@@ -767,8 +808,12 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
   // (`builtin cd`, `command echo`: the builtin runs in this shell, as if bash ran it: no other command runs it.)
   const direct = role.slot.run === 'current-shell' && res?.kind === 'builtin';
+  // (`command /bin/ls`: this shell runs the name, which a restricted one refuses with a `/`, 6.10.)
+  if (role.slot.run === 'current-shell' && res?.kind === 'file' && name.includes('/') && restrictedAt(cx, first)) cx.note(fact(cx.lang, 'restricted-refused', { kind: 'slash', name }), first);
+  // (A program the manual describes: `sudo bash -c`, `exec bash --login`, 6.1.)
+  const program = res?.kind === 'file' ? programSections(res.name) : [];
   return {
-    kind, ...(res ? { name: nameInfo(cx.lang, res, cx, first, cx.slotEnvs.get(first)) } : {}), ...(direct ? { refs: builtinSections(res.name, res.special) } : {}),
+    kind, ...(res ? { name: nameInfo(cx.lang, res, cx, first, cx.slotEnvs.get(first)) } : {}), ...(direct ? { refs: builtinSections(res.name, res.special) } : program.length ? { refs: program } : {}),
     label: shorten(name),
     explanation: (role.of ? cx.s('実行するコマンド: ', 'Command to run: ') : '') + (direct ? '' : cx.s(`\`${name}\` を実行: `, `runs \`${name}\`: `)) + explanation,
     span, children, summary: `${name}: ${explanation}`,
