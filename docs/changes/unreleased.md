@@ -86,10 +86,10 @@ The other warnings and caveats of the explanations are problems as well. Among t
 | `bracket-missing-close`, `bracket-close-glued`, `test-malformed` | `[ -f a`, `[ -f a]`, `[ a b c ]` | warning |
 | `unset-readonly`, `unset-function-and-variable` | `readonly x=1; unset x`, `unset -f -v x` | warning |
 | `assign-readonly` | `UID=0`, `readonly x=1; x=2` | warning |
-| `local-outside-function` | `local x=1` outside a function | warning |
-| `alias-not-expanded-in-script`, `distro-alias-in-script` | `alias ll='ls -l'` then `ll`; `ll /tmp` | warning |
+| `local-outside-function` | `local x=1` outside a function (information in a file with no shebang) | warning |
+| `alias-not-expanded-in-script`, `distro-alias-in-script` | `alias ll='ls -l'` then `ll` in a script with a shebang; `ll /tmp` | warning |
 | `extglob-turned-off`, `extglob-in-same-block`, `extglob-not-in-new-shell` | `shopt -u extglob`, then `ls !(a)` on a later line | warning |
-| `variable-not-exported`, `variable-not-passed-by-wrapper`, `variable-not-in-remote-shell` | `x=1; bash -c 'echo $x'` | warning |
+| `variable-not-exported`, `variable-not-passed-by-wrapper`, `variable-not-in-remote-shell` | `x=1; bash -c 'echo $x'` (information for a name that may come from the environment: `FOO=1`) | warning |
 | `builtin-or-function-as-program`, `function-not-in-new-shell-export`, `function-not-on-remote`… | `f() { :; }; sudo f` | warning |
 | `wrapper-assignment-expanded-first` | `sudo X=1 echo $X` | warning |
 | `pipeline-subshell-variable` | `… \| while read -r l; do n=1; done; echo "$n"` | warning |
@@ -852,6 +852,18 @@ The warning that an empty variable makes `rm -r` delete from the root:
 - In `if [ -f a ] then …`, `while [ x ] do …` and `if test -f a then …` (no `;` before `then` or `do`), the note is the syntax error only. Before, the line also said `[` or `test` "fails when it runs"; bash never runs it: `then` is an argument, so the construct has no `then` and bash stops with "syntax error near unexpected token `fi`" (`done` for a loop). `if [[ -f a ]] then` is valid and gets no note.
 - A command that another one runs through its command slot gets the checks of a command of its own: `sudo rm -rf $DIR/releases/$line`, `sudo -u deploy rm -rf "$DIR"/*`, `env A=1 rm -rf $DIR/x`, `nice -n 10 nohup rm -rf $DIR/x`, `… | xargs rm -rf $DIR/x` and `command rm -rf $DIR/x` get the warning that an empty `DIR` deletes from the root, and the one on an unquoted path (`sudo cp $a b` too). Before, only `rm` written first, or after `time`, got them. A string another shell runs (`sudo sh -c 'rm -rf $DIR/x'`) and a function named `sudo` are not read so.
 - An unquoted path whose value the script sets, on every path, to one word with nothing to glob (`TS=2024; rm -rf /tmp/build-$TS`) is a caveat, not a warning: "(with its value here it stays one argument, `/tmp/build-2024`, but another value breaks it)". A value the script does not know (`read line`, `$1`, `TS=$(date +%s)`, one set in a branch) keeps the warning.
+
+Five pitfalls that bash 5.2 contradicted (found in a review, each checked in bash):
+
+| Written | Before | Now | What bash does |
+| --- | --- | --- | --- |
+| `alias hi='echo hi'` then `hi`, in a file with no shebang (`.bashrc`, `~/.bash_aliases`), or in a README's code block | Warning: "command not found" in a script | No note; the explanation of `hi` says that an interactive shell that reads the file replaces it, and a script does not. A file with a shebang, a CI step, a Dockerfile `RUN` and a `bash -c` string keep the warning. | `bash -ic 'source f.sh'` prints `hi`; `bash f.sh` says "hi: command not found". |
+| `local v=7` outside a function, in a file with no shebang | Warning: it fails | Caveat: it fails, but works when a function reads the file with `source`. A file with a shebang, and a `bash -c` string, keep the warning. | `f() { source lib.sh; }; f` prints `v=7`, status 0; `bash lib.sh` says "can only be used in a function". |
+| `FOO=1; bash -c 'echo "$FOO"'` | Warning: empty there | Caveat: empty unless `FOO` was in the environment already, which exports it. A name in lower case, or one the script `unset` or `export -n` first, keeps the warning. | `bash s.sh` prints `[]`; `env FOO=x bash s.sh` prints `[1]`. |
+| `TERM=dumb; sudo bash -c "echo \$TERM"`, also `TZ`, `LANG`, `LC_*`, `DISPLAY` | Warning: sudo passes no variable | As without sudo: nothing when exported, the caveat above when not. sudo's defaults keep these names (sudoers(5): `env_reset`, `env_check`, `env_keep`). Another name keeps the warning, which now says that sudo keeps "a few such as `TERM` and `LANG`". | — (sudo needs a password here; the names come from sudoers(5) and sudo 1.9.15's defaults.) |
+| `[ -n "$x"]` | Warning: "missing `]`" | Warning: when `"$x"` is empty, the word is `]` and closes `[`, which tests `[ -n ]`: not the condition meant; with a value, "missing `]`". A word with text of its own before the `]` (`"$x/a"]`), `${#x}` or `${x:-none}`, or a variable set to text, keeps the old note. | `x=""; [ -n "$x"]; echo $?` prints `0` and no error; with `x=a`, `[: missing ']'` and `2`. |
+
+The name kind of an alias that is not expanded reads "not expanded in a script" (it said "not expanded here").
 
 - The pitfall on `sudo cmd > /etc/x` (`redirect-by-your-shell`) leads with what happens and why. For a fixed path under a system directory that only root writes (`/etc`, `/usr`, `/lib`, `/opt`, `/boot`, `/root`, `/sys`, `/proc/sys`) it names the file: "`/etc/resolv.conf` is normally writable only by root: the redirection (`>`) is opened by your own shell with your rights, before sudo starts, so it fails with "Permission denied" and the command does not run. Use `… | sudo tee /etc/resolv.conf`". For any other target (`"/etc/$f"`, `/proc/self/x`) it says "if the file is writable only by root, …". `>>` suggests `sudo tee -a`; `2>` and `&>` suggest `sudo bash -c '… 2> file'`, and `<` (a file only root reads) passing the file as an argument or the same `sudo bash -c`. When the pitfall appears did not change. Before, it only said the redirection is done by your shell and not by sudo, with `sudo tee` for every case.
 

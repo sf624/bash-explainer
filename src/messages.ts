@@ -56,6 +56,11 @@ const caveat = <P = Record<string, never>>(refs: readonly string[], text: (p: P)
  */
 const notProblem = <P>(e: Entry<P>): Entry<P> => ({ ...e, problem: false });
 
+/** `local-outside-function` in a file with no shebang (`sourced`): a function may read it with `source`, and `local` then works. */
+const withSourced = (sourced: boolean | undefined, [ja, en]: readonly [string, string]): readonly [string, string] => (sourced ? [
+  `${ja}。ただし、このファイルにはシバンがないので、関数の中から \`source\` で読み込まれたときは、\`local\` はその関数のローカル変数を宣言します`,
+  `${en}. But this file has no shebang: when a function reads it with \`source\`, \`local\` works there, and declares a variable of that function`] : [ja, en]);
+
 /** Headings of pitfalls whose text names its own kind of problem. */
 const NO_HEADING: Text = { ja: '', en: '' };
 const SYSTEM_DEPENDENT: Text = { ja: '環境依存: ', en: 'System-dependent: ' };
@@ -187,7 +192,8 @@ export const MESSAGES = {
     `Once unset, \`${name}\` loses what bash does with it: set again later, it is a plain variable`]),
   // (`stops`: in dash and busybox ash, which stop the shell that runs it there, the script, a subshell (which ends
   // only itself, status 2) or a shell not known to be either; bash goes on with status 1.)
-  'local-outside-function': pitfall<{ stops: false | 'script' | 'subshell' | 'shell' }>(['4.2'], ({ stops }) => stops === 'script' ? [
+  // (`sourced`: a file with no shebang (src/semantics/env.ts, `readAs`), which a function may read with `source`.)
+  'local-outside-function': pitfall<{ stops: false | 'script' | 'subshell' | 'shell'; sourced?: boolean }>(['4.2'], ({ stops, sourced }) => withSourced(sourced, stops === 'script' ? [
     '`local` は関数の中でしか使えず、関数の外で使うと dash や busybox ash は「local: not in a function」のエラーでスクリプトを止めます',
     '`local` can be used only inside a function; outside one, dash and busybox ash stop the script with "local: not in a function"'] : stops === 'subshell' ? [
     '`local` は関数の中でしか使えず、関数の外で使うと dash や busybox ash は「local: not in a function」のエラーでこのサブシェルを終えます（終了ステータス 2。サブシェルの外は続きます）',
@@ -195,7 +201,8 @@ export const MESSAGES = {
     '`local` は関数の中でしか使えず、関数の外で使うと dash や busybox ash は「local: not in a function」のエラーで、それを実行するシェルを止めます（サブシェルなら、終わるのはそのサブシェルだけです）',
     '`local` can be used only inside a function; outside one, dash and busybox ash stop the shell that runs it with "local: not in a function" (in a subshell, only the subshell ends)'] : [
     '`local` は関数の中でしか使えず、関数の外で使うと「can only be used in a function」のエラーになります',
-    '`local` can be used only inside a function; outside one it fails with "can only be used in a function"']),
+    '`local` can be used only inside a function; outside one it fails with "can only be used in a function"']), undefined,
+  ({ sourced }) => (sourced ? 'info' : 'warning')),
 
   // ---------------------------------------------------------------- POSIX mode (6.11, 4.4)
   'posix-special-function-name': pitfall(['6.11', '4.4'], () => [
@@ -291,12 +298,18 @@ export const MESSAGES = {
   'variable-not-in-remote-shell': pitfall<{ v: string }>(['3.7.3', '3.7.4'], ({ v }) => [
     `\`$${v}\` はリモートのシェルが展開しますが、リモートにはこのスクリプトの変数 \`${v}\` はありません。値を送るなら、こちらで展開されるようダブルクォートの中に書きます`,
     `the remote shell expands \`$${v}\`, but it does not have \`${v}\`, a variable of this script. To send its value, write it in double quotes, so that it is expanded here`]),
-  'variable-not-passed-by-wrapper': pitfall<{ v: string; via: string }>(['3.7.3', '3.7.4'], ({ v, via }) => [
-    `文字列の中の \`$${v}\` は新しいシェルが展開しますが、\`${via}\` はこのスクリプトの変数を（エクスポートしたものも）渡さないので、そこには \`${v}\` はありません。値を使うなら、こちらで展開されるようダブルクォートの中に書きます`,
-    `the new shell expands \`$${v}\` in the string, but \`${via}\` passes none of this script's variables (not even exported ones), so \`${v}\` is not there. To use its value, write it in double quotes, so that it is expanded here`]),
-  'variable-not-exported': pitfall<{ v: string }>(['3.7.3', '3.7.4'], ({ v }) => [
+  // (`keeps`: the wrapper passes a few variables of the environment all the same, sudo's `TERM`, `LANG`: src/dict/types.ts, `SUDO_KEEPS`.)
+  'variable-not-passed-by-wrapper': pitfall<{ v: string; via: string; keeps?: boolean }>(['3.7.3', '3.7.4'], ({ v, via, keeps }) => [
+    `文字列の中の \`$${v}\` は新しいシェルが展開しますが、\`${via}\` はこのスクリプトの変数を（エクスポートしたものも${keeps ? '、`TERM` や `LANG` などいくつかを除いて' : ''}）渡さないので、そこには \`${v}\` はありません。値を使うなら、こちらで展開されるようダブルクォートの中に書きます`,
+    `the new shell expands \`$${v}\` in the string, but \`${via}\` passes none of this script's variables (not even exported ones${keeps ? ', but for a few such as `TERM` and `LANG`' : ''}), so \`${v}\` is not there. To use its value, write it in double quotes, so that it is expanded here`]),
+  // (`environment`: a name in capitals the script set with no `unset` or declaration before, which is exported when
+  // it came from the environment: src/semantics/shellstate.ts, `mayBeInherited`.)
+  'variable-not-exported': pitfall<{ v: string; environment?: boolean }>(['3.7.3', '3.7.4'], ({ v, environment }) => (environment ? [
+    `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトで設定していますが、エクスポートしていないので、そこに値が届くのは \`${v}\` が初めから環境変数にあったとき（環境変数から来た変数はエクスポートされています）だけで、そうでなければ空です。先に \`export ${v}\` します`,
+    `the new shell expands \`$${v}\` in the string, and \`${v}\` is set by this script but not exported: its value gets there only when \`${v}\` was in the environment already (a variable from the environment is exported), and it is empty otherwise. Run \`export ${v}\` first`] : [
     `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です。先に \`export ${v}\` します`,
-    `the new shell expands \`$${v}\` in the string, and \`${v}\` is a variable of this script that is not exported, so it is empty there. Run \`export ${v}\` first`]),
+    `the new shell expands \`$${v}\` in the string, and \`${v}\` is a variable of this script that is not exported, so it is empty there. Run \`export ${v}\` first`]), undefined,
+  ({ environment }) => (environment ? 'info' : 'warning')),
   'function-not-in-container': pitfall<{ via: string; name: string }>(['3.3', '3.7.3'], ({ via, name }) => [
     `\`${via}\` は \`${name}\` をコンテナの中で実行します。このスクリプトの関数はコンテナの中にはないので使えません。関数の中身を直接書きます`,
     `\`${via}\` runs \`${name}\` inside the container, and a function from this script is not available in the container. Write out its body instead`]),
@@ -662,7 +675,7 @@ export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
   const others = f.also.filter((o) => !((program || (f.noProgram && f.by !== undefined)) && o.kind === 'builtin')).map((o) => {
     const detail = o.kind === 'keyword' ? (ja ? 'クォートせずにコマンドの先頭に書いたとき' : 'where it starts a command unquoted')
       : o.off ? (ja ? `\`enable -n\` で無効。\`enable ${f.name}\` で有効に戻る` : `turned off by \`enable -n\` (\`enable ${f.name}\` turns it on again)`)
-        : o.unexpanded ? (ja ? 'ここでは展開されない。`shopt -s expand_aliases` が要る' : 'not expanded here (needs `shopt -s expand_aliases`)')
+        : o.unexpanded ? (ja ? 'スクリプトの中では展開されない。`shopt -s expand_aliases` が要る' : 'not expanded in a script (needs `shopt -s expand_aliases`)')
           : o.path ? (ja ? `ふつうは \`${o.path}\`` : `usually \`${o.path}\``) : '';
     const reach = o.reach.length ? (ja ? `${codes(o.reach)} で動く` : `run with ${codes(o.reach)}`) : '';
     const name = o.kind === 'program' && !o.path ? (ja ? 'PATH の中のプログラム' : 'a program in PATH') : NAME_KINDS[o.kind].other[lang];

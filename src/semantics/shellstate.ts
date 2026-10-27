@@ -32,6 +32,12 @@ export interface VariableState {
    * or made from such a value (`a="$b"`, `n+=1`, `${n:=0}`). Arithmetic must not read it (`Walker.unsetRead`).
    */
   readonly kept?: true;
+  /**
+   * It may still be the variable the shell got from the environment, which is exported (`env FOO=x bash script`): a
+   * name that may come from there (`mayComeFromEnvironment`), assigned with no `unset` or declaration before it, on
+   * some path. Its export attribute is then not known unless the script set it (`mayBeInherited`).
+   */
+  readonly inherits?: true;
   /** The node that last changed it (after a merge, the latest in the source). */
   readonly at: SyntaxNode;
 }
@@ -285,6 +291,23 @@ export function shoptIn(st: ShellState, name: string, shell: Shell | undefined):
   return 'unsupported';
 }
 
+/**
+ * Whether a variable the script has not set may come from the environment (and is then exported): by custom, those
+ * are in capitals. The walk, the unset reads of `set -u` (src/semantics/unbound.ts) and the variables a new shell
+ * gets read it the same.
+ */
+export function mayComeFromEnvironment(name: string): boolean {
+  return /^[A-Z_][A-Z0-9_]*$/.test(name);
+}
+
+/**
+ * Whether the variable `v` may be exported because it came from the environment (`env FOO=x bash script`), although
+ * the script never exports it: it `inherits`, and nothing in the script turned its export attribute on or off.
+ */
+export function mayBeInherited(v: VariableState): boolean {
+  return !v.attrs.x && !!v.inherits;
+}
+
 /** The state of attribute `letter` of variable `name`. */
 export function attribute(st: ShellState, name: string, letter: string): Tri {
   return st.variables.get(name)?.attrs[letter]?.state ?? 'off';
@@ -329,7 +352,7 @@ function mergeVariable(a: VariableState | undefined, b: VariableState | undefine
     const v = (a ?? b)!;
     const attrs: Record<string, Attribute> = {};
     for (const [l, x] of Object.entries(v.attrs)) attrs[l] = { state: tri(x.state, 'off'), at: x.at };
-    return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true };
+    return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true, ...(v.inherits ? { inherits: true as const } : {}) };
   }
   const attrs: Record<string, Attribute> = {};
   for (const l of new Set([...Object.keys(a.attrs), ...Object.keys(b.attrs)])) {
@@ -338,7 +361,7 @@ function mergeVariable(a: VariableState | undefined, b: VariableState | undefine
     attrs[l] = x && y ? { state: tri(x.state, y.state), at: later(x.at, y.at) } : { state: tri((x ?? y)!.state, 'off'), at: (x ?? y)!.at };
   }
   const source = a.source === b.source ? a.source : undefined;
-  return { declared: tri(a.declared, b.declared), set: tri(a.set, b.set), attrs, value: a.value === b.value ? a.value : undefined, ...(source ? { source } : {}), at: later(a.at, b.at), ...(a.kept || b.kept ? { kept: true as const } : {}) };
+  return { declared: tri(a.declared, b.declared), set: tri(a.set, b.set), attrs, value: a.value === b.value ? a.value : undefined, ...(source ? { source } : {}), at: later(a.at, b.at), ...(a.kept || b.kept ? { kept: true as const } : {}), ...(a.inherits || b.inherits ? { inherits: true as const } : {}) };
 }
 
 function mergeFunction(a: FunctionState | undefined, b: FunctionState | undefined): FunctionState {
@@ -400,7 +423,7 @@ export function sameState(a: ShellState, b: ShellState): boolean {
     return k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state);
   };
   return a === b || (a.status === b.status && !a.unreachable === !b.unreachable && !a.opaque === !b.opaque && a.errexitWhy === b.errexitWhy && NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
-    && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && !x.kept === !y.kept && attrs(x, y)))
+    && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && !x.kept === !y.kept && !x.inherits === !y.inherits && attrs(x, y)))
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
     && NameMap.same(a.disabled, b.disabled, (x, y) => x === y || x.state === y.state)

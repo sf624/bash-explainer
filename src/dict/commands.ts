@@ -11,7 +11,7 @@ import { admin } from './admin';
 import { netadmin, SSH_OPTION_VALUES } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
-import { args, ASSIGNMENTS, byCount, cmd, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, wordTable } from './types';
+import { args, ASSIGNMENTS, byCount, cmd, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, SUDO_KEEPS, wordTable } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
@@ -1379,9 +1379,9 @@ export const core: Record<string, CommandSpec> = {
   ], {
     parser: 'getopt_long', optionsFirst: true,
     operands: [
-      { when: { option: ['-s', '-i'] }, pattern: [ASSIGNMENTS, runs({ run: 'shell-string', joinsWords: true, escapesWords: true, env: 'reset' })] },
+      { when: { option: ['-s', '-i'] }, pattern: [ASSIGNMENTS, runs({ run: 'shell-string', joinsWords: true, escapesWords: true, env: 'reset', keeps: SUDO_KEEPS })] },
       { when: { option: ['-E', '--preserve-env'] }, pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'variables' })] },
-      { pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'reset' })] },
+      { pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'reset', keeps: SUDO_KEEPS })] },
     ],
   }),
   // env's `-S` splits its value into the command and its first arguments; the operands after it are more arguments.

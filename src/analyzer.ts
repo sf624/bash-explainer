@@ -11,6 +11,7 @@ import { lookupCommand } from './dict/aliases';
 import { plainNote } from './messages';
 import { pictureNote } from './ctlchars';
 import { dialectFound, Shell } from './dialect';
+import { fileRead, type FileRead } from './semantics/env';
 import { shellState } from './semantics/state';
 import type { NestedScript } from './semantics/nested';
 import { statusModel } from './semantics/status';
@@ -33,6 +34,8 @@ export { isBlockLike, summaryOf };
 export class Analyzer {
   /** The kind of string this analyzer explains, when it explains a string read as a script (`nestedLine`). */
   private nested: NestedScript['kind'] | undefined;
+  /** How the file that holds that string is read (`fileRead`). */
+  private read: FileRead | undefined;
 
   constructor(private lang: Lang) {}
 
@@ -40,13 +43,15 @@ export class Analyzer {
     const root = tree.root;
     // (`#!/bin/bash --posix` starts bash in POSIX mode: the state reads it.)
     const state = shellState(tree, shell, { host: opts.hostCommands, run: opts.hostRun, version: opts.bashVersion });
+    // (A string read as a script is read as the file that holds it, unless another shell runs it: `readAs`.)
+    const read = this.read ?? fileRead(root, opts.host);
     // The walk the context calls back: the dispatch, with this line's context, and a line of a string read as a script.
     const walk: Walk = {
       explain: (n) => explain(cx, n),
       flatten: (n) => flatten(cx, n),
-      nestedLine: (t, l, sh, kind, o) => this.nestedLine(t, l, sh, kind, o),
+      nestedLine: (t, l, sh, kind, o) => this.nestedLine(t, l, sh, kind, o, read),
     };
-    const cx = new LineExplainer(this.lang, { opts, root, line, shell, state, status: statusModel(state, shell), nested: this.nested }, walk);
+    const cx = new LineExplainer(this.lang, { opts, root, line, shell, state, status: statusModel(state, shell), nested: this.nested, read }, walk);
     const items = flatten(cx, root);
     const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement'], line)
       .filter((n) => intersects(n, line));
@@ -93,9 +98,10 @@ export class Analyzer {
   }
 
   /** Line `line` of a string read as a script (src/explain/scripts.ts): a new `Analyzer`, which explains it as a script of its own. */
-  private nestedLine(tree: SyntaxTree, line: number, shell: Shell | undefined, kind: NestedScript['kind'], opts: ExplainOptions): LineExplanation {
+  private nestedLine(tree: SyntaxTree, line: number, shell: Shell | undefined, kind: NestedScript['kind'], opts: ExplainOptions, read: FileRead): LineExplanation {
     const inner = new Analyzer(this.lang);
     inner.nested = kind;
+    inner.read = read;
     return inner.explainLine(tree, line, shell, opts);
   }
 }

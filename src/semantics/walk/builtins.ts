@@ -13,7 +13,7 @@ import { parseExpansion } from '../../expansion';
 import { expansionFailure, sameInEveryLocale, substring } from '../chars';
 import { temporariesUnset } from '../names';
 import { aliasOf, builtinParse, commandName, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
-import { attribute, type Attribute, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy } from '../shellstate';
+import { attribute, type Attribute, mayComeFromEnvironment, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy } from '../shellstate';
 import { changedByBash, optionRoles, readDeclarationWords, type Declaration } from '../vars';
 import { ExpansionError, NAME, type Operand } from './shared';
 import type { Walker } from './walker';
@@ -366,7 +366,11 @@ export class WalkBuiltins {
         const x = hidden?.attrs.x;
         // (So does `declare -I`, and `local -I`.)
         const inherit = ['sh', 'dash', 'ash'].includes(this.w.shell ?? '') || on.includes('I') ? 'unknown' : option(st, 'shopt', 'localvar_inherit');
-        st = this.w.put(st, 'variables', name, { declared: 'on', set: inherit === 'off' || inherit === 'default' ? 'off' : 'unknown', attrs: x && x.state !== 'off' ? { x: { state: x.state, at: n } } : {}, at: n });
+        // (It keeps the export of one from the environment too: `VariableState.inherits`.)
+        const inherits = hidden ? hidden.inherits : mayComeFromEnvironment(name);
+        st = this.w.put(st, 'variables', name, {
+          declared: 'on', set: inherit === 'off' || inherit === 'default' ? 'off' : 'unknown', attrs: x && x.state !== 'off' ? { x: { state: x.state, at: n } } : {}, at: n, ...(inherits ? { inherits: true as const } : {}),
+        });
       }
       // `declare -g x` while `x` is local: the global one.
       const global = on.includes('g') ? this.w.frames.find((f) => f.saved.has(name)) : undefined;
@@ -392,9 +396,11 @@ export class WalkBuiltins {
     }
     for (const l of removes) attrs[l] = { state: 'off', at: n };
     // (A name the script has not set may come from the environment: by custom, those are in capitals.)
-    const set: Tri = prev ? prev.set : /^[A-Z_][A-Z0-9_]*$/.test(name) ? 'unknown' : 'off';
-    // (One the script has not set keeps a value from the environment: `export n`, `declare n` outside a function.)
-    st = this.w.put(st, 'variables', name, { declared: 'on', set, attrs, value: prev?.value, at: n, ...(!prev || prev.kept ? { kept: true as const } : {}) });
+    const set: Tri = prev ? prev.set : mayComeFromEnvironment(name) ? 'unknown' : 'off';
+    // (One the script has not set keeps a value from the environment: `export n`, `declare n` outside a function. It
+    // keeps its export too, also `local n` in a function: `VariableState.inherits`.)
+    const inherits = prev ? prev.inherits : mayComeFromEnvironment(name);
+    st = this.w.put(st, 'variables', name, { declared: 'on', set, attrs, value: prev?.value, at: n, ...(!prev || prev.kept ? { kept: true as const } : {}), ...(inherits ? { inherits: true as const } : {}) });
     // (A variable readonly before the declaration keeps its value; `readonly r=1` sets it.)
     if (!o.assign || prev?.attrs.r?.state === 'on') return st;
     // (The state of an assignment in a declaration has the attributes the declaration gives, and the values from before
@@ -636,7 +642,9 @@ export class WalkBuiltins {
   /** Sets `name` (to `value`, when known), exporting it under `set -a` (not an array: bash cannot export one). */
   setVariable(st: ShellState, name: string, at: SyntaxNode, value: string | undefined, plain = false, array = false, source?: SyntaxNode, kept = false): ShellState {
     const prev = st.variables.get(name);
-    st = this.w.put(st, 'variables', name, { declared: 'on', set: 'on', attrs: prev?.attrs ?? {}, value, ...(source ? { source } : {}), at, ...(kept ? { kept: true as const } : {}) });
+    // (One the script has not set nor declared may be the environment's, exported: `VariableState.inherits`.)
+    const inherits = prev ? prev.inherits : mayComeFromEnvironment(name);
+    st = this.w.put(st, 'variables', name, { declared: 'on', set: 'on', attrs: prev?.attrs ?? {}, value, ...(source ? { source } : {}), at, ...(kept ? { kept: true as const } : {}), ...(inherits ? { inherits: true as const } : {}) });
     // Assigning PATH empties the table of remembered paths.
     if (name === 'PATH') st = this.forgetHashed(st);
     if (name === 'POSIXLY_CORRECT' && !plain && this.w.bash && option(st, 'set', 'posix') !== 'on') st = this.setPosix(st, true, at, true);

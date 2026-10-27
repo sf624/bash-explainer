@@ -165,6 +165,21 @@ export const COMMAND_TEXT = tx('実行するコマンド', 'command to run');
 /** The operand from which the words are the command a wrapper runs (`sudo cmd args`), started as `slot` says. */
 export const runs = (slot: CommandSlot = { run: 'exec' }): OperandSpec => ({ name: 'COMMAND', text: COMMAND_TEXT, repeat: '?', command: slot });
 
+/**
+ * The variables of the caller's environment that sudo passes on by default, although `env_reset` starts the command
+ * in a fresh environment (sudoers(5), "Command environment", `env_reset`, `env_check`, `env_keep`; sudo 1.9.15).
+ * `env_reset` keeps `TERM` (and `PATH`, but `secure_path`, set on Debian and Ubuntu, replaces it; `HOME`, `MAIL`,
+ * `SHELL`, `LOGNAME` and `USER` are those of the target user); the default `env_check` list keeps `COLORTERM`,
+ * `LANG`, `LANGUAGE`, `LC_*`, `LINGUAS`, `TERM` and `TZ` when the value is safe (no `%` or `/`; for `TZ`, a zone
+ * name or a file of the zoneinfo directory), and the default `env_keep` list `COLORS`, `DISPLAY`, `HOSTNAME`,
+ * `KRB5CCNAME`, `LS_COLORS`, `PS1`, `PS2`, `XAUTHORITY`, `XAUTHORIZATION` and `XDG_CURRENT_DESKTOP` (as `sudo -V`
+ * lists them to root; the names are in sudoers.so). With `-i`, `TERM` and these lists still apply (sudoers(5)).
+ */
+export const SUDO_KEEPS: readonly string[] = [
+  'TERM', 'COLORTERM', 'LANG', 'LANGUAGE', 'LC_*', 'LINGUAS', 'TZ',
+  'COLORS', 'DISPLAY', 'HOSTNAME', 'KRB5CCNAME', 'LS_COLORS', 'PS1', 'PS2', 'XAUTHORITY', 'XAUTHORIZATION', 'XDG_CURRENT_DESKTOP',
+];
+
 /** `NAME=value` words before the command: variables for it (`env A=1 cmd`). */
 export const ASSIGNMENTS: OperandSpec = { name: 'NAME=VALUE', text: tx('コマンドの環境に入れる変数', 'variable for the command'), assignment: true, repeat: '*' };
 
