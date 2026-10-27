@@ -1,0 +1,7 @@
+{
+  "counts": {
+    "probe": { "commands": 365, "ran": 99, "words": 345, "unknown": 11, "failing": 3 },
+    "values": { "commands": 365, "ran": 209, "words": 676, "unknown": 37, "failing": 1 }
+  },
+  "known": []
+}

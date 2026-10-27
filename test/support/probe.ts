@@ -444,3 +444,21 @@ export async function pooled<T>(tasks: (() => Promise<T>)[], limit = Math.max(4,
   await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
   return results;
 }
+
+// ---------------------------------------------------------------------------------------------------
+// The comparison of words with what bash logged (test/word-probes.test.ts, test/argv.test.ts).
+
+/**
+ * Where the model knows the fields of some words of a command only: the fields of the known words before the first
+ * unknown one (`head`) and after the last one (`tail`), and whether every run of bash starts with that head and ends
+ * with that tail. (With no unknown word, `head` is all of them and `tail` empty.)
+ */
+export function alignRuns(results: readonly { fields?: string[] }[], runs: readonly string[][]): { head: string[]; tail: string[]; fits: boolean } {
+  const first = results.findIndex((r) => !r.fields);
+  const last = results.length - 1 - [...results].reverse().findIndex((r) => !r.fields);
+  const head = results.slice(0, first < 0 ? results.length : first).flatMap((r) => r.fields!);
+  const tail = first < 0 ? [] : results.slice(last + 1).flatMap((r) => r.fields!);
+  const fits = runs.every((run) => JSON.stringify(run.slice(0, head.length)) === JSON.stringify(head)
+    && (!tail.length || JSON.stringify(run.slice(-tail.length)) === JSON.stringify(tail)));
+  return { head, tail, fits };
+}

@@ -3,7 +3,7 @@ import { spawn, spawnSync } from 'child_process';
 export interface ContainedRun { stdout: string; stderr: string; status: number | null }
 
 /** Whether `systemd-run --user --scope` works here (not in every CI runner or container). */
-const scoped = spawnSync('systemd-run', ['--user', '--scope', '-q', 'true']).status === 0;
+export const scoped = spawnSync('systemd-run', ['--user', '--scope', '-q', 'true']).status === 0;
 
 /**
  * Runs `argv` (a bash, usually) in `cwd` with `env` and FUNCNEST set: in a cgroup that caps its memory and tasks when
