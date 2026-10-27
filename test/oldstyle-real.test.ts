@@ -192,6 +192,8 @@ describe('ps: a BSD letter with a value takes the rest of its word', () => {
     ['ps rUroot opid', 'ps r U root o pid', 'root', 'rU'],
     ['ps k-rss opid', 'ps k -rss o pid', '-rss', 'k'],
     ['ps ap1', 'ps a p 1', '1', 'ap'],
+    ['ps q1', 'ps q 1', '1', 'q'],
+    ['ps aq1 opid', 'ps a q 1 o pid', '1', 'aq'],
   ];
   (usable('ps') ? it : it.skip)('reads the rest of the word as the value, as ps does', () => {
     for (const [attached, separate, value, before] of ROWS) {
@@ -207,6 +209,14 @@ describe('ps: a BSD letter with a value takes the rest of its word', () => {
     // The value is the rest of the word, so the letters after the value's start are not letters: `ps oupid` is an error.
     assert.match(run('ps oupid', os.tmpdir()).err, /unknown user-defined format specifier "upid"/);
     assert.deepStrictEqual(parseOf('ps oupid').parse.roles.map(({ role }) => role.role), ['old-style']);
+    // The long form of `-U`: `--User root` is the option with the value `root`, not BSD letters (ps reads the same).
+    for (const [line, same] of [['ps --User root opid', 'ps -U root opid'], ['ps --User=root opid', 'ps -Uroot opid']] as const) {
+      const given = parseOf(line).parse.roles.flatMap(({ role }) => (role.role === 'option' ? [role.flag] : []));
+      assert.deepStrictEqual(given.slice(0, 1), ['--User'], line);
+      assert.deepStrictEqual(letters(line), ['o'], line);
+      assert.strictEqual(printed(line), printed(same), line);
+      assert.ok(/PID/.test(printed(line)) && !run(line, os.tmpdir()).err, line);
+    }
     // Before, `Uroot` was five letters, `U` taking the next word (`ps Uroot opid`).
     assert.notStrictEqual(printed('ps Uroot opid'), printed('ps U opid'));
   });

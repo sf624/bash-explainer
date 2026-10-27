@@ -7,6 +7,8 @@ import type { CommandSpec } from '../../argv/spec';
 import { actedNames, onlyInFunction } from '../../argv/query';
 import { prefixOf } from '../../argv/words';
 import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
+import { bracesWork } from '../../dialect';
+import { braceExpand } from '../../examples/shellwords';
 import { staticWordValue, tildeParts, tildeSpots } from '../../staticword';
 import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
 import { parseExpansion } from '../../expansion';
@@ -406,12 +408,18 @@ export class WalkBuiltins {
     const names = actedNames(parse);
     // What the names stand for, by unset's options (its spec): the same for every name.
     const space = names[0]?.space;
-    const all = names.map(({ word }) => ({ node: ws[word], text: staticWordValue(ws[word]) ?? ws[word].text }));
+    const braces = ['default', 'on'].includes(option(st, 'set', 'braceexpand'));
+    // (`unset {a,b}` unsets `a` and `b` in a shell with brace expansion: the words bash passes, as `wordFields` gives them.)
+    const all = names.flatMap(({ word }) => {
+      const node = ws[word];
+      const words = braces && node.type === 'word' && bracesWork(node.text, this.w.shell) ? bracedWords(node.text) : undefined;
+      return words ? words.map((text) => ({ node, text, known: true })) : [{ node, text: staticWordValue(node, false, this.w.shell) ?? node.text, known: false }];
+    });
     // (`unset -fv` is an error: nothing is unset.)
     if (space === 'none') return st;
     const temporary = temporariesUnset('unset', ws, n, this.w.shell, parse);
-    for (const { node, text } of all) {
-      if (staticWordValue(node) === undefined) {
+    for (const { node, text, known } of all) {
+      if (!known && staticWordValue(node, false, this.w.shell) === undefined) {
         // A name not known here: a variable that `${u:=u}` in it sets may be the one it names.
         for (const e of descendants(node, ['expansion'])) {
           const name = e.namedChildren[0];
@@ -670,5 +678,15 @@ export class WalkBuiltins {
   posixMode(st: ShellState): Tri {
     const p = option(st, 'set', 'posix');
     return p === 'default' ? 'off' : p;
+  }
+}
+
+/** The words the braces of the plain word `text` give; undefined when it has none, a glob character stays in a word, or they are too many. */
+function bracedWords(text: string): string[] | undefined {
+  try {
+    const words = braceExpand(text);
+    return words && words.length && !words.some((w) => /[*?[\\'"$`~]/.test(w)) ? words : undefined;
+  } catch {
+    return undefined;
   }
 }

@@ -207,12 +207,12 @@ export class Scripts implements StringTrees {
   private readonly shared = new Map<string, SyntaxNode>();
   capped = false;
   model!: StateModel;
-  constructor(readonly depth: number) {}
+  constructor(readonly depth: number, private readonly shell: Shell | undefined) {}
 
   /** The text of the string `words` make, and its tree. */
   private parse(words: readonly SyntaxNode[]): { text: MappedText; tree: SyntaxTree } | undefined {
     if (this.parsed.has(words[0])) return this.parsed.get(words[0]);
-    const text = scriptText(words);
+    const text = scriptText(words, this.shell);
     const out = text && { text, tree: parser().parse(text.text) };
     this.parsed.set(words[0], out);
     return out;
@@ -493,7 +493,7 @@ const modelVersions = new WeakMap<StateModel, BashVersion | undefined>();
  * shebang starts it with.
  */
 function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening, version?: BashVersion): StateModel {
-  const scripts = new Scripts(depth);
+  const scripts = new Scripts(depth, shell);
   const own = scriptTrust(tree.root, scripts, host, opening, shell, version);
   const trust = outer ? withinTrust(own, outer) : own;
   let w = new Walker(shell, posix, scripts, trust, host, run);

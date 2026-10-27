@@ -57,7 +57,7 @@ describe('nested scripts: the text of a string, as bash reads it', () => {
   it('gives each character the source it comes from', () => {
     const src = `eval "a\\$b" 'c'd`;
     const { args } = argsOf(src);
-    const t = scriptText(args)!;
+    const t = scriptText(args, undefined)!;
     assert.strictEqual(t.text, 'a$b cd');
     assert.deepStrictEqual(sources(src, t), ['a', '\\$', 'b', ' ', 'c', 'd']);
     // (A backslash-newline is removed; an escape of $'…' is the source of what it gives.)
@@ -68,10 +68,10 @@ describe('nested scripts: the text of a string, as bash reads it', () => {
 
   it('maps an offset of the text to the source, as the start or the end of a range', () => {
     const { args } = argsOf(`eval 'ab'`);
-    const script = { ...scriptText(args)!, words: args };
+    const script = { ...scriptText(args, undefined)!, words: args };
     assert.deepStrictEqual([0, 1, 2].map((i) => scriptSourceIndex(script, i, false)), [6, 7, 8]);
     assert.deepStrictEqual([0, 1, 2].map((i) => scriptSourceIndex(script, i, true)), [6, 7, 8]);
-    const empty = { ...scriptText(argsOf(`eval ''`).args)!, words: argsOf(`eval ''`).args };
+    const empty = { ...scriptText(argsOf(`eval ''`).args, undefined)!, words: argsOf(`eval ''`).args };
     assert.strictEqual(scriptSourceIndex(empty, 0, false), 5);
   });
 
@@ -80,7 +80,7 @@ describe('nested scripts: the text of a string, as bash reads it', () => {
     const tree = parser.parse('x=`eval \'a\\$b\'`');
     const inner = descendants(tree.root, ['raw_string'])[0];
     assert.strictEqual(staticWordText(inner), undefined);
-    assert.strictEqual(scriptText([argsOf('eval a "$x"').args[0], argsOf('eval a "$x"').args[1]]), undefined);
+    assert.strictEqual(scriptText([argsOf('eval a "$x"').args[0], argsOf('eval a "$x"').args[1]], undefined), undefined);
   });
 });
 

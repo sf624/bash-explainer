@@ -34,7 +34,7 @@ import type { Explainer } from './context';
 import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
-import type { StepKind } from '../semantics/words';
+import { type StepKind, wordFields } from '../semantics/words';
 import { globOff, NO_SPEC, resolve, shoptAt, specFor, wordAt } from './reads';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -522,6 +522,13 @@ function argumentAssignment(cx: Explainer, a: SyntaxNode, command: string): Toke
   ), a.type === 'concatenation' ? cx.sub(a).flatMap((t) => t.children) : []);
 }
 
+/** The words the braces of `a` give where the shell expands them and all are known (`{a,b}`: `a`, `b`); undefined otherwise. */
+function bracedNames(cx: Explainer, a: SyntaxNode): string[] | undefined {
+  if (wordAt(cx, a)?.steps.find((g) => g.kind === 'brace')?.applies !== true) return undefined;
+  const names = wordFields(a, cx.state).fields;
+  return names && names.length ? names : undefined;
+}
+
 /**
  * An operand of `unset` (`item`, its spec, with `acts: 'unsets'`): what its name stands for comes from the spec's options (`space`: a
  * function with `-f`, a variable with `-v`, the name reference itself with `-n`), else the variable if there is one
@@ -536,6 +543,16 @@ function unsetOperand(cx: Explainer, nodes: SyntaxNode[], word: number, item: Op
     // (Once for the command, at its first name.)
     if (parse.roles.find((r) => r.role.role === 'operand')!.word === word) cx.note(fact(cx.lang, 'unset-function-and-variable'), a.parent!);
     return positional(cx, a, cx.s('削除する名前（`-f` と `-v` を同時に指定しているので、何も削除されない）', 'Name to unset (with both `-f` and `-v`, nothing is unset)'));
+  }
+  // `unset {a,b}`: bash expands the braces first, and unsets each word (dash does not: the name is `{a,b}`).
+  const braced = bracedNames(cx, a);
+  if (braced) {
+    const list = braced.map((n) => `\`${n}\``).join(', ');
+    return positional(cx, a, fn
+      ? cx.s(`ブレース展開で ${braced.length} 語になり、関数 ${list} を削除する`, `The braces expand to ${braced.length} words first: remove the functions ${list}`)
+      : space === 'nameref'
+        ? cx.s(`ブレース展開で ${braced.length} 語になり、名前参照 ${list} そのものを削除する（参照先の変数は残る）`, `The braces expand to ${braced.length} words first: unset the name references ${list} themselves (the variables they point to stay)`)
+        : cx.s(`ブレース展開で ${braced.length} 語になり、変数 ${list} を削除する（未定義の状態に戻す）`, `The braces expand to ${braced.length} words first: unset the variables ${list} (they become undefined)`));
   }
   const plain = isPlainWord(a);
   // (An unquoted glob has no value known here: its text, which bash uses when no file matches.)
