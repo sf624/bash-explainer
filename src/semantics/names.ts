@@ -188,8 +188,10 @@ export type AliasResolution = Extract<NameResolution, { kind: 'alias' }>;
 export function aliasesAfter(c: SyntaxNode, first: AliasResolution, resolve: (name: string, at: SyntaxNode) => NameResolution): { word: SyntaxNode; res: AliasResolution }[] {
   const out: { word: SyntaxNode; res: AliasResolution }[] = [];
   let res = first;
-  for (const word of wordsAfterAlias(c)) {
+  for (const { word, quoted } of wordsAfterAlias(c)) {
     if (!aliasExpandsNext(res.alias.value)) break;
+    // (A quoted word is not checked, and leaves the check to the next one.)
+    if (quoted) continue;
     const next = resolve(word.text, word);
     if (next.kind !== 'alias') break;
     out.push({ word, res: next });

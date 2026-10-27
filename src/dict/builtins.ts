@@ -546,12 +546,16 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     // ends with a blank, say so when every definition of the line is one (6.6).
     operands: [
       {
-        pattern: [operand('DEFINITION', 'bash が受け付けない定義: エイリアス名には `/`、`$`、バッククォート、クォート、空白、メタ文字を使えない（「invalid alias name」で終了ステータス 1）',
-          'a definition bash refuses: an alias name may not have `/`, `$`, a backquote, a quote, a blank or a metacharacter ("invalid alias name", status 1)', { repeat: '+', matches: new RegExp(`^(?!${ALIAS_NAME}=)[^=]*=`) })],
+        pattern: [operand('DEFINITION', 'bash が受け付けない定義: エイリアス名には `/`、`$`、バッククォート、クォート、バックスラッシュ、空白、メタ文字を使えない（「invalid alias name」で終了ステータス 1）',
+          'a definition bash refuses: an alias name may not have `/`, `$`, a backquote, a quote, a backslash, a blank or a metacharacter ("invalid alias name", status 1)', { repeat: '+', matches: new RegExp(`^(?!${ALIAS_NAME}=)[^=]+=`), known: true })],
+      },
+      {
+        pattern: [operand('NAME', '`=` の前に名前がないので、bash はこの語全体を表示する別名の名前として探し、見つからずに失敗する（「not found」で終了ステータス 1）',
+          'no name before `=`: bash looks for an alias named by the whole word to print it, finds none, and fails ("not found", status 1)', { repeat: '+', matches: /^=/, known: true })],
       },
       {
         pattern: [operand('DEFINITION', '別名の定義: `=` の前の名前が、後ろの文字列を表す。文字列が空白で終わるので、この別名の次の単語も bash がエイリアスか調べる（`alias sudo=\'sudo \'` なら `sudo ll` でもエイリアス `ll` が使える）',
-          'an alias definition: the name before `=` stands for the text after it. The text ends with a blank, so bash checks the word after this alias for an alias too (with `alias sudo=\'sudo \'`, `sudo ll` uses the alias `ll`)', { repeat: '+', matches: new RegExp(`^${ALIAS_NAME}=[^]*[ \\t]$`) })],
+          'an alias definition: the name before `=` stands for the text after it. The text ends with a blank, so bash checks the word after this alias for an alias too (with `alias sudo=\'sudo \'`, `sudo ll` uses the alias `ll`)', { repeat: '+', matches: new RegExp(`^${ALIAS_NAME}=[^]*[ \\t]$`), known: true })],
       },
       { pattern: [operand('DEFINITION', '別名の定義: `=` の前の名前が、後ろの文字列を表す', 'an alias definition: the name before `=` stands for the text after it', { repeat: '+', matches: /^[^=]+=/ })] },
       { pattern: [operand('NAME', '定義を表示する別名（なければ失敗する）', 'alias whose definition to print (it fails when there is none)', { repeat: '+', matches: /^[^=]*$/ })] },

@@ -772,7 +772,7 @@ export function match(pattern: OperandSpec[], words: ArgWord[], maxSteps: number
   const fits = (item: OperandSpec, w: ArgWord): boolean => {
     if (item.assignment) return ASSIGNMENT.test(known(w));
     if (item.option) return w.value !== undefined && !!findOption(options, item.option, false)?.names.includes(w.value);
-    return !item.matches || w.value === undefined || item.matches.test(w.value);
+    return !item.matches || (w.value === undefined ? !item.known : item.matches.test(w.value));
   };
   const from = (it: number, at: number): number[] | null => {
     const key = it * (words.length + 1) + at;

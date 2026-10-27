@@ -44,37 +44,46 @@ export function aliasName(c: SyntaxNode): string | undefined {
 /** Whether bash checks the word after an alias of text `value` for an alias too (6.6): the text ends with a blank. */
 export const aliasExpandsNext = (value: string): boolean => /[ \t]$/.test(value);
 
+/** The kinds of node that quote: a word with one of them, or a backslash, is no alias. */
+const QUOTING = new Set(['string', 'raw_string', 'ansi_c_string', 'translated_string']);
+const quoting = (w: SyntaxNode): boolean => QUOTING.has(w.type) || (w.type === 'word' && w.text.includes('\\')) || (w.type === 'concatenation' && w.namedChildren.some(quoting));
+
 /**
  * The words after the name of the simple command `c` that bash may read as aliases (6.6: after an alias whose text ends
- * with a blank): the words up to the first that is not a plain word (a quote, an expansion, a redirection). Which of
- * them are aliases depends on the aliases there.
+ * with a blank), up to a redirection or an unquoted word that is not plain text (`$v`): a plain word, which is checked
+ * (and ends the check when it is no alias), or a word with quotes (`"b"`, `\b`, `"$v"`), which bash does not check but
+ * which leaves the check to the word after it (`quoted`). Checked with bash 5.2 and 5.3: `alias e='echo ' b=B`,
+ * `e "b" b` prints `b B`; `e $v b` prints `b`.
  */
-export function wordsAfterAlias(c: SyntaxNode): SyntaxNode[] {
+export function wordsAfterAlias(c: SyntaxNode): { word: SyntaxNode; quoted: boolean }[] {
   const parts = c.namedChildren;
-  const out: SyntaxNode[] = [];
+  const out: { word: SyntaxNode; quoted: boolean }[] = [];
   for (const w of parts.slice(parts.indexOf(field(c, 'name')!) + 1)) {
-    if (w.type !== 'word' || staticWordValue(w) !== w.text) break;
-    out.push(w);
+    const quoted = quoting(w);
+    if (!quoted && (w.type !== 'word' || staticWordValue(w) !== w.text)) break;
+    out.push({ word: w, quoted });
   }
   return out;
 }
 
 /**
  * The texts bash reads for the simple command `c` whose name is an alias of text `value` (6.6): that text, then the
- * rest of the command; while what is read so far ends with a blank, the next word is replaced by its alias's text,
- * for each of the texts `values` gives it (none: it is no alias), also kept as it is when `keep` (it may be none).
- * `rest`: where in the command's text the rest starts.
+ * rest of the command; while the last alias's text ends with a blank, the next plain word is replaced by its alias's
+ * text, for each of the texts `values` gives it (none: it is no alias), also kept as it is when `keep` (it may be none).
+ * `rest`: where in the command's text the rest starts. At most `limit` texts and one more (a script can define an
+ * alias many ways, and a line can name it many times: the texts grow as their product).
  */
-export function aliasTexts(c: SyntaxNode, value: string, values: (name: string) => readonly string[], keep = false): { text: string; rest: number }[] {
-  const name = field(c, 'name')!;
+export function aliasTexts(c: SyntaxNode, value: string, values: (name: string) => readonly string[], keep = false, limit = Infinity): { text: string; rest: number }[] {
   const out: { text: string; rest: number }[] = [];
-  const next = (text: string, rest: number, words: SyntaxNode[]): void => {
-    const [w, ...more] = words;
-    const vs = w && aliasExpandsNext(text) ? values(w.text) : [];
+  const next = (text: string, rest: number, words: { word: SyntaxNode; quoted: boolean }[], open: boolean): void => {
+    if (out.length > limit) return;
+    const i = words.findIndex((w) => !w.quoted);
+    const w = i < 0 ? undefined : words[i].word;
+    const vs = w && open ? values(w.text) : [];
     if (!vs.length || keep) out.push({ text, rest });
-    for (const v of vs) next(text + c.text.slice(rest - c.startIndex, w.startIndex - c.startIndex) + v, w.endIndex, more);
+    for (const v of vs) next(text + c.text.slice(rest - c.startIndex, w!.startIndex - c.startIndex) + v, w!.endIndex, words.slice(i + 1), aliasExpandsNext(v));
   };
-  next(value, name.endIndex, wordsAfterAlias(c));
+  next(value, field(c, 'name')!.endIndex, wordsAfterAlias(c), aliasExpandsNext(value));
   return out;
 }
 

@@ -798,7 +798,7 @@ describe('the reading tree as the Bash manual reads aliases and arrays (chapter 
     assert.deepStrictEqual(kids(node(src, 't ll', 'command', 5)), ['aliasWord t', 'argument ll']);
     assert.deepStrictEqual(kids(node(src, 's >/dev/null ll', 'command', 6)), ['aliasWord s', 'redirect >/dev/null', 'argument ll']);
     // The definitions say so, and that bash refuses a name with `/`.
-    assert.match(said(src, 'a/b=x', 7), /^a definition bash refuses: an alias name may not have `\/`, `\$`, a backquote, a quote, a blank or a metacharacter \("invalid alias name", status 1\)$/);
+    assert.match(said(src, 'a/b=x', 7), /^a definition bash refuses: an alias name may not have `\/`, `\$`, a backquote, a quote, a backslash, a blank or a metacharacter \("invalid alias name", status 1\)$/);
     assert.match(said(src, "s='sudo '", 8), /The text ends with a blank, so bash checks the word after this alias for an alias too/);
     // The state follows it: `c d` runs `command declare x=1`; not in a file that may not expand aliases.
     const tree = parser.parse("#!/bin/bash\nshopt -s expand_aliases\nalias c='command ' d='declare x=1'\nc d\necho \"[$x]\"");
@@ -816,5 +816,83 @@ describe('the reading tree as the Bash manual reads aliases and arrays (chapter 
     for (const src of ['a=(one two)', 'echo "${x:-\'a\'}"', 'declare -A m=(k v)', 'cat < f']) {
       assert.deepStrictEqual(readingNodes(reading(src)).filter((n) => n.refs && !n.refs.length).map((n) => n.label), [], src);
     }
+  });
+
+  // (The review of this round: each case checked with bash 5.2 and 5.3.)
+  const minor = (p: BashOptions) => runBash('echo ${BASH_VERSINFO[1]}', p).stdout.trim();
+
+  it('says a definition is refused only when its name is known, and what `alias =x` does', () => {
+    for (const [src, w] of [['alias cdp="cd $HOME/projects"', 'cdp="cd $HOME/projects"'], ['alias "$n=$v"', '"$n=$v"'], ['alias l=$(echo ls)', 'l=$(echo ls)'], ['alias ls="ls $X "', 'ls="ls $X "']]) {
+      assert.doesNotMatch(said(src, w), /refuses|ends with a blank/, src);
+    }
+    assert.match(said('alias =x', '=x'), /^no name before `=`: bash looks for an alias named by the whole word to print it, finds none, and fails \("not found", status 1\)$/);
+    assert.match(said('alias a\\\\b=x', 'a\\\\b=x'), /^a definition bash refuses: an alias name may not have `\/`, `\$`, a backquote, a quote, a backslash,/);
+    for (const p of programs) {
+      const r = runBash('n=a v=b; alias cdp="cd $HOME/projects"; echo $?; alias "$n=$v"; echo $?; alias l=$(echo ls); echo $?; alias =x; echo $?', p);
+      assert.strictEqual(r.stdout, '0\n0\n0\n1\n');
+      assert.match(r.stderr, /alias: =x: not found/);
+    }
+  });
+
+  it('stays fast on a line of many words that may be aliases', () => {
+    const src = `shopt -s expand_aliases\nif [ "$1" ]; then alias e="echo "; else alias e="printf %s "; fi\n${Array(60).fill('e').join(' ')}`;
+    const start = Date.now();
+    assert.strictEqual(node(src, 'e', 'aliasWord', 2).kind, 'aliasWord');
+    assert.ok(Date.now() - start < 3000, `${Date.now() - start} ms`);
+  });
+
+  it('reads the values of an associative array\'s list with no braces, and says what each is', () => {
+    const src = 'declare -A m=(t ~ k {a,b} $x *)';
+    assert.deepStrictEqual([node(src, '{a,b}', 'word').refs, node(src, '{a,b}', 'word').text, kids(node(src, '{a,b}', 'word'))], [undefined, 'Value `{a,b}` of the key `k`', []]);
+    assert.strictEqual(node(src, '$x', 'expansion').text, 'Key `$x`: Expands to the value of `x`');
+    assert.strictEqual(node(src, '~', 'word').text, 'Value `~` of the key `t`. bash 5.2 keeps the `~` as written; bash 5.3 expands it to the home directory');
+    assert.match(node('declare -A g=([t]=~)', '[t]=~', 'word').text!, /set it to `~`\. bash 5\.2 keeps the `~` as written; bash 5\.3 expands it/);
+    // (A value of several parts keeps them; a comment in the list is one.)
+    assert.deepStrictEqual([node('declare -A m=(k x$y)', 'x$y', 'word').text, kids(node('declare -A m=(k x$y)', 'x$y', 'word'))], ['Value `x$y` of the key `k`', ['expansion $y']]);
+    assert.deepStrictEqual(kids(node('declare -A m=(k # c\n v)', '(k # c', 'part')), ['operator (', 'word k', 'comment # c', 'word v', 'operator )']);
+    for (const p of programs) {
+      const r = runBash('x="p q"; declare -A m=(t ~ k {a,b} $x *); echo "${m[t]}|${m[k]}|${m[p q]}"', { ...p, env: { HOME: '/h' } }).stdout;
+      assert.strictEqual(r, `${minor(p) === '2' ? '~' : '/h'}|{a,b}|*\n`);
+    }
+  });
+
+  it('says what bash 5.2 and 5.3 do with `[4]={a,b}` and with a value missing its `[k]=`', () => {
+    const src = 'a=([4]={a,b} [2]=x)';
+    const braced = node(src, '[4]={a,b}', 'word');
+    assert.deepStrictEqual([kids(braced), braced.text], [['brace {a,b}'], 'bash 5.2 brace-expands this word first, into the values `[4]=a`, `[4]=b`, with no index of their own (each is the next element); bash 5.3 does not, and sets `{a,b}` as the element with the index `4`']);
+    assert.match(node('declare -A h=([a]=1 b)', 'b').text!, /bash 5\.2 says so and goes on; bash 5\.3 also abandons the rest of the line \(status 1\)$/);
+    for (const p of programs) {
+      const five2 = minor(p) === '2';
+      assert.strictEqual(runBash('a=([4]={a,b}); declare -p a', p).stdout, five2 ? 'declare -a a=([0]="[4]=a" [1]="[4]=b")\n' : 'declare -a a=([4]="{a,b}")\n');
+      assert.strictEqual(runBash('declare -A h=([a]=1 b); echo same; declare -p h\necho next', p).stdout, five2 ? 'same\ndeclare -A h=([a]="1" )\nnext\n' : 'next\n');
+    }
+  });
+
+  it('reads the word after a quoted one as an alias, and says what an alias in an alias is', () => {
+    const src = "shopt -s expand_aliases\nalias e='echo ' b='B' a2='b2 ' b2='c2 ' c2='echo C' t=s s='echo '\ne \"b\" b\ne \"$v\" \\b b\ne $v b\na2 a2\nt e b\nx=$(e b)";
+    assert.deepStrictEqual(kids(node(src, 'e "b" b', 'command', 2)), ['aliasWord e', 'argument "b"', 'aliasWord b']);
+    assert.deepStrictEqual(kids(node(src, 'e "$v" \\b b', 'command', 3)), ['aliasWord e', 'argument "$v"', 'argument \\b', 'aliasWord b']);
+    assert.deepStrictEqual(kids(node(src, 'e $v b', 'command', 4)), ['aliasWord e', 'argument $v', 'argument b']);
+    assert.deepStrictEqual(kids(node(`${src}\ne b"" b`, 'e b"" b', 'command', 8)), ['aliasWord e', 'argument b""', 'aliasWord b']);
+    assert.match(node(src, 'a2', 'aliasWord', 5) && all(src, 5).filter((n) => n.kind === 'aliasWord')[1].text!, /^The alias `a2` defined on line 2: replaced by `b2 ` \(`b2` is an alias too, for `c2 `\)\. The text of the alias before it/);
+    assert.match(node(src, 't', 'aliasWord', 6).text!, /\(`s` is an alias too, for `echo `; its text ends with a blank, but only bash 5\.3 then checks the next word for an alias, not bash 5\.2\)/);
+    const sub = readingNodes(reading(src, 7)).find((n) => n.kind === 'aliasWord' && n.label === 'b')!;
+    assert.deepStrictEqual([sub.layer, sub.process], ['child', 'subshell']);
+    for (const p of programs) {
+      const r = runBash(`shopt -s expand_aliases\nalias e='echo ' b='B' a2='b2 ' b2='c2 ' c2='echo C' t=s s='echo '\ne "b" b\ne "$v" \\b b\ne $v b\na2 a2\nt e b`, p).stdout;
+      assert.strictEqual(r, `b B\n b B\nb\nC echo C\n${minor(p) === '2' ? 'e b' : 'echo B'}\n`);
+    }
+  });
+
+  it('says that `$a[1]` is a glob only where bash globs it', () => {
+    assert.match(notes('a=(x); echo $a[1]'), /followed by the text `\[1\]` \(a glob too, here\)\./);
+    for (const src of ['a=(x); [[ $a[1] == x ]]', 'a=(x); [[ x =~ $a[1] ]]', 'a=(x); case $a[1] in x) ;; esac', 'a=(x); echo "$a[1]"']) {
+      assert.match(notes(src), /followed by the text `\[1\]`\. For the element/, src);
+    }
+  });
+
+  it('reads an index that is no one arithmetic expression as a word', () => {
+    // (Text that `(( ))` reads as more than one statement, a list, or a statement and a comment.)
+    for (const ix of ['1))|((2', '1)) && ((1', '1)) #', 'x y']) assert.strictEqual(node(`a=(1); echo \${a[${ix}]}`, ix).kind, 'word', ix);
   });
 });

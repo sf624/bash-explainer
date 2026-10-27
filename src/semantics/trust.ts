@@ -88,6 +88,8 @@ interface Where { fn: string | undefined; foreign: boolean; now: boolean; rest?:
  * may double them there); the commands of the script are not counted together.
  */
 const ALIAS_EXPANSIONS = 1000;
+/** How many texts of one alias with the aliases after it (6.6: a text ending with a blank) the scan reads at one command. */
+const ALIAS_NEXT = 64;
 const NO_NAMES: ReadonlySet<string> = new Set();
 
 
@@ -778,7 +780,10 @@ class Scan {
           more = true;
           // (With the words after it read as aliases too, when its text ends with a blank, and as they are: 6.6.)
           const values = (word: string): string[] => [...new Set(this.aliasDefs.filter((x) => x.name === word).map((x) => x.value))];
-          for (const { text, rest } of aliasTexts(c, d.value, values, true)) {
+          // (Their number is the product of the definitions of each word: past `ALIAS_NEXT`, nothing is trusted.)
+          const all = aliasTexts(c, d.value, values, true, ALIAS_NEXT);
+          if (all.length > ALIAS_NEXT) this.blindFor('too many aliases after aliases');
+          for (const { text, rest } of all) {
             const tree = this.strings.expansion(c, text, rest);
             if (this.strings.capped) this.blindFor('too many aliases expanded');
             this.expanding.set(tree, new Set([...from, name]));

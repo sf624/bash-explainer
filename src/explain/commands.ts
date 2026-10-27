@@ -22,6 +22,7 @@ import { fact } from '../messages';
 import { nameInfo } from '../namefacts';
 import { builtinSections, programSections } from '../refs';
 import { inFunction, processOf, readAs, shellEffectOf } from '../semantics/env';
+import { aliasExpandsNext } from '../semantics/effects';
 import { type AliasResolution, aliasesAfter, assignmentsOf, type Missed, type NameResolution, testSpecOf } from '../semantics/names';
 import { docLine, option } from '../semantics/state';
 import { isPlainWord, literalContent, staticWordValue, surelyHasSlash } from '../staticword';
@@ -161,11 +162,13 @@ function aliasArguments(cx: Explainer, n: SyntaxNode, res: AliasResolution, toks
   return toks.map((t) => {
     const a = after.find((x) => x.word.startPosition.row === t.span.start.line && x.word.startPosition.column === t.span.start.character && x.word.text === t.label);
     if (!a) return t;
-    const { name, alias } = a.res;
+    const { name, alias, target } = a.res;
     const line = docLine(alias.at) + 1;
+    // (The first word of its text is checked too: `alias a2='b2 ' b2='c2 '`.)
+    const chain = target?.kind === 'alias' ? cx.s(`（\`${target.name}\` もエイリアスで、\`${target.alias.value}\` に置き換わる）`, ` (\`${target.name}\` is an alias too, for \`${target.alias.value}\`)`) : '';
     return {
-      ...cx.tok(a.word, 'alias', cx.s(`行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる。前のエイリアスの置き換え先が空白で終わるので、bash はこの単語もエイリアスか調べる`,
-        `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`. The text of the alias before it ends with a blank, so bash checks this word for an alias too`)),
+      ...cx.tok(a.word, 'alias', cx.s(`行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。前のエイリアスの置き換え先が空白で終わるので、bash はこの単語もエイリアスか調べる`,
+        `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}. The text of the alias before it ends with a blank, so bash checks this word for an alias too`)),
       refs: ['6.6'],
     };
   });
@@ -357,8 +360,11 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     const spec: CommandSpec = target ?? { ...NO_SPEC, unknownOption: { ja: `エイリアスの置き換え先 \`${alias.value}\` に渡す単語`, en: `A word passed on to \`${alias.value}\`, the text of the alias` } };
     const line = (docLine(alias.at) + 1);
     // (`alias a=b b='echo B'`: `a` runs the alias `b`.)
+    // (When that one's text ends with a blank and this one's does not, bash 5.3 checks the next word, 5.2 does not.)
+    const later = res.target?.kind === 'alias' && aliasExpandsNext(res.target.alias.value) && !aliasExpandsNext(alias.value)
+      ? cx.s(`。その置き換え先は空白で終わるが、次の単語がエイリアスか調べるのは bash 5.3 だけで、bash 5.2 は調べない`, `; its text ends with a blank, but only bash 5.3 then checks the next word for an alias, not bash 5.2`) : '';
     const chain = res.target?.kind === 'alias'
-      ? cx.s(`（\`${res.target.name}\` もエイリアスで、\`${res.target.alias.value}\` に置き換わる）`, ` (\`${res.target.name}\` is an alias too, for \`${res.target.alias.value}\`)`)
+      ? cx.s(`（\`${res.target.name}\` もエイリアスで、\`${res.target.alias.value}\` に置き換わる${later}）`, ` (\`${res.target.name}\` is an alias too, for \`${res.target.alias.value}\`${later})`)
       : '';
     // (A file with no shebang: aliases are expanded only when an interactive shell reads it, `.bashrc`; the model
     // starts it with expand_aliases not known, src/semantics/state.ts.)
