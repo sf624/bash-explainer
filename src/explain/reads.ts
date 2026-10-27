@@ -5,10 +5,12 @@
 import { givenOptions, has as hasOption, operands, restrictedRefusal, values } from '../argv/query';
 import type { ArgvParse } from '../argv/interpret';
 import type { CommandSpec, ShellVariant } from '../argv/spec';
-import { impliedWords, lookupCommand } from '../dict/aliases';
+import type { Basis } from '../basis';
+import { canonicalName, impliedWords, lookupCommand } from '../dict/aliases';
 import { customCommandSpec } from '../dict/custom';
 import type { Flavor } from '../embedded/regex';
 import { isProgram } from '../namefacts';
+import { programSections } from '../refs';
 import type { ExecEnv } from '../semantics/env';
 import { type NameResolution, resolveName } from '../semantics/names';
 import { attribute, option, type OptionState, shoptIn } from '../semantics/state';
@@ -32,6 +34,18 @@ export function resolve(cx: Explainer, name: string, at: SyntaxNode, opts: { quo
 /** The spec of a command a wrapper runs: from the customCommands setting, the host, or the dictionary. */
 export function specFor(cx: Explainer, name: string): CommandSpec | undefined {
   return customCommandSpec(cx.opts.customCommands?.[name.split('/').pop()!]) ?? hostCommand(cx, name) ?? lookupCommand(name);
+}
+
+/**
+ * What the token of a command `name` that runs the program of `spec` rests on (docs/design/basis-spec-convention.md,
+ * 1.1): the spec, by the dictionary's name of it (`/bin/rm` is `rm`, `egrep` is `grep`; a host's command by its own).
+ * None for a builtin's spec, a program the manual describes (bash's options are 6.1's), a command of the
+ * customCommands setting (the reader wrote its text), or no spec.
+ */
+export function programBasis(cx: Explainer, name: string, spec: CommandSpec | undefined): Basis | undefined {
+  const base = name.slice(name.lastIndexOf('/') + 1);
+  if (!spec || spec.builtin || programSections(base).length || customCommandSpec(cx.opts.customCommands?.[base])) return undefined;
+  return { kind: 'spec', command: hostCommand(cx, name) === spec ? name : canonicalName(base) };
 }
 
 /**

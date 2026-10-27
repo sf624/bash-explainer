@@ -162,3 +162,16 @@ export function withTokenBases(tokens: Token[], rested: readonly RestingText[]):
   };
   tokens.forEach(walk);
 }
+
+/**
+ * The tokens of a line (and those under them) with no basis: `notes.basis` off. Only the `spec` of a program's
+ * command token is set where the token is made (src/explain/commands.ts); the others are given after the line
+ * (`withTokenBases`), and not with the setting off.
+ */
+export function withoutBases(tokens: Token[]): void {
+  const walk = (t: Token) => {
+    delete t.basis;
+    t.children.forEach(walk);
+  };
+  tokens.forEach(walk);
+}

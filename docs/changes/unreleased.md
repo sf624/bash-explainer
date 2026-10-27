@@ -583,6 +583,8 @@ The command starts a bash of its own, so it prints the same when typed into zsh 
 
 The hover and Copy as Markdown say both on one line in italics. The command-line tool prints them under the note. Its JSON gives each fact a `basis` and a `tryIt`.
 
+The command-line tool's JSON also names the spec a program's explanation comes from: the token of `grep -rn x .` has `"basis": { "kind": "spec", "command": "grep" }`. The name is the dictionary's (`/bin/sed` is `sed`, `egrep` is `grep`; bats' `run` is bats'). A command another one runs has its own (`rm` of `sudo rm -rf x`). Builtins, bash's own options, functions, aliases, commands the dictionary does not know and those of `bashExplainer.customCommands` have none: their text is the manual's, or the reader's. The tokens the command reads (its options, operands, and the regex of `grep -E`) carry nothing: they rest on the command's token above them, unless they have a basis of their own. No view shows it; the JSON of the project's sample script grows by 0.85%.
+
 `bashExplainer.notes.basis` (on by default; `--set notes.basis=false` for the command-line tool) turns the chips and the try-its off, in every output, the JSON included.
 
 Some warnings and caveats state a fact of bash that bites only with some values, and advise a common habit that rules it out: quote expansions, write `read -r`, `set -o pipefail`. The command-line tool's JSON names that habit, as data: a fact gets a `convention` (`"convention": "declare-then-assign"`), and so does a problem of `--check --format json` (`{"code": "read-without-r", …, "convention": "read-r"}`). No view shows it, and `notes.basis` off leaves it out. The habits, and who states them, are listed in src/conventions.ts:

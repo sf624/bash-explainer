@@ -9,7 +9,7 @@ import { wordFindings } from './wordfacts';
 import type { SyntaxNode, SyntaxTree } from './syntax/tree';
 import { lookupCommand } from './dict/aliases';
 import { basisGate, plainNote } from './messages';
-import { withTokenBases } from './tokenbases';
+import { withoutBases, withTokenBases } from './tokenbases';
 import { pictureNote } from './ctlchars';
 import { dialectFound, Shell } from './dialect';
 import { fileRead } from './semantics/env';
@@ -52,8 +52,10 @@ export class Analyzer {
     };
     const cx = new LineExplainer(this.lang, { opts, root, line, shell, state, status: statusModel(state, shell), nested: this.nested }, walk);
     const items = flatten(cx, root);
-    // (A token that shows a text stating bash's behaviour gets its basis and try-it, unless `notes.basis` is off.)
-    if (opts.basis !== false) withTokenBases(items, cx.rested);
+    // (A token that shows a text stating bash's behaviour gets its basis and try-it, over the spec a program's token
+    // has; with `notes.basis` off, no token has a basis.)
+    if (opts.basis === false) withoutBases(items);
+    else withTokenBases(items, cx.rested);
     const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement'], line)
       .filter((n) => intersects(n, line));
     const notes = [

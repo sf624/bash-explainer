@@ -37,7 +37,7 @@ import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
-import { arrayKind, globOff, NO_SPEC, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
+import { arrayKind, globOff, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
 import { inSubshell } from './where';
@@ -858,8 +858,11 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   if (refused) cx.note(fact(cx.lang, 'restricted-refused', { kind: direct ? 'builtin' : 'slash', name, ...refused }), first);
   // (A program the manual describes: `sudo bash -c`, `exec bash --login`, 6.1.)
   const program = res?.kind === 'file' ? programSections(res.name) : [];
+  // (A program it runs rests on its spec, as one bash runs does (src/explain/commands.ts): `rm` of `sudo rm -rf x`, and
+  // what it reads; not a builtin `builtin` does not find.)
+  const basis = kind === 'command' && res?.kind !== 'none' ? programBasis(cx, value ?? name, role.spec) : undefined;
   return {
-    kind, ...(res ? { name: nameInfo(cx.lang, res, cx, first, cx.slotEnvs.get(first)) } : {}), ...(direct ? { refs: builtinSections(res.name, res.special) } : program.length ? { refs: program } : {}),
+    kind, ...(res ? { name: nameInfo(cx.lang, res, cx, first, cx.slotEnvs.get(first)) } : {}), ...(direct ? { refs: builtinSections(res.name, res.special) } : program.length ? { refs: program } : {}), ...(basis ? { basis } : {}),
     label: shorten(name),
     explanation: (role.of ? cx.s('実行するコマンド: ', 'Command to run: ') : '') + (direct ? '' : cx.s(`\`${name}\` を実行: `, `runs \`${name}\`: `)) + explanation,
     span, children, summary: `${name}: ${explanation}`,

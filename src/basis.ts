@@ -25,9 +25,11 @@ export type BashRelease = '5.2' | '5.3';
  * - `checked`: bash's behaviour where the manual does not say it, checked by running the releases `bash` on the
  *   `probes` (in CI: every row in 5.2, the rows of 5.3's constructs in 5.3, and the try-it in each release listed).
  * - `differs`: bash's behaviour where the manual says otherwise, checked the same way.
- * - `spec`: what another program does (an option of `grep`), from its command spec in src/dict/.
- * Only `checked` and `differs` are given by the catalog today; the others are the default or not given yet. A habit of
- * shell scripts is not a basis: a note whose advice is one names it beside its basis (`convention`, src/conventions.ts;
+ * - `spec`: what another program does (an option of `grep`), from its command spec in src/dict/, by the dictionary's
+ *   name of it (`/bin/rm` and `rm` are `rm`, `egrep` is `grep`). Only on a program's command token: the tokens it
+ *   reads rest on it by a rule (`tokenBasisFor`; docs/design/basis-spec-convention.md, 1.4).
+ * The catalog gives `checked` and `differs`; a program's command token `spec`. A habit of shell scripts is not a
+ * basis: a note whose advice is one names it beside its basis (`convention`, src/conventions.ts;
  * docs/design/basis-spec-convention.md, decision 1).
  */
 export type Basis =
@@ -90,4 +92,34 @@ export function basisOf(spec: BasisSpec | undefined): { basis?: Basis; tryIt?: T
 /** The basis of an explanation with `refs` and maybe a `basis` of its own: the manual's sections when it has none. */
 export function basisFor(x: { refs?: readonly string[]; basis?: Basis }): Basis {
   return x.basis ?? { kind: 'manual', sections: x.refs ?? [] };
+}
+
+/** A token as `tokenBasisFor` reads it: a `Token`, or a token of the CLI's JSON. */
+export interface BasisPart { kind: string; origin?: string; refs?: readonly string[]; basis?: Basis }
+
+/** The kinds of token of a command another one runs, whose spec reads the words after its name (`sudo rm -rf x`: `rm`). */
+const RUN_KINDS = new Set(['command', 'builtin']);
+/** The kinds of bash's tokens of a word, under which the tokens of a language of that word sit (the quotes of `"a+"`, the word `x"a+"`). */
+const WORD_KINDS = new Set(['argument', 'string', 'variable', 'expansion', 'number', 'pattern']);
+
+/**
+ * The basis of a token, with the tokens `above` it (the outermost first, its parent last): its own; else, for a token
+ * of origin `argv` or `embedded`, the `spec` of the command that reads it, the nearest command token above it (only a
+ * program's has one: a builtin's, a function's, bash's are the manual's); else the manual's sections (`basisFor`).
+ * The argv tokens, and the tokens of a word (`"a+"`, the quotes of `grep -E "a+"`), lie between a token and its
+ * command; any other token above it (`[[ ]]`, a redirection) ends the search with no command. Nothing but the command
+ * token stores the `spec`: the row model and a reader of the JSON apply this rule (docs/design/basis-spec-convention.md, 1.4).
+ */
+export function tokenBasisFor(t: BasisPart, above: readonly BasisPart[]): Basis {
+  if (t.basis) return t.basis;
+  if (t.origin === 'argv' || t.origin === 'embedded') {
+    for (let i = above.length - 1; i >= 0; i--) {
+      const a = above[i];
+      const read = a.origin === 'argv' || a.origin === 'embedded';
+      if (read ? !RUN_KINDS.has(a.kind) : WORD_KINDS.has(a.kind)) continue;
+      if (a.basis?.kind === 'spec') return a.basis;
+      break;
+    }
+  }
+  return basisFor(t);
 }

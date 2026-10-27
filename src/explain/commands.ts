@@ -8,6 +8,7 @@ import type { Kind, Span, Token } from '../analyzer-types';
 import type { ArgRole, ArgvParse } from '../argv/interpret';
 import { onlyInFunction } from '../argv/query';
 import type { CommandSpec } from '../argv/spec';
+import type { Basis } from '../basis';
 import { argWord } from '../argv/words';
 import { lookupCommand } from '../dict/aliases';
 import { customCommandSpec } from '../dict/custom';
@@ -35,7 +36,7 @@ import type { Explainer } from './context';
 import { commandExampleFor, unreadStdin, wordExample } from './examples';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
 import { redirectInfo, redirectParts } from './redirections';
-import { hostCommand, NO_SPEC, resolve, restrictedAt, restrictedCall, shellVariant, specFor, unquotedWord } from './reads';
+import { hostCommand, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, specFor, unquotedWord } from './reads';
 import { exitRefusedNote, posixExitNote, statusRangeNote } from './status';
 import { shellEffectNote } from './where';
 import { bracesHere, braceWord, braceWords, bracesMaybeOff, plainText, shown } from './words';
@@ -51,6 +52,8 @@ interface CommandHead {
   test?: CommandSpec;
   /** The command whose spec reads the words, when it is not `name`: what an alias runs (`alias g=grep`). */
   runs?: string;
+  /** What the command's token rests on: the spec of the program it runs, from the dictionary or the host (`programBasis`). */
+  basis?: Basis;
 }
 
 /** An alias whose text is one plain word: the alias runs that command with the same words. */
@@ -290,6 +293,9 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   ]), bracket ? shorten(wordsText(n)) : shorten((word ?? nameNode).text));
   const name = head.res && nameInfo(cx.lang, head.res, cx, nameNode);
   if (name) (bracket ? nameToks[0] : t).name = name;
+  // (A program's token rests on its spec, and the tokens it reads on the token: `tokenBasisFor`. The analyzer drops it
+  // with `notes.basis` off.)
+  if (head.basis) t.basis = head.basis;
   t.summary = bracket ? cx.s(`条件判定 ${shorten(wordsText(n), 40)}`, `test ${shorten(wordsText(n), 40)}`) : `${head.name}: ${head.explanation}${name?.runs === 'builtin' ? name.said.short : ''}`;
   if (head.refs?.length) t.refs = bracket ? [...head.refs, '6.4'] : head.refs;
   // (The name `[` is the builtin's, as `test` is: its section, 4.1.)
@@ -439,8 +445,9 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     const why = res.hashed
       ? cx.s(`行 ${by} の \`hash -p\` で \`${name}\` は \`${path}\` を指す`, `\`hash -p\` on line ${by} gave \`${name}\` the path \`${path}\``)
       : cx.s(`行 ${by} の \`enable -n\` で組み込みの \`${name}\` は無効になっている`, `\`enable -n\` on line ${by} turned the builtin \`${name}\` off`);
+    const basis = programBasis(cx, path || name, program);
     return {
-      name, res: ran, ...(program ? { spec: program } : {}), ...testOf(res), kind: 'command', nameTokens: [], refs: ['3.7.2'],
+      name, res: ran, ...(program ? { spec: program } : {}), ...testOf(res), kind: 'command', nameTokens: [], refs: ['3.7.2'], ...(basis ? { basis } : {}),
       explanation: cx.s(`外部コマンド \`${path || name}\` を実行する（${why}）${program ? `: ${cx.t(program.summary)}` : ''}`, `Run the external command \`${path || name}\` (${why})${program ? `: ${cx.t(program.summary)}` : ''}`),
     };
   }
@@ -454,8 +461,9 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     const builtin = !!spec.builtin;
     // (A builtin's section, or that of a program the manual describes: `bash`, 6.1.)
     const own = builtin ? builtinSections(name, spec.builtin === 'special') : programSections(name);
+    const basis = programBasis(cx, name, spec);
     return {
-      name, res: ran, spec, ...testOf(res), kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(own.length ? { refs: own } : {}),
+      name, res: ran, spec, ...testOf(res), kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(own.length ? { refs: own } : {}), ...(basis ? { basis } : {}),
       explanation: builtin && spec.closingOperand // (zsh splits and globs no unquoted variable, but drops one that is empty all the same.)
         ? cx.s(`コマンド \`[\`（\`test\` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、\`[\` と \`]\` の前後に空白が要り、${cx.shell === 'zsh' ? '中の引数はほかのコマンドの引数と同じく展開される（クォートしない変数は、空なら引数ごと消える。`[[ ]]` なら消えない）' : '中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）'}`,
           `Command \`[\` (an alias of \`test\`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so \`[\` and \`]\` need spaces around them, and ${cx.shell === 'zsh' ? 'the arguments inside are expanded as any command\'s are (an unquoted variable that is empty is dropped; `[[ ]]` keeps it)' : 'the arguments inside undergo word splitting and globbing (`[[ ]]` does not)'}`)

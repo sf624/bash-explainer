@@ -104,7 +104,9 @@ export interface Token {
   value?: ValueInfo;
   /**
    * What the text rests on where it states bash's behaviour that the manual does not state, or states otherwise
-   * (src/tokenbases.ts, docs/design/basis.md): as `Fact.basis`. None with `notes.basis` off.
+   * (src/tokenbases.ts, docs/design/basis.md): as `Fact.basis`. On a program's command token, the spec it was read
+   * with (`{ kind: 'spec', command: 'grep' }`), on which the tokens it reads rest (`tokenBasisFor`). None with
+   * `notes.basis` off.
    */
   basis?: Basis;
   /** A command that shows that behaviour, and what it printed (`Fact.tryIt`), with the basis. */

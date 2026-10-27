@@ -5,10 +5,12 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import { Analyzer } from '../src/analyzer';
-import { basisFor, basisOf, type BasisSpec, PROBE_COPY, type ProbeRef } from '../src/basis';
+import type { Token } from '../src/analyzer-types';
+import { type Basis, basisFor, basisOf, type BasisSpec, PROBE_COPY, type ProbeRef, tokenBasisFor } from '../src/basis';
 import { type Convention, CONVENTIONS, type ConventionId } from '../src/conventions';
 import { documentIssues, explainDocumentLine } from '../src/document';
 import { openDocument } from '../src/document-setup';
+import { explainHostedLine, extractShell } from '../src/hosts';
 import { SECTIONS } from '../src/manual';
 import { STYLE_CONVENTIONS, STYLE_LEVELS, STYLE_REFS } from '../src/pitfalls';
 import type { Shell } from '../src/shellfeatures';
@@ -277,8 +279,9 @@ describe('basis: what an explanation rests on', () => {
     }
     // (Not where the text is not said: `$_` after a command with arguments, `PATH` for one command, `time` with a
     // pipeline, a variable whose text the manual states, the declaration that makes a variable read-only.)
+    // (A program's spec, step 5a, is not such a basis: `ls`.)
     for (const src of ['true x; echo "$_"', 'PATH=/x cmd', 'time ls', 'echo "$HOME"', 'readonly x=1', 'BASHPID=1']) {
-      assert.deepStrictEqual(allTokens(explain(src).items).filter((t) => t.basis || t.tryIt).map((t) => t.label), [], src);
+      assert.deepStrictEqual(allTokens(explain(src).items).filter((t) => (t.basis && t.basis.kind !== 'spec') || t.tryIt).map((t) => t.label), [], src);
     }
   });
 
@@ -310,6 +313,84 @@ describe('basis: what an explanation rests on', () => {
     assert.strictEqual(basisMarkdown(tok, 'en', '  '), `\\\n  _${basisLine('en', b, (c) => `\`${c}\``)}_`);
     assert.strictEqual(basisMarkdown({}, 'en', '  '), '');
     assert.match(toPlainMarkdown(ex, 'BASH_XTRACEFD=7', 'x.sh:1'), /- `BASH_XTRACEFD=7` — .*\\\n +_Differs from the manual · checked with bash 5\.2 and 5\.3 · Try it in your terminal: `bash -c '[^`]*'` → `fd 3 is still open`_/);
+  });
+
+  /** Each token of `items`, with the tokens above it (the outermost first). */
+  const withAbove = (items: readonly Token[], above: readonly Token[] = []): [Token, readonly Token[]][] =>
+    items.flatMap((t) => [[t, above] as [Token, readonly Token[]], ...withAbove(t.children, [...above, t])]);
+  /** What each token rests on by `tokenBasisFor`, as `label: kind command` (the spec) or `label: manual`. */
+  const rests = (src: string, line = 0, opts?: Parameters<typeof explain>[3]) => withAbove(explain(src, line, 'en', opts).items).map(([t, above]) => {
+    const b = tokenBasisFor(t, above);
+    return `${t.label}: ${b.kind === 'spec' ? `spec ${b.command}` : b.kind}`;
+  });
+  const spec = (command: string): Basis => ({ kind: 'spec', command });
+
+  it('gives a program\'s command token the spec it reads its words with, and the tokens it reads rest on it by the rule (step 5a)', () => {
+    const ex = explain('grep -rn "a+" .', 0, 'en', { reading: true });
+    // (Only the command's token holds it: the others rest on it by `tokenBasisFor`.)
+    assert.deepStrictEqual(allTokens(ex.items).filter((t) => t.basis).map((t) => [t.label, t.basis]), [['grep', spec('grep')]]);
+    assert.deepStrictEqual(rests('grep -rn "a+" .'), [
+      'grep: spec grep', '-rn: spec grep', '-r: spec grep', '-n: spec grep', '"a+": spec grep', '"a+": manual', 'a: spec grep', '+: spec grep', '.: spec grep',
+    ]);
+    // (Reading copies it to the node of the command's name.)
+    assert.deepStrictEqual(readingNodes(ex.reading!).filter((n) => n.basis).map((n) => [n.kind, n.label, n.basis]), [['commandName', 'grep', spec('grep')]]);
+    // By the dictionary's name: a path, a name the dictionary reads as another, a program `hash -p` or `enable -n` names.
+    for (const [src, line, command] of [['/bin/sed -n p f', 0, 'sed'], ['egrep x f', 0, 'grep'], ['hash -p /bin/ls l\nl -l', 1, 'ls'], ['enable -n echo\necho hi', 1, 'echo']] as const) {
+      assert.deepStrictEqual(explain(src, line).items.map((t) => t.basis), [spec(command)], src);
+    }
+    // A command another runs has its own spec (`rm`), not that of the command that runs it; bash's are the manual's.
+    assert.deepStrictEqual(rests('sudo rm -rf x'), ['sudo: spec sudo', 'rm: spec rm', '-rf: spec rm', '-r: spec rm', '-f: spec rm', 'x: spec rm']);
+    assert.deepStrictEqual(rests('env X=1 bash -c ls').slice(0, 4), ['env: spec env', 'X=1: spec env', 'bash: spec env', '-c: manual']);
+    assert.deepStrictEqual(rests('xargs printf "%s"').filter((r) => r.startsWith('%s') || r.startsWith('printf')), ['printf: spec printf', '%s: spec printf']);
+    // (The regex of `=~` is bash's; that of `grep -E` grep's, in a word of several parts too.)
+    assert.deepStrictEqual(rests('[[ x =~ a+ ]]').filter((r) => /^(a|\+):/.test(r)), ['a: manual', '+: manual']);
+    assert.deepStrictEqual(rests('grep -E x"a+" f').filter((r) => /^(x|a|\+):/.test(r)), ['x: manual', 'x: spec grep', 'a: spec grep', '+: spec grep']);
+  });
+
+  it('gives no spec to a builtin, bash, a function, an alias, an unknown or a custom command; bats\' own commands have bats\'', () => {
+    const none = (src: string, line = 0, opts?: Parameters<typeof explain>[3]) => {
+      assert.deepStrictEqual(allTokens(explain(src, line, 'en', opts).items).filter((t) => t.basis).map((t) => t.label), [], src);
+      assert.ok(rests(src, line, opts).every((r) => !r.includes('spec')), `${src}: ${rests(src, line, opts).join(', ')}`);
+    };
+    none('read -r x');
+    none("bash -c 'echo hi'");
+    none('/bin/bash --posix x.sh');
+    none('f() { :; }\nf -x', 1);
+    none("shopt -s expand_aliases\nalias l='ls -l'\nl /", 2);
+    none('shopt -s expand_aliases\nalias g=grep\ng -n x f', 2);
+    none('frobnicate --x y');
+    none('hash -p /opt/frob f\nf -x', 1);
+    none('grep -n x f', 0, { customCommands: { grep: { summary: 'My grep' } } });
+    none('builtin ls');
+    none('command cd /');
+    assert.deepStrictEqual(rests('sudo "$cmd" x').slice(0, 2), ['sudo: spec sudo', '"$cmd": spec sudo']);
+    assert.ok(!allTokens(explain('sudo "$cmd" x').items[0].children).some((t) => t.basis));
+    assert.deepStrictEqual(rests('sudo tool -a x', 0, { customCommands: { tool: { summary: 'T' } } }).slice(0, 2), ['sudo: spec sudo', 'tool: spec sudo']);
+    // (An alias explained as the command it runs, with its words after the alias's, says that command's spec.)
+    assert.deepStrictEqual(explain("shopt -s expand_aliases\nalias ls='ls -F'\nls /", 2).items[0].basis, spec('ls'));
+    const lines = ['@test "a" {', '  run grep -n x f', '}'];
+    const extracted = extractShell('bats', lines.join('\n'));
+    const ex = explainHostedLine(new Analyzer('en'), createUnbashParser().parse(extracted.text), extracted, lines, 1, 'en')!;
+    assert.deepStrictEqual(allTokens(ex.items).filter((t) => t.basis).map((t) => [t.label, t.basis]), [['run', spec('run')], ['grep', spec('grep')]]);
+  });
+
+  it('keeps a token\'s own basis over the spec, and gives none with `notes.basis` off; no view shows `spec`', () => {
+    const tok = allTokens(explain('alias a/b=x').items).find((t) => t.label === 'a/b=x')!;
+    assert.strictEqual(tokenBasisFor(tok, []).kind, 'checked');
+    const grep = { kind: 'command', origin: 'shell', basis: spec('grep') };
+    const own = basisOf(TOKEN_BASES['bash-refuses-option']).basis!;
+    assert.strictEqual(tokenBasisFor({ kind: 'option', origin: 'argv', basis: own }, [grep]), own);
+    assert.deepStrictEqual(tokenBasisFor({ kind: 'option', origin: 'argv', refs: ['4.2'] }, []), { kind: 'manual', sections: ['4.2'] });
+    assert.deepStrictEqual(tokenBasisFor({ kind: 'option', origin: 'argv' }, [grep, { kind: 'option', origin: 'argv' }]), spec('grep'));
+    const off = explain('sudo grep -n x f', 0, 'en', { reading: true, basis: false });
+    assert.deepStrictEqual(allTokens(off.items).filter((t) => t.basis), []);
+    assert.deepStrictEqual(readingNodes(off.reading!).filter((n) => n.basis), []);
+    // (`partBasis` and `basisSaid` show `checked` and `differs` only: a line with a spec only is sent as it is.)
+    const ex = explain('grep -n x f', 0, 'en', { reading: true });
+    assert.strictEqual(partBasis(ex.items[0], 'en'), undefined);
+    assert.strictEqual(basisSaid('ja', spec('grep')), undefined);
+    assert.strictEqual(withBasisShown(ex, 'en'), ex);
+    assert.doesNotMatch(toPlainMarkdown(ex, 'grep -n x f', 'x.sh:1'), /manual ·|Try it/);
   });
 });
 
