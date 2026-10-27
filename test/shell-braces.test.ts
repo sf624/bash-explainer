@@ -205,3 +205,14 @@ describe('the token of a brace expansion, as braceexpand is', () => {
     assert.match(head?.explanation ?? '', /it is not a `\{ \}` group\) \(where brace expansion is on: `set \+B`/);
   });
 });
+
+describe('a brace expansion next to a quoted part', () => {
+  it('has words the explainer does not list, and no value in examples (found by the fuzz test)', () => {
+    // bash gives three words (`%s,a` is the format, `%s,b` and `%s,c` its arguments); the examples do not read the word as its text.
+    assert.strictEqual(runBash("printf '%s,'{a..c}; echo").stdout, '%s,b,a%s,c,a\n');
+    const src = "printf -v v '%s,'{a..c}";
+    assert.doesNotThrow(() => new Analyzer('en').explainLine(parser.parse(src), 0));
+    const lines = new Analyzer('en').explainLine(parser.parse("printf '%s,'{a..c}"), 0).examples.flatMap((e) => e.sections.flatMap((x) => x.lines ?? []));
+    assert.ok(!lines.some((l) => l.includes('{a..c}')), lines.join('\n'));
+  });
+});

@@ -498,10 +498,14 @@ function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[]): void {
 /** The words bash makes of argument `a` by brace expansion where it runs; undefined when it makes none, or too many to list. */
 export function braceWordsOf(cx: Explainer, a: SyntaxNode): string[] | undefined {
   // (The model says whether braces expand there: not after `set +B`.)
-  if (wordAt(cx, a)?.steps.find((st) => st.kind === 'brace')?.applies !== true) return undefined;
-  // (The model applies brace expansion only to a word of plain parts, which `unquotedWord` reads.)
-  return braceExpansion(unquotedWord(a)!) ?? undefined;
+  if (!bracesApply(cx, a)) return undefined;
+  // (Only a word of plain parts, which `unquotedWord` reads, is expanded here: `'%s,'{a..c}` is not.)
+  const text = unquotedWord(a);
+  return text === undefined ? undefined : braceExpansion(text) ?? undefined;
 }
+
+/** Whether brace expansion applies to the argument `a` where it runs (the word model: not after `set +B`). */
+const bracesApply = (cx: Explainer, a: SyntaxNode): boolean => wordAt(cx, a)?.steps.find((st) => st.kind === 'brace')?.applies === true;
 
 /**
  * What a command gets from its argument words, for the examples that run it: each word of a brace expansion is a value of
@@ -516,7 +520,8 @@ export function exampleWords(cx: Explainer, args: SyntaxNode[], printed = false)
     const unknown = (w: string) => (globbed && isGlob(w)) || (printed && steps?.find((st) => st.kind === 'tilde')?.applies === true);
     const braced = braceWordsOf(cx, a);
     if (braced) return braced.map((w) => ({ value: unknown(w) ? undefined : w, text: w }));
-    return [{ value: unknown(a.text) ? undefined : literalContent(a)?.text, text: a.text }];
+    // (A word whose braces expand to words not listed here has no value: `'%s,'{a..c}`.)
+    return [{ value: unknown(a.text) || bracesApply(cx, a) ? undefined : literalContent(a)?.text, text: a.text }];
   });
 }
 
