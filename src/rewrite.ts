@@ -67,6 +67,7 @@ export function unusedName(n: SyntaxNode, base: string): string {
     const name = i === 1 ? base : `${base}${i}`;
     if (!new RegExp(`(?<!\\w)${name}(?!\\w)`).test(text)) return name;
   }
+}
 
 /** The operators that join the statements of a list or a pipeline. */
 const JOINS: ReadonlySet<string> = new Set(['&&', '||', '|', '|&']);
@@ -115,18 +116,33 @@ export function asIf(n: SyntaxNode): Rewrite {
   const and = n.children.find((c) => c.type === '&&')!;
   const right = n.namedChildren.find((c) => c.startIndex >= and.endIndex && c.type !== 'comment')!;
   const blanks = /[ \t]*$/.exec(n.text.slice(0, and.startIndex - n.startIndex))![0].length;
-  return replaceNode(n, changed(n, [{ start: n.startIndex, end: n.startIndex, text: 'if ' }, { start: and.startIndex - blanks, end: and.endIndex, text: '; then' },
+  // (`a&&b`: `then` needs a blank after it.)
+  const then = /\s/.test(n.text.charAt(and.endIndex - n.startIndex)) ? '; then' : '; then ';
+  // (The whole of `n`, here-documents included, is replaced: `fi` is before their bodies.)
+  return replaceRange(n, n.startIndex, n.endIndex, changed(n, [{ start: n.startIndex, end: n.startIndex, text: 'if ' }, { start: and.startIndex - blanks, end: and.endIndex, text: then },
     { start: headEnd(right), end: headEnd(right), text: '; fi' }]));
 }
 
 /** Where a statement put in place of another would not stand as one: `x | b`, `! x`, `time x`. */
 const BOUND: ReadonlySet<string> = new Set(['pipeline', 'negated_command', 'time_statement', 'coproc_statement', 'redirected_statement']);
 
+/** Whether statements put in place of the statement `n` need a group: where `n` is bound (`x | b`) or not first in a list. */
+const grouped = (n: SyntaxNode): boolean => BOUND.has(n.parent!.type) || (n.parent!.type === 'list' && n.parent!.namedChildren[0] !== n);
+
 /**
  * `code`, a list of statements, as one statement in place of the statement `n`: as it is where `n` stands alone or
  * first in an `&&` or `||` list (`local x; x=$(f) || return`); else in a group (`a && { local x; x=$(f); }`).
  */
 export function inPlaceOf(n: SyntaxNode, code: string): string {
-  const p = n.parent!;
-  return BOUND.has(p.type) || (p.type === 'list' && p.namedChildren[0] !== n) ? `{ ${code}; }` : code;
+  return grouped(n) ? `{ ${code}; }` : code;
+}
+
+/**
+ * The text of the statement `n` with `changes` made (edits within it), `before` put before it and `after` after it, but
+ * before the bodies of its here-documents (`local x <<EOF; x=$(g)⏎…⏎EOF`); in a group as `inPlaceOf` puts it.
+ */
+export function around(n: SyntaxNode, changes: readonly TextEdit[], before: string, after: string): string {
+  const group = grouped(n);
+  const head = headEnd(n);
+  return changed(n, [{ start: n.startIndex, end: n.startIndex, text: `${group ? '{ ' : ''}${before}` }, ...changes, { start: head, end: head, text: `${after}${group ? '; }' : ''}` }]);
 }

@@ -1393,4 +1393,4 @@ The note on a declaration that hides the status of its `$( )` told to declare fi
 | `local -r a=1 b=$(g) c` | `local a=1 b c; b=$(g); readonly a b c` |
 | `declare -ri y=$(g)` | `declare -i y; y=$(g); readonly y` |
 
-`readonly` makes the local read-only, and leaves a global of the same name as it was (bash 5.2 and 5.3). First in a list (`readonly r=$(g) || exit`), `||` would test `readonly`: the note shows the code, but carries no rewrite.
+`readonly` makes the local read-only, and leaves a global of the same name as it was (bash 5.2 and 5.3). First in a list (`readonly r=$(g) || exit`), `||` would test `readonly`: the note shows the list with the assignment first, `r=$(g) || exit; readonly r`, but carries no rewrite. A name the declaration assigns again moves with it, in order (`local x=$(g) x=1` → `local x; x=$(g); x=1`), also with no rewrite. With a here-document, the assignments go before its body (`local x <<EOF; x=$(g)`).

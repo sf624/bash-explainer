@@ -465,7 +465,7 @@ describe('conventions: the habit a note recommends', () => {
   });
 
   it('gives a fact and a style check their habit, beside the basis, and none with `notes.basis` off', () => {
-    const local = fact('en', 'declaration-masks-status', { kw: 'local', v: 'v' });
+    const local = fact('en', 'declaration-masks-status', { kw: 'local', v: 'v', rewrite: [{ code: 'local v; v=$(f)', edits: [] }] });
     assert.strictEqual(local.convention, 'declare-then-assign');
     assert.ok(!('basis' in local));
     assert.ok(!('convention' in basisGate(local, false)));

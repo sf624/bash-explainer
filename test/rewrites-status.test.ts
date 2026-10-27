@@ -37,11 +37,26 @@ describe('the rewrites of `declaration-masks-status`', () => {
     assert.match(code('f() {\n  local x=$(g)\n}\nf', 'declaration-masks-status', 'ja'), /`local x; x=\$\(g\)` と分けて書きます$/);
     // (`readonly r=$(g) || exit`: the `||` would test `readonly`.)
     const [ro] = factsOf('readonly r=$(g) || exit', 'declaration-masks-status');
-    assert.match(ro.text, /Split it: `r=\$\(g\); readonly r`$/);
+    assert.match(ro.text, /Split it: `r=\$\(g\) \|\| exit; readonly r`$/);
+    assert.match(code('f() {\n  local -r r=$(g) || return\n}\nf', 'declaration-masks-status'), /Split it: `local r; r=\$\(g\) \|\| return; readonly r`$/);
     assert.strictEqual(ro.rewrite, undefined);
     const [c] = factsOf("bash -c 'f() { local x=$(g); }; f'", 'declaration-masks-status');
     assert.match(c.text, /Split it: `local x; x=\$\(g\)`$/);
     assert.strictEqual(c.rewrite, undefined);
+  });
+
+  it('put the assignments before the bodies of here-documents', () => {
+    // (Before, `local x >/dev/null 2>&1 <<EOF⏎hi⏎EOF; x=$(g)`: the line `EOF; x=$(g)` ends no here-document.)
+    assert.deepStrictEqual(fix('f() {\n  local x=$(g) >/dev/null 2>&1 <<EOF\nhi\nEOF\n  :\n}\nf')[0][1], 'f() {\n  local x >/dev/null 2>&1 <<EOF; x=$(g)\nhi\nEOF\n  :\n}\nf');
+    assert.deepStrictEqual(fix('f() {\n  true && local x=$(g) <<EOF\nhi\nEOF\n}\nf')[0][1], 'f() {\n  true && { local x <<EOF; x=$(g); }\nhi\nEOF\n}\nf');
+    assert.deepStrictEqual(fix('readonly z=$(g) <<EOF\nhi\nEOF')[0][1], 'z=$(g); readonly z <<EOF\nhi\nEOF');
+  });
+  it('move a name assigned again with it, in order, and then carry no edits', () => {
+    // (Before, `local x x=1; x=$(g)`, which ends with the value of `g`.)
+    const [f] = factsOf('f() {\n  local x=$(g) x=1\n}\nf', 'declaration-masks-status');
+    assert.match(f.text, /Split it: `local x; x=\$\(g\); x=1`$/);
+    assert.strictEqual(f.rewrite, undefined);
+    assert.match(code('readonly x=1 x=$(g) y=$(g) x=2', 'declaration-masks-status'), /Split it: `x=\$\(g\); y=\$\(g\); x=2; readonly x=1 x y`$/);
   });
 
   // `g` prints 42, and fails when `RW_FAIL` is 1. `hides`: the status printed after the line, which the original
@@ -55,6 +70,8 @@ describe('the rewrites of `declaration-masks-status`', () => {
     { src: 'a=old\nexport a=$(g) b=$a\necho "@st=$?"\ndeclare -p a b\n', hides: 'st' },
     { src: 'f() {\n  true && export q=$(g)\n  echo "@st=$?"\n  declare -p q\n}\nf\n', hides: 'st' },
     { src: 'f() {\n  local u=$(g) || return 3\n  echo "@u=$u"\n}\nf\necho "@f=$?"\n', hides: 'f' },
+    { src: 'f() {\n  local x=$(g) >/dev/null 2>&1 <<EOF\nhi\nEOF\n  echo "@st=$?"\n  declare -p x\n}\nf\n', hides: 'st' },
+    { src: 'f() {\n  true && local y=$(g) <<EOF\nhi\nEOF\n  echo "@st=$?"\n  declare -p y\n}\nf\n', hides: 'st' },
   ];
   for (const { name, program } of programs) {
     for (const { src, hides } of inputs) {
@@ -85,6 +102,16 @@ describe('the rewrites of `declaration-masks-status`', () => {
   it('leaves no fact of the same id in the rewritten scripts', () => {
     for (const { src } of inputs) for (const [, s] of fix(src)) assert.deepStrictEqual(factsOf(s, 'declaration-masks-status'), [], s);
   });
+  for (const { name, program } of programs) {
+    it(`keep the last value of a name assigned again in ${name}`, async () => {
+      const src = 'f() {\n  local x=$(g) x=1\n  declare -p x\n}\nf\n';
+      const [f] = factsOf(src, 'declaration-masks-status');
+      const shown = /`([^`]*)`$/.exec(f.text)![1];
+      const [before, after] = await Promise.all([run(program, src, DRIVER, { recorders }), run(program, src.replace('local x=$(g) x=1', shown), DRIVER, { recorders })]);
+      assert.deepStrictEqual(after, before);
+      assert.match(after.out, /x="1"/);
+    });
+  }
 });
 
 describe('the rewrites of `postfix-increment-status`', () => {
@@ -96,6 +123,23 @@ describe('the rewrites of `postfix-increment-status`', () => {
     assert.deepStrictEqual(fix('set -e\ntrue && (( a[k]++ ))').map(([, s]) => s)[2], 'set -e\ntrue && { (( a[k]++ )) || true; }');
     assert.deepStrictEqual(fix('set -e\ntrue && (( a[k]++ ))').map(([c]) => c).slice(0, 2), ['a[k]=$((a[k]+1))', '((++a[k]))']);
   });
+  it('do not assign where the subscript acts, which would act twice', () => {
+    // (Before, `a[i++]=$((a[i++]+1))`, which runs `i++` twice.)
+    for (const v of ['a[i++]', 'a[--i]', 'a[i+=1]', 'a[j=2]', 'a[k<<=1]', 'a[$(f)]', 'a[`f`]']) assert.deepStrictEqual(fix(`((${v}++))`).map(([c]) => c), [`((++${v}))`], v);
+    assert.deepStrictEqual(fix('set -e\n((a[i++]++))').map(([c]) => c), ['((++a[i++]))', '((a[i++]++)) || true']);
+    assert.deepStrictEqual(fix('((a[i==1]++))').map(([c]) => c), ['a[i==1]=$((a[i==1]+1))', '((++a[i==1]))']);
+    assert.match(code('((a[i++]++))', 'postfix-increment-status'), /\. `\(\(\+\+a\[i\+\+\]\)\)` gives status 0$/);
+    assert.match(code('set -e\n((a[i++]++))', 'postfix-increment-status'), /Write `\(\(\+\+a\[i\+\+\]\)\)` or `\(\(a\[i\+\+\]\+\+\)\) \|\| true`$/);
+    assert.match(code('set -e\n((a[i++]++))', 'postfix-increment-status', 'ja'), /`\(\(\+\+a\[i\+\+\]\)\)` か `\(\(a\[i\+\+\]\+\+\)\) \|\| true` と書く$/);
+  });
+  for (const { name, program } of programs) {
+    it(`increment the element once, and the subscript once, in ${name}`, async () => {
+      const src = 'a=(0 5)\ni=0\n((a[i++]++))\necho "@st=$? a=${a[*]} i=$i"\n';
+      const [[, script]] = fix(src);
+      assert.match((await run(program, src, DRIVER)).out, /^@st=1 a=1 5 i=1$/m);
+      assert.match((await run(program, script, DRIVER)).out, /^@st=0 a=1 5 i=1$/m);
+    });
+  }
   it('are what the note says', () => {
     assert.match(code('set -e\ni=0\n((i++))', 'postfix-increment-status'), /Write `i=\$\(\(i\+1\)\)`, `\(\(\+\+i\)\)` or `\(\(i\+\+\)\) \|\| true`$/);
     assert.match(code('i=0\n((i++))', 'postfix-increment-status', 'ja'), /`i=\$\(\(i\+1\)\)` や `\(\(\+\+i\)\)` なら 0 になる$/);
@@ -141,6 +185,9 @@ describe('the rewrites of `test && cmd` at the end of a function or of a script'
     assert.deepStrictEqual(fix('#!/bin/bash\nset -e\nf() { [ -f x ] && echo y; }\nf', 'function-last-test-returns-status').map(([, s]) => s), [
       '#!/bin/bash\nset -e\nf() { if [ -f x ]; then echo y; fi; }\nf', '#!/bin/bash\nset -e\nf() { [ -f x ] && echo y; return 0; }\nf']);
     // (The last line, with no newline after it; `a && b && c`, and a newline after `&&`.)
+    // (`a&&b`: a blank after `then`. Before, `then` and `b` were one word.)
+    assert.deepStrictEqual(fix('#!/bin/bash\n[ -n "$x" ]&&echo hi', 'script-last-test-returns-status')[0][1], '#!/bin/bash\nif [ -n "$x" ]; then echo hi; fi');
+    assert.deepStrictEqual(fix('#!/bin/bash\n[ -n "$x" ]&&{ echo hi; }', 'script-last-test-returns-status')[0][0], 'if [ -n "$x" ]; then { echo hi; }; fi');
     assert.deepStrictEqual(fix('#!/bin/bash\n[ -f x ] && [ -f y ] &&\n  echo y', 'script-last-test-returns-status'), [
       ['if [ -f x ] && [ -f y ]; then\n  echo y; fi', '#!/bin/bash\nif [ -f x ] && [ -f y ]; then\n  echo y; fi'], ['exit 0', '#!/bin/bash\n[ -f x ] && [ -f y ] &&\n  echo y\nexit 0']]);
   });
@@ -175,6 +222,8 @@ describe('the rewrites of `test && cmd` at the end of a function or of a script'
     { src: '#!/bin/bash\nset -e\nf() {\n  grep -q x <<EOF && cat <<EOF2\n$X\nEOF\n@there\nEOF2\n}\nf\necho @next\n', id: 'function-last-test-stops-script', env: { X: 'x' } },
     { src: '#!/bin/bash\necho @start\n[ -f x ] && echo "@y"\n', id: 'script-last-test-returns-status', files: ['x'] },
     { src: '#!/bin/bash\n[ -f x ] &&\n  [ -f y ] && echo "@y"', id: 'script-last-test-returns-status', files: ['x', 'y'] },
+    { src: '#!/bin/bash\necho @start\n[ -f x ]&&echo "@y"\n', id: 'script-last-test-returns-status', files: ['x'] },
+    { src: '#!/bin/bash\nset -e\nf() {\n  [ -f x ]&&{ echo "@y"; }\n}\nf\necho @next\n', id: 'function-last-test-stops-script', files: ['x'] },
   ];
   for (const { name, program } of programs) {
     for (const { src, id, files = [], env = {} } of inputs) {
