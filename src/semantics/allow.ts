@@ -99,8 +99,9 @@ export const SYNTAX: Readonly<Record<NodeType, Row>> = {
   variable_name: followed(['values#split-unquoted']),
   special_variable_name: followed(['values#special-params']),
   subscript: followed(['values#test-v-subscript']),
-  // (`${ …; }` of bash 5.3, which the scan reads as `all`, runs in this shell; `$( )` in a subshell.)
-  command_substitution: followed(['values#command-subst', 'generator: command substitution']),
+  // (`$( )` runs in a subshell; `${ …; }` and `${| …; }` of bash 5.3 in this shell, which the walk follows.)
+  command_substitution: followed(['values#command-subst', 'generator: command substitution', 'state#funsub-keeps', 'state#funsub-scope', 'state#valsub-reply',
+    'state#funsub-return', 'env#funsub-shell', 'status#funsub-errexit', 'words#valsub-value']),
   // (A subshell: its own commands are looked up as well.)
   process_substitution: none(),
   arithmetic_expansion: followed(['values#arith-expansion']),

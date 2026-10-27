@@ -142,9 +142,9 @@ export interface DeadRange { code: 'dead-code'; severity: 'hint'; message: strin
  * of another file are explained one by one, with their own models. None where `# bash-explainer disable=dead-code`
  * says so.
  */
-export function deadCodeHints(doc: ShellDocument, lang: Lang, shells: Shells, ignore: readonly string[] = []): DeadRange[] {
+export function deadCodeHints(doc: ShellDocument, lang: Lang, shells: Shells, ignore: readonly string[] = [], version?: BashVersion): DeadRange[] {
   if (doc.extracted || ignore.includes('dead-code')) return [];
-  const model = shellState(doc.tree, shells.forced ?? shells.detected);
+  const model = shellState(doc.tree, shells.forced ?? shells.detected, { version });
   const message = plain(fact(lang, 'dead-code').text);
   const out: DeadRange[] = [];
   const visit = (parent: SyntaxNode): void => {
@@ -219,7 +219,7 @@ export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: 
     return doc?.extracted !== undefined && !settings['diagnostics.embedded'] ? [] : list.filter((i) => !ignore.has(i.code));
   };
   // (The faded ranges are no problems: they come apart from `shown`, where the surface draws them, if `hints.deadCode` is on.)
-  const faded = () => (settingSpec('hints.deadCode')!.surfaces.includes(surface) && settings['hints.deadCode'] && (doc ??= open()) ? deadCodeHints(doc, lang, shellsOf(doc), settings['diagnostics.ignore']) : []);
+  const faded = () => (settingSpec('hints.deadCode')!.surfaces.includes(surface) && settings['hints.deadCode'] && (doc ??= open()) ? deadCodeHints(doc, lang, shellsOf(doc), settings['diagnostics.ignore'], settings.bashVersion) : []);
   return { get all() { return all(); }, shown: shown(), get faded() { return faded(); } };
 }
 

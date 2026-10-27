@@ -1,8 +1,9 @@
-// The probe tables (test/fixtures/probes/*.json): what bash 5.2 does with each snippet, as
-// scripts/record-probes.ts recorded it. Steps B1–B5 of docs/design/semantics.md compare the semantic model
-// with these facts; here bash is run again on every row, to check that the facts are still what it does.
+// The probe tables (test/fixtures/probes/*.json): what bash 5.2 does with each snippet (bash 5.3, for a row of its
+// constructs: `"bash": "5.3"`, run with $BASH_EXPLAINER_BASH53), as scripts/record-probes.ts recorded it. Steps B1–B5
+// of docs/design/semantics.md compare the semantic model with these facts; here bash is run again on every row, to
+// check that the facts are still what it does.
 import * as assert from 'assert';
-import { factsOf, hasRequired, instrument, pooled, PROBE_KINDS, probeEnv, probeSkipReason, probeState, probeWords, readProbeTable } from './support/probe';
+import { factsOf, hasBash53, hasRequired, instrument, pooled, PROBE_KINDS, probeEnv, probeSkipReason, probeState, probeWords, readProbeTable } from './support/probe';
 
 describe('probes: the harness', () => {
   it('numbers the markers that have no id, and keeps the lines', () => {
@@ -60,8 +61,10 @@ describe('probes: the harness', () => {
         facts = await pooled(rows.map((row) => () => (hasRequired(row) ? factsOf(kind, row) : Promise.resolve(row.facts))));
       });
       rows.forEach((row, i) => {
-        const opts = [row.posix && 'bash --posix', row.shell === 'sh' ? 'dash and bash --posix' : row.shell, row.errexit === false && 'no -e'].filter(Boolean).join(', ');
+        const opts = [row.bash && `bash ${row.bash}`, row.posix && 'bash --posix', row.shell === 'sh' ? 'dash and bash --posix' : row.shell, row.errexit === false && 'no -e'].filter(Boolean).join(', ');
         it(`${row.manual}: ${JSON.stringify(row.snippet)}${opts ? ` (${opts})` : ''}`, () => {
+          // (Without a bash 5.3, its rows keep what was recorded; CI's `bash53` job runs them.)
+          if (row.bash === '5.3' && !hasBash53 && process.env.BASH_EXPLAINER_BASH53_REQUIRED) assert.fail('BASH_EXPLAINER_BASH53_REQUIRED is set, but $BASH_EXPLAINER_BASH53 is not a bash 5.3');
           assert.deepStrictEqual(facts[i], row.facts);
         });
       });

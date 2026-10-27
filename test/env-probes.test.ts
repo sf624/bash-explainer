@@ -13,6 +13,7 @@ import * as assert from 'assert';
 import { interpret } from '../src/argv/interpret';
 import { argWord } from '../src/argv/words';
 import { lookupCommand } from '../src/analyzer';
+import type { BashVersion } from '../src/bashversion';
 import { processOf, reachOf, slotEnvs, type ExecEnv } from '../src/semantics/env';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -31,9 +32,9 @@ function factOf(env: ExecEnv, slotted: boolean): Fact {
 }
 
 /** The model's fact for each marker of `script` (the snippet with its markers made calls of `__probe`). */
-export function modelFacts(script: string, ids: string[]): Record<string, Fact> {
+export function modelFacts(script: string, ids: string[], version?: BashVersion): Record<string, Fact> {
   const tree = createUnbashParser().parse(script);
-  const model = shellState(tree);
+  const model = shellState(tree, undefined, { version });
   const commands = descendants(tree.root, ['command']);
   const out: Record<string, Fact> = {};
   for (const id of ids) {
@@ -63,11 +64,11 @@ export function modelFacts(script: string, ids: string[]): Record<string, Fact> 
 }
 
 describe('execution environments against bash (test/fixtures/probes/env.json)', () => {
-  const rows = readProbeTable('env') as { snippet: string; facts: Record<string, string>; gaps?: Record<string, string> }[];
+  const rows = readProbeTable('env') as { snippet: string; bash?: BashVersion; facts: Record<string, string>; gaps?: Record<string, string> }[];
   for (const row of rows) {
     it(row.snippet, () => {
       const { script, markers } = instrument(row.snippet);
-      const model = modelFacts(script, markers);
+      const model = modelFacts(script, markers, row.bash);
       const wrong: Record<string, string> = {};
       for (const id of markers) {
         const bash = row.facts[id];

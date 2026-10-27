@@ -8,6 +8,7 @@
 // the row's `unbound`: bash must not have run them, and its first error must name the first one's variable.
 // The test reads the table only: it needs no bash.
 import * as assert from 'assert';
+import type { BashVersion } from '../src/bashversion';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields } from '../src/syntax/tree';
 import { shellState } from '../src/semantics/state';
@@ -15,7 +16,7 @@ import { unboundRead } from '../src/semantics/unbound';
 import { wordFields, type WordEnv } from '../src/semantics/words';
 import { BOX, FILES, instrument, PROBE_ENV, readProbeTable } from './support/probe';
 
-interface WordRow { manual: string; snippet: string; posix?: boolean; note?: string; gaps?: Record<string, string>; unbound?: string[]; facts: Record<string, unknown> }
+interface WordRow { manual: string; snippet: string; posix?: boolean; bash?: BashVersion; note?: string; gaps?: Record<string, string>; unbound?: string[]; facts: Record<string, unknown> }
 
 const ENV: WordEnv = { variables: PROBE_ENV, pwd: BOX, files: FILES };
 
@@ -23,9 +24,9 @@ describe('the word model against bash (probes/words.json)', () => {
   const parser = createUnbashParser();
   const rows = readProbeTable('words') as WordRow[];
   for (const row of rows) {
-    it(`${row.manual}: ${JSON.stringify(row.snippet)}${row.posix ? ' (bash --posix)' : ''}`, () => {
+    it(`${row.manual}: ${JSON.stringify(row.snippet)}${row.posix ? ' (bash --posix)' : ''}${row.bash ? ` (bash ${row.bash})` : ''}`, () => {
       const tree = parser.parse(instrument(row.snippet).script);
-      const state = shellState(tree, 'bash', { posix: row.posix });
+      const state = shellState(tree, 'bash', { posix: row.posix, version: row.bash });
       const markers = descendants(tree.root, ['command']).filter((c) => field(c, 'name')?.text === '__probe');
       const found = new Map<string, string>();
       let stopped = false;

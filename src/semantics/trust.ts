@@ -34,6 +34,7 @@
 import { prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
+import type { BashVersion } from '../bashversion';
 import { field, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
 import { aliasName, aliasOf, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
@@ -148,7 +149,7 @@ class Scan {
   /** The aliases each tree of an alias expanded at a command comes from (bash does not expand an alias in itself). */
   private readonly expanding = new Map<SyntaxNode, ReadonlySet<string>>();
 
-  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening?: Opening) {
+  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening?: Opening, private readonly version?: BashVersion) {
     const defs = (n: SyntaxNode): void => {
       if (n.type === 'function_definition') this.functions.add(field(n, 'name')!.text);
       if (n.type === 'command' && ['alias', 'enable'].includes(commandName(n) ?? '')) this.renames = true;
@@ -296,8 +297,8 @@ class Scan {
         for (const c of n.children) if (c.field === 'body') this.visit(c, w);
         return;
       case 'command_substitution':
-        // (The walk drops what a `${ …; }` changes, as for `$( )`, but it runs in the shell itself: docs/design/bash-versions.md, 4.2.)
-        if (substitutionForm(n).startsWith('${')) this.blindFor('a `${ …; }` substitution changes the shell where the walk does not follow it');
+        // (The walk follows a `${ …; }` as bash 5.3 runs it; bash 5.2 stops at it, "bad substitution": docs/design/bash-versions.md, 4.2.)
+        if (this.version !== '5.3' && substitutionForm(n).startsWith('${')) this.blindFor('a `${ …; }` substitution, which bash 5.2 rejects ("bad substitution"): the walk follows it only as bash 5.3 runs it');
         break;
       case 'subscript': {
         const index = field(n, 'index');
@@ -930,8 +931,8 @@ class Scan {
  * the file's host defines (a bats file: `run`, `load`…), read by their specs. `opening`: what the shebang starts bash
  * with (`#!/bin/bash -k`).
  */
-export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST, opening?: Opening): Trust {
-  const scan = new Scan(root, strings, host, opening);
+export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST, opening?: Opening, version?: BashVersion): Trust {
+  const scan = new Scan(root, strings, host, opening, version);
   if (scan.blind) return { ...BLIND, blind: scan.blind };
   const unseen = new Set<string>();
   for (const [name, ws] of scan.writes) if (ws.some((w) => w.foreign || (w.fn !== undefined && scan.callbacks.has(w.fn)))) unseen.add(name);

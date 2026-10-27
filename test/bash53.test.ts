@@ -148,15 +148,76 @@ describe('bash 5.3 command substitutions', () => {
     }
   });
 
-  it('decides no condition in a script that has one (the walk does not keep what it changes)', () => {
-    const decided = (sub: string) => {
-      const tree = parser.parse(`x=0\n: ${sub}\nif [ "$x" = 1 ]; then echo one; fi\n`);
-      const model = shellState(tree);
-      return { decided: model.condition(descendants(tree.root, ['if_statement'])[0]) !== undefined, blind: model.blind };
+  it('decides a condition after one from what it keeps, as bash 5.3 runs it (docs/design/bash-versions.md, 4.2)', function () {
+    const script = (sub: string) => `x=0\n: ${sub}\nif [ "$x" = 1 ]; then echo one; else echo other; fi\n`;
+    const decided = (sub: string, version: BashVersion = '5.3') => {
+      const tree = parser.parse(script(sub));
+      const model = shellState(tree, undefined, { version });
+      return { outcome: model.condition(descendants(tree.root, ['if_statement'])[0])?.outcome, blind: model.blind };
     };
-    // (In `$( )`, `x=1` is in a subshell: the condition is always false.)
-    assert.deepStrictEqual(decided('$( x=1 )'), { decided: true, blind: undefined });
-    assert.deepStrictEqual(decided('${ x=1; }'), { decided: false, blind: 'a `${ …; }` substitution changes the shell where the walk does not follow it' });
+    // (In `$( )`, `x=1` is in a subshell: the condition is always false; in `${ }`, in the shell: always true. A local
+    // `x`, or one `return` skips, is not kept.)
+    const cases = [
+      { sub: '$( x=1 )', outcome: 'false', out: 'other\n' },
+      { sub: '${ x=1; }', outcome: 'true', out: 'one\n' },
+      { sub: '${| x=1; }', outcome: 'true', out: 'one\n' },
+      { sub: '${ local x=1; }', outcome: 'false', out: 'other\n' },
+      { sub: '${ return; x=1; }', outcome: 'false', out: 'other\n' },
+    ];
+    for (const c of cases) assert.deepStrictEqual(decided(c.sub), { outcome: c.outcome, blind: undefined }, c.sub);
+    // (With bash 5.2, which stops at it ("bad substitution"), nothing is trusted, as before step 3. Nor in a ksh93 or
+    // mksh script, which has `${ …; }` too: the walk follows it as bash 5.3 runs it.)
+    assert.deepStrictEqual(decided('${ x=1; }', '5.2'), { outcome: undefined, blind: 'a `${ …; }` substitution, which bash 5.2 rejects ("bad substitution"): the walk follows it only as bash 5.3 runs it' });
+    assert.deepStrictEqual(decided('$( x=1 )', '5.2'), { outcome: 'false', blind: undefined });
+    assert.strictEqual(shellState(parser.parse(script('${ x=1; }')), 'mksh', { version: '5.3' }).blind, 'a `${ …; }` substitution, which the walk follows only as bash 5.3 runs it');
+    needBash53(this);
+    for (const c of cases) assert.deepStrictEqual(runBash(script(c.sub), { program: BASH53 }), { stdout: c.out, stderr: '', status: 0 }, c.sub);
+  });
+
+  it('decides conditions after `break`, `continue` and redirections with a `${ }` as bash 5.3 runs them', function () {
+    // (`out` is what bash 5.3 prints: `one` when the condition holds; the walk decides it, or not, never otherwise.)
+    const cases = [
+      // A loop in it takes the `break`; with no loop around it, `break` ends nothing (a function's caller's loop is none).
+      { script: 'x=0; v=${ while :; do break; done; x=1; }', outcome: 'true', out: 'one\n' },
+      { script: 'x=0; v=${ break; x=1; } 2>/dev/null', outcome: 'true', out: 'one\n' },
+      { script: 'x=0; f() { v=${ break; x=1; } 2>/dev/null; }; for i in 1; do f; done', outcome: 'true', out: 'one\n' },
+      // A `break` or `continue` there: bash runs no more of the statement, nor of the loop.
+      { script: 'x=0; for i in 1 2; do : ${ continue; } ${ x=1; }; done', outcome: undefined, out: 'other\n' },
+      { script: 'x=0; for i in 1; do case ${ break; } in *) x=1;; esac; done', outcome: undefined, out: 'other\n' },
+      { script: 'x=0; for i in 1 2; do v=${ for j in 1; do continue 2; done; x=1; }; done', outcome: undefined, out: 'other\n' },
+      { script: 'x=0; for j in 1; do v=${ for i in 1; do break 2; done; x=1; }; x=1; done', outcome: undefined, out: 'other\n' },
+      // A program makes its redirections in its own process: what a `${ }` there sets is lost.
+      { script: 'x=0; cat </dev/null >${ x=1; echo /dev/null; }', outcome: 'false', out: 'other\n' },
+      { script: 'x=0; cat <<EOF >/dev/null\n${ x=1; }\nEOF', outcome: 'false', out: 'other\n' },
+      { script: 'x=0; true >${ x=1; echo /dev/null; }', outcome: 'true', out: 'one\n' },
+      { script: 'x=0; c=true; $c >${ x=1; echo /dev/null; }', outcome: undefined, out: 'one\n' },
+      // An error in a word before it: bash ends the line there, before it runs.
+      { script: 'x=0; : $((1/0)) ${ x=1; } 2>/dev/null', outcome: undefined, out: 'other\n' },
+    ];
+    const full = (s: string) => `${s}\nif [ "$x" = 1 ]; then echo one; else echo other; fi\n`;
+    for (const c of cases) {
+      const tree = parser.parse(full(c.script));
+      const model = shellState(tree, undefined, { version: '5.3' });
+      const ifs = descendants(tree.root, ['if_statement']);
+      assert.strictEqual(model.condition(ifs[ifs.length - 1])?.outcome, c.outcome, c.script);
+    }
+    needBash53(this);
+    for (const c of cases) assert.strictEqual(runBash(full(c.script), { program: BASH53 }).stdout, c.out, c.script);
+  });
+
+  it('shows the value of a variable a `${ }` sets, in Meaning; not one `${| }` gives through `REPLY`', function () {
+    const script = 'x=1; v=${ x=2; }; echo "$x"; y=${| REPLY=hi; }; echo "$y"';
+    const tree = parser.parse(script);
+    const model = shellState(tree, undefined, { version: '5.3' });
+    const values = descendants(tree.root, ['simple_expansion']).filter((e) => e.parent!.parent!.text.startsWith('echo')).map((e) => expansionValue(e, model)?.text);
+    // (Decisions do not trust `REPLY`, which `read` and `select` set unseen: Meaning shows no value from it.)
+    assert.deepStrictEqual(values, ['2', undefined]);
+    // (With bash 5.2, none: it stops at the first one.)
+    assert.deepStrictEqual(descendants(tree.root, ['simple_expansion']).map((e) => expansionValue(e, shellState(tree))), [undefined, undefined]);
+    // (Nothing for a `${| }` the walk did not run.)
+    assert.strictEqual(model.reply(descendants(parser.parse('y=${| REPLY=hi; }').root, ['command_substitution'])[0]), undefined);
+    needBash53(this);
+    assert.strictEqual(runBash(script, { program: BASH53 }).stdout, '2\nhi\n');
   });
 
   it('rejects a `}` that does not end the substitution, as bash 5.3 does (the warning also without a bash 5.3)', function () {

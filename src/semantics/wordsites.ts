@@ -1,7 +1,8 @@
 // What the state at a word does not show by itself (src/semantics/words.ts reads them): the names a statement may
-// assign before one of its words is expanded, and the value of `$_` after a command that is only an assignment.
+// assign before one of its words is expanded, the value of `$_` after a command that is only an assignment, and
+// whether the script changes its directory.
 import { parseExpansion } from '../expansion';
-import { ancestor, assignmentsOnly, descendants, redirectionsOf, type SyntaxNode } from '../syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import { STATEMENTS } from './env';
 import { ARITH_ASSIGNED, type StateModel } from './state';
 
@@ -28,6 +29,16 @@ function afterAssignment(n: SyntaxNode, model: StateModel): boolean {
 /** The value of `$_` where `n` is: empty after a command that is only an assignment; undefined otherwise. */
 export function underscoreValue(n: SyntaxNode, model: StateModel): string | undefined {
   return afterAssignment(n, model) ? '' : undefined;
+}
+
+const cdCache = new WeakMap<SyntaxNode, boolean>();
+/** Whether the script changes its directory anywhere (`cd`, `pushd`, `popd`): the model does not follow it. */
+export function changesDirectory(n: SyntaxNode): boolean {
+  let root = n;
+  while (root.parent) root = root.parent;
+  let v = cdCache.get(root);
+  if (v === undefined) cdCache.set(root, (v = descendants(root, ['command']).some((c) => ['cd', 'pushd', 'popd'].includes(field(c, 'name')?.text ?? ''))));
+  return v;
 }
 
 const unreliableCache = new WeakMap<SyntaxNode, Set<string>>();

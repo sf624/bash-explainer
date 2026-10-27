@@ -1,4 +1,4 @@
-// Probes: run bash 5.2 on a snippet with an instrumentation, and read back what it did. Steps B1–B5 of
+// Probes: run bash 5.2 (or 5.3, for a row that says `"bash": "5.3"`) on a snippet with an instrumentation, and read back what it did. Steps B1–B5 of
 // docs/design/semantics.md compare the semantic model with these facts; test/fixtures/probes/*.json hold
 // the tables (written by scripts/record-probes.ts, checked by test/probe.test.ts).
 //
@@ -24,6 +24,19 @@ import * as path from 'path';
 /** The bash the probes run: `$BASH_EXPLAINER_BASH`, else `bash` on PATH. */
 export const PROBE_BASH = process.env.BASH_EXPLAINER_BASH || 'bash';
 
+/**
+ * The bash 5.3 the rows of bash 5.3's constructs run (`"bash": "5.3"`; docs/design/bash-versions.md, 6):
+ * `$BASH_EXPLAINER_BASH53`, a path. GPL: only run, as a separate program.
+ */
+export const PROBE_BASH53 = process.env.BASH_EXPLAINER_BASH53;
+
+/** Whether `$BASH_EXPLAINER_BASH53` is a bash 5.3. */
+export const hasBash53: boolean = (() => {
+  if (!PROBE_BASH53) return false;
+  const r = spawnSync(PROBE_BASH53, ['--norc', '--noprofile', '-c', 'echo "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"'], { encoding: 'utf8' });
+  return r.status === 0 && r.stdout.trim() === '5.3';
+})();
+
 /** Why the probes cannot run here (no bash, or one older than 5.2), or undefined when they can. */
 export const probeSkipReason: string | undefined = (() => {
   const r = spawnSync(PROBE_BASH, ['--norc', '--noprofile', '-c', 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"'], { encoding: 'utf8' });
@@ -47,6 +60,8 @@ export interface ProbeOptions {
   dash?: boolean;
   /** `bash -e`. */
   errexit?: boolean;
+  /** The bash to run (`PROBE_BASH53` for a row of bash 5.3); `PROBE_BASH` when absent. */
+  program?: string;
   timeout?: number;
 }
 
@@ -116,7 +131,7 @@ export function runProbe(snippet: string, body: string, opts: ProbeOptions = {})
   const env = opts.dash ? PROBE_ENV : { ...PROBE_ENV, 'BASH_FUNC___probe%%': fn };
   const normalize = (s: string): string => s.split(box).join(BOX).split(scriptFile).join(SCRIPT);
   return new Promise((resolve) => {
-    const child = execFile(opts.dash ? 'dash' : PROBE_BASH, args, { cwd: box, env, timeout: opts.timeout ?? 5000, encoding: 'utf8', maxBuffer: 1 << 24 }, (_err, stdout, stderr) => {
+    const child = execFile(opts.dash ? 'dash' : opts.program ?? PROBE_BASH, args, { cwd: box, env, timeout: opts.timeout ?? 5000, encoding: 'utf8', maxBuffer: 1 << 24 }, (_err, stdout, stderr) => {
       const raw = fs.readFileSync(log, 'utf8');
       // What the run left in its directory besides FILES (a directory ends with `/`).
       const created: string[] = [];
@@ -223,7 +238,7 @@ export interface StateDiff {
 const baselines = new Map<string, Promise<StateFacts>>();
 /** The state at the end of an empty snippet. */
 export function baselineState(opts: ProbeOptions = {}): Promise<StateFacts> {
-  const key = JSON.stringify({ posix: !!opts.posix, errexit: !!opts.errexit });
+  const key = JSON.stringify({ posix: !!opts.posix, errexit: !!opts.errexit, program: opts.program });
   let b = baselines.get(key);
   if (!b) {
     b = probeState('', opts).then((r) => r.states.end);
@@ -351,6 +366,8 @@ export interface ProbeRow {
   requires?: string;
   /** values: the shell the row is about, when not bash: dash, or sh (dash and `bash --posix`; facts `{ dash, posix }`). Such a row requires dash. */
   shell?: 'dash' | 'sh';
+  /** A row of a construct of bash 5.3 (`${ cmd; }`): run with `PROBE_BASH53`, and kept as recorded without it. */
+  bash?: '5.3';
   facts?: unknown;
 }
 
@@ -362,25 +379,26 @@ const firstError = (run: ProbeRun): { stderr?: string } => {
 
 /** What bash does with a row: the facts the table records. */
 export async function factsOf(kind: ProbeKind, row: ProbeRow): Promise<unknown> {
+  const program = row.bash === '5.3' ? PROBE_BASH53 : undefined;
   switch (kind) {
     case 'state': {
-      const opts = { posix: row.posix };
+      const opts = { posix: row.posix, program };
       const [{ states, run }, base] = await Promise.all([probeState(row.snippet, opts), baselineState(opts)]);
       return { ...Object.fromEntries(Object.entries(states).map(([id, s]) => [id, diffState(base, s)])), status: run.status, ...firstError(run) };
     }
     case 'env': {
-      const { env, run } = await probeEnv(row.snippet);
+      const { env, run } = await probeEnv(row.snippet, { program });
       return { ...env, ...firstError(run) };
     }
     case 'names':
       return probeNames(row.snippet, row.names ?? []);
     case 'words': {
-      const { fields, run } = await probeWords(row.snippet, { posix: row.posix });
+      const { fields, run } = await probeWords(row.snippet, { posix: row.posix, program });
       // (What the run created shows where its redirections went.)
       return { ...fields, status: run.status, ...firstError(run), ...(run.created.length ? { created: run.created } : {}) };
     }
     case 'status': {
-      const { ran, status, run } = await probeStatus(row.snippet, { errexit: row.errexit ?? true, posix: row.posix });
+      const { ran, status, run } = await probeStatus(row.snippet, { errexit: row.errexit ?? true, posix: row.posix, program });
       return { ran, status, ...firstError(run) };
     }
     // (The values of expansions, docs/design/expansion-values.md: the fields of each marker's one word, as for words;
@@ -399,8 +417,9 @@ export async function factsOf(kind: ProbeKind, row: ProbeRow): Promise<unknown> 
   }
 }
 
-/** Whether the program a row requires is on the probes' PATH. */
+/** Whether the program a row requires is on the probes' PATH, and a row of bash 5.3 has one. */
 export function hasRequired(row: ProbeRow): boolean {
+  if (row.bash === '5.3' && !hasBash53) return false;
   return !row.requires || spawnSync('sh', ['-c', `command -v ${row.requires}`], { env: PROBE_ENV }).status === 0;
 }
 

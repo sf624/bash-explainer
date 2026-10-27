@@ -1570,6 +1570,7 @@
  "xd /usr/bin/vi",
  "y",
  "y -a x -a -t",
+ "y=${| REPLY=hi; }",
  "yaml",
  "yash",
  "yq \"$e\" f",

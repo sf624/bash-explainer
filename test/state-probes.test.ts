@@ -8,6 +8,7 @@
 // (`end.variables.PWD`: "cd is not followed"); a gap the model gets right fails too, so that the list stays true.
 // The test reads the table only: it needs no bash.
 import * as assert from 'assert';
+import type { BashVersion } from '../src/bashversion';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields } from '../src/syntax/tree';
 import { defaultOn, option, shellState, ShellState } from '../src/semantics/state';
@@ -95,15 +96,15 @@ function compare(id: string, st: ShellState, facts: StateDiff, posix: boolean): 
   return out;
 }
 
-interface StateRow { manual: string; snippet: string; posix?: boolean; note?: string; gaps?: Record<string, string>; facts: Record<string, unknown> }
+interface StateRow { manual: string; snippet: string; posix?: boolean; bash?: BashVersion; note?: string; gaps?: Record<string, string>; facts: Record<string, unknown> }
 
 describe('the shell state model against bash (probes/state.json)', () => {
   const parser = createUnbashParser();
   const rows = readProbeTable('state') as StateRow[];
   for (const row of rows) {
-    it(`${row.manual}: ${JSON.stringify(row.snippet)}${row.posix ? ' (bash --posix)' : ''}`, () => {
+    it(`${row.manual}: ${JSON.stringify(row.snippet)}${row.posix ? ' (bash --posix)' : ''}${row.bash ? ` (bash ${row.bash})` : ''}`, () => {
       const tree = parser.parse(instrument(`${row.snippet}\n@PROBE:end@\n`).script);
-      const model = shellState(tree, 'bash', { posix: row.posix });
+      const model = shellState(tree, 'bash', { posix: row.posix, version: row.bash });
       const markers = new Map(descendants(tree.root, ['command'])
         .filter((c) => field(c, 'name')?.text === '__probe')
         .map((c) => [fields(c, 'argument')[0].text, c]));

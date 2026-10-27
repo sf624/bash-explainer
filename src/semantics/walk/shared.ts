@@ -2,13 +2,22 @@
 // it, where jumps go, the frames of the functions it runs, what reaches another shell, and the parser of the texts it
 // reads (aliases, arithmetic).
 import { createUnbashParser } from '../../syntax/adapters/unbash';
-import type { BashParser, SyntaxNode } from '../../syntax/tree';
+import { type BashParser, descendants, substitutionForm, type SyntaxNode } from '../../syntax/tree';
 import { evalArithWrapping } from '../../arith';
 import type { NameMap, OptionState, ShellState, VariableState } from '../shellstate';
 
 export const NAME = /^[A-Za-z_]\w*$/;
 
 export const SUBSTITUTIONS = ['command_substitution', 'process_substitution'];
+
+/** Whether the command substitution `c` is bash 5.3's `${ …; }` or `${| …; }`, which runs in the shell itself (docs/design/bash-versions.md, 4.1). */
+export const inShell = (c: SyntaxNode): boolean => c.type === 'command_substitution' && substitutionForm(c).startsWith('${');
+
+/**
+ * Whether the words of `n` hold a `${ …; }` (bash 5.3): its words are then expanded in states that change on the way,
+ * so a status read from the state before `n` may be wrong.
+ */
+export const changesWords = (n: SyntaxNode): boolean => descendants(n, ['command_substitution']).some(inShell);
 
 /** The change (see `Walker.put`) of a path that ran what the walk does not read (`Walker.opaque`). */
 export const OPAQUE = 'opaque';
@@ -64,12 +73,28 @@ export type Target =
    * (`aborts`, see `abort`); one that may happen (`maybes`) may discard it, or the rest of a line around it.
    */
   | { kind: 'unit'; dead: number; aborts: ShellState[]; maybes: ShellState[] }
+  /**
+   * bash 5.3's `${ …; }` or `${| …; }`, run in the shell itself (docs/design/bash-versions.md, 4.1): `return` ends it
+   * (`returns`), and so does an error in an expansion (`aborts`, or `maybes` when it may happen), as in a subshell.
+   * `exit` goes through it. `break` and `continue` that the loops inside it do not take, with a loop around it, end it
+   * too, and leave that loop once the statement that holds it is done (`jumps`; `Walker.statement`).
+   */
+  | { kind: 'substitution'; dead: number; returns: ShellState[]; aborts: ShellState[]; maybes: ShellState[]; jumps: Deferred[] }
   | { kind: 'subshell' | 'maybe' }
   /**
    * A trap's action (`exitOnly`: of EXIT alone): a signal may run it between any two statements, so an error that may
    * end the line around it, or a `return`, `break` or `continue` it does not hold, may leave any of them (see `escape`).
    */
   | { kind: 'trap'; exitOnly: boolean };
+
+/** A `break` or `continue` made in a `${ …; }` (from `st`), which bash makes once the statement that holds it is done. */
+export interface Deferred { readonly ends: 'loop' | 'pass'; readonly count: number | undefined; readonly st: ShellState }
+
+/**
+ * The statement being run, for its `${ …; }`: the jumps they made (`deferred`), and the state before the first of
+ * them (`before`), where an error in a word before it leaves the shell (bash expands the words in order).
+ */
+export interface Statement { deferred: Deferred[]; before?: ShellState }
 
 /** What the slots on the way give another shell besides the script's exported names (`childModel`). */
 export interface ChildPass {

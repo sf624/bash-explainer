@@ -27,7 +27,7 @@ import { WalkExpansions } from './expansions';
 import { kept, temporaries } from './temporaries';
 import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
-import { ExpansionError, type Frame, OPAQUE, type Target, WalkAgain } from './shared';
+import { changesWords, ExpansionError, type Frame, OPAQUE, type Statement, type Target, WalkAgain } from './shared';
 
 export type { ChildPass, Frame, Target } from './shared';
 
@@ -110,6 +110,8 @@ export class Walker {
   private readonly changeAtDefinition = new Map<SyntaxNode, number>();
   /** The sets of the bodies being walked, which collect what they change. */
   readonly collecting: Set<string>[] = [];
+  /** The `break` and `continue` the `${ …; }` of the statement being run made (see `Target`). */
+  statement: Statement = { deferred: [] };
   /** The statement being run, and the state its aliases come from. */
   node: SyntaxNode | undefined;
   expand: ShellState = EMPTY;
@@ -394,7 +396,7 @@ export class Walker {
    * a subshell, or is not `sure`, or anywhere when nothing is trusted (`exit` may be a sourced function), is made and not.
    */
   jump(ends: Ends, count: number | undefined, st: ShellState, sure = true): ShellState {
-    st = withStatus(st, undefined);
+    st = withStatus(this.expansions.beforeWords(st), undefined);
     const collect = (t: { dead: number }, to: ShellState[]): void => {
       if (t.dead === this.mode.dead) to.push(st);
     };
@@ -404,10 +406,19 @@ export class Walker {
       const loops: Extract<Target, { kind: 'loop' }>[] = [];
       let surely = 0;
       let trap: Extract<Target, { kind: 'trap' }> | undefined;
-      for (const t of [...this.targets].reverse()) {
+      for (let i = this.targets.length - 1; i >= 0; i--) {
+        const t = this.targets[i];
         if (t.kind === 'maybe') maybe = true;
         else if (t.kind === 'unit') continue;
-        else if (t.kind === 'trap') {
+        else if (t.kind === 'substitution') {
+          // (One the loops in the `${ …; }` take, or with no loop around it, stays in it. Else it ends it, and the loop
+          // around it is left once the statement that holds it is done: see `run`. Those in it may be left too.)
+          if ((count !== undefined && count <= loops.length) || !this.loopAround(i)) break;
+          t.jumps.push({ ends, count, st });
+          collect(t, t.returns);
+          for (const l of loops) collect(l, ends === 'loop' ? l.breaks : l.continues);
+          return maybe || loops.length ? st : unreachable(st);
+        } else if (t.kind === 'trap') {
           trap = t;
           break;
         } else if (t.kind !== 'loop') break;
@@ -435,10 +446,10 @@ export class Walker {
         this.escape(t);
         return st;
       } else if (t.kind === 'subshell') {
-        // It ends the subshell: `return` only in a function (else it fails, and the subshell goes on).
-        if (ends === 'function' && !this.targets.slice(0, i).some((x) => x.kind === 'function')) return st;
+        // It ends the subshell: `return` only in a function or a `${ …; }` (else it fails, and the subshell goes on).
+        if (ends === 'function' && !this.targets.slice(0, i).some((x) => x.kind === 'function' || x.kind === 'substitution')) return st;
         return maybe ? st : unreachable(st);
-      } else if (t.kind === 'function' && ends === 'function') {
+      } else if ((t.kind === 'function' || t.kind === 'substitution') && ends === 'function') {
         collect(t, t.returns);
         return maybe ? st : unreachable(st);
       } else if (t.kind === 'program') {
@@ -452,14 +463,22 @@ export class Walker {
   }
 
   /**
+   * Whether a loop of this function body and process is around the target at `i` (see `jump`). (A walk always has a
+   * target that ends the search: the script's, a function body's, a trap's action's, a test's of bats.)
+   */
+  private loopAround(i: number): boolean {
+    return this.targets.slice(0, i).reverse().find((t) => !['maybe', 'unit', 'substitution'].includes(t.kind))!.kind === 'loop';
+  }
+
+  /**
    * An error in an expansion (`$(( 1 / 0 ))`, from `st`): bash discards the rest of the line of top-level statements
-   * that holds it (`unit`), also from a function it calls, or ends the subshell. One that is not `sure` (from values
-   * not trusted, or that may not be expanded) may happen or not.
+   * that holds it (`unit`), also from a function it calls, or ends the subshell or the `${ …; }`. One that is not
+   * `sure` (from values not trusted, or that may not be expanded) may happen or not.
    */
   abort(st: ShellState, sure: boolean): ShellState {
     // (dash ends the shell on such errors: an arithmetic error, an assignment to a readonly variable.)
     if (!this.bash) return this.jump('shell', undefined, st, sure);
-    st = withStatus(st, undefined);
+    st = withStatus(this.expansions.beforeWords(st), undefined);
     const ends = sure && !this.blind;
     // (An error that may happen in a string `eval` runs may end the line of `eval` too: bash does so for an integer
     // given text that is no expression, or a subscript that fails.)
@@ -471,21 +490,23 @@ export class Walker {
         this.escape(t);
         return st;
       }
-      if (t.kind === 'unit') {
+      if (t.kind === 'unit' || t.kind === 'substitution') {
         if (t.dead === this.mode.dead) (ends ? t.aborts : t.maybes).push(st);
         if (ends) return unreachable(st);
+        // (bash 5.3 ends a `${ …; }` there, not the line around it.)
+        if (t.kind === 'substitution') return st;
       }
     }
     // (Outside the script's walk: a trap's action, a body no call reached.)
     return ends ? unreachable(st) : st;
   }
 
-  /** The line an error here would end (see `abort`): none in a subshell, or outside the script's walk. */
-  private unitTarget(): Extract<Target, { kind: 'unit' }> | undefined {
+  /** The line or the `${ …; }` an error here would end (see `abort`): none in a subshell, or outside the script's walk. */
+  private unitTarget(): Extract<Target, { kind: 'unit' | 'substitution' }> | undefined {
     for (let i = this.targets.length - 1; i >= 0; i--) {
       const t = this.targets[i];
       if (t.kind === 'subshell') return undefined;
-      if (t.kind === 'unit') return t;
+      if (t.kind === 'unit' || t.kind === 'substitution') return t;
     }
     return undefined;
   }
@@ -560,14 +581,21 @@ export class Walker {
       if (!this.mode.dead && !this.blind && attribute(st, name, 'A') !== 'on') this.walkAgain(`\`${name}\` may not be associative where its subscript is read`);
     }
     const outer = this.node;
+    const statement = this.statement;
     this.node = n;
+    this.statement = { deferred: [] };
     const reasons = subshellReasons(n);
     if (reasons.length) this.targets.push({ kind: 'subshell' });
     try {
       const ran = this.runStatement(n, st);
       const after = withStatus(ran, this.conditions.statusOf(n, st, ran));
       // (A job and a coproc are started: 0.)
-      const out = this.errexit(n, st, reasons.length ? withStatus(st, reasons.includes('background') || reasons.includes('coproc') ? 0 : after.status) : after);
+      let out = this.errexit(n, st, reasons.length ? withStatus(st, reasons.includes('background') || reasons.includes('coproc') ? 0 : after.status) : after);
+      // (A `break` or `continue` in a `${ …; }` of the statement: bash leaves the loop now, from a state between the one
+      // there and the one after the statement, of which it runs only some. The path also goes on, as the jump may not be made.)
+      // (Its words are expanded by then.)
+      this.statement.before = undefined;
+      for (const j of this.statement.deferred) this.jump(j.ends, j.count, merge([out, j.st], this.posix), false);
       // (A trap's action may run after any statement, when its signal comes.)
       return this.trapKeys.size ? widen(this, out, this.trapKeys) : out;
     } catch (e) {
@@ -578,6 +606,7 @@ export class Walker {
     } finally {
       if (reasons.length) this.targets.pop();
       this.node = outer;
+      this.statement = statement;
     }
   }
 
@@ -596,13 +625,12 @@ export class Walker {
     switch (n.type) {
       case 'command': return assignmentsOnly(n) ? this.assignments(n, st) : this.command(n, st);
       case 'extended_test':
-        this.expansions.substitutions(n, st);
-        return this.expansions.defaults(n, st);
+        return this.expansions.defaults(n, this.expansions.substitutions(n, st));
       case 'arithmetic_command': {
-        this.expansions.substitutions(n, st);
-        // (`(( ))` with nothing in it is not decided.)
+        st = this.expansions.substitutions(n, st);
+        // (`(( ))` with nothing in it is not decided, nor one whose words a `${ …; }` changes.)
         const r = this.conditions.arithStatus(n.namedChildren, this.expansions.defaults(n, st));
-        return withStatus(r.st, n.namedChildren.length ? r.status : undefined);
+        return withStatus(r.st, n.namedChildren.length && !changesWords(n) ? r.status : undefined);
       }
       case 'negated_command': return this.quietly(() => this.sequence(n.children, st));
       case 'time_statement': case 'compound_statement':
@@ -611,9 +639,9 @@ export class Walker {
         // A compound command makes its redirections first; a simple command, whose redirections are its own, expands its
         // words first (see `redirections`), and assignments alone are made before them (see `assignments`).
         const redirs = redirectionsOf(n);
-        for (const r of redirs) this.expansions.substitutions(r, st);
         // (A subshell makes them in its own process: `( : ) > $(( n = 3 ))` leaves n.)
-        st = this.expansions.fdVariables(redirs, this.expansions.expandAll(redirs, st, field(n, 'body')!.type === 'subshell' ? 'on' : 'off'));
+        const own = field(n, 'body')!.type === 'subshell' ? 'on' : 'off';
+        st = this.expansions.fdVariables(redirs, this.expansions.expandAll(redirs, this.expansions.redirectSubstitutions(redirs, st, own), own));
         return this.conditions.mayNotRun(redirs, st, this.sequence(n.children.filter((c) => c.field !== 'redirect'), st));
       }
       case 'subshell':
@@ -645,12 +673,11 @@ export class Walker {
       case 'if_statement': return this.ifStatement(n, st);
       case 'case_statement': {
         const before = st;
-        this.expansions.substitutions(field(n, 'value')!, st);
-        st = this.expansions.defaults(field(n, 'value')!, st);
+        st = this.expansions.defaults(field(n, 'value')!, this.expansions.substitutions(field(n, 'value')!, st));
         // The patterns are expanded in turn until one matches: the first one always, the others may be.
         const items = n.namedChildren.filter((c) => c.type === 'case_item');
         items.flatMap((item) => fields(item, 'value')).forEach((v, i) => {
-          this.expansions.substitutions(v, st);
+          st = this.expansions.substitutions(v, st, i > 0);
           // (Like a word that may not be expanded: an error there may not happen.)
           const after = this.expansions.defaults(v, st, i === 0 ? 'off' : 'unknown');
           st = i === 0 || after === st ? after : merge([st, after], this.posix);
@@ -703,7 +730,8 @@ export class Walker {
       case 'for_statement': case 'select_statement': return this.forStatement(n, st);
       case 'c_style_for_statement': {
         // The initializer, then the condition, the body and the update, again and again; the loop ends after a condition.
-        for (const c of n.namedChildren) if (c.type !== 'do_group') this.expansions.substitutions(c, st);
+        // (Those of the condition and the update run at each pass: what a `${ …; }` there changes may be.)
+        for (const c of n.namedChildren) if (c.type !== 'do_group') st = this.expansions.substitutions(c, st, c.field !== 'initializer');
         // (When the initializer may fail, bash runs neither the condition nor the update: what they assign may be.)
         let unsure = false;
         const part = (f: 'initializer' | 'update') => (s: ShellState): ShellState => this.arith.arithRun((x) => this.arith.arithScript(fields(n, f), x, unsure).st, s);
@@ -926,8 +954,7 @@ export class Walker {
   private forStatement(n: SyntaxNode, st: ShellState): ShellState {
     const values = fields(n, 'value');
     for (const v of values) {
-      this.expansions.substitutions(v, st);
-      st = this.expansions.defaults(v, st);
+      st = this.expansions.defaults(v, this.expansions.substitutions(v, st));
     }
     const variable = field(n, 'variable');
     // (A readonly variable: bash fails at the first word, and the body does not run; it may be.)
@@ -1104,6 +1131,11 @@ export class Walker {
     this.collecting.pop();
     // (`f() ( … )` runs its body in a subshell.)
     if (body.type === 'subshell') return entry;
+    return this.leaveFrame(frame, end);
+  }
+
+  /** `end` as the function (or `${ …; }`) of `frame` returns: its locals and its `local -` options are restored. */
+  leaveFrame(frame: Frame, end: ShellState): ShellState {
     for (const [name, v] of frame.saved) end = { ...end, variables: end.variables.with(name, v) };
     // A `local GLOBIGNORE` going out of scope sets GLOBIGNORE again, or unsets it: dotglob follows, as for an assignment or `unset`.
     if (frame.saved.has('GLOBIGNORE') && this.bash) {
@@ -1119,17 +1151,18 @@ export class Walker {
    * redirections are made (their command substitutions run first). Its status is set by `statusOf`.
    */
   private assignments(n: SyntaxNode, st: ShellState): ShellState {
-    for (const r of redirectionsOf(n)) this.expansions.substitutions(r, st);
+    for (const r of redirectionsOf(n)) st = this.expansions.substitutions(r, st);
     for (const a of prefixAssignments(n)) {
       this.record(a, st);
-      this.expansions.substitutions(a, st);
-      st = this.builtins.assignNode(a, this.expansions.defaults(a, st), true);
+      st = this.builtins.assignNode(a, this.expansions.defaults(a, this.expansions.substitutions(a, st)), true);
     }
     return withStatus(this.expansions.redirections(n, st, 'off'), st.status);
   }
 
   private command(n: SyntaxNode, st: ShellState): ShellState {
-    this.expansions.substitutions(n, st);
+    // (Those of its redirections when they are made, below.)
+    const redirs = redirectionsOf(n);
+    st = this.expansions.substitutions(n, st, false, redirs);
     const name = commandName(n);
     const nameNode = field(n, 'name')!;
     const assignments = prefixAssignments(n);
@@ -1141,13 +1174,14 @@ export class Walker {
         this.record(a, st);
         st = this.builtins.assignNode(a, this.expansions.defaults(a, st), true);
       }
-      return withStatus(this.expansions.redirections(n, st, 'off'), undefined);
+      return withStatus(this.expansions.redirections(n, this.expansions.redirectSubstitutions(redirs, st, 'off'), 'off'), undefined);
     }
     // The words are expanded, then the values of the assignments, then the redirections are made.
     const before = st;
     st = this.expansions.expandAll(n.namedChildren.filter((c) => !assignments.includes(c) && c.field !== 'redirect'), st);
     const temps = temporaries(this, assignments, st);
-    st = this.expansions.redirections(n, this.expansions.expandAll(assignments, st), this.builtins.runsProgram(n, st));
+    const program = this.builtins.runsProgram(n, st);
+    st = this.expansions.redirections(n, this.expansions.redirectSubstitutions(redirs, this.expansions.expandAll(assignments, st), program), program);
     const unrun = st;
     // A prefix assignment to PATH empties the table of remembered paths too.
     if (assignments.some((a) => field(a, 'name')!.text === 'PATH')) st = this.builtins.forgetHashed(st);
