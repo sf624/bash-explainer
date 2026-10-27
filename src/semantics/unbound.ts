@@ -98,7 +98,7 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
   const v = st.variables.get(name);
   // (Unset on every path. A nameref is left out: what it reads is its target's.)
   if (v && (v.set !== 'off' || attribute(st, name, 'n') !== 'off')) return undefined;
-  const environment = fromEnvironment(name, st, 'value');
+  const environment = fromEnvironment(name, st, 'value', model.provides);
   if (environment === 'usually') return undefined;
   const p = processOf(model.env(n));
   const exits = program ? 'command' : !p.sure ? 'shell' : p.kind === 'main' ? 'script' : p.kind === 'subshell' ? 'subshell' : 'shell';

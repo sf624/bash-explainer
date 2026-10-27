@@ -130,6 +130,8 @@ export interface ExplainOptions {
   hostCommands?: Record<string, CommandSpec>;
   /** What the host runs of the script (a bats file: its tests, each in a process of its own, with `set -eET`). */
   hostRun?: HostRun;
+  /** Variables the host gives the script, and the names of its placeholders (src/hosts/remap.ts, `hostProvided`). */
+  hostProvided?: readonly string[];
   /** Also build the reading tree of the line (`LineExplanation.reading`), for the panel's tree view. */
   reading?: boolean;
   /**

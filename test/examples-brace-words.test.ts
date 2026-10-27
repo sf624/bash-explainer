@@ -33,6 +33,12 @@ const wordsOf = (e: Example): ExampleSection => e.sections.find((s) => s.words)!
 const printedOf = (e: Example): ExampleSection | undefined => e.sections.find((s) => !s.words);
 
 describe('the example of a brace expansion', () => {
+  it("is not made of a word with quotes before the braces (`'%d\\n'{a,b}`), which bash expands too", () => {
+    // (Found by the fuzz test: the example read such a word as plain text, and failed.)
+    assert.strictEqual(bash("printf '<%s>' 'x'{a,b}"), '<xa><xb>');
+    assert.deepStrictEqual(braceExamples("printf '%d\\n'{a,b}"), []);
+  });
+
   // [line, whether the example shows what the command prints]
   const cases: [string, boolean][] = [
     ['echo {1..10..3}', true],

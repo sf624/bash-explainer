@@ -1,5 +1,5 @@
 import { shellFromName } from '../dialect';
-import { ciVariables } from '../dict/ciVariables';
+import { CI_PROVIDED, ciVariables } from '../dict/ciVariables';
 import type { RegionNote } from './index';
 import { LineOut, Builder, spaced } from './builder';
 
@@ -9,6 +9,8 @@ import { LineOut, Builder, spaced } from './builder';
  * `/bin/sh -xe` unless the script starts with a shebang.
  */
 export function jenkinsfile(b: Builder): void {
+  // (Jenkins sets its variables for every `sh` step: `BUILD_NUMBER`, `JOB_NAME`, `WORKSPACE`…)
+  b.provided.push(...CI_PROVIDED());
   const start = /\bsh\s*\(?\s*(?:(?:label|returnStdout|returnStatus|encoding)\s*:\s*(?:'[^']*'|"[^"]*"|true|false)\s*,\s*)*(?:script\s*:\s*)?('''|"""|'|")/g;
   for (let i = 0; i < b.lines.length; i++) {
     const line = b.lines[i];

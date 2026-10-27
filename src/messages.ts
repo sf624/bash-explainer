@@ -255,7 +255,10 @@ export const MESSAGES = {
     'This never runs: it is in a branch whose condition is never met, on the side of `&&` or `||` that is skipped, or after `break`, `continue`, `return` or `exit`']),
 
   // ---------------------------------------------------------------- aliases (6.6)
-  'alias-not-expanded-in-script': pitfall<{ name: string; value: string }>(['6.6', '4.3.2'], ({ name, value }) => [
+  // (`off`: the script turned it off, `shopt -u expand_aliases`, which counts in an interactive shell too.)
+  'alias-not-expanded-in-script': pitfall<{ name: string; value: string; off?: boolean }>(['6.6', '4.3.2'], ({ name, value, off }) => off ? [
+    `\`shopt -u expand_aliases\` でエイリアスの展開が無効になっているので、\`${name}\` は対話シェルでも「command not found」になります。\`shopt -s expand_aliases\` で有効に戻すか、関数 \`${name}() { ${value} "$@"; }\` にします`,
+    `alias expansion is turned off (\`shopt -u expand_aliases\`), so \`${name}\` is "command not found", also in an interactive shell. Turn it on again with \`shopt -s expand_aliases\`, or make it a function: \`${name}() { ${value} "$@"; }\``] : [
     `bash はスクリプトの中ではエイリアスを展開しないので、\`${name}\` は「command not found」になります。\`shopt -s expand_aliases\` を \`alias\` より前に書くか、関数 \`${name}() { ${value} "$@"; }\` にします（\`.bashrc\` など対話シェルで読むファイルなら問題ありません）`,
     `bash does not expand aliases in scripts, so \`${name}\` is "command not found". Put \`shopt -s expand_aliases\` before the \`alias\`, or make it a function: \`${name}() { ${value} "$@"; }\` (fine in files read by interactive shells, such as \`.bashrc\`)`]),
   // (A file with no shebang, which bash may run as a script or an interactive shell may read: src/semantics/state.ts.)
@@ -312,7 +315,10 @@ export const MESSAGES = {
   }),
   // (`environment`: the script set it with no `unset`, `local` or `export -n` before, so it is exported when it came
   // from the environment, `maybe` (capitals) or `unlikely` (lower case): src/semantics/shellstate.ts, `fromEnvironment`.)
-  'variable-not-exported': pitfall<{ v: string; environment?: 'maybe' | 'unlikely' }>(['3.7.3', '3.7.4'], ({ v, environment }) => (environment === 'maybe' ? [
+  // (`array`: bash exports no array, even one `export` marks, `declare -p` showing `-ax`.)
+  'variable-not-exported': pitfall<{ v: string; environment?: 'maybe' | 'unlikely'; array?: boolean }>(['3.7.3', '3.7.4'], ({ v, environment, array }) => (array ? [
+    `文字列の中の \`$${v}\` は新しいシェルが展開しますが、\`${v}\` は配列で、bash は配列をエクスポートできない（\`export\` しても渡らない）ので、そこでは空です。値を渡すなら、\`"\${${v}[*]}"\` を引数として渡すか、文字列の変数にします`,
+    `the new shell expands \`$${v}\` in the string, but \`${v}\` is an array, and bash cannot export an array (not even with \`export\`), so it is empty there. To pass its values, give \`"\${${v}[*]}"\` as an argument, or use a string variable`] : environment === 'maybe' ? [
     `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトで設定していますが、エクスポートしていないので、そこに値が届くのは \`${v}\` が初めから環境変数にあったとき（環境変数から来た変数はエクスポートされています）だけで、そうでなければ空です。先に \`export ${v}\` します`,
     `the new shell expands \`$${v}\` in the string, and \`${v}\` is set by this script but not exported: its value gets there only when \`${v}\` was in the environment already (a variable from the environment is exported), and it is empty otherwise. Run \`export ${v}\` first`] : [
     `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です${environment ? `（環境変数に初めから \`${v}\` があるときを除く）` : ''}。先に \`export ${v}\` します`,

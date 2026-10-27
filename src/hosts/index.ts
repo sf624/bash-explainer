@@ -46,6 +46,12 @@ export interface ShellRegion {
   tests?: number[];
   /** What the host runs of the script (bats: each test in a process of its own, with `set -eET`), which the model reads. */
   run?: HostRun;
+  /**
+   * Variables the host sets for its scripts (a CI's `GITHUB_SHA`, a step's `env:`, a Dockerfile's `ARG` and `ENV`); a
+   * name that ends in `*` stands for every name it starts. With the names of the placeholders (`hostProvided`), the
+   * model takes them as set by the environment (src/semantics/shellstate.ts, `fromEnvironment`).
+   */
+  provided?: readonly string[];
 }
 
 /** Something the host replaces before the shell sees it (`$(CC)` in make, `${{ … }}` in GitHub Actions). */

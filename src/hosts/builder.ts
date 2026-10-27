@@ -42,6 +42,8 @@ export class Builder {
   substitutions: HostSubstitution[] = [];
   /** Azure Pipelines: variables whose `$(name)` macros the pipeline replaces before the script runs. */
   azure?: { vars: Set<string> };
+  /** Variables the host sets for every script of the file (`ShellRegion.provided`). */
+  provided: string[] = [];
   constructor(text: string, readonly kind: HostKind) {
     this.lines = text.split(/\r?\n/);
     this.outs = this.lines.map(() => undefined);
@@ -56,6 +58,8 @@ export class Builder {
     if (end >= start) this.regions.push({ start, end, label, host: { kind: this.kind }, shell, notes, warnPipefail });
   }
   build(): Extracted {
+    const provided = [...new Set(this.provided)];
+    if (provided.length) for (const r of this.regions) r.provided = provided;
     const maps = this.lines.map((l, i) => this.outs[i]?.finish(l.length) ?? [l.length]);
     return { text: this.outs.map((o) => o?.text ?? '').join('\n'), maps, inserted: this.outs.map((o) => o?.inserted ?? []), regions: this.regions, substitutions: this.substitutions };
   }

@@ -1,5 +1,5 @@
 import { type Shell, shellFromName } from '../dialect';
-import { azureVariables as AZURE_VARIABLES, githubContext } from '../dict/ciVariables';
+import { azureVariables as AZURE_VARIABLES, CI_PROVIDED, githubContext } from '../dict/ciVariables';
 import type { HostCi } from './index';
 import { LineOut, Builder, spaced, indentOf } from './builder';
 
@@ -55,6 +55,9 @@ export function yaml(b: Builder): void {
   if (found.includes('azure')) b.azure = { vars: azureVariables(b.lines) };
   // A Travis CI file names its `language:` at the top level.
   const travis = b.lines.some((l) => /^language\s*:/.test(l));
+  // (What the CI and the file's `env:` maps set for the scripts, workflow, job or step: taken for every script.)
+  if (found.length) b.provided.push(...CI_PROVIDED());
+  b.provided.push(...envKeys(b.lines));
   for (let i = 0; i < b.lines.length; i++) {
     const line = b.lines[i];
     const m = /^(\s*(?:-\s+)?)([\w-]+)\s*:(?:\s+(.*))?$/.exec(line);
@@ -323,3 +326,23 @@ export function githubFileNotes(text: string, lang: 'ja' | 'en'): string[] {
   return out;
 }
 
+
+/** The keys of the `env:`, `variables:` and `environment:` maps of a YAML file: the variables they set for its scripts. */
+function envKeys(lines: readonly string[]): string[] {
+  const out: string[] = [];
+  lines.forEach((line, i) => {
+    const m = /^(\s*(?:-\s+)?)(?:env|variables|environment)\s*:\s*(?:#.*)?$/.exec(line);
+    if (!m) return;
+    // (The keys of its first child's indent, until a line indented as little as the map's key.)
+    let child = -1;
+    for (const next of lines.slice(i + 1)) {
+      if (!next.trim() || /^\s*#/.test(next)) continue;
+      const indent = indentOf(next);
+      if (indent <= m[1].length) break;
+      if (child < 0) child = indent;
+      const key = indent === child ? /^\s*(?:-\s+)?([A-Za-z_]\w*)\s*:/.exec(next) : null;
+      if (key) out.push(key[1]);
+    }
+  });
+  return out;
+}

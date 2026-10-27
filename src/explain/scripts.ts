@@ -250,11 +250,17 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
         : fact(cx.lang, 'variable-not-passed-by-wrapper', { v, via: dropped.via, ...(dropped.keeps ? { keeps: dropped.keeps.slice(0, 2) } : {}) }), words[0]);
       return;
     }
-    const environment = fromEnvironment(v, st, 'export');
+    // (`env -u FOO` removes it on the way, whatever the environment had.)
+    const unset = env.links.some((l) => l.kind === 'slot' && !!l.unsets?.includes(v));
+    const environment = unset ? 'no' : fromEnvironment(v, st, 'export', cx.state.provides);
     if (environment === 'usually') continue;
-    // (An array is never exported. `FOO=1` is, when `FOO` came from the environment: `env FOO=x bash script`.)
+    // (bash exports no array, even with `export`. `FOO=1` is exported when `FOO` came from the environment: `env FOO=x bash script`.)
     const array = ['a', 'A'].some((l) => (x.attrs[l]?.state ?? 'off') !== 'off');
-    if (exported === 'off' || array || environment === 'maybe') {
+    if (array) {
+      cx.note(fact(cx.lang, 'variable-not-exported', { v, array }), words[0]);
+      return;
+    }
+    if (exported === 'off' || environment === 'maybe' || (unset && exported !== 'on')) {
       cx.note(fact(cx.lang, 'variable-not-exported', { v, ...(environment === 'maybe' || environment === 'unlikely' ? { environment } : {}) }), words[0]);
       return;
     }

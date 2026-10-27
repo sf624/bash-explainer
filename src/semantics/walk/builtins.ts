@@ -664,7 +664,9 @@ export class WalkBuiltins {
     const v = st.variables.get(name.text);
     // (A nameref stands for another variable.)
     if (v && (v.set === 'on' || attribute(st, name.text, 'n') !== 'off')) return st;
-    return this.w.put(st, 'variables', name.text, { declared: 'on', set: 'on', attrs: v?.attrs ?? {}, value: undefined, at: e });
+    // (One the script had not set came from the environment, exported, unless something the model does not follow set it.)
+    const attrs = v?.attrs ?? { x: st.opaque ? exportFromEnvironment(name.text, e) : { state: 'on' as const, at: e } };
+    return this.w.put(st, 'variables', name.text, { declared: 'on', set: 'on', attrs, value: undefined, at: e });
   }
 
   /** GLOBIGNORE set to `value` (undefined: not known here): one that is not empty turns dotglob on, until it is unset; an empty one leaves it as it is. */

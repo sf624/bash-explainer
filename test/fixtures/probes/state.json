@@ -4772,6 +4772,11 @@
       "TERM": "xterm"
     },
     "note": "a variable from the environment is exported: an assignment keeps it so, and so does `local` (not its value)",
+    "gaps": {
+      "set.variables.foo.attrs": "a name in lower case is taken as not from the environment (fromEnvironment: unlikely), so its export is off in the model",
+      "local.variables.foo.attrs": "a name in lower case is taken as not from the environment (fromEnvironment: unlikely), so its export is off in the model",
+      "end.variables.foo.attrs": "a name in lower case is taken as not from the environment (fromEnvironment: unlikely), so its export is off in the model"
+    },
     "facts": {
       "set": {
         "variables": {
