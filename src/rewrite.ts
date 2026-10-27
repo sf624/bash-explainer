@@ -35,5 +35,9 @@ export function statementBefore(n: SyntaxNode, code: string): Rewrite {
   // (The root's text starts at its first token: what is before it on that line is blanks.)
   const at = n.startIndex - root.startIndex;
   const before = root.text.slice(root.text.lastIndexOf('\n', at - 1) + 1, at);
-  return { code, edits: own ? [{ start: n.startIndex, end: n.startIndex, text: /^[ \t]*$/.test(before) ? `${code}\n${before}` : `${code}; ` }] : [] };
+  const text = /^[ \t]*$/.test(before) ? code + '\n' + before : `${code}; `;
+  return {
+    code,
+    edits: own ? [{ start: n.startIndex, end: n.startIndex, text }] : [],
+  };
 }
