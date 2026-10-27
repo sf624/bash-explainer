@@ -115,7 +115,8 @@ function throughShell(n: SyntaxNode, vars: readonly string[], v: string, model: 
   };
   const r = resolveName(model, name.text, name, { shell, command: true });
   if (r.kind === 'function' || r.kind === 'alias' || (r.kind === 'builtin' && !builtins[r.name].program)) return { rewrite: { code: `${v}=…; ${name.text} … "$${v}"`, edits: [] }, apart: true };
-  const program = r.kind === 'file' || r.kind === 'builtin' ? stringShell(shell, name.text, words.map((w) => w.text)) : undefined;
+  // (What is left runs a program, or a builtin that is one too: no keyword takes an assignment before it.)
+  const program = stringShell(shell, name.text, words.map((w) => w.text));
   const among = redirectionsOf(n).some((d) => d.startIndex < last.endIndex && d.endIndex > name.startIndex);
   const script = words.map(inner);
   if (!program || among || !PLAIN.test(name.text) || script.includes(undefined)) return { rewrite: { code: `${shell ?? 'bash'} -c '… "$${v}"'`, edits: [] }, apart: false };
