@@ -15,7 +15,7 @@ import { expansionFailure, sameInEveryLocale, substring } from '../chars';
 import { temporariesUnset } from '../names';
 import { aliasOf, builtinParse, commandName, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
 import { attribute, type Attribute, environmentHas, exportFromEnvironment, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy, withStatus } from '../shellstate';
-import { builtinExit, definitionExit } from '../posixexits';
+import { builtinExit, definitionExit, exitRefusal } from '../posixexits';
 import { changedByBash, optionRoles, readDeclarationWords, type Declaration } from '../vars';
 import { ExpansionError, NAME, type Operand } from './shared';
 import { restrictedFromHere } from './child';
@@ -29,6 +29,9 @@ export const STARTUP_SHOPT: ReadonlySet<string> = new Set(['login_shell', 'restr
 
 /** What builtins and assignments change in the state, for the walk. */
 export class WalkBuiltins {
+  /** Where an error ends the shell in POSIX mode (`posixExit`): surely, on some walks only, or not (bash ignores it there). */
+  readonly exits = new Map<SyntaxNode, Tri>();
+
   constructor(private readonly w: Walker) {}
 
   /**
@@ -82,7 +85,13 @@ export class WalkBuiltins {
       const count = words.length ? staticWordValue(words[0]) : '1';
       return this.w.jump(spec.ends, words.length < 2 && count !== undefined && /^0*[1-9]\d{0,8}$/.test(count) ? Number(count) : undefined, st);
     }
-    if (spec.ends) return this.w.jump(spec.ends, undefined, st);
+    if (spec.ends) {
+      // (`exit x` and `exit 1 2` may not exit: `exitRefusal`. In POSIX mode bash 5.3 exits on `exit x` all the same where
+      // it does not ignore the error: `posixExit`.)
+      const refused = name === 'exit' ? exitRefusal(args, this.w.version) : undefined;
+      if (refused === 'unknown') return this.w.jump(spec.ends, undefined, st, false);
+      return refused && !refused.exits ? st : this.w.jump(spec.ends, undefined, st);
+    }
     switch (name) {
       case 'eval': case 'trap': {
         // A static string of `eval` runs here, in this shell; a trap's action runs later, when the signal comes
@@ -714,15 +723,21 @@ export class WalkBuiltins {
   /**
    * The state after statement `n` (a function definition or a simple command), run from `st` and leaving `after`: in
    * POSIX mode, an error the words decide (src/semantics/posixexits.ts) ends the shell (its subshell), surely where POSIX
-   * mode is surely on; a builtin's error not where bash ignores `set -e` (`quiet`). Bash only.
+   * mode is surely on; a builtin's error not where bash ignores `set -e` (`quiet`, also around the `eval` that runs it).
+   * Bash only. What it decides at each node is kept (`exits`), for the status model.
    */
   posixExit(n: SyntaxNode, st: ShellState, after: ShellState): ShellState {
     const posix = this.posixMode(st);
     const name = n.type === 'command' ? commandName(n) : undefined;
     if (!this.w.bash || posix === 'off' || (n.type === 'command' && name === undefined)) return after;
     const exit = name === undefined ? definitionExit(n, this.w.version) : builtinExit(n, name, fields(n, 'argument'), st, this.w.version, this.w.shell);
-    if (!exit || (exit.ignorable && this.w.mode.quiet)) return after;
-    return this.w.jump('shell', undefined, withStatus(after, exit.status), posix === 'on');
+    if (!exit) return after;
+    const decided: Tri = exit.ignorable && this.w.mode.quiet ? 'off' : posix;
+    if (!this.w.mode.dead) {
+      const was = this.exits.get(n);
+      this.exits.set(n, was === undefined || was === decided ? decided : 'unknown');
+    }
+    return decided === 'off' ? after : this.w.jump('shell', undefined, withStatus(after, exit.status), decided === 'on');
   }
 
   /** Whether bash is in POSIX mode at `st`, where an arithmetic or assignment error ends the shell, not only the line. */

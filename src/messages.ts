@@ -66,7 +66,18 @@ const withBasis = <P>(e: Entry<P>, basis: BasisSpec | ((p: P) => BasisSpec | und
 
 /** `local-outside-function` in a file with no shebang (`sourced`): a function may read it with `source`, and `local` then works. */
 /** An error of a special builtin that ends the shell in POSIX mode (`PosixExit` of src/semantics/posixexits.ts). */
-interface PosixExitParams { name: string; why: string; word: string; status: number; stops: 'script' | 'subshell' | 'unknown'; since?: string }
+interface PosixExitParams { name: string; why: string; word: string; status: number; stops: Stops; since?: string; trap?: boolean }
+
+/** The shell an exit ends: the script, a subshell, or either (`ErrexitContext.stops`). */
+type Stops = 'script' | 'subshell' | 'unknown';
+
+/** What bash ends, [ja, en], after "bash は" / "bash ": the script, this subshell, or the shell that runs it. */
+const ENDS: Record<Stops, readonly [string, string]> = {
+  script: ['ここでスクリプトを止めます', 'stops the script here'],
+  subshell: ['ここでこのサブシェルを終わらせます', 'ends this subshell here'],
+  unknown: ['ここで、それを実行しているシェルを止めます', 'stops the shell that runs it here'],
+};
+const ends = (stops: Stops): readonly [string, string] => ENDS[stops] ?? ENDS.script;
 
 /** What the error is (`why`), [ja, en]: each part ends where "so" follows. */
 function posixExitWhat({ name, why, word }: PosixExitParams): readonly [string, string] {
@@ -84,12 +95,14 @@ function posixExitWhat({ name, why, word }: PosixExitParams): readonly [string, 
 
 function posixExitText(p: PosixExitParams, maybe: boolean): readonly [string, string] {
   const [ja, en] = posixExitWhat(p);
-  const where: readonly [string, string] = p.stops === 'subshell' ? ['このサブシェルを終わらせます', 'ends this subshell'] : p.stops === 'unknown' ? ['止まります（サブシェルの中なら、そのサブシェルだけ）', 'stops here (in a subshell, only the subshell)'] : ['スクリプトを止めます', 'stops the script here'];
+  const where = ends(p.stops);
+  // (A trap's action: when the trap runs; on `EXIT`, the script ends anyway.)
+  const trap: readonly [string, string] = p.trap ? ['。トラップの動作の中なので、そうなるのはトラップが動いたときで、`EXIT` のトラップならスクリプトはもともと終わるところで、変わるのは終了ステータスだけです', '. In a trap\'s action, that happens when the trap runs; in a trap on `EXIT` the script is ending anyway, and only its status changes'] : ['', ''];
   const since: readonly [string, string] = p.since ? [`。bash ${p.since} から。bash 5.2 は終了ステータス 1 で続ける`, `; bash ${p.since} on: bash 5.2 goes on, with status 1`] : ['', ''];
   const paths: readonly [string, string] = maybe ? ['。そうなるのは一部の経路だけ（POSIX モードの経路、または `set -e` が無視されない呼び出し）', '; on some paths only (where POSIX mode is on, or a call where bash does not ignore `set -e`)'] : ['', ''];
   return [
-    `POSIX モードでは特殊ビルトインのエラーで非対話シェルが終了します。ここでは ${ja}ため、bash は${where[0]}（終了ステータス ${p.status}${since[0]}${paths[0]}）`,
-    `in POSIX mode an error of a special builtin ends a shell that is not interactive: here ${en}, so bash ${where[1]} (status ${p.status}${since[1]}${paths[1]})`];
+    `POSIX モードでは特殊ビルトインのエラーで非対話シェルが終了します。ここでは ${ja}ため、bash は${where[0]}（終了ステータス ${p.status}${since[0]}${paths[0]}）${trap[0]}`,
+    `in POSIX mode an error of a special builtin ends a shell that is not interactive: here ${en}, so bash ${where[1]} (status ${p.status}${since[1]}${paths[1]})${trap[1]}`];
 }
 
 const withSourced =(sourced: boolean | undefined, [ja, en]: readonly [string, string]): readonly [string, string] => (sourced ? [
@@ -117,6 +130,16 @@ export const MESSAGES = {
     `終了ステータスは 0〜255 なので、\`${command} ${value}\` では 256 で割った余りの ${status} になる`,
     `An exit status is 0–255, so \`${command} ${value}\` gives ${status} (the value modulo 256)`]),
   ({ ends }) => (ends === 'shell' ? { kind: 'checked', probe: 'status#exit-status', also: ['status#exit-negative'] } : undefined)),
+
+  'exit-refused': failure<{ why: string; word: string; status: number; version: string; exits: boolean }>(['4.1', '6.11'], ({ why, word, status, version, exits }) => (why === 'too-many' ? [
+    `\`exit\` が受け取る終了ステータスは1つだけで、それより多く渡すと bash は「too many arguments」のエラーになり、シェルは終了せずに続きます（bash ${version} では終了ステータス ${status}。bash 5.2 は 1、bash 5.3 は 2）`,
+    `\`exit\` takes one status: given more words, bash says "too many arguments" and does not exit; the shell goes on (status ${status} in bash ${version}: 1 in bash 5.2, 2 in bash 5.3)`]
+    : exits ? [
+      `\`${word}\` は数ではないので、bash ${version} は「numeric argument required」のエラーになり、終了ステータス 2 で終了します（bash 5.3 は POSIX モードの外では終了せずに続ける）`,
+      `\`${word}\` is no number: bash ${version} says "numeric argument required" and exits, status 2 (bash 5.3 goes on there, outside POSIX mode)`]
+      : [
+        `\`${word}\` は数ではないので、bash ${version} は「numeric argument required」のエラーになりますが、終了せずに続きます（終了ステータス 2。bash 5.2 は終了し、POSIX モードの bash 5.3 も \`set -e\` が止めるところでは終了する）`,
+        `\`${word}\` is no number: bash ${version} says "numeric argument required" but does not exit; the shell goes on, status 2 (bash 5.2 exits; so does bash 5.3 in POSIX mode, where \`set -e\` would stop it)`])),
 
   // ---------------------------------------------------------------- errexit (4.3.1, 4.3.2)
   // (`form`: `$( )`, or bash 5.3's `${ …; }` and `${| …; }`. For `$( )`, 3.7.3 and 4.3.2 (`inherit_errexit`) say that
@@ -303,21 +326,21 @@ export const MESSAGES = {
   // ---------------------------------------------------------------- POSIX mode (6.11, 4.4)
   // (6.11: "Function names may not be the same as one of the POSIX special builtins". That the definition then ends the
   // script, the manual does not say: checked.)
-  'posix-special-function-name': withBasis(pitfall(['6.11', '4.4'], () => [
-    `POSIX モードでは特殊ビルトインと同じ名前の関数は定義できず、bash はここで「is a special builtin」のエラーになってスクリプトを止めます。別の名前にします`,
-    `in POSIX mode a function cannot have the name of a special builtin: bash stops the script here with the error "is a special builtin". Use another name`]),
+  'posix-special-function-name': withBasis(pitfall<{ stops?: Stops }>(['6.11', '4.4'], ({ stops = 'script' }) => [
+    `POSIX モードでは特殊ビルトインと同じ名前の関数は定義できず、bash は「is a special builtin」のエラーになり、${ends(stops)[0]}。別の名前にします`,
+    `in POSIX mode a function cannot have the name of a special builtin: bash says "is a special builtin" and ${ends(stops)[1]}. Use another name`]),
   { kind: 'checked', probe: 'state#posix-special-function' }),
-  'posix-special-function-name-maybe': withBasis(caveat(['6.11', '4.4'], () => [
-    `POSIX モードでは特殊ビルトインと同じ名前の関数は定義できず、bash はここで「is a special builtin」のエラーになってスクリプトを止めます（この前で POSIX モードにしているのは一部の経路だけ）。別の名前にします`,
-    `in POSIX mode a function cannot have the name of a special builtin: bash stops the script here with the error "is a special builtin" (only some paths before here turn POSIX mode on). Use another name`]),
+  'posix-special-function-name-maybe': withBasis(caveat<{ stops?: Stops }>(['6.11', '4.4'], ({ stops = 'script' }) => [
+    `POSIX モードでは特殊ビルトインと同じ名前の関数は定義できず、bash は「is a special builtin」のエラーになり、${ends(stops)[0]}（この前で POSIX モードにしているのは一部の経路だけ）。別の名前にします`,
+    `in POSIX mode a function cannot have the name of a special builtin: bash says "is a special builtin" and ${ends(stops)[1]} (only some paths before here turn POSIX mode on). Use another name`]),
   { kind: 'checked', probe: 'state#posix-special-function' }),
 
-  'posix-function-name': pitfall(['6.11', '3.3'], () => [
-    `POSIX モードの bash 5.2 は、名前として正しくない関数名を受け付けず、ここで「not a valid identifier」のエラーになってスクリプトを止めます（終了ステータス 2。bash 5.3 は定義する）。英数字と \`_\` だけの名前にします`,
-    `in POSIX mode bash 5.2 refuses a function name that is not a valid name: it stops the script here with the error "not a valid identifier" (status 2; bash 5.3 defines the function). Use a name of letters, digits and \`_\``]),
-  'posix-function-name-maybe': caveat(['6.11', '3.3'], () => [
-    `POSIX モードの bash 5.2 は、名前として正しくない関数名を受け付けず、ここで「not a valid identifier」のエラーになってスクリプトを止めます（この前で POSIX モードにしているのは一部の経路だけ。bash 5.3 は定義する）。英数字と \`_\` だけの名前にします`,
-    `in POSIX mode bash 5.2 refuses a function name that is not a valid name: it stops the script here with the error "not a valid identifier" (only some paths before here turn POSIX mode on; bash 5.3 defines the function). Use a name of letters, digits and \`_\``]),
+  'posix-function-name': pitfall<{ stops?: Stops }>(['6.11', '3.3'], ({ stops = 'script' }) => [
+    `POSIX モードの bash 5.2 は、名前として正しくない関数名を受け付けず、「not a valid identifier」のエラーになり、${ends(stops)[0]}（終了ステータス 2。bash 5.3 は定義する）。英数字と \`_\` だけの名前にします`,
+    `in POSIX mode bash 5.2 refuses a function name that is not a valid name: it says "not a valid identifier" and ${ends(stops)[1]} (status 2; bash 5.3 defines the function). Use a name of letters, digits and \`_\``]),
+  'posix-function-name-maybe': caveat<{ stops?: Stops }>(['6.11', '3.3'], ({ stops = 'script' }) => [
+    `POSIX モードの bash 5.2 は、名前として正しくない関数名を受け付けず、「not a valid identifier」のエラーになり、${ends(stops)[0]}（この前で POSIX モードにしているのは一部の経路だけ。bash 5.3 は定義する）。英数字と \`_\` だけの名前にします`,
+    `in POSIX mode bash 5.2 refuses a function name that is not a valid name: it says "not a valid identifier" and ${ends(stops)[1]} (only some paths before here turn POSIX mode on; bash 5.3 defines the function). Use a name of letters, digits and \`_\``]),
   'posix-special-builtin-error': pitfall<PosixExitParams>(['4.4', '6.11'], (p) => posixExitText(p, false)),
   'posix-special-builtin-error-maybe': caveat<PosixExitParams>(['4.4', '6.11'], (p) => posixExitText(p, true)),
 

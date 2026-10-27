@@ -538,6 +538,10 @@ class Reader {
         break;
       }
       if (v.optional && !(v.next && next.value !== undefined && v.next.test(next.value))) break;
+      if (v.notValue && next.value !== undefined && v.notValue.test(next.value)) {
+        if (role) role.missing = true;
+        break;
+      }
       last++;
       st.roles.set(last, v.command ? { role: 'command', slot: v.command, of: flag } : { role: 'value', of: flag, option: opt, spec: v, index });
     }

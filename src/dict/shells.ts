@@ -1,6 +1,6 @@
 // The shells as commands: bash (Bash manual 6.1, and `bash --help`), bash as `rbash` (6.10), and the POSIX `sh`.
 // (Other shells take the options of `sh`: src/dict/aliases.ts.)
-import type { CommandSpec, OperandAlt, OperandSpec } from '../argv/spec';
+import type { CommandSpec, OperandAlt, OperandSpec, ValueSpec } from '../argv/spec';
 import { tx } from '../i18n';
 import { builtins, shellOptions, shoptOptions } from './builtins';
 import { cmd, operand, type OptSpec, optionOf, wordTable } from './types';
@@ -56,7 +56,9 @@ const BASH: CommandSpec = cmd('bash シェルを起動する（スクリプト�
     },
   },
   // (`set -r` is not `bash -r`, which also makes the variables read-only: 6.10.)
-  ...builtins.set.options!.filter((o) => o.names.every((n) => /^-[a-zA-Z]$/.test(n)) && o.names[0] !== '-r'),
+  // (`bash -o -c` gives `-o` the word `-c`, which bash refuses: `set -o -e` does not, `notValue`.)
+  ...builtins.set.options!.filter((o) => o.names.every((n) => /^-[a-zA-Z]$/.test(n)) && o.names[0] !== '-r')
+    .map((o) => (o.names[0] === '-o' ? { ...o, value: { ...(o.value as ValueSpec), notValue: undefined } } : o)),
   ['--debug', 'bash 自身のデバッグ用（マニュアルにない。リリース版の bash 5.2・5.3 では見える変化はない）', "bash's own debugging (not in the manual; in bash 5.2 and 5.3 as released, nothing visible changes)"],
   ['--debugger', '起動の前にデバッガ（bashdb）を読み込み、`extdebug` を有効にする（bashdb がなければ警告を表示し、どちらもしない）', 'load the debugger (bashdb) before starting, and turn on `extdebug` (without bashdb installed, it warns and does neither)'],
   ['--dump-po-strings', '`-D` と同じだが、GNU gettext の PO 形式で出力する', 'as `-D`, in the PO format of GNU gettext'],

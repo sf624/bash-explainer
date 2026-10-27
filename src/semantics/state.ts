@@ -28,7 +28,7 @@ import { ancestor, field, type SyntaxNode, type SyntaxTree } from '../syntax/tre
 import { SET_LETTERS } from './effects';
 import { EnvModel, type ExecEnv, fileRead, type FileRead, MAIN_SHELL, type SlotLink } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
-import type { ShellState } from './shellstate';
+import type { ShellState, Tri } from './shellstate';
 import { childOpening, HARMLESS_START, type Opening, openingBlinds } from './opening';
 import { BLIND, type HostCommands, NO_HOST, scriptTrust, type StringTrees, type Trust, withinTrust } from './trust';
 import { type MappedText, staticWordValue } from '../staticword';
@@ -61,6 +61,12 @@ export interface StateModel {
    * `expand`: the state its aliases come from (`parse`, or the run state of the command substitution that holds it).
    */
   at(n: SyntaxNode): { run: ShellState; parse: ShellState; expand: ShellState };
+  /**
+   * Whether an error the words decide ends the shell at `n` in POSIX mode where the walk ran it (src/semantics/posixexits.ts):
+   * `on`, `unknown` (on some walks, or where POSIX mode is on some paths), `off` (bash ignores it there, as `set -e`);
+   * undefined where the walk found none, or did not run `n`.
+   */
+  posixExit(n: SyntaxNode): Tri | undefined;
   /** The state at the end of the script. */
   readonly end: ShellState;
   /** The shell the model is of (bash when absent). */
@@ -622,6 +628,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
       return false;
     },
     condition: (n) => w.conditions.decision(n),
+    posixExit: (n) => w.builtins.exits.get(n),
     dead: (n) => w.runAt(n) !== undefined && !w.live.has(n) && w.everywhere(n),
     settled: (n) => w.everywhere(n),
     reply(n) {

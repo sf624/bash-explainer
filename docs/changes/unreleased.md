@@ -259,7 +259,7 @@ In POSIX mode (`set -o posix`, `#!/bin/bash --posix`, `bash --posix`), an error 
 | `set -o nosuch`, `set -euo nosuch` | exits, status 2 | the same | "`nosuch` is no option name of `set -o`" |
 | `exec -a`, `.` or `source` alone, `trap INT`, `trap -- INT` | exits, status 2 (a usage error) | the same | "`-a` has no value", "`.` is given no file to read", "a lone word that is no signal number" |
 | `source -p dir f` | exits, status 2 (an option of bash 5.3) | reads `f` | the warning `laterOption` says so in 5.2 mode, and now the note too |
-| `export 1x=2`, `readonly a-b`, `export -n 1x`, `unset -v a-b` | "not a valid identifier", status 1, goes on | exits, status 1 | in 5.3 mode, "`1x=2` is not a valid name, so bash stops the script here (status 1; bash 5.3 on: bash 5.2 goes on, with status 1)" |
+| `export 1x=2`, `readonly a-b`, `export -p a-b`, `export -n 1x`, `unset -v a-b` | "not a valid identifier", status 1, goes on | exits, status 1 | in 5.3 mode, "`1x=2` is not a valid name, so bash stops the script here (status 1; bash 5.3 on: bash 5.2 goes on, with status 1)" |
 | `readonly r; unset r` | "cannot unset: readonly variable", status 1, goes on | exits, status 1 | in 5.3 mode, "`r` is a read-only variable" |
 | `shift x` | "numeric argument required", status 1, goes on | exits, status 2 | in 5.3 mode, "`x` is no number" |
 | `readonly r=1; r=2 :` (an assignment before a special builtin) | exits, status 1, also on the left of `\|\|` | the same | the assignment's note: "in POSIX mode, bash stops the script here, status 1" |
@@ -267,9 +267,21 @@ In POSIX mode (`set -o posix`, `#!/bin/bash --posix`, `bash --posix`), an error 
 | `export() { :; }` | "is a special builtin": exits, status 2 | the same | as before; the code after it is faded now |
 | `set -Z \|\| :`, `if export 1x; then …`, `command set -Z`, `trap 2`, `unset a-b`, `export -f a-b` | goes on | goes on | nothing |
 
-Not decided from the words, so not said: a file `.` does not find (said by `.` itself), a redirection that fails, `eval` of text with a syntax error, `return x` in a function (bash 5.3 exits), `export a[1]=x`.
+| `set -o`, `set +o` alone (also `set -eo`, `set -o >/dev/null`), `set -o -e` | lists the options and goes on; with `-e` after it, sets `-e` too | the same | nothing; `set -o -e` reads `-e` as an option, not as a name of `set -o` |
+| `export 1x 2>/dev/null`, `exec -a 2>/dev/null` | as without the redirection | the same | the note too (and `exit 256 2>/dev/null` keeps its note) |
+| `trap 'set -Z' EXIT` | the trap's action ends the shell, which was ending anyway: only its status changes | the same | the note says so |
+| `eval 'export 1x' \|\| :`, `if eval 'set -Z'; then …` | 5.2 exits on the second | goes on | nothing (the walk and the status model read one decision, made where the walk ran the string) |
 
-The operands bash refuses as names are said so: `export 1x=2`, `readonly -p a-b`, `declare a.b` and `local -n 2r` are "Bash refuses this word: it is not a valid variable name ("not a valid identifier", status 1)". Before, they were "Variable `1x=2`".
+Not decided from the words, so not said: a file `.` does not find (said by `.` itself), a redirection that fails, `eval` of text with a syntax error, `return x` in a function (bash 5.3 exits), `export a[1]=x`, `set -opipefail` (letters after `o`, which bash reads erratically), and the exits on `export r=2` or `for r in …` of a readonly `r`.
+
+`exit` with words that give it no status, in and out of POSIX mode (checked with bash 5.2.21 and 5.3):
+
+| Written | bash 5.2 | bash 5.3 | Said now | Before |
+| --- | --- | --- | --- | --- |
+| `exit 1 2`, `exit 3 ""` | "too many arguments", status 1, goes on | status 2, goes on | "`exit` takes one status: given more words, bash says "too many arguments" and does not exit; the shell goes on …", nothing faded | the code after it faded |
+| `exit x`, `exit 1x`, `exit x y` | "numeric argument required": exits, status 2 | outside POSIX mode goes on, status 2; in POSIX mode exits, except where `set -e` would not stop it | by release, and the code after is faded where bash exits | always an exit |
+
+The operands bash refuses as names are said so: `export 1x=2`, `readonly -p a-b`, `declare a.b` and `local -n 2r` are "Bash refuses this word: it is not a valid variable name ("not a valid identifier", status 1)". Before, they were "Variable `1x=2`". `local -` (the options made local) and `export x\=1` (bash exports `x`) are not.
 
 In bash 5.3's POSIX mode, a `$( )` does not change `$?` until the command is done, so the walk follows `$?` across it: after `false`, `[ "$(true)$?" = 1 ]` is true there, and the `else` branch is faded in a script that starts in POSIX mode. In bash 5.2, and out of POSIX mode, `$?` there is the substitution's status, not decided.
 

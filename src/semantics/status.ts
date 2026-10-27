@@ -17,7 +17,10 @@ import { builtinParse, commandName, wrapped } from './effects';
 import { processOf, STATEMENTS } from './env';
 import { resolveName, testSpecOf } from './names';
 import { commandTest } from '../testexpr';
-import { assignmentExit, builtinExit, definitionExit, type PosixExit } from './posixexits';
+import { assignmentExit, builtinExit, definitionExit, exitRefusal, type PosixExit } from './posixexits';
+
+/** Why `exit` takes no status from its words (`exitRefusal`). */
+export type ExitRefusal = Exclude<ReturnType<typeof exitRefusal>, 'unknown' | undefined>;
 import { type ErrexitWhy, modelVersion, option, type ShellState, type StateModel, type Tri } from './state';
 import { type WordEnv, wordFields, type WordFailure, wordOf } from './words';
 
@@ -44,7 +47,12 @@ export type StatusRule =
    * `exit N` and `return N` (what they end, `CommandSpec.ends`: the shell or the function; `builtin`, its name): N
    * modulo 256 (with a word that is not a number, the rule is `command`).
    */
-  | { readonly kind: 'given'; readonly ends: 'shell' | 'function'; readonly builtin: string; readonly value: number }
+  | { readonly kind: 'given'; readonly ends: 'shell' | 'function'; readonly builtin: string; readonly value: number; readonly refused?: ExitRefusal }
+  /**
+   * A builtin that refuses its words and fails, and the shell goes on (`exit 1 2`; `exit x` in bash 5.3 outside POSIX
+   * mode): `refused` says why (src/semantics/posixexits.ts, `exitRefusal`).
+   */
+  | { readonly kind: 'refused'; readonly builtin: string; readonly value: number; readonly refused: ExitRefusal }
   /** `exit` and `return` with no number: the status of the command before. */
   | { readonly kind: 'previous'; readonly ends: 'shell' | 'function' }
   /** `wait`: the status of the job waited for (`job`, the statement `$!` started, when known); 0 with no operand. */
@@ -157,9 +165,9 @@ export interface StatusModel {
    * An error that ends the shell at statement `n` in POSIX mode, as the words written decide it (a function name bash
    * refuses, an error of a special builtin: src/semantics/posixexits.ts), and whether it ends the shell there: POSIX
    * mode on (`unknown` when on some paths only), and for a builtin's error, not where bash ignores `set -e`; the shell
-   * it ends (the script, or a subshell: `stops`, as for `set -e`). Bash only.
+   * it ends (the script, or a subshell: `stops`, as for `set -e`), and whether it is in a trap's action. Bash only.
    */
-  posixExit(n: SyntaxNode): { exit: PosixExit; active: Tri; stops: ErrexitContext['stops'] } | undefined;
+  posixExit(n: SyntaxNode): { exit: PosixExit; active: Tri; stops: ErrexitContext['stops']; trap: boolean } | undefined;
 }
 
 const models = new WeakMap<StateModel, StatusModel>();
@@ -235,7 +243,11 @@ class Statuses implements StatusModel {
         if (res?.kind !== 'builtin') return { kind: 'command', functions: this.calledBy(n) };
         const spec = builtins[res.name];
         if (spec.ends === 'shell' || spec.ends === 'function') {
-          const v = args[0]?.text;
+          // (`exit x` exits with 2 in bash 5.2; `exit 1 2` goes on: `exitRefusal`.)
+          const refused = res.name === 'exit' ? exitRefusal(args, modelVersion(this.state)) : undefined;
+          if (refused === 'unknown') return { kind: 'command', functions: [] };
+          if (refused) return refused.exits ? { kind: 'given', ends: 'shell', builtin: res.name, value: refused.status, refused } : { kind: 'refused', builtin: res.name, value: refused.status, refused };
+          const v = (args[0]?.text === '--' ? args[1] : args[0])?.text;
           if (v === undefined) return { kind: 'previous', ends: spec.ends };
           // (`exit $code`: the value is not known here.)
           return /^-?\d+$/.test(v) ? { kind: 'given', ends: spec.ends, builtin: res.name, value: ((Number(v) % 256) + 256) % 256 } : { kind: 'command', functions: [] };
@@ -272,7 +284,7 @@ class Statuses implements StatusModel {
     return { kind: 'last-run' };
   }
 
-  posixExit(n: SyntaxNode): { exit: PosixExit; active: Tri; stops: ErrexitContext['stops'] } | undefined {
+  posixExit(n: SyntaxNode): { exit: PosixExit; active: Tri; stops: ErrexitContext['stops']; trap: boolean } | undefined {
     if (this.shell && this.shell !== 'bash') return undefined;
     const posix = optionOn(this.state.at(n).run, 'set', 'posix');
     if (posix === 'off') return undefined;
@@ -286,8 +298,12 @@ class Statuses implements StatusModel {
       if (res.kind === 'builtin' && !res.disabled) exit = builtinExit(n, name, fields(n, 'argument'), this.state.at(n).run, modelVersion(this.state), this.shell);
     }
     if (!exit) return undefined;
+    // (What the walk decided where it ran `n`, which sees the `eval` around a string too; else from where `n` is.)
     const ignored = exit.ignorable ? this.ignored(n) : null;
-    return { exit, active: ignored?.sure ? 'off' : posix === 'unknown' || ignored ? 'unknown' : 'on', stops: this.errexit(n).stops };
+    const active = this.state.posixExit(n) ?? (ignored?.sure ? 'off' : posix === 'unknown' || ignored ? 'unknown' : 'on');
+    // (In a trap's action, it ends the shell when the trap runs.)
+    const trap = this.state.env(n).links.some((l) => l.kind === 'slot' && !!l.slot.later);
+    return { exit, active, stops: this.errexit(n).stops, trap };
   }
 
   /** The statement started with `&` before `n` in its list (what `$!` names), if it is in the same block. */

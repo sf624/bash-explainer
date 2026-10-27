@@ -1,5 +1,6 @@
 // Notes on exit statuses (docs/design/analyzer.md, step 3): `((i++))` at 0, `exit 256`, and whether a failing `$( )`
 // stops the script under `set -e`. The statuses and errexit come from the status model (src/semantics/status.ts).
+import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { shorten } from '../label';
 import { fact } from '../messages';
 import { STATEMENTS } from '../semantics/env';
@@ -24,14 +25,25 @@ export function posixExitNote(cx: Explainer, n: SyntaxNode): void {
   const p = cx.status.posixExit(n);
   if (!p || p.active === 'off' || p.exit.why === 'readonly-assignment') return;
   const { why, word, status, at, since } = p.exit;
-  cx.note(fact(cx.lang, p.active === 'on' ? 'posix-special-builtin-error' : 'posix-special-builtin-error-maybe', { name: field(n, 'name')!.text, why, word, status, stops: p.stops, ...(since ? { since } : {}) }), at);
+  cx.note(fact(cx.lang, p.active === 'on' ? 'posix-special-builtin-error' : 'posix-special-builtin-error-maybe', { name: field(n, 'name')!.text, why, word, status, stops: p.stops, ...(since ? { since } : {}), ...(p.trap ? { trap: true } : {}) }), at);
+}
+
+/**
+ * `exit 1 2` and `exit x`, whose words give no status (`ExitRefusal` of the status rule): what bash does, unless POSIX
+ * mode ends the shell there (`posixExitNote` says that).
+ */
+export function exitRefusedNote(cx: Explainer, n: SyntaxNode): void {
+  const rule = cx.status.status(n);
+  const refused = (rule.kind === 'given' || rule.kind === 'refused') && rule.refused;
+  if (!refused || (cx.status.posixExit(n)?.active ?? 'off') !== 'off') return;
+  cx.note(fact(cx.lang, 'exit-refused', { why: refused.why, word: refused.word, status: refused.status, version: cx.opts.bashVersion ?? DEFAULT_BASH_VERSION, exits: refused.exits }), refused.at);
 }
 
 /** `exit 256` and `return 300`: the status is taken modulo 256. */
 export function statusRangeNote(cx: Explainer, n: SyntaxNode): void {
   const rule = cx.status.status(n);
-  if (rule.kind !== 'given') return;
-  const arg = fields(n, 'argument')[0];
+  if (rule.kind !== 'given' || rule.refused) return;
+  const arg = fields(n, 'argument').filter((a) => a.text !== '--')[0];
   const v = Number(arg.text);
   if (v >= 0 && v <= 255) return;
   cx.note(fact(cx.lang, 'exit-modulo', { command: rule.builtin, value: String(v), status: rule.value, ends: rule.ends }), arg);

@@ -21,6 +21,7 @@ type Param = { kind: Exclude<Kind, 'none'>; via: string };
 
 const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'exit-modulo': 'none',
+  'exit-refused': 'none',
   'errexit-off-in-substitution': 'none',
   'errexit-set-called-where-ignored': 'none',
   'errexit-set-maybe-called-where-ignored': 'none',

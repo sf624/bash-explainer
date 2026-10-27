@@ -480,7 +480,8 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     // `set -euo pipefail`: bash's `set` takes the name of `-o` from the next word, and reads the letters after it.
     {
       names: ['-o'], text: tx('名前でオプションを有効にする', 'enable an option by name'), offText: tx('名前で指定したオプションを無効にする', 'disable an option by name'),
-      value: { name: 'VALUE', how: 'next-only', values: shellOptions, offValues: { noglob: GLOB_AGAIN, errexit: ERREXIT_OFF } },
+      // (A next word that starts with `-` or `+` is no name: `set -o -e` lists the options, then sets `-e`.)
+      value: { name: 'VALUE', how: 'next-only', notValue: /^[-+]|^$/, values: shellOptions, offValues: { noglob: GLOB_AGAIN, errexit: ERREXIT_OFF } },
       noValue: {
         text: tx('`-o` だけ（名前なし）: 現在のオプションの設定（`allexport  off` など）を一覧表示する。何も変えない', '`-o` alone (no name): list the current option settings (`allexport  off`…); nothing is changed'),
         offText: tx('`+o` だけ（名前なし）: 現在の設定を再現するコマンド（`set +o allexport` など）を表示する。何も変えない', '`+o` alone (no name): print the commands that recreate the current settings (`set +o allexport`…); nothing is changed'),

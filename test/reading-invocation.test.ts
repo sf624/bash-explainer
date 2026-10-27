@@ -39,7 +39,10 @@ describe('the reading tree as the Bash manual reads bash itself (chapter 6: 6.1,
     }
     // The letters of `set` mean what they mean to `set` (one source: its spec).
     // (`set -r` is not `bash -r`, which makes the variables read-only too.)
-    for (const o of builtins.set.options!.filter((x) => /^-[a-zA-Z]$/.test(x.names[0]) && x.names[0] !== '-r')) assert.strictEqual(spec.options!.find((x) => x.names.includes(o.names[0])), o, o.names[0]);
+    // (`-o` is the same but for `notValue`: `bash -o -c` gives `-o` the word `-c`, `set -o -e` lists the options.)
+    for (const o of builtins.set.options!.filter((x) => /^-[a-zA-Z]$/.test(x.names[0]) && x.names[0] !== '-r' && x.names[0] !== '-o')) assert.strictEqual(spec.options!.find((x) => x.names.includes(o.names[0])), o, o.names[0]);
+    const setO = builtins.set.options!.find((x) => x.names[0] === '-o')!;
+    assert.deepStrictEqual(spec.options!.find((x) => x.names[0] === '-o'), { ...setO, value: { ...setO.value, notValue: undefined } });
     each('for l in a b e f h k m n p t u v x B C E H P T; do "$BASH" -$l -c : </dev/null 2>/dev/null || echo "$l failed"; done', (r, which) => assert.strictEqual(r.stdout, '', which));
   });
 
