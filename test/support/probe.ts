@@ -20,7 +20,7 @@ import { execFile, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { BashRelease, ProbeCopy } from '../../src/basis';
+import { type BashRelease, type ProbeCopy, PROBE_TABLES, type ProbeTable } from '../../src/basis';
 
 /** The bash the probes run: `$BASH_EXPLAINER_BASH`, else `bash` on PATH. */
 export const PROBE_BASH = process.env.BASH_EXPLAINER_BASH || 'bash';
@@ -348,8 +348,9 @@ export async function probeStatus(snippet: string, opts: ProbeOptions = {}): Pro
 // The tables: test/fixtures/probes/<kind>.json, an array of rows. `snippet` and the inputs are written by
 // hand; `facts` by scripts/record-probes.ts.
 
-export type ProbeKind = 'state' | 'env' | 'names' | 'words' | 'status' | 'values';
-export const PROBE_KINDS: ProbeKind[] = ['state', 'env', 'names', 'words', 'status', 'values'];
+/** The probe tables: src/basis.ts has the list, since the explanations name rows by it. */
+export type ProbeKind = ProbeTable;
+export const PROBE_KINDS: readonly ProbeKind[] = PROBE_TABLES;
 
 export interface ProbeRow {
   /** A name other files refer to the row by (the allow-list's `kind#id`), unique in its table. */
@@ -375,8 +376,8 @@ export interface ProbeRow {
   bash?: '5.3';
   /**
    * A command that shows the reader what the row checks, in their terminal (docs/design/basis.md): `code` as they
-   * would type it, starting a bash of its own (`bash -c '…'`) so that it prints the same from zsh, and `output`, what
-   * it printed (stdout and stderr, as a terminal shows them; `tryOutput`). scripts/record-probes.ts writes `output`
+   * would type it, one word `bash -c '…'` with no `'` or `\` inside, so that any shell they type it in (bash, zsh,
+   * fish) runs the same bash script (test/basis.test.ts checks it), and `output`, what it printed (stdout and stderr, as a terminal shows them; `tryOutput`). scripts/record-probes.ts writes `output`
    * and the copy src/basis-probes.json, which the explanations read; test/probe.test.ts runs `code` again. A row with
    * a try-it has an `id`.
    */
@@ -452,7 +453,9 @@ function programPath(name: string): string {
  * What a row's try-it prints, as the reader's terminal shows it: `code` run by `bash --norc --noprofile -c` (the
  * reader's shell) in a fresh directory holding FILES, with the environment of the probes, and the row's bash first on
  * PATH as `bash` (so `bash -c '…'` in the code runs it). stdout and stderr go to one file, in the order they are
- * written; the last newline is dropped, and the directory is written as BOX. On a timeout the process group is killed.
+ * written; the last newline is dropped. The directory is written as BOX, and the one that holds the row's bash (first
+ * on PATH) as BIN. When the shell ends, what it left running (a job in the background) is killed with it: its process
+ * group; so is all of it on a timeout.
  */
 export function tryOutput(row: ProbeRow, timeout = 5000): Promise<string> {
   const program = programPath(row.bash === '5.3' ? PROBE_BASH53! : PROBE_BASH);
@@ -465,21 +468,40 @@ export function tryOutput(row: ProbeRow, timeout = 5000): Promise<string> {
     else fs.writeFileSync(path.join(box, f), '');
   }
   fs.symlinkSync(program, path.join(bin, 'bash'));
-  // (`pwd` prints the directory with no symbolic link in it.)
-  const real = fs.realpathSync(box);
+  // (Each directory also as `pwd` prints it, with no symbolic link in it.)
+  const names: [string, string][] = [[box, BOX], [fs.realpathSync(box), BOX], [bin, 'BIN'], [fs.realpathSync(bin), 'BIN']];
   const fd = fs.openSync(out, 'w');
   return new Promise((resolve, reject) => {
+    let timedOut = false;
+    let done = false;
+    const finish = (error?: Error): void => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      fs.closeSync(fd);
+      const text = names.reduce((t, [p, name]) => t.split(p).join(name), fs.readFileSync(out, 'utf8')).replace(/\n$/, '');
+      fs.rmSync(root, { recursive: true, force: true });
+      if (error) reject(error);
+      else resolve(text);
+    };
+    const killGroup = (pid: number | undefined): void => {
+      try {
+        if (pid) process.kill(-pid, 'SIGKILL');
+      } catch {
+        // (The group is gone already.)
+      }
+    };
     const child = spawn(program, ['--norc', '--noprofile', '-c', row.try!.code], {
       cwd: box, env: { ...PROBE_ENV, PATH: `${bin}:${PROBE_ENV.PATH}` }, stdio: ['ignore', fd, fd], detached: true,
     });
-    const timer = setTimeout(() => process.kill(-child.pid!, 'SIGKILL'), timeout);
-    child.on('exit', (_code, signal) => {
-      clearTimeout(timer);
-      fs.closeSync(fd);
-      const text = fs.readFileSync(out, 'utf8').split(real).join(BOX).split(box).join(BOX).replace(/\n$/, '');
-      fs.rmSync(root, { recursive: true, force: true });
-      if (signal === 'SIGKILL') reject(new Error(`the try-it timed out: ${row.try!.code}`));
-      else resolve(text);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup(child.pid);
+    }, timeout);
+    child.on('error', (err) => finish(new Error(`the try-it could not run: ${err.message}`)));
+    child.on('exit', () => {
+      killGroup(child.pid);
+      finish(timedOut ? new Error(`the try-it timed out: ${row.try!.code}`) : undefined);
     });
   });
 }

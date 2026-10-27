@@ -39,8 +39,8 @@ const ctx = (src: string, text: string, shell?: Shell): string => {
 
 describe('status rules (src/semantics/status.ts)', () => {
   it('gives each kind of statement its rule', () => {
-    assert.deepStrictEqual(status('exit 256', 'exit 256'), { kind: 'given', ends: 'shell', value: 0 });
-    assert.deepStrictEqual(status('return -1', 'return -1'), { kind: 'given', ends: 'function', value: 255 });
+    assert.deepStrictEqual(status('exit 256', 'exit 256'), { kind: 'given', ends: 'shell', builtin: 'exit', value: 0 });
+    assert.deepStrictEqual(status('return -1', 'return -1'), { kind: 'given', ends: 'function', builtin: 'return', value: 255 });
     assert.deepStrictEqual(status('return', 'return'), { kind: 'previous', ends: 'function' });
     assert.deepStrictEqual(status('exit $code', 'exit $code'), { kind: 'command', functions: [] });
     assert.deepStrictEqual(status('let i=0', 'let i=0'), { kind: 'arith' });

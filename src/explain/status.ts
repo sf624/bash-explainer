@@ -23,7 +23,7 @@ export function statusRangeNote(cx: Explainer, n: SyntaxNode): void {
   const arg = fields(n, 'argument')[0];
   const v = Number(arg.text);
   if (v >= 0 && v <= 255) return;
-  cx.note(fact(cx.lang, 'exit-modulo', { value: String(v), status: rule.value, ends: rule.ends }), arg);
+  cx.note(fact(cx.lang, 'exit-modulo', { command: rule.builtin, value: String(v), status: rule.value, ends: rule.ends }), arg);
 }
 
 /**

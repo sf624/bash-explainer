@@ -6,8 +6,9 @@
 // the test tables). Nothing here runs bash: a try-it shows what the probe recorded.
 import copied from './basis-probes.json';
 
-/** The probe tables (test/fixtures/probes/<table>.json). */
-export type ProbeTable = 'state' | 'env' | 'names' | 'words' | 'status' | 'values';
+/** The probe tables (test/fixtures/probes/<table>.json), the one list of them (test/support/probe.ts reads it). */
+export const PROBE_TABLES = ['state', 'env', 'names', 'words', 'status', 'values'] as const;
+export type ProbeTable = (typeof PROBE_TABLES)[number];
 
 /** A probe row: `<table>#<id>` (`status#exit-status`), its `id` in its table. */
 export type ProbeRef = `${ProbeTable}#${string}`;
@@ -18,7 +19,8 @@ export type BashRelease = '5.2' | '5.3';
 /**
  * What an explanation rests on:
  * - `manual`: what the manual's `sections` say (the default: a fact's or a token's `refs`).
- * - `checked`: bash's behaviour where the manual does not say it, checked by running `bash` on the `probes`.
+ * - `checked`: bash's behaviour where the manual does not say it, checked by running the releases `bash` on the
+ *   `probes` (in CI: every row in 5.2, the rows of 5.3's constructs in 5.3).
  * - `differs`: bash's behaviour where the manual says otherwise, checked the same way.
  * - `spec`: what another program does (an option of `grep`), from its command spec in src/dict/.
  * - `convention`: a habit of shell scripts, not a rule of bash (capitals for the environment).
@@ -26,15 +28,18 @@ export type BashRelease = '5.2' | '5.3';
  */
 export type Basis =
   | { kind: 'manual'; sections: readonly string[] }
-  | { kind: 'checked' | 'differs'; bash: BashRelease; probes: readonly ProbeRef[] }
+  | { kind: 'checked' | 'differs'; bash: readonly BashRelease[]; probes: readonly ProbeRef[] }
   | { kind: 'spec'; command: string }
   | { kind: 'convention' };
 
-/** A command for the reader to run in a terminal, and what it printed when the probe ran it (stdout and stderr). */
+/**
+ * A command for the reader to run in a terminal, and what it printed when the probe ran it (stdout and stderr). It may
+ * show another value than its row's snippet (`exit 300` for a row of `exit 256`): both are run in CI.
+ */
 export interface TryIt {
   code: string;
   output: string;
-  /** The bash it was run with. */
+  /** The bash it was run with (one run, one output). */
   bash: BashRelease;
   /** The probe row it comes from. */
   probe: ProbeRef;
@@ -46,19 +51,25 @@ export interface TryIt {
  */
 export interface BasisSpec {
   kind: 'manual' | 'checked' | 'differs';
-  probe: ProbeRef;
+  probe: CopiedRef;
   also?: readonly ProbeRef[];
 }
 
-/** A row of the copy: the section it is about, the bash it ran in, and its try-it. */
+/**
+ * A row of the copy: the section it is about (test/basis.test.ts checks that the facts that show it cite it), the bash
+ * it ran in, and its try-it.
+ */
 export interface ProbeCopy {
   manual: string;
   bash: BashRelease;
   try: { code: string; output: string };
 }
 
+/** A probe row with a try-it, as the copy names it: an entry that names another fails to compile. */
+export type CopiedRef = keyof typeof copied & ProbeRef;
+
 /** The probe rows that have a try-it, by `<table>#<id>` (src/basis-probes.json). */
-export const PROBE_COPY: Readonly<Record<string, ProbeCopy>> = copied as Record<string, ProbeCopy>;
+export const PROBE_COPY = copied as Readonly<Record<CopiedRef, ProbeCopy>>;
 
 /**
  * The basis and the try-it of a fact whose entry gives `spec`: the basis only where it is not the manual (the default,
@@ -67,12 +78,9 @@ export const PROBE_COPY: Readonly<Record<string, ProbeCopy>> = copied as Record<
 export function basisOf(spec: BasisSpec | undefined): { basis?: Basis; tryIt?: TryIt } {
   if (!spec) return {};
   const row = PROBE_COPY[spec.probe];
-  // (test/basis.test.ts checks that every row a catalog entry names is in the copy.)
-  /* c8 ignore next */
-  if (!row) throw new Error(`no probe row ${spec.probe} with a try-it in src/basis-probes.json: run scripts/record-probes.ts`);
   const tryIt: TryIt = { code: row.try.code, output: row.try.output, bash: row.bash, probe: spec.probe };
   if (spec.kind === 'manual') return { tryIt };
-  return { basis: { kind: spec.kind, bash: row.bash, probes: [spec.probe, ...(spec.also ?? [])] }, tryIt };
+  return { basis: { kind: spec.kind, bash: [row.bash], probes: [spec.probe, ...(spec.also ?? [])] }, tryIt };
 }
 
 /** The basis of an explanation with `refs` and maybe a `basis` of its own: the manual's sections when it has none. */

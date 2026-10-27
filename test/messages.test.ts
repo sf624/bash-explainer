@@ -16,16 +16,16 @@ describe('the message catalog', () => {
   });
 
   it('marks a note with ℹ and a pitfall with ⚠, in both languages', () => {
-    const note = fact('en', 'exit-modulo', { value: '300', status: 44 });
+    const note = fact('en', 'exit-modulo', { command: 'exit', value: '300', status: 44, ends: 'shell' });
     assert.strictEqual(note.kind, 'note');
     assert.ok(note.text.startsWith('ℹ '));
-    assert.ok(fact('ja', 'exit-modulo', { value: '300', status: 44 }).text.startsWith('ℹ 終了ステータスは'));
+    assert.ok(fact('ja', 'exit-modulo', { command: 'exit', value: '300', status: 44, ends: 'shell' }).text.startsWith('ℹ 終了ステータスは'));
     assert.deepStrictEqual(note.refs, ['3.7.5']);
     const pit = fact('en', 'local-outside-function', { stops: false });
     assert.strictEqual(pit.kind, 'pitfall');
     assert.ok(pit.text.startsWith('⚠ Pitfall: '));
     assert.ok(fact('ja', 'local-outside-function', { stops: false }).text.startsWith('⚠ 落とし穴: '));
-    assert.strictEqual(factOf('en', { id: 'exit-modulo', params: { value: '300', status: 44 } }).text, note.text);
+    assert.strictEqual(factOf('en', { id: 'exit-modulo', params: { command: 'exit', value: '300', status: 44, ends: 'shell' } }).text, note.text);
   });
 
   // The levels of docs/design/note-levels.md: a pitfall is a warning unless it is a caveat; a note is a plain fact
@@ -102,7 +102,7 @@ describe('the message catalog', () => {
     assert.deepStrictEqual([risk.level, risk.label], ['warning', 'Shell injection risk:']);
     // (A warning that names its own problem has no word; a plain fact neither; a note without a mark, an idiom, is a plain fact.)
     assert.deepStrictEqual(marked('en', 'warning', '`[[ ]]` is not POSIX sh'), { text: '⚠ `[[ ]]` is not POSIX sh', level: 'warning', label: '', body: '`[[ ]]` is not POSIX sh' });
-    assert.strictEqual(fact('en', 'exit-modulo', { value: '300', status: 44 }).label, '');
+    assert.strictEqual(fact('en', 'exit-modulo', { command: 'exit', value: '300', status: 44, ends: 'shell' }).label, '');
     assert.deepStrictEqual(plainNote('Idiom: `cmd || true`'), { text: 'Idiom: `cmd || true`', level: 'note', label: '', body: 'Idiom: `cmd || true`' });
     // (A diagnostic is a warning or information: a plain fact is never one, so it is taken as information.)
     assert.deepStrictEqual((['warning', 'info', 'note'] as const).map(severityOf), ['warning', 'info', 'info']);

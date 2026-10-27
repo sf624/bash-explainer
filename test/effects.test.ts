@@ -111,7 +111,7 @@ describe('builtin effects from the spec (src/semantics/effects.ts)', () => {
     const r = spawnSync('bash', ['-c', "'exit' 3; echo no"]);
     assert.deepStrictEqual([r.status, r.stdout.toString()], [3, '']);
     const tree = parser.parse("'exit' 3");
-    assert.deepStrictEqual(statusModel(shellState(tree)).status(descendants(tree.root, ['command'])[0]), { kind: 'given', ends: 'shell', value: 3 });
+    assert.deepStrictEqual(statusModel(shellState(tree)).status(descendants(tree.root, ['command'])[0]), { kind: 'given', ends: 'shell', builtin: 'exit', value: 3 });
   });
   it('says that `exec` with a command in a subshell ends only the subshell', () => {
     assert.strictEqual(bash('(exec true; echo no); echo yes'), 'yes\n');
