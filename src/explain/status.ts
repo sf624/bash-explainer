@@ -18,8 +18,10 @@ export function postfixStatusNote(cx: Explainer, n: SyntaxNode): void {
   const errexit = active === 'on';
   if (op === '--') return cx.note(fact(cx.lang, 'postfix-decrement-status', { v, errexit, stops }), n);
   // The rewrites: an assignment, whose status is 0 whatever the value; `((++v))`, 1 only when the new value is 0 (from
-  // -1); and where `set -e` stops there, the status ignored (`|| true`), in a group where a list would take it in.
-  const rewrite = [replaceNode(n, `${v}=$((${v}+1))`), replaceNode(n, `((++${v}))`), ...(errexit ? [replaceNode(n, inPlaceOf(n, `${n.text} || true`))] : [])];
+  // -1); and where `set -e` stops there, the status ignored (`|| true`), in a group where a list would take it in. No
+  // assignment when the subscript acts (`a[i++]`, `a[$(f)]`): written twice, it would act twice.
+  const acts = /\+\+|--|\$\(|`|<<=|>>=|(^|[^=!<>])=(?!=)/.test(v.slice(v.indexOf('[') + 1));
+  const rewrite = [...(acts ? [] : [replaceNode(n, `${v}=$((${v}+1))`)]), replaceNode(n, `((++${v}))`), ...(errexit ? [replaceNode(n, inPlaceOf(n, `${n.text} || true`))] : [])];
   cx.note(fact(cx.lang, 'postfix-increment-status', { v, errexit, stops, rewrite }), n);
 }
 

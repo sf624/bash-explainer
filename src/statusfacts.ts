@@ -11,7 +11,7 @@ import { canonicalName, lookupCommand } from './dict/aliases';
 import type { FactSpec, Words } from './messages';
 import { featureWorks, type Shell } from './dialect';
 import { outputsOf } from './idioms';
-import { asIf, changed, inPlaceOf, replaceNode, type Rewrite, statementAfter } from './rewrite';
+import { around, asIf, changed, replaceNode, replaceRange, type Rewrite, statementAfter, textBetween } from './rewrite';
 import { commandName } from './semantics/effects';
 import { readAs, STATEMENTS } from './semantics/env';
 import { resolveName } from './semantics/names';
@@ -181,9 +181,12 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
  */
 function splitDeclaration(n: SyntaxNode, rule: Extract<StatusRule, { kind: 'masked' }>): Rewrite {
   const moved = rule.operands.filter((o) => rule.substitutions.some((s) => o.word.startIndex <= s.startIndex && s.endIndex <= o.word.endIndex));
-  // The changes to the text of `n`: each word moved becomes its name; `r` leaves the options (`-r`, `-ri`) of `local` or `declare`.
-  const changes = moved.map((o) => ({ start: o.word.startIndex, end: o.word.endIndex, text: o.name }));
   const args = fields(n, 'argument');
+  // A name a later word assigns again (`local x=$(g) x=1`) moves with it, in order (`local x; x=$(g); x=1`).
+  const again = rule.operands.filter((o) => !moved.includes(o) && o.word.text.includes('=') && moved.some((m) => m.name === o.name && m.word.startIndex < o.word.startIndex));
+  // The changes to the text of `n`: each word moved becomes its name, or goes; `r` leaves the options (`-r`, `-ri`) of `local` or `declare`.
+  const changes = [...moved.map((o) => ({ start: o.word.startIndex, end: o.word.endIndex, text: o.name })),
+    ...again.map((o) => ({ start: args[args.indexOf(o.word) - 1].endIndex, end: o.word.endIndex, text: '' }))];
   const late = rule.readOnly && rule.by !== 'readonly';
   if (late) {
     for (const [i, w] of args.slice(0, args.indexOf(rule.operands[0].word)).entries()) {
@@ -192,14 +195,19 @@ function splitDeclaration(n: SyntaxNode, rule: Extract<StatusRule, { kind: 'mask
       changes.push(left === '-' ? { start: w.startIndex, end: args[i + 1].startIndex, text: '' } : { start: w.startIndex, end: w.endIndex, text: left });
     }
   }
-  const decl = changed(n, changes);
-  const assigns = moved.map((o) => o.word.text).join('; ');
+  const assigns = [...moved, ...again].sort((a, b) => a.word.startIndex - b.word.startIndex).map((o) => o.word.text).join('; ');
   const names = [...new Set(rule.operands.map((o) => o.name))].join(' ');
-  if (!rule.readOnly) return replaceNode(n, inPlaceOf(n, `${decl}; ${assigns}`));
-  const code = late ? `${decl}; ${assigns}; readonly ${names}` : `${assigns}; ${decl}`;
-  // (First in a list, `readonly x=$(cmd) || exit`, the `||` would then test `readonly`, whose status is 0, and in a
-  // group as well: the note shows the code, the fact carries no edits; `x=$(cmd) || exit; readonly x` is to be written.)
-  return n.parent!.type === 'list' && n.parent!.namedChildren[0] === n ? { code, edits: [] } : replaceNode(n, inPlaceOf(n, code));
+  // (The assignments go before the bodies of the here-documents of `n`, if any: `local x <<EOF; x=$(g)⏎…⏎EOF`.)
+  const code = !rule.readOnly ? around(n, changes, '', `; ${assigns}`) : late ? around(n, changes, '', `; ${assigns}; readonly ${names}`) : around(n, changes, `${assigns}; `, '');
+  // (With a name assigned again, the fact carries no edits: a word that reads the name, `x=$x`, would read the new value.)
+  if (again.length) return { code, edits: [] };
+  // (First in a list, `readonly x=$(cmd) || exit`, the `||` would then test `readonly`, whose status is 0: the note shows
+  // the list with the assignment first, `x=$(cmd) || exit; readonly x`, and the fact carries no edits.)
+  if (rule.readOnly && n.parent!.type === 'list' && n.parent!.namedChildren[0] === n) {
+    const rest = textBetween(n, n.parent!).slice(n.endIndex - n.startIndex);
+    return { code: late ? `${changed(n, changes)}; ${assigns}${rest}; readonly ${names}` : `${assigns}${rest}; ${changed(n, changes)}`, edits: [] };
+  }
+  return replaceRange(n, n.startIndex, n.endIndex, code);
 }
 
 /**
