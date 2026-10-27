@@ -68,7 +68,7 @@ The prototype was built fast. It has hacks and loosened tests. Two web tests wer
 | tar's operands by mode (src/dict/commands.ts) | Keep | Spec data. Checked with GNU tar (P2). |
 | Pattern or plain comparison in `[[ ]]` (`isPlainWord && !hasGlob` in src/explain/tests.ts; the regex ``/[*?[$`\\'"]/`` in src/reading.ts) | Rewrite | Decided from the word model (`wordMeaning`), not from the text (P2). |
 | `failure-reported-as-success`: a long command named, not cut (src/statusfacts.ts) | Keep | P2. |
-| `failure-reported-as-success`: the no-shebang case | Keep, fix | Kept (decision 8). Landed with oracles.md step 4 (PR_NUMBER): its fix ends with `return 1 2>/dev/null \|\| exit 1`, which returns when the file is sourced and exits when it is run. |
+| `failure-reported-as-success`: the no-shebang case | Keep, fix | Kept (decision 8). Landed with oracles.md step 4 (#453): its fix ends with `return 1 2>/dev/null \|\| exit 1`, which returns when the file is sourced and exits when it is run. |
 | `globMissReason` (src/examples/shellwords.ts) | Keep, test | Each reason checked against bash's globbing (P6). |
 | Pipeline example values (`SAMPLE_VALUES` in src/explain/examples.ts) | Move | A table of names in src/explain/ breaks CLAUDE.md. The values go to the example layer, from `wellKnownVariables` in src/dict/syntax.ts (P6). |
 | "Options only" in src/explain/examples.ts (the regex `/^-[hFEns]+$/`) | Rewrite | Whether grep reads a word as a regex comes from the spec (`lang: 'regex'`, `OptionSpec.whole`), not from the letters (P6). |
@@ -144,7 +144,7 @@ What: facts whose fix is mechanical carry `Rewrite` data (oracles.md 3.2): `fail
 
 Two fixes need care:
 
-- **A file that may be sourced.** `exit 1` there ends the caller's shell. The fix ends only the file: `return` where the file may be sourced, `exit` where it is run. Done in the rewrite data (oracles.md 3.2, PR_NUMBER).
+- **A file that may be sourced.** `exit 1` there ends the caller's shell. The fix ends only the file: `return` where the file may be sourced, `exit` where it is run. Done in the rewrite data (oracles.md 3.2, #453).
 - **`source lib.sh`.** `./lib.sh` still depends on the current directory, which the note warns about (cron starts in `$HOME`). The fix names the script's own directory (`"$(dirname "$0")/lib.sh"`, or a form that holds when the file is itself sourced), or there is no quick fix. B3 decides.
 
 CHANGELOG (New): "Quick fixes for a failure reported as success, `source` that searches `$PATH`, a `grep` pattern from a variable, and a loop over a glob that matches nothing."
