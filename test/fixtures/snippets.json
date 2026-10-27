@@ -1208,6 +1208,7 @@
  "printf '%d\\n' {a,b}",
  "printf '%q' \"$x\"",
  "printf '%q' $'a\\tb'",
+ "printf '%s,'{a..c}",
  "printf '%s\\n' *.txt",
  "printf '%s\\n' ~/x",
  "printf '\\033[1;32m%s\\033[0m\\n' OK",
