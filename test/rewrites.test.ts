@@ -7,6 +7,7 @@
 import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
+import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { factsOf, programs, type Ran, rewrites, run } from './support/rewrites';
 
@@ -34,6 +35,12 @@ describe('the rewrites of `failure-reported-as-success`', () => {
     const [g] = factsOf("bash -c 'for f in *.log; do rm \"$f\"; done'", 'unmatched-glob-runs-once');
     assert.match(g.text, /Start the body with `\[ -e "\$f" \] \|\| continue`, or turn on `shopt -s nullglob` before the loop$/);
     assert.strictEqual(g.rewrite, undefined);
+  });
+  it('are not carried as edits when the right side holds a here-document, whose body the group would cut off', () => {
+    // (`cp a b || { echo x <<EOF⏎body⏎EOF; exit 1; }`: bash 5.2 and 5.3 say "here-document … delimited by end-of-file".)
+    const [f] = factsOf('#!/bin/bash\ncp a b || echo x <<EOF\nbody\nEOF\n', 'failure-reported-as-success');
+    assert.match(f.text, /To pass the failure on, write `… \|\| \{ echo x <<EOF …`$/);
+    assert.strictEqual(f.rewrite, undefined);
   });
   it('are what the note says, which names how the sourced form works', () => {
     const [f] = factsOf('cp a b || { echo a\n  echo b; }', 'failure-reported-as-success');
@@ -149,5 +156,30 @@ describe('the rewrites of `unmatched-glob-runs-once`', () => {
   }
   it('leaves no fact of the same id in the rewritten scripts', () => {
     for (const src of inputs) for (const [, s] of fix(src)) assert.deepStrictEqual(factsOf(s, 'unmatched-glob-runs-once'), [], s);
+  });
+});
+
+describe('the rewrites in a host file', () => {
+  // (Their edits would be offsets in the extracted shell text, and their code in its syntax: `${MSG}` for make's
+  // `$(MSG)`, `$f` for `$$f`; a new line in a `RUN` that a backslash continues ends the instruction.)
+  const facts = (file: string, src: string, line: number) => {
+    const extracted = extractShell(hostKind('', file)!, src);
+    return (explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, src.split('\n'), line, 'en')?.facts ?? [])
+      .filter((f) => f.id === 'failure-reported-as-success' || f.id === 'unmatched-glob-runs-once');
+  };
+  it('are not carried by the facts: in a Dockerfile, a workflow, a Makefile', () => {
+    const cases: [string, string, number, string][] = [
+      ['Dockerfile', 'FROM debian\nRUN cp a b || echo "x"\n', 1, 'failure-reported-as-success'],
+      ['Dockerfile', 'FROM debian\nRUN set -e; \\\n    for f in *.log; do rm "$f"; done\n', 2, 'unmatched-glob-runs-once'],
+      ['.github/workflows/ci.yml', 'on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n          cp a b || echo "x"\n', 6, 'failure-reported-as-success'],
+      ['Makefile', 'MSG = hi\nall:\n\tfor f in *.log; do rm "$$f"; done\n\tcp a b || echo "$(MSG)"\n', 2, 'unmatched-glob-runs-once'],
+      ['Makefile', 'MSG = hi\nall:\n\tfor f in *.log; do rm "$$f"; done\n\tcp a b || echo "$(MSG)"\n', 3, 'failure-reported-as-success'],
+    ];
+    for (const [file, src, line, id] of cases) {
+      const found = facts(file, src, line);
+      assert.deepStrictEqual(found.map((f) => [f.id, f.rewrite]), [[id, undefined]], `${file}: ${src}`);
+    }
+    // (The note still says the fix, in the file's own syntax where the host replaced it: `$(MSG)`.)
+    assert.match(facts('Makefile', 'MSG = hi\nall:\n\tcp a b || echo "$(MSG)"\n', 2)[0].text, /`… \|\| \{ echo "\$\(MSG\)" >&2; exit 1; \}`$/);
   });
 });

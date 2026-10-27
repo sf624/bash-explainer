@@ -81,13 +81,16 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
     .filter(([inShell, file]) => file && inShell !== file);
   const inFile = (text: string) => names.reduce((t, [inShell, file]) => t.split(inShell).join(file), text);
   const noteInFile = <N extends { text: string; body: string }>(n: N): N => ({ ...n, text: inFile(n.text), body: inFile(n.body) });
+  // A fact's rewrites edit the extracted text, at its offsets and in its syntax (`${MSG}` for make's `$(MSG)`, `$f`
+  // for `$$f`, a line a backslash continues in a Dockerfile): not the file. The facts of a host carry none (src/rewrite.ts).
+  const factInFile = ({ rewrite: _r, ...f }: Fact): Fact => noteInFile(f);
   return {
     ...ex,
     items: ex.items.map(token),
     examples: ex.examples.map((e) => (e.anchor ? { ...e, anchor: span(e.anchor) } : e)),
     notes: ex.notes.map(inFile),
     noteInfo: ex.noteInfo.map(noteInFile),
-    ...(ex.facts ? { facts: ex.facts.map(noteInFile) } : {}),
+    ...(ex.facts ? { facts: ex.facts.map(factInFile) } : {}),
     ...(ex.anchors ? { anchors: ex.anchors.map((a) => ({ ...a, text: inFile(a.text), span: span(a.span) })) } : {}),
     ...(ex.reading ? { reading: reading(ex.reading) } : {}),
   };
