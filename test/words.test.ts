@@ -404,6 +404,11 @@ describe('words: fields', () => {
     assert.deepStrictEqual(fieldsOf('shopt -s extglob; x="!(*)"; echo $x', '$x').fields, ['!(*)']);
     assert.deepStrictEqual(fieldsOf('shopt -s extglob; x="!(*.txt)"; echo $x', '$x').fields, ['c.log', 'empty', 'sub']);
     assert.deepStrictEqual(fieldsOf('shopt -s extglob; x="!(a)*"; echo $x', '$x'), {});
+    // The files are those of the current directory: a pattern from the root is matched by bash in its own directory
+    // (bash: `/dev/null /dev/null`), and is not decided from them.
+    assert.strictEqual(execFileSync('bash', ['-c', 'D=; echo $D/dev/nul? /dev/nul[l]']).toString(), '/dev/null /dev/null\n');
+    assert.deepStrictEqual([fieldsOf('D=; echo $D/dev/nul?', '$D/dev/nul?'), fieldsOf('echo /dev/nul[l]', '/dev/nul[l]')], [{}, {}]);
+    assert.deepStrictEqual(fieldsOf('echo ./*.log', './*.log').fields, ['./c.log']);
   });
 
   it('gives one field, or none, where bash does not split', () => {
