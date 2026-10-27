@@ -12,7 +12,7 @@ import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellw
 import { patsubMiscounts } from '../bracket';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
-import { ansiCValue, decodedText, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
+import { ansiCValue, decodedSlice, decodedText, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, sameInEveryLocale, substring } from './chars';
 import { bracedWords, braceStep, wordAlternatives } from './brace';
@@ -612,9 +612,9 @@ class Evaluator {
         const ps = n.children.map((c) => (c.named ? this.pieces(c, quoted) : plain(c.type)));
         return ps.every((p) => p) ? (ps as Piece[][]).flat() : undefined;
       }
-      case 'raw_string': return [{ text: n.text.slice(1, -1), quoted: true, expanded: false }];
+      case 'raw_string': return [{ text: decodedText(n).slice(1, -1), quoted: true, expanded: false }];
       case 'ansi_c_string': {
-        const v = ansiCValue(n.text.slice(2, -1));
+        const v = ansiCValue(decodedText(n).slice(2, -1));
         return v === undefined || !sameInEveryLocale(v) ? undefined : [{ text: v, quoted: true, expanded: false }];
       }
       case 'translated_string': return this.pieces(n.namedChildren[0], quoted);
@@ -622,7 +622,7 @@ class Evaluator {
       case 'heredoc_body': {
         // A quoted delimiter: the body is text as it is.
         const start = n.parent!.children.find((c) => c.type === 'heredoc_start')!.text;
-        return /['"\\]/.test(start) ? [{ text: n.text, quoted: true, expanded: false }] : this.inner(n, n.startIndex, n.endIndex, /\\([$`\\\n])/g);
+        return /['"\\]/.test(start) ? [{ text: decodedText(n), quoted: true, expanded: false }] : this.inner(n, n.startIndex, n.endIndex, /\\([$`\\\n])/g);
       }
       case 'simple_expansion': case 'expansion': return this.expansion(n, quoted);
       case 'command_substitution': {
@@ -631,7 +631,7 @@ class Evaluator {
         return v === undefined || !substitutionNames(n).every((x) => this.source.builtinRuns(x, n)) ? undefined : [{ text: v, quoted, expanded: true }];
       }
       case 'arithmetic_expansion': {
-        const inner = n.text.replace(/^\$(?:\(\(|\[)/, '').replace(/(?:\)\)|\])$/, '');
+        const inner = decodedText(n).replace(/^\$(?:\(\(|\[)/, '').replace(/(?:\)\)|\])$/, '');
         const v = this.source.arith ? this.source.arith(n) : evalArith(inner);
         return v === undefined ? undefined : [{ text: String(v), quoted, expanded: true }];
       }
@@ -648,7 +648,7 @@ class Evaluator {
     let at = from;
     // (The text is taken as one piece: a backslash before a newline may end one string_content and the newline start the next.)
     const flush = (end: number): void => {
-      if (end > at) out.push({ text: n.text.slice(at - n.startIndex, end - n.startIndex).replace(escapes, (_, c: string) => (c === '\n' ? '' : c)), quoted: true, expanded: false });
+      if (end > at) out.push({ text: decodedSlice(n, at - n.startIndex, end - n.startIndex).replace(escapes, (_, c: string) => (c === '\n' ? '' : c)), quoted: true, expanded: false });
     };
     for (const c of n.namedChildren) {
       if (c.type === 'string_content' || c.type === 'heredoc_content') continue;
@@ -670,7 +670,7 @@ class Evaluator {
       const v = this.variable(name, n);
       return v === null ? this.unset(out) : v === undefined ? undefined : out(v);
     }
-    const p = n.startPosition.row === n.endPosition.row ? parseExpansion(n.text) : undefined;
+    const p = n.startPosition.row === n.endPosition.row ? parseExpansion(decodedText(n)) : undefined;
     if (!p || p.subscript !== undefined) return undefined;
     if (p.prefix === '!') {
       if (p.op) return undefined;

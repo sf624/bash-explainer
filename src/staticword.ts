@@ -117,6 +117,11 @@ export function substitutionNames(n: SyntaxNode): string[] {
  * backquote around the node, the outermost first.
  */
 export function decodedText(n: SyntaxNode): string {
+  return decodedSlice(n, 0, n.text.length);
+}
+
+/** What bash reads of `n.text.slice(from, to)`, as `decodedText`: the characters of that part of the source it keeps. */
+export function decodedSlice(n: SyntaxNode, from: number, to: number): string {
   const levels: boolean[] = [];
   for (let p = n.parent; p; p = p.parent) {
     if (p.type !== 'command_substitution' || p.children[0]?.type !== '`') continue;
@@ -125,7 +130,19 @@ export function decodedText(n: SyntaxNode): string {
     while (q && q.type !== 'string' && q.type !== 'command_substitution') q = q.parent;
     levels.unshift(q?.type === 'string');
   }
-  return levels.reduce((text, inDouble) => text.replace(inDouble ? /\\([$`\\"])/g : /\\([$`\\])/g, '$1'), n.text);
+  if (!levels.length) return n.text.slice(from, to);
+  // The offsets in `n.text` of the characters bash keeps.
+  let kept = Array.from({ length: n.text.length }, (_, i) => i);
+  for (const inDouble of levels) {
+    const escapable = inDouble ? '$`\\"' : '$`\\';
+    const next: number[] = [];
+    for (let k = 0; k < kept.length; k++) {
+      if (n.text[kept[k]] === '\\' && k + 1 < kept.length && escapable.includes(n.text[kept[k + 1]])) k++;
+      next.push(kept[k]);
+    }
+    kept = next;
+  }
+  return kept.filter((i) => i >= from && i < to).map((i) => n.text[i]).join('');
 }
 
 /** A tilde prefix bash expands: `parts[part].text.slice(start, end)` (`~`, `~+`, `~user`), at the start or after `=` or `:`. */
@@ -361,7 +378,8 @@ export interface Literal {
 
 /** The literal text inside a raw string, plain double-quoted string, plain word, or a concatenation of those. */
 export function literalContent(a: SyntaxNode, lang?: EmbeddedLang): Literal | undefined {
-  if (a.type === 'raw_string') return { text: a.text.slice(1, -1), base: 1 };
+  // (In backquotes, `'a\$b'` is `a$b`: bash removes the backslash first, and the characters no longer sit one to one.)
+  if (a.type === 'raw_string') return decodedText(a) === a.text ? { text: a.text.slice(1, -1), base: 1 } : undefined;
   // `echo -e "\e[1m"`: the shell keeps a backslash before any character but `$`, a backtick, `"` and `\`.
   if (lang === 'echo') {
     return a.type === 'string' && a.namedChildren.every((c) => c.type === 'string_content') && !/[$`]|\\[\\"\n]/.test(a.text) ? { text: a.text.slice(1, -1), base: 1 } : undefined;
