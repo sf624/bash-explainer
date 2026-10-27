@@ -602,9 +602,17 @@ function argumentAssignment(cx: Explainer, a: SyntaxNode, command: string): Toke
   if (!m) return undefined;
   const [, name, op] = m;
   const value = a.text.slice(m[0].length);
-  const split = wordAt(cx, a)?.steps.find((g) => g.kind === 'split')?.applies;
+  const word = wordAt(cx, a);
+  const split = word?.steps.find((g) => g.kind === 'split')?.applies;
   const what = op === '+=' ? cx.s(`変数 \`${name}\` に \`${value}\` を追記する`, `Append \`${value}\` to the variable \`${name}\``)
     : cx.s(`変数 \`${name}\` に \`${value}\` を代入する`, `Assign \`${value}\` to the variable \`${name}\``);
+  // (In POSIX mode, after `command`, bash expands it as an assignment: the word model's context, `assignmentAfterCommand`.)
+  if (word?.context === 'declaration-assignment') {
+    return cx.tok(a, 'assignment', cx.s(
+      `${what}（\`${command}\` がこの語を代入として読む）。POSIX モードの bash は、\`command\` の後でもこの語を代入として展開する（単語分割もグロブ展開もしない）`,
+      `${what} (\`${command}\` reads the word as an assignment). In POSIX mode, bash expands it as an assignment after \`command\` too (no word splitting or globbing)`,
+    ), a.type === 'concatenation' ? cx.sub(a).flatMap((t) => t.children) : []);
+  }
   return cx.tok(a, 'assignment', cx.s(
     `${what}（\`${command}\` がこの語を代入として読む）。ただし bash にとっては普通の引数で、代入ではない（コマンド名が \`${command}\` そのものではないため）${split ? '。クォートしない展開は単語分割とグロブ展開を受ける' : ''}`,
     `${what} (\`${command}\` reads the word as an assignment). To bash it is an ordinary argument, not an assignment, since the command name is not \`${command}\` itself${split ? ': an unquoted expansion in it is split and globbed' : ''}`,

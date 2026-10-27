@@ -16,7 +16,7 @@ import { ansiCValue, decodedSlice, decodedText, elementClose, plainWords, stackT
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, sameInEveryLocale, substring } from './chars';
 import { bracedWords, braceStep, wordAlternatives } from './brace';
-import { DECLARATIONS } from './effects';
+import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
 import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 import { changedByBash, setAtStart } from './vars';
@@ -382,9 +382,9 @@ function optionsOf(st: ShellState, shell?: Shell): WordOptions {
 /** The meaning of a word where it runs; `whole`: also its `value` and `failure` (the walk's conditions need neither). */
 function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: Shell | undefined, whole = true): WordMeaning {
   // A subscript of an associative array is a key; of an indexed one (or one not known as associative), arithmetic. (So
-  // is a value in the list of an associative array.)
+  // is a value in the list of an associative array.) In POSIX mode, `command export x=$v` assigns as `export` does.
   const sub = found === 'subscript-indexed' ? nodes[0].parent! : undefined;
-  const context: WordContext = sub && attribute(st, field(sub, 'name')!.text, 'A') === 'on' ? 'subscript-assoc' : found.startsWith('array-element') && attribute(st, field(nodes[0].parent!.parent!, 'name')!.text, 'A') === 'on' ? 'array-element-assoc' : found;
+  const context: WordContext = sub && attribute(st, field(sub, 'name')!.text, 'A') === 'on' ? 'subscript-assoc' : found.startsWith('array-element') && attribute(st, field(nodes[0].parent!.parent!, 'name')!.text, 'A') === 'on' ? 'array-element-assoc' : found === 'argument' && option(st, 'set', 'posix') === 'on' && assignmentAfterCommand(nodes[0]) ? 'declaration-assignment' : found;
   const { posix, glob, ifs, braceOpt } = optionsOf(st);
   const rule = CONTEXTS[context];
   const shape = shapeOf(nodes);

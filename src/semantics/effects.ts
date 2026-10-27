@@ -8,13 +8,31 @@ import { argWordFor } from '../argv/words';
 import type { Shell } from '../dialect';
 import { ALIAS_NAME, builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
-import { field, type SyntaxNode } from '../syntax/tree';
+import { field, fields, type SyntaxNode } from '../syntax/tree';
 
 /**
  * The names of the declaration builtins, whose operands declare names (`declaresNames`): `declare`, `typeset`, `local`,
  * `export`, `readonly`. Their words may be assignments (`declare x=1`).
  */
 export const DECLARATIONS: ReadonlySet<string> = new Set(Object.keys(builtins).filter((name) => declaresNames(builtins[name])));
+
+/**
+ * Whether the word `w`, an argument of a command written `command [command…] NAME …` (unquoted words; NAME a declaration
+ * builtin or `alias`) after NAME, is an assignment word (`x=$v`, `y+=~/a`): in POSIX mode, bash expands it as one, as if
+ * NAME were the command's name (no splitting or globbing). `command -p`, `command --` and `builtin` do not keep it.
+ * Checked with bash 5.2 and 5.3 (test/reading-manual-ch6-modes.test.ts).
+ */
+export function assignmentAfterCommand(w: SyntaxNode): boolean {
+  // (An argument's parent is its command, which has a name.)
+  const c = w.parent!;
+  if (field(c, 'name')!.text !== 'command') return false;
+  const args = fields(c, 'argument');
+  let k = 0;
+  while (args[k]?.text === 'command') k++;
+  const name = args[k]?.text;
+  const first = w.type === 'concatenation' ? w.namedChildren[0] : w;
+  return !!name && (DECLARATIONS.has(name) || name === 'alias') && args.indexOf(w) > k && first.type === 'word' && /^[A-Za-z_]\w*\+?=/.test(first.text);
+}
 
 /** `set` letters and the options they stand for. */
 export const SET_LETTERS: Readonly<Record<string, string>> = {

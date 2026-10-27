@@ -1350,6 +1350,7 @@
  "set -o posix\n. lib.sh",
  "set -o posix\nV=1 :",
  "set -o posix\nalias [=echo\n[ -f c ]",
+ "set -o posix\ncommand command",
  "set -o posix\nexport() { :; }",
  "set -o posix\nkill -SIGTERM 1; time",
  "set -o posix\nset -Z",
