@@ -211,6 +211,11 @@ describe('basis: what an explanation rests on', () => {
     'underscore-after-assignment': ['a=1; echo "$_"', 0, '$_'],
     'columns-from-environment': ['echo "$COLUMNS"', 0, '$COLUMNS'],
     'rematch-empty-after-failure': ['echo "$BASH_REMATCH"', 0, '$BASH_REMATCH'],
+    'bash-source-file': ['echo "${BASH_SOURCE[0]}"', 0, 'BASH_SOURCE'],
+    'histfile-script': ['echo "$HISTFILE"', 0, '$HISTFILE'],
+    'opterr-default': ['echo "$OPTERR"', 0, '$OPTERR'],
+    'random-seed-repeats': ['RANDOM=7', 0, 'RANDOM=7'],
+    'dot-posix-status': ['set -o posix\n. ./lib.sh', 1, '.'],
     'xtracefd-old-stays-open': ['BASH_XTRACEFD=7', 0, 'BASH_XTRACEFD=7'],
     'funcnest-status': ['FUNCNEST=10', 0, 'FUNCNEST=10'],
     'path-forgets-hash': ['PATH=/x:$PATH', 0, 'PATH=/x:$PATH'],
@@ -243,12 +248,13 @@ describe('basis: what an explanation rests on', () => {
   it('gives the tokens whose text states bash\'s behaviour the basis the audit found, and Reading\'s nodes too', () => {
     const audit: Record<TokenBasisId, string> = {
       'underscore-after-assignment': 'checked', 'columns-from-environment': 'checked', 'rematch-empty-after-failure': 'checked',
+      'bash-source-file': 'checked', 'histfile-script': 'checked', 'opterr-default': 'checked', 'random-seed-repeats': 'checked', 'dot-posix-status': 'checked',
       'xtracefd-old-stays-open': 'differs', 'funcnest-status': 'checked', 'path-forgets-hash': 'checked', 'pwd-variable-only': 'checked',
       'posixly-correct-unset': 'checked', 'local-special-plain': 'checked', 'ignored.LINENO': 'checked', 'ignored.BASH_COMMAND': 'checked',
       'readonly-abandons': 'checked', 'readonly-subshell': 'checked', 'readonly-prefix-runs': 'differs', 'bash-refuses-option': 'checked',
-      'bash-lone-plus': 'checked', 'alias-invalid-name': 'checked', 'alias-no-name': 'checked', 'alias-in-alias-blank': 'checked',
+      'bash-lone-plus': 'checked', 'alias-invalid-name': 'checked', 'alias-no-name': 'checked', 'alias-in-alias-blank': 'differs',
       'array-at-subscript': 'checked', 'export-subscript-refused': 'checked', 'declare-p-subscript': 'checked', 'assoc-missing-subscript': 'checked',
-      'array-brace-value': 'checked', 'assoc-tilde': 'checked', 'kill-posix-sig': 'checked', 'posix-indirect-hash': 'checked',
+      'array-brace-value': 'checked', 'assoc-tilde': 'differs', 'kill-posix-sig': 'checked', 'posix-indirect-hash': 'checked',
       'trap-posix-signal': 'checked', 'time-alone': 'checked', 'arith-syntax-abandons': 'checked',
     };
     assert.deepStrictEqual(Object.fromEntries(Object.entries(TOKEN_BASES).map(([id, spec]) => [id, spec.kind])), audit);

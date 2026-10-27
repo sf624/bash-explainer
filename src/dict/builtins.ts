@@ -260,7 +260,7 @@ const SOURCE_OPTIONS: OptSpec[] = [
 const SOURCE_OPERANDS: Rest = {
   ...args(operand('FILE', '読み込むファイル', 'file to source', { io: 'run', searchesPath: { shopt: 'sourcepath', instead: ['-p'] } }), operand('ARG', 'そのファイルに渡す引数（実行中は $1, $2…になる）', 'arguments passed to it (they are $1, $2… while it runs)')),
   // (A file not found ends a POSIX shell, 6.11: `. ./lib.sh` then runs nothing after it.)
-  inShell: [{ set: ['posix'], spec: {}, special: true, text: tx('POSIX モードなので、ファイルが見つからなければ、対話シェルでないシェル（スクリプト）は終了する（終了ステータス 1）', 'In POSIX mode, a file it does not find ends a shell that is not interactive, as one running a script (status 1)') }],
+  inShell: [{ set: ['posix'], spec: {}, special: true, text: based(tx('POSIX モードなので、ファイルが見つからなければ、対話シェルでないシェル（スクリプト）は終了する（終了ステータス 1）', 'In POSIX mode, a file it does not find ends a shell that is not interactive, as one running a script (status 1)'), 'dot-posix-status') }],
 };
 
 /** The signals `kill` knows by name (`-TERM`, `-SIGTERM`), as Linux and the BSDs name them. */

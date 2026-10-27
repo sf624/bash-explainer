@@ -6126,5 +6126,143 @@
       "end.variables.x": "the model does not know that an arithmetic syntax error abandons the rest of the line",
       "end.variables.y": "the model does not know that an arithmetic syntax error abandons the rest of the line"
     }
+  },
+  {
+    "id": "random-seed",
+    "manual": "5.2",
+    "snippet": "RANDOM=7; a=$RANDOM; RANDOM=7; b=$RANDOM",
+    "note": "the same seed gives the same numbers",
+    "try": {
+      "code": "bash -c 'RANDOM=7; echo $RANDOM $RANDOM; RANDOM=7; echo $RANDOM $RANDOM'",
+      "output": "19344 26956\n19344 26956",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"19344\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"19344\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "bash-source-top",
+    "manual": "5.2",
+    "snippet": "f=${BASH_SOURCE[0]}",
+    "note": "${BASH_SOURCE[0]} outside a function is the file running",
+    "try": {
+      "code": "bash -c 'cat > s.sh <<\"EOF\"\necho \"${BASH_SOURCE[0]}\"\nEOF\nbash s.sh'",
+      "output": "s.sh",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "f": {
+            "attrs": "-",
+            "value": "\"SCRIPT\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "histfile-script",
+    "manual": "5.2",
+    "snippet": "h=${HISTFILE-unset}",
+    "note": "a shell running a script keeps no history: HISTFILE is unset, and so is the option history",
+    "try": {
+      "code": "bash -c 'echo \"HISTFILE=${HISTFILE-unset}\"; shopt -po history'",
+      "output": "HISTFILE=unset\nset +o history",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "h": {
+            "attrs": "-",
+            "value": "\"unset\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "opterr-default",
+    "manual": "5.1",
+    "snippet": "o=$OPTERR; OPTERR=2; getopts a v -z",
+    "note": "OPTERR is 1 at start, and getopts prints its messages unless it is 0",
+    "try": {
+      "code": "bash -c 'echo \"OPTERR=$OPTERR\"; OPTERR=2; getopts a o -z; echo \"status $?\"'",
+      "output": "OPTERR=1\nbash: illegal option -- z\nstatus 0",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "OPTERR": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "OPTIND": {
+            "attrs": "i",
+            "value": "\"2\""
+          },
+          "o": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"?\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: illegal option -- z"
+    },
+    "gaps": {
+      "end.variables.OPTARG": "the model does not follow what `getopts` sets (an option it does not know unsets OPTARG)"
+    }
+  },
+  {
+    "id": "dot-posix",
+    "manual": "6.11",
+    "snippet": "set -o posix; . ./nofile; y=1",
+    "note": "in POSIX mode, a file . does not find ends the script, status 1",
+    "try": {
+      "code": "bash -c 'bash -c \"set -o posix; . ./nofile; echo not reached\" 2>/dev/null; echo \"status $?\"'",
+      "output": "status 1",
+      "bash": [
+        "5.2",
+        "5.3"
+      ]
+    },
+    "facts": {
+      "status": 1,
+      "stderr": "SCRIPT: line 1: ./nofile: No such file or directory"
+    }
   }
 ]
