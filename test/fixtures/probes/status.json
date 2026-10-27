@@ -1284,5 +1284,131 @@
       "ran": [],
       "status": 1
     }
+  },
+  {
+    "id": "funsub-errexit",
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "v=${ false; @PROBE:a@; }; @PROBE:b@; false; @PROBE:c@",
+    "note": "set -e is off in ${ cmd; }, and on again after it (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a",
+        "b"
+      ],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "shopt -s inherit_errexit; v=${ false; @PROBE:a@; }; @PROBE:b@",
+    "note": "with inherit_errexit, set -e stops the shell in ${ cmd; } (bash 5.3)",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "v=${ @PROBE:a@; return 3; @PROBE:b@; }; @PROBE:c@",
+    "note": "an assignment has the status of ${ cmd; }, which return gives (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 3
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "errexit": false,
+    "snippet": "v=${ @PROBE:a@; exit 4; }; @PROBE:b@",
+    "note": "exit in ${ cmd; } ends the shell (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 4
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "errexit": false,
+    "snippet": "for i in 1 2; do v=${ break; }; @PROBE:a@; done; @PROBE:b@",
+    "note": "break in ${ cmd; } leaves the loop around it (bash 5.3)",
+    "facts": {
+      "ran": [
+        "b"
+      ],
+      "status": 0
+    },
+    "gaps": "the evaluator does not run `break`"
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "errexit": false,
+    "snippet": "v=${| @PROBE:a@; REPLY=1; return 2; }; [ -z \"${v#1}\" ] && @PROBE:b@",
+    "note": "${| cmd; } gives REPLY also after return (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a",
+        "b"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "errexit": false,
+    "snippet": "a-b() { @PROBE:a@; }; a-b; @PROBE:b@",
+    "note": "in POSIX mode, bash 5.2 refuses a function name that is not an identifier, and exits (5.3 accepts it: the next row)",
+    "gaps": "the model reads the definition as bash 5.3 does (docs/design/bash-versions.md, 3.4): bash 5.2 in POSIX mode refuses the name, and exits",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: `a-b': not a valid identifier"
+    }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "errexit": false,
+    "bash": "5.3",
+    "snippet": "a-b() { @PROBE:a@; }; a-b; @PROBE:b@",
+    "note": "in POSIX mode, bash 5.3 accepts a function name that is not an identifier (bash 5.3)",
+    "facts": {
+      "ran": [
+        "a",
+        "b"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "snippet": "false; true; v=$(false) w=$?; @PROBE:a@",
+    "note": "in POSIX mode, a command of assignments alone has the status of its last command substitution",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "bash": "5.3",
+    "snippet": "false; true; v=$(false) w=$?; @PROBE:a@",
+    "note": "the same in bash 5.3 (bash 5.3)",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
   }
 ]

@@ -13,15 +13,14 @@ import { patsubMiscounts } from '../bracket';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
 import { ansiCValue, decodedText, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
-import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, sameInEveryLocale, substring } from './chars';
 import { bracedWords, braceStep } from './brace';
 import { DECLARATIONS } from './effects';
-import { STATEMENTS } from './env';
 import { resolveName } from './names';
 import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 import { changedByBash, setAtStart } from './vars';
-import { ARITH, underscoreValue, unreliableNames } from './wordsites';
+import { ARITH, changesDirectory, underscoreValue, unreliableNames } from './wordsites';
 
 export { underscoreValue, unreliableNames };
 
@@ -513,6 +512,8 @@ export interface ValueSource {
   builtinRuns(name: string, at: SyntaxNode): boolean;
   /** The value of the arithmetic expansion `n`, when it is known (the walk's arithmetic); without it, of a constant expression only. */
   arith?(n: SyntaxNode): bigint | undefined;
+  /** What the `${| …; }` `n` gives (its `REPLY` at the end, bash 5.3), when it is known. */
+  reply?(n: SyntaxNode): string | undefined;
 }
 
 /** The values the walk's conditions read, and the shell the walk is of (bash when absent). */
@@ -552,6 +553,9 @@ class ModelValues implements ValueSource {
     }
     return v.value;
   }
+
+  /** (Not for the values Meaning shows: `REPLY` is not one the decisions trust.) */
+  reply = (n: SyntaxNode): string | undefined => (this.trusted ? undefined : this.model.reply(n));
 
   builtinRuns(name: string, at: SyntaxNode): boolean {
     const r = resolveName(this.model, name, at.namedChildren[0]);
@@ -609,8 +613,8 @@ class Evaluator {
       }
       case 'simple_expansion': case 'expansion': return this.expansion(n, quoted);
       case 'command_substitution': {
-        // (`$(true)` prints nothing, unless `true` is a function, an alias or a program here.)
-        const v = staticWordValue(n);
+        // (`$(true)` prints nothing, unless `true` is a function, an alias or a program here; `${| …; }` gives its `REPLY`.)
+        const v = substitutionForm(n) === '${|' ? this.source.reply?.(n) : staticWordValue(n);
         return v === undefined || !substitutionNames(n).every((x) => this.source.builtinRuns(x, n)) ? undefined : [{ text: v, quoted, expanded: true }];
       }
       case 'arithmetic_expansion': {
@@ -865,16 +869,6 @@ function sourceValue(source: SyntaxNode, model: StateModel, env: WordEnv | undef
   if (expanding.size >= MAX_SOURCE_DEPTH) return undefined;
   const v = fieldsAt(source, model, env, new Set([...expanding, source]), trusted).fields?.[0];
   cache.set(source, v);
-  return v;
-}
-
-const cdCache = new WeakMap<SyntaxNode, boolean>();
-/** Whether the script changes its directory anywhere (`cd`, `pushd`, `popd`): the model does not follow it. */
-function changesDirectory(n: SyntaxNode): boolean {
-  let root = n;
-  while (root.parent) root = root.parent;
-  let v = cdCache.get(root);
-  if (v === undefined) cdCache.set(root, (v = descendants(root, ['command']).some((c) => ['cd', 'pushd', 'popd'].includes(field(c, 'name')?.text ?? ''))));
   return v;
 }
 

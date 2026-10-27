@@ -15,7 +15,7 @@ import { writeEffect } from '../vars';
 import { testSpec } from '../names';
 import { type WalkSource, wordIn } from '../words';
 import { redirectionMayFail, safeRedirect } from '../redirects';
-import { ArithError, NAME, SUBSTITUTIONS } from './shared';
+import { ArithError, changesWords, NAME, SUBSTITUTIONS } from './shared';
 import type { Walker } from './walker';
 
 const INTEGER_TESTS = new Set(['-eq', '-ne', '-lt', '-le', '-gt', '-ge']);
@@ -97,11 +97,11 @@ export class WalkConditions {
 
   /**
    * The status of the simple command `n` run from `st`, when known: `true`, `:` and `false` (also as the value of a
-   * variable: `$debug`), `test`. Not with prefix assignments (one may fail), a redirection that may fail, or a word
-   * whose value is not known (its expansion may fail).
+   * variable: `$debug`), `test`. Not with prefix assignments (one may fail), a redirection that may fail, a word
+   * whose value is not known (its expansion may fail), or a `${ …; }`, which changes what the words after it read.
    */
   simpleStatus(n: SyntaxNode, st: ShellState): number | undefined {
-    if (!this.w.bash || prefixAssignments(n).length || !fields(n, 'redirect').every((r) => this.safe(r))) return undefined;
+    if (!this.w.bash || prefixAssignments(n).length || !fields(n, 'redirect').every((r) => this.safe(r)) || changesWords(n)) return undefined;
     const name = wordIn(field(n, 'name')!.namedChildren[0], st, this.values(st), 'fields', this.ifsFollowed(st));
     // (The walk builds the state that `resolveName` reads (src/semantics/names.ts), so it cannot ask it: it looks at
     // the functions and the `enable -n` of `st` itself. An alias does not get here: the walk runs its text instead,
@@ -170,7 +170,7 @@ export class WalkConditions {
       case 'negated_command': return after.status === undefined ? undefined : Number(after.status === 0);
       case 'redirected_statement': return fields(n, 'redirect').every((r) => this.safe(r)) ? after.status : undefined;
       case 'extended_test': {
-        const v = this.w.bash && n.namedChildren.length === 1 ? this.condExpr(n.namedChildren[0], st) : undefined;
+        const v = this.w.bash && n.namedChildren.length === 1 && !changesWords(n) ? this.condExpr(n.namedChildren[0], st) : undefined;
         return v === undefined ? undefined : Number(!v);
       }
     }
@@ -403,7 +403,7 @@ export class WalkConditions {
   caseRuns(n: SyntaxNode, items: readonly SyntaxNode[], st: ShellState): number[] | undefined {
     const nocase = option(st, 'shopt', 'nocasematch');
     const { value: runs, reads } = this.reads((): number[] | undefined => {
-      const word = this.w.bash && !this.w.blind && (nocase === 'off' || nocase === 'default') ? wordIn(field(n, 'value')!, st, this.values(st), 'value') : undefined;
+      const word = this.w.bash && !this.w.blind && (nocase === 'off' || nocase === 'default') && ![field(n, 'value')!, ...items.flatMap((i) => fields(i, 'value'))].some(changesWords) ? wordIn(field(n, 'value')!, st, this.values(st), 'value') : undefined;
       if (word === undefined) return undefined;
       const out: number[] = [];
       for (let i = 0; i < items.length;) {

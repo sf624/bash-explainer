@@ -4282,5 +4282,387 @@
       "status": 0,
       "stderr": "SCRIPT: line 1: PPID: readonly variable"
     }
+  },
+  {
+    "id": "funsub-keeps",
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "x=0; y=${ x=1; f() { :; }; set -u; shopt -s extglob; echo out; }",
+    "note": "${ cmd; } runs in the shell itself: what it sets stays (bash 5.3)",
+    "facts": {
+      "end": {
+        "shopt": {
+          "extglob": true
+        },
+        "set": {
+          "nounset": true
+        },
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"out\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "funsub-scope",
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "v=${ local l=1; declare d=2; declare -g g=3; m=4; local -; set -f; }; f() { local q=1; w=${ local q=2; r=$q; }; s=$q; }; f",
+    "note": "${ cmd; } is a scope of its own, as a function body is: local and declare make locals, local - local options (bash 5.3)",
+    "facts": {
+      "end": {
+        "variables": {
+          "g": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "m": {
+            "attrs": "-",
+            "value": "\"4\""
+          },
+          "r": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "s": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "w": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "valsub-reply",
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "REPLY=outer; z=${| REPLY=hi; w=2; }; u=${| :; }; t=${| local REPLY=loc; }; e=${| unset REPLY; }",
+    "note": "${| cmd; } gives its REPLY, local to it and unset at the start (bash 5.3)",
+    "facts": {
+      "end": {
+        "variables": {
+          "REPLY": {
+            "attrs": "-",
+            "value": "\"outer\""
+          },
+          "e": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "t": {
+            "attrs": "-",
+            "value": "\"loc\""
+          },
+          "u": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "w": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"hi\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "id": "funsub-return",
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "f() { v=${ x=1; return 3; x=2; }; s=$?; y=1; }; f; z=${ return; k=1; }",
+    "note": "return ends ${ cmd; }, also in a function, which goes on (bash 5.3)",
+    "facts": {
+      "end": {
+        "variables": {
+          "s": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "set -e; v=${ set +e; }\n@PROBE:a@\nset +e; v=${ set -e; }\n@PROBE:b@\nshopt -s inherit_errexit; v=${ set -e; }",
+    "note": "bash turns errexit off in ${ cmd; } and gives it back after, unless inherit_errexit is on (bash 5.3)",
+    "facts": {
+      "a": {
+        "set": {
+          "errexit": true
+        },
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        }
+      },
+      "b": {
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        }
+      },
+      "end": {
+        "shopt": {
+          "inherit_errexit": true
+        },
+        "set": {
+          "errexit": true
+        },
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "for i in 1 2 3; do v=${| REPLY=x; n=$i; local l=1; break; }; done",
+    "note": "break in ${ cmd; } leaves the loop around it, and its locals and REPLY are restored (bash 5.3)",
+    "gaps": {
+      "end.variables.v": "bash makes the assignment, then leaves the loop; the model takes the path of the `break` from both the state at it and the one after the statement, of which bash runs only some"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "i": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "n": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"x\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "v=${ x=1; : $(( 1 / 0 )); x=2; }; y=3",
+    "note": "an expansion error ends ${ cmd; }, not the line around it (bash 5.3)",
+    "facts": {
+      "end": {
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"3\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: 1 / 0 : division by 0 (error token is \"0 \")"
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "x=; : ${x:-${ y=1; }}; x=1; : ${x:-${ z=1; }}; [[ -n x || ${ w=1; } ]]; case a in a) ;; ${ q=1; }) ;; esac",
+    "note": "a ${ cmd; } bash may not expand: in the word of ${x:-…}, on the right of || in [[ ]], in a pattern after the first (bash 5.3)",
+    "gaps": {
+      "end.variables.y": "bash may not expand it (the word of ${x:-…}, the right of || in [[ ]], a pattern after the first): what it sets may be",
+      "end.variables.z": "bash may not expand it (the word of ${x:-…}, the right of || in [[ ]], a pattern after the first): what it sets may be",
+      "end.variables.w": "bash may not expand it (the word of ${x:-…}, the right of || in [[ ]], a pattern after the first): what it sets may be",
+      "end.variables.q": "bash may not expand it (the word of ${x:-…}, the right of || in [[ ]], a pattern after the first): what it sets may be"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "set -e; v=${ w=${ set +e; }; }\n@PROBE:a@\n[ -n \"$HOME\" ] && shopt -s inherit_errexit; v=${ set +e; }",
+    "note": "errexit given back after a ${ cmd; } in one, and with inherit_errexit on some paths only (bash 5.3)",
+    "gaps": {
+      "end.shopt.inherit_errexit": "$HOME comes from the environment: the condition is not known",
+      "end.set.errexit": "inherit_errexit is on on some paths only: errexit after ${ set +e; } may be off or on"
+    },
+    "facts": {
+      "a": {
+        "set": {
+          "errexit": true
+        },
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "w": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        }
+      },
+      "end": {
+        "shopt": {
+          "inherit_errexit": true
+        },
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "w": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "true ${ x=1; }; [[ ${ y=1; } == \"\" ]]; case ${ z=1; } in *) ;; esac; for i in ${ u=1; }; do :; done; ${ k=1; } true",
+    "note": "what ${ cmd; } sets in the words of a command, a test, a case and a for stays (bash 5.3)",
+    "gaps": {
+      "end.variables.i": "the words of the loop are not known: it may run"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "k": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "u": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "source /dev/null; for i in 1 2; do v=${ x=$i; break; }; done; v=${ : $(( 1 / 0 )); y=1; }; (( ${ z=1; echo 1; } ))",
+    "note": "where nothing is trusted, a break or an error in ${ cmd; } may be made or not (bash 5.3)",
+    "gaps": {
+      "end.variables.y": "nothing is trusted (`source`): the error in `$(( 1 / 0 ))` may not happen"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "i": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: 1 / 0 : division by 0 (error token is \"0 \")"
+    }
   }
 ]

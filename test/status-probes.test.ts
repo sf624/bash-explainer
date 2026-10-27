@@ -7,16 +7,17 @@
 // know, a trap) or the model gets wrong has its reason in `gaps`; a gap the model gets right fails too, so that the
 // list stays true. The test reads the table only: it needs no bash.
 import * as assert from 'assert';
+import type { BashVersion } from '../src/bashversion';
 import { evalArith } from '../src/arith';
 import { testSpecAt } from '../src/semantics/names';
 import { statusModel, type StatusModel } from '../src/semantics/status';
 import { shellState, type StateModel } from '../src/semantics/state';
 import { wordFields, type WordEnv } from '../src/semantics/words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { field, fields, type SyntaxNode } from '../src/syntax/tree';
+import { field, fields, substitutionForm, type SyntaxNode } from '../src/syntax/tree';
 import { BOX, FILES, instrument, PROBE_ENV, readProbeTable } from './support/probe';
 
-interface StatusRow { manual: string; snippet: string; posix?: boolean; errexit?: boolean; note?: string; gaps?: string; facts: { ran: string[]; status: number } }
+interface StatusRow { manual: string; snippet: string; posix?: boolean; bash?: BashVersion; errexit?: boolean; note?: string; gaps?: string; facts: { ran: string[]; status: number } }
 
 const ENV: WordEnv = { variables: PROBE_ENV, pwd: BOX, files: FILES };
 
@@ -72,13 +73,24 @@ class Run {
     if (this.status.expansionError(n, ENV)) throw new Exit(1);
   }
 
-  /** The command substitutions of `n`, run in order (each in a subshell): the status of the last one (and of each, in `ran`). */
+  /**
+   * The command substitutions of `n`, run in order (each in a subshell; bash 5.3's `${ …; }` in the shell, where
+   * `return` ends it): the status of the last one (and of each, in `ran`).
+   */
   private substitutions(n: SyntaxNode, ran?: Map<SyntaxNode, number>): number | undefined {
     let s: number | undefined;
+    const inShell = (c: SyntaxNode): number => {
+      try {
+        return this.block(c.namedChildren);
+      } catch (e) {
+        if (e instanceof Return) return e.status;
+        throw e;
+      }
+    };
     const visit = (x: SyntaxNode): void => {
       for (const c of x.children) {
         if (c.type === 'command_substitution') {
-          s = this.sub(() => this.block(c.namedChildren));
+          s = substitutionForm(c).startsWith('${') ? inShell(c) : this.sub(() => this.block(c.namedChildren));
           ran?.set(c, s);
         } else if (c.type !== 'subshell' && c.type !== 'compound_statement') visit(c);
       }
@@ -237,7 +249,7 @@ export function evaluate(row: StatusRow): { ran: string[]; status: number } | { 
   // (`bash -e` is `set -e` before the first line: on the same line, so that the lines keep their numbers.)
   const script = `${row.errexit === false ? '' : 'set -e; '}${instrument(row.snippet).script}`;
   const tree = createUnbashParser().parse(script);
-  const state = shellState(tree, 'bash', { posix: row.posix });
+  const state = shellState(tree, 'bash', { posix: row.posix, version: row.bash });
   const run = new Run(state, statusModel(state));
   try {
     const status = run.block(tree.root.namedChildren);
@@ -252,7 +264,7 @@ export function evaluate(row: StatusRow): { ran: string[]; status: number } | { 
 describe('the status model against bash (probes/status.json)', () => {
   const rows = readProbeTable('status') as StatusRow[];
   for (const row of rows) {
-    it(`${row.manual}: ${JSON.stringify(row.snippet)}${row.errexit === false ? ' (no -e)' : ''}${row.posix ? ' (bash --posix)' : ''}`, () => {
+    it(`${row.manual}: ${JSON.stringify(row.snippet)}${row.errexit === false ? ' (no -e)' : ''}${row.posix ? ' (bash --posix)' : ''}${row.bash ? ` (bash ${row.bash})` : ''}`, () => {
       const got = evaluate(row);
       const wrong = 'unknown' in got ? got.unknown : JSON.stringify(got) === JSON.stringify({ ran: row.facts.ran, status: row.facts.status }) ? undefined : `model: ${JSON.stringify(got)}`;
       assert.strictEqual(!!wrong, !!row.gaps, wrong ?? `listed as a gap (${row.gaps}), but the model agrees with bash`);

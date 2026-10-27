@@ -763,6 +763,7 @@ Notes that name a line of the script name the line of the document: where a here
 - ksh93 and mksh have `${ cmd; }`, and mksh has `${| cmd; }` too; for the other shells (`sh`, dash, busybox ash, yash, zsh) they are warnings.
 - In bash 5.3 mode, a `}` right after a simple command (`${ echo a }`) is a warning (`funsubBrace`): bash reads that `}` as an argument of the command, and reports a syntax error. A `return` in `${ …; }` ends the substitution, and `local` in it is no pitfall.
 - Before, both were explained as `$( )`. Reading said that a subshell runs their commands; it now says this shell does (a `$( )` in them still has its subshell).
+- With `bashVersion` 5.3, what they change is followed after them: in `x=0; v=${ x=1; }; if [ "$x" = 1 ]; then echo one; else echo other; fi`, the condition is always true, so `echo other` is faded as code that never runs, and Meaning shows `$x` as `1` after it. A variable made `local` in them, and `REPLY` in `${| cmd; }`, are not kept; `set -e` comes back on after them. `break` or `continue` in them leaves the loop around them once the command is done; an error in an expansion ends only the substitution; one in the redirections of a program runs in that program's process. With 5.2, which stops at them, such a script still decides no condition. Before, a script with one decided no condition and showed no values.
 
 ### `test` and `[` in bash 5.3
 

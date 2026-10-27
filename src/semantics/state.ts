@@ -22,6 +22,7 @@
 // The model is built once per tree (and shell) and cached.
 //
 // The walk is in src/semantics/walk/ (walker.ts and its parts); the state it carries, in src/semantics/shellstate.ts.
+import type { BashVersion } from '../bashversion';
 import type { Shell } from '../dialect';
 import { ancestor, field, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { SET_LETTERS } from './effects';
@@ -113,6 +114,8 @@ export interface StateModel {
    * (src/semantics/values.ts, `expansionValue`).
    */
   settled(n: SyntaxNode): boolean;
+  /** What the `${| …; }` `n` gives (bash 5.3: its `REPLY` at the end), when every walk of it gives the same known text. */
+  reply(n: SyntaxNode): string | undefined;
 }
 
 /** The nested script whose tree each tree is (docs/design/semantics.md, 4.13): `shellState` gives its model. */
@@ -328,7 +331,7 @@ function childModel(script: NestedScript): StateModel {
     const why = w.blind ? undefined : openingBlinds(childOpening(pass.invocation, vars, st.set.get('posix') === 'on'));
     return why ? w.walkAgain(why) : st;
   };
-  return buildModel(script.tree, script.shell, false, script.depth, script.env, start, modelTrusts.get(script.outer));
+  return buildModel(script.tree, script.shell, false, script.depth, script.env, start, modelTrusts.get(script.outer), undefined, undefined, undefined, modelVersions.get(script.outer));
 }
 
 const models = new WeakMap<SyntaxTree, Map<string, StateModel>>();
@@ -448,14 +451,14 @@ export function shebangPosix(root: SyntaxNode): boolean {
  * host.ts, whose options replace the shebang's). Cached per tree. The tree of a string read as a script
  * (`StateModel.script`) has the model of that script: the outer one for `eval`.
  */
-export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean; host?: HostCommands; run?: HostRun } = {}): StateModel {
+export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean; host?: HostCommands; run?: HostRun; version?: BashVersion } = {}): StateModel {
   const owner = owners.get(tree);
   if (owner) return owner.model;
   const host = opts.host ?? NO_HOST;
   const names = Object.keys(host);
   const run = opts.run;
   const posix = opts.posix ?? ((!shell || shell === 'bash') && !run && shebangPosix(tree.root));
-  const key = `${shell ?? 'bash'}${posix ? ' --posix' : ''}${names.length ? ` host:${names.sort().join(' ')}` : ''}${run ? hostRunKey(run) : ''}`;
+  const key = `${shell ?? 'bash'}${posix ? ' --posix' : ''}${names.length ? ` host:${names.sort().join(' ')}` : ''}${run ? hostRunKey(run) : ''}${opts.version === '5.3' ? ' 5.3' : ''}`;
   let byKey = models.get(tree);
   if (!byKey) models.set(tree, (byKey = new Map()));
   const hit = byKey.get(key);
@@ -469,22 +472,24 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
     const st = w.initial(tree.root);
     return { ...st, ...(set?.size ? { set: st.set.withAll(set) } : {}), ...(shopt?.size ? { shopt: st.shopt.withAll(shopt) } : {}) };
   };
-  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, undefined, host, run, { set, shopt, variables: shebang?.variables, others: shebang?.others });
+  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, undefined, host, run, { set, shopt, variables: shebang?.variables, others: shebang?.others }, opts.version);
   byKey.set(key, model);
   return model;
 }
 
 /** What the decisions of each model trust (src/semantics/trust.ts): another shell's model trusts no more than its outer one. */
 const modelTrusts = new WeakMap<StateModel, Trust>();
+/** The bash release each model is of (another bash it starts is of the same one). */
+const modelVersions = new WeakMap<StateModel, BashVersion | undefined>();
 
 /**
  * The model of `tree`, whose root runs in `base`, from the state `start` gives; `depth` levels of strings deep;
  * `outer`: what the model of the script that starts this shell trusts; `host`: as for `shellState`; `opening`: what the
  * shebang starts it with.
  */
-function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening): StateModel {
+function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening, version?: BashVersion): StateModel {
   const scripts = new Scripts(depth);
-  const own = scriptTrust(tree.root, scripts, host, opening);
+  const own = scriptTrust(tree.root, scripts, host, opening, version);
   const trust = outer ? withinTrust(own, outer) : own;
   let w = new Walker(shell, posix, scripts, trust, host, run);
   let initial!: ShellState;
@@ -562,6 +567,11 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     condition: (n) => w.conditions.decision(n),
     dead: (n) => w.runAt(n) !== undefined && !w.live.has(n) && w.everywhere(n),
     settled: (n) => w.everywhere(n),
+    reply(n) {
+      // (None for one the walk did not run.)
+      const all = w.expansions.replies.get(n) ?? [];
+      return all.every((v) => v === all[0]) ? all[0] : undefined;
+    },
     at(n) {
       let run: ShellState | undefined;
       let expand: ShellState | undefined;
@@ -583,5 +593,6 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
   };
   scripts.model = model;
   modelTrusts.set(model, found ? BLIND : trust);
+  modelVersions.set(model, version);
   return model;
 }

@@ -2149,5 +2149,172 @@
       "status": 0,
       "stderr": "SCRIPT: line 1: h: unbound variable"
     }
+  },
+  {
+    "id": "valsub-value",
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "@PROBE:a@ ${| REPLY=hi; } \"${| REPLY='a b'; }\" ${| REPLY='c d'; } \"${| :; }\" x${| REPLY=y; }z",
+    "note": "${| cmd; } gives its REPLY, split and globbed as $( ) is (bash 5.3)",
+    "facts": {
+      "a": [
+        [
+          "hi",
+          "a b",
+          "c",
+          "d",
+          "",
+          "xyz"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "x=1; @PROBE:a@ \"$x\" ${ x=2; } \"$x\"; @PROBE:b@ \"$x\"",
+    "note": "the words after ${ cmd; } are expanded in the state it leaves (bash 5.3)",
+    "gaps": {
+      "a": "the output of a command is not known (`${ x=2; }` prints nothing)"
+    },
+    "facts": {
+      "a": [
+        [
+          "1",
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "x=1; @PROBE:a@ \"${ x=2; }$x\"; y=${| REPLY=v; }; @PROBE:b@ \"$y\"",
+    "note": "in the same word, after it, too (bash 5.3)",
+    "gaps": {
+      "a": "the output of a command is not known (`${ x=2; }` prints nothing)"
+    },
+    "facts": {
+      "a": [
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "v"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "x=1; @PROBE:a@ ${ x=4; } \"${ x=5; }$x\"; @PROBE:b@ \"${| REPLY=(c d); }\"; @PROBE:c@ \"${| read -r <<< e; }\"; @PROBE:d@ \"${| [ -n \"$HOME\" ] && unset REPLY; }\"",
+    "note": "what ${| cmd; } gives when its REPLY is an array, read sets it, or it is unset on some paths (bash 5.3)",
+    "gaps": {
+      "a": "the output of a command is not known (`${ x=4; }` prints nothing)",
+      "b": "the value of an array is not followed",
+      "c": "what `read` reads is not known",
+      "d": "$HOME comes from the environment: REPLY may be unset or empty"
+    },
+    "facts": {
+      "a": [
+        [
+          "5"
+        ]
+      ],
+      "b": [
+        [
+          "c"
+        ]
+      ],
+      "c": [
+        [
+          "e"
+        ]
+      ],
+      "d": [
+        [
+          ""
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.4",
+    "bash": "5.3",
+    "snippet": "f() { v=${| if [ \"$m\" = 1 ]; then REPLY=a; else REPLY=b; fi; }; @PROBE:a@ \"$v\"; }; m=1; f; m=2; f",
+    "note": "${| cmd; } in a function called twice gives two values (bash 5.3)",
+    "gaps": {
+      "a": "each call gives another value: the word is not known"
+    },
+    "facts": {
+      "a": [
+        [
+          "a"
+        ],
+        [
+          "b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "snippet": "false; true; @PROBE:a@ $(false) \"$?\"; v=$(false) @PROBE:b@ \"$?\"",
+    "note": "in POSIX mode, bash 5.2 sets $? at each command substitution (5.3 only in a command of assignments alone: the next row)",
+    "gaps": {
+      "a": "`$?` in a command with a command substitution is not followed (in POSIX mode, bash 5.2 sets it at each substitution, 5.3 only in a command of assignments alone)",
+      "b": "`$?` in a command with a command substitution is not followed (in POSIX mode, bash 5.2 sets it at each substitution, 5.3 only in a command of assignments alone)"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "b": [
+        [
+          "0"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "bash": "5.3",
+    "snippet": "false; true; @PROBE:a@ $(false) \"$?\"; v=$(false) @PROBE:b@ \"$?\"",
+    "note": "in POSIX mode, bash 5.3 sets $? at a command substitution only in a command of assignments alone (bash 5.3)",
+    "gaps": {
+      "a": "`$?` in a command with a command substitution is not followed (in POSIX mode, bash 5.2 sets it at each substitution, 5.3 only in a command of assignments alone)",
+      "b": "`$?` in a command with a command substitution is not followed (in POSIX mode, bash 5.2 sets it at each substitution, 5.3 only in a command of assignments alone)"
+    },
+    "facts": {
+      "a": [
+        [
+          "0"
+        ]
+      ],
+      "b": [
+        [
+          "0"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

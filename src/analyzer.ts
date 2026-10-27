@@ -39,7 +39,7 @@ export class Analyzer {
   explainLine(tree: SyntaxTree, line: number, shell?: Shell, opts: ExplainOptions = {}): LineExplanation {
     const root = tree.root;
     // (`#!/bin/bash --posix` starts bash in POSIX mode: the state reads it.)
-    const state = shellState(tree, shell, { host: opts.hostCommands, run: opts.hostRun });
+    const state = shellState(tree, shell, { host: opts.hostCommands, run: opts.hostRun, version: opts.bashVersion });
     // The walk the context calls back: the dispatch, with this line's context, and a line of a string read as a script.
     const walk: Walk = {
       explain: (n) => explain(cx, n),
