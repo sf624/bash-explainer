@@ -8,11 +8,13 @@ import type { CommandRole } from '../argv/interpret';
 import { specialVariables, wellKnownVariables } from '../dict/syntax';
 import { tx } from '../i18n';
 import { shorten } from '../label';
+import { VARIABLE_SECTIONS } from '../manual';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { type ExecEnv, reachOf, type SlotLink, whereOf } from '../semantics/env';
 import type { Missed } from '../semantics/names';
 import { type NestedScript, plainReads, scriptSourceIndex } from '../semantics/nested';
+import { givenToEveryShell } from '../semantics/vars';
 import { type ExpansionStep, wordMeaning } from '../semantics/words';
 import { isPlainWord, literalContent, staticWordValue } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, readsVariable, type SyntaxNode } from '../syntax/tree';
@@ -229,7 +231,10 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
   if (env.links.some((l) => l.kind === 'slot' && l.assigns.includes('*'))) return;
   for (const { name: v, at: e } of plainReads(script)) {
     const x = st.variables.get(v);
-    if (!x || x.set !== 'on' || wellKnownVariables[v] || specialVariables[v] || script.model.at(e).run.variables.has(v)) continue;
+    // (Not one bash or the environment gives every shell, `$HOME`, nor one the environment usually has that is not
+    // bash's, `$USER`.)
+    const given = Object.hasOwn(VARIABLE_SECTIONS, v) ? givenToEveryShell(v) : !!wellKnownVariables[v];
+    if (!x || x.set !== 'on' || given || specialVariables[v] || script.model.at(e).run.variables.has(v)) continue;
     const exported = x.attrs.x?.state ?? 'off';
     if (variables === 'none') {
       cx.note(remote

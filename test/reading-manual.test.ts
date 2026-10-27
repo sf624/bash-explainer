@@ -3,8 +3,12 @@
 // statement, a parameter or brace expansion and a redirection is a node of its own, and the grouping is bash's own
 // where bash-ast shows it.
 import * as assert from 'assert';
+import * as fs from 'fs';
 import { Analyzer } from '../src/analyzer';
+import { variableAssignments, wellKnownVariables } from '../src/dict/syntax';
+import { VARIABLE_SECTIONS } from '../src/manual';
 import { readingNodes, type ReadingNode } from '../src/reading';
+import { readonlyAtStart } from '../src/semantics/vars';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { ui } from '../src/ui/render';
 import type { SyntaxNode } from '../src/syntax/tree';
@@ -401,5 +405,145 @@ describe('the reading tree as the Bash manual reads the builtins (chapter 4)', (
     assert.match(t('exec cat >log'), /^Redirection applied to `exec cat`/);
     const b = runBash('exec 3>&2 >log 2>&1; echo a; ls /none; cat log >&3', { files: [] });
     assert.match(b.stderr, /^a\nls: cannot access/);
+  });
+});
+
+/** What an assignment to each variable of `variableAssignments` changes, in bash: a script and what it prints. */
+const ASSIGNMENT_PROBES: Record<string, { script: string; stdout?: string | RegExp; stderr?: string | RegExp; files?: string[]; input?: string }> = {
+  CDPATH: { script: 'mkdir -p d/sub; CDPATH=d; cd sub; basename "$PWD"', stdout: /\/d\/sub\nsub\n$/ },
+  HOME: { script: 'HOME=/tmp; cd; pwd; echo ~', stdout: '/tmp\n/tmp\n' },
+  OPTIND: { script: 'set -- -a; getopts a o; getopts a o; echo $?; OPTIND=1; getopts a o; echo "$? $o"', stdout: '1\n0 a\n' },
+  OPTERR: { script: 'set -- -z; OPTERR=0; getopts a o; OPTIND=1; OPTERR=1; getopts a o', stderr: /^[^\n]*illegal option -- z\n$/ },
+  // (An empty entry is the current directory.)
+  PATH: { script: 'hash -p /bin/ls ls; hash -t ls; PATH=$PATH; hash -t ls; printf "#!/bin/sh\\necho mine\\n" > c; chmod +x c; PATH=:/usr/bin:/bin; c', stdout: '/bin/ls\nmine\n', stderr: /hash: ls: not found\n$/ },
+  OLDPWD: { script: 'OLDPWD=/; cd - >/dev/null; pwd', stdout: '/\n' },
+  PWD: { script: 'cd /; PWD=/x; pwd; echo $PWD', stdout: '/\n/x\n' },
+  BASH_ALIASES: { script: 'BASH_ALIASES[ll]="echo hi"; alias ll; unset "BASH_ALIASES[ll]"; alias ll', stdout: "alias ll='echo hi'\nalias ll='echo hi'\n" },
+  BASH_ARGV0: { script: 'BASH_ARGV0=foo; echo $0', stdout: 'foo\n' },
+  BASH_CMDS: { script: 'BASH_CMDS[zz]=/bin/echo; hash -t zz; unset "BASH_CMDS[zz]"; hash -t zz', stdout: '/bin/echo\n/bin/echo\n' },
+  BASH_COMPAT: { script: 'BASH_COMPAT=44; shopt -p compat44', stdout: 'shopt -s compat44\n' },
+  BASH_ENV: { script: 'echo "echo from-env" > e; BASH_ENV=$PWD/e; bash -c "echo run"; export BASH_ENV; bash -c "echo run"', stdout: 'run\nfrom-env\nrun\n' },
+  BASH_XTRACEFD: { script: 'exec 3>t; BASH_XTRACEFD=3; set -x; : hi; set +x; cat t', stdout: '+ : hi\n+ set +x\n', stderr: '' },
+  EXECIGNORE: { script: 'EXECIGNORE="*/ls"; ls / >/dev/null; echo $?', stdout: '127\n' },
+  // (In a script: `bash -c` ends there in bash 5.3.)
+  FUNCNEST: { script: 'printf \'FUNCNEST=3\\nf() { f; }\\ng() { f; echo in; }\\ng || echo or\\necho "status $?"\\n\' > s; "$BASH" s', stdout: 'status 1\n', stderr: /maximum function nesting level exceeded \(3\)/ },
+  GLOBIGNORE: { script: 'GLOBIGNORE="*.o"; echo *; shopt -p dotglob', files: ['.h', 'a.o', 'b'], stdout: '.h b\nshopt -s dotglob\n' },
+  POSIXLY_CORRECT: { script: 'POSIXLY_CORRECT=1; shopt -po posix; unset POSIXLY_CORRECT; shopt -po posix', stdout: 'set -o posix\nset +o posix\n' },
+  PS3: { script: 'PS3="pick: "; select x in a; do echo $x; break; done', input: '1\n', stdout: 'a\n', stderr: '1) a\npick: ' },
+  PS4: { script: "PS4='+$LINENO: '; set -x; :\n:", stderr: '+1: :\n+2: :\n' },
+  RANDOM: { script: 'RANDOM=42; a=$RANDOM; RANDOM=42; b=$RANDOM; [ $a = $b ] && echo same', stdout: 'same\n' },
+  SECONDS: { script: 'SECONDS=100; echo $SECONDS', stdout: '100\n' },
+  TIMEFORMAT: { script: 'TIMEFORMAT=XX%0R; time :; TIMEFORMAT=; time :', stderr: 'XX0\n' },
+  // (A FIFO open for reading and writing: `read` waits, with no writer to end it.)
+  TMOUT: { script: 'mkfifo p; exec 3<>p; TMOUT=1; read x <&3; echo "status $?"', stdout: 'status 142\n' },
+  // (`é` is one character in a UTF-8 locale, two bytes in C.)
+  LANG: { script: 'unset LC_ALL; x=é; LANG=C.UTF-8; echo ${#x}; LANG=C; echo ${#x}', stdout: '1\n2\n' },
+  LC_ALL: { script: 'x=é; LC_ALL=C.UTF-8; echo ${#x}; LC_ALL=C; echo ${#x}', stdout: '1\n2\n' },
+  LC_CTYPE: { script: 'unset LC_ALL; x=é; LC_CTYPE=C.UTF-8; echo ${#x}; LC_CTYPE=C; echo ${#x}; LC_ALL=C.UTF-8; LC_CTYPE=C; echo ${#x}', stdout: '1\n2\n1\n' },
+};
+
+describe('the reading tree as the Bash manual reads the shell variables (chapter 5)', () => {
+  const programs: BashOptions[] = [{}, ...(process.env.BASH_EXPLAINER_BASH53 ? [{ program: process.env.BASH_EXPLAINER_BASH53 }] : [])];
+  const names = Object.keys(VARIABLE_SECTIONS).filter((n) => n !== '_');
+
+  it('cites the section that describes each variable, as the manual lists them (5.1, 5.2)', () => {
+    const doc = '/usr/share/doc/bash/bashref.html';
+    if (fs.existsSync(doc)) {
+      const html = fs.readFileSync(doc, 'utf8');
+      const listed: Record<string, string> = {};
+      for (const [id, section] of [['Bourne-Shell-Variables', '5.1'], ['Bash-Variables', '5.2']]) {
+        const start = html.indexOf(`id="${id}"`);
+        for (const m of html.slice(start, html.indexOf('<hr>', start + 10)).matchAll(/<dt[^>]*>.*?<code[^>]*>([A-Za-z_0-9]+)<\/code>/g)) listed[m[1]] = section;
+      }
+      assert.deepStrictEqual({ ...VARIABLE_SECTIONS }, listed);
+    }
+    for (const name of names) {
+      const section = VARIABLE_SECTIONS[name];
+      const r = reading(`echo $${name} \${${name}}`);
+      assert.deepStrictEqual(find(r, `$${name}`, 'expansion').refs, ['3.5.3', section], name);
+      assert.deepStrictEqual(find(r, name, 'name').refs, [section], name);
+      assert.deepStrictEqual(find(reading(`${name}=1`), name, 'name').refs, [section], name);
+    }
+    // (In arithmetic, and the element of an array of bash's, which is an array's too: 6.7.)
+    assert.deepStrictEqual(find(reading('echo $((RANDOM % 6))'), 'RANDOM', 'name').refs, ['5.2']);
+    assert.deepStrictEqual(find(reading('echo "${BASH_SOURCE[0]}"'), 'BASH_SOURCE[0]', 'name').refs, ['6.7', '5.2']);
+    // (Not a variable of the script's own, nor a special parameter: `$_` is in 5.2, and says what it expands to.)
+    assert.deepStrictEqual(find(reading('echo $x ${y}'), '$x', 'expansion').refs, ['3.5.3']);
+    assert.strictEqual(find(reading('echo $x ${y}'), 'y', 'name').refs, undefined);
+    assert.deepStrictEqual(find(reading('echo $_'), '$_', 'expansion').refs, ['5.2']);
+  });
+
+  it('says what each variable is, and that bash keeps some read-only', () => {
+    for (const name of names) {
+      const text = find(reading(`echo $${name}`), `$${name}`, 'expansion').text!;
+      assert.ok(text.startsWith(wellKnownVariables[name].en + (readonlyAtStart(name) ? ' (read-only)' : '')), `${name}: ${text}`);
+    }
+    // The read-only ones: an assignment fails, and the variable keeps its value; bash goes on (a command after a
+    // prefix assignment runs too).
+    const readonly = names.filter(readonlyAtStart);
+    assert.deepStrictEqual(readonly, ['BASHOPTS', 'BASH_VERSINFO', 'EUID', 'PPID', 'SHELLOPTS', 'UID']);
+    for (const name of readonly) assert.strictEqual(find(reading(`${name}=1`), `${name}=1`, 'assignment').text, `\`${name}\` is read-only, so this assignment fails and its value stays`);
+    assert.match(explain('UID=0').notes.join('\n'), /The variable `UID` is read-only, so this assignment fails \(`readonly variable`\) and `UID` keeps its value/);
+    assert.match(find(reading('readonly x=1\nx=2', 1), 'x=2', 'assignment').text!, /^`x` is read-only/);
+    // (Not the declaration that makes it read-only.)
+    assert.doesNotMatch(readingNodes(reading('readonly x=1')).map((n) => n.text ?? '').join('\n'), /read-only, so/);
+    for (const p of programs) {
+      for (const name of readonly) assert.match(runBash(`${name}=1`, p).stderr, new RegExp(`${name}: readonly variable`), name);
+      const b = runBash('u=$UID\nUID=0\necho "$? $((UID == u))"\nUID=0 /bin/echo ran', p);
+      assert.deepStrictEqual(b.stdout, '1 1\nran\n', p.program ?? 'bash');
+    }
+  });
+
+  it('says what an assignment to a variable of bash\'s changes, from there on, as bash does', function () {
+    this.timeout(20000);
+    assert.deepStrictEqual(Object.keys(ASSIGNMENT_PROBES).sort(), Object.keys(variableAssignments).sort());
+    for (const [name, effect] of Object.entries(variableAssignments)) {
+      const src = name === 'BASH_ALIASES' || name === 'BASH_CMDS' ? `${name}[k]=v` : `${name}=v`;
+      assert.ok(find(reading(src), src, 'assignment').text!.endsWith(`. ${effect.en}`), name);
+      // (Not for one command: `PATH=/x cmd`.)
+      assert.ok(!find(reading(`${src} cmd`), src, 'assignment').text!.includes(effect.en), name);
+      for (const p of programs) {
+        const { script, stdout, stderr, files, input } = ASSIGNMENT_PROBES[name];
+        const b = runBash(script, { ...p, files: files ?? [], input });
+        const check = (got: string, want: string | RegExp | undefined, what: string) => {
+          if (typeof want === 'string') assert.strictEqual(got, want, `${name} ${what} ${p.program ?? 'bash'}`);
+          else if (want) assert.match(got, want, `${name} ${what} ${p.program ?? 'bash'}`);
+        };
+        check(b.stdout, stdout, 'stdout');
+        check(b.stderr, stderr, 'stderr');
+      }
+    }
+    // `IFS` has its own text; an assignment bash ignores says so (test/bash-variables.test.ts checks which).
+    assert.match(find(reading('IFS=:'), 'IFS=:', 'assignment').text!, /from here, unquoted expansions are split on `:`/);
+    assert.match(find(reading('BASHPID=1'), 'BASHPID=1', 'assignment').text!, /\. Bash ignores this assignment \(it sets `BASHPID` itself\)$/);
+    // (Also an assignment a declaration builtin reads.)
+    const local = readingNodes(reading('f() { local OPTIND=1; }')).find((n) => n.layer === 'command' && n.kind === 'assignment')!;
+    assert.match(local.text!, /`OPTIND=1` makes it start again at `\$1`$/);
+  });
+
+  it('says that `unset` ends what bash does with a variable of the manual\'s list', () => {
+    const r = explain('unset RANDOM PATH');
+    assert.match(r.notes.join('\n'), /Once unset, `RANDOM` loses what bash does with it: set again later, it is a plain variable/);
+    assert.doesNotMatch(r.notes.join('\n'), /`PATH` loses/);
+    const texts = readingNodes(r.reading!).filter((n) => n.layer === 'command').map((n) => n.text);
+    assert.deepStrictEqual(texts, [
+      'Unset the variable `RANDOM` (it becomes undefined). `RANDOM` also loses what bash does with it (set again, it is a plain variable)',
+      'Unset the variable `PATH` (it becomes undefined)',
+    ]);
+    assert.strictEqual(runBash('unset RANDOM; RANDOM=5; echo $RANDOM $RANDOM').stdout, '5 5\n');
+  });
+
+  it('describes what bash does with a variable as bash does', () => {
+    for (const p of programs) {
+      const b = (script: string, o: BashOptions = {}) => runBash(script, { ...p, ...o }).stdout;
+      // `REPLY`: the line `read` reads with no name, whole, and the line typed to `select`.
+      assert.strictEqual(b('read; echo "[$REPLY]"; select x in a b; do echo "[$x][$REPLY]"; break; done 2>/dev/null', { input: '  a b  \n2\n' }), '[  a b  ]\n[b][2]\n');
+      // `FUNCNAME`: empty outside a function, `main` last in a script; `BASH_SOURCE[0]`: the file that defines the
+      // function running; `BASH_ARGC`: not kept up to date without extdebug (it has only the script's frame).
+      const lib = 'f() { echo "${FUNCNAME[*]} ${BASH_SOURCE[0]##*/} ${#BASH_ARGC[@]}"; }';
+      assert.strictEqual(b(`echo '${lib}' > lib; printf 'echo "[\${FUNCNAME[*]}]"; . ./lib; f x; echo "\${BASH_SOURCE[0]##*/}"' > main; ${p.program ?? 'bash'} main`, { files: [] }), '[]\nf main lib 1\nmain\n');
+      // `BASH_REMATCH`: empty after a match that fails. `BASHPID`: a subshell's own. `PS1`, `HISTFILE`: not set in a script.
+      assert.strictEqual(b('[[ ab =~ (b) ]]; [[ ab =~ z ]]; echo "${#BASH_REMATCH[@]}"; [ $BASHPID = $(echo $BASHPID) ] || echo own; echo "[${PS1-unset}][${HISTFILE-unset}]"'), '0\nown\n[unset][unset]\n');
+    }
   });
 });

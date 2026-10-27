@@ -5,19 +5,19 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { alwaysNumeric, assignsArithmetic, BASH_VARIABLES, changedByBash, changedUnseen, DYNAMIC_SINCE_53, readonlyAtStart, setAtStart } from '../src/semantics/vars';
+import { alwaysNumeric, assignmentIgnored, assignsArithmetic, BASH_VARIABLES, changedByBash, changedUnseen, DYNAMIC_SINCE_53, readonlyAtStart, setAtStart, unsetEndsSpecial } from '../src/semantics/vars';
 
 const [BASH, ENV] = execFileSync('bash', ['-c', 'type -P bash env']).toString().trim().split('\n');
 const names = Object.keys(BASH_VARIABLES);
 const where = (p: (name: string) => boolean): string[] => names.filter(p);
 
 /** The output of `script` run as a file by `bash --norc --noprofile`, with an empty environment (`env -i`: Node adds NODE_V8_COVERAGE to `env: {}` under c8). */
-function cleanRun(script: string): string {
+function cleanRun(script: string, bash = BASH): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-variables-'));
   try {
     const file = path.join(dir, 'script');
     fs.writeFileSync(file, script);
-    return execFileSync(ENV, ['-i', BASH, '--norc', '--noprofile', file], { cwd: dir }).toString();
+    return execFileSync(ENV, ['-i', bash, '--norc', '--noprofile', file], { cwd: dir }).toString();
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -88,5 +88,28 @@ describe('the variables bash sets (src/semantics/vars.ts)', () => {
     // (What bash sets only at start, a script that assigns it keeps: `SHLVL=3` stays 3.)
     for (const n of ['SHLVL', 'HOSTNAME', 'BASH_VERSION', 'BASH_ARGV0', 'OPTERR', 'IFS', 'PATH']) assert.ok(!changedUnseen(n), n);
     assert.strictEqual(cleanRun('SHLVL=3 HOSTNAME=h BASH_VERSION=v BASH_ARGV0=a OPTERR=0; echo $SHLVL $HOSTNAME $BASH_VERSION $BASH_ARGV0 $OPTERR\n'), '3 h v a 0\n');
+  });
+
+  it('marks the variables whose assignment bash ignores, and those that unset loses their special behaviour (5.2)', () => {
+    // Assigned 7 in a function (FUNCNAME is set there) and read on the next lines: bash keeps its own value. (In
+    // bash 5.2 and 5.3.)
+    const ignored = where(assignmentIgnored);
+    assert.deepStrictEqual(ignored, ['BASHPID', 'BASH_COMMAND', 'EPOCHREALTIME', 'EPOCHSECONDS', 'FUNCNAME', 'GROUPS', 'HISTCMD', 'LINENO', 'SRANDOM']);
+    const bashes = [BASH, ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])];
+    const read = (v: string) => `  x=\${${v}}\n  echo "${v} $x"`;
+    for (const bash of bashes) {
+      const kept = cleanRun(`f() {\n${ignored.map((v) => `  ${v}=7\n${read(v)}`).join('\n')}\n}\nf\n`, bash).trim().split('\n');
+      assert.deepStrictEqual(kept.filter((l) => l.endsWith(' 7')), [], bash);
+      // Unset, each of the manual's list is a plain variable: set again, it keeps what is assigned (in a subshell too).
+      const plain = where(unsetEndsSpecial).filter((v) => v !== 'COMP_WORDBREAKS');
+      const out = cleanRun(`f() {\n${plain.map((v) => `  unset ${v}; ${v}=7\n  (echo "${v} \${${v}}")`).join('\n')}\n}\nf\n`, bash);
+      assert.deepStrictEqual(out.trim().split('\n'), plain.map((v) => `${v} 7`), bash);
+    }
+    // (COMP_WORDBREAKS is Readline's, which a script has no use of; the manual lists it.)
+    assert.ok(unsetEndsSpecial('COMP_WORDBREAKS'));
+    // What the special behaviour was, for those whose value also stays when assigned: `SECONDS` counts, `BASH_ARGV0`
+    // sets `$0`, `BASH_ALIASES` and `BASH_CMDS` define aliases and remembered commands, `BASH_SUBSHELL` counts subshells.
+    assert.strictEqual(cleanRun('SECONDS=7; unset BASH_ARGV0 BASH_ALIASES BASH_CMDS BASH_SUBSHELL; BASH_ARGV0=x; BASH_ALIASES[ll]=y; BASH_CMDS[zz]=/bin/echo; BASH_SUBSHELL=0\n'
+      + 'sleep 1.1; echo "$SECONDS $0"; alias ll 2>&1 | grep -c "not found"; hash -t zz 2>&1 | grep -c "not found"; (echo $BASH_SUBSHELL)\n').replace(/ \S*script\n/, ' script\n'), '8 script\n1\n1\n0\n');
   });
 });

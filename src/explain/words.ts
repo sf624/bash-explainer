@@ -18,6 +18,7 @@ import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { attribute, docLine } from '../semantics/state';
+import { readonlyAtStart } from '../semantics/vars';
 import { CONTEXTS, partMeaning, underscoreValue, wordOf } from '../semantics/words';
 import { decodedText, splitElement, staticWordValue, unquoteWord } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, type SyntaxNode } from '../syntax/tree';
@@ -423,7 +424,8 @@ export function varDesc(cx: Explainer, name: string, at?: SyntaxNode): string | 
   if (own) return own;
   if (specialVariables[name]) return cx.t(specialVariables[name]);
   if (/^\d+$/.test(name)) return cx.s(`位置パラメータ: ${name} 番目の引数`, `Positional parameter: argument #${name}`);
-  if (wellKnownVariables[name]) return cx.t(wellKnownVariables[name]);
+  // (A variable bash makes read-only, `UID`: the script cannot assign it, src/semantics/vars.ts.)
+  if (wellKnownVariables[name]) return cx.t(wellKnownVariables[name]) + (readonlyAtStart(name) ? cx.s('（読み取り専用）', ' (read-only)') : '');
   const later = bash53Variable(cx, name);
   if (later) return later;
   // Set by a CI system, unless the script sets it itself (`BRANCH_NAME=…`).

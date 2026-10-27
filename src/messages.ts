@@ -165,6 +165,15 @@ export const MESSAGES = {
   'unset-readonly': failure<{ name: string }>(['4.1', '4.2'], ({ name }) => [
     `変数 \`${name}\` は読み取り専用なので、\`unset\` はエラーになり（\`cannot unset: readonly variable\`、終了ステータス 1）、\`${name}\` は削除されません`,
     `The variable \`${name}\` is read-only, so \`unset\` fails (\`cannot unset: readonly variable\`, status 1) and \`${name}\` stays`]),
+  // (A variable bash makes read-only, `UID`, or the script: `readonly x`. Bash says so and goes on; in POSIX mode an
+  // assignment that is not before a command name ends the script.)
+  'assign-readonly': failure<{ name: string }>(['3.4', '4.1'], ({ name }) => [
+    `変数 \`${name}\` は読み取り専用なので、この代入はエラーになり（\`readonly variable\`）、\`${name}\` の値は変わりません`,
+    `The variable \`${name}\` is read-only, so this assignment fails (\`readonly variable\`) and \`${name}\` keeps its value`]),
+  // (`RANDOM`, `SECONDS` and the other variables the manual says "lose their special properties" when unset.)
+  'unset-ends-special': note<{ name: string }>(['5.2'], ({ name }) => [
+    `\`${name}\` は \`unset\` すると bash の特別な働きがなくなり、あとで値を代入しても普通の変数になります`,
+    `Once unset, \`${name}\` loses what bash does with it: set again later, it is a plain variable`]),
   // (`stops`: in dash and busybox ash, which stop the shell that runs it there, the script, a subshell (which ends
   // only itself, status 2) or a shell not known to be either; bash goes on with status 1.)
   'local-outside-function': pitfall<{ stops: false | 'script' | 'subshell' | 'shell' }>(['4.2'], ({ stops }) => stops === 'script' ? [

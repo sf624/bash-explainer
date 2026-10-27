@@ -345,9 +345,13 @@ function expansionSummary(h: Explainer, n: SyntaxNode): Token {
   }
 
   const opIdx = kids.findIndex((c, i) => i > 0 && c.field === 'operator');
+  // (An array of bash's says what it holds: `${BASH_SOURCE[0]}`, `${PIPESTATUS[@]}`.)
+  const arrayName = targetText.replace(/\[.*/, '');
+  const about = target?.type === 'subscript' ? varDesc(h, arrayName) : undefined;
+  const of = about ? h.s(`（\`${arrayName}\`: ${about}）`, ` (\`${arrayName}\`: ${about})`) : '';
   const base = target?.type === 'subscript' ? h.t(isArrayAll
-    ? { ja: `配列 \`${targetText.replace(/\[.*/, '')}\` の全要素`, en: `all elements of array \`${targetText.replace(/\[.*/, '')}\`` }
-    : { ja: `配列要素 \`${targetText}\``, en: `array element \`${targetText}\`` }) : undefined;
+    ? { ja: `配列 \`${arrayName}\` の全要素`, en: `all elements of array \`${arrayName}\`` }
+    : { ja: `配列要素 \`${targetText}\``, en: `array element \`${targetText}\`` }) + of : undefined;
   if (opIdx > 0) {
     const op = kids[opIdx].type;
     const close = kids[kids.length - 1];
