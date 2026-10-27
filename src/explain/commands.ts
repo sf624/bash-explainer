@@ -37,7 +37,7 @@ import { redirectInfo, redirectParts } from './redirections';
 import { hostCommand, NO_SPEC, resolve, specFor } from './reads';
 import { statusRangeNote } from './status';
 import { shellEffectNote } from './where';
-import { braceWord, braceWords, shown } from './words';
+import { braceWord, braceWords, bracesMaybeOff, shown } from './words';
 
 interface CommandHead {
   /** `res`: what bash runs for the name (src/semantics/names.ts), whose facts the badge shows (src/namefacts.ts). */
@@ -278,8 +278,8 @@ function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedC
   if (braced?.length) {
     const head = commandHeadFor(cx, nameNode, word, braced[0]);
     head.explanation = cx.s(
-      `ブレース展開で \`${word.text}\` は \`${braced.join(' ')}\` になるので、コマンド \`${braced[0]}\` を実行する（\`{ }\` のグループではない）。${head.explanation}`,
-      `Brace expansion turns \`${word.text}\` into \`${braced.join(' ')}\`, so this runs the command \`${braced[0]}\` (it is not a \`{ }\` group). ${head.explanation}`);
+      `ブレース展開で \`${word.text}\` は \`${braced.join(' ')}\` になるので、コマンド \`${braced[0]}\` を実行する（\`{ }\` のグループではない）${bracesMaybeOff(cx, word)}。${head.explanation}`,
+      `Brace expansion turns \`${word.text}\` into \`${braced.join(' ')}\`, so this runs the command \`${braced[0]}\` (it is not a \`{ }\` group)${bracesMaybeOff(cx, word)}. ${head.explanation}`);
     head.nameTokens = [braceWord(cx, word)!];
     return head;
   }

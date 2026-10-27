@@ -182,3 +182,26 @@ describe('a word with a brace in dash', () => {
     assert.ok(!arg('trap {x,EXIT} INT').children.some((c) => c.kind === 'command'));
   });
 });
+
+describe('the token of a brace expansion, as braceexpand is', () => {
+  /** The token of the brace expansion `word` on the last line of `src`. */
+  const braceToken = (src: string, word: string) => allTokens(new Analyzer('en').explainLine(parser.parse(src), src.split('\n').length - 1).items)
+    .find((t) => t.label === word && t.kind === 'expansion')?.explanation;
+  it('is not shown after `set +B`, where bash keeps the word', () => {
+    assert.strictEqual(runBash('set +B; echo {a,b}').stdout, '{a,b}\n');
+    assert.strictEqual(braceToken('set +B\necho {a,b}', '{a,b}'), undefined);
+    assert.strictEqual(runBash('set +B; set -B; echo {a,b}').stdout, 'a b\n');
+    assert.strictEqual(braceToken('set +B; set -B\necho {a,b}', '{a,b}'), 'Brace expansion: `{a,b}` expands to 2 words: `a` `b`');
+    // (A command name: `{echo,hi}` is a command of that name, which bash does not find.)
+    assert.match(runBash('set +B; {echo,hi}').stderr, /\{echo,hi\}: command not found/);
+    assert.doesNotMatch(label('set +B\n{echo,hi}', '{echo,hi}') ?? '', /Brace expansion/);
+  });
+  it('says brace expansion may be off where `set +B` is on some paths', () => {
+    const src = 'if [ -n "$x" ]; then set +B; fi\necho {a,b}';
+    assert.strictEqual(runBash(src.replace('\n', '; ')).stdout, 'a b\n');
+    assert.strictEqual(runBash(`x=1; ${src.replace('\n', '; ')}`).stdout, '{a,b}\n');
+    assert.strictEqual(braceToken(src, '{a,b}'), 'Brace expansion: `{a,b}` expands to 2 words: `a` `b` (where brace expansion is on: `set +B` turns it off on some paths before, and there the word stays as it is)');
+    const head = allTokens(new Analyzer('en').explainLine(parser.parse('if [ -n "$x" ]; then set +B; fi\n{echo,hi}'), 1).items).find((t) => t.kind === 'command' || t.label === '{echo,hi}');
+    assert.match(head?.explanation ?? '', /it is not a `\{ \}` group\) \(where brace expansion is on: `set \+B`/);
+  });
+});
