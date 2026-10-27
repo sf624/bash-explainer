@@ -12,8 +12,8 @@ import { commandName } from '../effects';
 import { lastStageInShell, slotEnvs, STATEMENTS, subshellReasons } from '../env';
 import { NESTED_DEPTH, type NestedScript, type NotRead } from '../nested';
 import {
-  attribute, EMPTY, type Entry, type FunctionState, type Kind, environmentHas, merge, mergeErrexitWhy, mergeOption, NameMap, option,
-  POSIX_ON, reached, type ShellState, sameState, tri, type Tri, unreachable, type VariableState, withoutErrexitWhy, withStatus,
+  attribute, EMPTY, type Entry, type FunctionState, type Kind, environmentHas, merge, NameMap, option,
+  POSIX_ON, reached, type ShellState, sameState, tri, type Tri, unreachable, type VariableState, withStatus,
 } from '../shellstate';
 import type { Scripts } from '../state';
 import { type HostCommands, NO_HOST, type Trust } from '../trust';
@@ -1062,23 +1062,23 @@ export class Walker {
   }
 
   /**
-   * A recursive call of `def` with `st`: when errexit there (or why it has its value) is not what the walk of the body
-   * started with, the entry with errexit as on both paths, for `walkBody` to walk again.
+   * A recursive call of `def` with `st`: the body runs again from that state (`g() { …; d=2; g; …; }` runs it with `d`
+   * as 2), so when the entry the body was walked from does not hold for it, the entry merged with it, for `walkBody`
+   * to walk again.
    */
   private recurse(def: SyntaxNode, st: ShellState): void {
     const entry = this.recursed.get(def) ?? this.bodyEntries.get(def);
     if (!entry) return;
-    const errexit = mergeOption('set', 'errexit', entry.set.get('errexit'), st.set.get('errexit'), this.posix);
-    const { errexitWhy } = mergeErrexitWhy(entry.errexitWhy, st.errexitWhy);
-    if (errexit === (entry.set.get('errexit') ?? 'default') && errexitWhy === entry.errexitWhy) return;
-    this.recursed.set(def, { ...withoutErrexitWhy(entry), set: entry.set.with('errexit', errexit), ...(errexitWhy ? { errexitWhy } : {}) });
+    const both = merge([entry, st], this.posix);
+    if (!sameState(both, entry)) this.recursed.set(def, both);
   }
 
   /**
    * Walks the body of `def` from `entry` (`walkBodyOnce`). A recursive call in it, which is not walked, may run the
-   * body with errexit otherwise (`f() { cmd; x=$(f); }`: bash runs `cmd` with errexit on and off): then the body is
-   * walked again from `entry` with errexit as on both, until that adds nothing. Those walks only add run states to
-   * the nodes of the body: the state after the call is the one of the walk from the call's own entry.
+   * body from another state (`f() { cmd; x=$(f); }`: bash runs `cmd` with errexit on and off; `d=2; g` runs it with
+   * another `d`): then the body is walked again from `entry` merged with that state, until that adds nothing. Those
+   * walks only add run states to the nodes of the body: the state after the call is the one of the walk from the
+   * call's own entry.
    */
   walkBody(def: SyntaxNode, entry: ShellState, frame: Frame): ShellState {
     const saved = new Map(frame.saved);

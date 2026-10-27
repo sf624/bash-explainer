@@ -4002,6 +4002,48 @@
     }
   },
   {
+    "manual": "3.3",
+    "snippet": "g() { @PROBE:a@ \"$d\"; if [ \"$d\" = 1 ]; then d=2; g; return; fi; @PROBE:b@ \"$d\"; }; d=1; g",
+    "none": {
+      "a": "the recursive call runs the body with `d` as 2: its value at the first call is not the only one",
+      "b": "the body of `g` is not walked at its recursive call: what the walk found in it may not hold there (`settled`)"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ],
+        [
+          "2"
+        ]
+      ],
+      "b": [
+        [
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "g() { @PROBE:a@ \"$x\"; if [ \"$d\" = 1 ]; then d=2; g; return; fi; }; x=5; d=1; g",
+    "none": {
+      "a": "the body of `g` is not walked at its recursive call: what the walk found in it may not hold there (`settled`)"
+    },
+    "facts": {
+      "a": [
+        [
+          "5"
+        ],
+        [
+          "5"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
     "manual": "4.2",
     "snippet": "f() { local -I x; @PROBE:a@ \"$x\"; declare -I y=1+1; @PROBE:b@ \"$y\"; }; x=5; declare -i y; f",
     "none": {

@@ -2431,5 +2431,24 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "g() { @PROBE:a@ \"$d\" $x; if [ \"$d\" = 1 ]; then d=2; x=1; g; return; fi; }; d=1; g",
+    "gaps": {
+      "a": "the recursive call runs the body with `d` as 2 and `x` set: the body's state is of both calls"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ],
+        [
+          "2",
+          "1"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

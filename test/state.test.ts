@@ -430,6 +430,10 @@ describe('shell state: function bodies run at their calls', () => {
     assert.deepStrictEqual([attribute(ro, 'x', 'r'), attribute(ro, 'x', 'i')], ['unknown', 'unknown']);
     const kept = end('declare -i x=1; readonly r=1; g() { if [ "$d" = 1 ]; then d=2; g; return; fi; x=2; unset r; declare -i r; }; d=1; g');
     assert.deepStrictEqual([attribute(kept, 'x', 'i'), variable(kept, 'x')?.set, attribute(kept, 'r', 'r'), attribute(kept, 'r', 'i')], ['on', 'unknown', 'on', 'off']);
+    // A recursive call runs the body again from the state at the call: `$d` is 1 there at the first call and 2 at the
+    // second (bash prints `1 5` and `2 5`; test/fixtures/probes/state.json); `x`, which no call changes, stays known.
+    const again = before('g() { echo "$d $x"; if [ "$d" = 1 ]; then d=2; g; return; fi; }; x=5; d=1; g', 'echo "$d $x"');
+    assert.deepStrictEqual([variable(again, 'd')?.set, variable(again, 'd')?.value, variable(again, 'x')?.value], ['on', undefined, '5']);
     // Called with many different states.
     const many = 'f() { set -f; x=1; }\n' + Array.from({ length: 20 }, (_, i) => `v${i}=1; f`).join('\n');
     assert.strictEqual(variable(end(many), 'x')?.set, 'unknown');

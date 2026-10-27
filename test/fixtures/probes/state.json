@@ -4123,6 +4123,76 @@
     }
   },
   {
+    "manual": "3.3",
+    "snippet": "g() { @PROBE:a@; if [ \"$d\" = 1 ]; then d=2; g; return; fi; }; d=1; g",
+    "gaps": {
+      "end.variables.d": "the recursive call of `g` is not walked: what its body changes (`d`) is not known after it"
+    },
+    "facts": {
+      "a": {
+        "variables": {
+          "d": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        },
+        "functions": {
+          "g": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "d": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        },
+        "functions": {
+          "g": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "g() { @PROBE:a@; if [ \"$d\" = 1 ]; then d=2; local y=3; g; return; fi; }; d=1; g",
+    "gaps": {
+      "a.variables.y": "the body runs without `y` at the first call and with the caller's local `y` at the second: its state is of both",
+      "end.variables.d": "the recursive call of `g` is not walked: what its body changes (`d`) is not known after it",
+      "end.variables.y": "the recursive call of `g` is not walked: what its body changes (`y`, local in the call that returns) is not known after it"
+    },
+    "facts": {
+      "a": {
+        "variables": {
+          "d": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"3\""
+          }
+        },
+        "functions": {
+          "g": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "d": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        },
+        "functions": {
+          "g": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
     "manual": "3.7.1",
     "snippet": "a=1 >f b=$a; c=$b; d=0; d=1 2>/dev/null e=$d | cat",
     "facts": {
