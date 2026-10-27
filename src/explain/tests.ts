@@ -13,7 +13,7 @@ import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { expressionHost } from '../refs';
-import { replaceNode, statementBefore, unusedName } from '../rewrite';
+import { replaceNode, type Rewrite, statementBefore, unusedName } from '../rewrite';
 import { STATEMENTS } from '../semantics/env';
 import { option, type ShellState } from '../semantics/state';
 import { isPlainWord, staticWordValue } from '../staticword';
@@ -179,6 +179,57 @@ function numericTestNote(cx: Explainer, op: string, operands: string[], double: 
 /** The statements a test of `[[ ]]` can be a part of, up to the one the rewrite of `regex-backslash-dropped` goes before (not a block's: `{ }`, `( )`). */
 const STATEMENT_PARTS: ReadonlySet<string> = new Set([...STATEMENTS, 'elif_clause', 'else_clause', 'case_item'].filter((t) => t !== 'compound_statement' && t !== 'subshell'));
 
+/** An escape of a regex's text that quote removal drops: `\x` at `at`, and whether it is inside a bracket expression (`[\s]`). */
+interface Escape { at: number; x: string; bracket: boolean }
+
+/** What `\d` and `\D` mean in other regex languages: no POSIX regex has them, even from a variable (`\d` is `d` there). */
+const DIGITS: Record<string, string | undefined> = { d: '[0-9]', D: '[^0-9]' };
+
+/**
+ * The escapes of a `regex` node's text that would be operators of the regex library (glibc's `\b`, `\s`, `\<`…) or are
+ * taken for them (`\d`), but that quote removal makes ordinary characters.
+ */
+function droppedEscapes(text: string): Escape[] {
+  const out: Escape[] = [];
+  let bracket = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '\\') {
+      if (/[bBwWsSdD<>]/.test(text.charAt(i + 1))) out.push({ at: i, x: text[i + 1], bracket });
+      i++;
+    } else if (!bracket && c === '[') {
+      // (A `]` first in a bracket expression, after its `^` if any, is a member, not its end.)
+      bracket = true;
+      if (text.charAt(i + 1) === '^') i++;
+      if (text.charAt(i + 1) === ']') i++;
+    } else if (bracket && c === '[' && text.charAt(i + 1) === ':') {
+      // (A class inside it, `[:space:]`, ends with its own `]`.)
+      i = Math.max(i, text.indexOf(':]', i + 2) + 1);
+    } else if (c === ']') bracket = false;
+  }
+  return out;
+}
+
+/**
+ * The rewrite of `regex-backslash-dropped` for the `regex` node `n`: `\d` and `\D` become `[0-9]` and `[^0-9]`, in
+ * place when they are all there is; else the regex goes in a variable (`re`, or a name the document does not use) before
+ * the statement that holds the test (the outermost one it is part of), and `$re` takes its place in the right side. None
+ * when an escape is inside a bracket expression, where a backslash is no operator, even from a variable.
+ */
+function regexRewrite(n: SyntaxNode, escapes: readonly Escape[]): Rewrite[] {
+  if (escapes.some((e) => e.bracket)) return [];
+  const re = escapes.reduceRight((t, e) => `${t.slice(0, e.at)}${DIGITS[e.x] ?? t.slice(e.at, e.at + 2)}${t.slice(e.at + 2)}`, n.text);
+  const bin = n.parent!.type === 'concatenation' ? n.parent!.parent! : n.parent!;
+  const right = field(bin, 'right')!;
+  const test = (word: string): string => `[[ ${field(bin, 'left')!.text} =~ ${right.text.slice(0, n.startIndex - right.startIndex)}${word}${right.text.slice(n.endIndex - right.startIndex)} ]]`;
+  if (escapes.every((e) => DIGITS[e.x])) return [{ code: test(re), edits: replaceNode(n, re).edits }];
+  let stmt = ancestor(bin, (a) => a.type === 'extended_test')!;
+  while (STATEMENT_PARTS.has(stmt.parent!.type)) stmt = stmt.parent!;
+  const name = unusedName(n, 're');
+  const assign = statementBefore(stmt, `${name}='${re.replace(/'/g, "'\\''")}'`);
+  return [{ code: `${assign.code}; ${test(`$${name}`)}`, edits: [...assign.edits, ...replaceNode(n, `$${name}`).edits] }];
+}
+
 /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
 export function regexNode(cx: Explainer, n: SyntaxNode): Token {
   // (A `regex` node is only the plain right side of `=~`, without quotes: expansions and quotes make other nodes.)
@@ -186,20 +237,12 @@ export function regexNode(cx: Explainer, n: SyntaxNode): Token {
   // (The regex is read by the regex library bash calls, by the rules of an ERE: an embedded language.)
   const tokens = explainRegex(text, 'ere', cx.lang).map((t) => ({ ...fromEmbedded(t, n, { text, offsets }, 'embedded'), language: 'regex' }));
   const js = toJsRegex(text, 'ere');
-  const dropped = [...new Set([...n.text.matchAll(/\\([bBwWsSdD<>])/g)].filter((m) => text !== n.text).map((m) => '\\' + m[1]))];
-  if (dropped.length) {
-    const list = dropped.map((d) => `\`${d}\``).join(cx.s('、', ', '));
-    // The rewrite: the regex goes in a variable (`re`, or a name the document does not use) before the statement that
-    // holds the test (the outermost one it is part of), and `$re` takes its place in the right side.
-    const bin = n.parent!.type === 'concatenation' ? n.parent!.parent! : n.parent!;
-    let stmt = ancestor(bin, (a) => a.type === 'extended_test')!;
-    while (STATEMENT_PARTS.has(stmt.parent!.type)) stmt = stmt.parent!;
-    const name = unusedName(n, 're');
-    const right = field(bin, 'right')!;
-    const rest = `${right.text.slice(0, n.startIndex - right.startIndex)}$${name}${right.text.slice(n.endIndex - right.startIndex)}`;
-    const assign = statementBefore(stmt, `${name}='${n.text.replace(/'/g, "'\\''")}'`);
-    const code = `${assign.code}; [[ ${field(bin, 'left')!.text} =~ ${rest} ]]`;
-    cx.note(fact(cx.lang, 'regex-backslash-dropped', { list, rewrite: [{ code, edits: [...assign.edits, ...replaceNode(n, `$${name}`).edits] }] }), n);
+  const escapes = droppedEscapes(n.text);
+  if (escapes.length) {
+    const list = [...new Set(escapes.map((e) => `\`\\${e.x}\``))].join(cx.s('、', ', '));
+    const digits = escapes.some((e) => DIGITS[e.x]);
+    const others = escapes.some((e) => !DIGITS[e.x]);
+    cx.note(fact(cx.lang, 'regex-backslash-dropped', { list, digits, others, rewrite: regexRewrite(n, escapes) }), n);
   }
   // (A part of a right side with quotes or expansions: the example is the whole regex's, made by `binary`.)
   if (js && n.parent?.type !== 'concatenation') regexExample(cx, js, 'values', field(n.parent!, 'left')!);

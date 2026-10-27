@@ -193,8 +193,8 @@ export const MESSAGES = {
     '`[` has no `]` as its last argument, so it fails when it runs, without evaluating the condition (`[: missing \']\'`, status 2). This is not a syntax error but an error of the command `[` at run time']),
   { kind: 'manual', probe: 'state#bracket-missing' }),
   'bracket-close-glued': withBasis(suggests(failure<{ word: string; rewrite: readonly Rewrite[] }>(['4.1', '3.7.5', '6.4'], ({ word, rewrite: [fix] }) => [
-    `\`${word}\` の \`]\` は単語の一部なので、\`[\` の最後の引数は \`]\` ではありません。実行するとエラーになり、条件は評価されません（\`[: missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります（\`${fix.code}\`）`,
-    `The \`]\` in \`${word}\` is part of the word, so \`[\` has no \`]\` as its last argument: it fails when it runs, without evaluating the condition (\`[: missing ']'\`, status 2). \`]\` needs a space before it (\`${fix.code}\`)`])),
+    `\`${word}\` の \`]\` は単語の一部なので、\`[\` の最後の引数は \`]\` ではありません。実行するとエラーになり、条件は評価されません（\`[: missing ']'\`、終了ステータス 2）。${fix ? `\`]\` の前に空白が要ります（\`${fix.code}\`）` : 'この `]` はエスケープされている（`\\]`）ので、空白を入れても単語の文字のままです。テストの終わりには、空白のあとに別の `]` を書きます'}`,
+    `The \`]\` in \`${word}\` is part of the word, so \`[\` has no \`]\` as its last argument: it fails when it runs, without evaluating the condition (\`[: missing ']'\`, status 2). ${fix ? `\`]\` needs a space before it (\`${fix.code}\`)` : 'This `]` is escaped (`\\]`): with a space before it, it is still a character of the word. End the test with another `]`, after a space'}`])),
   { kind: 'manual', probe: 'state#bracket-missing' }),
   // (4.1: `test` and `[` "return a status of 0 (true) or 1 (false)", and two arguments whose first is no unary
   // operator, or three that are no binary test, `!` or `( )`, are false. bash fails with status 2 ("unary operator
@@ -627,9 +627,16 @@ export const MESSAGES = {
     'bats はテストファイルの `setup_suite` を呼ばず、警告(BW03)を出します。`setup_suite` は、テストと同じディレクトリのファイル `setup_suite.bash` に書きます',
     'bats does not call a `setup_suite` of a test file, and warns (BW03). Put `setup_suite` in the file `setup_suite.bash`, next to the tests']),
   // ---------------------------------------------------------------- words and names
-  'regex-backslash-dropped': suggests(pitfall<{ list: string; rewrite: readonly Rewrite[] }>(['3.5.9', '3.2.5.2'], ({ list, rewrite: [fix] }) => [
-    `\`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）。演算子として使うには変数に入れる（\`${fix.code}\`）か、\`[[:space:]]\` や \`[[:alnum:]_]\` のような書き方にする`,
-    `In \`[[ =~ ]]\`, an unquoted ${list} loses its backslash to quote removal and is an ordinary character, not a regex operator. Keep the regex in a variable (\`${fix.code}\`) or use \`[[:space:]]\` or \`[[:alnum:]_]\` instead`], NO_HEADING)),
+  // (`digits`: `\d` or `\D` among them, which no POSIX regex has, even from a variable; `others`: an operator of glibc's
+  // regexes among them, `\s`, `\b`…, which a variable keeps. `rewrite`: `[0-9]` in place, or the regex in a variable;
+  // none when one is inside a bracket expression, `[\s]`, where a backslash is no operator either way.)
+  'regex-backslash-dropped': suggests(pitfall<{ list: string; digits: boolean; others: boolean; rewrite: readonly Rewrite[] }>(['3.5.9', '3.2.5.2'], ({ list, digits, others, rewrite: [fix] }) => [
+    [`\`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）`,
+      ...(digits ? [`POSIX の正規表現には \`\\d\` がなく、変数に入れても \`d\` という文字になるので、\`\\d\` は \`[0-9]\`、\`\\D\` は \`[^0-9]\` と書く${!others && fix ? `（\`${fix.code}\`）` : ''}`] : []),
+      ...(others ? [fix ? `演算子として使うには変数に入れる（\`${fix.code}\`）か、\`[[:space:]]\` や \`[[:alnum:]_]\` のような書き方にする` : '`[[:space:]]` や `[[:alnum:]_]` のような書き方にする（`[ ]` の中のバックスラッシュは、変数に入れても演算子にならない）'] : [])].join('。'),
+    [`In \`[[ =~ ]]\`, an unquoted ${list} loses its backslash to quote removal and is an ordinary character, not a regex operator`,
+      ...(digits ? [`POSIX regexes have no \`\\d\`: even from a variable it is the letter \`d\`. Write \`[0-9]\` for \`\\d\` and \`[^0-9]\` for \`\\D\`${!others && fix ? ` (\`${fix.code}\`)` : ''}`] : []),
+      ...(others ? [fix ? `Keep the regex in a variable (\`${fix.code}\`) or use \`[[:space:]]\` or \`[[:alnum:]_]\` instead` : 'Use `[[:space:]]` or `[[:alnum:]_]` instead (inside `[ ]`, a backslash is no operator, even from a variable)'] : [])].join('. ')], NO_HEADING)),
   'distro-alias-in-script': pitfall<{ name: string; where: string; what: Words; many: boolean; instead: Words }>(['6.6'], ({ name, where, what, many, instead }) => [
     `\`${name}\` は ${where} が対話シェル用に定義する${what.ja}で、コマンドではありません。ほかの環境にはなく、スクリプトの中では${many ? 'これらの' : 'その'}環境でも使えません（command not found）。${instead.ja}`,
     `\`${name}\` is ${what.en} ${where} define${many ? '' : 's'} for interactive shells, not a command. Other systems lack it, and scripts do not have it even there ("command not found"). ${instead.en}`], SYSTEM_DEPENDENT),
