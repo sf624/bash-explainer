@@ -102,11 +102,11 @@ test/support/argv.ts makes the markers and runs the batch; test/argv.test.ts che
 - **Walls.** As 2.4. Wall 2 does not catch a command named by a path (`/bin/rm`), which bash runs without a PATH search: those rely on wall 1. A marker that runs 50 times in one shell stops that shell, for a loop no recorder ends. Without `systemd-run --user`, the driver sets `ulimit -v`, and `ulimit -u` a few hundred above the user's processes.
 - **Result.** In each environment, 365 commands get a marker; 99 and 209 of them run, with 345 and 676 words the model knows and 11 and 37 it does not. No difference: test/fixtures/argv-known.json pins these counts and lists no finding. The batch takes about half a second.
 
-A first run over the snippets, by hand (the input of step 3: 1,588 snippets that parse, both environments, 13 s), found these differences, left for step 3:
+A first run over the snippets, by hand (the input of step 3: 1,588 snippets that parse, both environments, 13 s), found these differences. The first three were bugs of the model, now fixed; the last two are accepted:
 
-1. Backquotes: bash removes the backslash of `\$`, `` \` `` and `\\` before it reads the command inside (`` x=`eval 'a\$b'` `` runs `eval` with `a$b`); the model keeps `a\$b`.
-2. A recursive function that changes a variable before it calls itself (`g() { if [ "$d" = 1 ]; then d=2; g; return; fi; }; d=1; g`): the model gives `$d` the value 1 in the body, which the second call sees as 2.
-3. A glob in another directory (`$D/*` with `D=''`, `/var/log/*.log`): given the files of the current directory (`WordEnv.files`, which only the tests give), the model takes it as matching nothing and keeps it as written; it should be unknown.
+1. Backquotes: bash removes the backslash of `\$`, `` \` `` and `\\` before it reads the command inside (`` x=`eval 'a\$b'` `` runs `eval` with `a$b`); the model kept `a\$b`. Fixed in #435: the word model reads the text bash reads (`decodedSlice`).
+2. A recursive function that changes a variable before it calls itself (`g() { if [ "$d" = 1 ]; then d=2; g; return; fi; }; d=1; g`): the model gave `$d` the value 1 in the body, which the second call sees as 2. Fixed in #433: a recursive call merges its state into the entry the body is walked again from.
+3. A glob in another directory (`$D/*` with `D=''`, `/var/log/*.log`): given the files of the current directory (`WordEnv.files`, which only the tests give), the model took it as matching nothing and kept it as written; it should be unknown. Fixed in #434: a pattern from the root is not known.
 4. A CR before a LF: the model reads the masked text (`crlf`); bash gives the word with its CR. An accepted difference.
 5. `a\` at the end of the input: unbash keeps the backslash (README Limitations; test/fixtures/bash-ast-known.json).
 
