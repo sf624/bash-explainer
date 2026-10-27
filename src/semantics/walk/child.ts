@@ -1,11 +1,28 @@
 // The state another shell starts with (`bash -c`, docs/design/semantics.md 4.13), for the walk of the shell state
 // (src/semantics/walk/walker.ts): what reaches it from the script's shell, and the options it is started with.
 import { SET_LETTERS } from '../effects';
+import { RESTRICTED_READONLY } from '../vars';
 import { type ExecEnv, reachOf } from '../env';
 import type { FunctionState, OptionState, ShellState, Tri, VariableState } from '../shellstate';
 import type { SyntaxNode } from '../../syntax/tree';
 import { type ChildPass, NAME, passed, passedMemo } from './shared';
 import type { Walker } from './walker';
+
+/**
+ * A restricted shell's start (`bash -r`, `rbash`, `#!/bin/bash -r`: Bash manual 6.10), as set at `at`: `shopt
+ * restricted_shell` is on, and the variables of `RESTRICTED_READONLY` are read-only (with a value bash gives `SHELL`
+ * and `PATH`, and the environment's, if any, to the others). What the restricted shell refuses is said where the
+ * script does it (src/explain/), from this state.
+ */
+export function restrictedStart(st: ShellState, at: SyntaxNode): ShellState {
+  let variables = st.variables;
+  for (const name of RESTRICTED_READONLY) {
+    const v = variables.get(name);
+    const set: Tri = v ? v.set : name === 'SHELL' || name === 'PATH' ? 'on' : 'unknown';
+    variables = variables.with(name, { ...(v ?? { declared: 'on', at }), set, attrs: { ...v?.attrs, r: { state: 'on', at } } });
+  }
+  return { ...st, shopt: st.shopt.with('restricted_shell', 'on'), variables };
+}
 
 /**
  * The state another shell starts with (`bash -c`, docs/design/semantics.md 4.13): the variables of `outer` that
@@ -47,6 +64,7 @@ export function childStart(w: Walker, outer: ShellState, env: ExecEnv, pass: Chi
   };
   // The options it is started with: `-e`, `+x`, `-o pipefail`, `-O extglob` (bash), `--posix`; `-l`, `-i` read startup files.
   let startup = false;
+  let restricted = false;
   for (const { flag, value } of pass.invocation) {
     const on = flag[0] === '-';
     const letter = flag.slice(1);
@@ -55,6 +73,7 @@ export function childStart(w: Walker, outer: ShellState, env: ExecEnv, pass: Chi
     else if (/^[-+]o$/.test(flag) && value) st = value === 'posix' ? w.builtins.setPosix(st, on, at) : { ...st, set: st.set.with(value, on ? 'on' : 'off') };
     else if (/^[-+]O$/.test(flag) && value) st = { ...st, shopt: st.shopt.with(value, on ? 'on' : 'off') };
     else if (SET_LETTERS[letter]) st = { ...st, set: st.set.with(SET_LETTERS[letter], on ? 'on' : 'off') };
+    else if (flag === '-r' || flag === '--restricted') restricted = true;
   }
   // (Then bash turns on the options an exported SHELLOPTS and BASHOPTS name, also those turned off above.)
   inherit('set', reach.options !== 'none');
@@ -72,5 +91,6 @@ export function childStart(w: Walker, outer: ShellState, env: ExecEnv, pass: Chi
     for (const [name, f] of outer.functions) if (!st.functions.has(name)) fns.set(name, { state: 'unknown', def: f.def, exported: 'unknown', readonly: 'off', imported: 'startup' });
     st = { ...st, variables: st.variables.withAll(vars), functions: st.functions.withAll(fns) };
   }
-  return st;
+  // (A restricted shell, `-r`: the restrictions apply after the startup files, 6.10.)
+  return restricted ? restrictedStart(st, at) : st;
 }

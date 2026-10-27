@@ -240,7 +240,7 @@ export const specialVariables: Record<string, Text> = wordTable({
   '$': tx('現在のシェルのプロセスID', 'Process ID of the current shell'),
   '!': tx('最後にバックグラウンド実行したプロセスのID', 'PID of the most recent background job'),
   '0': tx('スクリプト名（またはシェル名）', 'Name of the script or shell'),
-  '-': tx('現在有効なシェルオプションのフラグ', 'Current shell option flags'),
+  '-': tx('今有効なシェルオプションの文字（`set -e` の後なら `e`、対話シェルなら `i` など）', 'The letters of the shell options in effect (`e` after `set -e`, `i` in an interactive shell…)'),
   '_': tx('直前のコマンドの最後の引数', 'Last argument of the previous command'),
 });
 
@@ -289,7 +289,7 @@ export const wellKnownVariables: Record<string, Text> = wordTable({
   CDPATH: tx('`cd` が相対パスのディレクトリを探すディレクトリの一覧（`:` 区切り）', 'Colon-separated list of directories `cd` searches for a relative directory name'),
   MAIL: tx('対話シェルが新着メールを確かめるファイル（`MAILPATH` がないとき）', 'File an interactive shell checks for new mail (when `MAILPATH` is not set)'),
   MAILPATH: tx('対話シェルが新着メールを確かめるファイルの一覧（`:` 区切り）', 'Colon-separated list of files an interactive shell checks for new mail'),
-  PS1: tx('対話シェルのプロンプト（スクリプトを実行するシェルは設定しない）', 'Prompt of an interactive shell (a shell running a script does not set it)'),
+  PS1: tx('対話シェルのプロンプト（対話シェルでないシェルでは、環境から渡されても未設定になる。`[ -z "$PS1" ]` で対話シェルかどうかを調べられる）', 'Prompt of an interactive shell (a shell that is not interactive, as one running a script, leaves it unset, even when the environment gives it: `[ -z "$PS1" ]` tells which it is)'),
   PS2: tx('コマンドが次の行に続くときの、対話シェルのプロンプト（既定は `> `）', 'Prompt of an interactive shell when a command goes on to the next line (`> ` by default)'),
   // 5.2 Bash Variables (the others are above).
   BASH: tx('この bash を起動したフルパス', 'Full path used to run this bash'),

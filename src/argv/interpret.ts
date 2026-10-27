@@ -32,8 +32,11 @@ export type ArgRole =
   | { role: 'cluster'; letters: ArgRole[] }
   /** An option recognized by its form (`kill -TERM`, `head -5`); `open` for `-` and an expansion (`head -$n`). */
   | { role: 'pattern-option'; flag: string; pattern: PatternOption; text: Text; open?: boolean }
-  /** `ambiguous`: the long options a prefix could be (`timeout --v`), which the tool refuses. */
-  | { role: 'unknown-option'; flag: string; part?: Range; value?: ValueRole; ambiguous?: string[] }
+  /**
+   * `ambiguous`: the long options a prefix could be (`timeout --v`), which the tool refuses. `late`: a long option
+   * after a short one, where the parser reads long options only first (`bash -x --posix`, the rule `longFirst`).
+   */
+  | { role: 'unknown-option'; flag: string; part?: Range; value?: ValueRole; ambiguous?: string[]; late?: boolean }
   /** An option whose letters are known only at run time (`-$opts`, `-r$x`): `prefix` is what is known. */
   | { role: 'open-option'; prefix: string }
   | ValueRole
@@ -170,7 +173,7 @@ class Reader {
     for (let i = from; i < end; i++) {
       const w = this.words[i];
       const value = w.value;
-      if (!endOpts && value === '--' && spec.dashDash !== 'literal') {
+      if (!endOpts && (value === '--' || (value === '-' && rules.loneDashEnds)) && spec.dashDash !== 'literal') {
         roles.set(i, { role: 'end-of-options' });
         endOpts = true;
         if (typeof spec.dashDash === 'object') { afterDashes = i + 1; break; }
@@ -403,8 +406,19 @@ class Reader {
     const shift = written.length - text.length;
     const blocked = (o: { unlessMarked?: string }): boolean => !!o.unlessMarked && given.marks.has(o.unlessMarked);
     const mark = (o: { marks?: string }): void => { if (o.marks) given.marks.add(o.marks); };
+    // (`longFirst`, bash: `-login` is `--login` while the long options are read; a long option after a short one is
+    // read as letters, and refused.)
+    const longName = rules.longFirst && !st.shortSeen && !open && !disables && /^-[^-]/.test(text) && findOption(options, '-' + text, false) ? '-' + text : undefined;
+    if (rules.longFirst && !longName) {
+      if (!/^--./.test(text) || disables) st.shortSeen = true;
+      else if (st.shortSeen) {
+        roles.set(i, { role: 'unknown-option', flag: text, late: true });
+        given.flags.push(text);
+        return i;
+      }
+    }
     if (!open) {
-      const exact = findOption(options, text, rules.longPrefixes);
+      const exact = findOption(options, longName ?? text, rules.longPrefixes);
       if (exact) {
         if (blocked(exact)) return -1;
         const role: ArgRole = { role: 'option', flag: written, spec: exact, text: exact.text, ...(disables ? { disables } : {}) };
@@ -602,6 +616,8 @@ interface OptionState {
   guess: boolean;
   /** The options cobra knows while it searches for the subcommand (this level's). */
   search: OptionSpec[];
+  /** With the rule `longFirst`: a word of short options was read, so the long ones are over. */
+  shortSeen?: boolean;
 }
 
 const range = (from: number, to: number): number[] => Array.from({ length: to - from }, (_, k) => from + k);

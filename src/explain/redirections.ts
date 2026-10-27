@@ -10,12 +10,13 @@ import { fdName, networkPathAsFile, networkRedirect, networkTarget, redirects, s
 import { hasGlob } from '../embedded/glob';
 import { type Redirect, simulateRedirects } from '../idioms';
 import { shorten } from '../label';
+import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { field, fields, fileContentsOf, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { isBlockLike, same, skeletal, sortTokens, summaryOf } from './nodes';
-import { globOff, unquotedWord, wordAt } from './reads';
+import { globOff, restrictedAt, unquotedWord, wordAt } from './reads';
 import { braceExpansion } from './words';
 
 /** The operator and destination of a file redirection (`>&-` and `<&-`, which close a descriptor, are `>&` and `<&` to `-`). */
@@ -120,11 +121,18 @@ export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
       'Send stdout to stderr (the usual way to print an error message)');
   }
   const children = dests.filter((d) => !isPlainWord(d)).flatMap((d) => cx.sub(d));
+  // A restricted shell refuses to open a file for output (6.10); duplicating or closing a descriptor is fine (`>&2`, `>&-`).
+  if (OUTPUT.has(op) && !(op === '>&' && /^(\d+-?|-)$/.test(target)) && !/^>&[$`]/.test(op + dest) && restrictedAt(cx, n)) {
+    cx.note(fact(cx.lang, 'restricted-refused', { kind: 'redirect', name: op, word: target }), n);
+  }
   if (dests.length === 1 && unquotedWord(dests[0]) !== undefined && /[*?[{]/.test(dests[0].text)) expl += redirectTargetNote(cx, dests[0]);
   const later = OPENS_FILE.has(op) ? replacedBy(n) : undefined;
   if (later) expl += replacedFile(cx, op, fd, n, dests, later);
   return cx.tok(n, 'redirect', expl, children);
 }
+
+/** The operators that redirect output, which a restricted shell refuses when they open a file (Bash manual 6.10). */
+const OUTPUT: ReadonlySet<string> = new Set(['>', '>|', '<>', '>&', '&>', '>>', '&>>']);
 
 /** The file redirections that open a file on one descriptor, which a later redirection of that descriptor can replace. */
 const OPENS_FILE: ReadonlySet<string> = new Set(['<', '>', '>>', '>|', '<>']);

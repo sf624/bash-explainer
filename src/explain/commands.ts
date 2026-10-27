@@ -6,7 +6,7 @@
 // redirections set up first, the command inside); and the keyword `time`.
 import type { Kind, Span, Token } from '../analyzer-types';
 import type { ArgRole, ArgvParse } from '../argv/interpret';
-import { onlyInFunction } from '../argv/query';
+import { onlyInFunction, restrictedRefusal } from '../argv/query';
 import type { CommandSpec } from '../argv/spec';
 import { argWord } from '../argv/words';
 import { lookupCommand } from '../dict/aliases';
@@ -20,7 +20,7 @@ import { simulateRedirects } from '../idioms';
 import { bracket as bracketLabel, labelText, shorten } from '../label';
 import { fact } from '../messages';
 import { nameInfo } from '../namefacts';
-import { builtinSections } from '../refs';
+import { builtinSections, programSections } from '../refs';
 import { inFunction, processOf, readAs, shellEffectOf } from '../semantics/env';
 import { assignmentsOf, type Missed, type NameResolution, testSpecOf } from '../semantics/names';
 import { docLine, option } from '../semantics/state';
@@ -34,7 +34,7 @@ import type { Explainer } from './context';
 import { commandExampleFor, unreadStdin, wordExample } from './examples';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
 import { redirectInfo, redirectParts } from './redirections';
-import { hostCommand, NO_SPEC, resolve, specFor, unquotedWord } from './reads';
+import { hostCommand, NO_SPEC, resolve, restrictedAt, specFor, unquotedWord } from './reads';
 import { statusRangeNote } from './status';
 import { shellEffectNote } from './where';
 import { bracesHere, braceWord, braceWords, bracesMaybeOff, plainText, shown } from './words';
@@ -231,6 +231,11 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   }
   if (head.kind === 'builtin' && head.spec!.ends === 'function') head.explanation = returnInSubstitution(cx, n) ?? head.explanation;
   const read = readArgs(cx, head.spec, args, head.runs ?? head.name, head.fn);
+  // A restricted shell refuses some calls of builtins, and command names with a `/` (6.10).
+  if ((head.kind === 'builtin' || (head.kind === 'command' && head.name.includes('/'))) && restrictedAt(cx, n)) {
+    const refused = head.kind === 'command' ? {} : restrictedRefusal(head.spec!, read.parse, args.map((a) => staticWordValue(a)));
+    if (refused) cx.note(fact(cx.lang, 'restricted-refused', { kind: head.kind === 'command' ? 'slash' : 'builtin', name: head.name, ...refused }), n);
+  }
   if (tail && head.kind === 'builtin' && replacesShell(head.spec!) && !read.parse.roles.some((r) => r.role.role === 'command')) tail.toShell = true;
   let argToks = read.tokens;
   // `test` and `[` read their words as an expression (src/testexpr.ts), when the name runs one of them.
@@ -412,8 +417,10 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
   const spec = hostCommand(cx, name) ?? lookupCommand(name);
   if (spec) {
     const builtin = !!spec.builtin;
+    // (A builtin's section, or that of a program the manual describes: `bash`, 6.1.)
+    const own = builtin ? builtinSections(name, spec.builtin === 'special') : programSections(name);
     return {
-      name, res: ran, spec, ...testOf(res), kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(builtin ? { refs: builtinSections(name, spec.builtin === 'special') } : {}),
+      name, res: ran, spec, ...testOf(res), kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(own.length ? { refs: own } : {}),
       explanation: builtin && spec.closingOperand // (zsh splits and globs no unquoted variable, but drops one that is empty all the same.)
         ? cx.s(`コマンド \`[\`（\`test\` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、\`[\` と \`]\` の前後に空白が要り、${cx.shell === 'zsh' ? '中の引数はほかのコマンドの引数と同じく展開される（クォートしない変数は、空なら引数ごと消える。`[[ ]]` なら消えない）' : '中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）'}`,
           `Command \`[\` (an alias of \`test\`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so \`[\` and \`]\` need spaces around them, and ${cx.shell === 'zsh' ? 'the arguments inside are expanded as any command\'s are (an unquoted variable that is empty is dropped; `[[ ]]` keeps it)' : 'the arguments inside undergo word splitting and globbing (`[[ ]]` does not)'}`)

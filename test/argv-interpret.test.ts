@@ -253,14 +253,17 @@ describe('argv interpreter: commands of the dictionary', () => {
   });
 
   it("bash -c 'cmd' a b: the command string, `$0`, and the arguments", () => {
-    assert.deepStrictEqual(roles("bash -c 'cmd' a b"), ['-c: -c run the following string as a command', "'cmd': command shell-string", 'a: NAME', 'b: ARG']);
-    assert.deepStrictEqual(roles('bash -ex script.sh -x'), ['-ex: cluster -e exit on error | -x trace commands', 'script.sh: SCRIPT', '-x: ARG']);
-    assert.deepStrictEqual(roles('bash -s a'), ['-s: -s read commands from stdin', 'a: ARG']);
+    const c = '-c read the commands from the first argument after the options (the command string), not from a file or stdin; the arguments after it become `$0`, `$1`…';
+    assert.deepStrictEqual(roles("bash -c 'cmd' a b"), [`-c: ${c}`, "'cmd': command shell-string", 'a: NAME', 'b: ARG']);
+    // (The string is the first operand, also when options follow `-c`: `bash -c -e 'cmd'`.)
+    assert.deepStrictEqual(roles("bash -c -u 'cmd' a"), [`-c: ${c}`, '-u: -u treat unset variables as an error', "'cmd': command shell-string", 'a: NAME']);
+    assert.deepStrictEqual(roles('bash -ux script.sh -x'), ['-ux: cluster -u treat unset variables as an error | -x print each command after expansion (debugging)', 'script.sh: SCRIPT', '-x: ARG']);
+    assert.deepStrictEqual(roles('bash -s a'), ['-s: -s read the commands from stdin (also the default when no operand is left); the operands become `$1`…', 'a: ARG']);
     // `su -c`: the value of `-c` is a shell string.
     // `su -c 'cmd'` and `bash -c 'cmd'`: the same form, a command role with a shell-string slot.
     assert.deepStrictEqual(roles("su -c 'ls' user"), ['-c: -c run the given command with the shell', "'ls': command shell-string of -c", 'user: USER']);
     // `bash +x s.sh`: `+x` is an option (`bash +x /dev/null` exits 0).
-    assert.deepStrictEqual(roles('bash +x s.sh'), ['+x: +x (off) trace commands', 's.sh: SCRIPT']);
+    assert.deepStrictEqual(roles('bash +x s.sh'), ['+x: +x (off) print each command after expansion (debugging)', 's.sh: SCRIPT']);
   });
 
   it('env A=1 cmd: assignments, then the command; the first word that is not one ends the options', () => {

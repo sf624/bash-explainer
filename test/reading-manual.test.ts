@@ -476,7 +476,8 @@ describe('the reading tree as the Bash manual reads the shell variables (chapter
     for (const name of names) {
       const section = VARIABLE_SECTIONS[name];
       const r = reading(`echo $${name} \${${name}}`);
-      assert.deepStrictEqual(find(r, `$${name}`, 'expansion').refs, ['3.5.3', section], name);
+      // (`$PS1` also cites how a startup file tests it, 6.3.2: chapter 6.)
+      assert.deepStrictEqual(find(r, `$${name}`, 'expansion').refs, ['3.5.3', section, ...(name === 'PS1' ? ['6.3.2'] : [])], name);
       assert.deepStrictEqual(find(r, name, 'name').refs, [section], name);
       assert.deepStrictEqual(find(reading(`${name}=1`), name, 'name').refs, [section], name);
     }

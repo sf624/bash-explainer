@@ -23,7 +23,7 @@
 //
 // The walk is in src/semantics/walk/ (walker.ts and its parts); the state it carries, in src/semantics/shellstate.ts.
 import type { BashVersion } from '../bashversion';
-import type { Shell } from '../dialect';
+import { restrictedByName, type Shell } from '../dialect';
 import { ancestor, field, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { SET_LETTERS } from './effects';
 import { EnvModel, type ExecEnv, fileRead, type FileRead, MAIN_SHELL, type SlotLink } from './env';
@@ -35,7 +35,7 @@ import { type MappedText, staticWordValue } from '../staticword';
 import { parser, WalkAgain } from './walk/shared';
 import { type HostCall, type HostRun, hostRunKey } from './walk/host';
 import { Walker } from './walk/walker';
-import { childStart } from './walk/child';
+import { childStart, restrictedStart } from './walk/child';
 
 export {
   attribute, type AliasState, type Attribute, type CommandEntry, defaultOn, type ErrexitWhy, type FunctionState, merge, NameMap, option,
@@ -359,7 +359,7 @@ const models = new WeakMap<SyntaxTree, Map<string, StateModel>>();
  * assigns (`BASH_COMPAT=42 bash`); `others`, what else it gives that the allow-list does not have (`-r`, `--login`,
  * an `env -S` line not read in full).
  */
-interface ShebangStart { posix: boolean; set: Map<string, 'on' | 'off'>; shopt: Map<string, 'on' | 'off'>; variables: Map<string, string>; others: string[] }
+interface ShebangStart { posix: boolean; set: Map<string, 'on' | 'off'>; shopt: Map<string, 'on' | 'off'>; variables: Map<string, string>; others: string[]; restricted: boolean }
 
 /**
  * What the shebang starts bash with: the kernel passes the rest of the line as one argument, so `#!/bin/bash -eu`
@@ -367,25 +367,35 @@ interface ShebangStart { posix: boolean; set: Map<string, 'on' | 'off'>; shopt: 
  * not POSIX mode. Through `env -S` (env splits it, as one word `-S`): `bash --posix` (bash reads its long options
  * before the others), `bash -o posix`, `POSIXLY_CORRECT=… bash`, the letters and `-o` names of `set` (`-e -u`,
  * `-o nounset`), the `-O` names of `shopt`, and the other variables assigned (`BASH_COMPAT=42 bash`). Undefined when
- * the shebang does not start bash.
+ * the shebang does not start bash. `restricted`: `-r`, `--restricted`, or bash as `rbash` (Bash manual 6.10).
  */
 function shebangStart(root: SyntaxNode): ShebangStart | undefined {
   const m = /^#![ \t]*(\S+)[ \t]*([^\n]*?)[ \t]*(?:\n|$)/.exec(root.text);
   if (!m) return undefined;
   const base = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
-  const start: ShebangStart = { posix: false, set: new Map(), shopt: new Map(), variables: new Map(), others: [] };
+  const start: ShebangStart = { posix: false, set: new Map(), shopt: new Map(), variables: new Map(), others: [], restricted: false };
+  // (bash, or bash as `rbash`, which is restricted: the allow-list does not have it.)
+  const bash = (path: string): boolean => {
+    if (restrictedByName(path)) {
+      start.restricted = true;
+      start.others.push('rbash');
+    }
+    return base(path) === 'bash' || restrictedByName(path);
+  };
   const letters = (cluster: string): void => {
     for (const letter of cluster.slice(1)) {
       if (SET_LETTERS[letter]) start.set.set(SET_LETTERS[letter], cluster[0] === '-' ? 'on' : 'off');
       else if (letter !== 'o' && letter !== 'O') start.others.push(`${cluster[0]}${letter}`);
+      if (`${cluster[0]}${letter}` === '-r') start.restricted = true;
     }
   };
   // (A long option: POSIX mode, one that changes nothing here, or one the table does not have: `--debugger`.)
   const long = (option: string): void => {
     if (option === '--posix') start.posix = true;
     else if (!HARMLESS_START.has(option)) start.others.push(option);
+    if (option === '--restricted') start.restricted = true;
   };
-  if (base(m[1]) === 'bash') {
+  if (bash(m[1])) {
     // (Not when bash refuses them: then no option is on, run directly or by `bash script`.)
     if (!m[2] || shebangRefused(root.text)) return start;
     if (/^[-+][a-zA-Z]+$/.test(m[2])) letters(m[2]);
@@ -408,7 +418,7 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
     else start.variables.set(name, value);
   }
   if (words[i]?.startsWith('-')) return { ...start, others: [m[2]] };
-  if (base(words[i] ?? '') !== 'bash') return undefined;
+  if (!bash(words[i] ?? '')) return undefined;
   for (i++; words[i]?.startsWith('--') && words[i] !== '--'; i++) long(words[i]);
   // (Then the short options: each `o` or `O` of a cluster takes the next word, `-ox posix` too.)
   for (; /^[-+][a-zA-Z]+$/.test(words[i] ?? ''); i++) {
@@ -446,7 +456,7 @@ export type ShebangRefusal = { rest: string; why: 'blank' | 'name' | 'shopt' | '
  */
 export function shebangRefused(text: string): ShebangRefusal | undefined {
   const m = /^#![ \t]*(\S+)[ \t]+([-+][^\n]*?)[ \t]*(?:\n|$)/.exec(text);
-  if (!m || m[1].slice(m[1].lastIndexOf('/') + 1) !== 'bash') return undefined;
+  if (!m || (m[1].slice(m[1].lastIndexOf('/') + 1) !== 'bash' && !restrictedByName(m[1]))) return undefined;
   const rest = m[2];
   if (rest.startsWith('--')) return /[ \t]/.test(rest) ? { rest, why: 'long' } : undefined;
   for (const letter of rest.slice(1)) {
@@ -493,7 +503,9 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
   const start = (w: Walker): ShellState => {
     let st = w.initial(tree.root);
     if (aliases) st = { ...st, shopt: st.shopt.withAll(aliases) };
-    return { ...st, ...(set?.size ? { set: st.set.withAll(set) } : {}), ...(shopt?.size ? { shopt: st.shopt.withAll(shopt) } : {}) };
+    st = { ...st, ...(set?.size ? { set: st.set.withAll(set) } : {}), ...(shopt?.size ? { shopt: st.shopt.withAll(shopt) } : {}) };
+    // (`#!/bin/bash -r`, `#!/bin/rbash`: a restricted shell, 6.10.)
+    return shebang?.restricted ? restrictedStart(st, tree.root) : st;
   };
   const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, { read, provides: provider(opts.provided ?? []) }, undefined, host, run, { set, shopt, variables: shebang?.variables, others: shebang?.others }, opts.version);
   byKey.set(key, model);

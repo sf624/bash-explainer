@@ -61,6 +61,26 @@ export function values(parse: ArgvParse, ...names: string[]): GivenValue[] {
   return out;
 }
 
+/**
+ * Whether a restricted shell refuses this call of a builtin (`CommandSpec.restricted`), and the word bash names in its
+ * message (`.: ./f: restricted`, `command: -p: restricted`; none in `cd: restricted`). Undefined when it does not, or
+ * may not: a file whose name is known only at run time (`words`: the values of the words, undefined when not known).
+ */
+export function restrictedRefusal(spec: CommandSpec, parse: ArgvParse, words: readonly (string | undefined)[]): { word?: string } | undefined {
+  const r = spec.restricted;
+  if (!r) return undefined;
+  const option = r.options && givenOptions(parse).find(({ role }) => named(role, r.options!));
+  if ((r.options && !option) || (r.unless && has(parse, ...r.unless))) return undefined;
+  if (r.command && !parse.roles.some(({ role }) => role.role === 'command')) return undefined;
+  if (r.slash) {
+    const value = r.slash === 'operand' ? undefined : values(parse, r.slash)[0];
+    const at = r.slash === 'operand' ? operands(parse)[0]?.word : value?.word;
+    const file = at === undefined ? undefined : words[at]?.slice(value?.at ?? 0);
+    return file?.includes('/') ? { word: file } : undefined;
+  }
+  return r.namesOption ? { word: flagOf(option!.role) } : {};
+}
+
 /** The operands, in order, with their roles; with `name`, only those the spec gives that name (`ARG2`). */
 export function operands(parse: ArgvParse, name?: string): GivenOperand[] {
   const out: GivenOperand[] = [];

@@ -1,4 +1,4 @@
-import { BUILTIN_SECTIONS, VARIABLE_SECTIONS } from './manual';
+import { BUILTIN_SECTIONS, PARAMETER_ALSO, PROGRAM_SECTIONS, VARIABLE_SECTIONS } from './manual';
 import { field, isShebang, type SyntaxNode } from './syntax/tree';
 
 // The sections of the Bash manual (src/manual.ts) a token is about, from its node: a construct, an operator, a
@@ -59,10 +59,17 @@ function redirectSections(n: SyntaxNode): readonly string[] {
  */
 function parameterSections(text: string): readonly string[] {
   const name = text.slice(1);
+  // (`$-` and `$PS1` also cite how a startup file tests them, 6.3.2: `PARAMETER_ALSO`.)
+  const also = PARAMETER_ALSO[name] ? [PARAMETER_ALSO[name]] : [];
   if (/^\d/.test(name)) return ['3.4.1'];
   if (name === '_') return ['5.2'];
-  if (/^[-*@#?$!]/.test(name)) return ['3.4.2'];
-  return ['3.5.3', ...variableSections(name)];
+  if (/^[-*@#?$!]/.test(name)) return ['3.4.2', ...also];
+  return ['3.5.3', ...variableSections(name), ...also];
+}
+
+/** The sections of the manual about a program, by its name (`bash`, `/bin/rbash`): 6.1, and 6.10 for `rbash`. */
+export function programSections(name: string): readonly string[] {
+  return PROGRAM_SECTIONS[name.slice(name.lastIndexOf('/') + 1)] ?? [];
 }
 
 /** The section of chapter 5 that describes the variable `name` (`PATH`: 5.1), if bash's manual lists it there. */

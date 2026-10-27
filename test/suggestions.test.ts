@@ -53,6 +53,7 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'unset-function-and-variable': 'none',
   'unset-readonly': 'none',
   'assign-readonly': 'none',
+  'restricted-refused': 'none',
   'unset-ends-special': 'none',
   'local-outside-function': 'none',
   'posix-special-function-name': 'prose',
@@ -163,6 +164,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 16, scenario: 25, prose: 12, none: 43 });
+      { mechanical: 16, scenario: 25, prose: 12, none: 44 });
   });
 });

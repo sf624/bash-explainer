@@ -85,6 +85,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `bracket-missing-close`, `bracket-close-glued`, `test-malformed` | `[` or `test` fails every time it runs (status 2), and the condition is never evaluated. |
 | `unset-readonly`, `unset-function-and-variable` | `unset` fails every time (status 1), and nothing is unset. |
 | `assign-readonly` | The assignment fails every time, and bash abandons the rest of the command it is in (or, before a command name, runs the command without it). |
+| `restricted-refused` | In a restricted shell (`#!/bin/bash -r`, `bash -r -c`, `rbash`), bash refuses the builtin call, the command name with a `/` or the output redirection every time (status 1), and does nothing. |
 | `local-outside-function`, when the file runs as a script (a shebang, a host's step, a `bash -c` string) | `local` fails every time outside a function. |
 | `posix-special-function-name` | bash stops the script at the definition. |
 | `alias-not-expanded-in-script` | The alias is "command not found" in a script. Said where bash surely expands no alias: a shebang, a host's step, a `bash -c` string, or after `shopt -u expand_aliases` (the state's `expand_aliases`, which starts `on` in a README's code blocks and with `bash -i`, and not known in a file with no shebang: src/semantics/state.ts, `StateModel.read`). |

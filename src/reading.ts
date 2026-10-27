@@ -251,7 +251,12 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     }
     switch (c.type) {
       case 'command': return [simple(c, layer)];
-      case 'comment': return [shellNode(c, layer, isShebang(c) ? 'shebang' : 'comment', [])];
+      case 'comment': {
+        if (!isShebang(c)) return [shellNode(c, layer, 'comment', [])];
+        // (The shebang: what its interpreter reads the word after it as, `#!/bin/bash -eu`, which the kernel passes.)
+        const reader = /^#![ \t]*(\S*)/.exec(c.text)![1];
+        return [shellNode(c, layer, 'shebang', readParts(tokenAt(spanOf(c))!.children, false, reader.slice(reader.lastIndexOf('/') + 1)))];
+      }
       case 'variable_name': case 'special_variable_name': return [shellNode(c, layer, 'name', [])];
       case 'command_list': return [construct(c, layer, 'list')];
       // (Nested from the left: `a && b || c` is an OR list whose first part is the AND list `a && b`.)
