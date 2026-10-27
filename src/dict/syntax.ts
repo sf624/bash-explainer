@@ -424,10 +424,11 @@ export const variableEmptied: Record<string, Text> = wordTable({
 });
 
 /**
- * The variables the environment of a shell almost always has, exported: those login sets (`HOME`, `USER`, `LOGNAME`,
- * `SHELL`, `PATH`), the terminal's `TERM`, and the locale's `LANG` (src/semantics/shellstate.ts, `environmentHas`).
+ * The variables the environment of a shell almost always has, exported, that are not bash's own (those are marked in
+ * src/semantics/vars.ts, `BashVariable.environment`: `HOME`, `PATH`, `SHELL`, `LANG`, `TMPDIR`, `TERM`): the `USER`
+ * and `LOGNAME` login sets (src/semantics/shellstate.ts, `environmentHas`).
  */
-export const usualEnvironment: ReadonlySet<string> = new Set(['HOME', 'PATH', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'LANG']);
+export const usualEnvironment: ReadonlySet<string> = new Set(['USER', 'LOGNAME']);
 
 /**
  * The variables that bash 5.3 sets or reads (docs/design/bash-versions.md, 3.3; checked: test/bash53.test.ts). To

@@ -5,10 +5,9 @@
 // function or a builtin that a program cannot run, a variable that a new shell does not get.
 import type { ExplainOptions, Span, Token } from '../analyzer-types';
 import type { CommandRole } from '../argv/interpret';
-import { specialVariables, wellKnownVariables } from '../dict/syntax';
+import { specialVariables } from '../dict/syntax';
 import { tx } from '../i18n';
 import { shorten } from '../label';
-import { VARIABLE_SECTIONS } from '../manual';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { droppedBy, type ExecEnv, reachOf, type SlotLink, whereOf } from '../semantics/env';
@@ -234,9 +233,9 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
   if (env.links.some((l) => l.kind === 'slot' && l.assigns.includes('*'))) return;
   for (const { name: v, at: e } of plainReads(script)) {
     const x = st.variables.get(v);
-    // (Not one bash or the environment gives every shell, `$HOME`, nor one the environment usually has that is not
-    // bash's, `$USER`.)
-    const given = Object.hasOwn(VARIABLE_SECTIONS, v) ? givenToEveryShell(v) : !!wellKnownVariables[v];
+    // (Not one bash gives every shell, `$PS4`, `$FUNCNAME`. One the environment usually has, `$HOME`, is said nothing
+    // of below, unless a link on the way drops it: `env -i`.)
+    const given = givenToEveryShell(v);
     // (Set by the string itself before the read, or given to it exported, by the slot or this shell: not one passed
     // with an export not known, from the environment.)
     const own = script.model.at(e).run.variables.get(v);

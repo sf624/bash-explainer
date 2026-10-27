@@ -25,8 +25,8 @@ export interface BashVariable {
   /** The text the script assigns to it is read as arithmetic, as for `declare -i` (`OPTIND='x=5'` sets x). */
   arithmetic?: true;
   /**
-   * The environment usually has it, exported (`HOME`, set at login), or bash exports it from the start with no value
-   * (`OLDPWD`: `declare -x OLDPWD`): a shell the script starts gets what the script assigns to it.
+   * The environment usually has it, exported (`HOME`, `PATH`, `SHELL`, set at login; `LANG`, `TMPDIR`, `TERM`): a shell the
+   * script starts gets what the script assigns to it (src/semantics/shellstate.ts, `environmentHas`).
    */
   environment?: true;
   /** Bash ignores what the script assigns to it: it keeps its own value (`BASHPID`, `LINENO`). */
@@ -75,7 +75,7 @@ export const BASH_VARIABLES: Readonly<Record<string, BashVariable>> = {
   // 5.1 Bourne Shell Variables.
   CDPATH: { effect: NONE }, HOME: { effect: HOME, environment: true }, IFS: { effect: IFS, start: '--' }, MAIL: { effect: NONE }, MAILPATH: { effect: NONE },
   OPTARG: { effect: BASH_SETS, setBy: ['getopts'] }, OPTIND: { effect: OPTIND, start: '-i', numeric: true, arithmetic: true, setBy: ['getopts'] },
-  PATH: { effect: NONE, start: '--' }, PS1: { effect: NONE }, PS2: { effect: NONE },
+  PATH: { effect: NONE, start: '--', environment: true }, PS1: { effect: NONE }, PS2: { effect: NONE },
   // 5.2 Bash Variables.
   _: { effect: BASH_SETS, start: '--', dynamic: true },
   BASH: { effect: NONE, start: '--' },
@@ -121,7 +121,7 @@ export const BASH_VARIABLES: Readonly<Record<string, BashVariable>> = {
   MACHTYPE: { effect: NONE, start: '--' },
   MAILCHECK: { effect: NONE },
   MAPFILE: { effect: BASH_SETS, setBy: ['mapfile', 'readarray'] },
-  OLDPWD: { effect: BASH_SETS, setBy: CD, environment: true },
+  OLDPWD: { effect: BASH_SETS, setBy: CD },
   OPTERR: { effect: NONE, start: '--' },
   OSTYPE: { effect: NONE, start: '--' },
   PIPESTATUS: { effect: BASH_SETS, dynamic: true, numeric: true },
@@ -134,11 +134,11 @@ export const BASH_VARIABLES: Readonly<Record<string, BashVariable>> = {
   READLINE_ARGUMENT: { effect: BASH_SETS, setBy: BIND }, READLINE_LINE: { effect: BASH_SETS, setBy: BIND }, READLINE_MARK: { effect: BASH_SETS, setBy: BIND }, READLINE_POINT: { effect: BASH_SETS, setBy: BIND },
   REPLY: { effect: BASH_SETS, setBy: ['read', 'select'] },
   SECONDS: { effect: BASH_SETS, start: '-i', dynamic: true, numeric: true, unsetEnds: true },
-  SHELL: { effect: NONE, start: '--' },
+  SHELL: { effect: NONE, start: '--', environment: true },
   SHELLOPTS: { effect: BASH_SETS, start: '-r', dynamic: true },
   SHLVL: { effect: NONE, start: '-x' },
   SRANDOM: { effect: BASH_SETS, start: '-i', dynamic: true, numeric: true, arithmetic: true, ignored: true, unsetEnds: true },
-  TERM: { effect: NONE, start: '--' },
+  TERM: { effect: NONE, start: '--', environment: true },
   TIMEFORMAT: { effect: NONE }, TMOUT: { effect: NONE }, TMPDIR: { effect: NONE, environment: true }, histchars: { effect: NONE },
   // Not in the lists of bash 5.2's manual: bash 5.3's (GLOBSORT orders the words of a glob; the others are dynamic there:
   // DYNAMIC_SINCE_53), and the variables of `$"…"` (3.1.2.5).
@@ -175,11 +175,21 @@ export const INTEGERS_AT_START: readonly string[] = Object.keys(BASH_VARIABLES).
 export const readonlyAtStart = (name: string): boolean => known(name)?.start?.includes('r') ?? false;
 
 /**
- * Whether a shell the script starts has `name` whatever the script does: bash sets it at start (`PS4`), or computes
- * it (`FUNCNAME`), or the environment usually has it (`HOME`). Not one that only a builtin or a terminal sets
- * (`REPLY`, `COLUMNS`): a `bash -c` has it empty until then.
+ * Whether a shell the script starts has `name` whatever the script does, as bash's own: bash sets it at start (`PS4`),
+ * or computes it (`FUNCNAME`). Not one that only a builtin or a terminal sets (`REPLY`, `COLUMNS`): a `bash -c` has it
+ * empty until then. (One the environment usually has, `HOME`, is `fromEnvironment`'s: src/semantics/shellstate.ts.)
  */
-export const givenToEveryShell = (name: string): boolean => setAtStart(name) || !!known(name)?.dynamic || !!known(name)?.environment;
+export const givenToEveryShell = (name: string): boolean => setAtStart(name) || !!known(name)?.dynamic;
+
+/** Whether the environment usually has `name`, exported (`BashVariable.environment`: `HOME`, `PATH`, `LANG`). */
+export const usuallyInEnvironment = (name: string): boolean => !!known(name)?.environment;
+
+/**
+ * The variables bash exports from the start with no value (`declare -x OLDPWD`, until `cd`): a shell the script
+ * starts gets what the script assigns to them (it keeps an `OLDPWD` that names a directory). The walk's state starts
+ * with them so (`Walker.initial`). (`PWD` is exported too, with a value the model does not know: not in the state.)
+ */
+export const EXPORTED_AT_START: readonly string[] = ['OLDPWD'];
 
 /** Whether bash ignores what the script assigns to `name` (`BASHPID`, `LINENO`): it keeps its own value. */
 export const assignmentIgnored = (name: string): boolean => !!known(name)?.ignored;
