@@ -201,8 +201,9 @@ export function tildeSpots(parts: readonly { text: string; plain: boolean }[], m
  */
 export function stackTilde(user: string): { n: string; right: boolean; at: string } | undefined {
   const m = /^([+-]?)(\d+)$/.exec(user);
-  if (!m) return undefined;
-  const n = String(Number(m[2]));
+  // (A number past bash's intmax_t is none: the word stays as it is.)
+  if (!m || BigInt(m[2]) > 0x7fffffffffffffffn) return undefined;
+  const n = String(BigInt(m[2]));
   return { n, right: m[1] === '-', at: `${m[1] === '-' ? '-' : '+'}${n}` };
 }
 

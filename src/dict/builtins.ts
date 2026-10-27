@@ -43,12 +43,12 @@ export const shellOptions = {
 const ERREXIT_OFF = tx('コマンドが失敗しても終了しないようにする（既定）', 'go on when a command fails (the default)');
 
 /**
- * A `compatNN` option of `shopt` (manual 6.12): the compatibility level NN, and the first change the table of 6.12
- * lists for it. A level also brings back what the later levels change, and there is one level at a time.
+ * A `compatNN` option of `shopt` (manual 6.12): the compatibility level NN, and one change the table of 6.12 lists for
+ * it, checked with bash. A level also brings back what the later levels change, and there is one level at a time.
  */
 const compat = (version: string, ja: string, en: string) => tx(
-  `互換レベルを bash ${version} にする: ${ja}。後の版のレベルが戻す動作も戻す。レベルは同時に1つだけで、有効にするとほかの \`compat\` オプションは無効になる（\`BASH_COMPAT\` も変わる）`,
-  `compatibility level bash ${version}: ${en}; it also brings back what the later levels do. There is one level at a time: turning it on turns the other \`compat\` options off (and sets \`BASH_COMPAT\`)`);
+  `互換レベルを bash ${version} にする: ${ja}など。後の版のレベルが戻す動作も戻す（変わる点はマニュアルの Shell Compatibility Mode にある）。レベルは同時に1つだけで、有効にするとほかの \`compat\` オプションは無効になる（\`BASH_COMPAT\` も変わる）`,
+  `compatibility level bash ${version}: ${en}, among others; it also brings back what the later levels do (the manual lists them under Shell Compatibility Mode). There is one level at a time: turning it on turns the other \`compat\` options off (and sets \`BASH_COMPAT\`)`);
 
 /** Options of bash's `shopt`. */
 export const shoptOptions = {
@@ -259,7 +259,7 @@ const SOURCE_OPTIONS: OptSpec[] = [
 const SOURCE_OPERANDS: Rest = {
   ...args(operand('FILE', '読み込むファイル', 'file to source', { io: 'run', searchesPath: { shopt: 'sourcepath', instead: ['-p'] } }), operand('ARG', 'そのファイルに渡す引数（実行中は $1, $2…になる）', 'arguments passed to it (they are $1, $2… while it runs)')),
   // (A file not found ends a POSIX shell, 6.11: `. ./lib.sh` then runs nothing after it.)
-  inShell: [{ set: ['posix'], spec: {}, text: tx('POSIX モードなので、ファイルが見つからなければシェルが終了する（終了ステータス 1）', 'In POSIX mode, a file it does not find ends the shell (status 1)') }],
+  inShell: [{ set: ['posix'], spec: {}, special: true, text: tx('POSIX モードなので、ファイルが見つからなければ、対話シェルでないシェル（スクリプト）は終了する（終了ステータス 1）', 'In POSIX mode, a file it does not find ends a shell that is not interactive, as one running a script (status 1)') }],
 };
 
 /** The signals `kill` knows by name (`-TERM`, `-SIGTERM`), as Linux and the BSDs name them. */
@@ -290,25 +290,34 @@ const KILL_PATTERNS: PatternOption[] = [
   },
 ];
 
+/** The processes `kill` sends a signal to. */
+const KILL_PIDS = args(operand('PID', '対象のプロセス ID かジョブ指定（`%1`）', 'target PID or job spec (`%1`)', { type: 'job' })).operands!;
+
 /**
- * bash's `kill` in POSIX mode (6.11): a signal name with `SIG` is refused (`-SIGTERM`, `-s SIGTERM`, `-l SIGTERM`:
- * `invalid signal specification`, status 1).
+ * bash's `kill` in POSIX mode (6.11): a signal name with `SIG` is refused (`-SIGTERM`, `-s SIGTERM`, `-n SIGTERM`,
+ * `-l SIGTERM`: `invalid signal specification`, status 1).
  */
 const KILL_POSIX: ShellVariant = {
   set: ['posix'],
   spec: {
+    operands: [
+      { when: { option: ['-l'] }, pattern: [operand('SIGNAL', '名前か番号に直すシグナル（POSIX モードなので、`SIGTERM` のように `SIG` で始まる名前は受け付けない）', 'signal to translate between name and number (in POSIX mode, a name that starts with `SIG`, as `SIGTERM`, is refused)', { repeat: '*' })] },
+      ...KILL_PIDS,
+    ],
     patternOptions: [KILL_PATTERNS[0], KILL_PATTERNS[1], {
       pattern: new RegExp(`^-(?!s[A-Za-z])${anyCase('SIG')}(${anyCase(SIGNALS)})$`), ...SIGNAL_GIVEN,
       text: ([w]) => tx(`POSIX モードの bash は \`SIG\` で始まるシグナル名を受け付けない: \`${w.slice(1)}: invalid signal specification\` と表示し、何も送らずに失敗する（終了ステータス 1）。\`-${w.slice(4).toUpperCase()}\` と書く`,
         `In POSIX mode bash refuses a signal name that starts with \`SIG\`: it says \`${w.slice(1)}: invalid signal specification\`, and fails with status 1, sending nothing. Write \`-${w.slice(4).toUpperCase()}\``),
     }, KILL_PATTERNS[2]],
   },
-  text: tx('POSIX モードなので、`SIG` で始まるシグナル名（`-SIGTERM`、`-s SIGTERM`）は受け付けない', 'In POSIX mode, it refuses a signal name that starts with `SIG` (`-SIGTERM`, `-s SIGTERM`)'),
+  text: tx('POSIX モードなので、`SIG` で始まるシグナル名（`-SIGTERM`、`-s SIGTERM`、`-n SIGTERM`、`-l SIGTERM`）は受け付けない', 'In POSIX mode, it refuses a signal name that starts with `SIG` (`-SIGTERM`, `-s SIGTERM`, `-n SIGTERM`, `-l SIGTERM`)'),
 };
 
 /** bash's `ulimit` in POSIX mode (6.11): `-c` and `-f` count blocks of 512 bytes, not 1024. */
 const ULIMIT_POSIX: ShellVariant = {
-  set: ['posix'], spec: {},
+  set: ['posix'],
+  spec: args(operand('LIMIT', '新しい上限: 資源の単位の数（POSIX モードなので `-c` と `-f` は 512 バイト単位、ほかの大きさは多くが KiB 単位。`ulimit -a` に単位がある）か、`unlimited`（上限なし）・`soft`・`hard`（今のソフトリミット・ハードリミット）。資源のオプションがなければファイルの大きさ（`-f`）の上限',
+    'the new limit: a number in the unit of the resource (in POSIX mode, blocks of 512 bytes for `-c` and `-f`; most other sizes in KiB; `ulimit -a` shows the units), or `unlimited`, `soft` or `hard` (the current soft or hard limit); with no option for a resource, the limit of file size (`-f`)')),
   text: tx('POSIX モードなので、`-c` と `-f`（資源の指定がないときも）の大きさは 512 バイト単位（POSIX モードでなければ 1024 バイト単位）', 'In POSIX mode, the sizes of `-c` and `-f` (also with no resource given) count blocks of 512 bytes (1024 bytes out of POSIX mode)'),
 };
 
@@ -585,7 +594,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     unknownOption: tx('bash はシグナルの名前として読むが、その名前のシグナルはない: `invalid signal specification` と表示し、何も送らずに失敗する（終了ステータス 1）', 'bash reads it as the name of a signal, and there is none: it says `invalid signal specification`, and fails with status 1, sending nothing'),
     operands: [
       { when: { option: ['-l'] }, pattern: [operand('SIGNAL', '名前か番号に直すシグナル', 'signal to translate between name and number', { repeat: '*' })] },
-      ...args(operand('PID', '対象のプロセス ID かジョブ指定（`%1`）', 'target PID or job spec (`%1`)', { type: 'job' })).operands!,
+      ...KILL_PIDS,
     ],
   }),
   test: b(TEST_SUMMARY[0], TEST_SUMMARY[1], TEST_OPTIONS, { program: PROGRAMS.test, parser: 'single-dash', operandParser: 'test-expression' }),

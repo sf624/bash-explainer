@@ -24,7 +24,7 @@ import { builtinSections, programSections } from '../refs';
 import { inFunction, processOf, readAs, shellEffectOf } from '../semantics/env';
 import { aliasExpandsNext } from '../semantics/effects';
 import { type AliasResolution, aliasesAfter, assignmentsOf, type Missed, type NameResolution, testSpecOf } from '../semantics/names';
-import { docLine, option } from '../semantics/state';
+import { docLine, option, type ShellState } from '../semantics/state';
 import { isPlainWord, literalContent, staticWordValue, surelyHasSlash } from '../staticword';
 import { returnInSubstitution, scopeOf } from '../substitution-tokens';
 import { field, fields, redirectionsOf, type SyntaxNode, token, wordsText } from '../syntax/tree';
@@ -546,9 +546,14 @@ export function timeStatement(cx: Explainer, n: SyntaxNode): Token {
 function timed(cx: Explainer, n: SyntaxNode): Token {
   const lead = timeLead(cx, token(n, 'time')!, field(n, 'option'));
   const cmd = field(n, 'body');
+  const bash = !cx.shell || cx.shell === 'bash';
+  // In POSIX mode, `time` before a word that starts with `-` is not the reserved word: bash reads `time -p cmd` as the
+  // command `time`, the program (6.11; not at compatibility level 41 or below). The mode is the one bash read the line in.
+  if (bash && field(n, 'option') && timeIsProgram(cx.state.at(n).parse)) return timeProgram(cx, n, cmd);
+  if (!cmd && !bash) return skeletal(cx.tok(n, 'keyword', lead[0].explanation, lead), n);
   if (!cmd) {
     // `time` alone: an empty pipeline, timed; in POSIX mode, the times of the shell and its children so far (6.11).
-    const posix = (!cx.shell || cx.shell === 'bash') && option(cx.state.at(n).run, 'set', 'posix') === 'on';
+    const posix = option(cx.state.at(n).run, 'set', 'posix') === 'on';
     const t = cx.tok(n, 'keyword', posix
       ? cx.s('パイプラインのない `time`: POSIX モードなので、このシェルと終了した子プロセスがここまでに使ったユーザー時間とシステム時間を表示する', '`time` with no pipeline: in POSIX mode, it prints the user and system time this shell and its finished children have used so far')
       : cx.s('パイプラインのない `time`: 何も計測せず、0 の時間を表示する（POSIX モードなら、シェルがここまでに使った時間）', '`time` with no pipeline: it times nothing, and prints zero times (in POSIX mode, the times the shell has used so far)'), lead);
@@ -564,6 +569,30 @@ function timed(cx: Explainer, n: SyntaxNode): Token {
   const t = cx.tok(n, 'keyword', explanation, sortTokens([...lead, ...inner]));
   t.summary = `time ${inner.map(summaryOf).join(' ')}`;
   return skeletal(t, n);
+}
+
+/**
+ * Whether bash, reading a line in the state `st`, takes `time -p` for the program `time`: in POSIX mode, unless the
+ * compatibility level may be 41 or below (`shopt -s compat41`, `BASH_COMPAT`), where it is the reserved word (6.12).
+ */
+function timeIsProgram(st: ShellState): boolean {
+  return option(st, 'set', 'posix') === 'on' && ['compat31', 'compat32', 'compat40', 'compat41'].every((o) => option(st, 'shopt', o) !== 'on' && option(st, 'shopt', o) !== 'unknown')
+    && !st.variables.has('BASH_COMPAT');
+}
+
+/** `time -p cmd` in POSIX mode: the program `time`, with its options and the command it runs (as a program). */
+function timeProgram(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode | undefined): Token {
+  const time = token(n, 'time')!;
+  const words = [field(n, 'option')!, ...(cmd?.type === 'command' ? [field(cmd, 'name')!.namedChildren[0] ?? field(cmd, 'name')!, ...fields(cmd, 'argument')] : [])];
+  const kw = cx.tok(time, 'keyword', cx.s(
+    'POSIX モードの bash は、`-` で始まる語が続く `time` を予約語として読まない: これはプログラムの `time`（ふつうは `/usr/bin/time`）を実行するコマンドで、関数や組み込みコマンドは実行できない（`cannot run`）',
+    'In POSIX mode bash does not read `time` before a word that starts with `-` as the reserved word: this runs the program `time` (usually `/usr/bin/time`), which cannot run a function or a builtin (`cannot run`)')
+    + (cmd ? '' : cx.s('。実行するコマンドがないので失敗する（GNU の `time` は `missing program to run`、終了ステータス 125）', '. With no command to run, it fails (GNU `time`: `missing program to run`, status 125)')));
+  // (The program named as the word is: bash looks it up in PATH.)
+  const read = readArgs(cx, specFor(cx, time.text), words, time.text);
+  // (A body that is not one simple command, `time -p a | b`, is explained as it is.)
+  const rest = cmd && cmd.type !== 'command' ? cx.sub(cmd) : [];
+  return skeletal({ ...cx.tok(n, 'command', kw.explanation, sortTokens([kw, ...read.tokens, ...rest])), refs: ['3.2.3', '6.11'] }, n);
 }
 
 /** The keyword `time`, and the option `-p` if there is one: the start of every explanation of it. */
