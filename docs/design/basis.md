@@ -18,16 +18,16 @@ A basis is data on what an explanation rests on (src/basis.ts):
 | Kind | Meaning | Its data | Source |
 | --- | --- | --- | --- |
 | `manual` | What the manual's sections say | `sections` | The `refs` of the fact or token (src/manual.ts: bash 5.2's numbers). The default: nothing is stored |
-| `checked` | bash's behaviour; the manual does not say it | `bash` (the release), `probes` | The probe rows that check it |
+| `checked` | bash's behaviour; the manual does not say it | `bash` (the releases it was checked in, a list), `probes` | The probe rows that check it |
 | `differs` | bash's behaviour; the manual says otherwise | as `checked` | as `checked` |
 | `spec` | What another program does (an option of `grep`) | `command` | Its command spec in src/dict/ (data only, later) |
 | `convention` | A habit of shell scripts, not a rule of bash | — | A style check of src/pitfalls.ts (data only, later) |
 
-Apart from the basis, an explanation can have a **try-it** (`TryIt`): a command for the reader's terminal (`code`), what it printed (`output`, stdout and stderr as a terminal shows them), the bash it ran in, and the probe row it comes from. A `checked` or `differs` fact always has one. A fact the manual states may have one too, to show it (the prototype's `local x=$(false)`); then it has no chip.
+Apart from the basis, an explanation can have a **try-it** (`TryIt`): a command for the reader's terminal (`code`), what it printed (`output`, stdout and stderr as a terminal shows them), the bash it ran in, and the probe row it comes from. A `checked` or `differs` fact always has one. The data may also give one to a fact the manual states (the prototype's `local x=$(false)`), but the views show try-its only for `checked` and `differs` (section 8, decision 3). A try-it may show another value than its row's snippet (`exit 300` for the row of `exit 256`): both run in CI.
 
 Where it is carried:
 
-- **A fact of the message catalog** (src/messages.ts). The entry names its basis with `withBasis(entry, spec)`: the kind and the probe row with the try-it (`probe`), and other rows that check the same behaviour (`also`). A function of the params when it depends on the case, as `level` does: `exit-modulo` is `checked` for `exit` and the manual's for `return` (4.1 says that `return` keeps the least significant 8 bits), read from the status model's `ends`, not from the name. `fact()` gives `Fact.basis` (only when it is not the manual's: `basisFor` gives the default) and `Fact.tryIt`. Each such entry has a comment that says what the manual's sections say and do not say.
+- **A fact of the message catalog** (src/messages.ts). The entry names its basis with `withBasis(entry, spec)`: the kind and the probe row with the try-it (`probe`), and other rows that check the same behaviour (`also`). A function of the params when it depends on the case, as `level` does: `exit-modulo` is `checked` for `exit` and the manual's for `return` (4.1 says that `return` keeps the least significant 8 bits; for `exit`, section 2 and 3.7.5 imply it without stating it), read from the status model's `ends`, not from the name. The facts of a line are kept once per text, so a fact whose basis depends on the params says the case in its text: `exit 300` and `return 300` on one line are two notes. `fact()` gives `Fact.basis` (only when it is not the manual's: `basisFor` gives the default) and `Fact.tryIt`. Each such entry has a comment that says what the manual's sections say and do not say.
 - **A token** (step 4): `Token.basis` and `Token.tryIt`, the same types, for a text of a token that states bash's behaviour (`$_` after a command of assignments only is empty). The reading tree copies them to its nodes, as it copies `name`.
 - **Other notes** (style checks, dialect issues, idioms): no basis until a step gives them `convention` or `spec`; a view shows nothing for them.
 
@@ -37,9 +37,9 @@ The kinds `spec` and `convention` are in the type now so that the row model is w
 
 One source per fact: the probe tables that already run in CI (test/fixtures/probes/*.json, test/probe.test.ts).
 
-- A probe row that shows a behaviour to the reader gets a `try`: `{ code, output }`. `code` is written by hand, as the reader would type it; it starts a bash of its own (`bash -c '…'`), so it prints the same from zsh or fish, and test/basis.test.ts checks that. `output` is recorded by scripts/record-probes.ts (`tryOutput` in test/support/probe.ts: the code run by `bash --norc --noprofile -c` in a fresh directory with the probes' files and environment, with the row's bash first on `PATH` as `bash`, stdout and stderr in one file, the process group killed on a timeout). test/probe.test.ts runs it again on every CI run, with bash 5.2 (and the rows of bash 5.3 in the `bash53` job). A row with a try-it has an `id`.
-- The explanations do not read the test tables, which the bundles do not hold, so scripts/record-probes.ts writes a copy of the rows with a try-it to src/basis-probes.json: `kind#id` → the section, the release, the code and the output. test/basis.test.ts fails when the copy differs from the tables, when an entry names a row that is not there, and when a try-it is shown by no fact. The copy is small (a few rows) and changes only when a try-it changes.
-- The release on the chip is the release the row runs in (`"bash": "5.3"` or 5.2). The manual's sections stay the fact's `refs`.
+- A probe row that shows a behaviour to the reader gets a `try`: `{ code, output }`. `code` is written by hand, as the reader would type it: one word `bash -c '…'` with no `'` or `\` inside, so that bash, zsh and fish all hand the same script to bash (test/basis.test.ts checks the form). `output` is recorded by scripts/record-probes.ts (`tryOutput` in test/support/probe.ts: the code run by `bash --norc --noprofile -c` in a fresh directory with the probes' files and environment, with the row's bash first on `PATH` as `bash`, stdout and stderr in one file, the directory written as `BOX` and the one of the row's bash as `BIN`; the process group is killed when the shell ends, so no background job outlives it, and on a timeout). test/probe.test.ts runs it again on every CI run, with bash 5.2 (and the rows of bash 5.3 in the `bash53` job). A row with a try-it has an `id`.
+- The explanations do not read the test tables, which the bundles do not hold, so scripts/record-probes.ts writes a copy of the rows with a try-it to src/basis-probes.json: `kind#id` → the section, the release, the code and the output. test/basis.test.ts fails when the copy differs from the tables, when an entry names a row that is not there or a row about a section the fact does not cite, and when a try-it is shown by no fact. An entry that names a row with no try-it does not compile: `BasisSpec.probe` is a key of the copy. The copy is small (a few rows) and changes only when a try-it changes.
+- `Basis.bash` lists the releases the try-it passed in CI: today the row's own (5.2, or 5.3 for a row of `"bash": "5.3"`); step 3 adds 5.3 where the `bash53` job runs the try-it too. The chip names them, whatever `bashVersion` is set to, never a release the try-it did not run in. The manual's sections stay the fact's `refs`.
 - Whether the manual is silent or differs is a judgement, made against the bash 5.2 manual (the bash-doc package) when the entry is written, and written in the entry's comment; a test cannot check it. Step 3 goes through the catalog section by section.
 
 Nothing runs bash when a view is drawn: the output shown is the one recorded and checked in CI.
@@ -52,12 +52,12 @@ Look A of the prototype (branch `proto/basis`): a chip after the text, and the t
 
 - **The chip.** Its words and its tooltip come from the catalog (`basisSaid(lang, basis)`, step 2): "Not in the manual · checked with bash 5.2" / 「マニュアルに記述なし・bash 5.2 で確認」, and "Differs from the manual · checked with bash 5.2" / 「マニュアルの記述と異なる・bash 5.2 で確認」; the tooltip says what it means ("bash's actual behaviour, which the Bash manual does not state: checked by running bash 5.2"). The chip is quiet (the colour of the section links), never the colour of a level: it is not a problem.
 - **The try-it.** A folded "Try it in your terminal" / 「端末で試す」: the code with a copy button, then "prints" / 「出力」 and the output. The panel never runs it. A click in it neither folds the row nor moves the cursor.
-- **Where.** Today's panel: after a note in Meaning, and on a node of Reading. The hover and Copy as Markdown: a line in italics after the note, and the try-it as code. The CLI's text: a dim line under the note; its JSON gains `basis` and `tryIt` on each fact (a field added, nothing removed). The web page draws the same panel.
+- **Where.** Today's panel: after a note in Meaning, and on a node of Reading. The hover and Copy as Markdown: a line in italics after the note, and the try-it as code. The CLI's text: a dim line under the note; its JSON gains `basis` and `tryIt` on each fact (a field added, nothing removed). A try-it's output is one string, stdout and stderr as a terminal shows them; the tooltip says that messages are as bash prints them with `LC_ALL=C` (a translated bash may word them otherwise). The web page draws the same panel.
 - **The panel redesign.** P7a's rows carry `basis` and `tryIt` as they come from the fact or the token; the row model adds no words of its own. P7b's problems box shows the chip on a problem's "more".
 
 ## 4. The setting
 
-`bashExplainer.notes.basis` (boolean, default on), beside `notes.pitfalls` and `notes.idioms`: off hides the chips and the try-its in every view (panel, hover, Copy as Markdown, CLI text, web page's settings). The data stays on the explanation: the CLI's JSON keeps it, as it keeps the facts' sections. The CLI takes it as the other settings (`--set notes.basis=false`, the settings file).
+`bashExplainer.notes.basis` (boolean, default on; decided), beside `notes.pitfalls` and `notes.idioms`: off hides the chips and the try-its in every view (panel, hover, Copy as Markdown, CLI text, web page's settings). The data stays on the explanation: the CLI's JSON keeps it, as it keeps the facts' sections. The CLI takes it as the other settings (`--set notes.basis=false`, the settings file).
 
 ## 5. What is kept of the prototype
 
@@ -69,7 +69,7 @@ Changed: the prototype wrote each try-it's code and output in the catalog, and a
 
 Each step is a PR that keeps every test passing.
 
-1. **The data model and its source** (#441). src/basis.ts (the types, `basisOf`, `basisFor`), `withBasis` in the catalog, `Fact.basis` and `Fact.tryIt`; the probe rows' `try`, recorded and checked (test/support/probe.ts, scripts/record-probes.ts, test/probe.test.ts), the copy src/basis-probes.json, test/basis.test.ts. Two facts: `exit-modulo` for `exit` (`status#exit-status`, also `status#exit-negative`) and `unset-function-and-variable` (`state#unset-fv`), both `checked`. No view change, no CHANGELOG.
+1. **The data model and its source** (#441). src/basis.ts (the types, `basisOf`, `basisFor`), `withBasis` in the catalog, `Fact.basis` and `Fact.tryIt`; the probe rows' `try`, recorded and checked (test/support/probe.ts, scripts/record-probes.ts, test/probe.test.ts), the copy src/basis-probes.json, test/basis.test.ts. Two facts: `exit-modulo` for `exit` (`status#exit-status`, also `status#exit-negative`) and `unset-function-and-variable` (`state#unset-fv`), both `checked`. No view change; `exit-modulo` names the builtin in its text ("`exit 300` gives 44"), a CHANGELOG line.
 2. **The views and the setting.** The catalog's words for the chips and the try-it, the panel (Meaning and Reading), the hover, Copy as Markdown, the CLI (text and JSON), the web page; `bashExplainer.notes.basis`. Layout tests: the chip does not break, at three widths, in both languages, with CI's CJK fonts. CHANGELOG (New): "An explanation that rests on bash's behaviour rather than the manual says so, with a command to try it in your terminal."
 3. **More facts.** The catalog, section by section against the manual: each entry is the manual's, `checked` or `differs`, with a probe row and a try-it for the last two. Among them the new note on `$BASH_SUBSHELL` in a simple command of a pipeline (`differs`; a fact users see, so a CHANGELOG bullet). The `bash53` job runs every try-it in bash 5.3 too, so a chip can say both releases when both agree.
 4. **Tokens.** `Token.basis` and `Token.tryIt` for texts that state bash's behaviour (`$_` after assignments only), from a table keyed as the catalog is, read where the token's text is chosen; the reading tree copies them. No name checks in src/explain/: the table is keyed by the fact, not by a command.
@@ -79,13 +79,15 @@ Then the panel redesign's P7a takes `basis` and `tryIt` as row data.
 
 ## 7. Tests
 
-- test/basis.test.ts (no bash): the copy equals the tables; every entry names a row with a try-it, and its other rows exist; every try-it is shown by some fact; a try-it starts its own bash; `fact()` gives the basis and the try-it, per case of the params; the analyzer gives the basis of `exit 300` and not of `return 300`.
-- test/probe.test.ts (bash): every try-it prints what it recorded; the harness keeps stdout and stderr in order and kills a try-it that hangs.
+- test/basis.test.ts (no bash): the copy equals the tables; every entry names a row with a try-it about a section it cites, and its other rows exist; every try-it is shown by some fact; a try-it is one word `bash -c '…'`; `fact()` gives the basis and the try-it, per case of the params; the analyzer gives the basis of `exit 300` and not of `return 300`, also on one line.
+- test/probe.test.ts (bash): every try-it prints what it recorded; the harness keeps stdout and stderr in order, writes its directories as `BOX` and `BIN`, kills a try-it that hangs, does not call a shell that killed itself a timeout, and kills a job left in the background.
 - Step 2 adds the views' tests (the setting off shows nothing; the chip's words in both languages; the JSON), and the layout tests.
 
-## 8. Open questions
+## 8. Decisions
 
-1. The setting's name and default: `bashExplainer.notes.basis`, on by default?
-2. A try-it's output shows stderr as the terminal does (`bash: line 1: unset: cannot simultaneously unset …`). Keep it, or drop stderr (`2>/dev/null` in the code) where the message is noise?
-3. A fact the manual states, with a try-it: show the try-it alone (the prototype's `local x=$(false)`), or keep try-its for `checked` and `differs` only?
-4. With `bashExplainer.bashVersion` set to 5.3, should the chip say "checked with bash 5.3" where the `bash53` job ran the try-it (step 3), or always the release of the row?
+Decided by the maintainer on 2026-10-27, after the review of #441 (whose reviewer agreed on 1, 2 and 4, and proposed 3):
+
+1. **The setting** is `bashExplainer.notes.basis`, on by default.
+2. **stderr.** A try-it's output keeps stderr as a terminal shows it, in one string (for `unset -fv`, the message is the behaviour shown). The tooltip says that messages are as with `LC_ALL=C`.
+3. **Try-its on facts the manual states.** For now the views show try-its only for `checked` and `differs`, so that a try-it stays a sign of "not in the manual". The data may carry a try-it on a fact of the manual (`kind: 'manual'` with a probe); no view shows it until decided otherwise.
+4. **The releases on the chip** are those the try-it passed in CI (`Basis.bash`, a list), whatever `bashExplainer.bashVersion` is set to; never a release it did not run in.
