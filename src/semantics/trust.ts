@@ -31,6 +31,7 @@
 // the walk does not read (an expansion in it, a glob, too deep) makes it walk again with nothing trusted
 // (`Walker.found`), as does a trap's action that may leave what a signal interrupts.
 // Another shell's model (`bash -c`) trusts no more than the model of the script that starts it (`withinTrust`).
+import type { Shell } from '../dialect';
 import { prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
@@ -149,7 +150,7 @@ class Scan {
   /** The aliases each tree of an alias expanded at a command comes from (bash does not expand an alias in itself). */
   private readonly expanding = new Map<SyntaxNode, ReadonlySet<string>>();
 
-  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening?: Opening, private readonly version?: BashVersion) {
+  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening?: Opening, private readonly shell?: Shell, private readonly version?: BashVersion) {
     const defs = (n: SyntaxNode): void => {
       if (n.type === 'function_definition') this.functions.add(field(n, 'name')!.text);
       if (n.type === 'command' && ['alias', 'enable'].includes(commandName(n) ?? '')) this.renames = true;
@@ -541,7 +542,7 @@ class Scan {
   }
 
   private unset(words: SyntaxNode[], w: Where): void {
-    const parse = builtinParse('unset', words);
+    const parse = builtinParse('unset', words, this.shell);
     const flags = optionRoles(parse).map((r) => r.flag.slice(1)).join('');
     if (flags.includes('f') && !flags.includes('v')) {
       this.changed(w);
@@ -559,7 +560,7 @@ class Scan {
     let args = fields(c, 'argument');
     let direct = true;
     while (name === 'command' || name === 'builtin') {
-      const inner = wrapped(name, args);
+      const inner = wrapped(name, args, this.shell);
       if ('lookup' in inner) return { name, args, lookup: true, direct };
       ({ name, args } = inner);
       direct = false;
@@ -609,7 +610,7 @@ class Scan {
     if (unread) {
       this.blindFor(unread === 'file' ? 'a file is sourced' : 'a command line the model does not read is run');
     }
-    const parse = builtinParse(name, args, spec);
+    const parse = builtinParse(name, args, this.shell, spec);
     // The variables it sets, and the functions it runs later, as its spec says (src/semantics/effects.ts).
     for (const v of variableWrites(spec, parse, args)) {
       if (v.node) this.named(v.name, v.node, w, v.sets === 'job-id' ? 'number' : 'unknown');
@@ -704,7 +705,7 @@ class Scan {
         return;
       }
     }
-    if (DECLARATIONS.has(name)) this.declaration(name, args, readDeclarationWords(name, args), w);
+    if (DECLARATIONS.has(name)) this.declaration(name, args, readDeclarationWords(name, args, this.shell), w);
   }
 
   /**
@@ -931,8 +932,8 @@ class Scan {
  * the file's host defines (a bats file: `run`, `load`…), read by their specs. `opening`: what the shebang starts bash
  * with (`#!/bin/bash -k`).
  */
-export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST, opening?: Opening, version?: BashVersion): Trust {
-  const scan = new Scan(root, strings, host, opening, version);
+export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST, opening?: Opening, shell?: Shell, version?: BashVersion): Trust {
+  const scan = new Scan(root, strings, host, opening, shell, version);
   if (scan.blind) return { ...BLIND, blind: scan.blind };
   const unseen = new Set<string>();
   for (const [name, ws] of scan.writes) if (ws.some((w) => w.foreign || (w.fn !== undefined && scan.callbacks.has(w.fn)))) unseen.add(name);

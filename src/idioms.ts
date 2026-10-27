@@ -1,9 +1,10 @@
+import type { Shell } from './dialect';
 import { Lang } from './i18n';
 import { pick } from './embedded/types';
 import { interpret } from './argv/interpret';
 import type { ArgvParse } from './argv/interpret';
 import { has, values } from './argv/query';
-import { argWord } from './argv/words';
+import { argWordFor } from './argv/words';
 import { lookupCommand } from './dict/aliases';
 import { hasGlob } from './embedded/glob';
 import { staticWordValue } from './staticword';
@@ -104,26 +105,26 @@ const argsOf = (c: SyntaxNode): SyntaxNode[] => fields(c, 'argument');
 /** The values of a command's arguments, undefined where they are not known without running anything. */
 const wordsOf = (c: SyntaxNode): (string | undefined)[] => argsOf(c).map((w) => staticWordValue(w));
 /** The argv parse of a command (src/argv/), when its name and spec are known. */
-const parseOf = (c: SyntaxNode): ArgvParse | undefined => {
+const parseOf = (c: SyntaxNode, shell: Shell | undefined): ArgvParse | undefined => {
   const name = nameOf(c);
   const spec = name === undefined ? undefined : lookupCommand(name);
-  return spec && interpret(spec, argsOf(c).map(argWord), { name, lookup: lookupCommand });
+  return spec && interpret(spec, argsOf(c).map(argWordFor(shell)), { name, lookup: lookupCommand });
 };
 /** The parses of a command and of the commands it runs with its words (`sudo -u w xargs -0 rm`: sudo's, xargs's, rm's) named `name`. */
-const parsesOf = (c: SyntaxNode, name: string): ArgvParse[] => {
+const parsesOf = (c: SyntaxNode, name: string, shell: Shell | undefined): ArgvParse[] => {
   const out: ArgvParse[] = [];
   const visit = (parse: ArgvParse | undefined, n: string | undefined): void => {
     if (!parse) return;
     if (n === name) out.push(parse);
     for (const { role } of parse.roles) if (role.role === 'command') visit(role.parse, role.name);
   };
-  visit(parseOf(c), nameOf(c));
+  visit(parseOf(c, shell), nameOf(c));
   return out;
 };
 /** The values the option `name` is given, as bash passes them (`-d ''` and `-rd ''` give '', `-rd'' f` gives `f`). */
-const optionValues = (c: SyntaxNode, name: string): (string | undefined)[] => {
+const optionValues = (c: SyntaxNode, name: string, shell: Shell | undefined): (string | undefined)[] => {
   const args = argsOf(c);
-  return values(parseOf(c)!, name).map((v) => staticWordValue(args[v.word])?.slice(v.at ?? 0));
+  return values(parseOf(c, shell)!, name).map((v) => staticWordValue(args[v.word])?.slice(v.at ?? 0));
 };
 const commandIs = (c: SyntaxNode, ...names: string[]): boolean => names.includes(nameOf(c)!);
 /** What the builtin a simple command names ends (`CommandSpec.ends`: `continue` ends the pass of a loop). */
@@ -205,8 +206,9 @@ export const outputsOf = (n: SyntaxNode): { out?: string; err?: string } => {
   return to;
 };
 /** `command -v jq >/dev/null 2>&1`, `type -P jq &>/dev/null`, `hash jq`, `which jq`: a check that prints nothing. */
-const quietCheck = (c: SyntaxNode): boolean => {
-  if (!(commandIs(c, 'which', 'hash') || (commandIs(c, 'command') && has(parseOf(c)!, '-v')) || (commandIs(c, 'type') && has(parseOf(c)!, '-P')))) return false;
+const quietCheck = (c: SyntaxNode, status: StatusModel): boolean => {
+  const shell = status.state.shell;
+  if (!(commandIs(c, 'which', 'hash') || (commandIs(c, 'command') && has(parseOf(c, shell)!, '-v')) || (commandIs(c, 'type') && has(parseOf(c, shell)!, '-P')))) return false;
   const { out, err } = outputsOf(c);
   return out === '/dev/null' && err === '/dev/null';
 };
@@ -334,7 +336,7 @@ const emptyValue = (a: SyntaxNode): boolean => {
   return !v || staticWordValue(v) === '';
 };
 /** A shape of a command. */
-const command = (test: (c: SyntaxNode) => boolean): Shape => (n) => n.type === 'command' && test(n);
+const command = (test: (c: SyntaxNode, shell: Shell | undefined) => boolean): Shape => (n, status) => n.type === 'command' && test(n, status.state.shell);
 
 // (`until` is a `while_statement` too, with that keyword first.)
 const whileOf = (n: SyntaxNode): SyntaxNode | undefined => (n.type === 'while_statement' && n.children[0].type === 'while' ? n : undefined);
@@ -369,7 +371,7 @@ interface Idiom {
 /** Well-known patterns, found in the tree of a statement. */
 const IDIOMS: Idiom[] = [
   {
-    test: command((c) => commandIs(c, 'read') && c.namedChildren.some((a) => a.type === 'variable_assignment' && field(a, 'name')!.text === 'IFS' && emptyValue(a)) && has(parseOf(c)!, '-r')),
+    test: command((c, shell) => commandIs(c, 'read') && c.namedChildren.some((a) => a.type === 'variable_assignment' && field(a, 'name')!.text === 'IFS' && emptyValue(a)) && has(parseOf(c, shell)!, '-r')),
     ja: '`IFS= read -r`: 1行を加工せずそのまま読む（`IFS=` で前後の空白を取り除かせず、`-r` でバックスラッシュをそのまま残す）',
     en: '`IFS= read -r`: reads a line exactly as is (`IFS=` keeps surrounding spaces, `-r` keeps backslashes)',
   },
@@ -475,17 +477,17 @@ const IDIOMS: Idiom[] = [
     en: 'a loop over the arguments (usually a `case` on `$1`, then `shift` to move on). An option that takes a value needs `shift 2`; without any `shift` the loop never ends',
   },
   {
-    test: command((c) => commandIs(c, 'read') && optionValues(c, '-d').includes('')),
+    test: command((c, shell) => commandIs(c, 'read') && optionValues(c, '-d', shell).includes('')),
     ja: '`read -d \'\'`: NUL（バイト 0）までを1項目として読む。`find -print0` と組み合わせると、空白や改行を含む名前も安全に扱える。区切りは `-d \'\'` と書く（`-d \'\\0\'` では区切りが `\\` になり、何も読めない）',
     en: '`read -d \'\'`: reads up to a NUL byte as one item. With `find -print0`, names containing spaces or newlines are safe. Write the delimiter as `-d \'\'` (`-d \'\\0\'` makes `\\` the delimiter, and nothing is read)',
   },
   {
-    test: command((c) => parsesOf(c, 'find').some((p) => p.roles.some(({ word, role }) => role.role === 'expression' && staticWordValue(argsOf(c)[word]) === '-print0'))),
+    test: command((c, shell) => parsesOf(c, 'find', shell).some((p) => p.roles.some(({ word, role }) => role.role === 'expression' && staticWordValue(argsOf(c)[word]) === '-print0'))),
     ja: '`find -print0`: 名前を改行でなく NUL で区切って出力する。受け取る側も NUL を読むこと（`xargs -0`、`read -d \'\'`）。改行区切りのままだと、空白や改行を含む名前が壊れる',
     en: '`find -print0`: separates the names with a NUL byte instead of a newline. The reader must read NUL too (`xargs -0`, `read -d \'\'`); with newlines, names containing spaces or newlines break',
   },
   {
-    test: command((c) => parsesOf(c, 'xargs').some((p) => has(p, '-0'))),
+    test: command((c, shell) => parsesOf(c, 'xargs', shell).some((p) => has(p, '-0'))),
     ja: '`xargs -0`: 入力を NUL 区切りで読む（`find -print0` と組み合わせる）。付けないと、空白やクォートを含む名前が分割されたり壊れたりする',
     en: '`xargs -0`: reads its input separated by NUL bytes (pair it with `find -print0`). Without it, names with spaces or quotes are split or mangled',
   },
@@ -505,7 +507,7 @@ const IDIOMS: Idiom[] = [
     en: 'skips a name that does not exist. When `for f in *.txt` matches nothing, bash keeps `*.txt` as it is and the loop runs once with that text. This guards against it (`shopt -s nullglob` does too)',
   },
   {
-    test: command((c) => commandIs(c, 'read') && optionValues(c, '-p').some((p) => p !== undefined && /\b[yY](es)?\/[nN](o)?\b/.test(p))),
+    test: command((c, shell) => commandIs(c, 'read') && optionValues(c, '-p', shell).some((p) => p !== undefined && /\b[yY](es)?\/[nN](o)?\b/.test(p))),
     ja: 'はい／いいえの確認。`[y/N]` の大文字は、Enter だけのときの既定値という慣習で、空の答えをその既定値として扱うのは続くコードの役目。`-p` の表示は、標準入力が端末のときだけ出る',
     en: 'a yes/no question. The capital letter in `[y/N]` is only a convention for the default on a bare Enter: the code after it must treat an empty answer that way. The `-p` prompt is shown only when stdin is a terminal',
   },

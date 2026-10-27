@@ -533,18 +533,31 @@ class Reader {
   /**
    * `tar cvf a.tar`, `ps aux`: a word as letters without a dash. Returns the last word used, or -1. With `numbers`, a
    * number at the end of the word is the value of the last letter when it takes one (`ps t1`), else the value of the
-   * number option (`ps u1` is `ps u p1`).
+   * number option (`ps u1` is `ps u p1`). With `attachedValues`, a letter with a value takes the rest of the word
+   * (`ps opid,comm`).
    */
   private oldStyle(st: OptionState, i: number): number {
     const old = st.spec.oldStyle!;
     const word = this.words[i].value;
     const split = old.numbers && word !== undefined ? /^([A-Za-z]+)(\d+(?:,\d+)*)$/.exec(word) : null;
-    const text = split ? split[1] : word;
-    const tail = split?.[2];
+    let text = split ? split[1] : word;
+    let tail = split?.[2];
     const look = (ch: string): OptionSpec | undefined => (old.letters ? old.letters[ch] : findOption(st.options, '-' + ch, false));
+    const takes = (opt: OptionSpec): boolean => valuesOf(opt).some((v) => !v.optional && v.how !== 'attached-only');
+    // The first letter that takes a value takes the rest of the word, whatever it holds (`ps opid,comm`, `ps Uroot`).
+    let rest = false;
+    if (old.attachedValues && word !== undefined) {
+      for (let k = 0; k < word.length - 1; k++) {
+        const opt = look(word[k]);
+        if (!opt) break;
+        if (takes(opt)) {
+          [text, tail, rest] = [word.slice(0, k + 1), undefined, true];
+          break;
+        }
+      }
+    }
     if (text === undefined || !/^[A-Za-z0-9]+$/.test(text) || ![...text].every(look)) return -1;
     if (old.needs && ![...text].some((ch) => old.needs!.includes(ch))) return -1;
-    const takes = (opt: OptionSpec): boolean => valuesOf(opt).some((v) => !v.optional && v.how !== 'attached-only');
     // A letter with a value before the number would read the rest of the word, the number too (`ps op1`): not described.
     if (tail && [...text].slice(0, -1).some((ch) => takes(look(ch)!))) return -1;
     let last = i;
@@ -552,7 +565,7 @@ class Reader {
     const letters: ArgRole[] = [...text].map((ch, k) => {
       const opt = look(ch)!;
       st.given.specs.push(opt);
-      if (tail && k === text.length - 1 && takes(opt)) {
+      if ((tail || rest) && k === text.length - 1 && takes(opt)) {
         attached = true;
         return { role: 'option', flag: ch, spec: opt, text: opt.text, part: [k, k + 1], value: { role: 'value', of: ch, option: opt, spec: valuesOf(opt)[0], index: 0, attached: k + 1 } };
       }

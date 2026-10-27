@@ -168,12 +168,37 @@ describe('old-style options: ps', () => {
     assert.match(top('ps u1', 'ja')[0].children[1].explanation, /^プロセス ID を指定/);
     // The words after it are PIDs too (`ps u1 2`).
     assert.strictEqual(top('ps u1 2')[1].explanation, 'process ID (a bare number is a BSD-style PID selection)');
-    // A letter with a value before the number would read the rest of the word, the number too: not described.
-    assert.strictEqual(top('ps op1')[0].explanation, 'Word `op1`');
+    // A letter with a value before the number reads the rest of the word, the number too.
+    assert.deepStrictEqual(shape('ps op1'), [
+      'op1: BSD-style options (no dash; some mean something else than the UNIX forms with `-`): `o`',
+      '  o: output columns (`o pid,comm`)',
+      '  p1: Value for `o`',
+    ]);
     // A word that is quoted or not known is read as far as it can be.
     assert.strictEqual(top("ps $'t1'")[0].kind, 'option');
     assert.strictEqual(top('ps u"1"')[0].children.length, 2);
     assert.strictEqual(top('ps $w')[0].kind, 'variable');
+  });
+
+  it('gives the rest of a BSD word to the first letter that takes a value, as procps does', () => {
+    // (test/oldstyle-real.test.ts compares these with ps.)
+    assert.deepStrictEqual(shape('ps opid,comm'), [
+      'opid,comm: BSD-style options (no dash; some mean something else than the UNIX forms with `-`): `o`',
+      '  o: output columns (`o pid,comm`)',
+      '  pid,comm: Value for `o`',
+    ]);
+    assert.deepStrictEqual(shape('ps rUroot'), [
+      'rUroot: BSD-style options (no dash; some mean something else than the UNIX forms with `-`): `r` `U`',
+      '  r: only running processes',
+      '  U: only processes of these users',
+      '  root: Value for `U`',
+    ]);
+    // The next word is a value only when the letter ends the word.
+    assert.deepStrictEqual(shape('ps U root').map((l) => l.trim().split(':')[0]), ['U', 'U', 'root']);
+    // A letter that is not one ends the search: the word is plain.
+    assert.strictEqual(top('ps a.b')[0].explanation, 'Word `a.b`');
+    // (tar's letters take the next words, not the rest of the word.)
+    assert.strictEqual(top('tar cfa.tar')[0].explanation.startsWith('Word'), true);
   });
 
   it('reads BSD letters after other options too, as procps does', () => {

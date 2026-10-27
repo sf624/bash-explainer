@@ -1,3 +1,4 @@
+import type { Shell } from './dialect';
 import type { Lang } from './i18n';
 import { fact, type Fact } from './messages';
 import { resolveName } from './semantics/names';
@@ -19,9 +20,9 @@ const shorten = (text: string): string => {
 };
 
 /** The words of `run`'s command, after its options (`!`, `-N`, `--separate-stderr`…, `--`), as its spec reads them. */
-function runCommand(n: SyntaxNode): SyntaxNode[] {
+function runCommand(n: SyntaxNode, shell: Shell | undefined): SyntaxNode[] {
   const words = fields(n, 'argument');
-  const at = builtinParse('run', words, BATS_COMMANDS.run).roles.find((r) => r.role.role === 'command');
+  const at = builtinParse('run', words, shell, BATS_COMMANDS.run).roles.find((r) => r.role.role === 'command');
   return at ? words.slice(at.word) : [];
 }
 
@@ -90,7 +91,7 @@ export function batsFacts(tree: SyntaxTree, region: Pick<ShellRegion, 'commands'
       if (cmd.type !== 'command' || commandName(cmd) !== 'run') return;
       // (A function of the file named `run` is not bats' own.)
       if (resolveName(state, 'run', cmd).kind === 'function') return;
-      const words = runCommand(cmd);
+      const words = runCommand(cmd, state.shell);
       if (!words.length) return;
       const text = shorten(words.map((w) => w.text).join(' '));
       if (k === 0) out.push({ fact: fact(lang, 'bats-run-in-pipeline', { cmd: text }), node: p });

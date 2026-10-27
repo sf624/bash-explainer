@@ -2,7 +2,8 @@
 // both read: declaration commands read with their builtin's spec, the catalog of the variables bash sets, and the names
 // an arithmetic text assigns.
 import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
-import { argWord } from '../argv/words';
+import { argWordFor } from '../argv/words';
+import type { Shell } from '../dialect';
 import { builtins } from '../dict/builtins';
 import type { SyntaxNode } from '../syntax/tree';
 import { blinds, followed, none, type Row } from './allow';
@@ -223,8 +224,8 @@ export const optionRoles = (parse: ArgvParse): Extract<ArgRole, { role: 'option'
   parse.roles.flatMap((r) => (r.role.role === 'cluster' ? r.role.letters : [r.role])).filter((r): r is Extract<ArgRole, { role: 'option' }> => r.role === 'option');
 
 /** The words of a declaration command `builtin` read with its spec. */
-export function readDeclarationWords(builtin: string, words: SyntaxNode[]): Declaration {
-  const parse = interpret(builtins[builtin], words.map(argWord), { name: builtin });
+export function readDeclarationWords(builtin: string, words: SyntaxNode[], shell: Shell | undefined): Declaration {
+  const parse = interpret(builtins[builtin], words.map(argWordFor(shell)), { name: builtin });
   const roles = new Map(parse.roles.map(({ word, role }) => [words[word], role]));
   let on = '';
   let off = '';

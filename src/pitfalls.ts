@@ -127,7 +127,7 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
       if (role.role === 'subcommand') visit(role.parse);
       if (role.role !== 'command' || !role.parse) continue;
       if (role.name !== undefined && !runsString(role.slot)) {
-        envs ??= slotEnvs(model.env(n), parse, spec, a, lookupCommand);
+        envs ??= slotEnvs(model.env(n), parse, spec, a, lookupCommand, undefined, model.shell);
         out.push({ nameWord: a[word], name: pathCommand(role.name), args: a.slice(word + 1, role.parse.end), env: envs.get(a[word]) });
       }
       visit(role.parse);
@@ -448,7 +448,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
     const signals = [...new Set(r.parse.roles.flatMap(({ word, role }) => (role.role === 'operand' && role.spec?.name === 'SIGNAL' ? [signalName(r.values[word])] : [])))]
       .filter((x) => x !== undefined);
     if (!signals.length) return;
-    const script = model.script([w], slotEnvs(model.env(n), r.parse, r.spec, r.run.args, lookupCommand).get(w)!);
+    const script = model.script([w], slotEnvs(model.env(n), r.parse, r.spec, r.run.args, lookupCommand, undefined, model.shell).get(w)!);
     if ('why' in script || script.text === '' || endsShell(script.tree.root, new Set()) !== false) return;
     const code = (x: keyof typeof STOPS) => `\`exit ${128 + STOPS[x]}\``;
     const named = signals.map((x) => (x === 'INT' ? s('`INT`（Ctrl+C）', '`INT` (Ctrl+C)') : `\`${x}\``));

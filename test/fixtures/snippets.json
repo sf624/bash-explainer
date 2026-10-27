@@ -1498,6 +1498,7 @@
  "trap 'x=1' INT",
  "trap - INT; v=2",
  "trap -lP INT",
+ "trap {x,EXIT}",
  "true",
  "try input",
  "type -t ls",

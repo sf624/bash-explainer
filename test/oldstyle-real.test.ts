@@ -165,13 +165,44 @@ describe('ps: a number after BSD letters is a list of PIDs', () => {
     assert.deepStrictEqual(pids('ps t1'), pids('ps t 1'));
   });
 
-  // The number must come last in the word; a letter with a value before it takes the rest of the word (`ps op1`).
+  // The number must come last in the word.
   (usable('ps') ? it : it.skip)('is an error where the number is not last, which stays a plain word', () => {
     for (const line of ['ps u1x', 'ps 1u', 'ps u1a', 'ps a1p2']) {
       assert.match(run(line, os.tmpdir()).err, /process ID list syntax error/, line);
       assert.deepStrictEqual(letters(line), [], line);
     }
-    assert.deepStrictEqual(letters('ps op1'), []);
+  });
+});
+
+describe('ps: a BSD letter with a value takes the rest of its word', () => {
+  /** What ps prints for `line`, without the lines that change from run to run (the PIDs of its own children). */
+  const printed = (line: string): string => run(line, os.tmpdir()).out;
+  // [attached, separate, the value the interpreter reads, the letters before it]: the same output from both.
+  const ROWS: [string, string, string, string][] = [
+    ['ps opid,comm', 'ps o pid,comm', 'pid,comm', 'o'],
+    ['ps Uroot', 'ps U root', 'root', 'U'],
+    ['ps aopid,comm', 'ps a o pid,comm', 'pid,comm', 'ao'],
+    ['ps rUroot', 'ps r U root', 'root', 'rU'],
+    ['ps rUroot opid', 'ps r U root o pid', 'root', 'rU'],
+    ['ps k-rss opid', 'ps k -rss o pid', '-rss', 'k'],
+    ['ps ap1', 'ps a p 1', '1', 'ap'],
+  ];
+  (usable('ps') ? it : it.skip)('reads the rest of the word as the value, as ps does', () => {
+    for (const [attached, separate, value, before] of ROWS) {
+      const { parse, words } = parseOf(attached);
+      const old = parse.roles.find(({ role }) => role.role === 'old-style')!;
+      const given = (old.role as { letters: { flag: string; value?: { attached: number } }[] }).letters;
+      assert.strictEqual(given.map((l) => l.flag).join(''), before, attached);
+      assert.strictEqual(words[old.word].slice(given[given.length - 1].value!.attached), value, attached);
+      // The word after it is not its value: `ps Uroot opid` has `opid` as letters of its own.
+      assert.strictEqual(printed(attached), printed(separate), attached);
+      assert.ok(printed(attached).length > 0 && !run(attached, os.tmpdir()).err, attached);
+    }
+    // The value is the rest of the word, so the letters after the value's start are not letters: `ps oupid` is an error.
+    assert.match(run('ps oupid', os.tmpdir()).err, /unknown user-defined format specifier "upid"/);
+    assert.deepStrictEqual(parseOf('ps oupid').parse.roles.map(({ role }) => role.role), ['old-style']);
+    // Before, `Uroot` was five letters, `U` taking the next word (`ps Uroot opid`).
+    assert.notStrictEqual(printed('ps Uroot opid'), printed('ps U opid'));
   });
 });
 

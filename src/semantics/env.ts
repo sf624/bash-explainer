@@ -17,10 +17,11 @@
 import type { ArgRole, ArgvParse, ArgWord, CommandRole, RoleAt, ValueRole } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
 import type { BuiltinCall, CommandSlot, CommandSpec } from '../argv/spec';
-import { argWord } from '../argv/words';
+import { argWordFor } from '../argv/words';
 import { shellFromName } from '../dialect';
 import type { Shell } from '../dialect';
 import { field, substitutionForm, type SyntaxNode } from '../syntax/tree';
+import { staticWordValue } from '../staticword';
 import type { ShellState, Tri } from './state';
 import type { HostCall } from './walk/host';
 
@@ -456,7 +457,7 @@ export function runsString(slot: CommandSlot): boolean {
  * `env -S` value has no word of its own, so it is not a key, but what it runs is (`env -S'-i bash -c' 'f'`: the
  * string, under bash under env).
  */
-export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, nodes: readonly SyntaxNode[], lookup?: (name: string) => CommandSpec | undefined, strings?: Map<SyntaxNode, SyntaxNode[]>): Map<SyntaxNode, ExecEnv> {
+export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, nodes: readonly SyntaxNode[], lookup?: (name: string) => CommandSpec | undefined, strings?: Map<SyntaxNode, SyntaxNode[]>, shell?: Shell): Map<SyntaxNode, ExecEnv> {
   const out = new Map<SyntaxNode, ExecEnv>();
   const visit = (outer: ExecEnv, p: ArgvParse, s: CommandSpec, all: readonly Item[]): void => {
     // A command named in an `env -S` value reads the rest of the line: the roles after it are its own.
@@ -503,7 +504,7 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
       }
     }
   };
-  visit(env, parse, spec, items(parse.roles, { args: nodes.map(argWord), node: (i) => nodes[i], text: (i) => nodes[i].text }));
+  visit(env, parse, spec, items(parse.roles, { args: nodes.map(argWordFor(shell)), node: (i) => nodes[i], text: (i) => nodes[i].text }));
   return out;
 }
 
@@ -540,7 +541,7 @@ export function shellEffectOf(spec: CommandSpec | undefined, roles: readonly (re
         call.flags.push(r.flag);
         if (r.role === 'option' && r.missing) call.bare.push(r.flag);
       } else if (r.role === 'end-of-options') call.flags.push('--');
-      else if (r.role === 'operand') call.operands.push(argWord(w).value);
+      else if (r.role === 'operand') call.operands.push(staticWordValue(w));
     }
   }
   return effect.when(call) ? 'changes' : undefined;

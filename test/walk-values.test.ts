@@ -64,7 +64,7 @@ describe('the prefix assignments of a command with a name', () => {
     assert.strictEqual(after('[ -f x ] && enable -n export; a=2 export a', 'a'), 'unknown');
     // (`command -v` only looks the name up.)
     assert.strictEqual(after('a=1; a=2 command -v export', 'a'), '1');
-    assert.deepStrictEqual(keptPrefixes(parser.parse('a=2 command -v export a').root.namedChildren[0], () => undefined), { names: new Map() });
+    assert.deepStrictEqual(keptPrefixes(parser.parse('a=2 command -v export a').root.namedChildren[0], () => undefined, undefined), { names: new Map() });
   });
 
   it('says that the one `export` gets stays', () => {

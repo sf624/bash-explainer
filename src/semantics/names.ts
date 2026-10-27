@@ -304,10 +304,10 @@ export function assignmentsOf(model: StateModel, command: SyntaxNode, res: NameR
   const posix = option(model.at(command).run, 'set', 'posix');
   const stays = res !== 'dynamic' && res?.kind === 'builtin' && res.special && (posix === 'on' || posix === 'unknown');
   // (`x=1 unset x` removes that `x`: it does not stay.)
-  const unset = res !== 'dynamic' && res?.kind === 'builtin' ? temporariesUnset(res.name, fields(command, 'argument'), command) : undefined;
+  const unset = res !== 'dynamic' && res?.kind === 'builtin' ? temporariesUnset(res.name, fields(command, 'argument'), command, model.shell) : undefined;
   // (A word of known text gives one word: `x=1 $cmd env`.)
   const named = res === 'dynamic' && fields(command, 'argument').some((w) => staticWordValue(w) !== undefined);
-  const exported = res !== 'dynamic' && res?.kind === 'builtin' ? keptPrefixes(command, staticWordValue) : undefined;
+  const exported = res !== 'dynamic' && res?.kind === 'builtin' ? keptPrefixes(command, staticWordValue, model.shell) : undefined;
   return assignments.map((a) => {
     const name = (field(field(a, 'name')!, 'name') ?? field(a, 'name')!).text;
     if (exported?.names.get(name)) return { node: a, name, scope: 'persists', sure: true, named: exported.builtin };
@@ -327,12 +327,12 @@ const DECLARING = new Set(['export', 'readonly', 'declare', 'typeset', 'local'])
  * own in a function, and give `a=7` to the variable of the command): `false`, it may stay or not. With the name of
  * the builtin.
  */
-export function keptPrefixes(n: SyntaxNode, text: (w: SyntaxNode) => string | undefined): { builtin?: string; names: Map<string, boolean> } {
+export function keptPrefixes(n: SyntaxNode, text: (w: SyntaxNode) => string | undefined, shell: Shell | undefined): { builtin?: string; names: Map<string, boolean> } {
   let name = field(n, 'name')?.text;
   let args = fields(n, 'argument');
   const out = new Map<string, boolean>();
   while (name === 'command' || name === 'builtin') {
-    const inner = wrapped(name, args);
+    const inner = wrapped(name, args, shell);
     if ('lookup' in inner) return { names: out };
     ({ name, args } = inner);
   }
@@ -365,11 +365,11 @@ export function keptPrefixes(n: SyntaxNode, text: (w: SyntaxNode) => string | un
  * temporary ones that the assignments before the command `n` make (`x=1 unset x`), by its operands that unset names
  * (`OperandSpec.acts`): bash removes that `x`, and the one from before stays, in POSIX mode too.
  */
-export function temporariesUnset(name: string, words: readonly SyntaxNode[], n: SyntaxNode, parse?: ArgvParse): Set<string> {
+export function temporariesUnset(name: string, words: readonly SyntaxNode[], n: SyntaxNode, shell: Shell | undefined, parse?: ArgvParse): Set<string> {
   const prefix = new Set(prefixAssignments(n).map((a) => field(a, 'name')!.text));
   if (!prefix.size || !(builtins[name] && actsOnNames(builtins[name], 'unsets'))) return new Set();
   const ws = words.filter((w) => !w.type.endsWith('redirect'));
-  const names = actedNames(parse ?? builtinParse(name, ws)).filter((o) => o.acts === 'unsets' && o.space !== 'function' && o.space !== 'none');
+  const names = actedNames(parse ?? builtinParse(name, ws, shell)).filter((o) => o.acts === 'unsets' && o.space !== 'function' && o.space !== 'none');
   return new Set(names.map(({ word }) => staticWordValue(ws[word])).filter((v): v is string => v !== undefined && prefix.has(v)));
 }
 

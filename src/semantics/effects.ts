@@ -4,7 +4,7 @@
 import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
 import type { CommandSpec, ValueSpec, VariableSet } from '../argv/spec';
 import { declaresNames } from '../argv/query';
-import { argWord } from '../argv/words';
+import { argWordFor } from '../argv/words';
 import type { Shell } from '../dialect';
 import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
@@ -55,8 +55,8 @@ export function aliasOf(a: SyntaxNode): { name: string; value: string } | undefi
 }
 
 /** The words of a builtin read with its spec (or `spec`: a function of the host, bats' `run`). */
-export function builtinParse(name: string, args: readonly SyntaxNode[], spec = builtins[name]): ArgvParse {
-  return interpret(spec, args.map(argWord), { name });
+export function builtinParse(name: string, args: readonly SyntaxNode[], shell: Shell | undefined, spec = builtins[name]): ArgvParse {
+  return interpret(spec, args.map(argWordFor(shell)), { name });
 }
 
 /**
@@ -64,8 +64,8 @@ export function builtinParse(name: string, args: readonly SyntaxNode[], spec = b
  * (undefined: not known here) and its words; `lookup` when it runs nothing (`command -v x` only looks it up; `command`
  * alone).
  */
-export function wrapped(name: 'command' | 'builtin', args: readonly SyntaxNode[]): { name: string | undefined; args: SyntaxNode[] } | { lookup: true } {
-  const at = builtinParse(name, args).roles.find((r) => r.role.role === 'command');
+export function wrapped(name: 'command' | 'builtin', args: readonly SyntaxNode[], shell: Shell | undefined): { name: string | undefined; args: SyntaxNode[] } | { lookup: true } {
+  const at = builtinParse(name, args, shell).roles.find((r) => r.role.role === 'command');
   return at ? { name: staticWordValue(args[at.word]), args: args.slice(at.word + 1) } : { lookup: true };
 }
 

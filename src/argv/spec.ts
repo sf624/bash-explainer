@@ -357,6 +357,11 @@ export interface OldStyleSpec {
   /** Any word that is not an option or a value may be such letters, not only the first (procps reads `ps -p 1 u` as `ps u -p 1`). */
   anywhere?: boolean;
   /**
+   * A letter that takes a value takes the rest of its word when there is some (procps `ps opid,comm`, `ps Uroot`, `ps
+   * rU root`: the value is `root` there too), else the next word. Not for tar, whose letters take the next words.
+   */
+  attachedValues?: boolean;
+  /**
    * A number (or a comma-separated list) at the end of the word, after the letters. If the last letter takes a value,
    * it is that value (`ps t1`, `ps p1,2`); else it is the value of `option`, a letter of `letters`, that `text` says
    * (procps: `ps u1` is `ps u p1`).

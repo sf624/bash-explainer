@@ -1539,7 +1539,7 @@ export const core: Record<string, CommandSpec> = {
       ],
     }],
     oldStyle: {
-      anywhere: true, numbers: { option: 'p', text: tx('プロセス ID を指定（数字は BSD 形式の文字のあとに続けて書くと PID の指定になる。`p` と同じ）', 'process IDs (a number after BSD letters is a PID list, the same as `p`)') },
+      anywhere: true, attachedValues: true, numbers: { option: 'p', text: tx('プロセス ID を指定（数字は BSD 形式の文字のあとに続けて書くと PID の指定になる。`p` と同じ）', 'process IDs (a number after BSD letters is a PID list, the same as `p`)') },
       style: tx('BSD 形式のオプション（ハイフンなし。`-` 付きの UNIX 形式とは意味が違うものがある）', 'BSD-style options (no dash; some mean something else than the UNIX forms with `-`)'),
       letters: letters([
         ['a', '端末につながったプロセスを、ほかのユーザーのものも含めて表示（`x` と合わせて全プロセス）', "show processes that have a terminal, other users' included (with `x`: all processes)"],

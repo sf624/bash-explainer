@@ -1,5 +1,6 @@
 // The conditions of the walk of the shell state (src/semantics/walk/walker.ts): the status of a statement when it is
 // known (`[ ]`, `[[ ]]`, `true`, `(( ))`, assignments), the lists of a `case` that run, and what each condition decided.
+import type { Shell } from '../../dialect';
 import { evalArith } from '../../arith';
 import { parseExpansion } from '../../expansion';
 import { staticWordValue, substitutionNames } from '../../staticword';
@@ -30,12 +31,12 @@ const EXPANDING = ['simple_expansion', 'expansion', 'command_substitution', 'ari
  * which a decision made before it runs does not see. (A row of `all`, also one of an option, `jobs -x`, trusts
  * nothing: no decision is made at all.) A program changes nothing of this shell.
  */
-function changesOnlyNames(c: SyntaxNode, name: string): boolean {
+function changesOnlyNames(c: SyntaxNode, name: string, shell: Shell | undefined): boolean {
   const quiet = (row: Row): boolean => row.effect.kind === 'none' || row.effect.kind === 'names';
   if (!prefixAssignments(c).every((a) => quiet(writeEffect(field(a, 'name')!.text)))) return false;
   if (!Object.hasOwn(builtins, name)) return true;
   const args = fields(c, 'argument');
-  const parse = builtinParse(name, args);
+  const parse = builtinParse(name, args, shell);
   return quiet(builtinRow(name)) && callbacks(parse, args).length === 0;
 }
 
@@ -122,7 +123,7 @@ export class WalkConditions {
    * when it is not known here (a word not known, an element, `-f`, a variable read-only on some paths only).
    */
   private unsetStatus(args: readonly SyntaxNode[], st: ShellState): number | undefined {
-    const parse = builtinParse('unset', args);
+    const parse = builtinParse('unset', args, this.w.shell);
     const space = namespaceOf(parse, builtins.unset.operands![0].pattern[0]);
     if (space === 'none') return 1;
     if (space === 'function') return undefined;
@@ -395,8 +396,8 @@ export class WalkConditions {
     return ran.every((item) => descendants(item, ['command']).every((c) => {
       const name = commandName(c);
       // (Assignments alone: by the rows of the variables they assign.)
-      if (!field(c, 'name')) return changesOnlyNames(c, '');
-      return name !== undefined && !st.functions.get(name) && !st.aliases.get(name) && changesOnlyNames(c, name);
+      if (!field(c, 'name')) return changesOnlyNames(c, '', this.w.shell);
+      return name !== undefined && !st.functions.get(name) && !st.aliases.get(name) && changesOnlyNames(c, name, this.w.shell);
     }));
   }
 

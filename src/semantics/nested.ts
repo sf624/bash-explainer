@@ -114,7 +114,7 @@ export function nestedScripts(tree: SyntaxTree, shell?: Shell, descend: (script:
       const args = fields(cmd, 'argument');
       if (!spec || !args.length) continue;
       const strings = new Map<SyntaxNode, SyntaxNode[]>();
-      const envs = slotEnvs(model.env(cmd), interpret(spec, args.map(argWordFor(model.shell)), { name, lookup: lookupCommand }), spec, args, lookupCommand, strings);
+      const envs = slotEnvs(model.env(cmd), interpret(spec, args.map(argWordFor(model.shell)), { name, lookup: lookupCommand }), spec, args, lookupCommand, strings, model.shell);
       for (const [first, words] of strings) {
         const script = model.script(words, envs.get(first)!);
         if ('why' in script) continue;
