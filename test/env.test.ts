@@ -170,6 +170,15 @@ describe('execution environments: command slots', () => {
     const s2 = rb.get("'f'")! as ExecEnv;
     assert.deepStrictEqual(s2.links.map((l) => (l.kind === 'slot' ? `${l.via}:${l.slot.run}:${l.shell ?? ''}:${(l.invocation ?? []).map((o) => o.flag).join('')}` : l.kind)), ['run:subshell::', 'bash -c:shell-string:bash:-e-c']);
     assert.deepStrictEqual([processOf(s2).kind, reachOf(s2).functions, reachOf(s2).variables], ['shell', 'exported', 'exported']);
+    // (An option bash does not have, or a long one after a short one, is kept as written: what the shell starts with
+    // is then not known.)
+    for (const [src, flags] of [["bash -y -c 'f'", '-y-c'], ["bash -x --posix -c 'f'", '-x--posix-c']]) {
+      const u = slots(src, src).get("'f'")! as ExecEnv;
+      assert.deepStrictEqual(u.links.map((l) => (l.kind === 'slot' ? (l.invocation ?? []).map((o) => o.flag).join('') : l.kind)), [flags], src);
+    }
+    // (A value attached to its option, as POSIX lets `sh -opipefail` write it; bash's `-o` takes the next word.)
+    const attached = slots("sh -opipefail -c 'f'", "sh -opipefail -c 'f'").get("'f'")! as ExecEnv;
+    assert.deepStrictEqual(attached.links.map((l) => (l.kind === 'slot' ? l.invocation : undefined)), [[{ flag: '-o', value: 'pipefail' }, { flag: '-c' }]]);
     const re = slots("run eval 'f'", "run eval 'f'", BATS_COMMANDS.run).get("'f'")!;
     assert.deepStrictEqual([re.links.map((l) => (l.kind === 'slot' ? l.slot.run : l.kind)), processOf(re).kind, reachOf(re).functions], [['subshell', 'current-shell'], 'subshell', 'all']);
     // su keeps the environment, unless it starts a login shell; docker run -e passes a variable.
