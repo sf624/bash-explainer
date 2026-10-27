@@ -1,0 +1,18 @@
+{
+  "state#unset-fv": {
+    "manual": "4.1",
+    "bash": "5.2",
+    "try": {
+      "code": "bash -c 'f() { :; }; x=1; unset -fv x f; echo \"status $?, x=$x\"; type -t f'",
+      "output": "bash: line 1: unset: cannot simultaneously unset a function and a variable\nstatus 1, x=1\nfunction"
+    }
+  },
+  "status#exit-status": {
+    "manual": "3.7.5",
+    "bash": "5.2",
+    "try": {
+      "code": "bash -c 'exit 300'; echo $?",
+      "output": "44"
+    }
+  }
+}

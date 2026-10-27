@@ -1,3 +1,4 @@
+import { basisOf, type Basis, type BasisSpec, type TryIt } from './basis';
 import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
 import { codeSpan } from './label';
@@ -40,6 +41,11 @@ interface Entry<P> {
   level?: NoteLevel | ((p: P) => NoteLevel);
   /** `false`: a warning or caveat that stays a note, never a problem in the editors (`notProblem`, `isProblem`). */
   problem?: false;
+  /**
+   * Where the fact is bash's behaviour rather than the manual's, or has a command to try it: the probe row that checks
+   * it (src/basis.ts, `withBasis`); a function when it depends on the params. None: the manual's sections in `refs`.
+   */
+  basis?: BasisSpec | ((p: P) => BasisSpec | undefined);
 }
 
 const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text });
@@ -55,6 +61,8 @@ const caveat = <P = Record<string, never>>(refs: readonly string[], text: (p: P)
  * "Notes as problems").
  */
 const notProblem = <P>(e: Entry<P>): Entry<P> => ({ ...e, problem: false });
+/** An entry with its basis: the probe row that checks it and gives a try-it (src/basis.ts, docs/design/basis.md). */
+const withBasis = <P>(e: Entry<P>, basis: BasisSpec | ((p: P) => BasisSpec | undefined)): Entry<P> => ({ ...e, basis });
 
 /** `local-outside-function` in a file with no shebang (`sourced`): a function may read it with `source`, and `local` then works. */
 const withSourced = (sourced: boolean | undefined, [ja, en]: readonly [string, string]): readonly [string, string] => (sourced ? [
@@ -73,9 +81,12 @@ const postfixLevel = ({ errexit }: { errexit?: boolean }): NoteLevel => (errexit
 
 export const MESSAGES = {
   // ---------------------------------------------------------------- exit status (3.7.5)
-  'exit-modulo': note<{ value: string; status: number }>(['3.7.5'], ({ value, status }) => [
+  // (`ends`: what the builtin ends, from the status model: `exit` the shell, `return` a function. 4.1 says that `return`
+  // keeps the least significant 8 bits of its argument; nothing says what `exit 300` does.)
+  'exit-modulo': withBasis(note<{ value: string; status: number; ends?: 'shell' | 'function' }>(['3.7.5'], ({ value, status }) => [
     `終了ステータスは 0〜255 なので、\`${value}\` は 256 で割った余りの ${status} になる`,
     `An exit status is 0–255, so \`${value}\` becomes ${status} (the value modulo 256)`]),
+  ({ ends }) => (ends === 'shell' ? { kind: 'checked', probe: 'status#exit-status', also: ['status#exit-negative'] } : undefined)),
 
   // ---------------------------------------------------------------- errexit (4.3.1, 4.3.2)
   'errexit-off-in-substitution': note<{ first: string; form: string }>(['4.3.1', '4.3.2'], ({ first, form }) => [
@@ -164,9 +175,11 @@ export const MESSAGES = {
   'special-builtin-before-function': note<{ name: string; line: number }>(['3.7.2', '6.11'], ({ name, line }) => [
     `POSIX モードでは特殊ビルトインが関数より先に見つかるので、行 ${line} の関数 \`${name}\` ではなく、ビルトインの \`${name}\` が動きます`,
     `In POSIX mode a special builtin is found before a function, so the builtin \`${name}\` runs, not the function \`${name}\` of line ${line}`]),
-  'unset-function-and-variable': failure(['4.1'], () => [
+  // (4.1 says what `-f` and `-v` each do, not that both together are an error.)
+  'unset-function-and-variable': withBasis(failure(['4.1'], () => [
     '`unset` に `-f` と `-v` を同時に指定するとエラーになり（`cannot simultaneously unset a function and a variable`、終了ステータス 1）、何も削除されません',
     '`unset` with both `-f` and `-v` is an error (`cannot simultaneously unset a function and a variable`, status 1): nothing is unset']),
+  { kind: 'checked', probe: 'state#unset-fv' }),
   'unset-readonly': failure<{ name: string }>(['4.1', '4.2'], ({ name }) => [
     `変数 \`${name}\` は読み取り専用なので、\`unset\` はエラーになり（\`cannot unset: readonly variable\`、終了ステータス 1）、\`${name}\` は削除されません`,
     `The variable \`${name}\` is read-only, so \`unset\` fails (\`cannot unset: readonly variable\`, status 1) and \`${name}\` stays`]),
@@ -569,8 +582,12 @@ export type Params<K extends FactId> = Parameters<(typeof MESSAGES)[K]['text']>[
  */
 export interface Note { text: string; level: NoteLevel; label: string; body: string; code?: string }
 
-/** A fact as a note: its id (also its `code`), its kind, and the sections it cites. */
-export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly string[]; code: FactId }
+/**
+ * A fact as a note: its id (also its `code`), its kind, and the sections it cites; where it is bash's behaviour rather
+ * than the manual's, its `basis` (none: the manual's sections in `refs`, `basisFor`), and a command that shows it
+ * (`tryIt`), both from the probe row that checks it (src/basis.ts).
+ */
+export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly string[]; code: FactId; basis?: Basis; tryIt?: TryIt }
 
 /** The mark a note starts with, one per level. */
 export const MARKS: Record<NoteLevel, string> = { warning: '⚠', info: 'ⓘ', note: 'ℹ' };
@@ -610,7 +627,8 @@ export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> e
   const [ja, en] = e.text(params[0]);
   const level = typeof e.level === 'function' ? e.level(params[0]) : e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note');
   const { text, label, body } = marked(lang, level, lang === 'ja' ? ja : en, { kind: e.kind, heading: e.heading });
-  return { id, kind: e.kind, level, text, refs: e.refs, label, body, code: id };
+  const { basis, tryIt } = basisOf(typeof e.basis === 'function' ? e.basis(params[0]) : e.basis);
+  return { id, kind: e.kind, level, text, refs: e.refs, label, body, code: id, ...(basis ? { basis } : {}), ...(tryIt ? { tryIt } : {}) };
 }
 
 /** Whether the note with `code` is a problem when it is a warning or a caveat: all are, but the facts that `notProblem` marks. */
