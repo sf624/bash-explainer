@@ -36,6 +36,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Changed
 
+- A special builtin's badge says so (`export`, `set`, …); before, it said builtin.
 - A new logo: a speech bubble whose sides are the brackets `[ ]`, around a prompt `>_`. It is the extension's icon, the panel's tab icon, the web page's logo and tab icon, and the README's header.
 - The hover explains the part under the mouse (a word, an option, an operator), and moving to the next word explains that one. The whole line, one block per command, opens with `Ctrl+K Ctrl+E` or the hover's **Whole line** link; before, every hover showed it.
 - The Language Server's hover starts with the part at the position, then the whole line.

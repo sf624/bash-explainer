@@ -602,6 +602,9 @@ const SPECIAL_TITLE: Text = {
   en: 'a POSIX special builtin: a command built into bash, which runs in this shell with no new process. In POSIX mode, it is found before functions, an error in it exits a non-interactive shell, and the assignments before it stay after it',
 };
 
+/** The badge of a POSIX special builtin (4.4): its own word, in place of the builtin's. */
+const SPECIAL_WORD: Text = { ja: '特殊組み込み', en: 'special builtin' };
+
 /** The word of a kind of command name, as the badge says it ("builtin", "ビルトイン"). */
 export const nameKindWord =(lang: Lang, kind: NameKind): string => NAME_KINDS[kind].word[lang];
 
@@ -654,10 +657,11 @@ export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
     : f.by === undefined ? undefined : ja ? `\`${f.by}\` が実行` : `run by \`${f.by}\``;
   // (A special builtin, as the manual names it (4.4), differs from the others in POSIX mode only.)
   const title = f.special ? SPECIAL_TITLE[lang] : k.title[lang];
+  const word = f.special ? SPECIAL_WORD[lang] : k.word[lang];
   return {
-    kind: k.word[lang], title, ...(by ? { by } : {}), ...(lines.length ? { also: lines.join(ja ? '。' : '. ') } : {}),
-    short: ja ? `（${k.word.ja}${by ? `。${by}` : ''}）` : ` (${k.word.en}${by ? `, ${by}` : ''})`,
-    spoken: [k.word[lang], ...(by ? [by] : [])].join(ja ? '、' : ', ').replace(/`/g, ''),
+    kind: word, title, ...(by ? { by } : {}), ...(lines.length ? { also: lines.join(ja ? '。' : '. ') } : {}),
+    short: ja ? `（${word}${by ? `。${by}` : ''}）` : ` (${word}${by ? `, ${by}` : ''})`,
+    spoken: [word, ...(by ? [by] : [])].join(ja ? '、' : ', ').replace(/`/g, ''),
   };
 }
 
