@@ -8,32 +8,18 @@ class Unsupported extends RunnerUnsupported {}
 
 // ---------------------------------------------------------------- brace expansion
 
-/** Index of the `}` matching the `{` at `open`, skipping escaped characters. */
-function matchBrace(s: string, open: number): number {
-  let depth = 0;
-  for (let i = open; i < s.length; i++) {
-    if (s[i] === '\\') { i++; continue; }
-    if (s[i] === '{') depth++;
-    else if (s[i] === '}' && --depth === 0) return i;
+/** The words of the sequence expression `{x..y[..incr]}` (`text`, braces included, a valid one); null when they are too many to list. */
+export function braceSequence(text: string): string[] | null {
+  try {
+    return sequence(text.slice(1, -1));
+  } catch {
+    // (`sequence` throws only past 500 words.)
+    return null;
   }
-  return -1;
 }
 
-/** Top-level comma positions inside braces `s[open..close]`. */
-function commas(s: string, open: number, close: number): number[] {
-  const out: number[] = [];
-  let depth = 0;
-  for (let i = open + 1; i < close; i++) {
-    if (s[i] === '\\') { i++; continue; }
-    if (s[i] === '{') depth++;
-    else if (s[i] === '}') depth--;
-    else if (s[i] === ',' && depth === 0) out.push(i);
-  }
-  return out;
-}
-
-function sequence(body: string): string[] | undefined {
-  const num = /^(-?\d+)\.\.(-?\d+)(?:\.\.(-?\d+))?$/.exec(body);
+function sequence(body: string): string[] {
+  const num = /^([-+]?\d+)\.\.([-+]?\d+)(?:\.\.([-+]?\d+))?$/.exec(body);
   if (num) {
     const [a, b] = [Number(num[1]), Number(num[2])];
     const step = Math.abs(Number(num[3] ?? 1)) || 1;
@@ -46,59 +32,13 @@ function sequence(body: string): string[] | undefined {
     }
     return out;
   }
-  const chr = /^([A-Za-z])\.\.([A-Za-z])(?:\.\.(-?\d+))?$/.exec(body);
-  if (chr) {
-    const [a, b] = [chr[1].charCodeAt(0), chr[2].charCodeAt(0)];
-    const step = Math.abs(Number(chr[3] ?? 1)) || 1;
-    const out: string[] = [];
-    for (let v = a; a <= b ? v <= b : v >= b; v += a <= b ? step : -step) out.push(String.fromCharCode(v));
-    return out;
-  }
-  return undefined;
-}
-
-/**
- * Expand braces in an unquoted word; undefined when the word has no brace expansion. `raw`: keep the backslashes
- * (quote removal comes later, after the other expansions).
- */
-export function braceExpand(word: string, raw = false): string[] | undefined {
-  const words = expand(word);
-  // Words that end up empty are dropped, as bash drops empty unquoted words.
-  // (A backslash left at the end of a word, as the one `{Z..a}` makes, is removed with quote removal: an empty argument that stays.)
-  return words?.filter((w) => w !== '').map((w) => (raw ? w : w.replace(/\\(.|$)/g, '$1')));
-}
-
-function expand(word: string): string[] | undefined {
-  for (let i = 0; i < word.length; i++) {
-    if (word[i] === '\\') { i++; continue; }
-    if (word[i] !== '{' || word[i - 1] === '$') continue;
-    const close = matchBrace(word, i);
-    if (close < 0) return undefined;
-    const body = word.slice(i + 1, close);
-    const prefix = word.slice(0, i);
-    const suffix = word.slice(close + 1);
-    const cs = commas(word, i, close);
-    let parts: string[] | undefined;
-    if (cs.length) {
-      parts = [];
-      let from = i + 1;
-      for (const c of [...cs, close]) {
-        parts.push(word.slice(from, c));
-        from = c + 1;
-      }
-    } else {
-      parts = sequence(body);
-    }
-    if (!parts) continue;
-    const rest = expand(suffix) ?? [suffix];
-    const out: string[] = [];
-    for (const part of parts) {
-      for (const p of expand(part) ?? [part]) for (const r of rest) out.push(prefix + p + r);
-    }
-    if (out.length > 500) throw new Unsupported('too long');
-    return out;
-  }
-  return undefined;
+  // (Else two letters: the parser makes a sequence only of a valid one, src/syntax/adapters/braces.ts.)
+  const chr = /^([A-Za-z])\.\.([A-Za-z])(?:\.\.([-+]?\d+))?$/.exec(body)!;
+  const [a, b] = [chr[1].charCodeAt(0), chr[2].charCodeAt(0)];
+  const step = Math.abs(Number(chr[3] ?? 1)) || 1;
+  const out: string[] = [];
+  for (let v = a; a <= b ? v <= b : v >= b; v += a <= b ? step : -step) out.push(String.fromCharCode(v));
+  return out;
 }
 
 // ---------------------------------------------------------------- globs

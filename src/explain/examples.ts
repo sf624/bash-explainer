@@ -26,9 +26,10 @@ import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut,
 import { type Text, tx } from '../i18n';
 import { shorten } from '../label';
 import { EMPTY_WORD, fact, shownWord, SPACE_MARK } from '../messages';
+import { braceValues } from '../semantics/brace';
 import { slotEnvironment } from '../semantics/env';
 import { isPlainWord, literalContent, staticWordValue } from '../staticword';
-import { assignmentsOnly, field, prefixAssignments, redirectionsOf, type SyntaxNode } from '../syntax/tree';
+import { assignmentsOnly, field, prefixAssignments, redirectionsOf, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
@@ -499,9 +500,8 @@ function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[]): void {
 export function braceWordsOf(cx: Explainer, a: SyntaxNode): string[] | undefined {
   // (The model says whether braces expand there: not after `set +B`.)
   if (!bracesApply(cx, a)) return undefined;
-  // (Only a word of plain parts, which `unquotedWord` reads, is expanded here: `'%s,'{a..c}` is not.)
-  const text = unquotedWord(a);
-  return text === undefined ? undefined : braceExpansion(text) ?? undefined;
+  // (Their values: `{a,b}"x"` is `ax` and `bx`; none when one is not known, as `$x` in `{a,$x}`.)
+  return braceValues([a]) ?? undefined;
 }
 
 /** Whether brace expansion applies to the argument `a` where it runs (the word model: not after `set +B`). */
@@ -521,7 +521,9 @@ export function exampleWords(cx: Explainer, args: SyntaxNode[], printed = false)
     const braced = braceWordsOf(cx, a);
     if (braced) return braced.map((w) => ({ value: unknown(w) ? undefined : w, text: w }));
     // (A word whose braces expand to words not listed here has no value: `'%s,'{a..c}`.)
-    return [{ value: unknown(a.text) || bracesApply(cx, a) ? undefined : literalContent(a)?.text, text: a.text }];
+    // (Braces the shell does not expand are text, `{a,b}` in dash: the word model's value.)
+    const text = wordBraces(a).length ? staticWordValue(a, false, cx.shell) : literalContent(a)?.text;
+    return [{ value: unknown(a.text) || bracesApply(cx, a) ? undefined : text, text: a.text }];
   });
 }
 
@@ -590,7 +592,7 @@ export function wordExample(cx: Explainer, a: SyntaxNode, cmd: { name: string; n
     });
     return;
   }
-  if (bracesHere(cx, a) && braceExpansion(text) !== undefined) return;
+  if (bracesHere(cx, a) && braceExpansion(a) !== undefined) return;
   // (Where globstar may be on, the example shows `**` at any depth, and says so.)
   const maybe = hasGlobstar(text) && shoptAt(cx, a).globstar === 'unknown';
   if (isGlob(text) && !globOff(cx, a)) globExample(cx, a, text, 'file', cx.s(`例（グロブ \`${text}\`${maybe ? '、globstar が有効なとき' : ''}）`, `Example (glob \`${text}\`${maybe ? ', where globstar is on' : ''})`));

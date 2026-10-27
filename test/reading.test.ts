@@ -646,7 +646,7 @@ describe('the reading tree of a line', () => {
     ]);
   });
 
-  it('shows the parts bash reads in a word that have no node: a glob, an escape, a tilde, braces', () => {
+  it('shows the parts bash reads in a word: a glob, an escape and a tilde, which have no node, and braces', () => {
     assert.deepStrictEqual(tree("ls *.txt $'\\t' $f ${a[0]:-def} ~ x=~/y {a,b}"), [
       'bash/line ',
       "  bash/command ls *.txt $'\\t' $f ${a[0]:-def} ~ x=~/y {a,b}",
@@ -674,6 +674,12 @@ describe('the reading tree of a line', () => {
       '      bash/expansion ~',
       '      command/argument x=~/y',
       '    bash/argument {a,b}',
+      '      bash/brace {a,b}',
+      '        bash/operator {',
+      '        bash/word a',
+      '        bash/operator ,',
+      '        bash/word b',
+      '        bash/operator }',
       '      command/argument {a,b}',
     ]);
     // (In a subshell's script too.)
@@ -686,7 +692,7 @@ describe('the reading tree of a line', () => {
     // A word that is all one expansion has it as its text.
     const r = explain('ls ~ {a,b}').reading!;
     assert.match(find(r, '~', 'bash').text!, /^Tilde expansion/);
-    assert.match(find(r, '{a,b}', 'bash').text!, /^Brace expansion/);
+    assert.match(find(r, '{a,b}', 'bash', 'brace').text!, /^Brace expansion/);
   });
 
   it('reads assignments: a name, and the parts of the value', () => {

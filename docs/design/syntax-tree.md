@@ -110,8 +110,8 @@ What the adapter does beyond a change of names:
 Where the model differs from what tree-sitter gave, because its shape was an accident of its scanner, and the consumers cope with both:
 
 - **`extglob_pattern` or `word`** for a plain pattern after `=`/`==` in a test and in a `case` item: tree-sitter's external scanner decides (`y` is a pattern, `ab` a word, `*.txt` a word, `a*` a pattern). The adapter copies its rule as far as it could work it out, so most agree, but not all. The consumers read both types as a pattern.
-- **A word cut at `{ } [ ]`**: tree-sitter makes `{src,test}`, `*.[ch]` and `{}` (of `find -exec`) concatenations of single-character words; the adapter keeps one `word`.
-- **`{1..10..3}`**: a `brace_expression` with the step (tree-sitter does not read it).
+- **A word cut at `{ } [ ]`**: tree-sitter makes `{src,test}`, `*.[ch]` and `{}` (of `find -exec`) concatenations of single-character words; the adapter keeps one `word`, but for the braces bash expands.
+- **Brace expansion**: a `brace_expression` for each one bash makes (3.5.1), found as bash finds it (src/syntax/adapters/braces.ts): a sequence `{1..10..3}` with its start, end and step, a list `{a,"b c",$v}` with its items (words, quotes, expansions, lists inside them) between `,` tokens. Where bash never expands braces (a pattern, `[[ ]]`, the word of `${x:-word}`, arithmetic) there is none; elsewhere the word model says whether they expand there (not in `x={a,b}` nor in dash). Braces bash does not expand stay text with what is in them, as unbash gives them (`{1..$n}` is one `word`).
 - **A space before an expansion in a string**, **`>&-` as one operator**, **a redirection alone in a substitution**, and **`time` before a pipe with a redirection** (`time a >f | b`).
 
 What unbash does not give, which the adapter does not repair: `echo (` is accepted without an error, and `x=(a b` reports an "unterminated extended glob".

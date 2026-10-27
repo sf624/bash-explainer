@@ -183,13 +183,13 @@ export const tildeParts = (nodes: readonly SyntaxNode[]): { node: SyntaxNode; te
   nodes.flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n])).map((n) => ({ node: n, text: n.text, plain: n.type === 'word' }));
 
 /**
- * Whether the text of the word part `n` has an unescaped `*`, `?` or `{`, or a `[` with a `]` after it: a glob or a
- * brace that may change the word (a brace only where `shell` may expand it, by the table of src/shellfeatures.ts: in
- * dash `{x,EXIT}` is text, in mksh `{1..3}`). (bash's `glob_pattern_p`: a `[` with no `]` after it is no pattern, and
- * stays as it is: `[ -f x ]`, `echo [`. In a part of a concatenation, the `]` may be in another part: `a["x"]`.)
+ * Whether the text of the word part `n` has an unescaped `*` or `?`, or a `[` with a `]` after it: a glob that may
+ * change the word. (A brace expansion is a node of its own: `brace_expression`.) (bash's `glob_pattern_p`: a `[` with
+ * no `]` after it is no pattern, and stays as it is: `[ -f x ]`, `echo [`. In a part of a concatenation, the `]` may
+ * be in another part: `a["x"]`.)
  */
-function globbed(n: SyntaxNode, text: string, shell: Shell | undefined): boolean {
-  return /(^|[^\\])(\\\\)*([*?]|\[.*\])/s.test(text) || (/(^|[^\\])(\\\\)*\{/s.test(text) && bracesMayWork(text, shell)) || (n.parent?.type === 'concatenation' && /(^|[^\\])(\\\\)*\[/.test(text));
+function globbed(n: SyntaxNode, text: string): boolean {
+  return /(^|[^\\])(\\\\)*([*?]|\[.*\])/s.test(text) || (n.parent?.type === 'concatenation' && /(^|[^\\])(\\\\)*\[/.test(text));
 }
 
 /**
@@ -206,10 +206,21 @@ export function staticWordValue(n: SyntaxNode, assignment = false, shell?: Shell
 function literalValue(n: SyntaxNode, assignment: boolean, shell: Shell | undefined): string | undefined {
   const text = decodedText(n);
   switch (n.type) {
-    case 'word': case 'number': case 'brace_expression': {
-      // An unescaped glob or brace is not text yet; in the value of an assignment, they are text.
-      if (!assignment && globbed(n, text, shell)) return undefined;
+    case 'word': case 'number': {
+      // An unescaped glob is not text yet; in the value of an assignment, it is text.
+      if (!assignment && globbed(n, text)) return undefined;
       return text.replace(/\\\n/g, '').replace(/\\(.)/gs, '$1');
+    }
+    case 'brace_expression': {
+      // (Braces the shell may expand are not text yet: `{x,EXIT}` is text in dash, `{1..3}` in mksh; in an assignment's value too.)
+      if (!assignment && bracesMayWork(n, shell)) return undefined;
+      let out = '';
+      for (const c of n.children) {
+        const v = c.named ? literalValue(c, assignment, shell) : c.type;
+        if (v === undefined) return undefined;
+        out += v;
+      }
+      return out;
     }
     case 'raw_string': return text.slice(1, -1);
     case 'ansi_c_string': return ansiCValue(text.slice(2, -1));
@@ -263,10 +274,14 @@ function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined): 
     }
   };
   switch (n.type) {
-    case 'word': case 'number': case 'brace_expression':
-      if (globbed(n, src, shell)) return false;
+    case 'word': case 'number':
+      if (globbed(n, src)) return false;
       unescape(0, src.length, /[\s\S]/);
       return true;
+    case 'brace_expression':
+      // (Braces the shell does not expand are text, with what is in them: `{x,EXIT}` in dash.)
+      if (bracesMayWork(n, shell)) return false;
+      return n.children.every((c) => (c.named ? mappedValue(c, out, shell) : (put(c.type, c.startIndex - n.startIndex, c.endIndex - n.startIndex), true)));
     case 'raw_string':
       for (let i = 1; i < src.length - 1; i++) put(src[i], i, i + 1);
       return true;

@@ -12,32 +12,26 @@ import { ciVariables } from '../dict/ciVariables';
 import { bash53Variables, specialVariables, wellKnownVariables } from '../dict/syntax';
 import { explainGlob, globIntro, type GlobTarget, hasGlob } from '../embedded/glob';
 import type { EmbeddedToken } from '../embedded/types';
-import { braceExpand, extglobs, hasGlobstar, ShellWordsUnsupported } from '../examples/shellwords';
+import { braceSequence, extglobs, hasGlobstar } from '../examples/shellwords';
 import { parseExpansion } from '../expansion';
 import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
+import { braceTexts } from '../semantics/brace';
 import { attribute, docLine } from '../semantics/state';
 import { readonlyAtStart } from '../semantics/vars';
 import { CONTEXTS, partMeaning, underscoreValue, wordOf } from '../semantics/words';
-import { decodedText, splitElement, staticWordValue, unquoteWord } from '../staticword';
-import { ancestor, assignmentsOnly, descendants, field, type SyntaxNode } from '../syntax/tree';
+import { decodedText, isPlainWord, splitElement, staticWordValue, unquoteWord } from '../staticword';
+import { ancestor, assignmentsOnly, braceKind, descendants, field, type SyntaxNode, wordBraces } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
 import { fromEmbedded, same, sibling, sortTokens } from './nodes';
 import { arrayKind, globOff, globState, inArithmetic, isAssoc, shoptAt, unquotedWord, wordAt } from './reads';
 import { pidNote } from './where';
 
-/** `braceExpand` of an unquoted word: undefined when it has no brace expansion, null when it gives too many words to list. */
-export function braceExpansion(text: string): string[] | undefined | null {
-  try {
-    return braceExpand(text);
-  } catch (e) {
-    // braceExpand throws nothing else; a guard against a bug there.
-    /* c8 ignore next */
-    if (!(e instanceof ShellWordsUnsupported)) throw e;
-    return null;
-  }
+/** The words of the brace expansion of the word `n`: undefined when it has none, null when it gives too many words to list. */
+export function braceExpansion(n: SyntaxNode): string[] | undefined | null {
+  return braceTexts([n]);
 }
 
 export function word(cx: Explainer, n: SyntaxNode): Token {
@@ -48,7 +42,7 @@ export function word(cx: Explainer, n: SyntaxNode): Token {
   if (off) return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + off);
   if (hasGlob(text) && notGlobbedHere(cx, n)) return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + notGlobbedHere(cx, n));
   if (hasGlob(text)) return { ...cx.tok(n, 'pattern', globIntro(cx.lang, 'file') + globNotes(cx, text, n), globChildren(cx, n, text, 0)), refs: ['3.5.8'] };
-  return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + valueNote(cx, n) + braceVarNote(cx, text));
+  return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + valueNote(cx, n));
 }
 
 export function string(cx: Explainer, n: SyntaxNode): Token {
@@ -143,11 +137,12 @@ export function shown(v: string): string {
 
 /**
  * Whether the word model lets the word `n` have brace expansion here (src/semantics/words.ts): not in a shell without
- * it, as dash, nor after `set +B`. Where `set +B` is on some paths only, it may (see `bracesMaybeOff`).
+ * it, as dash, nor after `set +B`, nor where bash does not expand braces, as the value of an assignment or a
+ * here-string. Where `set +B` is on some paths only, it may (see `bracesMaybeOff`).
  */
 export function bracesHere(cx: Explainer, n: SyntaxNode): boolean {
   const step = wordAt(cx, n)?.steps.find((s) => s.kind === 'brace');
-  return step?.why !== 'dialect' && !(step?.why === 'braceexpand-off' && step.applies === false);
+  return step?.why !== 'dialect' && step?.why !== 'context' && !(step?.why === 'braceexpand-off' && step.applies === false);
 }
 
 /** What to add where brace expansion of `n` may be off (`set +B` on some paths before): a parenthesis; else nothing. */
@@ -158,9 +153,14 @@ export function bracesMaybeOff(cx: Explainer, n: SyntaxNode): string {
     : '';
 }
 
-/** The words an unquoted word of plain text gives by brace expansion; undefined when it gives none (or too many to list). */
-export function braceWords(cx: Explainer, n: SyntaxNode, text: string): string[] | undefined {
-  return bracesHere(cx, n) ? braceExpansion(text) ?? undefined : undefined;
+/** The words a word gives by brace expansion; undefined when it gives none (or too many to list). */
+export function braceWords(cx: Explainer, n: SyntaxNode): string[] | undefined {
+  return bracesHere(cx, n) ? braceExpansion(n) ?? undefined : undefined;
+}
+
+/** A word of plain text, braces included (`x{a,b}`): one read as its text where its braces do not expand (dash). */
+export function plainText(n: SyntaxNode): boolean {
+  return isPlainWord(n) || (unquotedWord(n) !== undefined && wordBraces(n).length > 0);
 }
 
 /** A word with braces (`{a,b\,c}`, `{,}`, `{a..e..2}`), explained as the brace expansion it is (manual 3.5.1). */
@@ -174,7 +174,7 @@ export function braceWord(cx: Explainer, n: SyntaxNode): Token | undefined {
 function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
   const text = unquotedWord(n);
   if (text === undefined || !bracesHere(cx, n)) return undefined;
-  const words = braceExpansion(text);
+  const words = braceExpansion(n);
   if (words === null) {
     return cx.tok(n, 'expansion', cx.s(`ブレース展開: \`${text}\` は多くの単語に展開される`, `Brace expansion: \`${text}\` expands to many words`));
   }
@@ -183,69 +183,95 @@ function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
   // (A word with a backtick, as `{Z..a}` makes, is in a longer fence.)
   const list = (words.length > 12 ? [...words.slice(0, 11), '…'] : words).map((w) => (w === '…' ? w : codeSpan(w || "''"))).join(' ');
   const comma = /\\,/.test(text);
+  const sequences = wordBraces(n).filter((b) => braceKind(b) === 'sequence');
   // `{01..10..3}`: a number with a leading 0 makes every number as wide as the widest.
-  const pad = /\{-?0\d+\.\./.test(text) || /\.\.-?0\d+(?:\.\.|\})/.test(text);
-  const parts = sequenceParts(cx, text).map((t) => fromEmbedded(t, n, { text, base: 0 }, 'shell'));
+  const pad = sequences.some((s) => s.namedChildren.slice(0, 2).some((c) => /^-?0\d/.test(c.text)));
+  const parts = sequences.flatMap((s) => sequenceParts(cx, s)).map((t) => fromEmbedded({ ...t, start: t.start - n.startIndex, end: t.end - n.startIndex }, n, { text, base: 0 }, 'shell'));
   return cx.tok(n, 'expansion', (words.length
     ? cx.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}${pad ? '（先頭が 0 の数があるので、桁数をそろえて 0 で埋める）' : ''}`,
       `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}${pad ? ' (a number with a leading 0 pads all of them with zeros to the same width)' : ''}`)
     : cx.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`)) + bracesMaybeOff(cx, n), parts);
 }
 
-/** A sequence expression of braces, `{x..y[..incr]}` (3.5.1): two integers, or two letters, and an integer step. */
-const SEQUENCE = /\{(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])(?:\.\.(-?\d+))?\}/g;
-
 /**
- * The parts of each sequence expression in a word's text, `{1..10..3}`: its start, its end and its increment, with
- * what bash makes of them (checked with bash 5.2): the sign of the increment does not count, the order comes from
- * the start and the end, an increment of 0 counts as 1, the last word is the last step that does not pass the end,
- * and a number with a leading 0 pads every word with zeros to the same width.
+ * The parts of a sequence expression of braces, `{1..10..3}` (3.5.1): its start, its end and its increment, at their
+ * places in the text, with what bash makes of them (checked with bash 5.2): the sign of the increment does not count,
+ * the order comes from the start and the end, an increment of 0 counts as 1, the last word is the last step that
+ * does not pass the end, and a number with a leading 0 pads every word with zeros to the same width.
  */
-function sequenceParts(cx: Explainer, text: string): EmbeddedToken[] {
-  const out: EmbeddedToken[] = [];
-  for (const m of text.matchAll(SEQUENCE)) {
-    const [whole, x, y, z] = m;
-    const numbers = /\d/.test(x);
-    // (`{1..b}{x,y}`: no sequence, the braces stay.)
-    if (numbers !== /\d/.test(y)) continue;
-    // (A sequence of the word expands to no more words than the word: they were listed.)
-    const words = braceExpansion(whole)!;
-    const kind = numbers ? 'number' : 'string';
-    const at = m.index! + 1;
-    const value = (s: string): number => (numbers ? Number(s) : s.charCodeAt(0));
-    const down = value(x) > value(y);
-    const padded = (s: string): string => (numbers && /^-?0\d/.test(s) ? cx.s('。先頭が 0 なので、すべての数を 0 で埋めて同じ桁数にする', '; it has a leading 0, so every number is padded with zeros to the same width') : '');
-    out.push({ start: at, end: at + x.length, kind, explanation: cx.s(`開始: \`${x}\``, `Start: \`${x}\``) + padded(x), children: [] });
-    const last = words[words.length - 1];
-    const stops = last !== y && (!numbers || Number(last) !== Number(y)) ? cx.s(`（増分で届かないので、最後の単語は \`${last}\`）`, ` (the steps do not land on it: the last word is \`${last}\`)`) : '';
-    out.push({ start: at + x.length + 2, end: at + x.length + 2 + y.length, kind, explanation: cx.s(`終わり: \`${y}\``, `End: \`${y}\``) + stops + padded(y), children: [] });
-    if (z === undefined) continue;
-    const step = Math.abs(Number(z)) || 1;
-    const sign = Number(z) < 0 ? cx.s('。符号は使われず、向きは開始と終わりで決まる', '; its sign does not count: the start and the end set the direction') : Number(z) === 0 ? cx.s('。0 は 1 として扱われる', '; 0 counts as 1') : '';
-    const s0 = at + x.length + 2 + y.length + 2;
-    out.push({
-      start: s0, end: s0 + z.length, kind: 'number',
-      explanation: numbers
-        ? cx.s(`増分: \`${z}\`（単語ごとに ${step} ${down ? '減る' : '増える'}）${sign}`, `Increment: \`${z}\` (each word is ${step} ${down ? 'less' : 'more'} than the one before)${sign}`)
-        : cx.s(`増分: \`${z}\`（${step} 文字ごとに${down ? '逆向きに' : ''}進む）${sign}`, `Increment: \`${z}\` (${step === 1 ? 'each letter' : `every ${ordinal(step)} letter`}, counting ${down ? 'down' : 'up'})${sign}`),
-      children: [],
-    });
-  }
+function sequenceParts(cx: Explainer, s: SyntaxNode): EmbeddedToken[] {
+  const [xn, yn, zn] = s.namedChildren;
+  const [x, y] = [xn.text, yn.text];
+  const numbers = /\d/.test(x);
+  // (A sequence of the word expands to no more words than the word: they were listed.)
+  const words = braceSequence(s.text)!;
+  const kind = numbers ? 'number' : 'string';
+  const value = (v: string): number => (numbers ? Number(v) : v.charCodeAt(0));
+  const down = value(x) > value(y);
+  const padded = (v: string): string => (numbers && /^-?0\d/.test(v) ? cx.s('。先頭が 0 なので、すべての数を 0 で埋めて同じ桁数にする', '; it has a leading 0, so every number is padded with zeros to the same width') : '');
+  const last = words[words.length - 1];
+  const stops = last !== y && (!numbers || Number(last) !== Number(y)) ? cx.s(`（増分で届かないので、最後の単語は \`${last}\`）`, ` (the steps do not land on it: the last word is \`${last}\`)`) : '';
+  const out: EmbeddedToken[] = [
+    { start: xn.startIndex, end: xn.endIndex, kind, explanation: cx.s(`開始: \`${x}\``, `Start: \`${x}\``) + padded(x), children: [] },
+    { start: yn.startIndex, end: yn.endIndex, kind, explanation: cx.s(`終わり: \`${y}\``, `End: \`${y}\``) + stops + padded(y), children: [] },
+  ];
+  if (!zn) return out;
+  const z = zn.text;
+  const step = Math.abs(Number(z)) || 1;
+  const sign = Number(z) < 0 ? cx.s('。符号は使われず、向きは開始と終わりで決まる', '; its sign does not count: the start and the end set the direction') : Number(z) === 0 ? cx.s('。0 は 1 として扱われる', '; 0 counts as 1') : '';
+  out.push({
+    start: zn.startIndex, end: zn.endIndex, kind: 'number',
+    explanation: numbers
+      ? cx.s(`増分: \`${z}\`（単語ごとに ${step} ${down ? '減る' : '増える'}）${sign}`, `Increment: \`${z}\` (each word is ${step} ${down ? 'less' : 'more'} than the one before)${sign}`)
+      : cx.s(`増分: \`${z}\`（${step} 文字ごとに${down ? '逆向きに' : ''}進む）${sign}`, `Increment: \`${z}\` (${step === 1 ? 'each letter' : `every ${ordinal(step)} letter`}, counting ${down ? 'down' : 'up'})${sign}`),
+    children: [],
+  });
   return out;
 }
 
+/** The kinds of node bash expands after braces, in a word or in a string of it. */
+const LATER = ['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion'];
+
+/**
+ * The braces of the word `n` that hold a `..` and an expansion, `{1..$n}`, as its pieces show them: braces bash does not
+ * expand (the parser makes no brace expression of them), whose text only the expansion would make a sequence.
+ */
+function braceWithExpansion(n: SyntaxNode): string | undefined {
+  let open = -1;
+  let later = false;
+  for (const p of n.type === 'concatenation' ? n.namedChildren : [n]) {
+    if (p.type !== 'word' && p.type !== 'number') {
+      later ||= open >= 0 && (LATER.includes(p.type) || descendants(p, LATER).length > 0);
+      continue;
+    }
+    for (let i = 0; i < p.text.length; i++) {
+      const c = p.text[i];
+      const at = p.startIndex - n.startIndex + i;
+      if (c === '\\') i++;
+      else if (c === '{') [open, later] = [at, false];
+      else if (c === ',') open = -1;
+      else if (c === '}' && open >= 0) {
+        const text = n.text.slice(open, at + 1);
+        if (later && text.includes('..')) return text;
+        open = -1;
+      }
+    }
+  }
+  return undefined;
+}
+
 /** `{1..$n}`: braces are expanded before variables, so a range whose end is a variable is not a range. */
-export function braceVarNote(cx: Explainer, text: string): string {
-  const m = /\{[^{},]*\.\.[^{},]*\}/.exec(text);
-  if (!m || !m[0].includes('$')) return '';
+function braceVarNote(cx: Explainer, n: SyntaxNode): string {
+  const text = braceWithExpansion(n);
+  if (!text) return '';
   if (cx.command?.rereads) {
     return cx.s(
       `。シェルは先に変数を置き換えるので、\`eval\` に渡る文字列は \`{1..3}\` のような形になり、\`eval\` がそれを読み直すときにはじめてブレース展開が連番になる`,
       `. The shell replaces the variable first, so \`eval\` gets a string like \`{1..3}\`, and only when \`eval\` reads it again is the brace expanded to a range`);
   }
   return cx.s(
-    `。\`${m[0]}\` は連番ではない: ブレース展開は変数の展開より先に行われるので、\`${m[0]}\` のまま変数だけが置き換わる（例: \`{1..3}\` という文字列）。連番にするには \`eval\` を使うか、\`seq\` や \`for ((…))\` を使う`,
-    `. \`${m[0]}\` is not a range: braces are expanded before variables, so the text stays \`{…}\` with only the variable replaced (for example the string \`{1..3}\`). To get a range, use \`eval\`, \`seq\` or a \`for ((…))\` loop`);
+    `。\`${text}\` は連番ではない: ブレース展開は変数の展開より先に行われるので、\`${text}\` のまま変数だけが置き換わる（例: \`{1..3}\` という文字列）。連番にするには \`eval\` を使うか、\`seq\` や \`for ((…))\` を使う`,
+    `. \`${text}\` is not a range: braces are expanded before variables, so the text stays \`{…}\` with only the variable replaced (for example the string \`{1..3}\`). To get a range, use \`eval\`, \`seq\` or a \`for ((…))\` loop`);
 }
 
 /** What a tilde prefix becomes (`~`, `~+`, `~-`, `~user`); undefined for the others (`~1`, the directory stack). */
@@ -710,7 +736,9 @@ export function rawString(cx: Explainer, n: SyntaxNode): Token {
 /** A word of several parts (`a"b"$c`): an element of an array assignment that bash splits, a brace expansion, or the parts joined. */
 export function concatenation(cx: Explainer, n: SyntaxNode): Token {
   if (n.parent!.type === 'array' && splitElement(n.text)) return arrayElement(cx, n);
-  return braceWord(cx, n) ?? cx.tok(n, 'argument', concatenationNote(cx, n) + valueNote(cx, n), cx.subs(n.namedChildren));
+  // (A word of plain text with braces that do not expand here, `x{a,b}` in dash, is one word.)
+  if (plainText(n)) return braceWord(cx, n) ?? word(cx, n);
+  return cx.tok(n, 'argument', concatenationNote(cx, n) + valueNote(cx, n) + braceVarNote(cx, n), cx.subs(n.namedChildren));
 }
 
 /** A number: a constant of arithmetic that is not plain decimal, with its value (`arithNumber`), or a plain number. */

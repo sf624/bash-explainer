@@ -6,9 +6,10 @@ import type { ArgRole, ArgvParse } from '../../argv/interpret';
 import type { CommandSpec } from '../../argv/spec';
 import { actedNames, onlyInFunction } from '../../argv/query';
 import { prefixOf } from '../../argv/words';
+import { bracesMayWork } from '../../shellfeatures';
 import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
 import { staticWordValue, tildeParts, tildeSpots } from '../../staticword';
-import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
+import { descendants, field, fields, type SyntaxNode, wordBraces } from '../../syntax/tree';
 import { parseExpansion } from '../../expansion';
 import { expansionFailure, sameInEveryLocale, substring } from '../chars';
 import { temporariesUnset } from '../names';
@@ -127,7 +128,8 @@ export class WalkBuiltins {
         st = this.markedArrays('alias', args, n, st);
         for (const a of args) {
           const def = a.type === 'variable_assignment' ? undefined : aliasOf(a);
-          if (def) st = this.w.put(st, 'aliases', def.name, { state: 'on', value: def.value, at: n });
+          // (Braces bash may expand make other definitions, `alias z={a,b}` is `alias z=a z=b`: not followed.)
+          if (def) st = this.w.put(st, 'aliases', def.name, { state: wordBraces(a).length ? 'unknown' : 'on', value: def.value, at: n });
         }
         return st;
       case 'unalias':
@@ -279,7 +281,8 @@ export class WalkBuiltins {
         const nameNode = field(w, 'name')!;
         const value = field(w, 'value');
         const subscript = nameNode.type === 'subscript';
-        const text = value ? this.w.conditions.staticText(value, st, true) : '';
+        // (bash brace-expands it as a word, `declare x={a,b}` is `x=a x=b`: its value is not followed.)
+        const text = !value ? '' : bracesMayWork(value, this.w.shell) ? undefined : this.w.conditions.staticText(value, st, true);
         out.push({ node: w, name: subscript ? field(nameNode, 'name')!.text : nameNode.text, subscript,
           assign: { append: w.children.some((c) => c.type === '+='), text, array: value?.type === 'array', source: value, kept: !!value && this.readsUnwritten(value, st) } });
         continue;

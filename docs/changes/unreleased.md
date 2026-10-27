@@ -569,6 +569,8 @@ Reading was checked against chapters 3 to 5 of the Bash manual, section by secti
 | 3.5, 3.5.1, 3.5.2, 3.5.7, 3.5.8 | `echo *.txt $x ~/a x=~/b`, `x=~/a:~/b` | the glob cited 3.5.8 only on the command's reading of it; `$x` cited 3.5.3 only; `x=~/b` and the assignment cited no tilde expansion | each word (and an assignment's value) cites what bash does to it that no part shows, as the word model says where it is: brace and tilde expansion, word splitting, filename expansion. `*.txt` cites 3.5.8 (not after `set -f`), `$x` 3.5.7 and 3.5.8 (no 3.5.7 with an empty `IFS`), `"$x"` neither |
 | 3.5.8.1 | `case $x in a*)`, `${x#*/}` | the pattern of `${x#…}` cited 3.2.5.2 (a regex) | a word matched as a pattern cites 3.5.8.1 |
 | 3.5.1 | `a{1..9..2}b`, `{a,b}{1..2}` | the braces cited no section; `{`, `..`, `,` and `}` were not shown | 3.5.1; an operator row each, and a row for each string of a list |
+| 3.5.1 | `echo {a,b} x{c,{d,e}}y {f,"g h",$v}` | a list had rows only next to a sequence: `{a,b}` alone was one word, with no row for its braces and `,` | a brace expression wherever bash expands one: a row for each brace and `,`, and one for each item (a word, a quote, an expansion, a list inside it) |
+| 3.5.1 | `x={1..3}` (a plain assignment, or one before a command), `cat <<< {1..2}`, `[[ x == {1..2} ]]`, `echo {1..3}` in a script for dash | the braces and `..` of a sequence were rows | no rows: bash does not expand braces there, so they are text. An assignment given to `declare`, `local`, `export`, `readonly` or `typeset`, and a definition of `alias`, are words bash expands: `declare x={1..3}` keeps its rows |
 | 3.5.3 | `${x:-$y}`, `${x//a/b}`, `${!x}`, `${x@Q}`, `${a[@]:i+1:2}` | one row, with only the expansions inside it | the parameter, each operator (citing 3.5.3), the word after it, a pattern (citing 3.5.8.1), or the arithmetic of a substring's offset and length (citing 6.5). `!` there is an operator, not the reserved word |
 | 3.5.4 | `echo "$(< f)"` | "runs the command and is replaced by its stdout", and inside it "Redirection applied to the command" | "replaced by the contents of the file `f` (trailing newlines removed), as `$(cat f)`, but without running `cat`", as bash does; `$(3< f)` and `$(< f; < g)`, which print nothing, are as before |
 | 3.6 | `cat 2> e {fd}>k <<< "$x"` | one row per redirection | its descriptor (`2`, `{fd}`, citing 3.6), its operator (citing the redirection's section) and its word, a row each |
@@ -593,7 +595,7 @@ Reading was checked against chapters 3 to 5 of the Bash manual, section by secti
 
 The operands and options of the builtins read in chapter 4 are under "Strings, braces and options". The badge of a special builtin still says "builtin": the manual says they differ from the others in POSIX mode only, so its word stays and the tooltip names the class.
 
-Left: `{a,b}` alone still has no row of its own for its braces (3.5.1), because the parser makes no node of it but next to a sequence (`{a,b}{1..2}`); quote removal (3.5.9) is not cited (the quotes cite their own sections). The grouping is checked against bash's own parser (bash-ast), the parts of each redirection too; the `select` text, the expansions of words, `$(< f)`, the redirections of a command with no name, and what bash does with each variable of chapter 5 against bash.
+Left: quote removal (3.5.9) is not cited (the quotes cite their own sections). Which braces bash expands is checked with bash on a table of words and on random ones (see "Words as bash reads them"). The grouping is checked against bash's own parser (bash-ast), the parts of each redirection too; the `select` text, the expansions of words, `$(< f)`, the redirections of a command with no name, and what bash does with each variable of chapter 5 against bash.
 
 ### Note levels
 
@@ -929,6 +931,22 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 | `a=1; declare a=5 b=$a`, `local x=$x` | the words are expanded before the builtin runs: `b` is `1`, and the local `x` gets the caller's value | the values that follow from them (the words of `$b`, the value of `$x`) | `b` was `5`, the local `x` empty |
 
 `[[ $x == "$q" ]]` already said that a quoted right side is literal text.
+
+Braces are read as bash 5.2 finds them, where it expands them (compared with bash on random words of braces, commas, dots, quotes and expansions):
+
+| Written | bash | Said now | Said before |
+| --- | --- | --- | --- |
+| `x={1..3}`, `cat <<< {1..2}{a,b}`, `[[ x == {1..2} ]]`, `a+=b{1,2}` (an assignment of its own, or before a command) | no brace expansion there: `{1..3}` | "Value `{1..3}`"; the words are text | "Brace expansion: `{1..3}` expands to 3 words" |
+| `declare x={a,b}`, `local y=p{1..3}`, `export P=/a/{b,c}`, `alias z={a,b}` | words bash expands: `declare x=a x=b` sets `b`, `alias z=a z=b` defines `z` as `b` | "Brace expansion: `{a,b}` expands to 2 words" (as for `{1..3}`), and Reading has the brace's rows; a script for sh is told brace expansion is not POSIX there, and not for `x={1..3}` | `declare x={a,b}` and `export P=/a/{b,c}`: "Value `{a,b}`" |
+| `echo {a,b}"x" \| cat` | `ax bx` | explained, and the pipeline's example prints `ax bx` | the line had no explanation (an error) |
+| `echo x{a,"b c"}y`, `echo {a,$x}` | `xay` and `xb cy`; `a` and the value of `x` | the example's words `xay` `xb cy`; no example of words for `{a,$x}` | `xay` `x"b c"y`; the words `a` `$x` |
+| `echo [{a,b}]`, `echo ["{a,b}"]`, `[${v:-a,b}]` | `[a]` `[b]`; the others one word (a quote or an expansion in a bracket hides its commas) | so | (the last two) a brace expansion |
+| `echo {1..$n}`, `e{.."$v"}` with `n=3`, `v=V` | `{1..3}`, `e{..V}` | the variable is a part of the word, expanded inside the braces that stay, and the note "is not a range" | the value `{1..$n}`, `e{.."$v"}` as written |
+| `echo {+01..3}` | `1 2 3`: only a leading `0` or `-0` pads | no padding note | "a number with a leading 0 pads all of them" |
+| `echo {a}b,c}`, `x{},a}`, `{a,{b,c}`, `{+1..3}` | `a}b` `c`; `x}` `xa`; `{a,b` `{a,c`; `1` `2` `3` (a `}` before the first `,` does not close the braces, nor does a `{` that starts the word and a `}` follows open them) | brace expansions, with those words | plain words |
+| `echo {x..{a,b}}`, `{x..{1..2}}` | `x..a` `x..b` (braces that hold no sequence go, when a comma is inside them); `{x..{1..2}}` as it is | those words | `{x..a}` `{x..b}`; `{x..1}` `{x..2}` |
+| `echo {a,b} > {c,d}` | "ambiguous redirect" | the target shows its words too, as `> {1..2}` did | the note alone |
+| `echo {a,b}$x`, `x` empty | `a` `b` | the words are known (in the values and the conditions the model follows) | not known |
 
 A tilde before a glob is expanded, then the word is globbed:
 

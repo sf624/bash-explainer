@@ -43,7 +43,7 @@ const OWNERS = new Set(['expansion', 'brace_expression', 'file_redirect', 'hered
 /** Scripts with every parameter expansion, brace expansion and redirection of 3.5 and 3.6. */
 const WORD_SCRIPTS = [
   'echo ${x:-$y} ${x#*/} ${x%%.*} ${!x} ${x^^} ${x,} ${x@Q} ${#x} ${x:i+1:2} ${!p*} ${!a[@]} ${a[@]:1} ${x:?m} ${x=d} ${x//a/b} ${x/#a} ${@:2} ${x:(-1)}',
-  'echo a{1..9..2}b {a,b}{1..2}',
+  'echo a{1..9..2}b {a,b}{1..2} {a,b} x{c,{d,e}}y {f,"g h",$v} {,}',
   'cat 2> e {fd}>k 1>&3- >"$f" <<< "$x" 5<&- &>i &>>j >&2 <&0 3<>h >|l <&f >>g 0<&4-',
   'cat 3<<-E\n\tx\nE',
 ];
@@ -227,6 +227,20 @@ describe('the reading tree as the Bash manual reads a line (chapter 3)', () => {
     assert.deepStrictEqual(find(r, '{1..9..4}', 'brace').refs, ['3.5.1']);
     assert.deepStrictEqual(kids(find(r, '{x,y}', 'brace')), ['operator {', 'word x', 'operator ,', 'word y', 'operator }']);
     assert.strictEqual(runBash('echo a{1..9..4}b {x,y}{1..2}').stdout, 'a1b a5b a9b x1 x2 y1 y2\n');
+    // A list alone too, nested, with a quote and a variable in it.
+    const l = reading('echo {a,b} x{c,{d,e}}y {f,"g h",$v}');
+    assert.deepStrictEqual(kids(find(l, '{a,b}', 'brace')), ['operator {', 'word a', 'operator ,', 'word b', 'operator }']);
+    assert.deepStrictEqual(find(l, '{a,b}', 'brace').refs, ['3.5.1']);
+    assert.deepStrictEqual(kids(find(l, '{c,{d,e}}', 'brace')), ['operator {', 'word c', 'operator ,', 'word {d,e}', 'operator }']);
+    assert.deepStrictEqual(kids(find(l, '{d,e}', 'brace')), ['operator {', 'word d', 'operator ,', 'word e', 'operator }']);
+    assert.deepStrictEqual(kids(find(l, '{f,"g h",$v}', 'brace')), ['operator {', 'word f', 'operator ,', 'word "g h"', 'operator ,', 'word $v', 'operator }']);
+    assert.strictEqual(runBash('v=V; printf "<%s>" {a,b} x{c,{d,e}}y {f,"g h",$v}').stdout, '<a><b><xcy><xdy><xey><f><g h><V>');
+    // Where bash does not expand braces, they are text: the value of an assignment, a here-string, a script for dash.
+    const none = (src: string, shell = 'bash'): boolean => !readingNodes(analyzer.explainLine(parser.parse(src), 0, shell as 'bash', { reading: true }).reading!).some((n) => n.kind === 'brace');
+    assert.ok(none('x={a,b} y={1..2}') && none('cat <<< {a,b}') && none('echo {a,b} {1..2}', 'dash'));
+    // (But an assignment given to `declare` is a word bash expands: `declare x={1..3}` is `x=1 x=2 x=3`.)
+    assert.ok(!none('declare x={1..3}') && !none('alias z={a,b}'));
+    assert.strictEqual(runBash('x={a,b}; cat <<< {c,d}; echo "$x"').stdout, '{c,d}\n{a,b}\n');
   });
 
   it('reads the parts of a parameter expansion (3.5.3): the parameter, its operators, and a word, a pattern or arithmetic', () => {

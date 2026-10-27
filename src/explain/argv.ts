@@ -14,7 +14,7 @@ import { builtins } from '../dict/builtins';
 import { describeFind, type FindNode, parseFind } from '../embedded/find';
 import { globIntro, hasGlob } from '../embedded/glob';
 import type { EmbeddedLang } from '../embedded/types';
-import { braceExpand } from '../examples/shellwords';
+import { braceTexts } from '../semantics/brace';
 import type { Text } from '../i18n';
 import { shorten } from '../label';
 import { fact } from '../messages';
@@ -39,7 +39,7 @@ import { globOff, NO_SPEC, resolve, shoptAt, specFor, wordAt } from './reads';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
 import { inSubshell } from './where';
-import { braceVarNote, braceWord, globChildren, globNotes, tilde, tildeNote, valueNote, word } from './words';
+import { braceWord, globChildren, globNotes, plainText, tilde, tildeNote, valueNote, word } from './words';
 
 /** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
 function jobSpec(text: string): { ja: string; en: string } | undefined {
@@ -604,7 +604,7 @@ function unsetOperand(cx: Explainer, nodes: SyntaxNode[], word: number, item: Op
   // `unset {a,b}`: bash expands the braces first, and unsets each word (dash does not: the name is `{a,b}`).
   const braces = wordAt(cx, a)?.steps.find((g) => g.kind === 'brace');
   if (braces && braces.applies !== false) return positional(cx, a, bracedUnset(cx, a, braces, space));
-  const plain = isPlainWord(a);
+  const plain = plainText(a);
   // (An unquoted glob has no value known here: its text, which bash uses when no file matches.)
   const name = staticWordValue(a, false, cx.shell) ?? (plain ? a.text : undefined);
   if (name === undefined) return positional(cx, a, cx.t(item.text));
@@ -696,7 +696,7 @@ function uncertainText(cx: Explainer, desc: string, other: string, parse: ArgvPa
 /** The words a brace expansion gives, each with its role (`cp a{,.bak}`: the source, then the destination). */
 function eachText(cx: Explainer, a: SyntaxNode, each: OperandSpec[]): string {
   // `destination (the new name…)` reads `destination: the new name…` in the parentheses.
-  const parts = braceExpand(a.text)!.map((w, k) => `\`${w}\`${cx.s(`（${cx.t(each[k].text).replace(/（(.*)）$/, ': $1')}）`, ` (${cx.t(each[k].text).replace(/ \((.*)\)$/, ': $1')})`)}`);
+  const parts = braceTexts([a])!.map((w, k) => `\`${w}\`${cx.s(`（${cx.t(each[k].text).replace(/（(.*)）$/, ': $1')}）`, ` (${cx.t(each[k].text).replace(/ \((.*)\)$/, ': $1')})`)}`);
   const list = `${parts.slice(0, -1).join(cx.s('、', ', '))}${cx.s('と ', ' and ')}${parts[parts.length - 1]}`;
   return cx.s(`${list}に展開される`, `expands to ${list}`);
 }
@@ -778,7 +778,8 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
 function positional(cx: Explainer, a: SyntaxNode, desc: string | undefined, lang?: EmbeddedLang): Token {
   const emb = lang && embedded(cx, a, lang);
   if (emb && desc && emb.note) desc += ` — ${emb.note}`;
-  if (isPlainWord(a)) {
+  // (A word of plain text with braces, `x{a,b}`, is read as one: its brace expansion, or its text where it has none.)
+  if (plainText(a)) {
     // Arguments in another language are positional ones the dictionary describes.
     if (emb) return cx.tok(a, 'argument', desc!, emb.tokens);
     const brace = braceWord(cx, a);
@@ -792,7 +793,7 @@ function positional(cx: Explainer, a: SyntaxNode, desc: string | undefined, lang
     const off = hasGlob(a.text) && globOff(cx, a);
     if (off) return cx.tok(a, 'argument', desc + off);
     const glob = hasGlob(a.text) ? ` — ${globIntro(cx.lang, 'file')}` + globNotes(cx, a.text, a) : '';
-    const t = cx.tok(a, 'argument', desc + glob + valueNote(cx, a) + braceVarNote(cx, a.text), hasGlob(a.text) ? globChildren(cx, a, a.text, 0) : []);
+    const t = cx.tok(a, 'argument', desc + glob + valueNote(cx, a), hasGlob(a.text) ? globChildren(cx, a, a.text, 0) : []);
     if (glob) t.refs = ['3.5.8'];
     return t;
   }

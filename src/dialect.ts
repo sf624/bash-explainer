@@ -7,8 +7,9 @@ import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
 import { marked, type Note, plainNote, PORTABILITY } from './messages';
-import { ancestor, braceTakenAsWord, childrenOnRows, descendants, field, fields, prefixAssignments, substitutionForm } from './syntax/tree';
+import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
 import { networkPath, networkTarget } from './dict/syntax';
+import { bracesInContext } from './semantics/words';
 import { staticWordValue } from './staticword';
 import { FEATURES, featureWorks, LETTER, type RealShell, type Shell, works } from './shellfeatures';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
@@ -165,7 +166,6 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       commandFeatures(name.text, n.namedChildren.filter((c) => c !== name && !prefix.includes(c)), add);
       return;
     }
-    case 'brace_expression': add('braceRange'); return;
     case 'coproc_statement': add('coproc'); return;
     case 'command_substitution': {
       const form = substitutionForm(n);
@@ -210,12 +210,14 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       return;
     }
     case 'simple_expansion': variableFeature(n.text.slice(1), add); return;
-    case 'word': case 'concatenation': {
-      // Only unquoted words brace-expand; `{` in a quoted string is plain text.
-      if (n.parent?.type === 'string' || n.parent?.type === 'concatenation') return;
+    case 'brace_expression': case 'word': case 'concatenation': {
+      // (Only where bash expands braces: not in `x={1..3}`, a here-string or the word of `case`.)
+      const braces = n.type !== 'word' && bracesInContext(n);
+      if (braces && n.type === 'brace_expression' && braceKind(n) === 'sequence') add('braceRange');
+      if (n.parent?.type === 'string' || n.parent?.type === 'concatenation' || n.parent?.type === 'brace_expression') return;
+      // (The lists of a word, once for the word: `{a,b}{c,d}`.)
+      if (braces && wordBraces(n).some((b) => braceKind(b) === 'list')) add('braceList');
       const t = n.type === 'word' ? n.text : n.children.filter((c) => c.type === 'word').map((c) => c.text).join('');
-      // (A range, `{1..3}`, is a `brace_expression`.)
-      if (/\{[^{}\s'"]*,[^{}\s'"]*\}/.test(t)) add('braceList');
       if (/[@!?+]\([^)]*\)/.test(t)) add('extglob');
       return;
     }

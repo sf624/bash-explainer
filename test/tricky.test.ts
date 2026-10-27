@@ -10,7 +10,8 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { evalArithWrapping } from '../src/arith';
 import { explainGlob } from '../src/embedded/glob';
 import { explainArith } from '../src/embedded/arith';
-import { braceExpand, globMatches, globToRegex, isGlob } from '../src/examples/shellwords';
+import { globMatches, globToRegex, isGlob } from '../src/examples/shellwords';
+import { braceTexts } from '../src/semantics/brace';
 import { allTokens } from './support/explain';
 
 let parser: Parser;
@@ -30,6 +31,9 @@ const find = (src: string, label: string, lang: 'ja' | 'en' = 'en', outer = fals
   assert.ok(t, `no token ${label} in ${src}`);
   return t;
 };
+
+/** The words brace expansion makes of the word `w`, read as an argument (src/semantics/brace.ts). */
+const expandBraces = (w: string) => braceTexts([parser.parse(`echo ${w}`).root.namedChildren[0].namedChildren[1]]);
 
 /** The output of bash for `script` (stdout and stderr, joined), with the script name cut from errors. */
 function bash(script: string): string {
@@ -378,10 +382,12 @@ describe('tricky lines (round 2)', () => {
 
   it('says too many words for a brace expansion it cannot list, in an argument', () => {
     const many = '{a..z}{a..z}{a..z}{a..z}';
-    assert.throws(() => braceExpand(many));
+    assert.strictEqual(expandBraces(many), null);
     const ex = new Analyzer('en').explainLine(parser.parse(`echo ${many}`), 0);
     assert.ok(!ex.examples.some((e) => /brace expansion/.test(e.title)));
     assert.match(find(`echo ${many}`, many).explanation, /expands to many words/);
+    // (As a command name too: the command is its first word, which is not listed.)
+    assert.strictEqual(tokens('{1..600} x')[0].explanation, 'Run the expanded value as a command');
     // bash itself expands it, so the case is not an error of the script.
     assert.strictEqual(bash(`set -- ${many}; echo $#`), '456976\n');
   });
@@ -614,17 +620,20 @@ describe('tricky lines (round 3)', () => {
     assert.match(find(src, '{-2..2..2}').explanation, /3 words: `-2` `0` `2`$/);
     assert.ok(!/pads/.test(find('echo {1..3}', '{1..3}').explanation));
     // (Not a brace expansion: the word stays as it is.)
-    assert.match(find('echo {1..x}', '{1..x}').explanation, /^Word `\{1\.\.x\}`/);
+    assert.ok(!/Brace expansion/.test(find('echo {1..x}', '{1..x}').explanation));
     assert.strictEqual(bash('echo {1..x}'), '{1..x}\n');
     assert.match(find('echo {1..03}', '{1..03}').explanation, /pads/);
+    // (Only `0…` and `-0…` pad: not a `+0…`.)
+    for (const w of ['{+01..3}', '{1..+03}']) assert.ok(!/pads/.test(find(`echo ${w}`, w).explanation), w);
+    assert.strictEqual(bash('echo {+01..3} {1..+03} {-01..1}'), '1 2 3 1 2 3 -01 000 001\n');
     assert.match(find(src, '{01..10..3}', 'ja').explanation, /桁数をそろえて 0 で埋める/);
     // (The example shows the empty word as `∅`, as the words of a value.)
     assert.deepStrictEqual(examplesOf('echo {Z..a}')[0].sections[0].lines, ['Z', '[', '∅', ']', '^', '_', '`', 'a']);
     assert.strictEqual(bash("printf '<%s>' {Z..a} {01..10..3} {10..1..4} {-2..2..2}"), '<Z><[><><]><^><_><`><a><01><04><07><10><10><6><2><-2><0><2>');
-    assert.deepStrictEqual(braceExpand('{Z..a}'), ['Z', '[', '', ']', '^', '_', '`', 'a']);
-    assert.deepStrictEqual(braceExpand('x{a,\\\\}'), ['xa', 'x\\']);
-    assert.deepStrictEqual(braceExpand('x{Z..a}')!.slice(1, 4), ['x[', 'x', 'x]']);
-    assert.deepStrictEqual(braceExpand('{,}'), []);
+    assert.deepStrictEqual(expandBraces('{Z..a}'), ['Z', '[', '', ']', '^', '_', '`', 'a']);
+    assert.deepStrictEqual(expandBraces('x{a,\\\\}'), ['xa', 'x\\']);
+    assert.deepStrictEqual(expandBraces('x{Z..a}')!.slice(1, 4), ['x[', 'x', 'x]']);
+    assert.deepStrictEqual(expandBraces('{,}'), []);
   });
 
   it('explains the arguments of let as arithmetic expressions', () => {
@@ -857,9 +866,11 @@ describe('tricky lines (round 4)', () => {
     assert.strictEqual(tokens('{ls,-l}')[0].kind, 'command');
     // `{1..$n}` is no range: the braces go first, then the variable.
     const lit = find('echo {1..$n}', '{1..$n}');
-    assert.match(lit.explanation, /^text to print\. `\{1\.\.\$n\}` is not a range: braces are expanded before variables/);
+    assert.match(lit.explanation, /^Concatenation: the parts below are joined into one word\. `\{1\.\.\$n\}` is not a range: braces are expanded before variables/);
+    // (Its parts are the parts of the word: `$n` is expanded, inside braces that stay as they are.)
+    assert.ok(tokens('echo {1..$n}').some((t) => t.label === '$n' && t.kind === 'variable'));
     assert.match(find('echo {1..$n}', '{1..$n}', 'ja').explanation, /連番ではない: ブレース展開は変数の展開より先に行われる/);
-    assert.match(find('eval echo {1..$n}', '{1..$n}').explanation, /^Word `\{1\.\.\$n\}`\. The shell replaces the variable first, so `eval` gets a string like `\{1\.\.3\}`, and only when `eval` reads it again is the brace expanded to a range/);
+    assert.match(find('eval echo {1..$n}', '{1..$n}').explanation, /^Concatenation: the parts below are joined into one word\. The shell replaces the variable first, so `eval` gets a string like `\{1\.\.3\}`, and only when `eval` reads it again is the brace expanded to a range/);
     assert.match(find('eval echo {1..$n}', '{1..$n}', 'ja').explanation, /`eval` がそれを読み直すときにはじめてブレース展開が連番になる/);
     assert.match(find('echo a{1..$n}b', 'a{1..$n}b').explanation, /is not a range/);
     assert.strictEqual(bash('n=3; echo {1..$n}; eval echo {1..$n}'), '{1..3}\n1 2 3\n');
@@ -867,6 +878,39 @@ describe('tricky lines (round 4)', () => {
     assert.ok(!/not a range/.test(find('echo {a,$n}', '{a,$n}').explanation));
     assert.ok(!/not a range/.test(find('echo {a..$}', '{a..$}').explanation) || true);
     assert.strictEqual(bash('n=3; echo {a,$n}'), 'a 3\n');
+    // (From the pieces of the word: a `$` before the braces, an escaped `{`, braces with no `..` or not closed, a quote.)
+    for (const w of ['$x-{1..$n}', 'e{.."$v"}']) assert.match(find(`echo ${w}`, w).explanation, /is not a range/, w);
+    for (const w of ['\\{1..$n}', '{x$n}', '{1..$n,x']) assert.ok(!/not a range/.test(find(`echo ${w}`, w).explanation), w);
+    assert.strictEqual(bash('n=3 v=4; echo $x-{1..$n} e{.."$v"} \\{1..$n} {x$n} {1..$n,x'), '-{1..3} e{..4} {1..3} {x3} {1..3,x\n');
+  });
+
+  it('explains braces as text where bash does not expand them: a value, a here-string, a pattern', () => {
+    const value = find('x={1..3}', '{1..3}');
+    assert.strictEqual(value.explanation, 'Value `{1..3}`');
+    assert.ok(!value.refs);
+    assert.strictEqual(find('y={a,b}', '{a,b}').explanation, 'Value `{a,b}`');
+    for (const src of ['cat <<< {1..2}{a,b}', '[[ x == {1..2} ]]', 'a+=b{1,2}']) assert.ok(!tokens(src).some((t) => /Brace expansion/.test(t.explanation)), src);
+    // (An assignment given to a declaration builtin, and a definition of `alias`, are words bash brace-expands.)
+    assert.match(find('declare x={a,b}', '{a,b}').explanation, /^Brace expansion: `\{a,b\}` expands to 2 words/);
+    assert.match(find('f() { local y=p{1..3}; }', 'p{1..3}').explanation, /^Brace expansion: `p\{1\.\.3\}` expands to 3 words/);
+    assert.match(find('export P=/a/{b,c}', '/a/{b,c}').explanation, /^Brace expansion/);
+    assert.match(find('alias z={a,b}', 'z={a,b}').explanation, /^Brace expansion: `z=\{a,b\}` expands to 2 words: `z=a` `z=b`/);
+    assert.strictEqual(bash('declare x={a,b}; f() { local y=p{1..3}; echo "$y"; }; f; export P=/a/{b,c}; alias z={a,b}; echo "$x $P"; alias z'), 'p3\nb /a/c\nalias z=\'b\'\n');
+    assert.strictEqual(bash('x={1..3}; y={a,b}; echo "$x $y"; cat <<< {1..2}{a,b}; [[ 1 == {1..2} ]] || echo no; a+=b{1,2}; echo "$a"'), '{1..3} {a,b}\n{1..2}{a,b}\nno\nb{1,2}\n');
+  });
+
+  it('explains a list next to a quote, and its words as the pipeline prints them', () => {
+    const ex = new Analyzer('en').explainLine(parser.parse('echo {a,b}"x" | cat'), 0).examples;
+    assert.deepStrictEqual(ex.find((e) => /whole pipeline/.test(e.title))!.sections.map((s) => s.lines), [['ax bx'], ['ax bx']]);
+    assert.strictEqual(bash('echo {a,b}"x" | cat'), 'ax bx\n');
+    // (Its words are those of bash, quotes removed; a word whose value is not known has none.)
+    const words = (src: string) => new Analyzer('en').explainLine(parser.parse(src), 0).examples.find((e) => /brace expansion/.test(e.title))?.sections[0].lines;
+    assert.deepStrictEqual(words('echo x{a,"b c"}y'), ['xay', 'xb cy']);
+    assert.strictEqual(words('echo {a,$x}'), undefined);
+    // (Nor one whose words bash reads again as other expansions: `{,$x}a` gives `$xa`.)
+    assert.strictEqual(words('echo {,$x}a'), undefined);
+    assert.strictEqual(bash('x=p; xa=q; printf "<%s>" {,$x}a'), '<a><q>');
+    assert.strictEqual(bash('printf "<%s>" x{a,"b c"}y'), '<xay><xb cy>');
   });
 
   it('says how [ ] and [[ ]] read the operands of -eq', () => {
