@@ -457,7 +457,7 @@ export function runsString(slot: CommandSlot): boolean {
  * `env -S` value has no word of its own, so it is not a key, but what it runs is (`env -S'-i bash -c' 'f'`: the
  * string, under bash under env).
  */
-export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, nodes: readonly SyntaxNode[], lookup?: (name: string) => CommandSpec | undefined, strings?: Map<SyntaxNode, SyntaxNode[]>, shell?: Shell): Map<SyntaxNode, ExecEnv> {
+export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, nodes: readonly SyntaxNode[], shell: Shell | undefined, lookup?: (name: string) => CommandSpec | undefined, strings?: Map<SyntaxNode, SyntaxNode[]>): Map<SyntaxNode, ExecEnv> {
   const out = new Map<SyntaxNode, ExecEnv>();
   const visit = (outer: ExecEnv, p: ArgvParse, s: CommandSpec, all: readonly Item[]): void => {
     // A command named in an `env -S` value reads the rest of the line: the roles after it are its own.

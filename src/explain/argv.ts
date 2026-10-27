@@ -67,7 +67,7 @@ export function readArgs(cx: Explainer, known: CommandSpec | undefined, args: Sy
   const spec = known && !isFn ? known : NO_SPEC;
   const lookup = (name: string): CommandSpec | undefined => specFor(cx, name);
   const parse = interpret(spec, args.map(argWordFor(cx.state.shell)), { name: cmdName, lookup });
-  if (args.length) for (const [w, env] of slotEnvs(cx.state.env(args[0].parent!), parse, spec, args, lookup, undefined, cx.state.shell)) cx.slotEnvs.set(w, env);
+  if (args.length) for (const [w, env] of slotEnvs(cx.state.env(args[0].parent!), parse, spec, args, cx.state.shell, lookup)) cx.slotEnvs.set(w, env);
   return { tokens: render(cx, parse, spec, args, args, isFn), parse };
 }
 

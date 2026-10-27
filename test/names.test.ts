@@ -45,7 +45,7 @@ function resolve(src: string, text: string, opts: { name?: string; slot?: string
     const spec = lookupCommand(name)!;
     const parse = interpret(spec, words.map(argWord), { name, lookup: lookupCommand });
     const word = words.find((w) => w.text === opts.slot)!;
-    const env = slotEnvs(model.env(node), parse, spec, words, lookupCommand).get(word)!;
+    const env = slotEnvs(model.env(node), parse, spec, words, 'bash', lookupCommand).get(word)!;
     return resolveName(model, opts.name ?? opts.slot.replace(/'/g, ''), word, { env, program, shell: opts.shell });
   }
   return resolveName(model, opts.name ?? field(node, 'name')!.text, node, { command: !opts.name, program, shell: opts.shell, quoted: opts.quoted });

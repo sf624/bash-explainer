@@ -62,7 +62,7 @@ function modelKinds(script: string, ids: string[], names: string[], posix: boole
       const spec = lookupCommand(name)!;
       const words = fields(at, 'argument');
       const parse = interpret(spec, words.map(argWord), { name, lookup: lookupCommand });
-      env = slotEnvs(model.env(at), parse, spec, words, lookupCommand).get(words.find((w) => w.text.includes(call))!);
+      env = slotEnvs(model.env(at), parse, spec, words, 'bash', lookupCommand).get(words.find((w) => w.text.includes(call))!);
     }
     const shell = env?.links[env.links.length - 1];
     // (The marker is a function exported to the shell: it runs when that shell gets and reads it.)

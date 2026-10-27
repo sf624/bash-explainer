@@ -558,15 +558,11 @@ class Reader {
     }
     if (text === undefined || !/^[A-Za-z0-9]+$/.test(text) || ![...text].every(look)) return -1;
     if (old.needs && ![...text].some((ch) => old.needs!.includes(ch))) return -1;
-    // A letter with a value before the number would read the rest of the word, the number too (`ps op1`): not described.
-    if (tail && [...text].slice(0, -1).some((ch) => takes(look(ch)!))) return -1;
     let last = i;
-    let attached = false;
     const letters: ArgRole[] = [...text].map((ch, k) => {
       const opt = look(ch)!;
       st.given.specs.push(opt);
-      if ((tail || rest) && k === text.length - 1 && takes(opt)) {
-        attached = true;
+      if (rest && k === text.length - 1 && takes(opt)) {
         return { role: 'option', flag: ch, spec: opt, text: opt.text, part: [k, k + 1], value: { role: 'value', of: ch, option: opt, spec: valuesOf(opt)[0], index: 0, attached: k + 1 } };
       }
       // Each letter with a value takes the next word not used yet, in order (`tar cfC a.tar dir`).
@@ -577,7 +573,7 @@ class Reader {
       }
       return { role: 'option', flag: ch, spec: opt, text: opt.text, part: [k, k + 1] };
     });
-    if (tail && !attached) {
+    if (tail) {
       const opt = look(old.numbers!.option)!;
       st.given.specs.push(opt);
       letters.push({ role: 'option', flag: tail, spec: opt, text: old.numbers!.text, part: [text.length, text.length + tail.length] });

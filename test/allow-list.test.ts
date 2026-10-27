@@ -267,7 +267,7 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
       const args = fields(c, 'argument');
       const name = commandName(c)!;
       const spec = lookupCommand(name)!;
-      const envs = slotEnvs(model.env(c), interpret(spec, args.map(argWord), { name, lookup: lookupCommand }), spec, args, lookupCommand);
+      const envs = slotEnvs(model.env(c), interpret(spec, args.map(argWord), { name, lookup: lookupCommand }), spec, args, 'bash', lookupCommand);
       const string = args[args.findIndex((a) => a.text === '-c') + 1];
       const script = model.script([string], envs.get(string)!);
       assert.ok(!('why' in script), src);
@@ -307,7 +307,7 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
       const args = fields(c, 'argument');
       const name = commandName(c)!;
       const spec = lookupCommand(name)!;
-      const envs = slotEnvs(m.env(c), interpret(spec, args.map(argWord), { name, lookup: lookupCommand }), spec, args, lookupCommand);
+      const envs = slotEnvs(m.env(c), interpret(spec, args.map(argWord), { name, lookup: lookupCommand }), spec, args, 'bash', lookupCommand);
       const string = args[args.findIndex((a) => a.text === '-c') + 1];
       const script = m.script([string], envs.get(string)!);
       assert.ok(!('why' in script), src);
@@ -393,6 +393,6 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
     // (A node type no parser gives: the scan asks the table first, and the default is `all`.)
     const fake = { type: 'no_such_node', named: true, children: [], namedChildren: [], parent: null, text: '', startIndex: 0, endIndex: 0 } as unknown as SyntaxNode;
     const strings = { script: () => undefined, alias: () => fake, expansion: () => fake, capped: false };
-    assert.strictEqual(scriptTrust(fake, strings).blind, 'the node type `no_such_node`, which the allow-list does not have');
+    assert.strictEqual(scriptTrust(fake, strings, undefined, undefined, undefined).blind, 'the node type `no_such_node`, which the allow-list does not have');
   });
 });

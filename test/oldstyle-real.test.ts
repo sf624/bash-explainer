@@ -175,8 +175,14 @@ describe('ps: a number after BSD letters is a list of PIDs', () => {
 });
 
 describe('ps: a BSD letter with a value takes the rest of its word', () => {
-  /** What ps prints for `line`, without the lines that change from run to run (the PIDs of its own children). */
-  const printed = (line: string): string => run(line, os.tmpdir()).out;
+  /**
+   * What ps prints for `line` that is the same from run to run: the header and the PIDs 1 and 2 (the other rows
+   * change: kernel workers come and go, and ps has a PID of its own). Every format of the rows below starts with the PID.
+   */
+  const printed = (line: string): string => {
+    const [header, ...rows] = run(line, os.tmpdir()).out.split('\n');
+    return [header, ...rows.map((row) => row.trim().split(/\s+/)[0]).filter((pid) => pid === '1' || pid === '2')].join('\n');
+  };
   // [attached, separate, the value the interpreter reads, the letters before it]: the same output from both.
   const ROWS: [string, string, string, string][] = [
     ['ps opid,comm', 'ps o pid,comm', 'pid,comm', 'o'],
@@ -196,7 +202,7 @@ describe('ps: a BSD letter with a value takes the rest of its word', () => {
       assert.strictEqual(words[old.word].slice(given[given.length - 1].value!.attached), value, attached);
       // The word after it is not its value: `ps Uroot opid` has `opid` as letters of its own.
       assert.strictEqual(printed(attached), printed(separate), attached);
-      assert.ok(printed(attached).length > 0 && !run(attached, os.tmpdir()).err, attached);
+      assert.ok(/PID/.test(printed(attached)) && !run(attached, os.tmpdir()).err, attached);
     }
     // The value is the rest of the word, so the letters after the value's start are not letters: `ps oupid` is an error.
     assert.match(run('ps oupid', os.tmpdir()).err, /unknown user-defined format specifier "upid"/);

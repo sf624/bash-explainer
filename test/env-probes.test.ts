@@ -49,7 +49,7 @@ export function modelFacts(script: string, ids: string[], version?: BashVersion)
     let slotted = false;
     if (name !== '__probe' && spec) {
       const parse = interpret(spec, words.map(argWord), { name, lookup: lookupCommand });
-      const envs = slotEnvs(env, parse, spec, words, lookupCommand);
+      const envs = slotEnvs(env, parse, spec, words, 'bash', lookupCommand);
       // The innermost slot whose first word, or string, holds the marker.
       const word = words.find((w) => w.text.includes(call) || w.text === '__probe');
       const inner = word && envs.get(word);
