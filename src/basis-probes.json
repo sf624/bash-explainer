@@ -423,6 +423,61 @@
       "output": "bash: line 1: ((: 2 *: syntax error: operand expected (error token is \"*\")\nstatus 1\nbash: line 1: 1 +: syntax error: operand expected (error token is \"+\")\nnext line, status 1"
     }
   },
+  "state#random-seed": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'RANDOM=7; echo $RANDOM $RANDOM; RANDOM=7; echo $RANDOM $RANDOM'",
+      "output": "19344 26956\n19344 26956"
+    }
+  },
+  "state#bash-source-top": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'cat > s.sh <<\"EOF\"\necho \"${BASH_SOURCE[0]}\"\nEOF\nbash s.sh'",
+      "output": "s.sh"
+    }
+  },
+  "state#histfile-script": {
+    "manual": "5.2",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'echo \"HISTFILE=${HISTFILE-unset}\"; shopt -po history'",
+      "output": "HISTFILE=unset\nset +o history"
+    }
+  },
+  "state#opterr-default": {
+    "manual": "5.1",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'echo \"OPTERR=$OPTERR\"; OPTERR=2; getopts a o -z; echo \"status $?\"'",
+      "output": "OPTERR=1\nbash: illegal option -- z\nstatus 0"
+    }
+  },
+  "state#dot-posix": {
+    "manual": "6.11",
+    "bash": [
+      "5.2",
+      "5.3"
+    ],
+    "try": {
+      "code": "bash -c 'bash -c \"set -o posix; . ./nofile; echo not reached\" 2>/dev/null; echo \"status $?\"'",
+      "output": "status 1"
+    }
+  },
   "words#underscore-after-assignment": {
     "manual": "5.2",
     "bash": [
