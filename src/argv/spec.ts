@@ -31,6 +31,11 @@ export interface CommandSpec {
   /** `+x` turns an option off (`set +e`). */
   plusOptions?: boolean;
   options?: OptionSpec[];
+  /**
+   * Options the program reads only when the word is its one and only argument (coreutils `echo --help` and
+   * `echo --version`; with any other word given, they are text). The word must be known and the only one.
+   */
+  soleOptions?: OptionSpec[];
   /** Options recognized by their form (`kill -TERM`, `-15`; `head -5`; `nice -10`), tried when no option has the word as its name. */
   patternOptions?: PatternOption[];
   /** Modes chosen by an option anywhere on the line (`rpm -q`). */

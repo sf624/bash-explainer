@@ -393,9 +393,10 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     // (When that one's text ends with a blank and this one's does not, bash 5.3 checks the next word, 5.2 does not.)
     const later = res.target?.kind === 'alias' && aliasExpandsNext(res.target.alias.value) && !aliasExpandsNext(alias.value)
       ? cx.rests(cx.s(`。その置き換え先は空白で終わるが、次の単語がエイリアスか調べるのは bash 5.3 だけで、bash 5.2 は調べない`, `; its text ends with a blank, but only bash 5.3 then checks the next word for an alias, not bash 5.2`), 'alias-in-alias-blank') : '';
-    const chain = res.target?.kind === 'alias'
-      ? cx.s(`（\`${res.target.name}\` もエイリアスで、\`${res.target.alias.value}\` に置き換わる${later}）`, ` (\`${res.target.name}\` is an alias too, for \`${res.target.alias.value}\`${later})`)
+    const chainIn = res.target?.kind === 'alias'
+      ? cx.s(`\`${res.target.name}\` もエイリアスで、\`${res.target.alias.value}\` に置き換わる${later}`, `\`${res.target.name}\` is an alias too, for \`${res.target.alias.value}\`${later}`)
       : '';
+    const chain = chainIn ? cx.s(`（${chainIn}）`, ` (${chainIn})`) : '';
     // (A file with no shebang: aliases are expanded only when an interactive shell reads it, `.bashrc`; the model
     // starts it with expand_aliases not known, src/semantics/state.ts.)
     const maybeSourced = !res.sure && alias.state === 'on' && readAs(cx.state.env(nameNode), cx.state.read) === 'unknown';
@@ -403,11 +404,14 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     // (The words after the alias are read with that command's spec, so they rest on it; with no spec, the alias's text.)
     const basis = target ? programBasis(cx, other?.path || runs!.name, target) : undefined;
     // (What `hash -p` or `enable -n` made of the command it runs, as for a name that is no alias.)
-    const offNote = other && res.sure ? cx.s(`（${other.why}）`, ` (${other.why})`) : '';
+    // (One bracket with the alias chain's, when that is there too: "(`b` is an alias too, …; `hash -p` on line 3 …)".)
+    const offIn = other && res.sure ? other.why : '';
+    const sureNote = [chainIn, offIn].filter(Boolean).join(cx.s('。', '; '));
+    const sure = sureNote ? cx.s(`（${sureNote}）`, ` (${sureNote})`) : '';
     return {
       name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'], spec, ...(target ? { runs: runs!.name } : {}), ...(basis ? { basis } : {}),
       explanation: res.sure
-        ? cx.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}${offNote}`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}${offNote}`)
+        ? cx.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${sure}`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${sure}`)
         : maybeSourced
           ? cx.s(`このファイルの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは対話シェルがこのファイルを読むとき（\`.bashrc\` や、端末で打つ \`source\`）か、\`shopt -s expand_aliases\` の後だけ。スクリプトとして実行すると、bash はエイリアスを展開しない`,
             `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}, but only when an interactive shell reads this file (\`.bashrc\`, or \`source\` typed in a terminal), or after \`shopt -s expand_aliases\`. Run as a script, bash does not expand aliases`)
@@ -461,7 +465,8 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     const { path, program, why } = offBuiltinOrHashed(cx, res);
     const basis = programBasis(cx, path || name, program);
     return {
-      name, res: ran, ...(program ? { spec: program } : {}), ...testOf(res), kind: 'command', nameTokens: [], refs: ['3.7.2'], ...(basis ? { basis } : {}),
+      // (The words are read as when the path is written out: the program is that file, so a word the dictionary lacks does not point to the manual of the name.)
+      name, res: ran, ...(program ? { spec: program } : {}), ...(path ? { runs: path } : {}), ...testOf(res), kind: 'command', nameTokens: [], refs: ['3.7.2'], ...(basis ? { basis } : {}),
       explanation: cx.s(`外部コマンド \`${path || name}\` を実行する（${why}）${program ? `: ${cx.t(program.summary)}` : ''}`, `Run the external command \`${path || name}\` (${why})${program ? `: ${cx.t(program.summary)}` : ''}`),
     };
   }

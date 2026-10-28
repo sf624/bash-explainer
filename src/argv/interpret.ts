@@ -168,7 +168,9 @@ class Reader {
   read(spec: CommandSpec, from: number, to: number, command: string, inherited: OptionSpec[], cobra: boolean, before: number[]): ArgvParse {
     const rules = rulesOf(spec, cobra);
     const isCobra = cobra || rules.cobra;
-    let options = [...(spec.options ?? []), ...inherited];
+    // (`echo --version` alone: coreutils reads it as an option only when it is the one argument.)
+    const sole = !!spec.soleOptions && to - from === 1 && this.words[from].value !== undefined && !this.words[from].count;
+    let options = [...(spec.options ?? []), ...(sole ? spec.soleOptions! : []), ...inherited];
     const search = options;
     const found = isCobra && spec.subcommands ? this.cobraSubcommand(spec, search, before, from, to) : undefined;
     // cobra reads every option with the flags of the command it runs: before the subcommand, its own (its name
