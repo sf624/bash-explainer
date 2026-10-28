@@ -3,7 +3,7 @@ import { spawnSync } from 'child_process';
 import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { pitfallNotes } from '../src/pitfalls';
+import { pitfallFindings, pitfallNotes, type StyleCode } from '../src/pitfalls';
 import { shellState } from '../src/semantics/state';
 import { wordFacts } from '../src/wordfacts';
 import * as fs from 'fs';
@@ -12,6 +12,7 @@ import { Analyzer } from '../src/analyzer';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { MESSAGES, fact, said, type FactId } from '../src/messages';
 import { runBash } from './support/bash';
+import { applied } from './support/rewrites';
 import type { Shell } from '../src/dialect';
 
 const root = path.join(__dirname, '..');
@@ -519,6 +520,109 @@ describe('pitfalls: a regex pattern that is a variable', () => {
       assert.strictEqual(grep('-F', '[', 'dots').status, 1);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the rewrites of the style checks (docs/design/oracles.md, step 6)', () => {
+  // (The input, the check, and the script each rewrite makes, the first recommended; none where it carries none.
+  // test/rewrites-corpus.test.ts runs them in bash over the states of each check.)
+  const cases: [string, StyleCode, string[]][] = [
+    ['[-f x]', 'bracket-no-space', ['[ -f x ]']],
+    ['[-f x ] && echo y', 'bracket-no-space', ['[ -f x ] && echo y']],
+    ['[[-f x]]', 'bracket-no-space', ['[[ -f x ]]']],
+    // (An escaped `]`, or one that is not the opener's: no rewrite.)
+    ['[-f x\\]', 'bracket-no-space', []],
+    ['[[-f x]', 'bracket-no-space', []],
+    ['x = 1', 'assignment-with-spaces', ['x=1']],
+    ['x =1', 'assignment-with-spaces', ['x=1']],
+    ['x =', 'assignment-with-spaces', ['x=']],
+    ['x = 1 >f', 'assignment-with-spaces', ['x=1 >f']],
+    // (Several words: no one value; a redirection among them.)
+    ['x = a b', 'assignment-with-spaces', []],
+    ['x =a b', 'assignment-with-spaces', []],
+    ['x = >f 1', 'assignment-with-spaces', []],
+    ['{echo a;}', 'brace-no-space', ['{ echo a;}']],
+    ['{echo a\n}', 'brace-no-space', ['{ echo a\n}']],
+    ['{echo a }', 'brace-no-space', ['{ echo a; }']],
+    ['{a }', 'brace-no-space', ['{ a; }']],
+    ['{echo a}', 'brace-no-space', ['{ echo a; }']],
+    ['{oops', 'brace-no-space', []],
+    ['{echo a\\}', 'brace-no-space', []],
+    ['{ echo a; echo b }', 'brace-close-no-separator', ['{ echo a; echo b; }']],
+    ['{ echo a; echo b >f }', 'brace-close-no-separator', ['{ echo a; echo b >f; }']],
+    ['rm -rf $DIR/*', 'rm-empty-variable-root', ['rm -rf "${DIR:?}"/*']],
+    // (A check before the statement, where it stands alone: not in a list nor a condition.)
+    ['rm -rf ${D%/}/x', 'rm-empty-variable-root', ['[ -n "${D%/}" ] || exit 1\nrm -rf ${D%/}/x']],
+    ['rm -rf ${D%/}/x 2>/dev/null', 'rm-empty-variable-root', ['[ -n "${D%/}" ] || exit 1\nrm -rf ${D%/}/x 2>/dev/null']],
+    ['f() { rm -rf ${D%/}/x; }', 'rm-empty-variable-root', ['f() { [ -n "${D%/}" ] || exit 1; rm -rf ${D%/}/x; }']],
+    ['if :; then rm -rf ${D%/}/x; fi', 'rm-empty-variable-root', ['if :; then [ -n "${D%/}" ] || exit 1; rm -rf ${D%/}/x; fi']],
+    ['case a in a) rm -rf ${D%/}/x ;; esac', 'rm-empty-variable-root', ['case a in a) [ -n "${D%/}" ] || exit 1; rm -rf ${D%/}/x ;; esac']],
+    ['a && rm -rf ${D%/}/x', 'rm-empty-variable-root', []],
+    ['if rm -rf ${D%/}/x; then :; fi', 'rm-empty-variable-root', []],
+    ['rm -rf ${D%/}/x | cat', 'rm-empty-variable-root', []],
+    ['read x', 'read-without-r', ['read -r x']],
+    ['IFS= read -a x', 'read-without-r', ['IFS= read -r -a x']],
+    ['[ $a < $b ]', 'redirect-in-bracket', ['[ $a \\< $b ]']],
+    ['[ $a>$b ]', 'redirect-in-bracket', ['[ $a \\> $b ]']],
+    ['[ 5>3 ]', 'redirect-in-bracket', ['[ 5 \\> 3 ]']],
+    // (No comparison of three words; not `>>`; another redirection; no `]`.)
+    ['[ $a 2>5 ]', 'redirect-in-bracket', []],
+    ['[ a b < c ]', 'redirect-in-bracket', []],
+    ['[ a < b c ]', 'redirect-in-bracket', []],
+    ['[ a >> b ]', 'redirect-in-bracket', []],
+    ['[ a < b > c ]', 'redirect-in-bracket', []],
+    ['[ a < b ] x', 'redirect-in-bracket', []],
+    ['[ -f $x]', 'bracket-close-in-word', ['[ -f $x ]']],
+    ['[ -n "$x"]', 'bracket-close-in-word', ['[ -n "$x" ]']],
+    ['[ $x$y]', 'bracket-close-in-word', ['[ $x$y ]']],
+    ['[ "$x"\\]', 'bracket-close-in-word', []],
+    ['[ -n $(f)x\\]', 'bracket-close-in-word', []],
+    ['[ a && b ]', 'and-or-in-bracket', ['[ a ] && [ b ]']],
+    ['[ -n "$a" || -n "$b" ]', 'and-or-in-bracket', ['[ -n "$a" ] || [ -n "$b" ]']],
+  ];
+  const found = (src: string, code: StyleCode, lang: 'en' | 'ja' = 'en') => {
+    const tree = parser.parse(src);
+    return pitfallFindings(tree.root, lang, 0, 100, shellState(tree, undefined), undefined).filter((f) => f.code === code);
+  };
+  for (const [src, code, scripts] of cases) {
+    it(`${code}: ${JSON.stringify(src)}`, () => {
+      const [f, ...more] = found(src, code);
+      assert.ok(f && !more.length, `one finding of ${code}`);
+      assert.deepStrictEqual((f.rewrite ?? []).map((r) => applied(src, r)), scripts);
+      // (The text shows the code of the first: one source.)
+      if (f.rewrite) assert.ok(f.text.includes(`\`${f.rewrite[0].code}\``) || f.rewrite[0].code.includes('\n'), f.text);
+      // (In Japanese the same.)
+      const [j] = found(src, code, 'ja');
+      if (j.rewrite) assert.ok(j.text.includes(`\`${j.rewrite[0].code}\``) || j.rewrite[0].code.includes('\n'), j.text);
+    });
+  }
+  it('shows the form of the rewrite where it has none', () => {
+    assert.match(found('[-f x\\]', 'bracket-no-space')[0].text, /Write `\[ -f …`$/);
+    assert.match(found('[[-f x]', 'bracket-no-space')[0].text, /`\[\[` is a reserved word only as a word of its own.*Write `\[\[ -f …`$/);
+    assert.match(found('x = a b', 'assignment-with-spaces')[0].text, /Write `x=…` with no spaces/);
+    assert.match(found('{oops', 'brace-no-space')[0].text, /`\{ oops …; \}`$/);
+    assert.match(found('{echo a\n}', 'brace-no-space')[0].text, /`\{ echo …; \}`$/);
+    assert.match(found('[ $a 2>5 ]', 'redirect-in-bracket')[0].text, /Use `\[\[ \]\]` to compare strings by order, or escape it as `\\>`$/);
+    assert.match(found('[ "$x"\\]', 'bracket-close-in-word')[0].text, /needs a space before it$/);
+    assert.match(found('a && rm -rf ${D%/}/x', 'rm-empty-variable-root')[0].text, /Write `\[ -n "\$\{D%\/\}" \] \|\| exit 1` before it/);
+  });
+  it('carries no rewrite in a string another shell reads, whose text shows it still', () => {
+    const tree = parser.parse("bash -c 'read x'");
+    const lines = new Analyzer('en').explainLine(tree, 0);
+    assert.ok(lines.notes.some((n) => /Usually write `read -r`/.test(n)), lines.notes.join('\n'));
+  });
+  it('says the check `rm -r` needs once it is there', () => {
+    // (The check the note says to write, or `[ -n "$v" ] || exit 1`, `test -n`, `return`, before it in the same list.)
+    for (const src of ['[ -n "${D%/}" ] || exit 1\nrm -rf ${D%/}/x', '[ -n "$D" ] || exit 1\nrm -rf $D/x', 'test -n "${D}" || return\ncd x\nrm -rf $D/x',
+      '[ "$#" -gt 0 ] || exit 1\nrm -rf $@/x', 'f() {\n  [ -n "$D" ] || return 1\n  rm -rf "$D"/*\n}']) {
+      assert.deepStrictEqual(found(src, 'rm-empty-variable-root'), [], src);
+    }
+    // (Not after another check, nor where the variable is set between.)
+    for (const src of ['[ -n "$D" ] && exit 1\nrm -rf $D/x', '! [ -n "$D" ] || exit 1\nrm -rf $D/x', '[ -n "$D" ] || { exit 1; }\nrm -rf $D/x', '[ -z "$D" ] || exit 1\nrm -rf $D/x',
+      '[ -n "$E" ] || exit 1\nrm -rf $D/x', '[ -n "$D" ] || echo\nrm -rf $D/x', '[ -n "$D" x ] || exit 1\nrm -rf $D/x', 'test -n "$D" x || exit 1\nrm -rf $D/x', 'echo -n "$D" || exit 1\nrm -rf $D/x',
+      '[ -n "$D" ] || exit 1\nD=\nrm -rf $D/x', '[ -n "$D" ] || exit 1\nread D\nrm -rf $D/x', '[ -n "$D" ] || exit 1\nfor D in a; do :; done\nrm -rf $D/x', '[ -n "${D%/}" ] || exit 1\nrm -rf $D/x']) {
+      assert.strictEqual(found(src, 'rm-empty-variable-root').length, 1, src);
     }
   });
 });
