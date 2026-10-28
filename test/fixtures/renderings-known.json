@@ -1,0 +1,205 @@
+{
+  "counts": {
+    "fixtures": {
+      "probe": { "words": 117, "unknown": 19, "claims": 137, "globExamples": 8, "roleCommands": 4, "roleFields": 11 },
+      "values": { "words": 260, "unknown": 43, "claims": 322, "globExamples": 13, "roleCommands": 14, "roleFields": 58 }
+    },
+    "snippets": {
+      "probe": { "words": 298, "unknown": 41, "claims": 324, "globExamples": 10, "roleCommands": 12, "roleFields": 12 },
+      "values": { "words": 302, "unknown": 44, "claims": 329, "globExamples": 10, "roleCommands": 12, "roleFields": 30 }
+    }
+  },
+  "known": [
+    {
+      "check": "count",
+      "source": "concatenation",
+      "reason": "Bug, to fix: the token of a concatenation says \"the parts below are joined into one word\" where word splitting, globbing or a brace expansion then make other than one word of it (`$DIR/*`, `\"$DIR\"/*`, `$x/a` with a space in `x`, `{a,b}\"x\"`). One cause for every such word, so one entry (no input)."
+    },
+    {
+      "input": "sample.sh",
+      "command": "echo \"${#items[@]} ${items[1]} ${items[@]}\"",
+      "word": "\"${#items[@]} ${items[1]} ${items[@]}\"",
+      "check": "count",
+      "source": "argument",
+      "env": "values",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "coverage.sh",
+      "command": "echo \"${#items[@]} ${items[1]} ${!items[@]}\"",
+      "word": "\"${#items[@]} ${items[1]} ${!items[@]}\"",
+      "check": "count",
+      "source": "argument",
+      "env": "values",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "sample.sh # --- Basics: redirections, expansions, control flow ---",
+      "command": "echo \"${#items[@]} ${items[1]} ${items[@]}\"",
+      "word": "\"${#items[@]} ${items[1]} ${items[@]}\"",
+      "check": "count",
+      "source": "argument",
+      "env": "values",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "ll() { ls -l \"$@\"; }\nll",
+      "command": "ls -l \"$@\"",
+      "word": "\"$@\"",
+      "check": "count",
+      "source": "argument",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "set -- $(getopt ab: \"$@\")",
+      "command": "getopt ab: \"$@\"",
+      "word": "\"$@\"",
+      "check": "count",
+      "source": "argument",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "cp $a b",
+      "command": "cp $a b",
+      "word": "b",
+      "check": "role",
+      "env": "probe",
+      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`cp b`: one operand, a source)."
+    },
+    {
+      "input": "cp $a b; cp $a c",
+      "command": "cp $a b",
+      "word": "b",
+      "check": "role",
+      "env": "probe",
+      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`cp b`: one operand, a source)."
+    },
+    {
+      "input": "cp $a b; cp $a c",
+      "command": "cp $a c",
+      "word": "c",
+      "check": "role",
+      "env": "probe",
+      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`cp b`: one operand, a source)."
+    },
+    {
+      "input": "echo \"${@:2}\"",
+      "command": "echo \"${@:2}\"",
+      "word": "\"${@:2}\"",
+      "check": "count",
+      "source": "argument",
+      "env": "probe",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "getopt --options=ab --longoptions=help,file: -- \"$@\"",
+      "command": "getopt --options=ab --longoptions=help,file: -- \"$@\"",
+      "word": "\"$@\"",
+      "check": "count",
+      "source": "argument",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "getopt --options=ab --longoptions=x,y: -- \"$@\"",
+      "command": "getopt --options=ab --longoptions=x,y: -- \"$@\"",
+      "word": "\"$@\"",
+      "check": "count",
+      "source": "argument",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "getopt -a -o x -l long -- \"$@\"",
+      "command": "getopt -a -o x -l long -- \"$@\"",
+      "word": "\"$@\"",
+      "check": "count",
+      "source": "argument",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "getopt -o '!' -- \"$@\"",
+      "command": "getopt -o '!' -- \"$@\"",
+      "word": "\"$@\"",
+      "check": "count",
+      "source": "argument",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "getopt -oab: -- \"$@\"",
+      "command": "getopt -oab: -- \"$@\"",
+      "word": "\"$@\"",
+      "check": "count",
+      "source": "argument",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "getopt ab \"$@\"",
+      "command": "getopt ab \"$@\"",
+      "word": "\"$@\"",
+      "check": "count",
+      "source": "argument",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "grep \"$@\" f",
+      "command": "grep \"$@\" f",
+      "word": "\"$@\"",
+      "check": "count",
+      "source": "argument",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "grep -c ${x} f",
+      "command": "grep -c ${x} f",
+      "word": "f",
+      "check": "role",
+      "env": "probe",
+      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`cp b`: one operand, a source)."
+    },
+    {
+      "input": "printf '%s,'{a..c}",
+      "command": "printf '%s,'{a..c}",
+      "word": "'%s,'{a..c}",
+      "check": "role",
+      "reason": "Bug, to fix: `countOf` (src/argv/words.ts) gives no count to a word with braces and a quoted part (`'%s,'{a..c}`), so the interpreter reads it as one word, the format; bash gives three words: the format `%s,a` and the values `%s,b` and `%s,c`."
+    },
+    {
+      "input": "trap {x,EXIT}",
+      "command": "trap {x,EXIT}",
+      "word": "{x,EXIT}",
+      "check": "count",
+      "source": "argument",
+      "reason": "Bug, to fix: the words of a brace expansion in the action of `trap` are read as the action alone, and its token is not marked `expands`; bash runs `trap x EXIT`, where `x` is the action and `EXIT` a signal."
+    },
+    {
+      "input": "trap {x,EXIT}",
+      "command": "trap {x,EXIT}",
+      "word": "{x,EXIT}",
+      "check": "role",
+      "reason": "Bug, to fix: the words of a brace expansion in the action of `trap` are read as the action alone, and its token is not marked `expands`; bash runs `trap x EXIT`, where `x` is the action and `EXIT` a signal."
+    },
+    {
+      "input": "getopt --options=ab --longoptions=x: -- \"$@\"",
+      "command": "getopt --options=ab --longoptions=x: -- \"$@\"",
+      "word": "\"$@\"",
+      "check": "count",
+      "source": "argument",
+      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
+    },
+    {
+      "input": "cp $a b; cp $a ",
+      "command": "cp $a b",
+      "word": "b",
+      "check": "role",
+      "env": "probe",
+      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`cp b`: one operand, a source)."
+    },
+    {
+      "input": "cp $a b; cp $a ",
+      "command": "cp $a",
+      "word": "$a",
+      "check": "role",
+      "env": "values",
+      "reason": "Bug, to fix: the hedge `several` gives the roles of the expansion taken as three words (`counts`: one more than two); bash gives it two here (`a b`), and the second is the destination of the two-operand form (the new name, or an existing directory), not a destination directory."
+    }
+  ]
+}

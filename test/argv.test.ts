@@ -12,14 +12,19 @@
 // No command may reach a PATH search. A difference (`compareMarker`) is listed in test/fixtures/argv-known.json with its
 // reason; an entry of an input that ran and no longer differs fails, and so do counts that changed (update them when
 // the fixtures or the sampled snippets change).
+//
+// On the same runs, step 9 (oracles.md, 2.5 and 2.8; test/support/renderings.ts): what the explanation says of the
+// number of words each word gives, its glob examples, and the roles of the fields of a word that gives other than one
+// (the interpreter reading bash's argv), against bash. Differences go in test/fixtures/renderings-known.json.
 import * as assert from 'assert';
 import * as fs from 'fs';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { ARGV_KNOWN, type ArgvInput, type ArgvKnownFile, checkArgv, fixtureInputs, instrumentArgv, matchKnown, runArgvBatch, SNIPPET_SAMPLE, snippetInputs, toNull } from './support/argv';
+import { ARGV_KNOWN, type ArgvInput, type ArgvKnownFile, type ArgvPlanRun, checkArgv, fixtureInputs, instrumentArgv, matchKnown, runArgv, runArgvBatch, SNIPPET_SAMPLE, snippetInputs, toNull } from './support/argv';
 import { probeSkipReason } from './support/probe';
+import { checkRenderings, claimsOf, explainInput, globExampleOn, matchRenderKnown, RENDER_KNOWN, type RenderKnownFile, staleClasses, wordCounts } from './support/renderings';
 
-describe('argv capture: the word model against bash (oracles.md, steps 2 and 3)', function () {
+describe('argv capture: the word model and the explanation against bash (oracles.md, steps 2, 3 and 9)', function () {
   this.timeout(120000);
 
   it('replaces each command by a recorder, keeps state builtins and functions, and sends redirections to /dev/null', () => {
@@ -51,6 +56,26 @@ describe('argv capture: the word model against bash (oracles.md, steps 2 and 3)'
   it('sends a file redirection to the descriptor opened on /dev/null', () => {
     assert.deepStrictEqual(['>', '2>>', '>|', '&>', '&>>', '<', '<>', '3<>', '{fd}>', '2>&'].map(toNull),
       ['>&97', '2>&97', '>&97', '>&97 2>&97', '>&97 2>&97', '<&97', '<&97', '3<&97', '{fd}>&97', '2>&97']);
+  });
+
+  it('reads the counts of words the explanation says, from the facts its tokens and examples carry', () => {
+    const tree = createUnbashParser().parse('x="a b"; cp $x d; echo {a,b} "a b" "$@" $x/c; ls *.txt; set -f; ls *.txt');
+    const input: ArgvInput = { name: 'claims', tree, model: shellState(tree, 'bash'), provided: [] };
+    const shown = explainInput(input);
+    const words = instrumentArgv(tree, input.model).markers.flatMap((m) => m.words.slice(1));
+    assert.deepStrictEqual(words.map((w) => [w.text, claimsOf(w, shown, input).map((c) => `${c.source} ${c.count}`).join(', '), globExampleOn(w, shown)]), [
+      // (The value of `$x` and its words; the argument is marked as split, so it says no count.)
+      ['$x', 'value 2', false], ['d', 'argument 1', false],
+      ['{a,b}', 'brace 2, brace-example 2', false], ['"a b"', 'argument 1, string 1', false],
+      // (`"$@"`: the argument is not marked, a known bug; its string says one word per element.)
+      ['"$@"', 'argument 1', false], ['$x/c', 'concatenation 1', false],
+      // (A glob: an example of the files it matches, and no count; after `set -f`, one argument and no example.)
+      ['*.txt', '', true], ['*.txt', 'argument 1', false],
+    ]);
+    // Bash's number of fields of each word: known from the model, or what lies between the known words around the only
+    // one it does not know.
+    assert.deepStrictEqual(wordCounts([{ fields: ['cp'] }, {}, { fields: ['d'] }], ['cp', 'a', 'b', 'd']), [1, 2, 1]);
+    assert.deepStrictEqual(wordCounts([{ fields: ['cp'] }, {}, {}], ['cp', 'a', 'b']), [1, undefined, undefined]);
   });
 
   if (probeSkipReason) {
@@ -86,14 +111,48 @@ describe('argv capture: the word model against bash (oracles.md, steps 2 and 3)'
     assert.ok(Date.now() - start < 8000);
   });
 
-  const check = async (set: string, inputs: ArgvInput[]): Promise<void> => {
+  // (Each set runs once, for both checks.)
+  const sets: Record<string, () => ArgvInput[]> = { fixtures: fixtureInputs, snippets: () => snippetInputs(SNIPPET_SAMPLE) };
+  const runs = new Map<string, Promise<{ inputs: ArgvInput[]; plans: ArgvPlanRun[] }>>();
+  const runOf = (set: string) => {
+    if (!runs.has(set)) runs.set(set, (async () => { const inputs = sets[set](); return { inputs, plans: await runArgv(inputs, { jobs: 4 }) }; })());
+    return runs.get(set)!;
+  };
+
+  const check = async (set: string): Promise<void> => {
     const known = JSON.parse(fs.readFileSync(ARGV_KNOWN, 'utf8')) as ArgvKnownFile;
-    const { found, escaped, counts } = await checkArgv(inputs, { jobs: 4 });
+    const { inputs, plans } = await runOf(set);
+    const { found, escaped, counts } = checkArgv(plans);
     const { unexplained, stale } = matchKnown(found, known.known, inputs);
     assert.deepStrictEqual({ escaped, unexplained, stale, counts }, { escaped: [], unexplained: [], stale: [], counts: known.counts[set] });
   };
 
-  it('gives every command of the fixtures the fields bash gives it', () => check('fixtures', fixtureInputs()));
+  const rendered = new Map<string, Promise<ReturnType<typeof checkRenderings> & ReturnType<typeof matchRenderKnown>>>();
+  const renderOf = (set: string, known: RenderKnownFile) => {
+    if (!rendered.has(set)) {
+      rendered.set(set, runOf(set).then(({ inputs, plans }) => { const r = checkRenderings(plans); return { ...r, ...matchRenderKnown(r.found, known.known, inputs) }; }));
+    }
+    return rendered.get(set)!;
+  };
+  const renderKnown = (): RenderKnownFile => JSON.parse(fs.readFileSync(RENDER_KNOWN, 'utf8')) as RenderKnownFile;
 
-  it('gives every command of a sample of the snippets the fields bash gives it', () => check('snippets', snippetInputs(SNIPPET_SAMPLE)));
+  const renderings = async (set: string): Promise<void> => {
+    const known = renderKnown();
+    const { unexplained, stale, counts } = await renderOf(set, known);
+    assert.deepStrictEqual({ unexplained, stale, counts }, { unexplained: [], stale: [], counts: known.counts[set] });
+  };
+
+  it('gives every command of the fixtures the fields bash gives it', () => check('fixtures'));
+
+  it('gives every command of a sample of the snippets the fields bash gives it', () => check('snippets'));
+
+  it('shows the words of the fixtures as bash expands them: the counts, the glob examples, the roles (step 9)', () => renderings('fixtures'));
+
+  it('shows the words of a sample of the snippets as bash expands them (step 9)', () => renderings('snippets'));
+
+  it('uses every entry of renderings-known.json that accepts a class of differences', async () => {
+    const known = renderKnown();
+    const used = await Promise.all(Object.keys(sets).map((set) => renderOf(set, known)));
+    assert.deepStrictEqual(staleClasses(known.known, used.flatMap((u) => u.classes)), []);
+  });
 });
