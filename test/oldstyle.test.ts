@@ -152,7 +152,7 @@ describe('old-style options: ps', () => {
     // (A number must come last in a BSD word: `u1x` is an error in ps.)
     assert.strictEqual(top('ps u1x')[0].explanation, 'Word `u1x`');
     // (procps has no end of options: `--` is an error, test/oldstyle-real.test.ts.)
-    assert.strictEqual(top('ps aux --')[1].explanation, 'Not allowed here: procps ps does not take `--`; it prints "error: garbage option" and fails (exit status 1)');
+    assert.strictEqual(top('ps aux --')[1].explanation, 'Not allowed here: procps ps does not take `--`, and fails (exit status 1)');
     assert.match(top('ps -- -ef', 'ja')[0].explanation, /^ここには書けない: procps の ps は `--` を受け付けず/);
   });
 

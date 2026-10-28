@@ -1513,7 +1513,7 @@ export const core: Record<string, CommandSpec> = {
     ['--group', 'グループで絞る', 'select by group', 'arg'],
   ], {
     // A bare number starts a list of process IDs that ends the line: `ps 1 u` and `ps 1 -e` fail with "process ID list syntax error". procps has no end of options: `--` is a "garbage option".
-    endsOptions: BARE_NUMBER, dashDash: { refused: tx('ここには書けない: procps の ps は `--` を受け付けず、「error: garbage option」と表示して失敗する（終了ステータス 1）', 'Not allowed here: procps ps does not take `--`; it prints "error: garbage option" and fails (exit status 1)') }, layouts: [{ options: [], layout: 'ps' }, { options: ['a', 'u', 'x'], layout: 'ps-bsd-u' }, { options: ['-e', '-f'], layout: 'ps-full' }],
+    endsOptions: BARE_NUMBER, dashDash: { refused: tx('ここには書けない: procps の ps は `--` を受け付けず、失敗する（終了ステータス 1）', 'Not allowed here: procps ps does not take `--`, and fails (exit status 1)') }, layouts: [{ options: [], layout: 'ps' }, { options: ['a', 'u', 'x'], layout: 'ps-bsd-u' }, { options: ['-e', '-f'], layout: 'ps-full' }],
     operands: [{
       when: { operand: 0, matches: BARE_NUMBER },
       pattern: [
