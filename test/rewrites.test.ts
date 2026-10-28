@@ -208,7 +208,84 @@ describe('the rewrites of `unmatched-glob-runs-once`', () => {
       assert.deepStrictEqual(factsOf(src, 'unmatched-glob-runs-once'), [], src);
     }
   });
+  it('count a part that may give several words as several, and offer no test of the name there', () => {
+    // (Before, `for i in "${a[@]}"*.c` was said to run once, with `i` set to the pattern's text, and the test of the
+    // name was offered: with `a=(x y)`, bash runs it twice, over `x` and `y*.c`, and the test would skip `x`.)
+    const text = (src: string, lang?: 'ja'): string => factsOf(src, 'unmatched-glob-runs-once', undefined, lang)[0].text;
+    for (const src of ['a=(x y); for i in "${a[@]}"*.c; do echo "$i"; done', 'for i in "${a[@]}"*.c; do echo "$i"; done', 'for i in "$@"/*.c; do echo "$i"; done',
+      'for i in $@*.c; do echo "$i"; done', 'for i in "${!a[@]}"*.c; do echo "$i"; done', 'for i in "${!BASH_V@}"*.c; do echo "$i"; done', 'for i in ${a[*]}*.c; do echo "$i"; done',
+      'for i in "${a[@]#x}"*.c; do echo "$i"; done', 'for i in "${@:2}"*.c; do echo "$i"; done', 'for i in *.c"$@"; do echo "$i"; done', 'for i in x${y:-"$@"}*.c; do echo "$i"; done',
+      'a=(x y); x=\'a[@]\'; for i in "${!x}"*.c; do echo "$i"; done', 'a=(x y); declare -n r=\'a[@]\'; for i in "$r"*.c; do echo "$i"; done',
+      'a=(x y); declare -n q=\'a[@]\'; declare -n r=q; for i in "$r"*.c; do echo "$i"; done', 'source ./f.sh; for i in "$r"*.c; do echo "$i"; done',
+      'a=(x y); declare -n r=\'a[*]\'; for i in $r*.c; do echo "$i"; done', 'declare -n r=$1; for i in "$r"*.c; do echo "$i"; done', 'a=(x y); x=\'a[@]\'; for i in "${!x:-z}"*.c; do echo "$i"; done', 'for i in "${!b[0]}"*.c; do echo "$i"; done']) {
+      const w = /in (\S+);/.exec(src)![1].replace(/[$*.?(){}[\]|\\^+]/g, '\\$&');
+      assert.match(text(src), new RegExp(`: \`${w}\` may give several words before files are matched; for each of them that is a pattern and that no file matches, the loop still runs once, with \`i\` set to its text itself, after its expansions\\. Turn on \`shopt -s nullglob\` before the loop$`), src);
+      assert.match(text(src, 'ja'), new RegExp(`: \`${w}\` はファイルと照合する前に複数の単語になることがあります。そのうちパターンで、一致するファイルが1つもないものについても1回ずつ実行され、\`i\` には展開後のその文字列がそのまま入ります。ループの前で \`shopt -s nullglob\` にします$`), src);
+      assert.deepStrictEqual(fix(src).map(([code]) => code), ['shopt -s nullglob'], src);
+    }
+    assert.match(text('for i in "$@"*.{c,h}; do echo "$i"; done'), /: `"\$@"\*\.\{c,h\}` gives `"\$@"\*\.c` and `"\$@"\*\.h`, each of which may give several words before files are matched; for each of them that is a pattern and that no file matches, the loop still runs once/);
+    assert.match(text('for i in "$@"*.{c,h}; do echo "$i"; done', 'ja'), /: `"\$@"\*\.\{c,h\}` は `"\$@"\*\.c`・`"\$@"\*\.h` になり、それぞれファイルと照合する前に複数の単語になることがあります。/);
+    // (A word that is only such a part is no pattern, but may give several words: no test of the name.)
+    assert.match(text('for i in "$@" *.c; do echo "$i"; done'), /: when no file matches `\*\.c`, the loop still runs once for it, with `i` set to the text `\*\.c` itself\. Turn on `shopt -s nullglob` before the loop$/);
+    assert.deepStrictEqual(fix('for i in "$@" *.c; do echo "$i"; done').map(([code]) => code), ['shopt -s nullglob']);
+    // (One word: `"$*"`, `"${a[*]}"`, a count, a nameref to a name, the output of a command substitution.)
+    for (const src of ['for i in "$*"*.c; do echo "$i"; done', 'for i in "${a[*]}"*.c; do echo "$i"; done', 'for i in "${!a[*]}"*.c; do echo "$i"; done',
+      'for i in "${#a[@]}"*.c; do echo "$i"; done', 'declare -n r=a; for i in "$r"*.c; do echo "$i"; done', 'for i in "$(echo "$@")"*.c; do echo "$i"; done',
+      'a=(x y); declare -n r=\'a[*]\'; for i in "$r"*.c; do echo "$i"; done', 'declare -n q=p; declare -n p=q; for i in "$p"*.c; do echo "$i"; done',
+      'for i in "$((x))"*.c; do echo "$i"; done', 'for i in ${x:-<(echo "$@")}*.c; do echo "$i"; done']) {
+      assert.match(text(src), /, the loop runs once with `i` set to the text of the pattern itself, after its expansions\. Start the body with `\[ -e "\$i" \] \|\| continue`/, src);
+    }
+  });
+  it('say what `select` does with a pattern that matches nothing, and offer only nullglob', () => {
+    // (Before, `select i in *.c` was said to run once with `i` set to `*.c`: the menu shows `*.c` as an entry.)
+    const text = (src: string, lang?: 'ja'): string => factsOf(src, 'unmatched-glob-runs-once', undefined, lang)[0].text;
+    assert.match(text('select i in *.c; do echo "$i"; done'), /: when no file matches `\*\.c`, the menu still shows it as an entry, and choosing it sets `i` to the text `\*\.c` itself\. Turn on `shopt -s nullglob` before the loop$/);
+    assert.match(text('select i in *.c; do echo "$i"; done', 'ja'), /: `\*\.c` に一致するファイルが1つもなくても、メニューには項目として表示され、それを選ぶと `i` に `\*\.c` という文字列がそのまま入ります。ループの前で `shopt -s nullglob` にします$/);
+    assert.match(text('select i in *.{c,h}; do echo "$i"; done'), /: `\*\.\{c,h\}` gives the patterns `\*\.c` and `\*\.h` before files are matched; each that no file matches is still shown in the menu, and choosing it sets `i` to its text itself\. Turn on/);
+    assert.match(text('select i in *.{c,h}; do echo "$i"; done', 'ja'), /: `\*\.\{c,h\}` はファイルと照合する前に `\*\.c`・`\*\.h` になります。そのうち一致するファイルが1つもないものもメニューに表示され、それを選ぶと `i` にはその文字列がそのまま入ります。ループの前で/);
+    assert.match(text('select i in "$d"/*.c; do echo "$i"; done'), /, the menu still shows it as an entry, and choosing it sets `i` to the text of the pattern itself, after its expansions\. Turn on/);
+    assert.match(text('select i in "$@"*.c; do echo "$i"; done'), /: `"\$@"\*\.c` may give several words before files are matched; each of them that is a pattern and that no file matches is still shown in the menu, and choosing it sets `i` to its text itself, after its expansions\. Turn on/);
+    assert.match(text('select i in "$@"*.c; do echo "$i"; done', 'ja'), /そのうちパターンで、一致するファイルが1つもないものもメニューに表示され、それを選ぶと `i` には展開後のその文字列がそのまま入ります。ループの前で/);
+    for (const src of ['select i in *.c; do echo "$i"; done', 'select i in "$d"/*.c; do echo "$i"; done']) {
+      assert.deepStrictEqual(fix(src).map(([code]) => code), ['shopt -s nullglob'], src);
+    }
+  });
   for (const { name, program } of programs) {
+    it(`run the loop over each word of a part that gives several, in ${name}`, async () => {
+      const driver = '"$BASH" f.sh';
+      for (const [src, none, matched] of [['a=(x y); for i in "${a[@]}"*.c; do echo "@$i"; done\n', '@x\n@y*.c\n', '@x\n@y1.c\n'],
+        ['set -- x y; for i in "$@"*.c; do echo "@$i"; done\n', '@x\n@y*.c\n', '@x\n@y1.c\n'], ['set -- x y; for i in $@*.c; do echo "@$i"; done\n', '@x\n@y*.c\n', '@x\n@y1.c\n'],
+        ['a=(x y); for i in "${!a[@]}"*.c; do echo "@$i"; done\n', '@0\n@1*.c\n', '@0\n@11.c\n'], ['a=(x y); x=\'a[@]\'; for i in "${!x}"*.c; do echo "@$i"; done\n', '@x\n@y*.c\n', '@x\n@y1.c\n'],
+        ['a=(x y); declare -n r=\'a[@]\'; for i in "$r"*.c; do echo "@$i"; done\n', '@x\n@y*.c\n', '@x\n@y1.c\n'],
+        ['a=(x y); declare -n r=\'a[*]\'; for i in $r*.c; do echo "@$i"; done\n', '@x\n@y*.c\n', '@x\n@y1.c\n'], ['a=(x y); x=\'a[@]\'; for i in "${!x:-z}"*.c; do echo "@$i"; done\n', '@x\n@y*.c\n', '@x\n@y1.c\n']]) {
+        assert.match(factsOf(src, 'unmatched-glob-runs-once')[0].text, /may give several words before files are matched/, src);
+        assert.strictEqual((await run(program, src, driver)).out, none, src);
+        assert.strictEqual((await run(program, src, driver, { files: ['y1.c', '11.c'] })).out, matched, src);
+        // (nullglob drops only the pattern that matches nothing; the test of the name, not offered, would drop `x` too.)
+        const [[, script]] = fix(src);
+        assert.strictEqual((await run(program, script, driver)).out, none.split('\n')[0] + '\n', script);
+        assert.strictEqual((await run(program, script, driver, { files: ['y1.c', '11.c'] })).out, matched, script);
+        assert.strictEqual((await run(program, src.replace('do echo', 'do [ -e "$i" ] || continue; echo'), driver)).out, '', src);
+      }
+      // (One word, `x y*.c`: the loop runs once, and the test of the name that the note offers skips it.)
+      const one = 'set -- x y; for i in "$*"*.c; do echo "@$i"; done\n';
+      assert.strictEqual((await run(program, one, driver)).out, '@x y*.c\n');
+      const [[code, test]] = fix(one);
+      assert.strictEqual(code, '[ -e "$i" ] || continue');
+      assert.strictEqual((await run(program, test, driver)).out, '');
+      assert.strictEqual((await run(program, test, driver, { files: ['x y1.c'] })).out, '@x y1.c\n');
+    });
+    it(`show a pattern that matches nothing as an entry of the menu of select, in ${name}`, async () => {
+      const src = 'select i in *.c; do echo "@$i"; break; done\n';
+      const ran = await run(program, src, 'echo 1 | "$BASH" f.sh');
+      assert.deepStrictEqual([ran.out, ran.err.includes('1) *.c\n')], ['@*.c\n', true]);
+      assert.strictEqual((await run(program, 'select i in *.{c,h}; do echo "@$i"; break; done\n', 'echo 2 | "$BASH" f.sh')).out, '@*.h\n');
+      assert.strictEqual((await run(program, src, 'echo 1 | "$BASH" f.sh', { files: ['x.c'] })).out, '@x.c\n');
+      // (With nullglob, the menu leaves the pattern out; with no entry, `select` runs nothing.)
+      const [[, script]] = fix(src);
+      assert.deepStrictEqual(await run(program, script, 'echo 1 | "$BASH" f.sh'), { out: '', err: '', status: 0 });
+      assert.strictEqual((await run(program, script, 'echo 1 | "$BASH" f.sh', { files: ['x.c'] })).out, '@x.c\n');
+    });
     it(`give the loop each pattern that braces make, as its note says, in ${name}`, async () => {
       const driver = '"$BASH" f.sh';
       for (const [src, none] of [['for i in *.{c,h}; do echo "@$i"; done\n', '@*.c\n@*.h\n'], ['for i in {a,b}*.c; do echo "@$i"; done\n', '@a*.c\n@b*.c\n'],

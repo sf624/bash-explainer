@@ -838,10 +838,10 @@ export function wordFields(n: SyntaxNode, model: StateModel, env?: WordEnv): Fie
 /**
  * The words of the brace expansion of the word of `n` (`wordAlternatives`; undefined where they are not known here),
  * each as written, with its fields before pathname expansion where they are known (`fields`), and its characters
- * unsplit, with `hole` for each part not known here (`chars`); either undefined where bash fails on the word
- * (`${x:?}`). For the patterns of a list (src/semantics/globwords.ts).
+ * unsplit, with `hole(part)` for each part not known here (`chars`; a tilde prefix is no part); either undefined
+ * where bash fails on the word (`${x:?}`). For the patterns of a list (src/semantics/globwords.ts).
  */
-export function braceWords(n: SyntaxNode, model: StateModel, hole: string): { w: WordMeaning; words: { written: string; fields?: Char[][]; chars?: Char[] }[] } | undefined {
+export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: SyntaxNode) => string): { w: WordMeaning; words: { written: string; fields?: Char[][]; chars?: Char[] }[] } | undefined {
   // (A word of a list is always one.)
   const w = wordMeaning(n, model)!;
   const alternatives = wordAlternatives(w);
@@ -849,7 +849,7 @@ export function braceWords(n: SyntaxNode, model: StateModel, hole: string): { w:
   const ev = new Evaluator(w, new ModelValues(w, model, undefined, new Set()));
   const failing = (nodes: BraceAlternative, holed: boolean): Piece[] | undefined => {
     try {
-      return piecesOf(w, nodes, ev, holed ? (quoted) => ({ text: hole, quoted, expanded: !quoted }) : undefined);
+      return piecesOf(w, nodes, ev, holed ? (quoted, part) => ({ text: hole(part), quoted, expanded: !quoted }) : undefined);
     } catch (e) {
       /* c8 ignore next -- a rethrow guard, as in `fieldsAt`. */
       if (!(e instanceof Failure)) throw e;
@@ -984,7 +984,7 @@ export type Char = { c: string; quoted: boolean; split: boolean };
  * The pieces of the word (or of one word of its brace expansion), with its tildes expanded. `hole`: what a part not
  * known here stands for, quoted or not (`braceWords`); without it, the pieces are not known.
  */
-function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator, hole?: (quoted: boolean) => Piece): Piece[] | undefined {
+function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator, hole?: (quoted: boolean, part?: SyntaxNode) => Piece): Piece[] | undefined {
   const out: Piece[] = [];
   const parts = nodes.flatMap((n): (SyntaxNode | string)[] => (typeof n !== 'string' && n.type === 'concatenation' ? [...n.namedChildren] : [n]));
   for (let i = 0; i < parts.length; i++) {
@@ -1012,7 +1012,7 @@ function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator,
       out.push(...plain(n.text.slice(at)));
       continue;
     }
-    const p = ev.pieces(n, false) ?? (hole && [hole(QUOTES.has(n.type))]);
+    const p = ev.pieces(n, false) ?? (hole && [hole(QUOTES.has(n.type), n)]);
     if (!p) return undefined;
     out.push(...p);
   }
