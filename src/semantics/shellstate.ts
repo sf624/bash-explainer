@@ -75,7 +75,7 @@ export interface AliasState {
 /** A name the command search treats apart: a builtin turned off (`enable -n`), or a path remembered (`hash -p`). */
 export interface CommandEntry {
   readonly state: Tri;
-  /** `hash -p`: the path. */
+  /** `hash -p`: the path (empty when it is known only at run time, `hash -p "$p" x`). */
   readonly value: string;
   /** The command that made it so. */
   readonly at: SyntaxNode;

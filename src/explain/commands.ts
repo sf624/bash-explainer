@@ -276,13 +276,15 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   // `test` and `[` read their words as an expression (src/testexpr.ts), when the name runs one of them.
   const bracket = head.test?.closingOperand !== undefined;
   if (head.test) argToks = readByCommand(testArgs(cx, n, commandTest(head.test, args, bashTest(cx, head.test)), bracket, !!head.test.builtin));
-  // (A function of the script is not the command its name suggests: no example of that command.)
-  if (!head.fn) {
+  // (A function of the script is not the command its name suggests: no example of that command. Nor is a name that
+  // may run a path `hash -p` gave it.)
+  const other = !!head.fn || (head.res?.kind === 'file' && !!head.res.maybeHashed);
+  if (!other) {
     unreadStdin(cx, n, read.parse, args, head.name);
     commandExampleFor(cx, n, head.spec, args, read.parse);
   }
   for (const a of args) {
-    cx.examplesAt(a, () => wordExample(cx, a, { name: head.name, node: n, args, ...(head.fn ? {} : { spec: head.spec }) }));
+    cx.examplesAt(a, () => wordExample(cx, a, { name: head.name, node: n, args, ...(other ? {} : { spec: head.spec }) }));
   }
   // `[` is a command and `]` its last argument: they get tokens of their own, around the condition.
   const nameToks = bracket ? [cx.tok(word ?? nameNode, head.kind, head.kind === 'builtin'
@@ -344,19 +346,57 @@ function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedC
 
 /**
  * The program a file name runs when `hash -p` gave it a path or `enable -n` turned the builtin of its name off: the
- * path (when hashed), the spec of the program, from the dictionary (a builtin's `program`), and why, in words.
+ * path (when hashed by one with a slash), the spec of the program, from the dictionary (a builtin's `program`), what
+ * runs and why, in words. A hashed path with no slash runs from the current directory (`hash -p tac sort`: `./tac`),
+ * and an empty one is known only at run time (`hash -p "$p" sort`): no program the dictionary knows.
  */
-function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 'file' }>): { path: string | undefined; program: CommandSpec | undefined; why: string } {
-  const path = res.hashed?.value;
-  const spec = lookupCommand(path || res.name);
+function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 'file' }>): { path: string | undefined; program: CommandSpec | undefined; runs: string; why: string } {
+  const value = res.hashed?.value;
   const by = docLine((res.hashed ?? res.disabled)!.at) + 1;
+  if (value !== undefined && !value.includes('/')) {
+    return value
+      ? {
+        path: undefined, program: undefined,
+        runs: cx.s(`現在のディレクトリの \`${value}\` を実行する`, `Run \`${value}\` from the current directory`),
+        why: cx.s(`行 ${by} の \`hash -p\` で \`${res.name}\` は \`${value}\` を指す。スラッシュのないパスは PATH から探さない`,
+          `\`hash -p\` on line ${by} gave \`${res.name}\` the path \`${value}\`; a path with no slash is not searched in PATH`),
+      }
+      : {
+        path: undefined, program: undefined, runs: cx.s('外部コマンドを実行する', 'Run an external command'),
+        why: cx.s(`行 ${by} の \`hash -p\` で \`${res.name}\` は実行時に決まるパスを指す`, `\`hash -p\` on line ${by} gave \`${res.name}\` a path known only when it runs`),
+      };
+  }
+  const spec = lookupCommand(value ?? res.name);
   const why = res.hashed
-    ? cx.s(`行 ${by} の \`hash -p\` で \`${res.name}\` は \`${path}\` を指す`, `\`hash -p\` on line ${by} gave \`${res.name}\` the path \`${path}\``)
+    ? cx.s(`行 ${by} の \`hash -p\` で \`${res.name}\` は \`${value}\` を指す`, `\`hash -p\` on line ${by} gave \`${res.name}\` the path \`${value}\``)
     : cx.s(`行 ${by} の \`enable -n\` で組み込みの \`${res.name}\` は無効になっている`, `\`enable -n\` on line ${by} turned the builtin \`${res.name}\` off`);
-  return { path, program: spec?.builtin ? spec.program : spec, why };
+  const runs = value ?? res.name;
+  return { path: value, program: spec?.builtin ? spec.program : spec, runs: cx.s(`外部コマンド \`${runs}\` を実行する`, `Run the external command \`${runs}\``), why };
+}
+
+/**
+ * Where a name runs a path `hash -p` gave it on some paths only, or where hashing may be off (`maybeHashed`): what
+ * it may run instead, in words, after the explanation of the name.
+ */
+function maybeHashedNote(cx: Explainer, res: Extract<NameResolution, { kind: 'file' }>): string {
+  const { entry, why } = res.maybeHashed!;
+  const by = docLine(entry.at) + 1;
+  const ja = entry.value ? ` \`${entry.value}\` ` : 'パス';
+  const en = entry.value ? `\`${entry.value}\`` : 'the path';
+  return why === 'branch'
+    ? cx.s(`（行 ${by} の \`hash -p\` が実行されていれば、そこで指定した${ja}を代わりに実行する）`, ` (if the \`hash -p\` on line ${by} ran, it runs ${en} given there instead)`)
+    : cx.s(`（ハッシュが有効なら、行 ${by} の \`hash -p\` で指定した${ja}を代わりに実行する。\`set +h\` で無効にする経路がある）`,
+      ` (if hashing is on here, it runs ${en} that \`hash -p\` on line ${by} gave it instead; \`set +h\` turns hashing off on some paths)`);
 }
 
 function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: string): CommandHead {
+  const head = headOf(cx, nameNode, word, as);
+  // (A path `hash -p` gave the name on some paths only, or where hashing may be off: it may run that instead.)
+  if (head.res?.kind === 'file' && head.res.maybeHashed) head.explanation += maybeHashedNote(cx, head.res);
+  return head;
+}
+
+function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: string): CommandHead {
   // Commands with an empty name (`FOO=1 2>/dev/null`) do not get here.
   // A name made of quotes, escapes or empty `$(:)` is the command it spells once they are removed (`e\c'h'"o"` is `echo`).
   const spelled = staticWordValue(word, false, cx.shell);
@@ -462,12 +502,12 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
   }
   // A builtin turned off with `enable -n` runs the program of its name; `hash -p` gives a name a path.
   if (res.kind === 'file' && (res.disabled || res.hashed)) {
-    const { path, program, why } = offBuiltinOrHashed(cx, res);
+    const { path, program, runs, why } = offBuiltinOrHashed(cx, res);
     const basis = programBasis(cx, path || name, program);
     return {
       // (The words are read as when the path is written out: the program is that file, so a word the dictionary lacks does not point to the manual of the name.)
       name, res: ran, ...(program ? { spec: program } : {}), ...(path ? { runs: path } : {}), ...testOf(res), kind: 'command', nameTokens: [], refs: ['3.7.2'], ...(basis ? { basis } : {}),
-      explanation: cx.s(`外部コマンド \`${path || name}\` を実行する（${why}）${program ? `: ${cx.t(program.summary)}` : ''}`, `Run the external command \`${path || name}\` (${why})${program ? `: ${cx.t(program.summary)}` : ''}`),
+      explanation: cx.s(`${runs}（${why}）${program ? `: ${cx.t(program.summary)}` : ''}`, `${runs} (${why})${program ? `: ${cx.t(program.summary)}` : ''}`),
     };
   }
   // A command described in the customCommands setting wins over the built-in dictionary.

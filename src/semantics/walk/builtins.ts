@@ -165,6 +165,11 @@ export class WalkBuiltins {
         return st;
       }
       case 'hash': {
+        // With hashing off (`set +h`), `hash` says "hashing disabled" and fails, whatever it is given (`-p`, `-r`,
+        // `-d`): the table stays as it was, for `set -h`. Where it may be off, both.
+        const hashall = option(st, 'set', 'hashall');
+        if (hashall === 'off') return st;
+        const before = st;
         if (has('-r')) st = this.forgetHashed(st);
         const path = valueOf('-p');
         // (`-d` takes no value: it forgets every name after it.)
@@ -174,7 +179,7 @@ export class WalkBuiltins {
           if (path) st = this.w.put(st, 'hashed', b, { state: 'on', value: staticWordValue(path) ?? '', at: n });
           else if (has('-d')) st = this.unhash(st, b, n);
         }
-        return st;
+        return hashall === 'unknown' ? merge([before, st], this.w.posix) : st;
       }
       case 'getopts': {
         // OPTARG is set, or unset when the option takes no value.
