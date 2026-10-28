@@ -394,15 +394,21 @@ export function mergeOption(kind: 'set' | 'shopt', name: string, a: OptionState 
 }
 
 function mergeVariable(name: string, a: VariableState | undefined, b: VariableState | undefined): VariableState {
-  // Changed on one path only (the other may have it from the environment): nothing about it is sure. On that path
-  // it is exported when the environment has it (`exportFromEnvironment`): `if …; then unset HOME; fi` may leave
-  // HOME exported.
+  // Changed on one path only: on the other the script left it alone, as it was when the shell started (what a first
+  // assignment finds, `exportFromEnvironment`): a name the environment may have is set and exported there when the
+  // environment has it. `if …; then unset HOME; fi` may leave HOME set and exported; after `if …; then unset Y; fi`,
+  // `Y` is exported only when the environment had it (`fromEnvironment`), as after a first `Y=1`.
   if (!a || !b) {
     const v = (a ?? b)!;
     const attrs: Record<string, Attribute> = {};
     for (const [l, x] of Object.entries(v.attrs)) attrs[l] = { state: tri(x.state, 'off'), at: x.at, ...(x.environment ? { environment: x.environment } : {}) };
-    if (exportFromEnvironment(name, v.at).state !== 'off') attrs.x = { state: 'unknown', at: v.attrs.x?.at ?? v.at, ...(v.attrs.x?.environment ? { environment: v.attrs.x.environment } : {}) };
-    return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true };
+    const start = exportFromEnvironment(name, v.at);
+    if (start.state === 'off') return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true };
+    // (The tag says it may be the environment's on every path: not where the script exported it.)
+    const x = v.attrs.x;
+    const tag = !x || x.state === 'off' ? start.environment : x.state === 'unknown' ? x.environment : undefined;
+    attrs.x = { state: 'unknown', at: x?.at ?? v.at, ...(tag ? { environment: tag } : {}) };
+    return { declared: tri(v.declared, 'off'), set: tri(v.set, 'unknown'), attrs, at: v.at, kept: true };
   }
   const attrs: Record<string, Attribute> = {};
   for (const l of new Set([...Object.keys(a.attrs), ...Object.keys(b.attrs)])) {

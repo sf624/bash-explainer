@@ -21,7 +21,7 @@ import { type JsRegex, regexExamples } from '../examples/regex';
 import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
 import { globMatches, type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
 import * as sources from '../examples/source';
-import { ENVIRONMENT, exportOrder, layoutOf, layoutSample, type Run } from '../examples/layouts';
+import { ENVIRONMENT, exportOrder, layoutOf, layoutSample, madeUpPath, type Run, START_NAMES, type Started, startValue } from '../examples/layouts';
 import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines, withSystemFiles, writesElsewhere } from '../examples/source';
 import { type Text, tx } from '../i18n';
 import { shorten } from '../label';
@@ -31,6 +31,7 @@ import { quotedName } from '../semantics/effects';
 import { slotEnvironment } from '../semantics/env';
 import type { NameResolution } from '../semantics/names';
 import { exportedValue } from '../semantics/state';
+import { changedByBash } from '../semantics/vars';
 import { literalContent, staticWordValue } from '../staticword';
 import { assignmentsOnly, field, prefixAssignments, redirectionsOf, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
@@ -547,50 +548,65 @@ function assignedText(a: SyntaxNode, name: string): string | null {
 }
 
 /**
- * What the shell that runs `cmd` got from its environment of the variable `name` (undefined: none; null: not known):
- * the made-up environment, and `SHLVL`, which bash sets one more than the shell that started it has: 1 for the login
- * shell a terminal types into, 2 for a script run from it. A shell that a command slot starts (`bash -c`, `sudo`,
- * `env -i`) gets what that slot passes, not followed here.
+ * How the shell that runs the file started on the made-up system (`Started`), when bash runs it so: a file of its own
+ * is a script run from a terminal, a console in Markdown is typed into one. Undefined for another shell (dash leaves
+ * SHLVL as it is and passes no `_`) or a host that starts the shell otherwise (a Dockerfile's `/bin/sh -c`, a CI's
+ * fresh bash, make's `/bin/sh`).
  */
-function inheritedAt(cx: Explainer, cmd: SyntaxNode): (name: string) => string | undefined | null {
-  const shlvl = cx.state.read === 'terminal' ? '1' : '2';
-  const own = (name: string): string | undefined => (name === 'SHLVL' ? shlvl : ENVIRONMENT.get(name));
-  const started = cx.state.env(cmd).links.some((l) => l.kind === 'slot' && l.slot.run !== 'current-shell' && l.slot.run !== 'subshell');
-  return started ? (name) => (own(name) === undefined ? undefined : null) : own;
+function startedAs(cx: Explainer): Started | undefined {
+  if ((cx.shell ?? 'bash') !== 'bash') return undefined;
+  const host = cx.opts.host?.kind;
+  return host === undefined ? 'script' : host === 'markdown' ? 'terminal' : undefined;
+}
+
+/**
+ * What the shell that runs `cmd` has of the variable `name` at start (undefined: none; null: not known): the made-up
+ * system's (`startValue`). A shell that a command slot starts (`bash -c`, `sudo`, `env -i`) gets what that slot
+ * passes, not followed here.
+ */
+function inheritedAt(cx: Explainer, cmd: SyntaxNode, started: Started): (name: string) => string | undefined | null {
+  const own = (name: string): string | undefined => startValue(name, started);
+  const slot = cx.state.env(cmd).links.some((l) => l.kind === 'slot' && l.slot.run !== 'current-shell' && l.slot.run !== 'subshell');
+  return slot ? (name) => (own(name) === undefined ? undefined : null) : own;
 }
 
 /**
  * The value of `name` in the environment of the command `cmd` on the made-up system (`exportedValue`), undefined when
- * it has none; null when the model cannot tell: what it does not follow may export it (`source`, `$cmd`), `cmd`, in
- * a function, may run where the script set it otherwise, or a nameref may export it under another name. (What bash
- * sets itself, `COLUMNS`, it does not export.)
+ * it has none; null when the model cannot tell: `cmd`, in a function, may run where the script set it otherwise, or a
+ * nameref may export it under another name. Where the model does not follow the whole script (`source`, `read n`
+ * then `$(( n * 2 ))`), it still follows what the script itself does to the name. (What bash sets itself, `COLUMNS`,
+ * it does not export.)
  */
 function exportedAt(cx: Explainer, cmd: SyntaxNode, name: string): string | undefined | null {
-  if (cx.state.blind !== undefined || (!cx.state.settled(cmd) && cx.state.assigned.has(name))) return null;
+  const elsewhere = cx.state.blind !== undefined ? cx.state.env(cmd).links.some((l) => l.kind === 'call') : !cx.state.settled(cmd);
+  if (elsewhere && cx.state.assigned.has(name)) return null;
   const st = cx.state.at(cmd).run;
   if ([...st.variables.values()].some((v) => (v.attrs.n?.state ?? 'off') !== 'off')) return null;
-  return exportedValue(st, name, inheritedAt(cx, cmd));
+  return exportedValue(st, name, inheritedAt(cx, cmd, startedAs(cx) ?? 'script'));
 }
 
 /**
- * The environment the command `cmd` gets on the made-up system (`ENVIRONMENT`), with what the script exported, unset
- * or stopped exporting before it, in the order bash passes it; undefined when the model cannot tell, the script
- * exports a function (env prints it too, as `BASH_FUNC_f%%=() {…`) or a local of a function (bash passes those
- * first), the order is not known (`exportOrder`), or another PATH may find another env, or none.
+ * The environment the command `cmd` gets on the made-up system (`START_NAMES`), with what the script exported, unset
+ * or stopped exporting before it, in the order bash passes it; undefined when the model cannot tell (a value bash
+ * sets itself, `RANDOM`, `_`, among them), the shell is not bash as a script or a terminal runs it (`startedAs`), the
+ * script exports a function (env prints it too, as `BASH_FUNC_f%%=() {…`) or a local of a function (bash passes
+ * those first), the order is not known (`exportOrder`), or another PATH may find another env, or none.
  */
 function exportedEnvironment(cx: Explainer, cmd: SyntaxNode): ReadonlyMap<string, string> | undefined {
+  const started = startedAs(cx);
+  if (!started || cx.state.blind !== undefined || !cx.state.settled(cmd)) return undefined;
   const st = cx.state.at(cmd).run;
-  if (!cx.state.settled(cmd) || [...st.functions.values()].some((f) => f.exported !== 'off')) return undefined;
-  const inherited = inheritedAt(cx, cmd);
+  if ([...st.functions.values()].some((f) => f.exported !== 'off')) return undefined;
+  const inherited = inheritedAt(cx, cmd, started);
   const path = st.variables.get('PATH');
-  if (path ? path.set !== 'on' || path.kept || path.value !== ENVIRONMENT.get('PATH') : inherited('PATH') !== ENVIRONMENT.get('PATH')) return undefined;
+  if (!madeUpPath(path ? (path.set === 'on' && !path.kept ? path.value : null) : inherited('PATH'))) return undefined;
   const values = new Map<string, string>();
-  for (const name of new Set([...ENVIRONMENT.keys(), 'SHLVL', ...st.variables.keys()])) {
+  for (const name of new Set([...START_NAMES, ...st.variables.keys()])) {
     const value = exportedValue(st, name, inherited);
     if (value === null) return undefined;
     if (value === undefined) continue;
     const v = st.variables.get(name);
-    if (v && cx.state.local(v.at, name)) return undefined;
+    if (changedByBash(name) || (v && cx.state.local(v.at, name))) return undefined;
     values.set(name, value);
   }
   const order = exportOrder(values.keys());
