@@ -136,12 +136,21 @@ describe('the rewrites of `unmatched-glob-runs-once`', () => {
     assert.deepStrictEqual(fix('for i in a b *.c; do echo "$i"; done'), [['shopt -s nullglob', 'shopt -s nullglob\nfor i in a b *.c; do echo "$i"; done']]);
     assert.deepStrictEqual(fix('for i in {a,b} x{c,d} {*.c,*.h}; do :; done').map(([code]) => code), ['shopt -s nullglob']);
     assert.match(factsOf('for i in a *.c; do echo "$i"; done', 'unmatched-glob-runs-once')[0].text, /the text `\*\.c` itself\. Turn on `shopt -s nullglob` before the loop$/);
-    assert.match(factsOf('for i in a *.c; do echo "$i"; done', 'unmatched-glob-runs-once', undefined, 'ja')[0].text, /1回実行されます。ループの前で `shopt -s nullglob` にします$/);
+    assert.match(factsOf('for i in a *.c; do echo "$i"; done', 'unmatched-glob-runs-once', undefined, 'ja')[0].text, /という文字列がそのまま入ります。ループの前で `shopt -s nullglob` にします$/);
     // (In sh, which has no nullglob: none, and the note says only what happens.)
     const [sh] = factsOf('#!/bin/sh\nfor i in a *.c; do echo "$i"; done', 'unmatched-glob-runs-once', 'sh');
     assert.strictEqual(sh.rewrite, undefined);
     assert.match(sh.text, /the text `\*\.c` itself$/);
-    assert.match(factsOf('#!/bin/sh\nfor i in a *.c; do echo "$i"; done', 'unmatched-glob-runs-once', 'sh', 'ja')[0].text, /という文字列がそのまま入って1回実行されます$/);
+    assert.match(factsOf('#!/bin/sh\nfor i in a *.c; do echo "$i"; done', 'unmatched-glob-runs-once', 'sh', 'ja')[0].text, /という文字列がそのまま入ります$/);
+  });
+  it('say that the loop runs once in all only where the glob is the whole list', () => {
+    // (Before, `for i in a b *.c` was said to run once with `i` set to `*.c`: it runs three times, the last with it.)
+    const text = (src: string, lang?: 'ja'): string => factsOf(src, 'unmatched-glob-runs-once', undefined, lang)[0].text;
+    assert.match(text('for f in *.log; do rm "$f"; done'), /: when no file matches `\*\.log`, the loop runs once with `f` set to the text `\*\.log` itself\. Start/);
+    assert.match(text('for f in *.log; do rm "$f"; done', 'ja'), /`\*\.log` に一致するファイルが1つもないと、`f` に `\*\.log` という文字列がそのまま入って1回実行されます。本体の先頭に/);
+    const src = 'for i in a b *.c; do echo "$i"; done';
+    assert.match(text(src), /: when no file matches `\*\.c`, the loop still runs once for it, with `i` set to the text `\*\.c` itself\. Turn on/);
+    assert.match(text(src, 'ja'), /: `\*\.c` に一致するファイルが1つもなくても、その分の1回は実行され、`i` には `\*\.c` という文字列がそのまま入ります。ループの前で/);
   });
   for (const { name, program } of programs) {
     it(`keep the other words of the list in ${name}`, async () => {
@@ -151,6 +160,8 @@ describe('the rewrites of `unmatched-glob-runs-once`', () => {
       assert.strictEqual((await run(program, src, driver, { files: ['x.c'] })).out, '@a\n@b\n@x.c\n');
       assert.strictEqual((await run(program, script, driver, { files: ['x.c'] })).out, '@a\n@b\n@x.c\n');
       assert.strictEqual((await run(program, script, driver)).out, '@a\n@b\n');
+      // (With no file, the original runs three times, the last with the text of the glob, as its note says.)
+      assert.strictEqual((await run(program, src, driver)).out, '@a\n@b\n@*.c\n');
       // (What the test of the name would do: skip `a` and `b`.)
       assert.strictEqual((await run(program, src.replace('do echo', 'do [ -e "$i" ] || continue; echo'), driver, { files: ['x.c'] })).out, '@x.c\n');
     });

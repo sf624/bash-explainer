@@ -13,7 +13,7 @@ import { lostVariable } from '../semantics/pipeline';
 import { docLine } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
 import { statusFacts, type StatusFact } from '../statusfacts';
-import { ancestor, field, fields, type SyntaxNode } from '../syntax/tree';
+import { ancestor, field, fields, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { Explainer } from './context';
 import { intersects, onLine } from './nodes';
 import { globOff, shoptAt, unquotedWord } from './reads';
@@ -119,7 +119,11 @@ export function unmatchedGlobPitfalls(cx: Explainer, root: SyntaxNode, line: num
     while (HOLDERS.has(holder.parent!.type)) holder = holder.parent!;
     const rewrite = fields(loop, 'value').every(globbed) ? [statementBefore(first, `[ -e "$${v}" ] || continue`)] : [];
     if (shopt.nullglob !== 'unsupported' && holder.parent!.type !== 'function_definition') rewrite.push(statementBefore(holder, 'shopt -s nullglob'));
-    return cx.say(fact(cx.lang, 'unmatched-glob-runs-once', { glob: glob.text, v, rewrite }), glob);
+    // (Alone in the list, the glob is all the loop runs over: once, with its text. With other words, or braces that make
+    // more, the loop runs over them too: `for i in a b *.c` runs three times, the last with `*.c`.)
+    const words = fields(loop, 'value');
+    const alone = words.length === 1 && !wordBraces(words[0]).length;
+    return cx.say(fact(cx.lang, 'unmatched-glob-runs-once', { glob: glob.text, v, alone, rewrite }), glob);
   }
   return [];
 }

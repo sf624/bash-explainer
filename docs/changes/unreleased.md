@@ -861,8 +861,7 @@ The notes on words suggest the fix for the line as it is written; a test runs ea
 | `IFS=:` then `t=${a[@]}` | … if one string is meant, write `t="${a[*]}"` | Only the array, `t=("${a[@]}")`. In an assignment bash joins `${a[@]}` with a space; `"${a[*]}"` joins with the first character of `IFS` (`x  y:b`, not `x  y b`). The string is still suggested where the `IFS` is the default or starts with a space. |
 | `[ ${x:-'a b'} = y ]` | Write `"${x:-'a b'}"` | No fix: in double quotes, the quotes in the default value are kept as text. As for an unquoted path, the fix is left out where quotes would change the value. |
 | `[ $x = a -o $y = b ]` | A caveat on `$x` only, whose fix left `$y` | A caveat on each, each with its fix. |
-| `cp $a b; cp $a c` | One note (the same text twice is listed once), whose fix quoted the first `$a` | The same note, whose fix quotes both. |
-| `for i in a b *.c; do …` | Start the body with `[ -e "$i" ] \|\| continue`, or turn on `shopt -s nullglob` | Turn on `shopt -s nullglob` before the loop. The test would skip `a` and `b` too, which are no files. In sh, which has no nullglob, the note says what happens and suggests nothing. Where every word of the list is a glob, both are still suggested. |
+| `for i in a b *.c; do …` | When no file matches `*.c`, the loop runs once with `i` set to the text `*.c` itself. Start the body with `[ -e "$i" ] \|\| continue`, or turn on `shopt -s nullglob` | When no file matches `*.c`, the loop still runs once for it, with `i` set to the text `*.c` itself (it runs three times in all: `a`, `b`, `*.c`). Turn on `shopt -s nullglob` before the loop. The test would skip `a` and `b` too, which are no files. In sh, which has no nullglob, the note says what happens and suggests nothing. Where the glob is the whole list (`for f in *.log`), the note is as before, with both fixes. |
 
 ## Fixed
 

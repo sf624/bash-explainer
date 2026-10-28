@@ -4,13 +4,14 @@
 // 3.3 (the meaning is kept, the hazard is gone). The states and the oracle of each id are data (`STATES`): what varies,
 // and the checks made of it. test/rewrites-corpus.test.ts runs them, with the two cheap checks for every rewrite.
 //
-// A corpus input runs only when nothing in it can reach outside its directory (`unsafe`): every command is named by
-// plain text with no `/`, none is one that runs code bash does not see in the tree (`eval`, `source`, `trap`…), and no
-// redirection names a file outside. Each run then has PATH set to a directory holding only the programs the id needs
-// (none for most), so every other command is a recorder (`command_not_found_handle`, read through BASH_ENV) that
-// prints what it was given and returns `$RW_FAIL` (0 when unset); `cd`, `pushd` and `popd` are recorders too, and the
-// builtins that reach outside the shell are turned off. The runs are batched, one contained bash per job of runs (a
-// cgroup and a process group killed on a timeout, test/support/contained.ts), each run under `timeout`.
+// A corpus input runs only when nothing in it, nor in its rewrite, can reach outside its directory (`unsafe`): every
+// command is named by plain text with no `/`, none is one that runs code bash does not see in the tree (`eval`,
+// `source`, `trap`…), none sets PATH or the other variables of `PROTECTED`, and no redirection names a file outside.
+// Each run then has a readonly PATH set to a directory holding only the programs the id needs (none for most), so
+// every other command is a recorder (`command_not_found_handle`, read through BASH_ENV) that prints what it was given
+// and returns `$RW_FAIL` (0 when unset); `cd`, `pushd` and `popd` are recorders too, and the builtins that reach
+// outside the shell are turned off. The runs are batched, one contained bash per job of runs (a cgroup and a process
+// group killed on a timeout, test/support/contained.ts), each run under `timeout`.
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -122,30 +123,152 @@ function subject(group: readonly CorpusFact[], rewrites: readonly Rewrite[], alt
 // ---------------------------------------------------------------------------------------------------
 // What may run.
 
-/** Commands that run code the tree does not show, change how names are found, or reach other processes. */
-const DENIED: ReadonlySet<string> = new Set(['source', '.', 'eval', 'exec', 'trap', 'kill', 'enable', 'hash', 'alias', 'fc', 'builtin', 'ulimit', 'umask', 'wait', 'disown', 'suspend', 'coproc']);
-/** The builtins the set-up turns off, after it has used them. */
-const TURNED_OFF = ['eval', 'exec', 'trap', 'kill', 'hash', 'alias', 'fc', 'ulimit', 'umask', 'wait', 'disown', 'suspend'];
+// The walls are of two kinds. At run time (`setup`, `runJobs`): PATH is readonly and holds only the programs a job
+// names, and those that run another program are wrappers that refuse what would leave the box (`bash` only as
+// `bash -c STRING`, `env` with no option, no variable of `PROTECTED` and no command named by a path); the recorders
+// are readonly functions; the builtins that would act outside (`cd` too, which `command cd` would reach past its
+// function) are turned off, so that a command of their name is a recorder. Before the run (`unsafe`), what those
+// walls cannot see: a command named by a path or an expansion, code the tree does not show, a redirection to a file
+// outside the directory. The corpus is ours: the walls are against a line that would act outside as written, not
+// against code assembled on purpose to escape (bytes built with `printf` and run as an arithmetic subscript).
+
+/** Commands that run code the tree does not show, change how names are found, write files, or reach other processes. */
+const DENIED: ReadonlySet<string> = new Set(['source', '.', 'eval', 'exec', 'trap', 'kill', 'enable', 'hash', 'alias', 'fc', 'builtin', 'ulimit', 'umask',
+  'wait', 'disown', 'suspend', 'coproc', 'complete', 'compgen', 'compopt', 'bind', 'history']);
+/** The recorders that stand for builtins: functions, which `command` and `builtin` would reach past. */
+const RECORDERS = ['cd', 'pushd', 'popd'];
+/**
+ * The builtins the set-up turns off, after it has used them: a command of their name then finds the recorder of
+ * `command_not_found_handle` (`command cd`, `exec x`). (`source` and `.` stay: the modes that source the script use
+ * them; `unsafe` refuses them in the script.)
+ */
+const TURNED_OFF = [...RECORDERS, ...[...DENIED].filter((n) => !['source', '.', 'builtin', 'enable', 'coproc'].includes(n))];
+/**
+ * Variables a script may not set, which the set-up makes readonly too: those that find commands (PATH, BASH_CMDS as
+ * `hash -p` does, BASH_ALIASES), are read by a new bash (BASH_ENV, ENV), hold code bash runs later (PS4 under
+ * `set -x`, PROMPT_COMMAND), name a file bash writes (HISTFILE) or where it loads builtins from.
+ */
+const PROTECTED = ['PATH', 'BASH_ENV', 'ENV', 'BASH_CMDS', 'BASH_ALIASES', 'PS4', 'PROMPT_COMMAND', 'HISTFILE', 'BASH_LOADABLES_PATH'];
+/** A word that names one of them (`PATH`, `PATH=…`, `BASH_CMDS[x]=…`), or, given to `env`, a variable that changes how a program runs. */
+const PROTECTED_NAME = new RegExp(`^(${PROTECTED.join('|')})(\\[|\\+?=|$)`);
+const ENV_GLOBS = [...PROTECTED, 'SHELLOPTS', 'BASHOPTS', 'GCONV_PATH'].map((n) => `${n}=*`).concat('LD_*', 'BASH_FUNC_*');
+const ENV_PROTECTED = new RegExp(`^(${ENV_GLOBS.map((g) => g.replace(/\*/g, '.*')).join('|')})`, 's');
+/** Commands whose operands name variables they set. */
+const SETTERS: ReadonlySet<string> = new Set(['declare', 'typeset', 'local', 'export', 'readonly', 'read', 'mapfile', 'readarray', 'getopts', 'unset', 'let']);
+/** Shells: on PATH only as the wrapper of `bash -c STRING`. */
+const SHELLS: ReadonlySet<string> = new Set(['bash', 'sh', 'dash', 'ksh', 'mksh', 'zsh', 'rbash']);
+/** The programs a job may put on PATH: those that run no other program, and the wrappers of `setup`. */
+const PROGRAMS: ReadonlySet<string> = new Set(['bash', 'env', 'echo', 'printf']);
 /** Files outside the run's directory a redirection may name. */
 const DEVICES = /^\/dev\/(null|stdin|stdout|stderr|fd\/\d+)$/;
+/** Text that is code where bash reads a value as code (an arithmetic subscript, `${x@P}`, PS4): `$( )`, backquotes, `<( )`. */
+const CODE = /\$\(|`|[<>]\(/;
 
-/** Why the script of `tree` may not run here, or undefined when it may (see the top of this file). */
-export function unsafe(tree: SyntaxTree): string | undefined {
+/** Why the script of `tree` may not run here, or undefined when it may (see the top of this file and above). */
+export function unsafe(tree: SyntaxTree, depth = 0): string | undefined {
   if (tree.errors.length) return 'it does not parse';
+  // (The strings `bash -c` runs, checked as scripts of their own: their text is code, not data.)
+  const scripts = new Set<SyntaxNode>();
+  for (const n of descendants(tree.root, ['function_definition'])) {
+    const name = field(n, 'name')?.text ?? n.namedChildren[0]?.text;
+    if (name && [...RECORDERS, 'command_not_found_handle', 'command', 'builtin'].includes(name)) return `a function \`${name}\`, which would replace a recorder`;
+  }
   for (const c of descendants(tree.root, ['command'])) {
-    const nameNode = field(c, 'name');
-    if (!nameNode) continue;
-    const name = staticWordValue(nameNode.namedChildren[0] ?? nameNode);
-    if (name === undefined) return 'a command named by an expansion';
-    if (name.includes('/')) return 'a command named by a path';
-    if (DENIED.has(name)) return `\`${name}\``;
-    if (name === 'command' && fields(c, 'argument').some((a) => /^-\w*[pvV]/.test(a.text))) return '`command -p`';
+    const why = commandWhy(c, depth, scripts);
+    if (why) return why;
   }
+  for (const n of descendants(tree.root, ['variable_assignment'])) {
+    const name = /^[A-Za-z_]\w*/.exec(n.text)?.[0];
+    if (name && PROTECTED_NAME.test(n.text)) return `an assignment to \`${name}\``;
+  }
+  if (/\/dev\/(tcp|udp)\//.test(tree.root.text)) return 'bash\'s `/dev/tcp/…`, which reaches the network';
+  if (descendants(tree.root, ['coproc_statement']).length || hasBackground(tree.root)) return 'a command in the background, which may outlive the run';
   for (const r of descendants(tree.root, ['file_redirect'])) {
-    const dest = field(r, 'destination');
-    const target = dest && (staticWordValue(dest) ?? dest.text);
-    if (target === undefined || (target.startsWith('/') && !DEVICES.test(target)) || target.includes('..') || target.startsWith('~')) return 'a redirection outside the directory';
+    const why = redirectWhy(r);
+    if (why) return why;
   }
+  for (const n of descendants(tree.root, ['expansion'])) if (/@P\}$/.test(n.text)) return '`${x@P}`, which runs the code of a value';
+  for (const n of descendants(tree.root, ['raw_string', 'ansi_c_string', 'string_content', 'word', 'heredoc_body'])) {
+    if ([...scripts].some((s) => s.startIndex <= n.startIndex && n.endIndex <= s.endIndex)) continue;
+    // (The text of the node but its expansions, as bash reads it: `\$\(` is `$(`, and `$'\x60'` a backquote.)
+    let own = n.text;
+    for (const c of [...n.namedChildren].reverse()) own = own.slice(0, c.startIndex - n.startIndex) + ' ' + own.slice(c.endIndex - n.startIndex);
+    const value = n.type === 'ansi_c_string' || n.type === 'word' ? staticWordValue(n, true) ?? '' : '';
+    if (CODE.test(own.replace(/\\(.)/gs, '$1')) || CODE.test(value)) return 'code in a string, which bash may run as a value';
+  }
+  return undefined;
+}
+
+/** Whether a command under `n` runs in the background (`a &`). */
+const hasBackground = (n: SyntaxNode): boolean => n.children.some((c) => (!c.named && c.type === '&') || hasBackground(c));
+
+/** Why a command may not run here: its name, its words, and, for a command that runs another, that one too. */
+function commandWhy(c: SyntaxNode, depth: number, scripts: Set<SyntaxNode>): string | undefined {
+  const nameNode = field(c, 'name');
+  if (!nameNode) return undefined;
+  const words = [nameNode.namedChildren[0] ?? nameNode, ...c.namedChildren.filter((w) => w !== nameNode && w.type !== 'variable_assignment' && !w.type.endsWith('_redirect'))];
+  // (After the name, the words that set variables: `declare PATH=…`, `read PATH`, `printf -v PATH`.)
+  const name = staticWordValue(words[0]);
+  if (name !== undefined && (SETTERS.has(name) || name === 'printf')) {
+    const named = name === 'printf' ? words.filter((_, i) => i > 0 && words[i - 1].text === '-v') : words.slice(1);
+    const bad = named.map((w) => staticWordValue(w, true) ?? w.text).find((t) => PROTECTED_NAME.test(t));
+    if (bad) return `\`${name}\` of \`${/^\w+/.exec(bad)![0]}\``;
+    const exported = name === 'export' || words.some((w) => /^-\w*x/.test(w.text));
+    if (name !== 'printf' && exported && words.some((w) => /^-\w*f/.test(w.text))) return 'an exported function, which a new bash would run before its set-up';
+  }
+  return wordsWhy(words, depth, scripts);
+}
+
+/** Why the command of `words` (its name first) may not run here. */
+function wordsWhy(words: readonly SyntaxNode[], depth: number, scripts: Set<SyntaxNode>): string | undefined {
+  const values = words.map((w) => staticWordValue(w));
+  const [name] = values;
+  if (name === undefined) return 'a command named by an expansion';
+  if (name.includes('/')) return 'a command named by a path';
+  if (DENIED.has(name)) return `\`${name}\``;
+  if ((name === 'mapfile' || name === 'readarray') && words.some((w) => /^-\w*C/.test(w.text))) return `\`${name} -C\`, which runs a string`;
+  // (The commands that run their operand: the words before it must be text, and the command they run is checked as one.)
+  const rest = (from: number): string | undefined => (from < words.length ? wordsWhy(words.slice(from), depth, scripts) : undefined);
+  const plain = `\`${name}\` with a word that is not plain text`;
+  if (name === 'command') {
+    let i = 1;
+    for (; i < words.length && values[i]?.startsWith('-'); i++) if (/p/.test(values[i]!)) return '`command -p`, which searches a PATH of its own';
+    if (i < words.length && RECORDERS.includes(values[i]!)) return `\`command ${values[i]}\`, which passes the recorder`;
+    return values[i] === undefined && i < words.length ? plain : rest(i);
+  }
+  if (name === 'env' || name === 'sudo') {
+    // (`sudo` is a stand-in that runs `env "$@"`.)
+    let i = 1;
+    for (; i < words.length && (values[i] === undefined || values[i]!.startsWith('-') || values[i]!.includes('=')); i++) {
+      if (values[i] === undefined) return plain;
+      if (values[i]!.startsWith('-')) return `\`${name}\` with an option`;
+      if (ENV_PROTECTED.test(values[i]!)) return `\`${name}\` given \`${values[i]!.replace(/=.*/s, '=')}\``;
+    }
+    return rest(i);
+  }
+  if (SHELLS.has(name)) {
+    const script = values[2];
+    if (values[1] !== '-c' || script === undefined || /^[-+]/.test(script)) return `\`${name}\` other than \`bash -c STRING\``;
+    if (depth > 3) return 'shells in shells';
+    scripts.add(words[2]);
+    const why = unsafe(parser.parse(script), depth + 1);
+    return why && `in \`${name} -c\`: ${why}`;
+  }
+  return undefined;
+}
+
+/** Why a redirection may not run here: its target is not text, or names a file outside the directory. */
+function redirectWhy(r: SyntaxNode): string | undefined {
+  const dest = field(r, 'destination') ?? r.namedChildren.find((c) => c.type !== 'file_descriptor');
+  const op = r.children.find((c) => !c.named)?.type ?? '';
+  // (`2>&1`, `>&-`: a descriptor, not a file.)
+  if (dest && /&$/.test(op) && /^(\d+|-)$/.test(dest.text)) return undefined;
+  const target = dest && staticWordValue(dest);
+  // (A file read with `<` changes nothing, wherever it is: its name may come from the state, `cat < "$f"`. Not with
+  // `<>`, which creates the file, nor bash's own `/dev/tcp/…`, which `unsafe` refuses in any text.)
+  if (target === undefined) return op === '<' ? undefined : 'a redirection to a word that is not plain text';
+  if (DEVICES.test(target)) return undefined;
+  if (!target || target.startsWith('/') || target.split('/').includes('..')) return 'a redirection outside the directory';
   return undefined;
 }
 
@@ -182,12 +305,28 @@ function setup(prelude = ''): string {
 cd() { builtin printf '@cd'; (( $# )) && builtin printf ' <%s>' "$@"; builtin echo; }
 pushd() { cd "$@"; }
 popd() { cd "$@"; }
+builtin readonly -f command_not_found_handle ${RECORDERS.join(' ')}
+builtin readonly ${PROTECTED.join(' ')}
 ulimit -f 20000
 enable -n ${TURNED_OFF.join(' ')}
 enable -n enable
 ${prelude}
 `;
 }
+
+/**
+ * The programs of PATH that run another one, as wrappers: \`bash\` only as \`bash -c STRING [ARG…]\` (so that the new
+ * bash reads the set-up: not \`-i\`, \`-p\` or \`--posix\`, which skip it), and \`env\` with no option (\`-i\`, \`-u PATH\`
+ * and \`-C DIR\` would leave the walls), no variable of \`PROTECTED\` and no command named by a path. They run in
+ * bash's privileged mode, which reads no BASH_ENV, and keep the name of the program for its messages.
+ */
+function wrapper(p: 'bash' | 'env', real: string): string {
+  const refuse = `{ builtin echo "@${p} refused: $*" >&2; builtin exit 126; }`;
+  const check = p === 'bash' ? `[[ $1 == -c && $# -ge 2 && $2 != [-+]* ]] || ${refuse}`
+    : `for a; do\n  case $a in\n    -*|${ENV_GLOBS.join('|')}) ${refuse} ;;\n    *=*) continue ;;\n    */*) ${refuse} ;;\n  esac\n  break\ndone`;
+  return `#!${real} -p\n${check}\nbuiltin exec -a ${p} ${quote(p === 'bash' ? real : REAL_ENV)} "$@"\n`;
+}
+const REAL_ENV = ['/usr/bin/env', '/bin/env'].find((f) => fs.existsSync(f))!;
 
 /** Runs the jobs with bash `program`, `jobs` contained batches at once. */
 export async function runJobs(bash: string, list: readonly Job[], { jobs = 4, perRun = 5 } = {}): Promise<Ran[]> {
@@ -202,8 +341,12 @@ export async function runJobs(bash: string, list: readonly Job[], { jobs = 4, pe
       fs.mkdirSync(box, { recursive: true });
       fs.mkdirSync(bin);
       for (const p of job.programs ?? []) {
-        const real = p === 'bash' ? program : ['/usr/bin', '/bin'].map((d) => path.join(d, p)).find((f) => fs.existsSync(f))!;
-        fs.symlinkSync(real, path.join(bin, p));
+        if (!PROGRAMS.has(p)) throw new Error(`\`${p}\` may not be on the PATH of a run (rewrite-states.ts, PROGRAMS)`);
+        if (p === 'bash' || p === 'env') {
+          fs.writeFileSync(path.join(bin, p), wrapper(p, program), { mode: 0o755 });
+          continue;
+        }
+        fs.symlinkSync(['/usr/bin', '/bin'].map((d) => path.join(d, p)).find((f) => fs.existsSync(f))!, path.join(bin, p));
       }
       for (const f of job.files ?? []) {
         const at = path.join(box, f);
@@ -369,14 +512,24 @@ Object.assign(STATES, {
     },
   },
   'unquoted-variable-in-test': {
-    states: 'empty, unset, a space, `-n`, `=`; plain values for the meaning',
+    states: 'empty, unset, a space, `-n`, `=` (the result: what the test gives with the value written in quotes); plain values for the meaning',
     checks: (s, x) => {
       const quiet = (r: Ran): string | undefined => (TEST_ERRORS.test(r.err) ? `the test failed: ${r.err}` : undefined);
       if (setBy(x)) return [holds('as the script sets it', s, { env: x.others }, quiet)];
       const env = (v?: string) => ({ ...x.others, ...(v === undefined ? {} : Object.fromEntries(x.vars.map((n) => [n, v]))) });
+      // (The hazard is gone: no error, and the result the test means, that of the value as one word, which an empty
+      // `[ -n $x ]` does not give, with no error. Where each edit quotes a plain `$x`, the original with the value
+      // written there in single quotes gives it; elsewhere (`${x:-d}`, `$*`), only that there is no error.)
+      const plain = s.rewrite.edits.every((e) => /^\$\{?[A-Za-z_]\w*\}?$/.test(s.original.slice(e.start, e.end)));
+      const epilogue = 'echo "@st=$?"';
+      const meant = (v: string): Check => (plain ? {
+        state: `${JSON.stringify(v)}, the result`,
+        runs: [{ script: applied(s.original, { code: '', edits: s.rewrite.edits.map((e) => ({ ...e, text: quote(v) })) }), env: env(v), epilogue }, { script: s.script, env: env(v), epilogue }],
+        verify: ([o, r]) => quiet(r) ?? same(o, r),
+      } : holds(JSON.stringify(v), s, { env: env(v) }, quiet));
       return [
         ...['y', 'VAL'].map((v) => keeps(JSON.stringify(v), s, { env: env(v) }, { env: env(v) })),
-        ...['', 'a b', '-n', '='].map((v) => holds(JSON.stringify(v), s, { env: env(v) }, quiet)),
+        ...['', 'a b', '-n', '='].map(meant),
         { state: 'unset as empty', runs: [{ script: s.script, env: env() }, { script: s.script, env: env('') }], verify: ([u, e]) => same(e, u) ?? quiet(u) },
       ];
     },
@@ -492,15 +645,36 @@ Object.assign(STATES, {
     },
   },
   'unmatched-glob-runs-once': {
-    states: 'files that match, none',
+    states: 'files that match, none (no pass of a loop with the text of a glob)',
     checks: (s, x) => {
       // (The variables of the list name the directory the files are in.)
       const env = Object.fromEntries(Object.keys(x.others).map((n) => [n, 'VAL']));
       const files = ['a.log', 'b.log', 'a.c', 'a.h', 'a.txt', 'VAL/a.log', 'VAL/b.log'];
+      // (A probe: each loop prints the value of its variable last in its body, `@it=…`, which a pass that the test
+      // of the name ends with `continue` does not reach.)
+      const loops = descendants(x.tree.root, ['for_statement']);
+      const probes = loops.flatMap((loop) => {
+        const done = field(loop, 'body')?.children.at(-1);
+        return done?.type === 'done' ? [{ start: done.startIndex, end: done.startIndex, text: `echo "@it=$${field(loop, 'variable')!.text}"; ` }] : [];
+      });
+      // (The values of the passes that nullglob removes: those of the globs that match nothing.)
+      const passes = (r: Ran): string[] => [...r.out.matchAll(/^@it=(.*)$/gm)].map((m) => m[1]);
+      const probed = (edits: readonly TextEdit[]): string => applied(s.original, { code: '', edits: [...edits, ...probes] });
       return [
         keeps('files that match', s, { env, files }, { env, files }),
         // (With none, the loop runs over what nullglob leaves: the words that are not globs.)
         keeps('none', s, { env, prelude: 'shopt -s nullglob' }, { env }),
+        // (The hazard is gone: the original has a pass with the text of the glob, the rewrite none.)
+        {
+          state: 'none, the passes',
+          runs: [{ script: probed([]), env }, { script: probed([]), env, prelude: 'shopt -s nullglob' }, { script: probed(s.rewrite.edits), env }],
+          verify: ([o, n, r]) => {
+            const globs = minus(passes(o), passes(n));
+            if (!globs.length) return `no pass with a glob in the original: ${JSON.stringify(o)}`;
+            const left = passes(r).filter((p) => globs.includes(p));
+            return left.length ? `passes with ${JSON.stringify(left)}` : undefined;
+          },
+        },
       ];
     },
   },
@@ -680,7 +854,7 @@ export async function checkStates(program: string, list: readonly Subject[]): Pr
   list.forEach((s, i) => {
     const c = (counts[s.id] ??= { subjects: 0, ran: 0, checks: 0, skipped: {} });
     c.subjects++;
-    const why = s.shell && s.shell !== 'bash' && s.shell !== 'sh' ? `read as ${s.shell}` : !ok[i] ? 'bash does not parse it' : unsafe(parser.parse(s.original));
+    const why = s.shell && s.shell !== 'bash' && s.shell !== 'sh' ? `read as ${s.shell}` : !ok[i] ? 'bash does not parse it' : unsafe(parser.parse(s.original)) ?? unsafe(parser.parse(s.script));
     const checks = why ?? STATES[s.id]!.checks(s, contextOf(s));
     if (typeof checks === 'string') { c.skipped[checks] = (c.skipped[checks] ?? 0) + 1; return; }
     c.ran++;
