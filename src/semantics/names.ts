@@ -17,7 +17,7 @@ import { staticWordValue } from '../staticword';
 import type { ArgvParse } from '../argv/interpret';
 import { actedNames, actsOnNames } from '../argv/query';
 import { field, fields, prefixAssignments, type SyntaxNode } from '../syntax/tree';
-import { aliasExpandsNext, builtinParse, wordsAfterAlias, wrapped } from './effects';
+import { aliasExpandsNext, builtinParse, quotedName, wordsAfterAlias, wrapped } from './effects';
 import { type ExecEnv, reachOf, type SlotLink, subshellReasons } from './env';
 import { type AliasState, type CommandEntry, type FunctionState, option, type ShellState, type StateModel, type Tri } from './state';
 import { docIndex } from './state';
@@ -433,11 +433,21 @@ export function testSpecOf(res: NameResolution): CommandSpec | undefined {
 
 /** `testSpecOf` for the simple command `n` (a `command` node) where it is; undefined when its name is not known here. */
 export function testSpecAt(model: StateModel, n: SyntaxNode, shell?: Shell): CommandSpec | undefined {
-  const nameNode = field(n, 'name');
-  const word = nameNode?.namedChildren[0];
-  const name = word && staticWordValue(word);
-  if (name === undefined) return undefined;
-  return testSpecOf(resolveName(model, name, nameNode!, { shell, command: true, quoted: word!.type !== 'word' || word!.text !== name }));
+  const nameWord = field(n, 'name');
+  const res = nameWord && resolveRun(model, { nameWord }, shell);
+  return res && testSpecOf(res);
+}
+
+/**
+ * What the name of a command runs, looked up by its value: `\cp` and `'cp'` run `cp` (and no alias of it, `quotedName`);
+ * undefined when the value is not known without running anything (`$cmd`). `nameWord` is the `command_name` of a simple
+ * command, or the word that a command slot runs (`sudo cp`), with where it runs (`env`, src/semantics/env.ts).
+ */
+export function resolveRun(model: StateModel, run: { readonly nameWord: SyntaxNode; readonly env?: ExecEnv }, shell: Shell | undefined): NameResolution | undefined {
+  const word = run.nameWord.type === 'command_name' ? run.nameWord.namedChildren[0] : run.nameWord;
+  const value = staticWordValue(word);
+  if (value === undefined) return undefined;
+  return resolveName(model, value, run.nameWord, { shell, command: true, quoted: quotedName(word, value), ...(run.env ? { env: run.env } : {}) });
 }
 
 /** What a command name is, as the panel's badge says it (docs/design/name-kind.md): a `file` is a program. */

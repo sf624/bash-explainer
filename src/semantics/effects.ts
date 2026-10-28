@@ -59,7 +59,15 @@ export function commandName(c: SyntaxNode): string | undefined {
 export function plainName(c: SyntaxNode): string | undefined {
   const word = field(c, 'name')!.namedChildren[0];
   const name = commandName(c);
-  return word.type === 'word' && word.text === name ? name : undefined;
+  return name !== undefined && !quotedName(word, name) ? name : undefined;
+}
+
+/**
+ * Whether the word of a command name, whose value is `value`, is quoted: not a plain word, or written otherwise than
+ * its value (`\ls`, `'ls'`, `l""s`). bash looks up no alias and no reserved word for it, and runs the same command.
+ */
+export function quotedName(word: SyntaxNode, value: string): boolean {
+  return word.type !== 'word' || word.text !== value;
 }
 
 /** Whether bash checks the word after an alias of text `value` for an alias too (6.6): the text ends with a blank. */

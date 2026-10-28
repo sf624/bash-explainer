@@ -20,7 +20,7 @@ import { findWords } from '../../src/embedded/find';
 import { argWordIn } from '../../src/semantics/argwords';
 import { commandName as staticName } from '../../src/semantics/effects';
 import { type SlotLink, slotEnvs } from '../../src/semantics/env';
-import { resolveName, testSpecOf } from '../../src/semantics/names';
+import { resolveRun, testSpecOf } from '../../src/semantics/names';
 import { shellState } from '../../src/semantics/state';
 import { staticWordValue } from '../../src/staticword';
 import { commandTest, type TestExpr } from '../../src/testexpr';
@@ -142,9 +142,8 @@ export const KEYS: Record<Normalizer, (tree: SyntaxTree, c: SyntaxNode) => strin
   commandTest: (tree, c) => {
     const model = shellState(tree, 'bash');
     const run = runCommands(c, model, 'bash').at(-1)!;
-    const word = run.nameWord.namedChildren[0] ?? run.nameWord;
-    const name = staticWordValue(word);
-    const spec = name === undefined ? undefined : testSpecOf(resolveName(model, name, run.nameWord, { shell: 'bash', command: true, quoted: word.type !== 'word' || word.text !== name }));
+    const res = resolveRun(model, run, 'bash');
+    const spec = res && testSpecOf(res);
     if (!spec) return '(no test)';
     const t = commandTest(spec, run.args, '5.2');
     const words = t.test?.words.map((w) => w.text);
