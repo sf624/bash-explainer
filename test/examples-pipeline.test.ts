@@ -288,6 +288,15 @@ describe('the pipeline example of a line agrees with the tools', () => {
       for (const lang of ['en', 'ja'] as const) {
         for (const line of [trapped, dotOrRev, checkhash]) assert.ok(!new Analyzer(lang).explainLine(parser.parse(line), 0).examples.some((x) => x.kind === 'pipeline' || x.title.includes('sort')), `${line} (${lang})`);
       }
+      // A path a subshell, a `$( )` or a pipeline stage gives is that process's own: a trap of the script never sees it.
+      const action = "trap 'printf \"b\\nc\\na\\n\" | sort' USR1";
+      for (const line of [`${action}; ( hash -p /usr/bin/rev sort ); hash -p /usr/bin/tac sort; kill -USR1 $$`,
+        `${action}; x=$(hash -p /usr/bin/rev sort); hash -p /usr/bin/tac sort; kill -USR1 $$`, `${action}; hash -p /usr/bin/rev sort | cat; hash -p /usr/bin/tac sort; kill -USR1 $$`,
+        `hash -p /usr/bin/tac sort; ${action}; kill -USR1 $$; ( hash -p /usr/bin/rev sort )`]) {
+        assert.deepStrictEqual(lines(bash(line).stdout.toString()), ['a', 'c', 'b'], line);
+        const said = JSON.stringify(new Analyzer('en').explainLine(parser.parse(line), 0).items);
+        assert.ok(said.includes('/usr/bin/tac') && !said.includes('/usr/bin/rev` instead') && !said.includes('or the path `/usr/bin/rev`'), line);
+      }
       // (Two paths, one on each path: tac or rev, never sort; no example either.)
       const either = `hash -p /usr/bin/tac sort; if [ -n "$x" ]; then hash -p /usr/bin/rev sort; fi; ${abc}`;
       assert.deepStrictEqual(lines(bash(either, { x: '1' }).stdout.toString()), ['b', 'a', 'c']);

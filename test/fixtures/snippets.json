@@ -1202,6 +1202,7 @@
  "hash -p /usr/bin/head zz; ps aux | zz -n 5",
  "hash -p /usr/bin/head zz; ps | zz -n 5",
  "hash -p /usr/bin/tac env; env | head -3",
+ "hash -p /usr/bin/tac sort\ntrap 'sort i' USR1\nkill -USR1 $$\n( hash -p /usr/bin/rev sort )",
  "hash -p /usr/bin/tac sort; printf 'b\\na\\nc\\n' | \\sort",
  "hash -p /usr/bin/tac sort; printf 'b\\na\\nc\\n' | sort",
  "hash -p /usr/bin/test t\nt -n x",
