@@ -480,6 +480,8 @@ A pipeline's worked example shows what each command reads. When the first comman
 
 The made-up lines are shown as they are, not in a box to edit: a box wraps long lines, and the columns would no longer line up. Other options or an operand (`ps aux --sort=-%mem`, `ls -l /etc`, `ls -lt`, `df`) get no made-up output, nor does `env` when it runs a command (`env sort | cat`: what sort prints) or starts from an empty environment (`env -`).
 
+The made-up environment holds what the script exports before the pipeline: after `export FOO=bar` (or `declare -x`, or `FOO=bar` under `set -a`), `env | grep FOO` shows `FOO=bar`; `unset HOME` and `export -n PATH` take a variable out, and `PATH=/usr/bin:/bin` changes the one the environment has. Before, the example said grep prints nothing. When the model cannot tell what is exported (a value not known, an export on some paths only, `source`, an exported function), env gets no made-up environment. A variable that changes a layout drops its made-up output too, set before the command or exported earlier: `TIME_STYLE=long-iso ls -l` (dates as `2026-10-29 02:23`), `PS_FORMAT=pid,comm ps` (`PID COMMAND`), `QUOTING_STYLE=c ls`, `BLOCK_SIZE=K ls -l`, `COLUMNS=40 ps aux`, a locale whose dates or decimal point differ (`LANG=de_DE.UTF-8 ls -l`, `LC_NUMERIC=de_DE.UTF-8 df -h`), and `LC_ALL=C who` (dates as `Mar  3 09:30`). Before, these showed the default layout. `LC_ALL=C ls -l` and `TZ=UTC ls -l` keep it: ls prints the same there.
+
 The input section of a command's own example names where a pipe brings it from:
 
 | Written | Input label now | Before |

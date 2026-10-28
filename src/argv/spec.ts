@@ -223,8 +223,18 @@ export interface Restriction { options?: string[]; unless?: string[]; unlessWord
 /** The layouts of output that src/examples/layouts.ts makes up. */
 export type Layout = 'ps' | 'ps-bsd-u' | 'ps-full' | 'ls' | 'ls-long' | 'ls-long-all' | 'ls-long-human' | 'df-human' | 'who' | 'env';
 
-/** One layout of a command's output: `options`, the options given (as their spec names them: `-l`, BSD letters `a` `u` `x`). */
-export interface LayoutAlt { options: string[]; layout: Layout }
+/**
+ * One layout of a command's output: `options`, the options given (as their spec names them: `-l`, BSD letters `a` `u`
+ * `x`). `environment`: what the environment the command gets changes of it. `prints`: it prints the environment (env):
+ * its lines are the variables exported where it runs. Otherwise the variables that change the layout (`TIME_STYLE`
+ * for `ls -l`), each with the values that leave it as made up besides the made-up system's own (src/examples/layouts.ts,
+ * `ENVIRONMENT`: `LANG=en_US.UTF-8`); an empty list: any value changes it. A variable the made-up environment has, and
+ * the script unsets, counts as empty (glibc reads an empty `LANG` as none). Each checked with the real tool.
+ */
+export interface LayoutAlt { options: string[]; layout: Layout; environment: 'prints' | LayoutEnvironment }
+
+/** The variables that change a layout, each with the values that leave it as made up (`LayoutAlt.environment`). */
+export type LayoutEnvironment = Readonly<Record<string, readonly string[]>>;
 
 /**
  * How a command works on several input files (operands and values with `io: 'input'`) when it does not read them as

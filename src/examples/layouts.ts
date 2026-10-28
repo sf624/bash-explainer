@@ -4,13 +4,14 @@
 // them with the real tools).
 import type { ArgvParse } from '../argv/interpret';
 import { givenOptions } from '../argv/query';
-import type { CommandSpec, Layout } from '../argv/spec';
+import type { CommandSpec, Layout, LayoutAlt } from '../argv/spec';
 
 /**
- * A command of the pipeline as it runs: its argument list (`argv`, as ps shows it), and the path bash runs it by when
- * it does not find it in PATH (`/bin/env`, or a path `hash -p` gave the name).
+ * A command of the pipeline as it runs: its argument list (`argv`, as ps shows it), the path bash runs it by when
+ * it does not find it in PATH (`/bin/env`, or a path `hash -p` gave the name), and its environment, when it is not the
+ * made-up one (`ENVIRONMENT`) as it is: what the script exported (`export FOO=bar`).
  */
-export interface Run { argv: string[]; path?: string }
+export interface Run { argv: string[]; path?: string; environment?: ReadonlyMap<string, string> }
 
 /** A column of a table: its width, and whether its cells are aligned on the right. */
 interface Column { width: number; right?: boolean }
@@ -126,16 +127,20 @@ const FILE_SYSTEMS = [
   ['/dev/sdb1', '916G', '603G', '267G', '70%', '/data'],
 ];
 
-/** The variables of the made-up environment, in the order a login shell exports them. */
-const ENVIRONMENT = [
-  'SHELL=/bin/bash', 'PWD=/home/alice', 'LOGNAME=alice', 'HOME=/home/alice', 'LANG=en_US.UTF-8', 'TERM=xterm-256color',
-  'USER=alice', 'PATH=/usr/local/bin:/usr/bin:/bin',
-];
+/**
+ * The variables of the made-up environment the script runs in, in the order a login shell exports them. The layouts
+ * of the other commands are those of its locale (`LayoutAlt.environment`).
+ */
+export const ENVIRONMENT: ReadonlyMap<string, string> = new Map([
+  ['SHELL', '/bin/bash'], ['PWD', '/home/alice'], ['LOGNAME', 'alice'], ['HOME', '/home/alice'], ['LANG', 'en_US.UTF-8'], ['TERM', 'xterm-256color'],
+  ['USER', 'alice'], ['PATH', '/usr/local/bin:/usr/bin:/bin'],
+]);
 
 /**
  * Made-up lines of what a command prints in the layout `kind`. `procs`: the commands of the pipeline (undefined where
  * their words are not known), `self` the index of this one: ps lists them too, since they run at the same time; env
- * ends with `_`, the path bash ran it by (found in the made-up PATH, `/usr/bin`, unless it has a path of its own).
+ * prints its environment (a line each, a value of several lines on several), and ends with `_`, the path bash ran it by
+ * (found in the made-up PATH, `/usr/bin`, unless it has a path of its own).
  */
 export function layoutSample(kind: Layout, procs: (Run | undefined)[], self: number): string[] {
   switch (kind) {
@@ -171,7 +176,10 @@ export function layoutSample(kind: Layout, procs: (Run | undefined)[], self: num
       const cols: Column[] = [{ width: 8 }, { width: 12 }, { width: 0 }];
       return table(cols, [['alice', 'pts/0', '2026-03-03 09:30 (192.168.1.20)'], ['bob', 'pts/1', '2026-03-03 10:02 (192.168.1.31)'], ['alice', 'tty1', '2026-03-03 08:12']]);
     }
-    case 'env': return [...ENVIRONMENT, `_=${procs[self]!.path ?? `/usr/bin/${procs[self]!.argv[0]}`}`];
+    case 'env': {
+      const run = procs[self]!;
+      return [...[...(run.environment ?? ENVIRONMENT)].flatMap(([name, value]) => `${name}=${value}`.split('\n')), `_=${run.path ?? `/usr/bin/${run.argv[0]}`}`];
+    }
   }
 }
 
@@ -184,10 +192,10 @@ const OPTION_WORDS = new Set(['option', 'cluster', 'old-style', 'value', 'end-of
  * any other word: an operand (`ls -l /etc` lists files not made up here), a command it runs (`env find .` prints what
  * find prints, not the environment), a pattern option (`env -` starts from an empty environment).
  */
-export function layoutOf(spec: CommandSpec | undefined, parse: ArgvParse): Layout | undefined {
+export function layoutOf(spec: CommandSpec | undefined, parse: ArgvParse): LayoutAlt | undefined {
   if (!spec?.layouts || parse.roles.some(({ role }) => !OPTION_WORDS.has(role.role))) return undefined;
   const given = givenOptions(parse).map(({ role }) => (role.role === 'option' ? role.spec.names[0] : undefined));
   if (given.includes(undefined)) return undefined;
   const names = new Set(given);
-  return spec.layouts.find((alt) => alt.options.length === names.size && alt.options.every((o) => names.has(o)))?.layout;
+  return spec.layouts.find((alt) => alt.options.length === names.size && alt.options.every((o) => names.has(o)));
 }
