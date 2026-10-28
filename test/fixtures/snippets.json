@@ -867,6 +867,7 @@
  "enable -n [\n[ -f f ]",
  "enable -n echo\nbuiltin echo y",
  "enable -n echo\ncommand echo z",
+ "enable -n echo\necho -n hi",
  "enable -n echo\necho x",
  "enable -n read\ncommand read z",
  "enable -n set\nset -Z\n\"$c\" -Z",
