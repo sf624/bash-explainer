@@ -124,6 +124,9 @@ describe('the pitfalls of a script, as problems', () => {
     // src/wordfacts.ts
     ['FOO=1 echo $FOO', [['prefix-assignment-expanded-first', 'warning', 0, 11, 0, 15]]],
     ['cp $a b', [['unquoted-variable-as-path', 'warning', 0, 3, 0, 5]]],
+    // (Each unquoted word of the command; before, only the first.)
+    ['cp $a $b', [['unquoted-variable-as-path', 'warning', 0, 3, 0, 5], ['unquoted-variable-as-path', 'warning', 0, 6, 0, 8]]],
+    ['cp $a $a/x', [['unquoted-variable-as-path', 'warning', 0, 3, 0, 5], ['unquoted-variable-as-path', 'warning', 0, 6, 0, 10]]],
     // (A path given to a command that neither deletes nor overwrites: a caveat.)
     ['cat $a', [['unquoted-variable-as-path', 'info', 0, 4, 0, 6]]],
     // (A path given to a command that neither deletes nor overwrites: a caveat.)

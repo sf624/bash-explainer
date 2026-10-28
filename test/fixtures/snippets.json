@@ -695,6 +695,8 @@
  "command rm -rf $DIR/x",
  "coproc W { cat; }",
  "coproc cat",
+ "cp $a $a/x",
+ "cp $a $b",
  "cp $a b",
  "cp $a b; cp $a c",
  "cp *.txt d/",

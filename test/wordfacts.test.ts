@@ -134,8 +134,11 @@ describe('word facts', () => {
     assert.deepStrictEqual(facts('for f in $(ls); do\n  echo "$f"\ndone', 1), []);
   });
 
-  it('says a fact once', () => {
-    assert.strictEqual(facts('cp $a $b').length, 1);
+  it('says a fact once for each word, also through a wrapper', () => {
+    // (Each unquoted word its own: quoting one leaves the others. Before, only the first, `$a`.)
+    for (const src of ['cp $a $b', 'sudo cp $a $b', 'time cp $a $b']) {
+      assert.deepStrictEqual(facts(src).map((f) => f.text.match(/`([^`]+)` is not quoted/)?.[1]), ['$a', '$b'], src);
+    }
   });
 });
 

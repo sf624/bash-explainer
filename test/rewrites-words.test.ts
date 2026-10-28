@@ -35,6 +35,12 @@ describe('the rewrites of `unquoted-variable-as-path`', () => {
     assert.deepStrictEqual(scripts('cp ~/$x/* e', id), ['cp ~/"$x"/* e']);
     // (One note for the same word twice on a line: its rewrite quotes both. Before, only the first.)
     assert.deepStrictEqual(scripts('cp $a b; cp $a c', id), ['cp "$a" b; cp "$a" c']);
+    // (A note for each unquoted word of the command, each with its rewrite: quoting one leaves the others. Before, only
+    // the first, `$a` of `cp $a $b`.)
+    assert.deepStrictEqual(factsOf('cp $a $b', id).map((f) => f.rewrite!.map((r) => applied('cp $a $b', r))), [['cp "$a" $b'], ['cp $a "$b"']]);
+    assert.deepStrictEqual(factsOf('sudo rm -rf $d/x $e', id).map((f) => f.text.match(/`([^`]+)` is not quoted/)![1]), ['$d/x', '$e']);
+    // (The same word twice in one command: one note, whose rewrite quotes both.)
+    assert.deepStrictEqual(scripts('cp $a $a', id), ['cp "$a" "$a"']);
     // (None where one of the places has none, in a string another shell reads, whichever comes first: the rewrite
     // would leave that one.)
     for (const src of [`bash -c 'cp $a b'; cp $a c`, `cp $a c; bash -c 'cp $a b'`]) assert.deepStrictEqual(factsOf(src, id).map((f) => f.rewrite), [undefined], src);

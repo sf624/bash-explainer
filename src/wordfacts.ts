@@ -191,16 +191,18 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
           const nameNode = run.nameWord;
           const ran = /^[\w./+-]+$/.test(nameNode.text) ? ranName(resolveName(model, nameNode.text, nameNode, { shell, command: true, ...(run.env ? { env: run.env } : {}) })) : undefined;
           if (!ran || !PATH_COMMANDS.has(ran)) continue;
-          const word = run.args.find((w) => bare(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => bare(c))));
-          if (!word) continue;
-          // A value the model knows that stays one word, with nothing to glob (`TS=2024; rm -rf /tmp/build-$TS`): no harm
-          // here, so a caveat; a value it does not know (`read`, `$1`, `$(date)`) may be anything.
-          const fields = wordFields(word, model).fields;
-          const quoted = quoteExpansions(word);
-          add(fact(lang, 'unquoted-variable-as-path', {
-            bare: word.text, rewrite: quoted ? [replaceNode(word, quoted)] : [], ...(DESTRUCTIVE_COMMANDS.has(ran) ? { destroys: true } : {}), ...(fields?.length === 1 ? { known: fields[0] } : {}),
-          }), word);
-          break;
+          // (Each of them: quoting one leaves the others, `cp $a $b`.)
+          const words = run.args.filter((w) => bare(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => bare(c))));
+          for (const word of words) {
+            // A value the model knows that stays one word, with nothing to glob (`TS=2024; rm -rf /tmp/build-$TS`): no harm
+            // here, so a caveat; a value it does not know (`read`, `$1`, `$(date)`) may be anything.
+            const fields = wordFields(word, model).fields;
+            const quoted = quoteExpansions(word);
+            add(fact(lang, 'unquoted-variable-as-path', {
+              bare: word.text, rewrite: quoted ? [replaceNode(word, quoted)] : [], ...(DESTRUCTIVE_COMMANDS.has(ran) ? { destroys: true } : {}), ...(fields?.length === 1 ? { known: fields[0] } : {}),
+            }), word);
+          }
+          if (words.length) break;
         }
         // `[ $x = y ]`: an empty or spaced value breaks the test. (When the name runs `[`: src/semantics/names.ts.)
         // The words of the test itself, not variables inside a `$(…)` in it.
