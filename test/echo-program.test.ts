@@ -87,6 +87,10 @@ describe('the program echo: --help and --version as its one argument', () => {
       const last = script.split('; ').slice(0, -1).concat(script.split('; ').pop()!.replace(/^bash --posix -c "(.*)"$/, '$1')).join('\n');
       assert.strictEqual(isVersion(last), version, `explainer: ${script}`);
     }
+    // (A subshell or a function the command runs in passes the exported variable on.)
+    assert.ok(!isVersion('export POSIXLY_CORRECT=y\n( /bin/echo --version )'));
+    assert.ok(!isVersion('export POSIXLY_CORRECT=y\nf() { /bin/echo --version; }'));
+    assert.ok(isVersion('( /bin/echo --version )'));
     assert.ok(isVersionBash('enable -n echo; command echo --version'));
     assert.ok(!isVersionBash('enable -n echo; POSIXLY_CORRECT=1 command echo --version'));
     assert.ok(!isVersion(`${OFF}POSIXLY_CORRECT=1 command echo --version`));

@@ -225,10 +225,10 @@ export function trContext(cx: Explainer, a: SyntaxNode): { role: 'from' | 'to' |
  * `env -u X`, `env -i`, `sudo`: the slot links of src/semantics/env.ts). A variable the script's own environment may
  * hold is not known.
  */
-export function inEnvironment(cx: Explainer, name: string, cmd: SyntaxNode, env: ExecEnv | undefined): boolean {
+export function inEnvironment(cx: Explainer, name: string, cmd: SyntaxNode, env: ExecEnv): boolean {
   const v = cx.state.at(cmd).run.variables.get(name);
   let on = prefixAssignments(cmd).some((a) => field(a, 'name')?.text === name) || (v?.set === 'on' && v.attrs.x?.state === 'on');
-  for (const l of env?.links ?? []) {
+  for (const l of env.links) {
     if (l.kind !== 'slot') continue;
     if (droppedBy({ links: [l] }, name)) on = false;
     if (l.assigns.includes(name)) on = true;
@@ -244,7 +244,7 @@ export function inEnvironment(cx: Explainer, name: string, cmd: SyntaxNode, env:
 export function soleOff(cx: Explainer, parse: ArgvParse, spec: CommandSpec, args: SyntaxNode[]): Set<number> {
   const off = new Set<number>();
   const visit = (p: ArgvParse, s: CommandSpec): void => {
-    if (p.soleAt !== undefined && s.soleUnlessEnv && inEnvironment(cx, s.soleUnlessEnv, args[0].parent!, p.soleAt < 0 ? cx.state.env(args[0].parent!) : cx.slotEnvs.get(args[p.soleAt]))) off.add(p.soleAt);
+    if (p.soleAt !== undefined && s.soleUnlessEnv && inEnvironment(cx, s.soleUnlessEnv, args[0].parent!, p.soleAt < 0 ? cx.state.env(args[0].parent!) : cx.slotEnvs.get(args[p.soleAt])!)) off.add(p.soleAt);
     for (const r of p.roles) if ((r.role.role === 'command' || r.role.role === 'subcommand') && r.role.parse) visit(r.role.parse, r.role.spec ?? NO_SPEC);
   };
   visit(parse, spec);

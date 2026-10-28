@@ -820,10 +820,10 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   const vspec = variant ? { ...role.spec!, ...variant.spec } : undefined;
   // (`enable -n echo; command echo --version`: `command` runs the program, and its words are the program's.)
   const offProgram = role.slot.run === 'current-shell' && res?.kind === 'file' && res.disabled ? role.spec?.program : undefined;
-  const programOff = offProgram?.soleUnlessEnv && inEnvironment(cx, offProgram.soleUnlessEnv, first.parent!, cx.slotEnvs.get(first)) ? new Set([-1]) : undefined;
+  const programOff = offProgram?.soleUnlessEnv && inEnvironment(cx, offProgram.soleUnlessEnv, first.parent!, cx.slotEnvs.get(first)!) ? new Set([-1]) : undefined;
   const children = test ? testArgs(cx, first.parent!, commandTest(test, words.slice(1), bashTest(cx, test)), test.closingOperand !== undefined, !!test.builtin)
     : vspec ? render(cx, interpret(vspec, words.slice(1).map(argWordFor(cx.state.shell)), { name, lookup: (x) => specFor(cx, x) }), vspec, words.slice(1), words.slice(1))
-      : offProgram ? render(cx, interpret(offProgram, words.slice(1).map(argWordFor(cx.state.shell)), { name, lookup: (x) => specFor(cx, x), ...(role.appended ? { appended: true } : {}), ...(programOff ? { noSole: programOff } : {}) }), offProgram, words.slice(1), words.slice(1))
+      : offProgram ? render(cx, interpret(offProgram, words.slice(1).map(argWordFor(cx.state.shell)), { name, lookup: (x) => specFor(cx, x), ...(programOff ? { noSole: programOff } : {}) }), offProgram, words.slice(1), words.slice(1))
       : render(cx, refusal ? { ...parse, refusal } : parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
   if (role.of) {
     // `{}` is replaced by find (and `xargs -I{}`) with each path.
