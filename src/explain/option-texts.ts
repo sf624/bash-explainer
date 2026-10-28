@@ -1,7 +1,10 @@
-// The texts of options the argument reader does not describe: one not in the dictionary, and the undoing of a `+` option
-// (src/explain/argv.ts).
+// The texts of options the argument reader does not describe: one not in the dictionary, the undoing of a `+` option
+// (src/explain/argv.ts), and an option a program reads only alone, where the environment may make it text.
+import { type ArgRole, type ArgvParse, swapRoles } from '../argv/interpret';
 import type { CommandSpec } from '../argv/spec';
 import type { Text } from '../i18n';
+import { type ExecEnv, variableIn } from '../semantics/env';
+import { prefixAssignments, field, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 
 /** The text of an option not in the dictionary. */
@@ -29,4 +32,29 @@ export function turnedOff(cx: Explainer, flag: string, what: string, value = fal
   const on = off ? cx.t(off)
     : cx.s(`元に戻す（${value ? '' : `\`${flag}\` は「`}${what}${value ? '' : '」'}）`, `turn it off again (${value ? '' : `\`${flag}\` is "`}${what}${value ? '' : '"'})`);
   return value ? on : cx.s(`\`${flag}\` を解除: ${on}`, `Undo \`${flag}\`: ${on}`);
+}
+
+/**
+ * `parse` (of the command `cmd`) with each word read as one of `soleOptions` (coreutils `echo --version`) as the
+ * model knows it where its command runs (`envs`, from `slotEnvs`): with the variable of `soleUnlessEnv` surely in
+ * that environment, text, which says why; surely not, the option; else the option, with the caveat.
+ */
+export function soleRead(cx: Explainer, parse: ArgvParse, envs: ReadonlyMap<ArgvParse, ExecEnv>, cmd: SyntaxNode): ArgvParse {
+  const swap = new Map<ArgRole, ArgRole>();
+  for (const [p, env] of envs) {
+    if (!p.sole) continue;
+    const { option, env: name } = p.sole;
+    const prefix = prefixAssignments(cmd).some((a) => field(a, 'name')?.text === name);
+    const { state } = variableIn(cx.state.at(cmd).run, name, env, prefix);
+    if (state === 'off') continue;
+    if (state === 'unknown') {
+      swap.set(option, { ...option, text: { ja: `${option.text.ja}（環境に \`${name}\` があると、ただの文字列）`, en: `${option.text.en} (plain text if \`${name}\` is in the environment)` } });
+      continue;
+    }
+    // (echo's words are operands of its spec.)
+    const text = p.sole.text as Extract<ArgRole, { role: 'operand' }>;
+    const t = text.spec!.text;
+    swap.set(option, { ...text, spec: { ...text.spec!, text: { ja: `${t.ja}（環境に \`${name}\` があるので、\`${option.flag}\` はオプションではない）`, en: `${t.en} (\`${name}\` is in its environment, so \`${option.flag}\` is no option)` } } });
+  }
+  return swap.size ? swapRoles(parse, swap) : parse;
 }

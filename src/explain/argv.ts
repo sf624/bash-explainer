@@ -23,7 +23,7 @@ import { fact } from '../messages';
 import { nameInfo } from '../namefacts';
 import { spanOf } from '../noteanchors';
 import { builtinSections, nodeSections, programSections } from '../refs';
-import { shellEffectOf, type SlotLink, slotEnvs } from '../semantics/env';
+import { type ExecEnv, shellEffectOf, type SlotLink, slotEnvs } from '../semantics/env';
 import { type Missed, testSpecOf } from '../semantics/names';
 import { attribute, docLine } from '../semantics/state';
 import { readDeclarationWords, unsetEndsSpecial } from '../semantics/vars';
@@ -39,9 +39,9 @@ import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
 import { argWordIn, untilWords } from '../semantics/argwords';
-import { arrayKind, globOff, inEnvironment, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, soleOff, specFor, wordAt } from './reads';
+import { arrayKind, globOff, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
-import { turnedOff, unknownOption } from './option-texts';
+import { soleRead, turnedOff, unknownOption } from './option-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
 import { inSubshell } from './where';
@@ -82,12 +82,13 @@ export function readArgs(cx: Explainer, known: CommandSpec | undefined, args: Sy
   // (A function's words are read with no spec: its options are unknown, and its operands are `$1`, `$2`….)
   const spec = known && !isFn ? known : NO_SPEC;
   const lookup = (name: string): CommandSpec | undefined => specFor(cx, name);
-  const words = args.map(argWordFor(cx.state.shell));
-  let parse = interpret(spec, words, { name: cmdName, lookup });
-  if (args.length) for (const [w, env] of slotEnvs(cx.state.env(args[0].parent!), parse, spec, args, cx.state.shell, lookup)) cx.slotEnvs.set(w, env);
-  // (`POSIXLY_CORRECT=1 /bin/echo --version`: the words the program reads as options only alone are text.)
-  const off = args.length ? soleOff(cx, parse, spec, args) : undefined;
-  if (off?.size) parse = interpret(spec, words, { name: cmdName, lookup, noSole: off });
+  let parse = interpret(spec, args.map(argWordFor(cx.state.shell)), { name: cmdName, lookup });
+  if (args.length) {
+    const envs = new Map<ArgvParse, ExecEnv>();
+    for (const [w, env] of slotEnvs(cx.state.env(args[0].parent!), parse, spec, args, cx.state.shell, lookup, undefined, envs)) cx.slotEnvs.set(w, env);
+    // (`POSIXLY_CORRECT=1 /bin/echo --version`: a word the program reads as an option only alone is text.)
+    parse = soleRead(cx, parse, envs, args[0].parent!);
+  }
   return { tokens: render(cx, parse, spec, args, args, isFn), parse };
 }
 
@@ -774,6 +775,21 @@ function shellParams(cx: Explainer, role: CommandRole, parse: ArgvParse, nodes: 
   return { via, words: (known < 0 ? after : after.slice(0, known)).map((w) => w.text), more: known >= 0 };
 }
 
+/**
+ * The tokens of the words of a command a slot runs (its first word `first`, read in `parse` over `nodes`), or read again
+ * with `respec`: the variant of a builtin for the shell options (`command kill`), or the program of a builtin turned off
+ * (`command echo` after `enable -n echo`). A word read as an option only alone is read as its environment makes it
+ * (`soleRead`): find's actions are read apart from the line, and `respec` reads the words afresh.
+ */
+function ownWords(cx: Explainer, respec: CommandSpec | undefined, name: string, first: SyntaxNode, parse: ArgvParse, spec: CommandSpec | undefined, nodes: SyntaxNode[], args: SyntaxNode[], refusal?: ArgvParse['refusal']): Token[] {
+  const lookup = (x: string): CommandSpec | undefined => specFor(cx, x);
+  const read = respec ? { parse: interpret(respec, args.map(argWordFor(cx.state.shell)), { name, lookup }), spec: respec, nodes: args }
+    : { parse: refusal ? { ...parse, refusal } : parse, spec: spec ?? NO_SPEC, nodes };
+  const envs = new Map<ArgvParse, ExecEnv>();
+  slotEnvs(cx.slotEnvs.get(first)!, read.parse, read.spec, read.nodes, cx.state.shell, lookup, undefined, envs);
+  return render(cx, soleRead(cx, read.parse, envs, first.parent!), read.spec, read.nodes, args);
+}
+
 /** Words forming a command run by another command (sudo, xargs, find -exec…): the command, with its words read by its spec. */
 function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: CommandRole, assigned: string[], refusal?: ArgvParse['refusal']): Token {
   const parse = role.parse!;
@@ -820,11 +836,8 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   const vspec = variant ? { ...role.spec!, ...variant.spec } : undefined;
   // (`enable -n echo; command echo --version`: `command` runs the program, and its words are the program's.)
   const offProgram = role.slot.run === 'current-shell' && res?.kind === 'file' && res.disabled ? role.spec?.program : undefined;
-  const programOff = offProgram?.soleUnlessEnv && inEnvironment(cx, offProgram.soleUnlessEnv, first.parent!, cx.slotEnvs.get(first)!) ? new Set([-1]) : undefined;
   const children = test ? testArgs(cx, first.parent!, commandTest(test, words.slice(1), bashTest(cx, test)), test.closingOperand !== undefined, !!test.builtin)
-    : vspec ? render(cx, interpret(vspec, words.slice(1).map(argWordFor(cx.state.shell)), { name, lookup: (x) => specFor(cx, x) }), vspec, words.slice(1), words.slice(1))
-      : offProgram ? render(cx, interpret(offProgram, words.slice(1).map(argWordFor(cx.state.shell)), { name, lookup: (x) => specFor(cx, x), ...(programOff ? { noSole: programOff } : {}) }), offProgram, words.slice(1), words.slice(1))
-      : render(cx, refusal ? { ...parse, refusal } : parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
+    : ownWords(cx, vspec ?? offProgram, name, first, parse, role.spec, nodes, words.slice(1), refusal);
   if (role.of) {
     // `{}` is replaced by find (and `xargs -I{}`) with each path.
     const mark = (ts: Token[]) => ts.forEach((t) => {
