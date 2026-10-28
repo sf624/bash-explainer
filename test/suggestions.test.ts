@@ -169,7 +169,8 @@ const STYLE_SUGGESTIONS: Record<StyleCode, Exclude<Kind, 'none'>> = {
   'brace-no-space': 'mechanical',
   // `{ echo a; echo b }` → `echo b; }`.
   'brace-close-no-separator': 'mechanical',
-  // `rm -rf $D/*` → `"${D:?}"/*`, or `[ -n "${D%/}" ] || exit 1` before the statement.
+  // `rm -rf $D/*` → `"${D:?}"/*`. (The check before the statement, `[ -n "${D%/}" ] || exit 1`, is said with no edits:
+  // the warning would stay after it, docs/design/semantics.md 4.15.)
   'rm-empty-variable-root': 'mechanical',
   // `read x` → `read -r x`.
   'read-without-r': 'mechanical',
@@ -237,7 +238,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     { id: 'regex-backslash-dropped', input: '[[ $x =~ ^[\\s]+$ ]]', why: 'none' },
     // (The style checks: several words after `=`, which have no one meaning as a value, or a redirection among them;
     // a `{` with no `}` after it; an escaped `]` or `}`, or a `]` that is not the opener's; a redirection that as an
-    // operator would make no comparison of three words; a check before `rm` where it would not stand alone.)
+    // operator would make no comparison of three words. The check before `rm`, which carries no edits, is apart.)
     { id: 'assignment-with-spaces', input: '! a = b -a -f c', why: 'none' },
     { id: 'assignment-with-spaces', input: 'a = b -a ( c -o d )', why: 'none' },
     { id: 'assignment-with-spaces', input: 'a = b -a c = d', why: 'none' },
@@ -256,13 +257,16 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     { id: 'redirect-in-bracket', input: '[ a < b c ]', why: 'none' },
     { id: 'redirect-in-bracket', input: '[ a >> b ]', why: 'none' },
     { id: 'redirect-in-bracket', input: '[ a b < c ]', why: 'none' },
-    { id: 'rm-empty-variable-root', input: 'a && rm -rf ${D%/}/x', why: 'none' },
-    { id: 'rm-empty-variable-root', input: 'if rm -rf ${D%/}/x; then :; fi', why: 'none' },
-    { id: 'rm-empty-variable-root', input: 'rm -rf ${D%/}/x | cat', why: 'none' },
   ];
   it('finds a rewrite on every fact of a mechanical id in the corpus, but where none is given', () => {
     const key = ({ id, input }: { id: SuggestionId; input: string }): string => `${id}: ${input}`;
-    assert.deepStrictEqual(corpusFacts().filter((f) => !f.fact.rewrite).map((f) => key({ id: f.fact.id, input: f.input })).sort(), WITHOUT.map(key).sort());
+    // (The check before `rm -rf ${D%/}/x`, said as code to write before it: no edits, since the warning would stay after
+    // it, docs/design/semantics.md 4.15.)
+    const checkBefore = (f: { fact: { id: SuggestionId; text: string } }): boolean => f.fact.id === 'rm-empty-variable-root' && /before it to stop when it is empty$/.test(f.fact.text);
+    assert.deepStrictEqual(corpusFacts().filter((f) => !f.fact.rewrite && !checkBefore(f)).map((f) => key({ id: f.fact.id, input: f.input })).sort(), WITHOUT.map(key).sort());
+    const checks = corpusFacts().filter(checkBefore);
+    assert.ok(checks.length > 0);
+    assert.deepStrictEqual(checks.filter((f) => f.fact.rewrite).map((f) => f.input), []);
     // (The facts of the host files carry none: their edits would be offsets in the extracted text.)
     const parser = createUnbashParser();
     const dir = path.join(__dirname, 'fixtures/hosts');

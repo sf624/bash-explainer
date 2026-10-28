@@ -454,12 +454,6 @@ export interface IdStates {
   /** Why a rewrite may bring another fact of the id to light, if it may (`set -u`: bash stops at the first unset name). */
   uncovers?: string;
   /**
-   * Why the rewrite `s` leaves the fact where it was made, if it does: it stops the hazard by a statement before it,
-   * which the model does not follow (`[ -n "$D" ] || exit 1` before `rm`). The second cheap check then requires the
-   * fact to stay, so that this goes once the model follows it.
-   */
-  stays?: (s: Subject) => string | undefined;
-  /**
    * Why the original may be one bash does not parse, if it may (a group never closed): its subjects run all the same,
    * and the checks run only the rewrite and a reference, never the original.
    */
@@ -995,15 +989,13 @@ Object.assign(STATES, {
     },
   },
   'rm-empty-variable-root': {
-    states: 'the variable set (with files in its directory), empty, unset; the file run, and where it may be sourced, sourced and sourced in a function; `rm` and the commands that run it are recorders',
-    stays: (s) => (s.rewrite.code.startsWith('[ ') ? 'a check before the statement, which the model does not follow (docs/design/semantics.md, 4.15)' : undefined),
+    states: 'the variable set (with files in its directory), empty, unset; `rm` and the commands that run it are recorders',
     checks: (s, x) => {
-      // (A check before the statement: the variables it tests.)
-      const vars = x.vars.length ? x.vars : [...new Set([...s.rewrite.code.matchAll(/\$\{?[#!]?([A-Za-z_]\w*)/g)].map((m) => m[1]))];
+      const vars = x.vars;
       if (!vars.length) return 'no named variable';
-      const why = setBy({ ...x, vars });
+      const why = setBy(x);
       if (why) return why;
-      // (Not the value `others` gives a variable of the check, which no edit replaces: unset is unset.)
+      // (Not the value `others` gives a variable of the word, which the edit replaces: unset is unset.)
       const others = Object.fromEntries(Object.entries(x.others).filter(([k]) => !vars.includes(k)));
       const env = (v?: string) => ({ ...others, ...(v === undefined ? {} : Object.fromEntries(vars.map((n) => [n, v]))) });
       const files = ['VAL/x1', 'VAL/x2', 'VAL/cache/a'];
@@ -1012,24 +1004,10 @@ Object.assign(STATES, {
         const extra = r.out.split('\n').filter((l) => /<\//.test(l) && !o.out.split('\n').includes(l));
         return extra.length ? `a path from the root: ${JSON.stringify(extra)}` : undefined;
       };
-      // (A check before it stops where the code runs: a shell that sources the file goes on, also from a function,
-      // which `exit 1` would end; unless the original ends it too in that state, `[ -n "$D" ] || exit 1` of its own.
-      // `${D:?}` ends it, as an expansion error does in a shell that is not interactive.)
-      const check = s.rewrite.code.startsWith('[ ');
-      const goesOn = (mode: NonNullable<Job['mode']>, r: Ran, h: Ran): string | undefined => {
-        const marker = mode === 'source' ? 'in' : 'after-g';
-        return said(r, marker) !== undefined || said(h, marker) === undefined ? undefined : `the shell that sources it ended: ${JSON.stringify(r)}`;
-      };
-      const modes: NonNullable<Job['mode']>[] = ['run', ...(/^#!/.test(s.original) ? [] : ['source', 'source-in-function'] as const)];
-      return modes.flatMap((mode) => [
-        keeps(`set, ${mode}`, s, { mode, env: env('VAL'), files }, { mode, env: env('VAL'), files }),
-        ...(['', undefined] as const).map((v): Check => ({
-          state: `${v === undefined ? 'unset' : 'empty'}, ${mode}`,
-          // (The original in that state too, where the check is sourced: whether the shell that sources it goes on.)
-          runs: [{ script: s.original, mode, env: env('VAL'), files }, { script: s.script, mode, env: env(v), files }, ...(check && mode !== 'run' ? [{ script: s.original, mode, env: env(v), files }] : [])],
-          verify: ([o, r, h]) => root(o, r) ?? (h && goesOn(mode, r, h)),
-        })),
-      ]);
+      return [
+        keeps('set', s, { env: env('VAL'), files }, { env: env('VAL'), files }),
+        ...(['', undefined] as const).map((v): Check => ({ state: v === undefined ? 'unset' : 'empty', runs: [{ script: s.original, env: env('VAL'), files }, { script: s.script, env: env(v), files }], verify: ([o, r]) => root(o, r) })),
+      ];
     },
   },
   'read-without-r': {
@@ -1108,8 +1086,7 @@ function minus(a: readonly string[], b: readonly string[]): string[] {
 /**
  * The second cheap check of 3.3 on a subject: explaining the rewrite (in the whole file) raises no fact of the same id
  * where the rewrite was made, and the other facts of the id stay; only where the id says a rewrite may bring the next
- * one to light (`IdStates.uncovers`), a new fact of it, and where it says the fact stays (`IdStates.stays`), that
- * fact, which must stay. A failure says what differs; undefined when it holds.
+ * one to light (`IdStates.uncovers`), a new fact of it. A failure says what differs; undefined when it holds.
  */
 export function leavesNoFact(s: Subject): string | undefined {
   const fixed = s.facts.map((f) => f.text);
@@ -1119,11 +1096,9 @@ export function leavesNoFact(s: Subject): string | undefined {
   const added = minus(after, before);
   const left = added.filter((t) => fixed.includes(t));
   const gone = minus(before, after);
-  const stays = STATES[s.id]!.stays?.(s);
-  if (stays && minus(fixed, left).length) return `gone, though ${stays}: ${JSON.stringify(minus(fixed, left))}`;
-  if (left.length && !stays) return `still ${JSON.stringify(left)}`;
+  if (left.length) return `still ${JSON.stringify(left)}`;
   if (gone.length) return `others gone: ${JSON.stringify(gone)}`;
-  if (minus(added, left).length && !STATES[s.id]!.uncovers) return `new: ${JSON.stringify(minus(added, left))}`;
+  if (added.length && !STATES[s.id]!.uncovers) return `new: ${JSON.stringify(added)}`;
   return undefined;
 }
 

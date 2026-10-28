@@ -34,10 +34,10 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
   'read-without-r': { subjects: 16, ran: 9, checks: 27, skipped: { 'its stdin is a pipe': 6, 'its stdin is a redirection': 1 } },
   'redirect-in-bracket': { subjects: 6, ran: 5, checks: 9, skipped: { 'a redirection to a word that is not plain text': 1 } },
   'regex-backslash-dropped': { subjects: 2, ran: 2, checks: 24, skipped: {} },
-  'rm-empty-variable-root': { subjects: 61, ran: 43, checks: 363, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, '`sudo` with an option': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'no named variable': 1, 'the script sets `DIR`': 4, 'the script sets `D`': 6 } },
+  'rm-empty-variable-root': { subjects: 45, ran: 28, checks: 84, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, '`sudo` with an option': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `DIR`': 4, 'the script sets `D`': 6 } },
   'unbraced-element': { subjects: 1, ran: 1, checks: 1, skipped: {} },
   'unmatched-glob-runs-once': { subjects: 7, ran: 7, checks: 21, skipped: {} },
-  'unquoted-variable-as-path': { subjects: 69, ran: 48, checks: 246, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `DIR`': 5, 'the script sets `D`': 9 } },
+  'unquoted-variable-as-path': { subjects: 54, ran: 33, checks: 170, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `DIR`': 5, 'the script sets `D`': 9 } },
   'unquoted-variable-in-test': { subjects: 13, ran: 12, checks: 72, skipped: { 'a redirection to a word that is not plain text': 1 } },
   'wrapper-assignment-expanded-first': { subjects: 1, ran: 1, checks: 2, skipped: {} },
 };
@@ -50,8 +50,7 @@ const UNPARSED: SuggestionId[] = ['assignment-with-spaces', ...Array(3).fill('br
  * words, where the test of the name in the body would skip the words that are no files: the same oracles. Then forms
  * of the style checks the corpus lacks: `[[` glued to its first word, a `}` glued to the group's command as a word of
  * its own or at the end of one, `read` from the script's stdin in a loop, `>` in `[ ]` (the original makes a file in
- * the box), the check before `rm` of a value with no `:?` form (in a file that may be sourced, in a script, in a
- * function), a value in quotes after `x =`, `rm` in a function.
+ * the box), a value in quotes after `x =`, `rm` in a function.
  */
 const HAND = [
   '#!/bin/bash\nset -e\nf() {\n  [ -f x ] && echo "@y"\n}\nf\necho @next\n',
@@ -59,8 +58,7 @@ const HAND = [
   '#!/bin/bash\necho @start\n[ -f x ] && echo "@y"\n',
   'for i in a b *.c; do echo "$i"; done\n',
   '[[-f x]] && echo y\n', '{echo a }\n', '{echo a}; echo b\n', 'while read line; do echo "$line"; done\n', '[ "$a" > b ] && echo yes\n',
-  'rm -rf ${DIR%/}/*\n', 'x = "a b"\necho "$x"\n', 'f() {\n  rm -rf $D/x\n}\nf\n',
-  '#!/bin/bash\nrm -rf ${DIR%/}/*\n', 'f() {\n  rm -rf ${D%/}/x\n}\nf\necho "@f=$?"\n',
+  'x = "a b"\necho "$x"\n', 'f() {\n  rm -rf $D/x\n}\nf\n',
 ];
 
 describe('the walls of the runs of the corpus (test/support/rewrite-states.ts)', function () {
