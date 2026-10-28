@@ -46,6 +46,34 @@ export function optionsBefore(parse: ArgvParse, word: number): GivenOption[] | u
   return givenOptions(parse).filter((g) => g.word < word || (g.word === word && letters.indexOf(g.role) < owner));
 }
 
+/**
+ * The modes that the options given select (`OptionSpec.selects`: grep's `-E`, sed's `-E`); for the text in word `word`,
+ * only those of the options that apply to it (`optionsBefore`: `sed -e 's/a+/x/' -E` reads its script in no mode).
+ */
+export function selectedModes(parse: ArgvParse, word?: number): Set<string> {
+  const options = (word === undefined ? undefined : optionsBefore(parse, word)) ?? givenOptions(parse);
+  return new Set(options.flatMap(({ role }) => (role.role === 'option' && role.spec.selects ? [role.spec.selects] : [])));
+}
+
+/**
+ * The values given before word `word` that the program reads as soon as it reads their option (`ValueSpec.inOrder`):
+ * an option in `word` does not apply to them (`sed -e 's/a+/x/' -E`: not to the script).
+ */
+export function readBefore(parse: ArgvParse, word: number): GivenValue[] {
+  const out: GivenValue[] = [];
+  for (const { word: w, role } of parse.roles) {
+    if (w >= word) continue;
+    if (role.role === 'value') {
+      if (role.spec?.inOrder) out.push({ word: w, role });
+      continue;
+    }
+    for (const r of role.role === 'cluster' ? role.letters : [role]) {
+      if (r.role === 'option' && r.value?.attached !== undefined && r.value.spec?.inOrder) out.push({ word: w, at: r.value.attached, role: r.value });
+    }
+  }
+  return out;
+}
+
 /** The option's flag with a dash, as its spec names it (`-x` for `+x`; old-style letters keep theirs). */
 const flagOf = (role: OptionRole | UnknownOptionRole): string => (role.flag.startsWith('+') ? '-' + role.flag.slice(1) : role.flag);
 

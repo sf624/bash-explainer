@@ -197,3 +197,62 @@ describe('sed reads each -e script with the options given before it', () => {
     assert.ok(tokens(line).some((t) => t.startsWith('(b): Group 1')));
   });
 });
+
+describe('the sed stage of a pipeline example reads each -e script with the options given before it, as GNU sed does', () => {
+  const parser = createUnbashParser();
+  const pipelineOf = (line: string) => new Analyzer('en').explainLine(parser.parse(line), 0).examples.find((x) => x.kind === 'pipeline');
+  // (The first section is what the first stage prints, or the sample contents of `f`; the last, what the line prints.)
+  const cases = [
+    "echo aa+ | sed -e 's/a+/x/' -E", "printf 'aa+\\n' | sed -e 's/a+/x/' -r", "cat f | sed -e 's/a+/x/' -E | sort",
+    "echo aa+ | sed --expression='s/a+/<&>/' --regexp-extended", "echo aa+ | sed '-es/a+/<&>/' -r", "echo aa+ | sed -Ee 's/(a+)/<\\1>/'",
+    "cat f | sed -E -e 's/(a+)/<\\1>/' | sort", "echo aa+ | sed 's/a+/<&>/' -E", "echo aa+ | sed -E -e 's/a+/x/' -e 's/b+/y/'",
+  ];
+  for (const line of cases) {
+    it(line, () => {
+      const ex = pipelineOf(line);
+      assert.ok(ex, 'has an example');
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-sed-'));
+      try {
+        fs.writeFileSync(path.join(dir, 'f'), ex.sections[0].lines.join('\n') + '\n');
+        const printed = run('bash', ['-c', line], { cwd: dir, check: true }).stdout.toString();
+        assert.deepStrictEqual(ex.sections[ex.sections.length - 1].lines.map((l) => l + '\n').join(''), printed);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it('shows no example where the scripts are read in two flavours, or one is read from a file', () => {
+    // (GNU sed: `echo aa+ bb+ | sed -e 's/a+/x/' -E -e 's/b+/y/'` prints `ax y+`, a BRE and an ERE.)
+    assert.strictEqual(run('bash', ['-c', "echo aa+ bb+ | sed -e 's/a+/x/' -E -e 's/b+/y/'"], { check: true }).stdout.toString(), 'ax y+\n');
+    for (const line of ["echo aa+ bb+ | sed -e 's/a+/x/' -E -e 's/b+/y/'", "echo aa+ | sed -f s.sed -E", "echo aa+ | sed -e 's/a+/x/' -E -e 's/b+/y/' | sort"]) {
+      assert.strictEqual(pipelineOf(line), undefined, line);
+    }
+  });
+});
+
+describe('an option that selects the regex flavour after an -e or -f script says it does not apply to it', () => {
+  const parser = createUnbashParser();
+  const option = (lang: 'en' | 'ja', line: string, label: string): string[] => {
+    const all: string[] = [];
+    const walk = (t: { label: string; explanation: string; children: unknown[] }) => (t.label === label && all.push(t.explanation), t.children.forEach((c) => walk(c as typeof t)));
+    new Analyzer(lang).explainLine(parser.parse(line), 0).items.forEach(walk);
+    return all;
+  };
+  const late = ' (not for the value of `-e` before it: `sed` reads that value as soon as it reads its option, with only the options given before)';
+
+  it('on the option after the script, in its word or in a cluster', () => {
+    assert.deepStrictEqual(option('en', "sed -e 's/a+/x/' -E f", '-E'), ['use extended regex (ERE)' + late]);
+    assert.deepStrictEqual(option('en', "sed '-es/a+/x/' -nE f", '-E'), ['use extended regex (ERE)' + late]);
+    assert.deepStrictEqual(option('en', "sed -f s.sed -e p --regexp-extended f", '--regexp-extended'), ['use extended regex (ERE) (not for the value of `-f`, `-e` before it: `sed` reads that value as soon as it reads its option, with only the options given before)']);
+    assert.deepStrictEqual(option('ja', "sed -e 's/a+/x/' -E f", '-E'), ['拡張正規表現(ERE)を使う（前にある `-e` の値には効かない: `sed` はオプションを読んだ時点で、それより前のオプションだけでその値を読む）']);
+  });
+
+  it('not where the option comes first, or the script is the operand', () => {
+    for (const line of ["sed -E -e 's/a+/x/' f", "sed -Ee 's/a+/x/' f", "sed 's/a+/x/' -E f", "sed -n -E -e p f"]) {
+      assert.ok(option('en', line, '-E').every((t) => t === 'use extended regex (ERE)'), line);
+    }
+    // (`-n` selects no flavour: sed reads it when it runs, for every script.)
+    assert.deepStrictEqual(option('en', "sed -e p -n f", '-n'), ['suppress automatic printing; print only with `p`']);
+  });
+});

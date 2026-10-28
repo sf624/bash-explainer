@@ -39,7 +39,7 @@ import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
 import { argWordIn, untilWords } from '../semantics/argwords';
-import { arrayKind, globOff, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
+import { arrayKind, globOff, NO_SPEC, notForEarlier, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
 import { soleRead, turnedOff, unknownOption } from './option-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
@@ -122,7 +122,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
         case 'cluster':
           disables = (role.role === 'cluster' ? role.letters[0] as { flag: string } : role).flag.startsWith('+');
           // (A declaration builtin's options are explained by the attributes they give; one it does not have, as any builtin's.)
-          out.push(declaresNames(spec) && role.role !== 'unknown-option' ? declarationOption(cx, a, role) : optionToken(cx, a, role, spec, parse));
+          out.push(declaresNames(spec) && role.role !== 'unknown-option' ? declarationOption(cx, a, role) : optionToken(cx, a, role, spec, parse, word));
           break;
         case 'pattern-option':
           out.push(cx.tok(a, 'option', cx.t(role.text), wordParts(cx, a)));
@@ -274,10 +274,10 @@ export function shebangOptionTokens(cx: Explainer, role: ArgRole, spec: CommandS
 }
 
 /** The token of an option word: one option, `--name=value`, or short options together (`-rn`, `-n5`, `-F'|'`). */
-function optionToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-option' | 'cluster' }>, spec: CommandSpec, parse: ArgvParse): Token {
+function optionToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-option' | 'cluster' }>, spec: CommandSpec, parse: ArgvParse, word: number): Token {
   if (role.role !== 'cluster' && role.value && !role.part) return equalsToken(cx, a, role, spec, parse);
   if (role.role === 'cluster' || role.part) {
-    const parts = (role.role === 'cluster' ? role.letters : [role]).flatMap((l) => letterParts(cx, a, l, spec, parse));
+    const parts = (role.role === 'cluster' ? role.letters : [role]).flatMap((l) => letterParts(cx, a, l, spec, parse, word));
     const flags = parts.filter((p) => p.kind === 'option');
     // `-F,` / `-n5`: one option with its value attached is not a combination.
     return cx.tok(a, 'option', flags.length > 1
@@ -290,7 +290,7 @@ function optionToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const alone = role.missing ? role.spec.noValue : undefined;
   return cx.tok(a, 'option', alone
     ? cx.t(role.disables ? alone.offText : alone.text)
-    : role.disables ? turnedOff(cx, flag, cx.t(role.text), false, role.spec.offText) : cx.t(role.text), wordParts(cx, a));
+    : (role.disables ? turnedOff(cx, flag, cx.t(role.text), false, role.spec.offText) : cx.t(role.text)) + notForEarlier(cx, word, role), wordParts(cx, a));
 }
 
 /** `--name=value` (and `-name=value` for single-dash options): the option, with its value in the text. */
@@ -325,11 +325,11 @@ function span(a: SyntaxNode, from: number, to: number, kind: Kind, explanation: 
 }
 
 /** The tokens of one letter of a cluster: the option, and the value written after it (`-n5`, `-i.bak`, `-F'|'`). */
-function letterParts(cx: Explainer, a: SyntaxNode, l: ArgRole, spec: CommandSpec, parse: ArgvParse): Token[] {
+function letterParts(cx: Explainer, a: SyntaxNode, l: ArgRole, spec: CommandSpec, parse: ArgvParse, word: number): Token[] {
   const letter = l as Extract<ArgRole, { role: 'option' | 'unknown-option' }>;
   const flag = dash(letter.flag);
   if (letter.role === 'unknown-option') return [part(a, letter, flag, unknownOption(cx, parse.command, spec))];
-  const parts = [part(a, letter, flag, letter.disables ? turnedOff(cx, flag, cx.t(letter.text), false, letter.spec.offText) : cx.t(letter.text))];
+  const parts = [part(a, letter, flag, (letter.disables ? turnedOff(cx, flag, cx.t(letter.text), false, letter.spec.offText) : cx.t(letter.text)) + notForEarlier(cx, word, letter))];
   const value = letter.value;
   if (!value) return parts;
   // In `-F'|'` the value is what is left after quote removal.

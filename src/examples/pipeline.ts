@@ -6,9 +6,10 @@ import { awkMarks, joinRanges, type LineMarks, type StageMarks } from './marks';
 import { grepWrap, JsRegex, literalRegex, posixMatches, regexExamples, toJsRegex } from './regex';
 import { runSed, sedExample, sedMarks } from './sed';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
-import { cutMarks, FILTERS, parseOptions, runSeq, sampleInput, shortKeys, sortMarks, sortsUnique, Unsupported } from './textfilters';
+import { cutMarks, FILTERS, parseOptions, parseWords, runSeq, sampleInput, shortKeys, sortMarks, sortsUnique, Unsupported } from './textfilters';
 import { runXargs, showCommand } from './runtime';
 import { canonicalName, impliedWords } from '../dict/aliases';
+import { selectedModes, values } from '../argv/query';
 
 export interface Stage {
   cmd: string;
@@ -150,13 +151,18 @@ const SED = shortKeys('enEisu');
 function sedArgs(words: (string | undefined)[]): { script: string; quiet: boolean; extended: boolean } {
   if (words.includes(undefined)) throw new Unsupported('non-literal');
   const p = parseOptions('sed', words, SED);
+  const parse = parseWords('sed', words);
   const scripts = p.opts.filter(([n]) => n === 'e').map(([, v]) => v);
+  // (sed reads each -e script with the options given before it, `ValueSpec.inOrder`: `sed -e 's/a+/x/' -E` reads a
+  // BRE; the script operand, with all of them. Scripts read in different flavours are not run as one.)
+  const extended = new Set((scripts.length ? values(parse, '-e').map(({ word }) => word) : [undefined]).map((w) => selectedModes(parse, w).has('ere')));
+  if (extended.size > 1) throw new Unsupported('flavours');
   if (!scripts.length) {
     const first = p.operands[0];
     if (first === undefined) throw new Unsupported('script');
     scripts.push(first);
   }
-  return { script: scripts.join('\n'), quiet: p.opts.some(([n]) => n === 'n'), extended: p.opts.some(([n]) => n === 'E') };
+  return { script: scripts.join('\n'), quiet: p.opts.some(([n]) => n === 'n'), extended: [...extended][0] };
 }
 
 function awkArgs(words: (string | undefined)[]): { program: string; fs?: string; vars: Record<string, string>; assigns: Record<string, string> } {
