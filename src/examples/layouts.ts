@@ -32,15 +32,15 @@ function table(columns: Column[], rows: string[][]): string[] {
 }
 
 /** A process of the made-up system: its user, PID, parent, CPU and memory, and command line (`args`). */
-interface Proc { user: string; pid: number; ppid: number; cpu: string; mem: string; vsz: number; rss: number; tty: string; stat: string; start: string; time: string; args: string }
+interface Proc { user: string; pid: number; ppid: number; cpu: string; mem: string; vsz: number; rss: number; tty: string; stat: string; start: string; time: string; args: string; comm: string }
 
 /** The processes of the made-up system, before the commands of the pipeline (a wide cell pushes the next ones: python's VSZ). */
 const SYSTEM: Proc[] = [
-  { user: 'root', pid: 1, ppid: 0, cpu: '0.0', mem: '0.1', vsz: 167744, rss: 11904, tty: '?', stat: 'Ss', start: '09:12', time: '0:02', args: '/sbin/init' },
-  { user: 'root', pid: 845, ppid: 1, cpu: '0.0', mem: '0.0', vsz: 55220, rss: 1640, tty: '?', stat: 'Ss', start: '09:12', time: '0:00', args: 'nginx: master process /usr/sbin/nginx' },
-  { user: 'www-data', pid: 846, ppid: 845, cpu: '0.0', mem: '0.0', vsz: 55856, rss: 5560, tty: '?', stat: 'S', start: '09:12', time: '0:00', args: 'nginx: worker process' },
-  { user: 'alice', pid: 2140, ppid: 2139, cpu: '0.0', mem: '0.0', vsz: 10052, rss: 5248, tty: 'pts/0', stat: 'Ss', start: '09:30', time: '0:00', args: '-bash' },
-  { user: 'alice', pid: 2301, ppid: 2140, cpu: '12.5', mem: '1.1', vsz: 1412880, rss: 192312, tty: 'pts/0', stat: 'Sl', start: '09:41', time: '1:14', args: 'python3 app.py' },
+  { user: 'root', pid: 1, ppid: 0, cpu: '0.0', mem: '0.1', vsz: 167744, rss: 11904, tty: '?', stat: 'Ss', start: '09:12', time: '0:02', args: '/sbin/init', comm: 'init' },
+  { user: 'root', pid: 845, ppid: 1, cpu: '0.0', mem: '0.0', vsz: 55220, rss: 1640, tty: '?', stat: 'Ss', start: '09:12', time: '0:00', args: 'nginx: master process /usr/sbin/nginx', comm: 'nginx' },
+  { user: 'www-data', pid: 846, ppid: 845, cpu: '0.0', mem: '0.0', vsz: 55856, rss: 5560, tty: '?', stat: 'S', start: '09:12', time: '0:00', args: 'nginx: worker process', comm: 'nginx' },
+  { user: 'alice', pid: 2140, ppid: 2139, cpu: '0.0', mem: '0.0', vsz: 10052, rss: 5248, tty: 'pts/0', stat: 'Ss', start: '09:30', time: '0:00', args: '-bash', comm: 'bash' },
+  { user: 'alice', pid: 2301, ppid: 2140, cpu: '12.5', mem: '1.1', vsz: 1412880, rss: 192312, tty: 'pts/0', stat: 'Sl', start: '09:41', time: '1:14', args: 'python3 app.py', comm: 'python3' },
 ];
 
 /** The PID of the first command of the pipeline; the shell starts each after the one before it. */
@@ -53,7 +53,7 @@ const FIRST_PID = 2388;
 function processes(procs: (string[] | undefined)[], self: number): Proc[] {
   const own = procs.flatMap((argv, i): Proc[] => (argv ? [{
     user: 'alice', pid: FIRST_PID + i, ppid: 2140, cpu: '0.0', mem: '0.0', vsz: 6480 + 1120 * i, rss: 2304 + 640 * i,
-    tty: 'pts/0', stat: i === self ? 'R+' : 'S+', start: '09:45', time: '0:00', args: argv.join(' '),
+    tty: 'pts/0', stat: i === self ? 'R+' : 'S+', start: '09:45', time: '0:00', args: argv.join(' '), comm: comm(argv[0]),
   }] : []));
   return [...SYSTEM, ...own];
 }
@@ -64,8 +64,19 @@ const longTime = (t: string): string => {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
-/** The name of a process's program, as ps's `comm` shows it: the base name of its first word, 15 characters at most. */
-const comm = (args: string): string => args.split(' ')[0].replace(/^-/, '').split('/').pop()!.slice(0, 15);
+/**
+ * The name of a program, as ps's `comm` shows it: the base name of the file run, cut to 15 bytes by the kernel; procps
+ * shows each byte of a character cut in two as `?`.
+ */
+function comm(file: string): string {
+  const base = file.slice(file.lastIndexOf('/') + 1);
+  const bytes = new TextEncoder().encode(base);
+  if (bytes.length <= 15) return base;
+  // (`end`: the first byte of the character the cut falls in, or the cut.)
+  let end = 15;
+  while ((bytes[end] & 0xc0) === 0x80) end--;
+  return new TextDecoder().decode(bytes.subarray(0, end)) + '?'.repeat(15 - end);
+}
 
 /** One entry of the made-up directory: its mode, links, owner, size, date and name. */
 interface Entry { mode: string; links: number; owner: string; size: number; date: string; name: string }
@@ -118,9 +129,9 @@ const ENVIRONMENT = [
 /**
  * Made-up lines of what a command prints in the layout `kind`. `procs`: the argument lists of the commands of the
  * pipeline (undefined where not known), `self` the index of this one: ps lists them too, since they run at the same
- * time; env ends with `_`, the path bash ran it by.
+ * time; env ends with `_`, the path bash ran it by: `path` when it was not found in PATH (`/bin/env`, `hash -p`).
  */
-export function layoutSample(kind: Layout, procs: (string[] | undefined)[], self: number): string[] {
+export function layoutSample(kind: Layout, procs: (string[] | undefined)[], self: number, path?: string): string[] {
   switch (kind) {
     case 'ps-bsd-u': {
       const cols: Column[] = [{ width: 8 }, { width: 7, right: true }, { width: 4, right: true }, { width: 4, right: true }, { width: 6, right: true }, { width: 5, right: true }, { width: 8 }, { width: 4 }, { width: 5 }, { width: 6, right: true }, { width: 0 }];
@@ -135,7 +146,7 @@ export function layoutSample(kind: Layout, procs: (string[] | undefined)[], self
     case 'ps': {
       // (The processes of this terminal, by the name of their program.)
       const cols: Column[] = [{ width: 7, right: true }, { width: 8 }, { width: 8, right: true }, { width: 0 }];
-      const rows = processes(procs, self).filter((p) => p.tty === 'pts/0').map((p) => [String(p.pid), p.tty, longTime(p.time), comm(p.args)]);
+      const rows = processes(procs, self).filter((p) => p.tty === 'pts/0').map((p) => [String(p.pid), p.tty, longTime(p.time), p.comm]);
       return table(cols, [['PID', 'TTY', 'TIME', 'CMD'], ...rows]);
     }
     case 'ls': return DIRECTORY.filter((e) => !e.name.startsWith('.')).map((e) => e.name);
@@ -154,7 +165,7 @@ export function layoutSample(kind: Layout, procs: (string[] | undefined)[], self
       const cols: Column[] = [{ width: 8 }, { width: 12 }, { width: 0 }];
       return table(cols, [['alice', 'pts/0', '2026-03-03 09:30 (192.168.1.20)'], ['bob', 'pts/1', '2026-03-03 10:02 (192.168.1.31)'], ['alice', 'tty1', '2026-03-03 08:12']]);
     }
-    case 'env': return [...ENVIRONMENT, `_=/usr/bin/${procs[self]![0].split('/').pop()}`];
+    case 'env': return [...ENVIRONMENT, `_=${path ?? `/usr/bin/${procs[self]![0]}`}`];
   }
 }
 

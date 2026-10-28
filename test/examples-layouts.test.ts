@@ -175,6 +175,49 @@ describe('pipelines that start with a made-up output agree with the real tools s
     assert.deepStrictEqual(row('ps aux | head -n 20 | cut -d \\: -f1'), ['head -n 20', 'cut -d : -f1']);
     assert.deepStrictEqual(row("ps aux | head -n 20 | cut -d $'\\t' -f1"), ['ps aux', 'head -n 20']);
   });
+  /** What the real ps shows of the command line of `cmd`, run by bash in the background (`locale`: of both). */
+  const realArgs = (cmd: string, locale = 'C') => lines(run('bash', ['-c', `${cmd} & sleep 0.2; ps -o args= -p $!; wait`], { env: { ...C, LC_ALL: locale }, check: true }).stdout)[0];
+  it('shows a stage by its words after quote removal, its name too, as ps shows them', function () {
+    this.timeout(30000);
+    for (const lang of ['en', 'ja'] as const) {
+      const rows = (line: string) => pipelineExampleOf(line, lang)!.sections[0].lines.slice(-2).map((r) => r.replace(/^.* 0:00 /, ''));
+      for (const head of ['\\head', "'head'", 'h\\ead', '"head"']) {
+        const line = `ps aux | ${head} -n 20 | cut -d : -f1`;
+        assert.deepStrictEqual(rows(line), ['head -n 20', 'cut -d : -f1'], `${line} (${lang})`);
+        // (head waits on its input.)
+        if (lang === 'en') assert.strictEqual(realArgs(`${head} -n 20 < <(sleep 0.5)`), 'head -n 20', head);
+      }
+      // (`ps` alone shows the name of the program, `comm`.)
+      assert.deepStrictEqual(pipelineExampleOf('ps | \\head -n 20', lang)!.sections[0].lines.at(-1)!.replace(/^.* /, ''), 'head');
+    }
+  });
+  it('makes up no row for a word with a character ps shows escaped (C1 controls too)', function () {
+    this.timeout(30000);
+    // (procps shows each byte of U+0085 as `?`, and one `?` for U+2028.)
+    assert.strictEqual(realArgs("bash -c 'sleep 0.5; :' x $'\\u0085' $'\\u2028'", 'C.UTF-8'), 'bash -c sleep 0.5; : x ?? ?');
+    for (const lang of ['en', 'ja'] as const) {
+      for (const d of ["$'\\u0085'", "$'\\u009b'", "$'\\u2028'", "$'\\x7f'"]) {
+        const line = `ps aux | head -n 20 | cut -d ${d} -f1`;
+        const lines = explain(line, 0, lang).examples.flatMap((e) => e.sections.flatMap((sec) => sec.lines)).filter((r) => / 0:00 /.test(r));
+        assert.ok(lines.length && lines.every((r) => !/cut/.test(r)), `${line} (${lang})`);
+      }
+    }
+  });
+  it('cuts the name `ps` shows to 15 bytes, as the kernel does, and shows a character cut in two as procps does', function () {
+    this.timeout(30000);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-comm-'));
+    try {
+      for (const name of ['aああああああ', 'ああああああ', 'abcdefghijklmnopq', 'sleepy']) {
+        const file = path.join(dir, name);
+        fs.symlinkSync(spawnSync('bash', ['-c', 'command -v sleep']).stdout.toString().trim(), file);
+        const theirs = lines(run('bash', ['-c', `"$1" 0.5 & sleep 0.2; ps -o comm= -p $!; wait`, 'bash', file], { env: { ...C, LC_ALL: 'C.UTF-8' }, check: true }).stdout)[0];
+        const ours = layoutSample('ps', [['ps'], [file, '0.5']], 0).at(-1)!;
+        assert.strictEqual(ours.replace(/^.* \d\d:\d\d:\d\d /, ''), theirs, name);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+    }
+  });
   it('makes up no output for other options or operands, and says that the input is not known', () => {
     for (const line of ['ps aux --sort=-%mem | head', 'ls -l /etc | wc -l', 'ls -lt | head -n 3', 'df | wc -l', 'ls -l --nope | wc -l', 'ls -lj | wc -l', 'ls -lZ | wc -l', 'mytool | wc -l', 'ps -ef -- | head', 'ps aux -- | head']) {
       const ex = explain(line).examples;
@@ -194,6 +237,23 @@ describe('pipelines that start with a made-up output agree with the real tools s
     // (As with another wrapper: grep's example of its own; `env --` alone prints the environment.)
     assert.deepStrictEqual(explain('env grep x "$f" | wc -l').examples.map((e) => e.kind), explain('nice grep x "$f" | wc -l').examples.map((e) => e.kind));
     assert.strictEqual(pipelineExampleOf('env -- | grep PATH')?.sections[0].label, 'Output of `env --` (sample)');
+    // (A name written otherwise runs the same program, which prints the environment: `_` is the path bash ran it by.)
+    for (const line of ['\\env | cat', '"env" -- | cat', 'e\\nv | cat', "'printenv' | cat", '/bin/env | cat', 'hash -p /bin/env env; env | cat', 'hash -p /bin/env env; \\env | cat']) {
+      const theirs = lines(run('bash', ['-c', line.replace(/\| cat$/, "| grep '^_='")], { env: C, check: true }).stdout);
+      for (const lang of ['en', 'ja'] as const) {
+        const ex = explain(line, 0, lang).examples.find((e) => e.kind === 'pipeline');
+        assert.deepStrictEqual([ex?.sections[0].lines.at(-1)], theirs, `${line} (${lang})`);
+      }
+    }
+    assert.strictEqual(pipelineExampleOf('"env" -- | grep PATH')?.sections[0].label, 'Output of `"env" --` (sample)');
+    assert.deepStrictEqual(pipelineExampleOf('\\ls -l | cat')?.sections[0].lines, sample('ls-long', ['ls', '-l']));
+    // A function of that name runs instead, quoted or not (a quoted name skips only aliases): nothing is made up.
+    for (const line of ['env() { echo hi; }; env | cat', 'env() { echo hi; }; \\env | cat', 'env() { echo hi; }; "env" -- | cat']) {
+      for (const lang of ['en', 'ja'] as const) {
+        const ex = explain(line, 0, lang).examples;
+        assert.ok(!ex.some((e) => e.sections.some((s) => s.lines.some((l) => l.startsWith('_=')))), `${line} (${lang})`);
+      }
+    }
     // (`--` written otherwise is `--` to env too, and to the `_` line: these once threw.)
     for (const line of ['env \\-- | cat', 'env -\\- | cat', "env $'--' | cat", 'env "--" | cat', 'printenv \\-- | cat', "printenv $'--' | cat"]) {
       for (const lang of ['en', 'ja'] as const) {

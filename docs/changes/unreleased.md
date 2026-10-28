@@ -468,7 +468,7 @@ They are explained only where the file can have the library: a `load` or `bats_l
 
 ### The input of each stage of a pipeline
 
-A pipeline's worked example shows what each command reads. When the first command prints a table of a known layout, the example starts from made-up lines in that layout (procps-ng 4, GNU coreutils 9), then shows what each later command makes of them. ps lists the commands of the pipeline too, since they run with it: `ps aux | grep nginx` keeps grep's own line.
+A pipeline's worked example shows what each command reads. When the first command prints a table of a known layout, the example starts from made-up lines in that layout (procps-ng 4, GNU coreutils 9), then shows what each later command makes of them. ps lists the commands of the pipeline too, since they run with it: `ps aux | grep nginx` keeps grep's own line. It shows their words after quote removal, the name too (`\head -n 3` as `head -n 3`); a command with a character ps shows as `?` (a tab, `$'\u0085'`) has no row. A quoted name runs the same program: `\env | cat` and `"env" -- | cat` get the made-up environment, unless the script defines a function `env`, and `_` is the path bash ran it by (`_=/bin/env` for `/bin/env`). Any pipeline reads a quoted name so: `printf 'b\na\n' | \sort | 'head' -n 1` shows `a`; before, a pipeline with a quoted name had no worked example.
 
 | Written | Shown now | Shown before |
 | --- | --- | --- |

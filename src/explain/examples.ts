@@ -27,8 +27,10 @@ import { type Text, tx } from '../i18n';
 import { shorten } from '../label';
 import { EMPTY_WORD, fact, shownWord, SPACE_MARK } from '../messages';
 import { braceValues } from '../semantics/brace';
+import { quotedName } from '../semantics/effects';
 import { slotEnvironment } from '../semantics/env';
-import { isPlainWord, literalContent, staticWordValue } from '../staticword';
+import type { NameResolution } from '../semantics/names';
+import { literalContent, staticWordValue } from '../staticword';
 import { assignmentsOnly, field, prefixAssignments, redirectionsOf, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
@@ -292,7 +294,7 @@ const cap = (lines: string[]) => (lines.length > MAX_SHOWN_LINES ? [...lines.sli
  * columns of a table stay lined up (a box wraps its long lines).
  */
 function sampledPipeline(cx: Explainer, n: SyntaxNode, kind: Layout, stages: Stage[], runs: ReadonlySet<Stage>): Example | undefined {
-  const sample = layoutSample(kind, n.namedChildren.map((c) => argvOf(cx, c)), 0);
+  const sample = madeUp(cx, n, kind);
   const rest = stages.slice(1);
   const ex = pipelines.pipelineExample(rest, true, sample);
   if (!ex) return undefined;
@@ -371,19 +373,21 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
       else if ((r.type === 'herestring_redirect' || r.type === 'heredoc_redirect') && i === 0 && (field(r, 'descriptor')?.text ?? '0') === '0') continue;
       else if (!(r.type === 'file_redirect' && field(r, 'descriptor')?.text === '2')) return undefined;
     }
-    const name = field(cmd, 'name');
-    // (An incomplete `echo a |` has a stage with a name of no word.)
-    if (!name || (name.namedChildren.length && !isPlainWord(name.namedChildren[0]))) return undefined;
+    // (By its name after quote removal: `\env` and `"env"` run env.)
+    const named = stageName(cx, cmd);
+    if (!named) return undefined;
+    const { node: name, value, res } = named;
     // A stage that runs a function or an alias of the script is not the program its name suggests (as in commandTail).
-    if (['function', 'alias'].includes(resolve(cx, name.text, name).kind)) return undefined;
+    if (['function', 'alias'].includes(res.kind)) return undefined;
     const args = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect');
-    const spec = specFor(cx, name.text);
-    const stage: Stage = { cmd: name.text.split('/').pop()!, words: exampleWords(cx, args, !!spec?.prints).map((w) => w.value), text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}) };
-    const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell)), { name: name.text, lookup: (x) => specFor(cx, x) });
+    const spec = specFor(cx, value);
+    const stage: Stage = { cmd: value.split('/').pop()!, words: exampleWords(cx, args, !!spec?.prints).map((w) => w.value), text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}) };
+    const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell)), { name: value, lookup: (x) => specFor(cx, x) });
     const source = inputSource(cx, cmd, parse, args, spec);
     // A stage that writes its output to a file (`sort -o f`) hands nothing on.
     const runs = !!spec?.operands?.some((alt) => alt.pattern.some((o) => o.command));
-    const layout = i === 0 ? layoutOf(spec, parse) : undefined;
+    // (The layout of a program: what it prints.)
+    const layout = i === 0 && res.kind === 'file' ? layoutOf(spec, parse) : undefined;
     return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source, runs, ...(layout ? { layout } : {}) };
   })();
   stages.set(cmd, read);
@@ -443,7 +447,7 @@ function pipedLines(cx: Explainer, n: SyntaxNode, index: number): Piped {
   const p = pipelineStages(cx, n, index);
   if (!p) return { by };
   if (p.layout && !p.files.slice(1).some(Boolean)) {
-    const lines = pipedOutput(p.stages.slice(1), layoutSample(p.layout, n.namedChildren.map((c) => argvOf(cx, c)), 0));
+    const lines = pipedOutput(p.stages.slice(1), madeUp(cx, n, p.layout));
     return lines ? { by, lines, sample: true } : { by };
   }
   if (p.readsFile || p.files.some(Boolean)) {
@@ -457,16 +461,48 @@ function pipedLines(cx: Explainer, n: SyntaxNode, index: number): Piped {
 }
 
 /**
- * The words a stage of a pipeline runs as a program, as ps shows its command line (`awk {print $2}`), after quote
- * removal as the interpreter reads them (`env \--` runs `env --`); undefined when they are not all known, or the stage
- * is not a program (a builtin, a function, a compound command). A word with a control character is not known either:
- * ps shows it escaped (`$'a\tb'` as `a?b`), and a newline would break the row.
+ * The name of the simple command `cmd` after quote removal (`\env`, `"env"` and `e\nv` are `env`), and what it runs,
+ * looked up as bash does (a quoted name is no alias, but may be a function or a builtin); undefined when it is not
+ * known (`$cmd`), or empty, or the stage has no name word (an incomplete `echo a |`).
  */
-function argvOf(cx: Explainer, cmd: SyntaxNode): string[] | undefined {
-  const name = cmd.type === 'command' ? field(cmd, 'name') : undefined;
-  if (!name || resolve(cx, name.text, name).kind !== 'file') return undefined;
+function stageName(cx: Explainer, cmd: SyntaxNode): { node: SyntaxNode; value: string; res: NameResolution } | undefined {
+  const node = cmd.type === 'command' ? field(cmd, 'name') : undefined;
+  const word = node?.namedChildren[0];
+  const value = word && staticWordValue(word, false, cx.state.shell);
+  if (!value) return undefined;
+  return { node: node!, value, res: resolve(cx, value, node!, { quoted: quotedName(word, value) }) };
+}
+
+/**
+ * Characters ps may not show as they are: controls (C0, DEL and C1: procps prints each of their bytes as `?`,
+ * `x$'\u0085'y` as `x??y`), unassigned code points and the line and paragraph separators (one `?`), and format and
+ * private-use characters, which it shows or not by the C library's tables. A row with one is not made up.
+ */
+const NOT_SHOWN = /[\p{C}\p{Zl}\p{Zp}]/u;
+
+/**
+ * The words a stage of a pipeline runs as a program, as ps shows its command line (`awk {print $2}`), after quote
+ * removal as the interpreter reads them (`env \--` runs `env --`, `\head` runs `head`); undefined when they are not all
+ * known, or the stage is not a program (a builtin, a function, a compound command). A word with a character ps
+ * does not show as it is (`NOT_SHOWN`) is not known either: ps shows it escaped (`$'a\tb'` as `a?b`), and a newline
+ * would break the row. `path`: the path bash runs it by, when it does not find it in PATH (`/bin/env`, `hash -p`).
+ */
+function argvOf(cx: Explainer, cmd: SyntaxNode): { argv: string[]; path?: string } | undefined {
+  const named = stageName(cx, cmd);
+  if (named?.res.kind !== 'file') return undefined;
+  const { node: name, value } = named;
+  const res = named.res;
   const words = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect').map((a) => staticWordValue(a, false, cx.state.shell));
-  return words.every((w) => w !== undefined && !/[\x00-\x1f\x7f]/.test(w)) ? [name.text, ...words as string[]] : undefined;
+  const argv = [value, ...words];
+  if (!argv.every((w): w is string => w !== undefined && !NOT_SHOWN.test(w))) return undefined;
+  const path = res.path === 'given' ? value : res.path === 'hashed' ? res.hashed!.value : undefined;
+  return { argv, ...(path ? { path } : {}) };
+}
+
+/** Made-up lines of what the first stage of pipeline `n` prints in the layout `kind`, with the stages run as ps sees them. */
+function madeUp(cx: Explainer, n: SyntaxNode, kind: Layout): string[] {
+  const runs = n.namedChildren.map((c) => argvOf(cx, c));
+  return layoutSample(kind, runs.map((r) => r?.argv), 0, runs[0]?.path);
 }
 
 /** A note when the command reads files it names, so not the standard input the line gives it (`jq . a.json < b.json`). */

@@ -221,6 +221,17 @@ describe('the pipeline example of a line agrees with the tools', () => {
     assert.ok(example("printf 'a\\n-v\\n' | grep -e -v"));
     assert.ok(example("printf 'a\\n-v\\n' | grep -e -v -"));
   });
+  it('runs a stage whose name is quoted as the command it names, which bash runs (a function of the name runs instead)', () => {
+    for (const lang of ['en', 'ja'] as const) {
+      const whole = (line: string) => new Analyzer(lang).explainLine(parser.parse(line), 0).examples.find((x) => x.kind === 'pipeline');
+      for (const line of ["printf 'b\\na\\nc\\n' | \\sort | 'head' -n 2", 'echo hi | "tr" a-z A-Z', '\\echo hi | t\\r a-z A-Z']) {
+        const real = lines(run('bash', ['-c', line], { env: { ...process.env, LC_ALL: 'C' } }).stdout.toString());
+        assert.deepStrictEqual(whole(line)?.sections.at(-1)?.lines, real, `${line} (${lang})`);
+      }
+      // (`\\sort` skips an alias, not a function: this one passes the lines on unsorted.)
+      assert.strictEqual(whole("sort() { cat; }; printf 'b\\na\\n' | \\sort"), undefined, lang);
+    }
+  });
 });
 
 describe('pipeline examples of long pipelines', () => {
