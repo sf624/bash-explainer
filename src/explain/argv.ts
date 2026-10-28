@@ -13,7 +13,7 @@ import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
 import { argWordFor, countOf } from '../argv/words';
 import { builtins, SHELL_OPTION_TABLES } from '../dict/builtins';
 import { OPTION_SECTIONS } from '../manual';
-import { describeFind, type FindNode, parseFind } from '../embedded/find';
+import { describeFind, findWords, type FindNode, parseFind } from '../embedded/find';
 import { globIntro, hasGlob } from '../embedded/glob';
 import type { EmbeddedLang } from '../embedded/types';
 import { braceTexts } from '../semantics/brace';
@@ -909,7 +909,7 @@ function positional(cx: Explainer, a: SyntaxNode, desc: string | undefined, lang
  * of each primary inside. When it cannot be parsed, its words are read as options of find.
  */
 function findExpression(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec): Token[] {
-  const words = nodes.map((a) => staticWordValue(a) ?? a.text);
+  const words = findWords(nodes);
   const lookup = (name: string) => specFor(cx, name);
   // find refuses all its arguments when one of its actions is wrong (`-exec f {} ;`): none of them runs. (Its words as find
   // gets them, where the model knows them: `x=';'; find . -exec echo {} $x` ends at `$x`.)

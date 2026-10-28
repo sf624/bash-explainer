@@ -64,6 +64,11 @@ describe('an unquoted variable as a path follows the options in effect', () => {
     assert.strictEqual(asPath('shopt -s expand_aliases\nalias del=rm\ndel $a', 2), true);
     assert.strictEqual(asPath('shopt -s expand_aliases\nalias del=echo\ndel $a', 2), false);
     assert.strictEqual(asPath('/bin/rm $a'), true);
+    // A name in quotes or with a backslash runs the same command (and no alias of it): its value is read.
+    assert.strictEqual(bash('f="a b"; \\printf "[%s]" $f; \'printf\' "[%s]" $f'), '[a][b][a][b]');
+    for (const src of ["'rm' -rf $DIR/*", "$'rm' $a", 'r$()m $a', '\\cp $a b', 'sudo \\cp $a b']) assert.strictEqual(asPath(src), true, src);
+    assert.strictEqual(asPath('shopt -s expand_aliases\nalias cp=echo\n\\cp $a b', 2), true);
+    assert.strictEqual(asPath('$cmd $a b'), false);
     // A command another one runs is that command: `command rm $a` and `sudo rm $a` split `$a` before rm gets it.
     assert.strictEqual(bash('f="a b"; command printf "[%s]" $f'), '[a][b]');
     assert.strictEqual(asPath('command rm $a'), true);

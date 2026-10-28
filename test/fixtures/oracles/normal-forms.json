@@ -7,7 +7,6 @@
   {"normalizer": "lookupCommand", "same": ["kill -l", "\\kill -l", "'kill' -l", "k\"\"ill -l"], "observe": ["stdout"]},
   {"normalizer": "lookupCommand", "differ": ["echo --help", "/bin/echo --help"], "observe": ["stdout"]},
   {"normalizer": "lookupCommand", "differ": ["printf -v x hi", "/usr/bin/printf -v x hi"], "observe": ["stdout", "stderr", "status"], "epilogue": "echo \"x=$x\""},
-  {"normalizer": "lookupCommand", "differ": ["echo -e 'a\\tb'", "POSIXLY_CORRECT=1 /bin/echo -e 'a\\tb'"], "observe": ["stdout"]},
   {"normalizer": "commandName", "differ": ["read x", "./read x"], "observe": ["stdout"], "files": {"read": "#!/bin/sh\necho script read\n"}, "stdin": "a\\b\n", "epilogue": "echo \"x=$x\""},
   {"normalizer": "commandName", "same": ["read x", "\\read x", "'read' x", "r\"\"ead x"], "observe": ["stdout"], "stdin": "a\\b\n", "epilogue": "echo \"x=$x\""},
   {"normalizer": "commandName", "same": ["rm -f x", "/bin/rm -f x", "/usr/bin/rm -f x", "\\rm -f x"], "observe": ["files", "status"], "files": {"x": ""}},

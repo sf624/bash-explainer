@@ -2,7 +2,7 @@
 // a command whose name is an alias, which runs the alias's text with the rest of the command, read again. The trees of
 // those texts are the model's (`Scripts.expansion`): the trust scan reads the same ones (src/semantics/trust.ts).
 import { fields, type SyntaxNode } from '../../syntax/tree';
-import { aliasName, aliasOf, aliasTexts, commandName } from '../effects';
+import { plainName, aliasOf, aliasTexts, commandName } from '../effects';
 import { type AliasState, merge, option, type ShellState, withStatus } from '../shellstate';
 import type { Walker } from './walker';
 
@@ -47,7 +47,7 @@ export class WalkAliases {
    * by its text too (6.6: `alias s='sudo '`, `s ll`), when it surely is one. Undefined otherwise.
    */
   expand(n: SyntaxNode, st: ShellState): ShellState | undefined {
-    const name = aliasName(n);
+    const name = plainName(n);
     const from = this.w.expand;
     const alias = name !== undefined && !this.expanding.has(name) ? from.aliases.get(name) : undefined;
     const expands = !this.w.bash ? 'on' : option(from, 'shopt', 'expand_aliases');

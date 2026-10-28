@@ -60,10 +60,13 @@ const present = (program: string): boolean => spawnSync('sh', ['-c', 'command -v
 describe('normal forms (oracles.md, 4.2): bash runs them as the table says', function () {
   this.timeout(120000);
   const releases: [string, string][] = [['5.2', PROBE_BASH], ...(hasBash53 ? [['5.3', PROBE_BASH53!] as [string, string]] : [])];
-  const runnable = rows.map((row, i) => ({ row, i })).filter(({ row }) => (row.requires ?? []).every(present));
+  // (The rows whose programs are missing are skipped, and the title says so: a count that grows shows what CI misses.)
+  const missing = [...new Set(rows.flatMap((row) => row.requires ?? []))].filter((p) => !present(p));
+  const runnable = rows.map((row, i) => ({ row, i })).filter(({ row }) => !(row.requires ?? []).some((p) => missing.includes(p)));
+  const skipped = rows.length - runnable.length;
 
   for (const [release, program] of releases) {
-    it(`in bash ${release}: the forms of \`same\` run the same, those of \`differ\` each otherwise`, async function () {
+    it(`in bash ${release}: the forms of \`same\` run the same, those of \`differ\` each otherwise${skipped ? ` (${skipped} rows skipped, without ${missing.join(', ')})` : ''}`, async function () {
       if (probeSkipReason) this.skip();
       const jobs = runnable.flatMap(({ row }) => formsOf(row).map((f) => jobOf(row, f)));
       const ran = await runJobs(program, jobs);

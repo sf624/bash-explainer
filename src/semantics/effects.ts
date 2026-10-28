@@ -52,8 +52,11 @@ export function commandName(c: SyntaxNode): string | undefined {
   return name ?? undefined;
 }
 
-/** The name of the simple command `c` when bash may read it as an alias: a plain word, with no quote or expansion. */
-export function aliasName(c: SyntaxNode): string | undefined {
+/**
+ * The name of the simple command `c` as written, when it is a plain word with no quote or expansion: what bash may
+ * read as an alias or a reserved word, and what the syntax checks of src/pitfalls.ts read (`[-f`, `{echo`, `x = 1`).
+ */
+export function plainName(c: SyntaxNode): string | undefined {
   const word = field(c, 'name')!.namedChildren[0];
   const name = commandName(c);
   return word.type === 'word' && word.text === name ? name : undefined;
