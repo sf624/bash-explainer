@@ -755,8 +755,8 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
       // (Nor a plain value the script surely set to some text: `DIR=/opt/app; rm -rf $DIR/*`.)
       if (t.plain && neverEmpty(model, v, e)) continue;
       // (Nor after a check that stops when it is empty, as the note says to write it: `[ -n "$DIR" ] || exit 1`.)
-      const stmt = n.parent!.type === 'redirected_statement' ? n.parent! : n;
-      if (guardedBefore(stmt, t.check, [`"${e.text}"`, ...(t.plain ? [`"$${v}"`, `"\${${v}}"`] : [])], v)) continue;
+      // (A command holds its redirections: `rm -rf $D/x 2>/dev/null` is one statement.)
+      if (guardedBefore(n, t.check, [`"${e.text}"`, ...(t.plain ? [`"$${v}"`, `"\${${v}}"`] : [])], v)) continue;
       const safe = t.plain && quoteExpansions(w, new Map([[e, `\${${v}:?}`]]));
       if (safe) {
         const fix = replaceNode(w, safe);
@@ -766,7 +766,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         // `${DIR%/}` has no form with `:?` (and is empty for DIR=/ too); `${x:-*.txt}` has no quoted form.
         const what = t.plain ? v : e.text;
         if (t.check) {
-          const fix = standsAlone(stmt) ? statementBefore(stmt, t.check) : { code: t.check, edits: [] };
+          const fix = standsAlone(n) ? statementBefore(n, t.check) : { code: t.check, edits: [] };
           add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${fix.code}\` と書くと、空のときは止まります`,
             `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${fix.code}\` before it to stop when it is empty`, [fix]);
         } else {
