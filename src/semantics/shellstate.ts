@@ -330,6 +330,28 @@ export function fromEnvironment(name: string, st: ShellState, what: 'value' | 'e
   return v.attrs.x?.environment ? (provides(name) ? 'usually' : v.attrs.x.environment) : 'no';
 }
 
+/**
+ * The value of `name` in the environment of a program the shell starts in `st`, when the shell got `environment`
+ * (name → value) from its own: undefined when the program gets none (not exported, `export -n`, `unset`, an array,
+ * or exported with no value: `declare -x OLDPWD`), null when that is not known (exported on some paths only, a value
+ * not known here, a nameref, which exports the variable it names). A variable the script set without exporting it is
+ * exported when the shell got it from its environment (`PATH=/bin`: `fromEnvironment`); `set -a` exports it.
+ */
+export function exportedValue(st: ShellState, name: string, environment: ReadonlyMap<string, string>): string | undefined | null {
+  const v = st.variables.get(name);
+  if (!v) return environment.get(name);
+  const array = ['a', 'A'].map((l) => v.attrs[l]?.state ?? 'off');
+  if (array.includes('on')) return undefined;
+  if (array.includes('unknown') || (v.attrs.n?.state ?? 'off') !== 'off') return null;
+  const x = v.attrs.x?.state ?? 'off';
+  if (x === 'off') return undefined;
+  if (x === 'unknown') {
+    if (fromEnvironment(name, st, 'export') === 'no') return null;
+    if (!environment.has(name)) return undefined;
+  }
+  return v.set === 'off' ? undefined : v.set === 'on' && v.value !== undefined ? v.value : null;
+}
+
 /** The state of attribute `letter` of variable `name`. */
 export function attribute(st: ShellState, name: string, letter: string): Tri {
   return st.variables.get(name)?.attrs[letter]?.state ?? 'off';

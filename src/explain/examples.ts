@@ -7,7 +7,7 @@
 import type { Example, ExampleSection } from '../analyzer-types';
 import type { ArgvParse } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
-import type { CommandSpec, Layout } from '../argv/spec';
+import type { CommandSpec, Layout, LayoutAlt } from '../argv/spec';
 import { argWordFor } from '../argv/words';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { visible } from '../ctlchars';
@@ -21,7 +21,7 @@ import { type JsRegex, regexExamples } from '../examples/regex';
 import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
 import { globMatches, type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
 import * as sources from '../examples/source';
-import { layoutOf, layoutSample, type Run } from '../examples/layouts';
+import { ENVIRONMENT, layoutOf, layoutSample, type Run } from '../examples/layouts';
 import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines, withSystemFiles, writesElsewhere } from '../examples/source';
 import { type Text, tx } from '../i18n';
 import { shorten } from '../label';
@@ -30,6 +30,7 @@ import { braceValues } from '../semantics/brace';
 import { quotedName } from '../semantics/effects';
 import { slotEnvironment } from '../semantics/env';
 import type { NameResolution } from '../semantics/names';
+import { exportedValue } from '../semantics/state';
 import { literalContent, staticWordValue } from '../staticword';
 import { assignmentsOnly, field, prefixAssignments, redirectionsOf, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
@@ -137,7 +138,10 @@ export function testExample(cx: Explainer, n: SyntaxNode, bracket: TestShape | u
  * A stage of a pipeline example; `runs`: its operands are a command it runs (xargs), so its step shows the commands;
  * `prints`: the layout of what it prints, when made-up lines of it can stand for its output (`ps aux`).
  */
-type PipelineStage = { stage: Stage; file: boolean; readsFile: boolean; source: InputSource; runs: boolean; layout?: Layout };
+type PipelineStage = { stage: Stage; file: boolean; readsFile: boolean; source: InputSource; runs: boolean; layout?: MadeUp };
+
+/** A layout the examples make up for what the first stage of a pipeline prints; env's, with the environment it prints. */
+type MadeUp = { kind: Layout; environment?: ReadonlyMap<string, string> };
 
 /** The stages of pipelines read so far on the line (`pipelineStage`). */
 const PIPELINE_STAGES = memoKey<PipelineStage | undefined>('pipeline stages');
@@ -293,8 +297,8 @@ const cap = (lines: string[]) => (lines.length > MAX_SHOWN_LINES ? [...lines.sli
  * made-up lines, and what each stage after it makes of them. They are shown as they are, not in a box to edit: the
  * columns of a table stay lined up (a box wraps its long lines).
  */
-function sampledPipeline(cx: Explainer, n: SyntaxNode, kind: Layout, stages: Stage[], runs: ReadonlySet<Stage>): Example | undefined {
-  const sample = madeUp(cx, n, kind);
+function sampledPipeline(cx: Explainer, n: SyntaxNode, layout: MadeUp, stages: Stage[], runs: ReadonlySet<Stage>): Example | undefined {
+  const sample = madeUp(cx, n, layout);
   const rest = stages.slice(1);
   const ex = pipelines.pipelineExample(rest, true, sample);
   if (!ex) return undefined;
@@ -343,7 +347,7 @@ function wholePipeline(cx: Explainer, n: SyntaxNode, ex: pipelines.PipelineExamp
  * The stages of pipeline `n` (the first `count`), as the pipeline examples run them: whether each names a file to
  * read, whether the first reads one (`< f`), and what the first reads. Undefined for a stage they cannot follow.
  */
-function pipelineStages(cx: Explainer, n: SyntaxNode, count = n.namedChildren.length): { stages: Stage[]; files: boolean[]; readsFile: boolean; src: InputSource; runs: ReadonlySet<Stage>; layout?: Layout } | undefined {
+function pipelineStages(cx: Explainer, n: SyntaxNode, count = n.namedChildren.length): { stages: Stage[]; files: boolean[]; readsFile: boolean; src: InputSource; runs: ReadonlySet<Stage>; layout?: MadeUp } | undefined {
   const read: PipelineStage[] = [];
   for (const [i, cmd] of n.namedChildren.slice(0, count).entries()) {
     const st = pipelineStage(cx, n, cmd, i);
@@ -388,10 +392,9 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     const source = inputSource(cx, cmd, parse, args, spec);
     // A stage that writes its output to a file (`sort -o f`) hands nothing on.
     const runs = !!spec?.operands?.some((alt) => alt.pattern.some((o) => o.command));
-    // (The layout of a program: what it prints. An assignment before env is in what it prints, and `PATH=` changes
-    // the path bash runs it by: the made-up environment would not be it.)
-    const kind = i === 0 && res.kind === 'file' ? layoutOf(spec, parse) : undefined;
-    const layout = kind === 'env' && prefixAssignments(cmd).length ? undefined : kind;
+    // (The layout of a program: what it prints.)
+    const alt = i === 0 && res.kind === 'file' ? layoutOf(spec, parse) : undefined;
+    const layout = alt && madeUpLayout(cx, cmd, alt);
     return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source, runs, ...(layout ? { layout } : {}) };
   })();
   stages.set(cmd, read);
@@ -504,9 +507,70 @@ function argvOf(cx: Explainer, cmd: SyntaxNode): Run | undefined {
   return { argv, ...(path ? { path } : {}) };
 }
 
-/** Made-up lines of what the first stage of pipeline `n` prints in the layout `kind`, with the stages run as ps sees them. */
-function madeUp(cx: Explainer, n: SyntaxNode, kind: Layout): string[] {
-  return layoutSample(kind, n.namedChildren.map((c) => argvOf(cx, c)), 0);
+/** Made-up lines of what the first stage of pipeline `n` prints in `layout`, with the stages run as ps sees them. */
+function madeUp(cx: Explainer, n: SyntaxNode, layout: MadeUp): string[] {
+  const procs = n.namedChildren.map((c) => argvOf(cx, c));
+  // (env's words are all known: options.)
+  if (layout.environment) procs[0] = { ...procs[0]!, environment: layout.environment };
+  return layoutSample(layout.kind, procs, 0);
+}
+
+/**
+ * The layout `alt` of what the first stage `cmd` of a pipeline prints, when the environment it runs in leaves it as
+ * made up (`LayoutAlt.environment`): no variable that changes it has another value, from an assignment before the
+ * command or an export of the script (`TIME_STYLE=long-iso ls -l`, `export PS_FORMAT=pid,comm`), nor one the model
+ * cannot tell. env prints its environment: the made-up one, with what the script exported (`export FOO=bar`).
+ */
+function madeUpLayout(cx: Explainer, cmd: SyntaxNode, alt: LayoutAlt): MadeUp | undefined {
+  const own = prefixAssignments(cmd);
+  if (alt.environment === 'prints') {
+    // (An assignment before env is in what it prints, and `PATH=` changes the path bash runs it by.)
+    const environment = own.length ? undefined : exportedEnvironment(cx, cmd);
+    return environment && { kind: alt.layout, environment };
+  }
+  for (const [name, keeps] of Object.entries(alt.environment)) {
+    const mine = own.filter((a) => field(a, 'name')?.text === name).pop();
+    const value = mine ? assignedText(mine, name) : exportedAt(cx, cmd, name);
+    if (value === null) return undefined;
+    // (One the made-up environment has and the script unset reads as empty: glibc reads an empty `LANG` as none.)
+    const v = value ?? (ENVIRONMENT.has(name) ? '' : undefined);
+    if (v !== undefined && v !== ENVIRONMENT.get(name) && !keeps.includes(v)) return undefined;
+  }
+  return { kind: alt.layout };
+}
+
+/** The value an assignment before a command gives `name`; null when it is not known (`X=$y`, `X+=y`, an array). */
+function assignedText(a: SyntaxNode, name: string): string | null {
+  const v = field(a, 'value');
+  if (a.text.startsWith(`${name}+=`)) return null;
+  return v ? literalContent(v)?.text ?? null : '';
+}
+
+/**
+ * The value of `name` in the environment of the command `cmd` on the made-up system (`exportedValue`), undefined when
+ * it has none; null when the model cannot tell: what it does not follow may export it (`source`, `$cmd`), or `cmd`, in
+ * a function, may run where the script set it otherwise. (What bash sets itself, `COLUMNS`, it does not export.)
+ */
+function exportedAt(cx: Explainer, cmd: SyntaxNode, name: string): string | undefined | null {
+  if (cx.state.blind !== undefined || (!cx.state.settled(cmd) && cx.state.assigned.has(name))) return null;
+  return exportedValue(cx.state.at(cmd).run, name, ENVIRONMENT);
+}
+
+/**
+ * The environment the command `cmd` gets on the made-up system (`ENVIRONMENT`), with what the script exported, unset
+ * or stopped exporting before it; undefined when the model cannot tell, or the script exports a function (env prints
+ * it too, as `BASH_FUNC_f%%=() {…`).
+ */
+function exportedEnvironment(cx: Explainer, cmd: SyntaxNode): ReadonlyMap<string, string> | undefined {
+  const st = cx.state.at(cmd).run;
+  if (!cx.state.settled(cmd) || [...st.functions.values()].some((f) => f.exported !== 'off')) return undefined;
+  const environment = new Map<string, string>();
+  for (const name of new Set([...ENVIRONMENT.keys(), ...st.variables.keys()])) {
+    const value = exportedValue(st, name, ENVIRONMENT);
+    if (value === null) return undefined;
+    if (value !== undefined) environment.set(name, value);
+  }
+  return environment;
 }
 
 /** A note when the command reads files it names, so not the standard input the line gives it (`jq . a.json < b.json`). */

@@ -8,7 +8,8 @@ import * as os from 'os';
 import * as path from 'path';
 import type { Example } from '../src/analyzer';
 import type { Layout } from '../src/argv/spec';
-import { layoutSample } from '../src/examples/layouts';
+import { commands } from '../src/dict/commands';
+import { ENVIRONMENT, layoutSample } from '../src/examples/layouts';
 import { explain } from './support/explain';
 import { run } from './support/run';
 
@@ -19,6 +20,35 @@ const real = (cmd: string, args: string[], opts: { cwd?: string } = {}) => lines
 
 /** A made-up output, as the first stage `argv` of a pipeline of one stage prints it. */
 const sample = (kind: Layout, argv: string[]) => layoutSample(kind, [{ argv }], 0);
+
+/**
+ * A directory made as the sample of `ls -la` says (its names, modes, sizes and dates), in a temporary directory of its
+ * own (`..` would otherwise be the shared one, which changes as other tests make files there); remove it with `removeDirectory`.
+ */
+function madeUpDirectory(): string {
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-prints-')), 'home');
+  fs.mkdirSync(dir);
+  const listing = sample('ls-long-all', ['ls', '-la']).slice(1);
+  for (const row of listing) {
+    const [mode, , , , size, , , , name] = words(row);
+    if (name === '.' || name === '..') continue;
+    const file = path.join(dir, name);
+    if (mode.startsWith('d')) fs.mkdirSync(file);
+    else fs.writeFileSync(file, 'x'.repeat(Number(size)));
+    fs.chmodSync(file, parseInt([1, 4, 7].map((i) => [0, 1, 2].reduce((n, k) => n * 2 + (mode[i + k] === '-' ? 0 : 1), 0)).join(''), 8));
+  }
+  // (`src` holds a directory: three links.)
+  fs.mkdirSync(path.join(dir, 'src', 'lib'));
+  for (const row of listing) {
+    const [, , , , , mon, day, time, name] = words(row);
+    if (name === '..') continue;
+    assert.strictEqual(spawnSync('touch', ['-d', `${mon} ${day} 2026 ${time}`, path.join(dir, name)], { env: C }).status, 0);
+  }
+  return dir;
+}
+
+/** Removes a directory `madeUpDirectory` made, with the one that holds it. */
+const removeDirectory = (dir: string) => fs.rmSync(path.dirname(dir), { recursive: true, force: true });
 
 describe('made-up output has the layout of the real tools', () => {
   // A row of `ps aux`, `ps -ef` and `ps`, by the kinds of its fields (START and STIME are a date after a day).
@@ -45,24 +75,8 @@ describe('made-up output has the layout of the real tools', () => {
   }
 
   it('ls: a directory made as the sample says lists so (`-l`, `-lh`, `-la`, and the names alone)', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-prints-'));
+    const dir = madeUpDirectory();
     try {
-      const listing = sample('ls-long-all', ['ls', '-la']).slice(1);
-      for (const row of listing) {
-        const [mode, , , , size, , , , name] = words(row);
-        if (name === '.' || name === '..') continue;
-        const file = path.join(dir, name);
-        if (mode.startsWith('d')) fs.mkdirSync(file);
-        else fs.writeFileSync(file, 'x'.repeat(Number(size)));
-        fs.chmodSync(file, parseInt([1, 4, 7].map((i) => [0, 1, 2].reduce((n, k) => n * 2 + (mode[i + k] === '-' ? 0 : 1), 0)).join(''), 8));
-      }
-      // (`src` holds a directory: three links.)
-      fs.mkdirSync(path.join(dir, 'src', 'lib'));
-      for (const row of listing) {
-        const [, , , , , mon, day, time, name] = words(row);
-        if (name === '..') continue;
-        assert.strictEqual(spawnSync('touch', ['-d', `${mon} ${day} 2026 ${time}`, path.join(dir, name)], { env: C }).status, 0);
-      }
       const style = '--time-style=+%b %e %H:%M';
       // (Dates of more than six months ago would show the year: the style keeps the layout of recent ones.)
       const fields = (row: string, dirSize: boolean) => {
@@ -83,7 +97,7 @@ describe('made-up output has the layout of the real tools', () => {
       // In a pipe, ls prints one name a line, as `-1` does.
       assert.deepStrictEqual(sample('ls', ['ls']), real('ls', ['-1'], { cwd: dir }));
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      removeDirectory(dir);
     }
   });
 
@@ -324,5 +338,158 @@ describe('pipelines that start with a made-up output agree with the real tools s
     assert.strictEqual(label('cat a.json | jq .', 'jq'), '入力: 標準入力（`cat` が渡す `a.json`、中身の例）');
     assert.strictEqual(label('curl -s u | jq .', 'jq'), '入力: 標準入力（`curl -s u` の出力。中身は分からないので仮の行）');
     assert.strictEqual(label("echo '{\"a\":1}' | jq .a", 'jq'), '入力: 標準入力（`echo \'{"a":1}\'` の出力）');
+  });
+});
+
+/** The lines of the made-up output that start the whole-pipeline example of `src` (its last line), if any. */
+const madeUpOf = (src: string, lang: 'en' | 'ja') => {
+  const ex = explain(src, src.split('\n').length - 1, lang).examples.find((e) => e.kind === 'pipeline');
+  return ex && /^Output of|の出力（例）$/.test(ex.sections[0].label) ? ex : undefined;
+};
+
+describe('the made-up environment, with what the script exports', () => {
+  /** What bash prints of `script`, run in the made-up environment. */
+  const bash = (script: string) => lines(run('bash', ['-c', script], { env: Object.fromEntries(ENVIRONMENT) }).stdout);
+  it('env and printenv print what the script exported, unset or stopped exporting, as bash does', () => {
+    for (const script of [
+      'export FOO=bar; env | grep FOO', 'declare -x FOO=bar; printenv | grep FOO', 'FOO=bar; env | grep FOO', 'set -a; FOO=1; env | grep FOO',
+      'export FOO=a; export -n FOO; env | grep FOO', 'export FOO=a; unset FOO; env | grep FOO', 'unset HOME; env | grep HOME',
+      'export -n PATH; env | grep PATH', 'PATH=/usr/bin:/bin; env | grep PATH', 'declare -xu FOO=abc; env | grep FOO',
+      'f() { local -x FOO=1; env | grep FOO; }; f', '(export FOO=1); env | grep FOO', "export FOO=$'a\\nb'; env | grep -x b",
+      'a=(1 2); export a; env | grep ^a=', 'export LANG=C; env | grep LANG',
+    ]) {
+      for (const lang of ['en', 'ja'] as const) {
+        const ex = madeUpOf(script, lang);
+        assert.ok(ex, `${script} (${lang})`);
+        assert.deepStrictEqual(ex.sections.at(-1)!.lines, bash(script), `${script} (${lang})`);
+      }
+    }
+    assert.ok(madeUpOf('export FOO=bar; env | grep FOO', 'en')!.sections[0].lines.includes('FOO=bar'));
+  });
+  it('makes up no environment where the model cannot tell what is exported', () => {
+    for (const script of [
+      'source ./x; env | grep FOO', 'eval "$x"; env | grep FOO', 'if [ "$1" ]; then export FOO=1; fi; env | grep FOO', 'export FOO=$x; env | grep FOO',
+      'export FOO; env | grep FOO', 'f() { :; }; export -f f; env | grep FOO', 'declare -n r=FOO; export r; env | grep FOO', 'cd /tmp; env | grep PWD',
+      'f() { env | grep FOO; }; export FOO=$1', 'if [ "$1" ]; then a=(1); fi; export a; env | grep ^a=',
+    ]) {
+      for (const lang of ['en', 'ja'] as const) {
+        const ex = explain(script, 0, lang).examples;
+        assert.ok(!ex.some((e) => e.sections.some((sec) => sec.lines.some((l) => l.startsWith('_=')))), `${script} (${lang})`);
+      }
+    }
+  });
+});
+
+describe('the variables of the environment that change a layout', function () {
+  this.timeout(60000);
+  // Locales built for the test (`localedef`, with `LOCPATH`): the made-up system's, and one that changes the layouts.
+  const locales = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-locales-'));
+  const built = (name: string) => {
+    const [i, f] = name.split(/\.|@/);
+    spawnSync('localedef', ['-i', i, '-f', f, path.join(locales, name)], { stdio: 'ignore' });
+    return fs.existsSync(path.join(locales, name));
+  };
+  let haveLocales = false;
+  let dir = '';
+  let utmp = '';
+  // A program with a long name (15 bytes, all of it in ps's `comm`), running while ps runs: a narrower line cuts it.
+  const LONG = 'abcdefghijklmno';
+  /** What `script` prints, run by bash with `env` while the program `LONG` runs. */
+  const withLong = (script: string, env: Record<string, string>) => lines(run('bash', ['-c', `"$0" 5 & sleep 0.2; ${script}; kill $!`, path.join(locales, LONG)], { env, cwd: dir }).stdout);
+  /** What tells ps's layouts apart: the header, and whether the line of `LONG` is whole. */
+  const psLayout = (out: string[]) => `${out[0]}\n${out.some((l) => l.includes(LONG))}`;
+  // (The made-up system's locale, `LANG=en_US.UTF-8`; C.UTF-8 prints the same, when it cannot be built.)
+  const base = () => ({ PATH: process.env.PATH!, TZ: 'UTC', LOCPATH: locales, LANG: haveLocales ? 'en_US.UTF-8' : 'C.UTF-8' });
+  before(() => {
+    haveLocales = built('en_US.UTF-8') && built('de_DE.UTF-8');
+    // (A system's locales answer to `en_US.utf8` too.)
+    if (haveLocales) fs.symlinkSync('en_US.UTF-8', path.join(locales, 'en_US.utf8'));
+    fs.symlinkSync(spawnSync('bash', ['-c', 'command -v sleep']).stdout.toString().trim(), path.join(locales, LONG));
+    dir = madeUpDirectory();
+    // A login record of who, as `/var/run/utmp` holds it (glibc's `struct utmp`: a USER_PROCESS on pts/0 from 192.168.1.20).
+    const rec = Buffer.alloc(384);
+    rec.writeInt16LE(7, 0);
+    rec.writeInt32LE(2140, 4);
+    rec.write('pts/0', 8);
+    rec.write('ts/0', 40);
+    rec.write('alice', 44);
+    rec.write('192.168.1.20', 76);
+    rec.writeInt32LE(1772530200, 340);
+    utmp = path.join(dir, 'utmp');
+    fs.writeFileSync(utmp, rec);
+  });
+  after(() => {
+    removeDirectory(dir);
+    fs.rmSync(locales, { recursive: true, force: true });
+  });
+
+  /** What the command of a layout prints with `env` added to the base environment: ls in the made-up directory, the header of ps, df's sizes as their shape. */
+  const output = (layout: Layout, argv: string[], env: Record<string, string>): string => {
+    if (layout.startsWith('ps')) return psLayout(withLong(argv.join(' '), { ...base(), ...env }));
+    const out = lines(run(argv[0], [...argv.slice(1), ...(layout === 'who' ? [utmp] : [])], { env: { ...base(), ...env }, cwd: dir }).stdout);
+    return (layout === 'df-human' ? out.map((l) => l.replace(/\d/g, '9')) : out).join('\n');
+  };
+  /** A value of each variable that changes the layouts that list it (for who, the C locale). */
+  const changing = (layout: Layout, name: string): string | undefined => ({
+    TIME_STYLE: 'long-iso', QUOTING_STYLE: 'c', BLOCK_SIZE: 'K', LS_BLOCK_SIZE: 'K', BLOCKSIZE: 'K', POSIXLY_CORRECT: '1', COLUMNS: '20',
+    PS_FORMAT: 'pid,comm', PS_PERSONALITY: 'bsd', CMD_ENV: 'bsd', I_WANT_A_BROKEN_PS: '1',
+  } as Record<string, string>)[name] ?? (/^(LC_|LANG$)/.test(name) ? (layout === 'who' ? 'C' : haveLocales ? 'de_DE.UTF-8' : undefined) : undefined);
+  // Variables that do not change them: ls in a pipe prints a name a line, and -h ignores the block size.
+  const UNCHANGED: Partial<Record<Layout, string[]>> = {
+    ls: ['COLUMNS', 'TABSIZE', 'LS_COLORS', 'TIME_STYLE', 'BLOCK_SIZE', 'LC_COLLATE'], 'ls-long-human': ['BLOCK_SIZE', 'LS_BLOCK_SIZE', 'BLOCKSIZE', 'POSIXLY_CORRECT'],
+    'df-human': ['BLOCK_SIZE', 'DF_BLOCK_SIZE', 'BLOCKSIZE', 'POSIXLY_CORRECT'], 'ps-bsd-u': ['PS_FORMAT', 'I_WANT_A_BROKEN_PS'], ps: ['POSIXLY_CORRECT', 'UNIX95'],
+  };
+  const ARGV: Record<string, string> = { ps: '', 'ps-bsd-u': 'aux', 'ps-full': '-ef', ls: '', 'ls-long': '-l', 'ls-long-all': '-la', 'ls-long-human': '-lh', 'df-human': '-h', who: '' };
+  it('each one listed in the specs changes the real tool, and the values listed with it do not', () => {
+    for (const [name, spec] of Object.entries(commands)) {
+      for (const alt of spec.layouts ?? []) {
+        if (alt.environment === 'prints' || alt.options.includes('-1')) continue;
+        const argv = [name, ...ARGV[alt.layout].split(' ').filter(Boolean)];
+        const plain = output(alt.layout, argv, {});
+        // (A machine whose file systems have no size with a decimal shows no decimal point to change.)
+        const decimals = alt.layout !== 'df-human' || /9\.9/.test(plain);
+        for (const [v, keeps] of Object.entries(alt.environment)) {
+          const value = changing(alt.layout, v);
+          if (value !== undefined && decimals) assert.notStrictEqual(output(alt.layout, argv, { [v]: value }), plain, `${argv.join(' ')} with ${v}=${value}`);
+          for (const keep of keeps) {
+            if (!haveLocales && keep.startsWith('en_US')) continue;
+            assert.strictEqual(output(alt.layout, argv, { [v]: keep }), plain, `${argv.join(' ')} with ${v}=${keep}`);
+          }
+        }
+        for (const v of UNCHANGED[alt.layout] ?? []) {
+          assert.ok(!(v in alt.environment), `${alt.layout}: ${v}`);
+          assert.strictEqual(output(alt.layout, argv, { [v]: changing(alt.layout, v) ?? 'K' }), plain, `${argv.join(' ')} with ${v}`);
+        }
+      }
+    }
+  });
+  it('drops the sample where an assignment before the command, or an export of the script, changes the layout, as bash runs it', () => {
+    // (Whether bash's output differs from that of the command alone: ls whole, in the made-up directory; ps by `psLayout`.)
+    for (const [script, alone, layout] of [
+      ['TIME_STYLE=long-iso ls -l | cat', 'ls -l', 'ls-long'], ['export TIME_STYLE=long-iso; ls -l | cat', 'ls -l', 'ls-long'],
+      ['TIME_STYLE=long-iso; ls -l | cat', 'ls -l', 'ls-long'], ['declare -x QUOTING_STYLE=c; ls | cat', 'ls', 'ls'],
+      ['set -a; QUOTING_STYLE=c; ls | cat', 'ls', 'ls'], ['QUOTING_STYLE=literal ls | cat', 'ls', 'ls'], ['BLOCK_SIZE=K ls -l | cat', 'ls -l', 'ls-long'],
+      ['BLOCK_SIZE=K ls -lh | cat', 'ls -lh', 'ls-long-human'], ['LC_ALL=C ls -l | cat', 'ls -l', 'ls-long'], ['TZ=UTC ls -l | cat', 'ls -l', 'ls-long'],
+      ['LANG=de_DE.UTF-8; ls -l | cat', 'ls -l', 'ls-long'], ['LC_TIME=de_DE.UTF-8; ls -l | cat', 'ls -l', 'ls-long'], ['export -n LANG; ls -l | cat', 'ls -l', 'ls-long'],
+      ['f() { ls -l | cat; }; export TIME_STYLE=long-iso; f', 'ls -l', 'ls-long'], ['PS_FORMAT=pid,comm ps | cat', 'ps', 'ps'],
+      ['export PS_FORMAT=pid,comm; ps | cat', 'ps', 'ps'], ['PS_FORMAT=pid,comm ps aux | cat', 'ps aux', 'ps'], ['COLUMNS=20 ps aux | cat', 'ps aux', 'ps'],
+      ['export PS_PERSONALITY=bsd; ps -ef | cat', 'ps -ef', 'ps'],
+    ] as [string, string, string][]) {
+      if (!haveLocales && /de_DE/.test(script)) continue;
+      const out = (s: string) => (layout === 'ps' ? psLayout(withLong(s, base())) : lines(run('bash', ['-c', s], { env: base(), cwd: dir }).stdout).join('\n'));
+      const changes = out(script) !== out(alone);
+      for (const lang of ['en', 'ja'] as const) assert.strictEqual(!madeUpOf(script, lang), changes, `${script} (${lang})`);
+    }
+  });
+  it('drops it where the model cannot tell, and keeps it in a function the script does not change it for', () => {
+    for (const lang of ['en', 'ja'] as const) {
+      for (const script of ['source ./x; ps aux | cat', 'PS_FORMAT=$f ps | cat', 'if [ "$1" ]; then export TIME_STYLE=long-iso; fi; ls -l | cat', 'LANG+=x ls -l | cat',
+        'unset LANG; who | cat', 'LC_ALL=C who | cat', 'LC_NUMERIC=de_DE.UTF-8 df -h | cat', 'f() { ls -l | cat; }; TIME_STYLE=$1; export TIME_STYLE']) {
+        assert.ok(!madeUpOf(script, lang), `${script} (${lang})`);
+      }
+      for (const [script, layout, argv] of [['f() { ps | cat; }', 'ps', ['ps']], ['LC_ALL=C.UTF-8 who | cat', 'who', ['who']], ['LC_ALL= who | cat', 'who', ['who']], ['LANG= ls -l | cat', 'ls-long', ['ls', '-l']]] as [string, Layout, string[]][]) {
+        assert.deepStrictEqual(madeUpOf(script, lang)?.sections[0].lines, layoutSample(layout, [{ argv }, { argv: ['cat'] }], 0), `${script} (${lang})`);
+      }
+    }
   });
 });
