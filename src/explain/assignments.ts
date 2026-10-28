@@ -117,7 +117,7 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
   }
   // `IFS` is the list of characters word splitting, `read` and `"${a[*]}"` use as separators.
   if (nm === 'IFS' && name?.type !== 'subscript' && !(n.parent?.type === 'command' && field(n.parent, 'name')?.text)) {
-    const v = value ? staticWordValue(value) : '';
+    const v = value ? staticWordValue(value, false, cx.shell) : '';
     expl += v === undefined
       ? cx.s('。`IFS` は単語分割（と `read`）が区切りに使う文字の一覧で、`"${a[*]}"` と `"$*"` が要素をつなぐ文字（先頭の1文字）でもある', '. `IFS` lists the characters word splitting and `read` split on, and its first character joins the elements in `"${a[*]}"` and `"$*"`')
       : v === ''
@@ -142,7 +142,7 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     }
     else if (Object.hasOwn(variableAssignments, own)) {
       // (An empty value may do something else: `BASH_XTRACEFD=`.)
-      const said = (!value || staticWordValue(value) === '') && Object.hasOwn(variableEmptied, own) ? variableEmptied[own] : variableAssignments[own];
+      const said = (!value || staticWordValue(value, false, cx.shell) === '') && Object.hasOwn(variableEmptied, own) ? variableEmptied[own] : variableAssignments[own];
       expl += cx.s(`。${cx.t(said)}`, `. ${cx.t(said)}`);
     }
   }

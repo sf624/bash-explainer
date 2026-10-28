@@ -554,7 +554,7 @@ function declaredOperand(cx: Explainer, a: SyntaxNode, space: ReturnType<typeof 
   // (`export 1x=2`, `readonly -p a-b`: no variable's name, as bash reads the word (`export x\=1` exports `x`); `declare
   // -p 1x` says "not found", as below; `local -` makes the options local (`localOptions`). Checked with bash 5.2 and 5.3;
   // in POSIX mode bash 5.3 exits, as a note says.)
-  const written = staticWordValue(a);
+  const written = staticWordValue(a, false, cx.shell);
   if (space !== 'function' && !element && written !== undefined && !validName(/^[^=]*?(?=\+?=|$)/.exec(written)![0]) && !(written === '-' && builtins[command].localOptions)
     && !(builtins[command].locals && readDeclarationWords(command, fields(a.parent!, 'argument'), cx.state.shell).on.includes('p'))) {
     return cx.tok(a, 'variable', cx.s('bash はこの語を受け付けない: 変数の名前として正しくない（「not a valid identifier」で終了ステータス 1）', 'Bash refuses this word: it is not a valid variable name ("not a valid identifier", status 1)'));
@@ -825,7 +825,7 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
     }
   }
   // `command [ -f x ]`, `env test -f x`: `test` and `[` read their words as an expression, when the name runs one of them.
-  const value = staticWordValue(first);
+  const value = staticWordValue(first, false, cx.shell);
   const res = value === undefined ? undefined : resolve(cx, value, first, { env: cx.slotEnvs.get(first) });
   const test = res && testSpecOf(res);
   // (The builtin run in this shell, `command kill`, `builtin echo`, reads its words as it would on its own in the shell

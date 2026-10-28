@@ -6,14 +6,14 @@ import { staticWordValue } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import type { ArgWord } from './interpret';
 
-/** The text known at the start of a word whose value is not known (`--file=` of `--file=$f`, `-I` of `-I{}`). */
-export function prefixOf(n: SyntaxNode): string {
+/** The text known at the start of a word whose value is not known (`--file=` of `--file=$f`, `-I` of `-I{}`), in a script for `shell`. */
+export function prefixOf(n: SyntaxNode, shell?: Shell): string {
   if (n.type === 'word' || n.type === 'number') return /^(?:\\.|[^\\*?[{~])*/s.exec(n.text)![0].replace(/\\(.)/gs, '$1');
   let out = '';
   if (n.type === 'concatenation') {
     for (const c of n.namedChildren) {
-      const v = staticWordValue(c);
-      if (v === undefined) return out + prefixOf(c);
+      const v = staticWordValue(c, false, shell);
+      if (v === undefined) return out + prefixOf(c, shell);
       out += v;
     }
   }
@@ -53,7 +53,7 @@ export function countOf(n: SyntaxNode, shell?: Shell): ArgWord['count'] {
 export const argWordFor = (shell?: Shell) => (n: SyntaxNode): ArgWord => {
   const value = staticWordValue(n, false, shell);
   const count = countOf(n, shell);
-  return { ...(value !== undefined ? { value } : { prefix: prefixOf(n) }), ...(count ? { count } : {}) };
+  return { ...(value !== undefined ? { value } : { prefix: prefixOf(n, shell) }), ...(count ? { count } : {}) };
 };
 
 /** A word of the command line as the interpreter reads it in bash. */

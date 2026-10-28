@@ -1,7 +1,7 @@
 import { bracketEnd } from './bracket';
 import { visible } from './ctlchars';
 import type { EmbeddedLang } from './embedded/types';
-import { bracesMayWork, type Shell } from './shellfeatures';
+import { bracesMayWork, featureWorks, type Shell } from './shellfeatures';
 import type { SyntaxNode } from './syntax/tree';
 
 /** The characters `$'…'` turns a one-letter escape into. */
@@ -37,6 +37,18 @@ export function ansiCValue(body: string): string | undefined {
     } else out += Object.hasOwn(ANSI_ESCAPES, c) ? ANSI_ESCAPES[c] : '\\' + c;
   }
   return out;
+}
+
+/**
+ * What the `$'…'` string `text` (with its `$'` and `'`) is in a script for `shell` (bash when absent): its escapes
+ * decoded where the shell has `$'…'`. dash has not: there `$` is text and `'…'` a single-quoted string, so
+ * `$'a\tb'` is `$a\tb` (dash 0.5.12). Undefined in POSIX sh, which may be dash or a shell that decodes it, in the
+ * other shells without it, and in dash when the body holds a `\'`, where dash's quote ends earlier than the tree's.
+ */
+export function ansiCWordValue(text: string, shell?: Shell): string | undefined {
+  const body = text.slice(2, -1);
+  if (featureWorks('ansiC', shell)) return ansiCValue(body);
+  return shell === 'dash' && !body.includes("'") ? `$${body}` : undefined;
 }
 
 /**
@@ -265,7 +277,7 @@ function literalValue(n: SyntaxNode, assignment: boolean, shell: Shell | undefin
       return out;
     }
     case 'raw_string': return text.slice(1, -1);
-    case 'ansi_c_string': return ansiCValue(text.slice(2, -1));
+    case 'ansi_c_string': return ansiCWordValue(text, shell);
     case 'string':
       if (!n.namedChildren.every((c) => c.type === 'string_content')) return undefined;
       // (One pass: in `"a\\<newline>"` the backslash is escaped, and the newline stays.)
@@ -332,6 +344,13 @@ function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined): 
       unescape(1, src.length - 1, /[$`"\\]/);
       return true;
     case 'ansi_c_string': {
+      // (Where the shell does not decode it: dash's `$` and single-quoted text, or nothing known.)
+      if (!featureWorks('ansiC', shell)) {
+        if (ansiCWordValue(src, shell) === undefined) return false;
+        put('$', 0, 1);
+        for (let i = 2; i < src.length - 1; i++) put(src[i], i, i + 1);
+        return true;
+      }
       // Each escape decoded on its own (`ansiCValue`), over the source of the escape.
       const body = src.slice(2, -1);
       for (let i = 0; i < body.length; i++) {

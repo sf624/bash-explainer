@@ -12,7 +12,7 @@ import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellw
 import { patsubMiscounts } from '../bracket';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
-import { ansiCValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
+import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, sameInEveryLocale, substring } from './chars';
 import { bracedWords, braceStep, wordAlternatives, type BraceAlternative } from './brace';
@@ -142,6 +142,8 @@ export interface WordMeaning {
   posix: Tri;
   /** The run state of the word. */
   state: ShellState;
+  /** The shell the script is for (bash when absent): `$'…'` is decoded only where it has it. */
+  shell?: Shell;
   /** The text after quote removal, when nothing in it expands: then it is one field (or none, in a redirection, never). */
   value?: string;
   /** How bash may fail on it, whatever the values (`set -u` with an expansion, failglob with a glob, a redirection target that may not be one word). */
@@ -336,15 +338,12 @@ function shapeOf(nodes: readonly SyntaxNode[]): Shape {
   const expansions = expansionsOf(nodes);
   const plain = plainWords(nodes);
   shape = {
-    expansions,
+    expansions, plain, tildes: new Map(), walked: new WeakMap(),
     unquoted: expansions.filter((e) => e.type !== 'process_substitution' && !nearestQuote(e)),
     someQuoted: expansions.some(nearestQuote),
     braced: bracedWords(plain),
-    plain,
     globWords: [...new Set([...plain.filter((w) => isGlob(w.text)), ...bracketsAcross(nodes)])].sort((a, b) => a.startIndex - b.startIndex),
     quoted: nodes.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text)),
-    tildes: new Map(),
-    walked: new WeakMap(),
     unreliable: unreliableNames(nodes[0]),
   };
   shapes.set(nodes[0], shape);
@@ -402,13 +401,14 @@ function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: S
     const parts = expansions.filter((e) => STEP_OF[e.type] === kind);
     steps.push(mk({ kind, applies: parts.length > 0, parts }));
   }
-  const meaning: WordMeaning = { nodes, context, rule, steps, tildes, ifs, glob, posix, state: st };
+  const meaning: WordMeaning = { nodes, context, rule, steps, tildes, ifs, glob, posix, state: st, ...(shell ? { shell } : {}) };
   steps.push(mk(splitStep(meaning, unquoted, someQuoted)));
   steps.push(mk(globStep(meaning, [...globWords, ...unquoted].sort((a, b) => a.startIndex - b.startIndex), someQuoted)));
   steps.push(mk({ kind: 'quote-removal', applies: shape.quoted, parts: [] }));
   if (!whole) return meaning;
   const literal = !brace && !tildes.length && !expansions.length && !globWords.length;
-  if (literal) meaning.value = nodes.map((x) => staticWordValue(x) ?? '').join('');
+  const values = literal ? nodes.map((x) => staticWordValue(x, false, shell)) : [];
+  if (literal && values.every((v) => v !== undefined)) meaning.value = values.join('');
   const failure = failureOf(meaning, expansions.some((e) => e.type === 'simple_expansion' || e.type === 'expansion'));
   if (failure) meaning.failure = failure;
   return meaning;
@@ -584,7 +584,7 @@ class Evaluator {
   private readonly unbound: Tri;
   private readonly unreliable: ReadonlySet<string>;
   /** `st`: the state the word is expanded in (the walk's own, for a meaning it keeps from another state with the same options). */
-  constructor(private readonly w: WordMeaning, private readonly source: ValueSource, private readonly st = w.state) {
+  constructor(readonly w: WordMeaning, private readonly source: ValueSource, private readonly st = w.state) {
     this.unbound = on(option(st, 'set', 'nounset'), 'set', 'nounset', false);
     this.unreliable = shapeOf(w.nodes).unreliable;
   }
@@ -612,7 +612,7 @@ class Evaluator {
       }
       case 'raw_string': return [{ text: decodedText(n).slice(1, -1), quoted: true, expanded: false }];
       case 'ansi_c_string': {
-        const v = ansiCValue(decodedText(n).slice(2, -1));
+        const v = ansiCWordValue(decodedText(n), this.w.shell);
         return v === undefined || !sameInEveryLocale(v) ? undefined : [{ text: v, quoted: true, expanded: false }];
       }
       case 'translated_string': return this.pieces(n.namedChildren[0], quoted);
@@ -788,7 +788,7 @@ function paramWord(text: string, quoted: boolean, ev: Evaluator): Piece[] | unde
     out.push({ text: home, quoted: true, expanded: false });
     text = text.slice(m[0].length);
   }
-  const segs = operandSegs(text, quoted, ev.param);
+  const segs = operandSegs(text, quoted, ev.param, ev.w.shell);
   return segs && [...out, ...segs.map((g) => ({ text: g.text, quoted: g.quoted || quoted, expanded: true }))];
 }
 
@@ -797,13 +797,13 @@ function paramWord(text: string, quoted: boolean, ev: Evaluator): Piece[] | unde
  * also when the `${…}` is in double quotes (`"${x#'a'}"` removes an `a`), and so does the pattern `$p` gives (`"${x#$p}"`).
  */
 function patternOf(text: string, ev: Evaluator): string | undefined {
-  const segs = hasExtglob(text) ? undefined : operandSegs(text, false, ev.param);
+  const segs = hasExtglob(text) ? undefined : operandSegs(text, false, ev.param, ev.w.shell);
   return segs?.map((g) => (g.quoted ? g.text.replace(/\W/g, '\\$&') : g.text)).join('');
 }
 
 /** The replacement of `${x/p/r}` (its quotes count as in a pattern); undefined with an unquoted `&` (the match, with patsub_replacement). */
 function replacementOf(text: string, ev: Evaluator): string | undefined {
-  const segs = operandSegs(text, false, ev.param);
+  const segs = operandSegs(text, false, ev.param, ev.w.shell);
   return !segs || segs.some((g) => !g.quoted && g.text.includes('&')) ? undefined : segs.map((g) => g.text).join('');
 }
 
