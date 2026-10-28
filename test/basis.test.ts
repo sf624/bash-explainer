@@ -440,6 +440,18 @@ describe('basis: what an explanation rests on', () => {
     // (A hashed file the dictionary does not know: grep's `-n` is not read; the word is the alias text's.)
     const frob = allTokens(explain(`${on}alias g=grep\nhash -p /opt/frob grep\ng -n x f`, 3, 'en').items).find((t) => t.label === '-n')!;
     assert.match(frob.explanation, /^A word passed on to `grep`/);
+    // The alias token says what runs, as the name itself does (`Run the external command … (`hash -p` on line N gave …)`).
+    const said = (src: string, lang: 'en' | 'ja') => allTokens(explain(src, src.split('\n').length - 1, lang).items).find((t) => t.kind === 'alias')!.explanation;
+    const hashedSrc = `${on}alias g=grep\nhash -p /opt/frob grep\ng -n x f`;
+    const offSrc = `${on}enable -n echo\nalias e=echo\ne -n hi`;
+    assert.strictEqual(said(hashedSrc, 'en'), 'The alias `g` defined on line 2: replaced by `grep` (`hash -p` on line 3 gave `grep` the path `/opt/frob`)');
+    assert.strictEqual(said(hashedSrc, 'ja'), 'このスクリプトの行 2 で定義したエイリアス `g`: `grep` に置き換わる（行 3 の `hash -p` で `grep` は `/opt/frob` を指す）');
+    assert.strictEqual(said(offSrc, 'en'), 'The alias `e` defined on line 3: replaced by `echo` (`enable -n` on line 2 turned the builtin `echo` off)');
+    assert.strictEqual(said(offSrc, 'ja'), 'このスクリプトの行 3 で定義したエイリアス `e`: `echo` に置き換わる（行 2 の `enable -n` で組み込みの `echo` は無効になっている）');
+    // (The same words as the name run directly.)
+    const direct = explain(`enable -n echo\necho -n hi`, 1, 'en').items[0].explanation;
+    assert.match(direct, /\(`enable -n` on line 1 turned the builtin `echo` off\)/);
+    assert.strictEqual(said(`${on}alias g=grep\ng -n x f`, 'en'), 'The alias `g` defined on line 2: replaced by `grep`');
     // Only when the hashed path is on every path (`hash -p` in a branch: not known).
     assert.deepStrictEqual(basisOf1(`${on}alias g=grep\nif [ -n "$A" ]; then hash -p /opt/frob grep; fi\ng -n x f`), [['g', spec('grep')]]);
   });

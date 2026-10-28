@@ -1416,7 +1416,7 @@ The note on a declaration that hides the status of its `$( )` told to declare fi
 
 ### An alias to a name changed by `hash -p` or `enable -n`
 
-Both read the words after the alias with the spec of the program bash runs for the alias's word, as the name itself would be (`type -P grep` after `hash -p /opt/frob grep` is `/opt/frob`; `type -t echo` after `enable -n echo` is `file`).
+Both read the words after the alias with the spec of the program bash runs for the alias's word, and the alias's text says what runs, as the text of the name itself does ("… replaced by `grep` (`hash -p` on line 3 gave `grep` the path `/opt/frob`)"; "… (`enable -n` on line 2 turned the builtin `echo` off)"). Before, the text said only "replaced by `grep`". Both are read as the name itself would be (`type -P grep` after `hash -p /opt/frob grep` is `/opt/frob`; `type -t echo` after `enable -n echo` is `file`).
 
 | Script (separate lines, with `shopt -s expand_aliases`) | Before | Now |
 | --- | --- | --- |

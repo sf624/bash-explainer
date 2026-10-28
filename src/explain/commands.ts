@@ -344,12 +344,16 @@ function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedC
 
 /**
  * The program a file name runs when `hash -p` gave it a path or `enable -n` turned the builtin of its name off: the
- * path (when hashed) and the spec of the program, from the dictionary (a builtin's `program`).
+ * path (when hashed), the spec of the program, from the dictionary (a builtin's `program`), and why, in words.
  */
-function offBuiltinOrHashed(res: Extract<NameResolution, { kind: 'file' }>): { path: string | undefined; program: CommandSpec | undefined } {
+function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 'file' }>): { path: string | undefined; program: CommandSpec | undefined; why: string } {
   const path = res.hashed?.value;
   const spec = lookupCommand(path || res.name);
-  return { path, program: spec?.builtin ? spec.program : spec };
+  const by = docLine((res.hashed ?? res.disabled)!.at) + 1;
+  const why = res.hashed
+    ? cx.s(`行 ${by} の \`hash -p\` で \`${res.name}\` は \`${path}\` を指す`, `\`hash -p\` on line ${by} gave \`${res.name}\` the path \`${path}\``)
+    : cx.s(`行 ${by} の \`enable -n\` で組み込みの \`${res.name}\` は無効になっている`, `\`enable -n\` on line ${by} turned the builtin \`${res.name}\` off`);
+  return { path, program: spec?.builtin ? spec.program : spec, why };
 }
 
 function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: string): CommandHead {
@@ -381,7 +385,7 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     let runs: NameResolution | undefined = res;
     while (runs?.kind === 'alias' && alias1(runs.alias.value)) runs = runs.target;
     // (What `hash -p` or `enable -n` makes of the name it runs: the program of that path or name, as when the name is not an alias.)
-    const other = runs?.kind === 'file' && (runs.disabled || runs.hashed) ? offBuiltinOrHashed(runs) : undefined;
+    const other = runs?.kind === 'file' && (runs.disabled || runs.hashed) ? offBuiltinOrHashed(cx, runs) : undefined;
     const target = runs && runs.kind !== 'alias' && res.sure && (runs.kind === 'builtin' || runs.kind === 'file') && !testSpecOf(runs) ? (other ? other.program : specFor(cx, runs.name)) : undefined;
     const spec: CommandSpec = target ?? { ...NO_SPEC, unknownOption: { ja: `エイリアスの置き換え先 \`${alias.value}\` に渡す単語`, en: `A word passed on to \`${alias.value}\`, the text of the alias` } };
     const line = (docLine(alias.at) + 1);
@@ -398,10 +402,12 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     if (maybeSourced) cx.note(fact(cx.lang, 'alias-maybe-not-expanded', { name, value: alias.value }), nameNode);
     // (The words after the alias are read with that command's spec, so they rest on it; with no spec, the alias's text.)
     const basis = target ? programBasis(cx, other?.path || runs!.name, target) : undefined;
+    // (What `hash -p` or `enable -n` made of the command it runs, as for a name that is no alias.)
+    const offNote = other && res.sure ? cx.s(`（${other.why}）`, ` (${other.why})`) : '';
     return {
       name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'], spec, ...(target ? { runs: runs!.name } : {}), ...(basis ? { basis } : {}),
       explanation: res.sure
-        ? cx.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}`)
+        ? cx.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}${offNote}`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}${offNote}`)
         : maybeSourced
           ? cx.s(`このファイルの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは対話シェルがこのファイルを読むとき（\`.bashrc\` や、端末で打つ \`source\`）か、\`shopt -s expand_aliases\` の後だけ。スクリプトとして実行すると、bash はエイリアスを展開しない`,
             `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}, but only when an interactive shell reads this file (\`.bashrc\`, or \`source\` typed in a terminal), or after \`shopt -s expand_aliases\`. Run as a script, bash does not expand aliases`)
@@ -452,11 +458,7 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
   }
   // A builtin turned off with `enable -n` runs the program of its name; `hash -p` gives a name a path.
   if (res.kind === 'file' && (res.disabled || res.hashed)) {
-    const { path, program } = offBuiltinOrHashed(res);
-    const by = (docLine((res.hashed ?? res.disabled)!.at) + 1);
-    const why = res.hashed
-      ? cx.s(`行 ${by} の \`hash -p\` で \`${name}\` は \`${path}\` を指す`, `\`hash -p\` on line ${by} gave \`${name}\` the path \`${path}\``)
-      : cx.s(`行 ${by} の \`enable -n\` で組み込みの \`${name}\` は無効になっている`, `\`enable -n\` on line ${by} turned the builtin \`${name}\` off`);
+    const { path, program, why } = offBuiltinOrHashed(cx, res);
     const basis = programBasis(cx, path || name, program);
     return {
       name, res: ran, ...(program ? { spec: program } : {}), ...testOf(res), kind: 'command', nameTokens: [], refs: ['3.7.2'], ...(basis ? { basis } : {}),
