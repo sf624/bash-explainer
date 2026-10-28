@@ -3,7 +3,7 @@ import type { ConventionId } from './conventions';
 import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
-import { extglobText, globstarText } from './messages-glob';
+import { extglobText, globstarText, unmatchedGlobText } from './messages-glob';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
 import type { Rewrite } from './rewrite';
 import type { NameFacts, NameKind } from './semantics/names';
@@ -466,10 +466,8 @@ export const MESSAGES = {
       + (partial ? '（この前で `shopt -s lastpipe` を有効にしているのは一部の経路だけです）' : ''),
     `the commands of a pipeline (\`|\`) run in subshells, so \`${used}\` set on the right side is gone when the pipeline ends; the later \`$${used}\` does not see it. ${fix.en}`
       + (partial ? ' (only some paths before here turn `shopt -s lastpipe` on)' : '')]),
-  // `rewrite`: `[ -e "$f" ] || continue` first in the body, and, where the shell has it, `shopt -s nullglob` before the loop.
-  'unmatched-glob-runs-once': withConvention(suggests(caveat<{ glob: string; v: string; rewrite: readonly Rewrite[] }>(['3.5.8'], ({ glob, v, rewrite: [first, nullglob] }) => [
-    `\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に \`${glob}\` という文字列がそのまま入って1回実行されます。本体の先頭に \`${first.code}\` を${nullglob ? `書くか、ループの前で \`${nullglob.code}\` にします` : '書きます'}`,
-    `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to the text \`${glob}\` itself. Start the body with \`${first.code}\`${nullglob ? `, or turn on \`${nullglob.code}\` before the loop` : ''}`])), 'guard-unmatched-glob'),
+  // (`rewrite`: a test first in the body, where every word of the list is a glob, and `shopt -s nullglob` where the shell has it.)
+  'unmatched-glob-runs-once': withConvention(suggests(caveat<{ glob: string; v: string; rewrite: readonly Rewrite[] }>(['3.5.8'], ({ glob, v, rewrite }) => unmatchedGlobText(glob, v, rewrite))), 'guard-unmatched-glob'),
   // (The shell sets the standard input up, but a command given a file to read reads that instead: jq, sort, cat…)
   'stdin-not-read': note<{ cmd: string; file: string; stdin: Words }>(['3.2.3', '3.6'], ({ cmd, file, stdin }) => [
     `\`${cmd}\` には読むファイル（\`${file}\`）が指定されているので、標準入力（${stdin.ja}）は読まない（\`-\` を指定すると標準入力も読む）`,

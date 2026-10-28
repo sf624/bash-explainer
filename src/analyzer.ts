@@ -11,6 +11,7 @@ import { lookupCommand } from './dict/aliases';
 import { basisGate, plainNote } from './messages';
 import { withoutBases, withTokenBases } from './tokenbases';
 import { pictureNote } from './ctlchars';
+import { withRewritesOf } from './rewrite';
 import { dialectFound, Shell } from './dialect';
 import { fileRead } from './semantics/env';
 import { shellState } from './semantics/state';
@@ -71,8 +72,10 @@ export class Analyzer {
       ...pipeSubshellPitfalls(cx, root, line),
       ...statusNotes(cx, line, true),
     ];
-    // (A fact said twice, or left out with the pitfalls, is listed once, or not.)
-    const facts = cx.facts.filter((f, i, all) => notes.includes(f.text) && all.findIndex((g) => g.text === f.text) === i).map((f) => basisGate(f, cx.opts.basis));
+    // (A fact said twice, or left out with the pitfalls, is listed once, or not. Said twice, it is about two places,
+    // `cp $a b; cp $a c`: its rewrites make the edits of both, so that none of them is left.)
+    const facts = cx.facts.filter((f, i, all) => notes.includes(f.text) && all.findIndex((g) => g.text === f.text) === i)
+      .map((f) => basisGate(withRewritesOf(f, cx.facts), cx.opts.basis));
     const result: LineExplanation = {
       line,
       ...(shell && shell !== 'bash' ? { shell } : {}),

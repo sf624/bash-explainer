@@ -1,5 +1,6 @@
-// The texts of the catalog's facts about extended globs and globstar (src/messages.ts: `extglob-*`, `globstar-*`),
-// apart, to keep src/messages.ts short.
+// The texts of the catalog's facts about extended globs, globstar and a loop over a glob (src/messages.ts: `extglob-*`,
+// `globstar-*`, `unmatched-glob-runs-once`), apart, to keep src/messages.ts short.
+import type { Rewrite } from './rewrite';
 
 /** Why an extended glob may be a syntax error where it is read: an `extglob-*` id without its prefix. */
 export type ExtglobWhy = 'in-same-block' | 'maybe-on' | 'turned-off' | 'not-found' | 'maybe-on-trap' | 'not-in-new-shell';
@@ -42,3 +43,17 @@ const GLOBSTAR: Record<GlobstarWhy, (on: string) => readonly [string, string]> =
 
 /** The text of `globstar-<why>`, [ja, en], for the command that turns it on, `on`. */
 export const globstarText = (why: GlobstarWhy) => ({ on }: { on: string }): readonly [string, string] => GLOBSTAR[why](on);
+
+/**
+ * `unmatched-glob-runs-once`: what the loop does when no file matches, and the rewrites there are (a test first in the
+ * body, `shopt -s nullglob`): either may be missing, or both (in sh, for a list with a word that is no glob).
+ */
+export function unmatchedGlobText(glob: string, v: string, rewrite: readonly Rewrite[]): readonly [string, string] {
+  const test = rewrite.find((r) => !r.code.startsWith('shopt'));
+  const nullglob = rewrite.find((r) => r.code.startsWith('shopt'));
+  const ja = test ? `本体の先頭に \`${test.code}\` を${nullglob ? `書くか、ループの前で \`${nullglob.code}\` にします` : '書きます'}` : nullglob ? `ループの前で \`${nullglob.code}\` にします` : '';
+  const en = test ? `Start the body with \`${test.code}\`${nullglob ? `, or turn on \`${nullglob.code}\` before the loop` : ''}` : nullglob ? `Turn on \`${nullglob.code}\` before the loop` : '';
+  return [
+    `\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に \`${glob}\` という文字列がそのまま入って1回実行されます${ja ? `。${ja}` : ''}`,
+    `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to the text \`${glob}\` itself${en ? `. ${en}` : ''}`];
+}

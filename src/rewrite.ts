@@ -2,6 +2,7 @@
 // test applies them and runs both scripts in bash (test/rewrites.test.ts). Quick fixes can come from the same data.
 import type { Shell } from './dialect';
 import { builtins } from './dict/builtins';
+import type { Fact } from './messages';
 import { STATEMENTS } from './semantics/env';
 import { documentRoot } from './semantics/state';
 import { descendants, type SyntaxNode } from './syntax/tree';
@@ -18,6 +19,23 @@ export interface TextEdit { start: number; end: number; text: string }
  * not the file (src/hosts/remap.ts).
  */
 export interface Rewrite { code: string; edits: readonly TextEdit[] }
+
+/**
+ * `f` with the edits of the other facts of `all` that have its text added to its rewrites: a fact said twice on a line
+ * is listed once (src/analyzer.ts), and is about two places, `cp $a b; cp $a c`, which its rewrites then both change.
+ */
+export function withRewritesOf(f: Fact, all: readonly Fact[]): Fact {
+  if (!f.rewrite) return f;
+  const others = all.filter((g) => g.text === f.text && g.rewrite);
+  return {
+    ...f,
+    rewrite: f.rewrite.map((r, k) => {
+      // (The same edit once: a fact said twice for one place.)
+      const edits = new Map(others.flatMap((g) => g.rewrite![k].edits).map((e) => [`${e.start} ${e.end} ${e.text}`, e]));
+      return { code: r.code, edits: [...edits.values()] };
+    }),
+  };
+}
 
 /** The root of the tree `n` is in, and whether that tree is the document's (not a string read as a script). */
 function treeOf(n: SyntaxNode): { root: SyntaxNode; own: boolean } {

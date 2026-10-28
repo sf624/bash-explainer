@@ -13,7 +13,13 @@
 // checks the classification against the English text: an entry that reads as a suggestion is not `none`, and one
 // classified as a suggestion reads as one (or names the parameter that carries it).
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
+import { Analyzer } from '../src/analyzer';
+import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { type FactId, MESSAGES } from '../src/messages';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { corpusFacts, MECHANICAL } from './support/rewrite-states';
 
 type Kind = 'mechanical' | 'scenario' | 'prose' | 'none';
 /** A suggestion the text does not spell out: `via` names the parameter that carries it (given by the analyzer), or says it is implied. */
@@ -178,6 +184,34 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     assert.deepStrictEqual(ids.filter((id) => rewrites(id) && kind(id) !== 'mechanical'), []);
     // (Every mechanical id has them: step 4 of oracles.md is done.)
     assert.deepStrictEqual(ids.filter((id) => !rewrites(id) && kind(id) === 'mechanical'), []);
+  });
+
+  // (docs/design/oracles.md, step 5: every fact of a mechanical id the corpus raises carries its rewrites, but where
+  // 3.1 and 3.2 give none: in a string another command reads as a script, where the code would need quoting; on the
+  // right of `||` with a here-document, whose body the group would cut off; where 3.1 says "none"; in a host file.)
+  const WITHOUT: { id: FactId; input: string; why: 'string' | 'heredoc' | 'none' }[] = [
+    { id: 'declaration-masks-status', input: "sh -c 'f() {\n  local x=$(false)\n}'", why: 'string' },
+    { id: 'bracket-close-glued', input: '[ a = b\\]', why: 'none' },
+    { id: 'unquoted-variable-as-path', input: "eval 'rm -rf $Q/*'", why: 'string' },
+    { id: 'unquoted-variable-as-path', input: "trap 'rm -f $tmp' EXIT", why: 'string' },
+    { id: 'nounset-unbound', input: "bash -c 'set -u; f() { echo \"$z\"; }; f'", why: 'string' },
+    { id: 'regex-backslash-dropped', input: '[[ $x =~ ^[\\s]+$ ]]', why: 'none' },
+  ];
+  it('finds a rewrite on every fact of a mechanical id in the corpus, but where none is given', () => {
+    const key = ({ id, input }: { id: FactId; input: string }): string => `${id}: ${input}`;
+    assert.deepStrictEqual(corpusFacts().filter((f) => !f.fact.rewrite).map((f) => key({ id: f.fact.id, input: f.input })).sort(), WITHOUT.map(key).sort());
+    // (The facts of the host files carry none: their edits would be offsets in the extracted text.)
+    const parser = createUnbashParser();
+    const dir = path.join(__dirname, 'fixtures/hosts');
+    const hosted = fs.readdirSync(dir).sort().flatMap((file) => {
+      const src = fs.readFileSync(path.join(dir, file), 'utf8');
+      const extracted = extractShell(hostKind('', file)!, src);
+      const tree = parser.parse(extracted.text);
+      const lines = src.split('\n');
+      return lines.flatMap((_, i) => explainHostedLine(new Analyzer('en'), tree, extracted, lines, i, 'en')?.facts ?? []).filter((f) => MECHANICAL.includes(f.id));
+    });
+    assert.ok(hosted.length > 0);
+    assert.deepStrictEqual(hosted.filter((f) => f.rewrite), []);
   });
 
   it('counts them', () => {

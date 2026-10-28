@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import type { Shell } from '../src/dialect';
 import type { FactId } from '../src/messages';
-import { factsOf, programs, type Ran, rewrites, run } from './support/rewrites';
+import { applied, factsOf, programs, type Ran, rewrites, run } from './support/rewrites';
 
 /** The rewritten scripts of the one fact of `id` in `src`. */
 const scripts = (src: string, id: FactId, shell?: Shell): string[] => rewrites(src, id, shell).map(([, s]) => s);
@@ -32,6 +32,8 @@ describe('the rewrites of `unquoted-variable-as-path`', () => {
     assert.deepStrictEqual(scripts('cp $a b', id), ['cp "$a" b']);
     assert.deepStrictEqual(scripts('sudo rm -rf $DIR/releases/$line', id), ['sudo rm -rf "$DIR/releases/$line"']);
     assert.deepStrictEqual(scripts('cp ~/$x/* e', id), ['cp ~/"$x"/* e']);
+    // (One note for the same word twice on a line: its rewrite quotes both. Before, only the first.)
+    assert.deepStrictEqual(scripts('cp $a b; cp $a c', id), ['cp "$a" b; cp "$a" c']);
   });
   it('are what the note says, and none where quotes would change the word, or in a string another shell reads', () => {
     assert.match(only('rm -rf $DIR/*', id).text, /\. Write `"\$DIR"\/\*`$/);
@@ -87,6 +89,8 @@ describe('the rewrites of `unquoted-variable-in-test`', () => {
     assert.deepStrictEqual(scripts('if [ -n ${x} ]; then :; fi', id), ['if [ -n "${x}" ]; then :; fi']);
     // (zsh drops an empty word all the same.)
     assert.deepStrictEqual(scripts('[ -n $x ]', id, 'zsh'), ['[ -n "$x" ]']);
+    // (Each word of the test, with its own rewrite. Before, only the first: quoting it left the others.)
+    assert.deepStrictEqual(factsOf('[ $x = a -o $y = b ]', id).map((f) => f.rewrite!.map((r) => applied('[ $x = a -o $y = b ]', r))), [['[ "$x" = a -o $y = b ]'], ['[ $x = a -o "$y" = b ]']]);
   });
   it('are what the note says, and none where quotes would change the value', () => {
     assert.match(only('[ $x = y ]', id).text, /\. Write `"\$x"`$/);
