@@ -27,7 +27,7 @@ Keep it current:
 
 ## Waiting on the maintainer
 
-- The basis of an alias's arguments: with `alias g=grep`, `g -n x f` reads `-n` with grep's spec, but its tokens rest on `manual`, since [design/basis-spec-convention.md](design/basis-spec-convention.md) gives aliases no `spec` (decision 2). Should an alias's arguments rest on the spec they are read with?
+- The basis of an alias's arguments: with `alias g=grep`, `g -n x f` reads `-n` with grep's spec, but its tokens rest on `manual`, since [design/basis-spec-convention.md](design/basis-spec-convention.md) gives aliases no `spec` (section 1.1). Should an alias's arguments rest on the spec they are read with?
 
 ## Not decided
 
