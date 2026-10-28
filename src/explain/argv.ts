@@ -182,7 +182,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             slotNotes(cx, role, cx.slotEnvs.get(a)!, [a], assigned);
             const string = role.of ? valueToken(cx, a, { role: 'value', of: role.of, index: 0 }, false) : cx.tok(a, 'argument', cx.t(role.item!.text), wordParts(cx, a));
             out.push(withScript(string, scriptTokens(cx, [a], cx.slotEnvs.get(a)!, shellParams(cx, role, parse, nodes, word))));
-          } else out.push(wrapped(cx, nodes, word, role, assigned));
+          } else out.push(wrapped(cx, nodes, word, role, assigned, parse.refused));
           break;
         case 'joined':
           if (!joinedWhole) out.push(a === joinedNote?.at ? withScript(positional(cx, a, joined), { tokens: [], note: joinedNote.note }) : positional(cx, a, joined));
@@ -795,14 +795,15 @@ function shellParams(cx: Explainer, role: CommandRole, parse: ArgvParse, nodes: 
 }
 
 /** Words forming a command run by another command (sudo, xargs, find -exec…): the command, with its words read by its spec. */
-function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: CommandRole, assigned: string[]): Token {
+function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: CommandRole, assigned: string[], lineRefused?: boolean): Token {
   const parse = role.parse!;
   const words = nodes.slice(word, parse.end);
   const first = nodes[word];
   // `find -exec cmd {} ;`: the words up to the terminator.
   // (What the builtin it names would do to a shell: `sudo cd /x` cannot change this one.)
   const effect = shellEffectOf(role.spec, parse.roles.map((r) => [nodes[r.word], r.role] as const));
-  slotNotes(cx, role, cx.slotEnvs.get(first)!, words, assigned, effect);
+  // (Not when the tool refuses the line, `find . -exec f {} ;`: it runs nothing, so nothing is wrong with how it would.)
+  if (!lineRefused) slotNotes(cx, role, cx.slotEnvs.get(first)!, words, assigned, effect);
   const name = first.text;
   let explanation = role.spec ? cx.t(role.spec.summary) : cx.s(`コマンド \`${name}\``, `Command \`${name}\``);
   let kind: Kind = role.spec?.builtin ? 'builtin' : 'command';
@@ -907,14 +908,18 @@ function positional(cx: Explainer, a: SyntaxNode, desc: string | undefined, lang
  */
 function findExpression(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec): Token[] {
   const words = nodes.map((a) => staticWordValue(a) ?? a.text);
+  const lookup = (name: string) => specFor(cx, name);
+  // find refuses the whole expression when one of its actions is wrong (`-exec f {} ;`): none of them runs.
+  const refused = interpret(spec, nodes.map(argWordFor(cx.state.shell)), { name: 'find', lookup }).refused;
   const read = (from: number, to: number): Token[] => {
     const part = nodes.slice(from, to);
-    return render(cx, interpret(spec, part.map(argWordFor(cx.state.shell)), { name: 'find', lookup: (name) => specFor(cx, name) }), spec, part, cx.command!.args);
+    const parse = interpret(spec, part.map(argWordFor(cx.state.shell)), { name: 'find', lookup });
+    return render(cx, refused ? { ...parse, refused } : parse, spec, part, cx.command!.args);
   };
   // (No option of find has an optional value.)
   const tree = parseFind(words, (w) => {
     const o = spec.options!.find((x) => x.names.includes(w));
-    return o?.until ? 'until' : o?.value ? 1 : 0;
+    return o?.until ?? (o?.value ? 1 : 0);
   });
   if (!tree) return read(0, nodes.length);
   const exprArgs = nodes;

@@ -140,7 +140,7 @@ describe('a wrapper cannot run a shell function or builtin', () => {
   it('a function defined in the script', () => {
     for (const [src, who] of [
       ['echo a | xargs myfunc', 'xargs'], ['doas myfunc', 'doas'], ['env myfunc', 'env'], ['nohup myfunc', 'nohup'],
-      ['timeout 5 myfunc', 'timeout'], ['nice myfunc', 'nice'], ['find . -exec myfunc {} \;', 'find -exec'], ['find . -exec myfunc {} +', 'find -exec'], ['chroot /r myfunc', 'chroot'],
+      ['timeout 5 myfunc', 'timeout'], ['nice myfunc', 'nice'], ['find . -exec myfunc {} \\;', 'find -exec'], ['find . -exec myfunc {} +', 'find -exec'], ['chroot /r myfunc', 'chroot'],
       ['flock /l myfunc', 'flock'], ['setsid myfunc', 'setsid'], ['watch -x myfunc', 'watch'], ['strace myfunc', 'strace'], ['stdbuf -oL myfunc', 'stdbuf'], ['ionice -c3 myfunc', 'ionice'],
     ]) {
       const n = at(FN + src, 1);
@@ -148,6 +148,11 @@ describe('a wrapper cannot run a shell function or builtin', () => {
       assert.match(n[0], new RegExp(`^⚠ Pitfall: \`${who}\` starts \`myfunc\` as a separate program, so it cannot run a shell function`), src);
       assert.match(n[0], /export -f myfunc`, then call it through a shell: `bash -c 'myfunc "\$@"' _ …`/);
     }
+  });
+  it('none where find refuses the line and runs nothing: an -exec that no `\\;` or `+` ends', () => {
+    // (GNU find: "missing argument to `-exec'", status 1; with one such -exec among others, none of them runs.)
+    for (const src of ['find . -exec myfunc {} ;', 'find . -exec myfunc {} \\; -exec myfunc {} ;', 'find . -ok myfunc {} +', 'find . -exec myfunc {}.bak +']) assert.deepStrictEqual(at(FN + src, 1), [], src);
+    assert.strictEqual(at(FN + 'find . -exec myfunc {} \\; -exec echo {} \\;', 1).length, 1);
   });
   it('a function defined later is still not run by the wrapper', () => {
     assert.strictEqual(at('sudo myfunc\n' + FN, 0).length, 1);

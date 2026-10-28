@@ -263,7 +263,15 @@ export interface OptionSpec {
   /** Its meaning in a mode (`rpm -i` is information when querying). */
   inMode?: Record<string, Text>;
   /** The words up to one of the terminators form a command (`find -exec … ;`). */
-  until?: { terminators: string[]; slot: CommandSlot };
+  until?: {
+    terminators: string[];
+    slot: CommandSlot;
+    /**
+     * A terminator that ends the command only right after a word holding the given text (find's `+` after `{}`); anywhere
+     * else it is a word of the command (`-exec echo a + \;`). The word must be that text alone, and no other word may hold it.
+     */
+    endsAfter?: Record<string, string>;
+  };
   /**
    * The operands after this option that the pattern gives to its last, repeating item are these instead
    * (`jq '.' in.json --args a`: `in.json` is a file, `a` a positional value). (jq's `--args` and `--jsonargs` only.

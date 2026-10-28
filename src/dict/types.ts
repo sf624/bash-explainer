@@ -6,7 +6,7 @@ export { wordTable } from '../wordtable';
 
 /**
  * `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg` (a value; `arg2` for two
- * words, as `jq --arg NAME VALUE`), `until` (the words up to `;` or `+` are a command: `find -exec`), `fills`
+ * words, as `jq --arg NAME VALUE`), `until` (the words up to `;`, or `+` after a `{}`, are a command: `find -exec`; `until-each`: only up to `;`, `find -ok`), `fills`
  * (the option gives what is otherwise the first operand: `grep -e`), `setenv` and `envfile` (the value gives the
  * command a slot runs an environment variable, or a file of them: `docker run -e`), `attached` (a value only in the same word:
  * `-i.bak`), `next:<regexp>` (an optional value, taken from the next word when it matches: `journalctl -b -1`),
@@ -28,7 +28,9 @@ export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSp
   const setsEnv = /\bsetenv\b/.test(flags) ? 'variable' : flags.includes('envfile') ? 'file' : undefined;
   const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(io ? { io } : {}), ...(values ? { values } : {}), ...(setsEnv ? { setsEnv } : {}), ...(flags.includes('unsetenv') ? { unsetsEnv: true } : {}) };
   const nextIf = /next:(\S+)/.exec(flags)?.[1];
-  if (flags.includes('until')) opt.until = { terminators: [';', '+'], slot: { run: 'exec' } };
+  // (find's `-exec` and `-execdir` end at `;`, or at `+` after a `{}`; `-ok` and `-okdir` only at `;`.)
+  if (flags.includes('until-each')) opt.until = { terminators: [';'], slot: { run: 'exec' } };
+  else if (flags.includes('until')) opt.until = { terminators: [';', '+'], slot: { run: 'exec' }, endsAfter: { '+': '{}' } };
   else if (flags.includes('arg')) {
     const n = Number(/arg(\d)/.exec(flags)?.[1] ?? 1);
     opt.value = n > 1
