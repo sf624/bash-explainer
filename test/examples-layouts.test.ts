@@ -483,7 +483,7 @@ describe('the variables of the environment that change a layout', function () {
   });
   it('drops it where the model cannot tell, and keeps it in a function the script does not change it for', () => {
     for (const lang of ['en', 'ja'] as const) {
-      for (const script of ['source ./x; ps aux | cat', 'PS_FORMAT=$f ps | cat', 'if [ "$1" ]; then export TIME_STYLE=long-iso; fi; ls -l | cat', 'LANG+=x ls -l | cat',
+      for (const script of ['source ./x; ps aux | cat', 'PS_FORMAT=$f ps | cat', 'if [ "$1" ]; then export TIME_STYLE=long-iso; fi; ls -l | cat', 'TIME_STYLE+=x ls -l | cat',
         'unset LANG; who | cat', 'LC_ALL=C who | cat', 'LC_NUMERIC=de_DE.UTF-8 df -h | cat', 'f() { ls -l | cat; }; TIME_STYLE=$1; export TIME_STYLE']) {
         assert.ok(!madeUpOf(script, lang), `${script} (${lang})`);
       }
