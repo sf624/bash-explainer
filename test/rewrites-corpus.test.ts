@@ -28,7 +28,7 @@ const PINNED: Partial<Record<FactId, IdCounts>> = {
   'regex-backslash-dropped': { subjects: 2, ran: 2, checks: 24, skipped: {} },
   'unbraced-element': { subjects: 1, ran: 1, checks: 1, skipped: {} },
   'unmatched-glob-runs-once': { subjects: 7, ran: 7, checks: 21, skipped: {} },
-  'unquoted-variable-as-path': { subjects: 27, ran: 13, checks: 76, skipped: { 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `D`': 5, 'the script sets `DIR`': 5, '`source`': 1 } },
+  'unquoted-variable-as-path': { subjects: 29, ran: 15, checks: 88, skipped: { 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `D`': 5, 'the script sets `DIR`': 5, '`source`': 1 } },
   'unquoted-variable-in-test': { subjects: 9, ran: 9, checks: 51, skipped: {} },
   'wrapper-assignment-expanded-first': { subjects: 1, ran: 1, checks: 2, skipped: {} },
 };

@@ -32,6 +32,8 @@ const SEVERAL = '\x01';
 function mayRefer(name: string, st: ShellState, inQuotes: boolean, seen: ReadonlySet<string> = new Set()): boolean {
   if (!/^[A-Za-z_]\w*$/.test(name) || seen.has(name)) return false;
   const v = st.variables.get(name);
+  // (A name the script has not set may be one after an opaque `source`. Here, not in `attribute`: its other readers would
+  // then say that `$@` may be an array, or that a later `x=1` may fail as read-only.)
   if (!v) return !!st.opaque;
   const ref = attribute(st, name, 'n');
   if (ref === 'off') return false;
