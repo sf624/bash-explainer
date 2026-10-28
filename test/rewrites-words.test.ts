@@ -5,7 +5,8 @@
 // mind), the hazard is gone, the rewrite parses (`bash -n`), and explaining it raises no fact of the same id.
 import * as assert from 'assert';
 import type { Shell } from '../src/dialect';
-import type { FactId } from '../src/messages';
+import type { Fact, FactId } from '../src/messages';
+import { type Rewrite, type TextEdit, withRewritesOf } from '../src/rewrite';
 import { applied, factsOf, programs, type Ran, rewrites, run } from './support/rewrites';
 
 /** The rewritten scripts of the one fact of `id` in `src`. */
@@ -34,6 +35,20 @@ describe('the rewrites of `unquoted-variable-as-path`', () => {
     assert.deepStrictEqual(scripts('cp ~/$x/* e', id), ['cp ~/"$x"/* e']);
     // (One note for the same word twice on a line: its rewrite quotes both. Before, only the first.)
     assert.deepStrictEqual(scripts('cp $a b; cp $a c', id), ['cp "$a" b; cp "$a" c']);
+    // (None where one of the places has none, in a string another shell reads, whichever comes first: the rewrite
+    // would leave that one.)
+    for (const src of [`bash -c 'cp $a b'; cp $a c`, `cp $a c; bash -c 'cp $a b'`]) assert.deepStrictEqual(factsOf(src, id).map((f) => f.rewrite), [undefined], src);
+  });
+  it('of a fact said for several places keep only the alternatives every place has', () => {
+    const edit = (start: number): TextEdit => ({ start, end: start + 1, text: 'x' });
+    const f = (rewrite?: Rewrite[]): Fact => ({ id: 'unmatched-glob-runs-once', text: 't', rewrite }) as Fact;
+    const two = f([{ code: 'a', edits: [edit(0)] }, { code: 'b', edits: [edit(1)] }]);
+    const one = f([{ code: 'a', edits: [edit(5)] }]);
+    assert.deepStrictEqual(withRewritesOf(two, [two, one]).rewrite, [{ code: 'a', edits: [edit(0), edit(5)] }]);
+    // (The same place twice: its edit once.)
+    assert.deepStrictEqual(withRewritesOf(one, [one, one]).rewrite, one.rewrite);
+    assert.ok(!('rewrite' in withRewritesOf(two, [two, f()])));
+    assert.strictEqual(withRewritesOf(f(), [f(), two]).rewrite, undefined);
   });
   it('are what the note says, and none where quotes would change the word, or in a string another shell reads', () => {
     assert.match(only('rm -rf $DIR/*', id).text, /\. Write `"\$DIR"\/\*`$/);

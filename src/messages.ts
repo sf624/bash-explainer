@@ -467,7 +467,7 @@ export const MESSAGES = {
     `the commands of a pipeline (\`|\`) run in subshells, so \`${used}\` set on the right side is gone when the pipeline ends; the later \`$${used}\` does not see it. ${fix.en}`
       + (partial ? ' (only some paths before here turn `shopt -s lastpipe` on)' : '')]),
   // (`rewrite`: a test first in the body, where every word of the list is a glob, and `shopt -s nullglob` where the shell has it.)
-  'unmatched-glob-runs-once': withConvention(suggests(caveat<{ glob: string; v: string; rewrite: readonly Rewrite[] }>(['3.5.8'], ({ glob, v, rewrite }) => unmatchedGlobText(glob, v, rewrite))), 'guard-unmatched-glob'),
+  'unmatched-glob-runs-once': withConvention(suggests(caveat<{ glob: string; v: string; alone: boolean; rewrite: readonly Rewrite[] }>(['3.5.8'], ({ glob, v, alone, rewrite }) => unmatchedGlobText(glob, v, alone, rewrite))), 'guard-unmatched-glob'),
   // (The shell sets the standard input up, but a command given a file to read reads that instead: jq, sort, cat…)
   'stdin-not-read': note<{ cmd: string; file: string; stdin: Words }>(['3.2.3', '3.6'], ({ cmd, file, stdin }) => [
     `\`${cmd}\` には読むファイル（\`${file}\`）が指定されているので、標準入力（${stdin.ja}）は読まない（\`-\` を指定すると標準入力も読む）`,

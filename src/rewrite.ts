@@ -23,15 +23,22 @@ export interface Rewrite { code: string; edits: readonly TextEdit[] }
 /**
  * `f` with the edits of the other facts of `all` that have its text added to its rewrites: a fact said twice on a line
  * is listed once (src/analyzer.ts), and is about two places, `cp $a b; cp $a c`, which its rewrites then both change.
+ * A rewrite must change every place, or it leaves the note: where one place has none (in a string another shell
+ * reads, `bash -c 'cp $a b'`), the fact has none; where one has fewer alternatives, the fact keeps only those all have.
  */
 export function withRewritesOf(f: Fact, all: readonly Fact[]): Fact {
-  if (!f.rewrite) return f;
-  const others = all.filter((g) => g.text === f.text && g.rewrite);
+  const same = all.filter((g) => g.text === f.text);
+  if (!f.rewrite || same.length < 2) return f;
+  if (same.some((g) => !g.rewrite)) {
+    const { rewrite: _, ...rest } = f;
+    return rest;
+  }
+  const alternatives = Math.min(...same.map((g) => g.rewrite!.length));
   return {
     ...f,
-    rewrite: f.rewrite.map((r, k) => {
+    rewrite: f.rewrite.slice(0, alternatives).map((r, k) => {
       // (The same edit once: a fact said twice for one place.)
-      const edits = new Map(others.flatMap((g) => g.rewrite![k].edits).map((e) => [`${e.start} ${e.end} ${e.text}`, e]));
+      const edits = new Map(same.flatMap((g) => g.rewrite![k].edits).map((e) => [`${e.start} ${e.end} ${e.text}`, e]));
       return { code: r.code, edits: [...edits.values()] };
     }),
   };

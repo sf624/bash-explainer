@@ -45,15 +45,19 @@ const GLOBSTAR: Record<GlobstarWhy, (on: string) => readonly [string, string]> =
 export const globstarText = (why: GlobstarWhy) => ({ on }: { on: string }): readonly [string, string] => GLOBSTAR[why](on);
 
 /**
- * `unmatched-glob-runs-once`: what the loop does when no file matches, and the rewrites there are (a test first in the
- * body, `shopt -s nullglob`): either may be missing, or both (in sh, for a list with a word that is no glob).
+ * `unmatched-glob-runs-once`: what the loop does when no file matches (`alone`: the glob is the only word of the list,
+ * so the loop runs only once), and the rewrites there are (a test first in the body, `shopt -s nullglob`): either may
+ * be missing, or both (in sh, for a list with a word that is no glob).
  */
-export function unmatchedGlobText(glob: string, v: string, rewrite: readonly Rewrite[]): readonly [string, string] {
+export function unmatchedGlobText(glob: string, v: string, alone: boolean, rewrite: readonly Rewrite[]): readonly [string, string] {
   const test = rewrite.find((r) => !r.code.startsWith('shopt'));
   const nullglob = rewrite.find((r) => r.code.startsWith('shopt'));
   const ja = test ? `本体の先頭に \`${test.code}\` を${nullglob ? `書くか、ループの前で \`${nullglob.code}\` にします` : '書きます'}` : nullglob ? `ループの前で \`${nullglob.code}\` にします` : '';
   const en = test ? `Start the body with \`${test.code}\`${nullglob ? `, or turn on \`${nullglob.code}\` before the loop` : ''}` : nullglob ? `Turn on \`${nullglob.code}\` before the loop` : '';
-  return [
-    `\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に \`${glob}\` という文字列がそのまま入って1回実行されます${ja ? `。${ja}` : ''}`,
-    `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to the text \`${glob}\` itself${en ? `. ${en}` : ''}`];
+  const [jaWhat, enWhat] = alone
+    ? [`\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に \`${glob}\` という文字列がそのまま入って1回実行されます`,
+      `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to the text \`${glob}\` itself`]
+    : [`\`${glob}\` に一致するファイルが1つもなくても、その分の1回は実行され、\`${v}\` には \`${glob}\` という文字列がそのまま入ります`,
+      `when no file matches \`${glob}\`, the loop still runs once for it, with \`${v}\` set to the text \`${glob}\` itself`];
+  return [`${jaWhat}${ja ? `。${ja}` : ''}`, `${enWhat}${en ? `. ${en}` : ''}`];
 }
