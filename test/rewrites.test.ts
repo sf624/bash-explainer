@@ -232,7 +232,7 @@ describe('the rewrites of `unmatched-glob-runs-once`', () => {
     for (const src of ['for i in "$*"*.c; do echo "$i"; done', 'for i in "${a[*]}"*.c; do echo "$i"; done', 'for i in "${!a[*]}"*.c; do echo "$i"; done',
       'for i in "${#a[@]}"*.c; do echo "$i"; done', 'declare -n r=a; for i in "$r"*.c; do echo "$i"; done', 'for i in "$(echo "$@")"*.c; do echo "$i"; done',
       'a=(x y); declare -n r=\'a[*]\'; for i in "$r"*.c; do echo "$i"; done', 'declare -n q=p; declare -n p=q; for i in "$p"*.c; do echo "$i"; done',
-      'for i in "$((x))"*.c; do echo "$i"; done', 'for i in ${x:-<(echo "$@")}*.c; do echo "$i"; done']) {
+      'for i in "$((x))"*.c; do echo "$i"; done', 'for i in ${x:-<(echo "$@")}*.c; do echo "$i"; done', 'd=$(cat f); for i in "$d"*.c; do echo "$i"; done']) {
       assert.match(text(src), /, the loop runs once with `i` set to the text of the pattern itself, after its expansions\. Start the body with `\[ -e "\$i" \] \|\| continue`/, src);
     }
   });
