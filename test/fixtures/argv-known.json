@@ -16,6 +16,12 @@
       "reason": "The harness, not the model: the recorder replaces the alias `c`, so the alias `d` after it is not expanded and its `declare x=1` does not run. In bash, `c d` runs `command declare x=1`, as the model says."
     },
     {
+      "input": "[ -n \"$D\" ] || exit 1\neval \"D=\"\nrm -rf $D/x",
+      "command": "rm -rf $D/x",
+      "env": "values",
+      "reason": "The harness, not the model: the recorder replaces `eval`, so `D=` does not run and `D` keeps the value the environment gave it (`a b`). In bash, `eval \"D=\"` empties `D`, as the model says."
+    },
+    {
       "input": "#!/bin/sh\r\n# a\r\necho \"PV \" x\r\n",
       "command": "echo \"PV \" x",
       "reason": "A CR before a LF: the model reads the text with each such CR masked as a space (`crlf`, which warns); bash gives the word its CR (oracles.md 2.6, 4)."

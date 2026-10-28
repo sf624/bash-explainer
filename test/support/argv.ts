@@ -29,6 +29,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { ExplainOptions } from '../../src/analyzer';
 import { extractShell, hostKind } from '../../src/hosts';
 import { hostProvided } from '../../src/hosts/remap';
 import { scriptTree } from '../../src/hosts/scripts';
@@ -39,6 +40,7 @@ import { BASH_VARIABLES } from '../../src/semantics/vars';
 import { wordFields, type WordEnv } from '../../src/semantics/words';
 import { staticWordValue } from '../../src/staticword';
 import { shellState } from '../../src/semantics/state';
+import type { Shell } from '../../src/shellfeatures';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
 import { descendants, field, fields, hasError, type SyntaxNode, type SyntaxTree } from '../../src/syntax/tree';
 import { runContained, scoped } from './contained';
@@ -305,8 +307,11 @@ export function splitTargets(fieldsRun: readonly string[]): { argv: string[]; ta
 // ---------------------------------------------------------------------------------------------------
 // Running inputs and comparing (test/argv.test.ts).
 
-/** A script to check: its tree, the model the explanation builds for it, and the variables its host sets. */
-export interface ArgvInput { name: string; tree: SyntaxTree; model: StateModel; provided: readonly string[] }
+/**
+ * A script to check: its tree, the model the explanation builds for it, and the variables its host sets; for a host's
+ * region, what the explanation of its lines is given (`explain`: the shell and the options, as src/hosts/remap.ts does).
+ */
+export interface ArgvInput { name: string; tree: SyntaxTree; model: StateModel; provided: readonly string[]; explain?: { shell?: Shell; opts: ExplainOptions } }
 
 /** The environments each input runs in (oracles.md, 2.3). */
 export type ArgvEnvName = 'probe' | 'values';
@@ -393,11 +398,14 @@ export interface ArgvCandidate { input: string; command: string; word: string; f
 const recorded = (word: SyntaxNode): boolean => descendants(word, ['command_substitution', 'process_substitution', 'special_variable_name'])
   .some((n) => n.type !== 'special_variable_name' || n.text === '?');
 
-/**
- * Runs each input in each environment, in `jobs` batches at once, and compares: the differences, the commands that
- * escaped, the counts, and the words the model could know.
- */
-export async function checkArgv(inputs: readonly ArgvInput[], { jobs = 1 } = {}): Promise<{ found: ArgvFinding[]; escaped: string[]; counts: Record<ArgvEnvName, ArgvCounts>; candidates: ArgvCandidate[] }> {
+/** One run of an input in an environment: its instrumented script, the variables given, and what bash logged. */
+export interface ArgvPlanRun { input: ArgvInput; inst: Instrumented; env: ArgvEnvName; variables: Record<string, string>; run: ArgvRun }
+
+/** The environment the model reads for a run: the one bash ran in (ARGV_ENV and the run's variables), BOX and its files. */
+export const runEnv = (p: ArgvPlanRun): WordEnv => ({ variables: { ...ARGV_ENV, ...p.variables }, pwd: BOX, files: FILES });
+
+/** Runs each input in each environment, in `jobs` batches at once. */
+export async function runArgv(inputs: readonly ArgvInput[], { jobs = 1 } = {}): Promise<ArgvPlanRun[]> {
   const plans = inputs.flatMap((input) => {
     const inst = instrumentArgv(input.tree, input.model);
     return ARGV_ENVS.map((env) => ({ input, inst, env, ...argvJob(input, inst.script, env) }));
@@ -405,8 +413,16 @@ export async function checkArgv(inputs: readonly ArgvInput[], { jobs = 1 } = {})
   const chunks: number[][] = Array.from({ length: Math.max(1, Math.min(jobs, plans.length)) }, () => []);
   plans.forEach((_, i) => chunks[i % chunks.length].push(i));
   const batches = await Promise.all(chunks.map((c) => runArgvBatch(c.map((i) => plans[i].job))));
-  const runs: ArgvRun[] = [];
-  chunks.forEach((c, k) => c.forEach((i, j) => { runs[i] = batches[k][j]; }));
+  const out: ArgvPlanRun[] = [];
+  chunks.forEach((c, k) => c.forEach((i, j) => { const { job: _, ...p } = plans[i]; out[i] = { ...p, run: batches[k][j] }; }));
+  return out;
+}
+
+/**
+ * Compares the runs of `runArgv` with the model: the differences, the commands that escaped, the counts, and the words
+ * the model could know.
+ */
+export function checkArgv(plans: readonly ArgvPlanRun[]): { found: ArgvFinding[]; escaped: string[]; counts: Record<ArgvEnvName, ArgvCounts>; candidates: ArgvCandidate[] } {
   const counts = Object.fromEntries(ARGV_ENVS.map((e) => [e, { commands: 0, ran: 0, words: 0, unknown: 0, failing: 0 }])) as Record<ArgvEnvName, ArgvCounts>;
   const found: ArgvFinding[] = [];
   const escaped: string[] = [];
@@ -414,10 +430,10 @@ export async function checkArgv(inputs: readonly ArgvInput[], { jobs = 1 } = {})
   // once they differ).
   const middles = new Map<ArgvInput, Map<ArgvMarker, Map<ArgvEnvName, string[] | undefined>>>();
   const unknownWord = new Map<ArgvMarker, string>();
-  plans.forEach((p, i) => {
-    const run = runs[i];
+  plans.forEach((p) => {
+    const { run } = p;
     escaped.push(...run.escaped.map((n) => `${p.input.name} (${p.env}): ${n}`));
-    const env: WordEnv = { variables: { ...ARGV_ENV, ...p.variables }, pwd: BOX, files: FILES };
+    const env = runEnv(p);
     for (const m of p.inst.markers) {
       counts[p.env].commands++;
       const records = run.records.get(m.id) ?? [];
@@ -485,7 +501,7 @@ export function fixtureInputs(): ArgvInput[] {
       seen.add(tree);
       const provided = hostProvided(extracted, region);
       const model = shellState(tree, region.shell, { read: fileRead(tree.root, region.host), ...(provided.length ? { provided } : {}) });
-      out.push({ name: `hosts/${file}:${region.start + 1}`, tree, model, provided });
+      out.push({ name: `hosts/${file}:${region.start + 1}`, tree, model, provided, explain: { shell: region.shell, opts: { host: region.host, ...(provided.length ? { hostProvided: provided } : {}) } } });
     }
   }
   return out;
