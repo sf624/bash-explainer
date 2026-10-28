@@ -297,6 +297,20 @@ describe('the pipeline example of a line agrees with the tools', () => {
         const said = JSON.stringify(new Analyzer('en').explainLine(parser.parse(line), 0).items);
         assert.ok(said.includes('/usr/bin/tac') && !said.includes('/usr/bin/rev` instead') && !said.includes('or the path `/usr/bin/rev`'), line);
       }
+      // A trap set in a subshell sees what that subshell changes after it (rev: `b c a`), and not what the shell
+      // changes once the subshell is gone (sort).
+      const inner = "trap 'printf \"b\\nc\\na\\n\" | sort' USR1; hash -p /usr/bin/rev sort; kill -USR1 $BASHPID";
+      for (const line of [`( ${inner} )`, `x=$( ${inner} ); echo "$x"`, `{ ${inner}; } | cat`]) {
+        assert.deepStrictEqual(lines(bash(line).stdout.toString()), ['b', 'c', 'a'], line);
+        for (const lang of ['en', 'ja'] as const) {
+          const ex = new Analyzer(lang).explainLine(parser.parse(line), 0);
+          assert.ok(JSON.stringify(ex.items).includes('/usr/bin/rev'), `${line} (${lang})`);
+          assert.ok(!ex.examples.some((x) => x.kind === 'pipeline'), `${line} (${lang})`);
+        }
+      }
+      const gone = "( trap 'printf \"b\\nc\\na\\n\" | sort' USR1; kill -USR1 $BASHPID ); hash -p /usr/bin/tac sort";
+      assert.deepStrictEqual(lines(bash(gone).stdout.toString()), ['a', 'b', 'c']);
+      assert.ok(!JSON.stringify(new Analyzer('en').explainLine(parser.parse(gone), 0).items).includes('runs the path `/usr/bin/tac`'));
       // (Two paths, one on each path: tac or rev, never sort; no example either.)
       const either = `hash -p /usr/bin/tac sort; if [ -n "$x" ]; then hash -p /usr/bin/rev sort; fi; ${abc}`;
       assert.deepStrictEqual(lines(bash(either, { x: '1' }).stdout.toString()), ['b', 'a', 'c']);

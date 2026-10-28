@@ -27,7 +27,7 @@ import { WalkExpansions } from './expansions';
 import { kept, temporaries } from './temporaries';
 import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
-import { changesWords, ExpansionError, type Frame, OPAQUE, type Statement, type Target, WalkAgain } from './shared';
+import { changesWords, ExpansionError, type Frame, OPAQUE, processIn, type SetAt, type Statement, type Target, WalkAgain } from './shared';
 
 export type { ChildPass, Frame, Target } from './shared';
 
@@ -84,7 +84,7 @@ export class Walker {
    */
   readonly sureLater = new Map<string, SyntaxNode>();
   /** The actions of `trap`, run after the top level (an EXIT trap with its state at the end). */
-  readonly traps: { script: NestedScript; host: SyntaxNode; st: ShellState; since: number; exit: boolean; exitOnly: boolean; dead: boolean }[] = [];
+  readonly traps: { script: NestedScript; host: SyntaxNode; st: ShellState; since: number; proc: Target | undefined; exit: boolean; exitOnly: boolean; dead: boolean }[] = [];
   /** The command whose alias, `eval` string or trap action is being run (its nodes are in their own tree). */
   aliasHost: SyntaxNode | undefined;
   /** The walks of each function body: the state it was called with, and the state after it. */
@@ -107,7 +107,7 @@ export class Walker {
   changeCount = 0;
   readonly lastChange = new Map<string, number>();
   readonly lastAt = new Map<string, SyntaxNode>();
-  private readonly changeAtDefinition = new Map<SyntaxNode, number>();
+  private readonly changeAtDefinition = new Map<SyntaxNode, SetAt>();
   /** The sets of the bodies being walked, which collect what they change. */
   readonly collecting: Set<string>[] = [];
   /** The `break` and `continue` the `${ …; }` of the statement being run made (see `Target`). */
@@ -288,11 +288,11 @@ export class Walker {
           found = true;
           // (It may be called from outside the script, with any values: its conditions are not decided.)
           this.unwalked.add(def);
-          const since = this.changeAtDefinition.get(def)!;
+          const { since, proc } = this.changeAtDefinition.get(def) ?? { since: Infinity, proc: undefined }; // (None where bash stops at it.)
           const after = new Set([...this.lastChange].filter(([, i]) => i > since).map(([k]) => k));
           this.walks.set(def, []);
           this.outside++;
-          this.walkBody(def, widen(this, at, after, since), { def, saved: new Map() });
+          this.walkBody(def, widen(this, at, after, { since, proc }), { def, saved: new Map() });
           this.outside--;
         }
       }
@@ -308,7 +308,7 @@ export class Walker {
     // (An action may set a trap of its own: it is walked in the next round.)
     for (let round = 0; round < NESTED_DEPTH && this.traps.length; round++) for (const t of this.traps.splice(0)) {
       const after = new Set([...this.lastChange].filter(([, i]) => i > t.since).map(([k]) => k));
-      const st = t.exit && this.topLevel(t.host) ? end : widen(this, t.st, after, t.since);
+      const st = t.exit && this.topLevel(t.host) ? end : widen(this, t.st, after, t);
       this.trapAction(t.script, t.host, st, t.exitOnly, t.dead);
     }
   }
@@ -978,7 +978,7 @@ export class Walker {
     // 5.2 one whose name is no valid name: bash stops the script there (src/semantics/posixexits.ts).
     if (prev?.state === 'on' && prev.readonly === 'on') return st;
     if ((st = this.builtins.posixExit(n, st, st)).unreachable || (builtins[name]?.builtin === 'special' && option(st, 'set', 'posix') === 'on')) return st;
-    this.changeAtDefinition.set(n, this.changeCount);
+    this.changeAtDefinition.set(n, { since: this.changeCount, proc: processIn(this.targets) });
     // Under `set -a`, a function defined is exported.
     const all = option(st, 'set', 'allexport');
     const exported: Tri = all === 'on' ? 'on' : all === 'unknown' ? tri(prev?.exported ?? 'off', 'on') : prev?.exported ?? 'off';

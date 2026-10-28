@@ -38,6 +38,7 @@ Keep it current:
     - A multi-word alias (`alias s='sort -r'`) does not mention a sure `hash -p` of the word it runs.
     - The words of a name that may run a path of `hash -p` are still read with the name's spec (`grep -o 'a+'` after a conditional `hash -p /usr/bin/egrep grep` reads a BRE).
     - `command sort` and `exec sort` ignore the table (bash uses it).
+    - A trap's action that changes the table, set in the shell, is taken to have maybe run before a subshell that sends its signal (`trap 'hash -p /usr/bin/tac sort' USR1; ( kill -USR1 $$; sort )`): true only for a signal from elsewhere; the subshell's own `kill` reaches the shell after the fork.
 
 ## Waiting on the maintainer
 
