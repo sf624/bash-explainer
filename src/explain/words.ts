@@ -406,7 +406,8 @@ export function tildeNote(cx: Explainer, n: SyntaxNode): string {
  * a pattern that matches itself. `text` starts `base` characters into the node.
  */
 export function globToken(cx: Explainer, n: SyntaxNode, target: GlobTarget, text = n.text, base = 0, kind: Kind = 'pattern'): Token {
-  const bracket = text === n.text ? bracketPiece(cx, n) : undefined;
+  // (A part that opens or closes a `[…]` of its word: the `[` of `[$x]` in a `case` pattern.)
+  const bracket = bracketPiece(cx, n);
   if (bracket) return bracket;
   if (!hasGlob(text)) return cx.tok(n, kind, cx.s(`パターン \`${text}\`（ワイルドカードを含まないので、この文字列そのものに一致）`, `Pattern \`${text}\` (no wildcards, so it matches exactly this text)`));
   return cx.tok(n, kind, globIntro(cx.lang, target) + extglobNote(cx, text), globChildren(cx, n, text, base));
