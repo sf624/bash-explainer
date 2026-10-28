@@ -22,7 +22,7 @@ import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { ARGV_KNOWN, type ArgvInput, type ArgvKnownFile, type ArgvPlanRun, checkArgv, fixtureInputs, instrumentArgv, matchKnown, runArgv, runArgvBatch, SNIPPET_SAMPLE, snippetInputs, toNull } from './support/argv';
 import { probeSkipReason } from './support/probe';
-import { checkRenderings, claimsOf, explainInput, globExampleOn, matchRenderKnown, RENDER_KNOWN, type RenderFinding, type RenderKnownFile, staleClasses, wordCauses, wordCounts } from './support/renderings';
+import { checkRenderings, claimsOf, explainInput, globExampleOn, matchRenderKnown, RENDER_KNOWN, type RenderFinding, type RenderKnownFile, saysOperand, staleClasses, wordCauses, wordCounts } from './support/renderings';
 
 describe('argv capture: the word model and the explanation against bash (oracles.md, steps 2, 3 and 9)', function () {
   this.timeout(120000);
@@ -78,6 +78,22 @@ describe('argv capture: the word model and the explanation against bash (oracles
     // one it does not know.
     assert.deepStrictEqual(wordCounts([{ fields: ['cp'] }, {}, { fields: ['d'] }], ['cp', 'a', 'b', 'd']), [1, 2, 1]);
     assert.deepStrictEqual(wordCounts([{ fields: ['cp'] }, {}, {}], ['cp', 'a', 'b']), [1, undefined, undefined]);
+  });
+
+  it('reads the role of a field at its place in a hedge or in the words of a brace expansion', () => {
+    const dest = ['destination (the new name, or an existing directory)', 'destination: the new name, or an existing directory'];
+    const place = (text: string, at: number, of: number, counts: [string, number][] = []) => ({ text, at, of, counts: new Map(counts) });
+    // (The words of `cp a{,'.bak'}` and `cp a{,"b c"}` as written, with their quotes; bash's fields have none: by place.)
+    const quoted = "expands to `a` (source) and `a'.bak'` (destination: the new name, or an existing directory)";
+    const spaced = 'expands to `a` (source) and `a"b c"` (destination: the new name, or an existing directory)';
+    assert.deepStrictEqual([saysOperand(quoted, dest, place('a.bak', 1, 2)), saysOperand(quoted, dest, place('a', 0, 2)), saysOperand(spaced, dest, place('ab c', 1, 2))], [true, false, true]);
+    // (`several`: the part for the number of fields the word gave; `otherwise`: the part for the words it names.)
+    const several = 'source when `$a` expands to a single word; when it expands to more, they are source, then destination directory';
+    assert.deepStrictEqual([saysOperand(several, ['source'], place('a', 0, 1)), saysOperand(several, ['destination directory'], place('b', 1, 2)), saysOperand(several, ['source'], place('b', 1, 2))], [true, true, false]);
+    const otherwise = 'destination (the new name, or an existing directory) when `$a` expands to a single word; destination directory when it expands to more';
+    assert.deepStrictEqual([1, 2, 0].map((n) => saysOperand(otherwise, dest, place('b', 0, 1, [['$a', n]]))), [true, false, false]);
+    // (A hedge in another form is a finding, so that a new wording is seen.)
+    assert.strictEqual(saysOperand('source when `$a` expands to a single word, or else none', ['source'], place('a', 0, 1)), false);
   });
 
   it('accepts a class of differences only under its condition, and refuses a class with none', () => {

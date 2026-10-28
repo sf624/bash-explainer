@@ -471,8 +471,8 @@ export function checkArgv(plans: readonly ArgvPlanRun[]): { found: ArgvFinding[]
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 
 /**
- * The fixtures bash runs, each with the model the explanation reads (src/analyzer.ts, src/hosts/remap.ts): sample.sh and
- * coverage.sh; each section of sample.sh on its own (in place, the other lines blank), since `set -e` stops the whole
+ * The fixtures bash runs, each with the model the explanation reads (src/analyzer.ts, src/hosts/remap.ts): sample.sh,
+ * coverage.sh and renderings.sh (the inputs of the renderings check, test/support/renderings.ts); each section of sample.sh on its own (in place, the other lines blank), since `set -e` stops the whole
  * file early; and the shell code of the host fixtures that bash runs. (Not posix.sh, ksh.ksh, nor the regions of sh
  * and of bats: another shell, or bats around the script.)
  */
@@ -483,7 +483,7 @@ export function fixtureInputs(): ArgvInput[] {
     const tree = parser.parse(text);
     out.push({ name, tree, model: shellState(tree, 'bash'), provided: [] });
   };
-  for (const name of ['sample.sh', 'coverage.sh']) add(name, fs.readFileSync(path.join(FIXTURES, name), 'utf8'));
+  for (const name of ['sample.sh', 'coverage.sh', 'renderings.sh']) add(name, fs.readFileSync(path.join(FIXTURES, name), 'utf8'));
   const lines = fs.readFileSync(path.join(FIXTURES, 'sample.sh'), 'utf8').split('\n');
   const heads = lines.flatMap((l, i) => (/^# --- .* ---$/.test(l) ? [i] : []));
   heads.forEach((from, k) => {
