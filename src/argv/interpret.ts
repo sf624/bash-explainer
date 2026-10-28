@@ -58,7 +58,7 @@ export type ArgRole =
    * `su -c 'cmd'`) has no `parse`; nor has a string joined from the words (`joined`). `of` is the option whose
    * value or words it is (`su -c`, `find -exec`); `item`, the operand it fills (`bash -c`, `ssh host cmd`).
    */
-  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec }
+  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec; unterminated?: true }
   /** The word that ends an option's command (`;` of `find -exec … ;`), and its text (one of the option's `until.terminators`). */
   | { role: 'terminator'; text: string }
   /** A word of the shell string that a `command` role before it joins from the words (`ssh host ls -l`). */
@@ -524,7 +524,11 @@ class Reader {
       const { terminators, slot } = opt.until;
       let j = last + 1;
       while (j < st.end && !terminators.includes(this.words[j].value ?? '')) j++;
-      if (j > last + 1) st.roles.set(last + 1, this.command(slot, last + 1, j, flag));
+      if (j > last + 1) {
+        const run = this.command(slot, last + 1, j, flag);
+        // No terminator: find refuses the line (`missing argument to -exec`), so that command never runs.
+        st.roles.set(last + 1, j < st.end ? run : { ...run, unterminated: true });
+      }
       if (j < st.end) { st.roles.set(j, { role: 'terminator', text: this.words[j].value! }); return j; }
       return st.end - 1;
     }

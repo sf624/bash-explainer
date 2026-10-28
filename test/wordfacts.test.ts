@@ -130,11 +130,27 @@ describe('word facts', () => {
     assert.strictEqual(out('*'), '<x y><x1><x2><.>');
     assert.strictEqual(out(''), '<.>');
     assert.strictEqual(out('a b', true), '<a b><.>');
-    assert.ok(facts('find . -maxdepth 0 -exec printf "<%s>" $a {} \;').every((f) => f.id !== 'unquoted-variable-as-path'), 'printf is no file command');
+    assert.ok(facts('find . -maxdepth 0 -exec printf "<%s>" $a {} \\;').every((f) => f.id !== 'unquoted-variable-as-path'), 'printf is no file command');
     // find's own operand is split the same way, and is not a path of a command it runs.
     assert.match(runBash('a=". /nonexistent"; find $a -maxdepth 0 2>&1', { files: ['x1'] }).stdout, /^\.\nfind: .*nonexistent/);
     assert.deepStrictEqual(facts('find $d -name x'), []);
-    assert.strictEqual(facts('find . -exec cp $a {} \;').length, 1);
+    assert.strictEqual(facts('find . -exec cp $a {} \\;').length, 1);
+  });
+
+  it('names the words of each command find runs, and of none that find refuses', () => {
+    const texts = (src: string) => facts(src).filter((f) => f.id === 'unquoted-variable-as-path').map((f) => f.text.match(/`([^`]+)` is not quoted/)![1]);
+    // bash: both actions run, for the one match, in the order written.
+    assert.strictEqual(runBash("find . -maxdepth 0 -exec echo one {} \\; -exec echo two {} \\;").stdout, 'one .\ntwo .\n');
+    assert.deepStrictEqual(texts('find . -exec cp $a {} \\; -exec mv $b {} \\;'), ['$a', '$b']);
+    // (A wrapper and the command it runs are one command's words: each once.)
+    assert.deepStrictEqual(texts('sudo cp $a $b'), ['$a', '$b']);
+    assert.deepStrictEqual(texts('find . -exec sudo cp $a $b {} +'), ['$a', '$b']);
+    // find needs the `;` or `+` that ends the command; written bare, the `;` is the shell's, and find refuses the line,
+    // so no command runs: `missing argument to `-exec'`, with no output of the action and status 1.
+    const refused = runBash('find . -maxdepth 0 -exec echo ran {} ;');
+    assert.deepStrictEqual([refused.stdout, refused.status, /^find: missing argument to `-exec'/.test(refused.stderr)], ['', 1, true], refused.stderr);
+    assert.deepStrictEqual(texts('find . -exec rm $a {} ;'), []);
+    assert.deepStrictEqual(texts('find . -exec cp $a {} \\; -exec mv $b {} ;'), ['$a']);
   });
 
   const fine = [

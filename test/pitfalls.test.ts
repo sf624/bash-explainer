@@ -71,6 +71,8 @@ describe('pitfalls', () => {
     './read x', '/usr/local/bin/read x', 'read() { :; }; read x', 'enable -n read; read x', './x = 1', 'bin/x = 1',
     // A string another shell runs is not this line's words; a function named sudo runs no command of its spec.
     "sudo sh -c 'rm -rf $DIR/x'", 'sudo rm -rf "${DIR:?}/x"', 'sudo() { :; }; sudo rm -rf $DIR/x', 'sudo $cmd -rf $DIR/x',
+    // find refuses an `-exec` that no `\;` or `+` ends (the bare `;` is the shell's): nothing runs.
+    'find . -exec rm -rf $DIR/x {} ;',
   ];
   for (const src of fine) {
     it(`says nothing about ${src}`, () => assert.deepStrictEqual(notes(src), []));

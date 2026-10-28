@@ -135,7 +135,9 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
         const rest = words.slice(word, p.end);
         visit(interpret(ps.expressionSpec, rest.map(argWordFor(model.shell)), { name: p.command, lookup: lookupCommand }), ps.expressionSpec, rest);
       }
-      if (role.role !== 'command' || !role.parse) continue;
+      // (A command that an option's terminator does not end is not run: `find . -exec rm {} ;` is refused by find, with
+      // the `;` taken by the shell.)
+      if (role.role !== 'command' || !role.parse || role.unterminated) continue;
       if (role.name !== undefined && !runsString(role.slot)) {
         envs ??= slotEnvs(model.env(n), parse, spec, a, model.shell, lookupCommand);
         out.push({ nameWord: words[word], name: pathCommand(role.name), args: words.slice(word + 1, role.parse.end), env: envs.get(words[word]) });
