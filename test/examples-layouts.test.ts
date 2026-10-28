@@ -366,8 +366,9 @@ describe('the made-up environment, with what the script exports', () => {
       'PATH=/usr/local/bin:/usr/bin:/bin; env | grep PATH', 'declare -xu FOO=abc; env | grep FOO',
       'f() { export FOO=1; }; f; env | grep FOO', '(export FOO=1); env | grep FOO', "export FOO=$'a\\nb'; env | grep -x b",
       'a=(1 2); export a; env | grep ^a=', 'export LANG=C; env | grep LANG', 'SHLVL=5; env | grep SHLVL', 'env | grep SHLVL',
-      // (Unset on some paths only, a name the made-up environment does not have: on none of them.)
-      'if [ "$1" ]; then unset FOO; fi; env | grep FOO',
+      // (Unset on some paths only, a name the made-up environment does not have: on none of them, exported after or not.)
+      'if [ "$1" ]; then unset FOO; fi; env | grep FOO', 'if [ "$1" ]; then unset FOO; fi; export FOO; env | grep FOO',
+      'if [ "$1" ]; then if [ "$2" ]; then unset FOO; fi; else FOO=/x; fi; env | grep FOO',
       // (In the order bash passes them: by the bucket of each name in its table.)
       'env | cat', 'export FOO=bar AAA=2; env | cat', 'unset HOME; export -n TERM; export B=1; env | cat', "unset HOME; export FOO=$'a\\nb'; env | cat",
     ]) {
@@ -382,6 +383,27 @@ describe('the made-up environment, with what the script exports', () => {
     for (const lang of ['en', 'ja'] as const) {
       const terminal = explain('env | grep SHLVL', 0, lang, { host: { kind: 'markdown' } }).examples.find((e) => e.kind === 'pipeline');
       assert.deepStrictEqual(terminal?.sections.at(-1)!.lines, ['SHLVL=1'], lang);
+    }
+  });
+  it('follows a removal, an export or a declaration on some paths only, as bash does with and without it', function () {
+    this.timeout(60000);
+    // (The model's rule: the path that left the variable alone has it as the shell started, set and exported only
+    // when the environment had it; a removal makes it exported at most then. bash run with no argument, and with one.)
+    for (const op of ['unset X', 'export -n X', 'export X=v', 'declare -x X=v']) {
+      for (const name of ['HOME', 'FOO']) {
+        for (const later of ['', 'X=/x; ']) {
+          const script = `if [ "\${1-}" ]; then ${op.replace('X', name)}; fi; ${later.replace('X', name)}env | grep '^${name}='`;
+          const [alone, changed] = [bash(script), lines(run('env', ['-i', ...made, 'bash', '-c', script, 's', '1']).stdout)];
+          for (const lang of ['en', 'ja'] as const) {
+            const ex = madeUpOf(script, lang);
+            // (Shown only where bash prints the same on both paths, and then what it prints. Exported on one path and
+            // given a value after: bash prints it on both, which the model does not follow.)
+            if (ex) assert.deepStrictEqual(ex.sections.at(-1)!.lines, alone, `${script} (${lang})`);
+            const kept = /^(export|declare)/.test(op) && name === 'HOME' && later;
+            assert.strictEqual(!!ex, JSON.stringify(alone) === JSON.stringify(changed) && !kept, `${script} (${lang})`);
+          }
+        }
+      }
     }
   });
   it('makes up no environment where the model cannot tell what is exported', () => {
@@ -400,6 +422,9 @@ describe('the made-up environment, with what the script exports', () => {
       'f() { local -x QQ=1; env | cat; }; f', 'export V472=1; env | cat',
       // What bash sets itself: `_` is the path of the program, RANDOM a new number each time.
       'export _=hi; env | grep -c "^_="', 'export RANDOM=5; env | grep RANDOM', 'export SECONDS; env | grep SECONDS',
+      // A removal on some paths, then a value: on the other paths it is exported, as bash started with it.
+      'if [ "$1" ]; then unset HOME; fi; HOME=/x; env | grep HOME', 'if [ "$1" ]; then export -n LANG; fi; LANG=C; env | grep LANG',
+      'if [ "$1" ]; then unset HOME; fi; export HOME; env | grep HOME', 'if [ "$1" ]; then if [ "$2" ]; then unset HOME; fi; else HOME=/x; fi; env | grep HOME',
       // Where the model is blind (`read` then arithmetic), env stays strict.
       'read n; echo $(( n * 2 )); env | grep FOO',
     ]) {
@@ -426,6 +451,7 @@ describe('the made-up environment, with what the script exports', () => {
     // (What bash does there.)
     assert.deepStrictEqual(bash('export _=hi; env | grep "^_="'), ['_=/usr/bin/env']);
     assert.deepStrictEqual(bash('if [ "$1" ]; then unset HOME; fi; env | grep HOME'), ['HOME=/home/alice']);
+    assert.deepStrictEqual(bash('if [ "$1" ]; then unset HOME; fi; HOME=/x; env | grep HOME'), ['HOME=/x']);
     assert.deepStrictEqual(bash("env -i bash -c 'env | cut -d= -f1'"), ['PWD', 'SHLVL', '_']);
     assert.deepStrictEqual(bash('PATH=/bin:/usr/bin; env | grep ^_='), ['_=/bin/env']);
     assert.deepStrictEqual(bash('f() { local -x QQ=1; env | cut -d= -f1 | head -n 1; }; f'), ['QQ']);
@@ -540,7 +566,9 @@ describe('the variables of the environment that change a layout', function () {
   });
   it('drops it where the model cannot tell, and keeps it in a function the script does not change it for', () => {
     for (const lang of ['en', 'ja'] as const) {
-      for (const script of ['source x; export TIME_STYLE=long-iso; ls -l | cat', 'source x; TIME_STYLE=1\nf() { ls -l | cat; }', 'PS_FORMAT=$f ps | cat', "env -u LANG bash -c 'who | cat'", "env -i bash -c 'who | cat'",
+      // (A function the script may call from where the model does not see: `bash s.sh f` prints ISO dates.)
+      for (const script of ['f() { export TIME_STYLE=long-iso; }; "$@"; ls -l | cat', 'f() { export TIME_STYLE=long-iso; }; $1; ls -l | cat', 'f() { export TIME_STYLE=long-iso; }; eval "$1"; ls -l | cat',
+        'source x; export TIME_STYLE=long-iso; ls -l | cat', 'source x; TIME_STYLE=1\nf() { ls -l | cat; }', 'PS_FORMAT=$f ps | cat', "env -u LANG bash -c 'who | cat'", "env -i bash -c 'who | cat'",
         "bash -c 'LANG=C; ls -l | cat'", 'if [ "$1" ]; then unset LANG; fi; who | cat', 'declare -n r=$1; r=long-iso; ls -l | cat', 'LANGUAGE=de ls -l | cat', 'LC_MESSAGES=ja_JP.UTF-8 df -h | cat', 'if [ "$1" ]; then export TIME_STYLE=long-iso; fi; ls -l | cat', 'TIME_STYLE+=x ls -l | cat',
         'unset LANG; who | cat', 'LC_ALL=C who | cat', 'LC_NUMERIC=de_DE.UTF-8 df -h | cat', 'TIME_STYLE=$1; export TIME_STYLE\nf() { ls -l | cat; }']) {
         assert.ok(!madeUpOf(script, lang), `${script} (${lang})`);
@@ -548,7 +576,7 @@ describe('the variables of the environment that change a layout', function () {
       // (Where the model does not follow the whole script, it still follows what the script does to these names.)
       for (const [script, layout, argv] of [['source ./x; ps aux | cat', 'ps-bsd-u', ['ps', 'aux']], ['read -p "n: " n; echo $(( n * 2 )); ps aux | cat', 'ps-bsd-u', ['ps', 'aux']],
         ['source venv/bin/activate; ls -l | cat', 'ls-long', ['ls', '-l']], ['export LANG=en_US.UTF-8; ls -l | cat', 'ls-long', ['ls', '-l']], ['eval "$(ssh-agent -s)"; df -h | cat', 'df-human', ['df', '-h']],
-        ['source x\nf() { ls -l | cat; }', 'ls-long', ['ls', '-l']], ['f() { ps | cat; }', 'ps', ['ps']], ['LC_ALL=C.UTF-8 who | cat', 'who', ['who']], ['LC_ALL= who | cat', 'who', ['who']], ['LANG= ls -l | cat', 'ls-long', ['ls', '-l']]] as [string, Layout, string[]][]) {
+        ['source x\nf() { ls -l | cat; }', 'ls-long', ['ls', '-l']], ['f() { X=1; }; "$@"; ls -l | cat', 'ls-long', ['ls', '-l']], ['f() { ps | cat; }', 'ps', ['ps']], ['LC_ALL=C.UTF-8 who | cat', 'who', ['who']], ['LC_ALL= who | cat', 'who', ['who']], ['LANG= ls -l | cat', 'ls-long', ['ls', '-l']]] as [string, Layout, string[]][]) {
         assert.deepStrictEqual(madeUpOf(script, lang)?.sections[0].lines, layoutSample(layout, [{ argv }, { argv: ['cat'] }], 0), `${script} (${lang})`);
       }
     }

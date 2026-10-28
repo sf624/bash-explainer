@@ -304,6 +304,10 @@ describe('explanations from the execution environment', () => {
     const caveat = pitfalls("Y=1\nsh -c 'echo \"$Y\"'", 'en', 1);
     assert.match(caveat[0], /^ⓘ Caveat: .* only when `Y` was in the environment already/);
     assert.deepStrictEqual(pitfalls("if [ \"$1\" ]; then unset Y; fi\nY=1\nsh -c 'echo \"$Y\"'", 'en', 2), caveat);
+    // (And it stays unset there unless the environment has it: with `set -u`, bash fails "FOO: unbound variable".)
+    for (const src of ['set -u; if [ "$1" ]; then unset FOO; fi\necho "$FOO"', 'set -u; while [ "$1" ]; do unset FOO; shift; done\necho "$FOO"']) {
+      assert.match(explain(src, 'en', 1).notes.join('\n'), /ⓘ Caveat: `FOO` is not set here: with `set -u` on, bash fails with "FOO: unbound variable"/, src);
+    }
     assert.deepStrictEqual(pitfalls("name=x\nssh host 'echo $name'", 'en', 1), ['⚠ Pitfall: the remote shell expands `$name`, but it does not have `name`, a variable of this script. To send its value, write it in double quotes, so that it is expanded here']);
     assert.deepStrictEqual(pitfalls("name=x\nssh host 'echo $name'", 'ja', 1), ['⚠ 落とし穴: `$name` はリモートのシェルが展開しますが、リモートにはこのスクリプトの変数 `name` はありません。値を送るなら、こちらで展開されるようダブルクォートの中に書きます']);
     // Exported, given to the command, set by the string itself, from the environment, not known, or in double quotes: nothing.
