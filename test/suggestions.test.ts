@@ -11,15 +11,17 @@
 //
 // The type makes every entry of the catalog appear here, so a new one is classified when it is added. The test
 // checks the classification against the English text: an entry that reads as a suggestion is not `none`, and one
-// classified as a suggestion reads as one (or names the parameter that carries it).
+// classified as a suggestion reads as one (or names the parameter that carries it). The style checks of
+// src/pitfalls.ts are classified alike (`STYLE_SUGGESTIONS`, step 6), by their codes.
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { type FactId, MESSAGES } from '../src/messages';
+import { STYLE_REWRITES, type StyleCode } from '../src/pitfalls';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { corpusFacts, MECHANICAL } from './support/rewrite-states';
+import { corpusFacts, MECHANICAL, type SuggestionId } from './support/rewrite-states';
 
 type Kind = 'mechanical' | 'scenario' | 'prose' | 'none';
 /** A suggestion the text does not spell out: `via` names the parameter that carries it (given by the analyzer), or says it is implied. */
@@ -154,6 +156,39 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'actions-script-injection': 'prose',
 };
 
+/**
+ * The style checks (src/pitfalls.ts), by their codes: each suggests a rewrite. Two are advice whose rewrite changes what
+ * runs, as the line means it (docs/design/oracles.md 3.1): a run checks them only with a set-up of their own.
+ */
+const STYLE_SUGGESTIONS: Record<StyleCode, Exclude<Kind, 'none'>> = {
+  // `[-f x]` → `[ -f x ]`, `[[-f x]]` → `[[ -f x ]]`.
+  'bracket-no-space': 'mechanical',
+  // `x = 1` → `x=1` (where `=` and one word follow the name).
+  'assignment-with-spaces': 'mechanical',
+  // `{echo a;}` → `{ echo a;}`, `{echo a}` → `{ echo a; }`.
+  'brace-no-space': 'mechanical',
+  // `{ echo a; echo b }` → `echo b; }`.
+  'brace-close-no-separator': 'mechanical',
+  // `rm -rf $D/*` → `"${D:?}"/*`, or `[ -n "${D%/}" ] || exit 1` before the statement.
+  'rm-empty-variable-root': 'mechanical',
+  // `read x` → `read -r x`.
+  'read-without-r': 'mechanical',
+  // `[ $a < $b ]` → `[ $a \< $b ]`.
+  'redirect-in-bracket': 'mechanical',
+  // `[ -f $x]` → `[ -f $x ]`.
+  'bracket-close-in-word': 'mechanical',
+  // `[ a && b ]` → `[ a ] && [ b ]`.
+  'and-or-in-bracket': 'mechanical',
+  // Download to a file and read it before running it: a person reads it.
+  'download-run-by-shell': 'prose',
+  // `exit 130` last in the action, a string `trap` runs: needs the signal sent to the script.
+  'trap-goes-on': 'scenario',
+  // Advice: `source ./lib.sh` reads another file than `source lib.sh` where `$PATH` has one of the name: a PATH set up.
+  'source-searches-path': 'scenario',
+  // Advice: `grep -F` (`-w`, `-x`) matches otherwise than the pattern, as meant: grep over lines of a set-up.
+  'pattern-from-variable': 'scenario',
+};
+
 /** Words of the English texts that tell the user what to write instead. */
 const SUGGESTS = /\b(Write|write it|write `|Use|use `|use a|Put|Run `|Pass|Quote it|Split it|Start the body|Keep the regex|Turn it on|single-quote|go through a shell|assign it first|instead\b|give status 0|needs a space before it|would make it|Save the file)/;
 
@@ -184,21 +219,49 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     assert.deepStrictEqual(ids.filter((id) => rewrites(id) && kind(id) !== 'mechanical'), []);
     // (Every mechanical id has them: step 4 of oracles.md is done.)
     assert.deepStrictEqual(ids.filter((id) => !rewrites(id) && kind(id) === 'mechanical'), []);
+    // (The style checks: those whose findings carry rewrites are the mechanical ones, step 6.)
+    const codes = Object.keys(STYLE_SUGGESTIONS) as StyleCode[];
+    assert.deepStrictEqual(codes.filter((c) => STYLE_REWRITES[c] !== (STYLE_SUGGESTIONS[c] === 'mechanical')), []);
   });
 
   // (docs/design/oracles.md, step 5: every fact of a mechanical id the corpus raises carries its rewrites, but where
   // 3.1 and 3.2 give none: in a string another command reads as a script, where the code would need quoting; on the
-  // right of `||` with a here-document, whose body the group would cut off; where 3.1 says "none"; in a host file.)
-  const WITHOUT: { id: FactId; input: string; why: 'string' | 'heredoc' | 'none' }[] = [
+  // right of `||` with a here-document, whose body the group would cut off; where 3.1 says "none"; in a host file.
+  // Step 6: the same of the style checks whose findings carry rewrites.)
+  const WITHOUT: { id: SuggestionId; input: string; why: 'string' | 'heredoc' | 'none' }[] = [
     { id: 'declaration-masks-status', input: "sh -c 'f() {\n  local x=$(false)\n}'", why: 'string' },
     { id: 'bracket-close-glued', input: '[ a = b\\]', why: 'none' },
     { id: 'unquoted-variable-as-path', input: "eval 'rm -rf $Q/*'", why: 'string' },
     { id: 'unquoted-variable-as-path', input: "trap 'rm -f $tmp' EXIT", why: 'string' },
     { id: 'nounset-unbound', input: "bash -c 'set -u; f() { echo \"$z\"; }; f'", why: 'string' },
     { id: 'regex-backslash-dropped', input: '[[ $x =~ ^[\\s]+$ ]]', why: 'none' },
+    // (The style checks: several words after `=`, which have no one meaning as a value, or a redirection among them;
+    // a `{` with no `}` after it; an escaped `]` or `}`, or a `]` that is not the opener's; a redirection that as an
+    // operator would make no comparison of three words; a check before `rm` where it would not stand alone.)
+    { id: 'assignment-with-spaces', input: '! a = b -a -f c', why: 'none' },
+    { id: 'assignment-with-spaces', input: 'a = b -a ( c -o d )', why: 'none' },
+    { id: 'assignment-with-spaces', input: 'a = b -a c = d', why: 'none' },
+    { id: 'assignment-with-spaces', input: 'x = >f 1', why: 'none' },
+    { id: 'assignment-with-spaces', input: 'x = a b', why: 'none' },
+    { id: 'assignment-with-spaces', input: 'x =a b', why: 'none' },
+    { id: 'brace-no-space', input: '{oops', why: 'none' },
+    { id: 'brace-no-space', input: '{echo a\\}', why: 'none' },
+    { id: 'bracket-close-in-word', input: '[ "$x"\\]', why: 'none' },
+    { id: 'bracket-close-in-word', input: '[ -n $(f)x\\]', why: 'none' },
+    { id: 'bracket-no-space', input: '[-f x\\]', why: 'none' },
+    { id: 'bracket-no-space', input: '[[-f x]', why: 'none' },
+    { id: 'redirect-in-bracket', input: '[ $a 2>5 ]', why: 'none' },
+    { id: 'redirect-in-bracket', input: '[ a < b > c ]', why: 'none' },
+    { id: 'redirect-in-bracket', input: '[ a < b ] x', why: 'none' },
+    { id: 'redirect-in-bracket', input: '[ a < b c ]', why: 'none' },
+    { id: 'redirect-in-bracket', input: '[ a >> b ]', why: 'none' },
+    { id: 'redirect-in-bracket', input: '[ a b < c ]', why: 'none' },
+    { id: 'rm-empty-variable-root', input: 'a && rm -rf ${D%/}/x', why: 'none' },
+    { id: 'rm-empty-variable-root', input: 'if rm -rf ${D%/}/x; then :; fi', why: 'none' },
+    { id: 'rm-empty-variable-root', input: 'rm -rf ${D%/}/x | cat', why: 'none' },
   ];
   it('finds a rewrite on every fact of a mechanical id in the corpus, but where none is given', () => {
-    const key = ({ id, input }: { id: FactId; input: string }): string => `${id}: ${input}`;
+    const key = ({ id, input }: { id: SuggestionId; input: string }): string => `${id}: ${input}`;
     assert.deepStrictEqual(corpusFacts().filter((f) => !f.fact.rewrite).map((f) => key({ id: f.fact.id, input: f.input })).sort(), WITHOUT.map(key).sort());
     // (The facts of the host files carry none: their edits would be offsets in the extracted text.)
     const parser = createUnbashParser();
@@ -218,5 +281,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
       { mechanical: 17, scenario: 25, prose: 14, none: 48 });
+    const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
+    assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 9, scenario: 3, prose: 1 });
   });
 });

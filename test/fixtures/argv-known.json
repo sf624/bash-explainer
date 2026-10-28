@@ -5,8 +5,8 @@
       "values": { "commands": 365, "ran": 209, "words": 676, "unknown": 37, "failing": 1 }
     },
     "snippets": {
-      "probe": { "commands": 344, "ran": 308, "words": 746, "unknown": 39, "failing": 2 },
-      "values": { "commands": 344, "ran": 308, "words": 751, "unknown": 32, "failing": 0 }
+      "probe": { "commands": 374, "ran": 331, "words": 803, "unknown": 47, "failing": 2 },
+      "values": { "commands": 374, "ran": 335, "words": 822, "unknown": 36, "failing": 0 }
     }
   },
   "known": [

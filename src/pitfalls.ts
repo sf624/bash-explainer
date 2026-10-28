@@ -16,6 +16,7 @@ import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
 import type { ConventionId } from './conventions';
 import { marked, type Note, type NoteLevel } from './messages';
+import { type Rewrite, replaceNode, replaceSpan, statementBefore, textBetween, type TextEdit } from './rewrite';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
 // `rm -rf $DIR/…`, `read` without `-r`, `<` and `>` or a missing `]` inside `[ ]`), explained where they appear: what
@@ -223,9 +224,38 @@ export const STYLE_REFS: Record<StyleCode, readonly string[]> = {
   'pattern-from-variable': [],
 };
 
-/** A style check found: its code, the node it is about, its level and its note. */
-/** A style check found on a node: its note, whose code is the check's. */
-export interface StyleFinding extends Note { code: StyleCode; node: SyntaxNode }
+/**
+ * Whether the findings of each style check carry rewrites (`StyleFinding.rewrite`, docs/design/oracles.md 3.2): the
+ * checks whose fix follows from the code the note is about (`[-f x]` → `[ -f x ]`). Not the advice whose rewrite
+ * changes what runs, as meant (`source ./lib.sh` finds another file than `source lib.sh` may; `grep -F` matches
+ * otherwise), nor a download to read or a trap's action, whose code is in a string. Total, so that a new check must
+ * decide; test/suggestions.test.ts checks it against the classification and the corpus.
+ */
+export const STYLE_REWRITES: Record<StyleCode, boolean> = {
+  'bracket-no-space': true, 'assignment-with-spaces': true, 'brace-no-space': true, 'brace-close-no-separator': true,
+  'rm-empty-variable-root': true, 'read-without-r': true, 'redirect-in-bracket': true, 'bracket-close-in-word': true,
+  'and-or-in-bracket': true, 'download-run-by-shell': false, 'trap-goes-on': false, 'source-searches-path': false,
+  'pattern-from-variable': false,
+};
+
+/**
+ * A style check found on a node: its note, whose code is the check's; where it suggests a mechanical rewrite, those
+ * with edits (`rewrite`: alternatives, each complete, the first recommended; src/rewrite.ts), whose code its text shows.
+ */
+export interface StyleFinding extends Note { code: StyleCode; node: SyntaxNode; rewrite?: readonly Rewrite[] }
+
+/** The text from the start of `from` to the end of `to` (a later node of the same tree), with `edits` made within it. */
+function edited(from: SyntaxNode, to: SyntaxNode, edits: readonly TextEdit[]): string {
+  return [...edits].sort((x, y) => y.start - x.start).reduce((t, e) => t.slice(0, e.start - from.startIndex) + e.text + t.slice(e.end - from.startIndex), textBetween(from, to));
+}
+
+/** The rewrite that makes `edits` (insertions and replacements) in the text from `from` to `to`, shown as that whole text. */
+function editSpan(from: SyntaxNode, to: SyntaxNode, edits: readonly TextEdit[]): Rewrite {
+  return replaceSpan(from, to, edited(from, to, edits));
+}
+
+/** Whether the text of a word ends with a `]` (or `}`) that a backslash escapes (`b\]`): an odd run of backslashes before it. */
+const escapedEnd = (text: string): boolean => /(^|[^\\])(\\\\)*\\.$/.test(text);
 
 /** Notes for the pitfalls whose node starts on `line`. */
 export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang, model: StateModel, shell: Shell | undefined): string[] {
@@ -355,13 +385,118 @@ const PATTERN_NAME = /pat|regexp?|(^|_)re(_|$)|expr/i;
 /** The characters of a regular expression that are special (in a BRE, an ERE or a PCRE). */
 const REGEX_SPECIAL = /[.[\]*^$\\+?(){}|]/;
 
+/**
+ * The rewrite of `[-f x]` (`open` is `[`) or `[[-f x]]` (`[[`): a space after the opener in the name, and before the
+ * closer at the end of the last word when it is glued there (`x]`). None when that closer is escaped (`x\]`) or is
+ * not the opener's (`[[-f x]`).
+ */
+function bracketSpaced(nameWord: SyntaxNode, last: SyntaxNode, open: '[' | '[['): Rewrite | undefined {
+  const close = open === '[' ? ']' : ']]';
+  if (!last.text.endsWith(close) || escapedEnd(last.text)) return undefined;
+  const at = nameWord.startIndex + open.length;
+  return editSpan(nameWord, last, [{ start: at, end: at, text: ' ' }, ...(last.text === close ? [] : [{ start: last.endIndex - close.length, end: last.endIndex - close.length, text: ' ' }])]);
+}
+
+/**
+ * The rewrite of `x = 1` (or `x =1`) as the assignment `x=1`: where `=` and at most one word follow the name (`x = a b`
+ * has no one meaning), with nothing else among them (a redirection).
+ */
+function assignmentJoined(n: SyntaxNode, name: string, a: readonly SyntaxNode[]): Rewrite | undefined {
+  const apart = a[0].text === '=';
+  if (a.length > (apart ? 2 : 1)) return undefined;
+  const nameWord = field(n, 'name')!;
+  const last = a[a.length - 1];
+  if (n.namedChildren.some((c) => c !== nameWord && !a.includes(c) && c.startIndex > nameWord.startIndex && c.startIndex < last.endIndex)) return undefined;
+  return replaceSpan(nameWord, last, `${name}=${apart ? a[1]?.text ?? '' : a[0].text.slice(1)}`);
+}
+
+/**
+ * The rewrite of `{echo a;}`: a space after `{` in the name `{echo`, and where the `}` is glued to the command, a `;`
+ * before it: as its last word (`{echo a }`: `{ echo a; }`), or at the end of its last word (`{echo a}`). Where the `}`
+ * follows the command already (`;}`, a new line: the tree has it as an error), only the space. None when no `}` is
+ * found (`{oops`).
+ */
+function braceSpaced(n: SyntaxNode, nameWord: SyntaxNode, a: readonly SyntaxNode[]): Rewrite | undefined {
+  const space = { start: nameWord.startIndex + 1, end: nameWord.startIndex + 1, text: ' ' };
+  const last = a[a.length - 1];
+  if (last?.type === 'word' && last.text === '}') {
+    const at = (a.length > 1 ? a[a.length - 2] : nameWord).endIndex;
+    return editSpan(nameWord, last, [space, { start: at, end: at, text: ';' }]);
+  }
+  if (last?.type === 'word' && last.text.endsWith('}') && !escapedEnd(last.text)) {
+    return editSpan(nameWord, last, [space, { start: last.endIndex - 1, end: last.endIndex - 1, text: '; ' }]);
+  }
+  const kids = n.parent!.children;
+  const i = kids.indexOf(n);
+  const close = kids[i + 1]?.type === ';' ? kids[i + 2] : kids[i + 1];
+  return close?.type === 'error' && close.text === '}' ? editSpan(nameWord, close, [space]) : undefined;
+}
+
+/**
+ * The rewrite of `[ $a < $b ]` (`redirect`, a redirection of the command `[`, `n`) as the comparison `[ $a \< $b ]`:
+ * the operator escaped and a word of its own, and the digits before it a word too (`[ 5>3 ]`: `[ 5 \> 3 ]`). Only
+ * where that makes a test of three words, `A \< B`, closed by `]` (`[ $a 2>5 ]` would have four, and is no
+ * comparison), with no other redirection among them; not `>>`, `<>` or `>|`.
+ */
+function escapedComparison(n: SyntaxNode, redirect: SyntaxNode): Rewrite | undefined {
+  const m = /^(\d*)([<>])(?![<>|&])/.exec(redirect.text);
+  const dest = field(redirect, 'destination');
+  const words = args(n);
+  const close = words.at(-1);
+  if (!m || !dest || close?.text !== ']') return undefined;
+  const before = words.filter((w) => w.endIndex <= redirect.startIndex);
+  const after = words.filter((w) => w.startIndex >= redirect.endIndex && w !== close);
+  if (before.length + (m[1] ? 1 : 0) !== 1 || after.length || redirectionsOf(n).some((r) => r !== redirect && r.startIndex < close.startIndex)) return undefined;
+  // (`[ $a>$b ]`: a blank before it, or the operator would be part of the word before.)
+  const pre = /\s/.test(n.text.charAt(redirect.startIndex - n.startIndex - 1)) ? '' : ' ';
+  return editSpan(field(n, 'name')!, close, [{ start: redirect.startIndex, end: redirect.endIndex, text: `${pre}${m[1] ? `${m[1]} ` : ''}\\${m[2]} ${dest.text}` }]);
+}
+
+/**
+ * Whether a statement before `stmt` in its list stops when the expansion is empty, as the note of
+ * `rm-empty-variable-root` says to write it: `check` itself, or `[ -n "$v" ] || exit 1` (`test -n`, `return`, the
+ * expansion written as one of `quoted`), with nothing between them that sets the variable `v`.
+ */
+function guardedBefore(stmt: SyntaxNode, check: string | undefined, quoted: readonly string[], v: string): boolean {
+  const kids = stmt.parent!.namedChildren;
+  for (let j = kids.indexOf(stmt) - 1; j >= 0; j--) {
+    const k = kids[j];
+    if (k.text === check || stopsWhenEmpty(k, quoted)) return true;
+    if (descendants(k, ['variable_assignment']).some((a) => field(a, 'name')?.text === v) || descendants(k, ['for_statement']).some((f) => field(f, 'variable')?.text === v)
+      || descendants(k, ['command']).some((c) => args(c).some((w) => w.text === v))) return false;
+  }
+  return false;
+}
+
+/** Whether `k` is `[ -n "$v" ] || exit 1` (or `test -n`, or `return`), its word one of `quoted`. */
+function stopsWhenEmpty(k: SyntaxNode, quoted: readonly string[]): boolean {
+  const [left, right] = k.namedChildren;
+  if (k.type !== 'list' || !k.children.some((c) => c.type === '||') || left.type !== 'command' || right.type !== 'command') return false;
+  const words = args(left).map((w) => w.text);
+  const name = commandName(left);
+  const test = (name === '[' && words.length === 3 && words[2] === ']') || (name === 'test' && words.length === 2);
+  return test && words[0] === '-n' && quoted.includes(words[1]) && ['exit', 'return'].includes(commandName(right) ?? '');
+}
+
+/** Whether the statement `n` stands alone in a list of statements (a body, the script), where one can go before it: not in `a && n`, `n | b`, `! n`, nor in a condition. */
+function standsAlone(n: SyntaxNode): boolean {
+  const p = n.parent!;
+  if (p.type === 'redirected_statement') return standsAlone(p);
+  if (['program', 'compound_statement', 'do_group', 'subshell', 'else_clause'].includes(p.type)) return true;
+  // (In `if`, `elif` and `case`, after the `then` or the `)` of its pattern.)
+  const opener = p.children.findIndex((c) => !c.named && (c.type === 'then' || c.type === ')'));
+  return ['if_statement', 'elif_clause', 'case_item'].includes(p.type) && opener >= 0 && p.children.indexOf(n) > opener;
+}
+
 /** The style checks whose node starts on a line from `from` to `to`, in one walk of the tree, with the model of the tree and its shell. */
 export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number, model: StateModel, shell: Shell | undefined): StyleFinding[] {
   const s = pick(lang);
   const found: StyleFinding[] = [];
-  const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string) => {
+  // (`rewrite`: the rewrites the text shows the code of; the finding carries those with edits, as a fact does.)
+  const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string, rewrite: readonly Rewrite[] = []) => {
     const convention = STYLE_CONVENTIONS[code];
-    found.push({ ...marked(lang, STYLE_LEVELS[code], s(ja, en), { kind: 'pitfall' }), code, node, ...(convention ? { convention } : {}) });
+    const edits = rewrite.filter((r) => r.edits.length);
+    found.push({ ...marked(lang, STYLE_LEVELS[code], s(ja, en), { kind: 'pitfall' }), code, node, ...(convention ? { convention } : {}), ...(edits.length ? { rewrite: edits } : {}) });
   };
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row >= from && n.startPosition.row <= to) check(n);
@@ -374,39 +509,57 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         if (writtenAsBracket(n)) bracket(n);
         const name = commandName(n);
         const a = args(n);
-        // `[-f x]`: the name is one word, `[-f`.
+        // `[-f x]`: the name is one word, `[-f`. (`[[-f x]]` too: `[[` is a reserved word only as a word of its own.)
         if (name && /^\[[^\]]/.test(name) && a.at(-1)?.text.endsWith(']')) {
-          add('bracket-no-space', field(n, 'name')!, `\`[\` は普通のコマンドなので、あとに空白が要ります（\`${name}\` は別のコマンド名になる）。\`[ ${name.slice(1)} …\` のように書きます`,
-            `\`[\` is an ordinary command, so a space must follow it (\`${name}\` reads as another command name). Write \`[ ${name.slice(1)} …\``);
+          const nameWord = field(n, 'name')!;
+          const open = name.startsWith('[[') ? '[[' : '[';
+          const fix = bracketSpaced(nameWord, a.at(-1)!, open);
+          const how = fix ? `\`${fix.code}\`` : `\`${open} ${name.slice(open.length)} …\``;
+          if (open === '[') {
+            add('bracket-no-space', nameWord, `\`[\` は普通のコマンドなので、あとに空白が要ります（\`${name}\` は別のコマンド名になる）。${how} のように書きます`,
+              `\`[\` is an ordinary command, so a space must follow it (\`${name}\` reads as another command name). Write ${how}`, fix ? [fix] : []);
+          } else {
+            add('bracket-no-space', nameWord, `\`[[\` は1つの単語として書いたときだけ予約語になるので、あとに空白が要ります（\`${name}\` はコマンド名になる）。${how} のように書きます`,
+              `\`[[\` is a reserved word only as a word of its own, so a space must follow it (\`${name}\` reads as a command name). Write ${how}`, fix ? [fix] : []);
+          }
         }
         // `x = 1`: a command named x, not an assignment.
         if (name && /^[A-Za-z_]\w*$/.test(name) && a.length && (a[0].text === '=' || /^=\S/.test(a[0].text)) && !runsCommand(model, name, field(n, 'name')!, shell)) {
-          add('assignment-with-spaces', n, `\`${name} ${a[0].text}…\` は代入ではなく、\`${name}\` というコマンドを実行します。代入は \`=\` の前後に空白を入れずに \`${name}=…\` と書きます`,
-            `\`${name} ${a[0].text}…\` runs a command named \`${name}\`; it is not an assignment. Write \`${name}=…\` with no spaces around \`=\``);
+          const fix = assignmentJoined(n, name, a);
+          const how = fix ? `\`${fix.code}\`` : `\`${name}=…\``;
+          add('assignment-with-spaces', n, `\`${name} ${a[0].text}…\` は代入ではなく、\`${name}\` というコマンドを実行します。代入は \`=\` の前後に空白を入れずに ${how} と書きます`,
+            `\`${name} ${a[0].text}…\` runs a command named \`${name}\`; it is not an assignment. Write ${how} with no spaces around \`=\``, fix ? [fix] : []);
         }
         // `{echo a;}`: no space after `{`, so it is a command named `{echo`.
         if (name && /^\{[A-Za-z_]\w*$/.test(name)) {
-          add('brace-no-space', field(n, 'name')!, `\`${name}\` は \`{\` の直後に空白がないので、グループの開始ではなく \`${name}\` というコマンド名です。\`{\` の後には空白が必要で、\`}\` の前には \`;\` か改行が必要です: \`{ ${name.slice(1)} …; }\``,
-            `there is no space after \`{\`, so \`${name}\` is a command name, not the start of a group. \`{\` needs a space after it, and \`}\` needs a \`;\` or newline before it: \`{ ${name.slice(1)} …; }\``);
+          const fix = braceSpaced(n, field(n, 'name')!, a);
+          const how = fix && !fix.code.includes('\n') ? `\`${fix.code}\`` : `\`{ ${name.slice(1)} …; }\``;
+          add('brace-no-space', field(n, 'name')!, `\`${name}\` は \`{\` の直後に空白がないので、グループの開始ではなく \`${name}\` というコマンド名です。\`{\` の後には空白が必要で、\`}\` の前には \`;\` か改行が必要です: ${how}`,
+            `there is no space after \`{\`, so \`${name}\` is a command name, not the start of a group. \`{\` needs a space after it, and \`}\` needs a \`;\` or newline before it: ${how}`, fix ? [fix] : []);
         }
         // `{ echo a; echo b }`: `}` is an argument of the last command, and the group is never closed. (Not in zsh, where
         // a `}` closes the group anywhere unless IGNORE_CLOSE_BRACES is set: zshoptions.)
         const lastArg = a[a.length - 1];
         if (shell !== 'zsh' && lastArg?.type === 'word' && lastArg.text === '}' && n.parent?.type === 'compound_statement' && n.parent.incomplete) {
-          add('brace-close-no-separator', lastArg, `\`}\` の前に \`;\` か改行が必要です。このままでは \`}\` は \`${name}\` の引数で、\`{ }\` のグループが閉じていません: \`{ …; }\``,
-            `\`}\` needs a \`;\` or a newline before it. As written, \`}\` is an argument of \`${name}\` and the \`{ }\` group is never closed: \`{ …; }\``);
+          // (`;` right before the `}`, after the words and redirections before it: `echo b >f; }`.)
+          const at = Math.max(...n.children.filter((c) => c.endIndex <= lastArg.startIndex).map((c) => c.endIndex));
+          const fix = editSpan(n, lastArg, [{ start: at, end: at, text: ';' }]);
+          add('brace-close-no-separator', lastArg, `\`}\` の前に \`;\` か改行が必要です。このままでは \`}\` は \`${name}\` の引数で、\`{ }\` のグループが閉じていません: \`${fix.code}\``,
+            `\`}\` needs a \`;\` or a newline before it. As written, \`}\` is an argument of \`${name}\` and the \`{ }\` group is never closed: \`${fix.code}\``, [fix]);
         }
         // `rm -rf $DIR/…`: an empty DIR removes from the root. (Also when another command runs it: `sudo rm -rf $DIR/…`.)
         for (const run of runCommands(n, model, shell)) {
-          if (run.name === 'rm' && run.args.some((w) => /^-[a-zA-Z]*[rR]/.test(w.text) || w.text === '--recursive')) rmFromRoot(run.args);
+          if (run.name === 'rm' && run.args.some((w) => /^-[a-zA-Z]*[rR]/.test(w.text) || w.text === '--recursive')) rmFromRoot(n, run.args);
         }
         // `read` without -r eats backslashes.
         // Only when it reads into a variable; `read` alone or `read -n 1` waits for a key. Only the builtin: not a
         // function of that name (src/semantics/names.ts).
         const readsVar = a.some((w) => /^[A-Za-z_]\w*$/.test(w.text));
         if (name === 'read' && readsVar && !a.some((w) => /^-[a-zA-Z]*[rnN]/.test(w.text)) && resolveName(model, name, field(n, 'name')!, { shell, command: true }).kind === 'builtin') {
-          add('read-without-r', n, '`-r` を付けないと、入力のバックスラッシュ（`\\`）がエスケープとして消えます。ふつうは `read -r` と書きます',
-            'without `-r`, backslashes in the input are taken as escapes and lost. Usually write `read -r`');
+          // (The name is `read` as written: a path or quotes run no builtin, `pathCommand`.)
+          const fix = replaceNode(field(n, 'name')!, 'read -r');
+          add('read-without-r', n, `\`-r\` を付けないと、入力のバックスラッシュ（\`\\\`）がエスケープとして消えます。ふつうは \`${fix.code}\` と書きます`,
+            `without \`-r\`, backslashes in the input are taken as escapes and lost. Usually write \`${fix.code}\``, [fix]);
         }
         downloadRun(n);
         trapGoesOn(n);
@@ -593,23 +746,29 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
   };
 
   /** `rm -r` with these words: the first that removes from the root when a variable in it is empty. */
-  const rmFromRoot = (words: readonly SyntaxNode[]) => {
+  // (`n`: the command; a check goes before it where it stands alone, `statementBefore`.)
+  const rmFromRoot = (n: SyntaxNode, words: readonly SyntaxNode[]) => {
     for (const w of words) {
       const t = rootTarget(w);
       if (!t) continue;
       const { e, v, left } = t;
       // (Nor a plain value the script surely set to some text: `DIR=/opt/app; rm -rf $DIR/*`.)
       if (t.plain && neverEmpty(model, v, e)) continue;
+      // (Nor after a check that stops when it is empty, as the note says to write it: `[ -n "$DIR" ] || exit 1`.)
+      const stmt = n.parent?.type === 'redirected_statement' ? n.parent : n;
+      if (guardedBefore(stmt, t.check, [`"${e.text}"`, ...(t.plain ? [`"$${v}"`, `"\${${v}}"`] : [])], v)) continue;
       const safe = t.plain && quoteExpansions(w, new Map([[e, `\${${v}:?}`]]));
       if (safe) {
-        add('rm-empty-variable-root', w, `\`${v}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。\`${safe}\` と書くと、空のときは止まります`,
-          `if \`${v}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${safe}\` to stop when it is empty`);
+        const fix = replaceNode(w, safe);
+        add('rm-empty-variable-root', w, `\`${v}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。\`${fix.code}\` と書くと、空のときは止まります`,
+          `if \`${v}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${fix.code}\` to stop when it is empty`, [fix]);
       } else {
         // `${DIR%/}` has no form with `:?` (and is empty for DIR=/ too); `${x:-*.txt}` has no quoted form.
         const what = t.plain ? v : e.text;
         if (t.check) {
-          add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${t.check}\` と書くと、空のときは止まります`,
-            `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${t.check}\` before it to stop when it is empty`);
+          const fix = standsAlone(stmt) ? statementBefore(stmt, t.check) : { code: t.check, edits: [] };
+          add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${fix.code}\` と書くと、空のときは止まります`,
+            `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${fix.code}\` before it to stop when it is empty`, [fix]);
         } else {
           // (A quote or backslash in the expansion: a check in quotes would not read it the same.)
           add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。空でないことを前に確かめてください`,
@@ -628,8 +787,12 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
     const meant = (e: SyntaxNode) => /&/.test(e.children.find((c) => !c.named)!.type) || /^\/dev\//.test(field(e, 'destination')?.text ?? '');
     const redirect = n.namedChildren.find((e) => e.type === 'file_redirect' && !meant(e) && e.startIndex > field(n, 'name')!.startIndex && e.startIndex < end);
     if (redirect) {
-      add('redirect-in-bracket', redirect, `\`[ ]\` の中の \`${redirect.text.match(/^\d*[<>]+/)![0]}\` は比較ではなくリダイレクトとして読まれます。文字列の順序の比較は \`[[ ]]\` を使うか、\`\\${redirect.text.match(/[<>]/)![0]}\` とエスケープします`,
-        `\`${redirect.text.match(/^\d*[<>]+/)![0]}\` inside \`[ ]\` is read as a redirection, not a comparison. Use \`[[ ]]\` to compare strings by order, or escape it as \`\\${redirect.text.match(/[<>]/)![0]}\``);
+      const op = redirect.text.match(/^\d*[<>]+/)![0];
+      const fix = escapedComparison(n, redirect);
+      const ja = fix ? `エスケープして \`${fix.code}\` と書くか、\`[[ ]]\` を使います` : `\`[[ ]]\` を使うか、\`\\${op.match(/[<>]/)![0]}\` とエスケープします`;
+      const en = fix ? `Escape it to compare strings by order, \`${fix.code}\`, or use \`[[ ]]\`` : `Use \`[[ ]]\` to compare strings by order, or escape it as \`\\${op.match(/[<>]/)![0]}\``;
+      add('redirect-in-bracket', redirect, `\`[ ]\` の中の \`${op}\` は比較ではなくリダイレクトとして読まれます。文字列の順序の比較は${fix ? '、' : ' '}${ja}`,
+        `\`${op}\` inside \`[ ]\` is read as a redirection, not a comparison. ${en}`, fix ? [fix] : []);
     }
     const { words, close } = bracketWords(n);
     const last = words[words.length - 1];
@@ -642,6 +805,9 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
       const parts = last.type === 'concatenation' ? last.namedChildren : [last];
       // (`"$x"\]` too: the `]` is quoted, still one character.)
       const before = staticWordValue(parts.at(-1)!) === ']' ? parts.slice(0, -1) : [];
+      // (The rewrite, a space before the `]`: none when it is escaped, `"$x"\]`, which a space leaves a character.)
+      const fix = escapedEnd(last.text) ? [] : [replaceNode(last, `${last.text.slice(0, -1)} ]`)];
+      const fixed = fix.length ? { ja: `（\`${fix[0].code}\`）`, en: ` (\`${fix[0].code}\`)` } : { ja: '', en: '' };
       if (before.length && before.every((p) => mayBeEmpty(model, p))) {
         const v = before.map((p) => p.text).join('');
         const earlier = words.slice(0, -1);
@@ -653,16 +819,17 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
           : outcome === 'error' ? ['たいてい「unary operator expected」などのエラーになります（終了ステータス 2）', 'usually an error such as "unary operator expected" (status 2)']
           : outcome === 'true' ? ['真になります（単語1つだけの条件は、空でなければ真）。意図した条件ではありません', 'true, as one word alone is when it is not empty: not the condition meant']
           : ['その引数のない条件になり、意図した条件ではありません', 'a test without that argument: not the condition meant'];
-        add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部です。\`${v}\` が空のときは単語が \`]\` だけになって \`[\` を閉じ、\`${runs}\` は${ja}。値があるときは閉じの \`]\` がなく、エラーになります（\`missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります`,
-          `the \`]\` in \`${last.text}\` is part of the word. When \`${v}\` is empty, the word is \`]\` alone and closes \`[\`, and \`${runs}\` is ${en}. With a value, \`[\` has no closing \`]\` and fails ("missing ']'", status 2). \`]\` needs a space before it`);
+        add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部です。\`${v}\` が空のときは単語が \`]\` だけになって \`[\` を閉じ、\`${runs}\` は${ja}。値があるときは閉じの \`]\` がなく、エラーになります（\`missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります${fixed.ja}`,
+          `the \`]\` in \`${last.text}\` is part of the word. When \`${v}\` is empty, the word is \`]\` alone and closes \`[\`, and \`${runs}\` is ${en}. With a value, \`[\` has no closing \`]\` and fails ("missing ']'", status 2). \`]\` needs a space before it${fixed.en}`, fix);
         return;
       }
-      add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部として読まれ、閉じの \`]\` がありません（\`missing ']'\`）。\`]\` の前に空白が要ります`,
-        `the \`]\` in \`${last.text}\` is read as part of the word, so \`[\` has no closing \`]\` ("missing ']'"). \`]\` needs a space before it`);
+      add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部として読まれ、閉じの \`]\` がありません（\`missing ']'\`）。\`]\` の前に空白が要ります${fixed.ja}`,
+        `the \`]\` in \`${last.text}\` is read as part of the word, so \`[\` has no closing \`]\` ("missing ']'"). \`]\` needs a space before it${fixed.en}`, fix);
     } else if (!close && (sep?.type === '&&' || sep?.type === '||') && next?.type === 'command' && args(next).at(-1)?.text === ']') {
-      // `[ a && b ]`
-      add('and-or-in-bracket', sep, `\`[ ]\` の中の \`${sep.type}\` は \`[\` の引数ではなく、コマンドをつなぐ演算子です。\`]\` が足りず、\`[ … ] ${sep.type} [ … ]\` と分けて書くか、\`[[ ]]\` を使います`,
-        `\`${sep.type}\` inside \`[ ]\` is not an argument of \`[\` but the operator that joins commands, so \`[\` loses its \`]\`. Write \`[ … ] ${sep.type} [ … ]\`, or use \`[[ ]]\``);
+      // `[ a && b ]`: a `]` at the end of the left, a `[` at the start of the right.
+      const fix = editSpan(n, next, [{ start: n.endIndex, end: n.endIndex, text: ' ]' }, { start: next.startIndex, end: next.startIndex, text: '[ ' }]);
+      add('and-or-in-bracket', sep, `\`[ ]\` の中の \`${sep.type}\` は \`[\` の引数ではなく、コマンドをつなぐ演算子です。\`]\` が足りず、\`${fix.code}\` と分けて書くか、\`[[ ]]\` を使います`,
+        `\`${sep.type}\` inside \`[ ]\` is not an argument of \`[\` but the operator that joins commands, so \`[\` loses its \`]\`. Write \`${fix.code}\`, or use \`[[ ]]\``, [fix]);
     }
   };
   visit(root);

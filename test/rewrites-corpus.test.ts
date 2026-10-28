@@ -1,13 +1,13 @@
-// The rewrites of the corpus (docs/design/oracles.md, 3.3 and step 5): every fact of a mechanical id that sample.sh,
-// the other fixtures and the snippets of the tests raise, its rewrites applied. For each rewrite, the two cheap checks:
+// The rewrites of the corpus (docs/design/oracles.md, 3.3 and steps 5 and 6): every fact of a mechanical id that
+// sample.sh, the other fixtures and the snippets of the tests raise, and every style check whose findings carry
+// rewrites (src/pitfalls.ts), its rewrites applied. For each rewrite, the two cheap checks:
 // it parses (`bash -n`, in bash 5.2 and 5.3 when `$BASH_EXPLAINER_BASH53` names one), and explaining it raises no fact
 // of the same id where it was made. Then the oracles of each id over its states (test/support/rewrite-states.ts,
 // `STATES`), where they apply: the meaning is kept, the hazard is gone. The counts are pinned, so that a change of the
 // corpus or of an oracle that runs fewer checks shows (update them when the corpus changes them).
 import * as assert from 'assert';
-import type { FactId } from '../src/messages';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { checkStates, corpusFacts, factsIn, type IdCounts, leavesNoFact, MECHANICAL, parses, runJobs, singles, STATES, subjects, unsafe } from './support/rewrite-states';
+import { checkStates, corpusFacts, factsIn, type IdCounts, isStyle, leavesNoFact, MECHANICAL, parses, runJobs, singles, STATES, subjects, type SuggestionId, unsafe } from './support/rewrite-states';
 import { programs } from './support/rewrites';
 
 const parser = createUnbashParser();
@@ -16,32 +16,49 @@ const parser = createUnbashParser();
  * For each id: its subjects (the rewrites of an input, applied together), those whose states ran, the checks made, and
  * why the others did not run.
  */
-const PINNED: Partial<Record<FactId, IdCounts>> = {
+const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
+  'and-or-in-bracket': { subjects: 4, ran: 4, checks: 10, skipped: {} },
   'array-joined-in-assignment': { subjects: 11, ran: 10, checks: 20, skipped: { 'an assignment in a function, whose variable the epilogue does not see': 1 } },
+  'assignment-with-spaces': { subjects: 11, ran: 9, checks: 18, skipped: { 'an assignment to `PATH`': 1, 'bash does not parse it': 1 } },
+  'brace-close-no-separator': { subjects: 3, ran: 3, checks: 3, skipped: {} },
+  'brace-no-space': { subjects: 7, ran: 7, checks: 7, skipped: {} },
   'bracket-close-glued': { subjects: 3, ran: 2, checks: 2, skipped: { 'not a plain name before `]`': 1 } },
+  'bracket-close-in-word': { subjects: 6, ran: 6, checks: 24, skipped: {} },
+  'bracket-no-space': { subjects: 4, ran: 4, checks: 8, skipped: {} },
   'declaration-masks-status': { subjects: 6, ran: 5, checks: 11, skipped: { 'bash does not parse it': 1 } },
   'failure-reported-as-success': { subjects: 2, ran: 2, checks: 16, skipped: {} },
   'for-over-unquoted-args': { subjects: 4, ran: 4, checks: 12, skipped: {} },
   'nounset-unbound': { subjects: 5, ran: 5, checks: 15, skipped: {} },
   'postfix-increment-status': { subjects: 14, ran: 14, checks: 28, skipped: {} },
   'prefix-assignment-expanded-first': { subjects: 1, ran: 1, checks: 2, skipped: {} },
+  'read-without-r': { subjects: 16, ran: 9, checks: 27, skipped: { 'its stdin is a pipe': 6, 'its stdin is a redirection': 1 } },
+  'redirect-in-bracket': { subjects: 6, ran: 5, checks: 9, skipped: { 'a redirection to a word that is not plain text': 1 } },
   'regex-backslash-dropped': { subjects: 2, ran: 2, checks: 24, skipped: {} },
+  'rm-empty-variable-root': { subjects: 41, ran: 28, checks: 84, skipped: { '`source`': 1, '`sudo` with an option': 1, 'a command named by a path': 2, 'the script sets `DIR`': 4, 'the script sets `D`': 5 } },
   'unbraced-element': { subjects: 1, ran: 1, checks: 1, skipped: {} },
   'unmatched-glob-runs-once': { subjects: 7, ran: 7, checks: 21, skipped: {} },
-  'unquoted-variable-as-path': { subjects: 29, ran: 15, checks: 88, skipped: { 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `D`': 5, 'the script sets `DIR`': 5, '`source`': 1 } },
-  'unquoted-variable-in-test': { subjects: 9, ran: 9, checks: 51, skipped: {} },
+  'unquoted-variable-as-path': { subjects: 58, ran: 41, checks: 214, skipped: { '`source`': 1, 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `DIR`': 5, 'the script sets `D`': 8 } },
+  'unquoted-variable-in-test': { subjects: 13, ran: 12, checks: 72, skipped: { 'a redirection to a word that is not plain text': 1 } },
   'wrapper-assignment-expanded-first': { subjects: 1, ran: 1, checks: 2, skipped: {} },
 };
 
+/** The ids of the subjects whose original bash does not parse, one for each. */
+const UNPARSED: SuggestionId[] = ['assignment-with-spaces', ...Array(3).fill('brace-close-no-separator'), ...Array(3).fill('brace-no-space'), 'declaration-masks-status'];
+
 /**
  * Inputs for the ids the corpus raises nowhere (the three `*-last-test-*` ids), and for a list of a glob and other
- * words, where the test of the name in the body would skip the words that are no files: the same oracles.
+ * words, where the test of the name in the body would skip the words that are no files: the same oracles. Then forms
+ * of the style checks the corpus lacks: `[[` glued to its first word, a `}` glued to the group's command as a word of
+ * its own or at the end of one, `read` from the script's stdin in a loop, `>` in `[ ]` (the original makes a file in
+ * the box), the check before `rm` of a value with no `:?` form, a value in quotes after `x =`, `rm` in a function.
  */
 const HAND = [
   '#!/bin/bash\nset -e\nf() {\n  [ -f x ] && echo "@y"\n}\nf\necho @next\n',
   '#!/bin/bash\nset -e\nf() { [[ -f x ]] && echo y; }\necho @start\nf\n',
   '#!/bin/bash\necho @start\n[ -f x ] && echo "@y"\n',
   'for i in a b *.c; do echo "$i"; done\n',
+  '[[-f x]] && echo y\n', '{echo a }\n', '{echo a}; echo b\n', 'while read line; do echo "$line"; done\n', '[ "$a" > b ] && echo yes\n',
+  'rm -rf ${DIR%/}/*\n', 'x = "a b"\necho "$x"\n', 'f() {\n  rm -rf $D/x\n}\nf\n',
 ];
 
 describe('the walls of the runs of the corpus (test/support/rewrite-states.ts)', function () {
@@ -147,11 +164,13 @@ describe('the rewrites of the corpus (docs/design/oracles.md, step 5)', function
     assert.deepStrictEqual(one.flatMap((s) => { const bad = leavesNoFact(s); return bad ? [`${s.id} in ${JSON.stringify(s.input)}, ${JSON.stringify(s.codes)}: ${bad}`] : []; }), []);
   });
   for (const { name, program } of programs) {
-    it(`parse in ${name}, where the original does`, async () => {
+    it(`parse in ${name}, where the original does, and always where it may not (\`broken\`)`, async () => {
       const [before, after] = await Promise.all([parses(program, one.map((s) => s.original)), parses(program, one.map((s) => s.script))]);
-      assert.deepStrictEqual(one.filter((_, i) => before[i] && !after[i]).map((s) => `${s.id} in ${JSON.stringify(s.input)}: ${JSON.stringify(s.codes)}`), []);
-      // (One snippet bash does not parse: `@(a|b)` in a `case` without extglob.)
-      assert.strictEqual(before.filter((b) => !b).length, 1);
+      assert.deepStrictEqual(one.filter((s, i) => (before[i] || STATES[s.id]!.broken) && !after[i]).map((s) => `${s.id} in ${JSON.stringify(s.input)}: ${JSON.stringify(s.codes)}`), []);
+      // (Originals bash does not parse: one snippet, `@(a|b)` in a `case` without extglob; groups the style checks find
+      // unclosed, `{echo a; }` and `{ echo a }`.)
+      const unparsed = one.filter((_, i) => !before[i]).map((s) => s.id);
+      assert.deepStrictEqual(unparsed.sort(), UNPARSED);
     });
     it(`keep the meaning and remove the hazard over the states of their ids, in ${name}`, async () => {
       const { failures, counts } = await checkStates(program, subjects(facts));
@@ -161,8 +180,9 @@ describe('the rewrites of the corpus (docs/design/oracles.md, step 5)', function
     it(`do so too on inputs for the ids the corpus raises nowhere, in ${name}`, async () => {
       const { failures, counts } = await checkStates(program, subjects(HAND.flatMap((t) => factsIn(t, t))));
       assert.deepStrictEqual(failures, []);
-      // (Every mechanical id has run over its states.)
+      // (Every mechanical id has run over its states; the style checks, on the forms above too.)
       assert.deepStrictEqual(MECHANICAL.filter((id) => !counts[id]?.ran && !PINNED[id]?.ran), []);
+      assert.deepStrictEqual(MECHANICAL.filter((id) => isStyle(id) && counts[id]?.ran !== counts[id]?.subjects), []);
     });
   }
 });

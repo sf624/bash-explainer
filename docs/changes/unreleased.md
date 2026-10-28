@@ -1038,6 +1038,7 @@ The warning that an empty variable makes `rm -r` delete from the root:
 - A function of this script that a `bash -c` string calls after it reads a file (`bash -c '. ./lib.sh && f'`, `bash -lc 'source ~/.profile; f'`) gets no pitfall that the new shell lacks it: the file may define it. Called before the file is read (`bash -c 'f; . ./lib.sh'`), it keeps the pitfall. With `-l`, the explanation of `f` names the file too: "only if the files it reads at startup (`-l`, `-i`, `BASH_ENV`), or the file it reads on line 2, define it".
 - The note on a distribution's alias or function (`ll`, `remount`) reads "is an alias" and "is a function"; before, it said "is an function". A quoted or escaped name (`"+"`, `"ll" /tmp`, `\ll`) gets none for an alias: bash looks up no alias for it. A function of the system (`"remount"`) still does.
 - In `if [ -f a ] then …`, `while [ x ] do …` and `if test -f a then …` (no `;` before `then` or `do`), the note is the syntax error only. Before, the line also said `[` or `test` "fails when it runs"; bash never runs it: `then` is an argument, so the construct has no `then` and bash stops with "syntax error near unexpected token `fi`" (`done` for a loop). `if [[ -f a ]] then` is valid and gets no note.
+- `rm -rf $DIR/*` is no warning after the check the note suggests, `[ -n "${DIR%/}" ] || exit 1` (or `[ -n "$DIR" ] || exit 1`, `test -n`, `return`), earlier in the same list of commands, with nothing between that sets `DIR`. Before, writing the check as the note said kept the warning.
 - A command that another one runs through its command slot gets the checks of a command of its own: `sudo rm -rf $DIR/releases/$line`, `sudo -u deploy rm -rf "$DIR"/*`, `env A=1 rm -rf $DIR/x`, `nice -n 10 nohup rm -rf $DIR/x`, `… | xargs rm -rf $DIR/x` and `command rm -rf $DIR/x` get the warning that an empty `DIR` deletes from the root, and the one on an unquoted path (`sudo cp $a b` too). Before, only `rm` written first, or after `time`, got them. A string another shell runs (`sudo sh -c 'rm -rf $DIR/x'`) and a function named `sudo` are not read so.
 - An unquoted path whose value the script sets, on every path, to one word with nothing to glob (`TS=2024; rm -rf /tmp/build-$TS`) is a caveat, not a warning: "(with its value here it stays one argument, `/tmp/build-2024`, but another value breaks it)". A value the script does not know (`read line`, `$1`, `TS=$(date +%s)`, one set in a branch) keeps the warning.
 
@@ -1403,6 +1404,19 @@ The notes of `wrapper-assignment-expanded-first`, `regex-backslash-dropped`, `br
 | `[[ $x =~ ^\d+$ ]]`, `[[ $x =~ ^[\s]+$ ]]` | `[[ $x =~ ^[0-9]+$ ]]` (`[^0-9]` for `\D`; with `\s` too, in the variable: `re='a\s[0-9]'`). Inside a bracket expression, `[\s]`, no fix: a backslash there is no operator, even from a variable, so the note says to use `[[:space:]]`. | `re='^\d+$'; [[ $x =~ $re ]]`, which matches `ddd` and not `123` (glibc's regexes have no `\d`), and `re='^[\s]+$'`, which matches `s` and `\`. |
 | `[ -f a.txt]` | `a.txt ]`. With the `]` escaped, `[ a = b\]`, no fix: `[ a = b\ ]` still misses its `]`, so the note says to end the test with another `]`. | "`]` needs a space before it". |
 | `$a[1]` | `${a[1]}`, also for `$a[@]` and `$m[k]`. | The same. |
+
+The style checks show the fix for the line too, rendered from the rewrite they carry and run in bash 5.2 and 5.3 over the states of each check (docs/design/oracles.md, step 6):
+
+| Note | The fix shown | Before |
+|---|---|---|
+| `[-f x]`, `[[-f x]]` | `[ -f x ]`, `[[ -f x ]]` (the `]` given its space too). With the `]` escaped, `[-f x\]`, the form `[ -f …`. | `[ -f …`, and `[ [-f …` for `[[-f x]]` |
+| `x = 1`, `x =1` | `x=1`. With more than one word after `=` (`x = a b`), the form `x=…`: there is no one value. | `x=…` |
+| `{echo a;}`, `{echo a}`, `{echo a }` | `{ echo a;}`, `{ echo a; }`. | `{ echo …; }` |
+| `{ echo a; echo b }` | `echo b; }` | `{ …; }` |
+| `[ $a < $b ]`, `[ 5>3 ]` | `[ $a \< $b ]`, `[ 5 \> 3 ]`, or `[[ ]]`. Where escaping makes no comparison of three words (`[ $a 2>5 ]`), the form `\>`. | `\<` |
+| `[ -f $x]` | `$x ]` (none for an escaped `]`, `"$x"\]`) | "`]` needs a space before it" |
+| `[ a && b ]` | `[ a ] && [ b ]` | `[ … ] && [ … ]` |
+| `read x` | `read -r` | The same. |
 
 ### Read-only declarations
 

@@ -18,28 +18,37 @@ import * as os from 'os';
 import * as path from 'path';
 import { Analyzer } from '../../src/analyzer';
 import { detectShell, type Shell } from '../../src/dialect';
-import { type Fact, type FactId, MESSAGES } from '../../src/messages';
+import { type FactId, MESSAGES } from '../../src/messages';
+import { pitfallFindings, STYLE_REWRITES, type StyleCode } from '../../src/pitfalls';
 import type { Rewrite, TextEdit } from '../../src/rewrite';
 import { resolveName } from '../../src/semantics/names';
 import { shellState } from '../../src/semantics/state';
 import { BASH_VARIABLES } from '../../src/semantics/vars';
 import { staticWordValue } from '../../src/staticword';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
-import { ancestor, descendants, field, fields, type SyntaxNode, type SyntaxTree } from '../../src/syntax/tree';
+import { ancestor, descendants, field, fields, redirectionsOf, type SyntaxNode, type SyntaxTree } from '../../src/syntax/tree';
 import { runContained, scoped } from './contained';
 import { corpus } from './corpus';
 import { applied } from './rewrites';
 
 const parser = createUnbashParser();
 
-/** The ids whose facts carry rewrites (the mechanical ids of test/suggestions.test.ts). */
-export const MECHANICAL = (Object.keys(MESSAGES) as FactId[]).filter((id) => 'rewrite' in MESSAGES[id]);
+/** The id of a fact of the catalog, or the code of a style check (src/pitfalls.ts), which test/suggestions.test.ts classifies alike. */
+export type SuggestionId = FactId | StyleCode;
+/** A fact or a style check found: its id, its text, and its rewrites (`Fact.rewrite`, `StyleFinding.rewrite`). */
+export interface Suggestion { id: SuggestionId; text: string; rewrite?: readonly Rewrite[] }
+
+/** The ids whose facts carry rewrites (the mechanical ids of test/suggestions.test.ts), and the style checks whose findings do. */
+export const MECHANICAL: SuggestionId[] = [...(Object.keys(MESSAGES) as FactId[]).filter((id) => 'rewrite' in MESSAGES[id]),
+  ...(Object.keys(STYLE_REWRITES) as StyleCode[]).filter((code) => STYLE_REWRITES[code])];
+/** Whether an id is a style check's. */
+export const isStyle = (id: SuggestionId): id is StyleCode => Object.hasOwn(STYLE_REWRITES, id);
 
 // ---------------------------------------------------------------------------------------------------
 // The facts of the corpus.
 
 /** A fact of a mechanical id in the corpus: the input (its name, its text), the shell it is read as. */
-export interface CorpusFact { input: string; text: string; shell?: Shell; fact: Fact }
+export interface CorpusFact { input: string; text: string; shell?: Shell; fact: Suggestion }
 
 /**
  * A rewrite to run: the facts of one id in one input, each with its rewrite number `alt` (or its last, when it has
@@ -47,7 +56,7 @@ export interface CorpusFact { input: string; text: string; shell?: Shell; fact: 
  * `rewrite` has the edits of all and the code of the first; `codes`, the code of each. `original` is the text that runs
  * (for a fixture, the statements that hold the edits), and `script` the same with the edits made.
  */
-export interface Subject { input: string; text: string; shell?: Shell; id: FactId; facts: Fact[]; rewrite: Rewrite; codes: string[]; alt: number; original: string; script: string }
+export interface Subject { input: string; text: string; shell?: Shell; id: SuggestionId; facts: Suggestion[]; rewrite: Rewrite; codes: string[]; alt: number; original: string; script: string }
 
 /**
  * The facts of a mechanical id in the corpus: the fixtures but the hosts (whose facts carry no rewrites, checked
@@ -63,22 +72,34 @@ function findCorpusFacts(): CorpusFact[] {
   return [...files.filter((f) => !f.name.startsWith('hosts/')), ...snippets].flatMap(({ name, text }) => factsIn(name.startsWith('snippet ') ? text : name, text));
 }
 
-/** The facts of a mechanical id in `text` (an input named `input`: a snippet is named by its text), one for each fact and text. */
+/**
+ * The facts of a mechanical id in `text` (an input named `input`: a snippet is named by its text), and the style checks
+ * found there whose findings carry rewrites, one for each id, text and rewrite.
+ */
 export function factsIn(input: string, text: string): CorpusFact[] {
-  const tree = parser.parse(text);
   const shell = detectShell(text, input === text ? '' : input);
   const seen = new Set<string>();
   const out: CorpusFact[] = [];
-  text.split('\n').forEach((_, line) => {
-    for (const fact of new Analyzer('en').explainLine(tree, line, shell).facts ?? []) {
-      if (!MECHANICAL.includes(fact.id)) continue;
-      const key = `${fact.id}\0${fact.text}\0${JSON.stringify(fact.rewrite ?? null)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ input, text, shell, fact });
-    }
-  });
+  for (const fact of suggestionsIn(text, shell)) {
+    if (!MECHANICAL.includes(fact.id)) continue;
+    const key = `${fact.id}\0${fact.text}\0${JSON.stringify(fact.rewrite ?? null)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ input, text, shell, fact });
+  }
   return out;
+}
+
+/**
+ * The facts the analyzer gives on each line of `text`, read as `shell`, then the style checks found in the whole text
+ * (`pitfallFindings`, with the model the analyzer reads): one for each place a check is found, with its own rewrites.
+ */
+function suggestionsIn(text: string, shell: Shell | undefined): Suggestion[] {
+  const tree = parser.parse(text);
+  const lines = text.split('\n');
+  const facts = lines.flatMap((_, line) => new Analyzer('en').explainLine(tree, line, shell).facts ?? []);
+  const style = pitfallFindings(tree.root, 'en', 0, lines.length, shellState(tree, shell), shell).map((f) => ({ id: f.code, text: f.text, ...(f.rewrite ? { rewrite: f.rewrite } : {}) }));
+  return [...facts, ...style];
 }
 
 /**
@@ -431,6 +452,11 @@ export interface IdStates {
   states: string;
   /** Why a rewrite may bring another fact of the id to light, if it may (`set -u`: bash stops at the first unset name). */
   uncovers?: string;
+  /**
+   * Why the original may be one bash does not parse, if it may (a group never closed): its subjects run all the same,
+   * and the checks run only the rewrite and a reference, never the original.
+   */
+  broken?: string;
   checks: (s: Subject, x: Context) => Check[] | string;
 }
 
@@ -530,16 +556,17 @@ function substitutionStatus(n: SyntaxNode, tree: SyntaxTree): 'state' | 'fails' 
 /** Strings for `=~`: matches and not, for the regexes of the corpus and of test/rewrites-misc.test.ts. */
 const STRINGS = ['a foo', 'foo', 'bfoo', 'foobar', 'xfoo', 'a b', 'asb', 'ab', '123', 'ddd', 'a 1', '1a'];
 
-export const STATES: Record<FactId, IdStates | undefined> = Object.fromEntries(MECHANICAL.map((id) => [id, undefined])) as Record<FactId, IdStates | undefined>;
+export const STATES: Record<SuggestionId, IdStates | undefined> = Object.fromEntries(MECHANICAL.map((id) => [id, undefined])) as Record<SuggestionId, IdStates | undefined>;
 Object.assign(STATES, {
   'unquoted-variable-as-path': {
-    states: 'values with a space, a `*`, empty (not where the word is a glob: `/*` is another note); files present and absent',
+    states: 'values with a space, a `*`, empty (not where the word is a glob: `/*` is another note; nor where the script tests the variable, `[ -n "$D" ] || exit 1`, which an empty value takes elsewhere); files present and absent',
     checks: (s, x) => {
       if (!x.vars.length) return 'no variable in the word';
       const why = setBy(x);
       if (why) return why;
       const glob = s.codes.some((c) => /[*?[]/.test(c.replace(/"[^"]*"/g, '')));
-      const values = ['a b', '*', ...(glob ? [] : [''])];
+      const tested = descendants(x.tree.root, ['command', 'extended_test']).some((c) => (c.type === 'extended_test' || ['[', 'test'].includes(field(c, 'name')?.text ?? '')) && varsIn(c).some((v) => x.vars.includes(v)));
+      const values = ['a b', '*', ...(glob || tested ? [] : [''])];
       return [false, true].flatMap((present) => values.map((v) => {
         // (Files present: two in the directory, and two in a directory of each value.)
         const files = present ? ['x1', 'x2', ...['VAL', v].filter(Boolean).flatMap((d) => [`${d}/x1`, `${d}/x2`])] : [];
@@ -799,7 +826,201 @@ Object.assign(STATES, {
       }));
     },
   },
-} satisfies Partial<Record<FactId, IdStates>>);
+} satisfies Partial<Record<SuggestionId, IdStates>>);
+
+// ---------------------------------------------------------------------------------------------------
+// The style checks (src/pitfalls.ts; docs/design/oracles.md, step 6). Their originals are what was not meant (a
+// command named `[-f`, `x`, `{echo`; a group never closed, which bash does not parse), so the meaning is checked
+// against a reference: the line written another way that bash reads as meant, built from the original's tree (the
+// words of `[ ]` given to `test`, the commands of a group without its braces), or the words the original gave a
+// recorder (`x = 1` gives `x` the words `=` and `1`).
+
+/** The command of the original that holds the first edit. */
+const commandAt = (x: Context): SyntaxNode => ancestor(x.at, (a) => a.type === 'command') ?? x.at;
+/** The original with the text from `start` to `end` replaced (`text`), and other such edits: the reference. */
+const reference = (s: Subject, edits: readonly TextEdit[]): string => applied(s.original, { code: '', edits });
+/** The named variables `n` expands (not bash's own), in order. */
+const varsIn = (n: SyntaxNode): string[] => [...new Set(descendants(n, ['simple_expansion', 'expansion']).flatMap((e) => e.namedChildren.filter((c) => c.type === 'variable_name').map((c) => c.text)))].filter((v) => !(v in BASH_VARIABLES));
+/** The epilogue that prints the status the script leaves. */
+const STATUS = 'echo "@st=$?"';
+
+/**
+ * The checks of a rewrite of `[ … ]` (`cmd`: the command of the original the rewrite is about, `ref`: the reference
+ * that runs what was meant): with the variables of the test a file name and empty, and that file present and absent,
+ * the rewrite prints what the reference prints and leaves its status (the messages of `test` as those of `[`).
+ */
+function testChecks(s: Subject, x: Context, cmd: SyntaxNode, ref: string): Check[] {
+  const vars = varsIn(cmd).filter((v) => !x.assigned.has(v));
+  const dir = /(^|\s)-d\s/.test(cmd.text);
+  const named = fields(cmd, 'argument').map((w) => staticWordValue(w)).filter((v): v is string => v !== undefined && /^\w[\w.]*$/.test(v));
+  const states = (vars.length ? ['x1', ''] : [undefined]).flatMap((value) => [true, false].map((present) => ({ value, present })));
+  return states.map(({ value, present }) => {
+    const files = present ? [...named, 'x1'].map((f) => (dir ? `${f}/` : f)) : [];
+    const env = { ...x.others, ...(value === undefined ? {} : Object.fromEntries(vars.map((v) => [v, value]))) };
+    return {
+      state: `${value === undefined ? '' : `${JSON.stringify(value)}, `}${present ? 'present' : 'absent'}`,
+      runs: [{ script: ref, env, files, epilogue: STATUS }, { script: s.script, env, files, epilogue: STATUS }],
+      verify: ([o, r]) => same(o, r, [['test: ', '[: ']]),
+    };
+  });
+}
+
+/** The words a recorder printed for the command `name` (`@x <=> <1>`), the first time, if it ran. */
+function recorded(r: Ran, name: string): string[] | undefined {
+  const line = r.out.split('\n').find((l) => l === `@${name}` || l.startsWith(`@${name} <`));
+  return line === undefined ? undefined : [...line.slice(name.length + 1).matchAll(/ <(.*?)>(?= <|$)/g)].map((m) => m[1]);
+}
+
+/** Why `read` (the command `cmd`) reads no stdin of the state, if it does not: a pipe or a redirection gives it another. */
+function stdinElsewhere(cmd: SyntaxNode): string | undefined {
+  for (let n: SyntaxNode | null = cmd; n; n = n.parent) {
+    const p: SyntaxNode | null = n.parent;
+    if (p?.type === 'pipeline' && p.namedChildren[0] !== n) return 'its stdin is a pipe';
+    if (redirectionsOf(n).some((r) => r.type === 'heredoc_redirect' || r.type === 'herestring_redirect' || (r.type === 'file_redirect' && /^0?</.test(r.text)))) return 'its stdin is a redirection';
+  }
+  return undefined;
+}
+
+Object.assign(STATES, {
+  'bracket-no-space': {
+    states: 'the variables of the test a file name and empty, that file present and absent (what `test` with the same words gives)',
+    checks: (s, x) => {
+      const cmd = commandAt(x);
+      const name = field(cmd, 'name')!;
+      const words = fields(cmd, 'argument');
+      const open = name.text.startsWith('[[') ? '[[' : '[';
+      const last = words.at(-1)!;
+      const inner = [name.text.slice(open.length), ...words.slice(0, -1).map((w) => w.text), last.text.slice(0, -(open.length))].filter(Boolean);
+      return testChecks(s, x, cmd, reference(s, [{ start: name.startIndex, end: last.endIndex, text: `test ${inner.join(' ')}` }]));
+    },
+  },
+  'bracket-close-in-word': {
+    states: 'the variables of the test a file name and empty, that file present and absent (what `test` with the same words gives)',
+    checks: (s, x) => {
+      const cmd = commandAt(x);
+      const name = field(cmd, 'name')!;
+      const words = fields(cmd, 'argument');
+      const last = words.at(-1)!;
+      const inner = [...words.slice(0, -1).map((w) => w.text), last.text.slice(0, -1)];
+      return testChecks(s, x, cmd, reference(s, [{ start: name.startIndex, end: last.endIndex, text: `test ${inner.join(' ')}` }]));
+    },
+  },
+  'and-or-in-bracket': {
+    states: 'the variables of the tests a file name and empty, that file present and absent (what `test … && test …` gives)',
+    checks: (s, x) => {
+      const cmd = commandAt(x);
+      const list = cmd.parent!;
+      const kids = list.children;
+      const op = kids[kids.indexOf(cmd) + 1];
+      const next = kids[kids.indexOf(cmd) + 2];
+      const right = [field(next, 'name')!.text, ...fields(next, 'argument').slice(0, -1).map((w) => w.text)];
+      const ref = `test ${fields(cmd, 'argument').map((w) => w.text).join(' ')} ${op.type} test ${right.join(' ')}`;
+      return testChecks(s, x, list, reference(s, [{ start: cmd.startIndex, end: next.endIndex, text: ref }]));
+    },
+  },
+  'redirect-in-bracket': {
+    states: 'the strings compared in either order and equal; no file in the directory (what `[[ … < … ]]` gives, and no file made or read)',
+    checks: (s, x) => {
+      const cmd = commandAt(x);
+      const name = field(cmd, 'name')!;
+      const redirect = cmd.namedChildren.find((c) => c.type === 'file_redirect' && c.startIndex > name.startIndex)!;
+      const [, fd, op] = /^(\d*)([<>])/.exec(redirect.text)!;
+      const words = fields(cmd, 'argument');
+      const left = fd || words.find((w) => w.endIndex <= redirect.startIndex)!.text;
+      const ref = reference(s, [{ start: name.startIndex, end: words.at(-1)!.endIndex, text: `[[ ${left} ${op} ${field(redirect, 'destination')!.text} ]]` }]);
+      const vars = varsIn(cmd).filter((v) => !x.assigned.has(v));
+      const pairs = vars.length > 1 ? [['a', 'b'], ['b', 'a'], ['a', 'a']] : vars.length ? [['a'], ['z']] : [[]];
+      // (The files the run leaves: none, where nothing was redirected.)
+      const epilogue = `${STATUS}\nshopt -s nullglob dotglob; for f in *; do echo "@file=$f"; done`;
+      return pairs.map((values) => {
+        const env = { ...x.others, ...Object.fromEntries(vars.map((v, i) => [v, values[Math.min(i, values.length - 1)]])) };
+        // (The original too, where bash parses it: its redirection makes a file, or fails to read one, which the rewrite does not.)
+        return {
+          state: JSON.stringify(values), runs: [{ script: ref, env, epilogue }, { script: s.script, env, epilogue }, { script: s.original, env, epilogue }],
+          verify: ([o, r, h]) => same(o, r) ?? (/^@file=/m.test(h.out) || /No such file/.test(h.err) ? undefined : `no file made or read by the original: ${JSON.stringify(h)}`),
+        };
+      });
+    },
+  },
+  'assignment-with-spaces': {
+    states: 'the variable unset, set before (it gets the words the original gives the command of its name)',
+    checks: (s, x) => {
+      const cmd = commandAt(x);
+      const name = field(cmd, 'name')!.text;
+      const epilogue = [...uncalled(x.tree), `echo "@v=\${${name}-unset}"`].join('\n');
+      // (The original without the command's redirections, so that its recorder prints the words: `x = 1 >f`.)
+      const bare = reference(s, redirectionsOf(cmd).map((r) => ({ start: r.startIndex, end: r.endIndex, text: '' })));
+      return [undefined, 'old'].map((before) => ({
+        state: before ? 'set before' : 'unset',
+        runs: [{ script: bare, env: { ...x.others, ...(before ? { [name]: before } : {}) }, epilogue }, { script: s.script, env: { ...x.others, ...(before ? { [name]: before } : {}) }, epilogue }],
+        verify: ([o, r]) => {
+          const words = recorded(o, name);
+          if (!words) return `the original ran no \`${name}\`: ${JSON.stringify(o)}`;
+          if (recorded(r, name)) return `the rewrite ran \`${name}\`: ${JSON.stringify(r)}`;
+          const value = words[0] === '=' ? words[1] ?? '' : words[0].slice(1);
+          return said(r, 'v') === value ? undefined : `${name} is ${JSON.stringify(said(r, 'v'))}, not ${JSON.stringify(value)}`;
+        },
+      } as Check));
+    },
+  },
+  'brace-no-space': {
+    states: 'run once (what the commands of the group give without its braces)',
+    broken: 'bash does not parse `{echo a;}`: the `}` has no group',
+    checks: (s, x) => {
+      const name = field(commandAt(x), 'name')!;
+      // (The `}` ends the text the rewrite replaces, as written in the original.)
+      const end = s.rewrite.edits[0].end;
+      if (s.original[end - 1] !== '}') return 'no `}` at the end of the rewrite';
+      const ref = reference(s, [{ start: name.startIndex, end: name.startIndex + 1, text: '' }, { start: end - 1, end, text: '' }]);
+      return [{ state: 'once', runs: [{ script: ref, env: x.others, epilogue: STATUS }, { script: s.script, env: x.others, epilogue: STATUS }], verify: ([o, r]) => same(o, r) }];
+    },
+  },
+  'brace-close-no-separator': {
+    states: 'run once (what the commands of the group give without its braces, and those after it)',
+    broken: 'bash does not parse a group that is never closed',
+    checks: (s, x) => {
+      const group = ancestor(x.at, (a) => a.type === 'compound_statement')!;
+      const end = s.rewrite.edits[0].end;
+      const ref = reference(s, [{ start: group.startIndex, end: group.startIndex + 1, text: '' }, { start: end - 1, end, text: '' }]);
+      return [{ state: 'once', runs: [{ script: ref, env: x.others, epilogue: STATUS }, { script: s.script, env: x.others, epilogue: STATUS }], verify: ([o, r]) => same(o, r) }];
+    },
+  },
+  'rm-empty-variable-root': {
+    states: 'the variable set (with files in its directory), empty, unset; `rm` and the commands that run it are recorders',
+    checks: (s, x) => {
+      // (A check before the statement: the variables it tests.)
+      const vars = x.vars.length ? x.vars : [...new Set([...s.rewrite.code.matchAll(/\$\{?[#!]?([A-Za-z_]\w*)/g)].map((m) => m[1]))];
+      if (!vars.length) return 'no named variable';
+      const why = setBy({ ...x, vars });
+      if (why) return why;
+      const env = (v?: string) => ({ ...x.others, ...(v === undefined ? {} : Object.fromEntries(vars.map((n) => [n, v]))) });
+      const files = ['VAL/x1', 'VAL/x2', 'VAL/cache/a'];
+      // (The hazard is gone: no command gets a path from the root that the original with a value does not give it.)
+      const root = (o: Ran, r: Ran): string | undefined => {
+        const extra = r.out.split('\n').filter((l) => /<\//.test(l) && !o.out.split('\n').includes(l));
+        return extra.length ? `a path from the root: ${JSON.stringify(extra)}` : undefined;
+      };
+      return [
+        keeps('set', s, { env: env('VAL'), files }, { env: env('VAL'), files }),
+        ...(['', undefined] as const).map((v): Check => ({ state: v === undefined ? 'unset' : 'empty', runs: [{ script: s.original, env: env('VAL'), files }, { script: s.script, env: env(v), files }], verify: ([o, r]) => root(o, r) })),
+      ];
+    },
+  },
+  'read-without-r': {
+    states: 'input with backslashes in a line, at the end of a line, at the end of the input (the rewrite keeps them: what the original gives with other text in their place)',
+    checks: (s, x) => {
+      const cmd = commandAt(x);
+      const elsewhere = stdinElsewhere(cmd);
+      if (elsewhere) return elsewhere;
+      // (The variables it reads into: not the value of an option, `-p PROMPT`; the name of `-a` is one.)
+      const words = fields(cmd, 'argument');
+      const names = words.filter((w, i) => /^[A-Za-z_]\w*$/.test(w.text) && !/^-\w*[dinNptu]$/.test(words[i - 1]?.text ?? '')).map((w) => w.text);
+      const epilogue = [...uncalled(x.tree), ...names.map((n) => `printf '@v=<%s>\\n' "\${${n}[*]}"`)].join('\n');
+      const inputs: [string, string][] = [['aBSLb cBSLBSLd\ne f\n', 'a\\b c\\\\d\ne f\n'], ['gBSL\nh i\n', 'g\\\nh i\n'], ['jBSL', 'j\\']];
+      return inputs.map(([benign, hazard]) => keeps(JSON.stringify(hazard), s, { stdin: benign, epilogue, env: x.others }, { stdin: hazard, epilogue, env: x.others }, [['BSL', '\\']]));
+    },
+  },
+} satisfies Partial<Record<StyleCode, IdStates>>);
 
 /** Whether `grep -E` matches `str` with `pattern` (GNU grep, as test/rewrites-misc.test.ts asks it). */
 const grepCache = new Map<string, boolean>();
@@ -842,16 +1063,13 @@ function lastTestChecks(s: Subject, x: Context, inFunction: boolean): Check[] | 
 // The checks of the corpus (test/rewrites-corpus.test.ts).
 
 /** The texts of the facts of `id` in `text`, read as `shell`, on every line, each once per fact. */
-function factTexts(text: string, id: FactId, shell?: Shell): string[] {
-  const tree = parser.parse(text);
+function factTexts(text: string, id: SuggestionId, shell?: Shell): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  text.split('\n').forEach((_, line) => {
-    for (const f of new Analyzer('en').explainLine(tree, line, shell).facts ?? []) {
-      const key = `${f.text}\0${JSON.stringify(f.rewrite ?? null)}`;
-      if (f.id === id && !seen.has(key)) { seen.add(key); out.push(f.text); }
-    }
-  });
+  for (const f of suggestionsIn(text, shell)) {
+    const key = `${f.text}\0${JSON.stringify(f.rewrite ?? null)}`;
+    if (f.id === id && !seen.has(key)) { seen.add(key); out.push(f.text); }
+  }
   return out.sort();
 }
 
@@ -870,8 +1088,9 @@ export function leavesNoFact(s: Subject): string | undefined {
   const fixed = s.facts.map((f) => f.text);
   const before = minus(factTexts(s.text, s.id, s.shell), fixed);
   const after = factTexts(applied(s.text, s.rewrite), s.id, s.shell);
-  const left = after.filter((t) => fixed.includes(t));
+  // (As lists with repeats: the style checks say the same text at each place, `read x` on two lines.)
   const added = minus(after, before);
+  const left = added.filter((t) => fixed.includes(t));
   const gone = minus(before, after);
   if (left.length) return `still ${JSON.stringify(left)}`;
   if (gone.length) return `others gone: ${JSON.stringify(gone)}`;
@@ -892,16 +1111,22 @@ export async function parses(program: string, texts: readonly string[]): Promise
  * The state oracles over `list` in bash `program`: the checks of each subject's id, where the subject may run
  * (`unsafe`, a script bash parses, read as bash or sh), with the failures and the counts of each id.
  */
-export async function checkStates(program: string, list: readonly Subject[]): Promise<{ failures: string[]; counts: Partial<Record<FactId, IdCounts>> }> {
+export async function checkStates(program: string, list: readonly Subject[]): Promise<{ failures: string[]; counts: Partial<Record<SuggestionId, IdCounts>> }> {
   const ok = await parses(program, list.map((s) => s.original));
-  const counts: Partial<Record<FactId, IdCounts>> = {};
+  const counts: Partial<Record<SuggestionId, IdCounts>> = {};
   const plans: { s: Subject; checks: Check[] }[] = [];
   list.forEach((s, i) => {
     const c = (counts[s.id] ??= { subjects: 0, ran: 0, checks: 0, skipped: {} });
     c.subjects++;
-    const why = s.shell && s.shell !== 'bash' && s.shell !== 'sh' ? `read as ${s.shell}` : !ok[i] ? 'bash does not parse it' : unsafe(parser.parse(s.original)) ?? unsafe(parser.parse(s.script));
+    // (An id whose original may be one bash does not parse runs its checks on the rewrite and a reference alone.)
+    const broken = !ok[i] && !!STATES[s.id]!.broken;
+    const why = s.shell && s.shell !== 'bash' && s.shell !== 'sh' ? `read as ${s.shell}` : !ok[i] && !broken ? 'bash does not parse it'
+      : (broken ? undefined : unsafe(parser.parse(s.original))) ?? unsafe(parser.parse(s.script));
     const checks = why ?? STATES[s.id]!.checks(s, contextOf(s));
     if (typeof checks === 'string') { c.skipped[checks] = (c.skipped[checks] ?? 0) + 1; return; }
+    // (Every script a check runs is one the walls let through: a reference, a probe, as well as the two of the subject.)
+    const refused = checks.flatMap((k) => k.runs.map((r) => r.script)).find((t) => unsafe(parser.parse(t)));
+    if (refused !== undefined) throw new Error(`${s.id} in ${JSON.stringify(s.input)}: a check runs ${JSON.stringify(refused)}, which the walls refuse: ${unsafe(parser.parse(refused))}`);
     c.ran++;
     c.checks += checks.length;
     plans.push({ s, checks });
