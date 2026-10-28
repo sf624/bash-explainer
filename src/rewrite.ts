@@ -24,24 +24,20 @@ export interface Rewrite { code: string; edits: readonly TextEdit[] }
  * `f` with the edits of the other facts of `all` that have its text added to its rewrites: a fact said twice on a line
  * is listed once (src/analyzer.ts), and is about two places, `cp $a b; cp $a c`, which its rewrites then both change.
  * A rewrite must change every place, or it leaves the note: where one place has none (in a string another shell
- * reads, `bash -c 'cp $a b'`), the fact has none; where one has fewer alternatives, the fact keeps only those all have.
+ * reads, `bash -c 'cp $a b'`), the fact has none; the alternatives are paired by their code, and the fact keeps only
+ * those every place has (none, where they have none in common).
  */
 export function withRewritesOf(f: Fact, all: readonly Fact[]): Fact {
   const same = all.filter((g) => g.text === f.text);
   if (!f.rewrite || same.length < 2) return f;
-  if (same.some((g) => !g.rewrite)) {
-    const { rewrite: _, ...rest } = f;
-    return rest;
-  }
-  const alternatives = Math.min(...same.map((g) => g.rewrite!.length));
-  return {
-    ...f,
-    rewrite: f.rewrite.slice(0, alternatives).map((r, k) => {
-      // (The same edit once: a fact said twice for one place.)
-      const edits = new Map(same.flatMap((g) => g.rewrite![k].edits).map((e) => [`${e.start} ${e.end} ${e.text}`, e]));
-      return { code: r.code, edits: [...edits.values()] };
-    }),
-  };
+  const kept = same.some((g) => !g.rewrite) ? [] : f.rewrite.filter((r) => same.every((g) => g.rewrite!.some((o) => o.code === r.code))).map((r) => {
+    // (The same edit once: a fact said twice for one place.)
+    const edits = new Map(same.flatMap((g) => g.rewrite!.filter((o) => o.code === r.code).flatMap((o) => o.edits)).map((e) => [`${e.start} ${e.end} ${e.text}`, e]));
+    return { code: r.code, edits: [...edits.values()] };
+  });
+  if (kept.length) return { ...f, rewrite: kept };
+  const { rewrite: _, ...rest } = f;
+  return rest;
 }
 
 /** The root of the tree `n` is in, and whether that tree is the document's (not a string read as a script). */

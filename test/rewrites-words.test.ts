@@ -45,6 +45,11 @@ describe('the rewrites of `unquoted-variable-as-path`', () => {
     const two = f([{ code: 'a', edits: [edit(0)] }, { code: 'b', edits: [edit(1)] }]);
     const one = f([{ code: 'a', edits: [edit(5)] }]);
     assert.deepStrictEqual(withRewritesOf(two, [two, one]).rewrite, [{ code: 'a', edits: [edit(0), edit(5)] }]);
+    // (Paired by their code, not by their place in the list; none where the places have no code in common.)
+    const swapped = f([{ code: 'b', edits: [edit(7)] }, { code: 'a', edits: [edit(8)] }]);
+    assert.deepStrictEqual(withRewritesOf(two, [two, swapped]).rewrite, [{ code: 'a', edits: [edit(0), edit(8)] }, { code: 'b', edits: [edit(1), edit(7)] }]);
+    assert.deepStrictEqual(withRewritesOf(swapped, [two, swapped, one]).rewrite, [{ code: 'a', edits: [edit(0), edit(8), edit(5)] }]);
+    assert.ok(!('rewrite' in withRewritesOf(one, [one, f([{ code: 'b', edits: [edit(3)] }])])));
     // (The same place twice: its edit once.)
     assert.deepStrictEqual(withRewritesOf(one, [one, one]).rewrite, one.rewrite);
     assert.ok(!('rewrite' in withRewritesOf(two, [two, f()])));

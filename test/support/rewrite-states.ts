@@ -145,10 +145,17 @@ const RECORDERS = ['cd', 'pushd', 'popd'];
 const TURNED_OFF = [...RECORDERS, ...[...DENIED].filter((n) => !['source', '.', 'builtin', 'enable', 'coproc'].includes(n))];
 /**
  * Variables a script may not set, which the set-up makes readonly too: those that find commands (PATH, BASH_CMDS as
- * `hash -p` does, BASH_ALIASES), are read by a new bash (BASH_ENV, ENV), hold code bash runs later (PS4 under
- * `set -x`, PROMPT_COMMAND), name a file bash writes (HISTFILE) or where it loads builtins from.
+ * `hash -p` does, BASH_ALIASES), are read by a new bash (BASH_ENV, ENV; POSIXLY_CORRECT, which starts it in posix
+ * mode, where it reads no BASH_ENV), hold code bash runs later (PS4 under `set -x`, PROMPT_COMMAND), name a file bash
+ * writes (HISTFILE) or where it loads builtins from. (`set -o posix` sets POSIXLY_CORRECT too, which `set -a` would
+ * export: readonly, it stays unset.)
  */
-const PROTECTED = ['PATH', 'BASH_ENV', 'ENV', 'BASH_CMDS', 'BASH_ALIASES', 'PS4', 'PROMPT_COMMAND', 'HISTFILE', 'BASH_LOADABLES_PATH'];
+const PROTECTED = ['PATH', 'BASH_ENV', 'ENV', 'POSIXLY_CORRECT', 'BASH_CMDS', 'BASH_ALIASES', 'PS4', 'PROMPT_COMMAND', 'HISTFILE', 'BASH_LOADABLES_PATH'];
+/**
+ * Variables a script may not export: a new bash takes its options from them (SHELLOPTS, BASHOPTS), and in posix or
+ * privileged mode it reads no BASH_ENV. (Both are readonly; `export` and `declare -x` still export them.)
+ */
+const OPTION_VARS = /^(SHELLOPTS|BASHOPTS)$/;
 /** A word that names one of them (`PATH`, `PATH=…`, `BASH_CMDS[x]=…`), or, given to `env`, a variable that changes how a program runs. */
 const PROTECTED_NAME = new RegExp(`^(${PROTECTED.join('|')})(\\[|\\+?=|$)`);
 const ENV_GLOBS = [...PROTECTED, 'SHELLOPTS', 'BASHOPTS', 'GCONV_PATH'].map((n) => `${n}=*`).concat('LD_*', 'BASH_FUNC_*');
@@ -177,6 +184,7 @@ export function unsafe(tree: SyntaxTree, depth = 0): string | undefined {
     const why = commandWhy(c, depth, scripts);
     if (why) return why;
   }
+  if (turnsOn(tree, 'a', 'allexport') && turnsOn(tree, undefined, 'posix')) return '`set -o posix` with `set -a`, which would export POSIXLY_CORRECT (a new bash in posix mode reads no BASH_ENV)';
   for (const n of descendants(tree.root, ['variable_assignment'])) {
     const name = /^[A-Za-z_]\w*/.exec(n.text)?.[0];
     if (name && PROTECTED_NAME.test(n.text)) return `an assignment to \`${name}\``;
@@ -199,6 +207,19 @@ export function unsafe(tree: SyntaxTree, depth = 0): string | undefined {
   return undefined;
 }
 
+/** Whether a `set` (or `shopt -o`) of the script turns on the option of `letter` or `long` (`set -ea`, `set -o allexport`). */
+function turnsOn(tree: SyntaxTree, letter: string | undefined, long: string): boolean {
+  return descendants(tree.root, ['command']).some((c) => {
+    const nameNode = field(c, 'name');
+    if (!nameNode) return false;
+    const ws = [nameNode.namedChildren[0] ?? nameNode, ...c.namedChildren.filter((w) => w !== nameNode && w.type !== 'variable_assignment' && !w.type.endsWith('_redirect'))]
+      .map((w) => staticWordValue(w) ?? w.text);
+    const flags = ws.slice(1).filter((w) => /^-\w/.test(w)).join('');
+    if (ws[0] === 'shopt') return /s/.test(flags) && /o/.test(flags) && ws.includes(long);
+    return ws[0] === 'set' && ((letter !== undefined && flags.includes(letter)) || ws.some((w, i) => /^-\w*o$/.test(ws[i - 1] ?? '') && w === long));
+  });
+}
+
 /** Whether a command under `n` runs in the background (`a &`). */
 const hasBackground = (n: SyntaxNode): boolean => n.children.some((c) => (!c.named && c.type === '&') || hasBackground(c));
 
@@ -215,6 +236,8 @@ function commandWhy(c: SyntaxNode, depth: number, scripts: Set<SyntaxNode>): str
     if (bad) return `\`${name}\` of \`${/^\w+/.exec(bad)![0]}\``;
     const exported = name === 'export' || words.some((w) => /^-\w*x/.test(w.text));
     if (name !== 'printf' && exported && words.some((w) => /^-\w*f/.test(w.text))) return 'an exported function, which a new bash would run before its set-up';
+    const options = exported ? named.map((w) => staticWordValue(w, true) ?? w.text).find((t) => OPTION_VARS.test(t.replace(/=.*/s, ''))) : undefined;
+    if (name !== 'printf' && options) return `\`${name}\` of \`${options.replace(/=.*/s, '')}\`, which a new bash takes its options from (in posix mode it reads no BASH_ENV)`;
   }
   return wordsWhy(words, depth, scripts);
 }
@@ -316,15 +339,19 @@ ${prelude}
 
 /**
  * The programs of PATH that run another one, as wrappers: \`bash\` only as \`bash -c STRING [ARG…]\` (so that the new
- * bash reads the set-up: not \`-i\`, \`-p\` or \`--posix\`, which skip it), and \`env\` with no option (\`-i\`, \`-u PATH\`
- * and \`-C DIR\` would leave the walls), no variable of \`PROTECTED\` and no command named by a path. They run in
- * bash's privileged mode, which reads no BASH_ENV, and keep the name of the program for its messages.
+ * bash reads the set-up: not \`-i\`, \`-p\`, \`-o posix\` or \`--posix\`, which skip it), and \`env\` with no option
+ * (\`-i\`, \`-u PATH\`, \`-S\` and \`-C DIR\` would leave the walls), no variable of \`PROTECTED\` and no command named by
+ * a path. They run in bash's privileged mode, which reads no BASH_ENV, and keep the name of the program for its
+ * messages. Both export PATH and BASH_ENV again (\`export -n PATH\`, which readonly allows, would give a new program
+ * the default PATH, and a new bash no set-up) and unset POSIXLY_CORRECT (posix mode); \`bash\` refuses an exported
+ * SHELLOPTS or BASHOPTS, which would bring posix mode, or the privileged mode of the wrapper itself.
  */
-function wrapper(p: 'bash' | 'env', real: string): string {
+function wrapper(p: 'bash' | 'env', real: string, bin: string, setupFile: string): string {
   const refuse = `{ builtin echo "@${p} refused: $*" >&2; builtin exit 126; }`;
-  const check = p === 'bash' ? `[[ $1 == -c && $# -ge 2 && $2 != [-+]* ]] || ${refuse}`
+  const check = p === 'bash' ? `[[ \${SHELLOPTS@a} != *x* && \${BASHOPTS@a} != *x* ]] || ${refuse}\n[[ $1 == -c && $# -ge 2 && $2 != [-+]* ]] || ${refuse}`
     : `for a; do\n  case $a in\n    -*|${ENV_GLOBS.join('|')}) ${refuse} ;;\n    *=*) continue ;;\n    */*) ${refuse} ;;\n  esac\n  break\ndone`;
-  return `#!${real} -p\n${check}\nbuiltin exec -a ${p} ${quote(p === 'bash' ? real : REAL_ENV)} "$@"\n`;
+  const reset = `builtin unset POSIXLY_CORRECT\nbuiltin export PATH=${quote(bin)} BASH_ENV=${quote(setupFile)}`;
+  return `#!${real} -p\n${reset}\n${check}\nbuiltin exec -a ${p} ${quote(p === 'bash' ? real : REAL_ENV)} "$@"\n`;
 }
 const REAL_ENV = ['/usr/bin/env', '/bin/env'].find((f) => fs.existsSync(f))!;
 
@@ -343,7 +370,7 @@ export async function runJobs(bash: string, list: readonly Job[], { jobs = 4, pe
       for (const p of job.programs ?? []) {
         if (!PROGRAMS.has(p)) throw new Error(`\`${p}\` may not be on the PATH of a run (rewrite-states.ts, PROGRAMS)`);
         if (p === 'bash' || p === 'env') {
-          fs.writeFileSync(path.join(bin, p), wrapper(p, program), { mode: 0o755 });
+          fs.writeFileSync(path.join(bin, p), wrapper(p, program, bin, path.join(dir, 'setup.sh')), { mode: 0o755 });
           continue;
         }
         fs.symlinkSync(['/usr/bin', '/bin'].map((d) => path.join(d, p)).find((f) => fs.existsSync(f))!, path.join(bin, p));
@@ -424,13 +451,17 @@ export function contextOf(s: Subject): Context {
   const vars = [...new Set(named.filter(inEdits).map((n) => n.text))];
   const read = [...new Set(named.filter((n) => n.type === 'variable_name' && /^[A-Za-z_]\w*$/.test(n.text)).map((n) => n.text))]
     .filter((n) => !vars.includes(n) && !(n in BASH_VARIABLES) && !/^(PATH|HOME|IFS|LC_\w+|LANG)$/.test(n));
-  let at = tree.root;
+  return { tree, vars, others: Object.fromEntries(read.map((n) => [n, 'w'])), assigned: model.assigned, at: innermost(tree, first.start) };
+}
+
+/** The innermost node of `tree` that holds the offset `at`. */
+function innermost(tree: SyntaxTree, at: number): SyntaxNode {
+  let n = tree.root;
   for (;;) {
-    const deeper = at.children.find((c) => c.startIndex <= first.start && first.start < c.endIndex);
-    if (!deeper) break;
-    at = deeper;
+    const deeper = n.children.find((c) => c.startIndex <= at && at < c.endIndex);
+    if (!deeper) return n;
+    n = deeper;
   }
-  return { tree, vars, others: Object.fromEntries(read.map((n) => [n, 'w'])), assigned: model.assigned, at };
 }
 
 /** The original with the state `job` (but its script), and the rewrite with the state `rjob` (the same when absent). */
@@ -512,19 +543,27 @@ Object.assign(STATES, {
     },
   },
   'unquoted-variable-in-test': {
-    states: 'empty, unset, a space, `-n`, `=` (the result: what the test gives with the value written in quotes); plain values for the meaning',
+    states: 'empty, unset, a space, `-n`, `=`, for every unquoted variable of the test (the result: what the test gives with the value written in quotes); plain values for the meaning',
     checks: (s, x) => {
       const quiet = (r: Ran): string | undefined => (TEST_ERRORS.test(r.err) ? `the test failed: ${r.err}` : undefined);
       if (setBy(x)) return [holds('as the script sets it', s, { env: x.others }, quiet)];
-      const env = (v?: string) => ({ ...x.others, ...(v === undefined ? {} : Object.fromEntries(x.vars.map((n) => [n, v]))) });
+      // (Every unquoted variable of the tests the edits are in varies, not only those the edits quote: a rewrite that
+      // quotes `$x` alone in `[ $x = a -o $y = b ]` leaves the hazard of `$y`. Not one the script sets.)
+      const words = [...new Set(s.rewrite.edits.map((e) => ancestor(innermost(x.tree, e.start), (a) => a.type === 'command')!))]
+        .flatMap((c) => c.namedChildren.filter((w) => w !== field(c, 'name') && (w.type === 'simple_expansion' || w.type === 'expansion')));
+      const nameOf = (w: SyntaxNode): string | undefined => w.namedChildren.find((c) => c.type === 'variable_name')?.text;
+      const vary = [...new Set([...x.vars, ...words.map(nameOf).filter((n): n is string => !!n && !(n in BASH_VARIABLES) && !x.assigned.has(n))])];
+      const env = (v?: string) => ({ ...x.others, ...(v === undefined ? {} : Object.fromEntries(vary.map((n) => [n, v]))) });
       // (The hazard is gone: no error, and the result the test means, that of the value as one word, which an empty
-      // `[ -n $x ]` does not give, with no error. Where each edit quotes a plain `$x`, the original with the value
-      // written there in single quotes gives it; elsewhere (`${x:-d}`, `$*`), only that there is no error.)
-      const plain = s.rewrite.edits.every((e) => /^\$\{?[A-Za-z_]\w*\}?$/.test(s.original.slice(e.start, e.end)));
+      // `[ -n $x ]` does not give, with no error. Where each of those words is a plain `$x`, and each edit quotes one,
+      // the original with the value written in each in single quotes gives it; elsewhere (`${x:-d}`, `$*`), only that
+      // there is no error.)
+      const spots = words.filter((w) => vary.includes(nameOf(w) ?? ''));
+      const plain = spots.every((w) => /^\$\{?[A-Za-z_]\w*\}?$/.test(w.text)) && s.rewrite.edits.every((e) => spots.some((w) => w.startIndex === e.start && w.endIndex === e.end));
       const epilogue = 'echo "@st=$?"';
       const meant = (v: string): Check => (plain ? {
         state: `${JSON.stringify(v)}, the result`,
-        runs: [{ script: applied(s.original, { code: '', edits: s.rewrite.edits.map((e) => ({ ...e, text: quote(v) })) }), env: env(v), epilogue }, { script: s.script, env: env(v), epilogue }],
+        runs: [{ script: applied(s.original, { code: '', edits: spots.map((w) => ({ start: w.startIndex, end: w.endIndex, text: quote(v) })) }), env: env(v), epilogue }, { script: s.script, env: env(v), epilogue }],
         verify: ([o, r]) => quiet(r) ?? same(o, r),
       } : holds(JSON.stringify(v), s, { env: env(v) }, quiet));
       return [
