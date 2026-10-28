@@ -15,6 +15,24 @@ describe('the message catalog', () => {
     }
   });
 
+  it('cites in each case, where the sections depend on the params (`refsOf`), some of `refs`, sections of the manual', () => {
+    // (Each case of the ids that choose: every combination of the params `refsOf` reads.)
+    const find = ['missing', 'empty', 'alone', 'once'].flatMap((why) => [true, false].flatMap((bare) => [true, false].flatMap((plus) => [true, false]
+      .map((noCommand) => ({ option: '-exec', why, plus, bare, noCommand, word: '{}x', rewrite: [] })))));
+    const cases: Record<string, readonly unknown[]> = { 'find-action-refused': find };
+    const choosing = Object.entries(MESSAGES).filter(([, e]) => 'refsOf' in e);
+    assert.deepStrictEqual(choosing.map(([id]) => id).sort(), Object.keys(cases).sort());
+    for (const [id, e] of choosing) {
+      const refsOf = (e as { refsOf: (p: unknown) => readonly string[] }).refsOf;
+      for (const p of cases[id]) {
+        const refs = refsOf(p);
+        const where = `${id} ${JSON.stringify(p)}: ${refs.join(', ')}`;
+        assert.ok(refs.length >= 1 && refs.every((r) => e.refs.includes(r) && SECTIONS.has(r)), where);
+        assert.deepStrictEqual(fact('en', id as FactId, p as never).refs, refs, where);
+      }
+    }
+  });
+
   it('marks a note with ℹ and a pitfall with ⚠, in both languages', () => {
     const note = fact('en', 'exit-modulo', { command: 'exit', value: '300', status: 44, ends: 'shell' });
     assert.strictEqual(note.kind, 'note');

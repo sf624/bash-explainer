@@ -386,20 +386,23 @@ const REAL_ENV = ['/usr/bin/env', '/bin/env'].find((f) => fs.existsSync(f))!;
 
 /**
  * Whether GNU find accepts the words that a line of its recorder shows (`@find <.> <-exec> …`): undefined, or what it says.
- * They are read with a start that does not exist, in a directory of its own, so that find finds nothing and runs nothing;
- * an action that opens a file as find reads it (`-fprint`…) is refused here instead.
+ * They are read with a start that does not exist (in place of the starts written, after the options `-H`, `-L`, `-P`,
+ * `-D DEBUGOPTS` and `-ON`), in a directory of its own, so that find finds nothing and runs nothing; an action that opens a
+ * file as find reads it (`-fprint`…), and `-files0-from`, which reads the starts from a file, are refused here instead.
+ * find runs contained as the other runs are (`runContained`: a cgroup, a process group killed on a timeout, a bare environment).
  */
-function findAccepts(line: string): string | undefined {
+async function findAccepts(line: string): Promise<string | undefined> {
   const words = [...line.matchAll(/ <(.*?)>(?= <|$)/g)].map((m) => m[1]);
-  const options = words.findIndex((w) => !/^-[HLP]$/.test(w));
+  let options = 0;
+  while (options < words.length && /^-(?:[HLP]|O\d*|D)$/.test(words[options])) options += words[options] === '-D' ? 2 : 1;
   const start = words.findIndex((w, i) => i >= options && isExpressionStart(w));
   const expression = start < 0 ? [] : words.slice(start);
-  if (expression.some((w) => /^-f(?:print0?|printf|ls)$/.test(w))) return `${expression.join(' ')}: an action that writes a file as find reads it`;
+  if (expression.some((w) => /^-(?:f(?:print0?|printf|ls)|files0-from)$/.test(w))) return `${expression.join(' ')}: an action that opens a file as find reads it`;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-find-'));
   try {
     const none = path.join(dir, 'none');
-    const r = spawnSync('find', [...words.slice(0, Math.max(options, 0)), none, ...expression], { cwd: dir, encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 10_000 });
-    const said = r.stderr.split('\n').filter((l) => l && l !== `find: '${none}': No such file or directory`);
+    const r = await runContained(['/usr/bin/find', ...words.slice(0, options), none, ...expression], dir, {}, 10_000);
+    const said = r.stderr.split('\n').filter((l) => l && l !== `/usr/bin/find: '${none}': No such file or directory`);
     return said.length ? said.join('\n') : undefined;
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -468,7 +471,7 @@ export async function runJobs(bash: string, list: readonly Job[], { jobs = 4, pe
 // The states and the oracles of each id.
 
 /** A check: runs, and what must hold of them (a failure says what does not; undefined when it holds). */
-export interface Check { state: string; runs: Job[]; verify: (r: readonly Ran[]) => string | undefined }
+export interface Check { state: string; runs: Job[]; verify: (r: readonly Ran[]) => string | undefined | Promise<string | undefined> }
 
 /** The states of an id and its oracle: the checks for a subject, or why its states do not apply to it. */
 export interface IdStates {
@@ -808,11 +811,11 @@ Object.assign(STATES, {
     checks: (s, x) => [{
       state: 'recorded',
       runs: pair(s, { env: x.others }),
-      verify: ([o, r]) => {
+      verify: async ([o, r]) => {
         const without = (t: string): string => t.split(' <;>').join('');
         const added = r.out.split(' <;>').length - o.out.split(' <;>').length;
         if (!(without(r.out) === without(o.out) && r.err === o.err && r.status === o.status && added === s.facts.length)) return `${added} words added to ${JSON.stringify(o.out)}, got ${JSON.stringify(r.out)}`;
-        const refused = r.out.split('\n').filter((l) => l.startsWith('@find')).map(findAccepts).find((e) => e !== undefined);
+        const refused = (await Promise.all(r.out.split('\n').filter((l) => l.startsWith('@find')).map(findAccepts))).find((e) => e !== undefined);
         return refused && `GNU find refuses the rewrite of ${JSON.stringify(o.out)}: ${refused}`;
       },
     }],
@@ -1179,7 +1182,7 @@ export async function checkStates(program: string, list: readonly Subject[]): Pr
   let at = 0;
   for (const { s, checks } of plans) {
     for (const c of checks) {
-      const bad = c.verify(rans.slice(at, (at += c.runs.length)));
+      const bad = await c.verify(rans.slice(at, (at += c.runs.length)));
       if (bad) failures.push(`${s.id} in ${JSON.stringify(s.input === s.text ? s.input : `${s.input}: ${s.original.trim()}`)}, ${JSON.stringify(s.codes)}, ${c.state}: ${bad}`);
     }
   }
