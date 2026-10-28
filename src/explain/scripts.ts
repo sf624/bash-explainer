@@ -10,7 +10,7 @@ import { tx } from '../i18n';
 import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
-import { type ExecEnv, reachOf, type SlotLink, variableIn, whereOf } from '../semantics/env';
+import { type ExecEnv, linksAfter, reachOf, type SlotLink, variableIn, whereOf } from '../semantics/env';
 import { fromEnvironment } from '../semantics/shellstate';
 import type { Missed } from '../semantics/names';
 import { type NestedScript, plainReads, scriptSourceIndex } from '../semantics/nested';
@@ -135,9 +135,11 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
   const { slot } = role;
   const link = env.links[env.links.length - 1] as SlotLink;
   const via = link.via;
-  const where = whereOf(env);
+  // (What reached the shell that runs the command is in its state: only the command's own slots, `linksAfter`.)
+  const own = linksAfter(env, cx.state.env(ancestor(words[0], (x) => x.type === 'command')!));
+  const where = whereOf(own);
   // (The first link that passes no exported functions: `env -i`, `su -`, sudo, a container.)
-  const { blocker } = reachOf(env);
+  const { blocker } = reachOf(own);
   const first = words[0];
   const name = first.text;
   // A function of the script that the slot does not run (src/semantics/names.ts): even one defined later.

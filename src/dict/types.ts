@@ -187,7 +187,8 @@ export const SUDO_KEEPS: readonly string[] = [
 /**
  * The variables of the caller's environment that doas passes on: it starts the command in a new environment, with
  * `DISPLAY` and `TERM` from the caller's, and `HOME`, `LOGNAME`, `PATH`, `SHELL` and `USER` set for the target user
- * (doas(1), OpenDoas 6.8). A rule of doas.conf(5) may pass more (`keepenv`, `setenv`): these are its defaults.
+ * (doas(1), OpenDoas 6.8). A rule of doas.conf(5) may pass more (`keepenv`, `setenv`): these are its defaults. (doas
+ * takes no `NAME=value` words: `doas [-Lns] [-a style] [-C config] [-u user] command [arg ...]`.)
  */
 export const DOAS_KEEPS: readonly string[] = ['DISPLAY', 'TERM'];
 

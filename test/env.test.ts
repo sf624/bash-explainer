@@ -351,6 +351,9 @@ describe('explanations from the execution environment', () => {
     ];
     const said = words.map(([w, , prelude]) => pitfalls(`${prelude ?? 'x=1'}\nssh h echo ${w}`, 'en', 1).some((p) => /the local shell expands/.test(p)));
     assert.deepStrictEqual(said, [true, true, true, true, true, true, false, false, false, false, false, true, true, true]);
+    // (A shell the remote one starts expands its own string there: no word of it is this shell's.)
+    assert.ok(!pitfalls(`ssh h 'bash -c "ls $HOME"'`).some((p) => /the local shell expands/.test(p)));
+    assert.ok(pitfalls(`ssh h "ls $HOME"`).some((p) => /the local shell expands/.test(p)));
     if (!hasBash) this.skip();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-ssh-'));
     try {

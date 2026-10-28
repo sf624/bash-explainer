@@ -102,7 +102,17 @@ describe('the program echo: --help and --version as its one argument', () => {
     }
     // (A subshell or a function the command runs in passes the exported variable on.)
     assert.ok(!isVersion('export POSIXLY_CORRECT=y\n( /bin/echo --version )'));
-    assert.ok(!isVersion('export POSIXLY_CORRECT=y\nf() { /bin/echo --version; }'));
+    // (A function that may be called where the model does not see, `bash -c f` after `export -f f`, or that no call
+    // reaches: not known.)
+    assert.deepStrictEqual(wordToken('export POSIXLY_CORRECT=y\nf() { /bin/echo --version; }', '--version'), ['option', VERSION]);
+    const bodyToken = (src: string, line: number): [string, string] => {
+      const t = allTokens(explain(src, line, 'en').items).find((x) => x.label === '--version')!;
+      return [t.kind, t.explanation];
+    };
+    assert.deepStrictEqual(bodyToken('export POSIXLY_CORRECT=1\nf() { /bin/echo --version; }\nexport -f f\nenv -u POSIXLY_CORRECT bash -c f', 1), ['option', VERSION]);
+    assert.ok(isVersionBash('export POSIXLY_CORRECT=1; f() { /bin/echo --version; }; export -f f; env -u POSIXLY_CORRECT bash -c f'));
+    assert.deepStrictEqual(bodyToken('f() { POSIXLY_CORRECT=1 /bin/echo --version; }\nexport -f f', 0), BY_ENV);
+    assert.deepStrictEqual(bodyToken('f() { env -i /bin/echo --version; }\nexport -f f', 0), PLAIN);
     assert.ok(isVersion('( /bin/echo --version )'));
     assert.ok(isVersionBash('enable -n echo; command echo --version'));
     assert.ok(!isVersionBash('enable -n echo; POSIXLY_CORRECT=1 command echo --version'));

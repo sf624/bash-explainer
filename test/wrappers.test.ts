@@ -83,12 +83,14 @@ describe('the command a wrapper runs', () => {
     // (What the operand after `-c` is, from flock's spec.)
     assert.match(about("flock -n /tmp/l -c 'cmd'", "'cmd'"), /^command to run\. /);
   });
-  it('env, sudo and doas: NAME=value words are assignments, not the command', () => {
+  it('env and sudo: NAME=value words are assignments, not the command; doas runs the first word', () => {
     assert.match(about('env -i A=1 cmd arg', 'A=1'), /^Sets the variable `A`/);
     assert.match(about('env -i A=1 cmd arg', 'A=1', 'ja'), /^環境変数 `A` の設定/);
     assert.match(ran('env -i A=1 cmd arg', 'cmd'), /runs `cmd`/);
     assert.match(about('sudo FOO=1 cmd', 'FOO=1'), /Sets the variable `FOO`/);
-    assert.match(about('doas -u u FOO=1 cmd', 'FOO=1'), /Sets the variable `FOO`/);
+    // (doas takes no assignments, doas(1): it runs `FOO=1` as the command, "doas: FOO=1: command not found".)
+    assert.match(ran('doas -u u FOO=1 cmd', 'FOO=1'), /runs `FOO=1`/);
+    assert.deepStrictEqual(notes("doas X=1 bash -c 'echo $X'").filter((n) => /`X`/.test(n)), []);
     assert.match(ran('doas -u u cmd', 'cmd'), /runs `cmd`/);
     assert.match(about('doas -u u cmd', 'doas'), /Run a command as another user/);
   });
@@ -257,6 +259,10 @@ describe('the pitfalls follow from how the command is run', () => {
       assert.deepStrictEqual(at(src), [`⚠ Pitfall: \`bash -c\` runs the command in a new shell, which does not have this script's function \`myfunc\`, and \`${blocker}\` passes no exported functions, so \`export -f myfunc\` does not help either. Write out its body`], src);
     }
     assert.strictEqual(at('sudo bash -c myfunc', 'ja')[0], '⚠ 落とし穴: `bash -c` は新しいシェルでコマンドを実行するため、このスクリプトの関数 `myfunc` は使えません。`sudo` は環境の関数を渡さないので、`export -f myfunc` も効きません。関数の中身を直接書きます');
+    // (A link before the shell that runs the wrapper is not the wrapper's: `nice` passes exported functions, sudo does not.)
+    assert.match(at("env -i bash -c 'myfunc() { :; }; export -f myfunc; nice myfunc'")[0], /Run `export -f myfunc`, then call it through a shell/);
+    assert.match(at("env -i bash -c 'myfunc() { :; }; export -f myfunc; sudo myfunc'")[0], /\(`sudo` passes no exported functions/);
+    assert.match(at("env -i bash -c 'myfunc() { :; }; export -f myfunc; sudo bash -c myfunc'")[0], /and `sudo` passes no exported functions/);
     // (Nor a link before the shell that exports it: what reached that shell is in its state.)
     for (const src of ['export -f myfunc; env bash -c myfunc', 'export -f myfunc; env -u X bash -c myfunc', 'export -f myfunc; timeout 5 bash -c myfunc',
       "env -i bash -c 'myfunc() { :; }; export -f myfunc; bash -c myfunc'"]) assert.deepStrictEqual(at(src), [], src);
@@ -298,13 +304,14 @@ describe('the pitfalls follow from how the command is run', () => {
 });
 
 describe('a variable set by a wrapper is not yet set when its words are expanded', () => {
-  it('env, sudo and doas', () => {
+  it('env and sudo', () => {
     const n = notes('env FOO=1 echo $FOO');
     assert.strictEqual(n.length, 1);
     assert.match(n[0], /^⚠ Pitfall: the current shell expands `\$FOO` before `env` sets `FOO` \(to its present value, or nothing\)/);
     assert.match(notes('env FOO=1 echo $FOO', 'ja')[0], /^⚠ 落とし穴: `\$FOO` は、`env` が `FOO` を設定する前に今のシェルが展開します/);
     assert.match(notes('sudo A=1 B=2 echo "${B:-x}"')[0], /expands `"\$\{B:-x\}"` before `sudo` sets `B`/);
-    assert.match(notes('doas A=1 echo $A')[0], /before `doas` sets `A`/);
+    // (doas sets no variable: `A=1` is the command it runs.)
+    assert.ok(!notes('doas A=1 echo $A').some((x) => /before `doas` sets/.test(x)));
   });
   it('says nothing when the shell is used or the variable is not read', () => {
     for (const src of ["env FOO=1 sh -c 'echo $FOO'", "env FOO=1 echo '$FOO'", 'env FOO=1 echo $BAR', 'env FOO=1 echo $FOOBAR', 'env FOO=1 cmd', 'env echo $FOO']) assert.deepStrictEqual(notes(src), [], src);
