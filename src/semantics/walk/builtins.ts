@@ -17,7 +17,7 @@ import { aliasOf, builtinParse, commandName, DECLARATIONS, setOptionWrites, vari
 import { attribute, type Attribute, type CommandEntry, environmentHas, exportFromEnvironment, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy, withStatus } from '../shellstate';
 import { builtinExit, definitionExit, exitRefusal } from '../posixexits';
 import { changedByBash, optionRoles, readDeclarationWords, type Declaration } from '../vars';
-import { ExpansionError, NAME, type Operand } from './shared';
+import { ExpansionError, NAME, type Operand, processIn, type Target } from './shared';
 import { restrictedFromHere } from './child';
 import type { Walker } from './walker';
 
@@ -33,10 +33,10 @@ export class WalkBuiltins {
   readonly exits = new Map<SyntaxNode, Tri>();
 
   /**
-   * The entries of the table of `hash -p` each change of the main shell put, by the number of the change: what a body
-   * that runs later may find (`widen`).
+   * The entries of the table of `hash -p` each change put, by the number of the change and the process it was made in
+   * (`processIn`): what a body that runs later in that process may find (`widen`).
    */
-  readonly hashPuts: { count: number; name: string; entry: CommandEntry }[] = [];
+  readonly hashPuts: { count: number; name: string; entry: CommandEntry; proc: Target | undefined }[] = [];
 
   constructor(private readonly w: Walker) {}
 
@@ -114,7 +114,7 @@ export class WalkBuiltins {
         if (name === 'eval') return this.w.evalScript(script, n, st);
         const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]) ?? '');
         const exit = (x: string) => /^(SIG)?EXIT$|^0$/i.test(x);
-        if (!this.w.silent) this.w.traps.push({ script, host: this.w.aliasHost ?? n, st, since: this.w.changeCount, exit: signals.some(exit), exitOnly: signals.every(exit), dead: this.w.mode.dead > 0 });
+        if (!this.w.silent) this.w.traps.push({ script, host: this.w.aliasHost ?? n, st, since: this.w.changeCount, proc: processIn(this.w.targets), exit: signals.some(exit), exitOnly: signals.every(exit), dead: this.w.mode.dead > 0 });
         // (What it changes, it may change after any later statement; an EXIT trap runs at the end only.)
         if (!signals.every(exit)) {
           const keys = new Set<string>();
@@ -230,11 +230,11 @@ export class WalkBuiltins {
     return st;
   }
 
-  /** `st` with the entry `e` of the table of `hash -p` for `name`, logged in `hashPuts` when it is the main shell's. */
+  /** `st` with the entry `e` of the table of `hash -p` for `name`, logged in `hashPuts` with its process. */
   private putHashed(st: ShellState, name: string, e: CommandEntry): ShellState {
     st = this.w.put(st, 'hashed', name, e);
-    // (A subshell, a `$( )` or a pipeline stage changes its own table: a trap of the script never sees it.)
-    if (!this.w.targets.some((t) => t.kind === 'subshell')) this.hashPuts.push({ count: this.w.changeCount, name, entry: e });
+    // (A subshell, a `$( )` or a pipeline stage changes its own table: only a trap or a function of that process sees it.)
+    this.hashPuts.push({ count: this.w.changeCount, name, entry: e, proc: processIn(this.w.targets) });
     return st;
   }
 

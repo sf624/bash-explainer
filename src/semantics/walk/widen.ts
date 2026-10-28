@@ -5,7 +5,7 @@ import type { SyntaxNode } from '../../syntax/tree';
 import type { Attribute, Entry, Kind, ShellState, VariableState } from '../shellstate';
 import { hashEntry, hashOutcomes } from '../shellstate';
 import { ATTRIBUTE_LETTERS } from './builtins';
-import { OPAQUE } from './shared';
+import { OPAQUE, processIn, type SetAt } from './shared';
 import type { Walker } from './walker';
 
 /** The prefix of the key of a change of a variable's attributes (`Walker.put`): `attrs x`, beside `variables x`. */
@@ -20,10 +20,10 @@ export function attributesChange(a: VariableState | undefined, b: VariableState 
 
 /**
  * `st` with the names in `keys` (`kind name`) taken as unknown, and the attributes of the variables in `attrs name`
- * keys; but a function surely defined by the top level (`Walker.sureLater`) is defined. `since`: the number of the
- * change after which they are made, when known (the table of `hash -p` then gathers what each of them leaves).
+ * keys; but a function surely defined by the top level (`Walker.sureLater`) is defined. `from`: where the body that
+ * runs later was set, when known (the table of `hash -p` then gathers what each change after it in its process leaves).
  */
-export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>, since?: number): ShellState {
+export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>, from?: SetAt): ShellState {
   const changes = { set: new Map(), shopt: new Map(), variables: new Map(), functions: new Map(), aliases: new Map(), disabled: new Map(), hashed: new Map() } as { [K in Kind]: Map<string, Entry<K>> };
   let opaque = st.opaque;
   for (const key of keys) {
@@ -59,11 +59,13 @@ export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>, sinc
       } else if (!f) changes.functions.set(name, { state: 'unknown', def: defs[defs.length - 1], exported: 'unknown', readonly: 'unknown' });
       else if (f.state !== 'unknown') changes.functions.set(name, { ...f, state: 'unknown' });
     } else if (kind === 'hashed') {
-      // (What it was, or what a change of the main shell after it leaves: each one after `since` (a function no call
-      // reaches, a trap's action), else the last one. One made only in a subshell changes nothing here.)
+      // (What it was, or what a change in the same process leaves: each one after `from` (a function no call reaches,
+      // a trap's action, in the process they were set in), else the last one in the process the walk is in. One made
+      // only in another process changes nothing here.)
       const e = st.hashed.get(name);
-      const puts = w.builtins.hashPuts.filter((p) => p.name === name && (since === undefined || p.count > since)).map((p) => p.entry);
-      const later = since === undefined ? puts.slice(-1) : puts;
+      const proc = from ? from.proc : processIn(w.targets);
+      const puts = w.builtins.hashPuts.filter((p) => p.name === name && p.proc === proc && (!from || p.count > from.since)).map((p) => p.entry);
+      const later = from ? puts : puts.slice(-1);
       if (later.length) changes.hashed.set(name, hashEntry(later.at(-1)!, [...hashOutcomes(e), ...later.flatMap(hashOutcomes)]));
     } else if (kind === 'disabled') {
       const e = st.disabled.get(name);

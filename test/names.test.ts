@@ -408,6 +408,14 @@ describe('the analyzer says what a name runs', () => {
       assert.strictEqual(all(explain(src, 0).items[0]).find((t) => t.startsWith('Sort lines')), 'Sort lines (if the `hash -p` on line 3 ran, `sort` runs the path `/usr/bin/tac` instead)', sub);
     }
     assert.ok(all(explain("hash -p /usr/bin/tac sort\ntrap 'sort i' USR1\nkill -USR1 $$\n( hash -p /usr/bin/rev sort )", 1).items[0]).some((t) => t.startsWith('Run the external command `/usr/bin/tac`')));
+    // (A trap or a function set in a subshell sees what that subshell changes after it, not what the shell changes.)
+    const inSub = (src: string) => all(explain(src, 0).items[0]).find((t) => t.startsWith('Sort lines'));
+    const rev = 'Sort lines (if the `hash -p` on line 1 ran, `sort` runs the path `/usr/bin/rev` instead)';
+    assert.strictEqual(inSub("( trap 'sort i' USR1; hash -p /usr/bin/rev sort; kill -USR1 $BASHPID )"), rev);
+    assert.strictEqual(inSub("x=$( trap 'sort i' USR1; hash -p /usr/bin/rev sort; kill -USR1 $BASHPID )"), rev);
+    assert.strictEqual(inSub("{ trap 'sort i' USR1; hash -p /usr/bin/rev sort; kill -USR1 $BASHPID; } | cat"), rev);
+    assert.strictEqual(inSub("( f() { sort i; }; hash -p /usr/bin/rev sort; complete -F f x )"), rev);
+    assert.strictEqual(inSub("( trap 'sort i' USR1; kill -USR1 $BASHPID ); hash -p /usr/bin/tac sort"), 'Sort lines');
     // (A trap's action that changes the table may run after any statement; changes of other names do not count.)
     assert.strictEqual(short(resolve('trap "hash -p /bin/ls e" INT\ne', 'e')), 'file:search-unknown-maybe-hashed:ran');
     assert.strictEqual(short(resolve('hash -p /bin/cat a\nf() { e; }\nhash -p /bin/ls a\nhash -p /bin/ls e', 'e')), 'file:search-unknown-maybe-hashed:ran');

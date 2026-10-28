@@ -87,6 +87,21 @@ export type Target =
    */
   | { kind: 'trap'; exitOnly: boolean };
 
+/**
+ * The process the walk is in (`targets`): the innermost subshell it entered (`( )`, `&`, `$( )`, a pipeline stage), or
+ * undefined for the shell itself. What a subshell changes, a trap or a function of another process never sees.
+ */
+export function processIn(targets: readonly Target[]): Target | undefined {
+  for (let i = targets.length - 1; i >= 0; i--) if (targets[i].kind === 'subshell') return targets[i];
+  return undefined;
+}
+
+/** Where a body that runs later was set (a trap, a function definition): the number of the change then, and the process. */
+export interface SetAt {
+  readonly since: number;
+  readonly proc: Target | undefined;
+}
+
 /** A `break` or `continue` made in a `${ …; }` (from `st`), which bash makes once the statement that holds it is done. */
 export interface Deferred { readonly ends: 'loop' | 'pass'; readonly count: number | undefined; readonly st: ShellState }
 
