@@ -1,6 +1,6 @@
 # Spec and convention, as data
 
-Status: decided (2026-10-28, #450); steps 5a (#452) and 5b (#451) done; an alias's arguments rest on the spec they are read with (decision 6, #NNN). The design of step 5 of [basis.md](basis.md): the two kinds of basis that steps 1 to 4 left in the type only. Data only: no view shows them (basis.md, section 6). The maintainer's decisions are in section 5.
+Status: decided (2026-10-28, #450); steps 5a (#452) and 5b (#451) done; an alias's arguments rest on the spec they are read with (decision 6, #460). The design of step 5 of [basis.md](basis.md): the two kinds of basis that steps 1 to 4 left in the type only. Data only: no view shows them (basis.md, section 6). The maintainer's decisions are in section 5.
 
 Steps 1 to 4 gave a basis to what bash does: the manual's sections, or a probe row (`checked`, `differs`). Two kinds are still empty:
 
