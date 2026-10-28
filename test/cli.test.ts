@@ -105,6 +105,10 @@ describe('the command-line tool', function () {
     assert.ok(!('basis' in JSON.parse(run(['--format', 'json', '-e', 'read -r x']).out)[0].explanation.items[0]));
     assert.ok(!('basis' in JSON.parse(run(['--format', 'json', '-e', 'grep -n x f', '--set', 'notes.basis=false']).out)[0].explanation.items[0]));
     assert.doesNotMatch(run(['-e', 'grep -n x f', '--no-color']).out, /spec|manual ·/);
+    // An alias is read with the spec of the command it runs: its token names it, and nothing else does (decision of 2026-10-28).
+    const alias = JSON.parse(run(['--format', 'json', '-e', 'shopt -s expand_aliases\nalias g=grep\ng -n x f']).out);
+    const g = alias.flatMap((l: { explanation: { items: { label: string; basis?: unknown }[] } }) => l.explanation.items).filter((i: { label: string }) => i.label === 'g');
+    assert.deepStrictEqual(g.map((i: { basis?: unknown }) => i.basis), [{ kind: 'spec', command: 'grep' }]);
   });
 
   it('labels a command with its name, and its arguments as before', () => {

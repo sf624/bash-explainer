@@ -384,8 +384,10 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     // starts it with expand_aliases not known, src/semantics/state.ts.)
     const maybeSourced = !res.sure && alias.state === 'on' && readAs(cx.state.env(nameNode), cx.state.read) === 'unknown';
     if (maybeSourced) cx.note(fact(cx.lang, 'alias-maybe-not-expanded', { name, value: alias.value }), nameNode);
+    // (The words after the alias are read with that command's spec, so they rest on it; with no spec, the alias's text.)
+    const basis = target ? programBasis(cx, runs!.name, target) : undefined;
     return {
-      name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'], spec, ...(target ? { runs: runs!.name } : {}),
+      name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'], spec, ...(target ? { runs: runs!.name } : {}), ...(basis ? { basis } : {}),
       explanation: res.sure
         ? cx.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}`)
         : maybeSourced

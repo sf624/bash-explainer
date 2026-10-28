@@ -378,7 +378,7 @@ describe('basis: what an explanation rests on', () => {
     none("/bin/rbash -c 'echo hi'");
     none('f() { :; }\nf -x', 1);
     none("shopt -s expand_aliases\nalias l='ls -l'\nl /", 2);
-    none('shopt -s expand_aliases\nalias g=grep\ng -n x f', 2);
+    none('shopt -s expand_aliases\nalias e=echo\ne hi', 2);
     none('frobnicate --x y');
     none('hash -p /opt/frob f\nf -x', 1);
     none('grep -n x f', 0, { customCommands: { grep: { summary: 'My grep' } } });
@@ -393,6 +393,37 @@ describe('basis: what an explanation rests on', () => {
     const extracted = extractShell('bats', lines.join('\n'));
     const ex = explainHostedLine(new Analyzer('en'), createUnbashParser().parse(extracted.text), extracted, lines, 1, 'en')!;
     assert.deepStrictEqual(allTokens(ex.items).filter((t) => t.basis).map((t) => [t.label, t.basis]), [['run', spec('run')], ['grep', spec('grep')]]);
+  });
+
+  it('gives an alias the spec its arguments are read with, as the command it runs would have (decision of 2026-10-28)', () => {
+    const on = 'shopt -s expand_aliases\n';
+    const basisOf1 = (src: string, opts?: Parameters<typeof explain>[3]) => allTokens(explain(src, src.split('\n').length - 1, 'en', opts).items).filter((t) => t.basis).map((t) => [t.label, t.basis]);
+    // An alias to a program: on its token only, the words it reads rest on it (`tokenBasisFor`).
+    assert.deepStrictEqual(basisOf1(`${on}alias g=grep\ng -rn x .`), [['g', spec('grep')]]);
+    assert.deepStrictEqual(rests(`${on}alias g=grep\ng -rn x .`, 2).slice(0, 3), ['g: spec grep', '-rn: spec grep', '-r: spec grep']);
+    // By the dictionary's name: a path, an alias to an alias.
+    assert.deepStrictEqual(basisOf1(`${on}alias g=/bin/grep\ng -n x f`), [['g', spec('grep')]]);
+    assert.deepStrictEqual(basisOf1(`${on}alias a=b b=egrep\na -n x f`), [['a', spec('grep')]]);
+    // Reading copies it to the node of the alias's name.
+    const ex = explain(`${on}alias g=grep\ng -n x f`, 2, 'en', { reading: true });
+    assert.deepStrictEqual(readingNodes(ex.reading!).filter((n) => n.basis).map((n) => [n.label, n.basis]), [['g', spec('grep')]]);
+    // An alias to a builtin (its options are the manual's), to bash, to a function, to a command the dictionary does not
+    // know: none, as for the name itself.
+    for (const src of [`${on}alias e=echo\ne -n hi`, `${on}alias a=b b=echo\na hi`, `${on}alias b=bash\nb --posix x`, `${on}f() { :; }\nalias g=f\ng -x`, `${on}alias g=frob\ng -x`]) {
+      assert.deepStrictEqual(basisOf1(src), [], src);
+    }
+    // An alias with options in its text (`alias ll='ls -l'`): its words go after those and no spec reads them, so none. One
+    // named as its command (`alias ls='ls -F'`) is that command.
+    assert.deepStrictEqual(basisOf1(`${on}alias ll='ls -l'\nll -a`), []);
+    assert.deepStrictEqual(basisOf1(`${on}alias ls='ls -F'\nls -a`), [['ls', spec('ls')]]);
+    // Not in effect: no expand_aliases in a script (the name is "command not found"), or not on every path.
+    assert.deepStrictEqual(basisOf1('alias g=grep\ng -n x f'), []);
+    assert.deepStrictEqual(basisOf1('shopt -u expand_aliases\nalias g=grep\ng -n x f'), []);
+    assert.deepStrictEqual(basisOf1('if [ -n "$A" ]; then shopt -s expand_aliases; fi\nalias g=grep\ng -n x f'), []);
+    // The command an alias to a wrapper runs has its own.
+    assert.deepStrictEqual(basisOf1(`${on}alias s=sudo\ns rm -rf x`), [['s', spec('sudo')], ['rm', spec('rm')]]);
+    // Setting off: none.
+    assert.deepStrictEqual(basisOf1(`${on}alias g=grep\ng -n x f`, { basis: false }), []);
   });
 
   it('keeps a token\'s own basis over the spec, and gives none with `notes.basis` off; no view shows `spec`', () => {
