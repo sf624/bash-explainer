@@ -613,6 +613,51 @@ describe('tricky lines (round 3)', () => {
     assert.strictEqual(bash('set -- a "b c"; for x in "$@"x; do echo "[$x]"; done; a=(1 2); for x in p"${a[@]}"q; do echo "[$x]"; done; set --; for x in "$@"x; do echo "[$x]"; done'), '[a]\n[b cx]\n[p1]\n[2q]\n[x]\n');
   });
 
+  it('says a concatenation is one word only where bash surely makes one of it, else what makes more, or none', () => {
+    const said = (src: string, label: string, lang: 'ja' | 'en' = 'en') => find(src, label, lang).explanation;
+    const count = (script: string) => bashIn(`${script}; echo $#`).trim();
+    // (Known values: the words bash makes of it.)
+    assert.match(said("x='a b'; echo $x/c", '$x/c'), /^Concatenation: the parts below are joined, but word splitting makes 2 words of it: `a` `b\/c`$/);
+    assert.strictEqual(bash("x='a b'; printf '<%s>' $x/c"), '<a><b/c>');
+    assert.match(said("x='a b'; echo $x/c", '$x/c', 'ja'), /^連結: 以下の部分を空白なしでつなげるが、単語分割で2個の単語になる: `a` `b\/c`$/);
+    assert.match(said('echo {a,b}"x"', '{a,b}"x"'), /but brace expansion makes 2 words of it: `ax` `bx`$/);
+    assert.strictEqual(bash('printf \'<%s>\' {a,b}"x"'), '<ax><bx>');
+    assert.match(said('e=; echo $e$e', '$e$e'), /^Concatenation: the parts below all expand to nothing, and an unquoted empty expansion is removed: no word is left$/);
+    assert.strictEqual(count('e=; set -- $e$e'), '0');
+    // (Values not known: what may make several words, and none where nothing in the word stays.)
+    assert.match(said('echo $DIR/*', '$DIR/*'), /^Concatenation: the parts below are joined, but word splitting and globbing may make several words of it$/);
+    assert.deepStrictEqual([count('DIR=.; set -- $DIR/*'), count("DIR='a b'; set -- $DIR/x")], ['2', '2']);
+    assert.match(said('echo "$DIR"/*', '"$DIR"/*'), /, but globbing may make several words of it$/);
+    assert.match(said('echo "$DIR"/*', '"$DIR"/*', 'ja'), /グロブ展開で複数の単語になることがある$/);
+    assert.match(said('shopt -s nullglob; echo "$x"*', '"$x"*'), /, but globbing may make several words of it, or none$/);
+    assert.strictEqual(count('shopt -s nullglob; x=z; set -- "$x"*'), '0');
+    assert.match(said('echo $a$b', '$a$b'), /, but word splitting and globbing may make several words of it, or none$/);
+    assert.match(said('echo $a$b', '$a$b', 'ja'), /単語分割・グロブ展開で複数の単語になることがある（単語が残らないこともある）$/);
+    assert.deepStrictEqual([count('set -- $a$b'), count("a='1 2'; set -- $a$b")], ['0', '2']);
+    // (An empty IFS: no splitting, but an unquoted empty expansion is still removed, and `$@` still one word per element.)
+    assert.match(said('set -f; IFS=; echo $a$b', '$a$b'), /^Concatenation: the parts below are joined into one word, or none when they all expand to nothing/);
+    assert.strictEqual(count('IFS=; set -- $a$b'), '0');
+    assert.match(said('IFS=; echo $@/x', '$@/x'), /, but `\$@` \(one word per element\) and globbing may make several words of it$/);
+    assert.strictEqual(bash("set -- 1 '2 3'; IFS=; printf '<%s>' $@/x"), '<1><2 3/x>');
+    // (One word: a quoted part and text, a known value with no blank, `set -f`.)
+    for (const [src, w] of [['echo "$x"/a', '"$x"/a'], ['x=ab; echo $x/c', '$x/c'], ['set -f; x=ab; echo $x/*', '$x/*']]) {
+      assert.match(said(src, w), /^Concatenation: the parts below are joined into one word$/, src);
+    }
+    assert.deepStrictEqual([count("x='a b'; set -- \"$x\"/a"), count('set -f; x=ab; set -- $x/*')], ['1', '1']);
+    // (A redirection: other than one word is an error.)
+    assert.match(said("x='a b'; cat > $x/a", '$x/a'), /^Concatenation: the parts below are joined, but word splitting makes other than one word of it, which bash refuses here \("ambiguous redirect"\)$/);
+    assert.match(said('cat > $HOME/x', '$HOME/x'), /, but word splitting and globbing may make other than one word of it, which bash refuses here/);
+    assert.match(said('cat > $HOME/x', '$HOME/x', 'ja'), /単語分割・グロブ展開で1つの単語にならないことがあり、そのとき bash はリダイレクトを「ambiguous redirect」のエラーにする$/);
+    assert.match(bashErr("x='a b'; cat > $x/a"), /ambiguous redirect/);
+    assert.match(said('set -f; IFS=; cat > $a$b', '$a$b'), /^Concatenation: the parts below are joined, but it may expand to no word, which bash refuses here/);
+    assert.match(said('set -f; IFS=; cat > $a$b', '$a$b', 'ja'), /^連結: 以下の部分を空白なしでつなげるが、空に展開されて1つの単語にならないことがあり、/);
+    assert.match(bashErr('set -f; IFS=; cat > $a$b'), /ambiguous redirect/);
+    // (A word with no context, a function's name, which bash does not expand: the plain sentence.)
+    assert.match(findAt('function c$tmp"; }\nread', 1, 'c$tmp"; } …').explanation, /^Concatenation: the parts below are joined into one word$/);
+    // (More than five words are counted, not listed.)
+    assert.match(said("x='1 2 3 4 5 6'; echo $x/a", '$x/a'), /but word splitting makes 6 words of it$/);
+  });
+
   it('lists the words of a brace expansion, with the lone backslash gone', () => {
     const src = ROUND3[0];
     assert.match(find(src, '{Z..a}').explanation, /expands to 8 words: `Z` `\[` `''` `\]` `\^` `_` .* `a`$/);
@@ -867,11 +912,11 @@ describe('tricky lines (round 4)', () => {
     assert.strictEqual(tokens('{ls,-l}')[0].kind, 'command');
     // `{1..$n}` is no range: the braces go first, then the variable.
     const lit = find('echo {1..$n}', '{1..$n}');
-    assert.match(lit.explanation, /^Concatenation: the parts below are joined into one word\. `\{1\.\.\$n\}` is not a range: braces are expanded before variables/);
+    assert.match(lit.explanation, /^Concatenation: the parts below are joined, but word splitting and globbing may make several words of it\. `\{1\.\.\$n\}` is not a range: braces are expanded before variables/);
     // (Its parts are the parts of the word: `$n` is expanded, inside braces that stay as they are.)
     assert.ok(tokens('echo {1..$n}').some((t) => t.label === '$n' && t.kind === 'variable'));
     assert.match(find('echo {1..$n}', '{1..$n}', 'ja').explanation, /連番ではない: ブレース展開は変数の展開より先に行われる/);
-    assert.match(find('eval echo {1..$n}', '{1..$n}').explanation, /^Concatenation: the parts below are joined into one word\. The shell replaces the variable first, so `eval` gets a string like `\{1\.\.3\}`, and only when `eval` reads it again is the brace expanded to a range/);
+    assert.match(find('eval echo {1..$n}', '{1..$n}').explanation, /^Concatenation: the parts below are joined, but word splitting and globbing may make several words of it\. The shell replaces the variable first, so `eval` gets a string like `\{1\.\.3\}`, and only when `eval` reads it again is the brace expanded to a range/);
     assert.match(find('eval echo {1..$n}', '{1..$n}', 'ja').explanation, /`eval` がそれを読み直すときにはじめてブレース展開が連番になる/);
     assert.match(find('echo a{1..$n}b', 'a{1..$n}b').explanation, /is not a range/);
     assert.strictEqual(bash('n=3; echo {1..$n}; eval echo {1..$n}'), '{1..3}\n1 2 3\n');

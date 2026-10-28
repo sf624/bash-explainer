@@ -11,12 +11,6 @@
   },
   "known": [
     {
-      "check": "count",
-      "source": "concatenation",
-      "when": "fields-step",
-      "reason": "Bug, to fix: the token of a concatenation says \"the parts below are joined into one word\" where word splitting, globbing or a brace expansion then make other than one word of it (`$DIR/*`, `\"$DIR\"/*`, `$x/a` with a space in `x`, `{a,b}\"x\"`). One cause for every such word, so one entry (no input), for the words on which one of those steps applies or may and with no `\"$@\"`-like part (`fields-step`)."
-    },
-    {
       "input": "cp $a b",
       "command": "cp $a b",
       "word": "b",
@@ -83,33 +77,6 @@
       "word": "d",
       "check": "role",
       "reason": "Bug, to fix: a value the model knows that starts with `-` gives an option, but the interpreter reads the word as written, an operand (`cp $opt d` with `opt=\"-r a\"`: bash runs `cp -r a d`, where `-r` is an option); the words after it then have the roles of another form (`d` is the destination of the two-operand form, not a destination directory)."
-    },
-    {
-      "input": "[ \"$#\" -gt 0 ] || exit 1\nrm -rf $@/x",
-      "command": "rm -rf $@/x",
-      "word": "$@/x",
-      "check": "count",
-      "source": "concatenation",
-      "env": "values",
-      "reason": "Bug, to fix: the token of a concatenation says \"the parts below are joined into one word\" where an unquoted `$@` gives one word per element, each split further (`$@/x`: one word per argument); outside the class `fields-step`, which leaves out a part that gives one word per element."
-    },
-    {
-      "input": "$@/a",
-      "command": "$@/a",
-      "word": "$@/a",
-      "check": "count",
-      "source": "concatenation",
-      "env": "values",
-      "reason": "Bug, to fix: the token of a concatenation says \"the parts below are joined into one word\" where an unquoted `$@` gives one word per element, each split further (`$@/x`: one word per argument); outside the class `fields-step`, which leaves out a part that gives one word per element."
-    },
-    {
-      "input": "${DIR[@]}/a",
-      "command": "${DIR[@]}/a",
-      "word": "${DIR[@]}/a",
-      "check": "count",
-      "source": "concatenation",
-      "env": "values",
-      "reason": "Bug, to fix: the token of a concatenation says \"the parts below are joined into one word\" where an unquoted `$@` or `${a[@]}` gives one word per element, each split further (`$@/x`: one word per argument); outside the class `fields-step`, which leaves out a part that gives one word per element."
     }
   ]
 }

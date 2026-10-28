@@ -68,7 +68,7 @@ describe('argv capture: the word model and the explanation against bash (oracles
       ['$x', 'value 2', false], ['d', 'argument 1', false],
       ['{a,b}', 'brace 2, brace-example 2', false], ['"a b"', 'argument 1, string 1', false],
       // (`"$@"`: the argument is marked as one word per element, and its string says so: no count.)
-      ['"$@"', '', false], ['$x/c', 'concatenation 1', false],
+      ['"$@"', '', false], ['$x/c', 'concatenation 2', false],
       // (A concatenation with `"$@"` says it is not one word, and its argument is marked as `"$@"`'s: no count.)
       ['"$@"/c', '', false],
       // (A glob: an example of the files it matches, and no count; after `set -f`, one argument and no example.)
@@ -100,12 +100,12 @@ describe('argv capture: the word model and the explanation against bash (oracles
     const tree = createUnbashParser().parse('x="a b"; echo $x/a "$@"/a "$@"/* "${a[@]}"x {a,b}"x" a"b"');
     const input: ArgvInput = { name: 'classes', tree, model: shellState(tree, 'bash'), provided: [] };
     const words = instrumentArgv(tree, input.model).markers.flatMap((m) => m.words.slice(1));
-    // (A concatenation that said "joined into one word" of each word, as the `"$@"` branch of `concatenationNote` would
-    // if it broke: the class takes only those that a step may make other than one word, with no `"$@"`-like part.)
+    // (A concatenation that said "joined into one word" of each word, as `concatenationNote` did before it asked the
+    // model: the class takes only those that a step may make other than one word, with no `"$@"`-like part.)
     const found: RenderFinding[] = words.map((w) => ({
       input: input.name, env: 'probe', command: 'echo', word: w.text, check: 'count', source: 'concatenation', causes: wordCauses(w, input.model), what: '',
     }));
-    const known = (JSON.parse(fs.readFileSync(RENDER_KNOWN, 'utf8')) as RenderKnownFile).known;
+    const known: RenderKnownFile['known'] = [{ check: 'count', source: 'concatenation', when: 'fields-step', reason: 'a class' }];
     const { unexplained } = matchRenderKnown(found, known, []);
     assert.deepStrictEqual(unexplained.map((u) => u.replace(/^[^[]*\[(.*), count\][^]*$/, '$1')), ['"$@"/a', '"$@"/*', '"${a[@]}"x', 'a"b"']);
     assert.throws(() => matchRenderKnown(found, [{ check: 'count', source: 'concatenation', reason: 'every one' }], []), /needs a source and a condition/);

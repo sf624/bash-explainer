@@ -3,7 +3,7 @@
 //
 // - **Renderings.** Some parts of the explanation state how many words bash makes of a word (`claimsOf`): the value of
 //   an expansion and the words it splits into (`Token.value`), a brace expansion (its token and its example), a
-//   double-quoted string that "stays one argument", a concatenation "joined into one word", and the token of an argument
+//   double-quoted string that "stays one argument", a concatenation "joined into one word" (or into N, or none), and the token of an argument
 //   with no `Token.expands` (the panel shows it as one argument). Each must be the number of fields bash gave the word,
 //   in every run. Where the model knows the word's fields, they are bash's (the argv check confirmed them); where it
 //   does not (2.3: then the explanation must state no count bash can contradict), bash's are those between the known
@@ -71,7 +71,8 @@ const BRACE_REF = '3.5.1';
  * - `brace-example`: the words of the example of a brace expansion ("N separate arguments"), unless cut;
  * - `string`: a double-quoted string that "stays one argument" (not the one of `"$@"`, one word per element);
  * - `concatenation`: a word of several parts that are "joined into one word" (not one with `"$@"` in it, which says
- *   it is not one word);
+ *   it is not one word, nor one that may be none or several), or that brace expansion or word splitting make N words of,
+ *   or none;
  * - `argument`: the token of an argument or an option's value with no `Token.expands`, which the panel shows as one argument.
  */
 export function claimsOf(w: SyntaxNode, shown: Shown, input: ArgvInput): Claim[] {
@@ -88,8 +89,12 @@ export function claimsOf(w: SyntaxNode, shown: Shown, input: ArgvInput): Claim[]
     // (The rendered sentence: which of the two `string` of src/explain/words.ts chose.)
     if (t.kind === 'string' && t.explanation.includes('(stays one argument)')) out.push({ source: 'string', count: 1 });
     if (t.kind === 'argument' && t.origin === 'argv' && !t.expands) out.push({ source: 'argument', count: 1 });
-    if (t.kind === 'argument' && t.origin === 'shell' && t.explanation.startsWith('Concatenation: the parts below are joined into one word')) {
-      out.push({ source: 'concatenation', count: 1 });
+    if (t.kind === 'argument' && t.origin === 'shell') {
+      // (A concatenation is one word only where bash surely makes one of it; else the count where it is known, or none.)
+      const many = /^Concatenation: the parts below are joined, but .* makes? (\d+) words of it/.exec(t.explanation);
+      if (/^Concatenation: the parts below are joined into one word(?!, or none)/.test(t.explanation)) out.push({ source: 'concatenation', count: 1 });
+      else if (many) out.push({ source: 'concatenation', count: Number(many[1]) });
+      else if (t.explanation.startsWith('Concatenation: the parts below all expand to nothing')) out.push({ source: 'concatenation', count: 0 });
     }
   }
   for (const x of shown.examples.get(key) ?? []) {
