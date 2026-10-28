@@ -1292,6 +1292,13 @@ The tables the explanations read (the commands, the variables, the functions of 
 | `find / -perm -4000`, `-perm /6000`, `-perm -1000`, `-perm 644` | "permissions include all the bits of 4000 (SUID, set-user-ID)", "(SUID, set-user-ID; SGID, set-group-ID)", "(the sticky bit)", "exactly 644 (owner read, write; group read; others read)" | the number alone |
 | `find . -perm +4000` | "GNU find rejects this form with "invalid mode"; any of the bits is `/4000`" | "permissions have at least one of the bits of 4000" |
 | `sh -o nounset -c 'f'`, `sh -eo pipefail -c :`, `sh -onounset -c f`, `dash -onounset -c f` | `-o` takes the next word, as dash reads it: `-o nounset`, then `-c`; in `sh -onounset -c f`, `-o` takes `-c` as its value, and dash refuses it (`Illegal option -o -c`, status 2) | `-opipefail` was `-o` with `pipefail`, the POSIX way to write it. `zsh`, `ksh`, `mksh`, `yash` and `ash` are not checked and still read it so |
+| `/bin/echo --version`, `/bin/echo --help`, `env echo --version`, `enable -n echo; echo --version`, `enable -n echo; command echo --version`, and the same through an alias | `--version`: "text to print". coreutils echo reads `--help` and `--version` as options when one of them is the only argument (bash 5.2, coreutils 9.4: `enable -n echo; echo --version` prints `echo (GNU coreutils) 9.4`) | `--version`: option, "print the version", `--help`: "show the usage" (with a note: plain text if `POSIXLY_CORRECT` is in the environment) |
+| `echo --version x`, `echo x --version`, `echo -- --version`, `echo --version "$@"` after `enable -n echo`; `echo --version` with the builtin | text | text (not the one argument; the builtin prints it) |
+| `echo a \| xargs echo --version`, `xargs -r /bin/echo --version`, `xargs env /bin/echo --version` | text | text: xargs adds its input after the words, so bash prints `--version a` (coreutils echo reads it as an option only when it is the only argument). With `xargs -I{} /bin/echo --version`, `-i`, `--replace` (no input added) and `find . -exec /bin/echo --version \;`, it is the option; `find … {} \;` adds the path: text |
+| `POSIXLY_CORRECT=1 /bin/echo --version`, `env POSIXLY_CORRECT=1 echo --version`, `export POSIXLY_CORRECT=y` then `/bin/echo --version`, `env -i POSIXLY_CORRECT=1 /bin/echo --version`, `POSIXLY_CORRECT=1 command echo --version` after `enable -n echo` | text | text: with the variable in the program's environment, coreutils echo prints `--version` (bash 5.2). Not so when it does not reach the program (it is the option): `POSIXLY_CORRECT=y` not exported, `set -o posix`, `bash --posix`, `env -u POSIXLY_CORRECT`, `POSIXLY_CORRECT=1 env -i` |
+| `hash -p /opt/frob grep`, `grep -n x f` | `-n`: "… see `man grep`" | `-n`: "… see `man /opt/frob`", as for `/opt/frob -n x f` |
+| `hash -p /usr/bin/egrep grep`, `echo aa \| grep -o 'a+'` | the pattern is a basic regex (BRE); bash prints `aa`, as `egrep` reads it as an ERE | extended regex (ERE) |
+| `hash -p /usr/bin/git git`, `git log` | "Subcommand `git log`" | "Subcommand `/usr/bin/git log`", as when the path is written out |
 
 The positional parameters are those the shell starts with: a `shift` or `set --` in the string changes them later. In a function the string defines, `$1` is the function's argument, as before. After a word whose number of words is known only when it runs (`"$@"`, an unquoted `$x`), the words that follow are not named. Options of several letters that tools document as one stay one: `tcpdump -nn`, `ldapsearch -LLL`, `ip -br`, `nmap -sS`.
 
@@ -1440,6 +1447,7 @@ Both read the words after the alias with the spec of the program bash runs for t
 | `alias g=grep`, `hash -p /opt/frob grep`, `g -n x f` | `-n`: "show line numbers" (grep's), with grep's examples | `-n`: "A word passed on to `grep`, the text of the alias" (the file is not in the dictionary) |
 | `alias g=grep`, `hash -p /usr/bin/egrep grep`, `g -n x f` | grep's spec | the same (egrep is grep's spec) |
 | `enable -n echo`, `alias e=echo`, `e -n hi` | no `basis` on the token (a builtin's spec) | `basis: { kind: 'spec', command: 'echo' }`, as for `echo -n hi` after `enable -n echo` |
+| `alias a=b b=grep`, `hash -p /opt/frob grep`, `a -n x f` | two brackets: "(`b` is an alias too, for `grep`) (`hash -p` on line 3 …)" | one: "(`b` is an alias too, for `grep`; `hash -p` on line 3 …)" |
 
 ### The quick fix of `[[ ]]`
 
@@ -1454,15 +1462,3 @@ For a script run by sh or dash, the fix of a `[[ ]]` writes `[ ]`. It now leaves
 | `[[ -t $fd ]]` | False in bash 5.2 when `$fd` is not a number (an error in bash 5.3); an error in dash | No fix (`[[ -t 1 ]]` → `[ -t 1 ]`) |
 | `[[ ! ! $x ]]` | dash reads `[ ! ! -n "" ]` as true | No fix |
 | `[[ -n $@ ]]`, `[[ "${a[@]}" == x ]]` | `[[ ]]` joins the words into one; `[ ]` gets them apart (`[: a: unexpected operator`) | No fix |
-
-### What `hash -p` and `enable -n` make a name run: the program's own words
-
-Checked in bash 5.2 (coreutils 9.4): after `enable -n echo`, `echo --version` prints `echo (GNU coreutils) 9.4` and `echo --help` prints the usage, but only when that word is the one argument (`echo --version x` prints `--version x`, `echo -- --version` prints `-- --version`).
-
-| Script | Before | Now |
-| --- | --- | --- |
-| `enable -n echo`, `echo --version` (also `/bin/echo --version`, `env echo --version`, and `e --version` with `alias e=echo`) | `--version`: "text to print" | `--version`: option, "print the version" (`--help`: "show help") |
-| `enable -n echo`, `echo --version x`, `echo -- --version`, `echo --version "$@"` | text | text (not the one argument) |
-| `echo --version`, with the builtin | text | text (the builtin prints it) |
-| `hash -p /opt/frob grep`, `grep -n x f` | `-n`: "… see `man grep`" | `-n`: "… see `man /opt/frob`", as for `/opt/frob -n x f` |
-| `alias a=b b=grep`, `hash -p /opt/frob grep`, `a -n x f` | two brackets: "(`b` is an alias too, for `grep`) (`hash -p` on line 3 …)" | one: "(`b` is an alias too, for `grep`; `hash -p` on line 3 …)" |

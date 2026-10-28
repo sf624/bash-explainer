@@ -493,7 +493,7 @@ export const core: Record<string, CommandSpec> = {
     ['--process-slot-var', '子プロセスごとに異なる番号を入れる環境変数の名前', 'name of a variable set to a different number in each child process', 'arg'],
     ['--help', 'ヘルプを表示する', 'show help'],
     ['--version', 'バージョンを表示する', 'print the version'],
-  ], { example: 'xargs', parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [runs()] }] }),
+  ], { example: 'xargs', parser: 'getopt_long', optionsFirst: true, operands: [{ when: { option: ['-I', '-i', '--replace'] }, pattern: [runs()] }, { pattern: [runs({ run: 'exec', appends: true })] }] }),
   cut: cmd('各行から指定した列（フィールド）や文字位置を切り出す', 'Cut out selected fields or characters from each line', [
     ['-s|--only-delimited', '区切り文字のない行は出力しない', 'do not print lines without the delimiter'],
     ['--complement', '指定した以外を出力する', 'select everything except the given fields'],

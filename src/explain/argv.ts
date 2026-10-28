@@ -39,7 +39,7 @@ import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
 import { argWordIn, untilWords } from '../semantics/argwords';
-import { arrayKind, globOff, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
+import { arrayKind, globOff, inEnvironment, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, soleOff, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -81,8 +81,12 @@ export function readArgs(cx: Explainer, known: CommandSpec | undefined, args: Sy
   // (A function's words are read with no spec: its options are unknown, and its operands are `$1`, `$2`….)
   const spec = known && !isFn ? known : NO_SPEC;
   const lookup = (name: string): CommandSpec | undefined => specFor(cx, name);
-  const parse = interpret(spec, args.map(argWordFor(cx.state.shell)), { name: cmdName, lookup });
+  const words = args.map(argWordFor(cx.state.shell));
+  let parse = interpret(spec, words, { name: cmdName, lookup });
   if (args.length) for (const [w, env] of slotEnvs(cx.state.env(args[0].parent!), parse, spec, args, cx.state.shell, lookup)) cx.slotEnvs.set(w, env);
+  // (`POSIXLY_CORRECT=1 /bin/echo --version`: the words the program reads as options only alone are text.)
+  const off = args.length ? soleOff(cx, parse, spec, args) : undefined;
+  if (off?.size) parse = interpret(spec, words, { name: cmdName, lookup, noSole: off });
   return { tokens: render(cx, parse, spec, args, args, isFn), parse };
 }
 
@@ -840,8 +844,12 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   const variant = own && !(own.special && role.slot.lookup === 'no-functions') ? own : undefined;
   if (variant) explanation += cx.s(`。${cx.t(variant.text)}`, `. ${cx.t(variant.text)}`);
   const vspec = variant ? { ...role.spec!, ...variant.spec } : undefined;
+  // (`enable -n echo; command echo --version`: `command` runs the program, and its words are the program's.)
+  const offProgram = role.slot.run === 'current-shell' && res?.kind === 'file' && res.disabled ? role.spec?.program : undefined;
+  const programOff = offProgram?.soleUnlessEnv && inEnvironment(cx, offProgram.soleUnlessEnv, first.parent!, cx.slotEnvs.get(first)) ? new Set([-1]) : undefined;
   const children = test ? testArgs(cx, first.parent!, commandTest(test, words.slice(1), bashTest(cx, test)), test.closingOperand !== undefined, !!test.builtin)
     : vspec ? render(cx, interpret(vspec, words.slice(1).map(argWordFor(cx.state.shell)), { name, lookup: (x) => specFor(cx, x) }), vspec, words.slice(1), words.slice(1))
+      : offProgram ? render(cx, interpret(offProgram, words.slice(1).map(argWordFor(cx.state.shell)), { name, lookup: (x) => specFor(cx, x), ...(role.appended ? { appended: true } : {}), ...(programOff ? { noSole: programOff } : {}) }), offProgram, words.slice(1), words.slice(1))
       : render(cx, refusal ? { ...parse, refusal } : parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
   if (role.of) {
     // `{}` is replaced by find (and `xargs -I{}`) with each path.

@@ -11,12 +11,12 @@ import { customCommandSpec } from '../dict/custom';
 import type { Flavor } from '../embedded/regex';
 import { isProgram } from '../namefacts';
 import { programSections } from '../refs';
-import type { ExecEnv } from '../semantics/env';
+import { droppedBy, type ExecEnv } from '../semantics/env';
 import { type NameResolution, resolveName } from '../semantics/names';
 import { attribute, option, type OptionState, shoptIn } from '../semantics/state';
 import { type ExpansionStep, ifsOf, type WordMeaning, wordMeaning } from '../semantics/words';
 import { literalContent, staticWordValue, surelyHasSlash } from '../staticword';
-import type { SyntaxNode } from '../syntax/tree';
+import { field, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { same } from './nodes';
 
@@ -217,4 +217,36 @@ export function trContext(cx: Explainer, a: SyntaxNode): { role: 'from' | 'to' |
   if (given(cx, '-d')) return { role: idx === 0 ? 'delete' : 'squeeze', sets: lits };
   if (given(cx, '-s') && sets.length === 1) return { role: 'squeeze', sets: lits };
   return { role: idx === 0 ? 'from' : 'to', sets: lits };
+}
+
+/**
+ * Whether the variable `name` is surely in the environment of the command with the words of `cmd`, whose process is
+ * `env`: set by its own prefix assignment, or exported where it runs, then what the wrappers on the line do (`env X=1`,
+ * `env -u X`, `env -i`, `sudo`: the slot links of src/semantics/env.ts). A variable the script's own environment may
+ * hold is not known.
+ */
+export function inEnvironment(cx: Explainer, name: string, cmd: SyntaxNode, env: ExecEnv | undefined): boolean {
+  const v = cx.state.at(cmd).run.variables.get(name);
+  let on = prefixAssignments(cmd).some((a) => field(a, 'name')?.text === name) || (v?.set === 'on' && v.attrs.x?.state === 'on');
+  for (const l of env?.links ?? []) {
+    if (l.kind !== 'slot') continue;
+    if (droppedBy({ links: [l] }, name)) on = false;
+    if (l.assigns.includes(name)) on = true;
+    if (l.unsets?.includes(name)) on = false;
+  }
+  return on;
+}
+
+/**
+ * The commands of `parse` (the line's own, `-1`, or one a wrapper runs, by the index of its word) that read their
+ * `soleOptions` although the environment they run in has the variable that makes them text (`soleUnlessEnv`).
+ */
+export function soleOff(cx: Explainer, parse: ArgvParse, spec: CommandSpec, args: SyntaxNode[]): Set<number> {
+  const off = new Set<number>();
+  const visit = (p: ArgvParse, s: CommandSpec): void => {
+    if (p.soleAt !== undefined && s.soleUnlessEnv && inEnvironment(cx, s.soleUnlessEnv, args[0].parent!, p.soleAt < 0 ? cx.state.env(args[0].parent!) : cx.slotEnvs.get(args[p.soleAt]))) off.add(p.soleAt);
+    for (const r of p.roles) if ((r.role.role === 'command' || r.role.role === 'subcommand') && r.role.parse) visit(r.role.parse, r.role.spec ?? NO_SPEC);
+  };
+  visit(parse, spec);
+  return off;
 }

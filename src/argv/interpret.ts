@@ -65,7 +65,7 @@ export type ArgRole =
    * `su -c 'cmd'`) has no `parse`; nor has a string joined from the words (`joined`). `of` is the option whose
    * value or words it is (`su -c`, `find -exec`); `item`, the operand it fills (`bash -c`, `ssh host cmd`).
    */
-  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec }
+  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec; appended?: true }
   /** The word that ends an option's command (`;` of `find -exec … ;`), and its text (one of the option's `until.terminators`). */
   | { role: 'terminator'; text: string; of: string }
   /** A word of the shell string that a `command` role before it joins from the words (`ssh host ls -l`). */
@@ -110,6 +110,11 @@ export interface ArgvParse {
   alternative?: number;
   /** The matcher stopped at its work cap: `unmatched` says it could not tell, not that nothing fits. */
   gaveUp?: boolean;
+  /**
+   * Set when the words were read with the options of `soleOptions` (the one argument): the index of the word before
+   * them (`-1`: the command's own words), which `InterpretContext.noSole` names to read them as text.
+   */
+  soleAt?: number;
   /** Where an expression read by `operandParser` starts (`find . -name x`: the index of `-name`). */
   expression?: number;
   /** The tool refuses the line: options that select different modes (`grep -E -F`, see `conflictingModes`). */
@@ -125,7 +130,11 @@ export interface InterpretContext {
   /** The command's name, for `ArgvParse.command`. */
   name?: string;
   /** The spec of a command named in a command slot. */
-  lookup?: (name: string) => CommandSpec | undefined;
+  lookup?: (name: string, at?: number, slot?: CommandSlot) => CommandSpec | undefined;
+  /** The words of the command are followed by words of the program that runs it (`CommandSlot.appends`). */
+  appended?: boolean;
+  /** The commands whose `soleOptions` do not apply: the index of the word before their words (`-1`: the command's own). */
+  noSole?: ReadonlySet<number>;
   /** A guard on the work of the operand matcher for one pattern (default 100000 steps). */
   maxSteps?: number;
 }
@@ -138,7 +147,7 @@ const known = (w: ArgWord): string => w.value ?? w.prefix ?? '';
 
 /** Reads the words of a command (its arguments, without the name) with its spec. */
 export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretContext = {}): ArgvParse {
-  return new Reader(words, ctx, new Set()).read(spec, 0, words.length, ctx.name ?? '', [], false, []);
+  return new Reader(words, ctx, new Set()).read(spec, 0, words.length, ctx.name ?? '', [], false, [], !!ctx.appended);
 }
 
 const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ? [] : Array.isArray(o.value) ? o.value : [o.value]);
@@ -165,11 +174,11 @@ class Reader {
    * `cobra`: the parent finds subcommands as cobra does (the `cobra` parser), so this spec does too; `before`:
    * the words the parents read before their subcommands (options and values), which cobra searches again.
    */
-  read(spec: CommandSpec, from: number, to: number, command: string, inherited: OptionSpec[], cobra: boolean, before: number[]): ArgvParse {
+  read(spec: CommandSpec, from: number, to: number, command: string, inherited: OptionSpec[], cobra: boolean, before: number[], appended = false): ArgvParse {
     const rules = rulesOf(spec, cobra);
     const isCobra = cobra || rules.cobra;
     // (`echo --version` alone: coreutils reads it as an option only when it is the one argument.)
-    const sole = !!spec.soleOptions && to - from === 1 && this.words[from].value !== undefined && !this.words[from].count;
+    const sole = !appended && !this.ctx.noSole?.has(from - 1) && !!spec.soleOptions && to - from === 1 && this.words[from].value !== undefined && !this.words[from].count;
     let options = [...(spec.options ?? []), ...(sole ? spec.soleOptions! : []), ...inherited];
     const search = options;
     const found = isCobra && spec.subcommands ? this.cobraSubcommand(spec, search, before, from, to) : undefined;
@@ -179,11 +188,11 @@ class Reader {
     const roles = new Map<number, ArgRole>();
     const given: Given = { specs: [], flags: [], marks: new Set(), later: [], unsplit: [] };
     const operands: number[] = [];
-    const parse: ArgvParse = { command, roles: [], unmatched: [], end: to };
+    const parse: ArgvParse = { command, roles: [], unmatched: [], end: to, ...(sole ? { soleAt: from - 1 } : {}) };
     let endOpts = false;
     let afterDashes: number | undefined;
     let end = to;
-    const st: OptionState = { spec, rules, options, roles, given, end, guess: isCobra && !!spec.subcommands, search };
+    const st: OptionState = { spec, rules, options, roles, given, end, guess: isCobra && !!spec.subcommands, search, appended };
     for (let i = from; i < end; i++) {
       const w = this.words[i];
       const value = w.value;
@@ -212,7 +221,7 @@ class Reader {
           // The words of the string are read in its place: the line is read again with them.
           if (split) {
             const composite = [...this.words.slice(0, used + 1), ...split, ...this.words.slice(used + 1)];
-            const parse = new Reader(composite, this.ctx, new Set([...this.spliced, used])).read(spec, from, to + split.length, command, inherited, cobra, before);
+            const parse = new Reader(composite, this.ctx, new Set([...this.spliced, used])).read(spec, from, to + split.length, command, inherited, cobra, before, appended);
             return unsplice(parse, used, split);
           }
           i = this.cobraValue(st, i, used);
@@ -224,7 +233,7 @@ class Reader {
       const sub = (found ? i === found.at : !operands.length) && value !== undefined ? subcommand(spec, value) : undefined;
       if (sub) {
         const inherit = [...inherited, ...(spec.options ?? []).filter((o) => o.persistent)];
-        roles.set(i, { role: 'subcommand', name: sub[0], spec: sub[1], parse: this.read(sub[1], i + 1, to, `${command} ${sub[0]}`, inherit, isCobra, isCobra ? [...before, ...range(from, i)] : []) });
+        roles.set(i, { role: 'subcommand', name: sub[0], spec: sub[1], parse: this.read(sub[1], i + 1, to, `${command} ${sub[0]}`, inherit, isCobra, isCobra ? [...before, ...range(from, i)] : [], appended) });
         end = i + 1;
         break;
       }
@@ -301,7 +310,7 @@ class Reader {
         if (item.command.joinsWords && !item.command.escapesWords) {
           roles.set(i, { role: 'command', slot: item.command, item });
           for (let j = i + 1; j < end; j++) roles.set(j, { role: 'joined' });
-        } else roles.set(i, { ...this.command(item.command, i, end), item });
+        } else roles.set(i, { ...this.command(item.command, i, end, undefined, st.appended || !!item.command.appends), item });
         return;
       }
       if (item.option) {
@@ -328,12 +337,12 @@ class Reader {
   }
 
   /** The role of the first word of a command run by this one, with the words up to `end` read by its spec. */
-  private command(slot: CommandSlot, at: number, end: number, of?: string): CommandRole {
+  private command(slot: CommandSlot, at: number, end: number, of?: string, appended = false): CommandRole {
     const name = this.words[at].value;
-    const found = name === undefined ? undefined : this.ctx.lookup?.(name);
+    const found = name === undefined ? undefined : this.ctx.lookup?.(name, at, slot);
     // A slot that starts a program runs the program of a builtin's name (`env echo`: coreutils echo).
     const spec = slot.run === 'exec' && found?.program ? found.program : found;
-    return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', [], false, []), ...(of ? { of } : {}) };
+    return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', [], false, [], appended), ...(of ? { of } : {}), ...(appended ? { appended: true as const } : {}) };
   }
 
   /**
@@ -540,7 +549,7 @@ class Reader {
       // (The words of the command as they are given: before it, none is read.)
       const words = this.words.slice(0, st.end).map((w, i) => (i > last ? untilWord(w) : ''));
       const { at: j, refusal } = untilEnd(opt.until, words, last + 1, st.end);
-      if (j > last + 1) st.roles.set(last + 1, this.command(slot, last + 1, j, flag));
+      if (j > last + 1) st.roles.set(last + 1, this.command(slot, last + 1, j, flag, st.appended));
       // (The first one: find tells that one.)
       if (refusal) st.refusal ??= { ...refusal, option: flag, at: last };
       if (j < st.end) { st.roles.set(j, { role: 'terminator', text: words[j]!, of: flag }); return j; }
@@ -638,6 +647,8 @@ interface OptionState {
   guess: boolean;
   /** The options cobra knows while it searches for the subcommand (this level's). */
   search: OptionSpec[];
+  /** Words of the run-time are added after the last one of these (`xargs cmd`: its input), so none of them is the one argument. */
+  appended: boolean;
   /** With the rule `longFirst`: a word of short options was read, so the long ones are over. */
   shortSeen?: boolean;
   /** The command of an option with `until` is wrong: `ArgvParse.refusal`. */

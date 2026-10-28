@@ -36,6 +36,12 @@ export interface CommandSpec {
    * `echo --version`; with any other word given, they are text). The word must be known and the only one.
    */
   soleOptions?: OptionSpec[];
+  /**
+   * With `soleOptions`: an environment variable that, once it is set, makes them text (coreutils echo:
+   * `POSIXLY_CORRECT`). Where the line sets it for the command (a prefix assignment, `env`, an export), the explainer
+   * reads the words without `soleOptions` (`InterpretContext.noSole`); where it cannot tell, the options' texts say so.
+   */
+  soleUnlessEnv?: string;
   /** Options recognized by their form (`kill -TERM`, `-15`; `head -5`; `nice -10`), tried when no option has the word as its name. */
   patternOptions?: PatternOption[];
   /** Modes chosen by an option anywhere on the line (`rpm -q`). */
@@ -534,6 +540,12 @@ export interface CommandSlot {
    * starts afresh). (`su -c` only: a value's slot has no alternatives of operands to put this `when` in.)
    */
   envWith?: { options: string[]; env: 'exported' | 'variables' | 'reset' | 'none'; keeps?: readonly string[] };
+  /**
+   * The program adds words of its own after the command's arguments when it runs it (`xargs cmd`: the words it reads),
+   * so no word of the command is its one argument (`xargs echo --version` prints `--version` and the input). Not so
+   * with a replace string (`xargs -I{}`), which says where the input goes.
+   */
+  appends?: boolean;
   /** `exec cmd`: nothing after it runs. */
   replacesShell?: boolean;
   /** With `shell-string`: the operands after the string are its `$0`, `$1`… (`sh -c '…' sh "$msg"`). */
