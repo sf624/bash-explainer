@@ -552,19 +552,9 @@ describe('the rewrites of the style checks (docs/design/oracles.md, step 6)', ()
     ['{ echo a; echo b }', 'brace-close-no-separator', ['{ echo a; echo b; }']],
     ['{ echo a; echo b >f }', 'brace-close-no-separator', ['{ echo a; echo b >f; }']],
     ['rm -rf $DIR/*', 'rm-empty-variable-root', ['rm -rf "${DIR:?}"/*']],
-    // (A check before the statement, where it stands alone: not in a list nor a condition.)
-    // (It stops as `failure-reported-as-success` does: `exit 1` in a script, `return 1` in a function, and where the
-    // file may be sourced, `return 1 2>/dev/null || exit 1`.)
-    ['#!/bin/bash\nrm -rf ${D%/}/x', 'rm-empty-variable-root', ['#!/bin/bash\n[ -n "${D%/}" ] || exit 1\nrm -rf ${D%/}/x']],
-    ['#!/bin/bash\nf() { rm -rf ${D%/}/x; }', 'rm-empty-variable-root', ['#!/bin/bash\nf() { [ -n "${D%/}" ] || return 1; rm -rf ${D%/}/x; }']],
-    ['rm -rf ${D%/}/x', 'rm-empty-variable-root', ['[ -n "${D%/}" ] || return 1 2>/dev/null || exit 1\nrm -rf ${D%/}/x']],
-    ['rm -rf ${D%/}/x 2>/dev/null', 'rm-empty-variable-root', ['[ -n "${D%/}" ] || return 1 2>/dev/null || exit 1\nrm -rf ${D%/}/x 2>/dev/null']],
-    ['f() { rm -rf ${D%/}/x; }', 'rm-empty-variable-root', ['f() { [ -n "${D%/}" ] || return 1; rm -rf ${D%/}/x; }']],
-    ['if :; then rm -rf ${D%/}/x; fi', 'rm-empty-variable-root', ['if :; then [ -n "${D%/}" ] || return 1 2>/dev/null || exit 1; rm -rf ${D%/}/x; fi']],
-    ['case a in a) rm -rf ${D%/}/x ;; esac', 'rm-empty-variable-root', ['case a in a) [ -n "${D%/}" ] || return 1 2>/dev/null || exit 1; rm -rf ${D%/}/x ;; esac']],
-    ['a && rm -rf ${D%/}/x', 'rm-empty-variable-root', []],
-    ['if rm -rf ${D%/}/x; then :; fi', 'rm-empty-variable-root', []],
-    ['rm -rf ${D%/}/x | cat', 'rm-empty-variable-root', []],
+    // (The check before the statement is said with no edits: the warning would stay after it, semantics.md 4.15.)
+    ['rm -rf ${D%/}/x', 'rm-empty-variable-root', []],
+    ['f() { rm -rf ${D%/}/x; }', 'rm-empty-variable-root', []],
     ['read x', 'read-without-r', ['read -r x']],
     ['IFS= read -a x', 'read-without-r', ['IFS= read -r -a x']],
     ['[ $a < $b ]', 'redirect-in-bracket', ['[ $a \\< $b ]']],
@@ -609,8 +599,17 @@ describe('the rewrites of the style checks (docs/design/oracles.md, step 6)', ()
     assert.match(found('{echo a\n}', 'brace-no-space')[0].text, /`\{ echo …; \}`$/);
     assert.match(found('[ $a 2>5 ]', 'redirect-in-bracket')[0].text, /Use `\[\[ \]\]` to compare strings by order, or escape it as `\\>`$/);
     assert.match(found('[ "$x"\\]', 'bracket-close-in-word')[0].text, /needs a space before it$/);
-    assert.match(found('#!/bin/bash\na && rm -rf ${D%/}/x', 'rm-empty-variable-root')[0].text, /Write `\[ -n "\$\{D%\/\}" \] \|\| exit 1` before it/);
-    assert.match(found('a && rm -rf ${D%/}/x', 'rm-empty-variable-root')[0].text, /Write `\[ -n "\$\{D%\/\}" \] \|\| return 1 2>\/dev\/null \|\| exit 1` before it/);
+    // (The check before `rm`, which ends as `failure-reported-as-success` does: `exit 1` in a script, `return 1` in a
+    // function, and where the file may be sourced, `return 1 2>/dev/null || exit 1`.)
+    const check = (src: string) => found(src, 'rm-empty-variable-root')[0].text.match(/Write `(.*)` before it to stop when it is empty$/)?.[1];
+    assert.strictEqual(check('#!/bin/bash\nrm -rf ${D%/}/x'), '[ -n "${D%/}" ] || exit 1');
+    assert.strictEqual(check('#!/bin/bash\na && rm -rf ${D%/}/x'), '[ -n "${D%/}" ] || exit 1');
+    assert.strictEqual(check('#!/bin/bash\nf() { rm -rf ${D%/}/x; }'), '[ -n "${D%/}" ] || return 1');
+    assert.strictEqual(check('f() { rm -rf ${D%/}/x; }'), '[ -n "${D%/}" ] || return 1');
+    assert.strictEqual(check('rm -rf ${D%/}/x 2>/dev/null'), '[ -n "${D%/}" ] || return 1 2>/dev/null || exit 1');
+    assert.strictEqual(check('if :; then rm -rf ${D%/}/x; fi'), '[ -n "${D%/}" ] || return 1 2>/dev/null || exit 1');
+    assert.strictEqual(check('rm -rf $@/x'), '[ "$#" -gt 0 ] || return 1 2>/dev/null || exit 1');
+    assert.match(found('rm -rf ${D%/}/x', 'rm-empty-variable-root', 'ja')[0].text, /前に `\[ -n "\$\{D%\/\}" \] \|\| return 1 2>\/dev\/null \|\| exit 1` と書くと、空のときは止まります$/);
   });
   it('carries no rewrite in a string another shell reads, whose text shows it still', () => {
     const tree = parser.parse("bash -c 'read x'");

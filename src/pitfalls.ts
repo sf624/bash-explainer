@@ -16,7 +16,7 @@ import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
 import type { ConventionId } from './conventions';
 import { marked, type Note, type NoteLevel } from './messages';
-import { type Rewrite, replaceNode, replaceSpan, statementBefore, stopCommand, textBetween, type TextEdit } from './rewrite';
+import { type Rewrite, replaceNode, replaceSpan, stopCommand, textBetween, type TextEdit } from './rewrite';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
 // `rm -rf $DIR/…`, `read` without `-r`, `<` and `>` or a missing `]` inside `[ ]`), explained where they appear: what
@@ -453,15 +453,6 @@ function escapedComparison(n: SyntaxNode, redirect: SyntaxNode): Rewrite | undef
   return editSpan(field(n, 'name')!, close, [{ start: redirect.startIndex, end: redirect.endIndex, text: `${pre}${m[1] ? `${m[1]} ` : ''}\\${m[2]} ${dest.text}` }]);
 }
 
-/** Whether the statement `n` stands alone in a list of statements (a body, the script), where one can go before it: not in `a && n`, `n | b`, `! n`, nor in a condition. */
-function standsAlone(n: SyntaxNode): boolean {
-  const p = n.parent!;
-  if (['program', 'compound_statement', 'do_group', 'subshell', 'else_clause'].includes(p.type)) return true;
-  // (In `if`, `elif` and `case`, after the `then` or the `)` of its pattern.)
-  const opener = p.children.findIndex((c) => !c.named && (c.type === 'then' || c.type === ')'));
-  return ['if_statement', 'elif_clause', 'case_item'].includes(p.type) && opener >= 0 && p.children.indexOf(n) > opener;
-}
-
 /** The style checks whose node starts on a line from `from` to `to`, in one walk of the tree, with the model of the tree and its shell. */
 export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number, model: StateModel, shell: Shell | undefined): StyleFinding[] {
   const s = pick(lang);
@@ -720,7 +711,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
   };
 
   /** `rm -r` with these words: the first that removes from the root when a variable in it is empty. */
-  // (`n`: the command; a check goes before it where it stands alone, `statementBefore`.)
+  // (`n`: the command, where the check before it stops.)
   const rmFromRoot = (n: SyntaxNode, words: readonly SyntaxNode[]) => {
     for (const w of words) {
       const t = rootTarget(w);
@@ -739,11 +730,12 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         // `${DIR%/}` has no form with `:?` (and is empty for DIR=/ too); `${x:-*.txt}` has no quoted form.
         const what = t.plain ? v : e.text;
         if (t.test) {
-          // (The check stops where the code runs: `exit 1` in a script, `return 1` in a function, both where it may be sourced.)
+          // (The check stops where the code runs: `exit 1` in a script, `return 1` in a function, both where it may be
+          // sourced. Said, but carried as no edits: the warning stays after it, since the model does not narrow a value
+          // through a test, docs/design/semantics.md 4.15; a quick fix would not clear it.)
           const check = `${t.test} || ${stopCommand(n, model, !!ancestor(n, (x) => x.type === 'function_definition'))}`;
-          const fix = standsAlone(n) ? statementBefore(n, check) : { code: check, edits: [] };
-          add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${fix.code}\` と書くと、空のときは止まります`,
-            `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${fix.code}\` before it to stop when it is empty`, [fix]);
+          add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${check}\` と書くと、空のときは止まります`,
+            `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${check}\` before it to stop when it is empty`);
         } else {
           // (A quote or backslash in the expansion: a check in quotes would not read it the same.)
           add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。空でないことを前に確かめてください`,
