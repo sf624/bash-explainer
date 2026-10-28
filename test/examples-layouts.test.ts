@@ -170,6 +170,10 @@ describe('pipelines that start with a made-up output agree with the real tools s
     // (Nor one whose words are not all known: `tee "$log"`.)
     const tee = explain('ps aux | tee "$log" | wc -l').examples.find((e) => e.kind === 'pipeline')!;
     assert.ok(!tee.sections[0].lines.some((r) => / tee/.test(r)) && tee.sections[0].lines.some((r) => / wc -l$/.test(r)));
+    // (Its words after quote removal, as the program gets them; one with a control character, which ps shows escaped, has no row.)
+    const row = (line: string) => explain(line).examples.find((e) => e.kind === 'textFilters')!.sections[0].lines.slice(-2).map((r) => r.replace(/^.* 0:00 /, ''));
+    assert.deepStrictEqual(row('ps aux | head -n 20 | cut -d \\: -f1'), ['head -n 20', 'cut -d : -f1']);
+    assert.deepStrictEqual(row("ps aux | head -n 20 | cut -d $'\\t' -f1"), ['ps aux', 'head -n 20']);
   });
   it('makes up no output for other options or operands, and says that the input is not known', () => {
     for (const line of ['ps aux --sort=-%mem | head', 'ls -l /etc | wc -l', 'ls -lt | head -n 3', 'df | wc -l', 'ls -l --nope | wc -l', 'ls -lj | wc -l', 'ls -lZ | wc -l', 'mytool | wc -l']) {
@@ -190,6 +194,13 @@ describe('pipelines that start with a made-up output agree with the real tools s
     // (As with another wrapper: grep's example of its own; `env --` alone prints the environment.)
     assert.deepStrictEqual(explain('env grep x "$f" | wc -l').examples.map((e) => e.kind), explain('nice grep x "$f" | wc -l').examples.map((e) => e.kind));
     assert.strictEqual(pipelineExampleOf('env -- | grep PATH')?.sections[0].label, 'Output of `env --` (sample)');
+    // (`--` written otherwise is `--` to env too, and to the `_` line: these once threw.)
+    for (const line of ['env \\-- | cat', 'env -\\- | cat', "env $'--' | cat", 'env "--" | cat', 'printenv \\-- | cat', "printenv $'--' | cat"]) {
+      for (const lang of ['en', 'ja'] as const) {
+        const ex = explain(line, 0, lang).examples.find((e) => e.kind === 'pipeline');
+        assert.strictEqual(ex?.sections[0].lines.at(-1), `_=/usr/bin/${line.split(' ')[0]}`, `${line} (${lang})`);
+      }
+    }
   });
   it('gives a command after it, whose example is its own, the made-up lines as its input', () => {
     // (`paste` is not followed: the stages' examples are shown, and awk's reads what `ls -l` prints.)

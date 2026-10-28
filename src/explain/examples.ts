@@ -457,14 +457,16 @@ function pipedLines(cx: Explainer, n: SyntaxNode, index: number): Piped {
 }
 
 /**
- * The words a stage of a pipeline runs as a program, as ps shows its command line (`awk {print $2}`); undefined when
- * they are not all known, or the stage is not a program (a builtin, a function, a compound command).
+ * The words a stage of a pipeline runs as a program, as ps shows its command line (`awk {print $2}`), after quote
+ * removal as the interpreter reads them (`env \--` runs `env --`); undefined when they are not all known, or the stage
+ * is not a program (a builtin, a function, a compound command). A word with a control character is not known either:
+ * ps shows it escaped (`$'a\tb'` as `a?b`), and a newline would break the row.
  */
 function argvOf(cx: Explainer, cmd: SyntaxNode): string[] | undefined {
   const name = cmd.type === 'command' ? field(cmd, 'name') : undefined;
   if (!name || resolve(cx, name.text, name).kind !== 'file') return undefined;
-  const words = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect').map((a) => literalContent(a)?.text);
-  return words.every((w) => w !== undefined) ? [name.text, ...words as string[]] : undefined;
+  const words = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect').map((a) => staticWordValue(a, false, cx.state.shell));
+  return words.every((w) => w !== undefined && !/[\x00-\x1f\x7f]/.test(w)) ? [name.text, ...words as string[]] : undefined;
 }
 
 /** A note when the command reads files it names, so not the standard input the line gives it (`jq . a.json < b.json`). */
