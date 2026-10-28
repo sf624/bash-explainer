@@ -578,11 +578,28 @@ function inheritedAt(cx: Explainer, cmd: SyntaxNode, started: Started): (name: s
  * it does not export.)
  */
 function exportedAt(cx: Explainer, cmd: SyntaxNode, name: string): string | undefined | null {
-  const elsewhere = cx.state.blind !== undefined ? cx.state.env(cmd).links.some((l) => l.kind === 'call') : !cx.state.settled(cmd);
+  // (Where the model is blind, a function may also run from where it does not see: `"$@"`, `eval "$1"`.)
+  const elsewhere = cx.state.blind !== undefined ? cx.state.env(cmd).links.some((l) => l.kind === 'call') || setInFunctions(cx).has(name) : !cx.state.settled(cmd);
   if (elsewhere && cx.state.assigned.has(name)) return null;
   const st = cx.state.at(cmd).run;
   if ([...st.variables.values()].some((v) => (v.attrs.n?.state ?? 'off') !== 'off')) return null;
   return exportedValue(st, name, inheritedAt(cx, cmd, startedAs(cx) ?? 'script'));
+}
+
+/** The variables some command in the body of a function of the script sets (`StateModel.writes`). */
+const IN_FUNCTIONS = memoKey<ReadonlySet<string>>('variables set in functions');
+function setInFunctions(cx: Explainer): ReadonlySet<string> {
+  const memo = cx.memo(IN_FUNCTIONS);
+  const known = memo.get(cx.root);
+  if (known) return known;
+  const names = new Set<string>();
+  const stack = [...cx.state.definitions.functions.values()].flat();
+  for (let n = stack.pop(); n; n = stack.pop()) {
+    for (const name of cx.state.writes(n)) names.add(name);
+    stack.push(...n.namedChildren);
+  }
+  memo.set(cx.root, names);
+  return names;
 }
 
 /**

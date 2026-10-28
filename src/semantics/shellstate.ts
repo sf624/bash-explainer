@@ -18,9 +18,11 @@ export type OptionState = Tri | 'default';
  * The state of an attribute, and the node that set it. `environment`, of the export attribute (`x`) only: the
  * script had neither set nor declared the variable before (no `unset`, `local`, `export -n` on the way), so it may be
  * the variable the shell got from the environment, which is exported (`environmentHas`: how likely); the state is
- * then `unknown`, or `off` for a name the environment is unlikely to have (one in lower case).
+ * then `unknown`, or `off` for a name the environment is unlikely to have (one in lower case). `atMost`: on some
+ * paths the script removed it or its export (`if …; then unset HOME; fi`, see `merge`), so it is exported at most
+ * when the environment had it, not always then.
  */
-export interface Attribute { readonly state: Tri; readonly at: SyntaxNode; readonly environment?: Exclude<FromEnvironment, 'no'> }
+export interface Attribute { readonly state: Tri; readonly at: SyntaxNode; readonly environment?: Exclude<FromEnvironment, 'no'>; readonly atMost?: true }
 
 export interface VariableState {
   /** Whether it exists (`declare -p` shows it): declared, with or without a value. */
@@ -348,11 +350,14 @@ export function exportedValue(st: ShellState, name: string, inherited: (name: st
   const x = v.attrs.x?.state ?? 'off';
   if (x === 'off') return undefined;
   if (x === 'unknown') {
-    // (Exported on some paths only, or removed on some paths only: `if …; then unset HOME; fi`, see `merge`.)
+    // (Exported on some paths only; or, `atMost`, removed on some paths only: `if …; then unset HOME; fi`, see `merge`.)
     if (fromEnvironment(name, st, 'export') === 'no' || got === null) return null;
     if (got === undefined) return undefined;
+    if (v.attrs.x!.atMost) return null;
   }
-  return v.set === 'off' ? undefined : v.set === 'on' && v.value !== undefined ? v.value : null;
+  // (Unset on some paths, and left as the shell started on others: the environment's, when it has one.)
+  if (v.set === 'off') return v.kept && got !== undefined ? null : undefined;
+  return v.set === 'on' && v.value !== undefined ? v.value : null;
 }
 
 /** The state of attribute `letter` of variable `name`. */
@@ -394,28 +399,25 @@ export function mergeOption(kind: 'set' | 'shopt', name: string, a: OptionState 
 }
 
 function mergeVariable(name: string, a: VariableState | undefined, b: VariableState | undefined): VariableState {
-  // Changed on one path only: on the other the script left it alone, as it was when the shell started (what a first
-  // assignment finds, `exportFromEnvironment`): a name the environment may have is set and exported there when the
-  // environment has it. `if …; then unset HOME; fi` may leave HOME set and exported; after `if …; then unset Y; fi`,
-  // `Y` is exported only when the environment had it (`fromEnvironment`), as after a first `Y=1`.
+  // Changed on one path only: the other left it as the shell started, set and exported only when the environment had
+  // it (`kept`, `exportFromEnvironment`), so the merge is set at most where either path sets it, and exported at most
+  // where either exports it: where the changed path removed it or its export, at most when the environment had it.
   if (!a || !b) {
     const v = (a ?? b)!;
     const attrs: Record<string, Attribute> = {};
-    for (const [l, x] of Object.entries(v.attrs)) attrs[l] = { state: tri(x.state, 'off'), at: x.at, ...(x.environment ? { environment: x.environment } : {}) };
+    for (const [l, x] of Object.entries(v.attrs)) attrs[l] = { state: tri(x.state, 'off'), at: x.at, ...(x.environment ? { environment: x.environment } : {}), ...(x.atMost ? { atMost: true as const } : {}) };
     const start = exportFromEnvironment(name, v.at);
-    if (start.state === 'off') return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true };
-    // (The tag says it may be the environment's on every path: not where the script exported it.)
     const x = v.attrs.x;
-    const tag = !x || x.state === 'off' ? start.environment : x.state === 'unknown' ? x.environment : undefined;
-    attrs.x = { state: 'unknown', at: x?.at ?? v.at, ...(tag ? { environment: tag } : {}) };
-    return { declared: tri(v.declared, 'off'), set: tri(v.set, 'unknown'), attrs, at: v.at, kept: true };
+    // (`if …; then unset Y; fi`: on neither path is `Y` exported unless the environment had it, as after a first `Y=1`.)
+    if (start.state !== 'off' && (!x || x.state === 'off')) attrs.x = { state: 'unknown', at: x?.at ?? v.at, environment: start.environment!, atMost: true };
+    return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true };
   }
   const attrs: Record<string, Attribute> = {};
   for (const l of new Set([...Object.keys(a.attrs), ...Object.keys(b.attrs)])) {
     const x = a.attrs[l];
     const y = b.attrs[l];
     // (From the environment only when it may be on both paths.)
-    attrs[l] = x && y ? { state: tri(x.state, y.state), at: later(x.at, y.at), ...(x.environment && y.environment ? { environment: x.environment } : {}) } : { state: tri((x ?? y)!.state, 'off'), at: (x ?? y)!.at };
+    attrs[l] = x && y ? { state: tri(x.state, y.state), at: later(x.at, y.at), ...(x.environment && y.environment ? { environment: x.environment, ...(x.atMost || y.atMost ? { atMost: true as const } : {}) } : {}) } : { state: tri((x ?? y)!.state, 'off'), at: (x ?? y)!.at };
   }
   const source = a.source === b.source ? a.source : undefined;
   return { declared: tri(a.declared, b.declared), set: tri(a.set, b.set), attrs, value: a.value === b.value ? a.value : undefined, ...(source ? { source } : {}), at: later(a.at, b.at), ...(a.kept || b.kept ? { kept: true as const } : {}) };
