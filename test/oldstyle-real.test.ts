@@ -174,6 +174,21 @@ describe('ps: a number after BSD letters is a list of PIDs', () => {
   });
 });
 
+describe('ps refuses `--`', () => {
+  // procps has no end of options: `--` anywhere is a "garbage option", with or without BSD letters.
+  (usable('ps') ? it : it.skip)('fails where the interpreter reads `--` as an option ps refuses', () => {
+    for (const line of ['ps --', 'ps -ef --', 'ps aux --', 'ps x --', 'ps -- -ef']) {
+      const r = run(line, os.tmpdir());
+      assert.deepStrictEqual([r.status, /garbage option/.test(r.err)], [1, true], line);
+      assert.deepStrictEqual(wordsWith(line, (role) => role.role === 'unknown-option' && !!role.refused), ['--'], line);
+    }
+    // (The same lines without it succeed, and read `-ef` after it as options.)
+    for (const line of ['ps -ef', 'ps aux', 'ps x']) assert.strictEqual(run(line, os.tmpdir()).status, 0, line);
+    assert.deepStrictEqual(letters('ps -- -ef'), [], 'no BSD letters');
+    assert.deepStrictEqual(wordsWith('ps -- -ef', (role) => role.role === 'cluster'), ['-ef']);
+  });
+});
+
 describe('ps: a BSD letter with a value takes the rest of its word', () => {
   /**
    * What ps prints for `line` that is the same from run to run: the header and the PIDs 1 and 2 (the other rows

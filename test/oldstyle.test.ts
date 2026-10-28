@@ -151,6 +151,9 @@ describe('old-style options: ps', () => {
     assert.strictEqual(top('ps -ef')[0].explanation, 'Combined short options `-e` `-f`');
     // (A number must come last in a BSD word: `u1x` is an error in ps.)
     assert.strictEqual(top('ps u1x')[0].explanation, 'Word `u1x`');
+    // (procps has no end of options: `--` is an error, test/oldstyle-real.test.ts.)
+    assert.strictEqual(top('ps aux --')[1].explanation, 'Not allowed here: procps ps does not take `--`; it prints "error: garbage option" and fails (exit status 1)');
+    assert.match(top('ps -- -ef', 'ja')[0].explanation, /^ここには書けない: procps の ps は `--` を受け付けず/);
   });
 
   it('reads a number at the end of BSD letters as a PID list, or as the value of a letter that takes one', () => {

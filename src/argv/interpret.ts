@@ -42,8 +42,9 @@ export type ArgRole =
   /**
    * `ambiguous`: the long options a prefix could be (`timeout --v`), which the tool refuses. `late`: a long option
    * after a short one, where the parser reads long options only first (`bash -x --posix`, the rule `longFirst`).
+   * `refused`: what the spec says of a `--` the command refuses (`dashDash`, procps `ps`).
    */
-  | { role: 'unknown-option'; flag: string; part?: Range; value?: ValueRole; ambiguous?: string[]; late?: boolean }
+  | { role: 'unknown-option'; flag: string; part?: Range; value?: ValueRole; ambiguous?: string[]; late?: boolean; refused?: Text }
   /** An option whose letters are known only at run time (`-$opts`, `-r$x`): `prefix` is what is known. */
   | { role: 'open-option'; prefix: string }
   | ValueRole
@@ -193,6 +194,12 @@ class Reader {
     for (let i = from; i < end; i++) {
       const w = this.words[i];
       const value = w.value;
+      // (A `--` the command refuses is an unknown option, and the words after it are read as before: `ps -- -ef`.)
+      if (!endOpts && value === '--' && typeof spec.dashDash === 'object' && 'refused' in spec.dashDash) {
+        roles.set(i, { role: 'unknown-option', flag: value, refused: spec.dashDash.refused });
+        given.flags.push(value);
+        continue;
+      }
       if (!endOpts && (value === '--' || (value === '-' && rules.loneDashEnds)) && spec.dashDash !== 'literal') {
         roles.set(i, { role: 'end-of-options' });
         endOpts = true;
