@@ -416,6 +416,11 @@ describe('the analyzer says what a name runs', () => {
     assert.strictEqual(inSub("{ trap 'sort i' USR1; hash -p /usr/bin/rev sort; kill -USR1 $BASHPID; } | cat"), rev);
     assert.strictEqual(inSub("( f() { sort i; }; hash -p /usr/bin/rev sort; complete -F f x )"), rev);
     assert.strictEqual(inSub("( trap 'sort i' USR1; kill -USR1 $BASHPID ); hash -p /usr/bin/tac sort"), 'Sort lines');
+    // (Walked at the end too: a trap's action or a function set in a subshell changes that subshell's table only.)
+    const second = (src: string) => all(explain(src, 1).items[0]).find((t) => t.startsWith('Sort lines'));
+    assert.strictEqual(second("( trap 'hash -p /usr/bin/rev sort' USR1; kill -USR1 $BASHPID )\ntrap 'sort i' USR2\nkill -USR2 $$"), 'Sort lines');
+    assert.strictEqual(second("( trap 'hash -p /usr/bin/rev sort' USR1; kill -USR1 $BASHPID )\nh() { sort i; }\nh"), 'Sort lines');
+    assert.strictEqual(second('( g() { hash -p /usr/bin/rev sort; }; complete -F g x )\nh() { sort i; }\ncomplete -F h y'), 'Sort lines');
     // (A trap's action that changes the table may run after any statement; changes of other names do not count.)
     assert.strictEqual(short(resolve('trap "hash -p /bin/ls e" INT\ne', 'e')), 'file:search-unknown-maybe-hashed:ran');
     assert.strictEqual(short(resolve('hash -p /bin/cat a\nf() { e; }\nhash -p /bin/ls a\nhash -p /bin/ls e', 'e')), 'file:search-unknown-maybe-hashed:ran');

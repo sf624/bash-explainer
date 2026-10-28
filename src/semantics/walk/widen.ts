@@ -63,7 +63,7 @@ export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>, from
       // a trap's action, in the process they were set in), else the last one in the process the walk is in. One made
       // only in another process changes nothing here.)
       const e = st.hashed.get(name);
-      const proc = from ? from.proc : processIn(w.targets);
+      const proc = from ? from.proc : processIn(w.targets, w.node);
       const puts = w.builtins.hashPuts.filter((p) => p.name === name && p.proc === proc && (!from || p.count > from.since)).map((p) => p.entry);
       const later = from ? puts : puts.slice(-1);
       if (later.length) changes.hashed.set(name, hashEntry(later.at(-1)!, [...hashOutcomes(e), ...later.flatMap(hashOutcomes)]));

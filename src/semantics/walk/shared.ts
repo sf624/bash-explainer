@@ -57,7 +57,7 @@ export interface Operand {
 }
 
 /** A function being run: the outer values of its locals (restored when it returns), and its set options with `local -`. */
-export interface Frame { def: SyntaxNode; saved: Map<string, VariableState | undefined>; options?: NameMap<OptionState> }
+export interface Frame { def: SyntaxNode; saved: Map<string, VariableState | undefined>; options?: NameMap<OptionState>; proc?: Target }
 
 /**
  * Where `break`, `continue`, `return` and `exit` go (innermost last): a loop, a function body, the script; a
@@ -66,7 +66,7 @@ export interface Frame { def: SyntaxNode; saved: Map<string, VariableState | und
  */
 export type Target =
   | { kind: 'loop'; dead: number; breaks: ShellState[]; continues: ShellState[] }
-  | { kind: 'function'; dead: number; returns: ShellState[] }
+  | { kind: 'function'; dead: number; returns: ShellState[]; proc?: Target }
   | { kind: 'program'; dead: number; exits: ShellState[] }
   /**
    * A line of top-level statements, or of a string `eval` or a trap runs: an expansion error discards the rest of it
@@ -80,19 +80,26 @@ export type Target =
    * too, and leave that loop once the statement that holds it is done (`jumps`; `Walker.statement`).
    */
   | { kind: 'substitution'; dead: number; returns: ShellState[]; aborts: ShellState[]; maybes: ShellState[]; jumps: Deferred[] }
-  | { kind: 'subshell' | 'maybe' }
+  /** `at`: the statement that runs in a subshell of its own (`( )`, `&`), when the target is its. */
+  | { kind: 'subshell' | 'maybe'; at?: SyntaxNode }
   /**
    * A trap's action (`exitOnly`: of EXIT alone): a signal may run it between any two statements, so an error that may
    * end the line around it, or a `return`, `break` or `continue` it does not hold, may leave any of them (see `escape`).
    */
-  | { kind: 'trap'; exitOnly: boolean };
+  | { kind: 'trap'; exitOnly: boolean; proc?: Target };
 
 /**
  * The process the walk is in (`targets`): the innermost subshell it entered (`( )`, `&`, `$( )`, a pipeline stage), or
- * undefined for the shell itself. What a subshell changes, a trap or a function of another process never sees.
+ * the process of a trap's action or a function body walked after the rest (`proc`: the one it was set in), or
+ * undefined for the shell itself; `ended`: a statement whose own subshell is over (a widening after it is the shell's).
+ * What a subshell changes, a trap or a function of another process never sees.
  */
-export function processIn(targets: readonly Target[]): Target | undefined {
-  for (let i = targets.length - 1; i >= 0; i--) if (targets[i].kind === 'subshell') return targets[i];
+export function processIn(targets: readonly Target[], ended?: SyntaxNode): Target | undefined {
+  for (let i = targets.length - 1; i >= 0; i--) {
+    const t = targets[i];
+    if (t.kind === 'subshell' && (!ended || t.at !== ended)) return t;
+    if ((t.kind === 'trap' || t.kind === 'function') && t.proc) return t.proc;
+  }
   return undefined;
 }
 

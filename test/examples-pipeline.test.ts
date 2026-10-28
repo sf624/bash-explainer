@@ -311,6 +311,18 @@ describe('the pipeline example of a line agrees with the tools', () => {
       const gone = "( trap 'printf \"b\\nc\\na\\n\" | sort' USR1; kill -USR1 $BASHPID ); hash -p /usr/bin/tac sort";
       assert.deepStrictEqual(lines(bash(gone).stdout.toString()), ['a', 'b', 'c']);
       assert.ok(!JSON.stringify(new Analyzer('en').explainLine(parser.parse(gone), 0).items).includes('runs the path `/usr/bin/tac`'));
+      // A trap's action or a function body set in a subshell changes that subshell's table, also when walked at the end:
+      // the shell's own trap or function finds none of it (`a b c`); one the action sets in turn finds it (`b c a`).
+      const subTrap = "( trap 'hash -p /usr/bin/rev sort' USR1; kill -USR1 $BASHPID )";
+      const ends = [`${subTrap}\ntrap 'printf "b\\nc\\na\\n" | sort' USR2\nkill -USR2 $$`, `${subTrap}\nh() { printf "b\\nc\\na\\n" | sort; }\nh`,
+        '( g() { hash -p /usr/bin/rev sort; }; complete -F g x )\nh() { printf "b\\nc\\na\\n" | sort; }\ncomplete -F h y\nh'];
+      for (const src of ends) {
+        assert.deepStrictEqual(lines(bash(src).stdout.toString()), ['a', 'b', 'c'], src);
+        assert.ok(!JSON.stringify(new Analyzer('en').explainLine(parser.parse(src), 1).items).includes('/usr/bin/rev'), src);
+      }
+      const nested = "( trap 'hash -p /usr/bin/rev sort; trap \"printf \\\"b\\\\nc\\\\na\\\\n\\\" | sort\" USR2; kill -USR2 $BASHPID' USR1; kill -USR1 $BASHPID )";
+      assert.deepStrictEqual(lines(bash(nested).stdout.toString()), ['b', 'c', 'a']);
+      assert.ok(JSON.stringify(new Analyzer('en').explainLine(parser.parse(nested), 0).items).includes('Run the external command `/usr/bin/rev`'));
       // (Two paths, one on each path: tac or rev, never sort; no example either.)
       const either = `hash -p /usr/bin/tac sort; if [ -n "$x" ]; then hash -p /usr/bin/rev sort; fi; ${abc}`;
       assert.deepStrictEqual(lines(bash(either, { x: '1' }).stdout.toString()), ['b', 'a', 'c']);
