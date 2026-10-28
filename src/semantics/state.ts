@@ -38,7 +38,7 @@ import { Walker } from './walk/walker';
 import { childStart, restrictedStart } from './walk/child';
 
 export {
-  attribute, type AliasState, type Attribute, type CommandEntry, defaultOn, type ErrexitWhy, exportedValue, type FunctionState, merge, NameMap, option,
+  attribute, type AliasState, type Attribute, type CommandEntry, defaultOn, type ErrexitWhy, exportedValue, type FunctionState, hashOutcomes, type HashOutcome, merge, NameMap, option,
   type OptionState, type ShellState, shoptIn, type Tri, type VariableState,
 } from './shellstate';
 export { ARITH_ASSIGNED, type Declaration } from './vars';

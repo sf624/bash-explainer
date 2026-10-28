@@ -75,10 +75,35 @@ export interface AliasState {
 /** A name the command search treats apart: a builtin turned off (`enable -n`), or a path remembered (`hash -p`). */
 export interface CommandEntry {
   readonly state: Tri;
-  /** `hash -p`: the path (empty when it is known only at run time, `hash -p "$p" x`). */
-  readonly value: string;
+  /** `hash -p`: the path; absent when it is known only at run time (`hash -p "$p" x`). */
+  readonly value?: string;
   /** The command that made it so. */
   readonly at: SyntaxNode;
+  /**
+   * A path remembered on some paths only (`unknown`): what each path that gets here leaves in the table (`hashOutcomes`);
+   * where the walk does not follow what a command leaves (a body that runs later), a path not known and none, by it.
+   */
+  readonly may?: readonly HashOutcome[];
+}
+
+/**
+ * What a path through the script leaves in the table of `hash -p` for a name: a path (`hashed`, with its `value`,
+ * absent when known only at run time) or none, and the command that made it so (`at`: `hash -p`, `hash -d`, `hash -r`,
+ * an assignment to PATH), absent when the script did not touch it on that path.
+ */
+export interface HashOutcome {
+  readonly hashed: boolean;
+  readonly value?: string;
+  readonly at?: SyntaxNode;
+}
+
+/** What the paths that get to an entry of the table of `hash -p` (or to no entry) leave there, each once. */
+export function hashOutcomes(e: CommandEntry | undefined): readonly HashOutcome[] {
+  if (!e) return [{ hashed: false }];
+  if (e.state === 'off') return [{ hashed: false, at: e.at }];
+  const own: HashOutcome = { hashed: true, ...(e.value !== undefined ? { value: e.value } : {}), at: e.at };
+  // (An entry `unknown` has `may`: `mergeHashed` and the walk's widening set it.)
+  return e.state === 'on' ? [own] : e.may!;
 }
 
 
@@ -440,6 +465,24 @@ function mergeAlias<T extends AliasState | CommandEntry>(a: T | undefined, b: T 
   return { ...newer, state: a.value === b.value ? tri(a.state, b.state) : 'unknown' };
 }
 
+/**
+ * A path of `hash -p` after two paths: the same path on both, none on both, or either, with what each path left
+ * (`CommandEntry.may`), so that a reader can say which commands make the table differ.
+ */
+function mergeHashed(a: CommandEntry | undefined, b: CommandEntry | undefined): CommandEntry {
+  const may: HashOutcome[] = [];
+  for (const o of [...hashOutcomes(a), ...hashOutcomes(b)]) {
+    if (!may.some((x) => x.hashed === o.hashed && x.value === o.value && x.at === o.at)) may.push(o);
+  }
+  const newer = !a || !b ? (a ?? b)! : later(a.at, b.at) === a.at ? a : b;
+  const hashed = may.filter((o) => o.hashed);
+  const { may: _, ...entry } = newer;
+  // (One path on every path, or none on any: no matter which command gave it.)
+  if (hashed.length === may.length && hashed.every((o) => o.value === hashed[0].value)) return { ...entry, state: 'on', ...(hashed[0].value !== undefined ? { value: hashed[0].value } : {}) };
+  if (!hashed.length) return { ...entry, state: 'off' };
+  return { ...entry, state: 'unknown', may };
+}
+
 /** The state after one of several paths, when any of them may have been taken. */
 export function merge(states: ShellState[], posix = false): ShellState {
   // (A path that never gets here adds nothing; when none does, the result never gets here either.)
@@ -452,7 +495,7 @@ export function merge(states: ShellState[], posix = false): ShellState {
     functions: NameMap.merge(a.functions, b.functions, (_k, x, y) => mergeFunction(x, y)),
     aliases: NameMap.merge(a.aliases, b.aliases, (_k, x, y) => mergeAlias(x, y)),
     disabled: NameMap.merge(a.disabled, b.disabled, (_k, x, y) => mergeAlias(x, y)),
-    hashed: NameMap.merge(a.hashed, b.hashed, (_k, x, y) => mergeAlias(x, y)),
+    hashed: NameMap.merge(a.hashed, b.hashed, (_k, x, y) => mergeHashed(x, y)),
     ...(a.status === b.status && a.status !== undefined ? { status: a.status } : {}),
     ...mergeErrexitWhy(a.errexitWhy, b.errexitWhy),
     ...(a.opaque || b.opaque ? { opaque: true as const } : {}),
@@ -475,6 +518,12 @@ export function mergeErrexitWhy(a: ErrexitWhy | undefined, b: ErrexitWhy | undef
   return why ? { errexitWhy: why } : {};
 }
 
+/** Whether two entries of the table of `hash -p` leave the same paths (the nodes that left them aside). */
+function sameOutcomes(a: readonly HashOutcome[], b: readonly HashOutcome[]): boolean {
+  const key = (m: readonly HashOutcome[]) => [...new Set(m.map((o) => (o.hashed ? `+${o.value}` : '-')))].sort().join('\n');
+  return key(a) === key(b);
+}
+
 /** Whether two states say the same (the nodes where things changed aside). */
 export function sameState(a: ShellState, b: ShellState): boolean {
   const attrs = (x: VariableState, y: VariableState): boolean => {
@@ -486,5 +535,5 @@ export function sameState(a: ShellState, b: ShellState): boolean {
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
     && NameMap.same(a.disabled, b.disabled, (x, y) => x === y || x.state === y.state)
-    && NameMap.same(a.hashed, b.hashed, (x, y) => x === y || (x.state === y.state && x.value === y.value)));
+    && NameMap.same(a.hashed, b.hashed, (x, y) => x === y || (x.state === y.state && x.value === y.value && (x.state !== 'unknown' || sameOutcomes(x.may!, y.may!)))));
 }

@@ -160,7 +160,7 @@ export class WalkBuiltins {
         if (has('-f') || has('-d') || has('-p')) return st;
         for (const o of operands) {
           const b = staticWordValue(o);
-          if (b) st = this.w.put(st, 'disabled', b, { state: has('-n') ? 'on' : 'off', value: '', at: n });
+          if (b) st = this.w.put(st, 'disabled', b, { state: has('-n') ? 'on' : 'off', at: n });
         }
         return st;
       }
@@ -170,13 +170,17 @@ export class WalkBuiltins {
         const hashall = option(st, 'set', 'hashall');
         if (hashall === 'off') return st;
         const before = st;
-        if (has('-r')) st = this.forgetHashed(st);
+        if (has('-r')) st = this.forgetHashed(st, n);
         const path = valueOf('-p');
         // (`-d` takes no value: it forgets every name after it.)
         for (const o of operands) {
           const b = staticWordValue(o);
           if (!b) continue;
-          if (path) st = this.w.put(st, 'hashed', b, { state: 'on', value: staticWordValue(path) ?? '', at: n });
+          if (path) {
+            // (A path known only at run time has no value: `hash -p "$p" x`; `hash -p '' x` has an empty one.)
+            const value = staticWordValue(path);
+            st = this.w.put(st, 'hashed', b, { state: 'on', ...(value !== undefined ? { value } : {}), at: n });
+          }
           else if (has('-d')) st = this.unhash(st, b, n);
         }
         return hashall === 'unknown' ? merge([before, st], this.w.posix) : st;
@@ -215,15 +219,15 @@ export class WalkBuiltins {
     return st;
   }
 
-  /** Every path `hash -p` gave is forgotten (`hash -r`, an assignment to PATH). */
-  forgetHashed(st: ShellState): ShellState {
-    for (const [k, e] of st.hashed) if (e.state !== 'off') st = this.w.put(st, 'hashed', k, { ...e, state: 'off' });
+  /** Every path `hash -p` gave is forgotten (`hash -r`, an assignment to PATH: `at`). */
+  forgetHashed(st: ShellState, at: SyntaxNode): ShellState {
+    for (const [k, e] of st.hashed) if (e.state !== 'off') st = this.w.put(st, 'hashed', k, { state: 'off', at });
     return st;
   }
 
   private unhash(st: ShellState, name: string, at: SyntaxNode): ShellState {
     const e = st.hashed.get(name);
-    return e ? this.w.put(st, 'hashed', name, { ...e, state: 'off', at }) : st;
+    return e ? this.w.put(st, 'hashed', name, { state: 'off', at }) : st;
   }
 
   /**
@@ -667,7 +671,7 @@ export class WalkBuiltins {
     // (One the script has not set nor declared may be the environment's, exported: `exportFromEnvironment`.)
     st = this.w.put(st, 'variables', name, { declared: 'on', set: 'on', attrs: prev?.attrs ?? { x: exportFromEnvironment(name, at) }, value, ...(source ? { source } : {}), at, ...(kept ? { kept: true as const } : {}) });
     // Assigning PATH empties the table of remembered paths.
-    if (name === 'PATH') st = this.forgetHashed(st);
+    if (name === 'PATH') st = this.forgetHashed(st, at);
     if (name === 'POSIXLY_CORRECT' && !plain && this.w.bash && option(st, 'set', 'posix') !== 'on') st = this.setPosix(st, true, at, true);
     if (name === 'GLOBIGNORE' && this.w.bash) st = this.globignore(st, value);
     const all = option(st, 'set', 'allexport');

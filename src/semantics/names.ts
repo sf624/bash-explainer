@@ -20,12 +20,30 @@ import { actedNames, actsOnNames } from '../argv/query';
 import { field, fields, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { aliasExpandsNext, builtinParse, quotedName, wordsAfterAlias, wrapped } from './effects';
 import { type ExecEnv, linksAfter, reachOf, type SlotLink, subshellReasons } from './env';
-import { type AliasState, type CommandEntry, type FunctionState, option, type ShellState, type StateModel, type Tri } from './state';
+import { type AliasState, type CommandEntry, type FunctionState, hashOutcomes, option, type ShellState, type StateModel, type Tri } from './state';
 import { docIndex } from './state';
 
 /** bash's reserved words: keywords where a command name may start (3.2, and `[[ ]]`). */
 export const RESERVED = new Set(['!', '[[', ']]', '{', '}', 'case', 'coproc', 'do', 'done', 'elif', 'else', 'esac', 'fi', 'for', 'function', 'if', 'in',
   'select', 'then', 'time', 'until', 'while']);
+
+/** What a name may run from the table of `hash -p`, where it differs with the path taken (`NameResolution`). */
+export interface MaybeHashed {
+  /** The paths it may run, each once, in the order of the script (`undefined`: one known only at run time). */
+  paths: (string | undefined)[];
+  /** It may also run what PATH finds for the name: on a path that leaves no entry, or with hashing off. */
+  search: boolean;
+  /** The commands that leave the table so on some paths (`hash -p`, `hash -d`, `hash -r`, an assignment to PATH), in the order of the script. */
+  by: SyntaxNode[];
+  /** Hashing may be off here (`set +h` on some paths). */
+  hashall: boolean;
+  /**
+   * One plain reading, when there is one: `ran`, the one `hash -p` of `by` gave the one path, and the other paths
+   * never touched the name (it runs that path if the `hash -p` ran); `hashing`, the path is surely in the table and
+   * only hashing may be off.
+   */
+  plain?: 'ran' | 'hashing';
+}
 
 /** Why a definition of the name does not apply where it is used. */
 export type MissReason =
@@ -91,15 +109,16 @@ export type NameResolution =
   | {
     kind: 'file'; name: string; path: 'search' | 'given' | 'hashed'; known: boolean; hashed?: CommandEntry; disabled?: CommandEntry; missed?: Missed;
     /**
-     * `hashed` by a path with no slash: bash runs it from the current directory, not from PATH (`hash -p tac sort`
-     * runs `./tac`), so it is no program the dictionary knows (`known` is false).
+     * `hashed` by a relative path (one not starting with `/`): bash runs it from the current directory, not from PATH
+     * (`hash -p tac sort` runs `./tac`; for `./tac` that is not there, it forgets the path and searches PATH), so it
+     * is no program the dictionary knows (`known` is false).
      */
     relative?: true;
     /**
-     * `search`, where bash may run a path `hash -p` gave the name instead: the `hash -p` ran on some paths only
-     * (`branch`), or hashing may be off there (`hashall`: `set +h` on some paths).
+     * Where the table of `hash -p` differs with the path taken, or hashing may be off: what the name may run instead.
+     * `path` is `search` then, also when every path runs one of `paths` (`maybeHashed.search` false).
      */
-    maybeHashed?: { entry: CommandEntry; why: 'branch' | 'hashall' };
+    maybeHashed?: MaybeHashed;
     /** A name the dictionary does not know, after a `source` or `.` (this command): it may be a function of the file read. */
     sourced?: SyntaxNode;
   }
@@ -309,17 +328,31 @@ function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, bash,
   const entry = exec || pathPrefix ? undefined : st.hashed.get(name);
   const set = option(st, 'set', 'hashall');
   const hashall = set === 'default' ? 'on' : set;
-  const hashed = entry && entry.state !== 'off' && hashall !== 'off' ? entry : undefined;
-  if (hashed && hashed.state === 'on' && hashall === 'on') {
-    // (A path with no slash runs from the current directory; an empty one is known only at run time.)
-    const relative = hashed.value !== '' && !hashed.value.includes('/');
-    return { kind: 'file', name, path: 'hashed', known: !relative && !!hashed.value && !!opts.program?.(hashed.value), hashed, ...(relative ? { relative } : {}), ...off, ...m };
+  if (entry?.state === 'on' && hashall === 'on') {
+    // (A relative path runs from the current directory; one not known is known only at run time.)
+    const relative = entry.value !== undefined && !entry.value.startsWith('/');
+    return { kind: 'file', name, path: 'hashed', known: !relative && entry.value !== undefined && !!opts.program?.(entry.value), hashed: entry, ...(relative ? { relative } : {}), ...off, ...m };
   }
-  const maybeHashed = hashed ? { maybeHashed: { entry: hashed, why: hashall === 'unknown' ? 'hashall' as const : 'branch' as const } } : {};
+  const maybe = hashall === 'off' ? undefined : maybeHashed(entry, hashall === 'unknown');
   // (A builtin turned off runs the program of its name, which the dictionary describes with it.)
   const known = !!opts.program?.(name) || !!spec?.program;
-  return { kind: 'file', name, path: 'search', known, ...maybeHashed, ...off, ...m, ...(sourced && !known && !missed && !exec && !opts.env ? { sourced } : {}) };
+  return { kind: 'file', name, path: 'search', known, ...(maybe ? { maybeHashed: maybe } : {}), ...off, ...m, ...(sourced && !known && !missed && !exec && !opts.env ? { sourced } : {}) };
 }
+
+/** What the entry `entry` of the table may make a name run (`hashall`: hashing may be off), or undefined when it runs what PATH finds. */
+function maybeHashed(entry: CommandEntry | undefined, hashall: boolean): MaybeHashed | undefined {
+  const outcomes = hashOutcomes(entry);
+  // (A path in the table always has the command that gave it.)
+  const hashed = outcomes.filter((o) => o.hashed).sort((a, b) => docIndex(a.at!) - docIndex(b.at!));
+  if (!hashed.length) return undefined;
+  const paths = [...new Set(hashed.map((o) => o.value))];
+  const by = [...new Set(outcomes.flatMap((o) => (o.at ? [o.at] : [])))].sort((a, b) => docIndex(a) - docIndex(b));
+  const untouched = outcomes.some((o) => !o.hashed && !o.at);
+  const plain = by.length !== 1 || paths.length !== 1 ? undefined
+    : !hashall && untouched && outcomes.length === 2 ? 'ran' as const : hashall && outcomes.length === 1 ? 'hashing' as const : undefined;
+  return { paths, search: hashall || hashed.length < outcomes.length, by, hashall, ...(plain ? { plain } : {}) };
+}
+
 
 /** What an assignment before a command name does (3.7.1, 3.7.4, 6.11). */
 export interface AssignmentMeaning {
@@ -449,8 +482,8 @@ export function testSpec(name: string, program: boolean): CommandSpec | undefine
  */
 export function testSpecOf(res: NameResolution): CommandSpec | undefined {
   if (res.kind === 'builtin') return testSpec(res.name, false);
-  // (A hashed path with no slash, or one not known, runs no program the dictionary knows.)
-  if (res.kind === 'file') return res.path !== 'hashed' ? testSpec(res.name, true) : res.hashed!.value.includes('/') ? testSpec(res.hashed!.value, true) : undefined;
+  // (A relative hashed path, or one not known, runs no program the dictionary knows.)
+  if (res.kind === 'file') return res.path !== 'hashed' ? testSpec(res.name, true) : !res.relative && res.hashed!.value !== undefined ? testSpec(res.hashed!.value, true) : undefined;
   return undefined;
 }
 
