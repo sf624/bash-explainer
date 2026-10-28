@@ -31,6 +31,21 @@ export function givenOptions(parse: ArgvParse): GivenOption[] {
   return out;
 }
 
+/**
+ * The options given before the value in word `word`, when its option reads it at once (`ValueSpec.inOrder`: sed
+ * compiles each `-e` script as it reads it, with the options given so far); undefined when every option given
+ * applies to it (another value, an operand).
+ */
+export function optionsBefore(parse: ArgvParse, word: number): GivenOption[] | undefined {
+  const at = parse.roles.find((r) => r.word === word)?.role;
+  if (at?.role === 'value') return at.spec?.inOrder ? givenOptions(parse).filter((g) => g.word < word) : undefined;
+  // (In the option's word, the letters before it count too: `-Ee 's/a+/x/'`, `-Ees/a+/x/`.)
+  const letters: (ArgRole | undefined)[] = at?.role === 'cluster' ? at.letters : [at];
+  const owner = letters.findIndex((r) => r?.role === 'option' && r.value?.attached !== undefined && r.value.spec?.inOrder);
+  if (owner < 0) return undefined;
+  return givenOptions(parse).filter((g) => g.word < word || (g.word === word && letters.indexOf(g.role) < owner));
+}
+
 /** The option's flag with a dash, as its spec names it (`-x` for `+x`; old-style letters keep theirs). */
 const flagOf = (role: OptionRole | UnknownOptionRole): string => (role.flag.startsWith('+') ? '-' + role.flag.slice(1) : role.flag);
 

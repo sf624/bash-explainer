@@ -2,7 +2,7 @@
 // command, the shell options and the meaning of a word where a node is, and what the options of the command whose
 // words are explained (`Explainer.command`) give. They read the models; the one text they make is `globOff`'s, the
 // end of a note on a word that is not globbed.
-import { givenOptions, has as hasOption, operands, restrictedRefusal, values } from '../argv/query';
+import { givenOptions, has as hasOption, operands, optionsBefore, restrictedRefusal, values } from '../argv/query';
 import type { ArgvParse } from '../argv/interpret';
 import type { CommandSpec, ShellVariant } from '../argv/spec';
 import type { Basis } from '../basis';
@@ -199,12 +199,15 @@ export function optionValues(cx: Explainer, ...names: string[]): { text?: string
 
 /**
  * The regex dialect of the current command: the modes its options select (`selects` in its spec: grep's `-E`, `-F`,
- * `-P`, sed's `-E`), with those of the words its name implies (`egrep` is `grep -E`); BRE when none does.
+ * `-P`, sed's `-E`), with those of the words its name implies (`egrep` is `grep -E`); BRE when none does. For the text
+ * in word `word`: where the program reads it as soon as its option (`ValueSpec.inOrder`: `sed -e`), only the options
+ * given before it count (`sed -e 's/a+/x/' -E` reads a BRE).
  */
-export function regexFlavor(cx: Explainer): Flavor | 'fixed' {
+export function regexFlavor(cx: Explainer, word?: number): Flavor | 'fixed' {
   const { cmd, parse, spec } = cx.command!;
   const implied = impliedWords(cmd.split('/').pop()!).map((w) => spec.options?.find((o) => o.names.includes(w))?.selects);
-  const selected = new Set([...givenOptions(parse).map(({ role }) => (role.role === 'option' ? role.spec.selects : undefined)), ...implied]);
+  const options = (word === undefined ? undefined : optionsBefore(parse, word)) ?? givenOptions(parse);
+  const selected = new Set([...options.map(({ role }) => (role.role === 'option' ? role.spec.selects : undefined)), ...implied]);
   return selected.has('pcre') ? 'pcre' : selected.has('fixed') ? 'fixed' : selected.has('ere') ? 'ere' : 'bre';
 }
 

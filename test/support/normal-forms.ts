@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { canonicalName, impliedWords, lookupCommand } from '../../src/dict/aliases';
 import { argWord } from '../../src/argv/words';
+import { optionsBefore } from '../../src/argv/query';
 import { type ArgRole, interpret } from '../../src/argv/interpret';
 import { testChain } from '../../src/fixes';
 import { nameOf, outputsOf } from '../../src/idioms';
@@ -96,7 +97,8 @@ function meaning(roles: readonly { word: number; role: ArgRole }[], values: read
     else if (r.role === 'unknown-option') out.push(`unknown ${r.flag}${r.ambiguous ? ` (${r.ambiguous.join(' ')})` : ''}`);
     else if (r.role === 'value') out[out.length - 1] += `=${values[word]}`;
     else if (r.role === 'operand') out.push(`operand ${values[word]}`);
-    else out.push(r.role);
+    // (Another role, such as a word whose value is not known (`open-option`): with the word, which tells it from others.)
+    else out.push(`${r.role} ${values[word]}`);
   };
   for (const { word, role } of roles) option(role, word);
   // (The options in any order, the operands in theirs: `-vi` is `-iv`.)
@@ -146,7 +148,10 @@ export const KEYS: Record<Normalizer, (tree: SyntaxTree, c: SyntaxNode) => strin
     const spec = res && testSpecOf(res);
     if (!spec) return '(no test)';
     const t = commandTest(spec, run.args, '5.2');
-    const words = t.test?.words.map((w) => w.text);
+    // (No expression read, nor said to be wrong: the explanation says nothing of it.)
+    if (!t.test && !t.unclosed && !t.malformed) return '(no expression)';
+    // (A word whose text is not known, by its source: two such words are not said to be one.)
+    const words = t.test?.words.map((w) => w.text ?? `(${w.nodes.map((n) => n.text).join('')})`);
     const expr = (e: TestExpr): unknown => JSON.parse(JSON.stringify(e, (k, v: unknown) => (typeof v === 'number' && words && k !== 'type' ? words[v] : v)));
     return JSON.stringify({ expr: t.test ? expr(t.test.expr) : null, unclosed: t.unclosed, malformed: t.malformed });
   },
@@ -160,7 +165,13 @@ export const KEYS: Record<Normalizer, (tree: SyntaxTree, c: SyntaxNode) => strin
     if (!spec) return '(no spec)';
     const args = argsOf(c);
     const parse = interpret(spec, args.map(argWord), { name, lookup: lookupCommand });
-    return meaning(parse.roles, args.map(valueOr)).join(', ');
+    // (A value read as soon as its option (`sed -e`: `ValueSpec.inOrder`) with the modes chosen before it, as
+    // `regexFlavor` reads them: `sed -e 's/a+/x/' -E` reads a BRE.)
+    const inOrder = args.flatMap((_, i) => {
+      const before = optionsBefore(parse, i);
+      return before ? [`${valueOr(args[i])} after ${before.flatMap(({ role }) => (role.role === 'option' && role.spec.selects ? [role.spec.selects] : [])).join(' ') || 'no mode'}`] : [];
+    });
+    return [...meaning(parse.roles, args.map(valueOr)), ...inOrder].join(', ');
   },
   // (Through its caller, the command slot of a shell's `-c` (src/semantics/env.ts, `slotEnvs`): the shell of the string
   // and whether it is started with `-r`.)

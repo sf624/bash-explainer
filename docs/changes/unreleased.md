@@ -1305,13 +1305,14 @@ The positional parameters are those the shell starts with: a `shift` or `set --`
 
 The Japanese notes of the dialect checks put a space between code and the words after it, as the other Japanese texts do: 「`local` は POSIX sh にない書き方です」, 「プロセス置換 `<(…)` / `>(…)` は…。代わりに一時ファイルや名前付きパイプを使う。」. Before, they read 「`local`は」 and 「代わりに 一時ファイル」. So do `IFS` in 「クォートしないと `IFS` …」 and perl's 「`$F[2] > 100` なら」.
 
-### `sed -n`, `git log --graph`, and a `case` being typed
+### `sed -n`, `sed -e` before `-E`, `git log --graph`, and a `case` being typed
 
 | Written | GNU sed, git, bash | Shown now | Shown before |
 | --- | --- | --- | --- |
 | `sed -n '1p;/x/q' f`, `sed --quiet '/x/q' f` | `q` prints nothing | `q`: "quit (with `-n`, the current line is not printed)" | "print the current line and quit" |
 | `sed -n 'n;p' f` | `n` does not print the line it leaves | `n`: "read the next line (with `-n`, the current one is not printed)" | "print the line and read the next one" |
 | a sed script whose first two characters are `#n` (`#n`, `#no…`; not `#N`) | runs as with `-n` (GNU sed 4.9) | as with `-n`, in the explanation and the example | as without `-n` |
+| `sed -e 's/a+/x/' -E f`, `sed --expression='s/a+/<&>/' --regexp-extended f` | the `-e` script is read when sed reads the option, before `-E`: `a+` is a basic regex, an `a` then a `+` (the script operand of `sed 's/a+/x/' -E f` is read after all the options: extended) | `+` is a literal `+`, in the explanation and the example; no example where the `-e` scripts are read in different flavours (`sed -e 's/a+/x/' -E -e 's/(b)/\1/'`) | `+`: "repeat `a` one or more times" |
 | `git log --oneline --graph --format='%h %s'` | `* 3f2a9c1 Fix login timeout` | the example's lines start with `* `; a commit's other lines with `\| ` (two spaces for the last), as git draws one line of history | `3f2a9c1 Fix login timeout` |
 | `case` (no word yet) | a syntax error | "case statement: match the value (not written yet) against each pattern…", with no empty part for the value | "match `` against each pattern…", and an empty "Value to match" |
 

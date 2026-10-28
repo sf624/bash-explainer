@@ -356,6 +356,11 @@ export interface ValueSpec {
   splice?: 'env';
   /** The value removes an environment variable from what the command a slot runs gets (`env -u NAME`). */
   unsetsEnv?: boolean;
+  /**
+   * The program reads the value as soon as it reads the option, with the options given so far: an option given after
+   * it does not apply to it (sed compiles each `-e` script at once, so `sed -e 's/a+/x/' -E` reads a BRE).
+   */
+  inOrder?: boolean;
 }
 
 /**
