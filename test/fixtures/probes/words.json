@@ -2639,5 +2639,87 @@
       ],
       "status": 0
     }
+  },
+  {
+    "id": "bracket-quoted-dash",
+    "manual": "3.5.8.1",
+    "snippet": "@PROBE:a@ [a\"-\"c]* [a'-'c]* [a\\-c]*; x=-; @PROBE:b@ [a\"$x\"c]*; x=a-c; @PROBE:c@ [\"$x\"]*; x=c; @PROBE:d@ [a-\"$x\"]* [a-c]*",
+    "note": "a quoted `-` in a bracket expression is the character, not a range (`[a\"-\"c]` is `a`, `-` or `c`); a quoted end of a range still ends it (`[a-\"$x\"]` with x=c is `[a-c]`)",
+    "facts": {
+      "a": [
+        [
+          "a.txt",
+          "c.log",
+          "a.txt",
+          "c.log",
+          "a.txt",
+          "c.log"
+        ]
+      ],
+      "b": [
+        [
+          "a.txt",
+          "c.log"
+        ]
+      ],
+      "c": [
+        [
+          "a.txt",
+          "c.log"
+        ]
+      ],
+      "d": [
+        [
+          "a.txt",
+          "b.txt",
+          "c.log",
+          "a.txt",
+          "b.txt",
+          "c.log"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "bracket-quoted-negation",
+    "manual": "3.5.8.1",
+    "snippet": "@PROBE:a@ ['^'a]* [\"!\"a]* [a!]* [!a]* [^a]*; x='^a'; @PROBE:b@ [\"$x\"]*; x='!a'; @PROBE:c@ [$x]* [\"$x\"]*",
+    "note": "a `!` or `^` first in a bracket expression negates it only unquoted: `['^'a]` is `^` or `a`; an unquoted expansion's `!` negates (`[$x]` with x='!a')",
+    "facts": {
+      "a": [
+        [
+          "a.txt",
+          "a.txt",
+          "a.txt",
+          "b.txt",
+          "c.log",
+          "empty",
+          "sub",
+          "x y.txt",
+          "b.txt",
+          "c.log",
+          "empty",
+          "sub",
+          "x y.txt"
+        ]
+      ],
+      "b": [
+        [
+          "a.txt"
+        ]
+      ],
+      "c": [
+        [
+          "b.txt",
+          "c.log",
+          "empty",
+          "sub",
+          "x y.txt",
+          "a.txt"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

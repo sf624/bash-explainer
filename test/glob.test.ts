@@ -116,6 +116,13 @@ describe('glob patterns in every context', () => {
     assert.match(pieces('ls [$x]', 'ja')[0][1] as string, /`\[` は `\[\$x\]` の `\[…\]` の始まり/);
     // (No pattern in an assignment, nor with `set -f`; no example of names, which depend on the value.)
     assert.deepStrictEqual([pieces('x=[$y]'), pieces('set -f; ls [$x]')], [[], []]);
+    // (`[!…]` and `[^…]` match any other character: with x=a, `[!$x]` matches `b`, not `a`; a quoted `!` or `^` is none.)
+    assert.strictEqual(bash('x=a; [[ b == [!$x] ]] && echo 1; [[ a == [^$x] ]] || echo 2; [[ a == ["^"$x] ]] && echo 3'), '1\n2\n3\n');
+    const except = (w: string, c: string) => `${globIntro('en', 'value')}. \`[${c}\` opens the \`[…]\` of \`${w}\`: it matches any one character except those between, the characters the expansions give included`;
+    assert.deepStrictEqual(pieces('[[ $1 == [!$x] ]]').map((x) => [x[0], x[1]]), [['[!', except('[!$x]', '!')], [']', closes('[!$x]', 'value')]]);
+    assert.deepStrictEqual(pieces('case $1 in [^$x]*) ;; esac').map((x) => x[1]), [except('[^$x]', '^'), closes('[^$x]', 'value')]);
+    assert.deepStrictEqual(pieces('[[ $1 == ["^"$x] ]]').map((x) => x[1]), [opens('["^"$x]', 'value'), closes('["^"$x]', 'value')]);
+    assert.match(pieces('ls [!$x]', 'ja')[0][1] as string, /`\[!` は `\[!\$x\]` の `\[…\]` の始まり: 間にある文字（展開した値の文字も含む）以外の1文字に一致する/);
     assert.ok(!explain('ls [$x].c').examples.some((e) => e.title.startsWith('Example (glob')));
     assert.ok(explain('ls [x].c').examples.some((e) => e.title.startsWith('Example (glob')));
   });

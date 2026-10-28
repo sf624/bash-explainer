@@ -158,6 +158,10 @@ describe('the status after a statement against bash (src/semantics/state.ts)', (
     ['p=b; [[ abc =~ $p ]]', true], ['p=b; [[ abc =~ "$p" ]]', true], ["p='^a'; [[ abc =~ $p ]]", true], ["p='^a'; [[ abc =~ \"$p\" ]]", true],
     ['[[ a.c =~ a\\.c ]]', true], ['[[ abc =~ a\\.c ]]', true], ["p='a.c'; [[ abc =~ $p ]]", false], ["p='\\w'; [[ a =~ $p ]]", false], ['[[ a =~ \\w ]]', true],
     ['[[ "a b" =~ "a "b$ ]]', true], ['p=b; [[ abc =~ ^a$p ]]', true], ['[[ abc =~ $nope ]]', false], ['x=c; [[ bc == b$x ]]', true],
+    // (A quoted `-` or `^` in a bracket expression is the character: no range, no negation; a quoted end of a range ends it.)
+    ['x=a; [[ $x == ["^"a] ]]', true], ["x=^; [[ $x == ['^'a] ]]", true], ['x=b; [[ $x == ["^"a] ]]', true], ['x=-; [[ $x == [a"-"c] ]]', true], ['x=b; [[ $x == [a"-"c] ]]', true],
+    ['x=-; case $x in [a"-"c]) false;; esac', true], ['x=b; case $x in [a"-"c]) false;; esac', true], ['x=-; case $x in [a\\-c]) false;; esac', true],
+    ['y=c; x=b; [[ $x == [a-"$y"] ]]', true], ['p=-; x=-; [[ $x == [a"$p"c] ]]', true], ['x=b; [[ $x == [!a] ]]', true], ['x=b; [[ $x == ["!"a] ]]', true],
     ['false; [[ $(( $? + 1 )) == 2 ]]', true], ['true; [ $(( $? * 2 )) -eq 0 ]', true], ['false; case $(( $? + 1 )) in 2) false;; esac', true],
     // (A name arithmetic reads is never trusted: src/semantics/trust.ts.)
     ['n=2; [[ $(( n + 1 )) == 3 ]]', false],

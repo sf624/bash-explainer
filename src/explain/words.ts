@@ -42,15 +42,28 @@ export function braceExpansion(n: SyntaxNode): string[] | undefined | null {
  * in `[[ ]]`).
  */
 export function bracketPart(n: SyntaxNode): { opens?: { text: string; at: number }; closes?: { text: string; at: number } } | undefined {
-  const p = n.parent;
-  const parts = p?.type === 'concatenation' ? p.namedChildren : p?.type === 'binary_expression' ? fields(p, 'right') : [];
-  const i = parts.indexOf(n);
-  if (i < 0) return undefined;
-  const spans = bracketSpans(parts);
-  const of = (b: BracketSpan | undefined, at: (b: BracketSpan) => number) => b && { text: p!.text.slice(b.start - p!.startIndex, b.end - p!.startIndex), at: at(b) - n.startIndex };
+  const found = bracketsOf(n);
+  if (!found) return undefined;
+  const { p, spans, i } = found;
+  const of = (b: BracketSpan | undefined, at: (b: BracketSpan) => number) => b && { text: p.text.slice(b.start - p.startIndex, b.end - p.startIndex), at: at(b) - n.startIndex };
   const opens = of(spans.find((b) => b.open === i), (b) => b.start);
   const closes = of(spans.find((b) => b.close === i), (b) => b.end - 1);
   return opens || closes ? { opens, closes } : undefined;
+}
+
+/** The parts of the word that `n` is a part of (as `bracketPart` takes them), their `[…]` across parts, and the index of `n`. */
+function bracketsOf(n: SyntaxNode): { p: SyntaxNode; spans: BracketSpan[]; i: number } | undefined {
+  const p = n.parent;
+  const parts = p?.type === 'concatenation' ? p.namedChildren : p?.type === 'binary_expression' ? fields(p, 'right') : [];
+  const i = parts.indexOf(n);
+  return i < 0 ? undefined : { p: p!, spans: bracketSpans(parts), i };
+}
+
+/** The text of the `[…]` across parts that the part `n` is inside of, between its `[` and `]` (the `$x` of `[$x]`). */
+function bracketAround(n: SyntaxNode): string | undefined {
+  const found = bracketsOf(n);
+  const b = found?.spans.find((s) => s.open < found.i && found.i < s.close);
+  return b && found!.p.text.slice(b.start - found!.p.startIndex, b.end - found!.p.startIndex);
 }
 
 /**
@@ -76,9 +89,13 @@ function bracketPiece(cx: Explainer, n: SyntaxNode): Token | undefined {
   const target: GlobTarget | undefined = CONTEXTS[w.context].match === 'pattern' ? 'value' : w.steps.find((s) => s.kind === 'glob')!.applies !== false ? 'file' : undefined;
   if (!target) return undefined;
   const { opens, closes } = part!;
+  // (`[!…]`, `[^…]`: an unquoted `!` or `^` first makes it match any other character.)
+  const negated = !!opens && /[!^]/.test(n.text[opens.at + 1] ?? '');
   const said = [
     closes && cx.s(`\`]\` は \`${closes.text}\` の \`[…]\` の終わり`, `\`]\` closes the \`[…]\` of \`${closes.text}\``),
-    opens && cx.s(`\`[\` は \`${opens.text}\` の \`[…]\` の始まり: 間にある文字（展開した値の文字も含む）のどれか1文字に一致する`, `\`[\` opens the \`[…]\` of \`${opens.text}\`: it matches one character of those between, the characters the expansions give included`),
+    opens && (negated
+      ? cx.s(`\`[${n.text[opens.at + 1]}\` は \`${opens.text}\` の \`[…]\` の始まり: 間にある文字（展開した値の文字も含む）以外の1文字に一致する`, `\`[${n.text[opens.at + 1]}\` opens the \`[…]\` of \`${opens.text}\`: it matches any one character except those between, the characters the expansions give included`)
+      : cx.s(`\`[\` は \`${opens.text}\` の \`[…]\` の始まり: 間にある文字（展開した値の文字も含む）のどれか1文字に一致する`, `\`[\` opens the \`[…]\` of \`${opens.text}\`: it matches one character of those between, the characters the expansions give included`)),
   ].filter(Boolean);
   const before = closes ? '' : n.text.slice(0, opens!.at);
   const after = opens ? '' : n.text.slice(closes!.at + 1);
@@ -631,6 +648,12 @@ function matchNote(cx: Explainer, n: SyntaxNode): string {
   const part = partMeaning(n, cx.state);
   const match = part && !part.quoted ? part.word.rule.match : undefined;
   if (!match) return '';
+  // (Inside a `[…]` across the parts, its characters are of the set: `x='*'; [[ $s == [$x] ]]` is true only for a `*`.)
+  const bracket = match === 'pattern' && bracketAround(n);
+  if (bracket) {
+    return cx.s(`。クォートしていないので、値はパターンとして読まれる。\`${bracket}\` の \`[…]\` の中なので、値の文字は集合の文字になる（\`*\` や \`?\` はその文字そのもの。\`a-c\` のような範囲は働く）`,
+      `. Unquoted here, its value is read as part of the pattern: inside the \`[…]\` of \`${bracket}\`, its characters join the set (a \`*\` or \`?\` in it is that character; a range such as \`a-c\` works)`);
+  }
   return match === 'pattern'
     ? cx.s('。クォートしていないので、値はパターンとして読まれる（値の中の `*`、`?`、`[…]` が働く。文字列として比べるなら `"$…"` とクォートする）',
       '. Unquoted here, its value is read as a pattern (`*`, `?` and `[…]` in it match; quote it to compare text)')

@@ -6097,7 +6097,7 @@
     "id": "time-alone",
     "manual": "3.2.3",
     "snippet": "time",
-    "note": "time with no pipeline prints zero times",
+    "note": "time with no pipeline still prints its report: the real, user and sys lines (their digits are written as zeros, since bash measures them)",
     "try": {
       "code": "bash -c 'time'",
       "output": "\nreal\t0m0.000s\nuser\t0m0.000s\nsys\t0m0.000s",
