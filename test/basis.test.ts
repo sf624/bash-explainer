@@ -448,6 +448,15 @@ describe('basis: what an explanation rests on', () => {
     assert.strictEqual(said(hashedSrc, 'ja'), 'このスクリプトの行 2 で定義したエイリアス `g`: `grep` に置き換わる（行 3 の `hash -p` で `grep` は `/opt/frob` を指す）');
     assert.strictEqual(said(offSrc, 'en'), 'The alias `e` defined on line 3: replaced by `echo` (`enable -n` on line 2 turned the builtin `echo` off)');
     assert.strictEqual(said(offSrc, 'ja'), 'このスクリプトの行 3 で定義したエイリアス `e`: `echo` に置き換わる（行 2 の `enable -n` で組み込みの `echo` は無効になっている）');
+    // One bracket, not two, when the alias is for an alias and the name was hashed: "(`b` is an alias too, …; `hash -p` …)".
+    const chainSrc = `${on}alias a=b b=grep\nhash -p /opt/frob grep\na -n x f`;
+    assert.strictEqual(said(chainSrc, 'en'), 'The alias `a` defined on line 2: replaced by `b` (`b` is an alias too, for `grep`; `hash -p` on line 3 gave `grep` the path `/opt/frob`)');
+    assert.strictEqual(said(chainSrc, 'ja'), 'このスクリプトの行 2 で定義したエイリアス `a`: `b` に置き換わる（`b` もエイリアスで、`grep` に置き換わる。行 3 の `hash -p` で `grep` は `/opt/frob` を指す）');
+    // A word the dictionary lacks, after `hash -p` to a file it does not know, points to the manual of that file, as the path written out does.
+    const lacks = (src: string): string => allTokens(explain(src, src.split('\n').length - 1, 'en').items).find((t) => t.label === '-n')!.explanation;
+    assert.strictEqual(lacks('hash -p /opt/frob grep\ngrep -n x f'), 'Option (not in the dictionary; see `man /opt/frob`)');
+    assert.strictEqual(lacks('/opt/frob -n x f'), 'Option (not in the dictionary; see `man /opt/frob`)');
+    assert.strictEqual(lacks('hash -p /bin/ls grep\ngrep -n x f'), lacks('/bin/ls -n x f'));
     // (The same words as the name run directly.)
     const direct = explain(`enable -n echo\necho -n hi`, 1, 'en').items[0].explanation;
     assert.match(direct, /\(`enable -n` on line 1 turned the builtin `echo` off\)/);

@@ -1454,3 +1454,15 @@ For a script run by sh or dash, the fix of a `[[ ]]` writes `[ ]`. It now leaves
 | `[[ -t $fd ]]` | False in bash 5.2 when `$fd` is not a number (an error in bash 5.3); an error in dash | No fix (`[[ -t 1 ]]` → `[ -t 1 ]`) |
 | `[[ ! ! $x ]]` | dash reads `[ ! ! -n "" ]` as true | No fix |
 | `[[ -n $@ ]]`, `[[ "${a[@]}" == x ]]` | `[[ ]]` joins the words into one; `[ ]` gets them apart (`[: a: unexpected operator`) | No fix |
+
+### What `hash -p` and `enable -n` make a name run: the program's own words
+
+Checked in bash 5.2 (coreutils 9.4): after `enable -n echo`, `echo --version` prints `echo (GNU coreutils) 9.4` and `echo --help` prints the usage, but only when that word is the one argument (`echo --version x` prints `--version x`, `echo -- --version` prints `-- --version`).
+
+| Script | Before | Now |
+| --- | --- | --- |
+| `enable -n echo`, `echo --version` (also `/bin/echo --version`, `env echo --version`, and `e --version` with `alias e=echo`) | `--version`: "text to print" | `--version`: option, "print the version" (`--help`: "show help") |
+| `enable -n echo`, `echo --version x`, `echo -- --version`, `echo --version "$@"` | text | text (not the one argument) |
+| `echo --version`, with the builtin | text | text (the builtin prints it) |
+| `hash -p /opt/frob grep`, `grep -n x f` | `-n`: "… see `man grep`" | `-n`: "… see `man /opt/frob`", as for `/opt/frob -n x f` |
+| `alias a=b b=grep`, `hash -p /opt/frob grep`, `a -n x f` | two brackets: "(`b` is an alias too, for `grep`) (`hash -p` on line 3 …)" | one: "(`b` is an alias too, for `grep`; `hash -p` on line 3 …)" |
