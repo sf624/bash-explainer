@@ -51,8 +51,9 @@ const jobs = at > 0 ? Number(process.argv[at + 1]) : 4;
   const gone = [
     ...known.known.filter((e) => !names.has(e.input)).map((e) => `${JSON.stringify(e.input)}: ${e.command}`),
     ...renderKnown.known.filter((e) => e.input !== undefined && !names.has(e.input)).map((e) => `${JSON.stringify(e.input)}: ${e.command} [${e.word}, ${e.check}]`),
-    ...staleClasses(renderKnown.known, classes),
   ];
+  const unused = staleClasses(renderKnown.known, classes);
   for (const e of gone) console.log(`STALE (no such input) ${e}`);
-  process.exitCode = failed || gone.length ? 1 : 0;
+  for (const e of unused) console.log(`STALE (a class no input has) ${e}`);
+  process.exitCode = failed || gone.length || unused.length ? 1 : 0;
 })();

@@ -13,7 +13,8 @@
     {
       "check": "count",
       "source": "concatenation",
-      "reason": "Bug, to fix: the token of a concatenation says \"the parts below are joined into one word\" where word splitting, globbing or a brace expansion then make other than one word of it (`$DIR/*`, `\"$DIR\"/*`, `$x/a` with a space in `x`, `{a,b}\"x\"`). One cause for every such word, so one entry (no input)."
+      "when": "fields-step",
+      "reason": "Bug, to fix: the token of a concatenation says \"the parts below are joined into one word\" where word splitting, globbing or a brace expansion then make other than one word of it (`$DIR/*`, `\"$DIR\"/*`, `$x/a` with a space in `x`, `{a,b}\"x\"`). One cause for every such word, so one entry (no input), for the words on which one of those steps applies or may and with no `\"$@\"`-like part (`fields-step`)."
     },
     {
       "input": "sample.sh",
@@ -148,12 +149,20 @@
       "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
     },
     {
+      "input": "cp $a $a/x",
+      "command": "cp $a $a/x",
+      "word": "$a/x",
+      "check": "role",
+      "env": "probe",
+      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with `$a` empty (the probe environment), bash runs `cp /x`, where `/x` is the only operand, a source, while the hedge on `$a/x` says the destination when it gives one word."
+    },
+    {
       "input": "grep -c ${x} f",
       "command": "grep -c ${x} f",
       "word": "f",
       "check": "role",
       "env": "probe",
-      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`cp b`: one operand, a source)."
+      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`grep -c f`: `f` is the pattern, not a file to search)."
     },
     {
       "input": "printf '%s,'{a..c}",

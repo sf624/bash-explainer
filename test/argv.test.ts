@@ -22,7 +22,7 @@ import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { ARGV_KNOWN, type ArgvInput, type ArgvKnownFile, type ArgvPlanRun, checkArgv, fixtureInputs, instrumentArgv, matchKnown, runArgv, runArgvBatch, SNIPPET_SAMPLE, snippetInputs, toNull } from './support/argv';
 import { probeSkipReason } from './support/probe';
-import { checkRenderings, claimsOf, explainInput, globExampleOn, matchRenderKnown, RENDER_KNOWN, type RenderKnownFile, staleClasses, wordCounts } from './support/renderings';
+import { checkRenderings, claimsOf, explainInput, globExampleOn, matchRenderKnown, RENDER_KNOWN, type RenderFinding, type RenderKnownFile, staleClasses, wordCauses, wordCounts } from './support/renderings';
 
 describe('argv capture: the word model and the explanation against bash (oracles.md, steps 2, 3 and 9)', function () {
   this.timeout(120000);
@@ -59,7 +59,7 @@ describe('argv capture: the word model and the explanation against bash (oracles
   });
 
   it('reads the counts of words the explanation says, from the facts its tokens and examples carry', () => {
-    const tree = createUnbashParser().parse('x="a b"; cp $x d; echo {a,b} "a b" "$@" $x/c; ls *.txt; set -f; ls *.txt');
+    const tree = createUnbashParser().parse('x="a b"; cp $x d; echo {a,b} "a b" "$@" $x/c "$@"/c; ls *.txt; set -f; ls *.txt');
     const input: ArgvInput = { name: 'claims', tree, model: shellState(tree, 'bash'), provided: [] };
     const shown = explainInput(input);
     const words = instrumentArgv(tree, input.model).markers.flatMap((m) => m.words.slice(1));
@@ -69,6 +69,8 @@ describe('argv capture: the word model and the explanation against bash (oracles
       ['{a,b}', 'brace 2, brace-example 2', false], ['"a b"', 'argument 1, string 1', false],
       // (`"$@"`: the argument is not marked, a known bug; its string says one word per element.)
       ['"$@"', 'argument 1', false], ['$x/c', 'concatenation 1', false],
+      // (A concatenation with `"$@"` says it is not one word: no count, but the argument's, as for `"$@"`.)
+      ['"$@"/c', 'argument 1', false],
       // (A glob: an example of the files it matches, and no count; after `set -f`, one argument and no example.)
       ['*.txt', '', true], ['*.txt', 'argument 1', false],
     ]);
@@ -76,6 +78,22 @@ describe('argv capture: the word model and the explanation against bash (oracles
     // one it does not know.
     assert.deepStrictEqual(wordCounts([{ fields: ['cp'] }, {}, { fields: ['d'] }], ['cp', 'a', 'b', 'd']), [1, 2, 1]);
     assert.deepStrictEqual(wordCounts([{ fields: ['cp'] }, {}, {}], ['cp', 'a', 'b']), [1, undefined, undefined]);
+  });
+
+  it('accepts a class of differences only under its condition, and refuses a class with none', () => {
+    const tree = createUnbashParser().parse('x="a b"; echo $x/a "$@"/a "$@"/* "${a[@]}"x {a,b}"x" a"b"');
+    const input: ArgvInput = { name: 'classes', tree, model: shellState(tree, 'bash'), provided: [] };
+    const words = instrumentArgv(tree, input.model).markers.flatMap((m) => m.words.slice(1));
+    // (A concatenation that said "joined into one word" of each word, as the `"$@"` branch of `concatenationNote` would
+    // if it broke: the class takes only those that a step may make other than one word, with no `"$@"`-like part.)
+    const found: RenderFinding[] = words.map((w) => ({
+      input: input.name, env: 'probe', command: 'echo', word: w.text, check: 'count', source: 'concatenation', causes: wordCauses(w, input.model), what: '',
+    }));
+    const known = (JSON.parse(fs.readFileSync(RENDER_KNOWN, 'utf8')) as RenderKnownFile).known;
+    const { unexplained } = matchRenderKnown(found, known, []);
+    assert.deepStrictEqual(unexplained.map((u) => u.replace(/^[^[]*\[(.*), count\][^]*$/, '$1')), ['"$@"/a', '"$@"/*', '"${a[@]}"x', 'a"b"']);
+    assert.throws(() => matchRenderKnown(found, [{ check: 'count', source: 'concatenation', reason: 'every one' }], []), /needs a source and a condition/);
+    assert.throws(() => matchRenderKnown(found, [{ check: 'count', when: 'fields-step', reason: 'every source' }], []), /needs a source and a condition/);
   });
 
   if (probeSkipReason) {
@@ -146,9 +164,9 @@ describe('argv capture: the word model and the explanation against bash (oracles
 
   it('gives every command of a sample of the snippets the fields bash gives it', () => check('snippets'));
 
-  it('shows the words of the fixtures as bash expands them: the counts, the glob examples, the roles (step 9)', () => renderings('fixtures'));
+  it('says the counts and the roles bash gives the words of the fixtures, and a glob example only where the model glob step may apply (step 9)', () => renderings('fixtures'));
 
-  it('shows the words of a sample of the snippets as bash expands them (step 9)', () => renderings('snippets'));
+  it('says the counts and the roles bash gives the words of a sample of the snippets, and the glob examples the model glob step allows (step 9)', () => renderings('snippets'));
 
   it('uses every entry of renderings-known.json that accepts a class of differences', async () => {
     const known = renderKnown();
