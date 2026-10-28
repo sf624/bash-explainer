@@ -374,19 +374,24 @@ const TEST_SUMMARY = ['条件式を評価し、真なら 0、偽なら 1 を返�
 const BRACKET_SUMMARY = ['条件式を評価し、真なら 0、偽なら 1 を返す（`test` と同じで、最後の引数は `]`）', 'Evaluate a conditional expression; exit 0 if true (same as `test`, with a last argument `]`)'] as const;
 const BRACKET_READING: Rest = { parser: 'single-dash', operandParser: 'test-expression', closingOperand: ']' };
 
+/** `--help` and `--version` of coreutils programs that read them only as their one argument (`CommandSpec.soleOptions`). */
+const SOLE_OPTIONS: OptionSpec[] = [
+  { names: ['--help'], text: tx('使い方を表示する', 'show the usage') },
+  { names: ['--version'], text: tx('バージョンを表示する', 'print the version') },
+];
+
 /**
  * The programs named like builtins (coreutils, procps), which a path (`/bin/kill`) or a wrapper that starts a
  * program (`env echo`, `sudo kill`) runs instead of the builtin. Their options may differ: procps kill has no
  * `-n` and no job specs, printf has no `-v`, and pwd reads `-P` by default.
  */
 const PROGRAMS: Record<string, CommandSpec> = {
-  // (coreutils echo reads `--help` and `--version` only when it is the one argument: bash's builtin prints them.)
-  echo: cmd('引数を空白区切りで標準出力に表示する（coreutils 版）', 'Print arguments to stdout, separated by spaces (from coreutils)', ECHO_OPTIONS, { ...ECHO_READING, soleUnlessEnv: 'POSIXLY_CORRECT', soleOptions: [
-    { names: ['--help'], text: tx('使い方を表示する（環境に `POSIXLY_CORRECT` があると、ただの文字列）', 'show the usage (plain text if `POSIXLY_CORRECT` is in the environment)') },
-    { names: ['--version'], text: tx('バージョンを表示する（環境に `POSIXLY_CORRECT` があると、ただの文字列）', 'print the version (plain text if `POSIXLY_CORRECT` is in the environment)') },
-  ] }),
+  // (coreutils echo reads `--help` and `--version` only when it is the one argument, and not with `POSIXLY_CORRECT`
+  // in its environment: bash's builtin prints them.)
+  echo: cmd('引数を空白区切りで標準出力に表示する（coreutils 版）', 'Print arguments to stdout, separated by spaces (from coreutils)', ECHO_OPTIONS, { ...ECHO_READING, soleUnlessEnv: 'POSIXLY_CORRECT', soleOptions: SOLE_OPTIONS }),
+  // (coreutils printf, true and false read them only when it is the one argument, whatever the environment.)
   printf: cmd('書式を指定して文字列を出力する（coreutils 版。`-v` はない）', 'Print formatted output (from coreutils, with no `-v`)', [], {
-    parser: 'letters', example: 'printf', prints: 'format', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')),
+    parser: 'letters', example: 'printf', prints: 'format', soleOptions: SOLE_OPTIONS, ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')),
   }),
   pwd: cmd('カレントディレクトリのパスを表示する（coreutils 版。既定は `-P`）', 'Print the current directory (from coreutils; `-P` is the default)', [
     ['-P|--physical', 'シンボリックリンクを解決した物理パスを表示（既定）', 'print the physical path (default)'],
@@ -408,8 +413,8 @@ const PROGRAMS: Record<string, CommandSpec> = {
   }),
   '[': cmd(`${BRACKET_SUMMARY[0]}（coreutils 版）`, `${BRACKET_SUMMARY[1]} (from coreutils)`, TEST_OPTIONS, BRACKET_READING),
   test: cmd(`${TEST_SUMMARY[0]}（coreutils 版）`, `${TEST_SUMMARY[1]} (from coreutils)`, TEST_OPTIONS, { parser: 'single-dash', operandParser: 'test-expression' }),
-  true: cmd('何もせず成功（終了ステータス 0）を返す（coreutils 版）', 'Do nothing and succeed (exit 0; from coreutils)', [], { parser: 'letters' }),
-  false: cmd('何もせず失敗（終了ステータス 1）を返す（coreutils 版）', 'Do nothing and fail (exit 1; from coreutils)', [], { parser: 'letters' }),
+  true: cmd('何もせず成功（終了ステータス 0）を返す（coreutils 版）', 'Do nothing and succeed (exit 0; from coreutils)', [], { parser: 'letters', soleOptions: SOLE_OPTIONS }),
+  false: cmd('何もせず失敗（終了ステータス 1）を返す（coreutils 版）', 'Do nothing and fail (exit 1; from coreutils)', [], { parser: 'letters', soleOptions: SOLE_OPTIONS }),
 };
 // (All of them are in /usr/bin: coreutils, and procps for kill.)
 for (const [name, spec] of Object.entries(PROGRAMS)) spec.path = `/usr/bin/${name}`;

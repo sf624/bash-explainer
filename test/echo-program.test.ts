@@ -14,8 +14,22 @@ const out = (script: string): string => runBash(script).stdout;
 const VERSION = 'print the version (plain text if `POSIXLY_CORRECT` is in the environment)';
 const HELP = 'show the usage (plain text if `POSIXLY_CORRECT` is in the environment)';
 const TEXT: [string, string] = ['argument', 'text to print'];
-const isVersion = (src: string): boolean => wordToken(src, '--version')[0] === 'option';
-const isVersionBash = (script: string): boolean => /^echo \(GNU coreutils\)/.test(out(script));
+/** Where the model knows `POSIXLY_CORRECT` is in the program's environment, and where it knows it is not. */
+const BY_ENV: [string, string] = ['argument', 'text to print (`POSIXLY_CORRECT` is in its environment, so `--version` is no option)'];
+const PLAIN: [string, string] = ['option', 'print the version'];
+/** Whether `--version` is read as the option on the last line of `src`: its token, or its word in an `env -S` string. */
+const isVersion = (src: string): boolean => {
+  const tokens = allTokens(explain(src, src.split('\n').length - 1, 'en').items);
+  const word = tokens.filter((x) => x.label === '--version').pop();
+  if (word) return word.kind === 'option';
+  const split = tokens.find((x) => /reads them here as its own arguments/.test(x.explanation));
+  assert.ok(split, `--version in ${src}`);
+  return /`--version` \(print the version/.test(split.explanation);
+};
+/** Whether bash's run prints the version of a coreutils program. */
+const isVersionBash = (script: string): boolean => /^\S+ \(GNU coreutils\)/.test(out(script));
+/** The script as lines for the explainer: `a; b` is two lines, and `bash --posix -c "x"` is `x`. */
+const lines = (script: string): string => script.split('; ').slice(0, -1).concat(script.split('; ').pop()!.replace(/^bash --posix -c "(.*)"$/, '$1')).join('\n');
 const OFF = 'enable -n echo\n';
 
 describe('the program echo: --help and --version as its one argument', () => {
@@ -84,8 +98,7 @@ describe('the program echo: --help and --version as its one argument', () => {
       ['bash --posix -c "/bin/echo --version"', true],
     ] as const) {
       assert.strictEqual(isVersionBash(script), version, script);
-      const last = script.split('; ').slice(0, -1).concat(script.split('; ').pop()!.replace(/^bash --posix -c "(.*)"$/, '$1')).join('\n');
-      assert.strictEqual(isVersion(last), version, `explainer: ${script}`);
+      assert.strictEqual(isVersion(lines(script)), version, `explainer: ${script}`);
     }
     // (A subshell or a function the command runs in passes the exported variable on.)
     assert.ok(!isVersion('export POSIXLY_CORRECT=y\n( /bin/echo --version )'));
@@ -105,5 +118,100 @@ describe('the program echo: --help and --version as its one argument', () => {
     // (Without it, the builtin: text.)
     assert.deepStrictEqual(wordToken('command echo --version', '--version'), TEXT);
     assert.deepStrictEqual(wordToken(`${OFF}command echo -n hi`, '-n'), ['option', 'do not print the trailing newline']);
+    assert.deepStrictEqual(wordToken(`${OFF}POSIXLY_CORRECT=1 command echo --version`, '--version'), BY_ENV);
+  });
+
+  it('follows a command named in an `env -S` string, and find\'s actions, as bash runs them', () => {
+    for (const [script, version] of [
+      ['env -S env /bin/echo --version', true],
+      ["env -S 'nice' /bin/echo --version", true],
+      ['env -S nohup /bin/echo --version', true],
+      ['env -S "env -i" /bin/echo --version', true],
+      ['env -S "nice -n 1" /bin/echo --version', true],
+      ['env -S "/bin/echo --version"', true],
+      ['env -S "/bin/echo" --version', true],
+      ['POSIXLY_CORRECT=1 env -S "/bin/echo --version"', false],
+      ['POSIXLY_CORRECT=1 env -S "/bin/echo" --version', false],
+      ["POSIXLY_CORRECT=1 env -S'/bin/echo --version'", false],
+      ["POSIXLY_CORRECT=1 env -iS'/bin/echo --version'", true],
+      ['POSIXLY_CORRECT=1 env -S "env -i /bin/echo" --version', true],
+      ['POSIXLY_CORRECT=1 env -S "env -u POSIXLY_CORRECT POSIXLY_CORRECT=1 /bin/echo" --version', false],
+      ['POSIXLY_CORRECT=1 find . -maxdepth 0 -exec /bin/echo --version \\;', false],
+      ['POSIXLY_CORRECT=1 find . -maxdepth 0 -execdir /bin/echo --version \\;', false],
+      ['POSIXLY_CORRECT=1 find . -maxdepth 0 -exec env -i /bin/echo --version \\;', true],
+      ['export POSIXLY_CORRECT=1; find . -maxdepth 0 -exec /bin/echo --version \\;', false],
+      ['find . -maxdepth 0 -exec /bin/echo --version \\;', true],
+    ] as const) {
+      assert.strictEqual(isVersionBash(script), version, script);
+      assert.strictEqual(isVersion(lines(script)), version, `explainer: ${script}`);
+    }
+    // (sudo and doas need a password to run in bash; sudo starts the command in a new environment.)
+    assert.ok(isVersion('env -S sudo /bin/echo --version'));
+    assert.ok(isVersion('env -S doas /bin/echo --version'));
+    assert.deepStrictEqual(wordToken('POSIXLY_CORRECT=1 sudo /bin/echo --version', '--version'), PLAIN);
+  });
+
+  it('says what the model knows of POSIXLY_CORRECT where the program runs', () => {
+    // Not known (it may be in the script's environment): the option, with the words that say what the variable does.
+    for (const src of ['/bin/echo --version', 'POSIXLY_CORRECT=y\n/bin/echo --version', '( /bin/echo --version )', 'docker run --env-file f img /bin/echo --version',
+      'env -u FOO /bin/echo --version', 'env --unset=FOO /bin/echo --version', 'timeout -vk 1 5 /bin/echo --version', 'timeout --foreground 5 /bin/echo --version']) {
+      assert.deepStrictEqual(wordToken(src, '--version'), ['option', VERSION], src);
+      if (!src.startsWith('docker') && !src.startsWith('POSIX')) assert.ok(isVersionBash(src), src);
+    }
+    // (Another option alone is the option it is.)
+    assert.deepStrictEqual(wordToken('/bin/echo -n', '-n'), ['option', 'do not print the trailing newline']);
+    // Surely not there: the option, and nothing more.
+    for (const src of ['env -i /bin/echo --version', 'env -u POSIXLY_CORRECT /bin/echo --version', 'unset POSIXLY_CORRECT\n/bin/echo --version',
+      'export POSIXLY_CORRECT=1\nexport -n POSIXLY_CORRECT\n/bin/echo --version', 'env -i env -i /bin/echo --version', 'docker run img /bin/echo --version']) {
+      assert.deepStrictEqual(wordToken(src, '--version'), PLAIN, src);
+    }
+    // Surely there: text, and why.
+    for (const src of ['POSIXLY_CORRECT=1 /bin/echo --version', 'export POSIXLY_CORRECT=1\n/bin/echo --version', 'docker run -e POSIXLY_CORRECT=1 img /bin/echo --version']) {
+      assert.deepStrictEqual(wordToken(src, '--version'), BY_ENV, src);
+    }
+    assert.ok(isVersionBash('unset POSIXLY_CORRECT; /bin/echo --version'));
+    assert.ok(isVersionBash('export POSIXLY_CORRECT=1; export -n POSIXLY_CORRECT; /bin/echo --version'));
+    assert.ok(isVersionBash('env -i env -i /bin/echo --version'));
+    // (ja)
+    const ja = (src: string): string => allTokens(explain(src, 0, 'ja').items).filter((x) => x.label === '--version').pop()!.explanation;
+    assert.strictEqual(ja('/bin/echo --version'), 'バージョンを表示する（環境に `POSIXLY_CORRECT` があると、ただの文字列）');
+    assert.strictEqual(ja('POSIXLY_CORRECT=1 /bin/echo --version'), '表示する文字列（環境に `POSIXLY_CORRECT` があるので、`--version` はオプションではない）');
+    assert.strictEqual(ja('env -i /bin/echo --version'), 'バージョンを表示する');
+  });
+
+  it('follows xargs: a later `-L` or `-l` turns a replace string off, a later `-I` or `-i` turns them off', () => {
+    for (const [script, version] of [
+      ['echo a | xargs -I{} -L1 /bin/echo --version', false],
+      ['echo a | xargs -i -l /bin/echo --version', false],
+      ['echo a | xargs -L1 -I{} /bin/echo --version', true],
+      ['echo a | xargs -I{} -n1 /bin/echo --version', true],
+      // (xargs runs the program, not the builtin.)
+      ['echo a | xargs -I{} echo --version', true],
+    ] as const) {
+      assert.strictEqual(isVersionBash(script), version, script);
+      assert.strictEqual(isVersion(script), version, `explainer: ${script}`);
+    }
+    // (The words xargs adds come after the whole line, so not into find's `-exec … \;`: find refuses them.)
+    assert.match(runBash('echo a | xargs find . -maxdepth 0 -exec /bin/echo --version \\;').stderr, /paths must precede expression/);
+    assert.ok(isVersion('echo a | xargs find . -exec /bin/echo --version \\;'));
+  });
+
+  it('reads `--help` and `--version` of coreutils printf, true and false only as their one argument, whatever the environment', () => {
+    for (const [script, word, option] of [
+      ['/usr/bin/printf --version', '--version', true],
+      ['POSIXLY_CORRECT=1 /usr/bin/printf --version', '--version', true],
+      ['env printf --help', '--help', true],
+      ['/usr/bin/printf --version x', '--version', false],
+      ['/usr/bin/printf -- --version', '--version', false],
+      ['/bin/true --version', '--version', true],
+      ['env false --help', '--help', true],
+      ['env true --version x', '--version', false],
+    ] as const) {
+      const printed = out(script);
+      assert.strictEqual(/^\S+ \(GNU coreutils\)|^Usage: /.test(printed), option, `${script}: ${printed}`);
+      const [kind, text] = wordToken(script, word);
+      assert.strictEqual(kind === 'option', option, `explainer: ${script}`);
+      if (option) assert.strictEqual(text, word === '--help' ? 'show the usage' : 'print the version');
+    }
   });
 });

@@ -32,14 +32,15 @@ export interface CommandSpec {
   plusOptions?: boolean;
   options?: OptionSpec[];
   /**
-   * Options the program reads only when the word is its one and only argument (coreutils `echo --help` and
-   * `echo --version`; with any other word given, they are text). The word must be known and the only one.
+   * Options the program reads only when the word is its one and only argument (coreutils `echo --help`, `printf
+   * --version`; with any other word given, they are text). The word must be known and the only one.
    */
   soleOptions?: OptionSpec[];
   /**
    * With `soleOptions`: an environment variable that, once it is set, makes them text (coreutils echo:
-   * `POSIXLY_CORRECT`). Where the line sets it for the command (a prefix assignment, `env`, an export), the explainer
-   * reads the words without `soleOptions` (`InterpretContext.noSole`); where it cannot tell, the options' texts say so.
+   * `POSIXLY_CORRECT`). The parse keeps the word's role as text too (`ArgvParse.sole`), and the explainer reads it as
+   * the environment where the program runs makes it (src/semantics/env.ts, `variableIn`): text where the variable is
+   * surely there, the option with a caveat where it may be.
    */
   soleUnlessEnv?: string;
   /** Options recognized by their form (`kill -TERM`, `-15`; `head -5`; `nice -10`), tried when no option has the word as its name. */
@@ -48,7 +49,8 @@ export interface CommandSpec {
   modes?: ModeSpec[];
   /**
    * The mode is that of the last option given that selects one (`echo -e -E` reads no escapes), not the first of `modes`.
-   * (echo only: it turns escapes on and off as it reads each letter; rpm's and kill's modes are chosen by the option, wherever.)
+   * (echo: it turns escapes on and off as it reads each letter; xargs: `-I` and `-L` turn each other off. rpm's and
+   * kill's modes are chosen by the option, wherever.)
    */
   lastModeWins?: boolean;
   /**
@@ -543,7 +545,8 @@ export interface CommandSlot {
   /**
    * The program adds words of its own after the command's arguments when it runs it (`xargs cmd`: the words it reads),
    * so no word of the command is its one argument (`xargs echo --version` prints `--version` and the input). Not so
-   * with a replace string (`xargs -I{}`), which says where the input goes.
+   * with a replace string (`xargs -I{}`), which says where the input goes, unless a later `-L` or `-l` turns it off
+   * (GNU xargs: "ignoring previous --replace value"; a later `-I` turns those off: xargs's modes, `lastModeWins`).
    */
   appends?: boolean;
   /** `exec cmd`: nothing after it runs. */

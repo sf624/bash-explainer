@@ -373,6 +373,39 @@ export function droppedBy(env: ExecEnv, name: string): SlotLink | undefined {
     && (l.slot.where === 'remote' || l.slot.where === 'container' || ((l.env === 'reset' || l.env === 'none') && !kept(l))));
 }
 
+/** Whether a variable is in the environment of a program (`variableIn`), and what on the way decides it. */
+export interface VariableIn {
+  readonly state: Tri;
+  /** The first link that passes no variables (`droppedBy`), even when a later one sets it again. */
+  readonly dropped?: SlotLink;
+  /** A link removes it (`env -u NAME`). */
+  readonly unset: boolean;
+}
+
+/**
+ * Whether the variable `name` is in the environment of the code in `env`: first in the shell that starts it, whose
+ * state is `st` (set and exported, or set by the command's own prefix assignment, `prefix`; one the script did not
+ * set may come from the script's own environment), then through each slot link on the way: one that passes no
+ * variables (`droppedBy`) or removes it (`env -u NAME`), then one that sets it (`env NAME=1`, `docker run -e NAME`;
+ * `*`, a file of them, may). (env applies `-i` and `-u` before its assignments.)
+ */
+export function variableIn(st: ShellState, name: string, env: ExecEnv, prefix = false): VariableIn {
+  const v = st.variables.get(name);
+  const exported = v?.attrs.x?.state ?? 'off';
+  let state: Tri = prefix || (v?.set === 'on' && exported === 'on') ? 'on' : !v ? 'unknown' : v.set === 'off' || exported === 'off' ? 'off' : 'unknown';
+  let dropped: SlotLink | undefined;
+  let unset = false;
+  for (const l of env.links) {
+    if (l.kind !== 'slot') continue;
+    if (droppedBy({ links: [l] }, name)) { state = 'off'; dropped ??= l; }
+    if (l.unsets?.includes(name)) { state = 'off'; unset = true; }
+    // (A file of them, `docker run --env-file`, may set it, in a container, which passes nothing else.)
+    if (l.assigns.includes(name)) state = 'on';
+    else if (l.assigns.includes('*')) state = 'unknown';
+  }
+  return { state, ...(dropped ? { dropped } : {}), unset };
+}
+
 /**
  * How a shell reads a file of code (`StateModel.read`): `script`, run by a shell that is not interactive (it has a
  * shebang, or a host hands it to a shell: a CI step, a Dockerfile `RUN`, a recipe, an npm script, a bats file), which
@@ -496,11 +529,13 @@ export function runsString(slot: CommandSlot): boolean {
  * command a slot runs, for find's expression. `strings` gets the words of each string a slot runs as a script
  * (`runsString`): one word, or the words it joins (`eval a b`, `ssh host ls -l`), by the first. A command named in an
  * `env -S` value has no word of its own, so it is not a key, but what it runs is (`env -S'-i bash -c' 'f'`: the
- * string, under bash under env).
+ * string, under bash under env). `parses` gets where the words of each parse run, by the parse: `parse`'s in `env`,
+ * a subcommand's in its parent's, a command's where it runs, also one named in an `env -S` value.
  */
-export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, nodes: readonly SyntaxNode[], shell: Shell | undefined, lookup?: (name: string) => CommandSpec | undefined, strings?: Map<SyntaxNode, SyntaxNode[]>): Map<SyntaxNode, ExecEnv> {
+export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, nodes: readonly SyntaxNode[], shell: Shell | undefined, lookup?: (name: string) => CommandSpec | undefined, strings?: Map<SyntaxNode, SyntaxNode[]>, parses?: Map<ArgvParse, ExecEnv>): Map<SyntaxNode, ExecEnv> {
   const out = new Map<SyntaxNode, ExecEnv>();
   const visit = (outer: ExecEnv, p: ArgvParse, s: CommandSpec, all: readonly Item[]): void => {
+    parses?.set(p, outer);
     // A command named in an `env -S` value reads the rest of the line: the roles after it are its own.
     const k = all.findIndex((i) => i.split && i.role.role === 'command');
     const list = k < 0 ? all : all.slice(0, k + 1);

@@ -111,10 +111,11 @@ export interface ArgvParse {
   /** The matcher stopped at its work cap: `unmatched` says it could not tell, not that nothing fits. */
   gaveUp?: boolean;
   /**
-   * Set when the words were read with the options of `soleOptions` (the one argument): the index of the word before
-   * them (`-1`: the command's own words), which `InterpretContext.noSole` names to read them as text.
+   * The one word was read as one of `CommandSpec.soleOptions` that the variable `env` makes text (`soleUnlessEnv`:
+   * coreutils `echo --version`): `option` is its role, and `text`, the role it has then, which the explainer puts in
+   * its place (`swapRoles`). The roles are found by identity, also after an `env -S` string was spliced in.
    */
-  soleAt?: number;
+  sole?: { option: Extract<ArgRole, { role: 'option' }>; text: ArgRole; env: string };
   /** Where an expression read by `operandParser` starts (`find . -name x`: the index of `-name`). */
   expression?: number;
   /** The tool refuses the line: options that select different modes (`grep -E -F`, see `conflictingModes`). */
@@ -130,9 +131,7 @@ export interface InterpretContext {
   /** The command's name, for `ArgvParse.command`. */
   name?: string;
   /** The spec of a command named in a command slot. */
-  lookup?: (name: string, at?: number, slot?: CommandSlot) => CommandSpec | undefined;
-  /** The commands whose `soleOptions` do not apply: the index of the word before their words (`-1`: the command's own). */
-  noSole?: ReadonlySet<number>;
+  lookup?: (name: string) => CommandSpec | undefined;
   /** A guard on the work of the operand matcher for one pattern (default 100000 steps). */
   maxSteps?: number;
 }
@@ -176,7 +175,7 @@ class Reader {
     const rules = rulesOf(spec, cobra);
     const isCobra = cobra || rules.cobra;
     // (`echo --version` alone: coreutils reads it as an option only when it is the one argument.)
-    const sole = !appended && !this.ctx.noSole?.has(from - 1) && !!spec.soleOptions && to - from === 1 && this.words[from].value !== undefined && !this.words[from].count;
+    const sole = !appended && !!spec.soleOptions && to - from === 1 && this.words[from].value !== undefined && !this.words[from].count;
     let options = [...(spec.options ?? []), ...(sole ? spec.soleOptions! : []), ...inherited];
     const search = options;
     const found = isCobra && spec.subcommands ? this.cobraSubcommand(spec, search, before, from, to) : undefined;
@@ -186,7 +185,7 @@ class Reader {
     const roles = new Map<number, ArgRole>();
     const given: Given = { specs: [], flags: [], marks: new Set(), later: [], unsplit: [] };
     const operands: number[] = [];
-    const parse: ArgvParse = { command, roles: [], unmatched: [], end: to, ...(sole ? { soleAt: from - 1 } : {}) };
+    const parse: ArgvParse = { command, roles: [], unmatched: [], end: to };
     let endOpts = false;
     let afterDashes: number | undefined;
     let end = to;
@@ -253,6 +252,11 @@ class Reader {
     for (const [word, role] of [...roles].sort((a, b) => a[0] - b[0])) parse.roles.push({ word, role: conflicting(spec, inMode(role, parse.mode), first) });
     if (first.refused) parse.refused = true;
     if (st.refusal) parse.refusal = st.refusal;
+    const option = sole && spec.soleUnlessEnv ? parse.roles[0].role : undefined;
+    // (Its role as text: read as when words follow it.)
+    if (option?.role === 'option' && spec.soleOptions!.includes(option.spec)) {
+      parse.sole = { option, text: this.read(spec, from, to, command, inherited, cobra, before, true).roles[0].role, env: spec.soleUnlessEnv! };
+    }
     return parse;
   }
 
@@ -337,7 +341,7 @@ class Reader {
   /** The role of the first word of a command run by this one, with the words up to `end` read by its spec. */
   private command(slot: CommandSlot, at: number, end: number, of?: string, appended = false): CommandRole {
     const name = this.words[at].value;
-    const found = name === undefined ? undefined : this.ctx.lookup?.(name, at, slot);
+    const found = name === undefined ? undefined : this.ctx.lookup?.(name);
     // A slot that starts a program runs the program of a builtin's name (`env echo`: coreutils echo).
     const spec = slot.run === 'exec' && found?.program ? found.program : found;
     return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', [], false, [], appended), ...(of ? { of } : {}) };
@@ -547,7 +551,8 @@ class Reader {
       // (The words of the command as they are given: before it, none is read.)
       const words = this.words.slice(0, st.end).map((w, i) => (i > last ? untilWord(w) : ''));
       const { at: j, refusal } = untilEnd(opt.until, words, last + 1, st.end);
-      if (j > last + 1) st.roles.set(last + 1, this.command(slot, last + 1, j, flag, st.appended));
+      // (Not `appended`: `xargs find . -exec echo --version \;` adds its words after the `;`.)
+      if (j > last + 1) st.roles.set(last + 1, this.command(slot, last + 1, j, flag));
       // (The first one: find tells that one.)
       if (refusal) st.refusal ??= { ...refusal, option: flag, at: last };
       if (j < st.end) { st.roles.set(j, { role: 'terminator', text: words[j]!, of: flag }); return j; }
@@ -662,6 +667,10 @@ function cobraTakesNext(w: string, options: OptionSpec[]): boolean {
   return !o || valuesOf(o).some((v) => !v.optional);
 }
 
+/** `role` with `f` applied to the parse of its words, when it has one (a subcommand, a command run). */
+const withParse = (role: ArgRole, f: (q: ArgvParse) => ArgvParse): ArgRole =>
+  (role.role === 'subcommand' || (role.role === 'command' && role.parse) ? { ...role, parse: f(role.parse!) } as ArgRole : role);
+
 /**
  * The parse of a line into which the words `split` were spliced after the word `at`, in the numbers of the
  * words without them: the roles of the split words go to the value's `split`, numbered from 0, and the words
@@ -674,8 +683,6 @@ function unsplice(parse: ArgvParse, at: number, split: ArgWord[]): ArgvParse {
   /** The number of a word not in the split words (a parse of the line ends after them too). */
   const back = (j: number): number => (j < s ? j : j - split.length);
   const splitRoles: RoleAt[] = [];
-  const withParse = (role: ArgRole, f: (q: ArgvParse) => ArgvParse): ArgRole =>
-    (role.role === 'subcommand' || (role.role === 'command' && role.parse) ? { ...role, parse: f(role.parse!) } as ArgRole : role);
   const line = (q: ArgvParse): ArgvParse => {
     const roles: RoleAt[] = [];
     for (const { word, role } of q.roles) {
@@ -707,6 +714,24 @@ function unsplice(parse: ArgvParse, at: number, split: ArgWord[]): ArgvParse {
     return { word: at, role: { role: 'cluster', letters: letters.map((l) => (l.role === 'option' && l.value && valuesOf(l.spec)[0]?.splice ? { ...l, value: value(l.value) } : l)) } };
   });
   return out;
+}
+
+/**
+ * `parse` with each role that is a key of `swap` replaced by its value, in the parses of the commands it runs and in
+ * the words of an `env -S` string too. It is read for where its commands run, so no parse keeps its `sole`.
+ */
+export function swapRoles(parse: ArgvParse, swap: ReadonlyMap<ArgRole, ArgRole>): ArgvParse {
+  const split = (v: ValueRole): ValueRole => (v.split ? { ...v, split: { ...v.split, roles: v.split.roles.map(at) } } : v);
+  const role = (r: ArgRole): ArgRole => {
+    const s = swap.get(r);
+    if (s) return s;
+    if (r.role === 'value') return split(r);
+    if (r.role === 'option' && r.value) return { ...r, value: split(r.value) };
+    return r.role === 'cluster' ? { ...r, letters: r.letters.map(role) } : withParse(r, (q) => swapRoles(q, swap));
+  };
+  const at = ({ word, role: r }: RoleAt): RoleAt => ({ word, role: role(r) });
+  const { sole: _, ...rest } = parse;
+  return { ...rest, roles: parse.roles.map(at) };
 }
 
 /**
