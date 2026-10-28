@@ -93,12 +93,13 @@ export function factsIn(input: string, text: string): CorpusFact[] {
 /**
  * The facts the analyzer gives on each line of `text`, read as `shell`, then the style checks found in the whole text
  * (`pitfallFindings`, with the model the analyzer reads): one for each place a check is found, with its own rewrites.
+ * (`only`: the facts or the style checks alone, which saves the other walk.)
  */
-function suggestionsIn(text: string, shell: Shell | undefined): Suggestion[] {
+function suggestionsIn(text: string, shell: Shell | undefined, only?: 'facts' | 'style'): Suggestion[] {
   const tree = parser.parse(text);
   const lines = text.split('\n');
-  const facts = lines.flatMap((_, line) => new Analyzer('en').explainLine(tree, line, shell).facts ?? []);
-  const style = pitfallFindings(tree.root, 'en', 0, lines.length, shellState(tree, shell), shell).map((f) => ({ id: f.code, text: f.text, ...(f.rewrite ? { rewrite: f.rewrite } : {}) }));
+  const facts = only === 'style' ? [] : lines.flatMap((_, line) => new Analyzer('en').explainLine(tree, line, shell).facts ?? []);
+  const style = only === 'facts' ? [] : pitfallFindings(tree.root, 'en', 0, lines.length, shellState(tree, shell), shell).map((f) => ({ id: f.code, text: f.text, ...(f.rewrite ? { rewrite: f.rewrite } : {}) }));
   return [...facts, ...style];
 }
 
@@ -1066,7 +1067,7 @@ function lastTestChecks(s: Subject, x: Context, inFunction: boolean): Check[] | 
 function factTexts(text: string, id: SuggestionId, shell?: Shell): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const f of suggestionsIn(text, shell)) {
+  for (const f of suggestionsIn(text, shell, isStyle(id) ? 'style' : 'facts')) {
     const key = `${f.text}\0${JSON.stringify(f.rewrite ?? null)}`;
     if (f.id === id && !seen.has(key)) { seen.add(key); out.push(f.text); }
   }
