@@ -61,10 +61,10 @@ describe('find in a command line', () => {
   });
 
   it('explains {} in -exec', () => {
-    const ts = tokens('find . -name x -exec rm {} \;');
+    const ts = tokens('find . -name x -exec rm {} \\;');
     assert.match(ts.find((t) => t.label === '{}')!.explanation, /replaced with the path/);
     // (A word whose value is known only when it runs: an unquoted glob, a variable in the command of `-exec`.)
-    const glob = tokens('find . -name *.txt -exec rm $opt {} \;');
+    const glob = tokens('find . -name *.txt -exec rm $opt {} \\;');
     assert.match(glob.find((t) => t.label === '*.txt')!.explanation, /./);
     assert.match(glob.find((t) => t.label === '{}')!.explanation, /replaced with the path/);
   });

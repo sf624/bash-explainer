@@ -185,7 +185,8 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
             break;
           }
         }
-        // Unquoted variables as paths of file commands, also those another command runs (`sudo rm -rf $d/x`).
+        // Unquoted variables as paths of file commands, also those another command runs (`sudo rm -rf $d/x`), each command that
+        // is run (`find . -exec cp $a {} \; -exec mv $b {} \;`).
         // (What the name runs, from the model: a function of that name is not `cp`.)
         for (const run of runCommands(n, model, shell)) {
           const nameNode = run.nameWord;
@@ -202,7 +203,6 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
               bare: word.text, rewrite: quoted ? [replaceNode(word, quoted)] : [], ...(DESTRUCTIVE_COMMANDS.has(ran) ? { destroys: true } : {}), ...(fields?.length === 1 ? { known: fields[0] } : {}),
             }), word);
           }
-          if (words.length) break;
         }
         // `[ $x = y ]`: an empty or spaced value breaks the test. (When the name runs `[`: src/semantics/names.ts.)
         // The words of the test itself, not variables inside a `$(…)` in it.
