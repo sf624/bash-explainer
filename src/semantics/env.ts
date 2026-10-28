@@ -394,20 +394,26 @@ export const linksAfter = (env: ExecEnv, place: ExecEnv): ExecEnv => ({ links: e
  * `cmd`. First in the shell that runs `cmd`, whose state the model has: set and exported there, or set by the
  * command's own prefix assignment (`NAME=1 cmd`). That state holds what reached the shell when it started (`bash -c`
  * after `env -i`), so only the links after `cmd`'s place apply (`linksAfter`); a name the state does not know came
- * from the environment the shell started with, so every link on the way applies to it, from not known. Each slot
+ * from the environment the shell started with, so every link on the way applies to it, from not known. In a function
+ * that may run where the model does not see (`CallLink.unsure`), the state is not known: only the links after `cmd`'s
+ * place and its prefix assignment are. Each slot
  * link, in order: one that passes no variables (`droppedBy`; on another machine or in a container, what sets the
  * environment there, an image's `ENV`, the remote shell's startup files, is not seen: not known) or removes it
  * (`env -u NAME`), then one that sets it (`env NAME=1`, `docker run -e NAME`; `*`, a file of them, may). (env applies
  * `-i` and `-u` before its assignments.)
  */
 export function variableIn(model: StateModel, cmd: SyntaxNode, name: string, env: ExecEnv): VariableIn {
-  const v = model.at(cmd).run.variables.get(name);
+  const place = model.env(cmd);
   const prefix = prefixAssignments(cmd).some((a) => field(a, 'name')?.text === name);
+  // (In a function that may be called where the model does not see, `bash -c f` after `export -f f`, the state of
+  // its calls it has is not all: `CallLink.unsure`.)
+  const open = place.links.some((l) => l.kind === 'call' && l.unsure);
+  const v = open ? undefined : model.at(cmd).run.variables.get(name);
   const exported = v?.attrs.x?.state ?? 'off';
   let state: Tri = prefix || (v?.set === 'on' && exported === 'on') ? 'on' : !v ? 'unknown' : v.set === 'off' || exported === 'off' ? 'off' : 'unknown';
   let dropped: SlotLink | undefined;
   let unset = false;
-  for (const l of (prefix || v ? linksAfter(env, model.env(cmd)) : env).links) {
+  for (const l of (prefix || open || v ? linksAfter(env, place) : env).links) {
     if (l.kind !== 'slot') continue;
     if (droppedBy({ links: [l] }, name)) { state = l.slot.where === 'remote' || l.slot.where === 'container' ? 'unknown' : 'off'; dropped ??= l; }
     if (l.unsets?.includes(name)) { state = 'off'; unset = true; }

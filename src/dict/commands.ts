@@ -1396,7 +1396,7 @@ export const core: Record<string, CommandSpec> = {
     ['-u', '実行するユーザー', 'run as the given user', 'arg'],
     ['-n', 'パスワードを尋ねない（必要なら失敗）', 'never prompt for a password'],
     ['-s', 'ログインシェルでなく、ユーザーのシェルを起動する', 'run the user\'s shell'],
-  ], { optionsFirst: true, operands: [{ pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'reset', keeps: DOAS_KEEPS })] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [runs({ run: 'exec', env: 'reset', keeps: DOAS_KEEPS })] }] }),
   nohup: cmd('ログアウト(ハングアップ)してもコマンドが止まらないように実行する', 'Run a command immune to hangups (survives logout)', [
     ...GNU_INFO,
   ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [runs()] }] }),
