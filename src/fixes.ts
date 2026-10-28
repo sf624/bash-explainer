@@ -56,7 +56,30 @@ export function fixFor(issue: Issue): Fix | undefined {
   return undefined;
 }
 
-const SAME_IN_TEST = /^(-[a-zA-Z]|=|!=|-eq|-ne|-lt|-le|-gt|-ge|-nt|-ot|-ef)$/;
+/**
+ * The operators `[ ]` reads as `[[ ]]` does, in POSIX sh (checked against dash): the file tests and `-n`, `-z`, string
+ * equality and `-ef`. Left out: `-a`, `-o`, `-v`, `-R`, `-N` (an error in dash: `-o` and `-v` test the shell's options and
+ * variables in bash), `-k`, `-O`, `-G` (not in POSIX), and `-nt`, `-ot` (bash's is true when only the first file exists,
+ * dash's false).
+ */
+const SAME_IN_TEST = /^(-[bcdefghLnprSsuwxz]|=|!=|-ef)$/;
+/**
+ * The arithmetic comparisons, whose operands `[[ ]]` reads as arithmetic expressions (`1+1`, `010` in octal, an empty
+ * value as 0) and `[ ]` as decimal integers (status 2 otherwise): the same only when both operands are such integers.
+ * `-t` too needs one: bash 5.2's test is false for another word, dash's an error.
+ */
+const ARITH_IN_TEST = /^(-eq|-ne|-lt|-le|-gt|-ge)$/;
+
+/**
+ * Whether an operand of `-eq`… is a decimal integer both tests read alike: a number without a leading 0 (octal in
+ * `[[ ]]`) and short enough not to overflow, or `$#`. (Not `${#x}`: dash counts bytes, bash characters.)
+ */
+function decimalOperand(n: SyntaxNode): boolean {
+  const number = /^(0|[1-9]\d{0,17})$/;
+  if (n.type === 'raw_string') return number.test(n.text.slice(1, -1));
+  const text = n.type === 'string' ? n.text.slice(1, -1) : n.text;
+  return number.test(text) || text === '$#' || text === '${#}';
+}
 
 /**
  * `[ … ]` commands equivalent to a `[[ … ]]` expression. `&&` / `||` become separate tests joined
@@ -75,30 +98,37 @@ export function testChain(e: SyntaxNode): string | undefined {
   };
   split(e);
   if (ops.size > 1) return undefined;
-  const tests = parts.map(single);
+  const tests = parts.map((p) => single(p));
   if (tests.some((t) => t === undefined)) return undefined;
   return tests.map((t) => `[ ${t} ]`).join(` ${[...ops][0] ?? '&&'} `);
 }
 
-/** The inside of one `[ ]` for a `[[ ]]` expression without `&&` / `||`. */
-function single(e: SyntaxNode): string | undefined {
+/**
+ * The inside of one `[ ]` for a `[[ ]]` expression without `&&` / `||`. One `!` at most: dash reads `[ ! ! -n "" ]` as
+ * true.
+ */
+function single(e: SyntaxNode, negated = false): string | undefined {
   if (e.type === 'unary_expression') {
     const op = field(e, 'operator')!.text;
     const operand = e.namedChildren.filter((c) => c.type !== 'test_operator').pop();
     if (!operand) return undefined; // `[[ -f ]]` while typing
     if (op === '!') {
-      const inner = single(operand);
+      const inner = negated ? undefined : single(operand, true);
       return inner === undefined ? undefined : `! ${inner}`;
     }
     const w = word(operand);
-    return SAME_IN_TEST.test(op) && w !== undefined ? `${op} ${w}` : undefined;
+    const same = SAME_IN_TEST.test(op) || (op === '-t' && decimalOperand(operand));
+    return same && w !== undefined ? `${op} ${w}` : undefined;
   }
   if (e.type === 'binary_expression') {
     let op = field(e, 'operator')!.text;
     const left = field(e, 'left')!;
     const right = field(e, 'right')!;
     if (op === '==') op = '=';
-    if (!SAME_IN_TEST.test(op) || fields(e, 'right').length > 1) return undefined;
+    if (fields(e, 'right').length > 1) return undefined;
+    if (ARITH_IN_TEST.test(op)) {
+      if (!decimalOperand(left) || !decimalOperand(right)) return undefined;
+    } else if (!SAME_IN_TEST.test(op)) return undefined;
     // In `[[ ]]` an unquoted right side of `=` / `!=` is a pattern; `[ ]` compares text.
     if ((op === '=' || op === '!=') && (/[*?[]/.test(unquotedText(right)) || hasUnquotedExpansion(right))) return undefined;
     const l = word(left);
@@ -182,8 +212,17 @@ export function quoteExpansions(n: SyntaxNode, replace: ReadonlyMap<SyntaxNode, 
   return out;
 }
 
+/**
+ * Whether a word has an expansion of several words (`$@`, `${a[@]}`, `${!a[@]}`, even in quotes): `[[ ]]` joins them
+ * into one, `[ ]` gets them apart. (Any `@` in an expansion: the others are not in POSIX sh either.)
+ */
+const hasList = (n: SyntaxNode): boolean =>
+  ((n.type === 'simple_expansion' || n.type === 'expansion') && n.text.includes('@'))
+  || ((n.type === 'string' || n.type === 'concatenation') && n.namedChildren.some(hasList));
+
 /** A word as `[ ]` needs it: expansions double-quoted, since `[ ]` splits and globs them. */
 function word(n: SyntaxNode): string | undefined {
+  if (hasList(n)) return undefined;
   switch (n.type) {
     case 'string': case 'raw_string': case 'number': return n.text;
     case 'word': case 'extglob_pattern': return /^[\w@%+=:,./-]+$/.test(n.text) ? n.text : undefined;

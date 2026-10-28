@@ -1440,3 +1440,17 @@ Both read the words after the alias with the spec of the program bash runs for t
 | `alias g=grep`, `hash -p /opt/frob grep`, `g -n x f` | `-n`: "show line numbers" (grep's), with grep's examples | `-n`: "A word passed on to `grep`, the text of the alias" (the file is not in the dictionary) |
 | `alias g=grep`, `hash -p /usr/bin/egrep grep`, `g -n x f` | grep's spec | the same (egrep is grep's spec) |
 | `enable -n echo`, `alias e=echo`, `e -n hi` | no `basis` on the token (a builtin's spec) | `basis: { kind: 'spec', command: 'echo' }`, as for `echo -n hi` after `enable -n echo` |
+
+### The quick fix of `[[ ]]`
+
+For a script run by sh or dash, the fix of a `[[ ]]` writes `[ ]`. It now leaves out what `[ ]` tests otherwise (bash 5.2 and 5.3 against dash):
+
+| `[[ ]]` | What `[ ]` would do | Now |
+| --- | --- | --- |
+| `[[ $a -eq $b ]]`, `-ne`, `-lt`, `-le`, `-gt`, `-ge` | `[[ ]]` reads the operands as arithmetic: `a=1+1` is 2, `010` is 8 (octal), an empty value is 0. `[ ]` reads decimal integers only (status 2 otherwise, and `010` is 10). | No fix, unless both operands are decimal numbers (`0`, or no leading 0) or `$#`: `[[ $# -gt 0 ]]` → `[ "$#" -gt 0 ]`. |
+| `[[ -v x ]]`, `[[ -o errexit ]]`, `-a`, `-R`, `-N` | An error in dash: "unexpected operator" | No fix |
+| `[[ -k f ]]`, `-O`, `-G` | Not in POSIX `test` | No fix |
+| `[[ $f -nt $g ]]`, `-ot` | True in bash when only the first file exists; false in dash | No fix |
+| `[[ -t $fd ]]` | False in bash 5.2 when `$fd` is not a number (an error in bash 5.3); an error in dash | No fix (`[[ -t 1 ]]` → `[ -t 1 ]`) |
+| `[[ ! ! $x ]]` | dash reads `[ ! ! -n "" ]` as true | No fix |
+| `[[ -n $@ ]]`, `[[ "${a[@]}" == x ]]` | `[[ ]]` joins the words into one; `[ ]` gets them apart (`[: a: unexpected operator`) | No fix |

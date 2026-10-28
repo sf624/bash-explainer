@@ -132,6 +132,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Pitfalls are found in a command that another one runs, or whose name is quoted: `sudo rm -rf $DIR/releases/$line` (and the same under `env`, `nice`, `nohup`, `xargs` or `command`) and `'rm' -rf $DIR/*` get the warnings of `rm -rf $DIR/…`, and `\read x` the one of `read`. An unquoted path whose value the script sets to one word (`TS=2024`) is a caveat, not a warning.
 - The note on `readonly x=$(cmd)` and `local -r x=$(cmd)` says to set the name first and make it read-only after: `x=$(cmd); readonly x`. Before, it said to write `readonly x`, then `x=$(cmd)`, which bash refuses ("x: readonly variable").
 - An alias to a name that `hash -p` or `enable -n` changed is read as the program bash runs: after `hash -p /opt/frob grep`, `g -n x f` (with `alias g=grep`) no longer reads `-n` with grep's options, and `enable -n echo` then `alias e=echo` reads `e -n hi` with the program echo's.
+- The quick fix that rewrites `[[ ]]` as `[ ]` for sh and dash is offered only where `[ ]` tests the same. Before, it kept `-eq`, `-lt`… on variables (`[[ $a -eq 010 ]]` compares in octal, `[ "$a" -eq 010 ]` in decimal), `-v`, `-o`, `-nt` and `$@`, and changed what the test does.
 
 ## 0.8.0
 
