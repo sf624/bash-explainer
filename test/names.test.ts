@@ -402,6 +402,9 @@ describe('the analyzer says what a name runs', () => {
     assert.strictEqual(trap('hash -d sort'), 'Sort lines (the command path cache may differ here (lines 2 and 4), so `sort` may run the path `/usr/bin/rev` instead)');
     assert.strictEqual(trap('hash -p /usr/bin/tac sort'), 'Sort lines (the command path cache may differ here (lines 2 and 4), so `sort` may run the path `/usr/bin/rev` or the path `/usr/bin/tac` instead)');
     assert.match(all(explain('f() { printf "b\\na\\nc\\n" | sort; }\ntrap f USR1\nhash -p /usr/bin/rev sort\nkill -USR1 $$\nhash -p /usr/bin/tac sort', 0).items[0]).join('\n'), /may run the path `\/usr\/bin\/rev` or the path `\/usr\/bin\/tac` instead/);
+    // (A trap's action that changes the table may run after any statement; changes of other names do not count.)
+    assert.strictEqual(short(resolve('trap "hash -p /bin/ls e" INT\ne', 'e')), 'file:search-unknown-maybe-hashed:ran');
+    assert.strictEqual(short(resolve('hash -p /bin/cat a\nf() { e; }\nhash -p /bin/ls a\nhash -p /bin/ls e', 'e')), 'file:search-unknown-maybe-hashed:ran');
     // A `./` path, a path known only at run time, or checkhash or POSIX mode (on some paths): PATH may be searched too.
     assert.strictEqual(short(resolve('if [ "$x" ]; then hash -p ./tac e; else hash -p /bin/ls e; fi\ne', 'e')), 'file:search-unknown-maybe-hashed:2');
     assert.strictEqual(short(resolve('if [ "$x" ]; then hash -p "$p" e; else hash -p /bin/ls e; fi\ne', 'e')), 'file:search-unknown-maybe-hashed:2');
