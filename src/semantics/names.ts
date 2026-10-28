@@ -31,7 +31,10 @@ export const RESERVED = new Set(['!', '[[', ']]', '{', '}', 'case', 'coproc', 'd
 export interface MaybeHashed {
   /** The paths it may run, each once, in the order of the script (`undefined`: one known only at run time). */
   paths: (string | undefined)[];
-  /** It may also run what PATH finds for the name: on a path that leaves no entry, or with hashing off. */
+  /**
+   * It may also run what PATH finds for the name: on a path that leaves no entry, with hashing off, or where bash may
+   * forget a path (checkhash or POSIX mode, a `./` path, one known only at run time).
+   */
   search: boolean;
   /** The commands that leave the table so on some paths (`hash -p`, `hash -d`, `hash -r`, an assignment to PATH), in the order of the script. */
   by: SyntaxNode[];
@@ -344,7 +347,7 @@ function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, bash,
       ...(relative ? { relative } : {}), ...(checked ? { checked } : {}), ...off, ...m,
     };
   }
-  const maybe = hashall === 'off' ? undefined : maybeHashed(entry, hashall === 'unknown', checked === 'on');
+  const maybe = hashall === 'off' ? undefined : maybeHashed(entry, hashall === 'unknown', checked);
   // (A builtin turned off runs the program of its name, which the dictionary describes with it.)
   const known = !!opts.program?.(name) || !!spec?.program;
   return { kind: 'file', name, path: 'search', known, ...(maybe ? { maybeHashed: maybe } : {}), ...off, ...m, ...(sourced && !known && !missed && !exec && !opts.env ? { sourced } : {}) };
@@ -354,18 +357,21 @@ function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, bash,
  * What the entry `entry` of the table may make a name run (`hashall`: hashing may be off; `checked`: bash checks that it
  * can run a path, checkhash or POSIX mode), or undefined when it runs what PATH finds.
  */
-function maybeHashed(entry: CommandEntry | undefined, hashall: boolean, checked: boolean): MaybeHashed | undefined {
+function maybeHashed(entry: CommandEntry | undefined, hashall: boolean, checked: 'on' | 'unknown' | undefined): MaybeHashed | undefined {
   // (`checked`: bash forgets an empty path, and searches PATH.)
-  const outcomes = hashOutcomes(entry).map((o) => (checked && o.value === '' ? { hashed: false, at: o.at } : o));
+  const outcomes = hashOutcomes(entry).map((o) => (checked === 'on' && o.value === '' ? { hashed: false, at: o.at } : o));
   // (A path in the table always has the command that gave it.)
   const hashed = outcomes.filter((o) => o.hashed).sort((a, b) => docIndex(a.at!) - docIndex(b.at!));
   if (!hashed.length) return undefined;
   const paths = [...new Set(hashed.map((o) => o.value))];
   const by = [...new Set(outcomes.flatMap((o) => (o.at ? [o.at] : [])))].sort((a, b) => docIndex(a) - docIndex(b));
   const untouched = outcomes.some((o) => !o.hashed && !o.at);
-  const plain = by.length !== 1 || paths.length !== 1 ? undefined
+  // (bash may forget a path and search PATH: one it cannot run, with checkhash or in POSIX mode; a `./` one that is
+  // not there; one known only at run time, which may be either.)
+  const forgets = !!checked || hashed.some((o) => o.value === undefined || o.value.startsWith('./'));
+  const plain = by.length !== 1 || paths.length !== 1 || forgets ? undefined
     : !hashall && untouched && outcomes.length === 2 ? 'ran' as const : hashall && outcomes.length === 1 ? 'hashing' as const : undefined;
-  return { paths, search: hashall || hashed.length < outcomes.length, by, hashall, ...(plain ? { plain } : {}) };
+  return { paths, search: hashall || forgets || hashed.length < outcomes.length, by, hashall, ...(plain ? { plain } : {}) };
 }
 
 

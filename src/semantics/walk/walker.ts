@@ -292,7 +292,7 @@ export class Walker {
           const after = new Set([...this.lastChange].filter(([, i]) => i > since).map(([k]) => k));
           this.walks.set(def, []);
           this.outside++;
-          this.walkBody(def, widen(this, at, after), { def, saved: new Map() });
+          this.walkBody(def, widen(this, at, after, since), { def, saved: new Map() });
           this.outside--;
         }
       }
@@ -308,7 +308,7 @@ export class Walker {
     // (An action may set a trap of its own: it is walked in the next round.)
     for (let round = 0; round < NESTED_DEPTH && this.traps.length; round++) for (const t of this.traps.splice(0)) {
       const after = new Set([...this.lastChange].filter(([, i]) => i > t.since).map(([k]) => k));
-      const st = t.exit && this.topLevel(t.host) ? end : widen(this, t.st, after);
+      const st = t.exit && this.topLevel(t.host) ? end : widen(this, t.st, after, t.since);
       this.trapAction(t.script, t.host, st, t.exitOnly, t.dead);
     }
   }

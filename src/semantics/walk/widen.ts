@@ -20,9 +20,10 @@ export function attributesChange(a: VariableState | undefined, b: VariableState 
 
 /**
  * `st` with the names in `keys` (`kind name`) taken as unknown, and the attributes of the variables in `attrs name`
- * keys; but a function surely defined by the top level (`Walker.sureLater`) is defined.
+ * keys; but a function surely defined by the top level (`Walker.sureLater`) is defined. `since`: the number of the
+ * change after which they are made, when known (the table of `hash -p` then gathers what each of them leaves).
  */
-export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>): ShellState {
+export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>, since?: number): ShellState {
   const changes = { set: new Map(), shopt: new Map(), variables: new Map(), functions: new Map(), aliases: new Map(), disabled: new Map(), hashed: new Map() } as { [K in Kind]: Map<string, Entry<K>> };
   let opaque = st.opaque;
   for (const key of keys) {
@@ -58,10 +59,12 @@ export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>): She
       } else if (!f) changes.functions.set(name, { state: 'unknown', def: defs[defs.length - 1], exported: 'unknown', readonly: 'unknown' });
       else if (f.state !== 'unknown') changes.functions.set(name, { ...f, state: 'unknown' });
     } else if (kind === 'hashed') {
-      // (What it was, or what the command that changes it there last leaves: `leftBy`.)
+      // (What it was, or what a change after it leaves: each change after `since` (a function no call reaches, a
+      // trap's action), and the last one, `leftBy`.)
       const e = st.hashed.get(name);
       const last = leftBy(w.lastAt.get(key)!, name);
-      changes.hashed.set(name, hashEntry(last, [...hashOutcomes(e), ...hashOutcomes(last)]));
+      const later = since === undefined ? [] : w.builtins.hashPuts.filter((p) => p.name === name && p.count > since).map((p) => p.entry);
+      changes.hashed.set(name, hashEntry(last, [...hashOutcomes(e), ...[...later, last].flatMap(hashOutcomes)]));
     } else if (kind === 'disabled') {
       const e = st.disabled.get(name);
       if (e?.state !== 'unknown') changes.disabled.set(name, { state: 'unknown', at: e?.at ?? w.lastAt.get(key)! });

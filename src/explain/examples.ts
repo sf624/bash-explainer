@@ -475,7 +475,8 @@ function pipedLines(cx: Explainer, n: SyntaxNode, index: number): Piped {
  * program by, when it does not search PATH for it (`/bin/env`, or a path `hash -p` gave the name). Undefined too when
  * the program is not known for that reason: a relative hashed path runs from the current directory (`hash -p tac
  * sort` runs `./tac`, `relative`), one not known is known only at run time, and a `hash -p` on some paths only, or
- * where hashing may be off (`set +h`), may make the name run that path or not (`maybeHashed`).
+ * where hashing may be off (`set +h`), may make the name run that path or not (`maybeHashed`), and with checkhash or
+ * in POSIX mode bash forgets a path it cannot run (`checked`).
  */
 function stageName(cx: Explainer, cmd: SyntaxNode): { node: SyntaxNode; value: string; res: NameResolution; path?: string } | undefined {
   const node = cmd.type === 'command' ? field(cmd, 'name') : undefined;
@@ -483,7 +484,7 @@ function stageName(cx: Explainer, cmd: SyntaxNode): { node: SyntaxNode; value: s
   const value = word && staticWordValue(word, false, cx.state.shell);
   if (!value) return undefined;
   const res = resolve(cx, value, node!, { quoted: quotedName(word, value) });
-  if (res.kind === 'file' && (res.maybeHashed || (res.path === 'hashed' && (res.relative || res.hashed!.value === undefined)))) return undefined;
+  if (res.kind === 'file' && (res.maybeHashed || (res.path === 'hashed' && (res.relative || res.checked || res.hashed!.value === undefined)))) return undefined;
   const path = res.kind !== 'file' ? undefined : res.path === 'given' ? value : res.hashed?.value;
   return { node: node!, value, res, ...(path ? { path } : {}) };
 }

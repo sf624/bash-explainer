@@ -377,10 +377,7 @@ function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 
     : res.checked === 'on'
       ? cx.s(`。\`shopt -s checkhash\` か POSIX モードなので、実行できないパスなら忘れて PATH から \`${name}\` を探す`, `; with \`shopt -s checkhash\` or in POSIX mode, bash forgets a path it cannot run and searches PATH for \`${name}\``)
       : cx.s(`。\`shopt -s checkhash\` か POSIX モードが有効なら、実行できないパスは忘れて PATH から \`${name}\` を探す`, `; if \`shopt -s checkhash\` or POSIX mode is on, bash forgets a path it cannot run and searches PATH for \`${name}\``);
-  const none = {
-    path: undefined, program: undefined,
-    words: { ...NO_SPEC, unknownOption: { ja: `${at} の \`hash -p\` で \`${name}\` が指すプログラムに渡す単語（辞書にない）`, en: `A word passed to the program \`hash -p\` on ${at} gave \`${name}\`, which the dictionary does not describe` } },
-  };
+  const none = { path: undefined, program: undefined, words: hashedWords(at, name) };
   if (value === undefined) {
     return {
       ...none, runs: cx.s('外部コマンドを実行する', 'Run an external command'),
@@ -407,7 +404,12 @@ function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 
     };
   }
   // (A path is never a builtin's entry: `/bin/echo` is the program.)
-  return { path: value, program: lookupCommand(value), runs: cx.s(`外部コマンド \`${value}\` を実行する`, `Run the external command \`${value}\``), why: gave };
+  return { path: value, program: lookupCommand(value), runs: cx.s(`外部コマンド \`${value}\` を実行する`, `Run the external command \`${value}\``), why: `${gave}${checked}` };
+}
+
+/** The spec the words of a program `hash -p` gave `name` are read with (on the lines `at`), which the dictionary does not describe: no manual. */
+function hashedWords(at: string, name: string): CommandSpec {
+  return { ...NO_SPEC, unknownOption: { ja: `${at} の \`hash -p\` で \`${name}\` が指すプログラムに渡す単語（辞書にない）`, en: `A word passed to the program \`hash -p\` on ${at} gave \`${name}\`, which the dictionary does not describe` } };
 }
 
 /** Spaces around code next to Japanese punctuation, and doubled ones, taken out (docs/japanese-style.md). */
@@ -578,7 +580,7 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
   if (res.kind === 'file' && res.maybeHashed && !res.maybeHashed.search) {
     const t = maybeHashedText(cx, name, res.maybeHashed);
     return {
-      name, res: ran, kind: 'command', nameTokens: [], refs: ['3.7.2'],
+      name, res: ran, kind: 'command', nameTokens: [], refs: ['3.7.2'], spec: hashedWords(linesOf(cx, res.maybeHashed.by), name),
       explanation: cx.s(`外部コマンドを実行する（${t}）`, `Run an external command (${t})`),
     };
   }
