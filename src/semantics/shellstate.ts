@@ -81,7 +81,7 @@ export interface CommandEntry {
   readonly at: SyntaxNode;
   /**
    * A path remembered on some paths only (`unknown`): what each path that gets here leaves in the table
-   * (`hashOutcomes`); also on one remembered on every path (`on`) when several commands gave it.
+   * (`hashOutcomes`); also on one remembered on every path (`on`) after paths that join, with the commands that gave it.
    */
   readonly may?: readonly HashOutcome[];
 }
@@ -107,7 +107,7 @@ export function hashOutcomes(e: CommandEntry | undefined): readonly HashOutcome[
 
 /**
  * The entry of the table of `hash -p` for what several paths leave (`outcomes`, each once), with the newest of them
- * (`newer`): the same path on every path (`on`, with the commands that gave it when several did), none on any
+ * (`newer`): the same path on every path (`on`, with the commands that gave it), none on any
  * (`off`), or either (`unknown`).
  */
 export function hashEntry(newer: CommandEntry, outcomes: readonly HashOutcome[]): CommandEntry {
@@ -116,7 +116,7 @@ export function hashEntry(newer: CommandEntry, outcomes: readonly HashOutcome[])
   const hashed = may.filter((o) => o.hashed);
   const { may: _, value: __, ...entry } = newer;
   if (hashed.length === may.length && hashed.every((o) => o.value === hashed[0].value)) {
-    return { ...entry, state: 'on', ...(hashed[0].value !== undefined ? { value: hashed[0].value } : {}), ...(may.length > 1 ? { may } : {}) };
+    return { ...entry, state: 'on', ...(hashed[0].value !== undefined ? { value: hashed[0].value } : {}), may };
   }
   if (!hashed.length) return { ...entry, state: 'off' };
   return { ...entry, state: 'unknown', may };
