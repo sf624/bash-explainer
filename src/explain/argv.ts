@@ -284,7 +284,7 @@ function optionToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
       ? cx.s(`短いオプション ${flags.map((p) => `\`${p.label}\``).join(' ')} をまとめて指定`, `Combined short options ${flags.map((p) => `\`${p.label}\``).join(' ')}`)
       : flags[0].explanation, flags.length > 1 ? parts : parts.filter((p) => p.kind === 'argument'));
   }
-  if (role.role === 'unknown-option') return cx.tok(a, 'option', unknownOption(cx, parse.command, spec, role.ambiguous, role.late));
+  if (role.role === 'unknown-option') return cx.tok(a, 'option', role.refused ? cx.t(role.refused) : unknownOption(cx, parse.command, spec, role.ambiguous, role.late));
   const flag = dash(role.flag);
   // `set -o` with no name lists the settings; `set +o` prints commands that restore them.
   const alone = role.missing ? role.spec.noValue : undefined;

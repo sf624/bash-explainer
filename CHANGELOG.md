@@ -119,6 +119,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `exec >log 2>&1` says that its redirections apply to the shell, for every command after it. Before, it said that the command does not see them.
 - Combined short options listed as one are split as the others are: `docker run -it` and `docker exec -it` are `-i` and `-t`, `screen -dmS` and `usermod -aG` too.
 - `tar vf a.tar` (the first word is always letters, with or without an operation) and `ps u1` (a number after BSD letters lists PIDs, as `ps u -p 1`) are explained as the tools read them. Before, both were plain words.
+- `ps -ef --`, `ps aux --` and `ps -- -ef` say that ps refuses `--` ("garbage option"), and a pipeline after them gets no made-up `ps` output. Before, `--` was the end of the options.
 - In a script for dash, POSIX sh or busybox ash, `echo {a,b}` and `{1..3}` are plain words, as the shell prints them (mksh: only `{a,b}` expands). Before, they were explained as expanding, with a warning that the shell lacks it.
 - `xargs -d '\n'` no longer says that the last newline stays in the last item: it does only with another delimiter.
 - With `sed -n`, `q` quits without printing the line and `n` reads the next one without printing this one, as GNU sed does; so does a script that starts with `#n`. Before, both said they print the line.

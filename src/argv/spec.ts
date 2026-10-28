@@ -66,8 +66,11 @@ export interface CommandSpec {
    * operands are not described (any number, with no meaning given).
    */
   operands?: OperandAlt[];
-  /** What `--` does: end the options (the default), nothing (`echo`), or start words of another pattern. */
-  dashDash?: 'end-options' | 'literal' | { then: OperandSpec[] };
+  /**
+   * What `--` does: end the options (the default), nothing (`echo`), start words of another pattern, or nothing but an
+   * error: an option the command refuses, which `refused` explains (procps `ps`: "garbage option").
+   */
+  dashDash?: 'end-options' | 'literal' | { then: OperandSpec[] } | { refused: Text };
   subcommands?: Record<string, SubcommandSpec>;
   /**
    * A prefix of a subcommand's name (or alias) selects it: a unique one (`true`), or any one, which selects the

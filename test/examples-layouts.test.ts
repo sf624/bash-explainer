@@ -176,7 +176,7 @@ describe('pipelines that start with a made-up output agree with the real tools s
     assert.deepStrictEqual(row("ps aux | head -n 20 | cut -d $'\\t' -f1"), ['ps aux', 'head -n 20']);
   });
   it('makes up no output for other options or operands, and says that the input is not known', () => {
-    for (const line of ['ps aux --sort=-%mem | head', 'ls -l /etc | wc -l', 'ls -lt | head -n 3', 'df | wc -l', 'ls -l --nope | wc -l', 'ls -lj | wc -l', 'ls -lZ | wc -l', 'mytool | wc -l']) {
+    for (const line of ['ps aux --sort=-%mem | head', 'ls -l /etc | wc -l', 'ls -lt | head -n 3', 'df | wc -l', 'ls -l --nope | wc -l', 'ls -lj | wc -l', 'ls -lZ | wc -l', 'mytool | wc -l', 'ps -ef -- | head', 'ps aux -- | head']) {
       const ex = explain(line).examples;
       assert.ok(!ex.some((e) => e.kind === 'pipeline' && /^Output of/.test(e.sections[0].label)), line);
     }
