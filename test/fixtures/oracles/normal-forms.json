@@ -81,10 +81,11 @@
   {"normalizer": "testChain", "same": ["[[ $x ]]", "[ -n \"$x\" ]"], "observe": ["status"], "env": {"x": "-z"}},
   {"normalizer": "testChain", "same": ["[[ $x == 'a b' ]]", "[ \"$x\" = 'a b' ]"], "observe": ["status"], "env": {"x": "a b"}},
   {"normalizer": "testChain", "differ": ["[[ $x == a* ]]", "[ \"$x\" = a* ]"], "observe": ["status"], "env": {"x": "abc"}},
-  {"normalizer": "testChain", "differ": ["[[ $a -eq $b ]]", "[ \"$a\" -eq \"$b\" ]"], "observe": ["status"], "env": {"a": "1+1", "b": "2"}, "known": "finding: the quick fix of `[[ ]]` (`testChain`, src/fixes.ts) writes `-eq`, `-lt`… as they are, but `[[ ]]` reads their operands as arithmetic (`1+1`, `010` in octal, an empty value as 0), and `[ ]` only as decimal integers (status 2 otherwise): the fix changes what the test says"},
-  {"normalizer": "testChain", "differ": ["[[ $a -eq 010 ]]", "[ \"$a\" -eq 010 ]"], "observe": ["status"], "env": {"a": "8"}, "known": "finding: the quick fix of `[[ ]]` (`testChain`, src/fixes.ts) writes `-eq`, `-lt`… as they are, but `[[ ]]` reads their operands as arithmetic (`1+1`, `010` in octal, an empty value as 0), and `[ ]` only as decimal integers (status 2 otherwise): the fix changes what the test says"},
+  {"normalizer": "testChain", "differ": ["[[ $a -eq $b ]]", "[ \"$a\" -eq \"$b\" ]"], "observe": ["status"], "env": {"a": "1+1", "b": "2"}},
+  {"normalizer": "testChain", "differ": ["[[ $a -eq 010 ]]", "[ \"$a\" -eq 010 ]"], "observe": ["status"], "env": {"a": "8"}},
   {"normalizer": "testChain", "same": ["[[ ! -f $y ]]", "[ ! -f \"$y\" ]"], "observe": ["status"], "env": {"y": "f"}, "files": {"f": ""}},
   {"normalizer": "testChain", "same": ["[[ -z $x ]]", "[ -z \"$x\" ]"], "observe": ["status"]},
   {"normalizer": "testChain", "differ": ["[[ $x = $y ]]", "[ \"$x\" = \"$y\" ]"], "observe": ["status"], "env": {"x": "abc", "y": "a*"}},
-  {"normalizer": "testChain", "differ": ["[[ $a -lt 1 ]]", "[ \"$a\" -lt 1 ]"], "observe": ["status"], "env": {"a": ""}, "known": "finding: the quick fix of `[[ ]]` (`testChain`, src/fixes.ts) writes `-eq`, `-lt`… as they are, but `[[ ]]` reads their operands as arithmetic (`1+1`, `010` in octal, an empty value as 0), and `[ ]` only as decimal integers (status 2 otherwise): the fix changes what the test says"}
+  {"normalizer": "testChain", "differ": ["[[ $a -lt 1 ]]", "[ \"$a\" -lt 1 ]"], "observe": ["status"], "env": {"a": ""}},
+  {"normalizer": "testChain", "same": ["[[ $# -gt 1 ]]", "[ \"$#\" -gt 1 ]"], "observe": ["status"], "prelude": "set -- a b"}
 ]

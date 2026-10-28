@@ -170,7 +170,11 @@ function condOf(n: SyntaxNode): Cond {
     case 'unary_expression': {
       const op = n.children[0];
       const arg = n.namedChildren.filter((c) => c !== op).pop()!;
-      if (op.text === '!') return { c: 'not', expr: condOf(arg) };
+      if (op.text === '!') {
+        // `[[ ! ! a ]]` is `[[ a ]]`: bash toggles the negation, as for a pipeline
+        const inner = condOf(arg);
+        return inner.c === 'not' ? inner.expr : { c: 'not', expr: inner };
+      }
       return { c: 'unary', op: op.text, arg: wordOf(arg) };
     }
     case 'parenthesized_expression': return { c: 'paren', expr: condOf(n.namedChildren[0]) };
