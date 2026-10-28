@@ -341,7 +341,7 @@ export interface Job {
   programs?: readonly string[];
 }
 
-/** What a run printed (both streams normalized: the run's directory, line numbers, the times of `time`), and its status. */
+/** What a run printed (both streams normalized: the run's directory, line numbers, the times of `time` and `time -p`), and its status. */
 export interface Ran { out: string; err: string; status: number | null }
 
 const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -432,7 +432,7 @@ export async function runJobs(bash: string, list: readonly Job[], { jobs = 4, pe
     return list.map((_, i) => {
       const dir = path.join(root, String(i));
       const read = (f: string): string => fs.readFileSync(path.join(dir, f), 'utf8').split(path.join(dir, 'box')).join('BOX').split(dir).join('DIR')
-        .replace(/line \d+:/g, 'line N:').replace(/^(real|user|sys)\s+[\d.]+\n/gm, '');
+        .replace(/line \d+:/g, 'line N:').replace(/^(real|user|sys)\s+(\d+m)?[\d.]+s?\n/gm, '');
       const status = fs.existsSync(path.join(dir, 'status')) ? Number(fs.readFileSync(path.join(dir, 'status'), 'utf8')) : null;
       return { out: read('out'), err: read('err'), status };
     });
