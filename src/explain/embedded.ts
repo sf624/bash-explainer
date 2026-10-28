@@ -4,7 +4,7 @@
 // (`Explainer.command`: the regex flavour, tr's sets, the letters given), places their tokens in the source, and adds
 // the worked example of the text (src/explain/examples.ts, src/explain/examples-jq.ts).
 import type { Token } from '../analyzer-types';
-import { givenOptions } from '../argv/query';
+import { givenOptions, values } from '../argv/query';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { YQ_SPECS } from '../dict/yq';
 import { explainEscapes } from '../embedded/format';
@@ -22,7 +22,7 @@ import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { awkOptions, dateRun, globExample, inputSource, ioExample, pushExample, regexExample, sedScripts } from './examples';
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
-import { fromEmbedded } from './nodes';
+import { fromEmbedded, same } from './nodes';
 import { given, regexFlavor, trContext } from './reads';
 import { valueNote } from './words';
 
@@ -55,7 +55,7 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
   if (cx.command?.parse.refused) return undefined;
   const ecx: EmbeddedContext = {
     lang: cx.lang,
-    flavor: () => regexFlavor(cx),
+    flavor: () => regexFlavor(cx, cx.command!.nodes.findIndex((w) => same(w, a))),
     trSet: () => trContext(cx, a),
     // The letters given (`-lane`: l, a, n and e; `-pi.bak`: p and i).
     letters: () => new Set(givenOptions(cx.command!.parse).map(({ role }) => role.flag.slice(1))),
@@ -79,7 +79,11 @@ function embeddedExample(cx: Explainer, lang: EmbeddedLang, text: string, a: Syn
       break;
     }
     case 'sed': {
-      const flavor = regexFlavor(cx);
+      // (Each -e script is read with the options given before it: `sed -e 's/a+/x/' -E -e 's/(b)/\1/'` mixes BRE and
+      // ERE, which the example, of one script, does not show.)
+      const flavors = new Set(values(cx.command!.parse, '-e').map(({ word }) => regexFlavor(cx, word)));
+      if (flavors.size > 1) break;
+      const flavor = [...flavors][0] ?? regexFlavor(cx);
       // With several -e options sed runs them as one script, so the example does too.
       const scripts = sedScripts(cx) ?? [text];
       const quiet = given(cx, '-n');

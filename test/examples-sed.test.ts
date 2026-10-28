@@ -143,6 +143,8 @@ describe('the sed example of a line agrees with GNU sed', () => {
   const cases = [
     "sed -ie 's/a/b/' -e 's/c/d/' f", "sed -e 's/a/b/' -e 's/c/d/' f", "sed --expression='s/a/b/' -e 's/c/d/' f", "sed -n -e 's/a/X/p' f",
     "sed -ne 's/a/X/p' f", "sed -i.bak 's/a/b/' f", "sed --in-place 's/a/b/' f", "sed -i -e 's/a/b/' f", "sed -E -e 's/(a+)/<\\1>/' f",
+    // (sed compiles each -e script as it reads it: an -E after it does not apply to it, but to the script operand.)
+    "sed -e 's/a+/<&>/' -E f", "sed -Ee 's/(a+)/<\\1>/' f", "sed '-Ees/(a+)/<\\1>/' f", "sed '-es/a+/<&>/' -E f", "sed --expression='s/a+/<&>/' --regexp-extended f", "sed 's/(a+)/<\\1>/' -E f",
   ];
   const parser = createUnbashParser();
   for (const line of cases) {
@@ -168,4 +170,30 @@ describe('the sed example of a line agrees with GNU sed', () => {
       }
     });
   }
+});
+
+describe('sed reads each -e script with the options given before it', () => {
+  const parser = createUnbashParser();
+  const tokens = (line: string): string[] => {
+    const all: string[] = [];
+    const walk = (t: { label: string; explanation: string; children: unknown[] }) => (all.push(`${t.label}: ${t.explanation}`), t.children.forEach((c) => walk(c as typeof t)));
+    new Analyzer('en').explainLine(parser.parse(line), 0).items.forEach(walk);
+    return all;
+  };
+
+  it('reads `a+` as a BRE before `-E`, and as an ERE after it', () => {
+    // (GNU sed: `sed -e 's/a+/x/' -E` leaves `aa` as it is; `-E` first makes it `x`.)
+    assert.deepStrictEqual(run('sed', ['-e', 's/a+/x/', '-E'], { input: 'aa\n', check: true }).stdout.toString(), 'aa\n');
+    assert.deepStrictEqual(run('sed', ['-E', '-e', 's/a+/x/'], { input: 'aa\n', check: true }).stdout.toString(), 'x\n');
+    assert.ok(tokens("sed -e 's/a+/x/' -E f").some((t) => t.startsWith('+: A literal "+"')));
+    assert.ok(tokens("sed -E -e 's/a+/x/' f").some((t) => t.startsWith('+: repeat')));
+    assert.ok(tokens("sed -E -e 's/b/y/' -e 's/a+/x/' f").some((t) => t.startsWith('+: repeat')));
+  });
+
+  it('shows no example where the scripts are read in two flavours', () => {
+    const line = "sed -e 's/a+/x/' -E -e 's/(b)/<\\1>/' f";
+    assert.deepStrictEqual(new Analyzer('en').explainLine(parser.parse(line), 0).examples.filter((x) => x.kind === 'sed'), []);
+    assert.ok(tokens(line).some((t) => t.startsWith('+: A literal "+"')));
+    assert.ok(tokens(line).some((t) => t.startsWith('(b): Group 1')));
+  });
 });
