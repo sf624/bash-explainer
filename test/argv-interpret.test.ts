@@ -370,6 +370,10 @@ describe('argv interpreter: the option grammar', () => {
     const brace = parseOf('cp a{,.bak}').roles[0].role;
     assert.ok(brace.role === 'operand' && !brace.uncertain);
     assert.deepStrictEqual(brace.each!.map((o) => o.text.en), ['source', 'destination (the new name, or an existing directory)']);
+    // (A command slot that takes one word, then the operands after it: `trap {x,EXIT}` is `trap x EXIT`.)
+    const action = parseOf('trap {x,EXIT}').roles[0].role;
+    assert.ok(action.role === 'command');
+    assert.deepStrictEqual(action.each!.map((o) => o.name), ['ACTION', 'SIGNAL']);
     const all = parseOf('cp "$@"').roles[0].role;
     assert.ok(all.role === 'operand' && all.uncertain);
     assert.deepStrictEqual(all.several!.map((o) => o.text.en), ['source', 'destination directory']);

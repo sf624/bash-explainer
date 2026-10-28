@@ -171,7 +171,9 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
           break;
         }
         case 'command':
-          if (role.slot.later) {
+          // `trap {x,EXIT}`, `bash -c {x,y}`: the words of the braces, each with its role; the string is not read as a script.
+          if (role.each) out.push(expanded(cx, a, positional(cx, a, eachText(cx, a, role.each))));
+          else if (role.slot.later) {
             // A trap's action: a string this shell runs later, with its expansions then.
             out.push(withScript(positional(cx, a, cx.t(role.item!.text) + trapNote(cx, a)), scriptTokens(cx, [a], cx.slotEnvs.get(a)!)));
           } else if (role.slot.joinsWords && !role.slot.escapesWords) {
