@@ -18,7 +18,7 @@ import type { ArgvParse } from '../argv/interpret';
 import { actedNames, actsOnNames } from '../argv/query';
 import { field, fields, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { aliasExpandsNext, builtinParse, quotedName, wordsAfterAlias, wrapped } from './effects';
-import { type ExecEnv, reachOf, type SlotLink, subshellReasons } from './env';
+import { type ExecEnv, linksAfter, reachOf, type SlotLink, subshellReasons } from './env';
 import { type AliasState, type CommandEntry, type FunctionState, option, type ShellState, type StateModel, type Tri } from './state';
 import { docIndex } from './state';
 
@@ -260,7 +260,8 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
   let sure = defined.state === 'on';
   if (shellString) {
     // Another shell has the functions exported to it, if every link passes them and it reads them.
-    const reach = reachOf(opts.env!);
+    // (What reached this shell is in its state: only the command's own slots, `linksAfter`.)
+    const reach = reachOf(linksAfter(opts.env!, model.env(at)));
     const imported = imports(slot!.shell);
     if (reach.functions === 'none') return miss('not-passed', reach.blocker);
     if (defined.exported === 'off') return miss('not-exported', slot);

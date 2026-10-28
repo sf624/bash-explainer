@@ -26,7 +26,7 @@ import { type BashVersion, DEFAULT_BASH_VERSION } from '../bashversion';
 import { restrictedByName, type Shell } from '../dialect';
 import { ancestor, field, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { SET_LETTERS } from './effects';
-import { EnvModel, type ExecEnv, fileRead, type FileRead, MAIN_SHELL, type SlotLink } from './env';
+import { EnvModel, type ExecEnv, fileRead, type FileRead, linksAfter, MAIN_SHELL, type SlotLink } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
 import type { ShellState, Tri } from './shellstate';
 import { childOpening, HARMLESS_START, type Opening, openingBlinds } from './opening';
@@ -314,7 +314,8 @@ function childModel(script: NestedScript): StateModel {
   const given = new Set(cmd.namedChildren.filter((c) => c.type === 'variable_assignment' && c.startIndex < name.startIndex).map((c) => field(c, 'name')!.text));
   const removed = new Set<string>();
   // (The links after the command's own place are its slots.)
-  const links = script.env.links.slice(script.outer.env(cmd).links.length) as SlotLink[];
+  const own = linksAfter(script.env, script.outer.env(cmd));
+  const links = own.links as SlotLink[];
   for (const l of links) {
     if (l.slot.run === 'current-shell') continue;
     if (l.env === 'reset' || l.env === 'none' || (l.slot.where ?? 'local') !== 'local') given.clear();
@@ -343,7 +344,8 @@ function childModel(script: NestedScript): StateModel {
     if (m) values.set(m[1], m[2]);
   }
   const start = (w: Walker): ShellState => {
-    let st = childStart(w, outer, script.env, pass, first);
+    // (What the links before reached the outer shell with is in `outer`: `env -i bash -c 'export X; bash -c …'`.)
+    let st = childStart(w, outer, own, pass, first);
     // (An interactive shell, `bash -i -c`, expands aliases.)
     if (w.bash && pass.invocation.some((f) => f.flag === '-i')) st = { ...st, shopt: st.shopt.with('expand_aliases', 'on') };
     // (SHELLOPTS and BASHOPTS not given are bash's own: an exported one passes options the outer model has read.)

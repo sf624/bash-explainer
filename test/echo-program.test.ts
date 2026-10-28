@@ -153,16 +153,20 @@ describe('the program echo: --help and --version as its one argument', () => {
 
   it('says what the model knows of POSIXLY_CORRECT where the program runs', () => {
     // Not known (it may be in the script's environment): the option, with the words that say what the variable does.
+    // (In a container or on another machine, what sets the environment there is not seen: an image's `ENV`, a remote
+    // shell's startup files.)
     for (const src of ['/bin/echo --version', 'POSIXLY_CORRECT=y\n/bin/echo --version', '( /bin/echo --version )', 'docker run --env-file f img /bin/echo --version',
-      'env -u FOO /bin/echo --version', 'env --unset=FOO /bin/echo --version', 'timeout -vk 1 5 /bin/echo --version', 'timeout --foreground 5 /bin/echo --version']) {
+      'env -u FOO /bin/echo --version', 'env --unset=FOO /bin/echo --version', 'timeout -vk 1 5 /bin/echo --version', 'timeout --foreground 5 /bin/echo --version',
+      'docker run img /bin/echo --version', 'export POSIXLY_CORRECT=1\ndocker run img /bin/echo --version', 'ssh host /bin/echo --version', "env -i ssh host '/bin/echo --version'"]) {
       assert.deepStrictEqual(wordToken(src, '--version'), ['option', VERSION], src);
-      if (!src.startsWith('docker') && !src.startsWith('POSIX')) assert.ok(isVersionBash(src), src);
+      if (!/^(docker|POSIX|export|ssh|env -i ssh)/.test(src)) assert.ok(isVersionBash(src), src);
     }
     // (Another option alone is the option it is.)
     assert.deepStrictEqual(wordToken('/bin/echo -n', '-n'), ['option', 'do not print the trailing newline']);
     // Surely not there: the option, and nothing more.
     for (const src of ['env -i /bin/echo --version', 'env -u POSIXLY_CORRECT /bin/echo --version', 'unset POSIXLY_CORRECT\n/bin/echo --version',
-      'export POSIXLY_CORRECT=1\nexport -n POSIXLY_CORRECT\n/bin/echo --version', 'env -i env -i /bin/echo --version', 'docker run img /bin/echo --version']) {
+      'export POSIXLY_CORRECT=1\nexport -n POSIXLY_CORRECT\n/bin/echo --version', 'env -i env -i /bin/echo --version',
+      'POSIXLY_CORRECT=1 doas /bin/echo --version', 'export POSIXLY_CORRECT=1\ndoas -u u /bin/echo --version']) {
       assert.deepStrictEqual(wordToken(src, '--version'), PLAIN, src);
     }
     // Surely there: text, and why.
@@ -177,6 +181,38 @@ describe('the program echo: --help and --version as its one argument', () => {
     assert.strictEqual(ja('/bin/echo --version'), 'バージョンを表示する（環境に `POSIXLY_CORRECT` があると、ただの文字列）');
     assert.strictEqual(ja('POSIXLY_CORRECT=1 /bin/echo --version'), '表示する文字列（環境に `POSIXLY_CORRECT` があるので、`--version` はオプションではない）');
     assert.strictEqual(ja('env -i /bin/echo --version'), 'バージョンを表示する');
+  });
+
+  it('starts from the state of the shell that runs the program: what that shell sets is not undone by the links before it', () => {
+    for (const [script, version] of [
+      ["env -i bash -c 'POSIXLY_CORRECT=1 /bin/echo --version'", false],
+      ["env -i bash -c 'export POSIXLY_CORRECT=1; /bin/echo --version'", false],
+      ["env -u POSIXLY_CORRECT bash -c 'POSIXLY_CORRECT=1 /bin/echo --version'", false],
+      ["env -i sh -c 'set -a; POSIXLY_CORRECT=1; /bin/echo --version'", false],
+      ["export POSIXLY_CORRECT=1; env -i bash -c '/bin/echo --version'", true],
+      ["export POSIXLY_CORRECT=1; env -u POSIXLY_CORRECT bash -c '/bin/echo --version'", true],
+      ["export POSIXLY_CORRECT=1; bash -c '/bin/echo --version'", false],
+      ["export POSIXLY_CORRECT=1; bash -c 'env -i /bin/echo --version'", true],
+      ["env -i bash -c '/bin/echo --version'", true],
+      ['bash -c \'export POSIXLY_CORRECT=1; env -i bash -c "/bin/echo --version"\'', true],
+      ['env -i bash -c \'export POSIXLY_CORRECT=1; bash -c "/bin/echo --version"\'', false],
+    ] as const) {
+      assert.strictEqual(isVersionBash(script), version, script);
+      // (The explainer reads the line after the last `; ` outside the quotes.)
+      const src = script.startsWith('export ') ? script.replace('; ', '\n') : script;
+      assert.strictEqual(isVersion(src), version, `explainer: ${script}`);
+    }
+  });
+
+  it('shows no example of what printf prints when it reads `--help` or `--version`', () => {
+    const titles = (src: string): string[] => explain(src, 0, 'en').examples.map((e) => `${e.title} ${e.target ?? ''}`);
+    assert.match(out('/usr/bin/printf --version'), /^printf \(GNU coreutils\)/);
+    assert.deepStrictEqual(titles('/usr/bin/printf --version'), []);
+    assert.deepStrictEqual(titles('env /usr/bin/printf --help'), []);
+    assert.ok(!titles('/usr/bin/printf --help | tr a-z A-Z').some((t) => /printf/.test(t)));
+    // (Not alone, it is the format.)
+    assert.strictEqual(out('/usr/bin/printf --version x'), '--version');
+    assert.strictEqual(titles('/usr/bin/printf --version x').length, 1);
   });
 
   it('follows xargs: a later `-L` or `-l` turns a replace string off, a later `-I` or `-i` turns them off', () => {

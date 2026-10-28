@@ -397,6 +397,8 @@ export function commandExampleFor(cx: Explainer, n: SyntaxNode, spec: CommandSpe
     readExample(cx, n, args);
     return;
   }
+  // (`/usr/bin/printf --version`: the word read as an option it takes only alone prints the version, not the format.)
+  if (parse.roles.some((r) => r.role.role === 'option' && spec.soleOptions?.includes(r.role.spec))) return;
   const kind = spec.example;
   const src = inputSource(cx, n, parse, args, spec);
   // A command that prints what it reads as it is (cat) shows what it does when it joins several streams (`cat a - b`).
