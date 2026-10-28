@@ -184,6 +184,8 @@ export function unsafe(tree: SyntaxTree, depth = 0): string | undefined {
     const why = commandWhy(c, depth, scripts);
     if (why) return why;
   }
+  // (A function defined after \`set -a\` is exported, and a new bash defines it before it reads its set-up.)
+  if (turnsOn(tree, 'a', 'allexport') && descendants(tree.root, ['function_definition']).length) return '`set -a` with a function definition, which would export it (a new bash defines it before its set-up runs)';
   if (turnsOn(tree, 'a', 'allexport') && turnsOn(tree, undefined, 'posix')) return '`set -o posix` with `set -a`, which would export POSIXLY_CORRECT (a new bash in posix mode reads no BASH_ENV)';
   for (const n of descendants(tree.root, ['variable_assignment'])) {
     const name = /^[A-Za-z_]\w*/.exec(n.text)?.[0];
@@ -322,7 +324,11 @@ export interface Ran { out: string; err: string; status: number | null }
 
 const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
-/** The text read through BASH_ENV: the recorders, the walls, then the job's prelude. */
+/**
+ * The text read through BASH_ENV: the recorders, the walls, then the job's prelude. Each builtin it runs is called
+ * through `builtin`: a function that a new bash imports from its environment, defined before it reads this, would
+ * take the name of one (`set -a; enable() { :; }; bash -c …`), and `unsafe` refuses a function named `builtin`.
+ */
 function setup(prelude = ''): string {
   return `command_not_found_handle() { builtin printf '@%s' "$1"; builtin shift; (( $# )) && builtin printf ' <%s>' "$@"; builtin echo; builtin return "\${RW_FAIL:-0}"; }
 cd() { builtin printf '@cd'; (( $# )) && builtin printf ' <%s>' "$@"; builtin echo; }
@@ -330,9 +336,9 @@ pushd() { cd "$@"; }
 popd() { cd "$@"; }
 builtin readonly -f command_not_found_handle ${RECORDERS.join(' ')}
 builtin readonly ${PROTECTED.join(' ')}
-ulimit -f 20000
-enable -n ${TURNED_OFF.join(' ')}
-enable -n enable
+builtin ulimit -f 20000
+builtin enable -n ${TURNED_OFF.join(' ')}
+builtin enable -n enable
 ${prelude}
 `;
 }

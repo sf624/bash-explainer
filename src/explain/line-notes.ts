@@ -4,20 +4,20 @@
 // (src/semantics/pipeline.ts), a loop over a glob that may match nothing, and an extended glob read before
 // `shopt -s extglob` applies.
 import type { Token } from '../analyzer-types';
-import { hasExtglob, isGlob } from '../examples/shellwords';
+import { hasExtglob } from '../examples/shellwords';
 import { tx } from '../i18n';
 import { fact, factOf, MESSAGES } from '../messages';
 import { statementBefore } from '../rewrite';
 import { STATEMENTS } from '../semantics/env';
+import { wordPatterns } from '../semantics/globwords';
 import { lostVariable } from '../semantics/pipeline';
 import { docLine } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
-import { wordFields } from '../semantics/words';
 import { statusFacts, type StatusFact } from '../statusfacts';
-import { ancestor, field, fields, type SyntaxNode, wordBraces } from '../syntax/tree';
+import { ancestor, field, fields, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { intersects, onLine } from './nodes';
-import { globOff, shoptAt, unquotedWord } from './reads';
+import { shoptAt } from './reads';
 
 /**
  * The status facts of a script, by line, computed once per status model and tree (both languages): the strings `eval`
@@ -100,39 +100,38 @@ export function unmatchedGlobPitfalls(cx: Explainer, root: SyntaxNode, line: num
   for (const loop of onLine(root, ['for_statement', 'select_statement'], line)) {
     const shopt = shoptAt(cx, loop);
     if (loop.startPosition.row !== line || shopt.nullglob === 'on' || shopt.failglob === 'on') continue;
-    // `*.log`, and `"$dir"/*.log` too.
-    const globbed = (v: SyntaxNode): boolean => (!!unquotedWord(v) && isGlob(v.text)) || (v.type === 'concatenation' && v.namedChildren.some((c) => c.type === 'word' && isGlob(c.text)));
-    const glob = fields(loop, 'value').find(globbed);
+    // (The words of the list as bash reads them where the loop runs, from the word model: the words each makes by
+    // brace expansion, and their fields that are patterns. `*.log`, `"$dir"/*.log` and `*.{c,h}` are, a quoted `*`
+    // is not: `{"*",*.c}`.)
+    const words = fields(loop, 'value');
+    const lists = words.map((w) => wordPatterns(w, cx.state));
+    const at = lists.findIndex((l) => l?.some((x) => x.patterns.length));
     const v = field(loop, 'variable')?.text;
-    if (!glob || !v || globOff(cx, glob)) continue;
+    if (at < 0 || !v) continue;
+    const glob = words[at];
     const bodyNode = field(loop, 'body');
     // `for f in *` while typing: there is no body to look at yet.
     if (!bodyNode) continue;
     const body = bodyNode.text;
     if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
-    // (The words bash makes of a word of the list when no file matches, from the word model: braces first, so that
-    // `*.{c,h}` runs over `*.c` and `*.h`; undefined where they are not known here, `"$d"/*.c`.)
-    const words = fields(loop, 'value');
-    const unmatched = (w: SyntaxNode): string[] | undefined => wordFields(w, cx.state, { files: [] }).fields;
-    // The rewrites: a test first in the body (`do` with no command is a syntax error: nothing runs once), where every
-    // word of the list is a glob, and each word its braces make (it would skip the others too, `for i in a *.c` or
-    // `for i in {a,*.c}`, which are no files); and where the shell has nullglob, `shopt -s nullglob` before the
-    // statement that holds the loop (`a && for … | sort`), unless the loop is a function's body (`f() for …`).
+    // The rewrites: a test first in the body (`do` with no command is a syntax error: nothing runs once), where each
+    // pass of the loop is over a pattern (it would skip the others too, `for i in a *.c` or `for i in {a,*.c}`, which
+    // are no files); and where the shell has nullglob, `shopt -s nullglob` before the statement that holds the loop
+    // (`a && for … | sort`), unless the loop is a function's body (`f() for …`).
     const first = bodyNode.namedChildren.find((c) => STATEMENTS.has(c.type));
     if (!first) continue;
     let holder = loop;
     while (HOLDERS.has(holder.parent!.type)) holder = holder.parent!;
-    const rewrite = words.every((w) => globbed(w) && (unmatched(w)?.every(isGlob) ?? true)) ? [statementBefore(first, `[ -e "$${v}" ] || continue`)] : [];
+    const rewrite = lists.every((l) => l?.every((x) => x.patterns.length && x.others === 0)) ? [statementBefore(first, `[ -e "$${v}" ] || continue`)] : [];
     if (shopt.nullglob !== 'unsupported' && holder.parent!.type !== 'function_definition') rewrite.push(statementBefore(holder, 'shopt -s nullglob'));
-    // (The patterns the glob gives, each of which runs the loop once with its text when nothing matches it; and whether
-    // they are all the loop runs over. With other words, or braces that make some, the loop runs over them too:
-    // `for i in a b *.c` runs three times, the last with `*.c`.)
-    // The note names the word as the pattern, but the one of its words that is a glob where it makes more (`{a,*.c}`).
-    const made = unmatched(glob);
-    const texts = made?.filter(isGlob) ?? [glob.text];
-    const alone = words.length === 1 && (made ? made.length === texts.length : !wordBraces(glob).length);
-    const pattern = made && made.length > 1 && texts.length === 1 ? texts[0] : glob.text;
-    return cx.say(fact(cx.lang, 'unmatched-glob-runs-once', { glob: pattern, texts, v, alone, rewrite }), glob);
+    // (Each pattern of the word runs the loop once when no file matches it, with its text after the expansions; they
+    // are the whole list, so that with one the loop runs once in all, where the word makes nothing else. A pattern is
+    // named by its text, but as written where the text is not known or reads otherwise as a pattern, `"$d"/*.c`.)
+    const made = lists[at]!;
+    const patterns = made.flatMap((x) => x.patterns.map((p) => ({ name: p.text !== undefined && p.text === p.pattern ? p.text : x.written, text: p.text })));
+    const alone = words.length === 1 && made.every((x) => x.others === 0);
+    const name = patterns.length === 1 && (made.length > 1 || made[0].others !== 0) ? patterns[0].name : glob.text;
+    return cx.say(fact(cx.lang, 'unmatched-glob-runs-once', { glob: name, patterns, v, alone, rewrite }), glob);
   }
   return [];
 }

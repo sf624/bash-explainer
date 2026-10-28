@@ -42,15 +42,19 @@ export const RECORDERS = 'cp() { echo "@cp $*"; return "${RW_FAIL:-0}"; }\ntar()
 export interface Ran { out: string; err: string; status: number | null }
 
 /**
- * Runs `driver` in bash `program`, in a new directory holding `f.sh` (`script`), the empty files `files`, and the
- * recorders (`recorders`, read through BASH_ENV by every bash started there).
+ * Runs `driver` in bash `program`, in a new directory holding `f.sh` (`script`), the empty files `files` (and the
+ * directories, `sub/`), and the recorders (`recorders`, read through BASH_ENV by every bash started there).
  */
 export async function run(program: string, script: string, driver: string, { env = {}, files = [], recorders = RECORDERS }: { env?: Record<string, string>; files?: readonly string[]; recorders?: string } = {}): Promise<Ran> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-rewrites-'));
   try {
     fs.writeFileSync(path.join(dir, 'f.sh'), script);
     fs.writeFileSync(path.join(dir, 'rec.sh'), recorders);
-    for (const f of files) fs.writeFileSync(path.join(dir, f), '');
+    // (A name that ends with `/` is a directory; the directories of the others are made too.)
+    for (const f of files) {
+      fs.mkdirSync(path.join(dir, f.endsWith('/') ? f : path.dirname(f)), { recursive: true });
+      if (!f.endsWith('/')) fs.writeFileSync(path.join(dir, f), '');
+    }
     const r = await runContained([program, '--norc', '--noprofile', '-c', driver], dir, { BASH_ENV: path.join(dir, 'rec.sh'), ...env });
     return { out: r.stdout, err: r.stderr, status: r.status };
   } finally {

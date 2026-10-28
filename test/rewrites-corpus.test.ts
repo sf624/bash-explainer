@@ -65,6 +65,9 @@ describe('the walls of the runs of the corpus (test/support/rewrite-states.ts)',
     ['set -a; set -o posix; bash -c \'cd ..; echo x > f\'', /`set -o posix` with `set -a`/], ['set -o allexport; shopt -so posix', /`set -o posix` with `set -a`/],
     ['export -n BASH_ENV; bash -c \'cd ..\'', /`export` of `BASH_ENV`/], ['declare +x PATH', /`declare` of `PATH`/], ['env -S \'bash --posix -c x\'', /`env` with an option/],
     ['exec -a sh bash -c \'cd ..\'', /`exec`/], ['sh -i', /`sh` other than/], ['./x.sh', /named by a path/],
+    // (A function exported by \`set -a\`, which a new bash would define before its set-up: \`enable\` there.)
+    ['set -a; enable() { :; }; bash -c \'cd ..\'', /`set -a` with a function definition/], ['set -o allexport; f() { :; }; bash -c f', /`set -a` with a function definition/],
+    ['shopt -so allexport\nulimit() { :; }', /`set -a` with a function definition/],
     // (A program by its path, also through a command that runs another, and the builtins that get past the walls.)
     ['/bin/id', /named by a path/], ['command /bin/id', /named by a path/], ['env /bin/id', /named by a path/], ['echo $(/usr/bin/id)', /named by a path/],
     ['command -p id', /`command -p`/], ['builtin cd /', /`builtin`/], ['exec id', /`exec`/], ['hash -p /bin/id x', /`hash`/], ['enable -f x.so y', /`enable`/],
@@ -86,7 +89,7 @@ describe('the walls of the runs of the corpus (test/support/rewrite-states.ts)',
   ];
   for (const [src, why] of refused) it(`refuse ${JSON.stringify(src)}`, () => assert.match(unsafe(parser.parse(src)) ?? 'allowed', why));
   it('allow what stays in the box', () => {
-    for (const src of ['set -o posix; bash -c :', 'set -a; x=1', 'export SHELLOPTS_X=1', 'echo hi > f 2>/dev/null >&2 2>&1 >&-', 'cat < "$f"; cat <<< "$x"', 'FOO=1 bash -c \'echo "$FOO" > f\'', 'command -v x', 'sudo FOO=1 echo $FOO', 'cd "$D"', 'cat <<E\n$(echo a)\nE']) {
+    for (const src of ['set -o posix; bash -c :', 'set -a; x=1', 'f() { :; }; f; set +a', 'export SHELLOPTS_X=1', 'echo hi > f 2>/dev/null >&2 2>&1 >&-', 'cat < "$f"; cat <<< "$x"', 'FOO=1 bash -c \'echo "$FOO" > f\'', 'command -v x', 'sudo FOO=1 echo $FOO', 'cd "$D"', 'cat <<E\n$(echo a)\nE']) {
       assert.strictEqual(unsafe(parser.parse(src)), undefined, src);
     }
   });
@@ -104,6 +107,8 @@ describe('the walls of the runs of the corpus (test/support/rewrite-states.ts)',
         { script: 'POSIXLY_CORRECT=1 bash -c \'cd ..; pwd\'; env POSIXLY_CORRECT=1 bash -c \'cd ..; pwd\'; export POSIXLY_CORRECT=1; bash -c \'cd ..; pwd\'', programs: ['bash', 'env'] },
         { script: 'set -a; set -o posix; bash -c \'cd ..; pwd\'; bash -o posix -c \'cd ..; pwd\'; bash --posix -c \'cd ..; pwd\'; export SHELLOPTS; bash -c \'cd ..; pwd\'', programs: ['bash'] },
         { script: 'export -n BASH_ENV PATH; bash -c \'cd ..; pwd; echo "$PATH" | grep -c usr\'; env bash -c \'cd ..; pwd\'', programs: ['bash', 'env'] },
+        // (Functions that a new bash imports before its set-up, named as builtins it runs: the set-up calls them through \`builtin\`.)
+        { script: 'set -a; enable() { builtin echo "@enable $*"; }; ulimit() { builtin echo "@ulimit $*"; }; bash -c \'exec echo x; hash -p /bin/echo y; enable -n z\'', programs: ['bash'] },
       ]);
       const out = runs.map((r) => r.out + r.err);
       assert.match(out[0], /PATH: readonly variable/);
@@ -123,6 +128,9 @@ describe('the walls of the runs of the corpus (test/support/rewrite-states.ts)',
         [['@cd <..>', 'BOX'], [readonly, '@bash refused', '@bash refused', '@bash refused']],
         [['@cd <..>', 'BOX', '@grep <-c> <usr>', '@cd <..>', 'BOX'], []],
       ]);
+      // (\`exec\` and \`hash\` are turned off in the new bash: its set-up ran \`enable\` and \`ulimit\`, not the functions,
+      // which print nothing there. The script's own \`enable\` is the function.)
+      assert.deepStrictEqual([lines(runs[9].out), lines(runs[9].err)], [['@exec <echo> <x>', '@hash <-p> </bin/echo> <y>', '@enable -n z'], []]);
     });
   }
 });

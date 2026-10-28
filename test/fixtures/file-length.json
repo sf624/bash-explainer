@@ -5,5 +5,5 @@
   "src/semantics/walk/walker.ts": 1283,
   "src/syntax/adapters/unbash.ts": 1392,
   "src/examples/awk.ts": 1387,
-  "src/semantics/words.ts": 1125
+  "src/semantics/words.ts": 1105
 }
