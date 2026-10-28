@@ -553,11 +553,15 @@ describe('the rewrites of the style checks (docs/design/oracles.md, step 6)', ()
     ['{ echo a; echo b >f }', 'brace-close-no-separator', ['{ echo a; echo b >f; }']],
     ['rm -rf $DIR/*', 'rm-empty-variable-root', ['rm -rf "${DIR:?}"/*']],
     // (A check before the statement, where it stands alone: not in a list nor a condition.)
-    ['rm -rf ${D%/}/x', 'rm-empty-variable-root', ['[ -n "${D%/}" ] || exit 1\nrm -rf ${D%/}/x']],
-    ['rm -rf ${D%/}/x 2>/dev/null', 'rm-empty-variable-root', ['[ -n "${D%/}" ] || exit 1\nrm -rf ${D%/}/x 2>/dev/null']],
-    ['f() { rm -rf ${D%/}/x; }', 'rm-empty-variable-root', ['f() { [ -n "${D%/}" ] || exit 1; rm -rf ${D%/}/x; }']],
-    ['if :; then rm -rf ${D%/}/x; fi', 'rm-empty-variable-root', ['if :; then [ -n "${D%/}" ] || exit 1; rm -rf ${D%/}/x; fi']],
-    ['case a in a) rm -rf ${D%/}/x ;; esac', 'rm-empty-variable-root', ['case a in a) [ -n "${D%/}" ] || exit 1; rm -rf ${D%/}/x ;; esac']],
+    // (It stops as `failure-reported-as-success` does: `exit 1` in a script, `return 1` in a function, and where the
+    // file may be sourced, `return 1 2>/dev/null || exit 1`.)
+    ['#!/bin/bash\nrm -rf ${D%/}/x', 'rm-empty-variable-root', ['#!/bin/bash\n[ -n "${D%/}" ] || exit 1\nrm -rf ${D%/}/x']],
+    ['#!/bin/bash\nf() { rm -rf ${D%/}/x; }', 'rm-empty-variable-root', ['#!/bin/bash\nf() { [ -n "${D%/}" ] || return 1; rm -rf ${D%/}/x; }']],
+    ['rm -rf ${D%/}/x', 'rm-empty-variable-root', ['[ -n "${D%/}" ] || return 1 2>/dev/null || exit 1\nrm -rf ${D%/}/x']],
+    ['rm -rf ${D%/}/x 2>/dev/null', 'rm-empty-variable-root', ['[ -n "${D%/}" ] || return 1 2>/dev/null || exit 1\nrm -rf ${D%/}/x 2>/dev/null']],
+    ['f() { rm -rf ${D%/}/x; }', 'rm-empty-variable-root', ['f() { [ -n "${D%/}" ] || return 1; rm -rf ${D%/}/x; }']],
+    ['if :; then rm -rf ${D%/}/x; fi', 'rm-empty-variable-root', ['if :; then [ -n "${D%/}" ] || return 1 2>/dev/null || exit 1; rm -rf ${D%/}/x; fi']],
+    ['case a in a) rm -rf ${D%/}/x ;; esac', 'rm-empty-variable-root', ['case a in a) [ -n "${D%/}" ] || return 1 2>/dev/null || exit 1; rm -rf ${D%/}/x ;; esac']],
     ['a && rm -rf ${D%/}/x', 'rm-empty-variable-root', []],
     ['if rm -rf ${D%/}/x; then :; fi', 'rm-empty-variable-root', []],
     ['rm -rf ${D%/}/x | cat', 'rm-empty-variable-root', []],
@@ -605,24 +609,44 @@ describe('the rewrites of the style checks (docs/design/oracles.md, step 6)', ()
     assert.match(found('{echo a\n}', 'brace-no-space')[0].text, /`\{ echo …; \}`$/);
     assert.match(found('[ $a 2>5 ]', 'redirect-in-bracket')[0].text, /Use `\[\[ \]\]` to compare strings by order, or escape it as `\\>`$/);
     assert.match(found('[ "$x"\\]', 'bracket-close-in-word')[0].text, /needs a space before it$/);
-    assert.match(found('a && rm -rf ${D%/}/x', 'rm-empty-variable-root')[0].text, /Write `\[ -n "\$\{D%\/\}" \] \|\| exit 1` before it/);
+    assert.match(found('#!/bin/bash\na && rm -rf ${D%/}/x', 'rm-empty-variable-root')[0].text, /Write `\[ -n "\$\{D%\/\}" \] \|\| exit 1` before it/);
+    assert.match(found('a && rm -rf ${D%/}/x', 'rm-empty-variable-root')[0].text, /Write `\[ -n "\$\{D%\/\}" \] \|\| return 1 2>\/dev\/null \|\| exit 1` before it/);
   });
   it('carries no rewrite in a string another shell reads, whose text shows it still', () => {
     const tree = parser.parse("bash -c 'read x'");
     const lines = new Analyzer('en').explainLine(tree, 0);
     assert.ok(lines.notes.some((n) => /Usually write `read -r`/.test(n)), lines.notes.join('\n'));
   });
-  it('says the check `rm -r` needs once it is there', () => {
-    // (The check the note says to write, or `[ -n "$v" ] || exit 1`, `test -n`, `return`, before it in the same list.)
+  it('keeps the warning of `rm -r` after a check before it, which the model does not follow (docs/design/semantics.md, 4.15)', () => {
+    // (Even the check the note says to write: a value is not narrowed through a test yet. Then other checks, and the
+    // variable set between.)
     for (const src of ['[ -n "${D%/}" ] || exit 1\nrm -rf ${D%/}/x', '[ -n "$D" ] || exit 1\nrm -rf $D/x', 'test -n "${D}" || return\ncd x\nrm -rf $D/x',
-      '[ "$#" -gt 0 ] || exit 1\nrm -rf $@/x', 'f() {\n  [ -n "$D" ] || return 1\n  rm -rf "$D"/*\n}']) {
-      assert.deepStrictEqual(found(src, 'rm-empty-variable-root'), [], src);
-    }
-    // (Not after another check, nor where the variable is set between.)
-    for (const src of ['[ -n "$D" ] && exit 1\nrm -rf $D/x', '! [ -n "$D" ] || exit 1\nrm -rf $D/x', '[ -n "$D" ] || { exit 1; }\nrm -rf $D/x', '[ -z "$D" ] || exit 1\nrm -rf $D/x',
+      '[ "$#" -gt 0 ] || exit 1\nrm -rf $@/x', 'f() {\n  [ -n "$D" ] || return 1\n  rm -rf "$D"/*\n}',
+      '[ -n "$D" ] && exit 1\nrm -rf $D/x', '! [ -n "$D" ] || exit 1\nrm -rf $D/x', '[ -n "$D" ] || { exit 1; }\nrm -rf $D/x', '[ -z "$D" ] || exit 1\nrm -rf $D/x',
       '[ -n "$E" ] || exit 1\nrm -rf $D/x', '[ -n "$D" ] || echo\nrm -rf $D/x', '[ -n "$D" x ] || exit 1\nrm -rf $D/x', 'test -n "$D" x || exit 1\nrm -rf $D/x', 'echo -n "$D" || exit 1\nrm -rf $D/x',
       '[ -n "$D" ] || exit 1\nD=\nrm -rf $D/x', '[ -n "$D" ] || exit 1\nread D\nrm -rf $D/x', '[ -n "$D" ] || exit 1\nfor D in a; do :; done\nrm -rf $D/x', '[ -n "${D%/}" ] || exit 1\nrm -rf $D/x']) {
       assert.strictEqual(found(src, 'rm-empty-variable-root').length, 1, src);
     }
   });
+  // (Where bash reaches `rm` with `D` empty after such a check: the check runs in the background, `return` outside a
+  // function fails and goes on, or `D` is emptied between, by a function, `eval` or a file read; or `exit` is a function.
+  // `D`: its value from the environment; lib.sh empties it.)
+  const reached: [string, string | undefined][] = [
+    ['[ -n "$D" ] || exit 1 &\nrm -rf $D/x', undefined],
+    ['test -n "$D" || return\nrm -rf $D/x', undefined],
+    ['f() { D=; }\n[ -n "$D" ] || exit 1\nf\nrm -rf $D/x', 'd'],
+    ['[ -n "$D" ] || exit 1\neval "D="\nrm -rf $D/x', 'd'],
+    ['[ -n "$D" ] || exit 1\n. ./lib.sh\nrm -rf $D/x', 'd'],
+    ['exit() { :; }\n[ -n "$D" ] || exit 1\nrm -rf $D/x', undefined],
+  ];
+  for (const program of bashes()) {
+    for (const [src, value] of reached) {
+      it(`keeps the warning where ${program ? 'bash 5.3' : 'bash'} reaches \`rm\` with \`D\` empty: ${JSON.stringify(src)}`, () => {
+        assert.strictEqual(found(src, 'rm-empty-variable-root').length, 1, src);
+        // (`rm` echoed; lib.sh written first, in the directory of the run.)
+        const r = runBash(`echo D= > lib.sh\n${src.replace('rm -rf', 'echo rm -rf')}\nwait`, { program, files: [], env: value === undefined ? {} : { D: value } });
+        assert.match(r.stdout, /^rm -rf \/x$/m, JSON.stringify(r));
+      });
+    }
+  }
 });

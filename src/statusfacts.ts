@@ -11,7 +11,7 @@ import { canonicalName, lookupCommand } from './dict/aliases';
 import type { FactSpec, Words } from './messages';
 import { featureWorks, type Shell } from './dialect';
 import { outputsOf } from './idioms';
-import { around, asIf, changed, replaceNode, replaceRange, type Rewrite, statementAfter, textBetween } from './rewrite';
+import { around, asIf, changed, replaceNode, replaceRange, type Rewrite, statementAfter, stopCommand, textBetween } from './rewrite';
 import { commandName } from './semantics/effects';
 import { readAs, STATEMENTS } from './semantics/env';
 import { resolveName } from './semantics/names';
@@ -320,7 +320,7 @@ function failureReported(n: SyntaxNode, root: SyntaxNode, state: StateModel, sta
   const sent = (x: SyntaxNode): boolean => redirectionsOf(x).length > 0 || (x !== right && sent(x.parent!));
   const said = sent(msg) ? right.text : `${right.text.slice(0, at)} >&2${right.text.slice(at)}`;
   const sourced = !def && read !== 'script';
-  const end = sourced ? 'return 1 2>/dev/null || exit 1' : where === 'function' || read !== 'script' ? 'return 1' : 'exit 1';
+  const end = stopCommand(n, state, where === 'function');
   const quiet = (left.type === 'command' || left.type === 'redirected_statement') && outputsOf(left).err === '/dev/null' ? redirectionsOf(left).map((r) => r.text).join(' ') : '';
   return { id: 'failure-reported-as-success', params: { where, name: def ? field(def, 'name')!.text : '', left: shorten(left.text), right: shorten(msg.text), quiet, sourced, rewrite: [replaceNode(right, `{ ${said}; ${end}; }`)] } };
 }

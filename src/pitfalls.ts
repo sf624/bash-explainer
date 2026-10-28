@@ -8,7 +8,7 @@ import { Lang } from './i18n';
 import { type ExecEnv, runsString, slotEnvs } from './semantics/env';
 import { resolveName } from './semantics/names';
 import { option, type StateModel } from './semantics/state';
-import { childrenOnRows, descendants, field, fields, redirectionsOf } from './syntax/tree';
+import { ancestor, childrenOnRows, descendants, field, fields, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, testFails, writtenAsBracket } from './testexpr';
 import { staticWordValue, unquoteWord } from './staticword';
@@ -16,7 +16,7 @@ import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
 import type { ConventionId } from './conventions';
 import { marked, type Note, type NoteLevel } from './messages';
-import { type Rewrite, replaceNode, replaceSpan, statementBefore, textBetween, type TextEdit } from './rewrite';
+import { type Rewrite, replaceNode, replaceSpan, statementBefore, stopCommand, textBetween, type TextEdit } from './rewrite';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
 // `rm -rf $DIR/…`, `read` without `-r`, `<` and `>` or a missing `]` inside `[ ]`), explained where they appear: what
@@ -35,10 +35,11 @@ function varName(n: SyntaxNode): string | undefined {
 /**
  * The variable an `rm -r` word starts with when an empty value leaves a path from the root (`$DIR/*`, `"$DIR"/*`,
  * `"${DIR}/x"`, `"$DIR/"*`, `"$DIR""/x"`): the expansion, its name, what is left (`/*`), and whether it is the plain
- * value (`$v`, `${v}`, `${v:-}`), which `${v:?}` can stand for. Not for an expansion that is never empty (`${#v}`,
- * `${v:-x}`, `${v:?}`), nor HOME and PWD, which are always set.
+ * value (`$v`, `${v}`, `${v:-}`), which `${v:?}` can stand for, and the test that it is not empty (`[ -n "${v%/}" ]`),
+ * when one can be written. Not for an expansion that is never empty (`${#v}`, `${v:-x}`, `${v:?}`), nor HOME and PWD,
+ * which are always set.
  */
-function rootTarget(w: SyntaxNode): { e: SyntaxNode; v: string; left: string; plain: boolean; check?: string } | undefined {
+function rootTarget(w: SyntaxNode): { e: SyntaxNode; v: string; left: string; plain: boolean; test?: string } | undefined {
   const first = w.type === 'concatenation' ? w.namedChildren[0] : w.type === 'string' ? w : undefined;
   if (!first) return undefined;
   // In quotes, the expansion right after the opening quote; a string of only it is skipped over (`"$DIR""/x"`).
@@ -56,7 +57,7 @@ function rootTarget(w: SyntaxNode): { e: SyntaxNode; v: string; left: string; pl
     const p = inner.type === 'expansion' ? parseExpansion(inner.text) : undefined;
     if (p?.op) return undefined;
     const name = sub?.namedChildren[0].text;
-    return { e: inner, v: inner.text, left, plain: false, check: name ? `[ "\${#${name}[@]}" -gt 0 ] || exit 1` : '[ "$#" -gt 0 ] || exit 1' };
+    return { e: inner, v: inner.text, left, plain: false, test: name ? `[ "\${#${name}[@]}" -gt 0 ]` : '[ "$#" -gt 0 ]' };
   }
   if (special) return undefined;
   // An element, `${a[0]}`, is named with its subscript.
@@ -65,7 +66,7 @@ function rootTarget(w: SyntaxNode): { e: SyntaxNode; v: string; left: string; pl
   const ref = /^\w+$/.test(v) ? `$${v}` : `\${${v}}`;
   // Inside `"…"` of a check, a quote or backslash in the expansion means something else than where it stands: no check then.
   const quotable = !/['"\\]/.test(inner.text);
-  const gen = (plain: boolean) => ({ e: inner, v, left, plain, check: quotable ? `[ -n "${plain ? ref : inner.text}" ] || exit 1` : undefined });
+  const gen = (plain: boolean) => ({ e: inner, v, left, plain, test: quotable ? `[ -n "${plain ? ref : inner.text}" ]` : undefined });
   if (inner.type === 'simple_expansion') return gen(true);
   const p = parseExpansion(inner.text);
   if (!p || p.prefix === '#') return undefined;
@@ -452,33 +453,6 @@ function escapedComparison(n: SyntaxNode, redirect: SyntaxNode): Rewrite | undef
   return editSpan(field(n, 'name')!, close, [{ start: redirect.startIndex, end: redirect.endIndex, text: `${pre}${m[1] ? `${m[1]} ` : ''}\\${m[2]} ${dest.text}` }]);
 }
 
-/**
- * Whether a statement before `stmt` in its list stops when the expansion is empty, as the note of
- * `rm-empty-variable-root` says to write it: `check` itself, or `[ -n "$v" ] || exit 1` (`test -n`, `return`, the
- * expansion written as one of `quoted`), with nothing between them that sets the variable `v`.
- */
-function guardedBefore(stmt: SyntaxNode, check: string | undefined, quoted: readonly string[], v: string): boolean {
-  const kids = stmt.parent!.namedChildren;
-  for (let j = kids.indexOf(stmt) - 1; j >= 0; j--) {
-    const k = kids[j];
-    if (k.text === check || stopsWhenEmpty(k, quoted)) return true;
-    if (descendants(k, ['variable_assignment']).some((a) => field(a, 'name')?.text === v) || descendants(k, ['for_statement']).some((f) => field(f, 'variable')?.text === v)
-      || descendants(k, ['command']).some((c) => args(c).some((w) => w.text === v))) return false;
-  }
-  return false;
-}
-
-/** Whether `k` is `[ -n "$v" ] || exit 1` (or `test -n`, or `return`), its word one of `quoted`. */
-function stopsWhenEmpty(k: SyntaxNode, quoted: readonly string[]): boolean {
-  const [left, right] = k.namedChildren;
-  if (k.type !== 'list' || !k.children.some((c) => c.type === '||') || left.type !== 'command' || right.type !== 'command') return false;
-  const words = args(left).map((w) => w.text);
-  const name = commandName(left);
-  const test = (name === '[' && words.length === 3 && words[2] === ']') || (name === 'test' && words.length === 2);
-  const stop = commandName(right);
-  return test && words[0] === '-n' && quoted.includes(words[1]) && (stop === 'exit' || stop === 'return');
-}
-
 /** Whether the statement `n` stands alone in a list of statements (a body, the script), where one can go before it: not in `a && n`, `n | b`, `! n`, nor in a condition. */
 function standsAlone(n: SyntaxNode): boolean {
   const p = n.parent!;
@@ -754,9 +728,8 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
       const { e, v, left } = t;
       // (Nor a plain value the script surely set to some text: `DIR=/opt/app; rm -rf $DIR/*`.)
       if (t.plain && neverEmpty(model, v, e)) continue;
-      // (Nor after a check that stops when it is empty, as the note says to write it: `[ -n "$DIR" ] || exit 1`.)
-      // (A command holds its redirections: `rm -rf $D/x 2>/dev/null` is one statement.)
-      if (guardedBefore(n, t.check, [`"${e.text}"`, ...(t.plain ? [`"$${v}"`, `"\${${v}}"`] : [])], v)) continue;
+      // (A check before it, `[ -n "$DIR" ] || exit 1`, leaves the warning: the model does not narrow a value through
+      // a test, docs/design/semantics.md 4.15.)
       const safe = t.plain && quoteExpansions(w, new Map([[e, `\${${v}:?}`]]));
       if (safe) {
         const fix = replaceNode(w, safe);
@@ -765,8 +738,10 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
       } else {
         // `${DIR%/}` has no form with `:?` (and is empty for DIR=/ too); `${x:-*.txt}` has no quoted form.
         const what = t.plain ? v : e.text;
-        if (t.check) {
-          const fix = standsAlone(n) ? statementBefore(n, t.check) : { code: t.check, edits: [] };
+        if (t.test) {
+          // (The check stops where the code runs: `exit 1` in a script, `return 1` in a function, both where it may be sourced.)
+          const check = `${t.test} || ${stopCommand(n, model, !!ancestor(n, (x) => x.type === 'function_definition'))}`;
+          const fix = standsAlone(n) ? statementBefore(n, check) : { code: check, edits: [] };
           add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${fix.code}\` と書くと、空のときは止まります`,
             `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${fix.code}\` before it to stop when it is empty`, [fix]);
         } else {

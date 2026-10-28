@@ -3,9 +3,9 @@
 import type { Shell } from './dialect';
 import { builtins } from './dict/builtins';
 import type { Fact } from './messages';
-import { STATEMENTS } from './semantics/env';
-import { documentRoot } from './semantics/state';
-import { descendants, type SyntaxNode } from './syntax/tree';
+import { readAs, STATEMENTS } from './semantics/env';
+import { documentRoot, type StateModel } from './semantics/state';
+import { ancestor, descendants, type SyntaxNode } from './syntax/tree';
 
 /** A change to the text explained (the document): the text from `start` to `end` (offsets, `end` exclusive) becomes `text`. */
 export interface TextEdit { start: number; end: number; text: string }
@@ -54,6 +54,17 @@ function treeOf(n: SyntaxNode): { root: SyntaxNode; own: boolean } {
 export function replaceNode(n: SyntaxNode, code: string): Rewrite {
   const edits = treeOf(n).own && !descendants(n, ['heredoc_redirect']).length;
   return { code, edits: edits ? [{ start: n.startIndex, end: n.endIndex, text: code }] : [] };
+}
+
+/**
+ * The command a rewrite ends with to stop the code at `n` after a failure, by how the file is read (`readAs`): `exit 1`
+ * in a file run as a script, or `return 1` there in a function where `returns` (its caller then sees the failure). In a
+ * file that may be sourced, where `exit 1` would end the shell that sources it, `return 1` in a function; outside one,
+ * `return 1 2>/dev/null || exit 1` (`return` fails when the file is run, and then `exit 1` ends it).
+ */
+export function stopCommand(n: SyntaxNode, model: StateModel, returns: boolean): string {
+  if (readAs(model.env(n), model.read) === 'script') return returns ? 'return 1' : 'exit 1';
+  return ancestor(n, (x) => x.type === 'function_definition') ? 'return 1' : 'return 1 2>/dev/null || exit 1';
 }
 
 /**
