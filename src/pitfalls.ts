@@ -475,13 +475,13 @@ function stopsWhenEmpty(k: SyntaxNode, quoted: readonly string[]): boolean {
   const words = args(left).map((w) => w.text);
   const name = commandName(left);
   const test = (name === '[' && words.length === 3 && words[2] === ']') || (name === 'test' && words.length === 2);
-  return test && words[0] === '-n' && quoted.includes(words[1]) && ['exit', 'return'].includes(commandName(right) ?? '');
+  const stop = commandName(right);
+  return test && words[0] === '-n' && quoted.includes(words[1]) && (stop === 'exit' || stop === 'return');
 }
 
 /** Whether the statement `n` stands alone in a list of statements (a body, the script), where one can go before it: not in `a && n`, `n | b`, `! n`, nor in a condition. */
 function standsAlone(n: SyntaxNode): boolean {
   const p = n.parent!;
-  if (p.type === 'redirected_statement') return standsAlone(p);
   if (['program', 'compound_statement', 'do_group', 'subshell', 'else_clause'].includes(p.type)) return true;
   // (In `if`, `elif` and `case`, after the `then` or the `)` of its pattern.)
   const opener = p.children.findIndex((c) => !c.named && (c.type === 'then' || c.type === ')'));
@@ -755,7 +755,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
       // (Nor a plain value the script surely set to some text: `DIR=/opt/app; rm -rf $DIR/*`.)
       if (t.plain && neverEmpty(model, v, e)) continue;
       // (Nor after a check that stops when it is empty, as the note says to write it: `[ -n "$DIR" ] || exit 1`.)
-      const stmt = n.parent?.type === 'redirected_statement' ? n.parent : n;
+      const stmt = n.parent!.type === 'redirected_statement' ? n.parent! : n;
       if (guardedBefore(stmt, t.check, [`"${e.text}"`, ...(t.plain ? [`"$${v}"`, `"\${${v}}"`] : [])], v)) continue;
       const safe = t.plain && quoteExpansions(w, new Map([[e, `\${${v}:?}`]]));
       if (safe) {
