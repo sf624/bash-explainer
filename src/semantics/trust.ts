@@ -244,7 +244,7 @@ class Scan {
 
   /** What the word `v` assigns (`writtenValue`). */
   private value(v: SyntaxNode | undefined): Value {
-    return writtenValue(v, (x) => this.renames || this.functions.has(x));
+    return writtenValue(v, (x) => this.renames || this.functions.has(x), this.shell);
   }
 
   /** Records the text assigned to `name` (read as arithmetic if it is an integer). */
@@ -508,7 +508,7 @@ class Scan {
         // A word: `x`, `a[1]` (a glob that matches no file, as the walk takes it), `'x=1'`, `"$v"=1` (a name with a value
         // not known), `$v` (a name not known), `{a,b}` (names the braces give where they expand).
         const text = staticWordValue(o, false, this.shell) ?? (o.type === 'word' && !bracedWords([o]).length ? o.text : undefined);
-        const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(text ?? prefixOf(o).replace(/=.*/s, '='));
+        const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(text ?? prefixOf(o, this.shell).replace(/=.*/s, '='));
         if (!m || (text === undefined && !m[3])) {
           // (`local -`: the options, not a variable.)
           if (text === undefined) this.blindFor('a declaration names a variable not known');

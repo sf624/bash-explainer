@@ -85,7 +85,7 @@ export function restrictedAt(cx: Explainer, n: SyntaxNode): boolean {
  */
 export function restrictedCall(cx: Explainer, at: SyntaxNode, spec: CommandSpec, parse: ArgvParse, words: readonly SyntaxNode[]): { word?: string } | undefined {
   if (!restrictedAt(cx, at)) return undefined;
-  return restrictedRefusal(spec, parse, words.map((a) => staticWordValue(a) ?? (surelyHasSlash(a) ? a.text : undefined)));
+  return restrictedRefusal(spec, parse, words.map((a) => staticWordValue(a, false, cx.shell) ?? (surelyHasSlash(a) ? a.text : undefined)));
 }
 
 /** The shell options at `n` (src/semantics/state.ts): when it runs, or (`parse`) when bash read it. */

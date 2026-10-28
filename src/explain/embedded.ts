@@ -17,6 +17,7 @@ import { grepWrap, literalRegex, toJsRegex } from '../examples/regex';
 import type { RerunSpec } from '../examples/rerun';
 import { sedExample, sedPattern } from '../examples/sed';
 import { NO_INPUT } from '../examples/source';
+import { featureWorks } from '../shellfeatures';
 import { type Literal, literalContent, staticWordText } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
@@ -168,7 +169,18 @@ export function ansiCChildren(cx: Explainer, n: SyntaxNode): Token[] {
   return explainEscapes(lit.text, cx.lang, 'ansic').map((t) => fromEmbedded(t, n, lit, 'shell'));
 }
 
-/** A `$'…'` string, with its escapes. */
+/**
+ * A `$'…'` string, with its escapes. In a shell without it (`FEATURES.ansiC`), what dash makes of it instead: a `$` and
+ * a single-quoted string, with its value there (`ansiCWordValue`; none in POSIX sh, which may be dash or not).
+ */
 export function ansiCString(cx: Explainer, n: SyntaxNode): Token {
+  if (!featureWorks('ansiC', cx.shell)) {
+    const escapes = /\\/.test(n.text);
+    return cx.tok(n, 'string', cx.shell === 'dash'
+      ? cx.s(`bash・ksh・zsh の \`$'…'\` 文字列だが、dash にはこの書き方がない。dash では \`$\` はただの文字で、\`'…'\` はシングルクォートの文字列${escapes ? 'なので、エスケープは書いたまま残る' : 'になる'}`,
+        `A bash, ksh and zsh \`$'…'\` string, which dash does not have: in dash, \`$\` is plain text and \`'…'\` a single-quoted string${escapes ? ', so the escapes stay as written' : ''}`) + valueNote(cx, n)
+      : cx.s('bash・ksh・zsh の `$\'…\'` 文字列（エスケープを解釈した文字列になる）だが、POSIX sh のすべてにあるわけではない。dash では `$` はただの文字で、`\'…\'` はシングルクォートの文字列になる',
+        'A bash, ksh and zsh `$\'…\'` string (backslash escapes are interpreted), which not every POSIX sh has: in dash, `$` is plain text and `\'…\'` a single-quoted string'));
+  }
   return cx.tok(n, 'string', cx.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? valueNote(cx, n) : ''), ansiCChildren(cx, n));
 }

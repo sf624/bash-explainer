@@ -193,7 +193,7 @@ export function concatenationNote(cx: Explainer, n: SyntaxNode): string {
  * and the result is known without running anything. Empty or unchanged: nothing to say.
  */
 export function valueNote(cx: Explainer, n: SyntaxNode): string {
-  const v = staticWordValue(n);
+  const v = staticWordValue(n, false, cx.shell);
   if (!v || v === decodedText(n)) return '';
   const literal = v.includes('$');
   // (A newline is shown as `␊`, so that it is not read as the two characters `\n`; each picture is told once.)

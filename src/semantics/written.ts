@@ -1,5 +1,6 @@
 // What a write gives a variable, as the trust of the decisions reads it (src/semantics/trust.ts): text the script
 // wrote, with the names in it, or a value not known; and the names in a text that arithmetic reads.
+import type { Shell } from '../shellfeatures';
 import { staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 
@@ -31,11 +32,11 @@ export const COPY = /^\$\{?([A-Za-z_]\w*)\}?$/;
 /**
  * What the word `v` assigns (undefined: the empty value): text with the names in it, or `unknown`.
  * `renamed`: whether `$(name)` may print something (a function or an alias of `true`: `$(true)` prints nothing only
- * when `true` is the builtin).
+ * when `true` is the builtin). `shell`: the shell the script is for (bash when absent).
  */
-export function writtenValue(v: SyntaxNode | undefined, renamed: (name: string) => boolean): WrittenValue {
+export function writtenValue(v: SyntaxNode | undefined, renamed: (name: string) => boolean, shell?: Shell): WrittenValue {
   if (!v) return { names: [], text: '', fixed: true };
-  const s = substitutionNames(v).some(renamed) ? undefined : staticWordValue(v, true);
+  const s = substitutionNames(v).some(renamed) ? undefined : staticWordValue(v, true, shell);
   if (s !== undefined) return { names: identifiers(s), text: s, fixed: true };
   // (A tilde gives the value of HOME, `~user` a home not known: `m=~; (( m ))` runs a HOME from the environment.)
   const tildes = tildeSpots(tildeParts([v]), 'assignment');

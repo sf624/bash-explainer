@@ -1,7 +1,8 @@
 // The operands of `${x:-word}`, `${x#pattern}` and `${x/p/r}` read from their text, for the word model
 // (src/semantics/words.ts): what bash makes of their quotes, backslashes and the variables in them (manual 3.5.3).
 import { sameInEveryLocale } from './chars';
-import { ansiCValue } from '../staticword';
+import type { Shell } from '../shellfeatures';
+import { ansiCWordValue } from '../staticword';
 
 /** A piece of the text of a `${…}` operand: quoted or not, from the source or from an expansion in it. */
 export interface Seg { text: string; quoted: boolean }
@@ -10,8 +11,9 @@ export interface Seg { text: string; quoted: boolean }
  * The operand of `${x:-word}`, `${x#pattern}` or `${x/p/r}`, read from its text: quotes, backslashes, `$'…'` and
  * `$name` / `${name}` (with `param`). Undefined when it holds another expansion. `quoted`: the `${…}` is in double
  * quotes, where a backslash quotes only `$`, `` ` ``, `"`, `\` and `}`, and a single quote is a plain character.
+ * `shell`: the shell the script is for (`$'…'` as `ansiCWordValue` reads it there).
  */
-export function operandSegs(text: string, quoted: boolean, param: (name: string) => string | undefined): Seg[] | undefined {
+export function operandSegs(text: string, quoted: boolean, param: (name: string) => string | undefined, shell?: Shell): Seg[] | undefined {
   const out: Seg[] = [];
   const name = /^\$(?:([A-Za-z_]\w*)|\{([A-Za-z_]\w*)\})/;
   for (let i = 0; i < text.length; i++) {
@@ -27,7 +29,7 @@ export function operandSegs(text: string, quoted: boolean, param: (name: string)
       }
       if (!quoted && text[i + 1] === "'") {
         const end = text.indexOf("'", i + 2);
-        const v = end < 0 ? undefined : ansiCValue(text.slice(i + 2, end));
+        const v = end < 0 ? undefined : ansiCWordValue(text.slice(i, end + 1), shell);
         if (v === undefined || !sameInEveryLocale(v)) return undefined;
         out.push({ text: v, quoted: true });
         i = end;
@@ -47,7 +49,7 @@ export function operandSegs(text: string, quoted: boolean, param: (name: string)
     } else if (c === '"') {
       const end = text.indexOf('"', i + 1);
       if (end < 0) return undefined;
-      const inner = operandSegs(text.slice(i + 1, end), true, param);
+      const inner = operandSegs(text.slice(i + 1, end), true, param, shell);
       if (!inner) return undefined;
       out.push({ text: '', quoted: true }, ...inner);
       i = end;

@@ -434,7 +434,7 @@ export function inputSource(cx: Explainer, cmd?: SyntaxNode, parse?: ArgvParse, 
 
 function stdinOf(cx: Explainer, cmd: SyntaxNode): Stdin {
   // (A here-string's word is not split or globbed: `$'b\na'` is two lines.)
-  return sources.stdinOf(cmd, (w) => literalContent(w)?.text ?? staticWordValue(w), (p, i) => pipedLines(cx, p, i));
+  return sources.stdinOf(cmd, (w) => literalContent(w)?.text ?? staticWordValue(w, false, cx.shell), (p, i) => pipedLines(cx, p, i));
 }
 
 /**

@@ -189,7 +189,7 @@ function commandParts(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode): { pre
   // one before a special builtin stays after it.
   const word = nameNode.namedChildren[0];
   // (An unquoted expansion alone may give no word: `x=1 $cmd`.)
-  const spelled = staticWordValue(word);
+  const spelled = staticWordValue(word, false, cx.shell);
   const dynamic = spelled === undefined && ['simple_expansion', 'expansion', 'command_substitution'].includes(word.type);
   const meanings = n.children.some((c) => c.type === 'variable_assignment')
     ? assignmentsOf(cx.state, n, dynamic ? 'dynamic' : resolve(cx, spelled ?? nameNode.text, nameNode))
@@ -331,7 +331,7 @@ function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedC
     return head;
   }
   const head = commandHeadFor(cx, nameNode, word);
-  const spelled = staticWordValue(word);
+  const spelled = staticWordValue(word, false, cx.shell);
   if (spelled && spelled !== word.text) {
     head.explanation = cx.s(
       `コマンド名 \`${word.text}\` は、クォートやバックスラッシュ、空の \`$(…)\` を取り除くと \`${shown(spelled)}\` になる。${head.explanation}`,
@@ -359,7 +359,7 @@ function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 
 function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: string): CommandHead {
   // Commands with an empty name (`FOO=1 2>/dev/null`) do not get here.
   // A name made of quotes, escapes or empty `$(:)` is the command it spells once they are removed (`e\c'h'"o"` is `echo`).
-  const spelled = staticWordValue(word);
+  const spelled = staticWordValue(word, false, cx.shell);
   const sv = spelled && spelled !== word.text ? spelled : undefined;
   const name = as ?? sv ?? (isPlainWord(word) ? word.text : nameNode.text);
   // (A word of plain text with braces is the first word they give, `as`; where they do not expand, `{echo,hi}` in dash, it is a name as written.)

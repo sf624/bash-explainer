@@ -337,10 +337,10 @@ function childModel(script: NestedScript): StateModel {
   for (const c of cmd.namedChildren) {
     if (c.type === 'variable_assignment') {
       const value = field(c, 'value');
-      values.set(field(c, 'name')!.text, value ? staticWordValue(value) : '');
+      values.set(field(c, 'name')!.text, value ? staticWordValue(value, false, script.outer.shell) : '');
       continue;
     }
-    const m = c.startIndex < first.startIndex ? /^([A-Za-z_]\w*)=(.*)$/s.exec(staticWordValue(c) ?? '') : null;
+    const m = c.startIndex < first.startIndex ? /^([A-Za-z_]\w*)=(.*)$/s.exec(staticWordValue(c, false, script.outer.shell) ?? '') : null;
     if (m) values.set(m[1], m[2]);
   }
   const start = (w: Walker): ShellState => {

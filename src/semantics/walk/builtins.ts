@@ -309,7 +309,7 @@ export class WalkBuiltins {
       const text = this.w.conditions.staticText(w, st);
       const texts = text !== undefined ? [text] : this.w.conditions.fieldsOf(w, st) ?? [w.type === 'word' ? w.text : undefined];
       for (const t of texts) {
-        const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(t ?? prefixOf(w).replace(/=.*/s, '='));
+        const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(t ?? prefixOf(w, this.w.shell).replace(/=.*/s, '='));
         if (!m || (t === undefined && !m[3])) continue;
         out.push({ node: w, name: m[1], subscript: !!m[2], ...(m[3] ? { assign: { append: m[3] === '+=', text: t === undefined ? undefined : m[4], array: false } } : {}) });
       }

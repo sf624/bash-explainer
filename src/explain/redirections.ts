@@ -5,7 +5,7 @@
 // words (src/explain/words.ts). A simple command with redirections before or after its words (`splitCommand`) is
 // the commands' (src/explain/commands.ts).
 import type { Token } from '../analyzer-types';
-import { SHELL_NAMES, featureWorks } from '../dialect';
+import { SHELL_NAMES, featureWorks, type Shell } from '../dialect';
 import { fdName, networkPathAsFile, networkRedirect, networkTarget, redirects, specialDestinations } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { type Redirect, simulateRedirects } from '../idioms';
@@ -100,7 +100,7 @@ export function fileRedirect(cx: Explainer, n: SyntaxNode): Token {
   // `> {a,}` writes `a`: the one word brace expansion makes of the target.
   const braced = dests.length === 1 ? bracedTarget(cx, dests[0]) : undefined;
   // The word after quote removal, when known: `>&"2"` duplicates, `> "/dev/tcp/h/80"` connects.
-  const target = braced ?? (dests.length === 1 ? staticWordValue(dests[0]) : undefined) ?? dest;
+  const target = braced ?? (dests.length === 1 ? staticWordValue(dests[0], false, cx.shell) : undefined) ?? dest;
   // Every operator the grammar has is in the dictionary.
   let expl = cx.t(redirects[op](fd, braced ?? (op === '>&' || op === '<&' ? target : dest)));
   if (braced) expl += cx.s(`。ブレース展開で \`${dest}\` は1つの単語 \`${braced}\` になる`, `. Brace expansion makes \`${dest}\` the one word \`${braced}\``);
@@ -168,16 +168,16 @@ function descriptors(r: Redirect): { sets: number[]; copies?: number | 'unknown'
 
 /**
  * The path a redirection opens as a file (`>a`, `&>a`, `>&a`), when its word is known here (undefined: not known, as
- * `"$f"` or an unquoted glob); null when it opens none (a here-document, a copy, a close).
+ * `"$f"` or an unquoted glob), in a script for `shell`; null when it opens none (a here-document, a copy, a close).
  */
-function openedPath(r: SyntaxNode): string | undefined | null {
+function openedPath(r: SyntaxNode, shell: Shell | undefined): string | undefined | null {
   if (r.type !== 'file_redirect') return null;
   const info = redirectInfo(r);
   const d = descriptors(info);
   if (!OPENS_FILE.has(info.op) && info.op !== '&>' && info.op !== '&>>' && (d.copies !== undefined || info.dest === '-')) return null;
   const words = fields(r, 'destination');
   if (words.length !== 1 || (isPlainWord(words[0]) && /[*?[]/.test(words[0].text))) return undefined;
-  return staticWordValue(words[0]);
+  return staticWordValue(words[0], false, shell);
 }
 
 /** Whether two paths name the same file as written (`a`, `./a`, `.//a`). */
@@ -237,8 +237,8 @@ function written(r: SyntaxNode): string {
  * (`/dev/null`) is only opened.
  */
 function replacedFile(cx: Explainer, op: string, fd: string, n: SyntaxNode, dests: SyntaxNode[], later: SyntaxNode): string {
-  const own = openedPath(n);
-  const other = openedPath(later);
+  const own = openedPath(n, cx.shell);
+  const other = openedPath(later, cx.shell);
   if (own && other && samePath(own, other)) return '';
   const dest = dests.map((d) => d.text).join(' ');
   const name = op.startsWith('<') ? fdName(fd, '0') : fdName(fd, '1');

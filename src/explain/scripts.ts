@@ -181,9 +181,9 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
     if (!('why' in script)) {
       const own = new Set(descendants(script.tree.root, ['function_definition']).map((d) => field(d, 'name')!.text));
       const call = descendants(script.tree.root, ['command']).filter((c) => !assignmentsOnly(c))
-        .find((c) => { const n = staticWordValue(field(c, 'name')!.namedChildren[0]); return n !== undefined && !own.has(n) && cx.state.definitions.functions.has(n); });
+        .find((c) => { const n = staticWordValue(field(c, 'name')!.namedChildren[0], false, script.shell); return n !== undefined && !own.has(n) && cx.state.definitions.functions.has(n); });
       // (A file the string reads first with `source` or `.` may define it: `bash -c '. ~/.profile; f'`.)
-      if (call && !script.model.sources.some((x) => x.startIndex < call.startIndex)) fn = staticWordValue(field(call, 'name')!.namedChildren[0]);
+      if (call && !script.model.sources.some((x) => x.startIndex < call.startIndex)) fn = staticWordValue(field(call, 'name')!.namedChildren[0], false, script.shell);
     } else {
       const lit = literalContent(first)?.text;
       fn = lit ? /^\s*([A-Za-z_][\w-]*)/.exec(lit)?.[1] : undefined;
