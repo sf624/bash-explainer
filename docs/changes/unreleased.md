@@ -1143,6 +1143,7 @@ Braces are read as bash 5.2 finds them, where it expands them (compared with bas
 | `echo {x..{a,b}}`, `{x..{1..2}}` | `x..a` `x..b` (braces that hold no sequence go, when a comma is inside them); `{x..{1..2}}` as it is | those words | `{x..a}` `{x..b}`; `{x..1}` `{x..2}` |
 | `echo {a,b} > {c,d}` | "ambiguous redirect" | the target shows its words too, as `> {1..2}` did | the note alone |
 | `echo {a,b}$x`, `x` empty | `a` `b` | the words are known (in the values and the conditions the model follows) | not known |
+| `trap {x,EXIT}`, `trap {y,INT} TERM`, `bash -c {x,y}` | `trap x EXIT`: the action `x` on `EXIT`; `bash -c x y`: `y` is `$0` | "expands to `x` (command to run…) and `EXIT` (signal…)", each word with its role | the braces were the action alone (or the command string), "not explained as a script" |
 
 A tilde before a glob is expanded, then the word is globbed:
 

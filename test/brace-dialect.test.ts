@@ -99,6 +99,18 @@ describe('what we say of a word with braces in a shell without them', () => {
     assert.match(tokens('{echo,hi}', 'bash').map((x) => x.explanation).join('\n'), /Brace expansion turns `\{echo,hi\}` into `echo hi`/);
   });
 
+  it('gives each word of braces in a command slot its role (`trap {x,EXIT}`: the action, then a signal), as bash runs it', () => {
+    const said = (src: string, word: string): string => tokens(src, 'bash').find((x) => x.label === word && x.kind === 'argument')!.explanation;
+    assert.strictEqual(said('trap {x,EXIT}', '{x,EXIT}'), 'expands to `x` (command to run: `-` resets, empty string ignores) and `EXIT` (signal: EXIT, ERR, INT, TERM…)');
+    assert.strictEqual(tokens('trap {x,EXIT}', 'bash').find((x) => x.label === '{x,EXIT}' && x.kind === 'argument')!.expands, 'brace');
+    assert.match(said('trap {y,INT} TERM', '{y,INT}'), /^expands to `y` \(command to run: .*\) and `INT` \(signal: /);
+    assert.match(said('bash -c {x,y}', '{x,y}'), /^expands to `x` \(The command string: .*\) and `y` \(Becomes `\$0`/);
+    const run = (src: string): string => spawnSync('bash', ['-c', src], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } }).stdout;
+    assert.strictEqual(run('trap {x,EXIT}; trap -p; trap -- - EXIT'), "trap -- 'x' EXIT\n");
+    assert.strictEqual(run('trap {y,INT} TERM; trap -p INT TERM'), "trap -- 'y' SIGINT\ntrap -- 'y' SIGTERM\n");
+    assert.strictEqual(run('bash -c {"echo \\$0",zz}'), 'zz\n');
+  });
+
   it('reads braces that stay as text, with the quotes in them, and cites no brace expansion there', () => {
     // (The word model: dash prints `{a,b}` for `{a,"b"}`; with a substitution in it, the value is not known.)
     assert.deepStrictEqual(modelOf('echo {a,"b"}', '{a,"b"}', 'dash').fields, ['{a,b}']);

@@ -172,21 +172,6 @@
       "reason": "Bug, to fix: `countOf` (src/argv/words.ts) gives no count to a word with braces and a quoted part (`'%s,'{a..c}`), so the interpreter reads it as one word, the format; bash gives three words: the format `%s,a` and the values `%s,b` and `%s,c`."
     },
     {
-      "input": "trap {x,EXIT}",
-      "command": "trap {x,EXIT}",
-      "word": "{x,EXIT}",
-      "check": "count",
-      "source": "argument",
-      "reason": "Bug, to fix: the words of a brace expansion in the action of `trap` are read as the action alone, and its token is not marked `expands`; bash runs `trap x EXIT`, where `x` is the action and `EXIT` a signal."
-    },
-    {
-      "input": "trap {x,EXIT}",
-      "command": "trap {x,EXIT}",
-      "word": "{x,EXIT}",
-      "check": "role",
-      "reason": "Bug, to fix: the words of a brace expansion in the action of `trap` are read as the action alone, and its token is not marked `expands`; bash runs `trap x EXIT`, where `x` is the action and `EXIT` a signal."
-    },
-    {
       "input": "renderings.sh",
       "command": "cp $pair",
       "word": "$pair",

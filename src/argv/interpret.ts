@@ -64,9 +64,11 @@ export type ArgRole =
   /**
    * The first word of a command run by this one; `parse` reads the words after it. A shell string (`bash -c 'cmd'`,
    * `su -c 'cmd'`) has no `parse`; nor has a string joined from the words (`joined`). `of` is the option whose
-   * value or words it is (`su -c`, `find -exec`); `item`, the operand it fills (`bash -c`, `ssh host cmd`).
+   * value or words it is (`su -c`, `find -exec`); `item`, the operand it fills (`bash -c`, `ssh host cmd`). `each`, as
+   * an operand's: the role of each word it becomes, when they are known and the others are not the command's
+   * (`trap {x,EXIT}`: the action, then a signal).
    */
-  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec }
+  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec; each?: OperandSpec[] }
   /** The word that ends an option's command (`;` of `find -exec … ;`), and its text (one of the option's `until.terminators`). */
   | { role: 'terminator'; text: string; of: string }
   /** A word of the shell string that a `command` role before it joins from the words (`ssh host ls -l`). */
@@ -313,8 +315,12 @@ class Reader {
       const pos = primary.first[k];
       const n = primary.items[pos];
       const item = pattern[n];
+      // Copies of one word with different meanings, or another meaning when the words are more: not certain.
+      const copies = primary.at.flatMap((x, p) => (x === k ? [pattern[primary.items[p]]] : []));
+      const count = words[k].count;
+      const each = count?.min === count?.max && copies.some((o) => o.text.en !== item.text.en) ? copies : undefined;
       if (item.command) {
-        if (!takesRest(item)) { roles.set(i, { role: 'command', slot: item.command, item }); continue; }
+        if (!takesRest(item)) { roles.set(i, { role: 'command', slot: item.command, item, ...(each ? { each } : {}) }); continue; }
         for (const j of [...roles.keys()]) if (j > i && j < end) roles.delete(j);
         // ssh: the words are joined into one string for the remote shell, which reads it as a script.
         // (`sudo -s` escapes each word first: the shell reads the same words, a command.)
@@ -329,11 +335,7 @@ class Reader {
         roles.set(i, { role: 'option', flag: words[k].value!, spec: opt, text: opt.text });
         continue;
       }
-      // Copies of one word with different meanings, or another meaning when the words are more: not certain.
-      const copies = primary.at.flatMap((x, p) => (x === k ? [pattern[primary.items[p]]] : []));
       const elsewhere = other ? [other.alt.pattern[other.items[other.first[k]]]] : [];
-      const count = words[k].count;
-      const each = count?.min === count?.max && copies.some((o) => o.text.en !== item.text.en) ? copies : undefined;
       const otherwise = each ? undefined : [...copies, ...elsewhere].find((o) => o.text.en !== item.text.en);
       // `cp "$@"`: when the word gives more words, they take these roles, in order.
       const theirs = other && other !== primary && primary === low ? other.at.flatMap((x, p) => (x === k ? [other.alt.pattern[other.items[p]]] : [])) : [];
