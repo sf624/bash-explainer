@@ -290,7 +290,7 @@ function optionToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const alone = role.missing ? role.spec.noValue : undefined;
   return cx.tok(a, 'option', alone
     ? cx.t(role.disables ? alone.offText : alone.text)
-    : (role.disables ? turnedOff(cx, flag, cx.t(role.text), false, role.spec.offText) : cx.t(role.text)) + notForEarlier(cx, word, role), wordParts(cx, a));
+    : (role.disables ? turnedOff(cx, flag, cx.t(role.text), false, role.spec.offText) : cx.t(role.text)) + notForEarlier(cx, parse, word, role), wordParts(cx, a));
 }
 
 /** `--name=value` (and `-name=value` for single-dash options): the option, with its value in the text. */
@@ -329,7 +329,7 @@ function letterParts(cx: Explainer, a: SyntaxNode, l: ArgRole, spec: CommandSpec
   const letter = l as Extract<ArgRole, { role: 'option' | 'unknown-option' }>;
   const flag = dash(letter.flag);
   if (letter.role === 'unknown-option') return [part(a, letter, flag, unknownOption(cx, parse.command, spec))];
-  const parts = [part(a, letter, flag, (letter.disables ? turnedOff(cx, flag, cx.t(letter.text), false, letter.spec.offText) : cx.t(letter.text)) + notForEarlier(cx, word, letter))];
+  const parts = [part(a, letter, flag, (letter.disables ? turnedOff(cx, flag, cx.t(letter.text), false, letter.spec.offText) : cx.t(letter.text)) + notForEarlier(cx, parse, word, letter))];
   const value = letter.value;
   if (!value) return parts;
   // In `-F'|'` the value is what is left after quote removal.

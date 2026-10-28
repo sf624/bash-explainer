@@ -248,9 +248,21 @@ describe('an option that selects the regex flavour after an -e or -f script says
     assert.deepStrictEqual(option('ja', "sed -e 's/a+/x/' -E f", '-E'), ['拡張正規表現(ERE)を使う（前にある `-e` の値には効かない: `sed` はオプションを読んだ時点で、それより前のオプションだけでその値を読む）']);
   });
 
+  it('on each later option while a script before it was read without the mode', () => {
+    // (GNU sed: the first script is a BRE, the second an ERE, read after the first `-E`: `aa+ bb+` gives `ax y+`.)
+    const line = "sed -e 's/a+/x/' -E -e 's/b+/y/' -E";
+    assert.strictEqual(run('bash', ['-c', `echo 'aa+ bb+' | ${line}`], { check: true }).stdout.toString(), 'ax y+\n');
+    assert.deepStrictEqual(option('en', line + ' f', '-E'), ['use extended regex (ERE)' + late, 'use extended regex (ERE)' + late]);
+  });
+
   it('not where the option comes first, or the script is the operand', () => {
     for (const line of ["sed -E -e 's/a+/x/' f", "sed -Ee 's/a+/x/' f", "sed 's/a+/x/' -E f", "sed -n -E -e p f"]) {
       assert.ok(option('en', line, '-E').every((t) => t === 'use extended regex (ERE)'), line);
+    }
+    // (`-E` or `-r` before the script reads it as an ERE already: GNU sed, `echo 'a aaa' | sed -E -e 's/a+/x/' -E` prints `x aaa`.)
+    assert.strictEqual(run('bash', ['-c', "echo 'a aaa' | sed -E -e 's/a+/x/' -E"], { check: true }).stdout.toString(), 'x aaa\n');
+    for (const line of ["sed -E -e 's/a+/x/' -E f", "sed -r -e 's/a+/x/' -E f", "sed -Ees/a+/x/ -E f", "sed -E --expression=s/a+/x/ --regexp-extended f"]) {
+      assert.ok([...option('en', line, '-E'), ...option('en', line, '--regexp-extended')].every((t) => t === 'use extended regex (ERE)'), line);
     }
     // (`-n` selects no flavour: sed reads it when it runs, for every script.)
     assert.deepStrictEqual(option('en', "sed -e p -n f", '-n'), ['suppress automatic printing; print only with `p`']);

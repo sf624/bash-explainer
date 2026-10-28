@@ -211,14 +211,16 @@ export function regexFlavor(cx: Explainer, word?: number): Flavor | 'fixed' {
 }
 
 /**
- * The end of the text of an option in word `word` that selects a mode (`OptionSpec.selects`: sed's `-E`) after values
- * the program has read already, as soon as it read their options (`ValueSpec.inOrder`): it does not apply to them
- * (`sed -e 's/a+/x/' -E` reads a BRE). Empty for another option, or one given before them.
+ * The end of the text of an option in word `word` of `parse` that selects a mode (`OptionSpec.selects`: sed's `-E`)
+ * after values the program has read already, as soon as it read their options (`ValueSpec.inOrder`), without that
+ * mode: it does not apply to them (`sed -e 's/a+/x/' -E` reads a BRE). Empty for another option, or where every value
+ * before it was read in its mode already (`sed -E -e 's/a+/x/' -E`).
  */
-export function notForEarlier(cx: Explainer, word: number, role: Extract<ArgRole, { role: 'option' }>): string {
-  const { cmd, parse } = cx.command!;
-  const flags = role.spec.selects ? [...new Set(readBefore(parse, word).map(({ role: v }) => `\`${v.option!.names[0]}\``))].join(cx.s('・', ', ')) : '';
-  const program = cmd.split(' ')[0].split('/').pop()!;
+export function notForEarlier(cx: Explainer, parse: ArgvParse, word: number, role: Extract<ArgRole, { role: 'option' }>): string {
+  const mode = role.spec.selects;
+  const without = mode ? readBefore(parse, word).filter((v) => !selectedModes(parse, v.word).has(mode)) : [];
+  const flags = [...new Set(without.map(({ role: v }) => `\`${v.option!.names[0]}\``))].join(cx.s('・', ', '));
+  const program = cx.command!.cmd.split(' ')[0].split('/').pop()!;
   return flags && cx.s(`（前にある ${flags} の値には効かない: \`${program}\` はオプションを読んだ時点で、それより前のオプションだけでその値を読む）`,
     ` (not for the value of ${flags} before it: \`${program}\` reads that value as soon as it reads its option, with only the options given before)`);
 }
