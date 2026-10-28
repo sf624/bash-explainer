@@ -478,7 +478,7 @@ A pipeline's worked example shows what each command reads. When the first comman
 | `df -h \| awk '{print $5}'` | `Filesystem Size Used Avail Use% Mounted on` and five file systems: `Use%`, `1%`, `45%`… | the same |
 | `who \| cut -d' ' -f1 \| sort -u`, `env \| grep PATH`, `printenv` | `alice    pts/0        2026-03-03 09:30 (192.168.1.20)`; `NAME=value` lines, ending with `_=/usr/bin/env` | the same |
 
-The made-up lines are shown as they are, not in a box to edit: a box wraps long lines, and the columns would no longer line up. Other options or an operand (`ps aux --sort=-%mem`, `ls -l /etc`, `ls -lt`, `df`) get no made-up output.
+The made-up lines are shown as they are, not in a box to edit: a box wraps long lines, and the columns would no longer line up. Other options or an operand (`ps aux --sort=-%mem`, `ls -l /etc`, `ls -lt`, `df`) get no made-up output, nor does `env` when it runs a command (`env sort | cat`: what sort prints) or starts from an empty environment (`env -`).
 
 The input section of a command's own example names where a pipe brings it from:
 

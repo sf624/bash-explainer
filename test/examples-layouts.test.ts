@@ -179,6 +179,18 @@ describe('pipelines that start with a made-up output agree with the real tools s
     const head = explain('ps aux --sort=-%mem | head').examples.find((e) => e.sections[0].label.startsWith('Input'));
     assert.strictEqual(head?.sections[0].label, 'Input: stdin (output of `ps aux --sort=-%mem`, not known here: made-up lines)');
   });
+  it('makes up no environment when env runs a command (it prints what the command prints), or for `env -`', () => {
+    // (`env find . -exec echo \;` once threw: env's layout was taken, and its words are not all known for the `_` line.)
+    for (const line of ['env find . -exec echo \\; | cat', 'env find "$x" | cat', 'env grep x "$f" | wc -l', 'env sort | cat', 'env find . -name x | cat', 'env - | cat', 'env -- printenv | cat']) {
+      for (const lang of ['en', 'ja'] as const) {
+        const ex = explain(line, 0, lang).examples;
+        assert.ok(!ex.some((e) => e.sections.some((s) => s.lines.some((l) => l.startsWith('_=')))), `${line} (${lang})`);
+      }
+    }
+    // (As with another wrapper: grep's example of its own; `env --` alone prints the environment.)
+    assert.deepStrictEqual(explain('env grep x "$f" | wc -l').examples.map((e) => e.kind), explain('nice grep x "$f" | wc -l').examples.map((e) => e.kind));
+    assert.strictEqual(pipelineExampleOf('env -- | grep PATH')?.sections[0].label, 'Output of `env --` (sample)');
+  });
   it('gives a command after it, whose example is its own, the made-up lines as its input', () => {
     // (`paste` is not followed: the stages' examples are shown, and awk's reads what `ls -l` prints.)
     const awk = explain("ls -l | awk '{print $5}' | paste -sd+").examples.find((e) => e.kind === 'awk')!;

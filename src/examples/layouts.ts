@@ -3,7 +3,7 @@
 // makes the lines. The columns are those of procps-ng 4 and GNU coreutils 9 (test/examples-layouts.test.ts compares
 // them with the real tools).
 import type { ArgvParse } from '../argv/interpret';
-import { givenOptions, operands } from '../argv/query';
+import { givenOptions } from '../argv/query';
 import type { CommandSpec, Layout } from '../argv/spec';
 
 /** A column of a table: its width, and whether its cells are aligned on the right. */
@@ -158,13 +158,17 @@ export function layoutSample(kind: Layout, procs: (string[] | undefined)[], self
   }
 }
 
+/** The roles of the words of a command that prints a layout: its options and their values, and `--`. */
+const OPTION_WORDS = new Set(['option', 'cluster', 'old-style', 'value', 'end-of-options']);
+
 /**
  * The layout of what the command prints (`CommandSpec.layouts`): the alternative whose options are exactly those given
- * (`ps aux`, `ls -l`), when it has no operand. Undefined for other options, an option the spec does not know, or an
- * operand (`ls -l /etc` lists files not made up here).
+ * (`ps aux`, `ls -l`), when every word is an option. Undefined for other options, an option the spec does not know, or
+ * any other word: an operand (`ls -l /etc` lists files not made up here), a command it runs (`env find .` prints what
+ * find prints, not the environment), a pattern option (`env -` starts from an empty environment).
  */
 export function layoutOf(spec: CommandSpec | undefined, parse: ArgvParse): Layout | undefined {
-  if (!spec?.layouts || operands(parse).length) return undefined;
+  if (!spec?.layouts || parse.roles.some(({ role }) => !OPTION_WORDS.has(role.role))) return undefined;
   const given = givenOptions(parse).map(({ role }) => (role.role === 'option' ? role.spec.names[0] : undefined));
   if (given.includes(undefined)) return undefined;
   const names = new Set(given);
