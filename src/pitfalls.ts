@@ -125,18 +125,25 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
   if (kind === 'function' || kind === 'alias') return out;
   const parse = interpret(spec, a.map(argWordFor(model.shell)), { name, lookup: lookupCommand });
   let envs: Map<SyntaxNode, ExecEnv> | undefined;
-  const visit = (p: ArgvParse): void => {
+  // (`words` are the words of the line that `p` read: the indexes of its roles count in them.)
+  const visit = (p: ArgvParse, ps: CommandSpec | undefined, words: readonly SyntaxNode[]): void => {
     for (const { word, role } of p.roles) {
-      if (role.role === 'subcommand') visit(role.parse);
+      if (role.role === 'subcommand') visit(role.parse, role.spec, words);
+      // An expression with a spec of its own is read by that spec from its first word: find's actions run commands
+      // (`-exec cp $a {} \;`; the `{}` and the `;` or `+` are find's words, not the command's).
+      if (role.role === 'expression' && word === p.expression && ps?.expressionSpec) {
+        const rest = words.slice(word, p.end);
+        visit(interpret(ps.expressionSpec, rest.map(argWordFor(model.shell)), { name: p.command, lookup: lookupCommand }), ps.expressionSpec, rest);
+      }
       if (role.role !== 'command' || !role.parse) continue;
       if (role.name !== undefined && !runsString(role.slot)) {
         envs ??= slotEnvs(model.env(n), parse, spec, a, model.shell, lookupCommand);
-        out.push({ nameWord: a[word], name: pathCommand(role.name), args: a.slice(word + 1, role.parse.end), env: envs.get(a[word]) });
+        out.push({ nameWord: words[word], name: pathCommand(role.name), args: words.slice(word + 1, role.parse.end), env: envs.get(words[word]) });
       }
-      visit(role.parse);
+      visit(role.parse, role.spec, words);
     }
   };
-  visit(parse);
+  visit(parse, spec, a);
   return out;
 }
 

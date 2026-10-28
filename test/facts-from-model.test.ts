@@ -68,6 +68,9 @@ describe('an unquoted variable as a path follows the options in effect', () => {
     assert.strictEqual(bash('f="a b"; command printf "[%s]" $f'), '[a][b]');
     assert.strictEqual(asPath('command rm $a'), true);
     assert.strictEqual(asPath('sudo rm $a'), true);
+    // The command that find's `-exec` runs, read from find's spec; find's own operand is not a path of a file command.
+    assert.strictEqual(asPath('find . -exec rm $a {} \\;'), true);
+    assert.strictEqual(asPath('find $a -name x'), false);
     assert.strictEqual(asPath('echo $a'), false);
   });
 });
