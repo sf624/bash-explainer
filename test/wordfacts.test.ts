@@ -41,6 +41,11 @@ describe('word facts', () => {
     ['time rm $f', 'unquoted-variable-as-path', /`\$f` is not quoted/],
     // A path names the program of its last part (`/bin/cp` is cp); the prefix assignment holds for any command.
     ['/bin/cp $src "$dst"', 'unquoted-variable-as-path', /`\$src` is not quoted/],
+    // The command an option of find's expression runs (`-exec`, `-execdir`, `-ok`, `-okdir`), read from find's spec; `{}` and the `;` or `+` are find's words.
+    ['find . -exec cp $a {} \\;', 'unquoted-variable-as-path', /`\$a` is not quoted/],
+    ['find . -type f -execdir rm -- $a {} +', 'unquoted-variable-as-path', /`\$a` is not quoted/],
+    ['find . -ok mv {} $dst \\;', 'unquoted-variable-as-path', /`\$dst` is not quoted/],
+    ['find . -name x -exec sudo rm $d/x {} \\;', 'unquoted-variable-as-path', /`\$d\/x` is not quoted/],
     ['for f in $(/bin/ls); do :; done', 'for-over-ls-output', /`\$\(ls …\)` is split on spaces/],
     ['/usr/bin/sudo echo 1 > /proc/sys/vm/drop_caches', 'redirect-by-your-shell', /opened by your own shell/],
     ['FOO=1 ./x $FOO', 'prefix-assignment-expanded-first', /`FOO=…` is set only in the environment of `\.\/x`/],
@@ -97,7 +102,7 @@ describe('word facts', () => {
   // (Also in a command another one runs: `sudo rm $f`.) A value the model knows that stays one word does no harm here: a
   // caveat; one it does not know (`read`, `$(date)`, `$1`) may be anything.
   for (const [src, level] of [['rm $f', 'warning'], ['mv $a "$b"', 'warning'], ['cp -f "$a" $b', 'warning'], ['cat $f', 'info'], ['chmod +x $f', 'info'], ['cd $d', 'info'],
-    ['sudo rm -rf $DIR/releases/$line', 'warning'], ['env A=1 cp $a b', 'warning'], ['sudo cat $f', 'info'], ['xargs rm $f', 'warning'],
+    ['sudo rm -rf $DIR/releases/$line', 'warning'], ['env A=1 cp $a b', 'warning'], ['sudo cat $f', 'info'], ['xargs rm $f', 'warning'], ['find . -exec rm $f {} \\;', 'warning'], ['find . -exec cat $f {} +', 'info'],
     ['TS=2024\nrm -rf /tmp/build-$TS', 'info'], ['TS=$(date +%s)\nrm -rf /tmp/build-$TS', 'warning'], ['read line\nrm -rf /tmp/$line', 'warning'], ['D="a b"\nrm -rf /tmp/$D', 'warning'],
     ['if [ "$1" ]; then T=a; else T=b; fi\nrm -rf /tmp/$T', 'warning']] as const) {
     it(`gives an unquoted path in ${src} the level ${level}`, () => {
@@ -118,10 +123,26 @@ describe('word facts', () => {
     assert.strictEqual(runBash('DIR=; line="x y"; env printf "[%s]" $DIR/releases/$line').stdout, '[/releases/x][y]');
   });
 
+  it('names the words of the command find runs, which bash splits and globs before find gets them', () => {
+    // bash: `$a` is expanded by the shell that starts find, so the command find runs gets the words it made; `{}` stays find's.
+    const out = (a: string, quoted = false) => runBash(`find . -maxdepth 0 -exec printf '<%s>' ${quoted ? '"$a"' : '$a'} {} \\;`, { files: ['x1', 'x2', 'x y'], env: { a } }).stdout;
+    assert.strictEqual(out('a b'), '<a><b><.>');
+    assert.strictEqual(out('*'), '<x y><x1><x2><.>');
+    assert.strictEqual(out(''), '<.>');
+    assert.strictEqual(out('a b', true), '<a b><.>');
+    assert.ok(facts('find . -maxdepth 0 -exec printf "<%s>" $a {} \;').every((f) => f.id !== 'unquoted-variable-as-path'), 'printf is no file command');
+    // find's own operand is split the same way, and is not a path of a command it runs.
+    assert.match(runBash('a=". /nonexistent"; find $a -maxdepth 0 2>&1', { files: ['x1'] }).stdout, /^\.\nfind: .*nonexistent/);
+    assert.deepStrictEqual(facts('find $d -name x'), []);
+    assert.strictEqual(facts('find . -exec cp $a {} \;').length, 1);
+  });
+
   const fine = [
     'x=1', 'for f in *.txt; do :; done', '[ "$x" = y ]', '[[ $x = y ]]', '[ $? -eq 0 ]', '[ $# -gt 0 ]', '[ ${#a[@]} -eq 0 ]', '[ "$(stat -c %a $f)" -le 600 ]',
     'echo 1 | sudo tee /proc/x', 'sudo cmd > /dev/null', 'sudo dmesg > dmesg.log', 'for a in "$@"; do :; done', 'cp "$src" "$dst"', 'echo $x', "FOO=1 sh -c 'echo $FOO'",
     'for f in $(grep -l x *); do :; done', 'for f in; do :; done',
+    // find's own operands and tests are not paths of a file command; a command that is not one (`echo`) and a string another shell reads give none.
+    'find $d -name x', 'find . -name $p -exec cat {} \\;', 'find . -exec echo $a {} \\;', 'find . -exec cp "$a" {} \\;', 'find . -exec sh -c "rm $a" \\;',
     // A path runs that file, never a builtin (3.7.2): `./cd` is a script, not `cd`.
     './cd $x', './source $x',
   ];

@@ -54,6 +54,8 @@ describe('pitfalls', () => {
     ['nice -n 10 nohup rm -rf $DIR/x', /if `DIR` is empty this becomes `rm -r \/x`/],
     ['find . -name x | xargs rm -rf $DIR/x', /if `DIR` is empty this becomes `rm -r \/x`/],
     ['command rm -rf $DIR/x', /if `DIR` is empty this becomes `rm -r \/x`/],
+    // (The command that find's `-exec` runs, read from find's spec.)
+    ['find . -name x -exec rm -rf $DIR/x {} \\;', /if `DIR` is empty this becomes `rm -r \/x`/],
     // (A subcommand's slot: `$DIR` is expanded here, and rm deletes in the container.)
     ['docker exec web rm -rf $DIR/x', /if `DIR` is empty this becomes `rm -r \/x`/],
   ];

@@ -33,6 +33,8 @@ describe('the rewrites of `unquoted-variable-as-path`', () => {
     assert.deepStrictEqual(scripts('cp $a b', id), ['cp "$a" b']);
     assert.deepStrictEqual(scripts('sudo rm -rf $DIR/releases/$line', id), ['sudo rm -rf "$DIR/releases/$line"']);
     assert.deepStrictEqual(scripts('cp ~/$x/* e', id), ['cp ~/"$x"/* e']);
+    // (The command that find's `-exec` runs: the `{}` and the `;` stay find's.)
+    assert.deepStrictEqual(scripts('find . -exec cp $a {} \\;', id), ['find . -exec cp "$a" {} \\;']);
     // (One note for the same word twice on a line: its rewrite quotes both. Before, only the first.)
     assert.deepStrictEqual(scripts('cp $a b; cp $a c', id), ['cp "$a" b; cp "$a" c']);
     // (A note for each unquoted word of the command, each with its rewrite: quoting one leaves the others. Before, only
