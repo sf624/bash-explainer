@@ -289,6 +289,11 @@ describe('explanations from the execution environment', () => {
     assert.deepStrictEqual(pitfalls("name=x\nbash -c 'echo \"$name\"'", 'ja', 1), ['⚠ 落とし穴: 文字列の中の `$name` は新しいシェルが展開します。`name` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です（環境変数に初めから `name` があるときを除く）。先に `export name` します']);
     assert.deepStrictEqual(pitfalls("export name=x\nenv -i bash -c 'echo $name'", 'en', 1), ["⚠ Pitfall: the new shell expands `$name` in the string, but `env` passes none of this script's variables (not even exported ones), so `name` is not there. To use its value, write it in double quotes, so that it is expanded here"]);
     assert.deepStrictEqual(pitfalls("export name=x\nsudo bash -c 'echo $name'", 'ja', 1), ['⚠ 落とし穴: 文字列の中の `$name` は新しいシェルが展開しますが、`sudo` はこのスクリプトの変数を（エクスポートしたものも、`TERM` や `LANG` などいくつかを除いて）渡さないので、そこには `name` はありません。値を使うなら、こちらで展開されるようダブルクォートの中に書きます']);
+    // (doas starts a new environment with `DISPLAY` and `TERM` of the caller's: doas(1).)
+    assert.deepStrictEqual(pitfalls("export name=x\ndoas bash -c 'echo $name'", 'en', 1), ["⚠ Pitfall: the new shell expands `$name` in the string, but `doas` passes none of this script's variables (not even exported ones, but for a few such as `DISPLAY` and `TERM`), so `name` is not there. To use its value, write it in double quotes, so that it is expanded here"]);
+    assert.deepStrictEqual(pitfalls("export TERM=dumb\ndoas bash -c 'echo $TERM'", 'en', 1), []);
+    // (What reached the shell that runs the command is its own: an outer `env -i` dropped nothing the string exports.)
+    assert.deepStrictEqual(pitfalls("env -i bash -c 'export name=x; bash -c \"echo \\$name\"'", 'en', 0), []);
     assert.strictEqual(pitfalls("name=x\nx | bash -c 'echo $name'", 'en', 1).length, 1);
     // A variable set by arithmetic is the script's too; not in a subshell.
     for (const src of ['(( n = 1 ))', 'let n++', 'for (( n = 0; n < 3; n++ )); do :; done', ': $(( n = 2 ))']) {
@@ -333,6 +338,8 @@ describe('explanations from the execution environment', () => {
     assert.match(bash("_=1; bash -c 'echo \"[${_}] [$_]\"'; true"), /^\[\/\S+\] \[\/\S+\]\n$/);
     assert.strictEqual(bash("y=1; bash -c 'echo ${y' 2>/dev/null; echo $?"), '2\n');
     assert.strictEqual(bash("name=x; bash -c 'echo \"[$name]\"'; export name; bash -c 'echo \"[$name]\"'; env -i bash -c 'echo \"[$name]\"'; env -i name=y bash -c 'echo \"[$name]\"'"), '[]\n[x]\n[]\n[y]\n');
+    assert.strictEqual(bash("env -i bash -c 'export name=x; bash -c \"echo \\$name\"'"), 'x\n');
+    assert.strictEqual(bash("env -i bash -c 'f() { echo ok; }; export -f f; bash -c f'"), 'ok\n');
   });
   it('says which words of an ssh command this shell expands before it sends them, as bash does', function () {
     // Each word as written, its text once the quotes are removed, and a prelude: the pitfall is said when bash

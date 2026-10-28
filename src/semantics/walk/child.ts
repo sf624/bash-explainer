@@ -35,7 +35,8 @@ export function restrictedFromHere(st: ShellState): ShellState {
 
 /**
  * The state another shell starts with (`bash -c`, docs/design/semantics.md 4.13): the variables of `outer` that
- * reach it through `env` (exported, with a value: an array is not passed), and those the slots set (`given`); the
+ * reach it through `env`, the slots of the command that starts it (`linksAfter`: what reached `outer` is in it)
+ * (exported, with a value: an array is not passed), and those the slots set (`given`); the
  * exported functions, when it is bash and every link passes them; the set options with an exported SHELLOPTS, the
  * shopt options with an exported BASHOPTS (bash); then the options it is started with (`bash -e -O extglob -c`). A
  * shell that reads startup files (`-l`, `-i`, an exported BASH_ENV) may have any name the script has.

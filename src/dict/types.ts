@@ -184,6 +184,13 @@ export const SUDO_KEEPS: readonly string[] = [
   'COLORS', 'DISPLAY', 'HOSTNAME', 'KRB5CCNAME', 'LS_COLORS', 'PS1', 'PS2', 'XAUTHORITY', 'XAUTHORIZATION', 'XDG_CURRENT_DESKTOP', 'DPKG_COLORS',
 ];
 
+/**
+ * The variables of the caller's environment that doas passes on: it starts the command in a new environment, with
+ * `DISPLAY` and `TERM` from the caller's, and `HOME`, `LOGNAME`, `PATH`, `SHELL` and `USER` set for the target user
+ * (doas(1), OpenDoas 6.8). A rule of doas.conf(5) may pass more (`keepenv`, `setenv`): these are its defaults.
+ */
+export const DOAS_KEEPS: readonly string[] = ['DISPLAY', 'TERM'];
+
 /** `NAME=value` words before the command: variables for it (`env A=1 cmd`). */
 export const ASSIGNMENTS: OperandSpec = { name: 'NAME=VALUE', text: tx('コマンドの環境に入れる変数', 'variable for the command'), assignment: true, repeat: '*' };
 

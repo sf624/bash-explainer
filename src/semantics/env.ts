@@ -20,10 +20,10 @@ import type { BuiltinCall, CommandSlot, CommandSpec } from '../argv/spec';
 import { argWordFor } from '../argv/words';
 import { restrictedByName, shellFromName } from '../dialect';
 import type { Shell } from '../dialect';
-import { field, isShebang, substitutionForm, type SyntaxNode } from '../syntax/tree';
+import { field, isShebang, prefixAssignments, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { staticWordValue } from '../staticword';
 import type { HostId } from '../hosts';
-import type { ShellState, Tri } from './state';
+import type { ShellState, StateModel, Tri } from './state';
 import type { HostCall } from './walk/host';
 
 /** Why a node runs in a subshell. */
@@ -383,21 +383,33 @@ export interface VariableIn {
 }
 
 /**
- * Whether the variable `name` is in the environment of the code in `env`: first in the shell that starts it, whose
- * state is `st` (set and exported, or set by the command's own prefix assignment, `prefix`; one the script did not
- * set may come from the script's own environment), then through each slot link on the way: one that passes no
- * variables (`droppedBy`) or removes it (`env -u NAME`), then one that sets it (`env NAME=1`, `docker run -e NAME`;
- * `*`, a file of them, may). (env applies `-i` and `-u` before its assignments.)
+ * The links of `env` after `place`, the environment of the command that runs code through them (`model.env(cmd)`, which
+ * `env` extends): its own slots, what that command does to the environment. The state of the shell that runs the
+ * command already holds what the links before reached it with (src/semantics/walk/child.ts).
  */
-export function variableIn(st: ShellState, name: string, env: ExecEnv, prefix = false): VariableIn {
-  const v = st.variables.get(name);
+export const linksAfter = (env: ExecEnv, place: ExecEnv): ExecEnv => ({ links: env.links.slice(place.links.length) });
+
+/**
+ * Whether the variable `name` is in the environment of the code in `env`, run by (or through a slot of) the command
+ * `cmd`. First in the shell that runs `cmd`, whose state the model has: set and exported there, or set by the
+ * command's own prefix assignment (`NAME=1 cmd`). That state holds what reached the shell when it started (`bash -c`
+ * after `env -i`), so only the links after `cmd`'s place apply (`linksAfter`); a name the state does not know came
+ * from the environment the shell started with, so every link on the way applies to it, from not known. Each slot
+ * link, in order: one that passes no variables (`droppedBy`; on another machine or in a container, what sets the
+ * environment there, an image's `ENV`, the remote shell's startup files, is not seen: not known) or removes it
+ * (`env -u NAME`), then one that sets it (`env NAME=1`, `docker run -e NAME`; `*`, a file of them, may). (env applies
+ * `-i` and `-u` before its assignments.)
+ */
+export function variableIn(model: StateModel, cmd: SyntaxNode, name: string, env: ExecEnv): VariableIn {
+  const v = model.at(cmd).run.variables.get(name);
+  const prefix = prefixAssignments(cmd).some((a) => field(a, 'name')?.text === name);
   const exported = v?.attrs.x?.state ?? 'off';
   let state: Tri = prefix || (v?.set === 'on' && exported === 'on') ? 'on' : !v ? 'unknown' : v.set === 'off' || exported === 'off' ? 'off' : 'unknown';
   let dropped: SlotLink | undefined;
   let unset = false;
-  for (const l of env.links) {
+  for (const l of (prefix || v ? linksAfter(env, model.env(cmd)) : env).links) {
     if (l.kind !== 'slot') continue;
-    if (droppedBy({ links: [l] }, name)) { state = 'off'; dropped ??= l; }
+    if (droppedBy({ links: [l] }, name)) { state = l.slot.where === 'remote' || l.slot.where === 'container' ? 'unknown' : 'off'; dropped ??= l; }
     if (l.unsets?.includes(name)) { state = 'off'; unset = true; }
     // (A file of them, `docker run --env-file`, may set it, in a container, which passes nothing else.)
     if (l.assigns.includes(name)) state = 'on';

@@ -252,7 +252,7 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
     if (!x || x.set !== 'on' || given || specialVariables[v] || (own && (own.attrs.x?.state === 'on' || script.tree.root === ancestor(own.at, (a) => !a.parent)))) continue;
     const exported = x.attrs.x?.state ?? 'off';
     // (sudo still passes a few variables of the environment, `TERM`, `TZ`: then it is as with no wrapper.)
-    const { dropped, unset } = variableIn(st, v, env);
+    const { dropped, unset } = variableIn(cx.state, cmd, v, env);
     if (dropped) {
       cx.note(remote
         ? fact(cx.lang, 'variable-not-in-remote-shell', { v })

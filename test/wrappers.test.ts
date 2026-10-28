@@ -139,7 +139,7 @@ describe('a wrapper cannot run a shell function or builtin', () => {
   const at = (src: string, line: number, lang: 'en' | 'ja' = 'en') => notes(src, lang, line);
   it('a function defined in the script', () => {
     for (const [src, who] of [
-      ['echo a | xargs myfunc', 'xargs'], ['doas myfunc', 'doas'], ['env myfunc', 'env'], ['nohup myfunc', 'nohup'],
+      ['echo a | xargs myfunc', 'xargs'], ['env myfunc', 'env'], ['nohup myfunc', 'nohup'],
       ['timeout 5 myfunc', 'timeout'], ['nice myfunc', 'nice'], ['find . -exec myfunc {} \\;', 'find -exec'], ['find . -exec myfunc {} +', 'find -exec'], ['chroot /r myfunc', 'chroot'],
       ['flock /l myfunc', 'flock'], ['setsid myfunc', 'setsid'], ['watch -x myfunc', 'watch'], ['strace myfunc', 'strace'], ['stdbuf -oL myfunc', 'stdbuf'], ['ionice -c3 myfunc', 'ionice'],
     ]) {
@@ -251,14 +251,18 @@ describe('the pitfalls follow from how the command is run', () => {
   });
   it('a wrapper that passes no exported functions: export -f does not help', () => {
     // env -i and `env -` clear the environment; sudo's policy removes the values that start with `()` (the
-    // functions bash exports), with -E too (sudoers(5): env_reset, and `*=()*` in env_delete).
-    for (const [src, blocker] of [["env -i bash -c 'myfunc'", 'env'], ['env - bash -c myfunc', 'env'], ['sudo bash -c myfunc', 'sudo'], ['sudo -E bash -c myfunc', 'sudo'], ['export -f myfunc; sudo -u bob bash -c myfunc', 'sudo'], ['env -i timeout 5 bash -c myfunc', 'env']]) {
+    // functions bash exports), with -E too (sudoers(5): env_reset, and `*=()*` in env_delete); doas starts a new one
+    // (doas(1)).
+    for (const [src, blocker] of [["env -i bash -c 'myfunc'", 'env'], ['export -f myfunc; doas bash -c myfunc', 'doas'], ['env - bash -c myfunc', 'env'], ['sudo bash -c myfunc', 'sudo'], ['sudo -E bash -c myfunc', 'sudo'], ['export -f myfunc; sudo -u bob bash -c myfunc', 'sudo'], ['env -i timeout 5 bash -c myfunc', 'env']]) {
       assert.deepStrictEqual(at(src), [`⚠ Pitfall: \`bash -c\` runs the command in a new shell, which does not have this script's function \`myfunc\`, and \`${blocker}\` passes no exported functions, so \`export -f myfunc\` does not help either. Write out its body`], src);
     }
     assert.strictEqual(at('sudo bash -c myfunc', 'ja')[0], '⚠ 落とし穴: `bash -c` は新しいシェルでコマンドを実行するため、このスクリプトの関数 `myfunc` は使えません。`sudo` は環境の関数を渡さないので、`export -f myfunc` も効きません。関数の中身を直接書きます');
-    for (const src of ['export -f myfunc; env bash -c myfunc', 'export -f myfunc; env -u X bash -c myfunc', 'export -f myfunc; timeout 5 bash -c myfunc']) assert.deepStrictEqual(at(src), [], src);
+    // (Nor a link before the shell that exports it: what reached that shell is in its state.)
+    for (const src of ['export -f myfunc; env bash -c myfunc', 'export -f myfunc; env -u X bash -c myfunc', 'export -f myfunc; timeout 5 bash -c myfunc',
+      "env -i bash -c 'myfunc() { :; }; export -f myfunc; bash -c myfunc'"]) assert.deepStrictEqual(at(src), [], src);
     // A function run as a program: the fix sends its definition.
     assert.match(at('sudo myfunc')[0], /^⚠ Pitfall: `sudo` starts `myfunc` as a separate program.*Write out its body, or pass the definition along: `sudo bash -c "\$\(declare -f myfunc\); myfunc"` \(`sudo` passes no exported functions, so `export -f` does not help\)$/);
+    assert.match(at('doas myfunc')[0], /^⚠ Pitfall: `doas` starts `myfunc` as a separate program.*`doas bash -c "\$\(declare -f myfunc\); myfunc"` \(`doas` passes no exported functions, so `export -f` does not help\)$/);
     assert.match(at('env -i myfunc', 'ja')[0], /`env bash -c "\$\(declare -f myfunc\); myfunc"` のように定義ごと渡します（`env` は環境の関数を渡さないので、`export -f` は効きません）$/);
   });
   it('sudo -s and -i: a shell runs the command, so builtins run, and the function is not there', () => {

@@ -4,7 +4,7 @@ import { type ArgRole, type ArgvParse, swapRoles } from '../argv/interpret';
 import type { CommandSpec } from '../argv/spec';
 import type { Text } from '../i18n';
 import { type ExecEnv, variableIn } from '../semantics/env';
-import { prefixAssignments, field, type SyntaxNode } from '../syntax/tree';
+import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 
 /** The text of an option not in the dictionary. */
@@ -44,8 +44,7 @@ export function soleRead(cx: Explainer, parse: ArgvParse, envs: ReadonlyMap<Argv
   for (const [p, env] of envs) {
     if (!p.sole) continue;
     const { option, env: name } = p.sole;
-    const prefix = prefixAssignments(cmd).some((a) => field(a, 'name')?.text === name);
-    const { state } = variableIn(cx.state.at(cmd).run, name, env, prefix);
+    const { state } = variableIn(cx.state, cmd, name, env);
     if (state === 'off') continue;
     if (state === 'unknown') {
       swap.set(option, { ...option, text: { ja: `${option.text.ja}（環境に \`${name}\` があると、ただの文字列）`, en: `${option.text.en} (plain text if \`${name}\` is in the environment)` } });

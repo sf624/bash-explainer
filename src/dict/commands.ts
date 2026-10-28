@@ -11,7 +11,7 @@ import { admin } from './admin';
 import { netadmin, SSH_OPTION_VALUES } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
-import { args, ASSIGNMENTS, byCount, cmd, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, SUDO_KEEPS, wordTable } from './types';
+import { args, ASSIGNMENTS, byCount, cmd, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, SUDO_KEEPS, wordTable } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
@@ -1396,7 +1396,7 @@ export const core: Record<string, CommandSpec> = {
     ['-u', '実行するユーザー', 'run as the given user', 'arg'],
     ['-n', 'パスワードを尋ねない（必要なら失敗）', 'never prompt for a password'],
     ['-s', 'ログインシェルでなく、ユーザーのシェルを起動する', 'run the user\'s shell'],
-  ], { optionsFirst: true, operands: [{ pattern: [ASSIGNMENTS, runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'reset', keeps: DOAS_KEEPS })] }] }),
   nohup: cmd('ログアウト(ハングアップ)してもコマンドが止まらないように実行する', 'Run a command immune to hangups (survives logout)', [
     ...GNU_INFO,
   ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [runs()] }] }),
