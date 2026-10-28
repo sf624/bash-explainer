@@ -3,6 +3,8 @@ import { describeGlob, globParts } from '../expansion';
 import type { OptionSpec } from '../argv/spec';
 import { untilEnd } from '../argv/until';
 import { pick } from './types';
+import { staticWordValue } from '../staticword';
+import type { SyntaxNode } from '../syntax/tree';
 
 /** A find expression, with word indices relative to the first expression word. */
 export type FindNode =
@@ -106,6 +108,9 @@ class Parser {
     return { type: 'primary', from, to: this.i - 1, name: w, args: this.words.slice(from + 1, this.i), ...(ended === undefined ? {} : { ended }), ...(refused ? { refused } : {}) };
   }
 }
+
+/** The words of find's expression as `parseFind` is given them: each word's value, or its text where the value is not known. */
+export const findWords = (nodes: readonly SyntaxNode[]): string[] => nodes.map((a) => staticWordValue(a) ?? a.text);
 
 /**
  * Parse the expression words (already unquoted). Returns undefined if they do not form an expression. `values` are the

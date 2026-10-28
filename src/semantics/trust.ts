@@ -39,7 +39,7 @@ import type { BashVersion } from '../bashversion';
 import { field, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { bracedWords } from './brace';
 import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
-import { aliasName, aliasOf, aliasTexts, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
+import { plainName, aliasOf, aliasTexts, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
 import { localeWritten, openingBlinds, type Opening } from './opening';
 import { closesStandard } from './redirects';
@@ -582,7 +582,7 @@ class Scan {
   }
 
   private command(c: SyntaxNode, w: Where): void {
-    const alias = aliasName(c);
+    const alias = plainName(c);
     if (alias !== undefined) this.aliasCommands.push({ c, name: alias, where: w });
     const { name, args, lookup, direct } = this.nameOf(c);
     if (name === undefined) {

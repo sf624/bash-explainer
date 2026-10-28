@@ -72,6 +72,11 @@ describe('pitfalls', () => {
     'local out', 'out=$(cmd)', 'echo 1 | sudo tee /proc/x', 'sudo cmd > /dev/null', 'sudo dmesg > dmesg.log', 'for a in "$@"; do :; done', 'cp "$src" "$dst"', 'echo $x',
     // A path runs that file, never a builtin (3.7.2); a function runs instead of the builtin.
     './read x', '/usr/local/bin/read x', 'read() { :; }; read x', 'enable -n read; read x', './x = 1', 'bin/x = 1',
+    // The checks of the syntax read the name as written: quotes or a backslash make it another word already (bash: `[-f:
+    // command not found`, `[[: command not found`, whose explanation says so), and a rewrite by position would edit inside them.
+    '"[-f" x]', '\\[-f x]', "'[[' -f x ]]", '\\{echo a;}', '\\x = 1',
+    // A backslash stops an alias, not a function: `\sudo` calls the function.
+    'sudo() { :; }; \\sudo rm -rf $DIR/x',
     // A string another shell runs is not this line's words; a function named sudo runs no command of its spec.
     "sudo sh -c 'rm -rf $DIR/x'", 'sudo rm -rf "${DIR:?}/x"', 'sudo() { :; }; sudo rm -rf $DIR/x', 'sudo $cmd -rf $DIR/x',
     // find refuses an `-exec` that no `\;` or `+` ends (the bare `;` is the shell's): nothing runs. (Where the value of `$DIR` is
@@ -196,6 +201,11 @@ describe('pitfalls', () => {
     }
   });
   // zsh (zshoptions: IGNORE_CLOSE_BRACES is off by default) closes a group at a `}` anywhere.
+  it('a } with no ; before it names the command as written', () => {
+    for (const [src, name] of [['{ ./x b }', './x'], ['{ $cmd b }', '$cmd'], ['{ \\echo b }', '\\echo']]) {
+      assert.match(notes(src).join('\n'), new RegExp(`As written, \`\\}\` is an argument of \`${name.replace(/[$.\\]/g, '\\$&')}\``), src);
+    }
+  });
   it('a } with no ; before it closes the group in zsh', () => {
     assert.strictEqual(notes('{ echo a }', 0, 'en', 'bash').length, 1);
     assert.deepStrictEqual(notes('{ echo a }', 0, 'en', 'zsh'), []);
@@ -436,6 +446,9 @@ describe('pitfalls: a file sourced by a name with no `/`', () => {
     // (`command` and `builtin` run the builtin in this shell.)
     assert.strictEqual(found('command source lib.sh').length, 1);
     assert.strictEqual(found('builtin . lib.sh').length, 1);
+    // (A name in quotes or with a backslash runs the builtin too.)
+    assert.strictEqual(found('\\source lib.sh').length, 1);
+    assert.strictEqual(found("'.' lib.sh").length, 1);
     assert.match(found('[ -f lib.sh ] && . "lib.sh"')[0], /^ⓘ Caveat: `\. lib\.sh` looks for `lib\.sh` in the directories of `\$PATH` first.* Write `\. \.\/lib\.sh`/);
   });
   it('says that only PATH is searched in POSIX mode and in sh', () => {

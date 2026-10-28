@@ -7,7 +7,8 @@ import { canonicalName, impliedWords, lookupCommand } from './dict/aliases';
 import { Lang } from './i18n';
 import { argWordIn } from './semantics/argwords';
 import { type ExecEnv, runsString, slotEnvs } from './semantics/env';
-import { resolveName } from './semantics/names';
+import { commandName as staticName, plainName } from './semantics/effects';
+import { type NameResolution, resolveName } from './semantics/names';
 import { option, type StateModel } from './semantics/state';
 import { ancestor, childrenOnRows, descendants, field, fields, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
@@ -84,12 +85,12 @@ function rootTarget(w: SyntaxNode): { e: SyntaxNode; v: string; left: string; pl
 }
 
 /**
- * The command the name of the simple command `n` runs, as the checks read it (see `pathCommand`): its value, so that
- * `\read` and `'rm'` are `read` and `rm`; undefined when it is not known without running anything (`$cmd`).
+ * The command the name of the simple command `n` runs, as the checks of commands read it (see `pathCommand`): from its
+ * value (src/semantics/effects.ts), so that `\read` and `'rm'` are `read` and `rm`; undefined when it is not known
+ * without running anything (`$cmd`). The checks of the syntax read the name as written instead (`plainName`).
  */
 export function commandName(n: SyntaxNode): string | undefined {
-  const word = field(n, 'name')?.namedChildren[0];
-  const name = word && staticWordValue(word);
+  const name = staticName(n);
   return name === undefined ? undefined : pathCommand(name);
 }
 
@@ -116,6 +117,18 @@ export function args(n: SyntaxNode): SyntaxNode[] {
  */
 export interface RunCommand { nameWord: SyntaxNode; name: string | undefined; args: SyntaxNode[]; env?: ExecEnv }
 
+/**
+ * What the name of `run` runs (src/semantics/names.ts), looked up by its value as `commandName` reads it: `\cp` and
+ * `'cp'` run `cp` (and no alias of it); undefined when the value is not known without running anything (`$cmd`).
+ */
+export function resolveRun(model: StateModel, run: RunCommand, shell: Shell | undefined): NameResolution | undefined {
+  // (The name of the command itself is a `command_name` around its word; one a slot runs is the word.)
+  const word = run.nameWord.type === 'command_name' ? run.nameWord.namedChildren[0] : run.nameWord;
+  const value = staticWordValue(word);
+  if (value === undefined) return undefined;
+  return resolveName(model, value, run.nameWord, { shell, command: true, quoted: word.type !== 'word' || word.text !== value, ...(run.env ? { env: run.env } : {}) });
+}
+
 /** The commands the simple command `n` runs (see `RunCommand`), itself first. */
 export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | undefined): RunCommand[] {
   const nameWord = field(n, 'name');
@@ -126,7 +139,7 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
   const spec = name === undefined ? undefined : lookupCommand(name);
   // (A function or an alias of that name runs something else: its words have no spec.)
   if (!spec || !a.length) return out;
-  const kind = resolveName(model, nameWord.text, nameWord, { shell, command: true }).kind;
+  const kind = resolveRun(model, out[0], shell)!.kind;
   if (kind === 'function' || kind === 'alias') return out;
   // (The words as the command gets them, where the model knows them: `x=';'; find . -exec echo {} $x` ends at `$x`.)
   const parse = interpret(spec, a.map(argWordIn(model)), { name, lookup: lookupCommand });
@@ -335,7 +348,7 @@ function specRuns(n: SyntaxNode, model: StateModel, shell: Shell | undefined): S
   for (const run of runCommands(n, model, shell)) {
     const spec = run.name === undefined ? undefined : lookupCommand(run.name);
     if (!spec) continue;
-    const kind = resolveName(model, run.nameWord.text, run.nameWord, { shell, command: true, ...(run.env ? { env: run.env } : {}) }).kind;
+    const kind = resolveRun(model, run, shell)?.kind;
     if (kind !== 'builtin' && kind !== 'file') continue;
     const parse = interpret(spec, run.args.map(argWordFor(model.shell)), { name: run.name, lookup: lookupCommand });
     out.push({ run, name: run.name!, spec, parse, values: run.args.map((w) => staticWordValue(w)) });
@@ -487,35 +500,38 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
     switch (n.type) {
       case 'command': {
         if (writtenAsBracket(n)) bracket(n);
+        // The checks of the syntax read the name as written, a plain word: their rewrites edit its text, and quotes
+        // already make it another word (`"[-f" x]`, `\{echo`). Those of what runs read the command it runs (`\read`).
+        const written = field(n, 'name') && plainName(n);
         const name = commandName(n);
         const a = args(n);
         // `[-f x]`: the name is one word, `[-f`. (`[[-f x]]` too: `[[` is a reserved word only as a word of its own.)
-        if (name && /^\[[^\]]/.test(name) && a.at(-1)?.text.endsWith(']')) {
+        if (written && /^\[[^\]]/.test(written) && a.at(-1)?.text.endsWith(']')) {
           const nameWord = field(n, 'name')!;
-          const open = name.startsWith('[[') ? '[[' : '[';
+          const open = written.startsWith('[[') ? '[[' : '[';
           const fix = bracketSpaced(nameWord, a.at(-1)!, open);
-          const how = fix ? `\`${fix.code}\`` : `\`${open} ${name.slice(open.length)} …\``;
+          const how = fix ? `\`${fix.code}\`` : `\`${open} ${written.slice(open.length)} …\``;
           if (open === '[') {
-            add('bracket-no-space', nameWord, `\`[\` は普通のコマンドなので、あとに空白が要ります（\`${name}\` は別のコマンド名になる）。${how} のように書きます`,
-              `\`[\` is an ordinary command, so a space must follow it (\`${name}\` reads as another command name). Write ${how}`, fix ? [fix] : []);
+            add('bracket-no-space', nameWord, `\`[\` は普通のコマンドなので、あとに空白が要ります（\`${written}\` は別のコマンド名になる）。${how} のように書きます`,
+              `\`[\` is an ordinary command, so a space must follow it (\`${written}\` reads as another command name). Write ${how}`, fix ? [fix] : []);
           } else {
-            add('bracket-no-space', nameWord, `\`[[\` は1つの単語として書いたときだけ予約語になるので、あとに空白が要ります（\`${name}\` はコマンド名になる）。${how} のように書きます`,
-              `\`[[\` is a reserved word only as a word of its own, so a space must follow it (\`${name}\` reads as a command name). Write ${how}`, fix ? [fix] : []);
+            add('bracket-no-space', nameWord, `\`[[\` は1つの単語として書いたときだけ予約語になるので、あとに空白が要ります（\`${written}\` はコマンド名になる）。${how} のように書きます`,
+              `\`[[\` is a reserved word only as a word of its own, so a space must follow it (\`${written}\` reads as a command name). Write ${how}`, fix ? [fix] : []);
           }
         }
         // `x = 1`: a command named x, not an assignment.
-        if (name && /^[A-Za-z_]\w*$/.test(name) && a.length && (a[0].text === '=' || /^=\S/.test(a[0].text)) && !runsCommand(model, name, field(n, 'name')!, shell)) {
-          const fix = assignmentJoined(n, name, a);
-          const how = fix ? `\`${fix.code}\`` : `\`${name}=…\``;
-          add('assignment-with-spaces', n, `\`${name} ${a[0].text}…\` は代入ではなく、\`${name}\` というコマンドを実行します。代入は \`=\` の前後に空白を入れずに ${how} と書きます`,
-            `\`${name} ${a[0].text}…\` runs a command named \`${name}\`; it is not an assignment. Write ${how} with no spaces around \`=\``, fix ? [fix] : []);
+        if (written && /^[A-Za-z_]\w*$/.test(written) && a.length && (a[0].text === '=' || /^=\S/.test(a[0].text)) && !runsCommand(model, written, field(n, 'name')!, shell)) {
+          const fix = assignmentJoined(n, written, a);
+          const how = fix ? `\`${fix.code}\`` : `\`${written}=…\``;
+          add('assignment-with-spaces', n, `\`${written} ${a[0].text}…\` は代入ではなく、\`${written}\` というコマンドを実行します。代入は \`=\` の前後に空白を入れずに ${how} と書きます`,
+            `\`${written} ${a[0].text}…\` runs a command named \`${written}\`; it is not an assignment. Write ${how} with no spaces around \`=\``, fix ? [fix] : []);
         }
         // `{echo a;}`: no space after `{`, so it is a command named `{echo`.
-        if (name && /^\{[A-Za-z_]\w*$/.test(name)) {
+        if (written && /^\{[A-Za-z_]\w*$/.test(written)) {
           const fix = braceSpaced(n, field(n, 'name')!, a);
-          const how = fix && !fix.code.includes('\n') ? `\`${fix.code}\`` : `\`{ ${name.slice(1)} …; }\``;
-          add('brace-no-space', field(n, 'name')!, `\`${name}\` は \`{\` の直後に空白がないので、グループの開始ではなく \`${name}\` というコマンド名です。\`{\` の後には空白が必要で、\`}\` の前には \`;\` か改行が必要です: ${how}`,
-            `there is no space after \`{\`, so \`${name}\` is a command name, not the start of a group. \`{\` needs a space after it, and \`}\` needs a \`;\` or newline before it: ${how}`, fix ? [fix] : []);
+          const how = fix && !fix.code.includes('\n') ? `\`${fix.code}\`` : `\`{ ${written.slice(1)} …; }\``;
+          add('brace-no-space', field(n, 'name')!, `\`${written}\` は \`{\` の直後に空白がないので、グループの開始ではなく \`${written}\` というコマンド名です。\`{\` の後には空白が必要で、\`}\` の前には \`;\` か改行が必要です: ${how}`,
+            `there is no space after \`{\`, so \`${written}\` is a command name, not the start of a group. \`{\` needs a space after it, and \`}\` needs a \`;\` or newline before it: ${how}`, fix ? [fix] : []);
         }
         // `{ echo a; echo b }`: `}` is an argument of the last command, and the group is never closed. (Not in zsh, where
         // a `}` closes the group anywhere unless IGNORE_CLOSE_BRACES is set: zshoptions.)
@@ -524,8 +540,10 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
           // (`;` right before the `}`, after the words and redirections before it: `echo b >f; }`.)
           const at = Math.max(...n.children.filter((c) => c.endIndex <= lastArg.startIndex).map((c) => c.endIndex));
           const fix = editSpan(n, lastArg, [{ start: at, end: at, text: ';' }]);
-          add('brace-close-no-separator', lastArg, `\`}\` の前に \`;\` か改行が必要です。このままでは \`}\` は \`${name}\` の引数で、\`{ }\` のグループが閉じていません: \`${fix.code}\``,
-            `\`}\` needs a \`;\` or a newline before it. As written, \`}\` is an argument of \`${name}\` and the \`{ }\` group is never closed: \`${fix.code}\``, [fix]);
+          // (The name as written: `{ ./x b }`, `{ $cmd b }`.)
+          const head = field(n, 'name')!.text;
+          add('brace-close-no-separator', lastArg, `\`}\` の前に \`;\` か改行が必要です。このままでは \`}\` は \`${head}\` の引数で、\`{ }\` のグループが閉じていません: \`${fix.code}\``,
+            `\`}\` needs a \`;\` or a newline before it. As written, \`}\` is an argument of \`${head}\` and the \`{ }\` group is never closed: \`${fix.code}\``, [fix]);
         }
         // `rm -rf $DIR/…`: an empty DIR removes from the root. (Also when another command runs it: `sudo rm -rf $DIR/…`.)
         for (const run of runCommands(n, model, shell)) {
@@ -605,7 +623,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         const file = r.values[word];
         if (!search || !file || file.includes('/') || has(r.parse, ...search.instead)) continue;
         // (Only the builtin searches: `sudo source f` starts a program of that name, which the wrappers' note is about.)
-        if (resolveName(model, r.run.nameWord.text, r.run.nameWord, { shell, command: true, ...(r.run.env ? { env: r.run.env } : {}) }).kind !== 'builtin') return;
+        if (resolveRun(model, r.run, shell)!.kind !== 'builtin') return;
         const st = model.at(n).run;
         const on = option(st, 'shopt', search.shopt);
         if (!posixShell && on !== 'on' && on !== 'default') return;

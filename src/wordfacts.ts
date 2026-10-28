@@ -4,7 +4,7 @@ import { type Fact, fact, type Params } from './messages';
 import { featureWorks, type Shell } from './dialect';
 import { builtins } from './dict/builtins';
 import { parseExpansion } from './expansion';
-import { args, commandName, pathCommand, runCommands } from './pitfalls';
+import { args, commandName, pathCommand, resolveRun, runCommands } from './pitfalls';
 import { replaceNode, replaceSpan, type Rewrite, stringShell } from './rewrite';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
 import { shebangRefused, type StateModel } from './semantics/state';
@@ -189,8 +189,9 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         // is run (`find . -exec cp $a {} \; -exec mv $b {} \;`).
         // (What the name runs, from the model: a function of that name is not `cp`.)
         for (const run of runCommands(n, model, shell)) {
-          const nameNode = run.nameWord;
-          const ran = /^[\w./+-]+$/.test(nameNode.text) ? ranName(resolveName(model, nameNode.text, nameNode, { shell, command: true, ...(run.env ? { env: run.env } : {}) })) : undefined;
+          // (By the name's value, as the other checks read it: `\cp` and `'cp'` are cp.)
+          const r = resolveRun(model, run, shell);
+          const ran = r && ranName(r);
           if (!ran || !PATH_COMMANDS.has(ran)) continue;
           // (Each of them: quoting one leaves the others, `cp $a $b`.)
           const words = run.args.filter((w) => bare(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => bare(c))));

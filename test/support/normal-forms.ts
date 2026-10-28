@@ -10,13 +10,16 @@
 // as test/fixtures/bash-ast-known.json does; a row whose keys agree with bash while it says `known` is stale and fails.
 import * as fs from 'fs';
 import * as path from 'path';
-import { aliasOf, canonicalName, impliedWords, lookupCommand } from '../../src/dict/aliases';
-import { restrictedByName, shellFromName } from '../../src/dialect';
+import { canonicalName, impliedWords, lookupCommand } from '../../src/dict/aliases';
 import { argWord } from '../../src/argv/words';
 import { type ArgRole, interpret } from '../../src/argv/interpret';
 import { testChain } from '../../src/fixes';
 import { nameOf, outputsOf } from '../../src/idioms';
 import { commandName, runCommands } from '../../src/pitfalls';
+import { findWords } from '../../src/embedded/find';
+import { argWordIn } from '../../src/semantics/argwords';
+import { commandName as staticName } from '../../src/semantics/effects';
+import { type SlotLink, slotEnvs } from '../../src/semantics/env';
 import { resolveName, testSpecOf } from '../../src/semantics/names';
 import { shellState } from '../../src/semantics/state';
 import { staticWordValue } from '../../src/staticword';
@@ -111,10 +114,10 @@ function lastValue(tree: SyntaxTree, c: SyntaxNode): string {
  */
 export const KEYS: Record<Normalizer, (tree: SyntaxTree, c: SyntaxNode) => string> = {
   // (The program whose spec the name uses, with the words it implies: `egrep x` is `grep -E x`.)
+  // (Given the name's value, as the product's callers give it, `src/semantics/status.ts` among them: a path stays one.)
   canonicalName: (_, c) => {
-    const name = valueOr(nameWordOf(c));
-    const base = name.slice(name.lastIndexOf('/') + 1);
-    return [aliasOf(base) ? canonicalName(base) : base, ...impliedWords(base), ...argsOf(c).map(valueOr)].join(' ');
+    const name = staticName(c) ?? `(${nameWordOf(c).text})`;
+    return [canonicalName(name), ...impliedWords(name), ...argsOf(c).map(valueOr)].join(' ');
   },
   // (The spec the name is read with: a builtin's, or the program's of a path to one.)
   lookupCommand: (_, c) => {
@@ -128,8 +131,12 @@ export const KEYS: Record<Normalizer, (tree: SyntaxTree, c: SyntaxNode) => strin
     const words = argsOf(c);
     return words.length ? staticWordValue(words[words.length - 1]) ?? '(not known)' : '(no word)';
   },
-  // (The words of find's expression as src/explain/argv.ts reads them.)
-  findWords: (_, c) => JSON.stringify(argsOf(c).map((a) => staticWordValue(a) ?? a.text)),
+  // (The words of find's expression as src/explain/argv.ts reads them (`findWords`): from where find's spec says it starts.)
+  findWords: (_, c) => {
+    const args = argsOf(c);
+    const parse = interpret(lookupCommand('find')!, args.map(argWord), { name: 'find', lookup: lookupCommand });
+    return JSON.stringify(findWords(args.slice(parse.expression, parse.end)));
+  },
   // (The expression of `test` or `[`, with the words it reads, as bash's builtin reads them; through `command`,
   // `builtin` and the other command slots.)
   commandTest: (tree, c) => {
@@ -156,10 +163,18 @@ export const KEYS: Record<Normalizer, (tree: SyntaxTree, c: SyntaxNode) => strin
     const parse = interpret(spec, args.map(argWord), { name, lookup: lookupCommand });
     return meaning(parse.roles, args.map(valueOr)).join(', ');
   },
-  shellFromName: (_, c) => {
-    const name = valueOr(nameWordOf(c));
-    const base = name.slice(name.lastIndexOf('/') + 1);
-    return `${shellFromName(base) ?? '(none)'}${restrictedByName(base) ? ', restricted' : ''}`;
+  // (Through its caller, the command slot of a shell's `-c` (src/semantics/env.ts, `slotEnvs`): the shell of the string
+  // and whether it is started with `-r`.)
+  shellFromName: (tree, c) => {
+    const model = shellState(tree, 'bash');
+    const name = commandName(c);
+    const spec = name === undefined ? undefined : lookupCommand(name);
+    if (!spec) return '(no spec)';
+    const args = argsOf(c);
+    const parse = interpret(spec, args.map(argWordIn(model)), { name: name!, lookup: lookupCommand });
+    const link = [...slotEnvs(model.env(c), parse, spec, args, 'bash', lookupCommand).values()]
+      .flatMap((e) => e.links).find((l): l is SlotLink => l.kind === 'slot' && l.shell !== undefined);
+    return link ? `${link.shell}${link.invocation?.some((o) => o.flag === '-r') ? ', restricted' : ''}` : '(no shell)';
   },
   arithTrees: lastValue,
   // (A `[[ ]]` as the `[ ]` the quick fix writes; a `[ ]` chain as itself.)

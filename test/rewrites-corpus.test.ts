@@ -20,7 +20,7 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
   'and-or-in-bracket': { subjects: 4, ran: 4, checks: 14, skipped: {} },
   'array-joined-in-assignment': { subjects: 11, ran: 10, checks: 20, skipped: { 'an assignment in a function, whose variable the epilogue does not see': 1 } },
   'assignment-with-spaces': { subjects: 11, ran: 9, checks: 18, skipped: { 'an assignment to `PATH`': 1, 'bash does not parse it': 1 } },
-  'brace-close-no-separator': { subjects: 3, ran: 3, checks: 3, skipped: {} },
+  'brace-close-no-separator': { subjects: 6, ran: 4, checks: 4, skipped: { 'a command named by a path': 1, 'a command named by an expansion': 1 } },
   'brace-no-space': { subjects: 7, ran: 7, checks: 7, skipped: {} },
   'bracket-close-glued': { subjects: 3, ran: 2, checks: 2, skipped: { 'not a plain name before `]`': 1 } },
   'bracket-close-in-word': { subjects: 6, ran: 6, checks: 36, skipped: {} },
@@ -37,13 +37,13 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
   'rm-empty-variable-root': { subjects: 48, ran: 31, checks: 93, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, '`sudo` with an option': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `DIR`': 4, 'the script sets `D`': 6 } },
   'unbraced-element': { subjects: 1, ran: 1, checks: 1, skipped: {} },
   'unmatched-glob-runs-once': { subjects: 7, ran: 7, checks: 21, skipped: {} },
-  'unquoted-variable-as-path': { subjects: 56, ran: 35, checks: 182, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `DIR`': 5, 'the script sets `D`': 9 } },
+  'unquoted-variable-as-path': { subjects: 58, ran: 37, checks: 192, skipped: { '`.`': 1, '`eval`': 1, '`source`': 1, 'a command in the background, which may outlive the run': 1, 'a command named by a path': 2, 'the script sets `BUILD_DIR`': 1, 'the script sets `DIR`': 5, 'the script sets `D`': 9 } },
   'unquoted-variable-in-test': { subjects: 13, ran: 12, checks: 72, skipped: { 'a redirection to a word that is not plain text': 1 } },
   'wrapper-assignment-expanded-first': { subjects: 1, ran: 1, checks: 2, skipped: {} },
 };
 
 /** The ids of the subjects whose original bash does not parse, one for each. */
-const UNPARSED: SuggestionId[] = ['assignment-with-spaces', ...Array(3).fill('brace-close-no-separator'), ...Array(3).fill('brace-no-space'), 'declaration-masks-status'];
+const UNPARSED: SuggestionId[] = ['assignment-with-spaces', ...Array(6).fill('brace-close-no-separator'), ...Array(3).fill('brace-no-space'), 'declaration-masks-status'];
 
 /**
  * Inputs for the ids the corpus raises nowhere (the three `*-last-test-*` ids and `find-action-refused`), and for a list of a glob and other
