@@ -361,7 +361,7 @@ describe('the made-up environment, with what the script exports', () => {
       'export FOO=a; export -n FOO; env | grep FOO', 'export FOO=a; unset FOO; env | grep FOO', 'unset HOME; env | grep HOME',
       'PATH=/usr/local/bin:/usr/bin:/bin; env | grep PATH', 'declare -xu FOO=abc; env | grep FOO',
       'f() { export FOO=1; }; f; env | grep FOO', '(export FOO=1); env | grep FOO', "export FOO=$'a\\nb'; env | grep -x b",
-      'a=(1 2); export a; env | grep ^a=', 'export LANG=C; env | grep LANG', 'SHLVL=5; env | grep SHLVL',
+      'a=(1 2); export a; env | grep ^a=', 'export LANG=C; env | grep LANG', 'SHLVL=5; env | grep SHLVL', 'env | grep SHLVL',
       // (In the order bash passes them: by the bucket of each name in its table.)
       'env | cat', 'export FOO=bar AAA=2; env | cat', 'unset HOME; export -n TERM; export B=1; env | cat', "unset HOME; export FOO=$'a\\nb'; env | cat",
     ]) {
@@ -372,6 +372,11 @@ describe('the made-up environment, with what the script exports', () => {
       }
     }
     assert.ok(madeUpOf('export FOO=bar; env | grep FOO', 'en')!.sections[0].lines.includes('FOO=bar'));
+    // (bash sets SHLVL one more than the shell that started it has: a script run from a terminal has 2, the shell typed into 1.)
+    for (const lang of ['en', 'ja'] as const) {
+      const terminal = explain('env | grep SHLVL', 0, lang, { host: { kind: 'markdown' } }).examples.find((e) => e.kind === 'pipeline');
+      assert.deepStrictEqual(terminal?.sections.at(-1)!.lines, ['SHLVL=1'], lang);
+    }
   });
   it('makes up no environment where the model cannot tell what is exported', () => {
     for (const script of [

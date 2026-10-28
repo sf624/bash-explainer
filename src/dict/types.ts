@@ -201,7 +201,8 @@ export const DOAS_KEEPS: readonly string[] = ['DISPLAY', 'TERM'];
  * `LC_ALL` and the others may name it too, and the dictionary does not read the made-up environment.)
  */
 const LOCALES_AS_MADE_UP = ['', 'C', 'POSIX', 'C.UTF-8', 'C.utf8', 'en_US.UTF-8', 'en_US.utf8'];
-const locale = (...names: string[]): LayoutEnvironment => ({ ...Object.fromEntries(names.map((n) => [n, LOCALES_AS_MADE_UP])), ...(names.includes('LC_MESSAGES') ? { LANGUAGE: [''] } : {}) });
+/** The locale variables `names`, with `LANGUAGE`, which picks the language of messages beside `LC_MESSAGES`. */
+const locale = (...names: string[]): LayoutEnvironment => ({ ...Object.fromEntries(names.map((n) => [n, LOCALES_AS_MADE_UP])), LANGUAGE: [''] });
 /** The quoting styles of GNU ls that print the made-up names as they are (`c` and `shell-always` quote them). */
 const QUOTING_STYLE = ['', 'literal', 'shell', 'shell-escape', 'escape'];
 
