@@ -187,14 +187,6 @@
       "reason": "Bug, to fix: the words of a brace expansion in the action of `trap` are read as the action alone, and its token is not marked `expands`; bash runs `trap x EXIT`, where `x` is the action and `EXIT` a signal."
     },
     {
-      "input": "getopt --options=ab --longoptions=x: -- \"$@\"",
-      "command": "getopt --options=ab --longoptions=x: -- \"$@\"",
-      "word": "\"$@\"",
-      "check": "count",
-      "source": "argument",
-      "reason": "Bug, to fix: `Token.expands` has no kind for a word that gives one word per element (`\"$@\"`, `\"${a[@]}\"`, `\"${@:2}\"`, also inside a longer string), so the argument's token is shown as one argument; bash gives one word per element, and none when there are none."
-    },
-    {
       "input": "cp $a b; cp $a ",
       "command": "cp $a b",
       "word": "b",
