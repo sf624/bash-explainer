@@ -350,9 +350,11 @@ const madeUpOf = (src: string, lang: 'en' | 'ja') => {
 describe('the made-up environment, with what the script exports', () => {
   /**
    * What bash prints of `script`, run in the made-up environment from a shell of SHLVL 1, as a script is; PWD is the
-   * directory bash runs in, which is not the made-up one.
+   * directory bash runs in, which is not the made-up one. (Through `env -i`: Node.js adds variables of its own to a
+   * child's environment when it measures coverage.)
    */
-  const bash = (script: string) => lines(run('bash', ['-c', script], { env: { ...Object.fromEntries(ENVIRONMENT), SHLVL: '1' } }).stdout).map((l) => l.replace(/^PWD=.*/, 'PWD=/home/alice'));
+  const made = Object.entries({ ...Object.fromEntries(ENVIRONMENT), SHLVL: '1' }).map(([k, v]) => `${k}=${v}`);
+  const bash = (script: string) => lines(run('env', ['-i', ...made, 'bash', '-c', script]).stdout).map((l) => l.replace(/^PWD=.*/, 'PWD=/home/alice'));
   it('env and printenv print what the script exported, unset or stopped exporting, as bash does', () => {
     for (const script of [
       'export FOO=bar; env | grep FOO', 'declare -x FOO=bar; printenv | grep FOO', 'FOO=bar; env | grep FOO', 'set -a; FOO=1; env | grep FOO',
