@@ -112,9 +112,9 @@ describe('the web page: opening a file and saving the script', function () {
     // The name now shows in the top bar and the title, with no mark: it is saved.
     assert.strictEqual(await page.locator('#file-label').innerText(), 'script.sh');
     assert.strictEqual(await page.title(), 'script.sh — Bash Explainer');
-    // An edit marks it, in words for a screen reader too. (At the end, said so: once, in a full run under load, the
-    // letter went to the start of the text. What moved the cursor was not found, in 70 runs under load; this test is
-    // about the save.)
+    // An edit marks it, in words for a screen reader too. (The cursor is put at the end first: once, in a full run under
+    // load, the letter went to the start of the text. What moved the cursor was not found, in 70 runs under load; this
+    // test is about the save.)
     await page.keyboard.press('Control+End');
     await page.keyboard.insertText('x');
     await until('the mark', () => page.title(), (t) => t === '● script.sh — Bash Explainer');
