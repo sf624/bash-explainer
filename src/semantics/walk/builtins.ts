@@ -27,19 +27,15 @@ export const ATTRIBUTE_LETTERS: ReadonlySet<string> = new Set(['a', 'A', 'i', 'l
 /** The `shopt` options bash sets when it starts, which `shopt -s` and `-u` leave as they are (and succeed; bash 5.2 and 5.3). */
 export const STARTUP_SHOPT: ReadonlySet<string> = new Set(['login_shell', 'restricted_shell']);
 
-/**
- * What each command leaves in the table of `hash -p` for the names it changes (by the node the walk is at, as
- * `Walker.lastAt`): what a body that runs later may find there (src/semantics/walk/widen.ts).
- */
-const hashLeft = new WeakMap<SyntaxNode, Map<string, CommandEntry>>();
-export const leftBy = (at: SyntaxNode, name: string): CommandEntry => hashLeft.get(at)!.get(name)!;
-
 /** What builtins and assignments change in the state, for the walk. */
 export class WalkBuiltins {
   /** Where an error ends the shell in POSIX mode (`posixExit`): surely, on some walks only, or not (bash ignores it there). */
   readonly exits = new Map<SyntaxNode, Tri>();
 
-  /** The entries of the table of `hash -p` each change put, by the number of the change: what a body that runs later may find (`widen`). */
+  /**
+   * The entries of the table of `hash -p` each change of the main shell put, by the number of the change: what a body
+   * that runs later may find (`widen`).
+   */
   readonly hashPuts: { count: number; name: string; entry: CommandEntry }[] = [];
 
   constructor(private readonly w: Walker) {}
@@ -234,13 +230,11 @@ export class WalkBuiltins {
     return st;
   }
 
-  /** `st` with the entry `e` of the table of `hash -p` for `name`, which the command the walk is at leaves (`leftBy`). */
+  /** `st` with the entry `e` of the table of `hash -p` for `name`, logged in `hashPuts` when it is the main shell's. */
   private putHashed(st: ShellState, name: string, e: CommandEntry): ShellState {
-    const at = this.w.node!;
-    const left = hashLeft.get(at) ?? new Map<string, CommandEntry>();
-    hashLeft.set(at, left.set(name, e));
     st = this.w.put(st, 'hashed', name, e);
-    this.hashPuts.push({ count: this.w.changeCount, name, entry: e });
+    // (A subshell, a `$( )` or a pipeline stage changes its own table: a trap of the script never sees it.)
+    if (!this.w.targets.some((t) => t.kind === 'subshell')) this.hashPuts.push({ count: this.w.changeCount, name, entry: e });
     return st;
   }
 

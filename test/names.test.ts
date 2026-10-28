@@ -402,6 +402,12 @@ describe('the analyzer says what a name runs', () => {
     assert.strictEqual(trap('hash -d sort'), 'Sort lines (the command path cache may differ here (lines 2 and 4), so `sort` may run the path `/usr/bin/rev` instead)');
     assert.strictEqual(trap('hash -p /usr/bin/tac sort'), 'Sort lines (the command path cache may differ here (lines 2 and 4), so `sort` may run the path `/usr/bin/rev` or the path `/usr/bin/tac` instead)');
     assert.match(all(explain('f() { printf "b\\na\\nc\\n" | sort; }\ntrap f USR1\nhash -p /usr/bin/rev sort\nkill -USR1 $$\nhash -p /usr/bin/tac sort', 0).items[0]).join('\n'), /may run the path `\/usr\/bin\/rev` or the path `\/usr\/bin\/tac` instead/);
+    // (A path a subshell or a `$( )` gives is not the main shell's: the trap's action finds tac, for sure.)
+    for (const sub of ['( hash -p /usr/bin/rev sort )', 'x=$(hash -p /usr/bin/rev sort)']) {
+      const src = `trap 'sort i' USR1\n${sub}\nhash -p /usr/bin/tac sort\nkill -USR1 $$`;
+      assert.strictEqual(all(explain(src, 0).items[0]).find((t) => t.startsWith('Sort lines')), 'Sort lines (if the `hash -p` on line 3 ran, `sort` runs the path `/usr/bin/tac` instead)', sub);
+    }
+    assert.ok(all(explain("hash -p /usr/bin/tac sort\ntrap 'sort i' USR1\nkill -USR1 $$\n( hash -p /usr/bin/rev sort )", 1).items[0]).some((t) => t.startsWith('Run the external command `/usr/bin/tac`')));
     // (A trap's action that changes the table may run after any statement; changes of other names do not count.)
     assert.strictEqual(short(resolve('trap "hash -p /bin/ls e" INT\ne', 'e')), 'file:search-unknown-maybe-hashed:ran');
     assert.strictEqual(short(resolve('hash -p /bin/cat a\nf() { e; }\nhash -p /bin/ls a\nhash -p /bin/ls e', 'e')), 'file:search-unknown-maybe-hashed:ran');

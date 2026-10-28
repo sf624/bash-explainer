@@ -4,7 +4,7 @@
 import type { SyntaxNode } from '../../syntax/tree';
 import type { Attribute, Entry, Kind, ShellState, VariableState } from '../shellstate';
 import { hashEntry, hashOutcomes } from '../shellstate';
-import { ATTRIBUTE_LETTERS, leftBy } from './builtins';
+import { ATTRIBUTE_LETTERS } from './builtins';
 import { OPAQUE } from './shared';
 import type { Walker } from './walker';
 
@@ -59,12 +59,12 @@ export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>, sinc
       } else if (!f) changes.functions.set(name, { state: 'unknown', def: defs[defs.length - 1], exported: 'unknown', readonly: 'unknown' });
       else if (f.state !== 'unknown') changes.functions.set(name, { ...f, state: 'unknown' });
     } else if (kind === 'hashed') {
-      // (What it was, or what a change after it leaves: each change after `since` (a function no call reaches, a
-      // trap's action), and the last one, `leftBy`.)
+      // (What it was, or what a change of the main shell after it leaves: each one after `since` (a function no call
+      // reaches, a trap's action), else the last one. One made only in a subshell changes nothing here.)
       const e = st.hashed.get(name);
-      const last = leftBy(w.lastAt.get(key)!, name);
-      const later = since === undefined ? [] : w.builtins.hashPuts.filter((p) => p.name === name && p.count > since).map((p) => p.entry);
-      changes.hashed.set(name, hashEntry(last, [...hashOutcomes(e), ...[...later, last].flatMap(hashOutcomes)]));
+      const puts = w.builtins.hashPuts.filter((p) => p.name === name && (since === undefined || p.count > since)).map((p) => p.entry);
+      const later = since === undefined ? puts.slice(-1) : puts;
+      if (later.length) changes.hashed.set(name, hashEntry(later.at(-1)!, [...hashOutcomes(e), ...later.flatMap(hashOutcomes)]));
     } else if (kind === 'disabled') {
       const e = st.disabled.get(name);
       if (e?.state !== 'unknown') changes.disabled.set(name, { state: 'unknown', at: e?.at ?? w.lastAt.get(key)! });
