@@ -115,6 +115,11 @@ export type NameResolution =
      */
     relative?: true;
     /**
+     * `hashed`: bash checks that it can run the path first, and forgets it and searches PATH when it cannot: with
+     * `shopt -s checkhash` or in POSIX mode, on every path (`on`) or some (`unknown`).
+     */
+    checked?: 'on' | 'unknown';
+    /**
      * Where the table of `hash -p` differs with the path taken, or hashing may be off: what the name may run instead.
      * `path` is `search` then, also when every path runs one of `paths` (`maybeHashed.search` false).
      */
@@ -328,20 +333,30 @@ function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, bash,
   const entry = exec || pathPrefix ? undefined : st.hashed.get(name);
   const set = option(st, 'set', 'hashall');
   const hashall = set === 'default' ? 'on' : set;
-  if (entry?.state === 'on' && hashall === 'on') {
+  // (With checkhash or in POSIX mode, bash checks that it can run the path, and else forgets it: an empty one, surely.)
+  const checks = [option(st, 'shopt', 'checkhash'), option(st, 'set', 'posix')];
+  const checked = checks.includes('on') ? 'on' as const : checks.includes('unknown') ? 'unknown' as const : undefined;
+  if (entry?.state === 'on' && hashall === 'on' && !(checked === 'on' && entry.value === '')) {
     // (A relative path runs from the current directory; one not known is known only at run time.)
     const relative = entry.value !== undefined && !entry.value.startsWith('/');
-    return { kind: 'file', name, path: 'hashed', known: !relative && entry.value !== undefined && !!opts.program?.(entry.value), hashed: entry, ...(relative ? { relative } : {}), ...off, ...m };
+    return {
+      kind: 'file', name, path: 'hashed', known: !relative && entry.value !== undefined && !!opts.program?.(entry.value), hashed: entry,
+      ...(relative ? { relative } : {}), ...(checked ? { checked } : {}), ...off, ...m,
+    };
   }
-  const maybe = hashall === 'off' ? undefined : maybeHashed(entry, hashall === 'unknown');
+  const maybe = hashall === 'off' ? undefined : maybeHashed(entry, hashall === 'unknown', checked === 'on');
   // (A builtin turned off runs the program of its name, which the dictionary describes with it.)
   const known = !!opts.program?.(name) || !!spec?.program;
   return { kind: 'file', name, path: 'search', known, ...(maybe ? { maybeHashed: maybe } : {}), ...off, ...m, ...(sourced && !known && !missed && !exec && !opts.env ? { sourced } : {}) };
 }
 
-/** What the entry `entry` of the table may make a name run (`hashall`: hashing may be off), or undefined when it runs what PATH finds. */
-function maybeHashed(entry: CommandEntry | undefined, hashall: boolean): MaybeHashed | undefined {
-  const outcomes = hashOutcomes(entry);
+/**
+ * What the entry `entry` of the table may make a name run (`hashall`: hashing may be off; `checked`: bash checks that it
+ * can run a path, checkhash or POSIX mode), or undefined when it runs what PATH finds.
+ */
+function maybeHashed(entry: CommandEntry | undefined, hashall: boolean, checked: boolean): MaybeHashed | undefined {
+  // (`checked`: bash forgets an empty path, and searches PATH.)
+  const outcomes = hashOutcomes(entry).map((o) => (checked && o.value === '' ? { hashed: false, at: o.at } : o));
   // (A path in the table always has the command that gave it.)
   const hashed = outcomes.filter((o) => o.hashed).sort((a, b) => docIndex(a.at!) - docIndex(b.at!));
   if (!hashed.length) return undefined;

@@ -268,7 +268,7 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   // know: its words are read with the name's spec, but give no example of it.)
   const other = !!head.fn || !!maybeHashedOf(head.res) || (head.res?.kind === 'file' && head.res.path === 'hashed' && !head.res.known);
   const reading = () => readArgs(cx, head.spec, args, head.runs ?? head.name, head.fn);
-  const read = other && !head.fn ? cx.examplesDropped(reading) : reading();
+  const read = other && head.spec ? cx.examplesDropped(reading) : reading();
   // A restricted shell refuses some calls of builtins, and command names with a `/` (6.10).
   // (A name with a `/` only inside an expansion may have none: `"${tool##*/}"`.)
   const refused = head.kind === 'builtin' ? restrictedCall(cx, n, head.spec!, read.parse, args)
@@ -346,17 +346,24 @@ function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedC
   return head;
 }
 
+/** The lines of `nodes`, in words: "line 1", "lines 1 and 3" (ja: 行 1、3). */
+function linesOf(cx: Explainer, nodes: readonly SyntaxNode[]): string {
+  const lines = [...new Set(nodes.map((x) => docLine(x) + 1))].sort((x, y) => x - y);
+  return cx.s(`行 ${lines.join('、')}`, lines.length === 1 ? `line ${lines[0]}` : `lines ${lines.slice(0, -1).join(', ')} and ${lines.at(-1)}`);
+}
+
 /**
  * The program a file name runs when `hash -p` gave it a path or `enable -n` turned the builtin of its name off: the
  * path (when hashed by an absolute one), the spec of the program, from the dictionary (a builtin's `program`), what
  * runs and why, in words. A relative path runs from the current directory (`hash -p tac sort`: `./tac`, `res.relative`),
  * an empty one runs nothing, and one not known is known only at run time (`hash -p "$p" sort`): no program the
- * dictionary knows.
+ * dictionary knows; its words are read with `words`, which names no manual. Where bash checks that it can run the path
+ * (`res.checked`: checkhash, POSIX mode), it may search PATH instead.
  */
-function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 'file' }>): { path: string | undefined; program: CommandSpec | undefined; runs: string; why: string } {
-  const by = docLine((res.hashed ?? res.disabled)!.at) + 1;
+function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 'file' }>): { path: string | undefined; program: CommandSpec | undefined; words?: CommandSpec; runs: string; why: string } {
   const name = res.name;
   if (!res.hashed) {
+    const by = docLine(res.disabled!.at) + 1;
     // (Only a builtin is turned off: the program its entry describes.)
     return {
       path: undefined, program: lookupCommand(name)!.program, runs: cx.s(`外部コマンド \`${name}\` を実行する`, `Run the external command \`${name}\``),
@@ -364,21 +371,30 @@ function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 
     };
   }
   const { value } = res.hashed;
-  const none = { path: undefined, program: undefined };
+  // (The commands that gave it, when several did: `hash -p /x a; [ c ] && hash -p /x a`.)
+  const at = linesOf(cx, res.hashed.may ? res.hashed.may.map((o) => o.at!) : [res.hashed.at]);
+  const checked = !res.checked ? ''
+    : res.checked === 'on'
+      ? cx.s(`。\`shopt -s checkhash\` か POSIX モードなので、実行できないパスなら忘れて PATH から \`${name}\` を探す`, `; with \`shopt -s checkhash\` or in POSIX mode, bash forgets a path it cannot run and searches PATH for \`${name}\``)
+      : cx.s(`。\`shopt -s checkhash\` か POSIX モードが有効なら、実行できないパスは忘れて PATH から \`${name}\` を探す`, `; if \`shopt -s checkhash\` or POSIX mode is on, bash forgets a path it cannot run and searches PATH for \`${name}\``);
+  const none = {
+    path: undefined, program: undefined,
+    words: { ...NO_SPEC, unknownOption: { ja: `${at} の \`hash -p\` で \`${name}\` が指すプログラムに渡す単語（辞書にない）`, en: `A word passed to the program \`hash -p\` on ${at} gave \`${name}\`, which the dictionary does not describe` } },
+  };
   if (value === undefined) {
     return {
       ...none, runs: cx.s('外部コマンドを実行する', 'Run an external command'),
-      why: cx.s(`行 ${by} の \`hash -p\` で \`${name}\` は実行時に決まるパスを指す`, `\`hash -p\` on line ${by} gave \`${name}\` a path known only when it runs`),
+      why: cx.s(`${at} の \`hash -p\` で \`${name}\` は実行時に決まるパスを指す${checked}`, `\`hash -p\` on ${at} gave \`${name}\` a path known only when it runs${checked}`),
     };
   }
   if (value === '') {
     return {
       ...none, runs: cx.s('何も実行できない', 'Run nothing'),
-      why: cx.s(`行 ${by} の \`hash -p\` で \`${name}\` は空のパスを指す。bash は "No such file or directory" で失敗する（終了ステータス 127）`,
-        `\`hash -p\` on line ${by} gave \`${name}\` an empty path: bash fails with "No such file or directory" (status 127)`),
+      why: cx.s(`${at} の \`hash -p\` で \`${name}\` は空のパスを指す。bash は "No such file or directory" で失敗する（終了ステータス 127）${checked}`,
+        `\`hash -p\` on ${at} gave \`${name}\` an empty path: bash fails with "No such file or directory" (status 127)${checked}`),
     };
   }
-  const gave = cx.s(`行 ${by} の \`hash -p\` で \`${name}\` は \`${value}\` を指す`, `\`hash -p\` on line ${by} gave \`${name}\` the path \`${value}\``);
+  const gave = cx.s(`${at} の \`hash -p\` で \`${name}\` は \`${value}\` を指す`, `\`hash -p\` on ${at} gave \`${name}\` the path \`${value}\``);
   if (res.relative) {
     // (bash runs `./PATH` when it is a file it can run; else `./x` is forgotten and PATH searched, and `x` run as it is, failing.)
     const dot = value.startsWith('./');
@@ -387,7 +403,7 @@ function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 
       why: dot
         ? cx.s(`${gave}。\`/\` で始まらないパスは現在のディレクトリから実行し、\`./\` で始まるパスは、そこに実行できるファイルがなければ忘れて PATH から \`${name}\` を探す`,
           `${gave}; a path that does not start with \`/\` is run from the current directory, and one that starts with \`./\` is forgotten when no file there can run, and PATH searched for \`${name}\``)
-        : cx.s(`${gave}。\`/\` で始まらないパスは PATH から探さず、現在のディレクトリから実行する`, `${gave}; a path that does not start with \`/\` is not searched in PATH, but run from the current directory`),
+        : cx.s(`${gave}。\`/\` で始まらないパスは PATH から探さず、現在のディレクトリから実行する${checked}`, `${gave}; a path that does not start with \`/\` is not searched in PATH, but run from the current directory${checked}`),
     };
   }
   // (A path is never a builtin's entry: `/bin/echo` is the program.)
@@ -410,22 +426,22 @@ function hashedPath(v: string | undefined): { ja: string; en: string } {
  * make the table differ. With `search` false, every path runs one of them.
  */
 function maybeHashedText(cx: Explainer, name: string, m: MaybeHashed): string {
-  const lines = m.by.map((x) => docLine(x) + 1);
+  const line = docLine(m.by[0]) + 1;
   const p = m.paths.map(hashedPath);
   if (m.plain === 'ran') {
-    return cx.s(jaTidy(`行 ${lines[0]} の \`hash -p\` が実行されていれば、\`${name}\` は代わりに${p[0].ja}を実行する`), `if the \`hash -p\` on line ${lines[0]} ran, \`${name}\` runs ${p[0].en} instead`);
+    return cx.s(jaTidy(`行 ${line} の \`hash -p\` が実行されていれば、\`${name}\` は代わりに${p[0].ja}を実行する`), `if the \`hash -p\` on line ${line} ran, \`${name}\` runs ${p[0].en} instead`);
   }
   if (m.plain === 'hashing') {
-    return cx.s(jaTidy(`コマンドのハッシュが有効なら、\`${name}\` は行 ${lines[0]} の \`hash -p\` で指定した${p[0].ja}を実行する。\`set +h\` で無効にする経路がある`),
-      `if hashing is on here, \`${name}\` runs ${p[0].en} that \`hash -p\` on line ${lines[0]} gave it; \`set +h\` turns hashing off on some paths`);
+    return cx.s(jaTidy(`コマンドのハッシュが有効なら、\`${name}\` は行 ${line} の \`hash -p\` で指定した${p[0].ja}を実行する。\`set +h\` で無効にする経路がある`),
+      `if hashing is on here, \`${name}\` runs ${p[0].en} that \`hash -p\` on line ${line} gave it; \`set +h\` turns hashing off on some paths`);
   }
-  const at = cx.s(`行 ${lines.join('、')}`, lines.length === 1 ? `line ${lines[0]}` : `lines ${lines.slice(0, -1).join(', ')} and ${lines.at(-1)}`);
+  const at = linesOf(cx, m.by);
   const ja = p.map((x) => x.ja).join('か');
   const en = p.length === 1 ? p[0].en : `${p.slice(0, -1).map((x) => x.en).join(', ')} or ${p.at(-1)!.en}`;
   const off = m.hashall ? cx.s('。`set +h` でハッシュを無効にする経路もある', '; `set +h` turns hashing off on some paths') : '';
   return m.search
-    ? cx.s(jaTidy(`経路によって \`hash -p\` の表が違い（${at}）、\`${name}\` は代わりに${ja}を実行することもある${off}`), `the table of \`hash -p\` differs with the path taken (${at}), so \`${name}\` may run ${en} instead${off}`)
-    : cx.s(jaTidy(`経路によって \`hash -p\` の表が違い（${at}）、\`${name}\` は${ja}を実行する`), `the table of \`hash -p\` differs with the path taken (${at}), so \`${name}\` runs ${en}`);
+    ? cx.s(jaTidy(`ここでのコマンドのパスのキャッシュは一通りに決まらず（${at}）、\`${name}\` は代わりに${ja}を実行することもある${off}`), `the command path cache may differ here (${at}), so \`${name}\` may run ${en} instead${off}`)
+    : cx.s(jaTidy(`ここでのコマンドのパスのキャッシュは一通りに決まらず（${at}）、\`${name}\` は${ja}を実行する`), `the command path cache may differ here (${at}), so \`${name}\` runs ${en}`);
 }
 
 /**
@@ -445,7 +461,9 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
   const res = head.res?.kind === 'file' ? head.res : undefined;
   if (res?.maybeHashed?.search) {
     const t = maybeHashedText(cx, res.name, res.maybeHashed);
-    head.explanation += cx.s(`（${t}）`, ` (${t})`);
+    // (One bracket with the explanation's own last one: `tr`'s "(stdin only)".)
+    const x = head.explanation;
+    head.explanation = cx.s(x.endsWith('）') ? `${x.slice(0, -1)}。${t}）` : `${x}（${t}）`, x.endsWith(')') ? `${x.slice(0, -1)}; ${t})` : `${x} (${t})`);
   }
   return head;
 }
@@ -566,11 +584,12 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
   }
   // A builtin turned off with `enable -n` runs the program of its name; `hash -p` gives a name a path.
   if (res.kind === 'file' && (res.disabled || res.hashed)) {
-    const { path, program, runs, why } = offBuiltinOrHashed(cx, res);
+    const { path, program, words, runs, why } = offBuiltinOrHashed(cx, res);
     const basis = programBasis(cx, path || name, program);
+    const spec = program ?? words;
     return {
       // (The words are read as when the path is written out: the program is that file, so a word the dictionary lacks does not point to the manual of the name.)
-      name, res: ran, ...(program ? { spec: program } : {}), ...(path ? { runs: path } : {}), ...testOf(res), kind: 'command', nameTokens: [], refs: ['3.7.2'], ...(basis ? { basis } : {}),
+      name, res: ran, ...(spec ? { spec } : {}), ...(path ? { runs: path } : {}), ...testOf(res), kind: 'command', nameTokens: [], refs: ['3.7.2'], ...(basis ? { basis } : {}),
       explanation: cx.s(`${runs}（${why}）${program ? `: ${cx.t(program.summary)}` : ''}`, `${runs} (${why})${program ? `: ${cx.t(program.summary)}` : ''}`),
     };
   }

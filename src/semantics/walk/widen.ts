@@ -3,8 +3,8 @@
 // call runs with states no walk saw.
 import type { SyntaxNode } from '../../syntax/tree';
 import type { Attribute, Entry, Kind, ShellState, VariableState } from '../shellstate';
-import { hashOutcomes } from '../shellstate';
-import { ATTRIBUTE_LETTERS } from './builtins';
+import { hashEntry, hashOutcomes } from '../shellstate';
+import { ATTRIBUTE_LETTERS, leftBy } from './builtins';
 import { OPAQUE } from './shared';
 import type { Walker } from './walker';
 
@@ -58,12 +58,10 @@ export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>): She
       } else if (!f) changes.functions.set(name, { state: 'unknown', def: defs[defs.length - 1], exported: 'unknown', readonly: 'unknown' });
       else if (f.state !== 'unknown') changes.functions.set(name, { ...f, state: 'unknown' });
     } else if (kind === 'hashed') {
-      // (What the command that changes it there leaves is not known: a path known only at run time, or none.)
+      // (What it was, or what the command that changes it there last leaves: `leftBy`.)
       const e = st.hashed.get(name);
-      // (Every key changed has the node that changed it last.)
-      const at = w.lastAt.get(key)!;
-      const may = [...hashOutcomes(e), { hashed: true, at }, { hashed: false, at }];
-      changes.hashed.set(name, { state: 'unknown', at, may: may.filter((o, i) => may.findIndex((x) => x.hashed === o.hashed && x.value === o.value && x.at === o.at) === i) });
+      const last = leftBy(w.lastAt.get(key)!, name);
+      changes.hashed.set(name, hashEntry(last, [...hashOutcomes(e), ...hashOutcomes(last)]));
     } else if (kind === 'disabled') {
       const e = st.disabled.get(name);
       if (e?.state !== 'unknown') changes.disabled.set(name, { state: 'unknown', at: e?.at ?? w.lastAt.get(key)! });

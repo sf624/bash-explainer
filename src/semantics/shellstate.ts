@@ -80,8 +80,8 @@ export interface CommandEntry {
   /** The command that made it so. */
   readonly at: SyntaxNode;
   /**
-   * A path remembered on some paths only (`unknown`): what each path that gets here leaves in the table (`hashOutcomes`);
-   * where the walk does not follow what a command leaves (a body that runs later), a path not known and none, by it.
+   * A path remembered on some paths only (`unknown`): what each path that gets here leaves in the table
+   * (`hashOutcomes`); also on one remembered on every path (`on`) when several commands gave it.
    */
   readonly may?: readonly HashOutcome[];
 }
@@ -101,9 +101,25 @@ export interface HashOutcome {
 export function hashOutcomes(e: CommandEntry | undefined): readonly HashOutcome[] {
   if (!e) return [{ hashed: false }];
   if (e.state === 'off') return [{ hashed: false, at: e.at }];
-  const own: HashOutcome = { hashed: true, ...(e.value !== undefined ? { value: e.value } : {}), at: e.at };
-  // (An entry `unknown` has `may`: `mergeHashed` and the walk's widening set it.)
-  return e.state === 'on' ? [own] : e.may!;
+  // (An entry `unknown` has `may`: `hashEntry` sets it; one `on` has it when several commands gave the path.)
+  return e.may ?? [{ hashed: true, ...(e.value !== undefined ? { value: e.value } : {}), at: e.at }];
+}
+
+/**
+ * The entry of the table of `hash -p` for what several paths leave (`outcomes`, each once), with the newest of them
+ * (`newer`): the same path on every path (`on`, with the commands that gave it when several did), none on any
+ * (`off`), or either (`unknown`).
+ */
+export function hashEntry(newer: CommandEntry, outcomes: readonly HashOutcome[]): CommandEntry {
+  const may: HashOutcome[] = [];
+  for (const o of outcomes) if (!may.some((x) => x.hashed === o.hashed && x.value === o.value && x.at === o.at)) may.push(o);
+  const hashed = may.filter((o) => o.hashed);
+  const { may: _, value: __, ...entry } = newer;
+  if (hashed.length === may.length && hashed.every((o) => o.value === hashed[0].value)) {
+    return { ...entry, state: 'on', ...(hashed[0].value !== undefined ? { value: hashed[0].value } : {}), ...(may.length > 1 ? { may } : {}) };
+  }
+  if (!hashed.length) return { ...entry, state: 'off' };
+  return { ...entry, state: 'unknown', may };
 }
 
 
@@ -465,22 +481,10 @@ function mergeAlias<T extends AliasState | CommandEntry>(a: T | undefined, b: T 
   return { ...newer, state: a.value === b.value ? tri(a.state, b.state) : 'unknown' };
 }
 
-/**
- * A path of `hash -p` after two paths: the same path on both, none on both, or either, with what each path left
- * (`CommandEntry.may`), so that a reader can say which commands make the table differ.
- */
+/** A path of `hash -p` after two paths (`hashEntry`), with what each left, so that a reader can say which commands make it differ. */
 function mergeHashed(a: CommandEntry | undefined, b: CommandEntry | undefined): CommandEntry {
-  const may: HashOutcome[] = [];
-  for (const o of [...hashOutcomes(a), ...hashOutcomes(b)]) {
-    if (!may.some((x) => x.hashed === o.hashed && x.value === o.value && x.at === o.at)) may.push(o);
-  }
   const newer = !a || !b ? (a ?? b)! : later(a.at, b.at) === a.at ? a : b;
-  const hashed = may.filter((o) => o.hashed);
-  const { may: _, ...entry } = newer;
-  // (One path on every path, or none on any: no matter which command gave it.)
-  if (hashed.length === may.length && hashed.every((o) => o.value === hashed[0].value)) return { ...entry, state: 'on', ...(hashed[0].value !== undefined ? { value: hashed[0].value } : {}) };
-  if (!hashed.length) return { ...entry, state: 'off' };
-  return { ...entry, state: 'unknown', may };
+  return hashEntry(newer, [...hashOutcomes(a), ...hashOutcomes(b)]);
 }
 
 /** The state after one of several paths, when any of them may have been taken. */
@@ -524,6 +528,11 @@ function sameOutcomes(a: readonly HashOutcome[], b: readonly HashOutcome[]): boo
   return key(a) === key(b);
 }
 
+/** Whether two entries of the table of `hash -p` say the same (the nodes aside). */
+function sameHashed(x: CommandEntry, y: CommandEntry): boolean {
+  return x === y || (x.state === y.state && x.value === y.value && (x.state !== 'unknown' || sameOutcomes(x.may!, y.may!)));
+}
+
 /** Whether two states say the same (the nodes where things changed aside). */
 export function sameState(a: ShellState, b: ShellState): boolean {
   const attrs = (x: VariableState, y: VariableState): boolean => {
@@ -535,5 +544,5 @@ export function sameState(a: ShellState, b: ShellState): boolean {
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
     && NameMap.same(a.disabled, b.disabled, (x, y) => x === y || x.state === y.state)
-    && NameMap.same(a.hashed, b.hashed, (x, y) => x === y || (x.state === y.state && x.value === y.value && (x.state !== 'unknown' || sameOutcomes(x.may!, y.may!)))));
+    && NameMap.same(a.hashed, b.hashed, sameHashed));
 }

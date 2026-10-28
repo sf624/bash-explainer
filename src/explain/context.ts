@@ -113,7 +113,10 @@ export interface Explainer {
   examplesAt<T>(n: SyntaxNode, f: () => T): T;
   /** The examples added inside `f` and `whole` give way to the example `whole` gives, if it gives one (a pipeline's). */
   examplesReplaced<T>(f: () => T, whole: () => Example | undefined): T;
-  /** The examples added inside `f` are dropped (words read with a spec that may not be the program's: `hash -p`). */
+  /**
+   * The examples the words read inside `f` add themselves are dropped (read with a spec that may not be the program's:
+   * `hash -p`); those of the commands inside them, which those commands have claimed (`examplesOf`), stay.
+   */
   examplesDropped<T>(f: () => T): T;
   /** The notes, facts and examples of a line of a string read as a script join this line's; `span` maps its places to the source. */
   adopt(ex: LineExplanation, span: (s: Span) => Span): void;
@@ -334,7 +337,9 @@ export class LineExplainer implements Explainer, LineOutput {
   examplesDropped<T>(f: () => T): T {
     const before = this.examples.length;
     const value = f();
+    const kept = this.examples.slice(before).filter((e) => e.target !== undefined);
     this.examples.length = before;
+    this.examples.push(...kept);
     return value;
   }
 

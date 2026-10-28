@@ -248,7 +248,9 @@ describe('the pipeline example of a line agrees with the tools', () => {
         // With hashing off (`set +h`), bash searches PATH; `hash` fails then ("hashing disabled") and changes nothing,
         // and the paths it had come back with `set -h`.
         for (const line of [`hash -p /usr/bin/tac sort; set +h; ${abc}`, `set +h; hash -p /usr/bin/tac sort; ${abc}`, `set +h; hash -p /usr/bin/tac sort; set -h; ${abc}`,
-          `hash -p /usr/bin/tac sort; set +h; set -h; ${abc}`, `hash -p /usr/bin/tac sort; set +h; hash -r; set -h; ${abc}`, `hash -p /usr/bin/tac sort; set +h; hash -d sort; set -h; ${abc}`]) {
+          `hash -p /usr/bin/tac sort; set +h; set -h; ${abc}`, `hash -p /usr/bin/tac sort; set +h; hash -r; set -h; ${abc}`, `hash -p /usr/bin/tac sort; set +h; hash -d sort; set -h; ${abc}`,
+          // (The same path from two commands; with checkhash or in POSIX mode, an empty path forgotten, and PATH searched.)
+          `hash -p /usr/bin/tac sort; [ -n "$x" ] && hash -p /usr/bin/tac sort; ${abc}`, `shopt -s checkhash; hash -p '' sort; ${abc}`, `set -o posix; hash -p '' sort; ${abc}`]) {
           assert.deepStrictEqual(whole(line)?.sections.at(-1)?.lines, lines(bash(line).stdout.toString()), `${line} (${lang})`);
         }
         // A relative path runs from the current directory (no `./tac` here: "No such file or directory", or PATH for
