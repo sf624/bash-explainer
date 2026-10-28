@@ -17,6 +17,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Analyzer } from '../../src/analyzer';
+import { isExpressionStart } from '../../src/embedded/find';
 import { detectShell, type Shell } from '../../src/dialect';
 import { type FactId, MESSAGES } from '../../src/messages';
 import { pitfallFindings, STYLE_REWRITES, type StyleCode } from '../../src/pitfalls';
@@ -382,6 +383,28 @@ function wrapper(p: 'bash' | 'env', real: string, bin: string, setupFile: string
   return `#!${real} -p\n${reset}\n${check}\nbuiltin exec -a ${p} ${quote(p === 'bash' ? real : REAL_ENV)} "$@"\n`;
 }
 const REAL_ENV = ['/usr/bin/env', '/bin/env'].find((f) => fs.existsSync(f))!;
+
+/**
+ * Whether GNU find accepts the words that a line of its recorder shows (`@find <.> <-exec> …`): undefined, or what it says.
+ * They are read with a start that does not exist, in a directory of its own, so that find finds nothing and runs nothing;
+ * an action that opens a file as find reads it (`-fprint`…) is refused here instead.
+ */
+function findAccepts(line: string): string | undefined {
+  const words = [...line.matchAll(/ <(.*?)>(?= <|$)/g)].map((m) => m[1]);
+  const options = words.findIndex((w) => !/^-[HLP]$/.test(w));
+  const start = words.findIndex((w, i) => i >= options && isExpressionStart(w));
+  const expression = start < 0 ? [] : words.slice(start);
+  if (expression.some((w) => /^-f(?:print0?|printf|ls)$/.test(w))) return `${expression.join(' ')}: an action that writes a file as find reads it`;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-find-'));
+  try {
+    const none = path.join(dir, 'none');
+    const r = spawnSync('find', [...words.slice(0, Math.max(options, 0)), none, ...expression], { cwd: dir, encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 10_000 });
+    const said = r.stderr.split('\n').filter((l) => l && l !== `find: '${none}': No such file or directory`);
+    return said.length ? said.join('\n') : undefined;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 /** Runs the jobs with bash `program`, `jobs` contained batches at once. */
 export async function runJobs(bash: string, list: readonly Job[], { jobs = 4, perRun = 5 } = {}): Promise<Ran[]> {
@@ -778,16 +801,19 @@ Object.assign(STATES, {
       ];
     },
   },
-  // (bash cannot run find here, which would run other programs: `find` is a recorder, and what it is given is what find would get. The rewrite hands it the `;` it lacked, and nothing else changes.)
+  // (bash cannot run find here, which would run other programs: `find` is a recorder, and what it is given is what find would get. The rewrite hands it the `;` it lacked, and nothing else changes;
+  // and GNU find accepts the words it is given then, read on a start that does not exist, so that it finds nothing and runs nothing: `findAccepts`.)
   'find-action-refused': {
-    states: 'none: find is a recorder, and what it is given is compared',
+    states: 'none: find is a recorder, and what it is given is compared, then read by GNU find',
     checks: (s, x) => [{
       state: 'recorded',
       runs: pair(s, { env: x.others }),
       verify: ([o, r]) => {
         const without = (t: string): string => t.split(' <;>').join('');
         const added = r.out.split(' <;>').length - o.out.split(' <;>').length;
-        return without(r.out) === without(o.out) && r.err === o.err && r.status === o.status && added === s.facts.length ? undefined : `${added} words added to ${JSON.stringify(o.out)}, got ${JSON.stringify(r.out)}`;
+        if (!(without(r.out) === without(o.out) && r.err === o.err && r.status === o.status && added === s.facts.length)) return `${added} words added to ${JSON.stringify(o.out)}, got ${JSON.stringify(r.out)}`;
+        const refused = r.out.split('\n').filter((l) => l.startsWith('@find')).map(findAccepts).find((e) => e !== undefined);
+        return refused && `GNU find refuses the rewrite of ${JSON.stringify(o.out)}: ${refused}`;
       },
     }],
   },

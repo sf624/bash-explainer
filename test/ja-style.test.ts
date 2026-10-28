@@ -53,6 +53,15 @@ describe('Japanese wording', () => {
     assert.deepStrictEqual(hits, []);
   });
 
+  it('puts a space between code and Japanese around a part of a template that may be empty (`\\`x\\`${a ? \'…\' : \'\'}は`)', () => {
+    // (One branch of the part gives the text, the other nothing: with nothing, the code span touches the Japanese.)
+    const hits = [...sources('src'), ...sources('cli')].flatMap((file) => fs.readFileSync(path.join(root, file), 'utf8').split('\n')
+      .flatMap((line, i) => emptyPartGlued(line).map((m) => `${file}:${i + 1}: ${m}`)));
+    assert.deepStrictEqual(hits, []);
+    // (It finds the text that had it: `-ok` "`\;`がない".)
+    assert.strictEqual(emptyPartGlued("`${o} のコマンドを終わらせる \\`\\\\;\\`${plus ? '（または `{}` の直後の `+`）' : ''}がない`").length, 1);
+  });
+
   it('puts a space between code and Japanese in the dialect notes, built from parts', () => {
     const notes = dialectTexts('ja');
     assert.ok(notes.length > 100, String(notes.length));
@@ -80,6 +89,30 @@ describe('Japanese wording', () => {
     assert.deepStrictEqual([...hits], []);
   });
 });
+
+/**
+ * In the source line of a template literal: a code span (an escaped backtick) and Japanese with a part between them, `${…}`,
+ * one of whose branches is empty (`? '' :` or `: ''`), so that the two touch when it is taken. Each such part, as written.
+ */
+function emptyPartGlued(line: string): string[] {
+  const letter = /[ぁ-ゖァ-ヺー一-鿿]/;
+  const out: string[] = [];
+  for (let at = line.indexOf('${'); at >= 0; at = line.indexOf('${', at + 2)) {
+    // (Its end: the brace that closes it, counting those inside, `{}` in its strings among them.)
+    let depth = 0;
+    let end = at + 1;
+    for (; end < line.length; end++) {
+      if (line[end] === '{') depth++;
+      else if (line[end] === '}' && --depth === 0) break;
+    }
+    const part = line.slice(at, end + 1);
+    if (!/\? (?:''|"") :|: (?:''|"")\}$/.test(part)) continue;
+    const before = line.slice(0, at);
+    const after = line.slice(end + 1);
+    if ((before.endsWith('\\`') && letter.test(after[0] ?? '')) || (letter.test(before.slice(-1)) && after.startsWith('\\`'))) out.push(part);
+  }
+  return out;
+}
 
 /** Where a code span (`` `…` ``) touches a kana or a kanji with no space: none when the backticks do not pair up. */
 function glued(text: string): string[] {

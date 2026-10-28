@@ -58,6 +58,8 @@ const HAND = [
   '#!/bin/bash\necho @start\n[ -f x ] && echo "@y"\n',
   'for i in a b *.c; do echo "$i"; done\n',
   'find . -name "*.c" -exec rm {} ;\n',
+  // (`{};` is `{}` and the `;`; a `#` right after the `;` starts a comment; `-exec ;` has no command, which `\;` would not give.)
+  'find . -exec echo {};\n', 'find . -exec echo {} ;# c\n', 'find . -exec ;\n',
   '[[-f x]] && echo y\n', '{echo a }\n', '{echo a}; echo b\n', 'while read line; do echo "$line"; done\n', '[ "$a" > b ] && echo yes\n',
   'x = "a b"\necho "$x"\n', 'f() {\n  rm -rf $D/x\n}\nf\n',
 ];

@@ -1,4 +1,4 @@
-// `find-action-refused` (src/messages.ts): find refuses the whole line when the command of an action (`-exec`, `-execdir`,
+// `find-action-refused` (src/messages.ts): find refuses all its arguments when the command of an action (`-exec`, `-execdir`,
 // `-ok`, `-okdir`) is not ended as it wants, and runs nothing. Each case runs the line in GNU find (the one on the PATH
 // of test/support/bash.ts) and checks that the note quotes what find printed; the rewrite for a bare `;` is run too.
 import * as assert from 'assert';
@@ -24,9 +24,10 @@ describe('the note on an action that find refuses', () => {
     ['find . -maxdepth 0 -exec echo ran {} a +', "missing argument to `-exec'", /^⚠ `-exec` has no `\\;` \(or `\+` right after a `\{\}`\) to end its command\. /],
     ['find . -maxdepth 0 -exec \\;', "invalid argument `;' to `-exec'", /is followed at once by `\\;`, so it has no command to run\./],
     ['find . -maxdepth 0 -ok \\;', "invalid argument `;' to `-ok'", /^⚠ `-ok` is followed at once by/],
-    ['find . -maxdepth 0 -exec echo ran {}.bak +', "In '-exec ... {} +' the '{}' must appear by itself, but you specified '{}.bak'", /a `\+` ends the command of `-exec` only after a `\{\}` that stands alone, and here the word before it is `\{\}\.bak`\./],
+    ['find . -maxdepth 0 -ok', "missing argument to `-ok'", /^⚠ `-ok` has no command to run, and no `\\;` to end one\. find refuses all its arguments .* Write the command to run, and end it with `\\;`$/],
+    ['find . -maxdepth 0 -exec echo ran {}.bak +', "In '-exec ... {} +' the '{}' must appear by itself, but you specified '{}.bak'", /^⚠ A `\+` ends the command of `-exec` only after a `\{\}` that stands alone, and here the word before it is `\{\}\.bak`\./],
     ['find . -maxdepth 0 -execdir echo ran {}.bak +', "In '-execdir ... {} +' the '{}' must appear by itself, but you specified '{}.bak'", /command of `-execdir` only after/],
-    ['find . -maxdepth 0 -exec echo ran {} {} +', 'Only one instance of {} is supported with -exec ... +', /command of `-exec` that a `\+` ends takes only one `\{\}`\./],
+    ['find . -maxdepth 0 -exec echo ran {} {} +', 'Only one instance of {} is supported with -exec ... +', /^⚠ The command of `-exec` that a `\+` ends takes only one `\{\}`\./],
     ['find . -maxdepth 0 -execdir echo ran {} {}.bak +', 'Only one instance of {} is supported with -execdir ... +', /command of `-execdir` that a `\+` ends/],
   ];
   for (const [src, said, reason] of cases) {
@@ -39,6 +40,7 @@ describe('the note on an action that find refuses', () => {
       assert.match(f.text, reason);
       // (As a code span: the fence is longer than the backticks inside.)
       assert.ok(f.text.includes(said.includes('`') ? `\`\`find: ${said}\`\`` : `\`find: ${said}\``), f.text);
+      assert.match(f.text, / find refuses all its arguments \(/);
       assert.match(f.text, /runs nothing\./);
       assert.ok(note(src, 'ja')!.text.includes('何も実行しない'));
     });
@@ -52,10 +54,48 @@ describe('the note on an action that find refuses', () => {
   });
 
   it('says the same in Japanese', () => {
-    assert.match(note('find . -exec rm {} ;', 'ja')!.text, /`-exec` のコマンドを終わらせる `\\;`（または `\{\}` の直後の `\+`）がない。末尾の `;` はシェルのコマンドリストの区切りなので、find には渡らない。find は行全体を受け付けず（``find: missing argument to `-exec'``）、何も実行しない。`\\;` と書く/);
+    assert.match(note('find . -exec rm {} ;', 'ja')!.text, /`-exec` のコマンドを終わらせる `\\;`（または `\{\}` の直後の `\+`）がない。末尾の `;` はシェルのコマンドリストの区切りなので、find には渡らない。find は与えられた引数をすべて受け付けず（``find: missing argument to `-exec'``）、何も実行しない。`\\;` と書く/);
     assert.match(note('find . -exec rm {}.bak +', 'ja')!.text, /`\+` が `-exec` のコマンドを終わらせるのは、直前の語が `\{\}` だけのときに限る。ここでは `\{\}\.bak` なので/);
     assert.match(note('find . -exec rm {} {} +', 'ja')!.text, /`\{\}` は1つだけ。2つ以上必要なら `\\;` で1件ずつ実行する。/);
-    assert.match(note('find . -exec \\;', 'ja')!.text, /直後がすぐ `\\;` で、実行するコマンドがない。/);
+    assert.match(note('find . -exec \\;', 'ja')!.text, /^⚠ `-exec` の直後が `\\;` で、実行するコマンドがない。/);
+    assert.match(note('find . -ok rm {} +', 'ja')!.text, /^⚠ `-ok` のコマンドを終わらせる `\\;` がない。`\+` で終わらせられるのは `-exec` と `-execdir` だけ。/);
+    assert.match(note('find . -exec ;', 'ja')!.text, /^⚠ `-exec` の後に、実行するコマンドも、それを終わらせる `\\;` もない。末尾の `;` は.*。実行するコマンドを書き、`\\;` で終わらせる$/);
+  });
+
+  it('cites the sections of each case: the list operator only for a bare `;`', () => {
+    const cases: [string, string[]][] = [
+      ['find . -exec rm {} ;', ['3.2.4', '3.1.2.1', '3.1.2.2']], ['find . -exec rm {}', ['3.1.2.1', '3.1.2.2']], ['find . -exec \\;', ['3.1.2.1']],
+      ['find . -exec rm {}.bak +', ['3.1.2.1']], ['find . -exec rm {} {} +', ['3.1.2.1']],
+    ];
+    for (const [src, refs] of cases) assert.deepStrictEqual(note(src)!.refs, refs, src);
+  });
+
+  it('is not said where a word of the command has a value not known here: it may be the `;`, and find runs', () => {
+    // (`"$@"`: the words of the call, `\;` among them; `$x`: one the script sets, which ends the command.)
+    for (const src of ['f() { find . -maxdepth 0 -exec "$@"; }; f echo ran {} \\;', "x=';'; find . -maxdepth 0 -exec echo ran {} $x"]) {
+      assert.strictEqual(real(src).stdout, 'ran .\n', src);
+      assert.strictEqual(note(src), undefined, src);
+    }
+    // (Where the value is known and is no `;`, find refuses as before.)
+    assert.match(real("x=y; find . -maxdepth 0 -exec echo ran {} $x").stderr, /^find: missing argument to `-exec'/);
+    assert.ok(note("x=y; find . -maxdepth 0 -exec echo ran {} $x"));
+  });
+
+  it('is not said where bash rejects the line: find never runs', () => {
+    for (const src of ['find . -maxdepth 0 -exec echo ran {} ;;', 'find . -maxdepth 0 -exec echo ran {} ; ;', 'find . -maxdepth 0 -exec echo ran {} ;&']) {
+      const r = real(src);
+      assert.deepStrictEqual([r.stdout, /syntax error near unexpected token/.test(r.stderr), r.stderr.includes('find:')], ['', true, false], src);
+      assert.strictEqual(note(src), undefined, src);
+    }
+    // (A syntax error on another line leaves this one to run.)
+    assert.ok(factsOf('find . -exec rm {} ;\nfi\n', ID).length);
+  });
+
+  it('leaves out the notes of a script that the refused command would run', () => {
+    const facts = (src: string) => new Analyzer('en').explainLine(parser.parse(src), 0).facts!.map((f) => f.id);
+    assert.ok(facts("find . -exec bash -c 'rm -rf $d/x' _ {} \\;").includes('unquoted-variable-as-path'));
+    assert.deepStrictEqual(facts("find . -exec bash -c 'rm -rf $d/x' _ {} ;"), [ID]);
+    assert.deepStrictEqual(facts("find . -exec sudo bash -c 'rm -rf $d/x' _ {} ;"), [ID]);
   });
 
   it('leaves the explanation of the rest of the line as it is: the pattern of `-name` and its example', () => {
@@ -86,8 +126,27 @@ describe('the note on an action that find refuses', () => {
         assert.ok(f.text.endsWith('Write `\\;` (or `\';\'`)'), f.text);
       }
     });
+    it('makes `\\;` a word of its own, after `{};` and before a `#` right after it', () => {
+      for (const [src, code, want] of [
+        ['find . -maxdepth 0 -exec echo ran {};', '{} \\;', 'find . -maxdepth 0 -exec echo ran {} \\;'],
+        ['find . -maxdepth 0 -exec echo ran {} ;# c', '\\; #', 'find . -maxdepth 0 -exec echo ran {} \\; # c'],
+        ['find . -maxdepth 0 -exec echo ran {};# c', '{} \\; #', 'find . -maxdepth 0 -exec echo ran {} \\; # c'],
+      ] as const) {
+        const [f] = factsOf(src, ID);
+        assert.deepStrictEqual(f.rewrite!.map((r) => [r.code, applied(src, r)]), [[code, want]], src);
+        const after = real(want);
+        assert.deepStrictEqual([after.stdout, after.status], ['ran .\n', 0], JSON.stringify(after));
+        assert.ok(f.text.endsWith(`Write \`${code}\`: \`\\;\` (or \`';'\`) must be a word of its own`), f.text);
+      }
+    });
+    it('gives none where the action has no command: find would refuse `-exec \\;` too', () => {
+      assert.match(real('find . -maxdepth 0 -exec \\;').stderr, /^find: invalid argument `;' to `-exec'/);
+      const [f] = factsOf('find . -exec ;', ID);
+      assert.strictEqual(f.rewrite, undefined);
+      assert.ok(f.text.endsWith('Write the command to run, and end it with `\\;`'), f.text);
+    });
     it('gives none where the cause is not the bare `;`, or the `;` is followed by another command', () => {
-      for (const src of ['find . -ok rm {} +', 'find . -exec rm {}.bak +', 'find . -exec rm {} ; echo done', 'find . -exec rm {}', 'find . -exec rm {} ;; ', 'find . -exec rm {} & ']) {
+      for (const src of ['find . -ok rm {} +', 'find . -exec rm {}.bak +', 'find . -exec rm {} ; echo done', 'find . -exec rm {}', 'find . -exec rm {} & ']) {
         const f = factsOf(src, ID);
         assert.ok(f.length >= 1 && f.every((x) => x.rewrite === undefined), src);
       }

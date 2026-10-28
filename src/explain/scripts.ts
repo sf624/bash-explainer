@@ -30,10 +30,11 @@ const LOCAL_EXPANSIONS: ReadonlySet<ExpansionStep['kind']> = new Set(['tilde', '
 /**
  * The tokens of the string `words` hold, read as the script a slot runs (docs/design/semantics.md, 4.13): the
  * items of each of its lines, explained with its shell and model (`Explainer.nestedLine`) and mapped to the source (a
- * token per line when it has several). Its notes and examples join the line's. `note`: why it is not read, or that
+ * token per line when it has several). Its notes and examples join the line's, unless `notes` is false (a script that never
+ * runs). `note`: why it is not read, or that
  * its shell is not known.
  */
-export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, positional?: ExplainOptions['positional']): { tokens: Token[]; note?: string } {
+export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, positional?: ExplainOptions['positional'], notes = true): { tokens: Token[]; note?: string } {
   const script = cx.state.script(words, env);
   // (A string no shell runs, `sudo eval s`, has the pitfall of its slot.)
   if ('why' in script) {
@@ -48,7 +49,8 @@ export function scriptTokens(cx: Explainer, words: SyntaxNode[], env: ExecEnv, p
     // (A statement over several lines is explained whole on each of them: keep it, and its notes, on its first.)
     const items = ex.items.filter((t) => t.span.start.line === line);
     lines.push(items.map((t) => fromScript(cx, t, script)));
-    if (!items.length) continue;
+    // (Not the notes of a script that never runs, `find . -exec bash -c 's' _ {} ;`, which find refuses: `notes` false.)
+    if (!items.length || !notes) continue;
     cx.adopt(ex, (span) => scriptSpan(cx, span, script));
   }
   const used = lines.map((items, i) => ({ items, i })).filter((l) => l.items.length);

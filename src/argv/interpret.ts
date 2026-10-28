@@ -4,7 +4,7 @@
 // It works in four passes: split the words into options and operands, choose the mode, match the
 // operands with the spec's patterns, and read the words of a command slot as a command of its own.
 import { isExpressionStart } from '../embedded/find';
-import { untilEnd, type UntilRefusal } from './until';
+import { untilEnd, type UntilRefusal, untilWord } from './until';
 import type { Text } from '../i18n';
 import { EnvSplitError, splitEnvString } from './envsplit';
 import { type ParserRules, rulesOf } from './parsers';
@@ -21,6 +21,12 @@ export interface ArgWord {
    * least 0 (`max` absent: not known).
    */
   count?: { min: number; max?: number };
+  /**
+   * The fields bash makes of it, where the semantic model knows them (`wordFields`; undefined where it does not), computed
+   * when asked: given by callers that have the model (src/semantics/argwords.ts), and read only where a word must be known
+   * as it is given (the end of an option's command, `untilWord`).
+   */
+  fields?: () => readonly string[] | undefined;
 }
 
 export type ArgRole =
@@ -529,11 +535,13 @@ class Reader {
   private separateValues(st: OptionState, opt: OptionSpec, flag: string, last: number, from: number, role?: { missing?: boolean }): number {
     if (opt.until) {
       const { slot } = opt.until;
-      const { at: j, refusal } = untilEnd(opt.until, this.words.map((w) => w.value), last + 1, st.end);
+      // (The words of the command as they are given: before it, none is read.)
+      const words = this.words.slice(0, st.end).map((w, i) => (i > last ? untilWord(w) : ''));
+      const { at: j, refusal } = untilEnd(opt.until, words, last + 1, st.end);
       if (j > last + 1) st.roles.set(last + 1, this.command(slot, last + 1, j, flag));
       // (The first one: find tells that one.)
       if (refusal) st.refusal ??= { ...refusal, option: flag, at: last };
-      if (j < st.end) { st.roles.set(j, { role: 'terminator', text: this.words[j].value!, of: flag }); return j; }
+      if (j < st.end) { st.roles.set(j, { role: 'terminator', text: words[j]!, of: flag }); return j; }
       return st.end - 1;
     }
     const values = valuesOf(opt);

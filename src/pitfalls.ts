@@ -5,6 +5,7 @@ import { argWordFor } from './argv/words';
 import type { Shell } from './dialect';
 import { canonicalName, impliedWords, lookupCommand } from './dict/aliases';
 import { Lang } from './i18n';
+import { argWordIn } from './semantics/argwords';
 import { type ExecEnv, runsString, slotEnvs } from './semantics/env';
 import { resolveName } from './semantics/names';
 import { option, type StateModel } from './semantics/state';
@@ -123,7 +124,8 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
   if (!spec || !a.length) return out;
   const kind = resolveName(model, nameWord.text, nameWord, { shell, command: true }).kind;
   if (kind === 'function' || kind === 'alias') return out;
-  const parse = interpret(spec, a.map(argWordFor(model.shell)), { name, lookup: lookupCommand });
+  // (The words as the command gets them, where the model knows them: `x=';'; find . -exec echo {} $x` ends at `$x`.)
+  const parse = interpret(spec, a.map(argWordIn(model)), { name, lookup: lookupCommand });
   let envs: Map<SyntaxNode, ExecEnv> | undefined;
   // (`words` are the words of the line that `p` read: the indexes of its roles count in them.)
   const visit = (p: ArgvParse, ps: CommandSpec | undefined, words: readonly SyntaxNode[]): void => {
@@ -135,7 +137,7 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
       // (`-exec cp $a {} \;`; the `{}` and the `;` or `+` are find's words, not the command's).
       if (role.role === 'expression' && word === p.expression && ps?.expressionSpec) {
         const rest = words.slice(word, p.end);
-        visit(interpret(ps.expressionSpec, rest.map(argWordFor(model.shell)), { name: p.command, lookup: lookupCommand }), ps.expressionSpec, rest);
+        visit(interpret(ps.expressionSpec, rest.map(argWordIn(model)), { name: p.command, lookup: lookupCommand }), ps.expressionSpec, rest);
       }
       if (role.role !== 'command' || !role.parse) continue;
       if (role.name !== undefined && !runsString(role.slot)) {
