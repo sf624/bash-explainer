@@ -65,7 +65,7 @@ export type ArgRole =
    * `su -c 'cmd'`) has no `parse`; nor has a string joined from the words (`joined`). `of` is the option whose
    * value or words it is (`su -c`, `find -exec`); `item`, the operand it fills (`bash -c`, `ssh host cmd`).
    */
-  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec; appended?: true }
+  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec }
   /** The word that ends an option's command (`;` of `find -exec … ;`), and its text (one of the option's `until.terminators`). */
   | { role: 'terminator'; text: string; of: string }
   /** A word of the shell string that a `command` role before it joins from the words (`ssh host ls -l`). */
@@ -131,8 +131,6 @@ export interface InterpretContext {
   name?: string;
   /** The spec of a command named in a command slot. */
   lookup?: (name: string, at?: number, slot?: CommandSlot) => CommandSpec | undefined;
-  /** The words of the command are followed by words of the program that runs it (`CommandSlot.appends`). */
-  appended?: boolean;
   /** The commands whose `soleOptions` do not apply: the index of the word before their words (`-1`: the command's own). */
   noSole?: ReadonlySet<number>;
   /** A guard on the work of the operand matcher for one pattern (default 100000 steps). */
@@ -147,7 +145,7 @@ const known = (w: ArgWord): string => w.value ?? w.prefix ?? '';
 
 /** Reads the words of a command (its arguments, without the name) with its spec. */
 export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretContext = {}): ArgvParse {
-  return new Reader(words, ctx, new Set()).read(spec, 0, words.length, ctx.name ?? '', [], false, [], !!ctx.appended);
+  return new Reader(words, ctx, new Set()).read(spec, 0, words.length, ctx.name ?? '', [], false, []);
 }
 
 const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ? [] : Array.isArray(o.value) ? o.value : [o.value]);
@@ -342,7 +340,7 @@ class Reader {
     const found = name === undefined ? undefined : this.ctx.lookup?.(name, at, slot);
     // A slot that starts a program runs the program of a builtin's name (`env echo`: coreutils echo).
     const spec = slot.run === 'exec' && found?.program ? found.program : found;
-    return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', [], false, [], appended), ...(of ? { of } : {}), ...(appended ? { appended: true as const } : {}) };
+    return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', [], false, [], appended), ...(of ? { of } : {}) };
   }
 
   /**
