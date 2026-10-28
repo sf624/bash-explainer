@@ -461,8 +461,11 @@ describe('basis: what an explanation rests on', () => {
     const direct = explain(`enable -n echo\necho -n hi`, 1, 'en').items[0].explanation;
     assert.match(direct, /\(`enable -n` on line 1 turned the builtin `echo` off\)/);
     assert.strictEqual(said(`${on}alias g=grep\ng -n x f`, 'en'), 'The alias `g` defined on line 2: replaced by `grep`');
-    // Only when the hashed path is on every path (`hash -p` in a branch: not known).
-    assert.deepStrictEqual(basisOf1(`${on}alias g=grep\nif [ -n "$A" ]; then hash -p /opt/frob grep; fi\ng -n x f`), [['g', spec('grep')]]);
+    // Not when the hashed path is on some paths only (`hash -p` in a branch): `grep` may run `/opt/frob`, so no one spec
+    // reads the words, and the alias's text says so.
+    const branch = `${on}alias g=grep\nif [ -n "$A" ]; then hash -p /opt/frob grep; fi\ng -n x f`;
+    assert.deepStrictEqual(basisOf1(branch), []);
+    assert.strictEqual(said(branch, 'en'), 'The alias `g` defined on line 2: replaced by `grep` (if the `hash -p` on line 3 ran, `grep` runs the path `/opt/frob` instead)');
   });
 
   it('keeps a token\'s own basis over the spec, and gives none with `notes.basis` off; no view shows `spec`', () => {

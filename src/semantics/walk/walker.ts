@@ -1184,7 +1184,7 @@ export class Walker {
     st = this.expansions.redirections(n, this.expansions.redirectSubstitutions(redirs, this.expansions.expandAll(assignments, st), program), program);
     const unrun = st;
     // A prefix assignment to PATH empties the table of remembered paths too.
-    if (assignments.some((a) => field(a, 'name')!.text === 'PATH')) st = this.builtins.forgetHashed(st);
+    if (assignments.some((a) => field(a, 'name')!.text === 'PATH')) st = this.builtins.forgetHashed(st, n);
     const expanded = this.aliases.expand(n, st);
     if (expanded) return expanded;
     // In POSIX mode, the assignments before a special builtin stay after it, exported.
