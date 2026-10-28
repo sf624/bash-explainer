@@ -864,13 +864,13 @@ export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: Synta
 }
 
 /**
- * What the expansion `part` of the word `w` gives with only the values the model trusts (`ModelValues.trusted`): its text, and its
- * fields where `split` (each with whether it has a glob character); undefined when bash fails on it or a value is not known.
+ * What the expansion `part` of the word `w` gives with only the values the model trusts (`ModelValues.trusted`; with `values: 'model'`, those of `wordFields`, also of a
+ * whole word, before brace and pathname expansion): its text, and its fields where `split` (each with whether it has a glob character); undefined when bash fails on it or a value is not known.
  */
-export function trustedPart(part: SyntaxNode, w: WordMeaning, model: StateModel, quoted: boolean, split: boolean): { text: string; fields: { text: string; glob: boolean }[] } | undefined {
+export function trustedPart(part: SyntaxNode, w: WordMeaning, model: StateModel, quoted: boolean, split: boolean, values: 'trusted' | 'model' = 'trusted'): { text: string; fields: { text: string; glob: boolean }[] } | undefined {
   let pieces: Piece[] | undefined;
   try {
-    pieces = new Evaluator(w, new ModelValues(w, model, undefined, new Set(), true)).pieces(part, quoted);
+    pieces = new Evaluator(w, new ModelValues(w, model, undefined, new Set(), values === 'trusted')).pieces(part, quoted);
   } catch (e) {
     /* c8 ignore next -- a rethrow guard, as in `fieldsAt`. */
     if (!(e instanceof Failure)) throw e;

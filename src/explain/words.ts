@@ -22,7 +22,7 @@ import { replaceRange } from '../rewrite';
 import { attribute, docLine } from '../semantics/state';
 import { readonlyAtStart } from '../semantics/vars';
 import { givesElements } from '../semantics/elements';
-import { CONTEXTS, partMeaning, underscoreValue, wordOf } from '../semantics/words';
+import { CONTEXTS, partMeaning, type StepKind, trustedPart, underscoreValue, wordFields, wordOf } from '../semantics/words';
 import { type BracketSpan, bracketSpans, decodedText, isPlainWord, setsElement, splitElement, stackTilde, staticWordValue, unquoteWord } from '../staticword';
 import { ancestor, assignmentsOnly, braceKind, descendants, field, fields, type SyntaxNode, wordBraces } from '../syntax/tree';
 import { claim } from '../tokenmarks';
@@ -160,7 +160,7 @@ function manyFields(n: SyntaxNode): boolean {
 export function concatenationNote(cx: Explainer, n: SyntaxNode): string {
   const parts = n.namedChildren;
   const each = manyFields(n) ? parts.findIndex((c) => c.type === 'string' && c.namedChildren.length === 1 && givesElements(c.namedChildren[0])) : -1;
-  if (each < 0) return cx.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word');
+  if (each < 0) return concatJoined(cx, n);
   const text = (from: number, to: number): string => (from >= to ? '' : n.text.slice(parts[from].startIndex - n.startIndex, parts[to - 1].endIndex - n.startIndex));
   const before = text(0, each);
   const after = text(each + 1, parts.length);
@@ -171,6 +171,73 @@ export function concatenationNote(cx: Explainer, n: SyntaxNode): string {
   return cx.s(
     `連結: \`${parts[each].text}\` は要素ごとに別々の単語になるので、全体は1つの単語にならない。${glue.join('、')}くっつく（要素が無ければ前後が1つの単語になる）`,
     `Concatenation: \`${parts[each].text}\` gives one word per element, so this is not one word. ${glue.join(' and ')} (with no elements, the text around it makes one word)`);
+}
+
+/** An unquoted part that gives one word per element (`$@`, `$*`, `${a[@]}`, `${a[*]}`), even where the IFS is empty. */
+function unquotedElements(n: SyntaxNode): boolean {
+  if (n.type === 'simple_expansion') return n.text === '$@' || n.text === '$*';
+  const p = n.type === 'expansion' ? parseExpansion(n.text) : undefined;
+  return !!p && p.prefix !== '#' && (p.name === '@' || p.name === '*' || p.subscript === '@' || p.subscript === '*');
+}
+
+/** A part that may expand to nothing unquoted: an expansion, or braces with an empty alternative (`{,a}`). */
+function mayBeEmpty(n: SyntaxNode): boolean {
+  if (n.type === 'brace_expression') return /\{,|,,|,\}/.test(n.text);
+  return n.type === 'simple_expansion' || n.type === 'expansion' || n.type === 'command_substitution';
+}
+
+/**
+ * "Concatenation" of a word with no `"$@"`-like part: the parts are joined, and the word is one word only where bash
+ * surely makes one of it (src/semantics/words.ts: the fields the model knows, else the steps of brace expansion, word
+ * splitting and globbing that apply or may); else what makes other than one word of it, and how many where known.
+ */
+function concatJoined(cx: Explainer, n: SyntaxNode): string {
+  const one = cx.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word');
+  const w = wordAt(cx, n);
+  // (A word in no context of the table: a function name, `function c$x"…"`, which bash does not expand.)
+  if (!w) return one;
+  const { fields, error } = wordFields(n, cx.state);
+  if (fields?.length === 1) return one;
+  const step = (kind: StepKind) => w.steps.find((x) => x.kind === kind)!;
+  // (The text of the word where the model knows its values, before brace expansion: what splitting and globbing act on.)
+  const known = trustedPart(n, w, cx.state, false, step('split').applies !== false, 'model');
+  const split = step('split').applies !== false && (!known || known.fields.length !== 1);
+  const glob = step('glob').applies !== false && (!known || known.fields.some((f) => f.glob));
+  const elements = w.rule.fields === 'one' ? [] : n.namedChildren.filter(unquotedElements);
+  const names = [
+    ...(step('brace').applies !== false ? [['ブレース展開', 'brace expansion']] : []),
+    ...elements.map((e) => [`\`${e.text}\`（要素ごとに別の単語）`, `\`${e.text}\` (one word per element)`]),
+    ...(split ? [['単語分割', 'word splitting']] : []),
+    ...(glob ? [['グロブ展開', 'globbing']] : []),
+  ];
+  const ja = names.map((x) => x[0]).join('・');
+  const en = names.length > 1 ? `${names.slice(0, -1).map((x) => x[1]).join(', ')} and ${names[names.length - 1][1]}` : names[0]?.[1];
+  const make = names.length > 1 ? 'make' : 'makes';
+  // (Unquoted, a word of expansions alone that all expand to nothing is removed, also where the IFS is empty: `$a$b`;
+  // and a glob that matches nothing, with nullglob.)
+  const empty = w.rule.fields !== 'one' && ((!known && n.namedChildren.every(mayBeEmpty)) || (glob && w.glob.nullglob !== 'off'));
+  if (fields?.length === 0) {
+    return cx.s('連結: 以下の部分はどれも空に展開され、クォートしない空の展開は取り除かれるので、単語は残らない', 'Concatenation: the parts below all expand to nothing, and an unquoted empty expansion is removed: no word is left');
+  }
+  if (fields) {
+    const list = fields.length <= 5 ? `: ${fields.map((f) => codeSpan(shown(f))).join(' ')}` : '';
+    return cx.s(`連結: 以下の部分を空白なしでつなげるが、${ja}で${fields.length}個の単語になる${list}`, `Concatenation: the parts below are joined, but ${en} ${make} ${fields.length} words of it${list}`);
+  }
+  if (error === 'ambiguous-redirect') {
+    return cx.s(`連結: 以下の部分を空白なしでつなげるが、${ja}で1つの単語にならないので、bash はリダイレクトを「ambiguous redirect」のエラーにする`,
+      `Concatenation: the parts below are joined, but ${en} ${make} other than one word of it, which bash refuses here ("ambiguous redirect")`);
+  }
+  if (!names.length && !empty) return one;
+  if (w.rule.fields === 'one-or-error') {
+    return cx.s(`連結: 以下の部分を空白なしでつなげるが、${names.length ? `${ja}で` : '空に展開されて'}1つの単語にならないことがあり、そのとき bash はリダイレクトを「ambiguous redirect」のエラーにする`,
+      `Concatenation: the parts below are joined, but ${names.length ? `${en} may make other than one word of it` : 'it may expand to no word'}, which bash refuses here ("ambiguous redirect")`);
+  }
+  if (!names.length) {
+    return cx.s('連結: 以下の部分を空白なしでつなげて1つの単語にする。ただし、どれも空に展開されると単語は残らない（クォートしない空の展開は取り除かれる）',
+      'Concatenation: the parts below are joined into one word, or none when they all expand to nothing (an unquoted empty expansion is removed)');
+  }
+  return cx.s(`連結: 以下の部分を空白なしでつなげるが、${ja}で複数の単語になることがある${empty ? '（単語が残らないこともある）' : ''}`,
+    `Concatenation: the parts below are joined, but ${en} may make several words of it${empty ? ', or none' : ''}`);
 }
 
 /**

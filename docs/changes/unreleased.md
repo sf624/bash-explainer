@@ -1125,6 +1125,10 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 | `ls [a"-"c]*`, `ls [a\-c]*`, `ls ['^'a]*`, `x=-; [[ $x == [a"-"c] ]]` | a quoted or escaped `-` or `^` in brackets is the character: `[a"-"c]` is `a`, `-` or `c`, `['^'a]` is `^` or `a`; a quoted end still ends a range (`[a-"$y"]` with `y=c`) | the file names and the conditions that follow (the `[[ ]]` is true) | the range `a-c` (`b.txt` matched too), or a negation |
 | `a=1; declare a=5 b=$a`, `local x=$x` | the words are expanded before the builtin runs: `b` is `1`, and the local `x` gets the caller's value | the values that follow from them (the words of `$b`, the value of `$x`) | `b` was `5`, the local `x` empty |
 | ``x=`printf '%s' 'a\$b'` ``, ``x=`eval 'a\$b'` `` | in backquotes bash removes the backslash before `$`, `` ` `` and `\` first: `printf` gets `a$b` | no example; the words are `a$b` (in the values and the conditions the model follows) | the example printed `a\$b`; the word was `a\$b` |
+| `echo $DIR/*`, `echo "$DIR"/*`, `echo {a,b}"x"`, `x='a b'; echo $x/c` | other than one word: the files `$DIR/*` matches; `ax` `bx`; `a` `b/c` | "the parts below are joined, but word splitting and globbing may make several words of it", "… but brace expansion makes 2 words of it: `ax` `bx`", "… but word splitting makes 2 words of it: `a` `b/c`" | "Concatenation: the parts below are joined into one word" |
+| `echo $a$b`, `IFS=; echo $a$b`, `e=; echo $e$e`, `shopt -s nullglob; echo "$x"*` | no word when nothing is left (an unquoted empty expansion is removed, also with an empty `IFS`; nullglob) | "…, or none", "no word is left" | "joined into one word" |
+| `echo $@/x`, `IFS=; echo $@/x` | one word per argument (`1` `2 3/x`), also with an empty `IFS` | "`$@` (one word per element) and globbing may make several words of it" | "joined into one word" |
+| `x='a b'; cat > $x/a`, `cat > $HOME/x` | "ambiguous redirect" (or may be) | "word splitting makes other than one word of it, which bash refuses here" ("may make") | "joined into one word" |
 
 `[[ $x == "$q" ]]` already said that a quoted right side is literal text.
 

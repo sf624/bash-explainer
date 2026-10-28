@@ -12,7 +12,7 @@ Keep it current:
 
 - Item 1 of "Next", the audit of Reading against the Bash Reference Manual: chapters 3 to 6 are done; only the small items listed there as left remain.
 - The seven bugs of the explanation that step 9 of item 4 found (oracles.md 2.8; the "Bug, to fix" entries of test/fixtures/renderings-known.json), before step 10. Each is fixed in its own PR, which removes its entries:
-  1. A concatenation said to be "joined into one word" where word splitting, globbing or a brace expansion then make other than one word of it (`$DIR/*`, `{a,b}"x"`).
+  1. Done (#NNN): a concatenation said to be "joined into one word" where word splitting, globbing or a brace expansion then make other than one word of it (`$DIR/*`, `{a,b}"x"`). It now says so only where bash surely makes one word, else what makes several, or none.
   2. Done (#480): `"$@"` (and `"${a[@]}"`, `"${@:2}"`) had no `Token.expands`: shown as one argument, where bash gives one word per element.
   3. Done (#478): `trap {x,EXIT}`: the words of the braces read as the action alone, where bash gives the action `x` and the signal `EXIT`. A command slot that takes one word gives each word of the braces its role (`ArgRole` `command` with `each`, as an operand's), also `bash -c {x,y}`.
   4. `printf '%s,'{a..c}`: `countOf` (src/argv/words.ts) gives no count to braces next to a quoted part, so the interpreter reads one word.
