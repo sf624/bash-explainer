@@ -1034,6 +1034,7 @@
  "f() { local IFS=,; echo $v; }",
  "f() { local RANDOM; unset RANDOM; }; f",
  "f() { local y; }",
+ "f() { printf \"b\\na\\nc\\n\" | sort; }\ntrap f USR1\nhash -p /usr/bin/rev sort\nkill -USR1 $$\nhash -p /usr/bin/tac sort",
  "f() { return 300; }",
  "f() { return 300; }; exit 300",
  "f() { rm -f nofile; }; trap f TERM",

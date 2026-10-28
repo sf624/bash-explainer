@@ -276,6 +276,18 @@ describe('the pipeline example of a line agrees with the tools', () => {
         assert.deepStrictEqual(lines(bash(line, { x: '1' }).stdout.toString()), ['c', 'a', 'b'], line);
         assert.deepStrictEqual(lines(bash(line, { x: '' }).stdout.toString()), ['a', 'b', 'c'], line);
       }
+      // A trap's action runs after a later change too (tac, then forgotten: bash runs tac); a `./` path that is not
+      // there is forgotten (PATH: `c b a`); with checkhash, a path that is not there too: no example of any.
+      const trapped = "trap 'printf \"b\\na\\nc\\n\" | sort' USR1; hash -p /usr/bin/tac sort; kill -USR1 $$; hash -d sort";
+      const dotOrRev = `if [ -z "$x" ]; then hash -p ./tac sort; else hash -p /usr/bin/rev sort; fi; ${abc} -r`;
+      const checkhash = `shopt -s checkhash; hash -p /nonexistent/tac sort; ${abc}`;
+      fs.rmSync(path.join(dir, 'tac'));
+      assert.deepStrictEqual(lines(bash(trapped).stdout.toString()), ['c', 'a', 'b']);
+      assert.deepStrictEqual(lines(bash(dotOrRev, { x: '' }).stdout.toString()), ['c', 'b', 'a']);
+      assert.deepStrictEqual(lines(bash(checkhash).stdout.toString()), ['a', 'b', 'c']);
+      for (const lang of ['en', 'ja'] as const) {
+        for (const line of [trapped, dotOrRev, checkhash]) assert.ok(!new Analyzer(lang).explainLine(parser.parse(line), 0).examples.some((x) => x.kind === 'pipeline' || x.title.includes('sort')), `${line} (${lang})`);
+      }
       // (Two paths, one on each path: tac or rev, never sort; no example either.)
       const either = `hash -p /usr/bin/tac sort; if [ -n "$x" ]; then hash -p /usr/bin/rev sort; fi; ${abc}`;
       assert.deepStrictEqual(lines(bash(either, { x: '1' }).stdout.toString()), ['b', 'a', 'c']);

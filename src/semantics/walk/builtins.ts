@@ -39,6 +39,9 @@ export class WalkBuiltins {
   /** Where an error ends the shell in POSIX mode (`posixExit`): surely, on some walks only, or not (bash ignores it there). */
   readonly exits = new Map<SyntaxNode, Tri>();
 
+  /** The entries of the table of `hash -p` each change put, by the number of the change: what a body that runs later may find (`widen`). */
+  readonly hashPuts: { count: number; name: string; entry: CommandEntry }[] = [];
+
   constructor(private readonly w: Walker) {}
 
   /**
@@ -236,7 +239,9 @@ export class WalkBuiltins {
     const at = this.w.node!;
     const left = hashLeft.get(at) ?? new Map<string, CommandEntry>();
     hashLeft.set(at, left.set(name, e));
-    return this.w.put(st, 'hashed', name, e);
+    st = this.w.put(st, 'hashed', name, e);
+    this.hashPuts.push({ count: this.w.changeCount, name, entry: e });
+    return st;
   }
 
   /** Every path `hash -p` gave is forgotten (`hash -r`, an assignment to PATH: `at`). */

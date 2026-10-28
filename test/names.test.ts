@@ -375,12 +375,13 @@ describe('the analyzer says what a name runs', () => {
     const ran = 'if [ "$x" ]; then hash -p /usr/bin/tac sort; fi\nsort';
     assert.strictEqual(head(ran, 1), 'Sort lines (if the `hash -p` on line 1 ran, `sort` runs the path `/usr/bin/tac` instead)');
     assert.strictEqual(head(ran, 1, 'ja'), '行を並べ替える（行 1 の `hash -p` が実行されていれば、`sort` は代わりにパス `/usr/bin/tac` を実行する）');
-    assert.strictEqual(head('if [ "$x" ]; then hash -p "$p" sort; fi\nsort', 1), 'Sort lines (if the `hash -p` on line 1 ran, `sort` runs a path known only at run time instead)');
-    assert.strictEqual(head('if [ "$x" ]; then hash -p "$p" sort; fi\nsort', 1, 'ja'), '行を並べ替える（行 1 の `hash -p` が実行されていれば、`sort` は代わりに実行時に決まるパスを実行する）');
+    // (A path known only at run time may be one bash forgets, `./x`: no plain "it runs".)
+    assert.strictEqual(head('if [ "$x" ]; then hash -p "$p" sort; fi\nsort', 1), 'Sort lines (the command path cache may differ here (line 1), so `sort` may run a path known only at run time instead)');
+    assert.strictEqual(head('if [ "$x" ]; then hash -p "$p" sort; fi\nsort', 1, 'ja'), '行を並べ替える（ここでのコマンドのパスのキャッシュは一通りに決まらず（行 1）、`sort` は代わりに実行時に決まるパスを実行することもある）');
     const hashing = 'hash -p /usr/bin/tac sort\nif [ "$x" ]; then set +h; fi\nsort';
     assert.strictEqual(head(hashing, 2), 'Sort lines (if hashing is on here, `sort` runs the path `/usr/bin/tac` that `hash -p` on line 1 gave it; `set +h` turns hashing off on some paths)');
     assert.strictEqual(head(hashing, 2, 'ja'), '行を並べ替える（コマンドのハッシュが有効なら、`sort` は行 1 の `hash -p` で指定したパス `/usr/bin/tac` を実行する。`set +h` で無効にする経路がある）');
-    assert.strictEqual(head('hash -p "$p" sort\nif [ "$x" ]; then set +h; fi\nsort', 2), 'Sort lines (if hashing is on here, `sort` runs a path known only at run time that `hash -p` on line 1 gave it; `set +h` turns hashing off on some paths)');
+    assert.strictEqual(head('hash -p "$p" sort\nif [ "$x" ]; then set +h; fi\nsort', 2), 'Sort lines (the command path cache may differ here (line 1), so `sort` may run a path known only at run time instead; `set +h` turns hashing off on some paths)');
     // Another command that changes the table on some paths: the lines that make it differ, and what may run.
     const removed = 'hash -p /usr/bin/tac sort\nif [ -n "$x" ]; then hash -d sort; fi\nsort x';
     assert.strictEqual(head(removed, 2), 'Sort lines (the command path cache may differ here (lines 1 and 2), so `sort` may run the path `/usr/bin/tac` instead)');
@@ -396,6 +397,20 @@ describe('the analyzer says what a name runs', () => {
     assert.strictEqual(head('hash -p /usr/bin/tac sort\n[ -n "$x" ] && hash -p /usr/bin/tac sort\nsort', 2, 'ja').split('）')[0], '外部コマンド `/usr/bin/tac` を実行する（行 1、2 の `hash -p` で `sort` は `/usr/bin/tac` を指す');
     // (A `hash -p` where hashing may be off: it ran, and may have failed.)
     assert.strictEqual(head('[ -n "$x" ] && set +h\nhash -p /usr/bin/tac sort\nset -h\nsort i', 3), 'Sort lines (the command path cache may differ here (line 2), so `sort` may run the path `/usr/bin/tac` instead)');
+    // A trap's action, or a function it calls, may run after each later change: every one counts.
+    const trap = (tail: string) => all(explain(`trap 'printf "b\\na\\nc\\n" | sort' USR1\nhash -p /usr/bin/rev sort\nkill -USR1 $$\n${tail}`, 0).items[0]).find((t) => t.startsWith('Sort lines'));
+    assert.strictEqual(trap('hash -d sort'), 'Sort lines (the command path cache may differ here (lines 2 and 4), so `sort` may run the path `/usr/bin/rev` instead)');
+    assert.strictEqual(trap('hash -p /usr/bin/tac sort'), 'Sort lines (the command path cache may differ here (lines 2 and 4), so `sort` may run the path `/usr/bin/rev` or the path `/usr/bin/tac` instead)');
+    assert.match(all(explain('f() { printf "b\\na\\nc\\n" | sort; }\ntrap f USR1\nhash -p /usr/bin/rev sort\nkill -USR1 $$\nhash -p /usr/bin/tac sort', 0).items[0]).join('\n'), /may run the path `\/usr\/bin\/rev` or the path `\/usr\/bin\/tac` instead/);
+    // A `./` path, a path known only at run time, or checkhash or POSIX mode (on some paths): PATH may be searched too.
+    assert.strictEqual(short(resolve('if [ "$x" ]; then hash -p ./tac e; else hash -p /bin/ls e; fi\ne', 'e')), 'file:search-unknown-maybe-hashed:2');
+    assert.strictEqual(short(resolve('if [ "$x" ]; then hash -p "$p" e; else hash -p /bin/ls e; fi\ne', 'e')), 'file:search-unknown-maybe-hashed:2');
+    assert.strictEqual(short(resolve('[ "$x" ] && shopt -s checkhash\nif [ "$x" ]; then hash -p tac e; else hash -p /bin/ls e; fi\ne', 'e')), 'file:search-unknown-maybe-hashed:2');
+    // Every path runs one of several paths: the words name no manual.
+    const either2 = 'if [ -n "$x" ]; then hash -p /usr/bin/tac sort; else hash -p /usr/bin/rev sort; fi\nsort -r';
+    assert.ok(all(explain(either2, 1).items[0]).includes('A word passed to the program `hash -p` on line 1 gave `sort`, which the dictionary does not describe'));
+    // An absolute path, with checkhash or in POSIX mode: bash may forget it, and gives no example.
+    assert.match(head('shopt -s checkhash\nhash -p /nonexistent/tac sort\nsort', 2), /\(`hash -p` on line 2 gave `sort` the path `\/nonexistent\/tac`; with `shopt -s checkhash` or in POSIX mode, bash forgets a path it cannot run and searches PATH for `sort`\)/);
     // One bracket with the explanation's own last one.
     assert.strictEqual(head('[ -n "$x" ] && hash -p /usr/bin/tac tr\ntr a b', 1), 'Translate or delete characters (stdin only; if the `hash -p` on line 1 ran, `tr` runs the path `/usr/bin/tac` instead)');
     assert.strictEqual(head('[ -n "$x" ] && hash -p /usr/bin/tac tr\ntr a b', 1, 'ja'), '文字を置換・削除する（標準入力のみ。行 1 の `hash -p` が実行されていれば、`tr` は代わりにパス `/usr/bin/tac` を実行する）');
