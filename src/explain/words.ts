@@ -22,8 +22,8 @@ import { replaceRange } from '../rewrite';
 import { attribute, docLine } from '../semantics/state';
 import { readonlyAtStart } from '../semantics/vars';
 import { CONTEXTS, partMeaning, underscoreValue, wordOf } from '../semantics/words';
-import { decodedText, isPlainWord, setsElement, splitElement, stackTilde, staticWordValue, unquoteWord } from '../staticword';
-import { ancestor, assignmentsOnly, braceKind, descendants, field, type SyntaxNode, wordBraces } from '../syntax/tree';
+import { type BracketSpan, bracketSpans, decodedText, isPlainWord, setsElement, splitElement, stackTilde, staticWordValue, unquoteWord } from '../staticword';
+import { ancestor, assignmentsOnly, braceKind, descendants, field, fields, type SyntaxNode, wordBraces } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
 import { fromEmbedded, same, sibling, sortTokens } from './nodes';
@@ -35,10 +35,66 @@ export function braceExpansion(n: SyntaxNode): string[] | undefined | null {
   return braceTexts([n]);
 }
 
+/**
+ * The `[…]` that a plain part of a word opens or closes, where the parts between are in it (the `[` and `]` of `[$x]`,
+ * `bracketSpans`): its text, and where in the part it starts (`opens`) or ends (`closes`; a part can do both, `][` of
+ * `[$x][$y]`). The parts are those of a concatenation, or the pieces of a pattern side by side (the right side of `==`
+ * in `[[ ]]`).
+ */
+export function bracketPart(n: SyntaxNode): { opens?: { text: string; at: number }; closes?: { text: string; at: number } } | undefined {
+  const p = n.parent;
+  const parts = p?.type === 'concatenation' ? p.namedChildren : p?.type === 'binary_expression' ? fields(p, 'right') : [];
+  const i = parts.indexOf(n);
+  if (i < 0) return undefined;
+  const spans = bracketSpans(parts);
+  const of = (b: BracketSpan | undefined, at: (b: BracketSpan) => number) => b && { text: p!.text.slice(b.start - p!.startIndex, b.end - p!.startIndex), at: at(b) - n.startIndex };
+  const opens = of(spans.find((b) => b.open === i), (b) => b.start);
+  const closes = of(spans.find((b) => b.close === i), (b) => b.end - 1);
+  return opens || closes ? { opens, closes } : undefined;
+}
+
+/**
+ * A word written as an element, unquoted, with expansions in its subscript: `a[$i]` (its subscript is a `[…]` of its
+ * parts, `bracketPart`). `unset` and `declare` take it as a name and a subscript, once it is not globbed away.
+ */
+export function elementWord(n: SyntaxNode): boolean {
+  const first = n.type === 'concatenation' ? n.namedChildren[0] : undefined;
+  const opens = first && bracketPart(first)?.opens;
+  return !!opens && /^[A-Za-z_]\w*\[$/.test(first!.text) && n.text === first!.text.slice(0, opens.at) + opens.text;
+}
+
+/**
+ * A plain part of a word that opens or closes a `[…]` the parts between are in (`bracketPart`): a pattern, matched
+ * against file names where the word is globbed, against a string where it is a pattern (`case`, `[[ == ]]`), with the
+ * wildcards of its text before the `[` and after the `]` (`]*.txt`). Undefined for any other part, and where the word
+ * is neither.
+ */
+function bracketPiece(cx: Explainer, n: SyntaxNode): Token | undefined {
+  const part = bracketPart(n);
+  const w = part && wordAt(cx, n);
+  if (!w) return undefined;
+  const target: GlobTarget | undefined = CONTEXTS[w.context].match === 'pattern' ? 'value' : w.steps.find((s) => s.kind === 'glob')!.applies !== false ? 'file' : undefined;
+  if (!target) return undefined;
+  const { opens, closes } = part!;
+  const said = [
+    closes && cx.s(`\`]\` は \`${closes.text}\` の \`[…]\` の終わり`, `\`]\` closes the \`[…]\` of \`${closes.text}\``),
+    opens && cx.s(`\`[\` は \`${opens.text}\` の \`[…]\` の始まり: 間にある文字（展開した値の文字も含む）のどれか1文字に一致する`, `\`[\` opens the \`[…]\` of \`${opens.text}\`: it matches one character of those between, the characters the expansions give included`),
+  ].filter(Boolean);
+  const before = closes ? '' : n.text.slice(0, opens!.at);
+  const after = opens ? '' : n.text.slice(closes!.at + 1);
+  const children = [
+    ...(hasGlob(before) ? globChildren(cx, n, before, 0) : []),
+    ...(hasGlob(after) ? globChildren(cx, n, after, closes!.at + 1) : []),
+  ];
+  return { ...cx.tok(n, 'pattern', `${globIntro(cx.lang, target)}${cx.s('。', '. ')}${said.join(cx.s('。', '. '))}`, children), refs: ['3.5.8.1'] };
+}
+
 export function word(cx: Explainer, n: SyntaxNode): Token {
   const text = n.text;
   const t = tilde(cx, n);
   if (t) return t;
+  const bracket = bracketPiece(cx, n);
+  if (bracket) return bracket;
   const off = hasGlob(text) && globOff(cx, n);
   if (off) return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + off);
   if (hasGlob(text) && notGlobbedHere(cx, n)) return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + notGlobbedHere(cx, n));
@@ -350,6 +406,8 @@ export function tildeNote(cx: Explainer, n: SyntaxNode): string {
  * a pattern that matches itself. `text` starts `base` characters into the node.
  */
 export function globToken(cx: Explainer, n: SyntaxNode, target: GlobTarget, text = n.text, base = 0, kind: Kind = 'pattern'): Token {
+  const bracket = text === n.text ? bracketPiece(cx, n) : undefined;
+  if (bracket) return bracket;
   if (!hasGlob(text)) return cx.tok(n, kind, cx.s(`パターン \`${text}\`（ワイルドカードを含まないので、この文字列そのものに一致）`, `Pattern \`${text}\` (no wildcards, so it matches exactly this text)`));
   return cx.tok(n, kind, globIntro(cx.lang, target) + extglobNote(cx, text), globChildren(cx, n, text, base));
 }
@@ -788,7 +846,8 @@ export function rawString(cx: Explainer, n: SyntaxNode): Token {
  */
 function unbracedElement(cx: Explainer, n: SyntaxNode): void {
   n.namedChildren.forEach((k, i) => {
-    const sub = /^\[[^\]]*\]/.exec(n.namedChildren[i + 1]?.text ?? '')?.[0];
+    // (The text after it, which may hold expansions: `$a[$i]`.)
+    const sub = /^\[[^\]]*\]/.exec(n.text.slice(k.endIndex - n.startIndex))?.[0];
     const name = k.text.slice(1);
     const st = cx.state.at(k).run;
     if (k.type !== 'simple_expansion' || !sub || !/^[A-Za-z_]\w*$/.test(name)) return;

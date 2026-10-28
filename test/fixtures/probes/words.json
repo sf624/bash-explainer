@@ -2613,5 +2613,31 @@
       ],
       "status": 0
     }
+  },
+  {
+    "id": "bracket-expansions",
+    "manual": "3.5.8.1",
+    "snippet": "x=ab d=x; @PROBE:a@ [$x].txt [\"$x\"].txt [$d].c [$x][$x].txt; unset x; @PROBE:b@ [$x] a[$x]b [\"$x\"]",
+    "note": "the expansions in a bracket expression give its characters: `[$x]` with x=ab is `[ab]`, a pattern; with x unset, `[]`, which is none",
+    "facts": {
+      "a": [
+        [
+          "a.txt",
+          "b.txt",
+          "a.txt",
+          "b.txt",
+          "[x].c",
+          "[ab][ab].txt"
+        ]
+      ],
+      "b": [
+        [
+          "[]",
+          "a[]b",
+          "[]"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

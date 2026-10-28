@@ -42,7 +42,7 @@ import { arrayKind, globOff, NO_SPEC, programBasis, resolve, restrictedAt, restr
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
 import { inSubshell } from './where';
-import { braceWord, globChildren, globNotes, plainText, tilde, tildeNote, valueNote, word } from './words';
+import { braceWord, elementWord, globChildren, globNotes, plainText, tilde, tildeNote, valueNote, word } from './words';
 
 /** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
 function jobSpec(text: string): { ja: string; en: string } | undefined {
@@ -568,7 +568,7 @@ function declaredOperand(cx: Explainer, a: SyntaxNode, space: ReturnType<typeof 
   // `local {a,b}`, `local a{1..3}`: bash expands the braces first, and the builtin takes each word.
   const braces = wordAt(cx, a)?.steps.find((g) => g.kind === 'brace');
   if (braces && braces.applies !== false) return positional(cx, a, bracedDeclare(cx, a, braces, command));
-  if (a.type !== 'word') return cx.explain(a);
+  if (a.type !== 'word' && !elementWord(a)) return cx.explain(a);
   const element = /^([A-Za-z_]\w*)\[(.+)\]$/s.exec(a.text);
   // (`export 1x=2`, `readonly -p a-b`: no variable's name, as bash reads the word (`export x\=1` exports `x`); `declare
   // -p 1x` says "not found", as below; `local -` makes the options local (`localOptions`). Checked with bash 5.2 and 5.3;
@@ -676,8 +676,9 @@ function unsetOperand(cx: Explainer, nodes: SyntaxNode[], word: number, item: Op
   const braces = wordAt(cx, a)?.steps.find((g) => g.kind === 'brace');
   if (braces && braces.applies !== false) return positional(cx, a, bracedUnset(cx, a, braces, space));
   const plain = plainText(a);
-  // (An unquoted glob has no value known here: its text, which bash uses when no file matches.)
-  const name = staticWordValue(a, false, cx.shell) ?? (plain ? a.text : undefined);
+  // (An unquoted glob has no value known here: its text, which bash uses when no file matches; so for `a[$i]`.)
+  const asElement = elementWord(a);
+  const name = staticWordValue(a, false, cx.shell) ?? (plain || asElement ? a.text : undefined);
   if (name === undefined) return positional(cx, a, cx.t(item.text));
   const element = /^([A-Za-z_]\w*)\[(.+)\]$/s.exec(name);
   let text: string;
@@ -694,7 +695,7 @@ function unsetOperand(cx: Explainer, nodes: SyntaxNode[], word: number, item: Op
       : cx.s(`配列 \`${element[1]}\` の要素 \`${name}\` を削除する（ほかの要素の添字はそのまま${kind === 'indexed' && /^-\d+$/.test(element[2]) ? '。負の添字は末尾から数える' : ''}）`,
         `Unset the element \`${name}\` of the array \`${element[1]}\` (the other elements keep their indices${kind === 'indexed' && /^-\d+$/.test(element[2]) ? '; a negative index counts back from the end' : ''})`);
     // (Unquoted, it is a glob first: `unset a[1]` with a file `a1` here unsets the variable `a1`.)
-    if (plain && hasGlob(a.text) && wordAt(cx, a)?.steps.find((g) => g.kind === 'glob')?.applies !== false) text = nameGlob(cx, a, name, text, 'unsets');
+    if (((plain && hasGlob(a.text)) || asElement) && wordAt(cx, a)?.steps.find((g) => g.kind === 'glob')?.applies !== false) text = nameGlob(cx, a, name, text, 'unsets');
   } else {
     const temp = space !== 'nameref' && prefixAssignments(a.parent!).find((c) => field(c, 'name')?.text === name);
     if (temp) {

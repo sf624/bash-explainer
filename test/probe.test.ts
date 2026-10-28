@@ -4,7 +4,7 @@
 // check that the facts are still what it does, and that each row's try-it prints what it recorded (the explanations show
 // it: docs/design/basis.md).
 import * as assert from 'assert';
-import { factsOf, hasBash53, hasRequired, instrument, pooled, PROBE_KINDS, probeEnv, probeSkipReason, probeState, probeWords, readProbeTable, releaseOf, tryOutput, tryReleases } from './support/probe';
+import { factsOf, hasBash53, hasRequired, instrument, pooled, PROBE_KINDS, probeEnv, probeSkipReason, probeState, probeWords, readProbeTable, releaseOf, steadyTimes, tryOutput, tryReleases } from './support/probe';
 
 describe('probes: the harness', () => {
   it('numbers the markers that have no id, and keeps the lines', () => {
@@ -23,6 +23,11 @@ describe('probes: the harness', () => {
     const pid = Number(await run('sleep 30 & echo $!'));
     await new Promise((r) => setTimeout(r, 100));
     assert.throws(() => process.kill(pid, 0), /ESRCH/);
+  });
+
+  it('writes the digits of the times `time` prints as zeros, and leaves other text alone', () => {
+    // (bash measures them: `time` alone took 0m0.002s once in CI.)
+    assert.strictEqual(steadyTimes('\nreal\t0m0.002s\nuser\t1m10.100s\nsys\t0m0.000s\nreal 0m0.002s'), '\nreal\t0m0.000s\nuser\t0m00.000s\nsys\t0m0.000s\nreal 0m0.002s');
   });
 
   it('reads every table: a manual section, a snippet with markers, and recorded facts', () => {

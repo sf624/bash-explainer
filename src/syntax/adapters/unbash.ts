@@ -30,6 +30,8 @@ const NO_BRACES = new Set(['pattern', 'case', 'casealt', 'regex', 'test', 'opera
 const WORDS = new Set(['word', 'number', 'string', 'concatenation']);
 const PATTERN_PARTS = new Set(['Literal', 'Glob', 'SimpleExpansion', 'ParameterExpansion']);
 const isPart = (p: U.WordPart): p is Part => !PLAIN.has(p.type);
+/** A part, or a bracket expression's parts that bash expands (`[$x]`, `["$x"].c`) between the text of its `[` and `]`. */
+const unbracket = (p: U.WordPart): readonly U.WordPart[] => (p.type === 'Glob' && p.kind === 'bracket' && p.parts.some(isPart) ? [{ type: 'Literal', pos: p.pos, end: p.pos + 1, text: '[', value: '[' }, ...p.parts, { type: 'Literal', pos: p.end - 1, end: p.end, text: ']', value: ']' }] : [p]);
 /** Blanks, line continuations and comments. */
 const BLANKS = /(?:\s|\\\n|#[^\n]*)*/y;
 /** Blanks that do not end a line, and line continuations. */
@@ -557,13 +559,12 @@ class Converter {
     if (!NO_BRACES.has(role) && this.text.slice(w.pos, w.end).includes('{')) {
       const opaque = new Map<number, Part>();
       const nodes = new Set<number>();
-      // (The quotes and expansions inside braces, a bracket or an extended glob are parts too, `["{a,b}"]`, `@(${v:-a,b})`;
-      // those of a glob stay in its text.)
+      // (The quotes and expansions inside braces or a bracket are parts too, `["{a,b}"]`; an extended glob's stay text, `@(${v:-a,b})`.)
       const visit = (ps: readonly U.WordPart[], glob: boolean): void => ps.forEach((p) => {
         if (isPart(p)) {
           opaque.set(p.pos, p);
           if (!glob) nodes.add(p.pos);
-        } else if (p.type !== 'Literal') visit(p.parts ?? [], glob || p.type !== 'BraceExpansion');
+        } else if (p.type !== 'Literal') visit(p.parts ?? [], glob || p.type === 'ExtendedGlob');
       });
       visit(parts ?? [], false);
       const builder: BraceBuilder<Mut> = {
@@ -574,15 +575,14 @@ class Converter {
       return bracePieces(builder, w.pos, w.end, opaque, nodes);
     }
     if (!parts) return [this.plain(w.pos, w.end, role)];
-    const alone = parts.every((x) => !isPart(x));
+    const alone = parts.every((x) => !isPart(x) && unbracket(x)[0] === x);
     const out: Mut[] = [];
-    let plainStart = -1;
-    let plainEnd = -1;
+    let [plainStart, plainEnd] = [-1, -1];
     const flush = (): void => {
       if (plainStart >= 0) out.push(this.plain(plainStart, plainEnd, role, alone));
       plainStart = -1;
     };
-    for (const p of parts) {
+    for (const p of parts.flatMap(unbracket)) {
       if (!isPart(p)) {
         if (plainStart < 0) plainStart = p.pos;
         plainEnd = p.end;

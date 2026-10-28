@@ -1,3 +1,4 @@
+import { bracketEnd } from './bracket';
 import { visible } from './ctlchars';
 import type { EmbeddedLang } from './embedded/types';
 import { bracesMayWork, type Shell } from './shellfeatures';
@@ -399,6 +400,45 @@ export function setsElement(e: SyntaxNode, assoc: boolean): boolean {
 export function plainWords(nodes: readonly SyntaxNode[]): SyntaxNode[] {
   return nodes.flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n]))
     .filter((n) => n.type === 'word' || n.type === 'extglob_pattern' || n.type === 'brace_expression');
+}
+
+/**
+ * A bracket expression that spans several parts of a word: opened in a plain part (`open`, an index into the parts),
+ * closed in a later one (`close`), from the `[` at `start` to after the `]` at `end` (offsets in the script). The quotes
+ * and expansions between are characters of its set, and the word is a pattern (3.5.8.1): `[$x]`, `["$x"].c`.
+ */
+export interface BracketSpan { open: number; close: number; start: number; end: number }
+
+/** The bracket expressions that span several of `parts`, the parts of one word in order (`BracketSpan`). */
+export function bracketSpans(parts: readonly SyntaxNode[]): BracketSpan[] {
+  // (Each part that is not plain text stands as one character that is neither `]` nor special.)
+  let text = '';
+  const owner: number[] = [];
+  const at: number[] = [];
+  parts.forEach((c, i) => {
+    const plain = c.type === 'word' || c.type === 'number' || c.type === 'extglob_pattern';
+    const t = plain ? c.text : '_';
+    text += t;
+    for (let k = 0; k < t.length; k++) {
+      owner.push(i);
+      at.push(c.startIndex + (plain ? k : 0));
+    }
+  });
+  const out: BracketSpan[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\\') i++;
+    else if (text[i] === '[') {
+      const end = bracketEnd(text, i);
+      if (owner[end] > owner[i]) out.push({ open: owner[i], close: owner[end], start: at[i], end: at[end] + 1 });
+    }
+  }
+  return out;
+}
+
+/** The plain parts of a word (its nodes, as `plainWords` takes them) that open a bracket expression a later part closes (`bracketSpans`). */
+export function bracketsAcross(nodes: readonly SyntaxNode[]): SyntaxNode[] {
+  const parts = nodes.length > 1 ? nodes : nodes[0].type === 'concatenation' ? nodes[0].namedChildren : [];
+  return bracketSpans(parts).map((b) => parts[b.open]);
 }
 
 /** A plain word or a number: no quotes, expansions or other parts. */

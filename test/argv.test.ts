@@ -74,6 +74,18 @@ describe('argv capture: the word model against bash (oracles.md, steps 2 and 3)'
     assert.doesNotMatch(restricted.stderr, /run/);
   });
 
+  it('waits for what a job left running, a process substitution, and kills what outlives the wait', async () => {
+    // (bash does not wait for a process substitution: its record came after the batch had been read, now and then,
+    // in CI.)
+    const late = '__probe 1 <( for (( i = 0; i < 100000; i++ )); do :; done; __probe 2 late )\n';
+    const [run] = await runArgvBatch([{ script: late }]);
+    assert.deepStrictEqual([...run.records.keys()], ['1', '2']);
+    const start = Date.now();
+    const [left, next] = await runArgvBatch([{ script: '{ while :; do :; done; } &\n__probe 1\n' }, { script: '__probe 2\n' }]);
+    assert.deepStrictEqual([[...left.records.keys()], left.status, [...next.records.keys()]], [['1'], 0, ['2']]);
+    assert.ok(Date.now() - start < 8000);
+  });
+
   const check = async (set: string, inputs: ArgvInput[]): Promise<void> => {
     const known = JSON.parse(fs.readFileSync(ARGV_KNOWN, 'utf8')) as ArgvKnownFile;
     const { found, escaped, counts } = await checkArgv(inputs, { jobs: 4 });

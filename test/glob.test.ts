@@ -99,6 +99,27 @@ describe('glob patterns in every context', () => {
     assert.strictEqual(echo.explanation, 'text to print — ' + globIntro('en', 'file'));
     assert.deepStrictEqual(parts(echo), [['*', 5, 6], ['.log', 6, 10]]);
   });
+  it('a bracket expression with expansions or quotes in it: its `[` and `]` (in each context), no example', () => {
+    // (bash expands them: with x=ab, `[$x].txt` is the pattern `[ab].txt`; with x unset, the text `[].txt`.)
+    assert.strictEqual(bash('cd "$(mktemp -d)" && touch a.txt b.txt && x=ab && echo [$x].txt ["$x"].txt && unset x && echo [$x].txt'), 'a.txt b.txt a.txt b.txt\n[].txt\n');
+    const pieces = (src: string, lang: 'ja' | 'en' = 'en') => flat(explain(src, lang).items).filter((x) => x.refs?.includes('3.5.8.1')).map((x) => [x.label, x.explanation, parts(x)]);
+    const opens = (w: string, target: 'file' | 'value') => `${globIntro('en', target)}. \`[\` opens the \`[…]\` of \`${w}\`: it matches one character of those between, the characters the expansions give included`;
+    const closes = (w: string, target: 'file' | 'value') => `${globIntro('en', target)}. \`]\` closes the \`[…]\` of \`${w}\``;
+    assert.deepStrictEqual(pieces('ls *[$x]*.txt ["$x"]'), [
+      ['*[', opens('[$x]', 'file'), [['*', 3, 4]]], [']*.txt', closes('[$x]', 'file'), [['*', 8, 9], ['.txt', 9, 13]]],
+      ['[', opens('["$x"]', 'file'), []], [']', closes('["$x"]', 'file'), []],
+    ]);
+    assert.deepStrictEqual(pieces('echo [$x][$y]').map((x) => x[0]), ['[', '][', ']']);
+    assert.strictEqual(pieces('echo [$x][$y]')[1][1], `${closes('[$x]', 'file')}. \`[\` opens the \`[…]\` of \`[$y]\`: it matches one character of those between, the characters the expansions give included`);
+    assert.deepStrictEqual(pieces('case $1 in [$x]) ;; esac').map((x) => x[1]), [opens('[$x]', 'value'), closes('[$x]', 'value')]);
+    assert.deepStrictEqual(pieces('[[ $1 == a[$x] ]]').map((x) => [x[0], x[1]]), [['a[', opens('[$x]', 'value')], [']', closes('[$x]', 'value')]]);
+    assert.match(pieces('ls [$x]', 'ja')[0][1] as string, /`\[` は `\[\$x\]` の `\[…\]` の始まり/);
+    // (No pattern in an assignment, nor with `set -f`; no example of names, which depend on the value.)
+    assert.deepStrictEqual([pieces('x=[$y]'), pieces('set -f; ls [$x]')], [[], []]);
+    assert.ok(!explain('ls [$x].c').examples.some((e) => e.title.startsWith('Example (glob')));
+    assert.ok(explain('ls [x].c').examples.some((e) => e.title.startsWith('Example (glob')));
+  });
+
   it('${x#pat} ${x##pat} ${x%pat} ${x%%pat} and ${x/pat/rep}', () => {
     for (const [src, label, expected] of [
       ['echo ${x#*/}', '*/', [['*', 9, 10], ['/', 10, 11]]],
