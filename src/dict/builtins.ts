@@ -1,7 +1,7 @@
 import { Text, tx } from '../i18n';
 import { based, basedSpec } from '../tokenbases';
 import type { BuiltinCall, CommandSlot, CommandSpec, NameOptions, OperandAlt, OperandSpec, OptionSpec, PatternOption, ShellVariant, ValueSpec, ValueType, VariableSet } from '../argv/spec';
-import { args, cmd, GNU_INFO, operand, optionOf, OptSpec, runs, wordTable } from './types';
+import { args, cmd, operand, optionOf, OptSpec, runs, wordTable } from './types';
 import { declarationCommands, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags } from './syntax';
 
 /**
@@ -381,7 +381,10 @@ const BRACKET_READING: Rest = { parser: 'single-dash', operandParser: 'test-expr
  */
 const PROGRAMS: Record<string, CommandSpec> = {
   // (coreutils echo reads `--help` and `--version` only when it is the one argument: bash's builtin prints them.)
-  echo: cmd('引数を空白区切りで標準出力に表示する（coreutils 版）', 'Print arguments to stdout, separated by spaces (from coreutils)', ECHO_OPTIONS, { ...ECHO_READING, soleOptions: GNU_INFO.map(optionOf) }),
+  echo: cmd('引数を空白区切りで標準出力に表示する（coreutils 版）', 'Print arguments to stdout, separated by spaces (from coreutils)', ECHO_OPTIONS, { ...ECHO_READING, soleUnlessEnv: 'POSIXLY_CORRECT', soleOptions: [
+    { names: ['--help'], text: tx('使い方を表示する（環境に `POSIXLY_CORRECT` があると、ただの文字列）', 'show the usage (plain text if `POSIXLY_CORRECT` is in the environment)') },
+    { names: ['--version'], text: tx('バージョンを表示する（環境に `POSIXLY_CORRECT` があると、ただの文字列）', 'print the version (plain text if `POSIXLY_CORRECT` is in the environment)') },
+  ] }),
   printf: cmd('書式を指定して文字列を出力する（coreutils 版。`-v` はない）', 'Print formatted output (from coreutils, with no `-v`)', [], {
     parser: 'letters', example: 'printf', prints: 'format', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')),
   }),

@@ -651,8 +651,8 @@ function matchNote(cx: Explainer, n: SyntaxNode): string {
   // (Inside a `[…]` across the parts, its characters are of the set: `x='*'; [[ $s == [$x] ]]` is true only for a `*`.)
   const bracket = match === 'pattern' && bracketAround(n);
   if (bracket) {
-    return cx.s(`。クォートしていないので、値はパターンとして読まれる。\`${bracket}\` の \`[…]\` の中なので、値の文字は集合の文字になる（\`*\` や \`?\` はその文字そのもの。\`a-c\` のような範囲は働く。ただし、集合の先頭にある \`!\` か \`^\` は否定、\`]\` は集合の終わり、\`[:digit:]\` は文字クラスになる）`,
-      `. Unquoted here, its value is read as part of the pattern: inside the \`[…]\` of \`${bracket}\`, its characters join the set (a \`*\` or \`?\` in it is that character; a range such as \`a-c\` works; but a \`!\` or \`^\` at the start of the set negates it, a \`]\` ends it, and \`[:digit:]\` is a class)`);
+    return cx.s(`。クォートしていないので、値はパターンとして読まれる。\`${bracket}\` の \`[…]\` の中なので、値の文字は集合の文字になる（\`*\` や \`?\` はその文字そのもの。\`a-c\` のような範囲は働く。ただし、集合の先頭にある \`!\` か \`^\` は否定、最初の文字より後の \`]\` は集合の終わり、\`[:digit:]\` は文字クラスになる）`,
+      `. Unquoted here, its value is read as part of the pattern: inside the \`[…]\` of \`${bracket}\`, its characters join the set (a \`*\` or \`?\` in it is that character; a range such as \`a-c\` works; but a \`!\` or \`^\` at the start of the set negates it, a \`]\` after the first character ends it, and \`[:digit:]\` is a class)`);
   }
   return match === 'pattern'
     ? cx.s('。クォートしていないので、値はパターンとして読まれる（値の中の `*`、`?`、`[…]` が働く。文字列として比べるなら `"$…"` とクォートする）',

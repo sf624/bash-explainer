@@ -155,8 +155,8 @@ describe('word notes: after the review', () => {
     // (With y='*', `[$y]` matches only a `*`; with y=a-c, a range.)
     assert.strictEqual(bash("y='*'; [[ a == [$y] ]] || echo 1; [[ '*' == [$y] ]] && echo 2; y=a-c; case b in [$y]) echo 3;; esac"), '1\n2\n3\n');
     // (But a `!` or `^` first negates the set, a `]` ends it, and `[:digit:]` is a class: the note says so.)
-    assert.strictEqual(bash("y='!a'; [[ b == [$y] ]] && echo 1; [[ a == [$y] ]] || echo 2; y='^a'; [[ b == [$y] ]] && echo 3; y='a]'; [[ 'a]' == [$y] ]] && echo 4; [[ a == [$y] ]] || echo 5; y='[:digit:]'; [[ 5 == [$y] ]] && echo 6; [[ a == [$y] ]] || echo 7"), '1\n2\n3\n4\n5\n6\n7\n');
-    const inside = /\. Unquoted here, its value is read as part of the pattern: inside the `\[…\]` of `\[!\$y\]`, its characters join the set \(a `\*` or `\?` in it is that character; a range such as `a-c` works; but a `!` or `\^` at the start of the set negates it, a `\]` ends it, and `\[:digit:\]` is a class\)$/;
+    assert.strictEqual(bash("y='!a'; [[ b == [$y] ]] && echo 1; [[ a == [$y] ]] || echo 2; y='^a'; [[ b == [$y] ]] && echo 3; y='a]'; [[ 'a]' == [$y] ]] && echo 4; [[ a == [$y] ]] || echo 5; y='[:digit:]'; [[ 5 == [$y] ]] && echo 6; [[ a == [$y] ]] || echo 7; y=']a'; [[ ']' == [$y] ]] && echo 8; y=']'; [[ ']' == [$y] ]] && echo 9; [[ ']' == [!$y] ]] || echo 10"), '1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n');
+    const inside = /\. Unquoted here, its value is read as part of the pattern: inside the `\[…\]` of `\[!\$y\]`, its characters join the set \(a `\*` or `\?` in it is that character; a range such as `a-c` works; but a `!` or `\^` at the start of the set negates it, a `\]` after the first character ends it, and `\[:digit:\]` is a class\)$/;
     assert.match(expl('[[ $x == [!$y] ]]', '$y'), inside);
     assert.match(expl('case $x in a[$y]*) ;; esac', '$y'), /inside the `\[…\]` of `\[\$y\]`, its characters join the set/);
     assert.match(expl('case $x in [$y]) ;; esac', '$y', 'ja'), /`\[\$y\]` の `\[…\]` の中なので、値の文字は集合の文字になる/);
