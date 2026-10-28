@@ -38,6 +38,7 @@ import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
+import { argWordIn, untilWords } from '../semantics/argwords';
 import { arrayKind, globOff, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
@@ -172,17 +173,17 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             joined = role.slot.run === 'current-shell' ? undefined : cx.t(role.item!.text);
             if (role.slot.run === 'current-shell') cx.command!.rereads = true;
             const words = nodes.slice(word, parse.end);
-            slotNotes(cx, role, cx.slotEnvs.get(a)!, words, assigned);
-            const script = scriptTokens(cx, words, cx.slotEnvs.get(a)!);
+            if (!parse.refusal) slotNotes(cx, role, cx.slotEnvs.get(a)!, words, assigned);
+            const script = scriptTokens(cx, words, cx.slotEnvs.get(a)!, undefined, !parse.refusal);
             joinedWhole = words.length > 1 && !!script.tokens.length;
             const at = script.note && !script.tokens.length ? words.find((w) => !staticWordText(w, cx.shell)) ?? a : a;
             if (at !== a) joinedNote = { at, note: script.note! };
             out.push(joinedWhole ? joinedScript(cx, words, joined, script) : withScript(positional(cx, a, joined), at === a ? script : { tokens: [] }));
           } else if (!role.parse) {
             // A command string: the value of an option (`su -c 'cmd'`), or an operand (`bash -c 'cmd'`, `watch 'cmd'`).
-            slotNotes(cx, role, cx.slotEnvs.get(a)!, [a], assigned);
+            if (!parse.refusal) slotNotes(cx, role, cx.slotEnvs.get(a)!, [a], assigned);
             const string = role.of ? valueToken(cx, a, { role: 'value', of: role.of, index: 0 }, false) : cx.tok(a, 'argument', cx.t(role.item!.text), wordParts(cx, a));
-            out.push(withScript(string, scriptTokens(cx, [a], cx.slotEnvs.get(a)!, shellParams(cx, role, parse, nodes, word))));
+            out.push(withScript(string, scriptTokens(cx, [a], cx.slotEnvs.get(a)!, shellParams(cx, role, parse, nodes, word), !parse.refusal)));
           } else out.push(wrapped(cx, nodes, word, role, assigned, parse.refusal));
           break;
         case 'joined':
@@ -796,7 +797,7 @@ function shellParams(cx: Explainer, role: CommandRole, parse: ArgvParse, nodes: 
 }
 
 /** Words forming a command run by another command (sudo, xargs, find -exec…): the command, with its words read by its spec. */
-function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: CommandRole, assigned: string[], refusal?: object): Token {
+function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: CommandRole, assigned: string[], refusal?: ArgvParse['refusal']): Token {
   const parse = role.parse!;
   const words = nodes.slice(word, parse.end);
   const first = nodes[word];
@@ -841,7 +842,7 @@ function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: Command
   const vspec = variant ? { ...role.spec!, ...variant.spec } : undefined;
   const children = test ? testArgs(cx, first.parent!, commandTest(test, words.slice(1), bashTest(cx, test)), test.closingOperand !== undefined, !!test.builtin)
     : vspec ? render(cx, interpret(vspec, words.slice(1).map(argWordFor(cx.state.shell)), { name, lookup: (x) => specFor(cx, x) }), vspec, words.slice(1), words.slice(1))
-      : render(cx, parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
+      : render(cx, refusal ? { ...parse, refusal } : parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
   if (role.of) {
     // `{}` is replaced by find (and `xargs -I{}`) with each path.
     const mark = (ts: Token[]) => ts.forEach((t) => {
@@ -910,19 +911,20 @@ function positional(cx: Explainer, a: SyntaxNode, desc: string | undefined, lang
 function findExpression(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec): Token[] {
   const words = nodes.map((a) => staticWordValue(a) ?? a.text);
   const lookup = (name: string) => specFor(cx, name);
-  // find refuses the whole expression when one of its actions is wrong (`-exec f {} ;`): none of them runs.
-  const { refusal } = interpret(spec, nodes.map(argWordFor(cx.state.shell)), { name: 'find', lookup });
-  if (refusal) cx.note(findRefusal(cx, nodes, spec, refusal), nodes[refusal.at]);
+  // find refuses all its arguments when one of its actions is wrong (`-exec f {} ;`): none of them runs. (Its words as find
+  // gets them, where the model knows them: `x=';'; find . -exec echo {} $x` ends at `$x`.)
+  const argWords = nodes.map(argWordIn(cx.state));
+  const { refusal } = interpret(spec, argWords, { name: 'find', lookup });
+  if (refusal) findRefusal(cx, nodes, spec, refusal);
   const read = (from: number, to: number): Token[] => {
     const part = nodes.slice(from, to);
-    const parse = interpret(spec, part.map(argWordFor(cx.state.shell)), { name: 'find', lookup });
-    return render(cx, refusal ? { ...parse, refusal } : parse, spec, part, cx.command!.args);
+    return render(cx, { ...interpret(spec, argWords.slice(from, to), { name: 'find', lookup }), refusal }, spec, part, cx.command!.args);
   };
   // (No option of find has an optional value.)
   const tree = parseFind(words, (w) => {
     const o = spec.options!.find((x) => x.names.includes(w));
     return o?.until ?? (o?.value ? 1 : 0);
-  });
+  }, untilWords(argWords));
   if (!tree) return read(0, nodes.length);
   const exprArgs = nodes;
 

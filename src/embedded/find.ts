@@ -6,8 +6,9 @@ import { pick } from './types';
 
 /** A find expression, with word indices relative to the first expression word. */
 export type FindNode =
-  // (`ended`: the arguments of an action that runs a command end with its terminator.)
-  | { type: 'primary'; from: number; to: number; name: string; args: string[]; ended?: boolean }
+  // (`ended`: the arguments of an action that runs a command end with its terminator; `refused`: find refuses that command,
+  // src/argv/until.ts.)
+  | { type: 'primary'; from: number; to: number; name: string; args: string[]; ended?: boolean; refused?: boolean }
   | { type: 'not'; op: number; child: FindNode }
   | { type: 'and'; children: FindNode[]; ops: number[] }
   | { type: 'or'; children: FindNode[]; ops: number[] }
@@ -49,7 +50,7 @@ export function isExpressionStart(w: string): boolean {
 
 class Parser {
   i = 0;
-  constructor(private words: string[], private arity: Arity) {}
+  constructor(private words: string[], private arity: Arity, private values: readonly (string | undefined)[]) {}
 
   private peek(): string | undefined {
     return this.words[this.i];
@@ -93,20 +94,25 @@ class Parser {
     const from = this.i++;
     const n = this.arity(w);
     let ended: boolean | undefined;
+    let refused = false;
     if (typeof n === 'object') {
-      const { at } = untilEnd(n, this.words, this.i, this.words.length);
+      const { at, refusal } = untilEnd(n, this.values, this.i, this.words.length);
       ended = at < this.words.length;
+      refused = !!refusal;
       this.i = Math.min(at + 1, this.words.length);
     } else {
       this.i = Math.min(this.i + n, this.words.length);
     }
-    return { type: 'primary', from, to: this.i - 1, name: w, args: this.words.slice(from + 1, this.i), ...(ended === undefined ? {} : { ended }) };
+    return { type: 'primary', from, to: this.i - 1, name: w, args: this.words.slice(from + 1, this.i), ...(ended === undefined ? {} : { ended }), ...(refused ? { refused } : {}) };
   }
 }
 
-/** Parse the expression words (already unquoted). Returns undefined if they do not form an expression. */
-export function parseFind(words: string[], arity: Arity): FindNode | undefined {
-  const p = new Parser(words, arity);
+/**
+ * Parse the expression words (already unquoted). Returns undefined if they do not form an expression. `values` are the
+ * words as find gets them, where they are known (`untilWord`), to find the ends of the commands of actions; `words` by default.
+ */
+export function parseFind(words: string[], arity: Arity, values: readonly (string | undefined)[] = words): FindNode | undefined {
+  const p = new Parser(words, arity, values);
   try {
     const node = p.or();
     return p.i === words.length ? node : undefined;
@@ -218,8 +224,10 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): string {
       const batch = p.ended && p.args[p.args.length - 1] === '+';
       const ask = p.name === '-ok' || p.name === '-okdir';
       // (find refuses a command that nothing ends, or that is empty: the note of the line says so.)
-      if (!p.ended || !cmd) return s(`${cmd ? `「${cmd}」を実行` : 'コマンドがない'}（find は受け付けない形）`, `${cmd ? `run "${cmd}"` : 'no command'} (find refuses this form)`);
-      return ask ? s(`確認してから「${cmd}」を1件ずつ実行`, `ask, then run "${cmd}" for each`) : s(`「${cmd}」を${batch ? 'まとめて' : '1件ずつ'}実行`, `run "${cmd}"${batch ? ' on all at once' : ' for each'}`);
+      if (p.refused) return s(`${cmd ? `「${cmd}」を実行` : 'コマンドがない'}（find は受け付けない形）`, `${cmd ? `run "${cmd}"` : 'no command'} (find refuses this form)`);
+      // (Where a word is not known here, `"$@"`, nothing may end the command, and find may still run it: how often is not known.)
+      const [howJ, howE] = !p.ended ? ['', ''] : batch ? ['まとめて', ' on all at once'] : ['1件ずつ', ' for each'];
+      return s(`${ask ? '確認してから' : ''}「${cmd}」を${howJ}実行`, `${ask ? 'ask, then ' : ''}run "${cmd}"${howE}`);
     }
     default: {
       // -newerXY REF: the X time of the file is newer than the Y time of REF (or than the date, with t).

@@ -58,7 +58,7 @@ Every row of note-levels.md's "Warnings" table goes to Error or Warning, and two
 | --- | --- | --- |
 | `keyword-needs-separator` | Error | `then` or `do` with no `;` or newline before it is an argument: a syntax error, every time. |
 | `bracket-missing-close`, `bracket-close-glued`, `test-malformed` | Error | `[` or `test` fails every time (status 2); the condition is never evaluated. |
-| `find-action-refused` | Error | find refuses the line (status 1) and runs nothing, whatever the values. Built as a warning until the level exists. |
+| `find-action-refused` | Error | find refuses all its arguments (status 1) and runs nothing, whatever the values (it is not said where a word of the command has a value not known here). Built as a warning until the level exists. |
 | `unset-readonly`, `unset-function-and-variable` | Error | `unset` fails every time (status 1); nothing is unset. |
 | `local-outside-function` | Error only in a file with a shebang; decided after the fix | Run as a program, `local` fails every time (bash: status 1; dash and ash stop the shell). A file with no shebang may be a library sourced inside a function, where `local` works (`f(){ source lib.sh; }; f`). A false positive today, fixed first (below). |
 | `posix-special-function-name` | Error | bash stops the script at the definition, every time. |

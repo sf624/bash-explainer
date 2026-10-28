@@ -149,9 +149,21 @@ describe('word facts', () => {
     // so no command runs: `missing argument to `-exec'`, with no output of the action and status 1.
     const refused = runBash('find . -maxdepth 0 -exec echo ran {} ;');
     assert.deepStrictEqual([refused.stdout, refused.status, /^find: missing argument to `-exec'/.test(refused.stderr)], ['', 1, true], refused.stderr);
-    assert.deepStrictEqual(texts('find . -exec rm $a {} ;'), []);
-    // (find refuses the whole line when one `-exec` is not ended: the actions before it run no more.)
-    assert.deepStrictEqual(texts('find . -exec cp $a {} \\; -exec mv $b {} ;'), []);
+    assert.deepStrictEqual(texts('a=x; find . -exec rm $a {} ;'), []);
+    // (find refuses all its arguments when one `-exec` is not ended: the actions before it run no more.)
+    assert.deepStrictEqual(texts('a=x; b=y; find . -exec cp $a {} \\; -exec mv $b {} ;'), []);
+    // A word whose value is not known may be the `;` (or give it, or more words): find may run the command, so it has its
+    // notes. (`a='; -name'` makes `-exec rm ; -name {}`, which find accepts.)
+    assert.deepStrictEqual(texts('find . -exec rm $a {} ;'), ['$a']);
+    const named = runBash("a='; -name'; find . -maxdepth 0 -exec echo ran $a {} ;", { files: ['{}'] });
+    assert.deepStrictEqual([named.status, named.stderr], [0, ''], JSON.stringify(named));
+  });
+
+  it('reads the end of a command find runs from the values the script gives', () => {
+    const texts = (src: string) => facts(src).filter((f) => f.id === 'unquoted-variable-as-path').map((f) => f.text.match(/`([^`]+)` is not quoted/)![1]);
+    // (The model knows `$x`: it ends the command, whose words have their notes; `$d/x` is a path of `rm`.)
+    assert.strictEqual(runBash("x=';'; find . -maxdepth 0 -exec echo ran {} $x").stdout, 'ran .\n');
+    assert.deepStrictEqual(texts("x=';'; find . -exec rm -rf $d/x {} $x"), ['$d/x']);
   });
 
   // The terminators of find's actions, from find's spec (`until` of `-exec`, `-execdir`, `-ok`, `-okdir`), against GNU find:
@@ -171,8 +183,11 @@ describe('word facts', () => {
       // (`-ok` asks on stderr before it runs; with nothing to read it does not run, and still accepts the line.)
       assert.strictEqual(real.status === 0 && !real.stderr.startsWith('find:'), result === 'runs', JSON.stringify(real));
       assert.strictEqual(real.stdout.includes('ran'), result === 'runs' && !rest.startsWith('-ok'), JSON.stringify(real));
-      const noted = facts(`find . ${rest.replace(/CMD/g, 'rm')}`).filter((f) => f.id === 'unquoted-variable-as-path').map((f) => f.text.match(/`([^`]+)` is not quoted/)![1]);
-      assert.deepStrictEqual(noted, result === 'refused' ? [] : rest.includes('$b') ? ['$a', '$b'] : ['$a']);
+      const noted = (pre: string) => facts(`${pre}find . ${rest.replace(/CMD/g, 'rm')}`).filter((f) => f.id === 'unquoted-variable-as-path').map((f) => f.text.match(/`([^`]+)` is not quoted/)![1]);
+      const all = ['$a', '$b'].filter((v) => rest.includes(v));
+      // (With the values find got, as find does; with values not known, any of them may end the command: no refusal.)
+      assert.deepStrictEqual(noted('a=A; b=B; '), result === 'refused' ? [] : all);
+      assert.deepStrictEqual(noted(''), all.length ? all : result === 'refused' ? [] : all);
     });
   }
 
