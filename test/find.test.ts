@@ -97,6 +97,26 @@ describe('find in a command line', () => {
     assert.strictEqual(end('find . -exec echo {} + -print'), '+');
   });
 
+  it('says the option\'s own name in the summary and at the terminator, and that find refuses what it refuses', () => {
+    const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
+    const summary = (line: string, lang: 'ja' | 'en' = 'en') => all(tokens(line, lang)).find((t) => t.kind === 'test')!.explanation;
+    const end = (line: string) => all(tokens(line)).find((t) => t.kind === 'operator' && /^End of /.test(t.explanation))!.explanation;
+    assert.match(summary('find . -ok rm {} \\;'), /ask, then run "rm \{\}" for each$/);
+    assert.match(summary('find . -okdir rm {} \\;'), /ask, then run "rm \{\}" for each$/);
+    assert.match(summary('find . -ok rm {} \\;', 'ja'), /確認してから「rm \{\}」を1件ずつ実行$/);
+    assert.match(summary('find . -execdir rm {} +'), /run "rm \{\}" on all at once$/);
+    assert.match(end('find . -ok rm {} \\;'), /^End of `-ok`: run once per match/);
+    assert.match(end('find . -okdir rm {} \\;'), /^End of `-okdir`: run once per match/);
+    assert.match(end('find . -execdir rm {} +'), /^End of `-execdir`: pass all matches/);
+    // (Where find refuses the form, the summary says so rather than that the command runs on all at once or for each.)
+    assert.match(summary('find . -exec echo {} a +'), /run "echo \{\} a \+" \(find refuses this form\)$/);
+    assert.match(summary('find . -ok echo {} +'), /run "echo \{\} \+" \(find refuses this form\)$/);
+    assert.match(summary('find . -okdir echo {} +'), /run "echo \{\} \+" \(find refuses this form\)$/);
+    assert.match(summary('find . -exec \\;'), /no command \(find refuses this form\)$/);
+    assert.match(summary('find . -exec echo x', 'ja'), /「echo x」を実行（find は受け付けない形）$/);
+    assert.match(summary('find . -exec \\;', 'ja'), /コマンドがない（find は受け付けない形）$/);
+  });
+
   it('reads the words as find gets them, after the quote removal of bash', () => {
     const fs = require('fs') as typeof import('fs');
     const os = require('os') as typeof import('os');

@@ -46,7 +46,7 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
 const UNPARSED: SuggestionId[] = ['assignment-with-spaces', ...Array(3).fill('brace-close-no-separator'), ...Array(3).fill('brace-no-space'), 'declaration-masks-status'];
 
 /**
- * Inputs for the ids the corpus raises nowhere (the three `*-last-test-*` ids), and for a list of a glob and other
+ * Inputs for the ids the corpus raises nowhere (the three `*-last-test-*` ids and `find-action-refused`), and for a list of a glob and other
  * words, where the test of the name in the body would skip the words that are no files: the same oracles. Then forms
  * of the style checks the corpus lacks: `[[` glued to its first word, a `}` glued to the group's command as a word of
  * its own or at the end of one, `read` from the script's stdin in a loop, `>` in `[ ]` (the original makes a file in
@@ -57,6 +57,7 @@ const HAND = [
   '#!/bin/bash\nset -e\nf() { [[ -f x ]] && echo y; }\necho @start\nf\n',
   '#!/bin/bash\necho @start\n[ -f x ] && echo "@y"\n',
   'for i in a b *.c; do echo "$i"; done\n',
+  'find . -name "*.c" -exec rm {} ;\n',
   '[[-f x]] && echo y\n', '{echo a }\n', '{echo a}; echo b\n', 'while read line; do echo "$line"; done\n', '[ "$a" > b ] && echo yes\n',
   'x = "a b"\necho "$x"\n', 'f() {\n  rm -rf $D/x\n}\nf\n',
 ];

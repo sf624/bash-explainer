@@ -127,8 +127,8 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
   let envs: Map<SyntaxNode, ExecEnv> | undefined;
   // (`words` are the words of the line that `p` read: the indexes of its roles count in them.)
   const visit = (p: ArgvParse, ps: CommandSpec | undefined, words: readonly SyntaxNode[]): void => {
-    // (The tool refuses the line and runs nothing: `find . -exec rm {} ;` has no `\;` to end the command, the `;` is the shell's.)
-    if (p.refused) return;
+    // (find refuses the line and runs nothing: `find . -exec rm {} ;` has no `\;` to end the command, the `;` is the shell's.)
+    if (p.refusal) return;
     for (const { word, role } of p.roles) {
       if (role.role === 'subcommand') visit(role.parse, role.spec, words);
       // An expression with a spec of its own is read by that spec from its first word: find's actions run commands

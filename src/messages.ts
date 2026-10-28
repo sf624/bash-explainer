@@ -3,6 +3,7 @@ import type { ConventionId } from './conventions';
 import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
+import { type FindRefusalParams, findRefusalText } from './messages-find';
 import { extglobText, globstarText, type LoopHow, type LoopPattern, unmatchedGlobText } from './messages-glob';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
 import type { Rewrite } from './rewrite';
@@ -538,6 +539,10 @@ export const MESSAGES = {
       : r.why === 'letter' ? `bash has no option \`-${r.letter}\`` : r.why === 'name' ? '`o` takes the next argument, the script\'s path, as an option name'
         : r.why === 'shopt' ? '`O` takes the next argument, the script\'s path, as a shopt option name' : 'no long option has that name'}). `
       + `Run directly, the script stops with an error before running anything. Write the options with \`set\`${r.rest.includes('O') ? ' (`-O` with `shopt -s`)' : ''} on the next line (\`bash script\` ignores the options of the shebang)`]),
+  // (find: an action that runs a command (`-exec`, `-execdir`, `-ok`, `-okdir`) that its spec does not read as ended; the
+  // reasons and the messages are GNU find 4.9's. The `;` is the list operator of 3.2.4 when it is bare, and `\;` or `';'`
+  // is the escape character or quoting of 3.1.2.1: the word find needs. `bare`: the `;` that ends the line; its rewrite.)
+  'find-action-refused': suggests(failure<FindRefusalParams>(['3.2.4', '3.1.2.1'], findRefusalText)),
   // (src/wordfacts.ts: a first word `\uFEFF#!…` at the start of the file; `word` without the mark.)
   'shebang-bom': pitfall<{ word: string; slash: boolean }>(['3.8', 'execve(2)'], ({ word, slash }) => [
     `1行目が見えないバイト順マーク(BOM、U+FEFF)で始まっているので、シバンにならない。カーネルはファイルの先頭2バイトが \`#!\` のときだけインタープリタを起動し、`

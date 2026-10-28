@@ -778,6 +778,19 @@ Object.assign(STATES, {
       ];
     },
   },
+  // (bash cannot run find here, which would run other programs: `find` is a recorder, and what it is given is what find would get. The rewrite hands it the `;` it lacked, and nothing else changes.)
+  'find-action-refused': {
+    states: 'none: find is a recorder, and what it is given is compared',
+    checks: (s, x) => [{
+      state: 'recorded',
+      runs: pair(s, { env: x.others }),
+      verify: ([o, r]) => {
+        const without = (t: string): string => t.split(' <;>').join('');
+        const added = r.out.split(' <;>').length - o.out.split(' <;>').length;
+        return without(r.out) === without(o.out) && r.err === o.err && r.status === o.status && added === s.facts.length ? undefined : `${added} words added to ${JSON.stringify(o.out)}, got ${JSON.stringify(r.out)}`;
+      },
+    }],
+  },
   'bracket-close-glued': {
     states: 'file present, absent',
     checks: (s, x) => {
