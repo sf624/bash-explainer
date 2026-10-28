@@ -357,9 +357,9 @@ function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 
   const by = docLine((res.hashed ?? res.disabled)!.at) + 1;
   const name = res.name;
   if (!res.hashed) {
-    const spec = lookupCommand(name);
+    // (Only a builtin is turned off: the program its entry describes.)
     return {
-      path: undefined, program: spec?.builtin ? spec.program : spec, runs: cx.s(`外部コマンド \`${name}\` を実行する`, `Run the external command \`${name}\``),
+      path: undefined, program: lookupCommand(name)!.program, runs: cx.s(`外部コマンド \`${name}\` を実行する`, `Run the external command \`${name}\``),
       why: cx.s(`行 ${by} の \`enable -n\` で組み込みの \`${name}\` は無効になっている`, `\`enable -n\` on line ${by} turned the builtin \`${name}\` off`),
     };
   }
@@ -390,8 +390,8 @@ function offBuiltinOrHashed(cx: Explainer, res: Extract<NameResolution, { kind: 
         : cx.s(`${gave}。\`/\` で始まらないパスは PATH から探さず、現在のディレクトリから実行する`, `${gave}; a path that does not start with \`/\` is not searched in PATH, but run from the current directory`),
     };
   }
-  const spec = lookupCommand(value);
-  return { path: value, program: spec?.builtin ? spec.program : spec, runs: cx.s(`外部コマンド \`${value}\` を実行する`, `Run the external command \`${value}\``), why: gave };
+  // (A path is never a builtin's entry: `/bin/echo` is the program.)
+  return { path: value, program: lookupCommand(value), runs: cx.s(`外部コマンド \`${value}\` を実行する`, `Run the external command \`${value}\``), why: gave };
 }
 
 /** Spaces around code next to Japanese punctuation, and doubled ones, taken out (docs/japanese-style.md). */
