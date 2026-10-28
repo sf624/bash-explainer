@@ -138,6 +138,27 @@ export const ENVIRONMENT: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
+ * How the shell that runs the script started on the made-up system: run as a script from the terminal of a login
+ * shell, or that login shell itself, typed into (a console in Markdown).
+ */
+export type Started = 'script' | 'terminal';
+
+/** The variables the script's shell gets at start on the made-up system: `ENVIRONMENT`, and `SHLVL` (`startValue`). */
+export const START_NAMES: readonly string[] = [...ENVIRONMENT.keys(), 'SHLVL'];
+
+/**
+ * The value of `name` the script's shell has at start on the made-up system: what it got from its environment
+ * (`ENVIRONMENT`), and the `SHLVL` bash sets, one more than the shell that started it has: 2 for a script run from the
+ * login shell, 1 for the login shell.
+ */
+export function startValue(name: string, started: Started): string | undefined {
+  return name === 'SHLVL' ? (started === 'terminal' ? '1' : '2') : ENVIRONMENT.get(name);
+}
+
+/** Whether the shell looks commands up in the made-up PATH, where it finds env at `/usr/bin/env` (`layoutSample`). */
+export const madeUpPath = (value: string | undefined | null): boolean => value === ENVIRONMENT.get('PATH');
+
+/**
  * The order in which bash passes the global variables `names` to a program it starts: by the bucket of each name in
  * its table of 1024 (FNV-1 hash of the name, hashlib.c), the buckets in order. Undefined when two names share a bucket:
  * then the one set last comes first, which is not followed here. (`ENVIRONMENT` is in this order.)

@@ -300,6 +300,10 @@ describe('explanations from the execution environment', () => {
       assert.deepStrictEqual(pitfalls(`${src}\nbash -c 'echo $n'`, 'en', 1), ['⚠ Pitfall: the new shell expands `$n` in the string, and `n` is a variable of this script that is not exported, so it is empty there (unless the environment already has `n`). Run `export n` first'], src);
     }
     assert.deepStrictEqual(pitfalls("( (( n = 1 )) )\nbash -c 'echo $n'", 'en', 1), []);
+    // (Unset on some paths only, then set: it may still be the environment's, exported, as after a first assignment.)
+    const caveat = pitfalls("Y=1\nsh -c 'echo \"$Y\"'", 'en', 1);
+    assert.match(caveat[0], /^ⓘ Caveat: .* only when `Y` was in the environment already/);
+    assert.deepStrictEqual(pitfalls("if [ \"$1\" ]; then unset Y; fi\nY=1\nsh -c 'echo \"$Y\"'", 'en', 2), caveat);
     assert.deepStrictEqual(pitfalls("name=x\nssh host 'echo $name'", 'en', 1), ['⚠ Pitfall: the remote shell expands `$name`, but it does not have `name`, a variable of this script. To send its value, write it in double quotes, so that it is expanded here']);
     assert.deepStrictEqual(pitfalls("name=x\nssh host 'echo $name'", 'ja', 1), ['⚠ 落とし穴: `$name` はリモートのシェルが展開しますが、リモートにはこのスクリプトの変数 `name` はありません。値を送るなら、こちらで展開されるようダブルクォートの中に書きます']);
     // Exported, given to the command, set by the string itself, from the environment, not known, or in double quotes: nothing.
