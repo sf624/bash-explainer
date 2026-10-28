@@ -1413,3 +1413,13 @@ The note on a declaration that hides the status of its `$( )` told to declare fi
 | `declare -ri y=$(g)` | `declare -i y; y=$(g); readonly y` |
 
 `readonly` makes the local read-only, and leaves a global of the same name as it was (bash 5.2 and 5.3). First in a list (`readonly r=$(g) || exit`), `||` would test `readonly`: the note shows the list with the assignment first, `r=$(g) || exit; readonly r`, but carries no rewrite. A name the declaration assigns again moves with it, in order (`local x=$(g) x=1` → `local x; x=$(g); x=1`), also with no rewrite. With a here-document, the assignments go before its body (`local x <<EOF; x=$(g)`).
+
+### An alias to a name changed by `hash -p` or `enable -n`
+
+Both read the words after the alias with the spec of the program bash runs for the alias's word, as the name itself would be (`type -P grep` after `hash -p /opt/frob grep` is `/opt/frob`; `type -t echo` after `enable -n echo` is `file`).
+
+| Script (separate lines, with `shopt -s expand_aliases`) | Before | Now |
+| --- | --- | --- |
+| `alias g=grep`, `hash -p /opt/frob grep`, `g -n x f` | `-n`: "show line numbers" (grep's), with grep's examples | `-n`: "A word passed on to `grep`, the text of the alias" (the file is not in the dictionary) |
+| `alias g=grep`, `hash -p /usr/bin/egrep grep`, `g -n x f` | grep's spec | the same (egrep is grep's spec) |
+| `enable -n echo`, `alias e=echo`, `e -n hi` | no `basis` on the token (a builtin's spec) | `basis: { kind: 'spec', command: 'echo' }`, as for `echo -n hi` after `enable -n echo` |

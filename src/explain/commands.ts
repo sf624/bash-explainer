@@ -342,6 +342,16 @@ function commandHead(cx: Explainer, nameNode: SyntaxNode, word = nameNode.namedC
   return head;
 }
 
+/**
+ * The program a file name runs when `hash -p` gave it a path or `enable -n` turned the builtin of its name off: the
+ * path (when hashed) and the spec of the program, from the dictionary (a builtin's `program`).
+ */
+function offBuiltinOrHashed(res: Extract<NameResolution, { kind: 'file' }>): { path: string | undefined; program: CommandSpec | undefined } {
+  const path = res.hashed?.value;
+  const spec = lookupCommand(path || res.name);
+  return { path, program: spec?.builtin ? spec.program : spec };
+}
+
 function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: string): CommandHead {
   // Commands with an empty name (`FOO=1 2>/dev/null`) do not get here.
   // A name made of quotes, escapes or empty `$(:)` is the command it spells once they are removed (`e\c'h'"o"` is `echo`).
@@ -370,7 +380,9 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     // alone at each step (`alias g=grep`: `g -n x f`). With more words (`alias ll='ls -l'`), they go after those.
     let runs: NameResolution | undefined = res;
     while (runs?.kind === 'alias' && alias1(runs.alias.value)) runs = runs.target;
-    const target = runs && runs.kind !== 'alias' && res.sure && (runs.kind === 'builtin' || runs.kind === 'file') && !testSpecOf(runs) ? specFor(cx, runs.name) : undefined;
+    // (What `hash -p` or `enable -n` makes of the name it runs: the program of that path or name, as when the name is not an alias.)
+    const other = runs?.kind === 'file' && (runs.disabled || runs.hashed) ? offBuiltinOrHashed(runs) : undefined;
+    const target = runs && runs.kind !== 'alias' && res.sure && (runs.kind === 'builtin' || runs.kind === 'file') && !testSpecOf(runs) ? (other ? other.program : specFor(cx, runs.name)) : undefined;
     const spec: CommandSpec = target ?? { ...NO_SPEC, unknownOption: { ja: `エイリアスの置き換え先 \`${alias.value}\` に渡す単語`, en: `A word passed on to \`${alias.value}\`, the text of the alias` } };
     const line = (docLine(alias.at) + 1);
     // (`alias a=b b='echo B'`: `a` runs the alias `b`.)
@@ -385,7 +397,7 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
     const maybeSourced = !res.sure && alias.state === 'on' && readAs(cx.state.env(nameNode), cx.state.read) === 'unknown';
     if (maybeSourced) cx.note(fact(cx.lang, 'alias-maybe-not-expanded', { name, value: alias.value }), nameNode);
     // (The words after the alias are read with that command's spec, so they rest on it; with no spec, the alias's text.)
-    const basis = target ? programBasis(cx, runs!.name, target) : undefined;
+    const basis = target ? programBasis(cx, other?.path || runs!.name, target) : undefined;
     return {
       name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'], spec, ...(target ? { runs: runs!.name } : {}), ...(basis ? { basis } : {}),
       explanation: res.sure
@@ -440,9 +452,7 @@ function commandHeadFor(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, a
   }
   // A builtin turned off with `enable -n` runs the program of its name; `hash -p` gives a name a path.
   if (res.kind === 'file' && (res.disabled || res.hashed)) {
-    const path = res.hashed?.value;
-    const spec = lookupCommand(path || name);
-    const program = spec?.builtin ? spec.program : spec;
+    const { path, program } = offBuiltinOrHashed(res);
     const by = (docLine((res.hashed ?? res.disabled)!.at) + 1);
     const why = res.hashed
       ? cx.s(`行 ${by} の \`hash -p\` で \`${name}\` は \`${path}\` を指す`, `\`hash -p\` on line ${by} gave \`${name}\` the path \`${path}\``)

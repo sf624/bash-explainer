@@ -424,6 +424,24 @@ describe('basis: what an explanation rests on', () => {
     assert.deepStrictEqual(basisOf1(`${on}alias s=sudo\ns rm -rf x`), [['s', spec('sudo')], ['rm', spec('rm')]]);
     // Setting off: none.
     assert.deepStrictEqual(basisOf1(`${on}alias g=grep\ng -n x f`, { basis: false }), []);
+    // What `hash -p` or `enable -n` makes the alias's word run, as for the name itself (bash: `type -P grep` is the hashed path,
+    // `type -t echo` is `file` after `enable -n echo`, and `e --help` prints coreutils' usage).
+    assert.deepStrictEqual(basisOf1(`${on}alias g=grep\nhash -p /opt/frob grep\ng -n x f`), [], 'hashed to a file the dictionary does not know');
+    assert.deepStrictEqual(basisOf1(`${on}alias g=grep\nhash -p /usr/bin/egrep grep\ng -n x f`), [['g', spec('grep')]], 'hashed to a program it knows');
+    assert.deepStrictEqual(basisOf1(`${on}enable -n echo\nalias e=echo\ne -n hi`), [['e', spec('echo')]], 'the program of a builtin turned off');
+    assert.deepStrictEqual(basisOf1(`${on}alias g=grep\nhash -p /bin/ls grep\ng -n x f`), [['g', spec('ls')]], 'hashed to another program: its spec');
+    for (const src of [`${on}alias g=grep\nhash -p /bin/ls grep\ng -n x f`, `${on}enable -n echo\nalias e=echo\ne -n hi`]) {
+      // (The same line direct: the words are read with the spec of the same program, not with the spec of the alias's word.)
+      const direct = explain(src.replace(/alias (\w)=(\w+)\n/, '').replace(/\n[ge] /, (m) => `\n${src.includes('echo') ? 'echo' : 'grep'} `), src.split('\n').length - 2, 'en').items;
+      const viaAlias = explain(src, src.split('\n').length - 1, 'en').items;
+      const opts = (ts: Token[]) => allTokens(ts).filter((t) => t.kind === 'option').map((t) => t.explanation);
+      assert.deepStrictEqual(opts(viaAlias), opts(direct), src);
+    }
+    // (A hashed file the dictionary does not know: grep's `-n` is not read; the word is the alias text's.)
+    const frob = allTokens(explain(`${on}alias g=grep\nhash -p /opt/frob grep\ng -n x f`, 3, 'en').items).find((t) => t.label === '-n')!;
+    assert.match(frob.explanation, /^A word passed on to `grep`/);
+    // Only when the hashed path is on every path (`hash -p` in a branch: not known).
+    assert.deepStrictEqual(basisOf1(`${on}alias g=grep\nif [ -n "$A" ]; then hash -p /opt/frob grep; fi\ng -n x f`), [['g', spec('grep')]]);
   });
 
   it('keeps a token\'s own basis over the spec, and gives none with `notes.basis` off; no view shows `spec`', () => {
