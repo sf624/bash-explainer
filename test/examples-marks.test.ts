@@ -27,7 +27,7 @@ const join = (rs: [number, number][]) => [...rs].sort((a, b) => a[0] - b[0]).red
 const texts = (input: string[], ranges: [number, number][][]) => ranges.map((rs, i) => rs.map(([a, b]) => input[i].slice(a, b)));
 
 const SAMPLES: [Layout, string[]][] = [['ps-bsd-u', ['ps', 'aux']], ['ps-full', ['ps', '-ef']], ['ls-long', ['ls', '-l']], ['ls-long-all', ['ls', '-la']], ['df-human', ['df', '-h']], ['who', ['who']], ['env', ['env']]];
-const samples = SAMPLES.map(([kind, argv]) => layoutSample(kind, [argv, ['grep', 'nginx']], 0));
+const samples = SAMPLES.map(([kind, argv]) => layoutSample(kind, [{ argv }, { argv: ['grep', 'nginx'] }], 0));
 const EDGES = ['ab abab', 'xx a xxx', 'alice:x:1000:1000::/home/alice:/bin/bash', 'a::b', 'no delimiter here', '', '  lead  trail  ', 'AbC abc ABC', 'a.b.c', '1.5K 220 Mar', '-3 .5x 5.K'];
 const ALL = [...samples, EDGES];
 

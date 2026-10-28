@@ -6,6 +6,12 @@ import type { ArgvParse } from '../argv/interpret';
 import { givenOptions } from '../argv/query';
 import type { CommandSpec, Layout } from '../argv/spec';
 
+/**
+ * A command of the pipeline as it runs: its argument list (`argv`, as ps shows it), and the path bash runs it by when
+ * it does not find it in PATH (`/bin/env`, or a path `hash -p` gave the name).
+ */
+export interface Run { argv: string[]; path?: string }
+
 /** A column of a table: its width, and whether its cells are aligned on the right. */
 interface Column { width: number; right?: boolean }
 
@@ -47,13 +53,13 @@ const SYSTEM: Proc[] = [
 const FIRST_PID = 2388;
 
 /**
- * The processes: the system's, then the commands of the pipeline (`procs`, their argument lists, in order: they run
+ * The processes: the system's, then the commands of the pipeline (`procs`, in order: they run
  * at the same time as ps; `self`, the index of ps among them). A command whose words are not known has no row.
  */
-function processes(procs: (string[] | undefined)[], self: number): Proc[] {
-  const own = procs.flatMap((argv, i): Proc[] => (argv ? [{
+function processes(procs: (Run | undefined)[], self: number): Proc[] {
+  const own = procs.flatMap((run, i): Proc[] => (run ? [{
     user: 'alice', pid: FIRST_PID + i, ppid: 2140, cpu: '0.0', mem: '0.0', vsz: 6480 + 1120 * i, rss: 2304 + 640 * i,
-    tty: 'pts/0', stat: i === self ? 'R+' : 'S+', start: '09:45', time: '0:00', args: argv.join(' '), comm: comm(argv[0]),
+    tty: 'pts/0', stat: i === self ? 'R+' : 'S+', start: '09:45', time: '0:00', args: run.argv.join(' '), comm: comm(run.path ?? run.argv[0]),
   }] : []));
   return [...SYSTEM, ...own];
 }
@@ -127,11 +133,11 @@ const ENVIRONMENT = [
 ];
 
 /**
- * Made-up lines of what a command prints in the layout `kind`. `procs`: the argument lists of the commands of the
- * pipeline (undefined where not known), `self` the index of this one: ps lists them too, since they run at the same
- * time; env ends with `_`, the path bash ran it by: `path` when it was not found in PATH (`/bin/env`, `hash -p`).
+ * Made-up lines of what a command prints in the layout `kind`. `procs`: the commands of the pipeline (undefined where
+ * their words are not known), `self` the index of this one: ps lists them too, since they run at the same time; env
+ * ends with `_`, the path bash ran it by (found in the made-up PATH, `/usr/bin`, unless it has a path of its own).
  */
-export function layoutSample(kind: Layout, procs: (string[] | undefined)[], self: number, path?: string): string[] {
+export function layoutSample(kind: Layout, procs: (Run | undefined)[], self: number): string[] {
   switch (kind) {
     case 'ps-bsd-u': {
       const cols: Column[] = [{ width: 8 }, { width: 7, right: true }, { width: 4, right: true }, { width: 4, right: true }, { width: 6, right: true }, { width: 5, right: true }, { width: 8 }, { width: 4 }, { width: 5 }, { width: 6, right: true }, { width: 0 }];
@@ -165,7 +171,7 @@ export function layoutSample(kind: Layout, procs: (string[] | undefined)[], self
       const cols: Column[] = [{ width: 8 }, { width: 12 }, { width: 0 }];
       return table(cols, [['alice', 'pts/0', '2026-03-03 09:30 (192.168.1.20)'], ['bob', 'pts/1', '2026-03-03 10:02 (192.168.1.31)'], ['alice', 'tty1', '2026-03-03 08:12']]);
     }
-    case 'env': return [...ENVIRONMENT, `_=${path ?? `/usr/bin/${procs[self]![0]}`}`];
+    case 'env': return [...ENVIRONMENT, `_=${procs[self]!.path ?? `/usr/bin/${procs[self]!.argv[0]}`}`];
   }
 }
 

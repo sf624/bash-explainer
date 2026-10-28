@@ -18,7 +18,7 @@ const lines = (out: Buffer) => out.toString().replace(/\n$/, '').split('\n').fil
 const real = (cmd: string, args: string[], opts: { cwd?: string } = {}) => lines(run(cmd, args, { ...opts, env: C, check: true }).stdout);
 
 /** A made-up output, as the first stage `argv` of a pipeline of one stage prints it. */
-const sample = (kind: Layout, argv: string[]) => layoutSample(kind, [argv], 0);
+const sample = (kind: Layout, argv: string[]) => layoutSample(kind, [{ argv }], 0);
 
 describe('made-up output has the layout of the real tools', () => {
   // A row of `ps aux`, `ps -ef` and `ps`, by the kinds of its fields (START and STIME are a date after a day).
@@ -164,7 +164,7 @@ describe('pipelines that start with a made-up output agree with the real tools s
     const ex = pipelineExampleOf("ps aux | grep -v grep | awk '{print $2}'")!;
     assert.deepStrictEqual(ex.sections[0].lines.slice(-3).map((r) => r.replace(/^.* 0:00 /, '')), ['ps aux', 'grep -v grep', 'awk {print $2}']);
     // (A stage whose words are not known, or that is not a program, has no row: a builtin runs in a copy of the shell.)
-    assert.deepStrictEqual(layoutSample('ps-bsd-u', [['ps', 'aux'], undefined], 0).length, layoutSample('ps-bsd-u', [['ps', 'aux']], 0).length);
+    assert.deepStrictEqual(layoutSample('ps-bsd-u', [{ argv: ['ps', 'aux'] }, undefined], 0).length, layoutSample('ps-bsd-u', [{ argv: ['ps', 'aux'] }], 0).length);
     const sh = explain("ps aux | grep -v grep | awk '{print $2}' | while read -r p; do echo \"$p\"; done").examples.find((e) => e.kind === 'awk');
     assert.ok(sh && !sh.sections[0].lines.some((r) => /while|read/.test(r)), 'no row for the loop');
     // (Nor one whose words are not all known: `tee "$log"`.)
@@ -211,11 +211,46 @@ describe('pipelines that start with a made-up output agree with the real tools s
         const file = path.join(dir, name);
         fs.symlinkSync(spawnSync('bash', ['-c', 'command -v sleep']).stdout.toString().trim(), file);
         const theirs = lines(run('bash', ['-c', `"$1" 0.5 & sleep 0.2; ps -o comm= -p $!; wait`, 'bash', file], { env: { ...C, LC_ALL: 'C.UTF-8' }, check: true }).stdout)[0];
-        const ours = layoutSample('ps', [['ps'], [file, '0.5']], 0).at(-1)!;
+        const ours = layoutSample('ps', [{ argv: ['ps'] }, { argv: [file, '0.5'], path: file }], 0).at(-1)!;
         assert.strictEqual(ours.replace(/^.* \d\d:\d\d:\d\d /, ''), theirs, name);
       }
     } finally {
       fs.rmSync(dir, { recursive: true });
+    }
+  });
+  it('reads a name `hash -p` gave a path as the program of that path, as bash runs it', function () {
+    this.timeout(30000);
+    /** The last section of the whole-pipeline example of `line` (its input in the first), and what bash prints of that input. */
+    const both = (ex: Example | undefined, line: string) => {
+      assert.ok(ex, line);
+      const input = ex.sections[0].label.startsWith('Input') ? ex.sections[0].lines.map((l) => l + '\n').join('') : '';
+      return [ex.sections.at(-1)!.lines, lines(run('bash', ['-c', line], { input, env: C }).stdout)];
+    };
+    const whole = (ex: Example[]) => ex.find((e) => e.kind === 'pipeline');
+    for (const [ex, line] of [
+      [explain("printf 'b\\na\\nc\\n' | \\sort | 'head' -n 2").examples, "printf 'b\\na\\nc\\n' | \\sort | 'head' -n 2"],
+      [explain("hash -p /usr/bin/tac sort; printf 'b\\na\\nc\\n' | \\sort").examples, "hash -p /usr/bin/tac sort; printf 'b\\na\\nc\\n' | \\sort"],
+      [explain("hash -p /usr/bin/tac sort; printf 'b\\na\\nc\\n' | sort", 0, 'ja').examples, "hash -p /usr/bin/tac sort; printf 'b\\na\\nc\\n' | sort"],
+      [explain('hash -p /usr/bin/tac env; env | head -3').examples, 'hash -p /usr/bin/tac env; env | head -3'],
+    ] as [Example[], string][]) {
+      const [ours, theirs] = both(whole(ex), line);
+      assert.deepStrictEqual(ours, theirs, line);
+      // (tac prints no environment.)
+      assert.ok(!ex.some((e) => e.sections.some((sec) => sec.lines.some((l) => l.startsWith('_=')))), line);
+    }
+    // ps shows the name as written, and the program run in its CMD column (`comm`).
+    const real = lines(run('bash', ['-c', 'hash -p /usr/bin/head zz; zz -n 5 < <(sleep 0.5) & sleep 0.2; ps -o comm=,args= -p $!; wait'], { env: C, check: true }).stdout)[0];
+    assert.deepStrictEqual(real.split(/ +/), ['head', 'zz', '-n', '5']);
+    assert.strictEqual(whole(explain('hash -p /usr/bin/head zz; ps | zz -n 5').examples)?.sections[0].lines.at(-1)!.replace(/^.* /, ''), 'head');
+    assert.strictEqual(whole(explain('hash -p /usr/bin/head zz; ps aux | zz -n 5', 0, 'ja').examples)?.sections[0].lines.at(-1)!.replace(/^.* 0:00 /, ''), 'zz -n 5');
+  });
+  it('makes up no environment for env with an assignment before it, which it prints (`PATH=` changes its path too)', () => {
+    assert.ok(lines(run('bash', ['-c', 'PATH=/bin env | cat'], { env: C, check: true }).stdout).includes('_=/bin/env'));
+    assert.ok(lines(run('bash', ['-c', 'FOO=1 printenv | cat'], { env: C, check: true }).stdout).includes('FOO=1'));
+    for (const lang of ['en', 'ja'] as const) {
+      for (const ex of [explain('PATH=/bin env | cat', 0, lang).examples, explain('FOO=1 printenv | cat', 0, lang).examples]) {
+        assert.ok(!ex.some((e) => e.sections.some((sec) => sec.lines.some((l) => l.startsWith('_=')))), lang);
+      }
     }
   });
   it('makes up no output for other options or operands, and says that the input is not known', () => {
