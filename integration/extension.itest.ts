@@ -160,15 +160,14 @@ describe('Bash Explainer in VS Code', function () {
   it("reads the theme's colours for the panel, also where the theme extensions are in another extension host (a remote window)", async () => {
     const ctx = { extension: extension() } as unknown as vscode.ExtensionContext;
     const wb = vscode.workspace.getConfiguration('workbench');
-    // `activeColorTheme` follows the setting a moment after `update` returns. While it still has the high contrast
-    // kind of the theme before, `activeThemeName` reads the preferred high contrast theme instead (CI, flaky): after
-    // leaving a high contrast theme, wait for the kind to leave it. (Only that: VS Code 1.85 here never changes the
-    // kind, so waiting for the kind of the new theme would not end.)
-    const setTheme = async (theme: string | undefined) => {
-      const wasHighContrast = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.HighContrast;
-      await wb.update('colorTheme', theme, vscode.ConfigurationTarget.Global);
-      if (wasHighContrast && theme !== 'Default High Contrast') await until('the colour theme to leave high contrast', () => vscode.window.activeColorTheme.kind, (k) => k !== vscode.ColorThemeKind.HighContrast);
-    };
+    const win = vscode.workspace.getConfiguration('window');
+    // `activeColorTheme` follows the setting some time after `update` returns, and its kind can lag by more than one
+    // change (CI: the high contrast kind arrived only after Monokai was set). With `autoDetectHighContrast`,
+    // `activeThemeName` reads the preferred high contrast theme while the kind is high contrast: off here, it reads
+    // the setting, which `update` has written when it returns. (No wait for the kind: VS Code 1.85 here never
+    // changes it.)
+    const setTheme = (theme: string | undefined) => wb.update('colorTheme', theme, vscode.ConfigurationTarget.Global);
+    await win.update('autoDetectHighContrast', false, vscode.ConfigurationTarget.Global);
     try {
       // The default theme, and other default ones (named alike in VS Code 1.85): here from their extension, and with no extension from our copy.
       for (const theme of [undefined, 'Visual Studio Light', 'Default High Contrast']) {
@@ -186,6 +185,7 @@ describe('Bash Explainer in VS Code', function () {
       assert.strictEqual(await themeRoleColours(ctx, true, []), 'Monokai');
     } finally {
       await wb.update('colorTheme', undefined, vscode.ConfigurationTarget.Global);
+      await win.update('autoDetectHighContrast', undefined, vscode.ConfigurationTarget.Global);
     }
   });
 

@@ -1104,13 +1104,14 @@
     const ul = $('reading-tree');
     // A new update or step redraws the tree: the focus goes back to the item it was on.
     const hadFocus = ul.contains(document.activeElement);
-    ul.replaceChildren();
     const t = labels.tree;
-    if (!t) return;
+    if (!t) return void ul.replaceChildren();
     ul.setAttribute('aria-label', t.label);
     renderControls();
-    if (!reading || view !== 'tree') return;
-    ul.append(treeItem(reading, '0', 1, null, 1, 1));
+    // (The rows are replaced in one step, after the controls have measured themselves: that layout, with the tree
+    // emptied, let the browser scroll the shorter page back to the top when the same line was drawn again.)
+    if (!reading || view !== 'tree') return void ul.replaceChildren();
+    ul.replaceChildren(treeItem(reading, '0', 1, null, 1, 1));
     const items = visibleItems();
     const current = items.find((li) => li.dataset.path === currentKey) ?? items[0];
     if (current) current.tabIndex = 0;

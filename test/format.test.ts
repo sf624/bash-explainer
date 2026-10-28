@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import { execFileSync, spawnSync } from 'child_process';
 import { explainDate, explainPrintf, formatDate, parseSampleDate, type PrintfReader, printfNote, UTC } from '../src/embedded/format';
 import { tokensOf } from './support/explain';
+import { run } from './support/run';
 import { parseDateValue, relativeFrom, relativeItems, zoneOf } from '../src/examples/dates';
 
 function parts(src: string, ts = explainPrintf(src, 'en')): string[] {
@@ -67,10 +68,13 @@ describe('printf formats', () => {
   it('rejects what coreutils printf rejects, and only that', () => {
     const formats: string[] = [];
     for (const conv of 'diouxXfeEgGaAcsbq') for (const mod of ['', '#', '0', '-', '+', ' ', "'", '5', '.2', '.', 'l', 'hh', 'L', 'j', 'z']) formats.push(`%${mod}${conv}`);
-    const wrong = formats.filter((fmt) => {
-      const r = spawnSync('/usr/bin/printf', [fmt, /[csbq]$/.test(fmt) ? 'a' : '1']);
-      return (explainPrintf(fmt, 'en', 'coreutils')[0].kind === 'error') !== (r.status !== 0);
-    });
+    // (One shell runs printf on every format, and prints each status: one spawn of this process, not one per format;
+    // see gnuDates.)
+    const script = 'while [ $# -gt 0 ]; do /usr/bin/printf "$1" "$2" >/dev/null 2>&1; echo $?; shift 2; done';
+    const r = spawnSync('/bin/sh', ['-c', script, 'sh', ...formats.flatMap((fmt) => [fmt, /[csbq]$/.test(fmt) ? 'a' : '1'])]);
+    const status = r.stdout.toString().split('\n').slice(0, -1).map(Number);
+    assert.strictEqual(status.length, formats.length, r.stderr.toString());
+    const wrong = formats.filter((fmt, i) => (explainPrintf(fmt, 'en', 'coreutils')[0].kind === 'error') !== (status[i] !== 0));
     assert.deepStrictEqual(wrong, []);
   });
 
@@ -99,6 +103,28 @@ describe('printf formats', () => {
   });
 });
 
+/**
+ * GNU date run once on many dates (`date -f -`, one per line of stdin), giving one line of output for each. A table
+ * costs one process, not one per row: each spawn copies the test process, which takes 10 ms and more once its heap is
+ * large (CI's Node.js 18 job runs the whole suite in one process), and a test of a thousand calls passed mocha's
+ * timeout. Several formats in one call are joined with a separator no conversion writes, and split again.
+ */
+function gnuDates(tz: string | undefined, dates: string[], formats: string[]): string[][] {
+  const sep = '\x1f';
+  const r = run('date', [...(tz === undefined ? ['-u'] : []), '-f', '-', `+${formats.join(sep)}`], {
+    input: dates.map((d) => d + '\n').join(''),
+    env: { ...process.env, ...(tz === undefined ? {} : { TZ: tz }), LC_ALL: 'C' },
+  });
+  assert.strictEqual(r.status, 0, `${tz} ${r.stderr}`);
+  const lines = r.stdout.toString().split('\n').slice(0, -1);
+  assert.strictEqual(lines.length, dates.length, `${tz}: one line for each date`);
+  return lines.map((l) => {
+    const cells = l.split(sep);
+    assert.strictEqual(cells.length, formats.length, `${tz} ${l}`);
+    return cells;
+  });
+}
+
 describe('date formats', () => {
   it('explains each conversion and flag', () => {
     const src = '+%Y-%m-%dT%H:%M:%S';
@@ -123,12 +149,11 @@ describe('date formats', () => {
     const formats = ['%Y-%m-%dT%H:%M:%S', '%F %T', '%-d %B %Y (%a)', '%D %R', '%j %u %w %e', '%^a %b %y %%', '%c', '%x', '%X', '%r', '%Z %z %:z %::z',
       '%U %W %V %G %g', '%s', '%N', '%C', '%I %l %k %p %P', '%h', '%-d %_m %0e', '%#p %#a %#Z', '%10Y %5d %-5d %_5e %3S', '%A, %B %-d', '%_H %_10Y %05H %08s %-p %_Z %10Z %10a', '%:::z %::z', '%3N|%6N|%9N|%12N|%1N|%10N', '%s%3N', '%s.%6N'];
     // Week numbers and ISO years change around the turn of the year.
-    for (const when of ['2024-03-05 07:08:09', '2025-12-31 23:59:59', '2021-01-03 12:00:00', '2020-12-31 00:30:00', '2027-01-01 13:05:00']) {
-      for (const fmt of formats) {
-        const expected = execFileSync('date', ['-u', '-d', when, `+${fmt}`], { env: { ...process.env, LC_ALL: 'C' } }).toString().replace(/\n$/, '');
-        assert.strictEqual(formatDate(`+${fmt}`, parseSampleDate(when)!), expected, `${when} ${fmt}`);
-      }
-    }
+    const whens = ['2024-03-05 07:08:09', '2025-12-31 23:59:59', '2021-01-03 12:00:00', '2020-12-31 00:30:00', '2027-01-01 13:05:00'];
+    const expected = gnuDates(undefined, whens, formats);
+    whens.forEach((when, i) => {
+      formats.forEach((fmt, j) => assert.strictEqual(formatDate(`+${fmt}`, parseSampleDate(when)!), expected[i][j], `${when} ${fmt}`));
+    });
     assert.strictEqual(formatDate('+%Q', parseSampleDate('2024-01-01')!), undefined);
     assert.strictEqual(formatDate('+%-3N', parseSampleDate('2024-01-01')!), undefined);
     // Flags on composites are left out.
@@ -148,27 +173,29 @@ describe('date formats', () => {
       'EST', 'MST', 'HST', 'CET', 'EET', 'MET', 'WET', 'EST5EDT', 'CST6CDT', 'MST7MDT', 'PST8PDT', 'Etc/GMT+5', 'Etc/GMT-14', 'America/Argentina/Buenos_Aires', 'Australia/Lord_Howe',
       'Pacific/Chatham', 'GMT0'];
     const moments = [0, 1709622489, 1767225599, 1720000000, -86401];
+    const formats = ['%F %T %s', '%z %:z %::z %:::z', '%a %j %U %V %c', '%Z'];
+    const dates = ['2024-01-02', '2024-1-2', '2024-07-01T12:00', '2024-07-01 12:00:30', '2024-01-02T03:04:05Z', '2024-01-02 03:04:05 UTC', '2024-01-02 03:04:05+09:00',
+      '2024-01-02 03:04:05 -0130', '2024-01-02 03:04:05 +09', '2024-01-02 3:04', '@0', '@-1', ' @5 ', '2024-10-27 02:30', '2024-11-03 01:30',
+      '2024-01-02 03:04:05 +24:00', '2024-01-02 03:04:05 -2400', '2024-01-02 03:04:05 +09:99'];
     for (const tz of zones) {
       const zone = zoneOf(tz)!;
       assert.ok(zone, tz);
-      for (const t of moments) {
-        for (const fmt of ['%F %T %s', '%z %:z %::z %:::z', '%a %j %U %V %c', '%Z']) {
+      const shown = gnuDates(tz, moments.map((t) => `@${t}`), formats);
+      const read = gnuDates(tz, dates, ['%s']);
+      moments.forEach((t, i) => {
+        formats.forEach((fmt, j) => {
           const ours = formatDate(`+${fmt}`, new Date(t * 1000), zone);
           // (A zone of the tz database is followed from 1970 on: before, the data of systems and of Intl differ.)
           if (zone.since !== undefined && t * 1000 < zone.since) {
             assert.strictEqual(ours, undefined, `${tz} @${t}`);
-            continue;
+            return;
           }
           // (The abbreviation of a zone of the tz database is not known here.)
-          if (ours === undefined && fmt === '%Z') continue;
-          assert.strictEqual(ours, real(tz, ['-d', `@${t}`, `+${fmt}`]), `${tz} @${t} ${fmt}`);
-        }
-      }
-      for (const d of ['2024-01-02', '2024-1-2', '2024-07-01T12:00', '2024-07-01 12:00:30', '2024-01-02T03:04:05Z', '2024-01-02 03:04:05 UTC', '2024-01-02 03:04:05+09:00',
-        '2024-01-02 03:04:05 -0130', '2024-01-02 03:04:05 +09', '2024-01-02 3:04', '@0', '@-1', ' @5 ', '2024-10-27 02:30', '2024-11-03 01:30',
-        '2024-01-02 03:04:05 +24:00', '2024-01-02 03:04:05 -2400', '2024-01-02 03:04:05 +09:99']) {
-        assert.strictEqual(String(parseDateValue(d, zone)!.getTime() / 1000), real(tz, ['-d', d, '+%s']), `${tz} ${d}`);
-      }
+          if (ours === undefined && fmt === '%Z') return;
+          assert.strictEqual(ours, shown[i][j], `${tz} @${t} ${fmt}`);
+        });
+      });
+      dates.forEach((d, i) => assert.strictEqual(String(parseDateValue(d, zone)!.getTime() / 1000), read[i][0], `${tz} ${d}`));
     }
     // Names glibc has no file for (it reads them as UTC), backward links, rules of summer time, offsets out of range.
     for (const tz of ['asia/tokyo', 'Foo/Bar', 'CET-1CEST,M3.5.0,M10.5.0/3', '', 'XYZ-25', 'XYZ-1:61', 'JST', 'PST', 'BST', 'CST', 'IST', 'Japan', 'US/Pacific', 'NZ', 'ROK', 'Cuba',
@@ -235,25 +262,25 @@ describe('date formats', () => {
     let compared = 0;
     for (const tz of ['UTC0', 'Asia/Tokyo', 'Europe/Paris', 'America/New_York', 'Asia/Kolkata', 'Australia/Lord_Howe', 'Asia/Kathmandu', 'America/Santiago']) {
       const zone = zoneOf(tz)!;
-      for (const d of list) {
-        // The clock is read before and after GNU runs: GNU's moment lies between. A second (minute, day) that ends
-        // between is retried, up to 3 times; then each second between is accepted. A moment at which the model does
-        // not follow the date (a change of summer time in the zone) skips the item.
-        let t0 = 0, t1 = 0, gnu = '';
-        for (let attempt = 0; attempt < 3 && (attempt === 0 || t0 !== t1); attempt++) {
-          t0 = Math.floor(Date.now() / 1000);
-          gnu = execFileSync('date', ['-d', d, '+%s'], { env: { ...process.env, TZ: tz, LC_ALL: 'C' } }).toString().trim();
-          t1 = Math.floor(Date.now() / 1000);
-        }
+      // The clock is read before and after GNU runs (once for the whole list): GNU's moments lie between. A second
+      // (minute, day) that ends between is retried, up to 3 times; then each second between is accepted. A moment at
+      // which the model does not follow the date (a change of summer time in the zone) skips the item.
+      let t0 = 0, t1 = 0, gnu: string[][] = [];
+      for (let attempt = 0; attempt < 3 && (attempt === 0 || t0 !== t1); attempt++) {
+        t0 = Math.floor(Date.now() / 1000);
+        gnu = gnuDates(tz, list, ['%s']);
+        t1 = Math.floor(Date.now() / 1000);
+      }
+      list.forEach((d, i) => {
         const ours = new Set<string | undefined>();
         for (let t = t0; t <= t1; t++) {
           const at = relativeFrom(relativeItems(d)!, new Date(t * 1000), zone);
           ours.add(at && String(at.getTime() / 1000));
         }
-        if (ours.has(undefined)) continue;
-        assert.ok(ours.has(gnu), `${tz} ${d}: GNU ${gnu}, ours ${[...ours]}`);
+        if (ours.has(undefined)) return;
+        assert.ok(ours.has(gnu[i][0]), `${tz} ${d}: GNU ${gnu[i][0]}, ours ${[...ours]}`);
         compared++;
-      }
+      });
     }
     assert.ok(compared > list.length * 4, `${compared} compared`);
   });

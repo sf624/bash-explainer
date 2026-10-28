@@ -39,7 +39,13 @@ const TRACK = `async ([selectors, target]) => {
   // ("key:K selector": the key K pressed on the element, as the tree's keys are read.)
   const key = /^key:(\\S+) (.*)$/.exec(target);
   if (key) document.querySelector(key[2]).dispatchEvent(new KeyboardEvent('keydown', { key: key[1], bubbles: true, cancelable: true }));
-  else document.querySelector(target).click();
+  else {
+    // (A click is the pointer's: it goes down first. A focus without it is taken for a key's, and the panel scrolls the
+    // row into view, which moved a row partly under the bottom of the screen.)
+    const el = document.querySelector(target);
+    el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, isPrimary: true }));
+    el.click();
+  }
   await Promise.resolve();
   await Promise.resolve();
   const samples = [at()];
@@ -315,6 +321,31 @@ describe('the panel keeps the row acted on in place', function () {
         }
         else assert.ok(to === 1 || from > to, `${from} → ${to}: a step forward keeps every row`);
         if (animations) assert.ok(t.samples.some((s) => s.moving > 0), 'it moved');
+      }
+      await ctx.close();
+    });
+  }
+
+  // The same line drawn again (its problems came, a setting changed) draws the rows anew where they were. Before, the
+  // page went back to the top: in the web page, the problems of a line just typed come a moment after it is explained,
+  // and a test that had scrolled meanwhile clicked a row that had moved.
+  for (const view of ['list', 'tree'] as const) {
+    it(`VS Code's panel, ${view === 'list' ? 'Meaning' : 'Reading'}: the same line drawn again, with other problems, leaves the page and its rows where they are`, async () => {
+      const { ctx, panel } = await code.open(view, true);
+      const rows = view === 'list' ? '#tree li[data-path] > .row' : '#reading-tree li[role="treeitem"] > .trow';
+      const tops = () => panel.evaluate(`JSON.stringify([...document.querySelectorAll('${rows}')].map((r) => Math.round(r.getBoundingClientRect().top)))`) as Promise<string>;
+      assert.ok(await panel.locator('#line .squiggle').count() > 0, 'the line has problems');
+      const max = await panel.evaluate('document.documentElement.scrollHeight - innerHeight') as number;
+      assert.ok(max > 300, 'the page scrolls');
+      for (const y of [Math.round(max / 2), max]) {
+        const at = await scrollTo(panel, y);
+        const was = await tops();
+        for (const marks of ['[]', 'window.MSGS.en.marks']) {
+          await panel.evaluate(`window.postMessage({ ...window.MSGS.en, marks: ${marks} }, '*')`);
+          await until('the line drawn again', () => panel.locator('#line .squiggle').count(), (n) => (marks === '[]' ? n === 0 : n > 0));
+          assert.ok(Math.abs(await panel.evaluate('scrollY') as number - at) <= 0.5, `scrolled to ${at}: still there (marks ${marks})`);
+          assert.strictEqual(await tops(), was, `the rows stay (marks ${marks})`);
+        }
       }
       await ctx.close();
     });
