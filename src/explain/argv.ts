@@ -38,6 +38,7 @@ import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
+import { elementsOf } from '../semantics/elements';
 import { argWordIn, untilWords } from '../semantics/argwords';
 import { arrayKind, globOff, NO_SPEC, notForEarlier, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
@@ -209,13 +210,14 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
 
 /**
  * Marks the token of a word the command reads as an argument with how bash changes the word before the command gets
- * it (`Token.expands`), from the word's meaning: a glob that applies, an unquoted expansion that splits, a brace expansion.
+ * it (`Token.expands`), from the word's meaning: a glob that applies, an unquoted expansion that splits, a brace expansion,
+ * an expansion that gives one word per element (`"$@"`).
  */
 function expanded(cx: Explainer, a: SyntaxNode, t: Token): Token {
   if (t.kind !== 'argument') return t;
-  const steps = wordAt(cx, a)!.steps;
-  const on = (k: StepKind): boolean => steps.some((x) => x.kind === k && x.applies === true);
-  const kind = on('split') ? 'split' : on('glob') ? 'glob' : on('brace') ? 'brace' : undefined;
+  const w = wordAt(cx, a)!;
+  const on = (k: StepKind): boolean => w.steps.some((x) => x.kind === k && x.applies === true);
+  const kind = on('split') ? 'split' : on('glob') ? 'glob' : on('brace') ? 'brace' : elementsOf(w).length ? 'elements' : undefined;
   return kind ? { ...t, expands: kind } : t;
 }
 

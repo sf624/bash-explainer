@@ -83,11 +83,12 @@ export interface Token {
   /**
    * On the token of a word a command reads as an operand or an option's value: how bash makes the words the command gets
    * from it, when it makes several or other ones (`split`: the fields of an unquoted expansion, which bash then globs;
-   * `glob`: the matching file names; `brace`: the words of a brace expansion; in that order of precedence). The command
+   * `glob`: the matching file names; `brace`: the words of a brace expansion; `elements`: one word per element, of
+   * `"$@"`, `"${a[@]}"` and the like, none when there are none; in that order of precedence). The command
    * never sees the word as written. From the word's meaning (src/semantics/words.ts), which says that the step applies.
    * With `valueFor`, the first word that comes out is the value and the others are operands.
    */
-  expands?: 'glob' | 'split' | 'brace';
+  expands?: 'glob' | 'split' | 'brace' | 'elements';
   /** On the outermost tokens of an embedded language: which language (`regex`, `sed`, `jq`…; `EmbeddedLang`). */
   language?: string;
   /** On the tokens of a string read as a script (`origin` `script`): which shell reads it. */

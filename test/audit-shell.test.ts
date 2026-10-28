@@ -29,6 +29,11 @@ describe('shell audit fixes', () => {
     assert.match(find('echo "${!a[@]}"', '"${!a[@]}"').explanation, /one word per element/);
     assert.match(find('echo "x$y"', '"x$y"').explanation, /stays one argument/);
     assert.strictEqual(bash('set -- a b; printf "[%s]" "$@"'), '[a][b]');
+    // Text in the quotes joins the first and the last element, and is one word when there are none.
+    assert.match(find('echo "pre$@post"', '"pre$@post"').explanation, /the text before joins the first element, and the text after the last \(with no elements, the text alone makes one word\)$/);
+    assert.match(find('echo "pre$@post"', '"pre$@post"', 'ja').explanation, /要素が無ければ文字列だけで1つの単語になる/);
+    assert.match(find('echo "$@"', '"$@"').explanation, /no word at all when there are none/);
+    assert.strictEqual(bash('set -- a "b c"; printf "[%s]" "pre$@post"; set --; printf "<%s>" "pre$@post"; f() { echo $#; }; f "$@"; f "pre$@post"'), '[prea][b cpost]<prepost>0\n1\n');
   });
 
   it('subscripted expansions are shown with an array element', () => {

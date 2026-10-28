@@ -80,7 +80,7 @@ export interface ReadingNode {
   /** In the layer `child`: which shell parses it (`ScriptProcess`). */
   process?: ScriptProcess;
   /** On a word a command reads as an operand or a value: how bash changes it first, so the command gets other words (`Token.expands`). */
-  expands?: 'glob' | 'split' | 'brace';
+  expands?: 'glob' | 'split' | 'brace' | 'elements';
   /** On a `commandName`: what bash runs for it (3.7.2), from the name resolution of src/semantics/names.ts. */
   resolves?: NameResolution['kind'];
   /** On a word a command reads as the value of an option: the option (`-f`, `--file`). */

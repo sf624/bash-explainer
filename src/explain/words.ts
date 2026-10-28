@@ -21,6 +21,7 @@ import { braceTexts } from '../semantics/brace';
 import { replaceRange } from '../rewrite';
 import { attribute, docLine } from '../semantics/state';
 import { readonlyAtStart } from '../semantics/vars';
+import { givesElements } from '../semantics/elements';
 import { CONTEXTS, partMeaning, underscoreValue, wordOf } from '../semantics/words';
 import { type BracketSpan, bracketSpans, decodedText, isPlainWord, setsElement, splitElement, stackTilde, staticWordValue, unquoteWord } from '../staticword';
 import { ancestor, assignmentsOnly, braceKind, descendants, field, fields, type SyntaxNode, wordBraces } from '../syntax/tree';
@@ -129,36 +130,20 @@ export function string(cx: Explainer, n: SyntaxNode): Token {
   }
   // `"$@"`, `"${a[@]}"`, `"${!pre@}"`, `"${@:2}"` give one word per element, also inside double quotes (not one in a
   // `$( )` in the string: the substitution gives one word), where the word may be many (not an assignment's value).
-  const perElement = n.namedChildren.some(eachElement) && manyFields(n);
+  const perElement = n.namedChildren.some(givesElements) && manyFields(n);
+  // (Text in the quotes joins the first and the last element, and makes one word when there are none: `"pre$@post"`.)
+  const text = n.namedChildren.some((c) => c.type === 'string_content');
   unbracedElement(cx, n);
-  return cx.tok(n, 'string', (perElement ? cx.s(
+  return cx.tok(n, 'string', (perElement && text ? cx.s(
+    'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開され、単語分割やグロブ展開はされない。ただし `"$@"` や `"${配列[@]}"` は、クォートの中でも要素ごとに別々の単語になる。前の文字列は最初の要素に、後ろの文字列は最後の要素にくっつく（要素が無ければ文字列だけで1つの単語になる）',
+    'Double-quoted string: `$vars` and `$(…)` expand, with no word splitting or globbing. But `"$@"` and `"${array[@]}"` still give one word per element, even inside the quotes: the text before joins the first element, and the text after the last (with no elements, the text alone makes one word)',
+  ) : perElement ? cx.s(
     'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開され、単語分割やグロブ展開はされない。ただし `"$@"` や `"${配列[@]}"` は、クォートの中でも要素ごとに別々の単語になる（要素が無ければ単語は0個）',
     'Double-quoted string: `$vars` and `$(…)` expand, with no word splitting or globbing. But `"$@"` and `"${array[@]}"` still give one word per element, even inside the quotes (no word at all when there are none)',
   ) : cx.s(
     'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開されるが、単語分割やグロブ展開はされない（1つの引数のまま）',
     'Double-quoted string: `$vars` and `$(…)` expand, but no word splitting or globbing (stays one argument)',
   )) + (/\\/.test(n.text) ? valueNote(cx, n) : ''), cx.subs(n.namedChildren.filter((c) => c.type !== 'string_content')));
-}
-
-/**
- * Whether an expansion in double quotes gives one word per element (manual 3.4.2, 3.5.3): `$@`, `${a[@]}` and
- * `${!a[@]}`, `${!pre@}`, also with a slice, a pattern or case operator, a transform but `A`, `K` and `k`, or `-`, `:-`,
- * `?`, `:?`; a `${x:-…}` or `${x:+…}` whose word has one. Not a length (`${#a[@]}`), nor a `$( )` (one word).
- */
-function eachElement(n: SyntaxNode): boolean {
-  if (n.type === 'simple_expansion') return n.text === '$@';
-  if (n.type === 'string') return n.namedChildren.some(eachElement);
-  if (n.type !== 'expansion') return false;
-  const p = parseExpansion(n.text);
-  if (!p || p.prefix === '#') return false;
-  const all = p.name === '@' || p.subscript === '@';
-  const word = () => n.namedChildren.some((c) => c.type !== 'variable_name' && c.type !== 'subscript' && eachElement(c));
-  if (p.prefix === '!') return (p.subscript === '@' && !p.op) || (!p.subscript && p.op === '@' && p.parts.length === 3);
-  if (!p.op || p.op === '?' || p.op === ':?') return all;
-  if (p.op === '-' || p.op === ':-') return all || word();
-  if (p.op === '+' || p.op === ':+') return word();
-  if (p.op === '=' || p.op === ':=') return false;
-  return all && !(p.op === '@' && p.parts.some((x) => x.role === 'transform' && /^[AKk]$/.test(x.text)));
 }
 
 /** Whether the word that holds `n` may be many words (an argument, a `for` list), seen through a `${x:-…}` around it. */
@@ -174,7 +159,7 @@ function manyFields(n: SyntaxNode): boolean {
  */
 export function concatenationNote(cx: Explainer, n: SyntaxNode): string {
   const parts = n.namedChildren;
-  const each = manyFields(n) ? parts.findIndex((c) => c.type === 'string' && c.namedChildren.length === 1 && eachElement(c.namedChildren[0])) : -1;
+  const each = manyFields(n) ? parts.findIndex((c) => c.type === 'string' && c.namedChildren.length === 1 && givesElements(c.namedChildren[0])) : -1;
   if (each < 0) return cx.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word');
   const text = (from: number, to: number): string => (from >= to ? '' : n.text.slice(parts[from].startIndex - n.startIndex, parts[to - 1].endIndex - n.startIndex));
   const before = text(0, each);

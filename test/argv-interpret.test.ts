@@ -8,6 +8,7 @@ import type { CommandSpec, OperandSpec, OptionSpec } from '../src/argv/spec';
 import { byCount, cmd, mergeOptions, runs } from '../src/dict/types';
 import { tx } from '../src/i18n';
 import { argWords, render } from './support/argwords';
+import { runBash } from './support/bash';
 // (Types only: loaded so that its coverage is measured.)
 import '../src/argv/spec';
 
@@ -562,6 +563,23 @@ describe('argv interpreter: review fixes', () => {
     // When more words fit nothing, the one reading that fits stands.
     const two: CommandSpec = { summary: t('two'), operands: [{ pattern: [item('A'), item('B')] }] };
     assert.deepStrictEqual(render(interpret(two, [{ value: 'x', count: { min: 1, max: 5 } }, { value: 'y' }]), ['$x', 'y']), ['$x: A', 'y: B']);
+  });
+
+  it('counts the words of `"$@"` and the like as bash gives them: none or more, one or more with text beside them', () => {
+    const counts = (line: string): string[] => argWords(line).words.map((w) => (w.count ? `${w.count.min}+` : '1'));
+    // (Every expansion that gives one word per element, in double quotes: `${@:2}`, a pattern, the keys.)
+    const none = ['"$@"', '"${@:2}"', '"${a[@]/x/y}"', '"${!a[@]}"', '"$@$x"', '$x$y', '$x"$@"'];
+    // (Text beside them, in the quotes or not, or an empty string, makes one word when there are none.)
+    const one = ['"pre$@post"', 'pre"$@"post', '"$@"""', '"$@"\'\'', '$x/a', '"${a[@]}"x'];
+    // (Not one per element: a length, a quoted `"$@"`, a variable in quotes.)
+    const plain = ['"${#a[@]}"', '\'"$@"\'', '"$x"'];
+    const words = [...none, ...one, ...plain];
+    assert.deepStrictEqual(counts(`f ${words.join(' ')}`), [...none.map(() => '0+'), ...one.map(() => '1+'), ...plain.map(() => '1')]);
+    // In bash, with no positional parameters, an empty array and empty variables: as many words as the least count.
+    const fields = (w: string, setup: string): string => runBash(`${setup}; f() { echo $#; }; f ${w}`).stdout.trim();
+    assert.deepStrictEqual(words.map((w) => fields(w, 'set --; a=(); x=; y=')), [...none.map(() => '0'), ...one.map(() => '1'), ...plain.map(() => '1')]);
+    // With two elements, one word each: `"pre$@post"` joins the text to the first and the last.
+    assert.deepStrictEqual(['"$@"', '"pre$@post"', '"${@:2}"'].map((w) => runBash(`set -- a 'b c'; printf '<%s>' ${w}`).stdout), ['<a><b c>', '<prea><b cpost>', '<b c>']);
   });
 
   it('records the alternative the operands fit; operands the spec does not describe are not unmatched', () => {

@@ -2,6 +2,7 @@
 // quote removal when it is known, the start that is known otherwise, and how many words they become.
 import { bracesWork, type Shell } from '../shellfeatures';
 import { braceTexts } from '../semantics/brace';
+import { givesElements } from '../semantics/elements';
 import { staticWordValue } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import type { ArgWord } from './interpret';
@@ -31,13 +32,18 @@ const plainPart = (c: SyntaxNode): boolean => c.type === 'word' || c.type === 'n
 
 /**
  * How many words a word gives, when that is not one: a brace expansion its count (where the `shell` has it); a glob
- * at least one; `"$@"`, `"${a[@]}"` and an unquoted expansion an unknown number.
+ * at least one; `"$@"`, `"${a[@]}"` and an unquoted expansion an unknown number (none or more; one or more with
+ * text beside them).
  */
 export function countOf(n: SyntaxNode, shell?: Shell): ArgWord['count'] {
   const parts = n.type === 'concatenation' ? n.namedChildren : [n];
-  // (Only in double quotes: `'"$@"'` is text.)
-  const many = (c: SyntaxNode): boolean => c.type === 'string' && c.namedChildren.some((e) => e.text === '$@' || /^\$\{[^}]*\[@\]\}$/.test(e.text));
-  if (parts.some((c) => UNQUOTED_EXPANSION.has(c.type) || many(c))) return { min: 0 };
+  // (Only in double quotes: `'"$@"'` is text. `"${@:2}"`, `"${a[@]/x/y}"` and `"pre$@post"` too: src/semantics/elements.ts.)
+  const many = (c: SyntaxNode): boolean => c.type === 'string' && givesElements(c);
+  // No word at all only when every part may give none: an unquoted expansion, or a string of expansions alone (`"$@"`,
+  // `"$@$x"`); text in it makes one word of the first element or of nothing (`"pre$@post"` is `prepost`), as an empty
+  // string does (`"$@"""`).
+  const none = (c: SyntaxNode): boolean => UNQUOTED_EXPANSION.has(c.type) || (c.type === 'string' && c.namedChildren.length > 0 && !c.namedChildren.some((e) => e.type === 'string_content'));
+  if (parts.some((c) => UNQUOTED_EXPANSION.has(c.type) || many(c))) return { min: parts.every(none) ? 0 : 1 };
   if (parts.every(plainPart)) {
     const words = bracesWork(n, shell) ? braceTexts([n]) : undefined;
     // (Too many words to list: `{1..100000}`.)
