@@ -188,7 +188,8 @@ class Reader {
     const operands: number[] = [];
     const parse: ArgvParse = { command, roles: [], unmatched: [], end: to };
     let endOpts = false;
-    let afterDashes: number | undefined;
+    // (Where `--` starts words of another pattern: the first of them, and the pattern.)
+    let afterDashes: { at: number; then: OperandSpec[] } | undefined;
     let end = to;
     const st: OptionState = { spec, rules, options, roles, given, end, guess: isCobra && !!spec.subcommands, search, appended };
     for (let i = from; i < end; i++) {
@@ -203,7 +204,7 @@ class Reader {
       if (!endOpts && (value === '--' || (value === '-' && rules.loneDashEnds)) && spec.dashDash !== 'literal') {
         roles.set(i, { role: 'end-of-options' });
         endOpts = true;
-        if (typeof spec.dashDash === 'object') { afterDashes = i + 1; break; }
+        if (typeof spec.dashDash === 'object' && 'then' in spec.dashDash) { afterDashes = { at: i + 1, then: spec.dashDash.then }; break; }
         continue;
       }
       if (spec.operandParser === 'find-expression' && isExpressionStart(known(w)) && !findOption(options, value ?? '', false)) {
@@ -251,9 +252,10 @@ class Reader {
       const alts = spec.operands.flatMap((alt, index) => (conditionHolds(alt.when, given, parse.mode, words) ? [{ alt, index }] : []));
       this.placeOperands(parse, st, operands, alts, end, true);
     } else operands.forEach((i, index) => roles.set(i, { role: 'operand', index }));
-    if (afterDashes !== undefined && afterDashes < to) {
-      const rest = Array.from({ length: to - afterDashes }, (_, k) => afterDashes! + k);
-      this.placeOperands(parse, st, rest, [{ alt: { pattern: (spec.dashDash as { then: OperandSpec[] }).then }, index: -1 }], to, false);
+    if (afterDashes !== undefined && afterDashes.at < to) {
+      const { at, then } = afterDashes;
+      const rest = Array.from({ length: to - at }, (_, k) => at + k);
+      this.placeOperands(parse, st, rest, [{ alt: { pattern: then }, index: -1 }], to, false);
     }
     const first: { mode?: string; refused?: boolean } = {};
     for (const [word, role] of [...roles].sort((a, b) => a[0] - b[0])) parse.roles.push({ word, role: conflicting(spec, inMode(role, parse.mode), first) });

@@ -466,6 +466,8 @@ describe('argv interpreter: the option grammar', () => {
     const refused: CommandSpec = { summary: t('r'), dashDash: { refused: t('refused') }, options: [opt('-n', 'n')] };
     const p = parseOf('r -- -n --', refused);
     assert.deepStrictEqual(p.roles.map(({ role }) => (role.role === 'unknown-option' ? `${role.flag}: ${role.refused?.en}` : role.role)), ['--: refused', 'option', '--: refused']);
+    // (A lone `-` that ends the options, as bash's parser reads it, is still no `--` of another pattern.)
+    assert.deepStrictEqual(roles('r - -n', { ...refused, parser: 'bash' }), ['-: end of options', '-n: operand']);
   });
 
   it('reads a shell-string slot in an operand pattern without reading the string', () => {

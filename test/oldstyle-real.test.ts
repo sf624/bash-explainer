@@ -182,6 +182,11 @@ describe('ps refuses `--`', () => {
       assert.deepStrictEqual([r.status, /garbage option/.test(r.err)], [1, true], line);
       assert.deepStrictEqual(wordsWith(line, (role) => role.role === 'unknown-option' && !!role.refused), ['--'], line);
     }
+    // (A word that fails first changes the message, not the status: `ps --nope --` is an "unknown gnu long option".)
+    for (const line of ['ps --nope --', 'ps -ezz --', 'ps --version --']) {
+      assert.strictEqual(run(line, os.tmpdir()).status, 1, line);
+      assert.deepStrictEqual(wordsWith(line, (role) => role.role === 'unknown-option' && !!role.refused), ['--'], line);
+    }
     // (The same lines without it succeed, and read `-ef` after it as options.)
     for (const line of ['ps -ef', 'ps aux', 'ps x']) assert.strictEqual(run(line, os.tmpdir()).status, 0, line);
     assert.deepStrictEqual(letters('ps -- -ef'), [], 'no BSD letters');
