@@ -5,6 +5,9 @@
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import { Analyzer } from '../src/analyzer';
+import { dialectNotes } from '../src/dialect';
+import { readingNodes } from '../src/reading';
+import { semanticFacts } from '../src/semanticFacts';
 import type { Shell } from '../src/dialect';
 import { shellState } from '../src/semantics/state';
 import { wordFields } from '../src/semantics/words';
@@ -108,6 +111,41 @@ describe('`$\'…\'` in the shell the script is for', () => {
       // (A word of several parts: its value as the shell reads it.)
       assert.match(tokens("echo a$'\\n'c", 'dash').find((t) => t.label === "a$'\\n'c" && /Concatenation/.test(t.explanation))!.explanation, /it is the string `a\$\\nc`/);
       assert.match(token("printf %s $'a\\tb'", 'dash', "$'a\\tb'", 'ja').explanation, /^bash・ksh・zsh の `\$'…'` 文字列だが、dash にはこの書き方がない。.*`\$a\\tb` という文字列になる/);
+    });
+
+    it('says where dash ends the quote of a body with `\\\'`, with no value, and that dash reads the rest as another quote', () => {
+      for (const word of ["$'it\\'s'", "$'\\''"]) {
+        const t = token(`echo ${word}`, 'dash', word);
+        assert.match(t.explanation, /but that quote ends at the `\\'`, and the `'` after it opens another quoted string$/, word);
+        assert.match(dialectNotes(parser.parse(`echo ${word}`), 0, 'dash', 'en').join('\n'), /`\$'…'` strings with `\\'` in them is not available in dash\. Instead, use `printf` \(dash ends the quote at the `\\'`/, word);
+        assert.match(dialectNotes(parser.parse(`echo ${word}`), 0, 'sh', 'en').join('\n'), /with `\\'` in them is not POSIX sh \(it fails in dash\)/, word);
+        if (have('dash')) assert.match(spawnSync('dash', ['-c', `echo ${word}`], { encoding: 'utf8' }).stderr, /Unterminated quoted string/, word);
+      }
+      // (Without a `\'`, the plain note.)
+      assert.match(dialectNotes(parser.parse("echo $'a'"), 0, 'dash', 'en').join('\n'), /^⚠ `\$'…'` strings is not available in dash/);
+      assert.match(token("echo $'it\\'s'", 'dash', "$'it\\'s'", 'ja').explanation, /その引用は `\\'` で終わり/);
+    });
+
+    it('reads the words of find, and a command name, as the shell spells them', () => {
+      const test = (shell: Shell) => tokens("find . -name $'*.c' -print", shell).find((t) => t.kind === 'test')!.explanation;
+      assert.match(test('dash'), /if name matches \$\*\.c: print it/);
+      assert.match(test('bash'), /if name matches \*\.c: print it/);
+      // (`$'echo'` is the program `$echo` in dash: painted and read as one.)
+      const facts = (shell: Shell) => { const tree = parser.parse("$'echo' hi"); return semanticFacts(tree, shellState(tree, shell), shell)[0].kind; };
+      assert.deepStrictEqual([facts('bash'), facts('dash')], ['builtin', 'command']);
+      const reading = (shell: Shell) => readingNodes(new Analyzer('en').explainLine(parser.parse("$'echo' hi"), 0, shell, { reading: true }).reading!).find((n) => n.kind === 'commandName')!.name;
+      assert.deepStrictEqual([reading('bash')?.name, reading('bash')?.runs, reading('dash')?.name, reading('dash')?.runs], ['echo', 'builtin', '$echo', 'program']);
+      if (have('dash')) assert.match(spawnSync('dash', ['-c', "$'echo' hi"], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } }).stderr, /\$echo: not found/);
+    });
+
+    it('lists the characters of `IFS`, so that dash\'s `$\'\\n\'` is not taken for a newline', () => {
+      const ifs = (src: string, shell: Shell, lang: 'en' | 'ja' = 'en') => tokens(src, shell, lang).find((t) => t.kind === 'assignment')!.explanation;
+      assert.match(ifs("IFS=$'\\n'", 'dash'), /unquoted expansions are split on each of `\$`, `\\` and `n`\. .* with the first character, `\$`$/);
+      assert.match(ifs("IFS=$'\\n'", 'bash'), /unquoted expansions are split on newline\. .* with the first character, newline$/);
+      assert.match(ifs("IFS=$' \\t\\n'", 'bash'), /split on each of space, tab and newline\./);
+      assert.match(ifs("IFS=$'\\n'", 'dash', 'ja'), /クォートしない展開は `\$`・`\\`・`n` のそれぞれで分割される。.*先頭の文字である `\$` で要素をつなぐ$/);
+      assert.match(ifs("IFS=$'\\n\\t'", 'bash', 'ja'), /クォートしない展開は改行・タブのそれぞれで分割される。.*先頭の文字である改行で要素をつなぐ$/);
+      if (have('dash')) assert.strictEqual(spawnSync('dash', ['-c', "IFS=$'\\n'; x='a$b\\cnd'; printf '[%s]' $x"], { encoding: 'utf8' }).stdout, '[a][b][c][d]');
     });
   });
 });

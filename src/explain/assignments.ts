@@ -4,9 +4,10 @@
 // what `IFS` is for.
 import type { Token } from '../analyzer-types';
 import { evalArith } from '../arith';
+import { visible } from '../ctlchars';
 import { variableAssignments, variableEmptied, variableLanguages } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
-import { shorten } from '../label';
+import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { nodeSections } from '../refs';
@@ -21,7 +22,7 @@ import { skeletal } from './nodes';
 import { arrayKind, isAssoc, unquotedWord, wordAt } from './reads';
 import { redirectedWhole } from './redirections';
 import { inSubshell } from './where';
-import { arithNumber, bash53Variable, notGlobbedHere, shown } from './words';
+import { arithNumber, bash53Variable, notGlobbedHere } from './words';
 
 /**
  * A command with no name: its assignments (`a=1`, `a=1 b=2`), and any redirections between them; redirections
@@ -122,8 +123,8 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
       ? cx.s('。`IFS` は単語分割（と `read`）が区切りに使う文字の一覧で、`"${a[*]}"` と `"$*"` が要素をつなぐ文字（先頭の1文字）でもある', '. `IFS` lists the characters word splitting and `read` split on, and its first character joins the elements in `"${a[*]}"` and `"$*"`')
       : v === ''
         ? cx.s('。`IFS` が空だと単語分割がされなくなる（`"${a[*]}"` と `"$*"` の要素は区切りなしでつながる）', '. An empty `IFS` turns word splitting off (the elements of `"${a[*]}"` and `"$*"` are joined with nothing between them)')
-        : cx.s(`。\`IFS\` は単語分割（と \`read\`）が区切りに使う文字の一覧: これ以降、クォートしない展開は \`${shown(v)}\` で分割される。\`"\${a[*]}"\` と \`"$*"\` は先頭の文字 \`${shown(v[0])}\` で要素をつなぐ`,
-          `. \`IFS\` lists the characters word splitting (and \`read\`) split on: from here, unquoted expansions are split on \`${shown(v)}\`. \`"\${a[*]}"\` and \`"$*"\` join their elements with the first character, \`${shown(v[0])}\``);
+        : cx.s(jaText('。`IFS` は単語分割（と `read`）が区切りに使う文字の一覧: これ以降、クォートしない展開は', ifsChars(cx, v), 'で分割される。`"${a[*]}"` と `"$*"` は先頭の文字である', ifsChars(cx, v[0]), 'で要素をつなぐ'),
+          `. \`IFS\` lists the characters word splitting (and \`read\`) split on: from here, unquoted expansions are split on ${ifsChars(cx, v)}. \`"\${a[*]}"\` and \`"$*"\` join their elements with the first character, ${ifsChars(cx, v[0])}`);
   }
   // What it changes when it is a variable of bash's (`PATH=…`, `OPTIND=1`): from here on, unless it is assigned for
   // one command only (`PATH=/x cmd`). (Not in arithmetic: `for ((OPTIND = 1; …))`.) A local of one bash computes
@@ -228,3 +229,17 @@ function sumText(cx: Explainer, value: SyntaxNode | null | undefined, name?: str
   return cx.s(`${it} 7 なら \`+=${value.text}\` で ${7 + v} であり、7${value.text} ではない`, `if ${it} is 7, \`+=${value.text}\` makes ${7 + v}, not 7${value.text}`);
 }
 
+const IFS_NAMES: Record<string, [string, string]> = { ' ': ['空白', 'space'], '\t': ['タブ', 'tab'], '\n': ['改行', 'newline'] };
+
+/**
+ * The characters of an `IFS` value one by one, so that a newline and the text `\n` differ (`IFS=$'\n'` in dash is
+ * `$`, `\` and `n`): blanks by name, others as code.
+ */
+function ifsChars(cx: Explainer, v: string): string {
+  const each = [...new Set(v)].map((c) => (Object.hasOwn(IFS_NAMES, c) ? cx.s(...IFS_NAMES[c]) : codeSpan(visible(c))));
+  if (cx.lang === 'ja') return each.length === 1 ? each[0] : `${each.join('・')}${each[each.length - 1].endsWith('`') ? ' ' : ''}のそれぞれ`;
+  return each.length === 1 ? each[0] : `each of ${each.slice(0, -1).join(', ')} and ${each[each.length - 1]}`;
+}
+
+/** Japanese text with a blank where code meets kana or kanji (docs/japanese-style.md). */
+const jaText = (...parts: string[]): string => parts.reduce((a, b) => a + (a.endsWith('`') || b.startsWith('`') ? ' ' : '') + b);

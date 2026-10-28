@@ -182,7 +182,8 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
     case 'select_statement': add('select'); return;
     case 'function_definition': if (kids[0] === 'function') add('funcKeyword'); return;
     case 'herestring_redirect': add('herestring'); return;
-    case 'ansi_c_string': add('ansiC'); return;
+    // (A `'` in the body is a `\'`, where dash's quote ends.)
+    case 'ansi_c_string': add(n.text.slice(2, -1).includes("'") ? 'ansiCQuote' : 'ansiC'); return;
     case 'process_substitution': add('procSub'); return;
     case 'file_redirect':
       if (kids.includes('&>')) add('ampRedirect');

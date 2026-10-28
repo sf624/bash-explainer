@@ -3,6 +3,7 @@ import { describeGlob, globParts } from '../expansion';
 import type { OptionSpec } from '../argv/spec';
 import { untilEnd } from '../argv/until';
 import { pick } from './types';
+import type { Shell } from '../shellfeatures';
 import { staticWordValue } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 
@@ -109,8 +110,8 @@ class Parser {
   }
 }
 
-/** The words of find's expression as `parseFind` is given them: each word's value, or its text where the value is not known. */
-export const findWords = (nodes: readonly SyntaxNode[]): string[] => nodes.map((a) => staticWordValue(a) ?? a.text);
+/** The words of find's expression as `parseFind` is given them, in a script for `shell`: each word's value, or its text where the value is not known. */
+export const findWords = (nodes: readonly SyntaxNode[], shell?: Shell): string[] => nodes.map((a) => staticWordValue(a, false, shell) ?? a.text);
 
 /**
  * Parse the expression words (already unquoted). Returns undefined if they do not form an expression. `values` are the

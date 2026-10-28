@@ -40,6 +40,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Changed
 
+- `IFS=…` names its characters one by one: `IFS=$'\n\t'` splits "on each of newline and tab". Before, it said `\n⇥`, where a newline and the text `\n` looked the same.
 - The note on an exit status out of range names the builtin: "`exit 300` gives 44". Before, it said "`300` becomes 44".
 - A special builtin's badge says so (`export`, `set`, …); before, it said builtin.
 - A new logo: a speech bubble whose sides are the brackets `[ ]`, around a prompt `>_`. It is the extension's icon, the panel's tab icon, the web page's logo and tab icon, and the README's header.
@@ -122,7 +123,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `tar vf a.tar` (the first word is always letters, with or without an operation) and `ps u1` (a number after BSD letters lists PIDs, as `ps u -p 1`) are explained as the tools read them. Before, both were plain words.
 - `ps -ef --`, `ps aux --` and `ps -- -ef` say that ps refuses `--` and fails, and `ps -ef -- | head` no longer shows the `ps -ef` sample output. Before, `--` was the end of the options.
 - In a script for dash, POSIX sh or busybox ash, `echo {a,b}` and `{1..3}` are plain words, as the shell prints them (mksh: only `{a,b}` expands). Before, they were explained as expanding, with a warning that the shell lacks it.
-- In a script for dash, `$'a\tb'` is the text `$a\tb`, as dash prints it; in a script for sh its value is not known. Before, its escapes were decoded as bash does, so `env $'--'` was read as `env --`.
+- In a script for dash, `$'a\tb'` is the text `$a\tb`, as dash prints it; in a script for sh its value is not known. Before, its escapes were decoded as bash does, so `env $'--'` was read as `env --`. With a `\'` inside, the warning says that dash ends the quote there.
 - `xargs -d '\n'` no longer says that the last newline stays in the last item: it does only with another delimiter.
 - With `sed -n`, `q` quits without printing the line and `n` reads the next one without printing this one, as GNU sed does; so does a script that starts with `#n`. Before, both said they print the line.
 - `sed -e 's/a+/x/' -E` reads its script as a basic regex, as GNU sed does: sed reads each `-e` script with the options given before it, and `-E` says so. Before, an `-E` anywhere on the line made every script extended.

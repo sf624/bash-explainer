@@ -60,7 +60,7 @@ const resolveOpts = (shell: Shell | undefined) => ({ ...(shell ? { shell } : {})
 function command(c: SyntaxNode, model: StateModel, shell: Shell | undefined, out: FactSpan[]): void {
   const nameNode = field(c, 'name');
   const word = nameNode?.namedChildren.length === 1 ? nameNode.namedChildren[0] : undefined;
-  const name = word && staticWordValue(word);
+  const name = word && staticWordValue(word, false, shell);
   if (!word || name === undefined) return;
   const res = resolveName(model, name, nameNode!, { ...resolveOpts(shell), quoted: quotedName(word, name) });
   out.push({ from: word.startIndex, to: word.endIndex, kind: nameKind(res) });
@@ -75,7 +75,7 @@ function command(c: SyntaxNode, model: StateModel, shell: Shell | undefined, out
   roles(parse, spec, args, (w) => {
     // (A plain word, so it has a value; slotEnvs keys the first word of each command a slot runs.)
     const env = (envs ??= slotEnvs(model.env(c), parse, spec, args, shell, lookupCommand)).get(w)!;
-    return nameKind(resolveName(model, staticWordValue(w)!, w, { ...resolveOpts(shell), env }));
+    return nameKind(resolveName(model, staticWordValue(w, false, shell)!, w, { ...resolveOpts(shell), env }));
   }, out, shell);
 }
 

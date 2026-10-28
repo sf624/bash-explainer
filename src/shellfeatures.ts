@@ -32,6 +32,8 @@ export const FEATURES: Record<string, Feature> = {
   funcKeyword: { works: 'b aykmz', ja: '`function` キーワードによる関数定義', en: 'the `function` keyword', altJa: '`name() { … }` と書く', altEn: 'write `name() { … }`' },
   herestring: { works: 'b  ykmz', ja: 'ヒアストリング `<<<`', en: 'here-strings `<<<`', altJa: '`printf \'%s\\n\' … |` やヒアドキュメントを使う', altEn: 'use `printf \'%s\\n\' … |` or a here-document' },
   ansiC: { works: 'b a kmz', ja: '`$\'…\'` の文字列', en: '`$\'…\'` strings', altJa: '`printf` を使う', altEn: 'use `printf`' },
+  // (dash ends the quote at the `\'`: the rest of the word, from the `'` after it, is another quoted string.)
+  ansiCQuote: { works: 'b a kmz', ja: '`\\\'` を含む `$\'…\'` の文字列', en: '`$\'…\'` strings with `\\\'` in them', altJa: '`printf` を使う（dash では `\\\'` で引用が終わり、その後の `\'` からスクリプトの次の `\'` までが別の引用になる。次の `\'` が無ければ構文エラー）', altEn: 'use `printf` (dash ends the quote at the `\\\'`, and the `\'` after it opens another quoted string up to the next `\'` of the script, or a syntax error if there is none)' },
   procSub: { works: 'b ayk z', ja: 'プロセス置換 `<(…)` / `>(…)`', en: 'process substitution `<(…)` / `>(…)`', altJa: '一時ファイルや名前付きパイプを使う', altEn: 'use a temporary file or a named pipe' },
   ampRedirect: { works: 'b a kmz', ja: '`&>`（標準出力と標準エラー出力をまとめてリダイレクト）', en: '`&>` (redirect stdout and stderr together)', altJa: '`>file 2>&1` と書く（dash では `cmd &> file` が「バックグラウンド実行 + 空のリダイレクト」と解釈される）', altEn: 'write `>file 2>&1` (dash reads `cmd &> file` as "run in the background, then an empty redirection")' },
   ampAppend: { works: 'b    mz', ja: '`&>>`', en: '`&>>`', altJa: '`>>file 2>&1` と書く', altEn: 'write `>>file 2>&1`' },
