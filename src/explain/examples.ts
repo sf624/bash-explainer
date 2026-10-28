@@ -21,7 +21,7 @@ import { type JsRegex, regexExamples } from '../examples/regex';
 import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
 import { globMatches, type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
 import * as sources from '../examples/source';
-import { layoutOf, layoutSample } from '../examples/layouts';
+import { layoutOf, layoutSample, type Run } from '../examples/layouts';
 import { type InputSource, knownLines, type Piped, pipeOf, readsFiles, shareOut, type SourceWord, type Stdin, type Stream, streamLabel, substitutionLines, withSystemFiles, writesElsewhere } from '../examples/source';
 import { type Text, tx } from '../i18n';
 import { shorten } from '../label';
@@ -376,18 +376,22 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     // (By its name after quote removal: `\env` and `"env"` run env.)
     const named = stageName(cx, cmd);
     if (!named) return undefined;
-    const { node: name, value, res } = named;
+    const { node: name, res } = named;
     // A stage that runs a function or an alias of the script is not the program its name suggests (as in commandTail).
     if (['function', 'alias'].includes(res.kind)) return undefined;
     const args = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect');
-    const spec = specFor(cx, value);
-    const stage: Stage = { cmd: value.split('/').pop()!, words: exampleWords(cx, args, !!spec?.prints).map((w) => w.value), text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}) };
-    const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell)), { name: value, lookup: (x) => specFor(cx, x) });
+    // (The program of the path it runs: `hash -p /usr/bin/tac sort` makes `sort` run tac.)
+    const program = named.path ?? named.value;
+    const spec = specFor(cx, program);
+    const stage: Stage = { cmd: program.split('/').pop()!, words: exampleWords(cx, args, !!spec?.prints).map((w) => w.value), text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}) };
+    const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell)), { name: program, lookup: (x) => specFor(cx, x) });
     const source = inputSource(cx, cmd, parse, args, spec);
     // A stage that writes its output to a file (`sort -o f`) hands nothing on.
     const runs = !!spec?.operands?.some((alt) => alt.pattern.some((o) => o.command));
-    // (The layout of a program: what it prints.)
-    const layout = i === 0 && res.kind === 'file' ? layoutOf(spec, parse) : undefined;
+    // (The layout of a program: what it prints. An assignment before env is in what it prints, and `PATH=` changes
+    // the path bash runs it by: the made-up environment would not be it.)
+    const kind = i === 0 && res.kind === 'file' ? layoutOf(spec, parse) : undefined;
+    const layout = kind === 'env' && prefixAssignments(cmd).length ? undefined : kind;
     return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source, runs, ...(layout ? { layout } : {}) };
   })();
   stages.set(cmd, read);
@@ -463,14 +467,17 @@ function pipedLines(cx: Explainer, n: SyntaxNode, index: number): Piped {
 /**
  * The name of the simple command `cmd` after quote removal (`\env`, `"env"` and `e\nv` are `env`), and what it runs,
  * looked up as bash does (a quoted name is no alias, but may be a function or a builtin); undefined when it is not
- * known (`$cmd`), or empty, or the stage has no name word (an incomplete `echo a |`).
+ * known (`$cmd`), or empty, or the stage has no name word (an incomplete `echo a |`). `path`: the path bash runs a
+ * program by, when it does not search PATH for it (`/bin/env`, or a path `hash -p` gave the name).
  */
-function stageName(cx: Explainer, cmd: SyntaxNode): { node: SyntaxNode; value: string; res: NameResolution } | undefined {
+function stageName(cx: Explainer, cmd: SyntaxNode): { node: SyntaxNode; value: string; res: NameResolution; path?: string } | undefined {
   const node = cmd.type === 'command' ? field(cmd, 'name') : undefined;
   const word = node?.namedChildren[0];
   const value = word && staticWordValue(word, false, cx.state.shell);
   if (!value) return undefined;
-  return { node: node!, value, res: resolve(cx, value, node!, { quoted: quotedName(word, value) }) };
+  const res = resolve(cx, value, node!, { quoted: quotedName(word, value) });
+  const path = res.kind !== 'file' ? undefined : res.path === 'given' ? value : res.hashed?.value;
+  return { node: node!, value, res, ...(path ? { path } : {}) };
 }
 
 /**
@@ -485,24 +492,21 @@ const NOT_SHOWN = /[\p{C}\p{Zl}\p{Zp}]/u;
  * removal as the interpreter reads them (`env \--` runs `env --`, `\head` runs `head`); undefined when they are not all
  * known, or the stage is not a program (a builtin, a function, a compound command). A word with a character ps
  * does not show as it is (`NOT_SHOWN`) is not known either: ps shows it escaped (`$'a\tb'` as `a?b`), and a newline
- * would break the row. `path`: the path bash runs it by, when it does not find it in PATH (`/bin/env`, `hash -p`).
+ * would break the row. With the path bash runs it by, when it does not search PATH for it (`stageName`).
  */
-function argvOf(cx: Explainer, cmd: SyntaxNode): { argv: string[]; path?: string } | undefined {
+function argvOf(cx: Explainer, cmd: SyntaxNode): Run | undefined {
   const named = stageName(cx, cmd);
   if (named?.res.kind !== 'file') return undefined;
-  const { node: name, value } = named;
-  const res = named.res;
+  const { node: name, value, path } = named;
   const words = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect').map((a) => staticWordValue(a, false, cx.state.shell));
   const argv = [value, ...words];
   if (!argv.every((w): w is string => w !== undefined && !NOT_SHOWN.test(w))) return undefined;
-  const path = res.path === 'given' ? value : res.path === 'hashed' ? res.hashed!.value : undefined;
   return { argv, ...(path ? { path } : {}) };
 }
 
 /** Made-up lines of what the first stage of pipeline `n` prints in the layout `kind`, with the stages run as ps sees them. */
 function madeUp(cx: Explainer, n: SyntaxNode, kind: Layout): string[] {
-  const runs = n.namedChildren.map((c) => argvOf(cx, c));
-  return layoutSample(kind, runs.map((r) => r?.argv), 0, runs[0]?.path);
+  return layoutSample(kind, n.namedChildren.map((c) => argvOf(cx, c)), 0);
 }
 
 /** A note when the command reads files it names, so not the standard input the line gives it (`jq . a.json < b.json`). */
