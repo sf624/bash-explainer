@@ -3,7 +3,7 @@ import type { ConventionId } from './conventions';
 import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
-import { extglobText, globstarText, type LoopPattern, unmatchedGlobText } from './messages-glob';
+import { extglobText, globstarText, type LoopHow, type LoopPattern, unmatchedGlobText } from './messages-glob';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
 import type { Rewrite } from './rewrite';
 import type { NameFacts, NameKind } from './semantics/names';
@@ -467,7 +467,7 @@ export const MESSAGES = {
     `the commands of a pipeline (\`|\`) run in subshells, so \`${used}\` set on the right side is gone when the pipeline ends; the later \`$${used}\` does not see it. ${fix.en}`
       + (partial ? ' (only some paths before here turn `shopt -s lastpipe` on)' : '')]),
   // (`rewrite`: a test first in the body, where each pass of the loop is over a pattern, and `shopt -s nullglob` where the shell has it.)
-  'unmatched-glob-runs-once': withConvention(suggests(caveat<{ glob: string; patterns: readonly LoopPattern[]; v: string; alone: boolean; rewrite: readonly Rewrite[] }>(['3.5.8'], ({ glob, patterns, v, alone, rewrite }) => unmatchedGlobText(glob, patterns, v, alone, rewrite))), 'guard-unmatched-glob'),
+  'unmatched-glob-runs-once': withConvention(suggests(caveat<{ glob: string; patterns: readonly LoopPattern[]; v: string; alone: boolean; rewrite: readonly Rewrite[]; how: LoopHow }>(['3.5.8'], ({ glob, patterns, v, alone, rewrite, how }) => unmatchedGlobText(glob, patterns, v, alone, rewrite, how))), 'guard-unmatched-glob'),
   // (The shell sets the standard input up, but a command given a file to read reads that instead: jq, sort, cat…)
   'stdin-not-read': note<{ cmd: string; file: string; stdin: Words }>(['3.2.3', '3.6'], ({ cmd, file, stdin }) => [
     `\`${cmd}\` には読むファイル（\`${file}\`）が指定されているので、標準入力（${stdin.ja}）は読まない（\`-\` を指定すると標準入力も読む）`,

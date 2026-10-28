@@ -116,22 +116,27 @@ export function unmatchedGlobPitfalls(cx: Explainer, root: SyntaxNode, line: num
     if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
     // The rewrites: a test first in the body (`do` with no command is a syntax error: nothing runs once), where each
     // pass of the loop is over a pattern (it would skip the others too, `for i in a *.c` or `for i in {a,*.c}`, which
-    // are no files); and where the shell has nullglob, `shopt -s nullglob` before the statement that holds the loop
-    // (`a && for … | sort`), unless the loop is a function's body (`f() for …`).
+    // are no files), and not in a `select`, whose menu shows the pattern still (choosing it would only ask again); and
+    // where the shell has nullglob, `shopt -s nullglob` before the statement that holds the loop (`a && for … | sort`),
+    // unless the loop is a function's body (`f() for …`).
     const first = bodyNode.namedChildren.find((c) => STATEMENTS.has(c.type));
     if (!first) continue;
     let holder = loop;
     while (HOLDERS.has(holder.parent!.type)) holder = holder.parent!;
-    const rewrite = lists.every((l) => l?.every((x) => x.patterns.length && x.others === 0)) ? [statementBefore(first, `[ -e "$${v}" ] || continue`)] : [];
+    const menu = loop.type === 'select_statement';
+    const rewrite = !menu && lists.every((l) => l?.every((x) => x.patterns.length && x.others === 0)) ? [statementBefore(first, `[ -e "$${v}" ] || continue`)] : [];
     if (shopt.nullglob !== 'unsupported' && holder.parent!.type !== 'function_definition') rewrite.push(statementBefore(holder, 'shopt -s nullglob'));
     // (Each pattern of the word runs the loop once when no file matches it, with its text after the expansions; they
     // are the whole list, so that with one the loop runs once in all, where the word makes nothing else. A pattern is
-    // named by its text, but as written where the text is not known or reads otherwise as a pattern, `"$d"/*.c`.)
+    // named by its text, but as written where the text is not known or reads otherwise as a pattern, `"$d"/*.c`. A
+    // word with a pattern but other fields not known gives several words, some of which may be patterns:
+    // `"${a[@]}"*.c`.)
     const made = lists[at]!;
+    const several = made.some((x) => x.patterns.length && x.others === 'unknown');
     const patterns = made.flatMap((x) => x.patterns.map((p) => ({ name: p.text !== undefined && p.text === p.pattern ? p.text : x.written, text: p.text })));
     const alone = words.length === 1 && made.every((x) => x.others === 0);
     const name = patterns.length === 1 && (made.length > 1 || made[0].others !== 0) ? patterns[0].name : glob.text;
-    return cx.say(fact(cx.lang, 'unmatched-glob-runs-once', { glob: name, patterns, v, alone, rewrite }), glob);
+    return cx.say(fact(cx.lang, 'unmatched-glob-runs-once', { glob: name, patterns, v, alone, rewrite, how: { menu, several } }), glob);
   }
   return [];
 }

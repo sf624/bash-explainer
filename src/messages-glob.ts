@@ -47,14 +47,19 @@ export const globstarText = (why: GlobstarWhy) => ({ on }: { on: string }): read
 /** A pattern of a `for` list, as the loop note names it, and its text after the expansions where it is known. */
 export interface LoopPattern { name: string; text?: string }
 
+/** How the loop of `unmatched-glob-runs-once` takes its list: a `select` menu (`menu`), and a word that may give several (`several`, `"${a[@]}"*.c`). */
+export interface LoopHow { menu: boolean; several: boolean }
+
 /**
  * `unmatched-glob-runs-once`: what the loop does when no file matches `glob`, whose patterns are `patterns` (more than
  * one where braces or splitting make them: `*.{c,h}`, `*.c` and `*.h`), each named and with the text the variable
  * gets, where it is known (not for `"$d"/*.c`); `alone`: they are the whole list, so that with one the loop runs only
- * once. And the rewrites there are (a test first in the body, `shopt -s nullglob`): either may be missing, or both
- * (in sh, for a list with a word that is no pattern).
+ * once. `how.several`: each may give several words, of which those that are patterns are not known (`"$@"*.c`);
+ * `how.menu`: a `select`, which shows each as an entry of its menu rather than running once for it. And the rewrites
+ * there are (a test first in the body, `shopt -s nullglob`): either may be missing, or both (in sh, for a list with a
+ * word that is no pattern).
  */
-export function unmatchedGlobText(glob: string, patterns: readonly LoopPattern[], v: string, alone: boolean, rewrite: readonly Rewrite[]): readonly [string, string] {
+export function unmatchedGlobText(glob: string, patterns: readonly LoopPattern[], v: string, alone: boolean, rewrite: readonly Rewrite[], how: LoopHow): readonly [string, string] {
   const test = rewrite.find((r) => !r.code.startsWith('shopt'));
   const nullglob = rewrite.find((r) => r.code.startsWith('shopt'));
   const ja = test ? `本体の先頭に \`${test.code}\` を${nullglob ? `書くか、ループの前で \`${nullglob.code}\` にします` : '書きます'}` : nullglob ? `ループの前で \`${nullglob.code}\` にします` : '';
@@ -62,15 +67,26 @@ export function unmatchedGlobText(glob: string, patterns: readonly LoopPattern[]
   const [{ text: t }] = patterns;
   const known = patterns.every((p) => p.text !== undefined);
   const code = patterns.map((p) => `\`${p.name}\``);
+  const enList = `${code.slice(0, -1).join(', ')} and ${code[code.length - 1]}`;
   // (The text the variable gets: the pattern's, after its expansions, which are not known here for `"$d"/*.c`.)
   const [jaText, enText] = t !== undefined ? [` \`${t}\` という文字列`, `the text \`${t}\` itself`] : ['展開後のパターンの文字列', 'the text of the pattern itself, after its expansions'];
-  const [jaWhat, enWhat] = patterns.length > 1
-    ? [`\`${glob}\` はファイルと照合する前に ${code.join('・')} になります。そのうち一致するファイルが1つもないものについても1回ずつ実行され、\`${v}\` には${known ? '' : '展開後の'}その文字列がそのまま入ります`,
-      `\`${glob}\` gives the patterns ${code.slice(0, -1).join(', ')} and ${code[code.length - 1]} before files are matched; for each that no file matches, the loop still runs once, with \`${v}\` set to its text itself${known ? '' : ', after its expansions'}`]
-    : alone
-      ? [`\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に${jaText}がそのまま入って1回実行されます`,
-        `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to ${enText}`]
-      : [`\`${glob}\` に一致するファイルが1つもなくても、その分の1回は実行され、\`${v}\` には${jaText}がそのまま入ります`,
-        `when no file matches \`${glob}\`, the loop still runs once for it, with \`${v}\` set to ${enText}`];
+  // (What each pattern that no file matches gives, `who`: a pass of the loop, or an entry of the menu of `select`.)
+  const after = known ? '' : ', after its expansions';
+  const jaEach = `${how.menu ? 'もメニューに表示され、それを選ぶと ' : 'についても1回ずつ実行され、'}\`${v}\` には${known ? '' : '展開後の'}その文字列がそのまま入ります`;
+  const enEach = (who: string): string => (how.menu ? `each ${who} is still shown in the menu, and choosing it sets \`${v}\` to its text itself${after}` : `for each ${who}, the loop still runs once, with \`${v}\` set to its text itself${after}`);
+  const [jaWhat, enWhat] = how.several
+    ? [`\`${glob}\` は${patterns.length > 1 ? ` ${code.join('・')} になり、それぞれ` : ''}ファイルと照合する前に複数の単語になることがあります。そのうちパターンで、一致するファイルが1つもないもの${jaEach}`,
+      `\`${glob}\`${patterns.length > 1 ? ` gives ${enList}, each of which` : ''} may give several words before files are matched; ${enEach('of them that is a pattern and that no file matches')}`]
+    : patterns.length > 1
+      ? [`\`${glob}\` はファイルと照合する前に ${code.join('・')} になります。そのうち一致するファイルが1つもないもの${jaEach}`,
+        `\`${glob}\` gives the patterns ${enList} before files are matched; ${enEach('that no file matches')}`]
+      : how.menu
+        ? [`\`${glob}\` に一致するファイルが1つもなくても、メニューには項目として表示され、それを選ぶと \`${v}\` に${jaText}がそのまま入ります`,
+          `when no file matches \`${glob}\`, the menu still shows it as an entry, and choosing it sets \`${v}\` to ${enText}`]
+        : alone
+          ? [`\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に${jaText}がそのまま入って1回実行されます`,
+            `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to ${enText}`]
+          : [`\`${glob}\` に一致するファイルが1つもなくても、その分の1回は実行され、\`${v}\` には${jaText}がそのまま入ります`,
+            `when no file matches \`${glob}\`, the loop still runs once for it, with \`${v}\` set to ${enText}`];
   return [`${jaWhat}${ja ? `。${ja}` : ''}`, `${enWhat}${en ? `. ${en}` : ''}`];
 }
