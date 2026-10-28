@@ -1,9 +1,9 @@
 // The readers the explanation of most parts calls (docs/design/analyzer.md, step 3): what a name runs, the spec of a
 // command, the shell options and the meaning of a word where a node is, and what the options of the command whose
-// words are explained (`Explainer.command`) give. They read the models; the one text they make is `globOff`'s, the
-// end of a note on a word that is not globbed.
-import { givenOptions, has as hasOption, operands, optionsBefore, restrictedRefusal, values } from '../argv/query';
-import type { ArgvParse } from '../argv/interpret';
+// words are explained (`Explainer.command`) give. They read the models; the texts they make are `globOff`'s, the end
+// of a note on a word that is not globbed, and `notForEarlier`'s, the end of the text of an option given too late.
+import { has as hasOption, operands, readBefore, restrictedRefusal, selectedModes, values } from '../argv/query';
+import type { ArgRole, ArgvParse } from '../argv/interpret';
 import type { CommandSpec, ShellVariant } from '../argv/spec';
 import type { Basis } from '../basis';
 import { impliedWords, lookupCommand, specName } from '../dict/aliases';
@@ -206,9 +206,21 @@ export function optionValues(cx: Explainer, ...names: string[]): { text?: string
 export function regexFlavor(cx: Explainer, word?: number): Flavor | 'fixed' {
   const { cmd, parse, spec } = cx.command!;
   const implied = impliedWords(cmd.split('/').pop()!).map((w) => spec.options?.find((o) => o.names.includes(w))?.selects);
-  const options = (word === undefined ? undefined : optionsBefore(parse, word)) ?? givenOptions(parse);
-  const selected = new Set([...options.map(({ role }) => (role.role === 'option' ? role.spec.selects : undefined)), ...implied]);
+  const selected = new Set<string | undefined>([...selectedModes(parse, word), ...implied]);
   return selected.has('pcre') ? 'pcre' : selected.has('fixed') ? 'fixed' : selected.has('ere') ? 'ere' : 'bre';
+}
+
+/**
+ * The end of the text of an option in word `word` that selects a mode (`OptionSpec.selects`: sed's `-E`) after values
+ * the program has read already, as soon as it read their options (`ValueSpec.inOrder`): it does not apply to them
+ * (`sed -e 's/a+/x/' -E` reads a BRE). Empty for another option, or one given before them.
+ */
+export function notForEarlier(cx: Explainer, word: number, role: Extract<ArgRole, { role: 'option' }>): string {
+  const { cmd, parse } = cx.command!;
+  const flags = role.spec.selects ? [...new Set(readBefore(parse, word).map(({ role: v }) => `\`${v.option!.names[0]}\``))].join(cx.s('・', ', ')) : '';
+  const program = cmd.split(' ')[0].split('/').pop()!;
+  return flags && cx.s(`（前にある ${flags} の値には効かない: \`${program}\` はオプションを読んだ時点で、それより前のオプションだけでその値を読む）`,
+    ` (not for the value of ${flags} before it: \`${program}\` reads that value as soon as it reads its option, with only the options given before)`);
 }
 
 /** How tr uses the set in `a`: its position among the sets (the operands) and the -d/-s options. */

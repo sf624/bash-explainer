@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import { lookupCommand } from '../src/analyzer';
 import { interpret } from '../src/argv/interpret';
-import { givenOptions, has, operands, values } from '../src/argv/query';
+import { givenOptions, has, operands, optionsBefore, readBefore, selectedModes, values } from '../src/argv/query';
 import { argWords } from './support/argwords';
 
 const parseOf = (line: string) => {
@@ -57,5 +57,25 @@ describe('ArgvParse queries', () => {
     // (`true` describes no operands.)
     assert.deepStrictEqual(names('true x', 'ARG1'), []);
     assert.deepStrictEqual(names('true x'), ['x']);
+  });
+
+  it('optionsBefore, readBefore and selectedModes: sed reads each -e or -f script with the options given before it', () => {
+    // The word of the script, or of the option: the options that apply to it, by flag (undefined: all of them).
+    const before = (line: string, word: number) => optionsBefore(parseOf(line).parse, word)?.map(({ role }) => role.flag);
+    assert.deepStrictEqual(before("sed -E -e s/a/b/ -n f", 2), ['-E', '-e']);
+    assert.deepStrictEqual(before('sed -nEes/a/b/ f', 0), ['-n', '-E']);
+    assert.deepStrictEqual(before('sed --expression=s/a/b/ -E f', 0), []);
+    // (The script operand, a value read later, and an option: every option given applies.)
+    assert.strictEqual(before('sed s/a/b/ -E f', 0), undefined);
+    assert.strictEqual(before('sed -l 5 -E s/a/b/ f', 1), undefined);
+    assert.strictEqual(before('sed -n -E f', 0), undefined);
+    // The values read at once before a word, by their word: in a word of their own, attached, after `=`.
+    const read = (line: string, word: number) => readBefore(parseOf(line).parse, word).map((v) => [v.word, v.at]);
+    assert.deepStrictEqual(read('sed -e p -l 5 -fs.sed -i.bak --expression=p -yE -E f', 9), [[1, undefined], [4, 2], [6, 13]]);
+    assert.deepStrictEqual(read('sed -E -e p f', 0), []);
+    const modes = (line: string, word?: number) => [...selectedModes(parseOf(line).parse, word)];
+    assert.deepStrictEqual(modes("sed -e s/a+/x/ -E f", 1), []);
+    assert.deepStrictEqual(modes("sed -e s/a+/x/ -E f"), ['ere']);
+    assert.deepStrictEqual(modes("sed -n s/a+/x/ f", 1), []);
   });
 });

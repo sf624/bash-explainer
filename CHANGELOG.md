@@ -122,7 +122,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - In a script for dash, POSIX sh or busybox ash, `echo {a,b}` and `{1..3}` are plain words, as the shell prints them (mksh: only `{a,b}` expands). Before, they were explained as expanding, with a warning that the shell lacks it.
 - `xargs -d '\n'` no longer says that the last newline stays in the last item: it does only with another delimiter.
 - With `sed -n`, `q` quits without printing the line and `n` reads the next one without printing this one, as GNU sed does; so does a script that starts with `#n`. Before, both said they print the line.
-- `sed -e 's/a+/x/' -E` reads its script as a basic regex, as GNU sed does: sed reads each `-e` script with the options given before it. Before, an `-E` anywhere on the line made every script extended.
+- `sed -e 's/a+/x/' -E` reads its script as a basic regex, as GNU sed does: sed reads each `-e` script with the options given before it, and `-E` says so. Before, an `-E` anywhere on the line made every script extended.
 - The `git log --graph` example draws the graph: `* ` before each commit, and `| ` before its other lines.
 - The Marketplace, Open VSX and npm pages show the images and links of the version they describe. Before, they showed the newest images from `main`, and one was missing.
 - The hover no longer repeats a problem that VS Code shows above it: the part leaves out that note. The notes that stay, and the notes of examples, line up with the hover's text. Before, the same pitfall came twice, the second time indented.

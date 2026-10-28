@@ -311,12 +311,16 @@ const rowOf = (s: Scenario, normalizer: Normalizer, forms: string[]): Row => ({ 
 /** A rule that takes a false merge: the forms it matches may run otherwise than the others of their key. */
 export interface Accepted { normalizer: Normalizer; scenario: string; match: (form: string) => boolean; reason: string }
 
-/** Whether a word of the form's subject has a value that is not known (a glob bash expands, a `$x`). */
-const unknownWord = (form: string): boolean => fields(subject(parser.parse(form)), 'argument').some((w) => staticWordValue(w) === undefined);
+/**
+ * Whether a word of the form's subject is a glob bash expands: a value that is not known, with an unquoted `*`, `?` or
+ * `[` (`*.txt`, `*.tx""t`; not `'*'.txt`, whose value is known).
+ */
+const unquotedGlob = (form: string): boolean => fields(subject(parser.parse(form)), 'argument').some((w) => staticWordValue(w) === undefined
+  && (w.type === 'concatenation' ? w.namedChildren : [w]).some((p) => p.type === 'word' && /(^|[^\\])(\\\\)*[*?[]/.test(p.text)));
 
 /** The false merges taken, each with its reason (as the `known` rows of the table). */
 export const ACCEPTED: Accepted[] = [
-  { normalizer: 'findWords', scenario: 'find', match: unknownWord, reason: 'finding, left to its own PR (the `known` row of the table): find\'s expression is read from the text of a word whose value is not known, so `-name *.txt` is explained as find\'s pattern while bash expands the glob first when files match' },
+  { normalizer: 'findWords', scenario: 'find', match: unquotedGlob, reason: 'finding, left to its own PR (the `known` row of the table): find\'s expression is read from the text of a word whose value is not known, so `-name *.txt` is explained as find\'s pattern while bash expands the glob first when files match (only an unquoted glob: scripts/normal-forms-sweep.ts, seeds 1 to 3, finds no false merge of another word whose value is not known)' },
 ];
 
 /** What a run gives for what the scenario observes, as one string. */
