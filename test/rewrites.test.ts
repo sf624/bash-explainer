@@ -131,6 +131,30 @@ describe('the rewrites of `unmatched-glob-runs-once`', () => {
     const [sh] = factsOf('#!/bin/sh\nfor f in *.log; do rm "$f"; done', 'unmatched-glob-runs-once', 'sh');
     assert.match(sh.text, /Start the body with `\[ -e "\$f" \] \|\| continue`$/);
   });
+  it('give no test of the name where the list has words that are no globs, which it would skip too', () => {
+    // (Before, `[ -e "$i" ] || continue` for `for i in a b *.c`, which skips `a` and `b`, no files.)
+    assert.deepStrictEqual(fix('for i in a b *.c; do echo "$i"; done'), [['shopt -s nullglob', 'shopt -s nullglob\nfor i in a b *.c; do echo "$i"; done']]);
+    assert.deepStrictEqual(fix('for i in {a,b} x{c,d} {*.c,*.h}; do :; done').map(([code]) => code), ['shopt -s nullglob']);
+    assert.match(factsOf('for i in a *.c; do echo "$i"; done', 'unmatched-glob-runs-once')[0].text, /the text `\*\.c` itself\. Turn on `shopt -s nullglob` before the loop$/);
+    assert.match(factsOf('for i in a *.c; do echo "$i"; done', 'unmatched-glob-runs-once', undefined, 'ja')[0].text, /1回実行されます。ループの前で `shopt -s nullglob` にします$/);
+    // (In sh, which has no nullglob: none, and the note says only what happens.)
+    const [sh] = factsOf('#!/bin/sh\nfor i in a *.c; do echo "$i"; done', 'unmatched-glob-runs-once', 'sh');
+    assert.strictEqual(sh.rewrite, undefined);
+    assert.match(sh.text, /the text `\*\.c` itself$/);
+    assert.match(factsOf('#!/bin/sh\nfor i in a *.c; do echo "$i"; done', 'unmatched-glob-runs-once', 'sh', 'ja')[0].text, /という文字列がそのまま入って1回実行されます$/);
+  });
+  for (const { name, program } of programs) {
+    it(`keep the other words of the list in ${name}`, async () => {
+      const src = 'for i in a b *.c; do echo "@$i"; done\n';
+      const driver = '"$BASH" f.sh';
+      const [[, script]] = fix(src);
+      assert.strictEqual((await run(program, src, driver, { files: ['x.c'] })).out, '@a\n@b\n@x.c\n');
+      assert.strictEqual((await run(program, script, driver, { files: ['x.c'] })).out, '@a\n@b\n@x.c\n');
+      assert.strictEqual((await run(program, script, driver)).out, '@a\n@b\n');
+      // (What the test of the name would do: skip `a` and `b`.)
+      assert.strictEqual((await run(program, src.replace('do echo', 'do [ -e "$i" ] || continue; echo'), driver, { files: ['x.c'] })).out, '@x.c\n');
+    });
+  }
   it('are not given for a body with no command, which is a syntax error', () => {
     assert.deepStrictEqual(factsOf('for f in *.log; do\ndone', 'unmatched-glob-runs-once'), []);
   });

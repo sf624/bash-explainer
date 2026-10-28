@@ -206,11 +206,13 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         // The words of the test itself, not variables inside a `$(…)` in it.
         // (Not through splitting: an empty value drops the word whatever IFS and `set -f` are.)
         if (testSpecAt(model, n, shell)?.closingOperand) {
-          const word = a.find((e) => isExpansion(e) && !alwaysNumber(e));
+          // (Each of them: quoting one leaves the others, `[ $x = a -o $y = b ]`.)
           // (zsh does not split it, but drops it all the same when it is empty.)
           // (`"$x"` as written, also for `$*`, which in a test is meant as one word; none where quotes change the value, as in
           // `${x:-'a b'}`: src/fixes.ts, `quoteExpansions`.)
-          if (word) add(fact(lang, 'unquoted-variable-in-test', { bare: word.text, zsh: shell === 'zsh', rewrite: quoteExpansions(word) ? [replaceNode(word, `"${word.text}"`)] : [] }), word);
+          for (const word of a.filter((e) => isExpansion(e) && !alwaysNumber(e))) {
+            add(fact(lang, 'unquoted-variable-in-test', { bare: word.text, zsh: shell === 'zsh', rewrite: quoteExpansions(word) ? [replaceNode(word, `"${word.text}"`)] : [] }), word);
+          }
         }
         // `sudo cmd > file`: the redirection is done by your shell, without sudo's rights.
         // Only for files that need root: system directories, not your logs or /dev/null. (The path after quote removal,

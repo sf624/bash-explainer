@@ -100,8 +100,8 @@ export function unmatchedGlobPitfalls(cx: Explainer, root: SyntaxNode, line: num
     const shopt = shoptAt(cx, loop);
     if (loop.startPosition.row !== line || shopt.nullglob === 'on' || shopt.failglob === 'on') continue;
     // `*.log`, and `"$dir"/*.log` too.
-    const glob = fields(loop, 'value').find((v) => ((!!unquotedWord(v) && isGlob(v.text))
-      || (v.type === 'concatenation' && v.namedChildren.some((c) => c.type === 'word' && isGlob(c.text)))));
+    const globbed = (v: SyntaxNode): boolean => (!!unquotedWord(v) && isGlob(v.text)) || (v.type === 'concatenation' && v.namedChildren.some((c) => c.type === 'word' && isGlob(c.text)));
+    const glob = fields(loop, 'value').find(globbed);
     const v = field(loop, 'variable')?.text;
     if (!glob || !v || globOff(cx, glob)) continue;
     const bodyNode = field(loop, 'body');
@@ -109,14 +109,15 @@ export function unmatchedGlobPitfalls(cx: Explainer, root: SyntaxNode, line: num
     if (!bodyNode) continue;
     const body = bodyNode.text;
     if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
-    // The rewrites: a test first in the body (`do` with no command is a syntax error: nothing runs once); and where
-    // the shell has nullglob, `shopt -s nullglob` before the statement that holds the loop (`a && for … | sort`),
-    // unless the loop is a function's body (`f() for …`).
+    // The rewrites: a test first in the body (`do` with no command is a syntax error: nothing runs once), where every
+    // word of the list is a glob (it would skip the others too, `for i in a *.c`, which are no files); and where the
+    // shell has nullglob, `shopt -s nullglob` before the statement that holds the loop (`a && for … | sort`), unless
+    // the loop is a function's body (`f() for …`).
     const first = bodyNode.namedChildren.find((c) => STATEMENTS.has(c.type));
     if (!first) continue;
     let holder = loop;
     while (HOLDERS.has(holder.parent!.type)) holder = holder.parent!;
-    const rewrite = [statementBefore(first, `[ -e "$${v}" ] || continue`)];
+    const rewrite = fields(loop, 'value').every(globbed) ? [statementBefore(first, `[ -e "$${v}" ] || continue`)] : [];
     if (shopt.nullglob !== 'unsupported' && holder.parent!.type !== 'function_definition') rewrite.push(statementBefore(holder, 'shopt -s nullglob'));
     return cx.say(fact(cx.lang, 'unmatched-glob-runs-once', { glob: glob.text, v, rewrite }), glob);
   }
