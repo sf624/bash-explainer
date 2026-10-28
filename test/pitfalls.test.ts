@@ -200,6 +200,15 @@ describe('pitfalls', () => {
       fs.rmSync(dir, { recursive: true });
     }
   });
+  it('a quoted name skips an alias, not the builtin: `\\read x` after an alias that adds `-r`', function () {
+    if (spawnSync('bash', ['-c', ':']).status !== 0) return this.skip();
+    const prelude = "shopt -s expand_aliases\nalias read='read -r'\n";
+    const run = (cmd: string) => spawnSync('bash', ['--norc', '--noprofile', '-c', `${prelude}${cmd}; echo "[$x]"`], { encoding: 'utf8', input: 'a\\b\n', timeout: 10000 }).stdout;
+    assert.strictEqual(run('read x'), '[a\\b]\n');
+    assert.strictEqual(run('\\read x'), '[ab]\n');
+    const said = (cmd: string) => notes(`${prelude}${cmd}`, 2).filter((n) => /without `-r`/.test(n)).length;
+    assert.deepStrictEqual([said('read x'), said('\\read x'), said("'read' x")], [0, 1, 1]);
+  });
   // zsh (zshoptions: IGNORE_CLOSE_BRACES is off by default) closes a group at a `}` anywhere.
   it('a } with no ; before it names the command as written', () => {
     for (const [src, name] of [['{ ./x b }', './x'], ['{ $cmd b }', '$cmd'], ['{ \\echo b }', '\\echo']]) {

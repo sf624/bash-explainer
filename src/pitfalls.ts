@@ -8,7 +8,7 @@ import { Lang } from './i18n';
 import { argWordIn } from './semantics/argwords';
 import { type ExecEnv, runsString, slotEnvs } from './semantics/env';
 import { commandName as staticName, plainName } from './semantics/effects';
-import { type NameResolution, resolveName } from './semantics/names';
+import { resolveName, resolveRun } from './semantics/names';
 import { option, type StateModel } from './semantics/state';
 import { ancestor, childrenOnRows, descendants, field, fields, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
@@ -116,18 +116,6 @@ export function args(n: SyntaxNode): SyntaxNode[] {
  * are not words of this line.
  */
 export interface RunCommand { nameWord: SyntaxNode; name: string | undefined; args: SyntaxNode[]; env?: ExecEnv }
-
-/**
- * What the name of `run` runs (src/semantics/names.ts), looked up by its value as `commandName` reads it: `\cp` and
- * `'cp'` run `cp` (and no alias of it); undefined when the value is not known without running anything (`$cmd`).
- */
-export function resolveRun(model: StateModel, run: RunCommand, shell: Shell | undefined): NameResolution | undefined {
-  // (The name of the command itself is a `command_name` around its word; one a slot runs is the word.)
-  const word = run.nameWord.type === 'command_name' ? run.nameWord.namedChildren[0] : run.nameWord;
-  const value = staticWordValue(word);
-  if (value === undefined) return undefined;
-  return resolveName(model, value, run.nameWord, { shell, command: true, quoted: word.type !== 'word' || word.text !== value, ...(run.env ? { env: run.env } : {}) });
-}
 
 /** The commands the simple command `n` runs (see `RunCommand`), itself first. */
 export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | undefined): RunCommand[] {
@@ -553,7 +541,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         // Only when it reads into a variable; `read` alone or `read -n 1` waits for a key. Only the builtin: not a
         // function of that name (src/semantics/names.ts).
         const readsVar = a.some((w) => /^[A-Za-z_]\w*$/.test(w.text));
-        if (name === 'read' && readsVar && !a.some((w) => /^-[a-zA-Z]*[rnN]/.test(w.text)) && resolveName(model, name, field(n, 'name')!, { shell, command: true }).kind === 'builtin') {
+        if (name === 'read' && readsVar && !a.some((w) => /^-[a-zA-Z]*[rnN]/.test(w.text)) && resolveRun(model, { nameWord: field(n, 'name')! }, shell)!.kind === 'builtin') {
           // (A path runs no builtin, `pathCommand`; a name in quotes or with a backslash does, and the rewrite writes it plainly.)
           const fix = replaceNode(field(n, 'name')!, 'read -r');
           add('read-without-r', n, `\`-r\` を付けないと、入力のバックスラッシュ（\`\\\`）がエスケープとして消えます。ふつうは \`${fix.code}\` と書きます`,

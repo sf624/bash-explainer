@@ -11,6 +11,7 @@ import type { HighlightKind } from './highlight';
 import { isProgram } from './namefacts';
 import { slotEnvs } from './semantics/env';
 import { type NameResolution, resolveName, testSpecOf } from './semantics/names';
+import { quotedName } from './semantics/effects';
 import type { StateModel } from './semantics/state';
 import { staticWordValue } from './staticword';
 import { field, fields, type SyntaxNode, type SyntaxTree } from './syntax/tree';
@@ -61,7 +62,7 @@ function command(c: SyntaxNode, model: StateModel, shell: Shell | undefined, out
   const word = nameNode?.namedChildren.length === 1 ? nameNode.namedChildren[0] : undefined;
   const name = word && staticWordValue(word);
   if (!word || name === undefined) return;
-  const res = resolveName(model, name, nameNode!, { ...resolveOpts(shell), quoted: word.type !== 'word' || word.text !== name });
+  const res = resolveName(model, name, nameNode!, { ...resolveOpts(shell), quoted: quotedName(word, name) });
   out.push({ from: word.startIndex, to: word.endIndex, kind: nameKind(res) });
   // A function's or an alias's words have no spec, and `test`'s are an expression (`-f`, `-eq` are its operators): the
   // tree's reading of them stays.
