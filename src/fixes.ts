@@ -62,7 +62,7 @@ const SAME_IN_TEST = /^(-[a-zA-Z]|=|!=|-eq|-ne|-lt|-le|-gt|-ge|-nt|-ot|-ef)$/;
  * `[ … ]` commands equivalent to a `[[ … ]]` expression. `&&` / `||` become separate tests joined
  * by the same operator (only one kind, so the shell's left-to-right order matches `[[ ]]`).
  */
-function testChain(e: SyntaxNode): string | undefined {
+export function testChain(e: SyntaxNode): string | undefined {
   const ops = new Set<string>();
   const parts: SyntaxNode[] = [];
   const split = (x: SyntaxNode): void => {

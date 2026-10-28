@@ -340,10 +340,22 @@ export interface Job {
   epilogue?: string;
   /** The programs on PATH: names of /usr/bin or /bin, or `bash`, the bash of the run. */
   programs?: readonly string[];
+  /** Files of the run's directory with their text (on top of `files`); one that starts with `#!` is executable. */
+  contents?: Readonly<Record<string, string>>;
+  /**
+   * `false` for the hand-written forms of the normal-forms table (test/fixtures/oracles/normal-forms.json, which a
+   * review reads, not the corpus): no set-up, recorders nor walls, and `/usr/bin:/bin` for PATH, so that the builtins
+   * and the programs run as they are; the run is still contained, under `timeout` and `ulimit -f`. Its `Ran` lists
+   * the files left in the directory.
+   */
+  walls?: false;
 }
 
-/** What a run printed (both streams normalized: the run's directory, line numbers, the times of `time` and `time -p`), and its status. */
-export interface Ran { out: string; err: string; status: number | null }
+/**
+ * What a run printed (both streams normalized: the run's directory, line numbers, the times of `time` and `time -p`),
+ * and its status; for a job with no walls, the files left in its directory (`name: text`, sorted; `name/` for a directory).
+ */
+export interface Ran { out: string; err: string; status: number | null; files?: string[] }
 
 const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
@@ -434,10 +446,15 @@ export async function runJobs(bash: string, list: readonly Job[], { jobs = 4, pe
         fs.mkdirSync(f.endsWith('/') ? at : path.dirname(at), { recursive: true });
         if (!f.endsWith('/')) fs.writeFileSync(at, '');
       }
+      for (const [f, text] of Object.entries(job.contents ?? {})) {
+        fs.mkdirSync(path.dirname(path.join(box, f)), { recursive: true });
+        fs.writeFileSync(path.join(box, f), text, { mode: text.startsWith('#!') ? 0o755 : 0o644 });
+      }
       fs.writeFileSync(path.join(dir, 'f.sh'), job.epilogue === undefined ? job.script : `${job.script}\n${job.epilogue}\n`);
       fs.writeFileSync(path.join(dir, 'setup.sh'), setup(job.prelude));
       fs.writeFileSync(path.join(dir, 'stdin'), job.stdin ?? '');
-      const env = { PATH: bin, HOME: box, LC_ALL: 'C', FUNCNEST: '100', BASH_ENV: path.join(dir, 'setup.sh'), ...job.env };
+      const env = job.walls === false ? { PATH: '/usr/bin:/bin', HOME: box, LC_ALL: 'C', FUNCNEST: '100', ...job.env }
+        : { PATH: bin, HOME: box, LC_ALL: 'C', FUNCNEST: '100', BASH_ENV: path.join(dir, 'setup.sh'), ...job.env };
       const assigns = Object.entries(env).map(([k, v]) => quote(`${k}=${v}`)).join(' ');
       const args = (job.args ?? []).map(quote).join(' ');
       const mode = job.mode ?? 'run';
@@ -460,11 +477,20 @@ export async function runJobs(bash: string, list: readonly Job[], { jobs = 4, pe
       const read = (f: string): string => fs.readFileSync(path.join(dir, f), 'utf8').split(path.join(dir, 'box')).join('BOX').split(dir).join('DIR')
         .replace(/line \d+:/g, 'line N:').replace(/^(real|user|sys)\s+(\d+m)?[\d.]+s?\n/gm, '');
       const status = fs.existsSync(path.join(dir, 'status')) ? Number(fs.readFileSync(path.join(dir, 'status'), 'utf8')) : null;
-      return { out: read('out'), err: read('err'), status };
+      return { out: read('out'), err: read('err'), status, ...(list[i].walls === false ? { files: filesIn(path.join(dir, 'box')) } : {}) };
     });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+}
+
+/** The files under `dir`, as `Ran.files` lists them. */
+function filesIn(dir: string, under = ''): string[] {
+  return fs.readdirSync(path.join(dir, under), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1)).flatMap((e) => {
+    const name = path.join(under, e.name);
+    if (e.isDirectory()) return [`${name}/`, ...filesIn(dir, name)];
+    return [e.isSymbolicLink() ? `${name} -> ${fs.readlinkSync(path.join(dir, name))}` : `${name}: ${fs.readFileSync(path.join(dir, name), 'utf8')}`];
+  });
 }
 
 // ---------------------------------------------------------------------------------------------------

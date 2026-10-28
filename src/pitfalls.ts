@@ -83,9 +83,13 @@ function rootTarget(w: SyntaxNode): { e: SyntaxNode; v: string; left: string; pl
   return gen(false);
 }
 
-/** The command the name of the simple command `n` runs, as the checks read it (see `pathCommand`). */
+/**
+ * The command the name of the simple command `n` runs, as the checks read it (see `pathCommand`): its value, so that
+ * `\read` and `'rm'` are `read` and `rm`; undefined when it is not known without running anything (`$cmd`).
+ */
 export function commandName(n: SyntaxNode): string | undefined {
-  const name = field(n, 'name')?.text;
+  const word = field(n, 'name')?.namedChildren[0];
+  const name = word && staticWordValue(word);
   return name === undefined ? undefined : pathCommand(name);
 }
 
@@ -532,7 +536,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         // function of that name (src/semantics/names.ts).
         const readsVar = a.some((w) => /^[A-Za-z_]\w*$/.test(w.text));
         if (name === 'read' && readsVar && !a.some((w) => /^-[a-zA-Z]*[rnN]/.test(w.text)) && resolveName(model, name, field(n, 'name')!, { shell, command: true }).kind === 'builtin') {
-          // (The name is `read` as written: a path or quotes run no builtin, `pathCommand`.)
+          // (A path runs no builtin, `pathCommand`; a name in quotes or with a backslash does, and the rewrite writes it plainly.)
           const fix = replaceNode(field(n, 'name')!, 'read -r');
           add('read-without-r', n, `\`-r\` を付けないと、入力のバックスラッシュ（\`\\\`）がエスケープとして消えます。ふつうは \`${fix.code}\` と書きます`,
             `without \`-r\`, backslashes in the input are taken as escapes and lost. Usually write \`${fix.code}\``, [fix]);

@@ -47,6 +47,9 @@ describe('pitfalls', () => {
     // A path names the program of its last part, as the explanation reads it: `/bin/rm` is rm.
     ['/bin/rm -rf $DIR/*', /becomes `rm -r \/\*`, deleting from the root/],
     ['./rm -rf $DIR/*', /becomes `rm -r \/\*`, deleting from the root/],
+    // A name in quotes or with a backslash runs the same command (test/fixtures/oracles/normal-forms.json).
+    ["'rm' -rf $DIR/x", /if `DIR` is empty this becomes `rm -r \/x`/],
+    ['\\read x', /without `-r`, backslashes/],
     // A command another one runs (its spec's command slot: sudo, env, nice, nohup, xargs, command…) gets the same checks.
     ['sudo rm -rf $DIR/releases/$line', /if `DIR` is empty this becomes `rm -r \/releases\/\$line`, deleting from the root/],
     ['sudo -u deploy rm -rf "$DIR"/*', /becomes `rm -r \/\*`, deleting from the root/],
@@ -561,6 +564,8 @@ describe('the rewrites of the style checks (docs/design/oracles.md, step 6)', ()
     ['rm -rf ${D%/}/x', 'rm-empty-variable-root', []],
     ['f() { rm -rf ${D%/}/x; }', 'rm-empty-variable-root', []],
     ['read x', 'read-without-r', ['read -r x']],
+    ['\\read x', 'read-without-r', ['read -r x']],
+    ["'rm' -rf $DIR/*", 'rm-empty-variable-root', ["'rm' -rf \"${DIR:?}\"/*"]],
     ['IFS= read -a x', 'read-without-r', ['IFS= read -r -a x']],
     ['[ $a < $b ]', 'redirect-in-bracket', ['[ $a \\< $b ]']],
     ['[ $a>$b ]', 'redirect-in-bracket', ['[ $a \\> $b ]']],
