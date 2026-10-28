@@ -4,7 +4,7 @@
 // It works in four passes: split the words into options and operands, choose the mode, match the
 // operands with the spec's patterns, and read the words of a command slot as a command of its own.
 import { isExpressionStart } from '../embedded/find';
-import { untilEnd } from './until';
+import { untilEnd, type UntilRefusal } from './until';
 import type { Text } from '../i18n';
 import { EnvSplitError, splitEnvString } from './envsplit';
 import { type ParserRules, rulesOf } from './parsers';
@@ -61,7 +61,7 @@ export type ArgRole =
    */
   | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec }
   /** The word that ends an option's command (`;` of `find -exec … ;`), and its text (one of the option's `until.terminators`). */
-  | { role: 'terminator'; text: string }
+  | { role: 'terminator'; text: string; of: string }
   /** A word of the shell string that a `command` role before it joins from the words (`ssh host ls -l`). */
   | { role: 'joined' }
   /** A word of the expression that `operandParser` reads (`find . -name x`). */
@@ -106,8 +106,13 @@ export interface ArgvParse {
   gaveUp?: boolean;
   /** Where an expression read by `operandParser` starts (`find . -name x`: the index of `-name`). */
   expression?: number;
-  /** The tool refuses the line and runs nothing: options that select different modes (`grep -E -F`, see `conflictingModes`), or a command of an option that its terminator does not end (`find . -exec rm {} ;`). */
+  /** The tool refuses the line: options that select different modes (`grep -E -F`, see `conflictingModes`). */
   refused?: boolean;
+  /**
+   * The tool refuses the line and runs nothing, because the command of an option with `until` is wrong (`find . -exec rm {} ;`):
+   * the first such command, with the option and the index of its word. The rest of the line is read as usual.
+   */
+  refusal?: UntilRefusal & { option: string; at: number };
 }
 
 export interface InterpretContext {
@@ -231,7 +236,8 @@ class Reader {
     }
     const first: { mode?: string; refused?: boolean } = {};
     for (const [word, role] of [...roles].sort((a, b) => a[0] - b[0])) parse.roles.push({ word, role: conflicting(spec, inMode(role, parse.mode), first) });
-    if (first.refused || st.refused) parse.refused = true;
+    if (first.refused) parse.refused = true;
+    if (st.refusal) parse.refusal = st.refusal;
     return parse;
   }
 
@@ -523,10 +529,11 @@ class Reader {
   private separateValues(st: OptionState, opt: OptionSpec, flag: string, last: number, from: number, role?: { missing?: boolean }): number {
     if (opt.until) {
       const { slot } = opt.until;
-      const { at: j, refused } = untilEnd(opt.until, this.words.map((w) => w.value), last + 1, st.end);
+      const { at: j, refusal } = untilEnd(opt.until, this.words.map((w) => w.value), last + 1, st.end);
       if (j > last + 1) st.roles.set(last + 1, this.command(slot, last + 1, j, flag));
-      if (refused) st.refused = true;
-      if (j < st.end) { st.roles.set(j, { role: 'terminator', text: this.words[j].value! }); return j; }
+      // (The first one: find tells that one.)
+      if (refusal) st.refusal ??= { ...refusal, option: flag, at: last };
+      if (j < st.end) { st.roles.set(j, { role: 'terminator', text: this.words[j].value!, of: flag }); return j; }
       return st.end - 1;
     }
     const values = valuesOf(opt);
@@ -623,8 +630,8 @@ interface OptionState {
   search: OptionSpec[];
   /** With the rule `longFirst`: a word of short options was read, so the long ones are over. */
   shortSeen?: boolean;
-  /** The tool refuses the line (an option's command that its terminators do not end properly): `ArgvParse.refused`. */
-  refused?: boolean;
+  /** The command of an option with `until` is wrong: `ArgvParse.refusal`. */
+  refusal?: UntilRefusal & { option: string; at: number };
 }
 
 const range = (from: number, to: number): number[] => Array.from({ length: to - from }, (_, k) => from + k);

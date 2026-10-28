@@ -39,6 +39,7 @@ import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
 import { arrayKind, globOff, NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
+import { findRefusal } from './find-refusal';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
 import { inSubshell } from './where';
@@ -144,8 +145,8 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
         }
         case 'terminator':
           out.push(cx.tok(a, 'operator', role.text === '+'
-            ? cx.s('`-exec` の終わり: 見つかったファイルをまとめて1回のコマンドに渡す', 'End of `-exec`: pass all matches to one command invocation')
-            : cx.s('`-exec` の終わり: 見つかったファイル1件ごとにコマンドを実行（`;` はシェルに解釈されないようエスケープが必要）', 'End of `-exec`: run once per match (`;` must be escaped from the shell)')));
+            ? cx.s(`\`${role.of}\` の終わり: 見つかったファイルをまとめて1回のコマンドに渡す`, `End of \`${role.of}\`: pass all matches to one command invocation`)
+            : cx.s(`\`${role.of}\` の終わり: 見つかったファイル1件ごとにコマンドを実行（\`;\` はシェルに解釈されないようエスケープが必要）`, `End of \`${role.of}\`: run once per match (\`;\` must be escaped from the shell)`)));
           break;
         case 'operand': {
           // (A word that expands to another number of words, `$x` or `{a,b}`, shifts the numbers: from it on, they are not sure.)
@@ -182,7 +183,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             slotNotes(cx, role, cx.slotEnvs.get(a)!, [a], assigned);
             const string = role.of ? valueToken(cx, a, { role: 'value', of: role.of, index: 0 }, false) : cx.tok(a, 'argument', cx.t(role.item!.text), wordParts(cx, a));
             out.push(withScript(string, scriptTokens(cx, [a], cx.slotEnvs.get(a)!, shellParams(cx, role, parse, nodes, word))));
-          } else out.push(wrapped(cx, nodes, word, role, assigned, parse.refused));
+          } else out.push(wrapped(cx, nodes, word, role, assigned, parse.refusal));
           break;
         case 'joined':
           if (!joinedWhole) out.push(a === joinedNote?.at ? withScript(positional(cx, a, joined), { tokens: [], note: joinedNote.note }) : positional(cx, a, joined));
@@ -795,15 +796,15 @@ function shellParams(cx: Explainer, role: CommandRole, parse: ArgvParse, nodes: 
 }
 
 /** Words forming a command run by another command (sudo, xargs, find -exec…): the command, with its words read by its spec. */
-function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: CommandRole, assigned: string[], lineRefused?: boolean): Token {
+function wrapped(cx: Explainer, nodes: SyntaxNode[], word: number, role: CommandRole, assigned: string[], refusal?: object): Token {
   const parse = role.parse!;
   const words = nodes.slice(word, parse.end);
   const first = nodes[word];
   // `find -exec cmd {} ;`: the words up to the terminator.
   // (What the builtin it names would do to a shell: `sudo cd /x` cannot change this one.)
   const effect = shellEffectOf(role.spec, parse.roles.map((r) => [nodes[r.word], r.role] as const));
-  // (Not when the tool refuses the line, `find . -exec f {} ;`: it runs nothing, so nothing is wrong with how it would.)
-  if (!lineRefused) slotNotes(cx, role, cx.slotEnvs.get(first)!, words, assigned, effect);
+  // (Not when find refuses the line, `find . -exec f {} ;`: it runs nothing, so nothing is wrong with how it would.)
+  if (!refusal) slotNotes(cx, role, cx.slotEnvs.get(first)!, words, assigned, effect);
   const name = first.text;
   let explanation = role.spec ? cx.t(role.spec.summary) : cx.s(`コマンド \`${name}\``, `Command \`${name}\``);
   let kind: Kind = role.spec?.builtin ? 'builtin' : 'command';
@@ -910,11 +911,12 @@ function findExpression(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec): 
   const words = nodes.map((a) => staticWordValue(a) ?? a.text);
   const lookup = (name: string) => specFor(cx, name);
   // find refuses the whole expression when one of its actions is wrong (`-exec f {} ;`): none of them runs.
-  const refused = interpret(spec, nodes.map(argWordFor(cx.state.shell)), { name: 'find', lookup }).refused;
+  const { refusal } = interpret(spec, nodes.map(argWordFor(cx.state.shell)), { name: 'find', lookup });
+  if (refusal) cx.note(findRefusal(cx, nodes, spec, refusal), nodes[refusal.at]);
   const read = (from: number, to: number): Token[] => {
     const part = nodes.slice(from, to);
     const parse = interpret(spec, part.map(argWordFor(cx.state.shell)), { name: 'find', lookup });
-    return render(cx, refused ? { ...parse, refused } : parse, spec, part, cx.command!.args);
+    return render(cx, refusal ? { ...parse, refusal } : parse, spec, part, cx.command!.args);
   };
   // (No option of find has an optional value.)
   const tree = parseFind(words, (w) => {

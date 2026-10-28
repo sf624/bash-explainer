@@ -52,6 +52,8 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'bracket-missing-close': 'none',
   // `[ -f $x]` → `[ -f $x ]`.
   'bracket-close-glued': 'mechanical',
+  // `find . -exec rm {} ;` → `find . -exec rm {} \;`: the `;` the shell took for its own is the one find needs.
+  'find-action-refused': 'mechanical',
   'test-malformed': 'none',
   'function-defined-later': 'none',
   'function-defined-in-subshell': 'none',
@@ -284,7 +286,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 17, scenario: 25, prose: 14, none: 48 });
+      { mechanical: 18, scenario: 25, prose: 14, none: 48 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
     assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 9, scenario: 3, prose: 1 });
   });

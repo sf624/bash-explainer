@@ -89,6 +89,12 @@ export function textBetween(first: SyntaxNode, last: SyntaxNode): string {
   return root.text.slice(first.startIndex - root.startIndex, last.endIndex - root.startIndex);
 }
 
+/** The text of the document from the end of `n` to the end of its tree. */
+export function textAfter(n: SyntaxNode): string {
+  const { root } = treeOf(n);
+  return root.text.slice(n.endIndex - root.startIndex);
+}
+
 /** The rewrite that puts `code` in place of the text from `start` to `end` (offsets in the tree of `n`, a node of it). */
 export function replaceRange(n: SyntaxNode, start: number, end: number, code: string): Rewrite {
   return { code, edits: treeOf(n).own ? [{ start, end, text: code }] : [] };

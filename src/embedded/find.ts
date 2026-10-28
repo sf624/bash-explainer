@@ -6,7 +6,8 @@ import { pick } from './types';
 
 /** A find expression, with word indices relative to the first expression word. */
 export type FindNode =
-  | { type: 'primary'; from: number; to: number; name: string; args: string[] }
+  // (`ended`: the arguments of an action that runs a command end with its terminator.)
+  | { type: 'primary'; from: number; to: number; name: string; args: string[]; ended?: boolean }
   | { type: 'not'; op: number; child: FindNode }
   | { type: 'and'; children: FindNode[]; ops: number[] }
   | { type: 'or'; children: FindNode[]; ops: number[] }
@@ -38,10 +39,8 @@ export function permBits(mode: string, lang: Lang): string | undefined {
   return out.length ? out.join(s('、', '; ')) : undefined;
 }
 
-/** How many words a primary takes: a count, or everything up to `;`/`+`. */
 /** How many words a primary takes, or (an action that runs a command) the `until` of its option, which says where it ends. */
 export type Arity = (primary: string) => number | NonNullable<OptionSpec['until']>;
-
 
 /** Whether find reads a word, as the shell gives it (after quote removal: `\(` is `(`), as the start of its expression. */
 export function isExpressionStart(w: string): boolean {
@@ -93,12 +92,15 @@ class Parser {
     }
     const from = this.i++;
     const n = this.arity(w);
+    let ended: boolean | undefined;
     if (typeof n === 'object') {
-      this.i = Math.min(untilEnd(n, this.words, this.i, this.words.length).at + 1, this.words.length);
+      const { at } = untilEnd(n, this.words, this.i, this.words.length);
+      ended = at < this.words.length;
+      this.i = Math.min(at + 1, this.words.length);
     } else {
       this.i = Math.min(this.i + n, this.words.length);
     }
-    return { type: 'primary', from, to: this.i - 1, name: w, args: this.words.slice(from + 1, this.i) };
+    return { type: 'primary', from, to: this.i - 1, name: w, args: this.words.slice(from + 1, this.i), ...(ended === undefined ? {} : { ended }) };
   }
 }
 
@@ -211,10 +213,13 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): string {
     case '-ls': return s('詳細を表示', 'list it in detail');
     case '-delete': return s('削除', 'delete it');
     case '-quit': return s('すぐに終了', 'quit');
-    case '-exec': case '-execdir': case '-ok': {
-      const cmd = p.args.slice(0, -1).join(' ');
-      const batch = p.args[p.args.length - 1] === '+';
-      return s(`「${cmd}」を${batch ? 'まとめて' : '1件ずつ'}実行`, `run "${cmd}"${batch ? ' on all at once' : ' for each'}`);
+    case '-exec': case '-execdir': case '-ok': case '-okdir': {
+      const cmd = (p.ended ? p.args.slice(0, -1) : p.args).join(' ');
+      const batch = p.ended && p.args[p.args.length - 1] === '+';
+      const ask = p.name === '-ok' || p.name === '-okdir';
+      // (find refuses a command that nothing ends, or that is empty: the note of the line says so.)
+      if (!p.ended || !cmd) return s(`${cmd ? `「${cmd}」を実行` : 'コマンドがない'}（find は受け付けない形）`, `${cmd ? `run "${cmd}"` : 'no command'} (find refuses this form)`);
+      return ask ? s(`確認してから「${cmd}」を1件ずつ実行`, `ask, then run "${cmd}" for each`) : s(`「${cmd}」を${batch ? 'まとめて' : '1件ずつ'}実行`, `run "${cmd}"${batch ? ' on all at once' : ' for each'}`);
     }
     default: {
       // -newerXY REF: the X time of the file is newer than the Y time of REF (or than the date, with t).

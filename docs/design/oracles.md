@@ -155,6 +155,7 @@ The catalog's classification is in test/suggestions.test.ts (#273), one line per
 | `regex-backslash-dropped` | `[[ $x =~ \bfoo ]]` → `re='\bfoo'; [[ $x =~ $re ]]`; `\d` → `[0-9]`, `\D` → `[^0-9]` (no POSIX regex has them, even from a variable); none for an escape in a bracket expression (`[\s]`) | strings that match and do not |
 | `nounset-unbound` | `$x` → `${x:-}` (when the analyzer gives `fix`) | unset, empty, set; with `set -u` |
 | `bracket-close-glued` | `[ -f a.txt]` → `[ -f a.txt ]` (with a variable, `[ -f $x]`, the style check of src/pitfalls.ts says it; none when the `]` is escaped, `b\]`) | file present, absent |
+| `find-action-refused` | `find . -exec rm {} ;` → `find . -exec rm {} \;` (only where the cause is the bare `;` that ends the line) | `find` is a recorder; it is given the `;` it lacked, and nothing else changes (find itself is run by test/find-refusal.test.ts) |
 | `script-last-test-returns-status` | `[ -f x ] && cmd` last → `if [ -f x ]; then cmd; fi`; `exit 0` after it | the test true, false |
 | `unbraced-element` | `$a[1]` → `${a[1]}` | an array of two elements; files that match `$a[1]` as a glob |
 | `array-joined-in-assignment` | `x=$@` → `x=("$@")`, or `x="$*"` when one string is meant (only where the IFS starts with a space: `"$*"` joins with its first character) | arguments with spaces, none |

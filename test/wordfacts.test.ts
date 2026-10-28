@@ -163,7 +163,7 @@ describe('word facts', () => {
     ['-exec CMD $a + \\;', 'runs'], ['-exec CMD + $a {} \\;', 'runs'], ['-exec CMD $a {} \\; -exec CMD $b {} \\;', 'runs'],
     ['-exec CMD {} $a +', 'refused'],     ['-exec CMD $a {} ;', 'refused'], ['-exec CMD $a + ;', 'refused'], ['-exec CMD $a {} \\; -exec CMD $b {} ;', 'refused'],
     ['-ok CMD $a {} +', 'refused'], ['-okdir CMD $a {} +', 'refused'], ['-exec CMD $a {} {} +', 'refused'], ['-exec CMD $a {}.bak +', 'refused'],
-    ['-exec CMD {}.bak $a +', 'refused'],
+    ['-exec CMD {}.bak $a +', 'refused'], ['-exec \\;', 'refused'], ['-ok \\;', 'refused'], ['-execdir CMD {} $a +', 'refused'],
   ];
   for (const [rest, result] of ends) {
     it(`reads ${rest} as find does: ${result}`, () => {
