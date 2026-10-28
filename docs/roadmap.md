@@ -14,7 +14,7 @@ Keep it current:
 - The seven bugs of the explanation that step 9 of item 4 found (oracles.md 2.8; the "Bug, to fix" entries of test/fixtures/renderings-known.json), before step 10. Each is fixed in its own PR, which removes its entries:
   1. A concatenation said to be "joined into one word" where word splitting, globbing or a brace expansion then make other than one word of it (`$DIR/*`, `{a,b}"x"`).
   2. `"$@"` (and `"${a[@]}"`, `"${@:2}"`) has no `Token.expands`: shown as one argument, where bash gives one word per element.
-  3. Done (#PR): `trap {x,EXIT}`: the words of the braces read as the action alone, where bash gives the action `x` and the signal `EXIT`. A command slot that takes one word gives each word of the braces its role (`ArgRole` `command` with `each`, as an operand's), also `bash -c {x,y}`.
+  3. Done (#478): `trap {x,EXIT}`: the words of the braces read as the action alone, where bash gives the action `x` and the signal `EXIT`. A command slot that takes one word gives each word of the braces its role (`ArgRole` `command` with `each`, as an operand's), also `bash -c {x,y}`.
   4. `printf '%s,'{a..c}`: `countOf` (src/argv/words.ts) gives no count to braces next to a quoted part, so the interpreter reads one word.
   5. An empty expansion counted as one word (`counts` in src/argv/interpret.ts): the hedge never covers none (`cp $a b`, `grep -c ${x} f`).
   6. The `several` hedge for `cp $a` with two words: the last is the destination of the two-operand form, not a destination directory.
