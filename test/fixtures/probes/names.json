@@ -824,6 +824,102 @@
     }
   },
   {
+    "manual": "4.3.1",
+    "snippet": "hash -p /bin/echo h1; set +h; @PROBE:off@; set -h; @PROBE:on@\nset +h; hash -p /bin/echo h2; hash -r; hash -d h1; set -h; @PROBE:fails@",
+    "note": "with hashing off (`set +h`), bash does not use the paths of `hash -p`, which come back with `set -h`; `hash` fails then (\"hashing disabled\"), also with `-p`, `-r` and `-d`",
+    "names": [
+      "h1",
+      "h2"
+    ],
+    "facts": {
+      "off": {
+        "h1": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "h2": {
+          "bash": "none",
+          "posix": "none"
+        }
+      },
+      "on": {
+        "h1": {
+          "bash": "file",
+          "posix": "file"
+        },
+        "h2": {
+          "bash": "none",
+          "posix": "none"
+        }
+      },
+      "fails": {
+        "h1": {
+          "bash": "file",
+          "posix": "file"
+        },
+        "h2": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "hash -p echo h3; @PROBE@",
+    "note": "a path with no slash is hashed as it is (bash runs it from the current directory)",
+    "names": [
+      "h3"
+    ],
+    "facts": {
+      "1": {
+        "h3": {
+          "bash": "file",
+          "posix": "file"
+        }
+      }
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "if [ -n \"$HOME\" ]; then hash -p /bin/echo h4; fi; @PROBE:a@\nhash -p /bin/echo h5; if [ -n \"$HOME\" ]; then set +h; fi; @PROBE:b@",
+    "note": "a `hash -p`, or a `set +h`, on one path of an `if`",
+    "names": [
+      "h4",
+      "h5"
+    ],
+    "facts": {
+      "a": {
+        "h4": {
+          "bash": "file",
+          "posix": "file"
+        },
+        "h5": {
+          "bash": "none",
+          "posix": "none"
+        }
+      },
+      "b": {
+        "h4": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "h5": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    },
+    "gaps": {
+      "a h4 bash": "the condition reads `$HOME`, which comes from the environment: the `hash -p` runs on one path of the `if`, so the model says \"may\"",
+      "a h4 posix": "the condition reads `$HOME`, which comes from the environment: the `hash -p` runs on one path of the `if`, so the model says \"may\"",
+      "b h4 bash": "the condition reads `$HOME`, which comes from the environment: `set +h` runs on one path of the `if`, so the model says \"may\" (bash uses the path of `hash -p` only with hashing on)",
+      "b h4 posix": "the condition reads `$HOME`, which comes from the environment: `set +h` runs on one path of the `if`, so the model says \"may\" (bash uses the path of `hash -p` only with hashing on)",
+      "b h5 bash": "the condition reads `$HOME`, which comes from the environment: `set +h` runs on one path of the `if`, so the model says \"may\" (bash uses the path of `hash -p` only with hashing on)",
+      "b h5 posix": "the condition reads `$HOME`, which comes from the environment: `set +h` runs on one path of the `if`, so the model says \"may\" (bash uses the path of `hash -p` only with hashing on)"
+    }
+  },
+  {
     "manual": "3.7.2",
     "snippet": "PATH=/usr/bin; @PROBE:usr@\nPATH=$HOME/bin; @PROBE:home@",
     "names": [

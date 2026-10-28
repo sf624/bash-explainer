@@ -3,10 +3,11 @@
 //
 // bash looks a name up in this order: a reserved word (only the first word, unquoted: the parser decides), an
 // alias (unquoted, when aliases are expanded where the line was read), a special builtin in POSIX mode, a
-// function, a builtin (unless `enable -n` turned it off), a path remembered by `hash -p`, and a file found in
-// PATH. A name with a `/` is a path and is not searched. `command` skips aliases and functions, `builtin` looks
-// at the builtins only. A command run by another program (`sudo f`, `xargs f`) is a file; a string run by
-// another shell (`bash -c f`) sees the functions exported to it, when that shell reads them (dash does not).
+// function, a builtin (unless `enable -n` turned it off), a path remembered by `hash -p` (unless `set +h` turned
+// hashing off), and a file found in PATH. A name with a `/` is a path and is not searched. `command` skips aliases
+// and functions, `builtin` looks at the builtins only. A command run by another program (`sudo f`, `xargs f`) is a
+// file; a string run by another shell (`bash -c f`) sees the functions exported to it, when that shell reads them
+// (dash does not).
 //
 // The model reads the shell state of src/semantics/state.ts at the place of the name, and the environment of
 // src/semantics/env.ts. It does not know the file system: a name that is none of the others is a file to search.
@@ -84,10 +85,21 @@ export type NameResolution =
   | { kind: 'builtin'; name: string; special: boolean; missed?: Missed; disabled?: CommandEntry }
   /**
    * A file: searched in PATH (`known` when the dictionary describes a program of that name), given as a path, or
-   * remembered by `hash -p` (`hashed`). `disabled`: the builtin of that name turned off by `enable -n`.
+   * remembered by `hash -p` (`hashed`; only while hashing is on, `set -h`). `disabled`: the builtin of that name
+   * turned off by `enable -n`.
    */
   | {
     kind: 'file'; name: string; path: 'search' | 'given' | 'hashed'; known: boolean; hashed?: CommandEntry; disabled?: CommandEntry; missed?: Missed;
+    /**
+     * `hashed` by a path with no slash: bash runs it from the current directory, not from PATH (`hash -p tac sort`
+     * runs `./tac`), so it is no program the dictionary knows (`known` is false).
+     */
+    relative?: true;
+    /**
+     * `search`, where bash may run a path `hash -p` gave the name instead: the `hash -p` ran on some paths only
+     * (`branch`), or hashing may be off there (`hashall`: `set +h` on some paths).
+     */
+    maybeHashed?: { entry: CommandEntry; why: 'branch' | 'hashall' };
     /** A name the dictionary does not know, after a `source` or `.` (this command): it may be a function of the file read. */
     sourced?: SyntaxNode;
   }
@@ -293,11 +305,20 @@ function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, bash,
   const off = disabled ? { disabled } : {};
   if (lookup === 'builtins-only') return { kind: 'none', name, why: 'not-a-builtin', ...m, ...off };
   if (name.includes('/')) return { kind: 'file', name, path: 'given', known: !!opts.program?.(name), ...m };
-  const hashed = exec || pathPrefix ? undefined : st.hashed.get(name);
-  if (hashed && hashed.state === 'on') return { kind: 'file', name, path: 'hashed', known: !!opts.program?.(hashed.value), hashed, ...off, ...m };
+  // (With hashing off, `set +h`, bash does not look in the table, which keeps its paths for `set -h`.)
+  const entry = exec || pathPrefix ? undefined : st.hashed.get(name);
+  const set = option(st, 'set', 'hashall');
+  const hashall = set === 'default' ? 'on' : set;
+  const hashed = entry && entry.state !== 'off' && hashall !== 'off' ? entry : undefined;
+  if (hashed && hashed.state === 'on' && hashall === 'on') {
+    // (A path with no slash runs from the current directory; an empty one is known only at run time.)
+    const relative = hashed.value !== '' && !hashed.value.includes('/');
+    return { kind: 'file', name, path: 'hashed', known: !relative && !!hashed.value && !!opts.program?.(hashed.value), hashed, ...(relative ? { relative } : {}), ...off, ...m };
+  }
+  const maybeHashed = hashed ? { maybeHashed: { entry: hashed, why: hashall === 'unknown' ? 'hashall' as const : 'branch' as const } } : {};
   // (A builtin turned off runs the program of its name, which the dictionary describes with it.)
   const known = !!opts.program?.(name) || !!spec?.program;
-  return { kind: 'file', name, path: 'search', known, ...off, ...m, ...(sourced && !known && !missed && !exec && !opts.env ? { sourced } : {}) };
+  return { kind: 'file', name, path: 'search', known, ...maybeHashed, ...off, ...m, ...(sourced && !known && !missed && !exec && !opts.env ? { sourced } : {}) };
 }
 
 /** What an assignment before a command name does (3.7.1, 3.7.4, 6.11). */
@@ -428,7 +449,8 @@ export function testSpec(name: string, program: boolean): CommandSpec | undefine
  */
 export function testSpecOf(res: NameResolution): CommandSpec | undefined {
   if (res.kind === 'builtin') return testSpec(res.name, false);
-  if (res.kind === 'file') return testSpec(res.path === 'hashed' ? res.hashed!.value : res.name, true);
+  // (A hashed path with no slash, or one not known, runs no program the dictionary knows.)
+  if (res.kind === 'file') return res.path !== 'hashed' ? testSpec(res.name, true) : res.hashed!.value.includes('/') ? testSpec(res.hashed!.value, true) : undefined;
   return undefined;
 }
 

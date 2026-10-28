@@ -39,6 +39,8 @@ function kindOf(r: NameResolution, path: string | undefined | null): Kind {
     case 'builtin': return r.disabled ? 'unknown' : 'builtin';
     case 'none': return 'none';
     case 'file':
+      // (A path `hash -p` gave it on some paths only, or where hashing may be off.)
+      if (r.maybeHashed) return 'unknown';
       if (r.path !== 'search') return 'file';
       if (!r.known) return 'none';
       // (null: PATH is not known.)

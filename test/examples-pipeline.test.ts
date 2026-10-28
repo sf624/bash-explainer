@@ -232,6 +232,42 @@ describe('the pipeline example of a line agrees with the tools', () => {
       assert.strictEqual(whole("sort() { cat; }; printf 'b\\na\\n' | \\sort"), undefined, lang);
     }
   });
+  it('runs a name `hash -p` gave a path as bash does: not while hashing is off, and no example where it may or may not', function () {
+    this.timeout(30000);
+    const C = { ...process.env, LC_ALL: 'C' };
+    const abc = "printf 'b\\na\\nc\\n' | sort";
+    const dir = sandbox();
+    try {
+      const bash = (line: string, env: NodeJS.ProcessEnv = {}) => run('bash', ['-c', line], { env: { ...C, ...env }, cwd: dir });
+      for (const lang of ['en', 'ja'] as const) {
+        const whole = (line: string) => new Analyzer(lang).explainLine(parser.parse(line), 0).examples.find((x) => x.kind === 'pipeline');
+        // With hashing off (`set +h`), bash searches PATH; `hash` fails then ("hashing disabled") and changes nothing,
+        // and the paths it had come back with `set -h`.
+        for (const line of [`hash -p /usr/bin/tac sort; set +h; ${abc}`, `set +h; hash -p /usr/bin/tac sort; ${abc}`, `set +h; hash -p /usr/bin/tac sort; set -h; ${abc}`,
+          `hash -p /usr/bin/tac sort; set +h; set -h; ${abc}`, `hash -p /usr/bin/tac sort; set +h; hash -r; set -h; ${abc}`, `hash -p /usr/bin/tac sort; set +h; hash -d sort; set -h; ${abc}`]) {
+          assert.deepStrictEqual(whole(line)?.sections.at(-1)?.lines, lines(bash(line).stdout.toString()), `${line} (${lang})`);
+        }
+        // A path with no slash runs from the current directory (no `./tac` here: "No such file or directory"); one
+        // known only at run time; a `hash -p` on one path of an `if`, or `set +h` on one: no example.
+        for (const line of [`hash -p tac sort; ${abc}`, `hash -p "$p" sort; ${abc}`, `if [ -n "$x" ]; then hash -p /usr/bin/tac sort; fi; ${abc}`,
+          `hash -p /usr/bin/tac sort; if [ -n "$x" ]; then set +h; fi; ${abc}`]) {
+          assert.strictEqual(whole(line), undefined, `${line} (${lang})`);
+        }
+      }
+      // What bash does there: the relative path from the current directory, and either program after the `if`.
+      const relative = bash(`hash -p tac sort; ${abc}`);
+      assert.strictEqual(relative.status, 127);
+      assert.match(relative.stderr.toString(), /tac: No such file or directory/);
+      fs.symlinkSync('/usr/bin/tac', path.join(dir, 'tac'));
+      assert.deepStrictEqual(lines(bash(`hash -p tac sort; ${abc}`).stdout.toString()), ['c', 'a', 'b']);
+      for (const line of [`if [ -n "$x" ]; then hash -p /usr/bin/tac sort; fi; ${abc}`, `hash -p /usr/bin/tac sort; if [ -z "$x" ]; then set +h; fi; ${abc}`]) {
+        assert.deepStrictEqual(lines(bash(line, { x: '1' }).stdout.toString()), ['c', 'a', 'b'], line);
+        assert.deepStrictEqual(lines(bash(line, { x: '' }).stdout.toString()), ['a', 'b', 'c'], line);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('pipeline examples of long pipelines', () => {

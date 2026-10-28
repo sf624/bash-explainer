@@ -1463,6 +1463,18 @@ A name `hash -p` gave a path is read as that file, as when the path is written o
 | `hash -p /usr/bin/egrep grep`, `echo aa \| grep -o 'a+'` | the pattern is a basic regex (BRE) | an extended regex (ERE), as `egrep` reads it: bash prints `aa` |
 | `hash -p /usr/bin/git git`, `git log` | "Subcommand `git log`" | "Subcommand `/usr/bin/git log`", as when the path is written out |
 
+bash uses the paths of `hash -p` only while hashing is on. After `set +h` it searches PATH, and `hash` fails with "hashing disabled" (with `-p`, `-r` or `-d` too), so the table stays as it was; `set -h` brings its paths back (bash 5.2). A path with no slash is run from the current directory, not searched in PATH. Where a `hash -p`, or a `set +h`, ran on some paths only, the name says what it may run instead, and gets no example. Before, each of these was read as the program of the path.
+
+| Script | Before | Now (bash 5.2 prints) |
+| --- | --- | --- |
+| `hash -p /usr/bin/tac sort; set +h; printf 'b\na\nc\n' \| sort` | `sort` runs `/usr/bin/tac`; the example prints `c a b` | "Sort lines"; the example prints `a b c` (bash: `a b c`) |
+| `set +h; hash -p /usr/bin/tac sort; printf … \| sort` | as above | as above (bash: "hash: hashing disabled", then `a b c`) |
+| `hash -p tac sort; printf … \| sort` | `sort` runs `tac`; the example prints `c a b` | "Run `tac` from the current directory (… a path with no slash is not searched in PATH)"; no example (bash: "tac: No such file or directory", or `./tac`'s output) |
+| `hash -p "$p" sort; printf … \| sort` | "Run the external command `sort` (… the path ``)"; the example sorts | "Run an external command (`hash -p` on line 1 gave `sort` a path known only when it runs)"; no example |
+| `if [ -n "$x" ]; then hash -p /usr/bin/tac sort; fi; printf … \| sort` | "Sort lines"; the example prints `a b c` | "Sort lines (if the `hash -p` on line 1 ran, it runs `/usr/bin/tac` given there instead)"; no example |
+| `hash -p /usr/bin/tac sort; if [ -n "$x" ]; then set +h; fi; printf … \| sort` | `sort` runs `/usr/bin/tac` | "Sort lines (if hashing is on here, it runs `/usr/bin/tac` …; `set +h` turns hashing off on some paths)"; no example |
+| `hash -p test t`, `t -n x` | `-n x`: a condition, read by `test` | `-n`, `x`: words of `./test`, a program the dictionary does not know |
+
 ### The quick fix of `[[ ]]`
 
 For a script run by sh or dash, the fix of a `[[ ]]` writes `[ ]`. It now leaves out what `[ ]` tests otherwise (bash 5.2 and 5.3 against dash):
