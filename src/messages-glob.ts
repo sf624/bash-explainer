@@ -44,26 +44,33 @@ const GLOBSTAR: Record<GlobstarWhy, (on: string) => readonly [string, string]> =
 /** The text of `globstar-<why>`, [ja, en], for the command that turns it on, `on`. */
 export const globstarText = (why: GlobstarWhy) => ({ on }: { on: string }): readonly [string, string] => GLOBSTAR[why](on);
 
+/** A pattern of a `for` list, as the loop note names it, and its text after the expansions where it is known. */
+export interface LoopPattern { name: string; text?: string }
+
 /**
- * `unmatched-glob-runs-once`: what the loop does when no file matches `glob`, whose patterns are `texts`, after quote
- * removal (more than one where braces or splitting make them: `*.{c,h}`, `*.c` and `*.h`); `alone`: they are the whole
- * list, so that with one the loop runs only once. And the rewrites there are (a test first in the body, `shopt -s
- * nullglob`): either may be missing, or both (in sh, for a list with a word that is no glob).
+ * `unmatched-glob-runs-once`: what the loop does when no file matches `glob`, whose patterns are `patterns` (more than
+ * one where braces or splitting make them: `*.{c,h}`, `*.c` and `*.h`), each named and with the text the variable
+ * gets, where it is known (not for `"$d"/*.c`); `alone`: they are the whole list, so that with one the loop runs only
+ * once. And the rewrites there are (a test first in the body, `shopt -s nullglob`): either may be missing, or both
+ * (in sh, for a list with a word that is no pattern).
  */
-export function unmatchedGlobText(glob: string, texts: readonly string[], v: string, alone: boolean, rewrite: readonly Rewrite[]): readonly [string, string] {
+export function unmatchedGlobText(glob: string, patterns: readonly LoopPattern[], v: string, alone: boolean, rewrite: readonly Rewrite[]): readonly [string, string] {
   const test = rewrite.find((r) => !r.code.startsWith('shopt'));
   const nullglob = rewrite.find((r) => r.code.startsWith('shopt'));
   const ja = test ? `本体の先頭に \`${test.code}\` を${nullglob ? `書くか、ループの前で \`${nullglob.code}\` にします` : '書きます'}` : nullglob ? `ループの前で \`${nullglob.code}\` にします` : '';
   const en = test ? `Start the body with \`${test.code}\`${nullglob ? `, or turn on \`${nullglob.code}\` before the loop` : ''}` : nullglob ? `Turn on \`${nullglob.code}\` before the loop` : '';
-  const [t] = texts;
-  const code = texts.map((x) => `\`${x}\``);
-  const [jaWhat, enWhat] = texts.length > 1
-    ? [`\`${glob}\` はファイルと照合する前に ${code.join('・')} になります。そのうち一致するファイルが1つもないものについても1回ずつ実行され、\`${v}\` にはその文字列がそのまま入ります`,
-      `\`${glob}\` gives the patterns ${code.slice(0, -1).join(', ')} and ${code[code.length - 1]} before files are matched; for each that no file matches, the loop still runs once, with \`${v}\` set to its text itself`]
+  const [{ text: t }] = patterns;
+  const known = patterns.every((p) => p.text !== undefined);
+  const code = patterns.map((p) => `\`${p.name}\``);
+  // (The text the variable gets: the pattern's, after its expansions, which are not known here for `"$d"/*.c`.)
+  const [jaText, enText] = t !== undefined ? [` \`${t}\` という文字列`, `the text \`${t}\` itself`] : ['展開後のパターンの文字列', 'the text of the pattern itself, after its expansions'];
+  const [jaWhat, enWhat] = patterns.length > 1
+    ? [`\`${glob}\` はファイルと照合する前に ${code.join('・')} になります。そのうち一致するファイルが1つもないものについても1回ずつ実行され、\`${v}\` には${known ? '' : '展開後の'}その文字列がそのまま入ります`,
+      `\`${glob}\` gives the patterns ${code.slice(0, -1).join(', ')} and ${code[code.length - 1]} before files are matched; for each that no file matches, the loop still runs once, with \`${v}\` set to its text itself${known ? '' : ', after its expansions'}`]
     : alone
-      ? [`\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に \`${t}\` という文字列がそのまま入って1回実行されます`,
-        `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to the text \`${t}\` itself`]
-      : [`\`${glob}\` に一致するファイルが1つもなくても、その分の1回は実行され、\`${v}\` には \`${t}\` という文字列がそのまま入ります`,
-        `when no file matches \`${glob}\`, the loop still runs once for it, with \`${v}\` set to the text \`${t}\` itself`];
+      ? [`\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に${jaText}がそのまま入って1回実行されます`,
+        `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to ${enText}`]
+      : [`\`${glob}\` に一致するファイルが1つもなくても、その分の1回は実行され、\`${v}\` には${jaText}がそのまま入ります`,
+        `when no file matches \`${glob}\`, the loop still runs once for it, with \`${v}\` set to ${enText}`];
   return [`${jaWhat}${ja ? `。${ja}` : ''}`, `${enWhat}${en ? `. ${en}` : ''}`];
 }

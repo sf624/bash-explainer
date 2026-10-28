@@ -15,12 +15,13 @@ import { parseExpansion } from '../expansion';
 import { ansiCValue, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, sameInEveryLocale, substring } from './chars';
-import { bracedWords, braceStep, wordAlternatives } from './brace';
+import { bracedWords, braceStep, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
 import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 import { changedByBash, setAtStart } from './vars';
 import { ARITH, changesDirectory, underscoreValue, unreliableNames } from './wordsites';
+import { operandSegs } from './operands';
 
 export { underscoreValue, unreliableNames };
 
@@ -777,59 +778,6 @@ function plain(text: string): Piece[] {
   return out;
 }
 
-/** A piece of the text of a `${…}` operand: quoted or not, from the source or from an expansion in it. */
-interface Seg { text: string; quoted: boolean }
-
-/**
- * The operand of `${x:-word}`, `${x#pattern}` or `${x/p/r}`, read from its text: quotes, backslashes, `$'…'` and
- * `$name` / `${name}` (with `param`). Undefined when it holds another expansion. `quoted`: the `${…}` is in double
- * quotes, where a backslash quotes only `$`, `` ` ``, `"`, `\` and `}`, and a single quote is a plain character.
- */
-function operandSegs(text: string, quoted: boolean, param: (name: string) => string | undefined): Seg[] | undefined {
-  const out: Seg[] = [];
-  const name = /^\$(?:([A-Za-z_]\w*)|\{([A-Za-z_]\w*)\})/;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '$') {
-      const m = name.exec(text.slice(i));
-      if (m) {
-        const v = param(m[1] ?? m[2]);
-        if (v === undefined) return undefined;
-        out.push({ text: v, quoted });
-        i += m[0].length - 1;
-        continue;
-      }
-      if (!quoted && text[i + 1] === "'") {
-        const end = text.indexOf("'", i + 2);
-        const v = end < 0 ? undefined : ansiCValue(text.slice(i + 2, end));
-        if (v === undefined || !sameInEveryLocale(v)) return undefined;
-        out.push({ text: v, quoted: true });
-        i = end;
-        continue;
-      }
-      return undefined;
-    }
-    if (c === '`') return undefined;
-    if (c === '\\' && i + 1 < text.length) {
-      if (quoted && !'$`"\\}'.includes(text[i + 1])) out.push({ text: c, quoted: true });
-      out.push({ text: text[++i], quoted: true });
-    } else if (c === "'" && !quoted) {
-      const end = text.indexOf("'", i + 1);
-      if (end < 0) return undefined;
-      out.push({ text: text.slice(i + 1, end), quoted: true });
-      i = end;
-    } else if (c === '"') {
-      const end = text.indexOf('"', i + 1);
-      if (end < 0) return undefined;
-      const inner = operandSegs(text.slice(i + 1, end), true, param);
-      if (!inner) return undefined;
-      out.push({ text: '', quoted: true }, ...inner);
-      i = end;
-    } else out.push({ text: c, quoted });
-  }
-  return out;
-}
-
 /** The word of `${x:-word}`: split and globbed where the `${…}` is (an unquoted tilde prefix at its start expands). */
 function paramWord(text: string, quoted: boolean, ev: Evaluator): Piece[] | undefined {
   const out: Piece[] = [];
@@ -885,6 +833,34 @@ function sourceValue(source: SyntaxNode, model: StateModel, env: WordEnv | undef
 /** The fields of the word that holds `n` where it runs (`fields`), bash's error on it (`error`), or neither when they are not known here. */
 export function wordFields(n: SyntaxNode, model: StateModel, env?: WordEnv): Fields {
   return fieldsAt(n, model, env, new Set());
+}
+
+/**
+ * The words of the brace expansion of the word of `n` (`wordAlternatives`; undefined where they are not known here),
+ * each as written, with its fields before pathname expansion where they are known (`fields`), and its characters
+ * unsplit, with `hole` for each part not known here (`chars`); either undefined where bash fails on the word
+ * (`${x:?}`). For the patterns of a list (src/semantics/globwords.ts).
+ */
+export function braceWords(n: SyntaxNode, model: StateModel, hole: string): { w: WordMeaning; words: { written: string; fields?: Char[][]; chars?: Char[] }[] } | undefined {
+  // (A word of a list is always one.)
+  const w = wordMeaning(n, model)!;
+  const alternatives = wordAlternatives(w);
+  if (!alternatives) return undefined;
+  const ev = new Evaluator(w, new ModelValues(w, model, undefined, new Set()));
+  const failing = (nodes: BraceAlternative, holed: boolean): Piece[] | undefined => {
+    try {
+      return piecesOf(w, nodes, ev, holed ? (quoted) => ({ text: hole, quoted, expanded: !quoted }) : undefined);
+    } catch (e) {
+      /* c8 ignore next -- a rethrow guard, as in `fieldsAt`. */
+      if (!(e instanceof Failure)) throw e;
+      return undefined;
+    }
+  };
+  return { w, words: alternatives.map((nodes) => {
+    const known = failing(nodes, false);
+    const chars = failing(nodes, true)?.flatMap((p) => [...p.text].map((c): Char => ({ c, quoted: p.quoted, split: p.expanded && !p.quoted })));
+    return { written: nodes.map((p) => (typeof p === 'string' ? p : p.text)).join(''), fields: known && splitPieces(w, known), chars };
+  }) };
 }
 
 /**
@@ -997,14 +973,18 @@ export function wordIn(n: SyntaxNode, st: ShellState, source: WalkSource, as: 'f
 const PLAIN_TEXT = /^[\w.,:/@%+=-]+$/;
 
 /** A field as a pattern for globToRegex: quoted characters escaped. */
-function patternOfChars(f: readonly Char[]): string {
+export function patternOfChars(f: readonly Char[]): string {
   return f.map((c) => (c.quoted && /[\\*?[\]()|!@+]/.test(c.c) ? `\\${c.c}` : c.c)).join('');
 }
 
-type Char = { c: string; quoted: boolean; split: boolean };
+/** A character of a field, quoted or not, and whether word splitting may split there (from an unquoted expansion). */
+export type Char = { c: string; quoted: boolean; split: boolean };
 
-/** The pieces of the word (or of one word of its brace expansion), with its tildes expanded. */
-function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator): Piece[] | undefined {
+/**
+ * The pieces of the word (or of one word of its brace expansion), with its tildes expanded. `hole`: what a part not
+ * known here stands for, quoted or not (`braceWords`); without it, the pieces are not known.
+ */
+function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator, hole?: (quoted: boolean) => Piece): Piece[] | undefined {
   const out: Piece[] = [];
   const parts = nodes.flatMap((n): (SyntaxNode | string)[] => (typeof n !== 'string' && n.type === 'concatenation' ? [...n.namedChildren] : [n]));
   for (let i = 0; i < parts.length; i++) {
@@ -1015,8 +995,8 @@ function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator)
       const t = /^~([^/\\'"$`]*)(?=\/|$)/.exec(n);
       if (t && w.rule.tilde !== 'none') {
         const home = ev.tilde(t[1]);
-        if (home === undefined) return undefined;
-        out.push({ text: home, quoted: true, expanded: false }, ...plain(n.slice(t[0].length)));
+        if (home === undefined && !hole) return undefined;
+        out.push(home === undefined ? hole!(true) : { text: home, quoted: true, expanded: false }, ...plain(n.slice(t[0].length)));
       } else out.push(...plain(n));
       continue;
     }
@@ -1025,14 +1005,14 @@ function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator)
       let at = 0;
       for (const t of tildes) {
         const v = ev.tilde(t.user);
-        if (v === undefined) return undefined;
-        out.push(...plain(n.text.slice(at, t.start)), { text: v, quoted: true, expanded: false });
+        if (v === undefined && !hole) return undefined;
+        out.push(...plain(n.text.slice(at, t.start)), v === undefined ? hole!(true) : { text: v, quoted: true, expanded: false });
         at = t.end;
       }
       out.push(...plain(n.text.slice(at)));
       continue;
     }
-    const p = ev.pieces(n, false);
+    const p = ev.pieces(n, false) ?? (hole && [hole(QUOTES.has(n.type))]);
     if (!p) return undefined;
     out.push(...p);
   }
