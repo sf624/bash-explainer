@@ -67,10 +67,10 @@ describe('argv capture: the word model and the explanation against bash (oracles
       // (The value of `$x` and its words; the argument is marked as split, so it says no count.)
       ['$x', 'value 2', false], ['d', 'argument 1', false],
       ['{a,b}', 'brace 2, brace-example 2', false], ['"a b"', 'argument 1, string 1', false],
-      // (`"$@"`: the argument is not marked, a known bug; its string says one word per element.)
-      ['"$@"', 'argument 1', false], ['$x/c', 'concatenation 1', false],
-      // (A concatenation with `"$@"` says it is not one word: no count, but the argument's, as for `"$@"`.)
-      ['"$@"/c', 'argument 1', false],
+      // (`"$@"`: the argument is marked as one word per element, and its string says so: no count.)
+      ['"$@"', '', false], ['$x/c', 'concatenation 1', false],
+      // (A concatenation with `"$@"` says it is not one word, and its argument is marked as `"$@"`'s: no count.)
+      ['"$@"/c', '', false],
       // (A glob: an example of the files it matches, and no count; after `set -f`, one argument and no example.)
       ['*.txt', '', true], ['*.txt', 'argument 1', false],
     ]);

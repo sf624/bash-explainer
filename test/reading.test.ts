@@ -1041,6 +1041,15 @@ describe('the reading tree in the panel and in host files', () => {
     assert.strictEqual(expands('ls $x', '$x'), 'split');
     assert.strictEqual(expands('ls *.c{,h}', '*.c{,h}'), 'glob');
     assert.strictEqual(expands('cat f{1,2}.txt', 'f{1,2}.txt'), 'brace');
+    // (One word per element: `"$@"` and the like, also with text beside them; unquoted, `$@` is split and globbed too:
+    // with an empty IFS and `set -f`, neither, and still one word per element.)
+    for (const w of ['"$@"', '"${@:2}"', '"${a[@]/x/y}"', '"pre$@post"', 'pre"$@"post', '"${!a[@]}"']) assert.strictEqual(expands(`cp ${w} d`, w), 'elements', w);
+    assert.strictEqual(expands('cp $@ d', '$@'), 'split');
+    assert.strictEqual(expands('set -f; IFS=; cp $@ d', '$@'), 'elements');
+    assert.strictEqual(expands('cp "${#a[@]}" d', '"${#a[@]}"'), undefined);
+    // (The value of an option: the first element is the value, the others are operands.)
+    const pattern = find(explain('grep -e "$@"').reading!, '"$@"', 'command', 'argument');
+    assert.deepStrictEqual([pattern.valueFor, pattern.expands], ['-e', 'elements']);
     assert.strictEqual(expands('cat "$x" "a*" f.txt', '"$x"'), undefined);
     assert.strictEqual(expands('cat "$x" "a*" f.txt', '"a*"'), undefined);
     assert.strictEqual(expands('cat "$x" "a*" f.txt', 'f.txt'), undefined);
@@ -1060,6 +1069,8 @@ describe('the reading tree in the panel and in host files', () => {
       assert.strictEqual(count('f{1,2}.txt'), '2');
       assert.strictEqual(count('"*.log"'), '1');
       assert.strictEqual(count('"$x"'), '1');
+      assert.strictEqual(bash(`set -- a 'b c'; f() { echo $#; }; f "$@"; f "pre$@post"; set -f; IFS=; f $@; set --; f "$@"; f "pre$@post"`), '2\n2\n2\n0\n1\n');
+      assert.strictEqual(bash(`set -- -x -; grep -e "$@" <<< $'-x\\na'`), '-x\n');
       // `sort -o *.txt`: the output goes to the first file, the other is the input.
       writeFileSync(path.join(dir, 'b.log'), 'z\n');
       assert.strictEqual(bash(`cd '${dir}' && sort -o *.log; cat a.log`), 'z\n');

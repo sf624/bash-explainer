@@ -1173,6 +1173,7 @@
  "grep -P 'a*+b??c{2,}+' f",
  "grep -P 'a+?b{,3}c{2,3}d{x}[\\d_]' f",
  "grep -c ${x} f",
+ "grep -e \"$@\"",
  "grep -e \"$x\" f",
  "grep -e'x' f",
  "grep -f \"$x\" f",
