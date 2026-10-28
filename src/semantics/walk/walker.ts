@@ -292,7 +292,7 @@ export class Walker {
           const after = new Set([...this.lastChange].filter(([, i]) => i > since).map(([k]) => k));
           this.walks.set(def, []);
           this.outside++;
-          this.walkBody(def, widen(this, at, after, { since, proc }), { def, saved: new Map() });
+          this.walkBody(def, widen(this, at, after, { since, proc }), { def, saved: new Map(), proc });
           this.outside--;
         }
       }
@@ -309,7 +309,7 @@ export class Walker {
     for (let round = 0; round < NESTED_DEPTH && this.traps.length; round++) for (const t of this.traps.splice(0)) {
       const after = new Set([...this.lastChange].filter(([, i]) => i > t.since).map(([k]) => k));
       const st = t.exit && this.topLevel(t.host) ? end : widen(this, t.st, after, t);
-      this.trapAction(t.script, t.host, st, t.exitOnly, t.dead);
+      this.trapAction(t.script, t.host, st, t.exitOnly, t.dead, t.proc);
     }
   }
 
@@ -585,7 +585,7 @@ export class Walker {
     this.node = n;
     this.statement = { deferred: [] };
     const reasons = subshellReasons(n);
-    if (reasons.length) this.targets.push({ kind: 'subshell' });
+    if (reasons.length) this.targets.push({ kind: 'subshell', at: n });
     try {
       const ran = this.runStatement(n, st);
       const after = withStatus(ran, this.conditions.statusOf(n, st, ran));
@@ -1116,7 +1116,7 @@ export class Walker {
     this.changes.set(def, changes);
     this.collecting.push(changes);
     // (`return` ends the body: the states there are merged into the one at its end.)
-    const target: Target = { kind: 'function', dead: this.mode.dead, returns: [] };
+    const target: Target = { kind: 'function', dead: this.mode.dead, returns: [], ...(frame.proc ? { proc: frame.proc } : {}) };
     this.targets.push(target);
     let end: ShellState;
     try {
@@ -1233,8 +1233,8 @@ export class Walker {
   }
 
   /** Runs a trap's action from `st` (see `runScript`), inside its `trap` target. */
-  trapAction(script: NestedScript, host: SyntaxNode, st: ShellState, exitOnly: boolean, dead = false): void {
-    this.targets.push({ kind: 'trap', exitOnly });
+  trapAction(script: NestedScript, host: SyntaxNode, st: ShellState, exitOnly: boolean, dead = false, proc?: Target): void {
+    this.targets.push({ kind: 'trap', exitOnly, ...(proc ? { proc } : {}) });
     // (A trap set in code that never runs is never set: its action is walked as dead code.)
     if (dead) this.mode.dead++;
     try {
