@@ -9,7 +9,9 @@
 // stale (an input that ran and no longer differs, or one that is in no set), and the words the model could know (bash
 // gave them the same fields on every run: a report, not a failure). Then the same for the renderings and the roles
 // (step 9, test/support/renderings.ts) and test/fixtures/renderings-known.json. It fails on a difference, a stale entry,
-// or a command that reached a PATH search. It takes about 15 s on 4 jobs.
+// or a command that reached a PATH search; but a difference of the renderings in a fuzz input is only reported (`SHOWN
+// (fuzz, not failing)`): the fuzz inputs change with every snippet, too often for entries, and a bug they show is given
+// a stable input (a snippet or test/fixtures/renderings.sh) with its entry. It takes about 15 s on 4 jobs.
 import * as fs from 'fs';
 import { ARGV_KNOWN, type ArgvKnownFile, checkArgv, fixtureInputs, fuzzArgvInputs, matchKnown, runArgv, snippetInputs } from '../test/support/argv';
 import { probeSkipReason } from '../test/support/probe';
@@ -44,9 +46,10 @@ const jobs = at > 0 ? Number(process.argv[at + 1]) : 4;
     for (const c of candidates) console.log(`    ${c.word} in ${JSON.stringify(c.command)}: ${JSON.stringify(c.fields).slice(0, 100)}`);
     console.log('  renderings and roles:');
     for (const [env, c] of Object.entries(rendered.counts)) console.log(`    ${env}: ${JSON.stringify(c)}`);
-    for (const u of r.unexplained) console.log(`    SHOWN ${u}`);
+    const fuzz = set === 'fuzz';
+    for (const u of r.unexplained) console.log(`    SHOWN${fuzz ? ' (fuzz, not failing)' : ''} ${u}`);
     for (const s of r.stale) console.log(`    STALE ${s}`);
-    failed ||= escaped.length + unexplained.length + stale.length + r.unexplained.length + r.stale.length > 0;
+    failed ||= escaped.length + unexplained.length + stale.length + (fuzz ? 0 : r.unexplained.length) + r.stale.length > 0;
   }
   const gone = [
     ...known.known.filter((e) => !names.has(e.input)).map((e) => `${JSON.stringify(e.input)}: ${e.command}`),

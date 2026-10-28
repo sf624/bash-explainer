@@ -108,18 +108,18 @@ export function globExampleOn(w: SyntaxNode, shown: Shown): boolean {
 
 /**
  * What may make other than one word of `w`, from the model and the syntax, not from the explanation: the steps of brace
- * expansion, word splitting and globbing that apply to it or may (`wordMeaning`), and whether a part in double quotes
- * gives one word per element (`"$@"`, `"${@:2}"`, `"${a[@]}"`, `"${!a[@]}"`; written so, whatever bash then gives).
+ * expansion, word splitting and globbing that apply to it or may (`wordMeaning`), and whether a part gives one word
+ * per element (`"$@"`, `"${@:2}"`, `"${a[@]}"`, `"${!a[@]}"`, and unquoted `$@/a`, `${a[@]}x`, which are also split
+ * further; written so, whatever bash then gives).
  */
 export interface WordCauses { steps: ('brace' | 'split' | 'glob')[]; perElement: boolean }
 
-/** An expansion that gives one word per element when it is in double quotes. */
+/** An expansion that gives one word per element (in double quotes; unquoted, each is split further). */
 const PER_ELEMENT = /^\$(@|\{!?@|\{!?[A-Za-z_]\w*\[@\]|\{![A-Za-z_]\w*@\})/;
 
 export function wordCauses(w: SyntaxNode, model: StateModel): WordCauses {
   const steps = (wordMeaning(w, model)?.steps ?? []).filter((s) => (s.kind === 'brace' || s.kind === 'split' || s.kind === 'glob') && s.applies !== false);
-  const quoted = descendants(w, ['string']).flatMap((s) => descendants(s, ['simple_expansion', 'expansion']));
-  return { steps: steps.map((s) => s.kind as WordCauses['steps'][number]), perElement: quoted.some((e) => PER_ELEMENT.test(e.text)) };
+  return { steps: steps.map((s) => s.kind as WordCauses['steps'][number]), perElement: descendants(w, ['simple_expansion', 'expansion']).some((e) => PER_ELEMENT.test(e.text)) };
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -183,7 +183,7 @@ const showsFlag = (t: Token, { flag, text }: { flag: string; text?: string }): b
  * does not cover); in the words of a brace expansion ("expands to `a` (X) and `b` (Y)"), the role after the field's
  * own text.
  */
-function saysOperand(explanation: string, texts: readonly string[], place: FieldPlace): boolean {
+export function saysOperand(explanation: string, texts: readonly string[], place: FieldPlace): boolean {
   const e = plain(explanation);
   const has = (part: string): boolean => texts.some((x) => part.includes(plain(x)));
   const several = / when `(.+?)` expands to a single word; when it expands to more, they are /.exec(e);
@@ -197,11 +197,18 @@ function saysOperand(explanation: string, texts: readonly string[], place: Field
   const otherwise = / when ((?:`[^`]+`(?:, )?)+) expands to a single word; (.*) when it expands to more/.exec(e);
   if (otherwise) {
     const named = [...otherwise[1].matchAll(/`([^`]+)`/g)].map((x) => place.counts.get(x[1]));
-    if (named.some((c) => c === undefined)) return has(e);
-    if (named.some((c) => c === 0)) return false;
+    // (A word the hedge names that is not one of the command's, or that gave none: not a reading the hedge covers.)
+    if (named.some((c) => c === undefined || c === 0)) return false;
     return named.some((c) => c! > 1) ? has(otherwise[2]) : has(e.slice(0, otherwise.index));
   }
-  if (e.startsWith('expands to `')) return texts.some((x) => e.includes(`\`${place.text}\` (${plain(x).replace(/ \((.*)\)$/, ': $1')})`));
+  // (A hedge in a form not read here: a finding, so that a new wording is seen.)
+  if (/expands to (a single word|more)/.test(e)) return false;
+  if (e.startsWith('expands to `')) {
+    // (The words as `braceTexts` writes them, with their quotes: the role at the field's place in the list.)
+    const starts = [...e.matchAll(/`[^`]*` \(/g)];
+    if (starts.length !== place.of) return has(e);
+    return has(e.slice(starts[place.at].index + starts[place.at][0].length, starts[place.at + 1]?.index ?? e.length));
+  }
   return has(e);
 }
 
@@ -216,6 +223,8 @@ function showsRole(role: ArgRole, tokens: readonly Token[], place: FieldPlace, o
   // (The value of an option that bash expands into several words: the first is the value, the others operands,
   // `Token.valueFor` with `Token.expands`.)
   const spliced = place.at > 0 && tokens.some((t) => t.valueFor && t.expands);
+  // (No token of an argument or an option on the word: a missing explanation, not one that contradicts bash.)
+  if (!tokens.length) return undefined;
   switch (role.role) {
     case 'option': case 'cluster': case 'pattern-option': case 'unknown-option': case 'old-style':
       return flagsOf(role).every((f) => tokens.some((t) => showsFlag(t, f)));
@@ -335,8 +344,8 @@ export function checkRenderings(plans: readonly ArgvPlanRun[]): { found: RenderF
 /**
  * The classes of differences an entry with no input may accept, each with the condition that tells its cause:
  * - `fields-step`: a count of a word that brace expansion, word splitting or globbing may make other than one word of
- *   (`$DIR/*`, `$x/a`, `{a,b}"x"`), with no part in double quotes that gives one word per element (`"$@"/a`, whose
- *   explanation says it is not one word).
+ *   (`$DIR/*`, `$x/a`, `{a,b}"x"`), with no part that gives one word per element (`"$@"/a`, whose explanation says
+ *   it is not one word; `$@/a`).
  */
 export const RENDER_CLASSES = {
   'fields-step': (f: RenderFinding): boolean => !!f.causes && f.causes.steps.length > 0 && !f.causes.perElement,

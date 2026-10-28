@@ -1,8 +1,8 @@
 {
   "counts": {
     "fixtures": {
-      "probe": { "words": 117, "unknown": 19, "claims": 137, "globExamples": 8, "roleCommands": 4, "roleFields": 11 },
-      "values": { "words": 260, "unknown": 43, "claims": 322, "globExamples": 13, "roleCommands": 14, "roleFields": 58 }
+      "probe": { "words": 124, "unknown": 19, "claims": 146, "globExamples": 8, "roleCommands": 9, "roleFields": 23 },
+      "values": { "words": 267, "unknown": 43, "claims": 331, "globExamples": 13, "roleCommands": 19, "roleFields": 70 }
     },
     "snippets": {
       "probe": { "words": 298, "unknown": 41, "claims": 324, "globExamples": 10, "roleCommands": 12, "roleFields": 12 },
@@ -187,20 +187,52 @@
       "reason": "Bug, to fix: the words of a brace expansion in the action of `trap` are read as the action alone, and its token is not marked `expands`; bash runs `trap x EXIT`, where `x` is the action and `EXIT` a signal."
     },
     {
-      "input": "cp $a b; cp $a ",
-      "command": "cp $a b",
-      "word": "b",
+      "input": "renderings.sh",
+      "command": "cp $pair",
+      "word": "$pair",
       "check": "role",
-      "env": "probe",
-      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`cp b`: one operand, a source)."
+      "reason": "Bug, to fix: the hedge `several` gives the roles of the expansion taken as three words (`counts`: one more than two); bash gives it two here (`a b`), and the second is the destination of the two-operand form (the new name, or an existing directory), not a destination directory."
     },
     {
-      "input": "cp $a b; cp $a ",
-      "command": "cp $a",
-      "word": "$a",
+      "input": "renderings.sh",
+      "command": "cp $opt d",
+      "word": "$opt",
       "check": "role",
+      "reason": "Bug, to fix: a value the model knows that starts with `-` gives an option, but the interpreter reads the word as written, an operand (`cp $opt d` with `opt=\"-r a\"`: bash runs `cp -r a d`, where `-r` is an option); the words after it then have the roles of another form (`d` is the destination of the two-operand form, not a destination directory)."
+    },
+    {
+      "input": "renderings.sh",
+      "command": "cp $opt d",
+      "word": "d",
+      "check": "role",
+      "reason": "Bug, to fix: a value the model knows that starts with `-` gives an option, but the interpreter reads the word as written, an operand (`cp $opt d` with `opt=\"-r a\"`: bash runs `cp -r a d`, where `-r` is an option); the words after it then have the roles of another form (`d` is the destination of the two-operand form, not a destination directory)."
+    },
+    {
+      "input": "[ \"$#\" -gt 0 ] || exit 1\nrm -rf $@/x",
+      "command": "rm -rf $@/x",
+      "word": "$@/x",
+      "check": "count",
+      "source": "concatenation",
       "env": "values",
-      "reason": "Bug, to fix: the hedge `several` gives the roles of the expansion taken as three words (`counts`: one more than two); bash gives it two here (`a b`), and the second is the destination of the two-operand form (the new name, or an existing directory), not a destination directory."
+      "reason": "Bug, to fix: the token of a concatenation says \"the parts below are joined into one word\" where an unquoted `$@` gives one word per element, each split further (`$@/x`: one word per argument); outside the class `fields-step`, which leaves out a part that gives one word per element."
+    },
+    {
+      "input": "$@/a",
+      "command": "$@/a",
+      "word": "$@/a",
+      "check": "count",
+      "source": "concatenation",
+      "env": "values",
+      "reason": "Bug, to fix: the token of a concatenation says \"the parts below are joined into one word\" where an unquoted `$@` gives one word per element, each split further (`$@/x`: one word per argument); outside the class `fields-step`, which leaves out a part that gives one word per element."
+    },
+    {
+      "input": "${DIR[@]}/a",
+      "command": "${DIR[@]}/a",
+      "word": "${DIR[@]}/a",
+      "check": "count",
+      "source": "concatenation",
+      "env": "values",
+      "reason": "Bug, to fix: the token of a concatenation says \"the parts below are joined into one word\" where an unquoted `$@` or `${a[@]}` gives one word per element, each split further (`$@/x`: one word per argument); outside the class `fields-step`, which leaves out a part that gives one word per element."
     }
   ]
 }
