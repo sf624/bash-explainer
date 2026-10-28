@@ -955,6 +955,7 @@
  "env A=1 rm -rf $DIR/x",
  "env [ -f f ]",
  "env grep x \"$f\" | wc -l",
+ "env | grep SHLVL",
  "env.CI",
  "error",
  "eval \"$(curl -fsSL https://x)\"",
