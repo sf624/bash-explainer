@@ -972,9 +972,9 @@ export function wordIn(n: SyntaxNode, st: ShellState, source: WalkSource, as: 'f
 /** A word that bash takes as it is written: no expansion, quote, escape, tilde, brace, glob or extended glob. */
 const PLAIN_TEXT = /^[\w.,:/@%+=-]+$/;
 
-/** A field as a pattern for globToRegex: quoted characters escaped. */
+/** A field as a pattern for globToRegex: quoted characters escaped, a `-` or `^` after an unquoted `[` too (`[a"-"c]`, `['^'a]`). */
 export function patternOfChars(f: readonly Char[]): string {
-  return f.map((c) => (c.quoted && /[\\*?[\]()|!@+]/.test(c.c) ? `\\${c.c}` : c.c)).join('');
+  return f.map((c, i) => (c.quoted && (/[\\*?[\]()|!@+]/.test(c.c) || (/[\^-]/.test(c.c) && f.slice(0, i).some((d) => d.c === '[' && !d.quoted))) ? `\\${c.c}` : c.c)).join('');
 }
 
 /** A character of a field, quoted or not, and whether word splitting may split there (from an unquoted expansion). */

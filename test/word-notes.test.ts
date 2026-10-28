@@ -151,6 +151,18 @@ describe('word notes: after the review', () => {
     assert.doesNotMatch(expl('[[ $x == $p ]]', '$x'), /pattern/);
   });
 
+  it('says that an unquoted expansion inside a `[…]` of a pattern gives characters of its set', () => {
+    // (With y='*', `[$y]` matches only a `*`; with y=a-c, a range.)
+    assert.strictEqual(bash("y='*'; [[ a == [$y] ]] || echo 1; [[ '*' == [$y] ]] && echo 2; y=a-c; case b in [$y]) echo 3;; esac"), '1\n2\n3\n');
+    const inside = /\. Unquoted here, its value is read as part of the pattern: inside the `\[…\]` of `\[!\$y\]`, its characters join the set \(a `\*` or `\?` in it is that character; a range such as `a-c` works\)$/;
+    assert.match(expl('[[ $x == [!$y] ]]', '$y'), inside);
+    assert.match(expl('case $x in a[$y]*) ;; esac', '$y'), /inside the `\[…\]` of `\[\$y\]`, its characters join the set/);
+    assert.match(expl('case $x in [$y]) ;; esac', '$y', 'ja'), /`\[\$y\]` の `\[…\]` の中なので、値の文字は集合の文字になる/);
+    // (Outside one, and in a file name glob, not so.)
+    assert.match(expl('[[ $x == [a]$y ]]', '$y'), /\(`\*`, `\?` and `\[…\]` in it match/);
+    assert.doesNotMatch(expl('ls [$y]', '$y'), /join the set/);
+  });
+
   it('expands a tilde after a `:` of an assignment that starts with an expansion', () => {
     assert.deepStrictEqual(labels('PATH=$PATH:~/bin', '~'), ['Tilde expansion (after `:`): `~` becomes the home directory (`$HOME`)']);
     assert.strictEqual(bash('P=/p; PATH2=$P:~/bin; echo $PATH2'), '/p:/home/w/bin\n');
