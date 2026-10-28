@@ -904,7 +904,7 @@ function positional(cx: Explainer, a: SyntaxNode, desc: string | undefined, lang
  * of each primary inside. When it cannot be parsed, its words are read as options of find.
  */
 function findExpression(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec): Token[] {
-  const words = findWords(nodes);
+  const words = findWords(nodes, cx.shell);
   const lookup = (name: string) => specFor(cx, name);
   // find refuses all its arguments when one of its actions is wrong (`-exec f {} ;`): none of them runs. (Its words as find
   // gets them, where the model knows them: `x=';'; find . -exec echo {} $x` ends at `$x`.)

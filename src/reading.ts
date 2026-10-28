@@ -27,6 +27,7 @@ import type { Pos, ScriptProcess, Span, Token } from './analyzer-types';
 import type { Basis, TryIt } from './basis';
 import { binaryTestOps, extendedEqualOps, unaryTestOps } from './dict/syntax';
 import type { Lang } from './i18n';
+import type { Shell } from './shellfeatures';
 import { anonSections, CONSTRUCTS, expressionHost, isExpression, nodeSections } from './refs';
 import { aliasesAfter, type AliasResolution, type NameResolution } from './semantics/names';
 import type { NameInfo } from './namefacts';
@@ -106,6 +107,8 @@ export interface ReadingContext {
   meaning(w: SyntaxNode): WordMeaning | undefined;
   /** Whether the array `name` is associative where `at` runs, surely indexed, or either (src/explain/reads.ts `arrayKind`). */
   arrayKind(name: string, at: SyntaxNode): 'assoc' | 'indexed' | 'unknown';
+  /** The shell the script is for (bash when absent): what a word spells there (`$'echo'` is `$echo` in dash). */
+  shell?: Shell;
 }
 
 /** The texts the tree says itself, where no token says them. */
@@ -409,7 +412,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const span = spanOf(c);
     const t = all.find((x) => x.origin === 'shell' && READERS.has(x.kind) && within(x.span, span) && !subs.some((s) => within(x.span, s)));
     // (The name it spells: `"ls"` and `\if` are `ls` and `if`.)
-    return t && { token: t, name: short(staticWordValue(name.namedChildren[0]) ?? name.text) };
+    return t && { token: t, name: short(staticWordValue(name.namedChildren[0], false, cx.shell) ?? name.text) };
   };
 
   /**
@@ -417,7 +420,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
    * explanation says of the command; or, when it has an expansion, a word whose first field is the name when it runs.
    */
   const commandName = (w: SyntaxNode, layer: Layer, t: Token | undefined): { node: ReadingNode; runs?: string; res?: AliasResolution } => {
-    const name = staticWordValue(w);
+    const name = staticWordValue(w, false, cx.shell);
     const span = spanOf(w);
     // (`[`: the token of its name, inside that of the test.)
     const own = all.find((x) => x.origin === 'shell' && READERS.has(x.kind) && same(x.span, span)) ?? t;
