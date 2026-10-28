@@ -150,8 +150,31 @@ describe('word facts', () => {
     const refused = runBash('find . -maxdepth 0 -exec echo ran {} ;');
     assert.deepStrictEqual([refused.stdout, refused.status, /^find: missing argument to `-exec'/.test(refused.stderr)], ['', 1, true], refused.stderr);
     assert.deepStrictEqual(texts('find . -exec rm $a {} ;'), []);
-    assert.deepStrictEqual(texts('find . -exec cp $a {} \\; -exec mv $b {} ;'), ['$a']);
+    // (find refuses the whole line when one `-exec` is not ended: the actions before it run no more.)
+    assert.deepStrictEqual(texts('find . -exec cp $a {} \\; -exec mv $b {} ;'), []);
   });
+
+  // The terminators of find's actions, from find's spec (`until` of `-exec`, `-execdir`, `-ok`, `-okdir`), against GNU find:
+  // `+` ends the command only after a `{}` (elsewhere it is a word of the command), by itself and once, and not for `-ok`
+  // and `-okdir`. Where find refuses the line it runs nothing, and the command it would have run has no notes. `CMD` is
+  // `echo ran` for find and `rm` for the notes.
+  const ends: [string, 'runs' | 'refused'][] = [
+    ['-exec CMD $a {} \\;', 'runs'], ['-exec CMD $a {} +', 'runs'], ['-execdir CMD $a {} +', 'runs'], ['-ok CMD $a {} \\;', 'runs'], ['-okdir CMD $a {} \\;', 'runs'],
+    ['-exec CMD $a + \\;', 'runs'], ['-exec CMD + $a {} \\;', 'runs'], ['-exec CMD $a {} \\; -exec CMD $b {} \\;', 'runs'],
+    ['-exec CMD {} $a +', 'refused'],     ['-exec CMD $a {} ;', 'refused'], ['-exec CMD $a + ;', 'refused'], ['-exec CMD $a {} \\; -exec CMD $b {} ;', 'refused'],
+    ['-ok CMD $a {} +', 'refused'], ['-okdir CMD $a {} +', 'refused'], ['-exec CMD $a {} {} +', 'refused'], ['-exec CMD $a {}.bak +', 'refused'],
+    ['-exec CMD {}.bak $a +', 'refused'],
+  ];
+  for (const [rest, result] of ends) {
+    it(`reads ${rest} as find does: ${result}`, () => {
+      const real = runBash(`find . -maxdepth 0 ${rest.replace(/CMD/g, 'echo ran').replace(/\$a/g, 'A').replace(/\$b/g, 'B')}`, { input: '' });
+      // (`-ok` asks on stderr before it runs; with nothing to read it does not run, and still accepts the line.)
+      assert.strictEqual(real.status === 0 && !real.stderr.startsWith('find:'), result === 'runs', JSON.stringify(real));
+      assert.strictEqual(real.stdout.includes('ran'), result === 'runs' && !rest.startsWith('-ok'), JSON.stringify(real));
+      const noted = facts(`find . ${rest.replace(/CMD/g, 'rm')}`).filter((f) => f.id === 'unquoted-variable-as-path').map((f) => f.text.match(/`([^`]+)` is not quoted/)![1]);
+      assert.deepStrictEqual(noted, result === 'refused' ? [] : rest.includes('$b') ? ['$a', '$b'] : ['$a']);
+    });
+  }
 
   const fine = [
     'x=1', 'for f in *.txt; do :; done', '[ "$x" = y ]', '[[ $x = y ]]', '[ $? -eq 0 ]', '[ $# -gt 0 ]', '[ ${#a[@]} -eq 0 ]', '[ "$(stat -c %a $f)" -le 600 ]',

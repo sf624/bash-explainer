@@ -6,7 +6,7 @@ import { describeFind, parseFind } from '../src/embedded/find';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { allTokens } from './support/explain';
 
-const arity = (w: string) => (w === '-exec' ? 'until' as const : ['-name', '-path', '-wholename', '-type', '-mtime', '-newer', '-maxdepth', '-mmin'].includes(w) ? 1 : 0);
+const arity = (w: string) => (w === '-exec' ? { terminators: [';', '+'], slot: { run: 'exec' as const }, endsAfter: { '+': '{}' } } : ['-name', '-path', '-wholename', '-type', '-mtime', '-newer', '-maxdepth', '-mmin'].includes(w) ? 1 : 0);
 
 let parser: Parser;
 before(async () => {
@@ -86,6 +86,15 @@ describe('find in a command line', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('takes a `+` as the end of the command only after a `{}`', () => {
+    // GNU find: a `+` as the first word of the command, or after another word, is a word of the command (`-exec + \\;` looks for a program `+`).
+    const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
+    const end = (line: string) => all(tokens(line)).find((t) => t.kind === 'operator' && /^End of `-exec`/.test(t.explanation))?.label;
+    assert.strictEqual(end('find . -exec + \\;'), '\\;');
+    assert.strictEqual(end('find . -exec echo a + \\;'), '\\;');
+    assert.strictEqual(end('find . -exec echo {} + -print'), '+');
   });
 
   it('reads the words as find gets them, after the quote removal of bash', () => {

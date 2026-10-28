@@ -1,5 +1,7 @@
 import type { Lang } from '../i18n';
 import { describeGlob, globParts } from '../expansion';
+import type { OptionSpec } from '../argv/spec';
+import { untilEnd } from '../argv/until';
 import { pick } from './types';
 
 /** A find expression, with word indices relative to the first expression word. */
@@ -37,9 +39,9 @@ export function permBits(mode: string, lang: Lang): string | undefined {
 }
 
 /** How many words a primary takes: a count, or everything up to `;`/`+`. */
-export type Arity = (primary: string) => number | 'until';
+/** How many words a primary takes, or (an action that runs a command) the `until` of its option, which says where it ends. */
+export type Arity = (primary: string) => number | NonNullable<OptionSpec['until']>;
 
-const TERMINATORS = new Set([';', '+']);
 
 /** Whether find reads a word, as the shell gives it (after quote removal: `\(` is `(`), as the start of its expression. */
 export function isExpressionStart(w: string): boolean {
@@ -91,9 +93,8 @@ class Parser {
     }
     const from = this.i++;
     const n = this.arity(w);
-    if (n === 'until') {
-      while (this.i < this.words.length && !TERMINATORS.has(this.words[this.i])) this.i++;
-      this.i = Math.min(this.i + 1, this.words.length);
+    if (typeof n === 'object') {
+      this.i = Math.min(untilEnd(n, this.words, this.i, this.words.length).at + 1, this.words.length);
     } else {
       this.i = Math.min(this.i + n, this.words.length);
     }

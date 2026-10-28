@@ -127,6 +127,8 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
   let envs: Map<SyntaxNode, ExecEnv> | undefined;
   // (`words` are the words of the line that `p` read: the indexes of its roles count in them.)
   const visit = (p: ArgvParse, ps: CommandSpec | undefined, words: readonly SyntaxNode[]): void => {
+    // (The tool refuses the line and runs nothing: `find . -exec rm {} ;` has no `\;` to end the command, the `;` is the shell's.)
+    if (p.refused) return;
     for (const { word, role } of p.roles) {
       if (role.role === 'subcommand') visit(role.parse, role.spec, words);
       // An expression with a spec of its own is read by that spec from its first word: find's actions run commands
@@ -135,9 +137,7 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
         const rest = words.slice(word, p.end);
         visit(interpret(ps.expressionSpec, rest.map(argWordFor(model.shell)), { name: p.command, lookup: lookupCommand }), ps.expressionSpec, rest);
       }
-      // (A command that an option's terminator does not end is not run: `find . -exec rm {} ;` is refused by find, with
-      // the `;` taken by the shell.)
-      if (role.role !== 'command' || !role.parse || role.unterminated) continue;
+      if (role.role !== 'command' || !role.parse) continue;
       if (role.name !== undefined && !runsString(role.slot)) {
         envs ??= slotEnvs(model.env(n), parse, spec, a, model.shell, lookupCommand);
         out.push({ nameWord: words[word], name: pathCommand(role.name), args: words.slice(word + 1, role.parse.end), env: envs.get(words[word]) });
