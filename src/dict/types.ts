@@ -193,28 +193,31 @@ export const SUDO_KEEPS: readonly string[] = [
 export const DOAS_KEEPS: readonly string[] = ['DISPLAY', 'TERM'];
 
 /**
- * The locales in which ls and df print dates, sizes and the order of names as on the made-up system
+ * The locales in which ls and df print dates, sizes, messages and the order of names as on the made-up system
  * (`LANG=en_US.UTF-8`, src/examples/layouts.ts): the C locale (an empty value reads as none), and en_US. Another
- * (`ja_JP.UTF-8`: `10月  1 18:02`; `de_DE.UTF-8`: `3,7K`) changes them.
+ * (`ja_JP.UTF-8`: `10月  1 18:02`; `de_DE.UTF-8`: `3,7K`; where coreutils' messages are installed, `合計` for
+ * `total`, `ファイルシス` for `Filesystem`) changes them. `LANGUAGE` picks the messages too, outside the C locale:
+ * any value but an empty one may change them. (en_US is listed here though the made-up `LANG` is en_US already:
+ * `LC_ALL` and the others may name it too, and the dictionary does not read the made-up environment.)
  */
 const LOCALES_AS_MADE_UP = ['', 'C', 'POSIX', 'C.UTF-8', 'C.utf8', 'en_US.UTF-8', 'en_US.utf8'];
-const locale = (...names: string[]): LayoutEnvironment => Object.fromEntries(names.map((n) => [n, LOCALES_AS_MADE_UP]));
+const locale = (...names: string[]): LayoutEnvironment => ({ ...Object.fromEntries(names.map((n) => [n, LOCALES_AS_MADE_UP])), ...(names.includes('LC_MESSAGES') ? { LANGUAGE: [''] } : {}) });
 /** The quoting styles of GNU ls that print the made-up names as they are (`c` and `shell-always` quote them). */
 const QUOTING_STYLE = ['', 'literal', 'shell', 'shell-escape', 'escape'];
 
 /**
  * The variables that change what GNU ls prints (`LayoutAlt.environment`, checked with coreutils 9.4): the names alone
  * (in a pipe, one a line: `COLUMNS` and `TABSIZE` do not count), `-l` (`TIME_STYLE`, the block size of the sizes and of
- * `total`, `POSIXLY_CORRECT`'s 512-byte blocks, the date of the locale), `-lh` (its sizes ignore the block size, but
- * take the locale's decimal point).
+ * `total`, `POSIXLY_CORRECT`'s 512-byte blocks, the date of the locale, the word `total` in its language), `-lh` (its
+ * sizes ignore the block size, but take the locale's decimal point).
  */
 export const LS_ENV: LayoutEnvironment = { QUOTING_STYLE };
 export const LS_LONG_ENV: LayoutEnvironment = {
-  QUOTING_STYLE, TIME_STYLE: ['locale'], BLOCK_SIZE: [], LS_BLOCK_SIZE: [], BLOCKSIZE: [''], POSIXLY_CORRECT: [], ...locale('LC_ALL', 'LC_TIME', 'LANG'),
+  QUOTING_STYLE, TIME_STYLE: ['locale'], BLOCK_SIZE: [], LS_BLOCK_SIZE: [], BLOCKSIZE: [''], POSIXLY_CORRECT: [], ...locale('LC_ALL', 'LC_TIME', 'LC_MESSAGES', 'LANG'),
 };
-export const LS_HUMAN_ENV: LayoutEnvironment = { QUOTING_STYLE, TIME_STYLE: ['locale'], ...locale('LC_ALL', 'LC_TIME', 'LC_NUMERIC', 'LANG') };
-/** What changes `df -h` (coreutils 9.4): the locale's decimal point (`-h` ignores the block size). */
-export const DF_HUMAN_ENV: LayoutEnvironment = locale('LC_ALL', 'LC_NUMERIC', 'LANG');
+export const LS_HUMAN_ENV: LayoutEnvironment = { QUOTING_STYLE, TIME_STYLE: ['locale'], ...locale('LC_ALL', 'LC_TIME', 'LC_NUMERIC', 'LC_MESSAGES', 'LANG') };
+/** What changes `df -h` (coreutils 9.4): the locale's decimal point, and the language of its header (`-h` ignores the block size). */
+export const DF_HUMAN_ENV: LayoutEnvironment = locale('LC_ALL', 'LC_NUMERIC', 'LC_MESSAGES', 'LANG');
 /**
  * What changes procps-ng's ps (4.0.4): the width of its lines (`COLUMNS`), the personality (`PS_PERSONALITY=bsd`,
  * `CMD_ENV`), `I_WANT_A_BROKEN_PS` (it reads `-ef` as BSD options), and `PS_FORMAT`, the columns of a bare `ps`.

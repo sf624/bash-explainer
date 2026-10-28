@@ -348,15 +348,20 @@ const madeUpOf = (src: string, lang: 'en' | 'ja') => {
 };
 
 describe('the made-up environment, with what the script exports', () => {
-  /** What bash prints of `script`, run in the made-up environment. */
-  const bash = (script: string) => lines(run('bash', ['-c', script], { env: Object.fromEntries(ENVIRONMENT) }).stdout);
+  /**
+   * What bash prints of `script`, run in the made-up environment from a shell of SHLVL 1, as a script is; PWD is the
+   * directory bash runs in, which is not the made-up one.
+   */
+  const bash = (script: string) => lines(run('bash', ['-c', script], { env: { ...Object.fromEntries(ENVIRONMENT), SHLVL: '1' } }).stdout).map((l) => l.replace(/^PWD=.*/, 'PWD=/home/alice'));
   it('env and printenv print what the script exported, unset or stopped exporting, as bash does', () => {
     for (const script of [
       'export FOO=bar; env | grep FOO', 'declare -x FOO=bar; printenv | grep FOO', 'FOO=bar; env | grep FOO', 'set -a; FOO=1; env | grep FOO',
       'export FOO=a; export -n FOO; env | grep FOO', 'export FOO=a; unset FOO; env | grep FOO', 'unset HOME; env | grep HOME',
-      'export -n PATH; env | grep PATH', 'PATH=/usr/bin:/bin; env | grep PATH', 'declare -xu FOO=abc; env | grep FOO',
-      'f() { local -x FOO=1; env | grep FOO; }; f', '(export FOO=1); env | grep FOO', "export FOO=$'a\\nb'; env | grep -x b",
-      'a=(1 2); export a; env | grep ^a=', 'export LANG=C; env | grep LANG',
+      'PATH=/usr/local/bin:/usr/bin:/bin; env | grep PATH', 'declare -xu FOO=abc; env | grep FOO',
+      'f() { export FOO=1; }; f; env | grep FOO', '(export FOO=1); env | grep FOO', "export FOO=$'a\\nb'; env | grep -x b",
+      'a=(1 2); export a; env | grep ^a=', 'export LANG=C; env | grep LANG', 'SHLVL=5; env | grep SHLVL',
+      // (In the order bash passes them: by the bucket of each name in its table.)
+      'env | cat', 'export FOO=bar AAA=2; env | cat', 'unset HOME; export -n TERM; export B=1; env | cat', "unset HOME; export FOO=$'a\\nb'; env | cat",
     ]) {
       for (const lang of ['en', 'ja'] as const) {
         const ex = madeUpOf(script, lang);
@@ -371,12 +376,26 @@ describe('the made-up environment, with what the script exports', () => {
       'source ./x; env | grep FOO', 'eval "$x"; env | grep FOO', 'if [ "$1" ]; then export FOO=1; fi; env | grep FOO', 'export FOO=$x; env | grep FOO',
       'export FOO; env | grep FOO', 'f() { :; }; export -f f; env | grep FOO', 'declare -n r=FOO; export r; env | grep FOO', 'cd /tmp; env | grep PWD',
       'f() { env | grep FOO; }; export FOO=$1', 'if [ "$1" ]; then a=(1); fi; export a; env | grep ^a=',
+      // A removal on some paths only: bash run with no argument still passes HOME.
+      'if [ "$1" ]; then unset HOME; fi; env | grep HOME', '[ "$1" ] && export -n PATH; env | grep PATH', 'case $1 in x) declare +x HOME;; esac; env | grep HOME',
+      'while [ "$1" ]; do unset HOME; shift; done; env | grep HOME', 'f() { unset HOME; }; [ "$1" ] && f; env | grep HOME',
+      // A shell a command starts gets what that command passes (`env -i`: PWD, SHLVL and `_` alone).
+      "env -u HOME bash -c 'env | grep HOME'", "env -i bash -c 'env | cat'", "bash -c 'env | cat'",
+      // Another PATH may find another env (`/bin/env`), or none.
+      'PATH=/opt/nothing; env | cat', 'PATH=/bin:/usr/bin; env | grep ^_=', 'unset PATH; env | cat', 'export PATH="$PATH:/opt/bin"; env | cat',
+      // A local of a function comes first, from the function's own table; two names in one bucket, the one set last first.
+      'f() { local -x QQ=1; env | cat; }; f', 'export V472=1; env | cat',
     ]) {
       for (const lang of ['en', 'ja'] as const) {
-        const ex = explain(script, 0, lang).examples;
-        assert.ok(!ex.some((e) => e.sections.some((sec) => sec.lines.some((l) => l.startsWith('_=')))), `${script} (${lang})`);
+        assert.ok(!madeUpOf(script, lang), `${script} (${lang})`);
       }
     }
+    // (What bash does there.)
+    assert.deepStrictEqual(bash('if [ "$1" ]; then unset HOME; fi; env | grep HOME'), ['HOME=/home/alice']);
+    assert.deepStrictEqual(bash("env -i bash -c 'env | cut -d= -f1'"), ['PWD', 'SHLVL', '_']);
+    assert.deepStrictEqual(bash('PATH=/bin:/usr/bin; env | grep ^_='), ['_=/bin/env']);
+    assert.deepStrictEqual(bash('f() { local -x QQ=1; env | cut -d= -f1 | head -n 1; }; f'), ['QQ']);
+    assert.deepStrictEqual(bash('export V472=1; env | cut -d= -f1 | sed -n 4,5p'), ['V472', 'HOME']);
   });
 });
 
@@ -429,11 +448,14 @@ describe('the variables of the environment that change a layout', function () {
     const out = lines(run(argv[0], [...argv.slice(1), ...(layout === 'who' ? [utmp] : [])], { env: { ...base(), ...env }, cwd: dir }).stdout);
     return (layout === 'df-human' ? out.map((l) => l.replace(/\d/g, '9')) : out).join('\n');
   };
+  // (The variables that choose the language of messages: this machine, as CI, has no translations of coreutils, so only
+  // the values that keep the layout are checked. Where they are installed, `LANGUAGE=de ls -l` prints `insgesamt`.)
+  const MESSAGES = ['LC_MESSAGES', 'LANGUAGE'];
   /** A value of each variable that changes the layouts that list it (for who, the C locale). */
   const changing = (layout: Layout, name: string): string | undefined => ({
     TIME_STYLE: 'long-iso', QUOTING_STYLE: 'c', BLOCK_SIZE: 'K', LS_BLOCK_SIZE: 'K', BLOCKSIZE: 'K', POSIXLY_CORRECT: '1', COLUMNS: '20',
     PS_FORMAT: 'pid,comm', PS_PERSONALITY: 'bsd', CMD_ENV: 'bsd', I_WANT_A_BROKEN_PS: '1',
-  } as Record<string, string>)[name] ?? (/^(LC_|LANG$)/.test(name) ? (layout === 'who' ? 'C' : haveLocales ? 'de_DE.UTF-8' : undefined) : undefined);
+  } as Record<string, string>)[name] ?? (/^(LC_|LANG$)/.test(name) && !MESSAGES.includes(name) ? (layout === 'who' ? 'C' : haveLocales ? 'de_DE.UTF-8' : undefined) : undefined);
   // Variables that do not change them: ls in a pipe prints a name a line, and -h ignores the block size.
   const UNCHANGED: Partial<Record<Layout, string[]>> = {
     ls: ['COLUMNS', 'TABSIZE', 'LS_COLORS', 'TIME_STYLE', 'BLOCK_SIZE', 'LC_COLLATE'], 'ls-long-human': ['BLOCK_SIZE', 'LS_BLOCK_SIZE', 'BLOCKSIZE', 'POSIXLY_CORRECT'],
@@ -473,7 +495,8 @@ describe('the variables of the environment that change a layout', function () {
       ['LANG=de_DE.UTF-8; ls -l | cat', 'ls -l', 'ls-long'], ['LC_TIME=de_DE.UTF-8; ls -l | cat', 'ls -l', 'ls-long'], ['export -n LANG; ls -l | cat', 'ls -l', 'ls-long'],
       ['f() { ls -l | cat; }; export TIME_STYLE=long-iso; f', 'ls -l', 'ls-long'], ['PS_FORMAT=pid,comm ps | cat', 'ps', 'ps'],
       ['export PS_FORMAT=pid,comm; ps | cat', 'ps', 'ps'], ['PS_FORMAT=pid,comm ps aux | cat', 'ps aux', 'ps'], ['COLUMNS=20 ps aux | cat', 'ps aux', 'ps'],
-      ['export PS_PERSONALITY=bsd; ps -ef | cat', 'ps -ef', 'ps'],
+      ['export PS_PERSONALITY=bsd; ps -ef | cat', 'ps -ef', 'ps'], ['declare -n r=TIME_STYLE; export r=long-iso; ls -l | cat', 'ls -l', 'ls-long'],
+      ["bash -c 'ps aux | cat'", 'ps aux', 'ps'],
     ] as [string, string, string][]) {
       if (!haveLocales && /de_DE/.test(script)) continue;
       const out = (s: string) => (layout === 'ps' ? psLayout(withLong(s, base())) : lines(run('bash', ['-c', s], { env: base(), cwd: dir }).stdout).join('\n'));
@@ -483,7 +506,8 @@ describe('the variables of the environment that change a layout', function () {
   });
   it('drops it where the model cannot tell, and keeps it in a function the script does not change it for', () => {
     for (const lang of ['en', 'ja'] as const) {
-      for (const script of ['source ./x; ps aux | cat', 'PS_FORMAT=$f ps | cat', 'if [ "$1" ]; then export TIME_STYLE=long-iso; fi; ls -l | cat', 'TIME_STYLE+=x ls -l | cat',
+      for (const script of ['source ./x; ps aux | cat', 'PS_FORMAT=$f ps | cat', "env -u LANG bash -c 'who | cat'", "env -i bash -c 'who | cat'",
+        "bash -c 'LANG=C; ls -l | cat'", 'if [ "$1" ]; then unset LANG; fi; who | cat', 'declare -n r=$1; r=long-iso; ls -l | cat', 'LANGUAGE=de ls -l | cat', 'LC_MESSAGES=ja_JP.UTF-8 df -h | cat', 'if [ "$1" ]; then export TIME_STYLE=long-iso; fi; ls -l | cat', 'TIME_STYLE+=x ls -l | cat',
         'unset LANG; who | cat', 'LC_ALL=C who | cat', 'LC_NUMERIC=de_DE.UTF-8 df -h | cat', 'f() { ls -l | cat; }; TIME_STYLE=$1; export TIME_STYLE']) {
         assert.ok(!madeUpOf(script, lang), `${script} (${lang})`);
       }

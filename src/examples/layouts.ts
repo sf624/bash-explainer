@@ -128,13 +128,29 @@ const FILE_SYSTEMS = [
 ];
 
 /**
- * The variables of the made-up environment the script runs in, in the order a login shell exports them. The layouts
- * of the other commands are those of its locale (`LayoutAlt.environment`).
+ * The variables of the made-up environment the script's shell got, in the order bash exports them (`exportOrder`).
+ * The layouts of the other commands are those of its locale (`LayoutAlt.environment`). (bash adds `SHLVL`: one more
+ * than the shell that started it has.)
  */
 export const ENVIRONMENT: ReadonlyMap<string, string> = new Map([
   ['SHELL', '/bin/bash'], ['PWD', '/home/alice'], ['LOGNAME', 'alice'], ['HOME', '/home/alice'], ['LANG', 'en_US.UTF-8'], ['TERM', 'xterm-256color'],
   ['USER', 'alice'], ['PATH', '/usr/local/bin:/usr/bin:/bin'],
 ]);
+
+/**
+ * The order in which bash passes the global variables `names` to a program it starts: by the bucket of each name in
+ * its table of 1024 (FNV-1 hash of the name, hashlib.c), the buckets in order. Undefined when two names share a bucket:
+ * then the one set last comes first, which is not followed here. (`ENVIRONMENT` is in this order.)
+ */
+export function exportOrder(names: Iterable<string>): string[] | undefined {
+  const bucket = (name: string): number => {
+    let h = 2166136261;
+    for (const byte of new TextEncoder().encode(name)) h = (Math.imul(h, 16777619) ^ byte) >>> 0;
+    return h & 1023;
+  };
+  const sorted = [...names].map((name) => ({ name, at: bucket(name) })).sort((a, b) => a.at - b.at);
+  return sorted.some((e, i) => i && e.at === sorted[i - 1].at) ? undefined : sorted.map((e) => e.name);
+}
 
 /**
  * Made-up lines of what a command prints in the layout `kind`. `procs`: the commands of the pipeline (undefined where

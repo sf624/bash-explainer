@@ -331,23 +331,26 @@ export function fromEnvironment(name: string, st: ShellState, what: 'value' | 'e
 }
 
 /**
- * The value of `name` in the environment of a program the shell starts in `st`, when the shell got `environment`
- * (name → value) from its own: undefined when the program gets none (not exported, `export -n`, `unset`, an array,
- * or exported with no value: `declare -x OLDPWD`), null when that is not known (exported on some paths only, a value
- * not known here, a nameref, which exports the variable it names). A variable the script set without exporting it is
- * exported when the shell got it from its environment (`PATH=/bin`: `fromEnvironment`); `set -a` exports it.
+ * The value of `name` in the environment of a program the shell starts in `st`, when the shell got `inherited(name)`
+ * from its own environment (undefined: none; null: not known): undefined when the program gets none (not exported,
+ * `export -n`, `unset`, an array, or exported with no value: `declare -x OLDPWD`), null when that is not known
+ * (exported on some paths only, removed on some paths only, a value not known here, a nameref, which exports the
+ * variable it names). A variable the script set without exporting it is exported when the shell got it from its
+ * environment (`PATH=/bin`: `fromEnvironment`); `set -a` exports it.
  */
-export function exportedValue(st: ShellState, name: string, environment: ReadonlyMap<string, string>): string | undefined | null {
+export function exportedValue(st: ShellState, name: string, inherited: (name: string) => string | undefined | null): string | undefined | null {
   const v = st.variables.get(name);
-  if (!v) return environment.get(name);
+  const got = inherited(name);
+  if (!v) return got;
   const array = ['a', 'A'].map((l) => v.attrs[l]?.state ?? 'off');
   if (array.includes('on')) return undefined;
   if (array.includes('unknown') || (v.attrs.n?.state ?? 'off') !== 'off') return null;
   const x = v.attrs.x?.state ?? 'off';
   if (x === 'off') return undefined;
   if (x === 'unknown') {
-    if (fromEnvironment(name, st, 'export') === 'no') return null;
-    if (!environment.has(name)) return undefined;
+    // (Exported on some paths only, or removed on some paths only: `if …; then unset HOME; fi`, see `merge`.)
+    if (fromEnvironment(name, st, 'export') === 'no' || got === null) return null;
+    if (got === undefined) return undefined;
   }
   return v.set === 'off' ? undefined : v.set === 'on' && v.value !== undefined ? v.value : null;
 }
@@ -390,12 +393,15 @@ export function mergeOption(kind: 'set' | 'shopt', name: string, a: OptionState 
   return 'unknown';
 }
 
-function mergeVariable(a: VariableState | undefined, b: VariableState | undefined): VariableState {
-  // Changed on one path only (the other may have it from the environment): nothing about it is sure.
+function mergeVariable(name: string, a: VariableState | undefined, b: VariableState | undefined): VariableState {
+  // Changed on one path only (the other may have it from the environment): nothing about it is sure. On that path
+  // it is exported when the environment has it (`exportFromEnvironment`): `if …; then unset HOME; fi` may leave
+  // HOME exported.
   if (!a || !b) {
     const v = (a ?? b)!;
     const attrs: Record<string, Attribute> = {};
     for (const [l, x] of Object.entries(v.attrs)) attrs[l] = { state: tri(x.state, 'off'), at: x.at, ...(x.environment ? { environment: x.environment } : {}) };
+    if (exportFromEnvironment(name, v.at).state !== 'off') attrs.x = { state: 'unknown', at: v.attrs.x?.at ?? v.at, ...(v.attrs.x?.environment ? { environment: v.attrs.x.environment } : {}) };
     return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true };
   }
   const attrs: Record<string, Attribute> = {};
@@ -434,7 +440,7 @@ export function merge(states: ShellState[], posix = false): ShellState {
   return paths.reduce((a, b) => (a === b ? a : {
     set: NameMap.merge(a.set, b.set, (k, x, y) => mergeOption('set', k, x, y, posix)),
     shopt: NameMap.merge(a.shopt, b.shopt, (k, x, y) => mergeOption('shopt', k, x, y, posix)),
-    variables: NameMap.merge(a.variables, b.variables, (_k, x, y) => mergeVariable(x, y)),
+    variables: NameMap.merge(a.variables, b.variables, (k, x, y) => mergeVariable(k, x, y)),
     functions: NameMap.merge(a.functions, b.functions, (_k, x, y) => mergeFunction(x, y)),
     aliases: NameMap.merge(a.aliases, b.aliases, (_k, x, y) => mergeAlias(x, y)),
     disabled: NameMap.merge(a.disabled, b.disabled, (_k, x, y) => mergeAlias(x, y)),
