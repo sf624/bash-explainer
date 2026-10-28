@@ -87,6 +87,8 @@ describe('the rewrite of `unbraced-element`', () => {
     assert.deepStrictEqual(fix('a=(x y)\necho "pre $a[1]post"', ID), ['a=(x y)\necho "pre ${a[1]}post"']);
     assert.deepStrictEqual(fix('declare -A m=([k]=v)\necho $m[k]', ID), ['declare -A m=([k]=v)\necho ${m[k]}']);
     assert.deepStrictEqual(fix('a=(x y)\necho $a[@]', ID), ['a=(x y)\necho ${a[@]}']);
+    // (A subscript with an expansion: `[$i]` is a bracket expression of its parts.)
+    assert.deepStrictEqual(fix('a=(x y); i=1\necho $a[$i]', ID), ['a=(x y); i=1\necho ${a[$i]}']);
   });
   it('is said, but not carried as edits, in a string another command reads as a script', () => {
     const [f] = factsOf("bash -c 'a=(x y); echo $a[1]'", ID);
@@ -102,7 +104,7 @@ describe('the rewrite of `unbraced-element`', () => {
 
   // (Each with the file its unquoted `$a[1]` matches as a glob, if any.)
   const inputs: [src: string, want: string, glob?: string][] = [['a=(x y)\necho $a[1]\n', 'y', 'x1'], ['a=(x y)\necho "$a[1]"\n', 'y'], ['a=(x y)\necho pre$a[1]post\n', 'preypost', 'prex1post'],
-    ['declare -A m=([k]=v)\necho $m[k]\n', 'v', 'k']];
+    ['declare -A m=([k]=v)\necho $m[k]\n', 'v', 'k'], ['a=(x y); i=1\necho $a[$i]\n', 'y', 'x1']];
   for (const { name, program } of programs) {
     for (const [src, want, glob] of inputs) {
       it(`give the element, not \`$a\` and the text, in ${name}: ${JSON.stringify(src)}`, async () => {

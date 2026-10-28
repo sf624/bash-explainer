@@ -1025,6 +1025,16 @@ describe('unbash adapter: tricky lines found by evaluation', () => {
     assert.equal(errorsOf('for x in a; { :'), 'missing@15-15');
     assert.equal(tree('while a; { b; }').root.namedChildren[0].incomplete, true);
   });
+  it('a bracket expression keeps its quotes and expansions, which bash expands: `[$x]`, `["$x"].c`, also beside braces', () => {
+    assert.equal(o('echo [$d].c ["$x"] a[b$x] [a{b,c}$x]'), '(program (command (command_name @name (word "echo")) '
+      + '(concatenation @argument (word "[") (simple_expansion "$" (variable_name "d")) (word "].c")) '
+      + '(concatenation @argument (word "[") (string "\\"" (simple_expansion "$" (variable_name "x")) "\\"") (word "]")) '
+      + '(concatenation @argument (word "a[b") (simple_expansion "$" (variable_name "x")) (word "]")) '
+      + '(concatenation @argument (word "[a") (brace_expression "{" (word "b") "," (word "c") "}") (simple_expansion "$" (variable_name "x")) (word "]"))))');
+    // (In a pattern too; a bracket with no part in it stays one word.)
+    assert.equal(o('case $1 in [$x]|[ab]) ;; esac').includes('(concatenation @value (extglob_pattern "[") (simple_expansion "$" (variable_name "x")) (word "]")) "|" (extglob_pattern @value "[ab]")'), true);
+  });
+
   it('[7]=z in an array is the index (a concatenation of four pieces, as the model has it)', () => {
     assert.equal(o('a+=([7]=z)'), '(program (command (variable_assignment (variable_name @name "a") "+=" (array @value "(" (concatenation (word "[") (number "7") (word "]") (word "=z")) ")"))))');
     assert.equal(o('a=([k]+=v)').includes('(word "k")'), true);
@@ -1119,9 +1129,11 @@ describe('unbash adapter: brace expressions as bash finds them (3.5.1)', () => {
   it('reads the items of a list: words, quotes, expansions and lists in them', () => {
     assert.equal(o('echo x{a,"b c",$v,{d,e}f,}'), '(program (command (command_name @name (word "echo")) (concatenation @argument (word "x") (brace_expression "{" (word "a") "," '
       + '(string "\\"" (string_content "b c") "\\"") "," (simple_expansion "$" (variable_name "v")) "," (concatenation (brace_expression "{" (word "d") "," (word "e") "}") (word "f")) "," "}"))))');
-    // (A `}` that is text, and braces that stay text with the parts in them: `$n` of `{1..$n}`, but not those of a glob.)
-    assert.equal(o('echo {a}b,c} {1..$n} ["{a,b}"]'), '(program (command (command_name @name (word "echo")) (brace_expression @argument "{" (word "a}b") "," (word "c") "}") '
-      + '(concatenation @argument (word "{1..") (simple_expansion "$" (variable_name "n")) (word "}")) (word @argument "[\\"{a,b}\\"]")))');
+    // (A `}` that is text, and braces that stay text with the parts in them: `$n` of `{1..$n}`, the string of a bracket
+    // expression, but not those of an extended glob.)
+    assert.equal(o('echo {a}b,c} {1..$n} ["{a,b}"] @(${v:-a,b})'), '(program (command (command_name @name (word "echo")) (brace_expression @argument "{" (word "a}b") "," (word "c") "}") '
+      + '(concatenation @argument (word "{1..") (simple_expansion "$" (variable_name "n")) (word "}")) '
+      + '(concatenation @argument (word "[") (string "\\"" (string_content "{a,b}") "\\"") (word "]")) (word @argument "@(${v:-a,b})")))');
     // (No brace expression where bash never expands braces: a pattern, `[[ ]]`, an operand of `${ }`.)
     assert.equal(types(tree('case x in {a,b}) ;; esac; [[ {a,b} == {c,d} ]]; echo ${x:-{a,b}}').root, 'brace_expression').length, 0);
     assert.strictEqual(runBash('case a in {a,b}) echo m;; *) echo n;; esac; [[ {a,b} == {a,b} ]] && echo t; echo ${x:-{a,b}}').stdout, 'n\nt\n{a,b}\n');

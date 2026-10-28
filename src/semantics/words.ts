@@ -12,7 +12,7 @@ import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellw
 import { patsubMiscounts } from '../bracket';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
-import { ansiCValue, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
+import { ansiCValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, sameInEveryLocale, substring } from './chars';
 import { bracedWords, braceStep, wordAlternatives, type BraceAlternative } from './brace';
@@ -341,7 +341,7 @@ function shapeOf(nodes: readonly SyntaxNode[]): Shape {
     someQuoted: expansions.some(nearestQuote),
     braced: bracedWords(plain),
     plain,
-    globWords: plain.filter((w) => isGlob(w.text)),
+    globWords: [...new Set([...plain.filter((w) => isGlob(w.text)), ...bracketsAcross(nodes)])].sort((a, b) => a.startIndex - b.startIndex),
     quoted: nodes.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text)),
     tildes: new Map(),
     walked: new WeakMap(),

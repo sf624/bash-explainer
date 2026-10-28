@@ -512,6 +512,8 @@ describe('the analyzer says what a name runs', () => {
       ['a=(1 2 3)\nunset \'a[1]\'', 'a=([0]="1" [2]="3")\n', /Unset the element `a\[1\]` of the array `a`/],
       ['a=(1 2 3)\nunset a[1]', 'a=([0]="1" [2]="3")\n', /Unset the element `a\[1\]`[\s\S]*if a file matches it, that file's name is unset instead/],
       ['a=(1 2 3); a1=x; touch a1\nunset a[1]', 'a=([0]="1" [1]="2" [2]="3")\n', /Unset the element `a\[1\]`[\s\S]*if a file matches it, that file's name is unset instead/],
+      // (A subscript with an expansion: a glob of its parts, `a[2]` here, which no file matches.)
+      ['a=(1 2 3); i=2\nunset a[$i]', 'a=([0]="1" [1]="2")\n', /Unset the element `a\[\$i\]` of the array `a`[\s\S]*if a file matches it, that file's name is unset instead \(write `'a\[\$i\]'`\)/],
       ['a=(1 2 3)\nunset "a[@]"', 'a=()\n', /Remove all the elements of the array `a` \(it stays, empty\)/],
       ['f() { :; }; x=1\nunset -fv x f', 'x="1"\nf\n', /Name to unset \(with both `-f` and `-v`, nothing is unset\)/],
       ['x=1\nunset -- x', '', /End of options[\s\S]*Unset the variable `x`/],
@@ -527,6 +529,8 @@ describe('the analyzer says what a name runs', () => {
     }
     // A name known only at run time: the role of the word.
     assert.match(text('unset "$y"'), /name to unset/);
+    assert.match(text('declare a[$i]'), /Declare the array `a` \(bash ignores the subscript `\[\$i\]`\)\. Unquoted, it is a glob pattern first/);
+    assert.match(text('unset "a[$i]" a[$i]x'), /^(?![\s\S]*Unset the element)/);
     assert.match(notes('readonly x=1\nunset x', 1), /`unset` fails \(`cannot unset: readonly variable`, status 1\)/);
     assert.match(text('if [ "$1" ]; then readonly x; fi\nunset x'), /some paths before here make it read-only/);
     assert.match(text('a=(1 2); if [ "$1" ]; then shopt -s nullglob; fi\nunset a[1]'), /on the paths where nullglob or failglob is on/);

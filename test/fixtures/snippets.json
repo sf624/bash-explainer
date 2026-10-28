@@ -1199,6 +1199,8 @@
  "ls @(a'b",
  "ls @(a\\)b|c)",
  "ls @(ab",
+ "ls [$x].c",
+ "ls [x].c",
  "ls ~ {a,b}",
  "ltrimstr(\"a\", \"b\")",
  "m",

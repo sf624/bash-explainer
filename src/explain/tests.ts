@@ -24,7 +24,7 @@ import { matchExample, regexExample, testExample } from './examples';
 import { fromEmbedded, same, skeletal, sortTokens } from './nodes';
 import { inArithmetic } from './reads';
 import { postfixStatusNote } from './status';
-import { arithChildren, arithNumber, commaNote, globToken } from './words';
+import { arithChildren, arithNumber, bracketPart, commaNote, globToken } from './words';
 
 /**
  * The text of the binary operator `op` of a test at `n`: for `<` and `>` in bash, with how they compare there
@@ -313,7 +313,8 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
   }
   // The grammar reads even a plain `a` after `=`, `==` and `!=` as a pattern; it is only a word to explain, and in `[ ]` any text is.
   // (A constant such as `0x1F` is not plain in arithmetic: it has a value to show.)
-  const plain = (x: SyntaxNode) => (isPlainWord(x) && !(inArithmetic(n) && arithNumber(cx, x))) || (x.type === 'extglob_pattern' && rights.length === 1 && !hasGlob(x.text));
+  // (A part that opens or closes a `[…]` across the parts is a pattern: the `[` and `]` of `[$x]`.)
+  const plain = (x: SyntaxNode) => !bracketPart(x) && ((isPlainWord(x) && !(inArithmetic(n) && arithNumber(cx, x))) || (x.type === 'extglob_pattern' && rights.length === 1 && !hasGlob(x.text)));
   // The grammar leaves some patterns as words (`*.txt`, `--?(a)b`, `-@(!(-*)e*|-edit)`); on the right of `==` in `[[ ]]` they are patterns all the same.
   const pattern = (x: SyntaxNode) => x.type === 'word' && ['=', '==', '!='].includes(op) && hasGlob(x.text) && !!ancestor(n, (a) => a.type === 'extended_test');
   const operands = sortTokens([

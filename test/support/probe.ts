@@ -86,6 +86,13 @@ export interface ProbeRun {
 
 const MARKER = /@PROBE(?::([\w.-]+))?@/g;
 
+/**
+ * The times `time` prints (`real\t0m0.002s`), with every digit written as 0. bash measures them, and even `time` with no
+ * pipeline can take a few milliseconds on a loaded machine (it failed so in CI once): the rows check the format of the
+ * report, not its numbers.
+ */
+export const steadyTimes = (s: string): string => s.replace(/^(real|user|sys)\t\d+m\d+\.\d+s$/gm, (line) => line.replace(/\d/g, '0'));
+
 /** The snippet with each marker replaced by `__probe ID`, and the ids. */
 export function instrument(snippet: string): { script: string; markers: string[] } {
   const markers: string[] = [];
@@ -132,7 +139,7 @@ export function runProbe(snippet: string, body: string, opts: ProbeOptions = {})
   const fn = `() { ${logged}\n}`;
   const args = opts.dash ? [scriptFile] : ['--norc', '--noprofile', ...shebangArgs(snippet), ...(opts.posix ? ['--posix'] : []), ...(opts.errexit ? ['-e'] : []), scriptFile];
   const env = { ...PROBE_ENV, ...opts.environment, ...(opts.dash ? {} : { 'BASH_FUNC___probe%%': fn }) };
-  const normalize = (s: string): string => s.split(box).join(BOX).split(scriptFile).join(SCRIPT);
+  const normalize = (s: string): string => steadyTimes(s.split(box).join(BOX).split(scriptFile).join(SCRIPT));
   return new Promise((resolve) => {
     const child = execFile(opts.dash ? 'dash' : opts.program ?? PROBE_BASH, args, { cwd: box, env, timeout: opts.timeout ?? 5000, encoding: 'utf8', maxBuffer: 1 << 24 }, (_err, stdout, stderr) => {
       const raw = fs.readFileSync(log, 'utf8');
@@ -480,7 +487,7 @@ export function tryOutput(row: ProbeRow, timeout = 5000, release: BashRelease = 
       done = true;
       clearTimeout(timer);
       fs.closeSync(fd);
-      const text = names.reduce((t, [p, name]) => t.split(p).join(name), fs.readFileSync(out, 'utf8')).replace(/\n$/, '');
+      const text = steadyTimes(names.reduce((t, [p, name]) => t.split(p).join(name), fs.readFileSync(out, 'utf8')).replace(/\n$/, ''));
       fs.rmSync(root, { recursive: true, force: true });
       if (error) reject(error);
       else resolve(text);

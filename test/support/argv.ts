@@ -18,12 +18,14 @@
 //
 // `runArgvBatch` runs the scripts in one `runContained` (a cgroup when `systemd-run --user` works, a process group
 // killed on a timeout), each under `timeout`, with `FUNCNEST` and `ulimit -f`, in a fresh directory holding FILES,
-// stdin from /dev/null (or a file of the job's lines). A file read through BASH_ENV defines the recorders, then sets
-// PATH to a directory that does not exist, defines `command_not_found_handle` to log `ESCAPED name` (a command that
-// reached a PATH search, which the test fails on), and turns off with `enable -n` the builtins that reach outside the
-// shell. The script then runs restricted (`bash -r`, after the set-up): no command named by a path (`/bin/rm`, which
-// needs no PATH search), no change of PATH, no file opened for output, no `cd`. So a command that the markers missed
-// (in text that bash reads as code at run time: an arithmetic subscript, a here-document) reaches only builtins.
+// stdin from /dev/null (or a file of the job's lines); the next job starts once what the job left running (a process
+// substitution) has ended, or has been killed after a few seconds. A file read through BASH_ENV defines the recorders,
+// then sets PATH to a directory that does not exist, defines `command_not_found_handle` to log `ESCAPED name` (a
+// command that reached a PATH search, which the test fails on), and turns off with `enable -n` the builtins that reach
+// outside the shell. The script then runs restricted (`bash -r`, after the set-up): no command named by a path
+// (`/bin/rm`, which needs no PATH search), no change of PATH, no file opened for output, no `cd`. So a command that the
+// markers missed (in text that bash reads as code at run time: an arithmetic subscript, a here-document) reaches only
+// builtins.
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -105,6 +107,10 @@ function redirectRule(r: SyntaxNode): 'capture' | 'null' | 'keep' {
 /** The descriptors the set-up opens: the log (appended to) and /dev/null (read and write). */
 const LOG_FD = 96;
 const NULL_FD = 97;
+/** The descriptor of the lock a job holds while it or a process it started runs (`runArgvBatch`). */
+const LOCK_FD = 95;
+/** How long, in seconds, the driver waits for what a job left running before it kills it. */
+const LOCK_WAIT = 3;
 
 /**
  * What stands for a file redirection to /dev/null, given its operator (with its descriptor: `2>`, `{fd}>>`, `&>`): a
@@ -252,10 +258,16 @@ export async function runArgvBatch(jobs: readonly ArgvJob[], { perJob = 10, prog
       const env = { ...ARGV_ENV, PATH: '/usr/bin:/bin', HOME: box, BASH_ENV: path.join(dir, 'setup.sh'), ...job.variables };
       const assigns = Object.entries(env).map(([k, v]) => quote(`${k}=${v}`)).join(' ');
       const argv = ['--norc', '--noprofile', '-r', path.join(dir, 'script.sh'), ...(job.args ?? [])].map(quote).join(' ');
-      lines.push(`(cd ${quote(box)} && exec env -i ${assigns} timeout -k 2 ${perJob} ${quote(program)} ${argv}) <${quote(stdin)} >/dev/null 2>${quote(path.join(dir, 'stderr'))}; echo $? >${quote(path.join(dir, 'status'))}`);
+      // (The job holds a shared lock on LOCK_FD, and every process it starts inherits it. Once the job's shell has
+      // ended, the driver takes the lock exclusively, so it waits for what the shell left running: a process
+      // substitution, which bash does not wait for (`diff <(sort a.txt) <(sort b.txt)`, with `diff` a recorder that
+      // reads neither, ended before its `sort`s had logged, now and then). What still runs after LOCK_WAIT is
+      // killed: `timeout` made the job's process a group of its own.)
+      const lock = quote(path.join(dir, 'lock'));
+      lines.push(`(cd ${quote(box)} && flock -s ${LOCK_FD} && exec env -i ${assigns} timeout -k 2 ${perJob} ${quote(program)} ${argv}) <${quote(stdin)} >/dev/null 2>${quote(path.join(dir, 'stderr'))} ${LOCK_FD}>${lock} & wait $!; echo $? >${quote(path.join(dir, 'status'))}; flock -w ${LOCK_WAIT} ${lock} true || kill -KILL -- -$! 2>/dev/null`);
     });
     fs.writeFileSync(path.join(root, 'driver.sh'), `${lines.join('\n')}\n`);
-    await runContained(['bash', '--norc', '--noprofile', path.join(root, 'driver.sh')], root, {}, (perJob + 3) * jobs.length * 1000);
+    await runContained(['bash', '--norc', '--noprofile', path.join(root, 'driver.sh')], root, {}, (perJob + LOCK_WAIT + 3) * jobs.length * 1000);
     return jobs.map((_, i) => {
       const dir = path.join(root, String(i));
       const box = path.join(dir, 'box');
