@@ -58,6 +58,13 @@ describe('the walls of the runs of the corpus (test/support/rewrite-states.ts)',
     ['BASH_ALIASES[x]=/bin/id', /assignment to `BASH_ALIASES`/], ['BASH_ENV=/x bash -c :', /assignment to `BASH_ENV`/], ['PS4=\'$(id)\'; set -x', /assignment to `PS4`/],
     ['env PATH=/usr/bin id', /`env` given `PATH=`/], ['env LD_PRELOAD=./x.so echo', /`env` given `LD_PRELOAD=`/], ['env -i id', /`env` with an option/],
     ['env -C / echo > f', /`env` with an option/], ['sudo -i id', /`sudo` with an option/], ['env $opt id', /`env` with a word that is not plain text/],
+    // (A new bash in posix mode, or with the options of SHELLOPTS, reads no BASH_ENV: the walls would not be there.)
+    ['POSIXLY_CORRECT=1 bash -c \'cd /tmp && echo x > f\'', /assignment to `POSIXLY_CORRECT`/], ['env POSIXLY_CORRECT=1 bash -c \'cd .. && echo x > f\'', /`env` given `POSIXLY_CORRECT=`/],
+    ['export POSIXLY_CORRECT=1; bash -c \'cd .. && echo x > f\'', /assignment to `POSIXLY_CORRECT`/], ['set -a; POSIXLY_CORRECT=1; bash -c \'cd .. && echo x > f\'', /assignment to `POSIXLY_CORRECT`/],
+    ['set -o posix; export SHELLOPTS; bash -c \'cd ..; echo x > f\'', /`export` of `SHELLOPTS`/], ['declare -x BASHOPTS', /`declare` of `BASHOPTS`/],
+    ['set -a; set -o posix; bash -c \'cd ..; echo x > f\'', /`set -o posix` with `set -a`/], ['set -o allexport; shopt -so posix', /`set -o posix` with `set -a`/],
+    ['export -n BASH_ENV; bash -c \'cd ..\'', /`export` of `BASH_ENV`/], ['declare +x PATH', /`declare` of `PATH`/], ['env -S \'bash --posix -c x\'', /`env` with an option/],
+    ['exec -a sh bash -c \'cd ..\'', /`exec`/], ['sh -i', /`sh` other than/], ['./x.sh', /named by a path/],
     // (A program by its path, also through a command that runs another, and the builtins that get past the walls.)
     ['/bin/id', /named by a path/], ['command /bin/id', /named by a path/], ['env /bin/id', /named by a path/], ['echo $(/usr/bin/id)', /named by a path/],
     ['command -p id', /`command -p`/], ['builtin cd /', /`builtin`/], ['exec id', /`exec`/], ['hash -p /bin/id x', /`hash`/], ['enable -f x.so y', /`enable`/],
@@ -79,7 +86,7 @@ describe('the walls of the runs of the corpus (test/support/rewrite-states.ts)',
   ];
   for (const [src, why] of refused) it(`refuse ${JSON.stringify(src)}`, () => assert.match(unsafe(parser.parse(src)) ?? 'allowed', why));
   it('allow what stays in the box', () => {
-    for (const src of ['echo hi > f 2>/dev/null >&2 2>&1 >&-', 'cat < "$f"; cat <<< "$x"', 'FOO=1 bash -c \'echo "$FOO" > f\'', 'command -v x', 'sudo FOO=1 echo $FOO', 'cd "$D"', 'cat <<E\n$(echo a)\nE']) {
+    for (const src of ['set -o posix; bash -c :', 'set -a; x=1', 'export SHELLOPTS_X=1', 'echo hi > f 2>/dev/null >&2 2>&1 >&-', 'cat < "$f"; cat <<< "$x"', 'FOO=1 bash -c \'echo "$FOO" > f\'', 'command -v x', 'sudo FOO=1 echo $FOO', 'cd "$D"', 'cat <<E\n$(echo a)\nE']) {
       assert.strictEqual(unsafe(parser.parse(src)), undefined, src);
     }
   });
@@ -93,6 +100,10 @@ describe('the walls of the runs of the corpus (test/support/rewrite-states.ts)',
         { script: 'exec echo; hash -p /bin/echo x; enable -n command' },
         { script: 'bash -i -c "echo i"; bash -p -c "echo p"; bash --posix -c "echo x"; bash -c "PATH=/usr/bin; echo no"', programs: ['bash'] },
         { script: 'env -i echo i; env -u PATH echo u; env PATH=/usr/bin echo p; env /bin/echo e; env A=1 echo ok', programs: ['env', 'echo'] },
+        // (A new bash that would skip the set-up: posix mode, the options of SHELLOPTS, no BASH_ENV or PATH exported.)
+        { script: 'POSIXLY_CORRECT=1 bash -c \'cd ..; pwd\'; env POSIXLY_CORRECT=1 bash -c \'cd ..; pwd\'; export POSIXLY_CORRECT=1; bash -c \'cd ..; pwd\'', programs: ['bash', 'env'] },
+        { script: 'set -a; set -o posix; bash -c \'cd ..; pwd\'; bash -o posix -c \'cd ..; pwd\'; bash --posix -c \'cd ..; pwd\'; export SHELLOPTS; bash -c \'cd ..; pwd\'', programs: ['bash'] },
+        { script: 'export -n BASH_ENV PATH; bash -c \'cd ..; pwd; echo "$PATH" | grep -c usr\'; env bash -c \'cd ..; pwd\'', programs: ['bash', 'env'] },
       ]);
       const out = runs.map((r) => r.out + r.err);
       assert.match(out[0], /PATH: readonly variable/);
@@ -104,6 +115,14 @@ describe('the walls of the runs of the corpus (test/support/rewrite-states.ts)',
       assert.deepStrictEqual(out[4].split('\n').filter(Boolean).map((l) => l.replace(/^(@bash refused|bash: line N: PATH: readonly variable).*/, '$1')),
         ['@bash refused', '@bash refused', '@bash refused', 'bash: line N: PATH: readonly variable']);
       assert.deepStrictEqual(out[5].split('\n').filter(Boolean).map((l) => l.replace(/^(@env refused).*/, '$1')), ['ok', '@env refused', '@env refused', '@env refused', '@env refused']);
+      // (Each new bash is refused or reads the set-up: \`cd\` is recorded and \`pwd\` stays in the box.)
+      const lines = (o: string): string[] => o.split('\n').filter(Boolean).map((l) => l.replace(/^(@\w+ refused|.*: line N: \w+: readonly variable).*/, '$1'));
+      const readonly = '../f.sh: line N: POSIXLY_CORRECT: readonly variable';
+      assert.deepStrictEqual([runs[6], runs[7], runs[8]].map((r) => [lines(r.out), lines(r.err)]), [
+        [['@cd <..>', 'BOX', '@cd <..>', 'BOX'], [readonly, '@env refused', readonly]],
+        [['@cd <..>', 'BOX'], [readonly, '@bash refused', '@bash refused', '@bash refused']],
+        [['@cd <..>', 'BOX', '@grep <-c> <usr>', '@cd <..>', 'BOX'], []],
+      ]);
     });
   }
 });
