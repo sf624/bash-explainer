@@ -51,6 +51,22 @@ function assignmentList(cx: Explainer, n: SyntaxNode, inner: SyntaxNode[]): Toke
   return { ...t, span: { start: spanOf(only).start, end: spanOf(last).end }, label: shorten(n.text.slice(only.startIndex - n.startIndex, last.endIndex - n.startIndex)) };
 }
 
+const IFS_NAMES: Record<string, [string, string]> = { ' ': ['空白', 'space'], '\t': ['タブ', 'tab'], '\n': ['改行', 'newline'] };
+
+/**
+ * The characters of an `IFS` value one by one, so that a newline and the text `\n` differ (`IFS=$'\n'` in dash is
+ * `$`, `\` and `n`): blanks by name, others as code.
+ */
+function ifsChars(cx: Explainer, v: string): string {
+  const each = [...new Set(v)].map((c) => (Object.hasOwn(IFS_NAMES, c) ? cx.s(IFS_NAMES[c][0], IFS_NAMES[c][1]) : codeSpan(visible(c))));
+  if (cx.lang === 'ja') {
+    // (With the blanks between code and the kana around it: docs/japanese-style.md.)
+    const text = each.length === 1 ? each[0] : `${each.join('・')}${each[each.length - 1].endsWith('`') ? ' ' : ''}のそれぞれ`;
+    return `${each[0].startsWith('`') ? ' ' : ''}${text}${text.endsWith('`') ? ' ' : ''}`;
+  }
+  return each.length === 1 ? each[0] : `each of ${each.slice(0, -1).join(', ')} and ${each[each.length - 1]}`;
+}
+
 /** An assignment; `decl`: an argument of a declaration that makes the name a nameref (`local -n r=$1`). */
 export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
   const name = field(n, 'name')!;
@@ -123,7 +139,7 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
       ? cx.s('。`IFS` は単語分割（と `read`）が区切りに使う文字の一覧で、`"${a[*]}"` と `"$*"` が要素をつなぐ文字（先頭の1文字）でもある', '. `IFS` lists the characters word splitting and `read` split on, and its first character joins the elements in `"${a[*]}"` and `"$*"`')
       : v === ''
         ? cx.s('。`IFS` が空だと単語分割がされなくなる（`"${a[*]}"` と `"$*"` の要素は区切りなしでつながる）', '. An empty `IFS` turns word splitting off (the elements of `"${a[*]}"` and `"$*"` are joined with nothing between them)')
-        : cx.s(jaText('。`IFS` は単語分割（と `read`）が区切りに使う文字の一覧: これ以降、クォートしない展開は', ifsChars(cx, v), 'で分割される。`"${a[*]}"` と `"$*"` は先頭の文字である', ifsChars(cx, v[0]), 'で要素をつなぐ'),
+        : cx.s(`。\`IFS\` は単語分割（と \`read\`）が区切りに使う文字の一覧: これ以降、クォートしない展開は${ifsChars(cx, v)}で分割される。\`"\${a[*]}"\` と \`"$*"\` は先頭の文字である${ifsChars(cx, v[0])}で要素をつなぐ`,
           `. \`IFS\` lists the characters word splitting (and \`read\`) split on: from here, unquoted expansions are split on ${ifsChars(cx, v)}. \`"\${a[*]}"\` and \`"$*"\` join their elements with the first character, ${ifsChars(cx, v[0])}`);
   }
   // What it changes when it is a variable of bash's (`PATH=…`, `OPTIND=1`): from here on, unless it is assigned for
@@ -228,18 +244,3 @@ function sumText(cx: Explainer, value: SyntaxNode | null | undefined, name?: str
   if (v === undefined || !value) return value ? cx.s(`算術式 \`${value.text}\` の値を足す`, `the value of the arithmetic expression \`${value.text}\` is added`) : cx.s('空の値は 0 を足す', 'an empty value adds 0');
   return cx.s(`${it} 7 なら \`+=${value.text}\` で ${7 + v} であり、7${value.text} ではない`, `if ${it} is 7, \`+=${value.text}\` makes ${7 + v}, not 7${value.text}`);
 }
-
-const IFS_NAMES: Record<string, [string, string]> = { ' ': ['空白', 'space'], '\t': ['タブ', 'tab'], '\n': ['改行', 'newline'] };
-
-/**
- * The characters of an `IFS` value one by one, so that a newline and the text `\n` differ (`IFS=$'\n'` in dash is
- * `$`, `\` and `n`): blanks by name, others as code.
- */
-function ifsChars(cx: Explainer, v: string): string {
-  const each = [...new Set(v)].map((c) => (Object.hasOwn(IFS_NAMES, c) ? cx.s(...IFS_NAMES[c]) : codeSpan(visible(c))));
-  if (cx.lang === 'ja') return each.length === 1 ? each[0] : `${each.join('・')}${each[each.length - 1].endsWith('`') ? ' ' : ''}のそれぞれ`;
-  return each.length === 1 ? each[0] : `each of ${each.slice(0, -1).join(', ')} and ${each[each.length - 1]}`;
-}
-
-/** Japanese text with a blank where code meets kana or kanji (docs/japanese-style.md). */
-const jaText = (...parts: string[]): string => parts.reduce((a, b) => a + (a.endsWith('`') || b.startsWith('`') ? ' ' : '') + b);
