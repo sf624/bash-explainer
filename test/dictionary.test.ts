@@ -15,10 +15,11 @@ import { monitor } from '../src/dict/monitor';
 import { macos } from '../src/dict/macos';
 import { ops } from '../src/dict/ops';
 import { cmd } from '../src/dict/types';
-import type { CommandSpec, OptionSpec, ValueSpec } from '../src/argv/spec';
+import type { CommandSpec, OperandSpec, OptionSpec, ValueSpec } from '../src/argv/spec';
+import { BATS_ASSERT_COMMANDS, BATS_COMMANDS, BATS_FILE_COMMANDS, BATS_SUPPORT_COMMANDS } from '../src/dict/bats';
 import { interpret } from '../src/argv/interpret';
 import { YQ_SPECS } from '../src/dict/yq';
-import { tx } from '../src/i18n';
+import { tx, type Text } from '../src/i18n';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
@@ -409,5 +410,30 @@ describe('the specs of the dictionary', () => {
       });
     });
     assert.deepStrictEqual(unreachable, []);
+  });
+
+  it('write each operand role as one phrase: no "; " in English (the hedges of src/explain/operand-texts.ts join their clauses with it) and no "；" in Japanese', () => {
+    // Every text that names the role of an operand: the items of a pattern, of `dashDash.then` and `laterOperands` (and the
+    // awk assignment's), wherever they are in a spec (a subcommand, find's expression, a variant of the shell).
+    const roles = new Map<string, Text>();
+    const seen = new Set<object>();
+    const add = (where: string, o: { text?: Text; assignmentText?: Text } | undefined): void => {
+      for (const t of [o?.text, o?.assignmentText]) if (t) roles.set(`${where}: ${t.en}`, t);
+    };
+    const walk = (v: unknown, where: string): void => {
+      if (!v || typeof v !== 'object' || seen.has(v)) return;
+      seen.add(v);
+      const o = v as { pattern?: OperandSpec[]; then?: OperandSpec[]; laterOperands?: OperandSpec };
+      if (Array.isArray(o.pattern)) o.pattern.forEach((x) => add(where, x));
+      if (Array.isArray(o.then)) o.then.forEach((x) => add(where, x));
+      if (o.laterOperands) add(where, o.laterOperands);
+      for (const [k, x] of Object.entries(v)) walk(x, `${where}.${k}`);
+    };
+    for (const table of [commands, builtins, YQ_SPECS, BATS_COMMANDS, BATS_SUPPORT_COMMANDS, BATS_ASSERT_COMMANDS, BATS_FILE_COMMANDS]) {
+      for (const [name, spec] of Object.entries(table)) walk(spec, name);
+    }
+    assert.ok(roles.size > 400, `found only ${roles.size} operand roles`);
+    const bad = [...roles].filter(([, t]) => t.en.includes('; ') || t.ja.includes('；')).map(([k]) => k);
+    assert.deepStrictEqual(bad, []);
   });
 });

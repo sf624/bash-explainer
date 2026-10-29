@@ -243,7 +243,7 @@ export const netadmin: Record<string, CommandSpec> = {
     ['-g', '全体の統計を表示', 'show general interface statistics'],
   ]),
   // ---- X11 ----------------------------------------------------------------------------------
-  xhost: cmd('X サーバーに接続できるホストやユーザーを制御する', 'Control which hosts and users can connect to the X server', [], { positional: [pos('`+ホスト`（許可）、`-ホスト`（拒否）、`+`（全員を許可。注意）', '`+host` (allow), `-host` (deny), `+` (allow everyone; careful)')] }),
+  xhost: cmd('X サーバーに接続できるホストやユーザーを制御する', 'Control which hosts and users can connect to the X server', [], { positional: [pos('`+ホスト`（許可）、`-ホスト`（拒否）、`+`（全員を許可、注意）', '`+host` (allow), `-host` (deny), `+` (allow everyone, careful)')] }),
   xauth: cmd('X サーバーの認証情報（`.Xauthority`）を管理する', 'Manage X server authorization (`.Xauthority`)', [
     ['-f', '対象のファイル', 'authority file', 'arg'],
     ['-v', '詳しく表示する', 'verbose'],

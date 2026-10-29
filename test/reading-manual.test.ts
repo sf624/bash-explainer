@@ -401,7 +401,7 @@ describe('the reading tree as the Bash manual reads the builtins (chapter 4)', (
       '--: ends the options; the words after it become the positional parameters `$1`, `$2`…, even those that start with `-` (with none, the positional parameters are unset)',
       'a: becomes the positional parameter `$1`', 'b: becomes the positional parameter `$2`',
     ]);
-    assert.match(texts('set - a')[0], /^-: ends the options, and turns `-x` and `-v` off/);
+    assert.match(texts('set - a')[0], /^-: ends the options and turns `-x` and `-v` off/);
     assert.deepStrictEqual(texts('set a'), ['a: becomes the positional parameter `$1`']);
     // (After a word that may expand to more or fewer words, the numbers shift: `b` is `$4` when `$x` is `1 2`.)
     assert.deepStrictEqual(texts('set -- a $x b').slice(2), [

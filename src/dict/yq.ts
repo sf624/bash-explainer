@@ -73,7 +73,7 @@ const V3_GLOBAL: OptSpec[] = [
 ];
 const V3_DOC: OptSpec = ['-d|--doc', '対象のドキュメント番号（0 から。`*` で全部）', 'document index (from 0; `*` for all)', 'arg'];
 const V3_INPLACE: OptSpec = ['-i|--inplace', 'ファイルを上書きする', 'update the file in place', 'each:in-place'];
-const path = pos('パス（`a.b[0].c`、`a.*`、`a.(name==x)` など。jq の式ではない）', 'path (`a.b[0].c`, `a.*`, `a.(name==x)`…; not a jq expression)');
+const path = pos('jq の式ではないパス（`a.b[0].c`、`a.*`、`a.(name==x)` など）', 'path, not a jq expression (`a.b[0].c`, `a.*`, `a.(name==x)`…)');
 const file = pos('YAML ファイル', 'YAML file');
 
 /** mikefarah/yq v3: `yq r FILE PATH`, `yq w FILE PATH VALUE`… */

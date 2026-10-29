@@ -478,7 +478,7 @@ describe('nested scripts: the explanation', () => {
     assert.match(tokens.find((t) => t.label === '"$OPTS"')!.explanation, /It holds an expansion/);
     assert.match(allTokens(explain(`eval echo *`).items).find((t) => t.label === '*')!.explanation, /It holds an expansion/);
     // (`"$@"` in single quotes is text: the words after the string are what the spec says.)
-    assert.match(allTokens(explain(`bash -c 'f "$@"' _ a`).items).find((t) => t.label === '_')!.explanation, /^Becomes `\$0`, the name in place of a script name \(shown in error messages\); not an argument$/);
+    assert.match(allTokens(explain(`bash -c 'f "$@"' _ a`).items).find((t) => t.label === '_')!.explanation, /^Becomes `\$0` \(not an argument\), the name in place of a script name shown in error messages$/);
   });
 
   it('adds the notes and examples of the string to the line', () => {

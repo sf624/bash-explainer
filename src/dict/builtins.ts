@@ -248,7 +248,7 @@ const DECLARE_NAMES: NameOptions['options'] = [['-f', 'function'], ['-F', 'funct
 function declarationSpec(name: string, flags: Record<string, Text>, options: NameOptions['options'], rest: Rest = {}, off: Record<string, Text> = {}): CommandSpec {
   const t = declarationCommands[name];
   return b(t.ja, t.en, Object.entries(flags).map(([flag, text]) => ({ names: [flag], text, ...(off[flag] ? { offText: off[flag] } : {}) })), {
-    ...args(operand('NAME', '変数名（`名前=値` も可。`-f` なら関数名）', 'variable name (`name=value` too; function names with `-f`)', { type: 'variable', acts: 'declares', names: { options } })),
+    ...args(operand('NAME', '変数名（`名前=値` も可、`-f` なら関数名）', 'variable name (`name=value` too, function names with `-f`)', { type: 'variable', acts: 'declares', names: { options } })),
     ...rest,
   });
 }
@@ -317,8 +317,8 @@ const KILL_POSIX: ShellVariant = {
 /** bash's `ulimit` in POSIX mode (6.11): `-c` and `-f` count blocks of 512 bytes, not 1024. */
 const ULIMIT_POSIX: ShellVariant = {
   set: ['posix'],
-  spec: args(operand('LIMIT', '新しい上限: 資源の単位の数（POSIX モードなので `-c` と `-f` は 512 バイト単位、ほかの大きさは多くが KiB 単位。`ulimit -a` に単位がある）か、`unlimited`（上限なし）・`soft`・`hard`（今のソフトリミット・ハードリミット）。資源のオプションがなければファイルの大きさ（`-f`）の上限',
-    'the new limit: a number in the unit of the resource (in POSIX mode, blocks of 512 bytes for `-c` and `-f`; most other sizes in KiB; `ulimit -a` shows the units), or `unlimited`, `soft` or `hard` (the current soft or hard limit); with no option for a resource, the limit of file size (`-f`)')),
+  spec: args(operand('LIMIT', '新しい上限: 資源の単位の数（POSIX モードなので `-c` と `-f` は 512 バイト単位、ほかの大きさは多くが KiB 単位で、`ulimit -a` に単位がある）か、`unlimited`（上限なし）・`soft`・`hard`（今のソフトリミット・ハードリミット）で、資源のオプションがなければファイルの大きさ（`-f`）の上限',
+    'the new limit: a number in the unit of the resource (in POSIX mode, blocks of 512 bytes for `-c` and `-f`, most other sizes in KiB, and `ulimit -a` shows the units), or `unlimited`, `soft` or `hard` (the current soft or hard limit), for the resource of the option given, or the file size (`-f`) with none')),
   text: tx('POSIX モードなので、`-c` と `-f`（資源の指定がないときも）の大きさは 512 バイト単位（POSIX モードでなければ 1024 バイト単位）', 'In POSIX mode, the sizes of `-c` and `-f` (also with no resource given) count blocks of 512 bytes (1024 bytes out of POSIX mode)'),
 };
 
@@ -480,7 +480,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-L', 'シンボリックリンクを含んだ論理パスを表示（既定）', 'print the logical path, with symlinks (default)'],
   ], { program: PROGRAMS.pwd }),
   logout: b('ログインシェルを終了する（ログインシェル以外ではエラー）', 'Exit a login shell (an error in other shells)', [], numeric(operand('STATUS', '終了ステータス', 'exit status'))),
-  exit: special('シェル（スクリプト）を終了する', 'Exit the shell or script', [], { ...numeric(operand('STATUS', '終了ステータス（0 が成功、省略時は直前のコマンドのステータス）', 'exit status (0 = success; default: status of last command)')), ends: 'shell' }),
+  exit: special('シェル（スクリプト）を終了する', 'Exit the shell or script', [], { ...numeric(operand('STATUS', '終了ステータス（0 が成功、省略時は直前のコマンドのステータス）', 'exit status (0 = success, default: status of last command)')), ends: 'shell' }),
   return: special('関数から戻る', 'Return from a function', [], { ...numeric(operand('STATUS', '戻り値となる終了ステータス', 'exit status to return')), ends: 'function' }),
   set: actsOnShell(special('シェルオプションや位置パラメータを設定する', 'Set shell options or positional parameters', [
     { names: ['-e'], text: tx('コマンドが失敗したら即座にスクリプトを終了する（ただし、`if`・`while`・`until` の条件、`&&`・`||` の最後以外のコマンド、`pipefail` なしならパイプラインの最後以外のコマンド、`!` を付けたコマンド、およびそこから呼んだ関数の中では終了しない）', 'exit immediately if a command fails (but not in the condition of `if`, `while` or `until`, in a `&&` or `||` list except its last command, in a pipeline except its last command (unless `pipefail` is on), after `!`, or in a function called from those places)'), offText: ERREXIT_OFF },
@@ -525,7 +525,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
       // (`set - a b`: a lone `-` ends the options too, and turns `-x` and `-v` off.)
       {
         when: { operand: 0, matches: /^-$/ }, pattern: [
-          operand('-', 'オプションの終わり。`-x` と `-v` も無効にする。続く語が位置パラメータになる（なければ位置パラメータはそのまま）', 'ends the options, and turns `-x` and `-v` off; the words after it become the positional parameters (with none, they stay as they are)', { matches: /^-$/ }),
+          operand('-', 'オプションの終わりで、`-x` と `-v` も無効にし、続く語が位置パラメータになる（なければ位置パラメータはそのまま）', 'ends the options and turns `-x` and `-v` off, and the words after it become the positional parameters (with none, they stay as they are)', { matches: /^-$/ }),
           operand('ARG', '位置パラメータ `$N` になる', 'becomes the positional parameter `$N`', { repeat: '*' }),
         ],
       },
@@ -662,7 +662,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
       },
       { pattern: [operand('DEFINITION', '別名の定義: `=` の前の名前が、後ろの文字列を表す', 'an alias definition: the name before `=` stands for the text after it', { repeat: '+', matches: /^[^=]+=/ })] },
       { pattern: [operand('NAME', '定義を表示する別名（なければ失敗する）', 'alias whose definition to print (it fails when there is none)', { repeat: '+', matches: /^[^=]*$/ })] },
-      ...args(operand('NAME', '`名前=値` なら別名の定義（`=` の前の名前が後ろの文字列を表す）、名前だけならその定義の表示', 'with `=`, an alias definition (the name stands for the text after `=`); a name alone prints its definition')).operands!,
+      ...args(operand('NAME', '`名前=値` なら別名の定義（`=` の前の名前が後ろの文字列を表す）、名前だけならその定義の表示', 'an alias definition with `=` (the name stands for the text after `=`), or a name alone, which prints its definition')).operands!,
     ],
   }), (c) => c.operands.some((o) => o === undefined || o.includes('=')), { alters: ['aliases'] }),
   unalias: actsOnShell(b('別名を削除する', 'Remove an alias', [
@@ -716,16 +716,16 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     operands: [
       // `jobs -x cmd %1`: the command runs in this shell, with the job specs among its words replaced by process IDs.
       { when: { option: ['-x'] }, pattern: [runs({ run: 'current-shell' })] },
-      ...args(operand('JOB', '対象のジョブ指定（`%1`。省略時は全て）', 'job spec (`%1`; default: all)', { type: 'job' })).operands!,
+      ...args(operand('JOB', '対象のジョブ指定（`%1`、省略時は全て）', 'job spec (`%1`, default: all)', { type: 'job' })).operands!,
     ],
   }),
-  fg: b('ジョブをフォアグラウンドに戻す', 'Bring a job to the foreground', [], args(operand('JOB', 'ジョブ指定（`%1`。省略時は現在のジョブ）', 'job spec (`%1`; default: the current job)', { type: 'job' }))),
-  bg: b('停止中のジョブをバックグラウンドで再開する', 'Resume a stopped job in the background', [], args(operand('JOB', 'ジョブ指定（`%1`。省略時は現在のジョブ）', 'job spec (`%1`; default: the current job)', { type: 'job' }))),
+  fg: b('ジョブをフォアグラウンドに戻す', 'Bring a job to the foreground', [], args(operand('JOB', 'ジョブ指定（`%1`、省略時は現在のジョブ）', 'job spec (`%1`, default: the current job)', { type: 'job' }))),
+  bg: b('停止中のジョブをバックグラウンドで再開する', 'Resume a stopped job in the background', [], args(operand('JOB', 'ジョブ指定（`%1`、省略時は現在のジョブ）', 'job spec (`%1`, default: the current job)', { type: 'job' }))),
   disown: b('ジョブをシェルの管理から外す（シェル終了時に終了させない）', 'Remove jobs from the job table (they survive shell exit)', [
     ['-h', 'ジョブ表には残すが、シェルが終了したときに `SIGHUP` を送らない', 'keep the job in the table, but do not send it `SIGHUP` when the shell exits'],
     ['-a', 'すべてのジョブを対象にする', 'act on all jobs'],
     ['-r', '実行中のジョブだけを対象にする', 'act on running jobs only'],
-  ], args(operand('JOB', 'ジョブ指定（`%1`。省略時は現在のジョブ）', 'job spec (`%1`; default: the current job)', { type: 'job' }))),
+  ], args(operand('JOB', 'ジョブ指定（`%1`、省略時は現在のジョブ）', 'job spec (`%1`, default: the current job)', { type: 'job' }))),
   umask: actsOnShell(b('新規ファイルのパーミッションマスク（作成時に外す権限）を設定・表示する', 'Set or show the file creation mask (permissions removed from new files)', [
     ['-S', '記号形式（u=rwx,g=rx,o=rx など）で表示する', 'show in symbolic form (u=rwx,g=rx,…)'],
     ['-p', '再入力できる形で表示する', 'output in a reusable form'],
@@ -753,7 +753,7 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-b', 'ソケットバッファの最大サイズ', 'maximum socket buffer size'],
     ['-R', 'リアルタイムのプロセスがブロックせずに走れる時間（マイクロ秒）', 'time a real-time process may run without blocking (microseconds)'],
     // (bash also lists -k, -P and -T, which Linux lacks: "invalid option".)
-  ], { ...args(operand('LIMIT', '新しい上限: 資源の単位の数（大きさは多くが KiB 単位。`ulimit -a` に単位がある）か、`unlimited`（上限なし）・`soft`・`hard`（今のソフトリミット・ハードリミット）。資源のオプションがなければファイルの大きさ（`-f`）の上限', 'the new limit: a number in the unit of the resource (most sizes in KiB; `ulimit -a` shows the units), or `unlimited`, `soft` or `hard` (the current soft or hard limit); with no option for a resource, the limit of file size (`-f`)')), inShell: [ULIMIT_POSIX] }), (c) => c.operands.length > 0),
+  ], { ...args(operand('LIMIT', '新しい上限: 資源の単位の数（大きさは多くが KiB 単位で、`ulimit -a` に単位がある）か、`unlimited`（上限なし）・`soft`・`hard`（今のソフトリミット・ハードリミット）で、資源のオプションがなければファイルの大きさ（`-f`）の上限', 'the new limit: a number in the unit of the resource (most sizes in KiB, and `ulimit -a` shows the units), or `unlimited`, `soft` or `hard` (the current soft or hard limit), for the resource of the option given, or the file size (`-f`) with none')), inShell: [ULIMIT_POSIX] }), (c) => c.operands.length > 0),
   mapfile: actsOnShell(b('標準入力の各行を配列に読み込む', 'Read lines from stdin into an array', MAPFILE_OPTIONS, MAPFILE_OPERANDS), undefined, MAPFILE_DEFAULT),
   readarray: actsOnShell(b('標準入力の各行を配列に読み込む（mapfile と同じ）', 'Read lines from stdin into an array (same as mapfile)', MAPFILE_OPTIONS, MAPFILE_OPERANDS), undefined, MAPFILE_DEFAULT),
   // `let` has no options: `let -a` is an expression.
@@ -845,5 +845,5 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-f', 'ログインシェルでも停止する', 'suspend even a login shell'],
   ]),
   times: special('シェルと子プロセスの累積CPU時間を表示する', 'Print accumulated CPU times'),
-  caller: b('呼び出し元の行番号・関数名を表示する（デバッグ用）', 'Print the caller context (debugging)', [], args(operand('EXPR', '表示する呼び出しの深さ（0 は今の関数を呼んだところ）。指定すると行番号・関数名・ファイル名を表示する', 'which call to print, counted from the current one (0: where the current function was called); with it, `caller` prints the line, the function and the file of that call'))),
+  caller: b('呼び出し元の行番号・関数名を表示する（デバッグ用）', 'Print the caller context (debugging)', [], args(operand('EXPR', '表示する呼び出しの深さ（0 は今の関数を呼んだところ）で、指定すると行番号・関数名・ファイル名を表示する', 'which call to print, counted from the current one (0: where the current function was called), which makes `caller` print the line, the function and the file of that call'))),
 });
