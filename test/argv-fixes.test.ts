@@ -524,6 +524,8 @@ describe("an option's value that may give no word (after #482)", () => {
     // (`head -n 1 g f` reads `g` as a file; `cut -d : g f` too; `grep -e p g f` searches `g`.)
     assert.strictEqual(tokenOf('head -n $a f', '$a').explanation, 'Value for `-n`; when `$a` expands to several words, this is its first word, and each of the others is target file');
     assert.strictEqual(tokenOf('head -n $a f', '$a', 'ja').explanation, '`-n` オプションの値、`$a` が2語以上に展開されるならこの値は最初の語で、残りの各語は対象のファイル');
+    // (An operand before the value too: `head f -n 1 g` reads `f` and `g`.)
+    assert.strictEqual(tokenOf('head f -n $a', '$a').explanation, 'Value for `-n`; when `$a` expands to several words, this is its first word, and each of the others is target file');
     assert.strictEqual(tokenOf('cut -d $a f', '$a').explanation, 'Value for `-d`; when `$a` expands to several words, this is its first word, and each of the others is target file');
     assert.match(tokenOf('grep -e $a f', '$a').explanation, /; when `\$a` expands to several words, this is its first word, and each of the others is file to search \(default: stdin\)$/);
     // (Words the spec does not describe, a command run, a value that may give several itself: the words after it.)
