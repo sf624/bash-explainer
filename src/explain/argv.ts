@@ -11,13 +11,12 @@ import { OPTION_ROLES } from '../argv/regroup';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { validName } from '../semantics/posixexits';
 import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
-import { splitsIn } from '../argv/words';
 import { builtins, SHELL_OPTION_TABLES } from '../dict/builtins';
 import { OPTION_SECTIONS } from '../manual';
 import { describeFind, findWords, type FindNode, parseFind } from '../embedded/find';
 import { globIntro, hasGlob } from '../embedded/glob';
 import type { EmbeddedLang } from '../embedded/types';
-import { braceAlternatives, braceTexts } from '../semantics/brace';
+import { braceTexts } from '../semantics/brace';
 import type { Text } from '../i18n';
 import { shorten } from '../label';
 import { fact } from '../messages';
@@ -37,13 +36,13 @@ import { assignment } from './assignments';
 import type { Explainer } from './context';
 import { embedded, embeddedText } from './embedded';
 import { testExample } from './examples';
-import { skeletal, sortTokens } from './nodes';
+import { nested, skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
 import { elementsOf } from '../semantics/elements';
 import { argWordIn, countIn, fieldsIn, untilWords } from '../semantics/argwords';
 import { arrayKind, globOff, NO_SPEC, notForEarlier, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
-import { functionArgs, hedged, listed, SHIFTS, wordItems } from './operand-texts';
+import { eachText, functionArgs, hedged, listed, numbered, SHIFTS, wordItems } from './operand-texts';
 import { soleRead, turnedOff, unknownOption } from './option-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -113,6 +112,12 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
   let joinedNote: { at: SyntaxNode; note: string } | undefined;
   // The number of the next word of each operand (`$N`: `set -- a b`), and whether the words before it each gave one.
   const ordinals = new Map<OperandSpec, { n: number; sure: boolean }>();
+  /** The number of the next word of operand `o` (and whether it is sure), its words then `by` words on. */
+  const next = (o: OperandSpec, by: number, sure: boolean): { n: number; sure: boolean } => {
+    const b = ordinals.get(o) ?? { n: 0, sure: true };
+    ordinals.set(o, { n: b.n + by, sure: b.sure && sure });
+    return { n: b.n + 1, sure: b.sure };
+  };
   cx.withCommand({ cmd: parse.command, args: words, parse, nodes, spec }, () => {
     for (const { word, role } of parse.roles) {
       const a = nodes[word];
@@ -159,12 +164,13 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             : cx.s(`\`${role.of}\` の終わり: 見つかったファイル1件ごとにコマンドを実行（\`;\` はシェルに解釈されないようエスケープが必要）`, `End of \`${role.of}\`: run once per match (\`;\` must be escaped from the shell)`)));
           break;
         case 'operand': {
-          // (A word that expands to another number of words, `$x` or `{a,b}`, shifts the numbers: from it on, they are not sure.)
-          const before = (role.spec && ordinals.get(role.spec)) || { n: 0, sure: true };
+          // (A word that expands to another number of words, `$x` or `{a,b}`, shifts the numbers: from it on, they are not
+          // sure. Each word of one that gives several counts for its own role: `p='s.sh a'; bash $p d`, `d` is `$2`.)
           const count = countIn(a, cx.state);
           const gives = !count ? 1 : count.min === count.max ? count.min : undefined;
-          if (role.spec) ordinals.set(role.spec, { n: before.n + (gives ?? 1), sure: before.sure && gives !== undefined });
-          out.push(expanded(cx, a, operandToken(cx, nodes, word, role, parse, spec, { n: before.n + 1, sure: before.sure && gives !== undefined }, assigned, isFn)));
+          const numbers = role.each?.map((o) => next(o, 1, true));
+          const before = numbers?.[0] ?? (role.spec ? next(role.spec, gives ?? 1, gives !== undefined) : { n: 1, sure: true });
+          out.push(expanded(cx, a, operandToken(cx, nodes, word, role, parse, spec, { n: before.n, sure: before.sure && gives !== undefined, ...(numbers ? { each: numbers } : {}) }, assigned, isFn)));
           break;
         }
         case 'subcommand': {
@@ -175,7 +181,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
         }
         case 'command':
           // `trap {x,EXIT}`, `bash -c {x,y}`: the words of the braces, each with its role; the string is not read as a script.
-          if (role.each) out.push(expanded(cx, a, positional(cx, a, eachText(cx, a, role.each))));
+          if (role.each) out.push(expanded(cx, a, positional(cx, a, eachText(cx, a, role.each, role.each.map((o) => next(o, 1, true)), fieldsIn(a, cx.state)))));
           else if (role.slot.later) {
             // A trap's action: a string this shell runs later, with its expansions then.
             out.push(withScript(positional(cx, a, cx.t(role.item!.text) + trapNote(cx, a)), scriptTokens(cx, [a], cx.slotEnvs.get(a)!)));
@@ -204,9 +210,12 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
           // find's expression, read as a whole from its first word.
           if (word === parse.expression) out.push(...findExpression(cx, nodes.slice(word, parse.end), spec.expressionSpec!));
           break;
-        case 'fields':
-          out.push(expanded(cx, a, fieldsToken(cx, a, role, parse.command, isFn, nodes)));
+        case 'fields': {
+          // (Each field that is an operand has its number: `p='-- a'; set $p d`, `a` is `$1` and `d` `$2`.)
+          const numbers = new Map(role.roles.flatMap(({ role: r }) => (r.role === 'operand' && r.spec ? [[r, next(r.spec, 1, true)] as const] : [])));
+          out.push(expanded(cx, a, fieldsToken(cx, a, role, parse.command, isFn, nodes, numbers)));
           break;
+        }
       }
     }
   });
@@ -424,20 +433,20 @@ function splicedNote(cx: Explainer, v: ValueRole): string {
  * cp $x d`: "expands to `-r` (option: …) and `a` (source)"), or that no word is left, so the command does not get it
  * (`z=; cp $z c`); to a function (`isFn`), its arguments. An option's token where every field is one.
  */
-function fieldsToken(cx: Explainer, a: SyntaxNode, role: FieldsRole, command: string, isFn: boolean | 'maybe', nodes: SyntaxNode[]): Token {
+function fieldsToken(cx: Explainer, a: SyntaxNode, role: FieldsRole, command: string, isFn: boolean | 'maybe', nodes: SyntaxNode[], numbers: ReadonlyMap<ArgRole, { n: number }> = new Map()): Token {
   const program = command.split(' ')[0].split('/').pop()!;
   // (A function gets every word as an argument, also one that looks like an option.)
   if (isFn && role.words.length) return positional(cx, a, functionArgs(cx, nodes, nodes.indexOf(a)));
   // (`unset {,}`: the braces say so.)
   if (!role.words.length) return positional(cx, a, braceTexts([a])?.every((w) => !w) ? noWord(cx) : cx.s(`展開すると語が残らないので、\`${program}\` には渡らない`, `expands to no word, so \`${program}\` does not get it`));
   // (A field's role may depend on how many words the others give: `p='a b'; cp $p $u`, `b` is the destination when `$u` gives none.)
-  const t = positional(cx, a, listed(cx, wordItems(cx, role.words, role.roles, true, (desc, r) => hedged(cx, desc, a.text, r, nodes))));
+  const t = positional(cx, a, listed(cx, wordItems(cx, role.words, role.roles, true, (desc, r) => hedged(cx, numbered(desc, numbers.get(r)), a.text, r, nodes))));
   const options = role.roles.every(({ role: r }) => OPTION_ROLES.has(r.role));
   return options ? { ...t, kind: 'option' } : t;
 }
 
 /** The token of an operand: what the spec says it is, numbered (`$1`), or as a job spec, a shell option, an assignment. */
-function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Extract<ArgRole, { role: 'operand' }>, parse: ArgvParse, spec: CommandSpec, at: { n: number; sure: boolean }, assigned: string[], isFn: boolean | 'maybe'): Token {
+function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Extract<ArgRole, { role: 'operand' }>, parse: ArgvParse, spec: CommandSpec, at: { n: number; sure: boolean; each?: { n: number; sure: boolean }[] }, assigned: string[], isFn: boolean | 'maybe'): Token {
   const a = nodes[word];
   const item = role.spec;
   // `unset NAME`, `declare NAME=value`: what the name stands for, as bash decides it here.
@@ -457,7 +466,7 @@ function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Ex
   if (isFn) desc = functionArgs(cx, nodes, word);
   else if (item?.values && Object.hasOwn(item.values, a.text)) desc = cx.t(item.values[a.text]);
   else if (role.assignment) desc = cx.t(item!.assignmentText!);
-  else if (role.each) desc = eachText(cx, a, role.each);
+  else if (role.each) desc = eachText(cx, a, role.each, at.each!, fieldsIn(a, cx.state));
   else if (item) {
     const text = cx.t(item.text);
     desc = text.replace('`$N`', `\`$${at.n}\``);
@@ -519,7 +528,6 @@ function bracedDeclare(cx: Explainer, a: SyntaxNode, step: ExpansionStep, comman
   }
   const names = wordFields(a, cx.state).fields;
   if (!names) return cx.s(`ブレース展開のあと、各語を \`${command}\` が受け取る（ここでは語が決まらない）`, `The braces expand first, and \`${command}\` takes each word (the words are not known here)`);
-  if (!names.length) return noWord(cx);
   return cx.s(`ブレース展開のあと、各語を \`${command}\` が受け取る: ${names.map((n) => `\`${n}\``).join('・')}`, `The braces expand first, and \`${command}\` takes each word: ${names.map((n) => `\`${n}\``).join(', ')}`);
 }
 
@@ -614,7 +622,6 @@ function bracedUnset(cx: Explainer, a: SyntaxNode, step: ExpansionStep, space: R
   }
   const names = wordFields(a, cx.state).fields;
   if (!names) return cx.s('ブレース展開のあと、各語を名前として削除する（ここでは語が決まらない）', 'The braces expand first, and each word is a name to unset (the words are not known here)');
-  if (!names.length) return noWord(cx);
   const ja = names.map((n) => `\`${n}\``).join('・');
   const en = names.map((n) => `\`${n}\``).join(', ');
   const many = names.length > 1;
@@ -740,21 +747,6 @@ function nameGlob(cx: Explainer, a: SyntaxNode, name: string, text: string, acts
     ? cx.s(`（nullglob や failglob が有効な経路では、一致しなければ何も${ja}されない）`, ` (on the paths where nullglob or failglob is on, nothing is ${en} when none matches)`) : '';
   return text + cx.s(`。ただしクォートしていないので先にグロブとして展開され、一致するファイルがあればその名前を${ja}する${sometimes}（${quoted} と書く）`,
     `. Unquoted, it is a glob pattern first: if a file matches it, that file's name is ${en} instead${sometimes} (write ${quoted})`);
-}
-
-/**
- * The words a brace expansion gives, each with its role (`cp a{,.bak}`: the source, then the destination); the fields
- * the model knows where an expansion in one of them may split it or give none (`x='p q'; cp {a,$x}`: `a`, `p` and `q`;
- * `x='p q'; y=; cp {$x,$y}`: `p` and `q`, both of `$x`), which an exact count of such a word is (`countIn`), as for a
- * word of no braces (`z=; p='a b'; cp $z $p`: `a` and `b`).
- */
-function eachText(cx: Explainer, a: SyntaxNode, each: OperandSpec[]): string {
-  const braces = braceAlternatives([a]);
-  const words = !braces || braces.some(splitsIn) ? fieldsIn(a, cx.state)! : braceTexts([a])!;
-  // `destination (the new name…)` reads `destination: the new name…` in the parentheses.
-  const parts = words.map((w, k) => `\`${w}\`${cx.s(`（${cx.t(each[k].text).replace(/（(.*)）$/, ': $1')}）`, ` (${cx.t(each[k].text).replace(/ \((.*)\)$/, ': $1')})`)}`);
-  const list = `${parts.slice(0, -1).join(cx.s('、', ', '))}${cx.s('と ', ' and ')}${parts[parts.length - 1]}`;
-  return cx.s(`${list}に展開される`, `expands to ${list}`);
 }
 
 /**
@@ -959,10 +951,11 @@ function findExpression(cx: Explainer, all: SyntaxNode[], spec: CommandSpec): To
   };
   const first = exprArgs[0];
   const last = exprArgs[exprArgs.length - 1];
+  const inside = (k: number): boolean => all.indexOf(none[k]) > all.indexOf(first) && all.indexOf(none[k]) < all.indexOf(last);
   return [{
     kind: 'test', label: shorten(words.join(' ')), explanation: describeFind(tree, cx.lang),
-    span: { start: spanOf(first).start, end: spanOf(last).end }, children: build(tree),
-  }, ...empty];
+    span: { start: spanOf(first).start, end: spanOf(last).end }, children: nested(build(tree), empty.filter((_, k) => inside(k))),
+  }, ...empty.filter((_, k) => !inside(k))];
 }
 
 /**

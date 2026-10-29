@@ -2,6 +2,9 @@
 // (src/explain/argv.ts; the roles from `ArgRole` `operand`: `several`, `byCount`, `mixed`, `otherwise`, `none`), and what
 // each of the words read in place of one is to the command (the fields of a word, a value `env -S` splits).
 import type { ArgRole, ArgWord, ByCount, MixedRoles, RoleAt, SeveralRoles } from '../argv/interpret';
+import type { OperandSpec } from '../argv/spec';
+import { splitsIn } from '../argv/words';
+import { braceAlternatives, braceTexts } from '../semantics/brace';
 import { countIn, fieldsIn } from '../semantics/argwords';
 import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
@@ -172,6 +175,28 @@ export function functionArgs(cx: Explainer, nodes: readonly SyntaxNode[], word: 
   const text = fields ? cx.s(`関数への引数 ${fields.map((f, k) => `${names[k]}（\`${f}\`）`).join('、')}`, `Arguments ${fields.map((f, k) => `${names[k]} (\`${f}\`)`).join(', ')} to the function`)
     : cx.s(`関数への引数 ${names[0]}`, `Argument ${names[0]} to the function`);
   return sure && own !== undefined ? text : text + SHIFTS(cx);
+}
+
+/**
+ * The words a brace expansion gives, each with its role (`cp a{,.bak}`: the source, then the destination); the fields
+ * the model knows (`fields`) where an expansion in one of them may split it or give none (`x='p q'; cp {a,$x}`: `a`, `p` and `q`;
+ * `x='p q'; y=; cp {$x,$y}`: `p` and `q`, both of `$x`), which an exact count of such a word is (`countIn`), as for a
+ * word of no braces (`z=; p='a b'; cp $z $p`: `a` and `b`); a `$N` in a role is the number of its word (`numbers`).
+ */
+export function eachText(cx: Explainer, a: SyntaxNode, each: OperandSpec[], numbers: readonly { n: number }[], fields: readonly string[] | undefined): string {
+  const braces = braceAlternatives([a]);
+  const words = !braces || braces.some(splitsIn) ? fields! : braceTexts([a])!;
+  // `destination (the new name…)` reads `destination: the new name…` in the parentheses.
+  const role = (k: number): string => numbered(cx.t(each[k].text).replace(/（(.*)）$/, ': $1').replace(/ \((.*)\)$/, ': $1'), numbers[k]);
+  return listed(cx, words.map((w, k) => `\`${w}\`${cx.s(`（${role(k)}）`, ` (${role(k)})`)}`));
+}
+
+/**
+ * `text` with its `$N` the number of its word (`number`). (A word of several fields of other roles, or of a brace expansion,
+ * comes before the options end, so no word before it has a count that is not known: the number is sure.)
+ */
+export function numbered(text: string, number: { n: number } | undefined): string {
+  return number ? text.replace('`$N`', `\`$${number.n}\``) : text;
 }
 
 const dash = (flag: string): string => flag.replace(/^\+/, '-');
