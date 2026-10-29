@@ -9,7 +9,7 @@ import type { Text } from '../i18n';
 import { EnvSplitError, splitEnvString } from './envsplit';
 import { type ByCount, counts, type Hedge, hedges, type MixedRoles, type SeveralRoles, withHedge } from './hedge';
 import { type ParserRules, rulesOf } from './parsers';
-import { mayGiveSeveral, restOf, roleText, valueHedges } from './valuehedges';
+import { mayGiveSeveral, roleText, valueHedges } from './valuehedges';
 import { type Group, lineIndex, optionFields, regroup, withParse } from './regroup';
 import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
 
@@ -223,13 +223,13 @@ export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretCon
   const back = groups.length ? lineIndex(groups) : (j: number): number => j;
   const read = (words: ArgWord[], at: (j: number) => number, bare: boolean): ArgvParse => new Reader(words, ctx, new Set(), at, bare).read(spec, 0, words.length, ctx.name ?? '', [], false, []);
   const parse = read(line, back, false);
-  // (A value that may give several words is read as its first word and one that gives the rest, `rest`, which may give
-  // one or more: their hedges say the roles of every count.)
-  const spread = (j: number): ArgvParse => {
+  // (A value that may give several words is read with `c` of them: its first word, then words of their own whose text is
+  // not known. The words of the line after it are `c - 1` places on.)
+  const spread = (j: number, c: number): ArgvParse => {
     const { count: _, fields: __, ...first } = line[j];
-    return read([...line.slice(0, j), first, restOf(line[j]), ...line.slice(j + 1)], (i) => back(i <= j ? i : i - 1), false);
+    return read([...line.slice(0, j), first, ...Array.from({ length: c - 1 }, (): ArgWord => ({})), ...line.slice(j + 1)], (i) => back(Math.max(Math.min(i, j), i - c + 1)), false);
   };
-  valueHedges(parse, line, (j) => read([...line.slice(0, j), ...line.slice(j + 1)], back, true), spread, back);
+  valueHedges(parse, spec, line, (j) => read([...line.slice(0, j), ...line.slice(j + 1)], back, true), spread, back);
   const out = groups.length ? regroup(parse, groups).parse : parse;
   return own.size ? optionFields(out, own, words) : out;
 }

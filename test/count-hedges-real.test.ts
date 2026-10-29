@@ -116,6 +116,32 @@ const CASES: Case[] = [
       return roles[at]?.role === 'subcommand' ? 'logged' : `not a command: ${argv[argv.indexOf('repo') + 1]}`;
     },
     seen: (r) => (/cannot change to 'log'/.test(r.err) ? 'cd log' : /'([^']*)' is not a git command/.exec(r.err) ? `not a command: ${/'([^']*)' is not a git command/.exec(r.err)![1]}` : /^ {4}first$/m.test(r.out) ? 'logged' : r.out) },
+  // (Review of #492: an option that takes two words, and a value before a command. `jq --arg x "B" "C" "V" "P"` takes
+  // `"B"` as the value, `"C"` as the filter and the files `"V"`, `"P"`; each file holds a string, and the filter, a string
+  // too, gives itself once per input; with no filter, jq prints stdin.)
+  ...['--arg', '--argjson'].map((option): Case => ({
+    line: `jq -c ${option} $n '"V"' '"P"'`, vars: { $n: ['x', option === '--arg' ? '"B"' : '1', '"C"', '"D"'] }, tool: 'jq', usable: () => has('jq'),
+    setup: `for f in '"V"' '"P"' '"C"' '"D"'; do echo '"F"' > "$f"; done`, stdin: '"S"',
+    expect: (argv, roles) => {
+      const filter = roles.findIndex((r) => op(r).startsWith('jq filter'));
+      // (No filter: jq reads stdin with `.`, its output not being a terminal.)
+      if (filter < 0) return '"S"';
+      const files = argv.filter((_, i) => op(roles[i]).startsWith('input JSON file'));
+      return Array.from({ length: files.length || 1 }, () => argv[filter]).join(' ');
+    },
+    seen: (r) => (r.status ? 'refused' : r.out.trim().split('\n').join(' ')),
+  })),
+  // (`timeout -s KILL 1 echo 5 echo x` runs `echo` with `5 echo x`; with one word, `5` is the time limit.)
+  ...[['-s', ['KILL', '1', 'echo', 'y']], ['-k', ['1', '2', 'echo', 'y']]].map(([option, values]): Case => ({
+    line: `timeout ${option as string} $s 5 echo x`, vars: { $s: values as string[] }, tool: 'timeout', usable: () => gnu('timeout'),
+    expect: (argv, roles) => {
+      const limit = roles.findIndex((r) => op(r).startsWith('time limit'));
+      const command = roles.findIndex((r) => r?.role === 'command');
+      if (limit < 0 || command < 0 || !/^\d+$/.test(argv[limit]) || argv[command] !== 'echo') return 'refused';
+      return argv.slice(command + 1).join(' ');
+    },
+    seen: (r) => (r.status ? 'refused' : r.out.trim()),
+  })),
   // (Not run: sudo's `-u` takes the next word as the user, as its manual says; `sudo -u tar -cf x y` runs nothing.)
   { line: 'sudo -u $u tar -cf x y', vars: { $u: ['root', 'p', 'q', 'r'] }, tool: 'sudo', usable: () => true, dry: true, only: ['-u', '$u', 'tar'] },
 ];
@@ -174,7 +200,8 @@ describe('hedges of words that give none or several, compared with bash and the 
       }
       vectors.forEach((v, n) => {
         const counts = new Map(names.map((x, j) => [x, v[j]]));
-        const parts = texts.map((t) => (counts.has(t) ? c.vars[t].slice(0, counts.get(t)) : [t]));
+        // (A word written out is its text after quote removal: `'"V"'` is `"V"`.)
+        const parts = texts.map((t, w) => (counts.has(t) ? c.vars[t].slice(0, counts.get(t)) : [words[w].value ?? t]));
         const argv = parts.flat();
         const roles = rolesOf(c.tool, argv);
         const where = `${c.line} with ${names.map((x) => `${x}=${counts.get(x)}`).join(', ')}`;
