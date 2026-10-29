@@ -381,12 +381,16 @@ describe('the fields of a word the model knows, read as bash gives them (bug 7 o
     assert.strictEqual(summary.explanation, 'Conditions and actions: if name matches x: print it');
     assert.strictEqual(tokenOf('z=; find . -name x $z -print', '$z').explanation, 'expands to no word, so `find` does not get it');
     // (Inside the summary's span, and of a group's, the word is a part of the innermost, so that a hover reaches it.)
-    for (const line of ['z=; find . -name x $z -print', 'z=; find . -name $z x', 'z=; find . \\( -name x $z \\)']) {
+    for (const line of ['z=; find . -name x $z -print', 'z=; find . -name $z x', 'z=; find . \\( -name x $z \\)', 'z=; find . \\( -name x $z \\) -print']) {
       const items = new Analyzer('en').explainLine(parser.parse(line), 0).items;
       const col = line.indexOf('$z') + 1;
       const chain = chainAt(items, { line: 0, character: col });
       assert.strictEqual(chain.at(-1)?.label === '$z' ? chain.at(-1)!.explanation : chain.at(-2)?.explanation, 'expands to no word, so `find` does not get it', line);
     }
+    // (Also in a group over two lines.)
+    const lines = 'z=; find . \\( -name x $z \\\n  -o -name y \\)';
+    const over = chainAt(new Analyzer('en').explainLine(parser.parse(lines), 0).items, { line: 0, character: lines.indexOf('$z') + 1 });
+    assert.strictEqual(over.find((t) => t.kind === 'argument' && t.label === '$z')?.explanation, 'expands to no word, so `find` does not get it');
     // (A field read as itself keeps the summary; one find may read as an option does not: `x=-print`.)
     const summaryOf = (line: string) => allTokens(new Analyzer('en').explainLine(parser.parse(line), 0).items).find((t) => t.kind === 'test')?.explanation;
     assert.strictEqual(summaryOf('p=a; find . -name "$p"'), 'Print what matches: name matches "$p" (no action is given, so `-print` is implied)');
