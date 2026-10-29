@@ -104,7 +104,7 @@ describe('what we say of a word with braces in a shell without them', () => {
     assert.strictEqual(said('trap {x,EXIT}', '{x,EXIT}'), 'expands to `x` (command to run: `-` resets, empty string ignores) and `EXIT` (signal: EXIT, ERR, INT, TERM…)');
     assert.strictEqual(tokens('trap {x,EXIT}', 'bash').find((x) => x.label === '{x,EXIT}' && x.kind === 'argument')!.expands, 'brace');
     assert.match(said('trap {y,INT} TERM', '{y,INT}'), /^expands to `y` \(command to run: .*\) and `INT` \(signal: /);
-    assert.match(said('bash -c {x,y}', '{x,y}'), /^expands to `x` \(The command string: .*\) and `y` \(Becomes `\$0`/);
+    assert.match(said('bash -c {x,y}', '{x,y}'), /^expands to `x` \(The command string: .*\) and `y` \(the name for `\$0`/);
     const run = (src: string): string => spawnSync('bash', ['-c', src], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } }).stdout;
     assert.strictEqual(run('trap {x,EXIT}; trap -p; trap -- - EXIT'), "trap -- 'x' EXIT\n");
     assert.strictEqual(run('trap {y,INT} TERM; trap -p INT TERM'), "trap -- 'y' SIGINT\ntrap -- 'y' SIGTERM\n");

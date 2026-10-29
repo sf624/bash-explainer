@@ -195,7 +195,7 @@ const TRAP_POSIX: ShellVariant = {
   spec: {
     operands: [
       ...TRAP_OPERANDS.slice(0, 4),
-      { when: { not: { option: ['-p', '-P', '-l'] } }, pattern: [basedSpec(operand('SIGNAL', 'POSIX モードの bash は、番号でない1語だけをリセットするシグナルとして読まない: 使い方の誤り（終了ステータス 2）になり、特殊組み込みコマンドのエラーなのでシェルが終了する。前に `-` を書く（`trap - INT`）', 'In POSIX mode bash does not read a lone word as a signal to reset unless it is a number: this is a usage error (status 2), and as an error of a special builtin it ends the shell. Write `-` before it (`trap - INT`)'), 'trap-posix-signal')] },
+      { when: { not: { option: ['-p', '-P', '-l'] } }, pattern: [basedSpec(operand('SIGNAL', 'POSIX モードの bash は、番号でない1語だけをリセットするシグナルとして読まない: 使い方の誤り（終了ステータス 2）になり、特殊組み込みコマンドのエラーとしてシェルが終了するので、前に `-` を書く（`trap - INT`）', 'In POSIX mode bash does not read a lone word as a signal to reset unless it is a number: this is a usage error (status 2), and as an error of a special builtin it ends the shell, so write `-` before it (`trap - INT`)'), 'trap-posix-signal')] },
       ...TRAP_OPERANDS.slice(4),
     ],
   },
@@ -657,8 +657,8 @@ export const builtins: Record<string, CommandSpec> = wordTable({
           'no name before `=`: bash looks for an alias named by the whole word to print it, finds none, and fails ("not found", status 1)', { repeat: '+', matches: /^=/, known: true }), 'alias-no-name')],
       },
       {
-        pattern: [operand('DEFINITION', '別名の定義: `=` の前の名前が、後ろの文字列を表す。文字列が空白で終わるので、この別名の次の単語も bash がエイリアスか調べる（`alias sudo=\'sudo \'` なら `sudo ll` でもエイリアス `ll` が使える）',
-          'an alias definition: the name before `=` stands for the text after it. The text ends with a blank, so bash checks the word after this alias for an alias too (with `alias sudo=\'sudo \'`, `sudo ll` uses the alias `ll`)', { repeat: '+', matches: new RegExp(`^${ALIAS_NAME}=[^]*[ \\t]$`), known: true })],
+        pattern: [operand('DEFINITION', '別名の定義: `=` の前の名前が、後ろの文字列を表し、文字列が空白で終わるので、この別名の次の単語も bash がエイリアスか調べる（`alias sudo=\'sudo \'` なら `sudo ll` でもエイリアス `ll` が使える）',
+          'an alias definition: the name before `=` stands for the text after it, and as the text ends with a blank, bash checks the word after this alias for an alias too (with `alias sudo=\'sudo \'`, `sudo ll` uses the alias `ll`)', { repeat: '+', matches: new RegExp(`^${ALIAS_NAME}=[^]*[ \\t]$`), known: true })],
       },
       { pattern: [operand('DEFINITION', '別名の定義: `=` の前の名前が、後ろの文字列を表す', 'an alias definition: the name before `=` stands for the text after it', { repeat: '+', matches: /^[^=]+=/ })] },
       { pattern: [operand('NAME', '定義を表示する別名（なければ失敗する）', 'alias whose definition to print (it fails when there is none)', { repeat: '+', matches: /^[^=]*$/ })] },
@@ -845,5 +845,5 @@ export const builtins: Record<string, CommandSpec> = wordTable({
     ['-f', 'ログインシェルでも停止する', 'suspend even a login shell'],
   ]),
   times: special('シェルと子プロセスの累積CPU時間を表示する', 'Print accumulated CPU times'),
-  caller: b('呼び出し元の行番号・関数名を表示する（デバッグ用）', 'Print the caller context (debugging)', [], args(operand('EXPR', '表示する呼び出しの深さ（0 は今の関数を呼んだところ）で、指定すると行番号・関数名・ファイル名を表示する', 'which call to print, counted from the current one (0: where the current function was called), which makes `caller` print the line, the function and the file of that call'))),
+  caller: b('呼び出し元の行番号・関数名を表示する（デバッグ用）', 'Print the caller context (debugging)', [], args(operand('EXPR', '表示する呼び出しの深さ（0 は今の関数を呼んだところ）で、指定すると行番号・関数名・ファイル名を表示する', 'which call to print, counted from the current one (0: where the current function was called), and with it, `caller` prints the line, the function and the file of that call'))),
 });

@@ -412,9 +412,10 @@ describe('the specs of the dictionary', () => {
     assert.deepStrictEqual(unreachable, []);
   });
 
-  it('write each operand role as one phrase: no "; " in English (the hedges of src/explain/operand-texts.ts join their clauses with it) and no "；" in Japanese', () => {
+  it('write each operand role as one phrase: no "; " or sentence end in English (the hedges of src/explain/operand-texts.ts join their clauses with "; "), no "；" or "。" outside brackets in Japanese', () => {
     // Every text that names the role of an operand: the items of a pattern, of `dashDash.then` and `laterOperands` (and the
-    // awk assignment's), wherever they are in a spec (a subcommand, find's expression, a variant of the shell).
+    // awk assignment's), wherever they are in a spec (a subcommand, find's expression, a variant of the shell). (The texts of
+    // `OperandSpec.values`, as shopt's, are not roles of a hedge: out of scope.)
     const roles = new Map<string, Text>();
     const seen = new Set<object>();
     const add = (where: string, o: { text?: Text; assignmentText?: Text } | undefined): void => {
@@ -433,7 +434,9 @@ describe('the specs of the dictionary', () => {
       for (const [name, spec] of Object.entries(table)) walk(spec, name);
     }
     assert.ok(roles.size > 400, `found only ${roles.size} operand roles`);
-    const bad = [...roles].filter(([, t]) => t.en.includes('; ') || t.ja.includes('；')).map(([k]) => k);
+    // (A sentence end inside brackets or backticks does not break the clause around it.)
+    const outside = (ja: string): string => ja.replace(/`[^`]*`/g, '').replace(/（[^）]*）/g, '');
+    const bad = [...roles].filter(([, t]) => t.en.includes('; ') || /\. /.test(t.en.replace(/`[^`]*`/g, '').replace(/\b(?:e\.g|i\.e)\./g, '')) || t.ja.includes('；') || outside(t.ja).includes('。')).map(([k]) => k);
     assert.deepStrictEqual(bad, []);
   });
 });

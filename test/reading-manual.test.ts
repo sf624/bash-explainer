@@ -800,7 +800,7 @@ describe('the reading tree as the Bash manual reads aliases and arrays (chapter 
     assert.deepStrictEqual(kids(node(src, 's >/dev/null ll', 'command', 6)), ['aliasWord s', 'redirect >/dev/null', 'argument ll']);
     // The definitions say so, and that bash refuses a name with `/`.
     assert.match(said(src, 'a/b=x', 7), /^a definition bash refuses: an alias name may not have `\/`, `\$`, a backquote, a quote, a backslash, a blank or a metacharacter \("invalid alias name", status 1\)$/);
-    assert.match(said(src, "s='sudo '", 8), /The text ends with a blank, so bash checks the word after this alias for an alias too/);
+    assert.match(said(src, "s='sudo '", 8), /as the text ends with a blank, bash checks the word after this alias for an alias too/);
     // The state follows it: `c d` runs `command declare x=1`; not in a file that may not expand aliases.
     const tree = parser.parse("#!/bin/bash\nshopt -s expand_aliases\nalias c='command ' d='declare x=1'\nc d\necho \"[$x]\"");
     assert.strictEqual(shellState(tree).at(tree.root.namedChildren[4]).run.variables.get('x')?.value, '1');
