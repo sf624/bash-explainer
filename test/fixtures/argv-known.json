@@ -1,8 +1,8 @@
 {
   "counts": {
     "fixtures": {
-      "probe": { "commands": 384, "ran": 118, "words": 393, "unknown": 13, "failing": 3 },
-      "values": { "commands": 384, "ran": 228, "words": 724, "unknown": 39, "failing": 1 }
+      "probe": { "commands": 393, "ran": 127, "words": 418, "unknown": 13, "failing": 3 },
+      "values": { "commands": 393, "ran": 237, "words": 749, "unknown": 39, "failing": 1 }
     },
     "snippets": {
       "probe": { "commands": 384, "ran": 342, "words": 837, "unknown": 47, "failing": 2 },

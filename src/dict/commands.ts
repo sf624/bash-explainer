@@ -1086,7 +1086,7 @@ export const core: Record<string, CommandSpec> = {
     parser: 'getopt_long',
     positional: [pos('リンク先（実体）', 'target')],
     operands: [
-      byCount(1, [pos('リンク先（実体）。リンクは同じ名前でカレントディレクトリに作る', 'target (the link is made in the current directory, with the same name)')]),
+      byCount(1, [pos('リンク先（実体。リンクは同じ名前でカレントディレクトリに作る）', 'target (the link is made in the current directory, with the same name)')]),
       byCount(2, [pos('リンク先（実体）', 'target'), pos('作るリンクの名前（既存のディレクトリならその中に作る）', 'link name (or an existing directory to make the link in)')], { unless: '-t|--target-directory' }),
       byCount(3, [pos('リンク先（実体）', 'target')], { orMore: true, unless: '-t|--target-directory', last: pos('リンクを作るディレクトリ', 'directory to make the links in') }),
     ],

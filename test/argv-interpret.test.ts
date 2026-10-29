@@ -388,6 +388,14 @@ describe('argv interpreter: the option grammar', () => {
     const gap: CommandSpec = { summary: t('gap'), operands: [{ pattern: [item('A')] }, { pattern: [item('A'), item('B')] }, { pattern: [item('A'), item('B'), item('C'), item('D'), item('D', { repeat: '*' })] }] };
     assert.deepStrictEqual(readings(interpret(gap, [{ value: 'x', count: { min: 1 } }]).roles[0].role), ['1: a', '2: a, b', '4+: a, b, c, d']);
     assert.strictEqual(readings(interpret({ summary: t('one'), operands: [{ pattern: [item('A')] }] }, [{ value: 'x', count: { min: 1 } }]).roles[0].role), undefined);
+    // (Two words that may give several: the roles any counts give, in the order of the patterns, and none where no pattern
+    // fits; a word after one such word, its role for each count of it.)
+    const two = [{ value: 'x', count: { min: 1 } }, { value: 'y', count: { min: 1 } }];
+    const mixed = interpret(three, two).roles.map((r) => (r.role.role === 'operand' && r.role.mixed ? `${r.role.mixed.words.join(' ')}: ${r.role.mixed.first} ${r.role.mixed.many} ${r.role.mixed.roles.map((o) => o.text.en).join(', ')}` : '-'));
+    assert.deepStrictEqual(mixed, ['0 1: true true a, b', '0 1: true true b, c']);
+    const by = interpret(three, [{ value: 'x', count: { min: 1 } }, { value: 'f' }]).roles[1].role;
+    // (One role for every count but the fewest: `otherwise`, with the word it depends on.)
+    assert.deepStrictEqual(by.role === 'operand' && [by.otherwise?.text.en, by.by, by.byCount], ['c', 0, undefined]);
     // (A word that gives two words or more: no reading for one.)
     assert.deepStrictEqual(readings(interpret(three, [{ value: 'x', count: { min: 2 } }]).roles[0].role), ['2: a, d', '3: a, b, c']);
     const p = parseOf('timeout 5 sleep 1');
