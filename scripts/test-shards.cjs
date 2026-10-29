@@ -9,8 +9,8 @@
 //
 //   node scripts/test-shards.cjs 2/4         the files of shard 2 of 4, one per line
 //   node scripts/test-shards.cjs --plan 4 [18|24]  the shards of 4, with their estimated times
-//   node scripts/test-shards.cjs --measure   run each file alone (three at a time) and rewrite the timings of
-//                                            this Node.js (run it with Node.js 18, and with 24)
+//   node scripts/test-shards.cjs --measure   run each file alone (as many at a time as mocha) and rewrite the
+//                                            timings of this Node.js (run it with Node.js 18, and with 24)
 //
 // Measure again when the shards drift apart (the CI jobs "Unit tests" show their times), with the tools
 // of CI installed (and the browser, BASH_EXPLAINER_BROWSER=1), so that the tests that compare with them run.
@@ -76,11 +76,16 @@ function shardFiles(spec, root = ROOT) {
   return split(testFiles(root), readTimings(), count)[index - 1].files;
 }
 
-/** Runs each test file alone, three at a time, on this Node.js, and writes the seconds each took to its column of the timings. */
+/**
+ * Runs each test file alone on this Node.js, as many at a time as mocha runs (three on Node.js 20 or later, else
+ * one), and writes the seconds each took to its column of the timings. With MOCHA_SHARD, only the files of that
+ * shard (a CI job can measure its own); else every file, and the files no longer there leave the column.
+ */
 async function measure() {
   const { spawn } = require('node:child_process');
   const mocha = require.resolve('mocha/bin/mocha.js');
-  const queue = testFiles();
+  const shard = process.env.MOCHA_SHARD;
+  const queue = shard ? shardFiles(shard) : testFiles();
   const timings = {};
   const one = async () => {
     for (let f = queue.shift(); f; f = queue.shift()) {
@@ -93,11 +98,11 @@ async function measure() {
       console.log(`${timings[f]}\t${f}${status ? ` (failed: ${status})` : ''}`);
     }
   };
-  await Promise.all([one(), one(), one()]);
+  await Promise.all(Array.from({ length: column() === '18' ? 1 : 3 }, one));
   const col = column();
   const all = JSON.parse(fs.readFileSync(TIMINGS, 'utf8'));
   for (const f of Object.keys(all)) {
-    if (!(f in timings)) delete all[f][col];
+    if (!shard && !(f in timings)) delete all[f][col];
     if (!Object.keys(all[f]).length) delete all[f];
   }
   for (const [f, t] of Object.entries(timings)) all[f] = { ...all[f], [col]: t };
