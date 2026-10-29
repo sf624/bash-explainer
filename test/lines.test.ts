@@ -213,8 +213,9 @@ describe('lines no other test reaches', () => {
   it('cut and tr: --output-delimiter on characters, tr -ds, and tr without a second set', () => {
     assert.deepStrictEqual(runCut(['-c', '1-2,4', '--output-delimiter=:'], ['abcde']), ['ab:d']);
     assert.deepStrictEqual(runTr(['-ds', 'a', 'b'], ['aabbbc']), ['bc']);
-    assert.throws(() => runTr(['-ds', 'a'], ['x']), /two sets/);
-    assert.throws(() => runTr(['a'], ['x']), /two sets/);
+    // (A lone set is refused by tr unless only one of -d and -s is given.)
+    assert.throws(() => runTr(['-ds', 'a'], ['x']), /extra operand/);
+    assert.throws(() => runTr(['a'], ['x']), /extra operand/);
   });
 
   it('awk and perl runners: what they leave to the real tools', () => {

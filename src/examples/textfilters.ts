@@ -424,7 +424,7 @@ const TR = shortKeys('cdst');
 export function runTr(words: (string | undefined)[], input: string[]): string[] {
   const p = parseOptions('tr', words, TR);
   const sets = p.operands;
-  // (A third set is an extra operand, which tr refuses: `parseOptions` throws.)
+  // (A third set is an extra operand, and a lone one is too few: tr refuses both, and `parseOptions` throws.)
   if (sets.some((s) => s === undefined) || !sets.length) throw new Unsupported('sets');
   const comp = has(p, 'c');
   const del = has(p, 'd');
@@ -437,7 +437,6 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
   if (del) {
     out = out.filter((c) => !in1(c));
     if (squeeze) {
-      if (sets.length < 2) throw new Unsupported('-ds needs two sets');
       const s2 = expandSet(sets[1]!);
       squeezeSet = (c) => s2.includes(c);
     }
@@ -460,10 +459,9 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
       out = out.map((c) => map.get(c) ?? c);
       squeezeSet = (c) => to.includes(c);
     }
-  } else if (squeeze) {
-    squeezeSet = in1;
   } else {
-    throw new Unsupported('tr needs two sets');
+    // (One set is a squeeze: tr refuses a lone set when translating, and when deleting and squeezing; `parseOptions` throws.)
+    squeezeSet = in1;
   }
   if (squeeze) out = out.filter((c, i) => !(i > 0 && c === out[i - 1] && squeezeSet(c)));
   const joined = out.join('');

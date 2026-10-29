@@ -690,7 +690,7 @@ describe('argv specs: the dictionary entries `cmd` builds', () => {
     assert.ok(k.role === 'subcommand' && k.parse.roles[2].role.role === 'command');
     // A positional language applies to its own index only.
     const tr = lookupCommand('tr')!.operands!.at(-1)!.pattern;
-    assert.deepStrictEqual(tr.map((x) => [x.repeat, x.lang]), [['?', 'trset'], ['?', 'trset'], ['*', undefined]]);
+    assert.deepStrictEqual(tr.map((x) => [x.repeat, x.lang]), [[undefined, 'trset'], [undefined, 'trset'], ['*', undefined]]);
     // `let`: every operand is arithmetic.
     assert.deepStrictEqual(lookupCommand('let')!.operands!.at(-1)!.pattern.map((x) => [x.repeat, x.lang, x.type]), [['*', 'arith', 'arith']]);
     assert.strictEqual(lookupCommand('set')!.builtin, 'special');

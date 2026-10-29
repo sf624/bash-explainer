@@ -113,8 +113,8 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
     const fails: [() => unknown, string][] = [
       [() => runSort(['-t', 'ab'], []), '-t'], [() => runSort(['--key'], []), 'missing'], [() => runSort(['-k'], []), 'missing'], [() => runSort(['--nope'], []), '--nope'],
       [() => runUniq(['-z'], []), '-z'], [() => runCut(['-f', 'x'], []), 'list'], [() => runCut(['-d', 'ab', '-f', '1'], []), '-d'], [() => runCut([], []), 'cut needs'],
-      [() => expandSet('[:foo:]'), 'class'], [() => expandSet('z-a'), 'reverse'], [() => runTr(['a', 'b', 'c'], []), 'extra operand'], [() => runTr([undefined as unknown as string], []), 'sets'], [() => runTr(['-c', 'a', 'xy'], []), '-c with'],
-      [() => runTr(['a', ''], []), 'empty set2'], [() => runTr(['-ds', 'a'], []), '-ds'], [() => runTr(['a'], []), 'two sets'], [() => runHead(['-n', 'x'], []), '-n'], [() => runTail(['-n', 'x'], []), '-n'],
+      [() => expandSet('[:foo:]'), 'class'], [() => expandSet('z-a'), 'reverse'], [() => runTr(['a', 'b', 'c'], []), 'extra operand'], [() => runTr(['-d', undefined as unknown as string], []), 'sets'], [() => runTr(['-c', 'a', 'xy'], []), '-c with'],
+      [() => runTr(['a', ''], []), 'empty set2'], [() => runTr(['-ds', 'a'], []), 'extra operand'], [() => runTr(['a'], []), 'extra operand'], [() => runHead(['-n', 'x'], []), '-n'], [() => runTail(['-n', 'x'], []), '-n'],
       [() => runSeq(['1', '0', '3']), 'zero'], [() => runSeq(['1', '100000']), 'too long'], [() => runSeq(['-f', '%g', '3']), '-f'],
     ];
     for (const [f, msg] of fails) assert.throws(f, (e: Error) => e instanceof Unsupported && e.message.includes(msg), msg);
