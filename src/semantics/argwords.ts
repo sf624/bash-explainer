@@ -6,7 +6,6 @@ import { untilWord } from '../argv/until';
 import { argWordFor, countOf } from '../argv/words';
 import { bracesWork } from '../shellfeatures';
 import type { SyntaxNode } from '../syntax/tree';
-import { braceAlternatives } from './brace';
 import { mayGiveNoField } from './nofield';
 import type { StateModel } from './state';
 import { wordFields, wordMeaning } from './words';
@@ -17,33 +16,41 @@ import { wordFields, wordMeaning } from './words';
  */
 export const bracesIn = (model: StateModel) => (n: SyntaxNode): boolean | 'unknown' => wordMeaning(n, model)?.steps[0].applies ?? bracesWork(n, model.shell);
 
+const known = new WeakMap<StateModel, WeakMap<SyntaxNode, { fields?: readonly string[] }>>();
+/** The fields of the word of `n` where the model knows them (`wordFields`), computed once for each word of a model. */
+export function fieldsIn(n: SyntaxNode, model: StateModel): readonly string[] | undefined {
+  let byNode = known.get(model);
+  if (!byNode) known.set(model, (byNode = new WeakMap()));
+  let f = byNode.get(n);
+  if (!f) byNode.set(n, (f = { fields: wordFields(n, model).fields }));
+  return f.fields;
+}
+
 /**
- * How many words the word of `n` gives (`countOf`), with brace expansion as the `model` says; where its braces expand
- * and that is a range, the number of its fields where the model knows them (`x=p; cp {a,$x} d`: two). (Not those of
- * other words, nor fields that start with `-`: the interpreter reads a word as written, not its fields, bugs 6 and 7 of
- * docs/design/oracles.md 2.8.)
+ * How many words the word of `n` gives (`countOf`), with brace expansion as the `model` says; where that is not one
+ * known number, the number of its fields where the model knows them (`x=p; cp {a,$x} d`: two; `y=a; cp $y c`: one;
+ * `z=; cp $z c`: none).
  */
 export function countIn(n: SyntaxNode, model: StateModel): ArgWord['count'] {
-  const braces = bracesIn(model)(n);
-  const count = countOf(n, model.shell, braces);
-  if (!count || count.min === count.max || braces !== true || !braceAlternatives([n])) return count;
-  const fields = wordFields(n, model).fields;
-  return !fields || fields.some((f) => f.startsWith('-')) ? count : fields.length === 1 ? undefined : { min: fields.length, max: fields.length };
+  const count = countOf(n, model.shell, bracesIn(model)(n));
+  if (!count || count.min === count.max) return count;
+  const fields = fieldsIn(n, model);
+  return !fields ? count : fields.length === 1 ? undefined : { min: fields.length, max: fields.length };
 }
 
 /**
  * The words of the command line as the interpreter reads them, with brace expansion as the `model` says (`set +B`),
- * each with its fields where the model knows them, and none as the fewest it gives only where the model says it may
- * give none (`x=1; cp $x b`: one at least; with nullglob, `*.txt` none). (A word with no count is one word.)
+ * each with its fields where the model knows them, which the interpreter reads in its place (`interpret`), and none as
+ * the fewest it gives only where the model says it may give none (`x=1; cp $x b`: one at least; with nullglob,
+ * `*.txt` none). (A word with no count is one word.)
  */
 export const argWordIn = (model: StateModel) => {
   const plain = argWordFor(model.shell, bracesIn(model), (n) => countIn(n, model));
   return (n: SyntaxNode): ArgWord => {
-    let known: { fields?: readonly string[] } | undefined;
     const w = plain(n);
     // (A word with a count is one of a command's words, which the model reads: an argument, or its name after a wrapper.)
     if (w.count) w.count = { ...w.count, min: mayGiveNoField(n, model) ? 0 : Math.max(w.count.min, 1) };
-    return { ...w, fields: () => (known ??= wordFields(n, model)).fields };
+    return { ...w, fields: () => fieldsIn(n, model) };
   };
 };
 
