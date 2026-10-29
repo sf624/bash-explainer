@@ -10,8 +10,11 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Test (Node.js ${{ matrix.node }})
+  # The unit tests run in shards, each on a runner of its own (`unit`); `test`, after them, gives one result per
+  # Node.js version under the name the repository's rules require, and on Node.js 24 merges the coverage of the
+  # shards and checks it. The type checks and the package build run beside the shards (`check`).
+  check:
+    name: Type check and package (Node.js ${{ matrix.node }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -20,6 +23,39 @@ jobs:
         # Extensions run on the Node.js built into VS Code (Electron), so test both ends of the
         # range we support: VS Code 1.85 (engines.vscode) has Node.js 18.15, current VS Code 24.21.
         node: [18, 24]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup
+        with:
+          node-version: ${{ matrix.node }}
+
+      # test/fixtures/snippets.json (the inputs of the syntax tests and the fuzz) must hold the snippets of the tests as they are now.
+      - name: Check the snippets of the tests
+        if: matrix.node == 24
+        run: npx tsx scripts/extract-snippets.ts --check
+
+      - name: Type check
+        run: |
+          npx tsc --noEmit
+          npx tsc --noEmit -p web
+
+      - name: Package the extension
+        run: npm run package
+
+  unit:
+    # The test files are split into shards of about the same time, from the times measured in
+    # scripts/test-timings.json (scripts/test-shards.cjs; test/shards.test.ts checks that each file is in one shard).
+    name: Unit tests (Node.js ${{ matrix.node }}, ${{ matrix.shard }}/4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 24]
+        shard: [1, 2, 3, 4]
+    env:
+      MOCHA_SHARD: ${{ matrix.shard }}/4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -54,11 +90,6 @@ jobs:
 
       - uses: ./.github/actions/install-tools
 
-      # test/fixtures/snippets.json (the inputs of the syntax tests and the fuzz) must hold the snippets of the tests as they are now.
-      - name: Check the snippets of the tests
-        if: matrix.node == 24
-        run: npx tsx scripts/extract-snippets.ts --check
-
       # The web page test drives Chromium; playwright needs Node.js 20 or later. The browser is cached by
       # the playwright version (`install` then finds it and downloads nothing); the system libraries
       # (`--with-deps`) are installed every time.
@@ -76,41 +107,78 @@ jobs:
         if: steps.apt-cache.outputs.cache-hit != 'true'
         run: cp -n /var/cache/apt/archives/*.deb "$HOME/apt-debs/"
 
-      - name: Type check and unit tests
+      - name: Unit tests
         if: matrix.node != 24
-        run: npm test
+        run: npx mocha
         env:
           # Fail instead of skipping when PyYAML is missing (test/host-shells.test.ts).
           BASH_EXPLAINER_PYYAML: '1'
 
-      # On the newest Node.js, with every tool installed, the unit tests also measure coverage.
-      - name: Type check, and unit tests with coverage
+      # On the newest Node.js, with every tool installed, the unit tests also measure coverage: each process
+      # writes V8's raw coverage (what `c8` collects), and `test` merges the shards' and reports it.
+      - name: Unit tests with coverage
         if: matrix.node == 24
-        # The two type checks run beside the tests (not before them) and are waited for after: a failure of
-        # either, or of the tests, fails the step. The tests run in parallel (.mocharc.cjs: three workers on
-        # the four cores of the runner), so the type checks mostly take the fourth core.
-        run: |
-          npx tsc --noEmit > "$RUNNER_TEMP/tsc-src.log" 2>&1 &
-          src=$!
-          npx tsc --noEmit -p web > "$RUNNER_TEMP/tsc-web.log" 2>&1 &
-          web=$!
-          status=0
-          npm run coverage || status=1
-          for check in src web; do
-            pid=${!check}
-            if wait "$pid"; then
-              echo "tsc ($check): ok"
-            else
-              echo "::error::tsc ($check) failed"
-              cat "$RUNNER_TEMP/tsc-$check.log"
-              status=1
-            fi
-          done
-          exit "$status"
+        run: NODE_V8_COVERAGE="$PWD/coverage/tmp" node_modules/.bin/mocha
         env:
           # Fail instead of skipping when the browser cannot start, or PyYAML is missing.
           BASH_EXPLAINER_BROWSER: '1'
           BASH_EXPLAINER_PYYAML: '1'
+          # As `npm run coverage`: some branches depend on the time zone.
+          TZ: UTC
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.node == 24
+        with:
+          name: coverage-raw-${{ matrix.shard }}
+          path: coverage/tmp/
+          retention-days: 1
+          # (A job run again replaces its own.)
+          overwrite: true
+          if-no-files-found: error
+
+  test:
+    name: Test (Node.js ${{ matrix.node }})
+    # (Also when a shard failed, to fail here: a required check that is skipped would count as passed.)
+    if: ${{ !cancelled() }}
+    needs: [check, unit]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 24]
+    steps:
+      # (The results of `check` and `unit` are those of all their jobs, of both Node.js versions; their own jobs say
+      # which one failed.)
+      - name: Check that the type checks, the package and every shard passed
+        env:
+          CHECK: ${{ needs.check.result }}
+          UNIT: ${{ needs.unit.result }}
+        run: |
+          echo "check: $CHECK, unit: $UNIT"
+          test "$CHECK" = success
+          test "$UNIT" = success
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: matrix.node == 24
+
+      - uses: ./.github/actions/setup
+        if: matrix.node == 24
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: matrix.node == 24
+        with:
+          pattern: coverage-raw-*
+          path: coverage/tmp/
+          merge-multiple: true
+
+      # c8 reads its options (the sources, what to leave out) from package.json, as `npm run coverage` does.
+      - name: Merge the coverage of the shards
+        if: matrix.node == 24
+        run: |
+          ls coverage/tmp | wc -l
+          npx c8 report
+          node scripts/coverage-report.mjs
 
       - name: Coverage summary
         if: matrix.node == 24
@@ -127,9 +195,6 @@ jobs:
       - name: Check coverage
         if: matrix.node == 24
         run: npm run coverage:check
-
-      - name: Package the extension
-        run: npm run package
 
   integration:
     # The production build in a real VS Code: the oldest version it supports and the newest. On
