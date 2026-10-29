@@ -1,8 +1,9 @@
 import { shells } from './shells';
+import { tr } from './tr';
 import { ops } from './ops';
 import { distro } from './distro';
 import { system } from './system';
-import type { CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption } from '../argv/spec';
+import type { CommandSpec, OperandSpec, OptionSpec, PatternOption } from '../argv/spec';
 import { tx } from '../i18n';
 import { basic, DATE_OPERANDS } from './basic';
 import { psLetters } from './psletters';
@@ -11,29 +12,10 @@ import { admin } from './admin';
 import { netadmin, SSH_OPTION_VALUES } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
-import { args, ASSIGNMENTS, byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, lackingOperand, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, SUDO_KEEPS, wordTable, LS_ENV, LS_LONG_ENV, LS_HUMAN_ENV, DF_HUMAN_ENV, PS_ENV, PS_BSD_ENV, PS_FULL_ENV } from './types';
+import { args, ASSIGNMENTS, byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, SUDO_KEEPS, wordTable, LS_ENV, LS_LONG_ENV, LS_HUMAN_ENV, DF_HUMAN_ENV, PS_ENV, PS_BSD_ENV, PS_FULL_ENV } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
-/**
- * The operands of `tr`, by the options and the count (checked against GNU coreutils 9.4): the sets to delete (`-d`) or
- * to squeeze (`-s`), or to translate (neither); with `-d` alone only one set is taken (the second word is refused with
- * a line of its own, the later ones without); a lone set when translating, or when deleting and squeezing, is refused.
- */
-const TR_BOTH: Condition = { all: [{ option: ['-d', '--delete'] }, { option: ['-s', '--squeeze-repeats'] }] };
-const TR_DELETE = pos('削除する文字集合', 'character set to delete');
-const TR_TRANSLATE = [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')];
-const TR_OPERANDS: OperandAlt[] = [
-  { when: TR_BOTH, ...byCount(0, [], { extra: lackingOperand('missing operand after', 'Two strings must be given when both deleting and squeezing repeats.', 1) }) },
-  { when: TR_BOTH, ...byCount(2, [TR_DELETE, pos('連続を1つにまとめる文字集合', 'character set whose repeats are squeezed')], { langs: ['trset', 'trset'], extra: EXTRA_OPERAND }) },
-  byCount(1, [TR_DELETE], { when: '-d|--delete', langs: ['trset'], extra: extraOperand('extra operand', 1, { also: 'Only one string may be given when deleting without squeezing repeats.', once: true }) }),
-  byCount(1, [TR_DELETE], { when: '-d|--delete', langs: ['trset'], extra: EXTRA_OPERAND }),
-  byCount(1, [pos('連続を1つにまとめる文字集合', 'character set whose repeats are squeezed')], { when: '-s|--squeeze-repeats', langs: ['trset'] }),
-  byCount(2, TR_TRANSLATE, { when: '-s|--squeeze-repeats', langs: ['trset', 'trset'], extra: EXTRA_OPERAND }),
-  byCount(0, [], { extra: lackingOperand('missing operand after', 'Two strings must be given when translating.', 1) }),
-  byCount(2, TR_TRANSLATE, { langs: ['trset', 'trset'], extra: EXTRA_OPERAND }),
-];
-
 const NEWERXY = [...'acBm'].flatMap((x) => [...'acBmt'].map((y) => `-newer${x}${y}`)).join('|');
 
 /** `ar` operations and modifiers (written without a dash, or with one). */
@@ -588,13 +570,7 @@ export const core: Record<string, CommandSpec> = {
       // util-linux getopt reads its own options up to the first operand (`+` in its getopt string): the words after it are the arguments it parses.
       optionsFirst: true,
       positional: [pos('（旧形式）受け付けるオプション文字', '(old form) the option letters'), pos('解析する引数（通常は `"$@"`）', 'the arguments to parse (usually `"$@"`)')], positionalLang: ['getoptshort'] }),
-  tr: cmd('文字を置換・削除する（標準入力のみ）', 'Translate or delete characters (stdin only)', [
-    ['-t|--truncate-set1', '1つ目の文字集合を2つ目の長さに切り詰める', 'truncate the first set to the length of the second'],
-    ['-d|--delete', '指定した文字を削除する', 'delete the characters'],
-    ['-s|--squeeze-repeats', '連続する同じ文字を1つにまとめる', 'squeeze repeated characters'],
-    ['-c|-C|--complement', '指定した文字以外を対象にする', 'use the complement of the set'],
-    ...GNU_INFO,
-  ], { example: 'tr', parser: 'getopt_long', operands: TR_OPERANDS }),
+  tr,
   head: cmd('ファイルの先頭部分を表示する（既定は10行）', 'Print the first part of files (default 10 lines)', [
     ['-q|--quiet|--silent', '複数ファイルでもファイル名の見出しを付けない', 'never print file name headers'],
     ['-v|--verbose', '常にファイル名の見出しを付ける', 'always print file name headers'],

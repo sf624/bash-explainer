@@ -63,7 +63,7 @@ describe('positional arguments described by their number', () => {
 
   it('tr, basename, mount, cmp and join', () => {
     assert.deepStrictEqual(operands('tr a-z A-Z').map((o) => o[1]), ['source character set (e.g. `a-z`)', 'target character set (e.g. `A-Z`)']);
-    assert.deepStrictEqual(operands("tr -d ' '").map((o) => o[1]), ['character set to delete or squeeze (`-d`, `-s`)']);
+    assert.deepStrictEqual(operands("tr -d ' '").map((o) => o[1]), ['character set to delete']);
     assert.deepStrictEqual(operands('basename /a/b .txt').map((o) => o[1]), ['path', 'suffix to remove']);
     assert.deepStrictEqual(operands('basename -a /a/b /c/d').map((o) => o[1]), ['path', 'path']);
     assert.deepStrictEqual(operands('basename /a/b').map((o) => o[1]), ['path']);
@@ -80,7 +80,8 @@ describe('positional arguments described by their number', () => {
     assert.deepStrictEqual(operands('basename /a/b .txt c').map((o) => o[1]), ['path', 'suffix to remove', extra]);
     assert.deepStrictEqual(operands('diff a b c').map((o) => o[1]), ['first file', 'second file', extra.replace('status 1', 'status 2')]);
     assert.deepStrictEqual(operands('diff --to-file=d a b c').map((o) => o[1]), ['first file', 'second file', 'second file']);
-    assert.deepStrictEqual(operands('tr -d a b').map((o) => o[1]), ['character set to delete', extra]);
+    assert.deepStrictEqual(operands('tr -d a b').map((o) => o[1]), ['character set to delete', extra.replace('`extra operand` and', '`extra operand` and `Only one string may be given when deleting without squeezing repeats.` and')]);
+    assert.deepStrictEqual(operands('tr -d a b c').map((o) => o[1]), ['character set to delete', extra, extra]);
     assert.deepStrictEqual(operands('mktemp a.XXX b', 'ja')[1], ['b', '余分なオペランド（コマンドは受け付けず、`too many templates` と表示して何もせずに終了ステータス 1 で終わる）']);
   });
 
