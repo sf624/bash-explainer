@@ -20,7 +20,7 @@ Keep it current:
   6. The `several` hedge for `cp $a` with two words: the last is the destination of the two-operand form, not a destination directory.
   7. A known split value that starts with `-` is read as an operand (`x="-r a"; cp $x d`: bash gives the option `-r`). Braces whose words start with `-` have the same cause (the interpreter reads the word as written, not its fields): `set {-e,-u}` is said to set `$1`, where bash turns on `-e` and `-u`.
   - Open, after #482: an option's value that may give no word makes the next word the value (`tar -cf $a b`, `cp -t $d $a`, `grep -e $p f`); the hedge of #482 covers operands only.
-  - Done (#PRNUM), found in the review of #481 (oracles.md 2.8, bug 8): an expansion in a word of the braces counted as one word (`x='p q'; cp {a,$x}` runs `cp a p q`). The braces now give the sum of what each of their words gives, and the fields where the model knows them.
+  - Done (#483), found in the review of #481 (oracles.md 2.8, bug 8): an expansion in a word of the braces counted as one word (`x='p q'; cp {a,$x}` runs `cp a p q`). The braces now give the sum of what each of their words gives, and the fields where the model knows them.
 
 ## Next, in this order
 
