@@ -10,29 +10,21 @@ permissions:
   contents: read
 
 jobs:
-  # The unit tests run in shards, each on a runner of its own (`unit`); `test`, after them, gives one result per
-  # Node.js version under the name the repository's rules require, and on Node.js 24 merges the coverage of the
-  # shards and checks it. The type checks and the package build run beside the shards (`check`).
+  # The unit tests run in shards, each on a runner of its own (`unit-18`, `unit-24`); `test-18` and `test-24`, after
+  # them, give one result per Node.js version under the names the repository's rules require, build the package on
+  # that version, and on Node.js 24 merge the coverage of the shards and check it. The type checks and the snippet
+  # check run beside the shards (`check`): what they find does not depend on the Node.js version.
   check:
-    name: Type check and package (Node.js ${{ matrix.node }})
+    name: Type check
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        # Extensions run on the Node.js built into VS Code (Electron), so test both ends of the
-        # range we support: VS Code 1.85 (engines.vscode) has Node.js 18.15, current VS Code 24.21.
-        node: [18, 24]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: ./.github/actions/setup
-        with:
-          node-version: ${{ matrix.node }}
 
       # test/fixtures/snippets.json (the inputs of the syntax tests and the fuzz) must hold the snippets of the tests as they are now.
       - name: Check the snippets of the tests
-        if: matrix.node == 24
         run: npx tsx scripts/extract-snippets.ts --check
 
       - name: Type check
@@ -40,84 +32,53 @@ jobs:
           npx tsc --noEmit
           npx tsc --noEmit -p web
 
-      - name: Package the extension
-        run: npm run package
-
-  unit:
-    # The test files are split into shards of about the same time, from the times measured in
-    # scripts/test-timings.json (scripts/test-shards.cjs; test/shards.test.ts checks that each file is in one shard).
-    name: Unit tests (Node.js ${{ matrix.node }}, ${{ matrix.shard }}/4)
+  # The test files are split into shards of about the same time, from the times measured in
+  # scripts/test-timings.json (scripts/test-shards.cjs; test/shards.test.ts checks that each file is in one shard).
+  # Extensions run on the Node.js built into VS Code (Electron), so test both ends of the range we support:
+  # VS Code 1.85 (engines.vscode) has Node.js 18.15, current VS Code 24.21.
+  unit-18:
+    name: Unit tests (Node.js 18, ${{ matrix.shard }}/4)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        node: [18, 24]
         shard: [1, 2, 3, 4]
     env:
       MOCHA_SHARD: ${{ matrix.shard }}/4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/unit-setup
         with:
-          node-version: ${{ matrix.node }}
-
-      - name: Find the playwright version
-        id: playwright
-        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")" >> "$GITHUB_OUTPUT"; echo "image=$ImageVersion" >> "$GITHUB_OUTPUT"
-
-      # apt downloads from the runner's mirror sometimes stall for minutes, or crawl at a few dozen kB/s: give apt
-      # timeouts and retries (also for the apt-get that `--with-deps` runs itself), keep the downloaded .deb files, and
-      # cache them (in a directory of the runner's; apt gets copies) so that a later run needs no download.
-      - name: Configure apt
-        run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAPT::Keep-Downloaded-Packages "true";\n' | sudo tee /etc/apt/apt.conf.d/99-ci-retries
-          sudo rm -f /etc/apt/apt.conf.d/docker-clean
-          mkdir -p "$HOME/apt-debs"
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: apt-cache
-        with:
-          path: ~/apt-debs
-          key: apt-${{ runner.os }}-${{ steps.playwright.outputs.image }}-node${{ matrix.node }}-pw${{ steps.playwright.outputs.version }}-${{ hashFiles('.github/actions/install-tools/action.yml') }}
-
-      - name: Use the cached .deb files
-        if: steps.apt-cache.outputs.cache-hit == 'true'
-        run: |
-          ls "$HOME/apt-debs" | wc -l
-          sudo cp -n "$HOME"/apt-debs/*.deb /var/cache/apt/archives/
-
-      - uses: ./.github/actions/install-tools
-
-      # The web page test drives Chromium; playwright needs Node.js 20 or later. The browser is cached by
-      # the playwright version (`install` then finds it and downloads nothing); the system libraries
-      # (`--with-deps`) are installed every time.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: matrix.node == 24
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-
-      - name: Install Chromium for the web page test
-        if: matrix.node == 24
-        run: npx playwright-core install --with-deps chromium-headless-shell
-
-      - name: Keep the downloaded .deb files for the cache
-        if: steps.apt-cache.outputs.cache-hit != 'true'
-        run: cp -n /var/cache/apt/archives/*.deb "$HOME/apt-debs/"
+          node-version: 18
 
       - name: Unit tests
-        if: matrix.node != 24
         run: npx mocha
         env:
           # Fail instead of skipping when PyYAML is missing (test/host-shells.test.ts).
           BASH_EXPLAINER_PYYAML: '1'
 
-      # On the newest Node.js, with every tool installed, the unit tests also measure coverage: each process
-      # writes V8's raw coverage (what `c8` collects), and `test` merges the shards' and reports it.
+  # On the newest Node.js, with every tool installed, the unit tests also measure coverage: each process writes V8's
+  # raw coverage (what `c8` collects), and `test-24` merges the shards' and reports it.
+  unit-24:
+    name: Unit tests (Node.js 24, ${{ matrix.shard }}/4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      MOCHA_SHARD: ${{ matrix.shard }}/4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/unit-setup
+        with:
+          node-version: 24
+
       - name: Unit tests with coverage
-        if: matrix.node == 24
         run: NODE_V8_COVERAGE="$PWD/coverage/tmp" node_modules/.bin/mocha
         env:
           # Fail instead of skipping when the browser cannot start, or PyYAML is missing.
@@ -127,7 +88,6 @@ jobs:
           TZ: UTC
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: matrix.node == 24
         with:
           name: coverage-raw-${{ matrix.shard }}
           path: coverage/tmp/
@@ -136,37 +96,54 @@ jobs:
           overwrite: true
           if-no-files-found: error
 
-  test:
-    name: Test (Node.js ${{ matrix.node }})
+  test-18:
+    name: Test (Node.js 18)
     # (Also when a shard failed, to fail here: a required check that is skipped would count as passed.)
     if: ${{ !cancelled() }}
-    needs: [check, unit]
+    needs: [check, unit-18]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        node: [18, 24]
     steps:
-      # (The results of `check` and `unit` are those of all their jobs, of both Node.js versions; their own jobs say
-      # which one failed.)
-      - name: Check that the type checks, the package and every shard passed
+      # (The result of `unit-18` is that of all its shards; their own jobs say which one failed.)
+      - name: Check that the type checks and every shard passed
         env:
           CHECK: ${{ needs.check.result }}
-          UNIT: ${{ needs.unit.result }}
+          UNIT: ${{ needs.unit-18.result }}
         run: |
-          echo "check: $CHECK, unit: $UNIT"
+          echo "check: $CHECK, unit-18: $UNIT"
           test "$CHECK" = success
           test "$UNIT" = success
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: matrix.node == 24
 
       - uses: ./.github/actions/setup
-        if: matrix.node == 24
+        with:
+          node-version: 18
+
+      - name: Package the extension
+        run: npm run package
+
+  test-24:
+    name: Test (Node.js 24)
+    if: ${{ !cancelled() }}
+    needs: [check, unit-24]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check that the type checks and every shard passed
+        env:
+          CHECK: ${{ needs.check.result }}
+          UNIT: ${{ needs.unit-24.result }}
+        run: |
+          echo "check: $CHECK, unit-24: $UNIT"
+          test "$CHECK" = success
+          test "$UNIT" = success
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: matrix.node == 24
         with:
           pattern: coverage-raw-*
           path: coverage/tmp/
@@ -174,18 +151,15 @@ jobs:
 
       # c8 reads its options (the sources, what to leave out) from package.json, as `npm run coverage` does.
       - name: Merge the coverage of the shards
-        if: matrix.node == 24
         run: |
           ls coverage/tmp | wc -l
           npx c8 report
           node scripts/coverage-report.mjs
 
       - name: Coverage summary
-        if: matrix.node == 24
         run: node scripts/coverage-summary.mjs >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: matrix.node == 24
         with:
           name: coverage
           # (The reports; not the raw coverage of the shards, which is large.)
@@ -196,8 +170,10 @@ jobs:
       # Every file runs all its lines and takes all its branches, but those in coverage-floors.json,
       # which must not go below their floors.
       - name: Check coverage
-        if: matrix.node == 24
         run: npm run coverage:check
+
+      - name: Package the extension
+        run: npm run package
 
   integration:
     # The production build in a real VS Code: the oldest version it supports and the newest. On

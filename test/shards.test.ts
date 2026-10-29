@@ -15,14 +15,18 @@ const shards = require('../scripts/test-shards.cjs') as {
 };
 const lookupFiles = require('mocha/lib/cli/lookup-files') as (spec: string, extensions: string[], recursive: boolean) => string[];
 
-/** The shard count of the workflow, after checking that its matrix lists each shard once. */
+/** The shard count of the workflow, after checking that both jobs of shards (Node.js 18 and 24) list each shard once, and name their count in MOCHA_SHARD. */
 function workflowShards(): number {
   const yml = fs.readFileSync(path.join(root, '.github/workflows/test.yml'), 'utf8');
-  const listed = /^\s*shard: \[([\d, ]+)\]$/m.exec(yml);
-  const count = /MOCHA_SHARD: \$\{\{ matrix\.shard \}\}\/(\d+)$/m.exec(yml);
-  assert.ok(listed && count, 'the unit test job has a matrix of shards, and MOCHA_SHARD names their count');
-  const n = Number(count[1]);
-  assert.deepStrictEqual(listed[1].split(',').map(Number), Array.from({ length: n }, (_, i) => i + 1));
+  const listed = [...yml.matchAll(/^\s*shard: \[([\d, ]+)\]$/gm)].map((m) => m[1]);
+  const counts = [...yml.matchAll(/MOCHA_SHARD: \$\{\{ matrix\.shard \}\}\/(\d+)$/gm)].map((m) => Number(m[1]));
+  assert.strictEqual(listed.length, 2, 'two jobs of shards');
+  assert.strictEqual(counts.length, 2, 'two jobs name their count in MOCHA_SHARD');
+  const n = counts[0];
+  for (const [i, list] of listed.entries()) {
+    assert.strictEqual(counts[i], n);
+    assert.deepStrictEqual(list.split(',').map(Number), Array.from({ length: n }, (_, k) => k + 1));
+  }
   return n;
 }
 

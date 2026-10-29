@@ -1,0 +1,65 @@
+name: Set up a shard of the unit tests
+description: >-
+  Node.js and the dependencies, the tools the tests compare against (their .deb files cached), and on Node.js 24
+  Chromium for the web page tests. Run it after actions/checkout.
+
+inputs:
+  node-version:
+    description: The Node.js version.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Find the playwright version
+      id: playwright
+      run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")" >> "$GITHUB_OUTPUT"; echo "image=$ImageVersion" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    # apt downloads from the runner's mirror sometimes stall for minutes, or crawl at a few dozen kB/s: give apt
+    # timeouts and retries (also for the apt-get that `--with-deps` runs itself), keep the downloaded .deb files, and
+    # cache them (in a directory of the runner's; apt gets copies) so that a later run needs no download.
+    - name: Configure apt
+      run: |
+        printf 'Acquire::Retries "3";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAPT::Keep-Downloaded-Packages "true";\n' | sudo tee /etc/apt/apt.conf.d/99-ci-retries
+        sudo rm -f /etc/apt/apt.conf.d/docker-clean
+        mkdir -p "$HOME/apt-debs"
+      shell: bash
+
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: apt-cache
+      with:
+        path: ~/apt-debs
+        key: apt-${{ runner.os }}-${{ steps.playwright.outputs.image }}-node${{ inputs.node-version }}-pw${{ steps.playwright.outputs.version }}-${{ hashFiles('.github/actions/install-tools/action.yml') }}
+
+    - name: Use the cached .deb files
+      if: steps.apt-cache.outputs.cache-hit == 'true'
+      run: |
+        ls "$HOME/apt-debs" | wc -l
+        sudo cp -n "$HOME"/apt-debs/*.deb /var/cache/apt/archives/
+      shell: bash
+
+    - uses: ./.github/actions/install-tools
+
+    # The web page test drives Chromium; playwright needs Node.js 20 or later. The browser is cached by
+    # the playwright version (`install` then finds it and downloads nothing); the system libraries
+    # (`--with-deps`) are installed every time.
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.node-version == '24'
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+    - name: Install Chromium for the web page test
+      if: inputs.node-version == '24'
+      run: npx playwright-core install --with-deps chromium-headless-shell
+      shell: bash
+
+    - name: Keep the downloaded .deb files for the cache
+      if: steps.apt-cache.outputs.cache-hit != 'true'
+      run: cp -n /var/cache/apt/archives/*.deb "$HOME/apt-debs/"
+      shell: bash
