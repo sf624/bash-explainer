@@ -7,6 +7,7 @@ import { countIn } from '../src/semantics/argwords';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, fields } from '../src/syntax/tree';
+import { chainAt } from '../src/ui/hoverParts';
 import { runBash } from './support/bash';
 import { allTokens } from './support/explain';
 
@@ -329,6 +330,9 @@ describe('the fields of a word the model knows, read as bash gives them (bug 7 o
     assert.strictEqual(tokenOf('x="host ls -l"; ssh $x', '$x').explanation, 'expands to `host` (destination: `user@host`), `ls` (the command to run) and `-l` (a word of the command string)');
     assert.strictEqual(tokenOf('x=". -name"; find $x a', '$x').explanation, 'expands to `.` (starting directory) and `-name` (a word of the expression)');
     assert.strictEqual(tokenOf('z=; find . $z -name a', '-name').explanation, 'file name matches the glob');
+    // (coreutils echo reads `--version` as an option only alone, and not with `POSIXLY_CORRECT` in its environment.)
+    assert.strictEqual(tokenOf('x=--version; POSIXLY_CORRECT=1 /bin/echo $x', '$x').explanation, 'expands to `--version` (text to print: `POSIXLY_CORRECT` is in its environment, so `--version` is no option)');
+    assert.strictEqual(runBash('x=--version; POSIXLY_CORRECT=1 /bin/echo $x').stdout, '--version\n');
     // (A function gets every word as an argument: `f -a b`.)
     assert.strictEqual(tokenOf('f() { :; }; x="-a b"; f $x', '$x').explanation, 'Arguments $1 (`-a`), $2 (`b`) to the function');
   });
@@ -355,6 +359,19 @@ describe('the fields of a word the model knows, read as bash gives them (bug 7 o
     assert.strictEqual(tokenOf('p="a b"; set -- $p d', '$p').explanation, 'expands to `a` (becomes the positional parameter `$1`) and `b` (becomes the positional parameter `$2`)');
     assert.strictEqual(tokenOf('p="a b"; set -- $p d', 'd').explanation, 'becomes the positional parameter `$3`');
     assert.deepStrictEqual(runBash('f() { echo "$#:$1:$3"; }; x=; f $x d; ff="-r a"; f $ff d; p="a b"; set -- $p d; echo "$3"').stdout, '1:d:\n3:-r:d\nd\n');
+    // (Each field counts for its own role: `set $p d` with `p='-- a'` sets `$1=a $2=d`; `bash $p d` with `p='s.sh a'` runs
+    // s.sh with `$1=a $2=d`; `bash -c 'echo $1' $p d` with `p='a b'` gives `$0=a $1=b $2=d`. Review of #485.)
+    assert.strictEqual(tokenOf('p="-- a"; set $p d', '$p').explanation, 'expands to `--` (end of options) and `a` (becomes the positional parameter `$1`)');
+    assert.strictEqual(tokenOf('p="-- a"; set $p d', 'd').explanation, 'becomes the positional parameter `$2`');
+    assert.strictEqual(tokenOf('p="s.sh a"; bash $p d', '$p').explanation, 'expands to `s.sh` (Script to run) and `a` (Argument to the script: `$1`)');
+    assert.strictEqual(tokenOf('p="s.sh a"; bash $p d', 'd').explanation, 'Argument to the script (`$2`)');
+    assert.match(tokenOf("p='a b'; bash -c 'echo $1' $p d", '$p').explanation, /and `b` \(Positional parameter `\$1` of the command string\)$/);
+    assert.strictEqual(tokenOf("p='a b'; bash -c 'echo $1' $p d", 'd').explanation, 'Positional parameter `$2` of the command string');
+    // (After a word whose count is not known, the numbers may shift; with one word, `--` is a parameter too.)
+    assert.strictEqual(tokenOf('p="a b"; set -- $u $p d', '$p').explanation, 'expands to `a` (becomes the positional parameter `$2`) and `b` (becomes the positional parameter `$3`) (if this word or one before it expands to more or fewer words, the number shifts)');
+    assert.strictEqual(tokenOf('p="-- a"; set $u $p d', 'd').explanation, 'becomes the positional parameter `$4` (if this word or one before it expands to more or fewer words, the number shifts)');
+    const script = 'echo "$1|$2"';
+    assert.strictEqual(runBash(`p="-- a"; set $p d; echo "$1|$2"; printf '%s' '${script}' > s.sh; p="s.sh a"; bash $p d; p="a b"; bash -c 'echo $0:$1:$2' $p d`, { files: ['.keep'] }).stdout, 'a|d\na|d\na:b:d\n');
   });
 
   it("explains a word of find's expression that gives none, and gives no summary of words read as other fields (review of #485)", () => {
@@ -363,6 +380,13 @@ describe('the fields of a word the model knows, read as bash gives them (bug 7 o
     const summary = allTokens(new Analyzer('en').explainLine(parser.parse('z=; find . -name x $z -print'), 0).items).find((t) => t.kind === 'test')!;
     assert.strictEqual(summary.explanation, 'Conditions and actions: if name matches x: print it');
     assert.strictEqual(tokenOf('z=; find . -name x $z -print', '$z').explanation, 'expands to no word, so `find` does not get it');
+    // (Inside the summary's span, and of a group's, the word is a part of the innermost, so that a hover reaches it.)
+    for (const line of ['z=; find . -name x $z -print', 'z=; find . -name $z x', 'z=; find . \\( -name x $z \\)']) {
+      const items = new Analyzer('en').explainLine(parser.parse(line), 0).items;
+      const col = line.indexOf('$z') + 1;
+      const chain = chainAt(items, { line: 0, character: col });
+      assert.strictEqual(chain.at(-1)?.label === '$z' ? chain.at(-1)!.explanation : chain.at(-2)?.explanation, 'expands to no word, so `find` does not get it', line);
+    }
     // (A field read as itself keeps the summary; one find may read as an option does not: `x=-print`.)
     const summaryOf = (line: string) => allTokens(new Analyzer('en').explainLine(parser.parse(line), 0).items).find((t) => t.kind === 'test')?.explanation;
     assert.strictEqual(summaryOf('p=a; find . -name "$p"'), 'Print what matches: name matches "$p" (no action is given, so `-print` is implied)');

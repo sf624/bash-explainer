@@ -109,3 +109,12 @@ export function fromEmbedded(t: EmbeddedToken, node: SyntaxNode, lit: Literal, o
     ...(t.group ? { group: t.group } : {}),
   };
 }
+
+/** `tokens` with each of `parts` among the children of the innermost token whose span holds it, so that a hover reaches it. */
+export function nested(tokens: Token[], parts: Token[]): Token[] {
+  const before = (x: Span['start'], y: Span['start']): boolean => x.line < y.line || (x.line === y.line && x.character <= y.character);
+  return sortTokens(parts.reduce((out, p) => {
+    const at = out.find((t) => before(t.span.start, p.span.start) && before(p.span.end, t.span.end));
+    return at ? out.map((t) => (t === at ? { ...t, children: nested(t.children, [p]) } : t)) : [...out, p];
+  }, tokens));
+}
