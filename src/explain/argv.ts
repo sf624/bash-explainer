@@ -42,7 +42,7 @@ import { elementsOf } from '../semantics/elements';
 import { argWordIn, countIn, fieldsIn, untilWords } from '../semantics/argwords';
 import { arrayKind, globOff, NO_SPEC, notForEarlier, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
-import { eachText, functionArgs, hedged, listed, numbered, SHIFTS, wordItems } from './operand-texts';
+import { eachText, functionArgs, hedged, listed, numbered, SHIFTS, withNone, wordItems } from './operand-texts';
 import { soleRead, turnedOff, unknownOption } from './option-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -123,17 +123,17 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
       const a = nodes[word];
       switch (role.role) {
         case 'end-of-options':
-          out.push(endOfOptions(cx, a, spec));
+          out.push(withNone(cx, endOfOptions(cx, a, spec), role.none, nodes));
           break;
         case 'option':
         case 'unknown-option':
         case 'cluster':
           disables = (role.role === 'cluster' ? role.letters[0] as { flag: string } : role).flag.startsWith('+');
           // (A declaration builtin's options are explained by the attributes they give; one it does not have, as any builtin's.)
-          out.push(declaresNames(spec) && role.role !== 'unknown-option' ? declarationOption(cx, a, role) : optionToken(cx, a, role, spec, parse, word));
+          out.push(withNone(cx, declaresNames(spec) && role.role !== 'unknown-option' ? declarationOption(cx, a, role) : optionToken(cx, a, role, spec, parse, word), role.none, nodes));
           break;
         case 'pattern-option':
-          out.push(cx.tok(a, 'option', cx.t(role.text), wordParts(cx, a)));
+          out.push(withNone(cx, cx.tok(a, 'option', cx.t(role.text), wordParts(cx, a)), role.none, nodes));
           break;
         case 'open-option':
           out.push(cx.tok(a, 'option', cx.s(
@@ -141,7 +141,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             'Options known only at run time (the command reads what the expansion gives as options)'), wordParts(cx, a)));
           break;
         case 'value':
-          out.push(expanded(cx, a, valueToken(cx, a, role, disables)));
+          out.push(withNone(cx, expanded(cx, a, valueToken(cx, a, role, disables)), role.none, nodes));
           break;
         case 'old-style': {
           const parts = role.letters.flatMap((l) => {
@@ -475,12 +475,17 @@ function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Ex
     if (fields && fields.length > 1) desc = listed(cx, fields.map((f, k) => `\`${f}\`${cx.s(`（${text.replace('`$N`', `\`$${at.n + k}\``)}）`, ` (${text.replace('`$N`', `\`$${at.n + k}\``)})`)}`));
     if (desc !== text && !at.sure) desc += SHIFTS(cx);
   }
-  if (desc) desc = hedged(cx, desc, a.text, role, nodes);
+  // (`tar -cf $a b`: a word the spec does not describe, but the value of `-f` when `$a` gives none.)
+  if (!desc && role.none) desc = cx.s(`文字列 \`${a.text}\``, `Word \`${a.text}\``);
+  const lang = isFn ? undefined : item?.lang;
+  // (The roles when words before it give none come after the note on its language, which is of this reading: `grep -d $v a b`.)
+  const late = lang ? role.none : undefined;
+  if (desc) desc = hedged(cx, desc, a.text, role, nodes, !late);
   // (A function named like a declaration builtin, or `alias`, given `a=…`: bash's parser marked the word.)
   // (Not the operand's meaning when bash assigns an array and passes only the name: `alias b=(1 2)`.)
   const named = isFn || field(a, 'value')?.type !== 'array' ? desc : undefined;
   if (a.type === 'variable_assignment') return markedAssignment(cx, a, named ?? cx.s(`引数 \`${a.text}\``, `Argument \`${a.text}\``), parse.command, isFn);
-  const t = positional(cx, a, desc, isFn ? undefined : item?.lang);
+  const t = withNone(cx, positional(cx, a, desc, lang), late, nodes);
   return isFn ? t : { ...t, ...optionRefs(item?.values, a.text) };
 }
 

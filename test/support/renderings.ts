@@ -240,9 +240,10 @@ export function saysOperand(explanation: string, texts: readonly string[], place
   const whole = plain(explanation);
   const has = (part: string): boolean => texts.some((x) => part.includes(plain(x)));
   // (The role when the words it names gave none and this word one; the part before says the other readings.)
-  const none = /; ((?:(?!; ).)+) when ((?:`[^`]+`(?:, )?)+) expands? to nothing$/.exec(whole);
-  if (none && place.of === 1 && [...none[2].matchAll(/`([^`]+)`/g)].every((x) => place.counts.get(x[1]) === 0)) return has(none[1]);
-  const e = none ? whole.slice(0, none.index) : whole;
+  const none = noneReadings(whole);
+  const held = heldNone(none.readings, place);
+  if (held.length) return held.some(has);
+  const e = none.rest;
   const several = severalClauses(e);
   if (several) {
     // (A count the hedge does not cover: not a reading it says.)
@@ -279,6 +280,23 @@ export function saysOperand(explanation: string, texts: readonly string[], place
 }
 
 /**
+ * The readings "; W when `$b` expands to nothing" (or "`$b`, `$c` expand") at the end of an explanation (`ArgRole`
+ * `none`: of an operand, after an option's value, or both), each with the words it names, and the part before them.
+ */
+function noneReadings(whole: string): { rest: string; readings: { text: string; words: string[] }[] } {
+  const readings: { text: string; words: string[] }[] = [];
+  let rest = whole;
+  for (let m; (m = /; ((?:(?!; ).)+) when ((?:`[^`]+`(?:, )?)+) expands? to nothing$/.exec(rest)); rest = rest.slice(0, m.index)) {
+    readings.unshift({ text: m[1], words: [...m[2].matchAll(/`([^`]+)`/g)].map((x) => x[1]) });
+  }
+  return { rest, readings };
+}
+
+/** The texts of the readings of `none` that hold for the field at `place`: every word they name gave none, and this word one. */
+const heldNone = (readings: { text: string; words: string[] }[], place: FieldPlace): string[] =>
+  (place.of === 1 ? readings.filter((r) => r.words.every((w) => place.counts.get(w) === 0)).map((r) => r.text) : []);
+
+/**
  * The part of a list of the words a word gives ("expands to `a` (X) and `b` (Y)", of a brace expansion or of the fields
  * the model knows, src/explain/argv.ts `eachText`, `fieldsToken`) that says the field at `place`: its text, then its role. Undefined
  * where the explanation is no such list, or lists another number of words. (The words as `braceTexts` writes them, with
@@ -306,6 +324,9 @@ function showsRole(role: ArgRole, tokens: readonly Token[], place: FieldPlace, o
   if (!tokens.length) return undefined;
   // (The parts of the lists of the fields of the word, "expands to `-n` (option: …) and `2` (value for `-n`)", that say this field.)
   const items = tokens.flatMap((t) => listItem(plain(t.explanation), place) ?? []);
+  // (The roles its token says it takes when words before it give none, where they gave none: `tar -cf $a b`, "…; value for
+  // `-f` when `$a` expands to nothing".)
+  const held = tokens.flatMap((t) => heldNone(noneReadings(plain(t.explanation)).readings, place));
   switch (role.role) {
     case 'option': case 'cluster': case 'pattern-option': case 'unknown-option': case 'old-style':
       // (Or in the list of the fields of its word: "expands to `-r` (option: …) and `a` (source)".)
@@ -313,11 +334,13 @@ function showsRole(role: ArgRole, tokens: readonly Token[], place: FieldPlace, o
     case 'end-of-options':
       return tokens.some((t) => t.kind === 'option') || items.some((e) => e.includes('(end of options)'));
     case 'value':
+      if (held.length) return held.some((x) => [`value for \`${dash(role.of)}\``, `name for \`${dash(role.of)}\``].includes(x));
       return tokens.some((t) => t.valueFor === dash(role.of)) || items.some((e) => e.includes(`(value for \`${dash(role.of)}\`)`));
     case 'operand': {
       if (role.spec?.assignment || role.assignment) return undefined;
       if (spliced) return true;
-      const args = tokens.filter((t) => t.kind === 'argument' && !t.valueFor);
+      // (An option or a value that is an operand when words before it give none: `grep -e $p -e x f`, `x` is a file.)
+      const args = tokens.filter((t) => t.kind === 'argument' && (!t.valueFor || held.length));
       if (!role.spec) return args.some((t) => !operands.some((x) => plain(t.explanation).includes(plain(x))));
       const texts = [role.spec.text.en, role.spec.text.en.replace(/ \((.*)\)$/, ': $1')];
       return args.some((t) => saysOperand(t.explanation, texts, place));

@@ -1,8 +1,8 @@
 {
   "counts": {
     "fixtures": {
-      "probe": { "words": 155, "unknown": 18, "claims": 177, "globExamples": 8, "roleCommands": 30, "roleFields": 74 },
-      "values": { "words": 294, "unknown": 38, "claims": 358, "globExamples": 13, "roleCommands": 41, "roleFields": 137 }
+      "probe": { "words": 162, "unknown": 18, "claims": 184, "globExamples": 8, "roleCommands": 35, "roleFields": 88 },
+      "values": { "words": 301, "unknown": 38, "claims": 365, "globExamples": 13, "roleCommands": 46, "roleFields": 151 }
     },
     "snippets": {
       "probe": { "words": 298, "unknown": 30, "claims": 325, "globExamples": 10, "roleCommands": 12, "roleFields": 12 },
