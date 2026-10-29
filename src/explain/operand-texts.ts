@@ -2,7 +2,7 @@
 // (src/explain/argv.ts; the roles from `ArgRole` `operand`: `several`, `byCount`, `mixed`, `otherwise`, `none`), and what
 // each of the words read in place of one is to the command (the fields of a word, a value `env -S` splits).
 import type { ArgRole, ArgWord, ByCount, MixedRoles, RoleAt, SeveralRoles } from '../argv/interpret';
-import { countIn } from '../semantics/argwords';
+import { countIn, fieldsIn } from '../semantics/argwords';
 import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 
@@ -140,6 +140,38 @@ export function wordItems(cx: Explainer, words: readonly ArgWord[], roles: reado
   };
   walk(roles);
   return items;
+}
+
+/** "expands to `a` (X) and `b` (Y)": the words a word gives, each with what it is. */
+export function listed(cx: Explainer, items: readonly string[]): string {
+  const list = items.length > 1 ? `${items.slice(0, -1).join(cx.s('、', ', '))}${cx.s('と ', ' and ')}${items[items.length - 1]}` : items[0];
+  return cx.s(`${list}に展開される`, `expands to ${list}`);
+}
+
+export const SHIFTS = (cx: Explainer): string => cx.s('（この語か前の語が展開で 1 語以外になると、番号もずれる）', ' (if this word or one before it expands to more or fewer words, the number shifts)');
+
+/**
+ * The positional parameters a function gets from its word `word` (of `nodes`, its words): from the words before it, each
+ * as many as the model knows it gives (`x=; f $x d`: `d` is `$1`; `p='a b'; f $p d`: `$1` and `$2`, then `$3`).
+ */
+export function functionArgs(cx: Explainer, nodes: readonly SyntaxNode[], word: number): string {
+  let n = 1;
+  let sure = true;
+  const gives = (w: SyntaxNode): number | undefined => {
+    const c = countIn(w, cx.state);
+    return !c ? 1 : c.min === c.max ? c.min : undefined;
+  };
+  for (const w of nodes.slice(0, word)) {
+    const k = gives(w);
+    sure &&= k !== undefined;
+    n += k ?? 1;
+  }
+  const own = gives(nodes[word]);
+  const names = Array.from({ length: Math.max(own ?? 1, 1) }, (_, k) => `$${n + k}`);
+  const fields = (own ?? 1) > 1 ? fieldsIn(nodes[word], cx.state) : undefined;
+  const text = fields ? cx.s(`関数への引数 ${fields.map((f, k) => `${names[k]}（\`${f}\`）`).join('、')}`, `Arguments ${fields.map((f, k) => `${names[k]} (\`${f}\`)`).join(', ')} to the function`)
+    : cx.s(`関数への引数 ${names[0]}`, `Argument ${names[0]} to the function`);
+  return sure && own !== undefined ? text : text + SHIFTS(cx);
 }
 
 const dash = (flag: string): string => flag.replace(/^\+/, '-');

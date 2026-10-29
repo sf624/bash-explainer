@@ -39,7 +39,7 @@ import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
 import { given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
-import { operands, values } from '../argv/query';
+import { operands, readsFields, values } from '../argv/query';
 import { wordValue } from './values';
 import { braceExpansion, bracesHere } from './words';
 
@@ -405,7 +405,8 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
 
 /** The example of a run of the command, when its spec has one (`CommandSpec.example`: printf, xargs, sort…). */
 export function commandExampleFor(cx: Explainer, n: SyntaxNode, spec: CommandSpec | undefined, args: SyntaxNode[], parse: ArgvParse): void {
-  if (!spec?.example) return;
+  // (`x='-n 3'; head $x f`: the example would read `$x` as written.)
+  if (!spec?.example || readsFields(parse)) return;
   if (spec.example === 'read') {
     readExample(cx, n, args);
     return;

@@ -18,6 +18,16 @@ export interface GivenOperand { word: number; role: Extract<ArgRole, { role: 'op
 export interface GivenValue { word: number; at?: number; role: ValueRole }
 
 /**
+ * Whether a word of the parse, or of a command it runs, is read as its fields with a role other than an operand's (an
+ * option, a value, the end of options, a command: `FieldsRole`, `x='-n 3'; head $x f`). The readers that take the words
+ * as written (the examples) do not see those roles, so they give nothing then.
+ */
+export function readsFields(parse: ArgvParse): boolean {
+  return parse.roles.some(({ role }) => (role.role === 'fields' ? role.roles.some((r) => r.role.role !== 'operand')
+    : (role.role === 'subcommand' || role.role === 'command') && !!role.parse && readsFields(role.parse)));
+}
+
+/**
  * The options given at this level of the parse (not those of a subcommand or a command it runs), in order: one per
  * option, the letters of a cluster (`-rn`) and of old-style letters (`tar cvf`) each on its own.
  */

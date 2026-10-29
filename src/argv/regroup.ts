@@ -6,8 +6,9 @@ import type { OperandSpec } from './spec';
 
 /**
  * The words of a reading that stand for one word of the line (`regroup`): the words `from` to `from + n` (exclusive),
- * which are the word `word` of the line, with `shift` words more than the line has for them; `words`, where they are the
- * fields of the word (`interpret`), else the words of a value spliced in after it (`unsplice`).
+ * which are the word `word` of the line, with `shift` words more than the line has for them: `n - 1` for the fields of
+ * a word, which stand in its place (`words`, `interpret`; -1 for none), `n` for the words of a value spliced in after
+ * it (`unsplice`).
  */
 export interface Group { from: number; n: number; word: number; shift: number; words?: ArgWord[] }
 
@@ -30,7 +31,8 @@ export const OPTION_ROLES = new Set<ArgRole['role']>(['option', 'cluster', 'unkn
 /**
  * The role of a word read as its fields (`interpret`), from their roles (`roles`, numbered from 0): where every field
  * is an operand with no hedge, or the first a command slot that takes one word and the others operands, the role of the
- * first, with the role of each field (`each`, as a brace expansion's: `cp a{,.bak}`) where they differ; where every
+ * first, with the role of each field (`each`, as a brace expansion's: `cp a{,.bak}`) where they differ (the number of
+ * fields is not kept in the role: the explanation reads it from the model, `countIn`, for the `$N` of each); where every
  * field is a word of find's expression or of a joined string, that role, which the words around it explain (as for no
  * field, `next`, the role of the word after it), or the command whose string they start; else `FieldsRole`.
  */
@@ -78,6 +80,12 @@ export const withParse = (role: ArgRole, f: (q: ArgvParse) => ArgvParse): ArgRol
 export function regroup(parse: ArgvParse, groups: Group[]): { parse: ArgvParse; inner: RoleAt[][] } {
   const back = lineIndex(groups);
   const groupOf = (j: number): number => groups.findIndex((g) => j >= g.from && j < g.from + g.n);
+  /** The word of the line where the words from `j` on start: before the words that give none just before it. */
+  const startOf = (j: number): number => {
+    let at = back(j);
+    for (const g of [...groups].reverse()) if (g.n === 0 && g.from === j && g.word === at - 1) at = g.word;
+    return at;
+  };
   /** The end of a parse (exclusive) among the words of the line: after the word of its last one. */
   const end = (j: number): number => back(j - 1) + 1;
   const inner: RoleAt[][] = groups.map(() => []);
@@ -102,7 +110,8 @@ export function regroup(parse: ArgvParse, groups: Group[]): { parse: ArgvParse; 
       }
     }
     roles.sort((a, b) => a.word - b.word);
-    const expression = q.expression === undefined ? {} : { expression: back(q.expression) };
+    // (Where the expression starts: at the words before it that give none, `z=; find . $z -name x`, which are its words.)
+    const expression = q.expression === undefined ? {} : { expression: startOf(q.expression) };
     const refusal = q.refusal ? { refusal: { ...q.refusal, at: back(q.refusal.at) } } : {};
     return { ...q, roles, end: end(q.end), unmatched: [...new Set(q.unmatched.filter((j) => groupOf(j) < 0 || groups[groupOf(j)].words).map(back))], ...expression, ...refusal };
   };
