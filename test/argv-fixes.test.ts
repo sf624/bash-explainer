@@ -582,4 +582,18 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.deepStrictEqual(out.split('\n').filter(Boolean), ['tar: Cowardly refusing to create an empty archive', 'cp: missing file operand', 'f', 'x-i', 'grep: x: No such file or directory', 'grep: invalid max count', 'ab', '--', 'f', 'x-', 'g', "fatal: cannot change to '-p': No such file or directory",
       'error: -n requires an argument', "fatal: Option '--author' requires a value", 'f', 'grep: x: No such file or directory', 'f:x-i']);
   });
+
+  it('does not point to a manual for an option of a command that is no name', () => {
+    // The command is an expansion (or a wrapper's word that is one): the option may be nobody's, as `-n 5 ls` is `nice`'s
+    // when `a` is empty and `echo`'s when `a=echo`; the text says it is not known, and sends nobody to `man ` or `man $(which`.
+    const en = 'Looks like an option, but the command comes from an expansion and is not known here, so what it means is not known';
+    const ja = 'オプションに見える語（コマンドが展開結果で、どのコマンドか分からないため、意味は分からない）';
+    for (const [line, word] of [['nice $a -n 5 ls', '-n'], ['$cmd -x', '-x'], ['"$@" -x', '-x'], ['$(which x) -y', '-y'], ['sudo $a -x', '-x'], ['sudo $a -x file', '-x'], ['env $a -x', '-x'], ['command $a -x', '-x']]) {
+      assert.strictEqual(tokenOf(line, word).explanation, en, line);
+      assert.strictEqual(tokenOf(line, word, 'ja').explanation, ja, line);
+    }
+    // A name written out still points to its manual, also as a wrapper's command.
+    assert.strictEqual(tokenOf('foo -x', '-x').explanation, 'Option (not in the dictionary; see `man foo`)');
+    assert.strictEqual(tokenOf('nice foo -x', '-x').explanation, 'Option (not in the dictionary; see `man foo`)');
+  });
 });
