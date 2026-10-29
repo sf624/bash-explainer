@@ -98,8 +98,9 @@ jobs:
 
   test-18:
     name: Test (Node.js 18)
-    # (Also when a shard failed, to fail here: a required check that is skipped would count as passed.)
-    if: ${{ !cancelled() }}
+    # (Also when a shard failed or the run was cancelled, to fail here: a required check that is skipped would count
+    # as passed.)
+    if: ${{ always() }}
     needs: [check, unit-18]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -125,7 +126,7 @@ jobs:
 
   test-24:
     name: Test (Node.js 24)
-    if: ${{ !cancelled() }}
+    if: ${{ always() }}
     needs: [check, unit-24]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -149,7 +150,7 @@ jobs:
           path: coverage/tmp/
           merge-multiple: true
 
-      # c8 reads its options (the sources, what to leave out) from package.json, as `npm run coverage` does.
+      # c8 reads its options (the sources, what to leave out) from .c8rc.json, as `npm run coverage` does.
       - name: Merge the coverage of the shards
         run: |
           ls coverage/tmp | wc -l
