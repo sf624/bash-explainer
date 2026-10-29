@@ -556,6 +556,9 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.deepStrictEqual(thenRoles({ role: 'operand', index: 0 }), [{}]);
     assert.deepStrictEqual(thenRoles({ role: 'value', of: '-f', index: 0 }), [{ value: { role: 'value', of: '-f', index: 0 } }]);
     assert.strictEqual(thenRoles({ role: 'end-of-options' }), undefined);
+    // (A command run fills an operand, or is an option's value, `su -c ls`, which no hedge names.)
+    assert.deepStrictEqual(thenRoles({ role: 'command', slot: { run: 'exec' }, item: o('command') }), [{ spec: o('command') }]);
+    assert.strictEqual(thenRoles({ role: 'command', slot: { run: 'exec' }, of: '-c' }), undefined);
     // (`mostWords`: two values at most and the longest pattern, and two; none with no operands.)
     const x = { names: ['-x'], text: { ja: '', en: '' }, value: [{ name: 'A' }, { name: 'B' }] };
     assert.strictEqual(mostWords({ summary: { ja: '', en: '' }, options: [x, { ...x, value: { name: 'A' } }], operands: [{ pattern: [o('a'), o('b')] }] }), 6);
