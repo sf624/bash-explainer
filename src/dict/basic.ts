@@ -1,11 +1,26 @@
-import type { CommandSpec } from '../argv/spec';
-import { cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, GNU_INFO, operand, pos, runs } from './types';
+import type { CommandSpec, OperandAlt } from '../argv/spec';
+import { byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, GNU_INFO, operand, pos, runs } from './types';
 
 // Everyday commands a Linux learner meets early (and that the LPIC-1 and LinuC-1 objectives name):
 // finding help and files, who is logged in, power control, small text tools, terminals and editors.
 
 const files = pos('対象のファイル', 'target file');
 const users = pos('ユーザー名', 'user name');
+
+/** The options that give `date` the date to show (`date -d now +%F`): with one of them, a word without a leading `+` is refused, not read as a date to set. */
+const DATE_GIVEN = ['-d', '--date', '-f', '--file', '-r', '--reference', '-s', '--set', '--resolution'];
+const NOT_FORMAT = /^(?!\+)/;
+/**
+ * The operand of `date` (coreutils date.c): a format starting with `+`; a word without one is a date to set
+ * (`date 01021530`, `MMDDhhmm[[CC]YY][.ss]`), unless an option gives the date, and then `date` refuses it. A second
+ * operand is refused first of all ("extra operand"), whatever the first is.
+ */
+export const DATE_OPERANDS: OperandAlt[] = [
+  { when: { option: DATE_GIVEN }, pattern: [{ name: 'FORMAT', text: pos('ここには書けない: 日時を指定するオプション（`-d` `-f` `-r` `-s` `--resolution`）があると、`+` で始まる書式しか書けない（`date` は「lacks a leading \'+\'」と表示して何もせずに終了ステータス 1 で終わる）', 'not allowed here: with an option that gives the date (`-d`, `-f`, `-r`, `-s`, `--resolution`), the operand must be a format starting with `+` (`date` prints `lacks a leading \'+\'` and exits with status 1, doing nothing)'), matches: NOT_FORMAT, known: true, extra: { says: "lacks a leading '+'", status: 1 } }] },
+  { when: { option: DATE_GIVEN }, pattern: [{ name: 'FORMAT', text: pos('書式または日時（2つ目の語があるので、`date` はどちらとしても読まず、「extra operand」と表示して終わる）', 'format or date (with a second word, `date` reads neither and stops with `extra operand`)'), matches: NOT_FORMAT, known: true }, EXTRA_OPERAND] },
+  { when: { not: { option: DATE_GIVEN } }, pattern: [{ name: 'DATE', text: pos('設定する日時（`MMDDhhmm[[CC]YY][.ss]` の形。書式ではなく日時として読み、時計を設定しようとする。root でなければ失敗する）', 'date to set (`MMDDhhmm[[CC]YY][.ss]`: read as a date, not as a format, and `date` tries to set the clock, which fails unless root)'), matches: NOT_FORMAT, known: true }, EXTRA_OPERAND] },
+  { pattern: [{ name: 'FORMAT', repeat: '?', lang: 'date', matches: /^\+/, text: pos('表示書式（`+` で始まる。例: `+%Y-%m-%d`, `+%F` は年-月-日, `+%s` は UNIX 時刻）', 'output format starting with `+` (e.g. `+%Y-%m-%d`, `+%F`, `+%s`)') }, EXTRA_OPERAND] },
+];
 
 export const basic: Record<string, CommandSpec> = {
   // ---- help and documentation ---------------------------------------------------------------
@@ -260,7 +275,9 @@ export const basic: Record<string, CommandSpec> = {
     ['-Z', 'SELinux のセキュリティコンテキストを既定の型にする', 'set the SELinux security context to the default type'],
     ['--context', '`-Z` と同じ。`=CTX` で SELinux・SMACK のコンテキストを指定する', 'like `-Z`; `=CTX` sets the SELinux or SMACK security context', 'attached'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('名前', 'name'), pos('種類（`b` ブロック、`c` キャラクタ、`p` パイプ）', 'type (`b` block, `c` character, `p` pipe)'), pos('メジャー番号', 'major number'), pos('マイナー番号', 'minor number')], atMost: { count: 4, extra: EXTRA_OPERAND } }),
+  ], { parser: 'getopt_long', positional: [pos('名前', 'name'), pos('種類（`b` ブロック、`c` キャラクタ、`u` バッファなしのキャラクタ、`p` パイプ）', 'type (`b` block, `c` or `u` character, `p` pipe)'), pos('メジャー番号', 'major number'), pos('マイナー番号', 'minor number')], atMost: { count: 4, extra: EXTRA_OPERAND },
+    // (A pipe has no device numbers: `mknod n p 1 2` stops at the `1`.)
+    operands: [{ ...byCount(2, [pos('名前', 'name'), pos('種類（`p` はパイプ。メジャー番号とマイナー番号は取らない）', 'type (`p`: a pipe, which takes no major or minor number)')], { extra: EXTRA_OPERAND }), when: { operand: 1, matches: /^p$/ } }] }),
   csplit: cmd('パターンに合う行でファイルを分割する', 'Split a file at lines that match patterns', [
     ['-f|--prefix', '出力ファイル名の先頭（既定 `xx`）', 'prefix of the output files (default `xx`)', 'arg'],
     ['-n|--digits', '連番の桁数', 'number of digits in the suffix', 'arg'],
@@ -302,7 +319,9 @@ export const basic: Record<string, CommandSpec> = {
     ['-p|--print-database', '標準の設定内容を表示', 'print the default database'],
     ['--print-ls-colors', 'エスケープした色の指定を表示用に出力する', 'output the fully escaped colors for display'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('設定ファイル', 'settings file')], atMost: { count: 1, extra: EXTRA_OPERAND } }),
+  ], { parser: 'getopt_long', positional: [pos('設定ファイル', 'settings file')], atMost: { count: 1, extra: EXTRA_OPERAND },
+    // (`-p` prints the built-in database: "file operands cannot be combined with --print-database".)
+    operands: [byCount(0, [], { when: '-p|--print-database', extra: EXTRA_OPERAND })] }),
   pr: cmd('印刷用にファイルをページ分けして整形する', 'Paginate and format files for printing', [
     ['-l|--length', '1ページの行数（既定 66）', 'lines per page (default 66)', 'arg'],
     ['-w|--width', '1行の幅', 'page width', 'arg'],

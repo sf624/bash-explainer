@@ -585,9 +585,15 @@ export const system: Record<string, CommandSpec> = {
     ['--all', '制限を無視して全 CPU 数', 'all CPUs, ignoring limits'], ['--ignore', '指定した数だけ引いて表示', 'subtract the given number of', 'arg'],
     ...GNU_INFO,
   ], { parser: 'getopt_long' }),
-  getconf: cmd('システムの設定値を表示する', 'Print system configuration values', [], {
+  getconf: cmd('システムの設定値を表示する', 'Print system configuration values', [
+    ['-a', 'すべての変数とその値を表示する（変数名は取らない。パスは1つ取れる）', 'print all variables and their values (takes no variable name, but may take a path)'],
+    ['-v', '指定したプログラミング環境（例: `POSIX_V7_LP64_OFF64`）での値を表示する', 'print the values for the given programming environment (e.g. `POSIX_V7_LP64_OFF64`)', 'arg'],
+    ...GNU_INFO,
+  ], {
     positional: [pos('変数名（`_NPROCESSORS_ONLN`: 使える CPU 数、`LONG_BIT`: 32/64 ビット、`PAGESIZE`…）', 'variable (`_NPROCESSORS_ONLN`: usable CPUs, `LONG_BIT`: 32/64-bit, `PAGESIZE`…)'), pos('パス（そこにあるファイルシステムでの値を表示する）', 'path (print the value for its file system)')],
     atMost: { count: 2, extra: extraOperand('Usage: getconf …', 2) },
+    // (`-a` lists every variable, so it takes a path at most: `getconf -a / x` prints the usage.)
+    operands: [{ when: { option: ['-a'] }, pattern: [operand('PATH', 'パス（そこにあるファイルシステムでの値を表示する）', 'path (print the values for its file system)', { repeat: '?' }), extraOperand('Usage: getconf …', 2)] }],
   }),
   lsb_release: cmd('Linux ディストリビューションの情報を表示する', 'Print Linux distribution information', [
     ['-a|--all', 'すべての情報', 'all information'], ['-i|--id', 'ディストリビューション名（`Ubuntu`…）', 'distributor ID (`Ubuntu`…)'], ['-d|--description', '説明', 'description'],

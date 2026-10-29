@@ -65,7 +65,11 @@ export const distro: Record<string, CommandSpec> = {
     ['-z|--zero-terminated', '行の区切りを NUL にする', 'lines end with NUL'],
     ['--random-source', '乱数のもとにするファイル', 'file to get random bytes from', 'arg'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [files], atMost: { count: 1, extra: EXTRA_OPERAND, unless: '-e|--echo' }, operands: [byCount(0, [], { when: '-i|--input-range', extra: EXTRA_OPERAND })] }),
+  ], { parser: 'getopt_long', positional: [files], atMost: { count: 1, extra: EXTRA_OPERAND }, operands: [
+    byCount(0, [], { when: '-i|--input-range', extra: EXTRA_OPERAND }),
+    // (With `-e` the words are the lines themselves, not files.)
+    { when: { option: ['-e', '--echo'] }, pattern: [operand('LINE', '並べ替える行（引数そのものが1行になる）', 'line to shuffle (each argument is one line)', { repeat: '*' })] },
+  ] }),
   stdbuf: cmd('標準入出力のバッファリングを変えてコマンドを実行する', 'Run a command with modified buffering of its standard streams', [
     ['-i|--input', '標準入力のバッファ（`L`: 行単位、`0`: なし）', 'stdin buffering (`L`: line, `0`: none)', 'arg'],
     ['-o|--output', '標準出力のバッファ（`L`: 行単位、`0`: なし）', 'stdout buffering (`L`: line, `0`: none)', 'arg'],
