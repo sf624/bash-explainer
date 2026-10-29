@@ -56,13 +56,12 @@ type Hedged = Extract<ArgRole, { none?: NoneRole[] }>;
 
 /**
  * The roles a word may take in a reading, as a hedge names them: an operand's and those of its hedges, a value's, the
- * operand a command run fills; undefined for a role no hedge names (an option, a subcommand…),
- * and for a value or a command name that may give several words (the words after its first are read otherwise: `rest`
- * of the reading where it does, which this one has not read).
+ * operand a command run fills; undefined for a role no hedge names (an option, a subcommand…). (Of a word that may
+ * give several, the role of its first word: `MoreRole.first`.)
  */
-export function thenRoles(role: ArgRole, word: ArgWord): ThenRole[] | undefined {
-  if (role.role === 'value') return mayGiveSeveral(word) ? undefined : [{ value: role }];
-  if (role.role === 'command') return role.item && !mayGiveSeveral(word) ? [{ spec: role.item }] : undefined;
+export function thenRoles(role: ArgRole): ThenRole[] | undefined {
+  if (role.role === 'value') return [{ value: role }];
+  if (role.role === 'command') return role.item ? [{ spec: role.item }] : undefined;
   if (role.role !== 'operand') return undefined;
   if (!role.spec) return [{}];
   const specs = [role.spec, ...(role.otherwise ? [role.otherwise] : []), ...(role.several ?? []).flatMap((r) => r.roles), ...(role.byCount?.readings ?? []).map((r) => r.spec), ...role.mixed?.roles ?? []];
@@ -100,13 +99,13 @@ export function valueHedges(parse: ArgvParse, spec: CommandSpec, line: ArgWord[]
     return spreads.get(j)!;
   };
   /** A role of each reading (`at`: the word of that reading, for `c` words of the value), as a hedge names it. */
-  const rolesIn = (j: number, at: (c: number) => number[], word: ArgWord): { roles: ThenRole[] | undefined; same: (role: ArgRole) => boolean } => {
+  const rolesIn = (j: number, at: (c: number) => number[]): { roles: ThenRole[] | undefined; same: (role: ArgRole) => boolean } => {
     const found = wide(j).flatMap((r, n) => at(n + 2).map((i) => r.get(i)!));
-    return { roles: union(found.map((r) => thenRoles(r, word))), same: (role) => found.every((r) => sameRole(role, r)) };
+    return { roles: union(found.map(thenRoles)), same: (role) => found.every((r) => sameRole(role, r)) };
   };
   /** The roles word k may take where the value j gives several words, when they differ from its role `role`. */
   const moreOf = (role: ArgRole, k: number, j: number): MoreRole | undefined => {
-    const { roles, same } = rolesIn(j, (c) => [k + c - 1], line[k]);
+    const { roles, same } = rolesIn(j, (c) => [k + c - 1]);
     // (The same one role as here, where nothing here depends on counts: `head -n $a f`, `f` is a file either way.)
     const counted = role.role === 'operand' && !!(role.otherwise || role.several || role.byCount || role.mixed);
     if (!roles || (roles.length === 1 && same(role) && !counted)) return undefined;
@@ -155,7 +154,7 @@ export function valueHedges(parse: ArgvParse, spec: CommandSpec, line: ArgWord[]
         // (The words after its first, for each count. Where one of them may be an argument the spec does not describe, the
         // words after it, as the text says: `tar -cf $a b`.)
         lazy(role, 'rest', () => {
-          const rest = rolesIn(word, (c) => Array.from({ length: c - 1 }, (_, n) => word + 1 + n), {}).roles;
+          const rest = rolesIn(word, (c) => Array.from({ length: c - 1 }, (_, n) => word + 1 + n)).roles;
           return rest?.every((r) => r.spec || r.value) ? rest : [];
         });
       }

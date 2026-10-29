@@ -552,10 +552,10 @@ describe("an option's value that may give no word (after #482)", () => {
     const o = (en: string): OperandSpec => ({ name: en, text: { ja: en, en } });
     const value = { role: 'value' as const, of: '-f', index: 0 };
     const role: ArgRole = { role: 'operand', index: 0, spec: o('a'), otherwise: o('b'), several: [{ from: 2, roles: [o('a'), o('c (x)')] }], byCount: { word: 1, readings: [{ from: 1, spec: o('d') }] }, mixed: { words: [1], first: true, many: false, roles: [o('e')] }, none: [{ words: [1], spec: o('c') }, { words: [1], value }, { words: [2], value }] };
-    assert.deepStrictEqual(thenRoles(role, {}), [{ spec: o('a') }, { spec: o('b') }, { spec: o('c (x)') }, { spec: o('d') }, { spec: o('e') }, { value }]);
-    assert.deepStrictEqual(thenRoles({ role: 'operand', index: 0 }, {}), [{}]);
-    assert.strictEqual(thenRoles({ role: 'value', of: '-f', index: 0 }, { count: { min: 0 } }), undefined);
-    assert.strictEqual(thenRoles({ role: 'end-of-options' }, {}), undefined);
+    assert.deepStrictEqual(thenRoles(role), [{ spec: o('a') }, { spec: o('b') }, { spec: o('c (x)') }, { spec: o('d') }, { spec: o('e') }, { value }]);
+    assert.deepStrictEqual(thenRoles({ role: 'operand', index: 0 }), [{}]);
+    assert.deepStrictEqual(thenRoles({ role: 'value', of: '-f', index: 0 }), [{ value: { role: 'value', of: '-f', index: 0 } }]);
+    assert.strictEqual(thenRoles({ role: 'end-of-options' }), undefined);
     // (`mostWords`: two values at most and the longest pattern, and two; none with no operands.)
     const x = { names: ['-x'], text: { ja: '', en: '' }, value: [{ name: 'A' }, { name: 'B' }] };
     assert.strictEqual(mostWords({ summary: { ja: '', en: '' }, options: [x, { ...x, value: { name: 'A' } }], operands: [{ pattern: [o('a'), o('b')] }] }), 6);
