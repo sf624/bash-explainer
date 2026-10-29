@@ -32,12 +32,14 @@ export function braceAlternatives(nodes: readonly SyntaxNode[], part = false): B
   return words && (part ? words : words.filter((w) => w.some((p) => typeof p !== 'string' || p !== '')));
 }
 
-/** The word `w`, or after brace expansion each word it gives; undefined when they are not known here. */
-export function wordAlternatives(w: WordMeaning): BraceAlternative[] | undefined {
-  const brace = w.steps[0];
-  if (brace.applies === false) return [[...w.nodes]];
+/**
+ * The word `w`, or after brace expansion each word it gives; undefined when they are not known here. `applies`: whether
+ * brace expansion applies, when the caller reads one reading of a step not known (`mayGiveNoField`).
+ */
+export function wordAlternatives(w: WordMeaning, applies = w.steps[0].applies): BraceAlternative[] | undefined {
+  if (applies === false) return [[...w.nodes]];
   // (A word whose brace step applies has a brace expression; null: too many words to list.)
-  const words = brace.applies === 'unknown' ? undefined : braceAlternatives(w.nodes) ?? undefined;
+  const words = applies === 'unknown' ? undefined : braceAlternatives(w.nodes) ?? undefined;
   return words?.some(rejoined) ? undefined : words;
 }
 

@@ -141,7 +141,13 @@ describe('an operand that becomes several words', () => {
     assert.strictEqual(tokenOf('a=1; cp $a b', 'b').explanation, 'destination (the new name, or an existing directory) when `$a` expands to a single word; destination directory when it expands to more');
     assert.strictEqual(tokenOf('grep -c $# f', 'f').explanation, 'file to search (default: stdin)');
     assert.strictEqual(tokenOf('shopt -s nullglob; grep -c *.txt f', 'f').explanation, 'file to search (default: stdin); search pattern (regex) when `*.txt` expands to nothing');
-    // (Nor where the role stays: `rm $a b`.)
+    // (Nor where the role stays: `rm $a b`; `ln -s $a $b`, where `$a` is the target either way, with more said of it when
+    // `$b` gives none.)
     assert.strictEqual(tokenOf('rm $a b', 'b').explanation, 'file to remove');
+    assert.strictEqual(tokenOf('ln -s $a $b', '$a').explanation, 'target');
+    // (The words of a builtin turned off, read again as the program's, from the model too: `$#` is never empty.)
+    assert.strictEqual(tokenOf('enable -n printf; command printf $# x', 'x').explanation, 'value for the format');
+    // (In Japanese the roles of more words are a list with `・`, and the reading with none comes after a `、`.)
+    assert.strictEqual(tokenOf('mv $a $b', '$b', 'ja').explanation, '`$b` が1語に展開されるなら移動先（新しい名前、または既存のディレクトリ）、2語以上なら順に移動元・移動先のディレクトリ、`$a` が0語なら移動元');
   });
 });

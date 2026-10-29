@@ -12,7 +12,8 @@ import type { Explainer } from './context';
 export function hedged(cx: Explainer, desc: string, a: string, role: Extract<ArgRole, { role: 'operand' }>, parse: ArgvParse, nodes: SyntaxNode[]): string {
   let out = desc;
   if (role.several) {
-    const roles = role.several.map((o) => cx.t(o.text)).join(cx.s('、', ', then '));
+    // (In Japanese the roles are a list, joined with `・`: the `、` after it starts another reading.)
+    const roles = role.several.map((o) => cx.t(o.text)).join(cx.s('・', ', then '));
     out = cx.s(`\`${a}\` が1語に展開されるなら${desc}、2語以上なら順に${roles}`, `${desc} when \`${a}\` expands to a single word; when it expands to more, they are ${roles}`);
   } else if (role.otherwise) out = uncertainText(cx, desc, cx.t(role.otherwise.text), parse, nodes);
   if (!role.none) return out;
