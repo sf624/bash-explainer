@@ -10,12 +10,13 @@ import { declaresNames, namespaceOf } from '../argv/query';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { validName } from '../semantics/posixexits';
 import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
+import { splitsIn } from '../argv/words';
 import { builtins, SHELL_OPTION_TABLES } from '../dict/builtins';
 import { OPTION_SECTIONS } from '../manual';
 import { describeFind, findWords, type FindNode, parseFind } from '../embedded/find';
 import { globIntro, hasGlob } from '../embedded/glob';
 import type { EmbeddedLang } from '../embedded/types';
-import { braceTexts } from '../semantics/brace';
+import { braceAlternatives, braceTexts } from '../semantics/brace';
 import type { Text } from '../i18n';
 import { shorten } from '../label';
 import { fact } from '../messages';
@@ -745,12 +746,11 @@ function nameGlob(cx: Explainer, a: SyntaxNode, name: string, text: string, acts
 
 /**
  * The words a brace expansion gives, each with its role (`cp a{,.bak}`: the source, then the destination); the fields
- * where the model knows them and they are other words (`x='p q'; cp {a,$x}`: `a`, `p` and `q`).
+ * the model knows where an expansion in one of them may split it or give none (`x='p q'; cp {a,$x}`: `a`, `p` and `q`;
+ * `x='p q'; y=; cp {$x,$y}`: `p` and `q`, both of `$x`), which an exact count of such a word is (`countIn`).
  */
 function eachText(cx: Explainer, a: SyntaxNode, each: OperandSpec[]): string {
-  // (An exact count is that of the words of the braces, or of the fields the model knows: `countIn`.)
-  const braces = braceTexts([a])!;
-  const words = braces.length === each.length ? braces : wordFields(a, cx.state).fields!;
+  const words = braceAlternatives([a])!.some(splitsIn) ? wordFields(a, cx.state).fields! : braceTexts([a])!;
   // `destination (the new name…)` reads `destination: the new name…` in the parentheses.
   const parts = words.map((w, k) => `\`${w}\`${cx.s(`（${cx.t(each[k].text).replace(/（(.*)）$/, ': $1')}）`, ` (${cx.t(each[k].text).replace(/ \((.*)\)$/, ': $1')})`)}`);
   const list = `${parts.slice(0, -1).join(cx.s('、', ', '))}${cx.s('と ', ' and ')}${parts[parts.length - 1]}`;

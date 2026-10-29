@@ -29,7 +29,7 @@ export function prefixOf(n: SyntaxNode, shell?: Shell): string {
 
 const UNQUOTED_EXPANSION = new Set(['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion']);
 /** The parts of plain text, where a glob character is one. */
-const PLAIN = new Set(['word', 'number', 'brace_expression']);
+const PLAIN = new Set(['word', 'number']);
 /** A glob character in plain text (`*.txt`; not `\*`, and not in quotes: `'*'` is a part of its own). */
 const GLOB = /(^|[^\\])[*?[]/;
 
