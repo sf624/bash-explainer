@@ -17,7 +17,9 @@ import { parseExpansion } from '../expansion';
 import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
-import { braceTexts } from '../semantics/brace';
+import { splitsIn } from '../argv/words';
+import { countIn } from '../semantics/argwords';
+import { braceAlternatives, braceTexts } from '../semantics/brace';
 import { mayGiveNoField } from '../semantics/nofield';
 import { replaceRange } from '../rewrite';
 import { attribute, docLine } from '../semantics/state';
@@ -318,9 +320,15 @@ function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
   // `{01..10..3}`: a number with a leading 0 makes every number as wide as the widest.
   const pad = sequences.some((s) => s.namedChildren.slice(0, 2).some((c) => /^-?0\d/.test(c.text)));
   const parts = sequences.flatMap((s) => sequenceParts(cx, s)).map((t) => fromEmbedded({ ...t, start: t.start - n.startIndex, end: t.end - n.startIndex }, n, { text, base: 0 }, 'shell'));
+  // `{a,$x}`: the words of the braces are not yet those the command gets, when an expansion in one may split it or give
+  // none, unless the model knows they are as many (`x=p; cp {a,$x} d`).
+  const part = n.parent!.type === 'concatenation';
+  const count = part ? undefined : countIn(n, cx.state) ?? { min: 1, max: 1 };
+  const later = braceAlternatives([n], part)!.some(splitsIn) && !(count?.min === words.length && count.max === words.length)
+    ? cx.s('（その後の展開で、単語の数は増えたり減ったりしうる）', ', which the expansions after it may make into more or fewer words') : '';
   return cx.tok(n, 'expansion', (words.length
-    ? cx.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}${pad ? '（先頭が 0 の数があるので、桁数をそろえて 0 で埋める）' : ''}`,
-      `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}${pad ? ' (a number with a leading 0 pads all of them with zeros to the same width)' : ''}`)
+    ? cx.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${later}${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}${pad ? '（先頭が 0 の数があるので、桁数をそろえて 0 で埋める）' : ''}`,
+      `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${later}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}${pad ? ' (a number with a leading 0 pads all of them with zeros to the same width)' : ''}`)
     : cx.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`)) + bracesMaybeOff(cx, n), parts);
 }
 

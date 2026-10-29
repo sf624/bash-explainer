@@ -68,7 +68,8 @@ const BRACE_REF = '3.5.1';
 /**
  * The numbers of words the explanation says bash makes of the word `w` (its tokens and examples over the whole word):
  * - `value`: the value of an expansion that is the whole word, and the words it splits into; none where bash then globs it;
- * - `brace`: the token of a brace expansion, where the model says the braces expand, and none of the words is a glob;
+ * - `brace`: the token of a brace expansion, where the model says the braces expand, none of the words is a glob, and
+ *   it does not say that the expansions in them may then make more or fewer words (`{a,$x}`);
  * - `brace-example`: the words of the example of a brace expansion ("N separate arguments"), unless cut;
  * - `string`: a double-quoted string that "stays one argument" (not the one of `"$@"`, one word per element);
  * - `concatenation`: a word of several parts that are "joined into one word" (not one with `"$@"` in it, which says
@@ -85,7 +86,8 @@ export function claimsOf(w: SyntaxNode, shown: Shown, input: ArgvInput): Claim[]
     if (t.value && !t.value.glob && !t.value.joined) out.push({ source: 'value', count: t.value.words?.length ?? 1 });
     if (t.kind === 'expansion' && t.refs?.includes(BRACE_REF) && applies('brace') === true) {
       const words = braceExpansion(w);
-      if (words && !words.some(isGlob)) out.push({ source: 'brace', count: words.length });
+      // (Not one that says the expansions in its words may then make other words of them, `{a,$x}`.)
+      if (words && !words.some(isGlob) && !t.explanation.includes('which the expansions after it may make')) out.push({ source: 'brace', count: words.length });
     }
     // (The rendered sentence: which of the two `string` of src/explain/words.ts chose.)
     if (t.kind === 'string' && t.explanation.includes('(stays one argument)')) out.push({ source: 'string', count: 1 });
