@@ -9,6 +9,9 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, fields } from '../src/syntax/tree';
 import { chainAt } from '../src/ui/hoverParts';
 import { runBash } from './support/bash';
+import { type ArgRole } from '../src/argv/interpret';
+import type { OperandSpec } from '../src/argv/spec';
+import { thenRoles } from '../src/argv/valuehedges';
 import { allTokens } from './support/explain';
 
 const parser = createUnbashParser();
@@ -428,7 +431,7 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.strictEqual(tokenOf('grep -e $p f', 'f').explanation, 'file to search (default: stdin); value for `-e` when `$p` expands to nothing');
     assert.strictEqual(tokenOf('grep -e $p -i f', '-i').explanation, 'ignore case; value for `-e` when `$p` expands to nothing');
     assert.strictEqual(tokenOf('grep -e $p -i f', 'f').explanation, 'file to search (default: stdin)');
-    assert.strictEqual(tokenOf('read -p $q -r x', '-r').explanation, 'do not treat backslashes as escapes (almost always wanted); value for `-p` when `$q` expands to nothing');
+    assert.strictEqual(tokenOf('read -p $q -r x', '-r').explanation, 'do not treat backslashes as escapes (almost always wanted); variable to store the input when `$q` expands to several words; value for `-p` when `$q` expands to nothing');
     assert.strictEqual(tokenOf('shopt -s nullglob; tar -cf *.tar b', 'b').explanation, 'Word `b`; value for `-f` when `*.tar` expands to nothing');
     assert.strictEqual(tokenOf('tar -cf $a b', 'b', 'ja').explanation, '文字列 `b`、`$a` が0語なら `-f` オプションの値');
     assert.strictEqual(tokenOf('tar cf $a b', 'b', 'ja').explanation, '文字列 `b`、`$a` が0語なら `f` の値');
@@ -454,15 +457,15 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.strictEqual(tokenOf('grep -m $n -c $x f', '-c').explanation, 'print a count of matching lines; value for `-m` when `$n` expands to nothing');
     assert.strictEqual(tokenOf('grep -m $n -c $x f', 'f').explanation, 'file to search (default: stdin); search pattern (regex) when `$x` expands to nothing');
     // (`tar cfC arc.tar sub g`: each letter takes the next word left, so `d` is the archive and `x` the directory.)
-    assert.strictEqual(tokenOf('tar cfC $a d x', 'd').explanation, 'Value for `C`; value for `f` when `$a` expands to nothing');
+    assert.strictEqual(tokenOf('tar cfC $a d x', 'd').explanation, 'Value for `C`; argument when `$a` expands to several words; value for `f` when `$a` expands to nothing');
     assert.strictEqual(tokenOf('tar cfC $a d x', 'x').explanation, 'Word `x`; value for `C` when `$a` expands to nothing');
-    assert.strictEqual(tokenOf('tar cfC $a d x', 'd', 'ja').explanation, '`C` の値、`$a` が0語なら `f` の値');
+    assert.strictEqual(tokenOf('tar cfC $a d x', 'd', 'ja').explanation, '`C` の値、`$a` が2語以上なら引数、`$a` が0語なら `f` の値');
     // (`jq --arg v .`: `v` is the name, and `.` its value.)
-    assert.strictEqual(tokenOf('jq --arg $n v .', 'v').explanation, 'Value for `--arg`; name for `--arg` when `$n` expands to nothing');
-    assert.strictEqual(tokenOf('jq --arg $n v .', '.').explanation, 'jq filter (e.g. `.items[].name`); value for `--arg` when `$n` expands to nothing');
-    assert.strictEqual(tokenOf('jq --arg $n v .', 'v', 'ja').explanation, '`--arg` の値、`$n` が0語なら `--arg` の名前');
+    assert.strictEqual(tokenOf('jq --arg $n v .', 'v').explanation, 'Value for `--arg`; jq filter (e.g. `.items[].name`) when `$n` expands to several words; name for `--arg` when `$n` expands to nothing');
+    assert.strictEqual(tokenOf('jq --arg $n v .', '.').explanation, 'jq filter (e.g. `.items[].name`); input JSON file when `$n` expands to several words; value for `--arg` when `$n` expands to nothing');
+    assert.strictEqual(tokenOf('jq --arg $n v .', 'v', 'ja').explanation, '`--arg` の値、`$n` が2語以上なら jq フィルタ（例: `.items[].name`）、`$n` が0語なら `--arg` の名前');
     // (After the note on the pattern's language, which is of the reading where `$v` gives a word: `grep -d a b`.)
-    assert.strictEqual(tokenOf('grep -d $v a b', 'a').explanation, 'search pattern (regex) — basic regex (BRE); value for `-d` when `$v` expands to nothing');
+    assert.strictEqual(tokenOf('grep -d $v a b', 'a').explanation, 'search pattern (regex) — basic regex (BRE); file to search (default: stdin) when `$v` expands to several words; value for `-d` when `$v` expands to nothing');
   });
 
   it('says nothing where the value gives a word, or the role it then takes is not an operand or a value', () => {
@@ -476,10 +479,10 @@ describe("an option's value that may give no word (after #482)", () => {
     // (Nor where the role stays: an option, letters, a word the spec does not describe.)
     assert.strictEqual(tokenOf('grep -e $p -e x -i f', '-i').explanation, 'ignore case');
     assert.strictEqual(tokenOf('tar -cf $a b c', 'c').explanation, 'Word `c`');
-    // (Left: `sudo -u ls` takes `ls` as the user, and runs nothing; `git -C status` changes to `status`. An option before a
-    // command or a subcommand says it: `sudo -u -i ls` runs `ls` as the user `-i`; `git -C -p status` fails "cannot change
-    // to '-p'".)
-    assert.match(tokenOf('sudo -u $u ls', 'ls').explanation, /^runs `ls`: List directory contents$/);
+    // (`sudo -u ls` takes `ls` as the user, and runs nothing; `git -C status` changes to `status`: the command and the
+    // subcommand say it, as an option before them does: `sudo -u -i ls` runs `ls` as the user `-i`; `git -C -p status`
+    // fails "cannot change to '-p'".)
+    assert.strictEqual(tokenOf('sudo -u $u ls', 'ls').explanation, 'runs `ls`: List directory contents; argument when `$u` expands to several words; value for `-u` when `$u` expands to nothing');
     assert.match(tokenOf('sudo -u $u -i ls', '-i').explanation, /; value for `-u` when `\$u` expands to nothing$/);
     assert.match(tokenOf('git -C $d -p status', '-p').explanation, /; value for `-C` when `\$d` expands to nothing$/);
     assert.match(tokenOf('git -C $d -p status', 'status').explanation, /^Subcommand `git status`/);
@@ -500,11 +503,64 @@ describe("an option's value that may give no word (after #482)", () => {
     // (A field that is an option says it too: `grep -e -i x f` looks for `-i` in `x` and `f`.)
     assert.strictEqual(tokenOf('y="-i x"; grep -e $p $y f', '$y').explanation, 'expands to `-i` (option: ignore case; value for `-e` when `$p` expands to nothing) and `x` (file to search: default: stdin)');
     // (The same reading after either of two words, once: `jq --arg n .` and `jq --arg v .` both take `.` as the value.)
-    assert.strictEqual(tokenOf('jq --arg $n $v .', '.').explanation, 'jq filter (e.g. `.items[].name`); value for `--arg` when `$n` or `$v` expands to nothing');
-    assert.strictEqual(tokenOf('jq --arg $n $v .', '.', 'ja').explanation, 'jq フィルタ（例: `.items[].name`）、`$n` か `$v` が0語なら `--arg` の値');
+    assert.strictEqual(tokenOf('jq --arg $n $v .', '.').explanation, 'jq filter (e.g. `.items[].name`); input JSON file or jq filter (e.g. `.items[].name`) when `$n` expands to several words; input JSON file when `$v` expands to several words; value for `--arg` when `$n` or `$v` expands to nothing');
+    assert.strictEqual(tokenOf('jq --arg $n $v .', '.', 'ja').explanation, 'jq フィルタ（例: `.items[].name`）、`$n` が2語以上なら入力 JSON ファイル・jq フィルタ（例: `.items[].name`）のどれか、`$v` が2語以上なら入力 JSON ファイル、`$n` か `$v` が0語なら `--arg` の値');
     // (A space before a role in Latin letters; a fence around a word with a backquote.)
     assert.strictEqual(tokenOf('jq --arg n $v . f', 'f', 'ja').explanation, '入力 JSON ファイル、`$v` が0語なら jq フィルタ（例: `.items[].name`）');
     assert.strictEqual(tokenOf('grep -e `cmd` -i f', '-i').explanation, 'ignore case; value for `-e` when `` `cmd` `` expands to nothing');
+  });
+
+  it('says no role of the first word where its own count changes it, when the others give none (review of #490)', () => {
+    // (With `b`, `c` empty, `seq 11` reads `11` as the last and `seq 11 12` as the first; `tr a1` is one set and `tr a1 a2`
+    // a translation. The hedge of every count says the roles.)
+    assert.strictEqual(tokenOf('seq $a $b $c', '$a').explanation, 'first when `$a`, `$b`, `$c` expand to a single word; when they expand to other numbers of words, each of its words can be last (counting from 1), first, increment, last or extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)');
+    assert.doesNotMatch(tokenOf('tr $a $b', '$a').explanation, /its first word|to nothing/);
+    // (Where its count does not change it, the reading stays: `grep -e "$@"` takes its first word as the pattern.)
+    assert.strictEqual(tokenOf('grep -e $p "$@"', '"$@"').explanation, 'file to search (default: stdin); its first word is value for `-e` when `$p` expands to nothing');
+    assert.strictEqual(tokenOf('cp $a b', 'b').explanation, 'destination (the new name, or an existing directory) when `$a` expands to a single word; destination directory when it expands to more; source when `$a` expands to nothing');
+  });
+
+  it('says what the words after the first of a value that gives several are, and what the words after it then are (review of #490)', () => {
+    // (`head -n 1 g f` reads `g` as a file; `cut -d : g f` too; `grep -e p g f` searches `g`.)
+    assert.strictEqual(tokenOf('head -n $a f', '$a').explanation, 'Value for `-n`; when `$a` expands to several words, this is its first word, and each of the others is target file');
+    assert.strictEqual(tokenOf('head -n $a f', '$a', 'ja').explanation, '`-n` オプションの値、`$a` が2語以上に展開されるならこの値は最初の語で、残りの各語は対象のファイル');
+    assert.strictEqual(tokenOf('cut -d $a f', '$a').explanation, 'Value for `-d`; when `$a` expands to several words, this is its first word, and each of the others is target file');
+    assert.match(tokenOf('grep -e $a f', '$a').explanation, /; when `\$a` expands to several words, this is its first word, and each of the others is file to search \(default: stdin\)$/);
+    // (Words the spec does not describe, a command run, a value that may give several itself: the words after it.)
+    assert.strictEqual(tokenOf('tar -cf $a b', '$a', 'ja').explanation, '`-f` オプションの値、`$a` が2語以上に展開されるならこの値は最初の語で、残りの語は後に続く引数として読まれる');
+    assert.strictEqual(tokenOf('sudo -u $u tar -cf x y', '$u').explanation, 'Value for `-u`; when `$u` expands to several words, this is its first word, and the others are read as the words after it');
+    assert.strictEqual(tokenOf('jq --arg $n v .', '$n').explanation, 'Name for `--arg` (use it as `$name` in the filter); when `$n` expands to several words, this is its first word, and the others are read as the words after it');
+    // (`seq -s x y 1`: `1` is the last; `seq -s x y z w 1`, an extra operand.)
+    assert.strictEqual(tokenOf('seq -s $a 1', '1').explanation, 'last (counting from 1); last or extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing) when `$a` expands to several words; value for `-s` when `$a` expands to nothing');
+    // (`timeout -s KILL x 5 ls` runs `5`; `jq --arg "$x"a "$x"b`, the name and its value; `sudo -u "$x"a "$x"b ls` runs `"$x"b`.)
+    assert.strictEqual(tokenOf('timeout -s $s 5 ls', '5').explanation, 'time limit (`5`, `30s`, `2m`, `1h`); command to run when `$s` expands to several words; value for `-s` when `$s` expands to nothing');
+    assert.strictEqual(tokenOf('jq --arg "$x"{a,b} . f', '"$x"{a,b}').explanation, 'Name for `--arg` (use it as `$name` in the filter); when `"$x"{a,b}` expands to several words, this is its first word, and each of the others is value for `--arg`');
+    assert.strictEqual(tokenOf('sudo -u "$x"{a,b} ls', '"$x"{a,b}').explanation, 'Value for `-u`; when `"$x"{a,b}` expands to several words, this is its first word, and each of the others is command to run');
+    // (The same roles after two values are one reading: `seq -s x y -f %g 1`, `seq -s : -f x y 1`.)
+    assert.strictEqual(tokenOf('seq -s $a -f $b 1', '1').explanation, 'last (counting from 1); extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing) or last when `$a` or `$b` expands to several words; value for `-f` when `$b` expands to nothing');
+    assert.strictEqual(tokenOf('seq -s $a -f $b 1', '1', 'ja').explanation, '終了値（開始値は 1）、`$a` か `$b` が2語以上なら余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 1 で終わる）・終了値のどれか、`$b` が0語なら `-f` オプションの値');
+    // (A command string of an option keeps its role: `su -s x y -c ls`.)
+    assert.match(tokenOf('su -s $s -c ls', 'ls').explanation, /^Value for `-c`\. The shell that runs it is not known here/);
+    // (Nothing where the words after it keep their role: `head -n 1 g f` reads `f` as a file still.)
+    assert.strictEqual(tokenOf('head -n $a f', 'f').explanation, 'target file; value for `-n` when `$a` expands to nothing');
+  });
+
+  it('names every role an operand may take in a reading, once (`thenRoles`)', () => {
+    const o = (en: string): OperandSpec => ({ name: en, text: { ja: en, en } });
+    const value = { role: 'value' as const, of: '-f', index: 0 };
+    const role: ArgRole = { role: 'operand', index: 0, spec: o('a'), otherwise: o('b'), several: [{ from: 2, roles: [o('a'), o('c (x)')] }], byCount: { word: 1, readings: [{ from: 1, spec: o('d') }] }, mixed: { words: [1], first: true, many: false, roles: [o('e')] }, none: [{ words: [1], spec: o('c') }, { words: [1], value }, { words: [2], value }] };
+    assert.deepStrictEqual(thenRoles(role, {}), [{ spec: o('a') }, { spec: o('b') }, { spec: o('c (x)') }, { spec: o('d') }, { spec: o('e') }, { value }]);
+    assert.deepStrictEqual(thenRoles({ role: 'operand', index: 0 }, {}), [{}]);
+    assert.strictEqual(thenRoles({ role: 'value', of: '-f', index: 0 }, { count: { min: 0 } }), undefined);
+    assert.strictEqual(thenRoles({ role: 'end-of-options' }, {}), undefined);
+  });
+
+  it('gives a command run and a subcommand the role they take when a value before them gives none or several (review of #490)', () => {
+    // (`git -C log` changes to `log`; `git -C r x log` runs `git x`, with the argument `log`; `sudo -u tar …` runs nothing.)
+    assert.strictEqual(tokenOf('git -C $d log', 'log').explanation, 'Subcommand `git log`: Show commit logs (to the shell it is an argument to `git`, which interprets it itself); argument when `$d` expands to several words; value for `-C` when `$d` expands to nothing');
+    assert.strictEqual(tokenOf('git -C $d log', 'log', 'ja').explanation, 'サブコマンド `git log`: コミット履歴を表示する（シェルから見れば `git` への引数で、`git` 自身が解釈する）、`$d` が2語以上なら引数、`$d` が0語なら `-C` オプションの値');
+    const tar = allTokens(new Analyzer('en').explainLine(parser.parse('sudo -u $u tar -cf x y'), 0).items).find((t) => t.kind === 'command' && t.label.startsWith('tar'))!;
+    assert.strictEqual(tar.explanation, 'runs `tar`: Create or extract tar archives; argument when `$u` expands to several words; value for `-u` when `$u` expands to nothing');
   });
 
   it('runs those lines in bash, GNU tar, cp, grep and git as said', function () {

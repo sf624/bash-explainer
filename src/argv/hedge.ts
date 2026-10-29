@@ -1,7 +1,7 @@
 // The hedges of an operand whose role depends on how many words the words that may give several give (`ArgRole`
 // `operand`: `several`, `byCount`, `mixed`, `otherwise`), read from the readings of the operand patterns that the
 // argument interpreter (src/argv/interpret.ts, `placeOperands`) makes with each count.
-import type { ArgWord, OperandRole } from './interpret';
+import type { ArgWord, NoneRole, OperandRole } from './interpret';
 import type { OperandAlt, OperandSpec } from './spec';
 
 /**
@@ -50,10 +50,10 @@ export interface Fit { alt: OperandAlt; items: number[] }
 export interface HedgeInput { words: ArgWord[]; operands: number[]; fit: (many: (k: number) => number) => Fit | undefined; span: number; alts: OperandAlt[] }
 
 /** The hedge of each operand word k, whose role in the reading with each word's fewest is `item`. */
-export function hedges({ words, operands, fit, span, alts }: HedgeInput): (k: number, item: OperandSpec) => Hedge {
+export function hedges({ words, operands, fit, span, alts }: HedgeInput): Hedges {
   // (Every item of every pattern with one role, as `echo`'s arguments or `rm`'s files: the same role for any count.)
   const roles = new Set(alts.flatMap((alt) => alt.pattern.map((o) => o.text.en)));
-  if (roles.size === 1) return () => ({});
+  if (roles.size === 1) return { hedge: () => ({}), none: () => undefined };
   // Each reading once. A pattern reads of a word only its text (`value`) or, where not known, its start (`prefix`): the
   // words in a row with the same give the same reading whichever of them give how many (`cp $a $b`: `x y` and `z`, or
   // `x` and `y z`), so the readings are kept by those runs.
@@ -133,11 +133,11 @@ export function hedges({ words, operands, fit, span, alts }: HedgeInput): (k: nu
    * The numbers of words the words `js` may give in all, each up to the longest pattern and one (`span`; past it a role
    * is the same, only the patterns that repeat an item fit), each with counts of the words that give it.
    */
-  const sums = (js: number[]): Map<number, number[]> => {
+  const sums = (js: number[], counts: (j: number) => number[] = domain): Map<number, number[]> => {
     let at = new Map<number, number[]>([[0, []]]);
     for (const j of js) {
       const next = new Map<number, number[]>();
-      for (const [n, counts] of at) for (const c of domain(j)) if (!next.has(Math.min(n + c, span))) next.set(Math.min(n + c, span), [...counts, c]);
+      for (const [n, counts_] of at) for (const c of counts(j)) if (!next.has(Math.min(n + c, span))) next.set(Math.min(n + c, span), [...counts_, c]);
       at = next;
     }
     return at;
@@ -195,21 +195,57 @@ export function hedges({ words, operands, fit, span, alts }: HedgeInput): (k: nu
     if (more.length > 1 || more[0]?.roles.length > 1) return v === k ? { several: out } : { byCount: { word: operands[v], readings: out.map((x) => ({ from: x.from, ...(x.orMore ? { orMore: true } : {}), spec: x.roles[0] })) } };
     return more.length && more[0].roles[0].text.en !== item.text.en ? { otherwise: more[0].roles[0], by: operands[v] } : {};
   };
-  return hedgeOf;
+  /**
+   * The role of the first word of word k where the words `drops` give none, for every count of the others (word k's own
+   * too, one at least): `cp $a b` with `$a` empty is `cp b`, a source. Undefined where it depends on those counts (`seq
+   * $a $b $c` with `$b`, `$c` empty: `seq 11` reads `11` as the last, `seq 11 12` as the first) or no form fits one of
+   * them: the hedge of word k then says the roles of all counts.
+   */
+  const noneOf = (k: number, drops: number[]): OperandSpec | undefined => {
+    const counts = (j: number): number[] => (drops.includes(j) ? [0] : domain(j));
+    const [left, right] = [sums(words.flatMap((_, j) => (j < k ? [j] : [])), counts), sums(words.flatMap((_, j) => (j > k ? [j] : [])), counts)];
+    let then: OperandSpec | undefined;
+    for (const c of domain(k).filter((n) => n > 0)) {
+      for (const before of left.values()) {
+        for (const after of right.values()) {
+          const o = itemsOf((j) => (j === k ? c : j < k ? before[j] : after[j - k - 1]), k)?.[0]?.o;
+          if (!o || (then && then.text.en !== o.text.en)) return undefined;
+          then = o;
+        }
+      }
+    }
+    return then;
+  };
+  return { hedge: hedgeOf, none: noneOf };
 }
 
 /**
- * Gives an operand's role its hedge (`uncertain` and the hedge's fields), read when first asked: only the explanation of
- * the words asks, and a command's words are interpreted for many other uses, where the readings would be wasted.
+ * The hedges of the operands (`hedge`), and the role of the first word of an operand where other words give none, the
+ * same for any count of the rest (`none`).
  */
-export function withHedge(role: OperandRole, hedge: () => Hedge): void {
+export interface Hedges { hedge: (k: number, item: OperandSpec) => Hedge; none: (k: number, drops: number[]) => OperandSpec | undefined }
+
+/**
+ * Gives an operand's role its hedge (`uncertain` and the hedge's fields) and its role where other operands give none
+ * (`none`, a `NoneRole` of its own), read when first asked: only the explanation of the words asks, and a command's words
+ * are interpreted for many other uses, where the readings would be wasted.
+ */
+export function withHedge(role: OperandRole, hedge: () => Hedge, none: () => NoneRole | undefined): void {
   let h: Hedge | undefined;
+  let n: NoneRole[] | undefined | null = null;
   const get = (): Hedge => (h ??= hedge());
-  const has = (): boolean => !!(get().otherwise || get().several || get().byCount || get().mixed);
+  const nones = (): NoneRole[] | undefined => {
+    if (n === null) {
+      const r = none();
+      n = r ? [r] : undefined;
+    }
+    return n;
+  };
+  const has = (): boolean => !!(get().otherwise || get().several || get().byCount || get().mixed || nones());
   const field = <K extends keyof Hedge>(key: K) => ({ enumerable: true, get: () => get()[key] });
-  const none = role.uncertain;
   Object.defineProperties(role, {
-    uncertain: { enumerable: true, get: () => (none || has() ? true : undefined) },
+    uncertain: { enumerable: true, get: () => (has() ? true : undefined) },
     otherwise: field('otherwise'), by: field('by'), several: field('several'), byCount: field('byCount'), mixed: field('mixed'),
+    none: { enumerable: true, configurable: true, get: nones },
   });
 }

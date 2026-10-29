@@ -9,6 +9,7 @@ import type { Text } from '../i18n';
 import { EnvSplitError, splitEnvString } from './envsplit';
 import { type ByCount, counts, type Hedge, hedges, type MixedRoles, type SeveralRoles, withHedge } from './hedge';
 import { type ParserRules, rulesOf } from './parsers';
+import { mayGiveSeveral, restOf, roleText, valueHedges } from './valuehedges';
 import { type Group, lineIndex, optionFields, regroup, withParse } from './regroup';
 import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
 
@@ -37,24 +38,24 @@ export type ArgRole =
    * `value` is a value written in the same word (`-n5`, `--file=x`); `missing`, a value it needs that no word gives.
    * `none`: its role when an option's value before it gives no word, where it differs (`NoneRole`: `grep -e $p -i f`).
    */
-  | { role: 'option'; flag: string; spec: OptionSpec; text: Text; part?: Range; value?: ValueRole; disables?: boolean; missing?: boolean; none?: NoneRole[] }
+  | { role: 'option'; flag: string; spec: OptionSpec; text: Text; part?: Range; value?: ValueRole; disables?: boolean; missing?: boolean; none?: NoneRole[]; more?: MoreRole[] }
   /** A word of several short options (`-xvf`, `-rn5`): one role per letter, in order, with their parts; `none` as an option's. */
-  | { role: 'cluster'; letters: ArgRole[]; none?: NoneRole[] }
+  | { role: 'cluster'; letters: ArgRole[]; none?: NoneRole[]; more?: MoreRole[] }
   /** An option recognized by its form (`kill -TERM`, `head -5`); `open` for `-` and an expansion (`head -$n`). */
-  | { role: 'pattern-option'; flag: string; pattern: PatternOption; text: Text; open?: boolean; none?: NoneRole[] }
+  | { role: 'pattern-option'; flag: string; pattern: PatternOption; text: Text; open?: boolean; none?: NoneRole[]; more?: MoreRole[] }
   /**
    * `ambiguous`: the long options a prefix could be (`timeout --v`), which the tool refuses. `late`: a long option
    * after a short one, where the parser reads long options only first (`bash -x --posix`, the rule `longFirst`).
    * `refused`: what the spec says of a `--` the command refuses (`dashDash`, procps `ps`). `none`, as an option's (the
    * pattern options' and the end of options' too).
    */
-  | { role: 'unknown-option'; flag: string; part?: Range; value?: ValueRole; ambiguous?: string[]; late?: boolean; refused?: Text; none?: NoneRole[] }
+  | { role: 'unknown-option'; flag: string; part?: Range; value?: ValueRole; ambiguous?: string[]; late?: boolean; refused?: Text; none?: NoneRole[]; more?: MoreRole[] }
   /** An option whose letters are known only at run time (`-$opts`, `-r$x`): `prefix` is what is known. */
   | { role: 'open-option'; prefix: string }
   | ValueRole
   /** Dashless letters in the first word (`tar cvf`). */
   | { role: 'old-style'; letters: ArgRole[] }
-  | { role: 'end-of-options'; none?: NoneRole[] }
+  | { role: 'end-of-options'; none?: NoneRole[]; more?: MoreRole[] }
   /**
    * An operand; `spec` is absent when the spec does not describe the operands, or none of its patterns fits
    * (see `ArgvParse.unmatched`). `uncertain`: the role depends on how many words an expansion gives, and
@@ -70,17 +71,17 @@ export type ArgRole =
    * `b` is a source); and an option's value before it, the words between giving what they give (`tar -cf $a b`: `b` is
    * the archive), each such value apart.
    */
-  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; uncertain?: boolean; otherwise?: OperandSpec; by?: number; each?: OperandSpec[]; several?: SeveralRoles[]; byCount?: ByCount; mixed?: MixedRoles; none?: NoneRole[] }
-  /** The rest of the words are read with the subcommand's spec. */
-  | { role: 'subcommand'; name: string; spec: CommandSpec; parse: ArgvParse }
+  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; uncertain?: boolean; otherwise?: OperandSpec; by?: number; each?: OperandSpec[]; several?: SeveralRoles[]; byCount?: ByCount; mixed?: MixedRoles; none?: NoneRole[]; more?: MoreRole[] }
+  /** The rest of the words are read with the subcommand's spec. `none` and `more`, as an option's (`git -C $d log`). */
+  | { role: 'subcommand'; name: string; spec: CommandSpec; parse: ArgvParse; none?: NoneRole[]; more?: MoreRole[] }
   /**
    * The first word of a command run by this one; `parse` reads the words after it. A shell string (`bash -c 'cmd'`,
    * `su -c 'cmd'`) has no `parse`; nor has a string joined from the words (`joined`). `of` is the option whose
    * value or words it is (`su -c`, `find -exec`); `item`, the operand it fills (`bash -c`, `ssh host cmd`). `each`, as
    * an operand's: the role of each word it becomes, when they are known and the others are not the command's
-   * (`trap {x,EXIT}`: the action, then a signal).
+   * (`trap {x,EXIT}`: the action, then a signal). `none` and `more`, as an option's (`sudo -u $u ls`).
    */
-  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec; each?: OperandSpec[] }
+  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec; each?: OperandSpec[]; none?: NoneRole[]; more?: MoreRole[] }
   /** The word that ends an option's command (`;` of `find -exec … ;`), and its text (one of the option's `until.terminators`). */
   | { role: 'terminator'; text: string; of: string }
   /** A word of the shell string that a `command` role before it joins from the words (`ssh host ls -l`). */
@@ -109,6 +110,19 @@ export type { ByCount, MixedRoles, SeveralRoles };
 export type NoneRole = ({ words: number[]; spec: OperandSpec; value?: undefined } | { words: number[]; value: ValueRole; spec?: undefined }) & { first?: true };
 
 /**
+ * A role a word may take that a hedge names: an operand's (`spec`), an option's value (`value`), or neither, an operand
+ * the spec does not describe (`git -C $d log`: with `d='r x'`, `log` is an argument of `git x`).
+ */
+export type ThenRole = { spec: OperandSpec; value?: undefined } | { value: ValueRole; spec?: undefined } | { spec?: undefined; value?: undefined };
+
+/**
+ * The roles a word may take when an option's value before it, a word of its own (`word`, an index of the command's
+ * words), gives two words or more, where they differ from its own (`jq --arg $n $v .`: with `n='a b'`, `$v` is the
+ * filter). `first`: the word may give several, and the roles are its first word's.
+ */
+export interface MoreRole { word: number; roles: ThenRole[]; first?: true }
+
+/**
  * The value of an option: `of` is the option's `flag` as written (`-f`, `--file`, `f` of `tar cf`), `index`
  * which of its values; `attached` is where it starts in the word, when it is written in the option's word.
  */
@@ -124,6 +138,14 @@ export interface ValueRole {
   refused?: { error: EnvSplitError; at: string };
   /** Its role when an option's value before it gives no word, where it differs (`grep -e $p -e x f`: `x` is a file). */
   none?: NoneRole[];
+  /** Its roles when an option's value before it gives several words, where they differ (`MoreRole`). */
+  more?: MoreRole[];
+  /**
+   * A value of a word of its own that may give several words: the roles the words after its first may take (`head -n $a
+   * f`: with `a='1 g'`, `g` is a file to read), as the words after it would be read; empty where the interpreter does not
+   * name one of them (an operand the spec does not describe, a command it runs…).
+   */
+  rest?: ThenRole[];
 }
 
 /** Offsets in a word's text: start, and end (exclusive). */
@@ -201,81 +223,17 @@ export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretCon
   const back = groups.length ? lineIndex(groups) : (j: number): number => j;
   const read = (words: ArgWord[], at: (j: number) => number, bare: boolean): ArgvParse => new Reader(words, ctx, new Set(), at, bare).read(spec, 0, words.length, ctx.name ?? '', [], false, []);
   const parse = read(line, back, false);
-  valueHedges(parse, line, (j) => read([...line.slice(0, j), ...line.slice(j + 1)], back, true), back);
+  // (A value that may give several words is read as its first word and one that gives the rest, `rest`, which may give
+  // one or more: their hedges say the roles of every count.)
+  const spread = (j: number): ArgvParse => {
+    const { count: _, fields: __, ...first } = line[j];
+    return read([...line.slice(0, j), first, restOf(line[j]), ...line.slice(j + 1)], (i) => back(i <= j ? i : i - 1), false);
+  };
+  valueHedges(parse, line, (j) => read([...line.slice(0, j), ...line.slice(j + 1)], back, true), spread, back);
   const out = groups.length ? regroup(parse, groups).parse : parse;
   return own.size ? optionFields(out, own, words) : out;
 }
 
-/** The roles of a reading, by word, at every level (the words of a subcommand, of a command run). */
-function allRoles(parse: ArgvParse, out = new Map<number, ArgRole>()): Map<number, ArgRole> {
-  for (const { word, role } of parse.roles) {
-    out.set(word, role);
-    if (role.role === 'subcommand' || (role.role === 'command' && role.parse)) allRoles(role.parse!, out);
-  }
-  return out;
-}
-
-/**
- * An operand's role, without what is said of it in parentheses: the same role in another form, with more said of it, is
- * not another (`ln -s $a $b`: `$a` is the target either way, "target (the link is made in the current directory…)" when
- * `$b` gives none).
- */
-const roleText = (o: OperandSpec): string => o.text.en.replace(/ \(.*\)$/, '');
-
-/** Whether two roles of a word say the same: the same option or letters, the value of the same option, the same operand. */
-function sameRole(a: ArgRole, b: ArgRole): boolean {
-  const flags = (r: ArgRole): string => (r.role === 'cluster' ? r.letters.map(flags).join(' ') : (r as { flag: string }).flag);
-  if (a.role === 'operand' && b.role === 'operand') return (a.spec && roleText(a.spec)) === (b.spec && roleText(b.spec));
-  if (a.role === 'value' && b.role === 'value') return a.of === b.of && a.index === b.index;
-  return a.role === b.role && flags(a) === flags(b);
-}
-
-/** The roles of a word that say what it takes when an option's value before it gives none (`ArgRole` `none`). */
-const HEDGED = new Set<ArgRole['role']>(['operand', 'value', 'option', 'cluster', 'unknown-option', 'pattern-option', 'end-of-options']);
-
-/** Whether a word may give more than one word (`*.txt`, `"$@"`; no `max`: any number): a role it takes then is its first word's. */
-const mayGiveSeveral = (w: ArgWord): boolean => !!w.count && !(w.count.max! <= 1);
-
-/**
- * The roles the words after an option's value take when the value, a word of its own that may give none (`count.min`
- * 0), gives none, where they differ (`ArgRole` `none`): with `$a` empty, `tar -cf $a b` is `tar -cf b`, and `b` the
- * archive. Read when first asked, each value once: the line again without it (`without`, in the numbers of `line` but
- * the word left out), the words between giving what they give. The words read are those of the value's command whose
- * roles are `HEDGED`; the role they then take, an operand's or a value's (else nothing is said).
- */
-function valueHedges(parse: ArgvParse, line: ArgWord[], without: (j: number) => ArgvParse, back: (j: number) => number): void {
-  const readings = new Map<number, Map<number, ArgRole>>();
-  const alt = (j: number): Map<number, ArgRole> => {
-    if (!readings.has(j)) readings.set(j, allRoles(without(j)));
-    return readings.get(j)!;
-  };
-  const hedge = (role: Extract<ArgRole, { none?: NoneRole[] }>, k: number, drops: number[]): void => {
-    const own = role.none;
-    let memo: NoneRole[] | undefined | null = null;
-    const read = (): NoneRole[] | undefined => {
-      const more = drops.flatMap((j): NoneRole[] => {
-        const then = alt(j).get(k - 1);
-        /* c8 ignore next -- every word has a role in a reading (a guard against a bug in it) */
-        if (!then) return [];
-        if (sameRole(role, then)) return [];
-        const first = mayGiveSeveral(line[k]) ? { first: true as const } : {};
-        if (then.role === 'operand' && then.spec) return [{ words: [back(j)], spec: then.spec, ...first }];
-        return then.role === 'value' ? [{ words: [back(j)], value: then, ...first }] : [];
-      });
-      return own || more.length ? [...own ?? [], ...more] : undefined;
-    };
-    Object.defineProperty(role, 'none', { enumerable: true, configurable: true, get: () => (memo === null ? (memo = read()) : memo) });
-  };
-  const visit = (q: ArgvParse): void => {
-    const drops: number[] = [];
-    for (const { word, role } of q.roles) {
-      if (drops.length && HEDGED.has(role.role)) hedge(role as Extract<ArgRole, { none?: NoneRole[] }>, word, [...drops]);
-      if (role.role === 'value' && role.attached === undefined && line[word].count?.min === 0) drops.push(word);
-      if (role.role === 'subcommand' || (role.role === 'command' && role.parse)) visit(role.parse!);
-    }
-  };
-  visit(parse);
-}
 
 const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ? [] : Array.isArray(o.value) ? o.value : [o.value]);
 /**
@@ -432,30 +390,20 @@ class Reader {
     if (record) parse.alternative = primary.index;
     const other = primary === low ? high : low;
     const pattern = primary.alt.pattern;
-    // `cp $a b`, `grep -c $x f`: the words that may give none (but word k) giving none, and the others one each (or their
-    // fewest). (Read once for the words that cannot give none, which all drop the same words, and once for each that can.)
+    // (A bare reading is read only for its roles: `valueHedges`.)
+    const read = this.bare ? undefined : hedges({ words, operands: operands.map(this.line), fit, span: Math.max(...alts.map(({ alt }) => alt.pattern.length)) + 1, alts: alts.map(({ alt }) => alt) });
+    // `cp $a b`, `grep -c $x f`: the words that may give none (but word k) giving none, and the others any count.
     const mayNone = words.map((w) => w.count?.min === 0);
-    const readings = new Map<number, { drops: number[]; read: ReturnType<typeof fit> } | undefined>();
-    const noneOf = (k: number) => {
-      const key = mayNone[k] ? k : -1;
-      if (!readings.has(key)) {
-        const drops = words.flatMap((_, j) => (mayNone[j] && j !== k ? [j] : []));
-        readings.set(key, drops.length ? { drops, read: fit((j) => (drops.includes(j) ? 0 : counts(words[j])[0])) } : undefined);
-      }
-      return readings.get(key);
-    };
     /**
-     * The role of word k (now `item`) where the other words give none, when it is another. (When no form fits
-     * then, nothing is said: every spec of the dictionary but ssh's has a form of any number of operands, `positional`.)
+     * The role of word k (now `item`) where the other words that may give none give none, when it is another, the same
+     * for any count of the rest (`Hedges.none`). (When no form fits then, nothing is said: every spec of the dictionary
+     * but ssh's has a form of any number of operands, `positional`.)
      */
     const noneRole = (k: number, item: OperandSpec): NoneRole | undefined => {
-      const r = this.bare ? undefined : noneOf(k);
-      if (!r?.read) return undefined;
-      const then = r.read.alt.pattern[r.read.items[r.read.first[k]]];
-      return roleText(then) !== roleText(item) ? { words: r.drops.map((j) => this.line(operands[j])), spec: then, ...(mayGiveSeveral(words[k]) ? { first: true as const } : {}) } : undefined;
+      const drops = words.flatMap((_, j) => (mayNone[j] && j !== k ? [j] : []));
+      const then = drops.length ? read!.none(k, drops) : undefined;
+      return then && roleText(then) !== roleText(item) ? { words: drops.map((j) => this.line(operands[j])), spec: then, ...(mayGiveSeveral(words[k]) ? { first: true as const } : {}) } : undefined;
     };
-    // (A bare reading is read only for its roles: `valueHedges`.)
-    const hedgeOf = this.bare ? undefined : hedges({ words, operands: operands.map(this.line), fit, span: Math.max(...alts.map(({ alt }) => alt.pattern.length)) + 1, alts: alts.map(({ alt }) => alt) });
     for (let k = 0; k < operands.length; k++) {
       const i = operands[k];
       const pos = primary.first[k];
@@ -484,15 +432,14 @@ class Reader {
       const elsewhere = other ? [other.alt.pattern[other.items[other.first[k]]]] : [];
       // (Where only the reading with more words fits, its copies of the word, which differ only where it may give several.)
       const otherwise = primary === low ? undefined : [...copies, ...elsewhere].find((o) => o.text.en !== item.text.en);
-      const hedge = each || !hedgeOf ? undefined : primary === low ? () => hedgeOf(k, item) : (): Hedge => (otherwise ? { otherwise, by: this.line(i) } : {});
-      const none = each ? undefined : noneRole(k, item);
+      const hedge = each || !read ? undefined : primary === low ? () => read.hedge(k, item) : (): Hedge => (otherwise ? { otherwise, by: this.line(i) } : {});
       // `jq . in.json --args a`: after the option, the operands of the repeating last item are something else.
       const last = n === pattern.length - 1 && (item.repeat === '*' || item.repeat === '+');
       const later = last ? st.given.later.filter((l) => l.word < i).pop()?.spec : undefined;
       const spec = later ?? item;
       const assignment = (spec.assignment || (spec.assignmentText && ASSIGNMENT.test(known(words[k])))) || undefined;
-      const role: OperandRole = { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(each ? { each } : {}), ...(none ? { uncertain: true, none: [none] } : {}) };
-      if (hedge) withHedge(role, hedge);
+      const role: OperandRole = { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(each ? { each } : {}) };
+      if (hedge) withHedge(role, hedge, () => noneRole(k, item));
       roles.set(i, role);
     }
   }
