@@ -1517,3 +1517,18 @@ For a script run by sh or dash, the fix of a `[[ ]]` writes `[ ]`. It now leaves
 | `[[ -t $fd ]]` | False in bash 5.2 when `$fd` is not a number (an error in bash 5.3); an error in dash | No fix (`[[ -t 1 ]]` → `[ -t 1 ]`) |
 | `[[ ! ! $x ]]` | dash reads `[ ! ! -n "" ]` as true | No fix |
 | `[[ -n $@ ]]`, `[[ "${a[@]}" == x ]]` | `[[ ]]` joins the words into one; `[ ]` gets them apart (`[: a: unexpected operator`) | No fix |
+
+### Extra operands
+
+A command that takes a few operands refuses a word after them before it does anything (GNU coreutils and diffutils: "extra operand"). The word is now an extra operand, with what the command prints and its status; the hedge of a word that may give several says so for the counts past the limit:
+
+| Written | The tool | Said now | Said before |
+| --- | --- | --- | --- |
+| `cmp a b 1 2 x`, `diff a b c`, `sdiff a b c`, `diff3 a b c d` | "extra operand 'x'", status 2 | "extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing)" | the last operand again: bytes to skip in the second file, second file, target file |
+| `basename a b c` (without `-a` or `-s`), `seq 1 2 3 4`, `mknod n c 1 2 3`, `uniq in out x`, `comm a b c`, `join a b c`, `link a b c`, `unlink a b`, `tsort a b`, `dircolors a b`, `date +%s x`, `shuf a b`, `shuf -i 1-3 a` | "extra operand", status 1 | the same, with status 1 | the last operand again; `basename a b c` printed `a` in its example |
+| `tr a b c`, `tr -d a b` (without `-s`) | "extra operand", status 1 | the same; with `-d`, the first set is "character set to delete" | the target set; `tr -d a b` showed `a` deleted |
+| `mktemp a.XXX b.XXX`, `pgrep a b`, `mountpoint a b`, `look a f g`, `xxd a b c`, `getconf NAME_MAX / x` | "too many templates"; "only one pattern can be provided" (status 2); "bad usage"; their usage (status 1, getconf 2) | the same, with what each prints | the last operand again |
+| `cmp $a`, `cmp $a f`, `diff $a`, `seq $a` | `a='x y 0 0 z'; cmp $a` refuses `z` | "…; when it expands to more, they are first file …, then bytes to skip in the second file, then extra operand, which the command refuses (…)"; of `f` in `cmp $a f`, "extra operand … when it expands to more" (four words or more) | the last role again for any count |
+
+`diff --from-file=a b c`, `basename -a a b c` and `shuf -e a b c` take any number, as before. Checked with GNU coreutils 9.4, diffutils 3.10, procps-ng 4.0.4, util-linux 2.39.3, xxd and glibc's getconf (test/extra-operands-real.test.ts); `mknod` from its usage, not run.
+

@@ -73,7 +73,29 @@ export interface CmdRest extends Omit<Partial<CommandSpec>, 'summary' | 'options
   positionalLang?: (EmbeddedLang | undefined)[];
   /** What the command does with the file the operand at each index of `positional` names (`IoUse`); the last one repeats. */
   positionalIo?: (IoUse | undefined)[];
+  /**
+   * The most operands of `positional` the command takes (`count`; the last text repeats up to it): the words after them
+   * are extra operands it refuses (`extra`, from `extraOperand`). With `unless`, only while none of these options is
+   * given; with one, the last text repeats with no limit (`diff --from-file`).
+   */
+  atMost?: { count: number; extra: OperandSpec; unless?: string };
 }
+
+/**
+ * The item for the words past the operands a command takes (`OperandSpec.extra`): it refuses them before doing
+ * anything, printing `says` and exiting with `status` (coreutils `extra operand`, status 1).
+ */
+export function extraOperand(says: string, status: number): OperandSpec {
+  return {
+    name: 'EXTRA', repeat: '*', extra: { says, status },
+    text: tx(`余分なオペランド（コマンドは受け付けず、\`${says}\` と表示して何もせずに終了ステータス ${status} で終わる）`,
+      `extra operand, which the command refuses (it prints \`${says}\` and exits with status ${status}, doing nothing)`),
+  };
+}
+
+/** The extra operands of GNU coreutils and of GNU diffutils (`cmp`, `diff`, `sdiff`, `diff3`: status 2). */
+export const EXTRA_OPERAND = extraOperand('extra operand', 1);
+export const DIFF_EXTRA_OPERAND = extraOperand('extra operand', 2);
 
 /**
  * A dictionary entry: the spec of a command (src/argv/spec.ts). Options are tuples (`OptSpec`) or option specs;
@@ -81,13 +103,17 @@ export interface CmdRest extends Omit<Partial<CommandSpec>, 'summary' | 'options
  */
 export function cmd(ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], rest: CmdRest = {}): CommandSpec {
   const summary = tx(ja, en);
-  const { positional = [], positionalLang = [], positionalIo = [], operands = [], ...fields } = rest;
+  const { positional = [], positionalLang = [], positionalIo = [], operands = [], atMost, ...fields } = rest;
   const options = mergeOptions(opts.map((o) => (Array.isArray(o) ? optionOf(o) : o)));
   const fills = opts.flatMap((o) => (Array.isArray(o) && o[3]?.includes('fills') ? o[0].split('|') : []));
+  // (With a limit, the operands up to it and the extra ones; with no limit when an option of `unless` is given.)
+  const unless = atMost?.unless?.split('|');
+  const limited: OperandAlt[] = atMost ? [{ ...(unless ? { when: { not: { option: unless } } } : {}), pattern: [...listed(positional, positionalLang, positionalIo, 0, atMost.count), atMost.extra] }] : [];
   const alts: OperandAlt[] = [
     ...operands,
     ...(fills.length ? [{ when: { option: fills }, pattern: listed(positional, positionalLang, positionalIo, 1) }] : []),
-    ...(positional.length ? [{ pattern: listed(positional, positionalLang, positionalIo) }] : []),
+    ...limited,
+    ...(positional.length && (!atMost || unless) ? [{ ...(unless ? { when: { option: unless } } : {}), pattern: listed(positional, positionalLang, positionalIo) }] : []),
   ];
   return { summary, options, ...fields, ...(alts.length ? { operands: alts } : {}) };
 }
@@ -96,11 +122,15 @@ export function cmd(ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [],
 const item = (i: number, text: Text, repeat?: OperandSpec['repeat'], lang?: EmbeddedLang, io?: IoUse): OperandSpec =>
   ({ name: `ARG${i + 1}`, text, ...(repeat ? { repeat } : {}), ...(lang ? { lang } : {}), ...(io ? { io } : {}) });
 
-/** The texts from `from` on: each optional, and the last repeats; a language applies to its own index only, a use of a file to the repeats too. */
-function listed(texts: Text[], langs: (EmbeddedLang | undefined)[], ios: (IoUse | undefined)[], from = 0): OperandSpec[] {
+/**
+ * The texts from `from` on: each optional, and the last repeats (up to `most` operands in all, when given); a language
+ * applies to its own index only, a use of a file to the repeats too.
+ */
+function listed(texts: Text[], langs: (EmbeddedLang | undefined)[], ios: (IoUse | undefined)[], from = 0, most?: number): OperandSpec[] {
   const out: OperandSpec[] = [];
   for (let i = from; i < texts.length; i++) {
     if (i < texts.length - 1) out.push(item(i, texts[i], '?', langs[i], ios[i]));
+    else if (most !== undefined) for (let j = i; j < most; j++) out.push(item(j, texts[i], '?', j === i ? langs[i] : undefined, ios[i]));
     else if (langs[i]) out.push(item(i, texts[i], '?', langs[i], ios[i]), item(i + 1, texts[i], '*', undefined, ios[i]));
     else out.push(item(i, texts[i], '*', undefined, ios[i]));
   }
@@ -111,8 +141,9 @@ function listed(texts: Text[], langs: (EmbeddedLang | undefined)[], ios: (IoUse 
  * Operands by count (`seq 5`, `seq 1 5`; `cp a b` and `cp a b c dir/`): exactly `count` of them, or more with
  * `orMore`; the texts in order, the last one repeating, and `last` for the final one. `when` and `unless` are
  * options (`-t|--target-directory`) given, or not, for the alternative to apply; `langs` the language of each.
+ * `extra`: the words after them are extra operands the command refuses (`extraOperand`: `seq 1 2 3 4`).
  */
-export function byCount(count: number, texts: Text[], o: { orMore?: boolean; last?: Text; when?: string; unless?: string; langs?: (EmbeddedLang | undefined)[] } = {}): OperandAlt {
+export function byCount(count: number, texts: Text[], o: { orMore?: boolean; last?: Text; when?: string; unless?: string; langs?: (EmbeddedLang | undefined)[]; extra?: OperandSpec } = {}): OperandAlt {
   const at = (i: number): Text => texts[Math.min(i, texts.length - 1)];
   const it = (i: number, t: Text, repeat?: OperandSpec['repeat']): OperandSpec => item(i, t, repeat, o.langs?.[i]);
   const required = o.last ? count - 1 : count;
@@ -123,6 +154,7 @@ export function byCount(count: number, texts: Text[], o: { orMore?: boolean; las
     pattern.push(it(Math.max(required, texts.length - 1), at(texts.length - 1), '*'));
   }
   if (o.last) pattern.push(it(count - 1, o.last));
+  if (o.extra) pattern.push(o.extra);
   const when: Condition | undefined = o.when ? { option: o.when.split('|') } : o.unless ? { not: { option: o.unless.split('|') } } : undefined;
   return { ...(when ? { when } : {}), pattern };
 }

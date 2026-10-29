@@ -53,7 +53,11 @@ export function parseOptions(cmd: string, words: (string | undefined)[], support
   if (parse.refused) throw new Unsupported('refused');
   for (const { word, role } of parse.roles) {
     switch (role.role) {
-      case 'operand': out.operands.push(words[word]); break;
+      case 'operand':
+        // (`basename a b c`: the tool refuses a word past the operands it takes, and runs nothing.)
+        if (role.spec?.extra) throw new Unsupported('extra operand');
+        out.operands.push(words[word]);
+        break;
       case 'end-of-options': break;
       case 'command': out.command = word; break;
       case 'cluster': role.letters.forEach((l) => option(l, word)); break;
@@ -420,7 +424,8 @@ const TR = shortKeys('cdst');
 export function runTr(words: (string | undefined)[], input: string[]): string[] {
   const p = parseOptions('tr', words, TR);
   const sets = p.operands;
-  if (sets.some((s) => s === undefined) || !sets.length || sets.length > 2) throw new Unsupported('sets');
+  // (A third set is an extra operand, which tr refuses: `parseOptions` throws.)
+  if (sets.some((s) => s === undefined) || !sets.length) throw new Unsupported('sets');
   const comp = has(p, 'c');
   const del = has(p, 'd');
   const squeeze = has(p, 's');
@@ -540,8 +545,8 @@ export function runSeq(words: (string | undefined)[]): string[] {
   // (A negative number is an operand: the spec says so, as GNU seq reads it.)
   const p = parseOptions('seq', words, shortKeys('wsf'));
   const nums = p.operands;
-  // seq needs one to three numbers.
-  if (nums.length < 1 || nums.length > 3 || nums.some((n) => n === undefined || !/^-?(\d+\.?\d*|\.\d+)$/.test(n))) throw new Unsupported('seq operands');
+  // seq needs one to three numbers (a fourth is an extra operand, which `parseOptions` refuses).
+  if (nums.length < 1 || nums.some((n) => n === undefined || !/^-?(\d+\.?\d*|\.\d+)$/.test(n))) throw new Unsupported('seq operands');
   const [first, inc, last] = nums.length === 1 ? ['1', '1', nums[0]!] : nums.length === 2 ? [nums[0]!, '1', nums[1]!] : [nums[0]!, nums[1]!, nums[2]!];
   const prec = (s: string) => (s.includes('.') ? s.split('.')[1].length : 0);
   const digits = Math.max(prec(first), prec(inc));

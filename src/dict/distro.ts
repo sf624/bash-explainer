@@ -1,6 +1,6 @@
 import type { CommandSpec } from '../argv/spec';
 import { tx } from '../i18n';
-import { byCount, cmd, COMMAND_TEXT, GNU_INFO, operand, pos, runs, WHO_ENV } from './types';
+import { byCount, cmd, COMMAND_TEXT, EXTRA_OPERAND, GNU_INFO, operand, pos, runs, WHO_ENV } from './types';
 
 // External commands that major distributions install by default (util-linux, coreutils, procps,
 // iproute / net-tools, systemd, openssh, acl, attr, libcap…), with the options scripts use most.
@@ -65,7 +65,7 @@ export const distro: Record<string, CommandSpec> = {
     ['-z|--zero-terminated', '行の区切りを NUL にする', 'lines end with NUL'],
     ['--random-source', '乱数のもとにするファイル', 'file to get random bytes from', 'arg'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [files] }),
+  ], { parser: 'getopt_long', positional: [files], atMost: { count: 1, extra: EXTRA_OPERAND, unless: '-e|--echo' }, operands: [byCount(0, [], { when: '-i|--input-range', extra: EXTRA_OPERAND })] }),
   stdbuf: cmd('標準入出力のバッファリングを変えてコマンドを実行する', 'Run a command with modified buffering of its standard streams', [
     ['-i|--input', '標準入力のバッファ（`L`: 行単位、`0`: なし）', 'stdin buffering (`L`: line, `0`: none)', 'arg'],
     ['-o|--output', '標準出力のバッファ（`L`: 行単位、`0`: なし）', 'stdout buffering (`L`: line, `0`: none)', 'arg'],
@@ -127,7 +127,7 @@ export const distro: Record<string, CommandSpec> = {
     ['--header', '各ファイルの 1 行目を見出しとして扱う', 'treat the first line of each file as a header'],
     ['-z|--zero-terminated', '行の区切りを NUL にする', 'lines end with NUL, not a newline'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('1 つ目のソート済みファイル（`-` で標準入力）', 'first sorted file (`-` for stdin)'), pos('2 つ目のソート済みファイル（`-` で標準入力）', 'second sorted file (`-` for stdin)')] }),
+  ], { parser: 'getopt_long', positional: [pos('1 つ目のソート済みファイル（`-` で標準入力）', 'first sorted file (`-` for stdin)'), pos('2 つ目のソート済みファイル（`-` で標準入力）', 'second sorted file (`-` for stdin)')], atMost: { count: 2, extra: EXTRA_OPERAND } }),
   chgrp: cmd('ファイルのグループを変える', 'Change the group of files', [
     recurse(),
     ['-h|--no-dereference', 'シンボリックリンク自体を変える', 'change symlinks themselves'],

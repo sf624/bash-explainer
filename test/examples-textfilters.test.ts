@@ -66,6 +66,9 @@ describe('coreutils example input', () => {
     // GNU seq needs one to three numbers.
     for (const args of [[], ['-w'], ['-s', ','], ['1', '2', '3', '4']]) assert.strictEqual(commandExample('seq', args), undefined, args.join(' '));
     assert.strictEqual(commandExample('basename', []), undefined);
+    // (A word past the operands the tool takes: it refuses the line, `extra operand`.)
+    assert.strictEqual(commandExample('basename', ['a', 'b', 'c']), undefined);
+    assert.strictEqual(commandExample('uniq', ['in', 'out', 'x']), undefined);
     assert.throws(() => runSort(['--bogus'], []));
     // GNU seq reads options only before the first number (`seq 1 -w 3`: invalid floating point argument: '-w'), and
     // uniq's other grouping methods are not `-D`.
@@ -110,7 +113,7 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
     const fails: [() => unknown, string][] = [
       [() => runSort(['-t', 'ab'], []), '-t'], [() => runSort(['--key'], []), 'missing'], [() => runSort(['-k'], []), 'missing'], [() => runSort(['--nope'], []), '--nope'],
       [() => runUniq(['-z'], []), '-z'], [() => runCut(['-f', 'x'], []), 'list'], [() => runCut(['-d', 'ab', '-f', '1'], []), '-d'], [() => runCut([], []), 'cut needs'],
-      [() => expandSet('[:foo:]'), 'class'], [() => expandSet('z-a'), 'reverse'], [() => runTr(['a', 'b', 'c'], []), 'sets'], [() => runTr(['-c', 'a', 'xy'], []), '-c with'],
+      [() => expandSet('[:foo:]'), 'class'], [() => expandSet('z-a'), 'reverse'], [() => runTr(['a', 'b', 'c'], []), 'extra operand'], [() => runTr([undefined as unknown as string], []), 'sets'], [() => runTr(['-c', 'a', 'xy'], []), '-c with'],
       [() => runTr(['a', ''], []), 'empty set2'], [() => runTr(['-ds', 'a'], []), '-ds'], [() => runTr(['a'], []), 'two sets'], [() => runHead(['-n', 'x'], []), '-n'], [() => runTail(['-n', 'x'], []), '-n'],
       [() => runSeq(['1', '0', '3']), 'zero'], [() => runSeq(['1', '100000']), 'too long'], [() => runSeq(['-f', '%g', '3']), '-f'],
     ];

@@ -487,6 +487,12 @@ export interface OperandSpec {
   text: Text;
   /** As in a regular expression; absent: exactly one. */
   repeat?: '?' | '*' | '+';
+  /**
+   * The words here are more operands than the command takes, which it refuses before doing anything (`cmp a b 1 2 x`,
+   * `diff a b c`: "extra operand"), printing `says` and exiting with `status`; the item ends the pattern of a form with
+   * a limit (src/dict/types.ts, `extraOperand`).
+   */
+  extra?: { says: string; status: number };
   /** As for a value (`ValueSpec.type`, `ValueSpec.sets`): `getopts OPTSTRING NAME` sets the variable NAME. */
   type?: ValueType;
   sets?: VariableSet;

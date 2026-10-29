@@ -11,7 +11,7 @@ import { admin } from './admin';
 import { netadmin, SSH_OPTION_VALUES } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
-import { args, ASSIGNMENTS, byCount, cmd, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, SUDO_KEEPS, wordTable, LS_ENV, LS_LONG_ENV, LS_HUMAN_ENV, DF_HUMAN_ENV, PS_ENV, PS_BSD_ENV, PS_FULL_ENV } from './types';
+import { args, ASSIGNMENTS, byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, SUDO_KEEPS, wordTable, LS_ENV, LS_LONG_ENV, LS_HUMAN_ENV, DF_HUMAN_ENV, PS_ENV, PS_BSD_ENV, PS_FULL_ENV } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
@@ -552,7 +552,7 @@ export const core: Record<string, CommandSpec> = {
     ['--group', '全ての行を出し、グループの間に空行を入れる（`=separate`, `=prepend`, `=append`, `=both`）', 'show all lines and separate groups with an empty line (`=separate`, `=prepend`, `=append`, `=both`)', 'attached'],
     ['--all-repeated', '重複した行をすべて出す（`=none`, `=prepend`, `=separate` でグループを区切る）', 'print all duplicate lines (`=none`, `=prepend`, `=separate` separates the groups)', 'attached'],
     ...GNU_INFO,
-  ], { example: 'uniq', parser: 'getopt_long', positional: [pos('入力ファイル（省略すると標準入力）', 'input file (stdin if omitted)'), pos('出力ファイル（省略すると標準出力）', 'output file (stdout if omitted)')], positionalIo: ['input', 'write'] }),
+  ], { example: 'uniq', parser: 'getopt_long', positional: [pos('入力ファイル（省略すると標準入力）', 'input file (stdin if omitted)'), pos('出力ファイル（省略すると標準出力）', 'output file (stdout if omitted)')], positionalIo: ['input', 'write'], atMost: { count: 2, extra: EXTRA_OPERAND } }),
   getopt: cmd('コマンドライン引数を解析して、オプションを先・それ以外を `--` の後ろに並べ直した形で出力する（`eval set -- "$(getopt …)"` で使う。長いオプションも扱える）',
     'Parse command-line arguments and print them normalised: options first, other arguments after `--` (used as `eval set -- "$(getopt …)"`; supports long options)', [
       ['-o|--options', '受け付ける短いオプションの一覧', 'the short options to accept', 'arg fills lang:getoptshort'],
@@ -575,7 +575,7 @@ export const core: Record<string, CommandSpec> = {
     ['-s|--squeeze-repeats', '連続する同じ文字を1つにまとめる', 'squeeze repeated characters'],
     ['-c|-C|--complement', '指定した文字以外を対象にする', 'use the complement of the set'],
     ...GNU_INFO,
-  ], { example: 'tr', parser: 'getopt_long', positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], positionalLang: ['trset', 'trset'], operands: [byCount(1, [pos('削除または圧縮する文字集合（`-d`、`-s`）', 'character set to delete or squeeze (`-d`, `-s`)')], { langs: ['trset', 'trset'] })] }),
+  ], { example: 'tr', parser: 'getopt_long', positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], positionalLang: ['trset', 'trset'], atMost: { count: 2, extra: EXTRA_OPERAND }, operands: [byCount(1, [pos('削除または圧縮する文字集合（`-d`、`-s`）', 'character set to delete or squeeze (`-d`, `-s`)')], { langs: ['trset', 'trset'] }), byCount(2, [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], { when: '-s|--squeeze-repeats', langs: ['trset', 'trset'], extra: EXTRA_OPERAND }), byCount(1, [pos('削除する文字集合', 'character set to delete')], { when: '-d|--delete', langs: ['trset'], extra: EXTRA_OPERAND })] }),
   head: cmd('ファイルの先頭部分を表示する（既定は10行）', 'Print the first part of files (default 10 lines)', [
     ['-q|--quiet|--silent', '複数ファイルでもファイル名の見出しを付けない', 'never print file name headers'],
     ['-v|--verbose', '常にファイル名の見出しを付ける', 'always print file name headers'],
@@ -1096,7 +1096,7 @@ export const core: Record<string, CommandSpec> = {
     ['-s|--suffix', '取り除く接尾辞', 'remove the given suffix', 'arg'],
     ['-z|--zero', '各項目を改行でなく NUL で終える', 'end output with NUL'],
     ...GNU_INFO,
-  ], { example: 'basename', parser: 'getopt_long', positional: [pos('パス', 'path')], operands: [byCount(2, [pos('パス', 'path'), pos('取り除く拡張子', 'suffix to remove')], { unless: '-a|--multiple|-s|--suffix' })] }),
+  ], { example: 'basename', parser: 'getopt_long', positional: [pos('パス', 'path')], operands: [byCount(2, [pos('パス', 'path'), pos('取り除く拡張子', 'suffix to remove')], { unless: '-a|--multiple|-s|--suffix', extra: EXTRA_OPERAND })] }),
   dirname: cmd('パスからディレクトリ部分を取り出す', 'Strip the last component from a path', [
     ['-z|--zero', '各項目を改行でなく NUL で終える', 'end output with NUL'],
     ...GNU_INFO,
@@ -1136,7 +1136,7 @@ export const core: Record<string, CommandSpec> = {
     ['-R|--rfc-email', 'メールの形式（RFC 5322）で表示', 'RFC 5322 (e-mail) format'],
     ['--resolution', '時刻の精度を表示する', 'print the resolution of timestamps'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('表示書式（`+` で始まる。例: `+%Y-%m-%d`, `+%F` は年-月-日, `+%s` は UNIX 時刻）', 'output format starting with `+` (e.g. `+%Y-%m-%d`, `+%F`, `+%s`)')], positionalLang: ['date'] }),
+  ], { parser: 'getopt_long', positional: [pos('表示書式（`+` で始まる。例: `+%Y-%m-%d`, `+%F` は年-月-日, `+%s` は UNIX 時刻）', 'output format starting with `+` (e.g. `+%Y-%m-%d`, `+%F`, `+%s`)')], positionalLang: ['date'], atMost: { count: 1, extra: EXTRA_OPERAND } }),
   sleep: cmd('指定した時間だけ待つ', 'Pause for a duration', [
     ...GNU_INFO,
   ], { parser: 'getopt_long', positional: [pos('待つ時間（秒。`1m`, `0.5` なども可）', 'duration in seconds (`1m`, `0.5`… also allowed)')] }),
@@ -1203,7 +1203,7 @@ export const core: Record<string, CommandSpec> = {
     ['--color', '出力に色を付ける（`=never`、`=always`、`=auto`）', 'color the output (`=never`, `=always`, `=auto`)', 'attached'],
     ['--palette', '`--color` で使う色（terminfo の名前を `:` で区切る）', 'colors to use with `--color` (terminfo capabilities separated by `:`)', 'arg'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('比較元', 'first file'), pos('比較先', 'second file')] }),
+  ], { parser: 'getopt_long', positional: [pos('比較元', 'first file'), pos('比較先', 'second file')], atMost: { count: 2, extra: DIFF_EXTRA_OPERAND, unless: '--from-file|--to-file' } }),
   ssh: cmd('リモートホストに SSH で接続する（コマンドを渡すとリモートで実行）', 'Connect to a remote host over SSH (optionally run a command)', [
     ['-i', '秘密鍵ファイル', 'identity (private key) file', 'arg'],
     ['-p', 'ポート番号', 'port', 'arg'],
@@ -1569,7 +1569,7 @@ export const core: Record<string, CommandSpec> = {
     ['-c|--count', '一致した数だけ表示', 'print the number of matches'],
     ['-d|--delimiter', '出力の区切り文字', 'output delimiter', 'arg'],
     ['-f', 'コマンドライン全体で照合', 'match the full command line'],
-  ], { positional: [pos('プロセス名のパターン（正規表現）', 'process name pattern (regular expression)')] }),
+  ], { positional: [pos('プロセス名のパターン（正規表現）', 'process name pattern (regular expression)')], atMost: { count: 1, extra: extraOperand('only one pattern can be provided', 2) } }),
   pkill: cmd('名前に一致するプロセスにシグナルを送る', 'Signal processes by name', [
     ...signalOpts(),
     ...pgrepCommon(),
@@ -1588,7 +1588,7 @@ export const core: Record<string, CommandSpec> = {
     operands: [
       byCount(1, [pos('終了値（開始値は 1）', 'last (counting from 1)')]),
       byCount(2, [pos('開始値', 'first'), pos('終了値', 'last')]),
-      byCount(3, [pos('開始値', 'first'), pos('増分', 'increment'), pos('終了値', 'last')], { orMore: true }),
+      byCount(3, [pos('開始値', 'first'), pos('増分', 'increment'), pos('終了値', 'last')], { extra: EXTRA_OPERAND }),
     ],
   }),
   mktemp: cmd('一意な名前の一時ファイルを作り、そのパスを表示する', 'Create a unique temporary file and print its path', [
@@ -1600,7 +1600,7 @@ export const core: Record<string, CommandSpec> = {
     ['-u|--dry-run', '名前だけ決めて作らない（非推奨）', 'only print a name; create nothing (unsafe)'],
     ['-q|--quiet', '作れなくてもエラーを表示しない', 'do not report errors'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('テンプレート（末尾に `XXXXXX`。例: `tmp.XXXXXX`）', 'template ending in `XXXXXX` (e.g. `tmp.XXXXXX`)')] }),
+  ], { parser: 'getopt_long', positional: [pos('テンプレート（末尾に `XXXXXX`。例: `tmp.XXXXXX`）', 'template ending in `XXXXXX` (e.g. `tmp.XXXXXX`)')], atMost: { count: 1, extra: extraOperand('too many templates', 1) } }),
   stat: cmd('ファイルの詳細情報（サイズ・権限・日時など）を表示する', 'Display file status (size, permissions, times…)', [
     ['-t|--terse', '簡潔な形式で表示', 'terse output'],
     ['--printf', '書式を指定して出力', 'custom format, with backslash escapes', 'arg'],
@@ -1741,7 +1741,7 @@ export const core: Record<string, CommandSpec> = {
     ['--total', '行数の合計を表示する', 'print a summary of the counts'],
     ['-z|--zero-terminated', '行の区切りを改行でなく NUL にする', 'lines end with NUL, not newline'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('ソート済みのファイル1', 'sorted file 1'), pos('ソート済みのファイル2', 'sorted file 2')] }),
+  ], { parser: 'getopt_long', positional: [pos('ソート済みのファイル1', 'sorted file 1'), pos('ソート済みのファイル2', 'sorted file 2')], atMost: { count: 2, extra: EXTRA_OPERAND } }),
   split: cmd('ファイルを複数に分割する', 'Split a file into pieces', [
     ['-a|--suffix-length', '出力ファイル名の接尾辞の長さ', 'length of the suffixes', 'arg'],
     ['-n|--number', '指定した数のファイルに分ける', 'split into the given number of files', 'arg'],
