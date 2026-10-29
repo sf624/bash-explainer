@@ -123,8 +123,8 @@ const outputCheck = (v: 'output' | 'stderr', negate: boolean) => check('bats-ass
     : `\`$stderr\`（\`run --separate-stderr\` が入れた標準エラー出力）が、与えた文字列と${negate ? '一致しない' : '一致する'}ことを確かめる。引数なしなら、${negate ? '空であること' : '空でないこと'}を確かめる。引数が \`-\` なら文字列を標準入力から読む。\`--separate-stderr\` なしの \`run\` では \`$stderr\` は空`,
   `checks that \`$${v}\` (${v === 'output' ? 'what `run` kept' : 'the stderr that `run --separate-stderr` kept; empty after a `run` without it'}) ${negate ? 'does not match' : 'matches'} the text given; with no argument, it checks that it is ${negate ? 'empty' : 'not empty'}; the argument \`-\` reads the text from stdin`,
   [...MODES, ...STDIN], {
-    operands: [{ pattern: [word('TEXT', negate ? '一致してはいけない文字列（`-` なら標準入力、省くと空であることを確かめる）' : '期待する文字列（`-` なら標準入力、省くと空でないことを確かめる）',
-      negate ? 'the text that must not match (`-` reads it from stdin, left out it checks that the output is empty)' : 'the expected text (`-` reads it from stdin, left out it checks that the output is not empty)', '?')] }],
+    operands: [{ pattern: [word('TEXT', negate ? `一致してはいけない文字列（\`-\` なら標準入力、省くと \`$${v}\` が空であることを確かめる）` : `期待する文字列（\`-\` なら標準入力、省くと \`$${v}\` が空でないことを確かめる）`,
+      negate ? `the text that must not match (\`-\` reads it from stdin, if left out it checks that \`$${v}\` is empty)` : `the expected text (\`-\` reads it from stdin, if left out it checks that \`$${v}\` is not empty)`, '?')] }],
   });
 
 /** assert_line, refute_line, assert_stderr_line, refute_stderr_line. */
@@ -231,7 +231,7 @@ export const BATS_FILE_COMMANDS: Record<string, CommandSpec> = wordTable({
   assert_file_contains: cmd(`bats-file の関数: ファイルの中身が正規表現に一致することを確かめる。${FAILS_JA}`,
     `bats-file function: checks that the content of the file matches the regular expression; ${FAILS_EN}`, [], {
     operands: [{ pattern: [operand('PATH', '調べるファイル', 'the file to check', { type: 'file' }), word('REGEX', '探す正規表現', 'the regular expression to look for'),
-      word('ENGINE', '使う grep（`grep`・`egrep`・`pcregrep` のどれか、入っていること）', 'the grep to use (`grep`, `egrep` or `pcregrep`, which has to be installed)', '?')] }],
+      word('ENGINE', '使う grep（`grep`・`egrep`・`pcregrep` のどれかで、入っていること）', 'the grep to use (`grep`, `egrep` or `pcregrep`, which has to be installed)', '?')] }],
   }),
   assert_file_not_contains: cmd(`bats-file の関数: ファイルの中身が正規表現に一致しないことを確かめる（ファイルがなくても失敗する）。${FAILS_JA}`,
     `bats-file function: checks that the content of the file does not match the regular expression (it fails if the file does not exist either); ${FAILS_EN}`, [], {

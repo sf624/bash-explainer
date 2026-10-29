@@ -50,7 +50,7 @@ describe('the reading tree as the Bash manual reads bash itself (chapter 6: 6.1,
     assert.match(said("bash -c -e 'echo $-' zero", '-c'), /^read the commands from the first argument after the options \(the command string\), not from a file or stdin; the arguments after it become `\$0`, `\$1`…$/);
     assert.match(said("bash -c -e 'echo $-' zero", '-e'), /^exit immediately if a command fails/);
     assert.match(said("bash -c -e 'echo $-' zero", "'echo $-'"), /^The command string/);
-    assert.match(said("bash -c -e 'echo $-' zero", 'zero'), /^Becomes `\$0`/);
+    assert.match(said("bash -c -e 'echo $-' zero", 'zero'), /^the name for `\$0`/);
     // (`-` ends the options as `--` does: the string is the word after it.)
     assert.strictEqual(said("bash -c - 'echo $0' zero", '-'), 'End of options: everything after is a plain argument');
     assert.match(said("bash -c - 'echo $0' zero", "'echo $0'"), /^The command string/);

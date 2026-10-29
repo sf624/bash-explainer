@@ -31,7 +31,7 @@ describe('the arguments of a shell run with -c', () => {
   for (const shell of ['bash', 'sh', 'dash', 'zsh', 'ksh']) {
     it(`${shell} -c: the first word after the string is $0, the next is $1`, () => {
       const src = `${shell} -c 'echo $1' a b`;
-      assert.match(about(src, 'a'), /^Becomes `\$0`/);
+      assert.match(about(src, 'a'), /^the name for `\$0`/);
       assert.match(about(src, 'b'), /^Positional parameter `\$1` of the command string/);
       assert.match(about(src, 'a', 'ja'), /^`\$0` になる名前/);
       assert.match(about(src, 'b', 'ja'), /^コマンド文字列の位置パラメータ `\$1`/);

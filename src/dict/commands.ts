@@ -216,8 +216,8 @@ const FROM_LINE: PatternOption = {
 const AWK_FILES: OperandSpec = {
   name: 'ARG2', text: files, repeat: '*', io: 'input',
   assignmentText: pos(
-    '変数の代入 `名前=値`: これより後のファイルを読み始める前に awk の変数を設定する（`-v` と違い `BEGIN` では使えず、`\\t` などのエスケープは解釈される）',
-    'Variable assignment `name=value`: sets the awk variable before the files after it are read (unlike `-v`, `BEGIN` does not see it, and escapes such as `\\t` are processed)',
+    '変数の代入 `名前=値`: これより後のファイルを読み始める前に awk の変数を設定する（`\\t` などのエスケープは解釈されるが、`-v` と違い `BEGIN` では使えない）',
+    'Variable assignment `name=value`: sets the awk variable before the files after it are read (escapes such as `\\t` are processed, but unlike with `-v`, `BEGIN` does not see it)',
   ),
 };
 
