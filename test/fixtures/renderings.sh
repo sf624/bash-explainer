@@ -71,3 +71,12 @@ cp $zp $zr
 cmp $zp $zr
 gosu $zu $zr
 cmp $zp f
+
+# An option's value that may give no word (after #482): with it empty, the word after it is the value (`tar -cf b`: `b`
+# is the archive; `cp -t c d`, `grep -e f`, `grep -e -i f`), and the words after take other roles (`grep -e -e x f`: `x`
+# is a file). (The name sorts after the others, and gets the empty value in the run with values.)
+tar -cf $zv b
+cp -t $zv c d
+grep -e $zv f
+grep -e $zv -i f
+grep -e $zv -e x f

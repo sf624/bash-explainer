@@ -591,7 +591,7 @@ describe('argv interpreter: review fixes', () => {
   it('a word that may give none: the role the words after it take when it gives none, where that is another', () => {
     const none = (line: string, spec?: CommandSpec): string[] => {
       const { texts } = argWords(line);
-      return parseOf(line, spec).roles.flatMap(({ word, role }) => (role.role === 'operand' && role.none ? [`${texts[word]}: ${role.none.words.map((w) => texts[w]).join(' ')} → ${role.none.spec.name}`] : []));
+      return parseOf(line, spec).roles.flatMap(({ word, role }) => (role.role === 'operand' && role.none ? role.none.map((r) => `${texts[word]}: ${r.words.map((w) => texts[w]).join(' ')} → ${r.spec ? r.spec.name : `value of ${r.value.of}`}`) : []));
     };
     // `cp $a b` with `$a` empty is `cp b`, a source; `grep -c $x f` reads `f` as the pattern; `cp $a b c` copies `b` to `c`.
     assert.deepStrictEqual(none('cp $a b'), ['b: $a → ARG1']);
@@ -844,7 +844,7 @@ describe('argv interpreter: the fields of a word the model knows (bug 7 of oracl
     // `$u` empty, `cp $z $u d` is `cp d`.)
     assert.deepStrictEqual(read('cp', [known(), { value: 'd' }], ['{$x,$y}', 'd']), ['{$x,$y}: fields 0', 'd: ARG1']);
     const d = interpret(lookup('cp')!, [known(), unknown, { value: 'd' }]).roles.find((r) => r.word === 2)!.role as OperandRole;
-    assert.deepStrictEqual(d.none?.words, [1]);
+    assert.deepStrictEqual(d.none?.map((r) => r.words), [[1]]);
   });
 
   it('reads a subcommand, a command and its words, and a terminator in the fields, and the words after them on the line', () => {

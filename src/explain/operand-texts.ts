@@ -1,7 +1,8 @@
 // The hedges of an operand whose role depends on how many words the expansions among the operands give
 // (src/explain/argv.ts; the roles from `ArgRole` `operand`: `several`, `byCount`, `mixed`, `otherwise`, `none`), and what
 // each of the words read in place of one is to the command (the fields of a word, a value `env -S` splits).
-import type { ArgRole, ArgWord, ByCount, MixedRoles, RoleAt, SeveralRoles } from '../argv/interpret';
+import type { Token } from '../analyzer-types';
+import type { ArgRole, ArgWord, ByCount, MixedRoles, NoneRole, RoleAt, SeveralRoles, ValueRole } from '../argv/interpret';
 import type { OperandSpec } from '../argv/spec';
 import { splitsIn } from '../argv/words';
 import { braceAlternatives, braceTexts } from '../semantics/brace';
@@ -11,18 +12,40 @@ import type { Explainer } from './context';
 
 /**
  * `desc`, the role `role` of the operand `a` (its text), with the roles it has when an expansion gives more words (`cp "$@"`, `cp
- * *.txt dir`) or none (with `$a` empty, `cp $a b` is `cp b`, and `grep -c $x f` reads `f` as the pattern).
+ * *.txt dir`) or none (with `$a` empty, `cp $a b` is `cp b`, and `grep -c $x f` reads `f` as the pattern; `none`, unless the
+ * caller puts them after a note of its own, `noneText`).
  */
-export function hedged(cx: Explainer, desc: string, a: string, role: Extract<ArgRole, { role: 'operand' }>, nodes: SyntaxNode[]): string {
+export function hedged(cx: Explainer, desc: string, a: string, role: Extract<ArgRole, { role: 'operand' }>, nodes: SyntaxNode[], none = true): string {
   let out = desc;
   if (role.several) out = severalText(cx, desc, a, role.several);
   else if (role.byCount) out = byCountText(cx, desc, role.byCount, nodes);
   else if (role.mixed) out = mixedText(cx, desc, role.mixed, nodes);
   else if (role.otherwise) out = uncertainText(cx, desc, cx.t(role.otherwise.text), role.by!, nodes);
-  if (!role.none) return out;
-  const list = role.none.words.map((i) => `\`${nodes[i].text}\``).join(cx.s('・', ', '));
-  const then = cx.t(role.none.spec.text);
-  return out + cx.s(`、${list} が0語なら${then}`, `; ${then} when ${list} ${role.none.words.length > 1 ? 'expand' : 'expands'} to nothing`);
+  return none ? out + noneText(cx, role.none, nodes) : out;
+}
+
+/** The token `t` of a word, with the roles it takes when words before it give none (`ArgRole` `none`). */
+export function withNone(cx: Explainer, t: Token, none: readonly NoneRole[] | undefined, nodes: SyntaxNode[]): Token {
+  return none ? { ...t, explanation: t.explanation + noneText(cx, none, nodes) } : t;
+}
+
+/** The value `v` of an option, as a hedge says it: "value for `-f`", "name for `--arg`" (`jq --arg NAME VALUE`). */
+function valueText(cx: Explainer, v: ValueRole): string {
+  const flag = dash(v.of);
+  if (Array.isArray(v.option?.value) && v.option.value.length === 2) return v.index ? cx.s(`\`${flag}\` の値`, `value for \`${flag}\``) : cx.s(`\`${flag}\` の名前`, `name for \`${flag}\``);
+  return /^-/.test(flag) ? cx.s(`\`${flag}\` オプションの値`, `value for \`${flag}\``) : cx.s(`\`${flag}\` の値`, `value for \`${flag}\``);
+}
+
+/**
+ * The roles a word takes when words before it give none (`ArgRole` `none`), each "; X when `$a` expands to nothing": an
+ * operand's (with `$a` empty, `cp $a b` is `cp b`, a source), or an option's value (`tar -cf $a b`: "value for `-f`").
+ */
+export function noneText(cx: Explainer, none: readonly NoneRole[] | undefined, nodes: SyntaxNode[]): string {
+  return (none ?? []).map((r) => {
+    const list = r.words.map((i) => `\`${nodes[i].text}\``).join(cx.s('・', ', '));
+    const then = r.spec ? cx.t(r.spec.text) : valueText(cx, r.value);
+    return cx.s(`、${list} が0語なら${then.startsWith('`') ? ' ' : ''}${then}`, `; ${then} when ${list} ${r.words.length > 1 ? 'expand' : 'expands'} to nothing`);
+  }).join('');
 }
 
 /**

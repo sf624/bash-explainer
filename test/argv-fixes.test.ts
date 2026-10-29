@@ -248,7 +248,8 @@ describe('an operand that becomes several words', () => {
     this.timeout(30000);
     // (The hedges are read when the explanation asks, each reading once: 80 words took 5.6 s, against 30 ms before them.)
     const many = (prefix: string, word: (i: number) => string) => `${prefix} ${Array.from({ length: 80 }, (_, i) => word(i)).join(' ')}`;
-    for (const line of [many('cp', (i) => `$a${i}`), many('echo', (i) => `*.x${i}`), many('rm -f', (i) => `*.x${i}`)]) {
+    // (And the line read again without each value that may give none, once: `grep -e $a1 -e $a3 …`, after #482.)
+    for (const line of [many('cp', (i) => `$a${i}`), many('echo', (i) => `*.x${i}`), many('rm -f', (i) => `*.x${i}`), many('grep', (i) => (i % 2 ? `$a${i}` : '-e')), many('tar -cf $f', (i) => `$a${i}`)]) {
       const start = performance.now();
       new Analyzer('en').explainLine(parser.parse(line), 0);
       assert.ok(performance.now() - start < 2000, `${line.slice(0, 20)}…: ${Math.round(performance.now() - start)} ms`);
@@ -408,5 +409,82 @@ describe('the fields of a word the model knows, read as bash gives them (bug 7 o
     const out = runBash('mkdir a; touch a/f q a2 g -- -r; x="-r a"; cp $x d && ls d; set {-e,-u}; echo "$-"; set +eu; z=""; pair="p q"; cp $z $pair; ls q; '
       + 'z=; cp $z c 2>&1 | head -1; y=a2; cp $y c2 && ls c2; printf "1\\n2\\n3\\n" > g; ov="-n 2"; head $ov g; od="-- -r"; cp $od dd && ls dd', { files: ['p'] }).stdout;
     assert.deepStrictEqual(out.split('\n').filter(Boolean), ['f', 'ehuBc', 'q', "cp: missing destination file operand after 'c'", 'c2', '1', '2', 'dd']);
+  });
+});
+
+describe("an option's value that may give no word (after #482)", () => {
+  it('gives the role a word after the value takes when the value expands to nothing', () => {
+    // With `a` empty, bash runs `tar -cf b` (tar takes `b` as the archive: "Cowardly refusing to create an empty archive"),
+    // `cp -t a b` (`a` is the directory, `b` the source), `grep -e f` (the pattern `f`, read from stdin) and `grep -e -i f`.
+    assert.strictEqual(tokenOf('tar -cf $a b', 'b').explanation, 'Word `b`; value for `-f` when `$a` expands to nothing');
+    assert.strictEqual(tokenOf('tar cf $a b', 'b').explanation, 'Word `b`; value for `f` when `$a` expands to nothing');
+    assert.strictEqual(tokenOf('cp -t $d $a', '$a').explanation, 'source; value for `-t` when `$d` expands to nothing');
+    assert.strictEqual(tokenOf('cp -t $d a b', 'b').explanation, 'source');
+    assert.strictEqual(tokenOf('grep -e $p f', 'f').explanation, 'file to search (default: stdin); value for `-e` when `$p` expands to nothing');
+    assert.strictEqual(tokenOf('grep -e $p -i f', '-i').explanation, 'ignore case; value for `-e` when `$p` expands to nothing');
+    assert.strictEqual(tokenOf('grep -e $p -i f', 'f').explanation, 'file to search (default: stdin)');
+    assert.strictEqual(tokenOf('read -p $q -r x', '-r').explanation, 'do not treat backslashes as escapes (almost always wanted); value for `-p` when `$q` expands to nothing');
+    assert.strictEqual(tokenOf('shopt -s nullglob; tar -cf *.tar b', 'b').explanation, 'Word `b`; value for `-f` when `*.tar` expands to nothing');
+    assert.strictEqual(tokenOf('tar -cf $a b', 'b', 'ja').explanation, '文字列 `b`、`$a` が0語なら `-f` オプションの値');
+    assert.strictEqual(tokenOf('tar cf $a b', 'b', 'ja').explanation, '文字列 `b`、`$a` が0語なら `f` の値');
+    assert.strictEqual(tokenOf('cp -t $d $a', '$a', 'ja').explanation, 'コピー元、`$d` が0語なら `-t` オプションの値');
+    assert.strictEqual(tokenOf('grep -e $p -i f', '-i', 'ja').explanation, '大文字・小文字を区別しない、`$p` が0語なら `-e` オプションの値');
+    // (Any option, and the end of options: `grep -e -- f` reads the pattern `--` from stdin, `head -c -5 f` prints all but
+    // the last 5 bytes, `grep -e --nope f` looks for `--nope`.)
+    assert.strictEqual(tokenOf('grep -e $p -- f', '--').explanation, 'End of options: everything after is a plain argument; value for `-e` when `$p` expands to nothing');
+    assert.strictEqual(tokenOf('head -c $n -5 f', '-5').explanation, '5 lines (old way to write `-n 5`); value for `-c` when `$n` expands to nothing');
+    assert.strictEqual(tokenOf('grep -e $p --nope f', '--nope').explanation, 'Option (not in the dictionary; see `man grep`); value for `-e` when `$p` expands to nothing');
+    assert.strictEqual(tokenOf('grep -e $p -- f', '--', 'ja').explanation, 'オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う、`$p` が0語なら `-e` オプションの値');
+  });
+
+  it('gives the role a value takes when a value before it expands to nothing, and the hedge of an operand with its own', () => {
+    // `grep -e -e x -e y f`: the pattern `-e`, then `x` is a file (grep: x: No such file or directory), and `y` is still a
+    // pattern; `grep -e -e x -ic f` reads `-ic` as options still.
+    const pattern = 'Value for `-e`: specify a pattern (useful for several or `-`-prefixed ones) — basic regex (BRE)';
+    assert.strictEqual(tokenOf('grep -e $p -e x -e y', 'x').explanation, `${pattern}; file to search (default: stdin) when \`$p\` expands to nothing`);
+    assert.strictEqual(tokenOf('grep -e $p -e x -e y', 'y').explanation, pattern);
+    assert.strictEqual(tokenOf('grep -e $p -e x -ic f', '-ic').explanation, 'Combined short options `-i` `-c`');
+    assert.strictEqual(tokenOf('grep -e $p -e x -e y', 'x', 'ja').explanation, '`-e` オプションの値: 検索パターンを指定（`-` で始まるパターンや複数指定に使う） — 基本正規表現(BRE)、`$p` が0語なら検索対象のファイル（省略時は標準入力）');
+    // (`grep -m -c f`: `-c` is the count, which grep refuses: "invalid max count". `f` keeps the hedge of `$x`.)
+    assert.strictEqual(tokenOf('grep -m $n -c $x f', '-c').explanation, 'print a count of matching lines; value for `-m` when `$n` expands to nothing');
+    assert.strictEqual(tokenOf('grep -m $n -c $x f', 'f').explanation, 'file to search (default: stdin); search pattern (regex) when `$x` expands to nothing');
+    // (`tar cfC arc.tar sub g`: each letter takes the next word left, so `d` is the archive and `x` the directory.)
+    assert.strictEqual(tokenOf('tar cfC $a d x', 'd').explanation, 'Value for `C`; value for `f` when `$a` expands to nothing');
+    assert.strictEqual(tokenOf('tar cfC $a d x', 'x').explanation, 'Word `x`; value for `C` when `$a` expands to nothing');
+    assert.strictEqual(tokenOf('tar cfC $a d x', 'd', 'ja').explanation, '`C` の値、`$a` が0語なら `f` の値');
+    // (`jq --arg v .`: `v` is the name, and `.` its value.)
+    assert.strictEqual(tokenOf('jq --arg $n v .', 'v').explanation, 'Value for `--arg`; name for `--arg` when `$n` expands to nothing');
+    assert.strictEqual(tokenOf('jq --arg $n v .', '.').explanation, 'jq filter (e.g. `.items[].name`); value for `--arg` when `$n` expands to nothing');
+    assert.strictEqual(tokenOf('jq --arg $n v .', 'v', 'ja').explanation, '`--arg` の値、`$n` が0語なら `--arg` の名前');
+    // (After the note on the pattern's language, which is of the reading where `$v` gives a word: `grep -d a b`.)
+    assert.strictEqual(tokenOf('grep -d $v a b', 'a').explanation, 'search pattern (regex) — basic regex (BRE); value for `-d` when `$v` expands to nothing');
+  });
+
+  it('says nothing where the value gives a word, or the role it then takes is not an operand or a value', () => {
+    // (A value known as one word, or none (`tar -cf b`, #485); a quoted one.)
+    assert.strictEqual(tokenOf('a=x; tar -cf $a b', 'b').explanation, 'Word `b`');
+    assert.strictEqual(tokenOf('a=; tar -cf $a b', 'b').explanation, 'Value for `-f`');
+    assert.strictEqual(tokenOf('tar -cf "$a" b', 'b').explanation, 'Word `b`');
+    // (`tar -f -f x b`: `x` is a file to archive, which tar's spec does not describe; `grep -e -e -i f`, `-i` an option.)
+    assert.strictEqual(tokenOf('tar -f $a -f x b', 'x').explanation, 'Value for `-f`');
+    assert.match(tokenOf('grep -e $p -e -i f', '-i').explanation, /basic regex \(BRE\)$/);
+    // (Nor where the role stays: an option, letters, a word the spec does not describe.)
+    assert.strictEqual(tokenOf('grep -e $p -e x -i f', '-i').explanation, 'ignore case');
+    assert.strictEqual(tokenOf('tar -cf $a b c', 'c').explanation, 'Word `c`');
+    // (Left: `sudo -u ls` takes `ls` as the user, and runs nothing; `git -C status` changes to `status`. An option before a
+    // command or a subcommand says it: `sudo -u -i ls` runs `ls` as the user `-i`; `git -C -p status` fails "cannot change
+    // to '-p'".)
+    assert.match(tokenOf('sudo -u $u ls', 'ls').explanation, /^runs `ls`: List directory contents$/);
+    assert.match(tokenOf('sudo -u $u -i ls', '-i').explanation, /; value for `-u` when `\$u` expands to nothing$/);
+    assert.match(tokenOf('git -C $d -p status', '-p').explanation, /; value for `-C` when `\$d` expands to nothing$/);
+    assert.match(tokenOf('git -C $d -p status', 'status').explanation, /^Subcommand `git status`/);
+  });
+
+  it('runs those lines in bash, GNU tar, cp and grep as said', function () {
+    this.timeout(20000);
+    const out = runBash('a=; mkdir d sub; touch sub/g; printf "f\\nx-i\\n--\\n" > f; tar -cf $a f 2>&1 | head -1; cp -t $a d 2>&1 | head -1; '
+      + 'grep -e $a f < f; grep -e $a -i < f; grep -e $a -e x -e y f 2>&1; grep -m $a -c f 2>&1; echo "a\\b" | { read -p $a -r x; echo "$x"; } 2>/dev/null; '
+      + 'grep -e $a -- f < f; head -c $a -5 f; echo; tar cfC $a arc.tar sub g && tar tf arc.tar; git -C $a -p status 2>&1', { files: ['.keep'] }).stdout;
+    assert.deepStrictEqual(out.split('\n').filter(Boolean), ['tar: Cowardly refusing to create an empty archive', 'cp: missing file operand', 'f', 'x-i', 'grep: x: No such file or directory', 'grep: invalid max count', 'ab', '--', 'f', 'x-', 'g', "fatal: cannot change to '-p': No such file or directory"]);
   });
 });
