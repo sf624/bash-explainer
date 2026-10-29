@@ -796,6 +796,7 @@
  "cut -f x f",
  "d",
  "dash",
+ "date +%F",
  "date +%Q",
  "date -Iseconds",
  "date -u +%Y%m%dT%H%M%SZ",

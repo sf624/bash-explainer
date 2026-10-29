@@ -10,7 +10,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { lookupCommand } from '../src/analyzer';
 import { interpret, type OperandRole } from '../src/argv/interpret';
+import { Analyzer } from '../src/analyzer';
 import type { OperandSpec } from '../src/argv/spec';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import type { Token } from '../src/analyzer-types';
 import { argWords } from './support/argwords';
 import { runContained } from './support/contained';
 import { run } from './support/run';
@@ -68,7 +71,7 @@ describe('extra operands, compared with the real tools', () => {
     'unlink nx1 nx2', 'unlink nx1', 'link f1 l f3', 'link f1 l', 'tsort f1 f2', 'tsort f1', 'dircolors f1 f2',
     'pgrep a b', 'pgrep -x no-such-process-name', 'mountpoint . f1', 'mountpoint -q .', 'look a f1 f2', 'look a f1', 'xxd f1 o f3', 'xxd f1 o', 'getconf NAME_MAX / x', 'getconf NAME_MAX /',
     'mknod n p 1 2', 'mknod n p 1', 'mknod n p', 'mknod -m 600 n p 1', 'mknod n c 1 2 3', 'mknod n b 1 2 3 4',
-    'dircolors -p f1', 'dircolors --print-database f1 f2', 'dircolors --print-ls-colors f1', 'dircolors -b f1', 'dircolors -p', 'dircolors f1 f2',
+    'dircolors -p f1', 'dircolors --print-database f1 f2', 'dircolors --print-ls-colors f1', 'dircolors -b f1', 'dircolors -p', 'dircolors f1 f2', 'dircolors -bp f1', 'dircolors -pb f1', 'dircolors -p -c f1 f2', 'dircolors --print-ls-colors -b f1', 'dircolors -b -c f1',
     'getconf -a / x', 'getconf -a /', 'getconf -a', 'getconf -a PATH', 'getconf -a NAME_MAX /', 'getconf -v POSIX_V7_LP64_OFF64 NAME_MAX /',
     'date -d now x', 'date -d now +%s', 'date -d now x +%s', 'date -s now x', 'date -f /dev/null x', 'date -r . x', 'date --resolution x', 'date -u x y', 'date -I x', 'date x', 'date 0101', 'date -- x',
   ];
@@ -141,6 +144,27 @@ describe('extra operands, compared with the real tools', () => {
     assert.match(roleTexts('getconf -a / x')[1], /^extra operand/);
     assert.match(roleTexts('getconf -a /')[0], /^path/);
     assert.match(roleTexts('getconf NAME_MAX /')[0], /^variable/);
+    // (glibc reads its options first: after the variable, `-a` is the path, and `getconf PAGESIZE -a` is the usage.)
+    assert.deepStrictEqual(read('getconf PAGESIZE -a').roles.map((r) => r?.role), ['operand', 'operand']);
+    assert.match(roleTexts('getconf PAGESIZE -a')[1], /^path/);
+    if (usableTool('getconf')) assert.match(runLine('getconf PAGESIZE -a').err, /^Usage:/);
+  });
+
+  // A word that may expand (a glob, a tilde) is not known to start with `+`: it is not explained as a format, and bash's
+  // own tokens stay (date reads the expanded word: "invalid date", or "lacks a leading '+'" with `-d`).
+  it('date: a glob or a tilde word gets no format tokens and no example of a format', () => {
+    const parser = createUnbashParser();
+    const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children ?? [])]);
+    for (const line of ['date x*', 'date %Y*', 'date [%Y]', 'date ~', 'date ~/%Y', 'date -d now %Y*']) {
+      const r = new Analyzer('en').explainLine(parser.parse(line), 0);
+      assert.ok(!r.examples.some((e) => e.kind === 'date'), `${line}: an example of a format`);
+      assert.ok(!all(r.items).some((t) => /introduces the output format|Literal text/.test(t.explanation)), `${line}: format tokens`);
+    }
+    const f = new Analyzer('en').explainLine(parser.parse('date +%F'), 0);
+    assert.ok(f.examples.some((e) => e.kind === 'date'));
+    if (!usableTool('date')) return;
+    assert.match(runLine("date x*").err, /invalid date/);
+    assert.match(runLine('date -d now %Y*').err, /lacks a leading/);
   });
 
   it('date: a word without a leading +, read as a date to set, or refused when an option gives the date', function () {

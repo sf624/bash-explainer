@@ -321,7 +321,11 @@ export const basic: Record<string, CommandSpec> = {
     ...GNU_INFO,
   ], { parser: 'getopt_long', positional: [pos('設定ファイル', 'settings file')], atMost: { count: 1, extra: EXTRA_OPERAND },
     // (`-p` prints the built-in database: "file operands cannot be combined with --print-database".)
-    operands: [byCount(0, [], { when: '-p|--print-database', extra: EXTRA_OPERAND })] }),
+    // (`-p` or `--print-ls-colors` with `-b` or `-c` is refused before any operand is looked at.)
+    operands: [
+      { when: { all: [{ option: ['-p', '--print-database', '--print-ls-colors'] }, { option: ['-b', '--sh', '--bourne-shell', '-c', '--csh', '--c-shell'] }] }, pattern: [operand('FILE', 'ファイル（読まれない: `dircolors` はその前に、同時に使えないオプションの組み合わせだとして終了ステータス 1 で終わる）', 'file (not read: `dircolors` first refuses options that cannot be combined, with status 1)', { repeat: '*' })] },
+      byCount(0, [], { when: '-p|--print-database', extra: EXTRA_OPERAND }),
+    ] }),
   pr: cmd('印刷用にファイルをページ分けして整形する', 'Paginate and format files for printing', [
     ['-l|--length', '1ページの行数（既定 66）', 'lines per page (default 66)', 'arg'],
     ['-w|--width', '1行の幅', 'page width', 'arg'],

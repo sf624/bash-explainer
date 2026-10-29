@@ -590,6 +590,8 @@ export const system: Record<string, CommandSpec> = {
     ['-v', '指定したプログラミング環境（例: `POSIX_V7_LP64_OFF64`）での値を表示する', 'print the values for the given programming environment (e.g. `POSIX_V7_LP64_OFF64`)', 'arg'],
     ...GNU_INFO,
   ], {
+    // (glibc reads the options first: `getconf PAGESIZE -a` is the usage, status 2.)
+    optionsFirst: true,
     positional: [pos('変数名（`_NPROCESSORS_ONLN`: 使える CPU 数、`LONG_BIT`: 32/64 ビット、`PAGESIZE`…）', 'variable (`_NPROCESSORS_ONLN`: usable CPUs, `LONG_BIT`: 32/64-bit, `PAGESIZE`…)'), pos('パス（そこにあるファイルシステムでの値を表示する）', 'path (print the value for its file system)')],
     atMost: { count: 2, extra: extraOperand('Usage: getconf …', 2) },
     // (`-a` lists every variable, so it takes a path at most: `getconf -a / x` prints the usage.)

@@ -140,7 +140,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A name that `hash -p` or `enable -n` changed, or an alias to one, is read as the program bash runs: after `hash -p /usr/bin/egrep grep`, `grep -o 'a+'` reads an extended regex.
 - The quick fix that rewrites `[[ ]]` as `[ ]` for sh and dash is offered only where `[ ]` tests the same. Before, it kept `-eq`, `-lt`… on variables (`[[ $a -eq 010 ]]` compares in octal, `[ "$a" -eq 010 ]` in decimal), `-v`, `-o`, `-nt` and `$@`, and changed what the test does.
 - A word past the operands a command takes is an extra operand, which the command refuses: `diff a b c`, `cmp` with five words, `basename a b c` (without `-a`), `seq 1 2 3 4`, `tr -d a b`. Before, it was read as one more file, suffix or number, and a worked example ran.
-- `date 0101` and `date x` are read as a date to set, not as an output format, and `date -d now x` is refused for lacking a leading `+`. `mknod n p 1 2` and `dircolors -p a` are refused as extra operands, `shuf -e a b c` takes its words as lines, and `getconf -a` is known. Before, `date x` was an output format with an example, and the other words were device numbers, a settings file and target files.
+- `date 0101` and `date x` are read as a date to set, not as an output format, and `date -d now x` is refused for lacking a leading `+`. `mknod n p 1 2` and `dircolors -p a` are refused as extra operands, `shuf -e a b c` takes its words as lines, and `getconf -a` is known. Before, `date x` was labelled an output format, and the other words were device numbers, a settings file and target files.
 
 ## 0.8.0
 
