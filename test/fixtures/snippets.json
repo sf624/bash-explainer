@@ -917,6 +917,7 @@
  "echo a | xargs echo | jq .",
  "echo a$'\\n'c",
  "echo hi",
+ "echo hi > $1$2",
  "echo hi {fd}>f",
  "echo hi | eval 'echo $BASHPID'",
  "echo ll",

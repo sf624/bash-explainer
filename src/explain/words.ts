@@ -169,9 +169,11 @@ export function concatenationNote(cx: Explainer, n: SyntaxNode): string {
     before && cx.s(`前の \`${before}\` は最初の要素の前に`, `\`${before}\` is glued to the start of the first element`),
     after && cx.s(`後ろの \`${after}\` は最後の要素の後ろに`, `\`${after}\` is glued to the end of the last one`),
   ].filter(Boolean);
+  // (With no elements, the text around is the word: none when it may expand to nothing, `"${a[@]}"$b`.)
+  const none = mayGiveNoField(n, cx.state);
   return cx.s(
-    `連結: \`${parts[each].text}\` は要素ごとに別々の単語になるので、全体は1つの単語にならない。${glue.join('、')}くっつく（要素が無ければ前後が1つの単語になる）`,
-    `Concatenation: \`${parts[each].text}\` gives one word per element, so this is not one word. ${glue.join(' and ')} (with no elements, the text around it makes one word)`);
+    `連結: \`${parts[each].text}\` は要素ごとに別々の単語になるので、全体は1つの単語にならない。${glue.join('、')}くっつく（要素が無ければ前後が1つの単語になる${none ? '。前後も空に展開されると単語は残らない' : ''}）`,
+    `Concatenation: \`${parts[each].text}\` gives one word per element, so this is not one word. ${glue.join(' and ')} (with no elements, the text around it makes one word${none ? ', or none when it expands to nothing too' : ''})`);
 }
 
 /** An unquoted part that gives one word per element (`$@`, `$*`, `${a[@]}`, `${a[*]}`), even where the IFS is empty. */
