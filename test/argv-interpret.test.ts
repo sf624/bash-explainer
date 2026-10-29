@@ -565,6 +565,24 @@ describe('argv interpreter: review fixes', () => {
     assert.deepStrictEqual(render(interpret(two, [{ value: 'x', count: { min: 1, max: 5 } }, { value: 'y' }]), ['$x', 'y']), ['$x: A', 'y: B']);
   });
 
+  it('a word that may give none: the role the words after it take when it gives none, where that is another', () => {
+    const none = (line: string, spec?: CommandSpec): string[] => {
+      const { texts } = argWords(line);
+      return parseOf(line, spec).roles.flatMap(({ word, role }) => (role.role === 'operand' && role.none ? [`${texts[word]}: ${role.none.words.map((w) => texts[w]).join(' ')} → ${role.none.spec.name}`] : []));
+    };
+    // `cp $a b` with `$a` empty is `cp b`, a source; `grep -c $x f` reads `f` as the pattern; `cp $a b c` copies `b` to `c`.
+    assert.deepStrictEqual(none('cp $a b'), ['b: $a → ARG1']);
+    assert.deepStrictEqual(none('grep -c $x f'), ['f: $x → ARG1']);
+    assert.deepStrictEqual(none('cp $a b c'), ['c: $a → ARG2']);
+    // (Each word that may give none is read with the others gone: `$b` is a source when `$a` gives none.)
+    assert.deepStrictEqual([none('cp $a $b'), none('cp $a $b c')], [['$b: $a → ARG1'], ['c: $a $b → ARG1']]);
+    // (None where the role stays, nor for the words of a brace expansion, nor where no form fits the words left.)
+    assert.deepStrictEqual([none('rm $a b'), none('cp $a {b,c}'), none('cp "$a" b')], [[], [], []]);
+    const two: CommandSpec = { summary: t('two'), operands: [{ pattern: [item('A'), item('B')] }] };
+    assert.deepStrictEqual(none('f $a y', two), []);
+    assert.ok(parseOf('cp $a b').roles.every(({ word, role }) => word === 0 || (role.role === 'operand' && role.uncertain)));
+  });
+
   it('counts the words of `"$@"` and the like as bash gives them: none or more, one or more with text beside them', () => {
     const counts = (line: string): string[] => argWords(line).words.map((w) => (w.count ? `${w.count.min}+` : '1'));
     // (Every expansion that gives one word per element, in double quotes: `${@:2}`, a pattern, the keys.)

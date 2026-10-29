@@ -15,6 +15,13 @@ printf '%s,'{a..c}
 cp x"y"{1,2} d
 cp 'a'{,}
 
+# A word that may give no field (bug 5 of oracles.md 2.8): with it empty, the words after it take other roles (`cp b`:
+# `b` is a source; `grep -c f`: `f` is the pattern).
+cp $a b
+grep -c ${x} f
+cp $a $a/x
+cp $e $u c
+
 # Bug 6 of oracles.md 2.8: the hedge `several` gives the roles of three words; with two, the last is the destination of
 # the two-operand form.
 cp $pair

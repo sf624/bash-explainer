@@ -8,9 +8,9 @@ import { allTokens } from './support/explain';
 
 const parser = createUnbashParser();
 /** The outermost token of the last occurrence of `word` in `line`. */
-function tokenOf(line: string, word: string): Token {
+function tokenOf(line: string, word: string, lang: 'en' | 'ja' = 'en'): Token {
   const col = line.lastIndexOf(word);
-  const t = allTokens(new Analyzer('en').explainLine(parser.parse(line), 0).items).find((x) => x.span.start.character === col && x.label === word);
+  const t = allTokens(new Analyzer(lang).explainLine(parser.parse(line), 0).items).find((x) => x.span.start.character === col && x.label === word);
   assert.ok(t, `no token for ${word} in ${line}`);
   return t;
 }
@@ -126,5 +126,22 @@ describe('an operand that becomes several words', () => {
     assert.strictEqual(tokenOf('cp "$@"', '"$@"').explanation, 'source when `"$@"` expands to a single word; when it expands to more, they are source, then destination directory');
     // (A brace expansion of globs gives at least one word each.)
     assert.strictEqual(tokenOf('cp {a,b}*.txt dir', 'dir').explanation, 'destination directory');
+  });
+
+  it('gives the role a word takes when the words before it expand to nothing, where the model says they may', () => {
+    // With `a` empty, bash runs `cp b` (cp: missing destination file operand after 'b'), `grep -c f` (the pattern `f`,
+    // read from stdin) and `cp /x`.
+    assert.strictEqual(tokenOf('cp $a b', 'b').explanation, 'destination (the new name, or an existing directory) when `$a` expands to a single word; destination directory when it expands to more; source when `$a` expands to nothing');
+    assert.strictEqual(tokenOf('grep -c ${x} f', 'f').explanation, 'file to search (default: stdin); search pattern (regex) when `${x}` expands to nothing');
+    assert.strictEqual(tokenOf('cp $a $a/x', '$a/x').explanation, 'destination (the new name, or an existing directory) when `$a/x` expands to a single word; when it expands to more, they are source, then destination directory; source when `$a` expands to nothing');
+    assert.strictEqual(tokenOf('cp $a $b c', 'c').explanation, 'destination directory; source when `$a`, `$b` expand to nothing');
+    assert.strictEqual(tokenOf('cp $a b', 'b', 'ja').explanation, '`$a` が1語に展開されるならコピー先（新しい名前、または既存のディレクトリ）、2語以上ならコピー先のディレクトリ、`$a` が0語ならコピー元');
+    assert.strictEqual(tokenOf('cp $a $b c', 'c', 'ja').explanation, 'コピー先のディレクトリ、`$a`・`$b` が0語ならコピー元');
+    // (Not where the model says the word gives a word: a value set here, `$#`; with nullglob, a glob may give none.)
+    assert.strictEqual(tokenOf('a=1; cp $a b', 'b').explanation, 'destination (the new name, or an existing directory) when `$a` expands to a single word; destination directory when it expands to more');
+    assert.strictEqual(tokenOf('grep -c $# f', 'f').explanation, 'file to search (default: stdin)');
+    assert.strictEqual(tokenOf('shopt -s nullglob; grep -c *.txt f', 'f').explanation, 'file to search (default: stdin); search pattern (regex) when `*.txt` expands to nothing');
+    // (Nor where the role stays: `rm $a b`.)
+    assert.strictEqual(tokenOf('rm $a b', 'b').explanation, 'file to remove');
   });
 });

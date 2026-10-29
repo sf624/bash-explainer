@@ -11,46 +11,6 @@
   },
   "known": [
     {
-      "input": "cp $a b",
-      "command": "cp $a b",
-      "word": "b",
-      "check": "role",
-      "env": "probe",
-      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`cp b`: one operand, a source)."
-    },
-    {
-      "input": "cp $a b; cp $a c",
-      "command": "cp $a b",
-      "word": "b",
-      "check": "role",
-      "env": "probe",
-      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`cp b`: one operand, a source)."
-    },
-    {
-      "input": "cp $a b; cp $a c",
-      "command": "cp $a c",
-      "word": "c",
-      "check": "role",
-      "env": "probe",
-      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`cp b`: one operand, a source)."
-    },
-    {
-      "input": "cp $a $a/x",
-      "command": "cp $a $a/x",
-      "word": "$a/x",
-      "check": "role",
-      "env": "probe",
-      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with `$a` empty (the probe environment), bash runs `cp /x`, where `/x` is the only operand, a source, while the hedge on `$a/x` says the destination when it gives one word."
-    },
-    {
-      "input": "grep -c ${x} f",
-      "command": "grep -c ${x} f",
-      "word": "f",
-      "check": "role",
-      "env": "probe",
-      "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`grep -c f`: `f` is the pattern, not a file to search)."
-    },
-    {
       "input": "renderings.sh",
       "command": "cp $pair",
       "word": "$pair",

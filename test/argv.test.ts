@@ -92,8 +92,14 @@ describe('argv capture: the word model and the explanation against bash (oracles
     assert.deepStrictEqual([saysOperand(several, ['source'], place('a', 0, 1)), saysOperand(several, ['destination directory'], place('b', 1, 2)), saysOperand(several, ['source'], place('b', 1, 2))], [true, true, false]);
     const otherwise = 'destination (the new name, or an existing directory) when `$a` expands to a single word; destination directory when it expands to more';
     assert.deepStrictEqual([1, 2, 0].map((n) => saysOperand(otherwise, dest, place('b', 0, 1, [['$a', n]]))), [true, false, false]);
+    // (`none`: the part for the words it names when they gave none and this word one; else the part before.)
+    const none = 'destination directory; source when `$a`, `$b` expand to nothing';
+    const both = (n: number): [string, number][] => [['$a', n], ['$b', n]];
+    assert.deepStrictEqual([saysOperand(none, ['source'], place('c', 0, 1, both(0))), saysOperand(none, ['source'], place('c', 0, 1, both(1))), saysOperand(none, ['destination directory'], place('c', 0, 1, both(1))), saysOperand(none, ['source'], place('c', 0, 1, [['$a', 0], ['$b', 1]]))], [true, false, true, false]);
+    assert.deepStrictEqual([0, 1].map((n) => saysOperand(`${otherwise}; source when \`$a\` expands to nothing`, ['source'], place('b', 0, 1, [['$a', n]]))), [true, false]);
     // (A hedge in another form is a finding, so that a new wording is seen.)
     assert.strictEqual(saysOperand('source when `$a` expands to a single word, or else none', ['source'], place('a', 0, 1)), false);
+    assert.strictEqual(saysOperand('source when `$a` expands to nothing, or more', ['source'], place('a', 0, 1)), false);
   });
 
   it('accepts a class of differences only under its condition, and refuses a class with none', () => {
