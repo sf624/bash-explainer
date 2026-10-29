@@ -72,6 +72,8 @@ describe('extra operands, compared with the real tools', () => {
     // (tr: a lone set is refused unless -d or -s is given, and with both; -d takes one set; every spelling of the options.)
     'tr a', 'tr -d a', 'tr -s a', 'tr -ds a', 'tr -sd a', 'tr -c a', 'tr -C a', 'tr -cd a', 'tr -cs a', 'tr -cds a', 'tr -t a', 'tr -dt a', 'tr -st a', 'tr --delete a', 'tr --squeeze-repeats a',
     'tr --delete --squeeze-repeats a', 'tr --complement a', 'tr --truncate-set1 a', 'tr -d -s a', 'tr -s -d a b', 'tr -d -s a b c', 'tr -c a b', 'tr -ct a b', 'tr -c a b c', 'tr -cd a b', 'tr -cd a b c', 'tr -dt a b', 'tr -d a b c',
+    // (tr reads options up to the first operand: after it, `-d` is a word of a set or an extra operand.)
+    'tr a -d', 'tr a -s', 'tr a b -d', 'tr -d a -s b', 'tr -d a -s', 'tr -d a -d', 'tr a -- -d', 'tr -d -- -s', 'tr -s -- a b', 'tr -c a -t', 'tr -- a -d', 'tr a --delete', 'tr -d a --squeeze-repeats',
     'tr -s a b', 'tr -st a b c', 'tr -cs a b', 'tr -cs a b c', 'tr -cds a b', 'tr -cds a b c', 'tr -- a', 'tr -d -- a b', 'tr -- a b', 'tr --delete a b c', 'date +%s x', 'date +%s', 'mktemp a.XXX b.XXX', 'mktemp a.XXX',
     'comm f1 f2 f3', 'comm f1 f2', 'join f1 f2 f3', 'join f1 f2', 'shuf f1 f2', 'shuf f1', 'shuf -e f1 f2 f3', 'shuf -i 1-3 f1',
     'unlink nx1 nx2', 'unlink nx1', 'link f1 l f3', 'link f1 l', 'tsort f1 f2', 'tsort f1', 'dircolors f1 f2',
@@ -143,6 +145,33 @@ describe('extra operands, compared with the real tools', () => {
       }
     });
   }
+
+  it('tr: options end at the first operand, as GNU tr reads them', function () {
+    const options = (line: string): string[] => {
+      const { name, words } = argWords(line);
+      return interpret(lookupCommand(name)!, words, { name, lookup: lookupCommand }).roles.flatMap(({ word, role }) => (role.role === 'option' ? [argWords(line).texts[word]] : []));
+    };
+    assert.deepStrictEqual(options('tr a -d'), []);
+    assert.deepStrictEqual(options('tr -d a -s b'), ['-d']);
+    assert.deepStrictEqual(options('tr -d -- -s'), ['-d']);
+    // (`a` becomes `-` and `d`: `-d` is the second set; `a b -d` and `-d a -s b` refuse the later option as an extra operand.)
+    assert.deepStrictEqual(roleTexts('tr a -d'), ['source character set (e.g. `a-z`)', 'target character set (e.g. `A-Z`)']);
+    assert.deepStrictEqual(TR_KINDS('tr a b -d'), ['set', 'set', 'extra']);
+    assert.deepStrictEqual(TR_KINDS('tr -d a -s b'), ['set', 'extra', 'extra']);
+    assert.deepStrictEqual(TR_KINDS('tr -d a -s'), ['set', 'extra']);
+    if (!usableTool('tr')) this.skip();
+    assert.strictEqual(run('tr', ['a', '-d'], { input: 'abcda\n', env: ENV }).stdout.toString(), '-bcd-\n');
+    // (A hedged word after the first operand: `$a` may be several words, and `-d` the second operand or an extra one, never an option.
+    // Before it, `tr $a -d` would be read with `$a` as one word: a word that may give none lets the options go on, which hedges do not say.)
+    for (const [line, word] of [['tr x $a -d', '-d'], ['tr -d x $a -s', '-s'], ['tr x $a -d', '$a']]) {
+      const { words, roles } = read(line);
+      const role = roles[words.indexOf(word)]!;
+      const texts = [role.spec, ...(role.mixed?.roles ?? []), ...(role.several ?? []).flatMap((x) => x.roles), ...(role.byCount?.readings ?? []).map((x) => x.spec), role.otherwise].flatMap((o) => (o ? [o.text.en] : []));
+      assert.ok(texts.length, line);
+      assert.ok(!texts.some((t) => /^delete the characters/.test(t)), `${line}: ${word} is no option`);
+    }
+    assert.ok(read('tr -d x $a -s').roles[read('tr -d x $a -s').words.indexOf('-s')]!.spec!.extra, 'tr -d x $a -s: -s is refused');
+  });
 
   it('tr with no operand: the tool refuses, no word to say it', function () {
     for (const line of ['tr', 'tr -d', 'tr -s', 'tr -ds', 'tr -c']) {
@@ -285,7 +314,7 @@ describe('extra operands, compared with the real tools', () => {
     ...['diff $a $b f', 'sdiff $a $b f', 'comm $a $b f', 'join $a $b f', 'uniq $a $b f', 'diff3 $a $b f', 'diff3 $a f $b', 'diff3 f $a $b'].map((line) => ({ line, values: ['f1', 'f2', 'f3', 'f1'] })),
     ...['cmp $a $b f', 'cmp $a f $b', 'cmp $a f $b g', 'cmp $a f g $b', 'cmp $a $b f g h'].map((line) => ({ line, values: ['0', '0', '0', '0'] })),
     ...['seq $a $b 1 2', 'seq $a 1 $b 2', 'seq 1 $a $b 2', 'seq $a $b 5'].map((line) => ({ line, values: ['1', '1', '1', '1'] })),
-    ...['tr $a $b x', 'tr -s $a $b x', 'tr -ds $a $b x', 'tr -d $a $b x', 'tr $a x $b', 'tr -s $a x $b', 'tr -ds $a x $b', 'tr -d $a x $b', 'tr -c $a $b f', 'tr -dt $a x $b'].map((line) => ({ line, values: ['a', 'b', 'c', 'd'] })),
+    ...['tr $a $b x', 'tr -s $a $b x', 'tr -ds $a $b x', 'tr -d $a $b x', 'tr $a x $b', 'tr x $a -d', 'tr x -s $a', 'tr -s $a x $b', 'tr -ds $a x $b', 'tr -d $a x $b', 'tr -c $a $b f', 'tr -dt $a x $b'].map((line) => ({ line, values: ['a', 'b', 'c', 'd'] })),
     { line: 'basename $a $b f', values: ['p/f1', 'p/f2', 'p/f3', 'p/f4'] },
     { line: 'date $a $b +%F', values: ['+%s', '+%s', '+%s', '+%s'] },
     { line: 'mktemp $a $b t.XXX', values: ['a.XXX', 'b.XXX', 'c.XXX', 'd.XXX'] },
