@@ -15,7 +15,7 @@ import { monitor } from '../src/dict/monitor';
 import { macos } from '../src/dict/macos';
 import { ops } from '../src/dict/ops';
 import { cmd } from '../src/dict/types';
-import type { CommandSpec, OperandSpec, OptionSpec, ValueSpec } from '../src/argv/spec';
+import type { CommandSpec, Condition, OperandSpec, OptionSpec, ValueSpec } from '../src/argv/spec';
 import { BATS_ASSERT_COMMANDS, BATS_COMMANDS, BATS_FILE_COMMANDS, BATS_SUPPORT_COMMANDS } from '../src/dict/bats';
 import { interpret } from '../src/argv/interpret';
 import { YQ_SPECS } from '../src/dict/yq';
@@ -390,10 +390,13 @@ describe('the specs of the dictionary', () => {
         const optionWords = (o: OptionSpec | undefined): string[] => (o ? [o.names[0], ...[o.value ?? []].flat().filter((v) => !v.optional).map(() => 'V')] : []);
         const find = (pred: (o: OptionSpec) => boolean) => (spec.options ?? []).find(pred);
         // (An option whose value splices words, with a string the program refuses: an unclosed quote.)
-        const before = alt.when && 'unsplit' in alt.when ? [alt.when.unsplit[0], '"']
-          : !alt.when || 'not' in alt.when || 'operand' in alt.when ? []
-          : 'option' in alt.when ? optionWords(find((o) => o.names.includes((alt.when as { option: string[] }).option[0])) ?? { names: alt.when.option, text: tx('', '') })
-          : optionWords(find((o) => o.selects === (alt.when as { mode: string }).mode));
+        // (All of several conditions: the words of each, `tr -ds`.)
+        const wordsOf = (c: Condition | undefined): string[] => (c && 'unsplit' in c ? [c.unsplit[0], '"']
+          : !c || 'not' in c || 'operand' in c ? []
+          : 'all' in c ? c.all.flatMap(wordsOf)
+          : 'option' in c ? optionWords(find((o) => o.names.includes(c.option[0])) ?? { names: c.option, text: tx('', '') })
+          : optionWords(find((o) => o.selects === c.mode)));
+        const before = wordsOf(alt.when);
         // (An item that only some words fit takes the first such of these: `alias a=b` defines, `alias a` prints, `alias a='b '`
         // checks the next word too, `alias a/b=1` is refused.)
         const item = (o: (typeof alt.pattern)[number]) => (o.assignment ? 'A=1' : o.option ?? (o.command ? 'true' : o.matches ? ['w0rd', 'A=1', 'A=1 ', 'a/b=1', '=1'].find((w) => o.matches!.test(w))! : 'w0rd'));

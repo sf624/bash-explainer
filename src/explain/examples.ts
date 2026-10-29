@@ -197,8 +197,8 @@ export function sedScripts(cx: Explainer): string[] | undefined {
 export function dateRun(cx: Explainer): commandExamples.DateRun | undefined {
   if (given(cx, '-s', '-I', '-R', '--rfc-3339')) return undefined;
   const { parse, nodes } = cx.command!;
-  // (`date +%F +%T`: date refuses the extra operand.)
-  if (operands(parse).length > 1) return undefined;
+  // (`date +%F +%T`: date refuses the extra operand, `OperandSpec.extra`.)
+  if (operands(parse).some(({ role }) => role.spec?.extra)) return undefined;
   const [dates, files, refs] = [values(parse, '-d'), values(parse, '-f'), values(parse, '-r')];
   if ([dates, files, refs].filter((v) => v.length).length > 1) return undefined;
   const utc = given(cx, '-u');

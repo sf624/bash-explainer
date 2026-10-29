@@ -86,6 +86,16 @@ describe('extra operands, compared with the real tools', () => {
     });
   }
 
+  it('tr -ds: the first set is deleted, the second squeezed, as tr does', function () {
+    const { roles } = read('tr -ds a b');
+    assert.deepStrictEqual(roles.map((r) => r?.spec?.text.en), [undefined, 'character set to delete', 'character set whose repeats are squeezed']);
+    if (!usableTool('tr')) this.skip();
+    assert.strictEqual(run('tr', ['-ds', 'a', 'b'], { input: 'aaxbbb\n', env: ENV }).stdout.toString(), 'xb\n');
+    // (`-s` alone: the first set becomes the second, whose repeats are then squeezed.)
+    assert.deepStrictEqual(read('tr -s a b').roles.map((r) => r?.spec?.text.en), [undefined, 'source character set (e.g. `a-z`)', 'target character set (e.g. `A-Z`)']);
+    assert.strictEqual(run('tr', ['-s', 'a', 'b'], { input: 'aaxbbb\n', env: ENV }).stdout.toString(), 'bxb\n');
+  });
+
   it('mknod: four operands at most, as its usage says (not run)', function () {
     const { words, roles } = read('mknod n c 1 2 3');
     assert.deepStrictEqual(words.filter((_, i) => extraOf(roles[i]?.spec)), ['3']);
@@ -114,6 +124,37 @@ describe('extra operands, compared with the real tools', () => {
         const refused = reading.roles.some((o) => o.extra);
         const r = runLine(`a='${values.slice(0, n).join(' ')}'; ${line}`);
         assert.strictEqual(REFUSALS.test(r.err), refused, `${line} with ${n} words: ${r.err}`);
+      }
+    });
+  }
+
+  // `seq $a $b f`, `cmp $a $b f2`: with each count of words of each variable, from none to three, the role the line of
+  // those words gives the word is one the hedge says (the reading of single words, or one of the roles when any gives
+  // more), and the tool refuses the line exactly where that role is an extra operand.
+  const MIXED: { line: string; word: string; values: string[][] }[] = [
+    { line: 'seq $a $b 5', word: '5', values: [['1', '2', '3'], ['1', '2', '3']] },
+    { line: 'cmp $a $b f2', word: 'f2', values: [['f1', 'f2', '0'], ['0', '0', '0']] },
+    { line: 'diff $a $b', word: '$b', values: [['f1', 'f2', 'f3'], ['f2', 'f3', 'f1']] },
+  ];
+  for (const { line, word, values } of MIXED) {
+    it(`hedge of several words: ${line}`, function () {
+      const { tool, words, roles } = read(line);
+      if (!usableTool(tool)) this.skip();
+      const role = roles[words.indexOf(word)]!;
+      assert.ok(role.mixed, `${line}: no hedge`);
+      const said = new Set(role.mixed.roles.map((o) => o.text.en));
+      for (const counts of [0, 1, 2, 3].flatMap((x) => [0, 1, 2, 3].map((y) => [x, y]))) {
+        // (Where none gives more, or the word itself gives none, the hedge says nothing of it.)
+        if (!counts.some((n) => n > 1) || (word === '$b' && !counts[1])) continue;
+        const given = values.map((v, i) => v.slice(0, counts[i]).join(' '));
+        // (The line as bash runs it: each variable's words written out.)
+        const written = line.replace('$a', given[0]).replace('$b', given[1]).replace(/ +/g, ' ');
+        const lit = read(written);
+        const at = word.startsWith('$') ? lit.words.flatMap((_, i) => (i >= lit.words.length - counts[1] ? [i] : [])) : [lit.words.length - 1];
+        const got = at.map((i) => lit.roles[i]?.spec);
+        for (const o of got) assert.ok(o && said.has(o.text.en), `${written}: ${o?.text.en} is not among ${[...said].join(' | ')}`);
+        const r = runLine(`a='${given[0]}'; b='${given[1]}'; ${line}`);
+        assert.strictEqual(REFUSALS.test(r.err), got.some((o) => o!.extra), `${written}: ${r.err}`);
       }
     });
   }
