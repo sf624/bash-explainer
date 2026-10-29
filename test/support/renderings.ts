@@ -9,10 +9,11 @@
 //   does not (2.3: then the explanation must state no count bash can contradict), bash's are those between the known
 //   words around it, when it is the only word not known (`wordCounts`). A glob example is shown only where the model
 //   says the glob step may apply.
-// - **Roles.** The argument interpreter (src/argv/) reads the words as written, not their fields. Where the model knows
-//   the fields of every word and some word gives other than one, the interpreter reads bash's argv, and the role of each
-//   field must be one the explanation shows on its word: the same option, the value of the same option, or an operand
-//   whose text from the spec the word's token says (alone, or in the part that holds of the hedge "… when `$x` expands
+// - **Roles.** The argument interpreter (src/argv/) reads the fields the model knows of a word, and the words it does not
+//   know as written. Where the model knows the fields of every word and some word gives other than one, the interpreter
+//   reads bash's argv, and the role of each field must be one the explanation shows on its word: the same option, the
+//   value of the same option, or an operand whose text from the spec the word's token says (alone, in the list of its
+//   fields, "expands to `-r` (option: …) and `a` (source)", or in the part that holds of the hedge "… when `$x` expands
 //   to a single word; … when it expands to more" that src/explain/argv.ts makes of `ArgRole.otherwise`, `several` and
 //   `byCount`, a reading for each count, or of "… when `$x`, `$y` expand to a single word; when any of them expands to more,
 //   each of its words is …", of `mixed`, or of "…; … when `$y` expands to nothing", of `none`).
@@ -273,13 +274,21 @@ export function saysOperand(explanation: string, texts: readonly string[], place
   if (among) return has(among[1]);
   // (A hedge in a form not read here: a finding, so that a new wording is seen.)
   if (/expands? to (a single word|more|nothing)/.test(e)) return false;
-  if (e.startsWith('expands to `')) {
-    // (The words as `braceTexts` writes them, with their quotes: the role at the field's place in the list.)
-    const starts = [...e.matchAll(/`[^`]*` \(/g)];
-    if (starts.length !== place.of) return has(e);
-    return has(e.slice(starts[place.at].index + starts[place.at][0].length, starts[place.at + 1]?.index ?? e.length));
-  }
-  return has(e);
+  const item = listItem(e, place);
+  return has(item ?? e);
+}
+
+/**
+ * The part of a list of the words a word gives ("expands to `a` (X) and `b` (Y)", of a brace expansion or of the fields
+ * the model knows, src/explain/argv.ts `eachText`, `fieldsToken`) that says the field at `place`: its text, then its role. Undefined
+ * where the explanation is no such list, or lists another number of words. (The words as `braceTexts` writes them, with
+ * their quotes, or the fields.)
+ */
+function listItem(e: string, place: FieldPlace): string | undefined {
+  if (!e.startsWith('expands to `')) return undefined;
+  const starts = [...e.matchAll(/`[^`]*` \(/g)];
+  if (starts.length !== place.of) return undefined;
+  return e.slice(starts[place.at].index, starts[place.at + 1]?.index ?? e.length);
 }
 
 /**
@@ -295,13 +304,16 @@ function showsRole(role: ArgRole, tokens: readonly Token[], place: FieldPlace, o
   const spliced = place.at > 0 && tokens.some((t) => t.valueFor && t.expands);
   // (No token of an argument or an option on the word: a missing explanation, not one that contradicts bash.)
   if (!tokens.length) return undefined;
+  // (The parts of the lists of the fields of the word, "expands to `-n` (option: …) and `2` (value for `-n`)", that say this field.)
+  const items = tokens.flatMap((t) => listItem(plain(t.explanation), place) ?? []);
   switch (role.role) {
     case 'option': case 'cluster': case 'pattern-option': case 'unknown-option': case 'old-style':
-      return flagsOf(role).every((f) => tokens.some((t) => showsFlag(t, f)));
+      // (Or in the list of the fields of its word: "expands to `-r` (option: …) and `a` (source)".)
+      return flagsOf(role).every((f) => tokens.some((t) => showsFlag(t, f)) || items.some((e) => showsFlag({ kind: 'option', explanation: e } as Token, f)));
     case 'end-of-options':
-      return tokens.some((t) => t.kind === 'option');
+      return tokens.some((t) => t.kind === 'option') || items.some((e) => e.includes('(end of options)'));
     case 'value':
-      return tokens.some((t) => t.valueFor === dash(role.of));
+      return tokens.some((t) => t.valueFor === dash(role.of)) || items.some((e) => e.includes(`(value for \`${dash(role.of)}\`)`));
     case 'operand': {
       if (role.spec?.assignment || role.assignment) return undefined;
       if (spliced) return true;

@@ -40,20 +40,26 @@ cp $y{,.bak}
 y3="a b c"
 cp $y3
 
-# Bug 7: a known value that starts with `-` gives an option, but is explained as an operand.
+# Bug 7: the fields of a known value, read as bash gives them to the command: an option (`cp -r a d`), an option and
+# its value (`head -n 2 f`), and the end of options (`cp -- -r d`: `-r` is a source). (Not `set {-e,-u}`: a `set` of a
+# word not known as written makes the model trust nothing in the file, src/semantics/trust.ts.)
 opt="-r a"
 cp $opt d
+ov="-n 2"
+head $ov f
+od="-- -r"
+cp $od d
 
 # Braces with brace expansion turned off: one word, the source (`set +B`).
 set +B
 cp {a,b} d
 set -B
 
-# Bug 7 too: a word the model knows is empty is read as one word, so with it the hedges say the roles of other forms
-# (bash runs `cp a b`: `b` is the destination).
+# Bug 7 too: a word the model knows is empty gives no word (bash runs `cp a b`: `b` is the destination; `cp c`).
 z=""
 cp $z $pair
 cp $pair $z
+cp $z c
 
 # Two words that may give several (review of #484): the roles of each are those any counts give (`cp p q r`: `r` is the
 # destination directory; `gosu u ls x`: `x` is an argument of `ls`; `cmp p q r`: `r` skips bytes in the first file),

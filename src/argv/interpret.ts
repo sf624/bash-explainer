@@ -9,6 +9,7 @@ import type { Text } from '../i18n';
 import { EnvSplitError, splitEnvString } from './envsplit';
 import { type ByCount, counts, type Hedge, hedges, type MixedRoles, type SeveralRoles, withHedge } from './hedge';
 import { type ParserRules, rulesOf } from './parsers';
+import { type Group, lineIndex, optionFields, regroup, withParse } from './regroup';
 import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
 
 /** A word of the command line, as the program will see it. */
@@ -81,7 +82,15 @@ export type ArgRole =
   /** A word of the shell string that a `command` role before it joins from the words (`ssh host ls -l`). */
   | { role: 'joined' }
   /** A word of the expression that `operandParser` reads (`find . -name x`). */
-  | { role: 'expression' };
+  | { role: 'expression' }
+  /**
+   * A word whose fields the semantic model knows (`ArgWord.fields`), read as those fields where they are other than one
+   * word whose roles one role says, or one gives an option (`x='-r a'; cp $x d`: the option `-r`, then the source `a`;
+   * `z=; cp $z c`: none): the fields, and their roles numbered from 0 in `words`, as a spliced value's (`ValueRole.split`).
+   */
+  | FieldsRole;
+
+export type FieldsRole = { role: 'fields'; words: ArgWord[]; roles: RoleAt[] };
 
 export type CommandRole = Extract<ArgRole, { role: 'command' }>;
 export type OperandRole = Extract<ArgRole, { role: 'operand' }>;
@@ -158,9 +167,31 @@ const ASSIGNMENT = /^[A-Za-z_]\w*=/;
 const ambiguous = (r: { candidates?: string[] }): { ambiguous?: string[] } => (r.candidates ? { ambiguous: r.candidates } : {});
 const known = (w: ArgWord): string => w.value ?? w.prefix ?? '';
 
-/** Reads the words of a command (its arguments, without the name) with its spec. */
+/**
+ * Reads the words of a command (its arguments, without the name) with its spec. A word whose fields the model knows
+ * (`ArgWord.fields`: not one known as written, `value` with no `count`) is read as those fields, as bash gives them to
+ * the command (`x='-r a'; cp $x d` is `cp -r a d`; `z=; cp $z c` is `cp c`): one field as the word's value, other than
+ * one as words of their own, whose roles go back to the word (`regroup`, `folded`).
+ */
 export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretContext = {}): ArgvParse {
-  return new Reader(words, ctx, new Set()).read(spec, 0, words.length, ctx.name ?? '', [], false, []);
+  const line: ArgWord[] = [];
+  const groups: Group[] = [];
+  const own = new Set<number>();
+  words.forEach((w, k) => {
+    const fields = w.fields && (w.value === undefined || w.count) ? w.fields() : undefined;
+    if (!fields) line.push(w);
+    else if (fields.length === 1) {
+      own.add(k);
+      line.push({ value: fields[0] });
+    } else {
+      groups.push({ from: line.length, n: fields.length, word: k, shift: fields.length - 1, words: fields.map((value) => ({ value })) });
+      line.push(...groups.at(-1)!.words!);
+    }
+  });
+  const back = groups.length ? lineIndex(groups) : (j: number): number => j;
+  const parse = new Reader(line, ctx, new Set(), back).read(spec, 0, line.length, ctx.name ?? '', [], false, []);
+  const out = groups.length ? regroup(parse, groups).parse : parse;
+  return own.size ? optionFields(out, own, words) : out;
 }
 
 const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ? [] : Array.isArray(o.value) ? o.value : [o.value]);
@@ -172,7 +203,8 @@ const takesRest = (o: OperandSpec): boolean => !!o.command && (o.command.joinsWo
 class Reader {
   private readonly maxSteps: number;
   /** `spliced`: the words (the last of an option and its value) whose words this reader has spliced in after them. */
-  constructor(private readonly words: ArgWord[], private readonly ctx: InterpretContext, private readonly spliced: Set<number>) {
+  /** `line`: the index of the word of the line that a word stands for (`lineIndex`), which the hedges name. */
+  constructor(private readonly words: ArgWord[], private readonly ctx: InterpretContext, private readonly spliced: Set<number>, private readonly line: (j: number) => number = (j) => j) {
     this.maxSteps = ctx.maxSteps ?? 100000;
   }
 
@@ -339,9 +371,9 @@ class Reader {
       const r = noneOf(k);
       if (!r?.read) return undefined;
       const then = r.read.alt.pattern[r.read.items[r.read.first[k]]];
-      return role(then) !== role(item) ? { words: r.drops.map((j) => operands[j]), spec: then } : undefined;
+      return role(then) !== role(item) ? { words: r.drops.map((j) => this.line(operands[j])), spec: then } : undefined;
     };
-    const hedgeOf = hedges({ words, operands, fit, span: Math.max(...alts.map(({ alt }) => alt.pattern.length)) + 1, alts: alts.map(({ alt }) => alt) });
+    const hedgeOf = hedges({ words, operands: operands.map(this.line), fit, span: Math.max(...alts.map(({ alt }) => alt.pattern.length)) + 1, alts: alts.map(({ alt }) => alt) });
     for (let k = 0; k < operands.length; k++) {
       const i = operands[k];
       const pos = primary.first[k];
@@ -370,7 +402,7 @@ class Reader {
       const elsewhere = other ? [other.alt.pattern[other.items[other.first[k]]]] : [];
       // (Where only the reading with more words fits, its copies of the word, which differ only where it may give several.)
       const otherwise = primary === low ? undefined : [...copies, ...elsewhere].find((o) => o.text.en !== item.text.en);
-      const hedge = each ? undefined : primary === low ? () => hedgeOf(k, item) : (): Hedge => (otherwise ? { otherwise, by: i } : {});
+      const hedge = each ? undefined : primary === low ? () => hedgeOf(k, item) : (): Hedge => (otherwise ? { otherwise, by: this.line(i) } : {});
       const none = each ? undefined : noneRole(k, item);
       // `jq . in.json --args a`: after the option, the operands of the repeating last item are something else.
       const last = n === pattern.length - 1 && (item.repeat === '*' || item.repeat === '+');
@@ -712,42 +744,13 @@ function cobraTakesNext(w: string, options: OptionSpec[]): boolean {
   return !o || valuesOf(o).some((v) => !v.optional);
 }
 
-/** `role` with `f` applied to the parse of its words, when it has one (a subcommand, a command run). */
-const withParse = (role: ArgRole, f: (q: ArgvParse) => ArgvParse): ArgRole =>
-  (role.role === 'subcommand' || (role.role === 'command' && role.parse) ? { ...role, parse: f(role.parse!) } as ArgRole : role);
-
 /**
  * The parse of a line into which the words `split` were spliced after the word `at`, in the numbers of the
  * words without them: the roles of the split words go to the value's `split`, numbered from 0, and the words
  * after them that a role started in the string reads (a command's arguments) come back to the line.
  */
 function unsplice(parse: ArgvParse, at: number, split: ArgWord[]): ArgvParse {
-  const s = at + 1;
-  const e = s + split.length;
-  const inSplit = (j: number): boolean => j >= s && j < e;
-  /** The number of a word not in the split words (a parse of the line ends after them too). */
-  const back = (j: number): number => (j < s ? j : j - split.length);
-  const splitRoles: RoleAt[] = [];
-  const line = (q: ArgvParse): ArgvParse => {
-    const roles: RoleAt[] = [];
-    for (const { word, role } of q.roles) {
-      if (inSplit(word)) splitRoles.push({ word: word - s, role: inString(role, roles) });
-      else roles.push({ word: back(word), role: withParse(role, line) });
-    }
-    roles.sort((a, b) => a.word - b.word);
-    // (Only env splices, so no find expression is read here.)
-    return { ...q, roles, end: back(q.end), unmatched: q.unmatched.filter((j) => !inSplit(j)).map(back) };
-  };
-  const inString = (role: ArgRole, hoist: RoleAt[]): ArgRole => withParse(role, (q) => {
-    const roles: RoleAt[] = [];
-    for (const { word, role: r } of q.roles) {
-      if (inSplit(word)) roles.push({ word: word - s, role: inString(r, hoist) });
-      else hoist.push({ word: back(word), role: withParse(r, line) });
-    }
-    return { ...q, roles, end: Math.min(q.end, e) - s, unmatched: q.unmatched.filter(inSplit).map((j) => j - s) };
-  });
-  const out = line(parse);
-  splitRoles.sort((a, b) => a.word - b.word);
+  const { parse: out, inner: [splitRoles] } = regroup(parse, [{ from: at + 1, n: split.length, word: at, shift: split.length }]);
   const value = (v: ValueRole): ValueRole => ({ ...v, split: { words: split, roles: splitRoles } });
   out.roles = out.roles.map((r) => {
     if (r.word !== at) return r;
@@ -771,6 +774,7 @@ export function swapRoles(parse: ArgvParse, swap: ReadonlyMap<ArgRole, ArgRole>)
     const s = swap.get(r);
     if (s) return s;
     if (r.role === 'value') return split(r);
+    if (r.role === 'fields') return { ...r, roles: r.roles.map(at) };
     if (r.role === 'option' && r.value) return { ...r, value: split(r.value) };
     return r.role === 'cluster' ? { ...r, letters: r.letters.map(role) } : withParse(r, (q) => swapRoles(q, swap));
   };

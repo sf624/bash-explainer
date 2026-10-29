@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import { lookupCommand } from '../src/analyzer';
 import { splitEnvString } from '../src/argv/envsplit';
-import { type ArgRole, ArgWord, interpret, InterpretContext, match } from '../src/argv/interpret';
+import { type ArgRole, ArgWord, interpret, InterpretContext, match, type OperandRole } from '../src/argv/interpret';
 import type { CommandSpec, OperandSpec, OptionSpec } from '../src/argv/spec';
 import { byCount, cmd, mergeOptions, runs } from '../src/dict/types';
 import { tx } from '../src/i18n';
@@ -815,5 +815,62 @@ describe('argv interpreter: a value whose words are read in its place (env -S)',
     assert.strictEqual(split('${A}${B}#'), 'unknown');
     assert.deepStrictEqual(split('a${A}#x ""${B}#y'), ['a…', '…']);
     assert.deepStrictEqual(roles("env -S'${A}#x' cmd").slice(1), ['cmd: ARG']);
+  });
+});
+
+describe('argv interpreter: the fields of a word the model knows (bug 7 of oracles.md 2.8)', () => {
+  /** A word not known as written (`$x`) whose fields the model knows; a word it does not know (`$u`). */
+  const known = (...fields: string[]): ArgWord => ({ prefix: '', count: { min: 0 }, fields: () => fields });
+  const unknown: ArgWord = { prefix: '', count: { min: 0 }, fields: () => undefined };
+  const read = (name: string, words: ArgWord[], texts: string[]) => render(interpret(lookup(name)!, words, { name, lookup }), texts);
+
+  it('reads the fields as bash gives them: options, their values and the end of options (bash 5.2, GNU coreutils)', () => {
+    // `x='-r a'; cp $x d` runs `cp -r a d`; `x=-rf` is the cluster; `x='-n 2'; head $x f` is `head -n 2 f`.
+    assert.deepStrictEqual(read('cp', [known('-r', 'a'), { value: 'd' }], ['$x', 'd']), ['$x: fields 2', '  · -r: -r copy directories recursively', '  · a: ARG1', 'd: ARG2']);
+    assert.deepStrictEqual(read('cp', [known('-rf'), { value: 'a' }, { value: 'b' }], ['$x', 'a', 'b']), ['$x: fields 1', '  · -rf: cluster -r copy directories recursively | -f force overwrite', 'a: ARG1', 'b: ARG2']);
+    assert.deepStrictEqual(read('head', [known('-n', '2'), { value: 'f' }], ['$x', 'f']), ['$x: fields 2', '  · -n: -n number of lines (`-n -5`: all but the last 5)', '  · 2: value 0 of -n VALUE', 'f: ARG1']);
+    // (`x='-- -r'; cp $x d` is `cp -- -r d`: `-r` is a source. `x=-n; head $x 2 f`: the value is the next word.)
+    assert.deepStrictEqual(read('cp', [known('--', '-r'), { value: 'd' }], ['$x', 'd']), ['$x: fields 2', '  · --: end of options', '  · -r: ARG1', 'd: ARG2']);
+    assert.deepStrictEqual(read('head', [known('-n'), { value: '2' }, { value: 'f' }], ['$x', '2', 'f']), ['$x: fields 1', '  · -n: -n number of lines (`-n -5`: all but the last 5)', '2: value 0 of -n VALUE', 'f: ARG1']);
+  });
+
+  it('reads one field as the word, and drops a word that gives none', () => {
+    // `y=a; cp $y c`: a source and the destination, with no hedge; `z=; cp $z $p` with `p='a b'` runs `cp a b`.
+    assert.deepStrictEqual(read('cp', [known('a'), { value: 'c' }], ['$y', 'c']), ['$y: ARG1', 'c: ARG2']);
+    assert.deepStrictEqual(read('cp', [known(), known('a', 'b')], ['$z', '$p']), ['$z: fields 0', '$p: ARG1']);
+    assert.deepStrictEqual((interpret(lookup('cp')!, [known(), known('a', 'b')]).roles[1].role as OperandRole).each?.map((o) => o.name), ['ARG1', 'ARG2']);
+    assert.deepStrictEqual(read('cp', [known('a', 'b'), known()], ['$p', '$z']), ['$p: ARG1', '$z: fields 0']);
+    // (`cp {$x,$y} d` with both empty: `cp d`. A hedge after a word that gives none names the word of the line: with
+    // `$u` empty, `cp $z $u d` is `cp d`.)
+    assert.deepStrictEqual(read('cp', [known(), { value: 'd' }], ['{$x,$y}', 'd']), ['{$x,$y}: fields 0', 'd: ARG1']);
+    const d = interpret(lookup('cp')!, [known(), unknown, { value: 'd' }]).roles.find((r) => r.word === 2)!.role as OperandRole;
+    assert.deepStrictEqual(d.none?.words, [1]);
+  });
+
+  it('reads a subcommand, a command and its words, and a terminator in the fields, and the words after them on the line', () => {
+    // `x='commit -m msg'; git $x`; `x='ls -l'; sudo $x f`, where `f` is an operand of `ls` read on the line.
+    assert.deepStrictEqual(read('git', [known('commit', '-m', 'msg')], ['$x']), ['$x: fields 3', '  · commit: subcommand commit', '    · -m: -m commit message', '    · msg: value 0 of -m VALUE']);
+    assert.deepStrictEqual(read('sudo', [known('ls', '-l'), { value: 'f' }], ['$x', 'f']), ['$x: fields 2', '  · ls: command exec ls', '    · -l: -l long format (permissions, owner, size, mtime)', 'f: ARG1']);
+    // (find's expression: its words say nothing apart, and `x='{} ;'; find . -exec echo $x -print` ends `-exec` at the `;`.)
+    const find = interpret(lookup('find')!, [{ value: '.' }, { value: '-type' }, known('f'), known('-name', 'a')], { name: 'find', lookup });
+    assert.deepStrictEqual(find.roles.map((r) => `${r.word}: ${r.role.role}`), ['0: operand', '1: expression', '2: expression', '3: expression']);
+    assert.strictEqual(find.expression, 1);
+    assert.deepStrictEqual(render(interpret(lookup('find')!.expressionSpec!, [{ value: '-exec' }, { value: 'echo' }, known('{}', ';'), { value: '-print' }], { name: 'find', lookup }), ['-exec', 'echo', '$x', '-print']).map((l) => l.replace(/ (run a command|print the path).*$/, '')), [
+      '-exec: -exec', 'echo: command exec of -exec echo', '  $x: fields 2', '    · {}: TEXT', '    · ;: terminator', '-print: -print',
+    ]);
+  });
+
+  it('gives a refusal and the operands no pattern fits in the numbers of the line', () => {
+    // (`z=; find . -name $z a -exec rm {}`: find misses the end of `-exec`, at the `-exec` of the line.)
+    const find = interpret(lookup('find')!.expressionSpec!, [{ value: '-name' }, known(), { value: 'a' }, { value: '-exec' }, { value: 'rm' }, { value: '{}' }], { name: 'find', lookup });
+    assert.deepStrictEqual([find.refusal?.why, find.refusal?.at], ['missing', 3]);
+    const one: CommandSpec = { summary: t('one'), operands: [{ pattern: [item('A')] }] };
+    assert.deepStrictEqual(interpret(one, [known('a', 'b'), { value: 'c' }]).unmatched, [0, 1]);
+  });
+
+  it('keeps the words a value splices in (env -S) apart from the fields of a word', () => {
+    assert.deepStrictEqual(read('env', [known('-S', 'A=1 -i'), { value: 'cmd' }], ['$x', 'cmd']).map((l) => l.replace(/ split a string into words.*$/, '')), [
+      '$x: fields 2', '  · -S: -S', '  · A=1 -i: value 0 of -S STRING', '    · » A=1: NAME=VALUE (assignment)', '    · » -i: command exec -i (unknown)', 'cmd: operand',
+    ]);
   });
 });

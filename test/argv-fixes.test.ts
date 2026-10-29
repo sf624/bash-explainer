@@ -7,6 +7,7 @@ import { countIn } from '../src/semantics/argwords';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, fields } from '../src/syntax/tree';
+import { runBash } from './support/bash';
 import { allTokens } from './support/explain';
 
 const parser = createUnbashParser();
@@ -139,8 +140,8 @@ describe('an operand that becomes several words', () => {
     // (`cp {a,$(echo b c)}` runs `cp a b c`; `set -- 1 2; cp {a,"$@"}` runs `cp a 1 2`, and with no parameters `cp a`.)
     assert.strictEqual(tokenOf('cp {a,$(echo b c)}', '{a,$(echo b c)}').explanation, hedge('{a,$(echo b c)}'));
     assert.strictEqual(tokenOf('cp {a,"$@"}', '{a,"$@"}').explanation, hedge('{a,"$@"}'));
-    // (Braces that do not expand: `set +B; x='p q'; cp {a,$x}` runs `cp {a,p q}`.)
-    assert.strictEqual(tokenOf('set +B; x="p q"; cp {a,$x}', '{a,$x}').explanation, hedge('{a,$x}'));
+    // (Braces that do not expand: `set +B; x='p q'; cp {a,$x}` runs `cp '{a,p' 'q}'`, the fields the model knows.)
+    assert.strictEqual(tokenOf('set +B; x="p q"; cp {a,$x}', '{a,$x}').explanation, 'expands to `{a,p` (source) and `q}` (destination: the new name, or an existing directory)');
     // The brace token says the expansions in its words come after it, but where the model knows they make as many.
     const brace = (line: string, w: string): string => tokenOf(line, w).children.find((c) => c.kind === 'expansion' && c.label === w)!.explanation;
     assert.strictEqual(brace('cp {a,$x}', '{a,$x}'), 'Brace expansion: `{a,$x}` expands to 2 words: `a` `$x`, which the expansions after it may make into more or fewer words');
@@ -169,8 +170,8 @@ describe('an operand that becomes several words', () => {
     // (Known values: `x='p q'`, three words; `x=`, one.)
     assert.deepStrictEqual(count('x="p q"; cp {a,$x}'), { min: 3, max: 3 });
     assert.strictEqual(count('x=; cp {a,$x}'), undefined);
-    // (A known field that starts with `-` may be an option, which the interpreter does not read: the range stays.)
-    assert.deepStrictEqual(count('x=-r; cp {a,$x}'), { min: 1 });
+    // (A known field that starts with `-` too: the interpreter reads it as an option, bug 7 of oracles.md 2.8.)
+    assert.deepStrictEqual(count('x=-r; cp {a,$x}'), { min: 2, max: 2 });
     // (`{,$x}a` is `a` and `$xa`, the variable `xa`: none or more.)
     assert.deepStrictEqual(count('cp {,$x}a'), { min: 1 });
     assert.deepStrictEqual(count('cp {b,$x}a'), { min: 1 });
@@ -262,8 +263,9 @@ describe('an operand that becomes several words', () => {
     assert.strictEqual(tokenOf('cp $a $b c', 'c').explanation, 'destination directory; source when `$a`, `$b` expand to nothing');
     assert.strictEqual(tokenOf('cp $a b', 'b', 'ja').explanation, '`$a` が1語に展開されるならコピー先（新しい名前、または既存のディレクトリ）、2語以上ならコピー先のディレクトリ、`$a` が0語ならコピー元');
     assert.strictEqual(tokenOf('cp $a $b c', 'c', 'ja').explanation, 'コピー先のディレクトリ、`$a`・`$b` が0語ならコピー元');
-    // (Not where the model says the word gives a word: a value set here, `$#`; with nullglob, a glob may give none.)
-    assert.strictEqual(tokenOf('a=1; cp $a b', 'b').explanation, 'destination (the new name, or an existing directory) when `$a` expands to a single word; destination directory when it expands to more');
+    // (Not where the model says the word gives a word: a value set here, read as its one field (`cp 1 b`), `$#`; with
+    // nullglob, a glob may give none.)
+    assert.strictEqual(tokenOf('a=1; cp $a b', 'b').explanation, 'destination (the new name, or an existing directory)');
     assert.strictEqual(tokenOf('grep -c $# f', 'f').explanation, 'file to search (default: stdin)');
     assert.strictEqual(tokenOf('shopt -s nullglob; grep -c *.txt f', 'f').explanation, 'file to search (default: stdin); search pattern (regex) when `*.txt` expands to nothing');
     // (Nor where the role stays: `rm $a b`; `ln -s $a $b`, where `$a` is the target either way, with more said of it when
@@ -274,5 +276,68 @@ describe('an operand that becomes several words', () => {
     assert.strictEqual(tokenOf('enable -n printf; command printf $# x', 'x').explanation, 'value for the format');
     // (In Japanese the roles of more words are a list with `・`, and the reading with none comes after a `、`.)
     assert.strictEqual(tokenOf('mv $a $b', '$b', 'ja').explanation, '`$a`・`$b` が1語に展開されるなら移動先（新しい名前、または既存のディレクトリ）、どれかが2語以上ならこの語の各語は移動元・移動先のディレクトリのどれか、`$a` が0語なら移動元');
+  });
+});
+
+describe('the fields of a word the model knows, read as bash gives them (bug 7 of oracles.md 2.8)', () => {
+  it('reads a field that starts with `-` as an option, with its value and the end of options (bash 5.2, GNU coreutils)', () => {
+    // bash runs `cp -r a d`, `cp -r a b` (also quoted: `"$x"` is one field, `-r`), `head -n 2 f` and `cp -- -r d`.
+    assert.strictEqual(tokenOf('x="-r a"; cp $x d', '$x').explanation, 'expands to `-r` (option: copy directories recursively) and `a` (source)');
+    assert.strictEqual(tokenOf('x="-r a"; cp $x d', 'd').explanation, 'destination (the new name, or an existing directory)');
+    const quoted = tokenOf('x=-r; cp "$x" a b', '"$x"');
+    assert.deepStrictEqual([quoted.kind, quoted.explanation], ['option', 'expands to `-r` (option: copy directories recursively)']);
+    assert.strictEqual(tokenOf('x=-rf; cp $x a b', '$x').explanation, 'expands to `-rf` (option `-r`: copy directories recursively, option `-f`: force overwrite)');
+    assert.strictEqual(tokenOf('x="-n 2"; head $x f', '$x').explanation, 'expands to `-n` (option: number of lines (`-n -5`: all but the last 5)) and `2` (value for `-n`)');
+    assert.strictEqual(tokenOf('x="-- -r"; cp $x d', '$x').explanation, 'expands to `--` (end of options) and `-r` (source)');
+    // `set {-e,-u}` turns on `-e` and `-u` (`$-` holds `e` and `u`); `x='-o pipefail'; set $x` turns on pipefail.
+    const set = tokenOf('set {-e,-u}', '{-e,-u}');
+    assert.strictEqual(set.kind, 'option');
+    assert.match(set.explanation, /^expands to `-e` \(option: exit immediately .*\) and `-u` \(option: treat unset variables as an error\)$/);
+    assert.strictEqual(tokenOf('x="-o pipefail"; set $x', '$x').explanation, 'expands to `-o` (option: enable an option by name) and `pipefail` (value for `-o`)');
+    // (A subcommand and a command in the fields: `git commit -m msg`, `sudo ls -l f`.)
+    assert.strictEqual(tokenOf('x="commit -m msg"; git $x', '$x').explanation, 'expands to `commit` (subcommand: Record staged changes), `-m` (option: commit message) and `msg` (value for `-m`)');
+    assert.strictEqual(tokenOf('x="ls -l"; sudo $x f', 'f').explanation, 'file or directory (default: current)');
+    assert.strictEqual(tokenOf('x="-r a"; cp $x d', '$x', 'ja').explanation, '`-r`（オプション: ディレクトリを再帰的にコピー）と `a`（コピー元）に展開される');
+  });
+
+  it('drops a word that gives no field, and reads the words of a known value with their roles', () => {
+    // bash runs `cp p q` (`q` the destination), `cp c` and `cp d2` (cp: missing destination file operand), `cp a2 c2`.
+    assert.strictEqual(tokenOf('z=""; p="a b"; cp $z $p', '$z').explanation, 'expands to no word, so `cp` does not get it');
+    assert.strictEqual(tokenOf('z=""; p="a b"; cp $z $p', '$p').explanation, 'expands to `a` (source) and `b` (destination: the new name, or an existing directory)');
+    assert.strictEqual(tokenOf('z=""; p="a b"; cp $p $z', '$p').explanation, 'expands to `a` (source) and `b` (destination: the new name, or an existing directory)');
+    assert.strictEqual(tokenOf('z=; cp $z c', 'c').explanation, 'source');
+    assert.strictEqual(tokenOf('x=; y=; cp {$x,$y} d', '{$x,$y}').explanation, 'expands to no word, so `cp` does not get it');
+    assert.strictEqual(tokenOf('x=; y=; cp {$x,$y} d', 'd').explanation, 'source');
+    assert.strictEqual(tokenOf('y=a; cp $y c', 'c').explanation, 'destination (the new name, or an existing directory)');
+    assert.strictEqual(tokenOf('p="a b"; cp $p d', 'd').explanation, 'destination directory');
+    assert.strictEqual(tokenOf('z=; cp $z c', '$z', 'ja').explanation, '展開すると語が残らないので、`cp` には渡らない');
+    // (The words of `set --` after a word of two: `x` is `$3`.)
+    assert.strictEqual(tokenOf('p="a b"; set -- $p x', 'x').explanation, 'becomes the positional parameter `$3`');
+  });
+
+  it('says what each field is: an option not in the dictionary, a pattern option, a letter with its value, old-style letters', () => {
+    // (`cp --bogus a b` fails: an unrecognized option; `head -5 f`, `head -n5 f`, `tar cvf a.tar d`.)
+    assert.strictEqual(tokenOf('x=--bogus; cp $x a b', '$x').explanation, 'expands to `--bogus` (option not in the dictionary)');
+    assert.strictEqual(tokenOf('x="-r --bogus"; cp $x a b', '$x').explanation, 'expands to `-r` (option: copy directories recursively) and `--bogus` (option not in the dictionary)');
+    assert.strictEqual(tokenOf('x=-5; head $x f', '$x').explanation, 'expands to `-5` (option: 5 lines (old way to write `-n 5`))');
+    assert.strictEqual(tokenOf('x=-n5; head $x f', '$x').explanation, 'expands to `-n5` (option `-n`: number of lines (`-n -5`: all but the last 5), value `5`)');
+    assert.strictEqual(tokenOf('x=cvf; tar $x a.tar d', '$x').explanation, 'expands to `cvf` (option `c`: create an archive, option `v`: list processed files, option `f`: archive file name)');
+    assert.strictEqual(tokenOf('x=-zr; cp $x a b', '$x').explanation, 'expands to `-zr` (option `-z` not in the dictionary, option `-r`: copy directories recursively)');
+    // (A word of a command run by another one: `sudo ls -l`; the words of a remote command, `ssh host ls -l`; find's
+    // start and expression, `find . -name a`.)
+    assert.strictEqual(tokenOf('x=-l; sudo ls $x', '$x').explanation, 'expands to `-l` (option: long format (permissions, owner, size, mtime))');
+    assert.strictEqual(tokenOf('x="host ls -l"; ssh $x', '$x').explanation, 'expands to `host` (destination: `user@host`), `ls` (the command to run) and `-l` (a word of the command string)');
+    assert.strictEqual(tokenOf('x=". -name"; find $x a', '$x').explanation, 'expands to `.` (starting directory) and `-name` (a word of the expression)');
+    assert.strictEqual(tokenOf('z=; find . $z -name a', '-name').explanation, 'file name matches the glob');
+    // (A function gets every word as an argument: `f -a b`.)
+    assert.strictEqual(tokenOf('f() { :; }; x="-a b"; f $x', '$x').explanation, 'Arguments to the function: `-a` `b`');
+    assert.strictEqual(tokenOf('f() { :; }; x="-a b"; f $x', '$x', 'ja').explanation, '関数への引数: `-a` `b`');
+  });
+
+  it('runs those lines in bash and GNU coreutils as said', function () {
+    this.timeout(20000);
+    const out = runBash('mkdir a; touch a/f q a2 g -- -r; x="-r a"; cp $x d && ls d; set {-e,-u}; echo "$-"; set +eu; z=""; pair="p q"; cp $z $pair; ls q; '
+      + 'z=; cp $z c 2>&1 | head -1; y=a2; cp $y c2 && ls c2; printf "1\\n2\\n3\\n" > g; ov="-n 2"; head $ov g; od="-- -r"; cp $od dd && ls dd', { files: ['p'] }).stdout;
+    assert.deepStrictEqual(out.split('\n').filter(Boolean), ['f', 'ehuBc', 'q', "cp: missing destination file operand after 'c'", 'c2', '1', '2', 'dd']);
   });
 });

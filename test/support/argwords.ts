@@ -34,6 +34,7 @@ export function render(parse: ArgvParse, texts: string[], depth = 0): string[] {
       case 'operand': return (r.spec ? `${r.spec.name}${r.assignment ? ' (assignment)' : ''}` : 'operand') + (r.uncertain ? ' (uncertain)' : '');
       case 'subcommand': return `subcommand ${r.name}`;
       case 'command': return `command ${r.slot.run}${r.slot.where ? `@${r.slot.where}` : ''}${r.of ? ` of ${r.of}` : ''}${r.name ? ` ${r.name}` : ''}${r.spec || !r.parse ? '' : ' (unknown)'}`;
+      case 'fields': return `fields ${r.words.length}`;
     }
   };
   for (const { word, role } of parse.roles) {
@@ -41,6 +42,8 @@ export function render(parse: ArgvParse, texts: string[], depth = 0): string[] {
     // The words a value splices in (`env -S'…'`), marked `»`, or why the program refuses them.
     const v = valueOf(role);
     if (v?.split) out.push(...render({ command: '', roles: v.split.roles, end: 0, unmatched: [] }, v.split.words.map((w) => w.value ?? `${w.prefix}…`), depth + 1).map((l) => l.replace(/^(\s*)/, '$1» ')));
+    // The fields of a word the model knows (`x='-r a'`), marked `·`.
+    if (role.role === 'fields') out.push(...render({ command: '', roles: role.roles, end: 0, unmatched: [] }, role.words.map((w) => w.value!), depth + 1).map((l) => l.replace(/^(\s*)/, '$1· ')));
     if (v?.refused) out.push(`${'  '.repeat(depth + 1)}refused: ${v.refused.error} ${v.refused.at}`);
     if ((role.role === 'subcommand' || role.role === 'command') && role.parse) out.push(...render(role.parse, texts, depth + 1));
   }

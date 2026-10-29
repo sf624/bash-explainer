@@ -5,8 +5,9 @@
 // push`), the command that a wrapper runs (sudo, xargs, `find -exec`), find's expression, the expression of `test`
 // and `[`, and the strings run as scripts (src/explain/scripts.ts).
 import type { ExplainOptions, Kind, Span, Token } from '../analyzer-types';
-import { type ArgRole, type ArgvParse, type CommandRole, interpret, type RoleAt, type ValueRole } from '../argv/interpret';
+import { type ArgRole, type ArgvParse, type CommandRole, type FieldsRole, interpret, type RoleAt, type ValueRole } from '../argv/interpret';
 import { declaresNames, namespaceOf } from '../argv/query';
+import { OPTION_ROLES } from '../argv/regroup';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { validName } from '../semantics/posixexits';
 import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
@@ -39,10 +40,10 @@ import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
 import { elementsOf } from '../semantics/elements';
-import { argWordIn, countIn, untilWords } from '../semantics/argwords';
+import { argWordIn, countIn, fieldsIn, untilWords } from '../semantics/argwords';
 import { arrayKind, globOff, NO_SPEC, notForEarlier, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
-import { hedged } from './operand-texts';
+import { hedged, wordItems } from './operand-texts';
 import { soleRead, turnedOff, unknownOption } from './option-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -202,6 +203,9 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
         case 'expression':
           // find's expression, read as a whole from its first word.
           if (word === parse.expression) out.push(...findExpression(cx, nodes.slice(word, parse.end), spec.expressionSpec!));
+          break;
+        case 'fields':
+          out.push(expanded(cx, a, fieldsToken(cx, a, role, parse.command, isFn, nodes)));
           break;
       }
     }
@@ -410,35 +414,28 @@ function splicedNote(cx: Explainer, v: ValueRole): string {
       `. ⚠ ${program} refuses this string and exits with status 125, running nothing (${why[v.refused.error]})`);
   }
   if (!v.split) return '';
-  const { words, roles } = v.split;
-  const shown = (k: number): string => {
-    const w = words[k];
-    return w.value !== undefined ? `\`${w.value}\`` : cx.s(`\`${w.prefix}…\`（\`\${…}\` の値は実行時に決まる）`, `\`${w.prefix}…\` (the value of \`\${…}\` is known at run time)`);
-  };
-  const what = (role: ArgRole): string => {
-    switch (role.role) {
-      case 'option': case 'pattern-option': return cx.t(role.text);
-      case 'cluster': return role.letters.map(what).join(cx.s('、', ', '));
-      case 'value': return cx.s(`\`${dash(role.of)}\` の値`, `value for \`${dash(role.of)}\``);
-      case 'operand':
-        if (role.spec?.assignment) return cx.s('コマンドの環境に入れる変数', 'variable for the command');
-        return role.spec ? cx.t(role.spec.text) : cx.s('引数', 'argument');
-      case 'command': return cx.s('実行するコマンド', 'the command to run') + (role.spec ? `: ${cx.t(role.spec.summary)}` : '');
-      case 'subcommand': return cx.s('サブコマンド', 'subcommand') + `: ${cx.t(role.spec.summary)}`;
-      case 'end-of-options': return cx.s('オプションの終わり', 'end of options');
-      default: return cx.s('辞書にないオプション', 'an option not in the dictionary');
-    }
-  };
-  const items: string[] = [];
-  const walk = (list: RoleAt[]): void => {
-    for (const { word, role } of list) {
-      items.push(`${shown(word)}${cx.s(`（${what(role)}）`, ` (${what(role)})`)}`);
-      if ((role.role === 'command' || role.role === 'subcommand') && role.parse) walk(role.parse.roles);
-    }
-  };
-  walk(roles);
+  const items = wordItems(cx, v.split.words, v.split.roles, false);
   if (!items.length) return cx.s(`。${program} はこれを単語に分けるが、何も残らない`, `. ${program} splits it into no words`);
   return cx.s(`。${program} はこれを単語に分けて、この位置で自分の引数として読む: ${items.join('、')}`, `. ${program} splits it into words and reads them here as its own arguments: ${items.join(', ')}`);
+}
+
+/**
+ * The token of a word read as the fields the model knows it gives (`FieldsRole`): what each is to `command` (`x='-r a';
+ * cp $x d`: "expands to `-r` (option: …) and `a` (source)"), or that no word is left, so the command does not get it
+ * (`z=; cp $z c`); to a function (`isFn`), its arguments. An option's token where every field is one.
+ */
+function fieldsToken(cx: Explainer, a: SyntaxNode, role: FieldsRole, command: string, isFn: boolean | 'maybe', nodes: SyntaxNode[]): Token {
+  const program = command.split(' ')[0].split('/').pop()!;
+  // (A function gets every word as an argument, also one that looks like an option.)
+  if (isFn && role.words.length) return positional(cx, a, cx.s(`関数への引数: ${role.words.map((w) => `\`${w.value}\``).join(' ')}`, `Arguments to the function: ${role.words.map((w) => `\`${w.value}\``).join(' ')}`));
+  // (`unset {,}`: the braces say so.)
+  if (!role.words.length) return positional(cx, a, braceTexts([a])?.every((w) => !w) ? noWord(cx) : cx.s(`展開すると語が残らないので、\`${program}\` には渡らない`, `expands to no word, so \`${program}\` does not get it`));
+  // (A field's role may depend on how many words the others give: `p='a b'; cp $p $u`, `b` is the destination when `$u` gives none.)
+  const items = wordItems(cx, role.words, role.roles, true, (desc, r) => hedged(cx, desc, a.text, r, nodes));
+  const list = items.length > 1 ? `${items.slice(0, -1).join(cx.s('、', ', '))}${cx.s('と ', ' and ')}${items[items.length - 1]}` : items[0];
+  const t = positional(cx, a, cx.s(`${list}に展開される`, `expands to ${list}`));
+  const options = role.roles.every(({ role: r }) => OPTION_ROLES.has(r.role));
+  return options ? { ...t, kind: 'option' } : t;
 }
 
 /** The token of an operand: what the spec says it is, numbered (`$1`), or as a job spec, a shell option, an assignment. */
@@ -747,10 +744,12 @@ function nameGlob(cx: Explainer, a: SyntaxNode, name: string, text: string, acts
 /**
  * The words a brace expansion gives, each with its role (`cp a{,.bak}`: the source, then the destination); the fields
  * the model knows where an expansion in one of them may split it or give none (`x='p q'; cp {a,$x}`: `a`, `p` and `q`;
- * `x='p q'; y=; cp {$x,$y}`: `p` and `q`, both of `$x`), which an exact count of such a word is (`countIn`).
+ * `x='p q'; y=; cp {$x,$y}`: `p` and `q`, both of `$x`), which an exact count of such a word is (`countIn`), as for a
+ * word of no braces (`z=; p='a b'; cp $z $p`: `a` and `b`).
  */
 function eachText(cx: Explainer, a: SyntaxNode, each: OperandSpec[]): string {
-  const words = braceAlternatives([a])!.some(splitsIn) ? wordFields(a, cx.state).fields! : braceTexts([a])!;
+  const braces = braceAlternatives([a]);
+  const words = !braces || braces.some(splitsIn) ? fieldsIn(a, cx.state)! : braceTexts([a])!;
   // `destination (the new name…)` reads `destination: the new name…` in the parentheses.
   const parts = words.map((w, k) => `\`${w}\`${cx.s(`（${cx.t(each[k].text).replace(/（(.*)）$/, ': $1')}）`, ` (${cx.t(each[k].text).replace(/ \((.*)\)$/, ': $1')})`)}`);
   const list = `${parts.slice(0, -1).join(cx.s('、', ', '))}${cx.s('と ', ' and ')}${parts[parts.length - 1]}`;

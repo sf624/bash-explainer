@@ -1,6 +1,7 @@
 // The hedges of an operand whose role depends on how many words the expansions among the operands give
-// (src/explain/argv.ts; the roles from `ArgRole` `operand`: `several`, `byCount`, `mixed`, `otherwise`, `none`).
-import type { ArgRole, ByCount, MixedRoles, SeveralRoles } from '../argv/interpret';
+// (src/explain/argv.ts; the roles from `ArgRole` `operand`: `several`, `byCount`, `mixed`, `otherwise`, `none`), and what
+// each of the words read in place of one is to the command (the fields of a word, a value `env -S` splits).
+import type { ArgRole, ArgWord, ByCount, MixedRoles, RoleAt, SeveralRoles } from '../argv/interpret';
 import { countIn } from '../semantics/argwords';
 import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
@@ -86,3 +87,59 @@ function uncertainText(cx: Explainer, desc: string, other: string, by: number, n
   const fewest = Math.max(countIn(nodes[by], cx.state)!.min, 1);
   return cx.s(`${w} が${fewest}語に展開されるなら${desc}、${fewest + 1}語以上なら${other}`, `${desc} when ${w} expands to ${fewest === 1 ? 'a single word' : `${fewest} words`}; ${other} when it expands to more`);
 }
+
+/**
+ * What each of `words` is to the command that reads them, from its role in `roles` (numbered from 0 in `words`), with the
+ * words of the commands it runs: `` `-i` (Start with an empty environment) ``. With `option`, a word read as an option says so
+ * (`option: …`), and an operand says its role as `eachText` does, with what `hedge` adds to it.
+ */
+export function wordItems(cx: Explainer, words: readonly ArgWord[], roles: readonly RoleAt[], option: boolean, hedge?: (desc: string, role: Extract<ArgRole, { role: 'operand' }>) => string): string[] {
+  const shown = (k: number): string => {
+    const w = words[k];
+    return w.value !== undefined ? `\`${w.value}\`` : cx.s(`\`${w.prefix}…\`（\`\${…}\` の値は実行時に決まる）`, `\`${w.prefix}…\` (the value of \`\${…}\` is known at run time)`);
+  };
+  /**
+   * The text of an option, or of a letter of a cluster (`word` empty); with `option`, the word says it is one, with its
+   * flag where the word holds more (a letter, a value after it) and its value.
+   */
+  const optionText = (r: ArgRole, word: string): string => {
+    const known = r.role === 'option' || r.role === 'pattern-option';
+    const text = known ? cx.t(r.text) : cx.s('辞書にないオプション', 'an option not in the dictionary');
+    if (!option) return text;
+    const o = r as Extract<ArgRole, { role: 'option' | 'unknown-option' | 'pattern-option' }>;
+    const named = dash(o.flag) === word ? '' : ` \`${dash(o.flag)}\``;
+    const value = o.role !== 'pattern-option' && o.value ? word.slice(o.value.attached) : undefined;
+    const said = known ? cx.s(`オプション${named}: ${text}`, `option${named}: ${text}`) : cx.s(`辞書にないオプション${named}`, `option${named} not in the dictionary`);
+    return said + (value !== undefined ? cx.s(`、値 \`${value}\``, `, value \`${value}\``) : '');
+  };
+  const what = (role: ArgRole, word: string): string => {
+    switch (role.role) {
+      case 'option': case 'pattern-option': return optionText(role, word);
+      case 'cluster': case 'old-style': return role.letters.map((l) => optionText(l, '')).join(cx.s('、', ', '));
+      case 'value': return cx.s(`\`${dash(role.of)}\` の値`, `value for \`${dash(role.of)}\``);
+      case 'operand':
+        if (role.spec?.assignment || role.assignment) return cx.s('コマンドの環境に入れる変数', 'variable for the command');
+        if (!role.spec) return cx.s('引数', 'argument');
+        // `destination (the new name…)` reads `destination: the new name…` in the parentheses.
+        return !option ? cx.t(role.spec.text) : hedge!(cx.t(role.spec.text).replace(/（(.*)）$/, ': $1').replace(/ \((.*)\)$/, ': $1'), role);
+      case 'command': return cx.s('実行するコマンド', 'the command to run') + (role.spec ? `: ${cx.t(role.spec.summary)}` : '');
+      case 'subcommand': return cx.s('サブコマンド', 'subcommand') + `: ${cx.t(role.spec.summary)}`;
+      case 'end-of-options': return cx.s('オプションの終わり', 'end of options');
+      case 'terminator': return cx.s(`\`${role.of}\` の終わり`, `end of \`${role.of}\``);
+      case 'expression': return cx.s('式の語', 'a word of the expression');
+      case 'joined': return cx.s('コマンド文字列の語', 'a word of the command string');
+      default: return optionText(role, word);
+    }
+  };
+  const items: string[] = [];
+  const walk = (list: readonly RoleAt[]): void => {
+    for (const { word, role } of list) {
+      items.push(`${shown(word)}${cx.s(`（${what(role, words[word].value ?? '')}）`, ` (${what(role, words[word].value ?? '')})`)}`);
+      if ((role.role === 'command' || role.role === 'subcommand') && role.parse) walk(role.parse.roles);
+    }
+  };
+  walk(roles);
+  return items;
+}
+
+const dash = (flag: string): string => flag.replace(/^\+/, '-');
