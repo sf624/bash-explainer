@@ -1030,8 +1030,8 @@ function splitPieces(w: WordMeaning, pieces: Piece[]): Char[][] | undefined {
     for (const c of p.text) chars.push({ c, quoted: p.quoted, split });
   }
   if (!splits) {
-    // Not split: one field, unless it is only unquoted expansions that gave nothing (`$empty` is no word).
-    const kept = chars.length > 0 || w.rule.fields !== 'many';
+    // Not split: one field, unless only unquoted expansions gave nothing (`$e` is no word, so bash's redirection fails; dash keeps it).
+    const kept = chars.length > 0 || w.rule.fields === 'one' || (w.rule.fields === 'one-or-error' && !!w.shell && w.shell !== 'bash');
     return kept ? [chars] : [];
   }
   const ifs = w.ifs.kind === 'default' ? DEFAULT_IFS : w.ifs.kind === 'value' ? w.ifs.value : undefined;

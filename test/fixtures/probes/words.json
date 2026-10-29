@@ -610,6 +610,47 @@
     }
   },
   {
+    "id": "redirect-word-empty",
+    "manual": "3.6",
+    "snippet": "e=; @PROBE:a@ > $e$e",
+    "note": "an unquoted expansion that gives nothing is no word: an ambiguous redirection",
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: $e$e: ambiguous redirect"
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "set -o posix; e=; @PROBE:a@ > $e$e",
+    "note": "in POSIX mode a redirection target is not split, and an empty unquoted expansion is still no word",
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: $e$e: ambiguous redirect"
+    }
+  },
+  {
+    "manual": "3.6",
+    "snippet": "e=; IFS=; @PROBE:a@ > $e$e",
+    "note": "an empty IFS does not split, and an empty unquoted expansion is still no word: an ambiguous redirection",
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: $e$e: ambiguous redirect"
+    }
+  },
+  {
+    "manual": "3.6",
+    "snippet": "e=; IFS=; set -f; @PROBE:a@ > $e",
+    "note": "as with `set -f` too",
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: $e: ambiguous redirect"
+    }
+  },
+  {
     "manual": "3.1.2",
     "snippet": "@PROBE:a@ 'a b' \"a\\\"b\" $'a\\tb' a\\ b \"\" '' $'' $\"\" \"\\$x\" '\\n'",
     "facts": {

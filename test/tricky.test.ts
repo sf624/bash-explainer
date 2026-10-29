@@ -619,7 +619,7 @@ describe('tricky lines (round 3)', () => {
     // (Known values: the words bash makes of it.)
     assert.match(said("x='a b'; echo $x/c", '$x/c'), /^Concatenation: the parts below are joined, but word splitting makes 2 words of it: `a` `b\/c`$/);
     assert.strictEqual(bash("x='a b'; printf '<%s>' $x/c"), '<a><b/c>');
-    assert.match(said("x='a b'; echo $x/c", '$x/c', 'ja'), /^連結: 以下の部分を空白なしでつなげるが、単語分割で2個の単語になる: `a` `b\/c`$/);
+    assert.match(said("x='a b'; echo $x/c", '$x/c', 'ja'), /^連結: 以下の部分を空白なしでつなげるが、単語分割で 2 個の単語になる: `a` `b\/c`$/);
     assert.match(said('echo {a,b}"x"', '{a,b}"x"'), /but brace expansion makes 2 words of it: `ax` `bx`$/);
     assert.strictEqual(bash('printf \'<%s>\' {a,b}"x"'), '<ax><bx>');
     assert.match(said('e=; echo $e$e', '$e$e'), /^Concatenation: the parts below all expand to nothing, and an unquoted empty expansion is removed: no word is left$/);
@@ -656,6 +656,39 @@ describe('tricky lines (round 3)', () => {
     assert.match(findAt('function c$tmp"; }\nread', 1, 'c$tmp"; } …').explanation, /^Concatenation: the parts below are joined into one word$/);
     // (More than five words are counted, not listed.)
     assert.match(said("x='1 2 3 4 5 6'; echo $x/a", '$x/a'), /but word splitting makes 6 words of it$/);
+    // (An empty field is written `''`, as in the words of a brace expansion.)
+    assert.match(said('IFS=:; x=:a; echo $x/c', '$x/c'), /makes 2 words of it: `''` `a\/c`$/);
+    assert.strictEqual(bash("IFS=:; x=:a; printf '<%s>' $x/c"), '<><a/c>');
+  });
+
+  it('says when a concatenation may give no word from the model: each word of its braces, and what never expands to nothing', () => {
+    const said = (src: string, label: string) => find(src, label).explanation;
+    const count = (script: string) => bash(`${script}; echo $#`).trim();
+    // (A word of the braces with text, a length, a count, a status or a PID: always a word, even with an IFS of digits.)
+    for (const w of ['{,a}$b', '${#a}$b', '$#$b', '$?$b', '$$$b']) {
+      assert.ok(!/or none/.test(said(`echo ${w}`, w)), w);
+      for (const ifs of ['', 'IFS=0; ']) assert.notStrictEqual(count(`${ifs}set -- ${w}`), '0', `${ifs}${w}`);
+    }
+    // (Braces first: `$x{b,c}` is `$xb` `$xc`, both unset; `{,}$b`, `$!$b` may be empty.)
+    for (const [src, w] of [['x=a; echo $x{b,c}', '$x{b,c}'], ['echo {,}$b', '{,}$b'], ['echo $!$b', '$!$b']]) assert.match(said(src, w), /, or none$/, src);
+    assert.deepStrictEqual([count('x=a; set -- $x{b,c}'), count('set -- {,}$b'), count('set -- $!$b')], ['0', '0', '0']);
+    // (An IFS not known here may hold a blank of a known value: `x=' '`.)
+    assert.match(said("IFS=$v; x=' '; echo $x$x", '$x$x'), /, or none$/);
+    assert.deepStrictEqual([count("v=' '; IFS=$v; x=' '; set -- $x$x"), count("v=:; IFS=$v; x=' '; set -- $x$x")], ['0', '1']);
+    // (An empty IFS splits nothing: a blank stays a word.)
+    assert.ok(!/or none/.test(said("IFS=; x=' '; echo $x$y", '$x$y')));
+    assert.strictEqual(count("IFS=; x=' '; set -- $x$y"), '1');
+    // (A quoted part is a word, even empty.)
+    assert.ok(!/or none/.test(said('echo "$a"$b', '"$a"$b')));
+    assert.strictEqual(count('set -- "$a"$b'), '1');
+    // (In a redirection, no word is "ambiguous redirect" in bash, also where nothing is split: an empty IFS, POSIX mode;
+    // dash keeps the empty name, and fails to open it.)
+    for (const src of ['e=; cat > $e$e', 'IFS=; e=; cat > $e$e', 'set -f; IFS=; e=; cat > $e$e', 'set -o posix; e=; cat > $e$e']) {
+      assert.match(said(src, '$e$e'), /^Concatenation: the parts below all expand to nothing, and an unquoted empty expansion is removed: no word is left, which bash refuses here \("ambiguous redirect"\)$/, src);
+      assert.match(bashErr(src), /\$e\$e: ambiguous redirect/, src);
+    }
+    const dash = new Analyzer('en').explainLine(parser.parse('e=; cat > $e$e'), 0, 'dash');
+    assert.strictEqual(allTokens(dash.items).find((t) => t.label === '$e$e')!.explanation, 'Concatenation: the parts below are joined into one word');
   });
 
   it('lists the words of a brace expansion, with the lone backslash gone', () => {

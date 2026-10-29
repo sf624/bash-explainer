@@ -1129,6 +1129,7 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 | `echo $a$b`, `IFS=; echo $a$b`, `e=; echo $e$e`, `shopt -s nullglob; echo "$x"*` | no word when nothing is left (an unquoted empty expansion is removed, also with an empty `IFS`; nullglob) | "…, or none", "no word is left" | "joined into one word" |
 | `echo $@/x`, `IFS=; echo $@/x` | one word per argument (`1` `2 3/x`), also with an empty `IFS` | "`$@` (one word per element) and globbing may make several words of it" | "joined into one word" |
 | `x='a b'; cat > $x/a`, `cat > $HOME/x` | "ambiguous redirect" (or may be) | "word splitting makes other than one word of it, which bash refuses here" ("may make") | "joined into one word" |
+| `e=; cat > $e$e`, also after `IFS=`, `set -f` or `set -o posix` | "ambiguous redirect" (dash opens the empty name) | "the parts below all expand to nothing … no word is left, which bash refuses here" | "joined into one word" (after `IFS=` or in POSIX mode) |
 
 `[[ $x == "$q" ]]` already said that a quoted right side is literal text.
 
