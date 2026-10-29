@@ -105,6 +105,20 @@ describe('an operand that becomes several words', () => {
     assert.strictEqual(tokenOf('cp config.yml{,.bak}', 'config.yml{,.bak}').explanation, 'expands to `config.yml` (source) and `config.yml.bak` (destination: the new name, or an existing directory)');
     assert.strictEqual(tokenOf('cp x{1,2,3}', 'x{1,2,3}').explanation, 'expands to `x1` (source), `x2` (source) and `x3` (destination directory)');
     assert.strictEqual(tokenOf('cp {a,b,c} dir', 'dir').explanation, 'destination directory');
+    // (Braces next to a quoted part: each word keeps the part. bash runs `printf '%s,a' '%s,b' '%s,c'` and `trap 'echo a' 'echo b'`.)
+    assert.strictEqual(tokenOf("printf '%s,'{a..c}", "'%s,'{a..c}").explanation, "expands to `'%s,'a` (format string), `'%s,'b` (value for the format) and `'%s,'c` (value for the format)");
+    assert.match(tokenOf('trap "echo "{a,b}', '"echo "{a,b}').explanation, /^expands to `"echo "a` \(command to run: .*\) and `"echo "b` \(signal: /);
+    assert.strictEqual(tokenOf('cp "$x"{1..3} d', 'd').explanation, 'destination directory');
+    // (`'a'{,}` is `a a`: the empty words of the braces are not empty next to `'a'`.)
+    assert.strictEqual(tokenOf("cp 'a'{,}", "'a'{,}").explanation, "expands to `'a'` (source) and `'a'` (destination: the new name, or an existing directory)");
+    // (A quoted `*` is no glob: two words exactly.)
+    assert.strictEqual(tokenOf("cp {'*',a}x d", 'd').explanation, 'destination directory');
+  });
+
+  it('counts the words of braces only where brace expansion is on (`set +B`)', () => {
+    // (bash runs `cp {a,b} d`: a source and the destination.)
+    assert.strictEqual(tokenOf('set +B; cp {a,b} d', 'd').explanation, 'destination (the new name, or an existing directory)');
+    assert.strictEqual(tokenOf('if c; then set +B; fi; cp {a,b} d', 'd').explanation, 'destination (the new name, or an existing directory) when `{a,b}` expands to a single word; destination directory when it expands to more');
   });
 
   it('gives the roles for one word and for more when the count is not known', () => {

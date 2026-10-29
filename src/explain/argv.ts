@@ -10,7 +10,7 @@ import { declaresNames, namespaceOf } from '../argv/query';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { validName } from '../semantics/posixexits';
 import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
-import { argWordFor, countOf } from '../argv/words';
+import { argWordFor } from '../argv/words';
 import { builtins, SHELL_OPTION_TABLES } from '../dict/builtins';
 import { OPTION_SECTIONS } from '../manual';
 import { describeFind, findWords, type FindNode, parseFind } from '../embedded/find';
@@ -39,7 +39,7 @@ import { testExample } from './examples';
 import { skeletal, sortTokens } from './nodes';
 import { type ExpansionStep, type StepKind, wordFields } from '../semantics/words';
 import { elementsOf } from '../semantics/elements';
-import { argWordIn, untilWords } from '../semantics/argwords';
+import { argWordIn, bracesIn, countIn, untilWords } from '../semantics/argwords';
 import { arrayKind, globOff, NO_SPEC, notForEarlier, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
 import { soleRead, turnedOff, unknownOption } from './option-texts';
@@ -83,7 +83,7 @@ export function readArgs(cx: Explainer, known: CommandSpec | undefined, args: Sy
   // (A function's words are read with no spec: its options are unknown, and its operands are `$1`, `$2`….)
   const spec = known && !isFn ? known : NO_SPEC;
   const lookup = (name: string): CommandSpec | undefined => specFor(cx, name);
-  let parse = interpret(spec, args.map(argWordFor(cx.state.shell)), { name: cmdName, lookup });
+  let parse = interpret(spec, args.map(argWordFor(cx.state.shell, bracesIn(cx.state))), { name: cmdName, lookup });
   if (args.length) {
     const envs = new Map<ArgvParse, ExecEnv>();
     for (const [w, env] of slotEnvs(cx.state.env(args[0].parent!), parse, spec, args, cx.state.shell, lookup, undefined, envs)) cx.slotEnvs.set(w, env);
@@ -159,7 +159,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
         case 'operand': {
           // (A word that expands to another number of words, `$x` or `{a,b}`, shifts the numbers: from it on, they are not sure.)
           const before = (role.spec && ordinals.get(role.spec)) || { n: 0, sure: true };
-          const count = countOf(a, cx.state.shell);
+          const count = countIn(a, cx.state);
           const gives = !count ? 1 : count.min === count.max ? count.min : undefined;
           if (role.spec) ordinals.set(role.spec, { n: before.n + (gives ?? 1), sure: before.sure && gives !== undefined });
           out.push(expanded(cx, a, operandToken(cx, nodes, word, role, parse, spec, { n: before.n + 1, sure: before.sure && !count }, assigned, isFn)));
@@ -752,7 +752,7 @@ function nameGlob(cx: Explainer, a: SyntaxNode, name: string, text: string, acts
  */
 function uncertainText(cx: Explainer, desc: string, other: string, parse: ArgvParse, nodes: SyntaxNode[]): string {
   // (Any word may be the one: `bash -c $cmd _ a`, where the string is unquoted.)
-  const many = parse.roles.filter((r) => countOf(nodes[r.word], cx.state.shell)?.max !== countOf(nodes[r.word], cx.state.shell)?.min);
+  const many = parse.roles.filter((r) => countIn(nodes[r.word], cx.state)?.max !== countIn(nodes[r.word], cx.state)?.min);
   const list = many.map((r) => `\`${nodes[r.word].text}\``).join(cx.s('・', ', '));
   return cx.s(`${list} が1語に展開されるなら${desc}、2語以上なら${other}`, `${desc} when ${list} expands to a single word; ${other} when it expands to more`);
 }
@@ -774,7 +774,7 @@ function shellParams(cx: Explainer, role: CommandRole, parse: ArgvParse, nodes: 
   if (!role.slot.params) return undefined;
   const after = parse.roles.filter((r) => r.word > word && r.role.role === 'operand').map((r) => nodes[r.word]);
   // (`countOf` gives nothing for a word that stays one word.)
-  const known = after.findIndex((w) => { const c = countOf(w, cx.state.shell); return c !== undefined && c.max !== 1; });
+  const known = after.findIndex((w) => { const c = countIn(w, cx.state); return c !== undefined && c.max !== 1; });
   const via = (cx.slotEnvs.get(nodes[word])!.links.at(-1) as SlotLink).via;
   return { via, words: (known < 0 ? after : after.slice(0, known)).map((w) => w.text), more: known >= 0 };
 }
@@ -787,7 +787,7 @@ function shellParams(cx: Explainer, role: CommandRole, parse: ArgvParse, nodes: 
  */
 function ownWords(cx: Explainer, respec: CommandSpec | undefined, name: string, first: SyntaxNode, parse: ArgvParse, spec: CommandSpec | undefined, nodes: SyntaxNode[], args: SyntaxNode[], refusal?: ArgvParse['refusal']): Token[] {
   const lookup = (x: string): CommandSpec | undefined => specFor(cx, x);
-  const read = respec ? { parse: interpret(respec, args.map(argWordFor(cx.state.shell)), { name, lookup }), spec: respec, nodes: args }
+  const read = respec ? { parse: interpret(respec, args.map(argWordFor(cx.state.shell, bracesIn(cx.state))), { name, lookup }), spec: respec, nodes: args }
     : { parse: refusal ? { ...parse, refusal } : parse, spec: spec ?? NO_SPEC, nodes };
   const envs = new Map<ArgvParse, ExecEnv>();
   slotEnvs(cx.slotEnvs.get(first)!, read.parse, read.spec, read.nodes, cx.state.shell, lookup, undefined, envs);

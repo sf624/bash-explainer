@@ -22,13 +22,14 @@ const MAX_WORDS = 500;
 /**
  * The words the word of `nodes` gives by brace expansion, in bash's order (each word of a list, then the words after
  * it: `{a,b}{1,2}` is `a1 a2 b1 b2`); undefined when it has no brace expression, null when it gives too many to list.
- * (The words left empty are dropped, as bash drops empty unquoted words: `{,}`; a quoted empty one stays: `{"",a}`.)
+ * (The words left empty are dropped, as bash drops empty unquoted words: `{,}`; a quoted empty one stays: `{"",a}`.
+ * With `part`, the nodes are a part of a longer word, whose other parts the empty words join: they stay.)
  */
-export function braceAlternatives(nodes: readonly SyntaxNode[]): BraceAlternative[] | null | undefined {
+export function braceAlternatives(nodes: readonly SyntaxNode[], part = false): BraceAlternative[] | null | undefined {
   const parts = nodes.flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n]));
   if (!parts.some((n) => n.type === 'brace_expression')) return undefined;
   const words = product(parts.map(alternativesOf));
-  return words && words.filter((w) => w.some((p) => typeof p !== 'string' || p !== ''));
+  return words && (part ? words : words.filter((w) => w.some((p) => typeof p !== 'string' || p !== '')));
 }
 
 /** The word `w`, or after brace expansion each word it gives; undefined when they are not known here. */
@@ -61,9 +62,9 @@ export function braceValues(nodes: readonly SyntaxNode[]): string[] | null | und
   return values.some((v) => v.includes(undefined)) ? undefined : values.map((v) => v.join(''));
 }
 
-/** The words a brace expansion gives, as text: undefined and null as `braceAlternatives` says. */
-export function braceTexts(nodes: readonly SyntaxNode[]): string[] | null | undefined {
-  const words = braceAlternatives(nodes);
+/** The words a brace expansion gives, as text: undefined and null as `braceAlternatives` says (`part` too). */
+export function braceTexts(nodes: readonly SyntaxNode[], part = false): string[] | null | undefined {
+  const words = braceAlternatives(nodes, part);
   // (The backslashes of plain text are removed later, by quote removal.)
   return words && words.map((w) => w.map((p) => (typeof p === 'string' ? p : p.text)).join('').replace(/\\(.|$)/gs, '$1'));
 }

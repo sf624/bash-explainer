@@ -5,7 +5,7 @@ import { argWordFor } from './argv/words';
 import type { Shell } from './dialect';
 import { canonicalName, impliedWords, lookupCommand } from './dict/aliases';
 import { Lang } from './i18n';
-import { argWordIn } from './semantics/argwords';
+import { argWordIn, bracesIn } from './semantics/argwords';
 import { type ExecEnv, runsString, slotEnvs } from './semantics/env';
 import { commandName as staticName, plainName } from './semantics/effects';
 import { resolveName, resolveRun } from './semantics/names';
@@ -338,7 +338,7 @@ function specRuns(n: SyntaxNode, model: StateModel, shell: Shell | undefined): S
     if (!spec) continue;
     const kind = resolveRun(model, run, shell)?.kind;
     if (kind !== 'builtin' && kind !== 'file') continue;
-    const parse = interpret(spec, run.args.map(argWordFor(model.shell)), { name: run.name, lookup: lookupCommand });
+    const parse = interpret(spec, run.args.map(argWordFor(model.shell, bracesIn(model))), { name: run.name, lookup: lookupCommand });
     out.push({ run, name: run.name!, spec, parse, values: run.args.map((w) => staticWordValue(w)) });
   }
   return out;
@@ -726,7 +726,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
       // (`kill -s INT $$`, `kill 0`: the signal again, to the shell itself or its process group.)
       if (spec.ends === 'shell' || (commandName(c) === 'kill' && a.some((w) => /\$\$|\$\{\$\}|\$\{?BASHPID\b|^-?0$/.test(w.text)))) return true;
       // `exec cmd`: the command replaces the shell (`exec 2>&1` alone does not).
-      if (interpret(spec, a.map(argWordFor(model.shell)), { lookup: lookupCommand }).roles.some(({ role }) => role.role === 'command' && role.slot.replacesShell)) return true;
+      if (interpret(spec, a.map(argWordFor(model.shell, bracesIn(model))), { lookup: lookupCommand }).roles.some(({ role }) => role.role === 'command' && role.slot.replacesShell)) return true;
     }
     return unknown ? undefined : false;
   };

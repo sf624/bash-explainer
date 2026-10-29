@@ -9,6 +9,7 @@ import type { ArgvParse } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
 import type { CommandSpec, Layout, LayoutAlt } from '../argv/spec';
 import { argWordFor } from '../argv/words';
+import { bracesIn } from '../semantics/argwords';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { visible } from '../ctlchars';
 import { awkInvocation, type AwkRunOptions } from '../examples/awk';
@@ -389,7 +390,7 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     const program = named.path ?? named.value;
     const spec = specFor(cx, program);
     const stage: Stage = { cmd: program.split('/').pop()!, words: exampleWords(cx, args, !!spec?.prints).map((w) => w.value), text: stageText(cmd), ...(spec?.copies ? { copies: true } : {}) };
-    const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell)), { name: program, lookup: (x) => specFor(cx, x) });
+    const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell, bracesIn(cx.state))), { name: program, lookup: (x) => specFor(cx, x) });
     const source = inputSource(cx, cmd, parse, args, spec);
     // A stage that writes its output to a file (`sort -o f`) hands nothing on.
     const runs = !!spec?.operands?.some((alt) => alt.pattern.some((o) => o.command));
