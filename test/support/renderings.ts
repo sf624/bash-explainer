@@ -13,7 +13,8 @@
 //   the fields of every word and some word gives other than one, the interpreter reads bash's argv, and the role of each
 //   field must be one the explanation shows on its word: the same option, the value of the same option, or an operand
 //   whose text from the spec the word's token says (alone, or in the part that holds of the hedge "… when `$x` expands
-//   to a single word; … when it expands to more" that src/explain/argv.ts makes of `ArgRole.otherwise` and `several`).
+//   to a single word; … when it expands to more" that src/explain/argv.ts makes of `ArgRole.otherwise` and `several`,
+//   or of "…; … when `$y` expands to nothing", of `none`).
 //
 // The counts come from the facts the tokens carry (`Token.value`, `Token.expands`, `Token.origin`, the refs and the
 // words of a brace expansion, the sections of an example); only the string and the concatenation are told by their
@@ -184,13 +185,17 @@ const showsFlag = (t: Token, { flag, text }: { flag: string; text?: string }): b
  * writes it) for the field at `place`. In the hedge of `several` ("X when `$a` expands to a single word; when it expands
  * to more, they are Y, then Z"), the part that holds for the number of fields its word gave, the first field the first
  * role and the last the last; in the hedge of `otherwise` ("X when `$a`, `$b` expands to a single word; Y when it
- * expands to more"), the part that holds for the words it names (neither when one of them gave none, which the hedge
- * does not cover); in the words of a brace expansion ("expands to `a` (X) and `b` (Y)"), the role after the field's
- * own text.
+ * expands to more"), the part that holds for the words it names (neither when one of them gave none, but as below);
+ * after either or alone, "; W when `$b` expands to nothing", W where the words it names gave none and this word one;
+ * in the words of a brace expansion ("expands to `a` (X) and `b` (Y)"), the role after the field's own text.
  */
 export function saysOperand(explanation: string, texts: readonly string[], place: FieldPlace): boolean {
-  const e = plain(explanation);
+  const whole = plain(explanation);
   const has = (part: string): boolean => texts.some((x) => part.includes(plain(x)));
+  // (The role when the words it names gave none and this word one; the part before says the other readings.)
+  const none = /; ((?:(?!; ).)+) when ((?:`[^`]+`(?:, )?)+) expands? to nothing$/.exec(whole);
+  if (none && place.of === 1 && [...none[2].matchAll(/`([^`]+)`/g)].every((x) => place.counts.get(x[1]) === 0)) return has(none[1]);
+  const e = none ? whole.slice(0, none.index) : whole;
   const several = / when `(.+?)` expands to a single word; when it expands to more, they are /.exec(e);
   if (several) {
     if (place.of === 1) return has(e.slice(0, several.index));
@@ -207,7 +212,7 @@ export function saysOperand(explanation: string, texts: readonly string[], place
     return named.some((c) => c! > 1) ? has(otherwise[2]) : has(e.slice(0, otherwise.index));
   }
   // (A hedge in a form not read here: a finding, so that a new wording is seen.)
-  if (/expands to (a single word|more)/.test(e)) return false;
+  if (/expands? to (a single word|more|nothing)/.test(e)) return false;
   if (e.startsWith('expands to `')) {
     // (The words as `braceTexts` writes them, with their quotes: the role at the field's place in the list.)
     const starts = [...e.matchAll(/`[^`]*` \(/g)];

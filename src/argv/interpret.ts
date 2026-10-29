@@ -56,9 +56,11 @@ export type ArgRole =
    * (see `ArgvParse.unmatched`). `uncertain`: the role depends on how many words an expansion gives, and
    * `otherwise` is the other role it may have. `each`: the role of each word it becomes, when they are known
    * and differ (`cp a{,.bak}`: the source, then the destination). `several`: the roles, in order, of the words it
-   * becomes when it gives more than one, when they differ (`cp "$@"`: sources, then the destination).
+   * becomes when it gives more than one, when they differ (`cp "$@"`: sources, then the destination). `none`: the role
+   * it has when the other words that may give no word (`words`, indexes of the command's words) give none and the rest
+   * one each, when it differs and a form fits (`grep -c $x f`: `f` is the pattern; `cp $a b`: `b` is a source).
    */
-  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; uncertain?: boolean; otherwise?: OperandSpec; each?: OperandSpec[]; several?: OperandSpec[] }
+  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; uncertain?: boolean; otherwise?: OperandSpec; each?: OperandSpec[]; several?: OperandSpec[]; none?: NoneRole }
   /** The rest of the words are read with the subcommand's spec. */
   | { role: 'subcommand'; name: string; spec: CommandSpec; parse: ArgvParse }
   /**
@@ -77,6 +79,9 @@ export type ArgRole =
   | { role: 'expression' };
 
 export type CommandRole = Extract<ArgRole, { role: 'command' }>;
+
+/** The role `spec` of an operand when the words `words` give no word (`ArgRole` `operand`, `none`). */
+export interface NoneRole { words: number[]; spec: OperandSpec }
 
 /**
  * The value of an option: `of` is the option's `flag` as written (`-f`, `--file`, `f` of `tar cf`), `index`
@@ -156,7 +161,10 @@ const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ? [] : A
  * (ssh). A `shell-string` slot and a `later` one (trap's action) take one word.
  */
 const takesRest = (o: OperandSpec): boolean => !!o.command && (o.command.joinsWords || (o.command.run !== 'shell-string' && !o.command.later));
-/** The number of words a word gives: fewest (at least one, as the text shows it) and many. */
+/**
+ * The number of words a word gives: fewest (at least one, as the text shows it) and many. A word that may give none
+ * (`count.min` 0) is read with one, and apart with none (`placeOperands`).
+ */
 const counts = (w: ArgWord): [number, number] => {
   if (!w.count) return [1, 1];
   const low = Math.max(w.count.min, 1);
@@ -279,18 +287,18 @@ class Reader {
   private placeOperands(parse: ArgvParse, st: OptionState, operands: number[], alts: { alt: OperandAlt; index: number }[], end: number, record: boolean): void {
     const { roles } = st;
     const words = operands.map((i) => this.words[i]);
-    /** The operands with each word repeated as many times as it gives words; `first[k]` is where word k starts. */
-    const expand = (high: boolean) => {
+    /** The operands with each word k repeated as many times as it gives words (`many(k)`); `first[k]` is where word k starts. */
+    const expand = (many: (k: number) => number) => {
       const at: number[] = [];
       const first: number[] = [];
-      words.forEach((w, k) => {
+      words.forEach((_, k) => {
         first.push(at.length);
-        for (let n = counts(w)[high ? 1 : 0]; n > 0; n--) at.push(k);
+        for (let n = many(k); n > 0; n--) at.push(k);
       });
       return { at, first };
     };
-    const fit = (high: boolean) => {
-      const x = expand(high);
+    const fit = (many: (k: number) => number) => {
+      const x = expand(many);
       for (const { alt, index } of alts) {
         const r = match(alt.pattern, x.at.map((k) => words[k]), this.maxSteps, st.options);
         if (r.gaveUp) parse.gaveUp = true;
@@ -299,8 +307,8 @@ class Reader {
       return undefined;
     };
     const variable = words.some((w) => counts(w)[0] !== counts(w)[1]);
-    const low = fit(false);
-    const high = variable ? fit(true) : low;
+    const low = fit((k) => counts(words[k])[0]);
+    const high = variable ? fit((k) => counts(words[k])[1]) : low;
     const primary = low ?? high;
     if (!primary) {
       operands.forEach((i, index) => roles.set(i, { role: 'operand', index }));
@@ -310,6 +318,28 @@ class Reader {
     if (record) parse.alternative = primary.index;
     const other = primary === low ? high : low;
     const pattern = primary.alt.pattern;
+    // `cp $a b`, `grep -c $x f`: the words that may give none (but word k) giving none, and the others one each (or their
+    // fewest). (Read once for the words that cannot give none, which all drop the same words, and once for each that can.)
+    const mayNone = words.map((w) => w.count?.min === 0);
+    const readings = new Map<number, { drops: number[]; read: ReturnType<typeof fit> } | undefined>();
+    const noneOf = (k: number) => {
+      const key = mayNone[k] ? k : -1;
+      if (!readings.has(key)) {
+        const drops = words.flatMap((_, j) => (mayNone[j] && j !== k ? [j] : []));
+        readings.set(key, drops.length ? { drops, read: fit((j) => (drops.includes(j) ? 0 : counts(words[j])[0])) } : undefined);
+      }
+      return readings.get(key);
+    };
+    /**
+     * The role of word k (now `item`) where the other words give none, when it is another. (When no form fits
+     * then, nothing is said: every spec of the dictionary but ssh's has a form of any number of operands, `positional`.)
+     */
+    const noneRole = (k: number, item: OperandSpec): NoneRole | undefined => {
+      const r = noneOf(k);
+      if (!r?.read) return undefined;
+      const then = r.read.alt.pattern[r.read.items[r.read.first[k]]];
+      return then.text.en !== item.text.en ? { words: r.drops.map((j) => operands[j]), spec: then } : undefined;
+    };
     for (let k = 0; k < operands.length; k++) {
       const i = operands[k];
       const pos = primary.first[k];
@@ -340,12 +370,13 @@ class Reader {
       // `cp "$@"`: when the word gives more words, they take these roles, in order.
       const theirs = other && other !== primary && primary === low ? other.at.flatMap((x, p) => (x === k ? [other.alt.pattern[other.items[p]]] : [])) : [];
       const several = theirs.filter((o, j) => j === 0 || o.text.en !== theirs[j - 1].text.en);
+      const none = each ? undefined : noneRole(k, item);
       // `jq . in.json --args a`: after the option, the operands of the repeating last item are something else.
       const last = n === pattern.length - 1 && (item.repeat === '*' || item.repeat === '+');
       const later = last ? st.given.later.filter((l) => l.word < i).pop()?.spec : undefined;
       const spec = later ?? item;
       const assignment = (spec.assignment || (spec.assignmentText && ASSIGNMENT.test(known(words[k])))) || undefined;
-      roles.set(i, { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(otherwise ? { uncertain: true, otherwise } : {}), ...(each ? { each } : {}), ...(several.length > 1 ? { uncertain: true, several } : {}) });
+      roles.set(i, { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(otherwise ? { uncertain: true, otherwise } : {}), ...(each ? { each } : {}), ...(several.length > 1 ? { uncertain: true, several } : {}), ...(none ? { uncertain: true, none } : {}) });
     }
   }
 

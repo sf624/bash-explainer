@@ -42,6 +42,7 @@ import { elementsOf } from '../semantics/elements';
 import { argWordIn, bracesIn, countIn, untilWords } from '../semantics/argwords';
 import { arrayKind, globOff, NO_SPEC, notForEarlier, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
+import { hedged } from './operand-texts';
 import { soleRead, turnedOff, unknownOption } from './option-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -83,7 +84,7 @@ export function readArgs(cx: Explainer, known: CommandSpec | undefined, args: Sy
   // (A function's words are read with no spec: its options are unknown, and its operands are `$1`, `$2`….)
   const spec = known && !isFn ? known : NO_SPEC;
   const lookup = (name: string): CommandSpec | undefined => specFor(cx, name);
-  let parse = interpret(spec, args.map(argWordFor(cx.state.shell, bracesIn(cx.state))), { name: cmdName, lookup });
+  let parse = interpret(spec, args.map(argWordIn(cx.state)), { name: cmdName, lookup });
   if (args.length) {
     const envs = new Map<ArgvParse, ExecEnv>();
     for (const [w, env] of slotEnvs(cx.state.env(args[0].parent!), parse, spec, args, cx.state.shell, lookup, undefined, envs)) cx.slotEnvs.set(w, env);
@@ -467,10 +468,7 @@ function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Ex
     desc = text.replace('`$N`', `\`$${at.n}\``);
     if (desc !== text && !at.sure) desc += cx.s('（この語か前の語が展開で 1 語以外になると、番号もずれる）', ' (if this word or one before it expands to more or fewer words, the number shifts)');
   }
-  if (desc && role.several) {
-    const roles = role.several.map((o) => cx.t(o.text)).join(cx.s('、', ', then '));
-    desc = cx.s(`\`${a.text}\` が1語に展開されるなら${desc}、2語以上なら順に${roles}`, `${desc} when \`${a.text}\` expands to a single word; when it expands to more, they are ${roles}`);
-  } else if (desc && role.otherwise) desc = uncertainText(cx, desc, cx.t(role.otherwise.text), parse, nodes);
+  if (desc) desc = hedged(cx, desc, a.text, role, parse, nodes);
   // (A function named like a declaration builtin, or `alias`, given `a=…`: bash's parser marked the word.)
   // (Not the operand's meaning when bash assigns an array and passes only the name: `alias b=(1 2)`.)
   const named = isFn || field(a, 'value')?.type !== 'array' ? desc : undefined;
@@ -746,17 +744,6 @@ function nameGlob(cx: Explainer, a: SyntaxNode, name: string, text: string, acts
     `. Unquoted, it is a glob pattern first: if a file matches it, that file's name is ${en} instead${sometimes} (write ${quoted})`);
 }
 
-/**
- * The roles an operand may have, which depend on how many words the expansions among the operands give
- * (`cp *.txt dir`): `desc` when they give one word each, `other` when they give more.
- */
-function uncertainText(cx: Explainer, desc: string, other: string, parse: ArgvParse, nodes: SyntaxNode[]): string {
-  // (Any word may be the one: `bash -c $cmd _ a`, where the string is unquoted.)
-  const many = parse.roles.filter((r) => countIn(nodes[r.word], cx.state)?.max !== countIn(nodes[r.word], cx.state)?.min);
-  const list = many.map((r) => `\`${nodes[r.word].text}\``).join(cx.s('・', ', '));
-  return cx.s(`${list} が1語に展開されるなら${desc}、2語以上なら${other}`, `${desc} when ${list} expands to a single word; ${other} when it expands to more`);
-}
-
 /** The words a brace expansion gives, each with its role (`cp a{,.bak}`: the source, then the destination). */
 function eachText(cx: Explainer, a: SyntaxNode, each: OperandSpec[]): string {
   // `destination (the new name…)` reads `destination: the new name…` in the parentheses.
@@ -787,7 +774,7 @@ function shellParams(cx: Explainer, role: CommandRole, parse: ArgvParse, nodes: 
  */
 function ownWords(cx: Explainer, respec: CommandSpec | undefined, name: string, first: SyntaxNode, parse: ArgvParse, spec: CommandSpec | undefined, nodes: SyntaxNode[], args: SyntaxNode[], refusal?: ArgvParse['refusal']): Token[] {
   const lookup = (x: string): CommandSpec | undefined => specFor(cx, x);
-  const read = respec ? { parse: interpret(respec, args.map(argWordFor(cx.state.shell, bracesIn(cx.state))), { name, lookup }), spec: respec, nodes: args }
+  const read = respec ? { parse: interpret(respec, args.map(argWordIn(cx.state)), { name, lookup }), spec: respec, nodes: args }
     : { parse: refusal ? { ...parse, refusal } : parse, spec: spec ?? NO_SPEC, nodes };
   const envs = new Map<ArgvParse, ExecEnv>();
   slotEnvs(cx.slotEnvs.get(first)!, read.parse, read.spec, read.nodes, cx.state.shell, lookup, undefined, envs);

@@ -1131,6 +1131,7 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 | `x='a b'; cat > $x/a`, `cat > $HOME/x` | "ambiguous redirect" (or may be) | "word splitting makes other than one word of it, which bash refuses here" ("may make") | "joined into one word" |
 | `e=; cat > $e$e`, also after `IFS=`, `set -f` or `set -o posix` | "ambiguous redirect" (dash opens the empty name) | "the parts below all expand to nothing … no word is left, which bash refuses here" | "joined into one word" (after `IFS=` or in POSIX mode) |
 | `a=(); b=; echo "${a[@]}"$b` | no word | "with no elements, the text around it makes one word, or none when it expands to nothing too" | "with no elements, the text around it makes one word" |
+| `cp $a b`, `grep -c ${x} f`, `cp $e $u c` (the variables empty) | `cp b`: `b` is a source (cp: missing destination file operand); `grep -c f`: `f` is the pattern; `cp c` | "…; source when `$a` expands to nothing", "file to search (default: stdin); search pattern (regex) when `${x}` expands to nothing", "destination directory; source when `$e`, `$u` expand to nothing" (not after `a=1`) | the roles for one word or more only: a destination, a file |
 
 `[[ $x == "$q" ]]` already said that a quoted right side is literal text.
 
