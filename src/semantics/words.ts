@@ -502,7 +502,7 @@ export interface Fields {
 }
 
 /** A piece of the text of a word: quoted (no split or glob), or unquoted from the source or from an expansion (split). */
-interface Piece { text: string; quoted: boolean; expanded: boolean }
+export interface Piece { text: string; quoted: boolean; expanded: boolean }
 class Failure { constructor(readonly error: NonNullable<Fields['error']>) {} }
 
 /**
@@ -836,12 +836,11 @@ export function wordFields(n: SyntaxNode, model: StateModel, env?: WordEnv): Fie
 }
 
 /**
- * The words of the brace expansion of the word of `n` (`wordAlternatives`; undefined where they are not known here),
- * each as written, with its fields before pathname expansion where they are known (`fields`), and its characters
- * unsplit, with `hole(part)` for each part not known here (`chars`; a tilde prefix is no part); either undefined
- * where bash fails on the word (`${x:?}`). For the patterns of a list (src/semantics/globwords.ts).
+ * The words of the brace expansion of the word of `n` (`wordAlternatives`; undefined where they are not known here), each as written, with its fields before
+ * pathname expansion where they are known (`fields`), its characters unsplit with `hole(part)` for each part not known here (`chars`; a tilde prefix is no part),
+ * and its fields with those holes (`holed`); undefined where bash fails on the word (`${x:?}`). For src/semantics/globwords.ts and nofield.ts.
  */
-export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: SyntaxNode) => string): { w: WordMeaning; words: { written: string; fields?: Char[][]; chars?: Char[] }[] } | undefined {
+export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: SyntaxNode) => string | Piece): { w: WordMeaning; words: { written: string; fields?: Char[][]; chars?: Char[]; holed?: Char[][] }[] } | undefined {
   // (A word of a list is always one.)
   const w = wordMeaning(n, model)!;
   const alternatives = wordAlternatives(w);
@@ -849,7 +848,7 @@ export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: Synta
   const ev = new Evaluator(w, new ModelValues(w, model, undefined, new Set()));
   const failing = (nodes: BraceAlternative, holed: boolean): Piece[] | undefined => {
     try {
-      return piecesOf(w, nodes, ev, holed ? (quoted, part) => ({ text: hole(part), quoted, expanded: !quoted }) : undefined);
+      return piecesOf(w, nodes, ev, holed ? (quoted, part) => ((h) => (typeof h === 'string' ? { text: h, quoted, expanded: !quoted } : h))(hole(part)) : undefined);
     } catch (e) {
       /* c8 ignore next -- a rethrow guard, as in `fieldsAt`. */
       if (!(e instanceof Failure)) throw e;
@@ -858,8 +857,9 @@ export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: Synta
   };
   return { w, words: alternatives.map((nodes) => {
     const known = failing(nodes, false);
-    const chars = failing(nodes, true)?.flatMap((p) => [...p.text].map((c): Char => ({ c, quoted: p.quoted, split: p.expanded && !p.quoted })));
-    return { written: nodes.map((p) => (typeof p === 'string' ? p : p.text)).join(''), fields: known && splitPieces(w, known), chars };
+    const holed = failing(nodes, true);
+    const chars = holed?.flatMap((p) => [...p.text].map((c): Char => ({ c, quoted: p.quoted, split: p.expanded && !p.quoted })));
+    return { written: nodes.map((p) => (typeof p === 'string' ? p : p.text)).join(''), fields: known && splitPieces(w, known), chars, holed: holed && splitPieces(w, holed) };
   }) };
 }
 

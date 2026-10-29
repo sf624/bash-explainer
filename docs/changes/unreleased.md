@@ -1130,6 +1130,7 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 | `echo $@/x`, `IFS=; echo $@/x` | one word per argument (`1` `2 3/x`), also with an empty `IFS` | "`$@` (one word per element) and globbing may make several words of it" | "joined into one word" |
 | `x='a b'; cat > $x/a`, `cat > $HOME/x` | "ambiguous redirect" (or may be) | "word splitting makes other than one word of it, which bash refuses here" ("may make") | "joined into one word" |
 | `e=; cat > $e$e`, also after `IFS=`, `set -f` or `set -o posix` | "ambiguous redirect" (dash opens the empty name) | "the parts below all expand to nothing … no word is left, which bash refuses here" | "joined into one word" (after `IFS=` or in POSIX mode) |
+| `a=(); b=; echo "${a[@]}"$b` | no word | "with no elements, the text around it makes one word, or none when it expands to nothing too" | "with no elements, the text around it makes one word" |
 
 `[[ $x == "$q" ]]` already said that a quoted right side is literal text.
 

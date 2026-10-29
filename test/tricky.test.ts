@@ -610,6 +610,11 @@ describe('tricky lines (round 3)', () => {
     assert.match(find(src, '"$@"x', 'ja').explanation, /最後の要素の後ろにくっつく/);
     assert.match(find('echo a"$x"b', 'a"$x"b').explanation, /^Concatenation: the parts below are joined into one word/);
     assert.match(find('echo "$*"x', '"$*"x').explanation, /^Concatenation: the parts below are joined into one word/);
+    // (With no elements, the text around is the word, and none when it is only expansions that may be empty.)
+    assert.match(find('a=(); b=; echo "${a[@]}"$b', '"${a[@]}"$b').explanation, /\(with no elements, the text around it makes one word, or none when it expands to nothing too\)$/);
+    assert.match(find('a=(); b=; echo "${a[@]}"$b', '"${a[@]}"$b', 'ja').explanation, /前後も空に展開されると単語は残らない）$/);
+    assert.match(find('echo "$@"x', '"$@"x').explanation, /\(with no elements, the text around it makes one word\)$/);
+    assert.strictEqual(bash('a=(); b=; set -- "${a[@]}"$b; echo $#; set --; set -- "$@"x; echo $#'), '0\n1\n');
     assert.strictEqual(bash('set -- a "b c"; for x in "$@"x; do echo "[$x]"; done; a=(1 2); for x in p"${a[@]}"q; do echo "[$x]"; done; set --; for x in "$@"x; do echo "[$x]"; done'), '[a]\n[b cx]\n[p1]\n[2q]\n[x]\n');
   });
 
@@ -689,6 +694,8 @@ describe('tricky lines (round 3)', () => {
     }
     const dash = new Analyzer('en').explainLine(parser.parse('e=; cat > $e$e'), 0, 'dash');
     assert.strictEqual(allTokens(dash.items).find((t) => t.label === '$e$e')!.explanation, 'Concatenation: the parts below are joined into one word');
+    const sh = new Analyzer('en').explainLine(parser.parse('echo hi > $1$2'), 0, 'sh');
+    assert.strictEqual(allTokens(sh.items).find((t) => t.label === '$1$2')!.explanation, 'Concatenation: the parts below are joined into one word');
   });
 
   it('lists the words of a brace expansion, with the lone backslash gone', () => {
