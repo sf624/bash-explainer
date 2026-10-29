@@ -4,7 +4,7 @@ import { distro } from './distro';
 import { system } from './system';
 import type { CommandSpec, OperandSpec, OptionSpec, PatternOption } from '../argv/spec';
 import { tx } from '../i18n';
-import { basic } from './basic';
+import { basic, DATE_OPERANDS } from './basic';
 import { psLetters } from './psletters';
 import { storage } from './storage';
 import { admin } from './admin';
@@ -1136,7 +1136,7 @@ export const core: Record<string, CommandSpec> = {
     ['-R|--rfc-email', 'メールの形式（RFC 5322）で表示', 'RFC 5322 (e-mail) format'],
     ['--resolution', '時刻の精度を表示する', 'print the resolution of timestamps'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('表示書式（`+` で始まる。例: `+%Y-%m-%d`, `+%F` は年-月-日, `+%s` は UNIX 時刻）', 'output format starting with `+` (e.g. `+%Y-%m-%d`, `+%F`, `+%s`)')], positionalLang: ['date'], atMost: { count: 1, extra: EXTRA_OPERAND } }),
+  ], { parser: 'getopt_long', operands: DATE_OPERANDS }),
   sleep: cmd('指定した時間だけ待つ', 'Pause for a duration', [
     ...GNU_INFO,
   ], { parser: 'getopt_long', positional: [pos('待つ時間（秒。`1m`, `0.5` なども可）', 'duration in seconds (`1m`, `0.5`… also allowed)')] }),

@@ -1,8 +1,8 @@
 // Words past the operands a tool takes, compared with the real tools (GNU coreutils and diffutils, procps pgrep,
 // util-linux mountpoint and look, xxd, getconf): the interpreter marks as extra operands the words the tool refuses
 // ("extra operand", "too many templates"…), and only those, and a hedge says so for the counts of words where the tool
-// refuses them. Each tool runs in a directory of its own; a missing tool is skipped. mknod is not run: its usage says
-// how many operands it takes.
+// refuses them. Each tool runs in a directory of its own; a missing tool is skipped. mknod runs only where it makes
+// a pipe or refuses (a device node is never made).
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
@@ -55,7 +55,7 @@ function runLine(line: string): { status: number; err: string } {
   return { status: r.status!, err: r.stderr.toString() };
 }
 
-const REFUSALS = /extra operand|too many templates|bad usage|only one pattern|^Usage:/m;
+const REFUSALS = /extra operand|too many templates|bad usage|only one pattern|lacks a leading|^Usage:/m;
 
 describe('extra operands, compared with the real tools', () => {
   // Lines with more operands than the tool takes, and lines with as many as it takes (some with an option that lifts
@@ -67,6 +67,10 @@ describe('extra operands, compared with the real tools', () => {
     'comm f1 f2 f3', 'comm f1 f2', 'join f1 f2 f3', 'join f1 f2', 'shuf f1 f2', 'shuf f1', 'shuf -e f1 f2 f3', 'shuf -i 1-3 f1',
     'unlink nx1 nx2', 'unlink nx1', 'link f1 l f3', 'link f1 l', 'tsort f1 f2', 'tsort f1', 'dircolors f1 f2',
     'pgrep a b', 'pgrep -x no-such-process-name', 'mountpoint . f1', 'mountpoint -q .', 'look a f1 f2', 'look a f1', 'xxd f1 o f3', 'xxd f1 o', 'getconf NAME_MAX / x', 'getconf NAME_MAX /',
+    'mknod n p 1 2', 'mknod n p 1', 'mknod n p', 'mknod -m 600 n p 1', 'mknod n c 1 2 3', 'mknod n b 1 2 3 4',
+    'dircolors -p f1', 'dircolors --print-database f1 f2', 'dircolors --print-ls-colors f1', 'dircolors -b f1', 'dircolors -p', 'dircolors f1 f2',
+    'getconf -a / x', 'getconf -a /', 'getconf -a', 'getconf -a PATH', 'getconf -a NAME_MAX /', 'getconf -v POSIX_V7_LP64_OFF64 NAME_MAX /',
+    'date -d now x', 'date -d now +%s', 'date -d now x +%s', 'date -s now x', 'date -f /dev/null x', 'date -r . x', 'date --resolution x', 'date -u x y', 'date -I x', 'date x', 'date 0101', 'date -- x',
   ];
   for (const line of LINES) {
     it(line, function () {
@@ -97,11 +101,56 @@ describe('extra operands, compared with the real tools', () => {
     assert.strictEqual(run('tr', ['-s', 'a', 'b'], { input: 'aaxbbb\n', env: ENV }).stdout.toString(), 'bxb\n');
   });
 
-  it('mknod: four operands at most, as its usage says (not run)', function () {
-    const { words, roles } = read('mknod n c 1 2 3');
-    assert.deepStrictEqual(words.filter((_, i) => extraOf(roles[i]?.spec)), ['3']);
+  // What each word is, against what the tool does with it: `shuf -e` takes lines, a pipe has no device numbers (the
+  // limit of mknod follows the type), `dircolors -p` takes no file, `date x` reads a date to set (`date -d now x`
+  // refuses it), `getconf -a` takes a path.
+  /** The English text of the role of each operand of `line` (the options have none). */
+  const roleTexts = (line: string): string[] => read(line).roles.flatMap((r) => (r?.spec ? [r.spec.text.en] : []));
+  const FORMAT = 'output format starting with `+` (e.g. `+%Y-%m-%d`, `+%F`, `+%s`)';
+
+  it('shuf -e: the words are the lines to shuffle, as shuf prints them', function () {
+    const line = 'line to shuffle (each argument is one line)';
+    assert.deepStrictEqual(roleTexts('shuf -e a b c'), [line, line, line]);
+    assert.deepStrictEqual(roleTexts('shuf -n 1 -e a'), [line]);
+    assert.deepStrictEqual(roleTexts('shuf f1'), ['target file']);
+    if (!usableTool('shuf')) this.skip();
+    assert.deepStrictEqual(run('shuf', ['-e', 'f1', 'b', 'c'], { env: ENV }).stdout.toString().split('\n').sort(), ['', 'b', 'c', 'f1']);
+  });
+
+  it('mknod: the limit follows the type, and the numbers are for devices only', function () {
+    assert.deepStrictEqual(roleTexts('mknod n p').length, 2);
+    assert.deepStrictEqual(roleTexts('mknod -m 600 n p 1').map((t) => /^extra operand/.test(t)), [false, false, true]);
+    for (const t of ['b', 'c', 'u']) assert.deepStrictEqual(roleTexts(`mknod n ${t} 1 2`).slice(2), ['major number', 'minor number']);
+    // (A type not known: the numbers may be wanted.)
+    assert.deepStrictEqual(roleTexts('mknod n $t 1 2').slice(2), ['major number', 'minor number']);
     if (!usableTool('mknod')) this.skip();
-    assert.match(spawnSync('mknod', ['--help'], { env: ENV, encoding: 'utf8' }).stdout, /^Usage: mknod \[OPTION\]\.\.\. NAME TYPE \[MAJOR MINOR\]$/m);
+    assert.match(runLine('mknod n p 1 2').err, /Fifos do not have major and minor device numbers/);
+    assert.match(runLine('mknod n c 1 2 3').err, /extra operand .3./);
+  });
+
+  it('dircolors: -p takes no file, --print-ls-colors one', function () {
+    assert.match(roleTexts('dircolors -p f1')[0], /^extra operand/);
+    assert.match(roleTexts('dircolors --print-database f1')[0], /^extra operand/);
+    assert.deepStrictEqual(roleTexts('dircolors --print-ls-colors f1'), ['settings file']);
+    assert.deepStrictEqual(roleTexts('dircolors f1'), ['settings file']);
+  });
+
+  it('getconf -a: a path at most, no variable name', function () {
+    assert.deepStrictEqual(roleTexts('getconf -a /').length, 1);
+    assert.doesNotMatch(roleTexts('getconf -a /')[0], /^extra operand/);
+    assert.match(roleTexts('getconf -a / x')[1], /^extra operand/);
+    assert.match(roleTexts('getconf -a /')[0], /^path/);
+    assert.match(roleTexts('getconf NAME_MAX /')[0], /^variable/);
+  });
+
+  it('date: a word without a leading +, read as a date to set, or refused when an option gives the date', function () {
+    assert.deepStrictEqual(roleTexts('date +%F'), [FORMAT]);
+    assert.deepStrictEqual(roleTexts('date $a'), [FORMAT]);
+    for (const line of ['date 0101', 'date -u 0101', 'date -I 0101', 'date -R 0101', 'date -- 0101']) assert.match(roleTexts(line)[0], /^date to set/, line);
+    for (const o of ['-d now', '-f f1', '-r f1', '-s now', '--set=now', '--resolution', '--date=now']) assert.match(roleTexts(`date ${o} 0101`).pop()!, /^not allowed here/, o);
+    assert.match(roleTexts('date -d now 0101 +%s')[0], /^format or date/);
+    assert.match(roleTexts('date -d now 0101 +%s')[1], /^extra operand/);
+    assert.deepStrictEqual(roleTexts('date -d now +%s'), [FORMAT]);
   });
 
   // `cmp $a`, `cmp $a f`: what the hedge says of each count of words `$a` gives, against the tool run with as many.
