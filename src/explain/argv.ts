@@ -42,7 +42,7 @@ import { elementsOf } from '../semantics/elements';
 import { argWordIn, countIn, fieldsIn, untilWords } from '../semantics/argwords';
 import { arrayKind, globOff, NO_SPEC, notForEarlier, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
-import { eachText, functionArgs, hedged, listed, numbered, SHIFTS, withNone, wordItems } from './operand-texts';
+import { eachText, functionArgs, hedged, listed, numbered, restText, SHIFTS, withNone, wordItems } from './operand-texts';
 import { soleRead, turnedOff, unknownOption } from './option-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -123,17 +123,17 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
       const a = nodes[word];
       switch (role.role) {
         case 'end-of-options':
-          out.push(withNone(cx, endOfOptions(cx, a, spec), role.none, nodes));
+          out.push(withNone(cx, endOfOptions(cx, a, spec), role, nodes));
           break;
         case 'option':
         case 'unknown-option':
         case 'cluster':
           disables = (role.role === 'cluster' ? role.letters[0] as { flag: string } : role).flag.startsWith('+');
           // (A declaration builtin's options are explained by the attributes they give; one it does not have, as any builtin's.)
-          out.push(withNone(cx, declaresNames(spec) && role.role !== 'unknown-option' ? declarationOption(cx, a, role) : optionToken(cx, a, role, spec, parse, word), role.none, nodes));
+          out.push(withNone(cx, declaresNames(spec) && role.role !== 'unknown-option' ? declarationOption(cx, a, role) : optionToken(cx, a, role, spec, parse, word), role, nodes));
           break;
         case 'pattern-option':
-          out.push(withNone(cx, cx.tok(a, 'option', cx.t(role.text), wordParts(cx, a)), role.none, nodes));
+          out.push(withNone(cx, cx.tok(a, 'option', cx.t(role.text), wordParts(cx, a)), role, nodes));
           break;
         case 'open-option':
           out.push(cx.tok(a, 'option', cx.s(
@@ -141,7 +141,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             'Options known only at run time (the command reads what the expansion gives as options)'), wordParts(cx, a)));
           break;
         case 'value':
-          out.push(withNone(cx, expanded(cx, a, valueToken(cx, a, role, disables)), role.none, nodes));
+          out.push(withNone(cx, expanded(cx, a, valueToken(cx, a, role, disables)), role, nodes));
           break;
         case 'old-style': {
           const parts = role.letters.flatMap((l) => {
@@ -175,7 +175,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
         }
         case 'subcommand': {
           const note = cx.s(`（シェルから見れば \`${parse.command}\` への引数で、\`${parse.command}\` 自身が解釈する）`, ` (to the shell it is an argument to \`${parse.command}\`, which interprets it itself)`);
-          out.push(cx.tok(a, 'subcommand', cx.s(`サブコマンド \`${role.parse.command}\`: `, `Subcommand \`${role.parse.command}\`: `) + cx.t(role.spec.summary) + note));
+          out.push(withNone(cx, cx.tok(a, 'subcommand', cx.s(`サブコマンド \`${role.parse.command}\`: `, `Subcommand \`${role.parse.command}\`: `) + cx.t(role.spec.summary) + note), role, nodes));
           out.push(...render(cx, role.parse, role.spec, nodes, nodes.slice(word + 1, role.parse.end)));
           break;
         }
@@ -201,7 +201,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             if (!parse.refusal) slotNotes(cx, role, cx.slotEnvs.get(a)!, [a], assigned);
             const string = role.of ? valueToken(cx, a, { role: 'value', of: role.of, index: 0 }, false) : cx.tok(a, 'argument', cx.t(role.item!.text), wordParts(cx, a));
             out.push(withScript(string, scriptTokens(cx, [a], cx.slotEnvs.get(a)!, shellParams(cx, role, parse, nodes, word), !parse.refusal)));
-          } else out.push(wrapped(cx, nodes, word, role, assigned, parse.refusal));
+          } else out.push(withNone(cx, wrapped(cx, nodes, word, role, assigned, parse.refusal), role, nodes));
           break;
         case 'joined':
           if (!joinedWhole) out.push(a === joinedNote?.at ? withScript(positional(cx, a, joined), { tokens: [], note: joinedNote.note }) : positional(cx, a, joined));
@@ -399,7 +399,8 @@ function valueToken(cx: Explainer, v: SyntaxNode, role: ValueRole, disables: boo
     const name = names[role.index];
     t.explanation = cx.s(`\`${flag}\` の${name}`, `${name[0].toUpperCase()}${name.slice(1)} for \`${flag}\``) + (role.index === 0 ? cx.s('（フィルタでは `$` を付けて使う）', ' (use it as `$name` in the filter)') : '');
   }
-  t.explanation += splicedNote(cx, role);
+  // (`head -n $a f`: what the words after its first are, where it gives several.)
+  t.explanation += splicedNote(cx, role) + restText(cx, role.rest, v.text);
   t.valueFor = flag;
   return t;
 }
@@ -476,10 +477,10 @@ function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Ex
     if (desc !== text && !at.sure) desc += SHIFTS(cx);
   }
   // (`tar -cf $a b`: a word the spec does not describe, but the value of `-f` when `$a` gives none.)
-  if (!desc && role.none) desc = cx.s(`文字列 \`${a.text}\``, `Word \`${a.text}\``);
+  if (!desc && (role.none || role.more)) desc = cx.s(`文字列 \`${a.text}\``, `Word \`${a.text}\``);
   const lang = isFn ? undefined : item?.lang;
   // (The roles when words before it give none come after the note on its language, which is of this reading: `grep -d $v a b`.)
-  const late = lang ? role.none : undefined;
+  const late = lang && (role.none || role.more) ? role : undefined;
   if (desc) desc = hedged(cx, desc, a.text, role, nodes, !late);
   // (A function named like a declaration builtin, or `alias`, given `a=…`: bash's parser marked the word.)
   // (Not the operand's meaning when bash assigns an array and passes only the name: `alias b=(1 2)`.)

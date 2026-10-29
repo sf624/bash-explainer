@@ -1580,6 +1580,7 @@
  "su -c 'whoami'",
  "sudo \"$cmd\" x",
  "sudo -i cd /tmp",
+ "sudo -u $u tar -cf x y",
  "sudo -u bob rm -rf /tmp/x",
  "sudo -u deploy rm -rf \"$DIR\"/*",
  "sudo deploy web",
