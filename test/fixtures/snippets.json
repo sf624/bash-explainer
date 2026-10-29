@@ -830,6 +830,7 @@
  "docker run -H x alpine",
  "docker run -it alpine",
  "dockerfile",
+ "e=; cat > $e$e",
  "echo",
  "echo\n",
  "echo\n#!/bin/bash",

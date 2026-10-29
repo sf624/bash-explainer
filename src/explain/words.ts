@@ -18,6 +18,7 @@ import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { braceTexts } from '../semantics/brace';
+import { mayGiveNoField } from '../semantics/nofield';
 import { replaceRange } from '../rewrite';
 import { attribute, docLine } from '../semantics/state';
 import { readonlyAtStart } from '../semantics/vars';
@@ -180,12 +181,6 @@ function unquotedElements(n: SyntaxNode): boolean {
   return !!p && p.prefix !== '#' && (p.name === '@' || p.name === '*' || p.subscript === '@' || p.subscript === '*');
 }
 
-/** A part that may expand to nothing unquoted: an expansion, or braces with an empty alternative (`{,a}`). */
-function mayBeEmpty(n: SyntaxNode): boolean {
-  if (n.type === 'brace_expression') return /\{,|,,|,\}/.test(n.text);
-  return n.type === 'simple_expansion' || n.type === 'expansion' || n.type === 'command_substitution';
-}
-
 /**
  * "Concatenation" of a word with no `"$@"`-like part: the parts are joined, and the word is one word only where bash
  * surely makes one of it (src/semantics/words.ts: the fields the model knows, else the steps of brace expansion, word
@@ -213,15 +208,19 @@ function concatJoined(cx: Explainer, n: SyntaxNode): string {
   const ja = names.map((x) => x[0]).join('・');
   const en = names.length > 1 ? `${names.slice(0, -1).map((x) => x[1]).join(', ')} and ${names[names.length - 1][1]}` : names[0]?.[1];
   const make = names.length > 1 ? 'make' : 'makes';
-  // (Unquoted, a word of expansions alone that all expand to nothing is removed, also where the IFS is empty: `$a$b`;
-  // and a glob that matches nothing, with nullglob.)
-  const empty = w.rule.fields !== 'one' && ((!known && n.namedChildren.every(mayBeEmpty)) || (glob && w.glob.nullglob !== 'off'));
+  // (An unquoted word that expands to nothing is removed, also where the IFS is empty: `$a$b`; so is a glob that
+  // matches nothing, with nullglob: src/semantics/nofield.ts.)
+  const empty = mayGiveNoField(n, cx.state);
   if (fields?.length === 0) {
     return cx.s('連結: 以下の部分はどれも空に展開され、クォートしない空の展開は取り除かれるので、単語は残らない', 'Concatenation: the parts below all expand to nothing, and an unquoted empty expansion is removed: no word is left');
   }
   if (fields) {
-    const list = fields.length <= 5 ? `: ${fields.map((f) => codeSpan(shown(f))).join(' ')}` : '';
-    return cx.s(`連結: 以下の部分を空白なしでつなげるが、${ja}で${fields.length}個の単語になる${list}`, `Concatenation: the parts below are joined, but ${en} ${make} ${fields.length} words of it${list}`);
+    const list = fields.length <= 5 ? `: ${fields.map((f) => codeSpan(shown(f) || "''")).join(' ')}` : '';
+    return cx.s(`連結: 以下の部分を空白なしでつなげるが、${ja}で ${fields.length} 個の単語になる${list}`, `Concatenation: the parts below are joined, but ${en} ${make} ${fields.length} words of it${list}`);
+  }
+  if (error === 'ambiguous-redirect' && known?.text === '') {
+    return cx.s('連結: 以下の部分はどれも空に展開され、クォートしない空の展開は取り除かれるので単語が残らず、bash はリダイレクトを「ambiguous redirect」のエラーにする',
+      'Concatenation: the parts below all expand to nothing, and an unquoted empty expansion is removed: no word is left, which bash refuses here ("ambiguous redirect")');
   }
   if (error === 'ambiguous-redirect') {
     return cx.s(`連結: 以下の部分を空白なしでつなげるが、${ja}で1つの単語にならないので、bash はリダイレクトを「ambiguous redirect」のエラーにする`,
