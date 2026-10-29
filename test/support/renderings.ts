@@ -183,10 +183,31 @@ const showsFlag = (t: Token, { flag, text }: { flag: string; text?: string }): b
   && ((!!text && t.explanation.includes(text)) || [flag, dash(flag)].some((f) => t.explanation.includes(`\`${f}\``) || t.label === f));
 
 /**
+ * The readings of the hedge of `several`, each for a count of words (`from` to `to`, or more): "X when `$a` expands to a
+ * single word", then "when it expands to 2 words (2 words or more, more), they are Y, then Z", where
+ * "more" is from the count after the reading before; the first may name the word ("when `$a` expands to 2 words, …").
+ * Undefined for an explanation in another form.
+ */
+function severalClauses(e: string): { from: number; to?: number; text: string }[] | undefined {
+  const out: { from: number; to?: number; text: string }[] = [];
+  for (const [j, part] of e.split('; ').entries()) {
+    const one = j ? null : /^(.*) when `[^`]+` expands to a single word$/.exec(part);
+    if (one) { out.push({ from: 1, to: 1, text: one[1] }); continue; }
+    const m = new RegExp(`^when ${j ? 'it' : '`[^`]+`'} expands to (?:(more)|(\\d+) words( or more)?), they are (.*)$`).exec(part);
+    if (!m) return undefined;
+    const before = out[out.length - 1]?.to;
+    if (m[1] && before === undefined) return undefined;
+    const from = m[1] ? before! + 1 : Number(m[2]);
+    out.push({ from, to: m[1] || m[3] ? undefined : from, text: m[4] });
+  }
+  return out.length > 1 || out[0].from > 1 ? out : undefined;
+}
+
+/**
  * Whether the explanation of an operand's token says the role `texts` (the spec's text, as written or as `eachText`
  * writes it) for the field at `place`. In the hedge of `several` ("X when `$a` expands to a single word; when it expands
- * to more, they are Y, then Z"), the part that holds for the number of fields its word gave, the first field the first
- * role and the last the last; in the hedge of `otherwise` ("X when `$a`, `$b` expands to a single word; Y when it
+ * to 2 words, they are Y, then Z; when it expands to more, they are …", `severalClauses`), the part that holds for the
+ * number of fields its word gave, the first field the first role and the last the last; in the hedge of `otherwise` ("X when `$a`, `$b` expands to a single word; Y when it
  * expands to more"), the part that holds for the words it names (neither when one of them gave none, but as below);
  * after either or alone, "; W when `$b` expands to nothing", W where the words it names gave none and this word one;
  * in the words of a brace expansion ("expands to `a` (X) and `b` (Y)"), the role after the field's own text.
@@ -198,10 +219,13 @@ export function saysOperand(explanation: string, texts: readonly string[], place
   const none = /; ((?:(?!; ).)+) when ((?:`[^`]+`(?:, )?)+) expands? to nothing$/.exec(whole);
   if (none && place.of === 1 && [...none[2].matchAll(/`([^`]+)`/g)].every((x) => place.counts.get(x[1]) === 0)) return has(none[1]);
   const e = none ? whole.slice(0, none.index) : whole;
-  const several = / when `(.+?)` expands to a single word; when it expands to more, they are /.exec(e);
+  const several = severalClauses(e);
   if (several) {
-    if (place.of === 1) return has(e.slice(0, several.index));
-    const roles = e.slice(several.index + several[0].length).split(', then ');
+    // (A count the hedge does not cover: not a reading it says.)
+    const clause = several.find((c) => c.from <= place.of && place.of <= (c.to ?? Infinity));
+    if (!clause) return false;
+    if (clause.from === 1) return has(clause.text);
+    const roles = clause.text.split(', then ');
     if (place.at === 0) return has(roles[0]);
     if (place.at === place.of - 1) return has(roles[roles.length - 1]);
     return roles.some(has);

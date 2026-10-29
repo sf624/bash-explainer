@@ -30,9 +30,15 @@ grep -c ${x} f
 cp $a $a/x
 cp $e $u c
 
-# Bug 6 of oracles.md 2.8: the hedge `several` gives the roles of three words; with two, the last is the destination of
-# the two-operand form.
+# The hedge `several` (bug 6 of oracles.md 2.8): with two words, the last is the destination of the two-operand form
+# (`cp a b`, `ln -s a b`: a new name, or an existing directory); with three, of the form of three or more. (The names
+# sort after the others, which keep their values in the run with values.)
 cp $pair
+ln -s $pair
+y=1
+cp $y{,.bak}
+y3="a b c"
+cp $y3
 
 # Bug 7: a known value that starts with `-` gives an option, but is explained as an operand.
 opt="-r a"
@@ -42,3 +48,9 @@ cp $opt d
 set +B
 cp {a,b} d
 set -B
+
+# Bug 7 too: a word the model knows is empty is read as one word, so with it the hedges say the roles of other forms
+# (bash runs `cp a b`: `b` is the destination).
+z=""
+cp $z $pair
+cp $pair $z
