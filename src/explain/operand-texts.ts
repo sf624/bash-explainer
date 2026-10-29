@@ -61,20 +61,20 @@ function byCountText(cx: Explainer, desc: string, by: ByCount, nodes: SyntaxNode
 
 /**
  * The roles the words of an operand may have when it or the other words that may give several give more (`MixedRoles`):
- * `cp $a $b` is, of `$b`, "destination (…) when `$a`, `$b` expand to a single word; when they expand to more, each of
+ * `cp $a $b` is, of `$b`, "destination (…) when `$a`, `$b` expand to a single word; when any of them expands to more, each of
  * its words is source or destination directory".
  */
 function mixedText(cx: Explainer, desc: string, mixed: MixedRoles, nodes: SyntaxNode[]): string {
   const list = mixed.words.map((i) => `\`${nodes[i].text}\``).join(cx.s('・', ', '));
   const texts = mixed.roles.map((o) => cx.t(o.text));
-  const roles = cx.s(`${texts.join('・')}のどれか`, texts.length > 1 ? `${texts.slice(0, -1).join(', ')} or ${texts[texts.length - 1]}` : texts[0]);
+  const roles = texts.length > 1 ? cx.s(`${texts.join('・')}のどれか`, `${texts.slice(0, -1).join(', ')} or ${texts[texts.length - 1]}`) : texts[0];
   const them = cx.s(mixed.many ? 'この語の各語は' : 'この語は', mixed.many ? 'each of its words is' : 'it is');
   if (!mixed.first) return cx.s(`${list} が展開される語数により、${them}${roles}`, `${them} ${roles}, by how many words ${list} expand to`);
   // (A word that gives two words at least, `{a,b}*`: as few as each gives.)
   const one = mixed.words.every((i) => countIn(nodes[i], cx.state)!.min <= 1);
   return one
-    ? cx.s(`${list} が1語に展開されるなら${desc}、どれかが2語以上なら${them}${roles}`, `${desc} when ${list} expand to a single word; when they expand to more, ${them} ${roles}`)
-    : cx.s(`${list} がそれぞれ最も少ない語数に展開されるなら${desc}、どれかがそれより多いなら${them}${roles}`, `${desc} when ${list} expand to as few words as each can; when they expand to more, ${them} ${roles}`);
+    ? cx.s(`${list} が1語に展開されるなら${desc}、どれかが2語以上なら${them}${roles}`, `${desc} when ${list} expand to a single word; when any of them expands to more, ${them} ${roles}`)
+    : cx.s(`${list} がそれぞれ最も少ない語数に展開されるなら${desc}、どれかがそれより多いなら${them}${roles}`, `${desc} when ${list} expand to as few words as each can; when any of them expands to more, ${them} ${roles}`);
 }
 
 /**
