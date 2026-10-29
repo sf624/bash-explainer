@@ -74,6 +74,16 @@ describe('positional arguments described by their number', () => {
     assert.deepStrictEqual(operands('join a b').map((o) => o[1]), ['first sorted file (`-` for stdin)', 'second sorted file (`-` for stdin)']);
   });
 
+  it('marks the words past the operands a tool takes as extra operands, which it refuses (test/extra-operands-real.test.ts)', () => {
+    const extra = 'extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)';
+    assert.deepStrictEqual(operands('seq 1 2 3 4').map((o) => o[1]), ['first', 'increment', 'last', extra]);
+    assert.deepStrictEqual(operands('basename /a/b .txt c').map((o) => o[1]), ['path', 'suffix to remove', extra]);
+    assert.deepStrictEqual(operands('diff a b c').map((o) => o[1]), ['first file', 'second file', extra.replace('status 1', 'status 2')]);
+    assert.deepStrictEqual(operands('diff --to-file=d a b c').map((o) => o[1]), ['first file', 'second file', 'second file']);
+    assert.deepStrictEqual(operands('tr -d a b').map((o) => o[1]), ['character set to delete', extra]);
+    assert.deepStrictEqual(operands('mktemp a.XXX b', 'ja')[1], ['b', '余分なオペランド（コマンドは受け付けず、`too many templates` と表示して何もせずに終了ステータス 1 で終わる）']);
+  });
+
   it('keeps what follows the description (glob notes) and leaves quoted words described', () => {
     assert.match(new Analyzer('en').explainLine(parser.parse('cp *.txt d/'), 0).items[0].children[0].explanation, /^source — Glob pattern \(shell wildcards\): expands to the matching file names/);
     assert.deepStrictEqual(operands('cp "$a" "$b"').map((o) => o[1]), ['source', 'destination (the new name, or an existing directory)']);

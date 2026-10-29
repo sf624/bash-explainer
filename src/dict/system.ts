@@ -1,6 +1,6 @@
 import type { CommandSpec, SubcommandSpec } from '../argv/spec';
 import { tx } from '../i18n';
-import { args, byCount, cmd, GNU_INFO, operand, OptSpec, persistent, pos } from './types';
+import { args, byCount, cmd, DIFF_EXTRA_OPERAND, extraOperand, GNU_INFO, operand, OptSpec, persistent, pos } from './types';
 
 // Commands chosen from a survey of shell scripts, Dockerfiles and CI workflows in popular
 // repositories (installers, official Docker images, CI images): the ones most often met that the
@@ -586,7 +586,8 @@ export const system: Record<string, CommandSpec> = {
     ...GNU_INFO,
   ], { parser: 'getopt_long' }),
   getconf: cmd('システムの設定値を表示する', 'Print system configuration values', [], {
-    positional: [pos('変数名（`_NPROCESSORS_ONLN`: 使える CPU 数、`LONG_BIT`: 32/64 ビット、`PAGESIZE`…）', 'variable (`_NPROCESSORS_ONLN`: usable CPUs, `LONG_BIT`: 32/64-bit, `PAGESIZE`…)')],
+    positional: [pos('変数名（`_NPROCESSORS_ONLN`: 使える CPU 数、`LONG_BIT`: 32/64 ビット、`PAGESIZE`…）', 'variable (`_NPROCESSORS_ONLN`: usable CPUs, `LONG_BIT`: 32/64-bit, `PAGESIZE`…)'), pos('パス（そこにあるファイルシステムでの値を表示する）', 'path (print the value for its file system)')],
+    atMost: { count: 2, extra: extraOperand('Usage: getconf …', 2) },
   }),
   lsb_release: cmd('Linux ディストリビューションの情報を表示する', 'Print Linux distribution information', [
     ['-a|--all', 'すべての情報', 'all information'], ['-i|--id', 'ディストリビューション名（`Ubuntu`…）', 'distributor ID (`Ubuntu`…)'], ['-d|--description', '説明', 'description'],
@@ -712,7 +713,7 @@ export const system: Record<string, CommandSpec> = {
     ['-d|--fs-devno', 'ファイルシステムのデバイス番号を表示', 'show the device number of the file system'],
     ['-x|--devno', 'ブロックデバイスの番号を表示', 'show the device number of a block device'],
     ['-q|--quiet', '何も表示せず終了ステータスで返す', 'print nothing; report via the exit status'],
-  ], { positional: [pos('ディレクトリ', 'directory')] }),
+  ], { positional: [pos('ディレクトリ', 'directory')], atMost: { count: 1, extra: extraOperand('bad usage', 1) } }),
   ldd: cmd('プログラムが使う共有ライブラリを表示する', 'Print the shared libraries a program uses', [
     ['-d|--data-relocs', 'データの再配置を行って未定義のシンボルを報告する', 'perform data relocations and report missing objects'],
     ['-r|--function-relocs', '関数の再配置を行って未定義のシンボルを報告する', 'perform function relocations and report missing objects'],
@@ -869,11 +870,11 @@ export const system: Record<string, CommandSpec> = {
     ['-i|--ignore-initial', '先頭の指定したバイト数を読み飛ばす（`SKIP1:SKIP2` で別々に）', 'skip the first bytes (`SKIP1:SKIP2` for each file)', 'arg'],
     ['--help', 'ヘルプを表示する', 'show help'],
     ['-v|--version', 'バージョンを表示する', 'print the version'],
-  ], { parser: 'getopt_long', positional: [pos('1 つ目のファイル（`-` で標準入力）', 'first file (`-` for stdin)'), pos('2 つ目のファイル', 'second file'), pos('1 つ目のファイルで読み飛ばすバイト数', 'bytes to skip in the first file'), pos('2 つ目のファイルで読み飛ばすバイト数', 'bytes to skip in the second file')] }),
+  ], { parser: 'getopt_long', positional: [pos('1 つ目のファイル（`-` で標準入力）', 'first file (`-` for stdin)'), pos('2 つ目のファイル', 'second file'), pos('1 つ目のファイルで読み飛ばすバイト数', 'bytes to skip in the first file'), pos('2 つ目のファイルで読み飛ばすバイト数', 'bytes to skip in the second file')], atMost: { count: 4, extra: DIFF_EXTRA_OPERAND } }),
   xxd: cmd('16進ダンプを作る・元に戻す', 'Make a hex dump, or reverse one', [
     ['-r|-revert', '16進ダンプをバイナリに戻す', 'turn a hex dump back into binary'], ['-p|-ps|-plain', '区切りのない16進数だけで出力', 'plain hex, no offsets or text'],
     ['-c|-cols', '1行のバイト数', 'bytes per line', 'arg'], ['-l|-len', '指定したバイト数だけ', 'stop after the given number of bytes', 'arg'], ['-s|-seek', '指定した位置から', 'start at the given offset', 'arg'], ['-i|-include', 'C の配列として出力', 'output as a C array'],
-  ], { positional: [files], parser: 'single-dash' }),
+  ], { positional: [files], parser: 'single-dash', atMost: { count: 2, extra: extraOperand('Usage:', 1) } }),
   od: cmd('ファイルを8進数・16進数などでダンプする', 'Dump files in octal, hex and other formats', [
     ['-b', '8 進数のバイトで表示', 'octal bytes'],
     ['-d', '10 進数の 2 バイト単位で表示', 'unsigned decimal 2-byte units'],

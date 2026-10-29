@@ -1,5 +1,5 @@
 import type { CommandSpec } from '../argv/spec';
-import { cmd, GNU_INFO, operand, pos, runs } from './types';
+import { cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, GNU_INFO, operand, pos, runs } from './types';
 
 // Everyday commands a Linux learner meets early (and that the LPIC-1 and LinuC-1 objectives name):
 // finding help and files, who is logged in, power control, small text tools, terminals and editors.
@@ -203,8 +203,8 @@ export const basic: Record<string, CommandSpec> = {
     ['--skip-chdir', '新しいルートの `/` に移動しない', 'do not change directory to `/`'],
   ], { optionsFirst: true, operands: [{ pattern: [operand('NEWROOT', '新しいルートにするディレクトリ', 'directory to use as the new root', { repeat: '?', type: 'dir' }), runs()] }] }),
   // ---- text and number tools ----------------------------------------------------------------
-  unlink: cmd('1つのファイルを削除する（`rm` より機能が少ない）', 'Remove a single file (a plainer `rm`)', [...GNU_INFO], { parser: 'getopt_long', positional: [files] }),
-  link: cmd('既存のファイルへのハードリンクを作る', 'Create a hard link to an existing file', [...GNU_INFO], { parser: 'getopt_long', positional: [pos('元のファイル', 'existing file'), pos('作るリンク名', 'link name to create')] }),
+  unlink: cmd('1つのファイルを削除する（`rm` より機能が少ない）', 'Remove a single file (a plainer `rm`)', [...GNU_INFO], { parser: 'getopt_long', positional: [files], atMost: { count: 1, extra: EXTRA_OPERAND } }),
+  link: cmd('既存のファイルへのハードリンクを作る', 'Create a hard link to an existing file', [...GNU_INFO], { parser: 'getopt_long', positional: [pos('元のファイル', 'existing file'), pos('作るリンク名', 'link name to create')], atMost: { count: 2, extra: EXTRA_OPERAND } }),
   cal: cmd('カレンダーを表示する', 'Show a calendar', [
     ['-3', '前月・今月・翌月の3か月分', 'show the previous, current and next month'],
     ['-y', '1年分を表示', 'show the whole year'],
@@ -260,7 +260,7 @@ export const basic: Record<string, CommandSpec> = {
     ['-Z', 'SELinux のセキュリティコンテキストを既定の型にする', 'set the SELinux security context to the default type'],
     ['--context', '`-Z` と同じ。`=CTX` で SELinux・SMACK のコンテキストを指定する', 'like `-Z`; `=CTX` sets the SELinux or SMACK security context', 'attached'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('名前', 'name'), pos('種類（`b` ブロック、`c` キャラクタ、`p` パイプ）', 'type (`b` block, `c` character, `p` pipe)'), pos('メジャー番号とマイナー番号', 'major and minor numbers')] }),
+  ], { parser: 'getopt_long', positional: [pos('名前', 'name'), pos('種類（`b` ブロック、`c` キャラクタ、`p` パイプ）', 'type (`b` block, `c` character, `p` pipe)'), pos('メジャー番号', 'major number'), pos('マイナー番号', 'minor number')], atMost: { count: 4, extra: EXTRA_OPERAND } }),
   csplit: cmd('パターンに合う行でファイルを分割する', 'Split a file at lines that match patterns', [
     ['-f|--prefix', '出力ファイル名の先頭（既定 `xx`）', 'prefix of the output files (default `xx`)', 'arg'],
     ['-n|--digits', '連番の桁数', 'number of digits in the suffix', 'arg'],
@@ -271,7 +271,7 @@ export const basic: Record<string, CommandSpec> = {
     ['--suppress-matched', 'パターンに合った行を出力しない', 'suppress the lines matching the pattern'],
     ...GNU_INFO,
   ], { positional: [files, pos('分割位置（行番号や `/正規表現/`、`{*}` で繰り返し）', 'split points (line numbers or `/regex/`, with `{*}` to repeat)')], parser: 'getopt_long' }),
-  tsort: cmd('順序の組から全体の順序（トポロジカルソート）を出力する', 'Print a total order from pairs of ordered items (topological sort)', [...GNU_INFO], { parser: 'getopt_long', positional: [files] }),
+  tsort: cmd('順序の組から全体の順序（トポロジカルソート）を出力する', 'Print a total order from pairs of ordered items (topological sort)', [...GNU_INFO], { parser: 'getopt_long', positional: [files], atMost: { count: 1, extra: EXTRA_OPERAND } }),
   numfmt: cmd('数値を読みやすい単位（K, M, G）と相互に変換する', 'Convert numbers to and from human-readable units (K, M, G)', [
     ['--to', '出力の単位系（`si`、`iec`、`iec-i`）', 'unit system for the output (`si`, `iec`, `iec-i`)', 'arg'],
     ['--from', '入力の単位系', 'unit system of the input', 'arg'],
@@ -302,7 +302,7 @@ export const basic: Record<string, CommandSpec> = {
     ['-p|--print-database', '標準の設定内容を表示', 'print the default database'],
     ['--print-ls-colors', 'エスケープした色の指定を表示用に出力する', 'output the fully escaped colors for display'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('設定ファイル', 'settings file')] }),
+  ], { parser: 'getopt_long', positional: [pos('設定ファイル', 'settings file')], atMost: { count: 1, extra: EXTRA_OPERAND } }),
   pr: cmd('印刷用にファイルをページ分けして整形する', 'Paginate and format files for printing', [
     ['-l|--length', '1ページの行数（既定 66）', 'lines per page (default 66)', 'arg'],
     ['-w|--width', '1行の幅', 'page width', 'arg'],
@@ -333,7 +333,7 @@ export const basic: Record<string, CommandSpec> = {
   look: cmd('ソート済みのファイルから、指定した文字列で始まる行を探す', 'Find lines of a sorted file that start with a string', [
     ['-f', '大文字と小文字を区別しない', 'ignore case'],
     ['-t', '区切り文字（ここまでを比べる）', 'termination character', 'arg'],
-  ], { positional: [pos('文字列', 'string'), files] }),
+  ], { positional: [pos('文字列', 'string'), files], atMost: { count: 2, extra: extraOperand('bad usage', 1) } }),
   sdiff: cmd('2つのファイルを左右に並べて比べる', 'Compare two files side by side', [
     ['-s|--suppress-common-lines', '共通の行は表示しない', 'do not print common lines'],
     ['-w|--width', '出力の幅', 'output width', 'arg'],
@@ -354,7 +354,7 @@ export const basic: Record<string, CommandSpec> = {
     ['-H|--speed-large-files', '大きなファイルで、離れた小さな変更が多いものとして扱う', 'assume large files and many scattered small changes'],
     ['--diff-program', 'ファイルの比較に使うプログラム', 'program to compare files with', 'arg'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [files] }),
+  ], { parser: 'getopt_long', positional: [files], atMost: { count: 2, extra: DIFF_EXTRA_OPERAND } }),
   diff3: cmd('3つのファイルを比べる（3-way マージの下準備）', 'Compare three files (for a three-way merge)', [
     ['-m|--merge', '統合した結果を出力する', 'output the merged file'],
     ['-e|--ed', '`ed` 用のスクリプトを出力する', 'output an `ed` script'],
@@ -370,7 +370,7 @@ export const basic: Record<string, CommandSpec> = {
     ['--diff-program', 'ファイルの比較に使うプログラム', 'program to compare files with', 'arg'],
     ['-L|--label', 'ファイル名の代わりに使うラベル（3回まで指定できる）', 'label to use instead of the file name (up to three times)', 'arg'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [files] }),
+  ], { parser: 'getopt_long', positional: [files], atMost: { count: 3, extra: DIFF_EXTRA_OPERAND } }),
   vimdiff: cmd('Vim で複数のファイルの差分を並べて表示・編集する', 'Show and edit differences between files in Vim', [], { positional: [files] }),
   // ---- compression leftovers ----------------------------------------------------------------
   zless: cmd('圧縮されたファイルをページャーで読む', 'Read a compressed file in a pager', [], { positional: [files] }),

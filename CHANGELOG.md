@@ -139,6 +139,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The note on `readonly x=$(cmd)` and `local -r x=$(cmd)` says to set the name first and make it read-only after: `x=$(cmd); readonly x`. Before, it said to write `readonly x`, then `x=$(cmd)`, which bash refuses ("x: readonly variable").
 - A name that `hash -p` or `enable -n` changed, or an alias to one, is read as the program bash runs: after `hash -p /usr/bin/egrep grep`, `grep -o 'a+'` reads an extended regex.
 - The quick fix that rewrites `[[ ]]` as `[ ]` for sh and dash is offered only where `[ ]` tests the same. Before, it kept `-eq`, `-lt`… on variables (`[[ $a -eq 010 ]]` compares in octal, `[ "$a" -eq 010 ]` in decimal), `-v`, `-o`, `-nt` and `$@`, and changed what the test does.
+- A word past the operands a command takes is an extra operand, which the command refuses: `diff a b c`, `cmp` with five words, `basename a b c` (without `-a`), `seq 1 2 3 4`, `tr -d a b`. Before, it was read as one more file, suffix or number, and a worked example ran.
 
 ## 0.8.0
 
