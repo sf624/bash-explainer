@@ -244,6 +244,8 @@ describe('an operand that becomes several words', () => {
     assert.strictEqual(tokenOf('cmp $a $b f', 'f', 'ja').explanation, '`$a`・`$b` が1語に展開されるなら1 つ目のファイルで読み飛ばすバイト数、どれかが2語以上ならこの語は1 つ目のファイルで読み飛ばすバイト数・2 つ目のファイルで読み飛ばすバイト数・余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 2 で終わる）のどれか、`$a`・`$b` が0語なら1 つ目のファイル（`-` で標準入力）');
     // (One role of its own past the limit: `seq 1 2 3 4` refuses `4`, "extra operand".)
     assert.strictEqual(tokenOf('seq $a $b f', 'f').explanation, 'last when `$a`, `$b` expand to a single word; when any of them expands to more, it is last or extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)');
+    // (Globs give a word at least: `seq *.a *.b 5` with three files or more refuses `5`, seq: extra operand.)
+    assert.strictEqual(tokenOf('seq *.a *.b 5', '5').explanation, 'last when `*.a`, `*.b` expand to a single word; when any of them expands to more, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)');
   });
 
   it('reads the hedges of many words that may give several in about the time of the line (review of #484)', function () {
