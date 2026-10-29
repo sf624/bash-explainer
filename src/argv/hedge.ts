@@ -1,7 +1,7 @@
 // The hedges of an operand whose role depends on how many words the words that may give several give (`ArgRole`
 // `operand`: `several`, `byCount`, `mixed`, `otherwise`), read from the readings of the operand patterns that the
 // argument interpreter (src/argv/interpret.ts, `placeOperands`) makes with each count.
-import type { ArgWord } from './interpret';
+import type { ArgWord, OperandRole } from './interpret';
 import type { OperandAlt, OperandSpec } from './spec';
 
 /**
@@ -38,25 +38,65 @@ export const counts = (w: ArgWord): [number, number] => {
   return [low, w.count.max === w.count.min ? low : Math.min(w.count.max ?? Infinity, low + 2)];
 };
 
-/**
- * A reading of the operands: each operand word repeated as many times as it gives words (`at`, the word of each place;
- * `first`, where each word starts), the pattern that fits them, and the item of each place.
- */
-export interface Fit { at: number[]; first: number[]; alt: OperandAlt; index: number; items: number[] }
+/** A reading of the operands: the pattern that fits them, and the item of each place. */
+export interface Fit { alt: OperandAlt; items: number[] }
 
 /**
  * What the hedges are read from: the operand words (`operands`, their indexes among the command's words), the reading
- * with each word's fewest (`primary`), the readings with other counts (`fit`), and the longest pattern and one
- * (`span`: past it, only the patterns that repeat an item fit, the same for any count).
+ * where word j gives `many(j)` words (`fit`; the role of each word is that of its reading with each word's fewest), the
+ * patterns that may fit (`alts`), and the longest pattern and one (`span`: past it, only the patterns that repeat an item
+ * fit, the same for any count).
  */
-export interface HedgeInput { words: ArgWord[]; operands: number[]; primary: Fit; fit: (many: (k: number) => number) => Fit | undefined; span: number }
+export interface HedgeInput { words: ArgWord[]; operands: number[]; fit: (many: (k: number) => number) => Fit | undefined; span: number; alts: OperandAlt[] }
 
-/** The hedge of each operand word k, whose role in the reading `primary` is `item`. */
-export function hedges({ words, operands, primary, fit, span }: HedgeInput): (k: number, item: OperandSpec) => Hedge {
-  /** The roles of the words of word k in the reading `r` (repeated roles once). */
-  const rolesIn = (r: Fit, k: number): OperandSpec[] => {
-    const all = r.at.flatMap((x, p) => (x === k ? [r.alt.pattern[r.items[p]]] : []));
-    return all.filter((o, j) => j === 0 || o.text.en !== all[j - 1].text.en);
+/** The hedge of each operand word k, whose role in the reading with each word's fewest is `item`. */
+export function hedges({ words, operands, fit, span, alts }: HedgeInput): (k: number, item: OperandSpec) => Hedge {
+  // (Every item of every pattern with one role, as `echo`'s arguments or `rm`'s files: the same role for any count.)
+  const roles = new Set(alts.flatMap((alt) => alt.pattern.map((o) => o.text.en)));
+  if (roles.size === 1) return () => ({});
+  // Each reading once. A pattern reads of a word only its text (`value`) or, where not known, its start (`prefix`): the
+  // words in a row with the same give the same reading whichever of them give how many (`cp $a $b`: `x y` and `z`, or
+  // `x` and `y z`), so the readings are kept by those runs.
+  const kinds = new Map<string, number>();
+  const kind = words.map((w) => {
+    const text = w.value !== undefined ? `=${w.value}` : `^${w.prefix ?? ''}`;
+    if (!kinds.has(text)) kinds.set(text, kinds.size);
+    return kinds.get(text)!;
+  });
+  const cache = new Map<string, Fit | undefined>();
+  /** The items of the places, where word j gives `many(j)` words, and where word k's start (`at`). */
+  const readAt = (many: (j: number) => number, k: number): (Fit & { at: number }) | undefined => {
+    let key = '';
+    let last = -1;
+    let run = 0;
+    let at = 0;
+    words.forEach((_, j) => {
+      const n = many(j);
+      if (j < k) at += n;
+      if (kind[j] === last) run += n;
+      else {
+        if (last >= 0) key += `${last}:${run},`;
+        last = kind[j];
+        run = n;
+      }
+    });
+    key += `${last}:${run}`;
+    if (!cache.has(key)) {
+      const r = fit(many);
+      cache.set(key, r && { alt: r.alt, items: r.items });
+    }
+    const r = cache.get(key);
+    return r && { ...r, at };
+  };
+  /** The items of the words of word k where word j gives `many(j)` words, with their place in their pattern (0 to 1). */
+  const itemsOf = (many: (j: number) => number, k: number): { o: OperandSpec; place: number }[] | undefined => {
+    const r = readAt(many, k);
+    return r && r.items.slice(r.at, r.at + many(k)).map((n) => ({ o: r.alt.pattern[n], place: n / r.alt.pattern.length }));
+  };
+  /** The roles of the words of word k where word j gives `many(j)` words (repeated roles once). */
+  const rolesAt = (many: (j: number) => number, k: number): OperandSpec[] | undefined => {
+    const all = itemsOf(many, k)?.map((x) => x.o);
+    return all?.filter((o, j) => j === 0 || o.text.en !== all[j - 1].text.en);
   };
   const fewest = (j: number): number => counts(words[j])[0];
   const varies = words.map((w) => counts(w)[0] !== counts(w)[1]);
@@ -71,10 +111,10 @@ export function hedges({ words, operands, primary, fit, span }: HedgeInput): (k:
     const max = words[v].count!.max ?? Infinity;
     const most = Math.min(max, fewest(v) + span);
     const out: SeveralRoles[] = [];
-    let r: Fit | undefined;
+    let r: OperandSpec[] | undefined;
     for (let c = fewest(v); c <= most; c++) {
-      r = c === fewest(v) ? primary : fit((j) => (j === v ? c : fewest(j)));
-      if (r) out.push({ from: c, roles: rolesIn(r, k) });
+      r = rolesAt((j) => (j === v ? c : fewest(j)), k);
+      if (r) out.push({ from: c, roles: r });
     }
     if (r && most < max) {
       let j = out.length - 1;
@@ -86,29 +126,30 @@ export function hedges({ words, operands, primary, fit, span }: HedgeInput): (k:
   const key = (roles: OperandSpec[]): string => roles.map((o) => o.text.en).join('\n');
   /**
    * The roles the words of word k may have when it or another word that may give several (`others`) gives more than
-   * its fewest: each other word with one or two more, and all of them, with each count of word k (`cp $a $b`: with
-   * `x y` and `z`, `z` is the destination directory, with `x` and `y z` a source and the destination directory).
-   * `first`: the reading where each gives its fewest is one role, the word's own (`spec`); else it is among them.
+   * its fewest: with each count of word k, and with one or two words more before it and after it, given by the nearest
+   * such word on each side (`cp $a $b`: with `x y` and `z`, `z` is the destination directory, with `x` and `y z` a source
+   * and the destination directory). A role depends on the place of a word among the operands and on their number; past
+   * the longest pattern, only the patterns that repeat an item fit. `first`: the reading where each gives its fewest is
+   * one role, the word's own (`spec`); else it is among them.
    */
   const mixedOf = (k: number, others: number[]): MixedRoles => {
     const own = varies[k] ? Math.min(words[k].count!.max ?? Infinity, fewest(k) + span) : fewest(k);
-    const first = rolesIn(primary, k).length === 1;
-    const steps = [new Map<number, number>(), ...others.flatMap((j) => [1, 2].map((d) => new Map([[j, d]]))), ...[1, 2].map((d) => new Map(others.map((j) => [j, d])))];
+    const first = rolesAt(fewest, k)!.length === 1;
+    const before = others.filter((j) => j < k).pop();
+    const after = others.find((j) => j > k);
+    const more = (j: number | undefined, d: number): number => (j === undefined ? 0 : Math.min(d, (words[j].count!.max ?? Infinity) - fewest(j)));
+    const steps = [0, 1, 2].flatMap((b) => [0, 1, 2].map((a) => [more(before, b), more(after, a)]));
     // (Each role with its place in its pattern, from 0 to 1, to list them in the order the patterns have them.)
-    const seen = new Map<string, { o: OperandSpec; at: number }>();
+    const seen = new Map<string, { o: OperandSpec; place: number }>();
     for (let c = fewest(k); c <= own; c++) {
-      for (const step of steps) {
-        if (first && c === fewest(k) && !step.size) continue;
-        const r = fit((j) => (j === k ? c : Math.min(fewest(j) + (step.get(j) ?? 0), words[j].count?.max ?? Infinity)));
-        r?.at.forEach((x, p) => {
-          if (x !== k) return;
-          const o = r.alt.pattern[r.items[p]];
-          const at = r.items[p] / r.alt.pattern.length;
-          if (!seen.has(o.text.en) || seen.get(o.text.en)!.at > at) seen.set(o.text.en, { o, at });
-        });
+      for (const [b, a] of steps) {
+        if (first && c === fewest(k) && !b && !a) continue;
+        for (const { o, place } of itemsOf((j) => (j === k ? c : fewest(j) + (j === before ? b : j === after ? a : 0)), k) ?? []) {
+          if (!seen.has(o.text.en) || seen.get(o.text.en)!.place > place) seen.set(o.text.en, { o, place });
+        }
       }
     }
-    const roles = [...seen.values()].sort((a, b) => a.at - b.at).map((x) => x.o);
+    const roles = [...seen.values()].sort((a, b) => a.place - b.place).map((x) => x.o);
     return { words: (varies[k] ? [k, ...others].sort((a, b) => a - b) : others).map((j) => operands[j]), first, many: varies[k], roles };
   };
   /**
@@ -134,4 +175,20 @@ export function hedges({ words, operands, primary, fit, span }: HedgeInput): (k:
     return more.length && more[0].roles[0].text.en !== item.text.en ? { otherwise: more[0].roles[0], by: operands[v] } : {};
   };
   return hedgeOf;
+}
+
+/**
+ * Gives an operand's role its hedge (`uncertain` and the hedge's fields), read when first asked: only the explanation of
+ * the words asks, and a command's words are interpreted for many other uses, where the readings would be wasted.
+ */
+export function withHedge(role: OperandRole, hedge: () => Hedge): void {
+  let h: Hedge | undefined;
+  const get = (): Hedge => (h ??= hedge());
+  const has = (): boolean => !!(get().otherwise || get().several || get().byCount || get().mixed);
+  const field = <K extends keyof Hedge>(key: K) => ({ enumerable: true, get: () => get()[key] });
+  const none = role.uncertain;
+  Object.defineProperties(role, {
+    uncertain: { enumerable: true, get: () => (none || has() ? true : undefined) },
+    otherwise: field('otherwise'), by: field('by'), several: field('several'), byCount: field('byCount'), mixed: field('mixed'),
+  });
 }

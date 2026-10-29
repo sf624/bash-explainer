@@ -580,6 +580,9 @@ describe('argv interpreter: review fixes', () => {
     // Only the many-words reading fits.
     const three: CommandSpec = { summary: t('three'), operands: [{ pattern: [item('A'), item('B'), item('C')] }] };
     assert.deepStrictEqual(render(interpret(three, [{ value: 'x', count: { min: 0 } }]), ['$x']), ['$x: A (uncertain)']);
+    // (Nor the other words, where their copies keep one role: `y` is D.)
+    const four: CommandSpec = { summary: t('four'), operands: [{ pattern: [item('A'), item('B'), item('C'), item('D')] }] };
+    assert.deepStrictEqual(render(interpret(four, [{ value: 'x', count: { min: 1 } }, { value: 'y' }]), ['$x', 'y']), ['$x: A (uncertain)', 'y: D']);
     // When more words fit nothing, the one reading that fits stands.
     const two: CommandSpec = { summary: t('two'), operands: [{ pattern: [item('A'), item('B')] }] };
     assert.deepStrictEqual(render(interpret(two, [{ value: 'x', count: { min: 1, max: 5 } }, { value: 'y' }]), ['$x', 'y']), ['$x: A', 'y: B']);

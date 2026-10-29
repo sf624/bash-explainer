@@ -7,7 +7,7 @@ import { isExpressionStart } from '../embedded/find';
 import { untilEnd, type UntilRefusal, untilWord } from './until';
 import type { Text } from '../i18n';
 import { EnvSplitError, splitEnvString } from './envsplit';
-import { type ByCount, counts, type Hedge, hedges, type MixedRoles, type SeveralRoles } from './hedge';
+import { type ByCount, counts, type Hedge, hedges, type MixedRoles, type SeveralRoles, withHedge } from './hedge';
 import { type ParserRules, rulesOf } from './parsers';
 import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
 
@@ -84,6 +84,7 @@ export type ArgRole =
   | { role: 'expression' };
 
 export type CommandRole = Extract<ArgRole, { role: 'command' }>;
+export type OperandRole = Extract<ArgRole, { role: 'operand' }>;
 
 export type { ByCount, MixedRoles, SeveralRoles };
 
@@ -340,7 +341,7 @@ class Reader {
       const then = r.read.alt.pattern[r.read.items[r.read.first[k]]];
       return role(then) !== role(item) ? { words: r.drops.map((j) => operands[j]), spec: then } : undefined;
     };
-    const hedgeOf = hedges({ words, operands, primary, fit, span: Math.max(...alts.map(({ alt }) => alt.pattern.length)) + 1 });
+    const hedgeOf = hedges({ words, operands, fit, span: Math.max(...alts.map(({ alt }) => alt.pattern.length)) + 1, alts: alts.map(({ alt }) => alt) });
     for (let k = 0; k < operands.length; k++) {
       const i = operands[k];
       const pos = primary.first[k];
@@ -368,14 +369,17 @@ class Reader {
       }
       const elsewhere = other ? [other.alt.pattern[other.items[other.first[k]]]] : [];
       // (Where only the reading with more words fits, its copies of the word, which differ only where it may give several.)
-      const hedge: Hedge = each ? {} : primary === low ? hedgeOf(k, item) : { otherwise: [...copies, ...elsewhere].find((o) => o.text.en !== item.text.en), by: i };
+      const otherwise = primary === low ? undefined : [...copies, ...elsewhere].find((o) => o.text.en !== item.text.en);
+      const hedge = each ? undefined : primary === low ? () => hedgeOf(k, item) : (): Hedge => (otherwise ? { otherwise, by: i } : {});
       const none = each ? undefined : noneRole(k, item);
       // `jq . in.json --args a`: after the option, the operands of the repeating last item are something else.
       const last = n === pattern.length - 1 && (item.repeat === '*' || item.repeat === '+');
       const later = last ? st.given.later.filter((l) => l.word < i).pop()?.spec : undefined;
       const spec = later ?? item;
       const assignment = (spec.assignment || (spec.assignmentText && ASSIGNMENT.test(known(words[k])))) || undefined;
-      roles.set(i, { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(each ? { each } : {}), ...(hedge.otherwise || hedge.several || hedge.byCount || hedge.mixed ? { uncertain: true, ...hedge } : {}), ...(none ? { uncertain: true, none } : {}) });
+      const role: OperandRole = { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(each ? { each } : {}), ...(none ? { uncertain: true, none } : {}) };
+      if (hedge) withHedge(role, hedge);
+      roles.set(i, role);
     }
   }
 

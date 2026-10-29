@@ -14,8 +14,8 @@
 //   field must be one the explanation shows on its word: the same option, the value of the same option, or an operand
 //   whose text from the spec the word's token says (alone, or in the part that holds of the hedge "… when `$x` expands
 //   to a single word; … when it expands to more" that src/explain/argv.ts makes of `ArgRole.otherwise`, `several` and
-//   `byCount`, a reading for each count, or of "… when `$x`, `$y` expand to a single word; when they expand to more, each
-//   of its words is …", of `mixed`, or of "…; … when `$y` expands to nothing", of `none`).
+//   `byCount`, a reading for each count, or of "… when `$x`, `$y` expand to a single word; when any of them expands to more,
+//   each of its words is …", of `mixed`, or of "…; … when `$y` expands to nothing", of `none`).
 //
 // The counts come from the facts the tokens carry (`Token.value`, `Token.expands`, `Token.origin`, the refs and the
 // words of a brace expansion, the sections of an example); only the string and the concatenation are told by their
@@ -207,11 +207,11 @@ function severalClauses(e: string): { from: number; to?: number; text: string }[
 /**
  * The readings of the hedges `otherwise` and `byCount`: "X when `$a` expands to a single word (or "to 2 words")", then
  * "Y when it expands to more" (or "to 2 words", "to 3 words or more"; "more" from the count after the reading before),
- * with the words the first names. Undefined for an explanation in another form.
+ * with the word the first names. Undefined for an explanation in another form.
  */
-function countClauses(e: string): { words: string[]; clauses: { from: number; to?: number; text: string }[] } | undefined {
+function countClauses(e: string): { word: string; clauses: { from: number; to?: number; text: string }[] } | undefined {
   const parts = e.split('; ');
-  const head = /^(.*) when ((?:`[^`]+`(?:, )?)+) expands to (?:a single word|(\d+) words)$/.exec(parts[0]);
+  const head = /^(.*) when `([^`]+)` expands to (?:a single word|(\d+) words)$/.exec(parts[0]);
   if (!head || parts.length < 2) return undefined;
   const from = Number(head[3] ?? 1);
   const clauses: { from: number; to?: number; text: string }[] = [{ from, to: from, text: head[1] }];
@@ -221,7 +221,7 @@ function countClauses(e: string): { words: string[]; clauses: { from: number; to
     const at = m[2] ? clauses[clauses.length - 1].to! + 1 : Number(m[3]);
     clauses.push({ from: at, to: m[2] || m[4] ? undefined : at, text: m[1] });
   }
-  return { words: [...head[2].matchAll(/`([^`]+)`/g)].map((x) => x[1]), clauses };
+  return { word: head[2], clauses };
 }
 
 /**
@@ -255,18 +255,14 @@ export function saysOperand(explanation: string, texts: readonly string[], place
   }
   const counted = countClauses(e);
   if (counted) {
-    const named = counted.words.map((w) => place.counts.get(w));
-    // (A word the hedge names that is not one of the command's, or that gave none: not a reading the hedge covers.)
-    if (named.some((c) => c === undefined || c === 0)) return false;
-    // (Of one word, the reading for its count; of several, "more" when one of them gave more than the fewest.)
-    if (named.length === 1) {
-      const clause = counted.clauses.find((c) => c.from <= named[0]! && named[0]! <= (c.to ?? Infinity));
-      return !!clause && has(clause.text);
-    }
-    return named.some((c) => c! > counted.clauses[0].from) ? has(counted.clauses[1].text) : has(counted.clauses[0].text);
+    // (The reading for the count of the word it names. A word not of the command's, or that gave none: not a reading
+    // the hedge covers.)
+    const count = place.counts.get(counted.word);
+    const clause = count ? counted.clauses.find((c) => c.from <= count && count <= (c.to ?? Infinity)) : undefined;
+    return !!clause && has(clause.text);
   }
   // (The roles its words may have when it or the other words give more: `mixed`.)
-  const mixed = /^(.*) when ((?:`[^`]+`(?:, )?)+) expand to (a single word|as few words as each can); when they expand to more, (?:each of its words is|it is) (.*)$/.exec(e);
+  const mixed = /^(.*) when ((?:`[^`]+`(?:, )?)+) expand to (a single word|as few words as each can); when any of them expands to more, (?:each of its words is|it is) (.*)$/.exec(e);
   if (mixed) {
     const named = [...mixed[2].matchAll(/`([^`]+)`/g)].map((x) => place.counts.get(x[1]));
     if (named.some((c) => c === undefined || c === 0)) return false;

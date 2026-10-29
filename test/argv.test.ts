@@ -107,10 +107,10 @@ describe('argv capture: the word model and the explanation against bash (oracles
     assert.strictEqual(saysOperand('S when `$a` expands to 2 words; A when it expands to 3 words', ['A'], place('f', 0, 1, [['$a', 5]])), false);
     // (`mixed`: the first part when the words it names give one each, else any role of the list; "as few as each can",
     // either; "by how many words", any of the list.)
-    const mixed = 'dest when `$a`, `$b` expand to a single word; when they expand to more, each of its words is src or dir';
+    const mixed = 'dest when `$a`, `$b` expand to a single word; when any of them expands to more, each of its words is src or dir';
     const ab = (a: number, b: number): [string, number][] => [['$a', a], ['$b', b]];
     assert.deepStrictEqual([saysOperand(mixed, ['dest'], place('z', 0, 1, ab(1, 1))), saysOperand(mixed, ['dest'], place('z', 0, 1, ab(2, 1))), saysOperand(mixed, ['dir'], place('z', 0, 1, ab(2, 1))), saysOperand(mixed, ['dir'], place('z', 0, 1, ab(0, 1)))], [true, false, true, false]);
-    const few = 'dest when `$a`, `$b` expand to as few words as each can; when they expand to more, it is src or dir';
+    const few = 'dest when `$a`, `$b` expand to as few words as each can; when any of them expands to more, it is src or dir';
     assert.deepStrictEqual(['dest', 'dir', 'X'].map((x) => saysOperand(few, [x], place('z', 0, 1, ab(3, 1)))), [true, true, false]);
     assert.deepStrictEqual(['M', 'F', 'X'].map((x) => saysOperand('each of its words is M or F, by how many words `$a`, `$b` expand to', [x], place('z', 0, 2, ab(2, 1)))), [true, true, false]);
     // (Of a word that gives two words at least: the first part for two.)

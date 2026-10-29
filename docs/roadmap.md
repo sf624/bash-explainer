@@ -21,7 +21,8 @@ Keep it current:
   7. A known split value that starts with `-` is read as an operand (`x="-r a"; cp $x d`: bash gives the option `-r`). Braces whose words start with `-` have the same cause (the interpreter reads the word as written, not its fields): `set {-e,-u}` is said to set `$1`, where bash turns on `-e` and `-u`.
   - Open, after #482: an option's value that may give no word makes the next word the value (`tar -cf $a b`, `cp -t $d $a`, `grep -e $p f`); the hedge of #482 covers operands only.
   - Done (#483), found in the review of #481 (oracles.md 2.8, bug 8): an expansion in a word of the braces counted as one word (`x='p q'; cp {a,$x}` runs `cp a p q`). The braces now give the sum of what each of their words gives, and the fields where the model knows them.
-  - Open, after #484: a spec whose last operand repeats past the tool's limit reads more words than the tool takes (`cmp` with five words, `diff a b c`, `basename` with three without `-a`: "extra operand"). A known empty value read as one word (`z=""; cp $z $pair`) is bug 7's cause.
+  - Open, after #484: a spec whose last operand repeats past the tool's limit reads more words than the tool takes (`cmp` with five words, `diff a b c`, `basename` with three without `-a`, `seq 1 2 3 4`, `mknod` with five: "extra operand"). A known empty value read as one word (`z=""; cp $z $pair`) is bug 7's cause.
+  - Open, after #484: spec role texts that hold "; " (ar's ARCHIVE, csplit, expr, jq `--args`/`--jsonargs`, git stash, xhost, rename) read as another clause inside a hedge, and the renderings check splits its hedges at "; ". Fix them in the specs, with a test.
 
 ## Next, in this order
 
