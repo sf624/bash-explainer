@@ -10,6 +10,10 @@ cp $pair d
 # The words of a brace expansion with a quoted part, each with its role at its place.
 cp a{,'.bak'}
 cp a{,"b c"}
+# The words of braces next to a quoted part, each keeping it (bug 4): the format, then its values; two words of `'a'{,}`.
+printf '%s,'{a..c}
+cp x"y"{1,2} d
+cp 'a'{,}
 
 # Bug 6 of oracles.md 2.8: the hedge `several` gives the roles of three words; with two, the last is the destination of
 # the two-operand form.
@@ -18,3 +22,8 @@ cp $pair
 # Bug 7: a known value that starts with `-` gives an option, but is explained as an operand.
 opt="-r a"
 cp $opt d
+
+# Braces with brace expansion turned off: one word, the source (`set +B`).
+set +B
+cp {a,b} d
+set -B

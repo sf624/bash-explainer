@@ -32,9 +32,12 @@ import { fromEmbedded, same, sibling, sortTokens } from './nodes';
 import { arrayKind, globOff, globState, inArithmetic, isAssoc, shoptAt, unquotedWord, wordAt } from './reads';
 import { pidNote, stageCountNote } from './where';
 
-/** The words of the brace expansion of the word `n`: undefined when it has none, null when it gives too many words to list. */
+/**
+ * The words of the brace expansion of the word `n`: undefined when it has none, null when it gives too many words to
+ * list. The braces of a part of a longer word (`'a'{,}`) keep their empty words, which the other parts join.
+ */
 export function braceExpansion(n: SyntaxNode): string[] | undefined | null {
-  return braceTexts([n]);
+  return braceTexts([n], n.parent!.type === 'concatenation');
 }
 
 /**

@@ -1,8 +1,8 @@
 {
   "counts": {
     "fixtures": {
-      "probe": { "words": 123, "unknown": 18, "claims": 145, "globExamples": 8, "roleCommands": 9, "roleFields": 23 },
-      "values": { "words": 262, "unknown": 38, "claims": 326, "globExamples": 13, "roleCommands": 19, "roleFields": 70 }
+      "probe": { "words": 129, "unknown": 18, "claims": 151, "globExamples": 8, "roleCommands": 12, "roleFields": 31 },
+      "values": { "words": 268, "unknown": 38, "claims": 332, "globExamples": 13, "roleCommands": 22, "roleFields": 78 }
     },
     "snippets": {
       "probe": { "words": 298, "unknown": 30, "claims": 325, "globExamples": 10, "roleCommands": 12, "roleFields": 12 },
@@ -49,13 +49,6 @@
       "check": "role",
       "env": "probe",
       "reason": "Bug, to fix: the interpreter takes every expansion as at least one word (`counts`, src/argv/interpret.ts), so the hedge says the roles when it gives one word or more, never none; with the expansion empty (the probe environment), bash gives the words after it other roles (`grep -c f`: `f` is the pattern, not a file to search)."
-    },
-    {
-      "input": "printf '%s,'{a..c}",
-      "command": "printf '%s,'{a..c}",
-      "word": "'%s,'{a..c}",
-      "check": "role",
-      "reason": "Bug, to fix: `countOf` (src/argv/words.ts) gives no count to a word with braces and a quoted part (`'%s,'{a..c}`), so the interpreter reads it as one word, the format; bash gives three words: the format `%s,a` and the values `%s,b` and `%s,c`."
     },
     {
       "input": "renderings.sh",

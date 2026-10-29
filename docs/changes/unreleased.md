@@ -1151,6 +1151,9 @@ Braces are read as bash 5.2 finds them, where it expands them (compared with bas
 | `echo {a,b} > {c,d}` | "ambiguous redirect" | the target shows its words too, as `> {1..2}` did | the note alone |
 | `echo {a,b}$x`, `x` empty | `a` `b` | the words are known (in the values and the conditions the model follows) | not known |
 | `trap {x,EXIT}`, `trap {y,INT} TERM`, `bash -c {x,y}` | `trap x EXIT`: the action `x` on `EXIT`; `bash -c x y`: `y` is `$0` | "expands to `x` (command to run…) and `EXIT` (signal…)", each word with its role | the braces were the action alone (or the command string), "not explained as a script" |
+| `printf '%s,'{a..c}`, `trap "echo "{a,b}`, `cp x"y"{1,2} d` | braces next to a quoted part give a word each: the format `%s,a`, then the values `%s,b` `%s,c`; the action `echo a` on the signal `echo b` (an error); two sources | "expands to `'%s,'a` (format string), `'%s,'b` (value for the format) and `'%s,'c` (value for the format)", each word with its role; `d` is the destination directory | one word: the format alone; the signal alone; `d` the destination of the two-operand form |
+| `cp 'a'{,}`, `cp 'x'{a,}` | the braces' empty words stay next to the quoted part: `a` `a`; `xa` `x` | "`{,}` expands to 2 words: `''` `''`", and the two words with their roles | "`{,}` expands to empty words, which are dropped, so nothing is left"; "`{a,}` expands to 1 word"; one source |
+| `set +B; cp {a,b} d` | no brace expansion: `{a,b}` is one word, a source, and `d` the destination | so | `d` the destination directory, as if the braces gave two sources |
 
 A tilde before a glob is expanded, then the word is globbed:
 
