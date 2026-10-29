@@ -122,11 +122,41 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
       assert.deepStrictEqual(runTr(words, lines), real('tr', words, lines));
     });
   }
+  // Repeats and case classes: what tr refuses gets no example (`[c*]` in string 1, `-ds` with `[c*]` in string 2, case
+  // classes that are not aligned), the rest is what tr prints: a count with a leading 0 is octal.
+  const TR_REPEATS: { words: string[]; refused?: true }[] = [
+    { words: ['[x*010]', 'A-Z'] }, { words: ['-tc', 'a', '[x*010]'] }, { words: ['abc', 'x[y*07]z'] }, { words: ['-s', 'abc', '[x*00]'] }, { words: ['[x*3]', 'y'] }, { words: ['ab', '[x*2]'] },
+    { words: ['-s', 'a', '[x*]'] }, { words: ['-ds', 'a', '[x*3]'] }, { words: ['ab', '[x*08]'], refused: true }, { words: ['x', '[x*0x]'], refused: true }, { words: ['a', '[x*b]'], refused: true },
+    { words: ['[a*]', 'x'], refused: true }, { words: ['-c', '[a*]', 'xy'], refused: true }, { words: ['-C', '[a*]', 'xy'], refused: true }, { words: ['--complement', '[a*]', 'xy'], refused: true },
+    { words: ['-cs', '[a*]', 'xy'], refused: true }, { words: ['-C', '-t', '[x*]', '-ds'], refused: true }, { words: ['-d', '[x*]'], refused: true }, { words: ['-s', '[x*]'], refused: true },
+    { words: ['[x*0]', 'y'], refused: true }, { words: ['-ds', 'a', '[x*]'], refused: true }, { words: ['-cds', '0-9', '[x*]'], refused: true }, { words: ['-ds', 'a', '[x*0]'], refused: true },
+    { words: ['[:upper:]', '[:lower:]'] }, { words: ['[:upper:]', '[:upper:]'] }, { words: ['A[:upper:]', 'x[:lower:]'] }, { words: ['[:upper:][:lower:]', '[:lower:][:upper:]'] }, { words: ['[:lower:]', 'x'] },
+    { words: ['[:lower:]a', '[:upper:]b'] }, { words: ['ab[:lower:]', 'xy[:upper:]'] }, { words: ['a[:lower:]', 'x[:upper:]y'] }, { words: ['-c', 'a', '[:upper:]a'] }, { words: ['-tc', 'a-z', '[:upper:]'] },
+    { words: ['-ds', 'a', '[:upper:]'] }, { words: ['-s', '[:lower:]', '[:upper:]'] }, { words: ['[:upper:]', '[:lower:]a'] },
+    { words: ['a-z', '[:upper:]'], refused: true }, { words: ['-t', 'abc', '[:upper:]'], refused: true }, { words: ['[:upper:]', 'a[:lower:]'], refused: true }, { words: ['[:upper:]', 'xyz[:lower:]'], refused: true },
+    { words: ['[:digit:]', '[:lower:]'], refused: true }, { words: ['a', 'x[:upper:]'], refused: true }, { words: ['a', '[:upper:]'], refused: true }, { words: ['ab[:lower:]', 'x[:upper:]'], refused: true },
+    { words: ['[:lower:]', '[:upper:][:upper:]'], refused: true }, { words: ['a[:upper:]', '[:lower:]'], refused: true },
+  ];
+  for (const { words, refused } of TR_REPEATS) {
+    it(`tr ${words.join(' ')}: ${refused ? 'tr refuses it, no example' : 'as tr prints'}`, () => {
+      const lines = ['abc', 'x', 'Hello aaa World', 'a\u0001b\tc', 'xyz 123 ABC'];
+      const r = run('tr', words, { input: lines.join('\n') + '\n', env: { ...process.env, LC_ALL: 'C' } });
+      if (refused) {
+        assert.notStrictEqual(r.status, 0, 'tr takes it');
+        assert.throws(() => runTr(words, lines), Unsupported);
+      } else {
+        assert.strictEqual(r.status, 0, r.stderr.toString());
+        assert.deepStrictEqual(runTr(words, lines), real('tr', words, lines));
+      }
+    });
+  }
+
   it('gives up on what it does not run', () => {
     const fails: [() => unknown, string][] = [
       [() => runSort(['-t', 'ab'], []), '-t'], [() => runSort(['--key'], []), 'missing'], [() => runSort(['-k'], []), 'missing'], [() => runSort(['--nope'], []), '--nope'],
       [() => runUniq(['-z'], []), '-z'], [() => runCut(['-f', 'x'], []), 'list'], [() => runCut(['-d', 'ab', '-f', '1'], []), '-d'], [() => runCut([], []), 'cut needs'],
-      [() => expandSet('[:foo:]'), 'class'], [() => expandSet('z-a'), 'reverse'], [() => runTr(['a', 'b', 'c'], []), 'extra operand'], [() => runTr(['-d', undefined as unknown as string], []), 'sets'], [() => runTr(['-c', 'a', 'é'], ['x']), '-c with'], [() => runTr(['-tc', '[:digit:]', 'x'], ['x']), 'class'], [() => runTr(['-d', 'a', '-s', 'b'], ['x']), 'extra operand'], [() => runTr(['a', 'b', '-d'], ['x']), 'extra operand'], [() => runTr(['-c', '[:digit:]', 'xy'], ['x']), 'class'],
+      [() => expandSet('[:foo:]'), 'class'], [() => expandSet('z-a'), 'reverse'], [() => runTr(['a', 'b', 'c'], []), 'extra operand'], [() => runTr(['-d', undefined as unknown as string], []), 'sets'], [() => runTr(['-c', 'a', 'é'], ['x']), '-c with'], [() => runTr(['-tc', '[:digit:]', 'x'], ['x']), 'class'], [() => runTr(['[:lower:]', '[:upper:][x*]'], ['x']), 'misaligned'],
+       [() => runTr(['-d', 'a', '-s', 'b'], ['x']), 'extra operand'], [() => runTr(['a', 'b', '-d'], ['x']), 'extra operand'], [() => runTr(['-c', '[:digit:]', 'xy'], ['x']), 'class'],
       [() => runTr(['a', '[=b=]'], ['x']), 'class in set2'], [() => runTr(['a', '[:digit:]'], ['x']), 'class in set2'], [() => runTr(['-c', '0-9', '[:upper:]'], ['x']), 'ends with a class'], [() => runTr(['-C', 'a-z', '[:upper:]'], ['x']), 'ends with a class'], [() => runTr(['-c', 'a', 'x'], ['é']), '-c with'],
       [() => runTr(['a', ''], []), 'empty set2'], [() => runTr(['-ds', 'a'], []), 'extra operand'], [() => runTr(['a'], []), 'extra operand'], [() => runHead(['-n', 'x'], []), '-n'], [() => runTail(['-n', 'x'], []), '-n'],
       [() => runSeq(['1', '0', '3']), 'zero'], [() => runSeq(['1', '100000']), 'too long'], [() => runSeq(['-f', '%g', '3']), '-f'],
