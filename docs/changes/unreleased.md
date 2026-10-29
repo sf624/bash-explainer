@@ -1545,3 +1545,13 @@ A command that takes a few operands refuses a word after them before it does any
 
 `diff --from-file=a b c`, `basename -a a b c` and `shuf -e a b c` take any number, as before. `mknod n p`, `mknod n c 1 2` (a node is made only where the test checks a pipe or a refusal), `dircolors --print-ls-colors a` and `date 0101` (not `date 01021530`, which would set the clock) are read as the tools do. Checked with GNU coreutils 9.4, diffutils 3.10, procps-ng 4.0.4, util-linux 2.39.3, xxd and glibc's getconf (test/extra-operands-real.test.ts).
 
+### Options of a command that is an expansion
+
+When the command's name is not text (`$cmd`, `"$@"`, `$(which x)`, or the word a wrapper runs: `nice $a`, `sudo $a`, `env $a`, `command $a`), an option-looking word after it is no longer "Option (not in the dictionary; see `man `)" (an empty name, or `man $(which`). What runs is not known: with `a` empty, `nice $a -n 5 ls` is `nice -n 5 ls`, and `$a -x` runs a command named `-x`; with `a=echo`, `-n` is `echo`'s. So the text is neutral.
+
+| Line | Before | Now |
+| --- | --- | --- |
+| `nice $a -n 5 ls`, `sudo $a -x`, `env $a -x`, `command $a -x` | `-n`: "Option (not in the dictionary; see `man `)" | "Looks like an option, but the command comes from an expansion and is not known here, so what it means is not known" |
+| `$cmd -x`, `"$@" -x` | "…see `man $cmd`", "…see `man \"$@\"`" | same new text |
+| `$(which x) -y` | "…see `man $(which`" | same new text |
+| `foo -x`, `nice foo -x` | "Option (not in the dictionary; see `man foo`)" | unchanged |

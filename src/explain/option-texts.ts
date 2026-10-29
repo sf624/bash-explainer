@@ -21,6 +21,11 @@ export function unknownOption(cx: Explainer, command: string, spec: CommandSpec,
     return cx.s(`bash の \`${command}\` にないオプション: bash は \`invalid option\` と表示し、\`${command}\` は何もせずに失敗する（終了ステータス 2。オプションは \`help ${command}\` にある）`,
       `An option bash's \`${command}\` does not have: bash says \`invalid option\`, and \`${command}\` fails with status 2, doing nothing (\`help ${command}\` lists its options)`);
   }
+  // (A command we cannot name as text, `$a` or `$(which x)`, has no manual to see; and what runs may be any command, or none:
+  // with `a` empty, `nice $a -n 5 ls` is `nice -n 5 ls`, and `$a -x` runs `-x`.)
+  if (!/^[^\s$`"'\\]+$/.test(command.split(' ')[0])) {
+    return cx.s('オプションに見える語（コマンドが展開結果で、どのコマンドか分からないため、意味は分からない）', 'Looks like an option, but the command comes from an expansion and is not known here, so what it means is not known');
+  }
   return cx.s(`オプション（辞書に未登録。\`man ${command.split(' ')[0]}\` を参照）`, `Option (not in the dictionary; see \`man ${command.split(' ')[0]}\`)`);
 }
 
