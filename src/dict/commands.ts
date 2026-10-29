@@ -216,8 +216,8 @@ const FROM_LINE: PatternOption = {
 const AWK_FILES: OperandSpec = {
   name: 'ARG2', text: files, repeat: '*', io: 'input',
   assignmentText: pos(
-    '変数の代入 `名前=値`: これより後のファイルを読み始める前に awk の変数を設定する（`-v` と違い `BEGIN` では使えない。`\\t` などのエスケープは解釈される）',
-    'Variable assignment `name=value`: sets the awk variable before the files after it are read (unlike `-v`, `BEGIN` does not see it; escapes such as `\\t` are processed)',
+    '変数の代入 `名前=値`: これより後のファイルを読み始める前に awk の変数を設定する（`-v` と違い `BEGIN` では使えず、`\\t` などのエスケープは解釈される）',
+    'Variable assignment `name=value`: sets the awk variable before the files after it are read (unlike `-v`, `BEGIN` does not see it, and escapes such as `\\t` are processed)',
   ),
 };
 
@@ -1462,11 +1462,11 @@ export const core: Record<string, CommandSpec> = {
     {
       names: ['--args'], text: pos('残りの引数を（ファイルでなく）文字列として `$ARGS.positional` に入れる', 'take the remaining arguments as strings in `$ARGS.positional`, not as files'),
       // (The operands after the filter are values for `$ARGS.positional`, not input files.)
-      laterOperands: { name: 'ARG', text: pos('位置引数の文字列（`$ARGS.positional` に入る。ファイルではない）', 'positional string (goes to `$ARGS.positional`; not a file)'), repeat: '*' },
+      laterOperands: { name: 'ARG', text: pos('`$ARGS.positional` に入る位置引数の文字列（ファイルではない）', 'positional string for `$ARGS.positional` (not a file)'), repeat: '*' },
     },
     {
       names: ['--jsonargs'], text: pos('残りの引数を（ファイルでなく）JSON の値として `$ARGS.positional` に入れる', 'take the remaining arguments as JSON values in `$ARGS.positional`, not as files'),
-      laterOperands: { name: 'ARG', text: pos('位置引数の JSON 値（`$ARGS.positional` に入る。ファイルではない）', 'positional JSON value (goes to `$ARGS.positional`; not a file)'), repeat: '*' },
+      laterOperands: { name: 'ARG', text: pos('`$ARGS.positional` に入る位置引数の JSON 値（ファイルではない）', 'positional JSON value for `$ARGS.positional` (not a file)'), repeat: '*' },
     },
     ['--indent', '出力のインデント幅（0〜7。0 は `-c` と同じ）', 'indentation width of the output (0 to 7; 0 is like `-c`)', 'arg'],
     ['--tab', 'インデントにタブを使う', 'indent with tabs'],
@@ -1531,7 +1531,7 @@ export const core: Record<string, CommandSpec> = {
     ...dashed(arLetters),
   ], {
     oldStyle: { letters: letters(arLetters), needs: 'dmpqrstxV' },
-    ...args(operand('ARCHIVE', 'アーカイブ（`libfoo.a`）。`a`・`b`・`i` を付けたときは先に基準にするメンバー', 'archive (`libfoo.a`); with `a`, `b` or `i`, the member to place relative to comes first'), operand('MEMBER', '対象のメンバー（ファイル）', 'member file')),
+    ...args(operand('ARCHIVE', 'アーカイブ（`libfoo.a`、`a`・`b`・`i` を付けたときはその前に基準にするメンバーを置く）', 'archive (`libfoo.a`, preceded by the member to place relative to with `a`, `b` or `i`)'), operand('MEMBER', '対象のメンバー（ファイル）', 'member file')),
   }),
   jar: cmd('Java のアーカイブ（.jar）を作る・取り出す', 'Create, list and extract Java archives (.jar)', [
     ...dashed(jarLetters),
@@ -1898,10 +1898,10 @@ export const core: Record<string, CommandSpec> = {
         subcommands: {
           push: cmd('変更を退避する（既定の動作）', 'Stash the changes (the default)', [['-m|--message', '退避のメモ', 'stash message', 'arg'], ['-u|--include-untracked', '未追跡のファイルも退避', 'also stash untracked files']]),
           list: cmd('退避した一覧を表示する', 'List the stashes'),
-          show: cmd('退避した変更を表示する', 'Show a stash', [['-p|--patch', '差分を表示', 'show the diff']], { positional: [pos('スタッシュ（`stash@{0}`。省略すると最新）', 'stash (`stash@{0}`; the latest if omitted)')] }),
-          pop: cmd('退避した変更を戻して、その退避を削除する', 'Apply a stash and drop it', [], { positional: [pos('スタッシュ（`stash@{0}`。省略すると最新）', 'stash (`stash@{0}`; the latest if omitted)')] }),
-          apply: cmd('退避した変更を戻す（退避は残る）', 'Apply a stash and keep it', [], { positional: [pos('スタッシュ（`stash@{0}`。省略すると最新）', 'stash (`stash@{0}`; the latest if omitted)')] }),
-          drop: cmd('退避を1つ削除する', 'Remove one stash', [], { positional: [pos('スタッシュ（`stash@{0}`。省略すると最新）', 'stash (`stash@{0}`; the latest if omitted)')] }),
+          show: cmd('退避した変更を表示する', 'Show a stash', [['-p|--patch', '差分を表示', 'show the diff']], { positional: [pos('スタッシュ（`stash@{0}`、省略すると最新）', 'stash (`stash@{0}`, the latest if omitted)')] }),
+          pop: cmd('退避した変更を戻して、その退避を削除する', 'Apply a stash and drop it', [], { positional: [pos('スタッシュ（`stash@{0}`、省略すると最新）', 'stash (`stash@{0}`, the latest if omitted)')] }),
+          apply: cmd('退避した変更を戻す（退避は残る）', 'Apply a stash and keep it', [], { positional: [pos('スタッシュ（`stash@{0}`、省略すると最新）', 'stash (`stash@{0}`, the latest if omitted)')] }),
+          drop: cmd('退避を1つ削除する', 'Remove one stash', [], { positional: [pos('スタッシュ（`stash@{0}`、省略すると最新）', 'stash (`stash@{0}`, the latest if omitted)')] }),
           clear: cmd('退避をすべて削除する', 'Remove all the stashes'),
         },
       }),

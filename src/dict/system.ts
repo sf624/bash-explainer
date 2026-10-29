@@ -926,7 +926,7 @@ export const system: Record<string, CommandSpec> = {
     ['-s|--silent|--quiet', '表示を減らす', 'less output'], ['-b|--backup', '元のファイルのバックアップを残す', 'keep backups of the originals'],
   ], { positional: [pos('対象のファイル', 'file to patch'), pos('差分のファイル', 'diff file')] }),
   expr: cmd('式を評価して結果を出力する（古い書き方。今は `$(( ))` や `[[ =~ ]]`）', 'Evaluate an expression and print the result (old style; today `$(( ))` or `[[ =~ ]]`)', [], {
-    positional: [pos('式（`$a + 1`、`文字列 : 正規表現`、`length 文字列`…。各語は別の引数）', 'expression (`$a + 1`, `string : regex`, `length string`…; one word per argument)')],
+    positional: [pos('式（各語は別の引数: `$a + 1`、`文字列 : 正規表現`、`length 文字列`…）', 'expression (one word per argument: `$a + 1`, `string : regex`, `length string`…)')],
   }),
 
   // ---- macOS and Windows helpers ----

@@ -270,7 +270,7 @@ export const basic: Record<string, CommandSpec> = {
     ['-k|--keep-files', 'エラーのとき出力ファイルを削除しない', 'do not remove output files on errors'],
     ['--suppress-matched', 'パターンに合った行を出力しない', 'suppress the lines matching the pattern'],
     ...GNU_INFO,
-  ], { positional: [files, pos('分割位置（行番号や `/正規表現/`、`{*}` で繰り返し）', 'split points (line numbers or `/regex/`; `{*}` repeats)')], parser: 'getopt_long' }),
+  ], { positional: [files, pos('分割位置（行番号や `/正規表現/`、`{*}` で繰り返し）', 'split points (line numbers or `/regex/`, with `{*}` to repeat)')], parser: 'getopt_long' }),
   tsort: cmd('順序の組から全体の順序（トポロジカルソート）を出力する', 'Print a total order from pairs of ordered items (topological sort)', [...GNU_INFO], { parser: 'getopt_long', positional: [files] }),
   numfmt: cmd('数値を読みやすい単位（K, M, G）と相互に変換する', 'Convert numbers to and from human-readable units (K, M, G)', [
     ['--to', '出力の単位系（`si`、`iec`、`iec-i`）', 'unit system for the output (`si`, `iec`, `iec-i`)', 'arg'],
@@ -434,7 +434,7 @@ export const basic: Record<string, CommandSpec> = {
   ], { positional: [files] }),
   view: cmd('読み取り専用で `vi` を開く', 'Open `vi` read-only', [], { positional: [files] }),
   rename: cmd('ファイル名の一部を一括で置き換える', 'Rename many files by replacing part of the name', [
-    ['-n|--no-act|--nono', '実際には変えず、行う内容を表示する', 'show what would be renamed; do nothing'],
+    ['-n|--no-act|--nono', '実際には変えず、行う内容を表示する', 'show what would be renamed, without doing it'],
     ['-v|--verbose', '変えた名前を表示する', 'show the renames done'],
     ['-f|--force', '既存のファイルを上書きする（Perl 版）（注意）', 'overwrite existing files (Perl version) (careful)'],
     ['-s|--symlink', 'リンク自体でなくリンク先の名前を変える（util-linux 版）', 'act on the target of symlinks, not the link (util-linux version)'],

@@ -549,7 +549,7 @@ export const ops: Record<string, CommandSpec> = {
 
   // ---- Text and numbers ----
   envsubst: cmd('テキスト中の `$VAR` や `${VAR}` を環境変数の値に置き換える（テンプレート用）', 'Replace `$VAR` and `${VAR}` in text with environment variables (for templates)', [], {
-    positional: [pos('置き換える変数だけを並べたもの（`\'$A $B\'`。省略時はすべて）', "the variables to replace (`'$A $B'`; default: all)")],
+    positional: [pos('置き換える変数だけを並べたもの（`\'$A $B\'`、省略時はすべて）', "the variables to replace (`'$A $B'`, default: all)")],
   }),
   bc: cmd('任意精度の計算機（小数の計算に。`echo "1.5*2" | bc`）', 'Arbitrary-precision calculator (for decimals: `echo "1.5*2" | bc`)', [['-l|--mathlib', '小数と数学関数を使えるようにする', 'decimals and the math library'], ['-q|--quiet', '起動時の表示を出さない', 'no banner']]),
 
