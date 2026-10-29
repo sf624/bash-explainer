@@ -85,6 +85,6 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   arith: (text, cx) => explainArith(text, cx.lang),
   // (The value of PS0, PS1, PS2 or PS4: bash reads it each time it prints the prompt, 6.9.)
   prompt: (text, cx) => ({ tokens: explainPrompt(text, cx.lang), note: promptNote(cx.lang) }),
-  // Only `+FORMAT` is a format; other date arguments set the clock.
-  date: (text, cx) => (text.startsWith('+') ? { tokens: explainDate(text, cx.lang) } : undefined),
+  // (Only `+FORMAT` is a format: the spec gives the language to a word that starts with `+`, src/dict/basic.ts.)
+  date: (text, cx) => ({ tokens: explainDate(text, cx.lang) }),
 };
