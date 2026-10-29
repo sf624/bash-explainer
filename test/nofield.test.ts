@@ -43,6 +43,19 @@ const ROWS: Row[] = [
   { src: 'cat > $1$2', word: '$1$2', none: false, shell: 'sh' },
   // (`"$@"` alone in its quotes is no word when there are no elements; with text in the quotes, it is one.)
   { src: 'echo "${a[@]}"$b', word: '"${a[@]}"$b', none: true, witness: 'a=()' },
+  { src: 'echo "${a[@]:0}"$b', word: '"${a[@]:0}"$b', none: true, witness: 'a=()' },
+  { src: 'echo "${a[@]#x}"$b', word: '"${a[@]#x}"$b', none: true, witness: 'a=()' },
+  { src: 'echo "${!a[@]}"$b', word: '"${!a[@]}"$b', none: true, witness: 'a=()' },
+  { src: 'echo "${@:+x}"$b', word: '"${@:+x}"$b', none: true },
+  // (With `-`, `:-` the word instead, in its quotes; with `?`, `:?` an error; the elements in a `${x:+…}` are in quotes.)
+  { src: 'echo "${a[@]:-}"$b', word: '"${a[@]:-}"$b', none: false },
+  { src: 'echo "${a[@]-}"$b', word: '"${a[@]-}"$b', none: false },
+  { src: 'echo "${@:-}"$b', word: '"${@:-}"$b', none: false },
+  { src: 'echo "${@-}"$b', word: '"${@-}"$b', none: false },
+  { src: 'echo "${@-}"$b', word: '"${@-}"$b', none: false, shell: 'sh' },
+  { src: 'echo "${@?}"$b', word: '"${@?}"$b', none: false },
+  { src: 'unset x\necho "${x:-"$@"}"$b', word: '"${x:-"$@"}"$b', none: false },
+  { src: 'x=1\necho "${x:+"$@"}"$b', word: '"${x:+"$@"}"$b', none: false },
   { src: 'echo "$@"x', word: '"$@"x', none: false },
   { src: 'echo "x$@"$b', word: '"x$@"$b', none: false },
 ];
