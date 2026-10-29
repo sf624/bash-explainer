@@ -3,7 +3,10 @@
 // word is now; the comment says how the real tool reads it.
 import * as assert from 'assert';
 import { Analyzer, Kind, Token } from '../src/analyzer';
+import { countIn } from '../src/semantics/argwords';
+import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { descendants, fields } from '../src/syntax/tree';
 import { allTokens } from './support/explain';
 
 const parser = createUnbashParser();
@@ -119,6 +122,63 @@ describe('an operand that becomes several words', () => {
     // (bash runs `cp {a,b} d`: a source and the destination.)
     assert.strictEqual(tokenOf('set +B; cp {a,b} d', 'd').explanation, 'destination (the new name, or an existing directory)');
     assert.strictEqual(tokenOf('if c; then set +B; fi; cp {a,b} d', 'd').explanation, 'destination (the new name, or an existing directory) when `{a,b}` expands to a single word; destination directory when it expands to more');
+  });
+
+  it('counts the words of braces whose words hold an expansion as bash gives them: a range, or the fields the model knows', () => {
+    // bash 5.2: with `x='p q'`, `cp {a,$x}` runs `cp a p q`; with `x` empty `cp a`, and with `x='*'` `a` and the names.
+    assert.strictEqual(tokenOf('x="p q"; cp {a,$x}', '{a,$x}').explanation, 'expands to `a` (source), `p` (source) and `q` (destination directory)');
+    assert.strictEqual(tokenOf('x="p q"; cp "x"{a,$x}', '"x"{a,$x}').explanation, 'expands to `xa` (source), `xp` (source) and `q` (destination directory)');
+    assert.strictEqual(tokenOf('x=; cp {a,$x}', '{a,$x}').explanation, 'source');
+    assert.strictEqual(tokenOf('x=p; cp {a,$x} d', 'd').explanation, 'destination directory');
+    const hedge = (w: string) => `source when \`${w}\` expands to a single word; when it expands to more, they are source, then destination directory`;
+    assert.strictEqual(tokenOf('cp {a,$x}', '{a,$x}').explanation, hedge('{a,$x}'));
+    assert.strictEqual(tokenOf('x="*"; cp {a,$x}', '{a,$x}').explanation, hedge('{a,$x}'));
+    // (`cp {a,$(echo b c)}` runs `cp a b c`; `set -- 1 2; cp {a,"$@"}` runs `cp a 1 2`, and with no parameters `cp a`.)
+    assert.strictEqual(tokenOf('cp {a,$(echo b c)}', '{a,$(echo b c)}').explanation, hedge('{a,$(echo b c)}'));
+    assert.strictEqual(tokenOf('cp {a,"$@"}', '{a,"$@"}').explanation, hedge('{a,"$@"}'));
+    // (Braces that do not expand: `set +B; x='p q'; cp {a,$x}` runs `cp {a,p q}`.)
+    assert.strictEqual(tokenOf('set +B; x="p q"; cp {a,$x}', '{a,$x}').explanation, hedge('{a,$x}'));
+    // The brace token says the expansions in its words come after it, but where the model knows they make as many.
+    const brace = (line: string, w: string): string => tokenOf(line, w).children.find((c) => c.kind === 'expansion' && c.label === w)!.explanation;
+    assert.strictEqual(brace('cp {a,$x}', '{a,$x}'), 'Brace expansion: `{a,$x}` expands to 2 words: `a` `$x`, which the expansions after it may make into more or fewer words');
+    assert.strictEqual(brace('cp {a,"$x"}', '{a,"$x"}'), 'Brace expansion: `{a,"$x"}` expands to 2 words: `a` `"$x"`');
+    assert.strictEqual(brace('x=p; cp {a,$x} d', '{a,$x}'), 'Brace expansion: `{a,$x}` expands to 2 words: `a` `$x`');
+    assert.strictEqual(tokenOf('cp {a,$x}', '{a,$x}', 'ja').children[0].explanation, 'ブレース展開: `{a,$x}` は 2 個の単語 `a` `$x` に展開される（その後の展開で、単語の数は増えたり減ったりしうる）');
+  });
+
+  it('counts the words each word of the braces gives (`countIn`), as bash 5.2 gives them', () => {
+    const count = (line: string) => {
+      const tree = parser.parse(line);
+      const model = shellState(tree);
+      const cmd = descendants(tree.root, ['command']).at(-1)!;
+      return countIn(fields(cmd, 'argument')[0], model);
+    };
+    // (`cp {a,$x}` gives `a` and the fields of `$x`, none or more; `"x"{a,$x}` `xa` and at least `x`.)
+    assert.deepStrictEqual(count('cp {a,$x}'), { min: 1 });
+    assert.deepStrictEqual(count('cp "x"{a,$x}'), { min: 2 });
+    assert.deepStrictEqual(count('cp {$x,"$@"}'), { min: 0 });
+    assert.deepStrictEqual(count('cp {a,"x$@"}'), { min: 2 });
+    // (Known values: `x='p q'`, three words; `x=`, one.)
+    assert.deepStrictEqual(count('x="p q"; cp {a,$x}'), { min: 3, max: 3 });
+    assert.strictEqual(count('x=; cp {a,$x}'), undefined);
+    // (A known field that starts with `-` may be an option, which the interpreter does not read: the range stays.)
+    assert.deepStrictEqual(count('x=-r; cp {a,$x}'), { min: 1 });
+    // (`{,$x}a` is `a` and `$xa`, the variable `xa`: none or more.)
+    assert.deepStrictEqual(count('cp {,$x}a'), { min: 1 });
+    assert.deepStrictEqual(count('cp {b,$x}a'), { min: 1 });
+    // (Globs give at least one word each; quoted words exactly one.)
+    assert.deepStrictEqual(count('cp {a,b}*'), { min: 2 });
+    assert.deepStrictEqual(count('cp {a,"$x"}'), { min: 2, max: 2 });
+    // (Braces that do not expand: the word with its parts, `{a,p` and `q}`.)
+    assert.deepStrictEqual(count('set +B; cp {a,$x}'), { min: 1 });
+    assert.deepStrictEqual(count('set +B; cp {a,*}'), { min: 1 });
+    assert.strictEqual(count('set +B; cp {a,b}'), undefined);
+    assert.deepStrictEqual(count('set +B; cp {a,b$x}'), { min: 1 });
+    // (`{,a}$x` is `$x` and `a$x`: `a` at least.)
+    assert.deepStrictEqual(count('cp {,a}$x'), { min: 1 });
+    // (Brace expansion on some paths only: the word as it is, or its words; one word either way for `{,a}`.)
+    assert.deepStrictEqual(count('if c; then set +B; fi; cp {a,$x}'), { min: 1 });
+    assert.strictEqual(count('if c; then set +B; fi; cp {,a}'), undefined);
   });
 
   it('gives the roles for one word and for more when the count is not known', () => {

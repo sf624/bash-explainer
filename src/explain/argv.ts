@@ -743,10 +743,16 @@ function nameGlob(cx: Explainer, a: SyntaxNode, name: string, text: string, acts
     `. Unquoted, it is a glob pattern first: if a file matches it, that file's name is ${en} instead${sometimes} (write ${quoted})`);
 }
 
-/** The words a brace expansion gives, each with its role (`cp a{,.bak}`: the source, then the destination). */
+/**
+ * The words a brace expansion gives, each with its role (`cp a{,.bak}`: the source, then the destination); the fields
+ * where the model knows them and they are other words (`x='p q'; cp {a,$x}`: `a`, `p` and `q`).
+ */
 function eachText(cx: Explainer, a: SyntaxNode, each: OperandSpec[]): string {
+  // (An exact count is that of the words of the braces, or of the fields the model knows: `countIn`.)
+  const braces = braceTexts([a])!;
+  const words = braces.length === each.length ? braces : wordFields(a, cx.state).fields!;
   // `destination (the new name…)` reads `destination: the new name…` in the parentheses.
-  const parts = braceTexts([a])!.map((w, k) => `\`${w}\`${cx.s(`（${cx.t(each[k].text).replace(/（(.*)）$/, ': $1')}）`, ` (${cx.t(each[k].text).replace(/ \((.*)\)$/, ': $1')})`)}`);
+  const parts = words.map((w, k) => `\`${w}\`${cx.s(`（${cx.t(each[k].text).replace(/（(.*)）$/, ': $1')}）`, ` (${cx.t(each[k].text).replace(/ \((.*)\)$/, ': $1')})`)}`);
   const list = `${parts.slice(0, -1).join(cx.s('、', ', '))}${cx.s('と ', ' and ')}${parts[parts.length - 1]}`;
   return cx.s(`${list}に展開される`, `expands to ${list}`);
 }

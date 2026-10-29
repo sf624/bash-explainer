@@ -47,7 +47,7 @@ export function wordAlternatives(w: WordMeaning, applies = w.steps[0].applies): 
  * Whether bash reads a word of a brace expansion otherwise than its parts say, since the braces are gone: a `$x` that
  * the text after it lengthens (`{,$x}a` gives `$xa`), or a `$` the text after it makes an expansion (`{a$,b}x`).
  */
-export function rejoined(w: BraceAlternative): boolean {
+export function rejoined(w: readonly (SyntaxNode | string)[]): boolean {
   return w.some((p, i) => (typeof p === 'string'
     ? /(?:^|[^\\])(?:\\\\)*\$[\w{('"@*#?$!-]/.test(p)
     : p.type === 'simple_expansion' && p.namedChildren[0].type === 'variable_name' && typeof w[i + 1] === 'string' && /^\w/.test(w[i + 1] as string)));

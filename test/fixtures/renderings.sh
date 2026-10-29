@@ -15,6 +15,14 @@ printf '%s,'{a..c}
 cp x"y"{1,2} d
 cp 'a'{,}
 
+# A word of braces with an expansion in it (found in the review of #481): the expansion may split it or give none, so
+# the braces do not give their number of words (`cp a a b`; with `$u` empty, `cp a`); with the value known, its fields.
+cp {a,$pair}
+cp "x"{a,$pair} d
+cp {a,$u}
+cp {a,"$@"}
+cp {a,$(echo b c)}
+
 # A word that may give no field (bug 5 of oracles.md 2.8): with it empty, the words after it take other roles (`cp b`:
 # `b` is a source; `grep -c f`: `f` is the pattern).
 cp $a b
