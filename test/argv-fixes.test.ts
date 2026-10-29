@@ -207,6 +207,12 @@ describe('an operand that becomes several words', () => {
     assert.strictEqual(tokenOf('cp {a,b}*', '{a,b}*').explanation, `when \`{a,b}*\` expands to 2 words, ${dest}; when it expands to more, they are source, then destination directory`);
     assert.strictEqual(tokenOf('cp {a,b}*', '{a,b}*', 'ja').explanation, '`{a,b}*` が2語に展開されるなら順にコピー元・コピー先（新しい名前、または既存のディレクトリ）、3語以上なら順にコピー元・コピー先のディレクトリ');
     assert.strictEqual(tokenOf('rm $a', '$a').explanation, 'file to remove');
+    // (A word after it, read with its fewest words: `cmp a* b* f` skips `f` bytes in the first file, `cmp a1 a2 b* f` in
+    // the second. With another word that may give several, as few as each can.)
+    assert.strictEqual(tokenOf('cmp {a,b}* f', 'f').explanation, 'bytes to skip in the first file when `{a,b}*` expands to 2 words; bytes to skip in the second file when it expands to more');
+    assert.strictEqual(tokenOf('cmp {a,b}* f', 'f', 'ja').explanation, '`{a,b}*` が2語に展開されるなら1 つ目のファイルで読み飛ばすバイト数、3語以上なら2 つ目のファイルで読み飛ばすバイト数');
+    assert.strictEqual(tokenOf('cmp {a,b}* f $c', 'f').explanation, 'bytes to skip in the first file when `{a,b}*`, `$c` expand to as few words as each can; bytes to skip in the second file when they expand to more');
+    assert.strictEqual(tokenOf('cmp {a,b}* f $c', 'f', 'ja').explanation, '`{a,b}*`・`$c` がそれぞれ最も少ない語数に展開されるなら1 つ目のファイルで読み飛ばすバイト数、それより多いなら2 つ目のファイルで読み飛ばすバイト数');
     // (The same roles for every count it gives: `chmod a* b*` is the mode, then files.)
     assert.strictEqual(tokenOf('chmod {a,b}*', '{a,b}*').explanation, 'when `{a,b}*` expands to 2 words or more, they are mode (e.g. `755`, `+x`, `u+w`), then target file');
     // (A brace expansion of globs gives at least one word each.)
