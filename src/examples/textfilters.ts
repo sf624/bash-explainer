@@ -441,24 +441,24 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
       squeezeSet = (c) => s2.includes(c);
     }
   } else if (sets.length === 2) {
-    if (comp) {
-      const s2 = expandSet(sets[1]!);
-      const last = s2[s2.length - 1];
-      if (new Set(s2).size !== 1 || last === undefined) throw new Unsupported('-c with a multi-character set2');
-      out = out.map((c) => (in1(c) ? last : c));
-      squeezeSet = (c) => c === last;
-    } else {
-      let from = set1;
-      let to = expandSet(sets[1]!, from.length);
-      // tr: "when not truncating set1, string2 must be non-empty".
-      if (!to.length) throw new Unsupported('empty set2');
-      if (has(p, 't')) from = from.slice(0, to.length);
-      else if (to.length < from.length) to = [...to, ...Array(from.length - to.length).fill(to[to.length - 1])];
-      const map = new Map<string, string>();
-      from.forEach((c, i) => map.set(c, to[i]));
-      out = out.map((c) => map.get(c) ?? c);
-      squeezeSet = (c) => to.includes(c);
-    }
+    // (With -c, the first set is every byte not in the set, in ascending order, as tr takes it; tr works on bytes, so
+    // text or sets beyond ASCII are left to the real tool.)
+    if (comp && ([...text, ...sets[0]!, ...sets[1]!].some((c) => c.charCodeAt(0) > 127))) throw new Unsupported('-c with non-ASCII text');
+    let from = comp ? Array.from({ length: 256 }, (_, i) => String.fromCharCode(i)).filter((c) => !set1.includes(c)) : set1;
+    let to = expandSet(sets[1]!, from.length);
+    // tr: "when not truncating set1, string2 must be non-empty".
+    if (!to.length) throw new Unsupported('empty set2');
+    // (Refused by tr: an equivalence class or a class but upper and lower in string2; string2 ending in a class when it is the shorter; with -c, a class in
+    // string1 unless string2 maps every character to one and -t is not given.)
+    if (/\[=|\[:(?!(upper|lower):\])/.test(sets[1]!)) throw new Unsupported('class in set2');
+    if (!has(p, 't') && to.length < from.length && /\[:\w+:\]$/.test(sets[1]!)) throw new Unsupported('set2 ends with a class');
+    if (comp && /\[[:=]/.test(sets[0]!) && (has(p, 't') || new Set(to).size > 1)) throw new Unsupported('-c with a class');
+    if (has(p, 't')) from = from.slice(0, to.length);
+    else if (to.length < from.length) to = [...to, ...Array(from.length - to.length).fill(to[to.length - 1])];
+    const map = new Map<string, string>();
+    from.forEach((c, i) => map.set(c, to[i]));
+    out = out.map((c) => map.get(c) ?? c);
+    squeezeSet = (c) => to.includes(c);
   } else {
     // (One set is a squeeze: tr refuses a lone set when translating, and when deleting and squeezing; `parseOptions` throws.)
     squeezeSet = in1;

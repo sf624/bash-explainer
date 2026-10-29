@@ -23,7 +23,7 @@ const cases: string[][] = [
   ['uniq'], ['uniq', '-c'], ['uniq', '-d'], ['uniq', '-u'], ['uniq', '-ic'], ['uniq', '-D'], ['uniq', '-f', '1'],
   ['cut', '-d,', '-f2-4,7'], ['cut', '-f2'], ['cut', '-c-10'], ['cut', '-c3-5,8'], ['cut', '-d:', '-f1,3', '--output-delimiter= | '],
   ['cut', '-d,', '-s', '-f1'], ['cut', '-d,', '--complement', '-f2'], ['cut', '-c2-'],
-  ['tr', '[:upper:]', '[:lower:]'], ['tr', 'a-z', 'A-Z'], ['tr', '-d', '\\r'], ['tr', '-s', ' '], ['tr', '\\n', ' '], ['tr', '-d', '0-9'],
+  ['tr', '[:upper:]', '[:lower:]'], ['tr', 'a-z', 'A-Z'], ['tr', '-d', '\\r'], ['tr', 'a', '-d'], ['tr', '-s', ' '], ['tr', '\\n', ' '], ['tr', '-d', '0-9'],
   ['tr', '-cd', '[:alnum:]\\n'], ['tr', 'abc', 'x'], ['tr', '-s', 'a-z'], ['tr', '-d', '\\n'], ['tr', '-c', '[:alnum:]\\n', '_'], ['tr', 'a-c', '[x*]'],
   ['head', '-n', '5'], ['head', '-5'], ['head', '-n', '-2'], ['head', '-c', '5'], ['head'],
   ['tail', '-n', '3'], ['tail', '-n', '+2'], ['tail', '-3'], ['tail', '-c', '4'], ['tail', '-c', '+15'],
@@ -100,7 +100,7 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
     ['sort', '-k1,9'], ['sort', '-s', '-k1,1'], ['sort', '-k1.2,1.3'], ['sort', '-t', ' ', '-k1.3,2'], ['sort', '-f'], ['sort', '-h', '-k2,2'], ['sort', '-t', ' ', '-k2,2n'],
     ['uniq', '-w', '1'], ['uniq', '-s', '2'], ['uniq', '-f', '1', '-c'], ['uniq', '-i', '-u'],
     ['cut', '-c', '2,4', '--output-delimiter=:'], ['cut', '-f', '2', '-d', ','],
-    ['tr', '[=a=]', 'b'], ['tr', '\\101\\154', 'xy'], ['tr', '\\q', 'x'], ['tr', '-t', 'abc', 'xy'], ['tr', 'abcl', 'xy'], ['tr', '-s', 'a'], ['tr', '-c', 'a-z\\n', '_'],
+    ['tr', '[=a=]', 'b'], ['tr', '\\101\\154', 'xy'], ['tr', '\\q', 'x'], ['tr', '-t', 'abc', 'xy'], ['tr', 'a', '-d'], ['tr', 'l', '-s'], ['tr', 'abcl', 'xy'], ['tr', '-s', 'a'], ['tr', '-c', 'a-z\\n', '_'],
     ['head', '-c', '-3'], ['head', '-c', '6'], ['tail', '-c', '3'], ['tail', '-n', '2'], ['head', '--lines=2'], ['sort', '-h'], ['sort', '--reverse'], ['tr', '-d', 'a-z\\n'], ['tail', '+2'], ['tail'],
   ];
   for (const [cmd, ...args] of cases) {
@@ -109,11 +109,25 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
       assert.deepStrictEqual(FILTERS[cmd](args, lines), real(cmd, args, lines));
     });
   }
+  // tr -c takes every byte not in the set, in order, from NUL: with -t only the first as many as set2 has are translated
+  // (`tr -tc a b` changes NUL only), without it set2 is padded with its last character.
+  const TR_C: string[][] = [
+    ['-tc', 'a', 'b'], ['-tC', 'a', 'b'], ['-ct', 'a', 'xyz'], ['-tc', 'ab', 'xy'], ['-t', 'abcd', 'xy'], ['-t', 'ab', 'xyz'], ['-c', 'a', 'b'], ['-c', 'a', 'xy'],
+    ['-c', 'ab', 'xyz'], ['-cs', 'a', 'xy'], ['-cs', 'a', 'x'], ['-tc', 'a-c', '[x*]'], ['-c', 'a', '[x*]'], ['-tc', '\\000', 'xy'], ['-tc', '\\n', 'xyz'], ['-c', '[:digit:]', 'x'], ['-c', '[:digit:]', 'xx'], ['-c', '0-9', '[:upper:]a'], ['-tc', '0-9', '[:upper:]'], ['-c', 'a', 'x[y*]'],
+    ['-tc', 'a-z', '[:upper:]'], ['-t', '[:lower:]', 'ab'], ['-ct', '\\000-\\011', 'abcdefghijkl'],
+  ];
+  for (const words of TR_C) {
+    it(`tr ${words.join(' ')}, on text with control characters`, () => {
+      const lines = ['abc\u0000d\u0001e\u0002', 'Hello aaa World', 'xyz 123', '\u0003\u0004'];
+      assert.deepStrictEqual(runTr(words, lines), real('tr', words, lines));
+    });
+  }
   it('gives up on what it does not run', () => {
     const fails: [() => unknown, string][] = [
       [() => runSort(['-t', 'ab'], []), '-t'], [() => runSort(['--key'], []), 'missing'], [() => runSort(['-k'], []), 'missing'], [() => runSort(['--nope'], []), '--nope'],
       [() => runUniq(['-z'], []), '-z'], [() => runCut(['-f', 'x'], []), 'list'], [() => runCut(['-d', 'ab', '-f', '1'], []), '-d'], [() => runCut([], []), 'cut needs'],
-      [() => expandSet('[:foo:]'), 'class'], [() => expandSet('z-a'), 'reverse'], [() => runTr(['a', 'b', 'c'], []), 'extra operand'], [() => runTr(['-d', undefined as unknown as string], []), 'sets'], [() => runTr(['-c', 'a', 'xy'], []), '-c with'],
+      [() => expandSet('[:foo:]'), 'class'], [() => expandSet('z-a'), 'reverse'], [() => runTr(['a', 'b', 'c'], []), 'extra operand'], [() => runTr(['-d', undefined as unknown as string], []), 'sets'], [() => runTr(['-c', 'a', 'é'], ['x']), '-c with'], [() => runTr(['-tc', '[:digit:]', 'x'], ['x']), 'class'], [() => runTr(['-d', 'a', '-s', 'b'], ['x']), 'extra operand'], [() => runTr(['a', 'b', '-d'], ['x']), 'extra operand'], [() => runTr(['-c', '[:digit:]', 'xy'], ['x']), 'class'],
+      [() => runTr(['a', '[=b=]'], ['x']), 'class in set2'], [() => runTr(['a', '[:digit:]'], ['x']), 'class in set2'], [() => runTr(['-c', '0-9', '[:upper:]'], ['x']), 'ends with a class'], [() => runTr(['-C', 'a-z', '[:upper:]'], ['x']), 'ends with a class'], [() => runTr(['-c', 'a', 'x'], ['é']), '-c with'],
       [() => runTr(['a', ''], []), 'empty set2'], [() => runTr(['-ds', 'a'], []), 'extra operand'], [() => runTr(['a'], []), 'extra operand'], [() => runHead(['-n', 'x'], []), '-n'], [() => runTail(['-n', 'x'], []), '-n'],
       [() => runSeq(['1', '0', '3']), 'zero'], [() => runSeq(['1', '100000']), 'too long'], [() => runSeq(['-f', '%g', '3']), '-f'],
     ];
