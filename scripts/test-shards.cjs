@@ -12,8 +12,11 @@
 //   node scripts/test-shards.cjs --measure   run each file alone (as many at a time as mocha) and rewrite the
 //                                            timings of this Node.js (run it with Node.js 18, and with 24)
 //
-// Measure again when the shards drift apart (the CI jobs "Unit tests" show their times), with the tools
-// of CI installed (and the browser, BASH_EXPLAINER_BROWSER=1), so that the tests that compare with them run.
+// Measure again when the shards drift apart (the CI jobs "Unit tests" show their times). The times are CI's:
+// on a branch, for one run, make the shard jobs run `node scripts/test-shards.cjs --measure` instead of mocha
+// (each job then measures its own files, on the coverage job with NODE_V8_COVERAGE as there), and gather the
+// lines the jobs print (seconds, file) into the file. A local machine is faster, and not by the same factor
+// for every file.
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');

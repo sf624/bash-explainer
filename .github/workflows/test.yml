@@ -188,7 +188,10 @@ jobs:
         if: matrix.node == 24
         with:
           name: coverage
-          path: coverage/
+          # (The reports; not the raw coverage of the shards, which is large.)
+          path: |
+            coverage/
+            !coverage/tmp/
 
       # Every file runs all its lines and takes all its branches, but those in coverage-floors.json,
       # which must not go below their floors.
