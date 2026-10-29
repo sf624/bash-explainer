@@ -492,6 +492,8 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.strictEqual(tokenOf('grep -e $p "$@"', '"$@"', 'ja').explanation, '検索対象のファイル（省略時は標準入力）、`$p` が0語ならこの語の最初の語は `-e` オプションの値');
     assert.strictEqual(tokenOf('y="a b"; tar -cf $a $y c', '$y').explanation, 'expands to `a` (argument; value for `-f` when `$a` expands to nothing) and `b` (argument)');
     assert.strictEqual(tokenOf('y="a b"; tar -cf $a $y c', '$y', 'ja').explanation, '`a`（引数、`$a` が0語なら `-f` オプションの値）と `b`（引数）に展開される');
+    // (A field that is an option says it too: `grep -e -i x f` looks for `-i` in `x` and `f`.)
+    assert.strictEqual(tokenOf('y="-i x"; grep -e $p $y f', '$y').explanation, 'expands to `-i` (option: ignore case; value for `-e` when `$p` expands to nothing) and `x` (file to search: default: stdin)');
     // (The same reading after either of two words, once: `jq --arg n .` and `jq --arg v .` both take `.` as the value.)
     assert.strictEqual(tokenOf('jq --arg $n $v .', '.').explanation, 'jq filter (e.g. `.items[].name`); value for `--arg` when `$n` or `$v` expands to nothing');
     assert.strictEqual(tokenOf('jq --arg $n $v .', '.', 'ja').explanation, 'jq フィルタ（例: `.items[].name`）、`$n` か `$v` が0語なら `--arg` の値');
@@ -505,8 +507,8 @@ describe("an option's value that may give no word (after #482)", () => {
     const out = runBash('a=; mkdir d sub; touch sub/g; printf "f\\nx-i\\n--\\n" > f; tar -cf $a f 2>&1 | head -1; cp -t $a d 2>&1 | head -1; '
       + 'grep -e $a f < f; grep -e $a -i < f; grep -e $a -e x -e y f 2>&1; grep -m $a -c f 2>&1; echo "a\\b" | { read -p $a -r x; echo "$x"; } 2>/dev/null; '
       + 'grep -e $a -- f < f; head -c $a -5 f; echo; tar cfC $a arc.tar sub g && tar tf arc.tar; git -C $a -p status 2>&1; '
-      + 'git init -q; git log -n $a -- f 2>&1; git log --author $a -- f 2>&1; y="arc2.tar f"; tar -cf $a $y && tar tf arc2.tar', { files: ['.keep'] }).stdout;
+      + 'git init -q; git log -n $a -- f 2>&1; git log --author $a -- f 2>&1; y="arc2.tar f"; tar -cf $a $y && tar tf arc2.tar; y="-i x"; grep -e $a $y f 2>&1', { files: ['.keep'] }).stdout;
     assert.deepStrictEqual(out.split('\n').filter(Boolean), ['tar: Cowardly refusing to create an empty archive', 'cp: missing file operand', 'f', 'x-i', 'grep: x: No such file or directory', 'grep: invalid max count', 'ab', '--', 'f', 'x-', 'g', "fatal: cannot change to '-p': No such file or directory",
-      'error: -n requires an argument', "fatal: Option '--author' requires a value", 'f']);
+      'error: -n requires an argument', "fatal: Option '--author' requires a value", 'f', 'grep: x: No such file or directory', 'f:x-i']);
   });
 });
