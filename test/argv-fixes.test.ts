@@ -242,6 +242,8 @@ describe('an operand that becomes several words', () => {
     // (One role for any count but the fewest: `cmp x y z f` skips `f` bytes in the second file.)
     assert.strictEqual(tokenOf('cmp $a $b f', 'f').explanation, 'bytes to skip in the first file when `$a`, `$b` expand to a single word; when any of them expands to more, it is bytes to skip in the second file or extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing); first file (`-` for stdin) when `$a`, `$b` expand to nothing');
     assert.strictEqual(tokenOf('cmp $a $b f', 'f', 'ja').explanation, '`$a`・`$b` が1語に展開されるなら1 つ目のファイルで読み飛ばすバイト数、どれかが2語以上ならこの語は2 つ目のファイルで読み飛ばすバイト数・余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 2 で終わる）のどれか、`$a`・`$b` が0語なら1 つ目のファイル（`-` で標準入力）');
+    // (One role of its own past the limit: `seq 1 2 3 4` refuses `4`, "extra operand".)
+    assert.strictEqual(tokenOf('seq $a $b f', 'f').explanation, 'last when `$a`, `$b` expand to a single word; when any of them expands to more, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)');
   });
 
   it('reads the hedges of many words that may give several in about the time of the line (review of #484)', function () {
