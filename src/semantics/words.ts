@@ -838,12 +838,12 @@ export function wordFields(n: SyntaxNode, model: StateModel, env?: WordEnv): Fie
 /**
  * The words of the brace expansion of the word of `n` (`wordAlternatives`; undefined where they are not known here), each as written, with its fields before
  * pathname expansion where they are known (`fields`), its characters unsplit with `hole(part)` for each part not known here (`chars`; a tilde prefix is no part),
- * and its fields with those holes (`holed`); undefined where bash fails on the word (`${x:?}`). For src/semantics/globwords.ts and nofield.ts.
+ * and its fields with those holes (`holed`); undefined where bash fails on the word (`${x:?}`); `braces` as `wordAlternatives`'s `applies`. For globwords.ts and nofield.ts.
  */
-export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: SyntaxNode) => string | Piece): { w: WordMeaning; words: { written: string; fields?: Char[][]; chars?: Char[]; holed?: Char[][] }[] } | undefined {
+export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: SyntaxNode) => string | Piece, braces?: boolean): { w: WordMeaning; words: { written: string; fields?: Char[][]; chars?: Char[]; holed?: Char[][] }[] } | undefined {
   // (A word of a list is always one.)
   const w = wordMeaning(n, model)!;
-  const alternatives = wordAlternatives(w);
+  const alternatives = wordAlternatives(w, braces);
   if (!alternatives) return undefined;
   const ev = new Evaluator(w, new ModelValues(w, model, undefined, new Set()));
   const failing = (nodes: BraceAlternative, holed: boolean): Piece[] | undefined => {

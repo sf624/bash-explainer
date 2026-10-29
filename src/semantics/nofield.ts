@@ -36,16 +36,19 @@ function elementsAlone(n: SyntaxNode): boolean {
 /**
  * Whether the word of `n` (in a word) may give no field where it runs: one that pathname expansion may remove (a glob
  * with nullglob on, or not known off), or each of whose brace words gives no field with the parts not known here empty
- * (or its fields are not known: an IFS not known here). Never in a context of one field, nor where the shell keeps an
+ * (or its fields are not known: an IFS not known here), with brace expansion or without where that is not known. Never in a context of one field, nor where the shell keeps an
  * empty redirection target (dash; bash fails on it), which `braceWords` splits as `wordFields` does.
  */
 export function mayGiveNoField(n: SyntaxNode, model: StateModel): boolean {
   // (`n` is in a word: the caller has its meaning.)
   const w = wordMeaning(n, model)!;
   if (w.steps.find((s) => s.kind === 'glob')!.applies !== false && w.glob.nullglob !== 'off') return true;
-  // (Brace words that the text after a `$x` lengthens, `$x{b,c}`, are not known here: any may be empty.)
-  const words = braceWords(n, model, (part) => (part && neverEmpty(part) ? SOME : part && elementsAlone(part) ? ELEMENTS : ''));
-  if (!words) return true;
-  // (A word bash fails on, `${x:?}`, has no characters: it is no field, but an error, which other notes say.)
-  return words.words.every((x) => !!x.chars && (!x.holed || x.holed.length === 0));
+  // (Brace expansion on some paths only, `if c; then set +B; fi`: none where either reading may give none.)
+  const applies = w.steps[0].applies;
+  return (applies === 'unknown' ? [false, true] : [applies]).some((braces) => {
+    // (Brace words that the text after a `$x` lengthens, `$x{b,c}`, are not known here: any may be empty.)
+    const words = braceWords(n, model, (part) => (part && neverEmpty(part) ? SOME : part && elementsAlone(part) ? ELEMENTS : ''), braces);
+    // (A word bash fails on, `${x:?}`, has no characters: it is no field, but an error, which other notes say.)
+    return !words || words.words.every((x) => !!x.chars && (!x.holed || x.holed.length === 0));
+  });
 }

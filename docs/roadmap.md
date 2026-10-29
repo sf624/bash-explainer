@@ -19,6 +19,7 @@ Keep it current:
   5. Done (#482): an empty expansion counted as one word (`counts` in src/argv/interpret.ts): the hedge never covered none (`cp $a b`, `grep -c ${x} f`). Where the model says a word may give none, an operand whose role then changes says so: "source when `$a` expands to nothing".
   6. The `several` hedge for `cp $a` with two words: the last is the destination of the two-operand form, not a destination directory.
   7. A known split value that starts with `-` is read as an operand (`x="-r a"; cp $x d`: bash gives the option `-r`). Braces whose words start with `-` have the same cause (the interpreter reads the word as written, not its fields): `set {-e,-u}` is said to set `$1`, where bash turns on `-e` and `-u`.
+  - Open, after #482: an option's value that may give no word makes the next word the value (`tar -cf $a b`, `cp -t $d $a`, `grep -e $p f`); the hedge of #482 covers operands only.
 
 ## Next, in this order
 

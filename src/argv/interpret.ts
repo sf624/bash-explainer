@@ -330,6 +330,9 @@ class Reader {
       }
       return readings.get(key);
     };
+    // (The same role in another form, with more said of it, is not another: `ln -s $a $b`, `$a` is the target either way,
+    // "target (the link is made in the current directory…)" when `$b` gives none.)
+    const role = (o: OperandSpec): string => o.text.en.replace(/ \(.*\)$/, '');
     /**
      * The role of word k (now `item`) where the other words give none, when it is another. (When no form fits
      * then, nothing is said: every spec of the dictionary but ssh's has a form of any number of operands, `positional`.)
@@ -338,7 +341,7 @@ class Reader {
       const r = noneOf(k);
       if (!r?.read) return undefined;
       const then = r.read.alt.pattern[r.read.items[r.read.first[k]]];
-      return then.text.en !== item.text.en ? { words: r.drops.map((j) => operands[j]), spec: then } : undefined;
+      return role(then) !== role(item) ? { words: r.drops.map((j) => operands[j]), spec: then } : undefined;
     };
     for (let k = 0; k < operands.length; k++) {
       const i = operands[k];
