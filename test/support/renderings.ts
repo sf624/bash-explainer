@@ -13,8 +13,9 @@
 //   the fields of every word and some word gives other than one, the interpreter reads bash's argv, and the role of each
 //   field must be one the explanation shows on its word: the same option, the value of the same option, or an operand
 //   whose text from the spec the word's token says (alone, or in the part that holds of the hedge "… when `$x` expands
-//   to a single word; … when it expands to more" that src/explain/argv.ts makes of `ArgRole.otherwise` and `several`,
-//   or of "…; … when `$y` expands to nothing", of `none`).
+//   to a single word; … when it expands to more" that src/explain/argv.ts makes of `ArgRole.otherwise`, `several` and
+//   `byCount`, a reading for each count, or of "… when `$x`, `$y` expand to a single word; when they expand to more, each
+//   of its words is …", of `mixed`, or of "…; … when `$y` expands to nothing", of `none`).
 //
 // The counts come from the facts the tokens carry (`Token.value`, `Token.expands`, `Token.origin`, the refs and the
 // words of a brace expansion, the sections of an example); only the string and the concatenation are told by their
@@ -204,11 +205,33 @@ function severalClauses(e: string): { from: number; to?: number; text: string }[
 }
 
 /**
+ * The readings of the hedges `otherwise` and `byCount`: "X when `$a` expands to a single word (or "to 2 words")", then
+ * "Y when it expands to more" (or "to 2 words", "to 3 words or more"; "more" from the count after the reading before),
+ * with the words the first names. Undefined for an explanation in another form.
+ */
+function countClauses(e: string): { words: string[]; clauses: { from: number; to?: number; text: string }[] } | undefined {
+  const parts = e.split('; ');
+  const head = /^(.*) when ((?:`[^`]+`(?:, )?)+) expands to (?:a single word|(\d+) words)$/.exec(parts[0]);
+  if (!head || parts.length < 2) return undefined;
+  const from = Number(head[3] ?? 1);
+  const clauses: { from: number; to?: number; text: string }[] = [{ from, to: from, text: head[1] }];
+  for (const part of parts.slice(1)) {
+    const m = /^(.*) when it expands to (?:(more)|(\d+) words( or more)?)$/.exec(part);
+    if (!m) return undefined;
+    const at = m[2] ? clauses[clauses.length - 1].to! + 1 : Number(m[3]);
+    clauses.push({ from: at, to: m[2] || m[4] ? undefined : at, text: m[1] });
+  }
+  return { words: [...head[2].matchAll(/`([^`]+)`/g)].map((x) => x[1]), clauses };
+}
+
+/**
  * Whether the explanation of an operand's token says the role `texts` (the spec's text, as written or as `eachText`
  * writes it) for the field at `place`. In the hedge of `several` ("X when `$a` expands to a single word; when it expands
  * to 2 words, they are Y, then Z; when it expands to more, they are …", `severalClauses`), the part that holds for the
  * number of fields its word gave, the first field the first role and the last the last; in the hedge of `otherwise` ("X when `$a`, `$b` expands to a single word; Y when it
- * expands to more"), the part that holds for the words it names (neither when one of them gave none, but as below);
+ * expands to more"), and of `byCount` ("…; Z when it expands to 3 words"), the part that holds for the words it names
+ * (neither when one of them gave none, but as below); in the hedge of `mixed`, the first part where the words it names
+ * gave one each, else any role of its list;
  * after either or alone, "; W when `$b` expands to nothing", W where the words it names gave none and this word one;
  * in the words of a brace expansion ("expands to `a` (X) and `b` (Y)"), the role after the field's own text.
  */
@@ -230,15 +253,28 @@ export function saysOperand(explanation: string, texts: readonly string[], place
     if (place.at === place.of - 1) return has(roles[roles.length - 1]);
     return roles.some(has);
   }
-  const otherwise = / when ((?:`[^`]+`(?:, )?)+) expands to (?:a single word|(\d+) words); (.*) when it expands to more/.exec(e);
-  if (otherwise) {
-    const named = [...otherwise[1].matchAll(/`([^`]+)`/g)].map((x) => place.counts.get(x[1]));
+  const counted = countClauses(e);
+  if (counted) {
+    const named = counted.words.map((w) => place.counts.get(w));
     // (A word the hedge names that is not one of the command's, or that gave none: not a reading the hedge covers.)
     if (named.some((c) => c === undefined || c === 0)) return false;
-    // (The first part for the fewest words: one, or "N words" of a word that gives N at least.)
-    const fewest = Number(otherwise[2] ?? 1);
-    return named.some((c) => c! > fewest) ? has(otherwise[3]) : has(e.slice(0, otherwise.index));
+    // (Of one word, the reading for its count; of several, "more" when one of them gave more than the fewest.)
+    if (named.length === 1) {
+      const clause = counted.clauses.find((c) => c.from <= named[0]! && named[0]! <= (c.to ?? Infinity));
+      return !!clause && has(clause.text);
+    }
+    return named.some((c) => c! > counted.clauses[0].from) ? has(counted.clauses[1].text) : has(counted.clauses[0].text);
   }
+  // (The roles its words may have when it or the other words give more: `mixed`.)
+  const mixed = /^(.*) when ((?:`[^`]+`(?:, )?)+) expand to (a single word|as few words as each can); when they expand to more, (?:each of its words is|it is) (.*)$/.exec(e);
+  if (mixed) {
+    const named = [...mixed[2].matchAll(/`([^`]+)`/g)].map((x) => place.counts.get(x[1]));
+    if (named.some((c) => c === undefined || c === 0)) return false;
+    if (mixed[3] === 'a single word') return named.every((c) => c === 1) ? has(mixed[1]) : has(mixed[4]);
+    return has(mixed[1]) || has(mixed[4]);
+  }
+  const among = /^(?:each of its words is|it is) (.*), by how many words ((?:`[^`]+`(?:, )?)+) expand to$/.exec(e);
+  if (among) return has(among[1]);
   // (A hedge in a form not read here: a finding, so that a new wording is seen.)
   if (/expands? to (a single word|more|nothing)/.test(e)) return false;
   if (e.startsWith('expands to `')) {

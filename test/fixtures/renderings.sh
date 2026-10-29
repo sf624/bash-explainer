@@ -54,3 +54,14 @@ set -B
 z=""
 cp $z $pair
 cp $pair $z
+
+# Two words that may give several (review of #484): the roles of each are those any counts give (`cp p q r`: `r` is the
+# destination directory; `gosu u ls x`: `x` is an argument of `ls`; `cmp p q r`: `r` skips bytes in the first file),
+# and a word after one such word has its role for each count of it (`cmp p q f`).
+zp="p q"
+zr=r
+zu="u ls"
+cp $zp $zr
+cmp $zp $zr
+gosu $zu $zr
+cmp $zp f

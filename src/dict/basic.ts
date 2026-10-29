@@ -260,7 +260,7 @@ export const basic: Record<string, CommandSpec> = {
     ['-Z', 'SELinux のセキュリティコンテキストを既定の型にする', 'set the SELinux security context to the default type'],
     ['--context', '`-Z` と同じ。`=CTX` で SELinux・SMACK のコンテキストを指定する', 'like `-Z`; `=CTX` sets the SELinux or SMACK security context', 'attached'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('名前', 'name'), pos('種類（`b` ブロック、`c` キャラクタ、`p` パイプ）', 'type (`b` block, `c` character, `p` pipe)'), pos('メジャー番号、マイナー番号', 'major and minor numbers')] }),
+  ], { parser: 'getopt_long', positional: [pos('名前', 'name'), pos('種類（`b` ブロック、`c` キャラクタ、`p` パイプ）', 'type (`b` block, `c` character, `p` pipe)'), pos('メジャー番号とマイナー番号', 'major and minor numbers')] }),
   csplit: cmd('パターンに合う行でファイルを分割する', 'Split a file at lines that match patterns', [
     ['-f|--prefix', '出力ファイル名の先頭（既定 `xx`）', 'prefix of the output files (default `xx`)', 'arg'],
     ['-n|--digits', '連番の桁数', 'number of digits in the suffix', 'arg'],

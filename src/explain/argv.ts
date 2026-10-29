@@ -468,7 +468,7 @@ function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Ex
     desc = text.replace('`$N`', `\`$${at.n}\``);
     if (desc !== text && !at.sure) desc += cx.s('（この語か前の語が展開で 1 語以外になると、番号もずれる）', ' (if this word or one before it expands to more or fewer words, the number shifts)');
   }
-  if (desc) desc = hedged(cx, desc, a.text, role, parse, nodes);
+  if (desc) desc = hedged(cx, desc, a.text, role, nodes);
   // (A function named like a declaration builtin, or `alias`, given `a=…`: bash's parser marked the word.)
   // (Not the operand's meaning when bash assigns an array and passes only the name: `alias b=(1 2)`.)
   const named = isFn || field(a, 'value')?.type !== 'array' ? desc : undefined;

@@ -7,6 +7,7 @@ import { isExpressionStart } from '../embedded/find';
 import { untilEnd, type UntilRefusal, untilWord } from './until';
 import type { Text } from '../i18n';
 import { EnvSplitError, splitEnvString } from './envsplit';
+import { type ByCount, counts, type Hedge, hedges, type MixedRoles, type SeveralRoles } from './hedge';
 import { type ParserRules, rulesOf } from './parsers';
 import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
 
@@ -54,14 +55,17 @@ export type ArgRole =
   /**
    * An operand; `spec` is absent when the spec does not describe the operands, or none of its patterns fits
    * (see `ArgvParse.unmatched`). `uncertain`: the role depends on how many words an expansion gives, and
-   * `otherwise` is the other role it may have. `each`: the role of each word it becomes, when they are known
+   * `otherwise` is the other role it may have, when the word `by` (an index of the command's words) gives more than its
+   * fewest. `each`: the role of each word it becomes, when they are known
    * and differ (`cp a{,.bak}`: the source, then the destination). `several`: the roles, in order, of the words it
    * becomes when it gives more than one, when they differ, for each count of words (`SeveralRoles`: `cp "$@"`, with two
-   * words a source and the destination, with more sources and the destination directory). `none`: the role
+   * words a source and the destination, with more sources and the destination directory). `byCount`: its role for each
+   * count of the one other word that may give several, when they differ (`ByCount`: `cmp $a f`). `mixed`: the roles its
+   * words may have when it and other words may give several (`MixedRoles`: `cp $a $b`). `none`: the role
    * it has when the other words that may give no word (`words`, indexes of the command's words) give none and the rest
    * one each, when it differs and a form fits (`grep -c $x f`: `f` is the pattern; `cp $a b`: `b` is a source).
    */
-  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; uncertain?: boolean; otherwise?: OperandSpec; each?: OperandSpec[]; several?: SeveralRoles[]; none?: NoneRole }
+  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; uncertain?: boolean; otherwise?: OperandSpec; by?: number; each?: OperandSpec[]; several?: SeveralRoles[]; byCount?: ByCount; mixed?: MixedRoles; none?: NoneRole }
   /** The rest of the words are read with the subcommand's spec. */
   | { role: 'subcommand'; name: string; spec: CommandSpec; parse: ArgvParse }
   /**
@@ -81,12 +85,7 @@ export type ArgRole =
 
 export type CommandRole = Extract<ArgRole, { role: 'command' }>;
 
-/**
- * The roles, in order, of the words an operand becomes when it gives `from` words (or more: `orMore`),
- * with the other words of the command giving their fewest as `counts` reads them, one at least (`ArgRole` `operand`,
- * `several`; repeated roles once).
- */
-export interface SeveralRoles { from: number; orMore?: boolean; roles: OperandSpec[] }
+export type { ByCount, MixedRoles, SeveralRoles };
 
 /** The role `spec` of an operand when the words `words` give no word (`ArgRole` `operand`, `none`). */
 export interface NoneRole { words: number[]; spec: OperandSpec }
@@ -169,16 +168,6 @@ const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ? [] : A
  * (ssh). A `shell-string` slot and a `later` one (trap's action) take one word.
  */
 const takesRest = (o: OperandSpec): boolean => !!o.command && (o.command.joinsWords || (o.command.run !== 'shell-string' && !o.command.later));
-/**
- * The number of words a word gives: fewest (at least one, as the text shows it) and many. A word that may give none
- * (`count.min` 0) is read with one, and apart with none (`placeOperands`).
- */
-const counts = (w: ArgWord): [number, number] => {
-  if (!w.count) return [1, 1];
-  const low = Math.max(w.count.min, 1);
-  return [low, w.count.max === w.count.min ? low : Math.min(w.count.max ?? Infinity, low + 2)];
-};
-
 class Reader {
   private readonly maxSteps: number;
   /** `spliced`: the words (the last of an option and its value) whose words this reader has spliced in after them. */
@@ -351,42 +340,7 @@ class Reader {
       const then = r.read.alt.pattern[r.read.items[r.read.first[k]]];
       return role(then) !== role(item) ? { words: r.drops.map((j) => operands[j]), spec: then } : undefined;
     };
-    /** The roles of the words of word k in the reading `r` (repeated roles once). */
-    const rolesIn = (r: NonNullable<ReturnType<typeof fit>>, k: number): OperandSpec[] => {
-      const all = r.at.flatMap((x, p) => (x === k ? [r.alt.pattern[r.items[p]]] : []));
-      return all.filter((o, j) => j === 0 || o.text.en !== all[j - 1].text.en);
-    };
-    // (Past the longest pattern, only the patterns that repeat an item fit, the same for any count.)
-    const span = Math.max(...alts.map(({ alt }) => alt.pattern.length)) + 1;
-    /**
-     * `cp "$@"`: the roles of the words of word k for each count it may give, the other words their fewest (`counts`), where
-     * they differ: `cp $a` with two words is a source and the destination (a new name or an existing directory), with
-     * three or more sources and the destination directory. Read with each count from the fewest to one more than the
-     * longest pattern.
-     */
-    const severalOf = (k: number): SeveralRoles[] | undefined => {
-      const { count } = words[k];
-      const [fewest, many] = counts(words[k]);
-      if (fewest === many) return undefined;
-      const most = Math.min(count!.max ?? Infinity, fewest + span);
-      const out: SeveralRoles[] = [];
-      let r: ReturnType<typeof fit>;
-      for (let c = fewest; c <= most; c++) {
-        r = c === fewest ? primary : fit((j) => (j === k ? c : counts(words[j])[0]));
-        if (r) out.push({ from: c, roles: rolesIn(r, k) });
-      }
-      // The last count stands for the counts after it, with the counts in a row before it that give the same roles (but
-      // one word); not a count bash cannot give, nor one no pattern fits.
-      if (r && most < (count!.max ?? Infinity)) {
-        const key = (x: SeveralRoles) => x.roles.map((o) => o.text.en).join('\n');
-        let j = out.length - 1;
-        while (j > 0 && out[j - 1].from > 1 && out[j - 1].from === out[j].from - 1 && key(out[j - 1]) === key(out[j])) j--;
-        out.splice(j, out.length - j, { ...out[j], orMore: true });
-      }
-      // (One role for every count of more than one word is said by `otherwise`.)
-      const more = out.filter((x) => x.from > 1);
-      return more.length > 1 || more[0]?.roles.length > 1 ? out : undefined;
-    };
+    const hedgeOf = hedges({ words, operands, primary, fit, span: Math.max(...alts.map(({ alt }) => alt.pattern.length)) + 1 });
     for (let k = 0; k < operands.length; k++) {
       const i = operands[k];
       const pos = primary.first[k];
@@ -413,15 +367,15 @@ class Reader {
         continue;
       }
       const elsewhere = other ? [other.alt.pattern[other.items[other.first[k]]]] : [];
-      const otherwise = each ? undefined : [...copies, ...elsewhere].find((o) => o.text.en !== item.text.en);
-      const several = primary === low ? severalOf(k) : undefined;
+      // (Where only the reading with more words fits, its copies of the word, which differ only where it may give several.)
+      const hedge: Hedge = each ? {} : primary === low ? hedgeOf(k, item) : { otherwise: [...copies, ...elsewhere].find((o) => o.text.en !== item.text.en), by: i };
       const none = each ? undefined : noneRole(k, item);
       // `jq . in.json --args a`: after the option, the operands of the repeating last item are something else.
       const last = n === pattern.length - 1 && (item.repeat === '*' || item.repeat === '+');
       const later = last ? st.given.later.filter((l) => l.word < i).pop()?.spec : undefined;
       const spec = later ?? item;
       const assignment = (spec.assignment || (spec.assignmentText && ASSIGNMENT.test(known(words[k])))) || undefined;
-      roles.set(i, { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(otherwise ? { uncertain: true, otherwise } : {}), ...(each ? { each } : {}), ...(several ? { uncertain: true, several } : {}), ...(none ? { uncertain: true, none } : {}) });
+      roles.set(i, { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(each ? { each } : {}), ...(hedge.otherwise || hedge.several || hedge.byCount || hedge.mixed ? { uncertain: true, ...hedge } : {}), ...(none ? { uncertain: true, none } : {}) });
     }
   }
 
