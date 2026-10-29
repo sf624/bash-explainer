@@ -42,7 +42,13 @@ function severalText(cx: Explainer, desc: string, a: string, several: SeveralRol
  */
 function uncertainText(cx: Explainer, desc: string, other: string, parse: ArgvParse, nodes: SyntaxNode[]): string {
   // (Any word may be the one: `bash -c $cmd _ a`, where the string is unquoted.)
-  const many = parse.roles.filter((r) => countIn(nodes[r.word], cx.state)?.max !== countIn(nodes[r.word], cx.state)?.min);
+  const many = parse.roles.flatMap((r) => {
+    const count = countIn(nodes[r.word], cx.state);
+    return count?.max !== count?.min ? [{ word: r.word, fewest: Math.max(count!.min, 1) }] : [];
+  });
   const list = many.map((r) => `\`${nodes[r.word].text}\``).join(cx.s('・', ', '));
-  return cx.s(`${list} が1語に展開されるなら${desc}、2語以上なら${other}`, `${desc} when ${list} expands to a single word; ${other} when it expands to more`);
+  // (A word that gives two words at least, `{a,b}*`: its fewest. With others, as few as each gives.)
+  const fewest = many.every((r) => r.fewest === 1) ? 1 : many.length === 1 ? many[0].fewest : undefined;
+  if (fewest === undefined) return cx.s(`${list} がそれぞれ最も少ない語数に展開されるなら${desc}、それより多いなら${other}`, `${desc} when ${list} expand to as few words as each can; ${other} when they expand to more`);
+  return cx.s(`${list} が${fewest}語に展開されるなら${desc}、${fewest + 1}語以上なら${other}`, `${desc} when ${list} expands to ${fewest === 1 ? 'a single word' : `${fewest} words`}; ${other} when it expands to more`);
 }

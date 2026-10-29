@@ -230,12 +230,14 @@ export function saysOperand(explanation: string, texts: readonly string[], place
     if (place.at === place.of - 1) return has(roles[roles.length - 1]);
     return roles.some(has);
   }
-  const otherwise = / when ((?:`[^`]+`(?:, )?)+) expands to a single word; (.*) when it expands to more/.exec(e);
+  const otherwise = / when ((?:`[^`]+`(?:, )?)+) expands to (?:a single word|(\d+) words); (.*) when it expands to more/.exec(e);
   if (otherwise) {
     const named = [...otherwise[1].matchAll(/`([^`]+)`/g)].map((x) => place.counts.get(x[1]));
     // (A word the hedge names that is not one of the command's, or that gave none: not a reading the hedge covers.)
     if (named.some((c) => c === undefined || c === 0)) return false;
-    return named.some((c) => c! > 1) ? has(otherwise[2]) : has(e.slice(0, otherwise.index));
+    // (The first part for the fewest words: one, or "N words" of a word that gives N at least.)
+    const fewest = Number(otherwise[2] ?? 1);
+    return named.some((c) => c! > fewest) ? has(otherwise[3]) : has(e.slice(0, otherwise.index));
   }
   // (A hedge in a form not read here: a finding, so that a new wording is seen.)
   if (/expands? to (a single word|more|nothing)/.test(e)) return false;

@@ -101,6 +101,9 @@ describe('argv capture: the word model and the explanation against bash (oracles
     assert.strictEqual(saysOperand('when `$a` expands to more, they are A, then B', ['B'], place('x', 1, 2)), false);
     const otherwise = 'destination (the new name, or an existing directory) when `$a` expands to a single word; destination directory when it expands to more';
     assert.deepStrictEqual([1, 2, 0].map((n) => saysOperand(otherwise, dest, place('b', 0, 1, [['$a', n]]))), [true, false, false]);
+    // (Of a word that gives two words at least: the first part for two.)
+    const two = 'bytes A when `{a,b}*` expands to 2 words; bytes B when it expands to more';
+    assert.deepStrictEqual([2, 3].map((n) => [saysOperand(two, ['bytes A'], place('f', 0, 1, [['{a,b}*', n]])), saysOperand(two, ['bytes B'], place('f', 0, 1, [['{a,b}*', n]]))]), [[true, false], [false, true]]);
     // (`none`: the part for the words it names when they gave none and this word one; else the part before.)
     const none = 'destination directory; source when `$a`, `$b` expand to nothing';
     const both = (n: number): [string, number][] => [['$a', n], ['$b', n]];
