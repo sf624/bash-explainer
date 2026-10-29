@@ -2,6 +2,7 @@
 // of parameters that have no values, are removed"; 3.5.8, nullglob), from the word model (src/semantics/words.ts): each
 // word of its brace expansion split as `wordFields` splits it (`braceWords`), with what the model knows of its values,
 // and the parts it does not know read as empty, but those that never are (`${#a}`, `$#`, `$?`, `$$`, `$(( ))`, `<( )`).
+import { parseExpansion } from '../expansion';
 import type { SyntaxNode } from '../syntax/tree';
 import { givesElements } from './elements';
 import type { StateModel } from './state';
@@ -18,8 +19,19 @@ function neverEmpty(n: SyntaxNode): boolean {
   return (n.type === 'simple_expansion' && /^\$[#?$]$/.test(n.text)) || (n.type === 'expansion' && n.text.startsWith('${#'));
 }
 
-/** `"$@"`, `"${a[@]}"` alone in double quotes. */
-const elementsAlone = (n: SyntaxNode): boolean => n.type === 'string' && n.namedChildren.length === 1 && givesElements(n.namedChildren[0]);
+/**
+ * `"$@"`, `"${a[@]}"` alone in double quotes, also with a slice, a pattern, case or transform operator, or `${@:+x}`:
+ * nothing when there are no elements. Not with `-`, `:-` (the word instead, quoted), `?`, `:?` (an error), nor a
+ * `${x:+"$@"}` (the word's elements are those of a word in quotes: `"${x:+"$@"}"` is one word).
+ */
+function elementsAlone(n: SyntaxNode): boolean {
+  const e = n.type === 'string' && n.namedChildren.length === 1 ? n.namedChildren[0] : undefined;
+  if (!e) return false;
+  if (/^\$\{(@|[A-Za-z_]\w*\[@\]):?\+/.test(e.text)) return true;
+  if (!givesElements(e) || e.type !== 'expansion') return givesElements(e);
+  const op = parseExpansion(e.text)!.op;
+  return !['-', ':-', '?', ':?', '+', ':+'].includes(op ?? '');
+}
 
 /**
  * Whether the word of `n` (in a word) may give no field where it runs: one that pathname expansion may remove (a glob
