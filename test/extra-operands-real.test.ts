@@ -59,6 +59,8 @@ function runLine(line: string): { status: number; err: string } {
 }
 
 const REFUSALS = /extra operand|too many templates|bad usage|only one pattern|lacks a leading|^Usage:/m;
+/** tr also refuses a lone set ("missing operand after"); the missing operands of the other tools are not modelled. */
+const refusals = (tool: string): RegExp => (tool === 'tr' ? /extra operand|missing operand/ : REFUSALS);
 
 describe('extra operands, compared with the real tools', () => {
   // Lines with more operands than the tool takes, and lines with as many as it takes (some with an option that lifts
@@ -66,7 +68,11 @@ describe('extra operands, compared with the real tools', () => {
   const LINES = [
     'cmp f1 f2 0 0 f3', 'cmp f1 f2 0 0', 'diff f1 f2 f3', 'diff f1 f2', 'diff --from-file=f1 f2 f3', 'sdiff f1 f2 f3', 'diff3 f1 f2 f3 f1', 'diff3 f1 f2 f3',
     'basename f1 f2 f3', 'basename f1 f2', 'basename -a f1 f2 f3', 'seq 1 2 3 4', 'seq 1 2 3', 'uniq f1 o f3', 'uniq f1 o',
-    'tr a b c', 'tr a b', 'tr -d a b', 'tr -s a b c', 'tr -ds a b c', 'tr -ds a b', 'date +%s x', 'date +%s', 'mktemp a.XXX b.XXX', 'mktemp a.XXX',
+    'tr a b c', 'tr a b', 'tr -d a b', 'tr -s a b c', 'tr -ds a b c', 'tr -ds a b',
+    // (tr: a lone set is refused unless -d or -s is given, and with both; -d takes one set; every spelling of the options.)
+    'tr a', 'tr -d a', 'tr -s a', 'tr -ds a', 'tr -sd a', 'tr -c a', 'tr -C a', 'tr -cd a', 'tr -cs a', 'tr -cds a', 'tr -t a', 'tr -dt a', 'tr -st a', 'tr --delete a', 'tr --squeeze-repeats a',
+    'tr --delete --squeeze-repeats a', 'tr --complement a', 'tr --truncate-set1 a', 'tr -d -s a', 'tr -s -d a b', 'tr -d -s a b c', 'tr -c a b', 'tr -ct a b', 'tr -c a b c', 'tr -cd a b', 'tr -cd a b c', 'tr -dt a b', 'tr -d a b c',
+    'tr -s a b', 'tr -st a b c', 'tr -cs a b', 'tr -cs a b c', 'tr -cds a b', 'tr -cds a b c', 'tr -- a', 'tr -d -- a b', 'tr -- a b', 'tr --delete a b c', 'date +%s x', 'date +%s', 'mktemp a.XXX b.XXX', 'mktemp a.XXX',
     'comm f1 f2 f3', 'comm f1 f2', 'join f1 f2 f3', 'join f1 f2', 'shuf f1 f2', 'shuf f1', 'shuf -e f1 f2 f3', 'shuf -i 1-3 f1',
     'unlink nx1 nx2', 'unlink nx1', 'link f1 l f3', 'link f1 l', 'tsort f1 f2', 'tsort f1', 'dircolors f1 f2',
     'pgrep a b', 'pgrep -x no-such-process-name', 'mountpoint . f1', 'mountpoint -q .', 'look a f1 f2', 'look a f1', 'xxd f1 o f3', 'xxd f1 o', 'getconf NAME_MAX / x', 'getconf NAME_MAX /',
@@ -82,7 +88,7 @@ describe('extra operands, compared with the real tools', () => {
       const at = words.flatMap((_, i) => (extraOf(roles[i]?.spec) ? [i] : []));
       const r = runLine(line);
       if (!at.length) {
-        assert.doesNotMatch(r.err, REFUSALS, `${line}: the tool refuses a word`);
+        assert.doesNotMatch(r.err, refusals(tool), `${line}: the tool refuses a word`);
         return;
       }
       const says = extraOf(roles[at[0]]!.spec)!;
@@ -102,6 +108,70 @@ describe('extra operands, compared with the real tools', () => {
     // (`-s` alone: the first set becomes the second, whose repeats are then squeezed.)
     assert.deepStrictEqual(read('tr -s a b').roles.map((r) => r?.spec?.text.en), [undefined, 'source character set (e.g. `a-z`)', 'target character set (e.g. `A-Z`)']);
     assert.strictEqual(run('tr', ['-s', 'a', 'b'], { input: 'aaxbbb\n', env: ENV }).stdout.toString(), 'bxb\n');
+  });
+
+  // tr, option by option and count by count: the role of each set, and the refusal of the tool (its lines, in full)
+  // where a role says it refuses the word. Without -d or -s a lone set is refused (it is not a set to delete or to
+  // squeeze); -d alone takes one set; -d and -s together need two. (No operand at all: tr refuses, but there is no word to say it.)
+  const TR_KINDS = (line: string): string[] => read(line).roles.flatMap((r) => (r?.spec ? [r.spec.extra ? (r.spec.name === 'LONE' ? 'lone' : 'extra') : 'set'] : []));
+  const TR_TABLE: { options: string[]; kinds: string[][] }[] = [
+    ...[[], ['-c'], ['-C'], ['-t'], ['-ct'], ['--complement'], ['--truncate-set1']].map((options) => ({ options, kinds: [['lone'], ['set', 'set'], ['set', 'set', 'extra']] })),
+    ...[['-d'], ['-cd'], ['-dt'], ['--delete'], ['-d', '-t'], ['--delete', '--complement']].map((options) => ({ options, kinds: [['set'], ['set', 'extra'], ['set', 'extra', 'extra']] })),
+    ...[['-s'], ['-cs'], ['-st'], ['--squeeze-repeats']].map((options) => ({ options, kinds: [['set'], ['set', 'set'], ['set', 'set', 'extra']] })),
+    ...[['-ds'], ['-sd'], ['-cds'], ['-d', '-s'], ['-s', '--delete'], ['--delete', '--squeeze-repeats', '-c']].map((options) => ({ options, kinds: [['lone'], ['set', 'set'], ['set', 'set', 'extra']] })),
+  ];
+  for (const { options, kinds } of TR_TABLE) {
+    it(`tr ${options.join(' ')}: one, two and three sets`, function () {
+      for (const [i, expected] of kinds.entries()) {
+        const line = `tr ${options.join(' ')} ${['a', 'b', 'c'].slice(0, i + 1).join(' ')}`;
+        assert.deepStrictEqual(TR_KINDS(line), expected, line);
+        if (!usableTool('tr')) continue;
+        const r = runLine(line);
+        const first = read(line).roles.find((o) => o?.spec?.extra)?.spec;
+        // (The lines tr prints but the usage hint, and the refusal's lines the role names.)
+        const lines = r.err.split('\n').filter((l) => l && !/^Try /.test(l));
+        if (!first) {
+          assert.strictEqual(r.status, 0, `${line}: ${r.err}`);
+          assert.deepStrictEqual(lines, [], line);
+          continue;
+        }
+        assert.strictEqual(r.status, first.extra!.status, `${line}: ${r.err}`);
+        const said = [...first.text.en.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+        assert.strictEqual(lines.length, said.length, `${line}: ${r.err}`);
+        said.forEach((m, k) => assert.ok(lines[k].includes(m), `${line}: ${lines[k]} does not say ${m}`));
+        assert.ok(first.text.en.includes('doing nothing'), line);
+      }
+    });
+  }
+
+  it('tr with no operand: the tool refuses, no word to say it', function () {
+    for (const line of ['tr', 'tr -d', 'tr -s', 'tr -ds', 'tr -c']) {
+      assert.deepStrictEqual(read(line).roles.filter((r) => r?.spec), [], line);
+      if (!usableTool('tr')) continue;
+      const r = runLine(line);
+      assert.strictEqual(r.status, 1, line);
+      assert.match(r.err, /^tr: missing operand\n/, line);
+    }
+  });
+
+  it('tr: a hedged lone set is a set to delete or squeeze only with -d or -s', function () {
+    const texts = (line: string, word: string): string[] => {
+      const { words, roles } = read(line);
+      const role = roles[words.indexOf(word)]!;
+      const all = [role.spec, ...(role.none ?? []).map((x) => x.spec), ...(role.mixed?.roles ?? []), ...(role.several ?? []).flatMap((x) => x.roles), ...(role.byCount?.readings ?? []).map((x) => x.spec), role.otherwise];
+      return all.flatMap((o) => (o ? [o.text.en] : []));
+    };
+    const squeezeOrDelete = 'character set to delete or squeeze (`-d`, `-s`)';
+    for (const [line, word] of [['tr $a $b', '$a'], ['tr $a $b', '$b'], ['tr $a $b f', 'f'], ['tr $a $b f', '$b'], ['tr $a x $b', 'x'], ['tr $a x $b', '$a'], ['tr -c $a $b f', 'f'], ['tr -t $a x $b', 'x']]) {
+      assert.ok(!texts(line, word).includes(squeezeOrDelete), `${line}: ${word}`);
+    }
+    // (`$a` and `$b` empty: `tr f`, which tr refuses; `tr -d f` deletes, `tr -s f` squeezes.)
+    const lone = (line: string, word: string): boolean => texts(line, word).some((t) => t.startsWith('lone character set'));
+    assert.ok(lone('tr $a $b f', 'f'));
+    assert.ok(lone('tr $a x $b', 'x'));
+    assert.ok(!lone('tr -d $a $b f', 'f'));
+    assert.ok(!lone('tr -s $a $b f', 'f'));
+    assert.ok(lone('tr -ds $a $b f', 'f'));
   });
 
   // What each word is, against what the tool does with it: `shuf -e` takes lines, a pipe has no device numbers (the
@@ -184,6 +254,10 @@ describe('extra operands, compared with the real tools', () => {
     { line: 'diff $a', word: '$a', values: ['f1', 'f2', 'f3', 'f3'] },
     { line: 'seq $a', word: '$a', values: ['1', '1', '2', '3', '4'] },
     { line: 'basename $a', word: '$a', values: ['f1', 'f2', 'f3', 'f3'] },
+    { line: 'tr $a', word: '$a', values: ['a', 'b', 'c', 'c'] },
+    { line: 'tr -d $a', word: '$a', values: ['a', 'b', 'c'] },
+    { line: 'tr -s $a', word: '$a', values: ['a', 'b', 'c'] },
+    { line: 'tr -ds $a', word: '$a', values: ['a', 'b', 'c'] },
   ];
   for (const { line, word, values } of HEDGES) {
     it(`hedge: ${line}`, function () {
@@ -197,7 +271,7 @@ describe('extra operands, compared with the real tools', () => {
         assert.ok(reading, `${line}: no reading for ${n} words`);
         const refused = reading.roles.some((o) => o.extra);
         const r = runLine(`a='${values.slice(0, n).join(' ')}'; ${line}`);
-        assert.strictEqual(REFUSALS.test(r.err), refused, `${line} with ${n} words: ${r.err}`);
+        assert.strictEqual(refusals(tool).test(r.err), refused, `${line} with ${n} words: ${r.err}`);
       }
     });
   }
@@ -211,7 +285,7 @@ describe('extra operands, compared with the real tools', () => {
     ...['diff $a $b f', 'sdiff $a $b f', 'comm $a $b f', 'join $a $b f', 'uniq $a $b f', 'diff3 $a $b f', 'diff3 $a f $b', 'diff3 f $a $b'].map((line) => ({ line, values: ['f1', 'f2', 'f3', 'f1'] })),
     ...['cmp $a $b f', 'cmp $a f $b', 'cmp $a f $b g', 'cmp $a f g $b', 'cmp $a $b f g h'].map((line) => ({ line, values: ['0', '0', '0', '0'] })),
     ...['seq $a $b 1 2', 'seq $a 1 $b 2', 'seq 1 $a $b 2', 'seq $a $b 5'].map((line) => ({ line, values: ['1', '1', '1', '1'] })),
-    ...['tr $a $b x', 'tr -s $a $b x', 'tr -ds $a $b x', 'tr -d $a $b x'].map((line) => ({ line, values: ['a', 'b', 'c', 'd'] })),
+    ...['tr $a $b x', 'tr -s $a $b x', 'tr -ds $a $b x', 'tr -d $a $b x', 'tr $a x $b', 'tr -s $a x $b', 'tr -ds $a x $b', 'tr -d $a x $b', 'tr -c $a $b f', 'tr -dt $a x $b'].map((line) => ({ line, values: ['a', 'b', 'c', 'd'] })),
     { line: 'basename $a $b f', values: ['p/f1', 'p/f2', 'p/f3', 'p/f4'] },
     { line: 'date $a $b +%F', values: ['+%s', '+%s', '+%s', '+%s'] },
     { line: 'mktemp $a $b t.XXX', values: ['a.XXX', 'b.XXX', 'c.XXX', 'd.XXX'] },
@@ -249,7 +323,7 @@ describe('extra operands, compared with the real tools', () => {
           assert.ok(got, `${where}: no role`);
           const ok = allowed(roles[i]!, counts, words);
           assert.ok(ok.includes(got.text.en), `${where} is ${got.text.en}, not among ${ok.join(' | ')}`);
-          if (got.extra && !skipNamed) assert.match(run1.err, REFUSALS, `${where}: not refused`);
+          if (got.extra && !skipNamed) assert.match(run1.err, refusals(tool), `${where}: not refused`);
           if (skipNamed === words[i]) assert.match(got.text.en, /^bytes to skip/, `${where}: ${run1.err}`);
           if (/^(cp|mv|ln)$/.test(tool) && words[i] === 'd') {
             const real = /missing destination|missing file operand/.test(run1.err) ? 'source' : run1.post.startsWith('file') ? 'destination' : run1.post.startsWith('link d') ? 'target' : run1.post.startsWith('link') ? 'link name' : /not a directory|No such file or directory/.test(run1.err) ? 'directory' : `? ${run1.err} ${run1.post}`;
@@ -260,7 +334,7 @@ describe('extra operands, compared with the real tools', () => {
         // one, and one we read with one is.)
         const named: string | undefined = /extra operand [‘']([^’']*)[’']/.exec(run1.err)?.[1];
         if (named !== undefined && !skipNamed) assert.strictEqual(extras[0], named, `${line} with ${a} and ${b} words: ${run1.err}`);
-        if (!skipNamed && tool !== 'tr') assert.strictEqual(REFUSALS.test(run1.err), extras.length > 0, `${line} with ${a} and ${b} words: ${run1.err}`);
+        if (!skipNamed) assert.strictEqual(refusals(tool).test(run1.err), extras.length > 0, `${line} with ${a} and ${b} words: ${run1.err}`);
       });
     });
   }

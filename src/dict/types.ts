@@ -83,13 +83,28 @@ export interface CmdRest extends Omit<Partial<CommandSpec>, 'summary' | 'options
 
 /**
  * The item for the words past the operands a command takes (`OperandSpec.extra`): it refuses them before doing
- * anything, printing `says` and exiting with `status` (coreutils `extra operand`, status 1).
+ * anything, printing `says` (and `also`, a second line) and exiting with `status` (coreutils `extra operand`, status 1).
+ * With `once`, it is one word, not any number (`tr -d a b` prints the second line for the second word, `tr -d a b c` does not).
  */
-export function extraOperand(says: string, status: number): OperandSpec {
+export function extraOperand(says: string, status: number, o: { also?: string; once?: boolean } = {}): OperandSpec {
+  const printed = o.also ? `\`${says}\` and \`${o.also}\`` : `\`${says}\``;
+  const printedJa = o.also ? `\`${says}\` と \`${o.also}\` を` : `\`${says}\` と`;
   return {
-    name: 'EXTRA', repeat: '*', extra: { says, status },
-    text: tx(`余分なオペランド（コマンドは受け付けず、\`${says}\` と表示して何もせずに終了ステータス ${status} で終わる）`,
-      `extra operand, which the command refuses (it prints \`${says}\` and exits with status ${status}, doing nothing)`),
+    name: 'EXTRA', ...(o.once ? {} : { repeat: '*' as const }), extra: { says, status },
+    text: tx(`余分なオペランド（コマンドは受け付けず、${printedJa}表示して何もせずに終了ステータス ${status} で終わる）`,
+      `extra operand, which the command refuses (it prints ${printed} and exits with status ${status}, doing nothing)`),
+  };
+}
+
+/**
+ * The item for an operand alone where the command needs one more (`OperandSpec.extra`, as for an extra operand;
+ * `tr a`: the command refuses it): it prints `says` with the operand, then `why`, and exits with `status`.
+ */
+export function lackingOperand(says: string, why: string, status: number): OperandSpec {
+  return {
+    name: 'LONE', extra: { says, status },
+    text: tx(`1つだけの文字集合（コマンドは受け付けず、\`${says}\` とそのオペランド、\`${why}\` を表示して何もせずに終了ステータス ${status} で終わる）`,
+      `lone character set, which the command refuses (it prints \`${says}\` and the operand, then \`${why}\`, and exits with status ${status}, doing nothing)`),
   };
 }
 
