@@ -15,8 +15,9 @@
 //   value of the same option, or an operand whose text from the spec the word's token says (alone, in the list of its
 //   fields, "expands to `-r` (option: …) and `a` (source)", or in the part that holds of the hedge "… when `$x` expands
 //   to a single word; … when it expands to more" that src/explain/argv.ts makes of `ArgRole.otherwise`, `several` and
-//   `byCount`, a reading for each count, or of "… when `$x`, `$y` expand to a single word; when any of them expands to more,
-//   each of its words is …", of `mixed`, or of "…; … when `$y` expands to nothing", of `none`).
+//   `byCount`, a reading for each count, or of "… when `$x`, `$y` expand to a single word; when they expand to other
+//   numbers of words, it can also be …" (or "each of its words can be …"), of `mixed`, or of "…; … when `$y` expands to
+//   nothing", of `none`).
 //
 // The counts come from the facts the tokens carry (`Token.value`, `Token.expands`, `Token.origin`, the refs and the
 // words of a brace expansion, the sections of an example); only the string and the concatenation are told by their
@@ -232,7 +233,7 @@ function countClauses(e: string): { word: string; clauses: { from: number; to?: 
  * number of fields its word gave, the first field the first role and the last the last; in the hedge of `otherwise` ("X when `$a`, `$b` expands to a single word; Y when it
  * expands to more"), and of `byCount` ("…; Z when it expands to 3 words"), the part that holds for the words it names
  * (neither when one of them gave none, but as below); in the hedge of `mixed`, the first part where the words it names
- * gave one each, else any role of its list;
+ * gave one each, else its own role or any of its list (with any counts, none too);
  * after either or alone, "; W when `$b` expands to nothing", W where the words it names gave none and this word one;
  * in the words of a brace expansion ("expands to `a` (X) and `b` (Y)"), the role after the field's own text.
  */
@@ -263,13 +264,15 @@ export function saysOperand(explanation: string, texts: readonly string[], place
     const clause = count ? counted.clauses.find((c) => c.from <= count && count <= (c.to ?? Infinity)) : undefined;
     return !!clause && has(clause.text);
   }
-  // (The roles its words may have when it or the other words give more: `mixed`.)
-  const mixed = /^(.*) when ((?:`[^`]+`(?:, )?)+) expand to (a single word|as few words as each can); when any of them expands to more, (?:each of its words is|it is) (.*)$/.exec(e);
+  // (The roles its words may have for the other counts of the words it names: `mixed`.)
+  const mixed = /^(.*) when ((?:`[^`]+`(?:, )?)+) expand to (a single word|as few words as each can); when they expand to other numbers of words, (each of its words can be|it can also be) (.*)$/.exec(e);
   if (mixed) {
     const named = [...mixed[2].matchAll(/`([^`]+)`/g)].map((x) => place.counts.get(x[1]));
-    if (named.some((c) => c === undefined || c === 0)) return false;
-    if (mixed[3] === 'a single word') return named.every((c) => c === 1) ? has(mixed[1]) : has(mixed[4]);
-    return has(mixed[1]) || has(mixed[4]);
+    if (named.some((c) => c === undefined)) return false;
+    if (mixed[3] === 'a single word' && named.every((c) => c === 1)) return has(mixed[1]);
+    // ("it can also be": its own role, or one of the list; "each of its words can be": one of the list, or the first
+    // part with as few words as each can.)
+    return ((mixed[4] === 'it can also be' || mixed[3] !== 'a single word') && has(mixed[1])) || has(mixed[5]);
   }
   const among = /^(?:each of its words is|it is) (.*), by how many words ((?:`[^`]+`(?:, )?)+) expand to$/.exec(e);
   if (among) return has(among[1]);

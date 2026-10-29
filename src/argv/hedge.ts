@@ -124,49 +124,45 @@ export function hedges({ words, operands, fit, span, alts }: HedgeInput): (k: nu
     return out;
   };
   const key = (roles: OperandSpec[]): string => roles.map((o) => o.text.en).join('\n');
+  /** The counts word j may give: none when it may, then its fewest up to the longest pattern more (past it, the same). */
+  const domain = (j: number): number[] => {
+    const top = varies[j] ? Math.min(words[j].count!.max ?? Infinity, fewest(j) + span) : fewest(j);
+    return [...(words[j].count?.min === 0 ? [0] : []), ...Array.from({ length: top - fewest(j) + 1 }, (_, n) => fewest(j) + n)];
+  };
   /**
-   * The roles the words of word k may have when it or another word that may give several (`others`) gives more than
-   * its fewest: with each count of word k, and with one or two words more before it and after it, given by the nearest
-   * such word on each side (`cp $a $b`: with `x y` and `z`, `z` is the destination directory, with `x` and `y z` a source
-   * and the destination directory), and with the others that may give none giving none, the nearest first, up to the
-   * longest pattern on each side (`seq $a $b f`: with `1 2` and nothing, `f` is still the last). A role depends on the
-   * place of a word among the operands and on their number; past the longest pattern, only the patterns that repeat an
-   * item fit. `first`: the reading where each gives its fewest is one role, the word's own (`spec`), and the roles are
-   * those where one of them gives more; else they are those of any counts.
+   * The numbers of words the words `js` may give in all, each up to the longest pattern and one (`span`; past it a role
+   * is the same, only the patterns that repeat an item fit), each with counts of the words that give it.
    */
-  const mixedOf = (k: number, others: number[]): MixedRoles => {
-    const own = varies[k] ? Math.min(words[k].count!.max ?? Infinity, fewest(k) + span) : fewest(k);
+  const sums = (js: number[]): Map<number, number[]> => {
+    let at = new Map<number, number[]>([[0, []]]);
+    for (const j of js) {
+      const next = new Map<number, number[]>();
+      for (const [n, counts] of at) for (const c of domain(j)) if (!next.has(Math.min(n + c, span))) next.set(Math.min(n + c, span), [...counts, c]);
+      at = next;
+    }
+    return at;
+  };
+  /**
+   * The roles the words of word k may have for any counts of the words that may give several or none (`MixedRoles`),
+   * read for every number of words before it and after it they may give, and every count of its own (`cp $a $b d`: with
+   * `$a` empty, `d` is the destination of the two-operand form; `cmp $a f $b` with four words of `$a` and none of `$b`,
+   * `f` is an extra operand). A role depends only on the number of words on each side and on its own, the same past
+   * the longest pattern. `first`: with each word giving its fewest, word k is one word of one role, the word's own, and
+   * the roles are those of the other counts; else they are those of any counts.
+   */
+  const mixedOf = (k: number, flexible: number[]): MixedRoles => {
     const first = rolesAt(fewest, k)!.length === 1;
-    const before = others.filter((j) => j < k).pop();
-    const after = others.find((j) => j > k);
-    const more = (j: number | undefined, d: number): number => (j === undefined ? 0 : Math.min(d, (words[j].count!.max ?? Infinity) - fewest(j)));
-    // (The words on each side that may give none, the nearest first; one that gives more is not among them.)
-    const none = (side: number[], grown: number | undefined): number[] => side.filter((j) => words[j].count!.min === 0 && j !== grown).slice(0, span);
-    const zeros = (side: number[], grown: number | undefined): number[][] => none(side, grown).map((_, n, all) => all.slice(0, n + 1));
-    const sides = (j: number | undefined, side: number[]): { grow: number; zero: number[] }[] => [0, 1, 2].flatMap((d) => {
-      const grow = more(j, d);
-      return d && !grow ? [] : [{ grow, zero: [] as number[] }, ...zeros(side, grow ? j : undefined).map((zero) => ({ grow, zero }))];
-    });
-    // (A role depends on the number of words before and after, the same for any number past the longest pattern: each
-    // such number once on each side, from the words there with each word's fewest, each that gives none one less, apart
-    // where one gives more.)
-    const once = (all: { grow: number; zero: number[] }[], fewer: number): { grow: number; zero: number[] }[] => {
-      const seen = new Set<string>();
-      return all.filter(({ grow, zero }) => {
-        const at = `${Math.min(fewer + grow - zero.length, span)} ${grow > 0}`;
-        return !seen.has(at) && !!seen.add(at);
-      });
-    };
-    const sum = (js: number[]): number => js.reduce((n, j) => n + fewest(j), 0);
-    const left = once(sides(before, others.filter((j) => j < k).reverse()), sum(words.flatMap((_, j) => (j < k ? [j] : []))));
-    const right = once(sides(after, others.filter((j) => j > k)), sum(words.flatMap((_, j) => (j > k ? [j] : []))));
+    const ahead = words.flatMap((_, j) => (j < k ? [j] : []));
+    const behind = words.flatMap((_, j) => (j > k ? [j] : []));
+    const [left, right] = [sums(ahead), sums(behind)];
+    const fewestAt = (js: number[]): number => Math.min(js.reduce((n, j) => n + fewest(j), 0), span);
     // (Each role with its place in its pattern, from 0 to 1, to list them in the order the patterns have them.)
     const seen = new Map<string, { o: OperandSpec; place: number }>();
-    for (let c = fewest(k); c <= own; c++) {
-      for (const b of left) {
-        for (const a of right) {
-          if (first && c === fewest(k) && !b.grow && !a.grow) continue;
-          const many = (j: number): number => (j === k ? c : b.zero.includes(j) || a.zero.includes(j) ? 0 : fewest(j) + (j === before ? b.grow : j === after ? a.grow : 0));
+    for (const c of domain(k).filter((n) => n > 0)) {
+      for (const [b, before] of left) {
+        for (const [a, after] of right) {
+          if (first && c === fewest(k) && b === fewestAt(ahead) && a === fewestAt(behind)) continue;
+          const many = (j: number): number => (j === k ? c : j < k ? before[j] : after[j - k - 1]);
           for (const { o, place } of itemsOf(many, k) ?? []) {
             if (!seen.has(o.text.en) || seen.get(o.text.en)!.place > place) seen.set(o.text.en, { o, place });
           }
@@ -174,23 +170,24 @@ export function hedges({ words, operands, fit, span, alts }: HedgeInput): (k: nu
       }
     }
     const roles = [...seen.values()].sort((a, b) => a.place - b.place).map((x) => x.o);
-    return { words: (varies[k] ? [k, ...others].sort((a, b) => a - b) : others).map((j) => operands[j]), first, many: varies[k], roles };
+    return { words: (varies[k] ? [k, ...flexible].sort((a, b) => a - b) : flexible).map((j) => operands[j]), first, many: varies[k], roles };
   };
   /**
    * What word k (now `item`) may be besides `item`, by how many words the words that may give several give: the roles
    * of its words for each count of its own (`several`), its role for each count of the one other (`byCount`: `cmp $a f`,
    * `f` skips bytes in the first file after two words of `$a`, in the second after three), a role for any count of it
-   * but the fewest (`otherwise`, `by`), or the roles its words may have for any counts of two or more such words
-   * (`mixed`).
+   * but the fewest (`otherwise`, `by`), or the roles its words may have for any counts of two or more words that may
+   * give several or none (`mixed`). (One word that may give none and no more is said by the reading without it:
+   * `ArgRole` `none`.)
    */
   const hedgeOf = (k: number, item: OperandSpec): Hedge => {
-    const others = words.flatMap((_, j) => (j !== k && varies[j] ? [j] : []));
-    if (!varies[k] && !others.length) return {};
-    if (others.length > (varies[k] ? 0 : 1)) {
-      const mixed = mixedOf(k, others);
+    const flexible = words.flatMap((_, j) => (j !== k && domain(j).length > 1 ? [j] : []));
+    if (!varies[k] && (!flexible.length || (flexible.length === 1 && !varies[flexible[0]]))) return {};
+    if (flexible.length > (varies[k] ? 0 : 1)) {
+      const mixed = mixedOf(k, flexible);
       return !mixed.first || mixed.roles.some((o) => o.text.en !== item.text.en) ? { mixed } : {};
     }
-    const v = varies[k] ? k : others[0];
+    const v = varies[k] ? k : flexible[0];
     const out = readingsOf(k, v);
     // (One role for every count but the fewest is said by `otherwise`. The fewest of its own of two or more words, as
     // `{a,b}*`, is no single word: its roles are said.)
