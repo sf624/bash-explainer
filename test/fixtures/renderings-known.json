@@ -12,13 +12,6 @@
   "known": [
     {
       "input": "renderings.sh",
-      "command": "cp $pair",
-      "word": "$pair",
-      "check": "role",
-      "reason": "Bug, to fix: the hedge `several` gives the roles of the expansion taken as three words (`counts`: one more than two); bash gives it two here (`a b`), and the second is the destination of the two-operand form (the new name, or an existing directory), not a destination directory."
-    },
-    {
-      "input": "renderings.sh",
       "command": "cp $opt d",
       "word": "$opt",
       "check": "role",
@@ -30,6 +23,20 @@
       "word": "d",
       "check": "role",
       "reason": "Bug, to fix: a value the model knows that starts with `-` gives an option, but the interpreter reads the word as written, an operand (`cp $opt d` with `opt=\"-r a\"`: bash runs `cp -r a d`, where `-r` is an option); the words after it then have the roles of another form (`d` is the destination of the two-operand form, not a destination directory)."
+    },
+    {
+      "input": "renderings.sh",
+      "command": "cp $z $pair",
+      "word": "$pair",
+      "check": "role",
+      "reason": "Bug, to fix (bug 7): the interpreter reads a word as written, not its fields, so a word the model knows is empty (`z=\"\"`) is read as one word; bash runs `cp a b` here, where `b` is the destination of the two-operand form (the hedge says the roles with `$z` one word, and with `$z` none and `$pair` one)."
+    },
+    {
+      "input": "renderings.sh",
+      "command": "cp $pair $z",
+      "word": "$pair",
+      "check": "role",
+      "reason": "Bug, to fix (bug 7): the interpreter reads a word as written, not its fields, so a word the model knows is empty (`z=\"\"`) is read as one word; bash runs `cp a b` here, where `b` is the destination of the two-operand form (the hedge says the roles with `$z` one word, and with `$z` none and `$pair` one)."
     }
   ]
 }

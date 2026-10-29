@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import { lookupCommand } from '../src/analyzer';
 import { splitEnvString } from '../src/argv/envsplit';
-import { ArgWord, interpret, InterpretContext, match } from '../src/argv/interpret';
+import { type ArgRole, ArgWord, interpret, InterpretContext, match } from '../src/argv/interpret';
 import type { CommandSpec, OperandSpec, OptionSpec } from '../src/argv/spec';
 import { byCount, cmd, mergeOptions, runs } from '../src/dict/types';
 import { tx } from '../src/i18n';
@@ -377,7 +377,19 @@ describe('argv interpreter: the option grammar', () => {
     assert.deepStrictEqual(action.each!.map((o) => o.name), ['ACTION', 'SIGNAL']);
     const all = parseOf('cp "$@"').roles[0].role;
     assert.ok(all.role === 'operand' && all.uncertain);
-    assert.deepStrictEqual(all.several!.map((o) => o.text.en), ['source', 'destination directory']);
+    // (For each count: with two words the two-operand form, a source and the destination; with three or more, the other.)
+    const readings = (r: ArgRole) => (r.role === 'operand' ? r.several?.map((x) => `${x.from}${x.orMore ? '+' : ''}: ${x.roles.map((o) => o.text.en).join(', ')}`) : undefined);
+    assert.deepStrictEqual(readings(all), ['1: source', '2: source, destination (the new name, or an existing directory)', '3+: source, destination directory']);
+    // (Up to the count a word may give, and only counts a pattern fits: none past the longest of a spec with no `*`.)
+    const three: CommandSpec = { summary: t('three'), operands: [{ pattern: [item('A'), item('B'), item('C')] }, { pattern: [item('A'), item('D')] }, { pattern: [item('A')] }] };
+    assert.deepStrictEqual(readings(interpret(three, [{ value: 'x', count: { min: 1 } }]).roles[0].role), ['1: a', '2: a, d', '3: a, b, c']);
+    assert.deepStrictEqual(readings(interpret(three, [{ value: 'x', count: { min: 1, max: 2 } }]).roles[0].role), ['1: a', '2: a, d']);
+    // (After a count no pattern fits, the count after it is no "more"; none when only one word fits.)
+    const gap: CommandSpec = { summary: t('gap'), operands: [{ pattern: [item('A')] }, { pattern: [item('A'), item('B')] }, { pattern: [item('A'), item('B'), item('C'), item('D'), item('D', { repeat: '*' })] }] };
+    assert.deepStrictEqual(readings(interpret(gap, [{ value: 'x', count: { min: 1 } }]).roles[0].role), ['1: a', '2: a, b', '4+: a, b, c, d']);
+    assert.strictEqual(readings(interpret({ summary: t('one'), operands: [{ pattern: [item('A')] }] }, [{ value: 'x', count: { min: 1 } }]).roles[0].role), undefined);
+    // (A word that gives two words or more: no reading for one.)
+    assert.deepStrictEqual(readings(interpret(three, [{ value: 'x', count: { min: 2 } }]).roles[0].role), ['2: a, d', '3: a, b, c']);
     const p = parseOf('timeout 5 sleep 1');
     const run = p.roles[1].role;
     assert.ok(run.role === 'command');

@@ -56,11 +56,12 @@ export type ArgRole =
    * (see `ArgvParse.unmatched`). `uncertain`: the role depends on how many words an expansion gives, and
    * `otherwise` is the other role it may have. `each`: the role of each word it becomes, when they are known
    * and differ (`cp a{,.bak}`: the source, then the destination). `several`: the roles, in order, of the words it
-   * becomes when it gives more than one, when they differ (`cp "$@"`: sources, then the destination). `none`: the role
+   * becomes when it gives more than one, when they differ, for each count of words (`SeveralRoles`: `cp "$@"`, with two
+   * words a source and the destination, with more sources and the destination directory). `none`: the role
    * it has when the other words that may give no word (`words`, indexes of the command's words) give none and the rest
    * one each, when it differs and a form fits (`grep -c $x f`: `f` is the pattern; `cp $a b`: `b` is a source).
    */
-  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; uncertain?: boolean; otherwise?: OperandSpec; each?: OperandSpec[]; several?: OperandSpec[]; none?: NoneRole }
+  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; uncertain?: boolean; otherwise?: OperandSpec; each?: OperandSpec[]; several?: SeveralRoles[]; none?: NoneRole }
   /** The rest of the words are read with the subcommand's spec. */
   | { role: 'subcommand'; name: string; spec: CommandSpec; parse: ArgvParse }
   /**
@@ -79,6 +80,13 @@ export type ArgRole =
   | { role: 'expression' };
 
 export type CommandRole = Extract<ArgRole, { role: 'command' }>;
+
+/**
+ * The roles, in order, of the words an operand becomes when it gives `from` words (or more: `orMore`),
+ * with the other words of the command giving their fewest as `counts` reads them, one at least (`ArgRole` `operand`,
+ * `several`; repeated roles once).
+ */
+export interface SeveralRoles { from: number; orMore?: boolean; roles: OperandSpec[] }
 
 /** The role `spec` of an operand when the words `words` give no word (`ArgRole` `operand`, `none`). */
 export interface NoneRole { words: number[]; spec: OperandSpec }
@@ -343,6 +351,42 @@ class Reader {
       const then = r.read.alt.pattern[r.read.items[r.read.first[k]]];
       return role(then) !== role(item) ? { words: r.drops.map((j) => operands[j]), spec: then } : undefined;
     };
+    /** The roles of the words of word k in the reading `r` (repeated roles once). */
+    const rolesIn = (r: NonNullable<ReturnType<typeof fit>>, k: number): OperandSpec[] => {
+      const all = r.at.flatMap((x, p) => (x === k ? [r.alt.pattern[r.items[p]]] : []));
+      return all.filter((o, j) => j === 0 || o.text.en !== all[j - 1].text.en);
+    };
+    // (Past the longest pattern, only the patterns that repeat an item fit, the same for any count.)
+    const span = Math.max(...alts.map(({ alt }) => alt.pattern.length)) + 1;
+    /**
+     * `cp "$@"`: the roles of the words of word k for each count it may give, the other words their fewest (`counts`), where
+     * they differ: `cp $a` with two words is a source and the destination (a new name or an existing directory), with
+     * three or more sources and the destination directory. Read with each count from the fewest to one more than the
+     * longest pattern.
+     */
+    const severalOf = (k: number): SeveralRoles[] | undefined => {
+      const { count } = words[k];
+      const [fewest, many] = counts(words[k]);
+      if (fewest === many) return undefined;
+      const most = Math.min(count!.max ?? Infinity, fewest + span);
+      const out: SeveralRoles[] = [];
+      let r: ReturnType<typeof fit>;
+      for (let c = fewest; c <= most; c++) {
+        r = c === fewest ? primary : fit((j) => (j === k ? c : counts(words[j])[0]));
+        if (r) out.push({ from: c, roles: rolesIn(r, k) });
+      }
+      // The last count stands for the counts after it, with the counts in a row before it that give the same roles (but
+      // one word); not a count bash cannot give, nor one no pattern fits.
+      if (r && most < (count!.max ?? Infinity)) {
+        const key = (x: SeveralRoles) => x.roles.map((o) => o.text.en).join('\n');
+        let j = out.length - 1;
+        while (j > 0 && out[j - 1].from > 1 && out[j - 1].from === out[j].from - 1 && key(out[j - 1]) === key(out[j])) j--;
+        out.splice(j, out.length - j, { ...out[j], orMore: true });
+      }
+      // (One role for every count of more than one word is said by `otherwise`.)
+      const more = out.filter((x) => x.from > 1);
+      return more.length > 1 || more[0]?.roles.length > 1 ? out : undefined;
+    };
     for (let k = 0; k < operands.length; k++) {
       const i = operands[k];
       const pos = primary.first[k];
@@ -370,16 +414,14 @@ class Reader {
       }
       const elsewhere = other ? [other.alt.pattern[other.items[other.first[k]]]] : [];
       const otherwise = each ? undefined : [...copies, ...elsewhere].find((o) => o.text.en !== item.text.en);
-      // `cp "$@"`: when the word gives more words, they take these roles, in order.
-      const theirs = other && other !== primary && primary === low ? other.at.flatMap((x, p) => (x === k ? [other.alt.pattern[other.items[p]]] : [])) : [];
-      const several = theirs.filter((o, j) => j === 0 || o.text.en !== theirs[j - 1].text.en);
+      const several = primary === low ? severalOf(k) : undefined;
       const none = each ? undefined : noneRole(k, item);
       // `jq . in.json --args a`: after the option, the operands of the repeating last item are something else.
       const last = n === pattern.length - 1 && (item.repeat === '*' || item.repeat === '+');
       const later = last ? st.given.later.filter((l) => l.word < i).pop()?.spec : undefined;
       const spec = later ?? item;
       const assignment = (spec.assignment || (spec.assignmentText && ASSIGNMENT.test(known(words[k])))) || undefined;
-      roles.set(i, { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(otherwise ? { uncertain: true, otherwise } : {}), ...(each ? { each } : {}), ...(several.length > 1 ? { uncertain: true, several } : {}), ...(none ? { uncertain: true, none } : {}) });
+      roles.set(i, { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(otherwise ? { uncertain: true, otherwise } : {}), ...(each ? { each } : {}), ...(several ? { uncertain: true, several } : {}), ...(none ? { uncertain: true, none } : {}) });
     }
   }
 
