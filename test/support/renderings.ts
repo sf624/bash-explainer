@@ -280,21 +280,28 @@ export function saysOperand(explanation: string, texts: readonly string[], place
 }
 
 /**
- * The readings "; W when `$b` expands to nothing" (or "`$b`, `$c` expand") at the end of an explanation (`ArgRole`
- * `none`: of an operand, after an option's value, or both), each with the words it names, and the part before them.
+ * The readings "; W when `$b` expands to nothing" (or "`$b`, `$c` expand", all of them; or "`$b` or `$c` expands", any
+ * one) at the end of an explanation (`ArgRole` `none`: of an operand, after an option's value, or both), each with the
+ * words it names, and the part before them. "its first word is W": the role of the first field of a word that may give
+ * several.
  */
-function noneReadings(whole: string): { rest: string; readings: { text: string; words: string[] }[] } {
-  const readings: { text: string; words: string[] }[] = [];
+type NoneReading = { text: string; words: string[]; any: boolean; first: boolean };
+function noneReadings(whole: string): { rest: string; readings: NoneReading[] } {
+  const readings: NoneReading[] = [];
   let rest = whole;
-  for (let m; (m = /; ((?:(?!; ).)+) when ((?:`[^`]+`(?:, )?)+) expands? to nothing$/.exec(rest)); rest = rest.slice(0, m.index)) {
-    readings.unshift({ text: m[1], words: [...m[2].matchAll(/`([^`]+)`/g)].map((x) => x[1]) });
+  for (let m; (m = /; ((?:(?!; ).)+) when ((?:`[^`]+`(?:, | or )?)+) expands? to nothing$/.exec(rest)); rest = rest.slice(0, m.index)) {
+    const first = m[1].startsWith('its first word is ');
+    readings.unshift({ text: first ? m[1].slice('its first word is '.length) : m[1], words: [...m[2].matchAll(/`([^`]+)`/g)].map((x) => x[1]), any: m[2].includes(' or '), first });
   }
   return { rest, readings };
 }
 
-/** The texts of the readings of `none` that hold for the field at `place`: every word they name gave none, and this word one. */
-const heldNone = (readings: { text: string; words: string[] }[], place: FieldPlace): string[] =>
-  (place.of === 1 ? readings.filter((r) => r.words.every((w) => place.counts.get(w) === 0)).map((r) => r.text) : []);
+/**
+ * The texts of the readings of `none` that hold for the field at `place`: every word they name gave none (or one of
+ * them, for "or"), and this word one (or this is the first field, for "its first word").
+ */
+const heldNone = (readings: NoneReading[], place: FieldPlace): string[] => readings.filter((r) => (place.of === 1 || (r.first && place.at === 0))
+  && (r.any ? r.words.some((w) => place.counts.get(w) === 0) : r.words.every((w) => place.counts.get(w) === 0))).map((r) => r.text);
 
 /**
  * The part of a list of the words a word gives ("expands to `a` (X) and `b` (Y)", of a brace expansion or of the fields

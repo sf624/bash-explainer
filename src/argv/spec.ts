@@ -71,6 +71,11 @@ export interface CommandSpec {
    * error: an option the command refuses, which `refused` explains (procps `ps`: "garbage option").
    */
   dashDash?: 'end-options' | 'literal' | { then: OperandSpec[] } | { refused: Text };
+  /**
+   * The program cuts its words at the first `--` before it reads any option (git's revision walk, revision.c): a `--` is
+   * never an option's value, and an option before it that needs one has none (`git log -n -- f`: "-n requires an argument").
+   */
+  cutsAtDashDash?: boolean;
   subcommands?: Record<string, SubcommandSpec>;
   /**
    * A prefix of a subcommand's name (or alias) selects it: a unique one (`true`), or any one, which selects the

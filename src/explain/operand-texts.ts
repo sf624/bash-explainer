@@ -2,6 +2,7 @@
 // (src/explain/argv.ts; the roles from `ArgRole` `operand`: `several`, `byCount`, `mixed`, `otherwise`, `none`), and what
 // each of the words read in place of one is to the command (the fields of a word, a value `env -S` splits).
 import type { Token } from '../analyzer-types';
+import { codeSpan } from '../label';
 import type { ArgRole, ArgWord, ByCount, MixedRoles, NoneRole, RoleAt, SeveralRoles, ValueRole } from '../argv/interpret';
 import type { OperandSpec } from '../argv/spec';
 import { splitsIn } from '../argv/words';
@@ -38,13 +39,27 @@ function valueText(cx: Explainer, v: ValueRole): string {
 
 /**
  * The roles a word takes when words before it give none (`ArgRole` `none`), each "; X when `$a` expands to nothing": an
- * operand's (with `$a` empty, `cp $a b` is `cp b`, a source), or an option's value (`tar -cf $a b`: "value for `-f`").
+ * operand's (with `$a` empty, `cp $a b` is `cp b`, a source), or an option's value (`tar -cf $a b`: "value for `-f`"), or
+ * its first word's where it may give several ("its first word is …"). Equal readings, each after one word, are one: "X
+ * when `$n` or `$v` expands to nothing" (`jq --arg $n $v .`); a reading after several words is when they all give none
+ * ("when `$a`, `$b` expand to nothing").
  */
 export function noneText(cx: Explainer, none: readonly NoneRole[] | undefined, nodes: SyntaxNode[]): string {
-  return (none ?? []).map((r) => {
-    const list = r.words.map((i) => `\`${nodes[i].text}\``).join(cx.s('・', ', '));
+  const readings: { then: string; first?: true; words: number[][] }[] = [];
+  for (const r of none ?? []) {
     const then = r.spec ? cx.t(r.spec.text) : valueText(cx, r.value);
-    return cx.s(`、${list} が0語なら${then.startsWith('`') ? ' ' : ''}${then}`, `; ${then} when ${list} ${r.words.length > 1 ? 'expand' : 'expands'} to nothing`);
+    const same = r.words.length === 1 ? readings.find((g) => g.then === then && g.first === r.first && g.words[0].length === 1) : undefined;
+    if (same) same.words.push(r.words);
+    else readings.push({ then, ...(r.first ? { first: r.first } : {}), words: [r.words] });
+  }
+  return readings.map(({ then, first, words }) => {
+    const names = words.map((ws) => ws.map((i) => codeSpan(nodes[i].text)));
+    const any = names.length > 1 ? names.map((n) => n[0]) : undefined;
+    const ja = any ? any.join(' か ') : names[0].join('・');
+    const en = any ? `${any.slice(0, -1).join(', ')} or ${any[any.length - 1]} expands` : `${names[0].join(', ')} ${names[0].length > 1 ? 'expand' : 'expands'}`;
+    // (A space before code or a word in Latin letters, as docs/japanese-style.md asks.)
+    const role = (/^[`A-Za-z]/.test(then) ? ' ' : '') + then;
+    return cx.s(`、${ja} が0語なら${first ? 'この語の最初の語は' : ''}${role}`, `; ${first ? 'its first word is ' : ''}${then} when ${en} to nothing`);
   }).join('');
 }
 
@@ -57,9 +72,9 @@ function severalText(cx: Explainer, desc: string, a: string, several: SeveralRol
   return several.map((r, j) => {
     // (In Japanese the roles are a list, joined with `・`: the `、` after it starts another reading.)
     const roles = r.roles.map((o) => cx.t(o.text)).join(cx.s('・', ', then '));
-    if (r.from === 1) return cx.s(`\`${a}\` が1語に展開されるなら${desc}`, `${desc} when \`${a}\` expands to a single word`);
+    if (r.from === 1) return cx.s(`${codeSpan(a)} が1語に展開されるなら${desc}`, `${desc} when ${codeSpan(a)} expands to a single word`);
     const { ja, en } = countPhrase(cx, several, j);
-    return j ? cx.s(`${ja}なら順に${roles}`, `when it expands to ${en}, they are ${roles}`) : cx.s(`\`${a}\` が${ja}に展開されるなら順に${roles}`, `when \`${a}\` expands to ${en}, they are ${roles}`);
+    return j ? cx.s(`${ja}なら順に${roles}`, `when it expands to ${en}, they are ${roles}`) : cx.s(`${codeSpan(a)} が${ja}に展開されるなら順に${roles}`, `when ${codeSpan(a)} expands to ${en}, they are ${roles}`);
   }).join(cx.s('、', '; '));
 }
 
@@ -78,7 +93,7 @@ function countPhrase(cx: Explainer, readings: { from: number; orMore?: boolean }
  * expands to 2 words; bytes to skip in the second file when it expands to more".
  */
 function byCountText(cx: Explainer, desc: string, by: ByCount, nodes: SyntaxNode[]): string {
-  const w = `\`${nodes[by.word].text}\``;
+  const w = codeSpan(nodes[by.word].text);
   return by.readings.map((r, j) => {
     const { ja, en } = countPhrase(cx, by.readings, j);
     const text = j ? cx.t(r.spec.text) : desc;
@@ -92,7 +107,7 @@ function byCountText(cx: Explainer, desc: string, by: ByCount, nodes: SyntaxNode
  * its words is source or destination directory".
  */
 function mixedText(cx: Explainer, desc: string, mixed: MixedRoles, nodes: SyntaxNode[]): string {
-  const list = mixed.words.map((i) => `\`${nodes[i].text}\``).join(cx.s('・', ', '));
+  const list = mixed.words.map((i) => codeSpan(nodes[i].text)).join(cx.s('・', ', '));
   const texts = mixed.roles.map((o) => cx.t(o.text));
   const roles = texts.length > 1 ? cx.s(`${texts.join('・')}のどれか`, `${texts.slice(0, -1).join(', ')} or ${texts[texts.length - 1]}`) : texts[0];
   const them = cx.s(mixed.many ? 'この語の各語は' : 'この語は', mixed.many ? 'each of its words is' : 'it is');
@@ -109,7 +124,7 @@ function mixedText(cx: Explainer, desc: string, mixed: MixedRoles, nodes: Syntax
  * gives its fewest, `other` when it gives more (`cp {a,b}* f`: "… when `{a,b}*` expands to 2 words").
  */
 function uncertainText(cx: Explainer, desc: string, other: string, by: number, nodes: SyntaxNode[]): string {
-  const w = `\`${nodes[by].text}\``;
+  const w = codeSpan(nodes[by].text);
   const fewest = Math.max(countIn(nodes[by], cx.state)!.min, 1);
   return cx.s(`${w} が${fewest}語に展開されるなら${desc}、${fewest + 1}語以上なら${other}`, `${desc} when ${w} expands to ${fewest === 1 ? 'a single word' : `${fewest} words`}; ${other} when it expands to more`);
 }
@@ -119,7 +134,7 @@ function uncertainText(cx: Explainer, desc: string, other: string, by: number, n
  * words of the commands it runs: `` `-i` (Start with an empty environment) ``. With `option`, a word read as an option says so
  * (`option: …`), and an operand says its role as `eachText` does, with what `hedge` adds to it.
  */
-export function wordItems(cx: Explainer, words: readonly ArgWord[], roles: readonly RoleAt[], option: boolean, hedge?: (desc: string, role: Extract<ArgRole, { role: 'operand' }>) => string): string[] {
+export function wordItems(cx: Explainer, words: readonly ArgWord[], roles: readonly RoleAt[], option: boolean, hedge?: (desc: string, role: Extract<ArgRole, { role: 'operand' }>) => string, nodes?: SyntaxNode[]): string[] {
   const shown = (k: number): string => {
     const w = words[k];
     return w.value !== undefined ? `\`${w.value}\`` : cx.s(`\`${w.prefix}…\`（\`\${…}\` の値は実行時に決まる）`, `\`${w.prefix}…\` (the value of \`\${…}\` is known at run time)`);
@@ -145,7 +160,7 @@ export function wordItems(cx: Explainer, words: readonly ArgWord[], roles: reado
       case 'value': return cx.s(`\`${dash(role.of)}\` の値`, `value for \`${dash(role.of)}\``);
       case 'operand':
         if (role.spec?.assignment || role.assignment) return cx.s('コマンドの環境に入れる変数', 'variable for the command');
-        if (!role.spec) return cx.s('引数', 'argument');
+        if (!role.spec) return option && role.none ? hedge!(cx.s('引数', 'argument'), role) : cx.s('引数', 'argument');
         // `destination (the new name…)` reads `destination: the new name…` in the parentheses.
         return !option ? cx.t(role.spec.text) : hedge!(cx.t(role.spec.text).replace(/（(.*)）$/, ': $1').replace(/ \((.*)\)$/, ': $1'), role);
       case 'command': return cx.s('実行するコマンド', 'the command to run') + (role.spec ? `: ${cx.t(role.spec.summary)}` : '');
@@ -157,10 +172,12 @@ export function wordItems(cx: Explainer, words: readonly ArgWord[], roles: reado
       default: return optionText(role, word);
     }
   };
+  // (A role other than an operand's, with what it takes when a value before it gives none: an operand's says it in `hedge`.)
+  const said = (role: ArgRole, word: string): string => what(role, word) + (role.role !== 'operand' && nodes && 'none' in role ? noneText(cx, role.none, nodes) : '');
   const items: string[] = [];
   const walk = (list: readonly RoleAt[]): void => {
     for (const { word, role } of list) {
-      items.push(`${shown(word)}${cx.s(`（${what(role, words[word].value ?? '')}）`, ` (${what(role, words[word].value ?? '')})`)}`);
+      items.push(`${shown(word)}${cx.s(`（${said(role, words[word].value ?? '')}）`, ` (${said(role, words[word].value ?? '')})`)}`);
       if ((role.role === 'command' || role.role === 'subcommand') && role.parse) walk(role.parse.roles);
     }
   };
