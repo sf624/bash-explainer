@@ -45,7 +45,8 @@ function folded(words: ArgWord[], roles: RoleAt[], next?: ArgRole): ArgRole {
   if (quiet(first) && roles.every(({ role }) => role.role === first.role)) return { role: first.role } as ArgRole;
   // (`eval {a,b}`, `ssh h $x`: the words of a joined string, from the first, as for the words of the line.)
   if (first.role === 'command' && first.slot.joinsWords && roles.slice(1).every(({ role }) => role.role === 'joined')) return first;
-  const plain = (r: ArgRole): boolean => r.role === 'operand' && !r.assignment && !r.spec?.assignment && !r.uncertain;
+  // (Nor one with a role of its own when a value before it gives none: `y='p q'; tar -cf $a $y`, only `p` is the archive then.)
+  const plain = (r: ArgRole): boolean => r.role === 'operand' && !r.assignment && !r.spec?.assignment && !r.uncertain && !r.none;
   if (roles.every(({ role }) => plain(role) && !(role as OperandRole).spec)) return first;
   const specs = roles.map(({ role }, k) => (k === 0 && role.role === 'command' && !role.parse ? role.item : plain(role) ? (role as OperandRole).spec : undefined));
   if (specs.some((o) => !o)) return fields;
