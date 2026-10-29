@@ -373,7 +373,14 @@ const TR_CLASSES: Record<string, string> = wordTable({
 });
 
 /** Expand a tr set to its characters; `[c*n]` repeats (n omitted: fill to `fillTo`). */
-export function expandSet(set: string, fillTo?: number): string[] {
+export interface SetInfo {
+  /** A `[c*]` (or `[c*0]`) that fills the set to the length of the other. */
+  indefinite: boolean;
+  /** Where in the set (before any fill) each `[:upper:]` and `[:lower:]` starts. */
+  cases: number[];
+}
+
+export function expandSet(set: string, fillTo?: number, info: SetInfo = { indefinite: false, cases: [] }): string[] {
   const out: string[] = [];
   let fillAt = -1;
   let fillChar = '';
@@ -388,15 +395,19 @@ export function expandSet(set: string, fillTo?: number): string[] {
     const cls = /^\[:(\w+):\]/.exec(set.slice(i));
     if (cls) {
       if (!TR_CLASSES[cls[1]]) throw new Unsupported(`class ${cls[1]}`);
+      if (/^(upper|lower)$/.test(cls[1])) info.cases.push(out.length);
       out.push(...TR_CLASSES[cls[1]]);
       i += cls[0].length;
       continue;
     }
-    const rep = /^\[(\\?.)\*(\d*)\]/.exec(set.slice(i));
+    const rep = /^\[(\\?.)\*([^\]]*)\]/.exec(set.slice(i));
     if (rep) {
       const [c] = esc(rep[1], 0);
-      if (rep[2] && Number(rep[2]) > 0) out.push(...Array(Number(rep[2])).fill(c));
-      else { fillAt = out.length; fillChar = c; }
+      // (A count with a leading 0 is octal; 0 and none fill the set. tr refuses a count that is not a number.)
+      if (!/^(0[0-7]*|[1-9]\d{0,5})?$/.test(rep[2])) throw new Unsupported('repeat count');
+      const n = rep[2].startsWith('0') ? parseInt(rep[2], 8) : Number(rep[2]);
+      if (n > 0) out.push(...Array(n).fill(c));
+      else { fillAt = out.length; fillChar = c; info.indefinite = true; }
       i += rep[0].length;
       continue;
     }
@@ -430,14 +441,19 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
   const del = has(p, 'd');
   const squeeze = has(p, 's');
   const text = input.map((l) => l + '\n').join('');
-  const set1 = expandSet(sets[0]!);
+  const [info1, info2]: SetInfo[] = [{ indefinite: false, cases: [] }, { indefinite: false, cases: [] }];
+  const set1 = expandSet(sets[0]!, undefined, info1);
+  // (tr refuses `[c*]` in string1, whatever the options.)
+  if (info1.indefinite) throw new Unsupported('[c*] in set1');
   const in1 = (c: string) => (comp ? !set1.includes(c) : set1.includes(c));
   let out = [...text];
   let squeezeSet: (c: string) => boolean = () => false;
   if (del) {
     out = out.filter((c) => !in1(c));
     if (squeeze) {
-      const s2 = expandSet(sets[1]!);
+      const s2 = expandSet(sets[1]!, undefined, info2);
+      // (tr: "the [c*] construct may appear in string2 only when translating".)
+      if (info2.indefinite) throw new Unsupported('[c*] in set2 when deleting');
       squeezeSet = (c) => s2.includes(c);
     }
   } else if (sets.length === 2) {
@@ -445,7 +461,7 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
     // text or sets beyond ASCII are left to the real tool.)
     if (comp && ([...text, ...sets[0]!, ...sets[1]!].some((c) => c.charCodeAt(0) > 127))) throw new Unsupported('-c with non-ASCII text');
     let from = comp ? Array.from({ length: 256 }, (_, i) => String.fromCharCode(i)).filter((c) => !set1.includes(c)) : set1;
-    let to = expandSet(sets[1]!, from.length);
+    let to = expandSet(sets[1]!, from.length, info2);
     // tr: "when not truncating set1, string2 must be non-empty".
     if (!to.length) throw new Unsupported('empty set2');
     // (Refused by tr: an equivalence class or a class but upper and lower in string2; string2 ending in a class when it is the shorter; with -c, a class in
@@ -453,6 +469,8 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
     if (/\[=|\[:(?!(upper|lower):\])/.test(sets[1]!)) throw new Unsupported('class in set2');
     if (!has(p, 't') && to.length < from.length && /\[:\w+:\]$/.test(sets[1]!)) throw new Unsupported('set2 ends with a class');
     if (comp && /\[[:=]/.test(sets[0]!) && (has(p, 't') || new Set(to).size > 1)) throw new Unsupported('-c with a class');
+    // (A class of upper or lower letters in string2 needs one of them at the same place in string1, else tr says "misaligned"; with -c there is nothing to align with.)
+    if (!comp && info2.cases.some((at) => info2.indefinite || !info1.cases.includes(at))) throw new Unsupported('misaligned case classes');
     if (has(p, 't')) from = from.slice(0, to.length);
     else if (to.length < from.length) to = [...to, ...Array(from.length - to.length).fill(to[to.length - 1])];
     const map = new Map<string, string>();
