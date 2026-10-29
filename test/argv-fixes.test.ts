@@ -11,7 +11,7 @@ import { chainAt } from '../src/ui/hoverParts';
 import { runBash } from './support/bash';
 import { type ArgRole } from '../src/argv/interpret';
 import type { OperandSpec } from '../src/argv/spec';
-import { thenRoles } from '../src/argv/valuehedges';
+import { mostWords, thenRoles } from '../src/argv/valuehedges';
 import { allTokens } from './support/explain';
 
 const parser = createUnbashParser();
@@ -461,9 +461,9 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.strictEqual(tokenOf('tar cfC $a d x', 'x').explanation, 'Word `x`; value for `C` when `$a` expands to nothing');
     assert.strictEqual(tokenOf('tar cfC $a d x', 'd', 'ja').explanation, '`C` の値、`$a` が2語以上なら引数、`$a` が0語なら `f` の値');
     // (`jq --arg v .`: `v` is the name, and `.` its value.)
-    assert.strictEqual(tokenOf('jq --arg $n v .', 'v').explanation, 'Value for `--arg`; jq filter (e.g. `.items[].name`) when `$n` expands to several words; name for `--arg` when `$n` expands to nothing');
+    assert.strictEqual(tokenOf('jq --arg $n v .', 'v').explanation, 'Value for `--arg`; jq filter (e.g. `.items[].name`) or input JSON file when `$n` expands to several words; name for `--arg` when `$n` expands to nothing');
     assert.strictEqual(tokenOf('jq --arg $n v .', '.').explanation, 'jq filter (e.g. `.items[].name`); input JSON file when `$n` expands to several words; value for `--arg` when `$n` expands to nothing');
-    assert.strictEqual(tokenOf('jq --arg $n v .', 'v', 'ja').explanation, '`--arg` の値、`$n` が2語以上なら jq フィルタ（例: `.items[].name`）、`$n` が0語なら `--arg` の名前');
+    assert.strictEqual(tokenOf('jq --arg $n v .', 'v', 'ja').explanation, '`--arg` の値、`$n` が2語以上なら jq フィルタ（例: `.items[].name`）・入力 JSON ファイルのどれか、`$n` が0語なら `--arg` の名前');
     // (After the note on the pattern's language, which is of the reading where `$v` gives a word: `grep -d a b`.)
     assert.strictEqual(tokenOf('grep -d $v a b', 'a').explanation, 'search pattern (regex) — basic regex (BRE); file to search (default: stdin) when `$v` expands to several words; value for `-d` when `$v` expands to nothing');
   });
@@ -528,14 +528,15 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.strictEqual(tokenOf('head f -n $a', '$a').explanation, 'Value for `-n`; when `$a` expands to several words, this is its first word, and each of the others is target file');
     assert.strictEqual(tokenOf('cut -d $a f', '$a').explanation, 'Value for `-d`; when `$a` expands to several words, this is its first word, and each of the others is target file');
     assert.match(tokenOf('grep -e $a f', '$a').explanation, /; when `\$a` expands to several words, this is its first word, and each of the others is file to search \(default: stdin\)$/);
-    // (Words the spec does not describe, a command run, a value that may give several itself: the words after it.)
+    // (Words the spec does not describe, a command run: the words after it. `jq --arg a b c v .` takes `b` as the value,
+    // `c` as the filter, and `v` as a file.)
     assert.strictEqual(tokenOf('tar -cf $a b', '$a', 'ja').explanation, '`-f` オプションの値、`$a` が2語以上に展開されるならこの値は最初の語で、残りの語は後に続く引数として読まれる');
     assert.strictEqual(tokenOf('sudo -u $u tar -cf x y', '$u').explanation, 'Value for `-u`; when `$u` expands to several words, this is its first word, and the others are read as the words after it');
-    assert.strictEqual(tokenOf('jq --arg $n v .', '$n').explanation, 'Name for `--arg` (use it as `$name` in the filter); when `$n` expands to several words, this is its first word, and the others are read as the words after it');
+    assert.strictEqual(tokenOf('jq --arg $n v .', '$n').explanation, 'Name for `--arg` (use it as `$name` in the filter); when `$n` expands to several words, this is its first word, and each of the others is value for `--arg`, jq filter (e.g. `.items[].name`) or input JSON file');
     // (`seq -s x y 1`: `1` is the last; `seq -s x y z w 1`, an extra operand.)
     assert.strictEqual(tokenOf('seq -s $a 1', '1').explanation, 'last (counting from 1); last or extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing) when `$a` expands to several words; value for `-s` when `$a` expands to nothing');
-    // (`timeout -s KILL x 5 ls` runs `5`; `jq --arg "$x"a "$x"b`, the name and its value; `sudo -u "$x"a "$x"b ls` runs `"$x"b`.)
-    assert.strictEqual(tokenOf('timeout -s $s 5 ls', '5').explanation, 'time limit (`5`, `30s`, `2m`, `1h`); command to run when `$s` expands to several words; value for `-s` when `$s` expands to nothing');
+    // (`timeout -s KILL x 5 ls` runs `5`, `timeout -s KILL x y 5 ls` runs `y` with the argument `5`; `jq --arg "$x"a "$x"b`, the name and its value; `sudo -u "$x"a "$x"b ls` runs `"$x"b`.)
+    assert.strictEqual(tokenOf('timeout -s $s 5 ls', '5').explanation, 'time limit (`5`, `30s`, `2m`, `1h`); command to run or argument when `$s` expands to several words; value for `-s` when `$s` expands to nothing');
     assert.strictEqual(tokenOf('jq --arg "$x"{a,b} . f', '"$x"{a,b}').explanation, 'Name for `--arg` (use it as `$name` in the filter); when `"$x"{a,b}` expands to several words, this is its first word, and each of the others is value for `--arg`');
     assert.strictEqual(tokenOf('sudo -u "$x"{a,b} ls', '"$x"{a,b}').explanation, 'Value for `-u`; when `"$x"{a,b}` expands to several words, this is its first word, and each of the others is command to run');
     // (The same roles after two values are one reading: `seq -s x y -f %g 1`, `seq -s : -f x y 1`.)
@@ -555,6 +556,10 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.deepStrictEqual(thenRoles({ role: 'operand', index: 0 }, {}), [{}]);
     assert.strictEqual(thenRoles({ role: 'value', of: '-f', index: 0 }, { count: { min: 0 } }), undefined);
     assert.strictEqual(thenRoles({ role: 'end-of-options' }, {}), undefined);
+    // (`mostWords`: two values at most and the longest pattern, and two; none with no operands.)
+    const x = { names: ['-x'], text: { ja: '', en: '' }, value: [{ name: 'A' }, { name: 'B' }] };
+    assert.strictEqual(mostWords({ summary: { ja: '', en: '' }, options: [x, { ...x, value: { name: 'A' } }], operands: [{ pattern: [o('a'), o('b')] }] }), 6);
+    assert.strictEqual(mostWords({ summary: { ja: '', en: '' }, options: [{ ...x, value: { name: 'A' } }] }), 3);
   });
 
   it('gives a command run and a subcommand the role they take when a value before them gives none or several (review of #490)', () => {

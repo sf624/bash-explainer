@@ -243,7 +243,8 @@ export function saysOperand(explanation: string, texts: readonly string[], place
   // (The role when the words it names gave none and this word one; the part before says the other readings.)
   const none = noneReadings(whole);
   const held = heldNone(none.readings, place);
-  if (held.length) return held.some(has);
+  // ("argument": an operand of a command the reading does not know, `timeout -s $s 5 ls`, any operand of the command run.)
+  if (held.length) return held.some(has) || held.some((h) => h.split(/, | or /).includes('argument'));
   const e = none.rest;
   const several = severalClauses(e);
   if (several) {
