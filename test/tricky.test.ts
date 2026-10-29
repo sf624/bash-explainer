@@ -1573,7 +1573,9 @@ describe('tricky lines (round 6)', () => {
     assert.deepStrictEqual(examplesOf('echo ${s^^$x}'), []);
   });
 
-  it('reads bracket expressions in case patterns as bash does', () => {
+  it('reads bracket expressions in case patterns as bash does', function () {
+    // (It runs bash many times: 3.3 s in a coverage run here, and over 10 s on a CI runner.)
+    this.timeout(60000);
     const lineOf = (i: number) => new Analyzer('en').explainLine(parser.parse(ROUND6[13]), 0).examples[i];
     assert.strictEqual(bash(ROUND6[13]), 'bang\ncaret\nclass\nbracket\n');
     const patterns = ['[!a]', '[\\^a]', '[[:alpha:]]', '[]]', '[[:alpha:]_]', '[a\\]b]', '[!]a]', '[^]]', '[a-]', '[]-a]', '[[:digit:][:alpha:]]', '[[.a.]]', '[a-c]', '[^a-c]', '[\\\\]', '[[:upper:]x]'];

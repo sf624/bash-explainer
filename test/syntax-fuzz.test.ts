@@ -43,7 +43,9 @@ describe('unbash adapter: fuzzing', () => {
     assert.ok(inputs.length > 5000, `${inputs.length} inputs`);
   });
 
-  it('unbash adapter: no throw, sound trees, and errors for what unbash rejects', () => {
+  it('unbash adapter: no throw, sound trees, and errors for what unbash rejects', function () {
+    // (4.7 s of the default 10 s on a CI runner under coverage.)
+    this.timeout(60000);
     const bad: string[] = [];
     for (const text of inputs) {
       let t: SyntaxTree;

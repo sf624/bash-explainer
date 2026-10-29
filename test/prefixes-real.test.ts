@@ -95,7 +95,9 @@ describe('getopt_long entries agree with the GNU tools', () => {
   // tool has (its message names it), and each prefix that is unique among the entry's and the tool's names is read
   // as the tool reads it. The tool's options the entry lacks are only listed.
   for (const tool of ENTRIES) {
-    (has(tool) && isGnu(tool) ? it : it.skip)(`${tool}: each long option of the entry, and its prefix, as the tool reads them`, () => {
+    (has(tool) && isGnu(tool) ? it : it.skip)(`${tool}: each long option of the entry, and its prefix, as the tool reads them`, function () {
+      // (4.1 s of the default 10 s on a CI runner under coverage, with the tool's `--help` run for each.)
+      this.timeout(60000);
       const spec = lookupCommand(tool)!;
       const help = spawnSync(tool, ['--help'], { env: ENV, encoding: 'utf8' }).stdout;
       const options = spec.options!.filter((o) => o.names.some((n) => n.startsWith('--')));
