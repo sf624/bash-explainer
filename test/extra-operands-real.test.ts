@@ -12,6 +12,7 @@ import { lookupCommand } from '../src/analyzer';
 import { interpret, type OperandRole } from '../src/argv/interpret';
 import type { OperandSpec } from '../src/argv/spec';
 import { argWords } from './support/argwords';
+import { runContained } from './support/contained';
 import { run } from './support/run';
 
 const ENV = { ...process.env, LC_ALL: 'C', TZ: 'UTC' };
@@ -128,34 +129,90 @@ describe('extra operands, compared with the real tools', () => {
     });
   }
 
-  // `seq $a $b f`, `cmp $a $b f2`: with each count of words of each variable, from none to three, the role the line of
-  // those words gives the word is one the hedge says (the reading of single words, or one of the roles when any gives
-  // more), and the tool refuses the line exactly where that role is an extra operand.
-  const MIXED: { line: string; word: string; values: string[][] }[] = [
-    { line: 'seq $a $b 5', word: '5', values: [['1', '2', '3'], ['1', '2', '3']] },
-    { line: 'cmp $a $b f2', word: 'f2', values: [['f1', 'f2', '0'], ['0', '0', '0']] },
-    { line: 'diff $a $b', word: '$b', values: [['f1', 'f2', 'f3'], ['f2', 'f3', 'f1']] },
+  // Two words that may give several or none, `$a` and `$b`, each with every count from none to four: the role the
+  // interpreter gives each word written in the line, read from the line with those words written out, is one the
+  // explanation of the line with `$a` and `$b` allows for those counts (`allowed`), and the real tool agrees with it:
+  // it refuses the word as an extra operand (or cmp reads it as bytes to skip) exactly where that role says so; cp, mv
+  // and ln make the file a destination, a directory or a link name, as the role says.
+  const GENERATED: { line: string; values: string[] }[] = [
+    ...['diff $a $b f', 'sdiff $a $b f', 'comm $a $b f', 'join $a $b f', 'uniq $a $b f', 'diff3 $a $b f', 'diff3 $a f $b', 'diff3 f $a $b'].map((line) => ({ line, values: ['f1', 'f2', 'f3', 'f1'] })),
+    ...['cmp $a $b f', 'cmp $a f $b', 'cmp $a f $b g', 'cmp $a f g $b', 'cmp $a $b f g h'].map((line) => ({ line, values: ['0', '0', '0', '0'] })),
+    ...['seq $a $b 1 2', 'seq $a 1 $b 2', 'seq 1 $a $b 2', 'seq $a $b 5'].map((line) => ({ line, values: ['1', '1', '1', '1'] })),
+    ...['tr $a $b x', 'tr -s $a $b x', 'tr -ds $a $b x', 'tr -d $a $b x'].map((line) => ({ line, values: ['a', 'b', 'c', 'd'] })),
+    { line: 'basename $a $b f', values: ['p/f1', 'p/f2', 'p/f3', 'p/f4'] },
+    { line: 'date $a $b +%F', values: ['+%s', '+%s', '+%s', '+%s'] },
+    { line: 'mktemp $a $b t.XXX', values: ['a.XXX', 'b.XXX', 'c.XXX', 'd.XXX'] },
+    ...['cp $a $b d', 'mv $a $b d', 'ln -s $a $b d'].map((line) => ({ line, values: ['f1', 'f2', 'f3', 'g'] })),
   ];
-  for (const { line, word, values } of MIXED) {
-    it(`hedge of several words: ${line}`, function () {
-      const { tool, words, roles } = read(line);
+  const COUNTS = [0, 1, 2, 3, 4].flatMap((a) => [0, 1, 2, 3, 4].map((b) => [a, b]));
+  for (const { line, values } of GENERATED) {
+    it(`generated: ${line}, every count of \`$a\` and \`$b\` from none to four`, async function () {
+      this.timeout(60000);
+      const tool = line.split(' ')[0];
       if (!usableTool(tool)) this.skip();
-      const role = roles[words.indexOf(word)]!;
-      assert.ok(role.mixed, `${line}: no hedge`);
-      const said = new Set(role.mixed.roles.map((o) => o.text.en));
-      for (const counts of [0, 1, 2, 3].flatMap((x) => [0, 1, 2, 3].map((y) => [x, y]))) {
-        // (Where none gives more, or the word itself gives none, the hedge says nothing of it.)
-        if (!counts.some((n) => n > 1) || (word === '$b' && !counts[1])) continue;
-        const given = values.map((v, i) => v.slice(0, counts[i]).join(' '));
-        // (The line as bash runs it: each variable's words written out.)
-        const written = line.replace('$a', given[0]).replace('$b', given[1]).replace(/ +/g, ' ');
-        const lit = read(written);
-        const at = word.startsWith('$') ? lit.words.flatMap((_, i) => (i >= lit.words.length - counts[1] ? [i] : [])) : [lit.words.length - 1];
-        const got = at.map((i) => lit.roles[i]?.spec);
-        for (const o of got) assert.ok(o && said.has(o.text.en), `${written}: ${o?.text.en} is not among ${[...said].join(' | ')}`);
-        const r = runLine(`a='${given[0]}'; b='${given[1]}'; ${line}`);
-        assert.strictEqual(REFUSALS.test(r.err), got.some((o) => o!.extra), `${written}: ${r.err}`);
-      }
+      const { words, roles } = read(line);
+      const fixed = words.flatMap((w, i) => (!w.startsWith('$') && roles[i] ? [i] : []));
+      // (One script for every count, run once, in a cgroup: each count in a directory of its own.)
+      const script = COUNTS.map(([a, b], n) => {
+        const [x, y] = [values.slice(0, a).join(' '), values.slice(0, b).join(' ')];
+        return `d=r${n}; mkdir $d; (cd $d && printf 'a\\nb\\n' > f1 && printf 'b\\nc\\n' > f2 && printf 'c\\nd\\n' > f3 && printf 'x\\n' > f && printf 'y\\n' > g && printf 'z\\n' > h && printf 'n\\n' > 0 && a='${x}' && b='${y}' && ${line}) </dev/null >/dev/null 2>$d.err; s=$?; printf 'R\\t%s\\t%s\\t%s\\t%s\\n' ${n} $s "$(tr '\\n' ' ' < $d.err)" "$( [ -L $d/d ] && echo "link $(readlink $d/d)"; [ -f $d/d ] && [ ! -L $d/d ] && echo file)"`;
+      }).join('\n');
+      const cwd = fs.mkdtempSync(path.join(dir, 'gen-'));
+      const r = await runContained(['bash', '--norc', '-c', script], cwd, { PATH: process.env.PATH }, 50000);
+      const runs = new Map(r.stdout.split('\n').filter((l) => l.startsWith('R\t')).map((l) => { const [, n, st, err, post] = l.split('\t'); return [Number(n), { st: Number(st), err, post }]; }));
+      COUNTS.forEach(([a, b], n) => {
+        const run1 = runs.get(n);
+        assert.ok(run1, `${line}: no run for ${a} and ${b} words`);
+        const counts = new Map([['$a', a], ['$b', b]]);
+        // (The line as bash runs it: each variable's words written out; where each written word is then.)
+        const parts = words.map((w) => (w === '$a' ? values.slice(0, a) : w === '$b' ? values.slice(0, b) : [w]));
+        const lit = read(`${tool} ${parts.flat().join(' ')}`);
+        const at = (i: number): number => parts.slice(0, i).flat().length;
+        const extras = lit.roles.flatMap((o, i) => (o?.spec?.extra ? [lit.words[i]] : []));
+        const skipNamed = /invalid --ignore-initial value '([^']*)'/.exec(run1.err)?.[1];
+        for (const i of fixed) {
+          const got = lit.roles[at(i)]?.spec;
+          const where = `${line} with ${a} and ${b} words: ${words[i]}`;
+          assert.ok(got, `${where}: no role`);
+          const ok = allowed(roles[i]!, counts, words);
+          assert.ok(ok.includes(got.text.en), `${where} is ${got.text.en}, not among ${ok.join(' | ')}`);
+          if (got.extra && !skipNamed) assert.match(run1.err, REFUSALS, `${where}: not refused`);
+          if (skipNamed === words[i]) assert.match(got.text.en, /^bytes to skip/, `${where}: ${run1.err}`);
+          if (/^(cp|mv|ln)$/.test(tool) && words[i] === 'd') {
+            const real = /missing destination|missing file operand/.test(run1.err) ? 'source' : run1.post.startsWith('file') ? 'destination' : run1.post.startsWith('link d') ? 'target' : run1.post.startsWith('link') ? 'link name' : /not a directory|No such file or directory/.test(run1.err) ? 'directory' : `? ${run1.err} ${run1.post}`;
+            assert.ok(got.text.en.startsWith(real) || (real === 'directory' && /directory( to make the links in)?$/.test(got.text.en)), `${where}: the tool makes it ${real} (${run1.err}), we read ${got.text.en}`);
+          }
+        }
+        // (The tool names the first word it refuses, ours too; a line we read with no extra operand is not refused as
+        // one, and one we read with one is.)
+        const named: string | undefined = /extra operand [‘']([^’']*)[’']/.exec(run1.err)?.[1];
+        if (named !== undefined && !skipNamed) assert.strictEqual(extras[0], named, `${line} with ${a} and ${b} words: ${run1.err}`);
+        if (!skipNamed && tool !== 'tr') assert.strictEqual(REFUSALS.test(run1.err), extras.length > 0, `${line} with ${a} and ${b} words: ${run1.err}`);
+      });
     });
   }
 });
+
+/**
+ * The roles the explanation of word `i` allows where the words `$a`, `$b` give `counts` words, from its role: the
+ * reading when every word that may give none gives none (`none`), the reading for each count of one other word
+ * (`byCount`, `otherwise`), and of several (`mixed`: its own role where each gives one, else its own role or any
+ * of the list, "it can also be"); else its one role.
+ */
+function allowed(role: OperandRole, counts: ReadonlyMap<string, number>, words: string[]): string[] {
+  const count = (i: number): number => counts.get(words[i]) ?? 1;
+  const own = role.spec!.text.en;
+  const nones = (role.none ?? []).filter((r) => r.spec && r.words.every((i) => count(i) === 0));
+  if (nones.length) return nones.map((r) => r.spec!.text.en);
+  if (role.mixed) {
+    if (role.mixed.words.every((i) => count(i) === 1)) return [own];
+    return [...(role.mixed.many ? [] : [own]), ...role.mixed.roles.map((o) => o.text.en)];
+  }
+  if (role.byCount) {
+    const n = count(role.byCount.word);
+    const r = role.byCount.readings.find((x) => x.from === n || (x.orMore && x.from <= n));
+    return r ? [r.spec.text.en] : [];
+  }
+  if (role.otherwise) return count(role.by!) > 1 ? [role.otherwise.text.en] : [own];
+  return [own];
+}

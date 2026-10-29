@@ -20,7 +20,7 @@ export function hedged(cx: Explainer, desc: string, a: string, role: Extract<Arg
   let out = desc;
   if (role.several) out = severalText(cx, desc, a, role.several);
   else if (role.byCount) out = byCountText(cx, desc, role.byCount, nodes);
-  else if (role.mixed) out = mixedText(cx, desc, role.mixed, nodes);
+  else if (role.mixed) out = mixedText(cx, desc, role.mixed, nodes, role.spec!);
   else if (role.otherwise) out = uncertainText(cx, desc, cx.t(role.otherwise.text), role.by!, nodes);
   return none ? out + noneText(cx, role.none, nodes) : out;
 }
@@ -102,21 +102,30 @@ function byCountText(cx: Explainer, desc: string, by: ByCount, nodes: SyntaxNode
 }
 
 /**
- * The roles the words of an operand may have when it or the other words that may give several give more (`MixedRoles`):
- * `cp $a $b` is, of `$b`, "destination (…) when `$a`, `$b` expand to a single word; when any of them expands to more, each of
- * its words is source or destination directory".
+ * The roles the words of an operand may have for the counts of the words that may give several or none (`MixedRoles`):
+ * `cp $a $b d` is, of `d`, "destination directory when `$a`, `$b` expand to a single word; when they expand to other
+ * numbers of words, it can also be destination (the new name, or an existing directory)"; of `$b` in `cp $a $b`, "…, each
+ * of its words can be source, destination (…) or destination directory". Its own role `own` is not listed again where
+ * it is one word.
  */
-function mixedText(cx: Explainer, desc: string, mixed: MixedRoles, nodes: SyntaxNode[]): string {
+function mixedText(cx: Explainer, desc: string, mixed: MixedRoles, nodes: SyntaxNode[], own: OperandSpec): string {
   const list = mixed.words.map((i) => codeSpan(nodes[i].text)).join(cx.s('・', ', '));
-  const texts = mixed.roles.map((o) => cx.t(o.text));
-  const roles = texts.length > 1 ? cx.s(`${texts.join('・')}のどれか`, `${texts.slice(0, -1).join(', ')} or ${texts[texts.length - 1]}`) : texts[0];
-  const them = cx.s(mixed.many ? 'この語の各語は' : 'この語は', mixed.many ? 'each of its words is' : 'it is');
-  if (!mixed.first) return cx.s(`${list} が展開される語数により、${them}${roles}`, `${them} ${roles}, by how many words ${list} expand to`);
+  const listed = (os: OperandSpec[]): { ja: string; en: string } => {
+    const texts = os.map((o) => cx.t(o.text));
+    return { ja: texts.join('・') + (texts.length > 1 ? 'のどれか' : ''), en: texts.length > 1 ? `${texts.slice(0, -1).join(', ')} or ${texts[texts.length - 1]}` : texts[0] };
+  };
+  // (Not one role with each giving its fewest: the word itself gives several, `chmod {a,b}* $c`.)
+  if (!mixed.first) {
+    const all = listed(mixed.roles);
+    return cx.s(`${list} が展開される語数により、この語の各語は${all.ja}`, `each of its words is ${all.en}, by how many words ${list} expand to`);
+  }
+  const other = listed(mixed.many ? mixed.roles : mixed.roles.filter((o) => o.text.en !== own.text.en));
+  const then = cx.s(mixed.many ? `この語の各語は${other.ja}` : `この語は${other.ja}にもなる`, mixed.many ? `each of its words can be ${other.en}` : `it can also be ${other.en}`);
   // (A word that gives two words at least, `{a,b}*`: as few as each gives.)
   const one = mixed.words.every((i) => countIn(nodes[i], cx.state)!.min <= 1);
   return one
-    ? cx.s(`${list} が1語に展開されるなら${desc}、どれかが2語以上なら${them}${roles}`, `${desc} when ${list} expand to a single word; when any of them expands to more, ${them} ${roles}`)
-    : cx.s(`${list} がそれぞれ最も少ない語数に展開されるなら${desc}、どれかがそれより多いなら${them}${roles}`, `${desc} when ${list} expand to as few words as each can; when any of them expands to more, ${them} ${roles}`);
+    ? cx.s(`${list} が1語に展開されるなら${desc}、ほかの語数なら${then}`, `${desc} when ${list} expand to a single word; when they expand to other numbers of words, ${then}`)
+    : cx.s(`${list} がそれぞれ最も少ない語数に展開されるなら${desc}、ほかの語数なら${then}`, `${desc} when ${list} expand to as few words as each can; when they expand to other numbers of words, ${then}`);
 }
 
 /**
