@@ -260,7 +260,10 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     { id: 'redirect-in-bracket', input: '[ a >> b ]', why: 'none' },
     { id: 'redirect-in-bracket', input: '[ a b < c ]', why: 'none' },
   ];
-  it('finds a rewrite on every fact of a mechanical id in the corpus, but where none is given', () => {
+  it('finds a rewrite on every fact of a mechanical id in the corpus, but where none is given', function () {
+    // (Explaining every line of the 1,800 snippets and the fixtures takes 4.5 s, spread over the analyzer with no one hot
+    // spot; 6.3 s alone and 7 s in a coverage run with three workers, against mocha's 10 s: too near for a loaded runner.)
+    this.timeout(60000);
     const key = ({ id, input }: { id: SuggestionId; input: string }): string => `${id}: ${input}`;
     // (The check before `rm -rf ${D%/}/x`, said as code to write before it: no edits, since the warning would stay after
     // it, docs/design/semantics.md 4.15.)

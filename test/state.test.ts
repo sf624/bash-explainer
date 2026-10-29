@@ -59,7 +59,9 @@ describe('shell state: options', () => {
     assert.strictEqual(shopt(end('shopt -s nullglob; mapfile -t a', 'zsh'), 'nullglob'), 'default');
     assert.strictEqual(end('mapfile -t a', 'zsh').variables.size, 0);
   });
-  it('reads POSIX mode from the shebang as the kernel, env and bash do', () => {
+  it('reads POSIX mode from the shebang as the kernel, env and bash do', function () {
+    // (It starts bash once for each row: 5.2 s of the 10 s limit in a coverage run with three workers.)
+    this.timeout(60000);
     // The kernel gives the interpreter the rest of the line as one word; `env -S` splits it, and bash reads its
     // long options before the short ones.
     const rows: [string, boolean][] = [
@@ -94,7 +96,9 @@ describe('shell state: options', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-  it('reads the set options of the shebang as the kernel, env and bash do', () => {
+  it('reads the set options of the shebang as the kernel, env and bash do', function () {
+    // (It starts bash once for each row, like the test before it.)
+    this.timeout(60000);
     // [shebang, errexit, nounset]: the kernel gives bash the rest of the line as one word, which bash reads as
     // letters only when it is one cluster; `env -S` splits it.
     const rows: [string, boolean, boolean][] = [
