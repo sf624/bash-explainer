@@ -4,7 +4,8 @@ import { exerciseTree, fuzzChunk } from './support/fuzz-exercise';
 
 // One chunk of the inputs of test/syntax-fuzz.test.ts (see test/support/fuzz-exercise.ts).
 describe('unbash adapter: fuzzing, analyzer chunk 3 of 6', function () {
-  this.timeout(120000);
+  // (78 s of 120 s on a CI runner under coverage.)
+  this.timeout(300000);
   it('analyzer and document checks: no throw on any fuzzed tree', () => {
     const ub = createUnbashParser();
     const bad: string[] = [];

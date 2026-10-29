@@ -781,7 +781,8 @@ describe('shell state: arithmetic', () => {
     assert.deepStrictEqual(after('x=\'a[1] = 2, i++, ++j\'; declare -n r=x; (( y = $1 + r ))', 'a', 'i', 'j', 'y'), ['unknown', 'unknown', 'unknown', 'unknown']);
   });
   it('gives up on an expression too long or too deep to follow, quickly', function () {
-    this.timeout(60000);
+    // (30 s of 60 s on a CI runner under coverage.)
+    this.timeout(120000);
     // (Each value reads the one before twice, and assigns: 2 ** 30 steps.)
     const chain = (n: number): string => ['v0=\'c++\'', ...Array.from({ length: n }, (_, i) => `v${i + 1}='v${i}+v${i}'`)].join('; ');
     const values = chain(30);

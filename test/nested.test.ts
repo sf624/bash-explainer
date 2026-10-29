@@ -515,7 +515,8 @@ describe('nested scripts: the issues of a string another shell reads', () => {
   });
 
   it('takes a time linear in the strings, however many variables the script exports', function () {
-    this.timeout(60000);
+    // (28 s of 60 s on a CI runner under coverage.)
+    this.timeout(120000);
     const time = (n: number, line: (i: number) => string) => {
       const src = Array.from({ length: n }, (_, i) => line(i)).join('\n');
       const tree = parser.parse(src);

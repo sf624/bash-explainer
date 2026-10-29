@@ -187,7 +187,9 @@ function checkHtml(text: string, what: string): void {
 }
 
 describe('the hover Markdown', () => {
-  it('keeps to the tags, attributes and span styles the hover sanitizer keeps', () => {
+  it('keeps to the tags, attributes and span styles the hover sanitizer keeps', function () {
+    // (8.2 s of the default 10 s on a CI runner under coverage.)
+    this.timeout(60000);
     const sample = open(fs.readFileSync(path.join(__dirname, 'fixtures/sample.sh'), 'utf8'));
     let checked = 0;
     for (const lang of ['en', 'ja'] as const) {

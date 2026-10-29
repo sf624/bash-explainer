@@ -198,7 +198,8 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
   });
 
   it("reads the aliases the walk expands from the walk's own trees: the alias's text with the rest of the command", function () {
-    this.timeout(60000);
+    // (29 s of 60 s on a CI runner under coverage.)
+    this.timeout(120000);
     // (The key of an associative array is not arithmetic, also in an alias's text: `k` is not read. Before, that tree
     // was read on its own, without `declare -A m`, and nothing was trusted.)
     const src = "declare -A m; shopt -s expand_aliases; alias put='m[k]=1'\nput";
