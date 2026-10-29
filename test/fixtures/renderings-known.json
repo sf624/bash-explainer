@@ -1,12 +1,12 @@
 {
   "counts": {
     "fixtures": {
-      "probe": { "words": 124, "unknown": 19, "claims": 146, "globExamples": 8, "roleCommands": 9, "roleFields": 23 },
-      "values": { "words": 264, "unknown": 40, "claims": 328, "globExamples": 13, "roleCommands": 19, "roleFields": 70 }
+      "probe": { "words": 123, "unknown": 18, "claims": 145, "globExamples": 8, "roleCommands": 9, "roleFields": 23 },
+      "values": { "words": 262, "unknown": 38, "claims": 326, "globExamples": 13, "roleCommands": 19, "roleFields": 70 }
     },
     "snippets": {
-      "probe": { "words": 308, "unknown": 41, "claims": 335, "globExamples": 10, "roleCommands": 12, "roleFields": 12 },
-      "values": { "words": 314, "unknown": 44, "claims": 342, "globExamples": 10, "roleCommands": 12, "roleFields": 30 }
+      "probe": { "words": 297, "unknown": 30, "claims": 324, "globExamples": 10, "roleCommands": 12, "roleFields": 12 },
+      "values": { "words": 301, "unknown": 31, "claims": 329, "globExamples": 10, "roleCommands": 12, "roleFields": 30 }
     }
   },
   "known": [
