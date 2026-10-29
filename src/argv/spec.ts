@@ -539,9 +539,9 @@ export interface OperandSpec {
  * When an alternative applies: an option is given, the mode is chosen, an operand (by its index among the
  * operands) has a known value that matches (`trap 1 2`: a number first makes every word a signal), an option
  * whose value splices words was given with a value that could not be split (`env -S"$cmd"`: not known;
- * `env -S'"a'`: refused), or not.
+ * `env -S'"a'`: refused), or not; or all of several hold (`tr -ds`: `-d` and `-s` both given).
  */
-export type Condition = { option: string[] } | { mode: string } | { operand: number; matches: RegExp } | { unsplit: string[] } | { not: Condition };
+export type Condition = { option: string[] } | { mode: string } | { operand: number; matches: RegExp } | { unsplit: string[] } | { not: Condition } | { all: Condition[] };
 
 /** How the words of a command slot are run. */
 export interface CommandSlot {

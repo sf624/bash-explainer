@@ -128,9 +128,11 @@ export function hedges({ words, operands, fit, span, alts }: HedgeInput): (k: nu
    * The roles the words of word k may have when it or another word that may give several (`others`) gives more than
    * its fewest: with each count of word k, and with one or two words more before it and after it, given by the nearest
    * such word on each side (`cp $a $b`: with `x y` and `z`, `z` is the destination directory, with `x` and `y z` a source
-   * and the destination directory). A role depends on the place of a word among the operands and on their number; past
-   * the longest pattern, only the patterns that repeat an item fit. `first`: the reading where each gives its fewest is
-   * one role, the word's own (`spec`); else it is among them.
+   * and the destination directory), and with the others that may give none giving none, the nearest first, up to the
+   * longest pattern on each side (`seq $a $b f`: with `1 2` and nothing, `f` is still the last). A role depends on the
+   * place of a word among the operands and on their number; past the longest pattern, only the patterns that repeat an
+   * item fit. `first`: the reading where each gives its fewest is one role, the word's own (`spec`), and the roles are
+   * those where one of them gives more; else they are those of any counts.
    */
   const mixedOf = (k: number, others: number[]): MixedRoles => {
     const own = varies[k] ? Math.min(words[k].count!.max ?? Infinity, fewest(k) + span) : fewest(k);
@@ -138,14 +140,25 @@ export function hedges({ words, operands, fit, span, alts }: HedgeInput): (k: nu
     const before = others.filter((j) => j < k).pop();
     const after = others.find((j) => j > k);
     const more = (j: number | undefined, d: number): number => (j === undefined ? 0 : Math.min(d, (words[j].count!.max ?? Infinity) - fewest(j)));
-    const steps = [0, 1, 2].flatMap((b) => [0, 1, 2].map((a) => [more(before, b), more(after, a)]));
+    // (The words on each side that may give none, the nearest first; one that gives more is not among them.)
+    const none = (side: number[], grown: number | undefined): number[] => side.filter((j) => words[j].count!.min === 0 && j !== grown).slice(0, span);
+    const zeros = (side: number[], grown: number | undefined): number[][] => none(side, grown).map((_, n, all) => all.slice(0, n + 1));
+    const sides = (j: number | undefined, side: number[]): { grow: number; zero: number[] }[] => [0, 1, 2].flatMap((d) => {
+      const grow = more(j, d);
+      return d && !grow ? [] : [{ grow, zero: [] as number[] }, ...zeros(side, grow ? j : undefined).map((zero) => ({ grow, zero }))];
+    });
+    const left = sides(before, others.filter((j) => j < k).reverse());
+    const right = sides(after, others.filter((j) => j > k));
     // (Each role with its place in its pattern, from 0 to 1, to list them in the order the patterns have them.)
     const seen = new Map<string, { o: OperandSpec; place: number }>();
     for (let c = fewest(k); c <= own; c++) {
-      for (const [b, a] of steps) {
-        if (first && c === fewest(k) && !b && !a) continue;
-        for (const { o, place } of itemsOf((j) => (j === k ? c : fewest(j) + (j === before ? b : j === after ? a : 0)), k) ?? []) {
-          if (!seen.has(o.text.en) || seen.get(o.text.en)!.place > place) seen.set(o.text.en, { o, place });
+      for (const b of left) {
+        for (const a of right) {
+          if (first && c === fewest(k) && !b.grow && !a.grow) continue;
+          const many = (j: number): number => (j === k ? c : b.zero.includes(j) || a.zero.includes(j) ? 0 : fewest(j) + (j === before ? b.grow : j === after ? a.grow : 0));
+          for (const { o, place } of itemsOf(many, k) ?? []) {
+            if (!seen.has(o.text.en) || seen.get(o.text.en)!.place > place) seen.set(o.text.en, { o, place });
+          }
         }
       }
     }

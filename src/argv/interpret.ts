@@ -909,6 +909,7 @@ function chooseMode(spec: CommandSpec, given: Given): string | undefined {
 function conditionHolds(c: Condition | undefined, given: Given, mode: string | undefined, operands: ArgWord[]): boolean {
   if (c === undefined) return true;
   if ('not' in c) return !conditionHolds(c.not, given, mode, operands);
+  if ('all' in c) return c.all.every((x) => conditionHolds(x, given, mode, operands));
   if ('mode' in c) return c.mode === mode;
   if ('unsplit' in c) return given.unsplit.some((n) => c.unsplit.includes(n));
   if ('operand' in c) {
