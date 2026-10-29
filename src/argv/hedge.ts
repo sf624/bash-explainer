@@ -147,8 +147,19 @@ export function hedges({ words, operands, fit, span, alts }: HedgeInput): (k: nu
       const grow = more(j, d);
       return d && !grow ? [] : [{ grow, zero: [] as number[] }, ...zeros(side, grow ? j : undefined).map((zero) => ({ grow, zero }))];
     });
-    const left = sides(before, others.filter((j) => j < k).reverse());
-    const right = sides(after, others.filter((j) => j > k));
+    // (A role depends on the number of words before and after, the same for any number past the longest pattern: each
+    // such number once on each side, from the words there with each word's fewest, each that gives none one less, apart
+    // where one gives more.)
+    const once = (all: { grow: number; zero: number[] }[], fewer: number): { grow: number; zero: number[] }[] => {
+      const seen = new Set<string>();
+      return all.filter(({ grow, zero }) => {
+        const at = `${Math.min(fewer + grow - zero.length, span)} ${grow > 0}`;
+        return !seen.has(at) && !!seen.add(at);
+      });
+    };
+    const sum = (js: number[]): number => js.reduce((n, j) => n + fewest(j), 0);
+    const left = once(sides(before, others.filter((j) => j < k).reverse()), sum(words.flatMap((_, j) => (j < k ? [j] : []))));
+    const right = once(sides(after, others.filter((j) => j > k)), sum(words.flatMap((_, j) => (j > k ? [j] : []))));
     // (Each role with its place in its pattern, from 0 to 1, to list them in the order the patterns have them.)
     const seen = new Map<string, { o: OperandSpec; place: number }>();
     for (let c = fewest(k); c <= own; c++) {
