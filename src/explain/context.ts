@@ -115,9 +115,10 @@ export interface Explainer {
   examplesReplaced<T>(f: () => T, whole: () => Example | undefined): T;
   /**
    * The examples the words read inside `f` add themselves are dropped (read with a spec that may not be the program's:
-   * `hash -p`); those of the commands inside them, which those commands have claimed (`examplesOf`), stay.
+   * `hash -p`), those `drops` says from what `f` gives; those of the commands inside them, which those commands have
+   * claimed (`examplesOf`), stay.
    */
-  examplesDropped<T>(f: () => T): T;
+  examplesDropped<T>(f: () => T, drops: (value: T, e: Example) => boolean): T;
   /** The notes, facts and examples of a line of a string read as a script join this line's; `span` maps its places to the source. */
   adopt(ex: LineExplanation, span: (s: Span) => Span): void;
 
@@ -334,10 +335,10 @@ export class LineExplainer implements Explainer, LineOutput {
     return value;
   }
 
-  examplesDropped<T>(f: () => T): T {
+  examplesDropped<T>(f: () => T, drops: (value: T, e: Example) => boolean): T {
     const before = this.examples.length;
     const value = f();
-    const kept = this.examples.slice(before).filter((e) => e.target !== undefined);
+    const kept = this.examples.slice(before).filter((e) => e.target !== undefined || !drops(value, e));
     this.examples.length = before;
     this.examples.push(...kept);
     return value;

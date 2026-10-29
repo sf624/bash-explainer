@@ -338,7 +338,8 @@ function specRuns(n: SyntaxNode, model: StateModel, shell: Shell | undefined): S
     if (!spec) continue;
     const kind = resolveRun(model, run, shell)?.kind;
     if (kind !== 'builtin' && kind !== 'file') continue;
-    const parse = interpret(spec, run.args.map(argWordFor(model.shell, bracesIn(model))), { name: run.name, lookup: lookupCommand });
+    // (The words as the command gets them, where the model knows them: `e=-e; grep $e p f` reads `p` as the pattern.)
+    const parse = interpret(spec, run.args.map(argWordIn(model)), { name: run.name, lookup: lookupCommand });
     out.push({ run, name: run.name!, spec, parse, values: run.args.map((w) => staticWordValue(w)) });
   }
   return out;

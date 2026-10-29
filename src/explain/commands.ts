@@ -6,7 +6,7 @@
 // redirections set up first, the command inside); and the keyword `time`.
 import type { Kind, Span, Token } from '../analyzer-types';
 import type { ArgRole, ArgvParse } from '../argv/interpret';
-import { onlyInFunction } from '../argv/query';
+import { onlyInFunction, readsFields } from '../argv/query';
 import type { CommandSpec } from '../argv/spec';
 import type { Basis } from '../basis';
 import { argWord } from '../argv/words';
@@ -268,7 +268,9 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   // know: its words are read with the name's spec, but give no example of it.)
   const other = !!head.fn || !!maybeHashedOf(head.res) || (head.res?.kind === 'file' && head.res.path === 'hashed' && !head.res.known);
   const reading = () => readArgs(cx, head.spec, args, head.runs ?? head.name, head.fn);
-  const read = other && head.spec ? cx.examplesDropped(reading) : reading();
+  // (Nor do the words give examples of the command when one is read as fields that are options or values, which the
+  // examples would read as written: `x='-n 3'; head $x f`. A glob's or a brace expansion's stay.)
+  const read = cx.examplesDropped(reading, (r, e) => (other && !!head.spec) || (readsFields(r.parse) && e.kind !== 'glob' && e.kind !== 'expansion'));
   // A restricted shell refuses some calls of builtins, and command names with a `/` (6.10).
   // (A name with a `/` only inside an expansion may have none: `"${tool##*/}"`.)
   const refused = head.kind === 'builtin' ? restrictedCall(cx, n, head.spec!, read.parse, args)

@@ -330,8 +330,49 @@ describe('the fields of a word the model knows, read as bash gives them (bug 7 o
     assert.strictEqual(tokenOf('x=". -name"; find $x a', '$x').explanation, 'expands to `.` (starting directory) and `-name` (a word of the expression)');
     assert.strictEqual(tokenOf('z=; find . $z -name a', '-name').explanation, 'file name matches the glob');
     // (A function gets every word as an argument: `f -a b`.)
-    assert.strictEqual(tokenOf('f() { :; }; x="-a b"; f $x', '$x').explanation, 'Arguments to the function: `-a` `b`');
-    assert.strictEqual(tokenOf('f() { :; }; x="-a b"; f $x', '$x', 'ja').explanation, '関数への引数: `-a` `b`');
+    assert.strictEqual(tokenOf('f() { :; }; x="-a b"; f $x', '$x').explanation, 'Arguments $1 (`-a`), $2 (`b`) to the function');
+  });
+
+  it('gives no example of a command one of whose words is read as fields that are options or values (review of #485)', () => {
+    // (The examples read the words as written: `head -n 3 f` would show 10 lines, `sort -r` ascending, `grep -v` the matches.)
+    const examples = (line: string) => new Analyzer('en').explainLine(parser.parse(line), 0).examples.map((e) => e.title);
+    for (const line of ['h="-n 3"; head $h f', 'hn=-n; head $hn 3 f', 'k="-n3 f"; head $k', 'xn="-n 2"; tail $xn f', 'hx=-n; head $hx', 'xr=-r; sort $xr f', 'xi=-i; sed $xi s/a/b/ f', 'xv=-v; grep $xv a f']) {
+      assert.deepStrictEqual(examples(line), [], line);
+    }
+    // (A brace expansion's example stays, and an expansion's.)
+    assert.deepStrictEqual(examples('set {-e,-u}'), ['Example (brace expansion `{-e,-u}`)']);
+    assert.deepStrictEqual(examples('x=-n; f=a.c; head $x 3 "${f%.c}"'), ['Example for `${f%.c}`']);
+  });
+
+  it('numbers the positional parameters from the fields the model knows (review of #485)', () => {
+    // bash: `x=; f $x d` gives `$1=d`; `f $ff d` with `ff='-r a'` gives `$3=d`; `set -- $p d` sets `$1=a $2=b $3=d`.
+    assert.strictEqual(tokenOf('f() { :; }; x=; f $x d', 'd').explanation, 'Argument $1 to the function');
+    assert.strictEqual(tokenOf('f() { :; }; ff="-r a"; f $ff d', '$ff').explanation, 'Arguments $1 (`-r`), $2 (`a`) to the function');
+    assert.strictEqual(tokenOf('f() { :; }; ff="-r a"; f $ff d', 'd').explanation, 'Argument $3 to the function');
+    assert.strictEqual(tokenOf('f() { :; }; p="a b"; f $p d', 'd').explanation, 'Argument $3 to the function');
+    assert.strictEqual(tokenOf('f() { :; }; f "$@" d', 'd').explanation, 'Argument $2 to the function (if this word or one before it expands to more or fewer words, the number shifts)');
+    assert.strictEqual(tokenOf('f() { :; }; p="a b"; f $p d', '$p', 'ja').explanation, '関数への引数 $1（`a`）、$2（`b`）');
+    assert.strictEqual(tokenOf('p="a b"; set -- $p d', '$p').explanation, 'expands to `a` (becomes the positional parameter `$1`) and `b` (becomes the positional parameter `$2`)');
+    assert.strictEqual(tokenOf('p="a b"; set -- $p d', 'd').explanation, 'becomes the positional parameter `$3`');
+    assert.deepStrictEqual(runBash('f() { echo "$#:$1:$3"; }; x=; f $x d; ff="-r a"; f $ff d; p="a b"; set -- $p d; echo "$3"').stdout, '1:d:\n3:-r:d\nd\n');
+  });
+
+  it("explains a word of find's expression that gives none, and gives no summary of words read as other fields (review of #485)", () => {
+    // bash: `z=; find . $z -name x` is `find . -name x`; `find . -name x $fe` with `fe='-exec rm {} ;'` runs `rm` on each match.
+    assert.strictEqual(tokenOf('z=; find . $z -name x', '$z').explanation, 'expands to no word, so `find` does not get it');
+    const summary = allTokens(new Analyzer('en').explainLine(parser.parse('z=; find . -name x $z -print'), 0).items).find((t) => t.kind === 'test')!;
+    assert.strictEqual(summary.explanation, 'Conditions and actions: if name matches x: print it');
+    assert.strictEqual(tokenOf('z=; find . -name x $z -print', '$z').explanation, 'expands to no word, so `find` does not get it');
+    // (A field read as itself keeps the summary; one find may read as an option does not: `x=-print`.)
+    const summaryOf = (line: string) => allTokens(new Analyzer('en').explainLine(parser.parse(line), 0).items).find((t) => t.kind === 'test')?.explanation;
+    assert.strictEqual(summaryOf('p=a; find . -name "$p"'), 'Print what matches: name matches "$p" (no action is given, so `-print` is implied)');
+    assert.strictEqual(summaryOf('x=-print; find . -name a $x'), undefined);
+    const fe = allTokens(new Analyzer('en').explainLine(parser.parse('fe="-exec rm {} ;"; find . -name x $fe'), 0).items);
+    assert.ok(!fe.some((t) => t.kind === 'test'), 'no summary of the words as written');
+    assert.match(fe.find((t) => t.label === '$fe')!.explanation, /^expands to `-exec` \(option: run a command on each match/);
+    // (A pitfall reads the words as the command gets them: `e=-e; grep $e pat f` reads `pat` as the pattern, not `$e`.)
+    const notes = new Analyzer('en').explainLine(parser.parse('e=-e; grep $e pat f'), 0).notes;
+    assert.ok(!notes.some((x) => /value of `\$e`/.test(x)), notes.join('\n'));
   });
 
   it('runs those lines in bash and GNU coreutils as said', function () {

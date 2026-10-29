@@ -43,7 +43,7 @@ import { elementsOf } from '../semantics/elements';
 import { argWordIn, countIn, fieldsIn, untilWords } from '../semantics/argwords';
 import { arrayKind, globOff, NO_SPEC, notForEarlier, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
-import { hedged, wordItems } from './operand-texts';
+import { functionArgs, hedged, listed, SHIFTS, wordItems } from './operand-texts';
 import { soleRead, turnedOff, unknownOption } from './option-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -164,7 +164,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
           const count = countIn(a, cx.state);
           const gives = !count ? 1 : count.min === count.max ? count.min : undefined;
           if (role.spec) ordinals.set(role.spec, { n: before.n + (gives ?? 1), sure: before.sure && gives !== undefined });
-          out.push(expanded(cx, a, operandToken(cx, nodes, word, role, parse, spec, { n: before.n + 1, sure: before.sure && !count }, assigned, isFn)));
+          out.push(expanded(cx, a, operandToken(cx, nodes, word, role, parse, spec, { n: before.n + 1, sure: before.sure && gives !== undefined }, assigned, isFn)));
           break;
         }
         case 'subcommand': {
@@ -427,13 +427,11 @@ function splicedNote(cx: Explainer, v: ValueRole): string {
 function fieldsToken(cx: Explainer, a: SyntaxNode, role: FieldsRole, command: string, isFn: boolean | 'maybe', nodes: SyntaxNode[]): Token {
   const program = command.split(' ')[0].split('/').pop()!;
   // (A function gets every word as an argument, also one that looks like an option.)
-  if (isFn && role.words.length) return positional(cx, a, cx.s(`関数への引数: ${role.words.map((w) => `\`${w.value}\``).join(' ')}`, `Arguments to the function: ${role.words.map((w) => `\`${w.value}\``).join(' ')}`));
+  if (isFn && role.words.length) return positional(cx, a, functionArgs(cx, nodes, nodes.indexOf(a)));
   // (`unset {,}`: the braces say so.)
   if (!role.words.length) return positional(cx, a, braceTexts([a])?.every((w) => !w) ? noWord(cx) : cx.s(`展開すると語が残らないので、\`${program}\` には渡らない`, `expands to no word, so \`${program}\` does not get it`));
   // (A field's role may depend on how many words the others give: `p='a b'; cp $p $u`, `b` is the destination when `$u` gives none.)
-  const items = wordItems(cx, role.words, role.roles, true, (desc, r) => hedged(cx, desc, a.text, r, nodes));
-  const list = items.length > 1 ? `${items.slice(0, -1).join(cx.s('、', ', '))}${cx.s('と ', ' and ')}${items[items.length - 1]}` : items[0];
-  const t = positional(cx, a, cx.s(`${list}に展開される`, `expands to ${list}`));
+  const t = positional(cx, a, listed(cx, wordItems(cx, role.words, role.roles, true, (desc, r) => hedged(cx, desc, a.text, r, nodes))));
   const options = role.roles.every(({ role: r }) => OPTION_ROLES.has(r.role));
   return options ? { ...t, kind: 'option' } : t;
 }
@@ -456,14 +454,17 @@ function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Ex
   if (job) return cx.tok(a, 'argument', cx.s(`ジョブ指定: ${job.ja}`, `Job spec: ${job.en}`));
   let desc: string | undefined;
   // (A function gets every word, also those that look like options: `f -g b` gives `b` as $2.)
-  if (isFn) desc = cx.s(`関数への引数 $${word + 1}`, `Argument $${word + 1} to the function`);
+  if (isFn) desc = functionArgs(cx, nodes, word);
   else if (item?.values && Object.hasOwn(item.values, a.text)) desc = cx.t(item.values[a.text]);
   else if (role.assignment) desc = cx.t(item!.assignmentText!);
   else if (role.each) desc = eachText(cx, a, role.each);
   else if (item) {
     const text = cx.t(item.text);
     desc = text.replace('`$N`', `\`$${at.n}\``);
-    if (desc !== text && !at.sure) desc += cx.s('（この語か前の語が展開で 1 語以外になると、番号もずれる）', ' (if this word or one before it expands to more or fewer words, the number shifts)');
+    // (`p='a b'; set -- $p`: `$1` and `$2`, one for each field the model knows.)
+    const fields = desc !== text ? fieldsIn(a, cx.state) : undefined;
+    if (fields && fields.length > 1) desc = listed(cx, fields.map((f, k) => `\`${f}\`${cx.s(`（${text.replace('`$N`', `\`$${at.n + k}\``)}）`, ` (${text.replace('`$N`', `\`$${at.n + k}\``)})`)}`));
+    if (desc !== text && !at.sure) desc += SHIFTS(cx);
   }
   if (desc) desc = hedged(cx, desc, a.text, role, nodes);
   // (A function named like a declaration builtin, or `alias`, given `a=…`: bash's parser marked the word.)
@@ -898,7 +899,11 @@ function positional(cx: Explainer, a: SyntaxNode, desc: string | undefined, lang
  * find's expression, explained as a whole (`-o`, implicit `-a`, `!` and `\( \)` grouping) with the tokens
  * of each primary inside. When it cannot be parsed, its words are read as options of find.
  */
-function findExpression(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec): Token[] {
+function findExpression(cx: Explainer, all: SyntaxNode[], spec: CommandSpec): Token[] {
+  // (A word that gives none is not find's: `z=; find . -name x $z -print`. Nor is a summary of words as written given.)
+  const none = all.filter((n) => fieldsIn(n, cx.state)?.length === 0);
+  const nodes = all.filter((n) => !none.includes(n));
+  const empty = none.map((n) => fieldsToken(cx, n, { role: 'fields', words: [], roles: [] }, 'find', false, all));
   const words = findWords(nodes, cx.shell);
   const lookup = (name: string) => specFor(cx, name);
   // find refuses all its arguments when one of its actions is wrong (`-exec f {} ;`): none of them runs. (Its words as find
@@ -915,7 +920,12 @@ function findExpression(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec): 
     const o = spec.options!.find((x) => x.names.includes(w));
     return o?.until ?? (o?.value ? 1 : 0);
   }, untilWords(argWords));
-  if (!tree) return read(0, nodes.length);
+  // (A field find may read as an option or an operator, or several: the summary of the words as written would miss it.)
+  const apart = nodes.some((n) => {
+    const f = staticWordValue(n, false, cx.shell) === undefined ? fieldsIn(n, cx.state) : undefined;
+    return !!f && (f.length !== 1 || /^(-|[()!,;+]$)/.test(f[0]));
+  });
+  if (!tree || apart) return [...read(0, nodes.length), ...empty];
   const exprArgs = nodes;
 
   const opTok = (idx: number, ja: string, en: string): Token[] => [cx.tok(exprArgs[idx], 'operator', cx.s(ja, en))];
@@ -952,7 +962,7 @@ function findExpression(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec): 
   return [{
     kind: 'test', label: shorten(words.join(' ')), explanation: describeFind(tree, cx.lang),
     span: { start: spanOf(first).start, end: spanOf(last).end }, children: build(tree),
-  }];
+  }, ...empty];
 }
 
 /**
