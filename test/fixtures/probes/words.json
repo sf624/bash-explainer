@@ -2762,5 +2762,38 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.5.6",
+    "snippet": "@PROBE:a@ x a<(:) y; @PROBE:b@ x <(:)b y; @PROBE:c@ x 2>(:) y",
+    "gaps": {
+      "a": "the file name of a process substitution is not known (/dev/fd/63 here)",
+      "b": "the file name of a process substitution is not known",
+      "c": "the file name of a process substitution is not known"
+    },
+    "facts": {
+      "a": [
+        [
+          "x",
+          "a/dev/fd/63",
+          "y"
+        ]
+      ],
+      "b": [
+        [
+          "x",
+          "/dev/fd/63b",
+          "y"
+        ]
+      ],
+      "c": [
+        [
+          "x",
+          "2/dev/fd/63",
+          "y"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

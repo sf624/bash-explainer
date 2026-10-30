@@ -329,6 +329,53 @@ describe('unbash adapter: redirections', () => {
   });
 });
 
+describe('unbash adapter: process substitutions in a longer word', () => {
+  // bash reads `<(` and `>(` in a word as it reads `$(`: the file name is part of the word. unbash ends the word there.
+  const words = ['a<(:)', 'b<(:)c', '<(:)<(:)', `"x"<(:)'y'`, '2>(:)', '{fd}<(:)', '<(:)2', 'a\\\n<(:)', '<(echo $(:)<(:))x'];
+  it('makes one word of them, as bash does', () => {
+    const text = `printf '<%s>\\n' ${words.join(' ')} z`;
+    const t = tree(text);
+    assert.deepStrictEqual(t.errors, []);
+    const [cmd] = types(t.root, 'command');
+    const args = fields(cmd, 'argument').slice(1);
+    assert.deepStrictEqual(args.map((a) => a.text), [...words, 'z']);
+    // Each word holds its process substitutions, with their operators.
+    assert.deepStrictEqual(args.map((a) => descendants(a, ['process_substitution']).filter((p) => p.parent === a || p === a).length), [1, 1, 2, 1, 1, 1, 1, 1, 1, 0]);
+    assert.ok(descendants(cmd, ['process_substitution']).every((p) => p.children[0].type === p.text.slice(0, 2)));
+    // bash prints a line for each word, with a file name where each process substitution is.
+    const r = runBash(text);
+    assert.strictEqual(r.status, 0, r.stderr);
+    const lines = r.stdout.trimEnd().split('\n');
+    // (The descriptors have two digits: the `2` of `<(:)2` is text after one.)
+    assert.deepStrictEqual(lines.map((l) => l.replace(/\/dev\/fd\/\d\d/g, '@')), ['<a@>', '<b@c>', '<@@>', '<x@y>', '<2@>', '<{fd}@>', '<@2>', '<a@>', '<@x>', '<z>']);
+  });
+  it('reads them so in assignments, redirections, arrays, `case`, `for` and `[[ ]]`', () => {
+    const lines = ['x=a<(:) y=1 echo', 'cat < a<(:) <(:)2>/dev/null', 'arr=(a<(:) b)', 'case x in a<(:)) ;; esac', 'for w in q<(:); do :; done', '[[ a<(:) == a/dev/fd/* ]]', 'declare z=a<(:)'];
+    for (const text of lines) {
+      const t = tree(text);
+      assert.deepStrictEqual(t.errors, [], text);
+      assert.ok(types(t.root, 'process_substitution').every((p) => p.parent!.type === 'concatenation'), text);
+    }
+    assert.strictEqual(o('x=a<(:) y=1 echo'),
+      '(program (command (variable_assignment (variable_name @name "x") "=" (concatenation @value (word "a") (process_substitution "<(" (command (command_name @name (word ":"))) ")"))) (variable_assignment (variable_name @name "y") "=" (number @value "1")) (command_name @name (word "echo"))))');
+    // bash: the same words.
+    const r = runBash('x=a<(:); echo "$x"; { cat < a<(:); } 2>&1 | grep -c "a/dev/fd"; arr=(a<(:) b); echo ${#arr[@]} "${arr[0]%/*}"; case a/dev/fd/63 in a<(:)) echo case;; esac; for w in q<(:); do echo "${w%/*}"; done; [[ a<(:) == a/dev/fd/* ]] && echo test; declare z=a<(:); echo "${z%/*}"');
+    assert.strictEqual(r.stdout.replace(/\/dev\/fd\/\d\d/g, '@'), 'a@\n1\n2 a/dev/fd\ncase\nq/dev/fd\ntest\na/dev/fd\n');
+    // bash's own parser gives the same shapes.
+    const bin = findBashAst();
+    if (!bin && process.env.BASH_EXPLAINER_BASH_AST) assert.fail('BASH_EXPLAINER_BASH_AST is set, but bash-ast cannot be run (see $BASH_AST)');
+    for (const text of bin ? [`printf x ${words.join(' ')}`, ...lines] : []) {
+      const a = runBashAst(bin!, text);
+      assert.ok(a.ok, text);
+      assert.deepStrictEqual(diffShapes(shapeOfTree(tree(text).root), shapeOfAst(a.ast)), [], text);
+    }
+  });
+  it('leaves apart one whose command is a subshell, which would read as `$((`', () => {
+    // (README, Limitations: bash reads `a<((ls))` as one word.)
+    assert.deepStrictEqual(fields(types(tree('echo a<((ls))').root, 'command')[0], 'argument').map((a) => a.text), ['a', '<((ls))']);
+  });
+});
+
 describe('unbash adapter: heredocs', () => {
   it('has the start, the body and the end, with the expansions of the body', () => {
     assert.equal(o('cat <<E\n${a} $(b) $((1)) $c\nE'),

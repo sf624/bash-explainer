@@ -513,7 +513,7 @@ export function casePattern(cx: Explainer, p: SyntaxNode): Token {
       ? cx.s(`パターン \`${p.text}\`: クォートしていない展開の結果はパターンになり、クォートした部分は文字列そのものとして照合される`, `Pattern \`${p.text}\`: what the unquoted expansions give is a pattern, and the quoted parts are matched as literal text`)
       : cx.s(`パターン \`${p.text}\`: 展開した結果がパターンになる`, `Pattern \`${p.text}\`: what it expands to is the pattern`), cx.sub(p));
 }
-const EXPANDING = new Set(['simple_expansion', 'expansion', 'command_substitution']);
+const EXPANDING = new Set(['simple_expansion', 'expansion', 'command_substitution', 'process_substitution', 'arithmetic_expansion']);
 const QUOTED = new Set(['string', 'raw_string', 'ansi_c_string', 'translated_string']);
 
 /** The parts of a glob pattern as tokens, placed where the pattern is written (`base` characters into `n`); `extglob: false` reads `@(…)` as plain text. */
