@@ -372,8 +372,8 @@ describe('hedges of words that give none or several, compared with bash and the 
           const role = roles[k++]!;
           if (c.only && !c.only.includes(texts[w])) return;
           // (The command run a word is shown under, and the one that reads it. If another command reads it, that is wrong; if the
-          // same, a token that names no role, "Word `5`", is a role missing, not one that contradicts. A token that names the role right under
-          // another command run is not compared: `timeout -s $s 5 echo x` with `$s` of three words runs the third, and says `x` is echo's text.)
+          // same, a token that names no role, "Word `5`", is a role missing, not one that contradicts. A word shown under a command run that does not read it
+          // is wrong whatever its token says: `timeout -s $s 5 echo x` with `$s` of three words runs the third, and `x` is not echo's text.)
           const shown = tokensOf[w] as Token[];
           const under = new Set(shown.map((t) => { const r = runOf.get(t); return r ? starts.indexOf(r.span.start.character) : -1; }));
           const shownUnder = under.size === 1 ? [...under][0] : -2;
@@ -381,7 +381,7 @@ describe('hedges of words that give none or several, compared with bash and the 
           const generic = shown.every((t) => /^(Word `|Looks like an option; which command reads it)/.test(t.explanation));
           if (shownUnder !== -1 && shownUnder === readBy && generic) return;
           // (Where the tool refuses the words, which command reads which is moot: section 2.5 of the design gives a refused shape no clause.)
-          const foreign = shown.length > 0 && generic && shownUnder !== readBy && shownUnder !== -1 && (c.dry || c.seen!(runs.get(n)!) !== 'refused');
+          const foreign = shown.length > 0 && shownUnder !== readBy && shownUnder !== -1 && (c.dry || c.seen!(runs.get(n)!) !== 'refused');
           if (!foreign && showsRole(role, shown, { text: field, at, of: fields.length, counts }, operands) !== false) return;
           contradicted.add(`${texts[w]} ${show(counts)}`);
           if (!mine.some((e) => e.word === texts[w] && meets(e, counts))) fresh.push(`${where}: \`${field}\` of \`${texts[w]}\` is ${JSON.stringify(role.role === 'operand' ? role.spec?.text.en : role.role === 'value' ? `value of ${role.of}` : role.role === 'option' ? `option ${role.flag}` : role.role)}; shown: ${JSON.stringify(tokensOf[w].map((t) => t.explanation))}`);
