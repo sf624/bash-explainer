@@ -22,72 +22,11 @@ import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type Sh
 import { changedByBash, setAtStart } from './vars';
 import { ARITH, changesDirectory, underscoreValue, unreliableAt, unreliableNames } from './wordsites';
 import { operandSegs } from './operands';
+import { CONTEXTS, type ContextRule, type WordContext } from './wordcontexts';
+import type { Hole } from './fieldshape';
 
 export { underscoreValue, unreliableNames };
-
-/** Where a word is: its context decides which expansions it undergoes. */
-export type WordContext =
-  | 'command-name' | 'argument' | 'assignment-value' | 'declaration-argument' | 'array-element' | 'array-element-assignment' | 'array-element-assoc'
-  | 'cond-operand' | 'cond-pattern' | 'cond-regex'                    // [[ ]]
-  | 'case-word' | 'case-pattern' | 'for-list'
-  | 'redirect-target' | 'heredoc-body' | 'herestring'
-  | 'arith' | 'subscript-indexed' | 'subscript-assoc'                // $(( )), (( )), a[i] (arithmetic), m[k] (a key)
-  | 'declaration-assignment'                                         // `alias a=$v`: a word of `alias` that is an assignment
-  | 'param-word' | 'param-pattern';                                  // ${x:-word}, ${x#pattern}
-
-/** One row of the context table. */
-export interface ContextRule {
-  brace: boolean;
-  /**
-   * `start`: a tilde prefix at the start; `assignment`: also after each `:` (and the start is after `=`);
-   * `argument`: at the start, and in bash mode after the `=` and the `:` of a word that looks like an assignment;
-   * `declaration`: as `argument`, in POSIX mode too (a declaration's assignment).
-   */
-  tilde: 'none' | 'start' | 'assignment' | 'argument' | 'declaration';
-  /** Word splitting and pathname expansion of the unquoted parts (`inherit`: as the expansion around it). */
-  split: boolean | 'inherit';
-  glob: boolean | 'inherit';
-  /** Unquoted parts are a pattern (`case`, `[[ == ]]`, `${x#p}`) or a regex (`[[ =~ ]]`). */
-  match?: 'pattern' | 'regex';
-  /** How many fields it may become: `one-or-error`, a redirection target (else "ambiguous redirect"). */
-  fields: 'many' | 'one' | 'one-or-error';
-  /** In POSIX mode, neither split nor globbed (a redirection target of a non-interactive shell). */
-  posixLiteral?: boolean;
-  /** The section of the Bash manual. */
-  manual: string;
-}
-
-const ARGUMENT: ContextRule = { brace: true, tilde: 'argument', split: true, glob: true, fields: 'many', manual: '3.5' };
-const ONE = { brace: false, split: false, glob: false, fields: 'one' } as const;
-
-/** The context table (manual 3.5, with the exceptions of 3.2.5.2, 3.4, 3.6, 4.2, 6.5 and 6.7). */
-export const CONTEXTS: Readonly<Record<WordContext, ContextRule>> = {
-  'command-name': { ...ARGUMENT, manual: '3.7.1' },
-  argument: ARGUMENT,
-  'for-list': { ...ARGUMENT, manual: '3.2.5.1' },
-  // (`a=(x=~/y)` keeps its tilde: only an argument that looks like an assignment has one after `=`.)
-  'array-element': { ...ARGUMENT, tilde: 'start', manual: '6.7' },
-  'array-element-assignment': { brace: true, tilde: 'assignment', split: false, glob: false, fields: 'many', manual: '6.7' }, // `a=([0]=$x [1]=*)` (bash 5.2 brace-expands `[2]={a,b}` to the values `[2]=a`, `[2]=b`)
-  'array-element-assoc': { ...ONE, tilde: 'none', manual: '6.7' }, // `m=(k {a,b} $x *)` in an associative array (bash 5.3 expands a tilde there, 5.2 not)
-  // A declaration builtin's word that looks like an assignment is one (the parser gives it as such); the others are arguments.
-  'declaration-argument': { ...ARGUMENT, manual: '4.2' },
-  'assignment-value': { ...ONE, tilde: 'assignment', manual: '3.4' },
-  'cond-operand': { ...ONE, tilde: 'argument', manual: '3.2.5.2' },
-  'cond-pattern': { ...ONE, tilde: 'argument', match: 'pattern', manual: '3.2.5.2' },
-  'cond-regex': { ...ONE, tilde: 'argument', match: 'regex', manual: '3.2.5.2' },
-  'case-word': { ...ONE, tilde: 'argument', manual: '3.2.5.2' },
-  'case-pattern': { ...ONE, tilde: 'argument', match: 'pattern', manual: '3.2.5.2' },
-  'redirect-target': { brace: true, tilde: 'argument', split: true, glob: true, fields: 'one-or-error', posixLiteral: true, manual: '3.6' },
-  herestring: { ...ONE, tilde: 'start', manual: '3.6.7' },
-  'heredoc-body': { ...ONE, tilde: 'none', manual: '3.6.6' },
-  arith: { ...ONE, tilde: 'none', manual: '6.5' },
-  'subscript-indexed': { ...ONE, tilde: 'none', manual: '6.7' },
-  'subscript-assoc': { ...ONE, tilde: 'none', manual: '6.7' },
-  // (bash brace-expands it as a word: `alias z={a,b}` is `alias z=a z=b`.)
-  'declaration-assignment': { ...ONE, brace: true, tilde: 'declaration', manual: '4.2' },
-  'param-word': { brace: false, tilde: 'start', split: 'inherit', glob: 'inherit', fields: 'many', manual: '3.5.3' },
-  'param-pattern': { ...ONE, tilde: 'start', match: 'pattern', manual: '3.5.3' },
-};
+export { CONTEXTS, type ContextRule, type WordContext } from './wordcontexts';
 
 export type Applies = boolean | 'unknown';
 export type StepKind = 'brace' | 'tilde' | 'parameter' | 'command' | 'arithmetic' | 'process' | 'split' | 'glob' | 'quote-removal';
@@ -498,8 +437,10 @@ export interface Fields {
   failure?: WordFailure;
 }
 
-/** A piece of the text of a word: quoted (no split or glob), or unquoted from the source or from an expansion (split). */
-export interface Piece { text: string; quoted: boolean; expanded: boolean }
+/** A piece of the text of a word: quoted (no split or glob), or unquoted from the source or from an expansion (split); `hole`: a part not known (fieldshape.ts), with no text. */
+export interface Piece { text: string; quoted: boolean; expanded: boolean; hole?: Hole }
+/** What stands for a part of a word whose value is not known (fieldshape.ts): an expansion, a substitution, a `$"…"`, or a tilde prefix (its text). */
+export type HoleOf = (part: SyntaxNode | string, quoted: boolean) => Piece[];
 class Failure { constructor(readonly error: NonNullable<Fields['error']>) {} }
 
 /**
@@ -580,8 +521,8 @@ class ModelValues implements ValueSource {
 class Evaluator {
   private readonly unbound: Tri;
   private readonly unreliable: ReadonlySet<string> | 'all';
-  /** `st`: the state the word is expanded in (the walk's own, for a meaning it keeps from another state with the same options). */
-  constructor(readonly w: WordMeaning, private readonly source: ValueSource, private readonly st = w.state) {
+  /** `st`: the state the word is expanded in (the walk's own, for a meaning it keeps from another state with the same options); `hole`: what a part not known gives (`holedWords`). */
+  constructor(readonly w: WordMeaning, private readonly source: ValueSource, private readonly st = w.state, private readonly hole?: HoleOf) {
     this.unbound = on(option(st, 'set', 'nounset'), 'set', 'nounset', false);
     this.unreliable = unreliableAt(w.nodes[0], st);
   }
@@ -612,24 +553,27 @@ class Evaluator {
         const v = ansiCWordValue(decodedText(n), this.w.shell);
         return v === undefined || !sameInEveryLocale(v) ? undefined : [{ text: v, quoted: true, expanded: false }];
       }
-      case 'translated_string': return this.pieces(n.namedChildren[0], quoted);
+      // (A translation may be any text: `holedWords` reads it as a hole.)
+      case 'translated_string': return this.hole ? this.hole(n, true) : this.pieces(n.namedChildren[0], quoted);
       case 'string': return this.inner(n, n.startIndex + 1, n.endIndex - 1, /\\([$`"\\\n])/g);
       case 'heredoc_body': {
         // A quoted delimiter: the body is text as it is.
         const start = n.parent!.children.find((c) => c.type === 'heredoc_start')!.text;
         return /['"\\]/.test(start) ? [{ text: decodedText(n), quoted: true, expanded: false }] : this.inner(n, n.startIndex, n.endIndex, /\\([$`\\\n])/g);
       }
-      case 'simple_expansion': case 'expansion': return this.expansion(n, quoted);
+      case 'simple_expansion': case 'expansion': return this.expansion(n, quoted) ?? this.hole?.(n, quoted);
       case 'command_substitution': {
         // (`$(true)` prints nothing, unless `true` is a function, an alias or a program here; `${| …; }` gives its `REPLY`.)
         const v = substitutionForm(n) === '${|' ? this.source.reply?.(n) : staticWordValue(n);
-        return v === undefined || !substitutionNames(n).every((x) => this.source.builtinRuns(x, n)) ? undefined : [{ text: v, quoted, expanded: true }];
+        return v === undefined || !substitutionNames(n).every((x) => this.source.builtinRuns(x, n)) ? this.hole?.(n, quoted) : [{ text: v, quoted, expanded: true }];
       }
       case 'arithmetic_expansion': {
         const inner = decodedText(n).replace(/^\$(?:\(\(|\[)/, '').replace(/(?:\)\)|\])$/, '');
         const v = this.source.arith ? this.source.arith(n) : evalArith(inner);
-        return v === undefined ? undefined : [{ text: String(v), quoted, expanded: true }];
+        return v === undefined ? this.hole?.(n, quoted) : [{ text: String(v), quoted, expanded: true }];
       }
+      // (A path, never split: `<(…)`.)
+      case 'process_substitution': return this.hole?.(n, true);
     }
     return undefined;
   }
@@ -641,6 +585,7 @@ class Evaluator {
   private inner(n: SyntaxNode, from: number, to: number, escapes: RegExp): Piece[] | undefined {
     const out: Piece[] = [{ text: '', quoted: true, expanded: false }];
     let at = from;
+    const elements = (): boolean => n.namedChildren.some((c) => this.pieces(c, true)?.some((x) => x.hole?.kind === 'elements'));
     // (The text is taken as one piece: a backslash before a newline may end one string_content and the newline start the next.)
     const flush = (end: number): void => {
       if (end > at) out.push({ text: decodedSlice(n, at - n.startIndex, end - n.startIndex).replace(escapes, (_, c: string) => (c === '\n' ? '' : c)), quoted: true, expanded: false });
@@ -648,13 +593,18 @@ class Evaluator {
     for (const c of n.namedChildren) {
       if (c.type === 'string_content' || c.type === 'heredoc_content') continue;
       flush(c.startIndex);
-      const p = this.pieces(c, true);
+      // (After `"$@"` in the same quotes, bash splits a part by IFS as if it were not quoted, F75: `"$@$#"` with `IFS=1`
+      // and one element drops the `1`; but not a variable alone, `"$@$x"`; and `$(( ))` anywhere in them, F84. With a
+      // hook, such a part is a hole not quoted.)
+      const split = this.hole && (out.some((x) => x.hole?.kind === 'elements') ? !/^\$(?:[A-Za-z_]\w*|\{[A-Za-z_]\w*\})$/.test(c.text) : c.type === 'arithmetic_expansion' && elements());
+      const p = split ? this.hole!(c, false) : this.pieces(c, true);
       if (!p) return undefined;
       out.push(...p);
       at = c.endIndex;
     }
     flush(to);
-    return out;
+    // (`"$@"` with no element gives no field, nor do the quotes around it and the parts in them that are empty: `"$@$x"`.)
+    return out.some((p) => p.hole?.kind === 'elements') ? out.filter((p) => p.text || p.hole) : out;
   }
 
   /** `$x`, `${x}` and the forms of `${…}` whose value follows from a known value. */
@@ -844,7 +794,7 @@ export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: Synta
   const ev = new Evaluator(w, new ModelValues(w, model, undefined, new Set()));
   const failing = (nodes: BraceAlternative, holed: boolean): Piece[] | undefined => {
     try {
-      return piecesOf(w, nodes, ev, holed ? (quoted, part) => ((h) => (typeof h === 'string' ? { text: h, quoted, expanded: !quoted } : h))(hole(part)) : undefined);
+      return piecesOf(w, nodes, ev, holed ? (quoted, part) => ((h) => [typeof h === 'string' ? { text: h, quoted, expanded: !quoted } : h])(hole(part)) : undefined);
     } catch (e) {
       /* c8 ignore next -- a rethrow guard, as in `fieldsAt`. */
       if (!(e instanceof Failure)) throw e;
@@ -856,6 +806,27 @@ export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: Synta
     const holed = failing(nodes, true);
     const chars = holed?.flatMap((p) => [...p.text].map((c): Char => ({ c, quoted: p.quoted, split: p.expanded && !p.quoted })));
     return { written: nodes.map((p) => (typeof p === 'string' ? p : p.text)).join(''), fields: known && splitPieces(w, known), chars, holed: holed && splitPieces(w, holed) };
+  }) };
+}
+
+/**
+ * The pieces of each word of the brace expansion of the word of `n` (`braces` as `wordAlternatives`'s `applies`), with
+ * the values of `source`, and `hole` for each part whose value is not known there (`HoleOf`; also a whole quoted string
+ * whose value is not known, `$'\u00e9'`). A word's pieces are undefined where bash fails on it (`${x:?}` with `x`
+ * unset). Undefined where the words are not known here (`{,$x}a`). For fieldshape.ts.
+ */
+export function holedWords(n: SyntaxNode, model: StateModel, source: ValueSource, hole: HoleOf, braces: boolean): { w: WordMeaning; words: (Piece[] | undefined)[] } | undefined {
+  const w = wordMeaning(n, model)!;
+  const alternatives = wordAlternatives(w, braces);
+  const ev = new Evaluator(w, source, w.state, hole);
+  return alternatives && { w, words: alternatives.map((nodes) => {
+    try {
+      return piecesOf(w, nodes, ev, (quoted, part, tilde) => hole(part ?? tilde!, quoted));
+    } catch (e) {
+      /* c8 ignore next -- a rethrow guard, as in `fieldsAt`. */
+      if (!(e instanceof Failure)) throw e;
+      return undefined;
+    }
   }) };
 }
 
@@ -980,7 +951,7 @@ export type Char = { c: string; quoted: boolean; split: boolean };
  * The pieces of the word (or of one word of its brace expansion), with its tildes expanded. `hole`: what a part not
  * known here stands for, quoted or not (`braceWords`); without it, the pieces are not known.
  */
-function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator, hole?: (quoted: boolean, part?: SyntaxNode) => Piece): Piece[] | undefined {
+function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator, hole?: (quoted: boolean, part?: SyntaxNode, tilde?: string) => Piece[]): Piece[] | undefined {
   const out: Piece[] = [];
   const parts = nodes.flatMap((n): (SyntaxNode | string)[] => (typeof n !== 'string' && n.type === 'concatenation' ? [...n.namedChildren] : [n]));
   for (let i = 0; i < parts.length; i++) {
@@ -993,7 +964,7 @@ function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator,
       if (t && w.rule.tilde !== 'none' && (t[0].length < r.text.length || (i === parts.length - 1 && !r.empty))) {
         const home = ev.tilde(t[1]);
         if (home === undefined && !hole) return undefined;
-        out.push(home === undefined ? hole!(true) : { text: home, quoted: true, expanded: false }, ...plain(r.text.slice(t[0].length)));
+        out.push(...(home === undefined ? hole!(true, undefined, t[0]) : [{ text: home, quoted: true, expanded: false }]), ...plain(r.text.slice(t[0].length)));
       } else out.push(...plain(r.text), ...(r.empty ? [{ text: '', quoted: true, expanded: false }] : []));
       continue;
     }
@@ -1003,13 +974,13 @@ function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator,
       for (const t of tildes) {
         const v = ev.tilde(t.user);
         if (v === undefined && !hole) return undefined;
-        out.push(...plain(n.text.slice(at, t.start)), v === undefined ? hole!(true) : { text: v, quoted: true, expanded: false });
+        out.push(...plain(n.text.slice(at, t.start)), ...(v === undefined ? hole!(true, undefined, n.text.slice(t.start, t.end)) : [{ text: v, quoted: true, expanded: false }]));
         at = t.end;
       }
       out.push(...plain(n.text.slice(at)));
       continue;
     }
-    const p = ev.pieces(n, false) ?? (hole && [hole(QUOTES.has(n.type), n)]);
+    const p = ev.pieces(n, false) ?? hole?.(QUOTES.has(n.type), n);
     if (!p) return undefined;
     out.push(...p);
   }
@@ -1035,31 +1006,37 @@ function splitPieces(w: WordMeaning, pieces: Piece[]): Char[][] | undefined {
   // (An IFS of other than ASCII is split on by characters or by bytes, by the locale; one with a mark of bash's, erratically, the quoted text too of a word with an unquoted expansion, `$x"b"`: src/semantics/chars.ts.)
   if (((ifs === undefined || !sameInEveryLocale(ifs)) && chars.some((c) => c.split)) || (IFS_ERRATIC.test(ifs ?? '') && pieces.some((p) => p.expanded && !p.quoted))) return undefined;
   const sep = ifs ?? '';
-  const isSep = (c: Char): boolean => c.split && sep.includes(c.c);
-  const white = (c: Char): boolean => isSep(c) && IFS_WHITESPACE.includes(c.c);
-  const fields: Char[][] = [];
-  let cur: Char[] = [];
-  let has = false;
+  return splitOn(chars, (c) => (c.split && sep.includes(c.c) ? (IFS_WHITESPACE.includes(c.c) ? 'white' : 'hard') : undefined), () => true).map((f) => f.field);
+}
+
+/**
+ * Word splitting (manual 3.5.7) of characters: `sep` says which are separators (an IFS white space or another IFS
+ * character, of an unquoted expansion), `has` whether one surely gives its field text; one that does not (a part that
+ * may be empty, fieldshape.ts) makes a field that is there only when it is not empty (`sure: false`).
+ */
+export function splitOn<T>(chars: readonly T[], sep: (c: T) => 'white' | 'hard' | undefined, has: (c: T) => boolean): { field: T[]; sure: boolean }[] {
+  const fields: { field: T[]; sure: boolean }[] = [];
+  let cur: T[] = [];
+  let sure = false;
+  let may = false;
+  const white = (k: number): boolean => k < chars.length && sep(chars[k]) === 'white';
   for (let i = 0; i < chars.length; i++) {
-    if (!isSep(chars[i])) {
+    if (!sep(chars[i])) {
       cur.push(chars[i]);
-      has = true;
+      if (has(chars[i])) sure = true;
+      else may = true;
       continue;
     }
     let j = i;
-    while (j < chars.length && white(chars[j])) j++;
-    let hard = false;
-    if (j < chars.length && isSep(chars[j]) && !white(chars[j])) {
-      hard = true;
-      j++;
-      while (j < chars.length && white(chars[j])) j++;
-    }
-    if (hard || has) fields.push(cur);
+    while (white(j)) j++;
+    const hard = j < chars.length && sep(chars[j]) === 'hard';
+    if (hard) for (j++; white(j);) j++;
+    if (hard || sure || may) fields.push({ field: cur, sure: hard || sure });
     cur = [];
-    has = false;
+    sure = may = false;
     i = j - 1;
   }
-  if (has) fields.push(cur);
+  if (sure || may) fields.push({ field: cur, sure });
   return fields;
 }
 

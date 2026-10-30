@@ -49,7 +49,7 @@ function mayRefer(name: string, st: ShellState, inQuotes: boolean, seen: Readonl
  * may be a nameref (`declare -n r='a[@]'`, `$r`), whose target may be such an array. Not in a command substitution,
  * whose output is text.
  */
-function severalFields(n: SyntaxNode, st: ShellState, quoted = false): boolean {
+export function severalFields(n: SyntaxNode, st: ShellState, quoted = false): boolean {
   if (n.type === 'command_substitution' || n.type === 'process_substitution' || n.type === 'arithmetic_expansion') return false;
   const inQuotes = quoted || n.type === 'string';
   if (n.type === 'simple_expansion' || n.type === 'expansion') {
