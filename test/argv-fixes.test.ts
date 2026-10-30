@@ -253,14 +253,33 @@ describe('an operand that becomes several words', () => {
   });
 
   it('reads the hedges of many words that may give several in about the time of the line (review of #484)', function () {
-    this.timeout(30000);
-    // (The hedges are read when the explanation asks, each reading once: 80 words took 5.6 s, against 30 ms before them.)
+    this.timeout(60000);
+    // (The hedges are read when the explanation asks, each reading once: 80 words took 5.6 s, against 30 ms before them.
+    // Since the table of readings (docs/design/count-hedges.md) the three lines of `cp`, `echo` and `rm` take 0.7 to 0.9 s
+    // here, 2 to 3.4 times that on a GitHub runner, so a bound in milliseconds fell between the two (2062 to 2688 ms
+    // failed on main). The bound is a multiple of the time the same lines take with the words written out, in the same
+    // process: it moves with the speed of the machine. The lines take 6 to 13 times that; the old blow-up 75 times.)
     const many = (prefix: string, word: (i: number) => string) => `${prefix} ${Array.from({ length: 80 }, (_, i) => word(i)).join(' ')}`;
     // (And the line read again without each value that may give none, once: `grep -e $a1 -e $a3 …`, after #482.)
-    for (const line of [many('cp', (i) => `$a${i}`), many('echo', (i) => `*.x${i}`), many('rm -f', (i) => `*.x${i}`), many('grep', (i) => (i % 2 ? `$a${i}` : '-e')), many('tar -cf $f', (i) => `$a${i}`)]) {
+    const lines: [string, string][] = [
+      [many('cp', (i) => `$a${i}`), many('cp', (i) => `a${i}`)],
+      [many('echo', (i) => `*.x${i}`), many('echo', (i) => `x${i}`)],
+      [many('rm -f', (i) => `*.x${i}`), many('rm -f', (i) => `x${i}`)],
+      [many('grep', (i) => (i % 2 ? `$a${i}` : '-e')), many('grep', (i) => (i % 2 ? `a${i}` : '-e'))],
+      [many('tar -cf $f', (i) => `$a${i}`), many('tar -cf $f', (i) => `a${i}`)],
+    ];
+    const time = (line: string): number => {
       const start = performance.now();
       new Analyzer('en').explainLine(parser.parse(line), 0);
-      assert.ok(performance.now() - start < 2000, `${line.slice(0, 20)}…: ${Math.round(performance.now() - start)} ms`);
+      return performance.now() - start;
+    };
+    // (The fewest of three runs of the five lines with their words written out; the first run also warms the tables up.)
+    const unit = Math.min(...[0, 1, 2].map(() => lines.reduce((sum, [, written]) => sum + time(written), 0)));
+    for (const [line] of lines) {
+      // (A slow run is read again once: a pause of the machine does not repeat, a blow-up does.)
+      let ms = time(line);
+      if (ms > 40 * unit) ms = Math.min(ms, time(line));
+      assert.ok(ms <= 40 * unit, `${line.slice(0, 20)}…: ${Math.round(ms)} ms, ${(ms / unit).toFixed(1)} times the ${Math.round(unit)} ms of the lines with their words written out`);
     }
   });
 
