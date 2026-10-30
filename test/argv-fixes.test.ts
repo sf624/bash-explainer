@@ -583,17 +583,28 @@ describe("an option's value that may give no word (after #482)", () => {
       'error: -n requires an argument', "fatal: Option '--author' requires a value", 'f', 'grep: x: No such file or directory', 'f:x-i']);
   });
 
-  it('does not point to a manual for an option of a command that is no name', () => {
-    // The command is an expansion (or a wrapper's word that is one): the option may be nobody's, as `-n 5 ls` is `nice`'s
-    // when `a` is empty and `echo`'s when `a=echo`; the text says it is not known, and sends nobody to `man ` or `man $(which`.
-    const en = 'Looks like an option, but the command comes from an expansion and is not known here, so what it means is not known';
-    const ja = 'オプションに見える語（コマンドが展開結果で、どのコマンドか分からないため、意味は分からない）';
-    for (const [line, word] of [['nice $a -n 5 ls', '-n'], ['$cmd -x', '-x'], ['"$@" -x', '-x'], ['$(which x) -y', '-y'], ['sudo $a -x', '-x'], ['sudo $a -x file', '-x'], ['env $a -x', '-x'], ['command $a -x', '-x']]) {
+  it('does not point to a manual for an option of a command word the model cannot read', () => {
+    // The command word is an expansion (or a wrapper's word that is one): what reads the option depends on its value, as
+    // `-n 5 ls` is `nice`'s when `a` is empty and `echo`'s when `a=echo`, and `$a -x` runs `-x` then.
+    const en = 'Looks like an option; which command reads it depends on what the expansion gives';
+    const ja = 'オプションに見える語（どのコマンドが読むかは、展開した結果で決まる）';
+    for (const [line, word] of [['nice $a -n 5 ls', '-n'], ['$cmd -x', '-x'], ['"$@" -x', '-x'], ['$(which x) -y', '-y'], ['sudo $a -x', '-x'], ['sudo $a -x file', '-x'], ['env $a -x', '-x'], ['command $a -x', '-x'], ['f* -x', '-x'], ['x=; $x -Z', '-Z'], ['x=ls; $x -Z', '-Z'], ['nice f* -x', '-x']]) {
       assert.strictEqual(tokenOf(line, word).explanation, en, line);
       assert.strictEqual(tokenOf(line, word, 'ja').explanation, ja, line);
     }
-    // A name written out still points to its manual, also as a wrapper's command.
+    // Where the model reads the value after a wrapper, the word is the command's own option.
+    assert.strictEqual(tokenOf('x=ls; sudo $x -Z', '-Z').explanation, 'print the SELinux security context');
+    // Quotes and escapes make a name, not an expansion: `man` is for what they spell.
+    for (const line of ['\'a"b\' -x', '\'a\\b\' -x', 'nice \'a"b\' -x']) assert.match(tokenOf(line, '-x').explanation, /^Option \(not in the dictionary; see `man a.b`\)$/, line);
+    // A name written out, also as a wrapper's command; a path gives the manual of its last part (`man ./foo` reads a
+    // file); a name with a blank has none.
     assert.strictEqual(tokenOf('foo -x', '-x').explanation, 'Option (not in the dictionary; see `man foo`)');
     assert.strictEqual(tokenOf('nice foo -x', '-x').explanation, 'Option (not in the dictionary; see `man foo`)');
+    for (const line of ['./foo -x', '~/bin/foo -x', 'nice ./foo -x', '/opt/x/foo -x']) assert.strictEqual(tokenOf(line, '-x').explanation, 'Option (not in the dictionary; see `man foo`)', line);
+    assert.strictEqual(tokenOf('/opt/x/foo -x', '-x', 'ja').explanation, 'オプション（辞書に未登録。`man foo` を参照）');
+    for (const line of ["'my prog' -x", "nice 'my prog' -x", 'foo/ -x']) assert.strictEqual(tokenOf(line, '-x').explanation, 'Option (not in the dictionary)', line);
+    assert.strictEqual(tokenOf("'my prog' -x", '-x', 'ja').explanation, 'オプション（辞書に未登録）');
+    // A subcommand's unknown option points to the program's manual.
+    assert.strictEqual(tokenOf('git nope --zzz', '--zzz').explanation, 'Option (not in the dictionary; see `man git`)');
   });
 });

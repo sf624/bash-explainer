@@ -26,6 +26,7 @@ import { inFunction, processOf, readAs, shellEffectOf } from '../semantics/env';
 import { aliasExpandsNext } from '../semantics/effects';
 import { type AliasResolution, aliasesAfter, assignmentsOf, type MaybeHashed, type Missed, type NameResolution, testSpecOf } from '../semantics/names';
 import { docLine, option, type ShellState } from '../semantics/state';
+import { wordMeaning } from '../semantics/words';
 import { isPlainWord, literalContent, staticWordValue, surelyHasSlash } from '../staticword';
 import { returnInSubstitution, scopeOf } from '../substitution-tokens';
 import { field, fields, redirectionsOf, type SyntaxNode, token, wordsText } from '../syntax/tree';
@@ -46,6 +47,8 @@ interface CommandHead {
   name: string; res?: NameResolution; spec?: CommandSpec; kind: Kind; explanation: string; nameTokens: Token[];
   /** A call of a function defined in the script (`maybe`: on some paths only). */
   fn?: true | 'maybe';
+  /** The name is an expansion the model does not read: no name for the argument reader (`$cmd -x`). */
+  unnamed?: true;
   /** The sections of the manual on what the name runs: a builtin's, a function's (3.3), an alias's (6.6). */
   refs?: readonly string[];
   /** The spec of `test` or `[`, when the name runs one of them (src/semantics/names.ts, `testSpecOf`). */
@@ -267,7 +270,7 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, args: S
   // may run a path `hash -p` gave it (also through an alias), or that runs one of a program the dictionary does not
   // know: its words are read with the name's spec, but give no example of it.)
   const other = !!head.fn || !!maybeHashedOf(head.res) || (head.res?.kind === 'file' && head.res.path === 'hashed' && !head.res.known);
-  const reading = () => readArgs(cx, head.spec, args, head.runs ?? head.name, head.fn);
+  const reading = () => readArgs(cx, head.spec, args, head.unnamed ? '' : head.runs ?? head.name, head.fn);
   // (Nor do the words give examples of the command when one is read as fields that are options or values, which the
   // examples would read as written: `x='-n 3'; head $x f`. A glob's or a brace expansion's stay.)
   const read = cx.examplesDropped(reading, (r, e) => (other && !!head.spec) || (readsFields(r.parse) && e.kind !== 'glob' && e.kind !== 'expansion'));
@@ -480,9 +483,11 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
   const name = as ?? sv ?? (isPlainWord(word) ? word.text : nameNode.text);
   // (A word of plain text with braces is the first word they give, `as`; where they do not expand, `{echo,hi}` in dash, it is a name as written.)
   const plain = isPlainWord(word) || (plainText(word) && (as !== undefined || !bracesHere(cx, word)));
-  if (sv === undefined && !plain && word.type !== 'raw_string') {
+  // (A glob is read from the files, `f* -x`: the first match is the command and the others its words, as an expansion's.)
+  const globbed = sv === undefined && as === undefined && plain && word.type !== 'raw_string' && !!wordMeaning(word, cx.state)?.steps.some((st) => st.kind === 'glob' && st.applies !== false && st.parts.length > 0);
+  if (sv === undefined && (!plain || globbed) && word.type !== 'raw_string') {
     return {
-      name, kind: 'command', nameTokens: cx.sub(word), refs: ['3.7.1'],
+      name, kind: 'command', nameTokens: cx.sub(word), refs: ['3.7.1'], unnamed: true,
       explanation: cx.s('変数（展開結果）をコマンド名として実行する', 'Run the expanded value as a command'),
     };
   }

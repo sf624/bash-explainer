@@ -269,7 +269,7 @@ export function shebangOptionTokens(cx: Explainer, role: ArgRole, spec: CommandS
   /** One option, over the characters `from` to `to` (a letter of a cluster, with a value written after it). */
   const one = (l: Extract<ArgRole, { role: 'option' | 'unknown-option' }>, from: number, to: number): Token => {
     const label = l.part ? dash(l.flag) : text;
-    if (l.role === 'unknown-option') return tok(from, to, label, unknownOption(cx, command, spec, l.ambiguous, l.late));
+    if (l.role === 'unknown-option') return tok(from, to, label, unknownOption(cx, { command }, spec, l.ambiguous, l.late));
     const said = l.disables ? turnedOff(cx, dash(l.flag), cx.t(l.text), false, l.spec.offText) : cx.t(l.text);
     // (`#!/usr/bin/awk -f`: the value is the next word, the script's path, unless a letter before took it (`-oO`); one
     // written in the word is its rest, `-i.bak`.)
@@ -302,7 +302,7 @@ function optionToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
       ? cx.s(`短いオプション ${flags.map((p) => `\`${p.label}\``).join(' ')} をまとめて指定`, `Combined short options ${flags.map((p) => `\`${p.label}\``).join(' ')}`)
       : flags[0].explanation, flags.length > 1 ? parts : parts.filter((p) => p.kind === 'argument'));
   }
-  if (role.role === 'unknown-option') return cx.tok(a, 'option', role.refused ? cx.t(role.refused) : unknownOption(cx, parse.command, spec, role.ambiguous, role.late));
+  if (role.role === 'unknown-option') return cx.tok(a, 'option', role.refused ? cx.t(role.refused) : unknownOption(cx, parse, spec, role.ambiguous, role.late));
   const flag = dash(role.flag);
   // `set -o` with no name lists the settings; `set +o` prints commands that restore them.
   const alone = role.missing ? role.spec.noValue : undefined;
@@ -323,7 +323,7 @@ function equalsToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
     : undefined;
   const emb = value.spec?.lang && valueLit ? embeddedText(cx, valueLit, value.spec.lang, a) : undefined;
   const extra = emb?.note ? ` — ${emb.note}` : '';
-  const text = role.role === 'option' ? cx.t(role.text) : unknownOption(cx, parse.command, spec, role.ambiguous);
+  const text = role.role === 'option' ? cx.t(role.text) : unknownOption(cx, parse, spec, role.ambiguous);
   return cx.tok(a, 'option', text + cx.s(`（値: \`${val}\`${known ? ' — ' + cx.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + cx.t(known) : ''})`) + extra + splicedNote(cx, value), emb?.tokens ?? []);
 }
 
@@ -346,7 +346,7 @@ function span(a: SyntaxNode, from: number, to: number, kind: Kind, explanation: 
 function letterParts(cx: Explainer, a: SyntaxNode, l: ArgRole, spec: CommandSpec, parse: ArgvParse, word: number): Token[] {
   const letter = l as Extract<ArgRole, { role: 'option' | 'unknown-option' }>;
   const flag = dash(letter.flag);
-  if (letter.role === 'unknown-option') return [part(a, letter, flag, unknownOption(cx, parse.command, spec))];
+  if (letter.role === 'unknown-option') return [part(a, letter, flag, unknownOption(cx, parse, spec))];
   const parts = [part(a, letter, flag, (letter.disables ? turnedOff(cx, flag, cx.t(letter.text), false, letter.spec.offText) : cx.t(letter.text)) + notForEarlier(cx, parse, word, letter))];
   const value = letter.value;
   if (!value) return parts;
