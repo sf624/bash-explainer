@@ -156,6 +156,8 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
     // the counts where a shape is refused or another role, `cp -v*$x`, or where no shape is read, `cp -v*$x -*`. A word of
     // one part whose first field is one word is read as any word of a known start: `cp {1..$n} x`.)
     assert.deepStrictEqual(['echo x*$y', 'cp -v*$x', 'cp -v*$x -*', 'cp {1..$n} x'].map((l) => wordReadings(table(l), 0)?.kind), [undefined, 'depends', 'depends', 'read']);
+    // (Also where a shape is refused: `jq --arg x*` lacks the value.)
+    assert.deepStrictEqual(wordReadings(table('jq --arg x*$y'), 1)?.kind, 'depends');
   });
 
   it('roles: told apart by the command words that read them, as `sameRole` keys them', () => {
