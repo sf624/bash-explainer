@@ -34,6 +34,12 @@ export interface Trust {
    * BASH_XTRACEFD`): a copy of one of them (`2>&1`) may then fail, as a copy of any other descriptor may.
    */
   readonly fdsMayClose: boolean;
+  /**
+   * Whether the scan read the word `w` of a builtin as the fields the values the script gives its variables make of it
+   * (`x=-e; set $x` as `set -e`, or as `set` where `x` is unset): the walk reads it as its fields too, and they must
+   * be known where it runs.
+   */
+  expands(w: SyntaxNode): boolean;
 }
 
 /** The functions a file's host defines (bats' `run`, `load`…), by name, with their specs (src/dict/bats.ts). */
@@ -63,7 +69,7 @@ export interface StringTrees {
 /** Nothing trusted: for a walk that found, as it went, arithmetic reading text not known (see `Walker`). */
 export const BLIND: Trust = {
   blind: 'arithmetic reads text not known', variable: () => false, closed: () => false, arithNames: () => undefined, copied: () => undefined, associative: () => undefined, mayFail: () => false,
-  fdsMayClose: true,
+  fdsMayClose: true, expands: () => false,
 };
 
 /**

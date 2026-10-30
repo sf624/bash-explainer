@@ -983,7 +983,7 @@ describe('shell state: what conditions are not decided from (docs/design/semanti
   it('does not trust values after a builtin sets or unsets a variable whose name is not known', () => {
     for (const cmd of ['unset "$v"', 'unset -v ${v}', 'read $v', 'printf -v "$v" 2', 'mapfile -t $v', 'getopts a $v', 'export $v=2', 'declare "$v=2"',
       'declare $v', 'declare -n r=$v; r=2', 'unset -n r; declare -n r=$v; unset r', 'wait -p $v']) {
-      assert.strictEqual(decided(`x=1; v=x; ${cmd}; [ "$x" = 1 ] && :`), undefined, cmd);
+      assert.strictEqual(decided(`x=1; v=$1; ${cmd}; [ "$x" = 1 ] && :`), undefined, cmd);
     }
     assert.strictEqual(decided('x=1; unset -f "$v"; [ "$x" = 1 ] && :'), 'true');
     // Nor in a loop where it comes after the condition (the next pass reads it).

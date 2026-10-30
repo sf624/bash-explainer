@@ -1,12 +1,12 @@
 // What the walk of the shell state (src/semantics/walk/) and the trust of its decisions (src/semantics/trust.ts)
 // both read: declaration commands read with their builtin's spec, the catalog of the variables bash sets, and the names
 // an arithmetic text assigns.
-import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
-import { argWordFor } from '../argv/words';
+import type { ArgRole, ArgvParse } from '../argv/interpret';
 import type { Shell } from '../dialect';
 import { builtins } from '../dict/builtins';
 import type { SyntaxNode } from '../syntax/tree';
 import { blinds, followed, none, type Row } from './allow';
+import { builtinRead } from './effects';
 
 /** The names an arithmetic text assigns (`x = 1`, `a[i] += 2`, `i++`, `--j`): group 1 (with 2, a subscript), 3 or 4. */
 export const ARITH_ASSIGNED = /(?<![\w$])(?:([A-Za-z_]\w*)\s*(\[[^\]]*\])?\s*(?:[-+*/%&^|]|<<|>>)?=(?!=)|([A-Za-z_]\w*)\s*(?:\+\+|--)|(?:\+\+|--)\s*([A-Za-z_]\w*))/g;
@@ -238,8 +238,13 @@ export const alwaysNumeric = (name: string): boolean => !!known(name)?.numeric;
 export const changedUnseen = (name: string): boolean => changedByBash(name) || !!known(name)?.setBy;
 
 export interface Declaration {
-  /** The role of each word (the options end at the first name or at `--`). */
+  /** The role of each word (the options end at the first name or at `--`); of a word read as its fields, of its first. */
   roles: Map<SyntaxNode, ArgRole>;
+  /**
+   * The words the builtin gets (`builtinRead`), each with the word of the line it comes from, its role, and its text
+   * where it is a field of that word (`x='a b'; declare $x`: `a` and `b`; undefined for a word read as written).
+   */
+  words: { node: SyntaxNode; role: ArgRole; field?: string }[];
   /** The letters of the options turned on (`ix` of `declare -ix`), and of those turned off (`x` of `declare +x`). */
   on: string;
   off: string;
@@ -249,15 +254,25 @@ export interface Declaration {
 export const optionRoles = (parse: ArgvParse): Extract<ArgRole, { role: 'option' }>[] =>
   parse.roles.flatMap((r) => (r.role.role === 'cluster' ? r.role.letters : [r.role])).filter((r): r is Extract<ArgRole, { role: 'option' }> => r.role === 'option');
 
-/** The words of a declaration command `builtin` read with its spec. */
-export function readDeclarationWords(builtin: string, words: SyntaxNode[], shell: Shell | undefined): Declaration {
-  const parse = interpret(builtins[builtin], words.map(argWordFor(shell)), { name: builtin });
-  const roles = new Map(parse.roles.map(({ word, role }) => [words[word], role]));
+/**
+ * The words of a declaration command `builtin` read with its spec; a word whose fields `fieldsOf` gives, as those
+ * fields (`x=-f; declare $x g` declares the function `g`: `builtinRead`).
+ */
+export function readDeclarationWords(builtin: string, words: SyntaxNode[], shell: Shell | undefined, fieldsOf?: (n: SyntaxNode) => readonly string[] | undefined): Declaration {
+  const read = builtinRead(builtin, words, shell, builtins[builtin], fieldsOf);
+  const { parse } = read;
+  const roles = new Map<SyntaxNode, ArgRole>();
+  const given: Declaration['words'] = [];
+  for (const { word, role } of parse.roles) {
+    const node = read.node(word);
+    if (!roles.has(node)) roles.set(node, role);
+    given.push({ node, role, ...(read.field(word) ? { field: read.text(word) } : {}) });
+  }
   let on = '';
   let off = '';
   for (const r of optionRoles(parse)) {
     if (r.disables) off += r.flag.slice(1);
     else on += r.flag.slice(1);
   }
-  return { roles, on, off };
+  return { roles, words: given, on, off };
 }

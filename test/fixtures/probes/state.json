@@ -58,6 +58,132 @@
     }
   },
   {
+    "manual": "4.3.1",
+    "snippet": "x=-e; set $x; y='-u -o pipefail'; set $y",
+    "note": "set gets the fields of its words, as any command does: x=-e; set $x is set -e",
+    "facts": {
+      "end": {
+        "set": {
+          "errexit": true,
+          "nounset": true,
+          "pipefail": true
+        },
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"-e\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"-u -o pipefail\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "set {-e,-u}; set +B; set {-f,-C}",
+    "note": "set gets the words brace expansion gives (set -e -u), and none with set +B: {-f,-C} is then $1",
+    "facts": {
+      "end": {
+        "set": {
+          "braceexpand": false,
+          "errexit": true,
+          "nounset": true
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "read -r y <<< -e; set $y",
+    "note": "a value the model does not know: set $y is read as written",
+    "gaps": {
+      "end.set.errexit": "the value read gives set $y its option: a word whose value is not known is read as written, an operand"
+    },
+    "facts": {
+      "end": {
+        "set": {
+          "errexit": true
+        },
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"-e\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -eZ 2>/dev/null; x=-u1; set $x 2>/dev/null; set -f -C -Q 2>/dev/null",
+    "note": "set checks every option before it sets any: a letter it does not have makes it fail and turn nothing on",
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"-u1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "g() { :; }; x=-f; declare $x g; y=-fx; declare $y g; z='a b'; declare $z; e=; declare $e q; w=-i; declare $w n; n=1+2",
+    "note": "the declaration builtins get the fields of their words: declare $x g with x=-f is declare -f g (no variable g), $z declares a and b, an empty $e gives no word",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-"
+          },
+          "b": {
+            "attrs": "-"
+          },
+          "e": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "n": {
+            "attrs": "i",
+            "value": "\"3\""
+          },
+          "q": {
+            "attrs": "-"
+          },
+          "w": {
+            "attrs": "-",
+            "value": "\"-i\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"-f\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"-fx\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"a b\""
+          }
+        },
+        "functions": {
+          "g": "fx"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
     "id": "set-allexport",
     "manual": "4.3.1",
     "snippet": "set -a; x=1; set +a; y=2",

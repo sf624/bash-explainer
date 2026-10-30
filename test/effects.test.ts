@@ -4,7 +4,7 @@ import * as assert from 'assert';
 import { execFileSync, spawnSync } from 'child_process';
 import { Analyzer } from '../src/analyzer';
 import { builtins } from '../src/dict/builtins';
-import { variableWrites, builtinParse, wrapped } from '../src/semantics/effects';
+import { variableWrites, builtinParse, builtinRead, wrapped } from '../src/semantics/effects';
 import { attribute, shellState } from '../src/semantics/state';
 import { statusModel } from '../src/semantics/status';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -76,7 +76,7 @@ describe('builtin effects from the spec (src/semantics/effects.ts)', () => {
     assert.ok(shellState(parser.parse('x=1; command "$c" read x; [ "$x" = 1 ] && :')).blind);
     // (The parse gives each variable its word.)
     const words = args('read -ra arr x');
-    assert.deepStrictEqual(variableWrites(builtins.read, builtinParse('read', words, undefined), words).map((v) => [v.name, v.sets]), [['arr', 'array']]);
+    assert.deepStrictEqual(variableWrites(builtins.read, builtinRead('read', words, undefined)).map((v) => [v.name, v.sets]), [['arr', 'array']]);
   });
   it('counts the words of a brace expansion only in a shell that has it, where the readers of arguments are given the shell', () => {
     // `trap {x,EXIT}` is the action `x` and the signal `EXIT` in bash, and one word, a signal that is not one, in dash and sh.

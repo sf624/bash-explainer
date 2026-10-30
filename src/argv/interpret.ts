@@ -202,12 +202,12 @@ const ambiguous = (r: { candidates?: string[] }): { ambiguous?: string[] } => (r
 const known = (w: ArgWord): string => w.value ?? w.prefix ?? '';
 
 /**
- * Reads the words of a command (its arguments, without the name) with its spec. A word whose fields the model knows
- * (`ArgWord.fields`: not one known as written, `value` with no `count`) is read as those fields, as bash gives them to
- * the command (`x='-r a'; cp $x d` is `cp -r a d`; `z=; cp $z c` is `cp c`): one field as the word's value, other than
- * one as words of their own, whose roles go back to the word (`regroup`, `folded`).
+ * The words a command gets for the words of its line (`interpret`): a word whose fields the model knows
+ * (`ArgWord.fields`: not one known as written, `value` with no `count`) gives those fields, each a word of known text
+ * (none for an empty one); the others stay as they are. `groups`: where the fields of a word that gives other than one
+ * stand (`lineIndex` gives the word of the line of each); `own`: the words of the line read as their one field.
  */
-export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretContext = {}): ArgvParse {
+export function fieldLine(words: readonly ArgWord[]): { line: ArgWord[]; groups: Group[]; own: Set<number> } {
   const line: ArgWord[] = [];
   const groups: Group[] = [];
   const own = new Set<number>();
@@ -222,6 +222,17 @@ export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretCon
       line.push(...groups.at(-1)!.words!);
     }
   });
+  return { line, groups, own };
+}
+
+/**
+ * Reads the words of a command (its arguments, without the name) with its spec. A word whose fields the model knows
+ * (`ArgWord.fields`: not one known as written, `value` with no `count`) is read as those fields, as bash gives them to
+ * the command (`x='-r a'; cp $x d` is `cp -r a d`; `z=; cp $z c` is `cp c`): one field as the word's value, other than
+ * one as words of their own, whose roles go back to the word (`regroup`, `folded`).
+ */
+export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretContext = {}): ArgvParse {
+  const { line, groups, own } = fieldLine(words);
   const back = groups.length ? lineIndex(groups) : (j: number): number => j;
   const read = (words: ArgWord[], at: (j: number) => number, bare: boolean): ArgvParse => new Reader(words, ctx, new Set(), at, bare).read(spec, 0, words.length, ctx.name ?? '', [], false, []);
   const parse = read(line, back, false);

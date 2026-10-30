@@ -921,6 +921,21 @@ The model now looks every construct of a script up in one table ([docs/design/tr
 
 The same holds for `set -H` and `set -o history` (history expansion may run an earlier line), `set -n`, `set -t`, `set -o posix` turned on in the middle of a script (a script that starts in POSIX mode, `sh` or `#!/bin/bash --posix`, keeps its values), `shopt -s` of `compat31` to `compat44`, `extdebug`, `localvar_inherit` (a plain `local n` keeps the value from outside, which arithmetic would run), `localvar_unset`, `assoc_expand_once` and `array_expand_once`, `shopt -u extquote` or `globasciiranges`, `POSIXLY_CORRECT`, `LANG`, `LC_ALL`, `LC_CTYPE` or `LC_COLLATE` set to a locale other than C (case conversion, character classes and ranges follow it), an option or a word that may be one that `set` or `shopt` does not have (`shopt -s "$opt"`, `set $args`), an option a builtin's spec does not have (`read -Q`), a parameter expansion bash rejects (`${x@Z}`), and text the parser cannot read. It also holds for `SHELLOPTS`, `BASHOPTS` or `POSIX_PEDANTIC` in a shebang's `env -S` line or given to another shell (bash turns on what they list when it starts), a shell started with an option such as `-r`, `-i`, `--login` or `--debugger`, or with `-O "$opt"`, a write through a nameref (`declare -n r=BASH_COMPAT; r=31`), and an empty command name (`cmd=; $cmd eval x=2` runs `eval`). `#!/bin/bash -a` exports the functions defined after it, as `set -a` does. What keeps the values: turning those options off (`set +k`), a locale of `C`, `POSIX`, `C.UTF-8` or empty, an assignment before a program (`LANG=de_DE.UTF-8 sort`: it goes to the program's environment only), `set -C` (a redirection to a file may fail anyway), and another shell started with `LC_ALL=C` or `-o posix`.
 
+### The words of `set` and the declarations, as fields
+
+The builtins whose words say what they set or turn on (`set`, `declare`, `typeset`, `local`, `export`, `readonly`, and those whose options or operands name a variable or a function: `printf -v`, `read`, `mapfile -C`, `complete -F`…) get the fields of a word whose variables the script sets, as the argument interpreter reads them (see "Words as bash reads them"; bash 5.2 and 5.3; test/fixtures/probes/state.json, test/decisions.test.ts):
+
+| Script | bash | Said before | Said now |
+| --- | --- | --- | --- |
+| `x=-e; set $x`, `y='-u -o pipefail'; set $y`, `set {-e,-u}` | `set -e`; `set -u -o pipefail`; `set -e -u` | nothing in the whole script (no value, no decided condition, no code faded), and errexit off | errexit on (and nounset, pipefail); the rest of the script as without them |
+| `set +B; set {-f,-C}` | `{-f,-C}` is `$1` | nothing in the whole script | noglob off |
+| `x=-f; declare $x g`, `y=-fx; declare $y g`, `z='a b'; declare $z`, `e=; declare $e q`, `w=-i; declare $w n; n=1+2` | no variable `g`; the function `g` exported; `a` and `b` declared; `q` declared; `n` is 3 | nothing in the whole script; a variable `g` | as bash |
+| `x=1; v=x; export $v=2`, then `if [ "$x" = 1 ]` | `x` is 2 | nothing in the whole script | always false |
+| `u=1; x=-v; printf $x u 2`, then `if [ "$u" = 1 ]` | `printf -v u 2`: `u` is 2 | always true; the `else` never runs | nothing |
+| `set -eZ`, `x=-u1; set $x`, `set -f -C -Q` | "invalid option": bash checks every option first, and turns none on | errexit on (nounset, noglob and noclobber) | none of them |
+
+Each value the script writes to the variable is read, and none (the variable unset there), also with brace expansion off where the word has braces. Where a value is not known (`read -r y; set $y`, `set $1`), the word is read as written, as before: `set` then still trusts nothing, and `printf $y u 2` is still read as a format.
+
 ### Shell code in host files
 
 A YAML block scalar is read as YAML gives it to the runner: without the indentation of its first line, or of the indicator (`run: |2`). So an indented `EOF` ends a here-document, and `<<-` strips the tabs after the indentation:

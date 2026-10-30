@@ -1335,6 +1335,7 @@
  "npm run build",
  "nsenter",
  "o README",
+ "o=-i; v=1+2; declare $o n=$v",
  "offset",
  "old -a x -b y -c z",
  "op",
