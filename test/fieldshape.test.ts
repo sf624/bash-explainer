@@ -223,8 +223,8 @@ describe('the field domain (fieldshape.ts)', () => {
     });
     it('does not know the words the word model reads otherwise than bash', () => {
       assert.deepStrictEqual(['~\\\n', '"$y\\\na"', '$\\\n{x}', '$x\\\n{a,b}','a<(:)', '<(:)a', '1<(:)"x"', '<(:)\\\n$x','$${1..2}', '$$$${a,b}', 'a{Z..a}', '{a..c}{Z..a}', '$_{a,b}'].map((t) => shapesOf(`show ${t}`)), Array(13).fill(undefined));
-      // (The process substitution itself, after the text it is joined to.)
-      const joined = parser.parse('show a<(:)');
+      // (The word after a process substitution and a line continuation, which the parser reads as two.)
+      const joined = parser.parse('show <(:)\\\n$x');
       assert.strictEqual(wordShapes(fields(descendants(joined.root, ['command'])[0], 'argument')[1], shellState(joined, 'bash')), undefined);
       assert.deepStrictEqual(['$$${x}','{a..c}', '<(:)', '~/a', '$y-a'].map((t) => !!shapesOf(`show ${t}`)), [true, true, true, true, true]);
       // (An IFS with a control character, `\v`; with a glob character, where a value has a backslash.)
