@@ -49,24 +49,22 @@ export function sameRole(a: ArgRole, b: ArgRole): boolean {
 
 /**
  * The roles of a word that say what it takes when an option's value before it gives none or several (`ArgRole` `none`,
- * `more`): with `$d` empty, `git -C $d log` changes to the directory `log`, and `sudo -u $u ls` runs nothing as the user `ls`.
+ * `more`): with `$d` empty, `git -C $d log` changes to the directory `log`, and `sudo -u $u ls` runs nothing as the user
+ * `ls`. Not an operand's, which says it in its `readings` (src/argv/profiles.ts).
  */
-const HEDGED = new Set<ArgRole['role']>(['operand', 'value', 'option', 'cluster', 'unknown-option', 'pattern-option', 'end-of-options', 'subcommand', 'command']);
+const HEDGED = new Set<ArgRole['role']>(['value', 'option', 'cluster', 'unknown-option', 'pattern-option', 'end-of-options', 'subcommand', 'command']);
 type Hedged = Extract<ArgRole, { none?: NoneRole[] }>;
 
 /**
- * The roles a word may take in a reading, as a hedge names them: an operand's and those of its hedges, a value's, the
- * operand a command run fills; undefined for a role no hedge names (an option, a subcommand…). (Of a word that may
- * give several, the role of its first word: `MoreRole.first`.)
+ * The roles a word may take in a reading, as a hedge names them: an operand's, a value's, the operand a command run
+ * fills; undefined for a role no hedge names (an option, a subcommand…). (Of a word that may give several, the role of
+ * its first word: `MoreRole.first`.)
  */
 export function thenRoles(role: ArgRole): ThenRole[] | undefined {
   if (role.role === 'value') return [{ value: role }];
   if (role.role === 'command') return role.item ? [{ spec: role.item }] : undefined;
   if (role.role !== 'operand') return undefined;
-  if (!role.spec) return [{}];
-  const specs = [role.spec, ...(role.otherwise ? [role.otherwise] : []), ...(role.several ?? []).flatMap((r) => r.roles), ...(role.byCount?.readings ?? []).map((r) => r.spec), ...role.mixed?.roles ?? []];
-  const all: ThenRole[] = [...specs.map((spec) => ({ spec })), ...(role.none ?? []).map((r): ThenRole => (r.spec ? { spec: r.spec } : { value: r.value! }))];
-  return all.filter((r, j) => all.findIndex((x) => keyOf(x) === keyOf(r)) === j);
+  return [role.spec ? { spec: role.spec } : {}];
 }
 
 /** What tells two roles a hedge names apart: an operand's text without its parentheses, an option's value, or neither. */
@@ -106,9 +104,8 @@ export function valueHedges(parse: ArgvParse, spec: CommandSpec, line: ArgWord[]
   /** The roles word k may take where the value j gives several words, when they differ from its role `role`. */
   const moreOf = (role: ArgRole, k: number, j: number): MoreRole | undefined => {
     const { roles, same } = rolesIn(j, (c) => [k + c - 1]);
-    // (The same one role as here, where nothing here depends on counts: `head -n $a f`, `f` is a file either way.)
-    const counted = role.role === 'operand' && !!(role.otherwise || role.several || role.byCount || role.mixed);
-    if (!roles || (roles.length === 1 && same(role) && !counted)) return undefined;
+    // (The same one role as here: `sudo -u $u ls`, `ls` is the command either way.)
+    if (!roles || (roles.length === 1 && same(role))) return undefined;
     return { word: back(j), roles, ...(mayGiveSeveral(line[k]) ? { first: true as const } : {}) };
   };
   const lazy = <T>(role: object, key: string, read: () => T | undefined): void => {
@@ -116,10 +113,7 @@ export function valueHedges(parse: ArgvParse, spec: CommandSpec, line: ArgWord[]
     Object.defineProperty(role, key, { enumerable: true, configurable: true, get: () => (memo === null ? (memo = read()) : memo) });
   };
   const hedge = (role: Hedged, k: number, drops: number[]): void => {
-    // (Its own, read when asked: an operand's, a getter of `withHedge`.)
-    const own = Object.getOwnPropertyDescriptor(role, 'none');
-    let memo: NoneRole[] | undefined | null = null;
-    const read = (): NoneRole[] | undefined => {
+    lazy(role, 'none', () => {
       const more = drops.flatMap((j): NoneRole[] => {
         const then = alt(j).get(k - 1);
         /* c8 ignore next -- every word has a role in a reading (a guard against a bug in it) */
@@ -129,10 +123,8 @@ export function valueHedges(parse: ArgvParse, spec: CommandSpec, line: ArgWord[]
         if (then.role === 'operand' && then.spec) return [{ words: [back(j)], spec: then.spec, ...first }];
         return then.role === 'value' ? [{ words: [back(j)], value: then, ...first }] : [];
       });
-      const mine = own?.get?.call(role) as NoneRole[] | undefined;
-      return mine || more.length ? [...mine ?? [], ...more] : undefined;
-    };
-    Object.defineProperty(role, 'none', { enumerable: true, configurable: true, get: () => (memo === null ? (memo = read()) : memo) });
+      return more.length ? more : undefined;
+    });
   };
   const visit = (q: ArgvParse, of: CommandSpec | undefined): void => {
     const drops: number[] = [];

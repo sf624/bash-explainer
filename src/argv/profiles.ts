@@ -2,10 +2,10 @@
 // sections 2.4 and 2.5), read from the table of src/argv/readings.ts: its profile at each of its contexts (its roles for
 // each of its own counts, said by place or by own count), the classes of contexts with one profile, and the conditions
 // that say each class (at most `CLAUSES` clauses, each of at most `CONDITIONS` conditions of at most two atoms, sound and
-// complete), or past them a text without conditions. Nothing reads it yet: the explanation reads it from step 4 on.
+// complete), or past them a text without conditions. `interpret` gives them to the operands (`OperandRole.readings`).
 import type { ArgRole, ArgvParse } from './interpret';
 import type { Coordinate, Outcome, ReadingsTable, WordAt } from './readings';
-import { roleText } from './valuehedges';
+import { allRoles, roleText } from './valuehedges';
 
 /** The most clauses a word says (section 2.5, the budget): past them, its other classes are one text without conditions. */
 export const CLAUSES = 4;
@@ -178,14 +178,32 @@ function cover(found: readonly Candidate[], inside: bigint): Candidate[] | undef
 }
 
 /**
+ * Whether every word of every shape read has one role, the same (`echo`'s text, `rm`'s files): then no word's role
+ * depends on the counts. Not where no shape is read (past the cap).
+ */
+function uniform(t: ReadingsTable): boolean {
+  if (!t.shapes) return false;
+  const keys = new Set<string>();
+  for (const sums of t.shapes) {
+    const r = t.reading(sums);
+    if (r.outcome !== 'read') return false;
+    for (const role of allRoles(r.parse).values()) keys.add(roleKey(role));
+  }
+  return keys.size === 1;
+}
+
+/**
  * The readings of the command's word `k` (section 2.4 and 2.5) from the table `t`: undefined where its role as written
- * is all there is to say (past the cap, a word whose role cannot depend on the counts); `Depends` where it may and is
+ * is all there is to say (past the cap, a word whose role cannot depend on the counts, a word known to give none); `Depends` where it may and is
  * not read (past the cap, or a reading the pattern matcher gave up).
  */
 export function wordReadings(t: ReadingsTable, k: number): WordReadings | Depends | undefined {
   const names = (): number[] => [...new Set(t.variables.map((v) => t.back(v.words[0])))];
   const cx = t.contexts(k);
-  if (!cx) return t.hedged().includes(k) || t.parted[k] ? { kind: 'depends', words: names() } : undefined;
+  // (A word in parts has no contexts of its own; it says nothing where no word's role depends on the counts: `echo {1..$n}`.)
+  if (!cx) return (t.hedged().includes(k) || t.parted[k]) && !uniform(t) ? { kind: 'depends', words: names() } : undefined;
+  // (A word the model knows gives no word has no role to say: `z=; cp $z $u d`.)
+  if (cx.own[0] === 0) return undefined;
   const own = t.variableAt[k];
   const orMore = own !== undefined && (t.variables[own].max ?? Infinity) > t.variables[own].top;
   const profiles = cx.contexts.map((context) => profileOf(t, cx.own, cx.own.map((c) => t.readAt(k, context, c)), orMore));

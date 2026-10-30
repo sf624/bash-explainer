@@ -42,7 +42,7 @@ import { elementsOf } from '../semantics/elements';
 import { argWordIn, countIn, fieldsIn, untilWords } from '../semantics/argwords';
 import { arrayKind, globOff, NO_SPEC, notForEarlier, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
-import { eachText, functionArgs, hedged, listed, numbered, restText, SHIFTS, withNone, wordItems } from './operand-texts';
+import { eachText, functionArgs, listed, numbered, readingsParts, restText, SHIFTS, withNone, wordItems } from './operand-texts';
 import { soleRead, turnedOff, unknownOption } from './option-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -441,7 +441,8 @@ function fieldsToken(cx: Explainer, a: SyntaxNode, role: FieldsRole, command: st
   // (`unset {,}`: the braces say so.)
   if (!role.words.length) return positional(cx, a, braceTexts([a])?.every((w) => !w) ? noWord(cx) : cx.s(`展開すると語が残らないので、\`${program}\` には渡らない`, `expands to no word, so \`${program}\` does not get it`));
   // (A field's role may depend on how many words the others give: `p='a b'; cp $p $u`, `b` is the destination when `$u` gives none.)
-  const t = positional(cx, a, listed(cx, wordItems(cx, role.words, role.roles, true, (desc, r) => hedged(cx, numbered(desc, numbers.get(r)), a.text, r, nodes), nodes)));
+  const said = listed(cx, wordItems(cx, role.words, role.roles, true, (desc, r) => numbered(desc, numbers.get(r)), nodes));
+  const t = positional(cx, a, said + readingsParts(cx, said, role.readings, nodes.indexOf(a), nodes).rest);
   const options = role.roles.every(({ role: r }) => OPTION_ROLES.has(r.role));
   return options ? { ...t, kind: 'option' } : t;
 }
@@ -476,18 +477,18 @@ function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, role: Ex
     if (fields && fields.length > 1) desc = listed(cx, fields.map((f, k) => `\`${f}\`${cx.s(`（${text.replace('`$N`', `\`$${at.n + k}\``)}）`, ` (${text.replace('`$N`', `\`$${at.n + k}\``)})`)}`));
     if (desc !== text && !at.sure) desc += SHIFTS(cx);
   }
-  // (`tar -cf $a b`: a word the spec does not describe, but the value of `-f` when `$a` gives none.)
-  if (!desc && (role.none || role.more)) desc = cx.s(`文字列 \`${a.text}\``, `Word \`${a.text}\``);
-  const lang = isFn ? undefined : item?.lang;
-  // (The roles when words before it give none come after the note on its language, which is of this reading: `grep -d $v a b`.)
-  const late = lang && (role.none || role.more) ? role : undefined;
-  if (desc) desc = hedged(cx, desc, a.text, role, nodes, !late);
+  // (Its readings: `cp -t $d $a b`, the value of `-t` when `$d` and `$a` give none; `tar -cf $a b`, a word the spec does not
+  // describe. The clauses come after the note on its language, of the reading as written: `grep -d $v a b`.)
+  const [own, lang] = [desc ?? cx.s(`文字列 \`${a.text}\``, `Word \`${a.text}\``), isFn ? undefined : item?.lang];
+  const parts = isFn ? undefined : readingsParts(cx, own, role.readings, word, nodes);
+  if (parts && (parts.rest || parts.base !== own)) desc = parts.base + (lang ? '' : parts.rest);
   // (A function named like a declaration builtin, or `alias`, given `a=…`: bash's parser marked the word.)
   // (Not the operand's meaning when bash assigns an array and passes only the name: `alias b=(1 2)`.)
   const named = isFn || field(a, 'value')?.type !== 'array' ? desc : undefined;
   if (a.type === 'variable_assignment') return markedAssignment(cx, a, named ?? cx.s(`引数 \`${a.text}\``, `Argument \`${a.text}\``), parse.command, isFn);
-  const t = withNone(cx, positional(cx, a, desc, lang), late, nodes);
-  return isFn ? t : { ...t, ...optionRefs(item?.values, a.text) };
+  const t = positional(cx, a, desc, lang);
+  const late = lang && parts?.rest ? { ...t, explanation: t.explanation + parts.rest } : t;
+  return isFn ? late : { ...late, ...optionRefs(item?.values, a.text) };
 }
 
 /**

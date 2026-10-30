@@ -80,52 +80,33 @@ describe('argv capture: the word model and the explanation against bash (oracles
     assert.deepStrictEqual(wordCounts([{ fields: ['cp'] }, {}, {}], ['cp', 'a', 'b']), [1, undefined, undefined]);
   });
 
-  it('reads the role of a field at its place in a hedge or in the words of a brace expansion', () => {
+  it('reads the role of a field at its place in the readings or in the words of a brace expansion', () => {
     const dest = ['destination (the new name, or an existing directory)', 'destination: the new name, or an existing directory'];
     const place = (text: string, at: number, of: number, counts: [string, number][] = []) => ({ text, at, of, counts: new Map(counts) });
     // (The words of `cp a{,'.bak'}` and `cp a{,"b c"}` as written, with their quotes; bash's fields have none: by place.)
     const quoted = "expands to `a` (source) and `a'.bak'` (destination: the new name, or an existing directory)";
     const spaced = 'expands to `a` (source) and `a"b c"` (destination: the new name, or an existing directory)';
     assert.deepStrictEqual([saysOperand(quoted, dest, place('a.bak', 1, 2)), saysOperand(quoted, dest, place('a', 0, 2)), saysOperand(spaced, dest, place('ab c', 1, 2))], [true, false, true]);
-    // (`several`: the part for the number of fields the word gave; `otherwise`: the part for the words it names.)
-    const several = 'source when `$a` expands to a single word; when it expands to more, they are source, then destination directory';
-    assert.deepStrictEqual([saysOperand(several, ['source'], place('a', 0, 1)), saysOperand(several, ['destination directory'], place('b', 1, 2)), saysOperand(several, ['source'], place('b', 1, 2))], [true, true, false]);
-    // (A reading for each count: "2 words", "2 words or more", and "more" after the reading before; none for a count it
-    // does not cover. The first may name the word, with no reading for one.)
-    const counted = `source when \`$a\` expands to a single word; when it expands to 2 words, they are source, then ${dest[0]}; when it expands to more, they are source, then destination directory`;
+    // (By own count: the group for the number of fields the word gave, the first field the first role and the last the
+    // last; "more words" after the group before; none for a count no group covers. The first may name the word.)
+    const counted = `source when \`$a\` expands to a single word; when it expands to 2 words, they are source, then ${dest[0]}; when it expands to more words, they are source, then destination directory`;
     assert.deepStrictEqual([saysOperand(counted, dest, place('b', 1, 2)), saysOperand(counted, ['destination directory'], place('b', 1, 2)), saysOperand(counted, ['destination directory'], place('c', 2, 3)), saysOperand(counted, dest, place('c', 2, 3)), saysOperand(counted, ['source'], place('a', 0, 1))], [true, false, true, false, true]);
-    const ranges = 'when `$a` expands to 3 words, they are A, then B; when it expands to 4 words, they are A, then C; when it expands to 6 words or more, they are A, then D';
-    assert.deepStrictEqual([2, 3, 4, 5, 6, 9].map((n) => ['B', 'C', 'D'].findIndex((x) => saysOperand(ranges, [x], place('x', n - 1, n)))), [-1, 0, 1, -1, 2, 2]);
-    assert.deepStrictEqual([saysOperand(ranges, ['A'], place('x', 0, 4)), saysOperand(ranges, ['D'], place('x', 1, 4)), saysOperand(ranges, ['C'], place('x', 1, 3))], [true, false, false]);
-    // ("More" first, after no reading: another form.)
-    assert.strictEqual(saysOperand('when `$a` expands to more, they are A, then B', ['B'], place('x', 1, 2)), false);
-    const otherwise = 'destination (the new name, or an existing directory) when `$a` expands to a single word; destination directory when it expands to more';
-    assert.deepStrictEqual([1, 2, 0].map((n) => saysOperand(otherwise, dest, place('b', 0, 1, [['$a', n]]))), [true, false, false]);
-    // (`byCount`: the reading for the count of the word it names; none for a count it does not cover.)
-    const by = 'S when `$a` expands to a single word; A when it expands to 2 words; B when it expands to more';
-    assert.deepStrictEqual([1, 2, 3, 7].map((n) => ['S', 'A', 'B'].findIndex((x) => saysOperand(by, [x], place('f', 0, 1, [['$a', n]])))), [0, 1, 2, 2]);
-    assert.strictEqual(saysOperand('S when `$a` expands to 2 words; A when it expands to 3 words', ['A'], place('f', 0, 1, [['$a', 5]])), false);
-    // (`mixed`: the first part when the words it names give one each, else any role of the list (or its own, "it can
-    // also be"), none too; "as few as each can", either; "by how many words", any of the list.)
-    const mixed = 'dest when `$a`, `$b` expand to a single word; when they expand to other numbers of words, each of its words can be src or dir';
-    const ab = (a: number, b: number): [string, number][] => [['$a', a], ['$b', b]];
-    assert.deepStrictEqual([saysOperand(mixed, ['dest'], place('z', 0, 1, ab(1, 1))), saysOperand(mixed, ['dest'], place('z', 0, 1, ab(2, 1))), saysOperand(mixed, ['dir'], place('z', 0, 1, ab(2, 1))), saysOperand(mixed, ['dir'], place('z', 0, 1, ab(0, 1))), saysOperand(mixed, ['dir'], place('z', 0, 1, [['$a', 1]]))], [true, false, true, true, false]);
-    const also = 'dest when `$a`, `$b` expand to a single word; when they expand to other numbers of words, it can also be src';
-    assert.deepStrictEqual(['dest', 'src', 'X'].map((x) => saysOperand(also, [x], place('z', 0, 1, ab(0, 1)))), [true, true, false]);
-    const few = 'dest when `$a`, `$b` expand to as few words as each can; when they expand to other numbers of words, it can also be src or dir';
-    assert.deepStrictEqual(['dest', 'dir', 'X'].map((x) => saysOperand(few, [x], place('z', 0, 1, ab(3, 1)))), [true, true, false]);
-    assert.deepStrictEqual(['M', 'F', 'X'].map((x) => saysOperand('each of its words is M or F, by how many words `$a`, `$b` expand to', [x], place('z', 0, 2, ab(2, 1)))), [true, true, false]);
-    // (Of a word that gives two words at least: the first part for two.)
-    const two = 'bytes A when `{a,b}*` expands to 2 words; bytes B when it expands to more';
-    assert.deepStrictEqual([2, 3].map((n) => [saysOperand(two, ['bytes A'], place('f', 0, 1, [['{a,b}*', n]])), saysOperand(two, ['bytes B'], place('f', 0, 1, [['{a,b}*', n]]))]), [[true, false], [false, true]]);
-    // (`none`: the part for the words it names when they gave none and this word one; else the part before.)
-    const none = 'destination directory; source when `$a`, `$b` expand to nothing';
+    const ranges = 'when `$a` expands to 3 words, they are A, then B; when it expands to 4 to 5 words, they are A, then C; when it expands to 6 words or more, they are A, then D';
+    assert.deepStrictEqual([2, 3, 4, 5, 6, 9].map((n) => ['B', 'C', 'D'].findIndex((x) => saysOperand(ranges, [x], place('x', n - 1, n)))), [-1, 0, 1, 1, 2, 2]);
+    // ("More words" first, after no group: another form, a finding.)
+    assert.strictEqual(saysOperand('when `$a` expands to more words, they are A, then B', ['B'], place('x', 1, 2)), false);
+    // (A clause holds for the counts of the words it names: `cp $a b`.)
+    const clauses = `${dest[0]}. When \`$a\` expands to nothing, it is source. When \`$a\` expands to several words, it is destination directory`;
+    assert.deepStrictEqual([1, 0, 2].map((n) => ['source', 'destination directory', dest[0]].filter((x) => saysOperand(clauses, [x], place('b', 0, 1, [['$a', n]]))).join()), [dest[0], 'source', 'destination directory']);
+    // (The fields the model knows, then a clause on the others: `p='a b'; cp $p $u`.)
+    const fields = 'expands to `a` (source) and `b` (source). When `$u` expands to nothing, its words are source, then destination (the new name, or an existing directory)';
+    assert.deepStrictEqual([saysOperand(fields, dest, place('b', 1, 2, [['$u', 0]])), saysOperand(fields, dest, place('b', 1, 2, [['$u', 1]])), saysOperand(fields, ['source'], place('b', 1, 2, [['$u', 1]]))], [true, false, true]);
+    // (The hedge of a value: the part for the words it names when they gave none and this word one; else the part before.)
+    const none = 'Value for `-e`; file to search when `$a`, `$b` expand to nothing';
     const both = (n: number): [string, number][] => [['$a', n], ['$b', n]];
-    assert.deepStrictEqual([saysOperand(none, ['source'], place('c', 0, 1, both(0))), saysOperand(none, ['source'], place('c', 0, 1, both(1))), saysOperand(none, ['destination directory'], place('c', 0, 1, both(1))), saysOperand(none, ['source'], place('c', 0, 1, [['$a', 0], ['$b', 1]]))], [true, false, true, false]);
-    assert.deepStrictEqual([0, 1].map((n) => saysOperand(`${otherwise}; source when \`$a\` expands to nothing`, ['source'], place('b', 0, 1, [['$a', n]]))), [true, false]);
-    // (A hedge in another form is a finding, so that a new wording is seen.)
-    assert.strictEqual(saysOperand('source when `$a` expands to a single word, or else none', ['source'], place('a', 0, 1)), false);
-    assert.strictEqual(saysOperand('source when `$a` expands to nothing, or more', ['source'], place('a', 0, 1)), false);
+    assert.deepStrictEqual([saysOperand(none, ['file to search'], place('c', 0, 1, both(0))), saysOperand(none, ['file to search'], place('c', 0, 1, both(1))), saysOperand(none, ['file to search'], place('c', 0, 1, [['$a', 0], ['$b', 1]]))], [true, false, false]);
+    // (A clause in another form is a finding, so that a new wording is seen.)
+    assert.strictEqual(saysOperand('source. When `$a` expands to nothing or more, it is target', ['source'], place('a', 0, 1, [['$a', 1]])), false);
   });
 
   it('accepts a class of differences only under its condition, and refuses a class with none', () => {

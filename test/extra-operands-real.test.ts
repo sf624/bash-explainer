@@ -166,7 +166,7 @@ describe('extra operands, compared with the real tools', () => {
     for (const [line, word] of [['tr x $a -d', '-d'], ['tr -d x $a -s', '-s'], ['tr x $a -d', '$a']]) {
       const { words, roles } = read(line);
       const role = roles[words.indexOf(word)]!;
-      const texts = [role.spec, ...(role.mixed?.roles ?? []), ...(role.several ?? []).flatMap((x) => x.roles), ...(role.byCount?.readings ?? []).map((x) => x.spec), role.otherwise].flatMap((o) => (o ? [o.text.en] : []));
+      const texts = readingTexts(role);
       assert.ok(texts.length, line);
       assert.ok(!texts.some((t) => /^delete the characters/.test(t)), `${line}: ${word} is no option`);
     }
@@ -186,9 +186,7 @@ describe('extra operands, compared with the real tools', () => {
   it('tr: a hedged lone set is a set to delete or squeeze only with -d or -s', function () {
     const texts = (line: string, word: string): string[] => {
       const { words, roles } = read(line);
-      const role = roles[words.indexOf(word)]!;
-      const all = [role.spec, ...(role.none ?? []).map((x) => x.spec), ...(role.mixed?.roles ?? []), ...(role.several ?? []).flatMap((x) => x.roles), ...(role.byCount?.readings ?? []).map((x) => x.spec), role.otherwise];
-      return all.flatMap((o) => (o ? [o.text.en] : []));
+      return readingTexts(roles[words.indexOf(word)]!);
     };
     const squeezeOrDelete = 'character set to delete or squeeze (`-d`, `-s`)';
     for (const [line, word] of [['tr $a $b', '$a'], ['tr $a $b', '$b'], ['tr $a $b f', 'f'], ['tr $a $b f', '$b'], ['tr $a x $b', 'x'], ['tr $a x $b', '$a'], ['tr -c $a $b f', 'f'], ['tr -t $a x $b', 'x']]) {
@@ -292,13 +290,13 @@ describe('extra operands, compared with the real tools', () => {
     it(`hedge: ${line}`, function () {
       const { tool, words, roles } = read(line);
       if (!usableTool(tool)) this.skip();
-      const role = roles[words.indexOf(word)]!;
+      const i = words.indexOf(word);
+      const role = roles[i]!;
       for (let n = 1; n <= values.length; n++) {
-        // The roles of this reading: of the words `$a` gives (`several`), or of the word after it (`byCount`).
-        const readings = role.several ?? role.byCount!.readings.map((x) => ({ from: x.from, orMore: x.orMore, roles: [x.spec] }));
-        const reading = readings.find((x) => x.from === n || (x.orMore && x.from <= n)) ?? (n === 1 ? { roles: [role.spec!] } : undefined);
+        // The roles of this reading: of the words `$a` gives, or of the word after it.
+        const reading = readingAt(role, i, new Map([['$a', n]]), words, word === '$a' ? n : 1);
         assert.ok(reading, `${line}: no reading for ${n} words`);
-        const refused = reading.roles.some((o) => o.extra);
+        const refused = reading.some((o) => o.extra);
         const r = runLine(`a='${values.slice(0, n).join(' ')}'; ${line}`);
         assert.strictEqual(refusals(tool).test(r.err), refused, `${line} with ${n} words: ${r.err}`);
       }
@@ -350,7 +348,7 @@ describe('extra operands, compared with the real tools', () => {
           const got = lit.roles[at(i)]?.spec;
           const where = `${line} with ${a} and ${b} words: ${words[i]}`;
           assert.ok(got, `${where}: no role`);
-          const ok = allowed(roles[i]!, counts, words);
+          const ok = allowed(roles[i]!, i, counts, words);
           assert.ok(ok.includes(got.text.en), `${where} is ${got.text.en}, not among ${ok.join(' | ')}`);
           if (got.extra && !skipNamed) assert.match(run1.err, refusals(tool), `${where}: not refused`);
           if (skipNamed === words[i]) assert.match(got.text.en, /^bytes to skip/, `${where}: ${run1.err}`);
@@ -369,26 +367,35 @@ describe('extra operands, compared with the real tools', () => {
   }
 });
 
+/** The texts of every role the readings of an operand give it, for any count (an operand's, an option's), and its own. */
+function readingTexts(role: OperandRole): string[] {
+  const r = role.readings;
+  const roles = r?.kind === 'read' ? r.profiles.flatMap((p) => p.entries.flatMap((e) => e.roles ?? [])).map((x) => x.role) : [];
+  const texts = [role.spec?.text.en, ...roles.map((x) => (x.role === 'operand' ? x.spec?.text.en : x.role === 'option' ? x.text.en : undefined))];
+  return [...new Set(texts.flatMap((t) => (t ? [t] : [])))];
+}
+
 /**
- * The roles the explanation of word `i` allows where the words `$a`, `$b` give `counts` words, from its role: the
- * reading when every word that may give none gives none (`none`), the reading for each count of one other word
- * (`byCount`, `otherwise`), and of several (`mixed`: its own role where each gives one, else its own role or any
- * of the list, "it can also be"); else its one role.
+ * The operands the readings of word `i` (of `words`) say it gives where the words `$a`, `$b` give `counts` words and it
+ * gives `own`: its profile at the context of those counts (src/argv/profiles.ts), the entry of its own count (the last
+ * standing for more); undefined where the readings do not tell (past the cap, a count refused).
  */
-function allowed(role: OperandRole, counts: ReadonlyMap<string, number>, words: string[]): string[] {
-  const count = (i: number): number => counts.get(words[i]) ?? 1;
-  const own = role.spec!.text.en;
-  const nones = (role.none ?? []).filter((r) => r.spec && r.words.every((i) => count(i) === 0));
-  if (nones.length) return nones.map((r) => r.spec!.text.en);
-  if (role.mixed) {
-    if (role.mixed.words.every((i) => count(i) === 1)) return [own];
-    return [...(role.mixed.many ? [] : [own]), ...role.mixed.roles.map((o) => o.text.en)];
-  }
-  if (role.byCount) {
-    const n = count(role.byCount.word);
-    const r = role.byCount.readings.find((x) => x.from === n || (x.orMore && x.from <= n));
-    return r ? [r.spec.text.en] : [];
-  }
-  if (role.otherwise) return count(role.by!) > 1 ? [role.otherwise.text.en] : [own];
-  return [own];
+function readingAt(role: OperandRole, i: number, counts: ReadonlyMap<string, number>, words: string[], own = 1): OperandSpec[] | undefined {
+  const r = role.readings;
+  if (!r) return own === 1 ? [role.spec!] : undefined;
+  if (r.kind === 'depends') return undefined;
+  const count = (k: number): number => counts.get(words[k]) ?? 1;
+  const at = r.contexts.findIndex((_, c) => r.places.every((p) => {
+    const n = p.words.reduce((sum, k) => sum + count(k), 0);
+    return p.values[c].orMore ? n >= p.values[c].n : n === p.values[c].n;
+  }));
+  const profile = r.profiles[at];
+  const j = profile.counts.indexOf(own);
+  const entry = profile.entries[j < 0 && profile.orMore && own > profile.counts.at(-1)! ? profile.entries.length - 1 : j];
+  return entry?.roles?.map((x) => (x.role.role === 'operand' ? x.role.spec! : { name: x.role.role, text: { ja: x.role.role, en: x.role.role } }));
+}
+
+/** The roles the explanation of word `i` allows where the words `$a`, `$b` give `counts` words: its readings there. */
+function allowed(role: OperandRole, i: number, counts: ReadonlyMap<string, number>, words: string[]): string[] {
+  return (readingAt(role, i, counts, words) ?? []).map((o) => o.text.en);
 }

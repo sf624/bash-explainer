@@ -13,6 +13,8 @@ import { readingsOf, SHAPE_CAP, specsReached, wordsBound, type ReadingsTable } f
 import type { CommandSpec } from '../src/argv/spec';
 import { allRoles } from '../src/argv/valuehedges';
 import { argWord, argWordFor } from '../src/argv/words';
+import { argWordIn } from '../src/semantics/argwords';
+import { shellState } from '../src/semantics/state';
 import { lookupCommand } from '../src/dict/aliases';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, type SyntaxNode } from '../src/syntax/tree';
@@ -222,6 +224,34 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     assert.deepStrictEqual(cut.contexts(1)!.coordinates.map((c) => [c.words, c.fixed]), [[[], 0], [[2, 3], 1], [[5], 0]]);
     assert.deepStrictEqual(cut.contexts(1)!.base, [0, 2, 1]);
     assert.deepStrictEqual(table('cp $a $b $c x $d y $e').contexts(0), undefined);
+  });
+
+  it('ties with the words of the model: an integer or a nameref cuts the tie of what its assignment sets (bash 5.2)', () => {
+    /** The count variables of the words of the last `cp` of `script`, read with the model (`argWordIn`). */
+    const vars = (script: string): number[][] => {
+      const tree = parser.parse(script);
+      const c = descendants(tree.root, ['command']).filter((x) => field(x, 'name')?.text === 'cp').at(-1)!;
+      const name = field(c, 'name')!;
+      const words = c.namedChildren.filter((x) => x !== name && x.startIndex > name.startIndex).map(argWordIn(shellState(tree, 'bash')));
+      return readingsOf(lookupCommand(name.text)!, words, { name: name.text, lookup: lookupCommand }).variables.map((v) => v.words);
+    };
+    // (bash: `declare -i n; b=; set -- $b ${n:=b=3} $b` gives two words, `3 3`: the integer reads `b=3` as arithmetic,
+    // which sets `b`; `declare -n r=b; b=; set -- $b ${r:=x} $b` gives `x x`, the value going to `b`. With `w` a nameref
+    // to `e`, `$w ${e:=k} $w` gives `k k`.)
+    const lines = ['declare -i n; b=; set -- $b ${n:=b=3} $b', 'declare -n r=b; b=; set -- $b ${r:=x} $b', 'declare -n w=e; e=; set -- $w ${e:=k} $w'];
+    const counts = spawnSync('bash', ['--norc', '-c', lines.map((l) => `${l}; echo $#`).join('\n')], { encoding: 'utf8' }).stdout;
+    assert.strictEqual(counts, '2\n2\n2\n');
+    for (const line of lines) assert.deepStrictEqual(vars(line.replace('set --', 'cp')).filter((w) => w.length > 1), [], line);
+    // (Not where the attribute is not there: `n` a plain variable, `r` no nameref.)
+    for (const line of ['declare n; cp $b ${n:=b=3} $b', 'cp $b ${r:=x} $b']) assert.deepStrictEqual(vars(line).filter((w) => w.length > 1), [[0, 2]], line);
+    // (A nameref whose target is not known, or holds a subscript, cuts every tie when it is read: `$r` may run arithmetic.)
+    assert.deepStrictEqual(vars('declare -n r=$t; cp $a $r $a d').filter((w) => w.length > 1), []);
+    // (Nor where what a default assigns is not known: a nameref whose target is not known or a cycle, an integer whose
+    // default holds an expansion, a name after `source`. `$( )` sets `$?` only.)
+    for (const line of ['declare -n r=$t; cp $b ${r:=x} $b', 'declare -n r=s; declare -n s=r; cp $b ${r:=x} $b', 'declare -i n; cp $b ${n:=$y} $b', 'source ./x; cp $a ${a:=1} $a']) {
+      assert.deepStrictEqual(vars(line).filter((w) => w.length > 1), [], line);
+    }
+    assert.deepStrictEqual(vars('cp $a "$(true)" <(:) $a d').filter((w) => w.length > 1), [[0, 3]]);
   });
 
   it('a glob keeps its known start on every word it gives, as bash globs it (GNU cp and grep)', function () {

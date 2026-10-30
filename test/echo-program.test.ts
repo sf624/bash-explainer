@@ -53,7 +53,8 @@ describe('the program echo: --help and --version as its one argument', () => {
     // (Not the only argument: text.)
     assert.deepStrictEqual(wordToken(`${OFF}echo --version x`, '--version'), TEXT);
     assert.deepStrictEqual(wordToken(`${OFF}echo x --version`, '--version'), TEXT);
-    assert.deepStrictEqual(wordToken(`${OFF}echo --version "$@"`, '--version'), TEXT);
+    // (With no argument, `--version` is the one argument: the option.)
+    assert.deepStrictEqual(wordToken(`${OFF}echo --version "$@"`, '--version'), ['argument', 'text to print. When `"$@"` expands to nothing, it is option `--version` (print the version)']);
     assert.deepStrictEqual(wordToken(`${OFF}echo -- --version`, '--version'), TEXT);
     // (A word not known, `$x`, may be an option or not.)
     assert.ok(allTokens(explain(`${OFF}echo $x`, 1, 'en').items).some((x) => x.kind === 'argument' && x.explanation === 'text to print'));

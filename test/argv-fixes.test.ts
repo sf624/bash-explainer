@@ -126,7 +126,7 @@ describe('an operand that becomes several words', () => {
   it('counts the words of braces only where brace expansion is on (`set +B`)', () => {
     // (bash runs `cp {a,b} d`: a source and the destination.)
     assert.strictEqual(tokenOf('set +B; cp {a,b} d', 'd').explanation, 'destination (the new name, or an existing directory)');
-    assert.strictEqual(tokenOf('if c; then set +B; fi; cp {a,b} d', 'd').explanation, 'destination (the new name, or an existing directory) when `{a,b}` expands to a single word; destination directory when it expands to more');
+    assert.strictEqual(tokenOf('if c; then set +B; fi; cp {a,b} d', 'd').explanation, 'destination (the new name, or an existing directory). When `{a,b}` expands to several words, it is destination directory');
   });
 
   it('counts the words of braces whose words hold an expansion as bash gives them: a range, or the fields the model knows', () => {
@@ -138,7 +138,7 @@ describe('an operand that becomes several words', () => {
     assert.strictEqual(tokenOf('x="p q"; y=; cp {$x,$y}', '{$x,$y}').explanation, 'expands to `p` (source) and `q` (destination: the new name, or an existing directory)');
     assert.strictEqual(tokenOf('x=; y="p q"; cp {$x,$y}', '{$x,$y}').explanation, 'expands to `p` (source) and `q` (destination: the new name, or an existing directory)');
     assert.strictEqual(tokenOf('x=p; cp {a,$x} d', 'd').explanation, 'destination directory');
-    const hedge = (w: string) => `source when \`${w}\` expands to a single word; when it expands to 2 words, they are source, then destination (the new name, or an existing directory); when it expands to more, they are source, then destination directory`;
+    const hedge = (w: string) => `source when \`${w}\` expands to a single word; when it expands to 2 words, they are source, then destination (the new name, or an existing directory); when it expands to more words, they are source, then destination directory`;
     assert.strictEqual(tokenOf('cp {a,$x}', '{a,$x}').explanation, hedge('{a,$x}'));
     assert.strictEqual(tokenOf('x="*"; cp {a,$x}', '{a,$x}').explanation, hedge('{a,$x}'));
     // (`cp {a,$(echo b c)}` runs `cp a b c`; `set -- 1 2; cp {a,"$@"}` runs `cp a 1 2`, and with no parameters `cp a`.)
@@ -195,32 +195,32 @@ describe('an operand that becomes several words', () => {
   });
 
   it('gives the roles for one word and for more when the count is not known', () => {
-    assert.strictEqual(tokenOf('cp *.txt dir', 'dir').explanation, 'destination (the new name, or an existing directory) when `*.txt` expands to a single word; destination directory when it expands to more');
+    assert.strictEqual(tokenOf('cp *.txt dir', 'dir').explanation, 'destination (the new name, or an existing directory). When `*.txt` expands to several words, it is destination directory');
     // (bash runs `cp a b` with two words, the two-operand form: `b` is a new name or an existing directory; with three,
     // `cp a b c`, the last must be a directory. Also `ln -s a b`: the link `b`; and `cmp`, a form for each count.)
     const dest = 'they are source, then destination (the new name, or an existing directory)';
-    assert.strictEqual(tokenOf('cp "$@"', '"$@"').explanation, `source when \`"$@"\` expands to a single word; when it expands to 2 words, ${dest}; when it expands to more, they are source, then destination directory`);
+    assert.strictEqual(tokenOf('cp "$@"', '"$@"').explanation, `source when \`"$@"\` expands to a single word; when it expands to 2 words, ${dest}; when it expands to more words, they are source, then destination directory`);
     assert.strictEqual(tokenOf('cp $a', '$a', 'ja').explanation, '`$a` が1語に展開されるならコピー元、2語なら順にコピー元・コピー先（新しい名前、または既存のディレクトリ）、3語以上なら順にコピー元・コピー先のディレクトリ');
-    assert.strictEqual(tokenOf('ln -s $x', '$x').explanation, 'target (the link is made in the current directory, with the same name) when `$x` expands to a single word; when it expands to 2 words, they are target, then link name (or an existing directory to make the link in); when it expands to more, they are target, then directory to make the links in');
+    assert.strictEqual(tokenOf('ln -s $x', '$x').explanation, 'target (the link is made in the current directory, with the same name) when `$x` expands to a single word; when it expands to 2 words, they are target (the link is made in the current directory, with the same name), then link name (or an existing directory to make the link in); when it expands to more words, they are target (the link is made in the current directory, with the same name), then directory to make the links in');
     // (`a=1; cp $a{,.bak}`: the model knows the words, #483.)
     assert.strictEqual(tokenOf('a=1; cp $a{,.bak}', '$a{,.bak}').explanation, 'expands to `1` (source) and `1.bak` (destination: the new name, or an existing directory)');
-    assert.strictEqual(tokenOf('cmp $a', '$a').explanation, 'first file (`-` for stdin) when `$a` expands to a single word; when it expands to 2 words, they are first file (`-` for stdin), then second file; when it expands to 3 words, they are first file (`-` for stdin), then second file, then bytes to skip in the first file; when it expands to 4 words, they are first file (`-` for stdin), then second file, then bytes to skip in the first file, then bytes to skip in the second file; when it expands to more, they are first file (`-` for stdin), then second file, then bytes to skip in the first file, then bytes to skip in the second file, then extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing)');
+    assert.strictEqual(tokenOf('cmp $a', '$a').explanation, 'first file (`-` for stdin); when `$a` expands to several words, this is its first word, and the others are second file, bytes to skip in the first file, bytes to skip in the second file, then extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing)');
     // (A word after: the same form for two words and more, `cp b x y`; a word before it is a source for any count.)
-    assert.strictEqual(tokenOf('cp b $a', '$a').explanation, 'destination (the new name, or an existing directory) when `$a` expands to a single word; when it expands to more, they are source, then destination directory');
-    assert.deepStrictEqual(['$a', 'd'].map((w) => tokenOf('cp $a d', w).explanation), ['source', 'destination (the new name, or an existing directory) when `$a` expands to a single word; destination directory when it expands to more; source when `$a` expands to nothing']);
+    assert.strictEqual(tokenOf('cp b $a', '$a').explanation, 'destination (the new name, or an existing directory) when `$a` expands to a single word; when it expands to more words, they are source, then destination directory');
+    assert.deepStrictEqual(['$a', 'd'].map((w) => tokenOf('cp $a d', w).explanation), ['source', 'destination (the new name, or an existing directory). When `$a` expands to nothing, it is source. When `$a` expands to several words, it is destination directory']);
     // (A word that gives two words at least, each of `{a,b}*` a glob: no reading for one; nor one when it is the same for
     // any count, `rm $a`.)
-    assert.strictEqual(tokenOf('cp {a,b}*', '{a,b}*').explanation, `when \`{a,b}*\` expands to 2 words, ${dest}; when it expands to more, they are source, then destination directory`);
+    assert.strictEqual(tokenOf('cp {a,b}*', '{a,b}*').explanation, `when \`{a,b}*\` expands to 2 words, ${dest}; when it expands to more words, they are source, then destination directory`);
     assert.strictEqual(tokenOf('cp {a,b}*', '{a,b}*', 'ja').explanation, '`{a,b}*` が2語に展開されるなら順にコピー元・コピー先（新しい名前、または既存のディレクトリ）、3語以上なら順にコピー元・コピー先のディレクトリ');
     assert.strictEqual(tokenOf('rm $a', '$a').explanation, 'file to remove');
     // (A word after it, read with its fewest words: `cmp a* b* f` skips `f` bytes in the first file, `cmp a1 a2 b* f` in
     // the second. With another word that may give several, as few as each can.)
-    assert.strictEqual(tokenOf('cmp {a,b}* f', 'f').explanation, 'bytes to skip in the first file when `{a,b}*` expands to 2 words; bytes to skip in the second file when it expands to 3 words; extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing) when it expands to more');
-    assert.strictEqual(tokenOf('cmp {a,b}* f', 'f', 'ja').explanation, '`{a,b}*` が2語に展開されるなら1 つ目のファイルで読み飛ばすバイト数、3語なら2 つ目のファイルで読み飛ばすバイト数、4語以上なら余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 2 で終わる）');
-    assert.strictEqual(tokenOf('cmp {a,b}* f $c', 'f').explanation, 'bytes to skip in the first file when `{a,b}*`, `$c` expand to as few words as each can; when they expand to other numbers of words, it can also be bytes to skip in the second file or extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing)');
-    assert.strictEqual(tokenOf('cmp {a,b}* f $c', 'f', 'ja').explanation, '`{a,b}*`・`$c` がそれぞれ最も少ない語数に展開されるなら1 つ目のファイルで読み飛ばすバイト数、ほかの語数ならこの語は2 つ目のファイルで読み飛ばすバイト数・余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 2 で終わる）のどれかにもなる');
+    assert.strictEqual(tokenOf('cmp {a,b}* f', 'f').explanation, 'bytes to skip in the first file. When `{a,b}*` expands to 3 words, it is bytes to skip in the second file. When `{a,b}*` expands to 4 words or more, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing)');
+    assert.strictEqual(tokenOf('cmp {a,b}* f', 'f', 'ja').explanation, '1 つ目のファイルで読み飛ばすバイト数。`{a,b}*` が3語なら2 つ目のファイルで読み飛ばすバイト数。`{a,b}*` が4語以上なら余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 2 で終わる）');
+    assert.strictEqual(tokenOf('cmp {a,b}* f $c', 'f').explanation, 'bytes to skip in the first file. When `{a,b}*` expands to 3 words, it is bytes to skip in the second file. When `{a,b}*` expands to 4 words or more, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing)');
+    assert.strictEqual(tokenOf('cmp {a,b}* f $c', 'f', 'ja').explanation, '1 つ目のファイルで読み飛ばすバイト数。`{a,b}*` が3語なら2 つ目のファイルで読み飛ばすバイト数。`{a,b}*` が4語以上なら余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 2 で終わる）');
     // (The same roles for every count it gives: `chmod a* b*` is the mode, then files.)
-    assert.strictEqual(tokenOf('chmod {a,b}*', '{a,b}*').explanation, 'when `{a,b}*` expands to 2 words or more, they are mode (e.g. `755`, `+x`, `u+w`), then target file');
+    assert.strictEqual(tokenOf('chmod {a,b}*', '{a,b}*').explanation, 'its words are mode (e.g. `755`, `+x`, `u+w`), then target file');
     // (A brace expansion of globs gives at least one word each.)
     assert.strictEqual(tokenOf('cp {a,b}*.txt dir', 'dir').explanation, 'destination directory');
   });
@@ -229,27 +229,27 @@ describe('an operand that becomes several words', () => {
     // (bash: with `a='x y'` and `b=z`, `cp $a $b` runs `cp x y z` (`z` a directory), `gosu $a $b` with `a='u ls'` runs
     // `ls z` as `u`, `cmp $a $b` reads `z` as the bytes to skip in the first file; with `a=x` and `b='y z'`, `y` is the
     // destination directory, `ls` runs `z`, cmp reads `y` as the second file.)
-    assert.strictEqual(tokenOf('cp $a $b', '$b').explanation, 'destination (the new name, or an existing directory) when `$a`, `$b` expand to a single word; when they expand to other numbers of words, each of its words can be source, destination (the new name, or an existing directory) or destination directory; its first word is source when `$a` expands to nothing');
-    assert.strictEqual(tokenOf('cp $a $b', '$a').explanation, 'source when `$a`, `$b` expand to a single word; when they expand to other numbers of words, each of its words can be source, destination (the new name, or an existing directory) or destination directory');
-    assert.strictEqual(tokenOf('gosu $a $b', '$b').explanation, 'command to run when `$a`, `$b` expand to a single word; when they expand to other numbers of words, each of its words can be user (or `user:group`), command to run or argument to the command; its first word is user (or `user:group`) when `$a` expands to nothing');
-    assert.strictEqual(tokenOf('cmp $a $b', '$b').explanation, 'second file when `$a`, `$b` expand to a single word; when they expand to other numbers of words, each of its words can be first file (`-` for stdin), second file, bytes to skip in the first file, bytes to skip in the second file or extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing); its first word is first file (`-` for stdin) when `$a` expands to nothing');
-    assert.strictEqual(tokenOf('cp $a $b', '$b', 'ja').explanation, '`$a`・`$b` が1語に展開されるならコピー先（新しい名前、または既存のディレクトリ）、ほかの語数ならこの語の各語はコピー元・コピー先（新しい名前、または既存のディレクトリ）・コピー先のディレクトリのどれか、`$a` が0語ならこの語の最初の語はコピー元');
+    assert.strictEqual(tokenOf('cp $a $b', '$b').explanation, 'destination (the new name, or an existing directory) when `$b` expands to a single word; when it expands to more words, they are source, then destination directory. When `$a` expands to nothing: source when `$b` expands to a single word; when it expands to 2 words, they are source, then destination (the new name, or an existing directory); when it expands to more words, they are source, then destination directory. When `$a` expands to several words: destination directory when `$b` expands to a single word; when it expands to more words, they are source, then destination directory');
+    assert.strictEqual(tokenOf('cp $a $b', '$a').explanation, 'source. When `$b` expands to nothing: source when `$a` expands to a single word; when it expands to 2 words, they are source, then destination (the new name, or an existing directory); when it expands to more words, they are source, then destination directory');
+    assert.strictEqual(tokenOf('gosu $a $b', '$b').explanation, 'command to run; when `$b` expands to several words, this is its first word, and each of the others is argument to the command. When `$a` expands to nothing, its words are user (or `user:group`), command to run, then argument to the command. When `$a` expands to several words, it is argument to the command');
+    assert.strictEqual(tokenOf('cmp $a $b', '$b').explanation, 'second file; when `$b` expands to several words, this is its first word, and the others are bytes to skip in the first file, bytes to skip in the second file, then extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing). When `$a` expands to nothing, its words are first file (`-` for stdin), second file, bytes to skip in the first file, bytes to skip in the second file, then extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing). When `$a` expands to 2 words, its words are bytes to skip in the first file, bytes to skip in the second file, then extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing). When `$a` expands to 3 words, its words are bytes to skip in the second file, then extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing). When `$a` expands to 4 words or more, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing)');
+    assert.strictEqual(tokenOf('cp $a $b', '$b', 'ja').explanation, '`$b` が1語に展開されるならコピー先（新しい名前、または既存のディレクトリ）、2語以上なら順にコピー元・コピー先のディレクトリ。`$a` が0語なら、`$b` が1語に展開されるならコピー元、2語なら順にコピー元・コピー先（新しい名前、または既存のディレクトリ）、3語以上なら順にコピー元・コピー先のディレクトリ。`$a` が2語以上なら、`$b` が1語に展開されるならコピー先のディレクトリ、2語以上なら順にコピー元・コピー先のディレクトリ');
     // (Its own fewest words of two roles: none is its own; `chmod a* b* c` is the mode, then files.)
-    assert.strictEqual(tokenOf('chmod {a,b}* $c', '{a,b}*').explanation, 'each of its words is mode (e.g. `755`, `+x`, `u+w`) or target file, by how many words `{a,b}*`, `$c` expand to');
-    assert.strictEqual(tokenOf('chmod {a,b}* $c', '{a,b}*', 'ja').explanation, '`{a,b}*`・`$c` が展開される語数により、この語の各語は権限（例: `755`, `+x` は実行権限を付与, `u+w`）・対象のファイルのどれか');
+    assert.strictEqual(tokenOf('chmod {a,b}* $c', '{a,b}*').explanation, 'its words are mode (e.g. `755`, `+x`, `u+w`), then target file');
+    assert.strictEqual(tokenOf('chmod {a,b}* $c', '{a,b}*', 'ja').explanation, '順に権限（例: `755`, `+x` は実行権限を付与, `u+w`）・対象のファイル');
     // (After one such word, a role for each count: `cmp x y f` skips `f` bytes in the first file, `cmp x y z f` in the
     // second.)
-    assert.strictEqual(tokenOf('cmp $a f', 'f').explanation, 'second file when `$a` expands to a single word; bytes to skip in the first file when it expands to 2 words; bytes to skip in the second file when it expands to 3 words; extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing) when it expands to more; first file (`-` for stdin) when `$a` expands to nothing');
-    assert.strictEqual(tokenOf('cmp $a f', 'f', 'ja').explanation, '`$a` が1語に展開されるなら2 つ目のファイル、2語なら1 つ目のファイルで読み飛ばすバイト数、3語なら2 つ目のファイルで読み飛ばすバイト数、4語以上なら余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 2 で終わる）、`$a` が0語なら1 つ目のファイル（`-` で標準入力）');
-    assert.strictEqual(tokenOf('cmp {a,b}* f g', 'g').explanation, 'bytes to skip in the second file when `{a,b}*` expands to 2 words; extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing) when it expands to more');
+    assert.strictEqual(tokenOf('cmp $a f', 'f').explanation, 'second file. When `$a` expands to nothing, it is first file (`-` for stdin). When `$a` expands to 2 words, it is bytes to skip in the first file. When `$a` expands to 3 words, it is bytes to skip in the second file. When `$a` expands to 4 words or more, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing)');
+    assert.strictEqual(tokenOf('cmp $a f', 'f', 'ja').explanation, '2 つ目のファイル。`$a` が0語なら1 つ目のファイル（`-` で標準入力）。`$a` が2語なら1 つ目のファイルで読み飛ばすバイト数。`$a` が3語なら2 つ目のファイルで読み飛ばすバイト数。`$a` が4語以上なら余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 2 で終わる）');
+    assert.strictEqual(tokenOf('cmp {a,b}* f g', 'g').explanation, 'bytes to skip in the second file. When `{a,b}*` expands to 3 words or more, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing)');
     // (Every count of each, none too: `a='x y' b=` runs `cmp x y f`, `f` the bytes to skip in the first file; `a= b=x`
     // runs `cmp x f`, `f` the second file.)
-    assert.strictEqual(tokenOf('cmp $a $b f', 'f').explanation, 'bytes to skip in the first file when `$a`, `$b` expand to a single word; when they expand to other numbers of words, it can also be first file (`-` for stdin), second file, bytes to skip in the second file or extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing); first file (`-` for stdin) when `$a`, `$b` expand to nothing');
-    assert.strictEqual(tokenOf('cmp $a $b f', 'f', 'ja').explanation, '`$a`・`$b` が1語に展開されるなら1 つ目のファイルで読み飛ばすバイト数、ほかの語数ならこの語は1 つ目のファイル（`-` で標準入力）・2 つ目のファイル・2 つ目のファイルで読み飛ばすバイト数・余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 2 で終わる）のどれかにもなる、`$a`・`$b` が0語なら1 つ目のファイル（`-` で標準入力）');
+    assert.strictEqual(tokenOf('cmp $a $b f', 'f').explanation, 'bytes to skip in the first file. When `$a` and `$b` expand to nothing, it is first file (`-` for stdin). When `$a` and `$b` expand to one word in all, it is second file. When `$a` and `$b` expand to 3 words in all, it is bytes to skip in the second file. When `$a` and `$b` expand to 4 words or more in all, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 2, doing nothing)');
+    assert.strictEqual(tokenOf('cmp $a $b f', 'f', 'ja').explanation, '1 つ目のファイルで読み飛ばすバイト数。`$a`・`$b` が0語なら1 つ目のファイル（`-` で標準入力）。`$a`・`$b` が合わせて1語なら2 つ目のファイル。`$a`・`$b` が合わせて3語なら2 つ目のファイルで読み飛ばすバイト数。`$a`・`$b` が合わせて4語以上なら余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 2 で終わる）');
     // (`a='1 2' b=; seq $a $b f` runs `seq 1 2 f`: `f` is the last; with more, `seq 1 2 3 f` refuses it.)
-    assert.strictEqual(tokenOf('seq $a $b f', 'f').explanation, 'last when `$a`, `$b` expand to a single word; when they expand to other numbers of words, it can also be last (counting from 1) or extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)');
+    assert.strictEqual(tokenOf('seq $a $b f', 'f').explanation, 'last. When `$a` and `$b` expand to 3 words or more in all, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)');
     // (Globs give a word at least: `seq *.a *.b 5` with three files or more refuses `5`, seq: extra operand.)
-    assert.strictEqual(tokenOf('seq *.a *.b 5', '5').explanation, 'last when `*.a`, `*.b` expand to a single word; when they expand to other numbers of words, it can also be extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)');
+    assert.strictEqual(tokenOf('seq *.a *.b 5', '5').explanation, 'last. When `*.a` and `*.b` expand to 3 words or more in all, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)');
   });
 
   it('reads the hedges of many words that may give several in about the time of the line (review of #484)', function () {
@@ -267,25 +267,25 @@ describe('an operand that becomes several words', () => {
   it('gives the role a word takes when the words before it expand to nothing, where the model says they may', () => {
     // With `a` empty, bash runs `cp b` (cp: missing destination file operand after 'b'), `grep -c f` (the pattern `f`,
     // read from stdin) and `cp /x`.
-    assert.strictEqual(tokenOf('cp $a b', 'b').explanation, 'destination (the new name, or an existing directory) when `$a` expands to a single word; destination directory when it expands to more; source when `$a` expands to nothing');
-    assert.strictEqual(tokenOf('grep -c ${x} f', 'f').explanation, 'file to search (default: stdin); search pattern (regex) when `${x}` expands to nothing');
-    assert.strictEqual(tokenOf('cp $a $a/x', '$a/x').explanation, 'destination (the new name, or an existing directory) when `$a`, `$a/x` expand to a single word; when they expand to other numbers of words, each of its words can be source, destination (the new name, or an existing directory) or destination directory; its first word is source when `$a` expands to nothing');
-    assert.strictEqual(tokenOf('cp $a $b c', 'c').explanation, 'destination directory when `$a`, `$b` expand to a single word; when they expand to other numbers of words, it can also be source or destination (the new name, or an existing directory); source when `$a`, `$b` expand to nothing');
-    assert.strictEqual(tokenOf('cp $a b', 'b', 'ja').explanation, '`$a` が1語に展開されるならコピー先（新しい名前、または既存のディレクトリ）、2語以上ならコピー先のディレクトリ、`$a` が0語ならコピー元');
-    assert.strictEqual(tokenOf('cp $a $b c', 'c', 'ja').explanation, '`$a`・`$b` が1語に展開されるならコピー先のディレクトリ、ほかの語数ならこの語はコピー元・コピー先（新しい名前、または既存のディレクトリ）のどれかにもなる、`$a`・`$b` が0語ならコピー元');
+    assert.strictEqual(tokenOf('cp $a b', 'b').explanation, 'destination (the new name, or an existing directory). When `$a` expands to nothing, it is source. When `$a` expands to several words, it is destination directory');
+    assert.strictEqual(tokenOf('grep -c ${x} f', 'f').explanation, 'file to search (default: stdin). When `${x}` expands to nothing, it is search pattern (regex)');
+    assert.strictEqual(tokenOf('cp $a $a/x', '$a/x').explanation, 'destination (the new name, or an existing directory) when `$a/x` expands to a single word; when it expands to more words, they are source, then destination directory. When `$a` expands to nothing: source when `$a/x` expands to a single word; when it expands to 2 words, they are source, then destination (the new name, or an existing directory); when it expands to more words, they are source, then destination directory. When `$a` expands to several words: destination directory when `$a/x` expands to a single word; when it expands to more words, they are source, then destination directory');
+    assert.strictEqual(tokenOf('cp $a $b c', 'c').explanation, 'destination directory. When `$a` and `$b` expand to nothing, it is source. When `$a` and `$b` expand to one word in all, it is destination (the new name, or an existing directory)');
+    assert.strictEqual(tokenOf('cp $a b', 'b', 'ja').explanation, 'コピー先（新しい名前、または既存のディレクトリ）。`$a` が0語ならコピー元。`$a` が2語以上ならコピー先のディレクトリ');
+    assert.strictEqual(tokenOf('cp $a $b c', 'c', 'ja').explanation, 'コピー先のディレクトリ。`$a`・`$b` が0語ならコピー元。`$a`・`$b` が合わせて1語ならコピー先（新しい名前、または既存のディレクトリ）');
     // (Not where the model says the word gives a word: a value set here, read as its one field (`cp 1 b`), `$#`; with
     // nullglob, a glob may give none.)
     assert.strictEqual(tokenOf('a=1; cp $a b', 'b').explanation, 'destination (the new name, or an existing directory)');
     assert.strictEqual(tokenOf('grep -c $# f', 'f').explanation, 'file to search (default: stdin)');
-    assert.strictEqual(tokenOf('shopt -s nullglob; grep -c *.txt f', 'f').explanation, 'file to search (default: stdin); search pattern (regex) when `*.txt` expands to nothing');
+    assert.strictEqual(tokenOf('shopt -s nullglob; grep -c *.txt f', 'f').explanation, 'file to search (default: stdin). When `*.txt` expands to nothing, it is search pattern (regex)');
     // (Nor where the role stays: `rm $a b`; `ln -s $a $b`, where `$a` is the target either way, with more said of it when
     // `$b` gives none.)
     assert.strictEqual(tokenOf('rm $a b', 'b').explanation, 'file to remove');
-    assert.strictEqual(tokenOf('ln -s $a $b', '$a').explanation, 'target when `$a`, `$b` expand to a single word; when they expand to other numbers of words, each of its words can be target (the link is made in the current directory, with the same name), target, link name (or an existing directory to make the link in) or directory to make the links in');
+    assert.strictEqual(tokenOf('ln -s $a $b', '$a').explanation, 'target. When `$b` expands to nothing: target (the link is made in the current directory, with the same name) when `$a` expands to a single word; when it expands to 2 words, they are target, then link name (or an existing directory to make the link in); when it expands to more words, they are target, then directory to make the links in');
     // (The words of a builtin turned off, read again as the program's, from the model too: `$#` is never empty.)
     assert.strictEqual(tokenOf('enable -n printf; command printf $# x', 'x').explanation, 'value for the format');
     // (In Japanese the roles of more words are a list with `・`, and the reading with none comes after a `、`.)
-    assert.strictEqual(tokenOf('mv $a $b', '$b', 'ja').explanation, '`$a`・`$b` が1語に展開されるなら移動先（新しい名前、または既存のディレクトリ）、ほかの語数ならこの語の各語は移動元・移動先（新しい名前、または既存のディレクトリ）・移動先のディレクトリのどれか、`$a` が0語ならこの語の最初の語は移動元');
+    assert.strictEqual(tokenOf('mv $a $b', '$b', 'ja').explanation, '`$b` が1語に展開されるなら移動先（新しい名前、または既存のディレクトリ）、2語以上なら順に移動元・移動先のディレクトリ。`$a` が0語なら、`$b` が1語に展開されるなら移動元、2語なら順に移動元・移動先（新しい名前、または既存のディレクトリ）、3語以上なら順に移動元・移動先のディレクトリ。`$a` が2語以上なら、`$b` が1語に展開されるなら移動先のディレクトリ、2語以上なら順に移動元・移動先のディレクトリ');
   });
 });
 
@@ -424,18 +424,18 @@ describe("an option's value that may give no word (after #482)", () => {
   it('gives the role a word after the value takes when the value expands to nothing', () => {
     // With `a` empty, bash runs `tar -cf b` (tar takes `b` as the archive: "Cowardly refusing to create an empty archive"),
     // `cp -t a b` (`a` is the directory, `b` the source), `grep -e f` (the pattern `f`, read from stdin) and `grep -e -i f`.
-    assert.strictEqual(tokenOf('tar -cf $a b', 'b').explanation, 'Word `b`; value for `-f` when `$a` expands to nothing');
-    assert.strictEqual(tokenOf('tar cf $a b', 'b').explanation, 'Word `b`; value for `f` when `$a` expands to nothing');
-    assert.strictEqual(tokenOf('cp -t $d $a', '$a').explanation, 'source; its first word is value for `-t` when `$d` expands to nothing');
+    assert.strictEqual(tokenOf('tar -cf $a b', 'b').explanation, 'Word `b`. When `$a` expands to nothing, it is value for `-f`');
+    assert.strictEqual(tokenOf('tar cf $a b', 'b').explanation, 'Word `b`. When `$a` expands to nothing, it is value for `f`');
+    assert.strictEqual(tokenOf('cp -t $d $a', '$a').explanation, 'source. When `$d` expands to nothing, its words are value for `-t`, then source');
     assert.strictEqual(tokenOf('cp -t $d a b', 'b').explanation, 'source');
-    assert.strictEqual(tokenOf('grep -e $p f', 'f').explanation, 'file to search (default: stdin); value for `-e` when `$p` expands to nothing');
+    assert.strictEqual(tokenOf('grep -e $p f', 'f').explanation, 'file to search (default: stdin). When `$p` expands to nothing, it is value for `-e`');
     assert.strictEqual(tokenOf('grep -e $p -i f', '-i').explanation, 'ignore case; value for `-e` when `$p` expands to nothing');
     assert.strictEqual(tokenOf('grep -e $p -i f', 'f').explanation, 'file to search (default: stdin)');
     assert.strictEqual(tokenOf('read -p $q -r x', '-r').explanation, 'do not treat backslashes as escapes (almost always wanted); variable to store the input when `$q` expands to several words; value for `-p` when `$q` expands to nothing');
-    assert.strictEqual(tokenOf('shopt -s nullglob; tar -cf *.tar b', 'b').explanation, 'Word `b`; value for `-f` when `*.tar` expands to nothing');
-    assert.strictEqual(tokenOf('tar -cf $a b', 'b', 'ja').explanation, '文字列 `b`、`$a` が0語なら `-f` オプションの値');
-    assert.strictEqual(tokenOf('tar cf $a b', 'b', 'ja').explanation, '文字列 `b`、`$a` が0語なら `f` の値');
-    assert.strictEqual(tokenOf('cp -t $d $a', '$a', 'ja').explanation, 'コピー元、`$d` が0語ならこの語の最初の語は `-t` オプションの値');
+    assert.strictEqual(tokenOf('shopt -s nullglob; tar -cf *.tar b', 'b').explanation, 'Word `b`. When `*.tar` expands to nothing, it is value for `-f`');
+    assert.strictEqual(tokenOf('tar -cf $a b', 'b', 'ja').explanation, '文字列 `b`。`$a` が0語なら `-f` オプションの値');
+    assert.strictEqual(tokenOf('tar cf $a b', 'b', 'ja').explanation, '文字列 `b`。`$a` が0語なら `f` の値');
+    assert.strictEqual(tokenOf('cp -t $d $a', '$a', 'ja').explanation, 'コピー元。`$d` が0語なら順に `-t` オプションの値・コピー元');
     assert.strictEqual(tokenOf('grep -e $p -i f', '-i', 'ja').explanation, '大文字・小文字を区別しない、`$p` が0語なら `-e` オプションの値');
     // (Any option, and the end of options: `grep -e -- f` reads the pattern `--` from stdin, `head -c -5 f` prints all but
     // the last 5 bytes, `grep -e --nope f` looks for `--nope`.)
@@ -455,17 +455,18 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.strictEqual(tokenOf('grep -e $p -e x -e y', 'x', 'ja').explanation, '`-e` オプションの値: 検索パターンを指定（`-` で始まるパターンや複数指定に使う） — 基本正規表現(BRE)、`$p` が0語なら検索対象のファイル（省略時は標準入力）');
     // (`grep -m -c f`: `-c` is the count, which grep refuses: "invalid max count". `f` keeps the hedge of `$x`.)
     assert.strictEqual(tokenOf('grep -m $n -c $x f', '-c').explanation, 'print a count of matching lines; value for `-m` when `$n` expands to nothing');
-    assert.strictEqual(tokenOf('grep -m $n -c $x f', 'f').explanation, 'file to search (default: stdin); search pattern (regex) when `$x` expands to nothing');
+    // (With `$n` of two words, `grep -m 1 2 -c f` reads `2` as the pattern: `f` is a file still.)
+    assert.strictEqual(tokenOf('grep -m $n -c $x f', 'f').explanation, 'file to search (default: stdin). When `$n` expands to nothing and `$x` to nothing, or when `$n` expands to a single word and `$x` to nothing, it is search pattern (regex)');
     // (`tar cfC arc.tar sub g`: each letter takes the next word left, so `d` is the archive and `x` the directory.)
     assert.strictEqual(tokenOf('tar cfC $a d x', 'd').explanation, 'Value for `C`; argument when `$a` expands to several words; value for `f` when `$a` expands to nothing');
-    assert.strictEqual(tokenOf('tar cfC $a d x', 'x').explanation, 'Word `x`; value for `C` when `$a` expands to nothing');
+    assert.strictEqual(tokenOf('tar cfC $a d x', 'x').explanation, 'Word `x`. When `$a` expands to nothing, it is value for `C`');
     assert.strictEqual(tokenOf('tar cfC $a d x', 'd', 'ja').explanation, '`C` の値、`$a` が2語以上なら引数、`$a` が0語なら `f` の値');
     // (`jq --arg v .`: `v` is the name, and `.` its value.)
     assert.strictEqual(tokenOf('jq --arg $n v .', 'v').explanation, 'Value for `--arg`; jq filter (e.g. `.items[].name`) or input JSON file when `$n` expands to several words; name for `--arg` when `$n` expands to nothing');
-    assert.strictEqual(tokenOf('jq --arg $n v .', '.').explanation, 'jq filter (e.g. `.items[].name`); input JSON file when `$n` expands to several words; value for `--arg` when `$n` expands to nothing');
+    assert.strictEqual(tokenOf('jq --arg $n v .', '.').explanation, 'jq filter (e.g. `.items[].name`). When `$n` expands to nothing, it is value for `--arg`. When `$n` expands to several words, it is input JSON file');
     assert.strictEqual(tokenOf('jq --arg $n v .', 'v', 'ja').explanation, '`--arg` の値、`$n` が2語以上なら jq フィルタ（例: `.items[].name`）・入力 JSON ファイルのどれか、`$n` が0語なら `--arg` の名前');
     // (After the note on the pattern's language, which is of the reading where `$v` gives a word: `grep -d a b`.)
-    assert.strictEqual(tokenOf('grep -d $v a b', 'a').explanation, 'search pattern (regex) — basic regex (BRE); file to search (default: stdin) when `$v` expands to several words; value for `-d` when `$v` expands to nothing');
+    assert.strictEqual(tokenOf('grep -d $v a b', 'a').explanation, 'search pattern (regex) — basic regex (BRE). When `$v` expands to nothing, it is value for `-d`. When `$v` expands to several words, it is file to search (default: stdin)');
   });
 
   it('says nothing where the value gives a word, or the role it then takes is not an operand or a value', () => {
@@ -496,28 +497,30 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.strictEqual(tokenOf('git show --pretty $p -- f', '--').explanation, 'End of options: everything after is a plain argument');
     assert.strictEqual(tokenOf('rsync -e $e -- a b', '--').explanation, 'End of options: everything after is a plain argument; value for `-e` when `$e` expands to nothing');
     // (Only the first word of a word that may give several is the value: `tar -cf a b c` with `a=` and `y='a b'`.)
-    assert.strictEqual(tokenOf('grep -e $p "$@"', '"$@"').explanation, 'file to search (default: stdin); its first word is value for `-e` when `$p` expands to nothing');
-    assert.strictEqual(tokenOf('grep -e $p "$@"', '"$@"', 'ja').explanation, '検索対象のファイル（省略時は標準入力）、`$p` が0語ならこの語の最初の語は `-e` オプションの値');
-    assert.strictEqual(tokenOf('y="a b"; tar -cf $a $y c', '$y').explanation, 'expands to `a` (argument; value for `-f` when `$a` expands to nothing) and `b` (argument)');
-    assert.strictEqual(tokenOf('y="a b"; tar -cf $a $y c', '$y', 'ja').explanation, '`a`（引数、`$a` が0語なら `-f` オプションの値）と `b`（引数）に展開される');
+    assert.strictEqual(tokenOf('grep -e $p "$@"', '"$@"').explanation, 'file to search (default: stdin). When `$p` expands to nothing, its words are value for `-e`, then file to search (default: stdin)');
+    assert.strictEqual(tokenOf('grep -e $p "$@"', '"$@"', 'ja').explanation, '検索対象のファイル（省略時は標準入力）。`$p` が0語なら順に `-e` オプションの値・検索対象のファイル（省略時は標準入力）');
+    assert.strictEqual(tokenOf('y="a b"; tar -cf $a $y c', '$y').explanation, 'expands to `a` (argument) and `b` (argument). When `$a` expands to nothing, its words are value for `-f`, then argument');
+    assert.strictEqual(tokenOf('y="a b"; tar -cf $a $y c', '$y', 'ja').explanation, '`a`（引数）と `b`（引数）に展開される。`$a` が0語なら順に `-f` オプションの値・引数');
     // (A field that is an option says it too: `grep -e -i x f` looks for `-i` in `x` and `f`.)
-    assert.strictEqual(tokenOf('y="-i x"; grep -e $p $y f', '$y').explanation, 'expands to `-i` (option: ignore case; value for `-e` when `$p` expands to nothing) and `x` (file to search: default: stdin)');
-    // (The same reading after either of two words, once: `jq --arg n .` and `jq --arg v .` both take `.` as the value.)
-    assert.strictEqual(tokenOf('jq --arg $n $v .', '.').explanation, 'jq filter (e.g. `.items[].name`); input JSON file or jq filter (e.g. `.items[].name`) when `$n` expands to several words; input JSON file when `$v` expands to several words; value for `--arg` when `$n` or `$v` expands to nothing');
-    assert.strictEqual(tokenOf('jq --arg $n $v .', '.', 'ja').explanation, 'jq フィルタ（例: `.items[].name`）、`$n` が2語以上なら入力 JSON ファイル・jq フィルタ（例: `.items[].name`）のどれか、`$v` が2語以上なら入力 JSON ファイル、`$n` か `$v` が0語なら `--arg` の値');
+    assert.strictEqual(tokenOf('y="-i x"; grep -e $p $y f', '$y').explanation, 'expands to `-i` (option: ignore case; value for `-e` when `$p` expands to nothing) and `x` (file to search: default: stdin). When `$p` expands to nothing, its words are value for `-e`, then file to search (default: stdin)');
+    // (The sum of a run: `jq --arg n .` and `jq --arg v .` both take `.` as the value, `jq --arg a b c .` a file.)
+    assert.strictEqual(tokenOf('jq --arg $n $v .', '.').explanation, 'jq filter (e.g. `.items[].name`). When `$n` and `$v` expand to one word in all, it is value for `--arg`. When `$n` and `$v` expand to 3 words or more in all, it is input JSON file');
+    assert.strictEqual(tokenOf('jq --arg $n $v .', '.', 'ja').explanation, 'jq フィルタ（例: `.items[].name`）。`$n`・`$v` が合わせて1語なら `--arg` の値。`$n`・`$v` が合わせて3語以上なら入力 JSON ファイル');
     // (A space before a role in Latin letters; a fence around a word with a backquote.)
-    assert.strictEqual(tokenOf('jq --arg n $v . f', 'f', 'ja').explanation, '入力 JSON ファイル、`$v` が0語なら jq フィルタ（例: `.items[].name`）');
+    assert.strictEqual(tokenOf('jq --arg n $v . f', 'f', 'ja').explanation, '入力 JSON ファイル。`$v` が0語なら jq フィルタ（例: `.items[].name`）');
     assert.strictEqual(tokenOf('grep -e `cmd` -i f', '-i').explanation, 'ignore case; value for `-e` when `` `cmd` `` expands to nothing');
   });
 
   it('says no role of the first word where its own count changes it, when the others give none (review of #490)', () => {
     // (With `b`, `c` empty, `seq 11` reads `11` as the last and `seq 11 12` as the first; `tr a1` is one set and `tr a1 a2`
     // a translation. The hedge of every count says the roles.)
-    assert.strictEqual(tokenOf('seq $a $b $c', '$a').explanation, 'first when `$a`, `$b`, `$c` expand to a single word; when they expand to other numbers of words, each of its words can be last (counting from 1), first, increment, last or extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)');
-    assert.doesNotMatch(tokenOf('tr $a $b', '$a').explanation, /its first word|to nothing/);
+    const extra = 'extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)';
+    assert.strictEqual(tokenOf('seq $a $b $c', '$a').explanation, `first; when \`$a\` expands to several words, this is its first word, and the others are increment, last, then ${extra}. When \`$b\` and \`$c\` expand to nothing: last (counting from 1) when \`$a\` expands to a single word; when it expands to 2 words, they are first, then last; when it expands to 3 words, they are first, increment, then last; when it expands to more words, they are first, increment, last, then ${extra}`);
+    // (`tr a1` is one set, which tr refuses; `tr a1 a2` a translation: a reading for each count of `$a` when `$b` gives none.)
+    assert.match(tokenOf('tr $a $b', '$a').explanation, /\. When `\$b` expands to nothing: lone character set, .* when `\$a` expands to a single word; when it expands to 2 words, they are source character set \(e\.g\. `a-z`\), then target character set/);
     // (Where its count does not change it, the reading stays: `grep -e "$@"` takes its first word as the pattern.)
-    assert.strictEqual(tokenOf('grep -e $p "$@"', '"$@"').explanation, 'file to search (default: stdin); its first word is value for `-e` when `$p` expands to nothing');
-    assert.strictEqual(tokenOf('cp $a b', 'b').explanation, 'destination (the new name, or an existing directory) when `$a` expands to a single word; destination directory when it expands to more; source when `$a` expands to nothing');
+    assert.strictEqual(tokenOf('grep -e $p "$@"', '"$@"').explanation, 'file to search (default: stdin). When `$p` expands to nothing, its words are value for `-e`, then file to search (default: stdin)');
+    assert.strictEqual(tokenOf('cp $a b', 'b').explanation, 'destination (the new name, or an existing directory). When `$a` expands to nothing, it is source. When `$a` expands to several words, it is destination directory');
   });
 
   it('says what the words after the first of a value that gives several are, and what the words after it then are (review of #490)', () => {
@@ -534,25 +537,23 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.strictEqual(tokenOf('sudo -u $u tar -cf x y', '$u').explanation, 'Value for `-u`; when `$u` expands to several words, this is its first word, and the others are read as the words after it');
     assert.strictEqual(tokenOf('jq --arg $n v .', '$n').explanation, 'Name for `--arg` (use it as `$name` in the filter); when `$n` expands to several words, this is its first word, and each of the others is value for `--arg`, jq filter (e.g. `.items[].name`) or input JSON file');
     // (`seq -s x y 1`: `1` is the last; `seq -s x y z w 1`, an extra operand.)
-    assert.strictEqual(tokenOf('seq -s $a 1', '1').explanation, 'last (counting from 1); last or extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing) when `$a` expands to several words; value for `-s` when `$a` expands to nothing');
+    assert.strictEqual(tokenOf('seq -s $a 1', '1').explanation, 'last (counting from 1). When `$a` expands to nothing, it is value for `-s`. When `$a` expands to 4 words or more, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)');
     // (`timeout -s KILL x 5 ls` runs `5`, `timeout -s KILL x y 5 ls` runs `y` with the argument `5`; `jq --arg "$x"a "$x"b`, the name and its value; `sudo -u "$x"a "$x"b ls` runs `"$x"b`.)
-    assert.strictEqual(tokenOf('timeout -s $s 5 ls', '5').explanation, 'time limit (`5`, `30s`, `2m`, `1h`); command to run or argument when `$s` expands to several words; value for `-s` when `$s` expands to nothing');
+    assert.strictEqual(tokenOf('timeout -s $s 5 ls', '5').explanation, 'time limit (`5`, `30s`, `2m`, `1h`). When `$s` expands to nothing, it is value for `-s`. When `$s` expands to 2 words, it is command to run. When `$s` expands to 3 words or more, it is argument of `$s`');
     assert.strictEqual(tokenOf('jq --arg "$x"{a,b} . f', '"$x"{a,b}').explanation, 'Name for `--arg` (use it as `$name` in the filter); when `"$x"{a,b}` expands to several words, this is its first word, and each of the others is value for `--arg`');
     assert.strictEqual(tokenOf('sudo -u "$x"{a,b} ls', '"$x"{a,b}').explanation, 'Value for `-u`; when `"$x"{a,b}` expands to several words, this is its first word, and each of the others is command to run');
     // (The same roles after two values are one reading: `seq -s x y -f %g 1`, `seq -s : -f x y 1`.)
-    assert.strictEqual(tokenOf('seq -s $a -f $b 1', '1').explanation, 'last (counting from 1); extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing) or last when `$a` or `$b` expands to several words; value for `-f` when `$b` expands to nothing');
-    assert.strictEqual(tokenOf('seq -s $a -f $b 1', '1', 'ja').explanation, '終了値（開始値は 1）、`$a` か `$b` が2語以上なら余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 1 で終わる）・終了値のどれか、`$b` が0語なら `-f` オプションの値');
+    assert.strictEqual(tokenOf('seq -s $a -f $b 1', '1').explanation, 'last (counting from 1). It can also be extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing) or value for `-f`, by how many words `$a` and `$b` give');
+    assert.strictEqual(tokenOf('seq -s $a -f $b 1', '1', 'ja').explanation, '終了値（開始値は 1）。`$a`・`$b` が展開される語数により、余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 1 で終わる）・`-f` オプションの値のどちらかにもなる');
     // (A command string of an option keeps its role: `su -s x y -c ls`.)
     assert.match(tokenOf('su -s $s -c ls', 'ls').explanation, /^Value for `-c`\. The shell that runs it is not known here/);
     // (Nothing where the words after it keep their role: `head -n 1 g f` reads `f` as a file still.)
-    assert.strictEqual(tokenOf('head -n $a f', 'f').explanation, 'target file; value for `-n` when `$a` expands to nothing');
+    assert.strictEqual(tokenOf('head -n $a f', 'f').explanation, 'target file. When `$a` expands to nothing, it is value for `-n`');
   });
 
-  it('names every role an operand may take in a reading, once (`thenRoles`)', () => {
+  it('names the role a word takes in a reading (`thenRoles`)', () => {
     const o = (en: string): OperandSpec => ({ name: en, text: { ja: en, en } });
-    const value = { role: 'value' as const, of: '-f', index: 0 };
-    const role: ArgRole = { role: 'operand', index: 0, spec: o('a'), otherwise: o('b'), several: [{ from: 2, roles: [o('a'), o('c (x)')] }], byCount: { word: 1, readings: [{ from: 1, spec: o('d') }] }, mixed: { words: [1], first: true, many: false, roles: [o('e')] }, none: [{ words: [1], spec: o('c') }, { words: [1], value }, { words: [2], value }] };
-    assert.deepStrictEqual(thenRoles(role), [{ spec: o('a') }, { spec: o('b') }, { spec: o('c (x)') }, { spec: o('d') }, { spec: o('e') }, { value }]);
+    assert.deepStrictEqual(thenRoles({ role: 'operand', index: 0, spec: o('a') }), [{ spec: o('a') }]);
     assert.deepStrictEqual(thenRoles({ role: 'operand', index: 0 }), [{}]);
     assert.deepStrictEqual(thenRoles({ role: 'value', of: '-f', index: 0 }), [{ value: { role: 'value', of: '-f', index: 0 } }]);
     assert.strictEqual(thenRoles({ role: 'end-of-options' }), undefined);

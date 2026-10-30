@@ -513,6 +513,77 @@
     }
   },
   {
+    "manual": "3.5.3",
+    "snippet": "declare -i n; b=; : ${n:=b=3}; declare -n r=c; c=; : ${r:=x}",
+    "note": "the default of an integer is read as arithmetic, which assigns b; the default of a nameref goes to its target",
+    "facts": {
+      "end": {
+        "variables": {
+          "b": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "c": {
+            "attrs": "-",
+            "value": "\"x\""
+          },
+          "n": {
+            "attrs": "i",
+            "value": "\"3\""
+          },
+          "r": {
+            "attrs": "n",
+            "value": "\"c\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "declare -i z=1 u w; g=; : ${z:=g=3} ${u:=}; v=k; : ${w:=$v}; if [ \"$1\" ]; then declare -i q; fi; h=; : ${q:=h=4}",
+    "note": "a default that bash does not assign (z is set) runs no arithmetic; one of an integer on some paths only may",
+    "facts": {
+      "end": {
+        "variables": {
+          "g": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "h": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "q": {
+            "attrs": "-",
+            "value": "\"h=4\""
+          },
+          "u": {
+            "attrs": "i",
+            "value": "\"0\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"k\""
+          },
+          "w": {
+            "attrs": "i",
+            "value": "\"0\""
+          },
+          "z": {
+            "attrs": "i",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.variables.q.i": "declared an integer only where `$1` is not empty, which the model does not know"
+    }
+  },
+  {
     "manual": "3.6.7",
     "snippet": "read -r a b <<< 'x y z'; IFS=: read -r p q <<< 'a:b:c'",
     "note": "IFS before read is for read only",
