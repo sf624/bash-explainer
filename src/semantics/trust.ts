@@ -137,7 +137,10 @@ class Scan {
   /** What the scan read of those words, by word (see `Trust.deferred`), and where each such builtin is. */
   readonly plans = new Map<SyntaxNode, DeferredPlan>();
   private readonly planned: { w: Where; written: boolean; names: string[] }[] = [];
-  /** The variables a declaration in a function makes local there (`local m`, `declare m=x`, not `declare -g`). */
+  /**
+   * The variables a declaration in a function makes local there (`local m`, `declare m=x`, not `declare -g`), and those
+   * an assignment before a command gives for that command only (`m=hi g`).
+   */
   private readonly locals = new Set<string>();
   /** The aliases the `alias` commands define (a name and its text), and the commands that may run one (see `aliases`). */
   private readonly aliasDefs: AliasDef[] = [];
@@ -371,6 +374,8 @@ class Scan {
       case 'variable_assignment':
         // (Those of a declaration are read with it.)
         if (n.field !== 'argument') this.assignment(n, w, true, false, n.parent!.type === 'command' && this.program(n.parent!));
+        // (Before a command, it holds while the command runs: `m=hi g`, as a local of `g`.)
+        if (n.field !== 'argument' && n.parent!.type === 'command' && field(n.parent!, 'name')) this.locals.add(field(n, 'name')!.text.replace(/\[.*/s, ''));
         break;
       case 'command':
         // (A command with no name has only its assignments, read above.)

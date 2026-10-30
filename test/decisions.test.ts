@@ -145,6 +145,9 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
       // environment's.)
       "f() { local m=hi; trap 'printf $m u 2' ERR; }; f; false", "f() { declare m=hi; trap 'printf $m u 2' ERR; }; f; false",
       "m=-v; f() { local m=hi; trap 'printf $m u 2' ERR; }; f; false",
+      // (So is one made by an assignment before the call: `m=hi g` holds while `g` runs.)
+      "g() { trap 'printf $m u 2' ERR; }; m=hi g; false", "m=-v; g() { trap 'printf $m u 2' ERR; }; m=hi g; false",
+      "g() { trap 'printf $m u 2' ERR; }; h() { m=hi g; }; h; false", "m=-v; g() { trap 'printf $m u 2' ERR; }; h() { m=hi g; }; h; false",
     ];
     // (A variable the walk knows is unset gives no field: the script still decides `v`.)
     const decides = ['x=-v; unset x; printf $x u 2', 'f() { local x; printf $x u 2; }; x=-v; f', 'x=-v; unset -v x; printf $x u 2', 'f() { unset x; }; x=-v; f; printf $x u 2'];
