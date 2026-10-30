@@ -18,7 +18,7 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { argWords } from './support/argwords';
 import { runContained } from './support/contained';
 import { allTokens } from './support/explain';
-import { showsRole } from './support/renderings';
+import { saysOperand, showsRole } from './support/renderings';
 
 const parser = createUnbashParser();
 const has = (tool: string): boolean => spawnSync('bash', ['--norc', '-c', `command -v ${tool}`]).status === 0;
@@ -245,7 +245,7 @@ const CASES: Case[] = [
   { line: 'tr $a -d', vars: { $a: ['a', 'b', 'c', 'd'] }, tool: 'tr', usable: () => gnu('tr'), stdin: 'abcdwxyz-',
     expect: trDeleteOf, seen: (r) => (r.status ? 'refused' : r.out.trim()) },
   // (`getconf NAME_MAX -a` asks the path `-a`: a directory of that name answers `255`.)
-  { line: 'getconf $a -a', vars: { $a: ['NAME_MAX', 'PAGESIZE', '/', 'x'] }, tool: 'getconf', usable: () => gnu('getconf') || has('getconf'), setup: 'mkdir -- -a',
+  { line: 'getconf $a -a', vars: { $a: ['NAME_MAX', 'PAGESIZE', '/', 'x'] }, tool: 'getconf', usable: () => has('getconf') && /glibc/i.test(spawnSync('getconf', ['--version'], { encoding: 'utf8' }).stdout ?? ''), setup: 'mkdir -- -a',
     expect: getconfOf, seen: (r) => (r.status ? 'refused' : r.out.trim().split('\n').length > 50 ? 'all' : r.out.trim()) },
   // (The builtin, through bash: `echo -n x` prints `x` with no newline. What it prints is the run's output, the newline too.)
   { line: 'echo $a -n x', vars: { $a: ['y', 'z', 'w', 'v'] }, tool: 'echo', usable: () => true,
@@ -264,17 +264,19 @@ const CASES: Case[] = [
 ];
 
 /** The roles of the words of `line`, by word, the name `undefined` (the words of a command run or a subcommand too). */
-function rolesOf(tool: string, argv: string[], program = false): (ArgRole | undefined)[] {
+function rolesOf(tool: string, argv: string[], program = false, nested: boolean[] = []): (ArgRole | undefined)[] {
   const spec = lookupCommand(tool)!;
   const parse = interpret(program ? spec.program! : spec, argv.map((value) => ({ value })), { name: tool, lookup: lookupCommand });
   const out: (ArgRole | undefined)[] = argv.map(() => undefined);
-  const walk = (roles: readonly RoleAt[]): void => {
+  // (`nested`: the word is read by the command a command run runs, or by a subcommand, not by the command itself.)
+  const walk = (roles: readonly RoleAt[], inner: boolean): void => {
     for (const { word, role } of roles) {
       out[word] = role;
-      if ((role.role === 'subcommand' || role.role === 'command') && role.parse) walk(role.parse.roles);
+      nested[word] = inner;
+      if ((role.role === 'subcommand' || role.role === 'command') && role.parse) walk(role.parse.roles, true);
     }
   };
-  walk(parse.roles);
+  walk(parse.roles, false);
   return out;
 }
 
@@ -306,7 +308,12 @@ describe('hedges of words that give none or several, compared with bash and the 
       const { words, texts } = argWords(c.line);
       assert.ok(words.length);
       // (The tokens of each word, by its place in the line.)
-      const tokens = allTokens(new Analyzer('en').explainLine(parser.parse(c.line), 0).items);
+      const items = new Analyzer('en').explainLine(parser.parse(c.line), 0).items;
+      const tokens = allTokens(items);
+      // (Whether a token lies under a command run (`nice $a -n 5 ls` shows `-n` under `$a`), the line's own command left out.)
+      const inRun = new Map<Token, boolean>();
+      const mark = (ts: readonly Token[], run: boolean): void => ts.forEach((t) => { inRun.set(t, run); mark(t.children, run || t.kind === 'command'); });
+      items.forEach((t) => { inRun.set(t, false); mark(t.children, false); });
       let col = c.line.indexOf(' ') + 1;
       const tokensOf = texts.map((t) => {
         const at = c.line.indexOf(t, col);
@@ -334,38 +341,64 @@ describe('hedges of words that give none or several, compared with bash and the 
       const contradicted = new Set<string>();
       const fresh: string[] = [];
       const mine = known.filter((k) => k.line === c.line);
-      const covered = new Set<Known>();
       vectors.forEach((v, n) => {
         const counts = new Map(names.map((x, j) => [x, v[j]]));
         // (A word written out is its text after quote removal: `'"V"'` is `"V"`.)
         const parts = texts.map((t, w) => (counts.has(t) ? c.vars[t].slice(0, counts.get(t)) : [words[w].value ?? t]));
         const argv = parts.flat();
-        const roles = rolesOf(c.tool, argv, c.program);
+        const nested: boolean[] = [];
+        const roles = rolesOf(c.tool, argv, c.program, nested);
         const where = `${c.line} with ${show(counts)}`;
         let k = 0;
         parts.forEach((fields, w) => fields.forEach((field, at) => {
           const role = roles[k++]!;
           if (c.only && !c.only.includes(texts[w])) return;
-          if (showsRole(role, tokensOf[w] as Token[], { text: field, at, of: fields.length, counts }, operands) !== false) return;
+          // (A word a command run shows under itself: if the command line reads it, that is wrong; if the command run reads it,
+          // a token that names no role, "Word `5`", is a role missing, not one that contradicts.)
+          const shown = tokensOf[w] as Token[];
+          const inCommandRun = shown.length > 0 && shown.every((t) => inRun.get(t));
+          const generic = shown.every((t) => /^(Word `|Looks like an option; which command reads it)/.test(t.explanation));
+          if (inCommandRun && nested[k - 1] && generic) return;
+          // (Where the tool refuses the words, which command reads which is moot: section 2.5 of the design gives a refused shape no clause.)
+          const foreign = inCommandRun && !nested[k - 1] && (c.dry || c.seen!(runs.get(n)!) !== 'refused');
+          if (!foreign && showsRole(role, shown, { text: field, at, of: fields.length, counts }, operands) !== false) return;
           contradicted.add(`${texts[w]} ${show(counts)}`);
-          const entry = mine.find((e) => e.word === texts[w] && meets(e, counts));
-          if (entry) covered.add(entry);
-          else fresh.push(`${where}: \`${field}\` of \`${texts[w]}\` is ${JSON.stringify(role.role === 'operand' ? role.spec?.text.en : role.role === 'value' ? `value of ${role.of}` : role.role === 'option' ? `option ${role.flag}` : role.role)}; shown: ${JSON.stringify(tokensOf[w].map((t) => t.explanation))}`);
+          if (!mine.some((e) => e.word === texts[w] && meets(e, counts))) fresh.push(`${where}: \`${field}\` of \`${texts[w]}\` is ${JSON.stringify(role.role === 'operand' ? role.spec?.text.en : role.role === 'value' ? `value of ${role.of}` : role.role === 'option' ? `option ${role.flag}` : role.role)}; shown: ${JSON.stringify(tokensOf[w].map((t) => t.explanation))}`);
         }));
         if (c.dry) return;
         const run = runs.get(n)!;
         assert.strictEqual(c.seen!(run), c.expect!(argv, roles), `${where}: ${argv.join(' ')}: ${run.err}`);
       });
+      // (An entry that names a variable the line lacks, or counts no run has, or that another entry repeats, is dead.)
+      const covers = (e: Known) => vectors.map((v) => new Map(names.map((x, j) => [x, v[j]]))).filter((counts) => meets(e, counts));
+      const dead = mine.flatMap((e, i) => [
+        ...Object.keys(e.counts).filter((x) => !names.includes(x)).map((x) => `dead: ${JSON.stringify(e.word)} names ${x}, not a variable of ${c.line}`),
+        ...(covers(e).length ? [] : [`dead: ${JSON.stringify(e)} matches no run`]),
+        ...(texts.includes(e.word) ? [] : [`dead: ${JSON.stringify(e.word)} is no word of ${c.line}`]),
+        ...mine.slice(0, i).filter((o) => o.word === e.word && covers(o).some((counts) => meets(e, counts))).map(() => `dead: ${JSON.stringify(e.word)} of ${c.line} is listed twice for the same counts`),
+      ]);
       // (An entry that covers counts where the explanation is right is stale.)
       const stale = mine.flatMap((e) => vectors
         .map((v) => new Map(names.map((x, j) => [x, v[j]])))
         .filter((counts) => meets(e, counts) && !contradicted.has(`${e.word} ${show(counts)}`))
         .map((counts) => `stale: \`${e.word}\` of ${c.line} with ${show(counts)} is explained right now`));
-      assert.deepStrictEqual([...fresh, ...stale], []);
+      assert.deepStrictEqual([...dead, ...fresh, ...stale], []);
     });
   }
 
   it('lists no entry of a line that is not a case', () => {
     assert.deepStrictEqual(known.filter((k) => !CASES.some((c) => c.line === k.line)).map((k) => k.line), []);
+  });
+});
+
+describe('the checker reads the clauses of a hedge', () => {
+  // (A comment after a condition may hold a condition itself: "B when it expands to more — C when it expands to 2 words" is the
+  // clause B for 2 words or more, with the comment, not the clause "B … — C" for 2 words.)
+  it('ends a clause at its own condition, whatever its comment says', () => {
+    const e = 'A when `$a` expands to a single word; B when it expands to more — C when it expands to 2 words';
+    const place = (n: number) => ({ text: 'x', at: 0, of: 1, counts: new Map([['$a', n]]) });
+    assert.strictEqual(saysOperand(e, ['A'], place(1)), true);
+    assert.strictEqual(saysOperand(e, ['B'], place(3)), true);
+    assert.strictEqual(saysOperand(e, ['A'], place(3)), false);
   });
 });
