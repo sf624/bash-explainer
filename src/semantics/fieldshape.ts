@@ -445,7 +445,9 @@ function misread(w: WordMeaning): boolean {
   if (/~[^/]*\\\n/.test(text) || /\$_\{/.test(text) || /\$\w*(?:\\\n)+[\w{]/.test(text) || /\$\\\n/.test(text) || /(?:^|[^$\\])(?:\$\$)+\{/.test(text)) return true;
   const crosses = (m: RegExpMatchArray): boolean => Math.min(m[1].charCodeAt(0), m[2].charCodeAt(0)) <= 92 && Math.max(m[1].charCodeAt(0), m[2].charCodeAt(0)) >= 92;
   if ([...text.matchAll(/\{([^\d.{}])\.\.([^\d.{}])(?:\.\.[-+]?\d+)?\}/g)].some(crosses)) return true;
-  if (w.nodes.some((x) => descendants(x, ['word']).some((d) => /[<>]\(/.test(d.text)))) return true;
+  // (A process substitution joined to other parts: with an expansion, bash splits its name, `<(:)$x` with `IFS=/` gives
+  // ``, `dev`, `fd`, `63`.)
+  if (w.nodes.some((x) => descendants(x, ['word']).some((d) => /[<>]\(/.test(d.text)) || descendants(x, ['process_substitution']).some((p) => p !== x))) return true;
   // (Text the adapter keeps as plain with quotes or expansions in it: an extglob group, `x@(${x})y` is split, F92;
   // `@(a'|'b)` is the pattern `@(a\|b)`. And a `${ cmd; }` of bash 5.3, which runs in the shell and may set IFS, F93.)
   // (Not in the operand of an expansion, which the evaluator reads from its text: `"${x:-'a'}"`.)
