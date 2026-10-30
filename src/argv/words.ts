@@ -1,10 +1,11 @@
 // The words of a command as the argument interpreter (src/argv/interpret.ts) takes them: their value after
 // quote removal when it is known, the start that is known otherwise, and how many words they become.
+import { parseExpansion } from '../expansion';
 import { bracesWork, type Shell } from '../shellfeatures';
 import { braceAlternatives, rejoined } from '../semantics/brace';
 import { givesElements } from '../semantics/elements';
 import { staticWordValue } from '../staticword';
-import type { SyntaxNode } from '../syntax/tree';
+import { descendants, type SyntaxNode } from '../syntax/tree';
 import type { ArgWord } from './interpret';
 
 /** The text known at the start of a word whose value is not known (`--file=` of `--file=$f`, `-I` of `-I{}`), in a script for `shell`. */
@@ -102,6 +103,33 @@ export function countOf(n: SyntaxNode, shell?: Shell, braces: boolean | 'unknown
   return either.min === 1 && either.max === 1 ? undefined : either;
 }
 
+/** The parameter of a word that is one unquoted expansion of it and nothing else (`ArgWord.param`: `$a`, `${a}`, `$@`). */
+function loneParameter(n: SyntaxNode): string | undefined {
+  if (n.type === 'simple_expansion') return n.text.slice(1);
+  const p = n.type === 'expansion' ? parseExpansion(n.text) : undefined;
+  return p?.parts.length === 1 ? p.name : undefined;
+}
+
+/** What may assign when it is expanded: a text with none of these holds no assignment, arithmetic or `${ cmd; }`. */
+const MAY_ASSIGN = /[=[:]|\(\(|\$\{[\s|]/;
+
+/**
+ * What expanding a word may assign (`ArgWord.assigns`): the names of `${a:=x}` and `${a=x}`, or `*` (any) for arithmetic,
+ * which may assign any name through a value it reads as arithmetic (`x='a=1'; $((x))`), in `$(( ))`, a subscript or an
+ * offset, and for `${ cmd; }`, which runs in the shell.
+ */
+function assignsOf(n: SyntaxNode): string[] | undefined {
+  if (!MAY_ASSIGN.test(n.text)) return undefined;
+  const names = new Set<string>();
+  for (const x of descendants(n, ['expansion', 'arithmetic_expansion', 'command_substitution'])) {
+    if (x.type === 'arithmetic_expansion' || (x.type === 'command_substitution' && x.text.startsWith('${'))) return ['*'];
+    const p = x.type === 'expansion' ? parseExpansion(x.text) : undefined;
+    if (p?.op === '=' || p?.op === ':=') names.add(p.name);
+    if (p?.parts.some((q) => q.role === 'offset' || q.role === 'length' || (q.role === 'subscript' && !/^\[[@*]\]$/.test(q.text)))) return ['*'];
+  }
+  return names.size ? [...names] : undefined;
+}
+
 /**
  * The words of the command line as the interpreter reads them, in a script for `shell` (bash when absent); `count` how
  * many words each gives, where the caller knows more than `countOf` (the model's fields, src/semantics/argwords.ts).
@@ -109,7 +137,9 @@ export function countOf(n: SyntaxNode, shell?: Shell, braces: boolean | 'unknown
 export const argWordFor = (shell?: Shell, braces?: (n: SyntaxNode) => boolean | 'unknown', count = (n: SyntaxNode) => countOf(n, shell, braces?.(n))) => (n: SyntaxNode): ArgWord => {
   const value = staticWordValue(n, false, shell);
   const words = count(n);
-  return { ...(value !== undefined ? { value } : { prefix: prefixOf(n, shell) }), ...(words ? { count: words } : {}) };
+  const param = loneParameter(n);
+  const assigns = assignsOf(n);
+  return { ...(value !== undefined ? { value } : { prefix: prefixOf(n, shell) }), ...(words ? { count: words } : {}), ...(param ? { param } : {}), ...(assigns ? { assigns } : {}) };
 };
 
 /** A word of the command line as the interpreter reads it in bash. */

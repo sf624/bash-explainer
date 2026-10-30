@@ -20,6 +20,14 @@ export interface ArgWord {
   /** Otherwise, the text known at its start (`--file=` of `--file=$f`, `-I` of `-I{}`), if any. */
   prefix?: string;
   /**
+   * The parameter it expands, where it is one unquoted expansion and nothing else (`$a`, `${a}`, `$1`, `$@`): such words
+   * of one parameter give as many words, unless a word between them assigns it (`assigns`; the ties of
+   * src/argv/readings.ts).
+   */
+  param?: string;
+  /** What expanding it may assign: names (`${a:=x}`), or `*` for any (arithmetic, `${ cmd; }`). */
+  assigns?: readonly string[];
+  /**
    * How many words it becomes, when that is not one: `{a,b}` is 2; `*.txt` at least 1 and `"$@"` at
    * least 0 (`max` absent: not known).
    */
@@ -246,6 +254,12 @@ export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretCon
   const out = groups.length ? regroup(parse, groups).parse : parse;
   return own.size ? optionFields(out, own, words) : out;
 }
+
+/**
+ * Reads words written out for one shape of the counts (src/argv/readings.ts) with the spec, for the roles only: as a
+ * reading of `valueHedges` does, it reads no hedges (`Reader.bare`).
+ */
+export const readWritten = (spec: CommandSpec, words: ArgWord[], ctx: InterpretContext): ArgvParse => new Reader(words, ctx, new Set(), undefined, true).read(spec, 0, words.length, ctx.name ?? '', [], false, []);
 
 
 /** The values an option takes (none, one, or one of several forms). */
@@ -847,7 +861,7 @@ function lookupOption(options: OptionSpec[], flag: string, prefixes: ParserRules
 const findOption = (options: OptionSpec[], flag: string, prefixes: ParserRules['longPrefixes'] = false): OptionSpec | undefined => lookupOption(options, flag, prefixes).option;
 
 /** The subcommand a word names: its name and spec. */
-function subcommand(spec: CommandSpec, word: string): [string, CommandSpec] | undefined {
+export function subcommand(spec: CommandSpec, word: string): [string, CommandSpec] | undefined {
   const subs = Object.entries(spec.subcommands ?? {});
   const names = ([name, s]: [string, SubcommandSpec]): string[] => [name, ...(s.aliases ?? [])];
   if (spec.subcommandPrefixes === 'first') return word ? subs.find((s) => names(s).some((n) => n.startsWith(word))) : undefined;
