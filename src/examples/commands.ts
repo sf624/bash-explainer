@@ -15,7 +15,7 @@ import { perlExample, perlOptions } from './perlrun';
 import { InputBox, Interactive, rerun, RerunSpec } from './rerun';
 import { InputSource, knownLines, readOrder, shareOut, shownSource, streamLabel, withSystemFiles } from './source';
 import { IFS_WHITESPACE } from '../semantics/chars';
-import { readSampleLine, runRead, xargsExample as runXargs } from './runtime';
+import { readSampleLine, runRead, showCommand, xargsExample as runXargs } from './runtime';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
 import { commandExample, parseOptions, parseWords, shortKeys, Unsupported as TextFiltersUnsupported } from './textfilters';
 import type { ArgvParse } from '../argv/interpret';
@@ -231,10 +231,12 @@ export function readExample(words: (string | undefined)[], ifs: string | undefin
   // A separator that is not whitespace (`IFS=,`) keeps empty fields; a trailing one adds no field.
   const seps = [...ifs].filter((c) => !IFS_WHITESPACE.includes(c));
   if (seps.length) {
-    const shownSeps = seps.map((c) => `\`${c}\``).join(s('、', ', '));
+    // (A control character is shown as bash reads it, `$'\x1b'`.)
+    const shown = (x: string): string => (/[\x00-\x1f\x7f]/.test(x) ? showCommand([x]) : x);
+    const shownSeps = seps.map((c) => `\`${shown(c)}\``).join(s('、', ', '));
     note = s(
-      `\`IFS=${ifs}\` の \`read\`: 空白以外の区切り文字（${shownSeps}）が続くと、間の空のフィールドもそのまま残る（空白の区切りは続いても1つにまとまる）。末尾の区切り文字の後ろには空のフィールドはできない`,
-      `\`read\` with \`IFS=${ifs}\`: a separator that is not whitespace (${shownSeps}) keeps the empty field between two of them (whitespace separators merge into one); a separator at the end of the line adds no empty field after it`);
+      `\`IFS=${shown(ifs)}\` の \`read\`: 空白以外の区切り文字（${shownSeps}）が続くと、間の空のフィールドもそのまま残る（空白の区切りは続いても1つにまとまる）。末尾の区切り文字の後ろには空のフィールドはできない`,
+      `\`read\` with \`IFS=${shown(ifs)}\`: a separator that is not whitespace (${shownSeps}) keeps the empty field between two of them (whitespace separators merge into one); a separator at the end of the line adds no empty field after it`);
   }
   const lines = r.array ? [`${r.array[0]}=(${r.array[1].map((x) => JSON.stringify(x)).join(' ')})`] : r.vars.map(([k, v]) => `${k}=${JSON.stringify(v)}`);
   const example: Example = { kind: 'read',
