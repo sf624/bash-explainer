@@ -1182,6 +1182,7 @@ Braces are read as bash 5.2 finds them, where it expands them (compared with bas
 | `echo {+01..3}` | `1 2 3`: only a leading `0` or `-0` pads | no padding note | "a number with a leading 0 pads all of them" |
 | `echo {a}b,c}`, `x{},a}`, `{a,{b,c}`, `{+1..3}` | `a}b` `c`; `x}` `xa`; `{a,b` `{a,c`; `1` `2` `3` (a `}` before the first `,` does not close the braces, nor does a `{` that starts the word and a `}` follows open them) | brace expansions, with those words | plain words |
 | `echo {x..{a,b}}`, `{x..{1..2}}` | `x..a` `x..b` (braces that hold no sequence go, when a comma is inside them); `{x..{1..2}}` as it is | those words | `{x..a}` `{x..b}`; `{x..1}` `{x..2}` |
+| `echo $${1..2}`, `$${a,b}`, `x{a,$${b,c}}` | `${` starts a parameter expansion also after the `$` of `$$`, so its braces are not expanded: `12345{1..2}`; `xa` `x12345{b,c}` | `$$` and the text `{1..2}`; the list's second word `x$${b,c}` | the braces expanded: `$$1` `$$2` |
 | `echo {a,b} > {c,d}` | "ambiguous redirect" | the target shows its words too, as `> {1..2}` did | the note alone |
 | `echo {a,b}$x`, `x` empty | `a` `b` | the words are known (in the values and the conditions the model follows) | not known |
 | `trap {x,EXIT}`, `trap {y,INT} TERM`, `bash -c {x,y}` | `trap x EXIT`: the action `x` on `EXIT`; `bash -c x y`: `y` is `$0` | "expands to `x` (command to run…) and `EXIT` (signal…)", each word with its role | the braces were the action alone (or the command string), "not explained as a script" |

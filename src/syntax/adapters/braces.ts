@@ -100,13 +100,24 @@ const SEQUENCE = /^\{(?:[-+]?\d+\.\.[-+]?\d+|[A-Za-z]\.\.[A-Za-z])(?:\.\.[-+]?\d
  * drops the braces, as of a list of one word (`{x..{a,b}}` is `x..a` and `x..b`).
  */
 export function nextBrace(text: string, from: number, to: number, opaque: ReadonlyMap<number, Range>): BraceSpan | undefined {
+  // (Whether the last character the scan read is a `$`, also the last of a part: see `$${`.)
+  let dollar = false;
   for (let i = from; i < to; i++) {
     const skip = opaque.get(i)?.end;
     // (A `{` after a `$` starts a parameter expansion, which unbash makes a part: `${a,b}`.)
     if (skip !== undefined || text[i] === '\\') {
+      dollar = skip !== undefined && text[skip - 1] === '$';
       i = skip === undefined ? i + 1 : skip - 1;
       continue;
     }
+    // bash's scan reads characters, not parts: the `{` after the `$$` of `$${1..2}` starts a parameter expansion
+    // to it, whose braces it skips with what they hold (`$${a{b,c}}` has none), up to the end when they stay open.
+    if (dollar && text[i] === '{') {
+      i = closing(text, i, to, opaque) - 1;
+      dollar = false;
+      continue;
+    }
+    dollar = text[i] === '$';
     // (Nor is a `{` at the start, or after a blank, that a `}` follows: `{},a}` stays as it is, as `find`'s `{}` does.)
     if (text[i] !== '{' || (text[i + 1] === '}' && (i === from || /\s/.test(text[i - 1])))) continue;
     const span = braceAt(text, i, to, opaque);
@@ -114,6 +125,18 @@ export function nextBrace(text: string, from: number, to: number, opaque: Readon
     else if (span) return span;
   }
   return undefined;
+}
+
+/** Where the braces that open at `open` end (past their `}`, the braces in them counted), or `to` when they are not closed. */
+function closing(text: string, open: number, to: number, opaque: ReadonlyMap<number, Range>): number {
+  let depth = 0;
+  for (let j = open; j < to; j++) {
+    const skip = opaque.get(j)?.end;
+    if (skip !== undefined || text[j] === '\\') j = skip === undefined ? j + 1 : skip - 1;
+    else if (text[j] === '{') depth++;
+    else if (text[j] === '}' && --depth === 0) return j + 1;
+  }
+  return to;
 }
 
 /** The brace expression that starts at the `{` at `open`; else the end of braces that stay as they are, when the scan skips them. */

@@ -1153,6 +1153,10 @@ describe('unbash adapter: brace expressions as bash finds them (3.5.1)', () => {
     ['{a}', []], ['{}', []], ['{a,b', []], ['"{a,b}"', []], ["'{a,b}'", []], ['\\{a,b}', []], ['{a\\,b}', []], ['{"a,b"}', []], ['${x,y}', []], ['{x,{y}', []],
     // (Quotes and expansions in a bracket or an extended glob are opaque; braces there are braces.)
     ['["{a,b}"]', []], ['[{"a,b"}]', []], ['a[{"x,y"}]b', []], ['[${v:-a,b}]', []], ['@(${v:-a,b}|x)', []], ['[{a,b}]', ['{a,b}']], ['@({a,b}|x)', ['{a,b}']],
+    // (bash's scan reads characters: the `{` after `$$` starts a parameter expansion, braces and all, to its `}` or the end.)
+    ['$${1..2}', []], ['$${a,b}', []], ['a$${1..2}b', []], ['$${a{b,c}}', []], ['$${x{a,b}', []], ['{a,$${b,c}}', ['{a,$${b,c}}']], ['$${a}{b,c}', ['{b,c}']],
+    ['$\\{1..2}', []], ['$$\\{1..2}', []], ['\\$${a}x{1,2}', ['{1,2}']], ['"$"{1..2}', ['{1..2}']], ["$'$'{1..2}", ['{1..2}']], ['$$$${a,b}', []], ['$$$x{a,b}', ['{a,b}']],
+    ['$$a{b,c}', ['{b,c}']], ['$${a\\}b,c}x', []], ['$${a"}"b}{c,d}', ['{c,d}']],
   ];
 
   it('makes one of each brace expansion bash makes, and of nothing else', () => {
