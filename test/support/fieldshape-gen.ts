@@ -41,9 +41,10 @@ const GROUPS = ['@(a|b)', '+(-v)', '!(zz)', '*(a)', '?(-)v*', '@(-v|-vu)', '@(a\
 /**
  * Parts bash makes from an integer, and others (F97): in double quotes before `"$@"` or another part that gives
  * elements, the first are split by IFS (`"$#$@"` with `IFS=1` and one element is an empty field and the element).
+ * Not `$LINENO`: a case runs twice, on two lines of the batch.
  */
-const INTEGERS = ['$#', '$?', '$$', '$!', '${#}', '${##}', '${#:-1}', '${#-x}', '${#@}', '${#*}', '${#x}', '${#a}', '${#a[@]}', '${#LINENO}', '${#1}', '$((1))', '$[-1]',
-  '${y:-$#}', '${?:+1}', '$x', '${x}', '$(printf 1)', '$LINENO', '$1'];
+const INTEGERS = ['$#', '$?', '$$', '$!', '${#}', '${##}', '${#:-1}', '${#-x}', '${#@}', '${#*}', '${#x}', '${#a}', '${#a[@]}', '${#BASH_VERSION}', '${#1}', '$((1))', '$[-1]',
+  '${y:-$#}', '${?:+1}', '$x', '${x}', '$(printf 1)', '$PPID', '$1'];
 const ELEMENTS = ['$@', '${@}', '${@:1}', '${@^}', '${@#a}', '${a[@]}', '${a[@]/z/y}', '${a[@]@Q}', '${a[@]:-q}', '${!a[@]}', '${!BASH_V@}', '${a[@]+"$@"}', '$*', '${a[*]}'];
 /** Variables bash does not let a script assign (F86). */
 const NOASSIGN = ['FUNCNAME', 'BASH_LINENO', 'BASH_SOURCE', 'BASH_ARGV', 'BASH_ARGC', 'GROUPS', 'DIRSTACK', 'BASH_ARGV0', 'PPID'];
@@ -169,7 +170,10 @@ function wordOf(pick: <T>(xs: readonly T[]) => T, chance: (p: number) => boolean
   // (The words the word model reads otherwise than bash are made too: the domain must say it does not know them.)
   for (;;) {
     const w = Array.from({ length: 1 + (chance(0.5) ? 1 : 0) + (chance(0.5) ? 1 : 0) + (chance(0.3) ? 1 : 0) }, part).join('');
-    // (Not a word of line continuations only: no word.)
-    if (w.replace(/\\\n/g, '')) return w;
+    // (Not a word of line continuations only: no word. Nor one with `**` under a path that may start at `/`, `~` or
+    // `~+` (`$SECONDSd/**` is `/**`): with globstar, bash would walk the whole tree. `d/**` in the case's directory is
+    // kept, unless a name before it takes its `d`.)
+    const flat = w.replace(/\\\n/g, '');
+    if (flat && !/\/\*\*/.test(flat.replace(/(?<![\w$])d\/\*\*/g, ''))) return w;
   }
 }
