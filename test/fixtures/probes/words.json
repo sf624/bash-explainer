@@ -2795,5 +2795,62 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "@PROBE:a@ {Z..a} x{Z..a} {Y..b..3} {[..a}",
+    "facts": {
+      "a": [
+        [
+          "Z",
+          "[",
+          "",
+          "]",
+          "^",
+          "_",
+          "`",
+          "a",
+          "xZ",
+          "x[",
+          "x",
+          "x]",
+          "x^",
+          "x_",
+          "x`",
+          "xa",
+          "Y",
+          "",
+          "_",
+          "b",
+          "{[..a}"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "@PROBE:b@ {Y..b..3}\"y\" \"a\"{Y..b..3}; @PROBE:a@ {Z..a}{1,2}",
+    "gaps": {
+      "b": "the backslash of the range quotes the first character of the part after it (`\\\"y\"` is `\"y`): the model reads the parts as written and says the words are not known (brace.ts, reread)",
+      "a": "bash fails (\"bad substitution\"): it reads the backquote of the range as a command substitution that nothing closes; the model has no such failure and says the words are not known (brace.ts, reread)"
+    },
+    "facts": {
+      "b": [
+        [
+          "Yy",
+          "\"y",
+          "_y",
+          "by",
+          "aY",
+          "a",
+          "a_",
+          "ab"
+        ]
+      ],
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: bad substitution: no closing \"`\" in `1"
+    }
   }
 ]

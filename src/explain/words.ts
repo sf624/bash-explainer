@@ -18,7 +18,7 @@ import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { splitsIn } from '../argv/words';
-import { braceAlternatives, braceTexts } from '../semantics/brace';
+import { braceAlternatives, braceTexts, rereadFails } from '../semantics/brace';
 import { mayGiveNoField } from '../semantics/nofield';
 import { replaceRange } from '../rewrite';
 import { attribute, docLine } from '../semantics/state';
@@ -321,11 +321,16 @@ function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
   const parts = sequences.flatMap((s) => sequenceParts(cx, s)).map((t) => fromEmbedded({ ...t, start: t.start - n.startIndex, end: t.end - n.startIndex }, n, { text, base: 0 }, 'shell'));
   // `{a,$x}`: the words of the braces are not yet those the command gets, when an expansion in one may split it or give
   // none, unless the model knows that each gives one word (`x=p; cp {a,$x} d`, `cp "x"{a,$x} d`).
-  const later = braceAlternatives([n], n.parent!.type === 'concatenation')!.some(splitsIn) && !oneFieldEach(cx, n)
+  const alternatives = braceAlternatives([n], n.parent!.type === 'concatenation')!;
+  const later = alternatives.some(splitsIn) && !oneFieldEach(cx, n)
     ? cx.s('（その後の展開で、単語の数は増えたり減ったりしうる）', ', which the expansions after it may make into more or fewer words') : '';
+  // (`x{Z..a}y`: bash reads the `` ` `` of ``x`y`` again, as a command substitution that nothing closes.)
+  const fails = braceAlternatives([n.parent!.type === 'concatenation' ? n.parent! : n])?.some(rereadFails)
+    ? cx.s('。ただし、範囲が作る `` ` `` の後ろに文字が続く語では、bash はそれを閉じていないコマンド置換の始まりと読み、失敗する（"bad substitution"）',
+      '; but where text follows a `` ` `` that the range gives, bash reads it as the start of a command substitution that nothing closes, and fails ("bad substitution")') : '';
   return cx.tok(n, 'expansion', (words.length
-    ? cx.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${later}${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}${pad ? '（先頭が 0 の数があるので、桁数をそろえて 0 で埋める）' : ''}`,
-      `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${later}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}${pad ? ' (a number with a leading 0 pads all of them with zeros to the same width)' : ''}`)
+    ? cx.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${later}${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}${pad ? '（先頭が 0 の数があるので、桁数をそろえて 0 で埋める）' : ''}${fails}`,
+      `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${later}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}${pad ? ' (a number with a leading 0 pads all of them with zeros to the same width)' : ''}${fails}`)
     : cx.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`)) + bracesMaybeOff(cx, n), parts);
 }
 

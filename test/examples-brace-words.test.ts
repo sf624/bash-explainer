@@ -2,7 +2,7 @@
 // (`ExampleSection.words`) that the outputs draw as separate words, and what `echo` or `printf` prints with them. Both
 // are compared with bash, run in an empty directory.
 import * as assert from 'assert';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -33,6 +33,21 @@ const wordsOf = (e: Example): ExampleSection => e.sections.find((s) => s.words)!
 const printedOf = (e: Example): ExampleSection | undefined => e.sections.find((s) => !s.words);
 
 describe('the example of a brace expansion', () => {
+  it('is not made where bash fails on a word: a `` ` `` of a letter range that text follows', () => {
+    // (bash reads it again as a command substitution that nothing closes.)
+    const r = spawnSync('bash', ['-c', "printf '<%s>' x{Z..a}y"], { encoding: 'utf8' });
+    assert.deepStrictEqual([r.stdout, r.status], ['', 1]);
+    assert.match(r.stderr, /bad substitution: no closing "`" in `y/);
+    assert.deepStrictEqual(braceExamples('echo x{Z..a}y'), []);
+    const t = explain('echo x{Z..a}y', 0, 'en').items[0].children.find((c) => c.label === 'x{Z..a}y')!.children[0];
+    assert.match(t.explanation, /`x`y`` `xay`; but where text follows a `` ` `` that the range gives, bash reads it as the start of a command substitution that nothing closes, and fails \("bad substitution"\)$/);
+    assert.doesNotMatch(explain('echo x{Z..a}', 0, 'en').items[0].children.find((c) => c.label === 'x{Z..a}')!.children[0].explanation, /fails/);
+    // (Also before a part: `{Z..a}"y"`.)
+    assert.match(JSON.stringify(explain('echo {Z..a}"y"', 0, 'en').items), /Brace expansion: `\{Z\.\.a\}` [^"]*, and fails/);
+    assert.strictEqual(spawnSync('bash', ['-c', 'echo {Z..a}"y"'], { encoding: 'utf8' }).status, 1);
+    // (A word too long to list says nothing of it.)
+    assert.doesNotMatch(JSON.stringify(explain('echo "a"{1..30}{A..Z}', 0, 'en').items), /fails/);
+  });
   it("is not made of a word with quotes before the braces (`'%d\\n'{a,b}`), which bash expands too", () => {
     // (Found by the fuzz test: the example read such a word as plain text, and failed.)
     assert.strictEqual(bash("printf '<%s>' 'x'{a,b}"), '<xa><xb>');
@@ -45,6 +60,8 @@ describe('the example of a brace expansion', () => {
     ['touch file{1..3}.txt', false],
     ["printf '%s\\n' {a,b}{1,2}", true],
     ['echo {Z..a}', true],
+    // (bash reads the `\` and `` ` `` of a letter range again: `x\` is `x`.)
+    ['echo x{Z..a}', true], ['echo {Y..b..3}', true],
     ['echo {a\\ ,b}', true],
     ['echo x{1..3}y {a,b}', true],
     ["printf '%s-' {1..20}", true],
