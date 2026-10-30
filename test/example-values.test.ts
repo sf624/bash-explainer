@@ -188,8 +188,9 @@ describe('worked examples of tests and patterns with the value of the script', (
     const src = 'x=abc\nread -r a b <<< "$x y"';
     assert.deepStrictEqual(examples(src), ['Line read → "abc y"', 'Values stored → a="abc" b="y"']);
     assert.strictEqual(bash(src, `${src.split('\n').pop()}; printf '%s|%s' "$a" "$b"`), 'abc|y');
-    assert.deepStrictEqual(examples('x=abc\nread -r a b <<< "$x \\$y"'), ['Line read → "alice 30 tokyo"', 'Values stored → a="alice" b="30 tokyo"']);
-    assert.deepStrictEqual(examples('read -r a b <<< "$(cmd) y"'), ['Line read → "alice 30 tokyo"', 'Values stored → a="alice" b="30 tokyo"']);
+    // (A text that is not known, `\$y` here or a command's output, is no line the example may make up: bash reads that text.)
+    assert.deepStrictEqual(examples('x=abc\nread -r a b <<< "$x \\$y"'), []);
+    assert.deepStrictEqual(examples('read -r a b <<< "$(cmd) y"'), []);
     assert.deepStrictEqual(examples('x=abc\nread -r a b <<< $x'), ['Line read → "abc"', 'Values stored → a="abc" b=""']);
   });
 

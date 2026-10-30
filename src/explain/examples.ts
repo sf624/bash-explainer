@@ -33,7 +33,7 @@ import { slotEnvironment } from '../semantics/env';
 import type { NameResolution } from '../semantics/names';
 import { exportedValue } from '../semantics/state';
 import { changedByBash } from '../semantics/vars';
-import { literalContent, staticWordValue } from '../staticword';
+import { literalContent, staticWordValue, substitutionNames } from '../staticword';
 import { assignmentsOnly, field, prefixAssignments, redirectionsOf, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
@@ -649,6 +649,38 @@ export function unreadStdin(cx: Explainer, n: SyntaxNode, parse: ArgvParse, args
   cx.note(fact(cx.lang, 'stdin-not-read', { cmd: name.split('/').pop()!, file: file.name, stdin }), n);
 }
 
+/**
+ * The text of the word `w` as bash makes it, when nothing in it varies: quote removal and `$'…'` decoded (`'\t'` is a
+ * backslash and a `t`, `$'\t'` a tab), `$"…"` as `"…"` (the locale's translation aside). Undefined with a substitution,
+ * even `$(:)`: it prints nothing only when `:` is the builtin, which a function of that name changes.
+ */
+function knownText(cx: Explainer, w: SyntaxNode, assignment: boolean): string | undefined {
+  const node = w.type === 'translated_string' && w.namedChildren.length === 1 ? w.namedChildren[0] : w;
+  const v = staticWordValue(node, assignment, cx.shell);
+  return v !== undefined && substitutionNames(node).length === 0 ? v : undefined;
+}
+
+/**
+ * The line `read` reads, from the input the script gives it: a here-string or a here-document (also on the compound
+ * command around it: `while read …; done <<< x`), or a pipe or a file whose lines are known. `line`: its text without
+ * the newline bash adds; `sample`: the script gives it none it writes (a file, a pipe not known, the terminal), so the
+ * example reads a made-up line; `unknown`: the script gives it a text that is not known, which no made-up line may
+ * stand for (and a string read as a script, `eval read …`, takes the input of the command around it).
+ */
+function readInput(cx: Explainer, n: SyntaxNode): { line: string } | 'sample' | 'unknown' {
+  if (cx.nested !== undefined) return 'unknown';
+  const literal = (w: SyntaxNode): string | undefined => literalContent(w)?.text ?? knownText(cx, w, false) ?? wordValue(cx, w);
+  // (The innermost redirection of standard input wins; a function's body takes the input of its call.)
+  for (let c: SyntaxNode | null = n; c && c.type !== 'function_definition'; c = c.parent) {
+    const stdin = sources.stdinOf(c, literal, (p, i) => pipedLines(cx, p, i));
+    if (stdin.from === 'unknown') continue;
+    if (stdin.from === 'here') return stdin.lines ? { line: stdin.lines.join('\n') } : 'unknown';
+    // (A file or a pipe whose contents the script does not give: the example's line stands for them.)
+    return stdin.lines?.length ? { line: stdin.lines.join('\n') } : 'sample';
+  }
+  return 'sample';
+}
+
 /** How `read` splits a sample line into its variables (with the IFS in effect, or the one given before it). */
 function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[]): void {
   let ifs = ifsAt(cx, n);
@@ -656,13 +688,15 @@ function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[]): void {
     if (c.type !== 'variable_assignment' || field(c, 'name')?.text !== 'IFS') continue;
     const v = field(c, 'value');
     // (Its value as bash makes it: `'\t'` and `"\t"` are a backslash and a `t`, `$'\t'` is a tab.)
-    ifs = v ? staticWordValue(v, true, cx.shell) : '';
+    const text = v ? knownText(cx, v, true) : '';
+    // (`IFS+=:` adds to the IFS in effect, when that is known.)
+    const append = c.children.some((k) => !k.named && k.type === '+=');
+    ifs = text === undefined || (append && ifs === undefined) ? undefined : append ? ifs + text : text;
     if (ifs === undefined) break;
   }
-  // The line the command reads, when a here-string gives it: `read -a p <<< "a,b,,c,"`.
-  const here = n.namedChildren.find((c) => c.type === 'herestring_redirect')?.namedChildren[0];
-  // (A here-string of expansions the model knows is read as their value: `read a b <<< "$x y"`.)
-  const r = commandExamples.readExample(args.map((a) => literalContent(a)?.text), ifs, here && (literalContent(here)?.text ?? wordValue(cx, here)), cx.lang, cx.opts.bashVersion ?? DEFAULT_BASH_VERSION);
+  const input = readInput(cx, n);
+  if (input === 'unknown') return;
+  const r = commandExamples.readExample(args.map((a) => literalContent(a)?.text), ifs, input === 'sample' ? undefined : input.line, cx.lang, cx.opts.bashVersion ?? DEFAULT_BASH_VERSION);
   if (!r) return;
   if (r.note) cx.note(r.note, n);
   cx.example(r.example);

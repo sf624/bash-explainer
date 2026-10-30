@@ -806,11 +806,11 @@ describe('tricky lines (round 3)', () => {
     assert.deepStrictEqual(ex.sections.map((s) => s.lines), [['"a,b,,c,"'], ['p=("a" "b" "" "c")']]);
     assert.match(notesOf(src).join('\n'), /`read` with `IFS=,`: a separator that is not whitespace \(`,`\) keeps the empty field/);
     assert.strictEqual(bash('IFS=, read -ra p <<< "a,b,,c,"; declare -p p'), 'declare -a p=([0]="a" [1]="b" [2]="" [3]="c")\n');
-    // Whitespace only: no note. Without a literal here-string: the sample line.
+    // Whitespace only: no note. A here-string that is not known gives no example, no made-up line.
     assert.ok(!notesOf('read -ra p <<< "a b"').some((n) => /IFS/.test(n)));
     assert.deepStrictEqual(examplesOf('read -r a b <<< "x  y z"')[0].sections.map((s) => s.lines), [['"x  y z"'], ['a="x"', 'b="y z"']]);
     assert.strictEqual(bash('read -r a b <<< "x  y z"; echo "[$a][$b]"'), '[x][y z]\n');
-    assert.deepStrictEqual(examplesOf('IFS=: read -r a b <<< "$x"')[0].sections[0].lines.length, 1);
+    assert.deepStrictEqual(examplesOf('IFS=: read -r a b <<< "$x"'), []);
   });
 });
 
@@ -2002,7 +2002,7 @@ describe('words as bash reads them (round 10)', () => {
   it('splits the read example with the IFS in effect, not the default one', () => {
     assert.strictEqual(bash('line=\'alice 30 tokyo\'; IFS=,; read -r a b <<< "$line"; echo "a=[$a] b=[$b]"'), 'a=[alice 30 tokyo] b=[]\n');
     // The example's line, read by bash with the same IFS, gives the values the example shows.
-    for (const [setup, src] of [['IFS=,', 'IFS=,; read -r a b <<< "$line"'], ["IFS=$'\\t'", "IFS=$'\\t'; read -r a b c"], ['IFS=:', 'IFS=:\nread -r a b'], [':', 'read -r a b']]) {
+    for (const [setup, src] of [['IFS=,', 'IFS=,; read -r a b'], ["IFS=$'\\t'", "IFS=$'\\t'; read -r a b c"], ['IFS=:', 'IFS=:\nread -r a b'], [':', 'read -r a b']]) {
       const lines = src.split('\n');
       const ex = new Analyzer('en').explainLine(parser.parse(src), lines.length - 1).examples.find((e) => e.kind === 'read');
       assert.ok(ex, src);

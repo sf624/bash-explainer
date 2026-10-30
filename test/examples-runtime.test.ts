@@ -150,50 +150,122 @@ describe('read agrees with bash', () => {
   }
 });
 
-describe('the example of read follows the IFS written before it, as bash reads the word', () => {
-  // A prefix `IFS=…` (as written in the script), the names, and the here-string (as written) when the example reads it.
-  const rows: [string, string, string?][] = [
-    [String.raw`'\t'`, 'a b', String.raw`'x\ty'`], [String.raw`"\t"`, 'a b', String.raw`'x\ty'`], [String.raw`'\t'`, 'a', String.raw`'x\ty'`],
-    [String.raw`'\n'`, 'a b', String.raw`'x\ny'`], [String.raw`"\\"`, 'a b', String.raw`'x\ty'`],
-    [String.raw`$'\t'`, 'a b c'], [String.raw`$'\t'`, 'a b'], [String.raw`$'\v'`, 'a b c'], [String.raw`$'\f'`, 'a b'], [String.raw`$'\r'`, 'a b c'], [String.raw`$'\n'`, 'a b'],
-    [String.raw`$'\t:'`, 'a b c'], [':', 'a b c', `'x:y:z:w'`], [':', 'a b', `'x:y:z:w'`], [':', 'a', `'x:y'`], [',', 'a b c', `'1,2,,3'`],
-    ['', 'a', `' x '`], [`''`, 'a b', `' x y '`], [String.raw`"$'\t'"`, 'a b', String.raw`'x\ty'`], [String.raw`a$'\t'`, 'a b c'],
+describe('the example of read follows the IFS written before it and the input the script gives, as bash reads them', () => {
+  /**
+   * `src`: the line explained; `names`/`array`: the variables bash is asked for after it (`inside`: `src` prints them
+   * itself, with `printf '%s\x1f'`); `pre`: lines before it; `sample`: the line gives `read` no input, so the example
+   * reads a made-up line, which bash then reads from a here-string; `optional`: an example may be missing (a value the
+   * model does not follow), but one shown is checked.
+   */
+  interface Row { src: string; names?: string[]; array?: string; pre?: string; inside?: boolean; sample?: boolean; optional?: boolean }
+  const S = String.raw;
+  const PF = S`printf '%s\x1f'`;
+  const rows: Row[] = [
+    // The prefix as a word: single and double quotes keep the backslash, `$'…'` decodes it.
+    { src: S`IFS='\t' read -r a b <<< 'x\ty'`, names: ['a', 'b'] }, { src: S`IFS="\t" read -r a b <<< 'x\ty'`, names: ['a', 'b'] },
+    { src: S`IFS='\t' read -r a <<< 'x\ty'`, names: ['a'] }, { src: S`IFS='\n' read -r a b <<< 'x\ny'`, names: ['a', 'b'] },
+    { src: S`IFS="\\" read -r a b <<< 'x\ty'`, names: ['a', 'b'] }, { src: S`IFS="$'\t'" read -r a b <<< 'x\ty'`, names: ['a', 'b'] },
+    { src: S`IFS=a$'\t' read -r a b c <<< $'xa\ty'`, names: ['a', 'b', 'c'] },
+    { src: S`IFS=: read -r a b c <<< 'x:y:z:w'`, names: ['a', 'b', 'c'] }, { src: S`IFS=: read -r a b <<< 'x:y:z:w'`, names: ['a', 'b'] },
+    { src: S`IFS=: read -r a <<< 'x:y'`, names: ['a'] }, { src: S`IFS=, read -r a b c <<< '1,2,,3'`, names: ['a', 'b', 'c'] },
+    { src: S`IFS= read -r a <<< ' x '`, names: ['a'] }, { src: S`IFS='' read -r a b <<< ' x y '`, names: ['a', 'b'] },
+    { src: S`IFS=$"x" read -r a b <<< 'pxq'`, names: ['a', 'b'] },
+    // The same prefixes where the line is the example's own.
+    ...[S`$'\t'`, S`$'\v'`, S`$'\f'`, S`$'\r'`, S`$'\n'`, S`$'\e'`, S`$'\t:'`, S`$'\f:'`, S`:`, ',', S`"\t"`, S`'\t'`].flatMap((ifs) => [
+      { src: `IFS=${ifs} read -r a b c`, names: ['a', 'b', 'c'], sample: true }, { src: `IFS=${ifs} read -r a b`, names: ['a', 'b'], sample: true },
+      { src: `IFS=${ifs} read -r -a arr`, array: 'arr', sample: true },
+    ] as Row[]),
+    // A here-string that is $'…', a concatenation, escapes, or has an expansion the model follows.
+    { src: S`IFS=$'\t' read -r name age <<< $'alice\t30'`, names: ['name', 'age'] }, { src: S`IFS=$'\t' read -r a b <<< p$'\t'q`, names: ['a', 'b'] },
+    { src: S`IFS=$'\t' read -r -a arr <<< $'p\t\tq\t'`, array: 'arr' }, { src: S`LC_ALL=C IFS=$'\t' read -r a b <<< $'p\tq'`, names: ['a', 'b'] },
+    { src: S`IFS=$'\v' read -r a b <<< $'x\vy'`, names: ['a', 'b'] }, { src: S`IFS=$'\f:' read -r a b <<< $'p\fq:r'`, names: ['a', 'b'] },
+    { src: S`IFS=$'\e' read -r a b <<< $'p\eq'`, names: ['a', 'b'] }, { src: S`IFS=: read -r a b <<< $'p:q\\:r'`, names: ['a', 'b'] },
+    { src: S`IFS=: read a b <<< $'p:q\\:r'`, names: ['a', 'b'] },
+    { src: S`read -r a b <<< $'p q'`, names: ['a', 'b'] }, { src: S`read -r a b <<< "x\\y"`, names: ['a', 'b'] }, { src: S`read -r a b <<< 'a   b'`, names: ['a', 'b'] },
+    { src: S`read -r a b <<< $'a b\nc d'`, names: ['a', 'b'] }, { src: S`read a b <<< $'a\\\nb c'`, names: ['a', 'b'] }, { src: S`read -r a <<< ''`, names: ['a'] },
+    { src: S`x=$'p\tq'; IFS=$'\t' read -r a b <<< "$x"`, names: ['a', 'b'], optional: true },
+    { src: S`x='p:q'; IFS=: read -r a b <<< "$x"`, names: ['a', 'b'], optional: true },
+    // A here-document, the compound command around the command, and a pipe that print the line.
+    { src: 'IFS=: read -r a b <<E\np:q\nE', names: ['a', 'b'] },
+    { src: S`while IFS=$'\t' read -r a b; do ${PF} "$a" "$b"; done <<< $'p\tq'`, inside: true },
+    { src: S`{ IFS=: read -r a b; } <<< 'p:q'`, names: ['a', 'b'] },
+    { src: S`printf 'p\tq\n' | { IFS=$'\t' read -r a b; ${PF} "$a" "$b"; }`, inside: true, optional: true },
+    { src: S`echo 'p:q' | { IFS=: read -r a b; ${PF} "$a" "$b"; }`, inside: true, optional: true },
+    // `IFS+=` adds to the IFS in effect.
+    { src: S`IFS+=: read -r a b c <<< 'p q:r'`, names: ['a', 'b', 'c'] }, { src: S`IFS=: IFS+=, read -r a b c <<< 'p:q,r'`, names: ['a', 'b', 'c'] },
   ];
-  const explained = rows.map(([ifs, names, here]) => {
-    const src = `IFS=${ifs} read -r ${names}${here ? ` <<< ${here}` : ''}`;
-    const ex = new Analyzer('en').explainLine(createUnbashParser().parse(src), 0).examples.find((e) => e.kind === 'read');
-    return { src, ex };
+  /** What stands for bash's `$a $b` (or the array) after the row, one value after the other, each ended by byte 31. */
+  const dump = (r: Row): string => (r.array ? `for x in "\${${r.array}[@]}"; do printf '%s\\x1f' "$x"; done` : (r.names ?? []).map((v) => `printf '%s\\x1f' "$${v}"`).join('; '));
+  const explained = rows.map((r) => {
+    const src = `${r.pre ? `${r.pre}\n` : ''}${r.src}`;
+    const ex = new Analyzer('en').explainLine(createUnbashParser().parse(src), r.pre ? r.pre.split('\n').length : 0).examples.filter((e) => e.kind === 'read');
+    const sections = ex[0]?.sections;
+    const label = (l: string): string[] => sections!.find((s) => s.label === l)!.lines!;
+    return {
+      examples: ex.length,
+      line: sections ? JSON.parse(label('Line read')[0]) as string : '',
+      // (`a="x"` or `arr=("p" "")`: the values, in order.)
+      values: sections ? label('Values stored').flatMap((l) => (l.includes('=(') ? l.slice(l.indexOf('=(')) : l.slice(l.indexOf('='))).match(/"(?:[^"\\]|\\.)*"/g)!.map((v) => JSON.parse(v) as string)) : [],
+    };
   });
 
-  it('gives an example for each of these', () => {
-    assert.deepStrictEqual(explained.filter((e) => !e.ex).map((e) => e.src), []);
+  it('gives an example for each of these, unless the model does not follow a value', () => {
+    assert.deepStrictEqual(rows.filter((r, k) => !r.optional && explained[k].examples !== 1).map((r) => r.src), []);
+    assert.deepStrictEqual(rows.filter((r, k) => explained[k].examples > 1).map((r) => r.src), []);
   });
 
-  it('gives none where the value is not known', () => {
-    for (const src of ['IFS=$x read -r a b <<< "x y"', 'IFS=$(cat f) read -r a b', 'IFS=${y}: read -r a b']) {
-      assert.deepStrictEqual(new Analyzer('en').explainLine(createUnbashParser().parse(src), 0).examples.filter((e) => e.kind === 'read'), [], src);
+  it('gives none where the input or the IFS is not known', () => {
+    const none = [
+      S`IFS=$'\t' read -r a b <<< "$(printf 'p\tq')"`, S`IFS=$'\t' read -r a b <<< "$RANDOM"`, S`IFS=$'\t' read -r a b <<< $(echo x)`,
+      'IFS=$x read -r a b <<< "x y"', 'IFS=$(cat f) read -r a b', 'IFS=${y}: read -r a b', 'IFS=: read -r a b <<< "$y"',
+      // (`$(:)` prints nothing only where `:` is the builtin.)
+      ':() { echo z; }\nIFS=$(:): read -r a b <<< \'pzq:r\'', 'IFS=$(true): read -r a b <<< "p q"',
+      // (`+=` adds to an IFS that is not known: `IFS` may be changed anywhere before.)
+      'IFS=$y; IFS+=: read -r a b <<< "p q"', 'IFS+=$y read -r a b <<< "p q"',
+      // (A string read as a script takes the input of the command around it.)
+      "IFS=: eval read -r a b <<< 'p:q'", "IFS=: eval 'read -r a b' <<< 'p:q'", "bash -c 'IFS=: read -r a b' <<< 'p:q'", "trap 'IFS=: read -r a b' EXIT",
+      // (A here-document with an expansion in it, and a here-string of a command's output, in the compound command around.)
+      'IFS=: read -r a b <<E\n$y\nE', 'while IFS=: read -r a b; do :; done <<< "$(cat f)"',
+    ];
+    for (const src of none) {
+      const pre = src.includes('\n') && src.startsWith(':()') ? 1 : 0;
+      assert.deepStrictEqual(new Analyzer('en').explainLine(createUnbashParser().parse(src), pre).examples.filter((e) => e.kind === 'read'), [], src);
     }
+  });
+
+  it('keeps the made-up line where the script gives the text no way to be known', () => {
+    // (A file, a pipe that copies one, and a function's body, which takes the input of its call.)
+    for (const [src, line] of [['IFS=: read -r a b < f', 0], ['cat f | IFS=: read -r a b', 0], ['cat f | while IFS=: read -r a b; do :; done', 0], ['f() { IFS=: read -r a b; }\nf <<< "p:q"', 0]] as const) {
+      const ex = new Analyzer('en').explainLine(createUnbashParser().parse(src), line).examples.filter((e) => e.kind === 'read');
+      assert.strictEqual(ex.length, 1, src);
+      assert.strictEqual(ex[0].sections[0].lines![0], '"alice:30:tokyo"', src);
+    }
+  });
+
+  it('shows a control character of the IFS as bash reads it, in the note', () => {
+    const notes = (src: string): string => JSON.stringify(new Analyzer('en').explainLine(createUnbashParser().parse(src), 0).notes);
+    assert.ok(notes(S`IFS=$'\e' read -r a b`).includes('IFS=$\'\\\\x1b\''), notes(S`IFS=$'\e' read -r a b`));
+    assert.ok(!/[\x00-\x1f]/.test(JSON.stringify(notes(S`IFS=$'\f:' read -r a b`)).replace(/\\\\n/g, '')), 'no raw control character');
+    assert.ok(notes(S`IFS=$'\f:' read -r a b`).includes('IFS=$\'\\\\x0c:\''));
   });
 
   for (const [version, bash] of READ_BASHES) {
     it(`bash ${version}: the values stored are what bash stores`, async function () {
       this.timeout(30000);
-      const shown = explained.map(({ ex }) => {
-        const label = (l: string) => ex!.sections.find((s) => s.label === l)!.lines!;
-        return { line: JSON.parse(label('Line read')[0]) as string, values: label('Values stored').map((l) => JSON.parse(l.slice(l.indexOf('=') + 1)) as string) };
-      });
-      // (Each row on its own: the prefix as written, the line the example read, the names it stored.)
-      const script = rows.map(([ifs, names], k) => {
-        const vars = names.split(' ');
-        return `unset ${names}; IFS=${ifs} read -r ${names} <<< ${ansiC(shown[k].line)}; ${vars.map((v) => `printf '%s\\x1f' "$${v}"`).join('; ')}; printf '\\x1e'`;
+      const script = rows.map((r, k) => {
+        const e = explained[k];
+        const run = r.sample ? `${r.src} <<< ${ansiC(e.line)}` : r.src;
+        return `${r.pre ? `${r.pre}\n` : ''}unset a b c arr REPLY; ${run}\n${r.inside ? '' : dump(r)}\nprintf '\\x1e'`;
       }).join('\n');
       const out = (await runContained([bash, '-c', script], process.cwd())).stdout.split('\x1e');
-      const mine = shown.map((s) => s.values.map((v) => `${v}\x1f`).join(''));
-      assert.deepStrictEqual(mine, out.slice(0, rows.length));
-      // (A here-string the example reads is the line it shows.)
-      rows.forEach(([, , here], k) => {
-        if (here) assert.strictEqual(shown[k].line, execFileSync(bash, ['-c', `printf %s ${here}`]).toString(), explained[k].src);
+      const bad = rows.flatMap((r, k) => {
+        const e = explained[k];
+        if (e.examples === 0) return [];
+        const mine = e.values.map((v) => `${v}\x1f`).join('');
+        return mine === out[k] ? [] : [`${r.src}: ${JSON.stringify(mine)} <> ${JSON.stringify(out[k])}`];
       });
+      assert.deepStrictEqual(bad, []);
+      // (A here-string the example reads is the line it shows.)
     });
   }
 });
