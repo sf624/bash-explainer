@@ -5,7 +5,7 @@
 // roles given back to the command's words. Nothing reads it yet: the hedges are built on it in the later steps.
 import { BASH_VARIABLES } from '../semantics/vars';
 import { splitEnvString } from './envsplit';
-import { type ArgRole, type ArgvParse, type ArgWord, fieldLine, type InterpretContext, readWritten, subcommand } from './interpret';
+import { type ArgRole, type ArgvParse, type ArgWord, fieldLine, type InterpretContext, readWritten, type RoleAt, subcommand } from './interpret';
 import { type Group, lineIndex, optionFields, regroup } from './regroup';
 import type { CommandSpec } from './spec';
 import { allRoles, mostWords } from './valuehedges';
@@ -57,6 +57,17 @@ export interface Reading { outcome: Outcome; words: ArgWord[]; parse: ArgvParse 
  */
 export interface WordsAt { outcome: Outcome; parse: ArgvParse; fields: ArgRole[][] }
 
+/**
+ * The contexts of a word (section 2.4), each tuple once: for a word in a run (`run`), the words before it and after it in
+ * the run, then the other runs in order; for another, every run. Each coordinate leaves out what the word's own
+ * variable gives, and is capped at its top. `own`: its own counts, from one (one or its known number of words for a word
+ * that is not flexible).
+ */
+export interface Contexts { run?: number; contexts: number[][]; own: number[] }
+
+/** A word read at a context and an own count: the shape, how its reading ends, and the role of each of its words. */
+export interface WordAt { sums: number[]; outcome: Outcome; fields: ArgRole[] }
+
 export interface ReadingsTable {
   line: ArgWord[];
   /** The command's word that a word of the line stands for. */
@@ -73,10 +84,20 @@ export interface ReadingsTable {
   base: number[];
   /** The shapes read, each the sum of each run, in order; undefined past `SHAPE_CAP`. */
   shapes: number[][] | undefined;
+  /** The count variable of each of the command's words that is flexible. */
+  variableAt: (number | undefined)[];
   /** The reading of a shape (each read once). */
   reading: (sums: readonly number[]) => Reading;
-  /** The roles of the command's words where each count variable gives `counts[v]` words. */
+  /**
+   * The roles of the command's words where each count variable gives `counts[v]` words: read at those real sums, so it
+   * may read a shape that is not in `shapes` (a count past its top). The hedges read through `contexts` and `readAt`,
+   * which stay within them.
+   */
   at: (counts: readonly number[]) => WordsAt;
+  /** The contexts of a command's word and its own counts (section 2.4); undefined past `SHAPE_CAP`. */
+  contexts: (k: number) => Contexts | undefined;
+  /** The shape of a command's word at one of its contexts with its own count `c` (one of `own`), and the roles of its words there. */
+  readAt: (k: number, context: readonly number[], c: number) => WordAt;
   /**
    * The command's words whose role may depend on the counts, as told without reading other shapes (section 2.8): every
    * word from the first flexible one on, and the words before it that are operands as written.
@@ -164,12 +185,21 @@ function variablesOf(line: readonly ArgWord[], words: readonly ArgWord[], back: 
 }
 
 /**
- * The shapes of the line (section 2.1): the union, over each word of each run, of that run at its real sums (the words
- * before the word and after it, each capped, and its own counts from one) with the other runs at their capped sums, and
- * of every run capped. Gathered by passes over the count variables that keep the distinct tuples of sums, never as their
- * product; undefined when a pass or the union holds more than `cap`.
+ * The passes of a word in a run (section 2.4): its run, its own variable (-1 for a word of a known count) and its own
+ * counts (from one), and what the words before it and after it in the run give but its own variable's (`ties`: how
+ * many of these are its own), with their tops.
  */
-function shapesOf(runs: readonly Run[], variables: readonly CountVariable[], variableOf: readonly (number | undefined)[], fixedOf: (j: number) => number, bound: number, cap: number): number[][] | undefined {
+interface Pass { run: number; own: number; counts: number[]; before: Part; after: Part }
+interface Part { mult: Map<number, number>; fixed: number; ties: number; top: number }
+
+/**
+ * The contexts of the words (section 2.4) and the shapes of the line (section 2.1). A word outside a run reads every run
+ * capped; a word in a run reads the words before it and after it in its run and the other runs, each without its own
+ * variable's words and capped, and its own counts from one. Each set of contexts is gathered by a pass over the count
+ * variables that keeps the distinct tuples, never by their product. The shapes are the union of the shapes of every
+ * context and own count; undefined when a pass or the union holds more than `cap`.
+ */
+function contextsOf(runs: readonly Run[], variables: readonly CountVariable[], variableOf: readonly (number | undefined)[], fixedOf: (j: number) => number, bound: number, cap: number) {
   const domain = (v: number, from = variables[v].min): number[] => range(from, variables[v].top + 1);
   /** The distinct tuples from `start` with the count of each variable but `skip` added by `add`. */
   const pass = (start: number[], add: (s: number[], v: number, x: number) => number[], skip?: number): number[][] | undefined => {
@@ -183,16 +213,16 @@ function shapesOf(runs: readonly Run[], variables: readonly CountVariable[], var
     }
     return [...states.values()];
   };
-  /** The sums of the runs with `x` words of variable `v` more, each capped at its top. */
-  const capped = (s: readonly number[], v: number, x: number, skip = -1): number[] => s.map((n, i) => (i === skip ? n : Math.min(n + (runs[i].mult.get(v) ?? 0) * x, runs[i].top)));
+  /** Sums of runs (all of them, or all but `skip`: `of` gives the run of each place) with `x` words of variable `v` more, each capped at its top. */
+  const capped = (s: readonly number[], v: number, x: number, of = (i: number): Run => runs[i]): number[] => s.map((n, i) => Math.min(n + (of(i).mult.get(v) ?? 0) * x, of(i).top));
   const all = pass(runs.map((r) => r.fixed), capped);
   if (!all) return undefined;
-  const shapes = new Map(all.map((shape) => [shape.join(), shape]));
+  const passes = new Map<number, { pass: Pass; contexts: number[][] }>();
   for (const [r, run] of runs.entries()) {
+    const others = runs.filter((_, i) => i !== r);
     for (const [p, w] of run.words.entries()) {
       const own = variableOf[w] ?? -1;
-      /** The words before or after word p in its run: what they give but `own`'s words (`ties`), and their top. */
-      const part = (ws: number[]) => {
+      const part = (ws: number[]): Part => {
         const mult = new Map<number, number>();
         let [fixed, fewest, ties] = [0, 0, 0];
         for (const j of ws) {
@@ -206,37 +236,54 @@ function shapesOf(runs: readonly Run[], variables: readonly CountVariable[], var
         }
         return { mult, fixed, ties, top: fixed + fewest + bound };
       };
-      const [b, a] = [part(run.words.slice(0, p)), part(run.words.slice(p + 1))];
-      const step = (s: number[], v: number, x: number): number[] => [Math.min(s[0] + (b.mult.get(v) ?? 0) * x, b.top), Math.min(s[1] + (a.mult.get(v) ?? 0) * x, a.top), ...capped(s.slice(2), v, x, r)];
-      const states = pass([b.fixed, a.fixed, ...runs.map((x) => x.fixed)], step, own);
-      if (!states) return undefined;
-      const counts = own < 0 ? [fixedOf(w)].filter((n) => n > 0) : domain(own, Math.max(1, variables[own].min));
-      for (const s of states) {
-        for (const c of counts) {
-          const shape = capped(s.slice(2), own, c);
-          shape[r] = s[0] + s[1] + (1 + b.ties + a.ties) * c;
-          if (shapes.set(shape.join(), shape).size > cap) return undefined;
-        }
+      const [before, after] = [part(run.words.slice(0, p)), part(run.words.slice(p + 1))];
+      const step = (s: number[], v: number, x: number): number[] => [
+        Math.min(s[0] + (before.mult.get(v) ?? 0) * x, before.top), Math.min(s[1] + (after.mult.get(v) ?? 0) * x, after.top), ...capped(s.slice(2), v, x, (i) => others[i]),
+      ];
+      const contexts = pass([before.fixed, after.fixed, ...others.map((x) => x.fixed)], step, own);
+      if (!contexts) return undefined;
+      const counts = own < 0 ? [fixedOf(w)] : domain(own, Math.max(1, variables[own].min));
+      passes.set(w, { pass: { run: r, own, counts, before, after }, contexts });
+    }
+  }
+  /** The sums of the runs of a context of a word in a run (`Pass`), with its own count `c`. */
+  const shapeOf = ({ run, own, before, after }: Pass, context: readonly number[], c: number): number[] => {
+    const others = capped(context.slice(2), own, c, (i) => runs[i < run ? i : i + 1]);
+    return [...others.slice(0, run), context[0] + context[1] + (1 + before.ties + after.ties) * c, ...others.slice(run)];
+  };
+  const shapes = new Map(all.map((shape) => [shape.join(), shape]));
+  for (const { pass: x, contexts } of passes.values()) {
+    for (const context of contexts) {
+      for (const c of x.counts) {
+        const shape = shapeOf(x, context, c);
+        if (shapes.set(shape.join(), shape).size > cap) return undefined;
       }
     }
   }
-  return [...shapes.values()].sort((x, y) => x.reduce((d, n, i) => d || n - y[i], 0));
+  return { all, passes, shapeOf, shapes: [...shapes.values()].sort((x, y) => x.reduce((d, n, i) => d || n - y[i], 0)) };
 }
 
-/** How a reading ends (`Outcome`), at every level of it. */
+/** How a reading ends (`Outcome`), at every level of it: in the parses of the commands it runs, and of a string a value splices in. */
 function outcomeOf(parse: ArgvParse): Outcome {
-  const missing = (r: ArgRole): boolean => (r.role === 'option' && !!r.missing) || (r.role === 'cluster' && r.letters.some(missing));
-  let refused = false;
-  const visit = (q: ArgvParse): boolean => {
-    if (q.gaveUp) return true;
-    refused ||= q.unmatched.length > 0 || q.roles.some(({ role }) => missing(role));
-    return q.roles.some(({ role }) => (role.role === 'subcommand' || role.role === 'command') && !!role.parse && visit(role.parse));
+  let [refused, unknown] = [false, false];
+  const visit = (q: ArgvParse): void => {
+    unknown ||= !!q.gaveUp;
+    refused ||= q.unmatched.length > 0;
+    for (const { role } of q.roles) look(role);
   };
-  return visit(parse) ? 'unknown' : refused ? 'refused' : 'read';
+  const look = (r: ArgRole): void => {
+    refused ||= r.role === 'option' && !!r.missing;
+    if (r.role === 'cluster') r.letters.forEach(look);
+    // (`env -S'tar -cf'`: the words of the string, and the command they start.)
+    for (const { role } of (r.role === 'value' ? r : r.role === 'option' ? r.value : undefined)?.split?.roles ?? []) look(role);
+    if ((r.role === 'subcommand' || r.role === 'command') && r.parse) visit(r.parse);
+  };
+  visit(parse);
+  return unknown ? 'unknown' : refused ? 'refused' : 'read';
 }
 
 /** The roles of the words of a group (`regroup`'s `inner`), at every level, by their number in it. */
-function groupRoles(roles: readonly { word: number; role: ArgRole }[], out: ArgRole[] = []): ArgRole[] {
+function groupRoles(roles: readonly RoleAt[], out: ArgRole[] = []): ArgRole[] {
   for (const { word, role } of roles) {
     out[word] = role;
     if ((role.role === 'subcommand' || role.role === 'command') && role.parse) groupRoles(role.parse.roles, out);
@@ -249,7 +296,7 @@ function groupRoles(roles: readonly { word: number; role: ArgRole }[], out: ArgR
  * reads them: the line with the fields the model knows in place, its runs and count variables, the bound S, the shapes
  * and a reading of each, read when asked.
  */
-export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: InterpretContext = {}, cap = SHAPE_CAP): ReadingsTable {
+export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: InterpretContext, cap = SHAPE_CAP): ReadingsTable {
   const { line, groups, own } = fieldLine(words);
   const back = lineIndex(groups);
   const specs = specsReached(spec, line, ctx);
@@ -316,6 +363,27 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
     const operand = (r: ArgRole): boolean => r.role === 'operand' || r.role === 'fields' || (r.role === 'command' && !!r.item);
     return range(0, words.length).filter((k) => k >= first || operand(roles.get(k)!));
   };
-  const shapes = shapesOf(runs, variables, variableOf, fixedOf, bound, cap);
-  return { line, back, runs, variables, variableOf, bound, specs, base, shapes, reading, at, hedged };
+  const found = contextsOf(runs, variables, variableOf, fixedOf, bound, cap);
+  /** Where the word `j` of the line starts in the reading of `sums`. */
+  const placeOf = (j: number, sums: readonly number[]): number => {
+    let at = 0;
+    for (let i = 0; i < j; i++) at += firstOf.has(i) ? sums[firstOf.get(i)!] : inRun.has(i) ? 0 : 1;
+    return at;
+  };
+  const contexts = (k: number): Contexts | undefined => {
+    if (!found) return undefined;
+    const x = spans[k].at === undefined ? undefined : found.passes.get(spans[k].at!);
+    return x ? { run: x.pass.run, contexts: x.contexts, own: x.pass.counts } : { contexts: found.all, own: [spans[k].group?.n ?? 1] };
+  };
+  const readAt = (k: number, context: readonly number[], c: number): WordAt => {
+    const x = spans[k].at === undefined ? undefined : found!.passes.get(spans[k].at!);
+    const sums = x ? found!.shapeOf(x.pass, context, c) : [...context];
+    const r = reading(sums);
+    // (In its run, its words come after those of the words before it: theirs, and its own variable's.)
+    const from = x ? placeOf(runs[x.pass.run].words[0], sums) + context[0] + x.pass.before.ties * c : placeOf(spans[k].group?.from ?? spans[k].at!, sums);
+    const roles = allRoles(r.parse);
+    return { sums, outcome: r.outcome, fields: range(from, from + c).map((i) => roles.get(i)!) };
+  };
+  const variableAt = words.map((_, k) => (spans[k].at === undefined ? undefined : variableOf[spans[k].at!]));
+  return { line, back, runs, variables, variableOf, variableAt, bound, specs, base, shapes: found?.shapes, reading, at, hedged, contexts, readAt };
 }

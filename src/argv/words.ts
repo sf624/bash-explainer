@@ -1,6 +1,6 @@
 // The words of a command as the argument interpreter (src/argv/interpret.ts) takes them: their value after
 // quote removal when it is known, the start that is known otherwise, and how many words they become.
-import { parseExpansion } from '../expansion';
+import { parseExpansion, type ParsedExpansion } from '../expansion';
 import { bracesWork, type Shell } from '../shellfeatures';
 import { braceAlternatives, rejoined } from '../semantics/brace';
 import { givesElements } from '../semantics/elements';
@@ -110,22 +110,42 @@ function loneParameter(n: SyntaxNode): string | undefined {
   return p?.parts.length === 1 ? p.name : undefined;
 }
 
-/** What may assign when it is expanded: a text with none of these holds no assignment, arithmetic or `${ cmd; }`. */
-const MAY_ASSIGN = /[=[:]|\(\(|\$\{[\s|]/;
+/** What may assign when it is expanded: a text with none of these holds no assignment, arithmetic, substitution or indirection. */
+const MAY_ASSIGN = /[=[:!@`(]|\$\{[\s|]/;
 
 /**
- * What expanding a word may assign (`ArgWord.assigns`): the names of `${a:=x}` and `${a=x}`, or `*` (any) for arithmetic,
- * which may assign any name through a value it reads as arithmetic (`x='a=1'; $((x))`), in `$(( ))`, a subscript or an
- * offset, and for `${ cmd; }`, which runs in the shell.
+ * Whether expanding `${…}` may assign any name: arithmetic (a subscript but `[@]`, `[*]`; an offset, a length), which
+ * may assign through a value it reads as arithmetic (`x='a=1'; $((x))`); an indirection, whose name may hold a subscript
+ * or a `${a:=x}` of its own (`x='b[a=5]'; ${!x}`), but not the names `${!x*}`, `${!x@}` nor the keys `${!a[@]}`; and
+ * `@P`, which expands its value as a prompt.
+ */
+function evaluates(p: ParsedExpansion): boolean {
+  const subscript = p.parts.find((q) => q.role === 'subscript');
+  if (subscript && !/^\[[@*]\]$/.test(subscript.text)) return true;
+  if (p.parts.some((q) => q.role === 'offset' || q.role === 'length' || (q.role === 'transform' && q.text === 'P'))) return true;
+  return p.prefix === '!' && !(p.parts.length === 3 && (subscript || p.op === '*' || p.op === '@'));
+}
+
+/**
+ * What expanding a word may assign (`ArgWord.assigns`): the names of `${a:=x}` and `${a=x}`; `?` for `$( )` and
+ * backquotes, which set the status; `!` for `<( )` and `>( )`, which start a process in the background; and `*` (any) for
+ * arithmetic, an indirection or `@P` (`evaluates`), a `${…}` that is not understood (`${!r:=x}`), and `${ cmd; }`, which
+ * runs in the shell.
  */
 function assignsOf(n: SyntaxNode): string[] | undefined {
   if (!MAY_ASSIGN.test(n.text)) return undefined;
   const names = new Set<string>();
-  for (const x of descendants(n, ['expansion', 'arithmetic_expansion', 'command_substitution'])) {
-    if (x.type === 'arithmetic_expansion' || (x.type === 'command_substitution' && x.text.startsWith('${'))) return ['*'];
-    const p = x.type === 'expansion' ? parseExpansion(x.text) : undefined;
-    if (p?.op === '=' || p?.op === ':=') names.add(p.name);
-    if (p?.parts.some((q) => q.role === 'offset' || q.role === 'length' || (q.role === 'subscript' && !/^\[[@*]\]$/.test(q.text)))) return ['*'];
+  for (const x of descendants(n, ['expansion', 'arithmetic_expansion', 'command_substitution', 'process_substitution'])) {
+    if (x.type === 'process_substitution') names.add('!');
+    else if (x.type === 'command_substitution') {
+      if (x.text.startsWith('${')) return ['*'];
+      names.add('?');
+    } else {
+      // (`$(( ))` is no expansion of a name: `p` is undefined, any name.)
+      const p = x.type === 'expansion' ? parseExpansion(x.text) : undefined;
+      if (!p || evaluates(p)) return ['*'];
+      if (p.op === '=' || p.op === ':=') names.add(p.name);
+    }
   }
   return names.size ? [...names] : undefined;
 }
