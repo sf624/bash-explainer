@@ -139,7 +139,8 @@ function inert(parseWith: (more: number) => ArgvParse, spec: CommandSpec, j: num
   if (at?.role === 'value') return !at.spec?.sets && at.spec?.type !== 'function' && one;
   if (at?.role !== 'operand') return false;
   if (!/^[^-+]/.test(prefixOf(word, shell)) && !parse.roles.some((r) => r.word < j && (r.role.role === 'operand' || r.role.role === 'end-of-options'))) return false;
-  const slots = 1 + Math.max(0, ...(spec.operands ?? []).map((o) => o.pattern.length));
+  // (Each builtin whose words are read so has operands in its spec: `set`, the declarations, `read`, `printf`…)
+  const slots = 1 + Math.max(0, ...spec.operands!.map((o) => o.pattern.length));
   return (one ? parse : parseWith(slots)).roles.every((r) => r.word < j || (r.role.role === 'operand' && !naming(r.role)));
 }
 
