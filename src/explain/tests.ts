@@ -17,7 +17,7 @@ import { replaceNode, type Rewrite, statementBefore, unusedName } from '../rewri
 import { STATEMENTS } from '../semantics/env';
 import { option, type ShellState } from '../semantics/state';
 import { isPlainWord, staticWordValue } from '../staticword';
-import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
+import { ancestor, descendants, field, fields, nameText, type SyntaxNode } from '../syntax/tree';
 import { type BracketTest, collation, type TestExpr, testRange } from '../testexpr';
 import type { Explainer } from './context';
 import { matchExample, regexExample, testExample } from './examples';
@@ -355,11 +355,12 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
 function quotedPatternNote(cx: Explainer, n: SyntaxNode, op: string, rights: SyntaxNode[]): string | undefined {
   const regex = op === '=~';
   if (!['=', '==', '!=', '=~'].includes(op) || !ancestor(n, (a) => a.type === 'extended_test')) return undefined;
-  // (In a regex a backslash is no quoting: `a\.c` is the same regex as `a[.]c`.)
+  // (In a regex a backslash is no quoting: `a\.c` is the same regex as `a[.]c`. Nor is a line continuation, which bash
+  // removes first: `a\<newline>*` is the pattern `a*`.)
   const quoted = (x: SyntaxNode): boolean[] => {
     if (x.type === 'concatenation') return x.namedChildren.flatMap(quoted);
     if (['string', 'raw_string', 'ansi_c_string', 'translated_string'].includes(x.type)) return [true];
-    return [!regex && x.text.includes('\\')];
+    return [!regex && nameText(x).includes('\\')];
   };
   const kinds = rights.flatMap(quoted);
   if (!kinds.some((q) => q)) return undefined;

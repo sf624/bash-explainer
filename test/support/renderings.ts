@@ -30,7 +30,7 @@ import { isGlob } from '../../src/examples/shellwords';
 import { braceExpansion } from '../../src/explain/words';
 import { spanOf } from '../../src/noteanchors';
 import { resolveName } from '../../src/semantics/names';
-import { type StateModel } from '../../src/semantics/state';
+import { modelVersion, type StateModel } from '../../src/semantics/state';
 import { type Fields, wordFields, wordMeaning } from '../../src/semantics/words';
 import { descendants, field, type SyntaxNode } from '../../src/syntax/tree';
 import { type ArgvEnvName, ARGV_ENVS, type ArgvInput, type ArgvMarker, type ArgvPlanRun, compareMarker, runEnv, splitTargets } from './argv';
@@ -86,7 +86,7 @@ export function claimsOf(w: SyntaxNode, shown: Shown, input: ArgvInput): Claim[]
   for (const t of shown.tokens.get(key) ?? []) {
     if (t.value && !t.value.glob && !t.value.joined) out.push({ source: 'value', count: t.value.words?.length ?? 1 });
     if (t.kind === 'expansion' && t.refs?.includes(BRACE_REF) && applies('brace') === true) {
-      const words = braceExpansion(w);
+      const words = braceExpansion(w, modelVersion(input.model));
       // (Not one that says the expansions in its words may then make other words of them, `{a,$x}`.)
       if (words && !words.some(isGlob) && !t.explanation.includes('which the expansions after it may make')) out.push({ source: 'brace', count: words.length });
     }

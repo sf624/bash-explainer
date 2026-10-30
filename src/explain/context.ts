@@ -3,6 +3,7 @@
 // one place where the line's notes, facts and examples are collected. src/analyzer.ts makes one per line.
 import type { ContextEntry, Example, ExplainOptions, Kind, LineExplanation, NoteAnchor, Span, Token } from '../analyzer-types';
 import type { ArgvParse } from '../argv/interpret';
+import { type BashVersion, DEFAULT_BASH_VERSION } from '../bashversion';
 import type { CommandSpec } from '../argv/spec';
 import type { Shell } from '../dialect';
 import type { Lang, Text } from '../i18n';
@@ -67,6 +68,8 @@ export interface Explainer {
   /** The shell the script is for (undefined: bash). */
   readonly shell: Shell | undefined;
   readonly opts: ExplainOptions;
+  /** The bash release the explanation follows (`bashExplainer.bashVersion`). */
+  readonly bashVersion: BashVersion;
   /** The whole text being explained (for hints such as how yq was installed). */
   readonly source: string;
   readonly root: SyntaxNode;
@@ -189,6 +192,11 @@ export class LineExplainer implements Explainer, LineOutput {
   command: CommandContext | undefined = undefined;
   private current: number | null;
   private readonly memos = new Map<MemoKey<unknown>, Map<SyntaxNode, unknown>>();
+
+  /** The bash release the explanation follows (`bashExplainer.bashVersion`). */
+  get bashVersion(): BashVersion {
+    return this.opts.bashVersion ?? DEFAULT_BASH_VERSION;
+  }
 
   constructor(readonly lang: Lang, init: LineInit, private readonly walk: Walk) {
     this.state = init.state;

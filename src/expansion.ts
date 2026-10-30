@@ -440,10 +440,12 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
 
 /**
  * The word of `${x:-word}` with its tilde prefixes `~` written `$HOME`: one at its start (`~/d`), and with `colons` one
- * after each `:` outside quotes (`x:~`); undefined when it has none.
+ * after each `:` outside quotes (`x:~`); undefined when it has none, null when one may be another directory (`~root`,
+ * `~+`: the example leaves the word out).
  */
-function homeOf(word: string, colons: boolean): string | undefined {
-  const prefix = colons ? /^~(?=[/:]|$)/ : /^~(?=\/|$)/;
+function homeOf(word: string, colons: boolean): string | undefined | null {
+  // (A tilde prefix runs to the first `/`, and with `colons` to a `:`; a quoted character makes it none: `~"root"`.)
+  const prefix = colons ? /^~([^/:]*)/ : /^~([^/]*)/;
   const skip = /\\.|'[^']*'|"(?:\\.|[^"\\])*"/sy;
   let out = '';
   // (Whether the text so far ends with a `:` outside quotes, or is empty.)
@@ -452,7 +454,9 @@ function homeOf(word: string, colons: boolean): string | undefined {
     skip.lastIndex = i;
     const m = skip.exec(word);
     if (m) i += m[0].length - 1;
-    const tilde = !m && start && prefix.test(word.slice(i));
+    const user = !m && start ? prefix.exec(word.slice(i))?.[1] : undefined;
+    if (user && !/[\\'"]/.test(user)) return null;
+    const tilde = user === '';
     out += tilde ? '$HOME' : m ? m[0] : word[i];
     start = colons && !m && word[i] === ':';
   }
@@ -544,6 +548,7 @@ function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; as
   // An unquoted `~/d` in the word expands to the home directory (not inside double quotes: `"${x-~/d}"` stays `~/d`),
   // and in an assignment's value one after each `:` too (`a=${x:+x:~}`).
   const homed = quoted ? undefined : homeOf(rawWord, !!ctx.assigned);
+  if (homed === null) return undefined;
   const homeWord = homed !== undefined;
   const word = homed ?? unquoteWord(rawWord, quoted) ?? rawWord;
   // A plausible value for "when it has a value", chosen to look like the default.

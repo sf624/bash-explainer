@@ -7,6 +7,7 @@
 //
 // A step that depends on a state the model has as unknown (`set -f` on some paths, an IFS set to a value not
 // known here, an attribute given on some paths) "may" apply: `'unknown'`.
+import type { BashVersion } from '../bashversion';
 import { evalArith } from '../arith';
 import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { patsubMiscounts } from '../bracket';
@@ -18,7 +19,7 @@ import { caseConverted, IFS_ERRATIC, IFS_WHITESPACE, sameInEveryLocale, substrin
 import { bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
-import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
+import { ARITH_ASSIGNED, attribute, defaultOn, modelVersion, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 import { changedByBash, setAtStart } from './vars';
 import { ARITH, changesDirectory, underscoreValue, unreliableAt, unreliableNames } from './wordsites';
 import { operandPattern, operandReplacement, operandWord } from './operands';
@@ -83,6 +84,8 @@ export interface WordMeaning {
   state: ShellState;
   /** The shell the script is for (bash when absent): `$'…'` is decoded only where it has it. */
   shell?: Shell;
+  /** The bash release whose limits of brace sequences apply (src/braceseq.ts); absent where the caller does not know it. */
+  version?: BashVersion;
   /** The text after quote removal, when nothing in it expands: then it is one field (or none, in a redirection, never). */
   value?: string;
   /** How bash may fail on it, whatever the values (`set -u` with an expansion, failglob with a glob, a redirection target that may not be one word). */
@@ -267,7 +270,7 @@ export function wordMeaning(n: SyntaxNode, model: StateModel): WordMeaning | und
   if (!byNode) cache.set(model, (byNode = new WeakMap()));
   const known = byNode.get(found.nodes[0]);
   if (known) return known;
-  const meaning = build(found.nodes, found.context, model.at(found.nodes[0]).run, model.shell);
+  const meaning = build(found.nodes, found.context, model.at(found.nodes[0]).run, model.shell, true, modelVersion(model));
   byNode.set(found.nodes[0], meaning);
   return meaning;
 }
@@ -337,7 +340,7 @@ function optionsOf(st: ShellState, shell?: Shell): WordOptions {
 }
 
 /** The meaning of a word where it runs; `whole`: also its `value` and `failure` (the walk's conditions need neither). */
-function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: Shell | undefined, whole = true): WordMeaning {
+function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: Shell | undefined, whole: boolean, version?: BashVersion): WordMeaning {
   // A subscript of an associative array is a key; of an indexed one (or one not known as associative), arithmetic. (So
   // is a value in the list of an associative array.) In POSIX mode, `command export x=$v` assigns as `export` does.
   const sub = found === 'subscript-indexed' ? nodes[0].parent! : undefined;
@@ -358,7 +361,7 @@ function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: S
     const parts = expansions.filter((e) => STEP_OF[e.type] === kind);
     steps.push(mk({ kind, applies: parts.length > 0, parts }));
   }
-  const meaning: WordMeaning = { nodes, context, rule, steps, tildes, ifs, glob, posix, state: st, ...(shell ? { shell } : {}) };
+  const meaning: WordMeaning = { nodes, context, rule, steps, tildes, ifs, glob, posix, state: st, ...(shell ? { shell } : {}), ...(version ? { version } : {}) };
   steps.push(mk(splitStep(meaning, unquoted, someQuoted)));
   steps.push(mk(globStep(meaning, [...globWords, ...unquoted].sort((a, b) => a.startIndex - b.startIndex), someQuoted)));
   steps.push(mk({ kind: 'quote-removal', applies: shape.quoted, parts: [] }));

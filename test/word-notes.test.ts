@@ -6,6 +6,7 @@ import { runBash } from './support/bash';
 import { Analyzer } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { allTokens } from './support/explain';
+import { braceSequence } from '../src/examples/shellwords';
 
 const parser = createUnbashParser();
 const explain = (src: string, lang: 'ja' | 'en' = 'en', line?: number) => {
@@ -219,5 +220,65 @@ describe('word notes: line continuations, sequences past intmax_t, here-strings 
     assert.ok(examples("a=${x:+'a:'~:\\:~:~}").includes("When `x=/data` → 'a:'~:\\:~:$HOME (expanded)"));
     assert.ok(examples('echo ${x:+x:~}').includes('When `x=hello` → x:~'));
     assert.strictEqual(bash("x=1; a=${x:+x:~}; b=${x:+'a:'~:\\:~:~}; echo $a $b ${x:+x:~}"), 'x:/home/w a:~::~:/home/w x:~\n');
+  });
+
+  it('reads a pattern of `[[ == ]]` without its line continuations: no quoting, and its examples', () => {
+    const src = 'v=x; [[ $v == @\\\n(x|y) ]]';
+    assert.ok(examples(src).includes('Values that match → x y'), examples(src).join('\n'));
+    assert.ok(!examples(src).some((x) => x.includes('\\')));
+    assert.strictEqual(bash('shopt -s extglob; v=x; [[ $v == @\\\n(x|y) ]] && echo m; v=x.bak; [[ $v == @\\\n(x|y) ]] || echo n'), 'm\nn\n');
+    const star = 'v=app; [[ $v == a\\\n* ]]';
+    assert.ok(!said(star).some((x) => x.includes('literal text')));
+    assert.ok(examples(star).some((x) => x.startsWith('Values that match → app')), examples(star).join('\n'));
+    assert.strictEqual(bash('v=app; [[ $v == a\\\n* ]] && echo m'), 'm\n');
+  });
+
+  it('leaves out the example of a word with a tilde of another directory (`~root`, `~+`)', () => {
+    assert.ok(!examples('a=${n:-x:~/d:~root}').some((x) => x.includes('~root')));
+    assert.ok(!examples('echo ${n:-~+/x}').some((x) => x.includes('~+')));
+    assert.ok(examples('a=${n:-x:~/d:~"r"}').some((x) => x.includes('x:$HOME/d:~"r"')));
+    assert.strictEqual(bash('cd /; n=; a=${n:-x:~/d:~root}; b=${n:-x:~/d:~"r"}; echo "$a" ${n:-~+/x} "$b"'), 'x:/home/w/d:/root //x x:/home/w/d:~r\n');
+  });
+});
+
+describe('word notes: sequences in bash 5.2 and 5.3', () => {
+  const parsed = (src: string, version: '5.2' | '5.3') => new Analyzer('en').explainLine(parser.parse(src), 0, undefined, { bashVersion: version });
+  const said = (src: string, version: '5.2' | '5.3'): string[] => allTokens(parsed(src, version).items).map((t) => t.explanation);
+  const BASH53 = process.env.BASH_EXPLAINER_BASH53;
+  /** What bash 5.2, and bash 5.3 where it is given, print for `script`. */
+  const both = (script: string, b52: string, b53: string): void => {
+    assert.strictEqual(bash(script), b52);
+    if (BASH53) assert.strictEqual(runBash(script, { program: BASH53 }).stdout, b53);
+  };
+
+  it('pads past a C int and lands on the end as each bash does', () => {
+    const src = 'echo {0001..2147483648..2147483647}';
+    assert.ok(said(src, '5.2').includes('Brace expansion: `{0001..2147483648..2147483647}` expands to 2 words: `0000000001` `-2147483648` (a number with a leading 0 pads all of them with zeros to the same width)'));
+    assert.ok(said(src, '5.2').includes('End: `2147483648`'));
+    assert.ok(said(src, '5.3').includes('Brace expansion: `{0001..2147483648..2147483647}` expands to 2 words: `0000000001` `2147483648` (a number with a leading 0 pads all of them with zeros to the same width)'));
+    assert.ok(said('echo {02147483648..2147483650}', '5.3').some((x) => x.includes('`02147483648` `02147483649` `02147483650`')));
+    both(`${src}; echo {02147483648..2147483650}`, '0000000001 -2147483648\n-2147483648 -2147483647 -2147483646\n', '0000000001 2147483648\n02147483648 02147483649 02147483650\n');
+  });
+
+  it('says where the bash of the explanation leaves a sequence as written', () => {
+    const wide = 'echo {9223372036854775806..0..9223372036854775806}';
+    assert.ok(said(wide, '5.2').includes('Brace expansion: `{9223372036854775806..0..9223372036854775806}` expands to 1 word: `{9223372036854775806..0..9223372036854775806}` (bash 5.2 leaves `{9223372036854775806..0..9223372036854775806}` as written: its numbers are past the limits of bash 5.2; bash 5.3 expands it)'));
+    assert.ok(!said(wide, '5.2').some((x) => x.startsWith('Start:')));
+    assert.ok(said(wide, '5.3').includes('Increment: `9223372036854775806` (each word is 9223372036854775806 less than the one before)'));
+    const min = 'echo {2..0..-9223372036854775808}{a,b}';
+    assert.ok(said(min, '5.2').some((x) => x.includes('expands to 2 words: `2a` `2b`')));
+    assert.ok(said(min, '5.3').some((x) => x.includes('(bash 5.3 leaves `{2..0..-9223372036854775808}` as written: its numbers are past the limits of bash 5.3; bash 5.2 expands it)')));
+    assert.ok(said('echo {1..3000000000}', '5.3').includes('Brace expansion: `{1..3000000000}` expands to many words'));
+    assert.ok(said('echo {1..3000000000}', '5.2').some((x) => x.includes('bash 5.2 leaves `{1..3000000000}` as written')));
+    both(`${wide}; ${min}`, '{9223372036854775806..0..9223372036854775806}\n2a 2b\n', '9223372036854775806 0\n{2..0..-9223372036854775808}a {2..0..-9223372036854775808}b\n');
+  });
+
+  it('gives the words of a sequence only where both bash give them, when the version is not known', () => {
+    assert.deepStrictEqual(braceSequence('{1..3}'), ['1', '2', '3']);
+    assert.strictEqual(braceSequence('{0001..2147483648..2147483647}'), null);
+    assert.strictEqual(braceSequence('{1..3000000000}'), null);
+    assert.strictEqual(braceSequence('{1..1000}'), null);
+    assert.deepStrictEqual(braceSequence('{1..3000000000}', '5.2'), ['{1..3000000000}']);
+    assert.deepStrictEqual(braceSequence('{2..0..-9223372036854775808}', '5.3'), ['{2..0..-9223372036854775808}']);
   });
 });

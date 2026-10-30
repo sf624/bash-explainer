@@ -1,6 +1,7 @@
 // Brace expansion in the word model (src/semantics/words.ts reads it): which words of a word have one, the words it
 // gives, and whether the step applies in the shell the model is of (the manual's 3.5.1; the shells, src/dialect.ts).
 // The parser makes a brace expression of every brace expansion bash makes (src/syntax/adapters/braces.ts).
+import type { BashVersion } from '../bashversion';
 import { bracesWork, type Shell } from '../shellfeatures';
 import { braceSequence } from '../examples/shellwords';
 import { staticWordValue } from '../staticword';
@@ -71,12 +72,14 @@ export function rereadFails(w: BraceAlternative): boolean {
  * The words the word of `nodes` gives by brace expansion, in bash's order (each word of a list, then the words after
  * it: `{a,b}{1,2}` is `a1 a2 b1 b2`); undefined when it has no brace expression, null when it gives too many to list.
  * (The words left empty are dropped, as bash drops empty unquoted words: `{,}`; a quoted empty one stays: `{"",a}`.
- * With `part`, the nodes are a part of a longer word, whose other parts the empty words join: they stay.)
+ * With `part`, the nodes are a part of a longer word, whose other parts the empty words join: they stay.) `version`:
+ * the bash whose limits of sequences apply (src/braceseq.ts); with none, a sequence bash 5.2 and 5.3 expand otherwise
+ * gives too many words to list.
  */
-export function braceAlternatives(nodes: readonly SyntaxNode[], part = false): BraceAlternative[] | null | undefined {
+export function braceAlternatives(nodes: readonly SyntaxNode[], part = false, version?: BashVersion): BraceAlternative[] | null | undefined {
   const parts = nodes.flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n]));
   if (!parts.some((n) => n.type === 'brace_expression')) return undefined;
-  const words = product(parts.map(alternativesOf));
+  const words = product(parts.map((n) => alternativesOf(n, version)));
   return words && (part ? words : words.filter((w) => w.some((p) => typeof p !== 'string' || p !== '')));
 }
 
@@ -87,7 +90,7 @@ export function braceAlternatives(nodes: readonly SyntaxNode[], part = false): B
 export function wordAlternatives(w: WordMeaning, applies = w.steps[0].applies): BraceAlternative[] | undefined {
   if (applies === false) return [[...w.nodes]];
   // (A word whose brace step applies has a brace expression; null: too many words to list.)
-  const words = applies === 'unknown' ? undefined : braceAlternatives(w.nodes) ?? undefined;
+  const words = applies === 'unknown' ? undefined : braceAlternatives(w.nodes, false, w.version) ?? undefined;
   return words?.some(rejoined) ? undefined : words;
 }
 
@@ -104,38 +107,38 @@ export function rejoined(w: readonly (SyntaxNode | string)[]): boolean {
 /**
  * The values of the words a brace expansion gives, when they are known without running anything, quotes removed
  * (`{a,"b c"}` is `a` and `b c`); undefined when one is not known (`{a,$x}`), null when they are too many to list.
- * `part`: as for `braceAlternatives`.
+ * `part` and `version`: as for `braceAlternatives`.
  */
-export function braceValues(nodes: readonly SyntaxNode[], part = false): string[] | null | undefined {
-  const words = braceAlternatives(nodes, part);
+export function braceValues(nodes: readonly SyntaxNode[], part = false, version?: BashVersion): string[] | null | undefined {
+  const words = braceAlternatives(nodes, part, version);
   if (!words || words.some(rejoined)) return words && undefined;
   // (The text as bash reads it again: `reread`.)
   const values = words.map((w) => w.map((p, i) => (typeof p === 'string' ? reread(p, i === w.length - 1)?.text.replace(/\\(.|$)/gs, '$1') : staticWordValue(p))));
   return values.some((v) => v.includes(undefined)) ? undefined : values.map((v) => v.join(''));
 }
 
-/** The words a brace expansion gives, as text: undefined and null as `braceAlternatives` says (`part` too). */
-export function braceTexts(nodes: readonly SyntaxNode[], part = false): string[] | null | undefined {
-  const words = braceAlternatives(nodes, part);
+/** The words a brace expansion gives, as text: undefined and null as `braceAlternatives` says (`part` and `version` too). */
+export function braceTexts(nodes: readonly SyntaxNode[], part = false, version?: BashVersion): string[] | null | undefined {
+  const words = braceAlternatives(nodes, part, version);
   // (The backslashes of plain text are removed later, by quote removal.)
   return words && words.map((w) => w.map((p) => (typeof p === 'string' ? unmarked(p) : p.text)).join('').replace(/\\(.|$)/gs, '$1'));
 }
 
 /** The words a part of a word gives: a brace expression its items or its sequence, any other part itself. */
-function alternativesOf(n: SyntaxNode): BraceAlternative[] | null {
-  if (n.type === 'concatenation') return product(n.namedChildren.map(alternativesOf));
+function alternativesOf(n: SyntaxNode, version: BashVersion | undefined): BraceAlternative[] | null {
+  if (n.type === 'concatenation') return product(n.namedChildren.map((c) => alternativesOf(c, version)));
   // (A mark the script holds is escaped: `escaped`. A `\` that ends the script, `a\`, bash reads as a quoted one.)
   if (n.type === 'word' || n.type === 'number') return [[escaped(/(?:^|[^\\])(?:\\\\)*\\$/.test(n.text) ? `${n.text}\\` : n.text)]];
   if (n.type !== 'brace_expression') return [[n]];
-  // (The parser makes a sequence only of a valid one.)
+  // (The parser makes a sequence only of one bash 5.2 or 5.3 expands; the version may leave it as text.)
   // (A `\` or `` ` `` of a letter sequence is marked: bash reads it again, `reread`.)
-  if (braceKind(n) === 'sequence') return braceSequence(joinedText(n))?.map((w) => [MARKS[w] ?? w]) ?? null;
+  if (braceKind(n) === 'sequence') return braceSequence(joinedText(n), version)?.map((w) => [MARKS[w] ?? w]) ?? null;
   const out: BraceAlternative[] = [];
   let item: SyntaxNode | undefined;
   for (const c of n.children.slice(1)) {
     if (c.named) item = c;
     else {
-      const words = item ? alternativesOf(item) : [['']];
+      const words = item ? alternativesOf(item, version) : [['']];
       if (!words) return null;
       out.push(...words);
       item = undefined;

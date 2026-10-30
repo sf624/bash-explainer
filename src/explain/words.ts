@@ -5,7 +5,7 @@
 // the descriptions and notes of variables from here.
 import type { Kind, Pos, Token } from '../analyzer-types';
 import { type ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping } from '../arith';
-import { DEFAULT_BASH_VERSION, earlier } from '../bashversion';
+import { type BashVersion, earlier } from '../bashversion';
 import { pictureList, visible } from '../ctlchars';
 import { ordinal } from '../i18n';
 import { ciVariables } from '../dict/ciVariables';
@@ -13,7 +13,7 @@ import { bash53Variables, specialVariables, wellKnownVariables } from '../dict/s
 import { explainGlob, globIntro, type GlobTarget, hasGlob, unbroken } from '../embedded/glob';
 import type { EmbeddedToken } from '../embedded/types';
 import { braceSequence, extglobs, hasGlobstar, isGlob } from '../examples/shellwords';
-import { parseSequence } from '../braceseq';
+import { lastValue, parseSequence } from '../braceseq';
 import { parseExpansion } from '../expansion';
 import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
@@ -36,10 +36,11 @@ import { pidNote, stageCountNote } from './where';
 
 /**
  * The words of the brace expansion of the word `n`: undefined when it has none, null when it gives too many words to
- * list. The braces of a part of a longer word (`'a'{,}`) keep their empty words, which the other parts join.
+ * list. The braces of a part of a longer word (`'a'{,}`) keep their empty words, which the other parts join. `version`:
+ * the bash whose limits of sequences apply.
  */
-export function braceExpansion(n: SyntaxNode): string[] | undefined | null {
-  return braceTexts([n], n.parent!.type === 'concatenation');
+export function braceExpansion(n: SyntaxNode, version: BashVersion): string[] | undefined | null {
+  return braceTexts([n], n.parent!.type === 'concatenation', version);
 }
 
 /**
@@ -288,7 +289,7 @@ export function bracesMaybeOff(cx: Explainer, n: SyntaxNode): string {
 
 /** The words a word gives by brace expansion; undefined when it gives none (or too many to list). */
 export function braceWords(cx: Explainer, n: SyntaxNode): string[] | undefined {
-  return bracesHere(cx, n) ? braceExpansion(n) ?? undefined : undefined;
+  return bracesHere(cx, n) ? braceExpansion(n, cx.bashVersion) ?? undefined : undefined;
 }
 
 /** A word of plain text, braces included (`x{a,b}`): one read as its text where its braces do not expand (dash). */
@@ -307,7 +308,7 @@ export function braceWord(cx: Explainer, n: SyntaxNode): Token | undefined {
 function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
   const text = unquotedWord(n);
   if (text === undefined || !bracesHere(cx, n)) return undefined;
-  const words = braceExpansion(n);
+  const words = braceExpansion(n, cx.bashVersion);
   if (words === null) {
     return cx.tok(n, 'expansion', cx.s(`ブレース展開: \`${text}\` は多くの単語に展開される`, `Brace expansion: \`${text}\` expands to many words`));
   }
@@ -317,21 +318,27 @@ function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
   const list = (words.length > 12 ? [...words.slice(0, 11), '…'] : words).map((w) => (w === '…' ? w : codeSpan(w || "''"))).join(' ');
   const comma = /\\,/.test(text);
   const sequences = wordBraces(n).filter((b) => braceKind(b) === 'sequence');
+  // (The parser makes a sequence of what bash 5.2 or 5.3 expands: the other may leave it as it is, `{1..3000000000}`.)
+  const version = cx.bashVersion;
+  const kept = sequences.filter((s) => !parseSequence(joinedText(s).slice(1, -1), version)).map((s) => codeSpan(joinedText(s)));
+  const other = version === '5.2' ? '5.3' : '5.2';
+  const refused = kept.length ? cx.s(`（bash ${version} は ${kept.join('・')} を展開せず、書いたまま残す。数が bash ${version} の範囲式の上限を超えるため。bash ${other} は展開する）`,
+    ` (bash ${version} leaves ${kept.join(', ')} as written: its numbers are past the limits of bash ${version}; bash ${other} expands it)`) : '';
   // `{01..10..3}`: a number with a leading 0 makes every number as wide as the widest.
-  const pad = sequences.some((s) => s.namedChildren.slice(0, 2).some((c) => /^-?0\d/.test(c.text)));
+  const pad = sequences.some((s) => parseSequence(joinedText(s).slice(1, -1), version)?.width);
   const parts = sequences.flatMap((s) => sequenceParts(cx, s)).map((t) => fromEmbedded({ ...t, start: t.start - n.startIndex, end: t.end - n.startIndex }, n, { text, base: 0 }, 'shell'));
   // `{a,$x}`: the words of the braces are not yet those the command gets, when an expansion in one may split it or give
   // none, unless the model knows that each gives one word (`x=p; cp {a,$x} d`, `cp "x"{a,$x} d`).
-  const alternatives = braceAlternatives([n], n.parent!.type === 'concatenation')!;
+  const alternatives = braceAlternatives([n], n.parent!.type === 'concatenation', version)!;
   const later = alternatives.some(splitsIn) && !oneFieldEach(cx, n)
     ? cx.s('（その後の展開で、単語の数は増えたり減ったりしうる）', ', which the expansions after it may make into more or fewer words') : '';
   // (`x{Z..a}y`: bash reads the `` ` `` of ``x`y`` again, as a command substitution that nothing closes.)
-  const fails = braceAlternatives([n.parent!.type === 'concatenation' ? n.parent! : n])?.some(rereadFails)
+  const fails = braceAlternatives([n.parent!.type === 'concatenation' ? n.parent! : n], false, version)?.some(rereadFails)
     ? cx.s('。ただし、範囲が作る `` ` `` の後ろに文字が続く語では、bash はそれを閉じていないコマンド置換の始まりと読み、失敗する（"bad substitution"）',
       '; but where text follows a `` ` `` that the range gives, bash reads it as the start of a command substitution that nothing closes, and fails ("bad substitution")') : '';
   return cx.tok(n, 'expansion', (words.length
-    ? cx.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${later}${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}${pad ? '（先頭が 0 の数があるので、桁数をそろえて 0 で埋める）' : ''}${fails}`,
-      `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${later}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}${pad ? ' (a number with a leading 0 pads all of them with zeros to the same width)' : ''}${fails}`)
+    ? cx.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${later}${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}${pad ? '（先頭が 0 の数があるので、桁数をそろえて 0 で埋める）' : ''}${refused}${fails}`,
+      `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${later}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}${pad ? ' (a number with a leading 0 pads all of them with zeros to the same width)' : ''}${refused}${fails}`)
     : cx.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`)) + bracesMaybeOff(cx, n), parts);
 }
 
@@ -345,22 +352,24 @@ function oneFieldEach(cx: Explainer, n: SyntaxNode): boolean {
  * The parts of a sequence expression of braces, `{1..10..3}` (3.5.1): its start, its end and its increment, at their
  * places in the text, with what bash makes of them (checked with bash 5.2): the sign of the increment does not count,
  * the order comes from the start and the end, an increment of 0 counts as 1, the last word is the last step that
- * does not pass the end, and a number with a leading 0 pads every word with zeros to the same width.
+ * does not pass the end, and a number with a leading 0 pads every word with zeros to the same width. None where the
+ * bash of the explanation leaves it as it is (`braceWordToken` says so).
  */
 function sequenceParts(cx: Explainer, s: SyntaxNode): EmbeddedToken[] {
   const [xn, yn, zn] = s.namedChildren;
   // (As bash reads them, without line continuations: `{1..\<newline>3}`.)
   const [x, y] = [joinedText(xn), joinedText(yn)];
-  // (The parser makes a sequence only of one bash expands.)
-  const seq = parseSequence(joinedText(s).slice(1, -1))!;
+  const seq = parseSequence(joinedText(s).slice(1, -1), cx.bashVersion);
+  if (!seq) return [];
   const numbers = !seq.letters;
   // (A sequence of the word expands to no more words than the word: they were listed.)
-  const words = braceSequence(joinedText(s))!;
+  const words = braceSequence(joinedText(s), seq.version)!;
   const kind = numbers ? 'number' : 'string';
   const down = seq.step < 0n;
   const padded = (v: string): string => (numbers && /^-?0\d/.test(v) ? cx.s('。先頭が 0 なので、すべての数を 0 で埋めて同じ桁数にする', '; it has a leading 0, so every number is padded with zeros to the same width') : '');
   const last = words[words.length - 1];
-  const stops = last !== y && (!numbers || BigInt(last) !== seq.end) ? cx.s(`（増分で届かないので、最後の単語は \`${last}\`）`, ` (the steps do not land on it: the last word is \`${last}\`)`) : '';
+  // (Where the last value is the end, it lands on it, even when bash 5.2 prints it cut to an `int`: `{0001..2147483648..2147483647}`.)
+  const stops = lastValue(seq) !== seq.end ? cx.s(`（増分で届かないので、最後の単語は \`${last}\`）`, ` (the steps do not land on it: the last word is \`${last}\`)`) : '';
   const out: EmbeddedToken[] = [
     { start: xn.startIndex, end: xn.endIndex, kind, explanation: cx.s(`開始: \`${x}\``, `Start: \`${x}\``) + padded(x), children: [] },
     { start: yn.startIndex, end: yn.endIndex, kind, explanation: cx.s(`終わり: \`${y}\``, `End: \`${y}\``) + stops + padded(y), children: [] },
@@ -634,7 +643,7 @@ export function notGlobbedHere(cx: Explainer, n: SyntaxNode): string {
 export function bash53Variable(cx: Explainer, name: string): string | undefined {
   if (!Object.hasOwn(bash53Variables, name)) return undefined;
   const what = cx.t(bash53Variables[name]);
-  return earlier(cx.opts.bashVersion ?? DEFAULT_BASH_VERSION, '5.3')
+  return earlier(cx.bashVersion, '5.3')
     ? cx.s(`bash 5.2 では普通の変数（bash 5.3 では${what}）`, `A plain variable in bash 5.2 (in bash 5.3, ${what})`)
     : cx.s(`bash 5.3 では${what}`, `In bash 5.3, ${what}`);
 }
@@ -869,7 +878,7 @@ function arrayValue(cx: Explainer, n: SyntaxNode): Token | undefined {
 function arrayElement(cx: Explainer, n: SyntaxNode, kind: 'assoc' | 'indexed' | 'unknown', more: string): Token {
   const e = splitElement(n.text)!;
   // (bash 5.2 brace-expands the word first, into values with no index of their own.)
-  const braces = wordAt(cx, n)!.steps.find((s) => s.kind === 'brace')!.applies === true ? braceExpansion(n) : undefined;
+  const braces = wordAt(cx, n)!.steps.find((s) => s.kind === 'brace')!.applies === true ? braceExpansion(n, '5.2') : undefined;
   if (braces) {
     return cx.tok(n, 'argument', cx.rests(cx.s(`bash 5.2 はこの語を先にブレース展開し、${braces.map((w) => `\`${w}\``).join('・')} という添字のない値にする（それぞれが次の要素になる）。bash 5.3 はブレース展開せず、添字 \`${e.key}\` の要素に \`${e.value}\` を${e.plus ? '追記' : '代入'}する`,
       `bash 5.2 brace-expands this word first, into the values ${braces.map((w) => `\`${w}\``).join(', ')}, with no index of their own (each is the next element); bash 5.3 does not, and ${e.plus ? 'appends' : 'sets'} \`${e.value}\` ${e.plus ? 'to' : 'as'} the element with the index \`${e.key}\``), 'array-brace-value'));

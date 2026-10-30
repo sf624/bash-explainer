@@ -34,7 +34,7 @@ import type { NameResolution } from '../semantics/names';
 import { exportedValue } from '../semantics/state';
 import { changedByBash } from '../semantics/vars';
 import { literalContent, staticWordValue, substitutionNames } from '../staticword';
-import { assignmentsOnly, field, prefixAssignments, redirectionsOf, type SyntaxNode, wordBraces } from '../syntax/tree';
+import { assignmentsOnly, field, nameText, prefixAssignments, redirectionsOf, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
@@ -105,7 +105,7 @@ export function interactive(cx: Explainer, spec: RerunSpec, inputs: InputBox[]):
  * whether it is one of the first section.
  */
 export function patternExample(cx: Explainer, pats: SyntaxNode[], labels: [string, string], known?: { value: string; matches: boolean }): void {
-  const texts = pats.map((p) => unquotedWord(p) ?? (p.type === 'extglob_pattern' ? p.text : undefined));
+  const texts = pats.map((p) => unquotedWord(p) ?? (p.type === 'extglob_pattern' ? nameText(p) : undefined));
   pushExample(cx, patterns.patternExample(texts, globOpts(cx, 'pattern', pats[0]), labels, cx.lang, known));
 }
 
@@ -113,7 +113,8 @@ export function patternExample(cx: Explainer, pats: SyntaxNode[], labels: [strin
 export function matchExample(cx: Explainer, n: SyntaxNode, pat: SyntaxNode): void {
   const left = field(n, 'left');
   const value = left && shoptAt(cx, n).nocasematch !== 'unknown' ? subjectValue(cx, left) : undefined;
-  const text = unquotedWord(pat) ?? pat.text;
+  // (Without the line continuations, which bash removes first: `@\<newline>(x|y)` is `@(x|y)`.)
+  const text = unquotedWord(pat) ?? nameText(pat);
   const known = value === undefined ? undefined : { value, matches: globMatches(text, value, 'value', globOpts(cx, 'pattern', pat)) };
   patternExample(cx, [pat], [cx.s('一致する値', 'Values that match'), cx.s('一致しない値', 'Values that do not match')], known);
 }
@@ -728,7 +729,7 @@ export function braceWordsOf(cx: Explainer, a: SyntaxNode): string[] | undefined
   // (The model says whether braces expand there: not after `set +B`.)
   if (!bracesApply(cx, a)) return undefined;
   // (Their values: `{a,b}"x"` is `ax` and `bx`; none when one is not known, as `$x` in `{a,$x}`.)
-  return braceValues([a]) ?? undefined;
+  return braceValues([a], false, cx.bashVersion) ?? undefined;
 }
 
 /** Whether brace expansion applies to the argument `a` where it runs (the word model: not after `set +B`). */
@@ -819,7 +820,7 @@ export function wordExample(cx: Explainer, a: SyntaxNode, cmd: { name: string; n
     });
     return;
   }
-  if (bracesHere(cx, a) && braceExpansion(a) !== undefined) return;
+  if (bracesHere(cx, a) && braceExpansion(a, cx.bashVersion) !== undefined) return;
   // (Where globstar may be on, the example shows `**` at any depth, and says so.)
   const maybe = hasGlobstar(text) && shoptAt(cx, a).globstar === 'unknown';
   if (isGlob(text) && !globOff(cx, a)) globExample(cx, a, text, 'file', cx.s(`例（グロブ \`${text}\`${maybe ? '、globstar が有効なとき' : ''}）`, `Example (glob \`${text}\`${maybe ? ', where globstar is on' : ''})`));
