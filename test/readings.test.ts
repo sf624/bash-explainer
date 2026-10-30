@@ -3,7 +3,9 @@
 // roles given back to the words (the same as `interpret` gives the words written out), and, over the corpus of the
 // tests, the bound S, the specs a reading visits, and the words the text past the cap names.
 import * as assert from 'assert';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { type ArgRole, type ArgWord, interpret, type RoleAt } from '../src/argv/interpret';
 import { readingsOf, SHAPE_CAP, specsReached, wordsBound, type ReadingsTable } from '../src/argv/readings';
@@ -195,7 +197,7 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     assert.deepStrictEqual([v.run, v.contexts, v.own, v.base], [0, Array.from({ length: 7 }, (_, n) => [n, 0]), [1, 2, 3, 4, 5, 6], [1, 0]]);
     // (What each place sums: `$n` before it, nothing after it; capped at S.)
     assert.deepStrictEqual(v.coordinates, [{ words: [1], fixed: 0, mult: new Map([[0, 1]]), top: 6 }, { words: [], fixed: 0, mult: new Map(), top: 6 }]);
-    assert.deepStrictEqual(jq.readAt(2, [2, 0], 1), { sums: [3], outcome: 'read', fields: jq.at([2, 1]).fields[2], places: [3] });
+    assert.deepStrictEqual(jq.readAt(2, [2, 0], 1), { sums: [3], outcome: 'read', fields: jq.at([2, 1]).fields[2], places: [3], owners: [0, 1, 1, 2, 3] });
     // (`.`: the run, capped; `--arg` too.)
     const dot = jq.contexts(3)!;
     assert.deepStrictEqual([dot.run, dot.contexts, dot.own, dot.base], [undefined, Array.from({ length: 7 }, (_, n) => [n]), [1], [2]]);
@@ -204,17 +206,43 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     // (A tie: the second `$a` is the first one's own, so it is no part of its context; its words come after the first's.)
     const cp = table('cp $a $a d');
     assert.deepStrictEqual(cp.contexts(0)!.contexts, [[0, 0]]);
-    assert.deepStrictEqual(cp.readAt(1, [0, 0], 2), { sums: [4], outcome: 'read', fields: cp.at([2]).fields[1], places: [2, 3] });
+    assert.deepStrictEqual(cp.readAt(1, [0, 0], 2), { sums: [4], outcome: 'read', fields: cp.at([2]).fields[1], places: [2, 3], owners: [0, 0, 1, 1, 2] });
     // (Its own variable's words are no part of a coordinate: the second `$a` is in none of the first's.)
     assert.deepStrictEqual(cp.contexts(0)!.coordinates.map((c) => c.words), [[], []]);
     // (Two runs: the other run is a coordinate; the word of a known count in a run, `"$b"`, has its one word.)
     const cut = table('cp -t $d "$b" $a x $c');
     assert.deepStrictEqual(cut.contexts(2)!.own, [1]);
-    assert.deepStrictEqual(cut.readAt(2, [1, 2, 3], 1), { sums: [4, 3], outcome: 'read', fields: cut.at([1, 2, 3]).fields[2], places: [2] });
+    assert.deepStrictEqual(cut.readAt(2, [1, 2, 3], 1), { sums: [4, 3], outcome: 'read', fields: cut.at([1, 2, 3]).fields[2], places: [2], owners: [0, 1, 2, 3, 3, 4, 5, 5, 5] });
     // (The words of a known count are part of a coordinate: `"$b"` after `$d`, `$a` gives one.)
     assert.deepStrictEqual(cut.contexts(1)!.coordinates.map((c) => [c.words, c.fixed]), [[[], 0], [[2, 3], 1], [[5], 0]]);
     assert.deepStrictEqual(cut.contexts(1)!.base, [0, 2, 1]);
     assert.deepStrictEqual(table('cp $a $b $c x $d y $e').contexts(0), undefined);
+  });
+
+  it('a glob keeps its known start on every word it gives, as bash globs it (GNU cp and grep)', function () {
+    const gnu = (tool: string): boolean => /GNU/.test(spawnSync(tool, ['--version'], { encoding: 'utf8' }).stdout ?? '');
+    if (!gnu('cp') || !gnu('grep')) this.skip();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-readings-'));
+    try {
+      // (`cp -v* x d` with files `-va` and `-vb`: cp runs as `cp -va -vb x d`, and `d` is the new name of `x`.)
+      for (const f of ['-va', '-vb', 'x']) fs.writeFileSync(path.join(dir, f), 'x\n');
+      const cp = spawnSync('bash', ['-c', 'cp -v* x d'], { cwd: dir, encoding: 'utf8' });
+      assert.deepStrictEqual([cp.status, fs.statSync(path.join(dir, 'd')).isFile()], [0, true]);
+      const t = table('cp -v* x d');
+      assert.deepStrictEqual(t.reading([2]).words, [{ prefix: '-v' }, { prefix: '-v' }, { value: 'x' }, { value: 'd' }]);
+      assert.deepStrictEqual(t.at([2]).fields.map(squeezed), ['open -v', 'operand source', 'operand destination (the new name, or an existing directory)']);
+      // (`grep -r --include=*.sh x .` with files `--include=a.sh`, `--include=b.sh`: `x` is the pattern; `a.sh` holds it.)
+      for (const f of ['--include=a.sh', '--include=b.sh']) fs.writeFileSync(path.join(dir, f), '');
+      fs.writeFileSync(path.join(dir, 'a.sh'), 'x\n');
+      const grep = spawnSync('bash', ['-c', 'grep -r --include=*.sh x .'], { cwd: dir, encoding: 'utf8' });
+      assert.deepStrictEqual([grep.status, grep.stdout], [0, './a.sh:x\n']);
+      const g = table('grep -r --include=*.sh x .');
+      assert.deepStrictEqual(g.at([2]).fields.map(squeezed), ['option -r search directories recursively', 'option --include only search files matching the glob =', 'operand search pattern (regex)', 'operand file to search (default: stdin)']);
+      // (Not a word that splits: `x$a` gives `xp q`, the second word without the `x`.)
+      assert.strictEqual(table('cp x$a d').runs[0].each, undefined);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('a word inside a run is read at its real sum: `cp $a $b` with five and four words', () => {

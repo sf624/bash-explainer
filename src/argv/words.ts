@@ -159,7 +159,10 @@ export const argWordFor = (shell?: Shell, braces?: (n: SyntaxNode) => boolean | 
   const words = count(n);
   const param = loneParameter(n);
   const assigns = assignsOf(n);
-  return { ...(value !== undefined ? { value } : { prefix: prefixOf(n, shell) }), ...(words ? { count: words } : {}), ...(param ? { param } : {}), ...(assigns ? { assigns } : {}) };
+  const prefix = value === undefined ? prefixOf(n, shell) : undefined;
+  // (Its words all keep the text before the first glob or brace character: nothing in it splits.)
+  const each = !!prefix && !!words && !splitsIn(n.type === 'concatenation' ? n.namedChildren : [n]);
+  return { ...(value !== undefined ? { value } : { prefix }), ...(each ? { prefixEach: true as const } : {}), ...(words ? { count: words } : {}), ...(param ? { param } : {}), ...(assigns ? { assigns } : {}) };
 };
 
 /** A word of the command line as the interpreter reads it in bash. */
