@@ -140,7 +140,7 @@ Risks: small. The snapshot shows every changed text.
 
 ### P3. Fixes to copy, as data
 
-What: facts whose fix is mechanical carry `Rewrite` data (oracles.md 3.2): `failure-reported-as-success`, `source-searches-path`, `pattern-from-variable` and `unmatched-glob-runs-once` first. The data and its tests are oracles.md steps 4 to 6 (B2, B3, B4), part of the roadmap's run-based oracles, done before this series (decision 5). `source-searches-path` and `pattern-from-variable` are style checks (`StyleCode` in src/pitfalls.ts), so they need B4. P3 does those steps for these four ids if item 4 has not. The note's text renders its fix from the same data, so the two cannot disagree. VS Code, the Language Server and the web page's editor (web/editor.ts, CodeMirror's lint actions) offer each rewrite as a quick fix (src/fixes.ts).
+What: facts whose fix is mechanical carry `Rewrite` data (oracles.md 3.2): `failure-reported-as-success`, `source-searches-path`, `pattern-from-variable` and `unmatched-glob-runs-once` first. The data and its tests are oracles.md steps 4 to 6 (B2, B3, B4), part of the roadmap's run-based oracles, done before this series (decision 5). `source-searches-path` and `pattern-from-variable` are style checks (`StyleCode` in src/pitfalls.ts), so they need B4. P3 does those steps for these four ids if the run-based oracles have not. The note's text renders its fix from the same data, so the two cannot disagree. VS Code, the Language Server and the web page's editor (web/editor.ts, CodeMirror's lint actions) offer each rewrite as a quick fix (src/fixes.ts).
 
 Two fixes need care:
 
@@ -196,7 +196,7 @@ Risks: an example value could be read as the real one. The note says it is an ex
 
 Three PRs:
 
-- **P7a. The row model.** `src/ui/panelRows.ts`: a pure function of the explanation, the depth and the switch. It builds the rows, the text of each depth, the boxes, the role ids, the marks and the Key entries. Data only, drawn by nothing yet, with its tests. It stays under the 1,000 lines of test/file-length.test.ts (split by part if it grows). The basis chips of the roadmap's basis of an explanation ("Not in the manual · checked with bash 5.2", "Try it") are row data here, as item 2 lands before P7 (section 8, decision 3).
+- **P7a. The row model.** `src/ui/panelRows.ts`: a pure function of the explanation, the depth and the switch. It builds the rows, the text of each depth, the boxes, the role ids, the marks and the Key entries. Data only, drawn by nothing yet, with its tests. It stays under the 1,000 lines of test/file-length.test.ts (split by part if it grows). The basis chips of the roadmap's basis of an explanation ("Not in the manual · checked with bash 5.2", "Try it") are row data here, as they land before P7 (section 8, decision 3).
 - **P7b. The problems box, in today's Meaning.** Each warning and caveat gets a headline: one sentence in its catalog entry or style check, required by the type (as test/suggestions.test.ts requires a class), and per params where the text has cases. The box "Problems on this line": each item with its level's mark and word from the catalog, the headline, "more" with the whole text and the fix to copy (P3), and chips that link each row to its problem and back. A line inside a construct gets a pointer to the problem on the construct's line, with the level's word and the line number.
 - **P7c. The grid and the boxes.** The Meaning tab becomes depth 1 of the new view: "In short", the problems box, the folded whole-line example, the grid, a box per command. Reading stays as the second tab.
 
@@ -287,4 +287,4 @@ The maintainer answered the plan's three open questions on 2026-10-27:
 
 1. **The CLI.** Its output stays as today's list of parts, like Copy as Markdown and the hover (decision 7). It follows neither the depth nor the switch. No step changes it.
 2. **"Not in POSIX sh" on a bash script.** The mark shows on a bash script too, as a quiet mark. It is a fact of the construct: useful when moving a script to sh, and for learners. The dialect issues (the problems) still show only for the target shell (P9).
-3. **The basis chips before P7.** Yes. They (the basis chips and "Try it") lands before P7, so P7's row model takes its chips as row data (P7a).
+3. **The basis chips before P7.** Yes. The basis chips and "Try it" land before P7, so P7's row model takes its chips as row data (P7a).
