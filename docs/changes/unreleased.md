@@ -1585,3 +1585,13 @@ When the command word is an expansion (`$cmd`, `"$@"`, `$(which x)`, a glob `f*`
 | `foo -x`, `nice foo -x`, `'a"b' -x` | "Option (not in the dictionary; see `man foo`)" | unchanged |
 | `./foo -x`, `~/bin/foo -x`, `nice ./foo -x` | "…see `man ./foo`" (`man` reads a name with a `/` as a file) | "…see `man foo`" |
 | `'my prog' -x`, `nice 'my prog' -x` | "…see `man my`" | "Option (not in the dictionary)" |
+
+### Defaults of an integer variable
+
+The model knows the integer attribute (`declare -i y`, also through a nameref), and the worked example of `${y:=w}`, `${y=w}` and the other defaults follows it (checked with bash 5.2): the word is an arithmetic expression whose value `y` gets, and a variable that is set holds a number (`y=hello` is 0, and `y=` is 0 too, so there is no case of an empty value).
+
+| Written | Said now | Said before |
+| --- | --- | --- |
+| `declare -i y; : ${y:=p=3}` | "When y is unset or empty" -> 3; "When `y=42`" -> 42 | -> `p=3`; "When `y=hello`" -> hello |
+| `declare -i y; echo ${y:=a$b}` | -> "the value of the arithmetic expression `a$b`" | -> `a$b (expanded)` |
+| `declare -i y; echo ${y-w}` | "When y is unset" -> w; "When `y=42`" -> 42 (no case for an empty `y`) | also "When `y=""`" -> empty |

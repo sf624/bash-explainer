@@ -13,7 +13,7 @@ import { isProgram } from '../namefacts';
 import { programSections } from '../refs';
 import type { ExecEnv } from '../semantics/env';
 import { type NameResolution, resolveName } from '../semantics/names';
-import { attribute, option, type OptionState, shoptIn } from '../semantics/state';
+import { attribute, option, type OptionState, refTarget, shoptIn } from '../semantics/state';
 import { type ExpansionStep, ifsOf, type WordMeaning, wordMeaning } from '../semantics/words';
 import { literalContent, staticWordValue, surelyHasSlash } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
@@ -132,6 +132,12 @@ export function unquotedWord(a: SyntaxNode): string | undefined {
   const plain = (x: SyntaxNode) => x.type === 'word' || x.type === 'number' || x.type === 'brace_expression';
   if (plain(a) || (a.type === 'concatenation' && a.namedChildren.every(plain))) return a.text;
   return undefined;
+}
+
+/** Whether `name` surely has the integer attribute where `n` runs (a nameref is followed): bash does arithmetic on what it is given. */
+export function isInteger(cx: Explainer, name: string, n: SyntaxNode): boolean {
+  const st = cx.state.at(n).run;
+  return attribute(st, refTarget(st, name), 'i') === 'on';
 }
 
 /** Whether `name` is an associative array (`declare -A`) where `n` runs: its subscripts are strings, not arithmetic. */

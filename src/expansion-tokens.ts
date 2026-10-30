@@ -6,7 +6,7 @@ import type { Kind, Span, Token } from './analyzer-types';
 import { evalArith, intValue } from './arith';
 import { cannotAssign, expansionOps, wellKnownVariables } from './dict/syntax';
 import type { Explainer } from './explain/context';
-import { arrayKind, isAssoc, shoptAt } from './explain/reads';
+import { arrayKind, isAssoc, isInteger, shoptAt } from './explain/reads';
 import { scriptValue } from './explain/values';
 import { stageCountNote } from './explain/where';
 import { globChildren, joinedNote, orderNote, variableNote, varDesc } from './explain/words';
@@ -66,7 +66,7 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   const joined = all && joinedNote(h, n, all, parsed.subscript === undefined);
   // (`"$@"` keeps the arguments apart only where words are split: not here.)
   if (joined) summary.explanation = (parsed.subscript === undefined && !parsed.op ? h.s('全ての位置パラメータ', 'All positional parameters') : summary.explanation) + joined;
-  const cases = exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: isAssoc(h, parsed.name, n), script: scriptValue(h, n, parsed) });
+  const cases = exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: isAssoc(h, parsed.name, n), integer: isInteger(h, parsed.name, n), script: scriptValue(h, n, parsed) });
   // A `${…}` on one line is always on the line explained.
   if (cases) {
     h.example({ kind: 'expansion',

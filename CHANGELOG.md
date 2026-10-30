@@ -144,6 +144,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A word past the operands a command takes is an extra operand, which the command refuses: `diff a b c`, `cmp` with five words, `basename a b c` (without `-a`), `seq 1 2 3 4`, `tr -d a b`. Before, it was read as one more file, suffix or number, and a worked example ran.
 - Where an argument's role depends on how many words several variables give, the explanation now reads all their counts together, options too (`cp -t $d $a b`, `echo $a -n x`).
 - `date 0101` and `date x` are read as a date to set, not as an output format, and `date -d now x` is refused for lacking a leading `+`. `mknod n p 1 2` and `dircolors -p a` are refused as extra operands, `shuf -e a b c` takes its words as lines, and `getconf -a` is known. Before, `date x` was labelled an output format, and the other words were device numbers, a settings file and target files.
+- The worked examples of a default for an integer variable follow bash's arithmetic: after `declare -i y`, `${y:=p=3}` gives 3 (and sets `p`), and a set `y` is a number. Before, they showed `p=3` and `y=hello`.
 
 ## 0.8.0
 
