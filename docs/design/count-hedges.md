@@ -1,6 +1,6 @@
 # Hedges by word counts, read for every count at once
 
-Status: planned (2026-10-30), revised after review. The maintainer agreed to "a design document first, then steps that keep every test passing". Steps 1 (#499), 2 (#500), 3 (#502) and 4 done; the others not started. The roadmap item is under "Now" in [../roadmap.md](../roadmap.md).
+Status: planned (2026-10-30), revised after review. The maintainer agreed to "a design document first, then steps that keep every test passing". Steps 1 (#499), 2 (#500), 3 (#502) and 4 (#505) done; the others not started. The roadmap item is under "Now" in [../roadmap.md](../roadmap.md).
 
 An unquoted `$a` may give no word, one word or several. The role of a word on the line can then depend on how many words `$a` gives: with `$a` empty, `tar -cf $a b` is `tar -cf b`, and `b` is the archive. The explanation says such roles under a condition ("value for `-f` when `$a` expands to nothing"); this page calls them hedges. Since #492, a hedge must hold for every count that meets its condition (oracles.md 2.8). The hedges read one word's count at a time, and read the options once. Several lines break that rule. This page shows the cases, proposes one design that reads every count of every such word together, and gives the steps.
 
