@@ -13,7 +13,7 @@ import { severalFields } from './globwords';
 import { attribute, option } from './shellstate';
 import type { StateModel } from './state';
 import { changedByBash } from './vars';
-import { holedWords, patternOfChars, type Piece, splitOn, type ValueSource, wordMeaning, type WordMeaning } from './words';
+import { holedWords, integerParameter, patternOfChars, type Piece, splitOn, type ValueSource, wordMeaning, type WordMeaning } from './words';
 
 /**
  * What a hole may give: `text`, any text; `digits`, digits (`$#`, `$?`, `$$`, `${#x}`; `$!`, also nothing before any
@@ -91,14 +91,9 @@ function holeOf(part: SyntaxNode | string, quoted: boolean, w: WordMeaning): Hol
 /** The kind of the hole of `part`, and whether it may be empty. */
 function kindOf(part: SyntaxNode, quoted: boolean, w: WordMeaning): Pick<Hole, 'kind' | 'empty'> {
   if (part.type === 'simple_expansion' || part.type === 'expansion') {
-    const p = parseExpansion(part.type === 'simple_expansion' ? `\${${part.text.slice(1)}}` : decodedText(part));
-    // (`$#`, `$?`, `$$` and a length are digits, also behind an operator that keeps a value that is set; `$!` may be
-    // empty. Any other operator over them gives text: `${#:+-v}`, `${#/#/-}`; `${##1}` with one element is empty.)
-    if (p?.prefix === '#' && !p.op) return { kind: 'digits', empty: false };
-    if (p && !p.prefix && p.subscript === undefined) {
-      if (/^[#?$]$/.test(p.name) && [undefined, '-', ':-', '=', ':=', '?', ':?'].includes(p.op)) return { kind: 'digits', empty: false };
-      if (p.name === '!' && !p.op) return { kind: 'digits', empty: true };
-    }
+    // (`$#`, `$?`, `$$` and a length are digits, also behind an operator that keeps a value that is set; `$!` may be empty.)
+    const digits = integerParameter(part);
+    if (digits) return { kind: 'digits', empty: digits === 'maybe-empty' };
     if (severalFields(part, w.state, quoted)) return { kind: 'elements', empty: true };
   }
   if (part.type === 'arithmetic_expansion') return { kind: 'integer', empty: false };
@@ -437,10 +432,24 @@ function risky(p: ReturnType<typeof parseExpansion>, w: WordMeaning): boolean {
  * (`$\<newline>@` is `$@`) or in a parameter's name (`$y\<newline>a` is `$ya`); `$_` before a brace expression (`$_{a,b}` gives `$_a`); a process substitution joined to other text (`a<(:)`
  * is one word, which the parser reads as two, or as text: `1<(:)`); a brace expression after `$$` (`$${1..2}`, not
  * expanded); a range of characters across a backslash (`{Z..a}`, `{Z..a..+2}`); plain text with a quote or an expansion in
- * it, as the adapter keeps an extglob group (`x@(${x})y`); a `${ cmd; }` of bash 5.3.
+ * it, as the adapter keeps an extglob group (`x@(${x})y`); a `${ cmd; }` of bash 5.3. Also any line continuation not
+ * in quotes (`{1..\<newline>3}` is `{1..3}`, F98); a sequence expression with a number of more than 15 digits, past what
+ * the word model counts exactly (`{0..2..9223372036854775808}` is not expanded, F99); a tilde that bash expands and the
+ * word model does not: after `:` in a here-string (`<<< x:~`), in an element `[k]=…` of an array, in the operand of an
+ * expansion in an assignment (`a=${x:+x:~}`, F100).
  */
 function misread(w: WordMeaning): boolean {
   const text = w.nodes.map((x) => x.text).join('');
+  // (A line continuation outside quotes and outside a substitution, which is a hole: F98. An even run of backslashes
+  // before a newline quotes the last of them, and is no continuation.)
+  const QUOTED = ['raw_string', 'ansi_c_string', 'string', 'translated_string', 'command_substitution', 'process_substitution'];
+  const bare = (x: SyntaxNode): string => descendants(x, QUOTED).reduce((t, q) => t.slice(0, q.startIndex - x.startIndex) + ' '.repeat(q.endIndex - q.startIndex) + t.slice(q.endIndex - x.startIndex), x.text);
+  if (w.nodes.some((x) => /(?:^|[^\\])(?:\\\\)*\\\n/.test(bare(x)))) return true;
+  if ([...text.matchAll(/\{[^{}]*\.\.[^{}]*\}/g)].some((m) => /\d{16}/.test(m[0]))) return true;
+  // (F100: bash expands these tildes, after `:` of a here-string, `<<< x:~`; in `r=([0]=~)`; in `a=${x:+x:~}`, also
+  // given to `declare`, `local` or `export`; the operand alone too, `x:~`, wherever its expansion is.)
+  if ((['herestring', 'param-word'].includes(w.context) && /:~/.test(text)) || (w.context === 'array-element-assignment' && text.includes('~'))) return true;
+  if (['assignment-value', 'declaration-assignment', 'herestring'].includes(w.context) && w.nodes.some((x) => descendants(x, ['expansion']).some((e) => e.text.includes('~')))) return true;
   // (Also a tilde after `=` or `:`, `a=~\<newline>/x`, and `$` before any line continuation: `$\<newline>@` is `$@`, F90; a `+` step, F91.)
   if (/~[^/]*\\\n/.test(text) || /\$_\{/.test(text) || /\$\w*(?:\\\n)+[\w{]/.test(text) || /\$\\\n/.test(text) || /(?:^|[^$\\])(?:\$\$)+\{/.test(text)) return true;
   const crosses = (m: RegExpMatchArray): boolean => Math.min(m[1].charCodeAt(0), m[2].charCodeAt(0)) <= 92 && Math.max(m[1].charCodeAt(0), m[2].charCodeAt(0)) >= 92;

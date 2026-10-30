@@ -517,6 +517,21 @@ class ModelValues implements ValueSource {
   }
 }
 
+/**
+ * Whether bash makes the value of the part `n` from an integer: `$#`, `$?`, `$$` and a length (`${#x}`, `${#a[@]}`),
+ * also `$#`, `$?` and `$$` behind an operator that keeps a value that is set (`${#:-1}`); `maybe-empty`: `$!`, empty
+ * before any `&`. Any other operator over them gives text: `${#:+-v}`, `${#/#/-}`; `${##1}` with one element is empty.
+ * Such a value is not quoted in double quotes with `"$@"` before it or after it (F84, F97).
+ */
+export function integerParameter(n: SyntaxNode): 'digits' | 'maybe-empty' | undefined {
+  if (n.type !== 'simple_expansion' && n.type !== 'expansion') return undefined;
+  const p = parseExpansion(n.type === 'simple_expansion' ? `\${${n.text.slice(1)}}` : decodedText(n));
+  if (p?.prefix === '#' && !p.op) return 'digits';
+  if (!p || p.prefix || p.subscript !== undefined) return undefined;
+  if (/^[#?$]$/.test(p.name) && [undefined, '-', ':-', '=', ':=', '?', ':?'].includes(p.op)) return 'digits';
+  return p.name === '!' && !p.op ? 'maybe-empty' : undefined;
+}
+
 /** What a word gives, read from its nodes with the values of a `ValueSource`. */
 class Evaluator {
   private readonly unbound: Tri;
@@ -594,9 +609,11 @@ class Evaluator {
       if (c.type === 'string_content' || c.type === 'heredoc_content') continue;
       flush(c.startIndex);
       // (After `"$@"` in the same quotes, bash splits a part by IFS as if it were not quoted, F75: `"$@$#"` with `IFS=1`
-      // and one element drops the `1`; but not a variable alone, `"$@$x"`; and `$(( ))` anywhere in them, F84. With a
+      // and one element drops the `1`; but not a variable alone, `"$@$x"`. Before it, `$(( ))` and a parameter made
+      // from an integer, F84, F97: `"$#$@"` with `IFS=1` and one element is an empty field and the element. With a
       // hook, such a part is a hole not quoted.)
-      const split = this.hole && (out.some((x) => x.hole?.kind === 'elements') ? !/^\$(?:[A-Za-z_]\w*|\{[A-Za-z_]\w*\})$/.test(c.text) : c.type === 'arithmetic_expansion' && elements());
+      const split = this.hole && (out.some((x) => x.hole?.kind === 'elements') ? !/^\$(?:[A-Za-z_]\w*|\{[A-Za-z_]\w*\})$/.test(c.text)
+        : (c.type === 'arithmetic_expansion' || integerParameter(c) !== undefined) && elements());
       const p = split ? this.hole!(c, false) : this.pieces(c, true);
       if (!p) return undefined;
       out.push(...p);
