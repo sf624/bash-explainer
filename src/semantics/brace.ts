@@ -56,9 +56,10 @@ export function rejoined(w: readonly (SyntaxNode | string)[]): boolean {
 /**
  * The values of the words a brace expansion gives, when they are known without running anything, quotes removed
  * (`{a,"b c"}` is `a` and `b c`); undefined when one is not known (`{a,$x}`), null when they are too many to list.
+ * `part`: as for `braceAlternatives`.
  */
-export function braceValues(nodes: readonly SyntaxNode[]): string[] | null | undefined {
-  const words = braceAlternatives(nodes);
+export function braceValues(nodes: readonly SyntaxNode[], part = false): string[] | null | undefined {
+  const words = braceAlternatives(nodes, part);
   if (!words || words.some(rejoined)) return words && undefined;
   const values = words.map((w) => w.map((p) => (typeof p === 'string' ? p.replace(/\\(.|$)/gs, '$1') : staticWordValue(p))));
   return values.some((v) => v.includes(undefined)) ? undefined : values.map((v) => v.join(''));

@@ -38,11 +38,11 @@
 import type { Shell } from '../dialect';
 import { prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
-import { staticWordValue } from '../staticword';
+import { splitElement, staticWordValue } from '../staticword';
 import type { BashVersion } from '../bashversion';
-import { field, fields, hasError, substitutionForm, type SyntaxNode } from '../syntax/tree';
+import { field, fields, hasError, substitutionForm, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { CommandSpec } from '../argv/spec';
-import { bracedWords } from './brace';
+import { bracedWords, braceValues } from './brace';
 import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
 import { plainName, aliasOf, aliasTexts, builtinParse, builtinRead, callbacks, commandName, commandWords, DECLARATIONS, setOptionWrites, variableWrites, wordName } from './effects';
 import { type Deferred, type DeferredPlan, deferredReadings, unknownWords } from './deferred';
@@ -488,7 +488,8 @@ class Scan {
   /** The subscripts of the elements of the array `value` (`a=([i]=x)`: `[i]`), assigned to `name` by `a`. */
   private elements(value: SyntaxNode, name: string, associative: boolean, a: SyntaxNode, w: Where): void {
     for (const e of value.namedChildren) {
-      const key = /^\[([^\]]*)\]\+?=/.exec(e.text)?.[1];
+      // (The key ends at the `]` that matches its `[`, past quotes and expansions: `[a[u=2]]=1`.)
+      const key = splitElement(e.text)?.key;
       if (key !== undefined && !associative) this.subscripts.push({ array: name, text: key, owner: this.owner(a), where: w });
     }
   }
@@ -562,9 +563,11 @@ class Scan {
           continue;
         }
         const value = field(o, 'value');
-        // (Of an element, `declare 'a[1]=(x)'`, only with -a or -A.)
+        // (Of an element, `declare 'a[1]=(x)'`, only with -a or -A. Each value the word gives: as written, and the words
+        // of its brace expansion where `set -B` is on, as for any word of a command: `a={'(…)',}` gives `a=(…)`, `a=`.)
         if (compound && value && value.type !== 'array' && (explicit || nameNode.type !== 'subscript')) {
-          this.compoundValue(o, name, staticWordValue(value, true, this.shell), prefixOf(value, this.shell), explicit, on.includes('A'), w);
+          const braced = wordBraces(value).length ? braceValues([value], true) ?? [undefined] : [];
+          for (const text of [staticWordValue(value, true, this.shell), ...braced]) this.compoundValue(o, name, text, prefixOf(value, this.shell), explicit, on.includes('A'), w);
         }
         this.assignment(o, w, plain, on.includes('A'), false, explicit);
       } else {

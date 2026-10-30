@@ -197,18 +197,24 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
       "x='([u=2]=1)'; mapfile arr < /dev/null; declare arr=\"$x\"", "x='([u=2]=1)'; : ${arr[0]:=a}; declare arr=\"$x\"", "x='([u=2]=1)'; (( arr[1]=2 )); declare arr=\"$x\"",
       // (`export` and `readonly` with -a or -A.)
       "export -a 'arr=([u=2]=1)'", "readonly -a 'arr=([u=2]=1)'", "readonly -A 'm=([a]=$((u=2)))'", "x='([u=2]=1)'; export -a arr=\"$x\"",
+      // (Each word of a brace expansion of the value, which bash makes of a declaration's words.)
+      "declare -a arr={'([u=2]=1)',}", "arr=(); declare arr={'([u=2]=1)',}", "declare -A m={'([k]=$((u=2)))',}", "declare -a arr={'($((u=2)))',x}",
+      "declare -a arr=\\({'[u=2]=1',}\\)",
+      // (A key ends at the `]` that matches its `[`.)
+      'arr=([a[u=2]]=1)', 'declare -a arr=([a[u=2]]=1)', "declare -a 'arr=([a[u=2]]=1)'",
     ];
     // (Bash leaves `u`: not a compound assignment there, or the text is not one; the script still decides it.)
     const kept = [
       "declare -A 'arr=([u=2]=1)'", "declare -a 'arr=([u=2]=1) '", "declare -a 'arr=(1 2'", "declare -a 'arr=\"($((u=2)))\"'", 'declare -a arr=(\\[u=2\\]=1)',
       "arr=(1); readonly 'arr=($((u=2)))'", "arr=(1); export 'arr=($((u=2)))'", "x='([u=2]=1)'; arr=(); export arr=\"$x\"", "arr=(1); declare 'arr[1]=($((u=2)))'",
       'f() { local v="$1"; }; f a', 'declare v="$1"', 'declare -a v="a$1"', 'unset v; declare v="$1"', 'for v in a; do :; done; declare v="$1"', 'o=-i; w=1+2; declare $o n=$w',
+      'declare -a arr={a,b}', 'declare x={a,b}', 'declare -A m=([a[k]]=1)',
     ];
     // (Bash leaves `u`, but the scan reads the value again, as it does not know whether the variable is an array there:
     // a local is a new variable, and `unset` ends the array.)
     const left = [
       "declare 'arr=([u=2]=1)'", "arr=(); f() { local 'arr=($((u=2)))'; }; f", "x='([u=2]=1)'; arr=(); f() { local arr=\"$x\"; }; f",
-      "arr=(1); unset arr; declare 'arr=($((u=2)))'",
+      "arr=(1); unset arr; declare 'arr=($((u=2)))'", "set +B; declare -a arr={'([u=2]=1)',}",
     ];
     const list: Script[] = [...undecided, ...kept, ...left].map((s) => ({ text: `u=1; ${s}; ${test('u')}; : M4`, constructs: [{ id: 1, type: 'if_statement' }] }));
     // (An error in the text, here an arithmetic one, discards the rest of the line, which the walk does not see.)
