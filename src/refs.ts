@@ -1,5 +1,5 @@
 import { BUILTIN_SECTIONS, PARAMETER_ALSO, PROGRAM_SECTIONS, VARIABLE_FEATURE_SECTIONS, VARIABLE_SECTIONS } from './manual';
-import { field, isShebang, type SyntaxNode } from './syntax/tree';
+import { field, isShebang, nameText, type SyntaxNode } from './syntax/tree';
 
 // The sections of the Bash manual (src/manual.ts) a token is about, from its node: a construct, an operator, a
 // quote, an expansion or a redirection. The command tokens take theirs from the name resolution (the analyzer's
@@ -132,7 +132,7 @@ export function nodeSections(n: SyntaxNode): readonly string[] | undefined {
   // (The pattern of `${x#pat}` or `${x/pat/s}` is a word of the parameter expansion; the word-meaning model adds what
   // reads it as a pattern, 3.5.8.1.)
   if (n.type === 'regex' && n.parent!.type === 'expansion') return NODES.expansion;
-  if (n.type === 'simple_expansion') return parameterSections(n.text);
+  if (n.type === 'simple_expansion') return parameterSections(nameText(n));
   // (`${10}`, `${#}`: a positional or special parameter in braces, which the manual says to write so, 3.4.1.)
   const braced = n.type === 'expansion' && /^\$\{(\d+|[-*@#?$!_])\}$/.exec(n.text);
   if (braced) return [...parameterSections(`$${braced[1]}`), '3.5.3'];

@@ -17,7 +17,7 @@ import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
 import type { ArgvParse } from '../argv/interpret';
 import { actedNames, actsOnNames } from '../argv/query';
-import { field, fields, prefixAssignments, type SyntaxNode } from '../syntax/tree';
+import { field, fields, nameText, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { aliasExpandsNext, builtinParse, quotedName, wordsAfterAlias, wrapped } from './effects';
 import { type ExecEnv, linksAfter, reachOf, type SlotLink, subshellReasons } from './env';
 import { type AliasState, type CommandEntry, type FunctionState, hashOutcomes, option, type ShellState, type StateModel, type Tri } from './state';
@@ -479,7 +479,7 @@ export function temporariesUnset(name: string, words: readonly SyntaxNode[], n: 
  * mode is on on some paths only.
  */
 export function definitionFails(model: StateModel, def: SyntaxNode): Tri {
-  if (builtins[field(def, 'name')!.text]?.builtin !== 'special') return 'off';
+  if (builtins[nameText(field(def, 'name')!)]?.builtin !== 'special') return 'off';
   const posix = option(model.at(def).run, 'set', 'posix');
   return posix === 'on' || posix === 'unknown' ? posix : 'off';
 }

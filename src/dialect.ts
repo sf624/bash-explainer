@@ -7,7 +7,7 @@ import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
 import { marked, type Note, plainNote, PORTABILITY } from './messages';
-import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
+import { ancestor, braceKind, braceTakenAsWord, childrenOnRows, descendants, field, fields, nameText, prefixAssignments, substitutionForm, wordBraces } from './syntax/tree';
 import { networkPath, networkTarget } from './dict/syntax';
 import { bracesInContext } from './semantics/words';
 import { staticWordValue } from './staticword';
@@ -215,7 +215,7 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       variableFeature(p.name, add);
       return;
     }
-    case 'simple_expansion': variableFeature(n.text.slice(1), add); return;
+    case 'simple_expansion': variableFeature(nameText(n).slice(1), add); return;
     case 'brace_expression': case 'word': case 'concatenation': {
       // (Only where bash expands braces: not in `x={1..3}`, a here-string or the word of `case`.)
       const braces = n.type !== 'word' && bracesInContext(n);

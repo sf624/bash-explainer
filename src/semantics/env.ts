@@ -20,7 +20,7 @@ import type { BuiltinCall, CommandSlot, CommandSpec } from '../argv/spec';
 import { argWordFor } from '../argv/words';
 import { restrictedByName, shellFromName } from '../dialect';
 import type { Shell } from '../dialect';
-import { field, isShebang, prefixAssignments, substitutionForm, type SyntaxNode } from '../syntax/tree';
+import { field, isShebang, nameText, prefixAssignments, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { staticWordValue } from '../staticword';
 import type { HostId } from '../hosts';
 import type { ShellState, StateModel, Tri } from './state';
@@ -209,7 +209,7 @@ export class EnvModel {
         for (const e of entries) sites.push({ at, env: inner.length ? { links: [...e.env.links, ...inner] } : e.env, sure: sure && e.sure });
       }
     }
-    const unsure = !sites.length || !!host || !this.walk.closed(field(def, 'name')!.text);
+    const unsure = !sites.length || !!host || !this.walk.closed(nameText(field(def, 'name')!));
     const link: CallLink = { kind: 'call', def, sites, unsure };
     return { links: sites.length ? [link] : [...this.at(def).links, link] };
   }

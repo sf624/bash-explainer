@@ -6,7 +6,7 @@ import { forEachChild, parse } from 'unbash';
 import type * as U from 'unbash';
 import type { BashParser, FieldName, Point, SyntaxError, SyntaxNode, SyntaxTree } from '../tree';
 import { type BraceBuilder, bracePieces, type Range } from './braces';
-import { type Joined, prepared } from './continuations';
+import { type Joined, nameBefore, prepared } from './continuations';
 import { extglobLike, NUMBER } from './extglob';
 import { attachedSubstitutions, type Children, scriptErrors as errorsOf } from './rereads';
 import { scanGap } from './tokens';
@@ -55,10 +55,10 @@ class Converter {
   private readonly skip: (readonly [number, number])[] = [];
 
   /**
-   * `text` is what is parsed and scanned: a CR of a CRLF is a blank, a line continuation in a word is removed (`joins`: ./continuations.ts).
-   * `original` is what the tree reports (the node texts and `tree.text`). `cr`: where the CRs are in it; no node ends with one.
+   * `text` is what is parsed and scanned: a CR of a CRLF is a blank, a line continuation that bash removes is removed (`joins`: ./continuations.ts).
+   * `original` is what the tree reports (the node texts and `tree.text`). `cr`: where the CRs are in it; no node ends with one. `first`: unbash's reading of `text`, if done.
    */
-  constructor(private readonly text: string, private readonly cr: ReadonlySet<number> = new Set(), private readonly original: string = text, private readonly joins?: Joined) {
+  constructor(private readonly text: string, private readonly cr: ReadonlySet<number> = new Set(), private readonly original: string = text, private readonly joins?: Joined, private readonly first?: U.ParsedScript) {
     for (let i = original.indexOf('\n'); i >= 0; i = original.indexOf('\n', i + 1)) this.lineStarts.push(i + 1);
   }
 
@@ -203,7 +203,7 @@ class Converter {
    * reading hides one `&` or operator more, so there are at most as many as the `&>`, `<(` and `>(` in the text.
    */
   parseScript(): U.ParsedScript {
-    let script = parse(this.text);
+    let script = this.first ?? parse(this.text);
     for (;;) {
       const before = this.bothOutputs.size + this.attached.size;
       for (const e of scriptErrors(script)) {
@@ -447,8 +447,8 @@ class Converter {
     // Every redirection of a simple command is its child, wherever it is written (`>o echo a 2>e`), as in bash.
     const args = [...before, ...after];
     const last = args.length ? args[args.length - 1] : c.name;
-    const name = c.name;
-    const node = this.node('command', start, Math.max(last.end, name.end));
+    const name = nameBefore(c.name, this.text);
+    const node = this.node('command', start, Math.max(last === c.name ? name.end : last.end, name.end));
     for (const p of before) {
       if (p.type === 'Assignment') this.add(node, this.assignment(p));
       else this.add(node, this.redirect(p as U.Redirection), 'redirect');
@@ -1379,8 +1379,8 @@ export function createUnbashParser(): BashParser {
   return {
     parse(text: string): SyntaxTree {
       // (The text unbash reads: ./continuations.ts.)
-      const { masked, carriageReturns, joins } = prepared(text, parse, children);
-      const tree = new Converter(joins ? joins.text : masked, new Set(carriageReturns), text, joins).run();
+      const { masked, carriageReturns, joins, script } = prepared(text, parse, children);
+      const tree = new Converter(joins ? joins.text : masked, new Set(carriageReturns), text, joins, script).run();
       return carriageReturns.length ? { ...tree, carriageReturns } : tree;
     },
   };

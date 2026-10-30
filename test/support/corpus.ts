@@ -64,7 +64,8 @@ export function invariants(tree: SyntaxTree): string[] {
       if (c.startIndex < at && !involved) bad.push(`${here}: ${c.type}@${c.startIndex} overlaps or is out of order`);
       if (!involved) at = Math.max(at, c.endIndex);
       prevHole ||= hasHole(c);
-      if (!c.named && c.type !== c.text) bad.push(`${here}: token ${c.type} has text ${c.text}`);
+      // (A line continuation that splits a token is removed before it is read: `&\<newline>&` is `&&`.)
+      if (!c.named && c.type !== c.text.replace(/\\\n/g, '')) bad.push(`${here}: token ${c.type} has text ${c.text}`);
       visit(c, n, here, hole);
     }
   };

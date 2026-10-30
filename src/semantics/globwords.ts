@@ -4,7 +4,7 @@
 import { isGlob } from '../examples/shellwords';
 import { parseExpansion, type ParsedExpansion } from '../expansion';
 import { decodedText } from '../staticword';
-import type { SyntaxNode } from '../syntax/tree';
+import { nameText, type SyntaxNode } from '../syntax/tree';
 import { attribute, type ShellState, type StateModel } from './state';
 import { braceWords, type Char, patternOfChars, wordMeaning } from './words';
 
@@ -53,7 +53,7 @@ function severalFields(n: SyntaxNode, st: ShellState, quoted = false): boolean {
   if (n.type === 'command_substitution' || n.type === 'process_substitution' || n.type === 'arithmetic_expansion') return false;
   const inQuotes = quoted || n.type === 'string';
   if (n.type === 'simple_expansion' || n.type === 'expansion') {
-    const p: Pick<ParsedExpansion, 'name' | 'subscript' | 'prefix' | 'op'> | undefined = n.type === 'simple_expansion' ? { name: n.text.slice(1) } : parseExpansion(decodedText(n));
+    const p: Pick<ParsedExpansion, 'name' | 'subscript' | 'prefix' | 'op'> | undefined = n.type === 'simple_expansion' ? { name: nameText(n).slice(1) } : parseExpansion(decodedText(n));
     // (Not read: an indirection with an operator, `${!x:-y}`, which may give the elements of `x='a[@]'` too.)
     if (!p) return true;
     const { name, subscript, prefix, op } = p;

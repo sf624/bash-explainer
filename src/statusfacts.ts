@@ -18,7 +18,7 @@ import { resolveName } from './semantics/names';
 import type { Decision, StateModel } from './semantics/state';
 import { type Ignored, lastStatements, type StatusModel, type StatusRule } from './semantics/status';
 import { staticWordValue } from './staticword';
-import { ancestor, descendants, field, fields, isShebang, redirectionsOf, substitutionForm, type SyntaxNode } from './syntax/tree';
+import { ancestor, descendants, field, fields, isShebang, nameText, redirectionsOf, substitutionForm, type SyntaxNode } from './syntax/tree';
 
 /** A fact and the statement it is about (where the part hover shows it). */
 export type StatusFact = FactSpec & { node: SyntaxNode };
@@ -115,7 +115,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         if (!body || statements(body).length < 2) break;
         const ig = status.errexit(statements(body)[0]).ignored;
         if (!ig?.sure || ig.why !== 'called-in-condition' || status.errexit(ig.at).errexit !== 'on' || !plain(body) || turnsOn(body)) break;
-        const name = field(n, 'name')!.text;
+        const name = nameText(field(n, 'name')!);
         add(n, { id: 'errexit-function-called-only-where-ignored', params: { name, line: row(ig.at) } });
         break;
       }
@@ -158,7 +158,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         if (!body || !lastStatements(body).includes(n) || !tests(n, state, status, shell)) break;
         const call = [...state.calls.get(def)?.keys() ?? []].find((c) => status.errexit(c).active === 'on' && status.errexit(c).checked === true);
         if (!call) break;
-        const name = field(def, 'name')!.text;
+        const name = nameText(field(def, 'name')!);
         // (The script's last command: its status is the script's.)
         const end = lastStatements(root).some((s) => s === call || s === call.parent);
         add(n, { id: end ? 'function-last-test-returns-status' : 'function-last-test-stops-script', params: { name, line: row(call), rewrite: [asIf(n), statementAfter(n, 'return 0')] } });
@@ -322,7 +322,7 @@ function failureReported(n: SyntaxNode, root: SyntaxNode, state: StateModel, sta
   const sourced = !def && read !== 'script';
   const end = stopCommand(n, state, where === 'function');
   const quiet = (left.type === 'command' || left.type === 'redirected_statement') && outputsOf(left).err === '/dev/null' ? redirectionsOf(left).map((r) => r.text).join(' ') : '';
-  return { id: 'failure-reported-as-success', params: { where, name: def ? field(def, 'name')!.text : '', left: shorten(left.text), right: shorten(msg.text), quiet, sourced, rewrite: [replaceNode(right, `{ ${said}; ${end}; }`)] } };
+  return { id: 'failure-reported-as-success', params: { where, name: def ? nameText(field(def, 'name')!) : '', left: shorten(left.text), right: shorten(msg.text), quiet, sourced, rewrite: [replaceNode(right, `{ ${said}; ${end}; }`)] } };
 }
 
 /**

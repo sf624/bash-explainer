@@ -7,7 +7,7 @@ import type { Ends } from '../../argv/spec';
 import type { Shell } from '../../dialect';
 import { builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
-import { assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from '../../syntax/tree';
+import { assignmentsOnly, coprocName, descendants, field, fields, nameText, prefixAssignments, redirectionsOf, type SyntaxNode } from '../../syntax/tree';
 import { commandName } from '../effects';
 import { lastStageInShell, slotEnvs, STATEMENTS, subshellReasons } from '../env';
 import { NESTED_DEPTH, type NestedScript, type NotRead } from '../nested';
@@ -240,7 +240,7 @@ export class Walker {
     const nodes = descendants(root, types);
     for (const f of nodes) {
       if (f.type !== 'function_definition') continue;
-      const name = field(f, 'name')!.text;
+      const name = nameText(field(f, 'name')!);
       const defs = this.functionDefs.get(name) ?? [];
       if (!defs.includes(f)) this.functionDefs.set(name, [...defs, f]);
     }
@@ -256,7 +256,7 @@ export class Walker {
       // (At the top level, or first in a list there: `f() { …; } && complete -F f x` always defines it.)
       let x = def;
       while (x.parent?.type === 'list' && x.parent.namedChildren[0] === x) x = x.parent;
-      const name = field(def, 'name')!.text;
+      const name = nameText(field(def, 'name')!);
       if (x.parent === root && !unset.has(name) && !subshellReasons(x).length) this.sureLater.set(name, def);
     }
     // The units bash reads at once: the top-level statements that share a line.
@@ -537,7 +537,7 @@ export class Walker {
     // (A definition itself runs where it stands: its body is what may run elsewhere.)
     let root = n;
     for (let x: SyntaxNode | null = n.type === 'function_definition' ? n.parent : n; x; x = x.parent) {
-      if (this.unwalked.has(x) || (x.type === 'function_definition' && (bad.has(x) || !this.trust.closed(field(x, 'name')!.text)))) return false;
+      if (this.unwalked.has(x) || (x.type === 'function_definition' && (bad.has(x) || !this.trust.closed(nameText(field(x, 'name')!))))) return false;
       root = x;
     }
     // (Nor in a trap's action, or a string it runs: a signal, an error or `exit` may run it at any point, with values
@@ -649,7 +649,7 @@ export class Walker {
       case 'coproc_statement': {
         // `NAME` (`COPROC`) is an array of the coprocess's fds, and `NAME_PID` its PID; bash unsets them when the
         // coprocess has ended (may be).
-        const name = field(n, 'name')?.text ?? 'COPROC';
+        const name = coprocName(n);
         st = this.sequence(n.children, st);
         return merge([st, this.builtins.setVariable(this.builtins.giveAttribute(this.builtins.setVariable(st, name, n, undefined, false, true), name, 'a', n), `${name}_PID`, n, undefined)], this.posix);
       }
@@ -972,7 +972,7 @@ export class Walker {
   }
 
   private functionDefinition(n: SyntaxNode, st: ShellState): ShellState {
-    const name = field(n, 'name')!.text;
+    const name = nameText(field(n, 'name')!);
     const prev = st.functions.get(name);
     // A readonly function cannot be defined again; in POSIX mode, nor can one named like a special builtin, nor in bash
     // 5.2 one whose name is no valid name: bash stops the script there (src/semantics/posixexits.ts).

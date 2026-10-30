@@ -2,7 +2,7 @@
 // `set -eET` on, then calls each test in a process of its own, after the file's `setup` and before its `teardown`,
 // and `setup_file` and `teardown_file` in one more process, around the tests. The walk reads those calls as bash
 // runs them, so the bodies have the states of their calls, and the status model sees `set -e` in them.
-import { field, type SyntaxNode } from '../../syntax/tree';
+import { field, nameText, type SyntaxNode } from '../../syntax/tree';
 import { merge, type ShellState, withStatus } from '../shellstate';
 import type { Target, Walker } from './walker';
 import { ATTRS, widen } from './widen';
@@ -61,7 +61,7 @@ export function hostRun(w: Walker, root: SyntaxNode, end: ShellState): void {
   const rows = new Set(run.tests);
   const tests = [...w.functionDefs.values()].flat().filter((d) => rows.has(d.startPosition.row) && rootOf(d) === root);
   for (const def of tests.sort((a, b) => a.startIndex - b.startIndex)) {
-    const name = field(def, 'name')!.text;
+    const name = nameText(field(def, 'name')!);
     // (A test the script does not define at its end, or defines otherwise: bats says "unknown test name".)
     if (fn(name) !== def) continue;
     const target: Extract<Target, { kind: 'program' }> = { kind: 'program', dead: w.mode.dead, exits: [] };

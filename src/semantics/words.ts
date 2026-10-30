@@ -13,7 +13,7 @@ import { patsubMiscounts } from '../bracket';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
-import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, nameText, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, sameInEveryLocale, substring } from './chars';
 import { bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
@@ -661,7 +661,7 @@ class Evaluator {
   private expansion(n: SyntaxNode, quoted: boolean): Piece[] | undefined {
     const out = (text: string): Piece[] => [{ text, quoted, expanded: true }];
     if (n.type === 'simple_expansion') {
-      const name = n.text.slice(1);
+      const name = nameText(n).slice(1);
       const v = this.variable(name, n);
       return v === null ? this.unset(out) : v === undefined ? undefined : out(v);
     }

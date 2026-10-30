@@ -3,7 +3,7 @@
 // test/fixtures/probes/words.json checks it against bash (each row's `unbound`).
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
-import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
+import { ancestor, descendants, field, fields, nameText, type SyntaxNode } from '../syntax/tree';
 import { processOf, STATEMENTS } from './env';
 import { resolveName } from './names';
 import { attribute, option, type StateModel } from './state';
@@ -54,7 +54,7 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
   let name: string;
   let shown: string;
   if (n.type === 'simple_expansion') {
-    name = shown = n.text.slice(1);
+    name = shown = nameText(n).slice(1);
   } else if (n.type === 'expansion') {
     const p = n.startPosition.row === n.endPosition.row ? parseExpansion(n.text) : undefined;
     if (!p || p.prefix === '!' || (p.op && /^:?[-=+?]$/.test(p.op)) || (p.subscript !== undefined && !/^\w+$/.test(p.subscript))) return undefined;
@@ -82,7 +82,7 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
   if (model.dead(statement) || setBefore(statement, n, name) || unreliableNames(n).has(name) || guarded(n, name) || testedBefore(n, statement, name)) return undefined;
   const isFunction = (a: SyntaxNode): boolean => a.type === 'function_definition';
   for (let fn = ancestor(n, isFunction); fn; fn = ancestor(fn, isFunction)) {
-    if (!model.closed(field(fn, 'name')!.text) || !model.calls.get(fn)?.size) return undefined;
+    if (!model.closed(nameText(field(fn, 'name')!)) || !model.calls.get(fn)?.size) return undefined;
   }
   let program = false;
   const redirect = ancestor(n, (a) => REDIRECTS.has(a.type));

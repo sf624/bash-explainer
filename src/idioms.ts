@@ -8,7 +8,7 @@ import { argWordFor } from './argv/words';
 import { lookupCommand } from './dict/aliases';
 import { hasGlob } from './embedded/glob';
 import { staticWordValue } from './staticword';
-import { ancestor, descendants, field, fields, redirectionsOf } from './syntax/tree';
+import { ancestor, descendants, field, fields, nameText, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { option } from './semantics/state';
 import type { StatusModel } from './semantics/status';
@@ -146,7 +146,7 @@ const expansionOf = (w: SyntaxNode | undefined): SyntaxNode | undefined => {
  */
 const parameterOf = (w: SyntaxNode | undefined): { name: string; index?: string } | undefined => {
   const e = expansionOf(w);
-  if (e?.type === 'simple_expansion') return { name: e.namedChildren[0].text };
+  if (e?.type === 'simple_expansion') return { name: nameText(e.namedChildren[0]) };
   // (`${#}` is `$#`: the adapter reads its `#` as an operator.)
   if (e?.children.length === 3 && e.children[1].text === '#') return { name: '#' };
   if (e?.children.length !== 3 || !e.children[1].named) return undefined;

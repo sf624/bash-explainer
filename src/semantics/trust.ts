@@ -40,7 +40,7 @@ import { prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import { splitElement, staticWordValue } from '../staticword';
 import type { BashVersion } from '../bashversion';
-import { field, fields, hasError, substitutionForm, type SyntaxNode, wordBraces } from '../syntax/tree';
+import { coprocName, field, fields, hasError, nameText, substitutionForm, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { CommandSpec } from '../argv/spec';
 import { bracedWords, braceValues } from './brace';
 import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, nodeRow, type Row } from './allow';
@@ -155,7 +155,7 @@ class Scan {
 
   constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening: Opening | undefined, private readonly shell: Shell | undefined, private readonly version: BashVersion | undefined, private readonly posix: boolean) {
     const defs = (n: SyntaxNode): void => {
-      if (n.type === 'function_definition') this.functions.add(field(n, 'name')!.text);
+      if (n.type === 'function_definition') this.functions.add(nameText(field(n, 'name')!));
       if (n.type === 'command' && ['alias', 'enable'].includes(commandName(n) ?? '')) this.renames = true;
       n.children.forEach(defs);
     };
@@ -303,7 +303,7 @@ class Scan {
     switch (n.type) {
       case 'function_definition': {
         this.changed(w);
-        const name = field(n, 'name')!.text;
+        const name = nameText(field(n, 'name')!);
         for (const c of n.children) this.visit(c, { ...w, fn: w.foreign ? w.fn : name });
         if (w.foreign) this.callbacks.add(name);
         return;
@@ -327,7 +327,7 @@ class Scan {
         break;
       }
       case 'simple_expansion':
-        if (n.namedChildren[0]?.type === 'variable_name') this.reads.add(n.namedChildren[0].text);
+        if (n.namedChildren[0]?.type === 'variable_name') this.reads.add(nameText(n.namedChildren[0]));
         break;
       case 'expansion': {
         this.apply(expansionRow(n));
@@ -380,7 +380,7 @@ class Scan {
         break;
       }
       case 'coproc_statement': {
-        const name = field(n, 'name')?.text ?? 'COPROC';
+        const name = coprocName(n);
         this.write(name, w, false, 'number');
         this.write(`${name}_PID`, w, false, 'number', { scalar: true });
         break;

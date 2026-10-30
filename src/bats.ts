@@ -8,7 +8,7 @@ import { builtinParse, commandName } from './semantics/effects';
 import { processOf, STATEMENTS } from './semantics/env';
 import { BATS_COMMANDS } from './dict/bats';
 import type { ShellRegion } from './hosts';
-import { ancestor, assignmentsOnly, descendants, field, fields, type SyntaxNode, type SyntaxTree } from './syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, fields, nameText, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 
 // What bats adds to a test file, said on its lines (docs/design/bats.md): the note on each `@test`, and two pitfalls
 // that follow from bash itself once bats has made a test a function run with `set -e`. The extractor (src/hosts.ts)
@@ -61,10 +61,10 @@ export function batsFacts(tree: SyntaxTree, region: Pick<ShellRegion, 'commands'
   for (const [def, call] of state.hostCalls) {
     if (call.role === 'test' || def.startPosition.row !== line) continue;
     const when = call.process === 'test' ? call.role : call.role === 'before' ? 'file-before' : 'file-after';
-    out.push({ fact: fact(lang, 'bats-hook', { name: field(def, 'name')!.text, when }), node: def });
+    out.push({ fact: fact(lang, 'bats-hook', { name: nameText(field(def, 'name')!), when }), node: def });
   }
   // (bats calls `setup_suite` only from setup_suite.bash: of a test file, it warns.)
-  const suite = descendants(tree.root, ['function_definition']).find((d) => d.startPosition.row === line && field(d, 'name')!.text === 'setup_suite');
+  const suite = descendants(tree.root, ['function_definition']).find((d) => d.startPosition.row === line && nameText(field(d, 'name')!) === 'setup_suite');
   if (suite) out.push({ fact: fact(lang, 'bats-setup-suite-in-test-file'), node: suite });
   // `! cmd` in a test, not its last command: bash ignores `set -e` after `!`, so it fails nothing.
   for (const def of descendants(tree.root, ['function_definition'])) {
