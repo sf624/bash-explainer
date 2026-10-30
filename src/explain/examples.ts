@@ -39,7 +39,7 @@ import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
 import { given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, unquotedWord, wordAt } from './reads';
-import { operands, readsFields, values } from '../argv/query';
+import { has, operands, readsFields, values } from '../argv/query';
 import { wordValue } from './values';
 import { braceExpansion, bracesHere } from './words';
 
@@ -176,8 +176,8 @@ export function titledExamples(cx: Explainer, root: SyntaxNode, line: number, ex
     if (!e.target) return e;
     const target = `\`${e.target}\``;
     const title = cx.lang === 'ja'
-      ? e.title.replace(/^例/, `${target} の例`)
-      : e.title.replace(/^Example/, `Example for ${target}`);
+      ? e.title.replace(/^例/, () => `${target} の例`)
+      : e.title.replace(/^Example/, () => `Example for ${target}`);
     return { ...e, title };
   });
 }
@@ -408,7 +408,7 @@ export function commandExampleFor(cx: Explainer, n: SyntaxNode, spec: CommandSpe
   // (`x='-n 3'; head $x f`: the example would read `$x` as written.)
   if (!spec?.example || readsFields(parse)) return;
   if (spec.example === 'read') {
-    readExample(cx, n, args);
+    readExample(cx, n, args, parse);
     return;
   }
   // (`/usr/bin/printf --version`: the word read as an option it takes only alone prints the version, not the format.)
@@ -660,43 +660,64 @@ function knownText(cx: Explainer, w: SyntaxNode, assignment: boolean): string | 
   return v !== undefined && substitutionNames(node).length === 0 ? v : undefined;
 }
 
+/** The nodes that are no statement of a list: a statement before `read` in its group or loop may read the input first. */
+const NOT_STATEMENT = new Set(['command_name', 'variable_assignment', 'word', 'number', 'variable_name', 'string', 'raw_string', 'ansi_c_string', 'translated_string', 'concatenation',
+  'comment', 'file_descriptor', 'simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution', 'brace_expression',
+  'file_redirect', 'herestring_redirect', 'heredoc_redirect', 'heredoc_body', 'heredoc_start', 'heredoc_end']);
+
+/** What `read` reads: the text of its input (`first`: the first pass of a loop reads it so, the next ones read on), or none that is known. */
+type ReadInput = { text: string; first: boolean } | 'sample' | 'unknown';
+
 /**
- * The line `read` reads, from the input the script gives it: a here-string or a here-document (also on the compound
- * command around it: `while read …; done <<< x`), or a pipe or a file whose lines are known. `line`: its text without
- * the newline bash adds; `sample`: the script gives it none it writes (a file, a pipe not known, the terminal), so the
- * example reads a made-up line; `unknown`: the script gives it a text that is not known, which no made-up line may
+ * The input of the `read` at `n`, for the descriptor `fd` (0, or the one of `-u`), from what the script gives it: a
+ * here-string or a here-document (also on the group, the loop or the stage around it: `while read …; done <<< x`), or
+ * a pipe or a file whose lines are known. `sample`: the script gives it none it writes (a file, a pipe not known, the
+ * terminal), so the example reads a made-up line; `unknown`: the script gives it a text that is not known, or other
+ * commands before it in the group or loop may read it first (`{ read a; read b; } <<< x`), which no made-up line may
  * stand for (and a string read as a script, `eval read …`, takes the input of the command around it).
  */
-function readInput(cx: Explainer, n: SyntaxNode): { line: string } | 'sample' | 'unknown' {
+function readInput(cx: Explainer, n: SyntaxNode, fd: number): ReadInput {
   if (cx.nested !== undefined) return 'unknown';
-  const literal = (w: SyntaxNode): string | undefined => literalContent(w)?.text ?? knownText(cx, w, false) ?? wordValue(cx, w);
-  // (The innermost redirection of standard input wins; a function's body takes the input of its call.)
+  // (The word of a here-string is not split, globbed or brace expanded; a tilde in it is the home directory, not known.)
+  const literal = (w: SyntaxNode): string | undefined => knownText(cx, w, true) ?? wordValue(cx, w);
+  const path: SyntaxNode[] = [];
+  // (The innermost redirection of the descriptor wins; a function's body takes the input of its call.)
   for (let c: SyntaxNode | null = n; c && c.type !== 'function_definition'; c = c.parent) {
-    const stdin = sources.stdinOf(c, literal, (p, i) => pipedLines(cx, p, i));
+    path.push(c);
+    const stdin = sources.stdinOf(c, literal, (p, i) => pipedLines(cx, p, i), fd);
     if (stdin.from === 'unknown') continue;
-    if (stdin.from === 'here') return stdin.lines ? { line: stdin.lines.join('\n') } : 'unknown';
-    // (A file or a pipe whose contents the script does not give: the example's line stands for them.)
-    return stdin.lines?.length ? { line: stdin.lines.join('\n') } : 'sample';
+    const lines = stdin.lines;
+    // (A file or a pipe whose contents the script does not give: the example's line stands for them, on the terminal's fd 0 only.)
+    if (!lines) return stdin.from === 'here' || fd !== 0 ? 'unknown' : 'sample';
+    // (Another statement before it in the group or loop, down from the node that has the input, may read first.)
+    const before = path.slice(1).some((a, k) => a.namedChildren.slice(0, a.namedChildren.indexOf(path[k])).some((x) => !NOT_STATEMENT.has(x.type)));
+    if (before) return 'unknown';
+    return { text: lines.join('\n'), first: path.slice(1).some((a) => /^(while|until|for|select|c_style_for)_statement$/.test(a.type)) };
   }
-  return 'sample';
+  return fd === 0 ? 'sample' : 'unknown';
 }
 
 /** How `read` splits a sample line into its variables (with the IFS in effect, or the one given before it). */
-function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[]): void {
+function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[], parse: ArgvParse): void {
   let ifs = ifsAt(cx, n);
-  for (const c of n.namedChildren) {
-    if (c.type !== 'variable_assignment' || field(c, 'name')?.text !== 'IFS') continue;
+  // (`IFS+=:` adds to what IFS is where the command runs; bash empties an IFS that is unset first.)
+  const unset = cx.state.at(n).run.variables.get('IFS')?.set === 'off';
+  for (const [k, c] of n.namedChildren.filter((x) => x.type === 'variable_assignment' && field(x, 'name')?.text === 'IFS').entries()) {
     const v = field(c, 'value');
     // (Its value as bash makes it: `'\t'` and `"\t"` are a backslash and a `t`, `$'\t'` is a tab.)
     const text = v ? knownText(cx, v, true) : '';
-    // (`IFS+=:` adds to the IFS in effect, when that is known.)
-    const append = c.children.some((k) => !k.named && k.type === '+=');
-    ifs = text === undefined || (append && ifs === undefined) ? undefined : append ? ifs + text : text;
+    const base = k === 0 && unset ? '' : ifs;
+    ifs = text === undefined ? undefined : c.children.some((x) => !x.named && x.type === '+=') ? base === undefined ? undefined : base + text : text;
     if (ifs === undefined) break;
   }
-  const input = readInput(cx, n);
+  const words = args.map((a) => literalContent(a)?.text);
+  // (`read -u 3` reads the descriptor 3, the number as the script writes it.)
+  const given = values(parse, '-u').map(({ word, at }) => words[word]?.slice(at ?? 0)).pop();
+  if (given !== undefined && !/^\d+$/.test(given)) return;
+  if (given === undefined && has(parse, '-u')) return;
+  const input = readInput(cx, n, given === undefined ? 0 : Number(given));
   if (input === 'unknown') return;
-  const r = commandExamples.readExample(args.map((a) => literalContent(a)?.text), ifs, input === 'sample' ? undefined : input.line, cx.lang, cx.opts.bashVersion ?? DEFAULT_BASH_VERSION);
+  const r = commandExamples.readExample(words, ifs, input === 'sample' ? undefined : input.text, cx.lang, cx.opts.bashVersion ?? DEFAULT_BASH_VERSION, input !== 'sample' && input.first);
   if (!r) return;
   if (r.note) cx.note(r.note, n);
   cx.example(r.example);

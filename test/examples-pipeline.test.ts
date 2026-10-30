@@ -7,7 +7,7 @@ import { run } from './support/run';
 import { argWords } from './support/argwords';
 import { Analyzer, lookupCommand } from '../src/analyzer';
 import { interpret } from '../src/argv/interpret';
-import { pipelineExample, Stage } from '../src/examples/pipeline';
+import { pipedOutput, pipelineExample, Stage } from '../src/examples/pipeline';
 import { readsFiles } from '../src/examples/source';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
@@ -343,5 +343,20 @@ describe('pipeline examples of long pipelines', () => {
     const line = (n: number) => Array.from({ length: n }, () => 'grep -e x f').join(' | ');
     const explain = (n: number) => () => new Analyzer('en').explainLine(parser.parse(line(n)), 0);
     assertGrowth('10 stages, then 20', explain(10), explain(20), 8, 3);
+  });
+});
+
+describe('the output of echo -n, as bash prints it', () => {
+  const st = (cmd: string, ...words: (string | undefined)[]): Stage => ({ cmd, words, text: [cmd, ...words].join(' ') });
+  it('prints the words with no newline, and nothing when there are none', () => {
+    // (Lines hold no newline: `echo -n a b | cat` prints `a b`, `echo -n | cat` nothing, as `printf ''` does.)
+    assert.deepStrictEqual(pipedOutput([st('echo', '-n', 'a', 'b'), st('cat')]), ['a b']);
+    assert.deepStrictEqual(pipedOutput([st('echo', '-n'), st('cat')]), []);
+    assert.deepStrictEqual(pipedOutput([st('echo', '-n', ''), st('cat')]), []);
+    assert.deepStrictEqual(pipedOutput([st('echo', 'a'), st('cat')]), ['a']);
+    // (Another option after it is not modelled.)
+    assert.strictEqual(pipedOutput([st('echo', '-n', '-e', 'a'), st('cat')]), undefined);
+    assert.strictEqual(pipedOutput([st('echo', '-e', 'a'), st('cat')]), undefined);
+    assert.strictEqual(run('bash', ['-c', "echo -n a b | cat; echo -n | cat; echo -n '' | cat"]).stdout.toString(), 'a b');
   });
 });

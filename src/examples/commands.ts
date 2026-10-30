@@ -202,12 +202,19 @@ function getoptExample(words: (string | undefined)[], lang: Lang): Example | und
   /* c8 ignore stop */
 }
 
+/** The line `read` takes from `text`: up to the first newline; without `-r`, a backslash keeps the newline after it (and the line goes on). */
+function firstLine(text: string, raw: boolean): string {
+  let i = 0;
+  while (i < text.length && text[i] !== '\n') i += text[i] === '\\' && !raw ? 2 : 1;
+  return text.slice(0, i);
+}
+
 /**
  * How `read` splits a sample line into its variables, with the IFS given before it (`ifs`, undefined when it is not
  * known) and the line of a here-string (`here`), as bash `version` reads it; and a note on a separator that is not
  * whitespace.
  */
-export function readExample(words: (string | undefined)[], ifs: string | undefined, here: string | undefined, lang: Lang, version?: BashVersion): { example: Example; note?: string } | undefined {
+export function readExample(words: (string | undefined)[], ifs: string | undefined, here: string | undefined, lang: Lang, version?: BashVersion, first = false): { example: Example; note?: string } | undefined {
   const s = pick(lang);
   if (ifs === undefined || words.some((w) => w === undefined)) return undefined;
   let p;
@@ -223,7 +230,8 @@ export function readExample(words: (string | undefined)[], ifs: string | undefin
   const names = p.operands as string[];
   const raw = p.opts.some(([o]) => o === 'r');
   // The line the command reads, when a here-string gives it: `read -a p <<< "a,b,,c,"`.
-  const line = here ?? readSampleLine(names.length || 1, ifs, !!array);
+  // (The text of the input is more than the line: `read` takes up to the first newline, or on past one a backslash escapes.)
+  const line = here === undefined ? readSampleLine(names.length || 1, ifs, !!array) : firstLine(here, raw);
   const r = runRead(line, names, { ifs, raw, array, version });
   // (An IFS with a mark of bash's own: what it splits into is not known.)
   if (!r) return undefined;
@@ -241,7 +249,7 @@ export function readExample(words: (string | undefined)[], ifs: string | undefin
   const lines = r.array ? [`${r.array[0]}=(${r.array[1].map((x) => JSON.stringify(x)).join(' ')})`] : r.vars.map(([k, v]) => `${k}=${JSON.stringify(v)}`);
   const example: Example = { kind: 'read',
     title: s('例', 'Example'),
-    sections: [{ label: s('読み込む行', 'Line read'), lines: [JSON.stringify(line)] }, { label: s('変数に入る値', 'Values stored'), lines }],
+    sections: [{ label: first ? s('読み込む最初の行', 'First line read') : s('読み込む行', 'Line read'), lines: [JSON.stringify(line)] }, { label: s('変数に入る値', 'Values stored'), lines }],
   };
   return { example, ...(note ? { note } : {}) };
 }

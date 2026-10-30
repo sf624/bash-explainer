@@ -182,14 +182,15 @@ export function withSystemFiles(src: InputSource): InputSource {
 /**
  * Where the standard input of `cmd`, a command node, comes from: the last redirection of fd 0 it has (`< f`, `<<<`,
  * `<<`), or the stage before it in a pipeline. `literal` gives a word's value when it is known; `piped`, what the
- * stages of a pipeline before the one at `index` print, when it is known.
+ * stages of a pipeline before the one at `index` print, when it is known. `want`: the descriptor asked for (`read -u 3`
+ * reads fd 3: `3<<< x`; only fd 0 has a pipe).
  */
-export function stdinOf(cmd: SyntaxNode, literal: (n: SyntaxNode) => string | undefined, piped: (pipeline: SyntaxNode, index: number) => Piped): Stdin {
+export function stdinOf(cmd: SyntaxNode, literal: (n: SyntaxNode) => string | undefined, piped: (pipeline: SyntaxNode, index: number) => Piped, want = 0): Stdin {
   const redirs = redirectionsOf(cmd);
   let stdin: Stdin | undefined;
   for (const r of redirs) {
     const fd = field(r, 'descriptor')?.text ?? '';
-    if (fd !== '' && fd !== '0') continue;
+    if (want === 0 ? fd !== '' && fd !== '0' : fd !== String(want)) continue;
     if (r.type === 'herestring_redirect') {
       const word = r.namedChildren.find((c) => c.type !== 'file_descriptor');
       const text = word && literal(word);
@@ -201,7 +202,9 @@ export function stdinOf(cmd: SyntaxNode, literal: (n: SyntaxNode) => string | un
       const body = r.namedChildren.find((c) => c.type === 'heredoc_body');
       // The body is as written when the delimiter is quoted, or when nothing in it is expanded or escaped.
       const known = start && body && (/['"\\]/.test(start) || (body.namedChildren.every((c) => c.type === 'heredoc_content') && !/[\\$`]/.test(body.text)));
-      stdin = { from: 'here', doc: true, ...(known ? { lines: body.text.replace(/\n$/, '').split('\n') } : {}) };
+      // (`<<-` strips the tabs at the start of every line, those before the delimiter too: they end the body's text.)
+      const text = known && r.children.some((c) => !c.named && c.type === '<<-') ? body.text.replace(/^\t+/gm, '') : known ? body.text : '';
+      stdin = { from: 'here', doc: true, ...(known ? { lines: text.replace(/\n$/, '').split('\n') } : {}) };
     } else {
       const op = r.children.find((c) => !c.named)!.type;
       if (fd === '' && !op.startsWith('<')) continue;
@@ -213,6 +216,7 @@ export function stdinOf(cmd: SyntaxNode, literal: (n: SyntaxNode) => string | un
   }
   if (stdin) return stdin;
   const p = cmd.parent;
+  if (want !== 0) return { from: 'unknown' };
   if (p?.type !== 'pipeline' || p.namedChildren[0] === cmd) return { from: 'unknown' };
   return { from: 'pipe', ...piped(p, p.namedChildren.indexOf(cmd)) };
 }

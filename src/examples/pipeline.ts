@@ -286,9 +286,13 @@ function sourceOutput(stage: Stage): string[] | undefined {
   if (w.some((x) => x === undefined)) return undefined;
   const words = w as string[];
   switch (stage.cmd) {
-    case 'echo':
-      if (words[0]?.startsWith('-')) return undefined;
-      return [words.join(' ')];
+    case 'echo': {
+      // (`echo -n` prints its words with no newline: nothing at all when there are none.)
+      const printed = words[0] === '-n' ? words.slice(1) : words;
+      if (printed[0]?.startsWith('-')) return undefined;
+      const line = printed.join(' ');
+      return words[0] === '-n' && line === '' ? [] : [line];
+    }
     case 'printf': {
       if (!words.length || words[0].startsWith('-')) return undefined;
       const out = bashPrintf(words[0], words.slice(1));
