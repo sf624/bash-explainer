@@ -88,11 +88,11 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     // (A word of no known text and one word is part of the run: `"$b"` gives one.)
     const quoted = table('cp $a "$b" c');
     assert.deepStrictEqual(quoted.runs.map((r) => [r.words, r.fixed, r.fewest]), [[[0, 1], 1, 1]]);
-    // (A known start keeps its first word; the words splitting may add after it are of no known text, a run with the
-    // words after; a quoted word alone is no run. A glob with a known start is a run of its own, which keeps it.)
+    // (A known start keeps its first word, a run of its own (section 2.1); a quoted word alone is no run. A glob with a
+    // known start is a run of its own, which keeps it on every word.)
     const head = table('head -n$a $b "$c" f');
-    assert.deepStrictEqual([head.line[0], head.runs.map((r) => [r.words, r.prefix])], [{ prefix: '-n' }, [[[1, 2, 3], undefined]]]);
-    assert.deepStrictEqual(head.variables.map((v) => [v.words, v.base, v.part]), [[[1], 0, true], [[2], 1, undefined]]);
+    assert.deepStrictEqual([head.line[0], head.runs.map((r) => [r.words, r.prefix])], [{ prefix: '-n', count: { min: 1 } }, [[[0], '-n'], [[1, 2], undefined]]]);
+    assert.deepStrictEqual(head.variables.map((v) => [v.words, v.base, v.part]), [[[0], 1, undefined], [[1], 1, undefined]]);
     assert.deepStrictEqual(table('cp -v* $b d').runs.map((r) => [r.words, r.prefix, r.each]), [[[0], '-v', true], [[1], undefined, undefined]]);
     assert.deepStrictEqual(table('cp "$a" b').runs, []);
     assert.deepStrictEqual(table('cp "$a" b').shapes, [[]]);
@@ -368,8 +368,9 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
       assert.deepStrictEqual([grep.status, grep.stdout], [0, './a.sh:x\n']);
       const g = table('grep -r --include=*.sh x .');
       assert.deepStrictEqual(g.at([2]).fields.map(squeezed), ['option -r search directories recursively', 'option --include only search files matching the glob =', 'operand search pattern (regex)', 'operand file to search (default: stdin)']);
-      // (A word that may split comes in parts: `x$a` gives `xp q` with `a='p q'`, the second word without the `x`.)
-      assert.deepStrictEqual(table('cp x$a d').line.slice(0, 2), [{ prefix: 'x' }, { count: { min: 0 } }]);
+      // (A word whose first field is one word comes in no parts: `x$a` gives `xp q` with `a='p q'`, its first word with
+      // the `x`, the others without, as any word of a known start is read.)
+      assert.deepStrictEqual(table('cp x$a d').line.slice(0, 2), [{ prefix: 'x', count: { min: 1 } }, { value: 'd' }]);
       // (No parts where the words of the brace expansion are not known: too many to list, or the step not known to apply.)
       assert.strictEqual(argWords('cp -v{1..100000}$x d').words[0].parts, undefined);
       const braced = descendants(parser.parse('cp -v{a,b}$x d').root, ['command'])[0].namedChildren[1];

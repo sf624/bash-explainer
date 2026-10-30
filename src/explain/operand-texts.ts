@@ -4,7 +4,8 @@
 import type { Token } from '../analyzer-types';
 import type { Text } from '../i18n';
 import { codeSpan } from '../label';
-import type { ArgRole, ArgWord, Readings, RoleAt, ValueRole } from '../argv/interpret';
+import { isPlainWord } from '../staticword';
+import type { ArgRole, ArgWord, FieldsRole, OperandRole, Readings, RoleAt, ValueRole } from '../argv/interpret';
 import { type Role, squeeze, type WordReadings } from '../argv/profiles';
 import { baseText, clausesText, dependsText, type Names } from '../argv/profiletexts';
 import type { OperandSpec } from '../argv/spec';
@@ -21,20 +22,21 @@ import type { Explainer } from './context';
  * of its other classes, each a sentence (". When `$d` and `$a` expand to nothing, it is value for `-t`."), or what they
  * fold into, or that its role may depend on the counts.
  */
-export function readingsParts(cx: Explainer, desc: string, readings: Readings | undefined, k: number, nodes: readonly SyntaxNode[]): { base: string; rest: string } {
-  if (!readings) return { base: desc, rest: '' };
+export function readingsParts(cx: Explainer, desc: string | undefined, readings: Readings | undefined, k: number, nodes: readonly SyntaxNode[]): { base: string; rest: string } {
+  if (!readings) return { base: desc!, rest: '' };
   // (The command that reads the line, which a role read by it names where another reads the word: "option `-n` of `nice`".)
   const command = field(nodes[0].parent!, 'name')!.text;
   const first = readings.kind === 'read' ? firstRole(readings) : undefined;
   const names = namesFor(nodes, command, first);
   // (Each a sentence of its own: ". When …", "。…なら…".)
   const sentences = (ts: readonly Text[]): string => ts.map((t) => cx.s(`。${t.ja}`, `. ${t.en.charAt(0).toUpperCase()}${t.en.slice(1)}`)).join('');
-  if (readings.kind === 'depends') return { base: desc, rest: sentences([dependsText(readings, names)]) };
+  if (readings.kind === 'depends') return { base: desc!, rest: sentences([dependsText(readings, names)]) };
   const p = readings.base;
   // (One role as written, or a word of a known number of words: `desc` says it.)
-  const plain = !p.groups.length || p.counts.length === 1 || (!!p.places && squeeze(p.places).length === 1);
-  // (In its profile as written, its role as written is `desc`.)
-  return { base: plain ? desc : cx.t(baseText(p, k, namesFor(nodes, command, first, desc))), rest: sentences(clausesText(readings, k, names)) };
+  const plain = desc !== undefined && (!p.groups.length || p.counts.length === 1 || (!!p.places && squeeze(p.places).length === 1));
+  // (In its profile as written, its role as written is `desc`; not in a list of its words, "its words are X, then Y".)
+  const list = !!p.places && p.counts[0] > 1;
+  return { base: plain ? desc : cx.t(baseText(p, k, namesFor(nodes, command, first, list ? undefined : desc))), rest: sentences(clausesText(readings, k, names)) };
 }
 
 /**
@@ -68,7 +70,11 @@ function namesFor(nodes: readonly SyntaxNode[], command: string, base: Role | un
       if (!base || path(r) === path(base)) return t;
       const at = r.by.at(-1);
       const name = !r.by.length ? command : at === undefined ? undefined : nodes[at].text;
-      return name === undefined ? { ja: `実行されるコマンドの${spaced(t.ja)}`, en: `${t.en} of the command it runs` } : { ja: `${codeSpan(name)} の${spaced(t.ja)}`, en: `${t.en} of ${codeSpan(name)}` };
+      if (name === undefined) return { ja: `実行されるコマンドの${spaced(t.ja)}`, en: `${t.en} of the command it runs` };
+      // (A command named by a word of the expansion, `sudo -u $u ls` with two words of `$u`: the command a word of `$u` names.)
+      if (at !== undefined && !isPlainWord(nodes[at])) return { ja: `${codeSpan(name)} の語が指すコマンドの${spaced(t.ja)}`, en: `${t.en} of the command a word of ${codeSpan(name)} names` };
+      // ("`sudo` が実行するコマンド": a role that says what the command does.)
+      return { ja: `${codeSpan(name)} ${/^実行する/.test(t.ja) ? 'が' : 'の'}${spaced(t.ja)}`, en: `${t.en} of ${codeSpan(name)}` };
     },
   };
 }
@@ -159,10 +165,19 @@ export function wordItems(cx: Explainer, words: readonly ArgWord[], roles: reado
   return items;
 }
 
-/** The words of the word `a` as `wordItems` shows them: of a brace expansion whose texts are not known, as written (`"$x"{a,b}`: `"$x"a`, `"$x"b`). */
-export function shownWords(words: readonly ArgWord[], a: SyntaxNode): readonly ArgWord[] {
-  const texts = words.some((w) => w.value === undefined) ? braceTexts([a]) : undefined;
-  return texts?.length === words.length ? texts.map((value) => ({ value })) : words;
+/**
+ * What the word `a` (of `nodes`, the command's words) read as its fields says (`FieldsRole`): what each field is to the
+ * command ("expands to `-r` (option: …) and `a` (source)"; the words of a brace expansion whose texts are not known as
+ * written, `"$x"{a,b}`: `"$x"a`, `"$x"b`), each operand numbered by `number`, then the clauses of its readings; a word
+ * that gives its fewest words or more (`"$x"{a,b}$y`) says its words for each count, from its readings.
+ */
+export function fieldsText(cx: Explainer, role: FieldsRole, a: SyntaxNode, nodes: readonly SyntaxNode[], number: (desc: string, role: OperandRole) => string): string {
+  const texts = role.words.some((w) => w.value === undefined) ? braceTexts([a]) : undefined;
+  const words = texts?.length === role.words.length ? texts.map((value) => ({ value })) : role.words;
+  const many = role.readings?.kind === 'read' && role.readings.base.counts.length > 1;
+  const said = many ? undefined : listed(cx, wordItems(cx, words, role.roles, true, number));
+  const { base, rest } = readingsParts(cx, said, role.readings, nodes.indexOf(a), nodes);
+  return base + rest;
 }
 
 /** "expands to `a` (X) and `b` (Y)": the words a word gives, each with what it is. */

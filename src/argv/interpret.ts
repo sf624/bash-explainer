@@ -209,21 +209,25 @@ const known = (w: ArgWord): string => w.value ?? w.prefix ?? '';
 /**
  * The words a command gets for the words of its line (`interpret`): a word whose fields the model knows
  * (`ArgWord.fields`: not one known as written, `value` with no `count`) gives those fields, each a word of known text
- * (none for an empty one); with `counted`, a word of no known text that gives a known number of words other than one
- * (`"$x"{a,b}`: two; a word whose words keep a known start comes in parts, `ArgWord.parts`) gives that many words of no
- * known text, the first with its known start; the others stay as they are. `groups`: where the fields of a word that gives other than one stand
- * (`lineIndex` gives the word of the line of each); `own`: the words of the line read as their one field.
+ * (none for an empty one); a word of no known text that gives two words or more (`"$x"{a,b}`; a word whose words keep a
+ * known start comes in parts, `ArgWord.parts`) gives its fewest, words of no known text, the first with its known start,
+ * where `spread` says so: `fewest` for any such word, the reading as written (`interpret`); `exact` where it gives that
+ * number only, as the table of readings writes the others for each count (src/argv/readings.ts); `none`. The others stay
+ * as they are. `groups`: where the fields of a word that gives other than one stand (`lineIndex` gives the word of the
+ * line of each); `own`: the words of the line read as their one field.
  */
-export function fieldLine(words: readonly ArgWord[], counted = true): { line: ArgWord[]; groups: Group[]; own: Set<number> } {
+export function fieldLine(words: readonly ArgWord[], spread: 'fewest' | 'exact' | 'none'): { line: ArgWord[]; groups: Group[]; own: Set<number> } {
   const line: ArgWord[] = [];
   const groups: Group[] = [];
   const own = new Set<number>();
   words.forEach((w, k) => {
     const fields = w.fields && (w.value === undefined || w.count) ? w.fields() : undefined;
-    const n = counted && !fields && w.value === undefined && !w.parts && w.count && w.count.min === w.count.max && w.count.min > 1 ? w.count.min : 0;
+    const some = !fields && w.value === undefined && !w.parts && w.count && w.count.min > 1;
+    const n = some && (spread === 'fewest' || (spread === 'exact' && w.count!.max === w.count!.min)) ? w.count!.min : 0;
     if (n) {
       const { count: _, fields: __, param: ___, ...first } = w;
-      groups.push({ from: line.length, n, word: k, shift: n - 1, words: [first, ...Array.from({ length: n - 1 }, (): ArgWord => ({}))] });
+      const fewest = w.count!.max !== n ? { fewest: true as const } : {};
+      groups.push({ from: line.length, n, word: k, shift: n - 1, words: [first, ...Array.from({ length: n - 1 }, (): ArgWord => ({}))], ...fewest });
       line.push(...groups.at(-1)!.words!);
     } else if (!fields) line.push(w);
     else if (fields.length === 1) {
@@ -246,10 +250,12 @@ export function fieldLine(words: readonly ArgWord[], counted = true): { line: Ar
  * asks, and the line is interpreted for many other uses.
  */
 export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretContext = {}): ArgvParse {
-  const { line, groups, own } = fieldLine(words);
+  const { line, groups, own } = fieldLine(words, 'fewest');
   const parse = readWritten(spec, line, ctx);
   // (No word may give other than one word: every role is certain, and no table is built.)
-  const readings = line.some(flexible) ? readingsAt(spec, words, ctx) : (): undefined => undefined;
+  // (Nor where it does as its fewest words: `"$x"{a,b}$y`.)
+  const flex = line.some(flexible) || groups.some((g) => g.fewest);
+  const readings = flex ? readingsAt(spec, words, ctx) : (): undefined => undefined;
   const certain = (k: number): boolean => {
     const r = readings(k);
     return !r || (r.kind === 'read' && !r.clauses.length && !r.folded);

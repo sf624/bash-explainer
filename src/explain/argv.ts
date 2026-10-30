@@ -42,7 +42,7 @@ import { elementsOf } from '../semantics/elements';
 import { argWordIn, countIn, fieldsIn, untilWords } from '../semantics/argwords';
 import { arrayKind, globOff, NO_SPEC, notForEarlier, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
-import { eachText, functionArgs, listed, numbered, readingsParts, SHIFTS, shownWords, withReadings, wordItems } from './operand-texts';
+import { eachText, fieldsText, functionArgs, listed, numbered, readingsParts, SHIFTS, withReadings, wordItems } from './operand-texts';
 import { soleRead, turnedOff, unknownOption } from './option-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -440,8 +440,7 @@ function fieldsToken(cx: Explainer, a: SyntaxNode, role: FieldsRole, command: st
   // (`unset {,}`: the braces say so.)
   if (!role.words.length) return positional(cx, a, braceTexts([a])?.every((w) => !w) ? noWord(cx) : cx.s(`展開すると語が残らないので、\`${program}\` には渡らない`, `expands to no word, so \`${program}\` does not get it`));
   // (A field's role may depend on how many words the others give: `p='a b'; cp $p $u`, `b` is the destination when `$u` gives none.)
-  const said = listed(cx, wordItems(cx, shownWords(role.words, a), role.roles, true, (desc, r) => numbered(desc, numbers.get(r))));
-  const t = positional(cx, a, said + readingsParts(cx, said, role.readings, nodes.indexOf(a), nodes).rest);
+  const t = positional(cx, a, fieldsText(cx, role, a, nodes, (desc, r) => numbered(desc, numbers.get(r))));
   const options = role.roles.every(({ role: r }) => OPTION_ROLES.has(r.role));
   return options ? { ...t, kind: 'option' } : t;
 }

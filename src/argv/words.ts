@@ -170,7 +170,8 @@ function mayGiveDashes(w: readonly (SyntaxNode | string)[], shell?: Shell): bool
  * each word of its brace expansion (where `braces` says the step applies, and the words are not too many to list), the
  * words of its first field, which keep the start (one; where it globs, `fewest` or more), then, where it may split, the
  * words splitting adds after them (none or more, of unknown text). `dashes` where a word that globs has a start of `-` or
- * `--` and its pattern may match `-` or `--` (`-*`, not `-?x` nor `-[av]*`). Undefined otherwise.
+ * `--` and its pattern may match `-` or `--` (`-*`, not `-?x` nor `-[av]*`). Undefined otherwise, and for one word
+ * whose first field is one word (`bin/$n`), which needs no parts: its first word keeps the start, the others do not.
  */
 function startParts(n: SyntaxNode, prefix: string, braces: boolean | 'unknown', fewest: number, shell?: Shell): ArgWord[] | 'dashes' | undefined {
   if (!prefix) return undefined;
@@ -178,6 +179,8 @@ function startParts(n: SyntaxNode, prefix: string, braces: boolean | 'unknown', 
   if (alternatives === null || (alternatives && braces === 'unknown')) return undefined;
   const words = alternatives ?? [n.type === 'concatenation' ? n.namedChildren : [n]];
   if ((prefix === '-' || prefix === '--') && words.some((w) => partsOf(w).glob && mayGiveDashes(w, shell))) return 'dashes';
+  // (No parts for one word whose first field is one word: `bin/$n`.)
+  if (words.length === 1 && !partsOf(words[0]).glob) return undefined;
   return words.flatMap((w): ArgWord[] => {
     const head: ArgWord = { prefix, ...(partsOf(w).glob ? { prefixEach: true as const, count: { min: fewest } } : {}) };
     return splitsIn(w) ? [head, { count: { min: 0 } }] : [head];

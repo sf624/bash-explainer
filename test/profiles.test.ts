@@ -152,9 +152,10 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
     assert.deepStrictEqual(wordReadings(big, 0), undefined);
     assert.deepStrictEqual(wordReadings(big, 4), { kind: 'depends', words: [1, 2, 3, 5, 7] });
     assert.deepStrictEqual(wordReadings(table('cp $a b', { maxSteps: 1 }), 1), { kind: 'depends', words: [0] });
-    // (A word in parts: nothing where every word of every shape has one role, `echo {1..$n}`; that its role
-    // may depend on the counts where a shape is refused or another role, `cp -v*$x`, or where no shape is read, `cp -v*$x -*`.)
-    assert.deepStrictEqual(['echo {1..$n}', 'cp -v*$x', 'cp -v*$x -*', 'cp {1..$n} x'].map((l) => wordReadings(table(l), 0)?.kind), [undefined, 'depends', 'depends', 'depends']);
+    // (A word in parts: nothing where every word of every shape has one role, `echo x*$y`; that its role may depend on
+    // the counts where a shape is refused or another role, `cp -v*$x`, or where no shape is read, `cp -v*$x -*`. A word of
+    // one part whose first field is one word is read as any word of a known start: `cp {1..$n} x`.)
+    assert.deepStrictEqual(['echo x*$y', 'cp -v*$x', 'cp -v*$x -*', 'cp {1..$n} x'].map((l) => wordReadings(table(l), 0)?.kind), [undefined, 'depends', 'depends', 'read']);
   });
 
   it('roles: told apart by the command words that read them, as `sameRole` keys them', () => {

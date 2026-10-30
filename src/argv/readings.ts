@@ -341,7 +341,7 @@ function groupRoles(roles: readonly RoleAt[], out: ArgRole[] = []): ArgRole[] {
  * and a reading of each, read when asked.
  */
 export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: InterpretContext, cap = SHAPE_CAP): ReadingsTable {
-  const { line: fielded, groups, own } = fieldLine(words);
+  const { line: fielded, groups, own } = fieldLine(words, 'exact');
   // (A word whose words come in parts, `ArgWord.parts`, is a word of the line for each: those after the first of a word
   // of its brace expansion, the words splitting adds, give none as written.)
   const line: ArgWord[] = [];

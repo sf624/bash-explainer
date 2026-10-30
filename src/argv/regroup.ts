@@ -8,9 +8,9 @@ import type { OperandSpec } from './spec';
  * The words of a reading that stand for one word of the line (`regroup`): the words `from` to `from + n` (exclusive),
  * which are the word `word` of the line, with `shift` words more than the line has for them: `n - 1` for the fields of
  * a word, which stand in its place (`words`, `interpret`; -1 for none), `n` for the words of a value spliced in after
- * it (`unsplice`).
+ * it (`unsplice`). `fewest`: the words are the fewest of a word that may give more (`"$x"{a,b}$y`).
  */
-export interface Group { from: number; n: number; word: number; shift: number; words?: ArgWord[] }
+export interface Group { from: number; n: number; word: number; shift: number; words?: ArgWord[]; fewest?: true }
 
 /** The index of the word of the line that the word `j` of a reading stands for, with these `groups` in it (in order). */
 export function lineIndex(groups: readonly Group[]): (j: number) => number {
@@ -36,7 +36,7 @@ export const OPTION_ROLES = new Set<ArgRole['role']>(['option', 'cluster', 'unkn
  * field is a word of find's expression or of a joined string, that role, which the words around it explain (as for no
  * field, `next`, the role of the word after it), or the command whose string they start; else `FieldsRole`.
  */
-function folded(words: ArgWord[], roles: RoleAt[], certain: boolean, next?: ArgRole): ArgRole {
+function folded(words: ArgWord[], roles: RoleAt[], certain: boolean, next?: ArgRole, fewest?: true): ArgRole {
   const fields: FieldsRole = { role: 'fields', words, roles };
   const quiet = (r: ArgRole): boolean => r.role === 'expression' || r.role === 'joined';
   if (!words.length) return next && quiet(next) ? { role: next.role } as ArgRole : fields;
@@ -49,7 +49,8 @@ function folded(words: ArgWord[], roles: RoleAt[], certain: boolean, next?: ArgR
   const plain = (r: ArgRole): boolean => certain && r.role === 'operand' && !r.assignment && !r.spec?.assignment;
   if (roles.every(({ role }) => plain(role) && !(role as OperandRole).spec)) return first;
   const specs = roles.map(({ role }, k) => (k === 0 && role.role === 'command' && !role.parse ? role.item : plain(role) ? (role as OperandRole).spec : undefined));
-  if (specs.some((o) => !o)) return fields;
+  // (Nor the roles of each word of a word that may give more: `cp "$x"{a,b}$y`.)
+  if (specs.some((o) => !o) || (fewest && specs.some((o) => o!.text.en !== specs[0]!.text.en))) return fields;
   const each = specs.some((o) => o!.text.en !== specs[0]!.text.en) ? { each: specs as OperandSpec[] } : {};
   return { ...first, ...each } as ArgRole;
 }
@@ -136,6 +137,6 @@ export function regroup(parse: ArgvParse, groups: Group[], certain: (word: numbe
     }
   }
   for (const list of inner) list.sort((a, b) => a.word - b.word);
-  for (const { g, at, next } of slots) at.role = folded(groups[g].words!, inner[g], certain(groups[g].word), next);
+  for (const { g, at, next } of slots) at.role = folded(groups[g].words!, inner[g], certain(groups[g].word), next, groups[g].fewest);
   return { parse: out, inner };
 }
