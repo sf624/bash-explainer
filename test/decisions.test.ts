@@ -139,6 +139,12 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
       // (A word after `--` that gives more fields than one moves the words after it to places that name a variable:
       // `getopts -- v u` sets `u`.)
       "o='v u'; getopts -- $o", "set -- -v; o='v u'; getopts -- $o",
+      // (Text before the first expansion as bash gives it, after quote removal: `\<newline>` goes.)
+      'x=; printf "\\\n-v$x" u 2', 'x=v; printf "\\\n-$x" u 2',
+      // (A trap's action runs where the trap fires: a function's local is gone by then, and `m` is the global one, or the
+      // environment's.)
+      "f() { local m=hi; trap 'printf $m u 2' ERR; }; f; false", "f() { declare m=hi; trap 'printf $m u 2' ERR; }; f; false",
+      "m=-v; f() { local m=hi; trap 'printf $m u 2' ERR; }; f; false",
     ];
     // (A variable the walk knows is unset gives no field: the script still decides `v`.)
     const decides = ['x=-v; unset x; printf $x u 2', 'f() { local x; printf $x u 2; }; x=-v; f', 'x=-v; unset -v x; printf $x u 2', 'f() { unset x; }; x=-v; f; printf $x u 2'];

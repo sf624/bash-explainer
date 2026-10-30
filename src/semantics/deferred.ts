@@ -7,7 +7,7 @@
 // (`wordIn`), as the walk's do.
 import type { ArgRole, ArgvParse } from '../argv/interpret';
 import type { CommandSpec, OperandSpec } from '../argv/spec';
-import { argWordFor, prefixOf } from '../argv/words';
+import { argWordFor } from '../argv/words';
 import type { Shell } from '../dialect';
 import { staticWordValue, tildeParts, tildeSpots } from '../staticword';
 import { descendants, type SyntaxNode, wordBraces } from '../syntax/tree';
@@ -138,11 +138,24 @@ function inert(parseWith: (more: number) => ArgvParse, spec: CommandSpec, j: num
   const one = !argWordFor(shell)(word).count;
   if (at?.role === 'value') return !at.spec?.sets && at.spec?.type !== 'function' && one;
   if (at?.role !== 'operand') return false;
-  if (!/^[^-+]/.test(prefixOf(word, shell)) && !parse.roles.some((r) => r.word < j && (r.role.role === 'operand' || r.role.role === 'end-of-options'))) return false;
+  if (!/^[^-+]/.test(literalStart(word, shell) ?? '') && !parse.roles.some((r) => r.word < j && (r.role.role === 'operand' || r.role.role === 'end-of-options'))) return false;
   // (Each builtin whose words are read so has operands in its spec: `set`, the declarations, `read`, `printf`…)
   const slots = 1 + Math.max(0, ...spec.operands!.map((o) => o.pattern.length));
   return (one ? parse : parseWith(slots)).roles.every((r) => r.word < j || (r.role.role === 'operand' && !naming(r.role)));
 }
+
+/**
+ * The text the word `w` starts with before its first expansion, as bash gives it (after quote removal, from the word
+ * model: `"\<newline>-v$x"` starts with `-v`), where each expansion is a parameter alone (`$x`, `${x}`, `$1`), whose
+ * value only follows that text; undefined otherwise, and where braces may make it several words.
+ */
+function literalStart(w: SyntaxNode, shell: Shell | undefined): string | undefined {
+  if (wordBraces(w).length || descendants(w, EXPANSIONS).some((e) => !/^\$(?:[A-Za-z_]\w*|\{[A-Za-z_]\w*\}|\d|\{\d+\})$/.test(e.text))) return undefined;
+  const source: WalkSource = { variable: () => HOLE, tilde: () => undefined, builtinRuns: () => false, shell: () => shell };
+  return wordIn(w, EMPTY, source, 'value')?.split(HOLE)[0];
+}
+/** What `literalStart` takes each parameter to expand to: a character no word holds. */
+const HOLE = '\u0000';
 
 /** Whether the word `w` expands something: a parameter, a substitution, braces or a tilde. */
 const expands = (w: SyntaxNode): boolean => descendants(w, EXPANSIONS).length > 0 || wordBraces(w).length > 0 || tildeSpots(tildeParts([w]), 'start').length > 0;
