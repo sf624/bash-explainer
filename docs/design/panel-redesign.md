@@ -42,7 +42,7 @@ From the maintainer, 2026-10-27:
 The answers to the plan's questions, from the maintainer, 2026-10-27:
 
 4. **Note levels.** Three levels will come, in a plan of their own (a revision of docs/design/note-levels.md): Error (red, "fails every time as written"), Warning (yellow: damage that cannot be undone, or the script's own exit status turned into success) and Info (blue). `failure-reported-as-success` and `source-searches-path` become Warning there. This plan depends on none of it: the panel reads each problem's level, mark and word from the catalog.
-5. **Order.** P1 to P10 start after roadmap items 1 to 7 are done. Studies that can run in parallel may (a measure, a sketch, a prototype that lands nothing).
+5. **Order.** P1 to P10 start after the roadmap's three note levels are done (changed 2026-10-31, from "items 1 to 7"). Studies that can run in parallel may (a measure, a sketch, a prototype that lands nothing).
 6. **Short names in the view slot.** "1 Does" / "2 Reads" (「1 何をする」/「2 読まれ方」). The full names ("What it does", "How bash reads it") are the tooltip and the accessible name.
 7. **Copy as Markdown and the hover** stay as today's list of parts. No step changes them.
 8. **The no-shebang case** of `failure-reported-as-success` stays: the note keeps that case. A user who does not want it changes the script (a shebang, or a fix). Its fix must not end the caller's shell when the file is sourced (P3).
@@ -115,7 +115,7 @@ Users: nothing changes. No CHANGELOG line.
 
 Tests: unit tests of `viewControl`. A web test: a press in the page's view switch changes the panel, and the choice is kept after a reload.
 
-Risks: the chrome series edits web/panel-bridge.ts too. P1 starts after roadmap items 1 to 7, like the other steps (decision 5). It lands before C7 of [chrome-redesign.md](chrome-redesign.md), which draws the slot from `viewControl`. Keep the PR small.
+Risks: the chrome series edits web/panel-bridge.ts too. P1 starts after the three note levels, like the other steps (decision 5). It lands before C7 of [chrome-redesign.md](chrome-redesign.md), which draws the slot from `viewControl`. Keep the PR small.
 
 ### P2. Explanation fixes found by the prototype
 
@@ -140,7 +140,7 @@ Risks: small. The snapshot shows every changed text.
 
 ### P3. Fixes to copy, as data
 
-What: facts whose fix is mechanical carry `Rewrite` data (oracles.md 3.2): `failure-reported-as-success`, `source-searches-path`, `pattern-from-variable` and `unmatched-glob-runs-once` first. The data and its tests are oracles.md steps 4 to 6 (B2, B3, B4), part of roadmap item 4, which comes before this series (decision 5). `source-searches-path` and `pattern-from-variable` are style checks (`StyleCode` in src/pitfalls.ts), so they need B4. P3 does those steps for these four ids if item 4 has not. The note's text renders its fix from the same data, so the two cannot disagree. VS Code, the Language Server and the web page's editor (web/editor.ts, CodeMirror's lint actions) offer each rewrite as a quick fix (src/fixes.ts).
+What: facts whose fix is mechanical carry `Rewrite` data (oracles.md 3.2): `failure-reported-as-success`, `source-searches-path`, `pattern-from-variable` and `unmatched-glob-runs-once` first. The data and its tests are oracles.md steps 4 to 6 (B2, B3, B4), part of the roadmap's run-based oracles, done before this series (decision 5). `source-searches-path` and `pattern-from-variable` are style checks (`StyleCode` in src/pitfalls.ts), so they need B4. P3 does those steps for these four ids if item 4 has not. The note's text renders its fix from the same data, so the two cannot disagree. VS Code, the Language Server and the web page's editor (web/editor.ts, CodeMirror's lint actions) offer each rewrite as a quick fix (src/fixes.ts).
 
 Two fixes need care:
 
@@ -155,7 +155,7 @@ Risks: two of these notes change level with the three levels (decision 4); this 
 
 ### P4. What the program receives, as data
 
-P4a. Oracles.md step 2 (A1), done (#432; oracles.md 2.6). Roadmap item 4 does it before this series (decision 5); if it has not, it lands here as its own PR first: argv capture over sample.sh and the fixtures, with a stub program that prints its argv, in a sandbox (cgroup, `FUNCNEST`, a process group killed on timeout). It is a pure test of `wordFields`. Known differences in test/fixtures/argv-known.json, each with a reason. The bugs it finds are fixed in their own PRs, each with a Fixed line.
+P4a. Oracles.md step 2 (A1), done (#432; oracles.md 2.6). The run-based oracles did it before this series (decision 5); if it has not, it lands here as its own PR first: argv capture over sample.sh and the fixtures, with a stub program that prints its argv, in a sandbox (cgroup, `FUNCNEST`, a process group killed on timeout). It is a pure test of `wordFields`. Known differences in test/fixtures/argv-known.json, each with a reason. The bugs it finds are fixed in their own PRs, each with a Fixed line.
 
 P4b. src/argvline.ts rebuilt on top. For each simple command: the words its program receives after expansions, quote removal, splitting and globbing (from `wordFields` and `wordMeaning`), placeholders for values known only at run time ("‹current user name›", "‹each name matching *.log›"), and what bash took out (assignments, redirections with their effect). Data on the explanation, not yet drawn.
 
@@ -196,7 +196,7 @@ Risks: an example value could be read as the real one. The note says it is an ex
 
 Three PRs:
 
-- **P7a. The row model.** `src/ui/panelRows.ts`: a pure function of the explanation, the depth and the switch. It builds the rows, the text of each depth, the boxes, the role ids, the marks and the Key entries. Data only, drawn by nothing yet, with its tests. It stays under the 1,000 lines of test/file-length.test.ts (split by part if it grows). The basis chips of roadmap item 2 ("Not in the manual · checked with bash 5.2", "Try it") are row data here, as item 2 lands before P7 (section 8, decision 3).
+- **P7a. The row model.** `src/ui/panelRows.ts`: a pure function of the explanation, the depth and the switch. It builds the rows, the text of each depth, the boxes, the role ids, the marks and the Key entries. Data only, drawn by nothing yet, with its tests. It stays under the 1,000 lines of test/file-length.test.ts (split by part if it grows). The basis chips of the roadmap's basis of an explanation ("Not in the manual · checked with bash 5.2", "Try it") are row data here, as item 2 lands before P7 (section 8, decision 3).
 - **P7b. The problems box, in today's Meaning.** Each warning and caveat gets a headline: one sentence in its catalog entry or style check, required by the type (as test/suggestions.test.ts requires a class), and per params where the text has cases. The box "Problems on this line": each item with its level's mark and word from the catalog, the headline, "more" with the whole text and the fix to copy (P3), and chips that link each row to its problem and back. A line inside a construct gets a pointer to the problem on the construct's line, with the level's word and the line number.
 - **P7c. The grid and the boxes.** The Meaning tab becomes depth 1 of the new view: "In short", the problems box, the folded whole-line example, the grid, a box per command. Reading stays as the second tab.
 
@@ -261,7 +261,7 @@ The panel handles keys 1, 2 and W when the focus is in it. The page binds none o
 
 ## 7. The usability test
 
-After P10 and the chrome series ([chrome-redesign.md](chrome-redesign.md), C9), as roadmap item 10. The users are simulated: agents, not people. So the test shows what an agent can find and do in the panel. It is not a measure of human usability. VS Code is not tested: the users drive the web page.
+After P10 and the chrome series ([chrome-redesign.md](chrome-redesign.md), C9), as the roadmap's usability test. The users are simulated: agents, not people. So the test shows what an agent can find and do in the panel. It is not a measure of human usability. VS Code is not tested: the users drive the web page.
 
 - **Users:** five simulated users (fresh agents with no project context): a beginner, a certification learner (LPIC/LinuC), a sysadmin, a developer and a UX designer, the personas of the usability test of October 2026. At least two models among them; the report gives the spread by model.
 - **Briefing:** each agent gets its persona, the page and the tasks. It is not told the goal score, that the panel was redesigned, or what the earlier rounds found.
@@ -287,4 +287,4 @@ The maintainer answered the plan's three open questions on 2026-10-27:
 
 1. **The CLI.** Its output stays as today's list of parts, like Copy as Markdown and the hover (decision 7). It follows neither the depth nor the switch. No step changes it.
 2. **"Not in POSIX sh" on a bash script.** The mark shows on a bash script too, as a quiet mark. It is a fact of the construct: useful when moving a script to sh, and for learners. The dialect issues (the problems) still show only for the target shell (P9).
-3. **Roadmap item 2 before P7.** Yes. Item 2 (the basis chips and "Try it") lands before P7, so P7's row model takes its chips as row data (P7a).
+3. **The basis chips before P7.** Yes. They (the basis chips and "Try it") lands before P7, so P7's row model takes its chips as row data (P7a).

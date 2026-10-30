@@ -1,6 +1,6 @@
 # Three note levels
 
-The plan to split today's warnings into errors and warnings, as VS Code and SARIF do. The levels were decided by the maintainer on 2026-10-27. Status: planned (decided 2026-10-27); revised after an independent review (PR #419). It is roadmap item 7: after items 1–6, before the panel redesign.
+The plan to split today's warnings into errors and warnings, as VS Code and SARIF do. The levels were decided by the maintainer on 2026-10-27. Status: planned (decided 2026-10-27); revised after an independent review (PR #419). It is the roadmap's "Three note levels": next after release 0.9.0 (2026-10-31), before the panel redesign.
 
 [note-levels.md](note-levels.md) is the record of what is built (#320): two levels of problems, `warning` and `info`, and the plain fact `note`. This plan adds `error` above them. When it is built, note-levels.md takes its tables, and this page stays as the record of the change.
 
@@ -252,7 +252,7 @@ Each step is one PR that keeps every test passing, with 100% coverage in CI. Eac
 - **Red beside red.** The error colour is close to the variable's colour: #d0020f for both in the light classic palette, and #fd6358 beside #ff5c65 in the dark one. The icon and the word tell them apart. To check with screenshots, with forced colours too.
 - **Red and yellow for colour-blind users.** The icon's shape and the word differ for each level.
 - **"Error: Syntax error: …"**. Texts that name their own error are reworded in step 1a, where they change level.
-- **The panel redesign** (#418) touches the same views. Decided 2026-10-27: this plan goes first (roadmap item 7, before the panel redesign). The redesign reads the level, the mark and the word from the catalog, so it needs no change either way.
+- **The panel redesign** (#418) touches the same views. Decided 2026-10-27: this plan goes first (the roadmap's three note levels, before the panel redesign). The redesign reads the level, the mark and the word from the catalog, so it needs no change either way.
 
 ## 10. Decisions
 

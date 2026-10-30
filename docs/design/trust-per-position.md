@@ -1,6 +1,6 @@
 # Trust per position instead of per script
 
-Status: deferred (2026-10-26); step 0 (the holes of section 2) done in #382. The roadmap's item "Trust per position" ([../roadmap.md](../roadmap.md)) is now at the end of "Next", for its small gain. This page says what each cause of "nothing is trusted" can change in bash, and from where. It gives the rule that replaces "the whole script is blind", the change of the data model, the tests and the steps. It ends with the gain, measured again with a prototype. The gain is smaller than the roadmap expected (section 8), so the maintainer deferred steps 1–4 (section 10).
+Status: deferred (2026-10-26); step 0 (the holes of section 2) done in #382. The roadmap's item "Trust per position" ([../roadmap.md](../roadmap.md)) is now in the deferred list, for its small gain. This page says what each cause of "nothing is trusted" can change in bash, and from where. It gives the rule that replaces "the whole script is blind", the change of the data model, the tests and the steps. It ends with the gain, measured again with a prototype. The gain is smaller than the roadmap expected (section 8), so the maintainer deferred steps 1–4 (section 10).
 
 ## 1. Today
 
@@ -240,4 +240,4 @@ So the rule works, but the gain is small: about a third more values (34 to 45 he
 
 ## 10. For the maintainer
 
-The rule is sound on everything tried, and its steps are independent of other work. But its gain is small on the corpus, and it does not open the way for item 6 in scripts with a taint, as the roadmap assumed. Step 0 fixes wrong values and dead code of today's model (eight cases, section 2) and should be done in any case. For the rest, the maintainer decides: do steps 1 to 4 now, or move the item down and look first at reading sourced files (section 9).
+The rule is sound on everything tried, and its steps are independent of other work. But its gain is small on the corpus, and it does not open the way for the roadmap's "Values of a whole word" in scripts with a taint, as the roadmap assumed. Step 0 fixes wrong values and dead code of today's model (eight cases, section 2) and should be done in any case. For the rest, the maintainer decides: do steps 1 to 4 now, or move the item down and look first at reading sourced files (section 9).
