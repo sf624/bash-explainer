@@ -776,6 +776,7 @@
  "cp $a b",
  "cp $a b; cp $a c",
  "cp *.txt d/",
+ "cp -v{a,b}$x d",
  "cp a b || echo failed",
  "cp a{,.bak}",
  "crlf",

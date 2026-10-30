@@ -38,8 +38,10 @@ export interface Profile { key: string; counts: readonly number[]; entries: Entr
  * one variable: "`$a` expands to …"; otherwise a sum: "`$n` and `$v` expand to … in all"), and its values in the units the
  * text says (the words of that variable, or of the words named in all; `orMore` at the top). `counted`: the sum counts
  * each named word once; where a variable is in it twice (`cp $a $b $a d`), only "nothing" and "a word or more" are said.
+ * `parts`: it holds a part of a word that comes in parts (`ArgWord.parts`: `-v*$x`), which no atom says; the classes it
+ * decides fold.
  */
-export interface Place { words: number[]; one: boolean; counted: boolean; values: Value[] }
+export interface Place { words: number[]; one: boolean; counted: boolean; parts?: true; values: Value[] }
 export interface Value { n: number; orMore?: true }
 
 /** A set of values of one place: from `from` to `to`, or `from` and more (no `to`). */
@@ -181,9 +183,9 @@ function cover(found: readonly Candidate[], inside: bigint): Candidate[] | undef
  * not read (past the cap, or a reading the pattern matcher gave up).
  */
 export function wordReadings(t: ReadingsTable, k: number): WordReadings | Depends | undefined {
-  const names = (): number[] => t.variables.map((v) => t.back(v.words[0]));
+  const names = (): number[] => [...new Set(t.variables.map((v) => t.back(v.words[0])))];
   const cx = t.contexts(k);
-  if (!cx) return t.hedged().includes(k) ? { kind: 'depends', words: names() } : undefined;
+  if (!cx) return t.hedged().includes(k) || t.parted[k] ? { kind: 'depends', words: names() } : undefined;
   const own = t.variableAt[k];
   const orMore = own !== undefined && (t.variables[own].max ?? Infinity) > t.variables[own].top;
   const profiles = cx.contexts.map((context) => profileOf(t, cx.own, cx.own.map((c) => t.readAt(k, context, c)), orMore));
@@ -191,9 +193,10 @@ export function wordReadings(t: ReadingsTable, k: number): WordReadings | Depend
   const named = cx.coordinates.map((c, i) => ({ c, i })).filter(({ c }) => c.mult.size);
   const places = named.map(({ c, i }): Place => {
     const most = c.fixed + [...c.mult].reduce((n, [v, m]) => n + m * (t.variables[v].max ?? Infinity), 0);
-    const words = [...c.mult.keys()].map((v) => t.back(c.words.find((j) => t.variableOf[j] === v)!));
+    const words = [...new Set([...c.mult.keys()].map((v) => t.back(c.words.find((j) => t.variableOf[j] === v)!)))];
     const one = c.mult.size === 1;
-    return { words, one, counted: one || [...c.mult.values()].every((m) => m === 1), values: cx.contexts.map((context) => valueOf(c, context[i], most)) };
+    const parts = [...c.mult.keys()].some((v) => t.variables[v].part);
+    return { words, one, counted: one || [...c.mult.values()].every((m) => m === 1), ...(parts ? { parts: true as const } : {}), values: cx.contexts.map((context) => valueOf(c, context[i], most)) };
   });
   const baseAt = cx.contexts.findIndex((context) => context.every((v, i) => v === cx.base[i]));
   const base = profiles[baseAt];
@@ -214,7 +217,8 @@ export function wordReadings(t: ReadingsTable, k: number): WordReadings | Depend
     const bitsOf = (atom: Atom): bigint => place.values.reduce((b, x, i) => (holds(atom, x) ? b | (1n << BigInt(i)) : b), 0n);
     const ns = [...new Set(place.values.map((x) => x.n))].sort((a, b) => a - b);
     // (Of a sum that holds a variable twice, "nothing" and "a word or more" only: its count is not the words named.)
-    const tried = place.counted ? [...ns.map((n): Atom => ({ place: p, from: n, to: n })), ...ns.slice(1).map((n): Atom => ({ place: p, from: n }))] : [{ place: p, from: 0, to: 0 }, { place: p, from: 1 }];
+    // (Of a part of a word that comes in parts, none: the texts name the word, not the part.)
+    const tried = place.parts ? [] : place.counted ? [...ns.map((n): Atom => ({ place: p, from: n, to: n })), ...ns.slice(1).map((n): Atom => ({ place: p, from: n }))] : [{ place: p, from: 0, to: 0 }, { place: p, from: 1 }];
     for (const atom of tried) {
       const bits = bitsOf(atom);
       if (bits && bits !== every && !atoms.some((a) => a.bits === bits)) atoms.push({ atoms: [atom], bits });
@@ -237,6 +241,6 @@ function fold(out: WordReadings, classes: Map<string, bigint>, coordinates: read
   }
   const vars = new Set(coordinates.flatMap((c) => [...c.mult.keys()]));
   if (own !== undefined) vars.add(own);
-  const words = [...vars].map((v) => t.back(t.variables[v].words[0])).sort((a, b) => a - b);
+  const words = [...new Set([...vars].map((v) => t.back(t.variables[v].words[0])))].sort((a, b) => a - b);
   return { ...out, folded: { roles, words } };
 }

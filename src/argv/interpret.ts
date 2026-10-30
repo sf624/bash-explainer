@@ -20,10 +20,17 @@ export interface ArgWord {
   /** Otherwise, the text known at its start (`--file=` of `--file=$f`, `-I` of `-I{}`), if any. */
   prefix?: string;
   /**
-   * Every word it gives starts with `prefix`, not only its first: a word with no unquoted expansion, whose words come
-   * from globbing or braces (`-v*` gives `-va -vb`; not `x$a`, which gives `xp q` with `a='p q'`).
+   * Every word it gives starts with `prefix`, not only its first: the words globbing gives of one field (`-v*` gives
+   * `-va -vb`). Not where the start alone may be `-` or `--`, which a command reads otherwise (`-*` may give `--`).
    */
   prefixEach?: true;
+  /**
+   * The words its words come in, where some of them keep its known start and others may not (`ArgWord.prefixEach`): for
+   * each word of its brace expansion, the words globbing gives of its first field, which keep the start, then the words
+   * word splitting adds after it, which do not (`-v*$x` with `x='a b'` is the words of `-v*a`, then `b`). Each is a word
+   * of the line of its own, with its own count (src/argv/readings.ts).
+   */
+  parts?: ArgWord[];
   /**
    * The parameter it expands, where it is one unquoted expansion and nothing else (`$a`, `${a}`, `$1`, `$@`): such words
    * of one parameter give as many words, unless a word between them assigns it (`assigns`; the ties of

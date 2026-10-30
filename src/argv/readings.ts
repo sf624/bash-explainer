@@ -22,6 +22,10 @@ export interface CountVariable {
   max?: number;
   /** The most read: `min` and S, or `max` where fewer. Where the word may give more, it stands for that many or more. */
   top: number;
+  /** Its count in the line as written: its fewest, one at least; none for the words splitting adds (`ArgWord.parts`). */
+  base: number;
+  /** It counts a part of a word that comes in several (`ArgWord.parts`), not the whole word. */
+  part?: true;
 }
 
 /**
@@ -103,6 +107,8 @@ export interface ReadingsTable {
   shapes: number[][] | undefined;
   /** The count variable of each of the command's words that is flexible. */
   variableAt: (number | undefined)[];
+  /** The command's words that come in parts (`ArgWord.parts`), each a word of the line with a count of its own. */
+  parted: boolean[];
   /** The reading of a shape (each read once). */
   reading: (sums: readonly number[]) => Reading;
   /**
@@ -173,19 +179,14 @@ function runsOf(line: readonly ArgWord[]): { words: number[]; prefix?: string; e
  * word between them may assign it or IFS (`ArgWord.assigns`). `words` are the command's words, `back` gives the command's
  * word of a word of the line.
  */
-function variablesOf(line: readonly ArgWord[], words: readonly ArgWord[], back: (j: number) => number, bound: number): { variables: CountVariable[]; variableOf: (number | undefined)[] } {
+function variablesOf(line: readonly ArgWord[], words: readonly ArgWord[], back: (j: number) => number, bound: number, tails: ReadonlySet<number>): { variables: CountVariable[]; variableOf: (number | undefined)[] } {
   const variables: CountVariable[] = [];
   const variableOf: (number | undefined)[] = line.map(() => undefined);
-  const lineOf = new Map<number, number>();
-  line.forEach((w, j) => { if (flexible(w)) lineOf.set(back(j), j); });
+  const lineOf = new Map<number, number[]>();
+  line.forEach((w, j) => { if (flexible(w)) lineOf.set(back(j), [...lineOf.get(back(j)) ?? [], j]); });
   const last = new Map<string, number>();
-  words.forEach((w, k) => {
-    for (const name of w.assigns ?? []) {
-      if (name === '*' || name === 'IFS') last.clear();
-      else last.delete(name);
-    }
-    const j = lineOf.get(k);
-    if (j === undefined) return;
+  /** The variable of the word `j` of the line, tied or new; `part`: a part of a word that comes in several. */
+  const variableAt = (j: number, part: boolean): void => {
     const { min, max } = line[j].count!;
     const param = line[j].param !== undefined && !BASH_VARIABLES[line[j].param!]?.dynamic ? line[j].param : undefined;
     const tied = param === undefined ? undefined : last.get(param);
@@ -196,7 +197,15 @@ function variablesOf(line: readonly ArgWord[], words: readonly ArgWord[], back: 
     }
     variableOf[j] = variables.length;
     if (param !== undefined) last.set(param, variables.length);
-    variables.push({ words: [j], min, ...(max !== undefined ? { max } : {}), top: Math.min(min + bound, max ?? Infinity) });
+    const base = tails.has(j) ? 0 : Math.max(min, 1);
+    variables.push({ words: [j], min, ...(max !== undefined ? { max } : {}), top: Math.min(min + bound, max ?? Infinity), base, ...(part ? { part: true as const } : {}) });
+  };
+  words.forEach((w, k) => {
+    for (const name of w.assigns ?? []) {
+      if (name === '*' || name === 'IFS') last.clear();
+      else last.delete(name);
+    }
+    for (const j of lineOf.get(k) ?? []) variableAt(j, !!w.parts);
   });
   return { variables, variableOf };
 }
@@ -314,11 +323,22 @@ function groupRoles(roles: readonly RoleAt[], out: ArgRole[] = []): ArgRole[] {
  * and a reading of each, read when asked.
  */
 export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: InterpretContext, cap = SHAPE_CAP): ReadingsTable {
-  const { line, groups, own } = fieldLine(words);
-  const back = lineIndex(groups);
+  const { line: fielded, groups, own } = fieldLine(words);
+  // (A word whose words come in parts, `ArgWord.parts`, is a word of the line for each: those after the first of a word
+  // of its brace expansion, the words splitting adds, give none as written.)
+  const line: ArgWord[] = [];
+  const of: number[] = [];
+  const tails = new Set<number>();
+  fielded.forEach((w, j) => (w.parts ?? [w]).forEach((p) => {
+    if (w.parts && !p.prefix) tails.add(line.length);
+    of.push(j);
+    line.push(p);
+  }));
+  const fieldBack = lineIndex(groups);
+  const back = (j: number): number => fieldBack(of[j]);
   const specs = specsReached(spec, line, ctx);
   const bound = Math.max(...[...specs].map(wordsBound));
-  const { variables, variableOf } = variablesOf(line, words, back, bound);
+  const { variables, variableOf } = variablesOf(line, words, back, bound, tails);
   const fixedOf = (j: number): number => line[j].count?.min ?? 1;
   const runs: Run[] = runsOf(line).map(({ words: ws, prefix, each }) => {
     const mult = new Map<number, number>();
@@ -355,17 +375,21 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
     readings.set(key, out);
     return out;
   };
-  /** Where each command's word stands in the line: its fields (a group of `fieldLine`), or one word of the line. */
-  const spans = words.map((): { group?: Group; at?: number } => ({}));
+  /**
+   * Where each command's word stands in the line: its words there (`lines`), and its fields (a group of `fieldLine`), or
+   * the one word of the line it is (`at`; none for a word that comes in parts).
+   */
+  const spans = words.map((): { group?: Group; at?: number; lines: number[] } => ({ lines: [] }));
   for (const g of groups) spans[g.word].group = g;
-  line.forEach((_, j) => { if (!spans[back(j)].group) spans[back(j)].at = j; });
+  line.forEach((_, j) => spans[back(j)].lines.push(j));
+  for (const s of spans) if (!s.group && s.lines.length === 1) s.at = s.lines[0];
   const at = (counts: readonly number[]): WordsAt => {
     const n = line.map((_, j) => (variableOf[j] !== undefined ? counts[variableOf[j]!] : inRun.has(j) ? fixedOf(j) : 1));
     const r = reading(runs.map((run) => run.words.reduce((s, j) => s + n[j], 0)));
     const written: Group[] = [];
     let from = 0;
-    for (const [k, { group, at: j }] of spans.entries()) {
-      const size = group ? group.n : n[j!];
+    for (const [k, { group, lines }] of spans.entries()) {
+      const size = group ? group.n : lines.reduce((x, j) => x + n[j], 0);
       if (group || size !== 1) written.push({ from, n: size, word: k, shift: size - 1, words: group?.words ?? Array.from({ length: size }, (): ArgWord => ({})) });
       from += size;
     }
@@ -378,7 +402,7 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
     });
     return { outcome: r.outcome, parse, fields };
   };
-  const base = variables.map((v) => Math.max(v.min, 1));
+  const base = variables.map((v) => v.base);
   const hedged = (): number[] => {
     if (!variables.length) return [];
     const first = Math.min(...variables.map((v) => back(v.words[0])));
@@ -405,8 +429,10 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
     }
     return { words: kept, fixed, mult, top };
   };
+  const parted = spans.map((x) => !x.group && x.lines.length > 1);
   const contexts = (k: number): Contexts | undefined => {
-    if (!found) return undefined;
+    // (A word in parts has no own count: the hedges of step 4 say only that its role may depend on the counts.)
+    if (!found || parted[k]) return undefined;
     const x = spans[k].at === undefined ? undefined : found.passes.get(spans[k].at!);
     const coordinates = x
       ? [
@@ -423,7 +449,7 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
     const sums = x ? found!.shapeOf(x.pass, context, c) : [...context];
     const r = reading(sums);
     // (In its run, its words come after those of the words before it: theirs, and its own variable's.)
-    const from = x ? placeOf(runs[x.pass.run].words[0], sums) + context[0] + x.pass.before.ties * c : placeOf(spans[k].group?.from ?? spans[k].at!, sums);
+    const from = x ? placeOf(runs[x.pass.run].words[0], sums) + context[0] + x.pass.before.ties * c : placeOf(spans[k].lines[0], sums);
     const roles = rolesOf(r);
     const places = range(from, from + c);
     const owners: (number | undefined)[] = [];
@@ -442,5 +468,5 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
     return { sums, outcome: r.outcome, fields: places.map((i) => roles.get(i)!), places, owners };
   };
   const variableAt = words.map((_, k) => (spans[k].at === undefined ? undefined : variableOf[spans[k].at!]));
-  return { line, back, runs, variables, variableOf, variableAt, bound, specs, base, shapes: found?.shapes, reading, at, hedged, contexts, readAt };
+  return { line, back, runs, variables, variableOf, variableAt, parted, bound, specs, base, shapes: found?.shapes, reading, at, hedged, contexts, readAt };
 }

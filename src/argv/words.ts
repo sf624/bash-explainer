@@ -151,6 +151,24 @@ function assignsOf(n: SyntaxNode): string[] | undefined {
 }
 
 /**
+ * The words a word's words come in (`ArgWord.parts`; one of them: `ArgWord.prefixEach`), where it has a known start that
+ * is not `-` or `--`: for each word of its brace expansion (where `braces` says the step applies, and the words are not
+ * too many to list), the words of its first field, which keep the start (one, or one or more where it may glob), then,
+ * where it may split, the words splitting adds after them (none or more, of unknown text). Undefined otherwise.
+ */
+function startParts(n: SyntaxNode, prefix: string, braces: boolean | 'unknown'): ArgWord[] | undefined {
+  if (!prefix || prefix === '-' || prefix === '--') return undefined;
+  const alternatives = braces === false ? undefined : braceAlternatives([n]);
+  if (alternatives === null || (alternatives && braces === 'unknown')) return undefined;
+  return (alternatives ?? [n.type === 'concatenation' ? n.namedChildren : [n]]).flatMap((w): ArgWord[] => {
+    const { glob } = partsOf(w);
+    const splits = splitsIn(w);
+    const head: ArgWord = { prefix, ...(glob || splits ? { prefixEach: true as const, count: { min: 1 } } : {}) };
+    return splits ? [head, { count: { min: 0 } }] : [head];
+  });
+}
+
+/**
  * The words of the command line as the interpreter reads them, in a script for `shell` (bash when absent); `count` how
  * many words each gives, where the caller knows more than `countOf` (the model's fields, src/semantics/argwords.ts).
  */
@@ -160,9 +178,11 @@ export const argWordFor = (shell?: Shell, braces?: (n: SyntaxNode) => boolean | 
   const param = loneParameter(n);
   const assigns = assignsOf(n);
   const prefix = value === undefined ? prefixOf(n, shell) : undefined;
-  // (Its words all keep the text before the first glob or brace character: nothing in it splits.)
-  const each = !!prefix && !!words && !splitsIn(n.type === 'concatenation' ? n.namedChildren : [n]);
-  return { ...(value !== undefined ? { value } : { prefix }), ...(each ? { prefixEach: true as const } : {}), ...(words ? { count: words } : {}), ...(param ? { param } : {}), ...(assigns ? { assigns } : {}) };
+  // (Which of its words keep its known start: all of one part, `-v*`; or some of several, `-v*$x`.)
+  const parts = words && prefix !== undefined ? startParts(n, prefix, braces?.(n) ?? bracesWork(n, shell)) : undefined;
+  // (One part: each of its words keeps the start, one word or the words of a glob.)
+  const kept = parts?.length === 1 ? { prefixEach: true as const } : parts ? { parts } : {};
+  return { ...(value !== undefined ? { value } : { prefix }), ...kept, ...(words ? { count: words } : {}), ...(param ? { param } : {}), ...(assigns ? { assigns } : {}) };
 };
 
 /** A word of the command line as the interpreter reads it in bash. */
