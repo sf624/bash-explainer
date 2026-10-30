@@ -3034,5 +3034,39 @@
       "status": 1,
       "stderr": "SCRIPT: line 1: bad substitution: no closing \"`\" in `\\`"
     }
+  },
+  {
+    "manual": "3.5.2",
+    "snippet": "@PROBE:a@ ~\\\n/x x=\\\n~/a \"e\\\nf\" g\\\nh ~\\\n\\\n/q a:\\\n~",
+    "facts": {
+      "a": [
+        [
+          "/home/probe/x",
+          "x=/home/probe/a",
+          "ef",
+          "gh",
+          "/home/probe/q",
+          "a:~"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.1.2.1",
+    "snippet": "y=1 ya=22; @PROBE:a@ \"$y\\\na\" $\\\ny ${\\\ny}",
+    "gaps": {
+      "a": "a name that a line continuation splits trusts nothing (allow.ts, nodeRow): the model reads the names of nodes as written; the explanation reads them as bash does (`ya`, `y`)"
+    },
+    "facts": {
+      "a": [
+        [
+          "22",
+          "1",
+          "1"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { descendants, field, fields, hasError, token } from '../src/syntax/tree';
+import { descendants, field, fields, hasError, nameText, token } from '../src/syntax/tree';
 import type { SyntaxNode } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import type { Token } from '../src/analyzer';
@@ -373,6 +373,65 @@ describe('unbash adapter: process substitutions in a longer word', () => {
   it('leaves apart one whose command is a subshell, which would read as `$((`', () => {
     // (README, Limitations: bash reads `a<((ls))` as one word.)
     assert.deepStrictEqual(fields(types(tree('echo a<((ls))').root, 'command')[0], 'argument').map((a) => a.text), ['a', '<((ls))']);
+  });
+});
+
+describe('unbash adapter: line continuations in a word', () => {
+  // bash removes a backslash-newline before it reads the word (3.1.2.1): it can split a name, or stand before one.
+  const words = ['"$y\\\na"', '$y\\\na', '${y\\\na}', '${\\\ny}', '$\\\ny', '${#y\\\na}', '"${y\\\n}"', '$((y\\\na + 1))'];
+  it('reads the names as bash does', () => {
+    const text = `y=1 ya=22\nprintf '<%s>' ${words.join(' ')}`;
+    const t = tree(text);
+    assert.deepStrictEqual(t.errors, []);
+    const [, cmd] = types(t.root, 'command');
+    const args = fields(cmd, 'argument').slice(1);
+    assert.deepStrictEqual(args.map((a) => a.text), words);
+    // Each name, without its line continuations, is the one bash reads: the values are those bash prints.
+    const values: Record<string, string> = { y: '1', ya: '22' };
+    const value = (a: SyntaxNode): string => {
+      const e = descendants(a, ['simple_expansion', 'expansion', 'arithmetic_expansion'])[0];
+      const name = nameText(descendants(e, ['variable_name'])[0]);
+      return e.type === 'arithmetic_expansion' ? String(Number(values[name]) + 1) : e.text.startsWith('${#') ? String(values[name].length) : values[name];
+    };
+    assert.strictEqual(args.map((a) => `<${value(a)}>`).join(''), runBash(text).stdout);
+    // The nodes are where they are written, with their text.
+    for (const n of types(t.root, 'variable_name')) assert.strictEqual(n.text, text.slice(n.startIndex, n.endIndex));
+    assert.deepStrictEqual(types(t.root, 'simple_expansion').map((n) => n.text), ['$y\\\na', '$y\\\na', '$\\\ny']);
+  });
+  it('joins a word as bash does, also a command name and an assignment', () => {
+    const text = 'declare\\\nx=1; ec\\\nho a\\\nb';
+    const t = tree(text);
+    assert.deepStrictEqual(t.errors, []);
+    assert.strictEqual(o(text), '(program (command (variable_assignment (variable_name @name "declare\\\\\\nx") "=" (number @value "1"))) ";" (command (command_name @name (word "ec\\\\\\nho")) (word @argument "a\\\\\\nb")))');
+    assert.strictEqual(runBash(`${text}; echo "$declarex"`).stdout, 'ab\n1\n');
+    // A continuation in single quotes, in `$'…'`, between words or in a comment of a substitution stays.
+    assert.strictEqual(o("echo 'a\\\nb' $'c\\\nd' \\\n e $(: # f\\\n)"), o("echo 'a\\\nb' $'c\\\nd' \\\n e $(: # f\\\n)"));
+    assert.deepStrictEqual(fields(types(tree("echo 'a\\\nb' $'c\\\nd' \\\n e $(: # f\\\n)").root, 'command')[0], 'argument').map((a) => a.text), ["'a\\\nb'", "$'c\\\nd'", 'e', '$(: # f\\\n)']);
+    // bash's own parser gives the same shapes.
+    const bin = findBashAst();
+    if (!bin && process.env.BASH_EXPLAINER_BASH_AST) assert.fail('BASH_EXPLAINER_BASH_AST is set, but bash-ast cannot be run (see $BASH_AST)');
+    // (bash numbers a command by the line its first word ends on, past the continuation: not compared.)
+    for (const s of bin ? [`printf x ${words.join(' ')}`, text] : []) {
+      const a = runBashAst(bin!, s);
+      assert.ok(a.ok, s);
+      assert.deepStrictEqual(diffShapes(shapeOfTree(tree(s).root), shapeOfAst(a.ast)).filter((d) => !d.path.endsWith('.line')), [], s);
+    }
+  });
+  it('places an arithmetic text where it is written, or gives none across a removed continuation', () => {
+    const t = tree('echo $\\\ny; let "a = 1 + 2"');
+    const s = types(t.root, 'string')[0];
+    const e = t.arithmetic(s, s.startIndex + 1, s.endIndex - 1)!;
+    assert.strictEqual(e.text, 'a = 1 + 2');
+    const w = types(t.root, 'simple_expansion')[0];
+    assert.strictEqual(t.arithmetic(w, w.startIndex, w.endIndex), undefined);
+  });
+  it('keeps a backslash that a backslash escapes, and puts the errors where they are written', () => {
+    // (`"a\\<newline>b"` is `a\`, a newline and `b`.)
+    assert.deepStrictEqual(fields(first('echo "a\\\\\nb" $\\\ny'), 'argument').map((a) => a.type), ['string', 'simple_expansion']);
+    assert.strictEqual(runBash('printf "<%s>" "a\\\\\nb"').stdout, '<a\\\nb>');
+    const bad = tree('echo $\\\ny; if :; then');
+    assert.deepStrictEqual(bad.errors.map((e) => [e.startIndex, e.endIndex]), [[21, 21]]); // (the end of the text as written)
+    assert.ok(types(bad.root, 'if_statement')[0].incomplete);
   });
 });
 

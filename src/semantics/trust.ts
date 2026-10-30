@@ -43,7 +43,7 @@ import type { BashVersion } from '../bashversion';
 import { field, fields, hasError, substitutionForm, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { CommandSpec } from '../argv/spec';
 import { bracedWords, braceValues } from './brace';
-import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
+import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, nodeRow, type Row } from './allow';
 import { plainName, aliasOf, aliasTexts, builtinParse, builtinRead, callbacks, commandName, commandWords, DECLARATIONS, setOptionWrites, variableWrites, wordName } from './effects';
 import { type Deferred, type DeferredPlan, deferredReadings, unknownWords } from './deferred';
 import { STATEMENTS } from './env';
@@ -296,7 +296,7 @@ class Scan {
   private visit(n: SyntaxNode, w: Where): void {
     if (w.rest && n.startIndex >= w.rest.at) w = w.rest.where;
     // Each node by the row of its type: what changes nothing has no handler (its parts are read in turn).
-    if (n.named && !this.apply(syntaxRow(n.type))) {
+    if (n.named && !this.apply(nodeRow(n))) {
       for (const c of n.children) this.visit(c, w);
       return;
     }

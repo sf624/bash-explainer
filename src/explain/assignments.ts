@@ -14,7 +14,7 @@ import { nodeSections } from '../refs';
 import { attribute, docLine, option } from '../semantics/state';
 import { assignmentIgnored, unsetEndsSpecial } from '../semantics/vars';
 import { isPlainWord, splitElement, staticWordValue } from '../staticword';
-import { assignmentSpan, field, type SyntaxNode } from '../syntax/tree';
+import { assignmentSpan, field, nameText, type SyntaxNode } from '../syntax/tree';
 import { tokenBasisOf } from '../tokenbases';
 import type { Explainer } from './context';
 import { embeddedValue } from './embedded';
@@ -72,7 +72,7 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
   const name = field(n, 'name')!;
   const value = field(n, 'value');
   const op = n.children.find((c) => !c.named && (c.type === '=' || c.type === '+='))!.type;
-  const nm = name.text;
+  const nm = nameText(name);
   let expl = op === '+='
     ? cx.s(`変数 \`${nm}\` に値を追記する（配列なら要素を追加）`, `Append to variable \`${nm}\` (adds elements for arrays)`)
     : value

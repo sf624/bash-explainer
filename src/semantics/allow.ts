@@ -292,6 +292,16 @@ const rowOf = <R>(table: Readonly<Record<string, R>>, key: string, missing: () =
 /** The row of a node type (one the table does not have trusts nothing). */
 export const syntaxRow = (type: string): Row => rowOf<Row>(SYNTAX, type, () => unlisted(`the node type \`${type}\``));
 
+const NAME_NODES = new Set(['variable_name', 'special_variable_name', 'simple_expansion', 'subscript']);
+/**
+ * The row of a node: that of its type, but a name that a line continuation splits trusts nothing (`$y\<newline>a`,
+ * `${\<newline>y}`): bash removes it before it reads the name, and the model reads the names of nodes as written.
+ */
+export function nodeRow(n: SyntaxNode): Row {
+  const name = n.type === 'expansion' ? n.namedChildren.find((c) => NAME_NODES.has(c.type)) : NAME_NODES.has(n.type) ? n : undefined;
+  return name && n.text.slice(0, name.endIndex - n.startIndex).includes('\\\n') ? blinds('a name that a line continuation splits') : syntaxRow(n.type);
+}
+
 /**
  * A name of the dictionary that is no builtin of bash (zsh's `setopt`): bash runs a program of that name in a child
  * process, or finds none, which changes nothing of this shell.

@@ -9,7 +9,7 @@ import type { Token } from '../analyzer-types';
 import { explainExpansion } from '../expansion-tokens';
 import { nodeSections } from '../refs';
 import { explainCommandSubstitution, explainProcessSubstitution } from '../substitution-tokens';
-import { assignmentsOnly, childrenOnRows, fields, type SyntaxNode, withLists } from '../syntax/tree';
+import { assignmentsOnly, childrenOnRows, fields, nameText, type SyntaxNode, withLists } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import { assignment, assignments } from './assignments';
 import { command, timeStatement } from './commands';
@@ -83,7 +83,7 @@ function explainNode(cx: Explainer, n: SyntaxNode): Token {
     case 'subscript': return subscript(cx, n);
     case 'regex': return regexNode(cx, n);
     case 'extglob_pattern': return globToken(cx, n, 'value');
-    case 'variable_name': return arithNumber(cx, n) ?? variable(cx, n.text, n);
+    case 'variable_name': return arithNumber(cx, n) ?? variable(cx, nameText(n), n);
     case 'subshell': return subshell(cx, n);
     case 'compound_statement': return group(cx, n);
     case 'do_group': return doGroup(cx, n);
