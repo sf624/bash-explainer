@@ -2953,5 +2953,86 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.5.2",
+    "snippet": "x=/v; @PROBE:a@ \"x\"{~,b} \"\"{~,a} ~-$x{~,~/x} ~root{a,b}\"\"{a,~}; @PROBE:b@ ~/{a,b}{~,c}",
+    "facts": {
+      "a": [
+        [
+          "x~",
+          "xb",
+          "~",
+          "a",
+          "~-/v~",
+          "~-/v~/x",
+          "~rootaa",
+          "~roota~",
+          "~rootba",
+          "~rootb~"
+        ]
+      ],
+      "b": [
+        [
+          "/home/probe/a~",
+          "/home/probe/ac",
+          "/home/probe/b~",
+          "/home/probe/bc"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "bash": "5.3",
+    "note": "bash 5.3 reads a backslash that ends the script as a quoted one; bash 5.2 drops it when it reads a file (as here) or stdin, and keeps it with -c",
+    "snippet": "@PROBE:a@ {W..c..5}a\\",
+    "facts": {
+      "a": [
+        [
+          "Wa\\",
+          "a\\",
+          "aa\\"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "@PROBE:a@ {W..c..5}\\`y",
+    "gaps": {
+      "a": "bash fails (\"bad substitution\"): the backslash of the range quotes the script's backslash, which leaves the backquote unquoted, as a command substitution that nothing closes; the model says the words are not known (brace.ts, reread)"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: bad substitution: no closing \"`\" in `y"
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "@PROBE:a@ x{W..c..5}\\\\\\`y",
+    "gaps": {
+      "a": "bash fails (\"bad substitution\"): the backslash of the range quotes the script's backslash, which leaves the backquote unquoted, as a command substitution that nothing closes; the model says the words are not known (brace.ts, reread)"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: bad substitution: no closing \"`\" in `y"
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "@PROBE:a@ {W..c..5}\\`\\`",
+    "gaps": {
+      "a": "bash fails (\"bad substitution\"): the backslash of the range quotes the script's backslash, which leaves the backquote unquoted, as a command substitution that nothing closes; the model says the words are not known (brace.ts, reread)"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: bad substitution: no closing \"`\" in `\\`"
+    }
   }
 ]

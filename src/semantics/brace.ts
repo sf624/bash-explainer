@@ -39,8 +39,8 @@ const unmarked = (t: string): string => t.replace(/\uE002(.)|[\uE000\uE001]/gs, 
  * `{Z..a}` an empty word; in `{W..c..5}\\`, the sequence's `\` quotes the first of the script's: `W\`, `\` and `a\`);
  * a `` ` `` at the end of the word is itself, and else starts a command substitution that nothing closes (bash fails,
  * "bad substitution"). `last`: the text ends the word. Its text as written (backslashes and all), and whether an empty
- * quoted string ends it; undefined where that is not known here (before another part, where bash fails, or where a `$`
- * or a quote is not quoted: `{W..c..5}\$x`, whose `$x` the sequence's `\` makes an expansion).
+ * quoted string ends it; undefined where that is not known here (before another part, where bash fails, or where a `$`,
+ * a quote or a `` ` `` of the script is not quoted: `{W..c..5}\$x`, whose `$x` the sequence's `\` makes an expansion).
  */
 export function reread(text: string, last: boolean): { text: string; empty: boolean } | undefined {
   if (!MARKED.test(text)) return { text, empty: false };
@@ -56,7 +56,7 @@ export function reread(text: string, last: boolean): { text: string; empty: bool
     } else if (c === BACKQUOTE) {
       if (i + 1 < text.length || !last) return undefined;
       out += '\\`';
-    } else if (/[$'"]/.test(c)) return undefined;
+    } else if (/[$'"`]/.test(c)) return undefined;
     else out += unmarked(text.slice(i, i + at(i)));
   }
   return { text: out, empty: false };
@@ -124,8 +124,8 @@ export function braceTexts(nodes: readonly SyntaxNode[], part = false): string[]
 /** The words a part of a word gives: a brace expression its items or its sequence, any other part itself. */
 function alternativesOf(n: SyntaxNode): BraceAlternative[] | null {
   if (n.type === 'concatenation') return product(n.namedChildren.map(alternativesOf));
-  // (A mark the script holds is escaped: `escaped`.)
-  if (n.type === 'word' || n.type === 'number') return [[escaped(n.text)]];
+  // (A mark the script holds is escaped: `escaped`. A `\` that ends the script, `a\`, bash reads as a quoted one.)
+  if (n.type === 'word' || n.type === 'number') return [[escaped(/(?:^|[^\\])(?:\\\\)*\\$/.test(n.text) ? `${n.text}\\` : n.text)]];
   if (n.type !== 'brace_expression') return [[n]];
   // (The parser makes a sequence only of a valid one.)
   // (A `\` or `` ` `` of a letter sequence is marked: bash reads it again, `reread`.)
