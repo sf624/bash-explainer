@@ -56,6 +56,8 @@ describe('sudo on Linux: an option it does not have', () => {
       assert.ok(t.includes('`invalid option`') && t.includes('`unrecognized option`') && !t.includes('BSD'), t);
     }
     assert.ok(said('sudo -Z ls', '-Z', 'ja').includes('`invalid option`'));
+    // (A long one with a value after `=`.)
+    assert.ok(said('sudo --frob=x ls', '--frob=x').includes('`unrecognized option`'));
   });
   it('is the ambiguous option sudo reports for a prefix of several long options', () => {
     assert.match(said('sudo --pre ls', '--pre'), /^Ambiguous option \(it starts several long options: `--preserve-env`, `--preserve-groups`\); sudo refuses it/);
@@ -63,6 +65,7 @@ describe('sudo on Linux: an option it does not have', () => {
   (sudo.status === 0 && /1\.9/.test(sudo.stdout) ? it : it.skip)('is refused by the real sudo as the text says', () => {
     assert.match(real('-Z', 'ls').err, /^sudo: invalid option -- 'Z'/);
     assert.match(real('--frob').err, /^sudo: unrecognized option '--frob'/);
+    assert.match(real('--frob=x', 'ls').err, /^sudo: unrecognized option '--frob=x'/);
     assert.match(real('--pre', 'ls').err, /^sudo: option '--pre' is ambiguous; possibilities: '--preserve-env' '--preserve-groups'/);
   });
   it('does not widen the other readings of the words after it, where the line as written is the refused one', () => {
