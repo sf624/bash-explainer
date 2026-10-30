@@ -94,7 +94,9 @@ function redirectAt(n: SyntaxNode): Redir[] {
   if (n.type === 'heredoc_redirect') {
     const body = n.children.find((c) => c.type === 'heredoc_body');
     // `<<-` strips the leading tabs of the body
-    const text = body ? body.text : '';
+    // (bash removes the line continuations of a body whose delimiter is not quoted, as it reads it.)
+    const quoted = /['"\\]/.test(n.children.find((c) => c.type === 'heredoc_start')?.text ?? '');
+    const text = body ? (quoted ? body.text : body.text.replace(/((?:^|[^\\])(?:\\\\)*)\\\n/g, '$1')) : '';
     return [{ fd, op: '<<', target: op === '<<-' ? text.replace(/^\t+/gm, '') : text }];
   }
   if (n.type === 'herestring_redirect') return [{ fd, op: '<<<', target: wordOf(n.namedChildren[n.namedChildren.length - 1]) }];
@@ -128,6 +130,13 @@ const bodyOf = (n: SyntaxNode | undefined): Shape | null => (n ? seq(itemsOf(n.c
 
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?\+?=/;
 
+/** An assignment as bash-ast prints it: an array as its elements, one blank apart, without the comments between them. */
+function assignmentOf(a: SyntaxNode): string {
+  const array = a.namedChildren.find((c) => c.type === 'array');
+  if (!array || !array.namedChildren.some((c) => c.type === 'comment')) return wordOf(a);
+  return `${wordOf({ ...a, text: a.text.slice(0, array.startIndex - a.startIndex) } as SyntaxNode)}(${array.namedChildren.filter((c) => c.type !== 'comment').map(wordOf).join(' ')})`;
+}
+
 function simpleOf(n: SyntaxNode, extra: Redir[]): Shape {
   const assignments: string[] = [];
   const parts: { text: string; start: number; end: number }[] = [];
@@ -142,7 +151,7 @@ function simpleOf(n: SyntaxNode, extra: Redir[]): Shape {
     } else parts.push({ text, start: c.startIndex, end: c.endIndex });
   };
   for (const c of n.children) {
-    if (c.type === 'variable_assignment') assignments.push(wordOf(c));
+    if (c.type === 'variable_assignment') assignments.push(assignmentOf(c));
     else if (c.field === 'redirect') continue;
     else if (c.named && c.type !== 'comment' && c.type !== 'heredoc_body') add(c, wordOf(c));
   }
@@ -254,7 +263,7 @@ function shapeOfNode(n: SyntaxNode, extra: Redir[]): Shape {
     }
     case 'c_style_for_statement': {
       // an empty expression is 1 to bash
-      const t = (f: 'initializer' | 'condition' | 'update'): string => (field(n, f)?.text ?? '').trim() || '1';
+      const t = (f: 'initializer' | 'condition' | 'update'): string => norm(field(n, f)?.text ?? '').trim() || '1';
       return { k: 'arith-for', init: t('initializer'), test: t('condition'), step: t('update'), body: bodyOf(field(n, 'body')), redirects: [] };
     }
     case 'case_statement': {
@@ -267,10 +276,10 @@ function shapeOfNode(n: SyntaxNode, extra: Redir[]): Shape {
     }
     case 'function_definition': {
       const body = field(n, 'body')!;
-      return { k: 'function', name: field(n, 'name')!.text, body: fromNode(body) };
+      return { k: 'function', name: norm(field(n, 'name')!.text), body: fromNode(body) };
     }
     case 'arithmetic_command': {
-      const inner = n.text.replace(/^\(\(/, '').replace(/\)\)$/, '');
+      const inner = norm(n.text).replace(/^\(\(/, '').replace(/\)\)$/, '');
       return { k: 'arith', expression: inner.trim(), redirects: [] };
     }
     case 'extended_test': return { k: 'cond', expr: condOf(n.namedChildren[0]), redirects: [] };

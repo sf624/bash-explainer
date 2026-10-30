@@ -189,12 +189,19 @@ export function wordsText(n: SyntaxNode): string {
 }
 
 /**
- * A name as bash reads it (a `variable_name`, a `simple_expansion`, a `subscript`): bash removes a line continuation
- * in a word before it reads the word, so `$y\<newline>a` reads `ya`, though the node's text is written with it
- * (src/syntax/adapters/continuations.ts). Only a removed one is in a name's text.
+ * A name as bash reads it (a `variable_name`, a `simple_expansion`, a `subscript`, the name of a function): bash
+ * removes a line continuation in a word before it reads the word, so `$y\<newline>a` reads `ya` and
+ * `f\<newline>n() …` defines `fn`, though the node's text is written with it (src/syntax/adapters/continuations.ts).
+ * Only a removed one is in a name's text.
  */
 export function nameText(n: SyntaxNode): string {
-  return n.text.replace(/\\\n/g, '');
+  return n.text.includes('\\\n') ? n.text.replace(/\\\n/g, '') : n.text;
+}
+
+/** The name of the array of a `coproc_statement`, as bash reads it: `COPROC` when it has none. */
+export function coprocName(n: SyntaxNode): string {
+  const name = field(n, 'name');
+  return name ? nameText(name) : 'COPROC';
 }
 
 /** A simple command with no name: assignments and redirections only (`a=1`, `a=1 >f b=2`, `>f`). */

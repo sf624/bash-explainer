@@ -6,7 +6,7 @@ import { globToRegex } from '../examples/shellwords';
 import { braceAlternatives, rejoined } from '../semantics/brace';
 import { givesElements } from '../semantics/elements';
 import { staticWordValue } from '../staticword';
-import { descendants, type SyntaxNode } from '../syntax/tree';
+import { descendants, nameText, type SyntaxNode } from '../syntax/tree';
 import type { ArgWord } from './interpret';
 
 /** The text known at the start of a word whose value is not known (`--file=` of `--file=$f`, `-I` of `-I{}`), in a script for `shell`. */
@@ -106,7 +106,7 @@ export function countOf(n: SyntaxNode, shell?: Shell, braces: boolean | 'unknown
 
 /** The parameter of a word that is one unquoted expansion of it and nothing else (`ArgWord.param`: `$a`, `${a}`, `$@`). */
 function loneParameter(n: SyntaxNode): string | undefined {
-  if (n.type === 'simple_expansion') return n.text.slice(1);
+  if (n.type === 'simple_expansion') return nameText(n).slice(1);
   const p = n.type === 'expansion' ? parseExpansion(n.text) : undefined;
   return p?.parts.length === 1 ? p.name : undefined;
 }

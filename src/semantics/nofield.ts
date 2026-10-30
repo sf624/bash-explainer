@@ -3,7 +3,7 @@
 // word of its brace expansion split as `wordFields` splits it (`braceWords`), with what the model knows of its values,
 // and the parts it does not know read as empty, but those that never are (`${#a}`, `$#`, `$?`, `$$`, `$(( ))`, `<( )`).
 import { parseExpansion } from '../expansion';
-import type { SyntaxNode } from '../syntax/tree';
+import { nameText, type SyntaxNode } from '../syntax/tree';
 import { givesElements } from './elements';
 import { attribute, refTarget, type ShellState, type StateModel } from './state';
 import { braceWords, type Piece, wordMeaning } from './words';
@@ -16,7 +16,7 @@ const ELEMENTS: Piece = { text: '', quoted: false, expanded: true };
 /** An expansion whose value is never empty: a length, a count, a status, a PID, arithmetic, a process substitution's path. */
 function neverEmpty(n: SyntaxNode): boolean {
   if (n.type === 'arithmetic_expansion' || n.type === 'process_substitution') return true;
-  return (n.type === 'simple_expansion' && /^\$[#?$]$/.test(n.text)) || (n.type === 'expansion' && n.text.startsWith('${#'));
+  return (n.type === 'simple_expansion' && /^\$[#?$]$/.test(nameText(n))) || (n.type === 'expansion' && n.text.startsWith('${#'));
 }
 
 /**

@@ -2276,4 +2276,30 @@ describe('words as bash reads them: line continuations', () => {
     assert.ok(next.some((s) => s.includes('`ya`') && !s.startsWith('Assign')), next.join('\n'));
     assert.strictEqual(runBash(`HOME=/home/w; ${src}; echo $ya`).stdout, '22 1 /home/w/x x=/home/w/a\n3\n3\n');
   });
+  it('defines a function or a coprocess by the name bash reads, and follows the state through it', () => {
+    // bash: `b`. The function is `fn`, and calling it sets `x`.
+    const src = 'x=0\nf\\\nn() { x=1; }\nfn\nif [ "$x" = 0 ]; then echo a; else echo b; fi';
+    assert.strictEqual(runBash(src).stdout, 'b\n');
+    const def = new Analyzer('en').explainLine(parser.parse(src), 1);
+    assert.ok(def.summary.startsWith('Defines function `fn`;'), def.summary);
+    assert.ok(tokensAt(src, 3).some((t) => t.explanation.startsWith('Call the function `fn` defined on line 2')), tokensAt(src, 3).map((t) => t.explanation).join('\n'));
+    const cond = new Analyzer('en').explainLine(parser.parse(src), 4).notes;
+    assert.ok(cond.some((s) => s.includes('`$x` is `1` here, so this condition is always false')), cond.join('\n'));
+    // bash: the arrays and the PID of the coprocess `ya`.
+    const co = 'coproc y\\\na { :; }\necho ${ya_PID:+pid}';
+    assert.strictEqual(runBash(co).stdout, 'pid\n');
+    assert.ok(tokensAt(co, 0).some((t) => t.explanation.includes('the array `ya`')), tokensAt(co, 0).map((t) => t.explanation).join('\n'));
+  });
+  it('knows the value of `$\\<newline>y`, and matches a pattern without its continuation', () => {
+    // bash: `1`, then `1`; `m`.
+    const src = 'y=1\necho $\\\ny\necho "$y"\ncase ab in a\\\nb) echo m;; esac';
+    assert.strictEqual(runBash(src).stdout, '1\n1\nm\n');
+    for (const line of [1, 3]) {
+      const v = tokensAt(src, line).filter((t) => t.value).map((t) => t.value!.said.text);
+      assert.deepStrictEqual(v, ['Value here, from the script: `1`'], `line ${line + 1}`);
+    }
+    const ex = new Analyzer('en').explainLine(parser.parse(src), 4);
+    const shown = [...ex.examples, ...allTokens(ex.items).flatMap((t) => t.examples ?? [])].flatMap((e) => e.sections.flatMap((s) => s.lines));
+    assert.ok(shown.includes('ab') && !shown.some((l) => l.includes('\n')), shown.join(' | '));
+  });
 });

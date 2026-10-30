@@ -16,7 +16,7 @@ import { type NameResolution, resolveName } from '../semantics/names';
 import { attribute, option, type OptionState, refTarget, shoptIn } from '../semantics/state';
 import { type ExpansionStep, ifsOf, type WordMeaning, wordMeaning } from '../semantics/words';
 import { literalContent, staticWordValue, surelyHasSlash } from '../staticword';
-import type { SyntaxNode } from '../syntax/tree';
+import { nameText, type SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 import { same } from './nodes';
 
@@ -130,7 +130,8 @@ export function globState(glob: ExpansionStep): 'off' | 'may' | 'on' {
 /** The text of an unquoted word (or concatenation of unquoted parts), where braces and globs take effect. */
 export function unquotedWord(a: SyntaxNode): string | undefined {
   const plain = (x: SyntaxNode) => x.type === 'word' || x.type === 'number' || x.type === 'brace_expression';
-  if (plain(a) || (a.type === 'concatenation' && a.namedChildren.every(plain))) return a.text;
+  // (Without the line continuations, which bash removes first: `a\<newline>b` is `ab`.)
+  if (plain(a) || (a.type === 'concatenation' && a.namedChildren.every(plain))) return nameText(a);
   return undefined;
 }
 

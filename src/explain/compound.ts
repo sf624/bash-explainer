@@ -10,7 +10,7 @@ import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { anonSections, programSections } from '../refs';
 import { definitionFails } from '../semantics/names';
-import { field, fields, isShebang, strayKeyword, type SyntaxNode, withLists } from '../syntax/tree';
+import { coprocName, field, fields, isShebang, nameText, strayKeyword, type SyntaxNode, withLists } from '../syntax/tree';
 import { detectShell, SHELL_NAMES } from '../dialect';
 import { shebangOptionTokens } from './argv';
 import type { Explainer } from './context';
@@ -209,7 +209,7 @@ function envLoop(cx: Explainer, assignment?: string): string {
 
 export function functionDef(cx: Explainer, n: SyntaxNode): Token {
   const nameNode = field(n, 'name')!;
-  const name = nameNode.text;
+  const name = nameText(nameNode);
   // A definition is explained on the line it starts on, where its name is.
   const nameTok = [cx.tok(nameNode, 'function', cx.s('関数名', 'Function name'))];
   // A redirection after the body is part of the function: it is applied on every call.
@@ -232,7 +232,7 @@ export function functionDef(cx: Explainer, n: SyntaxNode): Token {
 /** `coproc [NAME] command`: runs the command in the background, with two pipes to it kept in an array. */
 export function coprocStatement(cx: Explainer, n: SyntaxNode): Token {
   const nameNode = field(n, 'name');
-  const arr = nameNode?.text ?? 'COPROC';
+  const arr = coprocName(n);
   const nameTok = nameNode ? [cx.tok(nameNode, 'variable', cx.s(`コプロセスの名前: 配列 \`${arr}\` と変数 \`${arr}_PID\` の名前になる`, `Name of the co-process: names the array \`${arr}\` and the variable \`${arr}_PID\``))] : [];
   return skeletal(cx.tok(n, 'keyword', cx.s(
     `\`coproc\`: コマンドをバックグラウンドのコプロセスとして実行し、その出力と入力につながるファイルディスクリプタを配列 \`${arr}\` に入れる（\`\${${arr}[0]}\` はコプロセスの出力を読む側、\`\${${arr}[1]}\` はその入力に書く側）。プロセス ID は \`${arr}_PID\`${cx.lineRef(n)}`,
@@ -422,7 +422,7 @@ export function contextLabel(cx: Explainer, n: SyntaxNode): string | undefined {
       return cx.s(`case 分岐 \`${pats.join('|')})\``, `case branch \`${pats.join('|')})\``);
     }
     case 'function_definition':
-      return cx.s(`関数 \`${field(n, 'name')?.text}\``, `function \`${field(n, 'name')?.text}\``);
+      return cx.s(`関数 \`${nameText(field(n, 'name')!)}\``, `function \`${nameText(field(n, 'name')!)}\``);
     case 'arithmetic_command':
       return cx.s('(( )) 算術評価', '(( )) arithmetic');
     case 'compound_statement':

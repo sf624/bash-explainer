@@ -11,7 +11,7 @@ import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
 import { partMeaning, wordFields, wordMeaning, wordOf } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { childrenOnRows, field, fields, isShebang, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
+import { childrenOnRows, field, fields, isShebang, nameText, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a
@@ -65,7 +65,7 @@ function alwaysNumber(n: SyntaxNode): boolean {
 function joinedArray(n: SyntaxNode, model: StateModel, shell: Shell | undefined): Params<'array-joined-in-assignment'> | undefined {
   if (!featureWorks('array', shell)) return undefined;
   const p = n.type === 'expansion' ? parseExpansion(n.text) : undefined;
-  const all = n.type === 'simple_expansion' ? n.text === '$@' : !!p && !p.prefix && p.op !== ':' && (p.subscript === undefined ? p.name === '@' : p.subscript === '@');
+  const all = n.type === 'simple_expansion' ? nameText(n) === '$@' : !!p && !p.prefix && p.op !== ':' && (p.subscript === undefined ? p.name === '@' : p.subscript === '@');
   const word = all ? wordOf(n) : undefined;
   if (word?.context !== 'assignment-value') return undefined;
   // (An assignment's value is one word.)
@@ -240,7 +240,7 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         if (cmd === 'ls' || cmd === 'find') add(fact(lang, 'for-over-ls-output', { cmd }), value);
         // `for a in $*` / `for a in $@` (zsh gives each argument as one word, unsplit)
         // The rewrites: `for a in "$@"`, and `for a` alone where `$@` is the only word of the list.
-        if (shell !== 'zsh' && value.type === 'simple_expansion' && /^\$[*@]$/.test(value.text)) {
+        if (shell !== 'zsh' && value.type === 'simple_expansion' && /^\$[*@]$/.test(nameText(value))) {
           const head = n.text.slice(0, field(n, 'variable')!.endIndex - n.startIndex);
           const rewrite = [replaceSpan(n, value, `${head} in "$@"`), ...(fields(n, 'value').length === 1 ? [replaceSpan(n, value, head)] : [])];
           add(fact(lang, 'for-over-unquoted-args', { value: value.text, rewrite }), value);

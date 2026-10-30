@@ -182,7 +182,7 @@ export function concatenationNote(cx: Explainer, n: SyntaxNode): string {
 
 /** An unquoted part that gives one word per element (`$@`, `$*`, `${a[@]}`, `${a[*]}`), even where the IFS is empty. */
 function unquotedElements(n: SyntaxNode): boolean {
-  if (n.type === 'simple_expansion') return n.text === '$@' || n.text === '$*';
+  if (n.type === 'simple_expansion') return nameText(n) === '$@' || nameText(n) === '$*';
   const p = n.type === 'expansion' ? parseExpansion(n.text) : undefined;
   return !!p && p.prefix !== '#' && (p.name === '@' || p.name === '*' || p.subscript === '@' || p.subscript === '*');
 }

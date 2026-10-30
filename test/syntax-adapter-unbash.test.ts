@@ -1,6 +1,9 @@
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
+import { forEachChild, parse } from 'unbash';
+import { continuations, prepared } from '../src/syntax/adapters/continuations';
+import type { Children } from '../src/syntax/adapters/rereads';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, hasError, nameText, token } from '../src/syntax/tree';
 import type { SyntaxNode } from '../src/syntax/tree';
@@ -9,7 +12,7 @@ import type { Token } from '../src/analyzer';
 import { findBashAst, runBashAst, shapeOfAst } from './support/bashast';
 import { corpus, invariants } from './support/corpus';
 import { soundness } from './support/fuzz';
-import { fastest } from './support/growth';
+import { assertGrowth, fastest } from './support/growth';
 import { diffShapes, shapeOfTree } from './support/shape';
 import { runBash } from './support/bash';
 
@@ -416,6 +419,78 @@ describe('unbash adapter: line continuations in a word', () => {
       assert.ok(a.ok, s);
       assert.deepStrictEqual(diffShapes(shapeOfTree(tree(s).root), shapeOfAst(a.ast)).filter((d) => !d.path.endsWith('.line')), [], s);
     }
+  });
+  // Scripts whose reading depends on a line continuation outside a word, with what bash 5.2 and 5.3 print (and false
+  // where bash-ast's shape is not compared: it prints a substitution without its comments).
+  const OUTSIDE: [string, string, false?][] = [
+    // (A comment ends at the newline of a continuation in it: in an array, a `case`, a group, a substitution.)
+    ['a=(\n  -v   # verbose \\\n  -q\n)\nprintf "<%s>" "${a[@]}"', '<-v><-q>'],
+    ['a=(1 # c \\\n2)\nprintf "<%s>" "${a[@]}"', '<1><2>'],
+    ['case a in a) echo x # c \\\n;; esac', 'x\n'],
+    ['{ echo x # c \\\n}', 'x\n'],
+    ['x=$(echo y # c \\\n)\necho "$x"', 'y\n', false],
+    ['y=1 ya=2; x=$(cat <<E\n$y\\\na \\\nb\nE\n)\necho "$x"', '2 b\n'],
+    // (In an unquoted heredoc body it is removed, before the delimiter is looked for; in a quoted one it stays.)
+    ['y=1 ya=2; cat <<E\n$y\\\na\nx\\\nE\nE\necho next', '2\nxE\nnext\n'],
+    ["cat <<'E'\na\\\nb\nE", 'a\\\nb\n'],
+    ['cat <<E\na\\\\\nb\nE', 'a\\\nb\n'],
+    // (It joins an operator or a reserved word, and a name in `(( ))`.)
+    ['true &\\\n& echo and', 'and\n'],
+    ['true &\\\n\\\n& echo and', 'and\n'],
+    ['echo a#b &\\\n& echo c', 'a#b\nc\n'],
+    ['echo a #c&\\\necho b', 'a\nb\n'],
+    ['echo x >\\\n> /dev/null && echo app', 'app\n'],
+    ['if true; then echo a; f\\\ni', 'a\n'],
+    ['for i in 1; do echo $i; do\\\nne', '1\n'],
+    ['y=1 ya=3; (( y\\\na += 1 )); echo $ya', '4\n'],
+    ['for ((i\\\n=0; i<1; i++)); do echo $i; done', '0\n'],
+    ['for ((i=0; i<1; i+\\\n+)); do echo $i; done; for ((;;)); do break; done; for ((i=2;;)); do echo $i; break; done; for ((;i<\\\n3;)); do echo $i; break; done', '0\n2\n2\n'],
+    ['x=0\nf\\\nn() { x=1; }\nfn; echo $x', '1\n'],
+    // (With a process substitution attached to the word, or split from its `(`.)
+    ["printf '<%s>' a\\\n<(:) a<(:)\\\nb a <\\\n(:) | sed 's#/dev/fd/[0-9]*#FD#g'", '<aFD><aFDb><a><FD>'],
+  ];
+  it('reads a line continuation outside a word as bash does: kept in a comment, removed elsewhere', () => {
+    const bash53 = process.env.BASH_EXPLAINER_BASH53;
+    const bin = findBashAst();
+    for (const [text, out, shape] of OUTSIDE) {
+      for (const program of ['bash', ...(bash53 ? [bash53] : [])]) assert.strictEqual(runBash(text, { program }).stdout, out, `${program}: ${text}`);
+      assert.deepStrictEqual(tree(text).errors, [], text);
+      assert.deepStrictEqual(invariants(tree(text)), [], text);
+      if (!bin || shape === false) continue;
+      const a = runBashAst(bin, text);
+      assert.ok(a.ok, text);
+      assert.deepStrictEqual(diffShapes(shapeOfTree(tree(text).root), shapeOfAst(a.ast)).filter((d) => !d.path.endsWith('.line')), [], text);
+    }
+    // The comments are nodes, with the backslash that ends them.
+    assert.deepStrictEqual(types(tree(OUTSIDE[0][0]).root, 'comment').map((c) => c.text), ['# verbose \\']);
+    assert.deepStrictEqual(types(tree(OUTSIDE[0][0]).root, 'array')[0].namedChildren.map((c) => c.text), ['-v', '# verbose \\', '-q']);
+    assert.strictEqual(types(tree(OUTSIDE[6][0]).root, 'heredoc_body')[0].text, '$y\\\na\nx\\\nE\n');
+    assert.strictEqual(nameText(types(tree(OUTSIDE[6][0]).root, 'variable_name').pop()!), 'ya');
+    assert.strictEqual(types(tree(OUTSIDE[7][0]).root, 'heredoc_body')[0].children.length, 0);
+    assert.strictEqual(nameText(types(tree(OUTSIDE.find(([t]) => t.includes('(( y'))![0]).root, 'variable_name')[2]), 'ya');
+    const ps = fields(types(tree(OUTSIDE.find(([t]) => t.includes('<(:)'))![0]).root, 'command')[0], 'argument').slice(1);
+    assert.deepStrictEqual(ps.map((a) => [a.type, a.text]), [['concatenation', 'a\\\n<(:)'], ['concatenation', 'a<(:)\\\nb'], ['word', 'a'], ['process_substitution', '<\\\n(:)']]);
+    assert.deepStrictEqual(ps.slice(0, 2).map((a) => a.namedChildren.map((c) => c.type)), [['word', 'process_substitution'], ['word', 'process_substitution', 'word']]);
+    // (A comment that ends with one, and the error bash gives after it.)
+    assert.deepStrictEqual(tree('echo a # c \\\n&& b').errors.map((e) => e.startIndex), [13, 16]);
+    assert.notStrictEqual(runBash('echo a # c \\\n&& b').status, 0);
+    // (Text that unbash cannot read: a heredoc with no delimiter, a `for (( ))` with no end.)
+    for (const text of ['a\\\nb; cat <<', 'a\\\nb; for ((i=0; i<1']) assert.ok(tree(text).errors.length, text);
+  });
+  it('reads the text once when no continuation changes what unbash reads, and in time that grows with the text', () => {
+    const reads = (text: string): number => {
+      let n = 0;
+      prepared(text, (t) => (n++, parse(t)), forEachChild as unknown as Children);
+      return n;
+    };
+    // (Between words, or at the end of a word before a blank, unbash reads one as a blank.)
+    assert.strictEqual(reads('cp -v \\\n  a\\\n  b'), 1);
+    assert.strictEqual(reads('echo a # c \\\nb'), 1);
+    assert.strictEqual(reads('echo a'), 0);
+    assert.deepStrictEqual(continuations(parse('cp -v \\\n  a\\\n  b; x=$(: # \\\n)'), forEachChild as unknown as Children, 'cp -v \\\n  a\\\n  b; x=$(: # \\\n)'), []);
+    assert.deepStrictEqual(continuations(parse('a\\\nb; echo "$\\\\\n"'), forEachChild as unknown as Children, 'a\\\nb; echo "$\\\\\n"'), [1]);
+    const script = (n: number): string => 'echo "$y\\\na" b\\\nc \\\n  d\n'.repeat(n);
+    assertGrowth('500 commands, then 4000', () => ub.parse(script(500)), () => ub.parse(script(4000)), 16);
   });
   it('places an arithmetic text where it is written, or gives none across a removed continuation', () => {
     const t = tree('echo $\\\ny; let "a = 1 + 2"');

@@ -8,7 +8,7 @@ import { lookupCommand } from '../dict/aliases';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
 import { type MappedText, staticWordText } from '../staticword';
-import { descendants, fields } from '../syntax/tree';
+import { descendants, fields, nameText } from '../syntax/tree';
 import type { SyntaxNode, SyntaxTree } from '../syntax/tree';
 import { commandName } from './effects';
 import { type ExecEnv, type SlotLink, slotEnvs } from './env';
@@ -56,7 +56,7 @@ export function plainReads(script: NestedScript): { name: string; at: SyntaxNode
   for (const e of descendants(script.tree.root, ['simple_expansion', 'expansion'])) {
     const p = e.type === 'expansion' ? parseExpansion(e.text) : undefined;
     // (An expansion of one part is its name alone: `${v}`.)
-    const name = e.type === 'simple_expansion' ? e.text.slice(1) : p?.parts.length === 1 ? p.name : undefined;
+    const name = e.type === 'simple_expansion' ? nameText(e).slice(1) : p?.parts.length === 1 ? p.name : undefined;
     if (name !== undefined && /^[A-Za-z_]\w*$/.test(name)) out.push({ name, at: e });
   }
   return out;

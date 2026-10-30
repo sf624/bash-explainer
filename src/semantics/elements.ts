@@ -2,7 +2,7 @@
 // inside a longer double-quoted string (`"pre$@post"`) and unquoted (where each word is then split further). Read by
 // the explanation of words and arguments (src/explain/) and by the argument interpreter's words (src/argv/words.ts).
 import { parseExpansion } from '../expansion';
-import type { SyntaxNode } from '../syntax/tree';
+import { nameText, type SyntaxNode } from '../syntax/tree';
 import type { WordMeaning } from './words';
 
 /**
@@ -32,7 +32,7 @@ const SUBSTITUTIONS = new Set(['command_substitution', 'process_substitution', '
  * holds one when one of its parts is one.
  */
 export function givesElements(n: SyntaxNode): boolean {
-  if (n.type === 'simple_expansion') return n.text === '$@';
+  if (n.type === 'simple_expansion') return nameText(n) === '$@';
   if (n.type === 'string') return n.namedChildren.some(givesElements);
   if (n.type !== 'expansion') return false;
   const p = parseExpansion(n.text);

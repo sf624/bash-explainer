@@ -292,14 +292,17 @@ const rowOf = <R>(table: Readonly<Record<string, R>>, key: string, missing: () =
 /** The row of a node type (one the table does not have trusts nothing). */
 export const syntaxRow = (type: string): Row => rowOf<Row>(SYNTAX, type, () => unlisted(`the node type \`${type}\``));
 
-const NAME_NODES = new Set(['variable_name', 'special_variable_name', 'simple_expansion', 'subscript']);
 /**
- * The row of a node: that of its type, but a name that a line continuation splits trusts nothing (`$y\<newline>a`,
- * `${\<newline>y}`): bash removes it before it reads the name, and the model reads the names of nodes as written.
+ * The row of a node: that of its type, but a name that a line continuation splits trusts nothing (`y\<newline>a=1`,
+ * `$((y\<newline>a))`, `${\<newline>y}`): bash removes it before it reads the name, and the model reads most names
+ * as written. Those it reads as bash does (`nameText`) are left out: the name of `$y\<newline>a` or `$\<newline>y`,
+ * and that of a function or a coprocess.
  */
 export function nodeRow(n: SyntaxNode): Row {
-  const name = n.type === 'expansion' ? n.namedChildren.find((c) => NAME_NODES.has(c.type)) : NAME_NODES.has(n.type) ? n : undefined;
-  return name && n.text.slice(0, name.endIndex - n.startIndex).includes('\\\n') ? blinds('a name that a line continuation splits') : syntaxRow(n.type);
+  const split = n.type === 'expansion'
+    ? n.text.slice(0, (n.namedChildren.find((c) => c.type === 'variable_name' || c.type === 'special_variable_name' || c.type === 'subscript')?.endIndex ?? n.startIndex) - n.startIndex).includes('\\\n')
+    : (n.type === 'variable_name' || n.type === 'subscript') && n.parent!.type !== 'simple_expansion' && n.parent!.type !== 'expansion' && n.text.includes('\\\n');
+  return split ? blinds('a name that a line continuation splits') : syntaxRow(n.type);
 }
 
 /**

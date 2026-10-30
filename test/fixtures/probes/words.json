@@ -3054,15 +3054,26 @@
   },
   {
     "manual": "3.1.2.1",
-    "snippet": "y=1 ya=22; @PROBE:a@ \"$y\\\na\" $\\\ny ${\\\ny}",
-    "gaps": {
-      "a": "a name that a line continuation splits trusts nothing (allow.ts, nodeRow): the model reads the names of nodes as written; the explanation reads them as bash does (`ya`, `y`)"
-    },
+    "snippet": "y=1 ya=22; @PROBE:a@ \"$y\\\na\" $\\\ny",
     "facts": {
       "a": [
         [
           "22",
-          "1",
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.1.2.1",
+    "snippet": "y=1; @PROBE:a@ ${\\\ny}",
+    "gaps": {
+      "a": "a name that a line continuation splits in `${ }` trusts nothing (allow.ts, nodeRow): the model reads it as written; the explanation reads it as bash does (`y`)"
+    },
+    "facts": {
+      "a": [
+        [
           "1"
         ]
       ],
