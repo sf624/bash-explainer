@@ -7,6 +7,7 @@ import type { CommandSpec, OperandSpec, OptionSpec, PatternOption } from '../arg
 import { tx } from '../i18n';
 import { basic, DATE_OPERANDS } from './basic';
 import { psLetters } from './psletters';
+import { SUDO_BSD_OPTIONS, SUDO_UNKNOWN_OPTION } from './sudoopts';
 import { storage } from './storage';
 import { admin } from './admin';
 import { netadmin, SSH_OPTION_VALUES } from './netadmin';
@@ -1351,10 +1352,9 @@ export const core: Record<string, CommandSpec> = {
     ['-U|--other-user', '`-l` で一覧を表示するユーザー', 'user whose commands `-l` lists', 'arg'],
     ['-r|--role', 'SELinux のロール', 'SELinux role', 'arg'],
     ['-t|--type', 'SELinux のタイプ', 'SELinux type', 'arg'],
+    ...SUDO_BSD_OPTIONS,
   ], {
-    parser: 'getopt_long', optionsFirst: true,
-    // (The spec lists the options of sudo 1.9 on Linux. `-a` and `-c` are BSD's: sudo(8) here has neither.)
-    unknownOption: tx('sudo（Linux）にないオプション（`-a`、`-c` は BSD 版のもの）: sudo は `invalid option` と使い方を表示し、何も実行せずに失敗する', 'an option sudo (Linux) does not have (`-a` and `-c` are in the BSD builds only): sudo says `invalid option`, prints its usage, and fails, running nothing'),
+    parser: 'getopt_long', optionsFirst: true, unknownOption: SUDO_UNKNOWN_OPTION,
     operands: [
       { when: { option: ['-s', '-i'] }, pattern: [ASSIGNMENTS, runs({ run: 'shell-string', joinsWords: true, escapesWords: true, env: 'reset', keeps: SUDO_KEEPS })] },
       { when: { option: ['-E', '--preserve-env'] }, pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'variables' })] },

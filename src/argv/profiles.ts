@@ -101,9 +101,9 @@ export const squeeze = (roles: readonly Role[]): Role[] => roles.filter((r, i) =
 const keysOf = (roles: readonly Role[]): string => roles.map((r) => r.key).join('\x01');
 
 /** The profile of a word read at each of its own counts `counts` (`WordAt`). */
-function profileOf(t: ReadingsTable, counts: readonly number[], read: readonly WordAt[], orMore: boolean): Profile {
+function profileOf(t: ReadingsTable, counts: readonly number[], read: readonly WordAt[], orMore: boolean, asRead = false): Profile {
   const entries = read.map((x): Entry => {
-    if (x.outcome !== 'read') return { outcome: x.outcome };
+    if (x.outcome === 'unknown' || (x.outcome === 'refused' && !asRead)) return { outcome: x.outcome };
     const by = readers(t.reading(x.sums).parse, x.owners);
     return {
       outcome: 'read',
@@ -208,6 +208,14 @@ export function wordReadings(t: ReadingsTable, k: number): WordReadings | Depend
   const own = t.variableAt[k];
   const orMore = own !== undefined && (t.variables[own].max ?? Infinity) > t.variables[own].top;
   const profiles = cx.contexts.map((context) => profileOf(t, cx.own, cx.own.map((c) => t.readAt(k, context, c)), orMore));
+  // (The line as written is the one the explanation says first: where the tool refuses it (`sudo -u $u -Z ls y`), its roles are
+  // still the ones said, and the other readings are told from them, as if it were read: unless a word of it is an operand the spec
+  // does not describe, where no form fitted (`unmatched`) and there is no role to say. A refused context stays free.)
+  const baseAt = cx.contexts.findIndex((context) => context.every((v, i) => v === cx.base[i]));
+  const written = cx.own.map((c) => t.readAt(k, cx.contexts[baseAt], c));
+  if (profiles[baseAt].entries.every((e) => e.outcome === 'refused') && written.every((x) => x.fields.every((r) => r.role !== 'operand' || r.spec))) {
+    profiles[baseAt] = profileOf(t, cx.own, written, orMore, true);
+  }
   if (profiles.some((p) => p.entries.some((e) => e.outcome === 'unknown'))) return { kind: 'depends', words: names() };
   const named = cx.coordinates.map((c, i) => ({ c, i })).filter(({ c }) => c.mult.size);
   const places = named.map(({ c, i }): Place => {
@@ -217,7 +225,6 @@ export function wordReadings(t: ReadingsTable, k: number): WordReadings | Depend
     const parts = [...c.mult.keys()].some((v) => t.variables[v].part);
     return { words, one, counted: one || [...c.mult.values()].every((m) => m === 1), ...(parts ? { parts: true as const } : {}), values: cx.contexts.map((context) => valueOf(c, context[i], most)) };
   });
-  const baseAt = cx.contexts.findIndex((context) => context.every((v, i) => v === cx.base[i]));
   const base = profiles[baseAt];
   const out: WordReadings = { kind: 'read', places, contexts: cx.contexts, profiles, base, clauses: [] };
   // (The classes, in the order of their first context. The base class gets no clause; nor do the contexts where every

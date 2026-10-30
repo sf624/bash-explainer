@@ -16,11 +16,11 @@ export function unknownOption(cx: Explainer, parse: Pick<ArgvParse, 'command' | 
   const program = parse.program ?? command;
   // (`bash -x --posix`: long options only before the others, the parser rule `longFirst`.)
   if (late) return cx.t(spec.lateOption!);
-  if (spec.unknownOption) return cx.t(spec.unknownOption);
   if (ambiguous) {
     const names = ambiguous.map((n) => `\`${n}\``).join(cx.s('、', ', '));
     return cx.s(`あいまいなオプション（先頭が同じ長いオプションが複数ある: ${names}）。${program} は受け付けない`, `Ambiguous option (it starts several long options: ${names}); ${program} refuses it`);
   }
+  if (spec.unknownOption) return cx.t(spec.unknownOption);
   // (A builtin's spec has every option bash's builtin takes: any other is one it refuses before doing anything.)
   if (spec.builtin) {
     return cx.s(`bash の \`${command}\` にないオプション: bash は \`invalid option\` と表示し、\`${command}\` は何もせずに失敗する（終了ステータス 2。オプションは \`help ${command}\` にある）`,

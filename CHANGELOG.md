@@ -145,7 +145,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - Where an argument's role depends on how many words several variables give, the explanation now reads all their counts together, options too (`cp -t $d $a b`, `echo $a -n x`).
 - `date 0101` and `date x` are read as a date to set, not as an output format, and `date -d now x` is refused for lacking a leading `+`. `mknod n p 1 2` and `dircolors -p a` are refused as extra operands, `shuf -e a b c` takes its words as lines, and `getconf -a` is known. Before, `date x` was labelled an output format, and the other words were device numbers, a settings file and target files.
 - The worked examples of a default for an integer variable follow bash's arithmetic: after `declare -i y`, `${y:=p=3}` gives 3 (and sets `p`), and a set `y` is a number. Before, they showed `p=3` and `y=hello`.
-- `sudo -c` and `sudo -a` are no sudo options on Linux (they belong to the BSD builds): the explanation says sudo refuses them, and no longer reads the rest of the line as if sudo took them. Before, `sudo -u $u tar -cf x y` with `$u` empty explained `y` as an argument of `x`.
+- `sudo -c` and `sudo -a` (BSD's login class and authentication type) are explained as Linux sudo treats them: it reads the option, then prints its usage and fails. Other options sudo does not have say `invalid option`. The rest of the line is no longer read as if sudo took them. Before, `sudo -u $u tar -cf x y` with `$u` empty explained `y` as an argument of `x`.
 
 ## 0.8.0
 
