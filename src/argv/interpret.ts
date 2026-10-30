@@ -248,7 +248,8 @@ export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretCon
 }
 
 
-const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ? [] : Array.isArray(o.value) ? o.value : [o.value]);
+/** The values an option takes (none, one, or one of several forms). */
+export const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ? [] : Array.isArray(o.value) ? o.value : [o.value]);
 /**
  * An item that takes every word left: an `exec` or `current-shell` command, or a shell string joined from the words
  * (ssh). A `shell-string` slot and a `later` one (trap's action) take one word.
