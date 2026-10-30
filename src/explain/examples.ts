@@ -655,8 +655,8 @@ function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[]): void {
   for (const c of n.namedChildren) {
     if (c.type !== 'variable_assignment' || field(c, 'name')?.text !== 'IFS') continue;
     const v = field(c, 'value');
-    const lit = v ? literalContent(v) : { text: '' };
-    ifs = lit?.text.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
+    // (Its value as bash makes it: `'\t'` and `"\t"` are a backslash and a `t`, `$'\t'` is a tab.)
+    ifs = v ? staticWordValue(v, true, cx.shell) : '';
     if (ifs === undefined) break;
   }
   // The line the command reads, when a here-string gives it: `read -a p <<< "a,b,,c,"`.
