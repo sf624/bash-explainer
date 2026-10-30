@@ -218,7 +218,8 @@ function countClauses(e: string): { word: string; clauses: { from: number; to?: 
   const from = Number(head[3] ?? 1);
   const clauses: { from: number; to?: number; text: string }[] = [{ from, to: from, text: head[1] }];
   for (const part of parts.slice(1)) {
-    const m = /^(.*) when it expands to (?:(more)|(\d+) words( or more)?)$/.exec(part);
+    // (An explanation of the role may follow the condition, "… when it expands to more — replacement characters: …" of `tr`.)
+    const m = /^(.*) when it expands to (?:(more)|(\d+) words( or more)?)(?: — .*)?$/.exec(part);
     if (!m) return undefined;
     const at = m[2] ? clauses[clauses.length - 1].to! + 1 : Number(m[3]);
     clauses.push({ from: at, to: m[2] || m[4] ? undefined : at, text: m[1] });
@@ -361,9 +362,13 @@ export function showsRole(role: ArgRole, tokens: readonly Token[], place: FieldP
       return flagsOf(role).every((f) => tokens.some((t) => showsFlag(t, f)) || items.some((e) => showsFlag({ kind: 'option', explanation: e } as Token, f)));
     case 'end-of-options':
       return tokens.some((t) => t.kind === 'option') || items.some((e) => e.includes('(end of options)'));
-    case 'value':
+    case 'value': {
+      // (A later field of a value of two words or more (`--arg NAME VALUE`): the others of the first are said to be "value for `--arg`" among them.)
+      const rest = spliced ? restOf(tokens) : undefined;
+      if (rest !== undefined && !held.length) return rest.includes(`value for \`${dash(role.of)}\``);
       if (held.length) return held.some((x) => [`value for \`${dash(role.of)}\``, `name for \`${dash(role.of)}\``].includes(x));
       return tokens.some((t) => t.valueFor === dash(role.of)) || items.some((e) => e.includes(`(value for \`${dash(role.of)}\`)`));
+    }
     case 'operand': {
       if (role.spec?.assignment || role.assignment) return undefined;
       // (The words after the first of a value: the roles its token names, or any where it names none.)
