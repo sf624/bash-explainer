@@ -224,6 +224,8 @@ describe('the field domain (fieldshape.ts)', () => {
     it('does not know the words the word model reads otherwise than bash', () => {
       assert.deepStrictEqual(['~\\\n', '"$y\\\na"', '$\\\n{x}', '$x\\\n{a,b}','a<(:)', '<(:)a', '1<(:)"x"', '<(:)\\\n$x','$${1..2}', '$$$${a,b}', 'a{Z..a}', '{a..c}{Z..a}', '$_{a,b}'].map((t) => shapesOf(`show ${t}`)), Array(13).fill(undefined));
       assert.deepStrictEqual(['$$${x}','{a..c}', '<(:)', '~/a', '$y-a'].map((t) => !!shapesOf(`show ${t}`)), [true, true, true, true, true]);
+      // (Before a redirection, a process substitution is one field: bash, `IFS=/; printf '<%s>' <(:)>f` writes `</dev/fd/63>`.)
+      assert.deepStrictEqual(shapesOf('IFS=/; show <(:)>f')!.cases[0].map((s) => 'fields' in s && s.fields.length), [1]);
       // (An IFS with a control character, `\v`; with a glob character, where a value has a backslash.)
       assert.deepStrictEqual([shapesOf("IFS=$'\\v'; show $x"), shapesOf("IFS='*'; show $x", new Map([['x', ['a\\*b']]])), !!shapesOf("IFS='*'; show $x"), !!shapesOf("IFS=$'\\v'; show \"$x\"")],
         [undefined, undefined, true, true]);

@@ -465,14 +465,9 @@ function misread(w: WordMeaning): boolean {
     return true;
   };
   const plainText = (top: SyntaxNode) => (d: SyntaxNode): boolean => /['"$`]/.test(d.text.replace(/\\[^]/g, '')) && outer(d, top);
-  if (w.nodes.some((x) => descendants(x, ['word', 'extglob_pattern']).some(plainText(x)) || descendants(x, ['command_substitution']).some((e) => e.text.startsWith('${')))) return true;
-  const top = w.nodes[0];
-  const sibs = top.parent!.namedChildren;
-  const i = sibs.indexOf(top);
-  // (Also across a line continuation, `<(:)\<newline>$@`.)
-  const between = (a: SyntaxNode, b: SyntaxNode): string => top.parent!.text.slice(a.endIndex - top.parent!.startIndex, b.startIndex - top.parent!.startIndex);
-  const touches = (o: SyntaxNode | undefined, before: boolean): boolean => !!o && /^(?:\\\n)*$/.test(before ? between(o, top) : between(top, o));
-  return [touches(sibs[i - 1], true) && sibs[i - 1], touches(sibs[i + 1], false) && sibs[i + 1]].some((o) => o && [o.type, top.type].includes('process_substitution'));
+  // (The parser reads a process substitution joined to other text as one word, also across a line continuation,
+  // `<(:)\<newline>$x`; one before a redirection, `<(:)>f`, is one field, as bash gives it.)
+  return w.nodes.some((x) => descendants(x, ['word', 'extglob_pattern']).some(plainText(x)) || descendants(x, ['command_substitution']).some((e) => e.text.startsWith('${')));
 }
 
 /**
