@@ -1,7 +1,8 @@
 // The texts of a word's readings (docs/design/count-hedges.md, sections 2.6 and 2.7): its profile as written, a clause
-// "profile when condition" for each other class, the text the classes fold into past the budget, and the text past the
-// cap; in Japanese and English, with the names of the words and the texts of the roles from the caller. Nothing reads them
-// yet: src/explain/operand-texts.ts renders them from step 4 on.
+// "when condition, profile" for each other class, the text the classes fold into past the budget, and the text past the
+// cap; in Japanese and English, with the names of the words and the texts of the roles from the caller (who can name the
+// command that reads a role: `Role.by`). Each clause is a sentence of its own, so the reader sees where a condition ends.
+// Nothing reads them yet: src/explain/operand-texts.ts renders them from step 4 on.
 import type { Text } from '../i18n';
 import type { Atom, Clause, CountGroup, Depends, Folded, Place, Profile, Role, WordReadings } from './profiles';
 import { squeeze } from './profiles';
@@ -25,12 +26,19 @@ function listOf(roles: readonly Role[], names: Names): Text {
   return { ja: texts.map((t) => t.ja).join('・'), en: en.length > 1 ? `${en.slice(0, -1).join(', ')}, then ${en.at(-1)}` : en[0] };
 }
 
-/** Roles any of which a word may be: "X or Y", "X, Y or Z"; "X・Yのどれか". */
+/** Roles any of which a word may be: "X or Y", "X, Y or Z"; "X・Yのどちらか", "X・Y・Zのどれか". */
 function anyOf(roles: readonly Role[], names: Names): Text {
   const texts = roles.map(names.role);
   const en = texts.map((t) => t.en);
-  return { ja: texts.map((t) => t.ja).join('・') + (texts.length > 1 ? 'のどれか' : ''), en: en.length > 1 ? `${en.slice(0, -1).join(', ')} or ${en.at(-1)}` : en[0] };
+  const which = texts.length > 2 ? 'のどれか' : texts.length > 1 ? 'のどちらか' : '';
+  return { ja: texts.map((t) => t.ja).join('・') + which, en: en.length > 1 ? `${en.slice(0, -1).join(', ')} or ${en.at(-1)}` : en[0] };
 }
+
+/** "gives" after one word, "give" after several. */
+const gives = (words: readonly number[]): string => (words.length > 1 ? 'give' : 'gives');
+
+/** The first letter as a capital, for a clause that starts a sentence. */
+const sentence = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
 /**
  * An atom (section 2.5): of one word, "`$a` expands to nothing", "to a single word", "to several words", "to 3 words",
@@ -54,85 +62,92 @@ export function conditionText(places: readonly Place[], atoms: readonly Atom[], 
   return b ? { ja: `${a.ja}で ${b.ja}`, en: `${a.en} and ${b.en}` } : a;
 }
 
-/** How many of its own words a group of own counts is: "a single word", "2 words", "3 words or more", "more" (after the count before), "2 to 4 words". */
+/** Conditions any of which says a clause: "when A, or when B"; "A、または B なら". */
+function whenText(places: readonly Place[], conditions: readonly (readonly Atom[])[], names: Names): Text {
+  const texts = conditions.map((c) => conditionText(places, c, names));
+  return { ja: `${texts.map((t) => t.ja).join('、または ')}なら`, en: `when ${texts.map((t) => t.en).join(', or when ')}` };
+}
+
+/** How many of its own words a group of own counts is: "2 words", "3 words or more", "more words" (after the count before), "1 to 4 words". */
 function countText(groups: readonly CountGroup[], j: number): Text {
   const { from, to, orMore } = groups[j];
-  if (orMore) return { ja: `${from}語以上`, en: j && groups[j - 1].to === from - 1 ? 'more' : `${from} words or more` };
+  if (orMore) return { ja: `${from}語以上`, en: j && groups[j - 1].to === from - 1 ? 'more words' : `${from} words or more` };
   if (from < to) return { ja: `${from}〜${to}語`, en: `${from} to ${to} words` };
-  return { ja: `${from}語`, en: from === 1 ? 'a single word' : `${from} words` };
+  // (One word alone is said by its role: `byCountText`.)
+  return { ja: `${from}語`, en: `${from} words` };
 }
 
 /**
- * The profile as written, said first (section 2.6): its role; by place, "X; when `$v` expands to several words, this is
- * its first word, and the others are Y, then Z"; by own count, as `cp $a` is said today ("source when `$a` expands to a
- * single word; when it expands to 2 words, they are source, then destination; …"). A word of a known number of words
- * (fields the model knows) says each: "its words are X, then Y". Nothing where every own count is refused (`jq --arg $n`
- * as written): the role as written stays.
+ * The roles of a word for each group of its own counts, as `cp $a` is said today: "source when `$a` expands to a single
+ * word; when it expands to 2 words, they are source, then destination; when it expands to more words, they are …";
+ * "`$a` が1語に展開されるならコピー元、2語なら順に …".
  */
-export function baseText(p: Profile, k: number, names: Names): Text {
-  const w = names.word(k);
-  if (!p.groups.length) return { ja: '', en: '' };
-  if (p.places) {
-    const [first, ...rest] = squeeze(p.places);
-    const x = names.role(first);
-    if (!rest.length) return x;
-    if (p.counts.length === 1) {
-      const all = listOf(squeeze(p.places), names);
-      return { ja: `順に${spaced(all.ja)}`, en: `its words are ${all.en}` };
-    }
-    const others = squeeze(p.places.slice(1));
-    const l = listOf(others, names);
-    return others.length > 1
-      ? { ja: `${x.ja}、${w} が2語以上に展開されるならこの語は最初の語で、残りの語は順に${spaced(l.ja)}`, en: `${x.en}; when ${w} expands to several words, this is its first word, and the others are ${l.en}` }
-      : { ja: `${x.ja}、${w} が2語以上に展開されるならこの語は最初の語で、残りの各語は${spaced(l.ja)}`, en: `${x.en}; when ${w} expands to several words, this is its first word, and each of the others is ${l.en}` };
-  }
-  const parts = p.groups.map((g, j): Text => {
+function byCountText(groups: readonly CountGroup[], w: string, names: Names): Text {
+  const parts = groups.map((g, j): Text => {
     const l = listOf(g.roles, names);
     if (g.from === 1 && g.to === 1) return { ja: `${w} が1語に展開されるなら${spaced(l.ja)}`, en: `${l.en} when ${w} expands to a single word` };
-    const c = countText(p.groups, j);
+    const c = countText(groups, j);
     return j ? { ja: `${c.ja}なら順に${spaced(l.ja)}`, en: `when it expands to ${c.en}, they are ${l.en}` } : { ja: `${w} が${c.ja}に展開されるなら順に${spaced(l.ja)}`, en: `when ${w} expands to ${c.en}, they are ${l.en}` };
   });
   return { ja: parts.map((x) => x.ja).join('、'), en: parts.map((x) => x.en).join('; ') };
 }
 
 /**
- * A clause (section 2.6): "X when C"; by place, "when C, its words are X, Y, then Z"; by own count, "when C, it is X with
- * a single word, and they are X, then Y with 2 words or more".
+ * The profile as written, said first (section 2.6): its role; by place, "X; when `$v` expands to several words, this is
+ * its first word, and the others are Y, then Z"; by own count, as `cp $a` is said today. A word of a known number of
+ * words (fields the model knows) says each: "its words are X, then Y". Nothing where every own count is refused
+ * (`jq --arg $n` as written): the role as written stays.
  */
-export function clauseText(r: WordReadings, c: Clause, names: Names): Text {
-  const when = conditionText(r.places, c.atoms, names);
-  const p = c.profile;
-  if (p.places) {
-    const roles = squeeze(p.places);
-    const l = listOf(roles, names);
-    return roles.length > 1 ? { ja: `${when.ja}なら順に${spaced(l.ja)}`, en: `when ${when.en}, its words are ${l.en}` } : { ja: `${when.ja}なら${spaced(l.ja)}`, en: `${l.en} when ${when.en}` };
+export function baseText(p: Profile, k: number, names: Names): Text {
+  const w = names.word(k);
+  if (!p.groups.length) return { ja: '', en: '' };
+  if (!p.places) return byCountText(p.groups, w, names);
+  const [first, ...rest] = squeeze(p.places);
+  const x = names.role(first);
+  if (!rest.length) return x;
+  if (p.counts.length === 1) {
+    const all = listOf(squeeze(p.places), names);
+    return { ja: `順に${spaced(all.ja)}`, en: `its words are ${all.en}` };
   }
-  const parts = p.groups.map((g, j): Text => {
-    const l = listOf(g.roles, names);
-    const n = countText(p.groups, j);
-    const one = g.from === 1 && g.to === 1;
-    return { ja: `${j ? '' : 'この語が'}${n.ja}のとき${one ? '' : '順に'}${spaced(l.ja)}`, en: one ? `it is ${l.en} with ${n.en}` : `they are ${l.en} with ${n.en}` };
-  });
-  const ja = parts.map((x) => x.ja).join('、');
-  const en = parts.length > 1 ? `${parts.slice(0, -1).map((x) => x.en).join(', ')}, and ${parts.at(-1)!.en}` : parts[0].en;
-  return { ja: `${when.ja}なら、${ja}`, en: `when ${when.en}, ${en}` };
+  const others = squeeze(p.places.slice(1));
+  const l = listOf(others, names);
+  const ja = `${x.ja}、${w} が2語以上に展開されるなら、これは最初の語の役割で、`;
+  return others.length > 1
+    ? { ja: `${ja}残りの語は順に${spaced(l.ja)}`, en: `${x.en}; when ${w} expands to several words, this is its first word, and the others are ${l.en}` }
+    : { ja: `${ja}残りの各語は${spaced(l.ja)}`, en: `${x.en}; when ${w} expands to several words, this is its first word, and each of the others is ${l.en}` };
 }
 
-/** The classes folded into one text (section 2.5): "X or Y, by how many words `$a` and `$b` give"; "`$a`・`$b` が展開される語数により、X・Yのどれか". */
+/**
+ * A clause (section 2.6), a sentence: "when C, it is X"; by place, "when C, its words are X, Y, then Z"; by own count,
+ * "when C: X when `$a` expands to a single word; when it expands to more words, they are X, then Y".
+ */
+export function clauseText(r: WordReadings, c: Clause, k: number, names: Names): Text {
+  const when = whenText(r.places, c.conditions, names);
+  const p = c.profile;
+  if (!p.places) {
+    const by = byCountText(p.groups, names.word(k), names);
+    return { ja: `${when.ja}、${by.ja}`, en: `${when.en}: ${by.en}` };
+  }
+  const roles = squeeze(p.places);
+  const l = listOf(roles, names);
+  return roles.length > 1 ? { ja: `${when.ja}順に${spaced(l.ja)}`, en: `${when.en}, its words are ${l.en}` } : { ja: `${when.ja}${spaced(l.ja)}`, en: `${when.en}, it is ${l.en}` };
+}
+
+/** The classes folded into one text (section 2.5): "it can also be X or Y, by how many words `$a` and `$b` give"; "`$a`・`$b` が展開される語数により、X・Yのどちらかにもなる". */
 export function foldedText(f: Folded, names: Names): Text {
   const who = namesOf(f.words, names);
   const roles = anyOf(f.roles, names);
-  return { ja: `${who.ja} が展開される語数により、${roles.ja}`, en: `${roles.en}, by how many words ${who.en} give` };
+  return { ja: `${who.ja} が展開される語数により、${roles.ja}にもなる`, en: `it can also be ${roles.en}, by how many words ${who.en} ${gives(f.words)}` };
 }
 
 /** The text past the cap (section 2.8): "its role may depend on how many words `$a` and `$b` give". */
 export function dependsText(d: Depends, names: Names): Text {
   const who = namesOf(d.words, names);
-  return { ja: `${who.ja} が展開される語数により役割が変わりうる`, en: `its role may depend on how many words ${who.en} give` };
+  return { ja: `${who.ja} が展開される語数により役割が変わりうる`, en: `its role may depend on how many words ${who.en} ${gives(d.words)}` };
 }
 
-/** What a word's readings say: its profile as written, then each clause, or the folded text. */
+/** What a word's readings say: its profile as written, then each clause or the folded text, each a sentence ("。", ". "). */
 export function readingsText(r: WordReadings, k: number, names: Names): Text {
-  const parts = [baseText(r.base, k, names), ...r.clauses.map((c) => clauseText(r, c, names)), ...(r.folded ? [foldedText(r.folded, names)] : [])].filter((x) => x.en);
-  return { ja: parts.map((x) => x.ja).join('、'), en: parts.map((x) => x.en).join('; ') };
+  const parts = [baseText(r.base, k, names), ...r.clauses.map((c) => clauseText(r, c, k, names)), ...(r.folded ? [foldedText(r.folded, names)] : [])].filter((x) => x.en);
+  return { ja: parts.map((x) => x.ja).join('。'), en: parts.map((x, i) => (i ? sentence(x.en) : x.en)).join('. ') };
 }

@@ -26,12 +26,14 @@ export interface CountVariable {
 
 /**
  * Words in a row of no known text with at least one flexible word, or one flexible word with a known start (`x$a`,
- * whose first word keeps it: `prefix`). The line written out depends only on how many words they give in all.
+ * whose first word keeps it: `prefix`, and each of its words where they all do, `each`: `-v*`). The line written out
+ * depends only on how many words they give in all.
  */
 export interface Run {
   /** Its words, indexes in the line. */
   words: number[];
   prefix?: string;
+  each?: true;
   /** How many words its words of a known count give (`"$v"`, `{x,y}`), and how many words of each count variable it holds. */
   fixed: number;
   mult: Map<number, number>;
@@ -77,9 +79,11 @@ export interface Coordinate { words: number[]; fixed: number; mult: Map<number, 
 
 /**
  * A word read at a context and an own count: the shape, how its reading ends, and the role of each of its words, with
- * where each stands in the reading (`places`, the numbers of the reading's words).
+ * where each stands in the reading (`places`, the numbers of the reading's words). `owners`: the command's word that each
+ * word of the reading comes from, where the shape tells (a word outside the runs, the word itself, a run or the part of
+ * its run before or after it that is one word); undefined where it does not (`$n $v` with three words in all).
  */
-export interface WordAt { sums: number[]; outcome: Outcome; fields: ArgRole[]; places: number[] }
+export interface WordAt { sums: number[]; outcome: Outcome; fields: ArgRole[]; places: number[]; owners: (number | undefined)[] }
 
 export interface ReadingsTable {
   line: ArgWord[];
@@ -148,11 +152,11 @@ export function specsReached(spec: CommandSpec, line: readonly ArgWord[], ctx: I
 }
 
 /** The runs of the line, in order (`Run`, without its counts). */
-function runsOf(line: readonly ArgWord[]): { words: number[]; prefix?: string }[] {
-  const runs: { words: number[]; prefix?: string }[] = [];
+function runsOf(line: readonly ArgWord[]): { words: number[]; prefix?: string; each?: true }[] {
+  const runs: { words: number[]; prefix?: string; each?: true }[] = [];
   for (let i = 0; i < line.length; i++) {
     if (!unknownText(line[i])) {
-      if (flexible(line[i])) runs.push({ words: [i], prefix: line[i].prefix });
+      if (flexible(line[i])) runs.push({ words: [i], prefix: line[i].prefix, ...(line[i].prefixEach ? { each: true as const } : {}) });
       continue;
     }
     let j = i;
@@ -316,7 +320,7 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
   const bound = Math.max(...[...specs].map(wordsBound));
   const { variables, variableOf } = variablesOf(line, words, back, bound);
   const fixedOf = (j: number): number => line[j].count?.min ?? 1;
-  const runs: Run[] = runsOf(line).map(({ words: ws, prefix }) => {
+  const runs: Run[] = runsOf(line).map(({ words: ws, prefix, each }) => {
     const mult = new Map<number, number>();
     let fixed = 0;
     for (const j of ws) {
@@ -325,7 +329,7 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
       else mult.set(v, (mult.get(v) ?? 0) + 1);
     }
     const fewest = fixed + [...mult].reduce((n, [v, m]) => n + m * variables[v].min, 0);
-    return { words: ws, ...(prefix ? { prefix } : {}), fixed, mult, fewest, top: fewest + bound };
+    return { words: ws, ...(prefix ? { prefix } : {}), ...(each ? { each } : {}), fixed, mult, fewest, top: fewest + bound };
   });
   const firstOf = new Map(runs.map((r, i) => [r.words[0], i]));
   const inRun = new Set(runs.flatMap((r) => r.words));
@@ -343,7 +347,7 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
     const written: ArgWord[] = [];
     line.forEach((w, j) => {
       const r = firstOf.get(j);
-      if (r !== undefined) for (let i = 0; i < sums[r]; i++) written.push(i === 0 && runs[r].prefix ? { prefix: runs[r].prefix } : {});
+      if (r !== undefined) for (let i = 0; i < sums[r]; i++) written.push((i === 0 || runs[r].each) && runs[r].prefix ? { prefix: runs[r].prefix } : {});
       else if (!inRun.has(j)) written.push(w);
     });
     const parse = readWritten(spec, written, ctx);
@@ -422,7 +426,20 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
     const from = x ? placeOf(runs[x.pass.run].words[0], sums) + context[0] + x.pass.before.ties * c : placeOf(spans[k].group?.from ?? spans[k].at!, sums);
     const roles = rolesOf(r);
     const places = range(from, from + c);
-    return { sums, outcome: r.outcome, fields: places.map((i) => roles.get(i)!), places };
+    const owners: (number | undefined)[] = [];
+    const own = (ws: readonly number[], n: number): void => { for (let i = 0; i < n; i++) owners.push(ws.length === 1 ? back(ws[0]) : undefined); };
+    line.forEach((_, j) => {
+      const ri = firstOf.get(j);
+      if (ri === undefined) {
+        if (!inRun.has(j)) owners.push(back(j));
+      } else if (x?.pass.run === ri) {
+        const before = context[0] + x.pass.before.ties * c;
+        own(runs[ri].words.filter((w) => w < spans[k].at!), before);
+        own([spans[k].at!], c);
+        own(runs[ri].words.filter((w) => w > spans[k].at!), sums[ri] - before - c);
+      } else own(runs[ri].words, sums[ri]);
+    });
+    return { sums, outcome: r.outcome, fields: places.map((i) => roles.get(i)!), places, owners };
   };
   const variableAt = words.map((_, k) => (spans[k].at === undefined ? undefined : variableOf[spans[k].at!]));
   return { line, back, runs, variables, variableOf, variableAt, bound, specs, base, shapes: found?.shapes, reading, at, hedged, contexts, readAt };
