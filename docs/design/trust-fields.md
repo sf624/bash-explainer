@@ -63,7 +63,7 @@ printf "$f"
 
 A review of #501 noted the point this page builds on: a field that ends in literal text such as `\n` can never be a valid name, so even after `-v` nothing is assigned (3.3, F1, F2).
 
-`declare -a "arr=($x)"` is different: main before #501 decided it wrongly. bash reads a quoted compound assignment given to `declare -a` again, as code: `x='[y=5]=1'; declare -a "arr=($x)"` sets `y` to 5 (3.3, F50). The same happens with static text, and the model decides it wrongly on main today (section 5, step 0).
+`declare -a "arr=($x)"` is different: main before #501 decided it wrongly. bash reads the text of a compound assignment given to a declaration again, as code, where that text is not the word's own syntax: `x='[y=5]=1'; declare -a "arr=($x)"` sets `y` to 5 (3.3, F50). The same happens with static text, and the model decides it wrongly on main today (section 5, step 0).
 
 ## 2. The model
 
@@ -86,9 +86,11 @@ A part of a word is either known (a text, or unset) or a **hole**. A hole has a 
 | Kind | What it may give | From |
 | --- | --- | --- |
 | `text` | any text, also empty | a value not known, `$( )`, `$1`, `$0`, a tilde, `$"…"` |
-| `digits` | one or more digits | `$#`, `$?`, `$$`, `$!`, `${#x}`, `${#a[@]}` |
+| `digits` | digits; for `$!`, maybe nothing | `$#`, `$?`, `$$`, `${#x}`, `${#a[@]}` (never empty); `$!` (empty before any `&`: F62) |
 | `integer` | digits, maybe after a `-` | `$(( ))` (F31: `printf $((-5))` is an invalid option) |
 | `elements` | no field, or any number of fields of any text | `"$@"`, `"${a[@]}"` |
+
+A hole may be empty unless its kind says it never is. An unquoted empty hole alone gives no field: `printf $! -vu 2` sets `u` (F62).
 
 A field is described by:
 
@@ -117,11 +119,12 @@ With an open count, the first field has the word's literal start, the last the w
 Four questions are asked of a field. Each is decided from `text`, or from `start`, `end`, `head` and `tail`:
 
 - *May it equal t?* (`--`, `-`): t starts with `start`, ends with `end`, and is long enough.
-- *May it start with c?* (`-`, `+`): `start` starts with c; or `start` is empty and its head is a `text` hole, or an `integer` hole for `-`.
-- *May it be a name?* A name is an identifier, or one with a subscript (`a[i]`: F6, F46). No, when its first known character is not a letter or `_`, when its last known character is not a letter, digit, `_` or `]`, or when a character of its known start before a `[` is not a letter, digit or `_`. A field of one `digits` hole is no name.
-- *May it be an assignment?* (declarations) `name=…`, `name+=…`, `name[…]=…`. No, when its first known character is not a letter or `_`, or when its known start holds a character other than those before the first `=` or `[`. Its end does not matter: `declare "$x\n"` with `x='a='` sets `a` (F40).
+- *May it start with c?* (`-`, `+`): `start` starts with c; or `start` is empty and its head is a `text` or `elements` hole, or an `integer` hole for `-`; or its head may be empty and what follows may start with c.
+- *May it be a name?* This is the test for a variable's name. A name is an identifier, or one with a subscript (`a[i]`: F6, F46). No, when its first known character is not a letter or `_`, when its last known character is not a letter, digit, `_` or `]`, or when a character of its known start before a `[` is not a letter, digit or `_`. A field of one `digits` hole is no name.
+- *May it be an assignment?* (declarations) `name=…`, `name+=…`, `name[…]=…`. No, when its first known character is not a letter or `_`, or when its known start, before its first `=`, `+=` or `[`, holds a character that is not a letter, digit or `_`. Its end does not matter: `declare "$x\n"` with `x='a='` sets `a` (F40); `declare 'a+=2'` appends (F67).
+- *A function's name* (the operands under `-f`: `export -f`, `declare -f`, `readonly -f`, `unset -f`) has a rule of its own. bash 5.2 accepts names a variable cannot have: `f.(){ :; }; x=f; export -f "$x."` exports `f.` (F66). So any field that may be non-empty may name a function; only a known text names a known one.
 
-These four are all the spec reader asks of a field's text (section 2.4). Its exact text is asked only where it is known.
+These are all the spec reader asks of a field's text (section 2.4). Its exact text is asked only where it is known.
 
 ### 2.3 Computing it from the word model
 
@@ -131,7 +134,7 @@ The fields come from the word model (`wordMeaning`, `partMeaning` and the pieces
 2. **Parts.** Each part takes its value from V: a known text or unset, enumerated (up to K tuples, section 6), or a hole of the kind the table above gives. An operator over a hole gives a `text` hole, except `${#x}` (`digits`), and `${x:+w}` and `${x+w}`, which give w or nothing. An operator over known values is evaluated by the word model.
 3. **Pieces.** The word becomes pieces: literal text (never split: only the results of expansions are, manual 3.5.7; F43), known expanded text (quoted or not), and holes (quoted or not). Quote removal has already been done on the literal pieces (`"\<newline>-v"` is `-v`: F7).
 4. **Splitting.** A field can end only inside an unquoted expanded piece. A known piece splits by the IFS where that IFS is known. Where it is not known (the script sets IFS on some path), an unquoted known piece is read as a `text` hole: its split points are not known. An unquoted `text` or `integer` hole may split anywhere. A `digits` hole splits only where IFS may hold a digit. A word whose every piece may be empty and unquoted may give no field. A quoted hole never splits; an `elements` hole gives its own count (`"-v$@"` keeps `-v` on its first field: F44).
-5. **Globbing.** A field with an unquoted glob character, or with an unquoted expanded piece that may hold one, is a pattern. Its matches keep its known start before its first unquoted glob character, and its known end after its last: those characters must match as written. So a pattern field keeps `start` and `end` cut there, and gets a count from one up (none where `nullglob` may be on). This holds without the assumption that a glob matches no file (F34: `x='*'` with a file named `-vu` makes `printf $x 2` set `u`). The assumption stays only for a pattern in the script's own text with no expansion (`declare a[1]`, section 7).
+5. **Globbing.** A field with an unquoted glob character, or with an unquoted expanded piece that may hold one, is a pattern. Its matches keep its known start before its first character that may be special in the pattern, and its known end after its last. Three facts decide what those characters are. A backslash in the pattern quotes the next character: the value `\-v*` matches `-vu` (F63), so the start is read after the pattern's own quote removal. Where `nocaseglob` may be on, a letter matches either case: `-V*` matches `-vu` (F64), so the start's letters stand for both cases. Where `extglob` may be on, `!`, `@`, `+`, `?` and `*` before `(` are special: `!(zz)` matches `-vu` (F65), so the start ends there. `nocaseglob` and `extglob` are facts of the state, as `nullglob` is. A pattern field keeps `start` and `end` cut so, and gets a count from one up (none where `nullglob` may be on). This holds without the assumption that a glob matches no file (F34: `x='*'` with a file named `-vu` makes `printf $x 2` set `u`). The assumption stays only for a pattern in the script's own text with no expansion (`declare a[1]`, section 7).
 6. **The result.** The shapes of each case not known, as a union.
 
 The mode where the word expands is a fact of the state (section 2.5). POSIX mode decides whether `command declare a=$v` reads `a=$v` as an assignment (no split) or as a word (split): bash 5.2 splits it when not in POSIX mode, and does not split it in POSIX mode (F21, F22; manual 6.11: "when not in POSIX mode, assignment builtins lose their assignment statement expansion properties when preceded by command"). The word model's context rule decides it; where the mode is not known, both are read. (The comment at `fieldReadings` today says the reverse; step 4 rewrites it.)
@@ -140,7 +143,7 @@ The mode where the word expands is a fact of the state (section 2.5). POSIX mode
 
 The question: for a builtin, its spec, and a line of words each known or given by shapes, which effects can bash give it?
 
-**The effect.** What the builtin changes in the shell: each variable or function it sets, unsets, declares or gives an attribute to, with how (`variableWrites`); the options it turns on or off (`setOptionWrites`); the functions it will call (`callbacks`); and whether it runs text as code (a subscript in a name, `printf -v 'a[y=5]'`: F6; a compound assignment read again, F50, F57). It is today's `effectKey` with one change: an option flag counts only through what it makes the builtin do. A flag that changes only the output (`-p`, a `printf` format) adds nothing. A name that the effect cannot know is `?`: the scan then trusts nothing, as it does today for `read "$v"`.
+**The effect.** What the builtin changes in the shell: each variable or function it sets, unsets, declares or gives an attribute to, with how (`variableWrites`); the options it turns on or off (`setOptionWrites`); the functions it will call (`callbacks`); and whether it runs text as code (a subscript in a name, `printf -v 'a[y=5]'`: F6; a compound assignment read again, F50, F57). Text run as code that is not known is `?`, as a name not known is. It is today's `effectKey` with one change: an option flag counts only through what it makes the builtin do. A flag that changes only the output (`-p`, a `printf` format) adds nothing. A name that the effect cannot know is `?`: the scan then trusts nothing, as it does today for `read "$v"`.
 
 **Refusals.** bash refuses some lines, and then changes nothing (status 1 or 2). Each of these was checked (section 3.3):
 
@@ -165,10 +168,10 @@ The search stops at the first effect that is not E₀ when the question is "only
 
 V answers "what values can parameter p have where this word expands". A value is a known text, unset, or a hole of a kind. These are its facts:
 
-- **V1. Written values.** A plain assignment of known text gives that text (`valuesWritten`).
-- **V2. Unset.** `unset x`, `local x` and `declare x` in a function with no value make it unset: an unquoted expansion of it gives no field (F18).
+- **V1. Written values.** A plain assignment of known text gives that text (`valuesWritten`). An integer variable does not store the text: `declare -i n; n=-v` gives `0` (F68). V1 relies on the allow-list here: the scan reads the values of integers as arithmetic (`integers` in src/semantics/trust.ts), and a text such as `-v` then reads a variable `v` the script never sets, so nothing is trusted.
+- **V2. Unset.** `unset x` makes it unset, and so do `local x` and `declare x` with no value, where they make a new variable in the function's scope: an unquoted expansion of it then gives no field (F18). They do not make it unset where the variable keeps a value: with `shopt -s localvar_inherit` the local gets the value of the one it hides (F69); `local -I x` does the same (F70); a second `local x` or `declare x` in a scope where `x` is already local keeps its value (F71). There the value is the one before, from V1 to V5.
 - **V3. The environment.** Where no write of the script may have run on some path before the place, the value may come from the environment: a `text` hole. bash sets some variables itself (`changedUnseen`: `REPLY`, `OPTARG`, `_`, `RANDOM`…): a `text` hole.
-- **V4. Writes not followed.** `read`, `mapfile`, `select`, `printf -v`, `getopts`, a `for` loop (F42), `x=(…)`, `x[0]=`, `${x:=w}`, `x+=w`, `declare -l` and `-u`, a nameref or a nameref's target (F41): a `text` hole. A copy of a parameter of a known kind keeps it (`p=$!` is `digits`).
+- **V4. Writes not followed.** `read`, `mapfile`, `select`, `printf -v`, `getopts`, a `for` loop (F42), `x=(…)`, `x[0]=`, `${x:=w}`, `x+=w`, `declare -l` and `-u`, a nameref or a nameref's target (F41): a `text` hole. A copy of a parameter of a known kind keeps it (`p=$!` is `digits`, maybe empty).
 - **V5. Positional parameters.** The walk does not follow them: `$1`, `$@` and `$0` are holes.
 - **V6. A write whose target is not known** (`read "$v"`, `${!r:=x}`: F23, a nameref whose target is not known) may give any variable any value. It stays a cause of "nothing is trusted" in the allow-list (trust-allow-list.md), as today. The rule does not bound it.
 
@@ -180,6 +183,8 @@ Two facts say *when* code runs and *which binding* a name has then:
 - **S. Scope.** A local's value holds while its function runs; a prefix assignment's value holds while its command runs (manual 3.7.4). Code that runs later may see the global or the environment's binding of the same name. So in code that T covers, a name that is local in some function, or the name of some prefix assignment, is a `text` hole, whatever the state at the installing command says (F16, F17).
 
 S belongs in `widen`: it is a fact about the state at a later time, for every reader of that state, not about deferred words.
+
+The shell options also differ in such code. A trap's action sees the options of the function running then: `f() { local -; set -f; trap '…' RETURN; }` runs the action with `-f` on, which is off after `f` returns (F72). So the options a word expands with there (globbing, `set +B` with `set -E`, `noglob`) are not those of the installing command. `widen` (src/semantics/walk/widen.ts) makes each `set` and `shopt` option that some command changes after the installing one `unknown`, by the keys of those changes; this covers `local -`, `set -f`/`+f` and `set +B`. Step 5 checks it in bash.
 
 ### 2.6 How the scan and the walk use it
 
@@ -220,6 +225,7 @@ Each is written out with the rule. "Not trusted" means the model decides nothing
 - **A2.** The environment does not change bash itself: no exported functions named like builtins, no `BASH_ENV`, no `SHELLOPTS` (trust-per-position.md, section 2; as today).
 - **A3.** The status of a builtin is not part of its effect. A refused reading changes the status (1 or 2). The status model (src/semantics/status.ts) gives the builtins of this page no known status (their rule is `command`), so no condition rests on it. One exception is left as it is: a declaration with a `$( )` is `masked`, taken to give its own status, which a refused name makes 1 (F9, F12); the roadmap lists the statuses of the declarations as read from the words as written.
 - **A4.** The spec's option letters and operands are those of bash 5.2 (and 5.3 where `bashVersion` says so). Step 2's test checks them against bash.
+- **A5.** Writes made while the builtin's own words expand are not part of its effect, and the rule does not see them: `x='a[y=5]'; : "${!x}"` and `x='y=5'; : "${a[$x]}"` set `y`. They are safe only because the allow-list makes such words a cause of "nothing is trusted" (an indirection, arithmetic that reads text not known), as today.
 
 ### 3.3 Facts checked in bash 5.2
 
@@ -263,7 +269,20 @@ Each is written out with the rule. "Not trusted" means the model decides nothing
 | F50 | `y=1; x='[y=5]=1'; declare -a "arr=($x)"` | `y` is 5 |
 | F57 | `y=1; declare -a 'arr=($((y=5)))'` | `y` is 5, `arr` is `5` |
 
-Also checked: `declare -a arr="($x)"`, `declare -a 'arr=([y=5]=1)'` and `local -a 'arr=([y=5]=1)'` set `y` to 5; `declare "arr=($x)"` without `-a` does not read the text again; `declare -A 'arr=([y=5]=1)'` takes `y=5` as a key and leaves `y`; `x='$(y=7)'; declare -a "arr=($x)"` runs the substitution, in a subshell.
+| F61 | `y=1; declare -A 'arr=([k]=$((y=5)))'` | `y` is 5 |
+| F62 | `printf $! -vu 2` (no `&` before) | `u` is 2 |
+| F63 | `touch ./-vu; x='\-v*'; printf $x 2` | `u` is 2 |
+| F64 | `touch ./-vu; shopt -s nocaseglob; x='-V*'; printf $x 2` | `u` is 2 |
+| F65 | `touch ./-vu; shopt -s extglob; x='!(zz)'; printf $x 2` | `u` is 2 |
+| F66 | `f.(){ :; }; x=f; export -f "$x."; declare -fr "$x."` | both status 0; `declare -F` shows `declare -frx f.` |
+| F67 | `a=1; declare 'a+=2'` | `a` is `12` |
+| F68 | `declare -i n; n=-v` | `n` is 0 |
+| F69 | `shopt -s localvar_inherit; x=-v; f(){ local x; printf $x u 2; }; f` | `u` is 2 |
+| F70 | `x=-v; f(){ local -I x; printf $x u 2; }; f` | `u` is 2 |
+| F71 | `f(){ local x=-v; local x; printf $x u 2; }; f`, and the same with `declare x` | `u` is 2 |
+| F72 | `f() { local -; set -f; trap 'echo "$-"' RETURN; }; f; echo "$-"` | the action prints `f` among the flags; after `f`, no `f` |
+
+Also checked, for step 0: `declare -a arr="($x)"`, `declare -a 'arr=([y=5]=1)'` and `local -a 'arr=([y=5]=1)'` set `y` to 5. `-A` reads the text again too: its keys are not arithmetic (`declare -A 'arr=([y=5]=1)'` leaves `y`), but its values are expanded (F61). Without `-a` or `-A`, the text is read again where the name is already an array: `arr=(); declare "arr=([y=5]=1)"` sets `y`; `declare "arr=($x)"` with no array `arr`, and a new local in a function (`f() { local "arr=([y=5]=1)"; }`), leave it. An unquoted value is read so too: `x='([y=5]=1)'; declare -a arr=$x` sets `y`. `export -a` and `readonly -a` do the same. `x='$(y=7)'; declare -a "arr=($x)"` runs the substitution, in a subshell.
 
 ## 4. Expected gains
 
@@ -284,7 +303,7 @@ Each line of section 1.3, by shape first (2.1). None needs values, time or scope
 | `printf " sudo apt-get install ${pkgs# }\n"` | one field, start ` ` | not an option |
 | `mapfile -tO ${#a[@]} a` | `digits`, one field | not an option; the value of `-O` names nothing |
 | `declare -F _k_${func}` | first field starts with `_` | not an option, so every later field is an operand (F30); `-F` only prints the functions it names |
-| `declare -a "arr=($x)"` | one field, `arr=(…)` | **not gained**: bash reads the text again as code (F50); the effect "runs text" is not E₀ |
+| `declare -a "arr=($x)"` | one field, `arr=(…)` | **not gained**: bash reads the text again as code (F50); the effect "runs text", of text not known, is `?` |
 
 (F27: `pad=-v; printf "$pad%s\n" a` gives "`%s\n`: not a valid identifier", status 2.)
 
@@ -311,10 +330,10 @@ The gain that does not show as a count: the special cases S9 to S14 go away (sec
 
 Each step is a PR that keeps every test passing, test/decisions.test.ts against bash included, and leaves the snapshot of the corpus byte-identical unless the step says what changes.
 
-0. **Fix: a quoted compound assignment given to `declare -a` is read again as code.** Independent of the rule, and first. `declare -a 'arr=([y=5]=1)'` and `declare -a "arr=($x)"` set `y` (F50, F57); the model decides `[ "$y" = 1 ]` true on main. The scan reads the text in parentheses as an array assignment (arithmetic subscripts, expansions), and a text not known there trusts nothing. Also `local`, `typeset`, `declare -a arr="(…)"`; not `-A` (keys). Checked by rows in test/decisions.test.ts, run in bash. A CHANGELOG line (a fix).
-1. **The field domain** (src/semantics/fieldshape.ts). `wordShapes(word, state, values)`: the shapes of section 2.2, computed as 2.3 says, and the four questions on a field. Nothing reads it yet. Its test (test/fieldshape.test.ts) is differential and generated: words with literal starts and ends, quoted and unquoted holes of each kind, braces, `\<newline>`, `$"…"`; states with the default IFS, a blank and a non-blank IFS, `nullglob`, `set +B`, POSIX mode; and random values for the holes. Each runs in bash (in a cgroup, `FUNCNEST` set, killed as a process group) and prints its fields. The test checks that bash's fields lie in the union of shapes, and that the four questions answered "no" hold for each of them. This is the foundation: it is reviewed before step 2 builds on it.
-2. **The question to the spec reader** (src/argv/fieldreadings.ts). `builtinEffects(name, spec, line, values)`: the effect of 2.4, the refusal rules (a field of `OperandSpec` for a name bash refuses, with a row per builtin), the counts with S and the ties of readings.ts, the classes, the early stop and the cap C. Nothing in the trust reads it yet. Its test is differential too: for each builtin the scan defers (`set`, the declarations, `printf`, `read`, `getopts`, `mapfile`, `wait`, `complete`…), random lines of known text are run in bash, and the variables, attributes and options before and after are compared (`declare -p`, `set -o`); bash's change must be one of the effects the reader gives for any shape that holds the line. The facts of section 3.3 become rows.
-3. **Shape first.** The scan and the walk ask step 2 with every part a hole before anything else; a word whose shape allows only E₀ gets no plan. `inert`, `inertAfter`, `literalStart` and `expands` go (S9, S10, S11). Checked: every row of the past counterexamples in test/decisions.test.ts stays undecided; the idioms of section 1.3 get rows that are decided, each run in bash; the generator (case 38) gets words with a literal start or end around a value not known (`printf "$y\n"`, `printf "-v$y" u 2`, `printf "$y%s\n" a`, `getopts -- $o`). Measured on the three sets; the snapshot changes only where an input gains its trust.
+0. **Fix: the text of a compound assignment given to a declaration is read again as code.** Independent of the rule, and first; another PR fixes it. `declare -a 'arr=([y=5]=1)'` and `declare -a "arr=($x)"` set `y` (F50, F57); the model decides `[ "$y" = 1 ]` true on main. The cases (section 3.3, after the table): `-a`, and `-A` for its values (F61); without either, where the name is already an array; a value that is not the word's own syntax, quoted or from an expansion (`declare -a arr=$x`); `declare`, `local`, `typeset`, `export -a`, `readonly -a`. Not for a new local with no `-a`. The scan reads that text as an array assignment (arithmetic subscripts, expansions), and a text not known there trusts nothing. Checked by rows in test/decisions.test.ts, run in bash. A CHANGELOG line (a fix).
+1. **The field domain** (src/semantics/fieldshape.ts). `wordShapes(word, state, values)`: the shapes of section 2.2, computed as 2.3 says, and the four questions on a field. Nothing reads it yet. Its test (test/fieldshape.test.ts) is differential and generated: words with literal starts and ends, quoted and unquoted holes of each kind, braces, `\<newline>`, `$"…"`; states with the default IFS, a blank and a non-blank IFS, `nullglob`, `nocaseglob`, `extglob`, `set +B`, POSIX mode; random values for the holes, with backslashes and glob characters; `$!` before and after a `&`; and files on disk that the patterns match (`-vu`, `-Vu`, names with `\`). Each runs in bash (in a cgroup, `FUNCNEST` set, killed as a process group) and prints its fields. The test checks that bash's fields lie in the union of shapes, and that the questions answered "no" hold for each of them. This is the foundation: it is reviewed alone before step 2 builds on it, once the facts F62 to F66 are in its domain and its generator.
+2. **The question to the spec reader** (src/argv/fieldreadings.ts). `builtinEffects(name, spec, line, values)`: the effect of 2.4, the refusal rules (a field of `OperandSpec` for a name bash refuses, with a row per builtin), the counts with S and the ties of readings.ts, the classes, the early stop and the cap C. Nothing in the trust reads it yet. Its test is differential too: for each builtin the scan defers (`set`, the declarations, `printf`, `read`, `getopts`, `mapfile`, `wait`, `complete`…), random lines of known text are run in bash, and the state before and after is compared: variables and their attributes (`declare -p`), functions, exported and readonly ones (`declare -F`, `declare -f`, and the `-fx` and `-fr` listings), `set -o`, `shopt`, and traps (`trap -p`); bash's change must be one of the effects the reader gives for any shape that holds the line. The facts of section 3.3 become rows.
+3. **Shape first.** The scan and the walk ask step 2 with every part a hole before anything else; a word whose shape allows only E₀ gets no plan. `inert`, `inertAfter`, `literalStart` and `expands` go (S9, S10, S11). Checked: every row of the past counterexamples in test/decisions.test.ts stays undecided; the idioms of section 1.3 get rows that are decided, each run in bash; the generator (case 38) gets words with a literal start or end around a value not known (`printf "$y\n"`, `printf "-v$y" u 2`, `printf "$y%s\n" a`, `getopts -- $o`). `mayGiveNoField` (src/semantics/nofield.ts) and `wordPatterns` (src/semantics/globwords.ts) become views of fieldshape.ts, so each fact of a word's fields has one source; their tests stay as they are. Measured on the three sets; the snapshot changes only where an input gains its trust.
 4. **Values as holes.** `valuesWritten` gives known texts or a hole with a kind; `fieldReadings` enumerates the known parts and makes holes of the rest; past K tuples, parts become holes instead of the words being read as written; an IFS not known makes unquoted known parts holes. The plan holds the scan's effects, and the walk's check is "its effects are in the scan's" (S2, S4, S5, S6, S8; S1 and S3 stay as V1 and V2). Checked by test/decisions.test.ts and the generator; the comment at `fieldReadings` on POSIX mode is corrected (S7). Measured on the three sets.
 5. **Time and scope in `widen`.** In code that runs at a time of its own, a name that is local in some function, or the name of some prefix assignment, is a hole (S); the walk then checks such code like any other, and the scan's `late` check goes (S12, S13, S14). Checked by the trap, alias and callback rows of test/decisions.test.ts, and new generator cases: a trap set in a function with a local, and in a function called with a prefix assignment, each run in bash.
 6. **Documents.** trust-allow-list.md, section 6, points here for deferred words; the roadmap item moves to "Done lately"; README Limitations states A1 as it now stands.
@@ -323,6 +342,7 @@ Each step is a PR that keeps every test passing, test/decisions.test.ts against 
 
 - **K, the tuples of known values** enumerated for one builtin: 16, as `READINGS` today. Past K, parts become holes. This loses precision, never soundness.
 - **C, the lines read** for one builtin: 1,024, as `SHAPE_CAP` in readings.ts. A line is one `builtinRead`, about 0.03 ms (count-hedges.md, 2.8). Past C, the answer is "may change".
+- **`set` with a hole.** `set` names no variable, so its effects never hold `?`, and the search after shape first does not stop early: `set $x` with `x` a hole enumerates clusters of its letters up to C. Past C, nothing is trusted, as today ("`set` is given a word not known before its operands").
 - **The common case is small.** A `printf` with one quoted field reads five classes (not an option, `-`, `--`, `-v` with the rest, a letter it does not have). A `declare $x` stops at its first class that sets an attribute. Shape first needs no values, so most builtins are read once per text: the cache of `deferredReadings` (by text, shell, POSIX mode and IFS) stays, keyed by the shapes.
 - **Counts.** A word with an open count is read at its fewest up to S + 1; with ties, fewer. For the builtins read so, S is 4 to 6 (`declare`, `read`, `mapfile`: 4; `printf`, `set`: 5; `getopts`: 6).
 - #501 measured 1,500 lines of `printf "%s …" "$a" … "$f"` at about 0.55 s for the model. Step 3 measures the same file, and one of 1,500 `printf "$x\n"` lines, which reads every line today.
@@ -342,5 +362,6 @@ Each step is a PR that keeps every test passing, test/decisions.test.ts against 
 
 - The gain counted in whole inputs is small: one snippet of 1,861, none of the generated or real scripts (section 4.2). The idioms are gained where nothing else hides them.
 - The case for the rule is soundness that can be reviewed in one place. Each of #501's review rounds found a hole in a special case; under the rule, each past case follows from F, E, the values V1 to V6, or the facts T and S (section 3.1).
-- Step 0 is a wrong decision on main today, independent of the rule. It could go first whatever is decided for the rest.
+- Step 0 is a wrong decision on main today, independent of the rule. Another PR fixes it.
+- The review of this page found more holes in the domain (F62 to F66, F69 to F71). None makes main decide wrongly at c8b042c3: `localvar_inherit` trusts nothing (allow-list); `local -I x`, `printf $! -vu 2` and `p=$!; printf $p -vu 2` trust nothing (a plan the walk cannot check); a second `local x` or `declare x` keeps the trust and decides nothing.
 - Steps 1 and 2 are the foundation, and are tested against bash on their own. Step 3 gains the idioms and removes S9 to S11. Steps 4 and 5 remove the rest of the special cases, and gain little by themselves.
