@@ -259,7 +259,7 @@ function replacedFile(cx: Explainer, op: string, fd: string, n: SyntaxNode, dest
 function bracedTarget(cx: Explainer, d: SyntaxNode): string | undefined {
   if (unquotedWord(d) === undefined || !d.text.includes('{')) return undefined;
   if (!braceWorks(cx, d)) return undefined;
-  const words = braceExpansion(d);
+  const words = braceExpansion(d, cx.bashVersion);
   return words?.length === 1 && words[0] !== d.text ? words[0] : undefined;
 }
 
@@ -276,7 +276,7 @@ function redirectTargetNote(cx: Explainer, d: SyntaxNode): string {
   const w = wordAt(cx, d);
   const step = (kind: string) => w?.steps.find((s) => s.kind === kind);
   if (braceWorks(cx, d)) {
-    const words = braceExpansion(d);
+    const words = braceExpansion(d, cx.bashVersion);
     if (words?.length === 0) return cx.s('。ブレース展開で空の単語だけになって単語が残らないので、bash は「ambiguous redirect」のエラーにする', '. Brace expansion leaves no word of it (empty words are dropped), so bash reports "ambiguous redirect"');
     if (!words || words.length !== 1) return cx.s('。ブレース展開で複数の単語になるので、bash は「ambiguous redirect」のエラーにする', '. Brace expansion makes several words of it, so bash reports "ambiguous redirect"');
   }

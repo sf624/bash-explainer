@@ -4,7 +4,7 @@
 // expansion does, with the quotes and expansions of the word (`opaque`) taken as text it does not look into.
 // Checked with bash 5.2 (test/fixtures/probes/words.json, test/syntax-adapter-unbash.test.ts).
 
-import { parseSequence } from '../../braceseq';
+import { someSequence } from '../../braceseq';
 
 /** A range of the text. */
 export interface Range { readonly pos: number; readonly end: number }
@@ -168,8 +168,8 @@ function braceAt(text: string, open: number, to: number, opaque: ReadonlyMap<num
     else if (c === '}' && --depth === 0) {
       const end = j + 1;
       if (commas.length || (dots && comma)) return { pos: open, end, kind: 'list', commas };
-      // (A sequence expression bash expands: two integers, or two letters, and an integer increment, in its bounds.)
-      if (plain && parseSequence(text.slice(open + 1, end - 1))) return { pos: open, end, kind: 'sequence', commas };
+      // (A sequence expression bash 5.2 or 5.3 expands: two integers, or two letters, and an integer increment, in its bounds.)
+      if (plain && someSequence(text.slice(open + 1, end - 1))) return { pos: open, end, kind: 'sequence', commas };
       // (Here they hold a `..`: else the `}` would not have closed them.)
       return end;
     }

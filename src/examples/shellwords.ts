@@ -3,16 +3,25 @@ import { coreutilsRejects, type PrintfReader } from '../embedded/format';
 import { sprintf } from './awk';
 import { bracketEnd, bracketRegex } from '../bracket';
 import { parseSequence, sequenceWords } from '../braceseq';
+import { BASH_VERSIONS, type BashVersion } from '../bashversion';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 
 class Unsupported extends RunnerUnsupported {}
 
 // ---------------------------------------------------------------- brace expansion
 
-/** The words of the sequence expression `{x..y[..incr]}` (`text`, braces included, a valid one); null when they are too many to list. */
-export function braceSequence(text: string): string[] | null {
-  // (The parser makes a sequence only of one bash expands: src/syntax/adapters/braces.ts.)
-  return sequenceWords(parseSequence(text.slice(1, -1))!, 500);
+/**
+ * The words of the sequence expression `{x..y[..incr]}` (`text`, braces included; the parser makes one of what bash 5.2
+ * or 5.3 expands, src/syntax/adapters/braces.ts) in bash `version`: the text itself where that bash leaves the braces
+ * as they are; null when they are too many to list, and, with no version, where bash 5.2 and 5.3 give other words.
+ */
+export function braceSequence(text: string, version?: BashVersion): string[] | null {
+  if (!version) {
+    const [a, b] = BASH_VERSIONS.map((v) => braceSequence(text, v));
+    return a && b && a.join(' ') === b.join(' ') ? a : null;
+  }
+  const s = parseSequence(text.slice(1, -1), version);
+  return s ? sequenceWords(s, 500) : [text];
 }
 
 // ---------------------------------------------------------------- globs

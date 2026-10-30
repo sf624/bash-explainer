@@ -172,7 +172,7 @@ export function wordItems(cx: Explainer, words: readonly ArgWord[], roles: reado
  * that gives its fewest words or more (`"$x"{a,b}$y`) says its words for each count, from its readings.
  */
 export function fieldsText(cx: Explainer, role: FieldsRole, a: SyntaxNode, nodes: readonly SyntaxNode[], number: (desc: string, role: OperandRole) => string): string {
-  const texts = role.words.some((w) => w.value === undefined) ? braceTexts([a]) : undefined;
+  const texts = role.words.some((w) => w.value === undefined) ? braceTexts([a], false, cx.bashVersion) : undefined;
   const words = texts?.length === role.words.length ? texts.map((value) => ({ value })) : role.words;
   const many = role.readings?.kind === 'read' && role.readings.base.counts.length > 1;
   const said = many ? undefined : listed(cx, wordItems(cx, words, role.roles, true, number));
@@ -219,8 +219,9 @@ export function functionArgs(cx: Explainer, nodes: readonly SyntaxNode[], word: 
  * word of no braces (`z=; p='a b'; cp $z $p`: `a` and `b`); a `$N` in a role is the number of its word (`numbers`).
  */
 export function eachText(cx: Explainer, a: SyntaxNode, each: OperandSpec[], numbers: readonly { n: number }[], fields: readonly string[] | undefined): string {
-  const braces = braceAlternatives([a]);
-  const words = !braces || braces.some(splitsIn) ? fields! : braceTexts([a])!;
+  const version = cx.bashVersion;
+  const braces = braceAlternatives([a], false, version);
+  const words = !braces || braces.some(splitsIn) ? fields! : braceTexts([a], false, version)!;
   // `destination (the new name…)` reads `destination: the new name…` in the parentheses.
   const role = (k: number): string => numbered(cx.t(each[k].text).replace(/（(.*)）$/, ': $1').replace(/ \((.*)\)$/, ': $1'), numbers[k]);
   return listed(cx, words.map((w, k) => `\`${w}\`${cx.s(`（${role(k)}）`, ` (${role(k)})`)}`));

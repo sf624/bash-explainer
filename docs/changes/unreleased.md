@@ -1236,13 +1236,25 @@ bash removes a line continuation (`\` at the end of a line) before it reads a wo
 | `echo {0..2..9223372036854775808}`, `{1..2..18446744073709551617}`, `{a..c..9223372036854775808}` | the word as written | a plain word | the words `0`, `1`, `a` |
 | `echo {9007199254740993..9007199254740991..2}` | `9007199254740993 9007199254740991` | the same | `9007199254740992` |
 | `echo {0..2..9223372036854775807}` | `0` | "each word is 9223372036854775807 more" | "9223372036854776000 more" |
-| `echo {9223372036854775806..0..9223372036854775806}`, `{0..4294967290..2}` | bash 5.2: the word as written (its limits on the range and on the number of words) | a plain word | words |
+| `echo {9223372036854775806..0..9223372036854775806}`, `{1..3000000000}` | bash 5.2: the word as written (its limits on the range and on the number of words) | "bash 5.2 leaves `{…}` as written" | words |
+| `[[ $v == a\`, then `*` ]]`; `[[ $v == @\`, then `(x\|y)` ]]` | a pattern: true for `app`; for `x` | a pattern, with values that match it | "the right side is quoted, so it is literal text"; no example |
+| `a=${n:-x:~/d:~root}`, `echo ${n:-~+/x}` | `x:/home/me/d:/root`, `$PWD/x` | no example | the example `~root`, `~+/x` as written |
 | `cat <<< x:~`, `cat <<< a=~:~` | `x:/home/me`, `a=~:/home/me` (also in POSIX mode) | the tilde after `:`, not after `=` | the text |
 | `read a b <<< x:~` | reads `x:/home/me` | an example line | the line `x:~` |
 | `r=([0]=~ [1]=x:~)` | `/home/me x:/home/me` (in POSIX mode, `~ x:~`) | the tildes after `=` and `:` | "set it to `~`" alone |
 | `a=${x:+x:~}`, `declare a=${x:-~/a:~}`, `cat <<< ${x:+x:~}` | `x:/home/me`, `/home/me/a:/home/me` (not in POSIX mode; not `${x=x:~}`, nor as an argument: `echo ${x:+x:~}` prints `x:~`) | the example `x:$HOME (expanded)` | `x:~` |
 
-bash 5.3 changed some of these limits: it expands `{9223372036854775806..0..9223372036854775806}`, refuses any increment of -9223372036854775808, and pads `{02147483648..2147483650}` to `02147483648`… where bash 5.2 prints `-2147483648`…; the explanations follow bash 5.2 there.
+bash 5.3 changed some of these limits, and the explanations follow the release set in `bashExplainer.bashVersion`:
+
+| Written | bash 5.2 | bash 5.3 |
+| --- | --- | --- |
+| `echo {9223372036854775806..0..9223372036854775806}` | as written | `9223372036854775806 0` |
+| `echo {2..0..-9223372036854775808}` | `2` | as written (it refuses any increment of -9223372036854775808) |
+| `echo {1..3000000000}` | as written (more than 2147483644 steps) | many words (or, past its memory, an error and the word as written) |
+| `echo {02147483648..2147483650}` | `-2147483648 -2147483647 -2147483646` (padded numbers are printed as a C `int`) | `02147483648 02147483649 02147483650` |
+| `echo {0001..2147483648..2147483647}` | `0000000001 -2147483648`: the steps land on the end, printed as an `int` | `0000000001 2147483648` |
+
+Where the release is not known (the count of the words a command gets, the values the conditions read), a sequence the two expand otherwise is not listed.
 
 ### Tests and redirections as bash runs them
 

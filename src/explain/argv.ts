@@ -438,7 +438,7 @@ function fieldsToken(cx: Explainer, a: SyntaxNode, role: FieldsRole, command: st
   // (A function gets every word as an argument, also one that looks like an option.)
   if (isFn && role.words.length) return positional(cx, a, functionArgs(cx, nodes, nodes.indexOf(a)));
   // (`unset {,}`: the braces say so.)
-  if (!role.words.length) return positional(cx, a, braceTexts([a])?.every((w) => !w) ? noWord(cx) : cx.s(`展開すると語が残らないので、\`${program}\` には渡らない`, `expands to no word, so \`${program}\` does not get it`));
+  if (!role.words.length) return positional(cx, a, braceTexts([a], false, cx.bashVersion)?.every((w) => !w) ? noWord(cx) : cx.s(`展開すると語が残らないので、\`${program}\` には渡らない`, `expands to no word, so \`${program}\` does not get it`));
   // (A field's role may depend on how many words the others give: `p='a b'; cp $p $u`, `b` is the destination when `$u` gives none.)
   const t = positional(cx, a, fieldsText(cx, role, a, nodes, (desc, r) => numbered(desc, numbers.get(r))));
   const options = role.roles.every(({ role: r }) => OPTION_ROLES.has(r.role));

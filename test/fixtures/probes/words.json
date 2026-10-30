@@ -3272,8 +3272,8 @@
   },
   {
     "manual": "3.5.1",
-    "snippet": "@PROBE:a@ {9223372036854775806..0..9223372036854775806}; @PROBE:b@ {-1..9223372036854775805..9223372036854775805}; @PROBE:c@ {0..-9223372036854775808..9223372036854775807}; @PROBE:d@ {2..0..-9223372036854775808}; @PROBE:e@ {0..4294967290..2}; @PROBE:f@ {02147483648..2147483650} {-02147483649..-2147483647}",
-    "note": "bash 5.2's limits: a start and an end too far apart for its check (which bash 5.3 changed), more than INT_MAX-3 steps, and padded numbers printed as a C int.",
+    "snippet": "@PROBE:a@ {9223372036854775806..0..9223372036854775806}; @PROBE:b@ {-1..9223372036854775805..9223372036854775805}; @PROBE:c@ {0..-9223372036854775808..9223372036854775807}; @PROBE:d@ {2..0..-9223372036854775808}; @PROBE:e@ {0..4294967290..2}; @PROBE:f@ {02147483648..2147483650} {-02147483649..-2147483647}; @PROBE:g@ {0001..2147483648..2147483647}; @PROBE:h@ {2..2..-9223372036854775808}",
+    "note": "bash 5.2's limits: a start and an end too far apart for its check (which bash 5.3 changed), more than INT_MAX-3 steps, an increment of -2^63 (refused by bash 5.3), and padded numbers printed as a C int (`0001..2147483648..2147483647` lands on its end, printed `-2147483648`).",
     "facts": {
       "a": [
         [
@@ -3311,14 +3311,25 @@
           "-02147483647"
         ]
       ],
+      "g": [
+        [
+          "0000000001",
+          "-2147483648"
+        ]
+      ],
+      "h": [
+        [
+          "2"
+        ]
+      ],
       "status": 0
     }
   },
   {
     "manual": "3.5.1",
     "bash": "5.3",
-    "snippet": "@PROBE:a@ {9223372036854775806..0..9223372036854775806}; @PROBE:b@ {-1..9223372036854775805..9223372036854775805}; @PROBE:c@ {0..-9223372036854775808..9223372036854775807}; @PROBE:d@ {2..0..-9223372036854775808}; @PROBE:f@ {02147483648..2147483650} {-02147483649..-2147483647}",
-    "note": "bash 5.3 checks the bounds otherwise, and pads numbers past a C int.",
+    "snippet": "@PROBE:a@ {9223372036854775806..0..9223372036854775806}; @PROBE:b@ {-1..9223372036854775805..9223372036854775805}; @PROBE:c@ {0..-9223372036854775808..9223372036854775807}; @PROBE:d@ {2..0..-9223372036854775808}; @PROBE:f@ {02147483648..2147483650} {-02147483649..-2147483647}; @PROBE:g@ {0001..2147483648..2147483647}; @PROBE:h@ {2..2..-9223372036854775808}",
+    "note": "bash 5.3 checks the bounds otherwise (it refuses any increment of -2^63), and pads numbers past a C int as they are.",
     "facts": {
       "a": [
         [
@@ -3352,14 +3363,18 @@
           "-02147483647"
         ]
       ],
+      "g": [
+        [
+          "0000000001",
+          "2147483648"
+        ]
+      ],
+      "h": [
+        [
+          "{2..2..-9223372036854775808}"
+        ]
+      ],
       "status": 0
-    },
-    "gaps": {
-      "a": "the brace scanner follows bash 5.2's limits of sequences (src/braceseq.ts), which bash 5.3 changed",
-      "b": "the brace scanner follows bash 5.2's limits of sequences (src/braceseq.ts), which bash 5.3 changed",
-      "c": "the brace scanner follows bash 5.2's limits of sequences (src/braceseq.ts), which bash 5.3 changed",
-      "d": "the brace scanner follows bash 5.2's limits of sequences (src/braceseq.ts), which bash 5.3 changed",
-      "f": "bash 5.2 pads a number cut to a C int; bash 5.3 pads it as it is (src/braceseq.ts)"
     }
   },
   {
