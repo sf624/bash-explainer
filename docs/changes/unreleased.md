@@ -932,6 +932,7 @@ The builtins whose words say what they set or turn on (`set`, `declare`, `typese
 | `x=-f; declare $x g`, `y=-fx; declare $y g`, `z='a b'; declare $z`, `e=; declare $e q`, `w=-i; declare $w n; n=1+2` | no variable `g`; the function `g` exported; `a` and `b` declared; `q` declared; `n` is 3 | nothing in the whole script; a variable `g` | as bash |
 | `x=1; v=x; export $v=2`, then `if [ "$x" = 1 ]` | `x` is 2 | nothing in the whole script | always false |
 | `u=1; x=-v; printf $x u 2`, then `if [ "$u" = 1 ]` | `printf -v u 2`: `u` is 2 | always true; the `else` never runs | nothing |
+| `u=1; o='v u'; getopts -- $o`, then `if [ "$u" = 1 ]` | `getopts -- v u`: `u` is `?` | always true | nothing |
 | `u=1; read x <<< -v; printf $x u 2`, the same with `for x in -v`, `x=(-v)`, `mapfile -t x <<< -v`, `declare -n r=x; r=-v`, `REPLY` after `read <<< -v`, `OPTARG`, `$_`, or `printf "$1" u 2`, then `if [ "$u" = 1 ]` | `u` is 2 | always true | nothing in the whole script |
 | `set -eZ`, `x=-u1; set $x`, `set -f -C -Q` | "invalid option": bash checks every option first, and turns none on | errexit on (nounset, noglob and noclobber) | none of them |
 
