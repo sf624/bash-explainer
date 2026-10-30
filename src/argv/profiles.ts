@@ -258,7 +258,10 @@ export function wordReadings(t: ReadingsTable, k: number): WordReadings | Depend
   const named = cx.coordinates.map((c, i) => ({ c, i })).filter(({ c }) => c.mult.size);
   const places = named.map(({ c, i }): Place => {
     const most = c.fixed + [...c.mult].reduce((n, [v, m]) => n + m * (t.variables[v].max ?? Infinity), 0);
-    const words = [...new Set([...c.mult.keys()].map((v) => t.back(c.words.find((j) => t.variableOf[j] === v)!)))];
+    // (The first word of each variable, in one walk over the words: a line of many words has as many variables.)
+    const first = new Map<number, number>();
+    for (const j of c.words) if (t.variableOf[j] !== undefined && !first.has(t.variableOf[j]!)) first.set(t.variableOf[j]!, j);
+    const words = [...new Set([...c.mult.keys()].map((v) => t.back(first.get(v)!)))];
     const one = c.mult.size === 1;
     const parts = [...c.mult.keys()].some((v) => t.variables[v].part);
     return { words, one, counted: one || [...c.mult.values()].every((m) => m === 1), ...(parts ? { parts: true as const } : {}), values: cx.contexts.map((context) => valueOf(c, context[i], most)) };
