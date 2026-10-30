@@ -601,11 +601,12 @@ describe("an option's value that may give no word (after #482)", () => {
   });
 
   it('gives a command run and a subcommand the role they take when a value before them gives none or several (review of #490)', () => {
-    // (`git -C log` changes to `log`; `git -C r x log` runs `git x`, with the argument `log`; `sudo -u tar …` runs nothing.)
+    // (`git -C log` changes to `log`; `git -C r x log` runs `git x`, with the argument `log`; `sudo -u tar -cf …` runs nothing: sudo reads
+    // `-c` and refuses it on Linux, and a reading the tool refuses is not said.)
     assert.strictEqual(tokenOf('git -C $d log', 'log').explanation, 'Subcommand `git log`: Show commit logs (to the shell it is an argument to `git`, which interprets it itself). When `$d` expands to nothing, it is value for `-C`. When `$d` expands to several words, it is argument');
     assert.strictEqual(tokenOf('git -C $d log', 'log', 'ja').explanation, 'サブコマンド `git log`: コミット履歴を表示する（シェルから見れば `git` への引数で、`git` 自身が解釈する）。`$d` が0語なら `-C` オプションの値。`$d` が2語以上なら引数');
     const tar = allTokens(new Analyzer('en').explainLine(parser.parse('sudo -u $u tar -cf x y'), 0).items).find((t) => t.kind === 'command' && t.label.startsWith('tar'))!;
-    assert.strictEqual(tar.explanation, 'runs `tar`: Create or extract tar archives. When `$u` expands to nothing, it is value for `-u`. When `$u` expands to several words, it is argument of the command a word of `$u` names');
+    assert.strictEqual(tar.explanation, 'runs `tar`: Create or extract tar archives. When `$u` expands to several words, it is argument of the command a word of `$u` names');
   });
 
   it('runs those lines in bash, GNU tar, cp, grep and git as said', function () {
@@ -630,7 +631,12 @@ describe("an option's value that may give no word (after #482)", () => {
     // (A wrapper's word that may give none: with `$a` empty, the wrapper reads the option itself, `sudo -x`.)
     assert.strictEqual(tokenOf('nice $a -n 5 ls', '-n').explanation, `${en}. When \`$a\` expands to nothing, it is option \`-n\` (niceness adjustment) of \`nice\``);
     assert.strictEqual(tokenOf('nice $a -n 5 ls', '-n', 'ja').explanation, `${ja}。\`$a\` が0語なら \`nice\` のオプション \`-n\`（優先度の調整値）`);
-    for (const [line, of] of [['sudo $a -x', 'sudo'], ['sudo $a -x file', 'sudo'], ['env $a -x', 'env'], ['command $a -x', 'command']]) {
+    // (`sudo -x` is refused by sudo on Linux, so the reading where `$a` gives nothing is not said.)
+    for (const line of ['sudo $a -x', 'sudo $a -x file']) {
+      assert.strictEqual(tokenOf(line, '-x').explanation, en, line);
+      assert.strictEqual(tokenOf(line, '-x', 'ja').explanation, ja, line);
+    }
+    for (const [line, of] of [['env $a -x', 'env'], ['command $a -x', 'command']]) {
       assert.strictEqual(tokenOf(line, '-x').explanation, `${en}. When \`$a\` expands to nothing, it is option \`-x\` (not in the dictionary) of \`${of}\``, line);
       assert.strictEqual(tokenOf(line, '-x', 'ja').explanation, `${ja}。\`$a\` が0語なら \`${of}\` のオプション \`-x\`（辞書に未登録）`, line);
     }
