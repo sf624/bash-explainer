@@ -1596,11 +1596,13 @@ The model knows the integer attribute (`declare -i y`, also through a nameref), 
 | `declare -i y; echo ${y:=a$b}` | -> "the value of the arithmetic expression `a$b`" | -> `a$b (expanded)` |
 | `declare -i y; echo ${y-w}` | "When y is unset" -> w; "When `y=42`" -> 42 (no case for an empty `y`) | also "When `y=""`" -> empty |
 
-### sudo on Linux has no `-a` and no `-c`
+### sudo on Linux: `-a` and `-c`
 
-The spec of `sudo` lists the options of sudo 1.9 on Linux (sudo(8) has no `-a|--auth-type` and no `-c|--login-class`; both are BSD's). An option the spec does not list is one sudo refuses (`unknownOption`), and a reading that holds one is a refused reading, so the hedges say nothing of the words in it. The same holds for `bash` and bats' `run`, which already had such a text.
+sudo(8) on Linux lists neither `-a|--auth-type` nor `-c|--login-class` (BSD's), but sudo 1.9 still reads them and then prints its usage and exits with status 1 (checked with sudo 1.9.15 in test/sudo-linux.test.ts; `-c` alone says "option requires an argument -- 'c'"). The spec keeps them as options marked `refused`. Any other option sudo does not have is `invalid option -- 'Z'` (`unrecognized option '--frob'` for a long one), and a prefix of several long options is ambiguous (`--pre`); the spec has `unknownOption` for the first, and the ambiguous text wins over it. A reading with one of them is a refused reading, so the hedges say nothing of the words in it, and where the line as written is the refused one, the other readings are told from its roles (no "a word or more" that includes it).
 
 | Written | Said now | Said before |
 | --- | --- | --- |
-| `sudo -c foo ls` | option `-c`: "an option sudo (Linux) does not have (`-a` and `-c` are in the BSD builds only): sudo says `invalid option`…" | "login class (BSD)", with `foo` as its value |
+| `sudo -c foo ls` | option `-c`: "login class (BSD builds only: sudo on Linux reads the option, then prints its usage and fails with status 1)"; `foo` its value | "login class (BSD)" |
+| `sudo -Z ls` | "an option sudo does not have: sudo says `invalid option`…" | "Option (not in the dictionary; see `man sudo`)" |
 | `sudo -u $u tar -cf x y` | `y`: "argument of `$u`" when `$u` expands to several words | also "argument of `x`" when `$u` expands to nothing (sudo read `-cf` as a login class) |
+| `sudo -u $u -Z ls y` | `y`: "…When `$u` expands to several words, it is argument of `$u`" | as now |

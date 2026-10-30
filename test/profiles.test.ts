@@ -101,9 +101,17 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
     // (A clause may hold where every count is refused: `v` is the name with `$n` empty, `$f` empty or not; jq refuses
     // `jq --arg v`.)
     assert.deepStrictEqual(read(table('jq --arg $n v $f'), 'v').clauses[0].conditions, [[{ place: 0, from: 0, to: 0 }]]);
-    // (The base as written refused: `jq --arg $n` with `$n` one word lacks the value.)
+    // (The base as written refused: `jq --arg $n` with `$n` one word lacks the value. Its roles are still the ones said, and the other
+    // readings are told from them: `--arg` is the option in all of them, so no clause. The reading itself stays refused.)
     const arg = read(table('jq --arg $n'), '--arg');
-    assert.deepStrictEqual([arg.base.entries, arg.base.groups, arg.clauses.map((c) => c.conditions)], [[{ outcome: 'refused' }], [], [[[{ place: 0, from: 1 }]]]]);
+    assert.deepStrictEqual([keys(arg.base.entries[0].roles), arg.base.groups.length, arg.clauses], [[' | option --arg'], 1, []]);
+    assert.strictEqual(table('jq --arg $n').reading(table('jq --arg $n').shapes!.find((s) => s.join() === '1')!).outcome, 'refused');
+    // (A refused written reading and the readings that run: `sudo -u $u -Z ls y` with `$u` one word is refused by sudo, but `y` is
+    // said as written; the reading with several words is a clause of its own, and none says "a word or more", which includes the refused one.)
+    const y = read(table('sudo -u $u -Z ls y'), 'y');
+    assert.deepStrictEqual(y.clauses.map((c) => c.conditions), [[[{ place: 0, from: 2 }]]]);
+    assert.strictEqual(y.profiles[y.contexts.findIndex((c) => c[0] === 1)].entries.length, 1);
+    assert.deepStrictEqual(read(table('kill -s $sig -Z 1'), '1').clauses, []);
     // (One profile under two conditions is one clause: `x` with `$d` empty or of several words is a word `git` reads.)
     const x = read(table('git -C $d log -n $b x'), 'x');
     assert.deepStrictEqual(x.clauses.map((c) => c.conditions), [[[{ place: 0, from: 0, to: 0 }], [{ place: 0, from: 2 }]], [[{ place: 0, from: 1, to: 1 }, { place: 1, from: 0, to: 0 }]]]);
@@ -195,7 +203,8 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
       ['cp $b $a', '$b', 'source. When `$a` expands to nothing: source when `$b` expands to a single word; when it expands to 2 words, they are source, then destination (the new name, or an existing directory); when it expands to more words, they are source, then destination directory', 'コピー元。`$a` が0語のときは、`$b` が1語に展開されるならコピー元、2語なら順にコピー元・コピー先（新しい名前、または既存のディレクトリ）、3語以上なら順にコピー元・コピー先のディレクトリ'],
       ['seq $a x $b', 'x', 'increment. When `$a` expands to nothing and `$b` to nothing, it is last (counting from 1). When `$a` expands to nothing and `$b` to a word or more, it is first. When `$a` expands to 2 words, or when `$a` expands to a single word and `$b` to nothing, it is last. When `$a` expands to 3 words or more, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)', '増分。`$a` が0語で `$b` が0語なら終了値（開始値は 1）。`$a` が0語で `$b` が1語以上なら開始値。`$a` が2語、または `$a` が1語で `$b` が0語なら終了値。`$a` が3語以上なら余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 1 で終わる）'],
       ['cp $a $b $a d', 'd', 'destination directory. It can also be source or destination (the new name, or an existing directory), by how many words `$a` and `$b` give', 'コピー先のディレクトリ。`$a`・`$b` が展開される語数により、コピー元・コピー先（新しい名前、または既存のディレクトリ）のどちらかにもなる'],
-      ['jq --arg $n', '--arg', 'when `$n` expands to a word or more, it is option `--arg`', '`$n` が1語以上なら `--arg` オプション'],
+      // (Every reading reads `--arg` as the option, those jq refuses too: nothing to hedge.)
+      ['jq --arg $n', '--arg', 'option `--arg`', '`--arg` オプション'],
       ['cp -r $a $b $c x $d y $e', 'x', 'its role may depend on how many words `$a`, `$b`, `$c`, `$d` and `$e` give', '`$a`・`$b`・`$c`・`$d`・`$e` が展開される語数により役割が変わりうる'],
     ];
     for (const [line, word, en, ja] of CASES) {

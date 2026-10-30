@@ -284,6 +284,8 @@ export interface OptionSpec {
   value?: ValueSpec | ValueSpec[];
   /** Inherited by subcommands (`kubectl -n`). */
   persistent?: boolean;
+  /** The command reads the option and then refuses the line (sudo's `-a` and `-c` on Linux: it prints its usage and fails): the reading is refused (`Outcome`). */
+  refused?: true;
   /**
    * Written with `+` instead of `-`, it is the same option, not undone (bash's `+c`, `+l`, `+s`, `+D` when it starts:
    * shell.c reads the sign only for the letters of `set`). (bash's invocation only.)
