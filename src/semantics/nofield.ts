@@ -13,11 +13,11 @@ const SOME: Piece = { text: '1', quoted: false, expanded: false };
 /** What stands for `"$@"` or `"${a[@]}"` alone in its quotes: no word when there are no elements, even quoted. */
 const ELEMENTS: Piece = { text: '', quoted: false, expanded: true };
 
-/** An expansion whose value is never empty: a length, a count, a status, a PID, arithmetic, a process substitution's path. */
-function neverEmpty(n: SyntaxNode): boolean {
-  if (n.type === 'arithmetic_expansion' || n.type === 'process_substitution') return true;
-  return (n.type === 'simple_expansion' && /^\$[#?$]$/.test(nameText(n))) || (n.type === 'expansion' && n.text.startsWith('${#'));
-}
+/** An expansion whose value is a number: a length, a count, a status, a PID, arithmetic (negative too). */
+const isNumber = (n: SyntaxNode): boolean => n.type === 'arithmetic_expansion' || (n.type === 'simple_expansion' && /^\$[#?$]$/.test(nameText(n))) || (n.type === 'expansion' && n.text.startsWith('${#'));
+
+/** An expansion whose value is never empty: a number (`isNumber`), a process substitution's path. */
+const neverEmpty = (n: SyntaxNode): boolean => isNumber(n) || n.type === 'process_substitution';
 
 /**
  * `${n:=w}` of an integer `n` in `st`: never empty, since bash assigns it a number where it is unset or empty
@@ -33,13 +33,14 @@ function integerDefault(n: SyntaxNode, st: ShellState): boolean {
 }
 
 /**
- * Whether the word `n` is a lone `${n:=w}` of an integer (`integerDefault`) where the IFS holds no digit and no `-`: one
- * field, the number (with IFS `-5`, `-5` gives two).
+ * Whether the word `n` is a lone expansion whose value is a number (`$#`, `$?`, `$$`, `${#x}`, `$((…))`, or `${n:=w}` of
+ * an integer, `integerDefault`) where the IFS holds no digit and no `-`: one field, the number (with IFS `-5`, `-5`
+ * gives two; with IFS `1`, `$((11))` gives two empty fields and none).
  */
 export function givesOneNumber(n: SyntaxNode, model: StateModel): boolean {
-  if (n.type !== 'expansion') return false;
+  if (!isNumber(n) && n.type !== 'expansion') return false;
   const w = wordMeaning(n, model)!;
-  return integerDefault(n, w.state) && (w.ifs.kind === 'default' || (w.ifs.kind === 'value' && !/[\d-]/.test(w.ifs.value)));
+  return (isNumber(n) || integerDefault(n, w.state)) && (w.ifs.kind === 'default' || (w.ifs.kind === 'value' && !/[\d-]/.test(w.ifs.value)));
 }
 
 /**

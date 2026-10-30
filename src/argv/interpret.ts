@@ -10,8 +10,7 @@ import { EnvSplitError, splitEnvString } from './envsplit';
 import { type ParserRules, rulesOf } from './parsers';
 import { type Depends, type WordReadings, wordReadings } from './profiles';
 import { flexible, readingsOf, type ReadingsTable } from './readings';
-import { valueHedges } from './valuehedges';
-import { type Group, lineIndex, optionFields, regroup, withParse } from './regroup';
+import { type Group, optionFields, regroup, withParse } from './regroup';
 import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
 
 /** A word of the command line, as the program will see it. */
@@ -62,45 +61,44 @@ export type ArgRole =
   /**
    * An option, alone or as a letter of a cluster; `flag` is as written (`+x` for `set +x`, with `disables`).
    * `value` is a value written in the same word (`-n5`, `--file=x`); `missing`, a value it needs that no word gives.
-   * `none`: its role when an option's value before it gives no word, where it differs (`NoneRole`: `grep -e $p -i f`).
+   * `readings`, as an operand's (`grep -e $p -i f`: with `$p` empty, `-i` is the value of `-e`).
    */
-  | { role: 'option'; flag: string; spec: OptionSpec; text: Text; part?: Range; value?: ValueRole; disables?: boolean; missing?: boolean; none?: NoneRole[]; more?: MoreRole[] }
-  /** A word of several short options (`-xvf`, `-rn5`): one role per letter, in order, with their parts; `none` as an option's. */
-  | { role: 'cluster'; letters: ArgRole[]; none?: NoneRole[]; more?: MoreRole[] }
+  | { role: 'option'; flag: string; spec: OptionSpec; text: Text; part?: Range; value?: ValueRole; disables?: boolean; missing?: boolean; readings?: Readings }
+  /** A word of several short options (`-xvf`, `-rn5`): one role per letter, in order, with their parts; `readings` as an option's. */
+  | { role: 'cluster'; letters: ArgRole[]; readings?: Readings }
   /** An option recognized by its form (`kill -TERM`, `head -5`); `open` for `-` and an expansion (`head -$n`). */
-  | { role: 'pattern-option'; flag: string; pattern: PatternOption; text: Text; open?: boolean; none?: NoneRole[]; more?: MoreRole[] }
+  | { role: 'pattern-option'; flag: string; pattern: PatternOption; text: Text; open?: boolean; readings?: Readings }
   /**
    * `ambiguous`: the long options a prefix could be (`timeout --v`), which the tool refuses. `late`: a long option
    * after a short one, where the parser reads long options only first (`bash -x --posix`, the rule `longFirst`).
    * `refused`: what the spec says of a `--` the command refuses (`dashDash`, procps `ps`), or of an option it does not
-   * list (`unknownOption`): the command refuses the words (`Outcome`). `none`, as an option's (the
+   * list (`unknownOption`): the command refuses the words (`Outcome`). `readings`, as an option's (the
    * pattern options' and the end of options' too).
    */
-  | { role: 'unknown-option'; flag: string; part?: Range; value?: ValueRole; ambiguous?: string[]; late?: boolean; refused?: Text; none?: NoneRole[]; more?: MoreRole[] }
+  | { role: 'unknown-option'; flag: string; part?: Range; value?: ValueRole; ambiguous?: string[]; late?: boolean; refused?: Text; readings?: Readings }
   /** An option whose letters are known only at run time (`-$opts`, `-r$x`): `prefix` is what is known. */
   | { role: 'open-option'; prefix: string }
   | ValueRole
   /** Dashless letters in the first word (`tar cvf`). */
   | { role: 'old-style'; letters: ArgRole[] }
-  | { role: 'end-of-options'; none?: NoneRole[]; more?: MoreRole[] }
+  | { role: 'end-of-options'; readings?: Readings }
   /**
    * An operand; `spec` is absent when the spec does not describe the operands, or none of its patterns fits
    * (see `ArgvParse.unmatched`). `each`: the role of each word it becomes, when they are known and differ (`cp a{,.bak}`:
    * the source, then the destination). `readings`: what it is for every count of the words that may give other than one
-   * word, the line read again for each (src/argv/profiles.ts, `wordReadings`; `cp $a b`: with `$a` empty, `b` is a
-   * source; `tar -cf $a b`: the archive), read when first asked; undefined where no word may.
+   * word (`Readings`; `cp $a b`: with `$a` empty, `b` is a source; `tar -cf $a b`: the archive).
    */
-  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; each?: OperandSpec[]; readings?: WordReadings | Depends }
-  /** The rest of the words are read with the subcommand's spec. `none` and `more`, as an option's (`git -C $d log`). */
-  | { role: 'subcommand'; name: string; spec: CommandSpec; parse: ArgvParse; none?: NoneRole[]; more?: MoreRole[] }
+  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; each?: OperandSpec[]; readings?: Readings }
+  /** The rest of the words are read with the subcommand's spec. `readings`, as an option's (`git -C $d log`). */
+  | { role: 'subcommand'; name: string; spec: CommandSpec; parse: ArgvParse; readings?: Readings }
   /**
    * The first word of a command run by this one; `parse` reads the words after it. A shell string (`bash -c 'cmd'`,
    * `su -c 'cmd'`) has no `parse`; nor has a string joined from the words (`joined`). `of` is the option whose
    * value or words it is (`su -c`, `find -exec`); `item`, the operand it fills (`bash -c`, `ssh host cmd`). `each`, as
    * an operand's: the role of each word it becomes, when they are known and the others are not the command's
-   * (`trap {x,EXIT}`: the action, then a signal). `none` and `more`, as an option's (`sudo -u $u ls`).
+   * (`trap {x,EXIT}`: the action, then a signal). `readings`, as an option's (`sudo -u $u ls`).
    */
-  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec; each?: OperandSpec[]; none?: NoneRole[]; more?: MoreRole[] }
+  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec; each?: OperandSpec[]; readings?: Readings }
   /** The word that ends an option's command (`;` of `find -exec … ;`), and its text (one of the option's `until.terminators`). */
   | { role: 'terminator'; text: string; of: string }
   /** A word of the shell string that a `command` role before it joins from the words (`ssh host ls -l`). */
@@ -115,30 +113,18 @@ export type ArgRole =
   | FieldsRole;
 
 /** `readings`, as an operand's: what the word is for every count of the others (`p='a b'; cp $p $u`). */
-export type FieldsRole = { role: 'fields'; words: ArgWord[]; roles: RoleAt[]; readings?: WordReadings | Depends };
+export type FieldsRole = { role: 'fields'; words: ArgWord[]; roles: RoleAt[]; readings?: Readings };
 
 export type CommandRole = Extract<ArgRole, { role: 'command' }>;
 export type OperandRole = Extract<ArgRole, { role: 'operand' }>;
 
 /**
- * The role of a word when the words `words` give no word (`none` of an operand, an option, a value): an operand's
- * (`spec`), or the value of an option (`value`: `tar -cf $a b`, `b` is the archive when `$a` gives none). `first`: the
- * word may give several, and the role is its first word's (`y='p q'; tar -cf $a $y`, with `$a` empty `p` is the archive).
+ * What a word is for every count of the words of the line that may give other than one word (src/argv/profiles.ts,
+ * `wordReadings`), the line read again for each: read when first asked, and undefined where no word may. Every role of
+ * a command's own word has it, at every level (the words of a subcommand, of a command run), but not the roles of the
+ * fields of a word or of a string a value splices in, nor a letter of a cluster.
  */
-export type NoneRole = ({ words: number[]; spec: OperandSpec; value?: undefined } | { words: number[]; value: ValueRole; spec?: undefined }) & { first?: true };
-
-/**
- * A role a word may take that a hedge names: an operand's (`spec`), an option's value (`value`), or neither, an operand
- * the spec does not describe (`git -C $d log`: with `d='r x'`, `log` is an argument of `git x`).
- */
-export type ThenRole = { spec: OperandSpec; value?: undefined } | { value: ValueRole; spec?: undefined } | { spec?: undefined; value?: undefined };
-
-/**
- * The roles a word may take when an option's value before it, a word of its own (`word`, an index of the command's
- * words), gives two words or more, where they differ from its own (`jq --arg $n $v .`: with `n='a b'`, `$v` is the
- * filter). `first`: the word may give several, and the roles are its first word's.
- */
-export interface MoreRole { word: number; roles: ThenRole[]; first?: true }
+export type Readings = WordReadings | Depends;
 
 /**
  * The value of an option: `of` is the option's `flag` as written (`-f`, `--file`, `f` of `tar cf`), `index`
@@ -154,16 +140,8 @@ export interface ValueRole {
   split?: { words: ArgWord[]; roles: RoleAt[] };
   /** Why the program refuses to split it (`env -S'"a'`: no closing quote), with the text at fault. */
   refused?: { error: EnvSplitError; at: string };
-  /** Its role when an option's value before it gives no word, where it differs (`grep -e $p -e x f`: `x` is a file). */
-  none?: NoneRole[];
-  /** Its roles when an option's value before it gives several words, where they differ (`MoreRole`). */
-  more?: MoreRole[];
-  /**
-   * A value of a word of its own that may give several words: the roles the words after its first may take (`head -n $a
-   * f`: with `a='1 g'`, `g` is a file to read), as the words after it would be read; empty where the interpreter does not
-   * name one of them (an operand the spec does not describe, a command it runs…).
-   */
-  rest?: ThenRole[];
+  /** `readings`, as an operand's (`grep -e $p -e x f`: with `$p` empty, `x` is a file; `head -n $a f`: with `a='1 g'`, `g` is a file). */
+  readings?: Readings;
 }
 
 /** Offsets in a word's text: start, and end (exclusive). */
@@ -231,16 +209,23 @@ const known = (w: ArgWord): string => w.value ?? w.prefix ?? '';
 /**
  * The words a command gets for the words of its line (`interpret`): a word whose fields the model knows
  * (`ArgWord.fields`: not one known as written, `value` with no `count`) gives those fields, each a word of known text
- * (none for an empty one); the others stay as they are. `groups`: where the fields of a word that gives other than one
- * stand (`lineIndex` gives the word of the line of each); `own`: the words of the line read as their one field.
+ * (none for an empty one); with `counted`, a word of no known text that gives a known number of words other than one
+ * (`"$x"{a,b}`: two; a word whose words keep a known start comes in parts, `ArgWord.parts`) gives that many words of no
+ * known text, the first with its known start; the others stay as they are. `groups`: where the fields of a word that gives other than one stand
+ * (`lineIndex` gives the word of the line of each); `own`: the words of the line read as their one field.
  */
-export function fieldLine(words: readonly ArgWord[]): { line: ArgWord[]; groups: Group[]; own: Set<number> } {
+export function fieldLine(words: readonly ArgWord[], counted = true): { line: ArgWord[]; groups: Group[]; own: Set<number> } {
   const line: ArgWord[] = [];
   const groups: Group[] = [];
   const own = new Set<number>();
   words.forEach((w, k) => {
     const fields = w.fields && (w.value === undefined || w.count) ? w.fields() : undefined;
-    if (!fields) line.push(w);
+    const n = counted && !fields && w.value === undefined && !w.parts && w.count && w.count.min === w.count.max && w.count.min > 1 ? w.count.min : 0;
+    if (n) {
+      const { count: _, fields: __, param: ___, ...first } = w;
+      groups.push({ from: line.length, n, word: k, shift: n - 1, words: [first, ...Array.from({ length: n - 1 }, (): ArgWord => ({}))] });
+      line.push(...groups.at(-1)!.words!);
+    } else if (!fields) line.push(w);
     else if (fields.length === 1) {
       own.add(k);
       line.push({ value: fields[0] });
@@ -256,22 +241,13 @@ export function fieldLine(words: readonly ArgWord[]): { line: ArgWord[]; groups:
  * Reads the words of a command (its arguments, without the name) with its spec. A word whose fields the model knows
  * (`ArgWord.fields`: not one known as written, `value` with no `count`) is read as those fields, as bash gives them to
  * the command (`x='-r a'; cp $x d` is `cp -r a d`; `z=; cp $z c` is `cp c`): one field as the word's value, other than
- * one as words of their own, whose roles go back to the word (`regroup`, `folded`). An operand's `readings`, and those of
- * a word read as its fields, come from the table of readings of the line (src/argv/readings.ts), built once when first
- * asked: only the explanation asks, and the line is interpreted for many other uses.
+ * one as words of their own, whose roles go back to the word (`regroup`, `folded`). The `readings` of each role come
+ * from the table of readings of the line (src/argv/readings.ts), built once when first asked: only the explanation
+ * asks, and the line is interpreted for many other uses.
  */
 export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretContext = {}): ArgvParse {
   const { line, groups, own } = fieldLine(words);
-  const back = groups.length ? lineIndex(groups) : (j: number): number => j;
-  const read = (words: ArgWord[]): ArgvParse => readWritten(spec, words, ctx);
-  const parse = read(line);
-  // (A value that may give several words is read with `c` of them: its first word, then words of their own whose text is
-  // not known. The words of the line after it are `c - 1` places on.)
-  const spread = (j: number, c: number): ArgvParse => {
-    const { count: _, fields: __, ...first } = line[j];
-    return read([...line.slice(0, j), first, ...Array.from({ length: c - 1 }, (): ArgWord => ({})), ...line.slice(j + 1)]);
-  };
-  valueHedges(parse, spec, line, (j) => read([...line.slice(0, j), ...line.slice(j + 1)]), spread, back);
+  const parse = readWritten(spec, line, ctx);
   // (No word may give other than one word: every role is certain, and no table is built.)
   const readings = line.some(flexible) ? readingsAt(spec, words, ctx) : (): undefined => undefined;
   const certain = (k: number): boolean => {
@@ -283,19 +259,22 @@ export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretCon
 }
 
 /** The readings of each of the command's words (`wordReadings`), from one table of the line, built when first asked; each word's once. */
-function readingsAt(spec: CommandSpec, words: readonly ArgWord[], ctx: InterpretContext): (k: number) => WordReadings | Depends | undefined {
+function readingsAt(spec: CommandSpec, words: readonly ArgWord[], ctx: InterpretContext): (k: number) => Readings | undefined {
   let table: ReadingsTable | undefined;
-  const memo = new Map<number, WordReadings | Depends | undefined>();
+  const memo = new Map<number, Readings | undefined>();
   return (k) => {
     if (!memo.has(k)) memo.set(k, wordReadings((table ??= readingsOf(spec, words, ctx)), k));
     return memo.get(k);
   };
 }
 
-/** `parse` with the `readings` of each operand and each word read as its fields, at every level, read when asked. */
-function withReadings(parse: ArgvParse, readings: (k: number) => WordReadings | Depends | undefined): ArgvParse {
+/** The roles that have `readings` (`Readings`). */
+const READ = new Set<ArgRole['role']>(['operand', 'fields', 'value', 'option', 'cluster', 'pattern-option', 'unknown-option', 'end-of-options', 'subcommand', 'command']);
+
+/** `parse` with the `readings` of the role of each word (`Readings`), at every level, read when asked. */
+function withReadings(parse: ArgvParse, readings: (k: number) => Readings | undefined): ArgvParse {
   const give = (word: number, role: ArgRole): void => {
-    if (role.role === 'operand' || role.role === 'fields') Object.defineProperty(role, 'readings', { configurable: true, get: () => readings(word) });
+    if (READ.has(role.role)) Object.defineProperty(role, 'readings', { configurable: true, get: () => readings(word) });
     if ((role.role === 'subcommand' || role.role === 'command') && role.parse) visit(role.parse);
   };
   const visit = (q: ArgvParse): void => {

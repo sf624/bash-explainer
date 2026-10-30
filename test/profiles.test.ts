@@ -158,9 +158,10 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
   });
 
   it('roles: told apart by the command words that read them, as `sameRole` keys them', () => {
-    // (`nice $a -n 5 ls`: with `$a` one word, `-n` is read by the command `$a` runs; empty, nice's own.)
+    // (`nice $a -n 5 ls`: with `$a` one word, `-n` is read by the command `$a` runs, which the dictionary does not
+    // describe, so it is an argument; empty, nice's own option.)
     const n = read(table('nice $a -n 5 ls'), '-n');
-    assert.deepStrictEqual([keys(n.base.places), keys(n.clauses[0].profile.places)], [['>0 | unknown-option -n'], [' | option -n']]);
+    assert.deepStrictEqual([keys(n.base.places), keys(n.clauses[0].profile.places)], [['>0 | operand '], [' | option -n']]);
     assert.deepStrictEqual(n.base.places![0].by, [0]);
     assert.deepStrictEqual(keys(read(table('sudo -u $u tar -cf x y'), 'x').base.places), ['>2 | value -f 0']);
     assert.deepStrictEqual(keys(read(table('git log -n $b x'), 'x').base.places), ['>0 | operand ']);

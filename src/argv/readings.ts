@@ -2,13 +2,13 @@
 // (docs/design/count-hedges.md, section 2): the runs of words of unknown text, the count variables (tied where two words
 // are one parameter), the coordinates and their domains up to the bound S, the shapes read (the sums of the runs, at real
 // sums inside a run and capped elsewhere, at most `SHAPE_CAP`), and one reading of the whole line per shape, with the
-// roles given back to the command's words. src/argv/profiles.ts reads it, and `interpret` gives its readings to the operands.
+// roles given back to the command's words. src/argv/profiles.ts reads it, and `interpret` gives its readings to the
+// role of each word.
 import { BASH_VARIABLES } from '../semantics/vars';
 import { splitEnvString } from './envsplit';
 import { type ArgRole, type ArgvParse, type ArgWord, fieldLine, type InterpretContext, readWritten, type RoleAt, subcommand } from './interpret';
 import { type Group, lineIndex, optionFields, regroup } from './regroup';
 import type { CommandSpec } from './spec';
-import { allRoles, mostWords } from './valuehedges';
 
 /** The most shapes read for one command (section 2.8): past it, no shape is read. */
 export const SHAPE_CAP = 1024;
@@ -130,12 +130,26 @@ export interface ReadingsTable {
 
 /** Whether a word may give other than one word, and not an exact number of them (section 2.1). */
 export const flexible = (w: ArgWord): boolean => !!w.count && w.count.min !== w.count.max;
-/** Whether nothing is known of a word's text. */
-const unknownText = (w: ArgWord): boolean => w.value === undefined && !w.prefix;
 const range = (from: number, to: number): number[] => Array.from({ length: to - from }, (_, k) => from + k);
 
-/** S of one spec: `mostWords`, or for a spec without options two and its longest pattern. */
-export const wordsBound = (spec: CommandSpec): number => (spec.options ? mostWords(spec) : 2 + Math.max(0, ...(spec.operands ?? []).map((a) => a.pattern.length)));
+/**
+ * S of one spec (section 2.1): past it, every word of the line reads the same for any more words (a repeated item, an
+ * extra operand, an argument of the command it runs). Two, the most values an option takes (two: `jq --arg NAME
+ * VALUE`; none without options) and the longest pattern of its operands.
+ */
+export function wordsBound(spec: CommandSpec): number {
+  const values = spec.options ? Math.max(1, ...spec.options.map((o) => (Array.isArray(o.value) ? o.value.length : 1))) : 0;
+  return 2 + values + Math.max(0, ...(spec.operands ?? []).map((a) => a.pattern.length));
+}
+
+/** The roles of a reading, by word, at every level (the words of a subcommand, of a command run). */
+export function allRoles(parse: ArgvParse, out = new Map<number, ArgRole>()): Map<number, ArgRole> {
+  for (const { word, role } of parse.roles) {
+    out.set(word, role);
+    if (role.role === 'subcommand' || (role.role === 'command' && role.parse)) allRoles(role.parse!, out);
+  }
+  return out;
+}
 
 /**
  * The specs a reading of `line` may visit: `spec`, the specs its known words name as a command (`lookup`, and the
@@ -157,16 +171,20 @@ export function specsReached(spec: CommandSpec, line: readonly ArgWord[], ctx: I
   return out;
 }
 
-/** The runs of the line, in order (`Run`, without its counts). */
-function runsOf(line: readonly ArgWord[]): { words: number[]; prefix?: string; each?: true }[] {
+/**
+ * The runs of the line, in order (`Run`, without its counts). The words of a group of `fieldLine` (`grouped`: the words
+ * of a word of a known number of words, `"$x"{a,b}`, of no known text) are no part of one: they are that word's.
+ */
+function runsOf(line: readonly ArgWord[], grouped: ReadonlySet<number>): { words: number[]; prefix?: string; each?: true }[] {
   const runs: { words: number[]; prefix?: string; each?: true }[] = [];
+  const unknownText = (j: number): boolean => !grouped.has(j) && line[j].value === undefined && !line[j].prefix;
   for (let i = 0; i < line.length; i++) {
-    if (!unknownText(line[i])) {
+    if (!unknownText(i)) {
       if (flexible(line[i])) runs.push({ words: [i], prefix: line[i].prefix, ...(line[i].prefixEach ? { each: true as const } : {}) });
       continue;
     }
     let j = i;
-    while (j < line.length && unknownText(line[j])) j++;
+    while (j < line.length && unknownText(j)) j++;
     if (range(i, j).some((k) => flexible(line[k]))) runs.push({ words: range(i, j) });
     i = j - 1;
   }
@@ -340,7 +358,8 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
   const bound = Math.max(...[...specs].map(wordsBound));
   const { variables, variableOf } = variablesOf(line, words, back, bound, tails);
   const fixedOf = (j: number): number => line[j].count?.min ?? 1;
-  const runs: Run[] = runsOf(line).map(({ words: ws, prefix, each }) => {
+  const grouped = new Set(line.flatMap((_, j) => (groups.some((g) => of[j] >= g.from && of[j] < g.from + g.n) ? [j] : [])));
+  const runs: Run[] = runsOf(line, grouped).map(({ words: ws, prefix, each }) => {
     const mult = new Map<number, number>();
     let fixed = 0;
     for (const j of ws) {

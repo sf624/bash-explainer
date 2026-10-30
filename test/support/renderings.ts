@@ -14,9 +14,8 @@
 //   reads bash's argv, and the role of each field must be one the explanation shows on its word: the same option, the
 //   value of the same option, or an operand whose text from the spec the word's token says (alone, in the list of its
 //   fields, "expands to `-r` (option: …) and `a` (source)", or in the readings of the word (the texts of src/argv/profiletexts.ts,
-//   read by `readingsSay`): its profile as written, by place or by own count, unless a clause "When `$x` expands to nothing, it
-//   is …" holds for the counts, or a folded text "It can also be …"; or, on a value or an option, "…; … when `$y` expands
-//   to nothing", of `ArgRole.none`).
+//   read by `readingsSay`, on the token of any role): its profile as written, by place or by own count, unless a clause
+//   "When `$x` expands to nothing, it is …" holds for the counts, or a folded text "It can also be …").
 //
 // The counts come from the facts the tokens carry (`Token.value`, `Token.expands`, `Token.origin`, the refs and the
 // words of a brace expansion, the sections of an example); only the string and the concatenation are told by their
@@ -318,11 +317,10 @@ export function readingsSay(explanation: string, place: FieldPlace): { roles: st
 }
 
 /**
- * Whether the explanation of an operand's token says the role `texts` (the spec's text, as written or as `eachText`
+ * Whether the explanation of a token says the operand's role `texts` (the spec's text, as written or as `eachText`
  * writes it) for the field at `place`: in its readings (`readingsSay`), the role of its profile as written or of the
- * clause that holds; after them, "; W when `$b` expands to nothing", W where the words it names gave none and this word
- * one (the hedge of a value or an option, `ArgRole` `none`); in the words of a brace expansion or the fields the model
- * knows ("expands to `a` (X) and `b` (Y)"), the role after the field's own text, with its clauses.
+ * clause that holds; in the words of a brace expansion or the fields the model knows ("expands to `a` (X) and `b` (Y)"),
+ * the role after the field's own text, with its clauses.
  */
 export function saysOperand(explanation: string, texts: readonly string[], place: FieldPlace): boolean | undefined {
   const whole = plain(explanation);
@@ -333,59 +331,13 @@ export function saysOperand(explanation: string, texts: readonly string[], place
     for (let i = part.indexOf(p); i >= 0; i = part.indexOf(p, i + 1)) if (/\)$/.test(p) || !part.startsWith(' (', i + p.length)) return true;
     return false;
   });
-  // (The role when the words it names gave none and this word one; the part before says the other readings.)
-  const none = noneReadings(whole);
-  const held = heldNone(none.readings, place);
-  // ("argument": an operand of a command the reading does not know, `timeout -s $s 5 ls`, any operand of the command run.)
-  if (held.length) return held.some(has) || held.some((h) => h.split(/, | or /).includes('argument'));
-  const said = readingsSay(none.rest, place);
+  const said = readingsSay(whole, place);
   // (A text in a form not read here: a finding, so that a new wording is seen.)
   if (!said) return false;
   const list = said.roles.length === 1 ? listItem(said.roles[0], place) : undefined;
   // ("argument": an operand of a command the readings do not know, the command a word of `$s` names in `timeout -s $s 5 ls`.)
   const ok = list !== undefined ? has(list) : said.roles.some((x) => has(x) || /^argument(?: of |$)/.test(x));
   return ok || (said.loose ? undefined : false);
-}
-
-/**
- * The readings "; W when `$b` expands to nothing" (or "`$b`, `$c` expand", all of them; or "`$b` or `$c` expands", any
- * one) at the end of an explanation (`ArgRole` `none`: of an operand, after an option's value, or both), and "; W when
- * `$b` expands to several words" (`ArgRole` `more`: after an option's value that gives two words or more; W may be
- * "X or Y"), each with the words it names, and the part before them. "its first word is W": the role of the first field
- * of a word that may give several.
- */
-type NoneReading = { text: string; words: string[]; any: boolean; first: boolean; several: boolean };
-function noneReadings(whole: string): { rest: string; readings: NoneReading[] } {
-  const readings: NoneReading[] = [];
-  let rest = whole;
-  for (let m; (m = /; ((?:(?!; ).)+) when ((?:`[^`]+`(?:, | or )?)+) expands? to (nothing|several words)$/.exec(rest)); rest = rest.slice(0, m.index)) {
-    const first = m[1].startsWith('its first word is ');
-    readings.unshift({ text: first ? m[1].slice('its first word is '.length) : m[1], words: [...m[2].matchAll(/`([^`]+)`/g)].map((x) => x[1]), any: m[2].includes(' or '), first, several: m[3] !== 'nothing' });
-  }
-  return { rest, readings };
-}
-
-/**
- * The texts of the readings of `none` and `more` that hold for the field at `place`: every word they name gave none
- * (or several, two fields or more; one of them, for "or"), and this word one (or this is the first field, for "its
- * first word").
- */
-const heldNone = (readings: NoneReading[], place: FieldPlace): string[] => readings.filter((r) => {
-  const gave = (w: string): boolean => (r.several ? (place.counts.get(w) ?? 0) >= 2 : place.counts.get(w) === 0);
-  return (place.of === 1 || (r.first && place.at === 0)) && (r.any ? r.words.some(gave) : r.words.every(gave));
-}).map((r) => r.text);
-
-/**
- * The roles the words after the first of an option's value take, as its token says them where the value gives several
- * words (`ValueRole` `rest`): "…; when `$a` expands to several words, this value is the first word `$a` gives, and each
- * of the others is X" (or "X or Y"); undefined where it says they are read as the words after it, or says nothing of them.
- */
-function restOf(tokens: readonly Token[]): string | undefined {
-  for (const t of tokens) {
-    const m = t.valueFor && /; when `[^`]+` expands to several words, this value is the first word `[^`]+` gives, and each of the others is ((?:(?!; ).)+)/.exec(plain(t.explanation));
-    if (m) return m[1];
-  }
-  return undefined;
 }
 
 /**
@@ -403,56 +355,56 @@ function listItem(e: string, place: FieldPlace): string | undefined {
 
 /**
  * Whether one of the tokens shown on a word shows the role bash's argv gives one of its fields: an option as an
- * option's token that shows its flag, the value of an option as that option's value, an operand as an argument whose
- * text says the spec's text of it (at its place in a hedge), and an operand the spec does not describe as an argument
- * that says none of the spec's operands. Undefined for the roles not compared (a command another runs, a subcommand, a
- * terminator…).
+ * option's token that shows its flag, the value of an option as that option's value, an operand as a token whose text
+ * says the spec's text of it (at its place in its readings), and an operand the spec does not describe as one that says
+ * none of the spec's operands. A token whose clause holds for the counts (`readingsSay`) says the role that clause
+ * names, not its own. Undefined for the roles not compared (a command another runs, a subcommand, a terminator…), and
+ * where the role is not shown but a token says only that its role may depend on the counts (a missing explanation).
  */
 export function showsRole(role: ArgRole, tokens: readonly Token[], place: FieldPlace, operands: readonly string[]): boolean | undefined {
-  // (The value of an option that bash expands into several words: the first is the value, the others operands,
-  // `Token.valueFor` with `Token.expands`.)
-  const spliced = place.at > 0 && tokens.some((t) => t.valueFor && t.expands);
   // (No token of an argument or an option on the word: a missing explanation, not one that contradicts bash.)
   if (!tokens.length) return undefined;
   // (The parts of the lists of the fields of the word, "expands to `-n` (option: …) and `2` (value for `-n`)", that say this field.)
   const items = tokens.flatMap((t) => listItem(plain(t.explanation), place) ?? []);
-  // (The roles its token says it takes when words before it give none, where they gave none: `tar -cf $a b`, "…; value for
-  // `-f` when `$a` expands to nothing".)
-  const held = tokens.flatMap((t) => heldNone(noneReadings(plain(t.explanation)).readings, place));
-  // (The roles the readings of an operand's token say of the field, and those of a clause that holds: `cp -t $d $a b`,
-  // "… When `$d` and `$a` expand to nothing, it is value for `-t`".)
-  const args = tokens.filter((t) => t.kind === 'argument' && !t.valueFor);
-  const said = args.flatMap((t) => readingsSay(noneReadings(plain(t.explanation)).rest, place) ?? []);
-  const clauses = said.flatMap((r) => (r.clause ? r.roles : []));
-  switch (role.role) {
-    case 'option': case 'cluster': case 'pattern-option': case 'unknown-option': case 'old-style':
-      // (Or in the list of the fields of its word: "expands to `-r` (option: …) and `a` (source)".)
-      return flagsOf(role).every((f) => tokens.some((t) => showsFlag(t, f)) || [...items, ...clauses].some((e) => showsFlag({ kind: 'option', explanation: e } as Token, f)));
-    case 'end-of-options':
-      return tokens.some((t) => t.kind === 'option') || items.some((e) => e.includes('(end of options)')) || clauses.some((e) => e.includes('end of options'));
-    case 'value': {
-      if (clauses.length) return clauses.some((x) => x.includes(`value for \`${dash(role.of)}\``) || x.includes(`name for \`${dash(role.of)}\``));
-      // (A later field of a value of two words or more (`--arg NAME VALUE`): the others of the first are said to be "value for `--arg`" among them.)
-      const rest = spliced ? restOf(tokens) : undefined;
-      if (rest !== undefined && !held.length) return rest.includes(`value for \`${dash(role.of)}\``);
-      if (held.length) return held.some((x) => [`value for \`${dash(role.of)}\``, `name for \`${dash(role.of)}\``].includes(x));
-      return tokens.some((t) => t.valueFor === dash(role.of)) || items.some((e) => e.includes(`(value for \`${dash(role.of)}\`)`));
+  // (What the readings of each token say of the field: `grep -e $p -i f`, of `-i`, "… When `$p` expands to nothing, it is
+  // value for `-e`". A token whose clause holds says that clause's roles; the others, their own role.)
+  const read = tokens.map((t) => ({ t, said: readingsSay(plain(t.explanation), place) }));
+  const clauses = read.flatMap((x) => (x.said?.clause ? x.said.roles : []));
+  const own = read.filter((x) => !x.said?.clause).map((x) => x.t);
+  // (A field after the first of a word read by place or by own count: the roles its profile as written says of it, where
+  // that is not the token's own text: `head -n $a f` with `a='1 g'`, "… and each of the others is target file".)
+  const later = place.at > 0 ? read.flatMap((x) => (x.said && !x.said.clause && x.said.roles[0] !== plain(x.t.explanation) ? x.said.roles : [])) : [];
+  const loose = read.some((x) => x.said?.loose);
+  const shown = ((): boolean | undefined => {
+    switch (role.role) {
+      case 'option': case 'cluster': case 'pattern-option': case 'unknown-option': case 'old-style':
+        // (Or in the list of the fields of its word: "expands to `-r` (option: …) and `a` (source)".)
+        return flagsOf(role).every((f) => own.some((t) => showsFlag(t, f)) || [...items, ...clauses, ...later].some((e) => showsFlag({ kind: 'option', explanation: e } as Token, f)));
+      case 'end-of-options':
+        return own.some((t) => t.kind === 'option') || items.some((e) => e.includes('(end of options)')) || [...clauses, ...later].some((e) => e.includes('end of options'));
+      case 'value': {
+        const names = [`value for \`${dash(role.of)}\``, `name for \`${dash(role.of)}\``];
+        if (clauses.length) return clauses.some((x) => names.some((n) => x.includes(n)));
+        // (A later field of a value read by place: `jq --arg $n $v .`, of `$v`.)
+        if (later.length) return later.some((x) => names.some((n) => x.includes(n)));
+        return own.some((t) => t.valueFor === dash(role.of)) || items.some((e) => e.includes(`(value for \`${dash(role.of)}\`)`));
+      }
+      case 'operand': {
+        if (role.spec?.assignment || role.assignment) return undefined;
+        // (The tokens of an argument, and those whose clause holds: a subcommand's, `git -C $d log`.)
+        const speak = read.filter((x) => x.said?.clause || x.t.kind === 'argument');
+        // (An operand the spec does not describe: a role said that names none of them, "argument" when `$d` expands to
+        // several words.)
+        if (!role.spec) return speak.some((x) => x.said?.roles.some((r) => !operands.some((o) => r.includes(plain(o)))));
+        const texts = [role.spec.text.en, role.spec.text.en.replace(/ \((.*)\)$/, ': $1')];
+        const says = speak.map((x) => saysOperand(x.t.explanation, texts, place));
+        return says.includes(true) || (says.includes(undefined) ? undefined : false);
+      }
+      default:
+        return undefined;
     }
-    case 'operand': {
-      if (role.spec?.assignment || role.assignment) return undefined;
-      // (The words after the first of a value: the roles its token names, or any where it names none.)
-      if (spliced) return !role.spec || restOf(tokens) === undefined || [role.spec.text.en, role.spec.text.en.replace(/ \((.*)\)$/, ': $1')].some((x) => restOf(tokens)!.includes(plain(x)));
-      // (An option or a value that is an operand when words before it give none: `grep -e $p -e x f`, `x` is a file.)
-      const shown = tokens.filter((t) => t.kind === 'argument' && (!t.valueFor || held.length));
-      // (Or a reading that holds names none of them: "argument when `$d` expands to several words", `git -C $d log`.)
-      if (!role.spec) return held.length ? held.some((h) => !operands.some((x) => h.includes(plain(x)))) : said.some((r) => r.roles.some((x) => !operands.some((o) => x.includes(plain(o)))));
-      const texts = [role.spec.text.en, role.spec.text.en.replace(/ \((.*)\)$/, ': $1')];
-      const says = shown.map((t) => saysOperand(t.explanation, texts, place));
-      return says.includes(true) || (says.includes(undefined) ? undefined : false);
-    }
-    default:
-      return undefined;
-  }
+  })();
+  return shown === false && loose ? undefined : shown;
 }
 
 /** The role as the report says it. */

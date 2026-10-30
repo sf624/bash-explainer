@@ -42,7 +42,7 @@ import { elementsOf } from '../semantics/elements';
 import { argWordIn, countIn, fieldsIn, untilWords } from '../semantics/argwords';
 import { arrayKind, globOff, NO_SPEC, notForEarlier, programBasis, resolve, restrictedAt, restrictedCall, shellVariant, shoptAt, specFor, wordAt } from './reads';
 import { findRefusal } from './find-refusal';
-import { eachText, functionArgs, listed, numbered, readingsParts, restText, SHIFTS, withNone, wordItems } from './operand-texts';
+import { eachText, functionArgs, listed, numbered, readingsParts, SHIFTS, shownWords, withReadings, wordItems } from './operand-texts';
 import { soleRead, turnedOff, unknownOption } from './option-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
 import { testTokens } from './tests';
@@ -123,17 +123,17 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
       const a = nodes[word];
       switch (role.role) {
         case 'end-of-options':
-          out.push(withNone(cx, endOfOptions(cx, a, spec), role, nodes));
+          out.push(withReadings(cx, endOfOptions(cx, a, spec), role.readings, word, nodes));
           break;
         case 'option':
         case 'unknown-option':
         case 'cluster':
           disables = (role.role === 'cluster' ? role.letters[0] as { flag: string } : role).flag.startsWith('+');
           // (A declaration builtin's options are explained by the attributes they give; one it does not have, as any builtin's.)
-          out.push(withNone(cx, declaresNames(spec) && role.role !== 'unknown-option' ? declarationOption(cx, a, role) : optionToken(cx, a, role, spec, parse, word), role, nodes));
+          out.push(withReadings(cx, declaresNames(spec) && role.role !== 'unknown-option' ? declarationOption(cx, a, role) : optionToken(cx, a, role, spec, parse, word), role.readings, word, nodes));
           break;
         case 'pattern-option':
-          out.push(withNone(cx, cx.tok(a, 'option', cx.t(role.text), wordParts(cx, a)), role, nodes));
+          out.push(withReadings(cx, cx.tok(a, 'option', cx.t(role.text), wordParts(cx, a)), role.readings, word, nodes));
           break;
         case 'open-option':
           out.push(cx.tok(a, 'option', cx.s(
@@ -141,7 +141,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             'Options known only at run time (the command reads what the expansion gives as options)'), wordParts(cx, a)));
           break;
         case 'value':
-          out.push(withNone(cx, expanded(cx, a, valueToken(cx, a, role, disables)), role, nodes));
+          out.push(withReadings(cx, expanded(cx, a, valueToken(cx, a, role, disables)), role.readings, word, nodes));
           break;
         case 'old-style': {
           const parts = role.letters.flatMap((l) => {
@@ -175,7 +175,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
         }
         case 'subcommand': {
           const note = cx.s(`（シェルから見れば \`${parse.command}\` への引数で、\`${parse.command}\` 自身が解釈する）`, ` (to the shell it is an argument to \`${parse.command}\`, which interprets it itself)`);
-          out.push(withNone(cx, cx.tok(a, 'subcommand', cx.s(`サブコマンド \`${role.parse.command}\`: `, `Subcommand \`${role.parse.command}\`: `) + cx.t(role.spec.summary) + note), role, nodes));
+          out.push(withReadings(cx, cx.tok(a, 'subcommand', cx.s(`サブコマンド \`${role.parse.command}\`: `, `Subcommand \`${role.parse.command}\`: `) + cx.t(role.spec.summary) + note), role.readings, word, nodes));
           out.push(...render(cx, role.parse, role.spec, nodes, nodes.slice(word + 1, role.parse.end)));
           break;
         }
@@ -201,7 +201,7 @@ function render(cx: Explainer, parse: ArgvParse, spec: CommandSpec, nodes: Synta
             if (!parse.refusal) slotNotes(cx, role, cx.slotEnvs.get(a)!, [a], assigned);
             const string = role.of ? valueToken(cx, a, { role: 'value', of: role.of, index: 0 }, false) : cx.tok(a, 'argument', cx.t(role.item!.text), wordParts(cx, a));
             out.push(withScript(string, scriptTokens(cx, [a], cx.slotEnvs.get(a)!, shellParams(cx, role, parse, nodes, word), !parse.refusal)));
-          } else out.push(withNone(cx, wrapped(cx, nodes, word, role, assigned, parse.refusal), role, nodes));
+          } else out.push(withReadings(cx, wrapped(cx, nodes, word, role, assigned, parse.refusal), role.readings, word, nodes));
           break;
         case 'joined':
           if (!joinedWhole) out.push(a === joinedNote?.at ? withScript(positional(cx, a, joined), { tokens: [], note: joinedNote.note }) : positional(cx, a, joined));
@@ -399,8 +399,7 @@ function valueToken(cx: Explainer, v: SyntaxNode, role: ValueRole, disables: boo
     const name = names[role.index];
     t.explanation = cx.s(`\`${flag}\` の${name}`, `${name[0].toUpperCase()}${name.slice(1)} for \`${flag}\``) + (role.index === 0 ? cx.s('（フィルタでは `$` を付けて使う）', ' (use it as `$name` in the filter)') : '');
   }
-  // (`head -n $a f`: what the words after its first are, where it gives several.)
-  t.explanation += splicedNote(cx, role) + restText(cx, role.rest, v.text);
+  t.explanation += splicedNote(cx, role);
   t.valueFor = flag;
   return t;
 }
@@ -441,7 +440,7 @@ function fieldsToken(cx: Explainer, a: SyntaxNode, role: FieldsRole, command: st
   // (`unset {,}`: the braces say so.)
   if (!role.words.length) return positional(cx, a, braceTexts([a])?.every((w) => !w) ? noWord(cx) : cx.s(`展開すると語が残らないので、\`${program}\` には渡らない`, `expands to no word, so \`${program}\` does not get it`));
   // (A field's role may depend on how many words the others give: `p='a b'; cp $p $u`, `b` is the destination when `$u` gives none.)
-  const said = listed(cx, wordItems(cx, role.words, role.roles, true, (desc, r) => numbered(desc, numbers.get(r)), nodes));
+  const said = listed(cx, wordItems(cx, shownWords(role.words, a), role.roles, true, (desc, r) => numbered(desc, numbers.get(r))));
   const t = positional(cx, a, said + readingsParts(cx, said, role.readings, nodes.indexOf(a), nodes).rest);
   const options = role.roles.every(({ role: r }) => OPTION_ROLES.has(r.role));
   return options ? { ...t, kind: 'option' } : t;
