@@ -230,6 +230,15 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     for (const src of ["trap 'printf $o u 2' INT; o=-v", 'f() { printf $o u 2; }; trap f INT; o=-v', 'f() { set $o; }; complete -F f c; o=-e']) {
       assert.strictEqual(blind(src), 'a builtin is given a word not known where the walk does not run it', src);
     }
+    // A quoted word that starts with text other than `-` or `+` is no option; in a trap's action, a function a trap
+    // runs or an alias's text, values all read and the script's there: as written.
+    for (const src of ['printf "Usage: $0\\n"', 'd=$(date); printf "now $d\\n"', "RED='\\033[31m'; NC='\\033[0m'; cleanup() { printf \"${RED}bye${NC}\\n\"; }; trap cleanup EXIT",
+      "msg=hi; trap 'printf \"$msg\\n\"' EXIT", "m=hi; alias say='printf \"$m\\n\"'"]) assert.strictEqual(blind(src), undefined, src);
+    // Not where a value may still be the environment's (set after a trap that may run before), nor a value the walk
+    // does not follow: command output, `read`, the positional parameters (the walk does not follow `$1`), a
+    // translated string.
+    for (const src of ["trap 'printf \"$msg\\n\"' INT; msg=hi", 'RED=$(tput setaf 1); printf "${RED}err\\n"', 'while read -r line; do printf "$line\\n"; done < /dev/null',
+      'die() { printf "$1\\n"; }; die oops', 'set -- a b; printf "$1\\n"', 'printf $"Copyright %s $y" 2024']) assert.strictEqual(blind(src), notKnown, src);
     // Unset is a value it knows, also in another shell; code that never runs reads nothing; a word that expands
     // nothing is a glob that matches no file.
     for (const src of ['o=-v; unset o; printf $o u 2', 'f() { local o; printf $o u 2; }; f', "bash -c 'o=-v; unset o; printf $o u 2'", 'if false; then read -r o; printf $o u 2; fi', 'if false; then o=-v; printf $o u 2; fi',

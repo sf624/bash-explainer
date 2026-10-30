@@ -7,7 +7,7 @@
 // (`wordIn`), as the walk's do.
 import type { ArgRole, ArgvParse } from '../argv/interpret';
 import type { CommandSpec, OperandSpec } from '../argv/spec';
-import { argWordFor } from '../argv/words';
+import { argWordFor, prefixOf } from '../argv/words';
 import type { Shell } from '../dialect';
 import { staticWordValue, tildeParts, tildeSpots } from '../staticword';
 import { descendants, type SyntaxNode, wordBraces } from '../syntax/tree';
@@ -125,8 +125,9 @@ const naming = (r: ArgRole): boolean => r.role === 'operand' && [r.spec, r.other
  * Whether the word `word`, the `j`th of a builtin's line (`parseWith(0)`: as written, or with the fields of words
  * before it), gives the builtin what it sets whatever its fields are, with the words before it known:
  * - the value of an option that names nothing, as one word in any case (`read -p "$p" x`);
- * - an operand after an operand or `--` (bash's builtins read no option after them), with every word from it on an
- *   operand that names nothing. Where it may give more fields than one, the words after it move on, also to places past the
+ * - an operand that no field of it can make an option, after an operand or `--` (bash's builtins read no option after
+ *   them), or starting with text other than `-` or `+` (`printf "Usage: $0\n"`), with every word from it on an operand
+ *   that names nothing. Where it may give more fields than one, the words after it move on, also to places past the
  *   words written (`parseWith(n)`: with `n` words more): none of those may name one either (`getopts -- $o` with `o='v
  *   u'` sets `u`). So a word it gives more or fewer of only moves operands that name nothing (`printf "%s" "$a"`, `set
  *   -- "$a"`).
@@ -137,7 +138,7 @@ function inert(parseWith: (more: number) => ArgvParse, spec: CommandSpec, j: num
   const one = !argWordFor(shell)(word).count;
   if (at?.role === 'value') return !at.spec?.sets && at.spec?.type !== 'function' && one;
   if (at?.role !== 'operand') return false;
-  if (!parse.roles.some((r) => r.word < j && (r.role.role === 'operand' || r.role.role === 'end-of-options'))) return false;
+  if (!/^[^-+]/.test(prefixOf(word, shell)) && !parse.roles.some((r) => r.word < j && (r.role.role === 'operand' || r.role.role === 'end-of-options'))) return false;
   const slots = 1 + Math.max(0, ...(spec.operands ?? []).map((o) => o.pattern.length));
   return (one ? parse : parseWith(slots)).roles.every((r) => r.word < j || (r.role.role === 'operand' && !naming(r.role)));
 }
