@@ -248,7 +248,7 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     assert.deepStrictEqual(vars('declare -n r=$t; cp $a $r $a d').filter((w) => w.length > 1), []);
     // (Nor where what a default assigns is not known: a nameref whose target is not known or a cycle, an integer whose
     // default holds an expansion, a name after `source`. `$( )` sets `$?` only.)
-    for (const line of ['declare -n r=$t; cp $b ${r:=x} $b', 'declare -n r=s; declare -n s=r; cp $b ${r:=x} $b', 'declare -i n; cp $b ${n:=$y} $b', 'source ./x; cp $a ${a:=1} $a']) {
+    for (const line of ['declare -n r=$t; cp $b ${r:=x} $b', 'declare -n r=s; declare -n s=r; cp $b ${r:=x} $b', 'declare -i n; cp $b ${n:=$y} $b', 'declare -i n; cp $b ${n:=b++} $b', 'declare -i n; cp $b ${n:=++b} $b', 'declare -i n; cp $b ${n:=} $b', 'source ./x; cp $a ${a:=1} $a']) {
       assert.deepStrictEqual(vars(line).filter((w) => w.length > 1), [], line);
     }
     assert.deepStrictEqual(vars('cp $a "$(true)" <(:) $a d').filter((w) => w.length > 1), [[0, 3]]);
