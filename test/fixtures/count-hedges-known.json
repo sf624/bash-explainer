@@ -111,5 +111,53 @@
       "$a": 0
     },
     "reason": "With $a empty, `ls` is the command nice runs; we show it as a word of the command `$a`. Fixed by step 6 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "timeout 5 nice $a -n 5 ls",
+    "word": "-n",
+    "counts": {
+      "$a": 0
+    },
+    "reason": "With $a empty (timeout runs nice, and reads the rest itself), `-n` is the inner nice's own option; we show it under the command `$a` (\"Looks like an option; which command reads it depends on what the expansion gives\"), one level down from `nice $a -n 5 ls`. Fixed by step 6 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "timeout 5 nice $a -n 5 ls",
+    "word": "5",
+    "counts": {
+      "$a": 0
+    },
+    "reason": "With $a empty (timeout runs nice, and reads the rest itself), `5` is the value of the inner nice's `-n`; we show it as a word of the command `$a`, one level down from `nice $a -n 5 ls`. Fixed by step 6 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "timeout 5 nice $a -n 5 ls",
+    "word": "ls",
+    "counts": {
+      "$a": 0
+    },
+    "reason": "With $a empty (timeout runs nice, and reads the rest itself), `ls` is the command the inner nice runs; we show it as a word of the command `$a`, one level down from `nice $a -n 5 ls`. Fixed by step 6 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "nice nice $a -n 5 ls",
+    "word": "-n",
+    "counts": {
+      "$a": 0
+    },
+    "reason": "With $a empty (the outer nice runs the inner nice, and reads the rest itself), `-n` is the inner nice's own option; we show it under the command `$a` (\"Looks like an option; which command reads it depends on what the expansion gives\"), one level down from `nice $a -n 5 ls`. Fixed by step 6 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "nice nice $a -n 5 ls",
+    "word": "5",
+    "counts": {
+      "$a": 0
+    },
+    "reason": "With $a empty (the outer nice runs the inner nice, and reads the rest itself), `5` is the value of the inner nice's `-n`; we show it as a word of the command `$a`, one level down from `nice $a -n 5 ls`. Fixed by step 6 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "nice nice $a -n 5 ls",
+    "word": "ls",
+    "counts": {
+      "$a": 0
+    },
+    "reason": "With $a empty (the outer nice runs the inner nice, and reads the rest itself), `ls` is the command the inner nice runs; we show it as a word of the command `$a`, one level down from `nice $a -n 5 ls`. Fixed by step 6 of docs/design/count-hedges.md."
   }
 ]

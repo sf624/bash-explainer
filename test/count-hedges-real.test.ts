@@ -261,22 +261,35 @@ const CASES: Case[] = [
       return argv[command] === 'ls' ? 'f\n' : echoOf(argv, roles, command + 1);
     },
     seen: (r) => r.out },
+  // (Two commands run: with `$a` empty, `-n 5 ls` is the inner nice's; the dump shows it under `$a`, one level down.)
+  { line: 'timeout 5 nice $a -n 5 ls', vars: { $a: ['echo', 'y', 'z', 'w'] }, tool: 'timeout', usable: () => gnu('timeout') && gnu('nice'), setup: 'echo F > f',
+    expect: (argv, roles) => {
+      const command = roles.findIndex((r, i) => r?.role === 'command' && argv[i] === 'ls');
+      return command >= 0 ? 'f\n' : echoOf(argv, roles, roles.findIndex((r, i) => r?.role === 'command' && argv[i] === 'echo') + 1);
+    },
+    seen: (r) => r.out },
+  { line: 'nice nice $a -n 5 ls', vars: { $a: ['echo', 'y', 'z', 'w'] }, tool: 'nice', usable: () => gnu('nice'), setup: 'echo F > f',
+    expect: (argv, roles) => {
+      const command = roles.findIndex((r, i) => r?.role === 'command' && argv[i] === 'ls');
+      return command >= 0 ? 'f\n' : echoOf(argv, roles, roles.findIndex((r, i) => r?.role === 'command' && argv[i] === 'echo') + 1);
+    },
+    seen: (r) => r.out },
 ];
 
 /** The roles of the words of `line`, by word, the name `undefined` (the words of a command run or a subcommand too). */
-function rolesOf(tool: string, argv: string[], program = false, nested: boolean[] = []): (ArgRole | undefined)[] {
+function rolesOf(tool: string, argv: string[], program = false, owner: number[] = []): (ArgRole | undefined)[] {
   const spec = lookupCommand(tool)!;
   const parse = interpret(program ? spec.program! : spec, argv.map((value) => ({ value })), { name: tool, lookup: lookupCommand });
   const out: (ArgRole | undefined)[] = argv.map(() => undefined);
-  // (`nested`: the word is read by the command a command run runs, or by a subcommand, not by the command itself.)
-  const walk = (roles: readonly RoleAt[], inner: boolean): void => {
+  // (`owner`: the word of the command run that reads the word, -1 for the line's own command; a subcommand reads as its command does.)
+  const walk = (roles: readonly RoleAt[], by: number): void => {
     for (const { word, role } of roles) {
       out[word] = role;
-      nested[word] = inner;
-      if ((role.role === 'subcommand' || role.role === 'command') && role.parse) walk(role.parse.roles, true);
+      owner[word] = by;
+      if ((role.role === 'subcommand' || role.role === 'command') && role.parse) walk(role.parse.roles, role.role === 'command' ? word : by);
     }
   };
-  walk(parse.roles, false);
+  walk(parse.roles, -1);
   return out;
 }
 
@@ -310,13 +323,16 @@ describe('hedges of words that give none or several, compared with bash and the 
       // (The tokens of each word, by its place in the line.)
       const items = new Analyzer('en').explainLine(parser.parse(c.line), 0).items;
       const tokens = allTokens(items);
-      // (Whether a token lies under a command run (`nice $a -n 5 ls` shows `-n` under `$a`), the line's own command left out.)
-      const inRun = new Map<Token, boolean>();
-      const mark = (ts: readonly Token[], run: boolean): void => ts.forEach((t) => { inRun.set(t, run); mark(t.children, run || t.kind === 'command'); });
-      items.forEach((t) => { inRun.set(t, false); mark(t.children, false); });
+      // (The command run a token lies under, the nearest one (`nice $a -n 5 ls` shows `-n` under `$a`), the line's own command left out.)
+      const runOf = new Map<Token, Token | undefined>();
+      const mark = (ts: readonly Token[], run: Token | undefined): void => ts.forEach((t) => { runOf.set(t, run); mark(t.children, t.kind === 'command' ? t : run); });
+      items.forEach((t) => { runOf.set(t, undefined); mark(t.children, undefined); });
       let col = c.line.indexOf(' ') + 1;
+      // (The column of each word of the line, to tell which word a command run token is.)
+      const starts: number[] = [];
       const tokensOf = texts.map((t) => {
         const at = c.line.indexOf(t, col);
+        starts.push(at);
         col = at + t.length;
         return tokens.filter((x) => x.span.start.character === at && x.span.end.character === at + t.length && ['argument', 'option', 'subcommand', 'command'].includes(x.kind));
       });
@@ -346,21 +362,26 @@ describe('hedges of words that give none or several, compared with bash and the 
         // (A word written out is its text after quote removal: `'"V"'` is `"V"`.)
         const parts = texts.map((t, w) => (counts.has(t) ? c.vars[t].slice(0, counts.get(t)) : [words[w].value ?? t]));
         const argv = parts.flat();
-        const nested: boolean[] = [];
-        const roles = rolesOf(c.tool, argv, c.program, nested);
+        const owner: number[] = [];
+        const roles = rolesOf(c.tool, argv, c.program, owner);
+        // (The word of the line each word of the argv is a field of.)
+        const wordOf = parts.flatMap((fields, w) => fields.map(() => w));
         const where = `${c.line} with ${show(counts)}`;
         let k = 0;
         parts.forEach((fields, w) => fields.forEach((field, at) => {
           const role = roles[k++]!;
           if (c.only && !c.only.includes(texts[w])) return;
-          // (A word a command run shows under itself: if the command line reads it, that is wrong; if the command run reads it,
-          // a token that names no role, "Word `5`", is a role missing, not one that contradicts.)
+          // (The command run a word is shown under, and the one that reads it. If another command reads it, that is wrong; if the
+          // same, a token that names no role, "Word `5`", is a role missing, not one that contradicts. A token that names the role right under
+          // another command run is not compared: `timeout -s $s 5 echo x` with `$s` of three words runs the third, and says `x` is echo's text.)
           const shown = tokensOf[w] as Token[];
-          const inCommandRun = shown.length > 0 && shown.every((t) => inRun.get(t));
+          const under = new Set(shown.map((t) => { const r = runOf.get(t); return r ? starts.indexOf(r.span.start.character) : -1; }));
+          const shownUnder = under.size === 1 ? [...under][0] : -2;
+          const readBy = owner[k - 1] < 0 ? -1 : wordOf[owner[k - 1]];
           const generic = shown.every((t) => /^(Word `|Looks like an option; which command reads it)/.test(t.explanation));
-          if (inCommandRun && nested[k - 1] && generic) return;
+          if (shownUnder !== -1 && shownUnder === readBy && generic) return;
           // (Where the tool refuses the words, which command reads which is moot: section 2.5 of the design gives a refused shape no clause.)
-          const foreign = inCommandRun && !nested[k - 1] && (c.dry || c.seen!(runs.get(n)!) !== 'refused');
+          const foreign = shown.length > 0 && generic && shownUnder !== readBy && shownUnder !== -1 && (c.dry || c.seen!(runs.get(n)!) !== 'refused');
           if (!foreign && showsRole(role, shown, { text: field, at, of: fields.length, counts }, operands) !== false) return;
           contradicted.add(`${texts[w]} ${show(counts)}`);
           if (!mine.some((e) => e.word === texts[w] && meets(e, counts))) fresh.push(`${where}: \`${field}\` of \`${texts[w]}\` is ${JSON.stringify(role.role === 'operand' ? role.spec?.text.en : role.role === 'value' ? `value of ${role.of}` : role.role === 'option' ? `option ${role.flag}` : role.role)}; shown: ${JSON.stringify(tokensOf[w].map((t) => t.explanation))}`);
