@@ -13,7 +13,7 @@ import { readingsOf, SHAPE_CAP, specsReached, wordsBound, type ReadingsTable } f
 import type { CommandSpec } from '../src/argv/spec';
 import { allRoles } from '../src/argv/valuehedges';
 import { argWord, argWordFor } from '../src/argv/words';
-import { argWordIn } from '../src/semantics/argwords';
+import { argWordIn, fieldsIn } from '../src/semantics/argwords';
 import { shellState } from '../src/semantics/state';
 import { lookupCommand } from '../src/dict/aliases';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -252,6 +252,94 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
       assert.deepStrictEqual(vars(line).filter((w) => w.length > 1), [], line);
     }
     assert.deepStrictEqual(vars('cp $a "$(true)" <(:) $a d').filter((w) => w.length > 1), [[0, 3]]);
+  });
+
+  it('the fields of a word after arithmetic or a default that may assign it: as bash gives them, or not known (bash 5.2)', () => {
+    // (Each line prints the fields of its last word `$b`, after a first word of one field. Arithmetic reads the value of
+    // a variable as an expression, which may assign: `x='b=5'; $((x))` sets b, and so does the default `x` of an integer.
+    // A default that bash does not assign assigns nothing: `b` keeps its value. `known`: the model gives the fields.)
+    const cases: { line: string; known: boolean }[] = [
+      { line: "declare -i n; x='b=5'; b='p q'; printf '%s\\n' ${n:=x} $b", known: false },
+      { line: "declare -n r=b; declare -i n; b='p q'; printf '%s\\n' ${n:=r=5} $b", known: false },
+      { line: "x='b=5'; b='p q'; printf '%s\\n' $((x)) $b", known: false },
+      { line: "declare -n r=b; b='p q'; printf '%s\\n' $((r=5)) $b", known: false },
+      { line: "x='y + 1'; y='b=5'; b='p q'; printf '%s\\n' $(( x + 1 )) $b", known: false },
+      { line: "x='y=1'; y='b=5'; b='p q'; printf '%s\\n' $(( x + 1 )) $b", known: true },
+      { line: "x=3; b='p q'; printf '%s\\n' $((x+1)) $b", known: true },
+      { line: "x=3; b='p q'; printf '%s\\n' $(( $x + 16#f + $# )) $b", known: true },
+      { line: "declare -n r=b; b='p q'; printf '%s\\n' \"${r:=x}\" $b", known: true },
+      { line: "b='p q'; c=1; printf '%s\\n' ${c:=x} $b", known: true },
+      // (The statements after a default.)
+      { line: "declare -n r=b; b='p q'; : ${r:=x}; printf '%s\\n' 1 $b", known: true },
+      { line: "declare -n r=b; b=; : ${r=x y}; printf '%s\\n' 1 $b", known: true },
+      { line: "declare -i n; n=; b='p q'; : ${n=b=5}; printf '%s\\n' 1 $b", known: true },
+      { line: "declare -i n; read -r e <<< 'b=5'; b='p q'; : ${n:=$e}; printf '%s\\n' 1 $b", known: false },
+      { line: "declare -n r=b; unset b; : ${r=x y}; printf '%s\\n' 1 $b", known: false },
+      // (The values arithmetic reads: twice the same, unset, of a value not known (set on some paths only, from the
+      // environment, from a command), past the values followed, an element, a positional parameter, a nameref to a name
+      // not known, one a default of the statement assigns; the names it assigns, an element too.)
+      { line: "x=1; b='p q'; printf '%s\\n' $((x+x+${#b})) $b", known: true },
+      { line: "unset x; b='p q'; printf '%s\\n' $((x)) $b", known: true },
+      { line: "b='p q'; printf '%s\\n' $((zz)) $b", known: false },
+      { line: "if [ \"$1\" ]; then x=1; fi; b='p q'; printf '%s\\n' $((x)) $b", known: false },
+      { line: "if [ \"$1\" ]; then declare x; fi; b='p q'; printf '%s\\n' $((x)) $b", known: false },
+      { line: "x=\"$y\"; b='p q'; printf '%s\\n' $((x)) $b", known: false },
+      { line: "x=$(date +%s); b='p q'; printf '%s\\n' $((x)) $b", known: false },
+      { line: `${Array.from({ length: 40 }, (_, k) => `v${k}=v${k + 1}`).join('; ')}; b='p q'; printf '%s\\n' $((v0)) $b`, known: false },
+      { line: "a=(1 2); b='p q'; printf '%s\\n' $((a[1])) $b", known: false },
+      { line: "b='p q'; printf '%s\\n' $((a[1]=5)) $b", known: true },
+      { line: "b='p q'; printf '%s\\n' $(( $1 + 1 )) $b", known: false },
+      { line: "declare -n r; b='p q'; printf '%s\\n' $((r)) $b", known: false },
+      { line: "x=1; b='p q'; printf '%s\\n' $((x+=1, x++, ++x)) $b", known: true },
+      { line: "x=1; b='p q'; printf '%s\\n' \"${x:=2}$((x))\" $b", known: false },
+      // (The defaults of a statement: one bash may assign (unset, empty, of a value not known), one it does not.)
+      { line: "b='p q'; printf '%s\\n' \"${c:=x}\" $b", known: true },
+      { line: "b='p q'; printf '%s\\n' \"${c:=}x\" $b", known: true },
+      { line: "if [ \"$1\" ]; then declare c; fi; b='p q'; printf '%s\\n' \"${c:=x}\" $b", known: true },
+      { line: "c=; b='p q'; printf '%s\\n' \"${c=x}${c:=y}\" $b", known: true },
+      { line: "c=$(date +%s); b='p q'; printf '%s\\n' \"${c:=x}\" $b", known: true },
+      { line: "c=\"$y\"; b='p q'; printf '%s\\n' \"${c:=x}\" $b", known: true },
+      { line: "declare -n r; b='p q'; printf '%s\\n' \"${r:=x}\" $b", known: false },
+      { line: "declare -n r=b; b='p q'; printf '%s\\n' \"${b:=y}${r:=x}\" $b", known: false },
+      // (After an integer default whose text is not known: any variable but a readonly one and a nameref.)
+      { line: "readonly c='p q'; declare -n r=c; declare -i n; read -r e; : ${n:=$e}; printf '%s\\n' 1 $c", known: true },
+      { line: "declare -i n; b='p q'; : ${n:=$zz}; printf '%s\\n' 1 $b", known: true },
+      { line: "declare -n r; b='p q'; : ${r:=x}; printf '%s\\n' 1 $b", known: true },
+      { line: "read -r t; declare -n r=$t; b='p q'; : ${r:=x}; printf '%s\\n' 1 $b", known: false },
+    ];
+    const out = spawnSync('bash', ['--norc', '-c', cases.map(({ line }) => `(${line}); echo .`).join('\n')], { encoding: 'utf8', input: '' }).stdout;
+    const real = out.split('.\n').slice(0, -1).map((o) => o.split('\n').slice(1, -1));
+    assert.strictEqual(real.length, cases.length, out);
+    cases.forEach(({ line, known }, i) => {
+      const tree = parser.parse(line);
+      const last = descendants(tree.root, ['command']).at(-1)!.namedChildren.at(-1)!;
+      const fields = fieldsIn(last, shellState(tree, 'bash'));
+      assert.deepStrictEqual(fields, known ? real[i] : undefined, `${line}: bash gives ${JSON.stringify(real[i])}`);
+    });
+  });
+
+  it('an integer default gives one word, a number, unless the IFS holds a digit or `-` (bash 5.2)', () => {
+    // (`known`: the count the model gives the word `${…}` of the last command, undefined for one word.)
+    const cases: { line: string; count: { min: number; max?: number } | undefined }[] = [
+      { line: 'declare -i n; f ${n:=b=5}', count: undefined },
+      { line: 'declare -i n=7; f ${n:=b=5}', count: undefined },
+      { line: 'IFS=:; declare -i n; f ${n:=5}', count: undefined },
+      { line: 'IFS=-5; declare -i n=-5; f ${n:=5}', count: { min: 1 } },
+      { line: "n=' '; declare -i n; f ${n:=5}", count: { min: 0 } },
+      { line: 'declare -i n; f ${n=5}', count: { min: 0 } },
+      { line: 'm=n; declare -i n; f ${!m:=5}', count: { min: 0 } },
+      { line: 'declare -ai n; f ${n[0]:=5}', count: { min: 0 } },
+      { line: 'read -r IFS; declare -i n; f ${n:=5}', count: { min: 1 } },
+      { line: 'declare -i n; if [ "$1" ]; then n=$(date +%s); fi; f ${n:=5}', count: { min: 0 } },
+    ];
+    const out = spawnSync('bash', ['--norc', '-c', cases.map(({ line }) => `(f() { echo $#; }; ${line})`).join('\n')], { encoding: 'utf8', input: '' }).stdout;
+    // (bash's counts: one word where the model says so.)
+    assert.deepStrictEqual(out.trim().split('\n').map(Number), [1, 1, 1, 2, 0, 1, 1, 1, 1, 1]);
+    cases.forEach(({ line, count }) => {
+      const tree = parser.parse(line);
+      const word = descendants(tree.root, ['command']).at(-1)!.namedChildren.at(-1)!;
+      assert.deepStrictEqual(argWordIn(shellState(tree, 'bash'))(word).count, count, line);
+    });
   });
 
   it('a glob keeps its known start on every word it gives, as bash globs it (GNU cp and grep)', function () {

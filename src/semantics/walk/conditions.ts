@@ -356,16 +356,17 @@ export class WalkConditions {
   /**
    * Whether bash expands the word of the expansion `outer` from `st`: that of `${y-w}`, `${y=w}` and `${y?w}` when `y`
    * is not set (with `:`, or empty), of `${y+w}` when it is set (with `:`, and not empty); `on` for the other operators
-   * (`${y#p}`, `${a[i]:-w}`'s subscript is not its word), `unknown` when `y` is not known here, or not trusted.
+   * (`${y#p}`, `${a[i]:-w}`'s subscript is not its word), `unknown` when `y` is not known here, or not trusted
+   * (`trusted`: whether that is asked; the value the state holds otherwise).
    */
-  operandRuns(outer: SyntaxNode, st: ShellState): Tri {
+  operandRuns(outer: SyntaxNode, st: ShellState, trusted = true): Tri {
     const p = parseExpansion(outer.text);
     if (!p || p.prefix || p.subscript !== undefined || !NAME.test(p.name)) return 'unknown';
     if (!p.op || !/^:?[-=?+]$/.test(p.op)) return 'on';
     const target = this.w.builtins.resolve(st, p.name);
     const v = target === undefined ? undefined : st.variables.get(target);
     const colon = p.op.startsWith(':');
-    if (!v || v.declared === 'unknown' || v.set === 'unknown' || (colon && v.set === 'on' && v.value === undefined) || !this.w.trust.variable(p.name)) return 'unknown';
+    if (!v || v.declared === 'unknown' || v.set === 'unknown' || (colon && v.set === 'on' && v.value === undefined) || (trusted && !this.w.trust.variable(p.name))) return 'unknown';
     const empty = v.set === 'off' || (colon && v.value === '');
     return p.op.endsWith('+') === empty ? 'off' : 'on';
   }

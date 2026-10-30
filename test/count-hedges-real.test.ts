@@ -160,6 +160,25 @@ function echoOf(argv: string[], roles: (ArgRole | undefined)[], from = 0): strin
   return rest.filter((i) => roles[i]?.role === 'operand').map((i) => argv[i]).join(' ') + (rest.some((i) => isOption(roles[i], '-n')) ? '' : '\n');
 }
 
+/**
+ * The links `ln` makes, as `./path`, from the roles of its operands: a target alone makes a link of its name in the
+ * current directory, a link name its link, a directory one link of each target's name in it. With `hard`, only of the
+ * file `src/t1` (no hard link of a directory, nor of a file not there).
+ */
+function lnOf(hard: boolean) {
+  return (argv: string[], roles: (ArgRole | undefined)[]): string => {
+    const ops = roles.map(op);
+    const base = (t: string): string => t.slice(t.lastIndexOf('/') + 1);
+    const targets = argv.filter((_, i) => ops[i].startsWith('target')).filter((t) => !hard || t === 'src/t1');
+    const name = argv[ops.findIndex((o) => o.startsWith('link name'))];
+    const dir = argv[ops.findIndex((o) => o.startsWith('directory to make'))];
+    const links = dir !== undefined ? targets.map((t) => `./${dir}/${base(t)}`) : name !== undefined ? targets.map(() => `./${name}`) : targets.map((t) => `./${base(t)}`);
+    return links.sort().join(' ');
+  };
+}
+/** The links in the directory of an `ln` case: symbolic ones, and files of more than one link, but those of `src`. */
+const LINKS = "find . -path ./src -prune -o \\( -type l -o -type f -links +1 \\) -print | sort | tr '\\n' ' ' | sed 's/ $//'";
+
 /** The files jq reads in the cases (each holds the string `"F"`). */
 const JQ_FILES = `for f in '"V1"' '"V2"' '"V3"' '"V4"' '"B"' '"C"' '"D"' '"F1"' '"F2"' '"F3"'; do echo '"F"' > "$f"; done`;
 
@@ -167,6 +186,14 @@ const CASES: Case[] = [
   // (Item 1 of the review of #490: with `a='11 12'` and `b`, `c` empty, `seq 11 12` reads `11` as the first.)
   { line: 'seq $a $b $c', vars: { $a: ['11', '12', '13', '14'], $b: ['1', '2', '3', '4'], $c: ['20', '21', '22', '23'] }, tool: 'seq', usable: () => gnu('seq'),
     expect: seqOf, seen: (r) => (r.status ? 'refused' : r.out.trim().split('\n').filter(Boolean).join(' ')) },
+  // (A form by how many operands there are, with a note of its own: `seq 3` counts from 1, `seq 3 5` from 3.)
+  { line: 'seq $a', vars: { $a: ['3', '5', '7', '9'] }, tool: 'seq', usable: () => gnu('seq'),
+    expect: seqOf, seen: (r) => (r.status ? 'refused' : r.out.trim().split('\n').filter(Boolean).join(' ')) },
+  // (`ln -s src/t1` makes `t1` here; `ln -s src/t1 l2` makes `l2`; with three words or more, links in the last.)
+  { line: 'ln -s $a', vars: { $a: ['src/t1', 'l2', 'D', 'D2'] }, tool: 'ln', usable: () => gnu('ln'), setup: 'mkdir src D D2; echo F > src/t1',
+    after: LINKS, expect: lnOf(false), seen: (r) => r.out.trim() },
+  { line: 'ln $a', vars: { $a: ['src/t1', 'l2', 'D', 'D2'] }, tool: 'ln', usable: () => gnu('ln'), setup: 'mkdir src D D2; echo F > src/t1',
+    after: LINKS, expect: lnOf(true), seen: (r) => r.out.trim() },
   { line: 'tr $a $b', vars: { $a: ['a', 'b', 'c', 'd'], $b: ['w', 'x', 'y', 'z'] }, tool: 'tr', usable: () => gnu('tr'), stdin: 'abcdwxyz',
     expect: trOf, seen: (r) => (r.status ? 'refused' : r.out.trim()) },
   // (Item 2: a value that gives several words; `head -n f` refuses the number `f`.)
@@ -430,15 +457,17 @@ describe('the readings of the cases, in Japanese (docs/japanese-style.md)', () =
     assert.deepStrictEqual([
       said('cp -t $d $a b', 'b'), said('cut -d $a -f $b f', 'f'), said('jq --arg $n $v .', '.'), said('grep -e $p -- -v f', '-v'),
       said('echo $a -n x', '-n'), said('jq --arg $n v $f', '$f'), said('grep -m $n -c $x f', 'f'), said('seq $a x $b', 'x'),
+      said('cp $a $b $a d', 'd'),
     ], [
       'コピー元。`$d`・`$a` が0語なら `-t` オプションの値',
       '対象のファイル。`$a` が1語以上で `$b` が0語なら `-f` オプションの値',
       'jq フィルタ（例: `.items[].name`）。`$n`・`$v` が合わせて1語なら `--arg` の値。`$n`・`$v` が合わせて3語以上なら入力 JSON ファイル',
       '検索対象のファイル（省略時は標準入力）。`$p` が0語ならオプション `-v`（一致しない行を表示する）',
       '表示する文字列。`$a` が0語ならオプション `-n`（末尾の改行を出力しない）',
-      'jq フィルタ（例: `.items[].name`）、`$f` が2語以上に展開されるなら、これは最初の語の役割で、残りの各語は入力 JSON ファイル。`$n` が0語なら順に `--arg` の値・jq フィルタ（例: `.items[].name`）・入力 JSON ファイル。`$n` が2語以上なら入力 JSON ファイル',
+      'jq フィルタ（例: `.items[].name`）。`$f` が2語以上に展開されるときは、その最初の語がこの役割で、残りの各語は入力 JSON ファイル。`$n` が0語なら順に `--arg` の値・jq フィルタ（例: `.items[].name`）・入力 JSON ファイル。`$n` が2語以上なら入力 JSON ファイル',
       '検索対象のファイル（省略時は標準入力）。`$n` が0語で `$x` が0語、または `$n` が1語で `$x` が0語なら検索パターン（正規表現）',
-      `増分。\`$a\`・\`$b\` が展開される語数により、終了値（開始値は 1）・開始値・${extra}のどれかにもなる`,
+      `増分。\`$a\` が0語で \`$b\` が0語なら終了値（開始値は 1）。\`$a\` が0語で \`$b\` が1語以上なら開始値。\`$a\` が2語、または \`$a\` が1語で \`$b\` が0語なら終了値。\`$a\` が3語以上なら${extra}`,
+      'コピー先のディレクトリ。`$a`・`$b` が展開される語数により、コピー元・コピー先（新しい名前、または既存のディレクトリ）のどちらかにもなる',
     ]);
     // (A role another command reads names it: with `$a` empty, nice reads `5` as the value of its `-n`.)
     assert.strictEqual(said('nice $a -n 5 ls', '5'), '文字列 `5`。`$a` が0語なら `nice` の `-n` オプションの値');
@@ -460,7 +489,7 @@ describe('the checker reads the clauses of the readings', () => {
     assert.strictEqual(saysOperand(e, ['T'], place([['$n', 1]])), false);
   });
   it('reads profiles by place and by own count, the folded text and the text past the cap', () => {
-    const byPlace = 'A; when `$a` expands to several words, this is its first word, and the others are B, then C. When `$b` expands to nothing, its words are D, then E';
+    const byPlace = 'A; when `$a` expands to several words, this is the role of the first word `$a` gives, and the others are B, then C. When `$b` expands to nothing, its words are D, then E';
     const p = (at: number, b: number) => ['A', 'B', 'C', 'D', 'E'].filter((x) => saysOperand(byPlace, [x], place([['$b', b]], at, 4))).join();
     assert.deepStrictEqual([p(0, 1), p(1, 1), p(2, 1), p(0, 0), p(3, 0)], ['A', 'B', 'B,C', 'D', 'D,E']);
     const byCount = 'S when `$a` expands to a single word; when it expands to 2 words, they are S, then D; when it expands to more words, they are S, then R';

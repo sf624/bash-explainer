@@ -224,9 +224,10 @@ function countGroups(e: string): { from: number; to?: number; text: string }[] |
 
 /**
  * The roles a profile (src/argv/profiletexts.ts) says the field at `place` may have: by own count (`countGroups`, the
- * group that holds the number of fields its word gave); by place, "X; when `$a` expands to several words, this is its
- * first word, and the others are Y, then Z" (or "each of the others is Y"), the last for every word after; "its words
- * are X, then Y"; or one role. Undefined where a group holds no such count, or for a condition in another form.
+ * group that holds the number of fields its word gave); by place, "X; when `$a` expands to several words, this is the
+ * role of the first word `$a` gives, and the others are Y, then Z" (or "each of the others is Y"), the last for every
+ * word after; "its words are X, then Y"; or one role. Undefined where a group holds no such count, or for a condition in
+ * another form.
  */
 function profileSays(e: string, place: FieldPlace): string[] | undefined {
   const groups = countGroups(e);
@@ -234,7 +235,7 @@ function profileSays(e: string, place: FieldPlace): string[] | undefined {
     const g = groups.find((c) => c.from <= place.of && place.of <= (c.to ?? Infinity));
     return g && (g.from === 1 && g.to === 1 ? [g.text] : inRow(g.text, place.at, place.of));
   }
-  const byPlace = /^(.*?); when `[^`]+` expands to several words, this is its first word, and (?:the others are|each of the others is) (.*)$/.exec(e);
+  const byPlace = /^(.*?); when `[^`]+` expands to several words, this is the role of the first word `[^`]+` gives, and (?:the others are|each of the others is) (.*)$/.exec(e);
   if (byPlace) return place.at === 0 ? [byPlace[1]] : inPlaces(byPlace[2], place.at - 1);
   const words = /^its words are (.*)$/.exec(e);
   if (words) return inPlaces(words[1], place.at);
@@ -325,7 +326,13 @@ export function readingsSay(explanation: string, place: FieldPlace): { roles: st
  */
 export function saysOperand(explanation: string, texts: readonly string[], place: FieldPlace): boolean | undefined {
   const whole = plain(explanation);
-  const has = (part: string): boolean => texts.some((x) => part.includes(plain(x)));
+  // (A role of no note is not one with a note: "last" is not "last (counting from 1)", nor "target" the target of
+  // `ln -s t`, "target (the link is made in the current directory…)".)
+  const has = (part: string): boolean => texts.some((x) => {
+    const p = plain(x);
+    for (let i = part.indexOf(p); i >= 0; i = part.indexOf(p, i + 1)) if (/\)$/.test(p) || !part.startsWith(' (', i + p.length)) return true;
+    return false;
+  });
   // (The role when the words it names gave none and this word one; the part before says the other readings.)
   const none = noneReadings(whole);
   const held = heldNone(none.readings, place);
@@ -370,12 +377,12 @@ const heldNone = (readings: NoneReading[], place: FieldPlace): string[] => readi
 
 /**
  * The roles the words after the first of an option's value take, as its token says them where the value gives several
- * words (`ValueRole` `rest`): "…; when `$a` expands to several words, this is its first word, and each of the others is
- * X" (or "X or Y"); undefined where it says they are read as the words after it, or says nothing of them.
+ * words (`ValueRole` `rest`): "…; when `$a` expands to several words, this value is the first word `$a` gives, and each
+ * of the others is X" (or "X or Y"); undefined where it says they are read as the words after it, or says nothing of them.
  */
 function restOf(tokens: readonly Token[]): string | undefined {
   for (const t of tokens) {
-    const m = t.valueFor && /; when `[^`]+` expands to several words, this is its first word, and each of the others is ((?:(?!; ).)+)/.exec(plain(t.explanation));
+    const m = t.valueFor && /; when `[^`]+` expands to several words, this value is the first word `[^`]+` gives, and each of the others is ((?:(?!; ).)+)/.exec(plain(t.explanation));
     if (m) return m[1];
   }
   return undefined;

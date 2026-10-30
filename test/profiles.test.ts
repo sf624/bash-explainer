@@ -65,11 +65,11 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
     const v = read(t, '$v');
     assert.deepStrictEqual(v.contexts, Array.from({ length: 7 }, (_, n) => [n, 0]));
     assert.deepStrictEqual(v.places, [{ words: [1], one: true, counted: true, values: Array.from({ length: 7 }, (_, n) => (n === 6 ? { n, orMore: true } : { n })) }]);
-    assert.deepStrictEqual(keys(v.base.places), [' | value --arg 1', ' | operand jq filter', ...Array(4).fill(' | operand input JSON file')]);
+    assert.deepStrictEqual(keys(v.base.places), [' | value --arg 1', ' | operand jq filter (e.g. `.items[].name`)', ...Array(4).fill(' | operand input JSON file')]);
     assert.deepStrictEqual([v.base.counts, v.base.orMore], [[1, 2, 3, 4, 5, 6], true]);
     assert.deepStrictEqual(v.clauses.map((c) => [c.conditions, keys(c.profile.places)!.slice(0, 2)]), [
       [[[{ place: 0, from: 0, to: 0 }]], [' | value --arg 0', ' | value --arg 1']],
-      [[[{ place: 0, from: 2, to: 2 }]], [' | operand jq filter', ' | operand input JSON file']],
+      [[[{ place: 0, from: 2, to: 2 }]], [' | operand jq filter (e.g. `.items[].name`)', ' | operand input JSON file']],
       [[[{ place: 0, from: 3 }]], [' | operand input JSON file', ' | operand input JSON file']],
     ]);
     // (A word of one word: one role, at each context of the run, capped.)
@@ -82,7 +82,7 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
     const a = read(table('cp $a'), '$a');
     assert.strictEqual(a.base.places, undefined);
     assert.deepStrictEqual(a.base.groups.map((g) => [g.from, g.to, g.orMore, keys(g.roles)]), [
-      [1, 1, undefined, [' | operand source']], [2, 2, undefined, [' | operand source', ' | operand destination']], [3, 7, true, [' | operand source', ' | operand destination directory']],
+      [1, 1, undefined, [' | operand source']], [2, 2, undefined, [' | operand source', ' | operand destination (the new name, or an existing directory)']], [3, 7, true, [' | operand source', ' | operand destination directory']],
     ]);
     assert.deepStrictEqual(a.clauses, []);
     const b = read(table('cp $b $a'), '$b');
@@ -111,10 +111,10 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
   });
 
   it('folded: past the budget, or a class that no two conditions of two atoms say', () => {
-    // (`seq $a x $b`, of `x`: the last when `$b` gives none and `$a` at most two words, which no atom says.)
-    const x = read(table('seq $a x $b'), 'x');
+    // (`cp $a $b $a d`, of `d`: its other roles, a source and the new name, folded into one text.)
+    const x = read(table('cp $a $b $a d'), 'd');
     assert.deepStrictEqual(x.clauses, []);
-    assert.deepStrictEqual([keys(x.folded!.roles), x.folded!.words], [[' | operand last', ' | operand first', ' | operand extra operand, which the command refuses'], [0, 2]]);
+    assert.deepStrictEqual([keys(x.folded!.roles), x.folded!.words], [[' | operand source', ' | operand destination (the new name, or an existing directory)'], [0, 1]]);
     // (Four clauses at most: `cmp $a $b x $c`, of `x`, has four.)
     assert.strictEqual(read(table('cmp $a $b x $c'), 'x').clauses.length, 4);
     // (Five: a spec whose last operand is P1 to P6 by how many there are. The word's own count is named too.)
@@ -158,7 +158,7 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
     assert.deepStrictEqual(keys(read(table('git log -n $b x'), 'x').base.places), ['>0 | operand ']);
     // (`timeout $a 5 sleep x` with `$a` one word: `5` is the command, and `x` its word; with two, the second of `$a`.)
     const x = read(table('timeout $a 5 sleep x'), 'x');
-    assert.deepStrictEqual([keys(x.base.places), x.clauses.map((c) => keys(c.profile.places))], [['>1 | operand '], [['>2 | operand duration in seconds'], ['>0 | operand ']]]);
+    assert.deepStrictEqual([keys(x.base.places), x.clauses.map((c) => keys(c.profile.places))], [['>1 | operand '], [['>2 | operand duration in seconds (`1m`, `0.5`… also allowed)'], ['>0 | operand ']]]);
     // (A word of a run of two names a command no word of the shape tells: `>?`.)
     assert.deepStrictEqual(keys(read(table('nice $a $b x'), 'x').base.places), ['>? | operand ']);
     // (A shell string, a command run that fills no operand: `su -c ls`.)
@@ -179,8 +179,8 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
   describe('the texts of the cases of section 2.6', () => {
     const CASES: [string, string, string, string][] = [
       ['jq --arg $n $v .', '.', 'jq filter (e.g. `.items[].name`). When `$n` and `$v` expand to one word in all, it is value for `--arg`. When `$n` and `$v` expand to 3 words or more in all, it is input JSON file', 'jq フィルタ（例: `.items[].name`）。`$n`・`$v` が合わせて1語なら `--arg` の値。`$n`・`$v` が合わせて3語以上なら入力 JSON ファイル'],
-      ['jq --arg $n $v .', '$v', 'value for `--arg`; when `$v` expands to several words, this is its first word, and the others are jq filter (e.g. `.items[].name`), then input JSON file. When `$n` expands to nothing, its words are name for `--arg`, value for `--arg`, jq filter (e.g. `.items[].name`), then input JSON file. When `$n` expands to 2 words, its words are jq filter (e.g. `.items[].name`), then input JSON file. When `$n` expands to 3 words or more, it is input JSON file', '`--arg` の値、`$v` が2語以上に展開されるなら、これは最初の語の役割で、残りの語は順に jq フィルタ（例: `.items[].name`）・入力 JSON ファイル。`$n` が0語なら順に `--arg` の名前・`--arg` の値・jq フィルタ（例: `.items[].name`）・入力 JSON ファイル。`$n` が2語なら順に jq フィルタ（例: `.items[].name`）・入力 JSON ファイル。`$n` が3語以上なら入力 JSON ファイル'],
-      ['jq --arg $n v $f', '$f', 'jq filter (e.g. `.items[].name`); when `$f` expands to several words, this is its first word, and each of the others is input JSON file. When `$n` expands to nothing, its words are value for `--arg`, jq filter (e.g. `.items[].name`), then input JSON file. When `$n` expands to several words, it is input JSON file', 'jq フィルタ（例: `.items[].name`）、`$f` が2語以上に展開されるなら、これは最初の語の役割で、残りの各語は入力 JSON ファイル。`$n` が0語なら順に `--arg` の値・jq フィルタ（例: `.items[].name`）・入力 JSON ファイル。`$n` が2語以上なら入力 JSON ファイル'],
+      ['jq --arg $n $v .', '$v', 'value for `--arg`; when `$v` expands to several words, this is the role of the first word `$v` gives, and the others are jq filter (e.g. `.items[].name`), then input JSON file. When `$n` expands to nothing, its words are name for `--arg`, value for `--arg`, jq filter (e.g. `.items[].name`), then input JSON file. When `$n` expands to 2 words, its words are jq filter (e.g. `.items[].name`), then input JSON file. When `$n` expands to 3 words or more, it is input JSON file', '`--arg` の値。`$v` が2語以上に展開されるときは、その最初の語がこの役割で、残りの語は順に jq フィルタ（例: `.items[].name`）・入力 JSON ファイル。`$n` が0語なら順に `--arg` の名前・`--arg` の値・jq フィルタ（例: `.items[].name`）・入力 JSON ファイル。`$n` が2語なら順に jq フィルタ（例: `.items[].name`）・入力 JSON ファイル。`$n` が3語以上なら入力 JSON ファイル'],
+      ['jq --arg $n v $f', '$f', 'jq filter (e.g. `.items[].name`); when `$f` expands to several words, this is the role of the first word `$f` gives, and each of the others is input JSON file. When `$n` expands to nothing, its words are value for `--arg`, jq filter (e.g. `.items[].name`), then input JSON file. When `$n` expands to several words, it is input JSON file', 'jq フィルタ（例: `.items[].name`）。`$f` が2語以上に展開されるときは、その最初の語がこの役割で、残りの各語は入力 JSON ファイル。`$n` が0語なら順に `--arg` の値・jq フィルタ（例: `.items[].name`）・入力 JSON ファイル。`$n` が2語以上なら入力 JSON ファイル'],
       ['jq --arg $n v $f', 'v', 'value for `--arg`. When `$n` expands to nothing, it is name for `--arg`. When `$n` expands to 2 words, it is jq filter (e.g. `.items[].name`). When `$n` expands to 3 words or more, it is input JSON file', '`--arg` の値。`$n` が0語なら `--arg` の名前。`$n` が2語なら jq フィルタ（例: `.items[].name`）。`$n` が3語以上なら入力 JSON ファイル'],
       ['cut -d $a -f $b f', 'f', 'target file. When `$a` expands to a word or more and `$b` to nothing, it is value for `-f`', '対象のファイル。`$a` が1語以上で `$b` が0語なら `-f` の値'],
       ['cp -t $d $a b', 'b', 'source. When `$d` and `$a` expand to nothing, it is value for `-t`', 'コピー元。`$d`・`$a` が0語なら `-t` の値'],
@@ -192,8 +192,8 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
       ['nice $a -n 5 ls', 'ls', 'argument of `$a`. When `$a` expands to nothing, it is command to run', '`$a` の引数。`$a` が0語なら実行するコマンド'],
       ['timeout $a 5 sleep x', 'x', 'argument of `5`. When `$a` expands to nothing, it is duration in seconds (`1m`, `0.5`… also allowed) of `sleep`. When `$a` expands to several words, it is argument of `$a`', '`5` の引数。`$a` が0語なら `sleep` の待つ時間（秒。`1m`, `0.5` なども可）。`$a` が2語以上なら `$a` の引数'],
       ['cp $a', '$a', 'source when `$a` expands to a single word; when it expands to 2 words, they are source, then destination (the new name, or an existing directory); when it expands to more words, they are source, then destination directory', '`$a` が1語に展開されるならコピー元、2語なら順にコピー元・コピー先（新しい名前、または既存のディレクトリ）、3語以上なら順にコピー元・コピー先のディレクトリ'],
-      ['cp $b $a', '$b', 'source. When `$a` expands to nothing: source when `$b` expands to a single word; when it expands to 2 words, they are source, then destination (the new name, or an existing directory); when it expands to more words, they are source, then destination directory', 'コピー元。`$a` が0語なら、`$b` が1語に展開されるならコピー元、2語なら順にコピー元・コピー先（新しい名前、または既存のディレクトリ）、3語以上なら順にコピー元・コピー先のディレクトリ'],
-      ['seq $a x $b', 'x', 'increment. It can also be last (counting from 1), first or extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing), by how many words `$a` and `$b` give', '増分。`$a`・`$b` が展開される語数により、終了値（開始値は 1）・開始値・余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 1 で終わる）のどれかにもなる'],
+      ['cp $b $a', '$b', 'source. When `$a` expands to nothing: source when `$b` expands to a single word; when it expands to 2 words, they are source, then destination (the new name, or an existing directory); when it expands to more words, they are source, then destination directory', 'コピー元。`$a` が0語のときは、`$b` が1語に展開されるならコピー元、2語なら順にコピー元・コピー先（新しい名前、または既存のディレクトリ）、3語以上なら順にコピー元・コピー先のディレクトリ'],
+      ['seq $a x $b', 'x', 'increment. When `$a` expands to nothing and `$b` to nothing, it is last (counting from 1). When `$a` expands to nothing and `$b` to a word or more, it is first. When `$a` expands to 2 words, or when `$a` expands to a single word and `$b` to nothing, it is last. When `$a` expands to 3 words or more, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)', '増分。`$a` が0語で `$b` が0語なら終了値（開始値は 1）。`$a` が0語で `$b` が1語以上なら開始値。`$a` が2語、または `$a` が1語で `$b` が0語なら終了値。`$a` が3語以上なら余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 1 で終わる）'],
       ['cp $a $b $a d', 'd', 'destination directory. It can also be source or destination (the new name, or an existing directory), by how many words `$a` and `$b` give', 'コピー先のディレクトリ。`$a`・`$b` が展開される語数により、コピー元・コピー先（新しい名前、または既存のディレクトリ）のどちらかにもなる'],
       ['jq --arg $n', '--arg', 'when `$n` expands to a word or more, it is option `--arg`', '`$n` が1語以上なら `--arg` オプション'],
       ['cp -r $a $b $c x $d y $e', 'x', 'its role may depend on how many words `$a`, `$b`, `$c`, `$d` and `$e` give', '`$a`・`$b`・`$c`・`$d`・`$e` が展開される語数により役割が変わりうる'],
@@ -230,7 +230,7 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
       assert.strictEqual(baseText(p([{ from: 2, to: 2, roles: [r('A'), r('B')] }, { from: 4, to: 4, orMore: true, roles: [r('B')] }]), 0, names).ja, '`$a` が2語に展開されるなら順に A・B、4語以上なら順に B');
       assert.strictEqual(baseText(p([{ from: 2, to: 2, roles: [r('A'), r('B')] }, { from: 4, to: 4, orMore: true, roles: [r('B')] }]), 0, names).en, 'when `$a` expands to 2 words, they are A, then B; when it expands to 4 words or more, they are B');
       const clause = { profile: p([{ from: 2, to: 3, roles: [r('A')] }]), conditions: [[{ place: 0, from: 0, to: 0 }]] };
-      assert.deepStrictEqual(clauseText({ places: [one] } as WordReadings, clause, 1, names), { ja: '`$a` が0語なら、`$b` が2〜3語に展開されるなら順に A', en: 'when `$a` expands to nothing: when `$b` expands to 2 to 3 words, they are A' });
+      assert.deepStrictEqual(clauseText({ places: [one] } as WordReadings, clause, 1, names), { ja: '`$a` が0語のときは、`$b` が2〜3語に展開されるなら順に A', en: 'when `$a` expands to nothing: when `$b` expands to 2 to 3 words, they are A' });
       assert.deepStrictEqual(foldedText({ roles: [r('A')], words: [1] }, names), { ja: '`$b` が展開される語数により、Aにもなる', en: 'it can also be A, by how many words `$b` gives' });
       assert.deepStrictEqual(foldedText({ roles: [r('A'), r('B')], words: [0, 1] }, names), { ja: '`$a`・`$b` が展開される語数により、A・Bのどちらかにもなる', en: 'it can also be A or B, by how many words `$a` and `$b` give' });
       assert.deepStrictEqual(dependsText({ kind: 'depends', words: [2] } as Depends, names).en, 'its role may depend on how many words `$c` gives');

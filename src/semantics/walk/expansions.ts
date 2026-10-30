@@ -237,23 +237,51 @@ export class WalkExpansions {
   /**
    * `${x:=word}` sets `x`, to a value not known here: where `x` is a nameref, the variable it names (`declare -n r=b`,
    * `${r:=x}` sets b). Where that is an integer, `word` is read as arithmetic, with what it assigns (`declare -i n`,
-   * `${n:=b=3}` sets b), when bash assigns the default (`operandRuns`: `x` unset or empty).
+   * `${n:=b=3}` sets b), when bash assigns the default (`operandRuns`: `x` unset or empty; where it does not, nothing
+   * changes, as bash does with `declare -n r=b; b=1; : ${r:=x}` and `declare -i n; n=; : ${n=b=5}`). A word whose text
+   * is not known here may assign any variable (`${n:=$e}`), and so may a nameref whose target is not known: every
+   * value is then not known (`anyAssigned`).
    */
   private defaultOf(e: SyntaxNode, st: ShellState): ShellState {
     const name = e.namedChildren[0];
     if (!e.children.some((c) => c.type === ':=' || c.type === '=') || name?.type !== 'variable_name') return st;
-    const target = this.w.builtins.resolve(st, name.text) ?? name.text;
+    // (A variable a default assigns is never trusted, but its value in the state still says whether bash assigns it: the
+    // words are read with that value, `declare -n r=b; b=1; : ${r:=x}` leaves b alone.)
+    const runs = this.w.conditions.operandRuns(e, st, false);
+    if (runs === 'off') return st;
+    const target = this.w.builtins.resolve(st, name.text);
+    // (A nameref whose target is not known may assign any variable.)
+    if (target === undefined) return this.anyAssigned(st, e);
     const word = e.namedChildren[e.namedChildren.length - 1];
-    const runs = this.w.conditions.operandRuns(e, st);
     const integer = attribute(st, target, 'i');
-    const text = runs !== 'off' && integer !== 'off' && word !== name ? this.w.conditions.staticText(word, st, true) : undefined;
-    if (text !== undefined) {
-      const after = this.w.arith.integer(text, st, e).st;
-      st = runs === 'on' && integer === 'on' ? after : merge([st, after], this.w.posix);
+    if (integer !== 'off' && word !== name) {
+      // (A variable alone, `${n:=$v}`, gives its value as the state holds it, as the words read it.)
+      const read = /^\$\{?([A-Za-z_]\w*)\}?$/.exec(word.text)?.[1];
+      const value = read === undefined ? undefined : this.w.variableText(st, read, () => true);
+      const text = this.w.conditions.staticText(word, st, true) ?? (value === null ? '' : value);
+      if (text === undefined) st = this.anyAssigned(st, e);
+      else {
+        const after = this.w.arith.integer(text, st, e).st;
+        st = runs === 'on' && integer === 'on' ? after : merge([st, after], this.w.posix);
+      }
     }
     // (A variable the script has not set keeps a value from the environment.)
     const prev = st.variables.get(target);
     return this.w.builtins.setVariable(st, target, e, undefined, false, false, undefined, !prev || !!prev.kept);
+  }
+
+  /**
+   * `st` after arithmetic at `at` whose text is not known here, which may assign any variable a value not known: each
+   * variable may be set, but the readonly ones and the namerefs (an assignment goes to the target), and so may a name
+   * not set before (`ShellState.opaque`).
+   */
+  private anyAssigned(st: ShellState, at: SyntaxNode): ShellState {
+    let after = st;
+    for (const name of st.variables.keys()) {
+      if (attribute(st, name, 'r') !== 'off' || attribute(st, name, 'n') !== 'off') continue;
+      after = this.w.builtins.setVariable(after, name, at, undefined, false, false, undefined, true);
+    }
+    return this.w.opaque(merge([st, after], this.w.posix));
   }
 
   /**

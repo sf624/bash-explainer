@@ -5,7 +5,7 @@
 // complete), or past them a text without conditions. `interpret` gives them to the operands (`OperandRole.readings`).
 import type { ArgRole, ArgvParse } from './interpret';
 import type { Coordinate, Outcome, ReadingsTable, WordAt } from './readings';
-import { allRoles, roleText } from './valuehedges';
+import { allRoles } from './valuehedges';
 
 /** The most clauses a word says (section 2.5, the budget): past them, its other classes are one text without conditions. */
 export const CLAUSES = 4;
@@ -84,13 +84,14 @@ function readers(parse: ArgvParse, owners: readonly (number | undefined)[], path
 }
 
 /**
- * What tells two roles of a word apart (as `sameRole` of src/argv/valuehedges.ts): an operand's text without its
- * parentheses, the value of the same option, the operand a command run fills, the same option or letters.
+ * What tells two roles of a word apart (as `sameRole` of src/argv/valuehedges.ts does for the others): an operand's
+ * text, its note in parentheses included, the value of the same option, the operand a command run fills, the same
+ * option or letters.
  */
 export function roleKey(r: ArgRole): string {
-  if (r.role === 'operand') return `operand ${r.spec ? roleText(r.spec) : ''}`;
+  if (r.role === 'operand') return `operand ${r.spec?.text.en ?? ''}`;
   if (r.role === 'value') return `value ${r.of} ${r.index}`;
-  if (r.role === 'command') return `command ${r.slot.run} ${r.item ? roleText(r.item) : ''}`;
+  if (r.role === 'command') return `command ${r.slot.run} ${r.item?.text.en ?? ''}`;
   if (r.role === 'cluster' || r.role === 'old-style') return `${r.role} ${r.letters.map(roleKey).join(' ')}`;
   return `${r.role} ${'flag' in r ? r.flag : ''}`;
 }

@@ -5,7 +5,7 @@
 import { parseExpansion } from '../expansion';
 import type { SyntaxNode } from '../syntax/tree';
 import { givesElements } from './elements';
-import type { StateModel } from './state';
+import { attribute, refTarget, type ShellState, type StateModel } from './state';
 import { braceWords, type Piece, wordMeaning } from './words';
 
 /** What stands for a part not known here that is never empty: text no IFS removes (a non-blank IFS character still ends a field). */
@@ -17,6 +17,29 @@ const ELEMENTS: Piece = { text: '', quoted: false, expanded: true };
 function neverEmpty(n: SyntaxNode): boolean {
   if (n.type === 'arithmetic_expansion' || n.type === 'process_substitution') return true;
   return (n.type === 'simple_expansion' && /^\$[#?$]$/.test(n.text)) || (n.type === 'expansion' && n.text.startsWith('${#'));
+}
+
+/**
+ * `${n:=w}` of an integer `n` in `st`: never empty, since bash assigns it a number where it is unset or empty
+ * (`declare -i n; ${n:=b=5}` gives `5`), and a number gives a field with any IFS. Not where the value it holds may be
+ * other text, given before the attribute (`n=' '; declare -i n; ${n:=5}` gives no field).
+ */
+function integerDefault(n: SyntaxNode, st: ShellState): boolean {
+  const p = n.type === 'expansion' ? parseExpansion(n.text) : undefined;
+  if (!p || p.op !== ':=' || p.prefix || p.subscript !== undefined) return false;
+  const target = refTarget(st, p.name);
+  const v = st.variables.get(target);
+  return attribute(st, target, 'i') === 'on' && !!v && v.declared === 'on' && (v.set === 'off' || (v.set === 'on' && v.value !== undefined && /^(-?\d+)?$/.test(v.value)));
+}
+
+/**
+ * Whether the word `n` is a lone `${n:=w}` of an integer (`integerDefault`) where the IFS holds no digit and no `-`: one
+ * field, the number (with IFS `-5`, `-5` gives two).
+ */
+export function givesOneNumber(n: SyntaxNode, model: StateModel): boolean {
+  if (n.type !== 'expansion') return false;
+  const w = wordMeaning(n, model)!;
+  return integerDefault(n, w.state) && (w.ifs.kind === 'default' || (w.ifs.kind === 'value' && !/[\d-]/.test(w.ifs.value)));
 }
 
 /**
@@ -47,7 +70,7 @@ export function mayGiveNoField(n: SyntaxNode, model: StateModel): boolean {
   const applies = w.steps[0].applies;
   return (applies === 'unknown' ? [false, true] : [applies]).some((braces) => {
     // (Brace words that the text after a `$x` lengthens, `$x{b,c}`, are not known here: any may be empty.)
-    const words = braceWords(n, model, (part) => (part && neverEmpty(part) ? SOME : part && elementsAlone(part) ? ELEMENTS : ''), braces);
+    const words = braceWords(n, model, (part) => (part && (neverEmpty(part) || integerDefault(part, w.state)) ? SOME : part && elementsAlone(part) ? ELEMENTS : ''), braces);
     // (A word bash fails on, `${x:?}`, has no characters: it is no field, but an error, which other notes say.)
     return !words || words.words.every((x) => !!x.chars && (!x.holed || x.holed.length === 0));
   });

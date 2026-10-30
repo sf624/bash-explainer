@@ -62,10 +62,14 @@ export function conditionText(places: readonly Place[], atoms: readonly Atom[], 
   return b ? { ja: `${a.ja}で ${b.ja}`, en: `${a.en} and ${b.en}` } : a;
 }
 
-/** Conditions any of which says a clause: "when A, or when B"; "A、または B なら". */
-function whenText(places: readonly Place[], conditions: readonly (readonly Atom[])[], names: Names): Text {
+/**
+ * Conditions any of which says a clause: "when A, or when B"; "A、または B なら", or "A、または B のときは" before a
+ * text with conditions of its own (`nested`), so that the two do not read as one ("`$b` が0語のときは、`$a` が1語に
+ * 展開されるなら…").
+ */
+function whenText(places: readonly Place[], conditions: readonly (readonly Atom[])[], names: Names, nested = false): Text {
   const texts = conditions.map((c) => conditionText(places, c, names));
-  return { ja: `${texts.map((t) => t.ja).join('、または ')}なら`, en: `when ${texts.map((t) => t.en).join(', or when ')}` };
+  return { ja: `${texts.map((t) => t.ja).join('、または ')}${nested ? 'のときは' : 'なら'}`, en: `when ${texts.map((t) => t.en).join(', or when ')}` };
 }
 
 /** How many of its own words a group of own counts is: "2 words", "3 words or more", "more words" (after the count before), "1 to 4 words". */
@@ -94,8 +98,9 @@ function byCountText(groups: readonly CountGroup[], w: string, names: Names): Te
 
 /**
  * The profile as written, said first (section 2.6): its role; by place, "X; when `$v` expands to several words, this is
- * its first word, and the others are Y, then Z"; by own count, as `cp $a` is said today. A word of a known number of
- * words (fields the model knows), or one that never gives one word (`{a,b}*`), says each: "its words are X, then Y".
+ * the role of the first word `$v` gives, and the others are Y, then Z"; by own count, as `cp $a` is said today. A word
+ * of a known number of words (fields the model knows), or one that never gives one word (`{a,b}*`), says each: "its
+ * words are X, then Y".
  * Nothing where every own count is refused (`jq --arg $n` as written): the role as written stays.
  */
 export function baseText(p: Profile, k: number, names: Names): Text {
@@ -111,10 +116,9 @@ export function baseText(p: Profile, k: number, names: Names): Text {
   }
   const others = squeeze(p.places.slice(1));
   const l = listOf(others, names);
-  const ja = `${x.ja}、${w} が2語以上に展開されるなら、これは最初の語の役割で、`;
-  return others.length > 1
-    ? { ja: `${ja}残りの語は順に${spaced(l.ja)}`, en: `${x.en}; when ${w} expands to several words, this is its first word, and the others are ${l.en}` }
-    : { ja: `${ja}残りの各語は${spaced(l.ja)}`, en: `${x.en}; when ${w} expands to several words, this is its first word, and each of the others is ${l.en}` };
+  const ja = `${x.ja}。${w} が2語以上に展開されるときは、その最初の語がこの役割で、`;
+  const en = `${x.en}; when ${w} expands to several words, this is the role of the first word ${w} gives, and`;
+  return others.length > 1 ? { ja: `${ja}残りの語は順に${spaced(l.ja)}`, en: `${en} the others are ${l.en}` } : { ja: `${ja}残りの各語は${spaced(l.ja)}`, en: `${en} each of the others is ${l.en}` };
 }
 
 /**
@@ -122,8 +126,8 @@ export function baseText(p: Profile, k: number, names: Names): Text {
  * "when C: X when `$a` expands to a single word; when it expands to more words, they are X, then Y".
  */
 export function clauseText(r: WordReadings, c: Clause, k: number, names: Names): Text {
-  const when = whenText(r.places, c.conditions, names);
   const p = c.profile;
+  const when = whenText(r.places, c.conditions, names, !p.places);
   if (!p.places) {
     const by = byCountText(p.groups, names.word(k), names);
     return { ja: `${when.ja}、${by.ja}`, en: `${when.en}: ${by.en}` };

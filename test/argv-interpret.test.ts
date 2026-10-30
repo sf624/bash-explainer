@@ -386,18 +386,18 @@ describe('argv interpreter: the option grammar', () => {
     const three: CommandSpec = { summary: t('three'), operands: [{ pattern: [item('A'), item('B'), item('C')] }, { pattern: [item('A'), item('D')] }, { pattern: [item('A')] }] };
     assert.deepStrictEqual(saying(three, [{ count: { min: 1 } }], ['$x']), ['$x: a when `$x` expands to a single word; when it expands to 2 words, they are a, then d; when it expands to 3 words, they are a, b, then c']);
     // (By place, where no place depends on the count: with at most two words, the second is `d`.)
-    assert.deepStrictEqual(saying(three, [{ count: { min: 1, max: 2 } }], ['$x']), ['$x: a; when `$x` expands to several words, this is its first word, and each of the others is d']);
+    assert.deepStrictEqual(saying(three, [{ count: { min: 1, max: 2 } }], ['$x']), ['$x: a; when `$x` expands to several words, this is the role of the first word `$x` gives, and each of the others is d']);
     // (A count no pattern fits is left out: three words of `gap`.)
     const gap: CommandSpec = { summary: t('gap'), operands: [{ pattern: [item('A')] }, { pattern: [item('A'), item('B')] }, { pattern: [item('A'), item('B'), item('C'), item('D'), item('D', { repeat: '*' })] }] };
-    assert.deepStrictEqual(saying(gap, [{ count: { min: 1 } }], ['$x']), ['$x: a; when `$x` expands to several words, this is its first word, and the others are b, c, then d']);
+    assert.deepStrictEqual(saying(gap, [{ count: { min: 1 } }], ['$x']), ['$x: a; when `$x` expands to several words, this is the role of the first word `$x` gives, and the others are b, c, then d']);
     assert.deepStrictEqual(saying({ summary: t('one'), operands: [{ pattern: [item('A')] }] }, [{ count: { min: 1 } }], ['$x']), ['$x: a']);
     // (Two words that may give several: each word's roles for its own counts, and a clause on the other's.)
     assert.deepStrictEqual(saying(three, [{ count: { min: 1 } }, { count: { min: 1 } }], ['$x', '$y']), [
-      '$x: a; when `$x` expands to several words, this is its first word, and each of the others is b. When `$y` expands to several words, it is a',
+      '$x: a; when `$x` expands to several words, this is the role of the first word `$x` gives, and each of the others is b. When `$y` expands to several words, it is a',
       '$y: d when `$y` expands to a single word; when it expands to 2 words, they are b, then c. When `$x` expands to several words, it is c',
     ]);
     // (A word after one such word: its role for each count of it.)
-    assert.deepStrictEqual(saying(three, [{ count: { min: 1 } }, { value: 'f' }], ['$x', 'f']), ['$x: a; when `$x` expands to several words, this is its first word, and each of the others is b', 'f: d. When `$x` expands to several words, it is c']);
+    assert.deepStrictEqual(saying(three, [{ count: { min: 1 } }, { value: 'f' }], ['$x', 'f']), ['$x: a; when `$x` expands to several words, this is the role of the first word `$x` gives, and each of the others is b', 'f: d. When `$x` expands to several words, it is c']);
     // (A word that gives two words or more: no reading for one.)
     assert.deepStrictEqual(saying(three, [{ count: { min: 2 } }], ['$x']), ['$x: when `$x` expands to 2 words, they are a, then d; when it expands to 3 words, they are a, b, then c']);
     const p = parseOf('timeout 5 sleep 1');
