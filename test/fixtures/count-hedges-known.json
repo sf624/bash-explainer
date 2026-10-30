@@ -159,5 +159,27 @@
       "$a": 0
     },
     "reason": "With $a empty (the outer nice runs the inner nice, and reads the rest itself), `ls` is the command the inner nice runs; we show it as a word of the command `$a`, one level down from `nice $a -n 5 ls`. Fixed by step 6 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "timeout -s $s 5 echo x",
+    "word": "x",
+    "counts": {
+      "$s": [
+        3,
+        4
+      ]
+    },
+    "reason": "A word of the command `$s` gives, shown as echo's: with three or four words in $s, the third is the command timeout runs, and `5`, `echo` and `x` are its arguments, so echo does not run (its \"text to print\" sounds right, but the owner is wrong). Fixed by step 6 of docs/design/count-hedges.md (command runs)."
+  },
+  {
+    "line": "timeout -k $s 5 echo x",
+    "word": "x",
+    "counts": {
+      "$s": [
+        3,
+        4
+      ]
+    },
+    "reason": "A word of the command `$s` gives, shown as echo's: with three or four words in $s, the third is the command timeout runs, and `5`, `echo` and `x` are its arguments, so echo does not run (its \"text to print\" sounds right, but the owner is wrong). Fixed by step 6 of docs/design/count-hedges.md (command runs)."
   }
 ]
