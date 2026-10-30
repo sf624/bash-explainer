@@ -1,6 +1,6 @@
 # Trust of a builtin's words, from what their fields may be
 
-Status: in progress (2026-10-30). The maintainer approved a redesign: "a design document first, then steps that keep every test passing". Step 1, the field domain (src/semantics/fieldshape.ts), is done; nothing reads it yet, and it is to be reviewed before step 2. Step 0 is done (#504). The roadmap item is under "Deferred until after 0.10.0" (2026-10-31) in [../roadmap.md](../roadmap.md).
+Status: deferred until after 0.10.0 (2026-10-31); steps 0 and 1 done. Agreed 2026-10-30. The maintainer approved a redesign: "a design document first, then steps that keep every test passing". Step 1, the field domain (src/semantics/fieldshape.ts), is done; nothing reads it yet, and it is to be reviewed before step 2. Step 0 is done (#504). The roadmap item is under "Deferred" (2026-10-31) in [../roadmap.md](../roadmap.md).
 
 The condition and dead-code model (`shellState(…).condition(n)`, `.dead(n)`; [semantics.md](semantics.md), 4.14) may decide nothing that a builtin changes unseen. Some builtins read words that expand at run time, and those words can change what the builtin sets: `printf $x u 2` sets `u` when `$x` is `-v`. PRs #498 and #501 built the check for this from special cases. Each review round found a new hole. This page replaces the special cases with one rule about the fields of a word, and two kinds of stated facts: when the code runs, and which values a variable may have there.
 
