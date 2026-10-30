@@ -244,6 +244,10 @@ export class Scripts implements StringTrees {
     return root;
   }
 
+  compound(name: string, text: string): SyntaxNode {
+    return parser().parse(`${name}=${text}`).root;
+  }
+
   expansion(command: SyntaxNode, text: string, rest: number): SyntaxNode {
     let byText = this.expansions.get(command);
     if (!byText) this.expansions.set(command, (byText = new Map()));

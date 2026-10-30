@@ -23,6 +23,8 @@ export interface Write {
   nameref?: boolean;
   /** Made by `+=` (`n+=1`): an integer adds to the value it had, which arithmetic reads (see `Scan.appended`). */
   append?: true;
+  /** It never makes the variable an array (`read x`, `declare -i x=1`, `unset x`), as a plain assignment does not (see `compoundReads`). */
+  scalar?: true;
 }
 
 /** The builtins a command name read from a variable may be (`debug=false; $debug`): they change nothing. */
@@ -53,6 +55,22 @@ export function arithReads(arith: Set<string>, writesOf: ReadonlyMap<string, rea
           arith.add(x);
         }
       }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The variables a declaration gives a value not known that may start with `(` (`declare "a=$x"`, without -a or -A):
+ * bash reads it again as a compound assignment, which may run any code (`x='([u=2]=1)'`), where the variable is an
+ * array there. None may be one: an array is made by a write that is not `scalar` (`a=(…)`, `a[i]=x`, `declare -a`,
+ * `read -a`, `mapfile`, a nameref's), through a nameref (`refTargets`), or by bash (`BASH_REMATCH`, `PIPESTATUS`,
+ * which change unseen). (The scan does not know which variable is an array where: a local hides one, `unset` ends it.)
+ */
+export function compoundReads(names: readonly string[], writesOf: (name: string) => readonly Write[], refTargets: ReadonlySet<string>): string | undefined {
+  for (const name of names) {
+    if (changedUnseen(name) || refTargets.has(name) || writesOf(name).some((w) => !w.plain && !w.scalar)) {
+      return `a declaration gives \`${name}\`, which may be an array, a value not known, which it may read again as a compound assignment`;
     }
   }
   return undefined;

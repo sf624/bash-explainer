@@ -72,6 +72,12 @@ export interface StringTrees {
    * same text, and `capped` is set.
    */
   expansion(command: SyntaxNode, text: string, rest: number): SyntaxNode;
+  /**
+   * The root of `text`, a value that a declaration reads again as a compound assignment (`declare -a 'a=(…)'`), read
+   * alone as the assignment `name=text`. The walk does not run it: the scan reads it as foreign text, for the
+   * declaration.
+   */
+  compound(name: string, text: string): SyntaxNode;
   readonly capped: boolean;
 }
 

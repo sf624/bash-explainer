@@ -399,7 +399,7 @@ describe('the allow-list of the trust (src/semantics/allow.ts)', () => {
   it('trusts nothing in a script with a construct the table has no row for', () => {
     // (A node type no parser gives: the scan asks the table first, and the default is `all`.)
     const fake = { type: 'no_such_node', named: true, children: [], namedChildren: [], parent: null, text: '', startIndex: 0, endIndex: 0 } as unknown as SyntaxNode;
-    const strings = { script: () => undefined, alias: () => fake, expansion: () => fake, capped: false };
+    const strings = { script: () => undefined, alias: () => fake, expansion: () => fake, compound: () => fake, capped: false };
     assert.strictEqual(scriptTrust(fake, strings, undefined, undefined, undefined).blind, 'the node type `no_such_node`, which the allow-list does not have');
   });
 });
