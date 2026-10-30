@@ -11,7 +11,7 @@ import { chainAt } from '../src/ui/hoverParts';
 import { runBash } from './support/bash';
 import { type ArgRole } from '../src/argv/interpret';
 import type { OperandSpec } from '../src/argv/spec';
-import { mostWords, thenRoles } from '../src/argv/valuehedges';
+import { mostWords, sameRole, thenRoles } from '../src/argv/valuehedges';
 import { allTokens } from './support/explain';
 
 const parser = createUnbashParser();
@@ -555,6 +555,8 @@ describe("an option's value that may give no word (after #482)", () => {
     const o = (en: string): OperandSpec => ({ name: en, text: { ja: en, en } });
     assert.deepStrictEqual(thenRoles({ role: 'operand', index: 0, spec: o('a') }), [{ spec: o('a') }]);
     assert.deepStrictEqual(thenRoles({ role: 'operand', index: 0 }), [{}]);
+    // (Two operands are the same role where their texts are, or neither has one.)
+    assert.deepStrictEqual([sameRole({ role: 'operand', index: 0 }, { role: 'operand', index: 1 }), sameRole({ role: 'operand', index: 0, spec: o('a') }, { role: 'operand', index: 0 })], [true, false]);
     assert.deepStrictEqual(thenRoles({ role: 'value', of: '-f', index: 0 }), [{ value: { role: 'value', of: '-f', index: 0 } }]);
     assert.strictEqual(thenRoles({ role: 'end-of-options' }), undefined);
     // (A command run fills an operand, or is an option's value, `su -c ls`, which no hedge names.)

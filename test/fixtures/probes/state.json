@@ -584,6 +584,30 @@
     }
   },
   {
+    "manual": "3.5.3",
+    "snippet": "declare -i m=$2; j=; : ${m:=j=5}",
+    "note": "whether the default of an integer applies is not known here: its arithmetic may run",
+    "facts": {
+      "end": {
+        "variables": {
+          "j": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "m": {
+            "attrs": "i",
+            "value": "\"0\""
+          }
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.variables.j": "`declare -i m=$2` may fail on arithmetic of text not known, which discards the rest of the line: the model does not know it ran",
+      "end.variables.m": "`declare -i m=$2` may fail on arithmetic of text not known, which discards the rest of the line: the model does not know it ran"
+    }
+  },
+  {
     "manual": "3.6.7",
     "snippet": "read -r a b <<< 'x y z'; IFS=: read -r p q <<< 'a:b:c'",
     "note": "IFS before read is for read only",

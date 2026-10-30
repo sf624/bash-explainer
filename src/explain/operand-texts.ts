@@ -25,7 +25,7 @@ import type { Explainer } from './context';
 export function readingsParts(cx: Explainer, desc: string, readings: WordReadings | Depends | undefined, k: number, nodes: readonly SyntaxNode[]): { base: string; rest: string } {
   if (!readings) return { base: desc, rest: '' };
   // (The command that reads the line, which a role read by it names where another reads the word: "option `-n` of `nice`".)
-  const command = field(nodes[0].parent!, 'name')?.text ?? '';
+  const command = field(nodes[0].parent!, 'name')!.text;
   const first = readings.kind === 'read' ? firstRole(readings) : undefined;
   const names = namesFor(nodes, command, first);
   // (Each a sentence of its own: ". When …", "。…なら…".)
@@ -125,25 +125,13 @@ export function restText(cx: Explainer, rest: readonly ThenRole[] | undefined, a
 /**
  * The roles a word may take when an option's value before it gives several words (`ArgRole` `more`), each "; X when
  * `$a` expands to several words" (`jq --arg $n $v .`: `$v` is the filter when `$n` gives two words), "X or Y" where
- * they depend on counts, "its first word is …" where the word may give several. Equal readings are one: "X when `$n`
- * or `$v` expands to several words".
+ * they depend on counts, "its first word is …" where the word may give several.
  */
 function moreText(cx: Explainer, more: readonly MoreRole[] | undefined, nodes: SyntaxNode[]): string {
-  const readings: { then: string; key: string; first?: true; words: number[] }[] = [];
-  for (const r of more ?? []) {
-    const texts = r.roles.map((o) => thenText(cx, o));
-    const then = anyOf(cx, texts);
-    // (The same roles in another order are the same reading.)
-    const key = [...texts].sort().join('\n');
-    const same = readings.find((g) => g.key === key && g.first === r.first);
-    if (same) same.words.push(r.word);
-    else readings.push({ then, key, ...(r.first ? { first: r.first } : {}), words: [r.word] });
-  }
-  return readings.map(({ then, first, words }) => {
-    const names = words.map((i) => codeSpan(nodes[i].text));
-    const ja = names.join(' か ');
-    const en = names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : names[0];
-    return cx.s(`、${ja} が2語以上なら${first ? 'この語の最初の語は' : ''}${spaced(then)}`, `; ${first ? 'its first word is ' : ''}${then} when ${en} expands to several words`);
+  return (more ?? []).map(({ roles, first, word }) => {
+    const then = anyOf(cx, roles.map((o) => thenText(cx, o)));
+    const name = codeSpan(nodes[word].text);
+    return cx.s(`、${name} が2語以上なら${first ? 'この語の最初の語は' : ''}${spaced(then)}`, `; ${first ? 'its first word is ' : ''}${then} when ${name} expands to several words`);
   }).join('');
 }
 
@@ -156,27 +144,15 @@ function valueWords(v: ValueRole): Text {
 const valueText = (cx: Explainer, v: ValueRole): string => cx.t(valueWords(v));
 
 /**
- * The roles a word takes when words before it give none (`ArgRole` `none`), each "; X when `$a` expands to nothing": an
- * operand's (with `$a` empty, `cp $a b` is `cp b`, a source), or an option's value (`tar -cf $a b`: "value for `-f`"), or
- * its first word's where it may give several ("its first word is …"). Equal readings, each after one word, are one: "X
- * when `$n` or `$v` expands to nothing" (`jq --arg $n $v .`); a reading after several words is when they all give none
- * ("when `$a`, `$b` expand to nothing").
+ * The roles a word takes when an option's value before it gives none (`ArgRole` `none`, each of one word), each "; X
+ * when `$a` expands to nothing": an operand's (`grep -e $p -e x f`: "file to search"), or an option's value
+ * (`grep -e $p -i f`: "value for `-e`"), or its first word's where it may give several ("its first word is …").
  */
 export function noneText(cx: Explainer, none: readonly NoneRole[] | undefined, nodes: SyntaxNode[]): string {
-  const readings: { then: string; first?: true; words: number[][] }[] = [];
-  for (const r of none ?? []) {
+  return (none ?? []).map((r) => {
     const then = r.spec ? cx.t(r.spec.text) : valueText(cx, r.value);
-    const same = r.words.length === 1 ? readings.find((g) => g.then === then && g.first === r.first && g.words[0].length === 1) : undefined;
-    if (same) same.words.push(r.words);
-    else readings.push({ then, ...(r.first ? { first: r.first } : {}), words: [r.words] });
-  }
-  return readings.map(({ then, first, words }) => {
-    const names = words.map((ws) => ws.map((i) => codeSpan(nodes[i].text)));
-    const any = names.length > 1 ? names.map((n) => n[0]) : undefined;
-    const ja = any ? any.join(' か ') : names[0].join('・');
-    const en = any ? `${any.slice(0, -1).join(', ')} or ${any[any.length - 1]} expands` : `${names[0].join(', ')} ${names[0].length > 1 ? 'expand' : 'expands'}`;
-    const role = spaced(then);
-    return cx.s(`、${ja} が0語なら${first ? 'この語の最初の語は' : ''}${role}`, `; ${first ? 'its first word is ' : ''}${then} when ${en} to nothing`);
+    const name = r.words.map((i) => codeSpan(nodes[i].text)).join(cx.s('・', ', '));
+    return cx.s(`、${name} が0語なら${r.first ? 'この語の最初の語は' : ''}${spaced(then)}`, `; ${r.first ? 'its first word is ' : ''}${then} when ${name} expands to nothing`);
   }).join('');
 }
 
