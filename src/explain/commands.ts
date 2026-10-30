@@ -483,12 +483,14 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
   const name = as ?? sv ?? (isPlainWord(word) ? word.text : nameNode.text);
   // (A word of plain text with braces is the first word they give, `as`; where they do not expand, `{echo,hi}` in dash, it is a name as written.)
   const plain = isPlainWord(word) || (plainText(word) && (as !== undefined || !bracesHere(cx, word)));
-  // (A glob is read from the files, `f* -x`: the first match is the command and the others its words, as an expansion's.)
-  const globbed = sv === undefined && as === undefined && plain && word.type !== 'raw_string' && !!wordMeaning(word, cx.state)?.steps.some((st) => st.kind === 'glob' && st.applies !== false && st.parts.length > 0);
+  // (A glob is read from the files, `f* -x`: the first match is the command and the others its words, as an expansion's.
+  // But an alias is expanded before the glob, and a function of that name runs when no file matches: both are read as they are.)
+  const globs = sv === undefined && as === undefined && plain && word.type !== 'raw_string' && !!wordMeaning(word, cx.state)?.steps.some((st) => st.kind === 'glob' && st.applies !== false && st.parts.length > 0);
+  const globbed = globs && !['alias', 'function'].includes(resolve(cx, name, nameNode, { quoted: false }).kind);
   if (sv === undefined && (!plain || globbed) && word.type !== 'raw_string') {
     return {
       name, kind: 'command', nameTokens: cx.sub(word), refs: ['3.7.1'], unnamed: true,
-      explanation: cx.s('変数（展開結果）をコマンド名として実行する', 'Run the expanded value as a command'),
+      explanation: cx.s('展開した結果をコマンドとして実行する', 'Run the expanded value as a command'),
     };
   }
   // What bash runs (src/semantics/names.ts). An alias over a known command that runs that command with more words
@@ -572,7 +574,7 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
       if (res.kind === 'file') return { name, res: ran, kind: 'command', nameTokens: [], refs: ['6.6'], explanation: cx.s(`コマンド \`${name}\` を実行する（行 ${first + 1} のエイリアスはここではまだ効かない）`, `Run the command \`${name}\` (the alias of line ${first + 1} is not in effect here)`) };
     }
   }
-  if (res.kind === 'function') return { name, res: ran, kind: 'function', fn: res.sure || 'maybe', nameTokens: [], refs: ['3.3'], explanation: functionCall(cx, res) };
+  if (res.kind === 'function') return { name, res: ran, kind: 'function', fn: res.sure || 'maybe', nameTokens: [], refs: ['3.3'], explanation: functionCall(cx, res) + (globs ? globOver(cx) : '') };
   missedNote(cx, name, missed, nameNode);
   // After `source`, a name the dictionary does not know may be a function of the file read.
   if (res.kind === 'file' && res.sourced) {
@@ -677,6 +679,11 @@ function missedNote(cx: Explainer, name: string, missed: Missed | undefined, at:
 }
 
 /** "Call the function `f` defined on line N", with what it hides and whether it is sure. */
+/** A function named like a glob: a file that matches the name is the command instead (`f*() { :; }; f* -x` runs the first `f…` file). */
+function globOver(cx: Explainer): string {
+  return cx.s('。ただし、名前に一致するファイルがあれば、その最初のファイル名のコマンドが代わりに実行される', '. But if a file matches the name, the command of the first matching file name runs instead');
+}
+
 function functionCall(cx: Explainer, res: Extract<NameResolution, { kind: 'function' }>): string {
   const { name } = res;
   const line = (docLine(res.fn.def) + 1);
