@@ -17,7 +17,7 @@ import { field, fields, fileContentsOf, redirectionsOf, type SyntaxNode } from '
 import type { Explainer } from './context';
 import { isBlockLike, same, skeletal, sortTokens, summaryOf } from './nodes';
 import { globOff, restrictedAt, unquotedWord, wordAt } from './reads';
-import { braceExpansion } from './words';
+import { braceExpansion, tilde } from './words';
 
 /** The operator and destination of a file redirection (`>&-` and `<&-`, which close a descriptor, are `>&` and `<&` to `-`). */
 export function redirectParts(n: SyntaxNode): { op: string; dest: string } {
@@ -395,5 +395,6 @@ export function herestring(cx: Explainer, n: SyntaxNode): Token {
     : cx.s(
       `ヒアストリング \`<<<\`: 続く文字列（末尾に改行が付く）を${to}として渡す`,
       `Here-string \`<<<\`: the following word (plus a newline) becomes ${to}`,
-    ), cx.subs(n.namedChildren.filter((c) => !isPlainWord(c) && c.type !== 'file_descriptor')));
+    // (A plain word says nothing more, but its tildes: `<<< ~/x`, `<<< x:~`.)
+    ), [...cx.subs(n.namedChildren.filter((c) => !isPlainWord(c) && c.type !== 'file_descriptor')), ...n.namedChildren.filter(isPlainWord).flatMap((c) => tilde(cx, c) ?? [])]);
 }

@@ -170,3 +170,54 @@ describe('word notes: after the review', () => {
     assert.strictEqual(bash('P=/p; PATH2=$P:~/bin; echo $PATH2'), '/p:/home/w/bin\n');
   });
 });
+
+describe('word notes: line continuations, sequences past intmax_t, here-strings and array elements', () => {
+  const said = (src: string): string[] => allTokens(explain(src).items).map((t) => t.explanation);
+  const examples = (src: string): string[] => explain(src).examples.flatMap((e) => e.sections.map((s) => `${s.label} → ${s.lines.join(' ') || s.empty}`));
+  const TILDE = '`~` becomes the home directory (`$HOME`)';
+
+  it('reads a sequence, a tilde and a glob without their line continuations', () => {
+    assert.ok(said('echo {1..\\\n3} {1\\\n0..12}').includes('Brace expansion: `{1..3}` expands to 3 words: `1` `2` `3`'));
+    assert.ok(said('echo {1..\\\n3} {1\\\n0..12}').includes('Start: `10`'));
+    assert.strictEqual(bash('echo {1..\\\n3} {1\\\n0..12}'), '1 2 3 10 11 12\n');
+    const t = allTokens(explain('echo a\\\n=~').items).find((x) => x.label === '~')!;
+    assert.deepStrictEqual([t.explanation, t.span.start], [`Tilde expansion (after \`=\`): ${TILDE}`, { line: 1, character: 1 }]);
+    assert.strictEqual(bash('echo a\\\n=~'), 'a=/home/w\n');
+    assert.ok(said('echo *.t\\\nxt').includes('The text `.txt` itself'));
+    assert.ok(!said('echo *.t\\\nxt').some((x) => /not a pattern symbol/.test(x)));
+    assert.strictEqual(bash('echo *.t\\\nxt'), 'a.txt b.txt\n');
+    assert.ok(said('shopt -s extglob\necho +\\\n(a).txt').some((x) => x.includes('Extended glob: `+(a)` is `a` repeated one or more times')));
+    assert.strictEqual(bash('shopt -s extglob\necho +\\\n(a).txt'), 'a.txt\n');
+  });
+
+  it('keeps a sequence bash refuses as it is written, and counts past 2^53 exactly', () => {
+    assert.ok(!said('echo {0..2..9223372036854775808} {a..c..9223372036854775808}').some((x) => x.startsWith('Brace expansion')));
+    assert.strictEqual(bash('echo {0..2..9223372036854775808} {a..c..9223372036854775808}'), '{0..2..9223372036854775808} {a..c..9223372036854775808}\n');
+    assert.ok(said('echo {9007199254740993..9007199254740991..2}').includes('Brace expansion: `{9007199254740993..9007199254740991..2}` expands to 2 words: `9007199254740993` `9007199254740991`'));
+    assert.ok(said('echo {0..2..9223372036854775807}').includes('Increment: `9223372036854775807` (each word is 9223372036854775807 more than the one before)'));
+    assert.ok(said('echo {a..e..-9223372036854775807}').includes('Increment: `-9223372036854775807` (every 9223372036854775807th letter, counting up); its sign does not count: the start and the end set the direction'));
+    assert.strictEqual(bash('echo {9007199254740993..9007199254740991..2} {0..2..9223372036854775807} {a..e..-9223372036854775807}'), '9007199254740993 9007199254740991 0 a\n');
+  });
+
+  it('says that a here-string has a tilde after each `:`, not after `=`, and reads its line so', () => {
+    assert.deepStrictEqual(labels('cat <<< x:~', '~'), [`Tilde expansion (after \`:\`): ${TILDE}`]);
+    assert.deepStrictEqual(labels('cat <<< ~/x', '~/x'), [`Tilde expansion: ${TILDE}. The rest, \`/x\`, stays as it is`]);
+    assert.deepStrictEqual(labels('cat <<< a=~', '~'), []);
+    assert.strictEqual(bash('cat <<< x:~; cat <<< ~/x; cat <<< a=~'), 'x:/home/w\n/home/w/x\na=~\n');
+    assert.ok(!examples('read a b <<< x:~').some((x) => x.includes('x:~')));
+  });
+
+  it('says that an element with a subscript has its tilde expanded after `=` and `:`, but in POSIX mode', () => {
+    assert.deepStrictEqual(labels('r=([0]=~ [1]=x:~ [2]=~a@b)', '~'), [`Tilde expansion (after \`=\`): ${TILDE}`, `Tilde expansion (after \`:\`): ${TILDE}`]);
+    assert.deepStrictEqual(labels('set -o posix; r=([0]=~)', '~'), []);
+    assert.strictEqual(bash('r=([0]=~ [1]=x:~); echo "${r[@]}"'), '/home/w x:/home/w\n');
+    assert.strictEqual(bash('r=([0]=~); echo "${r[@]}"', true), '~\n');
+  });
+
+  it("shows the word of `${x:+word}` in an assignment's value with its tildes", () => {
+    assert.ok(examples('a=${x:+x:~}').includes('When `x=/data` → x:$HOME (expanded)'));
+    assert.ok(examples("a=${x:+'a:'~:\\:~:~}").includes("When `x=/data` → 'a:'~:\\:~:$HOME (expanded)"));
+    assert.ok(examples('echo ${x:+x:~}').includes('When `x=hello` → x:~'));
+    assert.strictEqual(bash("x=1; a=${x:+x:~}; b=${x:+'a:'~:\\:~:~}; echo $a $b ${x:+x:~}"), 'x:/home/w a:~::~:/home/w x:~\n');
+  });
+});

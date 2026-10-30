@@ -3144,5 +3144,472 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "@PROBE:a@ {1..\\\n3} {\\\n1..3} {1..3\\\n} {a\\\n..c} {1..3..\\\n2} x{1..\\\n3}y {a\\\n,b} {1\\\n0..12}",
+    "note": "bash removes a line continuation before it reads the word, also inside a sequence expression.",
+    "facts": {
+      "a": [
+        [
+          "1",
+          "2",
+          "3",
+          "1",
+          "2",
+          "3",
+          "1",
+          "2",
+          "3",
+          "a",
+          "b",
+          "c",
+          "1",
+          "3",
+          "x1y",
+          "x2y",
+          "x3y",
+          "a",
+          "b",
+          "10",
+          "11",
+          "12"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.2",
+    "snippet": "@PROBE:a@ a\\\n=~ a=\\\n~ a=b:\\\n~ a\\\n[1]=~ ~\\\n/x",
+    "note": "A line continuation in a word that looks like an assignment: bash reads the word without it.",
+    "facts": {
+      "a": [
+        [
+          "a=/home/probe",
+          "a=/home/probe",
+          "a=b:/home/probe",
+          "a[1]=/home/probe",
+          "/home/probe/x"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8.1",
+    "snippet": "shopt -s extglob\n@PROBE:a@ @\\\n(a.txt) !\\\n(*.txt) +\\\n(a).txt *\\\n(b).txt ?\\\n(c).log *.t\\\nxt",
+    "note": "A line continuation between the character and the `(` of an extended glob.",
+    "facts": {
+      "a": [
+        [
+          "a.txt",
+          "c.log",
+          "empty",
+          "sub",
+          "a.txt",
+          "b.txt",
+          "c.log",
+          "a.txt",
+          "b.txt",
+          "x y.txt"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "@PROBE:a@ {0..2..9223372036854775808} {0..2..-9223372036854775808} {1..2..18446744073709551617} {a..c..9223372036854775808} {9007199254740993..9007199254740991..2} {9223372036854775807..9223372036854775808} {-9223372036854775809..-9223372036854775808}",
+    "note": "A number of a sequence expression that bash's intmax_t cannot hold leaves the word as it is; the others are exact.",
+    "facts": {
+      "a": [
+        [
+          "{0..2..9223372036854775808}",
+          "{0..2..-9223372036854775808}",
+          "{1..2..18446744073709551617}",
+          "{a..c..9223372036854775808}",
+          "9007199254740993",
+          "9007199254740991",
+          "{9223372036854775807..9223372036854775808}",
+          "{-9223372036854775809..-9223372036854775808}"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "@PROBE:a@ {0..2..9223372036854775807} {a..e..-9223372036854775807} {9223372036854775805..9223372036854775807..2} {-9223372036854775808..-9223372036854775807} {9223372036854775807..9223372036854775805..-2} {0..2..0} {1..3..-1} {+1..+3} {-0..2}",
+    "note": "Sequences at the bounds of intmax_t.",
+    "facts": {
+      "a": [
+        [
+          "0",
+          "a",
+          "9223372036854775805",
+          "9223372036854775807",
+          "-9223372036854775808",
+          "-9223372036854775807",
+          "9223372036854775807",
+          "9223372036854775805",
+          "0",
+          "1",
+          "2",
+          "1",
+          "2",
+          "3",
+          "1",
+          "2",
+          "3",
+          "0",
+          "1",
+          "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "@PROBE:a@ {9223372036854775806..0..9223372036854775806}; @PROBE:b@ {-1..9223372036854775805..9223372036854775805}; @PROBE:c@ {0..-9223372036854775808..9223372036854775807}; @PROBE:d@ {2..0..-9223372036854775808}; @PROBE:e@ {0..4294967290..2}; @PROBE:f@ {02147483648..2147483650} {-02147483649..-2147483647}",
+    "note": "bash 5.2's limits: a start and an end too far apart for its check (which bash 5.3 changed), more than INT_MAX-3 steps, and padded numbers printed as a C int.",
+    "facts": {
+      "a": [
+        [
+          "{9223372036854775806..0..9223372036854775806}"
+        ]
+      ],
+      "b": [
+        [
+          "{-1..9223372036854775805..9223372036854775805}"
+        ]
+      ],
+      "c": [
+        [
+          "0",
+          "-9223372036854775807"
+        ]
+      ],
+      "d": [
+        [
+          "2"
+        ]
+      ],
+      "e": [
+        [
+          "{0..4294967290..2}"
+        ]
+      ],
+      "f": [
+        [
+          "-2147483648",
+          "-2147483647",
+          "-2147483646",
+          "002147483647",
+          "-02147483648",
+          "-02147483647"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "bash": "5.3",
+    "snippet": "@PROBE:a@ {9223372036854775806..0..9223372036854775806}; @PROBE:b@ {-1..9223372036854775805..9223372036854775805}; @PROBE:c@ {0..-9223372036854775808..9223372036854775807}; @PROBE:d@ {2..0..-9223372036854775808}; @PROBE:f@ {02147483648..2147483650} {-02147483649..-2147483647}",
+    "note": "bash 5.3 checks the bounds otherwise, and pads numbers past a C int.",
+    "facts": {
+      "a": [
+        [
+          "9223372036854775806",
+          "0"
+        ]
+      ],
+      "b": [
+        [
+          "-1",
+          "9223372036854775804"
+        ]
+      ],
+      "c": [
+        [
+          "{0..-9223372036854775808..9223372036854775807}"
+        ]
+      ],
+      "d": [
+        [
+          "{2..0..-9223372036854775808}"
+        ]
+      ],
+      "f": [
+        [
+          "02147483648",
+          "02147483649",
+          "02147483650",
+          "-02147483649",
+          "-02147483648",
+          "-02147483647"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "a": "the brace scanner follows bash 5.2's limits of sequences (src/braceseq.ts), which bash 5.3 changed",
+      "b": "the brace scanner follows bash 5.2's limits of sequences (src/braceseq.ts), which bash 5.3 changed",
+      "c": "the brace scanner follows bash 5.2's limits of sequences (src/braceseq.ts), which bash 5.3 changed",
+      "d": "the brace scanner follows bash 5.2's limits of sequences (src/braceseq.ts), which bash 5.3 changed",
+      "f": "bash 5.2 pads a number cut to a C int; bash 5.3 pads it as it is (src/braceseq.ts)"
+    }
+  },
+  {
+    "manual": "3.6.7",
+    "stdin": true,
+    "snippet": "@PROBE:a@ <<< x:~; @PROBE:b@ <<< a=~; @PROBE:c@ <<< a=b:~; @PROBE:d@ <<< x::~; @PROBE:e@ <<< x:~+; @PROBE:f@ <<< ~/a:~; @PROBE:g@ <<< a=~:~; @PROBE:h@ <<< \"x:~\"; @PROBE:i@ <<< x:\\~; @PROBE:j@ <<< x':'~; @PROBE:k@ <<< ~+:x",
+    "note": "A here-string is expanded as the value of an assignment: a tilde at the start and after each `:`, not after `=`.",
+    "facts": {
+      "a": [
+        [
+          "x:/home/probe"
+        ]
+      ],
+      "b": [
+        [
+          "a=~"
+        ]
+      ],
+      "c": [
+        [
+          "a=b:/home/probe"
+        ]
+      ],
+      "d": [
+        [
+          "x::/home/probe"
+        ]
+      ],
+      "e": [
+        [
+          "x:/BOX"
+        ]
+      ],
+      "f": [
+        [
+          "/home/probe/a:/home/probe"
+        ]
+      ],
+      "g": [
+        [
+          "a=~:/home/probe"
+        ]
+      ],
+      "h": [
+        [
+          "x:~"
+        ]
+      ],
+      "i": [
+        [
+          "x:~"
+        ]
+      ],
+      "j": [
+        [
+          "x:~"
+        ]
+      ],
+      "k": [
+        [
+          "/BOX:x"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.6.7",
+    "stdin": true,
+    "posix": true,
+    "snippet": "@PROBE:a@ <<< x:~; @PROBE:b@ <<< a=~; @PROBE:c@ <<< ~/a:~",
+    "note": "Also in POSIX mode.",
+    "facts": {
+      "a": [
+        [
+          "x:/home/probe"
+        ]
+      ],
+      "b": [
+        [
+          "a=~"
+        ]
+      ],
+      "c": [
+        [
+          "/home/probe/a:/home/probe"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.7",
+    "snippet": "r=([0]=~ [1]=x:~ [2]=a=~ [3]=~/a:~ [4]+=~ [5]=~:x ~ x=~ x:~); @PROBE:a@ \"${r[@]}\"",
+    "note": "An element with a subscript has its tilde after `]=` and after each `:`; one without, at its start only.",
+    "facts": {
+      "a": [
+        [
+          "/home/probe",
+          "x:/home/probe",
+          "a=~",
+          "/home/probe/a:/home/probe",
+          "/home/probe",
+          "/home/probe:x",
+          "/home/probe",
+          "x=~",
+          "x:~"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "a": "the model does not follow the values of an array's elements given with a subscript"
+    }
+  },
+  {
+    "manual": "6.7",
+    "posix": true,
+    "snippet": "r=([0]=~ [1]=x:~ ~); @PROBE:a@ \"${r[@]}\"",
+    "note": "In POSIX mode, an element with a subscript has none.",
+    "facts": {
+      "a": [
+        [
+          "~",
+          "x:~",
+          "/home/probe"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "a": "the model does not follow the values of an array's elements given with a subscript"
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=1; a=${x:+x:~}; b=${u:-x:~}; declare c=${x:+~/a:~}; export d=${x:+x=~}; e=${x+:~}; f=${u-x:~}${x:+$x:~}; h=\"${x:+x:~}\"; @PROBE:a@ \"$a\" \"$b\" \"$c\" \"$d\" \"$e\" \"$f\" \"$h\" ${x:+x:~} a=${x:+x:~}",
+    "note": "In the value of an assignment, the word of `${x:-word}` and `${x:+word}` has a tilde after each `:` too; not in double quotes, nor in an argument.",
+    "facts": {
+      "a": [
+        [
+          "x:/home/probe",
+          "x:/home/probe",
+          "/home/probe/a:/home/probe",
+          "x=~",
+          ":/home/probe",
+          "x:/home/probe1:/home/probe",
+          "x:~",
+          "x:~",
+          "a=x:~"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "f() { local l=${x:+x:~}; @PROBE:a@ \"$l\"; }; x=1; f",
+    "facts": {
+      "a": [
+        [
+          "x:/home/probe"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "posix": true,
+    "snippet": "x=1; a=${x:+x:~}; declare c=${x:+~/a:~}; @PROBE:a@ \"$a\" \"$c\"",
+    "note": "Not in POSIX mode.",
+    "facts": {
+      "a": [
+        [
+          "x:~",
+          "/home/probe/a:~"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.6.7",
+    "stdin": true,
+    "snippet": "x=1; @PROBE:a@ <<< ${x:+x:~}; @PROBE:b@ <<< \"${x:+x:~}\"; @PROBE:c@ <<< ${u-x:~}",
+    "facts": {
+      "a": [
+        [
+          "x:/home/probe"
+        ]
+      ],
+      "b": [
+        [
+          "x:~"
+        ]
+      ],
+      "c": [
+        [
+          "x:/home/probe"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.6.7",
+    "stdin": true,
+    "posix": true,
+    "snippet": "x=1; @PROBE:a@ <<< ${x:+x:~}",
+    "facts": {
+      "a": [
+        [
+          "x:~"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.7",
+    "snippet": "x=1; g=${u=x:~}; r[1]=${x:+x:~}; q=([1]=${x:+x:~}); @PROBE:a@ \"$g\" \"${r[1]}\" \"${q[1]}\"",
+    "note": "Not the word of `${x=word}`, nor that of an element in an array's list; but that of an element assigned alone.",
+    "gaps": {
+      "a": "the model does not follow the value `${u=word}` assigns, nor the values of an array's elements given with a subscript"
+    },
+    "facts": {
+      "a": [
+        [
+          "x:~",
+          "x:/home/probe",
+          "x:~"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x=1; a=${x:+'x:'~:\\:~:\"~\":~}; b=${x:+$x:~}; c=${x:+~:x}; @PROBE:a@ \"$a\" \"$b\" \"$c\"",
+    "note": "Only a `:` outside quotes starts a tilde prefix; one at the start ends at a `:`.",
+    "facts": {
+      "a": [
+        [
+          "x:~::~:~:/home/probe",
+          "1:/home/probe",
+          "/home/probe:x"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

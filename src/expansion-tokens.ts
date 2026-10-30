@@ -16,6 +16,7 @@ import { ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parse
 import { Lang, ordinal, Text } from './i18n';
 import { isPlainWord, messageText, unquoteWord } from './staticword';
 import { option } from './semantics/state';
+import { operandAssigned } from './semantics/words';
 import { field, nameText, type SyntaxNode } from './syntax/tree';
 
 /** Nodes inside an expansion's argument that get their own explanation. */
@@ -66,7 +67,7 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   const joined = all && joinedNote(h, n, all, parsed.subscript === undefined);
   // (`"$@"` keeps the arguments apart only where words are split: not here.)
   if (joined) summary.explanation = (parsed.subscript === undefined && !parsed.op ? h.s('全ての位置パラメータ', 'All positional parameters') : summary.explanation) + joined;
-  const cases = exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: isAssoc(h, parsed.name, n), integer: isInteger(h, parsed.name, n), script: scriptValue(h, n, parsed) });
+  const cases = exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: isAssoc(h, parsed.name, n), integer: isInteger(h, parsed.name, n), assigned: operandAssigned(n, h.state), script: scriptValue(h, n, parsed) });
   // A `${…}` on one line is always on the line explained.
   if (cases) {
     h.example({ kind: 'expansion',

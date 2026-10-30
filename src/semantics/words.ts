@@ -13,7 +13,7 @@ import { patsubMiscounts } from '../bracket';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
-import { ancestor, assignmentsOnly, descendants, field, nameText, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, IFS_ERRATIC, IFS_WHITESPACE, sameInEveryLocale, substring } from './chars';
 import { bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
@@ -21,7 +21,7 @@ import { resolveName } from './names';
 import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 import { changedByBash, setAtStart } from './vars';
 import { ARITH, changesDirectory, underscoreValue, unreliableAt, unreliableNames } from './wordsites';
-import { operandSegs } from './operands';
+import { operandPattern, operandReplacement, operandWord } from './operands';
 import { CONTEXTS, type ContextRule, type WordContext } from './wordcontexts';
 import type { Hole } from './fieldshape';
 
@@ -228,11 +228,32 @@ function nearestQuote(n: SyntaxNode): boolean {
   return a.type === 'string' || a.type === 'heredoc_body';
 }
 
+/**
+ * The contexts whose word bash expands as the value of an assignment, and with it the word of a `${x:-word}` or
+ * `${x:+word}` in it: a tilde after each `:` too, in bash mode (`a=${x:+x:~}`, `cat <<< ${x:-x:~}`; not `${x=word}`).
+ */
+const ASSIGNED: ReadonlySet<WordContext> = new Set(['assignment-value', 'herestring', 'declaration-assignment']);
+
+/** Whether the word of the `${…}` `e` is expanded as the value of an assignment (`ASSIGNED`), also in such a word of another one. */
+function assignedOperand(e: SyntaxNode): boolean {
+  if (!/^:?[-+]$/.test(parseExpansion(e.text)?.op ?? '') || nearestQuote(e)) return false;
+  const outer = wordOf(e);
+  /* c8 ignore next -- a guard: a `${…}` with a word is in a word's place (an argument, a value, a pattern…). */
+  if (!outer) return false;
+  return outer.context === 'param-word' ? assignedOperand(outer.nodes[0].parent!) : ASSIGNED.has(outer.context);
+}
+
+/** Whether bash expands the word of the `${…}` `e` as the value of an assignment where it runs, a tilde after each `:` too (`a=${x:+x:~}`; not in POSIX mode). */
+export function operandAssigned(e: SyntaxNode, model: StateModel): boolean {
+  return option(model.at(e).run, 'set', 'posix') !== 'on' && assignedOperand(e);
+}
+
 /** The tilde prefixes of a word, as its context and the mode read them (3.5.2; `tildeSpots`); none in `"${x:-~}"`. */
 function tildesOf(nodes: readonly SyntaxNode[], rule: ContextRule, posix: Tri): TildePrefix[] {
-  if (rule.tilde === 'none' || (rule === CONTEXTS['param-word'] && nodes[0].parent?.parent?.type === 'string')) return [];
+  if (rule.tilde === 'none' || (rule.tilde === 'element' && posix === 'on') || (rule === CONTEXTS['param-word'] && nodes[0].parent?.parent?.type === 'string')) return [];
   const parts = tildeParts(nodes);
-  const mode = rule.tilde === 'declaration' ? 'argument' : rule.tilde === 'argument' ? (posix === 'on' ? 'start' : 'argument') : rule.tilde;
+  const mode = rule.tilde === 'declaration' ? 'argument' : rule.tilde === 'argument' ? (posix === 'on' ? 'start' : 'argument')
+    : rule === CONTEXTS['param-word'] && posix !== 'on' && assignedOperand(nodes[0].parent!) ? 'assignment' : rule.tilde;
   return tildeSpots(parts, mode).map((t) => ({ node: parts[t.part].node, start: t.start, end: t.end, user: t.user, after: t.after }));
 }
 
@@ -279,7 +300,7 @@ function shapeOf(nodes: readonly SyntaxNode[]): Shape {
     unquoted: expansions.filter((e) => e.type !== 'process_substitution' && !nearestQuote(e)),
     someQuoted: expansions.some(nearestQuote),
     braced: bracedWords(plain),
-    globWords: [...new Set([...plain.filter((w) => isGlob(w.text)), ...bracketsAcross(nodes)])].sort((a, b) => a.startIndex - b.startIndex),
+    globWords: [...new Set([...plain.filter((w) => isGlob(joinedText(w))), ...bracketsAcross(nodes)])].sort((a, b) => a.startIndex - b.startIndex),
     quoted: nodes.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text)),
   };
   shapes.set(nodes[0], shape);
@@ -649,7 +670,8 @@ class Evaluator {
     if (/^:?[-=+?]$/.test(op)) {
       if (value === undefined) return undefined;
       const missing = value === null || (op[0] === ':' && value === '');
-      const word = (): Piece[] | undefined => paramWord(part('word'), quoted, this);
+      // (The word of `${x:-word}` and `${x:+word}` in an assignment's value is expanded as one: `a=${x:+x:~}`.)
+      const word = (): Piece[] | undefined => operandWord(part('word'), quoted, this, !op.endsWith('=') && ASSIGNED.has(this.w.context) && this.w.posix !== 'on');
       if (op.endsWith('+')) return missing ? out('') : word();
       if (op.endsWith('?')) return missing ? (() => { throw new Failure('parameter-null'); })() : out(value!);
       return missing ? word() : out(value!);
@@ -662,7 +684,7 @@ class Evaluator {
     }
     if (op[0] === '~') return undefined; // (`~` and `~~` toggle the case: not followed.)
     if (op === '^^' || op === ',,' || op === '^' || op === ',') return part('pattern') ? undefined : out(caseConverted(op, value));
-    const pattern = patternOf(part('pattern'), this);
+    const pattern = operandPattern(part('pattern'), this);
     if (pattern === undefined) return undefined;
     // nocasematch makes `${x/p/r}` ignore case (not `#` and `%`).
     const nocase = op[0] === '/' ? on(option(this.st, 'shopt', 'nocasematch'), 'shopt', 'nocasematch', false) : 'off';
@@ -684,7 +706,7 @@ class Evaluator {
       }
     }
     // `${x/p/r}`, `${x//p/r}`, `${x/#p/r}`, `${x/%p/r}`. An unquoted `&` in the replacement is the match (patsub_replacement).
-    const rep = replacementOf(part('replacement'), this);
+    const rep = operandReplacement(part('replacement'), this);
     // (A pattern that matches nothing at all, like `*`, has rules of its own at the end of the value; `[!]]`: patsubMiscounts.)
     if (rep === undefined || test('') || patsubMiscounts(pattern)) return undefined;
     const at = (k: number): number | undefined => range(len, k).find((e) => test(value.slice(k, e)));
@@ -739,35 +761,6 @@ function plain(text: string): Piece[] {
     } else push(text[i], false);
   }
   return out;
-}
-
-/** The word of `${x:-word}`: split and globbed where the `${…}` is (an unquoted tilde prefix at its start expands). */
-function paramWord(text: string, quoted: boolean, ev: Evaluator): Piece[] | undefined {
-  const out: Piece[] = [];
-  const m = /^~([^/]*)/.exec(text);
-  if (m && !quoted) {
-    const home = /[\\'"$`]/.test(m[1]) ? undefined : ev.tilde(m[1]);
-    if (home === undefined) return undefined;
-    out.push({ text: home, quoted: true, expanded: false });
-    text = text.slice(m[0].length);
-  }
-  const segs = operandSegs(text, quoted, ev.param, ev.w.shell);
-  return segs && [...out, ...segs.map((g) => ({ text: g.text, quoted: g.quoted || quoted, expanded: true }))];
-}
-
-/**
- * A pattern of `${x#p}` as a glob for globToRegex: quoted characters escaped (but letters and digits). Its quotes count
- * also when the `${…}` is in double quotes (`"${x#'a'}"` removes an `a`), and so does the pattern `$p` gives (`"${x#$p}"`).
- */
-function patternOf(text: string, ev: Evaluator): string | undefined {
-  const segs = hasExtglob(text) ? undefined : operandSegs(text, false, ev.param, ev.w.shell);
-  return segs?.map((g) => (g.quoted ? g.text.replace(/\W/g, '\\$&') : g.text)).join('');
-}
-
-/** The replacement of `${x/p/r}` (its quotes count as in a pattern); undefined with an unquoted `&` (the match, with patsub_replacement). */
-function replacementOf(text: string, ev: Evaluator): string | undefined {
-  const segs = operandSegs(text, false, ev.param, ev.w.shell);
-  return !segs || segs.some((g) => !g.quoted && g.text.includes('&')) ? undefined : segs.map((g) => g.text).join('');
 }
 
 const DEFAULT_IFS = ' \t\n';

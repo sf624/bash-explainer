@@ -2,6 +2,7 @@
 import { coreutilsRejects, type PrintfReader } from '../embedded/format';
 import { sprintf } from './awk';
 import { bracketEnd, bracketRegex } from '../bracket';
+import { parseSequence, sequenceWords } from '../braceseq';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 
 class Unsupported extends RunnerUnsupported {}
@@ -10,35 +11,8 @@ class Unsupported extends RunnerUnsupported {}
 
 /** The words of the sequence expression `{x..y[..incr]}` (`text`, braces included, a valid one); null when they are too many to list. */
 export function braceSequence(text: string): string[] | null {
-  try {
-    return sequence(text.slice(1, -1));
-  } catch {
-    // (`sequence` throws only past 500 words.)
-    return null;
-  }
-}
-
-function sequence(body: string): string[] {
-  const num = /^([-+]?\d+)\.\.([-+]?\d+)(?:\.\.([-+]?\d+))?$/.exec(body);
-  if (num) {
-    const [a, b] = [Number(num[1]), Number(num[2])];
-    const step = Math.abs(Number(num[3] ?? 1)) || 1;
-    // A leading zero on either end pads every number to the same width.
-    const pad = /^-?0\d/.test(num[1]) || /^-?0\d/.test(num[2]) ? Math.max(num[1].length, num[2].length) : 0;
-    const out: string[] = [];
-    for (let v = a; a <= b ? v <= b : v >= b; v += a <= b ? step : -step) {
-      out.push(pad ? (v < 0 ? '-' + String(-v).padStart(pad - 1, '0') : String(v).padStart(pad, '0')) : String(v));
-      if (out.length > 500) throw new Unsupported('too long');
-    }
-    return out;
-  }
-  // (Else two letters: the parser makes a sequence only of a valid one, src/syntax/adapters/braces.ts.)
-  const chr = /^([A-Za-z])\.\.([A-Za-z])(?:\.\.([-+]?\d+))?$/.exec(body)!;
-  const [a, b] = [chr[1].charCodeAt(0), chr[2].charCodeAt(0)];
-  const step = Math.abs(Number(chr[3] ?? 1)) || 1;
-  const out: string[] = [];
-  for (let v = a; a <= b ? v <= b : v >= b; v += a <= b ? step : -step) out.push(String.fromCharCode(v));
-  return out;
+  // (The parser makes a sequence only of one bash expands: src/syntax/adapters/braces.ts.)
+  return sequenceWords(parseSequence(text.slice(1, -1))!, 500);
 }
 
 // ---------------------------------------------------------------- globs

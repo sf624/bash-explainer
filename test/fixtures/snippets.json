@@ -921,6 +921,7 @@
  "echo a | cat 2>/dev/null",
  "echo a | xargs echo | jq .",
  "echo a$'\\n'c",
+ "echo a\\\n=~",
  "echo hi",
  "echo hi > $1$2",
  "echo hi {fd}>f",

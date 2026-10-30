@@ -198,6 +198,12 @@ export function nameText(n: SyntaxNode): string {
   return n.text.includes('\\\n') ? n.text.replace(/\\\n/g, '') : n.text;
 }
 
+/**
+ * A plain part of a word as bash reads it, as `nameText` reads a name: a `word`, a `number`, a sequence expression
+ * (`{1..\<newline>3}` is `{1..3}`). Only a removed line continuation is in its text.
+ */
+export const joinedText = nameText;
+
 /** The name of the array of a `coproc_statement`, as bash reads it: `COPROC` when it has none. */
 export function coprocName(n: SyntaxNode): string {
   const name = field(n, 'name');
