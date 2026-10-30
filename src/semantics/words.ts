@@ -14,7 +14,7 @@ import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, nameText, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
-import { caseConverted, sameInEveryLocale, substring } from './chars';
+import { caseConverted, IFS_ERRATIC, IFS_WHITESPACE, sameInEveryLocale, substring } from './chars';
 import { bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
@@ -1032,11 +1032,11 @@ function splitPieces(w: WordMeaning, pieces: Piece[]): Char[][] | undefined {
     return kept ? [chars] : [];
   }
   const ifs = w.ifs.kind === 'default' ? DEFAULT_IFS : w.ifs.kind === 'value' ? w.ifs.value : undefined;
-  // (An IFS of other than ASCII is split on by characters or by bytes, by the locale: src/semantics/chars.ts.)
-  if ((ifs === undefined || !sameInEveryLocale(ifs)) && chars.some((c) => c.split)) return undefined;
+  // (An IFS of other than ASCII is split on by characters or by bytes, by the locale; one with a marker of bash's, erratically: src/semantics/chars.ts.)
+  if ((ifs === undefined || !sameInEveryLocale(ifs) || IFS_ERRATIC.test(ifs)) && chars.some((c) => c.split)) return undefined;
   const sep = ifs ?? '';
   const isSep = (c: Char): boolean => c.split && sep.includes(c.c);
-  const white = (c: Char): boolean => isSep(c) && DEFAULT_IFS.includes(c.c);
+  const white = (c: Char): boolean => isSep(c) && IFS_WHITESPACE.includes(c.c);
   const fields: Char[][] = [];
   let cur: Char[] = [];
   let has = false;

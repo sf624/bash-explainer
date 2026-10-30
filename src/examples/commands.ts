@@ -13,6 +13,7 @@ import { formatDate, GitFormatUnsupported, runGitLog, sampleCommits } from './gi
 import { perlExample, perlOptions } from './perlrun';
 import { InputBox, Interactive, rerun, RerunSpec } from './rerun';
 import { InputSource, knownLines, readOrder, shareOut, shownSource, streamLabel, withSystemFiles } from './source';
+import { IFS_WHITESPACE } from '../semantics/chars';
 import { readSampleLine, runRead, xargsExample as runXargs } from './runtime';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
 import { commandExample, parseOptions, parseWords, shortKeys, Unsupported as TextFiltersUnsupported } from './textfilters';
@@ -224,11 +225,12 @@ export function readExample(words: (string | undefined)[], ifs: string | undefin
   const r = runRead(line, names, { ifs, raw, array });
   let note: string | undefined;
   // A separator that is not whitespace (`IFS=,`) keeps empty fields; a trailing one adds no field.
-  if (/[^ \t\n]/.test(ifs)) {
-    const seps = [...ifs].filter((c) => !/[ \t\n]/.test(c)).map((c) => `\`${c}\``).join(s('、', ', '));
+  const seps = [...ifs].filter((c) => !IFS_WHITESPACE.includes(c));
+  if (seps.length) {
+    const shownSeps = seps.map((c) => `\`${c}\``).join(s('、', ', '));
     note = s(
-      `\`IFS=${ifs}\` の \`read\`: 空白以外の区切り文字（${seps}）が続くと、間の空のフィールドもそのまま残る（空白の区切りは続いても1つにまとまる）。末尾の区切り文字の後ろには空のフィールドはできない`,
-      `\`read\` with \`IFS=${ifs}\`: a separator that is not whitespace (${seps}) keeps the empty field between two of them (whitespace separators merge into one); a separator at the end of the line adds no empty field after it`);
+      `\`IFS=${ifs}\` の \`read\`: 空白以外の区切り文字（${shownSeps}）が続くと、間の空のフィールドもそのまま残る（空白の区切りは続いても1つにまとまる）。末尾の区切り文字の後ろには空のフィールドはできない`,
+      `\`read\` with \`IFS=${ifs}\`: a separator that is not whitespace (${shownSeps}) keeps the empty field between two of them (whitespace separators merge into one); a separator at the end of the line adds no empty field after it`);
   }
   const lines = r.array ? [`${r.array[0]}=(${r.array[1].map((x) => JSON.stringify(x)).join(' ')})`] : r.vars.map(([k, v]) => `${k}=${JSON.stringify(v)}`);
   const example: Example = { kind: 'read',

@@ -3079,5 +3079,54 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "IFS=$'\\v'; x=$'\\va\\v\\vb\\v'; @PROBE:a@ $x; IFS=$':\\f\\r'; x=$'\\fa\\r:\\fb\\r\\r'; @PROBE:b@ $x; IFS=$' \\v'; x=$'a \\v b'; @PROBE:c@ $x",
+    "facts": {
+      "a": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "b": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "c": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "IFS=$'\\x01'; x=$'a\\x01\\x01b'; @PROBE:a@ $x; IFS=$'\\x7f'; x=$'a\\x7fb'; @PROBE:b@ $x",
+    "gaps": {
+      "a": "an IFS that holds a byte 1 or 127 (CTLESC, CTLNUL: markers of bash's own) is not followed: bash splits on them erratically",
+      "b": "as a"
+    },
+    "facts": {
+      "a": [
+        [
+          "a",
+          "",
+          "b"
+        ]
+      ],
+      "b": [
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

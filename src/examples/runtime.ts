@@ -1,4 +1,5 @@
 /** Simulations of xargs, simple test conditions and `read` word splitting, for worked examples. */
+import { IFS_WHITESPACE } from '../semantics/chars';
 import { globExamples, globMatches } from './shellwords';
 import { parseOptions, Parsed, shortKeys, Unsupported } from './textfilters';
 
@@ -209,7 +210,8 @@ export interface ReadResult {
   array?: [string, string[]];
 }
 
-const IFS_WS = /[ \t\n]/;
+/** IFS whitespace, as `read` splits on it (src/semantics/chars.ts). */
+const IFS_WS = new RegExp(`[${IFS_WHITESPACE}]`);
 
 /** bash's `read [-r] [-a arr] name…` splitting of one line with the given IFS. */
 export function runRead(line: string, names: string[], opts: { ifs: string; raw: boolean; array?: string }): ReadResult {
@@ -277,7 +279,7 @@ export function runRead(line: string, names: string[], opts: { ifs: string; raw:
 export function readSampleLine(names: number, ifs: string, array: boolean): string {
   const words = ['alice', '30', 'tokyo', 'admin', 'extra'];
   if (ifs === '') return '  hello   world  ';
-  const sep = /^[ \t\n]*$/.test(ifs) ? ' ' : [...ifs].find((c) => !IFS_WS.test(c))!;
+  const sep = [...ifs].every((c) => IFS_WS.test(c)) ? ' ' : [...ifs].find((c) => !IFS_WS.test(c))!;
   const count = array ? 3 : Math.min(names + 1, 5);
   return words.slice(0, count).join(sep);
 }
