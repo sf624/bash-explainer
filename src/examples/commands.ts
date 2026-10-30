@@ -2,6 +2,7 @@
 // from its words. The analyzer chooses one by the command's spec (`CommandSpec.example`), not by its name, and shows
 // what it returns.
 import type { Example } from '../analyzer-types';
+import type { BashVersion } from '../bashversion';
 import type { CommandExampleKind } from '../argv/spec';
 import { visible } from '../ctlchars';
 import { formatDate as formatDateCommand, parseSampleDate, type PrintfReader, SAMPLE_DATES, UTC } from '../embedded/format';
@@ -203,9 +204,10 @@ function getoptExample(words: (string | undefined)[], lang: Lang): Example | und
 
 /**
  * How `read` splits a sample line into its variables, with the IFS given before it (`ifs`, undefined when it is not
- * known) and the line of a here-string (`here`); and a note on a separator that is not whitespace.
+ * known) and the line of a here-string (`here`), as bash `version` reads it; and a note on a separator that is not
+ * whitespace.
  */
-export function readExample(words: (string | undefined)[], ifs: string | undefined, here: string | undefined, lang: Lang): { example: Example; note?: string } | undefined {
+export function readExample(words: (string | undefined)[], ifs: string | undefined, here: string | undefined, lang: Lang, version?: BashVersion): { example: Example; note?: string } | undefined {
   const s = pick(lang);
   if (ifs === undefined || words.some((w) => w === undefined)) return undefined;
   let p;
@@ -218,11 +220,13 @@ export function readExample(words: (string | undefined)[], ifs: string | undefin
     throw e;
   }
   const array = p.opts.find(([o]) => o === 'a')?.[1];
-  const names = (p.operands as string[]).length ? (p.operands as string[]) : array ? [] : ['REPLY'];
+  const names = p.operands as string[];
   const raw = p.opts.some(([o]) => o === 'r');
   // The line the command reads, when a here-string gives it: `read -a p <<< "a,b,,c,"`.
-  const line = here ?? readSampleLine(names.length, ifs, !!array);
-  const r = runRead(line, names, { ifs, raw, array });
+  const line = here ?? readSampleLine(names.length || 1, ifs, !!array);
+  const r = runRead(line, names, { ifs, raw, array, version });
+  // (An IFS with a mark of bash's own: what it splits into is not known.)
+  if (!r) return undefined;
   let note: string | undefined;
   // A separator that is not whitespace (`IFS=,`) keeps empty fields; a trailing one adds no field.
   const seps = [...ifs].filter((c) => !IFS_WHITESPACE.includes(c));

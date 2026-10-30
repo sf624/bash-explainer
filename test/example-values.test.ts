@@ -3,6 +3,7 @@
 // case is checked with bash: what the example says of the script's value is what bash does with the same script.
 import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
+import type { BashVersion } from '../src/bashversion';
 import { exampleFor, parseExpansion } from '../src/expansion';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { runBash } from './support/bash';
@@ -10,9 +11,9 @@ import { runBash } from './support/bash';
 const parser = createUnbashParser();
 
 /** The examples of the last line of `src`, as "label → lines" strings. */
-function examples(src: string, lang: 'ja' | 'en' = 'en'): string[] {
+function examples(src: string, lang: 'ja' | 'en' = 'en', bashVersion?: BashVersion): string[] {
   const tree = parser.parse(src);
-  const ex = new Analyzer(lang).explainLine(tree, src.split('\n').length - 1);
+  const ex = new Analyzer(lang).explainLine(tree, src.split('\n').length - 1, undefined, bashVersion ? { bashVersion } : {});
   return ex.examples.flatMap((e) => e.sections.map((sec) => `${sec.label} → ${sec.lines.join(' ') || sec.empty}`));
 }
 
@@ -190,5 +191,18 @@ describe('worked examples of tests and patterns with the value of the script', (
     assert.deepStrictEqual(examples('x=abc\nread -r a b <<< "$x \\$y"'), ['Line read → "alice 30 tokyo"', 'Values stored → a="alice" b="30 tokyo"']);
     assert.deepStrictEqual(examples('read -r a b <<< "$(cmd) y"'), ['Line read → "alice 30 tokyo"', 'Values stored → a="alice" b="30 tokyo"']);
     assert.deepStrictEqual(examples('x=abc\nread -r a b <<< $x'), ['Line read → "abc"', 'Values stored → a="abc" b=""']);
+  });
+
+  it('reads the line of `read` as the bash version set does, with the IFS in effect', () => {
+    // (At the end of the last variable, bash 5.3 removes the `\v` of IFS, bash 5.2 does not.)
+    const src = "IFS=$'\\v'\nread -r a b <<< 'x\v\vy\v\v'";
+    assert.deepStrictEqual(examples(src), ['Line read → "x\\u000b\\u000by\\u000b\\u000b"', 'Values stored → a="x" b="\\u000by\\u000b\\u000b"']);
+    assert.deepStrictEqual(examples(src, 'en', '5.3'), ['Line read → "x\\u000b\\u000by\\u000b\\u000b"', 'Values stored → a="x" b="\\u000by"']);
+    assert.strictEqual(bash(src, `${src.split('\n').pop()}; printf '%q|%q' "$a" "$b"`), "x|$'\\vy\\v\\v'");
+    // (The sample line is joined by the first character of IFS; with no name, REPLY gets the line as it is.)
+    assert.deepStrictEqual(examples("IFS=$'\\r'\nread -r a b"), ['Line read → "alice\\r30\\rtokyo"', 'Values stored → a="alice" b="30\\rtokyo"']);
+    assert.deepStrictEqual(examples('read -r <<< "  a b  "'), ['Line read → "  a b  "', 'Values stored → REPLY="  a b  "']);
+    // (An IFS with byte 1, a mark of bash's own, splits erratically: no example.)
+    assert.deepStrictEqual(examples("IFS=$'\\x01'\nread -r a b"), []);
   });
 });

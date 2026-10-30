@@ -1032,8 +1032,8 @@ function splitPieces(w: WordMeaning, pieces: Piece[]): Char[][] | undefined {
     return kept ? [chars] : [];
   }
   const ifs = w.ifs.kind === 'default' ? DEFAULT_IFS : w.ifs.kind === 'value' ? w.ifs.value : undefined;
-  // (An IFS of other than ASCII is split on by characters or by bytes, by the locale; one with a marker of bash's, erratically: src/semantics/chars.ts.)
-  if ((ifs === undefined || !sameInEveryLocale(ifs) || IFS_ERRATIC.test(ifs)) && chars.some((c) => c.split)) return undefined;
+  // (An IFS of other than ASCII is split on by characters or by bytes, by the locale; one with a mark of bash's, erratically, the quoted text too of a word with an unquoted expansion, `$x"b"`: src/semantics/chars.ts.)
+  if (((ifs === undefined || !sameInEveryLocale(ifs)) && chars.some((c) => c.split)) || (IFS_ERRATIC.test(ifs ?? '') && pieces.some((p) => p.expanded && !p.quoted))) return undefined;
   const sep = ifs ?? '';
   const isSep = (c: Char): boolean => c.split && sep.includes(c.c);
   const white = (c: Char): boolean => isSep(c) && IFS_WHITESPACE.includes(c.c);
