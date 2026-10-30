@@ -111,15 +111,15 @@ const spaced = (text: string): string => (/^[`A-Za-z]/.test(text) ? ' ' : '') + 
 
 /**
  * The roles the words after the first of an option's value `a` take when it gives several words (`ValueRole` `rest`):
- * `head -n $a f`, "…; when `$a` expands to several words, this is its first word, and each of the others is target
- * file"; or that they are read as the words after it, where the interpreter names no role of theirs.
+ * `head -n $a f`, "…; when `$a` expands to several words, this value is the first word `$a` gives, and each of the
+ * others is target file"; or that they are read as the words after it, where the interpreter names no role of theirs.
  */
 export function restText(cx: Explainer, rest: readonly ThenRole[] | undefined, a: string): string {
   if (!rest) return '';
   const w = codeSpan(a);
-  if (!rest.length) return cx.s(`、${w} が2語以上に展開されるならこの値は最初の語で、残りの語は後に続く引数として読まれる`, `; when ${w} expands to several words, this is its first word, and the others are read as the words after it`);
+  if (!rest.length) return cx.s(`、${w} が2語以上に展開されるならこの値は最初の語で、残りの語は後に続く引数として読まれる`, `; when ${w} expands to several words, this value is the first word ${w} gives, and the others are read as the words after it`);
   const list = anyOf(cx, rest.map((r) => thenText(cx, r)));
-  return cx.s(`、${w} が2語以上に展開されるならこの値は最初の語で、残りの各語は${spaced(list)}`, `; when ${w} expands to several words, this is its first word, and each of the others is ${list}`);
+  return cx.s(`、${w} が2語以上に展開されるならこの値は最初の語で、残りの各語は${spaced(list)}`, `; when ${w} expands to several words, this value is the first word ${w} gives, and each of the others is ${list}`);
 }
 
 /**

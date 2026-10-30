@@ -6,7 +6,7 @@ import { untilWord } from '../argv/until';
 import { argWordFor, countOf } from '../argv/words';
 import { bracesWork } from '../shellfeatures';
 import type { SyntaxNode } from '../syntax/tree';
-import { mayGiveNoField } from './nofield';
+import { givesOneNumber, mayGiveNoField } from './nofield';
 import { attribute, refTarget, type ShellState, type StateModel } from './state';
 import { wordFields, wordMeaning } from './words';
 
@@ -50,6 +50,8 @@ export const argWordIn = (model: StateModel) => {
   return (n: SyntaxNode): ArgWord => {
     const w = plain(n);
     // (A word with a count is one of a command's words, which the model reads: an argument, or its name after a wrapper.)
+    // (`declare -i n; ${n:=b=5}` gives one field, a number.)
+    if (w.count && givesOneNumber(n, model)) delete w.count;
     if (w.count) w.count = { ...w.count, min: mayGiveNoField(n, model) ? 0 : Math.max(w.count.min, 1) };
     return { ...attributed(w, model.at(n).run), fields: () => fieldsIn(n, model) };
   };

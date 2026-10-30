@@ -33,16 +33,11 @@ export function allRoles(parse: ArgvParse, out = new Map<number, ArgRole>()): Ma
 }
 
 /**
- * An operand's role, without what is said of it in parentheses: the same role in another form, with more said of it, is
- * not another (`ln -s $a $b`: `$a` is the target either way, "target (the link is made in the current directory…)" when
- * `$b` gives none).
+ * Whether two roles of a word say the same: the same option or letters, the value of the same option. (The first is
+ * never an operand's: `HEDGED`.)
  */
-export const roleText = (o: OperandSpec): string => o.text.en.replace(/ \(.*\)$/, '');
-
-/** Whether two roles of a word say the same: the same option or letters, the value of the same option, the same operand. */
 export function sameRole(a: ArgRole, b: ArgRole): boolean {
   const flags = (r: ArgRole): string => (r.role === 'cluster' ? r.letters.map(flags).join(' ') : (r as { flag: string }).flag);
-  if (a.role === 'operand' && b.role === 'operand') return (a.spec && roleText(a.spec)) === (b.spec && roleText(b.spec));
   if (a.role === 'value' && b.role === 'value') return a.of === b.of && a.index === b.index;
   return a.role === b.role && flags(a) === flags(b);
 }
@@ -67,8 +62,8 @@ export function thenRoles(role: ArgRole): ThenRole[] | undefined {
   return [role.spec ? { spec: role.spec } : {}];
 }
 
-/** What tells two roles a hedge names apart: an operand's text without its parentheses, an option's value, or neither. */
-const keyOf = (r: ThenRole): string => (r.spec ? roleText(r.spec) : r.value ? `\0${r.value.of}\0${r.value.index}` : '\0');
+/** What tells two roles a hedge names apart: an operand's text (its note in parentheses too), an option's value, or neither. */
+const keyOf = (r: ThenRole): string => (r.spec ? r.spec.text.en : r.value ? `\0${r.value.of}\0${r.value.index}` : '\0');
 
 /** Whether a word may give more than one word (`*.txt`, `"$@"`; no `max`: any number): a role it takes then is its first word's. */
 export const mayGiveSeveral = (w: ArgWord): boolean => !!w.count && !(w.count.max! <= 1);
