@@ -1,5 +1,5 @@
-// The hedges of words whose role depends on how many words a variable gives, none or several (src/argv/hedge.ts, the
-// `none` reading of an operand; `valueHedges` in src/argv/valuehedges.ts: `none`, `more` and `rest`), compared with bash
+// The hedges of words whose role depends on how many words a variable gives, none or several (an operand's readings,
+// src/argv/profiles.ts; `valueHedges` in src/argv/valuehedges.ts: `none`, `more` and `rest`), compared with bash
 // and the real tools. Each variable gives every count from none to four; for each count, the interpreter reads the line
 // with the variables' words written out, and the explanation of the line as written must allow the role of every word
 // it gives under the conditions it states (`showsRole`, as the renderings check reads hedges). The tool then runs the
@@ -14,6 +14,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { Analyzer, lookupCommand, type Token } from '../src/analyzer';
 import { type ArgRole, interpret, type RoleAt } from '../src/argv/interpret';
+import { outcomeOf } from '../src/argv/readings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { argWords } from './support/argwords';
 import { runContained } from './support/contained';
@@ -276,10 +277,15 @@ const CASES: Case[] = [
     seen: (r) => r.out },
 ];
 
-/** The roles of the words of `line`, by word, the name `undefined` (the words of a command run or a subcommand too). */
-function rolesOf(tool: string, argv: string[], program = false, owner: number[] = []): (ArgRole | undefined)[] {
+/**
+ * The roles of the words of `line`, by word, the name `undefined` (the words of a command run or a subcommand too).
+ * `refused`: the interpreter knows that the tool refuses the words (an option's value no word gives, operands no form
+ * fits), where the readings say nothing (docs/design/count-hedges.md, 2.5).
+ */
+function rolesOf(tool: string, argv: string[], program = false, owner: number[] = [], refused: { at?: boolean } = {}): (ArgRole | undefined)[] {
   const spec = lookupCommand(tool)!;
   const parse = interpret(program ? spec.program! : spec, argv.map((value) => ({ value })), { name: tool, lookup: lookupCommand });
+  refused.at = outcomeOf(parse) === 'refused';
   const out: (ArgRole | undefined)[] = argv.map(() => undefined);
   // (`owner`: the word of the command run that reads the word, -1 for the line's own command; a subcommand reads as its command does.)
   const walk = (roles: readonly RoleAt[], by: number): void => {
@@ -363,14 +369,15 @@ describe('hedges of words that give none or several, compared with bash and the 
         const parts = texts.map((t, w) => (counts.has(t) ? c.vars[t].slice(0, counts.get(t)) : [words[w].value ?? t]));
         const argv = parts.flat();
         const owner: number[] = [];
-        const roles = rolesOf(c.tool, argv, c.program, owner);
+        const refused: { at?: boolean } = {};
+        const roles = rolesOf(c.tool, argv, c.program, owner, refused);
         // (The word of the line each word of the argv is a field of.)
         const wordOf = parts.flatMap((fields, w) => fields.map(() => w));
         const where = `${c.line} with ${show(counts)}`;
         let k = 0;
         parts.forEach((fields, w) => fields.forEach((field, at) => {
           const role = roles[k++]!;
-          if (c.only && !c.only.includes(texts[w])) return;
+          if ((c.only && !c.only.includes(texts[w])) || refused.at) return;
           // (The command run a word is shown under, and the one that reads it. If another command reads it, that is wrong; if the
           // same, a token that names no role, "Word `5`", is a role missing, not one that contradicts. A word shown under a command run that does not read it
           // is wrong whatever its token says: `timeout -s $s 5 echo x` with `$s` of three words runs the third, and `x` is not echo's text.)
@@ -412,14 +419,57 @@ describe('hedges of words that give none or several, compared with bash and the 
   });
 });
 
-describe('the checker reads the clauses of a hedge', () => {
-  // (A comment after a condition may hold a condition itself: "B when it expands to more — C when it expands to 2 words" is the
-  // clause B for 2 words or more, with the comment, not the clause "B … — C" for 2 words.)
-  it('ends a clause at its own condition, whatever its comment says', () => {
-    const e = 'A when `$a` expands to a single word; B when it expands to more — C when it expands to 2 words';
-    const place = (n: number) => ({ text: 'x', at: 0, of: 1, counts: new Map([['$a', n]]) });
-    assert.strictEqual(saysOperand(e, ['A'], place(1)), true);
-    assert.strictEqual(saysOperand(e, ['B'], place(3)), true);
-    assert.strictEqual(saysOperand(e, ['A'], place(3)), false);
+describe('the readings of the cases, in Japanese (docs/japanese-style.md)', () => {
+  /** The explanation of the token of `word` (its last occurrence) in `line`, in Japanese. */
+  const said = (line: string, word: string): string | undefined => {
+    const col = line.lastIndexOf(word);
+    return allTokens(new Analyzer('ja').explainLine(parser.parse(line), 0).items).find((t) => t.span.start.character === col && t.label === word)?.explanation;
+  };
+  it('says a sum, two atoms, two conditions, a profile by place and a folded text as the English does', () => {
+    const extra = '余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 1 で終わる）';
+    assert.deepStrictEqual([
+      said('cp -t $d $a b', 'b'), said('cut -d $a -f $b f', 'f'), said('jq --arg $n $v .', '.'), said('grep -e $p -- -v f', '-v'),
+      said('echo $a -n x', '-n'), said('jq --arg $n v $f', '$f'), said('grep -m $n -c $x f', 'f'), said('seq $a x $b', 'x'),
+    ], [
+      'コピー元。`$d`・`$a` が0語なら `-t` オプションの値',
+      '対象のファイル。`$a` が1語以上で `$b` が0語なら `-f` オプションの値',
+      'jq フィルタ（例: `.items[].name`）。`$n`・`$v` が合わせて1語なら `--arg` の値。`$n`・`$v` が合わせて3語以上なら入力 JSON ファイル',
+      '検索対象のファイル（省略時は標準入力）。`$p` が0語ならオプション `-v`（一致しない行を表示する）',
+      '表示する文字列。`$a` が0語ならオプション `-n`（末尾の改行を出力しない）',
+      'jq フィルタ（例: `.items[].name`）、`$f` が2語以上に展開されるなら、これは最初の語の役割で、残りの各語は入力 JSON ファイル。`$n` が0語なら順に `--arg` の値・jq フィルタ（例: `.items[].name`）・入力 JSON ファイル。`$n` が2語以上なら入力 JSON ファイル',
+      '検索対象のファイル（省略時は標準入力）。`$n` が0語で `$x` が0語、または `$n` が1語で `$x` が0語なら検索パターン（正規表現）',
+      `増分。\`$a\`・\`$b\` が展開される語数により、終了値（開始値は 1）・開始値・${extra}のどれかにもなる`,
+    ]);
+    // (A role another command reads names it: with `$a` empty, nice reads `5` as the value of its `-n`.)
+    assert.strictEqual(said('nice $a -n 5 ls', '5'), '文字列 `5`。`$a` が0語なら `nice` の `-n` オプションの値');
+  });
+});
+
+describe('the checker reads the clauses of the readings', () => {
+  const place = (counts: [string, number][], at = 0, of = 1) => ({ text: 'x', at, of, counts: new Map(counts) });
+  // (A role text may hold a condition itself: "it is B — C when it expands to 2 words" is the clause B, with its comment.)
+  it('reads the clause whose conditions hold, whatever its role text says', () => {
+    const e = 'A. When `$a` expands to 2 words or more, it is B — C when it expands to 2 words';
+    assert.deepStrictEqual([1, 3].map((n) => ['A', 'B', 'C'].filter((x) => saysOperand(e, [x], place([['$a', n]])))), [['A'], ['B', 'C']]);
+  });
+  it('reads sums, two atoms and two conditions', () => {
+    const e = 'T. When `$n` and `$v` expand to one word in all, it is V. When `$b` expands to nothing and `$a` to a word or more, it is W. When `$c` expands to 3 words, or when `$c` expands to nothing, it is Z';
+    const at = (n: number, v: number, a: number, b: number, c = 1) => ['T', 'V', 'W', 'Z'].filter((x) => saysOperand(e, [x], place([['$n', n], ['$v', v], ['$a', a], ['$b', b], ['$c', c]]))).join();
+    assert.deepStrictEqual([at(1, 0, 1, 1), at(1, 1, 1, 1), at(2, 2, 2, 0), at(2, 2, 0, 0), at(2, 2, 1, 1, 3), at(2, 2, 1, 1, 0)], ['V', 'T', 'W', 'T', 'Z', 'Z']);
+    // (A word the condition names with no count: a text the checker cannot read, a finding.)
+    assert.strictEqual(saysOperand(e, ['T'], place([['$n', 1]])), false);
+  });
+  it('reads profiles by place and by own count, the folded text and the text past the cap', () => {
+    const byPlace = 'A; when `$a` expands to several words, this is its first word, and the others are B, then C. When `$b` expands to nothing, its words are D, then E';
+    const p = (at: number, b: number) => ['A', 'B', 'C', 'D', 'E'].filter((x) => saysOperand(byPlace, [x], place([['$b', b]], at, 4))).join();
+    assert.deepStrictEqual([p(0, 1), p(1, 1), p(2, 1), p(0, 0), p(3, 0)], ['A', 'B', 'B,C', 'D', 'D,E']);
+    const byCount = 'S when `$a` expands to a single word; when it expands to 2 words, they are S, then D; when it expands to more words, they are S, then R';
+    const c = (at: number, of: number) => ['S', 'D', 'R'].filter((x) => saysOperand(byCount, [x], place([], at, of))).join();
+    assert.deepStrictEqual([c(0, 1), c(1, 2), c(2, 3), c(1, 3)], ['S', 'D', 'R', 'S,R']);
+    const folded = 'A. It can also be B or C, by how many words `$a` and `$b` give';
+    assert.deepStrictEqual(['A', 'B', 'C', 'D'].map((x) => saysOperand(folded, [x], place([]))), [true, true, true, false]);
+    // (Past the cap, another role is not said: a missing explanation.)
+    const depends = 'A. Its role may depend on how many words `$a` and `$b` give';
+    assert.deepStrictEqual(['A', 'B'].map((x) => saysOperand(depends, [x], place([]))), [true, undefined]);
   });
 });

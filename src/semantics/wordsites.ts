@@ -4,7 +4,7 @@
 import { parseExpansion } from '../expansion';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import { STATEMENTS } from './env';
-import { ARITH_ASSIGNED, type StateModel } from './state';
+import { ARITH_ASSIGNED, attribute, refTarget, type ShellState, type StateModel } from './state';
 
 /** The nodes whose text is arithmetic. */
 export const ARITH = new Set(['arithmetic_expansion', 'arithmetic_command', 'c_style_for_statement']);
@@ -41,15 +41,43 @@ export function changesDirectory(n: SyntaxNode): boolean {
   return v;
 }
 
-const unreliableCache = new WeakMap<SyntaxNode, Set<string>>();
-const unreliableInWordsCache = new WeakMap<SyntaxNode, Set<string>>();
+/** What a statement may assign: names, and the defaults `${x:=word}` assign, with the text of the word. */
+interface Assigned { names: Set<string>; defaults: { name: string; word: string }[] }
+const unreliableCache = new WeakMap<SyntaxNode, Assigned>();
+const unreliableInWordsCache = new WeakMap<SyntaxNode, Assigned>();
 /**
  * The variables an arithmetic expression or a `${x:=word}` may assign in the statement that holds `n` (through
  * the substitutions around it): the state there is the one before the statement, so their values are not known.
  * (A simple command expands its words, or makes its assignments, before its redirections: what those assign does
- * not reach them.)
+ * not reach them.) What a default assigns through a nameref or an integer, the state says (`unreliableAt`).
  */
 export function unreliableNames(n: SyntaxNode): Set<string> {
+  return assignedIn(n).names;
+}
+
+/**
+ * The variables the statement that holds `n` may assign before `n` is expanded (`unreliableNames`), with what its
+ * defaults assign as the attributes in `st` say: a nameref's target (`declare -n r=b; ${r:=x}` assigns b), and where that
+ * is an integer, what the arithmetic of the word assigns (`declare -i n; ${n:=b=3}` assigns b); `all` where any
+ * variable may be (a target not known, a word of an integer with an expansion in it). Checked with bash 5.2
+ * (test/readings.test.ts).
+ */
+export function unreliableAt(n: SyntaxNode, st: ShellState): ReadonlySet<string> | 'all' {
+  const { names, defaults } = assignedIn(n);
+  if (!defaults.length) return names;
+  const out = new Set(names);
+  for (const { name, word } of defaults) {
+    const target = refTarget(st, name);
+    if (target === '*') return 'all';
+    out.add(target);
+    if (attribute(st, target, 'i') === 'off') continue;
+    if (/[$`]/.test(word)) return 'all';
+    for (const m of word.matchAll(ARITH_ASSIGNED)) out.add(m[1] ?? m[3] ?? m[4]);
+  }
+  return out;
+}
+
+function assignedIn(n: SyntaxNode): Assigned {
   let top = n;
   let open = true;
   for (let x = n.parent; x; x = x.parent) {
@@ -63,19 +91,24 @@ export function unreliableNames(n: SyntaxNode): Set<string> {
   const inside = (a: SyntaxNode, r: SyntaxNode) => a.startIndex >= r.startIndex && a.endIndex <= r.endIndex;
   const skip = redirs.some((r) => inside(n, r)) ? [] : redirs;
   const cache = skip.length ? unreliableInWordsCache : unreliableCache;
-  let names = cache.get(top);
-  if (names) return names;
-  names = new Set();
+  const seen = cache.get(top);
+  if (seen) return seen;
+  const names = new Set<string>();
+  const defaults: Assigned['defaults'] = [];
   // (Not `let`: its words are expanded before it runs.)
   for (const a of descendants(top, [...ARITH, 'expansion'])) {
     if (skip.some((r) => inside(a, r))) continue;
     if (a.type === 'expansion') {
       const p = parseExpansion(a.text);
-      if (p && (p.op === ':=' || p.op === '=')) names.add(p.name);
+      if (p && (p.op === ':=' || p.op === '=')) {
+        names.add(p.name);
+        defaults.push({ name: p.name, word: p.parts.find((q) => q.role === 'word')?.text ?? '' });
+      }
       continue;
     }
     for (const m of a.text.matchAll(ARITH_ASSIGNED)) names.add(m[1] ?? m[3] ?? m[4]);
   }
-  cache.set(top, names);
-  return names;
+  const out = { names, defaults };
+  cache.set(top, out);
+  return out;
 }

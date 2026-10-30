@@ -13,11 +13,10 @@
 //   know as written. Where the model knows the fields of every word and some word gives other than one, the interpreter
 //   reads bash's argv, and the role of each field must be one the explanation shows on its word: the same option, the
 //   value of the same option, or an operand whose text from the spec the word's token says (alone, in the list of its
-//   fields, "expands to `-r` (option: …) and `a` (source)", or in the part that holds of the hedge "… when `$x` expands
-//   to a single word; … when it expands to more" that src/explain/argv.ts makes of `ArgRole.otherwise`, `several` and
-//   `byCount`, a reading for each count, or of "… when `$x`, `$y` expand to a single word; when they expand to other
-//   numbers of words, it can also be …" (or "each of its words can be …"), of `mixed`, or of "…; … when `$y` expands to
-//   nothing", of `none`).
+//   fields, "expands to `-r` (option: …) and `a` (source)", or in the readings of the word (the texts of src/argv/profiletexts.ts,
+//   read by `readingsSay`): its profile as written, by place or by own count, unless a clause "When `$x` expands to nothing, it
+//   is …" holds for the counts, or a folded text "It can also be …"; or, on a value or an option, "…; … when `$y` expands
+//   to nothing", of `ArgRole.none`).
 //
 // The counts come from the facts the tokens carry (`Token.value`, `Token.expands`, `Token.origin`, the refs and the
 // words of a brace expansion, the sections of an example); only the string and the concatenation are told by their
@@ -186,59 +185,145 @@ const showsFlag = (t: Token, { flag, text }: { flag: string; text?: string }): b
   && ((!!text && t.explanation.includes(text)) || [flag, dash(flag)].some((f) => t.explanation.includes(`\`${f}\``) || t.label === f));
 
 /**
- * The readings of the hedge of `several`, each for a count of words (`from` to `to`, or more): "X when `$a` expands to a
- * single word", then "when it expands to 2 words (2 words or more, more), they are Y, then Z", where
- * "more" is from the count after the reading before; the first may name the word ("when `$a` expands to 2 words, …").
- * Undefined for an explanation in another form.
+ * The roles in a row of the words of one count, "A, then B, then C" (a role repeated in a row once), that a field at
+ * `at` of `of` may be: the first the first, the last the last, and any of them between.
  */
-function severalClauses(e: string): { from: number; to?: number; text: string }[] | undefined {
+function inRow(list: string, at: number, of: number): string[] {
+  const roles = list.split(', then ');
+  if (at === 0) return [roles[0]];
+  if (at === of - 1) return [roles[roles.length - 1]];
+  return roles;
+}
+
+/**
+ * The roles by place, "A, then B, then C" (a role repeated in a row once, the last for every word after), that the field
+ * at `at` may be: the first the first, and any of the first `at + 1` after.
+ */
+const inPlaces = (list: string, at: number): string[] => list.split(', then ').slice(0, at + 1);
+
+/**
+ * A profile by own count (src/argv/profiletexts.ts, `byCountText`): "X when `$a` expands to a single word", then "when it
+ * expands to 2 words (2 words or more, 1 to 3 words, more words), they are Y, then Z", where "more words" is from the
+ * count after the group before; the first may name the word ("when `$a` expands to 2 words, …"). Each group, its counts
+ * and its roles; undefined for a text in another form.
+ */
+function countGroups(e: string): { from: number; to?: number; text: string }[] | undefined {
   const out: { from: number; to?: number; text: string }[] = [];
   for (const [j, part] of e.split('; ').entries()) {
     const one = j ? null : /^(.*) when `[^`]+` expands to a single word$/.exec(part);
     if (one) { out.push({ from: 1, to: 1, text: one[1] }); continue; }
-    const m = new RegExp(`^when ${j ? 'it' : '`[^`]+`'} expands to (?:(more)|(\\d+) words( or more)?), they are (.*)$`).exec(part);
+    const m = new RegExp(`^when ${j ? 'it' : '`[^`]+`'} expands to (?:(more words)|(\\d+) to (\\d+) words|(\\d+) words( or more)?), they are (.*)$`).exec(part);
     if (!m) return undefined;
     const before = out[out.length - 1]?.to;
     if (m[1] && before === undefined) return undefined;
-    const from = m[1] ? before! + 1 : Number(m[2]);
-    out.push({ from, to: m[1] || m[3] ? undefined : from, text: m[4] });
+    const from = m[1] ? before! + 1 : Number(m[2] ?? m[4]);
+    out.push({ from, to: m[1] || m[5] ? undefined : Number(m[3] ?? m[4]), text: m[6] });
   }
   return out.length > 1 || out[0].from > 1 ? out : undefined;
 }
 
 /**
- * The readings of the hedges `otherwise` and `byCount`: "X when `$a` expands to a single word (or "to 2 words")", then
- * "Y when it expands to more" (or "to 2 words", "to 3 words or more"; "more" from the count after the reading before),
- * with the word the first names. Undefined for an explanation in another form.
+ * The roles a profile (src/argv/profiletexts.ts) says the field at `place` may have: by own count (`countGroups`, the
+ * group that holds the number of fields its word gave); by place, "X; when `$a` expands to several words, this is its
+ * first word, and the others are Y, then Z" (or "each of the others is Y"), the last for every word after; "its words
+ * are X, then Y"; or one role. Undefined where a group holds no such count, or for a condition in another form.
  */
-function countClauses(e: string): { word: string; clauses: { from: number; to?: number; text: string }[] } | undefined {
-  const parts = e.split('; ');
-  const head = /^(.*) when `([^`]+)` expands to (?:a single word|(\d+) words)$/.exec(parts[0]);
-  if (!head || parts.length < 2) return undefined;
-  const from = Number(head[3] ?? 1);
-  const clauses: { from: number; to?: number; text: string }[] = [{ from, to: from, text: head[1] }];
-  for (const part of parts.slice(1)) {
-    // (An explanation of the role may follow the condition, "… when it expands to more — replacement characters: …" of `tr`.)
-    const m = /^(.*?) when it expands to (?:(more)|(\d+) words( or more)?)(?: — .*)?$/.exec(part);
-    if (!m) return undefined;
-    const at = m[2] ? clauses[clauses.length - 1].to! + 1 : Number(m[3]);
-    clauses.push({ from: at, to: m[2] || m[4] ? undefined : at, text: m[1] });
+function profileSays(e: string, place: FieldPlace): string[] | undefined {
+  const groups = countGroups(e);
+  if (groups) {
+    const g = groups.find((c) => c.from <= place.of && place.of <= (c.to ?? Infinity));
+    return g && (g.from === 1 && g.to === 1 ? [g.text] : inRow(g.text, place.at, place.of));
   }
-  return { word: head[2], clauses };
+  const byPlace = /^(.*?); when `[^`]+` expands to several words, this is its first word, and (?:the others are|each of the others is) (.*)$/.exec(e);
+  if (byPlace) return place.at === 0 ? [byPlace[1]] : inPlaces(byPlace[2], place.at - 1);
+  const words = /^its words are (.*)$/.exec(e);
+  if (words) return inPlaces(words[1], place.at);
+  // (A condition in a form not read here: a finding.)
+  return /when `[^`]+` expands? to /.test(e) ? undefined : [e];
+}
+
+/** One atom of a condition (src/argv/profiletexts.ts, `atomText`): the words it names, and the numbers of words in all it holds for. */
+interface ParsedAtom { names: string[]; from: number; to?: number }
+
+/**
+ * The conditions at the start of a clause, "When C, or when D, …" (each "A" or "A and B"), and the text after them:
+ * an atom of one word, "`$a` expands to nothing", "to a single word", "to several words", "to 3 words", "to 3 words or
+ * more", "to a word or more"; of a sum, "`$n` and `$v` expand to nothing", "to one word in all", "to 3 words or more
+ * in all"; the second of a condition without its verb ("`$a` to a word or more"). Undefined for another form.
+ */
+function conditionsOf(e: string): { conditions: ParsedAtom[][]; rest: string } | undefined {
+  const atom = /^((?:`[^`]+`)(?:(?:, | and )`[^`]+`)*)(?: expands?)? to (nothing|a single word|several words|a word or more|one word in all|a word or more in all|(\d+) words( or more)?(?: in all)?)/;
+  const conditions: ParsedAtom[][] = [];
+  let rest = e;
+  for (;;) {
+    const condition: ParsedAtom[] = [];
+    for (;;) {
+      const m = atom.exec(rest);
+      if (!m) return undefined;
+      const names = [...m[1].matchAll(/`([^`]+)`/g)].map((x) => x[1]);
+      const v = m[2];
+      const range = v === 'nothing' ? [0, 0] : v === 'a single word' || v === 'one word in all' ? [1, 1] : v === 'several words' ? [2] : v.startsWith('a word or more') ? [1] : m[4] ? [Number(m[3])] : [Number(m[3]), Number(m[3])];
+      condition.push({ names, from: range[0], to: range[1] });
+      rest = rest.slice(m[0].length);
+      if (condition.length === 1 && rest.startsWith(' and ')) rest = rest.slice(5);
+      else break;
+    }
+    conditions.push(condition);
+    if (!rest.startsWith(', or when ')) return { conditions, rest };
+    rest = rest.slice(', or when '.length);
+  }
+}
+
+/** Whether a condition holds for the counts of the words it names (undefined where one of them has none). */
+function holdsAt(condition: readonly ParsedAtom[], counts: ReadonlyMap<string, number>): boolean | undefined {
+  let all: boolean | undefined = true;
+  for (const a of condition) {
+    const ns = a.names.map((x) => counts.get(x));
+    if (ns.some((n) => n === undefined)) return undefined;
+    const n = ns.reduce((x, y) => x! + y!, 0)!;
+    all &&= n >= a.from && (a.to === undefined || n <= a.to);
+  }
+  return all;
+}
+
+/**
+ * The roles the readings of a word (src/argv/profiletexts.ts) say the field at `place` may have, each a text that names
+ * one or more roles: its profile as written, unless a clause "When C, it is X" (", its words are X, then Y"; ": by own
+ * count") holds for the counts of the words it names; with the roles of "It can also be X or Y, by how many words …
+ * give" too. `loose`: "Its role may depend on how many words … give", where another role is a missing explanation, not
+ * a wrong one; `clause`: a clause holds. Undefined where the explanation is in no such form, or names a word with no count.
+ */
+export function readingsSay(explanation: string, place: FieldPlace): { roles: string[]; loose?: true; clause?: true } | undefined {
+  const [base, ...sentences] = explanation.split(/\. (?=When |It can also be |Its role may depend on how many words )/);
+  let roles = profileSays(base, place);
+  let loose: true | undefined;
+  let held = false;
+  for (const s of sentences) {
+    if (s.startsWith('Its role may depend')) { loose = true; continue; }
+    const also = /^It can also be (.*), by how many words .* give$/.exec(s);
+    if (also) { roles = [...roles ?? [], also[1]]; continue; }
+    const c = conditionsOf(s.slice('When '.length));
+    if (!c || !/^(, it is |, its words are |: )/.test(c.rest)) return undefined;
+    const holds = c.conditions.map((x) => holdsAt(x, place.counts));
+    if (holds.some((h) => h === undefined)) return undefined;
+    if (held || !holds.some(Boolean)) continue;
+    held = true;
+    const it = /^, it is (.*)$/.exec(c.rest);
+    const words = /^, its words are (.*)$/.exec(c.rest);
+    const counted = /^: (.*)$/.exec(c.rest);
+    roles = it ? [it[1]] : words ? inPlaces(words[1], place.at) : counted ? profileSays(counted[1], place) : undefined;
+  }
+  return roles && { roles, ...(loose ? { loose } : {}), ...(held ? { clause: true as const } : {}) };
 }
 
 /**
  * Whether the explanation of an operand's token says the role `texts` (the spec's text, as written or as `eachText`
- * writes it) for the field at `place`. In the hedge of `several` ("X when `$a` expands to a single word; when it expands
- * to 2 words, they are Y, then Z; when it expands to more, they are …", `severalClauses`), the part that holds for the
- * number of fields its word gave, the first field the first role and the last the last; in the hedge of `otherwise` ("X when `$a`, `$b` expands to a single word; Y when it
- * expands to more"), and of `byCount` ("…; Z when it expands to 3 words"), the part that holds for the words it names
- * (neither when one of them gave none, but as below); in the hedge of `mixed`, the first part where the words it names
- * gave one each, else its own role or any of its list (with any counts, none too);
- * after either or alone, "; W when `$b` expands to nothing", W where the words it names gave none and this word one;
- * in the words of a brace expansion ("expands to `a` (X) and `b` (Y)"), the role after the field's own text.
+ * writes it) for the field at `place`: in its readings (`readingsSay`), the role of its profile as written or of the
+ * clause that holds; after them, "; W when `$b` expands to nothing", W where the words it names gave none and this word
+ * one (the hedge of a value or an option, `ArgRole` `none`); in the words of a brace expansion or the fields the model
+ * knows ("expands to `a` (X) and `b` (Y)"), the role after the field's own text, with its clauses.
  */
-export function saysOperand(explanation: string, texts: readonly string[], place: FieldPlace): boolean {
+export function saysOperand(explanation: string, texts: readonly string[], place: FieldPlace): boolean | undefined {
   const whole = plain(explanation);
   const has = (part: string): boolean => texts.some((x) => part.includes(plain(x)));
   // (The role when the words it names gave none and this word one; the part before says the other readings.)
@@ -246,42 +331,13 @@ export function saysOperand(explanation: string, texts: readonly string[], place
   const held = heldNone(none.readings, place);
   // ("argument": an operand of a command the reading does not know, `timeout -s $s 5 ls`, any operand of the command run.)
   if (held.length) return held.some(has) || held.some((h) => h.split(/, | or /).includes('argument'));
-  const e = none.rest;
-  const several = severalClauses(e);
-  if (several) {
-    // (A count the hedge does not cover: not a reading it says.)
-    const clause = several.find((c) => c.from <= place.of && place.of <= (c.to ?? Infinity));
-    if (!clause) return false;
-    if (clause.from === 1) return has(clause.text);
-    const roles = clause.text.split(', then ');
-    if (place.at === 0) return has(roles[0]);
-    if (place.at === place.of - 1) return has(roles[roles.length - 1]);
-    return roles.some(has);
-  }
-  const counted = countClauses(e);
-  if (counted) {
-    // (The reading for the count of the word it names. A word not of the command's, or that gave none: not a reading
-    // the hedge covers.)
-    const count = place.counts.get(counted.word);
-    const clause = count ? counted.clauses.find((c) => c.from <= count && count <= (c.to ?? Infinity)) : undefined;
-    return !!clause && has(clause.text);
-  }
-  // (The roles its words may have for the other counts of the words it names: `mixed`.)
-  const mixed = /^(.*) when ((?:`[^`]+`(?:, )?)+) expand to (a single word|as few words as each can); when they expand to other numbers of words, (each of its words can be|it can also be) (.*)$/.exec(e);
-  if (mixed) {
-    const named = [...mixed[2].matchAll(/`([^`]+)`/g)].map((x) => place.counts.get(x[1]));
-    if (named.some((c) => c === undefined)) return false;
-    if (mixed[3] === 'a single word' && named.every((c) => c === 1)) return has(mixed[1]);
-    // ("it can also be": its own role, or one of the list; "each of its words can be": one of the list, or the first
-    // part with as few words as each can.)
-    return ((mixed[4] === 'it can also be' || mixed[3] !== 'a single word') && has(mixed[1])) || has(mixed[5]);
-  }
-  const among = /^(?:each of its words is|it is) (.*), by how many words ((?:`[^`]+`(?:, )?)+) expand to$/.exec(e);
-  if (among) return has(among[1]);
-  // (A hedge in a form not read here: a finding, so that a new wording is seen.)
-  if (/expands? to (a single word|more|nothing)/.test(e)) return false;
-  const item = listItem(e, place);
-  return has(item ?? e);
+  const said = readingsSay(none.rest, place);
+  // (A text in a form not read here: a finding, so that a new wording is seen.)
+  if (!said) return false;
+  const list = said.roles.length === 1 ? listItem(said.roles[0], place) : undefined;
+  // ("argument": an operand of a command the readings do not know, the command a word of `$s` names in `timeout -s $s 5 ls`.)
+  const ok = list !== undefined ? has(list) : said.roles.some((x) => has(x) || /^argument(?: of |$)/.test(x));
+  return ok || (said.loose ? undefined : false);
 }
 
 /**
@@ -356,13 +412,19 @@ export function showsRole(role: ArgRole, tokens: readonly Token[], place: FieldP
   // (The roles its token says it takes when words before it give none, where they gave none: `tar -cf $a b`, "…; value for
   // `-f` when `$a` expands to nothing".)
   const held = tokens.flatMap((t) => heldNone(noneReadings(plain(t.explanation)).readings, place));
+  // (The roles the readings of an operand's token say of the field, and those of a clause that holds: `cp -t $d $a b`,
+  // "… When `$d` and `$a` expand to nothing, it is value for `-t`".)
+  const args = tokens.filter((t) => t.kind === 'argument' && !t.valueFor);
+  const said = args.flatMap((t) => readingsSay(noneReadings(plain(t.explanation)).rest, place) ?? []);
+  const clauses = said.flatMap((r) => (r.clause ? r.roles : []));
   switch (role.role) {
     case 'option': case 'cluster': case 'pattern-option': case 'unknown-option': case 'old-style':
       // (Or in the list of the fields of its word: "expands to `-r` (option: …) and `a` (source)".)
-      return flagsOf(role).every((f) => tokens.some((t) => showsFlag(t, f)) || items.some((e) => showsFlag({ kind: 'option', explanation: e } as Token, f)));
+      return flagsOf(role).every((f) => tokens.some((t) => showsFlag(t, f)) || [...items, ...clauses].some((e) => showsFlag({ kind: 'option', explanation: e } as Token, f)));
     case 'end-of-options':
-      return tokens.some((t) => t.kind === 'option') || items.some((e) => e.includes('(end of options)'));
+      return tokens.some((t) => t.kind === 'option') || items.some((e) => e.includes('(end of options)')) || clauses.some((e) => e.includes('end of options'));
     case 'value': {
+      if (clauses.length) return clauses.some((x) => x.includes(`value for \`${dash(role.of)}\``) || x.includes(`name for \`${dash(role.of)}\``));
       // (A later field of a value of two words or more (`--arg NAME VALUE`): the others of the first are said to be "value for `--arg`" among them.)
       const rest = spliced ? restOf(tokens) : undefined;
       if (rest !== undefined && !held.length) return rest.includes(`value for \`${dash(role.of)}\``);
@@ -374,11 +436,12 @@ export function showsRole(role: ArgRole, tokens: readonly Token[], place: FieldP
       // (The words after the first of a value: the roles its token names, or any where it names none.)
       if (spliced) return !role.spec || restOf(tokens) === undefined || [role.spec.text.en, role.spec.text.en.replace(/ \((.*)\)$/, ': $1')].some((x) => restOf(tokens)!.includes(plain(x)));
       // (An option or a value that is an operand when words before it give none: `grep -e $p -e x f`, `x` is a file.)
-      const args = tokens.filter((t) => t.kind === 'argument' && (!t.valueFor || held.length));
+      const shown = tokens.filter((t) => t.kind === 'argument' && (!t.valueFor || held.length));
       // (Or a reading that holds names none of them: "argument when `$d` expands to several words", `git -C $d log`.)
-      if (!role.spec) return held.length ? held.some((h) => !operands.some((x) => h.includes(plain(x)))) : args.some((t) => !operands.some((x) => plain(t.explanation).includes(plain(x))));
+      if (!role.spec) return held.length ? held.some((h) => !operands.some((x) => h.includes(plain(x)))) : said.some((r) => r.roles.some((x) => !operands.some((o) => x.includes(plain(o)))));
       const texts = [role.spec.text.en, role.spec.text.en.replace(/ \((.*)\)$/, ': $1')];
-      return args.some((t) => saysOperand(t.explanation, texts, place));
+      const says = shown.map((t) => saysOperand(t.explanation, texts, place));
+      return says.includes(true) || (says.includes(undefined) ? undefined : false);
     }
     default:
       return undefined;

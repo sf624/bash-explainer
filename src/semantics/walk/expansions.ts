@@ -3,7 +3,7 @@
 // `${x?}`), with the redirections made after them (`{fd}>file`).
 import { descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../../syntax/tree';
 import { STATEMENTS } from '../env';
-import { merge, option, type ShellState, type Tri, type VariableState, withoutErrexitWhy } from '../shellstate';
+import { attribute, merge, option, type ShellState, type Tri, type VariableState, withoutErrexitWhy } from '../shellstate';
 import { ArithError, ExpansionError, type Frame, inShell, numberOfLengths, SUBSTITUTIONS, type Target } from './shared';
 import type { Walker } from './walker';
 
@@ -234,13 +234,26 @@ export class WalkExpansions {
     this.w.jump('shell', undefined, st, false);
   }
 
-  /** `${x:=word}` sets `x`. */
+  /**
+   * `${x:=word}` sets `x`, to a value not known here: where `x` is a nameref, the variable it names (`declare -n r=b`,
+   * `${r:=x}` sets b). Where that is an integer, `word` is read as arithmetic, with what it assigns (`declare -i n`,
+   * `${n:=b=3}` sets b), when bash assigns the default (`operandRuns`: `x` unset or empty).
+   */
   private defaultOf(e: SyntaxNode, st: ShellState): ShellState {
     const name = e.namedChildren[0];
     if (!e.children.some((c) => c.type === ':=' || c.type === '=') || name?.type !== 'variable_name') return st;
+    const target = this.w.builtins.resolve(st, name.text) ?? name.text;
+    const word = e.namedChildren[e.namedChildren.length - 1];
+    const runs = this.w.conditions.operandRuns(e, st);
+    const integer = attribute(st, target, 'i');
+    const text = runs !== 'off' && integer !== 'off' && word !== name ? this.w.conditions.staticText(word, st, true) : undefined;
+    if (text !== undefined) {
+      const after = this.w.arith.integer(text, st, e).st;
+      st = runs === 'on' && integer === 'on' ? after : merge([st, after], this.w.posix);
+    }
     // (A variable the script has not set keeps a value from the environment.)
-    const prev = st.variables.get(name.text);
-    return this.w.builtins.setVariable(st, name.text, e, undefined, false, false, undefined, !prev || !!prev.kept);
+    const prev = st.variables.get(target);
+    return this.w.builtins.setVariable(st, target, e, undefined, false, false, undefined, !prev || !!prev.kept);
   }
 
   /**

@@ -119,7 +119,7 @@ const AS_WRITTEN: ReadonlySet<string> = new Set(['eval', 'trap', 'alias', 'let',
 const READINGS = 16;
 
 /** Whether the role `r` reads a word as a name the builtin declares, sets or acts on (`declare x`, `read x`). */
-const naming = (r: ArgRole): boolean => r.role === 'operand' && [r.spec, r.otherwise, ...(r.each ?? [])].some((o?: OperandSpec) => !!o?.sets || !!o?.acts);
+const naming = (r: ArgRole): boolean => r.role === 'operand' && [r.spec, ...(r.each ?? [])].some((o?: OperandSpec) => !!o?.sets || !!o?.acts);
 
 /**
  * Whether the word `word`, the `j`th of a builtin's line (`parseWith(0)`: as written, or with the fields of words

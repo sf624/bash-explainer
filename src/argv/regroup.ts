@@ -30,13 +30,13 @@ export const OPTION_ROLES = new Set<ArgRole['role']>(['option', 'cluster', 'unkn
 
 /**
  * The role of a word read as its fields (`interpret`), from their roles (`roles`, numbered from 0): where every field
- * is an operand with no hedge, or the first a command slot that takes one word and the others operands, the role of the
- * first, with the role of each field (`each`, as a brace expansion's: `cp a{,.bak}`) where they differ (the number of
+ * is an operand and the word's role does not depend on how many words the others give (`certain`), or the first a
+ * command slot that takes one word and the others operands, the role of the first, with the role of each field (`each`, as a brace expansion's: `cp a{,.bak}`) where they differ (the number of
  * fields is not kept in the role: the explanation reads it from the model, `countIn`, for the `$N` of each); where every
  * field is a word of find's expression or of a joined string, that role, which the words around it explain (as for no
  * field, `next`, the role of the word after it), or the command whose string they start; else `FieldsRole`.
  */
-function folded(words: ArgWord[], roles: RoleAt[], next?: ArgRole): ArgRole {
+function folded(words: ArgWord[], roles: RoleAt[], certain: boolean, next?: ArgRole): ArgRole {
   const fields: FieldsRole = { role: 'fields', words, roles };
   const quiet = (r: ArgRole): boolean => r.role === 'expression' || r.role === 'joined';
   if (!words.length) return next && quiet(next) ? { role: next.role } as ArgRole : fields;
@@ -46,7 +46,7 @@ function folded(words: ArgWord[], roles: RoleAt[], next?: ArgRole): ArgRole {
   // (`eval {a,b}`, `ssh h $x`: the words of a joined string, from the first, as for the words of the line.)
   if (first.role === 'command' && first.slot.joinsWords && roles.slice(1).every(({ role }) => role.role === 'joined')) return first;
   // (Nor one with a role of its own when a value before it gives none: `y='p q'; tar -cf $a $y`, only `p` is the archive then.)
-  const plain = (r: ArgRole): boolean => r.role === 'operand' && !r.assignment && !r.spec?.assignment && !r.uncertain && !r.none;
+  const plain = (r: ArgRole): boolean => certain && r.role === 'operand' && !r.assignment && !r.spec?.assignment;
   if (roles.every(({ role }) => plain(role) && !(role as OperandRole).spec)) return first;
   const specs = roles.map(({ role }, k) => (k === 0 && role.role === 'command' && !role.parse ? role.item : plain(role) ? (role as OperandRole).spec : undefined));
   if (specs.some((o) => !o)) return fields;
@@ -76,9 +76,10 @@ export const withParse = (role: ArgRole, f: (q: ArgvParse) => ArgvParse): ArgRol
  * in after it, `unsplice`, or a word's fields, `interpret`), in the numbers of the line's words. The roles of the words
  * of each group are given apart (`inner`), numbered from 0, with the roles in the parses of their commands of words of
  * the same group (a command started in them reads the words after them too, whose roles come back to the line). A
- * group of fields has a role of its own (`folded`) where its first role was.
+ * group of fields has a role of its own (`folded`) where its first role was; `certain` says of the line's word of a group
+ * whether its role does not depend on how many words the others give (`interpret`; all where absent).
  */
-export function regroup(parse: ArgvParse, groups: Group[]): { parse: ArgvParse; inner: RoleAt[][] } {
+export function regroup(parse: ArgvParse, groups: Group[], certain: (word: number) => boolean = () => true): { parse: ArgvParse; inner: RoleAt[][] } {
   const back = lineIndex(groups);
   const groupOf = (j: number): number => groups.findIndex((g) => j >= g.from && j < g.from + g.n);
   /** The word of the line where the words from `j` on start: before the words that give none just before it. */
@@ -135,6 +136,6 @@ export function regroup(parse: ArgvParse, groups: Group[]): { parse: ArgvParse; 
     }
   }
   for (const list of inner) list.sort((a, b) => a.word - b.word);
-  for (const { g, at, next } of slots) at.role = folded(groups[g].words!, inner[g], next);
+  for (const { g, at, next } of slots) at.role = folded(groups[g].words!, inner[g], certain(groups[g].word), next);
   return { parse: out, inner };
 }

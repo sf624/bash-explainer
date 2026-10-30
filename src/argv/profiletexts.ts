@@ -2,7 +2,7 @@
 // "when condition, profile" for each other class, the text the classes fold into past the budget, and the text past the
 // cap; in Japanese and English, with the names of the words and the texts of the roles from the caller (who can name the
 // command that reads a role: `Role.by`). Each clause is a sentence of its own, so the reader sees where a condition ends.
-// Nothing reads them yet: src/explain/operand-texts.ts renders them from step 4 on.
+// src/explain/operand-texts.ts renders them (`readingsParts`).
 import type { Text } from '../i18n';
 import type { Atom, Clause, CountGroup, Depends, Folded, Place, Profile, Role, WordReadings } from './profiles';
 import { squeeze } from './profiles';
@@ -95,8 +95,8 @@ function byCountText(groups: readonly CountGroup[], w: string, names: Names): Te
 /**
  * The profile as written, said first (section 2.6): its role; by place, "X; when `$v` expands to several words, this is
  * its first word, and the others are Y, then Z"; by own count, as `cp $a` is said today. A word of a known number of
- * words (fields the model knows) says each: "its words are X, then Y". Nothing where every own count is refused
- * (`jq --arg $n` as written): the role as written stays.
+ * words (fields the model knows), or one that never gives one word (`{a,b}*`), says each: "its words are X, then Y".
+ * Nothing where every own count is refused (`jq --arg $n` as written): the role as written stays.
  */
 export function baseText(p: Profile, k: number, names: Names): Text {
   const w = names.word(k);
@@ -105,7 +105,7 @@ export function baseText(p: Profile, k: number, names: Names): Text {
   const [first, ...rest] = squeeze(p.places);
   const x = names.role(first);
   if (!rest.length) return x;
-  if (p.counts.length === 1) {
+  if (p.counts.length === 1 || p.counts[0] > 1) {
     const all = listOf(squeeze(p.places), names);
     return { ja: `順に${spaced(all.ja)}`, en: `its words are ${all.en}` };
   }
@@ -146,8 +146,13 @@ export function dependsText(d: Depends, names: Names): Text {
   return { ja: `${who.ja} が展開される語数により役割が変わりうる`, en: `its role may depend on how many words ${who.en} ${gives(d.words)}` };
 }
 
+/** What a word's readings say after its profile as written: each clause, or the folded text. */
+export function clausesText(r: WordReadings, k: number, names: Names): Text[] {
+  return [...r.clauses.map((c) => clauseText(r, c, k, names)), ...(r.folded ? [foldedText(r.folded, names)] : [])];
+}
+
 /** What a word's readings say: its profile as written, then each clause or the folded text, each a sentence ("。", ". "). */
 export function readingsText(r: WordReadings, k: number, names: Names): Text {
-  const parts = [baseText(r.base, k, names), ...r.clauses.map((c) => clauseText(r, c, k, names)), ...(r.folded ? [foldedText(r.folded, names)] : [])].filter((x) => x.en);
+  const parts = [baseText(r.base, k, names), ...clausesText(r, k, names)].filter((x) => x.en);
   return { ja: parts.map((x) => x.ja).join('。'), en: parts.map((x, i) => (i ? sentence(x.en) : x.en)).join('. ') };
 }

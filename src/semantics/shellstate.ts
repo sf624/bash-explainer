@@ -406,6 +406,24 @@ export function attribute(st: ShellState, name: string, letter: string): Tri {
   return st.variables.get(name)?.attrs[letter]?.state ?? 'off';
 }
 
+/**
+ * The variable the name `name` stands for in `st`, following namerefs (`declare -n r=b`: `b`); `*` where that is not
+ * known: a nameref whose target is not known or holds a subscript (`r='a[i=5]'`, whose reading runs arithmetic), a
+ * nameref on some paths only, or a name not known after what the model does not read (`source`).
+ */
+export function refTarget(st: ShellState, name: string): string {
+  const seen = new Set<string>();
+  for (;;) {
+    const v = st.variables.get(name);
+    if (!v) return st.opaque ? '*' : name;
+    const ref = attribute(st, name, 'n');
+    if (ref === 'off') return name;
+    if (ref !== 'on' || v.set !== 'on' || v.value === undefined || !/^[A-Za-z_]\w*$/.test(v.value) || seen.has(v.value)) return '*';
+    seen.add(name);
+    name = v.value;
+  }
+}
+
 export type Kind = Exclude<keyof ShellState, 'status' | 'unreachable' | 'errexitWhy' | 'opaque'>;
 export type Entry<K extends Kind> = ShellState[K] extends NameMap<infer V> ? V : never;
 

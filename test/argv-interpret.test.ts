@@ -7,7 +7,7 @@ import { type ArgRole, ArgWord, interpret, InterpretContext, match, type Operand
 import type { CommandSpec, OperandSpec, OptionSpec } from '../src/argv/spec';
 import { byCount, cmd, mergeOptions, runs } from '../src/dict/types';
 import { tx } from '../src/i18n';
-import { argWords, render } from './support/argwords';
+import { argWords, render, said } from './support/argwords';
 import { runBash } from './support/bash';
 // (Types only: loaded so that its coverage is measured.)
 import '../src/argv/spec';
@@ -268,7 +268,7 @@ describe('argv interpreter: commands of the dictionary', () => {
   });
 
   it('env A=1 cmd: assignments, then the command; the first word that is not one ends the options', () => {
-    assert.deepStrictEqual(roles('env -i A=1 B=$x cmd -i'), ['-i: -i start with an empty environment', 'A=1: NAME=VALUE (assignment)', 'B=$x: NAME=VALUE (assignment)', 'cmd: command exec cmd (unknown)', '  -i: -i?']);
+    assert.deepStrictEqual(roles('env -i A=1 B=$x cmd -i'), ['-i: -i start with an empty environment', 'A=1: NAME=VALUE (assignment)', 'B=$x: NAME=VALUE (assignment) (hedged)', 'cmd: command exec cmd (unknown)', '  -i: -i?']);
     assert.deepStrictEqual(roles('env A=1'), ['A=1: NAME=VALUE (assignment)']);
     assert.deepStrictEqual(roles('sudo -u root ls -la').slice(2, 3), ['ls: command exec ls']);
     assert.deepStrictEqual(roles('sudo $cmd -x'), ['$cmd: command exec (unknown)', '  -x: -x?']);
@@ -364,40 +364,42 @@ describe('argv interpreter: the option grammar', () => {
     assert.deepStrictEqual(roles('t --lines=$n --$x --lines$x', spec), ['--lines=$n: --lines=8 lines', '--$x: open --', '--lines$x: open --lines']);
   });
 
-  it('records the other role of an uncertain operand, the operand a command fills, and where nested words end', () => {
-    const dir = parseOf('cp *.txt dir').roles[1].role;
-    assert.ok(dir.role === 'operand' && dir.uncertain);
-    assert.strictEqual(dir.otherwise!.text.en, 'destination directory');
+  it('gives an operand its readings for every count, the operand a command fills, and where nested words end', () => {
+    /** What the readings of each word say (test/support/argwords.ts, `said`). */
+    const saying = (spec: CommandSpec, words: ArgWord[], texts: string[]): string[] => interpret(spec, words, { lookup }).roles.map(({ word, role }) => `${texts[word]}: ${said(role, word, texts) ?? '-'}`);
+    const line = (l: string): string[] => {
+      const { name, words, texts } = argWords(l);
+      return saying(lookup(name)!, words, texts);
+    };
+    assert.deepStrictEqual(line('cp *.txt dir'), ['*.txt: source', 'dir: destination (the new name, or an existing directory). When `*.txt` expands to several words, it is destination directory']);
+    // (A word of a known number of words has no readings; its words have their roles, `each`.)
     const brace = parseOf('cp a{,.bak}').roles[0].role;
-    assert.ok(brace.role === 'operand' && !brace.uncertain);
+    assert.ok(brace.role === 'operand' && !brace.readings);
     assert.deepStrictEqual(brace.each!.map((o) => o.text.en), ['source', 'destination (the new name, or an existing directory)']);
     // (A command slot that takes one word, then the operands after it: `trap {x,EXIT}` is `trap x EXIT`.)
     const action = parseOf('trap {x,EXIT}').roles[0].role;
     assert.ok(action.role === 'command');
     assert.deepStrictEqual(action.each!.map((o) => o.name), ['ACTION', 'SIGNAL']);
-    const all = parseOf('cp "$@"').roles[0].role;
-    assert.ok(all.role === 'operand' && all.uncertain);
     // (For each count: with two words the two-operand form, a source and the destination; with three or more, the other.)
-    const readings = (r: ArgRole) => (r.role === 'operand' ? r.several?.map((x) => `${x.from}${x.orMore ? '+' : ''}: ${x.roles.map((o) => o.text.en).join(', ')}`) : undefined);
-    assert.deepStrictEqual(readings(all), ['1: source', '2: source, destination (the new name, or an existing directory)', '3+: source, destination directory']);
+    assert.deepStrictEqual(line('cp "$@"'), ['"$@": source when `"$@"` expands to a single word; when it expands to 2 words, they are source, then destination (the new name, or an existing directory); when it expands to more words, they are source, then destination directory']);
     // (Up to the count a word may give, and only counts a pattern fits: none past the longest of a spec with no `*`.)
     const three: CommandSpec = { summary: t('three'), operands: [{ pattern: [item('A'), item('B'), item('C')] }, { pattern: [item('A'), item('D')] }, { pattern: [item('A')] }] };
-    assert.deepStrictEqual(readings(interpret(three, [{ value: 'x', count: { min: 1 } }]).roles[0].role), ['1: a', '2: a, d', '3: a, b, c']);
-    assert.deepStrictEqual(readings(interpret(three, [{ value: 'x', count: { min: 1, max: 2 } }]).roles[0].role), ['1: a', '2: a, d']);
-    // (After a count no pattern fits, the count after it is no "more"; none when only one word fits.)
+    assert.deepStrictEqual(saying(three, [{ count: { min: 1 } }], ['$x']), ['$x: a when `$x` expands to a single word; when it expands to 2 words, they are a, then d; when it expands to 3 words, they are a, b, then c']);
+    // (By place, where no place depends on the count: with at most two words, the second is `d`.)
+    assert.deepStrictEqual(saying(three, [{ count: { min: 1, max: 2 } }], ['$x']), ['$x: a; when `$x` expands to several words, this is its first word, and each of the others is d']);
+    // (A count no pattern fits is left out: three words of `gap`.)
     const gap: CommandSpec = { summary: t('gap'), operands: [{ pattern: [item('A')] }, { pattern: [item('A'), item('B')] }, { pattern: [item('A'), item('B'), item('C'), item('D'), item('D', { repeat: '*' })] }] };
-    assert.deepStrictEqual(readings(interpret(gap, [{ value: 'x', count: { min: 1 } }]).roles[0].role), ['1: a', '2: a, b', '4+: a, b, c, d']);
-    assert.strictEqual(readings(interpret({ summary: t('one'), operands: [{ pattern: [item('A')] }] }, [{ value: 'x', count: { min: 1 } }]).roles[0].role), undefined);
-    // (Two words that may give several: the roles any counts give, in the order of the patterns, and none where no pattern
-    // fits; a word after one such word, its role for each count of it.)
-    const two = [{ value: 'x', count: { min: 1 } }, { value: 'y', count: { min: 1 } }];
-    const mixed = interpret(three, two).roles.map((r) => (r.role.role === 'operand' && r.role.mixed ? `${r.role.mixed.words.join(' ')}: ${r.role.mixed.first} ${r.role.mixed.many} ${r.role.mixed.roles.map((o) => o.text.en).join(', ')}` : '-'));
-    assert.deepStrictEqual(mixed, ['0 1: true true a, b', '0 1: true true b, c']);
-    const by = interpret(three, [{ value: 'x', count: { min: 1 } }, { value: 'f' }]).roles[1].role;
-    // (One role for every count but the fewest: `otherwise`, with the word it depends on.)
-    assert.deepStrictEqual(by.role === 'operand' && [by.otherwise?.text.en, by.by, by.byCount], ['c', 0, undefined]);
+    assert.deepStrictEqual(saying(gap, [{ count: { min: 1 } }], ['$x']), ['$x: a; when `$x` expands to several words, this is its first word, and the others are b, c, then d']);
+    assert.deepStrictEqual(saying({ summary: t('one'), operands: [{ pattern: [item('A')] }] }, [{ count: { min: 1 } }], ['$x']), ['$x: a']);
+    // (Two words that may give several: each word's roles for its own counts, and a clause on the other's.)
+    assert.deepStrictEqual(saying(three, [{ count: { min: 1 } }, { count: { min: 1 } }], ['$x', '$y']), [
+      '$x: a; when `$x` expands to several words, this is its first word, and each of the others is b. When `$y` expands to several words, it is a',
+      '$y: d when `$y` expands to a single word; when it expands to 2 words, they are b, then c. When `$x` expands to several words, it is c',
+    ]);
+    // (A word after one such word: its role for each count of it.)
+    assert.deepStrictEqual(saying(three, [{ count: { min: 1 } }, { value: 'f' }], ['$x', 'f']), ['$x: a; when `$x` expands to several words, this is its first word, and each of the others is b', 'f: d. When `$x` expands to several words, it is c']);
     // (A word that gives two words or more: no reading for one.)
-    assert.deepStrictEqual(readings(interpret(three, [{ value: 'x', count: { min: 2 } }]).roles[0].role), ['2: a, d', '3: a, b, c']);
+    assert.deepStrictEqual(saying(three, [{ count: { min: 2 } }], ['$x']), ['$x: when `$x` expands to 2 words, they are a, then d; when it expands to 3 words, they are a, b, then c']);
     const p = parseOf('timeout 5 sleep 1');
     const run = p.roles[1].role;
     assert.ok(run.role === 'command');
@@ -543,7 +545,7 @@ describe('argv interpreter: review fixes', () => {
     assert.deepStrictEqual(roles('kill -$sig $pid'), ['-$sig: pattern (open) Send the signal the expansion names (same as `-s NAME`)', '$pid: PID']);
     assert.deepStrictEqual(roles('head -$n f'), ['-$n: pattern (open) as many lines as the expansion gives (old way to write `-n N`)', 'f: ARG1']);
     // No operand slot: `cp -$opts a b` keeps `b` as the destination.
-    assert.deepStrictEqual(roles('cp -$opts a b'), ['-$opts: open -', 'a: ARG1', 'b: ARG2']);
+    assert.deepStrictEqual(roles('cp -$opts a b'), ['-$opts: open -', 'a: ARG1', 'b: ARG2 (hedged)']);
     assert.deepStrictEqual(roles('ls -l$x d'), ['-l$x: open -l', 'd: ARG1']);
     assert.deepStrictEqual(roles('nice --5 make').slice(0, 1), ['--5: pattern niceness adjustment -5 (old way to write `-n -5`; a negative value needs privileges)']);
   });
@@ -573,37 +575,40 @@ describe('argv interpreter: review fixes', () => {
 
   it('a word that may be several words: the role is certain only when it is the same for any count', () => {
     assert.deepStrictEqual(roles('cp {a,b} dir'), ['{a,b}: ARG1', 'dir: ARG3']);
-    assert.deepStrictEqual(roles('cp *.txt dir'), ['*.txt: ARG1', 'dir: ARG2 (uncertain)']);
-    assert.deepStrictEqual(roles('cp "$@" dir'), ['"$@": ARG1', 'dir: ARG2 (uncertain)']);
+    assert.deepStrictEqual(roles('cp *.txt dir'), ['*.txt: ARG1', 'dir: ARG2 (hedged)']);
+    assert.deepStrictEqual(roles('cp "$@" dir'), ['"$@": ARG1', 'dir: ARG2 (hedged)']);
     // (A brace expansion gives known words: each has its role, in `each`.)
     assert.deepStrictEqual(roles('cp {a,b}'), ['{a,b}: ARG1']);
     // Only the many-words reading fits.
     const three: CommandSpec = { summary: t('three'), operands: [{ pattern: [item('A'), item('B'), item('C')] }] };
-    assert.deepStrictEqual(render(interpret(three, [{ value: 'x', count: { min: 0 } }]), ['$x']), ['$x: A (uncertain)']);
-    // (Nor the other words, where their copies keep one role: `y` is D.)
+    assert.deepStrictEqual(render(interpret(three, [{ value: 'x', count: { min: 0 } }]), ['$x']), ['$x: A (hedged)']);
+    // (The other words too, where no form fits their words as written: with one word of `$x`, four refuses them.)
     const four: CommandSpec = { summary: t('four'), operands: [{ pattern: [item('A'), item('B'), item('C'), item('D')] }] };
-    assert.deepStrictEqual(render(interpret(four, [{ value: 'x', count: { min: 1 } }, { value: 'y' }]), ['$x', 'y']), ['$x: A (uncertain)', 'y: D']);
+    const fourWords: ArgWord[] = [{ value: 'x', count: { min: 1 } }, { value: 'y' }];
+    assert.deepStrictEqual(render(interpret(four, fourWords), ['$x', 'y']), ['$x: A (hedged)', 'y: D (hedged)']);
+    assert.strictEqual(said(interpret(four, fourWords).roles[1].role, 1, ['$x', 'y']), 'when `$x` expands to several words, it is d');
     // When more words fit nothing, the one reading that fits stands.
     const two: CommandSpec = { summary: t('two'), operands: [{ pattern: [item('A'), item('B')] }] };
     assert.deepStrictEqual(render(interpret(two, [{ value: 'x', count: { min: 1, max: 5 } }, { value: 'y' }]), ['$x', 'y']), ['$x: A', 'y: B']);
   });
 
   it('a word that may give none: the role the words after it take when it gives none, where that is another', () => {
+    /** The clauses of each word's readings that say what it is when a word gives none. */
     const none = (line: string, spec?: CommandSpec): string[] => {
       const { texts } = argWords(line);
-      return parseOf(line, spec).roles.flatMap(({ word, role }) => (role.role === 'operand' && role.none ? role.none.map((r) => `${texts[word]}: ${r.words.map((w) => texts[w]).join(' ')} → ${r.spec ? r.spec.name : `value of ${r.value.of}`}`) : []));
+      return parseOf(line, spec).roles.flatMap(({ word, role }) => (said(role, word, texts) ?? '').split('. ').filter((c) => / expands? to nothing/.test(c)).map((c) => `${texts[word]}: ${c}`));
     };
     // `cp $a b` with `$a` empty is `cp b`, a source; `grep -c $x f` reads `f` as the pattern; `cp $a b c` copies `b` to `c`.
-    assert.deepStrictEqual(none('cp $a b'), ['b: $a → ARG1']);
-    assert.deepStrictEqual(none('grep -c $x f'), ['f: $x → ARG1']);
-    assert.deepStrictEqual(none('cp $a b c'), ['c: $a → ARG2']);
-    // (Each word that may give none is read with the others gone: `$b` is a source when `$a` gives none.)
-    assert.deepStrictEqual([none('cp $a $b'), none('cp $a $b c')], [['$b: $a → ARG1'], ['c: $a $b → ARG1']]);
+    assert.deepStrictEqual(none('cp $a b'), ['b: When `$a` expands to nothing, it is source']);
+    assert.deepStrictEqual(none('grep -c $x f'), ['f: When `$x` expands to nothing, it is search pattern (regex)']);
+    assert.deepStrictEqual(none('cp $a b c'), ['c: When `$a` expands to nothing, it is destination (the new name, or an existing directory)']);
+    // (Both words of a run: `c` is a source when `$a` and `$b` both give none.)
+    assert.deepStrictEqual(none('cp $a $b c'), ['c: When `$a` and `$b` expand to nothing, it is source']);
     // (None where the role stays, nor for the words of a brace expansion, nor where no form fits the words left.)
-    assert.deepStrictEqual([none('rm $a b'), none('cp $a {b,c}'), none('cp "$a" b')], [[], [], []]);
+    assert.deepStrictEqual([none('rm $a b'), none('cp "$a" b')], [[], []]);
     const two: CommandSpec = { summary: t('two'), operands: [{ pattern: [item('A'), item('B')] }] };
     assert.deepStrictEqual(none('f $a y', two), []);
-    assert.ok(parseOf('cp $a b').roles.every(({ word, role }) => word === 0 || (role.role === 'operand' && role.uncertain)));
+    assert.ok(parseOf('cp $a b').roles.every(({ role }) => role.role === 'operand' && role.readings?.kind === 'read'));
   });
 
   it('counts the words of `"$@"` and the like as bash gives them: none or more, one or more with text beside them', () => {
@@ -746,7 +751,7 @@ describe('argv interpreter: subcommands found as cobra does', () => {
     // Nothing to take at the end; a word not known, `--` and a word that names no subcommand end the search.
     assert.deepStrictEqual(of('tool -x'), ['-x: -x?']);
     assert.deepStrictEqual(of('tool -n'), ['-n: -n (no value) namespace']);
-    assert.deepStrictEqual(of('tool $v get'), ['$v: operand', 'get: operand']);
+    assert.deepStrictEqual(of('tool $v get'), ['$v: operand', 'get: operand (hedged)']);
     assert.deepStrictEqual(of('tool -- get'), ['--: end of options', 'get: operand']);
     assert.deepStrictEqual(of('tool nope get'), ['nope: operand', 'get: operand']);
     // cobra skips empty words.
@@ -843,8 +848,12 @@ describe('argv interpreter: the fields of a word the model knows (bug 7 of oracl
     // (`cp {$x,$y} d` with both empty: `cp d`. A hedge after a word that gives none names the word of the line: with
     // `$u` empty, `cp $z $u d` is `cp d`.)
     assert.deepStrictEqual(read('cp', [known(), { value: 'd' }], ['{$x,$y}', 'd']), ['{$x,$y}: fields 0', 'd: ARG1']);
-    const d = interpret(lookup('cp')!, [known(), unknown, { value: 'd' }]).roles.find((r) => r.word === 2)!.role as OperandRole;
-    assert.deepStrictEqual(d.none?.map((r) => r.words), [[1]]);
+    const d = interpret(lookup('cp')!, [known(), unknown, { value: 'd' }]).roles.find((r) => r.word === 2)!.role;
+    assert.match(said(d, 2, ['$z', '$u', 'd'])!, /When `\$u` expands to nothing, it is source/);
+    // (Fields folded into one role only where the word's role does not depend on the counts: `p='a b'; cp $p d` is two
+    // sources; with `$u` after, the second may be the destination; after a glob that may give `--`, nothing is read.)
+    const fold = (words: ArgWord[]) => interpret(lookup('cp')!, words).roles.find((r) => r.word === 1)!.role.role;
+    assert.deepStrictEqual([fold([{ value: 'x' }, known('a', 'b'), { value: 'd' }]), fold([{ value: 'x' }, known('a', 'b'), unknown]), fold([{ prefix: '-', dashes: true, count: { min: 1 } }, known('a', 'b'), { value: 'd' }])], ['operand', 'fields', 'fields']);
   });
 
   it('reads a subcommand, a command and its words, and a terminator in the fields, and the words after them on the line', () => {

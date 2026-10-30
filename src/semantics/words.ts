@@ -20,7 +20,7 @@ import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
 import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 import { changedByBash, setAtStart } from './vars';
-import { ARITH, changesDirectory, underscoreValue, unreliableNames } from './wordsites';
+import { ARITH, changesDirectory, underscoreValue, unreliableAt, unreliableNames } from './wordsites';
 import { operandSegs } from './operands';
 
 export { underscoreValue, unreliableNames };
@@ -327,8 +327,6 @@ interface Shape {
   tildes: Map<string, TildePrefix[]>;
   /** The meanings the walk read (`wordIn`), by the options they were read with (`optionsOf`), with the state of the first. */
   walked: WeakMap<WordOptions, { meaning: WordMeaning; noIfs?: WordMeaning }>;
-  /** The variables the statement may assign before the word is expanded (`unreliableNames`). */
-  unreliable: ReadonlySet<string>;
 }
 
 const shapes = new WeakMap<SyntaxNode, Shape>();
@@ -344,7 +342,6 @@ function shapeOf(nodes: readonly SyntaxNode[]): Shape {
     braced: bracedWords(plain),
     globWords: [...new Set([...plain.filter((w) => isGlob(w.text)), ...bracketsAcross(nodes)])].sort((a, b) => a.startIndex - b.startIndex),
     quoted: nodes.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text)),
-    unreliable: unreliableNames(nodes[0]),
   };
   shapes.set(nodes[0], shape);
   return shape;
@@ -582,16 +579,16 @@ class ModelValues implements ValueSource {
 /** What a word gives, read from its nodes with the values of a `ValueSource`. */
 class Evaluator {
   private readonly unbound: Tri;
-  private readonly unreliable: ReadonlySet<string>;
+  private readonly unreliable: ReadonlySet<string> | 'all';
   /** `st`: the state the word is expanded in (the walk's own, for a meaning it keeps from another state with the same options). */
   constructor(readonly w: WordMeaning, private readonly source: ValueSource, private readonly st = w.state) {
     this.unbound = on(option(st, 'set', 'nounset'), 'set', 'nounset', false);
-    this.unreliable = shapeOf(w.nodes).unreliable;
+    this.unreliable = unreliableAt(w.nodes[0], st);
   }
 
   /** The value of the parameter `name`: a string, null when unset, undefined when not known here. */
   variable(name: string, node: SyntaxNode): string | null | undefined {
-    return this.unreliable.has(name) ? undefined : this.source.variable(name, node);
+    return this.unreliable === 'all' || this.unreliable.has(name) ? undefined : this.source.variable(name, node);
   }
 
   /** The value of `$name` in an operand of `${…}`: empty when unset (an error under `set -u`), undefined when not known. */
