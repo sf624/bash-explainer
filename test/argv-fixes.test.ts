@@ -284,22 +284,25 @@ describe('an operand that becomes several words', () => {
   });
 
   it('reads a line of many words that may give none in time linear in the words (count-hedges.md 2.8)', function () {
-    this.timeout(60000);
-    // (Step 4 of the table made these lines grow as the square of their words: 20 words took 20 to 70 ms, 160 words 0.6
-    // to 2.4 s, 27 times as long for 8 times the words. Linear growth is 8 times; the bound is twice that, measured in
-    // the same process, the fewest of three runs of each, so it holds on a slow machine.)
-    const many = (prefix: string, n: number, suffix = '') => `${prefix} ${Array.from({ length: n }, (_, i) => `$a${i}`).join(' ')}${suffix}`;
+    this.timeout(120000);
+    // (Step 4 of the table made these lines grow as the square of their words: at 160 words they took 60 to 100 times as
+    // long as the same lines with the words written out, 2 to 6 s; now about 3 times. The bound is 15, measured in the same
+    // process, the fewest of three runs of each, so it holds on a slow machine and under coverage. Not the growth of one
+    // line from fewer words: at 20 words fixed costs and the garbage collector weigh as much as the words, and from 40
+    // words the old blow-up was only 10 to 11 times for 4 times the words.)
+    const many = (prefix: string, word: (i: number) => string, suffix = '') => `${prefix} ${Array.from({ length: 160 }, (_, i) => word(i)).join(' ')}${suffix}`;
     const time = (line: string): number => Math.min(...[0, 1, 2].map(() => {
       const start = performance.now();
       new Analyzer('en').explainLine(parser.parse(line), 0);
       return performance.now() - start;
     }));
-    time(many('cp', 20, ' d'));
+    time(many('cp', (i) => `a${i}`, ' d'));
     for (const [prefix, suffix] of [['cp', ' d'], ['echo', ''], ['rm -f', '']]) {
-      const [short, long] = [time(many(prefix, 20, suffix)), time(many(prefix, 160, suffix))];
+      const [words, written] = [many(prefix, (i) => `$a${i}`, suffix), many(prefix, (i) => `a${i}`, suffix)];
+      let ratio = time(words) / time(written);
       // (A slow run is read again once: a pause of the machine does not repeat, a blow-up does.)
-      const ratio = long / short > 16 ? time(many(prefix, 160, suffix)) / time(many(prefix, 20, suffix)) : long / short;
-      assert.ok(ratio <= 16, `${prefix}: 160 words took ${ratio.toFixed(1)} times as long as 20 words`);
+      if (ratio > 15) ratio = time(words) / time(written);
+      assert.ok(ratio <= 15, `${prefix}: 160 words that may give none took ${ratio.toFixed(1)} times as long as written out`);
     }
   });
 
