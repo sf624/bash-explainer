@@ -270,6 +270,9 @@ describe('branches no other test takes', () => {
     assert.strictEqual(testCases('[', '-z', { var: 'a' }, undefined), undefined);
     assert.strictEqual(testCases('[', '<', { var: 'f' }, { lit: 'b' }), undefined);
     assert.deepStrictEqual(runRead('a b\\', ['x', 'y'], { ifs: ' \t\n', raw: false })!.vars, [['x', 'a'], ['y', 'b']]);
+    // (bash 5.3 trims the escaped `\v` at the end and keeps its mark, the byte 1: `IFS=$'\v' read a <<< $'x\vy\\\v'`
+    // gives `a=$'x\vy\001'`. Compared with bash 5.3 in test/examples-runtime.test.ts, where it is found.)
+    assert.deepStrictEqual(runRead('x\vy\\\v', ['a'], { ifs: '\v', raw: false, version: '5.3' })!.vars, [['a', 'x\vy\x01']]);
   });
 
   it('git log dates: strftime as date prints it, zones west of UTC and UTC itself, relative dates, unknown styles', function () {
