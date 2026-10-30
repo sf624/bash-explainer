@@ -269,7 +269,7 @@ describe('branches no other test takes', () => {
     assert.strictEqual(testCases('((', '%', { var: 'n' }, { lit: '2' }), undefined);
     assert.strictEqual(testCases('[', '-z', { var: 'a' }, undefined), undefined);
     assert.strictEqual(testCases('[', '<', { var: 'f' }, { lit: 'b' }), undefined);
-    assert.deepStrictEqual(runRead('a b\\', ['x', 'y'], { ifs: ' \t\n', raw: false }).vars, [['x', 'a'], ['y', 'b']]);
+    assert.deepStrictEqual(runRead('a b\\', ['x', 'y'], { ifs: ' \t\n', raw: false })!.vars, [['x', 'a'], ['y', 'b']]);
   });
 
   it('git log dates: strftime as date prints it, zones west of UTC and UTC itself, relative dates, unknown styles', function () {

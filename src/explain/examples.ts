@@ -662,7 +662,7 @@ function readExample(cx: Explainer, n: SyntaxNode, args: SyntaxNode[]): void {
   // The line the command reads, when a here-string gives it: `read -a p <<< "a,b,,c,"`.
   const here = n.namedChildren.find((c) => c.type === 'herestring_redirect')?.namedChildren[0];
   // (A here-string of expansions the model knows is read as their value: `read a b <<< "$x y"`.)
-  const r = commandExamples.readExample(args.map((a) => literalContent(a)?.text), ifs, here && (literalContent(here)?.text ?? wordValue(cx, here)), cx.lang);
+  const r = commandExamples.readExample(args.map((a) => literalContent(a)?.text), ifs, here && (literalContent(here)?.text ?? wordValue(cx, here)), cx.lang, cx.opts.bashVersion ?? DEFAULT_BASH_VERSION);
   if (!r) return;
   if (r.note) cx.note(r.note, n);
   cx.example(r.example);

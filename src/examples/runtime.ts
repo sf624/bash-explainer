@@ -1,5 +1,6 @@
 /** Simulations of xargs, simple test conditions and `read` word splitting, for worked examples. */
-import { IFS_WHITESPACE } from '../semantics/chars';
+import type { BashVersion } from '../bashversion';
+import { IFS_ERRATIC, IFS_WHITESPACE } from '../semantics/chars';
 import { globExamples, globMatches } from './shellwords';
 import { parseOptions, Parsed, shortKeys, Unsupported } from './textfilters';
 
@@ -210,76 +211,107 @@ export interface ReadResult {
   array?: [string, string[]];
 }
 
-/** IFS whitespace, as `read` splits on it (src/semantics/chars.ts). */
-const IFS_WS = new RegExp(`[${IFS_WHITESPACE}]`);
+/** A character of the line `read` keeps, or null for the mark it puts before one that a backslash escapes. */
+type Cell = string | null;
 
-/** bash's `read [-r] [-a arr] name…` splitting of one line with the given IFS. */
-export function runRead(line: string, names: string[], opts: { ifs: string; raw: boolean; array?: string }): ReadResult {
-  // Without -r a backslash escapes the next character (and protects it from splitting).
-  const chars: { c: string; escaped: boolean }[] = [];
-  for (let i = 0; i < line.length; i++) {
-    if (!opts.raw && line[i] === '\\' && i + 1 < line.length) chars.push({ c: line[++i], escaped: true });
-    else if (!opts.raw && line[i] === '\\') continue;
-    else chars.push({ c: line[i], escaped: false });
-  }
+/** IFS whitespace (src/semantics/chars.ts); and space, tab and newline, which `read` alone skips in some places. */
+const isSpace = (c: Cell): boolean => c !== null && IFS_WHITESPACE.includes(c);
+const isSpcTabNl = (c: Cell): boolean => c !== null && ' \t\n'.includes(c);
+
+/**
+ * bash's `read [-r] [-a arr] [name…]` splitting of one line with the given IFS, as `version` does it (bash 5.2 when it is
+ * not given); undefined for an IFS that holds byte 1 or 127, which bash uses as marks of its own (it splits erratically).
+ * bash skips IFS whitespace before each field, but only space, tab and newline at the start of the line and right after
+ * a separator; at the end of the last variable's text, bash 5.3 removes IFS whitespace, bash 5.2 only space, tab and
+ * newline (`IFS=$'\v' read -r a b` of `x\v\vy\v\v`: `b` is `\vy\v\v` in 5.2, `\vy` in 5.3). With no name, `REPLY` gets
+ * the whole line. Checked against both releases: test/examples-runtime.test.ts.
+ */
+export function runRead(line: string, names: string[], opts: { ifs: string; raw: boolean; array?: string; version?: BashVersion }): ReadResult | undefined {
   const ifs = opts.ifs;
-  const isIfs = (x: { c: string; escaped: boolean }) => !x.escaped && ifs.includes(x.c);
-  const isWs = (x: { c: string; escaped: boolean }) => isIfs(x) && IFS_WS.test(x.c);
-  // Leading and trailing IFS whitespace is removed.
-  let s = 0;
-  let e = chars.length;
-  while (s < e && isWs(chars[s])) s++;
-  while (e > s && isWs(chars[e - 1])) e--;
-  const body = chars.slice(s, e);
-  const text = (xs: typeof body) => xs.map((x) => x.c).join('');
-  const fields: string[] = [];
-  const starts: number[] = [];
-  let i = 0;
-  if (ifs === '') {
-    fields.push(text(body));
-    starts.push(0);
-  } else {
-    while (i < body.length) {
-      starts.push(i);
-      let j = i;
-      while (j < body.length && !isIfs(body[j])) j++;
-      fields.push(text(body.slice(i, j)));
-      // Skip one non-whitespace delimiter (with whitespace around it) or a run of whitespace.
-      let k = j;
-      while (k < body.length && isWs(body[k])) k++;
-      if (k < body.length && isIfs(body[k]) && !isWs(body[k])) {
-        k++;
-        while (k < body.length && isWs(body[k])) k++;
-      }
-      if (k >= body.length && j < body.length && isIfs(body[j]) && !isWs(body[j])) {
-        // A trailing non-whitespace delimiter ends the last field without starting a new one.
-      }
-      i = k;
-    }
+  if (IFS_ERRATIC.test(ifs)) return undefined;
+  // The line, up to its first newline; without -r a backslash keeps the next character (a mark before it), and a
+  // backslash before a newline goes away with it. bash marks the bytes 1 and 127 of the line too.
+  const buf: Cell[] = [];
+  let escape = false;
+  for (const c of line) {
+    if (escape) {
+      escape = false;
+      if (c === '\n') buf.pop();
+      else buf.push(c);
+    } else if (c === '\\' && !opts.raw) {
+      escape = true;
+      buf.push(null);
+    } else if (c === '\n') break;
+    else buf.push(...(c === '\x01' || c === '\x7f' ? [null, c] : [c]));
   }
-  if (opts.array) return { vars: [], array: [opts.array, fields] };
-  const out: [string, string][] = [];
-  names.forEach((n, k) => {
-    if (k < names.length - 1) out.push([n, fields[k] ?? '']);
-    else {
-      // The last name gets the rest of the line, delimiters included.
-      if (k >= fields.length) out.push([n, '']);
-      else {
-        let rest = text(body.slice(starts[k]));
-        // A single trailing non-whitespace delimiter is dropped when exactly one field remains.
-        if (k === fields.length - 1 && rest.length && ifs.includes(rest[rest.length - 1]) && !IFS_WS.test(rest[rest.length - 1])) rest = rest.slice(0, -1);
-        out.push([n, rest]);
-      }
+  if (escape) buf.pop();
+  const isIfs = (c: Cell): boolean => c !== null && ifs.includes(c);
+  // (A mark at the end, left by the trim below, stays as the byte 1.)
+  const text = (cells: Cell[]): string => cells.map((c, k) => c ?? (k === cells.length - 1 ? '\x01' : '')).join('');
+  // The end of the text of a field from `i`: the next separator that is not escaped.
+  const fieldEnd = (i: number): number => {
+    while (i < buf.length && !isIfs(buf[i])) i += buf[i] === null ? 2 : 1;
+    return i;
+  };
+  // Where the next field starts after the separator at `j`: IFS whitespace (`white`) after it, and one separator that is
+  // not whitespace after whitespace, with the whitespace after that.
+  const skipSeparator = (j: number, white: (c: Cell) => boolean): number => {
+    const first = isSpace(buf[j]);
+    j++;
+    while (j < buf.length && white(buf[j]) && isIfs(buf[j])) j++;
+    if (j < buf.length && first && isIfs(buf[j]) && !isSpace(buf[j])) {
+      j++;
+      while (j < buf.length && isSpace(buf[j]) && isIfs(buf[j])) j++;
     }
+    return j;
+  };
+  if (opts.array) {
+    // As word splitting does it: IFS whitespace around the fields goes, and a separator that is not whitespace after
+    // an empty field gives an empty element.
+    const fields: string[] = [];
+    let i = 0;
+    while (i < buf.length && isIfs(buf[i]) && isSpace(buf[i])) i++;
+    while (i < buf.length) {
+      const j = fieldEnd(i);
+      if (j > i || !isSpace(buf[j])) fields.push(text(buf.slice(i, j)));
+      i = j < buf.length ? skipSeparator(j, isSpace) : j;
+    }
+    return { vars: [], array: [opts.array, fields] };
+  }
+  if (!names.length) return { vars: [['REPLY', text(buf)]] };
+  // A field from `i`: its text, and where the rest of the line starts.
+  const field = (i: number): { cells: Cell[]; next: number } => {
+    while (i < buf.length && isSpace(buf[i]) && isIfs(buf[i])) i++;
+    const j = fieldEnd(i);
+    return { cells: buf.slice(i, j), next: j < buf.length ? skipSeparator(j, isSpcTabNl) : j };
+  };
+  let i = 0;
+  while (i < buf.length && isSpcTabNl(buf[i]) && isIfs(buf[i])) i++;
+  const vars = names.slice(0, -1).map((n): [string, string] => {
+    const f = field(i);
+    i = f.next;
+    return [n, text(f.cells)];
   });
-  return { vars: out };
+  // The last variable gets its field when nothing follows it, else the rest of the line, less IFS whitespace at its end.
+  const f = field(i);
+  let rest = f.cells;
+  if (f.next < buf.length) {
+    const trailing = opts.version === '5.3' ? isSpace : isSpcTabNl;
+    let e = buf.length - 1;
+    // (An escaped space, tab or newline at the end goes too: bash looks back over the mark before it.)
+    while (e > i && ((trailing(buf[e]) && isIfs(buf[e])) || (buf[e] === null && isSpcTabNl(buf[e + 1])))) e--;
+    rest = buf.slice(i, e + 1);
+  }
+  vars.push([names[names.length - 1], text(rest)]);
+  return { vars };
 }
 
-/** A line that shows how read splits it: one field more than there are names. */
+/** A line that shows how read splits it: one field more than there are names, joined by the first character of IFS. */
 export function readSampleLine(names: number, ifs: string, array: boolean): string {
   const words = ['alice', '30', 'tokyo', 'admin', 'extra'];
   if (ifs === '') return '  hello   world  ';
-  const sep = [...ifs].every((c) => IFS_WS.test(c)) ? ' ' : [...ifs].find((c) => !IFS_WS.test(c))!;
+  // (A newline would end the line: the next character, or a space that IFS does not split on.)
+  const sep = [...ifs].find((c) => c !== '\n') ?? ' ';
   const count = array ? 3 : Math.min(names + 1, 5);
   return words.slice(0, count).join(sep);
 }

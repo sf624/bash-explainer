@@ -13,7 +13,11 @@ import { parseExpansion } from '../expansion';
  */
 export const IFS_WHITESPACE = ' \t\n\v\f\r';
 
-/** Characters that bash uses for markers of its own while it expands (CTLESC and CTLNUL): an IFS that holds one splits erratically. */
+/**
+ * Characters that bash uses for markers of its own while it expands (CTLESC and CTLNUL): an IFS that holds one splits
+ * erratically, even the quoted text of a word with an unquoted expansion, an empty one too (`IFS=$'\x01'; x=;
+ * printf '<%s>' $x"b"` prints `<><b>`).
+ */
 export const IFS_ERRATIC = /[\x01\x7f]/;
 
 /** Whether every locale reads `text` the same: it is ASCII. */

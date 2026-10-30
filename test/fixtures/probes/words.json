@@ -3107,10 +3107,12 @@
   },
   {
     "manual": "3.5.7",
-    "snippet": "IFS=$'\\x01'; x=$'a\\x01\\x01b'; @PROBE:a@ $x; IFS=$'\\x7f'; x=$'a\\x7fb'; @PROBE:b@ $x",
+    "snippet": "IFS=$'\\x01'; x=$'a\\x01\\x01b'; @PROBE:a@ $x; x=; y=ab; @PROBE:c@ $x\"b\" $x\"$y\"; @PROBE:d@ a\"$y\"; IFS=$'\\x7f'; x=$'a\\x7fb'; @PROBE:b@ $x",
+    "note": "a word with no unquoted expansion is not split (`a\"$y\"`)",
     "gaps": {
       "a": "an IFS that holds a byte 1 or 127 (CTLESC, CTLNUL: markers of bash's own) is not followed: bash splits on them erratically",
-      "b": "as a"
+      "b": "as a",
+      "c": "as a: bash splits even the quoted text of a word with an unquoted expansion, an empty one too"
     },
     "facts": {
       "a": [
@@ -3118,6 +3120,20 @@
           "a",
           "",
           "b"
+        ]
+      ],
+      "c": [
+        [
+          "",
+          "b",
+          "",
+          "a",
+          "b"
+        ]
+      ],
+      "d": [
+        [
+          "aab"
         ]
       ],
       "b": [
