@@ -1,7 +1,7 @@
 // What a builtin does to the shell's state, read from its parse by its spec (src/argv/spec.ts: `shellEffect`, and the
 // values and operands of `type: 'variable'` or `'function'`). The walk of the state (src/semantics/walk/) and the
 // trust scan (src/semantics/trust.ts) both read the effects here, so that they never disagree on what a builtin sets.
-import { fieldLine, interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
+import { fieldLine, interpret, type ArgRole, type ArgvParse, valuesOf } from '../argv/interpret';
 import { lineIndex } from '../argv/regroup';
 import type { CommandSpec, ValueSpec, VariableSet } from '../argv/spec';
 import { declaresNames } from '../argv/query';
@@ -231,8 +231,8 @@ export function variableWrites(spec: CommandSpec, read: BuiltinRead): VariableWr
  * of an option (`printf -v`, `mapfile -C`, `complete -F`) or an operand (`read NAME`).
  */
 export function namesByWords(spec: CommandSpec): boolean {
-  const values = (spec.options ?? []).flatMap((o) => (o.value === undefined ? [] : Array.isArray(o.value) ? o.value : [o.value]));
-  return values.some((v) => !!v.sets || v.type === 'function') || !!spec.operands?.some((o) => o.pattern.some((p) => !!p.sets));
+  // (Every builtin's spec lists its options, none too.)
+  return spec.options!.flatMap(valuesOf).some((v) => !!v.sets || v.type === 'function') || !!spec.operands?.some((o) => o.pattern.some((p) => !!p.sets));
 }
 
 /** The words that name a function the builtin runs later (`mapfile -C f`, `complete -F f`), with their names (undefined: not known here). */
