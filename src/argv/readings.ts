@@ -103,7 +103,7 @@ export interface ReadingsTable {
   specs: ReadonlySet<CommandSpec>;
   /** The counts of the base shape, the line as written: each word its fewest, one at least. */
   base: number[];
-  /** The shapes read, each the sum of each run, in order; undefined past `SHAPE_CAP`. */
+  /** The shapes read, each the sum of each run, in order; undefined past `SHAPE_CAP`, or where a word is `ArgWord.dashes`. */
   shapes: number[][] | undefined;
   /** The count variable of each of the command's words that is flexible. */
   variableAt: (number | undefined)[];
@@ -410,7 +410,9 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
     const operand = (r: ArgRole): boolean => r.role === 'operand' || r.role === 'fields' || (r.role === 'command' && !!r.item);
     return range(0, words.length).filter((k) => k >= first || operand(roles.get(k)!));
   };
-  const found = contextsOf(runs, variables, variableOf, fixedOf, bound, cap);
+  // (Nothing is read where a glob may give `--` or `-` past its first word, `ArgWord.dashes`: the words after it may be
+  // operands or not, whatever the counts.)
+  const found = line.some((w) => w.dashes) ? undefined : contextsOf(runs, variables, variableOf, fixedOf, bound, cap);
   /** Where the word `j` of the line starts in the reading of `sums`. */
   const placeOf = (j: number, sums: readonly number[]): number => {
     let at = 0;
