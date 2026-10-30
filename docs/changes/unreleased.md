@@ -1165,6 +1165,7 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 | `x=; f $x d`, `p='a b'; f $p d` (`f` a function), `set -- $p d` | `d` is `$1`, then `$3`; `set --` sets `$1=a $2=b $3=d` | "Argument $1 to the function", "Arguments $1 (`a`), $2 (`b`) to the function", "expands to `a` (becomes the positional parameter `$1`) and `b` (… `$2`)" | `d` was "Argument $2"; `$p` "`$1` (… the number shifts)" |
 | `cat a<(sort x)`, `diff <(ls a)/ b`, `x=a<(:)`, `echo 2>(:)`, `[[ a<(:) == … ]]` | a process substitution attached to other text is part of that word: `a/dev/fd/63` | one word, a concatenation of the text and the process substitution | two words (`a` and `<(sort x)`); `2>(:)` and `{fd}<(:)` were plain text, and `[[ a<(:) …` a syntax error |
 | `case $f in <(:))`, `case $n in $((i+1)))` | the substitution is expanded, and its result is the pattern | "what it expands to is the pattern" | "no wildcards, so it matches exactly this text" |
+| `echo "$y\<newline>a"`, `$\<newline>y`, `${\<newline>y}`, `y\<newline>a=1`, `ls ~\<newline>/x`, `x=\<newline>~/a` | bash removes a line continuation in a word before it reads the word: the variable `ya`, then `y`; the home directory | "the value of `ya`", "of `y`"; "Tilde expansion" (no value is said in such a script) | "the value of `y`" and the text `a`; `$` as plain text; "the value of `\<newline>y`"; the tilde as plain text |
 
 `[[ $x == "$q" ]]` already said that a quoted right side is literal text.
 

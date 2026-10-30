@@ -188,6 +188,15 @@ export function wordsText(n: SyntaxNode): string {
   return n.text.slice(0, words[words.length - 1].endIndex - n.startIndex);
 }
 
+/**
+ * A name as bash reads it (a `variable_name`, a `simple_expansion`, a `subscript`): bash removes a line continuation
+ * in a word before it reads the word, so `$y\<newline>a` reads `ya`, though the node's text is written with it
+ * (src/syntax/adapters/continuations.ts). Only a removed one is in a name's text.
+ */
+export function nameText(n: SyntaxNode): string {
+  return n.text.replace(/\\\n/g, '');
+}
+
 /** A simple command with no name: assignments and redirections only (`a=1`, `a=1 >f b=2`, `>f`). */
 export function assignmentsOnly(n: SyntaxNode): boolean {
   return n.type === 'command' && !field(n, 'name');

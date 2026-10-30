@@ -26,7 +26,7 @@ import { readonlyAtStart } from '../semantics/vars';
 import { givesElements } from '../semantics/elements';
 import { braceWords as fieldsOfBraceWords, CONTEXTS, partMeaning, patternOfChars, type StepKind, trustedPart, underscoreValue, wordFields, wordOf } from '../semantics/words';
 import { type BracketSpan, bracketSpans, decodedText, isPlainWord, setsElement, splitElement, stackTilde, staticWordValue, unquoteWord } from '../staticword';
-import { ancestor, assignmentsOnly, braceKind, descendants, field, fields, type SyntaxNode, wordBraces } from '../syntax/tree';
+import { ancestor, assignmentsOnly, braceKind, descendants, field, fields, nameText, type SyntaxNode, wordBraces } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
 import { fromEmbedded, same, sibling, sortTokens } from './nodes';
@@ -662,7 +662,7 @@ export function variable(cx: Explainer, name: string, n: SyntaxNode): Token {
 }
 
 export function simpleExpansion(cx: Explainer, n: SyntaxNode): Token {
-  const name = n.text.slice(1);
+  const name = nameText(n).slice(1);
   // (`"$@"` keeps the arguments apart only where words are split: not where the word stays one string.)
   const joined = name === '@' || name === '*' ? joinedNote(cx, n, name, true) : undefined;
   const d = joined ? cx.s('全ての位置パラメータ', 'All positional parameters') : varDesc(cx, name, n);

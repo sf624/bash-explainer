@@ -177,24 +177,32 @@ function escaped(text: string, i: number): boolean {
  */
 export function tildeSpots(parts: readonly { text: string; plain: boolean }[], mode: 'start' | 'assignment' | 'argument'): TildeSpot[] {
   const out: TildeSpot[] = [];
-  const at = (p: number, i: number, after: TildeSpot['after'], colon: boolean): void => {
+  // (bash removes a line continuation before it reads the word: `~\<newline>/x` is `~/x`, `x=\<newline>~` has a prefix.)
+  const tilde = (text: string, i: number): number | undefined => {
+    while (text.startsWith('\\\n', i)) i += 2;
+    return text[i] === '~' ? i : undefined;
+  };
+  const at = (p: number, from: number, after: TildeSpot['after'], colon: boolean): void => {
     const text = parts[p].text;
-    const m = (colon ? /^~([^/:]*)/ : /^~([^/]*)/).exec(text.slice(i))!;
+    const i = tilde(text, from);
+    if (i === undefined) return;
+    const m = (colon ? /^~((?:\\\n|[^/:])*)/ : /^~((?:\\\n|[^/])*)/).exec(text.slice(i))!;
     const end = i + m[0].length;
-    if ((end === text.length && p < parts.length - 1) || /[\\'"$`]/.test(m[1])) return;
-    out.push({ part: p, start: i, end, user: m[1], after });
+    const user = m[1].replace(/\\\n/g, '');
+    if ((end === text.length && p < parts.length - 1) || /[\\'"$`]/.test(user)) return;
+    out.push({ part: p, start: i, end, user, after });
   };
   const first = parts[0];
   const plain = !!first?.plain;
   let from: number | undefined;
   if (mode === 'assignment') {
-    if (plain && first.text[0] === '~') at(0, 0, '', true);
+    if (plain) at(0, 0, '', true);
     from = 0;
   } else if (plain) {
-    if (first.text[0] === '~') at(0, 0, '', false);
+    at(0, 0, '', false);
     const m = mode === 'argument' ? /^[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=/.exec(first.text) : null;
     if (m) {
-      if (first.text[m[0].length] === '~') at(0, m[0].length, '=', true);
+      at(0, m[0].length, '=', true);
       from = m[0].length;
     }
   }
@@ -202,7 +210,7 @@ export function tildeSpots(parts: readonly { text: string; plain: boolean }[], m
   parts.forEach((part, p) => {
     if (!part.plain) return;
     for (let i = part.text.indexOf(':', p === 0 ? from : 0); i >= 0; i = part.text.indexOf(':', i + 1)) {
-      if (part.text[i + 1] === '~' && !escaped(part.text, i)) at(p, i + 1, ':', true);
+      if (!escaped(part.text, i)) at(p, i + 1, ':', true);
     }
   });
   return out;

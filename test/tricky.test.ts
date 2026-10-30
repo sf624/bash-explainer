@@ -2262,3 +2262,18 @@ describe('words as bash reads them (round 10, review)', () => {
     assert.ok(caveat('ls @(a|b)'));
   });
 });
+
+describe('words as bash reads them: line continuations', () => {
+  it('reads a name or a tilde prefix across a line continuation, which bash removes first', () => {
+    // bash: `22 1 /home/w/x x=/home/w/a`, and `ya` set to 3 (test/fixtures/probes/words.json has the fields).
+    const src = 'y=1 ya=22\necho "$y\\\na" $\\\ny ~\\\n/x x=\\\n~/a\ny\\\na=3; echo $((y\\\na))';
+    const said = tokensAt(src, 1).map((t) => t.explanation);
+    assert.ok(said.includes('Expands to the value of `ya`'), said.join('\n'));
+    assert.ok(said.some((s) => s.startsWith('Expands to the value of `y` (unquoted')), said.join('\n'));
+    assert.strictEqual(said.filter((s) => s.startsWith('Tilde expansion')).length, 2, said.join('\n'));
+    const next = tokensAt(src, 6).map((t) => t.explanation);
+    assert.ok(next.some((s) => s.startsWith('Assign a value to variable `ya`')), next.join('\n'));
+    assert.ok(next.some((s) => s.includes('`ya`') && !s.startsWith('Assign')), next.join('\n'));
+    assert.strictEqual(runBash(`HOME=/home/w; ${src}; echo $ya`).stdout, '22 1 /home/w/x x=/home/w/a\n3\n3\n');
+  });
+});

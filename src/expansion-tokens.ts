@@ -16,7 +16,7 @@ import { ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parse
 import { Lang, ordinal, Text } from './i18n';
 import { isPlainWord, messageText, unquoteWord } from './staticword';
 import { option } from './semantics/state';
-import { field, type SyntaxNode } from './syntax/tree';
+import { field, nameText, type SyntaxNode } from './syntax/tree';
 
 /** Nodes inside an expansion's argument that get their own explanation. */
 const NESTED = new Set(['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution', 'string', 'raw_string']);
@@ -302,7 +302,7 @@ function expansionSummary(h: Explainer, n: SyntaxNode): Token {
   const kids = n.children;
   const inner = n.text.slice(2, -1);
   const target = kids.find((c) => ['variable_name', 'subscript', 'special_variable_name'].includes(c.type));
-  const targetText = target?.text ?? inner;
+  const targetText = target ? nameText(target) : inner;
   const isArrayAll = target?.type === 'subscript' && /\[[@*]\]$/.test(targetText);
   const prefixOp = kids[1] && !kids[1].named ? kids[1].type : '';
 

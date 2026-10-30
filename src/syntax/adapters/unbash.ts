@@ -6,6 +6,7 @@ import { forEachChild, parse } from 'unbash';
 import type * as U from 'unbash';
 import type { BashParser, FieldName, Point, SyntaxError, SyntaxNode, SyntaxTree } from '../tree';
 import { type BraceBuilder, bracePieces, type Range } from './braces';
+import { type Joined, prepared } from './continuations';
 import { extglobLike, NUMBER } from './extglob';
 import { attachedSubstitutions, type Children, scriptErrors as errorsOf } from './rereads';
 import { scanGap } from './tokens';
@@ -54,11 +55,11 @@ class Converter {
   private readonly skip: (readonly [number, number])[] = [];
 
   /**
-   * `text` is what is parsed and scanned: the CR of a CRLF is a blank in it. `original` is what the tree reports (the node texts and
-   * `tree.text`); it is the same text with the CRs back. `cr`: where those CRs are; no node ends with one.
+   * `text` is what is parsed and scanned: a CR of a CRLF is a blank, a line continuation in a word is removed (`joins`: ./continuations.ts).
+   * `original` is what the tree reports (the node texts and `tree.text`). `cr`: where the CRs are in it; no node ends with one.
    */
-  constructor(private readonly text: string, private readonly cr: ReadonlySet<number> = new Set(), private readonly original: string = text) {
-    for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) this.lineStarts.push(i + 1);
+  constructor(private readonly text: string, private readonly cr: ReadonlySet<number> = new Set(), private readonly original: string = text, private readonly joins?: Joined) {
+    for (let i = original.indexOf('\n'); i >= 0; i = original.indexOf('\n', i + 1)) this.lineStarts.push(i + 1);
   }
 
   // Nodes
@@ -99,6 +100,7 @@ class Converter {
   /** Sorts the children, links the parents and fills in the texts and positions, all the way down. */
   seal(m: Mut, parent: Mut | null): void {
     delete m.lineEnd;
+    if (this.joins) Object.assign(m, this.joins.span(m));
     // The blank that was a CR at the end of a line is not part of a comment, a word or any other node.
     if (m.endIndex - m.startIndex > 1 && this.cr.has(m.endIndex - 1)) m.endIndex--;
     m.parent = parent;
@@ -168,13 +170,16 @@ class Converter {
     // The program starts at its first token: leading blanks are not part of it.
     root.startIndex = Math.min(...root.children.map((c) => c.startIndex), this.text.length);
     this.seal(root, null);
+    if (this.joins) this.errors.splice(0, Infinity, ...this.errors.map((e) => ({ ...e, ...this.joins!.span(e) })));
     this.errors.sort((x, y) => x.startIndex - y.startIndex || x.endIndex - y.endIndex);
     return { text: this.original, root, errors: this.errors, arithmetic: (owner, start, end) => this.arithmetic(owner as Mut, start, end) };
   }
 
   /** `SyntaxTree.arithmetic`: the text read as `(( ))` reads its expression, placed where it is, under `owner`. */
   arithmetic(owner: Mut, start: number, end: number): SyntaxNode | undefined {
-    const tree = new Converter(`((${this.text.slice(start, end)}))`).run();
+    const at = this.joins ? this.joins.inText(start, end) : start;
+    if (at === undefined) return undefined; // (Not where a line continuation was removed: the nodes are placed one for one.)
+    const tree = new Converter(`((${this.text.slice(at, at + end - start)}))`).run();
     const [cmd, more] = tree.root.namedChildren;
     // (Text unbash does not read as an expression is one `word`: `x y`.)
     if (tree.errors.length || more || cmd.type !== 'arithmetic_command' || cmd.namedChildren.length !== 1 || cmd.namedChildren[0].type === 'word') return undefined;
@@ -442,12 +447,8 @@ class Converter {
     // Every redirection of a simple command is its child, wherever it is written (`>o echo a 2>e`), as in bash.
     const args = [...before, ...after];
     const last = args.length ? args[args.length - 1] : c.name;
-    // (unbash ends a plain name after a line continuation that follows it: `declare\<newline> x`. The name is before it.)
-    let nameEnd = c.name.end;
-    if (!c.name.parts) while (this.text.slice(nameEnd - 2, nameEnd) === '\\\n') nameEnd -= 2;
-    // (A plain word has no parts to keep; unbash computes the parts of a word when they are read.)
-    const name: U.Word = nameEnd === c.name.end ? c.name : { ...c.name, end: nameEnd };
-    const node = this.node('command', start, Math.max(last === c.name ? nameEnd : last.end, nameEnd));
+    const name = c.name;
+    const node = this.node('command', start, Math.max(last.end, name.end));
     for (const p of before) {
       if (p.type === 'Assignment') this.add(node, this.assignment(p));
       else this.add(node, this.redirect(p as U.Redirection), 'redirect');
@@ -1377,11 +1378,10 @@ class Converter {
 export function createUnbashParser(): BashParser {
   return {
     parse(text: string): SyntaxTree {
-      // bash would read the CR of a CRLF as part of the last word of the line (`fi\r` is no `fi`). That is not what the
-      // author meant, and the document issues say so; the tree is built as if the CR were a blank (its texts are the original ones).
-      const carriageReturns = [...text.matchAll(/\r(?=\n)/g)].map((m) => m.index!);
-      if (!carriageReturns.length) return new Converter(text).run();
-      return { ...new Converter(text.replace(/\r(?=\n)/g, ' '), new Set(carriageReturns), text).run(), carriageReturns };
+      // (The text unbash reads: ./continuations.ts.)
+      const { masked, carriageReturns, joins } = prepared(text, parse, children);
+      const tree = new Converter(joins ? joins.text : masked, new Set(carriageReturns), text, joins).run();
+      return carriageReturns.length ? { ...tree, carriageReturns } : tree;
     },
   };
 }
