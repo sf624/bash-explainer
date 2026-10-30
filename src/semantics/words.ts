@@ -15,7 +15,7 @@ import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { caseConverted, sameInEveryLocale, substring } from './chars';
-import { bracedWords, braceStep, wordAlternatives, type BraceAlternative } from './brace';
+import { bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
 import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
@@ -768,8 +768,7 @@ function plain(text: string): Piece[] {
   };
   for (let i = 0; i < text.length; i++) {
     if (text[i] === '\\' && i + 1 < text.length) {
-      if (text[i + 1] !== '\n') push(text[i + 1], true);
-      i++;
+      if (text[++i] !== '\n') push(text[i], true);
     } else push(text[i], false);
   }
   return out;
@@ -987,14 +986,15 @@ function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator,
   for (let i = 0; i < parts.length; i++) {
     const n = parts[i];
     if (typeof n === 'string') {
-      // A word of a brace expansion: its tilde prefix at the start.
-      // (A prefix with a quoted character is not one: `{~\\x,y}`.)
-      const t = /^~([^/\\'"$`]*)(?=\/|$)/.exec(n);
+      // A word of a brace expansion, as bash reads it again (`reread`): its tilde prefix at the start (none with a quoted character: `{~\\x,y}`).
+      const r = reread(n, i === parts.length - 1);
+      if (!r) return undefined;
+      const t = !r.empty && /^~([^/\\'"$`]*)(?=\/|$)/.exec(r.text);
       if (t && w.rule.tilde !== 'none') {
         const home = ev.tilde(t[1]);
         if (home === undefined && !hole) return undefined;
-        out.push(home === undefined ? hole!(true) : { text: home, quoted: true, expanded: false }, ...plain(n.slice(t[0].length)));
-      } else out.push(...plain(n));
+        out.push(home === undefined ? hole!(true) : { text: home, quoted: true, expanded: false }, ...plain(r.text.slice(t[0].length)));
+      } else out.push(...plain(r.text), ...(r.empty ? [{ text: '', quoted: true, expanded: false }] : []));
       continue;
     }
     const tildes = w.tildes.filter((t) => t.node === n);
