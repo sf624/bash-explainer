@@ -283,6 +283,26 @@ describe('an operand that becomes several words', () => {
     }
   });
 
+  it('reads a line of many words that may give none in time linear in the words (count-hedges.md 2.8)', function () {
+    this.timeout(60000);
+    // (Step 4 of the table made these lines grow as the square of their words: 20 words took 20 to 70 ms, 160 words 0.6
+    // to 2.4 s, 27 times as long for 8 times the words. Linear growth is 8 times; the bound is twice that, measured in
+    // the same process, the fewest of three runs of each, so it holds on a slow machine.)
+    const many = (prefix: string, n: number, suffix = '') => `${prefix} ${Array.from({ length: n }, (_, i) => `$a${i}`).join(' ')}${suffix}`;
+    const time = (line: string): number => Math.min(...[0, 1, 2].map(() => {
+      const start = performance.now();
+      new Analyzer('en').explainLine(parser.parse(line), 0);
+      return performance.now() - start;
+    }));
+    time(many('cp', 20, ' d'));
+    for (const [prefix, suffix] of [['cp', ' d'], ['echo', ''], ['rm -f', '']]) {
+      const [short, long] = [time(many(prefix, 20, suffix)), time(many(prefix, 160, suffix))];
+      // (A slow run is read again once: a pause of the machine does not repeat, a blow-up does.)
+      const ratio = long / short > 16 ? time(many(prefix, 160, suffix)) / time(many(prefix, 20, suffix)) : long / short;
+      assert.ok(ratio <= 16, `${prefix}: 160 words took ${ratio.toFixed(1)} times as long as 20 words`);
+    }
+  });
+
   it('gives the role a word takes when the words before it expand to nothing, where the model says they may', () => {
     // With `a` empty, bash runs `cp b` (cp: missing destination file operand after 'b'), `grep -c f` (the pattern `f`,
     // read from stdin) and `cp /x`.

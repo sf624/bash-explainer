@@ -178,6 +178,32 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     assert.strictEqual(table('cp $a $b $c', 20).shapes, undefined);
     assert.strictEqual(table('cp $a $b', 10).shapes, undefined);
     assert.strictEqual(table('cp $a $b', 15).shapes!.length, 15);
+    // (The cap holds after each variable of a pass, also where the variables of a row are added at once: of `*.b`, the
+    // words after it give 2 to 7 words after two of them, 6 sums with the 5 before it, so 30 tuples; 3 to 7 after the three.)
+    assert.strictEqual(table('echo *.a *.b *.c *.d *.e', 29).shapes, undefined);
+    assert.strictEqual(table('echo *.a *.b *.c *.d *.e', 30).shapes!.length, 13);
+  });
+
+  it('cost: a line of many words reads its shapes and its words in time linear in the words (count-hedges.md 2.8)', () => {
+    /** How many times the readings of every word of the line ask the table for a reading (`readAt`). */
+    const asks = (line: string): number => {
+      const t = table(line);
+      let n = 0;
+      const readAt = t.readAt;
+      t.readAt = (...a) => (n++, readAt(...a));
+      t.texts.forEach((_, k) => wordReadings(t, k));
+      return n;
+    };
+    const many = (prefix: string, n: number, word: (i: number) => string, suffix = '') => `${prefix} ${Array.from({ length: n }, (_, i) => word(i)).join(' ')}${suffix}`;
+    // (The words of a run in the same place of it, with the same counts, share their profiles: `$a1` … `$a158` read the
+    // same shapes at the same places at each context. So a line of words that may give none reads as many as a short one.)
+    for (const [prefix, suffix] of [['cp', ' d'], ['echo', ''], ['rm -f', ''], ['tar -cf $f', '']]) {
+      assert.strictEqual(asks(many(prefix, 160, (i) => `$a${i}`, suffix)), asks(many(prefix, 10, (i) => `$a${i}`, suffix)), prefix);
+    }
+    // (A glob gives a word at least, so the words before a word give as many words at least as there are: each word has
+    // contexts of its own, a few dozen readings each.)
+    const globs = [40, 160].map((n) => asks(many('cp', n, (i) => `*.x${i}`, ' d')));
+    assert.ok(globs[1] < 5 * globs[0], `${globs}`);
   });
 
   it('past the cap, the words that say their role may depend on the counts: from the first flexible one on, and the operands before it', () => {
