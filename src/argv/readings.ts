@@ -73,6 +73,12 @@ export interface Contexts {
   run?: number; contexts: number[][]; own: number[];
   /** What each place of a context sums (`Coordinate`), and the context of the line as written (each word its fewest, one at least). */
   coordinates: Coordinate[]; base: number[];
+  /**
+   * Words of one key read alike (`readAt`): at each context and own count, the same shape, the same places in it and so
+   * the same roles (the words of a run in the same place of it, of the same counts: `$a1` and `$a2` of `cp $a0 … $a79 d`).
+   * Only the owners of the reading's words differ.
+   */
+  key: string;
 }
 
 /**
@@ -130,7 +136,12 @@ export interface ReadingsTable {
 
 /** Whether a word may give other than one word, and not an exact number of them (section 2.1). */
 export const flexible = (w: ArgWord): boolean => !!w.count && w.count.min !== w.count.max;
-const range = (from: number, to: number): number[] => Array.from({ length: to - from }, (_, k) => from + k);
+const range = (from: number, to: number): number[] => {
+  // (A loop: `Array.from({ length })` costs more, and a reading of a line of many words makes many of these.)
+  const out: number[] = [];
+  for (let k = from; k < to; k++) out.push(k);
+  return out;
+};
 
 /**
  * S of one spec (section 2.1): past it, every word of the line reads the same for any more words (a repeated item, an
@@ -233,7 +244,7 @@ function variablesOf(line: readonly ArgWord[], words: readonly ArgWord[], back: 
  * counts (from one), and what the words before it and after it in the run give but its own variable's (`ties`: how
  * many of these are its own), with their tops.
  */
-interface Pass { run: number; own: number; counts: number[]; before: Part; after: Part }
+interface Pass { run: number; own: number; counts: number[]; before: Part; after: Part; key: string }
 interface Part { mult: Map<number, number>; fixed: number; ties: number; top: number }
 
 /**
@@ -245,21 +256,48 @@ interface Part { mult: Map<number, number>; fixed: number; ties: number; top: nu
  */
 function contextsOf(runs: readonly Run[], variables: readonly CountVariable[], variableOf: readonly (number | undefined)[], fixedOf: (j: number) => number, bound: number, cap: number) {
   const domain = (v: number, from = variables[v].min): number[] => range(from, variables[v].top + 1);
-  /** The distinct tuples from `start` with the count of each variable but `skip` added by `add`. */
-  const pass = (start: number[], add: (s: number[], v: number, x: number) => number[], skip?: number): number[][] | undefined => {
-    let states = new Map([[start.join(), start]]);
-    for (let v = 0; v < variables.length; v++) {
-      if (v === skip) continue;
-      const next = new Map<string, number[]>();
-      for (const s of states.values()) for (const x of domain(v)) { const t = add(s, v, x); next.set(t.join(), t); }
-      if (next.size > cap) return undefined;
-      states = next;
+  /**
+   * The distinct tuples from `start` (each place capped at `tops`) with the count of each variable but `skip` added, as
+   * many words to each place as `multOf` says, in the order a pass over the variables one by one finds them (each count
+   * from its fewest up). Variables in a row with the same domain and the same words in each place are added at once,
+   * as one variable whose count is their sum (from k times the fewest to k times the most, or until every place it adds
+   * to is at its top): a tuple is found first by the fewest counts of the first variables, so in the order of that sum
+   * (section 2.8, the cost). That keeps a line of many words that may give none linear (`cp $a0 … $a79 d`).
+   */
+  const pass = (start: number[], tops: readonly number[], multOf: (v: number) => readonly number[], skip?: number): number[][] | undefined => {
+    let states = [start];
+    const after = (v: number): number => (v + 1 === skip ? v + 2 : v + 1);
+    const same = (a: readonly number[], b: readonly number[]): boolean => a.every((n, i) => n === b[i]);
+    for (let v = skip === 0 ? 1 : 0; v < variables.length;) {
+      const { min, top } = variables[v];
+      const m = multOf(v);
+      // (The variables after `v` with its domain and its words in each place: `k` of them, then `w`.)
+      let [k, w] = [1, after(v)];
+      while (w < variables.length && variables[w].min === min && variables[w].top === top && same(multOf(w), m)) [k, w] = [k + 1, after(w)];
+      // (Past this sum every place the variables add to is at its top, whatever the tuple: more give the same tuples.)
+      const most = Math.max(0, ...m.map((n, i) => (n ? Math.ceil(tops[i] / n) : 0)));
+      // (Where the variables give one word or more, the tuples after some of them may be more than after all of them, and
+      // the cap is checked after each, as one by one: they are added one by one, unless no count of them can make more
+      // than `cap` tuples, each tuple of `states` with each sum up to `most`. Where they may give none, the tuples only
+      // grow, and the cap is checked once.)
+      if (min > 0 && states.length * (Math.min(k * (top - min), most) + 1) > cap) [k, w] = [1, after(v)];
+      const to = Math.min(k * top, Math.max(k * min, most));
+      const found = new Map<string, number[]>();
+      for (const s of states) {
+        for (let x = k * min; x <= to; x++) {
+          const t = s.map((n, i) => Math.min(n + m[i] * x, tops[i]));
+          found.set(t.join(), t);
+        }
+      }
+      if (found.size > cap) return undefined;
+      states = [...found.values()];
+      v = w;
     }
-    return [...states.values()];
+    return states;
   };
   /** Sums of runs (all of them, or all but `skip`: `of` gives the run of each place) with `x` words of variable `v` more, each capped at its top. */
   const capped = (s: readonly number[], v: number, x: number, of = (i: number): Run => runs[i]): number[] => s.map((n, i) => Math.min(n + (of(i).mult.get(v) ?? 0) * x, of(i).top));
-  const all = pass(runs.map((r) => r.fixed), capped);
+  const all = pass(runs.map((r) => r.fixed), runs.map((r) => r.top), (v) => runs.map((r) => r.mult.get(v) ?? 0));
   if (!all) return undefined;
   const passes = new Map<number, { pass: Pass; contexts: number[][] }>();
   for (const [r, run] of runs.entries()) {
@@ -281,13 +319,13 @@ function contextsOf(runs: readonly Run[], variables: readonly CountVariable[], v
         return { mult, fixed, ties, top: fixed + fewest + bound };
       };
       const [before, after] = [part(run.words.slice(0, p)), part(run.words.slice(p + 1))];
-      const step = (s: number[], v: number, x: number): number[] => [
-        Math.min(s[0] + (before.mult.get(v) ?? 0) * x, before.top), Math.min(s[1] + (after.mult.get(v) ?? 0) * x, after.top), ...capped(s.slice(2), v, x, (i) => others[i]),
-      ];
-      const contexts = pass([before.fixed, after.fixed, ...others.map((x) => x.fixed)], step, own);
+      const places = [before, after, ...others];
+      const contexts = pass(places.map((x) => x.fixed), places.map((x) => x.top), (v) => places.map((x) => x.mult.get(v) ?? 0), own);
       if (!contexts) return undefined;
       const counts = own < 0 ? [fixedOf(w)] : domain(own, Math.max(1, variables[own].min));
-      passes.set(w, { pass: { run: r, own, counts, before, after }, contexts });
+      // (What decides the shape and the places of the word at a context, besides the context: `Contexts.key`.)
+      const key = [r, before.ties, after.ties, counts.join(), ...runs.map((x, i) => (i === r ? '' : x.mult.get(own) ?? 0))].join(' ');
+      passes.set(w, { pass: { run: r, own, counts, before, after, key }, contexts });
     }
   }
   /** The sums of the runs of a context of a word in a run (`Pass`), with its own count `c`. */
@@ -296,8 +334,11 @@ function contextsOf(runs: readonly Run[], variables: readonly CountVariable[], v
     return [...others.slice(0, run), context[0] + context[1] + (1 + before.ties + after.ties) * c, ...others.slice(run)];
   };
   const shapes = new Map(all.map((shape) => [shape.join(), shape]));
+  // (Words of one key read the same shapes at a context: each once.)
+  const seen = new Set<string>();
   for (const { pass: x, contexts } of passes.values()) {
     for (const context of contexts) {
+      if (seen.size === seen.add(`${x.key}|${context.join()}`).size) continue;
       for (const c of x.counts) {
         const shape = shapeOf(x, context, c);
         if (shapes.set(shape.join(), shape).size > cap) return undefined;
@@ -463,7 +504,8 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
       ]
       : runs.map((r) => coordinate(r.words, -1, r.top));
     const at = coordinates.map((p) => Math.min(p.fixed + [...p.mult].reduce((n, [v, m]) => n + m * base[v], 0), p.top));
-    return x ? { run: x.pass.run, contexts: x.contexts, own: x.pass.counts, coordinates, base: at } : { contexts: found.all, own: [spans[k].group?.n ?? 1], coordinates, base: at };
+    if (!x) return { contexts: found.all, own: [spans[k].group?.n ?? 1], coordinates, base: at, key: `@${k}` };
+    return { run: x.pass.run, contexts: x.contexts, own: x.pass.counts, coordinates, base: at, key: x.pass.key };
   };
   const readAt = (k: number, context: readonly number[], c: number): WordAt => {
     const x = spans[k].at === undefined ? undefined : found!.passes.get(spans[k].at!);
@@ -473,20 +515,25 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
     const from = x ? placeOf(runs[x.pass.run].words[0], sums) + context[0] + x.pass.before.ties * c : placeOf(spans[k].lines[0], sums);
     const roles = rolesOf(r);
     const places = range(from, from + c);
-    const owners: (number | undefined)[] = [];
-    const own = (ws: readonly number[], n: number): void => { for (let i = 0; i < n; i++) owners.push(ws.length === 1 ? back(ws[0]) : undefined); };
-    line.forEach((_, j) => {
-      const ri = firstOf.get(j);
-      if (ri === undefined) {
-        if (!inRun.has(j)) owners.push(back(j));
-      } else if (x?.pass.run === ri) {
-        const before = context[0] + x.pass.before.ties * c;
-        own(runs[ri].words.filter((w) => w < spans[k].at!), before);
-        own([spans[k].at!], c);
-        own(runs[ri].words.filter((w) => w > spans[k].at!), sums[ri] - before - c);
-      } else own(runs[ri].words, sums[ri]);
-    });
-    return { sums, outcome: r.outcome, fields: places.map((i) => roles.get(i)!), places, owners };
+    /** (Read when asked: the profiles ask only where a command run or a subcommand reads the word, so a line of many words stays linear.) */
+    const ownersOf = (): (number | undefined)[] => {
+      const owners: (number | undefined)[] = [];
+      const own = (ws: readonly number[], n: number): void => { for (let i = 0; i < n; i++) owners.push(ws.length === 1 ? back(ws[0]) : undefined); };
+      line.forEach((_, j) => {
+        const ri = firstOf.get(j);
+        if (ri === undefined) {
+          if (!inRun.has(j)) owners.push(back(j));
+        } else if (x?.pass.run === ri) {
+          const before = context[0] + x.pass.before.ties * c;
+          own(runs[ri].words.filter((w) => w < spans[k].at!), before);
+          own([spans[k].at!], c);
+          own(runs[ri].words.filter((w) => w > spans[k].at!), sums[ri] - before - c);
+        } else own(runs[ri].words, sums[ri]);
+      });
+      return owners;
+    };
+    let owners: (number | undefined)[] | undefined;
+    return { sums, outcome: r.outcome, fields: places.map((i) => roles.get(i)!), places, get owners() { return (owners ??= ownersOf()); } };
   };
   const variableAt = words.map((_, k) => (spans[k].at === undefined ? undefined : variableOf[spans[k].at!]));
   return { line, back, runs, variables, variableOf, variableAt, parted, bound, specs, base, shapes: found?.shapes, reading, at, hedged, contexts, readAt };

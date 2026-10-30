@@ -78,13 +78,22 @@ export interface Depends { kind: 'depends'; words: number[] }
  * in (`path`), and whether the innermost is a command the dictionary does not describe (`unread`: its words are its
  * arguments to us, whatever they look like).
  */
-type Readers = Map<number, { path: (number | undefined)[]; unread: boolean }>;
-function readers(parse: ArgvParse, owners: readonly (number | undefined)[], path: (number | undefined)[] = [], unread = false, out: Readers = new Map()): Readers {
+type Readers = Map<number, { path: number[]; unread: boolean; role?: Role }>;
+function readersIn(parse: ArgvParse, path: number[] = [], unread = false, out: Readers = new Map()): Readers {
   for (const { word, role } of parse.roles) {
     out.set(word, { path, unread });
-    if ((role.role === 'subcommand' || role.role === 'command') && role.parse) readers(role.parse, owners, [...path, owners[word]], role.role === 'command' && !role.spec, out);
+    if ((role.role === 'subcommand' || role.role === 'command') && role.parse) readersIn(role.parse, [...path, word], role.role === 'command' && !role.spec, out);
   }
   return out;
+}
+/**
+ * The readers of each word of a reading, in the numbers of the reading's words (`path`), each reading's once; and, where
+ * none is a command run or a subcommand, the word's `Role` there, shared by every word read at that place.
+ */
+const readersMemo = new WeakMap<ArgvParse, Readers>();
+function readers(parse: ArgvParse): Readers {
+  if (!readersMemo.has(parse)) readersMemo.set(parse, readersIn(parse));
+  return readersMemo.get(parse)!;
 }
 
 /**
@@ -103,30 +112,44 @@ export function roleKey(r: ArgRole): string {
 export const squeeze = (roles: readonly Role[]): Role[] => roles.filter((r, i) => i === 0 || r.key !== roles[i - 1].key);
 const keysOf = (roles: readonly Role[]): string => roles.map((r) => r.key).join('\x01');
 
+/** The profiles of a table's words, by `Contexts.key`, context and `orMore`: shared by the words of one key. */
+const profileMemo = new WeakMap<ReadingsTable, Map<string, Profile>>();
+function shared(t: ReadingsTable): Map<string, Profile> {
+  if (!profileMemo.has(t)) profileMemo.set(t, new Map());
+  return profileMemo.get(t)!;
+}
+
 /** The profile of a word read at each of its own counts `counts` (`WordAt`). */
 function profileOf(t: ReadingsTable, counts: readonly number[], read: readonly WordAt[], orMore: boolean, asRead = false): Profile {
   const entries = read.map((x): Entry => {
     if (x.outcome === 'unknown' || (x.outcome === 'refused' && !asRead)) return { outcome: x.outcome };
-    const by = readers(t.reading(x.sums).parse, x.owners);
+    const by = readers(t.reading(x.sums).parse);
     return {
       outcome: 'read',
       roles: x.fields.map((own, i) => {
-        const { path, unread } = by.get(x.places[i])!;
-        // (A word of a command the dictionary does not describe is an argument of it: `sudo -u $u -i ls` with two words of
-        // `$u`, `-i` is an argument of the command its second word names.)
-        const role: ArgRole = unread ? { role: 'operand', index: 0 } : own;
-        return { key: `${path.map((k) => `>${k ?? '?'}`).join('')}\0${roleKey(role)}`, role, by: path };
+        const r = by.get(x.places[i])!;
+        const make = (): Role => {
+          const path = r.path.map((w) => x.owners[w]);
+          // (A word of a command the dictionary does not describe is an argument of it: `sudo -u $u -i ls` with two words of
+          // `$u`, `-i` is an argument of the command its second word names.)
+          const role: ArgRole = r.unread ? { role: 'operand', index: 0 } : own;
+          return { key: `${path.map((k) => `>${k ?? '?'}`).join('')}\0${roleKey(role)}`, role, by: path };
+        };
+        return r.path.length ? make() : (r.role ??= make());
       }),
     };
   });
   const key = entries.map((e) => (e.roles ? keysOf(e.roles) : `\x02${e.outcome}`)).join('\x03');
   const groups: CountGroup[] = [];
+  let lastKey = '';
   entries.forEach((e, i) => {
     if (!e.roles) return;
     const roles = squeeze(e.roles);
+    const rolesKey = keysOf(roles);
     const last = groups.at(-1);
-    if (last && last.to === counts[i] - 1 && keysOf(last.roles) === keysOf(roles)) last.to = counts[i];
+    if (last && last.to === counts[i] - 1 && lastKey === rolesKey) last.to = counts[i];
     else groups.push({ from: counts[i], to: counts[i], roles });
+    lastKey = rolesKey;
   });
   if (orMore && groups.length && groups.at(-1)!.to === counts.at(-1)) groups.at(-1)!.orMore = true;
   // (By place: the role of each word is that of every own count read that has it.)
@@ -213,14 +236,23 @@ export function wordReadings(t: ReadingsTable, k: number): WordReadings | Depend
   if (cx.own[0] === 0) return undefined;
   const own = t.variableAt[k];
   const orMore = own !== undefined && (t.variables[own].max ?? Infinity) > t.variables[own].top;
-  const profiles = cx.contexts.map((context) => profileOf(t, cx.own, cx.own.map((c) => t.readAt(k, context, c)), orMore));
+  // (Words of one key share their profiles, where no command run or subcommand reads them: their roles name no word.)
+  const memo = shared(t);
+  const profiles = cx.contexts.map((context) => {
+    const key = `${cx.key}|${orMore}|${context.join()}`;
+    const seen = memo.get(key);
+    if (seen) return seen;
+    const p = profileOf(t, cx.own, cx.own.map((c) => t.readAt(k, context, c)), orMore);
+    if (p.entries.every((e) => !e.roles || e.roles.every((r) => !r.by.length))) memo.set(key, p);
+    return p;
+  });
   // (The line as written is the one the explanation says first: where the tool refuses it (`sudo -u $u -Z ls y`), its roles are
   // still the ones said, and the other readings are told from them, as if it were read: unless a word of it is an operand the spec
   // does not describe, where no form fitted (`unmatched`) and there is no role to say. A refused context stays free.)
   const baseAt = cx.contexts.findIndex((context) => context.every((v, i) => v === cx.base[i]));
-  const written = cx.own.map((c) => t.readAt(k, cx.contexts[baseAt], c));
-  if (profiles[baseAt].entries.every((e) => e.outcome === 'refused') && written.every((x) => x.fields.every((r) => r.role !== 'operand' || r.spec))) {
-    profiles[baseAt] = profileOf(t, cx.own, written, orMore, true);
+  if (profiles[baseAt].entries.every((e) => e.outcome === 'refused')) {
+    const written = cx.own.map((c) => t.readAt(k, cx.contexts[baseAt], c));
+    if (written.every((x) => x.fields.every((r) => r.role !== 'operand' || r.spec))) profiles[baseAt] = profileOf(t, cx.own, written, orMore, true);
   }
   if (profiles.some((p) => p.entries.some((e) => e.outcome === 'unknown'))) return { kind: 'depends', words: names() };
   const named = cx.coordinates.map((c, i) => ({ c, i })).filter(({ c }) => c.mult.size);
