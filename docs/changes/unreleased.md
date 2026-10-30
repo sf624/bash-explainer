@@ -1609,7 +1609,7 @@ sudo(8) on Linux lists neither `-a|--auth-type` nor `-c|--login-class` (BSD's), 
 
 ### A path after find's expression
 
-GNU find reads the starting points before the first test or action only. A later word that no test, action or operator takes makes it print `find: paths must precede expression: 'b.txt'` and exit with status 1, running nothing (checked with GNU find 4.9 in test/count-hedges-real.test.ts). The words of the expression are read with the spec of find's tests, whose operands are now one refused item. An operand with a refused item (`extra` in the spec, as `seq 1 2 3 4` has) makes the reading a refused one.
+GNU find reads the starting points before the first test or action only. A later word that no test, action or operator takes makes it print `find: paths must precede expression: 'b.txt'` and exit with status 1, running nothing (checked with GNU find 4.9 in test/count-hedges-real.test.ts). The words of the expression are read with the spec of find's tests, whose operands are now one refused item.
 
 | Written | Said now | Said before |
 | --- | --- | --- |
