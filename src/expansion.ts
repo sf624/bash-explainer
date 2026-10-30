@@ -1,4 +1,4 @@
-import { intValue } from './arith';
+import { evalArith, intValue } from './arith';
 import { Lang } from './i18n';
 import { bracketEnd, bracketItems, bracketRegex, patsubMiscounts, type BracketItem } from './bracket';
 import { messageText, unquoteWord } from './staticword';
@@ -385,11 +385,20 @@ const SET_BY_SHELL: Record<string, { setup: string; values: string[]; ja: string
   BASH_REMATCH: { setup: '[[ abc =~ (b)(c) ]]', values: ['bc', 'b', 'c'], ja: '`[[ abc =~ (b)(c) ]]` の後', en: 'After `[[ abc =~ (b)(c) ]]`' },
 };
 
+/**
+ * What `${y:=w}` gives for an integer `y` that is unset or empty: the value of `w` as an arithmetic expression, which
+ * `y` is assigned (`p=3` is 3, and sets `p`). A word with a name or a substitution in it has no value known here.
+ */
+function integerResult(word: string, ja: boolean): string {
+  const value = evalArith(word.replace(/^(?:[A-Za-z_]\w*=(?!=))+/, ''));
+  return value !== undefined ? String(value) : ja ? `算術式 \`${word}\` の値` : `the value of the arithmetic expression \`${word}\``;
+}
+
 const sq = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 
 /** "When `msg=hello`": a case of the named variable `ref` with the value `val` (in the form `shown` gives). */
-function valueCase(ref: string, val: string, shown: string, result: string, ja: boolean): ExpansionCase {
-  return { when: ja ? `\`${ref}=${shown}\` のとき` : `When \`${ref}=${shown}\``, result, setup: `${ref}=${sq(val)}`, value: val };
+function valueCase(ref: string, val: string, shown: string, result: string, ja: boolean, integer = false): ExpansionCase {
+  return { when: ja ? `\`${ref}=${shown}\` のとき` : `When \`${ref}=${shown}\``, result, setup: `${integer ? `declare -i ${ref}; ` : ''}${ref}=${sq(val)}`, value: val };
 }
 
 /** "When `msg=""`": the named variable `ref` set to an empty string. */
@@ -415,9 +424,9 @@ function withScriptValue(p: ParsedExpansion, cases: ExpansionCase[], own: Expans
 
 /**
  * Worked examples such as `file=report.tar.gz` → `report.tar`, computed with the same matching
- * rules as bash. Undefined when the expansion depends on values we cannot know. `ctx.quoted`: the expansion is in double quotes; `ctx.assoc`: the array is associative (its keys are strings, in no fixed order).
+ * rules as bash. Undefined when the expansion depends on values we cannot know. `ctx.quoted`: the expansion is in double quotes; `ctx.assoc`: the array is associative (its keys are strings, in no fixed order); `ctx.integer`: the scalar variable has the integer attribute (an assignment is arithmetic: `declare -i y; ${y:=p=3}` gives 3 and sets `p`, and `y=hello` is 0).
  */
-export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; assoc?: boolean; script?: ScriptValue } = {}): ExpansionCase[] | undefined {
+export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; assoc?: boolean; integer?: boolean; script?: ScriptValue } = {}): ExpansionCase[] | undefined {
   const cases = sampleCases(p, lang, ctx);
   const own = ctx.script;
   // (Only a variable of the script has its value: not an argument, an element, a special parameter, nor `${!x}`.)
@@ -426,11 +435,11 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
   const result = own.result ?? resultWith(p, v);
   if (result === undefined) return cases;
   const shown = /^[\w.,:@%+/=^-]+$/.test(v) ? v : /["$`\\!]/.test(v) ? sq(v) : `"${v}"`;
-  return withScriptValue(p, cases, v === '' ? emptyValueCase(p.name, result, lang === 'ja') : valueCase(p.name, v, shown, result, lang === 'ja'));
+  return withScriptValue(p, cases, v === '' ? emptyValueCase(p.name, result, lang === 'ja') : valueCase(p.name, v, shown, result, lang === 'ja', ctx.integer));
 }
 
 /** The worked examples with sample values (`exampleFor`). */
-function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; assoc?: boolean }): ExpansionCase[] | undefined {
+function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; assoc?: boolean; integer?: boolean }): ExpansionCase[] | undefined {
   const quoted = ctx.quoted ?? false;
   const ja = lang === 'ja';
   const name = p.name;
@@ -440,6 +449,8 @@ function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; as
   const args = name === '@' || name === '*';
   // `${a[1]:-x}`: one element of an array (the others are unset), not the scalar `a`.
   const element = p.subscript !== undefined && p.subscript !== '@' && p.subscript !== '*';
+  // An integer variable: what it holds is a number (`y=hello` is 0), and it is declared before the worked examples set it.
+  const integer = !!ctx.integer && !positional && !args && p.subscript === undefined && p.prefix !== '!';
   if (element && !/^\d+$/.test(p.subscript!)) return undefined;
   const ref = element ? `${name}[${p.subscript}]` : name;
   // Values are never empty here (an empty one is `emptyCase`).
@@ -450,7 +461,7 @@ function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; as
       : (ja ? `${name} 番目の引数が \`${shown(val)}\` のとき` : `When argument ${name} is \`${shown(val)}\``),
     result,
     setup: args ? `set -- ${sq(val)}` : undefined,
-  } : valueCase(ref, val, shown(val), result, ja));
+  } : valueCase(ref, val, shown(val), result, ja, integer));
   // `coproc` fills these in with descriptor numbers and a process ID: no example holds on every run.
   if (name === 'COPROC' || name === 'COPROC_PID') return undefined;
   const shellSet = Object.hasOwn(SET_BY_SHELL, name) ? SET_BY_SHELL[name] : undefined;
@@ -466,7 +477,7 @@ function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; as
         ? (ja ? `${name} 番目の引数が無い${orEmpty ? 'か空の' : ''}とき` : `When argument ${name} is missing${orEmpty ? ' or empty' : ''}`)
         : (ja ? `${ref} が未設定${orEmpty ? 'か空' : ''}のとき` : `When ${ref} is unset${orEmpty ? ' or empty' : ''}`),
     result,
-    setup: args ? 'set --' : positional ? undefined : `unset ${name}`,
+    setup: args ? 'set --' : positional ? undefined : integer ? `declare -i ${name}` : `unset ${name}`,
   });
 
   // The special parameters cannot be assigned (`#=hello` is not bash), and their values are not ours to choose.
@@ -486,7 +497,7 @@ function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; as
     // `${##}` is the length of `$#`, so `set -- a b c` gives 1; the others have no fixed value.
     if (name === '#') return [{ when: ja ? '引数が `a b c` のとき' : 'When the arguments are `a b c`', result: '1', setup: 'set -- a b c' }];
     if (special) return undefined;
-    return [set('hello', '5')];
+    return [integer ? set('12345', '5') : set('hello', '5')];
   }
   if (special && !p.prefix) return undefined;
   if (p.prefix === '!') {
@@ -513,8 +524,10 @@ function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; as
   const homeWord = !quoted && /^~(\/|$)/.test(rawWord);
   const word = homeWord ? `$HOME${rawWord.slice(1)}` : unquoteWord(rawWord, quoted) ?? rawWord;
   // A plausible value for "when it has a value", chosen to look like the default.
-  const sample = homeWord || /^\/|^~/.test(word) ? '/data' : /^-?\d+$/.test(word) ? '42' : 'hello';
+  const sample = integer ? '42' : homeWord || /^\/|^~/.test(word) ? '/data' : /^-?\d+$/.test(word) ? '42' : 'hello';
   const expanded = (w: string) => `${w}${/\$/.test(w) ? (ja ? '（展開結果）' : ' (expanded)') : ''}`;
+  // (An integer variable set to nothing holds 0: `y=` is `y=0`, so it has no case of an empty value.)
+  const empties = (c: ExpansionCase): ExpansionCase[] => (integer ? [] : [c]);
   const emptyCase = (result: string): ExpansionCase => (args || positional ? {
     when: args ? (ja ? '引数が空の1つだけのとき' : 'When the only argument is empty') : (ja ? `${name} 番目の引数が空のとき` : `When argument ${name} is empty`),
     result,
@@ -525,18 +538,18 @@ function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; as
   switch (p.op) {
     case ':=':
       if (positional || args) return [missing(true, noAssign), set(sample, sample)];
-      return [missing(true, expanded(word)), set(sample, sample)];
+      return [missing(true, integer ? integerResult(word, ja) : expanded(word)), set(sample, sample)];
     case ':-':
       return [missing(true, expanded(word)), set(sample, sample)];
     case '=':
       if (positional || args) return [missing(false, noAssign), emptyCase(''), set(sample, sample)];
-      return [missing(false, expanded(word)), emptyCase(''), set(sample, sample)];
+      return [missing(false, integer ? integerResult(word, ja) : expanded(word)), ...empties(emptyCase('')), set(sample, sample)];
     case '-':
-      return [missing(false, expanded(word)), emptyCase(''), set(sample, sample)];
+      return [missing(false, expanded(word)), ...empties(emptyCase('')), set(sample, sample)];
     case ':+':
       return [set(sample, expanded(word)), missing(true, '')];
     case '+':
-      return [set(sample, expanded(word)), emptyCase(expanded(word)), missing(false, '')];
+      return [set(sample, expanded(word)), ...empties(emptyCase(expanded(word))), missing(false, '')];
     case ':?': case '?': {
       // (`${x:?""}` prints an empty message; only a missing word gives bash's own. The quotes of the word go also inside
       // double quotes: `"${x:?'a'}"` prints `a`, as the token says.)
