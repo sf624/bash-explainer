@@ -4,6 +4,8 @@ import { execFileSync } from 'child_process';
 import type { BashVersion } from '../src/bashversion';
 import { runContained } from './support/contained';
 import { random } from './support/fuzz';
+import { Analyzer } from '../src/analyzer';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { readSampleLine, runRead, runXargs, showCommand, testCases, xargsExample } from '../src/examples/runtime';
 
 describe('xargs agrees with GNU xargs', () => {
@@ -144,6 +146,54 @@ describe('read agrees with bash', () => {
         return (r.array ? r.array[1] : r.vars.map(([, v]) => v)).map((x) => `${x}\x1f`).join('') !== out[k];
       });
       assert.deepStrictEqual(bad, []);
+    });
+  }
+});
+
+describe('the example of read follows the IFS written before it, as bash reads the word', () => {
+  // A prefix `IFS=…` (as written in the script), the names, and the here-string (as written) when the example reads it.
+  const rows: [string, string, string?][] = [
+    [String.raw`'\t'`, 'a b', String.raw`'x\ty'`], [String.raw`"\t"`, 'a b', String.raw`'x\ty'`], [String.raw`'\t'`, 'a', String.raw`'x\ty'`],
+    [String.raw`'\n'`, 'a b', String.raw`'x\ny'`], [String.raw`"\\"`, 'a b', String.raw`'x\ty'`],
+    [String.raw`$'\t'`, 'a b c'], [String.raw`$'\t'`, 'a b'], [String.raw`$'\v'`, 'a b c'], [String.raw`$'\f'`, 'a b'], [String.raw`$'\r'`, 'a b c'], [String.raw`$'\n'`, 'a b'],
+    [String.raw`$'\t:'`, 'a b c'], [':', 'a b c', `'x:y:z:w'`], [':', 'a b', `'x:y:z:w'`], [':', 'a', `'x:y'`], [',', 'a b c', `'1,2,,3'`],
+    ['', 'a', `' x '`], [`''`, 'a b', `' x y '`], [String.raw`"$'\t'"`, 'a b', String.raw`'x\ty'`], [String.raw`a$'\t'`, 'a b c'],
+  ];
+  const explained = rows.map(([ifs, names, here]) => {
+    const src = `IFS=${ifs} read -r ${names}${here ? ` <<< ${here}` : ''}`;
+    const ex = new Analyzer('en').explainLine(createUnbashParser().parse(src), 0).examples.find((e) => e.kind === 'read');
+    return { src, ex };
+  });
+
+  it('gives an example for each of these', () => {
+    assert.deepStrictEqual(explained.filter((e) => !e.ex).map((e) => e.src), []);
+  });
+
+  it('gives none where the value is not known', () => {
+    for (const src of ['IFS=$x read -r a b <<< "x y"', 'IFS=$(cat f) read -r a b', 'IFS=${y}: read -r a b']) {
+      assert.deepStrictEqual(new Analyzer('en').explainLine(createUnbashParser().parse(src), 0).examples.filter((e) => e.kind === 'read'), [], src);
+    }
+  });
+
+  for (const [version, bash] of READ_BASHES) {
+    it(`bash ${version}: the values stored are what bash stores`, async function () {
+      this.timeout(30000);
+      const shown = explained.map(({ ex }) => {
+        const label = (l: string) => ex!.sections.find((s) => s.label === l)!.lines!;
+        return { line: JSON.parse(label('Line read')[0]) as string, values: label('Values stored').map((l) => JSON.parse(l.slice(l.indexOf('=') + 1)) as string) };
+      });
+      // (Each row on its own: the prefix as written, the line the example read, the names it stored.)
+      const script = rows.map(([ifs, names], k) => {
+        const vars = names.split(' ');
+        return `unset ${names}; IFS=${ifs} read -r ${names} <<< ${ansiC(shown[k].line)}; ${vars.map((v) => `printf '%s\\x1f' "$${v}"`).join('; ')}; printf '\\x1e'`;
+      }).join('\n');
+      const out = (await runContained([bash, '-c', script], process.cwd())).stdout.split('\x1e');
+      const mine = shown.map((s) => s.values.map((v) => `${v}\x1f`).join(''));
+      assert.deepStrictEqual(mine, out.slice(0, rows.length));
+      // (A here-string the example reads is the line it shows.)
+      rows.forEach(([, , here], k) => {
+        if (here) assert.strictEqual(shown[k].line, execFileSync(bash, ['-c', `printf %s ${here}`]).toString(), explained[k].src);
+      });
     });
   }
 });
