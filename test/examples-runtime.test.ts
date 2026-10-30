@@ -82,8 +82,10 @@ describe('read agrees with bash', () => {
   const cases: [string, boolean, string[], string?][] = [
     [' \t\n', true, ['a', 'b', 'c']], [',', true, ['a', 'b', 'c']], ['', true, ['line']], [':', true, ['user', 'rest']], [' \t\n', true, [], 'arr'],
     [' \t\n', false, ['a', 'b']], [', ', true, ['a', 'b']], ['\t', true, ['a', 'b', 'c']],
+    // (The vertical tab, the form feed and the carriage return are whitespace too.)
+    ['\v', true, ['a', 'b', 'c']], [':\f', true, ['a', 'b']], ['\r', true, [], 'arr'],
   ];
-  const lines = (ifs: string, names: string[], array?: string) => [readSampleLine(names.length, ifs, !!array), '  lead  trail  ', 'a\\ b c', 'x,,y,', ' a , b ,c '];
+  const lines = (ifs: string, names: string[], array?: string) => [readSampleLine(names.length, ifs, !!array), '  lead  trail  ', 'a\\ b c', 'x,,y,', ' a , b ,c ', '\v\va\v\f:b\r\r:\fc\v'];
   for (const [ifs, raw, names, array] of cases) {
     for (const line of lines(ifs, names, array)) {
       it(`IFS=${JSON.stringify(ifs)} read ${raw ? '-r ' : ''}${array ? `-a ${array}` : names.join(' ')} <<< ${JSON.stringify(line)}`, () => {

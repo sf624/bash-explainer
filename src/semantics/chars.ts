@@ -6,6 +6,16 @@
 import { evalArith } from '../arith';
 import { parseExpansion } from '../expansion';
 
+/**
+ * The characters of IFS that bash counts as IFS whitespace: a run of them around a field is one separator, and they
+ * are trimmed at the start and the end (manual 3.5.7 names space, tab and newline; bash tests `isspace`, which in every
+ * locale is true of the vertical tab, the form feed and the carriage return too). Word splitting and `read` both.
+ */
+export const IFS_WHITESPACE = ' \t\n\v\f\r';
+
+/** Characters that bash uses for markers of its own while it expands (CTLESC and CTLNUL): an IFS that holds one splits erratically. */
+export const IFS_ERRATIC = /[\x01\x7f]/;
+
 /** Whether every locale reads `text` the same: it is ASCII. */
 export function sameInEveryLocale(text: string): boolean {
   return !/[^\x00-\x7f]/.test(text);
