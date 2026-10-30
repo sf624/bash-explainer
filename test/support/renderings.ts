@@ -219,7 +219,7 @@ function countClauses(e: string): { word: string; clauses: { from: number; to?: 
   const clauses: { from: number; to?: number; text: string }[] = [{ from, to: from, text: head[1] }];
   for (const part of parts.slice(1)) {
     // (An explanation of the role may follow the condition, "… when it expands to more — replacement characters: …" of `tr`.)
-    const m = /^(.*) when it expands to (?:(more)|(\d+) words( or more)?)(?: — .*)?$/.exec(part);
+    const m = /^(.*?) when it expands to (?:(more)|(\d+) words( or more)?)(?: — .*)?$/.exec(part);
     if (!m) return undefined;
     const at = m[2] ? clauses[clauses.length - 1].to! + 1 : Number(m[3]);
     clauses.push({ from: at, to: m[2] || m[4] ? undefined : at, text: m[1] });
