@@ -106,8 +106,8 @@ export function batsTestLine(ex: LineExplanation, extracted: Extracted, original
   const lines = /\s*[（(](?:行|lines?) [^)）]*[)）]$/.exec(def.explanation)?.[0] ?? '';
   def.explanation = (here.marked ? batsMarkedMeaning(here.marked, here.name) : batsTestMeaning(here.name))[lang === 'ja' ? 0 : 1] + lines;
   def.summary = def.explanation;
-  def.label = def.label.replace(here.head, here.written);
-  def.labelParts = def.labelParts!.map((p) => (p.text.startsWith(here.head) ? { ...p, text: p.text.replace(here.head, here.written) } : p));
+  def.label = def.label.replace(here.head, () => here.written);
+  def.labelParts = def.labelParts!.map((p) => (p.text.startsWith(here.head) ? { ...p, text: p.text.replace(here.head, () => here.written) } : p));
   ex.summary = def.explanation;
 }
 

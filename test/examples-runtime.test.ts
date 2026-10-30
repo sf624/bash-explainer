@@ -191,7 +191,29 @@ describe('the example of read follows the IFS written before it and the input th
     { src: S`{ IFS=: read -r a b; } <<< 'p:q'`, names: ['a', 'b'] },
     { src: S`printf 'p\tq\n' | { IFS=$'\t' read -r a b; ${PF} "$a" "$b"; }`, inside: true, optional: true },
     { src: S`echo 'p:q' | { IFS=: read -r a b; ${PF} "$a" "$b"; }`, inside: true, optional: true },
-    // `IFS+=` adds to the IFS in effect.
+    // Only the first command that reads an input a group or a loop has is given its text; one after it gets none (counted
+    // as one example: the first). A loop reads on: its first pass reads the first line.
+    { src: S`{ read -r a; read -r b; } <<< $'x\ny'`, names: ['a'] }, { src: S`{ read -r a; { read -r b; }; } <<< $'x\ny'`, names: ['a'] },
+    { src: S`while read -r a; do read -r b; break; done <<< $'p\nq'`, names: ['a'] }, { src: S`for i in 1 2; do read -r a; break; done <<< $'p\nq'`, names: ['a'] },
+    { src: S`while read -r a; do :; break; done <<< $'p\nq'`, names: ['a'] },
+    { src: S`printf 'x y\n' | { read -r a; read -r b; ${PF} "$a"; }`, inside: true },
+    { src: S`printf 'x y\n' | { read -r a b; ${PF} "$a" "$b"; }`, inside: true },
+    // The line read is the first, not the whole input; `<<-` strips the tabs of every line.
+    { src: S`seq 3 | { read -r a b; ${PF} "$a" "$b"; }`, inside: true }, { src: S`printf 'p q\nr\n' | { read -r a b; ${PF} "$a" "$b"; }`, inside: true },
+    { src: S`read -r a b <<< $'p q\nr'`, names: ['a', 'b'] }, { src: 'IFS=: read -r a b <<-E\n\tp:q r\n\ts\n\tE', names: ['a', 'b'] },
+    { src: 'IFS=: read -r a b <<E\np:q r\ns\nE', names: ['a', 'b'] },
+    // Nothing to read: the variables are empty.
+    { src: S`echo -n | { read -r a; ${PF} "$a"; }`, inside: true }, { src: S`echo -n | { read -r a b; ${PF} "$a" "$b"; }`, inside: true },
+    { src: S`printf '' | { read -r a; ${PF} "$a"; }`, inside: true }, { src: S`echo | { read -r a; ${PF} "$a"; }`, inside: true },
+    // `read -u` reads the descriptor named, from the redirection of that descriptor.
+    { src: S`read -u 3 a b 3<<< 'x y' <<< 'p q'`, names: ['a', 'b'] }, { src: S`read -u 3 a b <<< 'p q' 3<<< 'x y'`, names: ['a', 'b'] },
+    { src: S`{ read -u 3 a b; } 3<<< 'x y'`, names: ['a', 'b'] }, { src: S`read -u3 -r a b 3<<< 'x:y' <<< 'p q'`, names: ['a', 'b'] },
+    { src: S`read -u 0 a b <<< 'p q' 3<<< 'x y'`, names: ['a', 'b'] }, { src: S`IFS=: read -u 3 -r a b 3<<< 'x:y' <<< 'p q'`, names: ['a', 'b'] },
+    // A tilde is the home directory, which the example does not know; quoted, it is a character.
+    { src: S`read -r a b <<< "~"`, names: ['a', 'b'] }, { src: S`read -r a b <<< '~ x'`, names: ['a', 'b'] },
+    // `IFS+=` adds to the IFS in effect (to nothing when it is unset).
+    // (The IFS is put back: the rows share a shell.)
+    { src: S`unset IFS; IFS+=: read -r a b <<< 'p q:r'; ${PF} "$a" "$b"; IFS=$' \t\n'`, inside: true },
     { src: S`IFS+=: read -r a b c <<< 'p q:r'`, names: ['a', 'b', 'c'] }, { src: S`IFS=: IFS+=, read -r a b c <<< 'p:q,r'`, names: ['a', 'b', 'c'] },
   ];
   /** What stands for bash's `$a $b` (or the array) after the row, one value after the other, each ended by byte 31. */
@@ -200,7 +222,7 @@ describe('the example of read follows the IFS written before it and the input th
     const src = `${r.pre ? `${r.pre}\n` : ''}${r.src}`;
     const ex = new Analyzer('en').explainLine(createUnbashParser().parse(src), r.pre ? r.pre.split('\n').length : 0).examples.filter((e) => e.kind === 'read');
     const sections = ex[0]?.sections;
-    const label = (l: string): string[] => sections!.find((s) => s.label === l)!.lines!;
+    const label = (l: string): string[] => sections!.find((s) => s.label === l || s.label === `First ${l.toLowerCase()}`)!.lines!;
     return {
       examples: ex.length,
       line: sections ? JSON.parse(label('Line read')[0]) as string : '',
@@ -220,6 +242,9 @@ describe('the example of read follows the IFS written before it and the input th
       'IFS=$x read -r a b <<< "x y"', 'IFS=$(cat f) read -r a b', 'IFS=${y}: read -r a b', 'IFS=: read -r a b <<< "$y"',
       // (`$(:)` prints nothing only where `:` is the builtin.)
       ':() { echo z; }\nIFS=$(:): read -r a b <<< \'pzq:r\'', 'IFS=$(true): read -r a b <<< "p q"',
+      // (Another command before it in the group or loop may read the input first; a descriptor no redirection gives.)
+      S`printf 'x\n' | { cat >/dev/null; read -r a; }`, S`{ cat >/dev/null; read -r a; } <<< x`, S`{ echo; read -r a; } <<< x`, S`while :; do read -r a; break; done <<< x`,
+      'read -u 3 a b', 'read -u $fd a b <<< "x y"', 'read -u x a b <<< "x y"', 'read -u 3 a b 3< f', "read -u 3 a b 3>&- <<< 'x y'", "read -u 3 a b <<< 'p q'", "read -u 3 a b 4<<< 'x y'", 'read -r a b <<< ~', 'read -r a b <<< ~/x', 'read -r a b <<< ~root',
       // (`+=` adds to an IFS that is not known: `IFS` may be changed anywhere before.)
       'IFS=$y; IFS+=: read -r a b <<< "p q"', 'IFS+=$y read -r a b <<< "p q"',
       // (A string read as a script takes the input of the command around it.)
@@ -239,6 +264,24 @@ describe('the example of read follows the IFS written before it and the input th
       const ex = new Analyzer('en').explainLine(createUnbashParser().parse(src), line).examples.filter((e) => e.kind === 'read');
       assert.strictEqual(ex.length, 1, src);
       assert.strictEqual(ex[0].sections[0].lines![0], '"alice:30:tokyo"', src);
+    }
+  });
+
+  it('names the first line where a loop reads on, and shows only the line read', () => {
+    const read = (src: string) => new Analyzer('en').explainLine(createUnbashParser().parse(src), 0).examples.filter((e) => e.kind === 'read').map((e) => [e.sections[0].label, e.sections[0].lines![0]]);
+    assert.deepStrictEqual(read(S`while read -r a; do :; done <<< $'p\nq'`), [['First line read', '"p"']]);
+    assert.deepStrictEqual(read(S`{ read -r a; } <<< $'p\nq'`), [['Line read', '"p"']]);
+    assert.deepStrictEqual(read('read -r a <<-E\n\tp q\n\tr\n\tE'), [['Line read', '"p q"']]);
+    // (Without -r, a backslash before the newline goes on to the next line.)
+    assert.deepStrictEqual(read(S`read a <<< $'p\\\nq\nr'`), [['Line read', '"p\\\\\\nq"']]);
+  });
+
+  it('keeps a $\' of the command in the title of its example', () => {
+    // (String.replace reads `$'` in a replacement as "the text after the match".)
+    for (const [lang, head] of [['en', 'Example for'], ['ja', '']] as const) {
+      const ex = new Analyzer(lang).explainLine(createUnbashParser().parse(S`IFS=$'\t' read -r a b <<< 'x\ty'; echo hi`), 0).examples.find((e) => e.kind === 'read')!;
+      assert.ok(ex.title.includes('`' + S`IFS=$'\t' read -r a b` + '`'), ex.title);
+      assert.ok(ex.title.startsWith(head), ex.title);
     }
   });
 

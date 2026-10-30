@@ -175,7 +175,10 @@ export function globToRegex(pattern: string, mode: GlobMode, opts: GlobOpts = {}
           // (One that bash reads by rules of its own or by the locale, `[[.space.]]`, `[[=a=]]`: no regex.)
           if (set === undefined) throw new Unmatchable();
           // (`nocaseglob`: both cases of every letter in the set.)
-          if (ci(i)) set = set.replace(/\]$/, `${set.slice(1, -1).toUpperCase()}${set.slice(1, -1).toLowerCase()}]`);
+          if (ci(i)) {
+            const inner = set.slice(1, -1);
+            set = set.replace(/\]$/, () => `${inner.toUpperCase()}${inner.toLowerCase()}]`);
+          }
           out += `${noDot(i)}${set}`;
           i = end;
           continue;
