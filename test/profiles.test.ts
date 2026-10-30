@@ -266,10 +266,21 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
     it('every clause is sound and the clauses complete, on the counts; the cost', () => {
       const start = performance.now();
       const wrong: string[] = [];
-      let [words, withClauses, clauses, conditions, folded] = [0, 0, 0, 0, 0];
+      let [words, withClauses, clauses, conditions, folded, parted] = [0, 0, 0, 0, 0, 0];
       for (const { text, t } of tables) {
         for (let k = 0; k < t.back(t.line.length - 1) + 1; k++) {
           const r = wordReadings(t, k);
+          // (A word in parts says only that its role may depend on the counts: `echo {1..$n}`; past the cap, every word
+          // whose role may (`cp -v{a,b}$x d`).)
+          if (!t.shapes) {
+            assert.strictEqual(r?.kind ?? 'depends', 'depends');
+            continue;
+          }
+          if (t.parted[k]) {
+            assert.strictEqual(r?.kind, 'depends');
+            parted++;
+            continue;
+          }
           assert.ok(r && r.kind === 'read', `${text}: word ${k}`);
           words++;
           withClauses += r.clauses.length ? 1 : 0;
@@ -300,7 +311,7 @@ describe('profiles: what a word is for every count (count-hedges.md, step 3)', f
         }
       }
       const ms = performance.now() - start;
-      if (process.env.READINGS_STATS) console.log(JSON.stringify({ commands: tables.length, words, withClauses, clauses, conditions, folded, ms: Math.round(ms) }));
+      if (process.env.READINGS_STATS) console.log(JSON.stringify({ commands: tables.length, words, withClauses, clauses, conditions, folded, parted, ms: Math.round(ms) }));
       assert.deepStrictEqual(wrong, []);
       assert.ok(words > 400 && withClauses > 10, `${words} ${withClauses}`);
     });

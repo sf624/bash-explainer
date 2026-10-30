@@ -8,10 +8,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { type ArgRole, type ArgWord, interpret, type RoleAt } from '../src/argv/interpret';
+import { roleKey, wordReadings, type WordReadings } from '../src/argv/profiles';
 import { readingsOf, SHAPE_CAP, specsReached, wordsBound, type ReadingsTable } from '../src/argv/readings';
 import type { CommandSpec } from '../src/argv/spec';
 import { allRoles } from '../src/argv/valuehedges';
-import { argWord } from '../src/argv/words';
+import { argWord, argWordFor } from '../src/argv/words';
 import { lookupCommand } from '../src/dict/aliases';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, type SyntaxNode } from '../src/syntax/tree';
@@ -64,6 +65,7 @@ function vectors(t: ReadingsTable, more: number, most = Infinity): number[][] {
  * design document defines it; undefined where a coordinate is past its top.
  */
 function contextOf(t: ReadingsTable, k: number, counts: readonly number[]): number[] | undefined {
+  // (`k`: the word's place in the line.)
   const own = t.variableOf[k];
   const n = (j: number): number => (t.variableOf[j] === undefined ? t.line[j].count?.min ?? 1 : t.variableOf[j] === own ? 0 : counts[t.variableOf[j]!]);
   const sum = (ws: number[]): number => ws.reduce((x, j) => x + n(j), 0);
@@ -85,9 +87,11 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     // (A word of no known text and one word is part of the run: `"$b"` gives one.)
     const quoted = table('cp $a "$b" c');
     assert.deepStrictEqual(quoted.runs.map((r) => [r.words, r.fixed, r.fewest]), [[[0, 1], 1, 1]]);
-    // (A known start is a run of its own, which keeps it; a quoted word alone is no run.)
+    // (A known start is a run of its own, which keeps it; the words splitting may add after it are of no known text, a
+    // run with the words after; a quoted word alone is no run.)
     const head = table('head -n$a $b "$c" f');
-    assert.deepStrictEqual(head.runs.map((r) => [r.words, r.prefix]), [[[0], '-n'], [[1, 2], undefined]]);
+    assert.deepStrictEqual(head.runs.map((r) => [r.words, r.prefix, r.each]), [[[0], '-n', true], [[1, 2, 3], undefined, undefined]]);
+    assert.deepStrictEqual(head.variables.map((v) => [v.words, v.base, v.part]), [[[0], 1, true], [[1], 0, true], [[2], 1, undefined]]);
     assert.deepStrictEqual(table('cp "$a" b').runs, []);
     assert.deepStrictEqual(table('cp "$a" b').shapes, [[]]);
     // (A brace word is its known number of words, in a run where it is one.)
@@ -238,12 +242,68 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
       assert.deepStrictEqual([grep.status, grep.stdout], [0, './a.sh:x\n']);
       const g = table('grep -r --include=*.sh x .');
       assert.deepStrictEqual(g.at([2]).fields.map(squeezed), ['option -r search directories recursively', 'option --include only search files matching the glob =', 'operand search pattern (regex)', 'operand file to search (default: stdin)']);
-      // (Not a word that splits: `x$a` gives `xp q`, the second word without the `x`.)
-      assert.strictEqual(table('cp x$a d').runs[0].each, undefined);
+      // (A word that may split comes in parts: `x$a` gives `xp q` with `a='p q'`, the second word without the `x`.)
+      assert.deepStrictEqual(table('cp x$a d').line.slice(0, 2), [{ prefix: 'x', prefixEach: true, count: { min: 1 } }, { count: { min: 0 } }]);
+      // (No parts where the words of the brace expansion are not known: too many to list, or the step not known to apply.)
+      assert.strictEqual(argWords('cp -v{1..100000}$x d').words[0].parts, undefined);
+      const braced = descendants(parser.parse('cp -v{a,b}$x d').root, ['command'])[0].namedChildren[1];
+      assert.deepStrictEqual([argWordFor(undefined, () => 'unknown')(braced).parts, argWordFor()(braced).parts?.length], [undefined, 4]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  /**
+   * Lines whose words keep a known start on some of the words they give, run with bash and the real tool (LC_ALL=C) in
+   * a directory of their own: the argv bash gives (a function prints it), what the tool did, and the role `interpret`
+   * gives `word` in that argv, which some profile of the word must hold (the texts say every profile: the property test
+   * of test/profiles.test.ts).
+   */
+  const STARTS: { line: string; files: string[]; dirs?: string[]; vars?: string; argv: string[]; word: string; role: string; did: (dir: string, out: string) => boolean; counts?: number[]; depends?: true }[] = [
+    // (`-v*$x` with `x=a`: `$x` does not split, and every word of the glob keeps `-v`; `d` is the new name.)
+    { line: 'cp -v*$x y d', files: ['-vaa', '-vba', 'y'], vars: 'x=a', argv: ['-vaa', '-vba', 'y', 'd'], word: 'd', role: 'operand destination', did: (dir) => fs.statSync(path.join(dir, 'd')).isFile(), counts: [2, 0] },
+    // (`--include=$a*` with `a=p`: the start is the text before `$a`.)
+    { line: 'grep -r --include=$a* x .', files: ['--include=pa', '--include=pb'], vars: 'a=p', argv: ['-r', '--include=pa', '--include=pb', 'x', '.'], word: 'x', role: 'operand search pattern', did: (_, out) => out === './pa:x\n', counts: [2, 0] },
+    // (Each word of the brace expansion keeps the start: `-va -vb`. Two words that may each glob and split are four parts,
+    // past the cap: `d` says its role may depend on the counts.)
+    { line: 'cp -v{a,b}$x y d', files: ['y'], vars: 'x=', argv: ['-va', '-vb', 'y', 'd'], word: 'd', role: 'operand destination', did: (dir) => fs.statSync(path.join(dir, 'd')).isFile(), depends: true },
+    // (A start of `-` or `--` alone may give `--`: `cp -- -v x d` copies into the directory `d`.)
+    { line: 'cp -* x d', files: ['--', '-v', 'x'], dirs: ['d'], argv: ['--', '-v', 'x', 'd'], word: 'd', role: 'operand destination directory', did: (dir) => fs.existsSync(path.join(dir, 'd', 'x')), counts: [2] },
+    { line: 'cp --* x d', files: ['--', '--verbose', 'x'], dirs: ['d'], argv: ['--', '--verbose', 'x', 'd'], word: 'd', role: 'operand destination directory', did: (dir) => fs.existsSync(path.join(dir, 'd', 'x')), counts: [2] },
+  ];
+  for (const { line, files, dirs = [], vars = ':', argv, word, role, did, counts, depends } of STARTS) {
+    it(`a known start, as bash and the tool read it: ${line}`, function () {
+      const gnu = (tool: string): boolean => /GNU/.test(spawnSync(tool, ['--version'], { encoding: 'utf8' }).stdout ?? '');
+      if (!gnu('cp') || !gnu('grep')) this.skip();
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-readings-'));
+      try {
+        for (const f of files) fs.writeFileSync(path.join(dir, f), '');
+        for (const d of dirs) fs.mkdirSync(path.join(dir, d));
+        if (line.startsWith('grep')) fs.writeFileSync(path.join(dir, 'pa'), 'x\n');
+        const env = { ...process.env, LC_ALL: 'C' };
+        const { name } = argWords(line);
+        const args = spawnSync('bash', ['-c', `${vars}; f() { printf '%s\\0' "$@"; }; f ${line.slice(name.length + 1)}`], { cwd: dir, env, encoding: 'utf8' });
+        assert.deepStrictEqual(args.stdout.split('\0').slice(0, -1), argv);
+        const ran = spawnSync('bash', ['-c', `${vars}; ${line}`], { cwd: dir, env, encoding: 'utf8' });
+        assert.ok(did(dir, ran.stdout), `${line}: ${ran.stderr}`);
+        const t = table(line);
+        const k = t.texts.indexOf(word);
+        const real = allRoles(interpret(lookupCommand(name)!, argv.map((value) => ({ value })), ctxOf(name))).get(argv.indexOf(word))!;
+        assert.strictEqual(key(real).startsWith(role), true, key(real));
+        const r = wordReadings(t, k)!;
+        if (depends) assert.deepStrictEqual([r.kind, t.parted, t.shapes], ['depends', [true, false, false], undefined]);
+        else {
+          // (The profile at the counts bash gave, each part's: the context they make.)
+          const cx = t.contexts(k)!;
+          const at = cx.coordinates.map((c) => Math.min(c.fixed + [...c.mult].reduce((n, [v, m]) => n + m * counts![v], 0), c.top)).join();
+          const p = (r as WordReadings).profiles[cx.contexts.findIndex((c) => c.join() === at)];
+          assert.deepStrictEqual(p.entries.map((e) => e.roles?.map((x) => x.key)), [[`\0${roleKey(real)}`]], line);
+        }
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
 
   it('a word inside a run is read at its real sum: `cp $a $b` with five and four words', () => {
     const t = table('cp $a $b');
@@ -316,12 +376,19 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
       const spec = lookupCommand(name)!;
       for (const counts of vectors(t, 2)) {
         // (The words written out: a run's known start on its first word.)
+        // (A word in parts, `ArgWord.parts`, is each part's words: those of a part that keeps the start keep it.)
         const argv: ArgWord[] = [];
         const spans = words.map((w, k) => {
-          const v = t.variableOf[k];
+          const lines = t.line.flatMap((_, j) => (t.back(j) === k ? [j] : []));
           const from = argv.length;
-          if (v === undefined) argv.push(w);
-          else for (let i = 0; i < counts[v]; i++) argv.push({ value: (i === 0 ? w.prefix ?? '' : '') + text(k, i) });
+          if (lines.length === 1 && t.variableOf[lines[0]] === undefined) argv.push(w);
+          else {
+            for (const j of lines) {
+              const v = t.variableOf[j];
+              const n = v === undefined ? 1 : counts[v];
+              for (let i = 0; i < n; i++) argv.push({ value: (i === 0 || t.line[j].prefixEach ? t.line[j].prefix ?? '' : '') + text(k, argv.length - from) });
+            }
+          }
           return [from, argv.length];
         });
         const roles = allRoles(interpret(spec, argv, ctxOf(name)));
@@ -330,7 +397,9 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
         assert.deepStrictEqual(at.fields.map((f) => f.map(key)), expected, `${line} at ${counts.join(',')}`);
         // (Each word read at its context, where no coordinate of it is past its top: the same roles.)
         for (let k = 0; k < words.length; k++) {
-          const context = contextOf(t, k, counts);
+          const lines = t.line.flatMap((_, j) => (t.back(j) === k ? [j] : []));
+          if (lines.length !== 1) continue;
+          const context = contextOf(t, lines[0], counts);
           if (context) assert.deepStrictEqual(t.readAt(k, context, counts[t.variableAt[k]!] ?? 1).fields.map(key), expected[k], `${line}: word ${k} at ${counts.join(',')}`);
         }
       }
@@ -386,7 +455,7 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
       const missed: string[] = [];
       for (const { text, t } of tables()) {
         const seen = new Set<CommandSpec>();
-        for (const s of t.shapes!) visit(t.reading(s).parse, seen);
+        for (const s of t.shapes ?? []) visit(t.reading(s).parse, seen);
         if ([...seen].some((s) => !t.specs.has(s))) missed.push(text);
       }
       assert.deepStrictEqual(missed, []);
@@ -412,6 +481,8 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     it('the words the text past the cap names hold every word whose role may change', () => {
       const wrong: string[] = [];
       for (const { text, t } of tables()) {
+        // (Past the cap, no shape is read: `cp -v{a,b}$x d`, four parts.)
+        if (!t.shapes) continue;
         const hedged = new Set(t.hedged());
         const base = t.at(t.base).fields;
         const flexible = Math.min(...t.variables.map((v) => v.words[0]));
@@ -438,8 +509,11 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     it('every context of every word reads a shape of the table', () => {
       const wrong: string[] = [];
       for (const { text, t } of tables()) {
-        const shapes = new Set(t.shapes!.map((s) => s.join()));
+        if (!t.shapes) continue;
+        const shapes = new Set(t.shapes.map((s) => s.join()));
         for (let k = 0; k < t.back(t.line.length - 1) + 1; k++) {
+          // (A word in parts has no own count, and no contexts.)
+          if (t.parted[k]) continue;
           const { contexts, own } = t.contexts(k)!;
           for (const context of contexts) {
             for (const c of own) {
