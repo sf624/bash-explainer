@@ -7,6 +7,7 @@ import type * as U from 'unbash';
 import type { BashParser, FieldName, Point, SyntaxError, SyntaxNode, SyntaxTree } from '../tree';
 import { type BraceBuilder, bracePieces, type Range } from './braces';
 import { extglobLike, NUMBER } from './extglob';
+import { attachedSubstitutions, type Children, scriptErrors as errorsOf } from './rereads';
 import { scanGap } from './tokens';
 import { splitElement } from '../../staticword';
 
@@ -38,27 +39,16 @@ const BLANKS = /(?:\s|\\\n|#[^\n]*)*/y;
 const HORIZONTAL = /(?:[ \t]|\\\n)*/y;
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/**
- * The errors of a script and of the scripts of the substitutions in it (a backquote with escapes is parsed
- * apart, by `decoded`, and its errors are in the text without the escapes).
- */
-function scriptErrors(script: U.ParsedScript): U.ParseError[] {
-  const errors: U.ParseError[] = [];
-  const walk = (n: U.SyntaxNode): void => {
-    if (n.type === 'Script') {
-      if (n !== script && (n as U.ParsedScript).source !== undefined) return;
-      errors.push(...((n as U.ParsedScript).errors ?? []));
-    }
-    forEachChild(n, walk);
-  };
-  walk(script);
-  return errors;
-}
+/** unbash's walk of the children of a node, for ./rereads.ts (which reads the nodes by their shape). */
+const children = forEachChild as unknown as Children;
+const scriptErrors = (script: U.ParsedScript): U.ParseError[] => errorsOf(script, children);
 
 class Converter {
   readonly errors: SyntaxError[] = [];
   /** Where the `&` is of a `&>` or `&>>` whose target is a process substitution (`&> >(tee log)`); see `parseScript`. */
   private readonly bothOutputs = new Set<number>();
+  /** Where the operator is of a process substitution that is part of a longer word (`a<(:)`); see `parseScript`. */
+  private readonly attached = new Set<number>();
   private readonly lineStarts: number[] = [0];
   /** Ranges that are not code: heredoc bodies and their closing lines. */
   private readonly skip: (readonly [number, number])[] = [];
@@ -202,19 +192,22 @@ class Converter {
    * compound command (`{ …; } &> >(tee log)`) that word is an unexpected token, and before a command name it is the
    * name. bash redirects both outputs to the process substitution. Where unbash says such a redirection has no
    * target, the `&` is read as a blank, so that unbash reads `> >(tee log)`; `redirect` puts the `&` back.
+   * The `<` or `>` of a process substitution that is part of a longer word (`a<(:)`: see `attachedSubstitutions`)
+   * is read as a `$`, so that unbash reads one word with a command substitution; `substitution` puts the operator back.
    * unbash may stop at the first error of a kind, so the text is read again until no new one appears: each
-   * reading hides one `&` more, so there are at most as many as the `&>` in the text.
+   * reading hides one `&` or operator more, so there are at most as many as the `&>`, `<(` and `>(` in the text.
    */
   parseScript(): U.ParsedScript {
     let script = parse(this.text);
     for (;;) {
-      const before = this.bothOutputs.size;
+      const before = this.bothOutputs.size + this.attached.size;
       for (const e of scriptErrors(script)) {
         const op = e.message === 'expected redirect target' && /^[<>]\(/.test(this.text.slice(e.pos)) ? /&>>?[ \t]*$/.exec(this.text.slice(0, e.pos)) : null;
         if (op) this.bothOutputs.add(op.index);
       }
-      if (this.bothOutputs.size === before) break;
-      script = parse(this.text.split('').map((c, i) => (this.bothOutputs.has(i) ? ' ' : c)).join(''));
+      for (const at of attachedSubstitutions(script, children, this.text)) this.attached.add(at);
+      if (this.bothOutputs.size + this.attached.size === before) break;
+      script = parse(this.text.split('').map((c, i) => (this.bothOutputs.has(i) ? ' ' : this.attached.has(i) ? '$' : c)).join(''));
     }
     return script;
   }
@@ -826,8 +819,10 @@ class Converter {
   substitution(p: U.CommandExpansionPart | U.ProcessSubstitutionPart): Mut {
     // `${ cmd; }` and `${| cmd; }` (bash 5.3) are substitutions that run in the current shell.
     const funsub = p.type === 'CommandExpansion' && p.text.startsWith('${');
-    const open = p.type === 'ProcessSubstitution' ? p.operator + '(' : funsub ? (p.text[2] === '|' ? '${|' : '${') : p.text.startsWith('`') ? '`' : '$(';
-    const type = p.type === 'CommandExpansion' ? 'command_substitution' : 'process_substitution';
+    // (A process substitution in a longer word was read as a command substitution: see `parseScript`.)
+    const process = p.type === 'ProcessSubstitution' || this.attached.has(p.pos);
+    const open = process ? (p.type === 'ProcessSubstitution' ? p.operator : this.text[p.pos]) + '(' : funsub ? (p.text[2] === '|' ? '${|' : '${') : p.text.startsWith('`') ? '`' : '$(';
+    const type = process ? 'process_substitution' : 'command_substitution';
     const n = this.node(type, p.pos, p.end);
     this.tok(open, p.pos, n);
     const close = open === '`' ? '`' : funsub ? '}' : ')';

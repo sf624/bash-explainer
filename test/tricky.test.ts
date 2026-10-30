@@ -2218,6 +2218,9 @@ describe('words as bash reads them (round 10, review)', () => {
     assert.strictEqual(findAt(src, 0, '${q:-"*"}', 'ja', true).explanation, 'パターン `${q:-"*"}`: クォートしていない展開の結果はパターンになり、クォートした部分は文字列そのものとして照合される');
     // (A `${x#"a"}` gives a value: its quotes are of its own pattern.)
     assert.strictEqual(findAt('case $y in ${x#"a"}) :;; esac', 0, '${x#"a"}', 'en', true).explanation, 'Pattern `${x#"a"}`: what it expands to is the pattern');
+    // (A process substitution and an arithmetic expansion are expanded too: bash matches `a/dev/fd/63` and `2`.)
+    for (const p of ['a<(:)', '$((1+1))']) assert.strictEqual(findAt(`case $y in ${p}) :;; esac`, 0, p, 'en', true).explanation, `Pattern \`${p}\`: what it expands to is the pattern`);
+    assert.strictEqual(runBash('case 2 in $((1+1))) echo m;; esac; case a/dev/fd/63 in a<(:)) echo p;; esac').stdout, 'm\np\n');
     // An unterminated `$'` is plain text.
     assert.ok(!explainGlob("a*$'b", 'en').some((t) => /\$'…'/.test(t.explanation)));
     assert.deepStrictEqual(explainGlob("$'a\\'*'*", 'en').map((t) => t.end - t.start), [7, 1]);
