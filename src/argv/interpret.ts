@@ -242,7 +242,7 @@ export function fieldLine(words: readonly ArgWord[]): { line: ArgWord[]; groups:
 export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretContext = {}): ArgvParse {
   const { line, groups, own } = fieldLine(words);
   const back = groups.length ? lineIndex(groups) : (j: number): number => j;
-  const read = (words: ArgWord[], at: (j: number) => number, bare: boolean): ArgvParse => new Reader(words, ctx, new Set(), at, bare).read(spec, 0, words.length, ctx.name ?? '', [], false, []);
+  const read = (words: ArgWord[], at: (j: number) => number, bare: boolean): ArgvParse => readWords(spec, words, ctx, at, bare);
   const parse = read(line, back, false);
   // (A value that may give several words is read with `c` of them: its first word, then words of their own whose text is
   // not known. The words of the line after it are `c - 1` places on.)
@@ -256,11 +256,14 @@ export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretCon
 }
 
 /**
- * Reads words written out for one shape of the counts (src/argv/readings.ts) with the spec, for the roles only: as a
- * reading of `valueHedges` does, it reads no hedges (`Reader.bare`).
+ * Reads the words with the spec, from the first: `at` gives the word of the line each stands for, which the hedges name;
+ * a `bare` reading is for the roles only, and reads no hedges (`Reader.bare`).
  */
-export const readWritten = (spec: CommandSpec, words: ArgWord[], ctx: InterpretContext): ArgvParse => new Reader(words, ctx, new Set(), undefined, true).read(spec, 0, words.length, ctx.name ?? '', [], false, []);
+const readWords = (spec: CommandSpec, words: ArgWord[], ctx: InterpretContext, at: ((j: number) => number) | undefined, bare: boolean): ArgvParse =>
+  new Reader(words, ctx, new Set(), at, bare).read(spec, 0, words.length, ctx.name ?? '', [], false, []);
 
+/** Reads words written out for one shape of the counts (src/argv/readings.ts) with the spec, for the roles only. */
+export const readWritten = (spec: CommandSpec, words: ArgWord[], ctx: InterpretContext): ArgvParse => readWords(spec, words, ctx, undefined, true);
 
 /** The values an option takes (none, one, or one of several forms). */
 export const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ? [] : Array.isArray(o.value) ? o.value : [o.value]);

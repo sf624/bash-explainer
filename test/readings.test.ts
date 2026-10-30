@@ -5,7 +5,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { type ArgRole, type ArgvParse, type ArgWord, interpret } from '../src/argv/interpret';
+import { type ArgRole, type ArgWord, interpret, type RoleAt } from '../src/argv/interpret';
 import { readingsOf, SHAPE_CAP, specsReached, wordsBound, type ReadingsTable } from '../src/argv/readings';
 import type { CommandSpec } from '../src/argv/spec';
 import { allRoles } from '../src/argv/valuehedges';
@@ -57,6 +57,21 @@ function vectors(t: ReadingsTable, more: number, most = Infinity): number[][] {
   return all <= most ? Array.from({ length: all }, (_, i) => vector(i)) : Array.from({ length: most }, (_, i) => vector(Math.floor((i * all) / most)));
 }
 
+/**
+ * The context of word k (no model: a word of the line each) where each variable gives `counts[v]` (section 2.4), as the
+ * design document defines it; undefined where a coordinate is past its top.
+ */
+function contextOf(t: ReadingsTable, k: number, counts: readonly number[]): number[] | undefined {
+  const own = t.variableOf[k];
+  const n = (j: number): number => (t.variableOf[j] === undefined ? t.line[j].count?.min ?? 1 : t.variableOf[j] === own ? 0 : counts[t.variableOf[j]!]);
+  const sum = (ws: number[]): number => ws.reduce((x, j) => x + n(j), 0);
+  const fewest = (ws: number[]): number => ws.reduce((x, j) => x + (t.variableOf[j] === undefined ? t.line[j].count?.min ?? 1 : t.variableOf[j] === own ? 0 : t.variables[t.variableOf[j]!].min), 0);
+  const r = t.runs.findIndex((x) => x.words.includes(k));
+  const parts = r < 0 ? [] : [t.runs[r].words.slice(0, t.runs[r].words.indexOf(k)), t.runs[r].words.slice(t.runs[r].words.indexOf(k) + 1)];
+  const coordinates = [...parts.map((ws) => [sum(ws), fewest(ws) + t.bound]), ...t.runs.flatMap((x, i) => (i === r ? [] : [[sum(x.words), x.top]]))];
+  return coordinates.every(([v, top]) => v <= top) ? coordinates.map(([v]) => v) : undefined;
+}
+
 describe('readings: the table of every count (count-hedges.md, step 2)', function () {
   this.timeout(120000);
 
@@ -94,7 +109,7 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     assert.deepStrictEqual(globs.shapes!.map((s) => s[0]), Array.from({ length: 22 }, (_, s) => s + 2));
     assert.strictEqual(table('cp $a $b $c $d').shapes!.length, 22);
     // (A word with a known most: `{a,$x}` gives one or more, `${a[@]}` none or more.)
-    const most = readingsOf(lookupCommand('cp')!, [{ prefix: '', count: { min: 0, max: 2 } }, { value: 'd' }]);
+    const most = readingsOf(lookupCommand('cp')!, [{ prefix: '', count: { min: 0, max: 2 } }, { value: 'd' }], {});
     assert.deepStrictEqual([most.variables[0].top, most.shapes], [2, [[0], [1], [2]]]);
   });
 
@@ -122,17 +137,24 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     const cp = table('cp $a $a d');
     assert.deepStrictEqual(cp.shapes, [[0], [2], [4], [6], [7], [8], [10], [12], [14]]);
     assert.deepStrictEqual(cp.at([2]).fields.map((f) => f.length), [2, 2, 1]);
-    // (What cuts a tie: `${a:=x}`, `${a=x}`, IFS's, arithmetic anywhere, `${ cmd; }`. Not `${b:=x}`, a subshell's, `${b[@]}`.)
+    // (What cuts a tie: `${a:=x}`, `${a=x}`, IFS's, arithmetic anywhere, an indirection (`r=a` and `a` unset: `${!r:=x}`
+    // sets `a`; `x='b[a=5]'`: `${!x}` sets it in the subscript), `@P` (`x='${a:=1 2}'`), a `${…}` not understood, and
+    // `${ cmd; }`. Not `${b:=x}`, a subshell's, `${b[@]}`, the names `${!x*}` and the keys `${!b[@]}`, nor `@Q`.)
     assert.deepStrictEqual(vars('cp ${a:=x} $a'), [[0], [1]]);
-    for (const cut of ['${a:=x}', '"${a=x}"', '${IFS:=x}', '$((b++))', '${b[i]}', '${x:1}', '${x::2}', '${ b=1; }', '"$(( 1 ))"']) {
+    for (const cut of ['${a:=x}', '"${a=x}"', '${IFS:=x}', '$((b++))', '${b[i]}', '${x:1}', '${x::2}', '${ b=1; }', '"$(( 1 ))"', '${!r:=x}', '${!x}', '"${!x}"', '${x@P}', '${!x@Q}']) {
       assert.deepStrictEqual(vars(`cp $a ${cut} $a d`).filter((w) => w.length > 1), [], cut);
     }
-    for (const kept of ['${b:=x}', '"$(a=1)"', '${b[@]}', '${#b[*]}', 'x=y', '"${b:-x}"']) {
+    for (const kept of ['${b:=x}', '"$(a=1)"', '${b[@]}', '${#b[*]}', 'x=y', '"${b:-x}"', '${!x*}', '${!x@}', '${!b[@]}', '${!b[*]}', '${x@Q}', '`a=1`', '<(a=1)']) {
       assert.deepStrictEqual(vars(`cp $a ${kept} $a d`).filter((w) => w.length > 1), [[0, 2]], kept);
     }
+    // (`$( )` and backquotes set `$?`, `<( )` and `>( )` set `$!`: with digits in IFS, `$?` may give another count.)
+    for (const [param, cut] of [['$?', '"$(true)"'], ['$?', '"`true`"'], ['$!', '<(:)'], ['$!', '>(:)']]) {
+      assert.deepStrictEqual(vars(`cp ${param} ${cut} ${param} d`), [[0], [2]], `${param} ${cut}`);
+    }
+    assert.deepStrictEqual(vars('cp $! "$(true)" $! d'), [[0, 2]]);
     // (Not a parameter bash changes as it runs, nor two words of other counts.)
     assert.deepStrictEqual(vars('cp $RANDOM $RANDOM d'), [[0], [1]]);
-    const other = readingsOf(lookupCommand('cp')!, [{ prefix: '', count: { min: 0 }, param: 'a' }, { prefix: '', count: { min: 1 }, param: 'a' }, { value: 'd' }]);
+    const other = readingsOf(lookupCommand('cp')!, [{ prefix: '', count: { min: 0 }, param: 'a' }, { prefix: '', count: { min: 1 }, param: 'a' }, { value: 'd' }], {});
     assert.deepStrictEqual(other.variables.map((v) => v.words), [[0], [1]]);
   });
 
@@ -166,6 +188,25 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     assert.deepStrictEqual(hedged('cp a b'), []);
   });
 
+  it('contexts: what a word reads besides its own count, each capped; a reading at a context and an own count', () => {
+    const jq = table('jq --arg $n $v .');
+    // (`$v`: the words before it in its run, `$n`, and none after; its own counts from one.)
+    assert.deepStrictEqual(jq.contexts(2), { run: 0, contexts: Array.from({ length: 7 }, (_, n) => [n, 0]), own: [1, 2, 3, 4, 5, 6] });
+    assert.deepStrictEqual(jq.readAt(2, [2, 0], 1), { sums: [3], outcome: 'read', fields: jq.at([2, 1]).fields[2] });
+    // (`.`: the run, capped; `--arg` too.)
+    assert.deepStrictEqual(jq.contexts(3), { contexts: Array.from({ length: 7 }, (_, n) => [n]), own: [1] });
+    assert.deepStrictEqual(jq.readAt(3, [1], 1).fields.map(key), ['value --arg 1']);
+    // (A tie: the second `$a` is the first one's own, so it is no part of its context; its words come after the first's.)
+    const cp = table('cp $a $a d');
+    assert.deepStrictEqual(cp.contexts(0)!.contexts, [[0, 0]]);
+    assert.deepStrictEqual(cp.readAt(1, [0, 0], 2), { sums: [4], outcome: 'read', fields: cp.at([2]).fields[1] });
+    // (Two runs: the other run is a coordinate; the word of a known count in a run, `"$b"`, has its one word.)
+    const cut = table('cp -t $d "$b" $a x $c');
+    assert.deepStrictEqual(cut.contexts(2)!.own, [1]);
+    assert.deepStrictEqual(cut.readAt(2, [1, 2, 3], 1), { sums: [4, 3], outcome: 'read', fields: cut.at([1, 2, 3]).fields[2] });
+    assert.deepStrictEqual(table('cp $a $b $c x $d y $e').contexts(0), undefined);
+  });
+
   it('a word inside a run is read at its real sum: `cp $a $b` with five and four words', () => {
     const t = table('cp $a $b');
     assert.ok(t.shapes!.some((s) => s[0] === 9));
@@ -183,8 +224,13 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     // (`one` takes one operand: every spec of the dictionary but ssh's has a form of any number of them.)
     const one: CommandSpec = { summary: { ja: '', en: '' }, operands: [{ pattern: [{ name: 'A', text: { ja: '', en: 'a' } }] }] };
     const lookup = (name: string): CommandSpec | undefined => (name === 'one' ? one : lookupCommand(name));
-    assert.deepStrictEqual([1, 2].map((c) => readingsOf(one, argWords('one $a').words).at([c]).outcome), ['read', 'refused']);
+    assert.deepStrictEqual([1, 2].map((c) => readingsOf(one, argWords('one $a').words, {}).at([c]).outcome), ['read', 'refused']);
     assert.strictEqual(readingsOf(lookupCommand('sudo')!, argWords('sudo one $a').words, { lookup }).at([2]).outcome, 'refused');
+    // (In a string a value splices in, as its own word or in the option's: `tar -cf` with no archive; real env exits 64.)
+    for (const line of ["env -S 'tar -cf' $a", "env -S'tar -cf' $a", "env -iS'tar -cf' $a"]) {
+      const env = table(line);
+      assert.deepStrictEqual([0, 1].map((c) => env.at([c]).outcome), ['refused', 'read'], line);
+    }
     const { words } = argWords('cp $a b');
     assert.strictEqual(readingsOf(lookupCommand('cp')!, words, { maxSteps: 1 }).at([3]).outcome, 'unknown');
     assert.strictEqual(readingsOf(lookupCommand('sudo')!, argWords('sudo cp $a b').words, { lookup: lookupCommand, maxSteps: 1 }).at([3]).outcome, 'unknown');
@@ -202,8 +248,15 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     assert.strictEqual(at.parse.roles.find((r) => r.word === 0)!.role.role, 'fields');
     // (Its fields are read by patterns too: the word whose fields the model knows says it may depend on the counts.)
     assert.deepStrictEqual(t.hedged(), [0, 1, 2, 3, 4]);
+    assert.deepStrictEqual(t.variableAt, [undefined, 0, undefined, undefined, undefined]);
+    // (The words of known fields read every run, with their own number of words: two, one, none.)
+    assert.deepStrictEqual([0, 2, 3].map((k) => t.contexts(k)), [0, 2, 3].map((k) => ({ contexts: [[0], [1], [2], [3], [4], [5], [6], [7]], own: [[2], [1], [0]][[0, 2, 3].indexOf(k)] })));
+    assert.deepStrictEqual(t.readAt(0, [2], 2).fields.map(key), at.fields[0].map(key));
+    assert.deepStrictEqual(t.readAt(2, [2], 1).fields.map(key), at.fields[2].map(key));
+    assert.deepStrictEqual(t.readAt(3, [2], 0).fields, []);
+    assert.deepStrictEqual(t.readAt(4, [2], 1).fields.map(key), at.fields[4].map(key));
     // (No count variable: one shape, of no sum.)
-    assert.deepStrictEqual(readingsOf(lookupCommand('cp')!, [known('a'), { value: 'd' }]).shapes, [[]]);
+    assert.deepStrictEqual(readingsOf(lookupCommand('cp')!, [known('a'), { value: 'd' }], {}).shapes, [[]]);
   });
 
   /**
@@ -237,6 +290,11 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
         const at = t.at(counts);
         const expected = spans.map(([from, to]) => Array.from({ length: to - from }, (_, j) => key(roles.get(from + j))));
         assert.deepStrictEqual(at.fields.map((f) => f.map(key)), expected, `${line} at ${counts.join(',')}`);
+        // (Each word read at its context, where no coordinate of it is past its top: the same roles.)
+        for (let k = 0; k < words.length; k++) {
+          const context = contextOf(t, k, counts);
+          if (context) assert.deepStrictEqual(t.readAt(k, context, counts[t.variableAt[k]!] ?? 1).fields.map(key), expected[k], `${line}: word ${k} at ${counts.join(',')}`);
+        }
       }
     });
   }
@@ -277,11 +335,14 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     });
 
     it('every spec a reading visits is in the set S is taken over', () => {
-      const visit = (q: ArgvParse, out: Set<CommandSpec>): void => {
+      const visit = (q: { roles: readonly RoleAt[] }, out: Set<CommandSpec>): void => {
         for (const { role } of q.roles) {
           if (role.role === 'subcommand') out.add(role.spec);
           if (role.role === 'command' && role.spec) out.add(role.spec);
           if ((role.role === 'subcommand' || role.role === 'command') && role.parse) visit(role.parse, out);
+          // (The commands a string a value splices in starts: `env -S'tar …'`.)
+          const value = role.role === 'value' ? role : role.role === 'option' ? role.value : undefined;
+          if (value?.split) visit(value.split, out);
         }
       };
       const missed: string[] = [];
@@ -315,13 +376,39 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
       for (const { text, t } of tables()) {
         const hedged = new Set(t.hedged());
         const base = t.at(t.base).fields;
-        // (No word before the first flexible one gives other than one word: its number in a reading is its own.)
+        const flexible = Math.min(...t.variables.map((v) => v.words[0]));
+        const inRun = new Set(t.runs.flatMap((r) => r.words));
         for (const s of t.shapes!) {
           const r = t.reading(s);
           if (r.outcome !== 'read') continue;
+          // (The words of the line before the first flexible one give their own number of words: where each starts in
+          // the reading does not depend on the counts. Their roles go back to the command's words through `back`.)
           const roles = allRoles(r.parse);
-          const moved = base.flatMap((f, k) => (!hedged.has(k) && squeezed(f) !== key(roles.get(k)) ? [k] : []));
+          const read = new Map<number, ArgRole[]>();
+          let at = 0;
+          for (let j = 0; j < flexible; j++) {
+            const n = inRun.has(j) ? t.line[j].count?.min ?? 1 : 1;
+            for (let i = 0; i < n; i++) read.set(t.back(j), [...read.get(t.back(j)) ?? [], roles.get(at++)!]);
+          }
+          const moved = [...read].flatMap(([k, f]) => (!hedged.has(k) && squeezed(f) !== squeezed(base[k]) ? [k] : []));
           if (moved.length) wrong.push(`${text}: ${moved.join(' ')} at ${s.join(',')}`);
+        }
+      }
+      assert.deepStrictEqual(wrong, []);
+    });
+
+    it('every context of every word reads a shape of the table', () => {
+      const wrong: string[] = [];
+      for (const { text, t } of tables()) {
+        const shapes = new Set(t.shapes!.map((s) => s.join()));
+        for (let k = 0; k < t.back(t.line.length - 1) + 1; k++) {
+          const { contexts, own } = t.contexts(k)!;
+          for (const context of contexts) {
+            for (const c of own) {
+              const r = t.readAt(k, context, c);
+              if (!shapes.has(r.sums.join()) || r.fields.length !== c || r.fields.some((f) => !f)) wrong.push(`${text}: word ${k} at ${context.join(',')} with ${c}`);
+            }
+          }
         }
       }
       assert.deepStrictEqual(wrong, []);
