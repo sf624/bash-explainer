@@ -172,4 +172,54 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // A value that a declaration reads again as a compound assignment: bash expands its elements and runs its subscripts
+  // as arithmetic (the keys of an associative array are expanded too), with -a or -A, or where the variable is an
+  // array already (in the scope the declaration assigns), when the value, once expanded, starts with `(` and ends with
+  // `)`. `export` and `readonly` do so only with -a or -A. Bash sets `u` to 2 in each of `undecided`.
+  it('makes none that bash contradicts where a declaration reads a value again as a compound assignment', async function () {
+    this.timeout(60_000);
+    const test = (v: string): string => `⟦s:1⟧if ⟦p:1⟧[ "$${v}" = 1 ]⟦c:1⟧; then : M2; else : M3; fi`;
+    const undecided = [
+      "declare -a 'arr=([u=2]=1)'", "x='[u=2]=1'; declare -a \"arr=($x)\"", "f() { local -a 'arr=([u=2]=1)'; }; f", "x='[u=2]=1'; declare -a arr=\"($x)\"",
+      "declare -a 'arr=($((u=2)))'", "typeset -a 'arr=([u=2]=1)'", "declare -a 'arr+=([u=2]=1)'", "declare -a 'arr[0]=([u=2]=1)'", "declare -ai 'arr=(u=2)'",
+      "declare -a arr\\=\\(\\[u=2\\]=1\\)", "declare -a \"arr\"'=($((u=2)))'", "declare -a arr'=('$((u=2))')'",
+      // (-A: the keys are expanded, and the values.)
+      "declare -A 'arr=([k]=$((u=2)))'", "declare -A 'arr=([$((u=2))]=1)'", "f() { local -A 'm=([a]=$((u=2)))'; }; f",
+      // (Without -a: an array already, also through a nameref, or one of bash's.)
+      "arr=(); declare 'arr=([u=2]=1)'", "declare -a arr; declare 'arr=($((u=2)))'", "arr=(a); f() { declare -g 'arr=($((u=2)))'; }; f",
+      "f() { local -a arr; local 'arr=($((u=2)))'; }; f", "arr=(1); declare 'arr+=($((u=2)))'", "declare -A arr; declare 'arr=([a]=$((u=2)))'",
+      "declare -n r=arr; arr=(1); declare 'r=($((u=2)))'",
+      // (A value from a variable, quoted or not.)
+      "x='([u=2]=1)'; declare -a arr=$x", "x='([u=2]=1)'; declare -a \"arr=$x\"", "x='([u=2]=1)'; arr=(); declare arr=\"$x\"", "x='([u=2]=1)'; arr=(); typeset arr=\"$x\"",
+      "x='([u=2]=1)'; arr=(); f() { declare -g arr=\"$x\"; }; f", "x='([u=2]=1)'; declare -n r=arr; arr=(); declare r=\"$x\"",
+      "x='([u=2]=1)'; [[ a =~ a ]]; declare BASH_REMATCH=\"$x\"", "x='([u=2]=1)'; read -a arr <<< q; declare arr=\"$x\"",
+      "x='([u=2]=1)'; mapfile arr < /dev/null; declare arr=\"$x\"", "x='([u=2]=1)'; : ${arr[0]:=a}; declare arr=\"$x\"", "x='([u=2]=1)'; (( arr[1]=2 )); declare arr=\"$x\"",
+      // (`export` and `readonly` with -a or -A.)
+      "export -a 'arr=([u=2]=1)'", "readonly -a 'arr=([u=2]=1)'", "readonly -A 'm=([a]=$((u=2)))'", "x='([u=2]=1)'; export -a arr=\"$x\"",
+    ];
+    // (Bash leaves `u`: not a compound assignment there, or the text is not one; the script still decides it.)
+    const kept = [
+      "declare -A 'arr=([u=2]=1)'", "declare -a 'arr=([u=2]=1) '", "declare -a 'arr=(1 2'", "declare -a 'arr=\"($((u=2)))\"'", 'declare -a arr=(\\[u=2\\]=1)',
+      "arr=(1); readonly 'arr=($((u=2)))'", "arr=(1); export 'arr=($((u=2)))'", "x='([u=2]=1)'; arr=(); export arr=\"$x\"", "arr=(1); declare 'arr[1]=($((u=2)))'",
+      'f() { local v="$1"; }; f a', 'declare v="$1"', 'declare -a v="a$1"', 'unset v; declare v="$1"', 'for v in a; do :; done; declare v="$1"', 'o=-i; w=1+2; declare $o n=$w',
+    ];
+    // (Bash leaves `u`, but the scan reads the value again, as it does not know whether the variable is an array there:
+    // a local is a new variable, and `unset` ends the array.)
+    const left = [
+      "declare 'arr=([u=2]=1)'", "arr=(); f() { local 'arr=($((u=2)))'; }; f", "x='([u=2]=1)'; arr=(); f() { local arr=\"$x\"; }; f",
+      "arr=(1); unset arr; declare 'arr=($((u=2)))'",
+    ];
+    const list: Script[] = [...undecided, ...kept, ...left].map((s) => ({ text: `u=1; ${s}; ${test('u')}; : M4`, constructs: [{ id: 1, type: 'if_statement' }] }));
+    // (An error in the text, here an arithmetic one, discards the rest of the line, which the walk does not see.)
+    list.push({ text: `u=1; declare -a 'arr=($((1/0)))' 2>/dev/null; u=2\n${test('u')}; : M4`, constructs: [{ id: 1, type: 'if_statement' }] });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'decisions-'));
+    try {
+      const results = await checkAll(list, dir, 4);
+      assert.deepStrictEqual(results.flatMap((r, i) => r.problems.map((p) => `${p}\n${forModel(list[i].text).src}`)), []);
+      assert.deepStrictEqual(results.map((r) => r.decided > 0), [...undecided.map(() => false), ...kept.map(() => true), ...left.map(() => false), false]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

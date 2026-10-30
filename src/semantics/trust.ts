@@ -9,7 +9,8 @@
 //   `declare`, `typeset`, `export`, `readonly` of `x=w` with no option but -r, -x and -g), and its name appears in no
 //   arithmetic text (where bash may assign it), in no other builtin that takes names, in no array, nameref, `${x:=w}`,
 //   function a trap or a callback may run, nor in the text of an `eval`, `trap` or `alias`. Positional parameters and
-//   the variables bash sets itself never are.
+//   the variables bash sets itself never are. A value that a declaration reads again as a compound assignment
+//   (`declare -a 'a=([u=2]=1)'`) is read as one, as text the walk does not run (`compoundValue`).
 // - Nothing is trusted (`blind`) when the script holds a construct whose row in the allow-list (src/semantics/allow.ts;
 //   docs/design/trust-allow-list.md) is `all`, or one the table does not have: what the walk does not follow, or the
 //   scan cannot read (`source`, `eval` or `trap` of text not known, a command name not known, indirection, an option
@@ -39,7 +40,7 @@ import { prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
 import type { BashVersion } from '../bashversion';
-import { field, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
+import { field, fields, hasError, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import type { CommandSpec } from '../argv/spec';
 import { bracedWords } from './brace';
 import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
@@ -52,7 +53,7 @@ import { inExtendedTest, testSplits, testWordShape } from './testwords';
 import { BLIND, type HostCommands, NO_HOST, type StringTrees, type Trust } from './trustmodel';
 import { COPY, identifiers, joined, writtenValue } from './written';
 import { ARITH_ASSIGNED, assignsArithmetic, changedUnseen, localeVariable, optionRoles, readDeclarationWords, writeEffect, type Declaration } from './vars';
-import { arithReads, commandNames, promptReads, ps4Writes, valuesWritten, type Value, type Write } from './writechecks';
+import { arithReads, commandNames, compoundReads, promptReads, ps4Writes, valuesWritten, type Value, type Write } from './writechecks';
 
 export { BLIND, type HostCommands, NO_HOST, type StringTrees, type Trust, withinTrust } from './trustmodel';
 
@@ -147,6 +148,10 @@ class Scan {
   private readonly aliasCommands: { c: SyntaxNode; name: string; where: Where }[] = [];
   /** The aliases each tree of an alias expanded at a command comes from (bash does not expand an alias in itself). */
   private readonly expanding = new Map<SyntaxNode, ReadonlySet<string>>();
+  /** The trees of the values declarations read again as compound assignments (`compoundValue`), with the statement of each. */
+  private readonly rereads = new Map<SyntaxNode, SyntaxNode>();
+  /** The variables a declaration gives a value not known that it reads again where the variable is an array (`compoundValue`). */
+  private readonly unknownCompounds: string[] = [];
 
   constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening: Opening | undefined, private readonly shell: Shell | undefined, private readonly version: BashVersion | undefined, private readonly posix: boolean) {
     const defs = (n: SyntaxNode): void => {
@@ -186,11 +191,14 @@ class Scan {
     return row.effect.kind !== 'none';
   }
 
-  /** `program`: a prefix assignment of a program (`LANG=de_DE.UTF-8 sort`), which changes its environment only. */
-  private write(name: string, w: Where, plain: boolean, value: Value, nameref = false, program = false): void {
-    if (!program) this.variableRow(name, value);
+  /**
+   * `program`: a prefix assignment of a program (`LANG=de_DE.UTF-8 sort`), which changes its environment only.
+   * `scalar`: the write never makes the variable an array (`Write.scalar`).
+   */
+  private write(name: string, w: Where, plain: boolean, value: Value, how: { nameref?: boolean; program?: boolean; scalar?: boolean } = {}): void {
+    if (!how.program) this.variableRow(name, value);
     const list = this.writes.get(name) ?? [];
-    list.push({ plain, value, fn: w.fn, foreign: w.foreign, ...(nameref ? { nameref } : {}) });
+    list.push({ plain, value, fn: w.fn, foreign: w.foreign, ...(how.nameref ? { nameref: true } : {}), ...(how.scalar ? { scalar: true } : {}) });
     this.writes.set(name, list);
   }
 
@@ -211,10 +219,19 @@ class Scan {
 
   /** The statement that runs `n`: of the script, or of a string it runs (the walk runs the same tree, `StringTrees`). */
   private owner(n: SyntaxNode): SyntaxNode | undefined {
+    const reread = this.reread(n);
+    if (reread) return reread;
     // (An assignment is run with its command.)
     for (let x: SyntaxNode | null = n; x; x = x.parent) if (STATEMENTS.has(x.type)) return x;
     /* c8 ignore next -- every word is in a statement */
     return undefined;
+  }
+
+  /** The declaration that reads `n` again, as a compound assignment, where `n` is in such a value (`compoundValue`). */
+  private reread(n: SyntaxNode): SyntaxNode | undefined {
+    let root = n;
+    while (root.parent) root = root.parent;
+    return this.rereads.get(root);
   }
 
   /**
@@ -235,7 +252,7 @@ class Scan {
       for (const name of names) set.add(name);
       this.pending.set(owner, set);
     }
-    for (const m of text.matchAll(ARITH_ASSIGNED)) this.write(m[1] ?? m[3] ?? m[4], w, false, 'number');
+    for (const m of text.matchAll(ARITH_ASSIGNED)) this.write(m[1] ?? m[3] ?? m[4], w, false, 'number', { scalar: m[2] === undefined });
   }
 
   /** What the word `v` assigns (`writtenValue`). */
@@ -260,14 +277,17 @@ class Scan {
     this.assigned(name, name, n, w);
   }
 
-  /** A variable a builtin sets, named `text` by the word `word` (undefined: a name not known here). */
-  private named(text: string | undefined, word: SyntaxNode, w: Where, value: Value = 'unknown'): void {
+  /**
+   * A variable a builtin sets, named `text` by the word `word` (undefined: a name not known here); `scalar`: not as an
+   * array (`read x`, not `read -a x`), unless the name has a subscript.
+   */
+  private named(text: string | undefined, word: SyntaxNode, w: Where, value: Value, scalar: boolean): void {
     const m = text === undefined ? null : /^([A-Za-z_]\w*)(?:\[(.*)\])?$/s.exec(text);
     if (!m) {
       if (text === undefined) this.blindFor('a builtin is given a variable name not known');
       return;
     }
-    this.write(m[1], w, false, value);
+    this.write(m[1], w, false, value, { scalar: scalar && m[2] === undefined });
     // (An unset gives no text to read as arithmetic.)
     if (value !== 'none') this.assigned(m[1], undefined, word, w);
     if (m[2] !== undefined) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(word), where: w });
@@ -289,8 +309,9 @@ class Scan {
         return;
       }
       case 'arithmetic_expansion': case 'arithmetic_command':
-        // (Run by the walk: its reads are checked there.)
-        this.arithText(n.type === 'arithmetic_command' ? n.namedChildren.map((c) => c.text).join(' ') : n.text, w);
+        // (Run by the walk: its reads are checked there. Not in a value a declaration reads again: they are checked
+        // where the declaration runs.)
+        this.arithText(n.type === 'arithmetic_command' ? n.namedChildren.map((c) => c.text).join(' ') : n.text, w, this.reread(n));
         return;
       case 'c_style_for_statement':
         for (const f of ['initializer', 'condition', 'update'] as const) for (const c of fields(n, f)) this.arithText(c.text, w);
@@ -320,9 +341,11 @@ class Scan {
           if (read === undefined || !NAME.test(read)) this.blindFor('a prompt expansion (`@P`) of a value not known');
           this.prompts.add(read);
         }
+        // (`${a[i]:=w}` assigns an element: `a` becomes an array.)
+        if (name?.type === 'subscript' && (ops.includes(':=') || ops.includes('='))) this.write(read!, w, false, 'unknown');
         if (name?.type === 'variable_name' && (ops.includes(':=') || ops.includes('='))) {
           const word = n.namedChildren[n.namedChildren.length - 1];
-          this.write(name.text, w, false, word === name ? { names: [], text: '' } : this.value(word));
+          this.write(name.text, w, false, word === name ? { names: [], text: '' } : this.value(word), { scalar: true });
           this.assigned(name.text, undefined, n, w);
         }
         // `${x:offset:length}`: arithmetic, the text after the first `:` (an operator of its own, not `:-`).
@@ -351,7 +374,7 @@ class Scan {
         if (variable) {
           // (Each word, once expanded: a glob or an expansion gives text not known; `select`, what the user types.)
           const values = fields(n, 'value').map((v): Value => (staticWordValue(v) !== undefined ? this.value(v) : 'unknown'));
-          this.write(variable.text, w, false, n.type === 'select_statement' || !values.length ? 'unknown' : joined(values));
+          this.write(variable.text, w, false, n.type === 'select_statement' || !values.length ? 'unknown' : joined(values), { scalar: true });
           this.assigned(variable.text, undefined, n, w);
         }
         break;
@@ -359,14 +382,14 @@ class Scan {
       case 'coproc_statement': {
         const name = field(n, 'name')?.text ?? 'COPROC';
         this.write(name, w, false, 'number');
-        this.write(`${name}_PID`, w, false, 'number');
+        this.write(`${name}_PID`, w, false, 'number', { scalar: true });
         break;
       }
       case 'file_redirect': case 'heredoc_redirect': case 'herestring_redirect': {
         this.apply(redirectionRow(n));
         // (`{fd}>f` sets `fd`; `{a[i]}>f` sets an element of `a`, and `i` is arithmetic.)
         const fd = /^\{([A-Za-z_]\w*)(?:\[(.*)\])?\}$/s.exec(field(n, 'descriptor')?.text ?? '');
-        if (fd) this.write(fd[1], w, false, 'number');
+        if (fd) this.write(fd[1], w, false, 'number', { scalar: fd[2] === undefined });
         if (fd?.[2] !== undefined) this.subscripts.push({ array: fd[1], text: fd[2], owner: this.owner(n), where: w });
         if (closesStandard(n)) this.fdsClose = true;
         break;
@@ -440,20 +463,16 @@ class Scan {
 
   /**
    * `x=w`, `x+=w`, `a[i]=w`, `a=(…)`: `plain` unless it is in a declaration that gives attributes; `associative`: in
-   * `declare -A`, whose keys are not arithmetic.
+   * `declare -A`, whose keys are not arithmetic; `array`: in a declaration that gives -a or -A.
    */
-  private assignment(a: SyntaxNode, w: Where, plain: boolean, associative = false, program = false): void {
+  private assignment(a: SyntaxNode, w: Where, plain: boolean, associative = false, program = false, array = false): void {
     const nameNode = field(a, 'name')!;
     const value = field(a, 'value');
     const subscript = nameNode.type === 'subscript';
     const name = subscript ? field(nameNode, 'name')!.text : nameNode.text;
     if (value?.type === 'array') {
-      this.write(name, w, false, joined(value.namedChildren.map((e) => this.value(e))), false, program);
-      for (const e of value.namedChildren) {
-        // (`a=([i]=x)`: `[i]` is a subscript.)
-        const key = /^\[([^\]]*)\]\+?=/.exec(e.text)?.[1];
-        if (key !== undefined && !associative) this.subscripts.push({ array: name, text: key, owner: this.owner(a), where: w });
-      }
+      this.write(name, w, false, joined(value.namedChildren.map((e) => this.value(e))), { program });
+      this.elements(value, name, associative, a, w);
       this.assigned(name, undefined, a, w);
       return;
     }
@@ -461,9 +480,48 @@ class Scan {
     // (A copy, `save=$IFS`, `IFS=$save`: see `testSplits`.)
     const copy = typeof v === 'object' && !subscript ? COPY.exec(v.text)?.[1] : undefined;
     if (copy) this.copies.push({ owner: this.owner(a)!, target: name, source: copy });
-    this.write(name, w, plain && !subscript, v, false, program);
+    this.write(name, w, plain && !subscript, v, { program, scalar: !subscript && !array });
     this.assigned(name, value ? value.text : '', a, w);
     if (!subscript && a.children.some((c) => c.type === '+=')) this.appended(name, a, w);
+  }
+
+  /** The subscripts of the elements of the array `value` (`a=([i]=x)`: `[i]`), assigned to `name` by `a`. */
+  private elements(value: SyntaxNode, name: string, associative: boolean, a: SyntaxNode, w: Where): void {
+    for (const e of value.namedChildren) {
+      const key = /^\[([^\]]*)\]\+?=/.exec(e.text)?.[1];
+      if (key !== undefined && !associative) this.subscripts.push({ array: name, text: key, owner: this.owner(a), where: w });
+    }
+  }
+
+  /**
+   * The value of `name` that the declaration word `o` gives, which bash reads again as a compound assignment when it
+   * starts with `(` and ends with `)`, once expanded, and the declaration gives -a or -A (`explicit`), or the variable
+   * is an array there (in its scope: a local in a function, a nameref's target): `declare -a 'a=([u=2]=1)'`,
+   * `a=(); declare "a=$x"`. It then expands the elements, and runs the subscripts as arithmetic unless the array is
+   * associative, as in `a=(…)`. `text`: the value, where it is known; `start`: the text known at its start otherwise.
+   * A value known is read so whether or not the variable is an array there, which the scan does not know: as foreign
+   * text the walk does not run, whose arithmetic is checked where the declaration runs (`rereads`), and which may fail
+   * there. One not known that may start with `(` trusts nothing with -a or -A, and else where the variable may be an
+   * array somewhere (`compoundReads`).
+   */
+  private compoundValue(o: SyntaxNode, name: string, text: string | undefined, start: string, explicit: boolean, associative: boolean, w: Where): void {
+    if (text === undefined) {
+      if (start && !start.startsWith('(')) return;
+      if (explicit) this.blindFor('a declaration with -a or -A is given a value not known, which it may read again as a compound assignment');
+      this.unknownCompounds.push(name);
+      return;
+    }
+    if (!/^\(.*\)$/s.test(text)) return;
+    const root = this.strings.compound(name, text);
+    const command = root.namedChildren.length === 1 ? root.namedChildren[0] : undefined;
+    const a = command?.namedChildren.length === 1 ? command.namedChildren[0] : undefined;
+    const value = a && field(a, 'value');
+    if (hasError(root) || value?.type !== 'array' || value.text !== text) this.blindFor('a declaration reads again as a compound assignment text the model does not read');
+    const owner = this.owner(o)!;
+    this.rereads.set(root, owner);
+    this.fails.add(owner);
+    this.elements(value, name, associative, a!, w);
+    this.visit(value, { fn: w.fn, foreign: true, now: false });
   }
 
   private declaration(builtin: string, { words, on, off }: Declaration, w: Where): void {
@@ -486,6 +544,9 @@ class Scan {
     // ones run their values.)
     if (builtin === 'readonly' || unknownOption || [...on, ...off].some((l) => !'xg'.includes(l))) this.changed(w);
     const nameref = on.includes('n') && builtin !== 'export';
+    // (`export` and `readonly` read a value again as a compound assignment only with -a or -A: see `compoundValue`.)
+    const explicit = /[aA]/.test(on);
+    const compound = explicit || (builtin !== 'export' && builtin !== 'readonly');
     for (const { node: o, field: f } of operands) {
       let name: string;
       if (f === undefined && o.type === 'variable_assignment') {
@@ -499,10 +560,15 @@ class Scan {
             this.refEdge(name, m[1]);
             if (m[2] !== undefined) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(o), where: w });
           } else this.refUnknown.add(name);
-          this.write(name, w, false, 'unknown', true);
+          this.write(name, w, false, 'unknown', { nameref: true });
           continue;
         }
-        this.assignment(o, w, plain, on.includes('A'));
+        const value = field(o, 'value');
+        // (Of an element, `declare 'a[1]=(x)'`, only with -a or -A.)
+        if (compound && value && value.type !== 'array' && (explicit || nameNode.type !== 'subscript')) {
+          this.compoundValue(o, name, staticWordValue(value, true, this.shell), prefixOf(value, this.shell), explicit, on.includes('A'), w);
+        }
+        this.assignment(o, w, plain, on.includes('A'), false, explicit);
       } else {
         // A word: `x`, `a[1]` (a glob that matches no file, as the walk takes it), `'x=1'`, `"$v"=1` (a name with a value
         // not known), `$v` (a name not known), `{a,b}` (names the braces give where they expand).
@@ -521,12 +587,16 @@ class Scan {
             this.refTargets.add(target);
             this.refEdge(name, target);
           } else this.refUnknown.add(name);
-          this.write(name, w, false, 'unknown', true);
+          this.write(name, w, false, 'unknown', { nameref: true });
           continue;
         }
         if (m[3]) {
+          if (compound && (explicit || !m[2])) {
+            const start = text === undefined ? prefixOf(o, this.shell) : '';
+            this.compoundValue(o, name, text === undefined ? undefined : m[4], start.slice(start.indexOf('=') + 1), explicit, on.includes('A'), w);
+          }
           const value: Value = text === undefined ? 'unknown' : { names: identifiers(m[4]), text: m[4], fixed: true };
-          this.write(name, w, plain && !m[2], value);
+          this.write(name, w, plain && !m[2], value, { scalar: !m[2] && !explicit });
           this.assigned(name, text === undefined ? undefined : m[4], o, w);
           if (m[3] === '+=' && !m[2]) this.appended(name, o, w);
         } else if (!(builtin === 'export' || builtin === 'readonly') || !plain) {
@@ -535,7 +605,7 @@ class Scan {
           // `declare n; (( n ))` runs `n='y=5'` from there. A trap's action may run in any function, or none.)
           // (`declare -I x` makes the local variable start with the value of the one it hides.)
           const local = w.fn !== undefined && (!w.foreign || w.now) && !on.includes('g') && !on.includes('I') && builtin !== 'export' && builtin !== 'readonly';
-          this.write(name, w, false, local ? 'none' : 'kept');
+          this.write(name, w, false, local ? 'none' : 'kept', { scalar: !m[2] && !explicit });
         }
       }
       if (on.includes('i')) this.integers.add(name);
@@ -551,7 +621,7 @@ class Scan {
       this.changed(w);
       return;
     }
-    for (const r of parse.roles) if (r.role.role === 'operand') this.named(wordName(words[r.word]), words[r.word], w, 'none');
+    for (const r of parse.roles) if (r.role.role === 'operand') this.named(wordName(words[r.word]), words[r.word], w, 'none', true);
   }
 
   /**
@@ -612,7 +682,7 @@ class Scan {
     const { parse } = read;
     // The variables it sets, and the functions it runs later, as its spec says (src/semantics/effects.ts).
     for (const v of variableWrites(spec, read)) {
-      if (v.node) this.named(v.name, v.node, w, v.sets === 'job-id' ? 'number' : 'unknown');
+      if (v.node) this.named(v.name, v.node, w, v.sets === 'job-id' ? 'number' : 'unknown', v.sets === 'string' || v.sets === 'job-id');
       else this.write(v.name!, w, false, 'unknown');
     }
     for (const f of callbacks(read)) this.callback(f);
@@ -893,7 +963,7 @@ class Scan {
         this.copied.set(c.owner, set);
       }
     }
-    const why = arithReads(this.arith, this.writes, this.refUnknown) ?? commandNames(this.commandVariables, this.writes, this.functions, this.callbacks) ?? ps4Writes(writesOf('PS4'));
+    const why = arithReads(this.arith, this.writes, this.refUnknown) ?? compoundReads(this.unknownCompounds, writesOf, this.refTargets) ?? commandNames(this.commandVariables, this.writes, this.functions, this.callbacks) ?? ps4Writes(writesOf('PS4'));
     if (why) this.blindFor(why);
     // A nameref whose target is not known, assigned or unset: any variable may change. Read, too: bash expands the
     // target's subscript (`declare -n r=$1; : "$r"` with `$1` = `a[u=2]` sets `u`).

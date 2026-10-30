@@ -402,4 +402,32 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     assert.match(bashErr('compgen -C true x'), /-C option may not work as you expect/);
     assert.strictEqual(decided('u=1; compgen -C true x; [ "$u" = 1 ] && :'), undefined);
   });
+
+  it('reads a value that a declaration reads again as a compound assignment as one, where its subscripts run', () => {
+    const blind = (src: string): string | undefined => shellState(parser.parse(src)).blind;
+    // Arithmetic in it reads `n` where the declaration runs, which may have the environment's value there (`n='u=2'`):
+    // the walk checks it, as for a subscript it does not run.
+    for (const src of ["declare -a 'a=($((n)))'; n=1", "declare -a 'a=([n]=1)'; n=1", "a=(); declare 'a=($((n)))'; n=1", "declare -A 'a=([k]=$((n)))'; n=1"]) {
+      assert.strictEqual(inherited(`u=1; ${src}\necho "$u"`), '2', src);
+      assert.strictEqual(decided(`u=1; ${src}\n[ "$u" = 1 ] && :`), undefined, src);
+    }
+    // (A function called in it runs where the walk does not see it.)
+    assert.strictEqual(bash("f() { echo 2; }; declare -a 'a=($(f))'; echo \"${a[0]}\""), '2\n');
+    assert.strictEqual(shellState(parser.parse("f() { :; }; declare -a 'a=($(f))'")).closed('f'), false);
+    assert.strictEqual(shellState(parser.parse("f() { :; }; declare -a 'a=(f)'; f")).closed('f'), true);
+    // A text the model does not read as one compound assignment, and a value not known, trust nothing.
+    for (const text of ['(a);(b)', '(a) b\\)', '(a) # x)', '(a) (b)']) {
+      assert.strictEqual(blind(`declare -a 'a=${text}'`), 'a declaration reads again as a compound assignment text the model does not read', text);
+    }
+    for (const src of ['declare -a a="$1"', 'declare -A a=$1', 'readonly -a a="$1"', 'x=$1; declare -a a="($x)"', 'f() { local -a a="$1"; }']) {
+      assert.strictEqual(blind(src), 'a declaration with -a or -A is given a value not known, which it may read again as a compound assignment', src);
+    }
+    for (const src of ['a=(); declare a="$1"', '[[ a =~ a ]]; declare BASH_REMATCH="$1"', 'declare -n r=a; declare a="$1"', 'declare -n r=a; declare r="$1"', 'read -a a; declare a="$1"', 'a[1]=x; declare a="$1"']) {
+      assert.match(blind(src) ?? '', /^a declaration gives `\w+`, which may be an array, a value not known/, src);
+    }
+    // (Not where it is never an array, nor where the value starts with text other than `(`, nor with `export` or `readonly` alone.)
+    for (const src of ['a=x; read a; declare -r a="$1"; f() { local a="$1"; }', 'declare -a a="x$1"', 'a=(); export a="$1"; readonly a="$1"', 'a=(); declare a[1]="$1"']) {
+      assert.strictEqual(blind(src), undefined, src);
+    }
+  });
 });
