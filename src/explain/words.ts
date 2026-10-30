@@ -3,16 +3,17 @@
 // word splitting and globbing do to them, arrays and arithmetic. What a word does in its context comes from the
 // model (src/semantics/words.ts, through src/explain/reads.ts); a `${…}` is src/expansion-tokens.ts, which reads
 // the descriptions and notes of variables from here.
-import type { Kind, Token } from '../analyzer-types';
+import type { Kind, Pos, Token } from '../analyzer-types';
 import { type ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping } from '../arith';
 import { DEFAULT_BASH_VERSION, earlier } from '../bashversion';
 import { pictureList, visible } from '../ctlchars';
 import { ordinal } from '../i18n';
 import { ciVariables } from '../dict/ciVariables';
 import { bash53Variables, specialVariables, wellKnownVariables } from '../dict/syntax';
-import { explainGlob, globIntro, type GlobTarget, hasGlob } from '../embedded/glob';
+import { explainGlob, globIntro, type GlobTarget, hasGlob, unbroken } from '../embedded/glob';
 import type { EmbeddedToken } from '../embedded/types';
 import { braceSequence, extglobs, hasGlobstar, isGlob } from '../examples/shellwords';
+import { parseSequence } from '../braceseq';
 import { parseExpansion } from '../expansion';
 import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
@@ -24,9 +25,9 @@ import { replaceRange } from '../rewrite';
 import { attribute, docLine } from '../semantics/state';
 import { readonlyAtStart } from '../semantics/vars';
 import { givesElements } from '../semantics/elements';
-import { braceWords as fieldsOfBraceWords, CONTEXTS, partMeaning, patternOfChars, type StepKind, trustedPart, underscoreValue, wordFields, wordOf } from '../semantics/words';
+import { braceWords as fieldsOfBraceWords, CONTEXTS, partMeaning, patternOfChars, type StepKind, type TildePrefix, trustedPart, underscoreValue, wordFields, wordOf } from '../semantics/words';
 import { type BracketSpan, bracketSpans, decodedText, isPlainWord, setsElement, splitElement, stackTilde, staticWordValue, unquoteWord } from '../staticword';
-import { ancestor, assignmentsOnly, braceKind, descendants, field, fields, nameText, type SyntaxNode, wordBraces } from '../syntax/tree';
+import { ancestor, assignmentsOnly, braceKind, descendants, field, fields, joinedText, nameText, type SyntaxNode, wordBraces } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
 import { fromEmbedded, same, sibling, sortTokens } from './nodes';
@@ -348,29 +349,31 @@ function oneFieldEach(cx: Explainer, n: SyntaxNode): boolean {
  */
 function sequenceParts(cx: Explainer, s: SyntaxNode): EmbeddedToken[] {
   const [xn, yn, zn] = s.namedChildren;
-  const [x, y] = [xn.text, yn.text];
-  const numbers = /\d/.test(x);
+  // (As bash reads them, without line continuations: `{1..\<newline>3}`.)
+  const [x, y] = [joinedText(xn), joinedText(yn)];
+  // (The parser makes a sequence only of one bash expands.)
+  const seq = parseSequence(joinedText(s).slice(1, -1))!;
+  const numbers = !seq.letters;
   // (A sequence of the word expands to no more words than the word: they were listed.)
-  const words = braceSequence(s.text)!;
+  const words = braceSequence(joinedText(s))!;
   const kind = numbers ? 'number' : 'string';
-  const value = (v: string): number => (numbers ? Number(v) : v.charCodeAt(0));
-  const down = value(x) > value(y);
+  const down = seq.step < 0n;
   const padded = (v: string): string => (numbers && /^-?0\d/.test(v) ? cx.s('。先頭が 0 なので、すべての数を 0 で埋めて同じ桁数にする', '; it has a leading 0, so every number is padded with zeros to the same width') : '');
   const last = words[words.length - 1];
-  const stops = last !== y && (!numbers || Number(last) !== Number(y)) ? cx.s(`（増分で届かないので、最後の単語は \`${last}\`）`, ` (the steps do not land on it: the last word is \`${last}\`)`) : '';
+  const stops = last !== y && (!numbers || BigInt(last) !== seq.end) ? cx.s(`（増分で届かないので、最後の単語は \`${last}\`）`, ` (the steps do not land on it: the last word is \`${last}\`)`) : '';
   const out: EmbeddedToken[] = [
     { start: xn.startIndex, end: xn.endIndex, kind, explanation: cx.s(`開始: \`${x}\``, `Start: \`${x}\``) + padded(x), children: [] },
     { start: yn.startIndex, end: yn.endIndex, kind, explanation: cx.s(`終わり: \`${y}\``, `End: \`${y}\``) + stops + padded(y), children: [] },
   ];
   if (!zn) return out;
-  const z = zn.text;
-  const step = Math.abs(Number(z)) || 1;
-  const sign = Number(z) < 0 ? cx.s('。符号は使われず、向きは開始と終わりで決まる', '; its sign does not count: the start and the end set the direction') : Number(z) === 0 ? cx.s('。0 は 1 として扱われる', '; 0 counts as 1') : '';
+  const z = joinedText(zn);
+  const step = seq.step < 0n ? -seq.step : seq.step;
+  const sign = seq.written < 0n ? cx.s('。符号は使われず、向きは開始と終わりで決まる', '; its sign does not count: the start and the end set the direction') : seq.written === 0n ? cx.s('。0 は 1 として扱われる', '; 0 counts as 1') : '';
   out.push({
     start: zn.startIndex, end: zn.endIndex, kind: 'number',
     explanation: numbers
       ? cx.s(`増分: \`${z}\`（単語ごとに ${step} ${down ? '減る' : '増える'}）${sign}`, `Increment: \`${z}\` (each word is ${step} ${down ? 'less' : 'more'} than the one before)${sign}`)
-      : cx.s(`増分: \`${z}\`（${step} 文字ごとに${down ? '逆向きに' : ''}進む）${sign}`, `Increment: \`${z}\` (${step === 1 ? 'each letter' : `every ${ordinal(step)} letter`}, counting ${down ? 'down' : 'up'})${sign}`),
+      : cx.s(`増分: \`${z}\`（${step} 文字ごとに${down ? '逆向きに' : ''}進む）${sign}`, `Increment: \`${z}\` (${step === 1n ? 'each letter' : `every ${ordinal(step)} letter`}, counting ${down ? 'down' : 'up'})${sign}`),
     children: [],
   });
   return out;
@@ -470,16 +473,23 @@ export function tilde(cx: Explainer, n: SyntaxNode): Token | undefined {
     return { origin: 'shell', ...cx.tok(n, 'expansion', cx.s(`チルダ展開: ${tildeTarget(cx, first.user)}に置き換わる`, `Tilde expansion: ${tildeTarget(cx, first.user)}`)
       + after + (hasGlob(n.text) ? notGlobbedHere(cx, n) + globOff(cx, n) : ''), globbed ? globChildren(cx, n, rest, first.end) : []), refs: ['3.5.2', ...stackSection(first.user), ...(globbed ? ['3.5.8'] : [])] };
   }
-  const row = n.startPosition.row;
-  const col = n.startPosition.column;
-  const kids = tildes.map((t) => ({
-    kind: 'expansion' as Kind, label: n.text.slice(t.start, t.end), children: [], origin: 'shell' as const,
-    span: { start: { line: row, character: col + t.start }, end: { line: row, character: col + t.end } },
+  return cx.tok(n, 'argument', cx.s(`文字列 \`${n.text}\``, `Word \`${n.text}\``) + tildeNote(cx, n), tildeTokens(cx, tildes));
+}
+
+/** The tokens of the tilde prefixes of a word, each where it is written (past a line continuation: `a=\<newline>~`). */
+function tildeTokens(cx: Explainer, tildes: readonly TildePrefix[]): Token[] {
+  const at = (n: SyntaxNode, i: number): Pos => {
+    const before = n.text.slice(0, i);
+    const nl = before.lastIndexOf('\n');
+    return nl < 0 ? { line: n.startPosition.row, character: n.startPosition.column + i } : { line: n.startPosition.row + before.split('\n').length - 1, character: i - nl - 1 };
+  };
+  return tildes.map((t) => ({
+    kind: 'expansion' as Kind, label: t.node.text.slice(t.start, t.end), children: [], origin: 'shell' as const,
+    span: { start: at(t.node, t.start), end: at(t.node, t.end) },
     explanation: t.after
       ? cx.s(`チルダ展開（\`${t.after}\` の後ろ）: ${tildeTarget(cx, t.user)}に置き換わる`, `Tilde expansion (after \`${t.after}\`): ${tildeTarget(cx, t.user)}`)
       : cx.s(`チルダ展開: ${tildeTarget(cx, t.user)}に置き換わる`, `Tilde expansion: ${tildeTarget(cx, t.user)}`),
   }));
-  return cx.tok(n, 'argument', cx.s(`文字列 \`${n.text}\``, `Word \`${n.text}\``) + tildeNote(cx, n), kids);
 }
 
 /** An argument that looks like an assignment (`x=~/y`): bash expands a tilde after its `=` and `:`. */
@@ -523,14 +533,22 @@ const QUOTED = new Set(['string', 'raw_string', 'ansi_c_string', 'translated_str
 
 /** The parts of a glob pattern as tokens, placed where the pattern is written (`base` characters into `n`); `extglob: false` reads `@(…)` as plain text. */
 export function globChildren(cx: Explainer, n: SyntaxNode, text: string, base: number, extglob = true): Token[] {
-  return explainGlob(text, cx.lang, extglob).map((t) => fromEmbedded(t, n, { text, base }, 'shell'));
+  // (bash reads the pattern without its line continuations: `*.t\<newline>xt` is `*.txt`, each character where it is written.)
+  const pattern = unbroken(text);
+  const offsets: number[] = [];
+  for (let i = 0; pattern !== text && i < text.length; i++) {
+    if (text.startsWith('\\\n', i)) i++;
+    else offsets.push(base + i);
+  }
+  return explainGlob(pattern, cx.lang, extglob).map((t) => fromEmbedded(t, n, pattern === text ? { text, base } : { text: pattern, offsets }, 'shell'));
 }
 
 /**
  * What a file-name glob does with the glob options in effect: `**` reaches into subdirectories only with globstar on
  * (with a pitfall when it is not seen turned on before: it may be, in a file read with `source`).
  */
-export function globNotes(cx: Explainer, text: string, n: SyntaxNode): string {
+export function globNotes(cx: Explainer, written: string, n: SyntaxNode): string {
+  const text = unbroken(written);
   return globOptionNote(cx, n, text) + starStarNote(cx, text, n) + extglobNote(cx, text);
 }
 
@@ -872,7 +890,7 @@ function arrayElement(cx: Explainer, n: SyntaxNode, kind: 'assoc' | 'indexed' | 
   return cx.tok(n, 'argument', cx.s(
     `${what}${what.endsWith('`') ? ' ' : ''}の要素に \`${m[3]}\` を${m[2] ? '追記' : '代入'}する`,
     `Element with ${what}: ${m[2] ? 'append' : 'set it to'} \`${m[3]}\``,
-  ) + more);
+  ) + more, tildeTokens(cx, wordAt(cx, n)!.tildes.filter((t) => tildeTarget(cx, t.user))));
 }
 
 export function subscript(cx: Explainer, n: SyntaxNode): Token {

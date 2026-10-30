@@ -8,7 +8,7 @@ import { actedNames, has, onlyInFunction } from '../../argv/query';
 import { prefixOf } from '../../argv/words';
 import { bracesMayWork } from '../../shellfeatures';
 import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
-import { staticWordValue, tildeParts, tildeSpots } from '../../staticword';
+import { elementClose, staticWordValue, tildeParts, tildeSpots } from '../../staticword';
 import { descendants, field, fields, type SyntaxNode, wordBraces } from '../../syntax/tree';
 import { parseExpansion } from '../../expansion';
 import { expansionFailure, sameInEveryLocale, substring } from '../chars';
@@ -585,8 +585,8 @@ export class WalkBuiltins {
       const v = st.variables.get(target);
       return !changedByBash(target) && target !== 'IFS' && (!v || !!v.kept);
     };
-    // (Each element of `a=(~ x)` starts a word of its own.)
-    const tildes = (w.type === 'array' ? w.namedChildren : [w]).flatMap((e) => tildeSpots(tildeParts([e]), 'assignment'));
+    // (Each element of `a=(~ x)` starts a word of its own; one with a subscript has its tilde after the `=`: `a=([1]=~)`.)
+    const tildes = (w.type === 'array' ? w.namedChildren : [w]).flatMap((e) => tildeSpots(tildeParts([e]), w.type === 'array' && elementClose(e.text) ? 'element' : 'assignment'));
     if (tildes.some((t) => t.user !== '' || unwritten('HOME'))) return true;
     return [w, ...descendants(w, ['simple_expansion', 'expansion'])].some((e) => {
       const name = (e.type === 'simple_expansion' || e.type === 'expansion') ? e.namedChildren[0] : undefined;

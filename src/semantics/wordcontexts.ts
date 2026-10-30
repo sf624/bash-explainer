@@ -17,9 +17,10 @@ export interface ContextRule {
   /**
    * `start`: a tilde prefix at the start; `assignment`: also after each `:` (and the start is after `=`);
    * `argument`: at the start, and in bash mode after the `=` and the `:` of a word that looks like an assignment;
-   * `declaration`: as `argument`, in POSIX mode too (a declaration's assignment).
+   * `declaration`: as `argument`, in POSIX mode too (a declaration's assignment); `element`: in bash mode, after the
+   * `=` of an element with a subscript and after each `:` (none in POSIX mode).
    */
-  tilde: 'none' | 'start' | 'assignment' | 'argument' | 'declaration';
+  tilde: 'none' | 'start' | 'assignment' | 'argument' | 'declaration' | 'element';
   /** Word splitting and pathname expansion of the unquoted parts (`inherit`: as the expansion around it). */
   split: boolean | 'inherit';
   glob: boolean | 'inherit';
@@ -43,7 +44,7 @@ export const CONTEXTS: Readonly<Record<WordContext, ContextRule>> = {
   'for-list': { ...ARGUMENT, manual: '3.2.5.1' },
   // (`a=(x=~/y)` keeps its tilde: only an argument that looks like an assignment has one after `=`.)
   'array-element': { ...ARGUMENT, tilde: 'start', manual: '6.7' },
-  'array-element-assignment': { brace: true, tilde: 'assignment', split: false, glob: false, fields: 'many', manual: '6.7' }, // `a=([0]=$x [1]=*)` (bash 5.2 brace-expands `[2]={a,b}` to the values `[2]=a`, `[2]=b`)
+  'array-element-assignment': { brace: true, tilde: 'element', split: false, glob: false, fields: 'many', manual: '6.7' }, // `a=([0]=$x [1]=*)` (bash 5.2 brace-expands `[2]={a,b}` to the values `[2]=a`, `[2]=b`)
   'array-element-assoc': { ...ONE, tilde: 'none', manual: '6.7' }, // `m=(k {a,b} $x *)` in an associative array (bash 5.3 expands a tilde there, 5.2 not)
   // A declaration builtin's word that looks like an assignment is one (the parser gives it as such); the others are arguments.
   'declaration-argument': { ...ARGUMENT, manual: '4.2' },
@@ -54,7 +55,8 @@ export const CONTEXTS: Readonly<Record<WordContext, ContextRule>> = {
   'case-word': { ...ONE, tilde: 'argument', manual: '3.2.5.2' },
   'case-pattern': { ...ONE, tilde: 'argument', match: 'pattern', manual: '3.2.5.2' },
   'redirect-target': { brace: true, tilde: 'argument', split: true, glob: true, fields: 'one-or-error', posixLiteral: true, manual: '3.6' },
-  herestring: { ...ONE, tilde: 'start', manual: '3.6.7' },
+  // (bash expands it as the value of an assignment: `x:~` has a tilde after the `:`, `a=~` none after the `=`; in POSIX mode too.)
+  herestring: { ...ONE, tilde: 'assignment', manual: '3.6.7' },
   'heredoc-body': { ...ONE, tilde: 'none', manual: '3.6.6' },
   arith: { ...ONE, tilde: 'none', manual: '6.5' },
   'subscript-indexed': { ...ONE, tilde: 'none', manual: '6.7' },

@@ -1224,6 +1224,26 @@ A tilde before a glob is expanded, then the word is globbed:
 | `set -f; ls ~/*.txt` | `~/*.txt` with the home directory, as written | "stays as it is", and the note on `set -f` | "stays as it is" |
 | the example of `ls ~/*.txt`, of `/var/cache/apk/*` | a hidden file is not matched | `~/.app.txt`, `/var/cache/apk/.app` | `.~/app.txt`, `./var/cache/apk/app` |
 
+### Line continuations, long sequences and tildes in more places
+
+bash removes a line continuation (`\` at the end of a line) before it reads a word, counts a sequence in 64-bit integers, and expands some words as the value of an assignment. Checked with bash 5.2 and 5.3 (test/fixtures/probes/words.json); `~` is the home directory:
+
+| Written | bash | Said now | Said before |
+| --- | --- | --- | --- |
+| `echo {1..\`, then `3}` on the next line (also `{1\`, then `0..12}`) | `1 2 3` (`10 11 12`) | "expands to 3 words: `1` `2` `3`", start `10` | "expands to many words" |
+| `echo a\`, then `=~` | `a=/home/me` | the tilde after `=`, at its place on the second line | the string `a=~` |
+| `echo *.t\`, then `xt`; `shopt -s extglob; echo +\`, then `(a).txt` | `a.txt`… | the text `.txt`; an extended glob `+(a)` | the character newline; the string `+(a).txt` |
+| `echo {0..2..9223372036854775808}`, `{1..2..18446744073709551617}`, `{a..c..9223372036854775808}` | the word as written | a plain word | the words `0`, `1`, `a` |
+| `echo {9007199254740993..9007199254740991..2}` | `9007199254740993 9007199254740991` | the same | `9007199254740992` |
+| `echo {0..2..9223372036854775807}` | `0` | "each word is 9223372036854775807 more" | "9223372036854776000 more" |
+| `echo {9223372036854775806..0..9223372036854775806}`, `{0..4294967290..2}` | bash 5.2: the word as written (its limits on the range and on the number of words) | a plain word | words |
+| `cat <<< x:~`, `cat <<< a=~:~` | `x:/home/me`, `a=~:/home/me` (also in POSIX mode) | the tilde after `:`, not after `=` | the text |
+| `read a b <<< x:~` | reads `x:/home/me` | an example line | the line `x:~` |
+| `r=([0]=~ [1]=x:~)` | `/home/me x:/home/me` (in POSIX mode, `~ x:~`) | the tildes after `=` and `:` | "set it to `~`" alone |
+| `a=${x:+x:~}`, `declare a=${x:-~/a:~}`, `cat <<< ${x:+x:~}` | `x:/home/me`, `/home/me/a:/home/me` (not in POSIX mode; not `${x=x:~}`, nor as an argument: `echo ${x:+x:~}` prints `x:~`) | the example `x:$HOME (expanded)` | `x:~` |
+
+bash 5.3 changed some of these limits: it expands `{9223372036854775806..0..9223372036854775806}`, refuses any increment of -9223372036854775808, and pads `{02147483648..2147483650}` to `02147483648`… where bash 5.2 prints `-2147483648`…; the explanations follow bash 5.2 there.
+
 ### Tests and redirections as bash runs them
 
 | Written | bash | Said now | Said before |

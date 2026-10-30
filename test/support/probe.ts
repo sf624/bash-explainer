@@ -332,10 +332,15 @@ export async function probeNames(snippet: string, names: string[]): Promise<Reco
 
 // (POSIX text, which dash runs too: its printf knows no `\x1e`.)
 const WORDS_BODY = `{ printf '%s\\0' "$1"; shift; if [ "$#" -gt 0 ]; then printf '%s\\0' "$@"; fi; printf '\\036'; } >>LOG`;
+/** The same, and then what the marker reads on its stdin, without the newline that a here-string ends with (bash only). */
+const STDIN_BODY = `{ printf '%s\\0' "$1"; shift; if [ "$#" -gt 0 ]; then printf '%s\\0' "$@"; fi; local __in; __in=$(cat; echo .); __in=\${__in%.}; printf '%s\\0\\036' "\${__in%$'\\n'}"; } >>LOG`;
 
-/** For each marker, the fields of its words, once per time it ran (`@PROBE:x@ $a *.txt`). */
-export async function probeWords(snippet: string, opts: ProbeOptions = {}): Promise<{ fields: Record<string, string[][]>; run: ProbeRun }> {
-  const run = await runProbe(snippet, WORDS_BODY, opts);
+/**
+ * For each marker, the fields of its words, once per time it ran (`@PROBE:x@ $a *.txt`); with `stdin`, then the text
+ * it reads on its stdin (`@PROBE:x@ <<< ~`).
+ */
+export async function probeWords(snippet: string, opts: ProbeOptions & { stdin?: boolean } = {}): Promise<{ fields: Record<string, string[][]>; run: ProbeRun }> {
+  const run = await runProbe(snippet, opts.stdin ? STDIN_BODY : WORDS_BODY, opts);
   const fields: Record<string, string[][]> = {};
   for (const id of run.markers) fields[id] = [];
   for (const [id, ...words] of run.records) fields[id].push(words);
@@ -371,6 +376,8 @@ export interface ProbeRow {
   environment?: Record<string, string>;
   /** status: false to run without `-e`. */
   errexit?: boolean;
+  /** words: each marker also prints what it reads on its stdin (the text of its here-string), after its words. */
+  stdin?: boolean;
   /** names: the names to look up at each marker. */
   names?: string[];
   /** What the row shows (optional). */
@@ -415,7 +422,7 @@ export async function factsOf(kind: ProbeKind, row: ProbeRow): Promise<unknown> 
     case 'names':
       return probeNames(row.snippet, row.names ?? []);
     case 'words': {
-      const { fields, run } = await probeWords(row.snippet, { posix: row.posix, program });
+      const { fields, run } = await probeWords(row.snippet, { posix: row.posix, program, stdin: row.stdin });
       // (What the run created shows where its redirections went.)
       return { ...fields, status: run.status, ...firstError(run), ...(run.created.length ? { created: run.created } : {}) };
     }

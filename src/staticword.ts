@@ -172,10 +172,11 @@ function escaped(text: string, i: number): boolean {
  * The tilde prefixes bash expands in a word, given as its parts (`plain`: unquoted text of the source, as a `word`
  * node). `start`: at the start of the word; `assignment`: also after each unquoted `:` (manual 3.4); `argument`: in a
  * word that looks like an assignment (`x=~/a:~/b`, `a[1]=~`, `n+=~`), also after the `=` and after each unquoted `:`
- * (bash mode). A prefix runs to the first `/` (or `:`, after `=` and `:` and in an assignment) and must be all unquoted
- * text: `~"x"`, `~$u`, `x="a:"~/b` and `x=a:"~/b"` have none.
+ * (bash mode); `element`: an element of an array's list with a subscript (`[1]=~/a:~/b`), after its `=` and after
+ * each unquoted `:` (bash mode). A prefix runs to the first `/` (or `:`, after `=` and `:` and in an assignment) and
+ * must be all unquoted text: `~"x"`, `~$u`, `x="a:"~/b` and `x=a:"~/b"` have none.
  */
-export function tildeSpots(parts: readonly { text: string; plain: boolean }[], mode: 'start' | 'assignment' | 'argument'): TildeSpot[] {
+export function tildeSpots(parts: readonly { text: string; plain: boolean }[], mode: 'start' | 'assignment' | 'argument' | 'element'): TildeSpot[] {
   const out: TildeSpot[] = [];
   // (bash removes a line continuation before it reads the word: `~\<newline>/x` is `~/x`, `x=\<newline>~` has a prefix.)
   const tilde = (text: string, i: number): number | undefined => {
@@ -194,22 +195,34 @@ export function tildeSpots(parts: readonly { text: string; plain: boolean }[], m
   };
   const first = parts[0];
   const plain = !!first?.plain;
-  let from: number | undefined;
+  // Where the `:` that are looked at start: the part, and the index in it.
+  let from: [number, number] | undefined;
   if (mode === 'assignment') {
     if (plain) at(0, 0, '', true);
-    from = 0;
+    from = [0, 0];
+  } else if (mode === 'element') {
+    // (After the `=` that follows the subscript's `]`, which may be in another part than the `[`: `["k"]=~`. The word is such an element.)
+    const close = elementClose(parts.map((x) => x.text).join(''))!;
+    let eq = close.close + close.plus.length + 2;
+    const p = parts.findIndex((x) => eq < x.text.length || ((eq -= x.text.length), false));
+    if (p >= 0 && parts[p].plain) {
+      at(p, eq, '=', true);
+      from = [p, eq];
+    }
   } else if (plain) {
     at(0, 0, '', false);
-    const m = mode === 'argument' ? /^[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=/.exec(first.text) : null;
+    // (A name, a subscript, `+` and `=`, which line continuations may part: `a\<newline>=~`.)
+    const m = mode === 'argument' ? /^[A-Za-z_](?:\\\n|\w)*(?:\[[^\]]*\])?(?:\\\n)*\+?(?:\\\n)*=/.exec(first.text) : null;
     if (m) {
       at(0, m[0].length, '=', true);
-      from = m[0].length;
+      from = [0, m[0].length];
     }
   }
   if (from === undefined) return out;
+  const [fp, fi] = from;
   parts.forEach((part, p) => {
-    if (!part.plain) return;
-    for (let i = part.text.indexOf(':', p === 0 ? from : 0); i >= 0; i = part.text.indexOf(':', i + 1)) {
+    if (!part.plain || p < fp) return;
+    for (let i = part.text.indexOf(':', p === fp ? fi : 0); i >= 0; i = part.text.indexOf(':', i + 1)) {
       if (!escaped(part.text, i)) at(p, i + 1, ':', true);
     }
   });

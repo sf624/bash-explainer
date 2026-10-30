@@ -424,9 +424,9 @@ function withScriptValue(p: ParsedExpansion, cases: ExpansionCase[], own: Expans
 
 /**
  * Worked examples such as `file=report.tar.gz` → `report.tar`, computed with the same matching
- * rules as bash. Undefined when the expansion depends on values we cannot know. `ctx.quoted`: the expansion is in double quotes; `ctx.assoc`: the array is associative (its keys are strings, in no fixed order); `ctx.integer`: the scalar variable has the integer attribute (an assignment is arithmetic: `declare -i y; ${y:=p=3}` gives 3 and sets `p`, and `y=hello` is 0).
+ * rules as bash. Undefined when the expansion depends on values we cannot know. `ctx.quoted`: the expansion is in double quotes; `ctx.assoc`: the array is associative (its keys are strings, in no fixed order); `ctx.integer`: the scalar variable has the integer attribute (an assignment is arithmetic: `declare -i y; ${y:=p=3}` gives 3 and sets `p`, and `y=hello` is 0); `ctx.assigned`: its word is expanded as an assignment's value (`a=${x:+x:~}`).
  */
-export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; assoc?: boolean; integer?: boolean; script?: ScriptValue } = {}): ExpansionCase[] | undefined {
+export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; assoc?: boolean; integer?: boolean; assigned?: boolean; script?: ScriptValue } = {}): ExpansionCase[] | undefined {
   const cases = sampleCases(p, lang, ctx);
   const own = ctx.script;
   // (Only a variable of the script has its value: not an argument, an element, a special parameter, nor `${!x}`.)
@@ -438,8 +438,29 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
   return withScriptValue(p, cases, v === '' ? emptyValueCase(p.name, result, lang === 'ja') : valueCase(p.name, v, shown, result, lang === 'ja', ctx.integer));
 }
 
+/**
+ * The word of `${x:-word}` with its tilde prefixes `~` written `$HOME`: one at its start (`~/d`), and with `colons` one
+ * after each `:` outside quotes (`x:~`); undefined when it has none.
+ */
+function homeOf(word: string, colons: boolean): string | undefined {
+  const prefix = colons ? /^~(?=[/:]|$)/ : /^~(?=\/|$)/;
+  const skip = /\\.|'[^']*'|"(?:\\.|[^"\\])*"/sy;
+  let out = '';
+  // (Whether the text so far ends with a `:` outside quotes, or is empty.)
+  let start = true;
+  for (let i = 0; i < word.length; i++) {
+    skip.lastIndex = i;
+    const m = skip.exec(word);
+    if (m) i += m[0].length - 1;
+    const tilde = !m && start && prefix.test(word.slice(i));
+    out += tilde ? '$HOME' : m ? m[0] : word[i];
+    start = colons && !m && word[i] === ':';
+  }
+  return out === word ? undefined : out;
+}
+
 /** The worked examples with sample values (`exampleFor`). */
-function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; assoc?: boolean; integer?: boolean }): ExpansionCase[] | undefined {
+function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; assoc?: boolean; integer?: boolean; assigned?: boolean }): ExpansionCase[] | undefined {
   const quoted = ctx.quoted ?? false;
   const ja = lang === 'ja';
   const name = p.name;
@@ -520,9 +541,11 @@ function sampleCases(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; as
   const part = (role: ExpansionPart['role']) => p.parts.find((x) => x.role === role)?.text;
   // The word of `${u-'x'}` after quote removal. Inside double quotes the single quotes stay (`"${u-'x'}"` is `'x'`).
   const rawWord = part('word') ?? '';
-  // An unquoted `~/d` in the word expands to the home directory (not inside double quotes: `"${x-~/d}"` stays `~/d`).
-  const homeWord = !quoted && /^~(\/|$)/.test(rawWord);
-  const word = homeWord ? `$HOME${rawWord.slice(1)}` : unquoteWord(rawWord, quoted) ?? rawWord;
+  // An unquoted `~/d` in the word expands to the home directory (not inside double quotes: `"${x-~/d}"` stays `~/d`),
+  // and in an assignment's value one after each `:` too (`a=${x:+x:~}`).
+  const homed = quoted ? undefined : homeOf(rawWord, !!ctx.assigned);
+  const homeWord = homed !== undefined;
+  const word = homed ?? unquoteWord(rawWord, quoted) ?? rawWord;
   // A plausible value for "when it has a value", chosen to look like the default.
   const sample = integer ? '42' : homeWord || /^\/|^~/.test(word) ? '/data' : /^-?\d+$/.test(word) ? '42' : 'hello';
   const expanded = (w: string) => `${w}${/\$/.test(w) ? (ja ? '（展開結果）' : ' (expanded)') : ''}`;

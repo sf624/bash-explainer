@@ -98,5 +98,10 @@ function ansiEnd(src: string, from: number): number {
 }
 
 const hasBracket =(s: string) => [...s].some((c, i) => c === '[' && s[i - 1] !== '\\' && bracketEnd(s, i) > i);
+/** A word's text without its line continuations, which bash removes before it reads the word (`*.t\<newline>xt` is `*.txt`). */
+export const unbroken = (s: string): string => (s.includes('\\\n') ? s.replace(/\\\n/g, '') : s);
 /** Whether a word's text has a wildcard: `*`, `?`, an extended glob (`+(`, `@(`, `!(`) or a bracket expression. */
-export const hasGlob = (s: string): boolean => /(^|[^\\])([*?]|[+@!]\()/.test(s) || hasBracket(s);
+export const hasGlob = (text: string): boolean => {
+  const s = unbroken(text);
+  return /(^|[^\\])([*?]|[+@!]\()/.test(s) || hasBracket(s);
+};

@@ -4,7 +4,7 @@
 import { bracesWork, type Shell } from '../shellfeatures';
 import { braceSequence } from '../examples/shellwords';
 import { staticWordValue } from '../staticword';
-import { braceKind, type SyntaxNode } from '../syntax/tree';
+import { braceKind, joinedText, type SyntaxNode } from '../syntax/tree';
 import type { Tri } from './state';
 import type { Applies, ExpansionStep, WordMeaning } from './words';
 
@@ -129,7 +129,7 @@ function alternativesOf(n: SyntaxNode): BraceAlternative[] | null {
   if (n.type !== 'brace_expression') return [[n]];
   // (The parser makes a sequence only of a valid one.)
   // (A `\` or `` ` `` of a letter sequence is marked: bash reads it again, `reread`.)
-  if (braceKind(n) === 'sequence') return braceSequence(n.text)?.map((w) => [MARKS[w] ?? w]) ?? null;
+  if (braceKind(n) === 'sequence') return braceSequence(joinedText(n))?.map((w) => [MARKS[w] ?? w]) ?? null;
   const out: BraceAlternative[] = [];
   let item: SyntaxNode | undefined;
   for (const c of n.children.slice(1)) {

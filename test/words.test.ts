@@ -590,3 +590,58 @@ describe('words: after the review', () => {
     assert.deepStrictEqual(fieldsOf('shopt -s extglob; echo ./!(a)*', './!(a)*'), {});
   });
 });
+
+// (What bash gives for these is in test/fixtures/probes/words.json.)
+describe('words: line continuations, sequences past intmax_t and tildes read as in an assignment', () => {
+  const tildes = (src: string, text: string, posix = false) => meaning(src, text, 0, posix).tildes.map((t) => [t.node.text, t.start, t.after]);
+
+  it('reads a word without its line continuations: sequences, assignments and extended globs', () => {
+    assert.deepStrictEqual(fieldsOf('echo {1..\\\n3}', '{1..\\\n3}').fields, ['1', '2', '3']);
+    assert.deepStrictEqual(fieldsOf('echo {1\\\n0..12}', '{1\\\n0..12}').fields, ['10', '11', '12']);
+    assert.deepStrictEqual(tildes('echo a\\\n=~', 'a\\\n=~'), [['a\\\n=~', 4, '=']]);
+    assert.deepStrictEqual(tildes('echo a\\\n[1]+\\\n=~', 'a\\\n[1]+\\\n=~'), [['a\\\n[1]+\\\n=~', 10, '=']]);
+    assert.deepStrictEqual(fieldsOf('shopt -s extglob\necho @\\\n(a.txt)', '@\\\n(a.txt)').fields, ['a.txt']);
+    assert.deepStrictEqual(step('shopt -s extglob\necho +\\\n(a).txt', '+\\\n(a).txt', 'glob'), [true]);
+  });
+
+  it('keeps a sequence bash 5.2 refuses as it is written, and counts past 2^53 exactly', () => {
+    assert.deepStrictEqual(fieldsOf('echo {0..2..9223372036854775808}', '{0..2..9223372036854775808}').fields, ['{0..2..9223372036854775808}']);
+    // (More than INT_MAX - 3 steps; else more than the words listed.)
+    assert.deepStrictEqual(fieldsOf('echo {0..9223372036854775807}', '{0..9223372036854775807}').fields, ['{0..9223372036854775807}']);
+    assert.deepStrictEqual(fieldsOf('echo {0..2147483647..2}', '{0..2147483647..2}'), {});
+    assert.deepStrictEqual(fieldsOf('echo {9007199254740993..9007199254740995}', '{9007199254740993..9007199254740995}').fields, ['9007199254740993', '9007199254740994', '9007199254740995']);
+  });
+
+  it('expands a tilde of a here-string after each `:`, not after `=`, in POSIX mode too', () => {
+    assert.deepStrictEqual(tildes('cat <<< x:~/a:~', 'x:~/a:~'), [['x:~/a:~', 2, ':'], ['x:~/a:~', 6, ':']]);
+    assert.deepStrictEqual(tildes('cat <<< a=~', 'a=~'), []);
+    assert.deepStrictEqual(tildes('cat <<< ~:x', '~:x', true), [['~:x', 0, '']]);
+  });
+
+  it('expands a tilde of an element with a subscript after its `=` and each `:`, in bash mode only', () => {
+    assert.deepStrictEqual(tildes('r=([0]=~ [1]=x:~)', '[0]=~'), [['=~', 1, '=']]);
+    assert.deepStrictEqual(tildes('r=([0]=~ [1]=x:~)', '[1]=x:~'), [['=x:~', 3, ':']]);
+    assert.deepStrictEqual(tildes('r=(["k"]=~/a:~)', '["k"]=~/a:~'), [[']=~/a:~', 2, '='], [']=~/a:~', 6, ':']]);
+    assert.deepStrictEqual(tildes('r=([0]= [1]="~")', '[0]='), []);
+    assert.deepStrictEqual(tildes('r=([0]= [1]="~")', '[1]="~"'), []);
+    assert.deepStrictEqual(tildes('r=([0]=~ [1]=x:~)', '[0]=~', true), []);
+    assert.deepStrictEqual(tildes('r=(x=~ x:~)', 'x:~'), []);
+  });
+
+  it("expands the word of `${x:-word}` and `${x:+word}` as an assignment's value in one, in bash mode", () => {
+    assert.deepStrictEqual(tildes('a=${x:+x:~}', 'x:~'), [['x:~', 2, ':']]);
+    assert.deepStrictEqual(tildes('cat <<< ${x-~:~}', '~:~'), [['~:~', 0, ''], ['~:~', 2, ':']]);
+    assert.deepStrictEqual(tildes('alias a=${x:+x:~}', 'x:~'), [['x:~', 2, ':']]);
+    assert.deepStrictEqual(tildes('a=${x:+${y:-y:~}}', 'y:~'), [['y:~', 2, ':']]);
+    assert.deepStrictEqual(tildes('echo ${x:+x:~}', 'x:~'), []);
+    assert.deepStrictEqual(tildes('a=${u=x:~}', 'x:~'), []);
+    assert.deepStrictEqual(tildes('a="${x:+${y:+y:~}}"', 'y:~'), []);
+    assert.deepStrictEqual(tildes('a=${x:+x:~}', 'x:~', true), []);
+    assert.deepStrictEqual(tildes('r=([1]=${x:+x:~})', 'x:~'), []);
+    const value = (src: string) => fieldsOf(`HOME=/h; x=1; ${src}; echo "$a"`, '"$a"').fields;
+    assert.deepStrictEqual(value('a=${x:+x:~$x}'), undefined);
+    assert.deepStrictEqual(value('a=${x:+x:~root}'), undefined);
+    assert.deepStrictEqual(value('a=${x:+`b`:~}'), undefined);
+    assert.deepStrictEqual(value('a=${x:+x:"~"}'), ['x:~']);
+  });
+});

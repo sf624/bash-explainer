@@ -147,6 +147,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The worked examples of a default for an integer variable follow bash's arithmetic: after `declare -i y`, `${y:=p=3}` gives 3 (and sets `p`), and a set `y` is a number. Before, they showed `p=3` and `y=hello`.
 - `sudo -c` and `sudo -a` (BSD's login class and authentication type) are explained as Linux sudo treats them: it reads the option, then prints its usage and fails. Other options sudo does not have say `invalid option`. The rest of the line is no longer read as if sudo took them. Before, `sudo -u $u tar -cf x y` with `$u` empty explained `y` as an argument of `x`.
 - A word that no test or action of find takes, after its expression has started, is said to be refused by find ("paths must precede expression"), and the summary of the expression says so: `find . -name a.txt b.txt`, which is what `find . -name *.txt` becomes when the shell expands the glob to two files. A word that is an expansion is not called a path, since it may be a test or an action. `find . , b` reads `,` and `b` as starting points, a `,` after the expression is the operator, and `find . -name x -- y` is an unknown predicate. Before, such a word was called a starting directory.
+- More words are expanded as bash does: a sequence or a glob with a line continuation inside, a sequence with numbers past 2^53 (`{0..2..9223372036854775808}` stays as written), and a `~` after `:` in `cat <<< x:~`, `r=([0]=x:~)` and `a=${x:+x:~}`.
 
 ## 0.8.0
 

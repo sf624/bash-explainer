@@ -4,6 +4,8 @@
 // expansion does, with the quotes and expansions of the word (`opaque`) taken as text it does not look into.
 // Checked with bash 5.2 (test/fixtures/probes/words.json, test/syntax-adapter-unbash.test.ts).
 
+import { parseSequence } from '../../braceseq';
+
 /** A range of the text. */
 export interface Range { readonly pos: number; readonly end: number }
 
@@ -88,9 +90,6 @@ function list<N>(b: BraceBuilder<N>, s: BraceSpan, opaque: ReadonlyMap<number, R
   return n;
 }
 
-/** A sequence expression: two integers, or two letters, and an integer increment (bash takes a `+` sign too). */
-const SEQUENCE = /^\{(?:[-+]?\d+\.\.[-+]?\d+|[A-Za-z]\.\.[A-Za-z])(?:\.\.[-+]?\d+)?\}$/;
-
 /**
  * The first brace expression bash expands in `text` from `from` to `to`, outside the ranges of `opaque` (each starts
  * where the scan can reach it: quotes and expansions). As bash does, it takes the first `{` that is not quoted,
@@ -169,7 +168,8 @@ function braceAt(text: string, open: number, to: number, opaque: ReadonlyMap<num
     else if (c === '}' && --depth === 0) {
       const end = j + 1;
       if (commas.length || (dots && comma)) return { pos: open, end, kind: 'list', commas };
-      if (plain && SEQUENCE.test(text.slice(open, end))) return { pos: open, end, kind: 'sequence', commas };
+      // (A sequence expression bash expands: two integers, or two letters, and an integer increment, in its bounds.)
+      if (plain && parseSequence(text.slice(open + 1, end - 1))) return { pos: open, end, kind: 'sequence', commas };
       // (Here they hold a `..`: else the `}` would not have closed them.)
       return end;
     }
