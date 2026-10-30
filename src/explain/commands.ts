@@ -678,12 +678,12 @@ function missedNote(cx: Explainer, name: string, missed: Missed | undefined, at:
   }
 }
 
-/** "Call the function `f` defined on line N", with what it hides and whether it is sure. */
 /** A function named like a glob: a file that matches the name is the command instead (`f*() { :; }; f* -x` runs the first `f…` file). */
 function globOver(cx: Explainer): string {
   return cx.s('。ただし、名前に一致するファイルがあれば、その最初のファイル名のコマンドが代わりに実行される', '. But if a file matches the name, the command of the first matching file name runs instead');
 }
 
+/** "Call the function `f` defined on line N", with what it hides and whether it is sure. */
 function functionCall(cx: Explainer, res: Extract<NameResolution, { kind: 'function' }>): string {
   const { name } = res;
   const line = (docLine(res.fn.def) + 1);
