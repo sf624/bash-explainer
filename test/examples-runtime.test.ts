@@ -95,8 +95,11 @@ describe('read agrees with bash', () => {
     ['\v', true, ['a', 'b', 'c']], [':\f', true, ['a', 'b']], ['\r', true, [], 'arr'], ['\v', true, ['a']], ['\v', true, ['a', 'b']],
     // (With no name, REPLY gets the line as it is.)
     [' \t\n', false, []],
+    // (Without -r, an escaped `\v` at the end keeps bash's mark, the byte 1, in 5.3; with an IFS of a newline alone,
+    // the sample line is not split.)
+    ['\v', false, ['a']], ['\n', true, ['a', 'b']],
   ];
-  const lines = (ifs: string, names: string[], array?: string) => [readSampleLine(names.length || 1, ifs, !!array), '  lead  trail  ', 'a\\ b c', 'x,,y,', ' a , b ,c ', '\v\va\v\f:b\r\r:\fc\v', '\v\vx\v\v', 'x\v\vy\v\v', 'p x y\\ '];
+  const lines = (ifs: string, names: string[], array?: string) => [readSampleLine(names.length || 1, ifs, !!array), '  lead  trail  ', 'a\\ b c', 'x,,y,', ' a , b ,c ', '\v\va\v\f:b\r\r:\fc\v', '\v\vx\v\v', 'x\v\vy\v\v', 'p x y\\ ', 'x\vy\\\v'];
   for (const [version, bash] of READ_BASHES) {
     for (const [ifs, raw, names, array] of cases) {
       for (const line of lines(ifs, names, array)) {
