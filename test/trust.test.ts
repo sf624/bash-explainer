@@ -419,7 +419,7 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     for (const text of ['(a);(b)', '(a) b\\)', '(a) # x)', '(a) (b)']) {
       assert.strictEqual(blind(`declare -a 'a=${text}'`), 'a declaration reads again as a compound assignment text the model does not read', text);
     }
-    for (const src of ['declare -a a="$1"', 'declare -A a=$1', 'readonly -a a="$1"', 'x=$1; declare -a a="($x)"', 'f() { local -a a="$1"; }']) {
+    for (const src of ['declare -a a="$1"', 'declare -A a=$1', 'readonly -a a="$1"', 'x=$1; declare -a a="($x)"', 'f() { local -a a="$1"; }', 'declare -a a={"$1",b}']) {
       assert.strictEqual(blind(src), 'a declaration with -a or -A is given a value not known, which it may read again as a compound assignment', src);
     }
     for (const src of ['a=(); declare a="$1"', '[[ a =~ a ]]; declare BASH_REMATCH="$1"', 'declare -n r=a; declare a="$1"', 'declare -n r=a; declare r="$1"', 'read -a a; declare a="$1"', 'a[1]=x; declare a="$1"']) {
