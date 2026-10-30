@@ -87,11 +87,12 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     // (A word of no known text and one word is part of the run: `"$b"` gives one.)
     const quoted = table('cp $a "$b" c');
     assert.deepStrictEqual(quoted.runs.map((r) => [r.words, r.fixed, r.fewest]), [[[0, 1], 1, 1]]);
-    // (A known start is a run of its own, which keeps it; the words splitting may add after it are of no known text, a
-    // run with the words after; a quoted word alone is no run.)
+    // (A known start keeps its first word; the words splitting may add after it are of no known text, a run with the
+    // words after; a quoted word alone is no run. A glob with a known start is a run of its own, which keeps it.)
     const head = table('head -n$a $b "$c" f');
-    assert.deepStrictEqual(head.runs.map((r) => [r.words, r.prefix, r.each]), [[[0], '-n', true], [[1, 2, 3], undefined, undefined]]);
-    assert.deepStrictEqual(head.variables.map((v) => [v.words, v.base, v.part]), [[[0], 1, true], [[1], 0, true], [[2], 1, undefined]]);
+    assert.deepStrictEqual([head.line[0], head.runs.map((r) => [r.words, r.prefix])], [{ prefix: '-n' }, [[[1, 2, 3], undefined]]]);
+    assert.deepStrictEqual(head.variables.map((v) => [v.words, v.base, v.part]), [[[1], 0, true], [[2], 1, undefined]]);
+    assert.deepStrictEqual(table('cp -v* $b d').runs.map((r) => [r.words, r.prefix, r.each]), [[[0], '-v', true], [[1], undefined, undefined]]);
     assert.deepStrictEqual(table('cp "$a" b').runs, []);
     assert.deepStrictEqual(table('cp "$a" b').shapes, [[]]);
     // (A brace word is its known number of words, in a run where it is one.)
@@ -243,11 +244,20 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
       const g = table('grep -r --include=*.sh x .');
       assert.deepStrictEqual(g.at([2]).fields.map(squeezed), ['option -r search directories recursively', 'option --include only search files matching the glob =', 'operand search pattern (regex)', 'operand file to search (default: stdin)']);
       // (A word that may split comes in parts: `x$a` gives `xp q` with `a='p q'`, the second word without the `x`.)
-      assert.deepStrictEqual(table('cp x$a d').line.slice(0, 2), [{ prefix: 'x', prefixEach: true, count: { min: 1 } }, { count: { min: 0 } }]);
+      assert.deepStrictEqual(table('cp x$a d').line.slice(0, 2), [{ prefix: 'x' }, { count: { min: 0 } }]);
       // (No parts where the words of the brace expansion are not known: too many to list, or the step not known to apply.)
       assert.strictEqual(argWords('cp -v{1..100000}$x d').words[0].parts, undefined);
       const braced = descendants(parser.parse('cp -v{a,b}$x d').root, ['command'])[0].namedChildren[1];
       assert.deepStrictEqual([argWordFor(undefined, () => 'unknown')(braced).parts, argWordFor()(braced).parts?.length], [undefined, 4]);
+      // (Where the glob options let a glob give none, `nullglob` in the model's count, the words of its first field may be none.)
+      const globbed = descendants(parser.parse('cp -v*$x d').root, ['command'])[0].namedChildren[1];
+      assert.deepStrictEqual(argWordFor(undefined, undefined, () => ({ min: 0 }))(globbed).parts?.[0].count, { min: 0 });
+      assert.deepStrictEqual(argWordFor()(globbed).parts?.[0].count, { min: 1 });
+      // (A brace word whose words may glob to `--`: `-{v,-}*`; quoted text is no pattern: `-*"?"` cannot, `-*"-"` can.)
+      assert.strictEqual(argWords('cp -{v,-}* d').words[0].dashes, true);
+      assert.deepStrictEqual([argWords('cp -*"?" d').words[0].dashes, argWords('cp -*"?" d').words[0].prefixEach], [undefined, true]);
+      assert.strictEqual(argWords('cp -*"-" d').words[0].dashes, true);
+      assert.strictEqual(argWords('cp -"$x"* d').words[0].dashes, true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -264,12 +274,16 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     { line: 'cp -v*$x y d', files: ['-vaa', '-vba', 'y'], vars: 'x=a', argv: ['-vaa', '-vba', 'y', 'd'], word: 'd', role: 'operand destination', did: (dir) => fs.statSync(path.join(dir, 'd')).isFile(), counts: [2, 0] },
     // (`--include=$a*` with `a=p`: the start is the text before `$a`.)
     { line: 'grep -r --include=$a* x .', files: ['--include=pa', '--include=pb'], vars: 'a=p', argv: ['-r', '--include=pa', '--include=pb', 'x', '.'], word: 'x', role: 'operand search pattern', did: (_, out) => out === './pa:x\n', counts: [2, 0] },
-    // (Each word of the brace expansion keeps the start: `-va -vb`. Two words that may each glob and split are four parts,
-    // past the cap: `d` says its role may depend on the counts.)
-    { line: 'cp -v{a,b}$x y d', files: ['y'], vars: 'x=', argv: ['-va', '-vb', 'y', 'd'], word: 'd', role: 'operand destination', did: (dir) => fs.statSync(path.join(dir, 'd')).isFile(), depends: true },
-    // (A start of `-` or `--` alone may give `--`: `cp -- -v x d` copies into the directory `d`.)
-    { line: 'cp -* x d', files: ['--', '-v', 'x'], dirs: ['d'], argv: ['--', '-v', 'x', 'd'], word: 'd', role: 'operand destination directory', did: (dir) => fs.existsSync(path.join(dir, 'd', 'x')), counts: [2] },
-    { line: 'cp --* x d', files: ['--', '--verbose', 'x'], dirs: ['d'], argv: ['--', '--verbose', 'x', 'd'], word: 'd', role: 'operand destination directory', did: (dir) => fs.existsSync(path.join(dir, 'd', 'x')), counts: [2] },
+    // (Each word of the brace expansion keeps the start: `-va -vb`; the words `$x` adds after each are parts of their own.)
+    { line: 'cp -v{a,b}$x y d', files: ['y'], vars: 'x=', argv: ['-va', '-vb', 'y', 'd'], word: 'd', role: 'operand destination', did: (dir) => fs.statSync(path.join(dir, 'd')).isFile(), counts: [0, 0] },
+    // (A glob whose pattern may match `-` or `--` may give `--`: `cp -- -v x d` copies into the directory `d`, and with the
+    // files `-a`, `-v`, `cp -a -v x d` makes the file `d`. Nothing is read: every word says its role may depend on the counts.)
+    { line: 'cp -* x d', files: ['--', '-v', 'x'], dirs: ['d'], argv: ['--', '-v', 'x', 'd'], word: 'd', role: 'operand destination directory', did: (dir) => fs.existsSync(path.join(dir, 'd', 'x')), depends: true },
+    { line: 'cp --* x d', files: ['--', '--verbose', 'x'], dirs: ['d'], argv: ['--', '--verbose', 'x', 'd'], word: 'd', role: 'operand destination directory', did: (dir) => fs.existsSync(path.join(dir, 'd', 'x')), depends: true },
+    // (A pattern that cannot match `-` nor `--` keeps the start on every word: `cp -ax -vx y d` makes the file `d`.)
+    { line: 'cp -?x y d', files: ['-ax', '-vx', 'y'], argv: ['-ax', '-vx', 'y', 'd'], word: 'd', role: 'operand destination', did: (dir) => fs.statSync(path.join(dir, 'd')).isFile(), counts: [2] },
+    { line: 'cp -[av]* y d', files: ['-ax', '-vx', 'y'], argv: ['-ax', '-vx', 'y', 'd'], word: 'd', role: 'operand destination', did: (dir) => fs.statSync(path.join(dir, 'd')).isFile(), counts: [2] },
+    { line: 'cp -*x y d', files: ['-ax', '-vx', 'y'], argv: ['-ax', '-vx', 'y', 'd'], word: 'd', role: 'operand destination', did: (dir) => fs.statSync(path.join(dir, 'd')).isFile(), counts: [2] },
   ];
   for (const { line, files, dirs = [], vars = ':', argv, word, role, did, counts, depends } of STARTS) {
     it(`a known start, as bash and the tool read it: ${line}`, function () {
@@ -291,7 +305,7 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
         const real = allRoles(interpret(lookupCommand(name)!, argv.map((value) => ({ value })), ctxOf(name))).get(argv.indexOf(word))!;
         assert.strictEqual(key(real).startsWith(role), true, key(real));
         const r = wordReadings(t, k)!;
-        if (depends) assert.deepStrictEqual([r.kind, t.parted, t.shapes], ['depends', [true, false, false], undefined]);
+        if (depends) assert.deepStrictEqual([r.kind, t.shapes], ['depends', undefined]);
         else {
           // (The profile at the counts bash gave, each part's: the context they make.)
           const cx = t.contexts(k)!;

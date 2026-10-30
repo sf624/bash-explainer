@@ -21,9 +21,14 @@ export interface ArgWord {
   prefix?: string;
   /**
    * Every word it gives starts with `prefix`, not only its first: the words globbing gives of one field (`-v*` gives
-   * `-va -vb`). Not where the start alone may be `-` or `--`, which a command reads otherwise (`-*` may give `--`).
+   * `-va -vb`; `-?x`, `-[av]*` too).
    */
   prefixEach?: true;
+  /**
+   * The words a glob gives of it may be `-` or `--`, which a command reads otherwise than an option (`-*` with the file
+   * `--`: `cp -- -v x d`): its words are not read past its first (src/argv/readings.ts reads no shape).
+   */
+  dashes?: true;
   /**
    * The words its words come in, where some of them keep its known start and others may not (`ArgWord.prefixEach`): for
    * each word of its brace expansion, the words globbing gives of its first field, which keep the start, then the words

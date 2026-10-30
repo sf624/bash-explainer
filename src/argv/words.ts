@@ -2,6 +2,7 @@
 // quote removal when it is known, the start that is known otherwise, and how many words they become.
 import { parseExpansion, type ParsedExpansion } from '../expansion';
 import { bracesWork, type Shell } from '../shellfeatures';
+import { globToRegex } from '../examples/shellwords';
 import { braceAlternatives, rejoined } from '../semantics/brace';
 import { givesElements } from '../semantics/elements';
 import { staticWordValue } from '../staticword';
@@ -151,20 +152,35 @@ function assignsOf(n: SyntaxNode): string[] | undefined {
 }
 
 /**
- * The words a word's words come in (`ArgWord.parts`; one of them: `ArgWord.prefixEach`), where it has a known start that
- * is not `-` or `--`: for each word of its brace expansion (where `braces` says the step applies, and the words are not
- * too many to list), the words of its first field, which keep the start (one, or one or more where it may glob), then,
- * where it may split, the words splitting adds after them (none or more, of unknown text). Undefined otherwise.
+ * The pattern one word of a brace expansion globs with, its expansions standing for any text (`*`): `-*$x` is `-**`.
+ * Whether it may match `-` or `--`, which a command reads otherwise than an option (`-*` with the file `--`).
  */
-function startParts(n: SyntaxNode, prefix: string, braces: boolean | 'unknown'): ArgWord[] | undefined {
-  if (!prefix || prefix === '-' || prefix === '--') return undefined;
+function mayGiveDashes(w: readonly (SyntaxNode | string)[], shell?: Shell): boolean {
+  const pattern = w.map((p) => {
+    if (typeof p === 'string' || PLAIN.has(p.type)) return typeof p === 'string' ? p : p.text;
+    const v = staticWordValue(p, false, shell);
+    return v === undefined ? '*' : v.replace(/[*?[\\]/g, '\\$&');
+  }).join('');
+  const re = globToRegex(pattern, 'file');
+  return !re || re.test('-') || re.test('--');
+}
+
+/**
+ * The words a word's words come in (`ArgWord.parts`; one of them: `ArgWord.prefixEach`), where it has a known start: for
+ * each word of its brace expansion (where `braces` says the step applies, and the words are not too many to list), the
+ * words of its first field, which keep the start (one; where it globs, `fewest` or more), then, where it may split, the
+ * words splitting adds after them (none or more, of unknown text). `dashes` where a word that globs has a start of `-` or
+ * `--` and its pattern may match `-` or `--` (`-*`, not `-?x` nor `-[av]*`). Undefined otherwise.
+ */
+function startParts(n: SyntaxNode, prefix: string, braces: boolean | 'unknown', fewest: number, shell?: Shell): ArgWord[] | 'dashes' | undefined {
+  if (!prefix) return undefined;
   const alternatives = braces === false ? undefined : braceAlternatives([n]);
   if (alternatives === null || (alternatives && braces === 'unknown')) return undefined;
-  return (alternatives ?? [n.type === 'concatenation' ? n.namedChildren : [n]]).flatMap((w): ArgWord[] => {
-    const { glob } = partsOf(w);
-    const splits = splitsIn(w);
-    const head: ArgWord = { prefix, ...(glob || splits ? { prefixEach: true as const, count: { min: 1 } } : {}) };
-    return splits ? [head, { count: { min: 0 } }] : [head];
+  const words = alternatives ?? [n.type === 'concatenation' ? n.namedChildren : [n]];
+  if ((prefix === '-' || prefix === '--') && words.some((w) => partsOf(w).glob && mayGiveDashes(w, shell))) return 'dashes';
+  return words.flatMap((w): ArgWord[] => {
+    const head: ArgWord = { prefix, ...(partsOf(w).glob ? { prefixEach: true as const, count: { min: fewest } } : {}) };
+    return splitsIn(w) ? [head, { count: { min: 0 } }] : [head];
   });
 }
 
@@ -179,9 +195,10 @@ export const argWordFor = (shell?: Shell, braces?: (n: SyntaxNode) => boolean | 
   const assigns = assignsOf(n);
   const prefix = value === undefined ? prefixOf(n, shell) : undefined;
   // (Which of its words keep its known start: all of one part, `-v*`; or some of several, `-v*$x`.)
-  const parts = words && prefix !== undefined ? startParts(n, prefix, braces?.(n) ?? bracesWork(n, shell)) : undefined;
-  // (One part: each of its words keeps the start, one word or the words of a glob.)
-  const kept = parts?.length === 1 ? { prefixEach: true as const } : parts ? { parts } : {};
+  // (A glob gives none only where the glob options say so, `nullglob`: the model's count.)
+  const parts = words && prefix !== undefined ? startParts(n, prefix, braces?.(n) ?? bracesWork(n, shell), Math.min(words.min, 1), shell) : undefined;
+  // (One part: each of its words keeps the start, the words of a glob.)
+  const kept = parts === 'dashes' ? { dashes: true as const } : parts?.length === 1 ? { prefixEach: true as const } : parts ? { parts } : {};
   return { ...(value !== undefined ? { value } : { prefix }), ...kept, ...(words ? { count: words } : {}), ...(param ? { param } : {}), ...(assigns ? { assigns } : {}) };
 };
 
