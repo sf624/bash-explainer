@@ -430,7 +430,7 @@ function risky(p: ReturnType<typeof parseExpansion>, w: WordMeaning): boolean {
  * Words the word model reads otherwise than bash (trust-fields.md, 7), not known here until it reads them as bash
  * does: a line continuation after a tilde prefix (`~\<newline>` is `~`, also after `=` or `:`), after `$`
  * (`$\<newline>@` is `$@`) or in a parameter's name (`$y\<newline>a` is `$ya`); `$_` before a brace expression (`$_{a,b}` gives `$_a`); a process substitution joined to other text (`a<(:)`
- * is one word, which the parser reads as two, or as text: `1<(:)`); a brace expression after `$$` (`$${1..2}`, not
+ * is one word, and with an expansion in it bash splits the name of the substitution: `<(:)$x`); a brace expression after `$$` (`$${1..2}`, not
  * expanded); a range of characters across a backslash (`{Z..a}`, `{Z..a..+2}`); plain text with a quote or an expansion in
  * it, as the adapter keeps an extglob group (`x@(${x})y`); a `${ cmd; }` of bash 5.3. Also any line continuation not
  * in quotes (`{1..\<newline>3}` is `{1..3}`, F98); a sequence expression with a number of more than 15 digits, past what

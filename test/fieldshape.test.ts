@@ -223,11 +223,6 @@ describe('the field domain (fieldshape.ts)', () => {
     });
     it('does not know the words the word model reads otherwise than bash', () => {
       assert.deepStrictEqual(['~\\\n', '"$y\\\na"', '$\\\n{x}', '$x\\\n{a,b}','a<(:)', '<(:)a', '1<(:)"x"', '<(:)\\\n$x','$${1..2}', '$$$${a,b}', 'a{Z..a}', '{a..c}{Z..a}', '$_{a,b}'].map((t) => shapesOf(`show ${t}`)), Array(13).fill(undefined));
-      // (The word after a process substitution and a line continuation, which the parser reads as two.)
-      // (Not a snippet of the corpus: bash-ast reads it as one word, the known limit.)
-      const continued = 'show <(:)\\\n$x';
-      const joined = parser.parse(continued);
-      assert.strictEqual(wordShapes(fields(descendants(joined.root, ['command'])[0], 'argument')[1], shellState(joined, 'bash')), undefined);
       assert.deepStrictEqual(['$$${x}','{a..c}', '<(:)', '~/a', '$y-a'].map((t) => !!shapesOf(`show ${t}`)), [true, true, true, true, true]);
       // (An IFS with a control character, `\v`; with a glob character, where a value has a backslash.)
       assert.deepStrictEqual([shapesOf("IFS=$'\\v'; show $x"), shapesOf("IFS='*'; show $x", new Map([['x', ['a\\*b']]])), !!shapesOf("IFS='*'; show $x"), !!shapesOf("IFS=$'\\v'; show \"$x\"")],
