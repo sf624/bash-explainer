@@ -191,19 +191,29 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
   it('contexts: what a word reads besides its own count, each capped; a reading at a context and an own count', () => {
     const jq = table('jq --arg $n $v .');
     // (`$v`: the words before it in its run, `$n`, and none after; its own counts from one.)
-    assert.deepStrictEqual(jq.contexts(2), { run: 0, contexts: Array.from({ length: 7 }, (_, n) => [n, 0]), own: [1, 2, 3, 4, 5, 6] });
-    assert.deepStrictEqual(jq.readAt(2, [2, 0], 1), { sums: [3], outcome: 'read', fields: jq.at([2, 1]).fields[2] });
+    const v = jq.contexts(2)!;
+    assert.deepStrictEqual([v.run, v.contexts, v.own, v.base], [0, Array.from({ length: 7 }, (_, n) => [n, 0]), [1, 2, 3, 4, 5, 6], [1, 0]]);
+    // (What each place sums: `$n` before it, nothing after it; capped at S.)
+    assert.deepStrictEqual(v.coordinates, [{ words: [1], fixed: 0, mult: new Map([[0, 1]]), top: 6 }, { words: [], fixed: 0, mult: new Map(), top: 6 }]);
+    assert.deepStrictEqual(jq.readAt(2, [2, 0], 1), { sums: [3], outcome: 'read', fields: jq.at([2, 1]).fields[2], places: [3] });
     // (`.`: the run, capped; `--arg` too.)
-    assert.deepStrictEqual(jq.contexts(3), { contexts: Array.from({ length: 7 }, (_, n) => [n]), own: [1] });
+    const dot = jq.contexts(3)!;
+    assert.deepStrictEqual([dot.run, dot.contexts, dot.own, dot.base], [undefined, Array.from({ length: 7 }, (_, n) => [n]), [1], [2]]);
+    assert.deepStrictEqual(dot.coordinates, [{ words: [1, 2], fixed: 0, mult: new Map([[0, 1], [1, 1]]), top: 6 }]);
     assert.deepStrictEqual(jq.readAt(3, [1], 1).fields.map(key), ['value --arg 1']);
     // (A tie: the second `$a` is the first one's own, so it is no part of its context; its words come after the first's.)
     const cp = table('cp $a $a d');
     assert.deepStrictEqual(cp.contexts(0)!.contexts, [[0, 0]]);
-    assert.deepStrictEqual(cp.readAt(1, [0, 0], 2), { sums: [4], outcome: 'read', fields: cp.at([2]).fields[1] });
+    assert.deepStrictEqual(cp.readAt(1, [0, 0], 2), { sums: [4], outcome: 'read', fields: cp.at([2]).fields[1], places: [2, 3] });
+    // (Its own variable's words are no part of a coordinate: the second `$a` is in none of the first's.)
+    assert.deepStrictEqual(cp.contexts(0)!.coordinates.map((c) => c.words), [[], []]);
     // (Two runs: the other run is a coordinate; the word of a known count in a run, `"$b"`, has its one word.)
     const cut = table('cp -t $d "$b" $a x $c');
     assert.deepStrictEqual(cut.contexts(2)!.own, [1]);
-    assert.deepStrictEqual(cut.readAt(2, [1, 2, 3], 1), { sums: [4, 3], outcome: 'read', fields: cut.at([1, 2, 3]).fields[2] });
+    assert.deepStrictEqual(cut.readAt(2, [1, 2, 3], 1), { sums: [4, 3], outcome: 'read', fields: cut.at([1, 2, 3]).fields[2], places: [2] });
+    // (The words of a known count are part of a coordinate: `"$b"` after `$d`, `$a` gives one.)
+    assert.deepStrictEqual(cut.contexts(1)!.coordinates.map((c) => [c.words, c.fixed]), [[[], 0], [[2, 3], 1], [[5], 0]]);
+    assert.deepStrictEqual(cut.contexts(1)!.base, [0, 2, 1]);
     assert.deepStrictEqual(table('cp $a $b $c x $d y $e').contexts(0), undefined);
   });
 
@@ -250,7 +260,7 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     assert.deepStrictEqual(t.hedged(), [0, 1, 2, 3, 4]);
     assert.deepStrictEqual(t.variableAt, [undefined, 0, undefined, undefined, undefined]);
     // (The words of known fields read every run, with their own number of words: two, one, none.)
-    assert.deepStrictEqual([0, 2, 3].map((k) => t.contexts(k)), [0, 2, 3].map((k) => ({ contexts: [[0], [1], [2], [3], [4], [5], [6], [7]], own: [[2], [1], [0]][[0, 2, 3].indexOf(k)] })));
+    assert.deepStrictEqual([0, 2, 3].map((k) => { const { contexts, own } = t.contexts(k)!; return { contexts, own }; }), [0, 2, 3].map((k) => ({ contexts: [[0], [1], [2], [3], [4], [5], [6], [7]], own: [[2], [1], [0]][[0, 2, 3].indexOf(k)] })));
     assert.deepStrictEqual(t.readAt(0, [2], 2).fields.map(key), at.fields[0].map(key));
     assert.deepStrictEqual(t.readAt(2, [2], 1).fields.map(key), at.fields[2].map(key));
     assert.deepStrictEqual(t.readAt(3, [2], 0).fields, []);
