@@ -1082,8 +1082,9 @@ describe('shell state: what decisions trust (src/semantics/trust.ts, docs/design
       assert.strictEqual(decided(`${body}; ${more}`, 'if_statement'), undefined, more);
       assert.strictEqual(dead(`${body}; ${more}`), false, more);
     }
-    // (Printing or naming it does not call it.)
-    for (const more of ['declare -f f', 'declare -f "$g"', 'type f', 'command -v f', 'h() { :; }; h; export -f h']) assert.strictEqual(dead(`${body}; ${more}`), true, more);
+    // (Printing or naming it does not call it. A `$g` the script does not set may come from the environment, as any
+    // option: see test/decisions.test.ts.)
+    for (const more of ['declare -f f', 'g=f; declare -f "$g"', 'type f', 'command -v f', 'h() { :; }; h; export -f h']) assert.strictEqual(dead(`${body}; ${more}`), true, more);
     // One no call reaches (its definition itself runs where it stands).
     assert.strictEqual(dead('f() { exit; : M; }'), false);
     const tree = parser.parse('if false; then f() { :; }; fi');

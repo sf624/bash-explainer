@@ -3,6 +3,7 @@
 // checks where it runs them.
 import type { CommandSpec } from '../argv/spec';
 import type { SyntaxNode } from '../syntax/tree';
+import type { DeferredPlan } from './deferred';
 
 export interface Trust {
   /** Why nothing is trusted (no decision at all), when so. */
@@ -35,11 +36,19 @@ export interface Trust {
    */
   readonly fdsMayClose: boolean;
   /**
-   * Whether the scan read the word `w` of a builtin as the fields the values the script gives its variables make of it
-   * (`x=-e; set $x` as `set -e`, or as `set` where `x` is unset): the walk reads it as its fields too, and they must
-   * be known where it runs.
+   * What the scan read of the word `w` of a builtin, whose fields may change what the builtin sets and whose value is
+   * not known where it stands (`x=-e; set $x` as `set -e`, or as `set` where `x` is unset): src/semantics/deferred.ts.
+   * The walk reads it as its fields where it knows them (`valuesKnown`), and walks again with nothing trusted where
+   * they give the builtin what the scan did not read, or where it does not know them, unless the scan read every
+   * value it may have and each gives what the word as written gives (`written`).
    */
-  expands(w: SyntaxNode): boolean;
+  deferred(w: SyntaxNode): DeferredPlan | undefined;
+  /**
+   * Whether every value of the variable `name` is one the walk follows where it is made: text a plain assignment
+   * gives in full, or none (`unset x`, `local x`); not where a trap or a callback may set it. The walk reads the
+   * fields of a builtin's words (`deferred`) from those alone.
+   */
+  valuesKnown(name: string): boolean;
 }
 
 /** The functions a file's host defines (bats' `run`, `load`…), by name, with their specs (src/dict/bats.ts). */
@@ -69,7 +78,7 @@ export interface StringTrees {
 /** Nothing trusted: for a walk that found, as it went, arithmetic reading text not known (see `Walker`). */
 export const BLIND: Trust = {
   blind: 'arithmetic reads text not known', variable: () => false, closed: () => false, arithNames: () => undefined, copied: () => undefined, associative: () => undefined, mayFail: () => false,
-  fdsMayClose: true, expands: () => false,
+  fdsMayClose: true, deferred: () => undefined, valuesKnown: () => false,
 };
 
 /**
@@ -78,5 +87,8 @@ export const BLIND: Trust = {
  */
 export function withinTrust(own: Trust, outer: Trust): Trust {
   if (outer.blind !== undefined) return { ...BLIND, blind: outer.blind };
-  return { ...own, variable: (name) => own.variable(name) && outer.variable(name), fdsMayClose: own.fdsMayClose || outer.fdsMayClose };
+  return {
+    ...own, variable: (name) => own.variable(name) && outer.variable(name), valuesKnown: (name) => own.valuesKnown(name) && outer.valuesKnown(name),
+    fdsMayClose: own.fdsMayClose || outer.fdsMayClose,
+  };
 }

@@ -754,7 +754,7 @@ export class Walker {
     return st;
   }
   /** The value of the variable `name` as text; null when it is unset (and `set -u` is off), undefined when not known here. */
-  variableText(st: ShellState, name: string): string | null | undefined {
+  variableText(st: ShellState, name: string, trusted = (x: string): boolean => this.trust.variable(x)): string | null | undefined {
     this.arith.noteRead(st, name);
     const target = this.builtins.resolve(st, name);
     if (!target || changedByBash(target)) return undefined;
@@ -772,7 +772,7 @@ export class Walker {
     const text = v.set === 'off' ? unset : v.value;
     // (Decisions read only the variables the script cannot change unseen: see src/semantics/trust.ts. A read in dead
     // code is no reason for a decision.)
-    if (!this.trust.variable(name) || !this.trust.variable(target)) this.markAssumed();
+    if (!trusted(name) || !trusted(target)) this.markAssumed();
     else if (text !== undefined && !this.mode.dead) for (const r of this.conditions.reading) r.set(name, text);
     return text;
   }

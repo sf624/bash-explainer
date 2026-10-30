@@ -88,6 +88,16 @@ const FIELD_WORDS: readonly (readonly [string, string, readonly string[]])[] = [
   ['oq', 'set -- "$oq"', ['-e', "'a b'"]],
 ];
 
+/**
+ * Writes that give the variable `X` the value `V` otherwise than by a plain assignment of text, which the trust scan
+ * does not list (src/semantics/deferred.ts), with the variable the builtin then reads, when not `X` (`read` sets
+ * REPLY). `declare -l` gets `V` in capitals.
+ */
+const UNLISTED: readonly (readonly [string, string?])[] = [
+  ['for X in V; do :; done'], ['X=(V)'], ['X=a; X[0]=V'], ['read -r X <<< V'], ['printf -v X %s V'], ['unset X; : ${X:=V}'], ['mapfile -t X <<< V'],
+  ['declare -l X; X=V'], ['declare -n Xr=X; Xr=V'], ['Xh=V; X=$Xh'], ['read -r <<< V', 'REPLY'], ['select X in V; do break; done <<< 1 2> /dev/null'],
+];
+
 /** The scripts' constructs: those of the reviews of the decisions (docs/design/semantics.md, 4.14). */
 class Generator {
   private n = 0;
@@ -320,6 +330,15 @@ class Generator {
       // (Chosen in turn, not by the seed, so that the other scripts stay as they were.)
       case 38: {
         const k = this.fields++;
+        // (Every third from the third: its value from a write the scan does not list. Chosen by what the script has so
+        // far, not by the seed.)
+        if (k % 3 === 2) {
+          const i = this.n * 7 + k;
+          const [o, cmd, values] = FIELD_WORDS[i % FIELD_WORDS.length];
+          const [write, read] = UNLISTED[Math.floor(i / FIELD_WORDS.length) % UNLISTED.length];
+          const v = write.startsWith('declare -l') ? values[i % values.length].toUpperCase() : values[i % values.length];
+          return `${write.replace(/X/g, o).replace('V', v)}; ${read ? cmd.replace(`$${o}`, `$${read}`) : cmd}`;
+        }
         if (k % 3) return this.mark();
         const [o, cmd, values] = FIELD_WORDS[(k / 3) % FIELD_WORDS.length];
         const other = k % 9 === 6 ? `; [ -t 0 ] && ${o}=${values[(k + 1) % values.length]}` : '';

@@ -115,4 +115,41 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // A word of a builtin whose variable gets a value the trust scan does not list (written otherwise than by a plain
+  // assignment of text, set by bash, through a nameref, or past the readings it makes) is read as its fields by the
+  // walk, which walks again with nothing trusted where it does not know them (src/semantics/deferred.ts). Bash sets
+  // `u` to 2 in each but the `set -e` one, which exits.
+  it('makes none that bash contradicts where a builtin gets the fields of a value the scan does not list', async function () {
+    this.timeout(60_000);
+    const test = (v: string): string => `⟦s:1⟧if ⟦p:1⟧[ "$${v}" = 1 ]⟦c:1⟧; then : M2; else : M3; fi`;
+    const many = Array.from({ length: 15 }, (_, i) => `x=a${i + 1}`).join('; ');
+    const undecided = [
+      'for x in -v; do :; done; printf $x u 2', 'x=a; x[0]=-v; printf $x u 2', 'x=(-v); printf $x u 2', 'read x <<< -v; printf $x u 2',
+      'printf -v x %s -v; printf $x u 2', ': ${x:=-v}; printf $x u 2', 'mapfile -t x <<< -v; printf $x u 2', 'readarray -t x <<< -v; printf $x u 2',
+      'select x in -v; do break; done <<< 1 2> /dev/null; printf $x u 2', 'REPLY=a; read <<< -v; printf $REPLY u 2', 'declare -l x; x=-V; printf $x u 2',
+      'x=$"-v"; printf $x u 2', 'y=-v; [ -t 0 ] || x=$y; printf $x u 2',
+      // (Variables bash sets, and namerefs either way.)
+      'OPTARG=a; getopts v: o -v -v; printf $OPTARG u 2', '_=a; : -v; printf $_ u 2', 'REPLY=a; select x in a; do break; done <<< -v 2> /dev/null; printf $REPLY u 2',
+      'x=a; declare -n r=x; r=-v; printf $x u 2', 'declare -n r=x; v=-v; r=$v; printf $x u 2', 'declare -n r=w; w=-v; printf $r u 2',
+      // (Past the readings the scan makes; words after the format do not count.)
+      'x=-v; a=1; b=1; c=1; d=1; printf $x u 2 $a $b $c $d', `${many}; x=-v; printf $x u 2`, 'v=-v; printf -v x %s "$v"; printf $x u 2',
+      // (`set` and the declarations too: bash runs `set -e` there, and declares `u` global.)
+      'for x in -e; do :; done; set $x; false; u=2', 'read -r x <<< -g; f() { declare $x u=2; }; f',
+    ];
+    // (A variable the walk knows is unset gives no field: the script still decides `v`.)
+    const decides = ['x=-v; unset x; printf $x u 2', 'f() { local x; printf $x u 2; }; x=-v; f', 'x=-v; unset -v x; printf $x u 2', 'f() { unset x; }; x=-v; f; printf $x u 2'];
+    // (Not through a nameref: the walk does not follow every write of a nameref's target, so it does not read it.)
+    const left = ['x=-v; declare -n r=x; unset r; printf $x u 2'];
+    const list: Script[] = undecided.map((s) => ({ text: `u=1; ${s}; ${test('u')}; : M4`, constructs: [{ id: 1, type: 'if_statement' }] }));
+    list.push(...[...decides, ...left].map((s) => ({ text: `v=1; ${s}; ${test('v')}; : M4`, constructs: [{ id: 1, type: 'if_statement' as const }] })));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'decisions-'));
+    try {
+      const results = await checkAll(list, dir, 4);
+      assert.deepStrictEqual(results.flatMap((r, i) => r.problems.map((p) => `${p}\n${forModel(list[i].text).src}`)), []);
+      assert.deepStrictEqual(results.map((r) => r.decided > 0), [...undecided.map(() => false), ...decides.map(() => true), ...left.map(() => false)]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
