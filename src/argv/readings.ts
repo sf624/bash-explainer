@@ -2,7 +2,7 @@
 // (docs/design/count-hedges.md, section 2): the runs of words of unknown text, the count variables (tied where two words
 // are one parameter), the coordinates and their domains up to the bound S, the shapes read (the sums of the runs, at real
 // sums inside a run and capped elsewhere, at most `SHAPE_CAP`), and one reading of the whole line per shape, with the
-// roles given back to the command's words. Nothing reads it yet: the hedges are built on it in the later steps.
+// roles given back to the command's words. src/argv/profiles.ts reads it (step 3); the hedges are built on it in the later steps.
 import { BASH_VARIABLES } from '../semantics/vars';
 import { splitEnvString } from './envsplit';
 import { type ArgRole, type ArgvParse, type ArgWord, fieldLine, type InterpretContext, readWritten, type RoleAt, subcommand } from './interpret';
@@ -63,10 +63,23 @@ export interface WordsAt { outcome: Outcome; parse: ArgvParse; fields: ArgRole[]
  * variable gives, and is capped at its top. `own`: its own counts, from one (one or its known number of words for a word
  * that is not flexible).
  */
-export interface Contexts { run?: number; contexts: number[][]; own: number[] }
+export interface Contexts {
+  run?: number; contexts: number[][]; own: number[];
+  /** What each place of a context sums (`Coordinate`), and the context of the line as written (each word its fewest, one at least). */
+  coordinates: Coordinate[]; base: number[];
+}
 
-/** A word read at a context and an own count: the shape, how its reading ends, and the role of each of its words. */
-export interface WordAt { sums: number[]; outcome: Outcome; fields: ArgRole[] }
+/**
+ * A place of a word's contexts: the words it sums (indexes in the line; the word's own variable's left out), how many
+ * words its words of a known count give, how many words of each count variable it holds, and its cap (that many or more).
+ */
+export interface Coordinate { words: number[]; fixed: number; mult: Map<number, number>; top: number }
+
+/**
+ * A word read at a context and an own count: the shape, how its reading ends, and the role of each of its words, with
+ * where each stands in the reading (`places`, the numbers of the reading's words).
+ */
+export interface WordAt { sums: number[]; outcome: Outcome; fields: ArgRole[]; places: number[] }
 
 export interface ReadingsTable {
   line: ArgWord[];
@@ -317,6 +330,12 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
   const firstOf = new Map(runs.map((r, i) => [r.words[0], i]));
   const inRun = new Set(runs.flatMap((r) => r.words));
   const readings = new Map<string, Reading>();
+  const roleMaps = new WeakMap<Reading, Map<number, ArgRole>>();
+  /** The roles of a reading's words, at every level (each reading's once). */
+  const rolesOf = (r: Reading): Map<number, ArgRole> => {
+    if (!roleMaps.has(r)) roleMaps.set(r, allRoles(r.parse));
+    return roleMaps.get(r)!;
+  };
   const reading = (sums: readonly number[]): Reading => {
     const key = sums.join();
     const seen = readings.get(key);
@@ -370,10 +389,30 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
     for (let i = 0; i < j; i++) at += firstOf.has(i) ? sums[firstOf.get(i)!] : inRun.has(i) ? 0 : 1;
     return at;
   };
+  /** A coordinate summing `ws` but the words of the variable `own`, capped at `top`. */
+  const coordinate = (ws: readonly number[], own: number, top: number): Coordinate => {
+    const mult = new Map<number, number>();
+    let fixed = 0;
+    const kept = ws.filter((j) => variableOf[j] !== own);
+    for (const j of kept) {
+      const v = variableOf[j];
+      if (v === undefined) fixed += fixedOf(j);
+      else mult.set(v, (mult.get(v) ?? 0) + 1);
+    }
+    return { words: kept, fixed, mult, top };
+  };
   const contexts = (k: number): Contexts | undefined => {
     if (!found) return undefined;
     const x = spans[k].at === undefined ? undefined : found.passes.get(spans[k].at!);
-    return x ? { run: x.pass.run, contexts: x.contexts, own: x.pass.counts } : { contexts: found.all, own: [spans[k].group?.n ?? 1] };
+    const coordinates = x
+      ? [
+        coordinate(runs[x.pass.run].words.filter((j) => j < spans[k].at!), x.pass.own, x.pass.before.top),
+        coordinate(runs[x.pass.run].words.filter((j) => j > spans[k].at!), x.pass.own, x.pass.after.top),
+        ...runs.filter((_, i) => i !== x.pass.run).map((r) => coordinate(r.words, x.pass.own, r.top)),
+      ]
+      : runs.map((r) => coordinate(r.words, -1, r.top));
+    const at = coordinates.map((p) => Math.min(p.fixed + [...p.mult].reduce((n, [v, m]) => n + m * base[v], 0), p.top));
+    return x ? { run: x.pass.run, contexts: x.contexts, own: x.pass.counts, coordinates, base: at } : { contexts: found.all, own: [spans[k].group?.n ?? 1], coordinates, base: at };
   };
   const readAt = (k: number, context: readonly number[], c: number): WordAt => {
     const x = spans[k].at === undefined ? undefined : found!.passes.get(spans[k].at!);
@@ -381,8 +420,9 @@ export function readingsOf(spec: CommandSpec, words: readonly ArgWord[], ctx: In
     const r = reading(sums);
     // (In its run, its words come after those of the words before it: theirs, and its own variable's.)
     const from = x ? placeOf(runs[x.pass.run].words[0], sums) + context[0] + x.pass.before.ties * c : placeOf(spans[k].group?.from ?? spans[k].at!, sums);
-    const roles = allRoles(r.parse);
-    return { sums, outcome: r.outcome, fields: range(from, from + c).map((i) => roles.get(i)!) };
+    const roles = rolesOf(r);
+    const places = range(from, from + c);
+    return { sums, outcome: r.outcome, fields: places.map((i) => roles.get(i)!), places };
   };
   const variableAt = words.map((_, k) => (spans[k].at === undefined ? undefined : variableOf[spans[k].at!]));
   return { line, back, runs, variables, variableOf, variableAt, bound, specs, base, shapes: found?.shapes, reading, at, hedged, contexts, readAt };
