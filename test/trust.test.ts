@@ -208,6 +208,9 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     assert.strictEqual(blind('o=-e; if false; then [ -t 0 ] && o=-u; set $o; fi'), undefined);
     // A variable such a word reads must not be set by a builtin read so.
     assert.strictEqual(blind('o=a; v=o; declare "$v=-e"; set $o'), 'a builtin may set a variable whose value gives the words of a builtin');
+    // Read again where the same command comes again; a word after the options, or a value as one word, as written.
+    for (const src of ['o=-e; set $o; set $o', 'p=x; read -p $p ans < /dev/null', 'o=-v; a=1; printf $o u "%s" "$a"', 'cb=f; f() { :; }; complete -F $cb x',
+      'v=u; printf -v $v x', 'p=x; read -r -p "$p" ans < /dev/null']) assert.strictEqual(blind(src), undefined, src);
     // A word beside it that is not read as fields: an assignment of a declaration.
     assert.strictEqual(shellState(parser.parse('o=-i; v=1+2; declare $o n=$v')).end.variables.get('n')?.attrs.i?.state, 'on');
   });

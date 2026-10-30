@@ -810,15 +810,15 @@ class Scan {
    * trusted where it does not know them. A variable they expand must not be set by such a reading.
    */
   private readDeferred(): void {
-    const plans = this.deferred.map((d) => ({ d, readings: deferredReadings(d.words, (name) => this.writes.get(name), this.writes.has('IFS'), this.shell) }));
+    const plans = this.deferred.map((d) => ({ d, ...deferredReadings(d, (name) => this.writes.get(name), this.writes.has('IFS'), this.shell) }));
     const read = new Map<string, number>();
     for (const { d, readings } of plans) {
       if (!readings) continue;
       for (const name of [...d.words.flatMap((u) => u.names), ...(d.words.some((u) => u.unquoted) ? ['IFS'] : [])]) read.set(name, this.writes.get(name)?.length ?? 0);
     }
-    for (const { d, readings } of plans) {
+    for (const { d, readings, expands } of plans) {
       for (const fieldsOf of readings ?? [undefined]) this.builtinWords(d.c, d.name, d.args, d.spec, undefined, d.w, fieldsOf);
-      if (readings) for (const u of d.words) this.expanded.add(u.word);
+      if (expands) for (const u of d.words) this.expanded.add(u.word);
     }
     for (const [name, count] of read) if ((this.writes.get(name)?.length ?? 0) !== count) this.blindFor('a builtin may set a variable whose value gives the words of a builtin');
   }
