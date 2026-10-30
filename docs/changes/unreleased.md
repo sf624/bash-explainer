@@ -1238,6 +1238,7 @@ bash removes a line continuation (`\` at the end of a line) before it reads a wo
 | `echo {0..2..9223372036854775807}` | `0` | "each word is 9223372036854775807 more" | "9223372036854776000 more" |
 | `echo {9223372036854775806..0..9223372036854775806}`, `{1..3000000000}` | bash 5.2: the word as written (its limits on the range and on the number of words) | "bash 5.2 leaves `{…}` as written" | words |
 | `[[ $v == a\`, then `*` ]]`; `[[ $v == @\`, then `(x\|y)` ]]` | a pattern: true for `app`; for `x` | a pattern, with values that match it | "the right side is quoted, so it is literal text"; no example |
+| `[[ $v == a\\* ]]` | true for `a\xy`: the backslash quotes only the second backslash, and `*` is a pattern | "the quoted parts of the right side are literal text, the rest is a pattern" | "the right side is quoted, so it is literal text" |
 | `a=${n:-x:~/d:~root}`, `echo ${n:-~+/x}` | `x:/home/me/d:/root`, `$PWD/x` | no example | the example `~root`, `~+/x` as written |
 | `cat <<< x:~`, `cat <<< a=~:~` | `x:/home/me`, `a=~:/home/me` (also in POSIX mode) | the tilde after `:`, not after `=` | the text |
 | `read a b <<< x:~` | reads `x:/home/me` | an example line | the line `x:~` |

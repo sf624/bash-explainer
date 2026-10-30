@@ -356,11 +356,14 @@ function quotedPatternNote(cx: Explainer, n: SyntaxNode, op: string, rights: Syn
   const regex = op === '=~';
   if (!['=', '==', '!=', '=~'].includes(op) || !ancestor(n, (a) => a.type === 'extended_test')) return undefined;
   // (In a regex a backslash is no quoting: `a\.c` is the same regex as `a[.]c`. Nor is a line continuation, which bash
-  // removes first: `a\<newline>*` is the pattern `a*`.)
+  // removes first: `a\<newline>*` is the pattern `a*`. A backslash quotes the one character after it: `a\\*` is the
+  // character `\` and then a pattern `*`.)
   const quoted = (x: SyntaxNode): boolean[] => {
     if (x.type === 'concatenation') return x.namedChildren.flatMap(quoted);
     if (['string', 'raw_string', 'ansi_c_string', 'translated_string'].includes(x.type)) return [true];
-    return [!regex && nameText(x).includes('\\')];
+    const text = nameText(x);
+    const bare = text.replace(/\\./gs, '\0');
+    return regex || bare === text ? [false] : hasGlob(bare) ? [true, false] : [true];
   };
   const kinds = rights.flatMap(quoted);
   if (!kinds.some((q) => q)) return undefined;

@@ -39,8 +39,25 @@ const wrapped = (v: bigint): bigint => BigInt.asIntN(64, v);
 /** Whether a start or an end written so pads the numbers (`01`, `-01`: a leading zero and more). */
 const padding = (s: string): boolean => /^-?0./.test(s);
 
+/**
+ * Why bash leaves a sequence expression of the right shape, with numbers that fit, as it is: an increment of -2^63 it
+ * refuses, a start and an end too far apart for its arithmetic, or more words than bash 5.2 makes (`INT_MAX - 2`).
+ */
+export type SequenceRefusal = 'increment' | 'distance' | 'words';
+
 /** The sequence expression between the braces, `body` (`1..10..3`), when bash `version` expands it; undefined when it leaves the braces as they are. */
 export function parseSequence(body: string, version: BashVersion): BraceSequence | undefined {
+  const r = readSequence(body, version);
+  return typeof r === 'object' ? r : undefined;
+}
+
+/** Why bash `version` leaves the sequence expression `body` as it is, when its shape and its numbers would do. */
+export function sequenceRefusal(body: string, version: BashVersion): SequenceRefusal | undefined {
+  const r = readSequence(body, version);
+  return typeof r === 'string' ? r : undefined;
+}
+
+function readSequence(body: string, version: BashVersion): BraceSequence | SequenceRefusal | undefined {
   const m = SHAPE.exec(body);
   if (!m) return undefined;
   const letters = m[3] !== undefined;
@@ -53,16 +70,17 @@ export function parseSequence(body: string, version: BashVersion): BraceSequence
   if (version === '5.2') {
     if (start > end && step > 0n) step = -step;
     else if (start < end && step < 0n) {
-      if (step === INTMAX_MIN) return undefined;
+      if (step === INTMAX_MIN) return 'increment';
       step = -step;
     }
     // (Its check that `end - start` does not overflow, with its margins: SUBOVERFLOW (end, start, INTMAX_MIN+3, INTMAX_MAX-2).)
-    if ((start > 0n && end < INTMAX_MIN + 3n + start) || (start < 0n && end > INTMAX_MAX - 2n + start)) return undefined;
+    if ((start > 0n && end < INTMAX_MIN + 3n + start) || (start < 0n && end > INTMAX_MAX - 2n + start)) return 'distance';
     // (The number of steps, in its arithmetic: `imaxabs (end - start) / imaxabs (incr)`, which wraps at INTMAX_MIN; more than INT_MAX - 3 is refused.)
-    if (wrapped(abs(end - start)) / wrapped(abs(step)) > INT_MAX - 3n) return undefined;
+    if (wrapped(abs(end - start)) / wrapped(abs(step)) > INT_MAX - 3n) return 'words';
   } else {
     // (bash 5.3 takes the absolute value of the increment and the distance with `ckd_sub`, and refuses where one overflows.)
-    if (step === INTMAX_MIN || abs(end - start) > INTMAX_MAX) return undefined;
+    if (step === INTMAX_MIN) return 'increment';
+    if (abs(end - start) > INTMAX_MAX) return 'distance';
     if ((start < end) === (step < 0n)) step = -step;
   }
   const width = !letters && (padding(m[1]) || padding(m[2])) ? Math.max(m[1].length, m[2].length) : 0;
