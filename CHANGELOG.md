@@ -146,6 +146,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - `date 0101` and `date x` are read as a date to set, not as an output format, and `date -d now x` is refused for lacking a leading `+`. `mknod n p 1 2` and `dircolors -p a` are refused as extra operands, `shuf -e a b c` takes its words as lines, and `getconf -a` is known. Before, `date x` was labelled an output format, and the other words were device numbers, a settings file and target files.
 - The worked examples of a default for an integer variable follow bash's arithmetic: after `declare -i y`, `${y:=p=3}` gives 3 (and sets `p`), and a set `y` is a number. Before, they showed `p=3` and `y=hello`.
 - `sudo -c` and `sudo -a` (BSD's login class and authentication type) are explained as Linux sudo treats them: it reads the option, then prints its usage and fails. Other options sudo does not have say `invalid option`. The rest of the line is no longer read as if sudo took them. Before, `sudo -u $u tar -cf x y` with `$u` empty explained `y` as an argument of `x`.
+- A word that no test or action of find takes, after its expression has started, is said to be refused by find ("paths must precede expression"): `find . -name *.txt` where the shell turns `*.txt` into `a.txt b.txt`, and a variable that gives several words after `-name`. Before, such a word was called a starting directory. Words before the expression stay starting directories.
 
 ## 0.8.0
 
