@@ -15,6 +15,8 @@ export type FindNode =
   | { type: 'not'; op: number; child: FindNode }
   | { type: 'and'; children: FindNode[]; ops: number[] }
   | { type: 'or'; children: FindNode[]; ops: number[] }
+  // (`a , b`: both are evaluated, and the value is the right one's.)
+  | { type: 'list'; children: FindNode[]; ops: number[] }
   | { type: 'group'; open: number; close: number; child: FindNode };
 
 /** The special bits of a mode (chmod(1), inode(7)): set-user-ID, set-group-ID and sticky; the names, in Japanese and English. */
@@ -46,9 +48,13 @@ export function permBits(mode: string, lang: Lang): string | undefined {
 /** How many words a primary takes, or (an action that runs a command) the `until` of its option, which says where it ends. */
 export type Arity = (primary: string) => number | NonNullable<OptionSpec['until']>;
 
-/** Whether find reads a word, as the shell gives it (after quote removal: `\(` is `(`), as the start of its expression. */
+/**
+ * Whether find reads a word, as the shell gives it (after quote removal: `\(` is `(`), as the start of its expression
+ * where it looks for the starting points. A `,` or a `)` there is a starting point (GNU find: `find . , b` lists `,` and `b`);
+ * they are operators only once the expression has begun.
+ */
 export function isExpressionStart(w: string): boolean {
-  return (w.startsWith('-') && w.length > 1) || w === '(' || w === '!' || w === ',';
+  return (w.startsWith('-') && w.length > 1) || w === '(' || w === '!';
 }
 
 class Parser {
@@ -57,6 +63,17 @@ class Parser {
 
   private peek(): string | undefined {
     return this.words[this.i];
+  }
+
+  /** The loosest: `a , b`. */
+  list(): FindNode {
+    const children = [this.or()];
+    const ops: number[] = [];
+    while (this.peek() === ',') {
+      ops.push(this.i++);
+      children.push(this.or());
+    }
+    return children.length === 1 ? children[0] : { type: 'list', children, ops };
   }
 
   or(): FindNode {
@@ -90,7 +107,7 @@ class Parser {
     }
     if (w === '(') {
       const open = this.i++;
-      const child = this.or();
+      const child = this.list();
       if (this.peek() !== ')') throw new Error('missing )');
       return { type: 'group', open, close: this.i++, child };
     }
@@ -120,7 +137,7 @@ export const findWords = (nodes: readonly SyntaxNode[], shell?: Shell): string[]
 export function parseFind(words: string[], arity: Arity, values: readonly (string | undefined)[] = words): FindNode | undefined {
   const p = new Parser(words, arity, values);
   try {
-    const node = p.or();
+    const node = p.list();
     return p.i === words.length ? node : undefined;
   } catch {
     return undefined;
@@ -257,6 +274,7 @@ function describe(n: FindNode, lang: Lang): string {
     case 'group': return s(`（${describe(n.child, lang)}）`, `(${describe(n.child, lang)})`);
     // Only at the top or in `( )`: `-o` binds the loosest.
     case 'or': return n.children.map((c) => describe(c, lang)).join(s('、または ', '; or '));
+    case 'list': return n.children.map((c) => describe(c, lang)).join(s('。次に ', ', then '));
     case 'and': {
       // Conditions followed by actions read as "if <conditions>: <actions>".
       const conds = n.children.filter((c) => !(c.type === 'primary' && (ACTIONS.has(c.name) || c.name === '-prune')));
@@ -285,9 +303,30 @@ function lateGlobalOption(n: FindNode): string | undefined {
 }
 
 /** One sentence for the whole expression, including find's implicit -print. */
-export function describeFind(n: FindNode, lang: Lang): string {
+/** What the operator of a list of terms says: Japanese and English (`-a`, `-o`, `,`). */
+export function operatorTexts(type: 'and' | 'or' | 'list'): [string, string] {
+  if (type === 'list') return ['`,`: 左も右も評価し、全体の値は右の値になる（`-a`、`-o` より優先順位が低い）', "`,`: evaluates both sides, and the value is the right one's (lower precedence than `-o`)"];
+  if (type === 'or') return ['`-o`: または（左右どちらかが真なら真。`-a` より優先順位が低い）', '`-o`: or (lower precedence than `-a`)'];
+  return ['`-a`: かつ（省略しても同じ）', '`-a`: and (the default when omitted)'];
+}
+
+/**
+ * The words of the expression that no predicate, action or operator takes: a primary that is not one, or `--` (find says
+ * `paths must precede expression`, or `unknown predicate`). Their indexes in the words `parseFind` was given.
+ */
+export function strayWords(n: FindNode): number[] {
+  switch (n.type) {
+    case 'primary': return !n.name.startsWith('-') || n.name === '--' ? [n.from] : [];
+    case 'not': case 'group': return strayWords(n.child);
+    default: return n.children.flatMap(strayWords);
+  }
+}
+
+/** `refused`: find refuses the line (a word no predicate takes, per `strayWords`); the summary says so before what it would do. */
+export function describeFind(n: FindNode, lang: Lang, refused = false): string {
   const s = pick(lang);
   const body = describe(n, lang);
+  if (refused) return s('find はこの式を受け付けず、何も実行せずに終了ステータス 1 で終わる（式に条件でも処理でもない語がある）', 'find refuses this expression and exits with status 1, running nothing (a word is neither a predicate nor an action)');
   const pruneIdiom = n.type === 'or' && n.children[0].type === 'and'
     && n.children[0].children.some((c) => c.type === 'primary' && c.name === '-prune');
   const idiom = pruneIdiom ? s('（`-prune -o` は、特定のディレクトリを探索から除外する定番の書き方）', ' (`-prune -o` is the usual way to exclude a directory)') : '';

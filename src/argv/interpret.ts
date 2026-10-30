@@ -495,7 +495,8 @@ class Reader {
       const later = last ? st.given.later.filter((l) => l.word < i).pop()?.spec : undefined;
       const spec = later ?? item;
       const assignment = (spec.assignment || (spec.assignmentText && ASSIGNMENT.test(known(words[k])))) || undefined;
-      const role: OperandRole = { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(each ? { each } : {}) };
+      // (An extra operand that only a known word is: a word of unknown text may be something else, so it is an argument the spec does not describe.)
+      const role: OperandRole = spec.extra?.knownOnly && words[k].value === undefined ? { role: 'operand', index: k } : { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(each ? { each } : {}) };
       roles.set(i, role);
     }
   }

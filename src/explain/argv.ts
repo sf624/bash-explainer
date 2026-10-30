@@ -13,7 +13,7 @@ import { validName } from '../semantics/posixexits';
 import type { CommandSpec, OperandSpec, VariableAct } from '../argv/spec';
 import { builtins, SHELL_OPTION_TABLES } from '../dict/builtins';
 import { OPTION_SECTIONS } from '../manual';
-import { describeFind, findWords, type FindNode, parseFind } from '../embedded/find';
+import { describeFind, findWords, type FindNode, operatorTexts, parseFind, strayWords } from '../embedded/find';
 import { globIntro, hasGlob } from '../embedded/glob';
 import type { EmbeddedLang } from '../embedded/types';
 import { braceTexts } from '../semantics/brace';
@@ -944,14 +944,11 @@ function findExpression(cx: Explainer, all: SyntaxNode[], spec: CommandSpec): To
         return [{ kind: 'block', label: shorten(words.slice(n.open, n.close + 1).join(' ')), span, children: inner, explanation: cx.s('グループ: 括弧の中を先にまとめて評価する', 'Group: evaluated as one condition') }];
       }
       case 'and':
-      case 'or': {
+      case 'or':
+      case 'list': {
         const ops = new Set(n.ops);
         const toks = n.children.flatMap(build);
-        for (const o of ops) {
-          toks.push(...(n.type === 'or'
-            ? opTok(o, '`-o`: または（左右どちらかが真なら真。`-a` より優先順位が低い）', '`-o`: or (lower precedence than `-a`)')
-            : opTok(o, '`-a`: かつ（省略しても同じ）', '`-a`: and (the default when omitted)')));
-        }
+        for (const o of ops) toks.push(...opTok(o, ...operatorTexts(n.type)));
         return sortTokens(toks);
       }
     }
@@ -960,7 +957,7 @@ function findExpression(cx: Explainer, all: SyntaxNode[], spec: CommandSpec): To
   const last = exprArgs[exprArgs.length - 1];
   const inside = (k: number): boolean => all.indexOf(none[k]) > all.indexOf(first) && all.indexOf(none[k]) < all.indexOf(last);
   return [{
-    kind: 'test', label: shorten(words.join(' ')), explanation: describeFind(tree, cx.lang),
+    kind: 'test', label: shorten(words.join(' ')), explanation: describeFind(tree, cx.lang, strayWords(tree).some((i) => staticWordValue(nodes[i], false, cx.shell) !== undefined)),
     span: { start: spanOf(first).start, end: spanOf(last).end }, children: nested(build(tree), empty.filter((_, k) => inside(k))),
   }, ...empty.filter((_, k) => !inside(k))];
 }

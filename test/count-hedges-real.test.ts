@@ -253,6 +253,14 @@ const CASES: Case[] = [
   { line: 'find . -name $f', vars: { $f: ['a.txt', 'b.txt', 'c.txt', 'd.txt'] }, tool: 'find', usable: () => gnu('find'), setup: 'echo > a.txt; echo > b.txt',
     expect: (_, roles) => (roles.some((r) => (r?.role === 'operand' && r.spec?.extra?.says === 'paths must precede expression') || (r?.role === 'option' && r.missing)) ? 'refused' : 'ran'),
     seen: (r) => (r.status ? 'refused' : 'ran') },
+  // (A word of unknown text after the expression may be a test or an action: `b` is refused, `-print` runs, and the explanation
+  // does not call the word a path.)
+  { line: 'find . -name a $more', vars: { $more: ['b', 'c', 'd', 'e'] }, tool: 'find', usable: () => gnu('find'), setup: 'echo > a; echo > b',
+    expect: (_, roles) => (roles.some((r) => (r?.role === 'operand' && r.spec?.extra?.says === 'paths must precede expression') || (r?.role === 'option' && r.missing)) ? 'refused' : 'ran'),
+    seen: (r) => (r.status ? 'refused' : 'ran') },
+  { line: 'find . -name a $opt', vars: { $opt: ['-print', '-print', '-print', '-print'] }, tool: 'find', usable: () => gnu('find'), setup: 'echo > a; echo > b',
+    expect: (_, roles) => (roles.some((r) => (r?.role === 'operand' && r.spec?.extra?.says === 'paths must precede expression') || (r?.role === 'option' && r.missing)) ? 'refused' : 'ran'),
+    seen: (r) => (r.status ? 'refused' : 'ran') },
   // (Not run: sudo's `-u` takes the next word as the user, as its manual says; `sudo -u tar -cf x y` runs nothing.)
   { line: 'sudo -u $u tar -cf x y', vars: { $u: ['root', 'p', 'q', 'r'] }, tool: 'sudo', usable: () => true, dry: true, only: ['-u', '$u', 'tar'] },
   // ---- The cases of docs/design/count-hedges.md, 1.2: the explanation reads one word's count at a time, and the options once.
