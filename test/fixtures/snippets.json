@@ -1588,6 +1588,7 @@
  "sticky",
  "su -c 'whoami'",
  "sudo \"$cmd\" x",
+ "sudo -c foo ls",
  "sudo -i cd /tmp",
  "sudo -u $u tar -cf x y",
  "sudo -u bob rm -rf /tmp/x",
