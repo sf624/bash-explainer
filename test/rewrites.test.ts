@@ -5,6 +5,7 @@
 // gone (in the other states, none of its signs), the rewrite parses (`bash -n`), and explaining it raises no fact of
 // the same id. Commands that would act (`cp`, `rm`, `tar`) are recorders, defined through BASH_ENV (test/support/rewrites.ts).
 import * as assert from 'assert';
+import { execFileSync } from 'child_process';
 import { Analyzer } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
@@ -194,6 +195,20 @@ describe('the rewrites of `unmatched-glob-runs-once`', () => {
       assert.deepStrictEqual(fix(src).map(([code]) => code), ['shopt -s nullglob'], src);
     }
     assert.match(text('for f in "$d"/*.c a; do echo "$f"; done', 'ja'), /: `"\$d"\/\*\.c` に一致するファイルが1つもなくても、その分の1回は実行され、`f` には展開後のパターンの文字列がそのまま入ります。ループの前で/);
+  });
+  it('count a pattern where IFS is not known, whichever way bash quotes its glob characters', () => {
+    // (With an IFS not known, bash may take the `*` of `$dir/*.log` as itself, or as a wildcard: either way, where no
+    // file matches, the loop runs once with the text, in bash 5.2 and 5.3.)
+    for (const b of ['bash', ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])]) {
+      for (const ifs of [',', '*']) {
+        const out = execFileSync(b, ['-c', `cd /; OLDIFS=$IFS; IFS='${ifs}'; read -r a b <<< "$1"; IFS=$OLDIFS; dir=nodir; for x in $dir/*.log; do echo "iter <$x>"; done; IFS='${ifs}'; for x in $dir/*.log; do echo "iter <$x>"; done`, '_', 'a,b']).toString();
+        assert.strictEqual(out, 'iter <nodir/*.log>\niter <nodir/*.log>\n', `${b}: ${ifs}`);
+      }
+    }
+    const text = (src: string): string => factsOf(src, 'unmatched-glob-runs-once')[0].text;
+    for (const src of ['OLDIFS=$IFS; IFS=,; read -r a b <<< "$1"; IFS=$OLDIFS\nfor x in $dir/*.log; do echo "$x"; done', 'f() {\n  for x in $dir/*.log; do echo "$x"; done\n}\nIFS=,']) {
+      assert.match(text(src), /: when no file matches `\$dir\/\*\.log`, the loop runs once with `x` set to the text of the pattern itself, after its expansions\. Start the body with `\[ -e "\$x" \] \|\| continue`/, src);
+    }
   });
   it('take a quoted glob character as no pattern', () => {
     // (Before, `for i in {"*",*.c}` called `*` a pattern too, and the test of the name skipped it: bash passes `*`

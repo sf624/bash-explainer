@@ -3,11 +3,17 @@
 // arguments cannot show (a here-string, a here-document) are compared with bash too.
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { type Char, globbedByBash, ownChars, type Piece, quotedIfs } from '../src/semantics/chars';
 import { shellState, type StateModel } from '../src/semantics/state';
 import { braceWords, bracesInContext, CONTEXTS, partMeaning, underscoreValue, wordFields, wordMeaning, wordOf, type WordEnv } from '../src/semantics/words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, type SyntaxNode } from '../src/syntax/tree';
 import { staticWordValue } from '../src/staticword';
+import { runContained } from './support/contained';
+import { random } from './support/fuzz';
 import { BOX, FILES, PROBE_ENV, probeSkipReason, runProbe } from './support/probe';
 
 const parser = createUnbashParser();
@@ -422,6 +428,116 @@ describe('words: fields', () => {
     assert.deepStrictEqual(fieldsOf('echo ./*.log', './*.log').fields, ['./c.log']);
   });
 
+  // (bash 5.2 on PATH, and bash 5.3 when `$BASH_EXPLAINER_BASH53` names one.)
+  const bashes = ['bash', ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])];
+  /** What bash prints for `set` then `printf '<%s>' - word` in `dir`, then `|` and the status; the model's, the same way. */
+  const globbed = (bash: string, dir: string, set: string, word: string): string =>
+    execFileSync(bash, ['-c', `( ${set}; printf '<%s>' - ${word} ) 2>/dev/null; printf '|%d' $?`], { cwd: dir }).toString();
+  const modelled = (dir: string, files: string[], set: string, word: string): string | undefined => {
+    const r = fieldsOf(`${set}\nprintf '<%s>' - ${word}`, word, { variables: PROBE_ENV, pwd: dir, files });
+    return r.fields ? `<->${r.fields.map((f) => `<${f}>`).join('')}|0` : r.error === 'no-match' ? '|1' : undefined;
+  };
+
+  it('says where the quoting of IFS characters is not known, and for other shells', () => {
+    const piece = (text: string, quoted = false, expanded = false): Piece => ({ text, quoted, expanded });
+    const own = [piece('', false, true), piece('a?')];
+    const quoted = (cs: Char[] | undefined) => cs?.map((c) => (c.quoted ? `"${c.c}"` : c.c)).join('');
+    assert.strictEqual(quoted(ownChars(own, true, { ifs: '?', context: true })), 'a"?"');
+    // (dash quotes none; another shell, an IFS or a context not known: not known where a glob character is at stake.)
+    assert.strictEqual(quoted(ownChars(own, true, { ifs: '?', context: true, shell: 'dash' })), 'a?');
+    assert.strictEqual(ownChars(own, true, { ifs: '?', context: true, shell: 'ksh' }), undefined);
+    assert.strictEqual(ownChars(own, true, { context: true }), undefined);
+    assert.strictEqual(ownChars(own, true, { ifs: '?', context: 'unknown' }), undefined);
+    assert.strictEqual(quoted(ownChars([piece('a'), piece('?', true)], true, { ifs: 'a?', context: true })), 'a?');
+    assert.strictEqual(quoted(ownChars(own, true, { ifs: '?', context: false })), 'a?');
+    const w = (applies: boolean | 'unknown', ifs: { kind: string; value?: string }, shell?: string) => ({ steps: [{ kind: 'split', applies }], ifs, ...(shell ? { shell } : {}) });
+    assert.strictEqual(quotedIfs(w(true, { kind: 'default' })), ' \t\n');
+    assert.strictEqual(quotedIfs(w(true, { kind: 'value', value: '?' })), '?');
+    assert.strictEqual(quotedIfs(w(false, { kind: 'value', value: '?' })), '');
+    assert.strictEqual(quotedIfs(w(true, { kind: 'value', value: '?' }, 'dash')), '');
+    assert.strictEqual(quotedIfs(w(true, { kind: 'value', value: '?' }, 'ksh')), undefined);
+    assert.strictEqual(quotedIfs(w('unknown', { kind: 'unknown' })), undefined);
+    // (What bash takes as a pattern: `[` with a later `]` in the same name, an extglob only with extglob on.)
+    assert.deepStrictEqual(['[]', '[a/]', '\\[]', '@(a)', 'a/b'].map((p) => globbedByBash(p, 'off')), [true, false, false, false, false]);
+    assert.deepStrictEqual(['@(a)', '+(a)'].map((p) => [globbedByBash(p, 'on'), globbedByBash(p, 'unknown')]), [[true, undefined], [true, undefined]]);
+    // (A word whose quoted wildcard bash unquotes, with `set -f` on, or on some paths only.)
+    assert.deepStrictEqual(fieldsOf("set -f; IFS='?a'; echo \"?\"a", '"?"a').fields, ['?a']);
+    assert.deepStrictEqual(fieldsOf("if a; then set -f; fi; IFS='?a'; echo \"?\"a", '"?"a'), {});
+  });
+
+  it('reads a character of IFS in the word\'s own text as bash does', () => {
+    // bash quotes a character of the word's own text that is in IFS, so that splitting leaves it. In a word with an
+    // unquoted expansion, even an empty one, it stays quoted: no wildcard, and a backslash of a value before one is a
+    // backslash. In a word with none, bash unquotes every character in IFS, those quoted in the script too.
+    const files = ['\\x', '\\-q', '\\]', '\\a', '\\:a', ':a', 'a\\b', 'b.txt', 'a]', ']', '*', 'ab', 'b', 'a*', 'a?', 'a\\', '[ab]', '?]', '\\x\\', '\\\\x\\', '*\\', 'a?\\', 'ax', 'cb', '-b', '!b', '^b'];
+    const cases: [string, string][] = [
+      ["IFS='*'; x='\\'", '$x*'], ["IFS='?'; x='\\'", '$x?'], ["IFS=']'; x='\\'", '[b$x].txt'], ["IFS='['; x='\\'", '$x[ab]'],
+      ["IFS=':'; x='\\'", '$x:*'], ["IFS='*'; x='a\\'", '$x*'], ["IFS='*'; x='\\\\'", '$x*'], ["IFS='*'; x='\\b\\'", '$x*'],
+      // (Not before a character of the value, nor one that is not in IFS: the backslash quotes it.)
+      ["unset IFS; x='\\'", '$x*'], ["IFS='?'; x='\\'", '$x*'], ["IFS='*'; x='\\?'", '$x'], ["IFS=']'; x='\\]'", '[b$x'],
+      // (No wildcard after an expansion, even an empty one, or a command substitution; a wildcard with none.)
+      ["IFS='?'; z=a", '$z?'], ["IFS='?'; x=']'", '?$x'], ["IFS='?'; y=", 'a?$y'], ["IFS='?'; y=", '"$y"a?'], ["IFS='?'", 'a?'],
+      ["IFS='[]'; y=", '$y[ab]'], ["IFS='[]'", '[ab]'], ["shopt -s failglob; IFS='*'; y=", ']$y*'], ["IFS='?'", 'a?$(true)'],
+      ["IFS='?'", 'a?$((0))'], ["IFS='?'", 'a?`true`'],
+      // (With none, the quoted ones too: `"*"` is a wildcard.)
+      ["IFS='*'", 'b"*"'], ["IFS='?a'", '"?"a'], ["IFS='?a'", "'?'a"], ["IFS='*'", '\\**'], ["IFS='*'", '"*"'],
+      // (A backslash at the end of a pattern: itself, but nothing after a `*`. `[]` is a pattern for bash.)
+      ["x='\\'", '?$x'], ["x='\\'", '*$x'], ["shopt -s failglob; x='\\'", '*$x'], ["shopt -s nullglob; x='['", ':$x]'],
+      ["shopt -s failglob", '[]'], ["x='\\'", 'a?$x'],
+      // (An escaped backslash or wildcard before the run: `\\*\` is a backslash, any text, nothing.)
+      ["x='\\'", '\\\\*$x'], ["x='\\'", '\\\\\\\\*$x'], ["x='\\'", '\\\\?$x'], ["x='\\'", '\\*$x'], ["x='\\'", '*\\?$x'], ["x='\\'", '?*$x'], ["x='\\'", '*?$x'],
+      // (A character of IFS in a bracket expression, or after one, is itself.)
+      ["IFS='?'; x=", '$x[ab]?'], ["IFS='-'; x=", '$x[a-c]b'], ["IFS='!'; x=", '$x[!a]b'], ["IFS='^'; x=", '$x[^a]b'], ["IFS='-'", '[a-c]b'],
+    ];
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-ifsglob-'));
+    try {
+      for (const f of files) fs.writeFileSync(path.join(dir, f), '');
+      for (const [set, word] of cases) {
+        const model = modelled(dir, files, set, word);
+        for (const bash of bashes) assert.strictEqual(model, globbed(bash, dir, set, word), `${bash}: ${set}; ${word}`);
+      }
+      // (A backslash of a value before a quoted letter: a backslash in bash 5.2, an escape in 5.3. Not followed.)
+      assert.strictEqual(modelled(dir, files, "x='\\'", '$x"b"*'), undefined);
+      assert.strictEqual(modelled(dir, files, "IFS=b; x='\\'", '${x}b*'), undefined);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('globs as bash does: random words, values, IFS and glob options', async function () {
+    this.timeout(60000);
+    const next = random(511);
+    const pick = <T>(xs: readonly T[]): T => xs[Math.floor(next() * xs.length)];
+    const files = ['a*', 'a?', 'ab', '\\]', 'a]', ']', 'b', 'Ab', '.ab', '\\a', '*', '[ab]', 'a\\', 'ba', '?', '\\'];
+    const sq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+    const cases = Array.from({ length: 400 }, () => {
+      const opts = ['nullglob', 'failglob', 'nocaseglob', 'extglob', 'dotglob'].filter(() => next() < 1 / 3);
+      const r = next();
+      const ifs = r < 0.1 ? undefined : r < 0.2 ? null : Array.from({ length: 1 + Math.floor(next() * 3) }, () => pick(['*', '?', '[', ']', ':', '\\', 'a', '!', ' ', '-', 'b'])).join('');
+      const value = (): string => Array.from({ length: Math.floor(next() * 4) }, () => pick(['*', '?', '[', ']', '\\', 'a', 'b', '!', '-', 'A'])).join('');
+      const atoms = Array.from({ length: 1 + Math.floor(next() * 4) }, () => (next() < 0.5
+        ? pick(['a', 'b', '*', '?', '[', ']', '\\*', '\\\\', '"*"', "'?'", '"["', ':', '!', '-', 'A', '.'])
+        : pick(['$x', '$y', '"$x"', '${y}', '"$y"', '$(true)', '$((0))', '`true`'])));
+      const set = [...(opts.length ? [`shopt -s ${opts.join(' ')}`] : []), ...(ifs === undefined ? [] : ifs === null ? ['unset IFS'] : [`IFS=${sq(ifs)}`]), `x=${sq(value())}`, `y=${sq(value())}`].join('; ');
+      const word = atoms.join('').replace(/^-/, 'a-');
+      return { set, word };
+    });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-globrandom-'));
+    try {
+      for (const f of files) fs.writeFileSync(path.join(dir, f), '');
+      const script = cases.map(({ set, word }) => `( ${set}; printf '<%s>' - ${word} ) 2>/dev/null; printf '|%d\\x1e' $?`).join('\n');
+      for (const bash of bashes) {
+        const out = (await runContained([bash, '-c', script], dir)).stdout.split('\x1e');
+        const bad = cases.filter(({ set, word }, k) => {
+          const model = modelled(dir, files, set.replace(/; /g, '\n'), word);
+          return model !== undefined && model !== out[k];
+        });
+        assert.deepStrictEqual(bad, [], bash);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it('gives one field, or none, where bash does not split', () => {
     assert.deepStrictEqual(fieldsOf("x='a  *'; y=$x; echo \"$y\"", '"$y"').fields, ['a  *']);
     assert.deepStrictEqual(fieldsOf('x=; cat <<< $x', '$x').fields, ['']);
