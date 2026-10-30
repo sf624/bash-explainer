@@ -4,7 +4,9 @@
 // with the variables' words written out, and the explanation of the line as written must allow the role of every word
 // it gives under the conditions it states (`showsRole`, as the renderings check reads hedges). The tool then runs the
 // line for real, in a directory of its own, and what it does (the files it reads, the numbers it prints, the archive it
-// makes, the directory git changes to) must be what that reading says.
+// makes, the directory git changes to) must be what that reading says. The cases of docs/design/count-hedges.md 1.2, where
+// today's hedges contradict the tool, are listed in test/fixtures/count-hedges-known.json (below); the test fails on a
+// contradiction not listed, and on an entry that covers counts where the explanation is right.
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
@@ -39,6 +41,10 @@ interface Case {
   stdin?: string;
   /** Not run: only the explanation is compared with the interpreter's reading (sudo). */
   dry?: true;
+  /** The line runs the program of the command's name (`/usr/bin/echo`), not the builtin: the spec is its `program`. */
+  program?: true;
+  /** A script run in the directory after the line, whose output is then what the run saw (the files `cp` made). */
+  after?: string;
   /**
    * The words compared, where not all: the words a command run or a subcommand reads after it are read as a whole by
    * another command when the word before it gives none or several (`sudo -u root p tar -cf x y` runs `p`), which their
@@ -83,6 +89,78 @@ const readsFiles = (valueOk: (v: string) => boolean) => (argv: string[], roles: 
   const files = argv.filter((_, i) => op(roles[i]));
   return files.length ? [...new Set(files)].sort().join(' ') : 'stdin';
 };
+
+/** Whether the word has the option `flag` as its role. */
+const isOption = (r: ArgRole | undefined, flag: string): boolean => r?.role === 'option' && r.flag === flag;
+/** The words that are operands (any operand role, whatever the spec calls it). */
+const operandsOf = (argv: string[], roles: (ArgRole | undefined)[]): string[] => argv.filter((_, i) => roles[i]?.role === 'operand');
+/** The word that is the value of the option `flag`. */
+const valueOf = (argv: string[], roles: (ArgRole | undefined)[], flag: string): string | undefined => argv[roles.findIndex((r) => r?.role === 'value' && r.of === flag)];
+
+/**
+ * jq's output on the files `"F1"`… (each holds the string `"F"`) and stdin (`"S"`): `--arg` takes two words, the filter
+ * is `.` or a string, which it prints once per input; a file that is not one of ours, or a filter that is not, is a
+ * refusal. With no filter, jq reads `.`; with no file, stdin.
+ */
+function jqOf(argv: string[], roles: (ArgRole | undefined)[]): string {
+  if (roles.some((r) => r?.role === 'option' && r.missing)) return 'refused';
+  const filter = roles.findIndex((r) => op(r).startsWith('jq filter'));
+  const files = argv.filter((_, i) => op(roles[i]).startsWith('input JSON file'));
+  if ((filter >= 0 && !/^("[^"]*"|\.)$/.test(argv[filter])) || files.some((f) => !f.startsWith('"'))) return 'refused';
+  const program = filter < 0 ? '.' : argv[filter];
+  return (files.length ? files.map(() => '"F"') : ['"S"']).map((input) => (program === '.' ? input : program)).join(' ');
+}
+
+/** cut's output of the files and stdin (`F-name`), a refusal where `-d` is not one character or `-f` not a list. */
+function cutOf(argv: string[], roles: (ArgRole | undefined)[]): string {
+  const [d, f] = [valueOf(argv, roles, '-d'), valueOf(argv, roles, '-f')];
+  if (d === undefined || f === undefined || d.length !== 1 || !/^[\d,-]+$/.test(f)) return 'refused';
+  const files = operandsOf(argv, roles);
+  return files.length ? [...new Set(files)].sort().join(' ') : 'stdin';
+}
+
+/** The files `cp -t DIR sources` copied into the directories D, E, F and G of its directory, as `dir/name`. */
+function cpOf(argv: string[], roles: (ArgRole | undefined)[]): string {
+  const dir = valueOf(argv, roles, '-t');
+  if (dir === undefined || !['D', 'E', 'F', 'G'].includes(dir)) return '';
+  // (A directory as a source is omitted: `cp` copies no directory without `-r`.)
+  return operandsOf(argv, roles).filter((s) => /^(s\d|b)$/.test(s)).map((s) => `${dir}/${s}`).sort().join(' ');
+}
+
+/** The lines of the file `f` (`a`, `--`, `b`) that `grep -e PATTERN` prints, with the name of `f` when it reads several files. */
+function grepOf(argv: string[], roles: (ArgRole | undefined)[]): string {
+  const pattern = valueOf(argv, roles, '-e');
+  const files = operandsOf(argv, roles);
+  if (pattern === undefined || !files.includes('f')) return 'refused';
+  const invert = roles.some((r) => isOption(r, '-v'));
+  return ['a', '--', 'b'].filter((l) => l.includes(pattern) !== invert).map((l) => (files.length > 1 ? `f:${l}` : l)).join(' ');
+}
+
+/** tr's output of `abcdwxyz-`: translated by two sets, or with `-d` the characters of one deleted; a refusal for the other counts. */
+function trDeleteOf(argv: string[], roles: (ArgRole | undefined)[]): string {
+  const sets = operandsOf(argv, roles);
+  const [from, to] = sets;
+  if (roles.some((r) => isOption(r, '-d'))) return sets.length === 1 ? [...'abcdwxyz-'].filter((c) => !from.includes(c)).join('') : 'refused';
+  if (sets.length !== 2) return 'refused';
+  return [...'abcdwxyz-'].map((c) => (from.includes(c) ? to[Math.min(from.indexOf(c), to.length - 1)] : c)).join('');
+}
+
+/** getconf's answer for `-a` (every variable), or for `NAME_MAX` with the path `-a` (a directory made for it: 255). */
+function getconfOf(argv: string[], roles: (ArgRole | undefined)[]): string {
+  if (roles.some((r) => isOption(r, '-a'))) return 'all';
+  const ops = operandsOf(argv, roles);
+  return ops.length === 2 && ops[0] === 'NAME_MAX' && ops[1] === '-a' ? '255' : 'refused';
+}
+
+/** What echo prints for the words its roles say are text, with the newline unless an option `-n` of it is read. */
+function echoOf(argv: string[], roles: (ArgRole | undefined)[], from = 0): string {
+  const rest = argv.map((_, i) => i).filter((i) => i >= from);
+  if (rest.some((i) => isOption(roles[i], '--version'))) return 'version';
+  return rest.filter((i) => roles[i]?.role === 'operand').map((i) => argv[i]).join(' ') + (rest.some((i) => isOption(roles[i], '-n')) ? '' : '\n');
+}
+
+/** The files jq reads in the cases (each holds the string `"F"`). */
+const JQ_FILES = `for f in '"V1"' '"V2"' '"V3"' '"V4"' '"B"' '"C"' '"D"' '"F1"' '"F2"' '"F3"'; do echo '"F"' > "$f"; done`;
 
 const CASES: Case[] = [
   // (Item 1 of the review of #490: with `a='11 12'` and `b`, `c` empty, `seq 11 12` reads `11` as the first.)
@@ -144,11 +222,51 @@ const CASES: Case[] = [
   })),
   // (Not run: sudo's `-u` takes the next word as the user, as its manual says; `sudo -u tar -cf x y` runs nothing.)
   { line: 'sudo -u $u tar -cf x y', vars: { $u: ['root', 'p', 'q', 'r'] }, tool: 'sudo', usable: () => true, dry: true, only: ['-u', '$u', 'tar'] },
+  // ---- The cases of docs/design/count-hedges.md, 1.2: the explanation reads one word's count at a time, and the options once.
+  // (Two words in a row that may give none, after an option that takes two: `--arg` takes the name and the value, and what
+  // is left is the filter and the files. Stdin holds `"S"`, the files `"F"`.)
+  { line: 'jq --arg $n $v .', vars: { $n: ['x', '"B"', '"C"', '"D"'], $v: ['"V1"', '"V2"', '"V3"', '"V4"'] }, tool: 'jq', usable: () => has('jq'),
+    setup: JQ_FILES, stdin: '"S"', expect: jqOf, seen: (r) => (r.status ? 'refused' : r.out.trim().split('\n').join(' ')) },
+  // (The same, with a known word between; with `$n` empty, `v` is the name and the first word of `$f` the value.)
+  { line: 'jq --arg $n v $f', vars: { $n: ['x', '"B"', '"C"', '"D"'], $f: ['.', '"F1"', '"F2"', '"F3"'] }, tool: 'jq', usable: () => has('jq'),
+    setup: JQ_FILES, stdin: '"S"', expect: jqOf, seen: (r) => (r.status ? 'refused' : r.out.trim().split('\n').join(' ')) },
+  // (Two values, a known option between: with `$a` empty `-f` is the delimiter, which cut refuses; `-f` needs a list.)
+  { line: 'cut -d $a -f $b f', vars: { $a: [':', 'g1', 'g2', 'g3'], $b: ['1', 'g1', 'g2', 'g3'] }, tool: 'cut', usable: () => gnu('cut'), setup: FILES, stdin: 'F-stdin',
+    expect: cutOf, seen: (r) => (r.status && !r.out ? 'refused' : filesIn(r.out)) },
+  // (A value and an operand in a row, both may give none: with both empty, `b` is the directory; `cp` then refuses.
+  // What was copied into the directories D to G is what a run saw.)
+  { line: 'cp -t $d $a b', vars: { $d: ['D', 'E', 'F', 'G'], $a: ['s1', 's2', 's3', 's4'] }, tool: 'cp', usable: () => gnu('cp'),
+    setup: 'mkdir D E F G; for f in s1 s2 s3 s4 b; do echo "F-$f" > $f; done',
+    after: "find D E F G -type f | sort | tr '\\n' ' ' | sed 's/ $//'", expect: cpOf, seen: (r) => r.out.trim() },
+  // (A word that becomes an option: with `$p` empty, `-e` takes `--`, and `-v` is the option. The file holds `a`, `--`, `b`.)
+  { line: 'grep -e $p -- -v f', vars: { $p: ['a', 'b', 'c', 'd'] }, tool: 'grep', usable: () => gnu('grep'), setup: "printf 'a\\n--\\nb\\n' > f",
+    expect: grepOf, seen: (r) => r.out.trim().split('\n').filter(Boolean).join(' ') || (r.status > 1 ? 'refused' : '') },
+  // (`optionsFirst`: the options end at the first operand. With `$a` empty `-d` is the option; with a word, the second set.)
+  { line: 'tr $a -d', vars: { $a: ['a', 'b', 'c', 'd'] }, tool: 'tr', usable: () => gnu('tr'), stdin: 'abcdwxyz-',
+    expect: trDeleteOf, seen: (r) => (r.status ? 'refused' : r.out.trim()) },
+  // (`getconf NAME_MAX -a` asks the path `-a`: a directory of that name answers `255`.)
+  { line: 'getconf $a -a', vars: { $a: ['NAME_MAX', 'PAGESIZE', '/', 'x'] }, tool: 'getconf', usable: () => gnu('getconf') || has('getconf'), setup: 'mkdir -- -a',
+    expect: getconfOf, seen: (r) => (r.status ? 'refused' : r.out.trim().split('\n').length > 50 ? 'all' : r.out.trim()) },
+  // (The builtin, through bash: `echo -n x` prints `x` with no newline. What it prints is the run's output, the newline too.)
+  { line: 'echo $a -n x', vars: { $a: ['y', 'z', 'w', 'v'] }, tool: 'echo', usable: () => true,
+    expect: (argv, roles) => echoOf(argv, roles), seen: (r) => r.out },
+  // (coreutils echo, by its path: `--version` only as the one argument.)
+  { line: '/usr/bin/echo $a --version', vars: { $a: ['y', 'z', 'w', 'v'] }, tool: 'echo', program: true, usable: () => gnu('/usr/bin/echo'),
+    expect: (argv, roles) => echoOf(argv, roles), seen: (r) => (/^echo \(GNU coreutils\)/.test(r.out) ? 'version' : r.out) },
+  // (A word that may give none in a command slot: with `$a` empty, nice reads `-n 5` itself and runs `ls`; with `echo`, it
+  // is echo's option and text. `ls` lists the one file `f` made.)
+  { line: 'nice $a -n 5 ls', vars: { $a: ['echo', 'y', 'z', 'w'] }, tool: 'nice', usable: () => gnu('nice'), setup: 'echo F > f',
+    expect: (argv, roles) => {
+      const command = roles.findIndex((r) => r?.role === 'command');
+      return argv[command] === 'ls' ? 'f\n' : echoOf(argv, roles, command + 1);
+    },
+    seen: (r) => r.out },
 ];
 
 /** The roles of the words of `line`, by word, the name `undefined` (the words of a command run or a subcommand too). */
-function rolesOf(tool: string, argv: string[]): (ArgRole | undefined)[] {
-  const parse = interpret(lookupCommand(tool)!, argv.map((value) => ({ value })), { name: tool, lookup: lookupCommand });
+function rolesOf(tool: string, argv: string[], program = false): (ArgRole | undefined)[] {
+  const spec = lookupCommand(tool)!;
+  const parse = interpret(program ? spec.program! : spec, argv.map((value) => ({ value })), { name: tool, lookup: lookupCommand });
   const out: (ArgRole | undefined)[] = argv.map(() => undefined);
   const walk = (roles: readonly RoleAt[]): void => {
     for (const { word, role } of roles) {
@@ -166,6 +284,19 @@ before(() => {
 });
 after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
+/**
+ * The words whose explanation contradicts the tool today (test/fixtures/count-hedges-known.json): the line, the word,
+ * the counts of the variables the entry holds for (a count not named is any; a list is any of them), and why, with the
+ * step of docs/design/count-hedges.md that fixes it. A contradiction no entry covers fails the test, and so does an
+ * entry that covers counts where the explanation is right (a stale entry).
+ */
+interface Known { line: string; word: string; counts: Record<string, number | number[]>; reason: string }
+const known: Known[] = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/count-hedges-known.json'), 'utf8'));
+/** Whether an entry holds for the counts of one run. */
+const meets = (k: Known, counts: Map<string, number>): boolean =>
+  Object.entries(k.counts).every(([x, n]) => (Array.isArray(n) ? n.includes(counts.get(x)!) : n === counts.get(x)));
+const show = (counts: Map<string, number>): string => [...counts].map(([x, n]) => `${x}=${n}`).join(', ');
+
 describe('hedges of words that give none or several, compared with bash and the real tools', () => {
   for (const c of CASES) {
     it(c.line, async function () {
@@ -176,7 +307,7 @@ describe('hedges of words that give none or several, compared with bash and the 
       assert.ok(words.length);
       // (The tokens of each word, by its place in the line.)
       const tokens = allTokens(new Analyzer('en').explainLine(parser.parse(c.line), 0).items);
-      let col = c.tool.length + 1;
+      let col = c.line.indexOf(' ') + 1;
       const tokensOf = texts.map((t) => {
         const at = c.line.indexOf(t, col);
         col = at + t.length;
@@ -189,7 +320,8 @@ describe('hedges of words that give none or several, compared with bash and the 
         // (One script for every count, run once in a cgroup: each count in a directory of its own.)
         const script = vectors.map((v, n) => {
           const assign = names.map((x, j) => `${x.slice(1)}='${c.vars[x].slice(0, v[j]).join(' ')}'`).join('; ');
-          return `mkdir r${n} && (cd r${n} && ${c.setup ?? ':'} && ${assign} && printf '%s\\n' '${c.stdin ?? ''}' | ${c.line} > ../r${n}.out 2> ../r${n}.err; echo $? > ../r${n}.st${c.tool === 'tar' ? `; for t in x.tar; do [ -f $t ] && echo "$t: $(tar -tf $t | tr '\\n' ' ' | sed 's/ $//')" > ../r${n}.out; done` : ''})`;
+          const after = c.after ? `; ${c.after} > ../r${n}.out 2>> ../r${n}.err` : '';
+          return `mkdir r${n} && (cd r${n} && ${c.setup ?? ':'} && ${assign} && printf '%s\\n' '${c.stdin ?? ''}' | ${c.line} > ../r${n}.out 2> ../r${n}.err; echo $? > ../r${n}.st${after}${c.tool === 'tar' ? `; for t in x.tar; do [ -f $t ] && echo "$t: $(tar -tf $t | tr '\\n' ' ' | sed 's/ $//')" > ../r${n}.out; done` : ''})`;
         }).join('\n');
         const cwd = fs.mkdtempSync(path.join(dir, 'run-'));
         await runContained(['bash', '--norc', '-c', script], cwd, { PATH: process.env.PATH }, 50000);
@@ -198,24 +330,42 @@ describe('hedges of words that give none or several, compared with bash and the 
           runs.set(n, { status: Number(read('st')), out: read('out'), err: read('err') });
         });
       }
+      // (The words whose tokens contradict a role the tool gave them, by word and counts.)
+      const contradicted = new Set<string>();
+      const fresh: string[] = [];
+      const mine = known.filter((k) => k.line === c.line);
+      const covered = new Set<Known>();
       vectors.forEach((v, n) => {
         const counts = new Map(names.map((x, j) => [x, v[j]]));
         // (A word written out is its text after quote removal: `'"V"'` is `"V"`.)
         const parts = texts.map((t, w) => (counts.has(t) ? c.vars[t].slice(0, counts.get(t)) : [words[w].value ?? t]));
         const argv = parts.flat();
-        const roles = rolesOf(c.tool, argv);
-        const where = `${c.line} with ${names.map((x) => `${x}=${counts.get(x)}`).join(', ')}`;
+        const roles = rolesOf(c.tool, argv, c.program);
+        const where = `${c.line} with ${show(counts)}`;
         let k = 0;
         parts.forEach((fields, w) => fields.forEach((field, at) => {
           const role = roles[k++]!;
           if (c.only && !c.only.includes(texts[w])) return;
-          const ok = showsRole(role, tokensOf[w] as Token[], { text: field, at, of: fields.length, counts }, operands);
-          assert.notStrictEqual(ok, false, `${where}: \`${field}\` of \`${texts[w]}\` is ${JSON.stringify(role.role === 'operand' ? role.spec?.text.en : role.role === 'value' ? `value of ${role.of}` : role.role)}; shown: ${JSON.stringify(tokensOf[w].map((t) => t.explanation))}`);
+          if (showsRole(role, tokensOf[w] as Token[], { text: field, at, of: fields.length, counts }, operands) !== false) return;
+          contradicted.add(`${texts[w]} ${show(counts)}`);
+          const entry = mine.find((e) => e.word === texts[w] && meets(e, counts));
+          if (entry) covered.add(entry);
+          else fresh.push(`${where}: \`${field}\` of \`${texts[w]}\` is ${JSON.stringify(role.role === 'operand' ? role.spec?.text.en : role.role === 'value' ? `value of ${role.of}` : role.role === 'option' ? `option ${role.flag}` : role.role)}; shown: ${JSON.stringify(tokensOf[w].map((t) => t.explanation))}`);
         }));
         if (c.dry) return;
         const run = runs.get(n)!;
         assert.strictEqual(c.seen!(run), c.expect!(argv, roles), `${where}: ${argv.join(' ')}: ${run.err}`);
       });
+      // (An entry that covers counts where the explanation is right is stale.)
+      const stale = mine.flatMap((e) => vectors
+        .map((v) => new Map(names.map((x, j) => [x, v[j]])))
+        .filter((counts) => meets(e, counts) && !contradicted.has(`${e.word} ${show(counts)}`))
+        .map((counts) => `stale: \`${e.word}\` of ${c.line} with ${show(counts)} is explained right now`));
+      assert.deepStrictEqual([...fresh, ...stale], []);
     });
   }
+
+  it('lists no entry of a line that is not a case', () => {
+    assert.deepStrictEqual(known.filter((k) => !CASES.some((c) => c.line === k.line)).map((k) => k.line), []);
+  });
 });

@@ -1,0 +1,80 @@
+[
+  {
+    "line": "jq --arg $n $v .",
+    "word": ".",
+    "counts": { "$n": 0, "$v": 2 },
+    "reason": "With $n empty and $v two words, `--arg` takes both, so `.` is the filter; we say `.` is the value for `--arg` (a hedge on $n or $v alone) and read the other word of the other variable as one. Fixed by the table of readings, step 4 of docs/design/count-hedges.md (the sum of the run `$n $v`)."
+  },
+  {
+    "line": "jq --arg $n $v .",
+    "word": "$v",
+    "counts": { "$n": 0, "$v": [2, 3, 4] },
+    "reason": "With $n empty, the second word of $v is the value for `--arg` (the first is the name); we say the others are the jq filter or the input files, from $v's count alone. Fixed by the profiles of `$v` over the words before it in its run, step 5 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "jq --arg $n v $f",
+    "word": "$f",
+    "counts": { "$n": 0, "$f": 2 },
+    "reason": "With $n empty, `v` is the name and the first word of $f the value, so the second word of $f is the filter; we say it is an input file, since the hedge on $n reads $f as one word. Fixed by step 4 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "cut -d $a -f $b f",
+    "word": "f",
+    "counts": { "$a": 0, "$b": 0 },
+    "reason": "With both empty, `-f` is the value of `-d` and `f` a file; we say `f` is the value for `-f` when $b is empty, whatever $a gives. Fixed by the conditions on two words, step 4 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "cp -t $d $a b",
+    "word": "b",
+    "counts": { "$d": 0, "$a": 0 },
+    "reason": "With both empty, `b` is the value of `-t` (the directory); we say it is a source, since no hedge reads $d and $a together. Fixed by the sums of a run, step 4 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "grep -e $p -- -v f",
+    "word": "-v",
+    "counts": { "$p": 0 },
+    "reason": "With $p empty, `-e` takes `--` and `-v` is an option; we say it is a file to search, since a word that becomes an option is not said. Fixed by the table of readings, step 4 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "tr $a -d",
+    "word": "-d",
+    "counts": { "$a": 0 },
+    "reason": "With $a empty, `-d` is the option (the options are read once, with `$a` as a word); we say it is the target character set or an extra operand. Fixed by reading the options again for each count, step 4 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "getconf $a -a",
+    "word": "-a",
+    "counts": { "$a": 0 },
+    "reason": "With $a empty, `-a` is the option (print every variable); we say it is the path or an extra operand, from the options read once. Fixed by step 4 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "echo $a -n x",
+    "word": "-n",
+    "counts": { "$a": 0 },
+    "reason": "With $a empty, echo reads `-n` as its option (no newline); we say it is text to print, from the options read once. Fixed by step 4 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "/usr/bin/echo $a --version",
+    "word": "--version",
+    "counts": { "$a": 0 },
+    "reason": "With $a empty, `--version` is the one argument and coreutils echo reads it as the option; we say it is text to print. Fixed by step 4 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "nice $a -n 5 ls",
+    "word": "5",
+    "counts": { "$a": [0, 1, 2, 3, 4] },
+    "reason": "With $a empty, `5` is the value of nice's `-n`; with a command in $a, it is a word of that command (echo's text). We say a plain word. Fixed by the readings of the words of a command run, step 6 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "nice $a -n 5 ls",
+    "word": "-n",
+    "counts": { "$a": [2, 3, 4] },
+    "reason": "With a command and its argument in $a (`echo y`), `-n` is text of that command; we say it is an option the dictionary does not have, with no hedge. Fixed by step 6 of docs/design/count-hedges.md."
+  },
+  {
+    "line": "nice $a -n 5 ls",
+    "word": "ls",
+    "counts": { "$a": [1, 2, 3, 4] },
+    "reason": "With a command in $a (`echo`), `ls` is a word of that command (echo's text), not the command nice runs; we say a plain word. Fixed by step 6 of docs/design/count-hedges.md."
+  }
+]
