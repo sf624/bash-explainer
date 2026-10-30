@@ -72,7 +72,8 @@ export type ArgRole =
   /**
    * `ambiguous`: the long options a prefix could be (`timeout --v`), which the tool refuses. `late`: a long option
    * after a short one, where the parser reads long options only first (`bash -x --posix`, the rule `longFirst`).
-   * `refused`: what the spec says of a `--` the command refuses (`dashDash`, procps `ps`). `none`, as an option's (the
+   * `refused`: what the spec says of a `--` the command refuses (`dashDash`, procps `ps`), or of an option it does not
+   * list (`unknownOption`): the command refuses the words (`Outcome`). `none`, as an option's (the
    * pattern options' and the end of options' too).
    */
   | { role: 'unknown-option'; flag: string; part?: Range; value?: ValueRole; ambiguous?: string[]; late?: boolean; refused?: Text; none?: NoneRole[]; more?: MoreRole[] }
@@ -640,7 +641,7 @@ class Reader {
       const opt = findOption(options, flag, rules.longPrefixes);
       const value: ValueRole = { role: 'value', of: flag, ...(opt ? { option: opt, spec: valuesOf(opt)[0] } : {}), index: 0, attached: eq + 1 + shift };
       given.flags.push(flag);
-      if (!opt) { roles.set(i, { role: 'unknown-option', flag, value, ...ambiguous(lookupOption(options, flag, rules.longPrefixes)) }); return i; }
+      if (!opt) { roles.set(i, { role: 'unknown-option', flag, value, ...(spec.unknownOption ? { refused: spec.unknownOption } : {}), ...ambiguous(lookupOption(options, flag, rules.longPrefixes)) }); return i; }
       roles.set(i, { role: 'option', flag, spec: opt, text: opt.text, value });
       given.specs.push(opt);
       mark(opt);
@@ -648,7 +649,7 @@ class Reader {
     }
     if (long || rules.singleDash || !rules.shortClusters) {
       if (open) return openOption();
-      roles.set(i, { role: 'unknown-option', flag: text, ...ambiguous(lookupOption(options, text, rules.longPrefixes)) });
+      roles.set(i, { role: 'unknown-option', flag: text, ...(spec.unknownOption ? { refused: spec.unknownOption } : {}), ...ambiguous(lookupOption(options, text, rules.longPrefixes)) });
       given.flags.push(text);
       return i;
     }
@@ -671,7 +672,7 @@ class Reader {
       flags.push(flag);
       if (!opt) {
         if (strict) return -1;
-        letters.push({ role: 'unknown-option', flag: as, part });
+        letters.push({ role: 'unknown-option', flag: as, part, ...(st.spec.unknownOption ? { refused: st.spec.unknownOption } : {}) });
         continue;
       }
       const role: ArgRole = { role: 'option', flag: as, spec: opt, text: opt.text, part, ...(disables && !opt.signless ? { disables } : {}) };

@@ -298,7 +298,7 @@ export function outcomeOf(parse: ArgvParse): Outcome {
     for (const { role } of q.roles) look(role);
   };
   const look = (r: ArgRole): void => {
-    refused ||= r.role === 'option' && !!r.missing;
+    refused ||= (r.role === 'option' && !!r.missing) || (r.role === 'unknown-option' && !!r.refused);
     if (r.role === 'cluster') r.letters.forEach(look);
     // (`env -S'tar -cf'`: the words of the string, and the command they start.)
     for (const { role } of (r.role === 'value' ? r : r.role === 'option' ? r.value : undefined)?.split?.roles ?? []) look(role);

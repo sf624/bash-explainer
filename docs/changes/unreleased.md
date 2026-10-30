@@ -1595,3 +1595,12 @@ The model knows the integer attribute (`declare -i y`, also through a nameref), 
 | `declare -i y; : ${y:=p=3}` | "When y is unset or empty" -> 3; "When `y=42`" -> 42 | -> `p=3`; "When `y=hello`" -> hello |
 | `declare -i y; echo ${y:=a$b}` | -> "the value of the arithmetic expression `a$b`" | -> `a$b (expanded)` |
 | `declare -i y; echo ${y-w}` | "When y is unset" -> w; "When `y=42`" -> 42 (no case for an empty `y`) | also "When `y=""`" -> empty |
+
+### sudo on Linux has no `-a` and no `-c`
+
+The spec of `sudo` lists the options of sudo 1.9 on Linux (sudo(8) has no `-a|--auth-type` and no `-c|--login-class`; both are BSD's). An option the spec does not list is one sudo refuses (`unknownOption`), and a reading that holds one is a refused reading, so the hedges say nothing of the words in it. The same holds for `bash` and bats' `run`, which already had such a text.
+
+| Written | Said now | Said before |
+| --- | --- | --- |
+| `sudo -c foo ls` | option `-c`: "an option sudo (Linux) does not have (`-a` and `-c` are in the BSD builds only): sudo says `invalid option`…" | "login class (BSD)", with `foo` as its value |
+| `sudo -u $u tar -cf x y` | `y`: "argument of `$u`" when `$u` expands to several words | also "argument of `x`" when `$u` expands to nothing (sudo read `-cf` as a login class) |
