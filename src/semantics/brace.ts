@@ -19,30 +19,45 @@ export type BraceAlternative = (SyntaxNode | string)[];
 /** How many words a brace expansion may give before we stop listing them. */
 const MAX_WORDS = 500;
 
-/** Marks for the characters of a letter sequence that bash reads again in the word they end up in (`reread`). */
+/**
+ * Marks for the characters of a letter sequence that bash reads again in the word they end up in (`reread`). A
+ * character of the script that is a mark or the escape is the escape and the character three after it (`escaped`), so
+ * that a mark comes only from a sequence (`{<U+E000>y,b}` is that character and `y`, then `b`).
+ */
 const BACKSLASH = '\uE000';
 const BACKQUOTE = '\uE001';
+const ESCAPE = '\uE002';
 const MARKS: Readonly<Record<string, string>> = { '\\': BACKSLASH, '`': BACKQUOTE };
-const MARKED = /[\uE000\uE001]/;
-const unmarked = (t: string): string => t.replace(/\uE000/g, '\\').replace(/\uE001/g, '`');
+const MARKED = /[\uE000-\uE002]/;
+const escaped = (t: string): string => t.replace(/[\uE000-\uE002]/g, (c) => ESCAPE + String.fromCharCode(c.charCodeAt(0) + 3));
+const unmarked = (t: string): string => t.replace(/\uE002(.)|[\uE000\uE001]/gs, (m, c?: string) => (c ? String.fromCharCode(c.charCodeAt(0) - 3) : m === BACKSLASH ? '\\' : '`'));
 
 /**
  * A text of a word of a brace expansion as bash reads it again: the `\` and `` ` `` of a letter sequence (`{Z..a}`) are
- * unquoted characters of the word, which bash reads after the braces are gone (bash 5.2 and 5.3). A `\` quotes the
- * character after it, and is an empty string at the end of the word (`x{Z..a}` gives `x`, and `{Z..a}` an empty word);
+ * unquoted characters of the word, which bash reads with the text around them after the braces are gone (bash 5.2 and
+ * 5.3). A `\` quotes the character after it, and is an empty string at the end of the word (`x{Z..a}` gives `x`, and
+ * `{Z..a}` an empty word; in `{W..c..5}\\`, the sequence's `\` quotes the first of the script's: `W\`, `\` and `a\`);
  * a `` ` `` at the end of the word is itself, and else starts a command substitution that nothing closes (bash fails,
  * "bad substitution"). `last`: the text ends the word. Its text as written (backslashes and all), and whether an empty
- * quoted string ends it; undefined where that is not known here (before another part, or where bash fails).
+ * quoted string ends it; undefined where that is not known here (before another part, where bash fails, or where a `$`
+ * or a quote is not quoted: `{W..c..5}\$x`, whose `$x` the sequence's `\` makes an expansion).
  */
 export function reread(text: string, last: boolean): { text: string; empty: boolean } | undefined {
   if (!MARKED.test(text)) return { text, empty: false };
+  // (The length in `text` of the character at `i`: two for an escaped one.)
+  const at = (i: number): number => (text[i] === ESCAPE ? 2 : 1);
   let out = '';
-  for (let i = 0; i < text.length; i++) {
+  for (let i = 0; i < text.length; i += at(i)) {
     const c = text[i];
-    if (c === BACKSLASH && i + 1 < text.length) out += `\\${unmarked(text[++i])}`;
-    else if (c !== BACKSLASH && c !== BACKQUOTE) out += c;
-    else if (!last || i + 1 < text.length) return undefined;
-    else return { text: c === BACKQUOTE ? `${out}\\\`` : out, empty: c === BACKSLASH };
+    if (c === BACKSLASH || c === '\\') {
+      if (i + 1 === text.length) return last ? { text: out, empty: true } : undefined;
+      out += `\\${unmarked(text.slice(i + 1, i + 1 + at(i + 1)))}`;
+      i++;
+    } else if (c === BACKQUOTE) {
+      if (i + 1 < text.length || !last) return undefined;
+      out += '\\`';
+    } else if (/[$'"]/.test(c)) return undefined;
+    else out += unmarked(text.slice(i, i + at(i)));
   }
   return { text: out, empty: false };
 }
@@ -109,7 +124,8 @@ export function braceTexts(nodes: readonly SyntaxNode[], part = false): string[]
 /** The words a part of a word gives: a brace expression its items or its sequence, any other part itself. */
 function alternativesOf(n: SyntaxNode): BraceAlternative[] | null {
   if (n.type === 'concatenation') return product(n.namedChildren.map(alternativesOf));
-  if (n.type === 'word' || n.type === 'number') return [[n.text]];
+  // (A mark the script holds is escaped: `escaped`.)
+  if (n.type === 'word' || n.type === 'number') return [[escaped(n.text)]];
   if (n.type !== 'brace_expression') return [[n]];
   // (The parser makes a sequence only of a valid one.)
   // (A `\` or `` ` `` of a letter sequence is marked: bash reads it again, `reread`.)

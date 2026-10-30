@@ -2852,5 +2852,106 @@
       "status": 1,
       "stderr": "SCRIPT: line 1: bad substitution: no closing \"`\" in `1"
     }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "@PROBE:a@ ~/x{Z..a} {W..c..5}\\\\ {W..c..5}\\\\\\\\\\\\ {W..c..5}{W..c..5} {W..c..5}a\\\\ {W..c..5}\\a; @PROBE:b@ {y,b} x\\{a,b} {Z..a} {W..c..5}",
+    "facts": {
+      "a": [
+        [
+          "/home/probe/xZ",
+          "/home/probe/x[",
+          "/home/probe/x",
+          "/home/probe/x]",
+          "/home/probe/x^",
+          "/home/probe/x_",
+          "/home/probe/x`",
+          "/home/probe/xa",
+          "W\\",
+          "\\",
+          "a\\",
+          "W\\\\\\",
+          "\\\\\\",
+          "a\\\\\\",
+          "WW",
+          "W",
+          "Wa",
+          "W",
+          "\\",
+          "a",
+          "aW",
+          "a",
+          "aa",
+          "Wa\\",
+          "a\\",
+          "aa\\",
+          "Wa",
+          "\\a",
+          "aa"
+        ]
+      ],
+      "b": [
+        [
+          "y",
+          "b",
+          "xa",
+          "xb",
+          "Z",
+          "[",
+          "",
+          "]",
+          "^",
+          "_",
+          "`",
+          "a",
+          "W",
+          "",
+          "a"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.2",
+    "snippet": "@PROBE:a@ {~,a}\"\" {~,a}\"/x\" {~/,a}\"\"",
+    "facts": {
+      "a": [
+        [
+          "~",
+          "a",
+          "~/x",
+          "a/x",
+          "/home/probe/",
+          "a"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "@PROBE:a@ {W..c..5}\\$HOME; @PROBE:b@ {W..c..5}\\'",
+    "gaps": {
+      "a": "the backslash of the range quotes the script's backslash, so `$HOME` is expanded: the model says the words are not known (brace.ts, reread)",
+      "b": "the backslash of the range quotes the script's backslash, which leaves the quote unquoted: the model says the words are not known (brace.ts, reread)"
+    },
+    "facts": {
+      "a": [
+        [
+          "W$HOME",
+          "\\/home/probe",
+          "a$HOME"
+        ]
+      ],
+      "b": [
+        [
+          "W'",
+          "\\",
+          "a'"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

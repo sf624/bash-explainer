@@ -986,11 +986,11 @@ function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator,
   for (let i = 0; i < parts.length; i++) {
     const n = parts[i];
     if (typeof n === 'string') {
-      // A word of a brace expansion, as bash reads it again (`reread`): its tilde prefix at the start (none with a quoted character: `{~\\x,y}`).
+      // A word of a brace expansion, as bash reads it again (`reread`): its tilde prefix at the start, none with a quoted character (`{~\\x,y}`) nor, where no `/` ends it in the text, with what follows: a quoted part (`{~,a}""`) or the empty string a `\` leaves (`~{Z..a}`).
       const r = reread(n, i === parts.length - 1);
       if (!r) return undefined;
-      const t = !r.empty && /^~([^/\\'"$`]*)(?=\/|$)/.exec(r.text);
-      if (t && w.rule.tilde !== 'none') {
+      const t = /^~([^/\\'"$`]*)(?=\/|$)/.exec(r.text);
+      if (t && w.rule.tilde !== 'none' && (t[0].length < r.text.length || (i === parts.length - 1 && !r.empty))) {
         const home = ev.tilde(t[1]);
         if (home === undefined && !hole) return undefined;
         out.push(home === undefined ? hole!(true) : { text: home, quoted: true, expanded: false }, ...plain(r.text.slice(t[0].length)));
