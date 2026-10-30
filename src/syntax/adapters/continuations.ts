@@ -117,23 +117,21 @@ export function continuations(script: AstNode, children: Children, text: string)
 /**
  * Whether the backslash at `i`, outside any word, is in a comment: after a `#` on its line that no word holds (a
  * comment ends at the newline of a line continuation). Asked only of a continuation that splits a token, which is rare.
+ * The words are looked for in the whole tree: a construct unbash could not read may have an empty range (`case $# in
+ * 0) :;\<newline>; esac` before `;;` is joined).
  */
 function inComment(script: AstNode, children: Children, text: string, i: number): boolean {
-  for (let h = text.lastIndexOf('\n', i - 1) + 1; h < i; h++) {
-    if (text[h] !== '#') continue;
-    // (The innermost node at `h`: a `#` in a word, a quote or a heredoc body starts no comment.)
-    let n: AstNode | undefined = script;
-    let held = false;
-    while (n) {
-      const at: AstNode = n;
-      n = undefined;
-      children(at, (c) => {
-        if (!n && c.pos <= h && h < c.end && c.source === undefined) n = c;
-      });
-      if (n && HOLDS.has((n as AstNode).type)) held = true;
-    }
-    if (!held) return true;
-  }
+  const holds = (n: AstNode, h: number): boolean => {
+    const here = n.pos <= h && h < n.end;
+    if (HOLDS.has(n.type) && here) return true;
+    if (WHOLE.has(n.type) && !here) return false;
+    let found = false;
+    children(n, (c) => {
+      found ||= holds(c, h);
+    });
+    return found;
+  };
+  for (let h = text.lastIndexOf('\n', i - 1) + 1; h < i; h++) if (text[h] === '#' && !holds(script, h)) return true;
   return false;
 }
 

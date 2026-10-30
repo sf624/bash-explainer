@@ -446,6 +446,10 @@ describe('unbash adapter: line continuations in a word', () => {
     ['for ((i\\\n=0; i<1; i++)); do echo $i; done', '0\n'],
     ['for ((i=0; i<1; i+\\\n+)); do echo $i; done; for ((;;)); do break; done; for ((i=2;;)); do echo $i; break; done; for ((;i<\\\n3;)); do echo $i; break; done', '0\n2\n2\n'],
     ['x=0\nf\\\nn() { x=1; }\nfn; echo $x', '1\n'],
+    // (In backquotes with escapes, which are read apart; after a `#` that is no comment.)
+    ['y=1 ya=2\necho `echo \\$y\\\na` "`echo \\"$y\\\na\\"`"', '2 2\n'],
+    ['set --; case $# in 0) echo z ;\\\n; esac', 'z\n'],
+    ['\\\necho a', 'a\n'],
     // (With a process substitution attached to the word, or split from its `(`.)
     ["printf '<%s>' a\\\n<(:) a<(:)\\\nb a <\\\n(:) | sed 's#/dev/fd/[0-9]*#FD#g'", '<aFD><aFDb><a><FD>'],
   ];
@@ -468,6 +472,8 @@ describe('unbash adapter: line continuations in a word', () => {
     assert.strictEqual(nameText(types(tree(OUTSIDE[6][0]).root, 'variable_name').pop()!), 'ya');
     assert.strictEqual(types(tree(OUTSIDE[7][0]).root, 'heredoc_body')[0].children.length, 0);
     assert.strictEqual(nameText(types(tree(OUTSIDE.find(([t]) => t.includes('(( y'))![0]).root, 'variable_name')[2]), 'ya');
+    const quoted = types(tree(OUTSIDE.find(([t]) => t.includes('`echo'))![0]).root, 'simple_expansion').map(nameText);
+    assert.deepStrictEqual(quoted, ['$ya', '$ya']);
     const ps = fields(types(tree(OUTSIDE.find(([t]) => t.includes('<(:)'))![0]).root, 'command')[0], 'argument').slice(1);
     assert.deepStrictEqual(ps.map((a) => [a.type, a.text]), [['concatenation', 'a\\\n<(:)'], ['concatenation', 'a<(:)\\\nb'], ['word', 'a'], ['process_substitution', '<\\\n(:)']]);
     assert.deepStrictEqual(ps.slice(0, 2).map((a) => a.namedChildren.map((c) => c.type)), [['word', 'process_substitution'], ['word', 'process_substitution', 'word']]);
