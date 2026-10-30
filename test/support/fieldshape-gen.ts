@@ -35,7 +35,16 @@ const LITERALS = ['-', '-v', 'v', 'u', '--', '+', 'a', '=', 'a=', '1', '*', '?',
   // (globstar: `d/**/x` also matches `d/x`.)
   '**', '**/', 'd/**/x', 'd/**', '**/x', 'd/*/x'];
 /** Extglob groups, with quotes and expansions in them or not (F91). */
-const GROUPS = ['@(a|b)', '+(-v)', '!(zz)', '*(a)', '?(-)v*', '@(-v|-vu)', '@(a\\|b)', "@(a'|'b)", '@(a"|"b)', 'x@(${x})y', '+($x)', '@(${x}|u)', '!($y)', '@($(printf a))', '@(a|$((1)))', '*(\\-)v'];
+const GROUPS = ['@(a|b)', '+(-v)', '!(zz)', '*(a)', '?(-)v*', '@(-v|-vu)', '@(a\\|b)', "@(a'|'b)", '@(a"|"b)', 'x@(${x})y', '+($x)', '@(${x}|u)', '!($y)', '@($(printf a))', '@(a|$((1)))', '*(\\-)v',
+  // (A line continuation in a group, F98.)
+  '@\\\n(a|b)', '+(-\\\nv)'];
+/**
+ * Parts bash makes from an integer, and others (F97): in double quotes before `"$@"` or another part that gives
+ * elements, the first are split by IFS (`"$#$@"` with `IFS=1` and one element is an empty field and the element).
+ */
+const INTEGERS = ['$#', '$?', '$$', '$!', '${#}', '${##}', '${#:-1}', '${#-x}', '${#@}', '${#*}', '${#x}', '${#a}', '${#a[@]}', '${#LINENO}', '${#1}', '$((1))', '$[-1]',
+  '${y:-$#}', '${?:+1}', '$x', '${x}', '$(printf 1)', '$LINENO', '$1'];
+const ELEMENTS = ['$@', '${@}', '${@:1}', '${@^}', '${@#a}', '${a[@]}', '${a[@]/z/y}', '${a[@]@Q}', '${a[@]:-q}', '${!a[@]}', '${!BASH_V@}', '${a[@]+"$@"}', '$*', '${a[*]}'];
 /** Variables bash does not let a script assign (F86). */
 const NOASSIGN = ['FUNCNAME', 'BASH_LINENO', 'BASH_SOURCE', 'BASH_ARGV', 'BASH_ARGC', 'GROUPS', 'DIRSTACK', 'BASH_ARGV0', 'PPID'];
 const IN_QUOTES = ['-v', ' ', 'a b', '*', '\\\n', '\\$', '\\n', '%s', '-', 'u', '\\"', '\\\\', ':', '='];
@@ -71,7 +80,8 @@ export function fieldCases(count: number, seed: number): FieldCase[] {
     option('set +B', 'set -B');
     option('set -o posix', 'set +o posix');
     if (chance(0.05)) lines.push('set -u');
-    const ifs = pick(['', '', '', "IFS=' '", 'IFS=:', "IFS=' :'", 'IFS=', 'IFS=-v', 'IFS=1', 'unset IFS', 'IFS=u', "IFS='\\'", "IFS='*'", "IFS='?x'", "IFS=$'\\v'", "IFS='['"]);
+    const ifs = pick(['', '', '', "IFS=' '", 'IFS=:', "IFS=' :'", 'IFS=', 'IFS=-v', 'IFS=1', 'unset IFS', 'IFS=u', "IFS='\\'", "IFS='*'", "IFS='?x'", "IFS=$'\\v'", "IFS='['",
+      'IFS=0', "IFS='1 '", 'IFS=0123456789']);
     if (ifs) lines.push(ifs);
     if (chance(0.15)) {
       const flag = `G${i}_${flags++}`;
@@ -140,14 +150,19 @@ function wordOf(pick: <T>(xs: readonly T[]) => T, chance: (p: number) => boolean
     ]);
   };
   const part = (): string => {
-    switch (pick([0, 1, 2, 3, 4, 5, 5, 5])) {
+    switch (pick([0, 1, 2, 3, 4, 5, 5, 5, 6])) {
       case 0: return pick(LITERALS);
       case 1: return quote(pick(IN_QUOTES).replace(/\\/g, ''));
       case 2: return `"${Array.from({ length: 1 + (chance(0.5) ? 1 : 0) + (chance(0.3) ? 1 : 0) }, () => (chance(0.5) ? pick(IN_QUOTES) : expansion(true))).join('')}"`;
       case 3: return pick(['{a,-v}', '{,x}', '{1..2}', '{"a b",c}', '{-v,"*"}', '{Z..a}', '{a..c}', '{Z..a..+2}', '{a..e..+2}', '{1..5..+2}', '{Z..a..-3}', '{+1..3}', '{a..c..+0}',
         '{1..$x}', '{$x,a}', '{a,b{c,d}}', '{a,}', '{,}', '{a}', '{a..c..}', '{1..3..0}', '{-1..1}', '{01..3}', '{a..C}', '\\{a,b}', '{a,b\\}', "{'a,b',c}", '{a..c}{1..2}',
-        "{$'a b',c}", '{1..a}', '{3..1}', '{-3..-1..2}', '{a,"$x"}']);
+        "{$'a b',c}", '{1..a}', '{3..1}', '{-3..-1..2}', '{a,"$x"}',
+        // (Line continuations in braces, F98; numbers past what a double holds exactly, or past intmax_t, F99.)
+        '{1..\\\n3}', '{a,\\\nb}', '{0..2..9223372036854775808}', '{1..2..18446744073709551617}', '{a..c..9223372036854775808}', '{9007199254740993..9007199254740991..2}',
+        '{1..3..999999999999999}', '{9223372036854775807..9223372036854775806}']);
       case 4: return chance(0.5) ? pick(GROUPS) : pick(['-v', '-', 'a', '*']);
+      // (A part made from an integer before elements in the same quotes, F97.)
+      case 6: return `"${chance(0.3) ? pick(['a', '-', ' ']) : ''}${pick(INTEGERS)}${pick(['', '', 'a', ' ', '-', pick(INTEGERS)])}${pick(ELEMENTS)}${pick(['', '', '$#', 'x', pick(INTEGERS)])}"`;
       default: return expansion(false);
     }
   };

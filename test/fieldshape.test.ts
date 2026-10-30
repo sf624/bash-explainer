@@ -13,7 +13,7 @@ import * as path from 'path';
 import { fieldHolds, mayBeAssignment, mayBeName, mayGiveNone, mayNameFunction, TUPLES, mayStartWith, shapesHold, wordShapes, type Field, type Shape, type Values, type WordShapes } from '../src/semantics/fieldshape';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { descendants, field, fields } from '../src/syntax/tree';
+import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
 import { runContained } from './support/contained';
 import { fieldCases, type FieldCase } from './support/fieldshape-gen';
 
@@ -285,8 +285,44 @@ describe('the field domain (fieldshape.ts)', () => {
     it('does not know a tilde or a `$` before a line continuation, a range with a `+` step across `\\`, an extglob group with quotes or expansions, `${ cmd; }` (F90 to F93)', () => {
       assert.deepStrictEqual(['a=~\\\n/x', 'x=a:~\\\n/x', '$\\\n@', '$\\\n#', '$\\\n((1+1))', "$\\\n'a'", '{Z..a..+2}', 'x@(${x})y', '+($x)', "@(a'|'b)", '@(a"|"b)', '@($(echo))', '${ echo; }', '${| REPLY=a; }'].map((t) => shapesOf(`shopt -s extglob\nshow ${t}`)),
         Array(14).fill(undefined));
-      assert.deepStrictEqual(['@(a|b)', '@(a\\|b)', '{a..e..+2}', '$x\\\n/', 'a$', '$(echo)x'].map((t) => !!shapesOf(`shopt -s extglob\nshow ${t}`)), [true, true, true, true, false, true]);
+      // (`$x\<newline>/`: any line continuation not in quotes is refused, F98.)
+      assert.deepStrictEqual(['@(a|b)', '@(a\\|b)', '{a..e..+2}', '$x\\\n/', 'a$', '$(echo)x'].map((t) => !!shapesOf(`shopt -s extglob\nshow ${t}`)), [true, true, true, false, false, true]);
       assert.deepStrictEqual(shapesOf('shopt -s extglob\nshow @(a\\|b)', undefined, { glob: false })!.cases[0], [{ fields: [{ text: '@(a|b)', start: '@(a|b)', end: '@(a|b)', pattern: '@(a\\|b)' }] }]);
+    });
+    it('splits a part made from an integer before `"$@"` in the same quotes (F97)', () => {
+      // (bash: `set -- a; IFS=1; "$#$@"` is an empty field and `a`; `IFS=0; set --; "$#$@"` is one empty field;
+      // `x=1; IFS=1; "${#x}$@"` is an empty field and `a`.)
+      const holds = (t: string, fields: string[], values?: Values): boolean => shapesHold(shapesOf(t, values)!, fields);
+      assert.deepStrictEqual([holds('IFS=1; show "$#$@"', ['', 'a']), holds('IFS=0; show "$#$@"', ['']), holds('IFS=1; show "${#x}$@"', ['', 'a'], new Map([['x', ['1']]]))], [true, true, true]);
+      const integers = ['$?', '${#}', '${##}', '${#:-1}', '${#@}', '${#*}', '${#a}', '${#a[@]}', '${#m[@]}', '${#LINENO}', '${#1}', '$$', '$!'];
+      const elements = ['${@:1}', '${@^}', '${@#a}', '${a[@]/z/y}', '${a[@]@Q}', '${a[@]:-q}', '${!a[@]}', '${!BASH_V@}', '${a[@]+"$@"}'];
+      const split = (d: string, e: string): boolean => holds(`a=(a); IFS=1; show "${d}${e}"`, ['', 'a']);
+      assert.deepStrictEqual(integers.filter((d) => !split(d, '$@')), []);
+      assert.deepStrictEqual(elements.filter((e) => !split('$#', e)), []);
+      assert.deepStrictEqual([holds('IFS=1; show "$#a$@"', ['', 'a']), holds('IFS=1; show "$# $@"', ['', ' a'])], [true, true]);
+      // (Not split: a variable, a substitution, `$#` in quotes of its own; with the default IFS, digits all the same.)
+      assert.deepStrictEqual([holds('x=1; IFS=1; show "$x$@"', ['', 'a'], new Map([['x', ['1']]])), holds('IFS=1; show "$#""$@"', ['', 'a']), holds('IFS=1; show "$(echo 1)$@"', ['1a'])], [false, false, true]);
+      const first = (shapesOf('show "$#$@"')!.cases[0][0] as { min: number; first: Field });
+      assert.deepStrictEqual([first.min, first.first.head?.kind], [1, 'digits']);
+    });
+    it('does not know a line continuation out of quotes, a sequence with a number of 16 digits or more, a tilde the word model does not expand (F98 to F100)', () => {
+      // (bash: `{1..\<newline>3}` is `1`, `2`, `3`; `@\<newline>(a)` with extglob matches `a`; `{0..2..9223372036854775808}` stays as it is;
+      // `{9007199254740993..9007199254740991..2}` is `9007199254740993`, `9007199254740991`.)
+      assert.deepStrictEqual(['{1..\\\n3}', 'a\\\nb', '@\\\n(a)', '$x\\\n/', 'a\\\\\\\nb', '{0..2..9223372036854775808}', '{1..2..18446744073709551617}', '{a..c..9223372036854775808}',
+        '{9007199254740993..9007199254740991..2}'].map((t) => shapesOf(`shopt -s extglob\nshow ${t}`)), Array(9).fill(undefined));
+      // (In quotes, in a substitution, after a quoted backslash, `\\` before a newline; 15 digits.)
+      assert.deepStrictEqual(['"a\\\nb"', "'a\\\nb'", "$'a\\\nb'", '$(echo \\\n a)x', 'a\\\\'].map((t) => !!shapesOf(`show ${t}`)), [true, true, true, true, true]);
+      assert.deepStrictEqual(texts(shapesOf('show {1..3..999999999999999}')!), ['1']);
+      // (bash, with HOME=/H: `cat <<< x:~` prints `x:/H`, `cat <<< x=~` `x=~`; `r=([0]=~)` gives `/H`; `a=${x:+x:~}` with `x` set
+      // gives `x:/H`, also given to `declare`, `local`, `export`.)
+      const at = (text: string, word: string): WordShapes | undefined => {
+        const tree = parser.parse(text);
+        const all = (n: SyntaxNode): SyntaxNode[] => [n, ...n.children.flatMap(all)];
+        return wordShapes(all(tree.root).find((n) => n.named && n.text === word)!, shellState(tree, 'bash'), new Map([['x', ['1']]]));
+      };
+      assert.deepStrictEqual([at('cat <<< x:~', 'x:~'), at('r=([0]=~)', '[0]=~'), at('a=${x:+x:~}', '${x:+x:~}'), at('a=${x:+x:~}', 'x:~'), at('declare a=${x:-x:~}', '${x:-x:~}'),
+        at('f() { local a=${x:+x:~}; }', '${x:+x:~}'), at('export a=${x:+x:~}', '${x:+x:~}'), at('cat <<< ${x:+x:~}', '${x:+x:~}'), at('r=([0]=a:~)', '[0]=a:~')], Array(9).fill(undefined));
+      assert.deepStrictEqual([at('cat <<< x=~', 'x=~'), at('a=x:~', 'x:~'), at('r=(x:~)', 'x:~')].map((ws) => !!ws), [true, true, true]);
     });
     it('reads a `/` next to a special character as special where globstar may be on (F94)', () => {
       const holds = (t: string, fields: string[], pre = 'shopt -s globstar; '): boolean => shapesHold(shapesOf(`${pre}show ${t}`, new Map([['x', ['d/**/x']]]))!, fields);
