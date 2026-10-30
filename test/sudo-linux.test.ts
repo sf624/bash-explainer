@@ -69,9 +69,9 @@ describe('sudo on Linux: an option it does not have', () => {
     assert.match(real('--pre', 'ls').err, /^sudo: option '--pre' is ambiguous; possibilities: '--preserve-env' '--preserve-groups'/);
   });
   it('does not widen the other readings of the words after it, where the line as written is the refused one', () => {
-    // (Main said: "When `$u` expands to several words, it is argument of `$u`"; the written reading is refused, but its role is the one said first.)
-    assert.strictEqual(said('sudo -u $u -Z ls y', 'y'), 'file or directory (default: current). When `$u` expands to several words, it is argument of `$u`');
-    assert.strictEqual(said('sudo -u $u -c x ls y', 'y'), 'file or directory (default: current). When `$u` expands to nothing, it is argument of `x`. When `$u` expands to several words, it is argument of `$u`');
+    // (The written reading is refused, but its role is the one said first; the words of `$u` after the first run a command the dictionary does not describe.)
+    assert.strictEqual(said('sudo -u $u -Z ls y', 'y'), 'file or directory (default: current). When `$u` expands to several words, it is argument of the command a word of `$u` names');
+    assert.strictEqual(said('sudo -u $u -c x ls y', 'y'), 'file or directory (default: current). When `$u` expands to nothing, it is argument of `x`. When `$u` expands to several words, it is argument of the command a word of `$u` names');
     assert.strictEqual(said('kill -s $sig -Z 1', '1'), 'target PID or job spec (`%1`)');
   });
 });

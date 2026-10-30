@@ -52,7 +52,7 @@ describe('a path after the start of find\'s expression', () => {
       const line = `find . -name a ${more}`;
       assert.ok(!allTokens(explain(line).items).some((t) => /refuses/.test(t.explanation)), line);
     }
-    assert.match(said('find . -name $f -exec rm {} \\;', '$f'), /this value is the first word `\$f` gives, and the others are read as the words after it/);
+    assert.match(said('find . -name $f -exec rm {} \\;', '$f'), /this is the role of the first word `\$f` gives, and each of the others is argument/);
   });
   withFind('is what the real find does only when the word is one: `more` empty, `-print`, `-o -name c` run, `b` is refused', () => {
     for (const [more, runs] of [[[], true], [['-print'], true], [['-o', '-name', 'c'], true], [['b'], false]] as const) {
