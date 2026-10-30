@@ -18,7 +18,7 @@ inputs:
   bash-version:
     description: >-
       The bash release to check bash scripts for (5.2 or 5.3). Default, the tool's (5.2): `${ cmd; }`
-      is then a warning. Needs a command-line tool with --bash-version (see `package`).
+      is then a warning. Needs a command-line tool with --bash-version, 0.9.0 or later (see `package`).
     default: ''
   fail-on-warning:
     description: Fail the step when there is a warning ('true' or 'false').
@@ -26,7 +26,7 @@ inputs:
   strict:
     description: >-
       Also fail on a warning on a pitfall ('true' or 'false'), such as `x = 1` or `rm -rf $DIR/*`.
-      The pitfalls are reported either way. Needs a command-line tool newer than 0.8.0 (see `package`).
+      The pitfalls are reported either way. Needs a command-line tool 0.9.0 or later (see `package`).
     default: 'false'
   sarif:
     description: Also write the problems to this SARIF file, for github/codeql-action/upload-sarif.
@@ -91,7 +91,7 @@ runs:
         # may lack --strict, --bash-version or --sarif.
         help=$(npx --yes --package="$package" bash-explainer --help 2>/dev/null)
         if [ "$STRICT" = 'true' ] && ! grep -q -- '--strict' <<< "$help"; then
-          echo "::error title=Bash Explainer::strict needs a command-line tool with --strict (newer than 0.8.0); $package has none."
+          echo "::error title=Bash Explainer::strict needs a command-line tool with --strict (0.9.0 or later); $package has none."
           exit 2
         fi
         if [ -n "$CHECK_BASH_VERSION" ]; then
