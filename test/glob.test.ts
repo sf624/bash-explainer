@@ -1,4 +1,7 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { execFileSync } from 'child_process';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
@@ -152,6 +155,75 @@ describe('glob patterns in every context', () => {
     assert.strictEqual(t.explanation, 'any string, including an empty one');
     assert.deepStrictEqual(flat(explain("find . -name '*.txt'").items).filter((x) => x.explanation.startsWith('The text')).map((x) => [x.label, x.span.start.character, x.span.end.character]), [['.txt', 15, 19]]);
     assert.ok(flat(explain("find . -name 'a?c'", 'ja').items).some((x) => x.explanation === '任意の1文字'));
+  });
+  it('a character of IFS in a word with an unquoted expansion, which bash matches as itself', () => {
+    // (bash: with files `a?` and `ab`, `IFS='?'; x=a; echo $x?` prints `a?`, and `echo a?` prints `a? ab`.)
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-ifsword-'));
+    try {
+      for (const f of ['a?', 'ab']) fs.writeFileSync(path.join(dir, f), '');
+      assert.strictEqual(execFileSync('bash', ['-c', "IFS='?'; x=a; echo $x?; echo a?"], { cwd: dir }).toString(), 'a?\na? ab\n');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    const q = flat(explain("IFS='?'; x=a; ls $x?").items).find((t) => t.label === '?')!;
+    assert.strictEqual(q.kind, 'argument');
+    assert.strictEqual(q.explanation, 'Word `?`. The word has an unquoted expansion, so bash matches `?`, which `IFS` holds, as itself: no wildcard here');
+    assert.match(flat(explain("IFS='[]'; y=; echo $y[ab]", 'ja').items).find((t) => t.label === '[ab]')!.explanation, /`IFS` にある `\[`・`\]` をそのままの文字として照合する/);
+    assert.strictEqual(flat(explain("IFS='?'; x=a; ls $x\\*?").items).find((t) => t.label === '\\*?')!.kind, 'argument');
+    // (Without an expansion, or with `?` not in IFS, it is a wildcard.)
+    assert.ok(flat(explain("IFS='?'; x=a; ls $x?*").items).some((t) => t.label === '?*' && t.kind === 'pattern'));
+    assert.ok(flat(explain("IFS='?'; ls a?").items).some((t) => t.label === '?' && t.kind === 'pattern'));
+    assert.ok(flat(explain("IFS=':'; x=a; ls $x?").items).some((t) => t.label === '?' && t.kind === 'pattern'));
+  });
+  it('a pattern some of whose glob characters are in IFS: those are themselves, the others wildcards', () => {
+    // (Before, `?` of `$x[ab]?` with `IFS='?'` was "any one character", the `-` of `[a-c]` with `IFS='-'` a range, and
+    // the `|` of `@(a|b)` with `IFS='|'` a separator: bash matches each as itself, in bash 5.2 and 5.3.)
+    const rows: [string, string, string][] = [
+      ["x=; IFS='?'", '$x[ab]?', '<a?>'], ["x=; IFS='-'", '$x[a-c]b', '<-b><ab><cb>'], ["x=; IFS='!'", '$x[!a]b', '<!b><ab>'],
+      ["x=; IFS='^'", '$x[^a]b', '<^b><ab>'], ["x=; IFS='|'", '$x@(a|b)', '<a|b>'], ["x=; IFS='\\|'", '$x@(a\\\\|b)', '<a\\|b>'], ["x=; IFS=' '", '$x@(a|b)', '<a><b>'],
+      ["x=; IFS='@'", '$x@(a|b)', '<@(a|b)>'], ["x=; IFS='-!'", '$x[!a-c]b', '<!b><-b><ab><cb>'],
+      ["x=a; IFS=']'", '[$x]', '<[a]>'], ["x=a; IFS='['", '[$x]', '<[a]>'], ["x=a; IFS='!'", '[!$x]b', '<!b><ab>'],
+    ];
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-ifspattern-'));
+    try {
+      for (const f of ['a?', 'ax', 'ab', 'cb', '-b', '!b', '^b', 'a|b', 'a\\|b', 'a', 'b']) fs.writeFileSync(path.join(dir, f), '');
+      for (const b of ['bash', ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])]) {
+        for (const [set, word, out] of rows) assert.strictEqual(execFileSync(b, ['-c', `shopt -s extglob\n${set}; printf '<%s>' ${word}`], { cwd: dir }).toString(), out, `${b}: ${set}; ${word}`);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    // (The line after `shopt -s extglob`.)
+    const tokens = (set: string, word: string, lang: 'ja' | 'en' = 'en') => flat(new Analyzer(lang).explainLine(parser.parse(`shopt -s extglob\n${set}; ls ${word}`), 1).items);
+    const said = (set: string, word: string, label: string, lang: 'ja' | 'en' = 'en') => tokens(set, word, lang).find((t) => t.label === label)!;
+    const held = /^`IFS` holds it and the word has an unquoted expansion, so bash matches the character itself, not a pattern symbol$/;
+    assert.strictEqual(said("x=; IFS='?'", '$x[ab]?', '[ab]?').kind, 'pattern');
+    assert.match(said("x=; IFS='?'", '$x[ab]?', '[ab]').explanation, /one character from ab$/);
+    assert.deepStrictEqual([said("x=; IFS='?'", '$x[ab]?', '?')].map((t) => [t.kind, held.test(t.explanation.replace(/^`\?`: /, ''))]), [['string', true]]);
+    assert.match(said("x=; IFS='?'", '$x[ab]?', '?', 'ja').explanation, /`IFS` にある文字で、語にクォートしていない展開があるので、bash はこの文字そのものとして照合する/);
+    assert.match(said("x=; IFS='-'", '$x[a-c]b', '[a-c]').explanation, /one character from a, -, c \(`-`, which `IFS` holds, is itself\)$/);
+    assert.match(said("x=; IFS='-'", '$x[a-c]b', '[a-c]', 'ja').explanation, /a、-、cのどれか1文字（`IFS` にある `-` はその文字そのもの）$/);
+    for (const c of ['!', '^']) assert.match(said(`x=; IFS='${c}'`, `$x[${c}a]b`, `[${c}a]`).explanation, new RegExp(`one character from \\${c}a \\(\`\\${c}\`, which \`IFS\` holds, is itself\\)$`), c);
+    // (An extended glob whose `|` is in IFS: one alternative, `a|b`; the note that lists alternatives is left out.)
+    assert.ok(!tokens("x=; IFS='|'", '$x@(a|b)').some((t) => /one of `a`, `b`/.test(t.explanation)));
+    assert.deepStrictEqual(said("x=; IFS='|'", '$x@(a|b)', '@(a|b)').children.find((t) => t.kind === 'pattern')!.children.map((t) => [t.label, t.kind]), [['a|b', 'pattern']]);
+    assert.ok(held.test(said("x=; IFS='|'", '$x@(a|b)', '|').explanation.replace(/^`\|`: /, '')));
+    assert.match(said("x=; IFS='\\|'", '$x@(a\\\\|b)', 'a\\\\|b').explanation, /^Alternative `a\\\\\|b`$/);
+    assert.match(said("x=; IFS=' '", '$x@(a|b)', '@(a|b)').explanation, /Extended glob: `@\(a\|b\)` is one of `a`, `b`/);
+    assert.match(said("x=; IFS='-!'", '$x[!a-c]b', '[!a-c]').explanation, /one character from !, a, -, c \(`!`, `-`, which `IFS` holds, are themselves\)$/);
+    // (An `@` of IFS before `(`: no extended glob, and no wildcard left.)
+    assert.match(said("x=; IFS='@'", '$x@(a|b)', '@(a|b)').explanation, /^Word `@\(a\|b\)`\. The word has an unquoted expansion, so bash matches `@`, which `IFS` holds, as itself: no wildcard here$/);
+    // (A bracket expression around an expansion: none where `IFS` holds `[` or `]`, and not negated by a `!` it holds.)
+    for (const set of ["x=a; IFS=']'", "x=a; IFS='['"]) assert.deepStrictEqual(tokens(set, '[$x]').filter((t) => t.label === '[' || t.label === ']').map((t) => [t.label, t.kind]), [['[', 'argument'], [']', 'argument']], set);
+    assert.match(said("x=a; IFS='!'", '[!$x]b', '[!').explanation, /`\[` opens the `\[…\]` of `\[!\$x\]`: it matches one character of those between/);
+    assert.match(said("x=a; IFS=' '", '[!$x]b', '[!').explanation, /`\[!` opens the `\[…\]` of `\[!\$x\]`: it matches any one character except those between/);
+    assert.strictEqual(said('x=a; IFS=$1', '[$x]', '[').kind, 'pattern');
+    // (A line continuation, which bash removes first: bash lists `a?` and `b?` with files `a?`, `b?`, `ax`.)
+    const broken = flat(new Analyzer('en').explainLine(parser.parse("x=; IFS='?'; ls $x[a\\\nb]?"), 0).items);
+    assert.ok(broken.some((t) => t.explanation === '`[ab]`: one character from ab'));
+    assert.ok(broken.some((t) => t.label === '?' && held.test(t.explanation.replace(/^`\?`: /, ''))));
+    // (A `-` written escaped is no range either.)
+    assert.match(said('x=', '[a\\-c]b', '[a\\-c]').explanation, /one character from a, -, c$/);
   });
 });
 

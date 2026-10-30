@@ -1,10 +1,10 @@
 // The patterns of a word of a `for` or `select` list, from the word model (src/semantics/words.ts): what the loop runs
 // over when no file matches (manual 3.5.1, brace expansion first; 3.5.8, a field with a glob character that is not
 // quoted is a pattern, and stays as it is when nothing matches it).
-import { isGlob } from '../examples/shellwords';
 import { parseExpansion, type ParsedExpansion } from '../expansion';
 import { decodedText } from '../staticword';
 import { nameText, type SyntaxNode } from '../syntax/tree';
+import { globbedByBash } from './chars';
 import { attribute, type ShellState, type StateModel } from './state';
 import { braceWords, type Char, patternOfChars, wordMeaning } from './words';
 
@@ -79,7 +79,8 @@ export function wordPatterns(n: SyntaxNode, model: StateModel): BracePatterns[] 
   const found = braceWords(n, model, (part) => (part && severalFields(part, st) ? SEVERAL : HOLE));
   if (!found) return undefined;
   const globs = found.w.steps.find((s) => s.kind === 'glob')!.applies !== false;
-  const pattern = (f: readonly Char[]): boolean => globs && isGlob(patternOfChars(f));
+  // (As bash tests it: `[]` is one too. An extglob, with extglob not known, counts.)
+  const pattern = (f: readonly Char[]): boolean => globs && globbedByBash(patternOfChars(f), found.w.glob.extglob) !== false;
   return found.words.map(({ written, fields, chars }): BracePatterns => {
     if (fields) {
       const patterns = fields.filter(pattern);

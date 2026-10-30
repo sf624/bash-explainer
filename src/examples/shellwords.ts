@@ -101,6 +101,21 @@ export function extglobs(pattern: string): { op: string; text: string; alts: str
 class Unmatchable extends Error {}
 
 /**
+ * Whether the last character of `pattern` comes right after a run of `*` and `?` with a `*` in it, none of them
+ * escaped: `\\*` is an escaped backslash and a wildcard (`x='\'; ls \\*$x` matches nothing), `\*` a star.
+ */
+function afterStar(pattern: string): boolean {
+  // (`star`: the characters since the last other one are such a run.)
+  let star = false;
+  for (let i = 0; i < pattern.length - 1; i++) {
+    const c = pattern[i];
+    star = (c === '*' || c === '?') && pattern[i + 1] !== '(' && (star || c === '*');
+    if (c === '\\') i++;
+  }
+  return star;
+}
+
+/**
  * A regex for a glob: in `file` mode `*` and `?` do not match `/` nor (without `dotglob`) a leading
  * `.` of a name, and with `globstar` a `**` segment matches any number of directories. Otherwise `**`
  * is the same as `*`. Extended globs are read as with `shopt -s extglob`.
@@ -123,6 +138,9 @@ export function globToRegex(pattern: string, mode: GlobMode, opts: GlobOpts = {}
     for (let i = from; i < to; i++) {
       const c = pattern[i];
       if (c === '\\' && i + 1 < to) { i++; out += lit(i, pattern[i]); continue; }
+      // (A backslash at the end, from a value, is matched as itself, but bash matches nothing when a `*` comes right
+      // before it, alone or with `?`: `x='\'`, `ls ?$x` lists `a\`, `ls *$x` nothing.)
+      if (c === '\\' && i + 1 === pattern.length && afterStar(pattern)) { out += '(?!)'; continue; }
       if ('?*+@!'.includes(c) && pattern[i + 1] === '(') {
         const end = closingParen(pattern, i + 1);
         if (end > 0 && end < to) {

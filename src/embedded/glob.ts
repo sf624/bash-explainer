@@ -21,12 +21,18 @@ export function globIntro(lang: Lang, target: GlobTarget): string {
 /**
  * The parts of a glob pattern as tokens, with offsets into `src`: `*`, `?`, a bracket expression, an extended
  * glob with its alternatives, a run of literal characters, an escaped character, a quoted part.
- * Nothing for a pattern with an expansion (`$x`, `$(…)`): its text is only known at run time.
+ * Nothing for a pattern with an expansion (`$x`, `$(…)`): its text is only known at run time. `ifs`: the places of
+ * backslashes not written in the script, put before the characters that bash quotes because `IFS` holds them (in a
+ * word with an unquoted expansion, `IFS='?'; ls $x[ab]?`); the texts shown leave them out.
  */
-export function explainGlob(src: string, lang: Lang, extglob = true): EmbeddedToken[] {
+export function explainGlob(src: string, lang: Lang, extglob = true, ifs: ReadonlySet<number> = new Set()): EmbeddedToken[] {
   if (/\$(?!')|`/.test(src)) return [];
-  return parse(src, 0, src.length, pick(lang), lang, extglob);
+  const shown = (from: number, to: number): string => [...src.slice(from, to)].filter((_, k) => !ifs.has(from + k)).join('');
+  return parse({ src, s: pick(lang), lang, ifs, shown }, 0, src.length, extglob);
 }
+
+/** What `parse` reads: the pattern, the language, and the backslashes put before characters of `IFS` (`explainGlob`). */
+interface Source { src: string; s: (ja: string, en: string) => string; lang: Lang; ifs: ReadonlySet<number>; shown: (from: number, to: number) => string }
 
 const EXT: Record<string, [string, string]> = {
   '?': ['次を0回か1回', 'zero or one of'],
@@ -37,7 +43,8 @@ const EXT: Record<string, [string, string]> = {
 };
 
 /** `extglob: false`: without the option, `@(…)` is no extended glob (`*(` and `?(` are a wildcard and a `(`). */
-function parse(src: string, from: number, to: number, s: (ja: string, en: string) => string, lang: Lang, extglob: boolean): EmbeddedToken[] {
+function parse(at: Source, from: number, to: number, extglob: boolean): EmbeddedToken[] {
+  const { src, s, lang, ifs, shown } = at;
   const out: EmbeddedToken[] = [];
   let run: EmbeddedToken | undefined;
   const add = (start: number, end: number, kind: EmbeddedToken['kind'], explanation: string, children: EmbeddedToken[] = []) => {
@@ -50,7 +57,10 @@ function parse(src: string, from: number, to: number, s: (ja: string, en: string
   };
   for (let i = from; i < to; i++) {
     const c = src[i];
-    if (c === '\\' && i + 1 < to) {
+    if (ifs.has(i)) {
+      add(i, i + 2, 'string', s(`\`${src[i + 1]}\`: \`IFS\` にある文字で、語にクォートしていない展開があるので、bash はこの文字そのものとして照合する（パターンの記号としては働かない）`, `\`${src[i + 1]}\`: \`IFS\` holds it and the word has an unquoted expansion, so bash matches the character itself, not a pattern symbol`));
+      i++;
+    } else if (c === '\\' && i + 1 < to) {
       add(i, i + 2, 'string', s(`\`${src.slice(i, i + 2)}\`: \`${src[i + 1]}\` という文字そのもの（パターンの記号としては働かない）`, `\`${src.slice(i, i + 2)}\`: the character \`${src[i + 1]}\` itself, not a pattern symbol`));
       i++;
     } else if (c === '"' || c === "'") {
@@ -68,8 +78,8 @@ function parse(src: string, from: number, to: number, s: (ja: string, en: string
       const [ja, en] = EXT[c];
       const alts = alternatives(src, i + 2, end).filter(([a, b]) => b > a).map(([a, b]): EmbeddedToken => ({
         start: a, end: b, kind: 'pattern',
-        explanation: s(`選択肢 \`${src.slice(a, b)}\``, `Alternative \`${src.slice(a, b)}\``),
-        children: parse(src, a, b, s, lang, true),
+        explanation: s(`選択肢 \`${shown(a, b)}\``, `Alternative \`${shown(a, b)}\``),
+        children: parse(at, a, b, true),
       }));
       add(i, end + 1, 'pattern', s(`\`${c}(…)\`: 拡張グロブ。${ja}（\`|\` で区切った選択肢）`, `\`${c}(…)\`: extended glob, ${en} the alternatives separated by \`|\``), alts);
       i = end;
@@ -77,13 +87,16 @@ function parse(src: string, from: number, to: number, s: (ja: string, en: string
     else if (c === '?') add(i, i + 1, 'pattern', s('`?`: 任意の1文字', '`?`: any one character'));
     else if (c === '[' && bracketEnd(src, i, to) > 0) {
       const end = bracketEnd(src, i, to);
-      add(i, end + 1, 'pattern', `\`${src.slice(i, end + 1)}\`: ${describeGlob([{ type: 'class', body: src.slice(i + 1, end) }], lang)}`);
+      // (Characters of `IFS` in it are themselves: `IFS='-'; ls $x[a-c]b` matches `a`, `-` or `c`.)
+      const held = [...new Set([...ifs].filter((k) => k > i && k < end).map((k) => `\`${src[k + 1]}\``))];
+      const note = held.length ? s(`（\`IFS\` にある ${held.join('・')} はその文字そのもの）`, ` (${held.join(', ')}, which \`IFS\` holds, ${held.length > 1 ? 'are themselves' : 'is itself'})`) : '';
+      add(i, end + 1, 'pattern', `\`${shown(i, end + 1)}\`: ${describeGlob([{ type: 'class', body: src.slice(i + 1, end) }], lang)}${note}`);
       i = end;
     } else literal(i);
   }
   for (const t of out) {
     if (!t.explanation) {
-      const text = src.slice(t.start, t.end);
+      const text = shown(t.start, t.end);
       t.explanation = s(`文字列 \`${text}\` そのもの`, `The text \`${text}\` itself`);
     }
   }

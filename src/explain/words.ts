@@ -23,7 +23,7 @@ import { replaceRange } from '../rewrite';
 import { attribute, docLine } from '../semantics/state';
 import { readonlyAtStart } from '../semantics/vars';
 import { givesElements } from '../semantics/elements';
-import { braceWords as fieldsOfBraceWords, CONTEXTS, partMeaning, patternOfChars, type StepKind, type TildePrefix, trustedPart, underscoreValue, wordFields, wordOf } from '../semantics/words';
+import { braceWords as fieldsOfBraceWords, CONTEXTS, ifsEscaped, partMeaning, patternOfChars, quotedIfs, type StepKind, type TildePrefix, trustedPart, underscoreValue, wordFields, wordOf } from '../semantics/words';
 import { type BracketSpan, bracketSpans, decodedText, isPlainWord, setsElement, splitElement, stackTilde, staticWordValue, unquoteWord } from '../staticword';
 import { ancestor, assignmentsOnly, braceKind, descendants, field, fields, joinedText, nameText, type SyntaxNode, wordBraces } from '../syntax/tree';
 import { claim } from '../tokenmarks';
@@ -96,8 +96,11 @@ function bracketPiece(cx: Explainer, n: SyntaxNode): Token | undefined {
   const target: GlobTarget | undefined = CONTEXTS[w.context].match === 'pattern' ? 'value' : w.steps.find((s) => s.kind === 'glob')!.applies !== false ? 'file' : undefined;
   if (!target) return undefined;
   const { opens, closes } = part!;
+  // (A `[` or `]` of IFS that bash quotes makes no bracket expression, `IFS=']'; ls [$x]`; a `!` or `^` of IFS no negation.)
+  const ifs = quotedIfs(w) ?? '';
+  if (/[[\]]/.test(ifs)) return undefined;
   // (`[!…]`, `[^…]`: an unquoted `!` or `^` first makes it match any other character.)
-  const negated = !!opens && /[!^]/.test(n.text[opens.at + 1] ?? '');
+  const negated = !!opens && /[!^]/.test(n.text[opens.at + 1] ?? '') && !ifs.includes(n.text[opens.at + 1]);
   const said = [
     closes && cx.s(`\`]\` は \`${closes.text}\` の \`[…]\` の終わり`, `\`]\` closes the \`[…]\` of \`${closes.text}\``),
     opens && (negated
@@ -122,6 +125,10 @@ export function word(cx: Explainer, n: SyntaxNode): Token {
   const off = hasGlob(text) && globOff(cx, n);
   if (off) return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + off);
   if (hasGlob(text) && notGlobbedHere(cx, n)) return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + notGlobbedHere(cx, n));
+  // (The glob characters that bash quotes because `IFS` holds them: all, or some, `IFS='?'; ls $x[ab]?`.)
+  const ifs = hasGlob(text) ? quotedByIfs(cx, n) : undefined;
+  if (ifs && !hasGlob(ifs.text)) return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + noWildcardByIfs(cx, ifs.kept));
+  if (ifs) return { ...cx.tok(n, 'pattern', globIntro(cx.lang, 'file') + globNotes(cx, ifs.text, n, text), explainGlob(ifs.text, cx.lang, true, ifs.inserted).map((t) => fromEmbedded(t, n, ifs, 'shell'))), refs: ['3.5.8'] };
   if (hasGlob(text)) return { ...cx.tok(n, 'pattern', globIntro(cx.lang, 'file') + globNotes(cx, text, n), globChildren(cx, n, text, 0)), refs: ['3.5.8'] };
   return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + valueNote(cx, n));
 }
@@ -510,11 +517,14 @@ export function globChildren(cx: Explainer, n: SyntaxNode, text: string, base: n
 
 /**
  * What a file-name glob does with the glob options in effect: `**` reaches into subdirectories only with globstar on
- * (with a pitfall when it is not seen turned on before: it may be, in a file read with `source`).
+ * (with a pitfall when it is not seen turned on before: it may be, in a file read with `source`). `source`: the text
+ * as written, where `written` has backslashes put before characters of IFS (`quotedByIfs`); the extended globs are told
+ * only where those leave them as written.
  */
-export function globNotes(cx: Explainer, written: string, n: SyntaxNode): string {
+export function globNotes(cx: Explainer, written: string, n: SyntaxNode, source = written): string {
   const text = unbroken(written);
-  return globOptionNote(cx, n, text) + starStarNote(cx, text, n) + extglobNote(cx, text);
+  const same = JSON.stringify(extglobs(text)) === JSON.stringify(extglobs(unbroken(source)));
+  return globOptionNote(cx, n, text) + starStarNote(cx, text, n) + (same ? extglobNote(cx, text) : '');
 }
 
 /**
@@ -593,6 +603,22 @@ export function notGlobbedHere(cx: Explainer, n: SyntaxNode): string {
   return w?.context === 'assignment-value'
     ? cx.s('。代入ではファイル名の展開はされないので、`*` や `?` もそのままの文字として代入される', '. An assignment does no file-name expansion, so `*` and `?` are assigned as they are')
     : '';
+}
+
+/** `ifsEscaped` of a plain part, where bash quotes the glob characters that are in IFS (`quotedIfs`): undefined where it quotes none. */
+function quotedByIfs(cx: Explainer, n: SyntaxNode): ReturnType<typeof ifsEscaped> {
+  // (Where the word is not globbed, `globOff` and `notGlobbedHere` said so before; where it is not split, there are none.
+  // A word the model does not read, a function's name, has none.)
+  const w = wordAt(cx, n);
+  const ifs = w && quotedIfs(w);
+  return ifs ? ifsEscaped(n.text, ifs) : undefined;
+}
+
+/** What to say of a plain part whose glob characters bash all takes as themselves (`quotedByIfs`). */
+function noWildcardByIfs(cx: Explainer, kept: readonly string[]): string {
+  const chars = kept.map((c) => `\`${c}\``).join(cx.s('・', ', '));
+  return cx.s(`。この語にはクォートしていない展開があるので、bash は \`IFS\` にある ${chars} をそのままの文字として照合する（ワイルドカードにならない）`,
+    `. The word has an unquoted expansion, so bash matches ${chars}, which \`IFS\` holds, as ${kept.length > 1 ? 'themselves' : 'itself'}: no wildcard here`);
 }
 
 /** What a variable of bash 5.3 (`bash53Variables`) is in the release explained for: a plain one in bash 5.2. */

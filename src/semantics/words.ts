@@ -15,7 +15,7 @@ import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
-import { caseConverted, IFS_ERRATIC, IFS_WHITESPACE, sameInEveryLocale, substring } from './chars';
+import { caseConverted, type Char, GLOB_CHARS, globbedByBash, IFS_ERRATIC, IFS_WHITESPACE, ownChars, patternOfChars, releasesDiffer, sameInEveryLocale, substring } from './chars';
 import { bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
@@ -25,6 +25,7 @@ import { ARITH, changesDirectory, underscoreValue, unreliableAt, unreliableNames
 import { operandPattern, operandReplacement, operandWord } from './operands';
 import { CONTEXTS, type ContextRule, type WordContext } from './wordcontexts';
 import type { Hole } from './fieldshape';
+export { type Char, ifsEscaped, patternOfChars, quotedIfs } from './chars';
 
 export { underscoreValue, unreliableNames };
 export { CONTEXTS, type ContextRule, type WordContext } from './wordcontexts';
@@ -303,7 +304,7 @@ function shapeOf(nodes: readonly SyntaxNode[]): Shape {
     unquoted: expansions.filter((e) => e.type !== 'process_substitution' && !nearestQuote(e)),
     someQuoted: expansions.some(nearestQuote),
     braced: bracedWords(plain),
-    globWords: [...new Set([...plain.filter((w) => isGlob(joinedText(w))), ...bracketsAcross(nodes)])].sort((a, b) => a.startIndex - b.startIndex),
+    globWords: [...new Set([...plain.filter((w) => isGlob(joinedText(w)) || globbedByBash(joinedText(w), 'off')), ...bracketsAcross(nodes)])].sort((a, b) => a.startIndex - b.startIndex),
     quoted: nodes.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text)),
   };
   shapes.set(nodes[0], shape);
@@ -796,7 +797,7 @@ export function wordFields(n: SyntaxNode, model: StateModel, env?: WordEnv): Fie
 
 /**
  * The words of the brace expansion of the word of `n` (`wordAlternatives`; undefined where they are not known here), each as written, with its fields before
- * pathname expansion where they are known (`fields`), its characters unsplit with `hole(part)` for each part not known here (`chars`; a tilde prefix is no part),
+ * pathname expansion where they are known (`fields`), its characters unsplit with `hole(part)` for each part not known here (`chars`; a tilde prefix is no part; as written where bash's quoting of IFS characters is not known: either way, the word gives its text where no file matches),
  * and its fields with those holes (`holed`); undefined where bash fails on the word (`${x:?}`); `braces` as `wordAlternatives`'s `applies`. For globwords.ts and nofield.ts.
  */
 export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: SyntaxNode) => string | Piece, braces?: boolean): { w: WordMeaning; words: { written: string; fields?: Char[][]; chars?: Char[]; holed?: Char[][] }[] } | undefined {
@@ -817,7 +818,8 @@ export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: Synta
   return { w, words: alternatives.map((nodes) => {
     const known = failing(nodes, false);
     const holed = failing(nodes, true);
-    const chars = holed?.flatMap((p) => [...p.text].map((c): Char => ({ c, quoted: p.quoted, split: p.expanded && !p.quoted })));
+    const splits = w.steps.find((s) => s.kind === 'split')!.applies !== false;
+    const chars = holed && (charsOf(w, holed, splits) ?? ownChars(holed, splits, { context: false }));
     return { written: nodes.map((p) => (typeof p === 'string' ? p : p.text)).join(''), fields: known && splitPieces(w, known), chars, holed: holed && splitPieces(w, holed) };
   }) };
 }
@@ -952,13 +954,8 @@ export function wordIn(n: SyntaxNode, st: ShellState, source: WalkSource, as: 'f
 /** A word that bash takes as it is written: no expansion, quote, escape, tilde, brace, glob or extended glob. */
 const PLAIN_TEXT = /^[\w.,:/@%+=-]+$/;
 
-/** A field as a pattern for globToRegex: quoted characters escaped, a `-` or `^` after an unquoted `[` too (`[a"-"c]`, `['^'a]`). */
-export function patternOfChars(f: readonly Char[]): string {
-  return f.map((c, i) => (c.quoted && (/[\\*?[\]()|!@+]/.test(c.c) || (/[\^-]/.test(c.c) && f.slice(0, i).some((d) => d.c === '[' && !d.quoted))) ? `\\${c.c}` : c.c)).join('');
-}
-
-/** A character of a field, quoted or not, and whether word splitting may split there (from an unquoted expansion). */
-export type Char = { c: string; quoted: boolean; split: boolean };
+/** The characters of the IFS in effect at the word; undefined when they are not known. */
+const ifsOfWord = (w: WordMeaning): string | undefined => (w.ifs.kind === 'default' ? DEFAULT_IFS : w.ifs.kind === 'value' ? w.ifs.value : undefined);
 
 /**
  * The pieces of the word (or of one word of its brace expansion), with its tildes expanded. `hole`: what a part not
@@ -1000,22 +997,21 @@ function piecesOf(w: WordMeaning, nodes: (SyntaxNode | string)[], ev: Evaluator,
   return out;
 }
 
+/** `ownChars` of the pieces of a word: how bash quotes the characters of IFS in it there. */
+const charsOf = (w: WordMeaning, pieces: Piece[], splits: boolean): Char[] | undefined => ownChars(pieces, splits, { ifs: ifsOfWord(w), context: contextAllows(w, 'split').applies, shell: w.shell });
+
 /** Word splitting (manual 3.5.7): the unquoted results of expansions are split on IFS; empty unquoted results go. */
 function splitPieces(w: WordMeaning, pieces: Piece[]): Char[][] | undefined {
   const step = w.steps.find((s) => s.kind === 'split')!;
   const splits = step.applies !== false;
-  const chars: Char[] = [];
-  for (const p of pieces) {
-    const split = splits && p.expanded && !p.quoted;
-    if (p.quoted && !p.text) chars.push({ c: '', quoted: true, split: false });
-    for (const c of p.text) chars.push({ c, quoted: p.quoted, split });
-  }
+  const chars = charsOf(w, pieces, splits);
+  if (!chars) return undefined;
   if (!splits) {
     // Not split: one field, unless only unquoted expansions gave nothing (`$e` is no word, so bash's redirection fails; dash keeps it).
     const kept = chars.length > 0 || w.rule.fields === 'one' || (w.rule.fields === 'one-or-error' && !!w.shell && w.shell !== 'bash');
     return kept ? [chars] : [];
   }
-  const ifs = w.ifs.kind === 'default' ? DEFAULT_IFS : w.ifs.kind === 'value' ? w.ifs.value : undefined;
+  const ifs = ifsOfWord(w);
   // (An IFS of other than ASCII is split on by characters or by bytes, by the locale; one with a mark of bash's, erratically, the quoted text too of a word with an unquoted expansion, `$x"b"`: src/semantics/chars.ts.)
   if (((ifs === undefined || !sameInEveryLocale(ifs)) && chars.some((c) => c.split)) || (IFS_ERRATIC.test(ifs ?? '') && pieces.some((p) => p.expanded && !p.quoted))) return undefined;
   const sep = ifs ?? '';
@@ -1057,11 +1053,15 @@ export function splitOn<T>(chars: readonly T[], sep: (c: T) => 'white' | 'hard' 
 function globField(w: WordMeaning, f: Char[], env: WordEnv | undefined): string[] | undefined {
   const text = f.map((c) => c.c).join('');
   const step = w.steps.find((s) => s.kind === 'glob')!;
-  if (step.applies === false && step.why !== 'noglob') return [text];
-  const pattern = patternOfChars(f);
-  if (!isGlob(pattern)) return [text];
-  if (step.applies === false) return [text];
   const g = w.glob;
+  // (Glob characters all quoted, which bash unquotes, `ownChars`: `IFS='?a'; ls "?"a`.)
+  const unquoted = step.applies === false && (step.why === undefined || step.why === 'quoted') && f.some((c) => !c.quoted && GLOB_CHARS.test(c.c));
+  if (unquoted ? g.noglob !== 'off' : step.applies === false && step.why !== 'noglob') return unquoted && g.noglob === 'unknown' ? undefined : [text];
+  const pattern = patternOfChars(f);
+  // (Not followed: `@(a)` with extglob off, a syntax error written so; what differs between releases, `releasesDiffer`.)
+  if (globbedByBash(pattern, g.extglob) === false && !hasExtglob(pattern)) return [text];
+  if (step.applies === false && !unquoted) return [text];
+  if (releasesDiffer(f)) return undefined;
   if (step.applies === 'unknown' || !env?.files || changesDirectory(w.nodes[0])) return undefined;
   if (hasExtglob(pattern) && g.extglob !== 'on') return undefined;
   if ([g.nullglob, g.failglob, g.dotglob, g.nocaseglob, g.globstar, g.extglob, g.globskipdots].includes('unknown') || g.globignore === 'unknown') return undefined;
