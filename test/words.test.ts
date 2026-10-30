@@ -4,7 +4,7 @@
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import { shellState, type StateModel } from '../src/semantics/state';
-import { bracesInContext, CONTEXTS, partMeaning, underscoreValue, wordFields, wordMeaning, wordOf, type WordEnv } from '../src/semantics/words';
+import { braceWords, bracesInContext, CONTEXTS, partMeaning, underscoreValue, wordFields, wordMeaning, wordOf, type WordEnv } from '../src/semantics/words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, type SyntaxNode } from '../src/syntax/tree';
 import { staticWordValue } from '../src/staticword';
@@ -201,6 +201,15 @@ const underscore = (src: string) => {
 };
 
 describe('words: fields', () => {
+  it('expands no tilde where the `\\` of a letter range ends the prefix (`~{Z..a}`), as bash does', () => {
+    // (The `\` is an empty quoted string at the end of the word, in the prefix `~\`: the third word stays `~`. The
+    // others name users the model does not know. After a `/`, the prefix is `~` alone: `~/x{Z..a}` gives `$HOME/x`.)
+    const out = execFileSync('bash', ['-c', "HOME=/h; printf '<%s>' ~{Z..a}"], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } });
+    assert.strictEqual(out.split('><')[2], '~');
+    const { node, model } = find('echo ~{Z..a}', '~{Z..a}');
+    const words = braceWords(node, model, () => '?')!.words.map((w) => w.fields?.map((f) => f.map((c) => c.c).join('')));
+    assert.deepStrictEqual(words[2], ['~']);
+  });
   it('splits on IFS as bash does', () => {
     assert.deepStrictEqual(fieldsOf("x=' a  b '; echo $x", '$x').fields, ['a', 'b']);
     assert.deepStrictEqual(fieldsOf("IFS=:; x=':a::b:'; echo $x", '$x').fields, ['', 'a', '', 'b']);
