@@ -136,6 +136,9 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
       'x=-v; a=1; b=1; c=1; d=1; printf $x u 2 $a $b $c $d', `${many}; x=-v; printf $x u 2`, 'v=-v; printf -v x %s "$v"; printf $x u 2',
       // (`set` and the declarations too: bash runs `set -e` there, and declares `u` global.)
       'for x in -e; do :; done; set $x; false; u=2', 'read -r x <<< -g; f() { declare $x u=2; }; f',
+      // (A word after `--` that gives more fields than one moves the words after it to places that name a variable:
+      // `getopts -- v u` sets `u`.)
+      "o='v u'; getopts -- $o", "set -- -v; o='v u'; getopts -- $o",
     ];
     // (A variable the walk knows is unset gives no field: the script still decides `v`.)
     const decides = ['x=-v; unset x; printf $x u 2', 'f() { local x; printf $x u 2; }; x=-v; f', 'x=-v; unset -v x; printf $x u 2', 'f() { unset x; }; x=-v; f; printf $x u 2'];

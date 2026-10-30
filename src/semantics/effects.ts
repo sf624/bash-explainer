@@ -150,14 +150,15 @@ export interface BuiltinRead {
  * The words the builtin `name` gets from the words `args` (or `spec`: a function of the host), as bash gives them:
  * a word whose fields `fieldsOf` gives is those fields (`x=-e; set $x` is `set -e`; `x='a b'; declare $x` declares
  * `a` and `b`; an empty one gives no word), the others are read as written (`fieldLine`, as the argument interpreter
- * reads the fields the model knows).
+ * reads the fields the model knows). `more`: words of text not used after them, read in the parse only (the roles
+ * a word would have there).
  */
-export function builtinRead(name: string, args: readonly SyntaxNode[], shell: Shell | undefined, spec = builtins[name], fieldsOf?: (n: SyntaxNode) => readonly string[] | undefined): BuiltinRead {
+export function builtinRead(name: string, args: readonly SyntaxNode[], shell: Shell | undefined, spec = builtins[name], fieldsOf?: (n: SyntaxNode) => readonly string[] | undefined, more = 0): BuiltinRead {
   const plain = argWordFor(shell);
   const { line, groups, own } = fieldLine(args.map((a) => (fieldsOf ? { ...plain(a), fields: () => fieldsOf(a) } : plain(a))));
   const back = lineIndex(groups);
   // (The fields are read as words of known text: not as a word read again by its fields.)
-  const parse = interpret(spec, line.map(({ fields: _, ...w }) => w), { name });
+  const parse = interpret(spec, [...line.map(({ fields: _, ...w }) => w), ...Array.from({ length: more }, () => ({ value: 'x' }))], { name });
   const field = (j: number): boolean => own.has(back(j)) || groups.some((g) => j >= g.from && j < g.from + g.n);
   return { parse, node: (j) => args[back(j)], text: (j) => (field(j) ? line[j].value : staticWordValue(args[back(j)])), field, size: line.length };
 }

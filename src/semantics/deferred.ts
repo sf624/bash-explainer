@@ -11,7 +11,7 @@ import { argWordFor } from '../argv/words';
 import type { Shell } from '../dialect';
 import { staticWordValue, tildeParts, tildeSpots } from '../staticword';
 import { descendants, type SyntaxNode, wordBraces } from '../syntax/tree';
-import { builtinParse, builtinRead, DECLARATIONS, effectKey, namesByWords } from './effects';
+import { builtinRead, DECLARATIONS, effectKey, namesByWords } from './effects';
 import { EMPTY, type ShellState } from './shellstate';
 import { type WalkSource, wordIn } from './words';
 
@@ -68,7 +68,12 @@ export function deferredReadings(d: Deferred<unknown>, valuesOf: (name: string) 
   return { plan: { words: found.words.map((k) => d.words[k].word), keys: found.keys, written: found.written }, readings: found.lists.map(at) };
 }
 
-/** The readings of commands already read (`deferredReadings`), by their text and the values of their variables; words by their place in `Deferred.words`. */
+/**
+ * The readings of commands already read (`deferredReadings`), by their text and the values of their variables; words
+ * by their place in `Deferred.words`. The key holds the text, the shell, POSIX mode, whether IFS is set and the values,
+ * and nothing else: it takes the spec of a builtin to be the same in every bash version and with every host. (A host's
+ * functions are not deferred: `Scan.command`.) A spec that comes to depend on them must go into the key.
+ */
 const known = new Map<string, { words: number[]; lists: (readonly string[])[][]; keys: ReadonlySet<string>; written: boolean }>();
 const KNOWN = 4096;
 
@@ -105,7 +110,7 @@ function readingsOf(d: Deferred<unknown>, valuesOf: (name: string) => readonly (
 function inertAfter(d: Deferred<unknown>, r: FieldsOf, word: SyntaxNode, shell: Shell | undefined): boolean {
   const read = builtinRead(d.name, d.args, shell, d.spec, r);
   const k = Array.from({ length: read.size }, (_, j) => j).find((j) => read.node(j) === word)!;
-  return inert(read.parse, k, word, shell);
+  return inert((more) => (more ? builtinRead(d.name, d.args, shell, d.spec, r, more).parse : read.parse), d.spec, k, word, shell);
 }
 
 /** The builtins whose words the scan reads as written, with handlers of their own (`Scan.builtinWords`). */
@@ -117,17 +122,24 @@ const READINGS = 16;
 const naming = (r: ArgRole): boolean => r.role === 'operand' && [r.spec, r.otherwise, ...(r.each ?? [])].some((o?: OperandSpec) => !!o?.sets || !!o?.acts);
 
 /**
- * Whether the word `word`, the `j`th of a builtin's line (`parse`: as written, or with the fields of words before it), gives the builtin what it sets whatever its
- * fields are, with the words before it known: the value of an option that names nothing, which is one word in any case
- * (`read -p "$p" x`), or an operand after the first operand or `--` (bash's builtins read no option after them) with
- * every word from it on an operand that names nothing, so that a word it gives more or fewer of only moves those
- * (`printf "%s" "$a"`, `set -- "$a"`).
+ * Whether the word `word`, the `j`th of a builtin's line (`parseWith(0)`: as written, or with the fields of words
+ * before it), gives the builtin what it sets whatever its fields are, with the words before it known:
+ * - the value of an option that names nothing, as one word in any case (`read -p "$p" x`);
+ * - an operand after an operand or `--` (bash's builtins read no option after them), with every word from it on an
+ *   operand that names nothing. Where it may give more fields than one, the words after it move on, also to places past the
+ *   words written (`parseWith(n)`: with `n` words more): none of those may name one either (`getopts -- $o` with `o='v
+ *   u'` sets `u`). So a word it gives more or fewer of only moves operands that name nothing (`printf "%s" "$a"`, `set
+ *   -- "$a"`).
  */
-function inert(parse: ArgvParse, j: number, word: SyntaxNode, shell: Shell | undefined): boolean {
+function inert(parseWith: (more: number) => ArgvParse, spec: CommandSpec, j: number, word: SyntaxNode, shell: Shell | undefined): boolean {
+  const parse = parseWith(0);
   const at = parse.roles.find((r) => r.word === j)?.role;
-  if (at?.role === 'value') return !at.spec?.sets && at.spec?.type !== 'function' && !argWordFor(shell)(word).count;
-  if (at?.role !== 'operand' || !parse.roles.some((r) => r.word < j && (r.role.role === 'operand' || r.role.role === 'end-of-options'))) return false;
-  return parse.roles.every((r) => r.word < j || (r.role.role === 'operand' && !naming(r.role)));
+  const one = !argWordFor(shell)(word).count;
+  if (at?.role === 'value') return !at.spec?.sets && at.spec?.type !== 'function' && one;
+  if (at?.role !== 'operand') return false;
+  if (!parse.roles.some((r) => r.word < j && (r.role.role === 'operand' || r.role.role === 'end-of-options'))) return false;
+  const slots = 1 + Math.max(0, ...(spec.operands ?? []).map((o) => o.pattern.length));
+  return (one ? parse : parseWith(slots)).roles.every((r) => r.word < j || (r.role.role === 'operand' && !naming(r.role)));
 }
 
 /** Whether the word `w` expands something: a parameter, a substitution, braces or a tilde. */
@@ -150,12 +162,11 @@ const quotedIn = (e: SyntaxNode, word: SyntaxNode): boolean => {
 export function unknownWords(name: string, spec: CommandSpec, args: readonly SyntaxNode[], shell: Shell | undefined): DeferredWord[] | undefined {
   if (AS_WRITTEN.has(name) || spec.operandParser === 'test-expression' || !(name === 'set' || DECLARATIONS.has(name) || namesByWords(spec))) return undefined;
   const out: DeferredWord[] = [];
-  let parse: ArgvParse | undefined;
   for (const [j, a] of args.entries()) {
     // (A word that expands nothing is a glob at most, which the model takes as matching no file: `declare a[1]`.)
     if (a.type === 'variable_assignment' || staticWordValue(a, false, shell) !== undefined || !expands(a)) continue;
     // (A word whose fields cannot change what the builtin sets is read as written: `printf "%s\n" "$m"`, as before.)
-    if (!out.length && inert(parse ??= builtinParse(name, args, shell, spec), j, a, shell)) continue;
+    if (!out.length && inert((more) => builtinRead(name, args, shell, spec, undefined, more).parse, spec, j, a, shell)) continue;
     const names: string[] = [];
     let unquoted = false;
     let other = false;
