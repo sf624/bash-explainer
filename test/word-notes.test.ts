@@ -233,6 +233,16 @@ describe('word notes: line continuations, sequences past intmax_t, here-strings 
     assert.strictEqual(bash('v=app; [[ $v == a\\\n* ]] && echo m'), 'm\n');
   });
 
+  it('reads a backslash of a pattern as quoting the one character after it: `a\\\\*` is a pattern', () => {
+    const literal = 'the right side is quoted, so it is literal text';
+    const mixed = 'the quoted parts of the right side are literal text, the rest is a pattern';
+    assert.ok(said("v='a\\xy'; [[ $v == a\\\\* ]]").some((x) => x.includes(mixed)));
+    assert.ok(said("v='a\\xy'; [[ $v == a\\\\\\\n* ]]").some((x) => x.includes(mixed)));
+    assert.ok(said('[[ $v == a\\* ]]').some((x) => x.includes(literal)));
+    assert.ok(said('[[ $v == a\\\\ ]]').some((x) => x.includes(literal)));
+    assert.strictEqual(bash("v='a\\xy'; [[ $v == a\\\\* ]] && echo 1; [[ $v == a\\\\\\\n* ]] && echo 2; v='a*'; [[ $v == a\\* ]] && echo 3; v=ab; [[ $v == a\\* ]] || echo 4; v='a\\'; [[ $v == a\\\\ ]] && echo 5"), '1\n2\n3\n4\n5\n');
+  });
+
   it('leaves out the example of a word with a tilde of another directory (`~root`, `~+`)', () => {
     assert.ok(!examples('a=${n:-x:~/d:~root}').some((x) => x.includes('~root')));
     assert.ok(!examples('echo ${n:-~+/x}').some((x) => x.includes('~+')));
@@ -242,8 +252,8 @@ describe('word notes: line continuations, sequences past intmax_t, here-strings 
 });
 
 describe('word notes: sequences in bash 5.2 and 5.3', () => {
-  const parsed = (src: string, version: '5.2' | '5.3') => new Analyzer('en').explainLine(parser.parse(src), 0, undefined, { bashVersion: version });
-  const said = (src: string, version: '5.2' | '5.3'): string[] => allTokens(parsed(src, version).items).map((t) => t.explanation);
+  const parsed = (src: string, version: '5.2' | '5.3', lang: 'ja' | 'en') => new Analyzer(lang).explainLine(parser.parse(src), 0, undefined, { bashVersion: version });
+  const said = (src: string, version: '5.2' | '5.3', lang: 'ja' | 'en' = 'en'): string[] => allTokens(parsed(src, version, lang).items).map((t) => t.explanation);
   const BASH53 = process.env.BASH_EXPLAINER_BASH53;
   /** What bash 5.2, and bash 5.3 where it is given, print for `script`. */
   const both = (script: string, b52: string, b53: string): void => {
@@ -262,15 +272,21 @@ describe('word notes: sequences in bash 5.2 and 5.3', () => {
 
   it('says where the bash of the explanation leaves a sequence as written', () => {
     const wide = 'echo {9223372036854775806..0..9223372036854775806}';
-    assert.ok(said(wide, '5.2').includes('Brace expansion: `{9223372036854775806..0..9223372036854775806}` expands to 1 word: `{9223372036854775806..0..9223372036854775806}` (bash 5.2 leaves `{9223372036854775806..0..9223372036854775806}` as written: its numbers are past the limits of bash 5.2; bash 5.3 expands it)'));
+    assert.ok(said(wide, '5.2').includes('Brace expansion: `{9223372036854775806..0..9223372036854775806}` expands to 1 word: `{9223372036854775806..0..9223372036854775806}` (bash 5.2 leaves `{9223372036854775806..0..9223372036854775806}` as written, since its start and its end are too far apart for it; bash 5.3 expands it)'));
     assert.ok(!said(wide, '5.2').some((x) => x.startsWith('Start:')));
     assert.ok(said(wide, '5.3').includes('Increment: `9223372036854775806` (each word is 9223372036854775806 less than the one before)'));
     const min = 'echo {2..0..-9223372036854775808}{a,b}';
     assert.ok(said(min, '5.2').some((x) => x.includes('expands to 2 words: `2a` `2b`')));
-    assert.ok(said(min, '5.3').some((x) => x.includes('(bash 5.3 leaves `{2..0..-9223372036854775808}` as written: its numbers are past the limits of bash 5.3; bash 5.2 expands it)')));
+    assert.ok(said(min, '5.3').some((x) => x.includes('(bash 5.3 leaves `{2..0..-9223372036854775808}` as written, since it refuses the increment `-9223372036854775808`; bash 5.2 expands it)')));
     assert.ok(said('echo {1..3000000000}', '5.3').includes('Brace expansion: `{1..3000000000}` expands to many words'));
-    assert.ok(said('echo {1..3000000000}', '5.2').some((x) => x.includes('bash 5.2 leaves `{1..3000000000}` as written')));
-    both(`${wide}; ${min}`, '{9223372036854775806..0..9223372036854775806}\n2a 2b\n', '9223372036854775806 0\n{2..0..-9223372036854775808}a {2..0..-9223372036854775808}b\n');
+    assert.ok(said('echo {1..2147483646}x{0..4294967290..2}', '5.2').some((x) => x.endsWith('(bash 5.2 leaves `{1..2147483646}` as written, since it would make more than 2147483645 words; `{0..4294967290..2}` as written, since it would make more than 2147483645 words; bash 5.3 expands them)')));
+    const far = 'echo {0..-9223372036854775808..9223372036854775807}';
+    assert.ok(said(far, '5.3').some((x) => x.includes('(bash 5.3 leaves `{0..-9223372036854775808..9223372036854775807}` as written, since its start and its end are too far apart for it; bash 5.2 expands it)')));
+    assert.ok(said(wide, '5.2', 'ja').some((x) => x.includes('（bash 5.2 は `{9223372036854775806..0..9223372036854775806}` を、開始と終わりが離れすぎているので展開せず、書いたまま残す。bash 5.3 は展開する）')));
+    both(`${wide}; ${min}; ${far}`, '{9223372036854775806..0..9223372036854775806}\n2a 2b\n0 -9223372036854775807\n',
+      '9223372036854775806 0\n{2..0..-9223372036854775808}a {2..0..-9223372036854775808}b\n{0..-9223372036854775808..9223372036854775807}\n');
+    // (Only bash 5.2 runs these: bash 5.3 would make the words.)
+    assert.strictEqual(bash('echo {1..2147483646}x{0..4294967290..2}'), '{1..2147483646}x{0..4294967290..2}\n');
   });
 
   it('gives the words of a sequence only where both bash give them, when the version is not known', () => {

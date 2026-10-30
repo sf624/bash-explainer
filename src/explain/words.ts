@@ -7,13 +7,11 @@ import type { Kind, Pos, Token } from '../analyzer-types';
 import { type ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping } from '../arith';
 import { type BashVersion, earlier } from '../bashversion';
 import { pictureList, visible } from '../ctlchars';
-import { ordinal } from '../i18n';
 import { ciVariables } from '../dict/ciVariables';
 import { bash53Variables, specialVariables, wellKnownVariables } from '../dict/syntax';
 import { explainGlob, globIntro, type GlobTarget, hasGlob, unbroken } from '../embedded/glob';
-import type { EmbeddedToken } from '../embedded/types';
-import { braceSequence, extglobs, hasGlobstar, isGlob } from '../examples/shellwords';
-import { lastValue, parseSequence } from '../braceseq';
+import { extglobs, hasGlobstar, isGlob } from '../examples/shellwords';
+import { parseSequence } from '../braceseq';
 import { parseExpansion } from '../expansion';
 import { codeSpan, shorten } from '../label';
 import { fact } from '../messages';
@@ -32,6 +30,7 @@ import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
 import { fromEmbedded, same, sibling, sortTokens } from './nodes';
 import { arrayKind, globOff, globState, inArithmetic, isAssoc, shoptAt, unquotedWord, wordAt } from './reads';
+import { refusedNote, sequenceParts } from './sequences';
 import { pidNote, stageCountNote } from './where';
 
 /**
@@ -320,10 +319,7 @@ function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
   const sequences = wordBraces(n).filter((b) => braceKind(b) === 'sequence');
   // (The parser makes a sequence of what bash 5.2 or 5.3 expands: the other may leave it as it is, `{1..3000000000}`.)
   const version = cx.bashVersion;
-  const kept = sequences.filter((s) => !parseSequence(joinedText(s).slice(1, -1), version)).map((s) => codeSpan(joinedText(s)));
-  const other = version === '5.2' ? '5.3' : '5.2';
-  const refused = kept.length ? cx.s(`（bash ${version} は ${kept.join('・')} を展開せず、書いたまま残す。数が bash ${version} の範囲式の上限を超えるため。bash ${other} は展開する）`,
-    ` (bash ${version} leaves ${kept.join(', ')} as written: its numbers are past the limits of bash ${version}; bash ${other} expands it)`) : '';
+  const refused = refusedNote(cx, sequences);
   // `{01..10..3}`: a number with a leading 0 makes every number as wide as the widest.
   const pad = sequences.some((s) => parseSequence(joinedText(s).slice(1, -1), version)?.width);
   const parts = sequences.flatMap((s) => sequenceParts(cx, s)).map((t) => fromEmbedded({ ...t, start: t.start - n.startIndex, end: t.end - n.startIndex }, n, { text, base: 0 }, 'shell'));
@@ -346,46 +342,6 @@ function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
 function oneFieldEach(cx: Explainer, n: SyntaxNode): boolean {
   const words = fieldsOfBraceWords(n, cx.state, () => '')?.words;
   return !!words && words.every((w) => w.fields?.length === 1 && !isGlob(patternOfChars(w.fields[0])));
-}
-
-/**
- * The parts of a sequence expression of braces, `{1..10..3}` (3.5.1): its start, its end and its increment, at their
- * places in the text, with what bash makes of them (checked with bash 5.2): the sign of the increment does not count,
- * the order comes from the start and the end, an increment of 0 counts as 1, the last word is the last step that
- * does not pass the end, and a number with a leading 0 pads every word with zeros to the same width. None where the
- * bash of the explanation leaves it as it is (`braceWordToken` says so).
- */
-function sequenceParts(cx: Explainer, s: SyntaxNode): EmbeddedToken[] {
-  const [xn, yn, zn] = s.namedChildren;
-  // (As bash reads them, without line continuations: `{1..\<newline>3}`.)
-  const [x, y] = [joinedText(xn), joinedText(yn)];
-  const seq = parseSequence(joinedText(s).slice(1, -1), cx.bashVersion);
-  if (!seq) return [];
-  const numbers = !seq.letters;
-  // (A sequence of the word expands to no more words than the word: they were listed.)
-  const words = braceSequence(joinedText(s), seq.version)!;
-  const kind = numbers ? 'number' : 'string';
-  const down = seq.step < 0n;
-  const padded = (v: string): string => (numbers && /^-?0\d/.test(v) ? cx.s('。先頭が 0 なので、すべての数を 0 で埋めて同じ桁数にする', '; it has a leading 0, so every number is padded with zeros to the same width') : '');
-  const last = words[words.length - 1];
-  // (Where the last value is the end, it lands on it, even when bash 5.2 prints it cut to an `int`: `{0001..2147483648..2147483647}`.)
-  const stops = lastValue(seq) !== seq.end ? cx.s(`（増分で届かないので、最後の単語は \`${last}\`）`, ` (the steps do not land on it: the last word is \`${last}\`)`) : '';
-  const out: EmbeddedToken[] = [
-    { start: xn.startIndex, end: xn.endIndex, kind, explanation: cx.s(`開始: \`${x}\``, `Start: \`${x}\``) + padded(x), children: [] },
-    { start: yn.startIndex, end: yn.endIndex, kind, explanation: cx.s(`終わり: \`${y}\``, `End: \`${y}\``) + stops + padded(y), children: [] },
-  ];
-  if (!zn) return out;
-  const z = joinedText(zn);
-  const step = seq.step < 0n ? -seq.step : seq.step;
-  const sign = seq.written < 0n ? cx.s('。符号は使われず、向きは開始と終わりで決まる', '; its sign does not count: the start and the end set the direction') : seq.written === 0n ? cx.s('。0 は 1 として扱われる', '; 0 counts as 1') : '';
-  out.push({
-    start: zn.startIndex, end: zn.endIndex, kind: 'number',
-    explanation: numbers
-      ? cx.s(`増分: \`${z}\`（単語ごとに ${step} ${down ? '減る' : '増える'}）${sign}`, `Increment: \`${z}\` (each word is ${step} ${down ? 'less' : 'more'} than the one before)${sign}`)
-      : cx.s(`増分: \`${z}\`（${step} 文字ごとに${down ? '逆向きに' : ''}進む）${sign}`, `Increment: \`${z}\` (${step === 1n ? 'each letter' : `every ${ordinal(step)} letter`}, counting ${down ? 'down' : 'up'})${sign}`),
-    children: [],
-  });
-  return out;
 }
 
 /** The kinds of node bash expands after braces, in a word or in a string of it. */

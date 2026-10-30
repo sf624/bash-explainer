@@ -176,6 +176,7 @@ Sizes are estimates, with doc comments.
 | src/explain/where.ts | where code runs: `groupSubshell`, `subshellWhy`, `inSubshell`, `shellEffectNote`, `pidNote` | 90 | env |
 | src/explain/status.ts | `postfixStatusNote`, `statusRangeNote`, `substitutionStatus` | 60 | status, statusfacts |
 | src/explain/words.ts | words and expansions, with `globNotes`, `extglobNote`, `globToken`, `globChildren` | 450 | words, state |
+| src/explain/sequences.ts | the sequence expressions of brace expansion (`sequenceParts`, `refusedNote`), split off words.ts to keep it under 1,000 lines | 70 | src/braceseq.ts |
 | src/explain/examples.ts | example builders that read the line (pipeline, regex, read, glob, case, test), which examples the line keeps and their titles | 500 | spec (`example`, `io`, `eachFile`), examples/source.ts |
 | src/explain/examples-jq.ts | the examples of jq and yq (`jqExamples`, `yqExample`, `yqStreams`), split off examples.ts to keep it near 500 lines | 240 | spec (`example`), examples/source.ts |
 | src/explain/embedded.ts | `embedded`, `embeddedText`, `embeddedTextInner`, `embeddedExample`, `ansiCChildren` | 200 | embedded registry, argv query |
