@@ -215,6 +215,27 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     assert.strictEqual(shellState(parser.parse('o=-i; v=1+2; declare $o n=$v')).end.variables.get('n')?.attrs.i?.state, 'on');
   });
 
+  it('trusts nothing where a builtin gets the fields of a value the scan does not list (src/semantics/deferred.ts)', () => {
+    const blind = (src: string): string | undefined => shellState(parser.parse(src)).blind;
+    const notKnown = 'a builtin is given a word whose fields the trust read, which are not known here';
+    // A value not written by a plain assignment of text, another parameter, a substitution, one the script never sets
+    // (the environment's), one set on some paths only: the walk does not know the fields.
+    for (const src of ['read -r o; printf $o u 2', 'printf "$1" u 2', 'o=$(f); printf $o u 2', 'printf $nope u 2', '[ -t 0 ] && o=-v; printf $o u 2',
+      'read -r o; a=1; printf $o "$a"', '[ -t 1 ] && f=x; printf "$f" a', 'REPLY=-v; printf $REPLY u 2']) assert.strictEqual(blind(src), notKnown, src);
+    // Where it knows them, they must give what a reading of the scan gave: not past the readings the scan makes.
+    const many = Array.from({ length: 16 }, (_, i) => `o=a${i}`).join('; ');
+    assert.strictEqual(blind(`${many}; o=-v; printf $o u 2`), 'a builtin is given words whose fields give it what the trust did not read');
+    assert.strictEqual(blind(`${many}; printf $o u 2`), undefined);
+    // Where the walk does not run the builtin where bash does, it cannot check them.
+    for (const src of ["trap 'printf $o u 2' INT; o=-v", 'f() { printf $o u 2; }; trap f INT; o=-v', 'f() { set $o; }; complete -F f c; o=-e']) {
+      assert.strictEqual(blind(src), 'a builtin is given a word not known where the walk does not run it', src);
+    }
+    // Unset is a value it knows, also in another shell; code that never runs reads nothing; a word that expands
+    // nothing is a glob that matches no file.
+    for (const src of ['o=-v; unset o; printf $o u 2', 'f() { local o; printf $o u 2; }; f', "bash -c 'o=-v; unset o; printf $o u 2'", 'if false; then read -r o; printf $o u 2; fi', 'if false; then o=-v; printf $o u 2; fi',
+      'declare a[1]', 'o=%s; [ -t 0 ] && o=x; a=1; printf $o "$a" "$a"']) assert.strictEqual(blind(src), undefined, src);
+  });
+
   it('takes a function defined after `shopt -so allexport` as exported, as after `set -a`', () => {
     // (bash exports it: another bash sees it. Before the allow-list, the scan read `set -a` but not `shopt -so`.)
     assert.strictEqual(bash("shopt -so allexport; f() { :; }; bash -c 'declare -F f'"), 'f\n');

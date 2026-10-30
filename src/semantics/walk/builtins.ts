@@ -13,7 +13,7 @@ import { descendants, field, fields, type SyntaxNode, wordBraces } from '../../s
 import { parseExpansion } from '../../expansion';
 import { expansionFailure, sameInEveryLocale, substring } from '../chars';
 import { temporariesUnset } from '../names';
-import { aliasOf, builtinParse, builtinRead, type BuiltinRead, commandName, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
+import { aliasOf, builtinParse, builtinRead, type BuiltinRead, commandName, DECLARATIONS, effectKey, setOptionWrites, variableWrites, wrapped } from '../effects';
 import { attribute, type Attribute, type CommandEntry, environmentHas, exportFromEnvironment, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy, withStatus } from '../shellstate';
 import { builtinExit, definitionExit, exitRefusal } from '../posixexits';
 import { changedByBash, optionRoles, readDeclarationWords, type Declaration } from '../vars';
@@ -73,10 +73,10 @@ export class WalkBuiltins {
       return 'lookup' in inner || inner.name === undefined ? st : this.builtin(inner.name, inner.args, n, st);
     }
     // (The words the trust scan read as their fields, `fieldsIn`, are read so; the others as written.)
-    const fieldsOf = this.fieldsIn(args, st);
+    const spec = builtins[name];
+    const fieldsOf = this.fieldsIn(name, spec, args, st);
     if (DECLARATIONS.has(name)) return this.declare(name, args, readDeclarationWords(name, args, this.w.shell, fieldsOf), n, st);
     if (name === 'unset') return this.unset(args, n, st);
-    const spec = builtins[name];
     const read = builtinRead(name, args, this.w.shell, spec, fieldsOf);
     const parse = fieldsOf ? builtinParse(name, args, this.w.shell) : read.parse;
     st = this.effects(spec, read, n, st);
@@ -306,20 +306,32 @@ export class WalkBuiltins {
   }
 
   /**
-   * The fields of the words of a builtin that the trust scan read as the fields the script's values give them
-   * (`Trust.expands`: `x=-e; set $x`), from `st`; undefined when none of `args` is one. Where the fields of one are
-   * not known here, the walk is made again with nothing trusted (the scan took them for those it read).
+   * The fields of the words of the builtin `name` that the trust scan read as fields (`Trust.deferred`: `x=-e; set
+   * $x`), from `st`; undefined when it has none, and where they are read as written. Where they are known (from the
+   * variables whose values the walk follows), they must give the builtin what a reading of the scan gave it; where they
+   * are not, the scan must have read every value they may have, each giving what the words as written give, and each
+   * variable must have a value the script wrote here (`readsUnwritten`). Otherwise the walk is made again with nothing
+   * trusted: the scan took the builtin to set what no reading of its gave it.
    */
-  private fieldsIn(args: readonly SyntaxNode[], st: ShellState): ((a: SyntaxNode) => readonly string[] | undefined) | undefined {
+  private fieldsIn(name: string, spec: CommandSpec, args: readonly SyntaxNode[], st: ShellState): ((a: SyntaxNode) => readonly string[] | undefined) | undefined {
     const trust = this.w.trust;
-    if (!args.some((a) => trust.expands(a))) return undefined;
-    return (a) => {
-      if (!trust.expands(a)) return undefined;
-      const f = this.w.conditions.fieldsOf(a, st);
-      // (Nothing is read so where nothing is trusted.)
-      if (!f && !this.w.mode.dead) this.w.walkAgain('a builtin is given a word whose fields the trust read, which are not known here');
-      return f;
-    };
+    const plan = args.map((a) => trust.deferred(a)).find((p) => p);
+    if (!plan) return undefined;
+    const fields = new Map<SyntaxNode, readonly string[]>();
+    for (const a of plan.words) {
+      const f = this.w.conditions.deferredFields(a, st);
+      if (f) fields.set(a, f);
+    }
+    const fieldsOf = (a: SyntaxNode): readonly string[] | undefined => fields.get(a);
+    const known = fields.size === plan.words.length;
+    // (Nothing is checked in code that never runs.)
+    if (this.w.mode.dead) return known ? fieldsOf : undefined;
+    if (known) {
+      if (!plan.keys.has(effectKey(name, spec, builtinRead(name, args, this.w.shell, spec, fieldsOf), this.w.shell))) this.w.walkAgain('a builtin is given words whose fields give it what the trust did not read');
+      return fieldsOf;
+    }
+    if (!plan.written || plan.words.some((a) => this.readsUnwritten(a, st))) this.w.walkAgain('a builtin is given a word whose fields the trust read, which are not known here');
+    return undefined;
   }
 
   private setCommand(st: ShellState, read: BuiltinRead): ShellState {

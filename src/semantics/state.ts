@@ -544,7 +544,7 @@ export const modelVersion = (model: StateModel): BashVersion => modelVersions.ge
  */
 function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, file: Pick<StateModel, 'read' | 'provides'>, outer?: Trust, host = NO_HOST, run?: HostRun, opening?: Opening, version?: BashVersion): StateModel {
   const scripts = new Scripts(depth, shell);
-  const own = scriptTrust(tree.root, scripts, host, opening, shell, version);
+  const own = scriptTrust(tree.root, scripts, host, opening, shell, version, posix);
   const trust = outer ? withinTrust(own, outer) : own;
   let w = new Walker(shell, posix, scripts, trust, host, run, undefined, version);
   let initial!: ShellState;

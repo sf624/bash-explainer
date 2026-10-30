@@ -17,6 +17,9 @@
 //   `followed` row has a handler here, which checks its precondition (a nameref's target, `-v` of a name not known,
 //   `${x@P}` of a value that may run code, a PS4 that may, a locale other than C), and arithmetic must not read text
 //   not known (`$1`, `$(cmd)`, a variable `read` sets: bash runs it as an expression, which may assign any variable).
+// - A word of a builtin whose fields may change what it sets (`x=-v; printf $x u 2`) is read as the fields of every
+//   value bash may give it, where the scan can list them; where it cannot (`read x`, `$1`), as written, and the walk
+//   trusts nothing where it runs the builtin with fields that give what no reading gave (src/semantics/deferred.ts).
 // - A function is closed (its decisions and dead code may be said, and src/semantics/env.ts says for sure where its
 //   body runs) when every call of it is one the walk sees, in the script or in an `eval`'s string: not exported
 //   (`export -f`, `set -a`), not named as an argument (`complete -F f`, `trap f INT`), not called from the text of a
@@ -41,41 +44,21 @@ import type { CommandSpec } from '../argv/spec';
 import { bracedWords } from './brace';
 import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
 import { plainName, aliasOf, aliasTexts, builtinParse, builtinRead, callbacks, commandName, commandWords, DECLARATIONS, setOptionWrites, variableWrites, wordName } from './effects';
-import { type Deferred, deferredReadings, unknownWords } from './deferred';
+import { type Deferred, type DeferredPlan, deferredReadings, unknownWords } from './deferred';
 import { STATEMENTS } from './env';
 import { localeWritten, openingBlinds, type Opening } from './opening';
 import { closesStandard } from './redirects';
 import { inExtendedTest, testSplits, testWordShape } from './testwords';
 import { BLIND, type HostCommands, NO_HOST, type StringTrees, type Trust } from './trustmodel';
-import { COPY, identifiers, joined, writtenValue, type WrittenValue } from './written';
-import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, localeVariable, optionRoles, readDeclarationWords, writeEffect, type Declaration } from './vars';
+import { COPY, identifiers, joined, writtenValue } from './written';
+import { ARITH_ASSIGNED, assignsArithmetic, changedUnseen, localeVariable, optionRoles, readDeclarationWords, writeEffect, type Declaration } from './vars';
+import { arithReads, commandNames, promptReads, ps4Writes, valuesWritten, type Value, type Write } from './writechecks';
 
 export { BLIND, type HostCommands, NO_HOST, type StringTrees, type Trust, withinTrust } from './trustmodel';
 
 const NAME = /^[A-Za-z_]\w*$/;
 /** A `${…}` that arithmetic may paste: a value, an element, a length, or a default (`${x:-0}`). */
 const PASTE = /^\$\{#?[A-Za-z_]\w*(?:\[[^\]]*\])?(?::?-[^{}$`'"]*)?\}/;
-/** The builtins a command name read from a variable may be (`debug=false; $debug`): they change nothing. */
-const SAFE_BUILTINS = new Set(['true', 'false', ':', 'echo', 'test', '[']);
-
-/**
- * What a write gives a variable: a number, nothing (unset), the value it had (`declare x` outside a function: maybe
- * one from the environment), text with these names in it (see `WrittenValue`), or text not known.
- */
-type Value = WrittenValue;
-
-interface Write {
-  /** A plain assignment (see the head of this file). */
-  plain: boolean;
-  value: Value;
-  /** The function whose body holds it (undefined: the top level), and whether it is in the text of an eval, trap or alias. */
-  fn: string | undefined;
-  foreign: boolean;
-  /** Made by a nameref declaration (`declare -n r=x`). */
-  nameref?: boolean;
-  /** Made by `+=` (`n+=1`): an integer adds to the value it had, which arithmetic reads (see `appended`). */
-  append?: true;
-}
 
 /**
  * Where a node is: the function whose body holds it, whether it is in the text of an `eval`, a trap or an alias
@@ -151,15 +134,16 @@ class Scan {
   private readonly commandVariables: { name: string; quoted: boolean }[] = [];
   /** The builtins given words whose values are not known where the scan reads them (`unknownWords`), read at the end. */
   private readonly deferred: Deferred<Where>[] = [];
-  /** The words read as the fields of the values the script gives their variables (see `Trust.expands`). */
-  readonly expanded = new Set<SyntaxNode>();
+  /** What the scan read of those words, by word (see `Trust.deferred`), and where each such builtin is. */
+  readonly plans = new Map<SyntaxNode, DeferredPlan>();
+  private readonly planned: Where[] = [];
   /** The aliases the `alias` commands define (a name and its text), and the commands that may run one (see `aliases`). */
   private readonly aliasDefs: AliasDef[] = [];
   private readonly aliasCommands: { c: SyntaxNode; name: string; where: Where }[] = [];
   /** The aliases each tree of an alias expanded at a command comes from (bash does not expand an alias in itself). */
   private readonly expanding = new Map<SyntaxNode, ReadonlySet<string>>();
 
-  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening: Opening | undefined, private readonly shell: Shell | undefined, private readonly version?: BashVersion) {
+  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands, opening: Opening | undefined, private readonly shell: Shell | undefined, private readonly version: BashVersion | undefined, private readonly posix: boolean) {
     const defs = (n: SyntaxNode): void => {
       if (n.type === 'function_definition') this.functions.add(field(n, 'name')!.text);
       if (n.type === 'command' && ['alias', 'enable'].includes(commandName(n) ?? '')) this.renames = true;
@@ -804,23 +788,37 @@ class Scan {
 
   /**
    * The builtins given words whose values are not known where they stand (`unknownWords`), read once all the writes
-   * of the script are known: as the fields each value the script gives their variables makes of each word (or none, the
-   * variable unset), with brace expansion on and off; as written where those values are not all text the script wrote
-   * (`deferredReadings`). The walk reads those words as their fields too (`Trust.expands`), and walks again with nothing
-   * trusted where it does not know them. A variable they expand must not be set by such a reading.
+   * of the script are known: as the fields each value bash may give their variables makes of each word (`valuesOf`),
+   * with brace expansion on and off; as written where those values are not all listed (`deferredReadings`). The walk
+   * reads those words as their fields where it knows them, and walks again with nothing trusted where they give the
+   * builtin what the scan did not read, or where it does not know them (`Trust.deferred`). A variable they expand
+   * must not be set by such a reading, nor become a nameref's target.
    */
   private readDeferred(): void {
-    const plans = this.deferred.map((d) => ({ d, ...deferredReadings(d, (name) => this.writes.get(name), this.writes.has('IFS'), this.shell) }));
-    const read = new Map<string, number>();
-    for (const { d, readings } of plans) {
-      if (!readings) continue;
-      for (const name of [...d.words.flatMap((u) => u.names), ...(d.words.some((u) => u.unquoted) ? ['IFS'] : [])]) read.set(name, this.writes.get(name)?.length ?? 0);
+    const plans = this.deferred.map((d) => ({ d, ...deferredReadings(d, (name) => this.valuesOf(name), this.writes.has('IFS'), this.shell, this.posix) }));
+    const read = new Map<string, string>();
+    const seen = (name: string): string => `${this.writes.get(name)?.length ?? 0} ${this.refTargets.has(name)}`;
+    for (const { d } of plans) for (const name of [...d.words.flatMap((u) => u.names), ...(d.words.some((u) => u.unquoted) ? ['IFS'] : [])]) read.set(name, seen(name));
+    for (const { d, plan, readings } of plans) {
+      for (const fieldsOf of readings.length ? readings : [undefined]) this.builtinWords(d.c, d.name, d.args, d.spec, undefined, d.w, fieldsOf);
+      for (const w of plan.words) this.plans.set(w, plan);
+      this.planned.push(d.w);
     }
-    for (const { d, readings, expands } of plans) {
-      for (const fieldsOf of readings ?? [undefined]) this.builtinWords(d.c, d.name, d.args, d.spec, undefined, d.w, fieldsOf);
-      if (expands) for (const u of d.words) this.expanded.add(u.word);
-    }
-    for (const [name, count] of read) if ((this.writes.get(name)?.length ?? 0) !== count) this.blindFor('a builtin may set a variable whose value gives the words of a builtin');
+    for (const [name, was] of read) if (seen(name) !== was) this.blindFor('a builtin may set a variable whose value gives the words of a builtin');
+  }
+
+  /** The values the script gives the variable `name`, where the walk follows each (`valuesWritten`). */
+  written(name: string): (string | null)[] | undefined {
+    return valuesWritten(name, this.writes.get(name) ?? [], this.refTargets.has(name));
+  }
+
+  /**
+   * Every value bash may give the variable `name` where a builtin's word reads it (`written`), for the scan's
+   * readings; undefined also where the script gives it no text: its value there is the environment's.
+   */
+  private valuesOf(name: string): (string | null)[] | undefined {
+    const texts = this.written(name);
+    return texts && texts.length > 1 ? texts : undefined;
   }
 
   /** What is left once the whole script is read: subscripts, integers, the values read as arithmetic, callbacks. */
@@ -887,62 +885,14 @@ class Scan {
         this.copied.set(c.owner, set);
       }
     }
-    // The values of the names read as arithmetic are run as expressions: each must be text the script wrote.
-    const queue = [...this.arith];
-    const seen = new Set(queue);
-    while (queue.length) {
-      const name = queue.pop()!;
-      if (alwaysNumeric(name)) continue;
-      const writes = this.writes.get(name);
-      if (!writes) {
-        this.blindFor(`arithmetic reads \`${name}\`, which the script never sets`);
-      }
-      if (this.refUnknown.has(name)) this.blindFor(`arithmetic reads \`${name}\`, a nameref whose target is not known`);
-      if (writes.every((w) => w.append)) this.blindFor(`arithmetic reads \`${name}\`, which only \`+=\` sets`);
-      for (const w of writes) {
-        if (w.value === 'unknown' && !w.nameref) this.blindFor(`arithmetic reads \`${name}\`, which may be set to text not known`);
-        if (w.value === 'kept') this.blindFor(`arithmetic reads \`${name}\`, which a declaration may keep from the environment`);
-        if (typeof w.value !== 'object') continue;
-        for (const x of w.value.names) {
-          if (!seen.has(x)) {
-            seen.add(x);
-            queue.push(x);
-            this.arith.add(x);
-          }
-        }
-      }
-    }
-    // A command named by a variable: each value the script gives it must be a command that changes nothing, or a
-    // function (which runs where the walk does not see it); unquoted, not empty (`cmd=; $cmd eval x=2` runs `eval`).
-    for (const { name, quoted } of this.commandVariables) {
-      const writes = this.writes.get(name) ?? [];
-      if (!writes.length || (!quoted && this.writes.has('IFS'))) this.blindFor('a command name not known');
-      for (const w of writes) {
-        const v = w.value;
-        if (!w.plain || typeof v !== 'object' || !v.fixed || (!quoted && (v.text === '' || /[\s*?[]/.test(v.text)))) this.blindFor('a command name not known');
-        else if (this.functions.has(v.text)) this.callbacks.add(v.text);
-        else if (builtins[v.text] && !SAFE_BUILTINS.has(v.text)) this.blindFor('a command name not known');
-      }
-    }
-    // PS4 is expanded before each command `set -x` traces (also `bash -x script`): a value that may assign (arithmetic,
-    // `${x:=w}`, a subscript) or run a command changes the shell where the walk does not see it.
-    for (const w of writesOf('PS4')) {
-      // (A value kept from the environment is assumed quiet: README, Limitations.)
-      if (w.value !== 'none' && w.value !== 'kept' && w.value !== 'number' && (w.value === 'unknown' || !w.value.fixed || !quietPrompt(w.value.text))) this.blindFor('PS4, which `set -x` expands before each command, may assign or run a command');
-    }
+    const why = arithReads(this.arith, this.writes, this.refUnknown) ?? commandNames(this.commandVariables, this.writes, this.functions, this.callbacks) ?? ps4Writes(writesOf('PS4'));
+    if (why) this.blindFor(why);
     // A nameref whose target is not known, assigned or unset: any variable may change. Read, too: bash expands the
     // target's subscript (`declare -n r=$1; : "$r"` with `$1` = `a[u=2]` sets `u`).
     for (const r of this.refUnknown) if (this.writes.get(r)!.some((w) => !w.nameref)) this.blindFor('a nameref whose target is not known is assigned');
     for (const r of this.refUnknown) if (this.reads.has(r)) this.blindFor('a nameref whose target is not known is read');
-    // `${x@P}` expands the value again, as a prompt: each value the script gives it must run nothing and assign nothing,
-    // and none may be added with `+=` (`x='\0'; x+='44((u=2))'` joins texts that are quiet alone).
-    for (const name of this.prompts) {
-      const writes = this.writes.get(name);
-      if (!writes || changedUnseen(name) || this.refUnknown.has(name) || this.refTargets.has(name)
-        || writes.some((w) => w.append || w.value === 'unknown' || w.value === 'kept' || (typeof w.value === 'object' && (!w.value.fixed || !quietPrompt(w.value.text))))) {
-        this.blindFor('a prompt expansion (`@P`) of a value that may run a command or assign');
-      }
-    }
+    const prompt = promptReads(this.prompts, this.writes, this.refUnknown, this.refTargets);
+    if (prompt) this.blindFor(prompt);
     // The functions a callback, a trap or a foreign text may run, and those they call.
     const reached = [...this.callbacks];
     const run = new Set(reached);
@@ -956,6 +906,9 @@ class Scan {
     }
     this.callbacks.clear();
     for (const f of run) this.callbacks.add(f);
+    // (The walk checks the fields of a builtin's words where it runs the builtin: not in a trap's action, an alias's
+    // text, or a function a callback runs, where their values are those of when bash runs it.)
+    if (this.planned.some((w) => !w.now || (w.fn !== undefined && run.has(w.fn)))) this.blindFor('a builtin is given a word not known where the walk does not run it');
     if (this.foreignChanges || [...run].some((f) => this.changes.has(f))) this.blindFor('a trap, a callback or a foreign text changes options, functions or aliases');
   }
 }
@@ -967,13 +920,14 @@ class Scan {
  * the file's host defines (a bats file: `run`, `load`…), read by their specs. `opening`: what the shebang starts bash
  * with (`#!/bin/bash -k`).
  */
-export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST, opening: Opening | undefined, shell: Shell | undefined, version?: BashVersion): Trust {
-  const scan = new Scan(root, strings, host, opening, shell, version);
+export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST, opening: Opening | undefined, shell: Shell | undefined, version?: BashVersion, posix = false): Trust {
+  const scan = new Scan(root, strings, host, opening, shell, version, posix);
   if (scan.blind) return { ...BLIND, blind: scan.blind };
   const unseen = new Set<string>();
   for (const [name, ws] of scan.writes) if (ws.some((w) => w.foreign || (w.fn !== undefined && scan.callbacks.has(w.fn)))) unseen.add(name);
   // (Asked once per use of a variable, as the colouring does: kept per name, as the writes of a name are many.)
   const trusted = new Map<string, boolean>();
+  const known = new Map<string, boolean>();
   return {
     blind: undefined,
     variable: (name) => trusted.get(name) ?? trusted.set(name, NAME.test(name) && !changedUnseen(name) && !scan.arith.has(name) && !unseen.has(name)
@@ -993,6 +947,7 @@ export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HO
     },
     mayFail: (n) => scan.fails.has(n),
     fdsMayClose: scan.fdsClose,
-    expands: (w) => scan.expanded.has(w),
+    deferred: (w) => scan.plans.get(w),
+    valuesKnown: (name) => known.get(name) ?? known.set(name, !unseen.has(name) && !scan.arith.has(name) && scan.written(name) !== undefined).get(name)!,
   };
 }

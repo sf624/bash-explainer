@@ -37,8 +37,8 @@ function changesOnlyNames(c: SyntaxNode, name: string, shell: Shell | undefined,
   if (!prefixAssignments(c).every((a) => quiet(writeEffect(field(a, 'name')!.text)))) return false;
   if (!Object.hasOwn(builtins, name)) return true;
   const args = fields(c, 'argument');
-  // (A word read as its fields may give any option, `x='-C f'; mapfile $x`: the scan read it so, `Trust.expands`.)
-  return quiet(builtinRow(name)) && !args.some((a) => trust.expands(a)) && callbacks(builtinRead(name, args, shell)).length === 0;
+  // (A word read as its fields may give any option, `x='-C f'; mapfile $x`: the scan read it so, `Trust.deferred`.)
+  return quiet(builtinRow(name)) && !args.some((a) => trust.deferred(a)?.written === false) && callbacks(builtinRead(name, args, shell)).length === 0;
 }
 
 /** What the walk decides of its conditions, and the values they read (src/semantics/words.ts evaluates their words). */
@@ -329,6 +329,18 @@ export class WalkConditions {
     }
   }
 
+  /** The values `deferredFields` reads, from `valuesState`: those of `source`, of a variable whose values the walk follows. */
+  private readonly listed: WalkSource = {
+    ...this.source,
+    variable: (name) => {
+      const st = this.valuesState;
+      if (!NAME.test(name) || !this.w.trust.valuesKnown(name) || st.variables.get(name)?.kept) return undefined;
+      this.w.assumed = false;
+      const v = this.w.variableText(st, name, (x) => this.w.trust.valuesKnown(x));
+      return this.w.assumed ? undefined : v;
+    },
+  };
+
   /** The walk's values (`source`), read from `st`. */
   private values(st: ShellState): WalkSource {
     this.valuesState = st;
@@ -367,6 +379,15 @@ export class WalkConditions {
   /** The fields of the word `w` of a command, from `st`, when they are known: `\declare a=$v` declares each. */
   fieldsOf(w: SyntaxNode, st: ShellState): string[] | undefined {
     return wordIn(w, st, this.values(st), 'fields', this.ifsFollowed(st));
+  }
+
+  /**
+   * The fields of the word `w` of a builtin that the trust scan read as fields (`Trust.deferred`), from `st`, when
+   * they are known: from the variables whose every value the walk follows (`Trust.valuesKnown`), unset ones too.
+   */
+  deferredFields(w: SyntaxNode, st: ShellState): string[] | undefined {
+    this.valuesState = st;
+    return wordIn(w, st, this.listed, 'fields', this.ifsFollowed(st));
   }
 
   /** Whether word splitting follows the IFS of `st` in a condition: not one the script set, or may set where the walk does not see it. */
