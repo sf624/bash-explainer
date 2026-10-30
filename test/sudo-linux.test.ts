@@ -26,6 +26,12 @@ describe('sudo on Linux has no -a and no -c', () => {
       assert.ok(t.explanation.includes(text) && t.explanation.includes('BSD'), t.explanation);
     }
   });
+  it('says that sudo refuses a long BSD option too, also with a value after `=`', () => {
+    for (const line of ['sudo --login-class=x ls', 'sudo --login-class x ls']) {
+      const t = allTokens(explain(line).items).find((x) => x.label.startsWith('--login-class'))!;
+      assert.ok(t.explanation.includes('does not have'), t.explanation);
+    }
+  });
   it('does not read -cf of `sudo -u $u tar -cf x y` as a login class when $u gives nothing', () => {
     const y = allTokens(explain('sudo -u $u tar -cf x y').items).find((x) => x.label === 'y')!;
     assert.ok(!/argument of `x`/.test(y.explanation), y.explanation);
