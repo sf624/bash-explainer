@@ -6,6 +6,7 @@ import { system } from './system';
 import type { CommandSpec, OperandSpec, OptionSpec, PatternOption } from '../argv/spec';
 import { tx } from '../i18n';
 import { basic, DATE_OPERANDS } from './basic';
+import { findSpec } from './findspec';
 import { psLetters } from './psletters';
 import { SUDO_BSD_OPTIONS, SUDO_UNKNOWN_OPTION } from './sudoopts';
 import { storage } from './storage';
@@ -222,14 +223,6 @@ const AWK_FILES: OperandSpec = {
     'Variable assignment `name=value`: sets the awk variable before the files after it are read (escapes such as `\\t` are processed, but unlike with `-v`, `BEGIN` does not see it)',
   ),
 };
-
-/**
- * find reads only `-H`, `-L` and `-P` as options, before the starting points; the words from the first test or
- * action on are an expression (`operandParser`), whose words are read with all of its options (`expressionSpec`).
- */
-const findSpec = (spec: CommandSpec): CommandSpec => ({
-  ...spec, options: spec.options!.filter((o) => o.names.some((n) => /^-[HLP]$/.test(n))), operandParser: 'find-expression', expressionSpec: spec,
-});
 
 const signalOpts = (): OptSpec[] => [
   ['-HUP', 'SIGHUP を送る（設定の再読み込み）', 'send SIGHUP (reload configuration)'],

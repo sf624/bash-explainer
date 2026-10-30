@@ -248,6 +248,11 @@ const CASES: Case[] = [
     },
     seen: (r) => (r.status ? 'refused' : r.out.trim()),
   })),
+  // (find reads the starting points before its expression only: `*.txt` that the shell turns into several words after `-name`
+  // leaves the others after the expression began, which find refuses: "paths must precede expression".)
+  { line: 'find . -name $f', vars: { $f: ['a.txt', 'b.txt', 'c.txt', 'd.txt'] }, tool: 'find', usable: () => gnu('find'), setup: 'echo > a.txt; echo > b.txt',
+    expect: (_, roles) => (roles.some((r) => (r?.role === 'operand' && r.spec?.extra?.says === 'paths must precede expression') || (r?.role === 'option' && r.missing)) ? 'refused' : 'ran'),
+    seen: (r) => (r.status ? 'refused' : 'ran') },
   // (Not run: sudo's `-u` takes the next word as the user, as its manual says; `sudo -u tar -cf x y` runs nothing.)
   { line: 'sudo -u $u tar -cf x y', vars: { $u: ['root', 'p', 'q', 'r'] }, tool: 'sudo', usable: () => true, dry: true, only: ['-u', '$u', 'tar'] },
   // ---- The cases of docs/design/count-hedges.md, 1.2: the explanation reads one word's count at a time, and the options once.
@@ -323,6 +328,14 @@ function rolesOf(tool: string, argv: string[], program = false, owner: number[] 
     }
   };
   walk(parse.roles, -1);
+  // (find's expression is read as a whole by its own spec: a word no test or action takes is an operand it refuses.)
+  if (parse.expression !== undefined) {
+    const at = parse.expression;
+    for (const { word, role } of interpret(spec.expressionSpec!, argv.slice(at).map((value) => ({ value })), { name: tool, lookup: lookupCommand }).roles) {
+      out[at + word] = role;
+      owner[at + word] = -1;
+    }
+  }
   return out;
 }
 
