@@ -60,6 +60,48 @@ export function arithReads(arith: Set<string>, writesOf: ReadonlyMap<string, rea
   return undefined;
 }
 
+/** The names `start` leads to by `next`, with `start`. */
+export function reachable(start: Iterable<string>, next: (name: string) => Iterable<string> | undefined): Set<string> {
+  const out = new Set(start);
+  for (const todo = [...out]; todo.length;) {
+    for (const x of next(todo.pop()!) ?? []) {
+      if (out.has(x)) continue;
+      out.add(x);
+      todo.push(x);
+    }
+  }
+  return out;
+}
+
+/**
+ * The writes through the namerefs (`edges`: the names each refers to; `writes`: each one's own, of its declaration
+ * and after), by the variables they reach, also through a chain, each passed to `row` as it is found. `unknown`, the
+ * namerefs whose target is not known, gets those that refer to one: they read and assign through it (`declare -n
+ * a=b` with `declare -n b=$1`).
+ */
+export function throughNamerefs(edges: ReadonlyMap<string, ReadonlySet<string>>, unknown: Set<string>, writes: ReadonlyMap<string, readonly Write[]>, row: (target: string, value: Value) => void): Map<string, Write[]> {
+  for (let more = true; more;) {
+    more = false;
+    for (const [r, targets] of edges) {
+      if (!unknown.has(r) && [...targets].some((t) => unknown.has(t))) {
+        unknown.add(r);
+        more = true;
+      }
+    }
+  }
+  const via = new Map<string, Write[]>();
+  for (const [r, targets] of edges) {
+    const reached = reachable(targets, (t) => edges.get(t));
+    for (const x of writes.get(r)!.filter((x) => !x.nameref)) {
+      for (const t of reached) {
+        row(t, x.value);
+        via.set(t, [...(via.get(t) ?? []), x]);
+      }
+    }
+  }
+  return via;
+}
+
 /**
  * The variables a declaration gives a value not known that may start with `(` (`declare "a=$x"`, without -a or -A):
  * bash reads it again as a compound assignment, which may run any code (`x='([u=2]=1)'`), where the variable is an

@@ -53,7 +53,7 @@ import { inExtendedTest, testSplits, testWordShape } from './testwords';
 import { BLIND, type HostCommands, NO_HOST, type StringTrees, type Trust } from './trustmodel';
 import { COPY, identifiers, joined, writtenValue } from './written';
 import { ARITH_ASSIGNED, assignsArithmetic, changedUnseen, localeVariable, optionRoles, readDeclarationWords, writeEffect, type Declaration } from './vars';
-import { arithReads, commandNames, compoundReads, promptReads, ps4Writes, valuesWritten, type Value, type Write } from './writechecks';
+import { arithReads, commandNames, compoundReads, promptReads, ps4Writes, reachable, throughNamerefs, valuesWritten, type Value, type Write } from './writechecks';
 
 export { BLIND, type HostCommands, NO_HOST, type StringTrees, type Trust, withinTrust } from './trustmodel';
 
@@ -494,15 +494,13 @@ class Scan {
   }
 
   /**
-   * The value of `name` that the declaration word `o` gives, which bash reads again as a compound assignment when it
-   * starts with `(` and ends with `)`, once expanded, and the declaration gives -a or -A (`explicit`), or the variable
-   * is an array there (in its scope: a local in a function, a nameref's target): `declare -a 'a=([u=2]=1)'`,
-   * `a=(); declare "a=$x"`. It then expands the elements, and runs the subscripts as arithmetic unless the array is
-   * associative, as in `a=(…)`. `text`: the value, where it is known; `start`: the text known at its start otherwise.
-   * A value known is read so whether or not the variable is an array there, which the scan does not know: as foreign
-   * text the walk does not run, whose arithmetic is checked where the declaration runs (`rereads`), and which may fail
-   * there. One not known that may start with `(` trusts nothing with -a or -A, and else where the variable may be an
-   * array somewhere (`compoundReads`).
+   * The value `text` (undefined: not known; `start`: the text known at its start) of `name`, given by the declaration
+   * word `o`. Bash reads it again as a compound assignment, which expands the elements and runs the subscripts as
+   * arithmetic (as keys, `associative`), when it starts with `(` and ends with `)` and the declaration gives -a or -A
+   * (`explicit`), or the variable is an array there, in the scope it assigns: `declare -a 'a=([u=2]=1)'`, `a=();
+   * declare "a=$x"`. A value known is read so either way (the scan does not know which variable is an array where), as
+   * foreign text the walk does not run, checked and failing where the declaration runs (`rereads`). One not known that
+   * may start with `(` trusts nothing with -a or -A, and else where the variable may be an array (`compoundReads`).
    */
   private compoundValue(o: SyntaxNode, name: string, text: string | undefined, start: string, explicit: boolean, associative: boolean, w: Where): void {
     if (text === undefined) {
@@ -917,37 +915,8 @@ class Scan {
         else this.arithText(t.text, t.where, t.owner);
       }
     }
-    // (A nameref that refers to one whose target is not known reads and assigns through it: `declare -n a=b` with
-    // `declare -n b=$1`.)
-    for (let more = true; more;) {
-      more = false;
-      for (const [r, targets] of this.refEdges) {
-        if (!this.refUnknown.has(r) && [...targets].some((t) => this.refUnknown.has(t))) {
-          this.refUnknown.add(r);
-          more = true;
-        }
-      }
-    }
-    // A write through a nameref is one of its targets, also through a chain, by their rows (`declare -n r=BASH_COMPAT;
-    // r=42`), and is read with their writes below (PS4, IFS).
-    const via = new Map<string, Write[]>();
-    for (const [r, targets] of this.refEdges) {
-      const reached = new Set(targets);
-      for (const todo = [...targets]; todo.length;) {
-        for (const t of this.refEdges.get(todo.pop()!) ?? []) {
-          if (reached.has(t)) continue;
-          reached.add(t);
-          todo.push(t);
-        }
-      }
-      // (Each nameref has the write of its declaration.)
-      for (const x of this.writes.get(r)!.filter((x) => !x.nameref)) {
-        for (const t of reached) {
-          this.variableRow(t, x.value);
-          via.set(t, [...(via.get(t) ?? []), x]);
-        }
-      }
-    }
+    // (A write through a nameref is one of its targets, by their rows: `declare -n r=BASH_COMPAT; r=42`.)
+    const via = throughNamerefs(this.refEdges, this.refUnknown, this.writes, (t, value) => this.variableRow(t, value));
     const writesOf = (name: string): Write[] => [...(this.writes.get(name) ?? []), ...(via.get(name) ?? [])];
     // An unquoted expansion in a word of `test` or `[`: each value the script gives it must stay one word, and not be
     // `-v`, with every IFS the script sets (a number, with no IFS of digits or `-`).
@@ -972,16 +941,7 @@ class Scan {
     const prompt = promptReads(this.prompts, this.writes, this.refUnknown, this.refTargets);
     if (prompt) this.blindFor(prompt);
     // The functions a callback, a trap or a foreign text may run, and those they call.
-    const reached = [...this.callbacks];
-    const run = new Set(reached);
-    while (reached.length) {
-      for (const g of this.calls.get(reached.pop()!) ?? []) {
-        if (!run.has(g)) {
-          run.add(g);
-          reached.push(g);
-        }
-      }
-    }
+    const run = reachable(this.callbacks, (f) => this.calls.get(f));
     this.callbacks.clear();
     for (const f of run) this.callbacks.add(f);
     // (The walk checks the fields of a builtin's words where it runs the builtin. A trap's action, an alias's text or a
