@@ -503,8 +503,8 @@ describe("an option's value that may give no word (after #482)", () => {
     // subcommand say it, as an option before them does: `sudo -u -i ls` runs `ls` as the user `-i`; `git -C -p status`
     // fails "cannot change to '-p'". With two words of `$u`, `sudo -u a b -i ls` runs `b`, a command the dictionary does
     // not describe, whose words are its arguments.)
-    assert.strictEqual(tokenOf('sudo -u $u ls', 'ls').explanation, 'runs `ls`: List directory contents. When `$u` expands to nothing, it is value for `-u`. When `$u` expands to several words, it is argument of `$u`');
-    assert.match(tokenOf('sudo -u $u -i ls', '-i').explanation, /\. When `\$u` expands to nothing, it is value for `-u`\. When `\$u` expands to several words, it is argument of `\$u`$/);
+    assert.strictEqual(tokenOf('sudo -u $u ls', 'ls').explanation, 'runs `ls`: List directory contents. When `$u` expands to nothing, it is value for `-u`. When `$u` expands to several words, it is argument of the command a word of `$u` names');
+    assert.match(tokenOf('sudo -u $u -i ls', '-i').explanation, /\. When `\$u` expands to nothing, it is value for `-u`\. When `\$u` expands to several words, it is argument of the command a word of `\$u` names$/);
     assert.match(tokenOf('git -C $d -p status', '-p').explanation, /\. When `\$d` expands to nothing, it is value for `-C`$/);
     assert.match(tokenOf('git -C $d -p status', 'status').explanation, /^Subcommand `git status`/);
   });
@@ -554,13 +554,13 @@ describe("an option's value that may give no word (after #482)", () => {
     // (Words the spec does not describe, a command run: the words after it. `jq --arg a b c v .` takes `b` as the value,
     // `c` as the filter, and `v` as a file.)
     assert.strictEqual(tokenOf('tar -cf $a b', '$a', 'ja').explanation, '`-f` オプションの値。`$a` が2語以上に展開されるときは、その最初の語がこの役割で、残りの各語は引数');
-    assert.strictEqual(tokenOf('sudo -u $u tar -cf x y', '$u').explanation, 'Value for `-u`; when `$u` expands to several words, this is the role of the first word `$u` gives, and the others are command to run, then argument of `$u`');
+    assert.strictEqual(tokenOf('sudo -u $u tar -cf x y', '$u').explanation, 'Value for `-u`; when `$u` expands to several words, this is the role of the first word `$u` gives, and the others are command to run, then argument of the command a word of `$u` names');
     assert.strictEqual(tokenOf('jq --arg $n v .', '$n').explanation, 'Name for `--arg` (use it as `$name` in the filter); when `$n` expands to several words, this is the role of the first word `$n` gives, and the others are value for `--arg`, jq filter (e.g. `.items[].name`), then input JSON file');
     // (`seq -s x 1`: `1` is the last, counting from 1; `seq -s x y 1`, the last after the first `y`; `seq -s x y z w 1`, an
     // extra operand.)
     assert.strictEqual(tokenOf('seq -s $a 1', '1').explanation, 'last (counting from 1). When `$a` expands to nothing, it is value for `-s`. When `$a` expands to 2 words, or when `$a` expands to 3 words, it is last. When `$a` expands to 4 words or more, it is extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)');
     // (`timeout -s KILL x 5 ls` runs `5`, `timeout -s KILL x y 5 ls` runs `y` with the argument `5`; `jq --arg "$x"a "$x"b`, the name and its value; `sudo -u "$x"a "$x"b ls` runs `"$x"b`.)
-    assert.strictEqual(tokenOf('timeout -s $s 5 ls', '5').explanation, 'time limit (`5`, `30s`, `2m`, `1h`). When `$s` expands to nothing, it is value for `-s`. When `$s` expands to 2 words, it is command to run. When `$s` expands to 3 words or more, it is argument of `$s`');
+    assert.strictEqual(tokenOf('timeout -s $s 5 ls', '5').explanation, 'time limit (`5`, `30s`, `2m`, `1h`). When `$s` expands to nothing, it is value for `-s`. When `$s` expands to 2 words, it is command to run. When `$s` expands to 3 words or more, it is argument of the command a word of `$s` names');
     assert.strictEqual(tokenOf('jq --arg "$x"{a,b} . f', '"$x"{a,b}').explanation, 'expands to `"$x"a` (name for `--arg`) and `"$x"b` (value for `--arg`)');
     assert.strictEqual(tokenOf('sudo -u "$x"{a,b} ls', '"$x"{a,b}').explanation, 'expands to `"$x"a` (value for `-u`) and `"$x"b` (the command to run)');
     // (The same roles after two values are one reading: `seq -s x y -f %g 1`, `seq -s : -f x y 1`.)
@@ -570,6 +570,25 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.match(tokenOf('su -s $s -c ls', 'ls').explanation, /^Value for `-c`\. The shell that runs it is not known here/);
     // (Nothing where the words after it keep their role: `head -n 1 g f` reads `f` as a file still.)
     assert.strictEqual(tokenOf('head -n $a f', 'f').explanation, 'target file. When `$a` expands to nothing, it is value for `-n`');
+  });
+
+  it('reads a word of a known start, and one of two words or more, at every count (review of #516; jq and GNU grep)', function () {
+    this.timeout(20000);
+    // (A word of a known start whose first field is one word: its first word keeps the start, the others are the words
+    // after it. `grep -e xy g f` searches `g` and `f`; `sudo -u ua b ls` runs `b`.)
+    assert.strictEqual(tokenOf('gcc -o bin/$n a.c', 'bin/$n').explanation, 'Value for `-o`; when `bin/$n` expands to several words, this is the role of the first word `bin/$n` gives, and each of the others is source file');
+    assert.strictEqual(tokenOf('grep -e x$p f', 'x$p').explanation, 'Value for `-e`: specify a pattern (useful for several or `-`-prefixed ones); when `x$p` expands to several words, this is the role of the first word `x$p` gives, and each of the others is file to search (default: stdin)');
+    assert.strictEqual(tokenOf('sudo -u u$u ls', 'ls').explanation, 'runs `ls`: List directory contents. When `u$u` expands to several words, it is argument of the command a word of `u$u` names');
+    // (A word of two words or more is read as written at its fewest: `jq --arg Xa Xb . f` takes `.` as the filter, with
+    // `y` empty or `p`, and `jq --arg a b . f` too, with no positional parameters.)
+    const filter = 'jq filter (e.g. `.items[].name`)';
+    assert.strictEqual(tokenOf('jq --arg "$x"{a,b}$y . f', '.').explanation, `${filter}. When \`"$x"{a,b}$y\` expands to 3 words or more, it is input JSON file`);
+    assert.strictEqual(tokenOf('jq --arg "$x"{a,b}$y . f', '"$x"{a,b}$y').explanation, `its words are name for \`--arg\`, value for \`--arg\`, ${filter}, then input JSON file`);
+    assert.strictEqual(tokenOf('jq --arg "$x"{a,b}$y . f', '"$x"{a,b}$y', 'ja').explanation, '順に `--arg` の名前・`--arg` の値・jq フィルタ（例: `.items[].name`）・入力 JSON ファイル');
+    assert.strictEqual(tokenOf('jq --arg "$@"{a,b} . f', '.').explanation, `${filter}. When \`"$@"{a,b}\` expands to 3 words or more, it is input JSON file`);
+    assert.strictEqual(tokenOf('jq --arg n "$@"{a,b} f', 'f').explanation, 'input JSON file');
+    const out = runBash('printf 1 > f; printf "xy\\n" > g; x=X; for y in "" p; do jq --arg "$x"{a,b}$y . f; done; set --; jq --arg "$@"{a,b} . f; p="y g"; grep -e x$p f', { files: ['.keep'] }).stdout;
+    assert.deepStrictEqual(out.split('\n').filter(Boolean), ['1', '1', '1', 'g:xy']);
   });
 
   it('reads every count up to the bound of the spec (`wordsBound`)', () => {
@@ -586,7 +605,7 @@ describe("an option's value that may give no word (after #482)", () => {
     assert.strictEqual(tokenOf('git -C $d log', 'log').explanation, 'Subcommand `git log`: Show commit logs (to the shell it is an argument to `git`, which interprets it itself). When `$d` expands to nothing, it is value for `-C`. When `$d` expands to several words, it is argument');
     assert.strictEqual(tokenOf('git -C $d log', 'log', 'ja').explanation, 'サブコマンド `git log`: コミット履歴を表示する（シェルから見れば `git` への引数で、`git` 自身が解釈する）。`$d` が0語なら `-C` オプションの値。`$d` が2語以上なら引数');
     const tar = allTokens(new Analyzer('en').explainLine(parser.parse('sudo -u $u tar -cf x y'), 0).items).find((t) => t.kind === 'command' && t.label.startsWith('tar'))!;
-    assert.strictEqual(tar.explanation, 'runs `tar`: Create or extract tar archives. When `$u` expands to nothing, it is value for `-u`. When `$u` expands to several words, it is argument of `$u`');
+    assert.strictEqual(tar.explanation, 'runs `tar`: Create or extract tar archives. When `$u` expands to nothing, it is value for `-u`. When `$u` expands to several words, it is argument of the command a word of `$u` names');
   });
 
   it('runs those lines in bash, GNU tar, cp, grep and git as said', function () {
