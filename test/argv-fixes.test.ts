@@ -607,4 +607,29 @@ describe("an option's value that may give no word (after #482)", () => {
     // A subcommand's unknown option points to the program's manual.
     assert.strictEqual(tokenOf('git nope --zzz', '--zzz').explanation, 'Option (not in the dictionary; see `man git`)');
   });
+
+  it('reads a command word with a glob as the alias or the function of that name when there is one (bash expands aliases before globs)', () => {
+    // bash 5.2: `alias 'l*=echo ALIAS'` with a file `lx`: `l* -Z` prints `ALIAS -Z`; `f*() { echo FUNC "$@"; }` runs when no
+    // file matches `f*`, and the first matching file name runs as the command when one does (checked with bash).
+    const last = (src: string, label: string, lang: 'en' | 'ja' = 'en'): Token => {
+      const t = allTokens(new Analyzer(lang).explainLine(parser.parse(src), src.split('\n').length - 1).items).find((x) => x.label === label);
+      assert.ok(t, `no token for ${label} in ${src}`);
+      return t;
+    };
+    const alias = "shopt -s expand_aliases; alias 'l*=ls'\nl* -Z";
+    assert.strictEqual(last(alias, 'l*').kind, 'alias');
+    assert.match(last(alias, 'l*').explanation, /^The alias `l\*` defined on line 1: replaced by `ls`/);
+    assert.strictEqual(last(alias, '-Z').explanation, 'print the SELinux security context');
+    const fn = 'f*() { echo FUNC "$@"; }\nf* -x';
+    assert.strictEqual(last(fn, 'f*').kind, 'function');
+    assert.strictEqual(last(fn, 'f*').explanation, 'Call the function `f*` defined on line 1. But if a file matches the name, the command of the first matching file name runs instead');
+    assert.strictEqual(last(fn, 'f*', 'ja').explanation, 'このスクリプトの行 1 で定義された関数 `f*` を呼び出す。ただし、名前に一致するファイルがあれば、その最初のファイル名のコマンドが代わりに実行される');
+    // (Not a glob: no such sentence.)
+    assert.doesNotMatch(last('f() { :; }\nf -x', 'f').explanation, /matches the name/);
+    // The expansion branch is not about variables only: a glob and a substitution are expansions too.
+    for (const [line, word] of [['*.sh -x', '*.sh'], ['x[12] -x', 'x[12]'], ['$(which x) -y', '$(which x)'], ['$cmd -x', '$cmd']]) {
+      assert.strictEqual(tokenOf(line, word).explanation, 'Run the expanded value as a command', line);
+      assert.strictEqual(tokenOf(line, word, 'ja').explanation, '展開した結果をコマンドとして実行する', line);
+    }
+  });
 });
