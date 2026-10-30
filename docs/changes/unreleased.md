@@ -934,7 +934,7 @@ The builtins whose words say what they set or turn on (`set`, `declare`, `typese
 | `u=1; x=-v; printf $x u 2`, then `if [ "$u" = 1 ]` | `printf -v u 2`: `u` is 2 | always true; the `else` never runs | nothing |
 | `set -eZ`, `x=-u1; set $x`, `set -f -C -Q` | "invalid option": bash checks every option first, and turns none on | errexit on (nounset, noglob and noclobber) | none of them |
 
-Each value the script writes to the variable is read, and none (the variable unset there), also with brace expansion off where the word has braces. Where a value is not known (`read -r y; set $y`, `set $1`), the word is read as written, as before: `set` then still trusts nothing, and `printf $y u 2` is still read as a format.
+Each value the script writes to the variable is read, and none (the variable unset there), also with brace expansion off where the word has braces. A word whose fields cannot change what the builtin sets is read as written, as before, also where its values differ from path to path: the arguments after printf's format (`printf "%s\n" "$m"`), a value that names nothing given as one word (`read -r -p "$p" ans`), the words after `set --`, and a format whose values never give an option (`printf "${RED}error${NC}\n"`). Where a value is not known (`read -r y; set $y`, `set $1`), the word is read as written, as before: `set` then still trusts nothing, and `printf $y u 2` is still read as a format.
 
 ### Shell code in host files
 

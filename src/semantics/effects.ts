@@ -235,6 +235,18 @@ export function namesByWords(spec: CommandSpec): boolean {
   return spec.options!.flatMap(valuesOf).some((v) => !!v.sets || v.type === 'function') || !!spec.operands?.some((o) => o.pattern.some((p) => !!p.sets));
 }
 
+/**
+ * What the words `read` gives the builtin `name` decide of what it sets or turns on, as a key two readings of its
+ * words can be compared by (src/semantics/deferred.ts): its options, the variables and functions its words name, the
+ * names a declaration's operands give, and what `set` turns on.
+ */
+export function effectKey(name: string, spec: CommandSpec, read: BuiltinRead, shell: Shell | undefined): string {
+  const { parse } = read;
+  const flags = parse.roles.flatMap(({ role }) => (role.role === 'cluster' ? role.letters : [role])).flatMap((r) => (r.role === 'option' || r.role === 'unknown-option' ? [r.flag] : []));
+  const operands = DECLARATIONS.has(name) ? parse.roles.filter((r) => r.role.role === 'operand').map((r) => read.text(r.word) ?? null) : [];
+  return JSON.stringify([flags, variableWrites(spec, read).map((v) => [v.name ?? null, v.sets]), callbacks(read).map((f) => f ?? null), name === 'set' ? setOptionWrites(read, shell) : [], operands]);
+}
+
 /** The words that name a function the builtin runs later (`mapfile -C f`, `complete -F f`), with their names (undefined: not known here). */
 export function callbacks(read: BuiltinRead): (string | undefined)[] {
   return givenValues(read.parse).filter((v) => v.spec?.type === 'function').map((v) => read.text(v.word)?.slice(v.at));
@@ -243,7 +255,8 @@ export function callbacks(read: BuiltinRead): (string | undefined)[] {
 /**
  * The options `set` turns on or off with the words `read` gives it, in order (`set -e +e` turns errexit on, then
  * off: the last one wins): `-x`, `+x`, `-o name`, `+o name`. A letter `set` does not have is no option (`set +Z` is
- * an error, and in bash then none is turned on), except ksh's `-G` (globstar). A name of `-o` not known here is `undefined`.
+ * an error, and in bash then no letter is turned on), except ksh's `-G` (globstar). A name of `-o` not known here is
+ * `undefined`.
  */
 export function setOptionWrites(read: BuiltinRead, shell?: Shell): { name: string | undefined; on: boolean }[] {
   const out: { name: string | undefined; on: boolean }[] = [];
@@ -252,7 +265,8 @@ export function setOptionWrites(read: BuiltinRead, shell?: Shell): { name: strin
       if (r.role === 'option' || r.role === 'unknown-option') {
         const letter = r.flag.slice(1);
         const name = letter === 'G' && shell === 'ksh' ? 'globstar' : SET_LETTERS[letter];
-        // (bash checks every option before it sets any: `set -eZ` and `set -e -1` fail, and turn nothing on.)
+        // (bash checks every letter before it sets any: `set -eZ` and `set -e -1` fail, and turn nothing on. A name of
+        // `-o` it checks as it comes to it: `set -f +o nosuch` turns `-f` on.)
         if (!name && r.role === 'unknown-option' && (shell ?? 'bash') === 'bash') return [];
         if (name) out.push({ name, on: r.flag[0] === '-' });
       } else if (r.role === 'value') {

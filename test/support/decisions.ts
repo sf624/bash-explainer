@@ -71,6 +71,7 @@ export const GENERATED: Readonly<Record<string, RegExp>> = {
   'set -u': /\bset -u(?=[;\s)]|$)/,
   'set -o pipefail': /\bset -o pipefail\b/,
   'set option': /\bset [-+](?:[aefu]\b|o )/,
+  'builtin fields': /\b(?:set|declare|printf) (?:-- )?"?\$o[dpq]?\b/,
   'shopt -s': /\bshopt -s /,
   nocasematch: /\bshopt -[su] nocasematch\b/,
   // Expansions and redirections.
@@ -79,9 +80,19 @@ export const GENERATED: Readonly<Record<string, RegExp>> = {
   '<<<': /<<< /,
 };
 
+/** The builtins given a word read as the fields of a value (`o=-e; set $o`), and the values `o` takes. */
+const FIELD_WORDS: readonly (readonly [string, string, readonly string[]])[] = [
+  ['o', 'set $o', ['-e', '+e', '-u', '+u', '-f', "'-e -u'", "'a b'", "''"]],
+  ['od', 'declare $od', ["'mode=b'", "'mode=b v=c'", "''", "'-g flag=a'", "'-x v=d'"]],
+  ['op', 'printf $op mode %s b > /dev/null', ['-v', "''", 'x']],
+  ['oq', 'set -- "$oq"', ['-e', "'a b'"]],
+];
+
 /** The scripts' constructs: those of the reviews of the decisions (docs/design/semantics.md, 4.14). */
 class Generator {
   private n = 0;
+  /** How many words of builtins read as fields the scripts have (case 38 of `stmt`). */
+  private fields = 0;
   constructs: Construct[] = [];
   private fns: string[] = [];
   private depth = 0;
@@ -304,6 +315,16 @@ class Generator {
       case 37: if (!this.chance(0.3)) return this.mark();
         return `w=0; ${this.pick(['a=(0); a[0]=$q; q=0; (( a[0] ))', 'a=("$q"); q=0; (( a[0] ))', 'a=(); a+=("$q"); q=0; (( a ))', 'declare -a a=([0]="$q"); q=0; (( a[0] ))',
           'm=~; (( m ))', 'm=~; : "${arr[m]}"', 'm=(~); (( m ))', 'HOME=0; m=~; (( m ))', 'a=(1); a[0]=2; (( a[0] ))'])}; ${this.list('[ "$w" = 0 ]', '&&', this.mark())}`;
+      // A word of a builtin read as the fields of a value the script gives (`o=-e; set $o`): an option there sets what
+      // it names, a name there is declared (src/semantics/deferred.ts). On some paths, another value.
+      // (Chosen in turn, not by the seed, so that the other scripts stay as they were.)
+      case 38: {
+        const k = this.fields++;
+        if (k % 3) return this.mark();
+        const [o, cmd, values] = FIELD_WORDS[(k / 3) % FIELD_WORDS.length];
+        const other = k % 9 === 6 ? `; [ -t 0 ] && ${o}=${values[(k + 1) % values.length]}` : '';
+        return `${o}=${values[k % values.length]}${other}; ${cmd}`;
+      }
       default: return this.mark();
     }
   }

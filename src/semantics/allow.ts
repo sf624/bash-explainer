@@ -184,7 +184,7 @@ const BUILTIN_ROWS: Readonly<Record<string, BuiltinRowOf>> = {
   alias: builtin(followed(['state#alias-unalias'])), unalias: builtin(followed(['state#alias-unalias'])),
   // `-n NAME`, `-ns NAME`, `-n -s NAME`, `-n -a NAME`, `NAME`; all for -f or a name not known.
   enable: builtin(followed(['values#enable-n-exit'])),
-  set: builtin(followed(['state#set-euo-pipefail', 'generator: set option'])), shopt: builtin(followed(['state#shopt-extglob-nullglob', 'generator: shopt -s'])),
+  set: builtin(followed(['state#set-euo-pipefail', 'generator: set option', 'generator: builtin fields'])), shopt: builtin(followed(['state#shopt-extglob-nullglob', 'generator: shopt -s'])),
   // Precondition: no word may be `-v` with an operand that has a subscript. (Their words are the expression's, which
   // the handler reads: `[ -a file ]` is no option.)
   test: builtin(followed(['generator: test']), none()), '[': builtin(followed(['generator: [ test']), none()),
