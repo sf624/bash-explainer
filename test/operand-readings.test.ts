@@ -51,7 +51,7 @@ describe('the readings of an operand, as the explanation says them (count-hedges
     const { base: said, rest } = readingsParts(cxOf('en'), 'Word `5`', readings, 2, nodes);
     assert.strictEqual(said, 'Word `5`');
     assert.deepStrictEqual(rest.split('. ').slice(1).map((c) => c.replace(/^When `\$a` expands to (a single word|\d+ words), it is /, '')), [
-      'argument of `nice`', 'value for `-n`', 'option `-v` (invert) of `nice`', 'option `-z` not in the dictionary of `nice`', 'options `-d`, `-s` of `nice`', 'end of options of `nice`',
+      'argument of `nice`', 'value for `-n`', 'option `-v` (invert) of `nice`', 'option `-z` (not in the dictionary) of `nice`', 'options `-d`, `-s` of `nice`', 'end of options of `nice`',
       'the command to run of the command it runs', 'subcommand `log` of `nice`', 'end of `-exec` of `nice`', 'a word of the expression of `nice`', 'a word of the command string of `nice`', 'argument of `nice`',
     ]);
   });

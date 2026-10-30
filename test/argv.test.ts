@@ -101,10 +101,10 @@ describe('argv capture: the word model and the explanation against bash (oracles
     // (The fields the model knows, then a clause on the others: `p='a b'; cp $p $u`.)
     const fields = 'expands to `a` (source) and `b` (source). When `$u` expands to nothing, its words are source, then destination (the new name, or an existing directory)';
     assert.deepStrictEqual([saysOperand(fields, dest, place('b', 1, 2, [['$u', 0]])), saysOperand(fields, dest, place('b', 1, 2, [['$u', 1]])), saysOperand(fields, ['source'], place('b', 1, 2, [['$u', 1]]))], [true, false, true]);
-    // (The hedge of a value: the part for the words it names when they gave none and this word one; else the part before.)
-    const none = 'Value for `-e`; file to search when `$a`, `$b` expand to nothing';
+    // (The readings of a value: the role of the clause that holds; else its own.)
+    const value = 'Value for `-e`. When `$a` and `$b` expand to nothing, it is file to search';
     const both = (n: number): [string, number][] => [['$a', n], ['$b', n]];
-    assert.deepStrictEqual([saysOperand(none, ['file to search'], place('c', 0, 1, both(0))), saysOperand(none, ['file to search'], place('c', 0, 1, both(1))), saysOperand(none, ['file to search'], place('c', 0, 1, [['$a', 0], ['$b', 1]]))], [true, false, false]);
+    assert.deepStrictEqual([saysOperand(value, ['file to search'], place('c', 0, 1, both(0))), saysOperand(value, ['file to search'], place('c', 0, 1, both(1))), saysOperand(value, ['file to search'], place('c', 0, 1, [['$a', 0], ['$b', 1]]))], [true, false, false]);
     // (A clause in another form is a finding, so that a new wording is seen.)
     assert.strictEqual(saysOperand('source. When `$a` expands to nothing or more, it is target', ['source'], place('a', 0, 1, [['$a', 1]])), false);
   });

@@ -9,9 +9,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { type ArgRole, type ArgWord, interpret, type RoleAt } from '../src/argv/interpret';
 import { roleKey, wordReadings, type WordReadings } from '../src/argv/profiles';
-import { readingsOf, SHAPE_CAP, specsReached, wordsBound, type ReadingsTable } from '../src/argv/readings';
+import { allRoles, readingsOf, SHAPE_CAP, specsReached, wordsBound, type ReadingsTable } from '../src/argv/readings';
 import type { CommandSpec } from '../src/argv/spec';
-import { allRoles } from '../src/argv/valuehedges';
 import { argWord, argWordFor } from '../src/argv/words';
 import { argWordIn, fieldsIn } from '../src/semantics/argwords';
 import { shellState } from '../src/semantics/state';
@@ -97,9 +96,10 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     assert.deepStrictEqual(table('cp -v* $b d').runs.map((r) => [r.words, r.prefix, r.each]), [[[0], '-v', true], [[1], undefined, undefined]]);
     assert.deepStrictEqual(table('cp "$a" b').runs, []);
     assert.deepStrictEqual(table('cp "$a" b').shapes, [[]]);
-    // (A brace word is its known number of words, in a run where it is one.)
-    assert.deepStrictEqual(table('cp {x,y} $a').runs.map((r) => [r.words, r.fixed, r.fewest]), [[[0, 1], 2, 2]]);
-    assert.deepStrictEqual(table('cp {x,y} $a').reading([3]).words.length, 3);
+    // (A brace word of no known text is its known number of words, `interpret`'s `line` (`fieldLine`): no part of a run.)
+    assert.deepStrictEqual(table('cp {x,y} $a').line.slice(0, 2), [{ prefix: '' }, {}]);
+    assert.deepStrictEqual(table('cp {x,y} $a').runs.map((r) => [r.words, r.fixed, r.fewest]), [[[2], 0, 0]]);
+    assert.deepStrictEqual(table('cp {x,y} $a').reading([1]).words.length, 3);
   });
 
   it('domains: each count from its fewest to S more, or to its most; the shapes are sums, real inside a run and capped elsewhere', () => {
@@ -318,9 +318,16 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     });
   });
 
-  it('an integer default gives one word, a number, unless the IFS holds a digit or `-` (bash 5.2)', () => {
+  it('a number, an integer default too, gives one word, unless the IFS holds a digit or `-` (bash 5.2)', () => {
     // (`known`: the count the model gives the word `${…}` of the last command, undefined for one word.)
     const cases: { line: string; count: { min: number; max?: number } | undefined }[] = [
+      { line: 'set -- a b; f $#', count: undefined },
+      { line: 'f $?', count: undefined },
+      { line: 'f $$', count: undefined },
+      { line: 'x=abc; f ${#x}', count: undefined },
+      { line: 'IFS=:; f $((x - 7))', count: undefined },
+      { line: 'IFS=-; f $((x - 7))', count: { min: 1 } },
+      { line: 'IFS=1; f $((11))', count: { min: 2, max: 2 } },
       { line: 'declare -i n; f ${n:=b=5}', count: undefined },
       { line: 'declare -i n=7; f ${n:=b=5}', count: undefined },
       { line: 'IFS=:; declare -i n; f ${n:=5}', count: undefined },
@@ -334,7 +341,7 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     ];
     const out = spawnSync('bash', ['--norc', '-c', cases.map(({ line }) => `(f() { echo $#; }; ${line})`).join('\n')], { encoding: 'utf8', input: '' }).stdout;
     // (bash's counts: one word where the model says so.)
-    assert.deepStrictEqual(out.trim().split('\n').map(Number), [1, 1, 1, 2, 0, 1, 1, 1, 1, 1]);
+    assert.deepStrictEqual(out.trim().split('\n').map(Number), [1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 2, 0, 1, 1, 1, 1, 1]);
     cases.forEach(({ line, count }) => {
       const tree = parser.parse(line);
       const word = descendants(tree.root, ['command']).at(-1)!.namedChildren.at(-1)!;

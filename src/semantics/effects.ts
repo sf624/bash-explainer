@@ -155,7 +155,8 @@ export interface BuiltinRead {
  */
 export function builtinRead(name: string, args: readonly SyntaxNode[], shell: Shell | undefined, spec = builtins[name], fieldsOf?: (n: SyntaxNode) => readonly string[] | undefined, more = 0): BuiltinRead {
   const plain = argWordFor(shell);
-  const { line, groups, own } = fieldLine(args.map((a) => (fieldsOf ? { ...plain(a), fields: () => fieldsOf(a) } : plain(a))));
+  // (A word of a known number of words whose texts are not known stays one word here, as `args` has it: `interpret` reads its words.)
+  const { line, groups, own } = fieldLine(args.map((a) => (fieldsOf ? { ...plain(a), fields: () => fieldsOf(a) } : plain(a))), false);
   const back = lineIndex(groups);
   // (The fields are read as words of known text: not as a word read again by its fields.)
   const parse = interpret(spec, [...line.map(({ fields: _, ...w }) => w), ...Array.from({ length: more }, () => ({ value: 'x' }))], { name });

@@ -1,6 +1,5 @@
-// The hedges of words whose role depends on how many words a variable gives, none or several (an operand's readings,
-// src/argv/profiles.ts; `valueHedges` in src/argv/valuehedges.ts: `none`, `more` and `rest`), compared with bash
-// and the real tools. Each variable gives every count from none to four; for each count, the interpreter reads the line
+// The hedges of words whose role depends on how many words a variable gives, none or several (the readings of the role
+// of each word, src/argv/profiles.ts), compared with bash and the real tools. Each variable gives every count from none to four; for each count, the interpreter reads the line
 // with the variables' words written out, and the explanation of the line as written must allow the role of every word
 // it gives under the conditions it states (`showsRole`, as the renderings check reads hedges). The tool then runs the
 // line for real, in a directory of its own, and what it does (the files it reads, the numbers it prints, the archive it
@@ -492,6 +491,16 @@ describe('the readings of the cases, in Japanese (docs/japanese-style.md)', () =
     ]);
     // (A role another command reads names it: with `$a` empty, nice reads `5` as the value of its `-n`.)
     assert.strictEqual(said('nice $a -n 5 ls', '5'), '文字列 `5`。`$a` が0語なら `nice` の `-n` オプションの値');
+  });
+  it('says the readings of a value and of an option as those of an operand (step 5)', () => {
+    const filter = 'jq フィルタ（例: `.items[].name`）';
+    assert.deepStrictEqual([said('jq --arg $n $v .', '$v'), said('grep -e $p -- -v f', '--'), said('cut -d $a -f $b f', '$b'), said('sudo -u $u -i ls', '-i')], [
+      `\`--arg\` の値。\`$v\` が2語以上に展開されるときは、その最初の語がこの役割で、残りの語は順に ${filter}・入力 JSON ファイル。\`$n\` が0語なら順に \`--arg\` の名前・\`--arg\` の値・${filter}・入力 JSON ファイル。\`$n\` が2語なら順に ${filter}・入力 JSON ファイル。\`$n\` が3語以上なら入力 JSON ファイル`,
+      'オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う。`$p` が0語なら `-e` オプションの値',
+      '`-f` オプションの値: 取り出すフィールド番号（例: `1,3` や `2-`）。`$b` が2語以上に展開されるときは、その最初の語がこの役割で、残りの各語は対象のファイル。`$a` が0語なら対象のファイル',
+      // (A word of a command the dictionary does not describe is its argument: `sudo -u a b -i ls` runs `b`.)
+      '対象ユーザーのログインシェルを起動する（コマンドがあればそのシェルで実行）。`$u` が0語なら `-u` オプションの値。`$u` が2語以上なら `$u` の引数',
+    ]);
   });
 });
 

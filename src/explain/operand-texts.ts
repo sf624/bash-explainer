@@ -1,12 +1,11 @@
 // What a word of a command is for every count of the words that may give other than one word (src/explain/argv.ts;
-// an operand's `readings`, src/argv/profiles.ts, said with the texts of src/argv/profiletexts.ts), the hedges of the other
-// roles (`ArgRole` `none`, `more`, `ValueRole` `rest`), and what each of the words read in place of one is to the command
-// (the fields of a word, a value `env -S` splits).
+// the `readings` of its role, src/argv/profiles.ts, said with the texts of src/argv/profiletexts.ts), and what each of the
+// words read in place of one is to the command (the fields of a word, a value `env -S` splits).
 import type { Token } from '../analyzer-types';
 import type { Text } from '../i18n';
 import { codeSpan } from '../label';
-import type { ArgRole, ArgWord, MoreRole, NoneRole, RoleAt, ThenRole, ValueRole } from '../argv/interpret';
-import { type Depends, type Role, squeeze, type WordReadings } from '../argv/profiles';
+import type { ArgRole, ArgWord, Readings, RoleAt, ValueRole } from '../argv/interpret';
+import { type Role, squeeze, type WordReadings } from '../argv/profiles';
 import { baseText, clausesText, dependsText, type Names } from '../argv/profiletexts';
 import type { OperandSpec } from '../argv/spec';
 import { splitsIn } from '../argv/words';
@@ -22,7 +21,7 @@ import type { Explainer } from './context';
  * of its other classes, each a sentence (". When `$d` and `$a` expand to nothing, it is value for `-t`."), or what they
  * fold into, or that its role may depend on the counts.
  */
-export function readingsParts(cx: Explainer, desc: string, readings: WordReadings | Depends | undefined, k: number, nodes: readonly SyntaxNode[]): { base: string; rest: string } {
+export function readingsParts(cx: Explainer, desc: string, readings: Readings | undefined, k: number, nodes: readonly SyntaxNode[]): { base: string; rest: string } {
   if (!readings) return { base: desc, rest: '' };
   // (The command that reads the line, which a role read by it names where another reads the word: "option `-n` of `nice`".)
   const command = field(nodes[0].parent!, 'name')!.text;
@@ -36,6 +35,17 @@ export function readingsParts(cx: Explainer, desc: string, readings: WordReading
   const plain = !p.groups.length || p.counts.length === 1 || (!!p.places && squeeze(p.places).length === 1);
   // (In its profile as written, its role as written is `desc`.)
   return { base: plain ? desc : cx.t(baseText(p, k, namesFor(nodes, command, first, desc))), rest: sentences(clausesText(readings, k, names)) };
+}
+
+/**
+ * The token `t` of the command's word `k` (of `nodes`), with what it is for every count of the words that may give other
+ * than one word (`readings`): its explanation as its role as written, then the clauses (`grep -e $p -i f`, of `-i`:
+ * ". When `$p` expands to nothing, it is value for `-e`"; `head -n $a f`, of `$a`: "…; when `$a` expands to several
+ * words, this is the role of the first word `$a` gives, and each of the others is target file").
+ */
+export function withReadings(cx: Explainer, t: Token, readings: Readings | undefined, k: number, nodes: readonly SyntaxNode[]): Token {
+  const { base, rest } = readingsParts(cx, t.explanation, readings, k, nodes);
+  return base === t.explanation && !rest ? t : { ...t, explanation: base + rest };
 }
 
 /** The role of the first word of a word as written (its base profile), if it has one. */
@@ -73,7 +83,7 @@ function roleWords(r: ArgRole): Text {
     case 'operand': return r.spec?.text ?? { ja: '引数', en: 'argument' };
     case 'value': return valueWords(r);
     case 'option': case 'pattern-option': return { ja: `オプション \`${dash(r.flag)}\`（${r.text.ja}）`, en: `option \`${dash(r.flag)}\` (${r.text.en})` };
-    case 'unknown-option': return { ja: `辞書にないオプション \`${dash(r.flag)}\``, en: `option \`${dash(r.flag)}\` not in the dictionary` };
+    case 'unknown-option': return { ja: `オプション \`${dash(r.flag)}\`（辞書に未登録）`, en: `option \`${dash(r.flag)}\` (not in the dictionary)` };
     case 'cluster': case 'old-style': return { ja: `オプション ${flags(r.letters).join('・')}`, en: `options ${flags(r.letters).join(', ')}` };
     case 'end-of-options': return { ja: 'オプションの終わり', en: 'end of options' };
     case 'command': return r.item?.text ?? { ja: '実行するコマンド', en: 'the command to run' };
@@ -85,83 +95,21 @@ function roleWords(r: ArgRole): Text {
   }
 }
 
-/** What a hedge reads of a role: the roles when words before it give none (`none`) or several (`more`). */
-type Counted = { none?: readonly NoneRole[]; more?: readonly MoreRole[] };
-
-/** The roles a word takes when words before it give several (`more`) or none (`none`), in that order. */
-function countsText(cx: Explainer, role: Counted, nodes: SyntaxNode[]): string {
-  return moreText(cx, role.more, nodes) + noneText(cx, role.none, nodes);
-}
-
-/** The token `t` of a word, with the roles it takes when words before it give several or none (`ArgRole` `more`, `none`). */
-export function withNone(cx: Explainer, t: Token, role: Counted | undefined, nodes: SyntaxNode[]): Token {
-  return role && (role.none || role.more) ? { ...t, explanation: t.explanation + countsText(cx, role, nodes) } : t;
-}
-
-/** A role a hedge names (`ThenRole`): an operand's text, the value of an option, or an argument the spec does not describe. */
-const thenText = (cx: Explainer, r: ThenRole): string => (r.spec ? cx.t(r.spec.text) : r.value ? valueText(cx, r.value) : cx.s('引数', 'argument'));
-
-/** Roles as a hedge lists them: "X or Y", "X・Yのどれか". */
-function anyOf(cx: Explainer, texts: string[]): string {
-  return cx.s(texts.join('・') + (texts.length > 1 ? 'のどれか' : ''), texts.length > 1 ? `${texts.slice(0, -1).join(', ')} or ${texts[texts.length - 1]}` : texts[0]);
-}
-
 /** (A space before code or a word in Latin letters after Japanese, as docs/japanese-style.md asks.) */
 const spaced = (text: string): string => (/^[`A-Za-z]/.test(text) ? ' ' : '') + text;
 
-/**
- * The roles the words after the first of an option's value `a` take when it gives several words (`ValueRole` `rest`):
- * `head -n $a f`, "…; when `$a` expands to several words, this value is the first word `$a` gives, and each of the
- * others is target file"; or that they are read as the words after it, where the interpreter names no role of theirs.
- */
-export function restText(cx: Explainer, rest: readonly ThenRole[] | undefined, a: string): string {
-  if (!rest) return '';
-  const w = codeSpan(a);
-  if (!rest.length) return cx.s(`、${w} が2語以上に展開されるならこの値は最初の語で、残りの語は後に続く引数として読まれる`, `; when ${w} expands to several words, this value is the first word ${w} gives, and the others are read as the words after it`);
-  const list = anyOf(cx, rest.map((r) => thenText(cx, r)));
-  return cx.s(`、${w} が2語以上に展開されるならこの値は最初の語で、残りの各語は${spaced(list)}`, `; when ${w} expands to several words, this value is the first word ${w} gives, and each of the others is ${list}`);
-}
-
-/**
- * The roles a word may take when an option's value before it gives several words (`ArgRole` `more`), each "; X when
- * `$a` expands to several words" (`jq --arg $n $v .`: `$v` is the filter when `$n` gives two words), "X or Y" where
- * they depend on counts, "its first word is …" where the word may give several.
- */
-function moreText(cx: Explainer, more: readonly MoreRole[] | undefined, nodes: SyntaxNode[]): string {
-  return (more ?? []).map(({ roles, first, word }) => {
-    const then = anyOf(cx, roles.map((o) => thenText(cx, o)));
-    const name = codeSpan(nodes[word].text);
-    return cx.s(`、${name} が2語以上なら${first ? 'この語の最初の語は' : ''}${spaced(then)}`, `; ${first ? 'its first word is ' : ''}${then} when ${name} expands to several words`);
-  }).join('');
-}
-
-/** The value `v` of an option, as a hedge says it: "value for `-f`", "name for `--arg`" (`jq --arg NAME VALUE`). */
+/** The value `v` of an option, as the readings name it: "value for `-f`", "name for `--arg`" (`jq --arg NAME VALUE`). */
 function valueWords(v: ValueRole): Text {
   const flag = dash(v.of);
   if (Array.isArray(v.option?.value) && v.option.value.length === 2) return v.index ? { ja: `\`${flag}\` の値`, en: `value for \`${flag}\`` } : { ja: `\`${flag}\` の名前`, en: `name for \`${flag}\`` };
   return /^-/.test(flag) ? { ja: `\`${flag}\` オプションの値`, en: `value for \`${flag}\`` } : { ja: `\`${flag}\` の値`, en: `value for \`${flag}\`` };
 }
-const valueText = (cx: Explainer, v: ValueRole): string => cx.t(valueWords(v));
-
-/**
- * The roles a word takes when an option's value before it gives none (`ArgRole` `none`, each of one word), each "; X
- * when `$a` expands to nothing": an operand's (`grep -e $p -e x f`: "file to search"), or an option's value
- * (`grep -e $p -i f`: "value for `-e`"), or its first word's where it may give several ("its first word is …").
- */
-export function noneText(cx: Explainer, none: readonly NoneRole[] | undefined, nodes: SyntaxNode[]): string {
-  return (none ?? []).map((r) => {
-    const then = r.spec ? cx.t(r.spec.text) : valueText(cx, r.value);
-    const name = r.words.map((i) => codeSpan(nodes[i].text)).join(cx.s('・', ', '));
-    return cx.s(`、${name} が0語なら${r.first ? 'この語の最初の語は' : ''}${spaced(then)}`, `; ${r.first ? 'its first word is ' : ''}${then} when ${name} expands to nothing`);
-  }).join('');
-}
-
 /**
  * What each of `words` is to the command that reads them, from its role in `roles` (numbered from 0 in `words`), with the
  * words of the commands it runs: `` `-i` (Start with an empty environment) ``. With `option`, a word read as an option says so
  * (`option: …`), and an operand says its role as `eachText` does, numbered by `number` (its `$N`).
  */
-export function wordItems(cx: Explainer, words: readonly ArgWord[], roles: readonly RoleAt[], option: boolean, number?: (desc: string, role: Extract<ArgRole, { role: 'operand' }>) => string, nodes?: SyntaxNode[]): string[] {
+export function wordItems(cx: Explainer, words: readonly ArgWord[], roles: readonly RoleAt[], option: boolean, number?: (desc: string, role: Extract<ArgRole, { role: 'operand' }>) => string): string[] {
   const shown = (k: number): string => {
     const w = words[k];
     return w.value !== undefined ? `\`${w.value}\`` : cx.s(`\`${w.prefix}…\`（\`\${…}\` の値は実行時に決まる）`, `\`${w.prefix}…\` (the value of \`\${…}\` is known at run time)`);
@@ -184,7 +132,8 @@ export function wordItems(cx: Explainer, words: readonly ArgWord[], roles: reado
     switch (role.role) {
       case 'option': case 'pattern-option': return optionText(role, word);
       case 'cluster': case 'old-style': return role.letters.map((l) => optionText(l, '')).join(cx.s('、', ', '));
-      case 'value': return cx.s(`\`${dash(role.of)}\` の値`, `value for \`${dash(role.of)}\``);
+      // (`jq --arg "$x"{a,b}`: the name, then the value.)
+      case 'value': return Array.isArray(role.option?.value) && role.option.value.length === 2 ? cx.t(valueWords(role)) : cx.s(`\`${dash(role.of)}\` の値`, `value for \`${dash(role.of)}\``);
       case 'operand':
         if (role.spec?.assignment || role.assignment) return cx.s('コマンドの環境に入れる変数', 'variable for the command');
         if (!role.spec) return cx.s('引数', 'argument');
@@ -199,18 +148,21 @@ export function wordItems(cx: Explainer, words: readonly ArgWord[], roles: reado
       default: return optionText(role, word);
     }
   };
-  // (A role other than an operand's, with what it takes when a value before it gives none or several: an operand's says
-  // it in the readings of its word.)
-  const said = (role: ArgRole, word: string): string => what(role, word) + (role.role !== 'operand' && nodes && ('none' in role || 'more' in role) ? countsText(cx, role, nodes) : '');
   const items: string[] = [];
   const walk = (list: readonly RoleAt[]): void => {
     for (const { word, role } of list) {
-      items.push(`${shown(word)}${cx.s(`（${said(role, words[word].value ?? '')}）`, ` (${said(role, words[word].value ?? '')})`)}`);
+      items.push(`${shown(word)}${cx.s(`（${what(role, words[word].value ?? '')}）`, ` (${what(role, words[word].value ?? '')})`)}`);
       if ((role.role === 'command' || role.role === 'subcommand') && role.parse) walk(role.parse.roles);
     }
   };
   walk(roles);
   return items;
+}
+
+/** The words of the word `a` as `wordItems` shows them: of a brace expansion whose texts are not known, as written (`"$x"{a,b}`: `"$x"a`, `"$x"b`). */
+export function shownWords(words: readonly ArgWord[], a: SyntaxNode): readonly ArgWord[] {
+  const texts = words.some((w) => w.value === undefined) ? braceTexts([a]) : undefined;
+  return texts?.length === words.length ? texts.map((value) => ({ value })) : words;
 }
 
 /** "expands to `a` (X) and `b` (Y)": the words a word gives, each with what it is. */

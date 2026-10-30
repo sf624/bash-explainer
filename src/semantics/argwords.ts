@@ -29,11 +29,12 @@ export function fieldsIn(n: SyntaxNode, model: StateModel): readonly string[] | 
 /**
  * How many words the word of `n` gives (`countOf`), with brace expansion as the `model` says; where that is not one
  * known number, the number of its fields where the model knows them (`x=p; cp {a,$x} d`: two; `y=a; cp $y c`: one;
- * `z=; cp $z c`: none).
+ * `z=; cp $z c`: none), or one for a number the IFS does not split (`givesOneNumber`: `cp $# d`, `declare -i n; ${n:=b=5}`).
  */
 export function countIn(n: SyntaxNode, model: StateModel): ArgWord['count'] {
   const count = countOf(n, model.shell, bracesIn(model)(n));
   if (!count || count.min === count.max) return count;
+  if (givesOneNumber(n, model)) return undefined;
   const fields = fieldsIn(n, model);
   return !fields ? count : fields.length === 1 ? undefined : { min: fields.length, max: fields.length };
 }
@@ -50,8 +51,6 @@ export const argWordIn = (model: StateModel) => {
   return (n: SyntaxNode): ArgWord => {
     const w = plain(n);
     // (A word with a count is one of a command's words, which the model reads: an argument, or its name after a wrapper.)
-    // (`declare -i n; ${n:=b=5}` gives one field, a number.)
-    if (w.count && givesOneNumber(n, model)) delete w.count;
     if (w.count) w.count = { ...w.count, min: mayGiveNoField(n, model) ? 0 : Math.max(w.count.min, 1) };
     return { ...attributed(w, model.at(n).run), fields: () => fieldsIn(n, model) };
   };

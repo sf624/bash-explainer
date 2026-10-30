@@ -2,10 +2,9 @@
 // sections 2.4 and 2.5), read from the table of src/argv/readings.ts: its profile at each of its contexts (its roles for
 // each of its own counts, said by place or by own count), the classes of contexts with one profile, and the conditions
 // that say each class (at most `CLAUSES` clauses, each of at most `CONDITIONS` conditions of at most two atoms, sound and
-// complete), or past them a text without conditions. `interpret` gives them to the operands (`OperandRole.readings`).
+// complete), or past them a text without conditions. `interpret` gives them to the roles of the words (`readings`).
 import type { ArgRole, ArgvParse } from './interpret';
-import type { Coordinate, Outcome, ReadingsTable, WordAt } from './readings';
-import { allRoles } from './valuehedges';
+import { allRoles, type Coordinate, type Outcome, type ReadingsTable, type WordAt } from './readings';
 
 /** The most clauses a word says (section 2.5, the budget): past them, its other classes are one text without conditions. */
 export const CLAUSES = 4;
@@ -74,19 +73,23 @@ export interface WordReadings {
  */
 export interface Depends { kind: 'depends'; words: number[] }
 
-/** The commands that read each word of a reading: the command's words that name the command runs and subcommands it is in. */
-function readers(parse: ArgvParse, owners: readonly (number | undefined)[], path: (number | undefined)[] = [], out = new Map<number, (number | undefined)[]>()): Map<number, (number | undefined)[]> {
+/**
+ * The commands that read each word of a reading: the command's words that name the command runs and subcommands it is
+ * in (`path`), and whether the innermost is a command the dictionary does not describe (`unread`: its words are its
+ * arguments to us, whatever they look like).
+ */
+type Readers = Map<number, { path: (number | undefined)[]; unread: boolean }>;
+function readers(parse: ArgvParse, owners: readonly (number | undefined)[], path: (number | undefined)[] = [], unread = false, out: Readers = new Map()): Readers {
   for (const { word, role } of parse.roles) {
-    out.set(word, path);
-    if ((role.role === 'subcommand' || role.role === 'command') && role.parse) readers(role.parse, owners, [...path, owners[word]], out);
+    out.set(word, { path, unread });
+    if ((role.role === 'subcommand' || role.role === 'command') && role.parse) readers(role.parse, owners, [...path, owners[word]], role.role === 'command' && !role.spec, out);
   }
   return out;
 }
 
 /**
- * What tells two roles of a word apart (as `sameRole` of src/argv/valuehedges.ts does for the others): an operand's
- * text, its note in parentheses included, the value of the same option, the operand a command run fills, the same
- * option or letters.
+ * What tells two roles of a word apart: an operand's text, its note in parentheses included, the value of the same
+ * option, the operand a command run fills, the same option or letters.
  */
 export function roleKey(r: ArgRole): string {
   if (r.role === 'operand') return `operand ${r.spec?.text.en ?? ''}`;
@@ -107,8 +110,11 @@ function profileOf(t: ReadingsTable, counts: readonly number[], read: readonly W
     const by = readers(t.reading(x.sums).parse, x.owners);
     return {
       outcome: 'read',
-      roles: x.fields.map((role, i) => {
-        const path = by.get(x.places[i])!;
+      roles: x.fields.map((own, i) => {
+        const { path, unread } = by.get(x.places[i])!;
+        // (A word of a command the dictionary does not describe is an argument of it: `sudo -u $u -i ls` with two words of
+        // `$u`, `-i` is an argument of the command its second word names.)
+        const role: ArgRole = unread ? { role: 'operand', index: 0 } : own;
         return { key: `${path.map((k) => `>${k ?? '?'}`).join('')}\0${roleKey(role)}`, role, by: path };
       }),
     };

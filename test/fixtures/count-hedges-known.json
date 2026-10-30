@@ -1,18 +1,5 @@
 [
   {
-    "line": "jq --arg $n $v .",
-    "word": "$v",
-    "counts": {
-      "$n": 0,
-      "$v": [
-        2,
-        3,
-        4
-      ]
-    },
-    "reason": "With $n empty, the second word of $v is the value for `--arg` (the first is the name); we say the others are the jq filter or the input files, from $v's count alone. Fixed by the profiles of `$v` over the words before it in its run, step 5 of docs/design/count-hedges.md."
-  },
-  {
     "line": "nice $a -n 5 ls",
     "word": "-n",
     "counts": {
