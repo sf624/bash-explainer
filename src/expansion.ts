@@ -264,8 +264,13 @@ function describeSet(items: BracketItem[], lang: Lang): string {
     return named[item.name]?.[ja ? 0 : 1] ?? `[:${item.name}:]`;
   });
   // Characters and ranges run together (`HL`, `a〜cx`); classes are told apart, and so is a `-` between two others,
-  // which would read as a range (`[a\-c]` is `a`, `-` or `c`).
-  const apart = items.some((item, k) => item.type === 'class' || (item.type === 'char' && item.ch === '-' && k > 0 && k < items.length - 1));
+  // which would read as a range (`[a\-c]` is `a`, `-` or `c`), and a `[` before `:`, `.` or `=`, which would read as a
+  // class (`[[\:alpha\:]` is one of `[`, `:`, `a`…).
+  const char = (k: number, re: RegExp): boolean => {
+    const item = items[k];
+    return item.type === 'char' && re.test(item.ch);
+  };
+  const apart = items.some((item, k) => item.type === 'class' || (char(k, /^-$/) && k > 0 && k < items.length - 1) || (char(k, /^\[$/) && k + 1 < items.length && char(k + 1, /^[:.=]$/)));
   return words.join(apart && items.length > 1 ? (ja ? '、' : ', ') : '');
 }
 

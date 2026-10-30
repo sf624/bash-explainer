@@ -447,6 +447,8 @@ describe('words: fields', () => {
     assert.strictEqual(quoted(ownChars(own, true, { ifs: '?', context: true, shell: 'dash' })), 'a?');
     assert.strictEqual(ownChars(own, true, { ifs: '?', context: true, shell: 'ksh' }), undefined);
     assert.strictEqual(ownChars(own, true, { context: true }), undefined);
+    // (A `:` after a `[` of a value, with an IFS not known: it may open a class or not.)
+    assert.strictEqual(ownChars([piece('[', false, true), piece(':a')], true, { context: true }), undefined);
     assert.strictEqual(ownChars(own, true, { ifs: '?', context: 'unknown' }), undefined);
     assert.strictEqual(quoted(ownChars([piece('a'), piece('?', true)], true, { ifs: 'a?', context: true })), 'a?');
     assert.strictEqual(quoted(ownChars(own, true, { ifs: '?', context: false })), 'a?');
@@ -469,7 +471,7 @@ describe('words: fields', () => {
     // bash quotes a character of the word's own text that is in IFS, so that splitting leaves it. In a word with an
     // unquoted expansion, even an empty one, it stays quoted: no wildcard, and a backslash of a value before one is a
     // backslash. In a word with none, bash unquotes every character in IFS, those quoted in the script too.
-    const files = ['\\x', '\\-q', '\\]', '\\a', '\\:a', ':a', 'a\\b', 'b.txt', 'a]', ']', '*', 'ab', 'b', 'a*', 'a?', 'a\\', '[ab]', '?]', '\\x\\', '\\\\x\\', '*\\', 'a?\\', 'ax', 'cb', '-b', '!b', '^b'];
+    const files = ['\\x', '\\-q', '\\]', '\\a', '\\:a', ':a', 'a\\b', 'b.txt', 'a]', ']', '*', 'ab', 'b', 'a*', 'a?', 'a\\', '[ab]', '?]', '\\x\\', '\\\\x\\', '*\\', 'a?\\', 'ax', 'cb', '-b', '!b', '^b', ':]', '[]', 'l]', 'p]', '!]', '=]', 'x]', 'a:]'];
     const cases: [string, string][] = [
       ["IFS='*'; x='\\'", '$x*'], ["IFS='?'; x='\\'", '$x?'], ["IFS=']'; x='\\'", '[b$x].txt'], ["IFS='['; x='\\'", '$x[ab]'],
       ["IFS=':'; x='\\'", '$x:*'], ["IFS='*'; x='a\\'", '$x*'], ["IFS='*'; x='\\\\'", '$x*'], ["IFS='*'; x='\\b\\'", '$x*'],
@@ -488,6 +490,9 @@ describe('words: fields', () => {
       ["x='\\'", '\\\\*$x'], ["x='\\'", '\\\\\\\\*$x'], ["x='\\'", '\\\\?$x'], ["x='\\'", '\\*$x'], ["x='\\'", '*\\?$x'], ["x='\\'", '?*$x'], ["x='\\'", '*?$x'],
       // (A character of IFS in a bracket expression, or after one, is itself.)
       ["IFS='?'; x=", '$x[ab]?'], ["IFS='-'; x=", '$x[a-c]b'], ["IFS='!'; x=", '$x[!a]b'], ["IFS='^'; x=", '$x[^a]b'], ["IFS='-'", '[a-c]b'],
+      // (And a `:`, `.` or `=` of IFS after a `[`: no class, collating symbol or equivalence class; a quoted one neither.)
+      ["IFS=':'; x=", '$x[[:alpha:]]'], ["IFS=':'; x=", '$x[![:alpha:]]'], ["IFS=':'; x=", '$x[[:alpha:][:digit:]]'], ["IFS='='; x=", '$x[[=a=]]'],
+      ["IFS='.'; x=", '$x[[.a.]]'], ["IFS=':'", '[[:alpha:]]'], ["x=", '[[":"alpha:]]'], ["IFS=':'; x=", '$x[a:]'],
     ];
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-ifsglob-'));
     try {

@@ -23,15 +23,15 @@ export const IFS_ERRATIC = /[\x01\x7f]/;
 export type Char = { c: string; quoted: boolean; split: boolean };
 
 /**
- * A field as a pattern for globToRegex: quoted characters escaped, a `-` or `^` after an unquoted `[` too (`[a"-"c]`,
- * `['^'a]`). A backslash from a value before a quoted character is matched as a backslash, as bash does: the character
- * keeps its meaning (`x='\'`: `ls $x"*"` lists the names that start with `\`), or is itself (`ls $x":"*` lists those
+ * A field as a pattern for globToRegex: quoted characters escaped, a `-`, `^`, `:`, `.` or `=` after an unquoted `[` too
+ * (`[a"-"c]`, `['^'a]`; `[[":"alpha:]]` is no class). A backslash from a value before a quoted character is matched as
+ * a backslash, as bash does: the character keeps its meaning (`x='\'`: `ls $x"*"` lists the names that start with `\`), or is itself (`ls $x":"*` lists those
  * that start with `\:`; before a letter, a digit or `_`, bash 5.3 reads the backslash as escaping it, and 5.2 does
  * not, which `globField` leaves unknown). bash quotes the characters of IFS in the word's own text too, where the word
  * has an unquoted expansion (`ownChars`).
  */
 export function patternOfChars(f: readonly Char[]): string {
-  const special = (c: Char, i: number): boolean => /[\\*?[\]()|!@+]/.test(c.c) || (/[\^-]/.test(c.c) && f.slice(0, i).some((d) => d.c === '[' && !d.quoted));
+  const special = (c: Char, i: number): boolean => /[\\*?[\]()|!@+]/.test(c.c) || (/[\^\-:.=]/.test(c.c) && f.slice(0, i).some((d) => d.c === '[' && !d.quoted));
   return f.map((c, i) => {
     if (c.quoted && special(c, i)) return `\\${c.c}`;
     const next = c.c === '\\' && !c.quoted ? nextChar(f, i) : -1;
@@ -73,8 +73,10 @@ export function globbedByBash(pattern: string, extglob: 'on' | 'off' | 'unknown'
 /** A piece of the text of a word: quoted (no split or glob), or unquoted from the source or from an expansion (split). */
 export interface Piece { text: string; quoted: boolean; expanded: boolean }
 
-/** The glob characters, whose quoting changes what a pattern matches. */
+/** The glob characters, whose quoting changes what a pattern matches (and `:`, `.`, `=` after a `[`, `IN_BRACKET`). */
 export const GLOB_CHARS = /[*?[\]+@!()|^-]/;
+/** The characters whose quoting changes a pattern only after a `[`: they open and close a class (`[[:alpha:]]`), a collating symbol or an equivalence class. */
+const IN_BRACKET = /[:.=]/;
 
 /**
  * The characters of the pieces of a word (or of one word of its brace expansion), and where word splitting may split
@@ -85,7 +87,8 @@ export const GLOB_CHARS = /[*?[\]+@!()|^-]/;
  * a backslash of a value before one is a backslash (`IFS='*'; x='\'; ls $x*` lists the names that start with `\`). In
  * a word with none, bash unquotes every character in IFS, those quoted in the script too (`IFS='*'; ls "*"*` lists
  * every name). So bash 5.2 and 5.3; dash quotes none. With another shell, or an IFS not known, a glob character the
- * rule may change makes the characters not known (undefined).
+ * rule may change makes the characters not known (undefined): `:`, `.` and `=` too after an unquoted `[` (`IFS=':';
+ * ls $x[[:alpha:]]` matches one of `[:alph` and then `]`).
  */
 export function ownChars(pieces: readonly Piece[], splits: boolean, at: { ifs?: string; context: boolean | 'unknown'; shell?: string }): Char[] | undefined {
   const { ifs, context, shell } = at;
@@ -95,13 +98,16 @@ export function ownChars(pieces: readonly Piece[], splits: boolean, at: { ifs?: 
     : pieces.some((p) => p.expanded && !p.quoted) ? 'quote' : 'unquote';
   const sure = context === true && (!shell || shell === 'bash') && ifs !== undefined;
   const chars: Char[] = [];
+  let bracket = false;
   for (const p of pieces) {
     const split = splits && p.expanded && !p.quoted;
     if (p.quoted && !p.text) chars.push({ c: '', quoted: true, split: false });
     for (const c of p.text) {
       const changes = rule === 'quote' ? own(p, c) : rule === 'unquote' && p.quoted && (ifs === undefined || ifs.includes(c));
-      if (changes && !sure && GLOB_CHARS.test(c)) return undefined;
-      chars.push({ c, quoted: changes && sure ? rule === 'quote' : p.quoted, split });
+      if (changes && !sure && (GLOB_CHARS.test(c) || (bracket && IN_BRACKET.test(c)))) return undefined;
+      const quoted = changes && sure ? rule === 'quote' : p.quoted;
+      chars.push({ c, quoted, split });
+      bracket ||= c === '[' && !quoted;
     }
   }
   return chars;
@@ -122,7 +128,7 @@ export function quotedIfs(w: { steps: readonly { kind: string; applies: boolean 
  * The text of a plain part of a word (as written, its escapes kept) as bash matches it where it quotes the characters
  * of `ifs` (`quotedIfs`): a backslash put before each glob character of `ifs`, at the places `inserted`, with
  * `offsets` into `written` for each character and the characters `kept`. Undefined where there are none. A character
- * counts where it would mean something: `!`, `@` and `+` before `(`; `!`, `^` and `-` after a `[` (as
+ * counts where it would mean something: `!`, `@` and `+` before `(`; `!`, `^`, `-`, `:`, `.` and `=` after a `[` (as
  * `patternOfChars`).
  */
 export function ifsEscaped(written: string, ifs: string): { text: string; offsets: number[]; inserted: Set<number>; kept: string[] } | undefined {
@@ -135,7 +141,7 @@ export function ifsEscaped(written: string, ifs: string): { text: string; offset
   const put = (s: string, at: number): void => [...s].forEach((c, k) => { text += c; offsets.push(at + k); });
   for (let i = 0; i < written.length; i++) {
     const c = written[i];
-    const special = /[*?[\]()|]/.test(c) || (/[!@+]/.test(c) && written[i + 1] === '(') || (/[!^-]/.test(c) && open);
+    const special = /[*?[\]()|]/.test(c) || (/[!@+]/.test(c) && written[i + 1] === '(') || (/[!^\-:.=]/.test(c) && open);
     if (c === '\\') {
       // (Not a line continuation, which bash removes first: `$x[a\<newline>b]?`.)
       if (written[i + 1] !== '\n') put(written.slice(i, i + 2), i);

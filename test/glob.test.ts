@@ -225,6 +225,35 @@ describe('glob patterns in every context', () => {
     // (A `-` written escaped is no range either.)
     assert.match(said('x=', '[a\\-c]b', '[a\\-c]').explanation, /one character from a, -, c$/);
   });
+  it('a `:`, `.` or `=` of IFS after a `[`: no class, but characters of the bracket expression', () => {
+    // (Before, `$x[[:alpha:]]` with `IFS=':'` was "one character from letters": bash quotes the `:`, and matches one
+    // of `[`, `:`, `a`, `l`, `p`, `h`, then `]`, in bash 5.2 and 5.3.)
+    const rows: [string, string, string][] = [
+      ["x=; IFS=':'", '$x[[:alpha:]]', '<:]><[]><a]><l]><p]>'], ["x=; IFS=':'", '$x[![:alpha:]]', '<!]><=]><x]>'], ["x=; IFS=':'", '$x[[:alpha:][:digit:]]', '<a:]>'],
+      ["x=; IFS='='", '$x[[=a=]]', '<=]><[]><a]>'], ["x=; IFS='.'", '$x[[.a.]]', '<[]><a]>'], ["x=; IFS=':'", '[[:alpha:]]', '<a><b>'],
+      ['x=', '[[":"alpha:]]', '<:]><[]><a]><l]><p]>'], ["x=; IFS=':'", '$x[a:]', '<a>'],
+    ];
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-ifsclass-'));
+    try {
+      for (const f of ['a', 'b', ':]', '[]', 'a]', 'l]', 'p]', '!]', '=]', 'x]', 'a:]', '1']) fs.writeFileSync(path.join(dir, f), '');
+      for (const b of ['bash', ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BASH_EXPLAINER_BASH53] : [])]) {
+        for (const [set, word, out] of rows) assert.strictEqual(execFileSync(b, ['-c', `${set}; printf '<%s>' ${word}`], { cwd: dir }).toString(), out, `${b}: ${set}; ${word}`);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    const said = (set: string, word: string, label: string, lang: 'ja' | 'en' = 'en') => flat(new Analyzer(lang).explainLine(parser.parse(`${set}; ls ${word}`), 0).items).filter((t) => t.label === label).pop()!;
+    assert.match(said("x=; IFS=':'", '$x[[:alpha:]]', '[[:alpha:]').explanation, /one character from \[, :, a, l, p, h, a, : \(`:`, which `IFS` holds, is itself\)$/);
+    assert.strictEqual(said("x=; IFS=':'", '$x[[:alpha:]]', ']').kind, 'string');
+    assert.match(said("x=; IFS=':'", '$x[[:alpha:]]', '[[:alpha:]', 'ja').explanation, /\[、:、a、l、p、h、a、:のどれか1文字（`IFS` にある `:` はその文字そのもの）$/);
+    assert.match(said("x=; IFS=':'", '$x[![:alpha:]]', '[![:alpha:]').explanation, /one character other than \[, :, a, l, p, h, a, :/);
+    assert.match(said("x=; IFS='='", '$x[[=a=]]', '[[=a=]').explanation, /one character from \[, =, a, =/);
+    assert.match(said("x=; IFS='.'", '$x[[.a.]]', '[[.a.]').explanation, /one character from \[, \., a, \./);
+    // (With no expansion, or with `:` not in IFS, a class; a `[` last in a set reads as itself.)
+    assert.match(said("x=; IFS=':'", '[[:alpha:]]', '[[:alpha:]]').explanation, /one character from letters$/);
+    assert.match(said('x=; IFS=,', '$x[[:alpha:]]', '[[:alpha:]]').explanation, /one character from letters$/);
+    assert.match(explainGlob('[a[]', 'en')[0].explanation, /one character from a\[$/);
+  });
 });
 
 describe('the examples of [[ ]] patterns agree with bash', () => {
