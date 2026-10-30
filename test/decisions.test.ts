@@ -142,15 +142,23 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
     ];
     // (A variable the walk knows is unset gives no field: the script still decides `v`.)
     const decides = ['x=-v; unset x; printf $x u 2', 'f() { local x; printf $x u 2; }; x=-v; f', 'x=-v; unset -v x; printf $x u 2', 'f() { unset x; }; x=-v; f; printf $x u 2'];
+    // (Nor a quoted word that starts with text other than `-` or `+`, which no value makes an option; nor in a trap's
+    // action, a function a trap runs or an alias's text, where every value of the variables was read and is the
+    // script's when it runs.)
+    const kept = [
+      'printf "Usage: $0\\n"', 'd=$(date); printf "now $d\\n"', "RED='\\033[31m'; NC='\\033[0m'; cleanup() { printf \"${RED}bye${NC}\\n\"; }; trap cleanup EXIT",
+      "msg=hi; trap 'printf \"$msg\\n\"' EXIT", "m=hi; alias say='printf \"$m\\n\"'",
+    ];
     // (Not through a nameref: the walk does not follow every write of a nameref's target, so it does not read it.)
     const left = ['x=-v; declare -n r=x; unset r; printf $x u 2'];
     const list: Script[] = undecided.map((s) => ({ text: `u=1; ${s}; ${test('u')}; : M4`, constructs: [{ id: 1, type: 'if_statement' }] }));
     list.push(...[...decides, ...left].map((s) => ({ text: `v=1; ${s}; ${test('v')}; : M4`, constructs: [{ id: 1, type: 'if_statement' as const }] })));
+    list.push(...kept.map((s) => ({ text: `u=1; ${s}; ${test('u')}; : M4`, constructs: [{ id: 1, type: 'if_statement' as const }] })));
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'decisions-'));
     try {
       const results = await checkAll(list, dir, 4);
       assert.deepStrictEqual(results.flatMap((r, i) => r.problems.map((p) => `${p}\n${forModel(list[i].text).src}`)), []);
-      assert.deepStrictEqual(results.map((r) => r.decided > 0), [...undecided.map(() => false), ...decides.map(() => true), ...left.map(() => false)]);
+      assert.deepStrictEqual(results.map((r) => r.decided > 0), [...undecided.map(() => false), ...decides.map(() => true), ...left.map(() => false), ...kept.map(() => true)]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

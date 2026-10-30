@@ -136,7 +136,7 @@ class Scan {
   private readonly deferred: Deferred<Where>[] = [];
   /** What the scan read of those words, by word (see `Trust.deferred`), and where each such builtin is. */
   readonly plans = new Map<SyntaxNode, DeferredPlan>();
-  private readonly planned: Where[] = [];
+  private readonly planned: { w: Where; written: boolean }[] = [];
   /** The aliases the `alias` commands define (a name and its text), and the commands that may run one (see `aliases`). */
   private readonly aliasDefs: AliasDef[] = [];
   private readonly aliasCommands: { c: SyntaxNode; name: string; where: Where }[] = [];
@@ -802,7 +802,7 @@ class Scan {
     for (const { d, plan, readings } of plans) {
       for (const fieldsOf of readings.length ? readings : [undefined]) this.builtinWords(d.c, d.name, d.args, d.spec, undefined, d.w, fieldsOf);
       for (const w of plan.words) this.plans.set(w, plan);
-      this.planned.push(d.w);
+      this.planned.push({ w: d.w, written: plan.written });
     }
     for (const [name, was] of read) if (seen(name) !== was) this.blindFor('a builtin may set a variable whose value gives the words of a builtin');
   }
@@ -906,9 +906,13 @@ class Scan {
     }
     this.callbacks.clear();
     for (const f of run) this.callbacks.add(f);
-    // (The walk checks the fields of a builtin's words where it runs the builtin: not in a trap's action, an alias's
-    // text, or a function a callback runs, where their values are those of when bash runs it.)
-    if (this.planned.some((w) => !w.now || (w.fn !== undefined && run.has(w.fn)))) this.blindFor('a builtin is given a word not known where the walk does not run it');
+    // (The walk checks the fields of a builtin's words where it runs the builtin. A trap's action, an alias's text or a
+    // function a callback runs it walks from a state that may be older than where bash runs them, with what changes
+    // since taken as not known (`widen`): there it reads them as written only where the scan read every value they
+    // may have, and none gives them other than what they give as written (`DeferredPlan.written`), and checks that
+    // each variable may not have the environment's value. Elsewhere, nothing is trusted.)
+    const late = (w: Where): boolean => !w.now || (w.fn !== undefined && run.has(w.fn));
+    if (this.planned.some((p) => !p.written && late(p.w))) this.blindFor('a builtin is given a word not known where the walk does not run it');
     if (this.foreignChanges || [...run].some((f) => this.changes.has(f))) this.blindFor('a trap, a callback or a foreign text changes options, functions or aliases');
   }
 }

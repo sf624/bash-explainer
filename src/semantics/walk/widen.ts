@@ -48,7 +48,8 @@ export function widen(w: Walker, st: ShellState, keys: ReadonlySet<string>, from
         for (const l of ATTRIBUTE_LETTERS) attrs[l] = l === 'r' && v?.attrs.r?.state === 'on' ? v.attrs.r : { state: 'unknown', at: v?.attrs[l]?.at ?? at };
         same = !!v && [...ATTRIBUTE_LETTERS].every((l) => v.attrs[l]?.state === attrs[l].state);
       }
-      if (!v) changes.variables.set(name, { declared: 'unknown', set: 'unknown', attrs, at });
+      // (One not set before may still have the environment's value: `kept`.)
+      if (!v) changes.variables.set(name, { declared: 'unknown', set: 'unknown', attrs, at, kept: true });
       else if (v.declared !== 'unknown' || v.set !== 'unknown' || v.value !== undefined || !same) changes.variables.set(name, { ...v, declared: 'unknown', set: 'unknown', value: undefined, attrs });
     } else if (kind === 'functions') {
       const f = st.functions.get(name);
