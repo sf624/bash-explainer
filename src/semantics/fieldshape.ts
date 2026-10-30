@@ -129,18 +129,67 @@ function valued(name: string, w: WordMeaning): boolean {
   return /^[A-Za-z_]\w*$/.test(name) && name !== '_' && !changedByBash(name) && !w.state.opaque && ['a', 'A', 'n', 'i', 'l', 'u'].every((l) => attribute(w.state, name, l) === 'off');
 }
 
+/** The expansions of a word, each with what `parseExpansion` reads of it (a name alone for `$x`). */
+const expansionsOf = (w: WordMeaning): (readonly [SyntaxNode, { name: string } | ReturnType<typeof parseExpansion>])[] =>
+  w.nodes.flatMap((n) => descendants(n, ['simple_expansion', 'expansion'])).map((e) => [e, e.type === 'simple_expansion' ? { name: e.text.slice(1) } : parseExpansion(decodedText(e))] as const);
+
+/**
+ * What the word itself may assign as it expands: `names`; `any`, any variable; `ifs`, whether IFS may change, and to
+ * what (`integer`: only by arithmetic, which assigns integers). Bash splits the whole word with the IFS it has after
+ * its expansions: `${IFS=:}$x` splits `$x` at `:` (F88). An assignment is `${x=w}` or `${x:=w}` (to the target of an
+ * indirection or a nameref: any; of a variable with `-i`, `w` is arithmetic), or arithmetic: `$(( ))`, a subscript, an
+ * offset or a length (`${z:x=1}$x`, F87). Arithmetic that reads a name or an expansion may assign any variable: a value
+ * read is an expression in its turn (`y='IFS=1'; $((y))`), and so is the subscript of an indirection's or a nameref's
+ * target (`y='a[IFS=1]'; ${!y}`, F89). `${x@P}` runs the arithmetic in the value of `x` (F89).
+ */
+interface SelfAssigned { names: Set<string>; any: boolean; ifs: 'no' | 'integer' | 'any' }
+function selfAssigned(w: WordMeaning): SelfAssigned {
+  const out: SelfAssigned = { names: new Set(), any: false, ifs: 'no' };
+  const integer = (): void => { if (out.ifs === 'no') out.ifs = 'integer'; };
+  const anything = (ifs: 'integer' | 'any'): void => {
+    out.any = true;
+    if (ifs === 'any') out.ifs = 'any';
+    else integer();
+  };
+  // (Arithmetic with no letter, `_` or expansion names no variable: `$((-1))`.)
+  const arith = (text: string): void => { if (/[A-Za-z_$`]/.test(text)) anything('integer'); };
+  for (const a of w.nodes.flatMap((n) => descendants(n, ['arithmetic_expansion']))) arith(a.text.replace(/^\$\(\(|\)\)$|^\$\[|\]$/g, ''));
+  for (const [e, q] of expansionsOf(w)) {
+    // (An expansion not parsed here, `${!x@Q}`, may be an indirection; with `=`, `${!y=1}`, or `@P`, may assign anything.)
+    if (!q) {
+      anything(/=|P\}$/.test(e.text) ? 'any' : 'integer');
+      continue;
+    }
+    const nameref = attribute(w.state, q.name, 'n') !== 'off';
+    // (`$x` is a name alone.)
+    const p: Partial<NonNullable<ReturnType<typeof parseExpansion>>> = q;
+    if (p.subscript !== undefined && !/^[@*]$/.test(p.subscript)) arith(p.subscript);
+    if (p.op === ':') for (const x of p.parts!) if (x.role === 'offset' || x.role === 'length') arith(x.text);
+    if (p.op === '@' && !p.prefix && p.parts!.find((x) => x.role === 'transform')!.text === 'P') anything('any');
+    // (`${!x*}` and `${!x@}` list names, `${!a[@]}` keys: no indirection.)
+    const lists = p.subscript === undefined ? p.op === '*' || p.op === '@' : /^[@*]$/.test(p.subscript);
+    if ((p.prefix === '!' && !lists) || nameref) anything('integer');
+    if (p.op === '=' || p.op === ':=') {
+      if (nameref) anything('any');
+      else if (attribute(w.state, q.name, 'i') !== 'off') anything('integer');
+      out.names.add(q.name);
+      if (q.name === 'IFS') out.ifs = 'any';
+    }
+  }
+  return out;
+}
+
 /**
  * The readings of the word's parameters: each tuple of the values `values` lists for the parameters the word reads,
  * and for each `${x:+w}` or `${x+w}` whose `x` is a hole, `w` or nothing; at most TUPLES, the dimensions past them left as holes.
  */
-function readings(w: WordMeaning, values: Values | undefined): TupleValues[] {
+function readings(w: WordMeaning, values: Values | undefined, self: SelfAssigned): TupleValues[] {
   const dims: { name: string; node?: SyntaxNode; options: readonly (string | null)[] }[] = [];
-  const parsed = w.nodes.flatMap((n) => descendants(n, ['simple_expansion', 'expansion'])).map((e) => [e, e.type === 'simple_expansion' ? { name: e.text.slice(1) } : parseExpansion(decodedText(e))] as const);
-  // (A variable the word assigns, `${x:=a}$x`, is a hole: it has another value after.)
-  const assigned = new Set(parsed.flatMap(([, p]) => (p && 'op' in p && (p.op === '=' || p.op === ':=') ? [p.name] : [])));
+  const parsed = expansionsOf(w);
   for (const [e, p] of parsed) {
     if (!p) continue;
-    const listed = valued(p.name, w) && !assigned.has(p.name) ? values?.get(p.name) : undefined;
+    // (A variable the word may assign, `${x:=a}$x`, `${z:x=1}$x`, is a hole: it may have another value after.)
+    const listed = valued(p.name, w) && !self.any && !self.names.has(p.name) ? values?.get(p.name) : undefined;
     if (listed) {
       if (!dims.some((d) => !d.node && d.name === p.name)) dims.push({ name: p.name, options: listed });
       // (Only where `w` expands nothing: the evaluator reads the parameters of `w` by the same node.)
@@ -186,7 +235,7 @@ function splitExact(atoms: readonly Atom[]): Item[] {
 }
 
 /** How pathname expansion may read a field. */
-interface Globbing { applies: boolean; nullglob: boolean; nocase: boolean; extglob: boolean }
+interface Globbing { applies: boolean; nullglob: boolean; nocase: boolean; extglob: boolean; globstar: boolean }
 
 /** The field as a glob pattern (quoted characters escaped, as `patternOfChars`), with `fill` for each hole (`open`, if given, for one that may hold a glob character). */
 function patternText(atoms: readonly Atom[], fill: string, open = fill): string {
@@ -226,6 +275,12 @@ function matched(atoms: readonly Atom[], g: Globbing): Atom[] {
       lit.push(i + 1 === p.length || hole(i + 1) || letter(p[i + 1]) ? undefined : p[i + 1]);
       if (!hole(i + 1)) i++;
     } else lit.push(c === '\0' || '*?[]'.includes(c) || letter(c) || (g.extglob && ('()|'.includes(c) || ('!@+'.includes(c) && p[i + 1] === '('))) ? undefined : c);
+  }
+  // (With globstar, `**/` may match nothing, its `/` too: `d/**/x` matches `d/x`, `**/x` matches `x`, F94. So a `/`
+  // next to a special character is special.)
+  if (g.globstar) {
+    const special = lit.map((c) => c === undefined);
+    lit.forEach((c, i) => { if (c === '/' && ((i > 0 && special[i - 1]) || special[i + 1])) lit[i] = undefined; });
   }
   const chars = (cs: (string | undefined)[]): Ch[] => cs.map((c) => ({ c: c!, quoted: true }));
   const first = lit.indexOf(undefined);
@@ -301,9 +356,15 @@ function shapeOfItems(items: Item[], pattern?: (atoms: Atom[]) => string | true 
  * unquoted expansions are, and where a hole may hold one; then each field that may be a pattern read as the names it
  * may match. A hole that may split leaves the count open: the first field keeps the text before it, the last the text after.
  */
-function shapeOfWord(w: WordMeaning, pieces: readonly Piece[], glob: boolean, split: boolean): Shape | undefined {
+function shapeOfWord(w: WordMeaning, pieces: readonly Piece[], glob: boolean, split: boolean, ifsChanged: boolean): Shape | undefined {
   const step = w.steps.find((s) => s.kind === 'split')!;
   const ifsText = w.ifs.kind === 'default' ? WHITE : w.ifs.kind === 'value' && sameInEveryLocale(w.ifs.value) ? w.ifs.value : undefined;
+  // (Where the word's arithmetic may assign IFS, it splits by an IFS not known. That IFS holds digits and `-` at most
+  // besides, so the checks of glob characters and `\\` in IFS below stay as they are.)
+  const splitIfs = ifsChanged ? undefined : ifsText;
+  // (Bash quotes a character of the word's text that IFS holds as it expands; text before the assignment that the new
+  // IFS holds is then split too: `a1b$((IFS=1))` gives `a` and `b`, F95. Such a word is not known here.)
+  if (ifsChanged && pieces.some((p) => !p.hole && !p.expanded && !p.quoted && /[-0-9]/.test(p.text))) return undefined;
   // (`"$@"` makes fields where the context splits, also with an empty IFS or no unquoted part.)
   const elementsSplit = !(step.applies === false && (step.why === 'context' || step.why === 'posix-mode'));
   // (Word splitting may apply or not by POSIX mode, a redirection: an IFS not known stands for both.)
@@ -320,9 +381,14 @@ function shapeOfWord(w: WordMeaning, pieces: readonly Piece[], glob: boolean, sp
   const quoted = (chars: string): boolean => pieces.some((p) => !p.hole && p.quoted && [...p.text].some((c) => chars.includes(c) && may(c)));
   if (w.rule.glob !== false && w.glob.noglob !== 'on' && [...'*?[]'].some(may) && (unknownQuoted || quoted('*?[]'))) return undefined;
   if (pieces.some((p) => p.hole?.kind === 'elements') && may('\\') && (unknownQuoted || quoted('\\'))) return undefined;
-  const atoms = atomsOf(pieces, split && elementsSplit, step.applies === 'unknown' ? undefined : ifsText, elementsSplit);
+  // (Nor, in a word that expands something, one whose text has a character special in a pattern that IFS holds or may
+  // hold: bash quotes it, `*b$x` with `IFS='*'` matches nothing, F96; `-` and `^` count where the text has a `[`.)
+  const text = pieces.filter((p) => !p.hole && !p.quoted && !p.expanded).map((p) => p.text).join('');
+  const specials = text.includes('[') ? '*?[]()|!@+-^' : '*?[]()|!@+';
+  if (w.rule.glob !== false && w.glob.noglob !== 'on' && pieces.some((p) => p.hole || p.expanded) && [...text].some((c) => specials.includes(c) && may(c))) return undefined;
+  const atoms = atomsOf(pieces, split && elementsSplit, step.applies === 'unknown' ? undefined : splitIfs, elementsSplit);
   const gs = w.steps.find((s) => s.kind === 'glob')!;
-  const g: Globbing = { applies: glob && gs.applies !== false, nullglob: w.glob.nullglob !== 'off', nocase: w.glob.nocaseglob !== 'off', extglob: w.glob.extglob !== 'off' };
+  const g: Globbing = { applies: glob && gs.applies !== false, nullglob: w.glob.nullglob !== 'off', nocase: w.glob.nocaseglob !== 'off', extglob: w.glob.extglob !== 'off', globstar: w.glob.globstar !== 'off' };
   const pattern = (a: Atom[]): string | true | undefined => (gs.applies === false || !mayBePattern(a) ? undefined : a.some(isHole) ? true : patternText(a, ''));
   if (w.rule.fields === 'one') return { fields: [fieldOf(atoms)] };
   if (!atoms.some((a) => isHole(a) && a.splits)) return shapeOfItems(splitExact(atoms).map((i) => globbed(i, g)), glob ? undefined : pattern);
@@ -342,39 +408,53 @@ function shapeOfWord(w: WordMeaning, pieces: readonly Piece[], glob: boolean, sp
     return g.applies && mayBePattern(f) ? join(f, matched(f, g)) : f;
   };
   // (Fields between may be empty where IFS may hold a character that is not white space, or a part may be empty in quotes.)
-  const empty = ifsText === undefined || /[^ \t\n]/.test(ifsText) || atoms.some((a) => (isHole(a) ? a.hole.kind === 'elements' || nulls.has(a.hole) || (a.hole.quoted && a.hole.empty) : a.c === ''));
+  const empty = splitIfs === undefined || /[^ \t\n]/.test(splitIfs) || atoms.some((a) => (isHole(a) ? a.hole.kind === 'elements' || nulls.has(a.hole) || (a.hole.quoted && a.hole.empty) : a.c === ''));
   const marked = (a: Atom[]): Field => fieldOf(a, glob ? undefined : pattern(a));
   return { min: segments.filter(stays).length, first: marked(end(segments[0], 'start')), middle: marked([{ hole: { kind: 'text', quoted: false, empty } }]), last: marked(end(segments[segments.length - 1], 'end')) };
 }
 
 /** The transformations of `${x@…}` in bash 5.2 (another letter is a bad substitution). */
-const TRANSFORMS = 'QEPAKaUuLk';
+const TRANSFORMS = /^[QEPAKaUuLk]$/;
 
 /**
  * Whether bash may fail on the expansion `p` (also where it gives no field): an offset, an indirection, a subscript
- * (arithmetic); `${x:=w}` on a parameter it cannot assign (special, positional, read-only); a case operator on a special
- * parameter (`${#^^}`); a transformation it does not have (`${x@Z}`); a length with an operator (`${#x@Q}`, not parsed).
+ * (arithmetic); `${x:=w}` on a parameter it cannot assign (special, positional, read-only, one bash keeps, `FUNCNAME`
+ * outside a function, F86; an element of `x[@]`), or may refuse `w` (`-i`: arithmetic; a nameref); a case operator on a
+ * special parameter (`${#^^}`); a transformation it does not have (`${x@Z}`, `${x@}`: not parsed, nor is a length with an
+ * operator, `${#x@Q}`). `${!x@}` and `${!x*}`, the names that start with `x`, never fail (F85).
  */
 function risky(p: ReturnType<typeof parseExpansion>, w: WordMeaning): boolean {
   if (!p || p.op === ':' || (p.prefix === '!' && p.op !== '*' && p.op !== '@') || (p.subscript !== undefined && !/^[@*]$/.test(p.subscript))) return true;
-  if (p.op === '=' || p.op === ':=') return !/^[A-Za-z_]\w*$/.test(p.name) || attribute(w.state, p.name, 'r') !== 'off';
-  if (p.op === '@') return !TRANSFORMS.includes(p.parts.find((x) => x.role === 'transform')!.text);
+  if (p.op === '=' || p.op === ':=') return !/^[A-Za-z_]\w*$/.test(p.name) || p.subscript !== undefined || changedByBash(p.name) || ['r', 'i', 'n'].some((l) => attribute(w.state, p.name, l) !== 'off');
+  // (`${x@}` is not parsed: an `@` with no prefix has its letter.)
+  if (p.op === '@') return p.prefix === '!' ? p.subscript !== undefined : !TRANSFORMS.test(p.parts.find((x) => x.role === 'transform')!.text);
   return /^[\^,~]/.test(p.op ?? '') && /^[#?$!-]$/.test(p.name);
 }
 
 /**
  * Words the word model reads otherwise than bash (trust-fields.md, 7), not known here until it reads them as bash
- * does: a line continuation after a tilde prefix (`~\<newline>` is `~`) or in a parameter's name (`$y\<newline>a` is
- * `$ya`); `$_` before a brace expression (`$_{a,b}` gives `$_a`); a process substitution joined to other text (`a<(:)`
+ * does: a line continuation after a tilde prefix (`~\<newline>` is `~`, also after `=` or `:`), after `$`
+ * (`$\<newline>@` is `$@`) or in a parameter's name (`$y\<newline>a` is `$ya`); `$_` before a brace expression (`$_{a,b}` gives `$_a`); a process substitution joined to other text (`a<(:)`
  * is one word, which the parser reads as two, or as text: `1<(:)`); a brace expression after `$$` (`$${1..2}`, not
- * expanded); a range of characters across a backslash (`{Z..a}`).
+ * expanded); a range of characters across a backslash (`{Z..a}`, `{Z..a..+2}`); plain text with a quote or an expansion in
+ * it, as the adapter keeps an extglob group (`x@(${x})y`); a `${ cmd; }` of bash 5.3.
  */
 function misread(w: WordMeaning): boolean {
   const text = w.nodes.map((x) => x.text).join('');
-  if (/^~[^/]*\\\n/.test(text) || /\$_\{/.test(text) || /\$\w*(?:\\\n)+[\w{]/.test(text) || /(?:^|[^$\\])(?:\$\$)+\{/.test(text)) return true;
+  // (Also a tilde after `=` or `:`, `a=~\<newline>/x`, and `$` before any line continuation: `$\<newline>@` is `$@`, F90; a `+` step, F91.)
+  if (/~[^/]*\\\n/.test(text) || /\$_\{/.test(text) || /\$\w*(?:\\\n)+[\w{]/.test(text) || /\$\\\n/.test(text) || /(?:^|[^$\\])(?:\$\$)+\{/.test(text)) return true;
   const crosses = (m: RegExpMatchArray): boolean => Math.min(m[1].charCodeAt(0), m[2].charCodeAt(0)) <= 92 && Math.max(m[1].charCodeAt(0), m[2].charCodeAt(0)) >= 92;
-  if ([...text.matchAll(/\{([^\d.{}])\.\.([^\d.{}])(?:\.\.-?\d+)?\}/g)].some(crosses)) return true;
+  if ([...text.matchAll(/\{([^\d.{}])\.\.([^\d.{}])(?:\.\.[-+]?\d+)?\}/g)].some(crosses)) return true;
   if (w.nodes.some((x) => descendants(x, ['word']).some((d) => /[<>]\(/.test(d.text)))) return true;
+  // (Text the adapter keeps as plain with quotes or expansions in it: an extglob group, `x@(${x})y` is split, F92;
+  // `@(a'|'b)` is the pattern `@(a\|b)`. And a `${ cmd; }` of bash 5.3, which runs in the shell and may set IFS, F93.)
+  // (Not in the operand of an expansion, which the evaluator reads from its text: `"${x:-'a'}"`.)
+  const outer = (d: SyntaxNode, top: SyntaxNode): boolean => {
+    for (let x = d; x !== top; x = x.parent!) if (!['concatenation', 'string', 'brace_expression'].includes(x.parent!.type)) return false;
+    return true;
+  };
+  const plainText = (top: SyntaxNode) => (d: SyntaxNode): boolean => /['"$`]/.test(d.text.replace(/\\[^]/g, '')) && outer(d, top);
+  if (w.nodes.some((x) => descendants(x, ['word', 'extglob_pattern']).some(plainText(x)) || descendants(x, ['command_substitution']).some((e) => e.text.startsWith('${')))) return true;
   const top = w.nodes[0];
   const sibs = top.parent!.namedChildren;
   const i = sibs.indexOf(top);
@@ -389,11 +469,15 @@ function misread(w: WordMeaning): boolean {
  * values `values` lists (each tuple of them, up to TUPLES), and every other parameter a hole; with no `values`, every
  * part is a hole (shape first, 2.1). `glob: false`: before pathname expansion, each field with its `pattern`.
  * Undefined outside a word, for a shell other than bash, where the words of its brace expansion are not known (`{,$x}a`),
- * and for the words the word model reads otherwise than bash (`misread`; an IFS with a control character).
+ * and for the words the word model reads otherwise than bash (`misread`; an IFS with a control character),
+ * or that may assign IFS other than by arithmetic (`${IFS=:}$x`, F88).
  */
 export function wordShapes(n: SyntaxNode, model: StateModel, values?: Values, opts: { glob?: boolean } = {}): WordShapes | undefined {
   const w = model.shell && model.shell !== 'bash' ? undefined : wordMeaning(n, model);
   if (!w || misread(w)) return undefined;
+  // (A word that may assign IFS other than by arithmetic, `${IFS=:}$x`, is not known here: it splits by the new IFS, F88.)
+  const self = selfAssigned(w);
+  if (self.ifs === 'any') return undefined;
   const brace = w.steps[0].applies;
   const cases: Shape[][] = [];
   const keys = new Set<string>();
@@ -406,7 +490,7 @@ export function wordShapes(n: SyntaxNode, model: StateModel, values?: Values, op
   // `${x-a b}$!` is one field. Such a word is read both ways.)
   const bang = nested.some((e) => e.text === '$!' && e.parent!.type !== 'string');
   for (const braces of brace === 'unknown' ? [false, true] : [brace]) {
-    for (const source of readings(w, values)) {
+    for (const source of readings(w, values, self)) {
       const got = holedWords(n, model, source, (part, quoted) => [{ text: '', quoted, expanded: !quoted, hole: holeOf(part, quoted, w) }], braces);
       if (!got) return undefined;
       if (got.words.some((p) => !p)) {
@@ -414,7 +498,7 @@ export function wordShapes(n: SyntaxNode, model: StateModel, values?: Values, op
         continue;
       }
       for (const split of bang ? [true, false] : [true]) {
-        const shapes = got.words.map((p) => shapeOfWord(w, p!, opts.glob !== false, split));
+        const shapes = got.words.map((p) => shapeOfWord(w, p!, opts.glob !== false, split, self.ifs === 'integer'));
         if (shapes.includes(undefined)) return undefined;
         const key = JSON.stringify(shapes);
         if (!keys.has(key)) cases.push(shapes as Shape[]);

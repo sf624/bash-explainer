@@ -46,6 +46,53 @@ function checked(wrong: string[]): (f: Field, t: string) => boolean {
   };
 }
 
+/**
+ * A shell word that bash reads as the glob pattern `p` (quoted characters escaped, as `Field.pattern`): each character
+ * but the special ones of a pattern escaped, an extglob group kept as it is; and whether bash globs it always (`*`,
+ * `?`, `[`), only with extglob (a group alone), or never. Undefined where `p` has a newline or a group not closed.
+ */
+function patternWord(p: string): { word: string; globs: 'always' | 'extglob' | 'never' } | undefined {
+  let out = '';
+  let depth = 0;
+  let globs: 'always' | 'extglob' | 'never' = 'never';
+  for (let i = 0; i < p.length; i++) {
+    const c = p[i];
+    if (c === '\n') return undefined;
+    if (c === '\\') {
+      if (i + 1 >= p.length || p[i + 1] === '\n') return undefined;
+      out += c + p[++i];
+    } else if ('*?['.includes(c)) {
+      globs = 'always';
+      out += c;
+    } else if (c === ']' || (c === '(' && /(?:^|[^\\])[?*+@!]$/.test(out)) || (depth > 0 && (c === ')' || c === '|'))) {
+      if (c === '(') {
+        depth++;
+        if (globs === 'never') globs = 'extglob';
+      }
+      if (c === ')') depth--;
+      out += c;
+    } else out += /[\w.,:/+%^@!=-]/.test(c) ? c : `\\${c}`;
+  }
+  return depth === 0 ? { word: out, globs } : undefined;
+}
+
+const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * The fields the domain knows in full before pathname expansion, with the values of the case, where one of them is a
+ * pattern; with the word that gives each pattern (`patternWord`), or text.
+ */
+function probeOf(c: FieldCase): { fields: Field[]; words: string[]; globs: ('always' | 'extglob' | 'never')[] } | undefined {
+  const pre = shapesOf(c.text, c.values, { glob: false });
+  if (!pre || !exact(pre) || pre.mayFail) return undefined;
+  const fs = pre.cases[0].flatMap((s) => (s as { fields: Field[] }).fields);
+  if (fs.some((f) => f.text === undefined) || !fs.some((f) => typeof f.pattern === 'string')) return undefined;
+  const words = fs.map((f) => (typeof f.pattern === 'string' ? patternWord(f.pattern) : { word: quote(f.text!), globs: 'never' as const }));
+  if (words.includes(undefined)) return undefined;
+  const ws = words as NonNullable<typeof words[number]>[];
+  return { fields: fs, words: ws.map((w, i) => (w.globs === 'never' ? quote(fs[i].text!) : w.word)), globs: ws.map((w) => w.globs) };
+}
+
 describe('the field domain (fieldshape.ts)', () => {
   describe('shapes', () => {
     const one = (text: string, values?: Values): Shape[] => {
@@ -59,7 +106,7 @@ describe('the field domain (fieldshape.ts)', () => {
     });
     it('gives the kinds of holes', () => {
       const kinds = (text: string): string[] => one(text).map((s) => ('fields' in s ? s.fields[0] : s.first).head!.kind);
-      assert.deepStrictEqual(['$#', '${#x}', '$((x))', '"$@"', '<(:)', '$"a"', '~'].map(kinds), [['digits'], ['digits'], ['integer'], ['text'], ['text'], ['text'], ['text']]);
+      assert.deepStrictEqual(['$#', '${#x}', '"$((x))"', '"$@"', '<(:)', '$"a"', '~'].map(kinds), [['digits'], ['digits'], ['integer'], ['text'], ['text'], ['text'], ['text']]);
     });
     it('reads `$!` alone as no field or one of digits (F62)', () => {
       assert.deepStrictEqual(one('$!'), [{ min: 0, max: 1, ...Object.fromEntries(['first', 'middle', 'last'].map((k) => [k, { start: '', end: '', head: { kind: 'digits', quoted: false, empty: false }, tail: { kind: 'digits', quoted: false, empty: false } }])) }]);
@@ -198,6 +245,54 @@ describe('the field domain (fieldshape.ts)', () => {
       // (A quoted `-` in brackets is escaped; a field that only an empty hole may give is still marked.)
       assert.deepStrictEqual([pre('[a"-"c]'), (shapesOf('IFS=; show $x', undefined, { glob: false })!.cases[0][0] as { first: Field }).first.pattern], [['[a\\-c]'], true]);
     });
+    it('lists the names of `${!x@}` and does not fail on them; fails on `${x@}` and `${!x@Q}` (F85)', () => {
+      const ws = (t: string): WordShapes => shapesOf(`show ${t}`)!;
+      assert.deepStrictEqual(['${!z@}', '"${!z@}"', '${!z*}', '${x@}', '${!x@Q}', '${x@QE}', '${!a[@]@}', '${x@Q}'].map((t) => ws(t).mayFail), [false, false, false, true, true, true, true, false]);
+      assert.deepStrictEqual([shapesHold(ws('"${!B@}"'), ['BASH', 'BASHOPTS']), shapesHold(ws('"${!B@}"'), [])], [true, true]);
+    });
+    it('says bash may fail on `:=` of what it keeps (F86)', () => {
+      const fails = (t: string): boolean => shapesOf(t)!.mayFail;
+      assert.deepStrictEqual(['show ${FUNCNAME:=a}', 'show ${BASH_ARGV=a}', 'show ${GROUPS:=a}', 'show ${x[@]:=a}', 'declare -i x; show ${x:=a}', 'show ${x:=a}'].map(fails),
+        [true, true, true, true, true, false]);
+    });
+    it('takes no value for a variable the word may assign by arithmetic (F87)', () => {
+      const v = new Map([['x', ['a']], ['z', ['bcd']]]);
+      // (bash: `x=a; z=bcd; ${z:x=1}$x` is `cd1`, `${z[x=2]}$x` is `2`.)
+      assert.deepStrictEqual([shapesHold(shapesOf('show ${z:x=1}$x', v)!, ['cd1']), shapesHold(shapesOf('show ${z[x=2]}$x', v)!, ['2']), shapesHold(shapesOf('show ${z:0:x=2}$x', v)!, ['bc2'])], [true, true, true]);
+      // (Arithmetic that names nothing assigns nothing: the value is still taken.)
+      assert.deepStrictEqual(texts(shapesOf('show ${z:1}$x$((1+1))', v)!) ?? texts(shapesOf('set -f; show ${z:1}$x', v)!), ['cda']);
+      assert.strictEqual(shapesOf('show $x${z:1}', v)!.cases[0].length, 1);
+    });
+    it('does not know a word that may assign IFS, and splits by an IFS not known where its arithmetic may (F88, F89)', () => {
+      assert.deepStrictEqual(['unset IFS; show ${IFS=:}$x', 'show ${IFS:=:}', 'show ${!y=1}$x', 'declare -n r=IFS; show ${r:=1}', 'show $x${y@P}', 'show $x${!y@P}'].map((t) => shapesOf(t)), Array(6).fill(undefined));
+      // (bash: `set -f; x='a b'; $x$((IFS=1))` is one field, `a b`; with `y='IFS=1'`, `x=a1b; $x$((y))` is `a`, `b`, and so are
+      // `$x${!y}` with `y='a[IFS=1]'`, `$x$r` with `declare -n r='a[IFS=1]'`, and `$x${i:=IFS=1}` with `declare -i i`.)
+      const holds = (t: string, fields: string[]): boolean => shapesHold(shapesOf(`set -f; x='a b'; show ${t}`, new Map([['x', ['a b']]]))!, fields);
+      assert.deepStrictEqual([holds('$x$((IFS=1))', ['a b']), holds('$x$((y))', ['a b']), holds('$x${!y}', ['a b']), holds('$x${a[y]}', ['a b']), holds('$x${z:y}', ['a b']), holds('$x$[y]', ['a b'])],
+        [true, true, true, true, true, true]);
+      // (F95: text before the assignment that the new IFS holds splits too, `a1b$((IFS=1))` is `a`, `b`; F96: text that IFS
+      // holds is quoted, `*b$x` with `IFS='*'` is no pattern.)
+      assert.deepStrictEqual(['a1b$((IFS=1))', '{1..2}$((IFS=1))', '-$((x))', "IFS='*'; show *b$x", "IFS='('; shopt -s extglob; show @(b)$x", "IFS=-; show [a-c]$x"].map((t) => shapesOf(t.includes('show') ? t : `show ${t}`)), Array(6).fill(undefined));
+      assert.deepStrictEqual(["'1'$((IFS=1))", '$((IFS=1))', "IFS='*'; show *b", "IFS=-; show a-$x*", "IFS=:; show a:$x*"].map((t) => !!shapesOf(t.includes('show') ? t : `show ${t}`)), [true, true, true, true, true]);
+      // (Through an element, `${!a[1]}`; twice, `$((x))$((y))`; after a word that may assign IFS otherwise.)
+      assert.deepStrictEqual([holds('$x${!a[1]}', ['a b']), holds('$x$((y))$((z))', ['a b']), holds('$x${!a[@]}', ['a b']), shapesOf('show ${IFS=1}$((x))')], [true, true, false, undefined]);
+      assert.deepStrictEqual([shapesHold(shapesOf('declare -n r; show $x$r')!, ['a', 'b']), shapesHold(shapesOf('declare -i i; set -f; show $x${i:=IFS=1}', new Map([['x', ['a1b']]]))!, ['a', 'b'])], [true, true]);
+      // (Arithmetic that names nothing, `$((-1))`, splits by the IFS as it is; with digits and `-` in IFS, a quoted glob character is not known, F81.)
+      assert.deepStrictEqual([holds('$x$((-1))', ['a b-1']), !!shapesOf("IFS=1; show '*'$((x))"), !!shapesOf("show '*'$((x))"), !!shapesOf("IFS='*'; show '1'$((x))")], [false, true, true, true]);
+    });
+    it('does not know a tilde or a `$` before a line continuation, a range with a `+` step across `\\`, an extglob group with quotes or expansions, `${ cmd; }` (F90 to F93)', () => {
+      assert.deepStrictEqual(['a=~\\\n/x', 'x=a:~\\\n/x', '$\\\n@', '$\\\n#', '$\\\n((1+1))', "$\\\n'a'", '{Z..a..+2}', 'x@(${x})y', '+($x)', "@(a'|'b)", '@(a"|"b)', '@($(echo))', '${ echo; }', '${| REPLY=a; }'].map((t) => shapesOf(`shopt -s extglob\nshow ${t}`)),
+        Array(14).fill(undefined));
+      assert.deepStrictEqual(['@(a|b)', '@(a\\|b)', '{a..e..+2}', '$x\\\n/', 'a$', '$(echo)x'].map((t) => !!shapesOf(`shopt -s extglob\nshow ${t}`)), [true, true, true, true, false, true]);
+      assert.deepStrictEqual(shapesOf('shopt -s extglob\nshow @(a\\|b)', undefined, { glob: false })!.cases[0], [{ fields: [{ text: '@(a|b)', start: '@(a|b)', end: '@(a|b)', pattern: '@(a\\|b)' }] }]);
+    });
+    it('reads a `/` next to a special character as special where globstar may be on (F94)', () => {
+      const holds = (t: string, fields: string[], pre = 'shopt -s globstar; '): boolean => shapesHold(shapesOf(`${pre}show ${t}`, new Map([['x', ['d/**/x']]]))!, fields);
+      assert.deepStrictEqual([holds('d/**/x', ['d/x']), holds('**/x', ['x']), holds('$x', ['d/x']), holds('d/**/x', ['d/x'], ''), holds('/a/**', ['/a/']), holds('/a*', ['/b'])], [true, true, true, false, true, false]);
+    });
+    it('reads the operand of an expansion with its quotes (`"${x:-\'a\'}"` keeps them)', () => {
+      assert.deepStrictEqual(texts(shapesOf('show "${x:-\'a\'}"', new Map([['x', [null]]]))!), ["'a'"]);
+    });
     it('says whether a word may give no field', () => {
       assert.deepStrictEqual(['$x', '"$x"', '"$@"', '$x$y', 'a'].map((t) => mayGiveNone(shapesOf(`show ${t}`)!)), [true, false, true, true, false]);
     });
@@ -248,6 +343,9 @@ describe('the field domain (fieldshape.ts)', () => {
     const ran: (string[] | undefined | null)[] = [];
     /** The same, with `set -f` just before `show` (a line the model does not read): the fields before pathname expansion. */
     const unglobbed: (string[] | undefined | null)[] = [];
+    /** The patterns the domain gives before pathname expansion, where it knows each field (`probeOf`), and what bash matches with each. */
+    const probes = cases.map((c) => probeOf(c));
+    const matched: (string[][] | undefined)[] = [];
     let dir = '';
     before(async () => {
       dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fieldshape-'));
@@ -258,22 +356,38 @@ describe('the field domain (fieldshape.ts)', () => {
         const script = ["show() { printf 'S\\0'; for a; do printf 'F%s\\0' \"$a\"; done; }", ...batch.flatMap((c, k) => {
           const d = path.join(dir, `c${from + k}`);
           fs.mkdirSync(d);
-          for (const f of c.files) fs.writeFileSync(path.join(d, f), '');
+          for (const f of c.files) {
+            fs.mkdirSync(path.dirname(path.join(d, f)), { recursive: true });
+            fs.writeFileSync(path.join(d, f), '');
+          }
           Object.assign(env, c.env);
-          const run = (text: string): string => `printf 'C\\0'; ( cd ${JSON.stringify(d)} || exit\n${c.hidden}\n${text})`;
+          // (A word with an extglob group parses only with extglob on: on before the case, which starts with it on, F91.)
+          const run = (text: string, extglob = c.extglob): string => `${extglob ? 'shopt -s extglob\n' : ''}printf '\\001C\\0'; ( cd ${JSON.stringify(d)} || exit\n${c.hidden}\n${text})${extglob ? '\nshopt -u extglob' : ''}`;
           // (The text ends with `show WORD`.)
           const at = c.text.length - `show ${c.word}\n`.length;
           const ready = `${c.text.slice(0, at)}printf 'R\\0'\n`;
-          return [run(`${ready}${c.text.slice(at)}`), run(`${ready}set -f\n${c.text.slice(at)}`)];
+          const probe = probes[from + k];
+          // (Each pattern alone, with nullglob: the names bash matches with it; none with `set -f`, `N`.)
+          const patterns = probe && run(`${c.extglob ? '' : 'shopt -u extglob\n'}${ready}case $- in *f*) printf 'N\\0';; esac\nshopt -q extglob && printf 'E\\0'\nshopt -s nullglob; shopt -u failglob\n${probe.words.map((w) => `show ${w}\n`).join('')}`, true);
+          return [run(`${ready}${c.text.slice(at)}`), run(`${ready}set -f\n${c.text.slice(at)}`), patterns ?? "printf '\\001C\\0'"];
         })].join('\n');
         const file = path.join(dir, `batch${from}.sh`);
         fs.writeFileSync(file, script);
         const r = await runContained(['bash', '--norc', file], dir, env, 60000);
-        const runs = r.stdout.split('C\0').slice(1);
-        assert.strictEqual(runs.length, 2 * batch.length, r.stderr);
+        const runs = r.stdout.split('\x01C\0').slice(1);
+        assert.strictEqual(runs.length, 3 * batch.length, r.stderr);
         runs.forEach((out, k) => {
           const parts = out.split('\0').slice(0, -1);
-          (k % 2 ? unglobbed : ran).push(parts[0] !== 'R' ? null : parts[1] === 'S' ? parts.slice(2).map((p) => p.slice(1)) : undefined);
+          if (k % 3 === 2) {
+            const each: string[][] = [];
+            for (const p of parts.slice(1)) {
+              if (p === 'S') each.push([]);
+              else if (p.startsWith('F')) each[each.length - 1].push(p.slice(1));
+            }
+            // (With extglob off, a group alone is no pattern: such a field is not checked.)
+            const extglobOn = parts.includes('E');
+            matched.push(parts[0] !== 'R' || parts[1] === 'N' || probes[from + Math.floor(k / 3)]!.globs.some((g) => g === 'extglob' && !extglobOn) ? undefined : each);
+          } else (k % 3 ? unglobbed : ran).push(parts[0] !== 'R' ? null : parts[1] === 'S' ? parts.slice(2).map((p) => p.slice(1)) : undefined);
         });
       }
     });
@@ -281,7 +395,7 @@ describe('the field domain (fieldshape.ts)', () => {
 
     it('gives shapes that hold bash\'s fields, and questions that hold for them', () => {
       const wrong: string[] = [];
-      const stats = { cases: cases.length, unknown: 0, failed: 0, exactCount: 0, exactValues: 0 };
+      const stats = { cases: cases.length, unknown: 0, failed: 0, exactCount: 0, exactValues: 0, patterns: 0 };
       cases.forEach((c: FieldCase, i) => {
         const got = ran[i];
         // (A case whose setup failed, `set -u` with `RANDOM=…`, says nothing.)
@@ -308,6 +422,19 @@ describe('the field domain (fieldshape.ts)', () => {
           // (Not where the word reads what `set -f` changes: `$-`, `$_`, `$LINENO`, `$!`, or what changes by itself.)
           const moving = /\$\{?(?:[-_!]|LINENO|RANDOM|SECONDS)/.test(c.word);
           if (flat && !marked && !moving && JSON.stringify(flat) !== JSON.stringify(got)) wrong.push(`no pattern, but globbing changed ${JSON.stringify(flat)} into ${JSON.stringify(got)}: ${where}`);
+          // (The patterns, where the domain knows each field: bash's fields are the names each matches, or where it
+          // matches none, the field itself or nothing, nullglob.)
+          const probe = probes[i];
+          const names = matched[i];
+          if (values && probe && names) {
+            stats.patterns++;
+            const fits = (k: number, from: number): boolean => {
+              if (k === names.length) return from === got.length;
+              const alts = probe.globs[k] !== 'never' && !names[k].length ? [[probe.fields[k].text!], []] : [names[k]];
+              return alts.some((a) => JSON.stringify(got.slice(from, from + a.length)) === JSON.stringify(a) && fits(k + 1, from + a.length));
+            };
+            if (!fits(0, 0)) wrong.push(`${JSON.stringify(got)}: not what the patterns ${JSON.stringify(probe.words)} match, ${JSON.stringify(names)}: ${where}`);
+          }
           const questions: string[] = [];
           if (!shapesHold(ws, got, checked(questions))) wrong.push(`${JSON.stringify(got)} not in ${JSON.stringify(ws.cases)}${values ? ' (with values)' : ''}: ${where}`);
           wrong.push(...questions.map((q) => `${q}: ${where}`));

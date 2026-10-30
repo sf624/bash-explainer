@@ -18,15 +18,28 @@ export interface FieldCase {
   files: string[];
   /** The variables of the environment that decide the options the model does not know. */
   env: Record<string, string>;
+  /** The word has an extglob group: bash parses it only with extglob on, so the case starts with `shopt -s extglob`. */
+  extglob: boolean;
 }
 
 const VALUES = ['', '-v', '-vu', 'u', 'a b', ' a ', '-v u', '*', '-v*', '\\-v*', '-V*', '!(zz)', '@(-vu)', 'a:b', ':', 'a::b', ' ',
-  '\\', 'a\\b', '[a]', '-', '--', '1', '-1', 'x y z', '\\n', '-v\nu', '+x', 'a=1', 'v[1]', '12', '\t-v', '*u', '-?u', ':-v:'];
-const FILES = ['-vu', '-Vu', '-v', '\\-vu', 'a\\b', 'x1', '.h', '[a]', '*', 'ab', 'a b', '-', '--', 'u', 'a=1', '12', 'v1'];
+  '\\', 'a\\b', '[a]', '-', '--', '1', '-1', 'x y z', '\\n', '-v\nu', '+x', 'a=1', 'v[1]', '12', '\t-v', '*u', '-?u', ':-v:',
+  // (Values that assign when arithmetic reads them, or an indirection's subscript: F87, F89.)
+  'IFS=1', 'a[IFS=1]', 'y=2', 'a[y=1]', '1-1', 'IFS', 'y', '$((IFS=1))'];
+const FILES = ['-vu', '-Vu', '-v', '\\-vu', 'a\\b', 'x1', '.h', '[a]', '*', 'ab', 'a b', '-', '--', 'u', 'a=1', '12', 'v1', 'd/x', 'd/e/x', 'a|b', 'a(b'];
 const LITERALS = ['-', '-v', 'v', 'u', '--', '+', 'a', '=', 'a=', '1', '*', '?', '[a]', '[', ']', '\\*', '\\-', '%s', '.', '/', ':', '@',
-  '\\\n', '\\ ', 'x', 'V', '+=', '_', '\\n', '~', '~/x'];
+  '\\\n', '\\ ', 'x', 'V', '+=', '_', '\\n', '~', '~/x',
+  // (A tilde after `=` or `:` before a line continuation, and `$` before one: F90.)
+  'a=~\\\n/x', ':~\\\n/x', 'x=a:~\\\n/x', '~\\\nx', '$\\\n@', '$\\\n#', '$\\\n((1+1))', "$\\\n'a'", '$\\\n"b"', '$\\\n{x}', '$\\\n$', '$\\\n?', '$\\\n*',
+  '$\\\n-', '$\\\n1', '$\\\nx', '${x\\\n}', '$(\\\n(1))',
+  // (globstar: `d/**/x` also matches `d/x`.)
+  '**', '**/', 'd/**/x', 'd/**', '**/x', 'd/*/x'];
+/** Extglob groups, with quotes and expansions in them or not (F91). */
+const GROUPS = ['@(a|b)', '+(-v)', '!(zz)', '*(a)', '?(-)v*', '@(-v|-vu)', '@(a\\|b)', "@(a'|'b)", '@(a"|"b)', 'x@(${x})y', '+($x)', '@(${x}|u)', '!($y)', '@($(printf a))', '@(a|$((1)))', '*(\\-)v'];
+/** Variables bash does not let a script assign (F86). */
+const NOASSIGN = ['FUNCNAME', 'BASH_LINENO', 'BASH_SOURCE', 'BASH_ARGV', 'BASH_ARGC', 'GROUPS', 'DIRSTACK', 'BASH_ARGV0', 'PPID'];
 const IN_QUOTES = ['-v', ' ', 'a b', '*', '\\\n', '\\$', '\\n', '%s', '-', 'u', '\\"', '\\\\', ':', '='];
-const WORDS = ['-v', 'a b', '', '"$y"', '*', '-', 'u', '"-v"', '$z'];
+const WORDS = ['-v', 'a b', '', '"$y"', '*', '-', 'u', '"-v"', '$z', "'a b'", "'-v'", '\\-v', "'*'", '\\*', "$'\\t'", '"a"b', '~', '$((1))'];
 const NAMES = ['x', 'y', 'z'];
 const SPECIAL = ['RANDOM', 'LINENO', 'SECONDS', '_', 'FUNCNAME'];
 const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -53,7 +66,7 @@ export function fieldCases(count: number, seed: number): FieldCase[] {
         lines.push(`if [ "$${flag}" = 1 ]; then ${on}; fi`);
       }
     };
-    for (const o of ['nullglob', 'failglob', 'dotglob', 'nocaseglob', 'extglob']) option(`shopt -s ${o}`, `shopt -u ${o}`);
+    for (const o of ['nullglob', 'failglob', 'dotglob', 'nocaseglob', 'extglob', 'globstar']) option(`shopt -s ${o}`, `shopt -u ${o}`);
     option('set -f', 'set +f');
     option('set +B', 'set -B');
     option('set -o posix', 'set +o posix');
@@ -80,6 +93,7 @@ export function fieldCases(count: number, seed: number): FieldCase[] {
     }
     // A read-only variable, a nameref and a variable bash sets itself, each with a value given to the domain that it must not take.
     if (chance(0.1)) lines.push(`readonly ${pick(NAMES)}`);
+    if (chance(0.05)) lines.push(`declare -i ${pick(NAMES)}`);
     if (chance(0.15)) {
       const target = pick(['x', 'a[@]', 'a']);
       lines.push(`declare -n r=${quote(target)}`);
@@ -96,7 +110,10 @@ export function fieldCases(count: number, seed: number): FieldCase[] {
     if (chance(0.5)) hidden.push(': &', 'wait');
     hidden.push(chance(0.5) ? 'true' : 'false');
     const word = wordOf(pick, chance);
-    cases.push({ text: `${lines.join('\n')}${lines.length ? '\n' : ''}show ${word}\n`, word, hidden: hidden.join('\n'), values, files: FILES.filter(() => chance(0.3)), env });
+    // (An extglob group parses only with extglob on: on at the start, the options above may turn it off as the case runs.)
+    const extglob = GROUPS.some((g) => word.includes(g));
+    if (extglob) lines.unshift('shopt -s extglob');
+    cases.push({ text: `${lines.join('\n')}${lines.length ? '\n' : ''}show ${word}\n`, word, hidden: hidden.join('\n'), values, files: FILES.filter(() => chance(0.3)), env, extglob });
   }
   return cases;
 }
@@ -112,6 +129,13 @@ function wordOf(pick: <T>(xs: readonly T[]) => T, chance: (p: number) => boolean
       '"$@"', '$@', '$*', '"$*"', '"${a[@]}"', '${a[@]}', '${a[*]}', '$1', '${2}', `\${${x}:?}`, '$-',
       `\${${x}:=${pick(WORDS)}}`, `\${${x}=${pick(WORDS)}}`, '${1:=a}', `\${${x}@Q}`, `\${${x}@Z}`, '$r', '${r}', `$${pick(SPECIAL)}`,
       pick(['${#:+-v}', '${#/#/-}', '${##1}', '${#%1}', '${#@Q}', '${#-x}', '${?:+x}', '${#^^}', '${##}', '${#}', '${!}', '${#1}']),
+      // (What the word assigns itself, by `=` or arithmetic, IFS among them (F87, F88); names and indirections (F85, F89); `:=` on what bash keeps (F86).)
+      pick([`\${${x}:${pick(['1', 'y=1', 'IFS=1', 'x', '0:y=2'])}}`, `\${a[${pick(['0', 'y=1', 'IFS=1', 'x', '$x'])}]}`, `\${${x}[y=1]}`, `$((${pick(['x', 'y=1', 'IFS=1', 'IFS=-1', '${x}', 'IFS+=1'])}))`,
+        `$[${pick(['x', 'IFS=1'])}]`, `\${IFS${pick(['=', ':=', '-', ':+', '+'])}${pick([':', '1', '', '"$y"', ' '])}}`, `\${!${x}}`, `\${!${x}@}`, `\${!${x}*}`, '${!z@}', '${!B*}', `\${${x}@}`,
+        `\${!${x}@Q}`, `\${${x}@P}`, `\${${x}[@]:=a}`, `\${!${x}=a}`, `\${${pick(NOASSIGN)}${pick([':=', '='])}a}`, `\${${x}@QE}`, '${!a[@]}', '${#a[y=1]}']),
+      // (Operators the evaluator computes over known values.)
+      pick([`\${${x}/a/-v}`, `\${${x}//[ab]/ }`, `\${${x}^^}`, `\${${x},}`, `\${${x}:1:1}`, `\${${x}: -1}`, `\${${x}/#-/+}`, `\${${x}/%u/ x}`, `\${${x}//\\*/a}`, `\${${x}/a/"$y"}`,
+        `\${${x}~~}`, `\${${x}##*-}`, `\${${x}%%[a-z]*}`, '"${a[*]}"', '${*:-x}', '${@:2}', '"${@:1:2}"', '${#@}', '${#*}', `\${${x}@U}`, `\${${x}@a}`, '~+', '~-', '~+/*', `~${x}`]),
       ...(quoted ? [] : [`$"${pick(IN_QUOTES)}"`, `$'${pick(['-v', 'a b', '\\t', '*'])}'`, '<(:)']),
     ]);
   };
@@ -120,8 +144,10 @@ function wordOf(pick: <T>(xs: readonly T[]) => T, chance: (p: number) => boolean
       case 0: return pick(LITERALS);
       case 1: return quote(pick(IN_QUOTES).replace(/\\/g, ''));
       case 2: return `"${Array.from({ length: 1 + (chance(0.5) ? 1 : 0) + (chance(0.3) ? 1 : 0) }, () => (chance(0.5) ? pick(IN_QUOTES) : expansion(true))).join('')}"`;
-      case 3: return pick(['{a,-v}', '{,x}', '{1..2}', '{"a b",c}', '{-v,"*"}', '{Z..a}', '{a..c}']);
-      case 4: return pick(['-v', '-', 'a', '*']);
+      case 3: return pick(['{a,-v}', '{,x}', '{1..2}', '{"a b",c}', '{-v,"*"}', '{Z..a}', '{a..c}', '{Z..a..+2}', '{a..e..+2}', '{1..5..+2}', '{Z..a..-3}', '{+1..3}', '{a..c..+0}',
+        '{1..$x}', '{$x,a}', '{a,b{c,d}}', '{a,}', '{,}', '{a}', '{a..c..}', '{1..3..0}', '{-1..1}', '{01..3}', '{a..C}', '\\{a,b}', '{a,b\\}', "{'a,b',c}", '{a..c}{1..2}',
+        "{$'a b',c}", '{1..a}', '{3..1}', '{-3..-1..2}', '{a,"$x"}']);
+      case 4: return chance(0.5) ? pick(GROUPS) : pick(['-v', '-', 'a', '*']);
       default: return expansion(false);
     }
   };
