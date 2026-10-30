@@ -81,4 +81,29 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // A word of a builtin whose value the script gives (`x=-e; set $x`) is read as the fields bash gives it, by the
+  // trust scan (for each value the script writes, and none) and by the walk: an option there is an option.
+  it('makes none that bash contradicts where a builtin gets the fields of a variable', async function () {
+    this.timeout(60_000);
+    const test = (v: string): string => `⟦s:1⟧if ⟦p:1⟧[ "$${v}" = 1 ]⟦c:1⟧; then : M2; else : M3; fi`;
+    const decides = [
+      'u=1; v=u; declare "$v=2"', 'u=1; v=u; export $v=3', "u=1; x='u=2 w=3'; declare $x", 'u=1; x=-g; f() { declare $x u=2; }; f',
+      'u=1; x=+e; set -e $x; false; u=2', 'u=1; set {-e,+e}; false; u=2', 'u=1; x=; declare $x u=4',
+    ];
+    // (Where the fields may give an option that sets `u`, or a value not known, nothing about `u` is decided.)
+    const undecided = [
+      'u=1; x=-v; printf $x u 2', 'u=1; x=-v; [ -t 0 ] && x=; printf $x u 2', "u=1; x='-a u'; read $x <<< 2", 'u=1; x=-i; declare $x u; u=1+1',
+      'u=1; x=u; [ -t 0 ] && x=w; declare $x=2',
+    ];
+    const list: Script[] = [...decides, ...undecided].map((s) => ({ text: `${s}; ${test('u')}; : M4`, constructs: [{ id: 1, type: 'if_statement' }] }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'decisions-'));
+    try {
+      const results = await checkAll(list, dir, 4);
+      assert.deepStrictEqual(results.flatMap((r, i) => r.problems.map((p) => `${p}\n${forModel(list[i].text).src}`)), []);
+      assert.deepStrictEqual(results.map((r) => r.decided > 0), [...decides.map(() => true), ...undecided.map(() => false)]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

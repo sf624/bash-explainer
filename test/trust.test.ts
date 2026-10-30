@@ -188,6 +188,30 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     assert.strictEqual(decided('y=1; HOME=0; m=~; (( m )); [ "$y" = 1 ] && :'), 'true');
   });
 
+  it('reads a word of `set` or a declaration as the fields of each value the script gives its variables (src/semantics/deferred.ts)', () => {
+    const blind = (src: string): string | undefined => shellState(parser.parse(src)).blind;
+    const unknown = '`set` is given a word not known before its operands, which may be any option';
+    // Each value the script writes, and none: `-a` exports the functions after it, `-k` trusts nothing.
+    const body = 'x=0; f() { [ "$x" = 0 ] && :; }; f';
+    assert.strictEqual(decided(`o=-e; set $o; ${body}`), 'true');
+    assert.strictEqual(decided(`o=-u; [ -t 0 ] || o=-a; f() { set $o; }; f; ${body}`), undefined);
+    assert.strictEqual(blind('o=-e; [ -t 0 ] || o=-k; set $o'), '`set -k` (keyword) makes every assignment word one for its command');
+    assert.strictEqual(blind('set {-e,-u}'), undefined);
+    assert.strictEqual(blind('o=nounset; set -o $o'), undefined);
+    // A value that is not text the script wrote in full, or a field that is not known: read as written.
+    for (const src of ['set $nope', 'read -r o; set $o', 'o=-e; o+=u; set $o', 'o=$y; set $o', 'o=$(f); set $o', "o='-*'; set $o", 'o=-e; set $o ~',
+      'IFS=:; o=-e; set $o', 'a=1 b=1 c=1 d=1 e=1 f=1 g=1; set $a $b $c $d $e $f $g', 'set ${o:-y}', 'set $1']) assert.strictEqual(blind(src), unknown, src);
+    // (Quoted, it is not split: an IFS the script sets does not matter.)
+    assert.strictEqual(blind('IFS=:; o=-e; set "$o"'), undefined);
+    // The walk reads it too, and trusts nothing where it does not know the fields there (not in code that never runs).
+    assert.strictEqual(blind('o=-e; [ -t 0 ] && o=-u; set $o'), 'a builtin is given a word whose fields the trust read, which are not known here');
+    assert.strictEqual(blind('o=-e; if false; then [ -t 0 ] && o=-u; set $o; fi'), undefined);
+    // A variable such a word reads must not be set by a builtin read so.
+    assert.strictEqual(blind('o=a; v=o; declare "$v=-e"; set $o'), 'a builtin may set a variable whose value gives the words of a builtin');
+    // A word beside it that is not read as fields: an assignment of a declaration.
+    assert.strictEqual(shellState(parser.parse('o=-i; v=1+2; declare $o n=$v')).end.variables.get('n')?.attrs.i?.state, 'on');
+  });
+
   it('takes a function defined after `shopt -so allexport` as exported, as after `set -a`', () => {
     // (bash exports it: another bash sees it. Before the allow-list, the scan read `set -a` but not `shopt -so`.)
     assert.strictEqual(bash("shopt -so allexport; f() { :; }; bash -c 'declare -F f'"), 'f\n');

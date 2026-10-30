@@ -176,7 +176,9 @@ describe('the status after a statement against bash (src/semantics/state.ts)', (
     ['x=1; exec {x}>/dev/null; [ "$x" = 1 ]', false], ['[ "$(echo a)" = a ]', false], ['[ "${#x}" = 0 ]', false], ['[ "a\\b" = "a\\b" ]', true],
     ['shopt -s nocasematch; [[ A =~ a ]]', false], ["x=$'1\\r'; [[ $x -eq 1 ]]", false], ['x=$\'1\\n\'; [[ $x -eq 1 ]]', false], ['[[ $\'1\\n\' -eq 1 ]]', true], ['[ @(a) = a ]', false],
     ['declare -c y=abc; [ "$y" = abc ]', false], ['_=5; [ "$_" = 5 ]', false], ['x=1; v=x; unset "$v"; [ "$x" = 1 ]', false], ['x=1; v=x; read $v <<< 2; [ "$x" = 1 ]', false],
-    ['x=1; v=x; printf -v "$v" 2; [ "$x" = 1 ]', false], ['x=1; v=x; declare "$v=2"; [ "$x" = 1 ]', false], ['x=1; v=x; typeset -n r=$v; r=2; [ "$x" = 1 ]', false],
+    ['x=1; v=x; printf -v "$v" 2; [ "$x" = 1 ]', false], ['x=1; v=x; declare "$v=2"; [ "$x" = 1 ]', true],
+    // (A word of a builtin is read as the fields the values the script gives its variables make of it: src/semantics/trust.ts.)
+    ['x=1; v=x; export $v=2; [ "$x" = 1 ]', true], ['x=1; v=x; [ -t 0 ] && v=y; declare "$v=2"; [ "$x" = 1 ]', false], ['f=+e; set -e $f; [ -o errexit ]', true], ['x=-v; case b in b) printf $x y c ;;& b) z=1 ;; esac; [ "$z" = 1 ]', false], ['set {-e,+e}; [ -o errexit ]', true], ['set +B; set -e {+e,-u}; [ -o errexit ]', true], ['x=1; v=x; typeset -n r=$v; r=2; [ "$x" = 1 ]', false],
     ['PWD=/x; cd /; [ "$PWD" = /x ]', false], ['enable -n "["; [ a ]', false], ['x=1; for i in a; do x=2; break; x=3; done; [ "$x" = 2 ]', true],
     ['x=1; f() { x=2; return; x=3; }; f; [ "$x" = 2 ]', true], ['x=1; for i in a b; do x=$i; continue; x=9; done; [ "$x" = b ]', false], ['x=1; for i in a b; do x=2; continue; x=9; done; [ "$x" = 2 ]', true],
   ];

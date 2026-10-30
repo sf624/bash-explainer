@@ -1,7 +1,8 @@
 // What a builtin does to the shell's state, read from its parse by its spec (src/argv/spec.ts: `shellEffect`, and the
 // values and operands of `type: 'variable'` or `'function'`). The walk of the state (src/semantics/walk/) and the
 // trust scan (src/semantics/trust.ts) both read the effects here, so that they never disagree on what a builtin sets.
-import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
+import { fieldLine, interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
+import { lineIndex } from '../argv/regroup';
 import type { CommandSpec, ValueSpec, VariableSet } from '../argv/spec';
 import { declaresNames } from '../argv/query';
 import { argWordFor } from '../argv/words';
@@ -132,6 +133,36 @@ export function builtinParse(name: string, args: readonly SyntaxNode[], shell: S
 }
 
 /**
+ * The words a builtin gets, read with its spec (`builtinRead`): their parse, and for each word of it (a word of the
+ * line, or one of its fields) the word of the line it comes from, and its text (undefined: not known here).
+ */
+export interface BuiltinRead {
+  readonly parse: ArgvParse;
+  node(word: number): SyntaxNode;
+  text(word: number): string | undefined;
+  /** Whether the word is one of the fields of its word of the line (whose text is then known), not that word as written. */
+  field(word: number): boolean;
+  /** How many words the builtin gets. */
+  readonly size: number;
+}
+
+/**
+ * The words the builtin `name` gets from the words `args` (or `spec`: a function of the host), as bash gives them:
+ * a word whose fields `fieldsOf` gives is those fields (`x=-e; set $x` is `set -e`; `x='a b'; declare $x` declares
+ * `a` and `b`; an empty one gives no word), the others are read as written (`fieldLine`, as the argument interpreter
+ * reads the fields the model knows).
+ */
+export function builtinRead(name: string, args: readonly SyntaxNode[], shell: Shell | undefined, spec = builtins[name], fieldsOf?: (n: SyntaxNode) => readonly string[] | undefined): BuiltinRead {
+  const plain = argWordFor(shell);
+  const { line, groups, own } = fieldLine(args.map((a) => (fieldsOf ? { ...plain(a), fields: () => fieldsOf(a) } : plain(a))));
+  const back = lineIndex(groups);
+  // (The fields are read as words of known text: not as a word read again by its fields.)
+  const parse = interpret(spec, line.map(({ fields: _, ...w }) => w), { name });
+  const field = (j: number): boolean => own.has(back(j)) || groups.some((g) => j >= g.from && j < g.from + g.n);
+  return { parse, node: (j) => args[back(j)], text: (j) => (field(j) ? line[j].value : staticWordValue(args[back(j)])), field, size: line.length };
+}
+
+/**
  * What `command` or `builtin` with the words `args` runs, by the command slot of its spec: the command's name
  * (undefined: not known here) and its words; `lookup` when it runs nothing (`command -v x` only looks it up; `command`
  * alone).
@@ -139,6 +170,23 @@ export function builtinParse(name: string, args: readonly SyntaxNode[], shell: S
 export function wrapped(name: 'command' | 'builtin', args: readonly SyntaxNode[], shell: Shell | undefined): { name: string | undefined; args: SyntaxNode[] } | { lookup: true } {
   const at = builtinParse(name, args, shell).roles.find((r) => r.role.role === 'command');
   return at ? { name: staticWordValue(args[at.word]), args: args.slice(at.word + 1) } : { lookup: true };
+}
+
+/**
+ * The command name of the simple command `c` and its words, past `command` and `builtin` (undefined: not known);
+ * `lookup`: `command -v`; `direct`: not behind them (so it may be a function).
+ */
+export function commandWords(c: SyntaxNode, shell: Shell | undefined): { name: string | undefined; args: SyntaxNode[]; lookup: boolean; direct: boolean } {
+  let name = commandName(c);
+  let args = fields(c, 'argument');
+  let direct = true;
+  while (name === 'command' || name === 'builtin') {
+    const inner = wrapped(name, args, shell);
+    if ('lookup' in inner) return { name, args, lookup: true, direct };
+    ({ name, args } = inner);
+    direct = false;
+  }
+  return { name, args, lookup: false, direct };
 }
 
 /**
@@ -163,40 +211,52 @@ function givenValues(parse: ArgvParse): { word: number; at: number; spec: ValueS
 }
 
 /**
- * The variables the builtin `spec` sets with the words `args` read as `parse` (`read -a NAME`, `printf -v NAME`,
+ * The variables the builtin `spec` sets with the words `read` gives it (`read -a NAME`, `printf -v NAME`,
  * `getopts OPTS NAME`, `mapfile NAME`, `wait -p NAME`), in order; its default (`REPLY`, `MAPFILE`) when no word names one,
  * and those it always sets (bats' `run`: `status`, `output`, `lines`).
  */
-export function variableWrites(spec: CommandSpec, parse: ArgvParse, args: readonly SyntaxNode[]): VariableWrite[] {
+export function variableWrites(spec: CommandSpec, read: BuiltinRead): VariableWrite[] {
   const out: VariableWrite[] = [];
-  for (const v of givenValues(parse)) if (v.spec?.sets) out.push({ node: args[v.word], name: wordName(args[v.word], v.at), sets: v.spec.sets });
-  for (const { word, role } of parse.roles) if (role.role === 'operand' && role.spec?.sets) out.push({ node: args[word], name: wordName(args[word]), sets: role.spec.sets });
+  const { parse } = read;
+  for (const v of givenValues(parse)) if (v.spec?.sets) out.push({ node: read.node(v.word), name: read.text(v.word)?.slice(v.at), sets: v.spec.sets });
+  for (const { word, role } of parse.roles) if (role.role === 'operand' && role.spec?.sets) out.push({ node: read.node(word), name: read.text(word), sets: role.spec.sets });
   const byDefault = spec.shellEffect?.byDefault;
   if (!out.length && byDefault) out.push({ node: undefined, name: byDefault.name, sets: byDefault.sets });
   for (const v of spec.shellEffect?.always ?? []) out.push({ node: undefined, ...v });
   return out;
 }
 
+/**
+ * Whether a word of the builtin `spec` may name a variable it sets or a function it runs later, by its spec: the value
+ * of an option (`printf -v`, `mapfile -C`, `complete -F`) or an operand (`read NAME`).
+ */
+export function namesByWords(spec: CommandSpec): boolean {
+  const values = (spec.options ?? []).flatMap((o) => (o.value === undefined ? [] : Array.isArray(o.value) ? o.value : [o.value]));
+  return values.some((v) => !!v.sets || v.type === 'function') || !!spec.operands?.some((o) => o.pattern.some((p) => !!p.sets));
+}
+
 /** The words that name a function the builtin runs later (`mapfile -C f`, `complete -F f`), with their names (undefined: not known here). */
-export function callbacks(parse: ArgvParse, args: readonly SyntaxNode[]): (string | undefined)[] {
-  return givenValues(parse).filter((v) => v.spec?.type === 'function').map((v) => wordName(args[v.word], v.at));
+export function callbacks(read: BuiltinRead): (string | undefined)[] {
+  return givenValues(read.parse).filter((v) => v.spec?.type === 'function').map((v) => read.text(v.word)?.slice(v.at));
 }
 
 /**
- * The options `set` turns on or off with the words `args` read as `parse`, in order (`set -e +e` turns errexit on,
- * then off: the last one wins): `-x`, `+x`, `-o name`, `+o name`. A letter `set` does not have is no option
- * (`set +Z` is an error), except ksh's `-G` (globstar). A name of `-o` not known here is `undefined`.
+ * The options `set` turns on or off with the words `read` gives it, in order (`set -e +e` turns errexit on, then
+ * off: the last one wins): `-x`, `+x`, `-o name`, `+o name`. A letter `set` does not have is no option (`set +Z` is
+ * an error, and in bash then none is turned on), except ksh's `-G` (globstar). A name of `-o` not known here is `undefined`.
  */
-export function setOptionWrites(parse: ArgvParse, args: readonly SyntaxNode[], shell?: Shell): { name: string | undefined; on: boolean }[] {
+export function setOptionWrites(read: BuiltinRead, shell?: Shell): { name: string | undefined; on: boolean }[] {
   const out: { name: string | undefined; on: boolean }[] = [];
-  for (const { word, role } of parse.roles) {
+  for (const { word, role } of read.parse.roles) {
     for (const r of role.role === 'cluster' ? role.letters : [role] as ArgRole[]) {
       if (r.role === 'option' || r.role === 'unknown-option') {
         const letter = r.flag.slice(1);
         const name = letter === 'G' && shell === 'ksh' ? 'globstar' : SET_LETTERS[letter];
+        // (bash checks every option before it sets any: `set -eZ` and `set -e -1` fail, and turn nothing on.)
+        if (!name && r.role === 'unknown-option' && (shell ?? 'bash') === 'bash') return [];
         if (name) out.push({ name, on: r.flag[0] === '-' });
       } else if (r.role === 'value') {
-        out.push({ name: staticWordValue(args[word]), on: r.of !== '+o' });
+        out.push({ name: read.text(word), on: r.of !== '+o' });
       }
     }
   }

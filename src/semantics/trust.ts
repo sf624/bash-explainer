@@ -37,9 +37,11 @@ import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
 import type { BashVersion } from '../bashversion';
 import { field, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
+import type { CommandSpec } from '../argv/spec';
 import { bracedWords } from './brace';
 import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, syntaxRow, type Row } from './allow';
-import { plainName, aliasOf, aliasTexts, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
+import { plainName, aliasOf, aliasTexts, builtinParse, builtinRead, callbacks, commandName, commandWords, DECLARATIONS, setOptionWrites, variableWrites, wordName } from './effects';
+import { type Deferred, deferredReadings, unknownWords } from './deferred';
 import { STATEMENTS } from './env';
 import { localeWritten, openingBlinds, type Opening } from './opening';
 import { closesStandard } from './redirects';
@@ -147,6 +149,10 @@ class Scan {
   readonly copied = new Map<SyntaxNode, Set<string>>();
   /** The variables whose values are command names (`$debug`), and whether they are quoted (not split). */
   private readonly commandVariables: { name: string; quoted: boolean }[] = [];
+  /** The builtins given words whose values are not known where the scan reads them (`unknownWords`), read at the end. */
+  private readonly deferred: Deferred<Where>[] = [];
+  /** The words read as the fields of the values the script gives their variables (see `Trust.expands`). */
+  readonly expanded = new Set<SyntaxNode>();
   /** The aliases the `alias` commands define (a name and its text), and the commands that may run one (see `aliases`). */
   private readonly aliasDefs: AliasDef[] = [];
   private readonly aliasCommands: { c: SyntaxNode; name: string; where: Where }[] = [];
@@ -168,6 +174,7 @@ class Scan {
       if (opening?.set?.get('allexport') === 'on') this.exportAll = true;
       this.visit(root, { fn: undefined, foreign: false, now: true });
       this.aliases();
+      this.readDeferred();
       this.finish();
     } catch (e) {
       /* c8 ignore next -- only `StopScan` is thrown on purpose */
@@ -468,28 +475,29 @@ class Scan {
     if (!subscript && a.children.some((c) => c.type === '+=')) this.appended(name, a, w);
   }
 
-  private declaration(builtin: string, words: SyntaxNode[], { roles, on, off }: Declaration, w: Where): void {
+  private declaration(builtin: string, { words, on, off }: Declaration, w: Where): void {
     if (on.includes('p')) return;
-    const operands = words.filter((x) => roles.get(x)?.role === 'operand');
+    // (A field of a word, `x='a b'; declare $x`, is text of its own: `a`, then `b`.)
+    const operands = words.filter((d) => d.role.role === 'operand');
     if (/[fF]/.test(on)) {
       // (`declare -f f` prints it; `export -f`, `declare -fx` export it, and a name not known may be any.)
       if ((builtin !== 'export' || on.includes('n')) && !on.includes('x')) return;
-      for (const o of operands) {
-        const name = staticWordValue(o);
+      for (const { node: o, field: f } of operands) {
+        const name = f ?? staticWordValue(o);
         if (name === undefined) this.exportAll = true;
         else this.exported.add(name);
       }
       return;
     }
-    const unknownOption = words.some((x) => roles.get(x)?.role === 'unknown-option');
+    const unknownOption = words.some((d) => d.role.role === 'unknown-option');
     const plain = !unknownOption && [...on].every((l) => 'rxg'.includes(l)) && [...off].every((l) => l === 'x') && !(builtin === 'export' && on.includes('n'));
     // (Attributes given where the walk does not see them change what assignments do: readonly ones fail, integer
     // ones run their values.)
     if (builtin === 'readonly' || unknownOption || [...on, ...off].some((l) => !'xg'.includes(l))) this.changed(w);
     const nameref = on.includes('n') && builtin !== 'export';
-    for (const o of operands) {
+    for (const { node: o, field: f } of operands) {
       let name: string;
-      if (o.type === 'variable_assignment') {
+      if (f === undefined && o.type === 'variable_assignment') {
         const nameNode = field(o, 'name')!;
         name = nameNode.type === 'subscript' ? field(nameNode, 'name')!.text : nameNode.text;
         if (nameref) {
@@ -507,7 +515,7 @@ class Scan {
       } else {
         // A word: `x`, `a[1]` (a glob that matches no file, as the walk takes it), `'x=1'`, `"$v"=1` (a name with a value
         // not known), `$v` (a name not known), `{a,b}` (names the braces give where they expand).
-        const text = staticWordValue(o, false, this.shell) ?? (o.type === 'word' && !bracedWords([o]).length ? o.text : undefined);
+        const text = f ?? staticWordValue(o, false, this.shell) ?? (o.type === 'word' && !bracedWords([o]).length ? o.text : undefined);
         const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(text ?? prefixOf(o, this.shell).replace(/=.*/s, '='));
         if (!m || (text === undefined && !m[3])) {
           // (`local -`: the options, not a variable.)
@@ -555,23 +563,6 @@ class Scan {
   }
 
   /**
-   * The command name of `c` and its words, past `command` and `builtin` (undefined: not known); `lookup`: `command -v`;
-   * `direct`: not behind them (so it may be a function).
-   */
-  private nameOf(c: SyntaxNode): { name: string | undefined; args: SyntaxNode[]; lookup: boolean; direct: boolean } {
-    let name = commandName(c);
-    let args = fields(c, 'argument');
-    let direct = true;
-    while (name === 'command' || name === 'builtin') {
-      const inner = wrapped(name, args, this.shell);
-      if ('lookup' in inner) return { name, args, lookup: true, direct };
-      ({ name, args } = inner);
-      direct = false;
-    }
-    return { name, args, lookup: false, direct };
-  }
-
-  /**
    * Whether the command `c` runs a program (a child process), or a name bash does not find: a static name that is no
    * builtin of bash, no function of the script, and no function of the file's host, in a script that defines no alias
    * (an alias's text may make it another command).
@@ -584,7 +575,7 @@ class Scan {
   private command(c: SyntaxNode, w: Where): void {
     const alias = plainName(c);
     if (alias !== undefined) this.aliasCommands.push({ c, name: alias, where: w });
-    const { name, args, lookup, direct } = this.nameOf(c);
+    const { name, args, lookup, direct } = commandWords(c, this.shell);
     if (name === undefined) {
       // `$debug`, `"$run"`: a variable the script sets to command names (see `finish`).
       const m = /^("?)\$\{?([A-Za-z_]\w*)\}?\1$/.exec(field(c, 'name')!.namedChildren[0].text);
@@ -613,13 +604,26 @@ class Scan {
     if (unread) {
       this.blindFor(unread === 'file' ? 'a file is sourced' : 'a command line the model does not read is run');
     }
-    const parse = builtinParse(name, args, this.shell, spec);
+    // A builtin whose words say what it sets or turns on (`set`, the declarations, `printf -v`…), given a word whose
+    // value is not known here: read at the end, as the fields of the values the script gives its variables (`readDeferred`).
+    const unknown = hosted ? undefined : unknownWords(name, spec, args, this.shell);
+    if (unknown) this.deferred.push({ c, name, args, spec, words: unknown, w });
+    else this.builtinWords(c, name, args, spec, hosted, w);
+  }
+
+  /**
+   * The words of the builtin `name` (or of a function of the host: `hosted`), read by its spec and its row; those
+   * whose fields `fieldsOf` gives, as those fields (`readDeferred`).
+   */
+  private builtinWords(c: SyntaxNode, name: string, args: SyntaxNode[], spec: CommandSpec, hosted: CommandSpec | undefined, w: Where, fieldsOf?: (n: SyntaxNode) => readonly string[] | undefined): void {
+    const read = builtinRead(name, args, this.shell, spec, fieldsOf);
+    const { parse } = read;
     // The variables it sets, and the functions it runs later, as its spec says (src/semantics/effects.ts).
-    for (const v of variableWrites(spec, parse, args)) {
+    for (const v of variableWrites(spec, read)) {
       if (v.node) this.named(v.name, v.node, w, v.sets === 'job-id' ? 'number' : 'unknown');
       else this.write(v.name!, w, false, 'unknown');
     }
-    for (const f of callbacks(parse, args)) this.callback(f);
+    for (const f of callbacks(read)) this.callback(f);
     if (hosted) return;
     // The rest by the builtin's row: an option the spec does not know, and the handler of a builtin the walk follows.
     const row = builtinRow(name);
@@ -697,18 +701,18 @@ class Scan {
         // Each option by its row; a name of `-o` not known, or a word whose value is not known before the operands
         // (`set $x`: `-k`?), may be any option. `set -a`, `set -o allexport` (the last of them in the command wins):
         // functions defined after are exported.
-        const writes = setOptionWrites(parse, args);
+        const writes = setOptionWrites(read, this.shell);
         for (const o of writes) {
           if (o.name === undefined) this.blindFor('`set -o` is given an option name not known');
           this.apply(optionRow(SET_OPTIONS, o.name, o.on));
         }
-        const first = parse.roles.find((r) => r.role.role === 'end-of-options' || (r.role.role === 'operand' && staticWordValue(args[r.word]) !== undefined))?.word ?? args.length;
-        if (args.slice(0, first).some((a) => staticWordValue(a) === undefined)) this.blindFor('`set` is given a word not known before its operands, which may be any option');
+        const first = parse.roles.find((r) => r.role.role === 'end-of-options' || (r.role.role === 'operand' && read.text(r.word) !== undefined))?.word ?? read.size;
+        if (Array.from({ length: first }, (_, j) => read.text(j)).some((t) => t === undefined)) this.blindFor('`set` is given a word not known before its operands, which may be any option');
         if (writes.filter((o) => o.name === 'allexport').pop()?.on) this.exportAll = true;
         return;
       }
     }
-    if (DECLARATIONS.has(name)) this.declaration(name, args, readDeclarationWords(name, args, this.shell), w);
+    if (DECLARATIONS.has(name)) this.declaration(name, readDeclarationWords(name, args, this.shell, fieldsOf), w);
   }
 
   /**
@@ -796,6 +800,27 @@ class Scan {
       }
     }
     for (const d of this.aliasDefs) if (!read.has(d)) this.foreign(this.strings.alias(d.word, d.value), 'an alias of text not known', d.where);
+  }
+
+  /**
+   * The builtins given words whose values are not known where they stand (`unknownWords`), read once all the writes
+   * of the script are known: as the fields each value the script gives their variables makes of each word (or none, the
+   * variable unset), with brace expansion on and off; as written where those values are not all text the script wrote
+   * (`deferredReadings`). The walk reads those words as their fields too (`Trust.expands`), and walks again with nothing
+   * trusted where it does not know them. A variable they expand must not be set by such a reading.
+   */
+  private readDeferred(): void {
+    const plans = this.deferred.map((d) => ({ d, readings: deferredReadings(d.words, (name) => this.writes.get(name), this.writes.has('IFS'), this.shell) }));
+    const read = new Map<string, number>();
+    for (const { d, readings } of plans) {
+      if (!readings) continue;
+      for (const name of [...d.words.flatMap((u) => u.names), ...(d.words.some((u) => u.unquoted) ? ['IFS'] : [])]) read.set(name, this.writes.get(name)?.length ?? 0);
+    }
+    for (const { d, readings } of plans) {
+      for (const fieldsOf of readings ?? [undefined]) this.builtinWords(d.c, d.name, d.args, d.spec, undefined, d.w, fieldsOf);
+      if (readings) for (const u of d.words) this.expanded.add(u.word);
+    }
+    for (const [name, count] of read) if ((this.writes.get(name)?.length ?? 0) !== count) this.blindFor('a builtin may set a variable whose value gives the words of a builtin');
   }
 
   /** What is left once the whole script is read: subscripts, integers, the values read as arithmetic, callbacks. */
@@ -968,5 +993,6 @@ export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HO
     },
     mayFail: (n) => scan.fails.has(n),
     fdsMayClose: scan.fdsClose,
+    expands: (w) => scan.expanded.has(w),
   };
 }

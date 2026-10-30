@@ -11,7 +11,8 @@ import type { Decision } from '../state';
 import { actedNames, namespaceOf } from '../../argv/query';
 import { builtins } from '../../dict/builtins';
 import { builtinRow, type Row } from '../allow';
-import { builtinParse, callbacks, commandName } from '../effects';
+import { builtinParse, builtinRead, callbacks, commandName } from '../effects';
+import type { Trust } from '../trustmodel';
 import { writeEffect } from '../vars';
 import { testSpec } from '../names';
 import { type WalkSource, wordIn } from '../words';
@@ -31,13 +32,13 @@ const EXPANDING = ['simple_expansion', 'expansion', 'command_substitution', 'ari
  * which a decision made before it runs does not see. (A row of `all`, also one of an option, `jobs -x`, trusts
  * nothing: no decision is made at all.) A program changes nothing of this shell.
  */
-function changesOnlyNames(c: SyntaxNode, name: string, shell: Shell | undefined): boolean {
+function changesOnlyNames(c: SyntaxNode, name: string, shell: Shell | undefined, trust: Trust): boolean {
   const quiet = (row: Row): boolean => row.effect.kind === 'none' || row.effect.kind === 'names';
   if (!prefixAssignments(c).every((a) => quiet(writeEffect(field(a, 'name')!.text)))) return false;
   if (!Object.hasOwn(builtins, name)) return true;
   const args = fields(c, 'argument');
-  const parse = builtinParse(name, args, shell);
-  return quiet(builtinRow(name)) && callbacks(parse, args).length === 0;
+  // (A word read as its fields may give any option, `x='-C f'; mapfile $x`: the scan read it so, `Trust.expands`.)
+  return quiet(builtinRow(name)) && !args.some((a) => trust.expands(a)) && callbacks(builtinRead(name, args, shell)).length === 0;
 }
 
 /** What the walk decides of its conditions, and the values they read (src/semantics/words.ts evaluates their words). */
@@ -400,8 +401,8 @@ export class WalkConditions {
     return ran.every((item) => descendants(item, ['command']).every((c) => {
       const name = commandName(c);
       // (Assignments alone: by the rows of the variables they assign.)
-      if (!field(c, 'name')) return changesOnlyNames(c, '', this.w.shell);
-      return name !== undefined && !st.functions.get(name) && !st.aliases.get(name) && changesOnlyNames(c, name, this.w.shell);
+      if (!field(c, 'name')) return changesOnlyNames(c, '', this.w.shell, this.w.trust);
+      return name !== undefined && !st.functions.get(name) && !st.aliases.get(name) && changesOnlyNames(c, name, this.w.shell, this.w.trust);
     }));
   }
 

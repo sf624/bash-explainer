@@ -13,7 +13,7 @@ import { descendants, field, fields, type SyntaxNode, wordBraces } from '../../s
 import { parseExpansion } from '../../expansion';
 import { expansionFailure, sameInEveryLocale, substring } from '../chars';
 import { temporariesUnset } from '../names';
-import { aliasOf, builtinParse, commandName, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
+import { aliasOf, builtinParse, builtinRead, type BuiltinRead, commandName, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
 import { attribute, type Attribute, type CommandEntry, environmentHas, exportFromEnvironment, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy, withStatus } from '../shellstate';
 import { builtinExit, definitionExit, exitRefusal } from '../posixexits';
 import { changedByBash, optionRoles, readDeclarationWords, type Declaration } from '../vars';
@@ -46,7 +46,7 @@ export class WalkBuiltins {
    */
   builtin(name: string, args: SyntaxNode[], n: SyntaxNode, st: ShellState, host = false): ShellState {
     const hosted = host && Object.hasOwn(this.w.host, name) ? this.w.host[name] : undefined;
-    if (hosted) return this.effects(hosted, builtinParse(name, args, this.w.shell, hosted), args, n, st, true);
+    if (hosted) return this.effects(hosted, builtinRead(name, args, this.w.shell, hosted), n, st, true);
     if (!builtins[name] || !this.bashBuiltin(name)) return st;
     // Where brace expansion may be on or off (`set +B` on some paths before), a word with braces gives other words
     // (`unset {a,b}`: `a` and `b`, or the name `{a,b}`): both are followed.
@@ -72,11 +72,14 @@ export class WalkBuiltins {
       const inner = wrapped(name, args, this.w.shell);
       return 'lookup' in inner || inner.name === undefined ? st : this.builtin(inner.name, inner.args, n, st);
     }
-    if (DECLARATIONS.has(name)) return this.declare(name, args, readDeclarationWords(name, args, this.w.shell), n, st);
+    // (The words the trust scan read as their fields, `fieldsIn`, are read so; the others as written.)
+    const fieldsOf = this.fieldsIn(args, st);
+    if (DECLARATIONS.has(name)) return this.declare(name, args, readDeclarationWords(name, args, this.w.shell, fieldsOf), n, st);
     if (name === 'unset') return this.unset(args, n, st);
     const spec = builtins[name];
-    const parse = builtinParse(name, args, this.w.shell);
-    st = this.effects(spec, parse, args, n, st);
+    const read = builtinRead(name, args, this.w.shell, spec, fieldsOf);
+    const parse = fieldsOf ? builtinParse(name, args, this.w.shell) : read.parse;
+    st = this.effects(spec, read, n, st);
     const operands = parse.roles.filter((r) => r.role.role === 'operand').map((r) => args[r.word]);
     const valueOf = (flag: string): SyntaxNode | undefined => {
       const r = parse.roles.find((x) => x.role.role === 'value' && x.role.of === flag);
@@ -133,7 +136,7 @@ export class WalkBuiltins {
         return merge([st, moved], this.w.posix);
       }
       case 'let': return this.w.arith.arithRun((s) => this.w.arith.letCommand(operands, s), st);
-      case 'set': return this.setCommand(st, parse, args);
+      case 'set': return this.setCommand(st, read);
       case 'shopt': {
         const on = has('-s') ? 'on' : has('-u') ? 'off' : undefined;
         if (!on) return st;
@@ -213,8 +216,8 @@ export class WalkBuiltins {
    * to run tools, not to change what the names of the file run: the walk goes on as it was (the trust scan trusts
    * nothing in the whole file then, so no condition of it is decided: src/semantics/trust.ts).
    */
-  private effects(spec: CommandSpec, parse: ArgvParse, args: SyntaxNode[], n: SyntaxNode, st: ShellState, hosted = false): ShellState {
-    for (const v of variableWrites(spec, parse, args)) {
+  private effects(spec: CommandSpec, read: BuiltinRead, n: SyntaxNode, st: ShellState, hosted = false): ShellState {
+    for (const v of variableWrites(spec, read)) {
       // (`wait -p`: bash unsets the variable first, also an integer: `x=1; wait -p x` with no job leaves `x` unset.)
       if (v.sets === 'job-id' && v.name && NAME.test(v.name) && attribute(st, v.name, 'r') === 'off') st = this.w.put(st, 'variables', v.name, { declared: 'off', set: 'off', attrs: {}, at: n });
       const was = st;
@@ -302,10 +305,27 @@ export class WalkBuiltins {
     return !on && now === 'unknown' ? merge([st, out], this.w.posix) : out;
   }
 
-  private setCommand(st: ShellState, parse: ArgvParse, args: SyntaxNode[]): ShellState {
+  /**
+   * The fields of the words of a builtin that the trust scan read as the fields the script's values give them
+   * (`Trust.expands`: `x=-e; set $x`), from `st`; undefined when none of `args` is one. Where the fields of one are
+   * not known here, the walk is made again with nothing trusted (the scan took them for those it read).
+   */
+  private fieldsIn(args: readonly SyntaxNode[], st: ShellState): ((a: SyntaxNode) => readonly string[] | undefined) | undefined {
+    const trust = this.w.trust;
+    if (!args.some((a) => trust.expands(a))) return undefined;
+    return (a) => {
+      if (!trust.expands(a)) return undefined;
+      const f = this.w.conditions.fieldsOf(a, st);
+      // (Nothing is read so where nothing is trusted.)
+      if (!f && !this.w.mode.dead) this.w.walkAgain('a builtin is given a word whose fields the trust read, which are not known here');
+      return f;
+    };
+  }
+
+  private setCommand(st: ShellState, read: BuiltinRead): ShellState {
     // (`set -r`: restricted from here on; `set +r` changes nothing, or is refused.)
-    if (this.w.bash && has(parse, '-r')) st = restrictedFromHere(st);
-    for (const { name, on } of setOptionWrites(parse, args, this.w.shell)) {
+    if (this.w.bash && has(read.parse, '-r')) st = restrictedFromHere(st);
+    for (const { name, on } of setOptionWrites(read, this.w.shell)) {
       if (!name) continue;
       const writes = this.w.setWrites.get(this.w.node!) ?? new Map<string, 'on' | 'off'>();
       this.w.setWrites.set(this.w.node!, writes.set(name, on ? 'on' : 'off'));
@@ -316,11 +336,21 @@ export class WalkBuiltins {
     return st;
   }
 
-  /** The names a declaration's words declare or assign. */
-  private operands(words: SyntaxNode[], roles: Map<SyntaxNode, ArgRole>, st: ShellState): Operand[] {
+  /** The names the words `words` of a declaration declare or assign (`decl`: the words the builtin gets). */
+  private operands(words: SyntaxNode[], decl: Declaration, st: ShellState): Operand[] {
     const out: Operand[] = [];
-    for (const w of words) {
-      if (roles.get(w)?.role !== 'operand') continue;
+    const named = (w: SyntaxNode, t: string | undefined): void => {
+      const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(t ?? prefixOf(w, this.w.shell).replace(/=.*/s, '='));
+      if (!m || (t === undefined && !m[3])) return;
+      out.push({ node: w, name: m[1], subscript: !!m[2], ...(m[3] ? { assign: { append: m[3] === '+=', text: t === undefined ? undefined : m[4], array: false } } : {}) });
+    };
+    for (const { node: w, role, field: f } of decl.words) {
+      if (role.role !== 'operand' || !words.includes(w)) continue;
+      // (A field of a word, `x='a b'; declare $x`, names one as text: `a`, then `b`. A word read as written is one word.)
+      if (f !== undefined) {
+        named(w, f);
+        continue;
+      }
       if (w.type === 'variable_assignment') {
         const nameNode = field(w, 'name')!;
         const value = field(w, 'value');
@@ -336,11 +366,7 @@ export class WalkBuiltins {
       // (`local {a,b}` declares `a` and `b` where the shell expands braces; an unquoted `a[1]` that matches no file is itself.)
       const text = this.w.conditions.staticText(w, st);
       const texts = text !== undefined ? [text] : this.w.conditions.fieldsOf(w, st) ?? [w.type === 'word' ? w.text : undefined];
-      for (const t of texts) {
-        const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(t ?? prefixOf(w, this.w.shell).replace(/=.*/s, '='));
-        if (!m || (t === undefined && !m[3])) continue;
-        out.push({ node: w, name: m[1], subscript: !!m[2], ...(m[3] ? { assign: { append: m[3] === '+=', text: t === undefined ? undefined : m[4], array: false } } : {}) });
-      }
+      for (const t of texts) named(w, t);
     }
     return out;
   }
@@ -359,12 +385,13 @@ export class WalkBuiltins {
     return this.declare(command, arrays, readDeclarationWords(command, [...words], this.w.shell), n, st);
   }
 
-  declare(builtin: string, words: SyntaxNode[], { roles, on, off }: Declaration, n: SyntaxNode, st: ShellState): ShellState {
+  declare(builtin: string, words: SyntaxNode[], decl: Declaration, n: SyntaxNode, st: ShellState): ShellState {
+    const { on, off } = decl;
     if (on.includes('p')) return st;
     // (bash expands every word before the builtin runs: `a=1; declare a=5 b=$a` sets b to 1.)
     const before = st;
     const spec = builtins[builtin];
-    const operands = this.operands(words, roles, st);
+    const operands = this.operands(words, decl, st);
     // `export -f f`, `declare -fx f`, `readonly -f f`: the names are functions.
     if (/[fF]/.test(on)) {
       const exported: Tri | undefined = (builtin === 'export' && !on.includes('n')) || on.includes('x') ? 'on' : (builtin === 'export' || off.includes('x')) ? 'off' : undefined;
@@ -379,19 +406,19 @@ export class WalkBuiltins {
     // and changes nothing; its words are still read as in a function (a line taken from one).
     if (onlyInFunction(spec, this.w.shell) && !this.w.frames.length) {
       this.w.frames.push({ def: n, saved: new Map() });
-      this.declare(builtin, words, { roles, on, off }, n, st);
+      this.declare(builtin, words, decl, n, st);
       this.w.frames.pop();
       return st;
     }
     // `local -` (`localOptions`): the set options come back when the function returns.
     const frame = this.w.frames[this.w.frames.length - 1];
-    if (spec.localOptions && words.some((w) => staticWordValue(w) === '-')) frame.options ??= st.set;
+    if (spec.localOptions && decl.words.some((d) => words.includes(d.node) && (d.field ?? staticWordValue(d.node)) === '-')) frame.options ??= st.set;
     const local = this.w.frames.length > 0 && spec.locals === 'unless-g' && !on.includes('g');
     const gives = builtin === 'export' ? (on.includes('n') ? '' : 'x') : builtin === 'readonly' ? 'r' : [...on].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
     const removes = builtin === 'export' && on.includes('n') ? 'x' : [...off].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
     // (An option the spec does not know, `declare -c`, may change the values assigned: they are not known. So does
     // `-I`, with the attributes of the variable it hides: an integer one runs the value.)
-    const unknown = on.includes('I') || words.some((w) => roles.get(w)?.role === 'unknown-option');
+    const unknown = on.includes('I') || decl.words.some((d) => words.includes(d.node) && d.role.role === 'unknown-option');
     for (let o of operands) {
       if (unknown && o.assign) o = { ...o, assign: { ...o.assign, text: undefined, source: undefined } };
       // `declare a[1]=x` makes `a` an array.
