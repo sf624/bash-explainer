@@ -156,6 +156,8 @@ export interface RoleAt { word: number; role: ArgRole }
 export interface ArgvParse {
   /** 'git branch'. */
   command: string;
+  /** The program's own name, when `command` is a subcommand's (`'my prog' sub`); it may hold spaces. */
+  program?: string;
   mode?: string;
   /** One role per word, in order. Words of a subcommand or of a command slot are in the `parse` of its role. */
   roles: RoleAt[];
@@ -254,7 +256,7 @@ class Reader {
    * `cobra`: the parent finds subcommands as cobra does (the `cobra` parser), so this spec does too; `before`:
    * the words the parents read before their subcommands (options and values), which cobra searches again.
    */
-  read(spec: CommandSpec, from: number, to: number, command: string, inherited: OptionSpec[], cobra: boolean, before: number[], appended = false): ArgvParse {
+  read(spec: CommandSpec, from: number, to: number, command: string, inherited: OptionSpec[], cobra: boolean, before: number[], appended = false, program = command): ArgvParse {
     const rules = rulesOf(spec, cobra);
     const isCobra = cobra || rules.cobra;
     // (`echo --version` alone: coreutils reads it as an option only when it is the one argument.)
@@ -268,7 +270,7 @@ class Reader {
     const roles = new Map<number, ArgRole>();
     const given: Given = { specs: [], flags: [], marks: new Set(), later: [], unsplit: [] };
     const operands: number[] = [];
-    const parse: ArgvParse = { command, roles: [], unmatched: [], end: to };
+    const parse: ArgvParse = { command, ...(program !== command ? { program } : {}), roles: [], unmatched: [], end: to };
     let endOpts = false;
     // (Where `--` starts words of another pattern: the first of them, and the pattern.)
     let afterDashes: { at: number; then: OperandSpec[] } | undefined;
@@ -308,7 +310,7 @@ class Reader {
           // The words of the string are read in its place: the line is read again with them.
           if (split) {
             const composite = [...this.words.slice(0, used + 1), ...split, ...this.words.slice(used + 1)];
-            const parse = new Reader(composite, this.ctx, new Set([...this.spliced, used]), undefined, this.bare).read(spec, from, to + split.length, command, inherited, cobra, before, appended);
+            const parse = new Reader(composite, this.ctx, new Set([...this.spliced, used]), undefined, this.bare).read(spec, from, to + split.length, command, inherited, cobra, before, appended, program);
             return unsplice(parse, used, split);
           }
           i = this.cobraValue(st, i, used);
@@ -320,7 +322,7 @@ class Reader {
       const sub = (found ? i === found.at : !operands.length) && value !== undefined ? subcommand(spec, value) : undefined;
       if (sub) {
         const inherit = [...inherited, ...(spec.options ?? []).filter((o) => o.persistent)];
-        roles.set(i, { role: 'subcommand', name: sub[0], spec: sub[1], parse: this.read(sub[1], i + 1, to, `${command} ${sub[0]}`, inherit, isCobra, isCobra ? [...before, ...range(from, i)] : [], appended) });
+        roles.set(i, { role: 'subcommand', name: sub[0], spec: sub[1], parse: this.read(sub[1], i + 1, to, `${command} ${sub[0]}`, inherit, isCobra, isCobra ? [...before, ...range(from, i)] : [], appended, program) });
         end = i + 1;
         break;
       }
@@ -346,7 +348,7 @@ class Reader {
     const option = sole && spec.soleUnlessEnv ? parse.roles[0].role : undefined;
     // (Its role as text: read as when words follow it.)
     if (option?.role === 'option' && spec.soleOptions!.includes(option.spec)) {
-      parse.sole = { option, text: this.read(spec, from, to, command, inherited, cobra, before, true).roles[0].role, env: spec.soleUnlessEnv! };
+      parse.sole = { option, text: this.read(spec, from, to, command, inherited, cobra, before, true, program).roles[0].role, env: spec.soleUnlessEnv! };
     }
     return parse;
   }

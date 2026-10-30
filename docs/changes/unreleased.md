@@ -1547,11 +1547,13 @@ A command that takes a few operands refuses a word after them before it does any
 
 ### Options of a command that is an expansion
 
-When the command's name is not text (`$cmd`, `"$@"`, `$(which x)`, or the word a wrapper runs: `nice $a`, `sudo $a`, `env $a`, `command $a`), an option-looking word after it is no longer "Option (not in the dictionary; see `man `)" (an empty name, or `man $(which`). What runs is not known: with `a` empty, `nice $a -n 5 ls` is `nice -n 5 ls`, and `$a -x` runs a command named `-x`; with `a=echo`, `-n` is `echo`'s. So the text is neutral.
+When the command word is an expansion (`$cmd`, `"$@"`, `$(which x)`, a glob `f*`, or the word a wrapper runs: `nice $a`, `sudo $a`, `env $a`, `command $a`), an option-looking word after it is no longer "Option (not in the dictionary; see `man `)" (an empty name, or `man $(which`). What reads it depends on what the expansion gives: with `a` empty, `nice $a -n 5 ls` is `nice -n 5 ls`, and `$a -x` runs a command named `-x` ("-x: command not found", status 127, checked with bash); with `a=echo`, `-n` is `echo`'s. So the text is neutral, and true whether or not the value is known. Where the model knows the value after a wrapper (`x=ls; sudo $x -Z`), the option is read with that command's spec, as before; at the top level (`x=ls; $x -Z`) it is not yet (roadmap, "Next" item 12).
 
 | Line | Before | Now |
 | --- | --- | --- |
-| `nice $a -n 5 ls`, `sudo $a -x`, `env $a -x`, `command $a -x` | `-n`: "Option (not in the dictionary; see `man `)" | "Looks like an option, but the command comes from an expansion and is not known here, so what it means is not known" |
-| `$cmd -x`, `"$@" -x` | "…see `man $cmd`", "…see `man \"$@\"`" | same new text |
+| `nice $a -n 5 ls`, `sudo $a -x`, `env $a -x`, `command $a -x` | `-n`: "Option (not in the dictionary; see `man `)" | "Looks like an option; which command reads it depends on what the expansion gives" |
+| `$cmd -x`, `"$@" -x`, `f* -x` | "…see `man $cmd`", "…see `man "$@"`", "…see `man f*`" | same new text |
 | `$(which x) -y` | "…see `man $(which`" | same new text |
-| `foo -x`, `nice foo -x` | "Option (not in the dictionary; see `man foo`)" | unchanged |
+| `foo -x`, `nice foo -x`, `'a"b' -x` | "Option (not in the dictionary; see `man foo`)" | unchanged |
+| `./foo -x`, `~/bin/foo -x`, `nice ./foo -x` | "…see `man ./foo`" (`man` reads a name with a `/` as a file) | "…see `man foo`" |
+| `'my prog' -x`, `nice 'my prog' -x` | "…see `man my`" | "Option (not in the dictionary)" |

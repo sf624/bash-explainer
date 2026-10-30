@@ -70,7 +70,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
-- An option-looking word after a command that is an expansion (`$cmd -x`, `nice $a -n 5 ls`, `sudo $(which x) -y`) no longer says "see `man `" with an empty or half-written name. It says the command comes from an expansion and is not known here, so the option is not described.
+- An option-looking word after a command that is an expansion or a glob (`$cmd -x`, `nice $a -n 5 ls`, `sudo $(which x) -y`, `f* -x`) no longer says "see `man `" with an empty or half-written name. It says that which command reads the word depends on what the expansion gives. Other unknown options no longer point to `man ./foo` or `man my` for a path or a name with a blank: a path gives the manual of its last part (`man foo`), a name with a blank none.
 - `exit 1 2` no longer fades the code after it: bash says "too many arguments" and goes on. `exit x` (no number) follows the release: bash 5.2 exits, bash 5.3 goes on outside POSIX mode.
 - The quick reference lists every command, sorted by name. Before, it stopped after 300 entries (at `git`) without saying so, so most commands showed only when searched for.
 - A pipeline whose command name is quoted (`\sort`, `'head'`) gets its worked example: bash runs the same program as the unquoted name, unless the script defines a function of that name. Before, it had none.

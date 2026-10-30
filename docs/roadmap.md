@@ -48,6 +48,7 @@ Keep it current:
     - The words of a name that may run a path of `hash -p` are still read with the name's spec (`grep -o 'a+'` after a conditional `hash -p /usr/bin/egrep grep` reads a BRE).
     - `command sort` and `exec sort` ignore the table (bash uses it).
     - A trap's action that changes the table, set in the shell, is taken to have maybe run before a subshell that sends its signal (`trap 'hash -p /usr/bin/tac sort' USR1; ( kill -USR1 $$; sort )`): true only for a signal from elsewhere; the subshell's own `kill` reaches the shell after the fork.
+12. Read a command word at the top level from the model, as the word after a wrapper is (`x=ls; sudo $x -Z` reads `ls`'s `-Z`; `x=ls; $x -Z` is still "Run the expanded value as a command", and its `-Z` says only that the expansion decides who reads it). `headOf` (src/explain/commands.ts) would take the value from `argWordIn(cx.state)` and explain the word as that command, with the variable's tokens kept; with `x=` the first word that is left is the command (`x=; $x -Z`: "-Z: command not found", status 127, checked with bash). The same for a glob (`f* -x`).
 
 ## Waiting on the maintainer
 

@@ -7,26 +7,34 @@ import { type ExecEnv, variableIn } from '../semantics/env';
 import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
 
-/** The text of an option not in the dictionary. */
-export function unknownOption(cx: Explainer, command: string, spec: CommandSpec, ambiguous?: string[], late?: boolean): string {
+/**
+ * The text of an option not in the dictionary. `parse` is the reading of the command's words: its name is empty when
+ * the model does not know the command word (an expansion, `$a -x`), and the program's own name tells which manual to see.
+ */
+export function unknownOption(cx: Explainer, parse: Pick<ArgvParse, 'command' | 'program'>, spec: CommandSpec, ambiguous?: string[], late?: boolean): string {
+  const { command } = parse;
+  const program = parse.program ?? command;
   // (`bash -x --posix`: long options only before the others, the parser rule `longFirst`.)
   if (late) return cx.t(spec.lateOption!);
   if (spec.unknownOption) return cx.t(spec.unknownOption);
   if (ambiguous) {
     const names = ambiguous.map((n) => `\`${n}\``).join(cx.s('、', ', '));
-    return cx.s(`あいまいなオプション（先頭が同じ長いオプションが複数ある: ${names}）。${command.split(' ')[0]} は受け付けない`, `Ambiguous option (it starts several long options: ${names}); ${command.split(' ')[0]} refuses it`);
+    return cx.s(`あいまいなオプション（先頭が同じ長いオプションが複数ある: ${names}）。${program} は受け付けない`, `Ambiguous option (it starts several long options: ${names}); ${program} refuses it`);
   }
   // (A builtin's spec has every option bash's builtin takes: any other is one it refuses before doing anything.)
   if (spec.builtin) {
     return cx.s(`bash の \`${command}\` にないオプション: bash は \`invalid option\` と表示し、\`${command}\` は何もせずに失敗する（終了ステータス 2。オプションは \`help ${command}\` にある）`,
       `An option bash's \`${command}\` does not have: bash says \`invalid option\`, and \`${command}\` fails with status 2, doing nothing (\`help ${command}\` lists its options)`);
   }
-  // (A command we cannot name as text, `$a` or `$(which x)`, has no manual to see; and what runs may be any command, or none:
-  // with `a` empty, `nice $a -n 5 ls` is `nice -n 5 ls`, and `$a -x` runs `-x`.)
-  if (!/^[^\s$`"'\\]+$/.test(command.split(' ')[0])) {
-    return cx.s('オプションに見える語（コマンドが展開結果で、どのコマンドか分からないため、意味は分からない）', 'Looks like an option, but the command comes from an expansion and is not known here, so what it means is not known');
+  // (No name: the command word is an expansion the model cannot read. What reads the word depends on what it gives:
+  // `nice $a -n 5 ls` is `nice -n 5 ls` when `a` is empty and `echo -n 5 ls` when `a=echo`; `$a -x` runs `-x` then.)
+  if (command === '') {
+    return cx.s('オプションに見える語（どのコマンドが読むかは、展開した結果で決まる）', 'Looks like an option; which command reads it depends on what the expansion gives');
   }
-  return cx.s(`オプション（辞書に未登録。\`man ${command.split(' ')[0]}\` を参照）`, `Option (not in the dictionary; see \`man ${command.split(' ')[0]}\`)`);
+  // (`man` reads a name with a `/` as a file, and one with a blank is no manual's: the file's own name, if it has one.)
+  const page = program.split('/').pop()!;
+  if (/\s/.test(page) || page === '') return cx.s('オプション（辞書に未登録）', 'Option (not in the dictionary)');
+  return cx.s(`オプション（辞書に未登録。\`man ${page}\` を参照）`, `Option (not in the dictionary; see \`man ${page}\`)`);
 }
 
 /**
