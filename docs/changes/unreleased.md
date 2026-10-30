@@ -1609,10 +1609,13 @@ sudo(8) on Linux lists neither `-a|--auth-type` nor `-c|--login-class` (BSD's), 
 
 ### A path after find's expression
 
-GNU find reads the starting points before the first test or action only. A later word that no test, action or operator takes makes it print `find: paths must precede expression: 'b.txt'` and exit with status 1, running nothing (checked with GNU find 4.9 in test/count-hedges-real.test.ts). The words of the expression are read with the spec of find's tests, whose operands are now one refused item.
+GNU find reads the starting points before the first test or action only. A later word that no test, action or operator takes makes it print `find: paths must precede expression: 'b.txt'` and exit with status 1, running nothing (checked with GNU find 4.9 in test/find-late-path.test.ts and test/count-hedges-real.test.ts). The words of the expression are read with the spec of find's tests, whose operands are now one refused item, which holds only for a word of known text: a word that is an expansion may be a test or an action (`find . -name a $more` runs with `more=''`, `-print` or `-o -name c`), so it is an argument the spec does not describe. The summary of the expression says that find refuses it when such a word is there. `--` after the starting points is an unknown predicate (`find . -name x -- y`); before them it still ends the options. Where the expression starts follows GNU find: a leading `,` or `)` is a starting point (`find . , b` lists `,` and `b`), `(` and `!` start the expression, and a `,` after it is the list operator (`-name a , -name b` evaluates both, and the value is the right one's).
 
 | Written | Said now | Said before |
 | --- | --- | --- |
-| `find . -name a.txt b.txt -exec rm {} \;` | `b.txt`: "a path after the expression, which find refuses (it prints `paths must precede expression`...)" | "starting directory" |
-| `find . -name $f -exec rm {} \;` | `$f`: "...when `$f` expands to several words, this value is the first word `$f` gives, and each of the others is a path after the expression, which find refuses" | "...each of the others is starting directory" |
+| `find . -name a.txt b.txt -exec rm {} \;` | `b.txt`: "a path after the expression, which find refuses (it prints `paths must precede expression`...)"; the expression: "find refuses this expression and exits with status 1, running nothing" | "starting directory"; "if name matches a.txt and b.txt: run rm" |
+| `find . -name a $more` | no claim about `$more` | "starting directory" |
+| `find . , b` | `,` and `b` are starting directories | `,` started the expression, and `b` was one of its words |
+| `find . -name a , -name b` | "name matches a, then name matches b", the `,` an operator | the words were listed flat, `,` called a starting directory |
+| `find . -name x -- y` | `--`: a predicate find does not know; `y` refused | "End of options" |
 | `find *.txt -name x`, `find a b -name x` | unchanged: starting directory | |
