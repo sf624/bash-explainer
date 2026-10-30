@@ -1,6 +1,6 @@
 # Hedges by word counts, read for every count at once
 
-Status: planned (2026-10-30), revised after review. The maintainer agreed to "a design document first, then steps that keep every test passing". Steps 1 (#499), 2 (#500), 3 (#502), 4 (#505) and 5 (#516) done; the others not started. The roadmap item is under "Now" in [../roadmap.md](../roadmap.md).
+Status: planned (2026-10-30), revised after review. The maintainer agreed to "a design document first, then steps that keep every test passing". Steps 1 (#499), 2 (#500), 3 (#502), 4 (#505) and 5 (#516) done; the others not started. The roadmap item is under "Deferred until after 0.10.0" (2026-10-31) in [../roadmap.md](../roadmap.md).
 
 An unquoted `$a` may give no word, one word or several. The role of a word on the line can then depend on how many words `$a` gives: with `$a` empty, `tar -cf $a b` is `tar -cf b`, and `b` is the archive. The explanation says such roles under a condition ("value for `-f` when `$a` expands to nothing"); this page calls them hedges. Since #492, a hedge must hold for every count that meets its condition (oracles.md 2.8). The hedges read one word's count at a time, and read the options once. Several lines break that rule. This page shows the cases, proposes one design that reads every count of every such word together, and gives the steps.
 
@@ -287,7 +287,7 @@ Step 1 can land at once. Steps 2 and 3 change no explanation, but step 2 already
 - **Counts tied in other ways** than the same lone expansion (section 2.2): `$a` and `$a/x`, `$a` and `"$a"`, `$@` and `$1`. The counts of `$a` and `$a/x` are not the same either (review of #505): with `a='p '`, `$a` gives one word and `$a/x` two (`p`, `/x`); with `a='*'` in a directory of the file `f1` and the directory `d` holding `x`, `$a` gives two and `$a/x` one (`d/x`). So the clause of `cp $a $a/x` "When `$a` expands to several words: destination directory when `$a/x` expands to a single word" can hold, and stays.
 - **An integer default gives one word.** Done in review of #505: `${n:=w}` of an integer that holds a number, or no value (`declare -i n`), is a number once expanded, so it never gives no word (`mayGiveNoField`), and gives one where the IFS holds no digit and no `-` (`givesOneNumber` in src/semantics/nofield.ts; with `IFS=-5`, `-5` gives two). Not where the value was given before the attribute (`n=' '; declare -i n; ${n:=5}` gives no word). In #516, the same for every number (`$#`, `$?`, `$$`, `${#x}`, `$((…))`), in the count of the word model (`countIn`).
 - **The model's own readers** of a command's words (`set $x`, `declare $x`, the environments of src/semantics/env.ts): the other open item after #485.
-- **Elements of arrays and positional parameters** as fields the model knows: roadmap item 5.
+- **Elements of arrays and positional parameters** as fields the model knows: roadmap, "Values of a whole word".
 - **Whole-line alternative readings in the panel** (alternative D).
 
 ## 6. For the maintainer
