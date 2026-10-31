@@ -568,9 +568,9 @@ export interface CommandSlot {
    */
   keeps?: readonly string[];
   /**
-   * With `reset`: the variables the program sets itself in the command's environment, with values of its own, not the
-   * caller's (sudo's `HOME`, `USER`, `SUDO_USER`: `SUDO_SETS`, src/dict/types.ts). The command has them, whatever the
-   * caller exported.
+   * The variables the program sets itself in the command's environment, with values of its own, not the caller's
+   * (sudo's `HOME`, `USER`, `SUDO_USER`: `SUDO_SETS`, src/dict/types.ts; with `-E`, only the `SUDO_*` ones). The command
+   * has them, whatever the caller exported.
    */
   sets?: readonly string[];
   /** `command`, `builtin`. */

@@ -39,7 +39,8 @@ export function restrictedFromHere(st: ShellState): ShellState {
  * (exported, with a value: an array is not passed), and those the slots set (`given`); the
  * exported functions, when it is bash and every link passes them; the set options with an exported SHELLOPTS, the
  * shopt options with an exported BASHOPTS (bash); then the options it is started with (`bash -e -O extglob -c`). A
- * shell that reads startup files (`-l`, `-i`, an exported BASH_ENV) may have any name the script has.
+ * shell that reads startup files (`-l`, `-i`, an exported BASH_ENV) may have any name the script has; one started
+ * after code the outer walk does not read (`opaque`) may have any name that reaches it.
  */
 export function childStart(w: Walker, outer: ShellState, env: ExecEnv, pass: ChildPass, at: SyntaxNode): ShellState {
   let st = w.initial(at);
@@ -88,6 +89,9 @@ export function childStart(w: Walker, outer: ShellState, env: ExecEnv, pass: Chi
   // (Then bash turns on the options an exported SHELLOPTS and BASHOPTS name, also those turned off above.)
   inherit('set', reach.options !== 'none');
   inherit('shopt', reachOf(env, exported('BASHOPTS')).options !== 'none');
+  // (A path before ran code the outer walk does not read, which may have exported any variable or function: where they
+  // reach this shell, a name it has not set may be set, as `unlessUnread` says of the outer shell.)
+  if (outer.opaque && reach.variables !== 'none') st = w.opaque(st);
   // bash runs the file an exported BASH_ENV names before the string: what it sets is not known, as for startup files.
   const bashEnv = st.variables.get('BASH_ENV');
   if (w.bash && bashEnv && bashEnv.set !== 'off' && bashEnv.value !== '') startup = true;

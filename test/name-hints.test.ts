@@ -31,6 +31,9 @@ describe('the name hints', () => {
   it('mark a builtin turned off, an alias not expanded, a program that is not there, and a name that runs nothing', () => {
     assert.deepStrictEqual(hints('enable -n echo\necho hi'), ['1:4 program: the builtin is off']);
     assert.deepStrictEqual(hints('#!/bin/bash\nalias ll="ls -l"\nalias ls="ls -F"\nls'), ['3:2 program: the alias is not expanded']);
+    // (After code not read here, which may turn expand_aliases on: `maybe`.)
+    assert.deepStrictEqual(hints('#!/bin/bash\nalias ls="ls -F"\n. ./lib.sh\nls'), ['3:2 program: the alias may not be expanded']);
+    assert.deepStrictEqual(hints('#!/bin/bash\nalias ls="ls -F"\n. ./lib.sh\nls', 'ja'), ['3:2 プログラム（エイリアスは展開されないかもしれない）']);
     assert.deepStrictEqual(hints('sudo cd /root'), ['0:7 program, run by sudo: usually there is none']);
     assert.deepStrictEqual(hints('sudo cd /root', 'ja'), ['0:7 プログラム（sudo が実行。ふつうは存在しない）']);
     assert.deepStrictEqual(hints('builtin ls'), ['0:10 nothing runs']);

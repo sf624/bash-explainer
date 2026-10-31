@@ -11,7 +11,7 @@ import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { type ExecEnv, linksAfter, reachOf, type SlotLink, variableIn, whereOf } from '../semantics/env';
-import { fromEnvironment } from '../semantics/shellstate';
+import { fromEnvironment, unlessUnread } from '../semantics/shellstate';
 import type { Missed } from '../semantics/names';
 import { type NestedScript, plainReads, scriptSourceIndex } from '../semantics/nested';
 import { givenToEveryShell } from '../semantics/vars';
@@ -202,7 +202,7 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
         ? fact(cx.lang, 'function-not-in-new-shell', { via, fn: f })
         : missed?.why === 'not-imported'
         ? fact(cx.lang, 'function-not-imported', { via, shell, fn: f })
-        : fact(cx.lang, 'function-not-in-new-shell-export', { via, fn: f }), first);
+        : fact(cx.lang, 'function-not-in-new-shell-export', { via, fn: f, ...(missed?.maybe === 'unread' ? { unread: true } : {}) }), first);
     } else if (missed?.why === 'not-imported') {
       // (`sh` is dash on Debian and Ubuntu, bash elsewhere.)
       cx.note(fact(cx.lang, 'function-not-imported-sh', { via, fn: fn! }), first);
@@ -231,9 +231,10 @@ export function slotNotes(cx: Explainer, role: CommandRole, env: ExecEnv, words:
  * passes no variables (`env -i`, sudo, ssh: `variableIn` of src/semantics/env.ts; but sudo keeps `TERM`, `TZ`…). Whether
  * its export may come from the environment is `fromEnvironment`'s: not said of one the environment almost always has
  * (`TERM`), a caveat for one in capitals, a clause for one in lower case. Not one the string sets itself, nor one the
- * command or a wrapper sets for it (`x=1 bash -c …`, `env x=1 …`, sudo's `USER`), nor one set by that shell (`$_`);
- * nothing of a read after code the string runs and its model does not read (`. ./env.sh; echo "$x"`), nor "not
- * exported" after such code in this shell (`source`, `eval "$x"`: `ShellState.opaque`), which may export it.
+ * command or a wrapper sets for it (`x=1 bash -c …`, `env x=1 …`, sudo's `USER`), nor one set by that shell (`$_`).
+ * After code not read, in this shell (`. ./lib.sh`, `eval "$x"`, which may export it) or in the string before the read
+ * (`. ./env.sh; echo "$x"`), a caveat (`unread`: the string's state is `opaque` then, src/semantics/walk/child.ts); but
+ * an array is never exported, whatever that code does.
  */
 function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): void {
   // The string, read as the script it is (src/semantics/state.ts): the variables it reads, and whether each
@@ -253,21 +254,18 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
     // (Set by the string itself before the read, or given to it exported, by the slot or this shell: not one passed
     // with an export not known, from the environment.)
     const own = script.model.at(e).run.variables.get(v);
-    // (After code the string runs that its model does not read, `bash -c '. ./env.sh; echo "$x"'`, it may be set.)
-    if (script.model.at(e).run.opaque) continue;
     if (!x || x.set !== 'on' || given || specialVariables[v] || (own && (own.attrs.x?.state === 'on' || script.tree.root === ancestor(own.at, (a) => !a.parent)))) continue;
     const exported = x.attrs.x?.state ?? 'off';
+    // (Not set by the string, as its model read it; but code not read before the read may set it there: `unlessUnread`.)
+    const unread = unlessUnread(script.model.at(e).run, 'off') === 'unread' ? { unread: true } : {};
     // (sudo still passes a few variables of the environment, `TERM`, `TZ`: then it is as with no wrapper.)
     const { dropped, unset } = variableIn(cx.state, cmd, v, env);
     if (dropped) {
       cx.note(remote
-        ? fact(cx.lang, 'variable-not-in-remote-shell', { v })
-        : fact(cx.lang, 'variable-not-passed-by-wrapper', { v, via: dropped.via, ...(dropped.keeps ? { keeps: dropped.keeps.slice(0, 2) } : {}) }), words[0]);
+        ? fact(cx.lang, 'variable-not-in-remote-shell', { v, ...unread })
+        : fact(cx.lang, 'variable-not-passed-by-wrapper', { v, via: dropped.via, ...(dropped.keeps ? { keeps: dropped.keeps.slice(0, 2) } : {}), ...unread }), words[0]);
       return;
     }
-    // (Whether it is exported, only where no path before ran code the model does not read (`source`, `eval "$x"`:
-    // `ShellState.opaque`), which may export it.)
-    if (st.opaque) return;
     // (`env -u FOO` removes it on the way, whatever the environment had.)
     const environment = unset ? 'no' : fromEnvironment(v, st, 'export', cx.state.provides);
     if (environment === 'usually') continue;
@@ -278,7 +276,7 @@ function unpassedVariables(cx: Explainer, env: ExecEnv, words: SyntaxNode[]): vo
       return;
     }
     if (exported === 'off' || environment === 'maybe' || (unset && exported !== 'on')) {
-      cx.note(fact(cx.lang, 'variable-not-exported', { v, ...(environment === 'maybe' || environment === 'unlikely' ? { environment } : {}) }), words[0]);
+      cx.note(fact(cx.lang, 'variable-not-exported', { v, ...(environment === 'maybe' || environment === 'unlikely' ? { environment } : {}), ...unread }), words[0]);
       return;
     }
   }

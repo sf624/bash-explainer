@@ -246,6 +246,9 @@ export const DOAS_KEEPS: readonly string[] = ['DISPLAY', 'TERM'];
  */
 export const SUDO_SETS: readonly string[] = ['HOME', 'MAIL', 'SHELL', 'LOGNAME', 'USER', 'PATH', 'SUDO_COMMAND', 'SUDO_GID', 'SUDO_UID', 'SUDO_USER'];
 
+/** The `SUDO_*` variables sudo sets also when it keeps the environment (`sudo -E`: sudo(8), ENVIRONMENT). */
+export const SUDO_OWN: readonly string[] = SUDO_SETS.filter((v) => v.startsWith('SUDO_'));
+
 /** The variables doas sets itself for the target user (doas(1), OpenDoas 6.8; see `DOAS_KEEPS`). */
 export const DOAS_SETS: readonly string[] = ['DOAS_USER', 'HOME', 'LOGNAME', 'PATH', 'SHELL', 'USER'];
 

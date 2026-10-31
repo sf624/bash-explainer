@@ -38,7 +38,11 @@ export function hintLabel(f: NameFacts, why: Surprise, lang: Lang): string {
       return ja ? `${runs}（${other}ではない）` : `${runs}, not the ${other}`;
     }
     case 'off': return ja ? `${runs}（ビルトインは無効）` : `${runs}: the builtin is off`;
-    case 'unexpanded': return ja ? `${runs}（エイリアスは展開されない）` : `${runs}: the alias is not expanded`;
+    case 'unexpanded': {
+      // (Where code not read here may turn expand_aliases on: `NameOther.unexpanded` is `maybe`.)
+      const maybe = f.also.some((a) => a.unexpanded === 'maybe');
+      return ja ? `${runs}（エイリアスは展開されない${maybe ? 'かもしれない' : ''}）` : `${runs}: the alias ${maybe ? 'may not be' : 'is not'} expanded`;
+    }
   }
 }
 
