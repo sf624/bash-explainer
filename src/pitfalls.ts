@@ -1,4 +1,4 @@
-import { interpret, type ArgvParse } from './argv/interpret';
+import { interpret, type ArgRole, type ArgvParse } from './argv/interpret';
 import { downloadsTo, givenOptions, has, readsScriptFromStdin } from './argv/query';
 import type { CommandSpec, OptionSpec } from './argv/spec';
 import { argWordFor } from './argv/words';
@@ -416,6 +416,24 @@ function fixedStrings(r: SpecRun, implied: boolean, w: SyntaxNode): Rewrite | un
   return editSpan(name, last, edits);
 }
 
+/**
+ * Whether grep reads a pattern besides the one of word `word`, which its mode applies to too: another word in the
+ * language of a pattern (`-e 'a.b' -e "$x"`), or an option that gives the patterns in place of the first operand (the
+ * condition of the operands' alternative, the spec's `fills`: `-e`, and `-f pats`, whose file holds patterns) besides
+ * the one whose value `word` is.
+ */
+function otherPatterns(r: SpecRun, word: number): boolean {
+  const isPattern = (role: ArgRole) => (role.role === 'operand' || role.role === 'value') && role.spec?.lang === 'regex';
+  if (r.parse.roles.some((x) => x.word !== word && isPattern(x.role))) return true;
+  // (Some alternative fits: the operands of grep are optional, and the last one repeats.)
+  const when = r.spec.operands![r.parse.alternative!].when;
+  const fills = when && 'option' in when ? when.option : [];
+  const gives = (o: OptionSpec) => o.names.some((name) => fills.includes(name));
+  const own = r.parse.roles.find((x) => x.word === word)!.role;
+  const given = givenOptions(r.parse).filter(({ role }) => role.role === 'option' && gives(role.spec)).length;
+  return given > (own.role === 'value' && gives(own.option!) ? 1 : 0);
+}
+
 /** A variable named as a pattern (`pattern`, `regex`, `re`, `expr`): its value is meant as one. */
 const PATTERN_NAME = /pat|regexp?|(^|_)re(_|$)|expr/i;
 /** The characters of a regular expression that are special (in a BRE, an ERE or a PCRE). */
@@ -686,6 +704,8 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
    * Not with a fixed string (`-F`, `fgrep`: the mode `fixed`), an option that matches only whole words or lines
    * (`whole`: `-w`, `-x`), a pattern with text of its own (`"^$USER:"`), a positional parameter (`"$1"`, often meant
    * as a pattern), a variable named as a pattern (`"$pattern"`), nor one whose known value has special characters.
+   * Where grep has other patterns (`-e 'a.b' -e "$x"`, `-f pats`), the note gives no `-F`, which would read them as
+   * fixed strings too (`otherPatterns`), and says so.
    */
   const patternFromVariable = (n: SyntaxNode) => {
     for (const r of specRuns(n, model, shell)) {
@@ -699,17 +719,23 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         const w = r.run.args[word];
         const v = wholeVariable(w);
         const known = v && model.trusts(v.name) ? model.at(w).run.variables.get(v.name)?.value : undefined;
-        if (!v || PATTERN_NAME.test(v.name) || (known !== undefined && REGEX_SPECIAL.test(known))) return;
+        if (!v || PATTERN_NAME.test(v.name) || (known !== undefined && REGEX_SPECIAL.test(known))) continue;
+        const others = otherPatterns(r, word);
         // (Where a word whose text is not known may be an option, the note says what to do, with no code: `-F` conflicts
         // with an option that selects another mode, and goes in its place.)
-        const fix = fixedStrings(r, implied.some((o) => o.selects), w);
+        const fix = others ? undefined : fixedStrings(r, implied.some((o) => o.selects), w);
         const other = given.find((o) => o.role === 'option' && o.spec.selects)?.flag ?? (implied.some((o) => o.selects) ? r.name : undefined);
         const fixed = fix ? s(`\`${fix.code}\` と書き`, `write \`${fix.code}\``)
           : other === undefined ? s('`-F` を付け', 'add `-F`')
             : other === r.name ? s(`\`${r.name}\` の代わりに \`${canonicalName(r.name)} -F\` を使い`, `use \`${canonicalName(r.name)} -F\` in place of \`${r.name}\``)
               : s(`\`${other}\` の代わりに \`-F\` を付け`, `write \`-F\` in place of \`${other}\``);
-        add('pattern-from-variable', w, `\`${r.name}\` は \`${v.text}\` の値を、ただの文字列ではなく正規表現として読みます。長い文字列の一部にも一致し（\`bob\` は \`bobby\` にも一致）、値の中の \`.\`・\`*\`・\`[\` などは特別な意味を持ちます。値をそのまま探すには ${fixed}、意図に合わせて \`-w\`（単語全体）か \`-x\`（行全体）も付けます`,
-          `\`${r.name}\` reads the value of \`${v.text}\` as a regular expression, not as plain text: it matches inside longer text too (\`bob\` matches \`bobby\`), and \`.\`, \`*\`, \`[\` and the like in the value have their special meaning. To look for the value as it is, ${fixed}, with \`-w\` (whole words) or \`-x\` (whole lines) as meant`, fix ? [fix] : []);
+        const advice = others
+          ? s('値をそのまま探す `-F` はすべてのパターンに効き、ほかのパターンも固定文字列として読まれます',
+            '`-F`, which would look for the value as it is, applies to every pattern: the others would be read as plain text too')
+          : s(`値をそのまま探すには ${fixed}、意図に合わせて \`-w\`（単語全体）か \`-x\`（行全体）も付けます`,
+            `To look for the value as it is, ${fixed}, with \`-w\` (whole words) or \`-x\` (whole lines) as meant`);
+        add('pattern-from-variable', w, `\`${r.name}\` は \`${v.text}\` の値を、ただの文字列ではなく正規表現として読みます。長い文字列の一部にも一致し（\`bob\` は \`bobby\` にも一致）、値の中の \`.\`・\`*\`・\`[\` などは特別な意味を持ちます。${advice}`,
+          `\`${r.name}\` reads the value of \`${v.text}\` as a regular expression, not as plain text: it matches inside longer text too (\`bob\` matches \`bobby\`), and \`.\`, \`*\`, \`[\` and the like in the value have their special meaning. ${advice}`, fix ? [fix] : []);
         return;
       }
     }

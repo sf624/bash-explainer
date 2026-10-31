@@ -26,6 +26,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Fixed
 
 - The note on `source lib.sh` suggests a path from the script's directory that holds when the file is itself sourced (`"$(dirname "${BASH_SOURCE[0]}")"/lib.sh`). Before, it suggested `$0`, which then names the caller.
+- The note on a `grep` pattern from a variable no longer suggests `-F` when grep has other patterns (`grep -e 'a.b' -e "$x"`, `-f pats`): `-F` would read them as plain text too. It now says so, whichever pattern comes first.
 - Hover cards on the web page no longer cover the line they explain, and a long card scrolls inside.
 - The `~` in the operands of `[`, `test` and `[[ ]]` (`[ -f ~/.bashrc ] && . ~/.bashrc`) and in a command name (`~/bin/foo`) is explained as a tilde expansion, as it is in other arguments. Before, it showed no expansion there.
 - A worked example now follows a first stage whose words hold a backslash, such as `printf "%s\n" b a | sort`, as bash reads them. Before, it showed made-up lines.
