@@ -94,5 +94,5 @@ export function editorAttributes(lang: Lang): Record<string, string> {
   return { 'aria-label': TEXT[lang].editor, ...(document.getElementById('editor-hint') ? { 'aria-describedby': 'editor-hint' } : {}) };
 }
 
-/** Whether a key is the one that goes between the editor and the explanation: F6, or Shift+F6 back. */
-export const isPaneKey = (e: KeyboardEvent) => e.key === 'F6' && !e.ctrlKey && !e.metaKey && !e.altKey;
+/** Whether a key is the one that goes between the editor and the explanation: F6, or Shift+F6 back (not while an input method composes: a Japanese one converts with F6 to F10). */
+export const isPaneKey = (e: KeyboardEvent) => e.key === 'F6' && !e.isComposing && e.keyCode !== 229 && !e.ctrlKey && !e.metaKey && !e.altKey;

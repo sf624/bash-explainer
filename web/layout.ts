@@ -143,9 +143,17 @@ export function setUpProblems(
   const max = () => Math.max(LIST_MIN, pane.clientHeight - EDITOR_MIN - (editor?.offsetTop ?? 0));
   const clamp = (v: number) => Math.round(Math.min(max(), Math.max(LIST_MIN, v)));
   const height = () => (saved.height === undefined ? box.getBoundingClientRect().height : clamp(saved.height));
+  const controls = toggle.getAttribute('aria-controls') ?? '';
   const apply = () => {
     const collapsed = isCollapsed();
-    toggle.setAttribute('aria-expanded', String(!collapsed));
+    // With no problem (web/problem-list.ts marks the box `empty`) the fold has nothing to open: no state to say.
+    if (box.classList.contains('empty')) {
+      toggle.removeAttribute('aria-expanded');
+      toggle.removeAttribute('aria-controls');
+    } else {
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      toggle.setAttribute('aria-controls', controls);
+    }
     box.classList.toggle('collapsed', collapsed);
     handle.hidden = collapsed;
     if (saved.height === undefined) box.style.removeProperty('--problems-height');
@@ -178,6 +186,8 @@ export function setUpProblems(
   narrow.addEventListener('change', apply);
   // The list's own height changes as problems come and go (and with the pane): the handle tells it.
   new ResizeObserver(apply).observe(box);
+  // (And when the problems come or go: the box's class. `apply` changes a class only when it differs, so no loop.)
+  new MutationObserver(apply).observe(box, { attributeFilter: ['class'] });
   apply();
   return () => {
     saved = {};

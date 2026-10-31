@@ -5,7 +5,7 @@
 import { DocumentIssue, plain } from '../src/document';
 import { Lang } from '../src/i18n';
 import { levelCounts, LEVELS, levelTally, problemLevel, problemLevels } from '../src/levels';
-import { type At, byPlace, problemAt, stepProblem } from '../src/ui/problemNav';
+import { type At, byPlace, problemAt, type ProblemSpan, stepProblem } from '../src/ui/problemNav';
 import { $ } from './dom';
 import { TEXT } from './text';
 
@@ -23,15 +23,17 @@ const span = (cls: string, text: string) => Object.assign(document.createElement
 export interface StripHost {
   lang(): Lang;
   cursor(): At;
-  pick(issue: DocumentIssue): void;
+  /** Where the problems are now, moved by every edit since the check (the editor's own diagnostics). */
+  spans(): ProblemSpan[];
+  pick(problem: ProblemSpan): void;
 }
 
 /** The strip and the list, from the problems the editor shows. */
 export class ProblemStrip {
-  /** The problems in the order of the script, as the list shows them and the position counts them. */
+  /** The problems of the last check in the order of the script, as the list and the counts show them. */
   private list: DocumentIssue[] = [];
   /** The problem last gone to, which tells apart two problems on one range. */
-  private picked: DocumentIssue | undefined;
+  private picked: ProblemSpan | undefined;
 
   constructor(private readonly host: StripHost) {
     // (F8 in the panel's frame: the page adds `keys` there too, each time the frame loads.)
@@ -96,7 +98,7 @@ export class ProblemStrip {
     icon.setAttribute('role', 'img');
     icon.setAttribute('aria-label', level.name[lang]);
     button.append(icon, span('where', t.line(i.startLine + 1)), message, span('code', i.code));
-    button.title = t.problemTip(i.startLine + 1, plain(i.message, { backticks: false }), i.code);
+    button.title = t.problemTip(t.line(i.startLine + 1), plain(i.message, { backticks: false }), i.code);
     button.addEventListener('click', () => this.go(i));
     button.addEventListener('keydown', (e) => this.enter(e, () => this.go(i)));
     li.append(button);
@@ -104,24 +106,28 @@ export class ProblemStrip {
   }
 
   /** Shows where the cursor is: "Ln 20 · 1/11" at a problem, nothing elsewhere. */
+  // The position and the steps read where the problems are now (`spans`), which an edit moves before the next check
+  // gives the list again: a line deleted, then F8 at once, goes to the next problem, not to a place where one was.
   place(): void {
     const t = TEXT[this.host.lang()];
-    const i = problemAt(this.list, this.host.cursor(), this.picked);
-    const at = this.list[i];
+    const spans = byPlace(this.host.spans());
+    const i = problemAt(spans, this.host.cursor(), this.picked);
+    const at = spans[i];
     // ("Ln 20 · " is a span of its own: a narrow pane shows "1/11" alone.)
-    $('problem-pos-text').replaceChildren(...(at ? [span('pos-ln', t.problemPosLine(at.startLine + 1)), `${i + 1}/${this.list.length}`] : []));
-    $('problem-pos-said').textContent = at ? t.problemPosSaid(at.startLine + 1, i + 1, this.list.length) : '';
+    $('problem-pos-text').replaceChildren(...(at ? [span('pos-ln', `${t.line(at.startLine + 1)} · `), `${i + 1}/${spans.length}`] : []));
+    $('problem-pos-said').textContent = at ? t.problemPosSaid(at.startLine + 1, i + 1, spans.length) : '';
   }
 
   /** Goes to the next problem (`back`: the previous one), round from the last to the first; false when there is none. */
   step(back: boolean): boolean {
-    const i = stepProblem(this.list, this.host.cursor(), back, this.picked);
+    const spans = byPlace(this.host.spans());
+    const i = stepProblem(spans, this.host.cursor(), back, this.picked);
     if (i < 0) return false;
-    this.go(this.list[i]);
+    this.go(spans[i]);
     return true;
   }
 
-  private go(i: DocumentIssue): void {
+  private go(i: ProblemSpan): void {
     this.picked = i;
     this.host.pick(i);
     this.place();
@@ -129,7 +135,8 @@ export class ProblemStrip {
 
   /** F8 and Shift+F8, from anywhere on the page or in the panel's frame, unless a dialog is open. */
   readonly keys = (e: KeyboardEvent): void => {
-    if (e.key !== 'F8' || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
+    // (Not while an input method composes: a Japanese one converts with F6 to F10.)
+    if (e.key !== 'F8' || e.isComposing || e.keyCode === 229 || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
     if (this.step(e.shiftKey)) e.preventDefault();
   };
 }

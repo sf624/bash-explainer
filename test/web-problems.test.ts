@@ -131,12 +131,77 @@ describe('the web page: the Problems strip', function () {
       assert.deepStrictEqual(await Promise.all(['#problem-prev', '#problem-next', '#problem-list', '#problems-resize'].map((s) => page.locator(s).isVisible())), [false, false, false, false]);
       assert.strictEqual(await page.locator('#problems-counts .count').count(), 0);
       assert.strictEqual(Math.round((await page.locator('.problems-strip').boundingBox())!.height), 32);
+      // The fold says no state and controls nothing, and the strip has no empty part for a screen reader.
+      const toggle = page.locator('#problems-toggle');
+      assert.deepStrictEqual(await toggle.evaluate((b) => [b.getAttribute('aria-expanded'), b.getAttribute('aria-controls')]), [null, null]);
+      assert.strictEqual(await page.locator('.problems-strip').ariaSnapshot(), `- heading "${lang === 'en' ? 'No problems' : '問題なし'}" [level=2]:\n  - button "${lang === 'en' ? 'No problems' : '問題なし'}" [disabled]`);
       // F8 has nowhere to go.
       await page.locator('.cm-content').focus();
       await page.keyboard.press('F8');
       assert.strictEqual(await activeLine(page), 'echo "hello"');
+      // A problem comes: the fold says its state again, and what it opens.
+      await page.keyboard.press('End');
+      await page.keyboard.insertText('\nread a');
+      await until('the fold back', () => toggle.getAttribute('aria-expanded'), (v) => v === 'true', 15000);
+      assert.strictEqual(await toggle.getAttribute('aria-controls'), 'problem-list');
+      await page.keyboard.press('F8');
+      await until('the position', () => pos(page), (t) => !!t);
+      const said = lang === 'en' ? 'Problems: 1 caveat' : '問題：注意 1 件';
+      // (The snapshot quotes a line with ": " in it, as YAML does: the quotes are left out here.)
+      assert.strictEqual((await page.locator('.problems-strip').ariaSnapshot()).replace(/'/g, ''), [
+        `- heading "${said}" [level=2]:`, `  - button "${said}" [expanded]`, `- text: ${lang === 'en' ? 'Problem 1 of 1, line 2' : '1 件中 1 件目の問題、2 行目'}`,
+        `- button "${lang === 'en' ? 'Previous problem' : '前の問題'}"`, `- button "${lang === 'en' ? 'Next problem' : '次の問題'}"`,
+      ].join('\n'));
       await ctx.close();
     }
+  });
+
+  it('goes to where the problems are after an edit, before the next check (a line deleted, then F8 at once)', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await ctx.newPage();
+    await open(page, 'read a\necho one\necho two\nread b\necho three\nread c');
+    await until('the problems', () => page.locator('#problem-list .problem').count(), (n) => n === 3, 15000);
+    await page.keyboard.press('Control+Home');
+    await until('the first', () => pos(page), (t) => t === 'Ln 1 · 1/3');
+    // The first line and its problem go; the others move up a line at once.
+    await page.keyboard.press('Control+Shift+K');
+    assert.strictEqual(await pos(page), '');
+    await page.keyboard.press('F8');
+    assert.strictEqual(await activeLine(page), 'read b');
+    assert.strictEqual(await page.evaluate('getSelection().toString()').then((t) => (t as string).startsWith('read')), true);
+    assert.strictEqual(await pos(page), 'Ln 3 · 1/2');
+    // The check that follows agrees, and keeps the cursor where F8 put it.
+    await until('the check', () => page.locator('#problem-list .problem').count(), (n) => n === 2, 15000);
+    assert.strictEqual(await pos(page), 'Ln 3 · 1/2');
+    assert.strictEqual(await activeLine(page), 'read b');
+    // A line added above: the position moves with it at once.
+    await page.keyboard.press('Control+Home');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('F8');
+    assert.strictEqual(await pos(page), 'Ln 4 · 1/2');
+    await ctx.close();
+  });
+
+  it('leaves F8 and F6 to an input method while it composes', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await ctx.newPage();
+    await open(page);
+    await until('the problems', () => page.locator('#problem-list .problem').count(), (n) => n === 4, 15000);
+    await page.keyboard.press('Control+Home');
+    const key = (k: string, isComposing: boolean) => page.evaluate(`(() => {
+      const e = new KeyboardEvent('keydown', { key: '${k}', isComposing: ${isComposing}, bubbles: true, cancelable: true });
+      document.querySelector('.cm-content').dispatchEvent(e);
+      return e.defaultPrevented;
+    })()`) as Promise<boolean>;
+    // Composing: neither key is taken, and the cursor (nothing selected) and the focus stay.
+    assert.deepStrictEqual([await key('F8', true), await key('F6', true)], [false, false]);
+    assert.strictEqual(await page.evaluate('document.activeElement.className'), 'cm-content cm-lineWrapping');
+    assert.strictEqual(await pos(page), 'Ln 1 · 1/4');
+    // Not composing: F8 goes to the next problem.
+    assert.strictEqual(await page.evaluate('getSelection().toString()'), '');
+    assert.strictEqual(await key('F8', false), true);
+    await until('a problem selected', () => page.evaluate('getSelection().toString()') as Promise<string>, (t) => t.length > 0);
+    await ctx.close();
   });
 
   for (const width of [390, 640, 1280]) {

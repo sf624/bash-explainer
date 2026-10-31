@@ -7,7 +7,7 @@ import { groovy } from '@codemirror/legacy-modes/mode/groovy';
 import { json } from '@codemirror/legacy-modes/mode/javascript';
 import { python } from '@codemirror/legacy-modes/mode/python';
 import { yaml } from '@codemirror/legacy-modes/mode/yaml';
-import { Diagnostic, forceLinting, linter, lintGutter } from '@codemirror/lint';
+import { Diagnostic, forEachDiagnostic, forceLinting, linter, lintGutter, setDiagnosticsEffect } from '@codemirror/lint';
 import { Compartment, EditorState, Prec, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
@@ -17,6 +17,7 @@ import { documentHighlight, HighlightKind, HIGHLIGHT_KINDS } from '../src/highli
 import type { HighlightModifier } from '../src/semanticFacts';
 import { Lang } from '../src/i18n';
 import { FADED, LEVELS, type ProblemSeverity, problemLevel, SEVERITIES } from '../src/levels';
+import type { ProblemSpan } from '../src/ui/problemNav';
 import { Settings } from '../src/settings';
 import { nameHints, type NameHint } from '../src/ui/nameHints';
 import { CLASSIC_COLOURS, kindColour } from './editor-colors';
@@ -493,6 +494,27 @@ export class Editor {
   /** Puts the cursor at a line and column (0-based). */
   setCursor(line: number, col: number): void {
     this.view.dispatch({ selection: { anchor: pos(this.view.state, line, col) } });
+  }
+
+  /**
+   * The problems the editor shows, where they are now: CodeMirror maps its diagnostics through every change until the
+   * next check, so a line deleted or added moves them at once (code that never runs is no problem).
+   */
+  problemSpans(): ProblemSpan[] {
+    const doc = this.view.state.doc;
+    const spans: ProblemSpan[] = [];
+    forEachDiagnostic(this.view.state, (d, from, to) => {
+      if (d.severity === SEVERITIES[FADED].codemirror) return;
+      const a = doc.lineAt(from);
+      const b = doc.lineAt(to);
+      spans.push({ startLine: a.number - 1, startCol: from - a.from, endLine: b.number - 1, endCol: to - b.from, code: d.source ?? '' });
+    });
+    return spans;
+  }
+
+  /** Whether an update moved the cursor or the problems (an edit, or a check that gave new ones): `problemSpans` changed. */
+  static problemsMoved(u: ViewUpdate): boolean {
+    return u.docChanged || u.selectionSet || u.transactions.some((tr) => tr.effects.some((e) => e.is(setDiagnosticsEffect)));
   }
 
   /** The cursor, as a 0-based line and column. */
