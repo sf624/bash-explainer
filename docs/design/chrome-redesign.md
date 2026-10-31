@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531). C1a to C6 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#PR). C1b to C6 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -189,6 +189,8 @@ Risks: small.
 Two PRs. C1a is the web page's editor. C1b is the panel's line box, in both hosts.
 
 **C1a. The editor and the hover cards (web only).**
+
+Done in #PR (2026-10-31). What the design did not say: `wrapRuns(doc)` gives the runs of every line of a document at once (once per tree, as the colours are), not of one line; a run is also any text between blanks (an operator, a comment's word), so that every character but a blank is in one run. A substitution over several lines (`x=$(` … `)`) is read line by line, as commands; a word not closed yet, and a line with text the parser cannot read, break at their blanks. The widths are measured with a canvas in the editor's font. On a key press only the changed lines are marked again; the speed test types into a 2,000-line script and reports the time to the next frame beside the editor without the wrap. A card goes below the line unless the room there is under 200 px and the room above larger; the way to the card has 600 ms.
 
 What:
 

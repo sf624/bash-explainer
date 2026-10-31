@@ -14,6 +14,7 @@ import type { LineExplanation } from '../src/analyzer';
 import { heredocAt, ShellDocument } from '../src/document';
 import { Lang } from '../src/i18n';
 import { Settings } from '../src/settings';
+import { CARD_GRACE, cardPlace, PointerAt, towardCard } from '../src/ui/cardPlace';
 import { blankRange, partAt, ProblemAt, rangeOnLine } from '../src/ui/hoverParts';
 import { HoverInput, lineCard, partHover } from '../src/ui/hoverView';
 import type { ThemeKind } from '../src/ui/palette';
@@ -82,7 +83,7 @@ function cardAt(host: HoverHost, view: EditorView, pos: number, problems: Proble
 }
 
 // A card opened by the keyboard stays until Escape, a click elsewhere, an edit or a move of the cursor.
-const openCard = StateEffect.define<{ pos: number } | null>();
+const openCard = StateEffect.define<{ pos: number; above: boolean } | null>();
 
 /** The whole line, on the web: the cursor goes to the line (where it is, if on it; else to its first word), and the panel explains it. */
 function wholeLineInPanel(view: EditorView, line: number): void {
@@ -94,16 +95,26 @@ function wholeLineInPanel(view: EditorView, line: number): void {
 }
 
 /**
- * Keeps the cards inside the editor's pane: the room above or below `pos`, whichever is larger, for their height, and
- * the pane's width (CSS variables on the editor, read by the theme below). It reads the layout, so it runs where a card
- * is asked for (the pointer, a key), never while CodeMirror updates.
+ * The rows of the line at `pos`, from the top of its first to the bottom of its last (a wrapped line is one), at the
+ * position's own left: where a card is anchored, so that it goes under the whole line, or above it, never over a row.
  */
-function measureRoom(view: EditorView, pos: number): void {
+function lineRows(view: EditorView, pos: number): { left: number; right: number; top: number; bottom: number } {
+  const block = view.lineBlockAt(pos);
+  const at = view.coordsAtPos(pos, 1) ?? { left: view.contentDOM.getBoundingClientRect().left };
+  return { left: at.left, right: at.left, top: view.documentTop + block.top, bottom: view.documentTop + block.bottom };
+}
+
+/**
+ * Where a card for `pos` goes, inside the editor's pane (src/ui/cardPlace.ts): above or below the line, and its height
+ * at most, set as a CSS variable on the editor (read by the theme below), with the pane's width. It reads the layout,
+ * so it runs where a card is asked for (the pointer, a key), never while CodeMirror updates.
+ */
+function placeCard(view: EditorView, pos: number): boolean {
   const pane = view.dom.getBoundingClientRect();
-  const at = view.coordsAtPos(pos);
-  const room = at ? Math.max(at.top - pane.top, pane.bottom - at.bottom) - 12 : 300;
-  view.dom.style.setProperty('--bx-hover-room', `${Math.max(120, Math.round(room))}px`);
+  const place = cardPlace(lineRows(view, pos), { top: Math.max(pane.top, 0), bottom: Math.min(pane.bottom, window.innerHeight) }, window.innerHeight);
+  view.dom.style.setProperty('--bx-hover-room', `${place.maxHeight}px`);
   view.dom.style.setProperty('--bx-hover-width', `${Math.max(200, Math.round(Math.min(pane.width, window.innerWidth) - 16))}px`);
+  return place.above;
 }
 
 function cardDom(host: HoverHost, view: EditorView, card: Card, pinned: boolean): HTMLElement {
@@ -155,13 +166,13 @@ function pinnedField(host: HoverHost) {
       for (const e of tr.effects) {
         if (!e.is(openCard)) continue;
         if (!e.value) return null;
-        const { pos } = e.value;
+        const { pos, above } = e.value;
         return {
-          pos, above: false, strictSide: false, arrow: false,
+          pos, above, strictSide: true, arrow: false,
           create: (view) => {
             // (From the keyboard no lint tooltip shows: the card keeps every note.)
             const c = cardAt(host, view, pos, []);
-            return { dom: c ? cardDom(host, view, c, true) : document.createElement('div') };
+            return { dom: c ? cardDom(host, view, c, true) : document.createElement('div'), getCoords: (at: number) => lineRows(view, at) };
           },
         };
       }
@@ -180,6 +191,46 @@ export interface WebHover {
 
 export function webHover(host: HoverHost): WebHover {
   const field = pinnedField(host);
+  /** The card the pointer opened, while it shows. */
+  let hovered: Card | undefined;
+  // The pointer on its way from a part to its card crosses the line's other rows, whose words would take the hover
+  // over: while it moves towards the card (src/ui/cardPlace.ts, `towardCard`), the editor does not see those moves.
+  const grace = ViewPlugin.define((view) => {
+    /** The pointer's last place on the part, and its last place. */
+    let onPart: PointerAt | undefined;
+    let last: PointerAt | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const move = (e: MouseEvent) => {
+      const tip = view.dom.querySelector<HTMLElement>('.cm-tooltip-hover');
+      last = { x: e.clientX, y: e.clientY, time: e.timeStamp };
+      const card = hovered;
+      if (!card || !tip?.querySelector('.cm-bx-hover')) return void (onPart = undefined);
+      const box = tip.getBoundingClientRect();
+      if (last.x >= box.left && last.x <= box.right && last.y >= box.top && last.y <= box.bottom) return void (onPart = undefined);
+      const at = view.posAtCoords(last, false);
+      if (at >= card.from && at <= card.to && view.state.doc.lineAt(at).number === card.line + 1) return void (onPart = last);
+      if (onPart && towardCard(onPart, last, lineRows(view, card.from), box)) {
+        e.stopPropagation();
+        clearTimeout(timer);
+        const since = onPart.time;
+        // Still not on the card when the time is up: it closes, as the editor would have closed it.
+        timer = setTimeout(() => {
+          const now = view.dom.querySelector<HTMLElement>('.cm-tooltip-hover')?.getBoundingClientRect();
+          const inCard = now && last && last.x >= now.left && last.x <= now.right && last.y >= now.top && last.y <= now.bottom;
+          if (!inCard && hovered === card) view.dispatch({ effects: closeHoverTooltips });
+        }, Math.max(0, since + CARD_GRACE - performance.now()) + 20);
+        return;
+      }
+      onPart = undefined;
+    };
+    view.dom.addEventListener('mousemove', move, true);
+    return {
+      destroy() {
+        clearTimeout(timer);
+        view.dom.removeEventListener('mousemove', move, true);
+      },
+    };
+  });
   const close = (view: EditorView) => {
     if (view.state.field(field)) view.dispatch({ effects: openCard.of(null) });
   };
@@ -190,8 +241,8 @@ export function webHover(host: HoverHost): WebHover {
       return true;
     }
     const pos = view.state.selection.main.head;
-    measureRoom(view, pos);
-    view.dispatch({ effects: [closeHoverTooltips, openCard.of({ pos })] });
+    const above = placeCard(view, pos);
+    view.dispatch({ effects: [closeHoverTooltips, openCard.of({ pos, above })] });
     // The focus stays in the editor: a screen reader is told that the card is there, and how to reach it.
     if (view.dom.querySelector('.cm-bx-hover-pinned')) host.announce?.(TEXT[host.lang()].cardOpened(isMac() ? '⌘K ⌘I' : 'Ctrl+K Ctrl+I'));
     return true;
@@ -239,9 +290,16 @@ export function webHover(host: HoverHost): WebHover {
       if (view.contentDOM.querySelector('.cm-bx-hint:hover')) return null;
       const c = cardAt(host, view, pos, problemsAt(view, pos, side));
       if (!c) return null;
-      measureRoom(view, pos);
-      return { pos: c.from, end: c.to, above: true, create: () => ({ dom: cardDom(host, view, c, false) }) };
+      const above = placeCard(view, c.from);
+      return {
+        pos: c.from, end: c.to, above, strictSide: true,
+        create: () => {
+          hovered = c;
+          return { dom: cardDom(host, view, c, false), getCoords: (at: number) => lineRows(view, at), destroy: () => void (hovered === c && (hovered = undefined)) };
+        },
+      };
     }, { hoverTime: 350 }),
+    grace,
     Prec.highest(compartment.of(host.settings()['hover.enabled'] ? keys : [])),
     EditorView.theme({
       // The box: no higher than the room by the position; it scrolls as one, the problem above the card with it, as

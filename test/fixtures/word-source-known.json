@@ -633,6 +633,14 @@
       ]
     },
     {
+      "file": "src/ui/wrapRuns.ts",
+      "reason": "source spans: where a long line may wrap on the page, not a fact of a word's value",
+      "uses": [
+        {"fn":"WORDS","kind":"node-type","count":11},
+        {"fn":"COMMANDS_INSIDE","kind":"node-type","count":2}
+      ]
+    },
+    {
       "file": "src/wordfacts.ts",
       "reason": "checks the shape of the source (\"the word is one `$x`\"), not what bash does with it",
       "uses": [

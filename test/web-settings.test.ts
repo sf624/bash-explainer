@@ -111,7 +111,7 @@ describe('the web page: theme and settings', function () {
     }
   });
 
-  it('wraps long lines in the editor when the editor.wrap setting is on: kept, exported, imported and reset', async () => {
+  it('wraps long lines in the editor unless the editor.wrap setting is off: kept, exported, imported and reset', async () => {
     const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 360, height: 740 } });
     const page = await ctx.newPage();
     const errors: string[] = [];
@@ -127,44 +127,44 @@ describe('the web page: theme and settings', function () {
       if (lines.length !== 3) return { height: 0, short: 0, over: false };
       return { height: lines[1].getBoundingClientRect().height, short: lines[0].getBoundingClientRect().height, over: sc.scrollWidth > sc.clientWidth + 1 };
     })()`) as Promise<{ height: number; short: number; over: boolean }>;
-    const off = await until('the three lines', metrics, (m) => m.height > 0);
-    assert.ok(off.over && off.height < off.short * 1.5, 'off: one row, scrolls sideways');
-    await page.locator('#settings-open').click();
-    assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), false);
-    assert.match(await page.locator('[data-key="editor.wrap"]').innerText(), /Wrap long lines/);
-    await page.locator('#setting-editor-wrap').check();
-    await page.locator('#settings-done').click();
-    const on = await until('the wrapped line', metrics, (m) => !m.over);
+    // On by default: the long line wraps, and nothing scrolls sideways.
+    const on = await until('the wrapped line', metrics, (m) => m.height > 0 && !m.over);
     assert.ok(on.height > on.short * 2 && !on.over, `on: wrapped, no horizontal scroll ${JSON.stringify(on)}`);
     // Clicking the start of the line puts the cursor on it, and the active line is the whole wrapped line.
     const box = (await page.locator('.cm-line').nth(1).boundingBox())!;
     await page.mouse.click(box.x + 2, box.y + 4);
     assert.match(await page.locator('.cm-activeLine').innerText(), /^echo word0 /);
+    await page.locator('#settings-open').click();
+    assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), true);
+    assert.match(await page.locator('[data-key="editor.wrap"]').innerText(), /Wrap long lines/);
+    await page.locator('#setting-editor-wrap').uncheck();
+    await page.locator('#settings-done').click();
+    const off = await until('one row', metrics, (m) => m.over);
+    assert.ok(off.over && off.height < off.short * 1.5, 'off: one row, scrolls sideways');
     // Kept across a reload, and in the export.
     await page.reload();
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText(`echo first\n${long}\necho last`);
-    const again = await until('wrapping after reload', metrics, (m) => m.height > 0 && !m.over);
-    assert.ok(again.height > again.short || again.height > 30);
+    await until('one row after reload', metrics, (m) => m.height > 0 && m.over);
     await page.locator('#settings-open').click();
-    assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), true);
+    assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), false);
     const text = await page.evaluate('localStorage.getItem("bash-explainer-settings")') as string;
-    assert.deepStrictEqual(JSON.parse(text), { 'bashExplainer.editor.wrap': true });
+    assert.deepStrictEqual(JSON.parse(text), { 'bashExplainer.editor.wrap': false });
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#settings-export').click()]);
     const file = await download.path();
-    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { 'bashExplainer.editor.wrap': true });
-    // Reset turns it off; importing the file turns it on again.
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { 'bashExplainer.editor.wrap': false });
+    // Reset turns it on again; importing the file turns it off.
     await page.locator('#settings-reset').click();
     assert.strictEqual(await page.evaluate('localStorage.getItem("bash-explainer-settings")'), null);
-    assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), false);
+    assert.strictEqual(await page.locator('#setting-editor-wrap').isChecked(), true);
     await page.locator('#settings-done').click();
-    assert.ok((await metrics()).over, 'reset: sideways scroll again');
+    await until('wrapped after the reset', metrics, (m) => !m.over);
     await page.locator('#settings-open').click();
     await page.locator('#settings-file').setInputFiles(file);
-    await until('the import', () => page.locator('#setting-editor-wrap').isChecked(), (c) => c);
+    await until('the import', () => page.locator('#setting-editor-wrap').isChecked(), (c) => !c);
     await page.locator('#settings-done').click();
-    assert.ok(!(await metrics()).over);
+    assert.ok((await metrics()).over);
     assert.deepStrictEqual(errors, []);
     await ctx.close();
   });

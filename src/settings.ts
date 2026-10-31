@@ -161,10 +161,10 @@ export const SETTINGS: readonly SettingSpec[] = [
     elsewhere: 'The web page always colours the script this way; the command-line tool shows no script.',
   },
   {
-    key: 'editor.wrap', type: 'boolean', default: false, group: 'display', title: ['長い行の折り返し', 'Wrap long lines'], surfaces: ['web'],
+    key: 'editor.wrap', type: 'boolean', default: true, group: 'display', title: ['長い行の折り返し', 'Wrap long lines'], surfaces: ['web'],
     description: [
-      'エディタで、長い行をウィンドウの幅で折り返します。オフのときは、長い行は横にスクロールします。',
-      'Wraps long lines in the editor at the width of the window. When off, a long line scrolls sideways.',
+      'エディタで、長い行をシェルの単語の間で折り返します。2 行目からは字下げして、行番号の横に ↪ を付けます。オフのときは、長い行は横にスクロールします。',
+      'Wraps long lines in the editor between shell words. The rows after the first are indented, with ↪ beside them. When off, a long line scrolls sideways.',
     ],
     elsewhere: 'Only the web page has its own editor; VS Code has `editor.wordWrap`, and the command-line tool and the Language Server show no editor.',
   },
