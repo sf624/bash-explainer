@@ -18,7 +18,7 @@ import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
 import type { ConventionId } from './conventions';
 import { marked, type Note } from './messages';
-import { STYLE_LEVELS, type StyleCode } from './messages-levels';
+import { STYLE_LEVELS, STYLE_MAYBE_LEVELS, type StyleCode } from './messages-levels';
 import { type Rewrite, replaceNode, replaceSpan, stopCommand, textBetween, type TextEdit } from './rewrite';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
@@ -158,7 +158,7 @@ export function runCommands(n: SyntaxNode, model: StateModel, shell: Shell | und
 }
 
 /** The codes of the style checks, and their levels (src/messages-levels.ts, beside the catalog's). */
-export { STYLE_LEVELS, type StyleCode };
+export { STYLE_LEVELS, STYLE_MAYBE_LEVELS, type StyleCode };
 
 /**
  * The habit each style check's advice is, when it is one (docs/design/basis-spec-convention.md, 2.3: the checks sorted
@@ -462,11 +462,13 @@ function escapedComparison(n: SyntaxNode, redirect: SyntaxNode): Rewrite | undef
 export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number, model: StateModel, shell: Shell | undefined): StyleFinding[] {
   const s = pick(lang);
   const found: StyleFinding[] = [];
-  // (`rewrite`: the rewrites the text shows the code of; the finding carries those with edits, as a fact does.)
-  const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string, rewrite: readonly Rewrite[] = []) => {
+  // (`rewrite`: the rewrites the text shows the code of; the finding carries those with edits, as a fact does. `maybe`:
+  // the case that fails only with some values, at its own level, `STYLE_MAYBE_LEVELS`.)
+  const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string, rewrite: readonly Rewrite[] = [], maybe = false) => {
     const convention = STYLE_CONVENTIONS[code];
     const edits = rewrite.filter((r) => r.edits.length);
-    found.push({ ...marked(lang, STYLE_LEVELS[code], s(ja, en), { kind: 'pitfall' }), code, node, ...(convention ? { convention } : {}), ...(edits.length ? { rewrite: edits } : {}) });
+    const level = (maybe ? STYLE_MAYBE_LEVELS[code] : undefined) ?? STYLE_LEVELS[code];
+    found.push({ ...marked(lang, level, s(ja, en), { kind: 'pitfall' }), code, node, ...(convention ? { convention } : {}), ...(edits.length ? { rewrite: edits } : {}) });
   };
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row >= from && n.startPosition.row <= to) check(n);
@@ -797,7 +799,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
           : outcome === 'true' ? ['真になります（単語1つだけの条件は、空でなければ真）。意図した条件ではありません', 'true, as one word alone is when it is not empty: not the condition meant']
           : ['その引数のない条件になり、意図した条件ではありません', 'a test without that argument: not the condition meant'];
         add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部です。\`${v}\` が空のときは単語が \`]\` だけになって \`[\` を閉じ、\`${runs}\` は${ja}。値があるときは閉じの \`]\` がなく、エラーになります（\`missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります${fixed.ja}`,
-          `the \`]\` in \`${last.text}\` is part of the word. When \`${v}\` is empty, the word is \`]\` alone and closes \`[\`, and \`${runs}\` is ${en}. With a value, \`[\` has no closing \`]\` and fails ("missing ']'", status 2). \`]\` needs a space before it${fixed.en}`, fix);
+          `the \`]\` in \`${last.text}\` is part of the word. When \`${v}\` is empty, the word is \`]\` alone and closes \`[\`, and \`${runs}\` is ${en}. With a value, \`[\` has no closing \`]\` and fails ("missing ']'", status 2). \`]\` needs a space before it${fixed.en}`, fix, true);
         return;
       }
       add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部として読まれ、閉じの \`]\` がありません（\`missing ']'\`）。\`]\` の前に空白が要ります${fixed.ja}`,

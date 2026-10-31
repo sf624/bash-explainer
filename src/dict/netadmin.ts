@@ -18,8 +18,9 @@ const SSH_OPTION_VALUES = {
 /**
  * The names of the caller's environment that `ssh -o VALUE` lets ssh send (ssh_config(5)): `SendEnv`, its keyword in
  * any case, then `=` or blanks, then names separated by whitespace (patterns with `*` and `?`; double quotes hold an
- * argument with blanks). A name after `-` clears names given before it; ssh reads `-o` before its configuration files,
- * so it clears none of theirs, and is left out. Another option sends none.
+ * argument with blanks). A pattern after `-` removes the names given before it that match it (`-o 'SendEnv=A -A'` sends
+ * no `A`, as `ssh -G` shows); ssh reads `-o` before its configuration files, so it removes none of theirs. It is left
+ * out, and the name it removes is kept (a rare corner). Another option sends none.
  */
 export function sshSendEnv(value: string): readonly string[] {
   const m = /^\s*SendEnv(?:\s*=\s*|\s+)([\s\S]*)$/i.exec(value);

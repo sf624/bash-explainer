@@ -1,6 +1,6 @@
 // Step 0 of the three note levels (docs/design/three-levels.md, sections 7 and 8): the bash inventory of the checks
 // at Error. Every id that section 3 puts at Error has a row here: a short script that our explanation says the note on
-// at `error` (since steps 1a and 2; the style checks at `warning` until step 3), run in bash, and in the program a row
+// at `error` (since steps 1a, 2 and 3), run in bash, and in the program a row
 // needs (dash, bats, python3), under what question 1 of the rule varies (section 2):
 //
 // - the values of the variables the row reads from outside (`reads`): unset, empty, `a b`, `*`, and `x`, each
@@ -61,7 +61,7 @@ interface Row {
    * script is explained for bash 5.2 (the default `bashExplainer.bashVersion`), which runs then only in bash 5.2.
    */
   assumes?: '/bin/sh is dash' | 'the user is not root' | 'bash 5.2';
-  /** The level the note has now, where it is not `error`: a style check until step 3, a postfix note, or a finding. */
+  /** The level the note has now, where it is not `error`: a postfix note, or a finding. */
   level?: 'warning';
   /** Some run does not fail, as the test checks: why, and the level the note keeps for it. */
   finding?: string;
@@ -122,15 +122,21 @@ const ROWS: readonly Row[] = [
   // decisions trust no name that arithmetic assigns (src/semantics/trust.ts). Left open in step 2.)
   { id: 'postfix-increment-status', text: '#!/bin/bash\nset -e\ni=0\n((i++))\necho it-works\n', line: 4, works: 'it-works', reads: ['i'], level: 'warning' },
   { id: 'postfix-decrement-status', text: '#!/bin/bash\nset -e\ni=0\n((i--))\necho it-works\n', line: 4, works: 'it-works', reads: ['i'], level: 'warning' },
-  // ---- the style checks
-  { id: 'bracket-no-space', text: '#!/bin/bash\nif [-d / ]; then echo it-works; fi\n', line: 2, works: 'it-works', level: 'warning' },
-  { id: 'assignment-with-spaces', text: '#!/bin/bash\nx = it-works\necho "[$x]"\n', line: 2, works: '[it-works]', reads: ['x'], level: 'warning' },
-  { id: 'brace-no-space', text: '#!/bin/bash\n{echo it-works; }\n', line: 2, works: 'it-works', level: 'warning' },
-  { id: 'brace-close-no-separator', text: '#!/bin/bash\n{ echo it-works }\n', line: 2, works: 'it-works', level: 'warning' },
-  // (`[ a > b ]` is meant false; bash tests `[ a ]`, true, and writes the file `b`.)
-  { id: 'redirect-in-bracket', text: '#!/bin/bash\nif [ a > b ]; then echo true; else echo false-as-meant; fi\n', line: 2, works: 'false-as-meant', level: 'warning' },
-  { id: 'and-or-in-bracket', text: '#!/bin/bash\n[ -d / && -d / ] && echo it-works\n', line: 2, works: 'it-works', level: 'warning' },
-  { id: 'bracket-close-in-word', text: '#!/bin/bash\nx=a\n[ -n "$x"] && echo it-works\n', line: 3, works: 'it-works', level: 'warning' },
+  // ---- the style checks (at `error` since step 3)
+  { id: 'bracket-no-space', text: '#!/bin/bash\nif [-d / ]; then echo it-works; fi\n', line: 2, works: 'it-works' },
+  { id: 'bracket-no-space', text: '#!/bin/bash\nif [[-d / ]]; then echo it-works; fi\n', line: 2, works: 'it-works' },
+  { id: 'assignment-with-spaces', text: '#!/bin/bash\nx = it-works\necho "[$x]"\n', line: 2, works: '[it-works]', reads: ['x'] },
+  { id: 'assignment-with-spaces', text: '#!/bin/bash\nx =it-works\necho "[$x]"\n', line: 2, works: '[it-works]', reads: ['x'] },
+  { id: 'brace-no-space', text: '#!/bin/bash\n{echo it-works; }\n', line: 2, works: 'it-works' },
+  { id: 'brace-close-no-separator', text: '#!/bin/bash\n{ echo it-works }\n', line: 2, works: 'it-works' },
+  // (The comparison is never made: `> b` writes a file, and `[ a ]` is true.)
+  { id: 'redirect-in-bracket', text: '#!/bin/bash\nif [ a > b ]; then echo true; else echo false-as-meant; fi\n', line: 2, works: 'false-as-meant' },
+  { id: 'and-or-in-bracket', text: '#!/bin/bash\n[ -d / && -d / ] && echo it-works\n', line: 2, works: 'it-works' },
+  { id: 'and-or-in-bracket', text: '#!/bin/bash\nif [ -d /nowhere || -d / ]; then echo it-works; fi\n', line: 2, works: 'it-works' },
+  // (What is before the `]` is never empty: the word is never `]` alone, and `[` has no `]`. Where it may be empty,
+  // a warning: below.)
+  { id: 'bracket-close-in-word', text: '#!/bin/bash\nx=a\n[ -n "$x"] && echo it-works\n', line: 3, works: 'it-works' },
+  { id: 'bracket-close-in-word', text: '#!/bin/bash\n[ -d "$d/"] && echo it-works\n', line: 2, works: 'it-works', reads: ['d'] },
   // ---- dialect issues and other problems
   { id: 'unsupported', code: 'dbracket', shell: 'sh', text: '#!/bin/sh\n[[ -d / ]] && echo it-works\n', line: 2, works: 'it-works', assumes: '/bin/sh is dash' },
   { id: 'unsupported', code: 'funsub', text: '#!/bin/bash\necho "${ echo it-works; }"\n', line: 2, works: 'it-works', assumes: 'bash 5.2' },
@@ -385,6 +391,22 @@ describe('the checks headed for Error, run in bash (three-levels.md, step 0)', f
       assert.deepStrictEqual(runs.filter((run) => failed(r, run)).map((run) => `${run.way}: ${JSON.stringify(run.stderr.slice(-200))}`), []);
     });
   }
+
+  // `"$x"]` where `$x` may be empty: then the word is `]` alone and closes `[`, and the shorter test runs. Not every
+  // time (`[ -z "$x"]` is true when `$x` is empty, as meant), but a test that is wrongly true (`[ -n "$x"]`) can guard
+  // what cannot be undone: a warning (question 2), and bash runs it fine with an empty value.
+  it('bracket-close-in-word where the part before `]` may be empty: a warning, as bash runs the line with an empty value', async function () {
+    const r: Row = { id: 'bracket-close-in-word', text: '#!/bin/bash\n[ -z "$x"] && echo it-works\n', line: 2, works: 'it-works', reads: ['x'] };
+    const doc = openDocument(r.text, 'shell', (t) => parser.parse(t));
+    const issue = documentIssues(doc, 'en', shellsOf(doc.lines, 'script.sh', undefined)).find((x) => x.code === r.id);
+    assert.strictEqual(issue?.severity, 'warning');
+    assert.match(issue.message, /When `"\$x"` is empty, the word is `\]` alone and closes `\[`/);
+    if (unrunnable(r)) return this.skip();
+    fs.mkdirSync(path.join(dir, 'close-maybe'));
+    const runs = await runRow(r, path.join(dir, 'close-maybe'));
+    // (Unset or empty: `[ -z ]` is true; with a value, `missing ']'`.)
+    assert.deepStrictEqual([...new Set(runs.filter((run) => !failed(r, run)).map((run) => run.env))], ['unset', '""']);
+  });
 
   ROWS.forEach((r, i) => {
     it(`${r.id}${r.code ? ` (${r.code})` : ''}: ${JSON.stringify(r.text.split('\n')[r.line - 1].replace(/^﻿/, '').replace(/\r$/, ''))}`, async function () {

@@ -128,7 +128,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 
 クイックフィックスは、スクリプトのシェルがその書き方に対応していない場合で、かつ意味が変わらない場合だけ出します。例えば `[[ $f == *.txt ]]` はパターン一致なので出しません。書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。警告を消すには、その前の行（または同じ行のコードの後ろ）に `# bash-explainer disable=<コード>`、ファイル全体なら `# bash-explainer disable-file=<コード>` を書くか、`bashExplainer.diagnostics.ignore` にコードを指定します（`all` ですべて）。「問題」パネルへの表示自体は `bashExplainer.diagnostics.enabled` でオフにできます。
 
-問題には、VS Code と同じく3つのレベルがあります。書いたとおりでは毎回失敗する行（`]` のない `[`、スクリプトのシェルにない書き方、前に `;` のない `then`）は **ⓧ エラー**（赤）、値や条件によっては取り返しのつかない被害が出るもの（`DIR` が空のときの `rm -rf $DIR/*`、`rm $f`、代入にならない `x = 1`）は **⚠ 警告**（黄）、値やシステムによってだけ問題になるものや失敗に気づけないもの（`for f in $(ls)`、`cat $f`、`-r` のない `read`、`local x=$(cmd)`）は **ⓘ 情報**（青）です。解説（パネル・ホバー・ターミナル・Web 版）では、レベルごとのアイコン・色・言葉（「エラー:」「落とし穴:」「注意:」）で示し、エラーを先に並べます。「問題」の一覧では、レベルをアイコンで示します。解説で指摘するエラー・警告・注意は、すべてコード付きで「問題」パネルにも出します。ただの補足は問題にしません。`bashExplainer.diagnostics.pitfalls` をオフにすると警告と注意は出しませんが、エラーは出します。`--check` と GitHub Action はエラーで失敗し、警告では `--strict` を付けたときだけ失敗し、情報では失敗しません。
+問題には、VS Code と同じく3つのレベルがあります。書いたとおりでは毎回失敗する行（`]` のない `[`、代入にならない `x = 1`、スクリプトのシェルにない書き方、前に `;` のない `then`）は **ⓧ エラー**（赤）、値や条件によっては取り返しのつかない被害が出るもの（`DIR` が空のときの `rm -rf $DIR/*`、`rm $f`、`curl … | sh`）は **⚠ 警告**（黄）、値やシステムによってだけ問題になるものや失敗に気づけないもの（`for f in $(ls)`、`cat $f`、`-r` のない `read`、`local x=$(cmd)`）は **ⓘ 情報**（青）です。解説（パネル・ホバー・ターミナル・Web 版）では、レベルごとのアイコン・色・言葉（「エラー:」「落とし穴:」「注意:」）で示し、エラーを先に並べます。「問題」の一覧では、レベルをアイコンで示します。解説で指摘するエラー・警告・注意は、すべてコード付きで「問題」パネルにも出します。ただの補足は問題にしません。`bashExplainer.diagnostics.pitfalls` をオフにすると警告と注意は出しませんが、エラーは出します。`--check` と GitHub Action はエラーで失敗し、警告では `--strict` を付けたときだけ失敗し、情報では失敗しません。
 
 ## VS Code で使う
 
@@ -226,7 +226,7 @@ Web 版のエディタでも同じカードを表示します（タッチ画面�
 | `bashExplainer.examples.placement` | `first` | 具体例を対応する部分の下の、各要素の解説より先（`first`）・後（`last`）、またはすべての解説の後（`bottom`）に表示 |
 | `bashExplainer.language` | `auto` | `auto`（VS Code の表示言語に合わせる）・`ja`・`en` |
 | `bashExplainer.notes.idioms` | `true` | 定番の書き方（strict mode、`IFS= read -r` など）の補足を表示する |
-| `bashExplainer.notes.pitfalls` | `true` | よくある間違いと避け方を注記する（`x = 1`、クォートしていない変数、`for f in $(ls)` など） |
+| `bashExplainer.notes.pitfalls` | `true` | よくある間違いと避け方を注記する（クォートしていない変数、`for f in $(ls)`、`rm -rf $DIR/…` など）。エラー（`x = 1`）はオフでも注記する |
 | `bashExplainer.notes.basis` | `true` | マニュアルではなく bash の実際の動きに基づく注記や部分の説明に印（「マニュアルに記述なし・bash 5.2 で確認」）を付け、端末で試すコマンドを添える |
 | **確認** | | |
 | `bashExplainer.shell` | `auto` | スクリプトの対象シェル: `auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh` |
@@ -234,7 +234,7 @@ Web 版のエディタでも同じカードを表示します（タッチ画面�
 | `bashExplainer.diagnostics.enabled` | `true` | エラーと警告を「問題」パネルにも表示（クイックフィックス付き） |
 | `bashExplainer.diagnostics.ignore` | `[]` | 出さない警告のコード（「問題」パネルに表示されるコード。`dbracket`・`echoE`・`dockerPipefail` など） |
 | `bashExplainer.diagnostics.embedded` | `true` | 他のファイルの中のシェルの警告も出す |
-| `bashExplainer.diagnostics.pitfalls` | `true` | 解説の警告と注意も「問題」パネルに出す（`x = 1`・`rm -rf $DIR/*`・`rm $f` は警告、`cat $f`・`read line` は情報）。解説のエラー（`]` のない `[`）は、この設定にかかわらず出す |
+| `bashExplainer.diagnostics.pitfalls` | `true` | 解説の警告と注意も「問題」パネルに出す（`rm -rf $DIR/*`・`rm $f` は警告、`cat $f`・`read line` は情報）。解説のエラー（`]` のない `[`、`x = 1`）は、この設定にかかわらず出す |
 | `bashExplainer.yq.flavor` | `auto` | `auto`・`mikefarah4`・`kislyuk`・`mikefarah3` |
 | **ファイル** | | |
 | `bashExplainer.embedded.files` | すべて | 中のシェルを解説するファイル: `dockerfile`・`makefile`・`yaml`・`packageJson`・`markdown`・`python`・`jenkinsfile`・`bats` |

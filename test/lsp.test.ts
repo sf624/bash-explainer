@@ -160,9 +160,9 @@ describe('the Language Server', function () {
 
   it('reports the pitfalls, a warning for one that breaks the script and information for the others', async () => {
     const uri = 'file:///work/pitfalls.sh';
-    client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'shellscript', version: 1, text: '#!/bin/bash\nx = 1\nread line\n' } });
+    client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'shellscript', version: 1, text: '#!/bin/bash\nsource lib.sh\nread line\n' } });
     const d = await client.diagnostics(uri, (list) => list.length > 0);
-    assert.deepStrictEqual(d.map((x) => [x.code, x.severity, x.range.start.line, x.message.split(':')[0]]), [['assignment-with-spaces', 2, 1, 'Pitfall'], ['read-without-r', 3, 2, 'Caveat']]);
+    assert.deepStrictEqual(d.map((x) => [x.code, x.severity, x.range.start.line, x.message.split(':')[0]]), [['source-searches-path', 2, 1, 'Pitfall'], ['read-without-r', 3, 2, 'Caveat']]);
     client.notify('textDocument/didClose', { textDocument: { uri } });
   });
 

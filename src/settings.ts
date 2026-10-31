@@ -100,8 +100,8 @@ export const SETTINGS: readonly SettingSpec[] = [
   {
     key: 'notes.pitfalls', type: 'boolean', default: true, section: 'common', title: ['よくある間違いの指摘', 'Pitfalls'], surfaces: ALL,
     description: [
-      'よくある間違いと避け方を注記する: `x = 1`（代入にならない）、空の `DIR` での `rm -rf $DIR/…`、クォートしていない変数、`for f in $(ls)` など。',
-      'Point out common mistakes and how to avoid them: `x = 1` (not an assignment), `rm -rf $DIR/…` with an empty `DIR`, unquoted variables, `for f in $(ls)`, and more.',
+      'よくある間違いと避け方を注記する: 空の `DIR` での `rm -rf $DIR/…`、クォートしていない変数、`for f in $(ls)` など。毎回失敗する行のエラー（`x = 1`）は、オフでも注記する。',
+      'Point out common mistakes and how to avoid them: `rm -rf $DIR/…` with an empty `DIR`, unquoted variables, `for f in $(ls)`, and more. Errors, lines that fail every time (`x = 1`), are said either way.',
     ],
   },
   { key: 'notes.basis', type: 'boolean', default: true, section: 'examples', title: ['マニュアルにない動きの印と試し方', 'Behaviour not in the manual'], surfaces: ALL },

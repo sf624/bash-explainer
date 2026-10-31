@@ -2,7 +2,7 @@
 
 How much a note matters, and how every output shows it. Built in #320; the prototype was commit 8371ef7 (branch `proto/note-levels`).
 
-The third level, Error, above the warnings, is being built in the steps of [three-levels.md](three-levels.md): step 1a gave the level, the problems and the facts that say a line fails (below); step 1b gave it its own look in every view (#552); step 2 moved the catalog's pitfalls that fail every time to it (#557); the style checks follow in step 3. This page describes what is built.
+The third level, Error, above the warnings, was built in the steps of [three-levels.md](three-levels.md), which stays as the record of the change: step 1a gave the level, the problems and the facts that say a line fails (#547, #549); step 1b gave it its own look in every view (#552); step 2 moved the catalog's pitfalls that fail every time to it (#557); step 3 the style checks that fail every time, and moved two caveats up to warnings (#PRNUM). Left open: the postfix notes at Error where the value is 0 on every path (the param `zero`, roadmap "Deferred"). This page describes what is built.
 
 ## The levels
 
@@ -11,7 +11,7 @@ A note has one of four levels (`NoteLevel` in [src/levels.ts](../../src/levels.t
 | Level | Mark | Word | Squiggle | When |
 | --- | --- | --- | --- | --- |
 | `error` | ⓧ | Error / エラー | error (red) | The line fails every time as written: `[ -f a`, `unset` of a read-only variable, `[[ ]]` in a `#!/bin/sh` script. Said whatever the pitfalls settings say. |
-| `warning` | ⚠ | Pitfall / 落とし穴 | warning (yellow) | If it goes wrong, the damage cannot be undone: `rm -rf $DIR/*` with an empty `DIR`, a stop under `set -u` of a name the environment may give. Until step 3, also the style checks that break as written: `x = 1`, `[-f x]`. |
+| `warning` | ⚠ | Pitfall / 落とし穴 | warning (yellow) | If it goes wrong, the damage cannot be undone: `rm -rf $DIR/*` with an empty `DIR`, a stop under `set -u` of a name the environment may give, `curl … \| sh`; or a failure becomes the script's exit status success: `cp a b \|\| echo failed` at the end of a script. |
 | `info` | ⓘ | Caveat / 注意 | information (blue) | It goes wrong only with some values or systems and the damage is limited, or a failure goes unnoticed: `echo $x`, `read line`, `local x=$(false)`. |
 | `note` | ℹ | none | none | A fact of how the shell runs the line. |
 
@@ -27,7 +27,7 @@ What a level looks like, and what it is in each protocol, comes from one table, 
 The level of each note comes from one source per kind of note:
 
 - The message catalog (src/messages.ts): `pitfall()` is a warning, `caveat()` a pitfall at the level `info`, `broken()` a pitfall at the level `error` (it fails every time as written, with a row in test/error-level.test.ts), `failure()` a fact that says the line fails every time it runs (a note at the level `error`, with a row in test/error-level.test.ts that runs it in bash), `note()` a plain fact. `fact()` gives the level with the text (`Fact.level`).
-- The style checks (src/pitfalls.ts): `STYLE_LEVELS`, beside the catalog (src/messages-levels.ts).
+- The style checks (src/pitfalls.ts): `STYLE_LEVELS`, beside the catalog (src/messages-levels.ts), and `STYLE_MAYBE_LEVELS` for the case of a check that fails only with some values (`bracket-close-in-word` where the part before `]` may be empty: a warning). A style check at `error` is said with the pitfalls off, as a fact at `error` is: one rule, `pitfallSaid` (src/messages.ts), read by `said` for the facts and by the analyzer for the style checks.
 - The dialect issues (src/dialect.ts): `unsupported` is an error, `behaviour` information (`PROBLEM_LEVELS`, src/messages-levels.ts); in `sh`, a construct that is not POSIX but that dash and busybox ash run (`local`, `echo -n`) is `behaviour`, "Portability", `parse` (zsh syntax bash cannot read) a plain fact (`Issue.note`). `crlf` (src/document.ts) is an error where a CR ends the `#!` line, a reserved word of a compound command stands before a CR (`then\r` is no keyword; the `}` of `${HOME}` is a word's, and runs) or a CR starts a command (a blank line, `echo a;\r`: `$'\r': command not found`), a warning otherwise (`bash file`, and a program whose `#!` line ends in LF, run `echo hi\r`).
 - A note with no mark (an idiom, where a line is in a here-document or a statement) is a plain fact (`plainNote`).
 - A diagnostic's severity is `severityOf(level)` (the level table): `error` an error, `warning` a warning, the others information (src/document.ts, src/hosts/remap.ts). The old list of pitfalls shown as warnings (`PITFALL_WARNINGS`) and `WordFinding.mild` are gone.
@@ -42,7 +42,7 @@ This replaced a bridge: the views read the level back from the mark (`noteLevel(
 
 Every error, warning and caveat a line's explanation says is a problem (`noteIssues` in src/document.ts), on every surface that lists problems: VS Code's Problems panel and squiggles, the Language Server, the web page's lint and Problems list, `--check` (text, JSON, SARIF) and the GitHub Action's annotations. A plain fact is not (the dialect issue `zshSyntax`, a plain fact that the line cannot be read, stays the problem it was). The rule:
 
-- **What.** The notes of each line at the level `error`, `warning` or `info` (`LineExplanation.noteInfo`), explained with the settings' options (so with `notes.pitfalls` off, the pitfalls are left out as the explanations leave them out; the errors stay: `said` keeps a fact at a level that `alwaysFails`, which is read from `SEVERITIES[…].fails`), without examples or idioms, which add none.
+- **What.** The notes of each line at the level `error`, `warning` or `info` (`LineExplanation.noteInfo`), explained with the settings' options (so with `notes.pitfalls` off, the pitfalls are left out as the explanations leave them out; the errors stay: `pitfallSaid` keeps a fact or a style check at a level that `alwaysFails`, which is read from `SEVERITIES[…].fails`), without examples or idioms, which add none.
 - **Where.** On the range of each node the note was found on (`LineExplanation.anchors`), cut to the line it starts on, as the other problems are. The notes of a string run as a script (`bash -c '…'`, `eval`, a trap) and of `$( )` are on their words in the document; a host file's are at its own columns (src/hosts/remap.ts).
 - **Code and severity.** The note's code (a fact's id, a style check, a dialect issue; a host's own code where it has one: `dockerPipefail`, `injection`) and `severityOf(level)`. Those but the errors are marked `pitfall: true`: advice, which `diagnostics.pitfalls` turns off, and whose GitHub annotation is titled "(pitfall)". What fails `--check` is the severity's (`SEVERITIES[…].fails`): an error always, a warning only with `--strict`, an info never.
 - **Once.** The same note on the same node is one problem, however many lines say it (a statement over several lines says its notes on each line). A note found on several nodes is a problem on each (`cp $a b; cp $a c`: two), since each is a place to fix. A note on a node where another problem (a dialect issue, `crlf`) has the same code or the same text is left out, and so is `pipefail-missing` where a Dockerfile's `dockerPipefail` is (`SAME_PROBLEM`); none is made on a line that zsh syntax leaves unread.
@@ -77,11 +77,11 @@ The level's colour is the editor's own: `editorWarning.foreground` and `editorIn
 
 ## The levels, one by one
 
-Every pitfall and failure note of the catalog, every style check and every dialect issue, against the definition above. The style checks that fail every time are still warnings here; step 3 of three-levels.md moves them to Error. test/messages.test.ts pins the catalog's levels.
+Every pitfall and failure note of the catalog, every style check and every dialect issue, against the definition above. test/messages.test.ts pins the catalog's levels.
 
 ### Errors
 
-Since steps 1a and 2 of [three-levels.md](three-levels.md); each has a row in test/error-level.test.ts that runs it in bash and sees it fail every way it can run.
+Since steps 1a, 2 and 3 of [three-levels.md](three-levels.md); each has a row in test/error-level.test.ts that runs it in bash and sees it fail every way it can run.
 
 | Id | Why |
 | --- | --- |
@@ -114,6 +114,8 @@ Since steps 1a and 2 of [three-levels.md](three-levels.md); each has a row in te
 | `regex-backslash-dropped` | The regex never means what is written. |
 | `python-string-without-shell` (the host code `pythonNoShell`) | Python runs the whole string as one program name: FileNotFoundError. |
 | Dialect: `unsupported` | The construct fails in the target shell. |
+| Style: `bracket-no-space`, `assignment-with-spaces`, `brace-no-space`, `brace-close-no-separator`, `redirect-in-bracket`, `and-or-in-bracket` | The line does not do what it says, every time: `[-f x]` and `[[-f x]]` are command names, `x = 1` runs a command `x`, `{echo` is a command name, `{ echo }` never closes the group, `[ a > b ]` makes no comparison (it writes a file `b`, and `[ a ]` is true), `[ a && b ]` leaves `[` with no `]`. |
+| Style: `bracket-close-in-word`, where the part before `]` is never empty (`[ -d "$d/"]`) | The word is never `]` alone, so `[` never has its `]`: "missing ']'", every time. |
 | Problem: `crlf`, where a CR ends the `#!` line, a keyword stands before a CR, or a CR starts a command | Run as a program, the interpreter's name ends with a CR; `fi\r` is no keyword, however the file runs; a CR on a blank line or after `;`, `&&`, `\|\|`, `\|` or `&` is a command of its own, `$'\r'`, not found. (A warning otherwise: `bash file`, and a program whose `#!` line ends in LF, run `echo hi\r`.) |
 
 ### Warnings
@@ -129,7 +131,9 @@ Since steps 1a and 2 of [three-levels.md](three-levels.md); each has a row in te
 | `function-shadowed-by-program`, of a function that only has the name of a program (`install() { cp app /usr/local/bin/; }`, then `sudo install`) | Another program runs, not the function's steps: coreutils' `install` fails, `sync` flushes the disks and copies nothing. |
 | `variable-not-exported`, of a name in lower case the script set (`fromEnvironment`: `unlikely`) | The variable is empty where the string runs, unless the environment had it, which a name in lower case seldom does (a clause says so). |
 | `posix-function-name`, `posix-special-builtin-error` | In POSIX mode, bash 5.2 stops the script at a function name that is not valid, and bash at an error of a special builtin. Like `unbraced-element`, they have no row in section 3 of three-levels.md, and stay warnings until it sorts them. |
-| Style: `bracket-no-space`, `assignment-with-spaces`, `brace-no-space`, `brace-close-no-separator`, `redirect-in-bracket`, `bracket-close-in-word`, `and-or-in-bracket` | The line does not do what it says, every time (`[ a > b ]` also writes a file `b`). Errors from step 3. |
+| `failure-reported-as-success` **(changed in step 3: was a caveat)** | The failure becomes a status of 0: the function's, the script's (what runs it, cron or CI, sees success), or, under `set -e`, the script goes on past it where it would have stopped. |
+| Style: `bracket-close-in-word`, where the part before `]` may be empty (`[ -n "$x"]`) | With a value, `[` fails ("missing ']'"); empty, the word is `]` alone and another test runs (`[ -n ]` is true), which can guard what cannot be undone (`[ -n "$d"] && rm -rf "$d"/*`). |
+| Style: `source-searches-path` **(changed in step 3: was a caveat)** | A file of that name in a directory of `$PATH` runs instead: code nobody chose, with the script's rights. |
 | Style: `rm-empty-variable-root` | With an empty variable, `rm -r` deletes from the root. |
 | Style: `download-run-by-shell` | A script nobody read runs, as far as it arrived: damage that cannot be undone (`curl … \| sh`, `sh -c "$(curl …)"`). |
 
@@ -140,7 +144,6 @@ Since steps 1a and 2 of [three-levels.md](three-levels.md); each has a row in te
 | `declaration-masks-status` | A failure in `$( )` goes unnoticed. |
 | `pipefail-missing`, `dockerfile-pipefail-missing` | A failure before the last command of a pipeline goes unnoticed. |
 | `function-last-test-returns-status`, `script-last-test-returns-status` | Only the script's exit status is wrong, and only when the test fails. |
-| `failure-reported-as-success` | A failure goes unnoticed: the status is 0 when the command on the left of `\|\| echo` fails. |
 | `local-outside-function`, in a file with no shebang | Fine when a function reads the file with `source`. |
 | `local-outside-function`, in a trap's action (`trap`) | Fine where the trap fires in a function (a `RETURN` trap set in it). |
 | `alias-not-expanded-in-script`, after code the model does not read (`unread`: `source`, `eval "$x"`), or with a function of that name defined on some paths (`fn`) | Fine when that code turns `expand_aliases` on, or where the function is defined. |
@@ -167,7 +170,6 @@ Since steps 1a and 2 of [three-levels.md](three-levels.md); each has a row in te
 | `unquoted-variable-in-test` | Only an empty value or one with spaces breaks the test. |
 | Style: `read-without-r` | Only input with a backslash. |
 | Style: `trap-goes-on` | Only when the signal comes, and often meant: the script goes on after the action (`trap 'echo bye' INT`). |
-| Style: `source-searches-path` | Only when `$PATH` has a file of the name, or the script is started from another directory. |
 | Style: `pattern-from-variable` | Only values that are part of longer text on a line, or that hold regex characters. |
 | Dialect: `behaviour` | The construct works, differently, in some shells ("Portability"). |
 

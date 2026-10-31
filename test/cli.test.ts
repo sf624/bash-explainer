@@ -257,10 +257,10 @@ describe('the command-line tool', function () {
   });
 
   it('shows the notes warnings first, with the mark and the word in the colour of their level', () => {
-    const notes = (args: string[]) => run(['--no-config', ...args, '-e', 'exit 300; read line; x = 1']).out.split('\n').slice(1, 4);
+    const notes = (args: string[]) => run(['--no-config', ...args, '-e', 'exit 300; read line; source lib.sh']).out.split('\n').slice(1, 4);
     assert.deepStrictEqual(notes(['--no-color']).map((l) => l.slice(0, 12)), ['  ⚠ Pitfall:', '  ⓘ Caveat: ', '  ℹ An exit ']);
     const [warning, info, note] = notes(['--color']);
-    assert.ok(warning.startsWith('  \x1b[33m\x1b[1m⚠ Pitfall:\x1b[0m\x1b[0m `x =…`'), warning);
+    assert.ok(warning.startsWith('  \x1b[33m\x1b[1m⚠ Pitfall:\x1b[0m\x1b[0m `source lib.sh`'), warning);
     assert.ok(info.startsWith('  \x1b[34m\x1b[1mⓘ Caveat:\x1b[0m\x1b[0m without `-r`'), info);
     // (A plain fact's mark is dim, with no word.)
     assert.ok(note.startsWith('  \x1b[90mℹ\x1b[0m An exit status'), note);
@@ -271,39 +271,39 @@ describe('the command-line tool', function () {
 
   it('reports the pitfalls, and fails on their warnings only with --strict', () => {
     const file = path.join(dir, 'pitfalls.sh');
-    fs.writeFileSync(file, '#!/bin/bash\nfor f in $(ls); do echo "$f"; done\nrm -rf $DIR/*\nx = 1\necho $y\nread line\n');
+    fs.writeFileSync(file, '#!/bin/bash\nfor f in $(ls); do echo "$f"; done\nrm -rf $DIR/*\nsource lib.sh\necho $y\nread line\n');
     const r = run(['--check', '--no-color', file]);
     assert.strictEqual(r.code, 0, r.out);
     const rows = r.out.trim().split('\n').map((l) => l.replace(/^.*pitfalls\.sh:/, ''));
     assert.deepStrictEqual(rows.map((l) => /^(\d+:\d+): (\w+): .* \[([\w-]+)\]$/.exec(l)!.slice(1).join(' ')), [
       '2:10 info for-over-ls-output', '3:8 warning rm-empty-variable-root', '3:8 warning unquoted-variable-as-path',
-      '4:1 warning assignment-with-spaces', '6:1 info read-without-r',
+      '4:8 warning source-searches-path', '6:1 info read-without-r',
     ]);
-    assert.match(rows[3], /^4:1: warning: Pitfall: x =… runs a command named x; it is not an assignment/);
+    assert.match(rows[3], /^4:8: warning: Pitfall: source lib\.sh looks for lib\.sh in the directories of \$PATH first/);
     assert.strictEqual(run(['--check', '--strict', file]).code, 1);
     // Information alone does not fail it, even with --strict; nor what is turned off.
     fs.writeFileSync(file, 'read line\n');
     assert.strictEqual(run(['--check', '--strict', file]).code, 0);
-    fs.writeFileSync(file, 'x = 1\n');
+    fs.writeFileSync(file, 'source lib.sh\n');
     assert.strictEqual(run(['--check', '--strict', '--set', 'diagnostics.pitfalls=false', file]).out, '');
-    assert.strictEqual(run(['--check', '--strict', '--set', 'diagnostics.ignore=["assignment-with-spaces"]', file]).code, 0);
+    assert.strictEqual(run(['--check', '--strict', '--set', 'diagnostics.ignore=["source-searches-path"]', file]).code, 0);
     const usage = run(['--strict', file]);
     assert.strictEqual(usage.code, 2);
     assert.match(usage.err, /--strict goes with --check/);
     // SARIF and annotations: a warning and a note.
-    fs.writeFileSync(file, 'x = 1\nread line\n');
+    fs.writeFileSync(file, 'source lib.sh\nread line\n');
     const sarif = JSON.parse(run(['--check', '--format', 'sarif', file]).out);
-    assert.deepStrictEqual(sarif.runs[0].results.map((x: { ruleId: string; level: string }) => [x.ruleId, x.level]), [['assignment-with-spaces', 'warning'], ['read-without-r', 'note']]);
-    assert.deepStrictEqual(sarif.runs[0].tool.driver.rules.map((x: { id: string }) => x.id), ['assignment-with-spaces', 'read-without-r']);
+    assert.deepStrictEqual(sarif.runs[0].results.map((x: { ruleId: string; level: string }) => [x.ruleId, x.level]), [['source-searches-path', 'warning'], ['read-without-r', 'note']]);
+    assert.deepStrictEqual(sarif.runs[0].tool.driver.rules.map((x: { id: string }) => x.id), ['read-without-r', 'source-searches-path']);
     const gh = run(['--check', '--format', 'github', file]);
     assert.strictEqual(gh.code, 0);
     assert.deepStrictEqual(gh.out.trim().split('\n').map((l) => l.split(' ')[0]), ['::warning', '::notice']);
-    assert.match(gh.out, /,title=Bash Explainer \(pitfall\)%3A assignment-with-spaces::/);
+    assert.match(gh.out, /,title=Bash Explainer \(pitfall\)%3A source-searches-path::/);
     // GitHub shows only the first annotations of a step: what fails the check comes first.
-    fs.writeFileSync(file, '#!/bin/sh\nx = 1\n[[ -n $a ]]\n');
+    fs.writeFileSync(file, '#!/bin/sh\n. lib.sh\n[[ -n $a ]]\n');
     const order = (args: string[]) => run([...args, '--format', 'github', file]).out.trim().split('\n').map((l) => /title=([^:]*)::/.exec(l)![1]);
-    assert.deepStrictEqual(order(['--check']), ['Bash Explainer%3A dbracket', 'Bash Explainer (pitfall)%3A assignment-with-spaces']);
-    assert.deepStrictEqual(order(['--check', '--strict']), ['Bash Explainer (pitfall)%3A assignment-with-spaces', 'Bash Explainer%3A dbracket']);
+    assert.deepStrictEqual(order(['--check']), ['Bash Explainer%3A dbracket', 'Bash Explainer (pitfall)%3A source-searches-path']);
+    assert.deepStrictEqual(order(['--check', '--strict']), ['Bash Explainer (pitfall)%3A source-searches-path', 'Bash Explainer%3A dbracket']);
   });
 
   it('reports the errors, warnings and caveats of the explanations, with their codes and ranges, and no plain fact', () => {
@@ -328,16 +328,21 @@ describe('the command-line tool', function () {
     for (const off of ['notes.pitfalls=false', 'diagnostics.pitfalls=false']) {
       assert.deepStrictEqual(JSON.parse(run(['--check', '--format', 'json', '--set', off, file]).out).map((x: { code: string }) => x.code), ['bracket-missing-close'], off);
     }
+    // (A style check at error too, `x = 1`: it fails the check with the pitfalls off.)
+    for (const off of ['notes.pitfalls=false', 'diagnostics.pitfalls=false']) {
+      const x = run(['--check', '--format', 'json', '--set', off, '-e', 'x = 1']);
+      assert.deepStrictEqual([x.code, JSON.parse(x.out).map((i: { code: string }) => i.code)], [1, ['assignment-with-spaces']], off);
+    }
     assert.strictEqual(run(['--check', '--set', 'diagnostics.ignore=["declaration-masks-status","bracket-missing-close"]', file]).out, '');
   });
 
   it('--counts appends the numbers of problems, as $GITHUB_OUTPUT reads them', () => {
     const file = path.join(dir, 'counts.sh');
     const out = path.join(dir, 'counts.txt');
-    fs.writeFileSync(file, '#!/bin/bash\n[ -f a\nx = 1\nread line\n');
+    fs.writeFileSync(file, '#!/bin/bash\n[ -f a\nsource lib.sh\nread line\n');
     fs.writeFileSync(out, 'before=1\n');
     assert.strictEqual(run(['--check', '--counts', out, file]).code, 1);
-    assert.strictEqual(run(['--check', '--strict', '--counts', out, '-e', 'x = 1']).code, 1);
+    assert.strictEqual(run(['--check', '--strict', '--counts', out, '-e', 'source lib.sh']).code, 1);
     assert.strictEqual(fs.readFileSync(out, 'utf8'), 'before=1\nerrors=1\nwarnings=1\ninfos=1\npitfalls=2\nfailing=1\nerrors=0\nwarnings=1\ninfos=0\npitfalls=1\nfailing=1\n');
     assert.match(run(['--counts', out, file]).err, /--counts goes with --check/);
     const bad = run(['--check', '--counts', path.join(dir, 'no-such-dir', 'c.txt'), '-e', 'ls']);
