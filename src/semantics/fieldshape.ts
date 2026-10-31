@@ -8,12 +8,13 @@ import { isGlob } from '../examples/shellwords';
 import { parseExpansion } from '../expansion';
 import { decodedText } from '../staticword';
 import { descendants, nameText, type SyntaxNode } from '../syntax/tree';
-import { sameInEveryLocale } from './chars';
+import { sameInEveryLocale, splitOn } from './chars';
 import { severalFields } from './globwords';
 import { attribute, option } from './shellstate';
 import type { StateModel } from './state';
 import { changedByBash } from './vars';
-import { holedWords, integerParameter, modelValues, patternOfChars, type Piece, splitOn, type ValueSource, wordMeaning, type WordMeaning } from './words';
+import { type Fields, holedWords, integerParameter, modelValues, patternOfChars, type Piece, type ValueSource, wordFields, wordMeaning, type WordMeaning, wordOf } from './words';
+import { declaredWord } from './wordcontexts';
 
 /**
  * What a hole may give: `text`, any text; `digits`, digits (`$#`, `$?`, `$$`, `${#x}`; `$!`, also nothing before any
@@ -596,15 +597,21 @@ export const mayGiveNone = (ws: WordShapes): boolean => ws.cases.some((c) => c.e
 // and, for each part whose value is known only when the line runs, a hole that says which part it is (src/argvline.ts
 // names it in a placeholder).
 
-/** A part of a word whose value is known only when the line runs: what it is, and its text in the script (`code`). */
+/**
+ * A part of a word whose value is known only when the line runs: what it is, and its text in the script (`code`).
+ * `elements`: a parameter that gives the arguments or the elements of an array (`"$@"`, `"${a[@]}"`, `$*`): each as
+ * a field of its own (`each`), or joined into one where the word's context does not split it (`joined`: an
+ * assignment's value, a here-string, `x="$@"`; manual 3.4.2).
+ */
 export type HoleSource =
-  | { kind: 'parameter'; name: string; code: string; elements: boolean }
+  | { kind: 'parameter'; name: string; code: string; elements?: 'each' | 'joined' }
   | { kind: 'command' | 'arithmetic' | 'process' | 'translation' | 'string'; code: string }
   | { kind: 'tilde'; user: string; code: string };
 
 /**
- * A part of a field: text, or a hole; `splits`: word splitting may cut the hole's value into several fields (or none);
- * `globs`: unquoted where pathname expansion applies, so a glob character in its value makes the field a pattern.
+ * A part of a field: text, or a hole; `splits`: word splitting by IFS may cut the hole's value into several fields (or
+ * none; not the elements of `"$@"`, which are fields without splitting); `globs`: unquoted where pathname expansion
+ * applies, so a glob character in its value makes the field a pattern.
  */
 export type ReceivedPart = { text: string } | { hole: HoleSource; splits: boolean; globs: boolean };
 
@@ -616,14 +623,15 @@ export type ReceivedPart = { text: string } | { hole: HoleSource; splits: boolea
  */
 export interface ReceivedField { parts: ReceivedPart[]; min: number; max?: number; pattern?: string }
 
-/** What the hole of `part` (a string: a tilde prefix not known) stands for. */
-function holeSource(part: SyntaxNode | string, h: Hole): HoleSource {
+/** What the hole of `part` (a string: a tilde prefix not known) stands for; `joined`: the word joins the elements of a parameter into one field. */
+function holeSource(part: SyntaxNode | string, h: Hole, joined: boolean): HoleSource {
   if (typeof part === 'string') return { kind: 'tilde', user: part.slice(1), code: part };
   const code = part.text;
+  const elements = h.kind === 'elements' ? { elements: joined ? 'joined' as const : 'each' as const } : {};
   switch (part.type) {
-    case 'simple_expansion': return { kind: 'parameter', name: nameText(part).slice(1), code, elements: h.kind === 'elements' };
+    case 'simple_expansion': return { kind: 'parameter', name: nameText(part).slice(1), code, ...elements };
     // (An expansion `parseExpansion` does not read, `${!x@Q}`, has no name.)
-    case 'expansion': return { kind: 'parameter', name: parseExpansion(decodedText(part))?.name ?? '', code, elements: h.kind === 'elements' };
+    case 'expansion': return { kind: 'parameter', name: parseExpansion(decodedText(part))?.name ?? '', code, ...elements };
     case 'command_substitution': return { kind: 'command', code };
     case 'arithmetic_expansion': return { kind: 'arithmetic', code };
     case 'process_substitution': return { kind: 'process', code };
@@ -637,18 +645,40 @@ function holeSource(part: SyntaxNode | string, h: Hole): HoleSource {
 function patternShown(f: readonly Atom[], of: ReadonlyMap<Hole, SyntaxNode | string>): string {
   const holes = f.filter(isHole);
   const text = patternOfChars(f.map((a) => (isHole(a) ? { c: '\0', quoted: false, split: false } : { c: a.c, quoted: a.quoted, split: false })));
-  return text.split('\0').reduce((t, rest, i) => t + holeSource(of.get(holes[i - 1].hole)!, holes[i - 1].hole).code + rest);
+  return text.split('\0').reduce((t, rest, i) => t + holeSource(of.get(holes[i - 1].hole)!, holes[i - 1].hole, false).code + rest);
+}
+
+/**
+ * What the word that holds `n` gives the program where it runs, with no environment (the script's own values): the
+ * fields of `wordFields` and bash's error on it, and where the fields are not known, the fields with a hole for each
+ * part whose value is known only when the line runs (`holed`, from `receivedWords`). The one reader of a word for
+ * what a program receives (src/argvline.ts). test/argvline.test.ts checks that `receivedWords` gives the fields of
+ * `wordFields` wherever both know them, over the snippets (docs/design/word-source.md, W-F1 and step 6).
+ */
+export function receivedFields(n: SyntaxNode, model: StateModel): Fields & { holed?: ReceivedField[] } {
+  const known = wordFields(n, model);
+  if (known.fields || known.error) return known;
+  const holed = receivedWords(n, model);
+  return holed ? { ...known, holed } : known;
 }
 
 /**
  * The fields the word that holds `n` gives the command where it runs (manual 3.5): with the values the model knows
  * (those of `wordFields`, with no environment), and a hole for each part it does not know, in order, the words of its
- * brace expansion one after another. Undefined where that is not known here: a shell other than bash, the words of a
+ * brace expansion one after another; an assignment given to a declaration builtin, the head as written and its
+ * value's fields (`declaredWord`). Undefined where that is not known here: a shell other than bash, the words of a
  * brace expansion not known (`{,$x}a`, `set +B` on some paths), a word the word model reads otherwise than bash
  * (`misread`), one that may assign IFS other than by arithmetic (`${IFS=:}$x`) or has an unquoted `$!` (F73), an IFS not known where an
  * expansion is split, the cases `wordShapes` leaves out, and a word bash fails on (`${x:?}`; `wordFields` says it).
  */
 export function receivedWords(n: SyntaxNode, model: StateModel): ReceivedField[] | undefined {
+  // (A declaration's word: the head, then each field of its value, which is one field for each word of its braces.)
+  const declared = declaredWord(wordOf(n));
+  if (declared === 'unread') return undefined;
+  if (declared) {
+    if (!declared.value) return [{ parts: [{ text: declared.head }], min: 1, max: 1 }];
+    return receivedWords(declared.value, model)?.map(({ parts: [first, ...rest], ...f }) => ({ ...f, parts: first && 'text' in first ? [{ text: declared.head + first.text }, ...rest] : [{ text: declared.head }, ...(first ? [first] : []), ...rest] }));
+  }
   const w = model.shell && model.shell !== 'bash' ? undefined : wordMeaning(n, model);
   if (!w || misread(w) || emptyBang(w.nodes.flatMap((x) => descendants(x, ['simple_expansion'])))) return undefined;
   // (Arithmetic in the word may set IFS to digits: then it splits by an IFS not known, F87.)
@@ -678,11 +708,13 @@ export function receivedWords(n: SyntaxNode, model: StateModel): ReceivedField[]
     for (const { field: f, sure: has } of runs) {
       const parts: ReceivedPart[] = [];
       for (const a of f) {
-        if (isHole(a)) parts.push({ hole: holeSource(of.get(a.hole)!, a.hole), splits: !!a.splits, globs: gs.applies !== false && globby(a.hole) });
+        // (Where the context does not split the word, the elements of `"$@"` are joined, `x="$@"`. Elsewhere they are
+        // fields of their own, not split: only those not in quotes, `$*`, are split too.)
+        if (isHole(a)) parts.push({ hole: holeSource(of.get(a.hole)!, a.hole, !elementsSplit), splits: a.hole.kind === 'elements' ? elementsSplit && !a.hole.quoted && step.applies !== false : !!a.splits, globs: gs.applies !== false && globby(a.hole) });
         else if (parts.length && 'text' in parts[parts.length - 1]) (parts[parts.length - 1] as { text: string }).text += a.c;
         else parts.push({ text: a.c });
       }
-      const several = parts.some((p) => 'hole' in p && (p.splits || p.globs));
+      const several = f.some((a) => isHole(a) && (a.splits || (gs.applies !== false && globby(a.hole))));
       const pattern = gs.applies !== false && (isGlob(patternText(f, '')) || isGlob(patternText(f, 'x'))) ? patternShown(f, of) : undefined;
       out.push({ parts, min: has && !(pattern !== undefined && nullglob) ? 1 : 0, ...(several || pattern !== undefined ? {} : { max: 1 }), ...(pattern !== undefined ? { pattern } : {}) });
     }

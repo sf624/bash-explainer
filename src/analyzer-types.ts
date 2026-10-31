@@ -206,8 +206,8 @@ export interface LineExplanation {
 /**
  * A part of a word a program receives (src/argvline.ts): text, or a placeholder for a value known only when the line
  * runs. `hole`: what it stands for, `code` its text in the script (for `names`, the pattern), `label` what the views
- * show between `‹` and `›` (marked text: code in backticks); `splits`: word splitting may cut the value into several
- * words, or none.
+ * show between `‹` and `›` (marked text: code in backticks); `splits`: word splitting by IFS may cut the value into
+ * several words, or none (not the elements of `"$@"`, which are words of their own unsplit).
  */
 export type ArgvPart = { text: string } | { hole: ArgvHoleKind; code: string; label: string; splits?: true };
 
@@ -229,8 +229,9 @@ export interface ArgvRemoved { kind: 'assignment' | 'redirect'; span: Span; text
 /**
  * What the program of one simple command receives (docs/design/panel-redesign.md, P4): its words, the name's first,
  * after bash's expansions, quote removal, word splitting and pathname expansion (manual 3.5, 3.7.1); what bash took
- * out first (`removed`, in source order); `fails`: bash fails on a word of it (`${x:?}`, `set -u`, failglob, an
- * ambiguous redirection), so the program does not run.
+ * out first (`removed`, in source order); `fails`: the first word bash fails on (`${x:?}`, `set -u`, failglob, an
+ * ambiguous redirection), in the order bash expands them: the words, then the values of the assignments, then the
+ * redirections; so the program does not run.
  */
 export interface ArgvLine { span: Span; words: ArgvWord[]; removed: ArgvRemoved[]; fails?: { span: Span; error: string } }
 

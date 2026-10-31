@@ -9,11 +9,13 @@ import { explainDocumentLine } from '../src/document';
 import { openDocument } from '../src/document-setup';
 import type { Lang } from '../src/i18n';
 import { assignmentSaid, hereSaid, placeholderSaid } from '../src/messages-argv';
-import { receivedWords } from '../src/semantics/fieldshape';
+import { receivedFields, receivedWords } from '../src/semantics/fieldshape';
 import { shellState } from '../src/semantics/state';
+import { wordFields } from '../src/semantics/words';
 import type { Shell } from '../src/shellfeatures';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { descendants, fields } from '../src/syntax/tree';
+import { descendants, field, fields, prefixAssignments, redirectionsOf } from '../src/syntax/tree';
+import { corpus } from './support/corpus';
 import { argvHolds, argvShown } from './support/argvline';
 
 const parser = createUnbashParser();
@@ -51,29 +53,41 @@ describe('what the program receives (src/argvline.ts, panel P4)', () => {
   });
 
   it('names each value known only when the line runs in a placeholder, with how many words it may give', () => {
-    assert.strictEqual(shown('grep -h "$USER" /var/log/*.log'), 'grep -h ‹current user name› ‹each name matching `/var/log/*.log`›{1,}');
-    assert.strictEqual(shown('grep -h "$USER" /var/log/*.log', 'ja'), 'grep -h ‹ログインユーザー名› ‹`/var/log/*.log` に一致する各名前›{1,}');
+    assert.strictEqual(shown('grep -h "$USER" /var/log/*.log'), 'grep -h ‹current user name› ‹each file name matching `/var/log/*.log`›{1,}');
+    assert.strictEqual(shown('grep -h "$USER" /var/log/*.log', 'ja'), 'grep -h ‹現在のユーザー名› ‹`/var/log/*.log` に一致する各ファイル名›{1,}');
     assert.strictEqual(shown('echo ~/d ~+ ~- ~bob/x ~2 "$@" $* "$*" "${a[@]}" $1 "$#" "$v" "${v:-d}"'),
       'echo ‹home directory›/d ‹current directory› ‹previous directory› ‹home directory of `bob`›/x ‹what `~2` gives›'
       + ' ‹each argument›{0,} ‹each argument›{0,} ‹the arguments joined› ‹each element of `a`›{0,} ‹argument 1›{0,} ‹number of arguments› ‹value of `$v`› ‹what `${v:-d}` gives›');
     assert.strictEqual(shown('echo ~/d ~+ ~- ~bob/x ~2 "$@" "$*" "${a[@]}" $1 "$v" "${v:-d}"', 'ja'),
       'echo ‹ホームディレクトリ›/d ‹カレントディレクトリ› ‹直前のカレントディレクトリ› ‹`bob` のホームディレクトリ›/x ‹`~2` の結果›'
-      + ' ‹各引数›{0,} ‹引数をつなげた文字列› ‹`a` の各要素›{0,} ‹1 番目の引数›{0,} ‹`$v` の値› ‹`${v:-d}` の結果›');
+      + ' ‹各引数›{0,} ‹引数をつなげた文字列› ‹`a` の各要素›{0,} ‹1番目の引数›{0,} ‹`$v` の値› ‹`${v:-d}` の結果›');
     // (A translation is known only with another part not known: `$"hi"` alone is `hi`.)
     assert.strictEqual(shown('echo "$(id -u)" "$((n + 1))" <(ls) $"hi"$v $"hi" $\'\\u00e9\' "${!x@Q}" a"$v"b'),
       'echo ‹output of `$(id -u)`› ‹result of `$((n + 1))`› ‹file name of `<(ls)`› ‹translation of `$"hi"`›‹value of `$v`›{1,} hi ‹what `$\'\\u00e9\'` gives› ‹what `${!x@Q}` gives›{0,} a‹value of `$v`›b');
     assert.strictEqual(shown('echo "$(id -u)" "$((n + 1))" <(ls) $"hi"$v $\'\\u00e9\' "${!x@Q}"', 'ja'),
       'echo ‹`$(id -u)` の出力› ‹`$((n + 1))` の計算結果› ‹`<(ls)` のファイル名› ‹`$"hi"` の翻訳›‹`$v` の値›{1,} ‹`$\'\\u00e9\'` の結果› ‹`${!x@Q}` の結果›{0,}');
-    // (A value that may be split is marked so.)
-    const [l] = lines('rm $f');
-    assert.deepStrictEqual(l.words[1].parts, [{ hole: 'parameter', code: '$f', label: 'value of `$f`', splits: true }]);
+    // (A value that may be split is marked so; the elements of `"$@"` are words of their own, not split, unless they are not quoted.)
+    const [l] = lines('rm $f "${a[@]}" "$@" ${a[@]} $*');
+    assert.deepStrictEqual(l.words.slice(1).map((w) => w.parts), [
+      [{ hole: 'parameter', code: '$f', label: 'value of `$f`', splits: true }],
+      [{ hole: 'parameter', code: '${a[@]}', label: 'each element of `a`' }], [{ hole: 'parameter', code: '$@', label: 'each argument' }],
+      [{ hole: 'parameter', code: '${a[@]}', label: 'each element of `a`', splits: true }], [{ hole: 'parameter', code: '$*', label: 'each argument', splits: true }],
+    ]);
+    assert.deepStrictEqual(lines('IFS=; rm $*').at(-1)!.words[1].parts, [{ hole: 'parameter', code: '$*', label: 'each argument' }]);
+  });
+
+  it('says that an assignment or a here-string joins the arguments and the elements into one word', () => {
+    const [l] = lines('args="$@" u=${a[@]} v=$* ls <<<"${a[@]}"');
+    assert.deepStrictEqual(l.removed.map((r) => argvShown(r.word!)), ['‹the arguments joined›', '‹the elements of `a` joined›', '‹the arguments joined›', '‹the elements of `a` joined›']);
+    assert.deepStrictEqual(lines('f() { local args="$@"; }')[0].words.slice(1).map((w) => [argvShown([w]), w.count]), [['args=‹the arguments joined›', undefined]]);
+    assert.strictEqual(argvShown(lines('u=${a[@]} ls', 0, 'ja')[0].removed[0].word!), '‹`a` の要素をつなげた文字列›');
   });
 
   it('names a pattern by its text: the whole word as written, else the field', () => {
-    assert.strictEqual(shown('ls "$d"/*.log'), 'ls ‹each name matching `"$d"/*.log`›{1,}');
+    assert.strictEqual(shown('ls "$d"/*.log'), 'ls ‹each file name matching `"$d"/*.log`›{1,}');
     // (Several fields of one word: each its own pattern, with a quoted glob character behind a backslash.)
-    assert.strictEqual(shown('x="a b*"; ls $x"*"$y*'), 'ls a ‹each name matching `b*\\*$y*`›{1,}');
-    assert.strictEqual(argvShown(lines('shopt -s nullglob; ls *.c')[1].words), 'ls ‹each name matching `*.c`›{0,}');
+    assert.strictEqual(shown('x="a b*"; ls $x"*"$y*'), 'ls a ‹each file name matching `b*\\*$y*`›{1,}');
+    assert.strictEqual(argvShown(lines('shopt -s nullglob; ls *.c')[1].words), 'ls ‹each file name matching `*.c`›{0,}');
   });
 
   it('stands for a word it cannot read with one placeholder, any number of words', () => {
@@ -82,10 +96,14 @@ describe('what the program receives (src/argvline.ts, panel P4)', () => {
   });
 
   it('gives an assignment to a declaration builtin as one word, its value not split', () => {
-    assert.deepStrictEqual(lines('f() { local x=1 y=$1 z= w="$HOME"/a b=(1 2) c[1]=2; }')[0].words.slice(1).map((w) => [argvShown([w]), w.asWritten]), [
+    assert.deepStrictEqual(lines('f() { local x=1 y=$1 z= w="$HOME"/a b=(1 2) c[1]=2 d={p,q}$1; }')[0].words.slice(1).map((w) => [argvShown([w]), w.asWritten]), [
       ['x=1', true], ['y=‹argument 1›', undefined], ['z=', true], ['w=‹home directory›/a', undefined],
-      ['‹the words of `b=(1 2)`›{0,}', undefined], ['‹the words of `c[1]=2`›{0,}', undefined],
+      ['‹the words of `b=(1 2)`›{0,}', undefined], ['‹the words of `c[1]=2`›{0,}', undefined], ['d=p‹argument 1›', undefined], ['d=q‹argument 1›', undefined],
     ]);
+    // (The model knows it: one word, braces expanded; behind `command`, an argument, split.)
+    assert.deepStrictEqual(['v="a b"; export x=$v y={c,d} t+=1 u=', 'v="a b"; command export x=$v'].map((s) => argvShown(lines(s).at(-1)!.words)),
+      ['export x=a b y=c y=d t+=1 u=', 'command export x=a b']);
+    assert.deepStrictEqual(lines('v="a b"; export x=$v').at(-1)!.words.map((w) => w.parts), [[{ text: 'export' }], [{ text: 'x=a b' }]]);
   });
 
   it('lists what bash takes out, in order: assignments and redirections, with what they do', () => {
@@ -122,6 +140,13 @@ describe('what the program receives (src/argvline.ts, panel P4)', () => {
     assert.strictEqual(shown('x=; echo ${x:?}'), 'echo ‹the words of `${x:?}`›{0,}');
     assert.deepStrictEqual(lines('x="a b"; cat < $x')[0].fails?.error, 'ambiguous-redirect');
     assert.strictEqual(lines('ls')[0].fails, undefined);
+    // (An assignment's value, a here-string, a here-document; bash expands the words, then the assignments, then the redirections.)
+    const at = (src: string): number | undefined => lines(src).at(-1)!.fails?.span.start.character;
+    assert.deepStrictEqual(['unset y; x=${y:?no} ls', 'unset y; ls <<<${y:?}', 'unset y; ls <<EOF\n${y:?}\nEOF', 'unset y z; x=${y:?Y} ls > ${z:?Z}', 'unset y z; ls > ${z:?Z} ${y:?Y}', 'unset y; x=$y ls'].map(at),
+      [11, 15, 0, 13, 24, undefined]);
+    assert.deepStrictEqual(lines('unset y; ls <<EOF\n${y:?}\nEOF').at(-1)!.fails?.span.start, { line: 1, character: 0 });
+    // (A here-document with no delimiter yet, while typing.)
+    assert.deepStrictEqual(lines('cat <<')[0].fails, undefined);
   });
 
   it('keeps the places of a host file, as the explanation does', () => {
@@ -146,7 +171,7 @@ describe('what the program receives (src/argvline.ts, panel P4)', () => {
   });
 
   it('reads a word with holes only where the word model reads it as bash does', () => {
-    assert.deepStrictEqual(received('echo $x'), [{ parts: [{ hole: { kind: 'parameter', name: 'x', code: '$x', elements: false }, splits: true, globs: true }], min: 0 }]);
+    assert.deepStrictEqual(received('echo $x'), [{ parts: [{ hole: { kind: 'parameter', name: 'x', code: '$x' }, splits: true, globs: true }], min: 0 }]);
     // (Not: another shell; braces not known; a word misread, one that assigns IFS or has `$!`; bash fails on it; an
     // IFS with a glob character; text split by an IFS not known.)
     assert.deepStrictEqual(['echo $x', 'if a; then set +B; fi; echo {a,b}$x', 'echo {,$x}a', 'echo ~\\\n/x', 'echo ${IFS=:}$x', 'echo $!', 'x=; echo ${x:?}', "IFS='*'; echo $x'*'", 'x=a; IFS=$v; echo $x$y']
@@ -156,13 +181,53 @@ describe('what the program receives (src/argvline.ts, panel P4)', () => {
     // (Neither split nor globbed: a field that may be empty, at most one. An IFS of other than ASCII is not followed: the hole may split.)
     assert.strictEqual(argvShown(lines('set -f; IFS=; echo $x').at(-1)!.words), 'echo ‹value of `$x`›{0,1}');
     assert.deepStrictEqual(received('IFS=é; echo $x'), received('echo $x'));
+    // (An assignment given to a declaration builtin: one word, the head and its value's field; not an array.)
+    assert.deepStrictEqual(['e=; local x=$e', 'local x=', 'local x=$1', 'declare a=(1 2)'].map((s) => received(s)), [
+      [{ parts: [{ text: 'x=' }], min: 1, max: 1 }], [{ parts: [{ text: 'x=' }], min: 1, max: 1 }],
+      [{ parts: [{ text: 'x=' }, { hole: { kind: 'parameter', name: '1', code: '$1' }, splits: false, globs: false }], min: 1, max: 1 }], undefined,
+    ]);
     // (Not split: one field.)
-    assert.deepStrictEqual(received('IFS=; echo $x'), [{ parts: [{ hole: { kind: 'parameter', name: 'x', code: '$x', elements: false }, splits: false, globs: true }], min: 0 }]);
+    assert.deepStrictEqual(received('IFS=; echo $x'), [{ parts: [{ hole: { kind: 'parameter', name: 'x', code: '$x' }, splits: false, globs: true }], min: 0 }]);
+  });
+
+  it('gives with holes the fields `wordFields` gives, wherever both know them, over the snippets (word-source.md, W-F1)', () => {
+    // (`receivedFields` reads `wordFields` first, and `receivedWords` only where it does not know the fields: until step 6
+    // of word-source.md folds the second into the first, they must agree where both answer.)
+    let both = 0;
+    const differ: string[] = [];
+    for (const { text } of corpus().snippets) {
+      const tree = parser.parse(text);
+      const model = shellState(tree, 'bash');
+      for (const c of descendants(tree.root, ['command'])) {
+        const words = [...(field(c, 'name')?.namedChildren ?? []), ...fields(c, 'argument'), ...prefixAssignments(c).flatMap((a) => fields(a, 'value')),
+          ...redirectionsOf(c).flatMap((r) => fields(r, 'destination'))];
+        for (const w of words) {
+          const known = wordFields(w, model).fields;
+          const holed = known && receivedWords(w, model);
+          if (!holed) continue;
+          both++;
+          // (One difference: `wordFields` reads `$"hi"` as its text, as bash does with no message catalog; `receivedWords`
+          // keeps it a hole, a translation, which may be any text.)
+          const exact = holed.every((f) => f.min === 1 && f.max === 1 && f.pattern === undefined && f.parts.every((p) => 'text' in p || p.hole.kind === 'translation'));
+          const got = holed.map((f) => new RegExp(`^${f.parts.map((p) => ('text' in p ? p.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '.*')).join('')}$`, 's'));
+          if (!exact || got.length !== known.length || got.some((r, i) => !r.test(known[i]))) differ.push(`${JSON.stringify(text)}: ${w.text} ${got.join(' ')} ${JSON.stringify(known)}`);
+        }
+      }
+    }
+    assert.deepStrictEqual(differ, []);
+    assert.ok(both > 5000, `${both} words`);
+    // (The entry point: the known fields, else the holed ones, and bash's error.)
+    const tree = parser.parse('x=1; unset y; ls $x $z ${y:?}');
+    const [, , ls] = descendants(tree.root, ['command']);
+    assert.deepStrictEqual(fields(ls, 'argument').map((w) => receivedFields(w, shellState(tree, 'bash'))), [
+      { fields: ['1'] }, { holed: [{ parts: [{ hole: { kind: 'parameter', name: 'z', code: '$z' }, splits: true, globs: true }], min: 0 }] },
+      { error: 'parameter-null', failure: { kind: 'fatal', applies: true } },
+    ]);
   });
 
   it('has a text for every placeholder and part bash takes out', () => {
     const texts = (lang: Lang) => [
-      placeholderSaid(lang, { kind: 'parameter', name: '?', code: '$?', elements: false }), placeholderSaid(lang, { kind: 'parameter', name: 'x', code: '${x}', elements: false }),
+      placeholderSaid(lang, { kind: 'parameter', name: '?', code: '$?' }), placeholderSaid(lang, { kind: 'parameter', name: 'x', code: '${x}' }),
       placeholderSaid(lang, { kind: 'tilde', user: '', code: '~' }), placeholderSaid(lang, { kind: 'string', code: "$'\\u00e9'" }),
       placeholderSaid(lang, { kind: 'word', code: 'a'.repeat(40) }),
       assignmentSaid(lang, 'stays', 'x', undefined), assignmentSaid(lang, 'maybe-stays', 'x', undefined), hereSaid(lang, 'herestring', ''),

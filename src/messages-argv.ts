@@ -24,14 +24,14 @@ const PARAMETERS: Readonly<Record<string, Text>> = {
   '!': tx('最後のバックグラウンドジョブのプロセスID', 'process ID of the last background job'),
   '#': tx('引数の個数', 'number of arguments'),
   0: tx('シェルかスクリプトの名前', 'name of the shell or script'),
-  '-': tx('今のシェルのオプションの文字', 'letters of the current shell options'),
-  USER: tx('ログインユーザー名', 'current user name'),
-  LOGNAME: tx('ログインユーザー名', 'current user name'),
+  '-': tx('現在のシェルオプションの文字', 'letters of the current shell options'),
+  USER: tx('現在のユーザー名', 'current user name'),
+  LOGNAME: tx('現在のユーザー名', 'current user name'),
   HOME: tx('ホームディレクトリ', 'home directory'),
   PWD: tx('カレントディレクトリ', 'current directory'),
   OLDPWD: tx('直前のカレントディレクトリ', 'previous directory'),
   HOSTNAME: tx('ホスト名', 'host name'),
-  RANDOM: tx('乱数', 'a random number'),
+  RANDOM: tx('乱数', 'random number'),
 };
 
 /** The tilde prefixes whose value is that of a variable (manual 3.5.2): `~`, `~+`, `~-`. */
@@ -44,10 +44,13 @@ export function placeholderSaid(lang: Lang, h: HoleSource | { kind: 'names' | 'w
   switch (h.kind) {
     case 'parameter': {
       const plain = h.code === `$${h.name}` || h.code === `\${${h.name}}`;
-      if (h.elements && /^[@*]$/.test(h.name)) return ja ? '各引数' : 'each argument';
-      if (h.elements && /^[A-Za-z_]\w*$/.test(h.name)) return ja ? `${code(h.name)} の各要素` : `each element of ${code(h.name)}`;
-      if (plain && /^[1-9]\d*$/.test(h.name)) return ja ? `${h.name} 番目の引数` : `argument ${h.name}`;
-      if (plain && /^[@*]$/.test(h.name)) return ja ? '引数をつなげた文字列' : 'the arguments joined';
+      // (The arguments or the elements, each a word of its own, or joined into one: `x="$@"`, as `"$*"`.)
+      const args = /^[@*]$/.test(h.name);
+      if (h.elements === 'each' && args) return ja ? '各引数' : 'each argument';
+      if (h.elements === 'each' && /^[A-Za-z_]\w*$/.test(h.name)) return ja ? `${code(h.name)} の各要素` : `each element of ${code(h.name)}`;
+      if ((h.elements === 'joined' || plain) && args) return ja ? '引数をつなげた文字列' : 'the arguments joined';
+      if (h.elements === 'joined' && /^[A-Za-z_]\w*$/.test(h.name)) return ja ? `${code(h.name)} の要素をつなげた文字列` : `the elements of ${code(h.name)} joined`;
+      if (plain && /^[1-9]\d*$/.test(h.name)) return ja ? `${h.name}番目の引数` : `argument ${h.name}`;
       const known = plain ? PARAMETERS[h.name] : undefined;
       if (known) return known[lang];
       return plain ? (ja ? `${c} の値` : `value of ${c}`) : ja ? `${c} の結果` : `what ${c} gives`;
@@ -61,7 +64,7 @@ export function placeholderSaid(lang: Lang, h: HoleSource | { kind: 'names' | 'w
       if (variable) return PARAMETERS[variable][lang];
       return /^[+-]?\d/.test(h.user) ? (ja ? `${c} の結果` : `what ${c} gives`) : ja ? `${code(h.user)} のホームディレクトリ` : `home directory of ${code(h.user)}`;
     }
-    case 'names': return ja ? `${c} に一致する各名前` : `each name matching ${c}`;
+    case 'names': return ja ? `${c} に一致する各ファイル名` : `each file name matching ${c}`;
     case 'word': return ja ? `${c} から得られる単語` : `the words of ${c}`;
     case 'string': return ja ? `${c} の結果` : `what ${c} gives`;
   }

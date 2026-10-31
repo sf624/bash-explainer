@@ -15,7 +15,7 @@ import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode } from '../syntax/tree';
-import { caseConverted, type Char, GLOB_CHARS, globbedByBash, IFS_ERRATIC, IFS_WHITESPACE, ownChars, patternOfChars, releasesDiffer, sameInEveryLocale, substring } from './chars';
+import { caseConverted, type Char, GLOB_CHARS, globbedByBash, IFS_ERRATIC, IFS_WHITESPACE, ownChars, patternOfChars, releasesDiffer, sameInEveryLocale, splitOn, substring } from './chars';
 import { bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
@@ -23,7 +23,7 @@ import { ARITH_ASSIGNED, attribute, defaultOn, modelVersion, option, type Option
 import { changedByBash, setAtStart } from './vars';
 import { ARITH, changesDirectory, underscoreValue, unreliableAt, unreliableNames } from './wordsites';
 import { operandPattern, operandReplacement, operandWord } from './operands';
-import { CONTEXTS, type ContextRule, type WordContext } from './wordcontexts';
+import { CONTEXTS, type ContextRule, declaredWord, type WordContext } from './wordcontexts';
 import type { Hole } from './fieldshape';
 export { type Char, ifsEscaped, patternOfChars, quotedIfs } from './chars';
 
@@ -597,8 +597,8 @@ class Evaluator {
       case 'translated_string': return this.hole ? this.hole(n, true) : this.pieces(n.namedChildren[0], quoted);
       case 'string': return this.inner(n, n.startIndex + 1, n.endIndex - 1, /\\([$`"\\\n])/g);
       case 'heredoc_body': {
-        // A quoted delimiter: the body is text as it is.
-        const start = n.parent!.children.find((c) => c.type === 'heredoc_start')!.text;
+        // A quoted delimiter: the body is text as it is. (No delimiter yet, `cat <<` while typing: an empty body.)
+        const start = n.parent!.children.find((c) => c.type === 'heredoc_start')?.text ?? '';
         return /['"\\]/.test(start) ? [{ text: decodedText(n), quoted: true, expanded: false }] : this.inner(n, n.startIndex, n.endIndex, /\\([$`\\\n])/g);
       }
       case 'simple_expansion': case 'expansion': return this.expansion(n, quoted) ?? this.hole?.(n, quoted);
@@ -869,9 +869,17 @@ export function trustedPart(part: SyntaxNode, w: WordMeaning, model: StateModel,
 export const trustedVariable = (name: string, w: WordMeaning, model: StateModel): string | null | undefined => new Evaluator(w, new ModelValues(w, model, undefined, new Set(), true)).variable(name, w.nodes[0]);
 /** The values `wordFields` reads where `w` runs, with no environment: those of the holes of `receivedWords` (fieldshape.ts). */
 export const modelValues = (w: WordMeaning, model: StateModel): ValueSource => new ModelValues(w, model, undefined, new Set());
+
 function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, expanding: ReadonlySet<SyntaxNode>, trusted = false): Fields {
   const w = wordMeaning(n, model);
   if (!w) return {};
+  // (An assignment given to a declaration builtin: its head, then each field of its value.)
+  const declared = declaredWord(w);
+  if (declared === 'unread') return {};
+  if (declared) {
+    const value = declared.value ? fieldsAt(declared.value, model, env, expanding, trusted) : { fields: [''] };
+    return value.fields ? { fields: value.fields.map((f) => declared.head + f) } : value;
+  }
   const unknown: Fields = w.failure ? { failure: w.failure } : {};
   const ev = new Evaluator(w, new ModelValues(w, model, env, expanding, trusted));
   try {
@@ -1020,36 +1028,6 @@ function splitPieces(w: WordMeaning, pieces: Piece[]): Char[][] | undefined {
   return splitOn(chars, (c) => (c.split && sep.includes(c.c) ? (IFS_WHITESPACE.includes(c.c) ? 'white' : 'hard') : undefined), () => true).map((f) => f.field);
 }
 
-/**
- * Word splitting (manual 3.5.7) of characters: `sep` says which are separators (an IFS white space or another IFS
- * character, of an unquoted expansion), `has` whether one surely gives its field text; one that does not (a part that
- * may be empty, fieldshape.ts) makes a field that is there only when it is not empty (`sure: false`).
- */
-export function splitOn<T>(chars: readonly T[], sep: (c: T) => 'white' | 'hard' | undefined, has: (c: T) => boolean): { field: T[]; sure: boolean }[] {
-  const fields: { field: T[]; sure: boolean }[] = [];
-  let cur: T[] = [];
-  let sure = false;
-  let may = false;
-  const white = (k: number): boolean => k < chars.length && sep(chars[k]) === 'white';
-  for (let i = 0; i < chars.length; i++) {
-    if (!sep(chars[i])) {
-      cur.push(chars[i]);
-      if (has(chars[i])) sure = true;
-      else may = true;
-      continue;
-    }
-    let j = i;
-    while (white(j)) j++;
-    const hard = j < chars.length && sep(chars[j]) === 'hard';
-    if (hard) for (j++; white(j);) j++;
-    if (hard || sure || may) fields.push({ field: cur, sure: hard || sure });
-    cur = [];
-    sure = may = false;
-    i = j - 1;
-  }
-  if (sure || may) fields.push({ field: cur, sure });
-  return fields;
-}
 
 /** Pathname expansion of one field (manual 3.5.8): the names it matches, the field itself, none, or unknown. */
 function globField(w: WordMeaning, f: Char[], env: WordEnv | undefined): string[] | undefined {
