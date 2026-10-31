@@ -2,6 +2,9 @@
 // shape, its placeholders and what bash takes out. test/argv.test.ts checks the same data against the argv bash gives,
 // over the capture's corpus.
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import type { ArgvLine, ArgvWord } from '../src/analyzer-types';
 import { argvOf } from '../src/argvline';
@@ -9,6 +12,7 @@ import { explainDocumentLine } from '../src/document';
 import { openDocument } from '../src/document-setup';
 import type { Lang } from '../src/i18n';
 import { assignmentSaid, hereSaid, placeholderSaid } from '../src/messages-argv';
+import { braceAlternatives } from '../src/semantics/brace';
 import { receivedFields, receivedWords } from '../src/semantics/fieldshape';
 import { shellState } from '../src/semantics/state';
 import { wordFields } from '../src/semantics/words';
@@ -17,6 +21,8 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, prefixAssignments, redirectionsOf } from '../src/syntax/tree';
 import { corpus } from './support/corpus';
 import { argvHolds, argvShown } from './support/argvline';
+import { hasBash53, PROBE_BASH, PROBE_BASH53, PROBE_ENV, probeSkipReason } from './support/probe';
+import { run } from './support/run';
 
 const parser = createUnbashParser();
 
@@ -95,15 +101,56 @@ describe('what the program receives (src/argvline.ts, panel P4)', () => {
     assert.strictEqual(shown('echo {,$x}a', 'ja'), 'echo ‹`{,$x}a` から得られる単語›{0,}');
   });
 
-  it('gives an assignment to a declaration builtin as one word, its value not split', () => {
+  it('gives an assignment to a declaration builtin as one word, its value not split, unless braces expand it', () => {
+    // (Braces make each word an argument: `d=p$1` is split and globbed.)
     assert.deepStrictEqual(lines('f() { local x=1 y=$1 z= w="$HOME"/a b=(1 2) c[1]=2 d={p,q}$1; }')[0].words.slice(1).map((w) => [argvShown([w]), w.asWritten]), [
       ['x=1', true], ['y=‹argument 1›', undefined], ['z=', true], ['w=‹home directory›/a', undefined],
-      ['‹the words of `b=(1 2)`›{0,}', undefined], ['‹the words of `c[1]=2`›{0,}', undefined], ['d=p‹argument 1›', undefined], ['d=q‹argument 1›', undefined],
+      ['‹the words of `b=(1 2)`›{0,}', undefined], ['‹the words of `c[1]=2`›{0,}', undefined], ['d=p‹argument 1›{1,}', undefined], ['d=q‹argument 1›{1,}', undefined],
     ]);
     // (The model knows it: one word, braces expanded; behind `command`, an argument, split.)
     assert.deepStrictEqual(['v="a b"; export x=$v y={c,d} t+=1 u=', 'v="a b"; command export x=$v'].map((s) => argvShown(lines(s).at(-1)!.words)),
       ['export x=a b y=c y=d t+=1 u=', 'command export x=a b']);
     assert.deepStrictEqual(lines('v="a b"; export x=$v').at(-1)!.words.map((w) => w.parts), [[{ text: 'export' }], [{ text: 'x=a b' }]]);
+  });
+
+  it('reads a declaration word that braces expand as arguments, as bash 5.2 and 5.3 do (split, globbed, a tilde only at the start)', function () {
+    if (probeSkipReason) this.skip();
+    // (Each case: the script, then what the builtin of its last command receives for its last word (a pattern as
+    // written), then what `declare -p` of the names prints after it in the function, run in an empty directory.)
+    const cases: [string, string[], string][] = [
+      ["z='p  q'; f() { local x={a,b}$z; }", ['x=ap', 'q', 'x=bp', 'q'], 'declare -- x="bp"\ndeclare -- q'],
+      ["z='p  q'; f() { local x={a..a}$z; }", ['x=ap', 'q'], 'declare -- x="ap"\ndeclare -- q'],
+      ['f() { export X=~{a,b}; }', ['X=~a', 'X=~b'], 'declare -x X="~b"'],
+      ['f() { export X=~{,/a}; }', ['X=~', 'X=~/a'], 'declare -x X="~/a"'],
+      ['f() { local d={p,q}*; }', ['d=p*', 'd=q*'], 'declare -- d="q*"'],
+      // (With `set +B`, it stays an assignment: not split.)
+      ["z='p  q'; set +B; f() { local x={a,b}$z; }", ['x={a,b}p  q'], 'declare -- x="{a,b}p  q"'],
+    ];
+    const got = (src: string): string[] | undefined => {
+      const tree = parser.parse(src);
+      const r = receivedFields(fields(descendants(tree.root, ['command']).at(-1)!, 'argument').at(-1)!, shellState(tree, 'bash'));
+      return r.fields ?? r.holed?.map((f) => f.pattern ?? '');
+    };
+    assert.deepStrictEqual(cases.map(([src]) => got(src)), cases.map(([, f]) => f));
+    // (A glob of it matches names.)
+    assert.deepStrictEqual(received('f() { local d={p,q}*; }')!.map((f) => [f.pattern, f.min, f.max]), [['d=p*', 1, undefined], ['d=q*', 1, undefined]]);
+    // (Not known where braces may or may not apply; the words of braces start with the head, but not with a subscript in the name, which bash expands too.)
+    const tree = parser.parse('if a; then set +B; fi; local x={a,b}');
+    assert.deepStrictEqual([received('if a; then set +B; fi; local x={a,b}'), wordFields(fields(descendants(tree.root, ['command']).at(-1)!, 'argument')[0], shellState(tree, 'bash'))], [undefined, {}]);
+    const arg = (src: string) => fields(descendants(parser.parse(src).root, ['command'])[0], 'argument')[0];
+    assert.deepStrictEqual([braceAlternatives([arg('local x={a,b}')]), braceAlternatives([arg('local a[1]={x,y}')])], [[['x=a'], ['x=b']], undefined]);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'argvline-declare-'));
+    try {
+      for (const bash of [PROBE_BASH, ...(hasBash53 ? [PROBE_BASH53!] : [])]) {
+        const out = (script: string): string => run(bash, ['--norc', '--noprofile', '-c', script], { env: PROBE_ENV, cwd: dir }).stdout.toString().trim();
+        assert.deepStrictEqual(cases.map(([src, f]) => out(`${src.replace(/; \}$/, `; declare -p ${[...new Set(f.map((w) => w.replace(/=.*/s, '')))].join(' ')}; }`)}; f`)), cases.map(([, , p]) => p), bash);
+        fs.writeFileSync(path.join(dir, 'd=qx'), '');
+        assert.strictEqual(out('f() { local d={p,q}*; declare -p d; }; f'), 'declare -- d="qx"', bash);
+        fs.rmSync(path.join(dir, 'd=qx'));
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('lists what bash takes out, in order: assignments and redirections, with what they do', () => {

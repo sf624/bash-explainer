@@ -6,6 +6,7 @@ import { bracesWork, type Shell } from '../shellfeatures';
 import { braceSequence } from '../examples/shellwords';
 import { staticWordValue } from '../staticword';
 import { braceKind, joinedText, type SyntaxNode } from '../syntax/tree';
+import { assignmentHead, ownParts } from './wordcontexts';
 import type { Tri } from './state';
 import type { Applies, ExpansionStep, WordMeaning } from './words';
 
@@ -77,9 +78,13 @@ export function rereadFails(w: BraceAlternative): boolean {
  * gives too many words to list.
  */
 export function braceAlternatives(nodes: readonly SyntaxNode[], part = false, version?: BashVersion): BraceAlternative[] | null | undefined {
-  const parts = nodes.flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n]));
+  // (A declaration's assignment word, `x={a,b}` (the parser makes no other assignment an argument): its head as text,
+  // then the parts of its value, `declaredWord`.)
+  const head = nodes[0].type === 'variable_assignment' ? assignmentHead({ nodes, context: 'declaration-argument' }) : undefined;
+  if (head === 'unread') return undefined;
+  const parts = ownParts(nodes).flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n]));
   if (!parts.some((n) => n.type === 'brace_expression')) return undefined;
-  const words = product(parts.map((n) => alternativesOf(n, version)));
+  const words = product([...(head === undefined ? [] : [[[escaped(head)]]]), ...parts.map((n) => alternativesOf(n, version))]);
   return words && (part ? words : words.filter((w) => w.some((p) => typeof p !== 'string' || p !== '')));
 }
 

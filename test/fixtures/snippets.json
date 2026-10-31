@@ -1296,6 +1296,7 @@
  "if a; b",
  "if a; then IFS=,; fi\necho $x",
  "if a; then b; elif c; then d; else e; fi; case x in y) z ;; esac",
+ "if a; then set +B; fi; local x={a,b}",
  "if c; then DIR=/x; fi\nrm -rf $DIR/*",
  "if c; then shopt -u sourcepath; fi\nsource lib.sh",
  "if false; then f() { :; }; fi",

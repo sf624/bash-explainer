@@ -23,7 +23,7 @@ import { ARITH_ASSIGNED, attribute, defaultOn, modelVersion, option, type Option
 import { changedByBash, setAtStart } from './vars';
 import { ARITH, changesDirectory, underscoreValue, unreliableAt, unreliableNames } from './wordsites';
 import { operandPattern, operandReplacement, operandWord } from './operands';
-import { CONTEXTS, type ContextRule, declaredWord, type WordContext } from './wordcontexts';
+import { CONTEXTS, type ContextRule, declarationOf, declaredWord, ownParts, type WordContext } from './wordcontexts';
 import type { Hole } from './fieldshape';
 export { type Char, ifsEscaped, patternOfChars, quotedIfs } from './chars';
 
@@ -159,10 +159,10 @@ function contextOf(w: SyntaxNode): WordContext | undefined {
   return 'cond-operand';
 }
 
-/** Whether bash brace-expands the word that holds `n` where it is (not by the shell or `set +B`): also an assignment given to `declare` (`x={a,b}` is `x=b`). */
+/** Whether bash brace-expands the word that holds `n` where it is (not by the shell or `set +B`): the value of a declaration's assignment as its whole word (`declarationOf`). */
 export function bracesInContext(n: SyntaxNode): boolean {
   const w = wordOf(n);
-  return !!w && (CONTEXTS[w.context].brace || (w.context === 'assignment-value' && w.nodes[0].parent!.field === 'argument'));
+  return !!w && CONTEXTS[(declarationOf(w) ?? w).context].brace;
 }
 
 /** The word that holds `n` (an expansion, a string, a word), with its nodes and context; undefined outside a word. */
@@ -298,14 +298,14 @@ function shapeOf(nodes: readonly SyntaxNode[]): Shape {
   let shape = shapes.get(nodes[0]);
   if (shape) return shape;
   const expansions = expansionsOf(nodes);
-  const plain = plainWords(nodes);
+  const own = ownParts(nodes), plain = plainWords(own);
   shape = {
     expansions, plain, tildes: new Map(), walked: new WeakMap(),
     unquoted: expansions.filter((e) => e.type !== 'process_substitution' && !nearestQuote(e)),
     someQuoted: expansions.some(nearestQuote),
     braced: bracedWords(plain),
-    globWords: [...new Set([...plain.filter((w) => isGlob(joinedText(w)) || globbedByBash(joinedText(w), 'off')), ...bracketsAcross(nodes)])].sort((a, b) => a.startIndex - b.startIndex),
-    quoted: nodes.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text)),
+    globWords: [...new Set([...plain.filter((w) => isGlob(joinedText(w)) || globbedByBash(joinedText(w), 'off')), ...(own.length ? bracketsAcross(own) : [])])].sort((a, b) => a.startIndex - b.startIndex),
+    quoted: own.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text)),
   };
   shapes.set(nodes[0], shape);
   return shape;
@@ -874,7 +874,7 @@ function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, ex
   const w = wordMeaning(n, model);
   if (!w) return {};
   // (An assignment given to a declaration builtin: its head, then each field of its value.)
-  const declared = declaredWord(w);
+  const declared = declaredWord(w, w.steps[0].applies);
   if (declared === 'unread') return {};
   if (declared) {
     const value = declared.value ? fieldsAt(declared.value, model, env, expanding, trusted) : { fields: [''] };
