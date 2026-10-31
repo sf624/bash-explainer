@@ -4,6 +4,7 @@ import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
+import { aliasDefinedText, aliasMaybeText, aliasNotExpandedText } from './messages-alias';
 import { extglobText, globstarText, type LoopHow, type LoopPattern, unmatchedGlobText } from './messages-glob';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
 import type { Rewrite } from './rewrite';
@@ -86,6 +87,11 @@ const suggests = <P extends { rewrite: readonly Rewrite[] }>(e: Entry<P>): Entry
 const withSourced =(sourced: boolean | undefined, [ja, en]: readonly [string, string]): readonly [string, string] => (sourced ? [
   `${ja}。ただし、このファイルにはシバンがないので、関数の中から \`source\` で読み込まれたときは、\`local\` はその関数のローカル変数を宣言します`,
   `${en}. But this file has no shebang: when a function reads it with \`source\`, \`local\` works there, and declares a variable of that function`] : [ja, en]);
+
+/** `local-outside-function` in a trap's action (`trap`): it runs where the trap fires, which may be in a function. */
+const withTrap = (trap: boolean | undefined, [ja, en]: readonly [string, string]): readonly [string, string] => (trap ? [
+  `${ja}。ここはトラップの動作で、トラップが起きた場所で実行されるので、関数の中のこともあれば、関数の外のこともあります`,
+  `${en}. This is a trap's action: it runs where the trap fires, which may be inside a function or outside one`] : [ja, en]);
 
 /** Headings of pitfalls whose text names its own kind of problem. */
 const NO_HEADING: Text = { ja: '', en: '' };
@@ -283,8 +289,9 @@ export const MESSAGES = {
     `Once unset, \`${name}\` loses what bash does with it: set again later, it is a plain variable`]),
   // (`stops`: in dash and busybox ash, which stop the shell that runs it there, the script, a subshell (which ends
   // only itself, status 2) or a shell not known to be either; bash goes on with status 1.)
-  // (`sourced`: a file with no shebang (src/semantics/env.ts, `readAs`), which a function may read with `source`.)
-  'local-outside-function': pitfall<{ stops: false | 'script' | 'subshell' | 'shell'; sourced?: boolean }>(['4.2'], ({ stops, sourced }) => withSourced(sourced, stops === 'script' ? [
+  // (`sourced`: a file with no shebang (src/semantics/env.ts, `readAs`), which a function may read with `source`.
+  // `trap`: a trap's action, which runs where the trap fires, in a function or not (`inFunction`).)
+  'local-outside-function': pitfall<{ stops: false | 'script' | 'subshell' | 'shell'; sourced?: boolean; trap?: boolean }>(['4.2'], ({ stops, sourced, trap }) => withTrap(trap, withSourced(sourced, stops === 'script' ? [
     '`local` は関数の中でしか使えず、関数の外で使うと dash や busybox ash は「local: not in a function」のエラーでスクリプトを止めます',
     '`local` can be used only inside a function; outside one, dash and busybox ash stop the script with "local: not in a function"'] : stops === 'subshell' ? [
     '`local` は関数の中でしか使えず、関数の外で使うと dash や busybox ash は「local: not in a function」のエラーでこのサブシェルを終えます（終了ステータス 2。サブシェルの外は続きます）',
@@ -292,8 +299,8 @@ export const MESSAGES = {
     '`local` は関数の中でしか使えず、関数の外で使うと dash や busybox ash は「local: not in a function」のエラーで、それを実行するシェルを止めます（サブシェルなら、終わるのはそのサブシェルだけです）',
     '`local` can be used only inside a function; outside one, dash and busybox ash stop the shell that runs it with "local: not in a function" (in a subshell, only the subshell ends)'] : [
     '`local` は関数の中でしか使えず、関数の外で使うと「can only be used in a function」のエラーになります',
-    '`local` can be used only inside a function; outside one it fails with "can only be used in a function"']), undefined,
-  ({ sourced }) => (sourced ? 'info' : 'warning')),
+    '`local` can be used only inside a function; outside one it fails with "can only be used in a function"'])), undefined,
+  ({ sourced, trap }) => (sourced || trap ? 'info' : 'warning')),
 
   // ---------------------------------------------------------------- POSIX mode (6.11, 4.4)
   // (6.11: "Function names may not be the same as one of the POSIX special builtins". That the definition then ends the
@@ -361,25 +368,17 @@ export const MESSAGES = {
     'This never runs: it is in a branch whose condition is never met, on the side of `&&` or `||` that is skipped, or after `break`, `continue`, `return` or `exit`']),
 
   // ---------------------------------------------------------------- aliases (6.6)
-  // (`off`: the script turned it off, `shopt -u expand_aliases`, which counts in an interactive shell too.)
-  'alias-not-expanded-in-script': pitfall<{ name: string; value: string; off?: boolean }>(['6.6', '4.3.2'], ({ name, value, off }) => off ? [
-    `\`shopt -u expand_aliases\` でエイリアスの展開が無効になっているので、\`${name}\` は対話シェルでも「command not found」になります。\`shopt -s expand_aliases\` で有効に戻すか、関数 \`${name}() { ${value} "$@"; }\` にします`,
-    `alias expansion is turned off (\`shopt -u expand_aliases\`), so \`${name}\` is "command not found", also in an interactive shell. Turn it on again with \`shopt -s expand_aliases\`, or make it a function: \`${name}() { ${value} "$@"; }\``] : [
-    `bash はスクリプトの中ではエイリアスを展開しないので、\`${name}\` は「command not found」になります。\`shopt -s expand_aliases\` を \`alias\` より前に書くか、関数 \`${name}() { ${value} "$@"; }\` にします（\`.bashrc\` など対話シェルで読むファイルなら問題ありません）`,
-    `bash does not expand aliases in scripts, so \`${name}\` is "command not found". Put \`shopt -s expand_aliases\` before the \`alias\`, or make it a function: \`${name}() { ${value} "$@"; }\` (fine in files read by interactive shells, such as \`.bashrc\`)`]),
+  // (`off`: the script turned it off, `shopt -u expand_aliases`, which counts in an interactive shell too. `unread`: a
+  // path before here ran code the model does not read (`ShellState.opaque`: a file read with `source`, `eval "$x"`),
+  // which may turn it on: a caveat.)
+  'alias-not-expanded-in-script': pitfall<{ name: string; value: string; off?: boolean; unread?: boolean }>(['6.6', '4.3.2'], aliasNotExpandedText, undefined, ({ unread }) => (unread ? 'info' : 'warning')),
   // (A file with no shebang, which bash may run as a script or an interactive shell may read: src/semantics/state.ts.)
-  'alias-maybe-not-expanded': caveat<{ name: string; value: string }>(['6.6', '4.3.2'], ({ name, value }) => [
-    `このファイルにはシバンがありません。\`.bashrc\` のように対話シェルが読むなら \`${name}\` は展開されますが、スクリプトとして実行すると（\`bash ファイル\`）bash はエイリアスを展開しないので「command not found」になります。スクリプトなら \`shopt -s expand_aliases\` を \`alias\` より前に書くか、関数 \`${name}() { ${value} "$@"; }\` にします`,
-    `this file has no shebang. Read by an interactive shell, as \`.bashrc\` is, \`${name}\` is expanded; but run as a script (\`bash file\`), bash does not expand aliases, so it is "command not found". Put \`shopt -s expand_aliases\` before the \`alias\` in a script, or make it a function: \`${name}() { ${value} "$@"; }\``]),
-  'alias-defined-same-unit': note<{ name: string; line: number }>(['6.6'], ({ name, line }) => [
-    `\`${name}\` は行 ${line} で \`alias\` として定義されますが、bash は行（複合コマンドや関数の本体も）をまとめて読んでから実行するので、同じ行で定義したエイリアスはまだ使えません。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
-    `\`${name}\` is defined as an alias on line ${line}, but bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`]),
+  'alias-maybe-not-expanded': caveat<{ name: string; value: string }>(['6.6', '4.3.2'], aliasMaybeText),
+  'alias-defined-same-unit': note<{ name: string; line: number }>(['6.6'], aliasDefinedText('same-unit')),
   'unbraced-element': suggests(pitfall<{ name: string; sub: string; glob?: boolean; rewrite: readonly Rewrite[] }>(['6.7'], ({ name, sub, glob, rewrite: [fix] }) => [
     `\`$${name}${sub}\` は配列の要素ではありません: \`$${name}\`（\`\${${name}[0]}\` と同じ）の後に文字列 \`${sub}\` が続きます${glob ? '（ここではグロブにもなります）' : ''}。要素は \`${fix.code}\` と波かっこで囲んで書きます`,
     `\`$${name}${sub}\` is not an element of the array: it is \`$${name}\` (that is \`\${${name}[0]}\`) followed by the text \`${sub}\`${glob ? ' (a glob too, here)' : ''}. For the element, write \`${fix.code}\` with braces`])),
-  'alias-defined-later': note<{ name: string; line: number }>(['6.6'], ({ name, line }) => [
-    `\`${name}\` は行 ${line} で \`alias\` として定義されますが、これはその前に読まれ、エイリアスは実行された後に読まれるものにだけ効きます。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
-    `\`${name}\` is defined as an alias on line ${line}, but this is read before that, and an alias works only on what is read after it ran. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`]),
+  'alias-defined-later': note<{ name: string; line: number }>(['6.6'], aliasDefinedText('later')),
 
   // ---------------------------------------------------------------- extended globs and globstar (3.5.8.1, 3.5.8, 4.3.2)
   // (3.5.8.1: extglob "changes the behavior of the parser", so it must be on "before parsing constructs containing the

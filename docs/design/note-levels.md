@@ -86,9 +86,9 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `unset-readonly`, `unset-function-and-variable` | `unset` fails every time (status 1), and nothing is unset. |
 | `assign-readonly` | The assignment fails every time, and bash abandons the rest of the command it is in (or, before a command name, runs the command without it). |
 | `restricted-refused` | In a restricted shell (`#!/bin/bash -r`, `bash -r -c`, `rbash`), bash refuses the builtin call, the command name with a `/` or the output redirection every time (status 1), and does nothing. |
-| `local-outside-function`, when the file runs as a script (a shebang, a host's step, a `bash -c` string) | `local` fails every time outside a function. |
+| `local-outside-function`, when the file runs as a script (a shebang, a host's step, a `bash -c` string), out of a trap's action | `local` fails every time outside a function. |
 | `posix-special-function-name` | bash stops the script at the definition. |
-| `alias-not-expanded-in-script` | The alias is "command not found" in a script. Said where bash surely expands no alias: a shebang, a host's step, a `bash -c` string, or after `shopt -u expand_aliases` (the state's `expand_aliases`, which starts `on` in a README's code blocks and with `bash -i`, and not known in a file with no shebang: src/semantics/state.ts, `StateModel.read`). |
+| `alias-not-expanded-in-script`, with no code the model does not read on a path before it | The alias is "command not found" in a script. Said where bash surely expands no alias: a shebang, a host's step, a `bash -c` string, or after `shopt -u expand_aliases` (the state's `expand_aliases`, which starts `on` in a README's code blocks and with `bash -i`, and not known in a file with no shebang: src/semantics/state.ts, `StateModel.read`). |
 | `extglob-in-same-block`, `extglob-turned-off`, `extglob-not-in-new-shell` | A syntax error, every time. |
 | `globstar-unsupported` | `**` never reaches into subdirectories in that shell. |
 | `variable-not-in-remote-shell`, `variable-not-passed-by-wrapper`, `variable-not-exported` | The variable is empty where the string runs, every time. (Not for a name sudo keeps, `TERM`, `TZ`: `SlotLink.keeps`. `variable-not-exported` follows `fromEnvironment`: no note for a name the environment almost always has, a caveat for one in capitals, a clause for one in lower case.) |
@@ -121,6 +121,8 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `function-last-test-returns-status`, `script-last-test-returns-status` | Only the script's exit status is wrong, and only when the test fails. |
 | `failure-reported-as-success` | A failure goes unnoticed: the status is 0 when the command on the left of `\|\| echo` fails. |
 | `local-outside-function`, in a file with no shebang | Fine when a function reads the file with `source`. |
+| `local-outside-function`, in a trap's action (`trap`) | Fine where the trap fires in a function (a `RETURN` trap set in it). |
+| `alias-not-expanded-in-script`, after code the model does not read (`unread`: `source`, `eval "$x"`) | Fine when that code turns `expand_aliases` on. |
 | `variable-not-exported`, of a name in capitals the script set with no `unset` or `export -n` first (`fromEnvironment`: `maybe`) | Fine when the variable came from the environment, which exports it. |
 | `nounset-unbound`, of a name in capitals (`fromEnvironment`: `maybe`) | Fine when the environment has it. |
 | `alias-maybe-not-expanded` | A file with no shebang: fine when an interactive shell reads it (`.bashrc`); "command not found" when it runs as a script. |

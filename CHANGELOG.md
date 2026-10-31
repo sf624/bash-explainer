@@ -15,7 +15,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A worked example now follows a first stage whose words hold a backslash, such as `printf "%s\n" b a | sort`, as bash reads them. Before, it showed made-up lines.
 - Japanese wording on the web page follows the project's style (the settings dialog said 消します where the rest says 削除します).
 - `[[ $x == 1 ]]` now says the strings are compared plainly (no wildcard in the pattern), `if` says that the last command before `then` decides, and a `;` before `then` says where the list ends. tar's operands are named by mode (`tar -tf a.tar docs/`: names in the archive). Reading names `[[`, `]]` and each operand of `[[ ]]`.
-- Four warnings no longer fire where bash runs the line fine: an alias in a `#!/bin/bash -i` script, `local` in a function's `RETURN` trap, sudo's own `$USER`, and a variable that a sourced file may export.
+- Fewer warnings where bash may run the line fine: none for an alias in a `#!/bin/bash -i` script, sudo's own `$USER`, or a variable that a sourced file may export; a caveat for `local` in a trap's action, and for an alias after a sourced file.
 
 ## 0.9.0
 
