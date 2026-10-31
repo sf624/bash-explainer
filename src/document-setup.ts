@@ -1,4 +1,4 @@
-import { detectShell, Shell } from './dialect';
+import { readShell, Shell } from './dialect';
 import type { Shells, ShellDocument } from './document';
 import { Extracted, extractShell, HostKind, hostKind } from './hosts';
 import type { Settings } from './settings';
@@ -118,5 +118,6 @@ export function openDocument(text: string, kind: FileKind, parse: (shellText: st
 
 /** The shell chosen by the user (`forced`), and the one the file says (shebang, ShellCheck directive, file name). */
 export function shellsOf(lines: readonly string[], fileName: string, forced: Shell | undefined): Shells {
-  return { forced, detected: detectShell(lines.slice(0, 50).join('\n'), fileName) };
+  const reading = readShell(lines.slice(0, 50).join('\n'), fileName);
+  return { forced, detected: reading.source === 'default' ? undefined : reading.shell, detectedFrom: reading.source };
 }

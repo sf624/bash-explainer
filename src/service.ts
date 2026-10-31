@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
-import { detectShell, Shell } from './dialect';
+import { readShell, Shell, type ShellReading } from './dialect';
 import { DeadRange, DocumentIssue, diagnosticsFor, explainDocumentLine, ShellDocument, Shells } from './document';
 import { HOST_LANGUAGES, HOST_PATTERNS, kindOfDocument, openDocument, semanticSelector } from './document-setup';
 import { Extracted, extractShell, HostKind } from './hosts';
@@ -128,7 +128,13 @@ export class ExplainService implements vscode.Disposable {
 
   /** The shell the file itself says (shebang, ShellCheck directive, file name). */
   detectedShell(doc: vscode.TextDocument): Shell | undefined {
-    return detectShell(doc.getText(new vscode.Range(0, 0, 50, 0)), doc.fileName);
+    const reading = this.shellReading(doc);
+    return reading.source === 'default' ? undefined : reading.shell;
+  }
+
+  /** The shell the file itself says and where that comes from (`default`: it says none). */
+  shellReading(doc: vscode.TextDocument): ShellReading {
+    return readShell(doc.getText(new vscode.Range(0, 0, 50, 0)), doc.fileName);
   }
 
   /** The shell chosen in the panel for this document, else the `shell` setting (undefined: auto). */

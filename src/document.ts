@@ -1,7 +1,7 @@
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import type { BashVersion } from './bashversion';
-import { dialectIssues, Shell } from './dialect';
+import { dialectIssues, Shell, type ShellSource } from './dialect';
 import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
@@ -38,6 +38,8 @@ export interface Shells {
   forced?: Shell;
   /** The shell the file says (shebang, ShellCheck directive, file name). */
   detected?: Shell;
+  /** Where `detected` comes from (`readShell`); absent when the caller does not need it. */
+  detectedFrom?: ShellSource;
 }
 
 export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line: number, lang: Lang, shells: Shells, opts: ExplainOptions): LineExplanation {
