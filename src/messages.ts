@@ -62,8 +62,11 @@ interface Entry<P> {
 }
 
 const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text });
-/** A fact that says the line fails when it runs: a note at the level of a warning. */
-const failure = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text, level: 'warning' });
+/**
+ * A fact that says the line fails every time it runs: a note at the level `error`, said whatever the pitfalls settings
+ * say. Each has a row in the bash test of test/error-level.test.ts that runs it and sees it fail.
+ */
+const failure = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text, level: 'error' });
 const pitfall = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text, level?: NoteLevel | ((p: P) => NoteLevel)): Entry<P> =>
   ({ kind: 'pitfall', refs, text, ...(heading ? { heading } : {}), ...(level ? { level } : {}) });
 /** A pitfall at the level `info`: harmless with most values, systems or paths. */
@@ -182,8 +185,8 @@ export const MESSAGES = {
   // error, the manual only implies: 6.3.3, item 19, says that in an interactive shell "Parser syntax errors will not
   // cause the shell to exit". Checked.)
   'keyword-needs-separator': withBasis(failure<{ kw: string }>(['3.2.1', '3.2.5.1', '3.2.5.2'], ({ kw }) => [
-    `構文エラー: \`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash は「syntax error near unexpected token」で止まる`,
-    `Syntax error: a \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash stops with "syntax error near unexpected token"`]),
+    `\`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash は「syntax error near unexpected token」で止まる`,
+    `A \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash stops with "syntax error near unexpected token"`]),
   { kind: 'checked', probe: 'state#keyword-separator' }),
   // (4.1: "When the [ form is used, the last argument to the command must be a ]"; 3.7.5: "All builtins return an exit
   // status of 2 to indicate incorrect usage, generally invalid options or missing arguments". The manual's; the probe
@@ -681,12 +684,13 @@ export interface Note { text: string; level: NoteLevel; label: string; body: str
 export interface Fact extends Note { id: FactId; kind: FactKind; refs: readonly string[]; code: FactId; basis?: Basis; tryIt?: TryIt; rewrite?: readonly Rewrite[] }
 
 /**
- * A note of `level` whose text starts with its mark, then, for a pitfall, the word that names the level (or its
- * heading, `heading`), then `body`.
+ * A note of `level` whose text starts with its mark, then the word that names the level (or its heading, `heading`)
+ * for a pitfall, and for every note at a level whose word goes with every kind (an error: "Error:"), then `body`.
  */
 export function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?: FactKind; heading?: Text; code?: string } = {}): Note {
   const { kind = 'note', heading, code } = opts;
-  const word = heading ? heading[lang] : kind === 'pitfall' ? LEVELS[level].word[lang] : '';
+  const { word: levelWord, wordOnEvery } = LEVELS[level];
+  const word = heading ? heading[lang] : kind === 'pitfall' || wordOnEvery ? levelWord[lang] : '';
   return { text: `${LEVELS[level].mark} ${word}${body}`, level, label: word.trimEnd(), body, ...(code ? { code } : {}) };
 }
 
@@ -726,10 +730,11 @@ export type { Words };
 
 /**
  * The one gate of the `notes.pitfalls` setting: the facts that are said, which are all but the pitfalls when the
- * pitfalls are off. The analyzer, the bats facts and the host notes all say their facts through it.
+ * pitfalls are off; a fact at a level that fails every time (an error) is said either way, since it is a bug, not
+ * advice. The analyzer, the bats facts and the host notes all say their facts through it.
  */
 export function said(facts: readonly Fact[], pitfalls: boolean | undefined): Fact[] {
-  return facts.filter((f) => f.kind !== 'pitfall' || pitfalls !== false);
+  return facts.filter((f) => f.kind !== 'pitfall' || pitfalls !== false || LEVELS[f.level].fails);
 }
 
 /**

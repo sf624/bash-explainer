@@ -237,7 +237,7 @@ describe('bash 5.3 command substitutions', () => {
       assert.deepStrictEqual(issues(script, '5.3'), [], script);
       assert.ok(!said(script).tokens.includes('Syntax error'), script);
     }
-    assert.match(dialectNotes(parser.parse('x=${ echo a }'), 0, 'bash', 'ja', '5.3')[0], /^⚠ 構文エラー（bash 5\.3）: この `\}` は直前のコマンドの引数になり/);
+    assert.match(dialectNotes(parser.parse('x=${ echo a }'), 0, 'bash', 'ja', '5.3')[0], /^ⓧ エラー: この `\}` は直前のコマンドの引数になり/);
     needBash53(this);
     for (const { script, how } of UNCLOSED) {
       const r = runBash(script, { program: BASH53 });
@@ -382,13 +382,13 @@ describe('bash 5.3 options of builtins', () => {
       assert.ok(found.length >= 1, c.script);
       // (`source`, `.` and `trap` are special builtins: in POSIX mode, their error exits the shell.)
       const special = ['source', '.', 'trap'].includes(c.command) ? '; an error of a special builtin, so in POSIX mode the shell exits' : '';
-      assert.strictEqual(found[0].message, `⚠ \`${c.command} ${c.flag}\` is a bash 5.3 option: bash 5.2 reports "invalid option", and \`${c.command}\` does nothing (status 2${special}).`, c.script);
+      assert.strictEqual(found[0].message, `ⓧ Error: \`${c.command} ${c.flag}\` is a bash 5.3 option: bash 5.2 reports "invalid option", and \`${c.command}\` does nothing (status 2${special}).`, c.script);
       // (On the option's word.)
       assert.strictEqual(c.script.slice(found[0].startCol, found[0].endCol), c.flag, c.script);
       assert.deepStrictEqual(issues('5.3'), [], c.script);
     }
     // A letter of a cluster; the note of the line, in Japanese.
-    assert.match(dialectNotes(parser.parse('trap -lP INT'), 0, 'bash', 'ja')[0], /^⚠ `trap -P` は bash 5\.3 からのオプションです。bash 5\.2 では「invalid option」のエラーになり、`trap` は何もしません（終了ステータス 2。特殊ビルトインのエラーなので、POSIX モードではシェルが終了する）。$/);
+    assert.match(dialectNotes(parser.parse('trap -lP INT'), 0, 'bash', 'ja')[0], /^ⓧ エラー: `trap -P` は bash 5\.3 からのオプションです。bash 5\.2 では「invalid option」のエラーになり、`trap` は何もしません（終了ステータス 2。特殊ビルトインのエラーなので、POSIX モードではシェルが終了する）。$/);
     assert.deepStrictEqual(dialectNotes(parser.parse('trap -lP INT'), 0, 'bash', 'en', '5.3'), []);
     // Nothing for other words: an unknown option, a program, assignments alone.
     for (const script of ['read -Z x', 'ls -p', 'x=1', 'source f']) assert.deepStrictEqual(dialectNotes(parser.parse(script), 0, 'bash', 'en'), [], script);
@@ -442,11 +442,11 @@ describe('bash 5.3 variables and shell options', () => {
       const issues = (version: BashVersion) => documentIssues({ lines: [c.script], tree: parser.parse(c.script) }, 'en', {}, [], { pitfalls: false, bashVersion: version });
       const found = issues('5.2');
       assert.deepStrictEqual(found.map((i) => i.code), ['laterOption'], c.script);
-      assert.strictEqual(found[0].message, `⚠ \`${c.name}\` is a bash 5.3 \`shopt\` option: bash 5.2 reports "invalid shell option name" for it (status 1; the other names are still set).`, c.script);
+      assert.strictEqual(found[0].message, `ⓧ Error: \`${c.name}\` is a bash 5.3 \`shopt\` option: bash 5.2 reports "invalid shell option name" for it (status 1; the other names are still set).`, c.script);
       assert.strictEqual(c.script.slice(found[0].startCol, found[0].endCol), c.name, c.script);
       assert.deepStrictEqual(issues('5.3'), [], c.script);
     }
-    assert.match(dialectNotes(parser.parse('shopt -s bash_source_fullpath'), 0, 'bash', 'ja')[0], /^⚠ `bash_source_fullpath` は bash 5\.3 からの `shopt` のオプションです。bash 5\.2 では「invalid shell option name」のエラーになります/);
+    assert.match(dialectNotes(parser.parse('shopt -s bash_source_fullpath'), 0, 'bash', 'ja')[0], /^ⓧ エラー: `bash_source_fullpath` は bash 5\.3 からの `shopt` のオプションです。bash 5\.2 では「invalid shell option name」のエラーになります/);
     // (A name of 5.2, or one given by a variable: nothing.)
     for (const script of ['shopt -s nullglob', 'shopt -s "$opt"']) assert.deepStrictEqual(dialectNotes(parser.parse(script), 0, 'bash', 'en'), [], script);
   });

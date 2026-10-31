@@ -53,10 +53,10 @@ describe('the message catalog', () => {
     'globstar-not-found', 'ssh-local-expansion', 'function-not-imported-sh', 'unmatched-glob-runs-once', 'for-over-ls-output', 'for-over-unquoted-args',
     'unquoted-variable-in-test', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment', 'alias-maybe-not-expanded'];
   const FAILURES = ['find-action-refused', 'keyword-needs-separator', 'bracket-missing-close', 'bracket-close-glued', 'test-malformed', 'unset-readonly', 'assign-readonly', 'unset-function-and-variable', 'bats-tags-invalid', 'restricted-refused', 'exit-refused'];
-  it('gives each entry the level of the design: warning, info or note', () => {
+  it('gives each entry the level of the design: error, warning, info or note', () => {
     for (const [id, e] of Object.entries(MESSAGES) as [FactId, { kind: string; level?: unknown }][]) {
       if (typeof e.level === 'function') continue;
-      const want = e.kind === 'note' ? (FAILURES.includes(id) ? 'warning' : 'note') : CAVEATS.includes(id) ? 'info' : 'warning';
+      const want = e.kind === 'note' ? (FAILURES.includes(id) ? 'error' : 'note') : CAVEATS.includes(id) ? 'info' : 'warning';
       assert.strictEqual(e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note'), want, id);
     }
     // The ones whose level depends on the case: an unquoted path given to `rm`, `mv` or `cp`; an unset read that stops a shell.
@@ -125,7 +125,7 @@ describe('the message catalog', () => {
   it('starts a note with the mark of its level, and a pitfall with the word of its level too', () => {
     assert.ok(fact('en', 'declaration-masks-status', { kw: 'local', v: 'x', rewrite: [{ code: 'local x; x=$(f)', edits: [] }] }).text.startsWith('ⓘ Caveat: the status of'));
     assert.ok(fact('ja', 'declaration-masks-status', { kw: 'local', v: 'x', rewrite: [{ code: 'local x; x=$(f)', edits: [] }] }).text.startsWith('ⓘ 注意: '));
-    assert.ok(fact('en', 'unset-readonly', { name: 'x' }).text.startsWith('⚠ The variable `x` is read-only'));
+    assert.ok(fact('en', 'unset-readonly', { name: 'x' }).text.startsWith('ⓧ Error: The variable `x` is read-only'));
     // (A heading of its own in place of the word.)
     assert.ok(fact('en', 'python-shell-injection').text.startsWith('⚠ Shell injection risk: '));
     assert.deepStrictEqual(marked('en', 'info', 'dash\'s `echo`', { heading: PORTABILITY, code: 'echoE' }), { text: 'ⓘ Portability: dash\'s `echo`', level: 'info', label: 'Portability:', body: 'dash\'s `echo`', code: 'echoE' });

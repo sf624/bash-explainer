@@ -6,6 +6,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Changed
 
+- Problems have a third level, Error, for a line that fails every time as written (`[` without `]`, `[[ ]]` in a `#!/bin/sh` script). `--check` and the GitHub Action fail on every error, and on a warning only with `--strict`; before, they failed on a warning that was no pitfall, such as a script injection in a workflow.
+- `bashExplainer.notes.pitfalls` and `bashExplainer.diagnostics.pitfalls` off no longer hide errors. The Action's `fail-on-warning: 'false'` lets errors pass too, and its new output `errors` counts them; `pitfalls` no longer does.
 - The web page wraps long lines between shell words, with ↪ on the rows after the first. Wrapping is on by default; before, it was off, and when on, a line broke anywhere.
 - The explanation's line box wraps a long line between shell words, up to three rows (click to see it whole). It follows Wrap long lines on the web page and `editor.wordWrap` in VS Code. Before, a long line scrolled sideways.
 - The editor on the web page has its own header: Open, Save, the file name (click it to rename; ● marks unsaved changes) and ⋯. Copy a link says "Copied" on its own button.

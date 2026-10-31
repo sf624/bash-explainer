@@ -4,6 +4,32 @@ The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
 ## Changed
 
+### Errors: a third level of problems
+
+A problem is now an error, a warning or information, as VS Code and SARIF have them. An error is a line that fails every time as written; it starts with ⓧ and the word "Error:" / 「エラー:」, whatever kind of note it is. In VS Code its squiggle and its icon in the Problems panel are the editor's error's, and the file's name turns red in the explorer and its tab. The Language Server gives it severity 1, `--check` prints `error:` (red in a terminal), its JSON `"severity": "error"`, SARIF `"level": "error"`, and the GitHub annotations `::error`, first. The panel, the hover and the web page still draw it with the warning's icon and colour; their own look comes with the next step of the plan (docs/design/three-levels.md, step 1b).
+
+At error now:
+
+- The notes that say a line fails when it runs: `[` without `]` (`[ -f a`), `]` glued to a word (`[ -d /]`), a `test` it cannot read (`[ 1 -eq ]`), `then` or `do` with no `;` or newline before it (`if true then`), `unset` of a read-only variable, `unset -f -v`, an assignment to a read-only variable, what a restricted shell refuses (`bash -r -c 'cd /'`), `exit` with a word that is no number or with two (`exit x`, `exit 1 2`), a `find` whose actions it refuses (`find . -exec rm {}` with no `;`), and an invalid `# bats test_tags=` line. Each is run in bash in test/error-level.test.ts, directly, with `bash file`, sourced in a function and by an interactive shell, and fails every time.
+- A construct the script's shell lacks: `[[ ]]` in a `#!/bin/sh` script, `${ cmd; }` for bash 5.2.
+- CRLF line ends, in a file with a shebang (run as a program, the interpreter's name ends with a CR) or with a keyword before a CR (`then\r`, `fi\r` are no keywords). Otherwise a warning: with no shebang and no keyword there, `bash file` runs `echo hi\r` and prints `hi` with a CR.
+
+The two notes that started with their own "Syntax error:" lose it, since the word now says "Error:": `if true then` says "ⓧ Error: A `;` or a newline is needed before `then`…", and a `}` that does not end `${ …; }` says "ⓧ Error: This `}` is one more argument…". The token of that `}` still says "Syntax error (bash 5.3):".
+
+What fails `--check` and the GitHub Action:
+
+| Problem | Before | Now |
+| --- | --- | --- |
+| An error | failed (a construct the shell lacks, CRLF), or only with `--strict` (the notes above, which counted as pitfalls) | fails |
+| A warning | failed, unless it was a pitfall (then only with `--strict`) | fails only with `--strict` |
+| Information | never failed | never fails |
+
+So `[ -f a`, `unset` of a read-only variable and the others above now fail without `--strict`. And a few warnings that are no pitfall no longer fail without it: a GitHub Actions expression in `run:` (`injection`), a Python string run by a shell (`pythonInjection`), a Python call that runs a string with no shell (`pythonNoShell`), and CRLF line ends in a file with no shebang and no keyword before a CR.
+
+- `bashExplainer.notes.pitfalls` off no longer hides an error, and `bashExplainer.diagnostics.pitfalls` off leaves the errors of the explanations in the Problems panel: an error is a bug, not advice. Before, `diagnostics.pitfalls` off left out the notes that said a line fails.
+- The GitHub Action's `fail-on-warning: 'false'` lets errors pass too. Its new output `errors` counts them; `warnings` counts what fails the step (the errors, and with `strict` the warnings), and `pitfalls` no longer counts errors. The counts come from the command-line tool's new `--counts <file>`, which appends `errors=`, `warnings=`, `infos=`, `pitfalls=` and `failing=` lines; with an older tool (a `package:` pin), the Action counts its annotations as before, and `errors` is 0.
+- SARIF has `error` results. GitHub's code scanning fails its check on alerts at `error` by default, so these can now block a pull request.
+
 ### Long lines on the web page wrap between shell words
 
 The editor of the web page wraps a long line only between the words bash reads: a word keeps its quotes, `$( )`, `${ }`, `<( )` and backquotes on one row. In `grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt && echo "done: $(date +%F)" || exit 1`, a row ends before `"done: $(date +%F)"`, never inside it. The rows after the first are indented by the line's own indentation and two more columns, and the gutter marks each of them with ↪. A word wider than a row breaks at its own blanks, and only as a last resort anywhere, so nothing scrolls sideways.

@@ -8,18 +8,21 @@ import type { ThemeKind } from './ui/palette';
 // panel, the hover and the web page; it imports nothing but types.
 
 /**
- * The level of a note:
- * - `warning` (⚠ "Pitfall" / 「落とし穴」, yellow): the line breaks as written, or if it goes wrong the damage cannot be
- *   undone (`x = 1`, `[-f x]`, `rm -rf $DIR/*` with an empty DIR, a stop under `set -u`).
+ * The level of a note (docs/design/three-levels.md, section 2: the first question answered yes gives it):
+ * - `error` (ⓧ "Error" / 「エラー」, red): the line fails every time as written (`[ -f x`, `unset` of a read-only
+ *   variable, a construct the target shell lacks). Said whatever the pitfalls settings say, and it fails `--check`.
+ * - `warning` (⚠ "Pitfall" / 「落とし穴」, yellow): damage that cannot be undone under some values or conditions, or a
+ *   failure that turns the script's own exit status into success (`rm -rf $DIR/*` with an empty DIR, a stop under
+ *   `set -u`); and, until they move to `error` (three-levels.md, step 2), the pitfalls that fail every time (`x = 1`).
  * - `info` (ⓘ "Caveat" / 「注意」, blue): it goes wrong only with some values or systems and the damage is limited, or
  *   a failure goes unnoticed (`echo $x`, `read line`, `local x=$(false)`). A dialect note on a construct that works
  *   differently in the target shell is `info` too, with the word "Portability" / 「移植性」.
  * - `note` (ℹ, no word, no squiggle): a fact of how the shell runs the line.
  */
-export type NoteLevel = 'warning' | 'info' | 'note';
+export type NoteLevel = 'error' | 'warning' | 'info' | 'note';
 
 /** The severity of a problem; `hint` is only the faded range of code that never runs (`FADED`), never a problem. */
-export type Severity = 'warning' | 'info' | 'hint';
+export type Severity = 'error' | 'warning' | 'info' | 'hint';
 
 /** The severity of a range the editors fade: code that never runs (src/document.ts, `DeadRange`). */
 export type Faded = 'hint';
@@ -52,8 +55,18 @@ export interface Level {
   rank: number;
   /** The mark a note's text starts with (the plain outputs: Markdown, the CLI, the Problems list). */
   mark: string;
-  /** What follows the mark of a pitfall that has no heading of its own ("Pitfall: "); empty when nothing does. */
+  /**
+   * What follows the mark of a note that has no heading of its own ("Pitfall: "); empty when nothing does. A pitfall's
+   * always; another kind's (a fact, a dialect issue) only with `wordOnEvery`.
+   */
   word: Text;
+  /** The word follows the level, whatever the kind of the note ("Error:" on a fact, a pitfall or a dialect issue). */
+  wordOnEvery?: true;
+  /**
+   * The line fails every time: the note is said whatever `notes.pitfalls` and `diagnostics.pitfalls` say (`said`), and
+   * as a problem it is no pitfall (`DocumentIssue.pitfall`).
+   */
+  fails?: true;
   /** Its name, for a screen reader and the Problems pane: 警告・情報・補足 / Warning, Information, Note. */
   name: Text;
   /** The Codicon that stands for the mark in the panel, the hover and the web page (media/icons.js draws it). */
@@ -74,25 +87,34 @@ export interface Level {
   count?: { ja: (n: number) => string; en: (n: number) => string };
 }
 
+/** The look of a warning, which an error shows in the views until step 1b of three-levels.md gives it its own. */
+const WARNING_LOOK = {
+  codicon: 'warning', className: 'level-warning', forcedBorder: '4px double CanvasText',
+  colour: {
+    variable: '--vscode-editorWarning-foreground', name: '--c-warning', fallback: 'var(--vscode-charts-yellow, #cca700)', dark: '#cca700',
+    ours: { light: '#855f00', highContrastLight: '#704500' },
+  },
+} as const;
+
 export const LEVELS: Readonly<Record<NoteLevel, Level>> = {
+  error: {
+    rank: 0, mark: 'ⓧ', word: { ja: 'エラー: ', en: 'Error: ' }, wordOnEvery: true, fails: true, name: { ja: 'エラー', en: 'Error' },
+    ansi: '31', bold: true, severity: 'error', ...WARNING_LOOK,
+    count: { ja: (n) => `エラー ${n} 件`, en: (n) => `${n} error${n === 1 ? '' : 's'}` },
+  },
   warning: {
-    rank: 0, mark: '⚠', word: { ja: '落とし穴: ', en: 'Pitfall: ' }, name: { ja: '警告', en: 'Warning' }, codicon: 'warning', ansi: '33', bold: true,
-    className: 'level-warning', severity: 'warning', forcedBorder: '4px double CanvasText',
+    rank: 1, mark: '⚠', word: { ja: '落とし穴: ', en: 'Pitfall: ' }, name: { ja: '警告', en: 'Warning' }, ansi: '33', bold: true, severity: 'warning', ...WARNING_LOOK,
     count: { ja: (n) => `警告 ${n} 件`, en: (n) => `${n} warning${n === 1 ? '' : 's'}` },
-    colour: {
-      variable: '--vscode-editorWarning-foreground', name: '--c-warning', fallback: 'var(--vscode-charts-yellow, #cca700)', dark: '#cca700',
-      ours: { light: '#855f00', highContrastLight: '#704500' },
-    },
   },
   info: {
-    rank: 1, mark: 'ⓘ', word: { ja: '注意: ', en: 'Caveat: ' }, name: { ja: '情報', en: 'Information' }, codicon: 'info', ansi: '34', bold: true,
+    rank: 2, mark: 'ⓘ', word: { ja: '注意: ', en: 'Caveat: ' }, name: { ja: '情報', en: 'Information' }, codicon: 'info', ansi: '34', bold: true,
     className: 'level-info', severity: 'info',
     colour: {
       variable: '--vscode-editorInfo-foreground', name: '--c-info', fallback: 'var(--vscode-charts-blue, #3794ff)', dark: '#3794ff',
       ours: { light: '#005fb8', highContrast: '#6badff', highContrastLight: '#0f4a85' },
     },
   },
-  note: { rank: 2, mark: 'ℹ', word: { ja: '', en: '' }, name: { ja: '補足', en: 'Note' }, codicon: 'info', ansi: '90', bold: false, className: 'level-note', severity: 'info' },
+  note: { rank: 3, mark: 'ℹ', word: { ja: '', en: '' }, name: { ja: '補足', en: 'Note' }, codicon: 'info', ansi: '90', bold: false, className: 'level-note', severity: 'info' },
 };
 
 /** A severity of a problem, in each protocol that shows one. */
@@ -113,14 +135,17 @@ export interface SeverityMapping {
   codemirror: 'error' | 'warning' | 'info' | 'hint';
   /** The word of `--check`'s text, as compilers print it (`file:1:1: warning: …`). */
   word: string;
-  /** Whether a problem of this severity fails `--check` (a pitfall's only with `--strict`: `failsCheck`). */
-  fails: boolean;
+  /** The name of the number of its problems, in what `--counts` writes (`warnings=2`) and the GitHub Action's outputs. */
+  count: string;
+  /** Whether a problem of this severity fails `--check` and the GitHub Action: always, only with `--strict`, or never. */
+  fails: 'always' | 'strict' | 'never';
 }
 
 export const SEVERITIES: Readonly<Record<Severity, SeverityMapping>> = {
-  warning: { level: 'warning', vscode: 1, lsp: 2, sarif: 'warning', github: 'warning', codemirror: 'warning', word: 'warning', fails: true },
-  info: { level: 'info', vscode: 2, lsp: 3, sarif: 'note', github: 'notice', codemirror: 'info', word: 'info', fails: false },
-  hint: { level: 'note', vscode: 3, lsp: 4, faded: true, sarif: 'note', github: 'notice', codemirror: 'hint', word: 'hint', fails: false },
+  error: { level: 'error', vscode: 0, lsp: 1, sarif: 'error', github: 'error', codemirror: 'error', word: 'error', count: 'errors', fails: 'always' },
+  warning: { level: 'warning', vscode: 1, lsp: 2, sarif: 'warning', github: 'warning', codemirror: 'warning', word: 'warning', count: 'warnings', fails: 'strict' },
+  info: { level: 'info', vscode: 2, lsp: 3, sarif: 'note', github: 'notice', codemirror: 'info', word: 'info', count: 'infos', fails: 'never' },
+  hint: { level: 'note', vscode: 3, lsp: 4, faded: true, sarif: 'note', github: 'notice', codemirror: 'hint', word: 'hint', count: 'hints', fails: 'never' },
 };
 
 /** The severity of a problem for a note of `level`. */
@@ -133,9 +158,10 @@ export function problemLevel(severity: Severity): Level {
   return LEVELS[SEVERITIES[severity].level];
 }
 
-/** Whether a problem fails `--check` (and the GitHub Action): a pitfall's warning only with `--strict`. */
-export function failsCheck(severity: Severity, pitfall: boolean | undefined, strict: boolean): boolean {
-  return SEVERITIES[severity].fails && (strict || !pitfall);
+/** Whether a problem fails `--check` (and the GitHub Action): an error always, a warning only with `--strict`. */
+export function failsCheck(severity: Severity, strict: boolean): boolean {
+  const { fails } = SEVERITIES[severity];
+  return fails === 'always' || (fails === 'strict' && strict);
 }
 
 /**

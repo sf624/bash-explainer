@@ -400,9 +400,9 @@ describe('the pitfall gate', () => {
     const ja = new Analyzer('ja').explainLine(parser.parse('remount ro /'), 0, undefined, { pitfalls: true }).notes;
     assert.ok(ja.some((x) => /^ⓘ 環境依存: `remount` は openSUSE が対話シェル用に定義する関数で.*ただし、このファイルにはシバンがないので、`\.bashrc` のように対話シェルが読むなら、使えることがあります。/.test(x)), ja.join('|'));
   });
-  it('a syntax error is not a pitfall: the missing then stays with pitfalls off', () => {
+  it('an error is not a pitfall: the missing then stays with pitfalls off', () => {
     const notes = explainNotes('if [ -f a ] then echo x; fi', 0, false);
-    assert.ok(notes.some((n) => /Syntax error: a `;` or a newline is needed before `then`/.test(n)), notes.join('|'));
+    assert.ok(notes.some((n) => /^ⓧ Error: A `;` or a newline is needed before `then`/.test(n)), notes.join('|'));
   });
 
   // A host file (src/hosts.ts): every note of a line, with the setting on or off.

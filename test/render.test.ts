@@ -97,8 +97,8 @@ describe('the levels of the notes', () => {
     const issue = (startLine: number, startCol: number, endLine: number, endCol: number, severity: 'warning' | 'info'): DocumentIssue => ({ code: 'c', severity, message: 'm', startLine, startCol, endLine, endCol });
     const issues = [issue(0, 2, 0, 5, 'warning'), issue(0, 7, 2, 1, 'info'), issue(1, 0, 1, 3, 'warning'), issue(0, 4, 0, 4, 'info')];
     // (Each on its line, from its start to its end, or to the end of the line when it goes on; an empty one is left out.)
-    assert.deepStrictEqual(lineMarks(issues, 0), [{ from: 2, to: 5, className: 'level-warning', rank: 0 }, { from: 7, to: Number.MAX_SAFE_INTEGER, className: 'level-info', rank: 1 }]);
-    assert.deepStrictEqual(lineMarks(issues, 1), [{ from: 0, to: 3, className: 'level-warning', rank: 0 }]);
+    assert.deepStrictEqual(lineMarks(issues, 0), [{ from: 2, to: 5, className: 'level-warning', rank: 1 }, { from: 7, to: Number.MAX_SAFE_INTEGER, className: 'level-info', rank: 2 }]);
+    assert.deepStrictEqual(lineMarks(issues, 1), [{ from: 0, to: 3, className: 'level-warning', rank: 1 }]);
   });
 });
 

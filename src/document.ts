@@ -6,7 +6,7 @@ import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
-import { FADED, type Faded, LEADING_MARK } from './levels';
+import { FADED, type Faded, LEADING_MARK, LEVELS } from './levels';
 import { conventionOf, fact, isProblem, severityOf } from './messages';
 import { PROBLEM_LEVELS } from './messages-levels';
 import { type NestedScript, nestedScripts } from './semantics/nested';
@@ -26,7 +26,10 @@ export interface ShellDocument {
   tree: SyntaxTree;
 }
 
-/** `pitfall`: a warning or caveat the explanations say (`noteIssues`), not a construct the shell lacks. */
+/**
+ * `pitfall`: a warning or caveat the explanations say (`noteIssues`), not an error of theirs nor a construct the shell
+ * lacks: advice, which `diagnostics.pitfalls` turns off, and whose annotation is titled so (`--format github`).
+ */
 export type DocumentIssue = DocIssue & { fix?: Fix; pitfall?: true };
 
 export interface Shells {
@@ -59,13 +62,14 @@ export function heredocAt(doc: ShellDocument, line: number): HeredocAt | undefin
 }
 
 /**
- * Problems in the whole document, with quick fixes for shell scripts, and (unless `pitfalls` is false) the warnings and
- * caveats its explanations say (`noteIssues`). Codes in `ignore`, and those turned off by `# bash-explainer disable=`
- * comments in the file, are left out.
+ * Problems in the whole document, with quick fixes for shell scripts, and the errors, warnings and caveats its
+ * explanations say (`noteIssues`; with `pitfalls` false, only their errors). Codes in `ignore`, and those turned off by
+ * `# bash-explainer disable=` comments in the file, are left out.
  */
 export function documentIssues(doc: ShellDocument, lang: Lang, shells: Shells, ignore: readonly string[] = [], opts: { pitfalls?: boolean; bashVersion?: BashVersion } = {}): DocumentIssue[] {
   const base = allIssues(doc, lang, shells, opts.bashVersion);
-  const found = opts.pitfalls === false ? base : [...base, ...noteIssues(doc, lang, shells, { bashVersion: opts.bashVersion }, base)];
+  const notes = noteIssues(doc, lang, shells, { bashVersion: opts.bashVersion }, base);
+  const found = [...base, ...(opts.pitfalls === false ? notes.filter((i) => !i.pitfall) : notes)];
   return unsuppressed(doc, found, ignore);
 }
 
@@ -83,9 +87,10 @@ const SAME_PROBLEM: Readonly<Record<string, string>> = { 'pipefail-missing': 'do
 const noteIssueCache = new WeakMap<SyntaxTree, Map<string, DocumentIssue[]>>();
 
 /**
- * The warnings and caveats the explanations of a document say, as problems (docs/design/note-levels.md, "Notes as
- * problems"): every note of a line at the level `warning` or `info` (`LineExplanation.noteInfo`), with its code, on
- * the range of each node it was found on (`LineExplanation.anchors`, cut to the line it starts on), `pitfall: true`.
+ * The errors, warnings and caveats the explanations of a document say, as problems (docs/design/note-levels.md, "Notes
+ * as problems"): every note of a line at the level `error`, `warning` or `info` (`LineExplanation.noteInfo`), with its
+ * code, on the range of each node it was found on (`LineExplanation.anchors`, cut to the line it starts on); those
+ * but the errors are `pitfall: true` (advice, which `diagnostics.pitfalls` turns off; an error is a bug).
  * A plain fact is never one, nor is a note the catalog keeps a note (`isProblem`). The same note on the same node is
  * one problem, whichever lines say it (a statement over several lines says its notes on each); one on two nodes is a
  * problem on each. A note about no node is about its line: only a host file has such warnings (a CI step, a Dockerfile
@@ -114,7 +119,7 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
       for (const { span } of ex.anchors?.filter((a) => a.text === n.text) ?? []) {
         const at = span.start.line;
         const issue: DocumentIssue = {
-          code: n.code!, severity: severityOf(n.level), message: n.text, pitfall: true, ...conventionOf(n),
+          code: n.code!, severity: severityOf(n.level), message: n.text, ...(LEVELS[n.level].fails ? {} : { pitfall: true as const }), ...conventionOf(n),
           startLine: at, startCol: span.start.character, endLine: at, endCol: span.end.line === at ? span.end.character : doc.lines[at].length,
         };
         const id = `${issue.code} ${at}:${issue.startCol}-${issue.endCol}`;
@@ -216,8 +221,10 @@ export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: 
   const ignore = new Set(settings['diagnostics.ignore']);
   const shown = () => {
     if (disabled) return [];
-    // (With `notes.pitfalls` off the explanations leave out their pitfalls, so the problems do too, but not their failures.)
-    const list = !settings['diagnostics.pitfalls'] ? without() : settings['notes.pitfalls'] ? all() : withNotes(false);
+    // (With `notes.pitfalls` off the explanations leave out their pitfalls, so the problems do too, but not their errors;
+    // with `diagnostics.pitfalls` off, the problems leave out the pitfalls of the explanations, not their errors.)
+    const notes = settings['notes.pitfalls'] ? all() : withNotes(false);
+    const list = settings['diagnostics.pitfalls'] ? notes : notes.filter((i) => !i.pitfall);
     return doc?.extracted !== undefined && !settings['diagnostics.embedded'] ? [] : list.filter((i) => !ignore.has(i.code));
   };
   // (The faded ranges are no problems: they come apart from `shown`, where the surface draws them, if `hints.deadCode` is on.)
@@ -301,18 +308,31 @@ function lineOf(starts: readonly number[], i: number): number {
 }
 
 const CRLF: [string, string] = [
-  'この行の改行は CRLF（Windows 形式）で、bash は行末の CR を最後の単語の一部として読む。`fi` が `fi\\r` になって「command not found」や構文エラーになるので、LF に変換する。そのままにしてこの警告だけ出さないなら、独立した行に `# bash-explainer disable-file=crlf` と書く。',
-  'This file has Windows line endings (CRLF). bash reads the CR at the end of a line as part of its last word, so `fi` becomes `fi\\r` and the script fails with "command not found" or a syntax error. Convert it to LF. To keep the file as it is and silence this warning, write `# bash-explainer disable-file=crlf` on a line of its own.',
+  'この行の改行は CRLF（Windows 形式）で、bash は行末の CR を最後の単語の一部として読む。`fi` が `fi\\r` になって「command not found」や構文エラーになるので、LF に変換する。そのままにしてこの指摘を出さないなら、独立した行に `# bash-explainer disable-file=crlf` と書く。',
+  'This file has Windows line endings (CRLF). bash reads the CR at the end of a line as part of its last word, so `fi` becomes `fi\\r` and the script fails with "command not found" or a syntax error. Convert it to LF. To keep the file as it is and silence this problem, write `# bash-explainer disable-file=crlf` on a line of its own.',
 ];
 
-/** A script with CRLF line ends fails in bash; the issue is shown once, on the last word of the first line that has one (the CR itself lies past the end of the line). */
+/** Whether a keyword token of the tree (`fi`, `then`, `{`…: a token whose text is a word) ends where a CR stands. */
+function keywordBefore(n: SyntaxNode, carriageReturns: ReadonlySet<number>): boolean {
+  if (!n.named && /^(?:[a-z]+|[{}!]|\[\[|\]\])$/.test(n.type) && carriageReturns.has(n.endIndex)) return true;
+  return n.children.some((c) => keywordBefore(c, carriageReturns));
+}
+
+/**
+ * A script with CRLF line ends fails in bash; the issue is shown once, on the last word of the first line that has one
+ * (the CR itself lies past the end of the line). An error where it fails every time (`PROBLEM_LEVELS.crlf`): a file
+ * with a shebang runs as a program, whose interpreter's name then ends with a CR (docs/design/three-levels.md, section
+ * 2); a keyword just before a CR (`fi\r`, `then\r`) is a word, not a keyword, however the file runs. Otherwise a
+ * warning (`crlfMaybe`): `bash file` and `source file` run `echo hi\r`, with a CR at the end of the output.
+ */
 function crlfIssue(tree: SyntaxTree, lang: Lang): DocumentIssue[] {
   const at = tree.carriageReturns?.[0];
   if (at === undefined) return [];
+  const level = tree.text.startsWith('#!') || keywordBefore(tree.root, new Set(tree.carriageReturns)) ? PROBLEM_LEVELS.crlf : PROBLEM_LEVELS.crlfMaybe;
   const before = tree.text.slice(0, at);
   const line = before.split('\n').length - 1;
   // (In the tree the CR is a blank, so the last word is the one before it; a line of nothing else has no word.)
   const text = before.slice(before.lastIndexOf('\n') + 1).trimEnd();
   const word = /\S+$/.exec(text);
-  return [{ code: 'crlf', severity: severityOf(PROBLEM_LEVELS.crlf), message: CRLF[lang === 'ja' ? 0 : 1], startLine: line, startCol: word?.index ?? 0, endLine: line, endCol: word ? text.length : 0 }];
+  return [{ code: 'crlf', severity: severityOf(level), message: CRLF[lang === 'ja' ? 0 : 1], startLine: line, startCol: word?.index ?? 0, endLine: line, endCol: word ? text.length : 0 }];
 }

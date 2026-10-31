@@ -33,18 +33,26 @@ export const SINCE: Readonly<Record<string, Since>> = {
 
 /**
  * What a `}` that does not end a `${ …; }` (`form`) is (`braceTakenAsWord` in src/syntax/tree.ts), [Japanese,
- * English]; in a bash script (`bash`), what bash 5.3 does then (checked: test/bash53.test.ts).
+ * English]; in a bash script (`bash`), what bash 5.3 does then (checked: test/bash53.test.ts). It starts with "Syntax
+ * error:", as the token says it; the dialect issue `funsubBrace` says it without (`unclosedBraceBody`), after its
+ * level's word "Error:".
  */
 export function unclosedBrace(how: 'argument' | 'misplaced', form: string, bash: boolean): [string, string] {
+  const [ja, en] = unclosedBraceBody(how, form, bash);
+  const tag: [string, string] = bash ? ['（bash 5.3）', ' (bash 5.3)'] : ['', ''];
+  return [`構文エラー${tag[0]}: ${ja}`, `Syntax error${tag[1]}: ${en[0].toLowerCase()}${en.slice(1)}`];
+}
+
+/** `unclosedBrace` without its "Syntax error:", for the dialect issue (src/dialect.ts). */
+export function unclosedBraceBody(how: 'argument' | 'misplaced', form: string, bash: boolean): [string, string] {
   const what: [string, string] = how === 'argument'
-    ? [`この \`}\` は直前のコマンドの引数になり、\`${form}\` を閉じない`, `this \`}\` is one more argument of the command before it, so it does not end \`${form}\``]
-    : [`この位置の \`}\` は \`${form}\` を閉じられない`, `this \`}\` cannot end \`${form}\` where it is`];
+    ? [`この \`}\` は直前のコマンドの引数になり、\`${form}\` を閉じない`, `This \`}\` is one more argument of the command before it, so it does not end \`${form}\``]
+    : [`この位置の \`}\` は \`${form}\` を閉じられない`, `This \`}\` cannot end \`${form}\` where it is`];
   const then: [string, string] = !bash ? ['（`}` が予約語になるのはコマンドの先頭だけ）', ' (`}` is a reserved word only where a command can start)']
     : how === 'argument'
       ? ['。bash 5.3 は閉じる `}` を探して先を読み、なければ「unexpected EOF while looking for matching `}\'」のエラーになる（終了ステータス 2）', '. bash 5.3 reads on for a `}` that does, or reports "unexpected EOF while looking for matching `}\'" (status 2)']
       : ['。bash 5.3 は「syntax error near unexpected token `}\'」のエラーになる', '. bash 5.3 reports "syntax error near unexpected token `}\'"'];
-  const tag: [string, string] = bash ? ['（bash 5.3）', ' (bash 5.3)'] : ['', ''];
-  return [`構文エラー${tag[0]}: ${what[0]}${then[0]}。\`}\` の前に \`;\` か改行を書く`, `Syntax error${tag[1]}: ${what[1]}${then[1]}. Write \`;\` or a newline before the \`}\``];
+  return [`${what[0]}${then[0]}。\`}\` の前に \`;\` か改行を書く`, `${what[1]}${then[1]}. Write \`;\` or a newline before the \`}\``];
 }
 
 /** Whether release `version` comes before release `than`. */

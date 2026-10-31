@@ -76,9 +76,9 @@ describe('the web page: the levels of the notes', function () {
     await page.keyboard.insertText('#!/bin/bash\nf() {\n  local x=$(false)\n}\n[ -f a\nexit 300');
     await openProblems(page);
     const rows = await until('the problems', () => problemRows(page).evaluateAll((els) => els.map((e) => [...e.querySelectorAll('.icon, .where, .code')].map((x) => x.textContent))), (r) => r.length === 2);
-    assert.deepStrictEqual(rows, [['ⓘ', 'Ln 3', 'declaration-masks-status'], ['⚠', 'Ln 5', 'bracket-missing-close']]);
+    assert.deepStrictEqual(rows, [['ⓘ', 'Ln 3', 'declaration-masks-status'], ['ⓧ', 'Ln 5', 'bracket-missing-close']]);
     // The squiggles cover the parts the notes are about.
-    const ranges = await page.evaluate(`(['info', 'warning']).map((level) => [...document.querySelectorAll('.cm-lintRange-' + level)].map((e) => e.textContent).join(''))`);
+    const ranges = await page.evaluate(`(['info', 'error']).map((level) => [...document.querySelectorAll('.cm-lintRange-' + level)].map((e) => e.textContent).join(''))`);
     assert.deepStrictEqual(ranges, ['local x=$(false)', '[ -f a']);
     // The hover on `local`: the problem in the lint's section, and not again in the card.
     const p = await page.evaluate(`(() => {

@@ -7,9 +7,11 @@ import type { NoteLevel } from './levels';
 /**
  * The level of the problems that are no fact of the catalog: a dialect issue on a construct the target shell lacks
  * (`unsupported`) or that works differently there (`behaviour`, "Portability"), src/dialect.ts; a script with CRLF line
- * ends (`crlf`, src/document.ts).
+ * ends (`crlf`, src/document.ts), an error when the file has a shebang or a keyword just before a CR (run directly, the
+ * interpreter is not found; `fi` is read as `fi\r`, every time), a warning otherwise (`crlfMaybe`: `bash file` runs
+ * `echo hi`, with a CR at the end of its output).
  */
-export const PROBLEM_LEVELS = { unsupported: 'warning', behaviour: 'info', crlf: 'warning' } as const satisfies Record<string, NoteLevel>;
+export const PROBLEM_LEVELS = { unsupported: 'error', behaviour: 'info', crlf: 'error', crlfMaybe: 'warning' } as const satisfies Record<string, NoteLevel>;
 
 /** The codes of the style checks of src/pitfalls.ts, as diagnostics show them (`# bash-explainer disable=<code>`). */
 export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-no-space' | 'brace-close-no-separator'

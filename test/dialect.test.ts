@@ -215,9 +215,9 @@ describe('dialect notes', () => {
   });
   it('words the note for POSIX sh and for a specific shell', () => {
     const notes = (src: string, shell: Parameters<typeof dialectNotes>[2]) => dialectNotes(parser.parse(src), 0, shell, 'en');
-    assert.deepStrictEqual(notes('[[ -f x ]]', 'sh'), ['⚠ `[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.']);
-    assert.deepStrictEqual(notes('f() { local v; }', 'sh'), ['⚠ `local` is not POSIX sh (dash and busybox ash accept it, but POSIX does not have it).']);
-    assert.deepStrictEqual(notes('cmd &> log', 'dash')[0], '⚠ `&>` (redirect stdout and stderr together) is not available in dash. Instead, write `>file 2>&1` (dash reads `cmd &> file` as "run in the background, then an empty redirection").');
+    assert.deepStrictEqual(notes('[[ -f x ]]', 'sh'), ['ⓧ Error: `[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.']);
+    assert.deepStrictEqual(notes('f() { local v; }', 'sh'), ['ⓧ Error: `local` is not POSIX sh (dash and busybox ash accept it, but POSIX does not have it).']);
+    assert.deepStrictEqual(notes('cmd &> log', 'dash')[0], 'ⓧ Error: `&>` (redirect stdout and stderr together) is not available in dash. Instead, write `>file 2>&1` (dash reads `cmd &> file` as "run in the background, then an empty redirection").');
     assert.deepStrictEqual(notes('[[ -f x ]]', 'ksh'), []);
     assert.deepStrictEqual(notes('[[ -f x ]]', 'bash'), []);
   });

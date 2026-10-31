@@ -171,12 +171,12 @@ describe('diagnosticsFor', () => {
     const d = openDocument('#!/bin/bash\nset -e\nf() {\n  local x=$(false)\n}\ni=0\n(( i++ ))\n[ -f a\nexit 300\n', 'shell', parse);
     const sh = shellsOf(d.lines, 'a.sh', undefined);
     const rows = (s: Settings, surface: Surface = 'lsp') => run(d, sh, s, surface).shown.map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endCol]);
-    const want = [['declaration-masks-status', 'info', 3, 2, 18], ['postfix-increment-status', 'warning', 6, 0, 9], ['bracket-missing-close', 'warning', 7, 0, 6]];
+    const want = [['declaration-masks-status', 'info', 3, 2, 18], ['postfix-increment-status', 'warning', 6, 0, 9], ['bracket-missing-close', 'error', 7, 0, 6]];
     for (const surface of ['vscode', 'lsp', 'web', 'cli'] as const) assert.deepStrictEqual(rows(defaultSettings(), surface), want, surface);
     assert.deepStrictEqual(rows(mergeSettings({ 'diagnostics.ignore': ['declaration-masks-status'] })), want.slice(1));
-    assert.deepStrictEqual(rows(mergeSettings({ 'diagnostics.pitfalls': false })), []);
-    // (The explanations leave out their pitfalls, so do the problems; the failure stays. `all` keeps them.)
-    assert.deepStrictEqual(rows(mergeSettings({ 'notes.pitfalls': false })), [['bracket-missing-close', 'warning', 7, 0, 6]]);
+    // (An error is no pitfall: it stays a problem with the pitfalls off, in the problems or in the explanations. `all` keeps them all.)
+    assert.deepStrictEqual(rows(mergeSettings({ 'diagnostics.pitfalls': false })), [['bracket-missing-close', 'error', 7, 0, 6]]);
+    assert.deepStrictEqual(rows(mergeSettings({ 'notes.pitfalls': false })), [['bracket-missing-close', 'error', 7, 0, 6]]);
     assert.deepStrictEqual(codes(run(d, sh, mergeSettings({ 'notes.pitfalls': false }), 'web').all), codes(run(d, sh, defaultSettings(), 'web').all));
     for (const surface of ['vscode', 'lsp', 'web'] as const) assert.deepStrictEqual(rows(mergeSettings({ 'diagnostics.enabled': false }), surface), [], surface);
     // (The file's directives too.)

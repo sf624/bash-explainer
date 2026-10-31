@@ -2,20 +2,21 @@
 
 How much a note matters, and how every output shows it. Built in #320; the prototype was commit 8371ef7 (branch `proto/note-levels`).
 
-Planned: a third level, Error, above the warnings ([three-levels.md](three-levels.md)). This page describes what is built.
+The third level, Error, above the warnings, is being built in the steps of [three-levels.md](three-levels.md): step 1a gave the level, the problems and the facts that say a line fails (below); the views take its own look in step 1b, and the pitfalls that fail every time move to it in step 2. This page describes what is built.
 
 ## The levels
 
-A note has one of three levels (`NoteLevel` in [src/levels.ts](../../src/levels.ts), the level table):
+A note has one of four levels (`NoteLevel` in [src/levels.ts](../../src/levels.ts), the level table):
 
 | Level | Mark | Word | Squiggle | When |
 | --- | --- | --- | --- | --- |
+| `error` | ⓧ | Error / エラー | error (red) | The line fails every time as written: `[ -f a`, `unset` of a read-only variable, `[[ ]]` in a `#!/bin/sh` script. Said whatever the pitfalls settings say. |
 | `warning` | ⚠ | Pitfall / 落とし穴 | warning (yellow) | The line breaks as written, or if it goes wrong the damage cannot be undone: `x = 1`, `[-f x]`, `rm -rf $DIR/*` with an empty `DIR`, a stop under `set -u`. |
 | `info` | ⓘ | Caveat / 注意 | information (blue) | It goes wrong only with some values or systems and the damage is limited, or a failure goes unnoticed: `echo $x`, `read line`, `local x=$(false)`. |
 | `note` | ℹ | none | none | A fact of how the shell runs the line. |
 
 - A dialect note on a construct that works differently in the target shell is `info`, with the word "Portability" / 「移植性」 (`ⓘ Portability: dash's echo interprets \t…`).
-- A dialect note on a construct the target shell lacks (`[[ ]]` in POSIX sh, a bash 5.3 construct with bash 5.2) is a `warning` with no word: its first words already say that it fails, and in which shell.
+- A dialect note on a construct the target shell lacks (`[[ ]]` in POSIX sh, a bash 5.3 construct with bash 5.2) is an `error`. Every note at `error` has the word "Error:" / 「エラー:」, whatever its kind (`wordOnEvery` in the level table): a failure fact, a dialect issue; at `warning` and `info`, only a pitfall has a word.
 - A pitfall with a heading of its own shows the heading in place of the word: "Shell injection risk:", "Script injection risk:", "System-dependent:". A few name their problem in their first words and have none (`regex-backslash-dropped`, the Dockerfile and Python notes).
 - A level that depends on the case is a function of the params: `unquoted-variable-as-path` (the command the word is given to) and `nounset-unbound` (how far the failure reaches) and `postfix-increment-status` / `postfix-decrement-status` (whether `set -e` stops the shell there: the `errexit` param, from the status model).
 
@@ -25,11 +26,11 @@ What a level looks like, and what it is in each protocol, comes from one table, 
 
 The level of each note comes from one source per kind of note:
 
-- The message catalog (src/messages.ts): `pitfall()` is a warning, `caveat()` a pitfall at the level `info`, `failure()` a fact that says the line fails when it runs (a note at the level `warning`), `note()` a plain fact. `fact()` gives the level with the text (`Fact.level`).
+- The message catalog (src/messages.ts): `pitfall()` is a warning, `caveat()` a pitfall at the level `info`, `failure()` a fact that says the line fails every time it runs (a note at the level `error`, with a row in test/error-level.test.ts that runs it in bash), `note()` a plain fact. `fact()` gives the level with the text (`Fact.level`).
 - The style checks (src/pitfalls.ts): `STYLE_LEVELS`, beside the catalog (src/messages-levels.ts).
-- The dialect issues (src/dialect.ts): `unsupported` is a warning, `behaviour` information (`PROBLEM_LEVELS`, src/messages-levels.ts), `parse` (zsh syntax bash cannot read) a plain fact (`Issue.note`). `crlf` (src/document.ts) is a warning (`PROBLEM_LEVELS`).
+- The dialect issues (src/dialect.ts): `unsupported` is an error, `behaviour` information (`PROBLEM_LEVELS`, src/messages-levels.ts), `parse` (zsh syntax bash cannot read) a plain fact (`Issue.note`). `crlf` (src/document.ts) is an error in a file with a shebang or with a keyword before a CR (`then\r` is no keyword), a warning otherwise (`bash file` runs `echo hi\r`).
 - A note with no mark (an idiom, where a line is in a here-document or a statement) is a plain fact (`plainNote`).
-- A diagnostic's severity is `severityOf(level)` (the level table): `warning` is a warning, the others information (src/document.ts, src/hosts/remap.ts). The old list of pitfalls shown as warnings (`PITFALL_WARNINGS`) and `WordFinding.mild` are gone.
+- A diagnostic's severity is `severityOf(level)` (the level table): `error` an error, `warning` a warning, the others information (src/document.ts, src/hosts/remap.ts). The old list of pitfalls shown as warnings (`PITFALL_WARNINGS`) and `WordFinding.mild` are gone.
 
 ### Notes as data
 
@@ -39,16 +40,16 @@ This replaced a bridge: the views read the level back from the mark (`noteLevel(
 
 ### Notes as problems
 
-Every warning and caveat a line's explanation says is a problem (`noteIssues` in src/document.ts), on every surface that lists problems: VS Code's Problems panel and squiggles, the Language Server, the web page's lint and Problems list, `--check` (text, JSON, SARIF) and the GitHub Action's annotations. A plain fact is not (the dialect issue `zshSyntax`, a plain fact that the line cannot be read, stays the problem it was). The rule:
+Every error, warning and caveat a line's explanation says is a problem (`noteIssues` in src/document.ts), on every surface that lists problems: VS Code's Problems panel and squiggles, the Language Server, the web page's lint and Problems list, `--check` (text, JSON, SARIF) and the GitHub Action's annotations. A plain fact is not (the dialect issue `zshSyntax`, a plain fact that the line cannot be read, stays the problem it was). The rule:
 
-- **What.** The notes of each line at the level `warning` or `info` (`LineExplanation.noteInfo`), explained with the settings' options (so with `notes.pitfalls` off, the pitfalls are left out as the explanations leave them out; the notes that say a line fails stay), without examples or idioms, which add none.
+- **What.** The notes of each line at the level `error`, `warning` or `info` (`LineExplanation.noteInfo`), explained with the settings' options (so with `notes.pitfalls` off, the pitfalls are left out as the explanations leave them out; the errors stay: `said` keeps a fact at a level that `fails`), without examples or idioms, which add none.
 - **Where.** On the range of each node the note was found on (`LineExplanation.anchors`), cut to the line it starts on, as the other problems are. The notes of a string run as a script (`bash -c '…'`, `eval`, a trap) and of `$( )` are on their words in the document; a host file's are at its own columns (src/hosts/remap.ts).
-- **Code and severity.** The note's code (a fact's id, a style check, a dialect issue; a host's own code where it has one: `dockerPipefail`, `injection`) and `severityOf(level)`. They are marked `pitfall: true`, so `--check` fails on their warnings only with `--strict`.
+- **Code and severity.** The note's code (a fact's id, a style check, a dialect issue; a host's own code where it has one: `dockerPipefail`, `injection`) and `severityOf(level)`. Those but the errors are marked `pitfall: true`: advice, which `diagnostics.pitfalls` turns off, and whose GitHub annotation is titled "(pitfall)". What fails `--check` is the severity's (`SEVERITIES[…].fails`): an error always, a warning only with `--strict`, an info never.
 - **Once.** The same note on the same node is one problem, however many lines say it (a statement over several lines says its notes on each line). A note found on several nodes is a problem on each (`cp $a b; cp $a c`: two), since each is a place to fix. A note on a node where another problem (a dialect issue, `crlf`) has the same code or the same text is left out, and so is `pipefail-missing` where a Dockerfile's `dockerPipefail` is (`SAME_PROBLEM`); none is made on a line that zsh syntax leaves unread.
 - **Notes that stay notes.** Three caveats of the catalog are not problems, though they are information: `ssh-local-expansion` (often meant: the remote command gets the local values) and `globstar-not-found` and `extglob-not-found` (wrong for a file that is read after the option is set, with `source`: the note cannot see it). The panel, the hover and the CLI still say them, with their level. The rule is data, not a list in the analyzer: the catalog entry is wrapped in `notProblem` (src/messages.ts, `Entry.problem: false`), and `noteIssues` leaves a note out when `isProblem(code)` is false. Any other warning or caveat is a problem, and so is every host note and every code that is no catalog fact. `declaration-masks-status` stays a problem (information). None of the three was a problem before the notes were: the pitfalls on main were the style checks and the pitfalls of `src/wordfacts.ts`, and these notes are said by `src/explain/`. *Proposed; the maintainer decides whether more notes, or these, change.*
 - **About the line.** A note with no node is about its line: only a host file has such warnings and caveats (a Dockerfile `RUN` pipe, a CI step's injection, a Python string), and `hostIssues` gives them already. They are not made twice. (A bats file's own facts are on their statements, `batsFacts`.)
 - **Host placeholders.** A note that names a placeholder of the extracted text (`${SRC}` for a Makefile's `$(SRC)`) names it as the file writes it (`remapExplanation`), so the problem's text is the file's.
-- **Settings.** `diagnostics.pitfalls` turns them off (default on); `diagnostics.ignore`, `# bash-explainer disable=`, `diagnostics.enabled` and `diagnostics.embedded` apply as to every problem. `all` (the codes the web page's settings list) has them whatever `notes.pitfalls` says.
+- **Settings.** `diagnostics.pitfalls` turns them off (default on), but the errors, which stay problems as the dialect issues do; `diagnostics.ignore`, `# bash-explainer disable=`, `diagnostics.enabled` and `diagnostics.embedded` apply as to every problem. `all` (the codes the web page's settings list) has them whatever `notes.pitfalls` says.
 - **Cost.** Every line is explained once per parse, language, shells and options; the result is kept with the tree (a `WeakMap`), so the panel, the hover and the code actions ask for it again for nothing. All the problems of a file of 2,300 lines (bash-completion's) take about 0.7–1 s, from 0.25–0.4 s with the old walk of the pitfalls alone; 2,700 lines of the fixtures, 0.9 s. The walks of one line skip the statements that cannot lie on it (`childrenOnRows` in src/syntax/tree.ts), so the time grows with the lines, not with their square.
 - **The hover.** The part's card leaves out a note that a problem at the position already says ([hover.md](hover.md), "Problems shown above"): the problem's code is the note's anchor's code.
 
@@ -58,9 +59,10 @@ Every view shows the notes in the same order: the warnings, then the information
 
 - **Panel** (media/panel.js, media/panel.css): the level's codicon (`warning`, `info`), its class and the icon's name, sent by `panelUpdate` from the level table, in place of the mark, then the word in bold, both in the level's colour, and the quote's left border in that colour. A plain fact keeps the quote's border and has the info icon in the muted colour, with no word. The icon has an `aria-label` (警告・情報・補足 / Warning, Information, Note). With forced colours, the icon and the word take `CanvasText`, and a warning's border is double, so that it differs from the others without colour. The copy of the line at the top underlines the line's problems as the editor does (`marks`, from `lineMarks`).
 - **Hover** (src/ui/hoverView.ts, `noteMarkdown`: the part, the whole line): `$(warning)` or `$(info)`, and the word in bold, in a `<span style="color:…">` of the level's colour; a plain fact has `$(info)` in `descriptionForeground`.
-- **CLI** (cli/main.ts): the mark and the word in the level's ANSI colour (33 yellow, 34 blue), bold; a plain fact's mark dim.
-- **Plain Markdown** (Copy as Markdown, the Language Server's hover): the mark, and the word in bold: `> ⚠ **Pitfall:** …`.
-- **Problems** (VS Code, the Language Server, `--check`, SARIF, the GitHub Action, the web page's Problems list): the severity of the level. SARIF has `warning` and `note`. The web page's list shows ⚠ and ⓘ in the level's colour.
+- **CLI** (cli/main.ts): the mark and the word in the level's ANSI colour (31 red, 33 yellow, 34 blue), bold; a plain fact's mark dim.
+- **Plain Markdown** (Copy as Markdown, the Language Server's hover): the mark, and the word in bold: `> ⚠ **Pitfall:** …`, `> ⓧ **Error:** …`.
+- **Problems** (VS Code, the Language Server, `--check`, SARIF, the GitHub Action, the web page's Problems list): the severity of the level. SARIF has `error`, `warning` and `note`; the annotations `::error`, `::warning` and `::notice`. The web page's list shows ⓧ, ⚠ and ⓘ in the level's colour.
+- **Until step 1b** of three-levels.md, the panel, the hover and the web page's editor draw an error with the warning's icon, class and colour (the level table's `error` row shares them); its mark ⓧ, word and name are its own.
 - **Web page's editor** (web/editor.ts, CodeMirror's lint): the squiggle is a wavy underline in the level's colour (CodeMirror's own is an image of a fixed colour, grey for information), the gutter shows the level's codicon from media/icons.js as a mask over that colour (CodeMirror makes the marker element, so CSS draws it), and the problem's tooltip starts with the icon, with the `aria-label` of the panel. The gutter is hidden from screen readers by CodeMirror (`aria-hidden`), so the label is in the tooltip and the Problems list. The colours are `--c-warning` and `--c-info` (web/page.css, from theme.css); with forced colours, the icons take `CanvasText`.
 
 ### Colours
@@ -76,18 +78,30 @@ The level's colour is the editor's own: `editorWarning.foreground` and `editorIn
 
 ## The levels, one by one
 
-Every pitfall and failure note of the catalog, every style check and every dialect issue, against the definition above. test/messages.test.ts pins the catalog's levels.
+Every pitfall and failure note of the catalog, every style check and every dialect issue, against the definition above. The pitfalls that fail every time are still warnings here; step 2 of three-levels.md moves them to Error. test/messages.test.ts pins the catalog's levels.
+
+### Errors
+
+Since step 1a of [three-levels.md](three-levels.md); each has a row in test/error-level.test.ts that runs it in bash and sees it fail every way it can run.
+
+| Id | Why |
+| --- | --- |
+| `keyword-needs-separator` | `then` or `do` with no `;` or newline before it is an argument: a syntax error, every time. |
+| `bracket-missing-close`, `bracket-close-glued`, `test-malformed` | `[` or `test` fails every time it runs (status 2), and the condition is never evaluated. |
+| `unset-readonly`, `unset-function-and-variable` | `unset` fails every time (status 1), and nothing is unset. |
+| `assign-readonly` | The assignment fails every time, and bash abandons the rest of the command it is in (or, before a command name, runs the command without it). |
+| `restricted-refused` | In a restricted shell (`#!/bin/bash -r`, `bash -r -c`, `rbash`), bash refuses the builtin call, the command name with a `/` or the output redirection every time (status 1), and does nothing. |
+| `exit-refused` | `exit` with a word that is no number, or with more than one: "numeric argument required" or "too many arguments", every time. |
+| `find-action-refused` | find refuses all its arguments (status 1) and runs nothing. |
+| `bats-tags-invalid` | bats runs none of the file's tests, and fails. |
+| Dialect: `unsupported` | The construct fails in the target shell. |
+| Problem: `crlf`, in a file with a shebang or with a keyword before a CR | Run directly, the interpreter's name ends with a CR; `fi\r` is no keyword, however the file runs. (A warning otherwise: `bash file` runs `echo hi\r`.) |
 
 ### Warnings
 
 | Id | Why |
 | --- | --- |
 | `function-last-test-stops-script` | `set -e` stops the script whenever the test fails, which is what a test is written for. |
-| `keyword-needs-separator` | `then` or `do` with no `;` or newline before it is an argument: a syntax error, every time. |
-| `bracket-missing-close`, `bracket-close-glued`, `test-malformed` | `[` or `test` fails every time it runs (status 2), and the condition is never evaluated. |
-| `unset-readonly`, `unset-function-and-variable` | `unset` fails every time (status 1), and nothing is unset. |
-| `assign-readonly` | The assignment fails every time, and bash abandons the rest of the command it is in (or, before a command name, runs the command without it). |
-| `restricted-refused` | In a restricted shell (`#!/bin/bash -r`, `bash -r -c`, `rbash`), bash refuses the builtin call, the command name with a `/` or the output redirection every time (status 1), and does nothing. |
 | `local-outside-function`, when the file runs as a script (a shebang, a host's step, a `bash -c` string), out of a trap's action | `local` fails every time outside a function. |
 | `posix-special-function-name` | bash stops the script at the definition. |
 | `alias-not-expanded-in-script`, with no code the model does not read on a path before it | The alias is "command not found" in a script. Said where bash surely expands no alias: a shebang, a host's step, a `bash -c` string, or after `shopt -u expand_aliases` (the state's `expand_aliases`, which starts `on` in a README's code blocks and with `bash -i`, and not known in a file with no shebang: src/semantics/state.ts, `StateModel.read`). |
@@ -112,7 +126,6 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | Style: `bracket-no-space`, `assignment-with-spaces`, `brace-no-space`, `brace-close-no-separator`, `redirect-in-bracket`, `bracket-close-in-word`, `and-or-in-bracket` | The line does not do what it says, every time (`[ a > b ]` also writes a file `b`). |
 | Style: `rm-empty-variable-root` | With an empty variable, `rm -r` deletes from the root. |
 | Style: `download-run-by-shell` | A script nobody read runs, as far as it arrived: damage that cannot be undone (`curl … \| sh`, `sh -c "$(curl …)"`). |
-| Dialect: `unsupported` | The construct fails in the target shell. |
 
 ### Caveats (information)
 

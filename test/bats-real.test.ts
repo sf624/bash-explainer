@@ -555,7 +555,7 @@ describe('bats tags and marked functions agree with the real bats', function () 
           assert.notStrictEqual(code, 0);
           assert.match(out, valid === 'empty' ? /Tags must not be empty/ : /Valid tags must match/);
           assert.deepStrictEqual(ours.map((f) => f.id), ['bats-tags-invalid']);
-          assert.strictEqual(ours[0].level, 'warning');
+          assert.strictEqual(ours[0].level, 'error');
           assert.match(ours[0].text, valid === 'empty' ? /leading comma, or a list of only spaces/ : /not valid/);
           // (The comment says so too, not what tags it gives.)
           assert.match(explain(lines, 0).summary, /refuses its list of tags, and runs none of the tests of this file/);

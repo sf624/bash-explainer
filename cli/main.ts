@@ -36,10 +36,14 @@ points out common pitfalls. Runs offline.
 Options:
   -e, --command <text>   explain this command line
   -l, --line <n>[-<m>]   only these lines (also <file>:<n>[-<m>])
-      --check            report constructs the script's shell lacks, other risks
-                         and pitfalls; exit 1 if there is a warning (other than
-                         on a pitfall)
-      --strict           with --check, also exit 1 on a warning on a pitfall
+      --check            report errors (lines that fail every time, constructs
+                         the script's shell lacks), warnings and other caveats;
+                         exit 1 if there is an error
+      --strict           with --check, also exit 1 on a warning
+      --counts <file>    with --check, also append the numbers of problems to
+                         this file, as $GITHUB_OUTPUT reads them: errors=,
+                         warnings=, infos=, pitfalls= and failing= (those that
+                         make the exit status 1)
       --shell <name>     the script's shell: ${Object.keys(SHELL_NAMES).join(', ')}
                          (default: from the shebang or the file name)
       --bash-version <v>  the bash release to explain for: ${BASH_VERSIONS.join(', ')}
@@ -69,9 +73,8 @@ Options:
 Settings: the file, then --set, then --lang, --shell, --bash-version and
 --no-examples, each overriding the one before.
 
-Exit status: 0 when done (with --check: no warning), 1 with --check when there
-is a warning (with --strict, also one on a pitfall), 2 on a usage or input
-error.
+Exit status: 0 when done (with --check: no error), 1 with --check when there
+is an error (with --strict, also a warning), 2 on a usage or input error.
 `;
 
 class UsageError extends Error {}
@@ -81,8 +84,10 @@ interface Options {
   command?: string;
   lines?: [number, number];
   check: boolean;
-  /** With --check: the warnings on pitfalls fail it too. */
+  /** With --check: the warnings fail it too. */
   strict: boolean;
+  /** With --check: also append the numbers of problems to this file, as name=value lines. */
+  countsFile?: string;
   shell?: Shell;
   kind?: Kind;
   lang: Lang;
@@ -179,6 +184,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
         o.format = v as Format;
         break;
       }
+      case '--counts': o.countsFile = value(); break;
       case '--sarif':
         o.sarifFile = value();
         if (o.sarifFile === '-') throw new UsageError('--sarif needs a file, not - (use --format sarif for standard output)');
@@ -194,6 +200,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
   }
   if ((o.format === 'sarif' || o.format === 'github') && !o.check) throw new UsageError(`--format ${o.format} goes with --check`);
   if (o.sarifFile !== undefined && !o.check) throw new UsageError('--sarif goes with --check');
+  if (o.countsFile !== undefined && !o.check) throw new UsageError('--counts goes with --check');
   if (o.strict && !o.check) throw new UsageError('--strict goes with --check');
   // defaults < settings file < --set < --lang, --shell, --bash-version, --no-examples
   const file = noConfig ? undefined : settingsFile(config, env);
@@ -387,7 +394,8 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
   const chunks: string[] = [];
   // (GitHub shows only the first annotations of each kind in a step: those that fail the check come first.)
   const failing: string[] = [];
-  let warnings = 0;
+  // (What --counts writes: the problems by severity, the pitfalls, and those that fail the check.)
+  const counts: Record<string, number> = { ...Object.fromEntries(Object.values(SEVERITIES).filter((s) => !s.faded).map((s) => [s.count, 0])), pitfalls: 0, failing: 0 };
 
   for (const input of inputs) {
     const doc = openDocument(input.text, input.kind, (text) => parser.parse(text));
@@ -398,9 +406,13 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
       const issues = diagnosticsFor(() => doc, () => shells, o.lang, o.settings, 'cli').shown
         .filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
         .sort((a, b) => a.startLine - b.startLine || a.startCol - b.startCol);
-      // (A pitfall fails the check only with --strict: its warnings came later, and must not fail a CI that passed.)
-      const fails = (i: DocumentIssue) => failsCheck(i.severity, i.pitfall, o.strict);
-      warnings += issues.filter(fails).length;
+      // (An error fails the check, a warning only with --strict: the level table, src/levels.ts.)
+      const fails = (i: DocumentIssue) => failsCheck(i.severity, o.strict);
+      for (const i of issues) {
+        counts[SEVERITIES[i.severity].count]++;
+        if (i.pitfall) counts.pitfalls++;
+        if (fails(i)) counts.failing++;
+      }
       if (o.format === 'json' || o.format === 'sarif' || o.sarifFile !== undefined) json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }), ...(i.convention && o.settings['notes.basis'] !== false ? { convention: i.convention } : {}) })));
       if (o.format === 'github') for (const i of issues) (fails(i) ? failing : chunks).push(annotation(input.name, i));
       else if (o.format !== 'json' && o.format !== 'sarif') chunks.push(...issues.map((i) => issueText(input.name, i, o.color)));
@@ -430,11 +442,19 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
       return 2;
     }
   }
+  if (o.countsFile !== undefined) {
+    try {
+      fs.appendFileSync(o.countsFile, Object.entries(counts).map(([k, n]) => `${k}=${n}\n`).join(''));
+    } catch (e) {
+      io.stderr(`bash-explainer: cannot write ${o.countsFile}: ${(e as Error).message}\n`);
+      return 2;
+    }
+  }
   if (o.format === 'json') io.stdout(JSON.stringify(json, null, 2) + '\n');
   else if (o.format === 'sarif') io.stdout(JSON.stringify(sarif(json as Problem[]), null, 2) + '\n');
   else if (o.format === 'github') chunks.unshift(...failing);
   if (o.format !== 'json' && o.format !== 'sarif' && chunks.length) io.stdout(chunks.join(o.check ? '\n' : o.format === 'markdown' ? '\n\n---\n\n' : '\n\n') + '\n');
-  return o.check && warnings > 0 ? 1 : 0;
+  return o.check && counts.failing > 0 ? 1 : 0;
 }
 
 if (require.main === module && process.argv.includes('--lsp')) {

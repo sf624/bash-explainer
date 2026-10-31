@@ -18,9 +18,9 @@ import type { ThemeKind } from '../src/ui/palette';
 
 const root = path.join(__dirname, '..');
 
-/** The coloured levels, with their class and colour. */
+/** The classes of the coloured levels, each once (two levels may share a look), with their colour. */
 const coloured = (): { cls: string; c: LevelColour; forcedBorder?: string }[] =>
-  COLOURED.map((l) => ({ cls: LEVELS[l].className, c: LEVELS[l].colour!, forcedBorder: LEVELS[l].forcedBorder }));
+  [...new Map(COLOURED.map((l) => [LEVELS[l].className, { cls: LEVELS[l].className, c: LEVELS[l].colour!, forcedBorder: LEVELS[l].forcedBorder }])).values()];
 
 /** Our colour of each level in a theme kind, where the theme's is not readable, as the panel names it. */
 const ours = (kind: ThemeKind): string[] => coloured().flatMap(({ c }) => (c.ours[kind] ? [`${c.name}: ${c.ours[kind]};`] : []));

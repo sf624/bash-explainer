@@ -18,15 +18,17 @@ inputs:
   bash-version:
     description: >-
       The bash release to check bash scripts for (5.2 or 5.3). Default, the tool's (5.2): `${ cmd; }`
-      is then a warning. Needs a command-line tool with --bash-version, 0.9.0 or later (see `package`).
+      is then an error. Needs a command-line tool with --bash-version, 0.9.0 or later (see `package`).
     default: ''
   fail-on-warning:
-    description: Fail the step when there is a warning ('true' or 'false').
+    description: >-
+      Fail the step when a problem fails the check ('true' or 'false'): an error (a line that fails
+      every time, a construct the shell lacks), and with strict a warning. With 'false', errors pass too.
     default: 'true'
   strict:
     description: >-
-      Also fail on a warning on a pitfall ('true' or 'false'), such as `x = 1` or `rm -rf $DIR/*`.
-      The pitfalls are reported either way. Needs a command-line tool 0.9.0 or later (see `package`).
+      Also fail on a warning ('true' or 'false'), such as `rm -rf $DIR/*`. The warnings are reported
+      either way. Needs a command-line tool 0.9.0 or later (see `package`).
     default: 'false'
   sarif:
     description: Also write the problems to this SARIF file, for github/codeql-action/upload-sarif.
@@ -36,13 +38,18 @@ inputs:
     default: ''
 
 outputs:
+  errors:
+    description: >-
+      The number of errors: lines that fail every time as written, and constructs the shell lacks.
+      Needs a command-line tool with --counts, a release after 0.9.0 (see `package`); 0 with an older one.
+    value: ${{ steps.check.outputs.errors }}
   warnings:
     description: >-
-      The number of warnings that fail the step (with fail-on-warning): the warnings on pitfalls
-      count only with strict.
+      The number of problems that fail the step (with fail-on-warning): the errors, and with strict
+      the warnings too.
     value: ${{ steps.check.outputs.warnings }}
   pitfalls:
-    description: The number of pitfalls found (warnings and notices).
+    description: The number of pitfalls found (warnings and notices); an error is none.
     value: ${{ steps.check.outputs.pitfalls }}
 
 runs:
@@ -78,7 +85,7 @@ runs:
         done
         if [ "${#files[@]}" -eq 0 ]; then
           echo "No files match: $FILES"
-          printf 'warnings=0\npitfalls=0\n' >> "$GITHUB_OUTPUT"
+          printf 'errors=0\nwarnings=0\npitfalls=0\n' >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
@@ -88,7 +95,7 @@ runs:
         check() { npx --yes --package="$package" bash-explainer "${args[@]}" "$@" -- "${files[@]}"; }
 
         # What the CLI can do, from its help: an older one (an earlier version, or a `package:` pin)
-        # may lack --strict, --bash-version or --sarif.
+        # may lack --strict, --bash-version, --sarif or --counts.
         help=$(npx --yes --package="$package" bash-explainer --help 2>/dev/null)
         if [ "$STRICT" = 'true' ] && ! grep -q -- '--strict' <<< "$help"; then
           echo "::error title=Bash Explainer::strict needs a command-line tool with --strict (0.9.0 or later); $package has none."
@@ -100,6 +107,14 @@ runs:
             exit 2
           fi
           args+=(--bash-version "$CHECK_BASH_VERSION")
+        fi
+
+        # A CLI with --counts counts the problems itself (errors, those that fail the check,
+        # pitfalls). An older one has no errors; its counts come from its annotations, below.
+        counts=
+        if grep -q -- '--counts <file>' <<< "$help"; then
+          counts=$(mktemp "${RUNNER_TEMP:-/tmp}/bash-explainer-counts.XXXXXX")
+          args+=(--counts "$counts")
         fi
 
         # A CLI with --sarif writes the annotations and the SARIF file in one run. An older one
@@ -117,12 +132,21 @@ runs:
         # Printed, these lines become annotations on the pull request.
         [ -n "$out" ] && printf '%s\n' "$out"
         [ "$status" -le 1 ] || exit 2
-        # The annotations of pitfalls have their own title; their warnings fail the step only with strict.
-        pitfall=',title=Bash Explainer (pitfall)%3A '
-        warnings=$(grep -c '^::warning ' <<< "$out")
-        if [ "$STRICT" != 'true' ]; then warnings=$((warnings - $(grep -c "^::warning [^:]*$pitfall" <<< "$out"))); fi
-        echo "warnings=$warnings" >> "$GITHUB_OUTPUT"
-        echo "pitfalls=$(grep -c "^::[a-z]* [^:]*$pitfall" <<< "$out")" >> "$GITHUB_OUTPUT"
+        if [ -n "$counts" ]; then
+          declare -A n=()
+          while IFS='=' read -r name value; do n[$name]=$value; done < "$counts"
+          rm -f -- "$counts"
+          errors=${n[errors]:-0} warnings=${n[failing]:-0} pitfalls=${n[pitfalls]:-0}
+        else
+          # An older CLI: the annotations of pitfalls have their own title; their warnings fail the
+          # step only with strict.
+          pitfall=',title=Bash Explainer (pitfall)%3A '
+          errors=0
+          warnings=$(grep -c '^::warning ' <<< "$out")
+          if [ "$STRICT" != 'true' ]; then warnings=$((warnings - $(grep -c "^::warning [^:]*$pitfall" <<< "$out"))); fi
+          pitfalls=$(grep -c "^::[a-z]* [^:]*$pitfall" <<< "$out")
+        fi
+        printf 'errors=%s\nwarnings=%s\npitfalls=%s\n' "$errors" "$warnings" "$pitfalls" >> "$GITHUB_OUTPUT"
         echo "Checked ${#files[@]} file(s) with $package."
         if [ "$status" -eq 1 ] && [ "$FAIL_ON_WARNING" != 'true' ]; then status=0; fi
         exit "$status"
