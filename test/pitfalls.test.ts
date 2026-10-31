@@ -371,10 +371,9 @@ describe('the pitfall gate', () => {
   const explainNotes = (src: string, line: number, pitfalls: boolean) =>
     new Analyzer('en').explainLine(parser.parse(src), line, undefined, { pitfalls }).notes;
 
-  it('the [[ =~ ]] backslash note disappears with pitfalls off; bash does read \\b as b', () => {
+  it('the [[ =~ ]] backslash note is an error, said with pitfalls off too; bash does read \\b as b', () => {
     const src = '[[ $x =~ \\bfoo ]]';
-    assert.ok(explainNotes(src, 0, true).some((n) => /^⚠ In `\[\[ =~ \]\]`, an unquoted `\\b` loses its backslash/.test(n)));
-    assert.deepStrictEqual(explainNotes(src, 0, false).filter((n) => /⚠/.test(n)), []);
+    for (const pitfalls of [true, false]) assert.ok(explainNotes(src, 0, pitfalls).some((n) => /^ⓧ In `\[\[ =~ \]\]`, an unquoted `\\b` loses its backslash/.test(n)), String(pitfalls));
     const r = spawnSync('bash', ['--norc', '--noprofile', '-c', "x=bfoo; [[ $x =~ \\bfoo ]] && echo match"], { encoding: 'utf8', env: { PATH: process.env.PATH, LC_ALL: 'C' } });
     assert.strictEqual(r.stdout.trim(), 'match');
   });
@@ -417,10 +416,8 @@ describe('the pitfall gate', () => {
   const has = (notes: string[], re: RegExp) => notes.some((n) => re.test(n));
   for (const [file, name, re] of [
     ['Dockerfile', 'the Dockerfile pipefail note', /^ⓘ If a command in the middle of the pipe fails, RUN still succeeds/],
-    ['deploy.py', 'the Python string-without-shell note', /^⚠ Without shell=True the whole string/],
     ['deploy.py', 'the Python shell injection note', /^⚠ Shell injection risk: the shell runs a string/],
     ['action.yml', 'the Actions script injection note', /^⚠ Script injection risk: `github\.event\.pull_request\.title`/],
-    ['test.bats', 'a bats pitfall', /^⚠ Pitfall: /],
   ] as const) {
     it(`${name} disappears with pitfalls off, and is the same text with them on`, () => {
       assert.ok(has(hostNotes(file, true), re));
@@ -429,11 +426,21 @@ describe('the pitfall gate', () => {
       assert.ok(has(hostNotes(file, true, 'ja'), file === 'Dockerfile' ? /^ⓘ / : /^⚠ /));
     });
   }
-  it('said keeps the notes with pitfalls off and the pitfalls with them on', () => {
-    const fs2 = [fact('en', 'exit-modulo', { command: 'exit', value: '256', status: 0, ends: 'shell' }), fact('en', 'local-outside-function', { stops: false })];
-    assert.deepStrictEqual(said(fs2, false).map((f) => f.id), ['exit-modulo']);
-    assert.deepStrictEqual(said(fs2, true).map((f) => f.id), ['exit-modulo', 'local-outside-function']);
-    assert.deepStrictEqual(said(fs2, undefined).length, 2);
+  // (An error is no advice: it stays with the pitfalls off.)
+  for (const [file, name, re] of [
+    ['deploy.py', 'the Python string-without-shell note', /^ⓧ Without shell=True the whole string/],
+    ['test.bats', 'a bats pitfall that fails every time', /^ⓧ Error: /],
+  ] as const) {
+    it(`${name} is an error, said with pitfalls off too`, () => {
+      assert.ok(has(hostNotes(file, true), re));
+      assert.ok(has(hostNotes(file, false), re));
+    });
+  }
+  it('said keeps the notes and the errors with pitfalls off and the pitfalls with them on', () => {
+    const fs2 = [fact('en', 'exit-modulo', { command: 'exit', value: '256', status: 0, ends: 'shell' }), fact('en', 'local-outside-function', { stops: false }), fact('en', 'posix-function-name', {})];
+    assert.deepStrictEqual(said(fs2, false).map((f) => f.id), ['exit-modulo', 'local-outside-function']);
+    assert.deepStrictEqual(said(fs2, true).map((f) => f.id), ['exit-modulo', 'local-outside-function', 'posix-function-name']);
+    assert.deepStrictEqual(said(fs2, undefined).length, 3);
   });
   it('only a pitfall has a heading in the catalog', () => {
     for (const [id, e] of Object.entries(MESSAGES) as [FactId, { kind: string; heading?: unknown }][]) {

@@ -23,10 +23,13 @@ function facts(src: string, line = 0, lang: 'en' | 'ja' = 'en', shell?: Shell) {
   return wordFacts(tree.root, line, lang, shellState(tree, shell), shell);
 }
 
-/** The word facts that are caveats (\`info\`): the others found here are warnings. */
-const LEVELS: Record<string, 'info'> = {
+/** The word facts that are caveats (\`info\`) or errors: the others found here are warnings. */
+const LEVELS: Record<string, 'info' | 'error'> = {
   'for-over-ls-output': 'info', 'for-over-unquoted-args': 'info', 'unquoted-variable-in-test': 'info', 'array-joined-in-assignment': 'info',
+  'prefix-assignment-expanded-first': 'error', 'redirect-by-your-shell': 'error',
 };
+/** The mark and the word a fact of each level starts with. */
+const START = { error: 'ⓧ Error: ', warning: '⚠ Pitfall: ', info: 'ⓘ Caveat: ' } as const;
 
 describe('word facts', () => {
   const cases: [string, string, RegExp][] = [
@@ -34,7 +37,7 @@ describe('word facts', () => {
     ['for f in $(ls *.txt); do echo "$f"; done', 'for-over-ls-output', /`\$\(ls …\)` is split on spaces/],
     ['for f in $(find . -name "*.sh"); do :; done', 'for-over-ls-output', /-print0/],
     ['[ $x = y ]', 'unquoted-variable-in-test', /unquoted `\$x` inside `\[ \]`/],
-    ['sudo echo 1 > /proc/sys/vm/drop_caches', 'redirect-by-your-shell', /Pitfall: `\/proc\/sys\/vm\/drop_caches` is normally writable only by root: the redirection \(`>`\) is opened by your own shell with your rights, before sudo starts, so it fails with "Permission denied" and the command does not run\. Use `… \| sudo tee \/proc\/sys\/vm\/drop_caches` \(`sudo tee -a` to append\)/],
+    ['sudo echo 1 > /proc/sys/vm/drop_caches', 'redirect-by-your-shell', /Error: `\/proc\/sys\/vm\/drop_caches` is normally writable only by root: the redirection \(`>`\) is opened by your own shell with your rights, before sudo starts, so it fails with "Permission denied" and the command does not run\. Use `… \| sudo tee \/proc\/sys\/vm\/drop_caches` \(`sudo tee -a` to append\)/],
     ['for a in $*; do :; done', 'for-over-unquoted-args', /unquoted `\$\*` splits arguments/],
     ['cp $src "$dst"', 'unquoted-variable-as-path', /`\$src` is not quoted/],
     // `time` times what follows; what follows is a command like any other.
@@ -62,8 +65,9 @@ describe('word facts', () => {
       assert.strictEqual(f.id, id);
       assert.strictEqual(f.kind, 'pitfall');
       // (Its level, and the mark and word of the level: docs/design/note-levels.md.)
-      assert.strictEqual(f.level, LEVELS[id] ?? 'warning', id);
-      assert.ok(f.text.startsWith((f.level as string) === 'warning' ? '⚠ Pitfall: ' : 'ⓘ Caveat: '), f.text);
+      // (A redirection under sudo to a file not known to be root's, `"/etc/$f"`, is a caveat.)
+      assert.strictEqual(f.level, src.includes('"/etc/$f"') ? 'info' : LEVELS[id] ?? 'warning', id);
+      assert.ok(f.text.startsWith(START[f.level as keyof typeof START]), f.text);
       assert.ok(f.refs.length >= 1);
     });
   }
@@ -71,24 +75,24 @@ describe('word facts', () => {
     const text = (src: string, lang: 'en' | 'ja' = 'en') => facts(src, 0, lang).find((x) => x.id === 'redirect-by-your-shell')!.text;
     it('names a file that only root writes, in both languages', () => {
       assert.strictEqual(text('sudo echo "nameserver 1.1.1.1" > /etc/resolv.conf'),
-        '⚠ Pitfall: `/etc/resolv.conf` is normally writable only by root: the redirection (`>`) is opened by your own shell with your rights, before sudo starts, so it fails with "Permission denied" and the command does not run. Use `… | sudo tee /etc/resolv.conf` (`sudo tee -a` to append)');
+        'ⓧ Error: `/etc/resolv.conf` is normally writable only by root: the redirection (`>`) is opened by your own shell with your rights, before sudo starts, so it fails with "Permission denied" and the command does not run. Use `… | sudo tee /etc/resolv.conf` (`sudo tee -a` to append)');
       assert.match(text('sudo echo "nameserver 1.1.1.1" > /etc/resolv.conf', 'ja'),
         /`\/etc\/resolv\.conf` はふつう root しか書き込めない。リダイレクト（`>`）は sudo ではなく今のシェルが今のユーザーの権限で開くので、sudo が動く前に「Permission denied」で失敗し、コマンドは実行されない。`… \| sudo tee \/etc\/resolv\.conf`（追記なら `sudo tee -a`）を使う$/);
     });
     it('says "if the file is writable only by root" for a path that is not known to be root-only', () => {
       for (const src of ['sudo echo 1 > "/etc/$f"', 'sudo echo 1 > /proc/self/x', 'sudo echo 1 > "/usr/a b"']) {
-        assert.match(text(src), /^⚠ Pitfall: if the file is writable only by root, the redirection \(`>`\)/, src);
+        assert.match(text(src), /^ⓘ Caveat: if the file is writable only by root, the redirection \(`>`\)/, src);
         assert.match(text(src), /Use `… \| sudo tee file` \(`sudo tee -a` to append\)$/, src);
       }
-      assert.match(text('sudo echo 1 > "/etc/$f"', 'ja'), /^⚠ 落とし穴: ファイルが root しか書き込めないなら、リダイレクト（`>`）は/);
+      assert.match(text('sudo echo 1 > "/etc/$f"', 'ja'), /^ⓘ 注意: ファイルが root しか書き込めないなら、リダイレクト（`>`）は/);
     });
     it('suggests tee -a for >>, and a command run by sudo for other descriptors and for input', () => {
-      assert.match(text('sudo echo 1 >> /etc/hosts'), /^⚠ Pitfall: `\/etc\/hosts` is normally writable only by root: the redirection \(`>>`\).* Use `… \| sudo tee -a \/etc\/hosts`$/);
+      assert.match(text('sudo echo 1 >> /etc/hosts'), /^ⓧ Error: `\/etc\/hosts` is normally writable only by root: the redirection \(`>>`\).* Use `… \| sudo tee -a \/etc\/hosts`$/);
       assert.match(text('sudo echo 1 >> /etc/hosts', 'ja'), /リダイレクト（`>>`）.*`… \| sudo tee -a \/etc\/hosts` を使う$/);
       assert.match(text('sudo make 2> /etc/err.log'), /the redirection \(`2>`\).* Use `sudo bash -c '… 2> \/etc\/err\.log'`, so that the redirection is done inside sudo too$/);
       assert.match(text('sudo make &> /etc/err.log', 'ja'), /リダイレクト（`&>`）.*`sudo bash -c '… &> \/etc\/err\.log'` のようにリダイレクトも sudo の中で行う$/);
       assert.match(text('sudo make {fd}> /etc/err.log'), /the redirection \(`\{fd\}>`\).* Use `sudo bash -c '… \{fd\}> \/etc\/err\.log'`/);
-      assert.match(text('sudo cat < /etc/shadow'), /^⚠ Pitfall: if the file is readable only by root, the redirection \(`<`\).* Pass the file to the command as an argument, or do the redirection inside sudo too: `sudo bash -c '… < file'`$/);
+      assert.match(text('sudo cat < /etc/shadow'), /^ⓘ Caveat: if the file is readable only by root, the redirection \(`<`\).* Pass the file to the command as an argument, or do the redirection inside sudo too: `sudo bash -c '… < file'`$/);
     });
     // What the note says, with bash: the redirection is opened before the command runs, and a failure ends the command with 1.
     it('is true: a redirection to a file that cannot be written fails before the command runs, with status 1', function () {
@@ -386,9 +390,10 @@ describe('word facts: an unset variable under set -u', () => {
       const [text, ...more] = unbound(src, line);
       assert.ok(text, `${src}: (none)`);
       assert.deepStrictEqual(more, []);
-      // (Only the command fails, and the shell goes on: a caveat.)
+      // (Unset on every path: an error, also where only the command fails. A name that may come from the environment
+      // (a clause says so), a warning, or a caveat where only the command fails and the shell goes on.)
       const stops = /\`set -e\` stops (the script|the subshell running it) on/.exec(exits)?.[1];
-      assert.ok(text.startsWith(`${exits === C ? 'ⓘ Caveat' : '⚠ Pitfall'}: \`${v}\` is not set here${stops ? `, so ${stops} stops` : ''}: with \`set -u\` on, bash fails with "${v}: unbound variable" and ${exits}${environment ? ` (unless \`${v.replace(/\[.*/, '')}\` comes from the environment)` : ''}. `), text);
+      assert.ok(text.startsWith(`${!environment ? 'ⓧ Error' : exits === C ? 'ⓘ Caveat' : '⚠ Pitfall'}: \`${v}\` is not set here${stops ? `, so ${stops} stops` : ''}: with \`set -u\` on, bash fails with "${v}: unbound variable" and ${exits}${environment ? ` (unless \`${v.replace(/\[.*/, '')}\` comes from the environment)` : ''}. `), text);
       assert.ok(text.endsWith(fix ? `write \`\${${v}:-}\`` : 'Set it before this line'), text);
     });
   }

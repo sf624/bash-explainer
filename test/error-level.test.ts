@@ -1,8 +1,7 @@
 // Step 0 of the three note levels (docs/design/three-levels.md, sections 7 and 8): the bash inventory of the checks
-// headed for Error, before any level moves. Every id that section 3 puts at Error has a row here: a short script that
-// our explanation says the note on (at `warning`, or at `error` for those step 1a moved: the `failure()` facts,
-// dialect `unsupported` and `crlf`), run in bash, and in the program a row needs (dash, bats,
-// python3), under what question 1 of the rule varies (section 2):
+// at Error. Every id that section 3 puts at Error has a row here: a short script that our explanation says the note on
+// at `error` (since steps 1a and 2; the style checks at `warning` until step 3), run in bash, and in the program a row
+// needs (dash, bats, python3), under what question 1 of the rule varies (section 2):
 //
 // - the values of the variables the row reads from outside (`reads`): unset, empty, `a b`, `*`, and `x`, each
 //   exported from the parent (so a name the script sets is also one the environment had);
@@ -62,8 +61,8 @@ interface Row {
    * script is explained for bash 5.2 (the default `bashExplainer.bashVersion`), which runs then only in bash 5.2.
    */
   assumes?: '/bin/sh is dash' | 'the user is not root' | 'bash 5.2';
-  /** The level the note has now, where it is not `warning`: an Error since step 1a, an Info case that moves up. */
-  level?: 'error' | 'info';
+  /** The level the note has now, where it is not `error`: a style check until step 3, a postfix note, or a finding. */
+  level?: 'warning';
   /** Some run does not fail, as the test checks: why, and the level the note keeps for it. */
   finding?: string;
 }
@@ -73,18 +72,18 @@ const AS_PROGRAM: readonly Way[] = ['direct', 'file'];
 
 const ROWS: readonly Row[] = [
   // ---- the `failure()` facts
-  { id: 'keyword-needs-separator', text: '#!/bin/bash\nif true then echo it-works; fi\n', line: 2, works: 'it-works', level: 'error' },
-  { id: 'bracket-missing-close', text: '#!/bin/bash\nif [ -d / ; then echo it-works; fi\n', line: 2, works: 'it-works', level: 'error' },
-  { id: 'bracket-close-glued', text: '#!/bin/bash\nif [ -d /]; then echo it-works; fi\n', line: 2, works: 'it-works', level: 'error' },
-  { id: 'test-malformed', text: '#!/bin/bash\nif [ 1 -eq ]; then echo it-works; else echo NO; fi\n', line: 2, error: /expected/, level: 'error' },
-  { id: 'unset-readonly', text: '#!/bin/bash\nreadonly r=1\nunset r && echo it-works\n', line: 3, works: 'it-works', level: 'error' },
-  { id: 'unset-function-and-variable', text: '#!/bin/bash\nx=1\nunset -f -v x && echo it-works\n', line: 3, works: 'it-works', level: 'error' },
-  { id: 'bats-tags-invalid', file: 't.bats', text: '# bats test_tags=a,,b\n@test "t" {\n  true\n}\n', line: 1, works: 'ok 1 t', ways: ['bats'], level: 'error' },
+  { id: 'keyword-needs-separator', text: '#!/bin/bash\nif true then echo it-works; fi\n', line: 2, works: 'it-works' },
+  { id: 'bracket-missing-close', text: '#!/bin/bash\nif [ -d / ; then echo it-works; fi\n', line: 2, works: 'it-works' },
+  { id: 'bracket-close-glued', text: '#!/bin/bash\nif [ -d /]; then echo it-works; fi\n', line: 2, works: 'it-works' },
+  { id: 'test-malformed', text: '#!/bin/bash\nif [ 1 -eq ]; then echo it-works; else echo NO; fi\n', line: 2, error: /expected/ },
+  { id: 'unset-readonly', text: '#!/bin/bash\nreadonly r=1\nunset r && echo it-works\n', line: 3, works: 'it-works' },
+  { id: 'unset-function-and-variable', text: '#!/bin/bash\nx=1\nunset -f -v x && echo it-works\n', line: 3, works: 'it-works' },
+  { id: 'bats-tags-invalid', file: 't.bats', text: '# bats test_tags=a,,b\n@test "t" {\n  true\n}\n', line: 1, works: 'ok 1 t', ways: ['bats'] },
   // ---- the pitfalls of the catalog
-  { id: 'find-action-refused', text: '#!/bin/bash\nfind . -name script.sh -exec echo it-works {}\n', line: 2, works: 'it-works', level: 'error' },
-  { id: 'assign-readonly', text: '#!/bin/bash\nreadonly r=1\nr=2 && echo it-works\n', line: 3, works: 'it-works', level: 'error' },
-  { id: 'restricted-refused', text: "#!/bin/bash\nbash -r -c 'cd / && echo it-works'\n", line: 2, works: 'it-works', level: 'error' },
-  { id: 'exit-refused', text: '#!/bin/bash\nexit x\n', line: 2, error: /numeric argument required/, level: 'error' },
+  { id: 'find-action-refused', text: '#!/bin/bash\nfind . -name script.sh -exec echo it-works {}\n', line: 2, works: 'it-works' },
+  { id: 'assign-readonly', text: '#!/bin/bash\nreadonly r=1\nr=2 && echo it-works\n', line: 3, works: 'it-works' },
+  { id: 'restricted-refused', text: "#!/bin/bash\nbash -r -c 'cd / && echo it-works'\n", line: 2, works: 'it-works' },
+  { id: 'exit-refused', text: '#!/bin/bash\nexit x\n', line: 2, error: /numeric argument required/ },
   { id: 'local-outside-function', text: '#!/bin/bash\nlocal x=1 && echo it-works\n', line: 2, works: 'it-works', ways: AS_PROGRAM },
   { id: 'posix-special-function-name', text: '#!/bin/bash\nset -o posix\nexport() { echo it-works; }\nexport\n', line: 3, works: 'it-works' },
   { id: 'alias-not-expanded-in-script', text: "#!/bin/bash\nalias ok='echo it-works'\nok\n", line: 3, works: 'it-works', ways: AS_PROGRAM },
@@ -117,32 +116,35 @@ const ROWS: readonly Row[] = [
   { id: 'regex-backslash-dropped', text: '#!/bin/bash\n[[ a1 =~ ^a\\d$ ]] && echo it-works\n', line: 2, works: 'it-works' },
   { id: 'python-string-without-shell', code: 'pythonNoShell', file: 'run.py', text: 'import subprocess\nsubprocess.run("echo it-works")\n', line: 2, works: 'it-works', error: /FileNotFoundError/, ways: ['python'] },
   { id: 'nounset-unbound', text: '#!/bin/bash\nset -u\nunset x\necho "[$x]" it-works\n', line: 4, works: 'it-works', reads: ['x'] },
-  // (Only the command fails, and the script goes on: an Info case that moves up.)
-  { id: 'nounset-unbound', text: '#!/bin/bash\nset -u\nunset f\ncat < "$f" && echo it-works\n', line: 4, works: 'it-works', reads: ['f'], level: 'info' },
-  { id: 'postfix-increment-status', text: '#!/bin/bash\nset -e\ni=0\n((i++))\necho it-works\n', line: 4, works: 'it-works', reads: ['i'] },
-  { id: 'postfix-decrement-status', text: '#!/bin/bash\nset -e\ni=0\n((i--))\necho it-works\n', line: 4, works: 'it-works', reads: ['i'] },
+  // (Only the command fails, and the script goes on: an Error too, since step 2; it was a caveat.)
+  { id: 'nounset-unbound', text: '#!/bin/bash\nset -u\nunset f\ncat < "$f" && echo it-works\n', line: 4, works: 'it-works', reads: ['f'] },
+  // (Still warnings: the state model cannot say that the value is 0 on every path, the param `zero` of section 3, since
+  // decisions trust no name that arithmetic assigns (src/semantics/trust.ts). Left open in step 2.)
+  { id: 'postfix-increment-status', text: '#!/bin/bash\nset -e\ni=0\n((i++))\necho it-works\n', line: 4, works: 'it-works', reads: ['i'], level: 'warning' },
+  { id: 'postfix-decrement-status', text: '#!/bin/bash\nset -e\ni=0\n((i--))\necho it-works\n', line: 4, works: 'it-works', reads: ['i'], level: 'warning' },
   // ---- the style checks
-  { id: 'bracket-no-space', text: '#!/bin/bash\nif [-d / ]; then echo it-works; fi\n', line: 2, works: 'it-works' },
-  { id: 'assignment-with-spaces', text: '#!/bin/bash\nx = it-works\necho "[$x]"\n', line: 2, works: '[it-works]', reads: ['x'] },
-  { id: 'brace-no-space', text: '#!/bin/bash\n{echo it-works; }\n', line: 2, works: 'it-works' },
-  { id: 'brace-close-no-separator', text: '#!/bin/bash\n{ echo it-works }\n', line: 2, works: 'it-works' },
+  { id: 'bracket-no-space', text: '#!/bin/bash\nif [-d / ]; then echo it-works; fi\n', line: 2, works: 'it-works', level: 'warning' },
+  { id: 'assignment-with-spaces', text: '#!/bin/bash\nx = it-works\necho "[$x]"\n', line: 2, works: '[it-works]', reads: ['x'], level: 'warning' },
+  { id: 'brace-no-space', text: '#!/bin/bash\n{echo it-works; }\n', line: 2, works: 'it-works', level: 'warning' },
+  { id: 'brace-close-no-separator', text: '#!/bin/bash\n{ echo it-works }\n', line: 2, works: 'it-works', level: 'warning' },
   // (`[ a > b ]` is meant false; bash tests `[ a ]`, true, and writes the file `b`.)
-  { id: 'redirect-in-bracket', text: '#!/bin/bash\nif [ a > b ]; then echo true; else echo false-as-meant; fi\n', line: 2, works: 'false-as-meant' },
-  { id: 'and-or-in-bracket', text: '#!/bin/bash\n[ -d / && -d / ] && echo it-works\n', line: 2, works: 'it-works' },
-  { id: 'bracket-close-in-word', text: '#!/bin/bash\nx=a\n[ -n "$x"] && echo it-works\n', line: 3, works: 'it-works' },
+  { id: 'redirect-in-bracket', text: '#!/bin/bash\nif [ a > b ]; then echo true; else echo false-as-meant; fi\n', line: 2, works: 'false-as-meant', level: 'warning' },
+  { id: 'and-or-in-bracket', text: '#!/bin/bash\n[ -d / && -d / ] && echo it-works\n', line: 2, works: 'it-works', level: 'warning' },
+  { id: 'bracket-close-in-word', text: '#!/bin/bash\nx=a\n[ -n "$x"] && echo it-works\n', line: 3, works: 'it-works', level: 'warning' },
   // ---- dialect issues and other problems
-  { id: 'unsupported', code: 'dbracket', shell: 'sh', text: '#!/bin/sh\n[[ -d / ]] && echo it-works\n', line: 2, works: 'it-works', assumes: '/bin/sh is dash', level: 'error' },
-  { id: 'unsupported', code: 'funsub', text: '#!/bin/bash\necho "${ echo it-works; }"\n', line: 2, works: 'it-works', assumes: 'bash 5.2', level: 'error' },
-  { id: 'crlf', text: '#!/bin/bash\r\nif true; then echo it-works; fi\r\n', line: 1, works: 'it-works', ways: ['direct'], level: 'error' },
+  { id: 'unsupported', code: 'dbracket', shell: 'sh', text: '#!/bin/sh\n[[ -d / ]] && echo it-works\n', line: 2, works: 'it-works', assumes: '/bin/sh is dash' },
+  { id: 'unsupported', code: 'funsub', text: '#!/bin/bash\necho "${ echo it-works; }"\n', line: 2, works: 'it-works', assumes: 'bash 5.2' },
+  { id: 'crlf', text: '#!/bin/bash\r\nif true; then echo it-works; fi\r\n', line: 1, works: 'it-works', ways: ['direct'] },
   // (A CR on the `#!` line alone: run as a program, the interpreter's name ends with a CR.)
-  { id: 'crlf', text: '#!/bin/bash\r\necho it-works\r\n', line: 1, works: 'it-works', ways: ['direct'], level: 'error' },
+  { id: 'crlf', text: '#!/bin/bash\r\necho it-works\r\n', line: 1, works: 'it-works', ways: ['direct'] },
   // (A `#!` line that ends in LF, and CRLF after it: the program runs, with a CR at the end of its output.)
   {
     id: 'crlf', text: '#!/bin/bash\necho it-works\r\n', line: 2, works: 'it-works',
     finding: 'a file whose `#!` line ends in LF, with no keyword before a CR, runs in every way (`echo it-works\\r` prints `it-works` and a CR): a warning (review of #549)',
+    level: 'warning',
   },
   // (With no shebang, a keyword before a CR fails however the file runs: `fi\r` is no keyword.)
-  { id: 'crlf', text: 'if true; then echo it-works\r\nfi\r\n', line: 1, works: 'it-works', level: 'error' },
+  { id: 'crlf', text: 'if true; then echo it-works\r\nfi\r\n', line: 1, works: 'it-works' },
   // (A CR where a command starts, on a blank line or after `;`, `&&` or `&`, is a command of its own, `$'\r'`, which is
   // not found, however the file runs: with no shebang, and with a `#!` line that ends in LF. A file with no shebang run
   // as a program is run by the caller's /bin/sh here, which says `\r: not found`.)
@@ -150,17 +152,18 @@ const ROWS: readonly Row[] = [
     const error = /\$'\\r': command not found|: \r: not found/;
     const line = shebang ? 2 : 1;
     return [
-      { id: 'crlf', text: `${shebang}echo it;\r\n`, line, error, level: 'error' },
-      { id: 'crlf', text: `${shebang}echo it &&\r\n`, line, error, level: 'error' },
-      { id: 'crlf', text: `${shebang}echo it\r\n\r\n`, line, error, level: 'error' },
+      { id: 'crlf', text: `${shebang}echo it;\r\n`, line, error },
+      { id: 'crlf', text: `${shebang}echo it &&\r\n`, line, error },
+      { id: 'crlf', text: `${shebang}echo it\r\n\r\n`, line, error },
     ];
   }),
   // (Also after a heredoc: `<<E\r` ends at the line `E\r`, and the lines after it are code again.)
-  { id: 'crlf', text: 'cat <<E\r\nx\r\nE\r\nif true; then echo it-works\r\nfi\r\n', line: 1, works: 'it-works', level: 'error' },
+  { id: 'crlf', text: 'cat <<E\r\nx\r\nE\r\nif true; then echo it-works\r\nfi\r\n', line: 1, works: 'it-works' },
   // (With no shebang and no keyword before a CR, bash runs each line with a CR at the end of its last word.)
   {
     id: 'crlf', text: 'echo it-works\r\n', line: 1, works: 'it-works',
     finding: 'a file with no shebang and no keyword before a CR runs (`bash file` prints `it-works` and a CR): a warning there, an error only with a shebang or a keyword before a CR (step 1a)',
+    level: 'warning',
   },
 ];
 
@@ -341,9 +344,9 @@ describe('the checks headed for Error, run in bash (three-levels.md, step 0)', f
     });
   }
 
-  // Where `.bashrc` is not read, `ll` is "command not found" in every run (a warning), and where the file's own shebang says
+  // Where `.bashrc` is not read, `ll` is "command not found" in every run (an error), and where the file's own shebang says
   // `-i`, it is read before the script (a caveat). `bash --norc` reads none, `--rcfile F` reads F instead (a file the
-  // explainer cannot read: still a warning), and a `bash -c` that `#!/bin/bash -i` starts is not interactive.
+  // explainer cannot read: still an error), and a `bash -c` that `#!/bin/bash -i` starts is not interactive.
   for (const [what, r, caveat] of [
     ['`bash --norc -i -c`: no .bashrc', { id: 'distro-alias-in-script', text: '#!/bin/bash\nbash --norc -i -c ll\n', line: 2, works: 'script.sh', ways: ['direct', 'file', 'function'] }, false],
     ['`bash --rcfile F -i -c`: F instead of .bashrc, which cannot be read', { id: 'distro-alias-in-script', text: '#!/bin/bash\nbash --rcfile rc -i -c ll\n', line: 2, works: 'script.sh', ways: ['direct', 'file', 'function'] }, false],
@@ -354,7 +357,7 @@ describe('the checks headed for Error, run in bash (three-levels.md, step 0)', f
     it(`${r.id} in ${what}`, async function () {
       const doc = openDocument(r.text, 'shell', (t) => parser.parse(t));
       const issue = documentIssues(doc, 'en', shellsOf(doc.lines, 'script.sh', undefined)).find((x) => x.code === r.id && x.startLine === r.line - 1);
-      assert.strictEqual(issue?.severity, caveat ? 'info' : 'warning');
+      assert.strictEqual(issue?.severity, caveat ? 'info' : 'error');
       assert.strictEqual(/But this shell is interactive \(`-i`\) and reads `\.bashrc` first: /.test(issue.message), caveat);
       if (unrunnable(r)) return this.skip();
       const at = path.join(dir, `rc-${what.replace(/\W+/g, '-')}`);
@@ -390,7 +393,7 @@ describe('the checks headed for Error, run in bash (three-levels.md, step 0)', f
       const doc = openDocument(r.text, hostKind('', file, r.text) ?? 'shell', (t) => parser.parse(t));
       const issue = documentIssues(doc, 'en', shellsOf(doc.lines, file, undefined)).find((x) => x.code === (r.code ?? r.id) && x.startLine === r.line - 1);
       assert.ok(issue, `${r.code ?? r.id} is not said on line ${r.line}`);
-      assert.strictEqual(issue.severity, r.level ?? 'warning');
+      assert.strictEqual(issue.severity, r.level ?? 'error');
       // bash's side: every run fails.
       const why = unrunnable(r);
       if (why) return this.skip();

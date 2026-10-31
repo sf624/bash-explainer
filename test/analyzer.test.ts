@@ -497,7 +497,7 @@ describe('robustness', () => {
   it('says that a byte order mark before the shebang makes it a command', () => {
     const e = explain('\uFEFF#!/bin/bash\necho hi');
     assert.deepStrictEqual(e.facts?.find((f) => f.id === 'shebang-bom')?.refs, ['3.8', 'execve(2)']);
-    assert.match(e.notes[0], /^⚠ Pitfall: the first line starts with an invisible byte order mark \(BOM, U\+FEFF\), so it is no shebang: .* a command named `#!\/bin\/bash` with the BOM before it, which fails \("No such file or directory"\)\. Save the file without the BOM$/);
+    assert.match(e.notes[0], /^ⓧ Error: the first line starts with an invisible byte order mark \(BOM, U\+FEFF\), so it is no shebang: .* a command named `#!\/bin\/bash` with the BOM before it, which fails \("No such file or directory"\)\. Save the file without the BOM$/);
     assert.match(explain('\uFEFF#!bash', 0, 'ja').notes[0], /BOM の付いた `#!bash` という名前のコマンドとして実行して失敗する（command not found）。BOM を付けずに保存する$/);
     assert.deepStrictEqual(explain('echo\n\uFEFF#!/bin/bash', 1).notes, []);
   });
@@ -529,10 +529,10 @@ describe('robustness', () => {
 
   it('says when bash refuses the options of its shebang (test/state.test.ts runs them)', () => {
     const notes = (line: string, lang: 'ja' | 'en' = 'en') => explain(`${line}\necho ran`, 0, lang).notes.filter((n) => /refuses it|受け付けない/.test(n));
-    assert.match(notes('#!/bin/bash -e -u')[0], /^⚠ Pitfall: on Linux the whole `-e -u` after the interpreter is one argument to bash, which refuses it \(a blank is not an option\)\. Run directly, the script stops with an error before running anything\. Write the options with `set` on the next line \(`bash script` ignores the options of the shebang\)$/);
+    assert.match(notes('#!/bin/bash -e -u')[0], /^ⓧ Error: on Linux the whole `-e -u` after the interpreter is one argument to bash, which refuses it \(a blank is not an option\)\. Run directly, the script stops with an error before running anything\. Write the options with `set` on the next line \(`bash script` ignores the options of the shebang\)$/);
     assert.match(notes('#!/bin/bash -o nounset')[0], /\(`o` takes the next argument, the script's path, as an option name\)/);
     assert.match(notes('#!/bin/bash --posix -e')[0], /\(no long option has that name\)/);
-    assert.match(notes('#!/bin/bash -euo pipefail', 'ja')[0], /^⚠ 落とし穴: Linux ではシバンのインタープリタの後ろの `-euo pipefail` 全体が bash への1つの引数になり、bash はそれを受け付けない（`o` が次の引数のスクリプトのパスをオプション名として読む）。直接実行すると/);
+    assert.match(notes('#!/bin/bash -euo pipefail', 'ja')[0], /^ⓧ エラー: Linux ではシバンのインタープリタの後ろの `-euo pipefail` 全体が bash への1つの引数になり、bash はそれを受け付けない（`o` が次の引数のスクリプトのパスをオプション名として読む）。直接実行すると/);
     for (const line of ['#!/bin/bash -eu', '#!/bin/bash', '#!/bin/bash --posix', '#!/usr/bin/env -S bash -e -u', '#!/bin/sh -e -u']) assert.deepStrictEqual(notes(line), [], line);
   });
 
@@ -841,7 +841,7 @@ describe('aliases of distributions', () => {
     assert.match(find(e, '/tmp').explanation, /file or directory/);
     // (A file with no shebang may be read by an interactive shell, `.bashrc`, which has it: a caveat.)
     assert.ok(e.notes.some((n) => /^ⓘ System-dependent: `ll` is an alias Ubuntu, Fedora \/ RHEL, openSUSE, Git for Windows define for interactive shells.*But this file has no shebang/.test(n)));
-    assert.ok(explain('#!/bin/bash\nll /tmp', 1).notes.some((n) => /^⚠ System-dependent: `ll` is an alias Ubuntu, Fedora \/ RHEL, openSUSE, Git for Windows define for interactive shells, not a command\. Other systems lack it, and scripts do not have it even there \("command not found"\)\. Write/.test(n)));
+    assert.ok(explain('#!/bin/bash\nll /tmp', 1).notes.some((n) => /^ⓧ System-dependent: `ll` is an alias Ubuntu, Fedora \/ RHEL, openSUSE, Git for Windows define for interactive shells, not a command\. Other systems lack it, and scripts do not have it even there \("command not found"\)\. Write/.test(n)));
   });
   it('covers more than ls: names that are not commands at all', () => {
     const cases: [string, RegExp][] = [

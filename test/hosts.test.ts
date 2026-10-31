@@ -377,7 +377,7 @@ describe('Python', () => {
   });
   it('warns about f-strings with shell=True and strings without it', () => {
     assert.match(explain('deploy.py', 8)!.notes[0], /^⚠ Shell injection risk/);
-    assert.match(explain('deploy.py', 10)!.notes[0], /^⚠ Without shell=True the whole string is taken as one program name/);
+    assert.match(explain('deploy.py', 10)!.notes[0], /^ⓧ Without shell=True the whole string is taken as one program name/);
   });
   it('joins adjacent literals across lines, and skips comments and other strings', () => {
     assert.ok(labels('deploy.py', 12).includes('wc@10'));
@@ -721,16 +721,17 @@ describe('bats', () => {
 
   it('warns about a `! cmd` that is not the last command of a test', () => {
     assert.deepStrictEqual(ids(explain('test.bats', 20)!), ['bats-negation-ignored']);
-    assert.match(explain('test.bats', 20)!.notes.join('\n'), /Pitfall: `set -e` ignores the status of a command after `!`, so unless it is the last command of the test, `! grep -q x \/dev\/null` does not fail the test/);
+    assert.match(explain('test.bats', 20)!.notes.join('\n'), /Error: `set -e` ignores the status of a command after `!`, so unless it is the last command of the test, `! grep -q x \/dev\/null` does not fail the test/);
     // The last command of a test, a `!` in a condition or outside a test: no warning.
     assert.deepStrictEqual(ids(explain('test.bats', 30)!), []);
     const src = ['setup() {', '  ! true', '  :', '}', '@test "a" {', '  # c', '  if ! true; then :; fi', '  ! true && :', '  ! { true; } >/dev/null', '  :', '}'];
     for (const line of [2, 7, 8]) assert.deepStrictEqual(ids(bats(src, line)), [], `line ${line}`);
     assert.deepStrictEqual(ids(bats(src, 9)), ['bats-negation-ignored']);
-    assert.deepStrictEqual(ids(bats(src, 9, 'en', { pitfalls: false })), []);
+    // (It fails every time: an error, said with the pitfalls off too.)
+    assert.deepStrictEqual(ids(bats(src, 9, 'en', { pitfalls: false })), ['bats-negation-ignored']);
     // A long command is shortened.
     assert.match(bats(['@test "a" {', '  ! grep -q some-long-pattern /some/long/path/to/a/file', '  :', '}'], 2).notes.join('\n'), /`! grep -q some-long-pattern \/so…` does not fail/);
-    assert.match(bats(src, 9, 'ja').notes.join('\n'), /落とし穴: `set -e` は `!` のあとのコマンドの結果を無視するので/);
+    assert.match(bats(src, 9, 'ja').notes.join('\n'), /エラー: `set -e` は `!` のあとのコマンドの結果を無視するので/);
     // The fix depends on what follows `!`: run takes one command; a pipeline needs bats_pipe; a group, `|| false`.
     const forms = ['@test "a" {', '  ! true', '  ! echo x | grep -q x', '  ! { true; }', '  ! x=1', '  :', '}'];
     assert.match(bats(forms, 2).notes.join('\n'), /Write `run ! true` \(since bats 1\.5\.0, with `bats_require_minimum_version 1\.5\.0`\) or `! true \|\| false`$/);
@@ -738,7 +739,7 @@ describe('bats', () => {
     assert.match(bats(forms, 4).notes.join('\n'), /Write `! \{ true; \} \|\| false`$/);
     // (`run ! x=1` would run a command named `x=1`.)
     assert.match(bats(forms, 5).notes.join('\n'), /Write `! x=1 \|\| false`$/);
-    for (const line of [2, 3, 4, 5]) assert.match(bats(forms, line, 'ja').notes.join('\n'), /^⚠ 落とし穴: `set -e` は/);
+    for (const line of [2, 3, 4, 5]) assert.match(bats(forms, line, 'ja').notes.join('\n'), /^ⓧ エラー: `set -e` は/);
   });
 
   it("reads bats' functions by their specs for the conditions it decides", () => {
@@ -765,7 +766,7 @@ describe('bats', () => {
 
   it('warns about `run cmd | …`', () => {
     assert.deepStrictEqual(ids(explain('test.bats', 21)!), ['bats-run-in-pipeline']);
-    assert.match(explain('test.bats', 21)!.notes.join('\n'), /Pitfall: the pipe gets the output of `run`, but `run` writes nothing: it keeps the output of `printf 'a\\nb\\n'` in `\$output`/);
+    assert.match(explain('test.bats', 21)!.notes.join('\n'), /Error: the pipe gets the output of `run`, but `run` writes nothing: it keeps the output of `printf 'a\\nb\\n'` in `\$output`/);
     const src = ['@test "a" {', '  run -- ! true 2>&1 | cat', '  run | cat', '  (run x) | cat', '  echo | run cat', '  run ! -1 cat 2>&1 | cat', '  >f | cat', '}'];
     assert.match(bats(src, 2).notes.join('\n'), /output of `! true`/);
     for (const line of [3, 4, 7]) assert.deepStrictEqual(ids(bats(src, line)), [], `line ${line}`);

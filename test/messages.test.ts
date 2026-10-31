@@ -39,39 +39,46 @@ describe('the message catalog', () => {
     assert.ok(note.text.startsWith('ℹ '));
     assert.ok(fact('ja', 'exit-modulo', { command: 'exit', value: '300', status: 44, ends: 'shell' }).text.startsWith('ℹ 終了ステータスは'));
     assert.deepStrictEqual(note.refs, ['3.7.5']);
-    const pit = fact('en', 'local-outside-function', { stops: false });
+    const pit = fact('en', 'posix-function-name', {});
     assert.strictEqual(pit.kind, 'pitfall');
     assert.ok(pit.text.startsWith('⚠ Pitfall: '));
-    assert.ok(fact('ja', 'local-outside-function', { stops: false }).text.startsWith('⚠ 落とし穴: '));
+    assert.ok(fact('ja', 'posix-function-name', {}).text.startsWith('⚠ 落とし穴: '));
+    // (A pitfall that fails every time is an error, with the word of the level.)
+    assert.ok(fact('en', 'local-outside-function', { stops: false }).text.startsWith('ⓧ Error: '));
+    assert.ok(fact('ja', 'local-outside-function', { stops: false }).text.startsWith('ⓧ エラー: '));
     assert.strictEqual(factOf('en', { id: 'exit-modulo', params: { command: 'exit', value: '300', status: 44, ends: 'shell' } }).text, note.text);
   });
 
-  // The levels of docs/design/note-levels.md: a pitfall is a warning unless it is a caveat; a note is a plain fact
-  // unless it says the line fails when it runs.
+  // The levels of docs/design/note-levels.md: a pitfall is a warning unless it is a caveat or fails every time (an
+  // error, docs/design/three-levels.md, step 2); a note is a plain fact unless it says the line fails when it runs.
   const CAVEATS = ['declaration-masks-status', 'pipefail-missing', 'function-last-test-returns-status', 'failure-reported-as-success', 'posix-special-function-name-maybe', 'posix-function-name-maybe', 'posix-special-builtin-error-maybe',
     'extglob-maybe-on', 'extglob-not-found', 'extglob-maybe-on-trap', 'globstar-maybe-on',
     'globstar-not-found', 'ssh-local-expansion', 'function-not-imported-sh', 'unmatched-glob-runs-once', 'for-over-ls-output', 'for-over-unquoted-args',
     'unquoted-variable-in-test', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment', 'alias-maybe-not-expanded'];
+  const PITFALL_ERRORS = ['posix-special-function-name', 'extglob-turned-off', 'globstar-unsupported', 'function-not-in-container', 'builtin-or-function-as-program',
+    'function-not-on-remote', 'function-not-in-new-shell-blocked', 'function-not-in-new-shell', 'function-not-imported', 'wrapper-assignment-expanded-first',
+    'prefix-assignment-expanded-first', 'shebang-refused', 'shebang-bom', 'bats-test-line-dropped', 'bats-negation-ignored', 'bats-run-in-pipeline-stage',
+    'bats-run-in-pipeline', 'bats-setup-suite-in-test-file', 'regex-backslash-dropped', 'python-string-without-shell'];
   const FAILURES = ['find-action-refused', 'keyword-needs-separator', 'bracket-missing-close', 'bracket-close-glued', 'test-malformed', 'unset-readonly', 'assign-readonly', 'unset-function-and-variable', 'bats-tags-invalid', 'restricted-refused', 'exit-refused'];
   it('gives each entry the level of the design: error, warning, info or note', () => {
     for (const [id, e] of Object.entries(MESSAGES) as [FactId, { kind: string; level?: unknown }][]) {
       if (typeof e.level === 'function') continue;
-      const want = e.kind === 'note' ? (FAILURES.includes(id) ? 'error' : 'note') : CAVEATS.includes(id) ? 'info' : 'warning';
+      const want = e.kind === 'note' ? (FAILURES.includes(id) ? 'error' : 'note') : CAVEATS.includes(id) ? 'info' : PITFALL_ERRORS.includes(id) ? 'error' : 'warning';
       assert.strictEqual(e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note'), want, id);
     }
     // The ones whose level depends on the case: an unquoted path given to `rm`, `mv` or `cp`; an unset read that stops a shell.
-    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['local-outside-function', 'postfix-increment-status', 'postfix-decrement-status', 'alias-not-expanded-in-script', 'extglob-in-same-block', 'extglob-not-in-new-shell', 'variable-not-in-remote-shell', 'variable-not-passed-by-wrapper', 'variable-not-exported', 'function-not-in-new-shell-export', 'unquoted-variable-as-path', 'nounset-unbound', 'distro-alias-in-script']);
+    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['local-outside-function', 'postfix-increment-status', 'postfix-decrement-status', 'alias-not-expanded-in-script', 'extglob-in-same-block', 'extglob-not-in-new-shell', 'variable-not-in-remote-shell', 'variable-not-passed-by-wrapper', 'variable-not-exported', 'function-not-in-new-shell-export', 'pipeline-subshell-variable', 'unquoted-variable-as-path', 'nounset-unbound', 'redirect-by-your-shell', 'distro-alias-in-script']);
     // `local` in a file with no shebang, which a function may source, or in a trap's action; an alias after code not
     // read, which may turn expand_aliases on; a name that may come from the environment, exported.
-    assert.strictEqual(fact('en', 'local-outside-function', { stops: false }).level, 'warning');
+    assert.strictEqual(fact('en', 'local-outside-function', { stops: false }).level, 'error');
     assert.strictEqual(fact('en', 'local-outside-function', { stops: false, sourced: true }).level, 'info');
     assert.strictEqual(fact('en', 'local-outside-function', { stops: 'script', trap: true }).level, 'info');
-    assert.strictEqual(fact('en', 'alias-not-expanded-in-script', { name: 'll', value: 'ls -l' }).level, 'warning');
+    assert.strictEqual(fact('en', 'alias-not-expanded-in-script', { name: 'll', value: 'ls -l' }).level, 'error');
     assert.strictEqual(fact('en', 'alias-not-expanded-in-script', { name: 'll', value: 'ls -l', off: true, unread: true }).level, 'info');
     assert.strictEqual(fact('en', 'alias-not-expanded-in-script', { name: 'll', value: 'ls -l', fn: true }).level, 'info');
     // (After code not read, which may set or export it there: `unread`, a caveat.)
     for (const unread of [false, true]) {
-      const level = unread ? 'info' : 'warning';
+      const level = unread ? 'info' : 'error';
       assert.strictEqual(fact('en', 'variable-not-in-remote-shell', { v: 'x', unread }).level, level);
       assert.strictEqual(fact('en', 'variable-not-passed-by-wrapper', { v: 'x', via: 'sudo', unread }).level, level);
       assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x', unread }).level, level);
@@ -79,14 +86,15 @@ describe('the message catalog', () => {
     }
     // (A distribution's alias, or `shopt -s extglob` in the block of its glob, in a file with no shebang, which an interactive shell may read.)
     const distro = { name: 'll', where: 'Ubuntu', what: { ja: 'エイリアス', en: 'an alias' }, many: false, instead: { ja: '', en: '' } };
-    assert.strictEqual(fact('en', 'distro-alias-in-script', distro).level, 'warning');
+    assert.strictEqual(fact('en', 'distro-alias-in-script', distro).level, 'error');
     assert.strictEqual(fact('en', 'distro-alias-in-script', { ...distro, reader: 'sourced' }).level, 'info');
-    assert.strictEqual(fact('en', 'extglob-in-same-block', { use: '!(x)' }).level, 'warning');
+    assert.strictEqual(fact('en', 'extglob-in-same-block', { use: '!(x)' }).level, 'error');
     assert.strictEqual(fact('en', 'extglob-in-same-block', { use: '!(x)', reader: 'sourced' }).level, 'info');
     assert.strictEqual(fact('en', 'extglob-not-in-new-shell', { use: '!(x)', reader: 'interactive' }).level, 'info');
     assert.strictEqual(fact('en', 'distro-alias-in-script', { ...distro, reader: 'interactive' }).level, 'info');
-    assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x' }).level, 'warning');
+    assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x' }).level, 'error');
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'X', environment: 'maybe' }).level, 'info');
+    // (A name in lower case may come from the environment too, though it seldom does: a warning, with a clause.)
     assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x', environment: 'unlikely' }).level, 'warning');
     // (The increment's params carry its rewrites, `incr`; the text renders their code.)
     const incr = (v: string) => ({ v, rewrite: [`${v}=$((${v}+1))`, `((++${v}))`, `((${v}++)) || true`].map((code) => ({ code, edits: [] })) });
@@ -114,12 +122,23 @@ describe('the message catalog', () => {
     assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true, rewrite: [] }).level, 'warning');
     assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f', rewrite: [] }).level, 'info');
     const unset = { v: 'x', name: 'x', shell: 'bash', environment: 'no', rewrite: [] } as const;
-    assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'script' }).level, 'warning');
-    assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'command', errexit: 'script' }).level, 'warning');
-    assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'command' }).level, 'info');
-    // (A name in capitals may come from the environment: a caveat; one in lower case keeps the warning, with a clause.)
-    assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'script', environment: 'maybe' }).level, 'info');
+    // (Unset on every path: the shell stops, or the command fails, every time.)
+    assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'script' }).level, 'error');
+    assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'command', errexit: 'script' }).level, 'error');
+    assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'command' }).level, 'error');
+    // (A name that may come from the environment, in capitals or, with a clause, in lower case: a stop halfway, a
+    // warning, or a command that fails while the shell goes on, a caveat.)
+    assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'script', environment: 'maybe' }).level, 'warning');
+    assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'command', errexit: 'script', environment: 'maybe' }).level, 'warning');
+    assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'command', environment: 'maybe' }).level, 'info');
     assert.strictEqual(fact('en', 'nounset-unbound', { ...unset, exits: 'script', environment: 'unlikely' }).level, 'warning');
+    // (A pipeline's variable is gone on every path, or only on those that do not turn `lastpipe` on; a redirection
+    // under sudo fails every time for a path only root writes, and otherwise only for a file of root's.)
+    const fix = { ja: '', en: '' };
+    assert.strictEqual(fact('en', 'pipeline-subshell-variable', { used: 'v', fix, partial: false }).level, 'error');
+    assert.strictEqual(fact('en', 'pipeline-subshell-variable', { used: 'v', fix, partial: true }).level, 'info');
+    assert.strictEqual(fact('en', 'redirect-by-your-shell', { op: '>', kind: 'write', file: '/etc/x.conf' }).level, 'error');
+    assert.strictEqual(fact('en', 'redirect-by-your-shell', { op: '>', kind: 'write' }).level, 'info');
   });
 
   it('starts a note with the mark of its level, and a pitfall with the word of its level too', () => {
@@ -148,8 +167,8 @@ describe('the message catalog', () => {
   });
 
   it('gives a note its level, its word and the rest as data', () => {
-    const { text, level, label, body, code } = fact('en', 'local-outside-function', { stops: false });
-    assert.deepStrictEqual({ level, label, code }, { level: 'warning', label: 'Pitfall:', code: 'local-outside-function' });
+    const { text, level, label, body, code } = fact('en', 'posix-function-name', {});
+    assert.deepStrictEqual({ level, label, code }, { level: 'warning', label: 'Pitfall:', code: 'posix-function-name' });
     assert.strictEqual(text, `⚠ Pitfall: ${body}`);
     const caveat = fact('ja', 'declaration-masks-status', { kw: 'local', v: 'x', rewrite: [{ code: 'local x; x=$(f)', edits: [] }] });
     assert.deepStrictEqual([caveat.level, caveat.label], ['info', '注意:']);

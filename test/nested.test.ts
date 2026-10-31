@@ -385,7 +385,7 @@ describe('nested scripts: the pitfall of a variable another shell does not get',
   });
 
   it('reads the variables a string another shell runs from its model', () => {
-    const notes = (src: string, line: number) => explain(src, line).notes.filter((n) => /Pitfall/.test(n));
+    const notes = (src: string, line: number) => explain(src, line).notes.filter((n) => /^[ⓧ⚠] (Error|Pitfall):/.test(n));
     assert.strictEqual(notes(`n=1\nbash -c 'echo $n'`, 1).length, 1);
     assert.strictEqual(notes(`n=1\nbash -c "echo \\$n"`, 1).length, 1);
     assert.deepStrictEqual(notes(`export n=1\nbash -c 'echo $n'`, 1), []);
@@ -456,7 +456,7 @@ describe('nested scripts: the explanation', () => {
   });
 
   it('says why a function or an extended glob may not be there, as the string is run', () => {
-    const pitfalls = (src: string, line = 0) => explain(src, line).notes.filter((n) => /Pitfall/.test(n));
+    const pitfalls = (src: string, line = 0) => explain(src, line).notes.filter((n) => /^[ⓧ⚠] (Error|Pitfall):/.test(n));
     // A function the string defines itself is there; one of the script it calls is not, also after its first word.
     assert.deepStrictEqual(pitfalls(`eval 'h() { :; }'; bash -c 'h() { :; }; h'`), []);
     assert.deepStrictEqual(pitfalls(`f() { :; }\nbash -c 'f() { echo; }; f'`, 1), []);

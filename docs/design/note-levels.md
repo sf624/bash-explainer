@@ -2,7 +2,7 @@
 
 How much a note matters, and how every output shows it. Built in #320; the prototype was commit 8371ef7 (branch `proto/note-levels`).
 
-The third level, Error, above the warnings, is being built in the steps of [three-levels.md](three-levels.md): step 1a gave the level, the problems and the facts that say a line fails (below); step 1b gave it its own look in every view (#552); the pitfalls that fail every time move to it in step 2. This page describes what is built.
+The third level, Error, above the warnings, is being built in the steps of [three-levels.md](three-levels.md): step 1a gave the level, the problems and the facts that say a line fails (below); step 1b gave it its own look in every view (#552); step 2 moved the catalog's pitfalls that fail every time to it (#PRNUM); the style checks follow in step 3. This page describes what is built.
 
 ## The levels
 
@@ -11,14 +11,14 @@ A note has one of four levels (`NoteLevel` in [src/levels.ts](../../src/levels.t
 | Level | Mark | Word | Squiggle | When |
 | --- | --- | --- | --- | --- |
 | `error` | ⓧ | Error / エラー | error (red) | The line fails every time as written: `[ -f a`, `unset` of a read-only variable, `[[ ]]` in a `#!/bin/sh` script. Said whatever the pitfalls settings say. |
-| `warning` | ⚠ | Pitfall / 落とし穴 | warning (yellow) | The line breaks as written, or if it goes wrong the damage cannot be undone: `x = 1`, `[-f x]`, `rm -rf $DIR/*` with an empty `DIR`, a stop under `set -u`. |
+| `warning` | ⚠ | Pitfall / 落とし穴 | warning (yellow) | If it goes wrong, the damage cannot be undone: `rm -rf $DIR/*` with an empty `DIR`, a stop under `set -u` of a name the environment may give. Until step 3, also the style checks that break as written: `x = 1`, `[-f x]`. |
 | `info` | ⓘ | Caveat / 注意 | information (blue) | It goes wrong only with some values or systems and the damage is limited, or a failure goes unnoticed: `echo $x`, `read line`, `local x=$(false)`. |
 | `note` | ℹ | none | none | A fact of how the shell runs the line. |
 
 - A dialect note on a construct that works differently in the target shell is `info`, with the word "Portability" / 「移植性」 (`ⓘ Portability: dash's echo interprets \t…`).
 - A dialect note on a construct the target shell lacks (`[[ ]]` in POSIX sh, a bash 5.3 construct with bash 5.2) is an `error`. Every note at `error` has the word "Error:" / 「エラー:」, whatever its kind (`wordOnEvery` in the level table): a failure fact, a dialect issue; at `warning` and `info`, only a pitfall has a word.
 - A pitfall with a heading of its own shows the heading in place of the word: "Shell injection risk:", "Script injection risk:", "System-dependent:". A few name their problem in their first words and have none (`regex-backslash-dropped`, the Dockerfile and Python notes).
-- A level that depends on the case is a function of the params: `unquoted-variable-as-path` (the command the word is given to) and `nounset-unbound` (how far the failure reaches) and `postfix-increment-status` / `postfix-decrement-status` (whether `set -e` stops the shell there: the `errexit` param, from the status model).
+- A level that depends on the case is a function of the params: `unquoted-variable-as-path` (the command the word is given to), `nounset-unbound` (whether the environment may give the name, and how far the failure reaches), `postfix-increment-status` / `postfix-decrement-status` (whether `set -e` stops the shell there: the `errexit` param, from the status model), `pipeline-subshell-variable` (`partial`: only some paths turn `lastpipe` on), `redirect-by-your-shell` (`file`: a path only root writes), and the checks that are errors but where the line may work, a caveat there (`unread`, `reader`, `sourced`, `trap`, `fn`, `environment`).
 
 ## Where the level comes from
 
@@ -26,7 +26,7 @@ What a level looks like, and what it is in each protocol, comes from one table, 
 
 The level of each note comes from one source per kind of note:
 
-- The message catalog (src/messages.ts): `pitfall()` is a warning, `caveat()` a pitfall at the level `info`, `failure()` a fact that says the line fails every time it runs (a note at the level `error`, with a row in test/error-level.test.ts that runs it in bash), `note()` a plain fact. `fact()` gives the level with the text (`Fact.level`).
+- The message catalog (src/messages.ts): `pitfall()` is a warning, `caveat()` a pitfall at the level `info`, `broken()` a pitfall at the level `error` (it fails every time as written, with a row in test/error-level.test.ts), `failure()` a fact that says the line fails every time it runs (a note at the level `error`, with a row in test/error-level.test.ts that runs it in bash), `note()` a plain fact. `fact()` gives the level with the text (`Fact.level`).
 - The style checks (src/pitfalls.ts): `STYLE_LEVELS`, beside the catalog (src/messages-levels.ts).
 - The dialect issues (src/dialect.ts): `unsupported` is an error, `behaviour` information (`PROBLEM_LEVELS`, src/messages-levels.ts); in `sh`, a construct that is not POSIX but that dash and busybox ash run (`local`, `echo -n`) is `behaviour`, "Portability", `parse` (zsh syntax bash cannot read) a plain fact (`Issue.note`). `crlf` (src/document.ts) is an error where a CR ends the `#!` line, a reserved word of a compound command stands before a CR (`then\r` is no keyword; the `}` of `${HOME}` is a word's, and runs) or a CR starts a command (a blank line, `echo a;\r`: `$'\r': command not found`), a warning otherwise (`bash file`, and a program whose `#!` line ends in LF, run `echo hi\r`).
 - A note with no mark (an idiom, where a line is in a here-document or a statement) is a plain fact (`plainNote`).
@@ -77,11 +77,11 @@ The level's colour is the editor's own: `editorWarning.foreground` and `editorIn
 
 ## The levels, one by one
 
-Every pitfall and failure note of the catalog, every style check and every dialect issue, against the definition above. The pitfalls that fail every time are still warnings here; step 2 of three-levels.md moves them to Error. test/messages.test.ts pins the catalog's levels.
+Every pitfall and failure note of the catalog, every style check and every dialect issue, against the definition above. The style checks that fail every time are still warnings here; step 3 of three-levels.md moves them to Error. test/messages.test.ts pins the catalog's levels.
 
 ### Errors
 
-Since step 1a of [three-levels.md](three-levels.md); each has a row in test/error-level.test.ts that runs it in bash and sees it fail every way it can run.
+Since steps 1a and 2 of [three-levels.md](three-levels.md); each has a row in test/error-level.test.ts that runs it in bash and sees it fail every way it can run.
 
 | Id | Why |
 | --- | --- |
@@ -93,6 +93,26 @@ Since step 1a of [three-levels.md](three-levels.md); each has a row in test/erro
 | `exit-refused` | `exit` with a word that is no number, or with more than one: "numeric argument required" or "too many arguments", every time. |
 | `find-action-refused` | find refuses all its arguments (status 1) and runs nothing. |
 | `bats-tags-invalid` | bats runs none of the file's tests, and fails. |
+| `local-outside-function`, when the file runs as a script (a shebang, a host's step, a `bash -c` string), out of a trap's action | `local` fails every time outside a function. |
+| `posix-special-function-name` | bash stops the script at the definition. |
+| `alias-not-expanded-in-script`, with no code the model does not read on a path before it | The alias is "command not found" in a script. Said where bash surely expands no alias: a shebang, a host's step, a `bash -c` string, or after `shopt -u expand_aliases` (the state's `expand_aliases`, which starts `on` in a README's code blocks and with `bash -i`, and not known in a file with no shebang: src/semantics/state.ts, `StateModel.read`). |
+| `distro-alias-in-script`, when the file runs as a script (a shebang, a host's step, a `bash -c` string) | "command not found" in a script, on every system. |
+| `extglob-in-same-block` when the file runs as a script, `extglob-turned-off`, `extglob-not-in-new-shell` | A syntax error, every time. |
+| `globstar-unsupported` | `**` never reaches into subdirectories in that shell. |
+| `variable-not-in-remote-shell`, `variable-not-passed-by-wrapper`, `variable-not-exported` | The variable is empty where the string runs, every time. (Not for a name sudo keeps, `TERM`, `TZ`: `SlotLink.keeps`. `variable-not-exported` follows `fromEnvironment`: no note for a name the environment almost always has, a caveat for one in capitals, a warning with a clause for one in lower case.) |
+| `function-not-in-container`, `builtin-or-function-as-program`, `function-not-on-remote`, `function-not-in-new-shell-blocked`, `function-not-in-new-shell`, `function-not-imported`, `function-not-in-new-shell-export` | The function or builtin is not there: "command not found", or no effect. |
+| `wrapper-assignment-expanded-first`, `prefix-assignment-expanded-first` | The word never sees the value it was meant to. |
+| `pipeline-subshell-variable`, unless only some paths turn `lastpipe` on (`partial`) | The variable set in the pipeline is gone after it, every time. |
+| `redirect-by-your-shell`, to a path only root writes (`file`) | "Permission denied" every time it runs as meant, not as root (the assumed system of three-levels.md, section 2). |
+| `nounset-unbound`, of a name the environment cannot give (`environment: 'no'`: unset first, or local) | Under `set -u`, the shell stops there every time; or, in a redirection of a program (`cat < "$f"`), the command fails every time. |
+| `shebang-refused` | Run directly, the script never starts. |
+| `shebang-bom` | The first line is no shebang, and runs as a command that is not found, every time. |
+| `bats-test-line-dropped` | The code before the test's name never runs. |
+| `bats-negation-ignored` | The test never fails on that line: the assertion is dead. |
+| `bats-run-in-pipeline-stage`, `bats-run-in-pipeline` | `$status` and `$output` are gone, or the pipe reads nothing, every time. |
+| `bats-setup-suite-in-test-file` | bats never calls it (and warns BW03). |
+| `regex-backslash-dropped` | The regex never means what is written. |
+| `python-string-without-shell` (the host code `pythonNoShell`) | Python runs the whole string as one program name: FileNotFoundError. |
 | Dialect: `unsupported` | The construct fails in the target shell. |
 | Problem: `crlf`, where a CR ends the `#!` line, a keyword stands before a CR, or a CR starts a command | Run as a program, the interpreter's name ends with a CR; `fi\r` is no keyword, however the file runs; a CR on a blank line or after `;`, `&&`, `\|\|`, `\|` or `&` is a command of its own, `$'\r'`, not found. (A warning otherwise: `bash file`, and a program whose `#!` line ends in LF, run `echo hi\r`.) |
 
@@ -101,28 +121,14 @@ Since step 1a of [three-levels.md](three-levels.md); each has a row in test/erro
 | Id | Why |
 | --- | --- |
 | `function-last-test-stops-script` | `set -e` stops the script whenever the test fails, which is what a test is written for. |
-| `local-outside-function`, when the file runs as a script (a shebang, a host's step, a `bash -c` string), out of a trap's action | `local` fails every time outside a function. |
-| `posix-special-function-name` | bash stops the script at the definition. |
-| `alias-not-expanded-in-script`, with no code the model does not read on a path before it | The alias is "command not found" in a script. Said where bash surely expands no alias: a shebang, a host's step, a `bash -c` string, or after `shopt -u expand_aliases` (the state's `expand_aliases`, which starts `on` in a README's code blocks and with `bash -i`, and not known in a file with no shebang: src/semantics/state.ts, `StateModel.read`). |
-| `extglob-in-same-block` when the file runs as a script, `extglob-turned-off`, `extglob-not-in-new-shell` | A syntax error, every time. |
-| `globstar-unsupported` | `**` never reaches into subdirectories in that shell. |
-| `variable-not-in-remote-shell`, `variable-not-passed-by-wrapper`, `variable-not-exported` | The variable is empty where the string runs, every time. (Not for a name sudo keeps, `TERM`, `TZ`: `SlotLink.keeps`. `variable-not-exported` follows `fromEnvironment`: no note for a name the environment almost always has, a caveat for one in capitals, a clause for one in lower case.) |
-| `function-not-in-container`, `builtin-or-function-as-program`, `function-not-on-remote`, `function-not-in-new-shell-blocked`, `function-not-in-new-shell`, `function-not-imported`, `function-not-in-new-shell-export` | The function or builtin is not there: "command not found", or no effect. |
-| `wrapper-assignment-expanded-first`, `prefix-assignment-expanded-first` | The word never sees the value it was meant to. |
-| `pipeline-subshell-variable` | The variable set in the pipeline is gone after it, every time (also when only some paths turn `lastpipe` on: the others lose it). |
-| `redirect-by-your-shell` | The redirection is "Permission denied" unless your shell is root already. |
-| `shebang-refused` | Run directly, the script never starts. |
-| `bats-negation-ignored` | The test never fails on that line: the assertion is dead. |
-| `bats-run-in-pipeline-stage`, `bats-run-in-pipeline` | `$status` and `$output` are gone, or the pipe reads nothing, every time. |
-| `regex-backslash-dropped` | The regex never means what is written. |
 | `unbraced-element` | `$a[1]` of an array never names the element: it is the first element, then the text `[1]` (6.7). |
-| `distro-alias-in-script`, when the file runs as a script (a shebang, a host's step, a `bash -c` string) | "command not found" in a script, on every system. |
-| `python-string-without-shell` | Python runs the whole string as one program name: FileNotFoundError. |
 | `python-shell-injection`, `actions-script-injection` | A value can run any command: damage that cannot be undone. |
 | `unquoted-variable-as-path` given to `rm`, `mv` or `cp` | A split or globbed path deletes or overwrites other files: it cannot be undone. |
-| `postfix-increment-status`, `postfix-decrement-status`, when `set -e` is on there and the statement is not ignored (`statusModel(state).errexit(n).active` is `on`) **(changed: was a caveat)** | `set -e` stops the script (or the subshell) at the first run of a counter that starts at 0: it breaks as written. |
-| `nounset-unbound`, when a shell exits | Under `set -u`, the script (or the subshell) stops there, every time; also when only the command fails and `set -e` then stops the script. |
-| Style: `bracket-no-space`, `assignment-with-spaces`, `brace-no-space`, `brace-close-no-separator`, `redirect-in-bracket`, `bracket-close-in-word`, `and-or-in-bracket` | The line does not do what it says, every time (`[ a > b ]` also writes a file `b`). |
+| `postfix-increment-status`, `postfix-decrement-status`, when `set -e` is on there and the statement is not ignored (`statusModel(state).errexit(n).active` is `on`) **(changed: was a caveat)** | `set -e` stops the script (or the subshell) at the first run of a counter that starts at 0: it breaks as written. (An error where the value is 0 on every path, three-levels.md says, with a param `zero`: not built, since decisions trust no name that arithmetic assigns, step 2.) |
+| `nounset-unbound`, of a name the environment may give (`fromEnvironment`: in capitals, or in lower case with a clause), when a shell exits | Under `set -u`, the script (or the subshell) stops there when the environment lacks the name; also when only the command fails and `set -e` then stops the script. |
+| `variable-not-exported`, of a name in lower case the script set (`fromEnvironment`: `unlikely`) | The variable is empty where the string runs, unless the environment had it, which a name in lower case seldom does (a clause says so). |
+| `posix-function-name`, `posix-special-builtin-error` | In POSIX mode, bash 5.2 stops the script at a function name that is not valid, and bash at an error of a special builtin. Like `unbraced-element`, they have no row in section 3 of three-levels.md, and stay warnings until it sorts them. |
+| Style: `bracket-no-space`, `assignment-with-spaces`, `brace-no-space`, `brace-close-no-separator`, `redirect-in-bracket`, `bracket-close-in-word`, `and-or-in-bracket` | The line does not do what it says, every time (`[ a > b ]` also writes a file `b`). Errors from step 3. |
 | Style: `rm-empty-variable-root` | With an empty variable, `rm -r` deletes from the root. |
 | Style: `download-run-by-shell` | A script nobody read runs, as far as it arrived: damage that cannot be undone (`curl … \| sh`, `sh -c "$(curl …)"`). |
 
@@ -137,9 +143,11 @@ Since step 1a of [three-levels.md](three-levels.md); each has a row in test/erro
 | `local-outside-function`, in a file with no shebang | Fine when a function reads the file with `source`. |
 | `local-outside-function`, in a trap's action (`trap`) | Fine where the trap fires in a function (a `RETURN` trap set in it). |
 | `alias-not-expanded-in-script`, after code the model does not read (`unread`: `source`, `eval "$x"`), or with a function of that name defined on some paths (`fn`) | Fine when that code turns `expand_aliases` on, or where the function is defined. |
-| `variable-not-exported`, `variable-not-passed-by-wrapper`, `variable-not-in-remote-shell`, `function-not-in-new-shell-export`, after code the model does not read (`unread`), in this shell or in the string | Fine when that code exports or sets it (not an array, which is never exported: a warning). |
+| `variable-not-exported`, `variable-not-passed-by-wrapper`, `variable-not-in-remote-shell`, `function-not-in-new-shell-export`, after code the model does not read (`unread`), in this shell or in the string | Fine when that code exports or sets it (not an array, which is never exported: an error). |
 | `variable-not-exported`, of a name in capitals the script set with no `unset` or `export -n` first (`fromEnvironment`: `maybe`) | Fine when the variable came from the environment, which exports it. |
-| `nounset-unbound`, of a name in capitals (`fromEnvironment`: `maybe`) | Fine when the environment has it. |
+| `nounset-unbound`, of a name the environment may give, when only the command fails | Fine when the environment has it; otherwise that command fails, and the script goes on. |
+| `pipeline-subshell-variable`, when only some paths before it turn `lastpipe` on (`partial`) | The other paths keep the variable. |
+| `redirect-by-your-shell`, to a file not known to be root's (no `file`: not static, or read) | Only when the file is root's; nothing is damaged. |
 | `alias-maybe-not-expanded` | A file with no shebang: fine when an interactive shell reads it (`.bashrc`); "command not found" when it runs as a script. |
 | `distro-alias-in-script`, in a file with no shebang or in `bash -i -c` (`reader`) | Fine when an interactive shell reads it (`.bashrc`), where the distribution defines the alias; "command not found" when it runs as a script. |
 | `extglob-in-same-block`, in a file with no shebang or in `bash -i -c`, and `extglob-not-in-new-shell` in `bash -i -c` (`reader`) | Fine when an interactive shell reads it with `extglob` on already (bash-completion turns it on); a syntax error when it runs as a script. |
@@ -154,7 +162,6 @@ Since step 1a of [three-levels.md](three-levels.md); each has a row in test/erro
 | `array-joined-in-assignment` | Only arguments or elements with spaces cannot be told apart again (`a=$@`). |
 | `unquoted-variable-as-path` given to another command (`cat`, `cd`, `chmod`…) | Only values with spaces or glob characters; the command fails or acts on another file, which can be undone. |
 | `unquoted-variable-in-test` | Only an empty value or one with spaces breaks the test. |
-| `nounset-unbound`, when only the command fails | A redirection of a program (`cat < "$f"`): that command fails with status 1, and the script goes on. |
 | Style: `read-without-r` | Only input with a backslash. |
 | Style: `trap-goes-on` | Only when the signal comes, and often meant: the script goes on after the action (`trap 'echo bye' INT`). |
 | Style: `source-searches-path` | Only when `$PATH` has a file of the name, or the script is started from another directory. |

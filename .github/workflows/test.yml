@@ -430,10 +430,11 @@ jobs:
           OUTCOME: ${{ steps.older-strict.outcome }}
         run: test "$OUTCOME" = failure
 
-      - name: Scripts without problems pass
+      # (test/fixtures/sample.sh and images/readme/hints.sh show errors on purpose: `sudo echo … > /etc/resolv.conf`, `sudo cd`.)
+      - name: Scripts without errors pass
         uses: ./
         with:
-          files: test/fixtures/sample.sh images/readme/*.sh
+          files: test/fixtures/renderings.sh images/readme/demo.sh
           package: ${{ steps.pack.outputs.tgz }}
 
   bash-ast:
