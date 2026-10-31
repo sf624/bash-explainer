@@ -13,7 +13,7 @@ The problems with quick fixes: `failure-reported-as-success` (`cp a b || echo fa
 Two notes carry their code as data for the first time:
 
 - `source lib.sh` (and `. lib.sh`): first a path from the script's directory, `source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh`, which bash sets to the file being read, also when it is sourced or in a function; then `source ./lib.sh`, which reads the file of the current directory, as the search would after `$PATH`. In a `#!/bin/sh` script, `$0` names the script's directory (`. "$(dirname "$0")"/lib.sh`); in an sh file with no shebang, which may be sourced, and in a code block typed into a terminal, only `./lib.sh`. Run in bash with a file of the name in `$PATH`, one in the current directory and one beside the script (in a directory whose name has a space), the script run, run by its path, sourced, and sourced in a function; and in dash.
-- `grep "$x" f`: `grep -F "$x" f`. `-F` takes the place of an option that selects another mode, which it would conflict with (`grep -iE "$x"` → `grep -iF "$x"`, `--extended-regexp` → `-F`; `egrep` → `grep -F`). None where a word before the pattern may be an option (`grep $opts "$x"`): the note then says what to do, as before. Run in bash with GNU grep: the rewrite matches a value with `.` or `*` as the original matches it escaped.
+- `grep "$x" f`: `grep -F "$x" f`. `-F` takes the place of an option that selects another mode, which it would conflict with (`grep -iE "$x"` → `grep -iF "$x"`, `--extended-regexp` → `-F`; `egrep` → `grep -F`). None where a word before the pattern may be an option (`grep $opts "$x"`): the note then says what to do, as before. None where grep has other patterns (`grep -e 'a.b' -e "$x"`, `-f pats`), which `-F` would read as fixed strings too: the note says so, (see Fixed). Run in bash with GNU grep: the rewrite matches a value with `.` or `*` as the original matches it escaped.
 
 ## Changed
 
@@ -130,6 +130,10 @@ The list is open on a first visit (folded on a phone, as before), and stays as y
 The screen reader's summary of a line now counts its caveats too ("Line 3: …; 1 warning, 1 caveat"), from the same table as the strip. Before, it counted errors and warnings only.
 
 ## Fixed
+
+### `-F` and the other patterns of grep
+
+The note on a grep pattern that is only a variable said to add `-F` also where grep had other patterns, which `-F` reads as fixed strings too: `grep -E -e "$x" -e 'foo|bar' f` with `-F` no longer matches `foo` lines, and `grep -f pats -e "$x"` reads the lines of `pats` as text. It now says that `-F` applies to every pattern, and offers no quick fix. It spoke of the variable only when it was the first pattern (`grep -e "$x" -e 'a.b'`, not `grep -e 'a.b' -e "$x"`); it does in either order now. Checked with GNU grep (test/rewrites-advice.test.ts).
 
 ### Hover cards on the web page stay off the line
 

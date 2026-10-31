@@ -156,6 +156,20 @@ describe('the rewrite of `pattern-from-variable`', () => {
     assert.deepStrictEqual(srcs.map((src) => /To look for the value as it is, (.*), with/.exec(findings(src, ID)[0].text)![1]),
       ['add `-F`', 'write `-F` in place of `-E`', 'use `grep -F` in place of `egrep`']);
   });
+  // (Patterns besides the variable, which `-F` would read as fixed strings too: another `-e` before or after it, a file
+  // of patterns, an attached value.)
+  const MANY = ['grep -E -e "$x" -e \'foo|bar\' f', 'grep -e \'a.b\' -e "$x" f', 'grep -e "$x" -e \'a.b\' f', 'grep -f pats -e "$x" f',
+    'grep -e "$x" --file=pats f', 'grep -ie "$x" -e y f', 'grep -e\'a.b\' -e "$x" f', 'grep -e "$x" -e "$y" f'];
+  it('is none where grep has other patterns, and the note then says that `-F` would apply to them too', () => {
+    for (const src of MANY) {
+      assert.deepStrictEqual(rewrites(src, ID), [], src);
+      assert.match(findings(src, ID)[0].text, /special meaning\. `-F`, which would look for the value as it is, applies to every pattern: the others would be read as plain text too$/, src);
+    }
+    const tree = parser.parse(MANY[1]);
+    assert.match(pitfallFindings(tree.root, 'ja', 0, 0, shellState(tree, 'bash'), 'bash')[0].text, /特別な意味を持ちます。値をそのまま探す `-F` はすべてのパターンに効き、ほかのパターンも固定文字列として読まれます$/);
+    // (One pattern: after `-e`, the operands are files.)
+    assert.deepStrictEqual(rewrites('grep -e "$x" a.b f', ID).map(([, s]) => s), ['grep -F -e "$x" a.b f']);
+  });
   it('is what the note says', () => {
     assert.match(findings('grep -iE "$x" f', ID)[0].text, /To look for the value as it is, write `grep -iF "\$x"`, with `-w` \(whole words\) or `-x` \(whole lines\) as meant$/);
     const tree = parser.parse('grep "$x" f');
@@ -173,6 +187,18 @@ describe('the rewrite of `pattern-from-variable`', () => {
       const run = (text: string, value: string) => inBox(program, { ...files, 'cwd/f.sh': text }, '"$BASH_BIN" f.sh 2>/dev/null', { x: value });
       // (The meaning: what egrep gives with the value escaped; the hazard: egrep matches `axb` too.)
       assert.deepStrictEqual(await Promise.all([run('egrep -i "$x" f\n', 'a\\.b'), run(script, 'a.b'), run('egrep -i "$x" f\n', 'a.b')]), ['A.B\n', 'A.B\n', 'A.B\naxb\n']);
+    });
+    it(`would read the other patterns as fixed strings too with \`-F\`, where it gives none, in ${name}`, async () => {
+      // (`-F` added, or in place of `-E`: the other patterns stop matching what they matched, or match their text.)
+      const files = { 'cwd/f': 'a.b\naxb\nfoo\nbar\nfoo|bar\n', 'cwd/pats': 'a.b\n' };
+      const run = (text: string) => inBox(program, { ...files, 'cwd/f.sh': text }, '"$BASH_BIN" f.sh 2>&1', { x: 'zzz' });
+      const dot: [string, string] = ['a.b\naxb\n', 'a.b\n'];
+      const cases: [string, string, string][] = [[MANY[0], 'foo\nbar\nfoo|bar\n', 'foo|bar\n'], ...[1, 2, 3, 4].map((i): [string, string, string] => [MANY[i], ...dot])];
+      for (const [src, before, after] of cases) {
+        assert.strictEqual(findings(src, ID).length, 1, src);
+        const withF = src.replace(/^grep (-E )?/, 'grep -F ');
+        assert.deepStrictEqual([await run(`${src}\n`), await run(`${withF}\n`)], [before, after], src);
+      }
     });
   }
 });
