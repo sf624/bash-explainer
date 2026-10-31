@@ -42,7 +42,7 @@ From the maintainer, 2026-10-27:
 The answers to the plan's questions, from the maintainer, 2026-10-27:
 
 4. **Note levels.** Three levels will come, in a plan of their own (a revision of docs/design/note-levels.md): Error (red, "fails every time as written"), Warning (yellow: damage that cannot be undone, or the script's own exit status turned into success) and Info (blue). `failure-reported-as-success` and `source-searches-path` become Warning there. This plan depends on none of it: the panel reads each problem's level, mark and word from the catalog.
-5. **Order.** P1 to P10 start after the roadmap's three note levels are done (changed 2026-10-31, from "items 1 to 7"). Studies that can run in parallel may (a measure, a sketch, a prototype that lands nothing).
+5. **Order.** P1 to P10 start after the roadmap's three note levels are done (changed 2026-10-31, from "items 1 to 7"). Changed again 2026-10-31: P1 and P2 start early, beside the three note levels; P3 onwards waits for them. Studies that can run in parallel may (a measure, a sketch, a prototype that lands nothing).
 6. **Short names in the view slot.** "1 Does" / "2 Reads" (「1 何をする」/「2 読まれ方」). The full names ("What it does", "How bash reads it") are the tooltip and the accessible name.
 7. **Copy as Markdown and the hover** stay as today's list of parts. No step changes them.
 8. **The no-shebang case** of `failure-reported-as-success` stays: the note keeps that case. A user who does not want it changes the script (a shebang, or a fix). Its fix must not end the caller's shell when the file is sourced (P3).
