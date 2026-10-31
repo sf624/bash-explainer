@@ -1,5 +1,5 @@
 {
-  "//": "Files in src/ over 1,000 lines, each with a ceiling at its current length. A ceiling may only go down (docs/design/analyzer.md, 3.1); when a file fits under 1,000 lines, remove its entry.",
+  "//": "Files in src/ and web/ over 1,000 lines, each with a ceiling at its current length. A ceiling may only go down (docs/design/analyzer.md, 3.1); when a file fits under 1,000 lines, remove its entry.",
   "src/dict/commands.ts": 2011,
   "src/examples/jq.ts": 1847,
   "src/semantics/walk/walker.ts": 1283,

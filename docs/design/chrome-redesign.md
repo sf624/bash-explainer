@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 to C6 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
+Status: C0 is done (#531). C1a to C6 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -90,11 +90,11 @@ The prototype was built fast, in eight rounds of overrides. It has hacks and loo
 | Toasts: three placements and two looks; `splitToast` cutting texts | Rewrite | One placement, one look (decision 8). Copy a link confirms in its own button (C3, C4). |
 | "Load the sample" over the user's script: an Undo toast instead of `confirm()` | Keep | C3. |
 | App bar, editor header, file name model (muted, ●, rename in place), ⋯ | Keep | The file name's state is a pure function in src/ui (C4). |
-| web/main.ts (2,261 lines; 935 on main) | Rewrite | Split by part (file identity, toasts, sheet, keyboard), each module under 1,000 lines (C0 extends test/file-length.test.ts to web/). |
+| web/main.ts (935 lines on main; 2,261 in the prototype) | Rewrite | Split by part (file identity, toasts, sheet, keyboard), each module under 1,000 lines (C0 extends test/file-length.test.ts to web/). |
 | web/chrome.ts: `popover` (menus and small dialogs, arrows, Escape, focus) | Keep, test | One helper for every popover. A11y web tests (roles, focus return) (C4). |
 | web/chrome.ts: the tooltip | Keep, fix | It reads the shortcut from `aria-keyshortcuts`, not from `data-key` (decision 6; C2). |
 | `.no-ring`: no focus ring after a pointer close, kept after a key | Keep | C4. |
-| web/chrome-text.ts (351 lines of page texts) | Move | Into web/text.ts, the page's one table of texts. Japanese checked by test/ja-style.test.ts, extended to web/ (C0). |
+| web/chrome-text.ts (the prototype's 351 lines of page texts; main has none, its texts are in web/text.ts, 168 lines) | Move | Into web/text.ts, the page's one table of texts. Japanese checked by test/ja-style.test.ts, extended to web/ (C0). |
 | The chip and its popover; the hidden selects kept for the panel bridge | Keep the control, rewrite the plumbing | The bridge reads the scope from the page's state, not from hidden `<select>`s (C5). |
 | The chip's shortening steps (`fitScope`: drop "(auto)", "Script · bash", icons, "bash", the name to the menu) | Rewrite | One fit rule in src/ui gives the candidate forms in order, widest first; the page takes the first that fits. Unit tests of the list; one web test per step (C5). |
 | web/settings-dialog.ts: sections, search, Jump to links, "More" inline, 44 px rows on touch | Keep, test | C6. |
@@ -106,7 +106,7 @@ The prototype was built fast, in eight rounds of overrides. It has hacks and loo
 | The phone tabs' fit steps (`snug`, `noline`, `icons`, `compact`), measured once per language and text size | Rewrite | One fit rule in src/ui gives the candidate forms in order, as for the chip; decision 9's words (C8a). |
 | The keyboard (`setUpKeyboard`, the visual viewport, `kb-open`) and the summary row | Keep, test | Whether the keyboard is open, from the visual viewport's numbers, is a pure function in src/ui. Both emulations of the kit become web tests (C8b). |
 | The summary row's text (the line's first problem, else the first part) | Rewrite | A pure function in src/ui, which P5 and P7b improve (section 7) (C8b). |
-| web/page.css (+5,272 lines, to 7,349) | Rewrite | Eight rounds of overrides. Keep the final look; write each rule once, in the step that needs it (checked by stylelint from C0); colours as roles of web/theme.css. |
+| web/page.css (2,083 lines on main; 7,349 in the prototype, +5,272) | Rewrite | Eight rounds of overrides. Keep the final look; write each rule once, in the step that needs it (checked by stylelint from C0); colours as roles of web/theme.css. |
 | Changed tests: test/web-settings.test.ts, web-phone, web-resize, document-setup | Review each | A changed expectation stays only as a wanted change of that step. Round 8 loosened at least one: `if (await yes.count()) await yes.click();` in web-settings. |
 | The kit's scripts (`shots.mjs`, `probe.mjs` with the hit areas) | Keep, as tools | The capture script in scripts/, the hit-area check in test/support (C0). |
 
@@ -163,14 +163,20 @@ Each step is a PR from the latest main, useful on its own. A step with letters i
 
 ### C0. Groundwork for the page's tests
 
-What:
+Done in #531 (2026-10-31). What it did, and what the design did not say:
 
 - test/ja-style.test.ts reads web/ too: single-quoted and backquoted strings in web/*.ts, and the text of web/index.html. It fixes what it finds.
 - test/file-length.test.ts covers web/*.ts. Every web/*.ts file is under 1,000 lines today, so none is listed.
-- A hit-area check in test/support: each visible control, `elementFromPoint` from its centre, as the kit's inventory measured. It gates from C0 on, with today's smaller controls in an allow-list that may only shrink (section 5).
+- A hit-area check in test/support: each visible control, `elementFromPoint` from its centre, as the kit's inventory measured. It gates from C0 on, with today's smaller controls in an allow-list that may only shrink (section 5). What the check does, as built (test/support/hit-areas.ts):
+  - It measures where a pointer finds the control, probing outwards from the centre of the control's first box (a link that wraps over lines has several; the centre of the bounding box may lie between them), up to 60 px each way. A size of 121 therefore means "at least". A control covered by another measures as what is left of it, down to 0x0.
+  - What is inside a closed `<details>`, but its summary, is not on the page (it measured 0x0). Controls inside the editor are not measured: the editor is one control. The file kind's picker is hidden on a narrow page (the menu has the kind there), so the kind list is measured only where the picker shows.
+  - It measures the page, the panel's frame, the menu, the settings dialog and the file kinds' list, at 390 px (44x44 bar, a phone with touch) and at 640 and 1280 px (24x24), in both languages. The list has one entry set per width and language.
+  - Only a dimension under the bar is gated: a size on the list is written as at most the bar, so a wide control that gets narrower and stays above the bar is no step back, and the list does not depend on the fonts of the machine. A dimension under the bar may differ by 3 px from the list (fonts, rounding).
+  - A key is the control's id (a family such as `setting-examples-disabled-*` is one key); a control with no id is keyed by its tag, role and first two classes, and the controls of one such key are one entry, the smallest. A new control without an id is caught only if it is smaller than its group's smallest: give a new control an id.
+  - The test cannot stop a hand edit that adds an entry for a new control or lowers a listed size. The reviewer holds that: `UPDATE_HIT_AREAS=1` writes the file from the page (with CI's CJK fonts through `FONTCONFIG_FILE`), and its diff is read.
 - stylelint (MIT, a devDependency) on web/*.css, with `no-duplicate-selectors` and `declaration-block-no-duplicate-properties`. It enforces "each rule once" (section 4, web/page.css). Today's duplicates are fixed here.
 - test/support/site.ts gets the helpers of section 5's table, and the tests use them.
-- A capture script in scripts/ that builds the page and takes the screenshots of a step at the three widths, in both languages. It hard-codes no path of this machine. The CJK fonts come from `FONTCONFIG_FILE`, the browser from Playwright's own variables. A memory cap and a limit on parallel heavy runs are the caller's wrapper; README "Contributing" says how to run it.
+- A capture script in scripts/ that builds the page and takes the screenshots of a step at the three widths, in both languages. It hard-codes no path of this machine. The CJK fonts come from `FONTCONFIG_FILE`, the browser from Playwright's own variables. It also takes `--themes light,dark`, closes the phone's first-run tip of the read-mode switch before the shots (the tip is a state of its own, `tip`), and names the files `NAME-WIDTH-LANG-THEME-STATE.png`. A memory cap and a limit on parallel heavy runs are the caller's wrapper; README "Contributing" says how to run it.
 
 Users: Japanese wording fixes on the page, if the check finds any. CHANGELOG (Fixed), only then: "Japanese wording on the web page follows the project's style."
 

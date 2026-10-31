@@ -16,15 +16,44 @@ function* sources(dir: string): Generator<string> {
   }
 }
 
-/** The single-quoted strings with Japanese in them, with where they are. */
+const kana = /[぀-ヿ一-鿿]/;
+
+/** The single-quoted strings of src/ and cli/ with Japanese in them, and those of web/ (single-quoted and backquoted), with where they are. */
 function japanese(): { where: string; text: string }[] {
   const out: { where: string; text: string }[] = [];
   for (const file of [...sources('src'), ...sources('cli')]) {
     fs.readFileSync(path.join(root, file), 'utf8').split('\n').forEach((line, i) => {
       for (const m of line.matchAll(/'((?:[^'\\]|\\.)*)'/g)) {
-        if (/[぀-ヿ一-鿿]/.test(m[1])) out.push({ where: `${file}:${i + 1}`, text: m[1] });
+        if (kana.test(m[1])) out.push({ where: `${file}:${i + 1}`, text: m[1] });
       }
     });
+  }
+  return [...out, ...webJapanese()];
+}
+
+/**
+ * The page's Japanese (C0 of docs/design/chrome-redesign.md): the single-quoted and backquoted strings of web/*.ts
+ * (a backquoted one may span lines; its `${…}` parts stay as written), and the text and the attribute values of
+ * web/index.html. An escaped backtick (a code span) is a backtick in the text.
+ */
+function webJapanese(): { where: string; text: string }[] {
+  const out: { where: string; text: string }[] = [];
+  const at = (text: string, index: number) => text.slice(0, index).split('\n').length;
+  for (const file of fs.readdirSync(path.join(root, 'web')).filter((f) => /\.ts$/.test(f)).map((f) => `web/${f}`)) {
+    const source = fs.readFileSync(path.join(root, file), 'utf8');
+    source.split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(/'((?:[^'\\]|\\.)*)'/g)) {
+        if (kana.test(m[1])) out.push({ where: `${file}:${i + 1}`, text: m[1] });
+      }
+    });
+    for (const m of source.matchAll(/`((?:[^`\\]|\\.)*)`/g)) {
+      if (kana.test(m[1])) out.push({ where: `${file}:${at(source, m.index!)}`, text: m[1] });
+    }
+  }
+  const html = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8');
+  for (const m of html.matchAll(/>([^<>]+)<|"([^"<>]*)"/g)) {
+    const text = (m[1] ?? m[2]).trim();
+    if (kana.test(text)) out.push({ where: `web/index.html:${at(html, m.index!)}`, text });
   }
   return out;
 }
@@ -33,6 +62,13 @@ describe('Japanese wording', () => {
   const texts = japanese();
 
   it('finds the Japanese strings', () => assert.ok(texts.length > 1000, String(texts.length)));
+
+  it('finds the Japanese of the web page (web/*.ts and web/index.html)', () => {
+    const web = webJapanese();
+    assert.ok(web.length > 100, String(web.length));
+    assert.ok(web.some((t) => t.where.startsWith('web/text.ts')));
+    assert.ok(web.some((t) => t.where.startsWith('web/index.html') && t.text === '日本語'));
+  });
 
   const rules: [RegExp, string][] = [
     [/作成(する|し[、てた])/, '「作る」を使う'],
@@ -55,7 +91,7 @@ describe('Japanese wording', () => {
 
   it('puts a space between code and Japanese around a part of a template that may be empty (`\\`x\\`${a ? \'…\' : \'\'}は`)', () => {
     // (One branch of the part gives the text, the other nothing: with nothing, the code span touches the Japanese.)
-    const hits = [...sources('src'), ...sources('cli')].flatMap((file) => fs.readFileSync(path.join(root, file), 'utf8').split('\n')
+    const hits = [...sources('src'), ...sources('cli'), ...sources('web')].flatMap((file) => fs.readFileSync(path.join(root, file), 'utf8').split('\n')
       .flatMap((line, i) => emptyPartGlued(line).map((m) => `${file}:${i + 1}: ${m}`)));
     assert.deepStrictEqual(hits, []);
     // (It finds the text that had it: `-ok` "`\;`がない".)

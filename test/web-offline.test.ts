@@ -5,7 +5,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Browser, Frame, Page } from 'playwright-core';
-import { openSite, choose, FILES, MARKER, root, until } from './support/site';
+import { openSite, choose, problemList, setShell, FILES, MARKER, root, until } from './support/site';
 
 describe('the web page: no request to another site, and offline', function () {
   this.timeout(120000);
@@ -84,8 +84,8 @@ describe('the web page: no request to another site, and offline', function () {
     assert.notStrictEqual(ph.color, parent.color);
 
     // Another shell: the problems and their quick fixes.
-    await choose(page, '#shell', 'dash');
-    await until('the problems for dash', () => page.locator('#problem-list').innerText(), (t) => t.includes('dbracket'));
+    await setShell(page, 'dash');
+    await until('the problems for dash', () => problemList(page), (t) => t.includes('dbracket'));
 
     // A link to the script, opened online in a new page: the script travels after '#' only.
     // The clipboard is shared by the browser's contexts: empty it, so that the wait below sees this

@@ -5,7 +5,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
-import { menuItem, openSite, choose, pickKind, until } from './support/site';
+import { menuItem, openSite, choose, pickKind, problemList, until } from './support/site';
 
 const DOCKERFILE = 'FROM alpine:3.20\nRUN apk add --no-cache curl\nCMD ["sh"]\n';
 
@@ -372,7 +372,7 @@ describe('the web page: opening a file and saving the script', function () {
     assert.strictEqual(await drop(page, 'win.sh', bytesOf(crlf)), true);
     await until('opened', () => toast(page), (t) => t === 'Opened win.sh.');
     // bash would read the CRs: the page says so, as for the file on disk.
-    await until('the CRLF warning', () => page.locator('#problem-list').innerText(), (t) => /crlf/.test(t));
+    await until('the CRLF warning', () => problemList(page), (t) => /crlf/.test(t));
     // The BOM is not part of the script (nor of the text in the editor): the first line is a shebang.
     assert.ok((await text(page)).startsWith('#!/bin/bash'));
     const same = await download(page);

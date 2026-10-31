@@ -43,6 +43,23 @@
   --page-background: #f8f8f8;
   --page-accent: #005fb8;
   --page-accent-foreground: #ffffff;
+
+  /* The page's own tokens: sizes, shadows, and the arrow of a select (the panel's too). */
+  --radius: 8px;
+  --radius-sm: 6px;
+  --bar-h: 48px;
+  --control-h: 32px;
+  --gutter: 7px;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --hover-border: #a8a8a8;
+  /* GitHub's mark is black on a light page and white on a dark one, never another colour. */
+  --github-mark: #000;
+  /* The logo: its brackets and tail, and its prompt (images/logo/mark-light.svg, mark-dark.svg). */
+  --logo-accent: #005fb8;
+  --logo-ink: #1f2328;
+  --accent-soft: rgba(0, 95, 184, 0.12);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 12px 32px rgba(0, 0, 0, 0.16);
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%23616161' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 /* Dark: the system's choice unless Light is chosen, or Dark itself (data-theme, set by theme-init.js). */
@@ -79,6 +96,14 @@
     --page-background: #181818;
     --page-accent: #0078d4;
     --page-accent-foreground: #ffffff;
+
+    --hover-border: #5a5a5a;
+    --github-mark: #fff;
+    --logo-accent: #4daafc;
+    --logo-ink: #e6e6e6;
+    --accent-soft: rgba(0, 120, 212, 0.25);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.5);
+    --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%239d9d9d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   }
 }
 
@@ -119,47 +144,7 @@
   --page-background: #181818;
   --page-accent: #0078d4;
   --page-accent-foreground: #ffffff;
-}
 
-body {
-  background: var(--vscode-editor-background);
-  color: var(--vscode-foreground);
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
-}
-
-/* The page's own tokens: sizes, shadows, and the arrow of a select (the panel's too). */
-:root {
-  --radius: 8px;
-  --radius-sm: 6px;
-  --bar-h: 48px;
-  --control-h: 32px;
-  --gutter: 7px;
-  --ease: cubic-bezier(0.2, 0, 0, 1);
-  --hover-border: #a8a8a8;
-  /* GitHub's mark is black on a light page and white on a dark one, never another colour. */
-  --github-mark: #000;
-  /* The logo: its brackets and tail, and its prompt (images/logo/mark-light.svg, mark-dark.svg). */
-  --logo-accent: #005fb8;
-  --logo-ink: #1f2328;
-  --accent-soft: rgba(0, 95, 184, 0.12);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 12px 32px rgba(0, 0, 0, 0.16);
-  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%23616161' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --hover-border: #5a5a5a;
-    --github-mark: #fff;
-    --logo-accent: #4daafc;
-    --logo-ink: #e6e6e6;
-    --accent-soft: rgba(0, 120, 212, 0.25);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.5);
-    --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%239d9d9d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  }
-}
-
-:root[data-theme="dark"] {
   --hover-border: #5a5a5a;
   --github-mark: #fff;
   --logo-accent: #4daafc;
@@ -167,4 +152,11 @@ body {
   --accent-soft: rgba(0, 120, 212, 0.25);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.5);
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%239d9d9d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+body {
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
 }

@@ -4,7 +4,7 @@
 // the problems in its copy of the line; the Problems list marks each problem with ⚠ or ⓘ in the same colours.
 import * as assert from 'assert';
 import type { Browser } from 'playwright-core';
-import { openSite, until } from './support/site';
+import { openSite, openProblems, problemRows, until } from './support/site';
 
 const rgb = (hex: string) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
 
@@ -38,6 +38,7 @@ describe('the web page: the levels of the notes', function () {
       const marked = await until('the squiggles', () => panel().locator('#line .squiggle').allTextContents(), (t) => t.length > 0);
       assert.strictEqual(marked.join('').replace(/\s/g, ''), 'readlinex=1');
       // The Problems list: ⚠ and ⓘ, in the levels' colours.
+      await openProblems(page);
       const rows = await until('the problems', () => page.locator('#problem-list .icon').evaluateAll((els) => els.map((e) => [e.textContent, e.ownerDocument.defaultView!.getComputedStyle(e).color])), (r) => r.length === 2);
       assert.deepStrictEqual(rows, [['ⓘ', rgb(info)], ['⚠', rgb(warning)]]);
       // The editor: a wavy squiggle in the level's colour, and in the gutter the panel's icon (the Codicon of
@@ -73,7 +74,8 @@ describe('the web page: the levels of the notes', function () {
     await page.keyboard.press('Control+A');
     // A caveat of the catalog, a failure, and a plain fact (`exit 300`), none of them a problem before.
     await page.keyboard.insertText('#!/bin/bash\nf() {\n  local x=$(false)\n}\n[ -f a\nexit 300');
-    const rows = await until('the problems', () => page.locator('#problem-list li').evaluateAll((els) => els.map((e) => [...e.querySelectorAll('.icon, .where, .code')].map((x) => x.textContent))), (r) => r.length === 2);
+    await openProblems(page);
+    const rows = await until('the problems', () => problemRows(page).evaluateAll((els) => els.map((e) => [...e.querySelectorAll('.icon, .where, .code')].map((x) => x.textContent))), (r) => r.length === 2);
     assert.deepStrictEqual(rows, [['ⓘ', 'Ln 3', 'declaration-masks-status'], ['⚠', 'Ln 5', 'bracket-missing-close']]);
     // The squiggles cover the parts the notes are about.
     const ranges = await page.evaluate(`(['info', 'warning']).map((level) => [...document.querySelectorAll('.cm-lintRange-' + level)].map((e) => e.textContent).join(''))`);

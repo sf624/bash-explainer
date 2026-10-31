@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { isDeepStrictEqual } from 'util';
 import type { Browser } from 'playwright-core';
-import { openSite, choose, root, stable, until } from './support/site';
+import { openSite, choose, currentShell, problemsShown, setShell, root, stable, until } from './support/site';
 
 describe('the web page: touch screens, stored data and the window', function () {
   this.timeout(120000);
@@ -56,7 +56,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     await page.locator('#readtip-close').tap();
     await page.locator('#readmode').tap();
     await choose(page, '#theme', 'dark');
-    await choose(page, '#shell', 'dash');
+    await setShell(page, 'dash');
     await until('the keys', stored, (k) => k.includes('bash-explainer-settings') && k.includes('bash-explainer-theme') && k.includes('bash-explainer-read-mode') && k.includes('bash-explainer-read-tip-seen'));
     assert.strictEqual(await page.locator('#readtip').isVisible(), false);
 
@@ -73,7 +73,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     // No reload: the dialog, the page and the storage are back to the defaults.
     assert.deepStrictEqual(await stored(), []);
     assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'auto');
-    assert.strictEqual(await page.locator('#shell').inputValue(), 'auto');
+    assert.strictEqual(await currentShell(page), 'auto');
     assert.strictEqual(await page.locator('#theme').inputValue(), 'auto');
     assert.strictEqual(await page.evaluate('document.documentElement.getAttribute("data-theme")'), null);
     assert.strictEqual(await page.locator('#readmode').getAttribute('aria-pressed'), 'false');
@@ -287,7 +287,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     /** What tells the phone layout: the bar's file kind hidden, the panes one above the other, and the Problems list folded. */
     const layout = async (page: import('playwright-core').Page) => {
       await page.locator('.cm-line').first().waitFor();
-      await until('the sample\'s problems', () => page.locator('#problems').isVisible(), (v) => v);
+      await until('the sample\'s problems', () => problemsShown(page), (v) => v);
       return async () => {
         const ed = (await page.locator('#editor').boundingBox())!;
         const box = (await page.locator('#panel').boundingBox())!;
@@ -357,7 +357,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     const wideLayout = { kind: true, stacked: false, splitter: 'vertical', problems: 'true' };
     const read = async (page: import('playwright-core').Page) => {
       await page.locator('.cm-line').first().waitFor();
-      await until('the sample\'s problems', () => page.locator('#problems').isVisible(), (v) => v);
+      await until('the sample\'s problems', () => problemsShown(page), (v) => v);
       return async () => {
         const ed = (await page.locator('#editor').boundingBox())!;
         const box = (await page.locator('#panel').boundingBox())!;

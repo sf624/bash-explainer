@@ -4,7 +4,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import type { Browser, Frame, Page } from 'playwright-core';
-import { openSite, choose, until } from './support/site';
+import { openSite, choose, currentShell, problemList, problemsShown, until } from './support/site';
 
 describe('the web page: theme and settings', function () {
   this.timeout(120000);
@@ -183,7 +183,7 @@ describe('the web page: theme and settings', function () {
     const panelText = () => panel().locator('#main').innerText();
     await until('the pitfall', panelText, (t) => /Caveat: the output of/.test(t));
     // The pitfall is also a problem.
-    await until('the pitfall as a problem', () => page.locator('#problem-list').innerText(), (t) => /for-over-ls-output/.test(t));
+    await until('the pitfall as a problem', () => problemList(page), (t) => /for-over-ls-output/.test(t));
 
     // The dialog lists the settings that apply here, and none that do not.
     await page.locator('#settings-open').click();
@@ -200,15 +200,15 @@ describe('the web page: theme and settings', function () {
     // A note turned off goes from the explanation and from the problems at once.
     await page.locator('#setting-notes-pitfalls').uncheck();
     await until('no pitfall', panelText, (t) => !/Caveat/.test(t));
-    await until('no pitfall problem', () => page.locator('#problems').isHidden(), (h) => h);
+    await until('no pitfall problem', () => problemsShown(page), (shown) => !shown);
     // The shell: the script is checked for sh, and the panel's own menu says so.
     await page.locator('#setting-shell').selectOption('sh');
-    await until('the problem', () => page.locator('#problem-list').innerText(), (t) => /dbracket/.test(t));
-    await until('the panel\'s shell', () => page.locator('#shell').inputValue(), (v) => v === 'sh');
+    await until('the problem', () => problemList(page), (t) => /dbracket/.test(t));
+    await until('the panel\'s shell', () => currentShell(page), (v) => v === 'sh');
     // A warning code left out.
     await page.locator('#setting-diagnostics-ignore').fill('dbracket');
     await page.locator('#setting-diagnostics-ignore-add').click();
-    await until('no problem', () => page.locator('#problems').isHidden(), (h) => h);
+    await until('no problem', () => problemsShown(page), (shown) => !shown);
     assert.match(await page.locator('[data-key="diagnostics.ignore"] .setting-list').innerText(), /dbracket/);
     // Examples off by kind.
     await page.locator('#setting-examples-disabled-regex').check();
@@ -219,7 +219,8 @@ describe('the web page: theme and settings', function () {
     await page.locator('#settings-done').click();
     await until('the dialog closed', () => page.locator('#settings-dialog').isVisible(), (v) => !v);
     await choose(page, '#lang', 'en');
-    // The panel's header is not shown on the page; a shell chosen in the menu is the setting.
+    // The panel's header is not shown on the page; the shell is a setting. This one is chosen in the menu's select on
+    // purpose (`setShell` takes the top bar's at this width, which test/web-topbar.test.ts covers): both are the setting.
     await until('the header hidden', () => panel().locator('header').isHidden(), (h) => h);
     await choose(page, '#shell', 'dash');
     await page.locator('#settings-open').click();
@@ -236,7 +237,7 @@ describe('the web page: theme and settings', function () {
     });
     await page.reload();
     await until('the panel after the reload', () => Promise.resolve(panel()), (f) => !!f);
-    await until('the shell after the reload', () => page.locator('#shell').inputValue(), (v) => v === 'dash');
+    await until('the shell after the reload', () => currentShell(page), (v) => v === 'dash');
     await page.locator('#settings-open').click();
     assert.strictEqual(await page.locator('#setting-notes-pitfalls').isChecked(), false);
     assert.strictEqual(await page.locator('#setting-examples-disabled-regex').isChecked(), true);
@@ -387,7 +388,7 @@ describe('the web page: theme and settings', function () {
     // Without storage, a change still applies for as long as the page is open.
     await page.locator('#setting-shell').selectOption('dash');
     const panel = page.frames().find((f) => f.url().endsWith('/panel.html'))!;
-    await until('the menu\'s shell', () => page.locator('#shell').inputValue(), (v) => v === 'dash');
+    await until('the menu\'s shell', () => currentShell(page), (v) => v === 'dash');
     assert.deepStrictEqual(errors, []);
     await ctx.close();
   });
