@@ -1,5 +1,6 @@
 // The shells of a host file: which regions of its shell code one shell runs, and the tree that shell reads (for the
 // explanations, the problems and the colours).
+import type { Shell } from '../shellfeatures';
 import type { BashParser, SyntaxTree } from '../syntax/tree';
 import { createUnbashParser } from '../syntax/adapters/unbash';
 import type { Extracted, ShellRegion } from './index';
@@ -43,4 +44,18 @@ export function scriptTree(tree: SyntaxTree, extracted: Extracted, region: Shell
     for (const r of group) cache.trees.set(r, own);
   }
   return own;
+}
+
+/** The region of a host document that `line` is in (none: the line is the host's own text, not shell code). */
+export function regionAt(extracted: Extracted, line: number): ShellRegion | undefined {
+  return extracted.regions.find((r) => r.start <= line && line <= r.end);
+}
+
+/**
+ * The shell a region's code is explained and checked as: the one chosen (`forced`, the setting or the panel), else the
+ * host's for it; undefined for bash, the analyzer's default (as `shellOf` for a script). Every reading of a region takes
+ * it from here: the explanation, the problems, the colours, the pipefail check and the automatic shell.
+ */
+export function regionShell(region: ShellRegion, forced?: Shell): Shell | undefined {
+  return forced ?? region.shell;
 }

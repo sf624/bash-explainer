@@ -14,7 +14,8 @@ import type { Lang } from './i18n';
  * - `long`: the chip's popover, which is about this file, "Auto: bash (from #!)".
  * - `setting`: the Shell setting, a preference for every script, "Auto (now: bash, from #!)".
  * A host file's shell comes from its type, part by part ("Auto: POSIX sh (from the file type)"); at a line in no part,
- * when the parts differ (`parts`), no shell is named: "auto", "Auto: set by each part (from the file type)".
+ * when the parts differ (`parts`), no shell is named: "auto", "Auto: set by each part (from the file type)". Words the
+ * host runs with no shell (`none`: Docker's exec form) say so: "no shell", "Auto: no shell (runs directly)".
  */
 export type AutoShellForm = 'option' | 'short' | 'long' | 'setting';
 
@@ -29,20 +30,26 @@ const FROM: Record<ShellSource, { ja: string; en: string }> = {
   host: { ja: 'ファイルの種類から', en: 'from the file type' },
 };
 
-/** No one shell: each part of a host file has its own. */
-const PARTS = { ja: '部分ごとに決まる', en: 'set by each part' };
+/** No one shell named: each part of a host file has its own (`parts`), or the host runs the words with none (`none`). */
+const NAMELESS = {
+  parts: { what: { ja: '部分ごとに決まる', en: 'set by each part' }, from: FROM.host },
+  none: { what: { ja: 'シェルなし', en: 'no shell' }, from: { ja: '直接実行', en: 'runs directly' } },
+};
 
 /** The automatic shell in words. `reading` is what `autoShellAt` gave (undefined: nothing was read, so bash by default). */
 export function autoShellText(lang: Lang, form: AutoShellForm, reading?: AutoShell): string {
   const ja = lang === 'ja';
   const auto = AUTO[lang];
-  if (reading === 'parts') {
-    const from = FROM.host[lang];
+  if (typeof reading === 'string') {
+    const what = NAMELESS[reading].what[lang];
+    const from = NAMELESS[reading].from[lang];
+    // (`parts` names nothing in the short forms: the line is in no part.)
+    const parts = reading === 'parts';
     switch (form) {
-      case 'option': return auto;
-      case 'short': return ja ? auto : auto.toLowerCase();
-      case 'long': return ja ? `${auto}: ${PARTS.ja}（${from}）` : `${auto}: ${PARTS.en} (${from})`;
-      case 'setting': return ja ? `${auto}（今: ${PARTS.ja}、${from}）` : `${auto} (now: ${PARTS.en}, ${from})`;
+      case 'option': return parts ? auto : ja ? `${auto}（${what}）` : `${auto} (${what})`;
+      case 'short': return !parts ? what : ja ? auto : auto.toLowerCase();
+      case 'long': return ja ? `${auto}: ${what}（${from}）` : `${auto}: ${what} (${from})`;
+      case 'setting': return ja ? `${auto}（今: ${what}、${from}）` : `${auto} (now: ${what}, ${from})`;
     }
   }
   const { shell, source } = reading ?? { shell: 'bash', source: 'default' } as const;

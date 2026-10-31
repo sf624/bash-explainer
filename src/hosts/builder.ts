@@ -57,6 +57,10 @@ export class Builder {
   region(start: number, end: number, label: [string, string], shell?: Shell, notes?: RegionNote[], warnPipefail?: boolean): void {
     if (end >= start) this.regions.push({ start, end, label, host: { kind: this.kind }, shell, notes, warnPipefail });
   }
+  /** A region of words run with no shell (`ShellRegion.noShell`), written by `execWords`; its code is read as bash's words. */
+  execRegion(start: number, end: number, label: [string, string], notes: RegionNote[]): void {
+    if (end >= start) this.regions.push({ start, end, label, host: { kind: this.kind }, shell: 'bash', notes, noShell: true });
+  }
   build(): Extracted {
     const provided = [...new Set(this.provided)];
     if (provided.length) for (const r of this.regions) r.provided = provided;

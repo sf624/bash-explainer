@@ -89,6 +89,9 @@ describe('the wording of the automatic shell', () => {
     // (A host file's part: the shell its host runs it in; a line in no part, when the parts differ, names none.)
     assert.deepStrictEqual(auto('en', r('sh', 'host')), ['auto', 'Auto (POSIX sh)']);
     assert.deepStrictEqual(auto('ja', 'parts'), ['auto', '自動']);
+    // (Words the host runs with no shell: Docker's exec form.)
+    assert.deepStrictEqual(auto('en', 'none'), ['auto', 'Auto (no shell)']);
+    assert.deepStrictEqual(auto('ja', 'none'), ['auto', '自動（シェルなし）']);
   });
 });
 
@@ -132,18 +135,25 @@ describe('the automatic shell of a host file: what the chip, its popover and the
         };
         if (!used) {
           // (A line of the host's own text: the shell of every part when they agree, else none named.)
-          assert.ok(auto === 'parts' || auto.source === 'host', `line ${line}`);
+          assert.ok(typeof auto === 'string' || auto.source === 'host', `line ${line}`);
           continue;
         }
         explained++;
-        const shell = used.shell ?? 'bash';
-        assert.deepStrictEqual(auto, { shell, source: 'host' }, `line ${line}`);
-        assert.deepStrictEqual(say('en'), {
-          chip: `${name} · ${SHELL_NAMES[shell]} (auto)`, popover: `Auto: ${SHELL_NAMES[shell]} (from the file type)`, setting: `Auto (now: ${SHELL_NAMES[shell]}, from the file type)`,
-        }, `line ${line}`);
-        assert.deepStrictEqual(say('ja'), {
-          chip: `${name} · ${SHELL_NAMES[shell]}（自動）`, popover: `自動: ${SHELL_NAMES[shell]}（ファイルの種類から）`, setting: `自動（今: ${SHELL_NAMES[shell]}、ファイルの種類から）`,
-        }, `line ${line}`);
+        if (auto === 'none') {
+          // (Docker's exec form and a Python list run with no shell; their words are still explained, as bash's.)
+          assert.ok(/\[/.test(text.split('\n')[line]), `line ${line}`);
+          assert.deepStrictEqual(say('en'), { chip: `${name} · no shell`, popover: 'Auto: no shell (runs directly)', setting: 'Auto (now: no shell, runs directly)' }, `line ${line}`);
+          assert.deepStrictEqual(say('ja'), { chip: `${name} · シェルなし`, popover: '自動: シェルなし（直接実行）', setting: '自動（今: シェルなし、直接実行）' }, `line ${line}`);
+        } else {
+          const shell = used.shell ?? 'bash';
+          assert.deepStrictEqual(auto, { shell, source: 'host' }, `line ${line}`);
+          assert.deepStrictEqual(say('en'), {
+            chip: `${name} · ${SHELL_NAMES[shell]} (auto)`, popover: `Auto: ${SHELL_NAMES[shell]} (from the file type)`, setting: `Auto (now: ${SHELL_NAMES[shell]}, from the file type)`,
+          }, `line ${line}`);
+          assert.deepStrictEqual(say('ja'), {
+            chip: `${name} · ${SHELL_NAMES[shell]}（自動）`, popover: `自動: ${SHELL_NAMES[shell]}（ファイルの種類から）`, setting: `自動（今: ${SHELL_NAMES[shell]}、ファイルの種類から）`,
+          }, `line ${line}`);
+        }
         // (A shell chosen wins over the part's, in the explanation as in the chip.)
         const chosen = usedShells(kind, file, text, 'zsh')[line];
         assert.strictEqual(chosen.used!.shell, 'zsh');
@@ -167,6 +177,15 @@ describe('the automatic shell of a host file: what the chip, its popover and the
     assert.deepStrictEqual(at('bats', 'a.bats', '#!/usr/bin/env bats\n@test "a" {\n  run make\n}\n', 2), { shell: 'bash', source: 'host' });
     // (The parts differ, and the line is in none: no shell is named.)
     assert.strictEqual(at('markdown', 'README.md', '# T\n```bash\necho\n```\n```zsh\necho\n```\n', 0), 'parts');
+    // (The exec form runs with no shell: CMD, ENTRYPOINT and RUN alike; but a script passed to `sh -c` runs in sh.)
+    for (const instr of ['CMD ["npm", "start"]', 'ENTRYPOINT ["./run.sh"]', 'RUN ["apt-get", "install", "-y", "x"]']) {
+      assert.strictEqual(at('dockerfile', 'Dockerfile', `FROM alpine\n${instr}\n`, 1), 'none', instr);
+      // (Every part runs with none: the host's own lines say so too.)
+      assert.strictEqual(at('dockerfile', 'Dockerfile', `FROM alpine\n${instr}\n`, 0), 'none', instr);
+    }
+    assert.deepStrictEqual(at('dockerfile', 'Dockerfile', 'FROM alpine\nCMD ["sh", "-c", "make"]\n', 1), sh);
+    assert.strictEqual(at('dockerfile', 'Dockerfile', 'FROM alpine\nRUN make\nCMD ["npm", "start"]\n', 0), 'parts');
+    assert.strictEqual(at('python', 'a.py', 'import subprocess\nsubprocess.run(["ls", "-l"])\n', 1), 'none');
     // (A script is the file's own reading.)
     assert.deepStrictEqual(at('shell', 'a.zsh', 'echo\n', 0), { shell: 'zsh', source: 'filename' });
     assert.deepStrictEqual(autoShellAt(openDocument('echo\n', 'shell', (t) => parser.parse(t)), {}, 0), { shell: 'bash', source: 'default' });
@@ -183,5 +202,20 @@ describe('the automatic shell of a host file: what the chip, its popover and the
     assert.deepStrictEqual(chip.forms.map((f) => f.chip), ['Markdown · auto', 'md · auto', 'md · auto', 'auto', 'auto']);
     assert.strictEqual(chip.tip, 'File type and shell: Markdown · Auto: set by each part (from the file type)');
     assert.deepStrictEqual(shellChoices('ja', 'parts')[0], ['auto', '自動: 部分ごとに決まる（ファイルの種類から）']);
+  });
+
+  it('words the exec form, which runs with no shell', () => {
+    assert.deepStrictEqual(['option', 'short', 'long', 'setting'].map((f) => autoShellText('en', f as 'long', 'none')), [
+      'Auto (no shell)', 'no shell', 'Auto: no shell (runs directly)', 'Auto (now: no shell, runs directly)',
+    ]);
+    assert.deepStrictEqual(['option', 'short', 'long', 'setting'].map((f) => autoShellText('ja', f as 'long', 'none')), [
+      '自動（シェルなし）', 'シェルなし', '自動: シェルなし（直接実行）', '自動（今: シェルなし、直接実行）',
+    ]);
+    const chip = scopeChip('ja', 'ファイルの種類とシェル', { name: 'Dockerfile', short: 'Docker' }, undefined, 'none');
+    assert.deepStrictEqual(chip.forms.map((f) => f.chip), ['Dockerfile · シェルなし', 'Docker · シェルなし', 'Docker · シェルなし', 'シェルなし', 'シェルなし']);
+    assert.strictEqual(chip.tip, 'ファイルの種類とシェル: Dockerfile · 自動: シェルなし（直接実行）');
+    assert.deepStrictEqual(shellChoices('en', 'none')[0], ['auto', 'Auto: no shell (runs directly)']);
+    // (A shell chosen is still the chip's: the words are then explained as that shell reads them.)
+    assert.strictEqual(scopeChip('en', 'T', { name: 'Dockerfile', short: 'Docker' }, 'sh', 'none').forms[0].chip, 'Dockerfile · POSIX sh');
   });
 });
