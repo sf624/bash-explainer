@@ -129,7 +129,9 @@ describe('the web page: the menu and the settings sheet', function () {
     const { devices } = await import('playwright-core');
     const phone = { ...devices['iPhone 13'], viewport: { width: 390, height: 844 }, locale: 'en-US' };
     const wide = { viewport: { width: 1280, height: 800 }, locale: 'en-US' };
-    for (const [name, dialog, opener, closer, sign] of [['menu', '#drawer', '#menu-open', '#menu-close', -1], ['settings', '#settings-dialog', '#settings-open', '#settings-dialog .settings-x', 1]] as const) {
+    // The menu comes from the left; the settings from the right on a phone, where they fill the screen, and from the
+    // left side by side, over the editor.
+    for (const [name, dialog, opener, closer, signs] of [['menu', '#drawer', '#menu-open', '#menu-close', { phone: -1, wide: -1 }], ['settings', '#settings-dialog', '#settings-open', '#settings-dialog .settings-x', { phone: 1, wide: -1 }]] as const) {
       const start = async (options: Parameters<Browser['newContext']>[0]) => {
         const ctx = await browser.newContext(options);
         const page = await ctx.newPage();
@@ -146,6 +148,7 @@ describe('the web page: the menu and the settings sheet', function () {
         // The settings fill the screen of a phone: no backdrop to tap.
         if (how === 'backdrop' && name === 'settings' && screen === 'phone') continue;
         const { ctx, page, isOpen } = await start(env);
+        const sign = signs[screen];
         const home = await page.locator(dialog).evaluate((d) => d.getBoundingClientRect().x);
         // Watch the sheet from inside the page: its position frame by frame, and the transitions it runs (with the
         // keyframes they go through), as they happen. The frames a loaded machine draws can be few and
