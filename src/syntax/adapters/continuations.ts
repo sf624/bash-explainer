@@ -199,48 +199,77 @@ export interface Prepared<S extends AstNode> {
  */
 export function prepared<S extends AstNode>(text: string, parse: (text: string) => S, children: Children): Prepared<S> {
   const carriageReturns = [...text.matchAll(/\r(?=\n)/g)].map((m) => m.index!);
-  let masked = carriageReturns.length ? text.replace(/\r(?=\n)/g, ' ') : text;
-  let script: S | undefined;
-  if (carriageReturns.length && masked.includes('<<')) ({ masked, script } = heredocCarriageReturns(text, masked, parse, children));
-  if (!masked.includes('\\\n')) return script ? { masked, carriageReturns, script } : { masked, carriageReturns };
-  script ??= parse(masked);
+  const kept = carriageReturns.length ? heredocCarriageReturns(text, carriageReturns, parse, children) : new Set<number>();
+  const masked = carriageReturns.length ? text.replace(/\r(?=\n)/g, (_, i: number) => (kept.has(i) ? '\r' : ' ')) : text;
+  if (!masked.includes('\\\n')) return { masked, carriageReturns };
+  const script = parse(masked);
   const places = continuations(script, children, masked);
   return places.length ? { masked, carriageReturns, joins: joined(masked, places) } : { masked, carriageReturns, script };
 }
 
-/** A heredoc redirection of unbash's AST, as far as this module reads it. */
+/** A heredoc redirection of unbash's AST, as far as this module reads it (with no delimiter after `<<#`, a comment). */
 interface HereDoc extends AstNode {
-  readonly operator: string;
-  readonly delimiter: { readonly end: number; readonly value: string };
-  readonly body: { readonly pos: number };
+  readonly delimiter?: { readonly value: string };
 }
 
 /**
- * `masked` with the CRs of `text` kept where bash reads them in a heredoc's delimiter (3.6.6). The CR right after the
- * delimiter is part of the word (`<<E\r`, `<<'E'\r`: the delimiter is `E\r`), and bash ends the body at the first
- * line that is `E\r` (after its leading tabs with `<<-`); a line `E` does not end it. Masked, the delimiter would be
- * `E` and that line `E `, which unbash does not take for the end either: so both CRs stay, and unbash reads them as
- * bash does. (The tree leaves them out of the words: the adapter's `seal`.) Each heredoc that is fixed so may hold or
- * move the ones after it, so they are found one at a time, the first one in the text first, in unbash's new reading.
+ * A heredoc's delimiter word right before a CRLF (`<<E\r`, `<<-'E'\r`, `<<$'E'\r`), but not in `<<<` or `$((1<<2))`.
+ * It may also be in a comment or a string, or in another heredoc's body: what is kept for it there does no harm (see
+ * `heredocCarriageReturns`).
  */
-function heredocCarriageReturns<S extends AstNode>(text: string, masked: string, parse: (text: string) => S, children: Children): { masked: string; script: S } {
-  for (;;) {
-    const script = parse(masked);
-    // (A CR that unbash reads is in the delimiter, so one right after it is masked. The walk goes in the order of
-    // the text, and a heredoc in a body that runs on comes after the one whose body it is.)
-    let first: HereDoc | undefined;
-    walk(script, children, (n) => {
-      if (!first && n.type === 'HereDoc' && text[(n as HereDoc).delimiter.end] === '\r') first = n as HereDoc;
-    });
-    if (!first) return { masked, script };
-    const kept = [first.delimiter.end];
-    const want = first.delimiter.value + '\r';
-    for (let p = first.body.pos, nl = text.indexOf('\n', p); nl >= 0; p = nl + 1, nl = text.indexOf('\n', p)) {
-      const line = text.slice(p, nl);
-      if ((first.operator === '<<-' ? line.replace(/^\t+/, '') : line) !== want) continue;
-      kept.push(nl - 1);
-      break;
+const DELIMITER = /(?<!<)<<(-?)[ \t]*((?:[^\s;&|<>()'"\\]|'[^'\n]*'|"(?:[^"\\\n]|\\.)*"|\\[^\r\n])+)(?=\r\n)/g;
+
+/**
+ * The CRs of `text` (at `carriageReturns`, each before a LF) that stay as they are, where bash reads them in a heredoc's
+ * delimiter (3.6.6). The CR right after the delimiter word is part of it (`<<E\r`, `<<'E'\r`: the delimiter is `E\r`),
+ * and bash ends the body at the first line that is `E\r` (after its leading tabs with `<<-`); a line `E` does not end
+ * it. Masked, the delimiter would be `E` and that line `E `, which unbash does not take for the end either: so both
+ * CRs stay, and unbash reads them as bash does. (The tree leaves them out of the words: the adapter's `seal`.)
+ *
+ * It is found in one pass over the text, before unbash reads it, and keeps a little too much where a delimiter word
+ * is not one (in a comment, a string or a body): the CR at its end, which `seal` leaves out of the comment or word,
+ * and the one of the next line that is that word, which a heredoc of that delimiter (if any) ends at anyway. The
+ * delimiter's value is unbash's own (quotes removed, `$'E'` is `E`), read from that word alone.
+ */
+function heredocCarriageReturns<S extends AstNode>(text: string, carriageReturns: readonly number[], parse: (text: string) => S, children: Children): Set<number> {
+  const kept = new Set<number>();
+  if (!text.includes('<<')) return kept;
+  const values = new Map<string, string | undefined>();
+  const valueOf = (word: string): string | undefined => {
+    if (!values.has(word)) {
+      let value: string | undefined;
+      walk(parse(':<<' + word + '\n'), children, (n) => {
+        if (n.type === 'HereDoc') value = (n as HereDoc).delimiter?.value;
+      });
+      values.set(word, value);
     }
-    for (const i of kept) masked = masked.slice(0, i) + '\r' + masked.slice(i + 1);
+    return values.get(word);
+  };
+  const delimiters: { at: number; value: string; dash: boolean }[] = [];
+  for (const m of text.matchAll(DELIMITER)) {
+    const value = valueOf(m[2]);
+    if (value !== undefined) delimiters.push({ at: m.index + m[0].length, value, dash: m[1] === '-' });
   }
+  // The lines that end with a CR and are a delimiter, as they are and after their leading tabs.
+  const wanted = new Set(delimiters.map((d) => d.value));
+  const exact = new Map<string, number[]>();
+  const tabbed = new Map<string, number[]>();
+  const add = (lines: Map<string, number[]>, line: string, cr: number): void => {
+    if (!wanted.has(line)) return;
+    const at = lines.get(line);
+    if (at) at.push(cr);
+    else lines.set(line, [cr]);
+  };
+  for (const cr of carriageReturns) {
+    const line = text.slice(text.lastIndexOf('\n', cr - 1) + 1, cr);
+    add(exact, line, cr);
+    add(tabbed, line.replace(/^\t+/, ''), cr);
+  }
+  for (const d of delimiters) {
+    kept.add(d.at);
+    const lines = (d.dash ? tabbed : exact).get(d.value);
+    const next = lines ? lines[lowerBound(lines, d.at + 1)] : undefined;
+    if (next !== undefined) kept.add(next);
+  }
+  return kept;
 }
