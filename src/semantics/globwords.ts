@@ -110,11 +110,13 @@ export function wordPatterns(n: SyntaxNode, model: StateModel): BracePatterns[] 
  * The text a pattern matches where it is plain: the word that holds `n` is a pattern of `[[ x == p ]]` or of `case`,
  * nothing in it acts as a wildcard once expanded with the values of the model (a quoted `*` does not), and nocasematch
  * is off where it runs, so it is compared as plain text (3.2.5.2: `[[ $x == 1 ]]`). Undefined when it is a pattern,
- * may be one, or is not known here (a value not known, or one bash fails on).
+ * may be one, or is not known here (a value not known, one bash fails on, or code the walk does not read before it).
  */
 export function plainPatternText(n: SyntaxNode, model: StateModel): string | undefined {
   const w = wordMeaning(n, model);
   if (w?.context !== 'cond-pattern' && w?.context !== 'case-pattern') return undefined;
+  // (After code the walk does not read, an `eval` or a `source`: nocasematch may be on, a name may have another value.)
+  if (w.state.opaque) return undefined;
   const nocase = option(w.state, 'shopt', 'nocasematch');
   if (nocase !== 'off' && nocase !== 'default') return undefined;
   // (One word and one field: neither `[[ ]]` nor `case` brace-expands or splits a pattern.)

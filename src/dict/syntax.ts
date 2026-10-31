@@ -253,7 +253,7 @@ export const specialVariables: Record<string, Text> = wordTable({
  * quick reference lists them in this order.
  */
 export const wellKnownVariables: Record<string, Text> = wordTable({
-  HOME: tx('ホームディレクトリ。引数なしの `cd` の移動先で、`~` の値にもなる','Home directory: where `cd` with no argument goes, and the value of `~`'),
+  HOME: tx('ホームディレクトリ。引数なしの `cd` の移動先で、`~` の値にもなる', 'Home directory: where `cd` with no argument goes, and the value of `~`'),
   PATH: tx('コマンドを探すディレクトリの一覧（`:` 区切り。空の項目はカレントディレクトリ）', 'Colon-separated list of directories searched for commands (an empty entry is the current directory)'),
   PWD: tx('`cd` が設定するカレントディレクトリ', 'Current working directory, as set by `cd`'),
   OLDPWD: tx('`cd` が設定する直前のカレントディレクトリ（`cd -` の移動先）', 'Previous working directory, as set by `cd` (where `cd -` goes)'),
@@ -593,7 +593,7 @@ export const listOps: Record<string, Text> = {
 };
 
 export const keywords: Record<string, Text> = {
-  if: tx('条件の始まり: `then` までのコマンドの終了ステータスが 0 なら `then` 節を実行する', 'Starts the condition: the commands up to `then`; if they exit 0, the `then` branch runs'),
+  if: tx('条件の始まり: `then` までのコマンドのうち、最後のコマンドの終了ステータスが 0 なら `then` 節を実行する', 'Start of the condition: if the last of the commands up to `then` exits 0, the `then` branch runs'),
   then: tx('条件が真のときに実行する部分の開始', 'Start of the branch run when the condition is true'),
   elif: tx('前の条件が偽のとき、次の条件を判定', 'Test another condition if the previous ones were false'),
   else: tx('どの条件も偽のときに実行する部分', 'Branch run when no condition was true'),
