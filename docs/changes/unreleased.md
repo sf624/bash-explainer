@@ -74,7 +74,7 @@ Every message of the web page (a toast) now shows in one place: above the Proble
 
 A message stays 4 seconds, or 8 with a button, and as long as the pointer is on it or the keyboard's focus in it (F6 goes there after the explanation); it goes 2 seconds or more after both leave. Escape closes it and puts the focus back in the editor. Its reason or detail is behind **Why?** or **More** ("a.sh was not opened. Why? It is not a text file in UTF-8."). Before, a message showed at the bottom middle of the window, over the explanation on a wide window, for 6 seconds, with its whole text.
 
-**Load the sample** over your own script replaces it at once and offers Undo, which brings back the text and its file. Before, the browser asked first.
+**Load the sample** over your own script replaces it at once and offers Undo, which brings back the text and its file. Over a file you opened and changed since, it asks first, as Open does ("Discard unsaved changes?", Discard and load or Cancel): the Undo goes with the next keystroke, and Ctrl+Z would bring back the text but not the file. Before, the browser asked first.
 
 ## Fixed
 

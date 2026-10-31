@@ -68,9 +68,11 @@ export const TEXT = {
     mixedEol: (name: string, eol: string) => ({ text: `Opened ${name}. It mixes line ends.`, more: `Saving writes ${eol} throughout.` }),
     discardTitle: 'Discard unsaved changes?',
     discardMessage: (name: string, how: string) => `Opening ${name} replaces the script in the editor, and its changes are not saved. To keep them, cancel and save first (${how}).`,
+    discardSampleMessage: (how: string) => `Loading the sample replaces the script in the editor, and its changes are not saved. To keep them, cancel and save first (${how}).`,
     /** How to save, where there is no keyboard for the shortcut. */
     saveInMenu: 'Menu, then Save',
     discard: 'Discard and open',
+    discardLoad: 'Discard and load',
     cancel: 'Cancel',
     /** After a file's name, for a screen reader and in the tooltip. */
     unsaved: ' (unsaved changes)',
@@ -195,8 +197,10 @@ export const TEXT = {
     mixedEol: (name: string, eol: string) => ({ text: `${name} を開きました。改行コードが混在しています。`, more: `保存すると、すべて ${eol} になります。` }),
     discardTitle: '保存していない変更を破棄しますか？',
     discardMessage: (name: string, how: string) => `${name} を開くと、エディタのスクリプトが置き換わり、保存していない変更は失われます。残すなら、キャンセルして先に保存してください（${how}）。`,
+    discardSampleMessage: (how: string) => `サンプルを読み込むと、エディタのスクリプトが置き換わり、保存していない変更は失われます。残すなら、キャンセルして先に保存してください（${how}）。`,
     saveInMenu: 'メニューの「保存」',
     discard: '破棄して開く',
+    discardLoad: '破棄して読み込む',
     cancel: 'キャンセル',
     unsaved: '（未保存の変更あり）',
     copyLink: 'リンクをコピー',

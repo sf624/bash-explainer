@@ -615,6 +615,8 @@ function loadSample(own: boolean): void {
   const info = kindInfo(kind);
   // Already there (a second click on the button): nothing to replace, so nothing to undo, and the file stays as it is.
   if (editor.text === info.sample) return;
+  // An Undo offered before (a sample loaded over the user's text) would undo nothing now: the text is another's.
+  dropUndo();
   const before = fileState.snapshot();
   loadingSample = true;
   try { editor.setText(info.sample, info.cursorLine); } finally { loadingSample = false; }
@@ -633,12 +635,33 @@ function loadSample(own: boolean): void {
   if (own) status('undo', TEXT[lang].sampleLoaded, { label: TEXT[lang].undo, run: back, untilEdit: true });
 }
 
-/** "Load the sample" (⋯, the menu, the empty editor; the compare page's button). */
-function sampleAsked(): void {
-  // The user's own text is replaced at once, and the toast offers to undo it; a sample or nothing gets no toast.
+/** Hides the toast whose Undo goes back over an edit, when another edit of the editor's text comes first. */
+function dropUndo(): void {
+  if (toast.current?.action?.untilEdit) toast.hide();
+}
+
+/**
+ * "Load the sample" (⋯, the menu, the empty editor; the compare page's button). The user's own text is replaced at once,
+ * and the toast offers to undo it; a sample or nothing gets no toast. A file opened and changed since is asked about as
+ * Open asks (the same question, in the same dialog): the Undo toast goes with the first keystroke, and Ctrl+Z would
+ * bring the text back but not the file.
+ */
+async function sampleAsked(): Promise<void> {
+  const t = TEXT[lang];
+  if (fileState.file && unsaved()) {
+    // From the menu (a phone), the menu closes first, so that the dialog is not under it.
+    const fromMenu = drawer?.open === true;
+    if (fromMenu) drawer!.close();
+    const back = fromMenu ? document.getElementById('menu-open') : document.activeElement as HTMLElement | null;
+    const discard = await ask({
+      id: 'discard', title: t.discardTitle, message: t.discardSampleMessage(window.matchMedia('(pointer: fine)').matches ? shortcut('S') : t.saveInMenu),
+      confirm: { id: 'discard-open', text: t.discardLoad }, cancel: { id: 'discard-cancel', text: t.cancel },
+    }, back);
+    if (!discard) return;
+  }
   loadSample(ownText());
 }
-on('sample', 'click', sampleAsked);
+on('sample', 'click', () => void sampleAsked());
 
 /**
  * Empties the editor, as one step of the history: the toast offers to undo it ("Sample cleared" when it held a sample).
@@ -648,6 +671,7 @@ function clearEditor(): void {
   const t = TEXT[lang];
   if (!editor.text) return editor.view.focus();
   const wasSample = untouched(editor.text);
+  dropUndo();
   loadingSample = true;
   try { editor.setText('', 1); } finally { loadingSample = false; }
   showFile();
@@ -705,7 +729,7 @@ const head = withFiles ? new EditorHead({
   names: new FileNameControl({ lang: () => lang, view: () => nameView(), rename }),
   openFile: () => void openFile(),
   saveFile: () => void saveFile(),
-  loadSample: sampleAsked,
+  loadSample: () => void sampleAsked(),
   clear: clearEditor,
   copyScript,
   holdsSample: () => KINDS.some((k) => k.sample === editor.text),
