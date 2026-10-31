@@ -415,6 +415,28 @@ describe('the web page: opening a file and saving the script', function () {
     await ctx.close();
   });
 
+  it('a file opened with CRLF or mixed line ends is clean: no mark, and opening another file asks nothing', async () => {
+    const { ctx, page } = await open([NO_PICKERS]);
+    for (const [name, content] of [['win.sh', '﻿#!/bin/bash\r\necho hi\r\n'], ['mixed.sh', 'a\r\nb\nc\r\n']] as const) {
+      assert.strictEqual(await drop(page, name, bytesOf(content)), true);
+      await until('opened', () => page.title(), (t) => t === `${name} — Bash Explainer`);
+      // The text the editor holds has "\n" line ends: it is the file's text, not a change of it.
+      assert.strictEqual(await page.locator('#file-dot').isVisible(), false);
+      assert.strictEqual(await page.locator('#file-name').getAttribute('aria-label'), `Rename: ${name}`);
+      assert.strictEqual(await page.evaluate("window.dispatchEvent(new Event('beforeunload', { cancelable: true }))"), true);
+      assert.strictEqual(await page.locator('#discard-dialog[open]').count(), 0);
+    }
+    // Typing and undoing back to the opened text clears the mark.
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.insertText('x');
+    await until('the mark', () => page.title(), (t) => t === '● mixed.sh — Bash Explainer');
+    await page.keyboard.press('Control+Z');
+    await until('no mark', () => page.title(), (t) => t === 'mixed.sh — Bash Explainer');
+    assert.strictEqual(await page.locator('#file-dot').isVisible(), false);
+    await ctx.close();
+  });
+
   it('with the File System Access API: Ctrl+S asks where once, then writes to that file; a file opened is written back to; a refused write says so, and the next save asks where', async () => {
     const { ctx, page, errors } = await open([PICKERS]);
     page.on('dialog', (d) => void d.accept()); // the sample button's confirmation

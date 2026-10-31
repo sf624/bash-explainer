@@ -21,7 +21,7 @@ import { Kind, KINDS } from './samples';
  */
 export const MAX_BYTES = 1024 * 1024;
 
-/** A file's text (without its BOM) and its format. */
+/** A file's text (without its BOM, its line ends all "\n" as the editor holds them) and its format. */
 export interface FileText extends FileFormat {
   text: string;
   /** The file had both CRLF and LF line ends: a save writes `eol` throughout. */
@@ -47,7 +47,8 @@ export function decodeText(bytes: Uint8Array): FileText | 'binary' | 'cr' {
   if (bom) text = text.slice(1);
   const crlf = text.match(/\r\n/g)?.length ?? 0;
   const lf = text.match(/(?<!\r)\n/g)?.length ?? 0;
-  return { text, eol: crlf > lf ? '\r\n' : '\n', bom, mixed: crlf > 0 && lf > 0 };
+  // The text is the editor's (CodeMirror stores every line end as "\n"), so that what the page compares with it, the clean text of the file state, is the same string; `withEol` puts the file's line ends back on a save.
+  return { text: text.replace(/\r\n/g, '\n'), eol: crlf > lf ? '\r\n' : '\n', bom, mixed: crlf > 0 && lf > 0 };
 }
 
 /** The editor's text (lines ended by "\n") with the file's line ends, as the explainers read it. */
