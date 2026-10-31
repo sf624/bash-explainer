@@ -5,7 +5,7 @@ import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
 import { aliasDefinedText, aliasMaybeText, aliasNotExpandedText } from './messages-alias';
-import { DEFINES_IT, inTrap, noShebang, SETS_IT, unreadClause } from './messages-common';
+import { DEFINES_IT, inTrap, LOCAL_SOURCED, noShebang, readByBashrc, SETS_IT, unreadClause } from './messages-common';
 import { extglobText, globstarText, type LoopHow, type LoopPattern, unmatchedGlobText } from './messages-glob';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
 import type { Rewrite } from './rewrite';
@@ -84,11 +84,8 @@ const withConvention = <P>(e: Entry<P>, convention: ConventionId): Entry<P> => (
 /** An entry whose suggestion is rewrites: its params carry them (`rewrite`), its text renders their code, its fact those with edits. */
 const suggests = <P extends { rewrite: readonly Rewrite[] }>(e: Entry<P>): Entry<P> => ({ ...e, rewrite: (p) => p.rewrite.filter((r) => r.edits.length) });
 
-/** `local-outside-function` in a file with no shebang (`sourced`): a function may read it with `source`, and `local` then works. */
-const LOCAL_SOURCED: readonly [string, string] = ['関数の中から `source` で読み込まれたときは、`local` はその関数のローカル変数を宣言します', 'when a function reads it with `source`, `local` works there, and declares a variable of that function'];
-
-/** The level of a pitfall with the param `unread` (`unreadClause`, src/messages-common.ts): a caveat where code not read may undo it. */
-const byUnread = ({ unread }: { unread?: boolean }): NoteLevel => (unread ? 'info' : 'warning');
+/** The level of a pitfall that is a caveat in some cases: `unread` (`unreadClause`), `reader` (`readByBashrc`). */
+const byCase = ({ unread, reader }: { unread?: boolean; reader?: string }): NoteLevel => (unread || reader ? 'info' : 'warning');
 
 /** Headings of pitfalls whose text names its own kind of problem. */
 const NO_HEADING: Text = { ja: '', en: '' };
@@ -382,13 +379,13 @@ export const MESSAGES = {
   // the manual does not say: checked. A new shell starts with its own options (3.7.3 lists what a command run apart
   // gets, and `shopt` options are not among them); the try-it shows it.)
   // (3.5.8.1: with globstar, `**` matches "zero or more directories"; without it, two `*`, each of which matches no `/`.)
-  // (`sourced`: a file with no shebang, which an interactive shell may read with extglob on: messages-glob.ts.)
-  'extglob-in-same-block': withBasis(pitfall<{ use: string; sourced?: boolean }>(['3.5.8.1', '4.3.2'], extglobText('in-same-block'), undefined, ({ sourced }) => (sourced ? 'info' : 'warning')), { kind: 'checked', probe: 'state#extglob-off' }),
+  // (`reader`: `.bashrc` may have run first, with extglob on: messages-glob.ts, a caveat.)
+  'extglob-in-same-block': withBasis(pitfall<{ use: string; reader?: 'sourced' | 'interactive' }>(['3.5.8.1', '4.3.2'], extglobText('in-same-block'), undefined, byCase), { kind: 'checked', probe: 'state#extglob-off' }),
   'extglob-maybe-on': withBasis(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('maybe-on')), { kind: 'checked', probe: 'state#extglob-off' }),
   'extglob-turned-off': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('turned-off')), { kind: 'checked', probe: 'state#extglob-off' }),
   'extglob-not-found': withBasis(notProblem(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('not-found'))), { kind: 'checked', probe: 'state#extglob-off' }),
   'extglob-maybe-on-trap': withBasis(caveat<{ use: string }>(['3.5.8.1', '4.3.2', '4.1'], extglobText('maybe-on-trap')), { kind: 'checked', probe: 'state#extglob-off' }),
-  'extglob-not-in-new-shell': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2', '3.7.3'], extglobText('not-in-new-shell')), { kind: 'checked', probe: 'state#extglob-new-shell', also: ['state#extglob-off'] }),
+  'extglob-not-in-new-shell': withBasis(pitfall<{ use: string; reader?: 'interactive' }>(['3.5.8.1', '4.3.2', '3.7.3'], extglobText('not-in-new-shell'), undefined, byCase), { kind: 'checked', probe: 'state#extglob-new-shell', also: ['state#extglob-off'] }),
   'globstar-maybe-on': caveat<{ on: string }>(['3.5.8', '4.3.2'], globstarText('maybe-on')),
   'globstar-not-found': notProblem(caveat<{ on: string }>(['3.5.8', '4.3.2'], globstarText('not-found'))),
   'globstar-unsupported': pitfall<{ shell: string }>(['3.5.8'], ({ shell }) => [
@@ -399,7 +396,7 @@ export const MESSAGES = {
   // (`unread`, here and below: code the model does not read, which runs before, may set it there: `unreadClause`.)
   'variable-not-in-remote-shell': pitfall<{ v: string; unread?: boolean }>(['3.7.3', '3.7.4'], ({ v, unread }) => [
     `\`$${v}\` はリモートのシェルが展開しますが、リモートにはこのスクリプトの変数 \`${v}\` はありません${unreadClause(unread, SETS_IT)[0]}。値を送るなら、こちらで展開されるようダブルクォートの中に書きます`,
-    `the remote shell expands \`$${v}\`, but it does not have \`${v}\`, a variable of this script${unreadClause(unread, SETS_IT)[1]}. To send its value, write it in double quotes, so that it is expanded here`], undefined, byUnread),
+    `the remote shell expands \`$${v}\`, but it does not have \`${v}\`, a variable of this script${unreadClause(unread, SETS_IT)[1]}. To send its value, write it in double quotes, so that it is expanded here`], undefined, byCase),
   // (`keeps`: what the wrapper still passes of the environment, up to two names: sudo's `TERM`, `LANG`, `su -l`'s
   // `TERM`; `SlotLink.keeps`.)
   'variable-not-passed-by-wrapper': pitfall<{ v: string; via: string; keeps?: readonly string[]; unread?: boolean }>(['3.7.3', '3.7.4'], ({ v, via, keeps = [], unread }) => {
@@ -407,7 +404,7 @@ export const MESSAGES = {
     return [
       `文字列の中の \`$${v}\` は新しいシェルが展開しますが、\`${via}\` はこのスクリプトの変数を（エクスポートしたものも${b ? `、${a} や ${b} などいくつかを除いて` : a ? `、${a} を除いて` : ''}）渡さないので、そこには \`${v}\` はありません${unreadClause(unread, SETS_IT)[0]}。値を使うなら、こちらで展開されるようダブルクォートの中に書きます`,
       `the new shell expands \`$${v}\` in the string, but \`${via}\` passes none of this script's variables (not even exported ones${b ? `, but for a few such as ${a} and ${b}` : a ? `, but for ${a}` : ''}), so \`${v}\` is not there${unreadClause(unread, SETS_IT)[1]}. To use its value, write it in double quotes, so that it is expanded here`];
-  }, undefined, byUnread),
+  }, undefined, byCase),
   // (`environment`: the script set it with no `unset`, `local` or `export -n` before, so it is exported when it came
   // from the environment, `maybe` (capitals) or `unlikely` (lower case): src/semantics/shellstate.ts, `fromEnvironment`.)
   // (`array`: bash exports no array, even one `export` marks, `declare -p` showing `-ax`. The Reference Manual does not
@@ -445,7 +442,7 @@ export const MESSAGES = {
     `\`${via}\` runs the command in ${shell}, which does not read the functions bash exports, so this script's function \`${fn}\` is not there, even with \`export -f\`. Write out its body, or use \`bash -c\``]),
   'function-not-in-new-shell-export': pitfall<{ via: string; fn: string; unread?: boolean }>(['3.3', '3.7.3'], ({ via, fn, unread }) => [
     `\`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません${unreadClause(unread, DEFINES_IT)[0]}。関数の中身を直接書くか、先に \`export -f ${fn}\` で関数を渡します（新しいシェルが bash のときだけ）`,
-    `\`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`${unreadClause(unread, DEFINES_IT)[1]}. Write out its body, or pass the function with \`export -f ${fn}\` first (only when the new shell is bash)`], undefined, byUnread),
+    `\`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`${unreadClause(unread, DEFINES_IT)[1]}. Write out its body, or pass the function with \`export -f ${fn}\` first (only when the new shell is bash)`], undefined, byCase),
   'function-not-imported-sh': caveat<{ via: string; fn: string }>(['3.3', '3.7.3'], ({ via, fn }) => [
     `\`${via}\` はコマンドを sh で実行します。Debian や Ubuntu の sh は dash で、dash は bash がエクスポートした関数を読まないので、このスクリプトの関数 \`${fn}\` は使えないことがあります。\`bash -c\` を使います`,
     `\`${via}\` runs the command in sh, which is dash on Debian and Ubuntu, and dash does not read the functions bash exports, so this script's function \`${fn}\` may not be there. Use \`bash -c\``]),
@@ -639,9 +636,13 @@ export const MESSAGES = {
     [`In \`[[ =~ ]]\`, an unquoted ${list} loses its backslash to quote removal and is an ordinary character, not a regex operator`,
       ...(digits ? [`POSIX regexes have no \`\\d\`: even from a variable it is the letter \`d\`. Write \`[0-9]\` for \`\\d\` and \`[^0-9]\` for \`\\D\`${!others && fix ? ` (\`${fix.code}\`)` : ''}`] : []),
       ...(others ? [fix ? `Keep the regex in a variable (\`${fix.code}\`) or use \`[[:space:]]\` or \`[[:alnum:]_]\` instead` : 'Use `[[:space:]]` or `[[:alnum:]_]` instead (inside `[ ]`, a backslash is no operator, even from a variable)'] : [])].join('. ')], NO_HEADING)),
-  'distro-alias-in-script': pitfall<{ name: string; where: string; what: Words; many: boolean; instead: Words; sourced?: boolean }>(['6.6'], ({ name, where, what, many, instead, sourced }) => [
-    `\`${name}\` は ${where} が対話シェル用に定義する${what.ja}で、コマンドではありません。ほかの環境にはなく、スクリプトの中では${many ? 'これらの' : 'その'}環境でも使えません（command not found）。${sourced ? 'ただし、このファイルにはシバンがないので、`.bashrc` のように対話シェルが読むなら使えます。' : ''}${instead.ja}`,
-    `\`${name}\` is ${what.en} ${where} define${many ? '' : 's'} for interactive shells, not a command. Other systems lack it, and scripts do not have it even there ("command not found").${sourced ? ' But this file has no shebang: read by an interactive shell, as `.bashrc` is, it may have it.' : ''} ${instead.en}`], SYSTEM_DEPENDENT, ({ sourced }) => (sourced ? 'info' : 'warning')),
+  // (`reader`: `.bashrc` may have run first, `bashrcReader` of src/semantics/env.ts: a caveat.)
+  'distro-alias-in-script': pitfall<{ name: string; where: string; what: Words; many: boolean; instead: Words; reader?: 'sourced' | 'interactive' }>(['6.6'], ({ name, where, what, many, instead, reader }) => {
+    const [ja, en] = readByBashrc(reader, [
+      `\`${name}\` は ${where} が対話シェル用に定義する${what.ja}で、コマンドではありません。ほかの環境にはなく、スクリプトの中では${many ? 'これらの' : 'その'}環境でも使えません（command not found）`,
+      `\`${name}\` is ${what.en} ${where} define${many ? '' : 's'} for interactive shells, not a command. Other systems lack it, and scripts do not have it even there ("command not found")`], ['使えることがあります', 'it may have it']);
+    return [`${ja}。${instead.ja}`, `${en}. ${instead.en}`];
+  }, SYSTEM_DEPENDENT, byCase),
   'distro-alias-interactive': note<{ name: string; where: string; what: Words; many: boolean; portable?: string }>(['6.6'], ({ name, where, what, many, portable }) => [
     `環境依存: \`${name}\` は ${where} が対話シェル用に定義する${what.ja}で、ほかの環境にはありません。どこでも動かすには${portable ? ` \`${portable}\` と書きます` : '、したいことに合ったコマンドをそのまま書きます'}`,
     `System-dependent: \`${name}\` is ${what.en} ${where} define${many ? '' : 's'} for interactive shells; other systems lack it. ${portable ? `Write \`${portable}\` to work everywhere` : 'To work everywhere, write the command you mean'}`]),

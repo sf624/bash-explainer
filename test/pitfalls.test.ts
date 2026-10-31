@@ -398,7 +398,7 @@ describe('the pitfall gate', () => {
     assert.match(readme('remount ro /')[0], /^ℹ System-dependent: `remount` is a function /);
     assert.deepStrictEqual(readme('"ll" /tmp').filter((x) => /System-dependent/.test(x)), []);
     const ja = new Analyzer('ja').explainLine(parser.parse('remount ro /'), 0, undefined, { pitfalls: true }).notes;
-    assert.ok(ja.some((x) => /^ⓘ 環境依存: `remount` は openSUSE が対話シェル用に定義する関数で.*ただし、このファイルにはシバンがないので、`\.bashrc` のように対話シェルが読むなら使えます。/.test(x)), ja.join('|'));
+    assert.ok(ja.some((x) => /^ⓘ 環境依存: `remount` は openSUSE が対話シェル用に定義する関数で.*ただし、このファイルにはシバンがないので、`\.bashrc` のように対話シェルが読むなら、使えることがあります。/.test(x)), ja.join('|'));
   });
   it('a syntax error is not a pitfall: the missing then stays with pitfalls off', () => {
     const notes = explainNotes('if [ -f a ] then echo x; fi', 0, false);

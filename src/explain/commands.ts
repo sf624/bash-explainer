@@ -24,7 +24,7 @@ import { TURNS_ALIASES_ON } from '../messages-alias';
 import { unreadClause } from '../messages-common';
 import { nameInfo } from '../namefacts';
 import { builtinSections, programSections } from '../refs';
-import { inFunction, processOf, readAs, shellEffectOf } from '../semantics/env';
+import { bashrcReader, inFunction, processOf, readAs, shellEffectOf } from '../semantics/env';
 import { aliasExpandsNext } from '../semantics/effects';
 import { type AliasResolution, aliasesAfter, assignmentsOf, type MaybeHashed, type Missed, type NameResolution, testSpecOf } from '../semantics/names';
 import { docLine, option, type ShellState } from '../semantics/state';
@@ -642,14 +642,14 @@ function headOf(cx: Explainer, nameNode: SyntaxNode, word: SyntaxNode, as?: stri
     const defs = distro.definitions.map(([os, v]) => `${os}: \`${v}\``).join(cx.s('、', ', '));
     const whatText = distro.kind === 'alias' ? tx('エイリアス', 'an alias') : tx('関数', 'a function');
     const what = cx.t(whatText);
-    // In a README the commands are typed into a terminal, where the alias may exist; a file with no shebang may be
-    // read by an interactive shell (`.bashrc`), where it may too (`readAs`).
-    const read = readAs(cx.state.env(nameNode), cx.state.read);
-    const interactive = read === 'terminal';
+    // In a README the commands are typed into a terminal, where the alias may exist; where `.bashrc` may have run first
+    // (a file with no shebang, `bash -i -c`: `bashrcReader`), it may too: a caveat.
+    const interactive = readAs(cx.state.env(nameNode), cx.state.read) === 'terminal';
+    const reader = bashrcReader(cx.state.env(nameNode), cx.state.read);
     const many = distro.definitions.length > 1;
     cx.note(interactive
       ? fact(cx.lang, 'distro-alias-interactive', { name, where, what: whatText, many, portable: distro.portable })
-      : fact(cx.lang, 'distro-alias-in-script', { name, where, what: whatText, many, instead: distro.portable ? tx(`\`${distro.portable}\` と書きます`, `Write \`${distro.portable}\``) : tx('したいことに合ったコマンドをそのまま書きます', 'Write the command you mean'), ...(read === 'unknown' ? { sourced: true } : {}) }), nameNode);
+      : fact(cx.lang, 'distro-alias-in-script', { name, where, what: whatText, many, instead: distro.portable ? tx(`\`${distro.portable}\` と書きます`, `Write \`${distro.portable}\``) : tx('したいことに合ったコマンドをそのまま書きます', 'Write the command you mean'), ...(reader ? { reader } : {}) }), nameNode);
     return {
       name, ...(interactive ? {} : { res: ran }), spec: distro.command ? lookupCommand(distro.command) : undefined, kind: 'command', nameTokens: [],
       explanation: cx.s(`${what} \`${name}\`: ${cx.t(distro.meaning)}（${defs}）`, `${distro.kind === 'alias' ? 'Alias' : 'Function'} \`${name}\`: ${cx.t(distro.meaning)} (${defs})`),

@@ -28,9 +28,22 @@ export function noShebang(sourced: boolean | undefined, [ja, en]: readonly [stri
 /** Who reads a file with no shebang interactively, the start of `noShebang`'s `how`. */
 export const READ_INTERACTIVELY: readonly [string, string] = ['`.bashrc` のように対話シェルが読むなら', 'read by an interactive shell, as `.bashrc` is,'];
 
+/**
+ * The sentence added to a fact where `~/.bashrc` may have run first (`bashrcReader`, src/semantics/env.ts): `sourced`,
+ * an interactive shell may read this file with no shebang; `interactive`, the shell is started with `-i`. `then`, what
+ * `.bashrc` then gives, [ja, en] (ja after 「…なら、」 or 「…ので、」, en after a colon).
+ */
+export function readByBashrc(reader: 'sourced' | 'interactive' | undefined, base: readonly [string, string], then: readonly [string, string]): readonly [string, string] {
+  return reader === 'interactive' ? [`${base[0]}。ただし、このシェルは対話シェル（\`-i\`）で、先に \`.bashrc\` を読むので、${then[0]}`, `${base[1]}. But this shell is interactive (\`-i\`) and reads \`.bashrc\` first: ${then[1]}`]
+    : noShebang(reader === 'sourced', base, [`${READ_INTERACTIVELY[0]}、${then[0]}`, `${READ_INTERACTIVELY[1]} ${then[1]}`]);
+}
+
 /** `local-outside-function` in a trap's action (`trap`): it runs where the trap fires, which may be in a function. */
 export function inTrap(trap: boolean | undefined, [ja, en]: readonly [string, string]): readonly [string, string] {
   return trap ? [
     `${ja}。ここはトラップの動作で、トラップが起きた場所で実行されるので、関数の中のこともあれば、関数の外のこともあります`,
     `${en}. This is a trap's action: it runs where the trap fires, which may be inside a function or outside one`] : [ja, en];
 }
+
+/** `local-outside-function` in a file with no shebang (`sourced`): a function may read it with `source`, and `local` then works. */
+export const LOCAL_SOURCED: readonly [string, string] = ['関数の中から `source` で読み込まれたときは、`local` はその関数のローカル変数を宣言します', 'when a function reads it with `source`, `local` works there, and declares a variable of that function'];
