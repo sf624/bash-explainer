@@ -89,7 +89,9 @@ describe('Bash Explainer in VS Code', function () {
     await open(doc);
     const diagnostics = await until('the loop caveat', () => vscode.languages.getDiagnostics(doc.uri), (d) => d.some((x) => x.code === 'unmatched-glob-runs-once'));
     const caveat = diagnostics.find((x) => x.code === 'unmatched-glob-runs-once')!;
-    const actions = (await vscode.commands.executeCommand<vscode.CodeAction[]>('vscode.executeCodeActionProvider', doc.uri, caveat.range)).filter((a) => a.diagnostics?.[0]?.code === 'unmatched-glob-runs-once');
+    // (The command's result carries no `diagnostics`: the fixes are told apart by their titles.)
+    const ours = (list: vscode.CodeAction[]) => list.filter((a) => /^Add `(\[ -e|shopt)/.test(a.title));
+    const actions = ours(await until('the quick fixes', () => vscode.commands.executeCommand<vscode.CodeAction[]>('vscode.executeCodeActionProvider', doc.uri, caveat.range), (a) => ours(a).length === 2));
     assert.deepStrictEqual(actions.map((a) => [a.title, !!a.isPreferred]), [['Add `[ -e "$f" ] || continue`', true], ['Add `shopt -s nullglob`', false]]);
     assert.ok(await vscode.workspace.applyEdit(actions[0].edit!));
     assert.strictEqual(doc.getText(), 'for f in *.log; do\n  [ -e "$f" ] || continue\n  wc -l "$f"\ndone\n');
