@@ -863,8 +863,8 @@ function fileKeys(e: KeyboardEvent): void {
   const key = /^[a-z]$/i.test(e.key) ? e.key.toLowerCase() : ({ KeyS: 's', KeyO: 'o' } as Record<string, string>)[e.code];
   if (key !== 's' && key !== 'o') return;
   e.preventDefault();
-  // A question or the settings are open: they come first.
-  if (e.repeat || document.querySelector('dialog.ask[open], #settings-dialog[open]')) return;
+  // A question, or the settings on a phone, are open: they come first (side by side the settings leave the page in use).
+  if (e.repeat || document.querySelector('dialog.ask[open], #settings-dialog:modal')) return;
   if (drawer?.open) drawer.close();
   void (key === 's' ? saveFile() : openFile());
 }
@@ -872,16 +872,20 @@ function fileKeys(e: KeyboardEvent): void {
 /**
  * F6 (or Shift+F6) moves between the editor, the explanation in the panel's frame and the toast when one with a button
  * shows, as F6 moves between the parts of VS Code: editor, explanation, toast, editor. Shift+F6 goes the other way.
+ * Side by side the settings lie over the editor, which is out of reach then: the sheet takes its place in the round.
  * `inFrame`: the key was pressed in the frame.
  */
 function paneKeys(e: KeyboardEvent, inFrame: boolean): void {
-  if (!isPaneKey(e) || document.querySelector('dialog[open]')) return;
+  if (!isPaneKey(e) || document.querySelector('dialog:modal')) return;
   e.preventDefault();
-  const stops = ['editor', 'panel', ...(toast.hasButton ? ['toast'] : [])];
-  const at = inFrame ? 'panel' : toast.focused ? 'toast' : 'editor';
+  // The editor lies under the settings side by side (inert): F6 goes among the parts in reach, with the sheet in its place.
+  const first = settingsDialog?.sideBySide ? 'sheet' : 'editor';
+  const stops = [first, 'panel', ...(toast.hasButton ? ['toast'] : [])];
+  const at = inFrame ? 'panel' : toast.focused ? 'toast' : first;
   const next = stops[(stops.indexOf(at) + (e.shiftKey ? stops.length - 1 : 1)) % stops.length];
   if (next === 'panel') toPanel();
   else if (next === 'toast') toast.focus();
+  else if (next === 'sheet') settingsDialog?.focus();
   else editor.view.focus();
 }
 
@@ -917,6 +921,8 @@ if (withFiles) {
     if (!w || w.location.href === 'about:blank') return;
     w.addEventListener('keydown', fileKeys, true);
     w.addEventListener('keydown', (e) => paneKeys(e, true), true);
+    // Esc shuts the settings that lie over the editor, when the panel does not take it.
+    w.addEventListener('keydown', (e) => settingsDialog?.escape(e));
     refuseDrops(w);
   };
   frame?.addEventListener('load', watchFrame);
