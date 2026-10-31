@@ -84,8 +84,8 @@ describe('openDocument', () => {
 
 describe('shellsOf', () => {
   it('detects the shell from the first 50 lines and the file name, and keeps the one chosen', () => {
-    assert.deepStrictEqual(shellsOf(['#!/bin/dash', 'echo'], 'a', undefined), { forced: undefined, detected: 'dash' });
-    assert.deepStrictEqual(shellsOf(['echo'], 'a.zsh', 'sh'), { forced: 'sh', detected: 'zsh' });
+    assert.deepStrictEqual(shellsOf(['#!/bin/dash', 'echo'], 'a', undefined), { forced: undefined, detected: 'dash', detectedFrom: 'shebang' });
+    assert.deepStrictEqual(shellsOf(['echo'], 'a.zsh', 'sh'), { forced: 'sh', detected: 'zsh', detectedFrom: 'filename' });
     const late = [...Array(60).fill(''), '#!/bin/dash'];
     assert.strictEqual(shellsOf(late, 'a', undefined).detected, undefined);
   });

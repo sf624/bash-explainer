@@ -1,6 +1,6 @@
 {
   "deciders": [
-    {"file":"src/dialect.ts","fn":"detectShell","kind":"dash-prefix","count":1,"to":"commandRead","reason":"the first operand of a shebang's command line (`#!/usr/bin/env -S bash`), by dash"},
+    {"file":"src/dialect.ts","fn":"readShell","kind":"dash-prefix","count":1,"to":"commandRead","reason":"the first operand of a shebang's command line (`#!/usr/bin/env -S bash`), by dash"},
     {"file":"src/dialect.ts","fn":"commandFeatures","kind":"interpret-call","count":1,"to":"commandRead","reason":"reads `set` and `shopt` options again to find the dialect"},
     {"file":"src/dialect.ts","fn":"laterOptions","kind":"interpret-call","count":1,"to":"commandRead","reason":"reads `set`/`shopt` options again for the dialect of the lines after"},
     {"file":"src/embedded/yq.ts","fn":"judgeYq","kind":"dash-prefix","count":4,"to":"commandRead","reason":"yq's own options (`-o`, `-p`, `-P`, `-I`, `-i`, `--`, `--name=value`) hand-parsed in judgeYq, to say whether the command line is one the embedded yq reads"},
