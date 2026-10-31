@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { alwaysFails, COLOURED, failsCheck, FADED, LEADING_MARK, LEVEL_ORDER, levelCounts, LEVELS, problemLevel, SEVERITIES, severityOf } from '../src/levels';
+import { alwaysFails, COLOURED, failsCheck, FADED, LEADING_MARK, LEVEL_ORDER, levelCounts, LEVELS, levelTally, problemLevel, problemLevels, SEVERITIES, severityOf } from '../src/levels';
 
 // The level table (src/levels.ts): what each output shows of a level comes from it (docs/design/note-levels.md).
 describe('the level table', () => {
@@ -34,14 +34,20 @@ describe('the level table', () => {
     assert.deepStrictEqual(LEVEL_ORDER.filter(alwaysFails), ['error']);
   });
 
-  it('counts the levels the screen reader\'s summary says', () => {
-    assert.deepStrictEqual(levelCounts(['note', 'warning', 'info', 'warning'], 'en'), ['2 warnings']);
+  it('counts the levels the screen reader\'s summary and the Problems strip say', () => {
+    assert.deepStrictEqual(levelCounts(['note', 'warning', 'info', 'warning'], 'en'), ['2 warnings', '1 caveat']);
+    assert.deepStrictEqual(levelCounts(['info', 'info', 'error'], 'ja'), ['エラー 1 件', '注意 2 件']);
+    assert.deepStrictEqual(levelCounts(['info', 'info'], 'en'), ['2 caveats']);
     assert.deepStrictEqual(levelCounts(['warning', 'error'], 'en'), ['1 error', '1 warning']);
     assert.deepStrictEqual(levelCounts(['error', 'error'], 'en'), ['2 errors']);
     assert.deepStrictEqual(levelCounts(['error', 'error', 'warning'], 'ja'), ['エラー 2 件', '警告 1 件']);
     assert.deepStrictEqual(levelCounts(['warning'], 'en'), ['1 warning']);
     assert.deepStrictEqual(levelCounts(['warning', 'warning'], 'ja'), ['警告 2 件']);
-    assert.deepStrictEqual(levelCounts(['info', 'note'], 'en'), []);
+    assert.deepStrictEqual(levelCounts(['info', 'note'], 'en'), ['1 caveat']);
+    assert.deepStrictEqual(levelCounts(['note'], 'en'), []);
+    // The strip's counts: each level with problems, in the levels' order, a problem's level from its severity.
+    assert.deepStrictEqual(levelTally(problemLevels(['info', 'warning', 'info', 'error'])), [{ level: 'error', n: 1 }, { level: 'warning', n: 1 }, { level: 'info', n: 2 }]);
+    assert.deepStrictEqual(levelTally([]), []);
   });
 
   it('finds the mark a message starts with', () => {

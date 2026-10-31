@@ -358,10 +358,10 @@ describe('the web page: the app bar and the editor\'s header', function () {
         if (help) {
           // Help's list of shortcuts: every key of the page.
           const keys = await page.locator('#menu-keys dt').allInnerTexts();
-          assert.deepStrictEqual(keys, ['Ctrl+O', 'Ctrl+S', 'F6', 'Ctrl+K Ctrl+I', ja ? 'Esc、Tab の順' : 'Escape, then Tab'], seen);
+          assert.deepStrictEqual(keys, ['Ctrl+O', 'Ctrl+S', 'F6', ja ? 'F8、Shift+F8' : 'F8, Shift+F8', 'Ctrl+K Ctrl+I', ja ? 'Esc、Tab の順' : 'Escape, then Tab'], seen);
           assert.deepStrictEqual(await page.locator('#menu-keys dd').allInnerTexts(), ja
-            ? ['ファイルを開く', '保存', '解説とエディタを行き来する', 'カーソル位置の部分のカードを表示', 'エディタから出る']
-            : ['Open a file', 'Save', 'Go to the explanation and back', 'Show the card of the part at the cursor', 'Leave the editor'], seen);
+            ? ['ファイルを開く', '保存', '解説とエディタを行き来する', '次の問題、前の問題へ移る', 'カーソル位置の部分のカードを表示', 'エディタから出る']
+            : ['Open a file', 'Save', 'Go to the explanation and back', 'Go to the next or previous problem', 'Show the card of the part at the cursor', 'Leave the editor'], seen);
           assert.strictEqual(await page.locator('#menu-keys').getAttribute('aria-labelledby'), 'menu-keys-title');
         } else {
           assert.strictEqual(await page.locator('#menu-keys').isVisible(), false, seen);
