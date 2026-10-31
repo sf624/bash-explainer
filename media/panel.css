@@ -155,9 +155,14 @@ pre#line.wrap > .rows {
   text-indent: -2ch;
 }
 
-/* (A ↪ on every row but the first, as many as the rows: the column is as tall as the text, and cut there.) */
+/*
+ * A ↪ on every row but the first: panel.js `fitLine` counts the rows and sets `data-marks` to a blank line and a ↪ for
+ * each row after the first. The empty alternative text (`/ ""`) keeps the marks out of the accessibility tree: a screen
+ * reader would otherwise read them before the line, and in the folded box's name. Text, not a background, so that
+ * forced colours draw it in the text colour.
+ */
 pre#line.wrap > .rows::before {
-  content: "\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA\A\21AA";
+  content: attr(data-marks) / "";
   position: absolute;
   top: 0;
   bottom: 0;

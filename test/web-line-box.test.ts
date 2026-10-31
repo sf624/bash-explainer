@@ -11,12 +11,13 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { wrapRuns } from '../src/ui/wrapRuns';
 import { openSite, until } from './support/site';
 
-/** Lines 1 to 4: line 8 of the sample; many quoted words; one word with blanks, wider than a row; one with no blank, wider than a row. */
+/** Lines 1 to 5: line 8 of the sample; many quoted words; one word with blanks, wider than a row; one with no blank, wider than a row; one of far more rows than 40. */
 const LINES = [
   'grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt && echo "done: $(date +%F)" || exit 1',
   `echo ${'"word word" '.repeat(40)}| sort -u > out.txt`,
   `printf '%s\\n' "${'a b '.repeat(70)}end"`,
   `echo ${'x'.repeat(320)} done`,
+  `echo ${'y'.repeat(2400)} done`,
 ];
 const SCRIPT = LINES.join('\n') + '\n';
 const parser = createUnbashParser();
@@ -36,9 +37,8 @@ interface Box {
   clamped: boolean;
   faded: boolean;
   expanded: string | null;
-  /** The height of the column of marks ↪, and of the text. */
+  /** The marks ↪ the style draws (the attribute it reads). */
   marks: number;
-  text: number;
 }
 
 /** The line box as drawn: its rows (from the tops of its characters), its height and its state. */
@@ -68,7 +68,7 @@ function box(panel: Frame): Promise<Box> {
       sideways: pre.scrollWidth > pre.clientWidth + 1, below: pre.scrollHeight > pre.clientHeight + 1,
       wrap: pre.classList.contains('wrap'), clamped: pre.classList.contains('clamped'),
       faded: (cs.maskImage || cs.webkitMaskImage || 'none') !== 'none', expanded: pre.getAttribute('aria-expanded'),
-      marks: parseFloat(getComputedStyle(rows, '::before').height) || 0, text: rows.getBoundingClientRect().height,
+      marks: (rows.getAttribute('data-marks') || '').split('\u21AA').length - 1,
     };
   })()`) as Promise<Box>;
 }
@@ -120,6 +120,24 @@ describe('the web page: the panel\'s line box wraps between shell words', functi
     }
   }
 
+  it('folds the box again on a new line: a line left open does not open the next one', async () => {
+    const { page, panel } = await open(1280, 'en');
+    try {
+      await show(page, panel, 1);
+      await panel().locator('#line').click({ position: { x: 4, y: 4 } });
+      await until('opened', () => box(panel()), (x) => x.expanded === 'true');
+      // (Without the reset, the new line is drawn open, and the wait below ends in a timeout.)
+      await show(page, panel, 2);
+      const next = await until('line 3 folded', () => box(panel()), (x) => x.expanded === 'false');
+      assert.ok(next.clamped && next.faded);
+      // (And back on the first: not remembered open.)
+      await show(page, panel, 1);
+      await until('line 2 folded', () => box(panel()), (x) => x.expanded === 'false');
+    } finally {
+      await page.context().close();
+    }
+  });
+
   for (const width of [390, 640, 1280]) {
     for (const lang of ['en', 'ja'] as const) {
       it(`wraps between runs, shows three rows and a fade, and opens whole at a click (${width} px, ${lang})`, async () => {
@@ -134,8 +152,12 @@ describe('the web page: the panel\'s line box wraps between shell words', functi
             if (l > 0) assert.ok(b.rows.length > 3, info);
             if (width < 520) assert.ok(b.rows.length >= 2, info);
             assertRows(l, b, where);
-            // (The column of marks ↪ is as tall as the text: one mark on each row after the first.)
-            assert.ok(Math.abs(b.marks - b.text) < 1, info);
+            // (One mark ↪ on each row after the first, however many rows: line 5 has more than 40.)
+            assert.strictEqual(b.marks, b.rows.length - 1, info);
+            // The marks are not in the accessible tree: not in the name of the box, a button when it has more than three rows
+            // (Playwright leaves out a name as long as line 5's).
+            const tree = await panel().locator('#line').ariaSnapshot();
+            assert.ok(!tree.includes('\u21AA') && (b.rows.length <= 3 || tree.startsWith('- button')), `${info}: ${tree.slice(0, 80)}`);
             if (b.rows.length <= 3) {
               assert.ok(!b.clamped && !b.faded && b.expanded === null, info);
               assert.ok(Math.abs(b.shown - b.rows.length * b.row) < 2, info);

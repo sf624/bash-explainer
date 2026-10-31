@@ -184,8 +184,8 @@ export function panelUpdate(p: PanelLine) {
     file: p.file,
     lineLabel: t.line(p.line + 1) + (ex.shell ? ` · ${t.forShell(SHELL_NAMES[ex.shell])}` : ''),
     lineText: p.lineText,
-    // (The line box: its text as runs that stay on one row and the blanks between them, and whether it wraps there.)
-    lineParts: lineParts(p.lineText, lineRuns(p.doc, p.line, p.lineText)),
+    // (The line box: its text as runs that stay on one row and the blanks between them, when it wraps there; one row has no use for them.)
+    lineParts: p.wrap === true ? lineParts(p.lineText, lineRuns(p.doc, p.line, p.lineText)) : undefined,
     wrap: p.wrap === true,
     explanation,
     // (Reading's tree, with what each node and each step shows: src/ui/readingSteps.ts.)
