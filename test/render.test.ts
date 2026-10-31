@@ -157,7 +157,7 @@ describe('links to the Bash manual', () => {
     const msg = panelUpdate({ lang: 'ja', explanation: new Analyzer('ja').explainLine(parser.parse('BASH_XTRACEFD=7'), 0, 'bash', { reading: true }), file: 'a.sh', line: 0, lineText: 'BASH_XTRACEFD=7', choice: {}, detected: 'bash', placement: 'first', animations: true });
     const shown = msg.explanation.items[0] as { basisShown?: { label: string; tryIt: { output: string } } };
     assert.deepStrictEqual([shown.basisShown?.label, shown.basisShown?.tryIt.output], ['マニュアルの記述と異なる・bash 5.2・5.3 で確認', 'fd 3 is still open']);
-    assert.ok(readingNodes(msg.explanation.reading!).some((n) => (n as { basisShown?: unknown }).basisShown));
+    assert.ok(readingNodes(msg.reading!.root).some((n) => (n as { basisShown?: unknown }).basisShown));
     // With the setting off, none.
     const off = new Analyzer('en').explainLine(parser.parse('BASH_XTRACEFD=7'), 0, 'bash', { basis: false });
     assert.ok(!toPlainMarkdown(off, 'BASH_XTRACEFD=7', 'a.sh:1').includes('Differs from the manual'));

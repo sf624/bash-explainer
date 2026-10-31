@@ -88,6 +88,14 @@ describe('the VS Code panel: its header', function () {
     await page.locator('#ref').click();
     assert.strictEqual(await page.locator('#ref').getAttribute('aria-pressed'), 'false');
     assert.strictEqual(await icon(page, 'ref'), 'book 1');
+    // Each change of the two is told to the host, as drawn: the web page draws its own buttons for them from it.
+    assert.deepStrictEqual(await page.evaluate('window.POSTED.filter((m) => m.type === "header").map((m) => [m.buttons.toggle.name, m.buttons.toggle.icon, m.buttons.ref.name, m.buttons.ref.icon, m.buttons.ref.pressed].join(" | "))'), [
+      'Collapse all | collapse-all | Quick reference | book | false',
+      'Expand all | expand-all | Quick reference | book | false',
+      'Collapse all | collapse-all | Quick reference | book | false',
+      'Collapse all | collapse-all | ← Back to the explanation | arrow-left | true',
+      'Collapse all | collapse-all | Quick reference | book | false',
+    ]);
     // The view switch: the tree, then the list again, each time told to the host.
     await page.locator('#view-tree').click();
     assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#views button')].map((b) => b.getAttribute('aria-pressed'))`), ['false', 'true']);
