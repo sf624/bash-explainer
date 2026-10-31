@@ -2,6 +2,19 @@
 
 The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
+## New
+
+### Quick fixes from the notes
+
+A note that suggests code to write in place of the line's (`Fact.rewrite`, `StyleFinding.rewrite`: docs/design/oracles.md, 3.2) offers it as a quick fix of its problem: the light bulb and Ctrl+. in VS Code, `textDocument/codeAction` in the Language Server, and buttons in the tooltip of the web page's editor. The fix makes the edits of the code the note shows, at the place of that problem (`cp $a b; cp $a c`: each `$a` its own); where the note gives two ways, both are offered, the one it recommends first (preferred, for VS Code's Auto Fix). The title is the code, cut at 60 characters: "Add `[ -e "$f" ] || continue`" where the fix only adds code, "Rewrite as `read -r`" where it changes some. Each rewrite is run in bash 5.2 and 5.3 (test/rewrites*.test.ts).
+
+The problems with quick fixes: `failure-reported-as-success` (`cp a b || echo failed` → `… || { echo failed >&2; exit 1; }`, `return 1` in a function, `return 1 2>/dev/null || exit 1` in a file that may be sourced), `unmatched-glob-runs-once` (`[ -e "$f" ] || continue`, or `shopt -s nullglob`), `source-searches-path`, `pattern-from-variable`, `declaration-masks-status`, `postfix-increment-status`, the three `*-last-test-*` notes, `wrapper-assignment-expanded-first`, `prefix-assignment-expanded-first`, `unbraced-element`, `regex-backslash-dropped`, `bracket-close-glued`, `find-action-refused`, `unquoted-variable-as-path`, `unquoted-variable-in-test`, `for-over-unquoted-args`, `array-joined-in-assignment`, `nounset-unbound`, and the style checks `bracket-no-space`, `assignment-with-spaces`, `brace-no-space`, `brace-close-no-separator`, `rm-empty-variable-root`, `read-without-r`, `redirect-in-bracket`, `bracket-close-in-word` and `and-or-in-bracket`. None in a string another shell reads (`bash -c '…'`), where the code would need quoting, nor in a Dockerfile, a workflow, a Makefile or another host file, whose shell code is extracted from the file.
+
+Two notes carry their code as data for the first time:
+
+- `source lib.sh` (and `. lib.sh`): first a path from the script's directory, `source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh`, which bash sets to the file being read, also when it is sourced or in a function; then `source ./lib.sh`, which reads the file of the current directory, as the search would after `$PATH`. In a `#!/bin/sh` script, `$0` names the script's directory (`. "$(dirname "$0")"/lib.sh`); in an sh file with no shebang, which may be sourced, and in a code block typed into a terminal, only `./lib.sh`. Run in bash with a file of the name in `$PATH`, one in the current directory and one beside the script (in a directory whose name has a space), the script run, run by its path, sourced, and sourced in a function; and in dash.
+- `grep "$x" f`: `grep -F "$x" f`. `-F` takes the place of an option that selects another mode, which it would conflict with (`grep -iE "$x"` → `grep -iF "$x"`, `--extended-regexp` → `-F`; `egrep` → `grep -F`). None where a word before the pattern may be an option (`grep $opts "$x"`): the note then says what to do, as before. Run in bash with GNU grep: the rewrite matches a value with `.` or `*` as the original matches it escaped.
+
 ## Changed
 
 ### Errors: a third level of problems

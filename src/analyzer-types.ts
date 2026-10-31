@@ -10,6 +10,7 @@ import type { LabelPart } from './label';
 import type { Fact, Note, SpaceEnds, ValueSaid } from './messages';
 import type { NameInfo } from './namefacts';
 import type { ReadingNode } from './reading';
+import type { Rewrite } from './rewrite';
 import type { ExpansionValue } from './semantics/values';
 import type { HostRun } from './semantics/walk/host';
 
@@ -156,9 +157,11 @@ export interface ExplainOptions {
 
 /**
  * A note of a line and the range it is about (`LineExplanation.anchors`); `code`: the code of the problem it is when
- * the editors show it as one (`DocumentIssue.code`: a fact's id, a style check, a dialect issue).
+ * the editors show it as one (`DocumentIssue.code`: a fact's id, a style check, a dialect issue); `rewrite`: the
+ * rewrites the note suggests at that place, with edits (`Fact.rewrite`, `StyleFinding.rewrite`), which the editors offer
+ * as quick fixes of the problem (`DocumentIssue.fixes`).
  */
-export interface NoteAnchor { text: string; span: Span; code?: string }
+export interface NoteAnchor { text: string; span: Span; code?: string; rewrite?: readonly Rewrite[] }
 
 export interface LineExplanation {
   line: number;

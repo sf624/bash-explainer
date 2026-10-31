@@ -187,10 +187,11 @@ const STYLE_SUGGESTIONS: Record<StyleCode, Exclude<Kind, 'none'>> = {
   'download-run-by-shell': 'prose',
   // `exit 130` last in the action, a string `trap` runs: needs the signal sent to the script.
   'trap-goes-on': 'scenario',
-  // Advice: `source ./lib.sh` reads another file than `source lib.sh` where `$PATH` has one of the name: a PATH set up.
-  'source-searches-path': 'scenario',
-  // Advice: `grep -F` (`-w`, `-x`) matches otherwise than the pattern, as meant: grep over lines of a set-up.
-  'pattern-from-variable': 'scenario',
+  // `source lib.sh` → `source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh` (or `./lib.sh`): the file next to the script, not one
+  // of `$PATH` (the panel redesign's P3; its runs in test/rewrites-advice.test.ts, with a PATH set up).
+  'source-searches-path': 'mechanical',
+  // `grep "$x"` → `grep -F "$x"`: the value as it is, with GNU grep over lines of a set-up.
+  'pattern-from-variable': 'mechanical',
 };
 
 /** Words of the English texts that tell the user what to write instead. */
@@ -293,6 +294,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
       { mechanical: 18, scenario: 25, prose: 15, none: 48 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
-    assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 9, scenario: 3, prose: 1 });
+    assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 11, scenario: 1, prose: 1 });
   });
 });

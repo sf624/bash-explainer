@@ -81,7 +81,7 @@ The prototype was built fast. It has hacks and loosened tests. Two web tests wer
 | src/analyzer.ts helpers `wordExpands`, `wordTildes` | Move | They serve depth 2: to the module of words (P8). |
 | src/analyzer.ts `otherLines` | Move | It explains up to 100 more lines, lean, on each request. It moves to src/document.ts, beside the lean explanation of every line that `noteIssues` already makes and caches per tree (`noteIssueCache`). The panel reads the other lines from that cache (P7). |
 | src/ui/panel.ts: `service.explain(doc, line, true)` | Rewrite | The prototype builds the reading tree on every request. src/ui decides what to compute from the state; measured (P7, P8). |
-| `HEADS` in src/messages.ts, `fixLine` in src/pitfalls.ts | Rewrite | The fix as `Rewrite` data (docs/design/oracles.md, 3.2), not as a string of the whole line (P3). A headline per catalog entry and per style check, required by the type (P7b). |
+| `HEADS` in src/messages.ts, `fixLine` in src/pitfalls.ts | Rewrite | The fix as `Rewrite` data (docs/design/oracles.md, 3.2), not as a string of the whole line (P3, done: the quick fixes read it). A headline per catalog entry and per style check, required by the type (P7b). |
 | `aroundLines` (src/ui/panelView.ts) | Keep, test | The problems of the lines around (the `for` of a loop body). It explains each of those lines again; it reads them from the cache above instead. Unit tests (P7). |
 | media/panel.js row building (`buildRows`, `prune`, `repeats`, `splitLong`, `bashOnly`, the Key) | Rewrite in TypeScript | It decides facts by comparing texts and matching "(default: …)" in them. A row model in src/ui/ (covered, section 5) builds the rows from data; panel.js only draws them (P7). |
 | src/ui/render.ts (+283 lines: the Key and the chips' texts) | Rewrite | Texts to the catalog, entries from the row model (P7, P9). |
@@ -165,13 +165,21 @@ What: facts whose fix is mechanical carry `Rewrite` data (oracles.md 3.2): `fail
 Two fixes need care:
 
 - **A file that may be sourced.** `exit 1` there ends the caller's shell. The fix ends only the file: `return` where the file may be sourced, `exit` where it is run. Done in the rewrite data (oracles.md 3.2, #453).
-- **`source lib.sh`.** `./lib.sh` still depends on the current directory, which the note warns about (cron starts in `$HOME`). The fix names the script's own directory (`"$(dirname "$0")/lib.sh"`, or a form that holds when the file is itself sourced), or there is no quick fix. B3 decides.
+- **`source lib.sh`.** `./lib.sh` still depends on the current directory, which the note warns about (cron starts in `$HOME`). The fix names the script's own directory (`"$(dirname "$0")/lib.sh"`, or a form that holds when the file is itself sourced), or there is no quick fix. B3 decides. Decided in P3 (B4 had left both advice checks without rewrites): first `"$(dirname "${BASH_SOURCE[0]}")"/lib.sh`, which holds when the file is sourced; `./lib.sh` second, as an alternative that reads what the search would find after `$PATH`.
 
 CHANGELOG (New): "Quick fixes for a failure reported as success, `source` that searches `$PATH`, a `grep` pattern from a variable, and a loop over a glob that matches nothing."
 
 Tests: oracles.md B2 to B4 for these ids. Each rewrite runs in bash, both when the file is run and when it is sourced: the hazard is gone (the caller sees the failure; the library is read from the script's directory; `-F` matches `a.b` only as written, with GNU grep), the meaning is kept, the caller's shell goes on, `bash -n` passes, and explaining the rewrite raises no note of the same id.
 
 Risks: two of these notes change level with the three levels (decision 4); this step does not depend on it.
+
+Done (#P3PR):
+
+- Every rewrite with edits is a quick fix, not only those of the four ids: the 17 mechanical ids of the catalog and the 11 style checks that carry rewrites. One rule, with no list of ids: a note's place (`NoteAnchor`, src/noteanchors.ts) carries the rewrites the note suggests there (`Fact.rewrite`, `StyleFinding.rewrite`), and `noteIssues` (src/document.ts) turns them into the problem's `fixes` (`rewriteFix` in src/fixes.ts: the edits at their positions, titled with the code the note shows). So a fact on two places gives each problem the fix of its own place. `DocumentIssue.fix` became `fixes`, a list; the first is the one the note recommends (VS Code's and the Language Server's `isPreferred`). The hosts' files carry none (src/hosts/remap.ts), as their facts carry none.
+- `source-searches-path`: in bash `"$(dirname "${BASH_SOURCE[0]}")"/lib.sh`, then `./lib.sh`; in sh `"$(dirname "$0")"/lib.sh` only where the file is run (`readAs`: a shebang), else `./lib.sh` alone; typed into a terminal, `./lib.sh` alone. The walls of the corpus runs refuse `source`, so its states run in test/rewrites-advice.test.ts (`IdStates.apart`): a file of the name in `$PATH`, one in the current directory, one beside the script in a directory whose name has a space; run, run by its path, sourced, sourced in a function; bash in POSIX mode; dash.
+- `pattern-from-variable`: `grep -F`, in place of an option or a name that selects another mode (GNU grep refuses two: "conflicting matchers specified"); none where a word before the pattern has a value that is not known. Its states run over the corpus with GNU grep on the runs' PATH (it writes no file): the rewrite with `a.b` or `x*` gives what the original gives with the value escaped.
+- The note's text renders the code of both from the rewrites. The note on `source lib.sh` suggested `"$(dirname "$0")/lib.sh"` in bash, which names the caller's directory when the file is sourced.
+- The web page's tooltip has a button per fix; on a narrow pane the box scrolls to the last one (test/web-quickfix.test.ts, screenshots in English and Japanese at 390 and 1280 px).
 
 ### P4. What the program receives, as data
 

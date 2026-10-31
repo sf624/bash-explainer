@@ -455,8 +455,8 @@ const BASHES = ['bash', ...(process.env.BASH_EXPLAINER_BASH53 ? [process.env.BAS
 describe('pitfalls: a file sourced by a name with no `/`', () => {
   const found = (src: string, lang: 'en' | 'ja' = 'en', shell?: Shell) => notes(src, src.split('\n').length - 1, lang, shell).filter((n) => /`\$PATH`/.test(n));
   it('says that bash looks in PATH first, then in the current directory, in both languages', () => {
-    assert.deepStrictEqual(found('source lib.sh'), ['⚠ Pitfall: `source lib.sh` looks for `lib.sh` in the directories of `$PATH` first, and only then in the current directory: a file of that name in `$PATH` runs instead, and the current directory is where the script was started from, not where it lies (cron starts in `$HOME`). Write `source ./lib.sh`, or a path from the script\'s directory: `source "$(dirname "$0")/lib.sh"`']);
-    assert.deepStrictEqual(found('source lib.sh', 'ja'), ['⚠ 落とし穴: `source lib.sh` は `lib.sh` をまず `$PATH` のディレクトリから探し、見つからないときだけカレントディレクトリを探します。`$PATH` に同じ名前のファイルがあればそちらが実行され、カレントディレクトリはスクリプトの場所ではなく、起動したときの場所です（cron なら `$HOME`）。`source ./lib.sh` か、スクリプトのディレクトリからのパス（`source "$(dirname "$0")/lib.sh"`）を書きます']);
+    assert.deepStrictEqual(found('source lib.sh'), ['⚠ Pitfall: `source lib.sh` looks for `lib.sh` in the directories of `$PATH` first, and only then in the current directory: a file of that name in `$PATH` runs instead, and the current directory is where the script was started from, not where it lies (cron starts in `$HOME`). Write a path from the script\'s directory, `source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh`, or `source ./lib.sh` to read it from the current directory']);
+    assert.deepStrictEqual(found('source lib.sh', 'ja'), ['⚠ 落とし穴: `source lib.sh` は `lib.sh` をまず `$PATH` のディレクトリから探し、見つからないときだけカレントディレクトリを探します。`$PATH` に同じ名前のファイルがあればそちらが実行され、カレントディレクトリはスクリプトの場所ではなく、起動したときの場所です（cron なら `$HOME`）。スクリプトのディレクトリからのパス（`source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh`）か、カレントディレクトリから読むなら `source ./lib.sh` と書きます']);
     assert.strictEqual(found('source lib.sh', 'en', 'bash').length, 1);
     assert.strictEqual(found('shopt -s sourcepath\nsource lib.sh').length, 1);
     // (`command` and `builtin` run the builtin in this shell.)
@@ -465,7 +465,7 @@ describe('pitfalls: a file sourced by a name with no `/`', () => {
     // (A name in quotes or with a backslash runs the builtin too.)
     assert.strictEqual(found('\\source lib.sh').length, 1);
     assert.strictEqual(found("'.' lib.sh").length, 1);
-    assert.match(found('[ -f lib.sh ] && . "lib.sh"')[0], /^⚠ Pitfall: `\. lib\.sh` looks for `lib\.sh` in the directories of `\$PATH` first.* Write `\. \.\/lib\.sh`/);
+    assert.match(found('[ -f lib.sh ] && . "lib.sh"')[0], /^⚠ Pitfall: `\. lib\.sh` looks for `lib\.sh` in the directories of `\$PATH` first.* or `\. \.\/"lib\.sh"` to read it from the current directory$/);
   });
   it('says that only PATH is searched in POSIX mode and in sh', () => {
     for (const [src, shell] of [['set -o posix\n. lib.sh', undefined], ['. lib.sh', 'sh'], ['. lib.sh', 'dash'], ['. lib.sh', 'ash']] as const) {
@@ -518,18 +518,18 @@ describe('pitfalls: a file sourced by a name with no `/`', () => {
 describe('pitfalls: a regex pattern that is a variable', () => {
   const found = (src: string, lang: 'en' | 'ja' = 'en') => notes(src, src.split('\n').length - 1, lang).filter((n) => /regular expression|正規表現/.test(n));
   it('says that the value is read as a regex, in both languages', () => {
-    assert.deepStrictEqual(found('grep "$USER" /etc/passwd'), ['ⓘ Caveat: `grep` reads the value of `$USER` as a regular expression, not as plain text: it matches inside longer text too (`bob` matches `bobby`), and `.`, `*`, `[` and the like in the value have their special meaning. To look for the value as it is, add `-F`, and `-w` (whole words) or `-x` (whole lines) as meant']);
-    assert.deepStrictEqual(found('grep "$USER" /etc/passwd', 'ja'), ['ⓘ 注意: `grep` は `$USER` の値を、ただの文字列ではなく正規表現として読みます。長い文字列の一部にも一致し（`bob` は `bobby` にも一致）、値の中の `.`・`*`・`[` などは特別な意味を持ちます。値をそのまま探すには `-F` を付け、意図に合わせて `-w`（単語全体）か `-x`（行全体）も付けます']);
+    assert.deepStrictEqual(found('grep "$USER" /etc/passwd'), ['ⓘ Caveat: `grep` reads the value of `$USER` as a regular expression, not as plain text: it matches inside longer text too (`bob` matches `bobby`), and `.`, `*`, `[` and the like in the value have their special meaning. To look for the value as it is, write `grep -F "$USER"`, with `-w` (whole words) or `-x` (whole lines) as meant']);
+    assert.deepStrictEqual(found('grep "$USER" /etc/passwd', 'ja'), ['ⓘ 注意: `grep` は `$USER` の値を、ただの文字列ではなく正規表現として読みます。長い文字列の一部にも一致し（`bob` は `bobby` にも一致）、値の中の `.`・`*`・`[` などは特別な意味を持ちます。値をそのまま探すには `grep -F "$USER"` と書き、意図に合わせて `-w`（単語全体）か `-x`（行全体）も付けます']);
     for (const src of ['grep -e "$x" f', 'grep -ve "$x" f', 'grep -c ${x} f', 'ps aux | grep "$name"', 'sudo grep -q "$entry" /etc/hosts', 'x=bob\ngrep "$x" f', 'grep -i -- "$x" f',
       // (An option grep does not know; a value not trusted after `eval`.)
       'grep --bogus "$x" f', 'eval "$y"\nx="a.*"\ngrep "$x" f']) {
       assert.strictEqual(found(src).length, 1, src);
     }
-    // (`egrep -F` is refused, and `-F` with `-E` or `-P` by older greps: `-F` goes in their place.)
-    assert.match(found('grep -E "$x" f')[0], /To look for the value as it is, write `-F` in place of `-E`, and/);
-    assert.match(found('grep -iP "$x" f')[0], /write `-F` in place of `-P`/);
-    assert.match(found('egrep "$x" f')[0], /^ⓘ Caveat: `egrep` reads the value of `\$x`.* use `grep -F` in place of `egrep`, and/);
-    assert.match(found('egrep "$x" f', 'ja')[0], /`egrep` の代わりに `grep -F` を使い、/);
+    // (`egrep -F` is refused, and `-F` with `-E` or `-P`, "conflicting matchers specified": `-F` goes in their place.)
+    assert.match(found('grep -E "$x" f')[0], /To look for the value as it is, write `grep -F "\$x"`, with/);
+    assert.match(found('grep -iP "$x" f')[0], /write `grep -iF "\$x"`/);
+    assert.match(found('egrep "$x" f')[0], /^ⓘ Caveat: `egrep` reads the value of `\$x`.* write `grep -F "\$x"`, with/);
+    assert.match(found('egrep "$x" f', 'ja')[0], /`grep -F "\$x"` と書き、/);
   });
   // A fixed string, whole words or lines, a pattern with text of its own, a positional parameter, a variable named as a
   // pattern or holding special characters, an expansion with an operator, a function named grep, a pattern from a file.

@@ -6,7 +6,7 @@ import type { Shell } from './dialect';
 import { canonicalName, impliedWords, lookupCommand } from './dict/aliases';
 import { Lang } from './i18n';
 import { argWordIn, bracesIn } from './semantics/argwords';
-import { type ExecEnv, runsString, slotEnvs } from './semantics/env';
+import { type ExecEnv, readAs, runsString, slotEnvs } from './semantics/env';
 import { commandName as staticName, plainName } from './semantics/effects';
 import { resolveName, resolveRun } from './semantics/names';
 import { option, type StateModel } from './semantics/state';
@@ -15,7 +15,7 @@ import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, operatorFits, testFails, writtenAsBracket } from './testexpr';
 import { staticWordValue, unquoteWord } from './staticword';
 import { parseExpansion } from './expansion';
-import { quoteExpansions } from './fixes';
+import { hasUnquotedExpansion, quoteExpansions } from './fixes';
 import type { ConventionId } from './conventions';
 import { marked, type Note } from './messages';
 import { STYLE_LEVELS, type StyleCase, type StyleCode } from './messages-levels';
@@ -231,16 +231,16 @@ export const STYLE_REFS: Record<StyleCode, readonly string[]> = {
 
 /**
  * Whether the findings of each style check carry rewrites (`StyleFinding.rewrite`, docs/design/oracles.md 3.2): the
- * checks whose fix follows from the code the note is about (`[-f x]` → `[ -f x ]`). Not the advice whose rewrite
- * changes what runs, as meant (`source ./lib.sh` finds another file than `source lib.sh` may; `grep -F` matches
- * otherwise), nor a download to read or a trap's action, whose code is in a string. Total, so that a new check must
- * decide; test/suggestions.test.ts checks it against the classification and the corpus.
+ * checks whose fix follows from the code the note is about (`[-f x]` → `[ -f x ]`), and the advice whose rewrite reads
+ * what was meant (`source lib.sh` → `source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh`, not a file of `$PATH`; `grep "$x"`
+ * → `grep -F "$x"`, the value as it is). Not a download to read, nor a trap's action, whose code is in a string. Total,
+ * so that a new check must decide; test/suggestions.test.ts checks it against the classification and the corpus.
  */
 export const STYLE_REWRITES: Record<StyleCode, boolean> = {
   'bracket-no-space': true, 'assignment-with-spaces': true, 'brace-no-space': true, 'brace-close-no-separator': true,
   'rm-empty-variable-root': true, 'read-without-r': true, 'redirect-in-bracket': true, 'bracket-close-in-word': true,
-  'and-or-in-bracket': true, 'download-run-by-shell': false, 'trap-goes-on': false, 'source-searches-path': false,
-  'pattern-from-variable': false,
+  'and-or-in-bracket': true, 'download-run-by-shell': false, 'trap-goes-on': false, 'source-searches-path': true,
+  'pattern-from-variable': true,
 };
 
 /**
@@ -384,6 +384,35 @@ function wholeVariable(w: SyntaxNode): { name: string; text: string } | undefine
   }
   const p = e.type === 'expansion' ? parseExpansion(e.text) : undefined;
   return p && !p.op && !p.prefix && p.subscript === undefined && /^[A-Za-z_]\w*$/.test(p.name) ? { name: p.name, text: e.text } : undefined;
+}
+
+/**
+ * The rewrite that has grep read its patterns as fixed strings (`grep "$x" f` → `grep -F "$x" f`), shown as the text
+ * from the command's name to the pattern `w` or the last word it changes: `-F` after the name; in place of each option
+ * given that selects another mode, which `-F` would conflict with ("conflicting matchers specified"): `-E` → `-F`,
+ * `--extended-regexp` → `-F`, the letter in a cluster (`-iE` → `-iF`; in quotes, the whole word in single quotes:
+ * `"-iE"` → `'-iF'`); `grep -F` in place of a name that implies one (`egrep`, `implied`). None where another word whose
+ * value is not known may be an option, which GNU grep takes anywhere: one before the pattern (`grep $opts "$x"`,
+ * `grep "$o" -e "$x"`), or one an unquoted expansion may split (`grep "$x" $opts f`; a quoted word after the pattern is
+ * taken as a file, `grep "$x" "$f"`).
+ */
+function fixedStrings(r: SpecRun, implied: boolean, w: SyntaxNode): Rewrite | undefined {
+  const name = r.run.nameWord;
+  if (r.run.args.some((a, i) => a !== w && r.values[i] === undefined && (a.endIndex <= w.startIndex || hasUnquotedExpansion(a)))) return undefined;
+  const edits: TextEdit[] = implied ? [{ start: name.startIndex, end: name.endIndex, text: `${canonicalName(r.name)} -F` }] : [];
+  let last = w;
+  for (const { word, role } of givenOptions(r.parse)) {
+    if (role.role !== 'option' || !role.spec.selects) continue;
+    const node = r.run.args[word];
+    const value = r.values[word];
+    if (node.endIndex > last.endIndex) last = node;
+    if (r.parse.roles.find((x) => x.word === word)!.role.role !== 'cluster') edits.push({ start: node.startIndex, end: node.endIndex, text: '-F' });
+    else if (value === node.text) edits.push({ start: node.startIndex + role.part![0], end: node.startIndex + role.part![1], text: 'F' });
+    else if (value !== undefined) edits.push({ start: node.startIndex, end: node.endIndex, text: `'${`${value.slice(0, role.part![0])}F${value.slice(role.part![1])}`.replace(/'/g, "'\\''")}'` });
+    else return undefined;
+  }
+  if (!edits.length) edits.push({ start: name.endIndex, end: name.endIndex, text: ' -F' });
+  return editSpan(name, last, edits);
 }
 
 /** A variable named as a pattern (`pattern`, `regex`, `re`, `expr`): its value is meant as one. */
@@ -607,7 +636,9 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
    * `searchesPath`, while `sourcepath` is on), and then in the current directory, which is where the script was
    * started from (in POSIX mode, and in sh, only in `$PATH`). Not for a path (`./lib.sh`), a name whose value is not
    * known, with `-p` (bash 5.3: the directories are given), with `sourcepath` off or not known to be on, nor in zsh
-   * or ksh, whose `.` searches otherwise.
+   * or ksh, whose `.` searches otherwise. Its rewrites put a directory before the name: the script's, which the note
+   * recommends (cron starts elsewhere), where the shell names it; then the current directory's, `./`, which reads the
+   * file the search would find there.
    */
   const sourceSearchesPath = (n: SyntaxNode) => {
     const posixShell = shell === 'sh' || shell === 'dash' || shell === 'ash';
@@ -624,14 +655,25 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
         if (!posixShell && on !== 'on' && on !== 'default') return;
         const posix = posixShell || option(st, 'set', 'posix') === 'on';
         const cmd = `${r.name} ${file}`;
-        const fix = s(`\`${r.name} ./${file}\` か、スクリプトのディレクトリからのパス（\`${r.name} "$(dirname "$0")/${file}"\`）を書きます`,
-          `Write \`${r.name} ./${file}\`, or a path from the script's directory: \`${r.name} "$(dirname "$0")/${file}"\``);
-        add('source-searches-path', r.run.args[word], posix
+        const w = r.run.args[word];
+        const before = (text: string) => editSpan(r.run.nameWord, w, [{ start: w.startIndex, end: w.startIndex, text }]);
+        // (The script's directory: bash names the file being read in `BASH_SOURCE`, sourced too; sh has only `$0`, the
+        // script's own path where the file is run, and the caller's where it is sourced. Typed into a terminal, there
+        // is no script.)
+        const read = readAs(model.env(n), model.read);
+        const dir = read === 'terminal' ? undefined : !posixShell ? '"$(dirname "${BASH_SOURCE[0]}")"/' : read === 'script' ? '"$(dirname "$0")"/' : undefined;
+        const [fromDir, here] = [dir && before(dir), before('./')];
+        const fix = fromDir
+          ? s(`スクリプトのディレクトリからのパス（\`${fromDir.code}\`）か、カレントディレクトリから読むなら \`${here.code}\` と書きます`,
+            `Write a path from the script's directory, \`${fromDir.code}\`, or \`${here.code}\` to read it from the current directory`)
+          : s(`カレントディレクトリから読むなら \`${here.code}\` と書きます`, `Write \`${here.code}\` to read it from the current directory`);
+        add('source-searches-path', w, posix
           ? `\`${cmd}\` は \`${file}\` を \`$PATH\` のディレクトリからだけ探し、カレントディレクトリは探しません（POSIX の動作）。\`$PATH\` になければ失敗し、あればそのファイルが実行されます。${fix}`
           : `\`${cmd}\` は \`${file}\` をまず \`$PATH\` のディレクトリから探し、見つからないときだけカレントディレクトリを探します。\`$PATH\` に同じ名前のファイルがあればそちらが実行され、カレントディレクトリはスクリプトの場所ではなく、起動したときの場所です（cron なら \`$HOME\`）。${fix}`,
         posix
           ? `\`${cmd}\` looks for \`${file}\` only in the directories of \`$PATH\`, not in the current directory (as POSIX says): it fails unless \`$PATH\` has it, and then runs the file found there. ${fix}`
-          : `\`${cmd}\` looks for \`${file}\` in the directories of \`$PATH\` first, and only then in the current directory: a file of that name in \`$PATH\` runs instead, and the current directory is where the script was started from, not where it lies (cron starts in \`$HOME\`). ${fix}`);
+          : `\`${cmd}\` looks for \`${file}\` in the directories of \`$PATH\` first, and only then in the current directory: a file of that name in \`$PATH\` runs instead, and the current directory is where the script was started from, not where it lies (cron starts in \`$HOME\`). ${fix}`,
+        fromDir ? [fromDir, here] : [here]);
         return;
       }
     }
@@ -651,19 +693,22 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
       const given = givenOptions(r.parse).map(({ role }) => role);
       const specs = [...given.map((o) => (o.role === 'option' ? o.spec : undefined)), ...implied];
       if (r.parse.refused || r.parse.mode === 'fixed' || specs.some((o) => o?.selects === 'fixed' || o?.whole)) continue;
-      // (`-F` with an option that selects another mode is refused: it goes in its place, `grep -F` in place of `egrep`.)
-      const other = given.find((o) => o.role === 'option' && o.spec.selects)?.flag ?? (implied.some((o) => o.selects) ? r.name : undefined);
-      const fixed = other === undefined ? s('`-F` を付け', 'add `-F`')
-        : other === r.name ? s(`\`${r.name}\` の代わりに \`${canonicalName(r.name)} -F\` を使い`, `use \`${canonicalName(r.name)} -F\` in place of \`${r.name}\``)
-        : s(`\`${other}\` の代わりに \`-F\` を付け`, `write \`-F\` in place of \`${other}\``);
       for (const { word, role } of r.parse.roles) {
         if ((role.role !== 'operand' && role.role !== 'value') || role.spec?.lang !== 'regex') continue;
         const w = r.run.args[word];
         const v = wholeVariable(w);
         const known = v && model.trusts(v.name) ? model.at(w).run.variables.get(v.name)?.value : undefined;
         if (!v || PATTERN_NAME.test(v.name) || (known !== undefined && REGEX_SPECIAL.test(known))) return;
+        // (Where a word whose text is not known may be an option, the note says what to do, with no code: `-F` conflicts
+        // with an option that selects another mode, and goes in its place.)
+        const fix = fixedStrings(r, implied.some((o) => o.selects), w);
+        const other = given.find((o) => o.role === 'option' && o.spec.selects)?.flag ?? (implied.some((o) => o.selects) ? r.name : undefined);
+        const fixed = fix ? s(`\`${fix.code}\` と書き`, `write \`${fix.code}\``)
+          : other === undefined ? s('`-F` を付け', 'add `-F`')
+            : other === r.name ? s(`\`${r.name}\` の代わりに \`${canonicalName(r.name)} -F\` を使い`, `use \`${canonicalName(r.name)} -F\` in place of \`${r.name}\``)
+              : s(`\`${other}\` の代わりに \`-F\` を付け`, `write \`-F\` in place of \`${other}\``);
         add('pattern-from-variable', w, `\`${r.name}\` は \`${v.text}\` の値を、ただの文字列ではなく正規表現として読みます。長い文字列の一部にも一致し（\`bob\` は \`bobby\` にも一致）、値の中の \`.\`・\`*\`・\`[\` などは特別な意味を持ちます。値をそのまま探すには ${fixed}、意図に合わせて \`-w\`（単語全体）か \`-x\`（行全体）も付けます`,
-          `\`${r.name}\` reads the value of \`${v.text}\` as a regular expression, not as plain text: it matches inside longer text too (\`bob\` matches \`bobby\`), and \`.\`, \`*\`, \`[\` and the like in the value have their special meaning. To look for the value as it is, ${fixed}, and \`-w\` (whole words) or \`-x\` (whole lines) as meant`);
+          `\`${r.name}\` reads the value of \`${v.text}\` as a regular expression, not as plain text: it matches inside longer text too (\`bob\` matches \`bobby\`), and \`.\`, \`*\`, \`[\` and the like in the value have their special meaning. To look for the value as it is, ${fixed}, with \`-w\` (whole words) or \`-x\` (whole lines) as meant`, fix ? [fix] : []);
         return;
       }
     }

@@ -150,6 +150,7 @@ describe('the Language Server', function () {
   it('offers the quick fix', async () => {
     const r = await client.request('textDocument/codeAction', { textDocument: { uri: script }, range: { start: { line: 1, character: 0 }, end: { line: 1, character: 0 } }, context: { diagnostics: [] } });
     assert.strictEqual(r.result.length, 1);
+    assert.strictEqual(r.result[0].isPreferred, true);
     assert.deepStrictEqual(r.result[0].edit.changes[script].map((e: any) => e.newText), ['[ -f "$1" ]']);
   });
 
@@ -163,6 +164,12 @@ describe('the Language Server', function () {
     client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'shellscript', version: 1, text: '#!/bin/bash\nsource lib.sh\nread line\n' } });
     const d = await client.diagnostics(uri, (list) => list.length > 0);
     assert.deepStrictEqual(d.map((x) => [x.code, x.severity, x.range.start.line, x.message.split(':')[0]]), [['source-searches-path', 2, 1, 'Pitfall'], ['read-without-r', 3, 2, 'Caveat']]);
+    // (Their rewrites are their quick fixes, the first one preferred: docs/design/panel-redesign.md, P3.)
+    const r = await client.request('textDocument/codeAction', { textDocument: { uri }, range: { start: { line: 1, character: 0 }, end: { line: 1, character: 0 } }, context: { diagnostics: [] } });
+    assert.deepStrictEqual(r.result.map((a: any) => [a.title, a.isPreferred, a.diagnostics[0].code, a.edit.changes[uri].map((e: any) => [e.range.start, e.range.end, e.newText])]), [
+      ['Rewrite as `source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh`', true, 'source-searches-path', [[{ line: 1, character: 0 }, { line: 1, character: 13 }, 'source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh']]],
+      ['Rewrite as `source ./lib.sh`', false, 'source-searches-path', [[{ line: 1, character: 0 }, { line: 1, character: 13 }, 'source ./lib.sh']]],
+    ]);
     client.notify('textDocument/didClose', { textDocument: { uri } });
   });
 

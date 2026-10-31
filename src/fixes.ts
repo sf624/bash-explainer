@@ -1,5 +1,7 @@
 import type { Issue } from './dialect';
 import { parseExpansion } from './expansion';
+import { shorten } from './label';
+import type { Rewrite } from './rewrite';
 import { field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
@@ -8,6 +10,23 @@ export interface Edit { startLine: number; startCol: number; endLine: number; en
 
 /** A quick fix for an issue: what it does (ja, en) and the edits. */
 export interface Fix { title: [string, string]; edits: Edit[] }
+
+/**
+ * The quick fix of a rewrite a note suggests (src/rewrite.ts; docs/design/panel-redesign.md, P3), with its edits at the
+ * places `place` gives for offsets of the document: titled with its code, the code the note shows (its first line,
+ * cut at 60 characters), "Add" where the edits only insert, else "Rewrite as".
+ */
+export function rewriteFix(r: Rewrite, place: (offset: number) => { line: number; col: number }): Fix {
+  const code = shorten(r.code, 60);
+  const title: Fix['title'] = r.edits.every((e) => e.start === e.end) ? [`\`${code}\` を加える`, `Add \`${code}\``] : [`\`${code}\` に書き換える`, `Rewrite as \`${code}\``];
+  return {
+    title,
+    edits: r.edits.map((e) => {
+      const [from, to] = [place(e.start), place(e.end)];
+      return { startLine: from.line, startCol: from.col, endLine: to.line, endCol: to.col, text: e.text };
+    }),
+  };
+}
 
 const replace = (n: { startPosition: { row: number; column: number }; endPosition: { row: number; column: number } }, text: string): Edit => ({
   startLine: n.startPosition.row, startCol: n.startPosition.column, endLine: n.endPosition.row, endCol: n.endPosition.column, text,
@@ -148,8 +167,8 @@ function unquotedText(n: SyntaxNode): string {
   return n.text;
 }
 
-/** Whether an expansion outside quotes is part of the word (its value would act as a pattern). */
-function hasUnquotedExpansion(n: SyntaxNode): boolean {
+/** Whether an expansion outside quotes is part of the word (its value would act as a pattern, or be split). */
+export function hasUnquotedExpansion(n: SyntaxNode): boolean {
   if (['simple_expansion', 'expansion', 'command_substitution'].includes(n.type)) return true;
   return n.type === 'concatenation' && n.namedChildren.some(hasUnquotedExpansion);
 }

@@ -3,7 +3,7 @@ import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import type { BashVersion } from './bashversion';
 import { dialectIssues, saidShell, Shell, type ShellReading } from './dialect';
 import { parseDirectives, suppressed } from './directives';
-import { Fix, fixFor } from './fixes';
+import { Fix, fixFor, rewriteFix } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
 import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
@@ -30,8 +30,10 @@ export interface ShellDocument {
 /**
  * `pitfall`: a warning or caveat the explanations say (`noteIssues`), not an error of theirs nor a construct the shell
  * lacks: advice, which `diagnostics.pitfalls` turns off, and whose annotation is titled so (`--format github`).
+ * `fixes`: the quick fixes the editors offer for it, the first the one it recommends: a dialect issue's portable form
+ * (`fixFor`), or the rewrites a note suggests at its place (`NoteAnchor.rewrite`).
  */
-export type DocumentIssue = DocIssue & { fix?: Fix; pitfall?: true };
+export type DocumentIssue = DocIssue & { fixes?: readonly Fix[]; pitfall?: true };
 
 export interface Shells {
   /** The shell chosen by the user (setting or panel), which wins over the file. */
@@ -117,15 +119,19 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
   const unparsed = others.filter((i) => i.code === 'zshSyntax');
   const out: DocumentIssue[] = [];
   const seen = new Set<string>();
+  // (The rewrites' edits are offsets in the text explained, the document's.)
+  const starts = lineStarts(doc.tree.text);
+  const place = (i: number) => placeOf(starts, i);
   for (let line = 0; line < doc.lines.length; line++) {
     const ex = explainDocumentLine(analyzer, doc, line, lang, shells, lean);
     for (const n of ex.noteInfo) {
       // (A plain fact is no problem; nor is a caveat the catalog keeps a note, `ssh-local-expansion`, the `…-not-found` of an option.)
       if (n.level === 'note' || !isProblem(n.code!)) continue;
-      for (const { span } of ex.anchors?.filter((a) => a.text === n.text) ?? []) {
+      for (const { span, rewrite } of ex.anchors?.filter((a) => a.text === n.text) ?? []) {
         const at = span.start.line;
         const issue: DocumentIssue = {
           code: n.code!, severity: severityOf(n.level), message: problemText(n, lang), ...(alwaysFails(n.level) ? {} : { pitfall: true as const }), ...conventionOf(n),
+          ...(rewrite ? { fixes: rewrite.map((r) => rewriteFix(r, place)) } : {}),
           startLine: at, startCol: span.start.character, endLine: at, endCol: span.end.line === at ? span.end.character : doc.lines[at].length,
         };
         const id = `${issue.code} ${at}:${issue.startCol}-${issue.endCol}`;
@@ -258,8 +264,9 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bas
   return [...crlf, ...nested, ...dialectIssues(doc.tree, shell ?? 'bash', lang, undefined, undefined, version).map((i): DocumentIssue => {
     const n = i.place;
     const sameLine = n.startPosition.row === n.endPosition.row;
+    const fix = fixFor(i);
     return {
-      code: i.id, severity: severityOf(i.note.level), message: problemText(i.note, lang), fix: fixFor(i),
+      code: i.id, severity: severityOf(i.note.level), message: problemText(i.note, lang), ...(fix ? { fixes: [fix] } : {}),
       startLine: n.startPosition.row, startCol: n.startPosition.column,
       endLine: n.startPosition.row, endCol: sameLine ? n.endPosition.column : doc.lines[n.startPosition.row].length,
     };
