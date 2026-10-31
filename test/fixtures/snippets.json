@@ -1011,6 +1011,7 @@
  "export A=1 >  >g",
  "export A=1 > f >g",
  "export FOO=1; env | grep FOO",
+ "export LANG=C.UTF-8\nssh host 'echo \"$LANG\"'",
  "export X=1; su - -c 'echo $X'",
  "export X=1; sudo bash -c \"echo \\$X\"",
  "export() { :; }\nexport a=1",

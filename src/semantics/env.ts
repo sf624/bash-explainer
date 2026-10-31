@@ -47,6 +47,8 @@ export interface SlotLink {
   readonly keeps?: readonly string[];
   /** The variables the program sets itself, with values of its own (`CommandSlot.sets`). */
   readonly sets?: readonly string[];
+  /** The variables of the caller's environment that may reach it, as configured (`CommandSlot.maySend`, and `ssh -o SendEnv=…`). */
+  readonly maySend?: readonly string[];
   readonly unsets?: readonly string[];
   readonly env: NonNullable<CommandSlot['env']>; readonly shell?: ShellKind;
   readonly invocation?: readonly { readonly flag: string; readonly value?: string }[];
@@ -370,16 +372,21 @@ export function reachOf(env: ExecEnv, shellopts = false): { functions: Reach; va
  * (`SlotLink.keeps`: sudo keeps `TERM`, `TZ`, `LANG`…, `su -l` `TERM`); undefined when the variable reaches it.
  */
 export function droppedBy(env: ExecEnv, name: string): SlotLink | undefined {
-  const kept = (l: SlotLink): boolean => !!l.keeps?.some((k) => (k.endsWith('*') ? name.startsWith(k.slice(0, -1)) : k === name));
+  const kept = (l: SlotLink): boolean => namedIn(l.keeps, name);
   return env.links.find((l): l is SlotLink => l.kind === 'slot'
     && (l.slot.where === 'remote' || l.slot.where === 'container' || ((l.env === 'reset' || l.env === 'none') && !kept(l))));
 }
+
+/** Whether `name` is among `names`, where a name that ends in `*` stands for every name it starts (`LC_*`). */
+const namedIn = (names: readonly string[] | undefined, name: string): boolean => !!names?.some((k) => (k.endsWith('*') ? name.startsWith(k.slice(0, -1)) : k === name));
 
 /** Whether a variable is in the environment of a program (`variableIn`), and what on the way decides it. */
 export interface VariableIn {
   readonly state: Tri;
   /** The first link that passes no variables (`droppedBy`), even when a later one sets it again. */
   readonly dropped?: SlotLink;
+  /** That link may still pass it, as configured (`SlotLink.maySend`: ssh's `SendEnv`). */
+  readonly sent?: true;
   /** A link removes it (`env -u NAME`). */
   readonly unset: boolean;
 }
@@ -425,7 +432,7 @@ export function variableIn(model: StateModel, cmd: SyntaxNode, name: string, env
     if (l.assigns.includes(name)) state = 'on';
     else if (l.assigns.includes('*')) state = 'unknown';
   }
-  return { state, ...(dropped ? { dropped } : {}), unset };
+  return { state, ...(dropped ? { dropped } : {}), ...(dropped && namedIn(dropped.maySend, name) ? { sent: true as const } : {}), unset };
 }
 
 /**
@@ -592,6 +599,8 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
     // (`env x=1 cmd`, `docker run -e x img cmd`: the assignments come before the command.)
     const assigns: string[] = [];
     const unsets: string[] = [];
+    // (`ssh -o SendEnv=NAME`: names ssh may send, with ssh_config's own; the server must accept them.)
+    const sends: string[] = [];
     const flags = list.flatMap((r) => (r.role.role === 'cluster' ? r.role.letters : [r.role])).flatMap((r) => (r.role === 'option' ? [r.flag, ...r.spec.names] : []));
     for (const [idx, { word, role, w, split }] of list.entries()) {
       // (`-e x`, or `--env=x` in the option's word.)
@@ -604,6 +613,12 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
         const text = w.args[word].value?.slice(value.attached);
         if (text !== undefined) unsets.push(text);
       }
+      if (value?.spec?.sendsEnv) {
+        // (A value not known here may send any name: `*`. `-NAME` removes a name ssh_config sends.)
+        const text = w.args[word].value?.slice(value.attached);
+        const m = /^\s*SendEnv\s*[=\s]\s*(.*)$/i.exec(text ?? 'SendEnv *');
+        if (m) sends.push(...m[1].split(/[\s,]+/).filter((x) => /^[^-]/.test(x)));
+      }
       if (role.role === 'operand' && role.spec?.assignment) {
         // (By its value where it is static: `env 'BASH_COMPAT=31' bash -c …`.)
         const text = w.args[word].value ?? w.text(word);
@@ -614,11 +629,12 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
         const env = withOption ? withOption.env : role.slot.env ?? 'exported';
         const keeps = withOption ? withOption.keeps : role.slot.keeps;
         const sets = withOption ? withOption.sets : role.slot.sets;
+        const maySend = [...role.slot.maySend ?? [], ...sends];
         const program = (role.slot.run === 'shell-string' ? p.command.split(' ')[0].split('/').pop()! : '');
         const shell: ShellKind | undefined = role.slot.run !== 'shell-string' ? undefined : role.slot.shell ?? (!role.slot.joinsWords ? shellFromName(program) : undefined) ?? 'unknown';
         // (The options of a shell started by its name: not those of `su -l -c` or of `watch`. `rbash` is `bash -r`.)
         const invocation = shell && shell !== 'unknown' && !role.slot.shell ? [...(restrictedByName(program) ? [{ flag: '-r' }] : []), ...shellInvocation(all)] : [];
-        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: w.node(word), assigns, env, ...(keeps ? { keeps } : {}), ...(sets ? { sets } : {}), ...(unsets.length ? { unsets } : {}),
+        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: w.node(word), assigns, env, ...(keeps ? { keeps } : {}), ...(sets ? { sets } : {}), ...(maySend.length ? { maySend } : {}), ...(unsets.length ? { unsets } : {}),
           ...(shell ? { shell } : {}), ...(invocation.length ? { invocation } : {}) });
         if (!split) out.set(w.node(word), inner);
         // (The words a slot joins are those after it that it marks `joined`.)

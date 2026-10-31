@@ -14,7 +14,7 @@ import { admin } from './admin';
 import { netadmin, SSH_OPTION_VALUES } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
-import { args, ASSIGNMENTS, byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, DOAS_SETS, SUDO_KEEPS, SUDO_OWN, SUDO_SETS, wordTable, LS_ENV, LS_LONG_ENV, LS_HUMAN_ENV, DF_HUMAN_ENV, PS_ENV, PS_BSD_ENV, PS_FULL_ENV } from './types';
+import { args, ASSIGNMENTS, byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, DOAS_SETS, SUDO_KEEPS, SSH_MAY_SEND, SSH_SETS, CONTAINER_SETS, SUDO_OWN, SUDO_SETS, wordTable, LS_ENV, LS_LONG_ENV, LS_HUMAN_ENV, DF_HUMAN_ENV, PS_ENV, PS_BSD_ENV, PS_FULL_ENV } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
@@ -141,7 +141,7 @@ const composeOpts: OptSpec[] = [
 ];
 
 /** The command of `docker run IMAGE CMD`: a program of the image, started without a shell. */
-const IN_CONTAINER = { run: 'exec', where: 'container', env: 'none' } as const;
+const IN_CONTAINER = { run: 'exec', where: 'container', env: 'none', sets: CONTAINER_SETS } as const;
 const IMAGE = operand('IMAGE', 'イメージ', 'image', { repeat: '?' });
 const SERVICE = operand('SERVICE', 'サービス', 'service', { repeat: '?' });
 
@@ -1203,7 +1203,7 @@ export const core: Record<string, CommandSpec> = {
   ssh: cmd('リモートホストに SSH で接続する（コマンドを渡すとリモートで実行）', 'Connect to a remote host over SSH (optionally run a command)', [
     ['-i', '秘密鍵ファイル', 'identity (private key) file', 'arg'],
     ['-p', 'ポート番号', 'port', 'arg'],
-    ['-o', 'ssh の設定オプションを `名前=値` で指定する（例: `ConnectTimeout=5`）', 'a config option, as `Name=value` (e.g. `ConnectTimeout=5`)', 'arg', SSH_OPTION_VALUES],
+    ['-o', 'ssh の設定オプションを `名前=値` で指定する（例: `ConnectTimeout=5`）', 'a config option, as `Name=value` (e.g. `ConnectTimeout=5`)', 'arg sendenv', SSH_OPTION_VALUES],
     ['-L', 'ローカルポートフォワーディング', 'local port forwarding', 'arg'],
     ['-N', 'リモートコマンドを実行しない（転送専用）', 'do not run a remote command'],
     ['-t', '疑似端末を割り当てる', 'force pseudo-terminal allocation'],
@@ -1241,7 +1241,7 @@ export const core: Record<string, CommandSpec> = {
     ['-K', 'GSSAPI 認証を使う', 'enable GSSAPI authentication'],
   ], {
     // ssh reads options again after the host; the words after it are joined into one string for the remote shell.
-    operands: [{ pattern: [operand('DESTINATION', '接続先（`user@host`）', 'destination (`user@host`)'), operand('COMMAND', 'リモートで実行するコマンド', 'remote command', { repeat: '?', command: { run: 'shell-string', where: 'remote', joinsWords: true } })] }],
+    operands: [{ pattern: [operand('DESTINATION', '接続先（`user@host`）', 'destination (`user@host`)'), operand('COMMAND', 'リモートで実行するコマンド', 'remote command', { repeat: '?', command: { run: 'shell-string', where: 'remote', joinsWords: true, sets: SSH_SETS, maySend: SSH_MAY_SEND } })] }],
   }),
   scp: cmd('SSH 経由でファイルをコピーする', 'Copy files over SSH', [
     ['-q', '進行状況を表示しない', 'quiet; no progress meter'],

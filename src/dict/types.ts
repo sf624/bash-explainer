@@ -26,7 +26,7 @@ export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSp
   const lang = /lang:(\w+)/.exec(flags)?.[1] as EmbeddedLang | undefined;
   const io = /io:(\w+)/.exec(flags)?.[1] as IoUse | undefined;
   const setsEnv = /\bsetenv\b/.test(flags) ? 'variable' : flags.includes('envfile') ? 'file' : undefined;
-  const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(io ? { io } : {}), ...(values ? { values } : {}), ...(setsEnv ? { setsEnv } : {}), ...(flags.includes('unsetenv') ? { unsetsEnv: true } : {}), ...(flags.includes('in-order') ? { inOrder: true } : {}) };
+  const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(io ? { io } : {}), ...(values ? { values } : {}), ...(setsEnv ? { setsEnv } : {}), ...(flags.includes('unsetenv') ? { unsetsEnv: true } : {}), ...(flags.includes('sendenv') ? { sendsEnv: true } : {}), ...(flags.includes('in-order') ? { inOrder: true } : {}) };
   const nextIf = /next:(\S+)/.exec(flags)?.[1];
   // (find's `-exec` and `-execdir` end at `;`, or at `+` after a `{}`; `-ok` and `-okdir` only at `;`.)
   if (flags.includes('until-each')) opt.until = { terminators: [';'], slot: { run: 'exec' } };
@@ -251,6 +251,26 @@ export const SUDO_OWN: readonly string[] = SUDO_SETS.filter((v) => v.startsWith(
 
 /** The variables doas sets itself for the target user (doas(1), OpenDoas 6.8; see `DOAS_KEEPS`). */
 export const DOAS_SETS: readonly string[] = ['DOAS_USER', 'HOME', 'LOGNAME', 'PATH', 'SHELL', 'USER'];
+
+/**
+ * The variables sshd sets for the remote command (ssh(1), ENVIRONMENT: `HOME`, `LOGNAME`, `MAIL`, `PATH`, `USER`,
+ * `SSH_CONNECTION`; OpenSSH's session.c also sets `SHELL` and `SSH_CLIENT`). `DISPLAY`, `SSH_TTY`, `SSH_AUTH_SOCK` and
+ * `TERM` only with X11 forwarding, a terminal or an agent.
+ */
+export const SSH_SETS: readonly string[] = ['HOME', 'LOGNAME', 'MAIL', 'PATH', 'SHELL', 'USER', 'SSH_CLIENT', 'SSH_CONNECTION'];
+
+/**
+ * The variables ssh may send to the remote command, as configured (`SendEnv` in ssh_config(5), which the server's
+ * `AcceptEnv` must take): Debian's and Ubuntu's ssh_config send `LANG` and `LC_*`, and their sshd_config accepts them.
+ * Other systems may send none, so a variable of these is a caveat, not known to be there or not.
+ */
+export const SSH_MAY_SEND: readonly string[] = ['LANG', 'LC_*'];
+
+/**
+ * The variables a container runtime sets in a Linux container: `HOME` (of the container's user), `HOSTNAME` and `PATH`
+ * (Docker's "Environment variables" of `docker run`; Kubernetes' runtimes the same), whatever the caller exported.
+ */
+export const CONTAINER_SETS: readonly string[] = ['HOME', 'HOSTNAME', 'PATH'];
 
 /** The variables `su -l` sets for the target user, in an environment it clears but for `TERM` (su(1), util-linux). */
 export const SU_LOGIN_SETS: readonly string[] = ['HOME', 'SHELL', 'USER', 'LOGNAME', 'PATH'];

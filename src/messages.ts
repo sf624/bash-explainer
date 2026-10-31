@@ -6,8 +6,13 @@ import { codeSpan, shorten } from './label';
 import { alwaysFails, LEVELS, namesLevel, type NoteLevel, severityOf } from './levels';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
 import { aliasDefinedText, aliasMaybeText, aliasNotExpandedText } from './messages-alias';
-import { DEFINES_IT, leavesSet, inTrap, LOCAL_SOURCED, noShebang, readByBashrc, SETS_IT, unlessAny, unreadClause, unreadCode } from './messages-common';
+import { inTrap, LOCAL_SOURCED, noShebang, readByBashrc, unreadClause } from './messages-common';
 import { extglobText, globstarText, type LoopHow, type LoopPattern, unmatchedGlobText } from './messages-glob';
+import {
+  builtinOrFunctionAsProgramText, functionNotImportedShText, functionNotImportedText, functionNotInContainerText, functionNotInNewShellBlockedText,
+  functionNotInNewShellExportText, functionNotInNewShellText, functionNotOnRemoteText, functionShadowedText, sshLocalExpansionText,
+  variableNotExportedText, variableNotInRemoteText, variableNotPassedText,
+} from './messages-wrappers';
 import { type ExitRefusedParams, exitRefusedText, ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
 import type { Rewrite } from './rewrite';
 import type { NameFacts, NameKind } from './semantics/names';
@@ -69,7 +74,10 @@ const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) =
 const failure = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text, level: 'error' });
 const pitfall = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text, level?: NoteLevel | ((p: P) => NoteLevel)): Entry<P> =>
   ({ kind: 'pitfall', refs, text, ...(heading ? { heading } : {}), ...(level ? { level } : {}) });
-/** A pitfall at the level `error`: it fails every time as written, with a row in test/error-level.test.ts that sees it fail. */
+/**
+ * A pitfall at the level `error`: the line fails every time as written (docs/design/three-levels.md, section 2), said
+ * whatever the pitfalls settings say. Each has a row in the bash test of test/error-level.test.ts that runs it and sees it fail.
+ */
 const broken = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text): Entry<P> => pitfall(refs, text, heading, 'error');
 /** A pitfall at the level `info`: harmless with most values, systems or paths. */
 const caveat = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text): Entry<P> => pitfall(refs, text, heading, 'info');
@@ -86,8 +94,11 @@ const withConvention = <P>(e: Entry<P>, convention: ConventionId): Entry<P> => (
 /** An entry whose suggestion is rewrites: its params carry them (`rewrite`), its text renders their code, its fact those with edits. */
 const suggests = <P extends { rewrite: readonly Rewrite[] }>(e: Entry<P>): Entry<P> => ({ ...e, rewrite: (p) => p.rewrite.filter((r) => r.edits.length) });
 
-/** The level of a pitfall that fails every time but in some cases, where it is a caveat: `unread` (`unreadClause`), `reader` (`readByBashrc`). */
-const byCase = ({ unread, reader }: { unread?: boolean; reader?: string }): NoteLevel => (unread || reader ? 'info' : 'error');
+/**
+ * The level of a pitfall that fails every time but in some cases, where it is a caveat: `unread` (`unreadClause`),
+ * `reader` (`readByBashrc`), `sent` (ssh may send the variable: src/messages-wrappers.ts).
+ */
+const byCase = ({ unread, reader, sent }: { unread?: boolean; reader?: string; sent?: boolean }): NoteLevel => (unread || reader || sent ? 'info' : 'error');
 
 /** Headings of pitfalls whose text names its own kind of problem. */
 const NO_HEADING: Text = { ja: '', en: '' };
@@ -395,59 +406,24 @@ export const MESSAGES = {
     `${shell} has no globstar, so \`**\` is the same as \`*\` and matches one level only. To reach into subdirectories, use \`find\``]),
 
   // ---------------------------------------------------------------- what a wrapper or a new shell does not get (3.7.3, 3.7.4, 3.3)
-  // (`unread`, here and below: code the model does not read, which runs before, may set it there: `unreadClause`.)
-  'variable-not-in-remote-shell': pitfall<{ v: string; unread?: boolean }>(['3.7.3', '3.7.4'], ({ v, unread }) => [
-    `\`$${v}\` はリモートのシェルが展開しますが、リモートにはこのスクリプトの変数 \`${v}\` はありません${unreadClause(unread, SETS_IT)[0]}。値を送るなら、こちらで展開されるようダブルクォートの中に書きます`,
-    `the remote shell expands \`$${v}\`, but it does not have \`${v}\`, a variable of this script${unreadClause(unread, SETS_IT)[1]}. To send its value, write it in double quotes, so that it is expanded here`], undefined, byCase),
-  // (`keeps`: what the wrapper still passes of the environment, up to two names: sudo's `TERM`, `LANG`, `su -l`'s
-  // `TERM`; `SlotLink.keeps`.)
-  'variable-not-passed-by-wrapper': pitfall<{ v: string; via: string; keeps?: readonly string[]; unread?: boolean }>(['3.7.3', '3.7.4'], ({ v, via, keeps = [], unread }) => {
-    const [a, b] = keeps.map((k) => `\`${k}\``);
-    return [
-      `文字列の中の \`$${v}\` は新しいシェルが展開しますが、\`${via}\` はこのスクリプトの変数を（エクスポートしたものも${b ? `、${a} や ${b} などいくつかを除いて` : a ? `、${a} を除いて` : ''}）渡さないので、そこには \`${v}\` はありません${unreadClause(unread, SETS_IT)[0]}。値を使うなら、こちらで展開されるようダブルクォートの中に書きます`,
-      `the new shell expands \`$${v}\` in the string, but \`${via}\` passes none of this script's variables (not even exported ones${b ? `, but for a few such as ${a} and ${b}` : a ? `, but for ${a}` : ''}), so \`${v}\` is not there${unreadClause(unread, SETS_IT)[1]}. To use its value, write it in double quotes, so that it is expanded here`];
-  }, undefined, byCase),
-  // (`environment`: the script set it with no `unset`, `local` or `export -n` before, so it is exported when it came
-  // from the environment, `maybe` (capitals) or `unlikely` (lower case): src/semantics/shellstate.ts, `fromEnvironment`.)
-  // (`array`: bash exports no array, even one `export` marks, `declare -p` showing `-ax`. The Reference Manual does not
-  // say it (the man page does, under BUGS: "Array variables may not (yet) be exported"): checked. Without it, 3.7.3 and
-  // 3.7.4 say that a command run apart gets only what is exported.)
-  'variable-not-exported': withBasis(pitfall<{ v: string; environment?: 'maybe' | 'unlikely'; array?: boolean; unread?: boolean }>(['3.7.3', '3.7.4'], ({ v, environment, array, unread }) => (array ? [
-    `文字列の中の \`$${v}\` は新しいシェルが展開しますが、\`${v}\` は配列で、bash は配列をエクスポートできない（\`export\` しても渡らない）ので、そこでは空です。値を渡すなら、\`"\${${v}[*]}"\` を引数として渡すか、文字列の変数にします`,
-    `the new shell expands \`$${v}\` in the string, but \`${v}\` is an array, and bash cannot export an array (not even with \`export\`), so it is empty there. To pass its values, give \`"\${${v}[*]}"\` as an argument, or use a string variable`] : environment === 'maybe' ? [
-    `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトで設定していますが、エクスポートしていないので、そこに値が届くのは \`${v}\` が初めから環境変数にあったとき（環境変数から来た変数はエクスポートされています）だけで、そうでなければ空です。先に \`export ${v}\` します`,
-    `the new shell expands \`$${v}\` in the string, and \`${v}\` is set by this script but not exported: its value gets there only when \`${v}\` was in the environment already (a variable from the environment is exported), and it is empty otherwise. Run \`export ${v}\` first`] : [
-    `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です${unlessAny(environment ? [`環境変数に初めから \`${v}\` があるとき`, `the environment already has \`${v}\``] : undefined, unread ? [`${unreadCode(leavesSet(v))[0]}いるとき`, unreadCode(leavesSet(v))[1]] : undefined)[0]}。先に \`export ${v}\` します`,
-    `the new shell expands \`$${v}\` in the string, and \`${v}\` is a variable of this script that is not exported, so it is empty there${unlessAny(environment ? [`環境変数に初めから \`${v}\` があるとき`, `the environment already has \`${v}\``] : undefined, unread ? [`${unreadCode(leavesSet(v))[0]}いるとき`, unreadCode(leavesSet(v))[1]] : undefined)[1]}. Run \`export ${v}\` first`]), undefined,
-  ({ environment, unread }) => (environment === 'maybe' || unread ? 'info' : environment ? 'warning' : 'error')),
+  // (The texts, and what each param means: src/messages-wrappers.ts.)
+  'variable-not-in-remote-shell': pitfall<{ v: string; unread?: boolean; sent?: boolean }>(['3.7.3', '3.7.4'], variableNotInRemoteText, undefined, byCase),
+  'variable-not-passed-by-wrapper': pitfall<{ v: string; via: string; keeps?: readonly string[]; unread?: boolean }>(['3.7.3', '3.7.4'], variableNotPassedText, undefined, byCase),
+  // (A name in lower case may come from the environment too, though it seldom does: a warning, with a clause.)
+  'variable-not-exported': withBasis(pitfall<{ v: string; environment?: 'maybe' | 'unlikely'; array?: boolean; unread?: boolean }>(['3.7.3', '3.7.4'], variableNotExportedText, undefined,
+    ({ environment, unread }) => (environment === 'maybe' || unread ? 'info' : environment ? 'warning' : 'error')),
   ({ array }) => (array ? { kind: 'checked', probe: 'state#export-array' } : undefined)),
-  'function-not-in-container': broken<{ via: string; name: string }>(['3.3', '3.7.3'], ({ via, name }) => [
-    `\`${via}\` は \`${name}\` をコンテナの中で実行します。このスクリプトの関数はコンテナの中にはないので使えません。関数の中身を直接書きます`,
-    `\`${via}\` runs \`${name}\` inside the container, and a function from this script is not available in the container. Write out its body instead`]),
-  'builtin-or-function-as-program': broken<{ via: string; name: string; isFn: boolean; fix: Words }>(['3.7.3', '3.3'], ({ via, name, isFn, fix }) => [
-    `\`${via}\` は \`${name}\` を別のプログラムとして起動するため、シェルの${isFn ? '関数' : '組み込みコマンド'}は実行できません（\`command not found\` になるか、今のシェルには効きません）。${fix.ja}`,
-    `\`${via}\` starts \`${name}\` as a separate program, so it cannot run a shell ${isFn ? 'function' : 'builtin'} ("command not found", or no effect on the current shell). ${fix.en}`]),
-  'ssh-local-expansion': notProblem(caveat<{ risky: string }>(['3.7.1', '3.7.3'], ({ risky }) => [
-    `\`ssh\` に渡すコマンドのうち \`${risky}\` は、送られる前にこちらのシェルが展開します（\`$変数\`・\`$(…)\`・\`*\`・\`~\` はこちらの値になります）。リモートで展開したいときは全体をシングルクォートで囲みます: \`ssh host '…'\``,
-    `the local shell expands \`${risky}\` in the command given to \`ssh\` before it is sent (\`$var\`, \`$(…)\`, \`*\` and \`~\` take local values). To expand them on the remote side, single-quote the whole command: \`ssh host '…'\``])),
-  'function-not-on-remote': broken<{ name: string }>(['3.3', '3.7.3'], ({ name }) => [
-    `リモートのシェルには、このスクリプトの関数 \`${name}\` はありません。中身を直接書くか、\`ssh host "$(declare -f ${name}); ${name}"\` のように定義ごと送ります`,
-    `the remote shell does not have this script's function \`${name}\`. Write out its body, or send the definition too: \`ssh host "$(declare -f ${name}); ${name}"\``]),
-  'function-not-in-new-shell-blocked': broken<{ via: string; fn: string; blocker: string }>(['3.3', '3.7.3'], ({ via, fn, blocker }) => [
-    `\`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。\`${blocker}\` は環境の関数を渡さないので、\`export -f ${fn}\` も効きません。関数の中身を直接書きます`,
-    `\`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`, and \`${blocker}\` passes no exported functions, so \`export -f ${fn}\` does not help either. Write out its body`]),
-  'function-not-in-new-shell': broken<{ via: string; fn: string }>(['3.3', '3.7.3'], ({ via, fn }) => [
-    `\`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書きます`,
-    `\`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`. Write out its body`]),
-  'function-not-imported': broken<{ via: string; shell: string; fn: string }>(['3.3', '3.7.3'], ({ via, shell, fn }) => [
-    `\`${via}\` はコマンドを ${shell} で実行します。${shell} は bash がエクスポートした関数を読まないので、\`export -f\` してもこのスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書くか、\`bash -c\` を使います`,
-    `\`${via}\` runs the command in ${shell}, which does not read the functions bash exports, so this script's function \`${fn}\` is not there, even with \`export -f\`. Write out its body, or use \`bash -c\``]),
-  'function-not-in-new-shell-export': pitfall<{ via: string; fn: string; unread?: boolean }>(['3.3', '3.7.3'], ({ via, fn, unread }) => [
-    `\`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません${unreadClause(unread, DEFINES_IT)[0]}。関数の中身を直接書くか、先に \`export -f ${fn}\` で関数を渡します（新しいシェルが bash のときだけ）`,
-    `\`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`${unreadClause(unread, DEFINES_IT)[1]}. Write out its body, or pass the function with \`export -f ${fn}\` first (only when the new shell is bash)`], undefined, byCase),
-  'function-not-imported-sh': caveat<{ via: string; fn: string }>(['3.3', '3.7.3'], ({ via, fn }) => [
-    `\`${via}\` はコマンドを sh で実行します。Debian や Ubuntu の sh は dash で、dash は bash がエクスポートした関数を読まないので、このスクリプトの関数 \`${fn}\` は使えないことがあります。\`bash -c\` を使います`,
-    `\`${via}\` runs the command in sh, which is dash on Debian and Ubuntu, and dash does not read the functions bash exports, so this script's function \`${fn}\` may not be there. Use \`bash -c\``]),
+  'function-not-in-container': broken<{ via: string; name: string }>(['3.3', '3.7.3'], functionNotInContainerText),
+  'builtin-or-function-as-program': broken<{ via: string; name: string; isFn: boolean; fix: Words }>(['3.7.3', '3.3'], builtinOrFunctionAsProgramText),
+  'ssh-local-expansion': notProblem(caveat<{ risky: string }>(['3.7.1', '3.7.3'], sshLocalExpansionText)),
+  'function-not-on-remote': broken<{ name: string }>(['3.3', '3.7.3'], functionNotOnRemoteText),
+  'function-not-in-new-shell-blocked': broken<{ via: string; fn: string; blocker: string }>(['3.3', '3.7.3'], functionNotInNewShellBlockedText),
+  'function-not-in-new-shell': broken<{ via: string; fn: string }>(['3.3', '3.7.3'], functionNotInNewShellText),
+  'function-not-imported': broken<{ via: string; shell: string; fn: string }>(['3.3', '3.7.3'], functionNotImportedText),
+  'function-not-in-new-shell-export': pitfall<{ via: string; fn: string; unread?: boolean }>(['3.3', '3.7.3'], functionNotInNewShellExportText, undefined, byCase),
+  'function-not-imported-sh': caveat<{ via: string; fn: string }>(['3.3', '3.7.3'], functionNotImportedShText),
+  // (The function is also the name of a program, which runs there instead: often meant, `sudo ls`.)
+  'function-shadowed-by-program': caveat<{ via: string; name: string; where: 'program' | 'shell' | 'remote' | 'container' }>(['3.3', '3.7.3'], functionShadowedText),
   'wrapper-assignment-expanded-first': suggests(broken<{ use: string; via: string; v: string; rewrite: readonly Rewrite[] }>(['3.7.1', '3.7.4'], ({ use, via, v, rewrite: [fix] }) => [
     `\`${use}\` は、\`${via}\` が \`${v}\` を設定する前に今のシェルが展開します（今の値で、なければ空）。設定した値を使うなら \`${via} ${v}=… ${fix.code}\` のようにシェル経由にします`,
     `the current shell expands \`${use}\` before \`${via}\` sets \`${v}\` (to its present value, or nothing). To use the value it sets, go through a shell: \`${via} ${v}=… ${fix.code}\``])),
@@ -464,7 +440,9 @@ export const MESSAGES = {
     `パイプ（\`|\`）でつないだコマンドはサブシェルで実行されるので、右側で設定した \`${used}\` はパイプラインが終わると消え、あとの \`$${used}\` には届きません。${fix.ja}`
       + (partial ? '（この前で `shopt -s lastpipe` を有効にしているのは一部の経路だけです）' : ''),
     `the commands of a pipeline (\`|\`) run in subshells, so \`${used}\` set on the right side is gone when the pipeline ends; the later \`$${used}\` does not see it. ${fix.en}`
-      + (partial ? ' (only some paths before here turn `shopt -s lastpipe` on)' : '')], undefined, ({ partial }) => (partial ? 'info' : 'error')),
+      + (partial ? ' (only some paths before here turn `shopt -s lastpipe` on)' : '')], undefined,
+  // (`partial`: the other paths keep the variable, as with `extglob-maybe-on`: a caveat.)
+  ({ partial }) => (partial ? 'info' : 'error')),
   // (`rewrite`: a test first in the body, where each pass of the loop is over a pattern, and `shopt -s nullglob` where the shell has it.)
   'unmatched-glob-runs-once': withConvention(suggests(caveat<{ glob: string; patterns: readonly LoopPattern[]; v: string; alone: boolean; rewrite: readonly Rewrite[]; how: LoopHow }>(['3.5.8', '3.2.5.1', '3.2.5.2'], ({ glob, patterns, v, alone, rewrite, how }) => unmatchedGlobText(glob, patterns, v, alone, rewrite, how))), 'guard-unmatched-glob'),
   // (The shell sets the standard input up, but a command given a file to read reads that instead: jq, sort, cat…)

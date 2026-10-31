@@ -54,7 +54,8 @@ describe('the message catalog', () => {
   const CAVEATS = ['declaration-masks-status', 'pipefail-missing', 'function-last-test-returns-status', 'failure-reported-as-success', 'posix-special-function-name-maybe', 'posix-function-name-maybe', 'posix-special-builtin-error-maybe',
     'extglob-maybe-on', 'extglob-not-found', 'extglob-maybe-on-trap', 'globstar-maybe-on',
     'globstar-not-found', 'ssh-local-expansion', 'function-not-imported-sh', 'unmatched-glob-runs-once', 'for-over-ls-output', 'for-over-unquoted-args',
-    'unquoted-variable-in-test', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment', 'alias-maybe-not-expanded'];
+    'unquoted-variable-in-test', 'dockerfile-pipefail-missing', 'script-last-test-returns-status', 'array-joined-in-assignment', 'alias-maybe-not-expanded',
+    'function-shadowed-by-program'];
   const PITFALL_ERRORS = ['posix-special-function-name', 'extglob-turned-off', 'globstar-unsupported', 'function-not-in-container', 'builtin-or-function-as-program',
     'function-not-on-remote', 'function-not-in-new-shell-blocked', 'function-not-in-new-shell', 'function-not-imported', 'wrapper-assignment-expanded-first',
     'prefix-assignment-expanded-first', 'shebang-refused', 'shebang-bom', 'bats-test-line-dropped', 'bats-negation-ignored', 'bats-run-in-pipeline-stage',
@@ -84,6 +85,8 @@ describe('the message catalog', () => {
       assert.strictEqual(fact('en', 'variable-not-exported', { v: 'x', unread }).level, level);
       assert.strictEqual(fact('en', 'function-not-in-new-shell-export', { via: 'bash -c', fn: 'f', unread }).level, level);
     }
+    // (A variable ssh may send, `SendEnv`: a caveat.)
+    assert.strictEqual(fact('en', 'variable-not-in-remote-shell', { v: 'LANG', sent: true }).level, 'info');
     // (A distribution's alias, or `shopt -s extglob` in the block of its glob, in a file with no shebang, which an interactive shell may read.)
     const distro = { name: 'll', where: 'Ubuntu', what: { ja: 'エイリアス', en: 'an alias' }, many: false, instead: { ja: '', en: '' } };
     assert.strictEqual(fact('en', 'distro-alias-in-script', distro).level, 'error');
