@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#C2PR), C3 (#545), C4 (#544) and C6 (#546). C5 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544) and C6 (#546). C5 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -244,7 +244,7 @@ Risks: the line box is the panel's, which P7c restyles. Whichever lands second k
 
 ### C2. The Problems strip
 
-Done in #C2PR (2026-10-31). What it did, and what the design did not say:
+Done in #555 (2026-10-31). What it did, and what the design did not say:
 
 - The order, the position and the next problem are src/ui/problemNav.ts: `byPlace` (the order of the script; the list shows it too, so "1/11" is the row's place; before, the list was grouped by kind), `problemAt` (the problem the cursor is in, else the first of its line, else none: the strip then shows no position), `stepProblem` (from inside a problem, the one after it in that order; from elsewhere, the first that starts after the cursor, or the last that starts before it; round from the last to the first) and `sameProblem`. The problem last gone to tells apart two problems on one range. The words ("Ln 20 · 1/11", "Problem 1 of 11, line 20") are in web/text.ts, the page's table of texts.
 - The counts are `levelTally` and `levelCounts` of the level table (src/levels.ts). Info got its `count` ("2 caveats" / 「注意 2 件」, decision 9). The screen reader's summary of a line reads the same function, so it counts caveats too: one rule for both.
