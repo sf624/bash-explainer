@@ -2,7 +2,7 @@
 // explanations, the problems as diagnostics and their quick fixes, hints after surprising command names, and (with highlight.enabled) semantic tokens. Hand-written JSON-RPC, so the
 // tool still needs nothing but fs (the usual libraries also bring sockets).
 import { Analyzer } from '../src/analyzer';
-import { DocumentIssue, diagnosticsFor, explainDocumentLine, heredocAt, plain, ShellDocument } from '../src/document';
+import { DocumentIssue, diagnosticsFor, explainDocumentLine, fixTitle, heredocAt, plain, ShellDocument } from '../src/document';
 import { FileKind, kindOfDocument, openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
 import { SEVERITIES } from '../src/levels';
@@ -173,7 +173,7 @@ export function startLanguageServer(io: Io): void {
     return issues(doc)
       .filter((i) => i.startLine <= range.end.line && i.endLine >= range.start.line)
       .flatMap((i) => (i.fixes ?? []).map((fix, k) => ({
-        title: fix.title[lang === 'ja' ? 0 : 1],
+        title: fixTitle(fix, lang),
         kind: 'quickfix',
         // (The first fix of a problem is the one it recommends.)
         isPreferred: k === 0,

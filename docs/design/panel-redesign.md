@@ -180,6 +180,7 @@ Done (#560):
 - `pattern-from-variable`: `grep -F`, in place of an option or a name that selects another mode (GNU grep refuses two: "conflicting matchers specified"); none where a word before the pattern has a value that is not known, nor where grep has other patterns (another word in a pattern's language, or an option that gives the patterns in place of the first operand, `fills`: `-f pats`), which `-F` would read as fixed strings too; the note then says so (`otherPatterns`). Its states run over the corpus with GNU grep on the runs' PATH (it writes no file): the rewrite with `a.b` or `x*` gives what the original gives with the value escaped.
 - The note's text renders the code of both from the rewrites. The note on `source lib.sh` suggested `"$(dirname "$0")/lib.sh"` in bash, which names the caller's directory when the file is sourced.
 - The web page's tooltip has a button per fix; on a narrow pane the box scrolls to the last one (test/web-quickfix.test.ts, screenshots in English and Japanese at 390 and 1280 px).
+- A fix's title is marked text (`Fix.title`, the code as a `codeSpan`); every host gets it from `fixTitle` (src/document.ts), next to `plain`: VS Code and the Language Server keep the backticks, as in their messages; the web page's buttons, which CodeMirror draws as text (`Action.name`, no render hook in @codemirror/lint 6.9), show each code span's code alone. The dialect fixes' titles (`fixFor`) too.
 
 ### P4. What the program receives, as data
 

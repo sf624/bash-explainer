@@ -24,9 +24,10 @@ describe('the web page: the quick fixes of the notes', function () {
     await page.keyboard.insertText(text);
   }
 
+  // (CodeMirror draws an action's name as text: the code without the backticks that mark it, `fixTitle`.)
   const TITLES = {
-    en: ['Rewrite as `source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh`', 'Rewrite as `source ./lib.sh`'],
-    ja: ['`source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh` に書き換える', '`source ./lib.sh` に書き換える'],
+    en: ['Rewrite as source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh', 'Rewrite as source ./lib.sh'],
+    ja: ['source "$(dirname "${BASH_SOURCE[0]}")"/lib.sh に書き換える', 'source ./lib.sh に書き換える'],
   };
   for (const [lang, locale] of [['en', 'en-US'], ['ja', 'ja-JP']] as const) {
     for (const width of [390, 1280]) {

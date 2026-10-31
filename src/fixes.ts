@@ -1,6 +1,6 @@
 import type { Issue } from './dialect';
 import { parseExpansion } from './expansion';
-import { shorten } from './label';
+import { codeSpan, shorten } from './label';
 import type { Rewrite } from './rewrite';
 import { field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
@@ -8,7 +8,7 @@ import type { SyntaxNode } from './syntax/tree';
 /** A text replacement, in tree positions (0-based rows and columns). */
 export interface Edit { startLine: number; startCol: number; endLine: number; endCol: number; text: string }
 
-/** A quick fix for an issue: what it does (ja, en) and the edits. */
+/** A quick fix for an issue: what it does (ja, en; marked text, code in backticks: `fixTitle` gives it for an editor) and the edits. */
 export interface Fix { title: [string, string]; edits: Edit[] }
 
 /**
@@ -17,8 +17,8 @@ export interface Fix { title: [string, string]; edits: Edit[] }
  * cut at 60 characters), "Add" where the edits only insert, else "Rewrite as".
  */
 export function rewriteFix(r: Rewrite, place: (offset: number) => { line: number; col: number }): Fix {
-  const code = shorten(r.code, 60);
-  const title: Fix['title'] = r.edits.every((e) => e.start === e.end) ? [`\`${code}\` を加える`, `Add \`${code}\``] : [`\`${code}\` に書き換える`, `Rewrite as \`${code}\``];
+  const code = codeSpan(shorten(r.code, 60));
+  const title: Fix['title'] = r.edits.every((e) => e.start === e.end) ? [`${code} を加える`, `Add ${code}`] : [`${code} に書き換える`, `Rewrite as ${code}`];
   return {
     title,
     edits: r.edits.map((e) => {
