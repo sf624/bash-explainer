@@ -1,5 +1,5 @@
 // The VS Code panel's page outside VS Code, for the browser tests of its header (test/panel-header.test.ts) and for
-// screenshots: PANEL_BODY, media/panel.css, media/icons.js and media/panel.js as src/ui/panel.ts serves them, under a content
+// screenshots: PANEL_BODY, media/panel.css, media/icons.js, media/view-control.js and media/panel.js as src/ui/panel.ts serves them, under a content
 // security policy as strict as the webview's (no inline script or style, no font, no image), with the theme
 // variables of Dark Modern, Light Modern or Dark High Contrast (test/fixtures/vscode-themes.css). A stub plays
 // VS Code's part: acquireVsCodeApi() keeps what the panel posts (window.POSTED), and 'ready' is answered with the
@@ -71,6 +71,7 @@ const PAGE = `<!DOCTYPE html>
 <body>
 ${PANEL_BODY}
 <script src="media/icons.js"></script>
+<script src="media/view-control.js"></script>
 <script src="media/panel.js"></script>
 </body>
 </html>
@@ -96,6 +97,7 @@ export async function servePanel(line = SAMPLE, file = 'cleanup.sh', wrap = fals
       case '/themes.css': return send('text/css', fs.readFileSync(path.join(root, 'test/fixtures/vscode-themes.css')));
       case '/media/panel.css': return send('text/css', fs.readFileSync(path.join(root, 'media/panel.css')));
       case '/media/icons.js': return send('text/javascript', fs.readFileSync(path.join(root, 'media/icons.js')));
+      case '/media/view-control.js': return send('text/javascript', fs.readFileSync(path.join(root, 'media/view-control.js')));
       case '/media/panel.js': return send('text/javascript', fs.readFileSync(path.join(root, 'media/panel.js')));
     }
     res.writeHead(404).end();

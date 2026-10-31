@@ -256,12 +256,13 @@ describe('the web page: the explanation panel and the editor', function () {
     await until('the panel drawn again', () => parent().evaluate((li) => !(li as any).mark), (redrawn) => redrawn);
     assert.strictEqual(await folded(), true);
     assert.strictEqual(await twisty(), '▸');
-    // "Expand all" and "Collapse all" still work.
+    // "Expand all" and "Collapse all" still work (the page's button sends the state it wants to the panel: a message).
     await page.locator('#collapse').click();
-    assert.strictEqual(await panel().locator('#tree .collapsed').count(), 0);
+    await until('expanded', () => panel().locator('#tree .collapsed').count(), (n) => n === 0);
+    await until('the button says Collapse all', async () => (await page.locator('#collapse').getAttribute('aria-label')) ?? '', (t) => t === 'Collapse all');
     await page.locator('#collapse').click();
+    await until('collapsed', () => panel().locator('#tree .collapsed').count(), (n) => n > 0);
     assert.strictEqual(await folded(), false);
-    assert.strictEqual(await panel().locator('#tree .collapsed').count() > 0, true);
     await ctx.close();
   });
 

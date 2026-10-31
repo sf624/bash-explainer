@@ -46,12 +46,6 @@
     <label class="pick desk-only"><span id="shell-top-label" class="sr-only">Shell</span><select id="shell-top"></select></label>
     <label id="yq-top-box" class="pick desk-only" hidden><span id="yq-top-label" class="sr-only">yq</span><select id="yq-top"></select></label>
     <span class="sep desk-only" aria-hidden="true"></span>
-    <div id="views-top" class="views bar-only" role="group"></div>
-    <span class="sep bar-only" aria-hidden="true"></span>
-    <button id="collapse" class="icon-btn" type="button"><svg class="ico" data-icon="collapse-all" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
-    <button id="copy-md" class="icon-btn desk-bar" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
-    <button id="ref" class="icon-btn" type="button" aria-pressed="false"><svg class="ico" data-icon="book" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
-    <span class="sep" aria-hidden="true"></span>
     <button id="share" class="text-btn desk-bar" type="button" aria-describedby="share-note"><svg aria-hidden="true"><use href="#i-link"/></svg><span id="share-label" class="lbl">Copy a link</span></button>
     <span id="share-note" hidden>The script is in the part after #, which browsers do not send to the server.</span>
     <span id="share-said" class="sr-only" role="status"></span>
@@ -96,7 +90,18 @@
     </section>
   </section>
   <div id="splitter" class="splitter" role="separator" tabindex="0" aria-controls="source" aria-valuemin="15" aria-valuemax="85" aria-valuenow="50"></div>
-  <iframe id="panel" src="panel.html" title="Explanation"></iframe>
+  <section id="panel-pane" class="panel-pane">
+    <!-- The panel's header (web/panel-head.ts): the tabs, the view control (media/view-control.js), and the tools with their words. -->
+    <div id="panel-head" class="panel-head" data-tools="beside">
+      <div id="panel-tabs" class="panel-tabs" role="tablist" aria-label="Panel"><button id="tab-explain" class="panel-tab" type="button" role="tab" aria-selected="true" aria-controls="panel-body">Explanation</button><button id="tab-ref" class="panel-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-body" tabindex="-1">Reference</button></div>
+      <div id="view-slot" class="view-slot"></div>
+      <div class="panel-tools">
+        <button id="collapse" class="panel-tool" type="button"><svg class="ico" data-icon="collapse-all" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="collapse-word" class="tool-word" aria-hidden="true"></span></button>
+        <button id="copy-md" class="panel-tool" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="copy-md-word" class="tool-word" aria-hidden="true"></span></button>
+      </div>
+    </div>
+    <div id="panel-body" class="panel-body" role="tabpanel" aria-labelledby="tab-explain"><iframe id="panel" src="panel.html" title="Explanation"></iframe></div>
+  </section>
 </main>
 <div id="status"></div>
 <!-- What the explanation of the line the cursor moved to is about, for a screen reader (web/a11y.ts). -->
@@ -113,7 +118,6 @@
       <h3 id="menu-h-script" class="menu-h">Script</h3>
       <span class="menu-file-row"><button id="menu-file" class="menu-item menu-file" type="button"><svg aria-hidden="true"><use href="#i-file"/></svg><span id="menu-file-name" class="menu-file-name"></span><span id="menu-file-dot" class="file-dot" aria-hidden="true" hidden>●</span><svg class="file-pencil" aria-hidden="true"><use href="#i-pencil"/></svg></button><input id="menu-file-input" class="file-name-input" type="text" spellcheck="false" autocomplete="off" hidden></span>
       <label class="field phone-only"><span id="kind-label">File</span><select id="kind-menu"></select></label>
-      <div class="field phone-only" role="group" aria-labelledby="views-menu-label"><span id="views-menu-label"></span><div id="views-menu" class="views"></div></div>
       <label class="field"><span id="shell-label">Shell</span><select id="shell"></select></label>
       <label id="yq-box" class="field" hidden><span id="yq-label">yq</span><select id="yq"></select></label>
       <button id="menu-open-file" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-open"/></svg><span id="menu-open-label">Open file…</span><kbd id="menu-open-key" class="menu-key"></kbd></button>
@@ -126,10 +130,6 @@
       <button id="menu-share" class="menu-item" type="button" aria-describedby="share-note"><svg aria-hidden="true"><use href="#i-link"/></svg><span id="menu-share-label">Copy a link to this script</span></button>
       <span id="menu-share-said" class="sr-only" role="status"></span>
       <button id="menu-copy-script" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-duplicate"/></svg><span id="menu-copy-script-label">Copy the script</span></button>
-    </section>
-    <section class="menu-group narrow-only" aria-labelledby="menu-h-explanation">
-      <h3 id="menu-h-explanation" class="menu-h">Explanation</h3>
-      <button id="menu-copy" class="menu-item phone-only" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg><span id="menu-copy-label">Copy as Markdown</span></button>
     </section>
     <section class="menu-group" aria-labelledby="menu-h-prefs">
       <h3 id="menu-h-prefs" class="menu-h">Preferences</h3>

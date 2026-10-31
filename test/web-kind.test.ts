@@ -296,7 +296,7 @@ describe('the web page: the file kind', function () {
     await ctx.close();
   });
 
-  it('has the logo and the name in the top bar of a phone, and the file kind, the copy and the link in the menu; from 320px to 430px, in both themes, nothing overflows and every button is 40px or more', async () => {
+  it('has the logo and the name in the top bar of a phone, and the file kind and the link in the menu; from 320px to 430px, in both themes, nothing overflows and every button is 40px or more', async () => {
     const { devices } = await import('playwright-core');
     for (const scheme of ['light', 'dark'] as const) {
       for (const width of [320, 360, 390, 430]) {
@@ -308,7 +308,7 @@ describe('the web page: the file kind', function () {
         // Read mode on, as on a phone in use.
         await page.locator('#readtip-close').tap().catch(() => undefined);
         await page.locator('#readmode').tap();
-        const ids = ['menu-open', 'collapse', 'ref', 'readmode', 'settings-open'];
+        const ids = ['menu-open', 'readmode', 'settings-open'];
         const m = (await page.evaluate(`(() => {
           const t = document.querySelector('.top');
           const boxes = ${JSON.stringify(ids)}.map((id) => { const e = document.getElementById(id); const r = e.getBoundingClientRect(); return [id, e.getClientRects().length > 0, r.left, r.right, r.width, r.height]; });
@@ -316,7 +316,7 @@ describe('the web page: the file kind', function () {
           const shown = (sel) => document.querySelector(sel).getClientRects().length > 0;
           return { h: t.getBoundingClientRect().height, bar: t.scrollWidth <= t.clientWidth, page: document.documentElement.scrollWidth <= document.documentElement.clientWidth, boxes,
             brand: [brand.getBoundingClientRect().left, brand.getBoundingClientRect().right, img.getBoundingClientRect().width], whole: name.scrollWidth <= name.clientWidth, text: name.textContent, rows: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)),
-            hidden: ['#kind', '#copy-md', '#share'].map((s) => shown(s)), href: brand.getAttribute('href') };
+            hidden: ['#kind', '#share'].map((s) => shown(s)), href: brand.getAttribute('href') };
         })()`)) as { h: number; bar: boolean; page: boolean; boxes: [string, boolean, number, number, number, number][]; brand: [number, number, number]; whole: boolean; text: string; rows: number; hidden: boolean[]; href: string };
         const where = `${width}px ${scheme}`;
         assert.ok(m.h <= 49 && m.bar && m.page && m.whole, `${where}: ${JSON.stringify(m)}`);
@@ -325,7 +325,7 @@ describe('the web page: the file kind', function () {
         assert.ok(m.brand[2] >= 24, where);
         // One line from 390px, two lines below it.
         assert.strictEqual(m.rows, width >= 390 ? 1 : 2, where);
-        assert.deepStrictEqual(m.hidden, [false, false, false], where);
+        assert.deepStrictEqual(m.hidden, [false, false], where);
         for (const [id, shown, left, right, w, h] of m.boxes) {
           assert.ok(shown && left >= 0 && right <= width + 0.5 && w >= 40 && h >= 40, `${where}: ${id} ${[shown, left, right, w, h]}`);
         }
@@ -340,12 +340,10 @@ describe('the web page: the file kind', function () {
           await page.locator('#menu-close').tap();
         }
         if (scheme === 'light' && (width === 320 || width === 390)) {
-          // The copy and the link work from the menu.
+          // The copy works from the panel's header, the link from the menu.
           await page.evaluate('navigator.clipboard.writeText("")');
           await page.locator('.cm-line').nth(7).tap();
-          await page.locator('#menu-open').tap();
-          await page.locator('#menu-copy').tap();
-          assert.strictEqual(await page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open), false);
+          await page.locator('#copy-md').tap();
           const md = await until('the copy', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.length > 0);
           assert.match(md, /`/);
           await page.evaluate('navigator.clipboard.writeText("")');

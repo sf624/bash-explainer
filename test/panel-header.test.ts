@@ -5,7 +5,7 @@
 import * as assert from 'assert';
 import type { Browser, Page } from 'playwright-core';
 import { PanelServer, PanelTheme, servePanel } from './support/panel-page';
-import { until } from './support/site';
+import { frames, until } from './support/site';
 
 describe('the VS Code panel: its header', function () {
   this.timeout(60000);
@@ -59,11 +59,11 @@ describe('the VS Code panel: its header', function () {
     assert.strictEqual(await page.getByRole('combobox', { name: 'Shell' }).getAttribute('title'), 'Shell');
     assert.strictEqual(await page.locator('#shell-box .ico path').count(), 1);
     // The view switch: two words, the view shown pressed.
-    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#views button')].map((b) => b.textContent + ' ' + b.getAttribute('aria-pressed'))`), ['Meaning true', 'Reading false']);
-    assert.strictEqual(await page.locator('#views').getAttribute('aria-label'), 'View');
+    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#view-options button')].map((b) => b.textContent + ' ' + b.getAttribute('aria-pressed'))`), ['Meaning true', 'Reading false']);
+    assert.strictEqual(await page.locator('#view-options').getAttribute('aria-label'), 'View');
     assert.strictEqual(await page.locator('header #views').count(), 1, 'the view switch is in the header');
     const ja = await open('dark', 600, 'ja');
-    assert.deepStrictEqual(await ja.evaluate(`[...document.querySelectorAll('header .tb, #views button')].map((b) => b.title || b.textContent)`), ['意味', '読まれ方', 'すべて折りたたむ', 'Markdown でコピー', '早見表', '設定']);
+    assert.deepStrictEqual(await ja.evaluate(`[...document.querySelectorAll('header .tb, #view-options button')].map((b) => b.title || b.textContent)`), ['意味', '読まれ方', 'すべて折りたたむ', 'Markdown でコピー', '早見表', '設定']);
     assert.deepStrictEqual([...page.errors, ...ja.errors], []);
     await page.close();
     await ja.close();
@@ -88,17 +88,17 @@ describe('the VS Code panel: its header', function () {
     await page.locator('#ref').click();
     assert.strictEqual(await page.locator('#ref').getAttribute('aria-pressed'), 'false');
     assert.strictEqual(await icon(page, 'ref'), 'book 1');
-    // Each change of the two is told to the host, as drawn: the web page draws its own buttons for them from it.
-    assert.deepStrictEqual(await page.evaluate('window.POSTED.filter((m) => m.type === "header").map((m) => [m.buttons.toggle.name, m.buttons.toggle.icon, m.buttons.ref.name, m.buttons.ref.icon, m.buttons.ref.pressed].join(" | "))'), [
-      'Collapse all | collapse-all | Quick reference | book | false',
-      'Expand all | expand-all | Quick reference | book | false',
-      'Collapse all | collapse-all | Quick reference | book | false',
-      'Collapse all | collapse-all | ← Back to the explanation | arrow-left | true',
-      'Collapse all | collapse-all | Quick reference | book | false',
+    // Each change of the two is told to the host, as a state: the web page draws its own tools from it (names and icons from src/ui/panelHead.ts).
+    assert.deepStrictEqual(await page.evaluate('window.POSTED.filter((m) => m.type === "header").map((m) => [m.folded, m.reference].join(" | "))'), [
+      'false | false',
+      'true | false',
+      'false | false',
+      'false | true',
+      'false | false',
     ]);
     // The view switch: the tree, then the list again, each time told to the host.
     await page.locator('#view-tree').click();
-    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#views button')].map((b) => b.getAttribute('aria-pressed'))`), ['false', 'true']);
+    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#view-options button')].map((b) => b.getAttribute('aria-pressed'))`), ['false', 'true']);
     assert.strictEqual(await page.locator('#reading').isVisible(), true);
     assert.deepStrictEqual(await page.evaluate('window.POSTED.filter((m) => m.type === "panelState").map((m) => m.state.view)'), ['tree']);
     await page.locator('#view-list').click();
@@ -202,8 +202,65 @@ describe('the VS Code panel: its header', function () {
     const widths = (sel: string) => page.evaluate(`(() => { const e = document.querySelector('${sel}'); const c = getComputedStyle(e); return [c.borderTopWidth, c.borderBottomWidth]; })()`);
     assert.ok((await page.locator('#line .seg').count()) > 0);
     assert.deepStrictEqual(await widths('#line .seg'), ['0px', '2px']);
-    assert.deepStrictEqual(await widths('#views'), ['1px', '1px']);
+    assert.deepStrictEqual(await widths('#view-options'), ['1px', '1px']);
     await page.close();
+  });
+
+  it('draws the view control as segments where they fit the header\'s row, else as a menu (the component of the web page: media/view-control.js)', async () => {
+    for (const lang of ['en', 'ja'] as const) {
+      const page = await open('dark', 600, lang);
+      const form = () => page.locator('#views').getAttribute('data-form');
+      const fits = () => page.evaluate('document.querySelector("header").scrollWidth <= document.querySelector("header").clientWidth');
+      assert.strictEqual(await form(), 'segments', lang);
+      assert.strictEqual(await page.locator('#view-open').isHidden(), true);
+      // Narrower and narrower: the segments while they fit the row, then the menu, which fits (the widths come from
+      // the fonts, so the test finds where the form changes rather than naming a width).
+      let width = 600;
+      while (width > 160 && (await form()) === 'segments') {
+        assert.strictEqual(await fits(), true, `${lang} ${width}px`);
+        width -= 10;
+        await page.setViewportSize({ width, height: 420 });
+        await until('the header measured', () => page.evaluate('document.querySelector("header").clientWidth') as Promise<number>, (w) => w === width - 32);
+        await frames(page);
+      }
+      assert.strictEqual(await form(), 'menu', `${lang} ${width}px`);
+      assert.strictEqual(await fits(), true, `${lang} ${width}px`);
+      assert.strictEqual(await page.locator('#view-options').isHidden(), true);
+      const open_ = page.locator('#view-open');
+      assert.strictEqual(await open_.getAttribute('aria-label'), lang === 'en' ? 'View: Meaning' : '表示: 意味');
+      assert.strictEqual(await open_.getAttribute('aria-expanded'), 'false');
+      // Opened with the keyboard: the option shown takes the focus; Escape closes it, the focus back on its button.
+      await open_.focus();
+      await page.keyboard.press('Enter');
+      assert.strictEqual(await open_.getAttribute('aria-expanded'), 'true');
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'view-list');
+      await page.keyboard.press('ArrowDown');
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'view-tree');
+      await page.keyboard.press('Escape');
+      assert.strictEqual(await page.locator('#view-options').isHidden(), true);
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'view-open');
+      // A choice closes it, gives the focus back to its button, and is told to the host.
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+      await until('the tree', () => page.locator('#reading').isVisible(), (v) => v);
+      assert.strictEqual(await page.locator('#view-options').isHidden(), true);
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'view-open');
+      assert.strictEqual(await open_.getAttribute('aria-label'), lang === 'en' ? 'View: Reading' : '表示: 読まれ方');
+      assert.deepStrictEqual(await page.evaluate('window.POSTED.filter((m) => m.type === "panelState").map((m) => m.state.view)'), ['tree']);
+      // The button keeps its width whichever option it says (each name drawn over the other, unseen).
+      const w = await open_.evaluate((b) => b.getBoundingClientRect().width);
+      await open_.click();
+      await page.locator('#view-list').click();
+      assert.strictEqual(await open_.evaluate((b) => b.getBoundingClientRect().width), w, lang);
+      // A press elsewhere closes it.
+      await open_.click();
+      assert.strictEqual(await page.locator('#view-options').isVisible(), true);
+      await page.mouse.click(5, 300);
+      assert.strictEqual(await page.locator('#view-options').isHidden(), true);
+      assert.deepStrictEqual(page.errors, [], lang);
+      await page.close();
+    }
   });
 
   it('shows the yq dropdown on a line that runs yq, and posts the choice', async () => {

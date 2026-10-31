@@ -25,14 +25,14 @@ describe('the web page: touch screens, stored data and the window', function () 
       await page.goto(base);
       await page.locator('.cm-line').nth(5).waitFor();
       const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
-      if (touch) await page.locator('#ref').tap();
-      else await page.locator('#ref').click();
+      if (touch) await page.locator('#tab-ref').tap();
+      else await page.locator('#tab-ref').click();
       await until('the reference', () => panel().locator('#reference').isVisible(), (v) => v);
       const focused = () => panel().evaluate('document.activeElement && document.activeElement.id');
       if (touch) {
         // (The search field would be focused by now, if it were going to be.)
         assert.notStrictEqual(await stable('the focus', async () => String(await focused())), 'ref-search');
-        assert.strictEqual(await page.evaluate('document.activeElement.id'), 'ref');
+        assert.strictEqual(await page.evaluate('document.activeElement.id'), 'tab-ref');
       } else {
         await until('the search field', async () => String(await focused()), (id) => id === 'ref-search');
       }
@@ -146,7 +146,7 @@ describe('the web page: touch screens, stored data and the window', function () 
     await desk.close();
   });
 
-  it('has the view switch in the menu on a phone (the top bar has no room for it), with targets of 40px or more, and remembers the view', async () => {
+  it('has the view control in the panel\'s header on a phone, as a 44px pill and its menu, and remembers the view', async () => {
     const { devices } = await import('playwright-core');
     for (const width of [320, 390, 430]) {
       const ctx = await browser.newContext({ ...devices['iPhone 13'], viewport: { width, height: 740 }, locale: width === 390 ? 'ja-JP' : 'en-US' });
@@ -154,27 +154,31 @@ describe('the web page: touch screens, stored data and the window', function () 
       await page.goto(base);
       await page.locator('.cm-line').nth(5).waitFor();
       const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
-      // The bar: one row, every button 40px or more, nothing hanging out; the switch is not in it.
+      // The bar: one row, every button 40px or more, nothing hanging out; the view control is not in it.
       const bar = await page.evaluate(`(() => {
         const t = document.querySelector('.top');
         const sizes = [...t.querySelectorAll('button, a')].filter((e) => e.getBoundingClientRect().width > 0).map((e) => Math.min(e.getBoundingClientRect().width, e.getBoundingClientRect().height));
         return [t.getBoundingClientRect().height, t.scrollWidth <= t.clientWidth, document.documentElement.scrollWidth <= document.documentElement.clientWidth, Math.min(...sizes.filter((s) => s > 30))];
       })()`) as [number, boolean, boolean, number];
       assert.ok(bar[0] <= 49 && bar[1] && bar[2] && bar[3] >= 40, `${width}px: ${bar}`);
-      assert.strictEqual(await page.locator('#views-top').isHidden(), true, `${width}px`);
-      await page.locator('#menu-open').tap();
-      // (The menu slides in.)
-      await stable('the menu open', async () => (await page.locator('#view-tree-menu').boundingBox())?.x ?? -1);
-      const halves = await Promise.all(['#view-list-menu', '#view-tree-menu'].map(async (id) => (await page.locator(id).boundingBox())!));
-      for (const b of halves) assert.ok(b.width >= 40 && b.height >= 40 && b.x >= 0 && b.x + b.width <= width, `${width}px: ${JSON.stringify(b)}`);
-      assert.strictEqual(await page.locator('#view-list-menu').getAttribute('aria-pressed'), 'true');
-      await page.locator('#view-tree-menu').tap();
-      assert.strictEqual(await page.locator('#view-tree-menu').getAttribute('aria-pressed'), 'true');
-      await page.evaluate("document.getElementById('drawer').close()");
+      assert.strictEqual(await page.locator('.top .vc').count(), 0, `${width}px`);
+      // In the panel's header: the segments where they fit, else the pill that opens them; each 44px high, inside the window.
+      const open = page.locator('#slot-open');
+      if (await open.isVisible()) {
+        // (Once the page has settled: the explanation's first drawing moves the panes.)
+        const pill = JSON.parse(await stable('the pill', async () => JSON.stringify(await open.boundingBox()))) as { x: number; width: number; height: number };
+        assert.ok(pill.height >= 44 && pill.x >= 0 && pill.x + pill.width <= width, `${width}px: ${JSON.stringify(pill)}`);
+        await open.tap();
+      }
+      const options = await Promise.all(['#slot-list', '#slot-tree'].map(async (id) => (await page.locator(id).boundingBox())!));
+      for (const b of options) assert.ok(b.width >= 44 && b.height >= 44 && b.x >= 0 && b.x + b.width <= width, `${width}px: ${JSON.stringify(b)}`);
+      assert.strictEqual(await page.locator('#slot-list').getAttribute('aria-pressed'), 'true');
+      await page.locator('#slot-tree').tap();
+      assert.strictEqual(await page.locator('#slot-tree').getAttribute('aria-pressed'), 'true');
       await until('the tree', () => panel().locator('#reading').isVisible(), (v) => v);
       await page.reload();
       await page.locator('.cm-line').first().waitFor();
-      assert.strictEqual(await page.locator('#view-tree-menu').getAttribute('aria-pressed'), 'true', 'remembered');
+      assert.strictEqual(await page.locator('#slot-tree').getAttribute('aria-pressed'), 'true', 'remembered');
       await until('the tree after a reload', () => panel()?.locator('#reading').isVisible() ?? Promise.resolve(false), (v) => v);
       await ctx.close();
     }
@@ -274,11 +278,14 @@ describe('the web page: touch screens, stored data and the window', function () 
       const inner = await until('the explanation scrolled', () => panel().evaluate('[document.scrollingElement.scrollHeight > innerHeight, scrollY > 0]') as Promise<boolean[]>, (v) => v[1]);
       assert.deepStrictEqual(inner, [true, true], `${width}×${height}`);
       // The editor and the explanation take the window below the top bar, side by side or one above the other.
+      // (The explanation's pane: its header, then the panel's frame, down to the bottom.)
       const ed = (await page.locator('.source').boundingBox())!;
       const bar = (await page.locator('.top').boundingBox())!;
+      const pane = (await page.locator('#panel-pane').boundingBox())!;
       assert.ok(bar.height <= 49, String(bar.height));
-      if (width < 768) assert.ok(ed.width === width && box.width === width && box.y > ed.y + ed.height && Math.round(box.y + box.height) === height, JSON.stringify([ed, box]));
-      else assert.ok(box.x > ed.x + ed.width && Math.round(ed.height) === height - bar.height && Math.round(box.height) === height - bar.height, JSON.stringify([ed, box]));
+      assert.ok(Math.round(box.y + box.height) === height && box.y > pane.y, JSON.stringify([pane, box]));
+      if (width < 768) assert.ok(ed.width === width && pane.width === width && pane.y > ed.y + ed.height && Math.round(pane.y + pane.height) === height, JSON.stringify([ed, pane]));
+      else assert.ok(pane.x > ed.x + ed.width && Math.round(ed.height) === height - bar.height && Math.round(pane.height) === height - bar.height, JSON.stringify([ed, pane]));
       await ctx.close();
     }
   });

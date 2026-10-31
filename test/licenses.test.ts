@@ -52,7 +52,7 @@ describe('licenses', function () {
     // Every icon of the table is drawn somewhere (the notice names no icon we do not use), and nothing draws
     // an icon the table lacks: the panel's markup and script, and the web page's markup and scripts.
     const read = (...p: string[]) => fs.readFileSync(path.join(root, ...p), 'utf8');
-    const sources = [read('src', 'ui', 'panelView.ts'), read('media', 'panel.js'), read('web', 'index.html'), read('web', 'compare.html')];
+    const sources = [read('src', 'ui', 'panelView.ts'), read('src', 'ui', 'panelHead.ts'), read('media', 'panel.js'), read('web', 'index.html'), read('web', 'compare.html')];
     // (The web page's hover cards draw the icons that src/ui/hoverView.ts names, from the list in web/hover-markdown.ts;
     // the levels' icons are the level table's, src/levels.ts.)
     const drawn = new Set([...sources, read('web', 'hover-markdown.ts'), read('src', 'levels.ts')].flatMap((text) => [...text.matchAll(/data-icon="([a-z-]+)"|'([a-z-]+)'/g)].map((m) => m[1] ?? m[2])).filter((n) => names.includes(n)));

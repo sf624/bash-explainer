@@ -1,4 +1,4 @@
-// The words of the menu (its groups: Script; Share and Explanation, stacked only; Preferences; Help; About) and of the
+// The words of the menu (its groups: Script; Share, stacked only; Preferences; Help; About) and of the
 // app bar's "Copy a link" (docs/design/chrome-redesign.md, C4). The menu's items are wired in web/main.ts.
 import type { Lang } from '../src/i18n';
 import { confirming, shortcut } from './editor-head';
@@ -12,7 +12,7 @@ export function showMenuTexts(lang: Lang): void {
     if (el) el.textContent = text;
   };
   for (const [id, text] of [
-    ['menu-h-script', t.menuScript], ['menu-h-share', t.menuShare], ['menu-h-explanation', t.menuExplanation],
+    ['menu-h-script', t.menuScript], ['menu-h-share', t.menuShare],
     ['menu-h-prefs', t.menuPrefs], ['menu-h-help', t.menuHelp], ['menu-h-about', t.menuAbout], ['menu-keys-title', t.keys],
     ['menu-clear-label', t.clear], ['menu-copy-script-label', t.copyScript], ['share-note', t.shareNote],
   ]) put(id, text);

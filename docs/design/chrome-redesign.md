@@ -2,7 +2,7 @@
 
 The plan that turns the chrome prototype (round 8) into real PRs. The "chrome" is everything on the web page around the explanation panel: the app bar, the editor's header, the Problems strip, the toasts, the settings, the panel's header and, on a phone, the bottom sheet. Agreed with the maintainer on 2026-10-27, and revised after an independent review the same day.
 
-Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544) and C6 (#546). C5 started early (decided by the maintainer 2026-10-31), beside the three note levels; C7 on wait for the levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
+Status: C0 is done (#531), C1a too (#539), C1b (#548), C2 (#555), C3 (#545), C4 (#544), C6 (#546) and C7 (#C7PR). C5 started early (decided by the maintainer 2026-10-31), beside the three note levels. [sources.md](sources.md), stage SB: C2 waits for the level table (SB1), C5 for `detectShell`'s source (SB4, done: #559); the other early steps go ahead.
 
 The panel's own content is the panel redesign ([panel-redesign.md](panel-redesign.md)). The two series meet at the view slot (panel-redesign.md, 6.1). Section 7 below says who owns what, and which step must land before which.
 
@@ -391,6 +391,17 @@ CHANGELOG (Changed): "The explanation's controls are in the panel's own header: 
 Tests: unit tests of `viewControlForms` (the candidates and their order, both languages, with and without digits). Web tests: the slot's width is the same in every state of a width (each option selected, Reference); the header does not overflow at 640 to 1440 px, en and ja, CJK fonts; the form at 1280 is the segments, en and ja; a press changes the panel and is kept after a reload (with P1's test); Collapse and Copy keep a word at every width.
 
 Risks: P8 changes the data to depths; the fit test runs again then. The 240 px threshold is measured with the real short names, not set by hand.
+
+Done (#C7PR). Where the plan above did not fit the code, the plan changed:
+
+- The one component is `media/view-control.js`: plain JS, shared as `media/icons.js` is. The VS Code panel loads it before panel.js (and so does the panel's frame on the page, whose header shows in panel mode); the page bundles it into app.js (web/panel-head.ts). It replaces both `drawViews` and `showView`. One markup serves every form: the menu's button, then the options as toggle buttons; as segments the button is not drawn, as a menu it opens the options under it (a disclosure: Escape, Tab, a choice or a press elsewhere closes it, and the focus goes back to its button, the opener named by `aria-controls`, as `focusTarget` does). Where a form change hides the element with the focus, the focus goes to the same control in the new form (the button, or the option shown). The page passes popover.ts `focusBack` for the focus ring.
+- `viewControlForms(control)` takes no language: the words are `viewControl`'s, already in its language. `ViewOption` gained `digit` (none until P8). With digits, the label is drawn before the segments and the menu says "Depth 1"; without, neither.
+- The page's header has forms of its own, `panelHeaderForms(control)`: the view's form, the tools' words beside or under their icons, and the tabs' words in full or short ("Ref", decision 9's word), widest first. When none fits (below about 340 px), its groups wrap. The slot is as wide as the form taken, not a fixed 240 px: no form changes width with the state (each text that changes is drawn over the others it may become, unseen), so a press moves nothing. At 1280 px the segments take 156 px in English and 130 px in Japanese, beside the tools' words; it is the menu at 900 px of window in English (a 443 px panel), and in Japanese from 360 px down.
+- VS Code's header takes the forms now, not from P8: once the component draws both, the measure is the same few lines (`drawViews` in media/panel.js). Its tools stay icons, as a view's title bar has.
+- The `header` message says the state (`folded`, `reference`); the page's tools send the state they want (`tools`: `folded`, `reference`, and `focus` for the search field after a click). Both hosts take the tools' names and icons from `panelTools` (src/ui/panelHead.ts). For the state to be true, the panel's fold button now follows a single row's fold too ("Expand all" once something is folded).
+- The quick reference is the tab Reference (`role="tablist"`, one Tab stop, the arrows move and choose; the frame is in the `tabpanel`). On it the view and Collapse keep their room, unseen.
+- The header is 36 px high, as the editor's; in the narrow layout 53 px (its top 8 px under the divider's grab area; on a touch screen it keeps 12 px from the edges' swipe strips), its controls 44 px, the menu's button a round pill. The phone's own row (the sheet's tabs with Problems, the pill in it) is C8a's: the real-device checks 4, 10 and 14 (section 8) cover the pill there.
+- The menu lost its Explanation group (Copy as Markdown) and its view switch; the top bar lost the view switch, the fold, the copy and the quick reference.
 
 ### C8. The phone's sheet and keyboard
 

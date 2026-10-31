@@ -74,6 +74,7 @@ a {
 /* The Codicons shared with the VS Code panel (media/icons.js): filled, drawn on their 16px grid as in VS Code. Their
    glyphs fill more of the box than the page's own 24px icons, so at 16px they look as large as those at 18px. */
 .icon-btn svg.ico,
+.panel-tool svg.ico,
 .menu-item svg.ico {
   width: 16px;
   height: 16px;
@@ -357,50 +358,6 @@ button {
   background: var(--vscode-panel-border);
 }
 
-/* The view switch (List or Tree): two words in one control, the view shown pressed, as the panel's own switch
-   in VS Code. In the top bar it has the height of the bar's selects; on a phone it is in the menu. */
-.views {
-  display: inline-flex;
-  flex: none;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--vscode-dropdown-border);
-  border-radius: var(--radius-sm);
-  background: var(--vscode-dropdown-background);
-}
-
-.views button {
-  min-height: 0;
-  height: 24px;
-  padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--vscode-descriptionForeground);
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-
-@media (hover: hover) {
-  .views button:hover {
-    border-color: transparent;
-    color: var(--vscode-foreground);
-  }
-}
-
-.views button[aria-pressed="true"] {
-  background: var(--accent-soft);
-  color: var(--vscode-foreground);
-  font-weight: 600;
-}
-
-/* In the menu: as wide as the selects, its halves 40px high to tap. */
-.field .views button {
-  flex: 1 1 0;
-  height: 40px;
-  font-size: inherit;
-}
-
 .compact select {
   font-size: 12.5px;
 }
@@ -455,8 +412,8 @@ button {
   flex: none;
 }
 
-/* Until C5 and C7 move the pickers and the view switch out of the bar, a window under 900 px has no room for the
-   words of "Copy a link": its icon only (✓ after a copy), its words for a screen reader. */
+/* Until C5 moves the pickers out of the bar, a window under 900 px has no room for the words of "Copy a link": its
+   icon only (✓ after a copy), its words for a screen reader. */
 @media (max-width: 899px) {
   #share {
     justify-content: center;
@@ -876,11 +833,251 @@ button {
 }
 
 #panel {
+  display: block;
   width: 100%;
   height: 100%;
   min-height: 0;
   border: 0;
   background: var(--vscode-editor-background);
+}
+
+/* ---- The panel's header (web/panel-head.ts; docs/design/chrome-redesign.md, decisions 4 and 11, C7) ---------------- */
+
+/* The explanation's pane: its header, then the panel's frame. */
+.panel-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+}
+
+/* One row: the tabs, the view control, then the tools at the right end. The row takes the first of its forms that
+   fits (the view as segments or a menu, the tools' words beside or under their icons); only when none does, its
+   groups wrap, never inside one. Nothing in it changes width with a press or a tab. */
+.panel-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 6px 0 2px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--page-background);
+  white-space: nowrap;
+}
+
+.panel-head.wrap {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+
+.panel-tabs {
+  display: flex;
+  flex: none;
+  align-self: stretch;
+}
+
+/* A tab: its word, and a line under it while it is chosen (its colour too, never its weight: the width stays). */
+.panel-tab {
+  min-height: 0;
+  padding: 0 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 13px;
+}
+
+.panel-head[data-tabs="short"] .tab-full,
+.panel-head:not([data-tabs="short"]) .tab-short {
+  display: none;
+}
+
+.panel-tab[aria-selected="true"] {
+  border-bottom-color: var(--page-accent);
+  color: var(--vscode-foreground);
+}
+
+@media (hover: hover) {
+  .panel-tab:hover {
+    color: var(--vscode-foreground);
+  }
+}
+
+.panel-tab:focus-visible {
+  outline-offset: -2px;
+}
+
+.view-slot {
+  display: flex;
+  flex: none;
+}
+
+/* The quick reference has no view to choose and nothing to fold: they keep their room, unseen. */
+.panel-head.reference .view-slot,
+.panel-head.reference #collapse {
+  visibility: hidden;
+}
+
+.panel-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+/* A tool: its icon and its word ("Copy"; the full name is its tooltip and its accessible name). Where the row is
+   short, the word goes under the icon, smaller. */
+.panel-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 12.5px;
+}
+
+.panel-head[data-tools="under"] .panel-tool {
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-height: 32px;
+  padding: 1px 4px;
+  font-size: 10.5px;
+  line-height: 1.1;
+}
+
+@media (hover: hover) {
+  .panel-tool:hover {
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+/* A text drawn over the other texts it may become (unseen): its box is as wide as the widest, so a press moves nothing. */
+.tool-word,
+.vc-stack {
+  display: inline-grid;
+}
+
+.tool-word > *,
+.vc-stack > * {
+  grid-area: 1 / 1;
+}
+
+.vc-size {
+  visibility: hidden;
+}
+
+/* The view control (media/view-control.js): segments, the option shown pressed; or a menu under its button. An option
+   with a digit shows its name only while it is the one shown. */
+.vc {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vc-label {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12.5px;
+}
+
+.vc[data-form="segments"] button[aria-pressed="false"] .vc-digit + .vc-name,
+.vc[data-form="segments"] .vc-open,
+.vc[data-form="menu"]:not([data-open="true"]) .vc-options {
+  display: none;
+}
+
+.vc-digit + .vc-name {
+  margin-left: 0.35em;
+}
+
+.vc-options {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: var(--radius-sm);
+  background: var(--vscode-dropdown-background);
+}
+
+.vc-options button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 0;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12.5px;
+}
+
+@media (hover: hover) {
+  .vc-options button:hover {
+    color: var(--vscode-foreground);
+  }
+}
+
+.vc-options button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--vscode-foreground);
+}
+
+.vc[data-form="menu"] .vc-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  flex-direction: column;
+  min-width: 100%;
+  padding: 4px;
+  box-shadow: var(--shadow);
+}
+
+.vc[data-form="menu"] .vc-options button {
+  justify-content: flex-start;
+  height: 32px;
+}
+
+/* The menu's button: the option shown, and an arrow. */
+.vc-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: var(--radius-sm);
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-foreground);
+  font-size: 12.5px;
+}
+
+.vc-chev {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+/* ?view=panel: the panel shows its own header. */
+html.view-panel .panel-head {
+  display: none;
 }
 
 /* The divider: a line to drag, to move with the arrow keys, or to double-click for the default sizes. */
@@ -1819,8 +2016,7 @@ body.resizing .problems-resize {
   }
 }
 
-/* The shell and yq are in the menu until there is room for them here; the fold, the quick reference
-   and the copy are in the top bar at every width. */
+/* The shell and yq are in the menu until there is room for them here. */
 @media (max-width: 1199px) {
   .desk-only {
     display: none !important;
@@ -1831,16 +2027,6 @@ body.resizing .problems-resize {
 :where(html.narrow) .desk-only,
 :where(html.narrow) .top .install {
   display: none !important;
-}
-
-/* The phone's bar has no room for the view switch (measured from 320 to 430px: two 40px halves do not fit
-   beside the four buttons): it is in the menu there. */
-:where(html.narrow) .bar-only {
-  display: none !important;
-}
-
-#ref[aria-pressed="true"] {
-  background: var(--accent-soft);
 }
 
 /* "Install for VS Code" from 1100 px. */
@@ -1939,6 +2125,39 @@ body.resizing .problems-resize {
   min-height: 44px;
 }
 
+/* The panel's header on a phone: 44 px to tap, the view's menu a bordered pill. */
+/* (Its top 8 px are the divider's grab area, above them: web/page.css `.splitter::before`.) */
+:where(html.narrow) .panel-head {
+  min-height: 53px;
+  padding-top: 8px;
+}
+
+:where(html.narrow) .panel-tab {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+:where(html.narrow) .panel-head[data-tools] .panel-tool {
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+}
+
+:where(html.narrow) .vc-options {
+  padding: 0;
+}
+
+:where(html.narrow) .vc[data-form] .vc-options button {
+  min-width: 44px;
+  height: 44px;
+}
+
+:where(html.narrow) .vc-open {
+  height: 44px;
+  padding-inline: 14px 12px;
+  border-radius: 22px;
+}
+
 :where(html.narrow) .ed-head {
   height: 44px;
   padding: 0;
@@ -1959,6 +2178,7 @@ body.resizing .problems-resize {
    and the hint's controls keep clear of them. */
 @media (pointer: coarse) {
   :where(html.narrow) .ed-head,
+  :where(html.narrow) .panel-head,
   :where(html.narrow) .first-hint {
     padding-inline: 12px;
   }

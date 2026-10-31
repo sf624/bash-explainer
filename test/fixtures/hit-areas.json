@@ -5,8 +5,6 @@
     "page #splitter": [44, 29],
     "panel button[button].twisty": [11, 20],
     "panel a": [24, 13],
-    "menu #view-list-menu": [44, 40],
-    "menu #view-tree-menu": [44, 40],
     "menu a": [44, 15],
     "menu #notices": [44, 15]
   },
@@ -31,8 +29,6 @@
     "page #splitter": [44, 29],
     "panel button[button].twisty": [11, 20],
     "panel a": [24, 13],
-    "menu #view-list-menu": [44, 40],
-    "menu #view-tree-menu": [44, 40],
     "menu a": [44, 15],
     "menu #notices": [44, 15]
   },

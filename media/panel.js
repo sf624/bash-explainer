@@ -20,30 +20,34 @@
   }
 
   /**
-   * The fold and quick reference buttons as drawn (src/ui/panelView.ts `HeaderButton`): the web page draws its own
-   * buttons for them the same, from the `header` message (they are in its top bar).
+   * The tools' names and icons for each state (src/ui/panelHead.ts `panelTools`), from the host with each line; and
+   * the state of the fold and quick reference buttons, told to the host (`header`): the web page's panel header
+   * draws its own tools from it.
    */
-  const header = /** @type {{ toggle?: { name: string, icon: string }, ref?: { name: string, icon: string, pressed: boolean } }} */ ({});
+  let tools = /** @type {{ toggle: Record<'fold' | 'unfold', { name: string, icon: string }>, ref: Record<'open' | 'close', { name: string, icon: string }>, copy: { name: string, icon: string } } | null} */ (null);
+  const header = { folded: false, reference: false };
   let headerSent = '';
   function postHeader() {
     const said = JSON.stringify(header);
-    if (!header.toggle || !header.ref || said === headerSent) return;
+    if (!tools || said === headerSent) return;
     headerSent = said;
-    vscode.postMessage({ type: 'header', buttons: { toggle: header.toggle, ref: header.ref } });
+    vscode.postMessage({ type: 'header', ...header });
   }
 
   /** The fold button says what it will do: unfold when something is folded, else fold. */
   function nameToggle(/** @type {boolean} */ folded) {
-    header.toggle = { name: folded ? labels.expandAll : labels.collapseAll, icon: folded ? 'expand-all' : 'collapse-all' };
-    nameButton('toggle', header.toggle.name, header.toggle.icon);
+    header.folded = folded;
+    const b = tools?.toggle[folded ? 'unfold' : 'fold'];
+    if (b) nameButton('toggle', b.name, b.icon);
     postHeader();
   }
 
   /** The quick reference's button: pressed while it is open, and then it says how to go back. */
   function nameRef() {
     const open = !$('reference').hidden;
-    header.ref = { name: open ? labels.back : labels.reference, icon: open ? 'arrow-left' : 'book', pressed: open };
-    nameButton('ref', header.ref.name, header.ref.icon);
+    header.reference = open;
+    const b = tools?.ref[open ? 'close' : 'open'];
+    if (b) nameButton('ref', b.name, b.icon);
     $('ref').setAttribute('aria-pressed', String(open));
     postHeader();
   }
@@ -84,7 +88,9 @@
   /** The steps of the line shown (`StepView`: whether each adds something, its words, where the arrows go from it). */
   let lineSteps = /** @type {{ adds: boolean, said: string, full: string, back: number, forward: number }[]} */ ([]);
   /** The view control (src/ui/panelView.ts `viewControl`), from the host with each line: the header's view switch. */
-  let control = /** @type {{ label: string, options: { id: string, short: string, full: string, sets: any, steps?: { short: string, name: string, layer: string }[] }[] }} */ ({ label: '', options: [] });
+  let control = /** @type {{ label: string, options: { id: string, digit?: string, short: string, full: string, pressed: boolean, sets: any, steps?: { short: string, name: string, layer: string }[] }[] }} */ ({ label: '', options: [] });
+  /** The forms the view control may take, widest first (src/ui/panelHead.ts `viewControlForms`): the first that fits is drawn. */
+  let viewForms = /** @type {{ kind: 'segments' | 'menu', label?: string, button?: { text: string, name: string }[] }[]} */ ([{ kind: 'segments' }]);
   /** The line shown (its number in the document). */
   let shownLineNo = 0;
   /** Paths of the folded items of the tree view, and of the one with the focus; kept while the same line is shown. */
@@ -172,6 +178,11 @@
       renderReference();
     }
     if (msg.type === 'focus') focusExplanation();
+    // The web page's panel header: its tools say the state they want (something folded, the quick reference open).
+    if (msg.type === 'tools') {
+      if (msg.reference !== undefined && msg.reference === $('reference').hidden) toggleReference(msg.focus === true);
+      if (msg.folded !== undefined && msg.folded !== header.folded) toggleAll();
+    }
     if (msg.type === 'panelState') {
       const was = view;
       applyState(msg.state);
@@ -203,15 +214,18 @@
     const ex = msg.explanation;
     labels = msg.labels ?? labels;
     control = msg.control ?? control;
+    viewForms = msg.viewForms ?? viewForms;
+    tools = msg.tools ?? tools;
     controlMarks = msg.controlMarks ?? controlMarks;
     if (msg.lang) document.documentElement.lang = msg.lang;
     manual = msg.manual ?? {};
     linkNote = msg.linkNote ?? '';
     nameButton('settings', msg.settingsLabel);
-    nameButton('copy', labels.copy);
+    if (tools) nameButton('copy', tools.copy.name);
     // The quick reference stays open while the cursor moves; keep its button saying how to go back.
     nameRef();
-    nameToggle(false);
+    // (The fold button is named once the rows are drawn: `applyView`, below. Naming it "Collapse all" first would tell
+    // the host for a moment that nothing is folded while a fold kept for this line is drawn again.)
     $('ref-search').setAttribute('placeholder', labels.search);
     examplesFirst = msg.examplesFirst !== false;
     animations = msg.animations !== false;
@@ -862,9 +876,13 @@
   function toggle(/** @type {HTMLElement} */ li) {
     hold(rowAt('list', String(li.dataset.path)));
     fold([setCollapsed(li, !isCollapsed(li))]);
+    // (The fold button then says what it will do: unfold when something is folded.)
+    updateToggle();
   }
 
-  $('toggle').addEventListener('click', () => {
+  $('toggle').addEventListener('click', () => toggleAll());
+  /** Folds everything below the top level, or unfolds it all (the fold button). */
+  function toggleAll() {
     if (view === 'tree' && reading) {
       // The tree view: fold everything below the line, or unfold it all.
       const all = /** @type {HTMLElement[]} */ (Array.from($('reading-tree').querySelectorAll('li[aria-expanded]')));
@@ -888,7 +906,7 @@
     hold(firstOnScreen(shownItems, 'list', below, (li) => !collapse || top(li) || top(li.parentElement?.closest('li'))), null, below);
     fold(items.filter((li) => want(li) !== isCollapsed(li)).map((li) => setCollapsed(li, want(li))));
     nameToggle(collapse);
-  });
+  }
   /** The shared button says what it will do in the view shown: unfold when something is folded, else fold. */
   function updateToggle() {
     const folded = view === 'tree' && reading ? foldedKeys.size > 0 : $('tree').querySelector('li.collapsed') !== null;
@@ -1095,25 +1113,37 @@
   /** Whether an option of the view control is the one shown: the state has what it sets (the rule of src/ui/panelView.ts `isPressed`). */
   const pressed = (/** @type {{ sets: Record<string, unknown> }} */ o) => Object.entries(o.sets).every(([k, v]) => /** @type {Record<string, unknown>} */ ({ view, step })[k] === v);
 
-  /** Draws the header's view switch from the view control: a button per option, its short name, its full name where it says more. */
+  /**
+   * The header's view control (media/view-control.js, the component the web page draws too): a press applies what
+   * the option sets at once, and tells the host.
+   */
+  const viewControl = /** @type {any} */ (globalThis).BashExplainerViewControl.create($('views'), 'view', (/** @type {any} */ sets) => {
+    dropSpacer();
+    applyState(sets);
+    save();
+    applyView();
+    renderReading();
+  });
+
+  /** Draws the view control from the host's data, each option pressed by the panel's own state, in the first of its forms that fits the header's row. */
   function drawViews() {
     if (!control.options.length) return;
-    const box = $('views');
-    box.setAttribute('aria-label', control.label);
-    const buttons = control.options.map((o) => {
-      const id = `view-${o.id}`;
-      const b = document.getElementById(id) ?? Object.assign(document.createElement('button'), { id, type: 'button' });
-      b.dataset.option = o.id;
-      b.textContent = o.short;
-      b.setAttribute('aria-pressed', String(pressed(o)));
-      for (const attr of ['title', 'aria-label']) {
-        if (o.full === o.short) b.removeAttribute(attr);
-        else b.setAttribute(attr, o.full);
-      }
-      return b;
-    });
-    if (buttons.length !== box.children.length || buttons.some((b, i) => box.children[i] !== b)) box.replaceChildren(...buttons);
+    const shown = { ...control, options: control.options.map((o) => ({ ...o, pressed: pressed(o) })) };
+    const head = /** @type {HTMLElement} */ (document.querySelector('header'));
+    for (const form of viewForms) {
+      viewControl.draw(shown, form);
+      if (head.scrollWidth <= head.clientWidth) break;
+    }
   }
+  // (Measured again when the header's width changes.)
+  let headWidth = 0;
+  new ResizeObserver(() => {
+    const w = /** @type {HTMLElement} */ (document.querySelector('header')).clientWidth;
+    if (w !== headWidth) {
+      headWidth = w;
+      drawViews();
+    }
+  }).observe(/** @type {HTMLElement} */ (document.querySelector('header')));
 
   /** Shows the list or the tree view. */
   function applyView() {
@@ -1127,16 +1157,6 @@
     requestAnimationFrame(syncLine);
   }
 
-  $('views').addEventListener('click', (e) => {
-    const b = e.target instanceof Element ? /** @type {HTMLElement | null} */ (e.target.closest('button[data-option]')) : null;
-    const option = b && control.options.find((o) => o.id === b.dataset.option);
-    if (!option || pressed(option)) return;
-    dropSpacer();
-    applyState(option.sets);
-    save();
-    applyView();
-    renderReading();
-  });
 
   /** Whether a node is drawn at the step shown. */
   const shown = (/** @type {any} */ c) => (c.appears ?? 1) <= step;
@@ -1759,6 +1779,7 @@
     if (!group) return;
     hold(rowAt('reading', String(li.dataset.path)));
     fold([setFolded(li, !/** @type {HTMLElement} */ (group).hidden)]);
+    updateToggle();
   }
 
   /** Folds or unfolds an item of the tree; the change returned says how its group moves (see `fold`). */
@@ -1923,7 +1944,9 @@
 
   // ---------------------------------------------------------------- quick reference
 
-  $('ref').addEventListener('click', () => {
+  $('ref').addEventListener('click', () => toggleReference(true));
+  /** Opens or closes the quick reference; `focus`: its search field takes the focus (with a pointer that types). */
+  function toggleReference(/** @type {boolean} */ focus) {
     const open = $('reference').hidden;
     $('reference').hidden = !open;
     $('main').hidden = open;
@@ -1934,9 +1957,9 @@
       if (!reference) vscode.postMessage({ type: 'reference' });
       else renderReference();
       // Not on a touch screen: focusing the field would open the on-screen keyboard over the list.
-      if (window.matchMedia('(pointer: fine)').matches) $('ref-search').focus();
+      if (focus && window.matchMedia('(pointer: fine)').matches) $('ref-search').focus();
     }
-  });
+  }
   $('ref-search').addEventListener('input', () => renderReference());
 
   function renderReference() {
