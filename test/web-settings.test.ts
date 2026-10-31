@@ -4,7 +4,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import type { Browser, Frame, Page } from 'playwright-core';
-import { openSite, choose, currentShell, openSettingsSection, problemList, problemsShown, settingControl, stable, until } from './support/site';
+import { openSite, choose, currentShell, pickKind, openSettingsSection, problemList, problemsShown, settingControl, stable, until } from './support/site';
 
 describe('the web page: theme and settings', function () {
   this.timeout(120000);
@@ -731,6 +731,45 @@ describe('the web page: theme and settings', function () {
     assert.strictEqual(await inert(), false);
     await until('closed', () => isOpen(page), (v) => !v);
     assert.strictEqual(await inert(), false);
+    await ctx.close();
+  });
+
+  it('keeps the top bar working while the sheet is open side by side: the menu takes its place, a shell chosen in the bar shows in the sheet, the gear shuts it', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 700 } });
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(base);
+    const drawerOpen = () => page.evaluate("document.getElementById('drawer').open") as Promise<boolean>;
+    await page.locator('#settings-open').click();
+    await until('the sheet open', () => isOpen(page), (v) => v);
+    await openSettingsSection(page, 'checks');
+    // The shell chosen in the bar is the Shell setting: the sheet shows it at once.
+    await page.locator('#shell-top').selectOption('dash');
+    assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'dash');
+    assert.strictEqual(await isOpen(page), true);
+    // The file kind chosen in the bar: the page takes it, the sheet stays.
+    await pickKind(page, 'makefile');
+    assert.strictEqual(await isOpen(page), true);
+    assert.match(await page.locator('#kind').innerText(), /Makefile/);
+    // ☰ shuts the sheet and opens the menu; the editor is not left inert.
+    await page.locator('#menu-open').click();
+    await until('the menu open', drawerOpen, (v) => v);
+    await until('the sheet closed', () => isOpen(page), (v) => !v);
+    assert.strictEqual(await page.evaluate("document.getElementById('source').inert"), false);
+    // The focus is in the menu, not lost to the page's body; Esc shuts the menu and the focus goes back to ☰.
+    assert.strictEqual(await page.evaluate("document.getElementById('drawer').contains(document.activeElement)"), true);
+    await page.keyboard.press('Escape');
+    await until('the menu closed', drawerOpen, (v) => !v);
+    assert.strictEqual(await page.evaluate('document.activeElement.id'), 'menu-open');
+    // The settings open again with what the bar chose, and the gear shuts them.
+    await page.locator('#settings-open').click();
+    await until('the sheet open again', () => isOpen(page), (v) => v);
+    await openSettingsSection(page, 'checks');
+    assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'dash');
+    await page.locator('#settings-open').click();
+    await until('the sheet closed by the gear', () => isOpen(page), (v) => !v);
+    assert.deepStrictEqual(errors, []);
     await ctx.close();
   });
 

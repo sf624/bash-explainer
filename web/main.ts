@@ -509,7 +509,10 @@ if (dialogElement) setUpSheet(dialogElement);
 
 const drawer = document.getElementById('drawer') as HTMLDialogElement | null;
 function openMenu(): void {
-  if (!drawer || settingsDialog?.open) return;
+  if (!drawer) return;
+  // The settings lie over the editor next to the bar: the menu takes their place (the sheet slides out, and the focus
+  // goes to the menu, which hands it back to ☰ when it closes).
+  if (settingsDialog?.open && dialogElement) closeSheet(dialogElement);
   if (reopenSheet(drawer) || drawer.open) return;
   drawer.showModal();
 }
