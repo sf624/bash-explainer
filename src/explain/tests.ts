@@ -325,7 +325,7 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
   const operands = sortTokens([
     ...cx.subs([left, ...rights].filter((x) => x && !plain(x) && !pattern(x))),
     ...rights.filter(pattern).map((x) => globToken(cx, x, 'value')),
-    ...(inArithmetic(n) ? [] : tildeTokens(cx, [left!, ...rights].filter((x) => isPlainWord(x) && !pattern(x)))),
+    ...(inArithmetic(n) ? [] : tildeTokens(cx, [left, ...rights].filter((x): x is SyntaxNode => !!x && isPlainWord(x) && !pattern(x)))),
   ]);
   // `[[ $x = *.txt ]]`: the values that match, as for a `case` pattern (a pattern with a quoted part is not tried).
   if (['=', '==', '!='].includes(op) && rights.length === 1 && (pattern(rights[0]) || (rights[0].type === 'extglob_pattern' && !plain(rights[0])))) {
