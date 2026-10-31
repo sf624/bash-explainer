@@ -22,7 +22,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 - A branch no input can reach is removed (or becomes a non-null assertion when the grammar guarantees the node); a guard against a bug elsewhere gets `/* c8 ignore … */` with a comment. Put `/* c8 ignore start */` before `} catch`, so the catch's own branch is left out too.
 - A template literal with `\n` in the last statement of a file (`` `${a}\n${b}` ``) shifts tsx's source map: its `0 && (module.exports = …)` then maps inside that line, and CI reports a branch no test can take (seen October 2026 in src/rewrite.ts). Write `a + '\n' + b` there.
 - A branch that only the seeded fuzz test reaches loses its coverage when the snippets change (a new test adds a snippet, and the fuzz inputs move), and CI then fails a PR that never touched that code. Give such a branch a direct test of the input that reaches it (October 2026: `src/semantics/allow.ts` via `echo ${s@${`; `declare +g` in #416).
-- `npx mocha test/<file>` runs the whole suite, because `.mocharc`'s `spec` is added to the file given. To run one file, use `npx mocha --no-config --node-option import=tsx --timeout 10000 test/<file>`.
+- `npx mocha test/<file>` runs the whole suite, because the `spec` of `.mocharc.cjs` is added to the file given. To run one file, use `npx mocha --no-config --node-option import=tsx --timeout 10000 test/<file>`.
 
 ## Explanations
 
@@ -77,7 +77,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 
 ## Web page and panel UI
 
-Check every change to the web page or the panel's UI against this list before its PR is opened. In October 2026 four chrome PRs (C1b, C3, C4, C6) each failed their first review on items of it.
+Check every change to the web page or the panel's UI against this list before its PR is opened. In October 2026 four PRs of the chrome redesign (steps C1b, C3, C4 and C6 of docs/design/chrome-redesign.md) each failed their first review on items of it.
 
 - **Japanese IME.** Enter and Escape during composition (`e.isComposing || e.keyCode === 229`) must not commit, cancel or close anything. A search matches after composition, and matches full-width text (NFKC).
 - **Keyboard and focus.**
