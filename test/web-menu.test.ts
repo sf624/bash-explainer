@@ -145,8 +145,10 @@ describe('the web page: the menu and the settings sheet', function () {
         return { ctx, page, isOpen };
       };
       for (const [screen, env, how] of ['x', 'escape', 'backdrop'].flatMap((h) => [['phone', phone, h], ['wide', wide, h]]) as ['phone' | 'wide', Parameters<Browser['newContext']>[0], 'x' | 'escape' | 'backdrop'][]) {
-        // The settings fill the screen of a phone: no backdrop to tap.
-        if (how === 'backdrop' && name === 'settings' && screen === 'phone') continue;
+        // The settings fill the screen of a phone: no backdrop to tap. Side by side they are not modal: no backdrop, and a
+        // click beside them is a click on the page.
+        if (how === 'backdrop' && name === 'settings') continue;
+        const backdrop = !(name === 'settings' && screen === 'wide');
         const { ctx, page, isOpen } = await start(env);
         const sign = signs[screen];
         const home = await page.locator(dialog).evaluate((d) => d.getBoundingClientRect().x);
@@ -190,7 +192,7 @@ describe('the web page: the menu and the settings sheet', function () {
           assert.ok(events[i].ms! > 0, `${name} ${how}: ${property} takes time; ${seen}`);
         };
         ran('transform', ['none', `translateX(${sign * 100}%)`]);
-        ran('::backdropopacity', ['1', '0']);
+        if (backdrop) ran('::backdropopacity', ['1', '0']);
         // The frames drawn meanwhile go towards that edge, never back, and never past where it leaves the screen.
         const xs = frames.filter((f) => f.open).map((f) => f.x);
         for (let i = 1; i < xs.length; i++) assert.ok(sign * (xs[i] - xs[i - 1]) >= -0.5, `${name} ${how}: monotonic; ${seen}`);
