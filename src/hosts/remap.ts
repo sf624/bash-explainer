@@ -12,7 +12,7 @@ import { statusModel } from '../semantics/status';
 import { batsFacts, batsTests } from '../bats';
 import type { ConventionId } from '../conventions';
 import type { ProblemSeverity } from '../levels';
-import { basisGate, conventionOf, type Fact, type FactSpec, factOf, type Note, plainNote, said, severityOf } from '../messages';
+import { basisGate, conventionOf, type Fact, type FactSpec, factOf, type Note, plainNote, problemText, said, severityOf } from '../messages';
 import type { ShellRegion, Extracted } from './index';
 import { batsTestLine } from './bats';
 import { batsCommentFacts } from './batstags';
@@ -208,28 +208,28 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
   for (const region of extracted.regions) {
     const own = scriptTree(tree, extracted, region);
     for (const issue of dialectIssues(own, shell ?? region.shell ?? 'bash', lang, region.start, region.end, version)) {
-      out.push({ code: issue.id, severity: severityOf(issue.note.level), message: issue.note.text, ...at(issue.place) });
+      out.push({ code: issue.id, severity: severityOf(issue.note.level), message: problemText(issue.note, lang), ...at(issue.place) });
     }
     if (region.warnPipefail) {
       for (let line = region.start; line <= region.end; line++) {
         if (!pipeWithoutPipefail(own, region, line)) continue;
         const pipe = original[line].search(/(?<!\|)\|(?!\|)/);
         const f = factOf(lang, PIPEFAIL);
-        out.push({ code: 'dockerPipefail', severity: severityOf(f.level), message: f.text, startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1, ...conventionOf(f) });
+        out.push({ code: 'dockerPipefail', severity: severityOf(f.level), message: problemText(f, lang), startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1, ...conventionOf(f) });
       }
     }
     for (const n of region.notes ?? []) {
       if (Array.isArray(n)) continue;
       const first = extracted.maps[region.start];
       const f = factOf(lang, n.spec);
-      out.push({ code: n.code, severity: severityOf(f.level), message: f.text, startLine: region.start, startCol: first[0], endLine: region.start, endCol: first[first.length - 1], ...conventionOf(f) });
+      out.push({ code: n.code, severity: severityOf(f.level), message: problemText(f, lang), startLine: region.start, startCol: first[0], endLine: region.start, endCol: first[first.length - 1], ...conventionOf(f) });
     }
   }
   for (const sub of extracted.substitutions) {
     if (!sub.warning) continue;
     const c = Math.max(0, original[sub.line].indexOf(sub.text));
     const f = factOf(lang, sub.warning);
-    out.push({ code: 'injection', severity: severityOf(f.level), message: f.text, startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length, ...conventionOf(f) });
+    out.push({ code: 'injection', severity: severityOf(f.level), message: problemText(f, lang), startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length, ...conventionOf(f) });
   }
   return out;
 }

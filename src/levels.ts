@@ -39,12 +39,18 @@ export interface LevelColour {
   name: string;
   /** Where the editor gives none (the panel outside VS Code): the chart colour, then VS Code's dark default. */
   fallback: string;
-  /** The editor's own colour in Dark Modern, which the web page's dark theme stands in for (web/theme.css). */
+  /**
+   * The editor's own colour in Dark Modern, which the web page's dark theme stands in for (web/theme.css), unless ours
+   * replaces it there (`ours.dark`).
+   */
   dark: string;
   /**
    * Ours, where the theme's falls below 4.5:1 as text (7:1 in high contrast), keeping the hue (test/contrast.test.ts):
-   * Light Modern's warning #bf8803 is 3.12:1 on white and its info #1a85ff 3.59:1; High Contrast's info #3794ff is 6.84:1
-   * on black; High Contrast Light's warning #895503 is 6.24:1 on white and its info #1a85ff 3.59:1.
+   * Light Modern's warning #bf8803 is 3.12:1 on white, its info #1a85ff 3.59:1 and its error #e51400 4.23:1 on a code
+   * block (#f2f2f2); Dark Modern's error #f14c4c is 3.96:1 on a code block (#2b2b2b); High Contrast's info #3794ff is
+   * 6.84:1 on black and its error #f48771 6.71:1 on a code block (#1f1f1f); High Contrast Light's warning #895503 is
+   * 6.24:1 on white, its info #1a85ff 3.59:1 and its error #b5200d 6.61:1. The error's are those of a part that cannot
+   * be read (`ERROR_COLOURS`, src/ui/palette.ts).
    */
   ours: Partial<Record<ThemeKind, string>>;
 }
@@ -76,29 +82,32 @@ export interface Level {
   severity: ProblemSeverity;
   /** Its colour; a plain note has the muted one. */
   colour?: LevelColour;
-  /** With forced colours, a note's left border, where it must differ from the others without colour. */
+  /**
+   * With forced colours, a note's left border, where it must differ from the others without colour: an error's double,
+   * a warning's dashed, the others' solid.
+   */
   forcedBorder?: string;
   /** How many notes of the level a line has, where the screen reader's summary of a line says it (web/a11y.ts). */
   count?: { ja: (n: number) => string; en: (n: number) => string };
 }
 
-/** The look of a warning, which an error shows in the views until step 1b of three-levels.md gives it its own. */
-const WARNING_LOOK = {
-  codicon: 'warning', className: 'level-warning', forcedBorder: '4px double CanvasText',
-  colour: {
-    variable: '--vscode-editorWarning-foreground', name: '--c-warning', fallback: 'var(--vscode-charts-yellow, #cca700)', dark: '#cca700',
-    ours: { light: '#855f00', highContrastLight: '#704500' },
-  },
-} as const;
-
 export const LEVELS: Readonly<Record<NoteLevel, Level>> = {
   error: {
     rank: 0, mark: 'ⓧ', word: { ja: 'エラー: ', en: 'Error: ' }, wordOnEvery: true, name: { ja: 'エラー', en: 'Error' },
-    ansi: '31', bold: true, severity: 'error', ...WARNING_LOOK,
+    codicon: 'error', ansi: '31', bold: true, className: 'level-error', severity: 'error', forcedBorder: '4px double CanvasText',
+    colour: {
+      variable: '--vscode-editorError-foreground', name: '--c-error-level', fallback: 'var(--vscode-charts-red, #f14c4c)', dark: '#f14c4c',
+      ours: { light: '#d0020f', dark: '#fd6358', highContrast: '#f6937e', highContrastLight: '#9b1c0b' },
+    },
     count: { ja: (n) => `エラー ${n} 件`, en: (n) => `${n} error${n === 1 ? '' : 's'}` },
   },
   warning: {
-    rank: 1, mark: '⚠', word: { ja: '落とし穴: ', en: 'Pitfall: ' }, name: { ja: '警告', en: 'Warning' }, ansi: '33', bold: true, severity: 'warning', ...WARNING_LOOK,
+    rank: 1, mark: '⚠', word: { ja: '落とし穴: ', en: 'Pitfall: ' }, name: { ja: '警告', en: 'Warning' }, codicon: 'warning', ansi: '33', bold: true,
+    className: 'level-warning', severity: 'warning', forcedBorder: '3px dashed CanvasText',
+    colour: {
+      variable: '--vscode-editorWarning-foreground', name: '--c-warning', fallback: 'var(--vscode-charts-yellow, #cca700)', dark: '#cca700',
+      ours: { light: '#855f00', highContrastLight: '#704500' },
+    },
     count: { ja: (n) => `警告 ${n} 件`, en: (n) => `${n} warning${n === 1 ? '' : 's'}` },
   },
   info: {
@@ -166,6 +175,15 @@ export function failsCheck(severity: Severity, strict: boolean): boolean {
  */
 export function alwaysFails(level: NoteLevel): boolean {
   return SEVERITIES[LEVELS[level].severity].fails === 'always';
+}
+
+/**
+ * Whether a note's word (its `label`) is its level's own word, which the level says on every note (`wordOnEvery`:
+ * "Error:"), not a heading or a kind's word ("Pitfall:"): it names the level, as the icon's name and a problem's severity do.
+ */
+export function namesLevel(level: NoteLevel, label: string, lang: Lang): boolean {
+  const { word, wordOnEvery } = LEVELS[level];
+  return wordOnEvery === true && label === word[lang].trimEnd();
 }
 
 /**

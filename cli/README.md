@@ -65,17 +65,20 @@ In the text output, a construct is labelled with its keywords and a placeholder 
 
 A row or a note about a part of bash ends with the sections of the GNU Bash Reference Manual it is about: `(Bash manual 3.7.2)` in the text output, links to the sections on gnu.org with `--format markdown`. The numbers are those of the bash 5.2 manual. With `--format json`, a token has them in `refs` (`["3.7.2"]`), and `facts` lists the notes that come from the message catalog, with their `id`, `kind` (`note` or `pitfall`), `text` and `refs`.
 
-`--check` prints problems as compilers do (`file:line:column: warning: … [code]`), so editors and CI can pick them up. With `--format github` they become GitHub Actions annotations, shown on the pull request's diff; with `--format sarif`, a SARIF file for code scanning (a warning is a `warning` result, information a `note`).
+`--check` prints problems as compilers do (`file:line:column: warning: … [code]`), so editors and CI can pick them up. With `--format github` they become GitHub Actions annotations, shown on the pull request's diff; with `--format sarif`, a SARIF file for code scanning (an error is an `error` result, a warning a `warning`, information a `note`).
 
-Problems have three levels: an error for a line that fails every time as written, a warning, and information. `--check` fails on every error, on a warning only with `--strict`, and never on information. The pitfalls of a shell script are problems too, with their own codes; turn them off with `--set diagnostics.pitfalls=false` (the errors stay).
+Problems have three levels: an error (red) for a line that fails every time as written, a warning (yellow) for damage that cannot be undone under some values, and information (blue) for what goes wrong only with some values or on some systems. `--check` fails on every error, on a warning only with `--strict`, and never on information. The pitfalls of a shell script are problems too, with their own codes; turn them off with `--set diagnostics.pitfalls=false` (the errors stay). The severity names the level, so a problem's text has no "Error:" of its own; a pitfall keeps its word ("Pitfall:", "Caveat:").
 
 ```text
 $ bash-explainer --check deploy.sh
-deploy.sh:2:10: warning: Pitfall: the output of $(ls …) is split on spaces and newlines, so file names with spaces break. Use a glob, as in for f in *.txt [for-over-ls-output]
-deploy.sh:4:1: warning: Pitfall: x =… runs a command named x; it is not an assignment. Write x=… with no spaces around = [assignment-with-spaces]
+deploy.sh:3:1: error: [ has no ] as its last argument, so it fails when it runs, without evaluating the condition ([: missing ']', status 2). This is not a syntax error but an error of the command [ at run time [bracket-missing-close]
+deploy.sh:4:1: warning: Pitfall: x =… runs a command named x; it is not an assignment. Write x=1 with no spaces around = [assignment-with-spaces]
+deploy.sh:5:1: info: Caveat: without -r, backslashes in the input are taken as escapes and lost. Usually write read -r [read-without-r]
 $ echo $?
-0
+1
 ```
+
+In the explanation, a note starts with the mark and the word of its level, in its colour: `ⓧ Error:` in red, `⚠ Pitfall:` in yellow, `ⓘ Caveat:` in blue, and a plain fact's `ℹ`, dim. Errors come first.
 
 ## Settings
 

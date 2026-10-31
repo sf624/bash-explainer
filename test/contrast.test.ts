@@ -70,20 +70,21 @@ const CHARTS: Record<Role, string> = {
 };
 const ROLES = Object.keys(CHARTS) as Role[];
 
-/** The colours of the levels (src/levels.ts), each once (two levels may share one). */
-const COLOURS = [...new Map(COLOURED.map((l) => [LEVELS[l].colour!.variable, LEVELS[l].colour!])).values()];
+/** The colours of the levels (src/levels.ts). */
+const COLOURS = COLOURED.map((l) => LEVELS[l].colour!);
 
 /** Our colours of the levels in a theme kind, where the theme's are not readable, by the editor's variable. */
 const ours = (kind: ThemeKind): Record<string, string> => Object.fromEntries(COLOURS.flatMap((c) => (c.ours[kind] ? [[c.variable, c.ours[kind]!]] : [])));
 
-/** VS Code's `editorWarning.foreground` and `editorInfo.foreground` in its default themes of each kind, by variable. */
+/** VS Code's `editorError.foreground`, `editorWarning.foreground` and `editorInfo.foreground` in its default themes of each kind (1.143), by variable. */
+const E = '--vscode-editorError-foreground';
 const W = '--vscode-editorWarning-foreground';
 const I = '--vscode-editorInfo-foreground';
 const VSCODE_LEVELS: Record<ThemeKind, Record<string, string>> = {
-  light: { [W]: '#bf8803', [I]: '#1a85ff' },
-  dark: { [W]: '#cca700', [I]: '#3794ff' },
-  highContrast: { [W]: '#ffd370', [I]: '#3794ff' },
-  highContrastLight: { [W]: '#895503', [I]: '#1a85ff' },
+  light: { [E]: '#e51400', [W]: '#bf8803', [I]: '#1a85ff' },
+  dark: { [E]: '#f14c4c', [W]: '#cca700', [I]: '#3794ff' },
+  highContrast: { [E]: '#f48771', [W]: '#ffd370', [I]: '#3794ff' },
+  highContrastLight: { [E]: '#b5200d', [W]: '#895503', [I]: '#1a85ff' },
 };
 
 /** The backgrounds text is drawn on, in a set of the web page's variables (Light Modern or Dark Modern). */
@@ -131,11 +132,13 @@ describe('the contrast of the colours of the roles', () => {
       const vars = web[kind];
       const colours: Record<string, string> = Object.fromEntries(ROLES.map((r) => [r, vars[CHARTS[r]]]));
       for (const v of ['errorForeground', 'descriptionForeground', 'foreground', 'editor-foreground']) colours[v] = vars[`--vscode-${v}`];
-      for (const v of ['editorWarning-foreground', 'editorInfo-foreground']) colours[v] = vars[`--vscode-${v}`];
+      for (const v of ['editorError-foreground', 'editorWarning-foreground', 'editorInfo-foreground']) colours[v] = vars[`--vscode-${v}`];
       check(`web ${kind}`, colours, backgrounds(vars), 4.5);
-      // The levels of the notes: the panel's own colours in the light theme, VS Code's Dark Modern ones in the dark.
+      // The levels of the notes: the panel's own colours in the light theme, VS Code's Dark Modern ones in the dark,
+      // but where they are not readable (the error's).
       const levels = Object.fromEntries(COLOURS.map((c) => [c.variable, vars[c.variable]]));
-      assert.deepEqual(levels, kind === 'light' ? ours('light') : VSCODE_LEVELS.dark);
+      assert.deepEqual(levels, kind === 'light' ? ours('light') : { ...VSCODE_LEVELS.dark, ...ours('dark') });
+      assert.deepEqual(Object.keys(ours('dark')), [E]);
       // (The web page's dark theme stands in for Dark Modern: the table's `dark`.)
       assert.deepEqual(VSCODE_LEVELS.dark, Object.fromEntries(COLOURS.map((c) => [c.variable, c.dark])));
       // The web page's colours are the panel's own where it has them.
@@ -165,7 +168,7 @@ describe('the contrast of the colours of the roles', () => {
       const error = ERROR_COLOURS[kind];
       assert.deepEqual(block, {
         ...Object.fromEntries(ROLES.filter((r) => own[r]).map((r) => [PANEL_VAR[r], own[r]])),
-        ...(error ? { '--c-error': error } : {}),
+        '--c-error': error,
         ...Object.fromEntries(COLOURS.filter((c) => c.ours[kind]).map((c) => [c.name, c.ours[kind]])),
       });
       // The levels of the notes: ours, or the theme's editorWarning and editorInfo colours.
@@ -178,9 +181,10 @@ describe('the contrast of the colours of the roles', () => {
       // Where it has none, the theme's chart colour (the light and dark themes: Light Modern's and Dark Modern's).
       const colours = Object.fromEntries(ROLES.map((r) => [r, own[r] ?? t.base[CHARTS[r]]])) as Record<Role, string>;
       check(`VS Code ${kind}`, colours, t.bgs, t.min);
-      // The error colour: our own in the light and dark themes (the high contrast themes keep theirs).
-      if (error) check(`VS Code ${kind} error`, { error }, t.bgs, t.min);
-      else assert.ok(kind === 'highContrast' || kind === 'highContrastLight', kind);
+      // The error colour (a part that cannot be read): our own in every theme kind, the error level's.
+      check(`VS Code ${kind} error`, { error }, t.bgs, t.min);
+      assert.strictEqual(error, LEVELS.error.colour!.ours[kind]);
+      assert.throws(() => check('', { error: VSCODE_LEVELS[kind][E] }, t.bgs, t.min), /below/, `${kind}: the theme's error colour is readable`);
       distinct(`VS Code ${kind}`, colours, 8);
     });
   }

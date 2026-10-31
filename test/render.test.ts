@@ -91,6 +91,14 @@ describe('the levels of the notes', () => {
     // (Each with its level's look from the level table: the class, the icon, and the icon's name for a screen reader.)
     assert.deepStrictEqual(msg.notes.map((n) => [n.className, n.icon, n.iconName]), [['level-warning', 'warning', 'Warning'], ['level-info', 'info', 'Information'], ['level-note', 'info', 'Note']]);
     assert.deepStrictEqual(msg.marks, []);
+    // An error first, with its own look; its icon has no name, as its word says the level ("Error:"), in both languages.
+    for (const lang of ['en', 'ja'] as const) {
+      const line = '[ -f a; read line';
+      const err = panelUpdate({ lang, explanation: new Analyzer(lang).explainLine(parser.parse(line), 0), file: 'a.sh', line: 0, lineText: line, choice: {}, placement: 'first', animations: true });
+      assert.deepStrictEqual(err.notes.map((n) => [n.className, n.icon, n.iconName, n.label]), [
+        ['level-error', 'error', '', lang === 'en' ? 'Error:' : 'エラー:'], ['level-info', 'info', lang === 'en' ? 'Information' : '情報', lang === 'en' ? 'Caveat:' : '注意:'],
+      ]);
+    }
   });
 
   it('gives the panel the problems of the line, to underline them', () => {

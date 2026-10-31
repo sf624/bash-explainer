@@ -7,13 +7,13 @@ import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
 import { alwaysFails, FADED, type Faded, LEADING_MARK } from './levels';
-import { conventionOf, fact, isProblem, severityOf } from './messages';
+import { conventionOf, fact, isProblem, problemText, severityOf } from './messages';
 import { PROBLEM_LEVELS } from './messages-levels';
 import { type NestedScript, nestedScripts } from './semantics/nested';
 import { shellState } from './semantics/state';
 import { explainOptions, settingSpec } from './settings';
 import type { Settings, Surface } from './settings';
-import { descendants, type Point, type SyntaxNode, type SyntaxTree } from './syntax/tree';
+import { descendants, isListHolder, type Point, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 
 // What the extension and the web page share: explaining a line and finding the problems of a
 // document, given its text and parse tree. Nothing here depends on VS Code.
@@ -119,7 +119,7 @@ export function noteIssues(doc: ShellDocument, lang: Lang, shells: Shells, opts:
       for (const { span } of ex.anchors?.filter((a) => a.text === n.text) ?? []) {
         const at = span.start.line;
         const issue: DocumentIssue = {
-          code: n.code!, severity: severityOf(n.level), message: n.text, ...(alwaysFails(n.level) ? {} : { pitfall: true as const }), ...conventionOf(n),
+          code: n.code!, severity: severityOf(n.level), message: problemText(n, lang), ...(alwaysFails(n.level) ? {} : { pitfall: true as const }), ...conventionOf(n),
           startLine: at, startCol: span.start.character, endLine: at, endCol: span.end.line === at ? span.end.character : doc.lines[at].length,
         };
         const id = `${issue.code} ${at}:${issue.startCol}-${issue.endCol}`;
@@ -253,7 +253,7 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bas
     const n = i.place;
     const sameLine = n.startPosition.row === n.endPosition.row;
     return {
-      code: i.id, severity: severityOf(i.note.level), message: i.note.text, fix: fixFor(i),
+      code: i.id, severity: severityOf(i.note.level), message: problemText(i.note, lang), fix: fixFor(i),
       startLine: n.startPosition.row, startCol: n.startPosition.column,
       endLine: n.startPosition.row, endCol: sameLine ? n.endPosition.column : doc.lines[n.startPosition.row].length,
     };
@@ -280,7 +280,7 @@ function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined):
       const start = at(source(index(i.place.startPosition), false));
       const end = at(source(index(i.place.endPosition), true));
       out.push({
-        code: i.id, severity: severityOf(i.note.level), message: i.note.text,
+        code: i.id, severity: severityOf(i.note.level), message: problemText(i.note, lang),
         startLine: start.line, startCol: start.col, endLine: start.line, endCol: end.line === start.line ? end.col : doc.lines[start.line].length,
       });
     }
@@ -312,15 +312,22 @@ const CRLF_KEEP = [
   'To keep the file as it is and silence this problem, write `# bash-explainer disable-file=crlf` on a line of its own.',
 ] as const;
 
-/** What a CR at the end of a line does: where a keyword stands before one, on the `#!` line, or elsewhere only. */
-const CRLF: Readonly<Record<'keyword' | 'shebang' | 'maybe', readonly [string, string]>> = {
+/**
+ * What a CR at the end of a line does: where a keyword stands before one, where one starts a command, on the `#!` line,
+ * or elsewhere only.
+ */
+const CRLF: Readonly<Record<'keyword' | 'command' | 'shebang' | 'maybe', readonly [string, string]>> = {
   keyword: [
     'この行の改行は CRLF（Windows 形式）で、bash は行末の CR を最後の単語の一部として読む。`fi` が `fi\\r` になって「command not found」や構文エラーになるので、LF に変換する。',
     'This file has Windows line endings (CRLF). bash reads the CR at the end of a line as part of its last word, so `fi` becomes `fi\\r` and the script fails with "command not found" or a syntax error. Convert it to LF.',
   ],
+  command: [
+    'この行の改行は CRLF（Windows 形式）で、空の行や、`;`・`&&`・`||`・`|`・`&` で終わる行では、行末の CR だけが1つのコマンドとして読まれ、実行されると `$\'\\r\': command not found` で失敗する（`&&`・`||`・`|` の後の行も、その続きにはならない）ので、LF に変換する。',
+    'This file has Windows line endings (CRLF). On a blank line, or after `;`, `&&`, `||`, `|` or `&` at the end of a line, the CR alone is read as a command, which fails with `$\'\\r\': command not found` where it runs (and the line after `&&`, `||` or `|` no longer continues it). Convert it to LF.',
+  ],
   shebang: [
-    'この行の改行は CRLF（Windows 形式）で、`#!` の行末の CR はインタープリタの名前の一部として読まれる。プログラムとして実行すると「required file not found」や「bad interpreter」で失敗するので、LF に変換する。',
-    'This file has Windows line endings (CRLF). The CR at the end of the `#!` line is read as part of the interpreter\'s name, so the script run as a program fails with "required file not found" or "bad interpreter". Convert it to LF.',
+    'この行の改行は CRLF（Windows 形式）で、`#!` の行末の CR はインタープリタの名前の一部として読まれる。プログラムとして実行すると、インタープリタが見つからずに失敗するので、LF に変換する。',
+    'This file has Windows line endings (CRLF). The CR at the end of the `#!` line is read as part of the interpreter\'s name, so the script run as a program fails: the interpreter is not found. Convert it to LF.',
   ],
   maybe: [
     'この行の改行は CRLF（Windows 形式）で、bash は行末の CR を最後の単語の一部として読む。`echo hi` は `hi` の後に CR を出力し、行末のファイル名や値にも CR が付くので、LF に変換する。',
@@ -334,18 +341,53 @@ function keywordBefore(n: SyntaxNode, carriageReturns: ReadonlySet<number>): boo
   return n.children.some((c) => keywordBefore(c, carriageReturns));
 }
 
+/** The operators after which a command starts: a CR after one, with only blanks between, is a command of its own. */
+const BEFORE_COMMAND = new Set([';', '&&', '||', '|', '|&', '&']);
+
+/**
+ * Whether a CR of the script starts a command (`$'\r': command not found`): it stands where a command does, in a script
+ * or a body of commands (no word, string, heredoc body or comment around it), with only blanks before it on a blank
+ * line or after an operator that a command follows (`echo a;\r`, `a &&\r`). One walk of the tree: the innermost node
+ * around each CR, and the token that ends at each offset.
+ */
+function startsCommand(tree: SyntaxTree, crs: readonly number[]): boolean {
+  const around: (SyntaxNode | undefined)[] = [];
+  const tokenAt = new Map<number, string>();
+  const visit = (n: SyntaxNode): void => {
+    let i = 0;
+    for (let hi = crs.length; i < hi;) {
+      const mid = (i + hi) >> 1;
+      if (crs[mid] < n.startIndex) i = mid + 1;
+      else hi = mid;
+    }
+    for (; i < crs.length && crs[i] < n.endIndex; i++) around[i] = n;
+    if (!n.children.length) tokenAt.set(n.endIndex, n.type);
+    n.children.forEach(visit);
+  };
+  visit(tree.root);
+  return crs.some((cr, i) => {
+    const n = around[i];
+    if (n && !isListHolder(n) && n.type !== 'list' && n.type !== 'pipeline') return false;
+    const before = /[ \t]*$/.exec(tree.text.slice(0, cr))!.index;
+    return before === 0 || tree.text[before - 1] === '\n' || BEFORE_COMMAND.has(tokenAt.get(before)!);
+  });
+}
+
 /**
  * A script with CRLF line ends; the issue is shown once, on the last word of the first line that has one (the CR itself
  * lies past the end of the line). An error where it fails every time (`PROBLEM_LEVELS.crlf`, docs/design/three-levels.md,
- * section 2): a keyword just before a CR (`fi\r`, `then\r`) is a word, not a keyword, however the file runs; a CR on the
- * `#!` line ends the interpreter's name, and the file runs as a program. Otherwise a warning (`crlfMaybe`): `bash file`,
- * `source file`, and a program whose `#!` line ends in LF, run `echo hi\r`, with a CR at the end of the output.
+ * section 2): a keyword just before a CR (`fi\r`, `then\r`) is a word, not a keyword, however the file runs; a CR where
+ * a command starts (a blank line, `echo a;\r`) is a command, `$'\r'`, which is not found; a CR on the `#!` line ends the
+ * interpreter's name, and the file runs as a program. Otherwise a warning (`crlfMaybe`): `bash file`, `source file`,
+ * and a program whose `#!` line ends in LF, run `echo hi\r`, with a CR at the end of the output.
  */
 function crlfIssue(tree: SyntaxTree, lang: Lang): DocumentIssue[] {
   const at = tree.carriageReturns?.[0];
   if (at === undefined) return [];
   const before = tree.text.slice(0, at);
-  const why = keywordBefore(tree.root, new Set(tree.carriageReturns)) ? 'keyword' : tree.text.startsWith('#!') && !before.includes('\n') ? 'shebang' : 'maybe';
+  const why = keywordBefore(tree.root, new Set(tree.carriageReturns)) ? 'keyword'
+    : startsCommand(tree, tree.carriageReturns!) ? 'command'
+    : tree.text.startsWith('#!') && !before.includes('\n') ? 'shebang' : 'maybe';
   const level = why === 'maybe' ? PROBLEM_LEVELS.crlfMaybe : PROBLEM_LEVELS.crlf;
   const line = before.split('\n').length - 1;
   // (In the tree the CR is a blank, so the last word is the one before it; a line of nothing else has no word.)

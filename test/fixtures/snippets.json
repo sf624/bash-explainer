@@ -1302,6 +1302,7 @@
  "label $a | try break $a",
  "length",
  "let 1+2",
+ "level-error",
  "level-info",
  "level-note",
  "level-warning",

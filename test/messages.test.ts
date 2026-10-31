@@ -1,7 +1,7 @@
 // The message catalog (src/messages.ts): every entry cites sections of the manual that exist, says its kind with the
 // right mark in both languages, and the analyzer lists a fact with the exact text of the note it shows.
 import * as assert from 'assert';
-import { fact, factOf, marked, MESSAGES, plainNote, PORTABILITY, severityOf, type FactId } from '../src/messages';
+import { fact, factOf, marked, MESSAGES, plainNote, PORTABILITY, problemText, severityOf, type FactId } from '../src/messages';
 import { SECTIONS } from '../src/manual';
 import { reference } from '../src/references';
 import { explain } from './support/explain';
@@ -131,6 +131,20 @@ describe('the message catalog', () => {
     assert.deepStrictEqual(marked('en', 'info', 'dash\'s `echo`', { heading: PORTABILITY, code: 'echoE' }), { text: 'ⓘ Portability: dash\'s `echo`', level: 'info', label: 'Portability:', body: 'dash\'s `echo`', code: 'echoE' });
     assert.strictEqual(marked('ja', 'info', 'x', { heading: PORTABILITY }).text, 'ⓘ 移植性: x');
     assert.strictEqual(marked('en', 'note', 'x').text, 'ℹ x');
+  });
+
+  it('leaves out of a problem the word of a level said on every note, which its severity says (three-levels.md, 1b)', () => {
+    const heading = { ja: '見出し: ', en: 'Heading: ' };
+    assert.deepStrictEqual((['en', 'ja'] as const).map((lang) => [
+      problemText(fact(lang, 'unset-readonly', { name: 'x' }), lang).slice(0, 14),
+      // (A pitfall at the error level has the error's word: left out; a heading names no level: kept.)
+      problemText(marked(lang, 'error', 'x', { kind: 'pitfall' }), lang), problemText(marked(lang, 'error', 'x', { heading }), lang),
+      // (The words of the other levels are no level's name: kept, as the plain fact's text.)
+      problemText(marked(lang, 'warning', 'x', { kind: 'pitfall' }), lang), problemText(marked(lang, 'info', 'x', { heading: PORTABILITY }), lang), problemText(plainNote('x'), lang),
+    ]), [
+      ['ⓧ The variable', 'ⓧ x', 'ⓧ Heading: x', '⚠ Pitfall: x', 'ⓘ Portability: x', 'x'],
+      ['ⓧ 変数 `x` は読み取り', 'ⓧ x', 'ⓧ 見出し: x', '⚠ 落とし穴: x', 'ⓘ 移植性: x', 'x'],
+    ]);
   });
 
   it('gives a note its level, its word and the rest as data', () => {

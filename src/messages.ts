@@ -3,7 +3,7 @@ import type { ConventionId } from './conventions';
 import { invisibleList, pictureList, visibleChar } from './ctlchars';
 import type { Lang, Text } from './i18n';
 import { codeSpan, shorten } from './label';
-import { alwaysFails, LEVELS, type NoteLevel, severityOf } from './levels';
+import { alwaysFails, LEVELS, namesLevel, type NoteLevel, severityOf } from './levels';
 import { type FindRefusalParams, findRefusalRefs, findRefusalText } from './messages-find';
 import { aliasDefinedText, aliasMaybeText, aliasNotExpandedText } from './messages-alias';
 import { DEFINES_IT, leavesSet, inTrap, LOCAL_SOURCED, noShebang, readByBashrc, SETS_IT, unlessAny, unreadClause, unreadCode } from './messages-common';
@@ -692,6 +692,16 @@ export function marked(lang: Lang, level: NoteLevel, body: string, opts: { kind?
   const { word: levelWord, wordOnEvery } = LEVELS[level];
   const word = heading ? heading[lang] : kind === 'pitfall' || wordOnEvery ? levelWord[lang] : '';
   return { text: `${LEVELS[level].mark} ${word}${body}`, level, label: word.trimEnd(), body, ...(code ? { code } : {}) };
+}
+
+/**
+ * A note's text in the problem outputs (`DocumentIssue.message`: the Problems panels, `--check`, the annotations,
+ * SARIF), which show its level themselves: without the word of its level where the level says it on every note
+ * ("Error:", `namesLevel`), so that the level is said once (`file:2:1: error: …`). A heading and a kind's word
+ * ("Pitfall:") stay; the explanations, the hover and Copy as Markdown keep the whole text.
+ */
+export function problemText(n: Note, lang: Lang): string {
+  return namesLevel(n.level, n.label, lang) ? `${LEVELS[n.level].mark} ${n.body}` : n.text;
 }
 
 /** A note with no mark (an idiom, where a line is): a plain fact, the whole text its body. */

@@ -193,7 +193,8 @@ describe('the command-line tool', function () {
   it('checks a script for its shell, and exits 1 on an error', () => {
     const r = run(['--check', '--no-color', '-e', '#!/bin/sh\n[[ -f x ]] && echo y']);
     assert.strictEqual(r.code, 1);
-    assert.match(r.out, /^\(command\):2:1: error: Error: \[\[ \]\] is not POSIX sh.*\[dbracket\]$/m);
+    // (The level is said once, by the severity: no "Error:" after it.)
+    assert.match(r.out, /^\(command\):2:1: error: \[\[ \]\] is not POSIX sh.*\[dbracket\]$/m);
     // (In colour, the level's word in the level's colour: the level table.)
     assert.match(run(['--check', '--color', '-e', '#!/bin/sh\n[[ -f x ]] && echo y']).out, /^\(command\):2:1: \x1b\[31merror\x1b\[0m: /m);
     assert.strictEqual(run(['--check', '-e', '#!/bin/bash\n[[ -f x ]] && echo y']).code, 0);
@@ -240,7 +241,7 @@ describe('the command-line tool', function () {
     const gh = run(['--check', '--format', 'github', fixture('posix.sh')]);
     assert.strictEqual(gh.code, 1);
     const lines = gh.out.trim().split('\n');
-    assert.match(lines[0], /^::error file=.*posix\.sh,line=3,col=1,endLine=3,endColumn=\d+,title=Bash Explainer%3A pipefail::Error: set -o pipefail is not POSIX sh/);
+    assert.match(lines[0], /^::error file=.*posix\.sh,line=3,col=1,endLine=3,endColumn=\d+,title=Bash Explainer%3A pipefail::set -o pipefail is not POSIX sh/);
     const fails = (l: string) => l.startsWith('::error ');
     const first = lines.filter(fails);
     assert.deepStrictEqual(lines.slice(0, first.length), first);
@@ -312,14 +313,17 @@ describe('the command-line tool', function () {
     // (An error of the explanations fails the check without --strict.)
     assert.strictEqual(r.code, 1, r.out);
     assert.deepStrictEqual(r.out.trim().split('\n').map((l) => /:(\d+:\d+): (\w+): .* \[([\w-]+)\]$/.exec(l)!.slice(1).join(' ')), ['3:3 info declaration-masks-status', '5:1 error bracket-missing-close']);
+    // (The level said once: the severity of an error, with no "Error:" after it; a caveat keeps its word, which is no level's name.)
+    assert.deepStrictEqual(r.out.trim().split('\n').map((l) => /: (\w+: \S+ \S+)/.exec(l)![1]), ['info: Caveat: the', 'error: [ has']);
     const json = JSON.parse(run(['--check', '--format', 'json', file]).out);
     assert.deepStrictEqual(json.map((x: { code: string; line: number; column: number; endColumn: number; severity: string }) => [x.code, x.severity, x.line, x.column, x.endColumn]),
       [['declaration-masks-status', 'info', 3, 3, 19], ['bracket-missing-close', 'error', 5, 1, 7]]);
     const sarif = JSON.parse(run(['--check', '--format', 'sarif', file]).out);
     assert.deepStrictEqual(sarif.runs[0].results.map((x: { ruleId: string; level: string }) => [x.ruleId, x.level]), [['declaration-masks-status', 'note'], ['bracket-missing-close', 'error']]);
+    assert.deepStrictEqual([json[1].message, sarif.runs[0].results[1].message.text].map((m: string) => m.slice(0, 12)), ['[ has no ] a', '[ has no ] a']);
     // (An error is no pitfall: its annotation has no "(pitfall)" title, and it comes first.)
     const gh = run(['--check', '--format', 'github', file]).out.trim().split('\n');
-    assert.deepStrictEqual(gh.map((l) => /^::(\w+) .*line=(\d+),.*title=([^:]*)::/.exec(l)!.slice(1).join(' ')), ['error 5 Bash Explainer%3A bracket-missing-close', 'notice 3 Bash Explainer (pitfall)%3A declaration-masks-status']);
+    assert.deepStrictEqual(gh.map((l) => /^::(\w+) .*line=(\d+),.*title=([^:]*)::(\S+)/.exec(l)!.slice(1).join(' ')), ['error 5 Bash Explainer%3A bracket-missing-close [', 'notice 3 Bash Explainer (pitfall)%3A declaration-masks-status Caveat:']);
     // Said with the pitfalls off, in the explanations and in the problems.
     for (const off of ['notes.pitfalls=false', 'diagnostics.pitfalls=false']) {
       assert.deepStrictEqual(JSON.parse(run(['--check', '--format', 'json', '--set', off, file]).out).map((x: { code: string }) => x.code), ['bracket-missing-close'], off);

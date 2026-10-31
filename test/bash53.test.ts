@@ -382,7 +382,7 @@ describe('bash 5.3 options of builtins', () => {
       assert.ok(found.length >= 1, c.script);
       // (`source`, `.` and `trap` are special builtins: in POSIX mode, their error exits the shell.)
       const special = ['source', '.', 'trap'].includes(c.command) ? '; an error of a special builtin, so in POSIX mode the shell exits' : '';
-      assert.strictEqual(found[0].message, `ⓧ Error: \`${c.command} ${c.flag}\` is a bash 5.3 option: bash 5.2 reports "invalid option", and \`${c.command}\` does nothing (status 2${special}).`, c.script);
+      assert.strictEqual(found[0].message, `ⓧ \`${c.command} ${c.flag}\` is a bash 5.3 option: bash 5.2 reports "invalid option", and \`${c.command}\` does nothing (status 2${special}).`, c.script);
       // (On the option's word.)
       assert.strictEqual(c.script.slice(found[0].startCol, found[0].endCol), c.flag, c.script);
       assert.deepStrictEqual(issues('5.3'), [], c.script);
@@ -442,7 +442,7 @@ describe('bash 5.3 variables and shell options', () => {
       const issues = (version: BashVersion) => documentIssues({ lines: [c.script], tree: parser.parse(c.script) }, 'en', {}, [], { pitfalls: false, bashVersion: version });
       const found = issues('5.2');
       assert.deepStrictEqual(found.map((i) => i.code), ['laterOption'], c.script);
-      assert.strictEqual(found[0].message, `ⓧ Error: \`${c.name}\` is a bash 5.3 \`shopt\` option: bash 5.2 reports "invalid shell option name" for it (status 1; the other names are still set).`, c.script);
+      assert.strictEqual(found[0].message, `ⓧ \`${c.name}\` is a bash 5.3 \`shopt\` option: bash 5.2 reports "invalid shell option name" for it (status 1; the other names are still set).`, c.script);
       assert.strictEqual(c.script.slice(found[0].startCol, found[0].endCol), c.name, c.script);
       assert.deepStrictEqual(issues('5.3'), [], c.script);
     }

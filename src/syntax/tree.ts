@@ -395,6 +395,10 @@ const LIST_HOLDERS = new Set<string>([
   'program', 'compound_statement', 'subshell', 'do_group', 'if_statement', 'elif_clause', 'else_clause', 'while_statement', 'case_item',
   'command_substitution', 'process_substitution',
 ]);
+/** Whether `n` holds lists of commands: a script, or the body of a compound command or a substitution. */
+export function isListHolder(n: SyntaxNode): boolean {
+  return LIST_HOLDERS.has(n.type);
+}
 /** The nodes that can be a part of a list: a pipeline (a command, compound or not, is one of a single stage) or an AND/OR list. */
 const LIST_PARTS = new Set<string>([
   'command', 'pipeline', 'list', 'negated_command', 'redirected_statement', 'time_statement', 'coproc_statement', 'compound_statement',

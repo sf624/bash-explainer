@@ -143,6 +143,18 @@ const ROWS: readonly Row[] = [
   },
   // (With no shebang, a keyword before a CR fails however the file runs: `fi\r` is no keyword.)
   { id: 'crlf', text: 'if true; then echo it-works\r\nfi\r\n', line: 1, works: 'it-works', level: 'error' },
+  // (A CR where a command starts, on a blank line or after `;`, `&&` or `&`, is a command of its own, `$'\r'`, which is
+  // not found, however the file runs: with no shebang, and with a `#!` line that ends in LF. A file with no shebang run
+  // as a program is run by the caller's /bin/sh here, which says `\r: not found`.)
+  ...['', '#!/bin/bash\n'].flatMap((shebang): Row[] => {
+    const error = /\$'\\r': command not found|: \r: not found/;
+    const line = shebang ? 2 : 1;
+    return [
+      { id: 'crlf', text: `${shebang}echo it;\r\n`, line, error, level: 'error' },
+      { id: 'crlf', text: `${shebang}echo it &&\r\n`, line, error, level: 'error' },
+      { id: 'crlf', text: `${shebang}echo it\r\n\r\n`, line, error, level: 'error' },
+    ];
+  }),
   // (With no shebang and no keyword before a CR, bash runs each line with a CR at the end of its last word.)
   {
     id: 'crlf', text: 'echo it-works\r\n', line: 1, works: 'it-works',

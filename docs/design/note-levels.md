@@ -2,7 +2,7 @@
 
 How much a note matters, and how every output shows it. Built in #320; the prototype was commit 8371ef7 (branch `proto/note-levels`).
 
-The third level, Error, above the warnings, is being built in the steps of [three-levels.md](three-levels.md): step 1a gave the level, the problems and the facts that say a line fails (below); the views take its own look in step 1b, and the pitfalls that fail every time move to it in step 2. This page describes what is built.
+The third level, Error, above the warnings, is being built in the steps of [three-levels.md](three-levels.md): step 1a gave the level, the problems and the facts that say a line fails (below); step 1b gave it its own look in every view (#PRNUM); the pitfalls that fail every time move to it in step 2. This page describes what is built.
 
 ## The levels
 
@@ -28,7 +28,7 @@ The level of each note comes from one source per kind of note:
 
 - The message catalog (src/messages.ts): `pitfall()` is a warning, `caveat()` a pitfall at the level `info`, `failure()` a fact that says the line fails every time it runs (a note at the level `error`, with a row in test/error-level.test.ts that runs it in bash), `note()` a plain fact. `fact()` gives the level with the text (`Fact.level`).
 - The style checks (src/pitfalls.ts): `STYLE_LEVELS`, beside the catalog (src/messages-levels.ts).
-- The dialect issues (src/dialect.ts): `unsupported` is an error, `behaviour` information (`PROBLEM_LEVELS`, src/messages-levels.ts); in `sh`, a construct that is not POSIX but that dash and busybox ash run (`local`, `echo -n`) is `behaviour`, "Portability", `parse` (zsh syntax bash cannot read) a plain fact (`Issue.note`). `crlf` (src/document.ts) is an error where a CR ends the `#!` line or a keyword stands before a CR (`then\r` is no keyword), a warning otherwise (`bash file`, and a program whose `#!` line ends in LF, run `echo hi\r`).
+- The dialect issues (src/dialect.ts): `unsupported` is an error, `behaviour` information (`PROBLEM_LEVELS`, src/messages-levels.ts); in `sh`, a construct that is not POSIX but that dash and busybox ash run (`local`, `echo -n`) is `behaviour`, "Portability", `parse` (zsh syntax bash cannot read) a plain fact (`Issue.note`). `crlf` (src/document.ts) is an error where a CR ends the `#!` line, a keyword stands before a CR (`then\r` is no keyword) or a CR starts a command (a blank line, `echo a;\r`: `$'\r': command not found`), a warning otherwise (`bash file`, and a program whose `#!` line ends in LF, run `echo hi\r`).
 - A note with no mark (an idiom, where a line is in a here-document or a statement) is a plain fact (`plainNote`).
 - A diagnostic's severity is `severityOf(level)` (the level table): `error` an error, `warning` a warning, the others information (src/document.ts, src/hosts/remap.ts). The old list of pitfalls shown as warnings (`PITFALL_WARNINGS`) and `WordFinding.mild` are gone.
 
@@ -55,15 +55,14 @@ Every error, warning and caveat a line's explanation says is a problem (`noteIss
 
 ## The views
 
-Every view shows the notes in the same order: the warnings, then the information, then the plain facts, each in the order found (`notesByLevel` in src/ui/render.ts, by the level table's `rank`).
+Every view shows the notes in the same order: the errors, the warnings, then the information, then the plain facts, each in the order found (`notesByLevel` in src/ui/render.ts, by the level table's `rank`).
 
-- **Panel** (media/panel.js, media/panel.css): the level's codicon (`warning`, `info`), its class and the icon's name, sent by `panelUpdate` from the level table, in place of the mark, then the word in bold, both in the level's colour, and the quote's left border in that colour. A plain fact keeps the quote's border and has the info icon in the muted colour, with no word. The icon has an `aria-label` (警告・情報・補足 / Warning, Information, Note). With forced colours, the icon and the word take `CanvasText`, and a warning's border is double, so that it differs from the others without colour. The copy of the line at the top underlines the line's problems as the editor does (`marks`, from `lineMarks`).
-- **Hover** (src/ui/hoverView.ts, `noteMarkdown`: the part, the whole line): `$(warning)` or `$(info)`, and the word in bold, in a `<span style="color:…">` of the level's colour; a plain fact has `$(info)` in `descriptionForeground`.
+- **Panel** (media/panel.js, media/panel.css): the level's codicon (`error`, `warning`, `info`), its class and the icon's name, sent by `panelUpdate` from the level table, in place of the mark, then the word in bold, both in the level's colour, and the quote's left border in that colour. A plain fact keeps the quote's border and has the info icon in the muted colour, with no word. The icon has an `aria-label` (警告・情報・補足 / Warning, Information, Note), but where the word names the level ("Error:", `namesLevel`): there the icon is hidden from screen readers, so that the level is said once. With forced colours, the icon and the word take `CanvasText`, and an error's border is double, a warning's dashed, so that the levels differ without colour. The copy of the line at the top underlines the line's problems as the editor does (`marks`, from `lineMarks`), each in its level's colour.
+- **Hover** (src/ui/hoverView.ts, `noteMarkdown`: the part, the whole line): `$(error)`, `$(warning)` or `$(info)`, and the word in bold, in a `<span style="color:…">` of the level's colour; a plain fact has `$(info)` in `descriptionForeground`.
 - **CLI** (cli/main.ts): the mark and the word in the level's ANSI colour (31 red, 33 yellow, 34 blue), bold; a plain fact's mark dim.
 - **Plain Markdown** (Copy as Markdown, the Language Server's hover): the mark, and the word in bold: `> ⚠ **Pitfall:** …`, `> ⓧ **Error:** …`.
-- **Problems** (VS Code, the Language Server, `--check`, SARIF, the GitHub Action, the web page's Problems list): the severity of the level. SARIF has `error`, `warning` and `note`; the annotations `::error`, `::warning` and `::notice`. The web page's list shows ⓧ, ⚠ and ⓘ in the level's colour.
-- **Until step 1b** of three-levels.md, the panel, the hover and the web page's editor draw an error with the warning's icon, class and colour (the level table's `error` row shares them); its mark ⓧ, word and name are its own.
-- **Web page's editor** (web/editor.ts, CodeMirror's lint): the squiggle is a wavy underline in the level's colour (CodeMirror's own is an image of a fixed colour, grey for information), the gutter shows the level's codicon from media/icons.js as a mask over that colour (CodeMirror makes the marker element, so CSS draws it), and the problem's tooltip starts with the icon, with the `aria-label` of the panel. The gutter is hidden from screen readers by CodeMirror (`aria-hidden`), so the label is in the tooltip and the Problems list. The colours are `--c-warning` and `--c-info` (web/page.css, from theme.css); with forced colours, the icons take `CanvasText`.
+- **Problems** (VS Code, the Language Server, `--check`, SARIF, the GitHub Action, the web page's Problems list): the severity of the level. SARIF has `error`, `warning` and `note`; the annotations `::error`, `::warning` and `::notice`. The web page's list shows ⓧ, ⚠ and ⓘ in the level's colour. A problem's text has no word of a level that says it on every note ("Error:", `problemText` in src/messages.ts), since the severity says it (`file:2:1: error: …`); a pitfall's word and a heading stay.
+- **Web page's editor** (web/editor.ts, CodeMirror's lint): the squiggle is a wavy underline in the level's colour (CodeMirror's own is an image of a fixed colour, grey for information), the gutter shows the level's codicon from media/icons.js as a mask over that colour (CodeMirror makes the marker element, so CSS draws it), and the problem's tooltip starts with the icon, with the `aria-label` of the panel. The gutter is hidden from screen readers by CodeMirror (`aria-hidden`), so the label is in the tooltip and the Problems list. The colours are `--c-error-level`, `--c-warning` and `--c-info` (web/page.css, from theme.css); with forced colours, the icons take `CanvasText`.
 
 ### Colours
 
@@ -95,7 +94,7 @@ Since step 1a of [three-levels.md](three-levels.md); each has a row in test/erro
 | `find-action-refused` | find refuses all its arguments (status 1) and runs nothing. |
 | `bats-tags-invalid` | bats runs none of the file's tests, and fails. |
 | Dialect: `unsupported` | The construct fails in the target shell. |
-| Problem: `crlf`, where a CR ends the `#!` line or a keyword stands before a CR | Run as a program, the interpreter's name ends with a CR; `fi\r` is no keyword, however the file runs. (A warning otherwise: `bash file`, and a program whose `#!` line ends in LF, run `echo hi\r`.) |
+| Problem: `crlf`, where a CR ends the `#!` line, a keyword stands before a CR, or a CR starts a command | Run as a program, the interpreter's name ends with a CR; `fi\r` is no keyword, however the file runs; a CR on a blank line or after `;`, `&&`, `\|\|`, `\|` or `&` is a command of its own, `$'\r'`, not found. (A warning otherwise: `bash file`, and a program whose `#!` line ends in LF, run `echo hi\r`.) |
 
 ### Warnings
 

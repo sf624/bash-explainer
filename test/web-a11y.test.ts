@@ -112,6 +112,13 @@ describe('the web page: keyboard and screen reader access', function () {
       assert.strictEqual(await region.textContent(), said);
       await page.keyboard.press('ArrowDown');
       await until('the next line', async () => (await region.textContent()) ?? '', (t) => t.startsWith(lang === 'en' ? 'Line 4: grep | sort' : '4 行目：grep | sort'));
+      // A line with an error and a warning: both counted, the error first.
+      await page.keyboard.press('Control+End');
+      await page.keyboard.insertText('\nx = 1; [ -f a');
+      await page.keyboard.press('ArrowUp');
+      await page.keyboard.press('ArrowDown');
+      const both = await until('the line of problems', async () => (await region.textContent()) ?? '', (t) => t.startsWith(lang === 'en' ? 'Line 6' : '6 行目'));
+      assert.ok(both.endsWith(lang === 'en' ? '; 1 error, 1 warning' : '。エラー 1 件、警告 1 件'), both);
       await ctx.close();
     }
   });
