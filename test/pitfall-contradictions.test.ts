@@ -124,7 +124,7 @@ describe('pitfalls that bash contradicted', function () {
       assert.match((await bash(['-i', '-c', 'source ./off.sh'])).stderr, /a: command not found/);
       for (const opts of [{}, { host: { kind: 'markdown' as const } }]) {
         const ex = explain(off, 2, 'en', opts);
-        assert.strictEqual(ex.noteInfo.find((n) => n.code === 'alias-not-expanded-in-script')!.level, 'warning', JSON.stringify(opts));
+        assert.strictEqual(ex.noteInfo.find((n) => n.code === 'alias-not-expanded-in-script')!.level, 'error', JSON.stringify(opts));
         assert.strictEqual(ex.items[0].name!.runs, 'program');
         // (Turned off by the script: "command not found" in an interactive shell too.)
         assert.match(ex.noteInfo.find((n) => n.code === 'alias-not-expanded-in-script')!.body, /alias expansion is turned off \(`shopt -u expand_aliases`\), so `a` is "command not found", also in an interactive shell/);
@@ -132,12 +132,12 @@ describe('pitfalls that bash contradicted', function () {
       }
     });
 
-    it('still warns in a script with a shebang, or a string another bash runs', async () => {
+    it('still an error in a script with a shebang, or a string another bash runs', async () => {
       const script = `#!/bin/bash\n${lines}`;
       write('run.sh', script);
       const r = await bash(['run.sh']);
       assert.deepStrictEqual([r.stdout, r.stderr], ['', 'run.sh: line 3: hi: command not found\n']);
-      assert.strictEqual(noteOf(script, 'alias-not-expanded-in-script', 2)!.level, 'warning');
+      assert.strictEqual(noteOf(script, 'alias-not-expanded-in-script', 2)!.level, 'error');
       // (A string run by `bash -c` is a script, in any file.)
       const string = "bash -c 'alias b=ls\nb'";
       const s = await bash(['-c', string]);
@@ -160,16 +160,16 @@ describe('pitfalls that bash contradicted', function () {
       assert.match(explain(lib, 0, 'ja').notes.join('\n'), /関数の中から `source` で読み込まれたときは/);
     });
 
-    it('still warns in a script with a shebang', async () => {
+    it('still an error in a script with a shebang', async () => {
       const script = `#!/bin/bash\n${lib}`;
       write('local.sh', script);
       const r = await bash(['local.sh']);
       assert.deepStrictEqual([r.stdout, r.stderr], ['v=\n', 'local.sh: line 2: local: can only be used in a function\n']);
       const note = noteOf(script, 'local-outside-function', 1)!;
-      assert.strictEqual(note.level, 'warning');
+      assert.strictEqual(note.level, 'error');
       assert.doesNotMatch(note.body, /shebang/);
       // (In a string another bash runs, from any file.)
-      assert.strictEqual(noteOf("bash -c 'local x=1'", 'local-outside-function', 0)!.level, 'warning');
+      assert.strictEqual(noteOf("bash -c 'local x=1'", 'local-outside-function', 0)!.level, 'error');
     });
   });
 
@@ -202,7 +202,7 @@ describe('pitfalls that bash contradicted', function () {
       write('local-read.sh', read);
       assert.match((await bash(['local-read.sh'], { FOO: 'x' })).stderr, /FOO: unbound variable/);
       const unbound = noteOf(read, 'nounset-unbound', 2)!;
-      assert.strictEqual(unbound.level, 'warning');
+      assert.strictEqual(unbound.level, 'error');
       assert.doesNotMatch(unbound.body, /environment/);
     });
 
@@ -219,7 +219,7 @@ describe('pitfalls that bash contradicted', function () {
       const script = '#!/bin/bash\nFOO=1\nenv -u FOO bash -c \'echo "[$FOO]"\'\n';
       assert.deepStrictEqual(await both('env-u.sh', script), ['[]\n', '[]\n']);
       const note = exported(script)!;
-      assert.strictEqual(note.level, 'warning');
+      assert.strictEqual(note.level, 'error');
       assert.doesNotMatch(note.body, /environment/);
     });
 
@@ -230,7 +230,7 @@ describe('pitfalls that bash contradicted', function () {
       ]) {
         assert.deepStrictEqual(await both(name, script), ['[]\n', '[]\n'], name);
         const note = exported(script)!;
-        assert.strictEqual(note.level, 'warning', name);
+        assert.strictEqual(note.level, 'error', name);
         assert.match(note.body, /`FOO` is an array, and bash cannot export an array \(not even with `export`\), so it is empty there\. To pass its values, give `"\$\{FOO\[\*\]\}"` as an argument/, name);
       }
       assert.match(explain('FOO=(a b)\nexport FOO\nbash -c \'echo "$FOO"\'', 2, 'ja').notes.join('\n'), /`FOO` は配列で、bash は配列をエクスポートできない/);
@@ -243,14 +243,14 @@ describe('pitfalls that bash contradicted', function () {
       assert.strictEqual(exported(script), undefined);
     });
 
-    it('removed first: the plain warning', async () => {
+    it('removed first: an error', async () => {
       for (const [name, script] of [
         ['unset.sh', '#!/bin/bash\nunset FOO\nFOO=1\nbash -c \'echo "[$FOO]"\'\n'],
         ['unexported.sh', '#!/bin/bash\nFOO=1\nexport -n FOO\nbash -c \'echo "[$FOO]"\'\n'],
       ]) {
         assert.deepStrictEqual(await both(name, script), ['[]\n', '[]\n'], name);
         const note = exported(script)!;
-        assert.strictEqual(note.level, 'warning', name);
+        assert.strictEqual(note.level, 'error', name);
         assert.doesNotMatch(note.body, /environment/, name);
       }
     });
@@ -293,7 +293,7 @@ describe('pitfalls that bash contradicted', function () {
       const caps = '#!/bin/bash\nset -u\necho "[$FOO]"\n';
       assert.deepStrictEqual(await both('u-caps.sh', caps), ['', '[x]\n']);
       const maybe = noteOf(caps, 'nounset-unbound', 2)!;
-      assert.strictEqual(maybe.level, 'info');
+      assert.strictEqual(maybe.level, 'warning');
       assert.match(maybe.body, /\(unless `FOO` comes from the environment\)/);
       const lower = '#!/bin/bash\nset -u\necho "[$foo]"\n';
       assert.deepStrictEqual(await both('u-lower.sh', lower), ['', '[x]\n']);
@@ -303,7 +303,7 @@ describe('pitfalls that bash contradicted', function () {
       const removed = '#!/bin/bash\nunset FOO\nset -u\necho "[$FOO]"\n';
       assert.deepStrictEqual(await both('u-unset.sh', removed), ['', '']);
       const no = noteOf(removed, 'nounset-unbound', 3)!;
-      assert.strictEqual(no.level, 'warning');
+      assert.strictEqual(no.level, 'error');
       assert.doesNotMatch(no.body, /environment/);
       // (bash sets its own: no note.)
       assert.strictEqual(noteOf('#!/bin/bash\nset -u\necho "$BASH_VERSION"\n', 'nounset-unbound', 2), undefined);
@@ -517,7 +517,7 @@ describe('pitfalls that bash contradicted', function () {
         const r = await run(name, plain);
         assert.strictEqual(r.status, name === 'before.sh' ? 0 : 127, name);
         assert.match(r.stderr, /al: command not found/, name);
-        assert.strictEqual(noteOf(plain, 'alias-not-expanded-in-script', line)?.level, 'warning', name);
+        assert.strictEqual(noteOf(plain, 'alias-not-expanded-in-script', line)?.level, 'error', name);
         assert.strictEqual(allTokens(explain(plain, line).items).find((t) => t.name && t.label === 'al')!.name!.also.find((o) => o.kind === 'alias')?.unexpanded, true, name);
       }
     });
@@ -532,8 +532,8 @@ describe('pitfalls that bash contradicted', function () {
         assert.strictEqual(noteOf(script, 'local-outside-function', 1)!.level, 'info', signal);
       }
       assert.match(noteOf('#!/bin/bash\nf() { trap \'local y=2\' "$1"; }\n', 'local-outside-function', 1)!.body, /This is a trap's action: it runs where the trap fires, which may be inside a function or outside one/);
-      // (Not in a trap: still a warning.)
-      assert.strictEqual(noteOf('#!/bin/bash\nlocal y=2\n', 'local-outside-function', 1)!.level, 'warning');
+      // (Not in a trap: still an error.)
+      assert.strictEqual(noteOf('#!/bin/bash\nlocal y=2\n', 'local-outside-function', 1)!.level, 'error');
     });
 
     it('variable-not-exported and function-not-in-new-shell-export: code the model does not read may export it', async () => {
@@ -559,11 +559,11 @@ describe('pitfalls that bash contradicted', function () {
       const fnNote = noteOf(fn, 'function-not-in-new-shell-export', 3)!;
       assert.strictEqual(fnNote.level, 'info');
       assert.match(fnNote.body, /does not have this script's function `f`, unless code that runs before it and is not read here, such as a file read with `source` or an `eval`, defines it there\./);
-      // (bash exports no array, whatever that code does: still a warning.)
+      // (bash exports no array, whatever that code does: still an error.)
       write('exports-arr.sh', 'export arr\n');
       const arr = "#!/bin/bash\narr=(a b)\n. ./exports-arr.sh\nbash -c 'echo \"[$arr]\"'\n";
       assert.strictEqual((await run('array.sh', arr)).stdout, '[]\n');
-      assert.strictEqual(noteOf(arr, 'variable-not-exported', 3)!.level, 'warning');
+      assert.strictEqual(noteOf(arr, 'variable-not-exported', 3)!.level, 'error');
       // (Still said where no code the model does not read runs before: after the command, in this shell or in the
       // string, or with a locale the trust does not know.)
       for (const [name, plain, line] of [

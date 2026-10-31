@@ -10,10 +10,12 @@ import type { ThemeKind } from './ui/palette';
 /**
  * The level of a note (docs/design/three-levels.md, section 2: the first question answered yes gives it):
  * - `error` (ⓧ "Error" / 「エラー」, red): the line fails every time as written (`[ -f x`, `unset` of a read-only
- *   variable, a construct the target shell lacks). Said whatever the pitfalls settings say, and it fails `--check`.
+ *   variable, a construct the target shell lacks, a function a new shell does not have). Said whatever the pitfalls
+ *   settings say, and it fails `--check`.
  * - `warning` (⚠ "Pitfall" / 「落とし穴」, yellow): damage that cannot be undone under some values or conditions, or a
  *   failure that turns the script's own exit status into success (`rm -rf $DIR/*` with an empty DIR, a stop under
- *   `set -u`); and, until they move to `error` (three-levels.md, step 2), the pitfalls that fail every time (`x = 1`).
+ *   `set -u` of a name the environment may give); and, until they move to `error` (three-levels.md, step 3), the style
+ *   checks that fail every time (`x = 1`).
  * - `info` (ⓘ "Caveat" / 「注意」, blue): it goes wrong only with some values or systems and the damage is limited, or
  *   a failure goes unnoticed (`echo $x`, `read line`, `local x=$(false)`). A dialect note on a construct that works
  *   differently in the target shell is `info` too, with the word "Portability" / 「移植性」.

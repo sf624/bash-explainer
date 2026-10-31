@@ -20,7 +20,7 @@ const about = (src: string, label: string, lang: 'en' | 'ja' = 'en'): string => 
   assert.ok(t, `no token ${label} in ${src}`);
   return t.explanation;
 };
-const notes = (src: string, lang: 'en' | 'ja' = 'en', line = 0): string[] => explain(src, lang, line).notes.filter((n) => /^[⚠ⓘ] (落とし穴|注意|Pitfall|Caveat)/.test(n));
+const notes = (src: string, lang: 'en' | 'ja' = 'en', line = 0): string[] => explain(src, lang, line).notes.filter((n) => /^[ⓧ⚠ⓘ] (エラー|落とし穴|注意|Error|Pitfall|Caveat)/.test(n));
 const bash = (code: string): { out: string; status: number } => {
   const r = spawnSync('bash', ['--norc', '-c', code], { encoding: 'utf8', timeout: 10000 });
   return { out: r.stdout + r.stderr, status: r.status ?? -1 };
@@ -147,13 +147,13 @@ describe('a wrapper cannot run a shell function or builtin', () => {
     ]) {
       const n = at(FN + src, 1);
       assert.strictEqual(n.length, 1, src);
-      assert.match(n[0], new RegExp(`^⚠ Pitfall: \`${who}\` starts \`myfunc\` as a separate program, so it cannot run a shell function`), src);
+      assert.match(n[0], new RegExp(`^ⓧ Error: \`${who}\` starts \`myfunc\` as a separate program, so it cannot run a shell function`), src);
       assert.match(n[0], /export -f myfunc`, then call it through a shell: `bash -c 'myfunc "\$@"' _ …`/);
     }
   });
   it('none where find refuses the line and runs nothing: an -exec that no `\\;` or `+` ends', () => {
     // (GNU find: "missing argument to `-exec'", status 1; with one such -exec among others, none of them runs.)
-    for (const src of ['find . -exec myfunc {} ;', 'find . -exec myfunc {} \\; -exec myfunc {} ;', 'find . -ok myfunc {} +', 'find . -exec myfunc {}.bak +']) assert.deepStrictEqual(at(FN + src, 1), [], src);
+    for (const src of ['find . -exec myfunc {} ;', 'find . -exec myfunc {} \\; -exec myfunc {} ;', 'find . -ok myfunc {} +', 'find . -exec myfunc {}.bak +']) assert.deepStrictEqual(at(FN + src, 1).filter((n) => !n.includes('find refuses all its arguments')), [], src);
     assert.strictEqual(at(FN + 'find . -exec myfunc {} \\; -exec echo {} \\;', 1).length, 1);
   });
   it('a function defined later is still not run by the wrapper', () => {
@@ -163,10 +163,10 @@ describe('a wrapper cannot run a shell function or builtin', () => {
     for (const b of ['cd /x', 'export A=1', 'source f.sh', '. f.sh', 'alias a=b', 'set -e', 'shopt -s nullglob', 'read x', 'ulimit -n 1', 'umask 022', 'exit 1', 'unset A', 'eval x', 'command -v x']) {
       const n = at('sudo ' + b, 0);
       assert.strictEqual(n.length, 1, b);
-      assert.match(n[0], /^⚠ Pitfall: `sudo` starts `\S+` as a separate program, so it cannot run a shell builtin/, b);
+      assert.match(n[0], /^ⓧ Error: `sudo` starts `\S+` as a separate program, so it cannot run a shell builtin/, b);
     }
     assert.match(at('sudo cd /root', 0)[0], /Use a subshell `\(cd … && …\)`, or `sudo sh -c 'cd … && …'`/);
-    assert.match(at('timeout 5 cd /tmp', 0)[0], /^⚠ Pitfall: `timeout` starts `cd`/);
+    assert.match(at('timeout 5 cd /tmp', 0)[0], /^ⓧ Error: `timeout` starts `cd`/);
     assert.match(at('xargs export', 0)[0], /`xargs sh -c 'export …'`/);
   });
   it('is explained as what it would run, in sudo and timeout alike', () => {
@@ -193,12 +193,14 @@ describe('a wrapper cannot run a shell function or builtin', () => {
   });
   it('speaks Japanese', () => {
     assert.strictEqual(at(FN + 'echo a | xargs myfunc', 1, 'ja')[0],
-      '⚠ 落とし穴: `xargs` は `myfunc` を別のプログラムとして起動するため、シェルの関数は実行できません（`command not found` になるか、今のシェルには効きません）。`export -f myfunc` してから `bash -c \'myfunc "$@"\' _ …` のようにシェル経由で呼びます');
-    assert.match(at('sudo cd /root', 0, 'ja')[0], /^⚠ 落とし穴: `sudo` は `cd` を別のプログラムとして起動するため、シェルの組み込みコマンドは実行できません.*サブシェル `\(cd … && …\)` か、`sudo sh -c 'cd … && …'` を使います$/);
+      'ⓧ エラー: `xargs` は `myfunc` を別のプログラムとして起動するため、シェルの関数は実行できません（`command not found` になるか、今のシェルには効きません）。`export -f myfunc` してから `bash -c \'myfunc "$@"\' _ …` のようにシェル経由で呼びます');
+    assert.match(at('sudo cd /root', 0, 'ja')[0], /^ⓧ エラー: `sudo` は `cd` を別のプログラムとして起動するため、シェルの組み込みコマンドは実行できません.*サブシェル `\(cd … && …\)` か、`sudo sh -c 'cd … && …'` を使います$/);
   });
-  it('can be turned off with the pitfalls setting', () => {
+  it('keeps its errors with the pitfalls setting off', () => {
     const src = 'sudo cd /root\nssh h $HOME\nsu -c x\nf() { :; }\nssh h f';
-    for (const line of [0, 1, 4]) assert.deepStrictEqual(new Analyzer('en').explainLine(parser.parse(src), line, undefined, { pitfalls: false }).notes.filter((n) => /Pitfall/.test(n)), []);
+    const said = (line: number) => new Analyzer('en').explainLine(parser.parse(src), line, undefined, { pitfalls: false }).notes.filter((n) => /^[ⓧ⚠ⓘ] (Error|Pitfall|Caveat):/.test(n));
+    // (A builtin or a function a wrapper or a remote shell cannot run fails every time: an error, said either way; `ssh h $HOME`, a caveat, is not.)
+    assert.deepStrictEqual([0, 1, 4].map((line) => said(line).map((n) => n.slice(0, 8))), [['ⓧ Error:'], [], ['ⓧ Error:']]);
   });
   it('nice -N is the old way to write nice -n N', () => {
     assert.match(about('nice -10 make', '-10'), /^niceness adjustment 10 \(old way to write `-n 10`/);
@@ -224,9 +226,9 @@ describe('the pitfalls follow from how the command is run', () => {
   const at = (src: string, lang: 'en' | 'ja' = 'en') => notes(FN + src, lang, 1);
   it('exec and the other wrappers that start a program: no function, no builtin without a program', () => {
     for (const [src, who] of [['exec myfunc', 'exec'], ['npx myfunc', 'npx'], ['uv run myfunc', 'uv run'], ['poetry run myfunc', 'poetry run'], ['systemd-cat myfunc', 'systemd-cat'], ['/usr/bin/time myfunc', 'time']]) {
-      assert.match(at(src)[0], new RegExp(`^⚠ Pitfall: \`${who}\` starts \`myfunc\` as a separate program, so it cannot run a shell function`), src);
+      assert.match(at(src)[0], new RegExp(`^ⓧ Error: \`${who}\` starts \`myfunc\` as a separate program, so it cannot run a shell function`), src);
     }
-    assert.match(at('exec cd /x')[0], /^⚠ Pitfall: `exec` starts `cd` as a separate program, so it cannot run a shell builtin/);
+    assert.match(at('exec cd /x')[0], /^ⓧ Error: `exec` starts `cd` as a separate program, so it cannot run a shell builtin/);
     // Builtins that no program has the name of.
     for (const src of ['env disown', 'xargs :', 'sudo help', 'nohup times']) assert.match(at(src)[0], /cannot run a shell builtin/, src);
   });
@@ -234,9 +236,9 @@ describe('the pitfalls follow from how the command is run', () => {
     for (const [src, who] of [['docker run img myfunc', 'docker run'], ['docker exec ctr myfunc', 'docker exec'], ['docker compose run svc myfunc', 'docker compose run'], ['podman run img myfunc', 'podman run'], ['kubectl exec pod -- myfunc', 'kubectl exec']]) {
       const n = at(src);
       assert.strictEqual(n.length, 1, src);
-      assert.strictEqual(n[0], `⚠ Pitfall: \`${who}\` runs \`myfunc\` inside the container, and a function from this script is not available in the container. Write out its body instead`);
+      assert.strictEqual(n[0], `ⓧ Error: \`${who}\` runs \`myfunc\` inside the container, and a function from this script is not available in the container. Write out its body instead`);
     }
-    assert.strictEqual(at('docker run img myfunc', 'ja')[0], '⚠ 落とし穴: `docker run` は `myfunc` をコンテナの中で実行します。このスクリプトの関数はコンテナの中にはないので使えません。関数の中身を直接書きます');
+    assert.strictEqual(at('docker run img myfunc', 'ja')[0], 'ⓧ エラー: `docker run` は `myfunc` をコンテナの中で実行します。このスクリプトの関数はコンテナの中にはないので使えません。関数の中身を直接書きます');
     // Builtins depend on the image: nothing is said.
     assert.deepStrictEqual(at('docker run img cd /x'), []);
   });
@@ -244,9 +246,9 @@ describe('the pitfalls follow from how the command is run', () => {
     for (const [src, who] of [["bash -c 'myfunc a'", 'bash -c'], ["sh -c 'myfunc'", 'sh -c'], ["bash -xc 'myfunc'", 'bash -c'], ["flock /l -c 'myfunc'", 'flock -c'], ["flock /l --command 'myfunc'", 'flock -c']]) {
       const n = at(src);
       assert.strictEqual(n.length, 1, src);
-      assert.strictEqual(n[0], `⚠ Pitfall: \`${who}\` runs the command in a new shell, which does not have this script's function \`myfunc\`. Write out its body, or pass the function with \`export -f myfunc\` first (only when the new shell is bash)`, src);
+      assert.strictEqual(n[0], `ⓧ Error: \`${who}\` runs the command in a new shell, which does not have this script's function \`myfunc\`. Write out its body, or pass the function with \`export -f myfunc\` first (only when the new shell is bash)`, src);
     }
-    assert.strictEqual(at("bash -c 'myfunc'", 'ja')[0], '⚠ 落とし穴: `bash -c` は新しいシェルでコマンドを実行するため、このスクリプトの関数 `myfunc` は使えません。関数の中身を直接書くか、先に `export -f myfunc` で関数を渡します（新しいシェルが bash のときだけ）');
+    assert.strictEqual(at("bash -c 'myfunc'", 'ja')[0], 'ⓧ エラー: `bash -c` は新しいシェルでコマンドを実行するため、このスクリプトの関数 `myfunc` は使えません。関数の中身を直接書くか、先に `export -f myfunc` で関数を渡します（新しいシェルが bash のときだけ）');
     for (const src of ["export -f myfunc; bash -c 'myfunc'", "declare -fx myfunc; bash -c 'myfunc'", "export -f other myfunc; find . -exec bash -c 'myfunc \"$1\"' _ {} \\;", "bash -c 'cd /x'", "bash -c \"$cmd\"", "bash -c 'ls'"]) {
       assert.deepStrictEqual(at(src), [], src);
     }
@@ -256,9 +258,9 @@ describe('the pitfalls follow from how the command is run', () => {
     // functions bash exports), with -E too (sudoers(5): env_reset, and `*=()*` in env_delete); doas starts a new one
     // (doas(1)).
     for (const [src, blocker] of [["env -i bash -c 'myfunc'", 'env'], ['export -f myfunc; doas bash -c myfunc', 'doas'], ['env - bash -c myfunc', 'env'], ['sudo bash -c myfunc', 'sudo'], ['sudo -E bash -c myfunc', 'sudo'], ['export -f myfunc; sudo -u bob bash -c myfunc', 'sudo'], ['env -i timeout 5 bash -c myfunc', 'env']]) {
-      assert.deepStrictEqual(at(src), [`⚠ Pitfall: \`bash -c\` runs the command in a new shell, which does not have this script's function \`myfunc\`, and \`${blocker}\` passes no exported functions, so \`export -f myfunc\` does not help either. Write out its body`], src);
+      assert.deepStrictEqual(at(src), [`ⓧ Error: \`bash -c\` runs the command in a new shell, which does not have this script's function \`myfunc\`, and \`${blocker}\` passes no exported functions, so \`export -f myfunc\` does not help either. Write out its body`], src);
     }
-    assert.strictEqual(at('sudo bash -c myfunc', 'ja')[0], '⚠ 落とし穴: `bash -c` は新しいシェルでコマンドを実行するため、このスクリプトの関数 `myfunc` は使えません。`sudo` は環境の関数を渡さないので、`export -f myfunc` も効きません。関数の中身を直接書きます');
+    assert.strictEqual(at('sudo bash -c myfunc', 'ja')[0], 'ⓧ エラー: `bash -c` は新しいシェルでコマンドを実行するため、このスクリプトの関数 `myfunc` は使えません。`sudo` は環境の関数を渡さないので、`export -f myfunc` も効きません。関数の中身を直接書きます');
     // (A link before the shell that runs the wrapper is not the wrapper's: `nice` passes exported functions, sudo does not.)
     assert.match(at("env -i bash -c 'myfunc() { :; }; export -f myfunc; nice myfunc'")[0], /Run `export -f myfunc`, then call it through a shell/);
     assert.match(at("env -i bash -c 'myfunc() { :; }; export -f myfunc; sudo myfunc'")[0], /\(`sudo` passes no exported functions/);
@@ -267,19 +269,19 @@ describe('the pitfalls follow from how the command is run', () => {
     for (const src of ['export -f myfunc; env bash -c myfunc', 'export -f myfunc; env -u X bash -c myfunc', 'export -f myfunc; timeout 5 bash -c myfunc',
       "env -i bash -c 'myfunc() { :; }; export -f myfunc; bash -c myfunc'"]) assert.deepStrictEqual(at(src), [], src);
     // A function run as a program: the fix sends its definition.
-    assert.match(at('sudo myfunc')[0], /^⚠ Pitfall: `sudo` starts `myfunc` as a separate program.*Write out its body, or pass the definition along: `sudo bash -c "\$\(declare -f myfunc\); myfunc"` \(`sudo` passes no exported functions, so `export -f` does not help\)$/);
-    assert.match(at('doas myfunc')[0], /^⚠ Pitfall: `doas` starts `myfunc` as a separate program.*`doas bash -c "\$\(declare -f myfunc\); myfunc"` \(`doas` passes no exported functions, so `export -f` does not help\)$/);
+    assert.match(at('sudo myfunc')[0], /^ⓧ Error: `sudo` starts `myfunc` as a separate program.*Write out its body, or pass the definition along: `sudo bash -c "\$\(declare -f myfunc\); myfunc"` \(`sudo` passes no exported functions, so `export -f` does not help\)$/);
+    assert.match(at('doas myfunc')[0], /^ⓧ Error: `doas` starts `myfunc` as a separate program.*`doas bash -c "\$\(declare -f myfunc\); myfunc"` \(`doas` passes no exported functions, so `export -f` does not help\)$/);
     assert.match(at('env -i myfunc', 'ja')[0], /`env bash -c "\$\(declare -f myfunc\); myfunc"` のように定義ごと渡します（`env` は環境の関数を渡さないので、`export -f` は効きません）$/);
   });
   it('sudo -s and -i: a shell runs the command, so builtins run, and the function is not there', () => {
     for (const src of ['sudo -i cd /tmp', 'sudo -s cd /tmp', 'sudo --login export A=1', 'sudo -iu bob cd ~']) assert.deepStrictEqual(at(src), [], src);
     assert.strictEqual(allTokens(explain('sudo -i cd /tmp').items).find((t) => t.label === 'cd')?.kind, 'builtin');
-    assert.deepStrictEqual(at('sudo -s myfunc'), ["⚠ Pitfall: `sudo` runs the command in a new shell, which does not have this script's function `myfunc`. Write out its body"]);
+    assert.deepStrictEqual(at('sudo -s myfunc'), ["ⓧ Error: `sudo` runs the command in a new shell, which does not have this script's function `myfunc`. Write out its body"]);
   });
   it('watch: sh -c runs the words joined, unless -x execs them', () => {
     assert.deepStrictEqual(at('watch cd /x'), []);
-    assert.match(at('watch -n 1 myfunc')[0], /^⚠ Pitfall: `watch` runs the command in a new shell, which does not have this script's function `myfunc`/);
-    assert.match(at('watch -x cd /x')[0], /^⚠ Pitfall: `watch` starts `cd` as a separate program/);
+    assert.match(at('watch -n 1 myfunc')[0], /^ⓧ Error: `watch` runs the command in a new shell, which does not have this script's function `myfunc`/);
+    assert.match(at('watch -x cd /x')[0], /^ⓧ Error: `watch` starts `cd` as a separate program/);
   });
   it('the current shell: eval, command and builtin run functions and builtins', () => {
     for (const src of ['eval myfunc', "eval 'myfunc a'", 'command cd /x', 'builtin cd /x', 'eval export A=1']) assert.deepStrictEqual(at(src), [], src);
@@ -307,8 +309,8 @@ describe('a variable set by a wrapper is not yet set when its words are expanded
   it('env and sudo', () => {
     const n = notes('env FOO=1 echo $FOO');
     assert.strictEqual(n.length, 1);
-    assert.match(n[0], /^⚠ Pitfall: the current shell expands `\$FOO` before `env` sets `FOO` \(to its present value, or nothing\)/);
-    assert.match(notes('env FOO=1 echo $FOO', 'ja')[0], /^⚠ 落とし穴: `\$FOO` は、`env` が `FOO` を設定する前に今のシェルが展開します/);
+    assert.match(n[0], /^ⓧ Error: the current shell expands `\$FOO` before `env` sets `FOO` \(to its present value, or nothing\)/);
+    assert.match(notes('env FOO=1 echo $FOO', 'ja')[0], /^ⓧ エラー: `\$FOO` は、`env` が `FOO` を設定する前に今のシェルが展開します/);
     assert.match(notes('sudo A=1 B=2 echo "${B:-x}"')[0], /expands `"\$\{B:-x\}"` before `sudo` sets `B`/);
     // (doas sets no variable: `A=1` is the command it runs.)
     assert.ok(!notes('doas A=1 echo $A').some((x) => /before `doas` sets/.test(x)));
@@ -319,7 +321,7 @@ describe('a variable set by a wrapper is not yet set when its words are expanded
   it('the plain prefix form has the same issue', () => {
     assert.match(notes('FOO=1 echo $FOO')[0], /`FOO=…` is set only in the environment of `echo`; the current shell expands `\$FOO` before that/);
     assert.match(notes('FOO=1 echo "${FOO:-x}"')[0], /expands `"\$\{FOO:-x\}"`/);
-    assert.match(notes('FOO=1 echo $FOO', 'ja')[0], /^⚠ 落とし穴: `FOO=…` は `echo` の環境にだけ入ります。`\$FOO` は、その前に今のシェルが展開します/);
+    assert.match(notes('FOO=1 echo $FOO', 'ja')[0], /^ⓧ エラー: `FOO=…` は `echo` の環境にだけ入ります。`\$FOO` は、その前に今のシェルが展開します/);
     for (const src of ["FOO=1 echo '$FOO'", 'FOO=1 echo $BAR', 'FOO=1', 'FOO=$FOO cmd', "FOO=1 sh -c 'echo $FOO'"]) assert.deepStrictEqual(notes(src), [], src);
   });
   (hasBash ? it : it.skip)('agrees with bash', () => {
@@ -345,9 +347,9 @@ describe('the command given to ssh and su -c', () => {
   });
   it('ssh and su -c: the remote shell has no function of this script', () => {
     assert.match(notes('f() { :; }\nssh host f', 'en', 1)[0], /remote shell does not have this script's function `f`.*declare -f f/);
-    assert.match(notes('f() { :; }\nssh host f', 'ja', 1)[0], /^⚠ 落とし穴: リモートのシェルには、このスクリプトの関数 `f` はありません/);
+    assert.match(notes('f() { :; }\nssh host f', 'ja', 1)[0], /^ⓧ エラー: リモートのシェルには、このスクリプトの関数 `f` はありません/);
     assert.match(notes("f() { :; }\nsu -c 'f arg' root", 'en', 1)[0], /`su -c` runs the command in a new shell, which does not have this script's function `f`/);
-    assert.match(notes("f() { :; }\nsu -c 'f arg' root", 'ja', 1)[0], /^⚠ 落とし穴: `su -c` は新しいシェルでコマンドを実行するため、このスクリプトの関数 `f` は使えません/);
+    assert.match(notes("f() { :; }\nsu -c 'f arg' root", 'ja', 1)[0], /^ⓧ エラー: `su -c` は新しいシェルでコマンドを実行するため、このスクリプトの関数 `f` は使えません/);
     assert.match(notes("f() { :; }\nsu --command 'f' root", 'en', 1)[0], /`su -c`/);
     for (const src of ["su -c 'ls' root", 'su - root', "su -c 'cd /x' root", "su -c ls$HOME root"]) assert.deepStrictEqual(notes('f() { :; }\n' + src, 'en', 1).filter((n) => /function/.test(n)), [], src);
     assert.deepStrictEqual(notes("su -c 'f' root"), []);

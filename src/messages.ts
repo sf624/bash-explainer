@@ -69,6 +69,8 @@ const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) =
 const failure = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text, level: 'error' });
 const pitfall = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text, level?: NoteLevel | ((p: P) => NoteLevel)): Entry<P> =>
   ({ kind: 'pitfall', refs, text, ...(heading ? { heading } : {}), ...(level ? { level } : {}) });
+/** A pitfall at the level `error`: it fails every time as written, with a row in test/error-level.test.ts that sees it fail. */
+const broken = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text): Entry<P> => pitfall(refs, text, heading, 'error');
 /** A pitfall at the level `info`: harmless with most values, systems or paths. */
 const caveat = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text): Entry<P> => pitfall(refs, text, heading, 'info');
 /**
@@ -84,8 +86,8 @@ const withConvention = <P>(e: Entry<P>, convention: ConventionId): Entry<P> => (
 /** An entry whose suggestion is rewrites: its params carry them (`rewrite`), its text renders their code, its fact those with edits. */
 const suggests = <P extends { rewrite: readonly Rewrite[] }>(e: Entry<P>): Entry<P> => ({ ...e, rewrite: (p) => p.rewrite.filter((r) => r.edits.length) });
 
-/** The level of a pitfall that is a caveat in some cases: `unread` (`unreadClause`), `reader` (`readByBashrc`). */
-const byCase = ({ unread, reader }: { unread?: boolean; reader?: string }): NoteLevel => (unread || reader ? 'info' : 'warning');
+/** The level of a pitfall that fails every time but in some cases, where it is a caveat: `unread` (`unreadClause`), `reader` (`readByBashrc`). */
+const byCase = ({ unread, reader }: { unread?: boolean; reader?: string }): NoteLevel => (unread || reader ? 'info' : 'error');
 
 /** Headings of pitfalls whose text names its own kind of problem. */
 const NO_HEADING: Text = { ja: '', en: '' };
@@ -294,12 +296,12 @@ export const MESSAGES = {
     '`local` can be used only inside a function; outside one, dash and busybox ash stop the shell that runs it with "local: not in a function" (in a subshell, only the subshell ends)'] : [
     '`local` は関数の中でしか使えず、関数の外で使うと「can only be used in a function」のエラーになります',
     '`local` can be used only inside a function; outside one it fails with "can only be used in a function"'], LOCAL_SOURCED)), undefined,
-  ({ sourced, trap }) => (sourced || trap ? 'info' : 'warning')),
+  ({ sourced, trap }) => (sourced || trap ? 'info' : 'error')),
 
   // ---------------------------------------------------------------- POSIX mode (6.11, 4.4)
   // (6.11: "Function names may not be the same as one of the POSIX special builtins". That the definition then ends the
   // script, the manual does not say: checked.)
-  'posix-special-function-name': withBasis(pitfall<{ stops?: Stops }>(['6.11', '4.4'], ({ stops = 'script' }) => [
+  'posix-special-function-name': withBasis(broken<{ stops?: Stops }>(['6.11', '4.4'], ({ stops = 'script' }) => [
     `POSIX モードでは特殊ビルトインと同じ名前の関数は定義できず、bash は「is a special builtin」のエラーになり、${ends(stops)[0]}。別の名前にします`,
     `in POSIX mode a function cannot have the name of a special builtin: bash says "is a special builtin" and ${ends(stops)[1]}. Use another name`]),
   { kind: 'checked', probe: 'state#posix-special-function' }),
@@ -364,7 +366,7 @@ export const MESSAGES = {
   // ---------------------------------------------------------------- aliases (6.6)
   // (`off`: the script turned it off, `shopt -u expand_aliases`, which counts in an interactive shell too. `unread` and
   // `fn`: `Missed.maybe` of src/semantics/names.ts, a caveat.)
-  'alias-not-expanded-in-script': pitfall<{ name: string; value: string; off?: boolean; unread?: boolean; fn?: boolean }>(['6.6', '4.3.2'], aliasNotExpandedText, undefined, ({ unread, fn }) => (unread || fn ? 'info' : 'warning')),
+  'alias-not-expanded-in-script': pitfall<{ name: string; value: string; off?: boolean; unread?: boolean; fn?: boolean }>(['6.6', '4.3.2'], aliasNotExpandedText, undefined, ({ unread, fn }) => (unread || fn ? 'info' : 'error')),
   // (A file with no shebang, which bash may run as a script or an interactive shell may read: src/semantics/state.ts.)
   'alias-maybe-not-expanded': caveat<{ name: string; value: string }>(['6.6', '4.3.2'], aliasMaybeText),
   'alias-defined-same-unit': note<{ name: string; line: number }>(['6.6'], aliasDefinedText('same-unit')),
@@ -382,13 +384,13 @@ export const MESSAGES = {
   // (`reader`: `.bashrc` may have run first, with extglob on: messages-glob.ts, a caveat.)
   'extglob-in-same-block': withBasis(pitfall<{ use: string; reader?: 'sourced' | 'interactive' }>(['3.5.8.1', '4.3.2'], extglobText('in-same-block'), undefined, byCase), { kind: 'checked', probe: 'state#extglob-off' }),
   'extglob-maybe-on': withBasis(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('maybe-on')), { kind: 'checked', probe: 'state#extglob-off' }),
-  'extglob-turned-off': withBasis(pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('turned-off')), { kind: 'checked', probe: 'state#extglob-off' }),
+  'extglob-turned-off': withBasis(broken<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('turned-off')), { kind: 'checked', probe: 'state#extglob-off' }),
   'extglob-not-found': withBasis(notProblem(caveat<{ use: string }>(['3.5.8.1', '4.3.2'], extglobText('not-found'))), { kind: 'checked', probe: 'state#extglob-off' }),
   'extglob-maybe-on-trap': withBasis(caveat<{ use: string }>(['3.5.8.1', '4.3.2', '4.1'], extglobText('maybe-on-trap')), { kind: 'checked', probe: 'state#extglob-off' }),
   'extglob-not-in-new-shell': withBasis(pitfall<{ use: string; reader?: 'interactive' }>(['3.5.8.1', '4.3.2', '3.7.3'], extglobText('not-in-new-shell'), undefined, byCase), { kind: 'checked', probe: 'state#extglob-new-shell', also: ['state#extglob-off'] }),
   'globstar-maybe-on': caveat<{ on: string }>(['3.5.8', '4.3.2'], globstarText('maybe-on')),
   'globstar-not-found': notProblem(caveat<{ on: string }>(['3.5.8', '4.3.2'], globstarText('not-found'))),
-  'globstar-unsupported': pitfall<{ shell: string }>(['3.5.8'], ({ shell }) => [
+  'globstar-unsupported': broken<{ shell: string }>(['3.5.8'], ({ shell }) => [
     `${shell} には globstar がなく、\`**\` は \`*\` と同じく1階層分にしか一致しません。サブディレクトリまでたどるには \`find\` を使います`,
     `${shell} has no globstar, so \`**\` is the same as \`*\` and matches one level only. To reach into subdirectories, use \`find\``]),
 
@@ -417,27 +419,27 @@ export const MESSAGES = {
     `the new shell expands \`$${v}\` in the string, and \`${v}\` is set by this script but not exported: its value gets there only when \`${v}\` was in the environment already (a variable from the environment is exported), and it is empty otherwise. Run \`export ${v}\` first`] : [
     `文字列の中の \`$${v}\` は新しいシェルが展開します。\`${v}\` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です${unlessAny(environment ? [`環境変数に初めから \`${v}\` があるとき`, `the environment already has \`${v}\``] : undefined, unread ? [`${unreadCode(leavesSet(v))[0]}いるとき`, unreadCode(leavesSet(v))[1]] : undefined)[0]}。先に \`export ${v}\` します`,
     `the new shell expands \`$${v}\` in the string, and \`${v}\` is a variable of this script that is not exported, so it is empty there${unlessAny(environment ? [`環境変数に初めから \`${v}\` があるとき`, `the environment already has \`${v}\``] : undefined, unread ? [`${unreadCode(leavesSet(v))[0]}いるとき`, unreadCode(leavesSet(v))[1]] : undefined)[1]}. Run \`export ${v}\` first`]), undefined,
-  ({ environment, unread }) => (environment === 'maybe' || unread ? 'info' : 'warning')),
+  ({ environment, unread }) => (environment === 'maybe' || unread ? 'info' : environment ? 'warning' : 'error')),
   ({ array }) => (array ? { kind: 'checked', probe: 'state#export-array' } : undefined)),
-  'function-not-in-container': pitfall<{ via: string; name: string }>(['3.3', '3.7.3'], ({ via, name }) => [
+  'function-not-in-container': broken<{ via: string; name: string }>(['3.3', '3.7.3'], ({ via, name }) => [
     `\`${via}\` は \`${name}\` をコンテナの中で実行します。このスクリプトの関数はコンテナの中にはないので使えません。関数の中身を直接書きます`,
     `\`${via}\` runs \`${name}\` inside the container, and a function from this script is not available in the container. Write out its body instead`]),
-  'builtin-or-function-as-program': pitfall<{ via: string; name: string; isFn: boolean; fix: Words }>(['3.7.3', '3.3'], ({ via, name, isFn, fix }) => [
+  'builtin-or-function-as-program': broken<{ via: string; name: string; isFn: boolean; fix: Words }>(['3.7.3', '3.3'], ({ via, name, isFn, fix }) => [
     `\`${via}\` は \`${name}\` を別のプログラムとして起動するため、シェルの${isFn ? '関数' : '組み込みコマンド'}は実行できません（\`command not found\` になるか、今のシェルには効きません）。${fix.ja}`,
     `\`${via}\` starts \`${name}\` as a separate program, so it cannot run a shell ${isFn ? 'function' : 'builtin'} ("command not found", or no effect on the current shell). ${fix.en}`]),
   'ssh-local-expansion': notProblem(caveat<{ risky: string }>(['3.7.1', '3.7.3'], ({ risky }) => [
     `\`ssh\` に渡すコマンドのうち \`${risky}\` は、送られる前にこちらのシェルが展開します（\`$変数\`・\`$(…)\`・\`*\`・\`~\` はこちらの値になります）。リモートで展開したいときは全体をシングルクォートで囲みます: \`ssh host '…'\``,
     `the local shell expands \`${risky}\` in the command given to \`ssh\` before it is sent (\`$var\`, \`$(…)\`, \`*\` and \`~\` take local values). To expand them on the remote side, single-quote the whole command: \`ssh host '…'\``])),
-  'function-not-on-remote': pitfall<{ name: string }>(['3.3', '3.7.3'], ({ name }) => [
+  'function-not-on-remote': broken<{ name: string }>(['3.3', '3.7.3'], ({ name }) => [
     `リモートのシェルには、このスクリプトの関数 \`${name}\` はありません。中身を直接書くか、\`ssh host "$(declare -f ${name}); ${name}"\` のように定義ごと送ります`,
     `the remote shell does not have this script's function \`${name}\`. Write out its body, or send the definition too: \`ssh host "$(declare -f ${name}); ${name}"\``]),
-  'function-not-in-new-shell-blocked': pitfall<{ via: string; fn: string; blocker: string }>(['3.3', '3.7.3'], ({ via, fn, blocker }) => [
+  'function-not-in-new-shell-blocked': broken<{ via: string; fn: string; blocker: string }>(['3.3', '3.7.3'], ({ via, fn, blocker }) => [
     `\`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。\`${blocker}\` は環境の関数を渡さないので、\`export -f ${fn}\` も効きません。関数の中身を直接書きます`,
     `\`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`, and \`${blocker}\` passes no exported functions, so \`export -f ${fn}\` does not help either. Write out its body`]),
-  'function-not-in-new-shell': pitfall<{ via: string; fn: string }>(['3.3', '3.7.3'], ({ via, fn }) => [
+  'function-not-in-new-shell': broken<{ via: string; fn: string }>(['3.3', '3.7.3'], ({ via, fn }) => [
     `\`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書きます`,
     `\`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`. Write out its body`]),
-  'function-not-imported': pitfall<{ via: string; shell: string; fn: string }>(['3.3', '3.7.3'], ({ via, shell, fn }) => [
+  'function-not-imported': broken<{ via: string; shell: string; fn: string }>(['3.3', '3.7.3'], ({ via, shell, fn }) => [
     `\`${via}\` はコマンドを ${shell} で実行します。${shell} は bash がエクスポートした関数を読まないので、\`export -f\` してもこのスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書くか、\`bash -c\` を使います`,
     `\`${via}\` runs the command in ${shell}, which does not read the functions bash exports, so this script's function \`${fn}\` is not there, even with \`export -f\`. Write out its body, or use \`bash -c\``]),
   'function-not-in-new-shell-export': pitfall<{ via: string; fn: string; unread?: boolean }>(['3.3', '3.7.3'], ({ via, fn, unread }) => [
@@ -446,7 +448,7 @@ export const MESSAGES = {
   'function-not-imported-sh': caveat<{ via: string; fn: string }>(['3.3', '3.7.3'], ({ via, fn }) => [
     `\`${via}\` はコマンドを sh で実行します。Debian や Ubuntu の sh は dash で、dash は bash がエクスポートした関数を読まないので、このスクリプトの関数 \`${fn}\` は使えないことがあります。\`bash -c\` を使います`,
     `\`${via}\` runs the command in sh, which is dash on Debian and Ubuntu, and dash does not read the functions bash exports, so this script's function \`${fn}\` may not be there. Use \`bash -c\``]),
-  'wrapper-assignment-expanded-first': suggests(pitfall<{ use: string; via: string; v: string; rewrite: readonly Rewrite[] }>(['3.7.1', '3.7.4'], ({ use, via, v, rewrite: [fix] }) => [
+  'wrapper-assignment-expanded-first': suggests(broken<{ use: string; via: string; v: string; rewrite: readonly Rewrite[] }>(['3.7.1', '3.7.4'], ({ use, via, v, rewrite: [fix] }) => [
     `\`${use}\` は、\`${via}\` が \`${v}\` を設定する前に今のシェルが展開します（今の値で、なければ空）。設定した値を使うなら \`${via} ${v}=… ${fix.code}\` のようにシェル経由にします`,
     `the current shell expands \`${use}\` before \`${via}\` sets \`${v}\` (to its present value, or nothing). To use the value it sets, go through a shell: \`${via} ${v}=… ${fix.code}\``])),
 
@@ -462,7 +464,7 @@ export const MESSAGES = {
     `パイプ（\`|\`）でつないだコマンドはサブシェルで実行されるので、右側で設定した \`${used}\` はパイプラインが終わると消え、あとの \`$${used}\` には届きません。${fix.ja}`
       + (partial ? '（この前で `shopt -s lastpipe` を有効にしているのは一部の経路だけです）' : ''),
     `the commands of a pipeline (\`|\`) run in subshells, so \`${used}\` set on the right side is gone when the pipeline ends; the later \`$${used}\` does not see it. ${fix.en}`
-      + (partial ? ' (only some paths before here turn `shopt -s lastpipe` on)' : '')]),
+      + (partial ? ' (only some paths before here turn `shopt -s lastpipe` on)' : '')], undefined, ({ partial }) => (partial ? 'info' : 'error')),
   // (`rewrite`: a test first in the body, where each pass of the loop is over a pattern, and `shopt -s nullglob` where the shell has it.)
   'unmatched-glob-runs-once': withConvention(suggests(caveat<{ glob: string; patterns: readonly LoopPattern[]; v: string; alone: boolean; rewrite: readonly Rewrite[]; how: LoopHow }>(['3.5.8', '3.2.5.1', '3.2.5.2'], ({ glob, patterns, v, alone, rewrite, how }) => unmatchedGlobText(glob, patterns, v, alone, rewrite, how))), 'guard-unmatched-glob'),
   // (The shell sets the standard input up, but a command given a file to read reads that instead: jq, sort, cat…)
@@ -473,7 +475,7 @@ export const MESSAGES = {
   // ---------------------------------------------------------------- words (3.7.1, 3.5.7, 3.4.2, 3.6; src/wordfacts.ts)
   // (`rewrite`: the command through `sh -c`, src/wordfacts.ts, `throughShell`.)
   // (`apart`: the command acts on this shell, `cd`, or is a function or an alias, which no other shell has: set it first.)
-  'prefix-assignment-expanded-first': suggests(pitfall<{ v: string; name: string; use: string; apart: boolean; rewrite: readonly Rewrite[] }>(['3.7.1', '3.7.4'], ({ v, name, use, apart, rewrite: [sh] }) => [
+  'prefix-assignment-expanded-first': suggests(broken<{ v: string; name: string; use: string; apart: boolean; rewrite: readonly Rewrite[] }>(['3.7.1', '3.7.4'], ({ v, name, use, apart, rewrite: [sh] }) => [
     `\`${v}=…\` は \`${name}\` の環境にだけ入ります。\`${use}\` は、その前に今のシェルが展開します（今の値で、なければ空）。新しい値を使うなら${apart ? `、先に \`${sh.code}\` のように別に代入します` : ` \`${v}=… ${sh.code}\` のようにシェル経由にします`}`,
     `\`${v}=…\` is set only in the environment of \`${name}\`; the current shell expands \`${use}\` before that (to its present value, or nothing). To use the new value, ${apart ? `assign it first, apart: \`${sh.code}\`` : `go through a shell: \`${v}=… ${sh.code}\``}`])),
   // (`rewrite`: the word with only its expansions in quotes, so a glob or a tilde in it still works: `"$DIR"/*`; none
@@ -521,12 +523,12 @@ export const MESSAGES = {
         + `${exits === 'script' ? 'the script exits' : exits === 'subshell' ? 'the subshell running it exits' : exits === 'shell' ? 'the shell running it exits' : `the command does not run: it fails with status 1${errexit ? `, and \`set -e\` stops ${errexit === 'script' ? 'the script' : 'the subshell running it'} on that failure` : ''}`}`
         + `${environment !== 'no' ? ` (unless \`${name}\` comes from the environment)` : ''}. ${fix ? `If it may be unset, write \`${fix.code}\`` : 'Set it before this line'}`];
   }, undefined,
-  // (Only the command fails, and the shell goes on: an unset read in a redirection of a program, `cat < "$f"` with `set -u`.)
-  // (A name in capitals, which by custom the environment may have: a caveat, src/semantics/shellstate.ts, `fromEnvironment`.)
-  ({ exits, errexit, environment }) => (environment === 'maybe' || (exits === 'command' && !errexit) ? 'info' : 'warning'))),
+  // (Unset on every path, the shell stops or the command fails (`cat < "$f"`) every time: an error. A name that may come
+  // from the environment (`fromEnvironment`), only when it lacks it: a stop halfway is a warning, a command that fails a caveat.)
+  ({ exits, errexit, environment }) => (environment === 'no' ? 'error' : exits === 'command' && !errexit ? 'info' : 'warning'))),
   ({ exits, shell }) => (exits === 'command' && shell === 'bash' ? { kind: 'differs', probe: 'state#nounset-redirect' } : undefined)),
   // (src/semantics/state.ts, `shebangRefused`.)
-  'shebang-refused': pitfall<ShebangRefusal>(['6.1', '3.8', 'execve(2)'], (r) => [
+  'shebang-refused': broken<ShebangRefusal>(['6.1', '3.8', 'execve(2)'], (r) => [
     `Linux ではシバンのインタープリタの後ろの \`${r.rest}\` 全体が bash への1つの引数になり、bash はそれを受け付けない（${r.why === 'blank' ? '空白はオプションではない'
       : r.why === 'letter' ? `\`-${r.letter}\` というオプションはない` : r.why === 'name' ? '`o` が次の引数のスクリプトのパスをオプション名として読む'
         : r.why === 'shopt' ? '`O` が次の引数のスクリプトのパスを shopt のオプション名として読む' : 'その名前の長いオプションはない'}）。`
@@ -538,12 +540,13 @@ export const MESSAGES = {
   // (find: an action whose command find refuses; the reasons, the messages and the sections of each case: src/messages-find.ts.)
   'find-action-refused': { ...suggests(failure<FindRefusalParams>(['3.2.4', '3.1.2.1', '3.1.2.2'], findRefusalText)), refsOf: findRefusalRefs },
   // (src/wordfacts.ts: a first word `\uFEFF#!…` at the start of the file; `word` without the mark.)
-  'shebang-bom': pitfall<{ word: string; slash: boolean }>(['3.8', 'execve(2)'], ({ word, slash }) => [
+  'shebang-bom': broken<{ word: string; slash: boolean }>(['3.8', 'execve(2)'], ({ word, slash }) => [
     `1行目が見えないバイト順マーク(BOM、U+FEFF)で始まっているので、シバンにならない。カーネルはファイルの先頭2バイトが \`#!\` のときだけインタープリタを起動し、`
       + `bash はこの行を BOM の付いた \`${word}\` という名前のコマンドとして実行して失敗する（${slash ? 'No such file or directory' : 'command not found'}）。BOM を付けずに保存する`,
     `the first line starts with an invisible byte order mark (BOM, U+FEFF), so it is no shebang: the kernel starts an interpreter only when the file's first two bytes are \`#!\`, `
       + `and bash runs this line as a command named \`${word}\` with the BOM before it, which fails (${slash ? '"No such file or directory"' : '"command not found"'}). Save the file without the BOM`]),
-  // (src/wordfacts.ts: `op` is the operator as written; `file` is a static path under a directory only root writes.)
+  // (src/wordfacts.ts: `op` is the operator as written; `file` is a static path under a directory only root writes, an
+  // error, as it fails every time it runs as meant, not as root; without it, a caveat: only a file of root's fails.)
   'redirect-by-your-shell': pitfall<{ op: string; kind: 'write' | 'append' | 'other' | 'read'; file?: string }>(['3.6', '3.7.3'], ({ op, kind, file }) => {
     const read = kind === 'read';
     const f = (ja: boolean) => file ?? (ja ? 'ファイル' : 'file');
@@ -561,7 +564,7 @@ export const MESSAGES = {
           : kind === 'write' ? `Use \`… | sudo tee ${f(false)}\` (\`sudo tee -a\` to append)`
             : kind === 'append' ? `Use \`… | sudo tee -a ${f(false)}\``
               : `Use \`${sh(false)}\`, so that the redirection is done inside sudo too`)];
-  }),
+  }, undefined, ({ file }) => (file ? 'error' : 'info')),
 
   // ---------------------------------------------------------------- bats test files (src/bats.ts; bash's side of what bats does)
   'bats-test': note(['3.3', '4.3.1'], () => [
@@ -591,10 +594,10 @@ export const MESSAGES = {
     `The \`${scope}_tags\` list is not valid, so bats runs none of the tests of this file and fails. Tags are letters, digits, \`-\`, \`_\` and \`:\`, separated by commas (spaces around them are fine). `
       + (why === 'empty' ? 'A leading comma, or a list of only spaces, makes an empty tag (for no tags, nothing follows the `=`)' : 'An empty tag (`a,,b`, a trailing comma) and a tag with a space or another character are errors')]),
   // (bats-preprocess matches `name() { # @test` anywhere on the line, and replaces the whole line.)
-  'bats-test-line-dropped': pitfall<{ dropped: string }>(['3.3'], ({ dropped }) => [
+  'bats-test-line-dropped': broken<{ dropped: string }>(['3.3'], ({ dropped }) => [
     `bats はこの行全体をテストの関数の定義に置き換えるので、関数名の前の \`${dropped}\` は実行されません。別の行に書きます`,
     `bats replaces this whole line with the definition of the test, so \`${dropped}\` before the function's name never runs. Put it on a line of its own`]),
-  'bats-negation-ignored': pitfall<{ cmd: string; form: 'command' | 'pipeline' | 'other' }>(['4.3.1', '3.2.3'], ({ cmd, form }) => [
+  'bats-negation-ignored': broken<{ cmd: string; form: 'command' | 'pipeline' | 'other' }>(['4.3.1', '3.2.3'], ({ cmd, form }) => [
     `\`set -e\` は \`!\` のあとのコマンドの結果を無視するので、\`! ${cmd}\` はテストの最後のコマンドでない限り、\`${cmd}\` が成功してもテストを失敗させません。`
       + (form === 'command' ? `\`run ! ${cmd}\`（bats 1.5.0 から。\`bats_require_minimum_version 1.5.0\` と書く）か \`! ${cmd} || false\` と書きます`
         : form === 'pipeline' ? `\`! ${cmd} || false\` と書くか、パイプラインを \`run ! bats_pipe …\` で実行します（\`|\` は \`\\|\` と書く。bats 1.10.0 から）`
@@ -603,10 +606,10 @@ export const MESSAGES = {
       + (form === 'command' ? `Write \`run ! ${cmd}\` (since bats 1.5.0, with \`bats_require_minimum_version 1.5.0\`) or \`! ${cmd} || false\``
         : form === 'pipeline' ? `Write \`! ${cmd} || false\`, or run the pipeline with \`run ! bats_pipe …\`, each \`|\` written \`\\|\` (since bats 1.10.0)`
         : `Write \`! ${cmd} || false\``)]),
-  'bats-run-in-pipeline-stage': pitfall<{ cmd: string }>(['3.2.3', '3.7.3'], ({ cmd }) => [
+  'bats-run-in-pipeline-stage': broken<{ cmd: string }>(['3.2.3', '3.7.3'], ({ cmd }) => [
     `パイプラインのコマンドはサブシェルで実行されるので、\`run ${cmd}\` が設定した \`$status\` と \`$output\` はパイプラインが終わると消えます。パイプライン全体を \`run\` で実行するには \`run bats_pipe … \\| ${cmd}\` か \`run bash -c '… | …'\` と書きます`,
     `the commands of a pipeline run in subshells, so the \`$status\` and \`$output\` that \`run ${cmd}\` sets are gone when the pipeline ends. To run the whole pipeline under \`run\`, write \`run bats_pipe … \\| ${cmd}\` or \`run bash -c '… | …'\``]),
-  'bats-run-in-pipeline': pitfall<{ cmd: string }>(['3.2.3'], ({ cmd }) => [
+  'bats-run-in-pipeline': broken<{ cmd: string }>(['3.2.3'], ({ cmd }) => [
     `パイプは \`run\` の出力を受け取りますが、\`run\` は \`${cmd}\` の出力を \`$output\` に入れるだけで何も出力しません。また、パイプラインのコマンドはサブシェルで実行されるので、\`run\` が設定した \`$status\` と \`$output\` はパイプラインが終わると消えます。パイプライン全体を \`run\` で実行するには \`run bats_pipe ${cmd} \\| …\` か \`run bash -c '… | …'\` と書きます`,
     `the pipe gets the output of \`run\`, but \`run\` writes nothing: it keeps the output of \`${cmd}\` in \`$output\`. And the commands of a pipeline run in subshells, so the \`$status\` and \`$output\` that \`run\` sets are gone when the pipeline ends. To run the whole pipeline under \`run\`, write \`run bats_pipe ${cmd} \\| …\` or \`run bash -c '… | …'\``]),
   // (The hooks bats calls: libexec/bats-core/bats-exec-test and bats-exec-file of bats-core 1.13.)
@@ -622,14 +625,14 @@ export const MESSAGES = {
     : [
       `bats は \`${name}\` をこのファイルの最後のテストの後に1回だけ、\`setup_file\` と同じプロセスで呼ぶ。\`${name} || …\` の形で呼ぶので、中では \`set -e\` が無視され、途中のコマンドが失敗しても止まらない`,
       `bats calls \`${name}\` once, after the last test of the file, in the process of \`setup_file\`. It calls it as \`${name} || …\`, so \`set -e\` is ignored in it: a command that fails in the middle does not stop it`])),
-  'bats-setup-suite-in-test-file': pitfall(['3.3'], () => [
+  'bats-setup-suite-in-test-file': broken(['3.3'], () => [
     'bats はテストファイルの `setup_suite` を呼ばず、警告(BW03)を出します。`setup_suite` は、テストと同じディレクトリのファイル `setup_suite.bash` に書きます',
     'bats does not call a `setup_suite` of a test file, and warns (BW03). Put `setup_suite` in the file `setup_suite.bash`, next to the tests']),
   // ---------------------------------------------------------------- words and names
   // (`digits`: `\d` or `\D` among them, which no POSIX regex has, even from a variable; `others`: an operator of glibc's
   // regexes among them, `\s`, `\b`…, which a variable keeps. `rewrite`: `[0-9]` in place, or the regex in a variable;
   // none when one is inside a bracket expression, `[\s]`, where a backslash is no operator either way.)
-  'regex-backslash-dropped': suggests(pitfall<{ list: string; digits: boolean; others: boolean; rewrite: readonly Rewrite[] }>(['3.5.9', '3.2.5.2'], ({ list, digits, others, rewrite: [fix] }) => [
+  'regex-backslash-dropped': suggests(broken<{ list: string; digits: boolean; others: boolean; rewrite: readonly Rewrite[] }>(['3.5.9', '3.2.5.2'], ({ list, digits, others, rewrite: [fix] }) => [
     [`\`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）`,
       ...(digits ? [`POSIX の正規表現には \`\\d\` がなく、変数に入れても \`d\` という文字になるので、\`\\d\` は \`[0-9]\`、\`\\D\` は \`[^0-9]\` と書く${!others && fix ? `（\`${fix.code}\`）` : ''}`] : []),
       ...(others ? [fix ? `演算子として使うには変数に入れる（\`${fix.code}\`）か、\`[[:space:]]\` や \`[[:alnum:]_]\` のような書き方にする` : '`[[:space:]]` や `[[:alnum:]_]` のような書き方にする（`[ ]` の中のバックスラッシュは、変数に入れても演算子にならない）'] : [])].join('。'),
@@ -650,7 +653,7 @@ export const MESSAGES = {
   'dockerfile-pipefail-missing': withConvention(caveat<Record<string, never>>(['3.2.3', '4.3.1'], () => [
     'パイプの途中のコマンドが失敗しても、RUN は最後のコマンドの結果だけで成功扱いになり、ビルドは止まりません。先に `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` と書くと失敗を検出できます。',
     'If a command in the middle of the pipe fails, RUN still succeeds with the status of the last command, and the build goes on. Put `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` first to catch such failures.'], NO_HEADING), 'pipefail'),
-  'python-string-without-shell': pitfall<Record<string, never>>(['3.7.2'], () => [
+  'python-string-without-shell': broken<Record<string, never>>(['3.7.2'], () => [
     'shell=True なしで文字列を渡すと、文字列全体が1つのプログラム名として扱われます（引数やパイプは使えず、多くの場合 FileNotFoundError）。`["cmd", "arg"]` のようなリストで渡すか、shell=True を付けます。',
     'Without shell=True the whole string is taken as one program name (no arguments or pipes; usually FileNotFoundError). Pass a list like `["cmd", "arg"]`, or add shell=True.'], NO_HEADING),
   'python-shell-injection': withConvention(pitfall<Record<string, never>>(['3.1.1', '3.1.2'], () => [

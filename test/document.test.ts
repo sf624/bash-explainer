@@ -148,7 +148,7 @@ describe('the pitfalls of a script, as problems', () => {
     // src/statusfacts.ts
     ['#!/bin/bash\ncp a b || echo failed', [['failure-reported-as-success', 'info', 1, 0, 1, 21]]],
     // src/wordfacts.ts
-    ['FOO=1 echo $FOO', [['prefix-assignment-expanded-first', 'warning', 0, 11, 0, 15]]],
+    ['FOO=1 echo $FOO', [['prefix-assignment-expanded-first', 'error', 0, 11, 0, 15]]],
     ['cp $a b', [['unquoted-variable-as-path', 'warning', 0, 3, 0, 5]]],
     // (Each unquoted word of the command; before, only the first.)
     ['cp $a $b', [['unquoted-variable-as-path', 'warning', 0, 3, 0, 5], ['unquoted-variable-as-path', 'warning', 0, 6, 0, 8]]],
@@ -159,7 +159,7 @@ describe('the pitfalls of a script, as problems', () => {
     ['cat $a', [['unquoted-variable-as-path', 'info', 0, 4, 0, 6]]],
     ['for f in $(ls); do :; done', [['for-over-ls-output', 'info', 0, 9, 0, 14]]],
     ['for a in $*; do :; done', [['for-over-unquoted-args', 'info', 0, 9, 0, 11]]],
-    ['sudo echo 1 > /etc/x', [['redirect-by-your-shell', 'warning', 0, 12, 0, 20]]],
+    ['sudo echo 1 > /etc/x', [['redirect-by-your-shell', 'error', 0, 12, 0, 20]]],
     // The script exits; only the command fails (a redirection of a program); the script never starts.
     ['set -u\necho "$dir"', [['nounset-unbound', 'warning', 1, 6, 1, 10]]],
     ['set -u\ncat < "$f"', [['nounset-unbound', 'info', 1, 7, 1, 9]]],
@@ -168,7 +168,7 @@ describe('the pitfalls of a script, as problems', () => {
     ['set -u\necho "$a" "$b"\necho "$c"\n[ -e /no ] && echo "$d"; x=$e echo "$f"', [
       ['nounset-unbound', 'warning', 1, 6, 1, 8], ['nounset-unbound', 'warning', 2, 6, 2, 8], ['nounset-unbound', 'warning', 3, 20, 3, 22],
       ['nounset-unbound', 'warning', 3, 36, 3, 38]]],
-    ['#!/bin/bash -e -u\n:', [['shebang-refused', 'warning', 0, 0, 0, 17]]],
+    ['#!/bin/bash -e -u\n:', [['shebang-refused', 'error', 0, 0, 0, 17]]],
     // A node over several lines: to the end of its first line.
     ['for f in $(ls\n); do :; done', [['for-over-ls-output', 'info', 0, 9, 0, 13]]],
     // Each place, also where the explanation of the line says it once.
@@ -248,7 +248,7 @@ describe('the pitfalls of a script, as problems', () => {
   it('in a host file: the facts of bats on their statements, a placeholder as the file writes it, a pipe said once', () => {
     const rows = (doc: ShellDocument) => documentIssues(doc, 'en', {}).map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endCol]);
     assert.deepStrictEqual(rows(hosted('bats', '@test "x" {\n  ! grep a f\n  run echo a | grep a\n  true\n}')),
-      [['bats-negation-ignored', 'warning', 1, 2, 12], ['bats-run-in-pipeline', 'warning', 2, 2, 21], ['pipefail-missing', 'info', 2, 2, 21]]);
+      [['bats-negation-ignored', 'error', 1, 2, 12], ['bats-run-in-pipeline', 'error', 2, 2, 21], ['pipefail-missing', 'info', 2, 2, 21]]);
     // (A test runs with `set -e`, so a failing first stage of the pipe is not seen: the status fact is said too.)
     const [make] = documentIssues(hosted('makefile', 'all:\n\tcp $(SRC) $$dir/\n'), 'en', {});
     assert.deepStrictEqual([make.code, make.startLine, make.startCol, make.endCol], ['unquoted-variable-as-path', 1, 4, 10]);

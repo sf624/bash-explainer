@@ -221,7 +221,7 @@ describe('explanations from the execution environment', () => {
   const about = (src: string, label: string, lang: 'en' | 'ja' = 'en', line = 0): string => allTokens(explain(src, lang, line).items).find((t) => t.label === label)!.explanation;
   const pid = (src: string, lang: 'en' | 'ja' = 'en', line = 0, shell?: Shell): string =>
     allTokens(new Analyzer(lang).explainLine(parser.parse(src), line, shell).items).find((t) => t.label === '$$' && t.kind === 'variable')!.explanation;
-  const pitfalls = (src: string, lang: 'en' | 'ja' = 'en', line = 0): string[] => explain(src, lang, line).notes.filter((n) => /^[⚠ⓘ] (落とし穴|注意|Pitfall|Caveat)/.test(n));
+  const pitfalls = (src: string, lang: 'en' | 'ja' = 'en', line = 0): string[] => explain(src, lang, line).notes.filter((n) => /^[ⓧ⚠ⓘ] (エラー|落とし穴|注意|Error|Pitfall|Caveat)/.test(n));
   const bash = (code: string): string => spawnSync('bash', ['--norc', '--noprofile', '-c', code], { encoding: 'utf8', cwd: '/tmp', env: { PATH: process.env.PATH } }).stdout;
   const hasBash = spawnSync('bash', ['--version']).status === 0;
 
@@ -287,10 +287,10 @@ describe('explanations from the execution environment', () => {
   it('says when a shell run by a slot does not get a variable its string reads', function () {
     assert.deepStrictEqual(pitfalls("name=x\nbash -c 'echo \"$name\"'", 'en', 1), ['⚠ Pitfall: the new shell expands `$name` in the string, and `name` is a variable of this script that is not exported, so it is empty there (unless the environment already has `name`). Run `export name` first']);
     assert.deepStrictEqual(pitfalls("name=x\nbash -c 'echo \"$name\"'", 'ja', 1), ['⚠ 落とし穴: 文字列の中の `$name` は新しいシェルが展開します。`name` はこのスクリプトの変数で、エクスポートされていないので、そこでは空です（環境変数に初めから `name` があるときを除く）。先に `export name` します']);
-    assert.deepStrictEqual(pitfalls("export name=x\nenv -i bash -c 'echo $name'", 'en', 1), ["⚠ Pitfall: the new shell expands `$name` in the string, but `env` passes none of this script's variables (not even exported ones), so `name` is not there. To use its value, write it in double quotes, so that it is expanded here"]);
-    assert.deepStrictEqual(pitfalls("export name=x\nsudo bash -c 'echo $name'", 'ja', 1), ['⚠ 落とし穴: 文字列の中の `$name` は新しいシェルが展開しますが、`sudo` はこのスクリプトの変数を（エクスポートしたものも、`TERM` や `LANG` などいくつかを除いて）渡さないので、そこには `name` はありません。値を使うなら、こちらで展開されるようダブルクォートの中に書きます']);
+    assert.deepStrictEqual(pitfalls("export name=x\nenv -i bash -c 'echo $name'", 'en', 1), ["ⓧ Error: the new shell expands `$name` in the string, but `env` passes none of this script's variables (not even exported ones), so `name` is not there. To use its value, write it in double quotes, so that it is expanded here"]);
+    assert.deepStrictEqual(pitfalls("export name=x\nsudo bash -c 'echo $name'", 'ja', 1), ['ⓧ エラー: 文字列の中の `$name` は新しいシェルが展開しますが、`sudo` はこのスクリプトの変数を（エクスポートしたものも、`TERM` や `LANG` などいくつかを除いて）渡さないので、そこには `name` はありません。値を使うなら、こちらで展開されるようダブルクォートの中に書きます']);
     // (doas starts a new environment with `DISPLAY` and `TERM` of the caller's: doas(1).)
-    assert.deepStrictEqual(pitfalls("export name=x\ndoas bash -c 'echo $name'", 'en', 1), ["⚠ Pitfall: the new shell expands `$name` in the string, but `doas` passes none of this script's variables (not even exported ones, but for a few such as `DISPLAY` and `TERM`), so `name` is not there. To use its value, write it in double quotes, so that it is expanded here"]);
+    assert.deepStrictEqual(pitfalls("export name=x\ndoas bash -c 'echo $name'", 'en', 1), ["ⓧ Error: the new shell expands `$name` in the string, but `doas` passes none of this script's variables (not even exported ones, but for a few such as `DISPLAY` and `TERM`), so `name` is not there. To use its value, write it in double quotes, so that it is expanded here"]);
     assert.deepStrictEqual(pitfalls("export TERM=dumb\ndoas bash -c 'echo $TERM'", 'en', 1), []);
     // (What reached the shell that runs the command is its own: an outer `env -i` dropped nothing the string exports.)
     assert.deepStrictEqual(pitfalls("env -i bash -c 'export name=x; bash -c \"echo \\$name\"'", 'en', 0), []);
@@ -304,12 +304,12 @@ describe('explanations from the execution environment', () => {
     const caveat = pitfalls("Y=1\nsh -c 'echo \"$Y\"'", 'en', 1);
     assert.match(caveat[0], /^ⓘ Caveat: .* only when `Y` was in the environment already/);
     assert.deepStrictEqual(pitfalls("if [ \"$1\" ]; then unset Y; fi\nY=1\nsh -c 'echo \"$Y\"'", 'en', 2), caveat);
-    // (And it stays unset there unless the environment has it: with `set -u`, bash fails "FOO: unbound variable".)
+    // (And it stays unset there unless the environment has it: with `set -u`, bash fails "FOO: unbound variable" and the script stops halfway: a warning.)
     for (const src of ['set -u; if [ "$1" ]; then unset FOO; fi\necho "$FOO"', 'set -u; while [ "$1" ]; do unset FOO; shift; done\necho "$FOO"']) {
-      assert.match(explain(src, 'en', 1).notes.join('\n'), /ⓘ Caveat: `FOO` is not set here: with `set -u` on, bash fails with "FOO: unbound variable"/, src);
+      assert.match(explain(src, 'en', 1).notes.join('\n'), /⚠ Pitfall: `FOO` is not set here: with `set -u` on, bash fails with "FOO: unbound variable"/, src);
     }
-    assert.deepStrictEqual(pitfalls("name=x\nssh host 'echo $name'", 'en', 1), ['⚠ Pitfall: the remote shell expands `$name`, but it does not have `name`, a variable of this script. To send its value, write it in double quotes, so that it is expanded here']);
-    assert.deepStrictEqual(pitfalls("name=x\nssh host 'echo $name'", 'ja', 1), ['⚠ 落とし穴: `$name` はリモートのシェルが展開しますが、リモートにはこのスクリプトの変数 `name` はありません。値を送るなら、こちらで展開されるようダブルクォートの中に書きます']);
+    assert.deepStrictEqual(pitfalls("name=x\nssh host 'echo $name'", 'en', 1), ['ⓧ Error: the remote shell expands `$name`, but it does not have `name`, a variable of this script. To send its value, write it in double quotes, so that it is expanded here']);
+    assert.deepStrictEqual(pitfalls("name=x\nssh host 'echo $name'", 'ja', 1), ['ⓧ エラー: `$name` はリモートのシェルが展開しますが、リモートにはこのスクリプトの変数 `name` はありません。値を送るなら、こちらで展開されるようダブルクォートの中に書きます']);
     // Exported, given to the command, set by the string itself, from the environment, not known, or in double quotes: nothing.
     for (const src of ["export name=x\nbash -c 'echo $name'", "name=x\nname=$name bash -c 'echo $name'", "export name=x\nenv -i name=$name bash -c 'echo $name'",
       "name=x\nbash -c 'name=y; echo $name'", "PATH=/bin\nbash -c 'echo $PATH'", "bash -c 'echo $name'", "name=x\nbash -c \"echo $name\"", "export name=x\nsudo -E bash -c 'echo $name'",

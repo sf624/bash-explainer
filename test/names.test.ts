@@ -541,7 +541,8 @@ describe('the analyzer says what a name runs', () => {
     assert.match(notes('set -o posix\neval() { :; }', 1, 'ja'), /スクリプトを止めます。別の名前/);
     assert.match(notes('[ "$x" ] && set -o posix\neval() { :; }', 1), /only some paths before here turn POSIX mode on/);
     assert.match(notes('[ "$x" ] && set -o posix\neval() { :; }', 1, 'ja'), /一部の経路だけ/);
-    assert.strictEqual(notes('set -o posix\neval() { :; }', 1, 'en', { pitfalls: false }), '');
+    // (It fails every time: an error, said with the pitfalls off too.)
+    assert.match(notes('set -o posix\neval() { :; }', 1, 'en', { pitfalls: false }), /^ⓧ Error: in POSIX mode a function cannot have the name of a special builtin/);
   });
 
   it('builtins turned off and paths remembered', () => {

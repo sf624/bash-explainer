@@ -346,7 +346,7 @@ describe('the command-line tool', function () {
   });
 
   it('takes the files after -- as files', () => {
-    assert.strictEqual(run(['--check', '--', fixture('sample.sh')]).code, 0);
+    assert.strictEqual(run(['--check', '--', fixture('renderings.sh')]).code, 0);
   });
 
   it('reports usage errors with exit status 2', () => {
