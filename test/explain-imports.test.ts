@@ -23,6 +23,9 @@ const dir = path.join(base, 'src', 'explain');
  *               dispatch counts, since a table keyed by command name is a copy of the dictionary (sources.md, M6: "the name switches can go,
  *               the runners stay"; a runner per spec replaces the registry in stage SC2). The guard therefore stops it from growing: a new
  *               simulator adds a `case`, which fails here until the entry is added with its reason, in a diff the reviewer reads.
+ *               A registry is also a table of functions with command names for keys (`{ cat: runCat, sort: runSort }`) and a lookup in it by a
+ *               stage's command (`FILTERS[stage.cmd]`): `nl: runCat` added to it fails here as a new text. Not caught: a `Map` of names to
+ *               functions, a registry filled at run time (`REG[name] = fn`) and a lookup by a key of another name (`FILTERS[c]`).
  *   decision    what to show or whether to run, decided from a command's name (`xargs`, the inert `cat` and `tee`, `echo` as a source).
  * Left out of the scan of src/examples/: the language interpreters (jq, awk, sed, perlrun, yaml, regex), which simulate a language, where a
  * name such as `sed` or `date` is a word of that language and not a command's fact.
@@ -70,7 +73,9 @@ const files = (): string[] => [...explainFiles(), ...OUTSIDE];
 /** The language interpreters of src/examples/, which the names guard leaves out (see KNOWN_NAMES). */
 const LANGUAGES = ['jq', 'awk', 'sed', 'perlrun', 'yaml', 'regex'].map((n) => `${n}.ts`);
 const examplesDir = path.join(base, 'src', 'examples');
-const examplesFiles = (): string[] => fs.readdirSync(examplesDir).filter((f) => /\.ts$/.test(f) && !LANGUAGES.includes(f)).map((f) => path.join(examplesDir, f));
+/** The `.ts` files under a directory, recursively, in path order. */
+const tsFilesUnder = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1)).flatMap((e) => (e.isDirectory() ? tsFilesUnder(path.join(d, e.name)) : /\.ts$/.test(e.name) ? [path.join(d, e.name)] : []));
+const examplesFiles = (): string[] => tsFilesUnder(examplesDir).filter((f) => !LANGUAGES.includes(path.relative(examplesDir, f)));
 
 /** The import graph of some sources (file to code): an edge only to a target that `inGraph` accepts (a path without its extension). */
 function importGraph(sources: ReadonlyMap<string, string>, inGraph: (target: string) => boolean): Map<string, string[]> {
@@ -290,6 +295,43 @@ function recordLookups(checker: ts.TypeChecker, sf: ts.SourceFile, names: Readon
   return found;
 }
 
+/** The names a lookup of a registry reads the key from: `stage.cmd`, `spec.command`, `cmd`. */
+const COMMAND_KEY = /(?:^|\.)(?:cmd|command|cmdName|commandName)$/;
+
+/**
+ * Registries keyed by command name: a table of functions, written as an object literal with command names for keys (`{ cat: runCat,
+ * sort: runSort }`: two or more of them, with values that are functions, or any command name when the literal is typed as a record of
+ * functions, `Record<string, (…) => …>`), and a lookup in a record of functions by a command's name (`FILTERS[stage.cmd]`). A table
+ * keyed by command name is a copy of the dictionary (sources.md, M6). Returns the text of what is found: the literal as
+ * `{ cat, sort, … }` (its command names), or the lookup. Not caught: a `Map` of names to functions, a registry built at run time
+ * (`REG[name] = fn`), and a lookup by a key of another name (`FILTERS[c]`).
+ */
+function registries(checker: ts.TypeChecker, sf: ts.SourceFile, names: ReadonlySet<string>): string[] {
+  const found: string[] = [];
+  const isFn = (t: ts.Type | undefined): boolean => !!t && t.getCallSignatures().length > 0;
+  /** The type of the values of a record, `Record<string, V>`, or undefined for a type without an index signature. */
+  const indexed = (t: ts.Type | undefined): ts.Type | undefined => t && checker.getIndexInfoOfType(t, ts.IndexKind.String)?.type;
+  const visit = (n: ts.Node): void => {
+    if (ts.isObjectLiteralExpression(n)) {
+      const keys: { name: string; fn: boolean }[] = [];
+      for (const p of n.properties) {
+        const key = p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) || ts.isNoSubstitutionTemplateLiteral(p.name)) ? p.name.text : undefined;
+        if (key === undefined || !names.has(key)) continue;
+        const value = ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p) || ts.isMethodDeclaration(p) ? checker.getTypeAtLocation(p) : undefined;
+        keys.push({ name: key, fn: isFn(value) });
+      }
+      const typed = isFn(indexed(checker.getContextualType(n)));
+      const fns = keys.filter((k) => k.fn).map((k) => k.name);
+      if (typed ? keys.length > 0 : fns.length > 1) found.push(`{ ${(typed ? keys.map((k) => k.name) : fns).join(', ')} }`);
+    } else if (ts.isElementAccessExpression(n) && !literalText(n.argumentExpression) && COMMAND_KEY.test(n.argumentExpression.getText(sf)) && isFn(indexed(checker.getTypeAtLocation(n.expression)))) {
+      found.push(n.getText(sf));
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return found;
+}
+
 // The snippets of the finder's own tests are files of src/explain/ that exist in memory only, so that they sit in the same
 // program as the real files (one `createProgram` for everything) and resolve imports from the real tree.
 const snippets = new Map<string, string>();
@@ -304,7 +346,7 @@ const SNIPPET_NAMES = new Set(['sed', 'awk', 'jq', 'date', 'grep', 'declare', 'b
 const found = (name: string): string[] => {
   const sf = program().getSourceFile(snippets.get(name)!)!;
   const checker = program().getTypeChecker();
-  return [...nameComparisons(checker, sf, SNIPPET_NAMES), ...recordLookups(checker, sf, SNIPPET_NAMES)];
+  return [...nameComparisons(checker, sf, SNIPPET_NAMES), ...recordLookups(checker, sf, SNIPPET_NAMES), ...registries(checker, sf, SNIPPET_NAMES)];
 };
 
 const fixtures: { name: string; code: string; found: string[] }[] = [
@@ -342,6 +384,21 @@ const fixtures: { name: string; code: string; found: string[] }[] = [
     found: [],
   },
   { name: 'closed-members', code: `const LIST = ['sed', 'awk'] as const;\nexport function f(s: Set<'sed' | 'awk'>, m: ReadonlySet<'grep'>) { return LIST.includes('sed') || s.has('awk') || m.has('grep'); }`, found: [] },
+  // A table of functions keyed by command name, typed or not, and a lookup in it by a command's name; not a table of other values or keys.
+  {
+    name: 'registry',
+    code: "const run = (w: string[]): string[] => w;\ntype F = (w: string[]) => string[];\n"
+      + "export const A: Record<string, F> = { sed: run, grep: run, zzz: run };\nexport const B = { awk: run, jq: run, zzz: run, local: 1 };\n"
+      + "export function f(cmd: string, s: { cmd: string; command: string }) { return [A[cmd], A[s.cmd], A[s.command], A['sed']]; }",
+    found: ['{ sed, grep }', '{ awk, jq }', 'A[cmd]', 'A[s.cmd]', 'A[s.command]'],
+  },
+  {
+    name: 'not-a-registry',
+    code: "const run = (w: string[]): string[] => w;\ntype F = (w: string[]) => string[];\n"
+      + "export const A: Record<string, F> = { zzz: run, qq: run };\nexport const B = { sed: run };\nexport const C = { sed: 1, grep: 2, cat: 3 };\nexport const D: Record<string, number> = { sed: 1 };\n"
+      + "export function f(cmd: string, k: string, n: Record<string, number>) { return [A[k], n[cmd], A.zzz]; }",
+    found: [],
+  },
   // The node type of the syntax tree is the one open string that is allowed.
   { name: 'node-type', code: `export function f(node: SyntaxNode, p: SyntaxNode | null) { return node.type === 'command' || 'command' === node.type || p?.type !== 'declare'; }`, found: [] },
   // Not a command name, whatever the type.
@@ -412,7 +469,7 @@ describe('src/explain guards', function () {
     const all = [...files(), ...examplesFiles()].flatMap((f) => {
       const sf = p.getSourceFile(f);
       assert.ok(sf, f);
-      return [...nameComparisons(checker, sf, names), ...recordLookups(checker, sf, names)].map((text) => ({ file: path.relative(base, f), text }));
+      return [...nameComparisons(checker, sf, names), ...recordLookups(checker, sf, names), ...registries(checker, sf, names)].map((text) => ({ file: path.relative(base, f), text }));
     });
     // Counted per file and text, like the other guards: a new text, a larger count and a stale entry all fail.
     const actual = new Map<string, number>();
@@ -435,6 +492,9 @@ describe('src/explain guards', function () {
   it('reads the files of src/examples/ except the language interpreters', () => {
     const names = examplesFiles().map((f) => path.basename(f));
     assert.ok(names.includes('pipeline.ts') && names.includes('textfilters.ts') && names.includes('getopt.ts'), names.join(' '));
+    // The walk goes into subdirectories (a new src/examples/x/y.ts is read).
+    const all = tsFilesUnder(path.join(base, 'src')).map((f) => path.relative(base, f).split(path.sep).join('/'));
+    assert.ok(all.includes('src/examples/pipeline.ts') && all.includes('src/syntax/adapters/unbash.ts'));
     for (const l of LANGUAGES) {
       assert.ok(fs.existsSync(path.join(examplesDir, l)), `${l} is gone: remove it from LANGUAGES`);
       assert.ok(!names.includes(l), l);
