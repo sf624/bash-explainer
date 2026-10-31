@@ -233,6 +233,8 @@ What:
 - The list is open on the very first visit (nothing stored), so the sample's problems show. After that, the user's choice is remembered. The page never opens it on its own, for example when a warning appears (section 9, 4).
 - The editor gets the room of the folded list. Help's list of shortcuts names F8.
 
+Prerequisite (2026-10-31, [sources.md](sources.md), phase B1): C2 starts after step 1 of [three-levels.md](three-levels.md) has built the level table with every output mapping; the strip's counts, icons and accessible names read it.
+
 CHANGELOG (Changed): "Problems on the web page fold into a strip with their counts. ‹ › and F8 / Shift+F8 go to the next and previous problem, and the strip shows where you are (Ln 20 · 1/11). The list opens on your first visit, and then stays as you left it."
 
 Tests: the strip's counts equal the problems of the document, per level; F8 from the last problem wraps to the first; the position on a line with two problems; the tooltip of every item has a 1-based line, and no tooltip text matches `/\d+:\d+:/`; open on a first visit, then the stored choice after a reload; a new warning while typing does not open it. Widths and languages as in section 5.
@@ -281,7 +283,7 @@ What:
 
 - One chip right of the file name, "Shell script · bash (auto)", at every width, on a quiet fill.
 - It opens one popover with two radio lists, File type and Shell (and the yq flavour when the script uses yq). On a phone it is a bottom sheet.
-- The wording of the automatic shell comes from one function (decision 12).
+- The wording of the automatic shell comes from one function (decision 12). Prerequisite (2026-10-31, [sources.md](sources.md), phase B4): `detectShell` (src/dialect.ts) gives its source (a ShellCheck directive, the shebang, the file name, the default), and the `auto (bash)` text of src/ui/panelView.ts comes from the same function.
 - The shortening is a fit rule in src/ui. It gives the candidate forms in order: the whole chip, then without "(auto)", "Script · bash", Open and Save as icons, "bash" alone, and the name moved to the menu. The page takes the first that fits.
 - The kind and shell pickers leave the app bar and the menu. The hidden selects go. The panel bridge reads the scope from the page's state.
 
