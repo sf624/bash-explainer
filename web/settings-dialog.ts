@@ -4,7 +4,8 @@
 // search finds a setting by its title or its key. A description shows two lines, with "More" after the last word shown;
 // on a touch screen it shows whole. Side by side the sheet lies over the editor, never wider than the editor's pane, so
 // that the explanation the settings change stays in view and live: it is not a modal dialog there (the panel can be
-// scrolled and clicked, and a click on it leaves the sheet open; Esc, × and Close shut it). In the narrow layout it is
+// scrolled and clicked, and a click on it leaves the sheet open; Esc, × and Close shut it). The editor under it is
+// inert (nothing in it can take the focus unseen), and the top bar stays above the sheet, in use. In the narrow layout it is
 // a modal dialog and takes the whole screen (page.css).
 // It comes back as it was left: the sections open, the search and the scroll (docs/design/chrome-redesign.md, C6).
 import { closeSheet, narrow, reopenSheet } from './layout';
@@ -89,18 +90,17 @@ export class SettingsDialog {
       this.draft = undefined;
       this.status = undefined;
       this.paste = { open: false, text: '' };
+      this.syncInert();
       this.returnFocus();
     });
     // Side by side the sheet is not modal, so the browser does not close it on Esc: it does, when the focus is in the
     // sheet or on the page itself (not in a field of the editor, which keeps its own Esc, nor mid-composition).
     document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
-      if (!this.dialog.open || this.modal || document.querySelector('dialog:modal')) return;
       const at = e.target as Node | null;
-      if (at !== document.body && !(at && this.dialog.contains(at))) return;
-      e.preventDefault();
-      closeSheet(this.dialog);
+      if (at === document.body || (at && this.dialog.contains(at))) this.escape(e);
     });
+    // (Sliding out and coming back are class changes of the sheet: web/layout.ts.)
+    new MutationObserver(() => this.syncInert()).observe(dialog, { attributes: true, attributeFilter: ['class'] });
     // The window crossing between the layouts while the sheet is open: it opens again in the other kind.
     narrow.addEventListener('change', () => {
       if (!this.dialog.open || this.modal === narrow.matches) return;
@@ -145,8 +145,40 @@ export class SettingsDialog {
     // stays in use, and the focus goes into the sheet and back by hand.
     if (this.modal) this.dialog.showModal();
     else this.dialog.show();
+    this.syncInert();
     this.fitDescs();
     this.body().scrollTop = this.scroll;
+  }
+
+  /**
+   * Esc shuts the sheet side by side (a modal one is shut by the browser): when it is not the input method's, not
+   * taken by what has the focus, and no modal question is open. Called for the keys of the page and of the panel.
+   */
+  escape(e: KeyboardEvent): void {
+    if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
+    if (!this.sideBySide || document.querySelector('dialog:modal')) return;
+    e.preventDefault();
+    closeSheet(this.dialog);
+  }
+
+  /** Whether the sheet is open over the editor with the panel still in use. */
+  get sideBySide(): boolean {
+    return this.dialog.open && !this.modal;
+  }
+
+  /** Puts the focus in the sheet (F6 from the explanation, when the editor under the sheet is out of reach). */
+  focus(): void {
+    this.dialog.querySelector<HTMLElement>('#settings-search')?.focus();
+  }
+
+  /**
+   * The editor's pane is out of reach while the sheet lies over it: no focus, no click, no reader's cursor. Not while it
+   * slides out (the sheet is on its way, and the editor may be used at once), nor when the sheet is modal (the browser
+   * shuts the page itself).
+   */
+  private syncInert(): void {
+    const pane = this.host.pane();
+    if (pane) pane.inert = this.dialog.open && !this.modal && !this.dialog.classList.contains('closing');
   }
 
   /** The gear again shuts the sheet (or, while it slides out, brings it back). */
@@ -178,10 +210,13 @@ export class SettingsDialog {
     return this.dialog.querySelector<HTMLElement>('.settings-body')!;
   }
 
-  /** Side by side, the sheet is never wider than the editor's pane (page.css reads `--pane-w`). */
+  /** Side by side, the sheet lies exactly over the editor's pane: never wider, and below the top bar (page.css reads `--pane-w` and `--pane-top`). */
   private fitWidth(): void {
     const pane = this.host.pane();
-    if (pane) this.dialog.style.setProperty('--pane-w', `${Math.floor(pane.getBoundingClientRect().width)}px`);
+    if (!pane) return;
+    const r = pane.getBoundingClientRect();
+    this.dialog.style.setProperty('--pane-w', `${Math.floor(r.width)}px`);
+    this.dialog.style.setProperty('--pane-top', `${Math.floor(r.top)}px`);
   }
 
   private change(key: keyof Settings, value: unknown): void {
@@ -384,7 +419,10 @@ export class SettingsDialog {
       this.refresh();
     });
     const done = el('button', { type: 'button', id: 'settings-done', textContent: t.close });
-    done.addEventListener('click', () => this.dialog.close());
+    done.addEventListener('click', () => {
+      this.dialog.close();
+      this.syncInert();
+    });
     const search = el('input', { type: 'search', id: 'settings-search', placeholder: t.searchHint, value: this.query, autocomplete: 'off', spellcheck: false });
     search.setAttribute('aria-label', t.search);
     search.addEventListener('input', () => {

@@ -427,8 +427,8 @@ describe('the web page: theme and settings', function () {
       await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
       const b = await boxes(page);
       const seen = `${width}: ${JSON.stringify(b)}`;
-      // Along the left edge, over the editor's pane and no wider: the panel is beside it, uncovered.
-      assert.ok(Math.abs(b.sheet.left) < 0.5 && b.sheet.top === 0, seen);
+      // Along the left edge, over the editor's pane (below the top bar) and no wider: the panel is beside it, uncovered.
+      assert.ok(Math.abs(b.sheet.left) < 0.5 && b.sheet.top === b.pane.top && b.sheet.bottom === b.pane.bottom, seen);
       assert.ok(b.sheet.width <= b.pane.width + 0.5 && b.sheet.right <= b.panel.left + 0.5, seen);
       // 36rem where the pane is wider; the pane's width where it is not.
       if (width === 1280) assert.strictEqual(Math.round(b.sheet.width), 576, seen);
@@ -504,12 +504,8 @@ describe('the web page: theme and settings', function () {
     await until('the sheet open', () => isOpen(page), (v) => v);
     await page.locator('#settings-open').click();
     await until('the sheet closed by the gear', () => isOpen(page), (v) => !v);
-    // Esc in a field of the editor is the editor's: it does not shut the sheet.
     await page.locator('#settings-open').click();
     await until('the sheet open again', () => isOpen(page), (v) => v);
-    await page.locator('.cm-content').click();
-    await page.keyboard.press('Escape');
-    assert.strictEqual(await isOpen(page), true);
     await page.locator('#settings-done').click();
     await until('the sheet closed by Close', () => isOpen(page), (v) => !v);
     assert.deepStrictEqual(errors, []);
@@ -579,7 +575,7 @@ describe('the web page: theme and settings', function () {
     const top = () => page.evaluate("document.getElementById('settings-section-checks').getBoundingClientRect().top - document.querySelector('.settings-body').getBoundingClientRect().top") as Promise<number>;
     assert.ok(Math.abs(await stable('the scroll', top)) <= 1, String(await top()));
     // Only the body scrolled: the sheet's header and its links stay at the top, its footer at the bottom.
-    assert.deepStrictEqual(await page.evaluate("[document.getElementById('settings-dialog').scrollTop, document.querySelector('.settings-head').getBoundingClientRect().top, Math.round(document.querySelector('.settings-foot').getBoundingClientRect().bottom)]"), [0, 0, 800]);
+    assert.deepStrictEqual(await page.evaluate("[document.getElementById('settings-dialog').scrollTop, document.querySelector('.settings-head').getBoundingClientRect().top, Math.round(document.querySelector('.settings-foot').getBoundingClientRect().bottom)]"), [0, 48, 800]);
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'settings-fold-checks');
     // Common is a link too: back to the top.
     await page.locator('#settings-jump-common').click();
@@ -636,6 +632,105 @@ describe('the web page: theme and settings', function () {
     await openSettingsSection(page, 'checks');
     assert.strictEqual(await page.locator('#settings-show-keys').isChecked(), true);
     assert.strictEqual(await page.locator('[data-key="shell"] .setting-key').innerText(), 'bashExplainer.shell');
+    await ctx.close();
+  });
+
+  it('keeps what the sheet covers out of reach while it is open side by side: the editor takes no focus and no key, the top bar stays above and in use', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 700 }, acceptDownloads: true });
+    // (A save is a download: without the file pickers of the browser.)
+    await ctx.addInitScript('delete window.showOpenFilePicker; delete window.showSaveFilePicker;');
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    const script = `echo ${Array.from({ length: 20 }, (_, i) => `word${i}`).join(' ')}`;
+    await page.keyboard.insertText(script);
+    await until('the rows', async () => panel().locator('#tree .row').count(), (n) => n > 10);
+    const inSource = "(() => { const a = document.activeElement; return !!a && !!a.closest('#source'); })()";
+    const text = () => page.evaluate("document.querySelector('.cm-content').textContent") as Promise<string>;
+    await page.locator('#settings-open').click();
+    await stable('the sheet slid in', () => page.locator('#settings-dialog').evaluate((d) => d.getBoundingClientRect().left));
+    // The sheet lies exactly over the editor's pane, below the top bar, which is not covered.
+    const geometry = await page.evaluate(`(() => {
+      const r = (e) => { const b = e.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom].map(Math.round); };
+      return { sheet: r(document.getElementById('settings-dialog')), pane: r(document.getElementById('source')), bar: r(document.querySelector('header.top')) };
+    })()`) as Record<'sheet' | 'pane' | 'bar', number[]>;
+    assert.strictEqual(geometry.sheet[1], geometry.pane[1], JSON.stringify(geometry));
+    assert.ok(geometry.sheet[1] >= geometry.bar[3] - 1 && geometry.sheet[3] >= geometry.pane[3] - 1, JSON.stringify(geometry));
+    for (const id of ['menu-open', 'kind', 'settings-open']) {
+      const on = await page.evaluate(`(() => { const e = document.getElementById('${id}'); const b = e.getBoundingClientRect(); return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2) === e || e.contains(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)); })()`);
+      assert.strictEqual(on, true, `${id} is under the sheet`);
+    }
+    assert.strictEqual(await page.evaluate("document.getElementById('source').inert"), true);
+    // A click on a part of the explanation selects it in the editor, but the focus stays in the panel: what is typed does not reach the editor under the sheet.
+    await panel().locator('#tree .row .label', { hasText: 'word5' }).click();
+    assert.strictEqual(await page.evaluate(inSource), false);
+    await page.keyboard.type('zz');
+    assert.strictEqual(await text(), script);
+    // Tab from the sheet goes through the top bar and the panel, never to the editor's head, the editor or its problems.
+    await page.locator('#settings-close').focus();
+    const stops: string[] = [];
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press('Tab');
+      stops.push(await page.evaluate(`(() => { const a = document.activeElement; return (a.closest('#source') ? 'COVERED ' : '') + (a.id || a.tagName); })()`) as string);
+    }
+    assert.deepStrictEqual(stops.filter((x) => x.startsWith('COVERED')), [], stops.join());
+    assert.ok(stops.some((x) => x === 'menu-open' || x === 'kind'), stops.join());
+    // Ctrl+S saves with the sheet open, with the focus in the sheet (the toast "Downloaded ..." has a button).
+    await page.locator('#settings-search').focus();
+    const [saved] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+S')]);
+    assert.ok(saved.suggestedFilename().endsWith('.sh'));
+    await until('the toast', () => page.evaluate("!!document.querySelector('#status [id=status-action], #status button')") as Promise<boolean>, (v) => v);
+    // F6 goes round the parts in reach, not into the editor: sheet, explanation, toast, sheet (Shift+F6 the other way).
+    const where = () => page.evaluate(`(() => { const a = document.activeElement; return a.id === 'panel' ? 'panel' : a.closest('#status') ? 'toast' : a.closest('#settings-dialog') ? 'sheet' : a.closest('#source') ? 'EDITOR' : a.tagName; })()`) as Promise<string>;
+    await page.keyboard.press('F6');
+    await until('F6 to the explanation', where, (w) => w === 'panel');
+    await page.waitForTimeout(300);
+    await page.keyboard.press('F6');
+    await until('F6 to the toast', where, (w) => w === 'toast');
+    await page.keyboard.press('F6');
+    await until('F6 to the sheet', where, (w) => w === 'sheet');
+    await page.keyboard.press('Shift+F6');
+    await until('Shift+F6 to the toast', where, (w) => w === 'toast');
+    await page.keyboard.press('Shift+F6');
+    await until('Shift+F6 to the explanation', where, (w) => w === 'panel');
+    // Ctrl+S from the panel too.
+    const [again] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+S')]);
+    assert.ok(again.suggestedFilename().endsWith('.sh'));
+    // Esc in the explanation shuts the sheet, and gives the editor back.
+    await page.keyboard.press('Escape');
+    await until('closed by Esc in the panel', () => isOpen(page), (v) => !v);
+    await until('the editor back', () => page.evaluate("document.getElementById('source').inert") as Promise<boolean>, (v) => !v);
+    await page.locator('.cm-content').click();
+    assert.strictEqual(await page.evaluate(inSource), true);
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('gives the editor back when the sheet is shut, and when the window crosses to the narrow layout', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 700 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    const inert = () => page.evaluate("document.getElementById('source').inert") as Promise<boolean>;
+    await page.locator('#settings-open').click();
+    await until('open', () => isOpen(page), (v) => v);
+    assert.strictEqual(await inert(), true);
+    // Narrow: the sheet opens again as a modal dialog, and the editor is not inert (the dialog shuts the page itself).
+    await page.setViewportSize({ width: 600, height: 700 });
+    await until('modal', () => page.locator('#settings-dialog').evaluate((d) => d.matches(':modal')), (v) => v);
+    assert.strictEqual(await inert(), false);
+    await page.setViewportSize({ width: 1280, height: 700 });
+    await until('not modal', () => page.locator('#settings-dialog').evaluate((d) => d.matches(':modal')), (v) => !v);
+    assert.strictEqual(await inert(), true);
+    await page.locator('#settings-done').click();
+    // The editor is back as the sheet starts to slide out, not when it is gone.
+    assert.strictEqual(await inert(), false);
+    await until('closed', () => isOpen(page), (v) => !v);
+    assert.strictEqual(await inert(), false);
     await ctx.close();
   });
 
