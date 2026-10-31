@@ -255,6 +255,7 @@ export const PANEL_BODY = `<div id="top">
 <pre id="line"></pre>
 </div>
 <main id="main">
+  <p id="short" hidden></p>
   <div id="notes"></div>
   <ul id="tree"></ul>
   <section id="reading" hidden>

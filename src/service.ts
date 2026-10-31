@@ -157,12 +157,12 @@ export class ExplainService implements vscode.Disposable {
     return this.overrides.get(doc.uri.toString()) ?? {};
   }
 
-  /** The explanation of a line; with `reading`, its reading tree too (the panel's tree view). */
-  explain(doc: vscode.TextDocument, line: number, reading = false): LineExplanation {
+  /** The explanation of a line; with `reading`, its reading tree too (the panel's tree view); with `sentence`, its sentence (the panel's "In short"). */
+  explain(doc: vscode.TextDocument, line: number, reading = false, sentence = false): LineExplanation {
     const lang = this.lang;
     let analyzer = this.analyzers.get(lang);
     if (!analyzer) this.analyzers.set(lang, (analyzer = new Analyzer(lang)));
-    return explainDocumentLine(analyzer, this.document(doc), line, lang, this.shells(doc), { ...this.explainOptions(doc), reading });
+    return explainDocumentLine(analyzer, this.document(doc), line, lang, this.shells(doc), { ...this.explainOptions(doc), reading, sentence });
   }
 
   /** The document's lines and parse tree; for a host file, the tree of its shell parts. */

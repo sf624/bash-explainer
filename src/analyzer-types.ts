@@ -156,6 +156,10 @@ export interface ExplainOptions {
   reading?: boolean;
   /** Also give what the program of each simple command on the line receives (`LineExplanation.argv`, src/argvline.ts). */
   argv?: boolean;
+  /** Also give the sentence of the line, "In short" (`LineExplanation.sentence`, src/linesentence.ts). */
+  sentence?: boolean;
+  /** The sections of the manual the problems a host file adds to the line cite (src/hosts/remap.ts): the sentence says nothing of them. */
+  hostProblems?: readonly string[];
   /**
    * Set by the analyzer for a string a shell runs (`sh -c '…' sh "$msg"`): the shell (`sh -c`) and the words its
    * `$0`, `$1`… start as, in order; `more`: words after them whose number is known only when it runs (`"$@"`).
@@ -201,6 +205,11 @@ export interface LineExplanation {
   reading?: ReadingNode;
   /** What the program of each simple command on the line receives, in source order (src/argvline.ts); only when `ExplainOptions.argv` asks for it. */
   argv?: ArgvLine[];
+  /**
+   * One sentence that says what the line does, "In short" (src/linesentence.ts; marked text: code in backticks); only
+   * when `ExplainOptions.sentence` asks for it, and on a line with code.
+   */
+  sentence?: string;
 }
 
 /**

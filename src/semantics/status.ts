@@ -221,7 +221,11 @@ class Statuses implements StatusModel {
   }
 
   status(n: SyntaxNode): StatusRule {
-    if (backgrounded(n) || n.type === 'coproc_statement') return { kind: 'background', job: this.own(n.type === 'coproc_statement' ? n.namedChildren[n.namedChildren.length - 1] : n) };
+    if (backgrounded(n) || n.type === 'coproc_statement') {
+      // (While `coproc` alone is typed, it has no command yet: no job, and no status but the last one's.)
+      const job = n.type === 'coproc_statement' ? n.namedChildren[n.namedChildren.length - 1] : n;
+      return job ? { kind: 'background', job: this.own(job) } : { kind: 'last-run' };
+    }
     return this.own(n);
   }
 

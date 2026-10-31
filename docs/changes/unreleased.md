@@ -4,6 +4,18 @@ The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
 ## New
 
+### "In short": one sentence for each line
+
+The Meaning view of the panel, in VS Code and on the web page, starts with one sentence that says what the line does, under the label "In short" / 「ひとことで」. Every line with code has one; the Reading view has none.
+
+- A command: what it is and does, the options given, and its redirections: "Runs `sort` (sort lines) using `-u` (output only unique lines), with stdin (fd 0) from `in.txt`, stdout (fd 1) to `out.txt`."
+- An assignment: the value the variable gets, with a placeholder for what is known only when the line runs: "Sets `workdir` to output of `$(mktemp -d)`", "Sets `x` to ‹home directory›`/bin`".
+- A list and a pipeline: "Tests the condition in `[ … ]`; if that succeeds, runs `echo` …", "Pipes `foo` into `bar`; its status is that of `bar`" (with pipefail: "the last command that fails, or 0"), and under `set -e`, that a failure before the last command of a list does not stop the script.
+- A block: its first line says what it does ("Repeats lines 75–79 while `getopts` … succeeds", "Runs line 26 with `$f` set to each file name matching `*.sh`, one at a time"), and the word that ends it says what it ends ("`done` ends the `while` loop of line 28: …").
+- Shapes with a sentence of their own: strict mode, an EXIT trap, a quiet check that a command is installed, `while read … done < file` ("Reads `input.txt` one line at a time…"), an endless loop, `sort | uniq -c | sort -rn | head -n 3` ("Counts how often each line … occurs and lists the lines from the most frequent, with their counts (the first 3)"), and `echo … >&2` ("prints a message on stderr").
+
+The sentence never repeats a problem of the line: where a problem is about the line's status or `set -e`, the sentence says nothing of them.
+
 ### Quick fixes from the notes
 
 A note that suggests code to write in place of the line's (`Fact.rewrite`, `StyleFinding.rewrite`: docs/design/oracles.md, 3.2) offers it as a quick fix of its problem: the light bulb and Ctrl+. in VS Code, `textDocument/codeAction` in the Language Server, and buttons in the tooltip of the web page's editor. The fix makes the edits of the code the note shows, at the place of that problem (`cp $a b; cp $a c`: each `$a` its own); where the note gives two ways, both are offered, the one it recommends first (preferred, for VS Code's Auto Fix). The title is the code, cut at 60 characters: "Add `[ -e "$f" ] || continue`" where the fix only adds code, "Rewrite as `read -r`" where it changes some. The web page's buttons show it as plain text, without the backticks (CodeMirror draws an action's name as text); VS Code and the Language Server keep them, as in their messages. Each rewrite is run in bash 5.2 and 5.3 (test/rewrites*.test.ts).

@@ -232,7 +232,7 @@ function updatePanel(): void {
   if (!doc) return;
   const line = editor.cursorLine();
   const s = shells();
-  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: needsReading(panel.panelState()) });
+  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: needsReading(panel.panelState()), sentence: true });
   const auto = autoShellAt(doc, s, line);
   shown = { explanation, line };
   announcer?.shown(explanation, line, lang);

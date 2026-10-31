@@ -41,6 +41,11 @@ export function argvOf(cmd: SyntaxNode, model: StateModel, lang: Lang): ArgvLine
   return { span: spanOf(cmd), words: words.flatMap((w) => wordArgv(w, read, lang)), removed, ...(failing ? { fails: { span: spanOf(failing), error: read(failing).error! } } : {}) };
 }
 
+/** The words the word `w` gives (`wordArgv`), read alone: a value or a target the sentence of the line says (src/linesentence.ts). */
+export function argvWords(w: SyntaxNode, model: StateModel, lang: Lang): ArgvWord[] {
+  return wordArgv(w, reader(model), lang);
+}
+
 /** What a word gives the program (`receivedFields`), read once for each word of a command. */
 type Reader = (w: SyntaxNode) => ReturnType<typeof receivedFields>;
 function reader(model: StateModel): Reader {
