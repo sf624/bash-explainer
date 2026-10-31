@@ -1,20 +1,17 @@
 // The explanation panel in its frame (panel.html, the page of the VS Code panel), and the page's own controls for it.
 // The panel says what the user does in it (src/ui/panelView.ts `FromPanel`); the page answers and shows the result.
-// The panel's own header is not shown on the page (web/panel-page.css): its shell and yq choices are the setting, and
-// the page draws the rest above the frame (web/panel-head.ts). Its view control keeps the state and sends it to the
-// panel, as the panel's own control tells it; its tools send the state they want (`tools`: folded, the quick reference
-// open), and the panel says the state it has (`header`).
+// The panel's own header is not shown on the page (web/panel-page.css): its shell and yq choices are the settings,
+// which the editor header's chip (web/scope-chip.ts) and the settings sheet show; the page draws the rest above the
+// frame (web/panel-head.ts). Its view control keeps the state and sends it to the panel, as the panel's own control
+// tells it; its tools send the state they want (`tools`: folded, the quick reference open), and the panel says the
+// state it has (`header`).
 import { Span } from '../src/analyzer';
 import { Lang } from '../src/i18n';
 import { FromPanel, needsReading, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
 import { isPanelQuestion, panelReply } from '../src/ui/panelReply';
-import { ui } from '../src/ui/render';
-import { on, put } from './dom';
 import { PanelHead } from './panel-head';
 import { Theme } from './protocol';
 import { readStoredObject, STORAGE_KEYS, writeStored } from './storage';
-
-type Dialect = ReturnType<typeof panelUpdate>['dialect'];
 
 /** What the panel's frame asks of the page around it. */
 export interface PanelHost {
@@ -24,8 +21,6 @@ export interface PanelHost {
   update(): void;
   /** "Copy as Markdown". */
   copy(): void;
-  /** The shell or yq chosen in the page's own selects. */
-  choose(key: 'shell' | 'yq', value: string): void;
   /** The shell or yq chosen in the panel's header ('auto' clears it). */
   override(key: 'shell' | 'yq', value: string): void;
   openSettings(): void;
@@ -54,9 +49,6 @@ export class PanelBridge {
       this.sendState();
     }
     window.addEventListener('message', (e) => this.onMessage(e));
-    for (const key of ['shell', 'yq'] as const) {
-      for (const id of [key, `${key}-top`]) on(id, 'change', (e) => host.choose(key, (e.target as HTMLSelectElement).value));
-    }
     const head = controls ? document.getElementById('panel-head') : null;
     this.head = head ? new PanelHead(head, {
       lang: host.lang,
@@ -116,10 +108,9 @@ export class PanelBridge {
     if (this.frame) this.frame.src = 'panel.html';
   }
 
-  /** Shows what the panel was sent for a line: the page's shell and yq selects follow it. */
+  /** Shows what the panel was sent for a line. */
   show(message: ReturnType<typeof panelUpdate>): void {
     this.send(message);
-    this.showDialect(message.dialect);
   }
 
   private onMessage(e: MessageEvent): void {
@@ -146,36 +137,8 @@ export class PanelBridge {
     }
   }
 
-  /** Fills the shell and yq selects of the top bar and the menu the way the panel's header was. */
-  private showDialect(d: Dialect): void {
-    const tp = ui[this.host.lang()].panel;
-    for (const [key, options, value, label] of [['shell', d.shells, d.shell, tp.shell], ['yq', d.yqs, d.yq, tp.yq]] as const) {
-      for (const id of [key, `${key}-top`]) {
-        const select = document.getElementById(id) as HTMLSelectElement | null;
-        if (!select) continue;
-        select.replaceChildren(...(options ?? []).map(([v, text]) => new Option(text, v)));
-        select.value = value;
-        put(`${id}-label`, label);
-        select.setAttribute('aria-label', label);
-        select.title = label;
-      }
-      // The yq choice only matters on the lines that run yq.
-      for (const id of [`${key}-box`, `${key}-top-box`]) {
-        const box = document.getElementById(id);
-        if (box && key === 'yq') box.hidden = !options;
-      }
-    }
-  }
-
-  /** The page's labels of the panel, in the page's language: its header, and the shell and yq selects. */
+  /** The page's labels of the panel, in the page's language: its header. */
   showActions(): void {
-    const tp = ui[this.host.lang()].panel;
     this.head?.draw();
-    for (const [key, label] of [['shell', tp.shell], ['yq', tp.yq]]) {
-      for (const id of [key, `${key}-top`]) {
-        put(`${id}-label`, label);
-        document.getElementById(id)?.setAttribute('aria-label', label);
-      }
-    }
   }
 }

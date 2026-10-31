@@ -292,7 +292,7 @@ describe('the web page: touch screens, stored data and the window', function () 
 
   it('keeps the phone layout on a phone at every zoom (a wider viewport in CSS pixels), and follows the width on a desktop and a tablet', async () => {
     const { devices } = await import('playwright-core');
-    /** What tells the phone layout: the bar's file kind hidden, the panes one above the other, and the Problems list folded. */
+    /** What tells the phone layout: the bar's Copy a link hidden, the panes one above the other, and the Problems list folded. */
     const layout = async (page: import('playwright-core').Page) => {
       await page.locator('.cm-line').first().waitFor();
       await until('the sample\'s problems', () => problemsShown(page), (v) => v);
@@ -300,7 +300,7 @@ describe('the web page: touch screens, stored data and the window', function () 
         const ed = (await page.locator('#editor').boundingBox())!;
         const box = (await page.locator('#panel').boundingBox())!;
         return {
-          kind: await page.locator('.kind').isVisible(),
+          share: await page.locator('#share').isVisible(),
           stacked: box.y >= ed.y + ed.height,
           splitter: await page.locator('#splitter').getAttribute('aria-orientation'),
           problems: await page.locator('#problems-toggle').getAttribute('aria-expanded'),
@@ -313,8 +313,8 @@ describe('the web page: touch screens, stored data and the window', function () 
       await until(label, read, (v) => isDeepStrictEqual(v, expected)).catch(() => undefined);
       assert.deepStrictEqual(await stable(label, read, 6), expected, label);
     };
-    const phoneLayout = { kind: false, stacked: true, splitter: 'horizontal', problems: 'false' };
-    const wideLayout = { kind: true, stacked: false, splitter: 'vertical', problems: 'true' };
+    const phoneLayout = { share: false, stacked: true, splitter: 'horizontal', problems: 'false' };
+    const wideLayout = { share: true, stacked: false, splitter: 'vertical', problems: 'true' };
 
     // A 390×844 phone, zoomed out to 50% and 33%: the CSS viewport grows and a device pixel is less of a CSS
     // pixel. At 780 the screen stays as at 100%, as Safari reports it; at 1170 it is in CSS pixels of the zoom, as in Chrome.
@@ -361,8 +361,8 @@ describe('the web page: touch screens, stored data and the window', function () 
 
   it('shows the desktop layout on a phone whose browser asks for the desktop site, and the phone layout again in the normal mode, also after a reload', async () => {
     const { devices } = await import('playwright-core');
-    const phoneLayout = { kind: false, stacked: true, splitter: 'horizontal', problems: 'false' };
-    const wideLayout = { kind: true, stacked: false, splitter: 'vertical', problems: 'true' };
+    const phoneLayout = { share: false, stacked: true, splitter: 'horizontal', problems: 'false' };
+    const wideLayout = { share: true, stacked: false, splitter: 'vertical', problems: 'true' };
     const read = async (page: import('playwright-core').Page) => {
       await page.locator('.cm-line').first().waitFor();
       await until('the sample\'s problems', () => problemsShown(page), (v) => v);
@@ -370,7 +370,7 @@ describe('the web page: touch screens, stored data and the window', function () 
         const ed = (await page.locator('#editor').boundingBox())!;
         const box = (await page.locator('#panel').boundingBox())!;
         return {
-          kind: await page.locator('.kind').isVisible(),
+          share: await page.locator('#share').isVisible(),
           stacked: box.y >= ed.y + ed.height,
           splitter: await page.locator('#splitter').getAttribute('aria-orientation'),
           problems: await page.locator('#problems-toggle').getAttribute('aria-expanded'),

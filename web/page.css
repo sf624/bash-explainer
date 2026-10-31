@@ -345,12 +345,6 @@ button {
   margin-left: auto;
 }
 
-.pick select {
-  max-width: 11rem;
-  min-height: 30px;
-  font-size: 12.5px;
-}
-
 .actions .sep {
   width: 1px;
   height: 20px;
@@ -412,25 +406,6 @@ button {
   flex: none;
 }
 
-/* Until C5 moves the pickers out of the bar, a window under 900 px has no room for the words of "Copy a link": its
-   icon only (✓ after a copy), its words for a screen reader. */
-@media (max-width: 899px) {
-  #share {
-    justify-content: center;
-    width: 34px;
-    padding: 0;
-  }
-
-  #share .lbl {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
-
 /* A control given the focus back after a pointer has no ring until the next key (web/popover.ts). */
 .no-ring:focus-visible {
   outline: none;
@@ -470,21 +445,25 @@ button {
   }
 }
 
-@container source (max-width: 480px) {
-  .tool-btn {
-    justify-content: center;
-    width: 32px;
-    padding: 0;
-  }
+/* Open and Save as icons, their words for a screen reader, where the header has no room for them (web/scope-chip.ts). */
+.ed-head[data-tools="icons"] .tool-btn {
+  justify-content: center;
+  width: 32px;
+  padding: 0;
+}
 
-  .tool-btn .lbl {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
+.ed-head[data-tools="icons"] .tool-btn .lbl {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The name only in the menu (its first row), but while it is renamed here. */
+.ed-head[data-name="menu"] .file-box:not(:has(.file-name-input:not([hidden]))) {
+  display: none;
 }
 
 /* The name: as wide as it is, cut in its stem ("very-long-dep….sh") when the header is short of room. */
@@ -577,6 +556,231 @@ button {
 .menu-file[hidden],
 .file-name-input[hidden] {
   display: none;
+}
+
+/* ---- The chip of the file type and the shell, and its popover (web/scope-chip.ts) --------------------------- */
+
+/* At the right, before ⋯, on a quiet round fill. */
+.scope-box {
+  min-width: 0;
+}
+
+.scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 28px;
+  min-height: 0;
+  padding: 0 10px 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .scope-chip:hover {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+  }
+}
+
+.scope-chip[aria-expanded="true"] {
+  border-color: var(--vscode-focusBorder);
+}
+
+.scope-chip .chev {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--vscode-descriptionForeground);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* No form fits: the chip's text is cut. */
+.ed-head.squeezed .scope-box {
+  flex: 0 1 auto;
+}
+
+.scope-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Beside the editor: a popover under the chip, at its right edge, the two lists side by side. */
+.scope-pop {
+  position: absolute;
+  inset: calc(100% + 4px) 0 auto auto;
+  z-index: 30;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - var(--bar-h) - 56px);
+  margin: 0;
+  padding: 8px 4px 4px;
+  overflow-y: auto;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--radius);
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+.scope-pop:not([open]) {
+  display: none;
+}
+
+/* Its title is for a screen reader there; the sheet shows it, with Done. */
+.scope-pop:not(.sheet-pop) .scope-head {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.scope-pop:not(.sheet-pop) .scope-done {
+  display: none;
+}
+
+.scope-lists {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 4px 16px;
+}
+
+@container source (max-width: 519.98px) {
+  .scope-lists {
+    grid-template-columns: auto;
+  }
+}
+
+.scope-h {
+  margin: 4px 10px 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scope-items {
+  display: flex;
+  flex-direction: column;
+}
+
+.scope-sub {
+  margin-top: 8px;
+}
+
+.scope-sub[hidden] {
+  display: none;
+}
+
+.scope-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  text-align: left;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .scope-opt:hover {
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+.scope-opt:focus-visible {
+  outline-offset: -2px;
+}
+
+.scope-opt[aria-checked="true"] {
+  font-weight: 600;
+}
+
+/* The radio's mark: a ring, filled when checked. */
+.scope-dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--vscode-descriptionForeground);
+  border-radius: 50%;
+}
+
+.scope-opt[aria-checked="true"] .scope-dot {
+  border-color: var(--vscode-focusBorder);
+  background: radial-gradient(circle, var(--vscode-focusBorder) 0 3.5px, transparent 4px);
+}
+
+/* On a phone (and in the narrow layout): a sheet from the bottom, its title and Done on top, 44 px rows. */
+.scope-pop.sheet-pop {
+  position: fixed;
+  inset: auto 0 0;
+  width: auto;
+  max-width: none;
+  max-height: 85dvh;
+  padding: 0 8px calc(8px + env(safe-area-inset-bottom));
+  border-width: 1px 0 0;
+  border-radius: 14px 14px 0 0;
+  overscroll-behavior: contain;
+}
+
+.scope-pop.sheet-pop::backdrop {
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.sheet-pop .scope-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 0 4px 0 10px;
+  background: var(--vscode-editor-background);
+}
+
+.scope-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.scope-done {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sheet-pop .scope-lists {
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+}
+
+.sheet-pop .scope-opt {
+  min-height: 44px;
+  font-size: 15px;
+  white-space: normal;
 }
 
 /* ⋯ and its menu, under it at its right edge. */
@@ -738,7 +942,7 @@ button {
   min-height: 0;
 }
 
-/* The editor's pane is a container: Open and Save in its header show their words from a pane of 481 px, icons below. */
+/* The editor's pane is a container: the Problems list and the chip's popover follow its width. */
 .source {
   position: relative;
   display: flex;
@@ -2016,15 +2220,7 @@ body.resizing .problems-resize {
   }
 }
 
-/* The shell and yq are in the menu until there is room for them here. */
-@media (max-width: 1199px) {
-  .desk-only {
-    display: none !important;
-  }
-}
-
 /* A phone zoomed out can be wider than these widths: it keeps the phone's bar (theme-init.js). */
-:where(html.narrow) .desk-only,
 :where(html.narrow) .top .install {
   display: none !important;
 }
@@ -2172,6 +2368,17 @@ body.resizing .problems-resize {
 :where(html.narrow) .tool-btn {
   min-width: 44px;
   justify-content: center;
+}
+
+/* The chip is a 44 px box, its fill drawn 32 px high inside it. */
+:where(html.narrow) .scope-chip {
+  height: 44px;
+  border-width: 6px 0;
+  background-clip: padding-box;
+}
+
+:where(html.narrow) .scope-chip[aria-expanded="true"] {
+  border-color: transparent;
 }
 
 /* A touch screen has strips along its edges for the swipes that open the menu and the settings (.edge): the header's

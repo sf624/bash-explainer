@@ -5,7 +5,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
-import { menuItem, openSite, choose, pickKind, problemList, toastText, until } from './support/site';
+import { menuItem, openSite, choose, kindChosen, pickKind, problemList, toastText, until } from './support/site';
 
 const DOCKERFILE = 'FROM alpine:3.20\nRUN apk add --no-cache curl\nCMD ["sh"]\n';
 
@@ -91,7 +91,7 @@ describe('the web page: opening a file and saving the script', function () {
       return shown && document.getElementById('drop-target').hidden;
     })()`) as Promise<boolean>;
   }
-  const kindOf = (page: Page) => page.locator('#kind').getAttribute('aria-label');
+  const kindOf = (page: Page) => kindChosen(page);
   /** The script's name as the editor's header shows it. */
   const shownName = (page: Page) => page.evaluate("document.getElementById('file-name-stem').textContent + document.getElementById('file-name-ext').textContent") as Promise<string>;
   const text = (page: Page) => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
@@ -188,7 +188,7 @@ describe('the web page: opening a file and saving the script', function () {
     const [chooser] = await Promise.all([page.waitForEvent('filechooser'), menuItem(page, '#menu-open-file')]);
     assert.strictEqual(chooser.isMultiple(), false);
     await chooser.setFiles({ name: 'Dockerfile', mimeType: 'application/octet-stream', buffer: Buffer.from(DOCKERFILE) });
-    await until('the kind', () => kindOf(page), (k) => k === 'File: Dockerfile');
+    await until('the kind', () => kindOf(page), (k) => k === 'dockerfile');
     assert.strictEqual((await text(page)).trim(), DOCKERFILE.trim());
     assert.strictEqual(await toast(page), 'Opened Dockerfile.');
     assert.strictEqual(await shownName(page), 'Dockerfile');
@@ -200,7 +200,7 @@ describe('the web page: opening a file and saving the script', function () {
     await page.waitForTimeout(200);
     assert.strictEqual((await text(page)).trim(), DOCKERFILE.trim());
     // Ctrl+O: a Makefile by its name (its content alone says nothing clear), then by content: a .txt with a bats shebang.
-    for (const [name, content, kind] of [['build.mk', 'x = 1\n', 'File: Makefile'], ['notes.txt', '#!/usr/bin/env bats\n@test "a" {\n  true\n}\n', 'File: bats'], ['run', 'echo plain\n', 'File: Shell script'], ['ci.yaml', 'jobs:\n', 'File: GitHub Actions / GitLab CI']]) {
+    for (const [name, content, kind] of [['build.mk', 'x = 1\n', 'makefile'], ['notes.txt', '#!/usr/bin/env bats\n@test "a" {\n  true\n}\n', 'bats'], ['run', 'echo plain\n', 'shell'], ['ci.yaml', 'jobs:\n', 'yaml']]) {
       const [c] = await Promise.all([page.waitForEvent('filechooser'), page.keyboard.press('Control+O')]);
       await c.setFiles({ name, mimeType: 'text/plain', buffer: Buffer.from(content) });
       await until(`the kind of ${name}`, () => kindOf(page), (k) => k === kind);
@@ -246,7 +246,7 @@ describe('the web page: opening a file and saving the script', function () {
     })()`);
     assert.strictEqual(await page.locator('#drop-target').isVisible(), false);
     assert.strictEqual(await drop(page, 'Makefile', bytesOf('all:\n\techo hi\n')), true);
-    await until('the kind', () => kindOf(page), (k) => k === 'File: Makefile');
+    await until('the kind', () => kindOf(page), (k) => k === 'makefile');
     assert.match(await text(page), /^all:\n\techo hi/);
     assert.strictEqual(await shownName(page), 'Makefile');
     // A file dropped elsewhere on the page is not shown by the browser in the page's place.
@@ -449,7 +449,7 @@ describe('the web page: opening a file and saving the script', function () {
     assert.strictEqual(await toast(page), 'Saved chosen.zsh.');
     assert.strictEqual(await shownName(page), 'chosen.zsh');
     // The name says zsh: the script is explained as zsh now, as a file of that name is in VS Code.
-    await until('the shell from the name', () => page.locator('#shell-top option:checked').innerText(), (v) => v === 'Auto (zsh)');
+    await until('the shell from the name', () => page.locator('#scope-shell-auto').textContent(), (v) => v === 'Auto: zsh (from the file name)');
     // The second save writes to the same file, without asking.
     await page.keyboard.insertText('echo two\n');
     await page.keyboard.press('Control+S');
@@ -458,7 +458,7 @@ describe('the web page: opening a file and saving the script', function () {
     // A file opened with the picker is written back to.
     await page.evaluate(`window.__nextOpen = new File(['FROM alpine\\nRUN ls\\n'], 'Containerfile')`);
     await page.keyboard.press('Control+O');
-    await until('the kind', () => kindOf(page), (k) => k === 'File: Dockerfile');
+    await until('the kind', () => kindOf(page), (k) => k === 'dockerfile');
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+End');
     await page.keyboard.insertText('CMD ["sh"]');
@@ -469,7 +469,7 @@ describe('the web page: opening a file and saving the script', function () {
     await page.evaluate('window.__nextOpen = undefined');
     await page.keyboard.press('Control+O');
     await page.waitForTimeout(200);
-    assert.strictEqual(await kindOf(page), 'File: Dockerfile');
+    assert.strictEqual(await kindOf(page), 'dockerfile');
     // A refused permission: nothing is written, and the toast says so; the mark stays.
     await page.evaluate('window.__refuseWrite = true');
     await page.keyboard.insertText('\n');
@@ -497,14 +497,24 @@ describe('the web page: opening a file and saving the script', function () {
         await until('the mark', () => page.title(), (t) => t.startsWith('●'));
         const seen = `${locale} ${width}`;
         assert.strictEqual(await page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true, seen);
-        // The name shows at every width in the editor's header, its stem cut, its extension and ● before ⋯.
+        // The name shows in the editor's header, its stem cut, its extension and ● before ⋯; at 320 px the header has
+        // no room for it beside the chip (the chip's last form): it is only the menu's first row, with its ●.
+        const inHeader = width > 320;
+        assert.strictEqual(await page.locator('#ed-head').getAttribute('data-name'), inHeader ? 'shown' : 'menu', seen);
         const label = await page.locator('#file-name').evaluate((el) => {
           const stem = el.querySelector('#file-name-stem')!;
           return { shown: el.getBoundingClientRect().width > 0, right: el.getBoundingClientRect().right, cut: stem.scrollWidth > stem.clientWidth, dot: !(el.querySelector('#file-dot') as unknown as { hidden: boolean }).hidden };
         });
-        assert.deepStrictEqual([label.shown, label.cut, label.dot], [true, true, true], seen);
+        assert.deepStrictEqual([label.shown, label.cut || !inHeader, label.dot], [inHeader, true, true], seen);
         const more = (await page.locator('#ed-more').boundingBox())!;
         assert.ok(label.right <= more.x, `${seen}: ${JSON.stringify(label)} ${JSON.stringify(more)}`);
+        if (!inHeader) {
+          await page.locator('#menu-open').click();
+          assert.strictEqual(await page.locator('#menu-file-name').textContent(), long, seen);
+          assert.strictEqual(await page.locator('#menu-file-dot').isVisible(), true, seen);
+          await page.locator('#menu-close').click();
+          await until('the menu closed', () => page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open), (v) => !v);
+        }
         const bar = await page.evaluate('document.querySelector(".top").getBoundingClientRect().height') as number;
         assert.ok(bar <= 49, `${seen}: ${bar}`);
         await page.locator('#menu-open').click();
@@ -524,7 +534,7 @@ describe('the web page: opening a file and saving the script', function () {
     const { ctx, page } = await open([NO_PICKERS]);
     await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
     assert.strictEqual(await drop(page, 'Dockerfile', bytesOf(DOCKERFILE)), true);
-    await until('the kind', () => kindOf(page), (k) => k === 'File: Dockerfile');
+    await until('the kind', () => kindOf(page), (k) => k === 'dockerfile');
     await page.locator('#share').click();
     const url = await until('the link', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.startsWith(`${base}#`));
     assert.strictEqual(await page.evaluate('location.hash'), '');
@@ -533,7 +543,7 @@ describe('the web page: opening a file and saving the script', function () {
     await other.page.goto(url);
     await other.page.reload();
     await until('the shared Dockerfile', () => text(other.page), (t) => t.trim() === DOCKERFILE.trim());
-    assert.strictEqual(await kindOf(other.page), 'File: Dockerfile');
+    assert.strictEqual(await kindOf(other.page), 'dockerfile');
     // A shared script is not the user's unsaved work... until it is edited.
     assert.strictEqual(await other.page.locator('#file-name').evaluate((b) => b.classList.contains('draft')), true);
     assert.strictEqual(await drop(other.page, 'x.sh', bytesOf('echo x\n')), true);

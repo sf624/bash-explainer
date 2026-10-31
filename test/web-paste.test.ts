@@ -2,7 +2,7 @@
 // (test/support/site.ts). Skipped when no browser can start, unless $BASH_EXPLAINER_BROWSER is set (as in CI).
 import * as assert from 'assert';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
-import { openSite, pickKind, toastText, until } from './support/site';
+import { kindChosen, openSite, pickKind, toastText, until } from './support/site';
 
 const DOCKERFILE = 'FROM alpine:3.20\nRUN apk add --no-cache curl\nCMD ["sh"]\n';
 const MAKEFILE = 'all: build\n\nbuild:\n\tgo build ./...\n';
@@ -48,7 +48,7 @@ describe('the web page: the file kind of a pasted script', function () {
     return { ctx, page, errors };
   }
   const text = (page: Page) => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
-  const kindOf = (page: Page) => page.locator('#kind').getAttribute('aria-label');
+  const kindOf = (page: Page) => kindChosen(page);
 
   it('switches the kind when a Dockerfile replaces the sample, keeps the text, says so in a polite toast, and Undo goes back', async () => {
     const { ctx, page, errors } = await open();
@@ -58,14 +58,14 @@ describe('the web page: the file kind of a pasted script', function () {
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await paste(page, DOCKERFILE);
-    await until('the kind', () => kindOf(page), (k) => k === 'File: Dockerfile');
+    await until('the kind', () => kindOf(page), (k) => k === 'dockerfile');
     assert.strictEqual((await text(page)).trim(), DOCKERFILE.trim());
     assert.strictEqual(await toastText(page), 'Detected: Dockerfile');
     assert.strictEqual(await toast.locator('.status-action').innerText(), 'Undo');
     assert.strictEqual(await page.locator('#kind-dialog[open]').count(), 0);
     // Undo: the kind goes back, the text stays.
     await page.locator('.status-action').click();
-    await until('the kind back', () => kindOf(page), (k) => k === 'File: Shell script');
+    await until('the kind back', () => kindOf(page), (k) => k === 'shell');
     assert.strictEqual((await text(page)).trim(), DOCKERFILE.trim());
     assert.strictEqual(await toast.innerText(), '');
     assert.deepStrictEqual(errors, []);
@@ -77,7 +77,7 @@ describe('the web page: the file kind of a pasted script', function () {
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await paste(page, DOCKERFILE);
-    await until('the kind', () => kindOf(page), (k) => k === 'File: Dockerfile');
+    await until('the kind', () => kindOf(page), (k) => k === 'dockerfile');
     await until('the toast', () => toastText(page), (t) => t === 'Detected: Dockerfile');
     // F6 to the explanation, F6 to the toast: where a keyboard user goes.
     await page.keyboard.press('F6');
@@ -86,7 +86,7 @@ describe('the web page: the file kind of a pasted script', function () {
     await page.keyboard.press('F6');
     await until('the Undo', () => page.evaluate('document.activeElement?.id'), (id) => id === 'status-action');
     await page.keyboard.press('Enter');
-    await until('the kind back', () => kindOf(page), (k) => k === 'File: Shell script');
+    await until('the kind back', () => kindOf(page), (k) => k === 'shell');
     assert.strictEqual(await page.evaluate("document.activeElement?.classList.contains('cm-content')"), true, 'the focus in the editor');
     assert.deepStrictEqual(errors, []);
     await ctx.close();
@@ -99,19 +99,19 @@ describe('the web page: the file kind of a pasted script', function () {
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Control+V');
-    await until('the kind', () => kindOf(page), (k) => k === 'File: Makefile');
+    await until('the kind', () => kindOf(page), (k) => k === 'makefile');
     // (innerText doubles an empty line's line break.)
     assert.strictEqual((await text(page)).replace(/\n+/g, '\n').trim(), MAKEFILE.replace(/\n+/g, '\n').trim());
     // A drop of a whole script: a Dockerfile now.
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Delete');
     await drop(page, DOCKERFILE);
-    await until('the kind', () => kindOf(page), (k) => k === 'File: Dockerfile');
+    await until('the kind', () => kindOf(page), (k) => k === 'dockerfile');
     // A script that says nothing clear keeps the kind.
     await page.keyboard.press('Control+A');
     await paste(page, 'echo hello\nls -l\n');
     await until('the paste', () => text(page), (t) => t.trim() === 'echo hello\nls -l');
-    assert.strictEqual(await kindOf(page), 'File: Dockerfile');
+    assert.strictEqual(await kindOf(page), 'dockerfile');
     await ctx.close();
   });
 
@@ -125,7 +125,7 @@ describe('the web page: the file kind of a pasted script', function () {
     await until('the paste', () => text(page), (t) => t.includes('RUN ls'));
     // Let a deferred change of kind happen, if there were one.
     await page.waitForTimeout(300);
-    assert.strictEqual(await kindOf(page), 'File: Shell script');
+    assert.strictEqual(await kindOf(page), 'shell');
     assert.strictEqual(await page.locator('#status').innerText(), '');
     // The kind chosen by hand (the user keeps their script), then a whole paste: detected again.
     await pickKind(page, 'yaml');
@@ -133,7 +133,7 @@ describe('the web page: the file kind of a pasted script', function () {
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await paste(page, MAKEFILE);
-    await until('the kind', () => kindOf(page), (k) => k === 'File: Makefile');
+    await until('the kind', () => kindOf(page), (k) => k === 'makefile');
     await ctx.close();
   });
 
@@ -148,12 +148,12 @@ describe('the web page: the file kind of a pasted script', function () {
     // Into the untouched sample, without selecting it: the sample was not the user's.
     await page.locator('.cm-line').nth(3).click();
     await paste(page, MAKEFILE);
-    await until('the kind', () => kindOf(page), (k) => k === 'File: Makefile');
+    await until('the kind', () => kindOf(page), (k) => k === 'makefile');
     // Into nothing.
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Delete');
     await paste(page, '#!/usr/bin/env bats\n@test "x" {\n  run true\n}\n');
-    await until('the kind', () => kindOf(page), (k) => k === 'File: bats');
+    await until('the kind', () => kindOf(page), (k) => k === 'bats');
     assert.deepStrictEqual(errors, []);
     await ctx.close();
   });

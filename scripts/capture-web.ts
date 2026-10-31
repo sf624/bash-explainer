@@ -1,6 +1,7 @@
 // Takes the screenshots of a step of docs/design/chrome-redesign.md: builds the web page, serves it on 127.0.0.1,
 // and captures it at 390 (a phone), 640 and 1280 px, in English and Japanese, in these states: the page with the
-// sample loaded ("page"), the menu open ("menu"), the settings open ("settings") and the file kinds' list ("kind"),
+// sample loaded ("page"), the menu open ("menu"), the settings open ("settings") and the popover of the file type and
+// the shell ("kind"),
 // in the light theme, or in the themes asked for (--themes light,dark). The phone's first-run tip of the read-mode
 // switch is closed before the shots, so that they are clean; "tip" is a state of its own that shoots it first.
 // Each visual PR goes with a "before" set (taken on main) and an "after" set (taken on the branch), and the author
@@ -10,7 +11,7 @@
 //          [--states page,menu] [--script FILE] [--line N] [--channel next] [--phone-scale 1.3]
 //   --out     where the PNGs go (required; created when missing). Each is DIR/NAME-WIDTH-LANG-THEME-STATE.png.
 //   --themes  light (the default), dark: the browser's colour scheme, which the page follows.
-//   --states  page, menu, settings, kind (the file kinds' list, where the page has one: not on a narrow page), tip (the phone's first-run tip; a phone only).
+//   --states  page, menu, settings, kind (the popover of the file type and the shell; a sheet on a narrow page), tip (the phone's first-run tip; a phone only).
 //   --name    the file name prefix, default "shot" (use "before" and "after").
 //   --script  a file to put into the editor instead of the sample (the page's own sample otherwise).
 //   --line    the line (from 1) to put the cursor on, from the keyboard, so the panel explains it (line 8 of the sample is long).
@@ -129,10 +130,10 @@ async function main(): Promise<void> {
             await page.keyboard.press('Escape');
             await page.locator('#settings-dialog').waitFor({ state: 'hidden' });
           }
-          // (On a narrow page the file kind is chosen in the menu: no list to shoot.)
-          if (states.includes('kind') && (await page.locator('#kind').isVisible())) {
-            await page.locator('#kind').click();
-            await page.locator('#kind-list').waitFor({ state: 'visible' });
+          // (The chip of the file type and the shell: its popover, a sheet on a narrow page.)
+          if (states.includes('kind') && (await page.locator('#scope-chip').isVisible())) {
+            await page.locator('#scope-chip').click();
+            await page.locator('#scope-pop').waitFor({ state: 'visible' });
             await shot('kind');
             await page.keyboard.press('Escape');
           }

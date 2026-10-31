@@ -21,11 +21,11 @@ describe('the web page: the menu and the settings sheet', function () {
     await page.goto(base);
     await page.locator('.cm-line').first().waitFor();
     const open = () => page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open);
-    // On a phone the top bar has the menu, the logo and name, read mode and the settings; the file kind, the link and
-    // the rest are in the menu. The explanation's controls are in the panel's header.
+    // On a phone the top bar has the menu, the logo and name, read mode and the settings; the link and the rest are in
+    // the menu, the file type and the shell in the editor's header. The explanation's controls are in the panel's header.
     const shown = async (ids: string[]) => Promise.all(ids.map(async (id) => [id, await page.locator(id).isVisible()]));
-    assert.deepStrictEqual(await shown(['#kind', '.brand', '#collapse', '#tab-ref', '#copy-md', '#share', '#settings-open', '#menu-open', '#ed-more', '#github', '#install']),
-      [['#kind', false], ['.brand', true], ['#collapse', true], ['#tab-ref', true], ['#copy-md', true], ['#share', false], ['#settings-open', true], ['#menu-open', true], ['#ed-more', true], ['#github', false], ['#install', false]]);
+    assert.deepStrictEqual(await shown(['#scope-chip', '.brand', '#collapse', '#tab-ref', '#copy-md', '#share', '#settings-open', '#menu-open', '#ed-more', '#github', '#install']),
+      [['#scope-chip', true], ['.brand', true], ['#collapse', true], ['#tab-ref', true], ['#copy-md', true], ['#share', false], ['#settings-open', true], ['#menu-open', true], ['#ed-more', true], ['#github', false], ['#install', false]]);
     assert.strictEqual(await page.locator('.top :is(#collapse, #tab-ref, #copy-md)').count(), 0);
     assert.strictEqual(await page.locator('#menu-open').getAttribute('aria-label'), 'Menu');
     assert.strictEqual(await page.locator('#menu-share').innerText(), 'Copy a link to this script');
@@ -37,7 +37,7 @@ describe('the web page: the menu and the settings sheet', function () {
     assert.strictEqual(await page.locator('#menu-settings').count(), 0);
     const sheet = await until('the sheet in place', async () => (await page.locator('#drawer').boundingBox())!, (b) => Math.abs(b.x) < 0.5);
     assert.ok(sheet.width < 390, JSON.stringify(sheet));
-    for (const id of ['#kind-menu', '#lang', '#theme', '#menu-sample', '#menu-share', '#menu-install', '#privacy', '#version', '#notices', '#drawer a[href="LICENSE.txt"]', '#drawer a[href="https://github.com/sf624/bash-explainer"]']) {
+    for (const id of ['#menu-scope', '#lang', '#theme', '#menu-sample', '#menu-share', '#menu-install', '#privacy', '#version', '#notices', '#drawer a[href="LICENSE.txt"]', '#drawer a[href="https://github.com/sf624/bash-explainer"]']) {
       assert.strictEqual(await page.locator(id).isVisible(), true, id);
     }
     // The release page has no version switch and no link to the development version.

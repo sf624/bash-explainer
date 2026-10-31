@@ -56,15 +56,14 @@ export function popover(button: HTMLElement, pop: HTMLElement): Popover {
     const hadFocus = pop.contains(document.activeElement);
     pop.hidden = true;
     button.setAttribute('aria-expanded', 'false');
-    openPops.delete(closer);
+    closed(closer);
     if (focusButton && hadFocus) focusBack(button);
   };
   const closer = () => close(false);
   const open = () => {
-    for (const other of [...openPops]) other();
+    opening(closer);
     pop.hidden = false;
     button.setAttribute('aria-expanded', 'true');
-    openPops.add(closer);
     items()[0]?.focus();
   };
   button.addEventListener('click', () => (pop.hidden ? open() : close(true)));
@@ -103,6 +102,20 @@ export function popover(button: HTMLElement, pop: HTMLElement): Popover {
     get open() { return !pop.hidden; },
     close: () => close(true),
   };
+}
+
+/**
+ * A popover of the page opens: the others close first, so that one is open at a time (`close` closes this one without
+ * moving the focus). Its own closing calls `closed`.
+ */
+export function opening(close: () => void): void {
+  for (const other of [...openPops]) if (other !== close) other();
+  openPops.add(close);
+}
+
+/** A popover of the page has closed. */
+export function closed(close: () => void): void {
+  openPops.delete(close);
 }
 
 /** Closes every popover (a dialog opens). */

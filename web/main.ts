@@ -39,7 +39,8 @@ import { ProblemStrip, roomAboveStrip, watchStrip } from './problem-list';
 import { CopyState, DEFAULT_THEME, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
 import { openingReady } from './opening';
-import { setUpFocusRings } from './popover';
+import { closePopovers, setUpFocusRings } from './popover';
+import { ScopeControl } from './scope-chip';
 import { SettingsDialog } from './settings-dialog';
 import { takeLinkFromAddress, inflate, readHash, scriptParams } from './share';
 import { clearStoredData, readStored, removeStored, STORAGE_KEYS, writeStored } from './storage';
@@ -104,6 +105,10 @@ const fileState = new FileState<FileSystemFileHandle>();
  */
 const scriptName = () => fileState.name(kindInfo(kind).fileName);
 let shown: { explanation: LineExplanation; line: number } | undefined;
+/** The chip of the file type and the shell in the editor's header (web/scope-chip.ts); the yq choices of the line, as the panel offers them; the shell reading the settings were drawn with. */
+let scope: ScopeControl | undefined;
+let yqLine: { options?: readonly (readonly string[])[]; value: string } = { value: 'auto' };
+let readingShown = '';
 
 const analyzer = () => analyzers.get(lang) ?? analyzers.set(lang, new Analyzer(lang)).get(lang)!;
 
@@ -192,7 +197,6 @@ const panel = new PanelBridge({
   theme: () => theme,
   update: updatePanel,
   copy: copyMarkdown,
-  choose: setChoice,
   // The compare page keeps the choice for both copies; the page has one script: the choice in the panel's header is the setting.
   override: mode.panel ? (key, value) => toParent({ type: 'bx-choice', key, value }) : setChoice,
   openSettings: () => settingsDialog?.show(),
@@ -217,11 +221,19 @@ function updatePanel(): void {
   const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: needsReading(panel.panelState()) });
   shown = { explanation, line };
   announcer?.shown(explanation, line, lang);
-  panel.show(panelUpdate({
+  const update = panelUpdate({
     lang, explanation, file: scriptName(), line, lineText: doc.lines[line] ?? '', doc, wrap: settings['editor.wrap'],
     choice: choice(), detected: s.detected, placement: settings['examples.placement'],
     animations: settings['panel.animations'], marks: lineMarks(problemsShown, line), web: true, state: panel.panelState(),
-  }));
+  });
+  panel.show(update);
+  yqLine = { options: update.dialect.yqs, value: update.dialect.yq };
+  scope?.draw();
+  // (The Shell setting says the shell the script reads as now: decision 12.)
+  if (JSON.stringify(s.detected) !== readingShown) {
+    readingShown = JSON.stringify(s.detected);
+    settingsDialog?.refresh();
+  }
 }
 
 /** Writes to the clipboard; false when the browser refuses (a write outside a click's own turn, a policy). */
@@ -344,15 +356,9 @@ function applyLanguage(): void {
   $<HTMLSelectElement>('theme').replaceChildren(...THEMES.map((x) => new Option(t.themes[x], x, false, x === theme)));
   showChannel(lang);
   $<HTMLSelectElement>('lang').value = lang;
+  // (The compare page's picker of the file kind; the editor page's chip.)
   kindPicker?.set(KINDS.map((k) => ({ value: k.kind, name: t.kinds[k.kind] ?? k.name, short: SHORT_KIND[k.kind] })), kind, t.kind);
-  // The same choice as a select in the menu, for a phone.
-  const menuKind = document.getElementById('kind-menu') as HTMLSelectElement | null;
-  if (menuKind) {
-    menuKind.replaceChildren(...KINDS.map((k) => new Option(t.kinds[k.kind] ?? k.name, k.kind)));
-    menuKind.value = kind;
-    menuKind.setAttribute('aria-label', t.kind);
-    put('kind-label', t.kind);
-  }
+  scope?.draw();
 }
 
 // The colours are CSS variables (theme.css): the attribute switches them, the editor and the panel follow. The menu's
@@ -426,6 +432,7 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   theme: () => theme,
   setTheme,
   pane: () => document.querySelector<HTMLElement>('main > .source'),
+  shellReading: () => shells().detected,
 });
 
 /**
@@ -537,10 +544,6 @@ const resetProblems = splitElement && mode.hasChrome
 // The cursor's line stays in view when the editor's pane changes size (the phone turned, the divider moved).
 narrow.addEventListener('change', () => editor.keepCursorInView());
 
-on('kind-menu', 'change', (e) => {
-  chooseKind((e.target as HTMLSelectElement).value as Kind);
-});
-
 /**
  * Whether the editor holds no text of the user's: nothing, or a sample exactly as the page loads it. Read from
  * the text itself rather than from a record of edits, so that it also holds after an undo back to a sample.
@@ -561,8 +564,6 @@ function chooseKind(k: Kind): void {
 /** Makes `k` the file kind, with the text as it is (`then` may change it before the script is explained again). */
 function setKind(k: Kind, then?: () => void): void {
   kind = k;
-  const menuKind = document.getElementById('kind-menu') as HTMLSelectElement | null;
-  if (menuKind) menuKind.value = k;
   kindPicker?.show(k);
   editor.setKind(kind);
   showFile();
@@ -604,6 +605,7 @@ function askAboutSample(k: Kind): void {
   // the choice is not under it.
   const back = document.activeElement as HTMLElement | null;
   drawer?.close();
+  closePopovers();
   void askReplaceWithSample({ title: t.askTitle(name), message: t.askMessage(name), replace: t.askReplace, keep: t.askKeep }, back, focusHome)
     .then((replace) => {
       if (replace) loadSample(true);
@@ -735,6 +737,12 @@ const head = withFiles ? new EditorHead({
   tipShown: () => document.getElementById('readtip')?.hidden === false,
   status: (text) => status('note', text),
 }) : undefined;
+scope = withFiles ? new ScopeControl({ lang: () => lang, kind: () => kind, shells, yq: () => yqLine, chooseKind, choose: setChoice }) : undefined;
+// The menu's row opens the same popover.
+on('menu-scope', 'click', () => {
+  drawer?.close();
+  scope?.open();
+});
 // Focus rings follow the input: none on a control given the focus back after a pointer (web/popover.ts).
 setUpFocusRings();
 
@@ -754,6 +762,8 @@ function showFile(): void {
   $('menu-save-name').textContent = v.name;
   head?.show(fileState.handle() ? t.saveTo(v.name) : t.saveAs(v.name));
   document.title = fileState.named() ? `${v.dot ? '● ' : ''}${v.name} — Bash Explainer` : 'Bash Explainer';
+  // (A name of another length leaves the chip another room.)
+  scope?.draw();
 }
 
 /**

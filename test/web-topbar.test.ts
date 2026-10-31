@@ -110,19 +110,16 @@ describe('the web page: the top bar', function () {
       // The header sits on the frame, as wide as it.
       const [head, frame] = await page.evaluate(`['#panel-head', '#panel'].map((s) => { const r = document.querySelector(s).getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.bottom), Math.round(r.top)]; })`) as number[][];
       assert.deepStrictEqual([head[0], head[1], head[2]], [frame[0], frame[1], frame[3]], `${width}px`);
-      assert.strictEqual(await page.locator('#shell-top').isVisible(), wide);
       // Still one row of 48px, with nothing hanging out of the bar.
       const bar = (await page.evaluate('(() => { const t = document.querySelector(".top"); return [t.getBoundingClientRect().height, t.scrollWidth <= t.clientWidth]; })()')) as [number, boolean];
       assert.deepStrictEqual(bar, [48, true]);
       const names = await page.evaluate('["collapse", "copy-md"].map((id) => [document.getElementById(id).getAttribute("aria-label"), document.getElementById(id).title])');
       assert.deepStrictEqual(names, [['Collapse all', 'Collapse all'], ['Copy as Markdown', 'Copy as Markdown']]);
-      if (wide) assert.strictEqual(await page.locator('#shell-top').getAttribute('aria-label'), 'Shell');
 
       // Shell: the setting, as the panel's select was.
       await setShell(page, 'dash');
       await until('the problems for dash', () => problemList(page), (t) => t.includes('dbracket'));
       assert.strictEqual(await currentShell(page), 'dash');
-      assert.strictEqual(await page.locator('#shell-top').inputValue(), 'dash');
 
       // Collapse all, then Expand all.
       const icon = (sel: string) => page.evaluate(`(() => { const s = document.querySelector('${sel} svg'); return [s.dataset.icon, s.querySelectorAll('path').length]; })()`) as Promise<[string, number]>;
@@ -179,7 +176,7 @@ describe('the web page: the top bar', function () {
       await until('ja names', async () => (await page.locator('#copy-md').getAttribute('aria-label')) ?? '', (t) => t === 'Markdown でコピー');
       assert.strictEqual(await page.locator('#copy-md').getAttribute('title'), 'Markdown でコピー');
       assert.deepStrictEqual(await page.evaluate(`['#collapse-word', '#copy-md-word', '#tab-ref'].map((s) => document.querySelector(s).firstChild.textContent)`), ['折りたたむ', 'コピー', '早見表']);
-      assert.strictEqual(await page.locator('#shell-label').textContent(), 'シェル');
+      assert.strictEqual(await page.locator('#menu-scope-label').textContent(), 'ファイルの種類とシェル…');
       await ctx.close();
     }
   });

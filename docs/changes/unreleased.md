@@ -84,7 +84,7 @@ It follows the editor: on the web page, the setting **Wrap long lines** (`editor
 - A name is at most 255 characters; `.` and `..` are refused. Enter that confirms a conversion of an input method (Japanese, for one) no longer ends the rename. A rename to `test.bats`, `Makefile` or `x.py` changes the file type, as opening a file of that name does.
 - When the browser refuses to copy (Safari can, for a link), the toast says so.
 - A click on the name, or ⋯ › Rename…, turns it into a field: Enter or a click elsewhere renames, Escape keeps the old name. A name ending in `.zsh` explains the script as zsh, as a file of that name does. The menu's first row is the name too, and renames the same way.
-- Copy a link is a button with words in the top bar. After a copy it reads "✓ Copied" for about 2 s, and a screen reader hears "Link copied"; its tooltip says that the script is in the part after `#`, which browsers do not send to the server. Before, a toast said all of it. Under 900 px it shows its icon only, until the file type and the view leave the top bar.
+- Copy a link is a button with words in the top bar. After a copy it reads "✓ Copied" for about 2 s, and a screen reader hears "Link copied"; its tooltip says that the script is in the part after `#`, which browsers do not send to the server. Before, a toast said all of it. Under 900 px it showed its icon only until the file type and the view left the top bar; it now has its words at every width beside the editor.
 - Install for VS Code shows from 1100 px (before, from 901 px).
 - Clear the editor empties it, and the toast offers Undo. An empty editor shows Paste a script, Open a file… and Load the sample, and that a file can be dropped there.
 - On a first visit, a row over the sample says "This is a sample: put the cursor on any line.", with Use my own script and Open a file…. It stays closed once closed or used.
@@ -108,6 +108,16 @@ Each description shows at most two lines, with "More" right after the last word 
 Side by side, the settings open from the left, over the editor, and are never wider than the editor's pane: the explanation stays in view, and a change shows in it at once, and you can scroll the explanation and click in it while the settings are open (a click there leaves them open; Esc, × and Close shut them). Before, they opened from the right, over the explanation they change. In the narrow layout (a phone, or a window up to 767 px wide) they take the whole screen, as before, and a change shows in the explanation when they close.
 
 The settings come back as they were left, for as long as the page is open: the sections unfolded, the search and the place they were scrolled to. Before, they opened at the top every time.
+
+### The file type and the shell on the web page
+
+One button in the editor's header, before ⋯, shows the file type and the shell: "Shell script · bash (auto)" (「シェルスクリプト · bash（自動）」). "(auto)" means that the shell is read from the script: a ShellCheck directive, the `#!` line, the file name, or bash by default. A shell you chose shows without it ("Shell script · zsh"). Before, the file type was a picker in the top bar (in the menu on a phone), and the shell a select in the top bar from 1200 px wide, else in the menu.
+
+- A click opens one popover with two lists, **File type** and **Shell**, and **yq** under Shell when the cursor's line runs yq. The Shell list starts with "Auto: bash (from #!)" (or "(from the file name)", "(from a ShellCheck directive)", "(default)"). On a phone, and in the narrow layout, it is a sheet from the bottom with 44 px rows and **Done**; a tap beside it or the back gesture closes it.
+- The checked file type has the focus when it opens. The arrow keys, Home and End move in a list without choosing; Enter, Space or a click chooses; Tab goes to the other list; Escape closes it, and the focus goes back to the button. A choice keeps it open, and the explanation follows at once; a file type over your own script asks first, as before.
+- Where the header has less room, the button gets shorter, step by step: without "(auto)", then "Script · bash", then Open and Save as icons, then "bash" alone, and last the file name leaves the header (it stays the menu's first row). The name keeps about a dozen characters before the button gives way. Before, Open and Save became icons at a fixed width of the editor's pane (481 px).
+- The menu's Script group has **File type and shell…**, with the current choice under it; it opens the same lists.
+- Settings › Checks › Shell says what Auto reads now: "Auto (now: bash, from #!)" (「自動（今: bash、#! 行から）」). Before, it said how Auto decides ("Auto: Detect from the shebang (#!/bin/sh…), a # shellcheck shell= directive or the file name; bash when unknown"), not what it found.
 
 ### The explanation's header on the web page
 

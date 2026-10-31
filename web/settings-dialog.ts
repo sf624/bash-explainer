@@ -9,7 +9,9 @@
 // a modal dialog and takes the whole screen (page.css).
 // It comes back as it was left: the sections open, the search and the scroll (docs/design/chrome-redesign.md, C6).
 import { closeSheet, narrow, reopenSheet } from './layout';
+import type { ShellReading } from '../src/dialect';
 import { Lang } from '../src/i18n';
+import { autoShellText } from '../src/messages-shell';
 import { checkValue, exportSettings, Ignored, importSettings, parseJsonc, Settings, SettingSpec, SettingText, SETTINGS, settingsFor } from '../src/settings';
 import { cutPoints, foldable, lastFit, pageSections, sectionOpen, SETTINGS_SECTIONS, SettingsSection, settingMatches } from '../src/ui/settingsPage';
 import { Theme, THEMES } from './protocol';
@@ -36,6 +38,8 @@ export interface SettingsHost {
   setTheme(t: Theme): void;
   /** The editor's pane, which the sheet covers side by side and is never wider than. */
   pane(): HTMLElement | null;
+  /** The shell the script reads as, and where from: the Shell setting's "Auto (now: bash, from #!)". */
+  shellReading(): ShellReading | undefined;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -682,9 +686,10 @@ export class SettingsDialog {
       // Each value in words; its own name before them only with "Show VS Code setting names".
       const labels: Record<string, string> = { ...text.values, ...(spec.key === 'language' ? { auto: t.browser } : {}) };
       const words = (v: string) => (labels[v] && labels[v] !== v ? labels[v].replace(/`/g, '') : v);
-      // "Auto" is said first (the words after it only tell what it does), until the Shell setting says what it found
-      // (docs/design/chrome-redesign.md, decision 12).
-      const label = (v: string) => (keys && words(v) !== v ? `${v} — ${words(v)}` : v === 'auto' && spec.key !== 'language' ? `${t.auto}: ${words(v)}` : words(v));
+      // "Auto" is said first (the words after it only tell what it does); the Shell setting's says the shell the script
+      // reads as now, and where from (docs/design/chrome-redesign.md, decision 12).
+      if (spec.key === 'shell') labels.auto = autoShellText(lang, 'setting', this.host.shellReading());
+      const label = (v: string) => (keys && words(v) !== v ? `${v} — ${words(v)}` : v === 'auto' && spec.key !== 'language' && spec.key !== 'shell' ? `${t.auto}: ${words(v)}` : words(v));
       const select = el('select', { id });
       describe(select);
       select.append(...spec.enum!.map((v) => new Option(label(v), v, false, v === value)));
