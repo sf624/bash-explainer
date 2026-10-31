@@ -84,7 +84,7 @@ describe('Bash Explainer in VS Code', function () {
     assert.strictEqual(doc.lineAt(1).text, 'if [ -f "$1" ]; then echo yes; fi');
   });
 
-  it('lists every warning and caveat of the explanations as a problem, with its level, range and code, and no plain fact', async () => {
+  it('lists every error, warning and caveat of the explanations as a problem, with its level, range and code, and no plain fact', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'shellscript', content: '#!/bin/bash\nf() {\n  local x=$(false)\n}\n[ -f a\nexit 300\n' });
     await open(doc);
     const mine = (d: vscode.Diagnostic[]) => d.filter((x) => x.source === 'Bash Explainer');
@@ -92,7 +92,7 @@ describe('Bash Explainer in VS Code', function () {
     const at = (x: vscode.Diagnostic) => [x.code, x.severity, x.range.start.line, x.range.start.character, x.range.end.line, x.range.end.character];
     assert.deepStrictEqual(diagnostics.map(at), [
       ['declaration-masks-status', vscode.DiagnosticSeverity.Information, 2, 2, 2, 18],
-      ['bracket-missing-close', vscode.DiagnosticSeverity.Warning, 4, 0, 4, 6],
+      ['bracket-missing-close', vscode.DiagnosticSeverity.Error, 4, 0, 4, 6],
     ]);
     // `diagnostics.ignore` leaves one out.
     await config().update('diagnostics.ignore', ['declaration-masks-status'], vscode.ConfigurationTarget.Global);

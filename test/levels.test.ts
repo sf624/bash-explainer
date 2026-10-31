@@ -31,6 +31,7 @@ describe('the level table', () => {
   it('counts the levels the screen reader\'s summary says', () => {
     assert.deepStrictEqual(levelCounts(['note', 'warning', 'info', 'warning'], 'en'), ['2 warnings']);
     assert.deepStrictEqual(levelCounts(['warning', 'error'], 'en'), ['1 error', '1 warning']);
+    assert.deepStrictEqual(levelCounts(['error', 'error'], 'en'), ['2 errors']);
     assert.deepStrictEqual(levelCounts(['error', 'error', 'warning'], 'ja'), ['エラー 2 件', '警告 1 件']);
     assert.deepStrictEqual(levelCounts(['warning'], 'en'), ['1 warning']);
     assert.deepStrictEqual(levelCounts(['warning', 'warning'], 'ja'), ['警告 2 件']);
