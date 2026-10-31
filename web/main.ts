@@ -6,7 +6,7 @@
 // This file holds the page's state (language, file kind, settings, theme) and wires the parts together:
 // web/editor.ts (the script), web/panel-bridge.ts (the panel's frame), web/compare.ts (the compare page),
 // web/share.ts (links), web/storage.ts (what the browser keeps), web/layout.ts (dividers and sheets),
-// web/file-io.ts (opening a file, saving to one).
+// web/file-io.ts (opening a file, saving to one), web/editor-head.ts (the editor's header, its hint and empty block).
 import { undo } from '@codemirror/commands';
 import { ViewUpdate } from '@codemirror/view';
 import { Analyzer, LineExplanation } from '../src/analyzer';
@@ -18,13 +18,18 @@ import { detectKind } from '../src/hosts/detect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { lineMarks, needsReading, panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
+import { fileNameView } from '../src/ui/fileName';
 import { editorAttributes, editorHint, isPaneKey, LineAnnouncer } from './a11y';
 import { CHANNEL, COMMIT, PR, UP, VERSION } from './build-info';
 import { Compare, receiveState, toParent } from './compare';
 import { $, on, put } from './dom';
 import { Editor } from './editor';
 import { drawIcons } from './icons';
-import { ChosenFile, chooseFile, decodeText, defaultName, fileContent, FileFormat, isMac, kindForFile, MAX_BYTES, PLAIN, saveText, withEol } from './file-io';
+import { confirmCopied, EditorHead, shortcut } from './editor-head';
+import { ChosenFile, chooseFile, decodeText, fileContent, FileFormat, isMac, kindForFile, MAX_BYTES, PLAIN, saveText, withEol } from './file-io';
+import { FileNameControl } from './file-name';
+import { linkWords, showMenuTexts } from './menu';
+import { showChannel } from './banner';
 import { ask, askReplaceWithSample } from './kind-dialog';
 import { closeSheet, narrow, reopenSheet, setUpEdgeSwipe, setUpProblems, setUpSheet, setUpSplitter } from './layout';
 import { mode } from './mode';
@@ -34,6 +39,7 @@ import { showProblems } from './problem-list';
 import { CopyState, Theme, THEMES } from './protocol';
 import { Kind, KINDS } from './samples';
 import { openingReady } from './opening';
+import { setUpFocusRings } from './popover';
 import { SettingsDialog } from './settings-dialog';
 import { takeLinkFromAddress, inflate, readHash, scriptParams } from './share';
 import { clearStoredData, readStored, removeStored, STORAGE_KEYS, writeStored } from './storage';
@@ -95,8 +101,11 @@ let file: { name: string; handle?: FileSystemFileHandle } | undefined;
  * too, so a CRLF file gets the `crlf` warning) and its BOM back.
  */
 let format: FileFormat = PLAIN;
-/** The name the explanations give the script: the file's, else the kind's (`script.sh`); a name ending in `.zsh` makes it zsh. */
-const fileName = () => file?.name ?? kindInfo(kind).fileName;
+/** The name given to the script by a rename before it was ever saved or opened; `renamed`: a file was renamed since it was saved. */
+let draftName: string | undefined;
+let renamed = false;
+/** The name the explanations give the script: the file's, else the name given, else the kind's (`script.sh`); a name ending in `.zsh` makes it zsh. */
+const fileName = () => file?.name ?? draftName ?? kindInfo(kind).fileName;
 let shown: { explanation: LineExplanation; line: number } | undefined;
 
 const analyzer = () => analyzers.get(lang) ?? analyzers.set(lang, new Analyzer(lang)).get(lang)!;
@@ -296,7 +305,7 @@ async function goWithScript(href: string): Promise<void> {
 function applyLanguage(): void {
   const t = TEXT[lang];
   document.documentElement.lang = lang;
-  put('tagline', mode.compare ? t.compareTagline : t.tagline);
+  if (mode.compare) put('tagline', t.compareTagline);
   put('install', t.install);
   put('readtip-text', t.readTip);
   document.getElementById('readtip-close')?.setAttribute('aria-label', t.close);
@@ -309,20 +318,18 @@ function applyLanguage(): void {
   put('menu-panes-label', t.toPanel);
   put('editor-hint', t.editorHint);
   editor.setLabels(editorAttributes(lang));
-  put('menu-open-key', shortcut('O'));
-  put('menu-save-key', shortcut('S'));
   document.getElementById('menu-open-file')?.setAttribute('title', t.openTip);
   document.getElementById('menu-save')?.setAttribute('title', t.saveTip);
   put('drop-title', t.dropTitle);
   put('drop-note', t.dropNote);
   showFile();
-  put('menu-share-label', t.share);
   put('menu-install-label', t.install);
   put('settings-label', t.settings);
-  put('drawer-title', t.menu);
+  showMenuTexts(lang);
+  head?.showTexts();
   panel.showActions();
   // The buttons drawn as icons say what they do to screen readers and in a tooltip.
-  for (const [id, name] of [['sample', t.sample], ['share', t.share], ['readmode', t.readMode], ['settings-open', t.settings], ['menu-open', t.menu], ['menu-close', t.close], ['github', t.github], ['splitter', t.resize], ['problems-resize', t.resizeProblems]]) {
+  for (const [id, name] of [['sample', t.sample], ['readmode', t.readMode], ['settings-open', t.settings], ['menu-open', t.menu], ['menu-close', t.close], ['github', t.github], ['splitter', t.resize], ['problems-resize', t.resizeProblems]]) {
     const el = document.getElementById(id);
     el?.setAttribute('aria-label', name);
     if (!id.endsWith('resize') && id !== 'splitter') el?.setAttribute('title', name);
@@ -336,41 +343,7 @@ function applyLanguage(): void {
   // shows, the development page its commit. The URL decides which is selected.
   put('theme-label', t.theme);
   $<HTMLSelectElement>('theme').replaceChildren(...THEMES.map((x) => new Option(t.themes[x], x, false, x === theme)));
-  // The release page has no version switch (the build leaves it out); the development and preview pages do.
-  put('channel-label', t.version);
-  $<HTMLSelectElement>('channel')?.replaceChildren(
-    new Option(t.release, 'release', false, false),
-    new Option(CHANNEL === 'next' ? `${t.development}, ${COMMIT})` : `${t.development})`, 'next', false, CHANNEL === 'next'),
-    // A preview has its own entry, the current one; the other pages do not list previews.
-    ...(CHANNEL === 'pr' ? [new Option(`${t.pr} #${PR}, ${COMMIT}`, 'pr', false, true)] : []),
-  );
-  if (!document.getElementById('channel-banner')) {
-    // The compare page has no banner.
-  } else if (CHANNEL !== 'release') {
-    const code = Object.assign(document.createElement('code'), { textContent: COMMIT });
-    const release = $<HTMLAnchorElement>('banner-release');
-    // The pages sit at /, /next/ and /pr/N/.
-    release.href = UP;
-    release.textContent = t.toRelease;
-    // From a preview, main is the other copy; from main, the release.
-    $('banner-compare').textContent = t.compareLink[CHANNEL];
-    if (CHANNEL === 'next') {
-      // Ja reads "main の abc1234 からビルドしています。": the commit sits in the middle of the sentence.
-      $('banner-text').replaceChildren(t.banner + ' ', code, ' ' + t.bannerTail);
-    } else {
-      // En reads "Preview of pull request #12 (commit abc1234). Not released."; ja "プルリクエスト #12（コミット abc1234）のプレビュー。未リリース。"
-      const open = lang === 'ja' ? '（コミット ' : ' (commit ';
-      const close = lang === 'ja' ? '）' : '). ';
-      $('banner-text').replaceChildren(`${t.prBanner} #${PR}${open}`, code, close + t.prBannerTail);
-      $<HTMLAnchorElement>('banner-pr').href = `https://github.com/sf624/bash-explainer/pull/${PR}`;
-      $('banner-pr').textContent = `${t.toPr} #${PR}`;
-      $('banner-pr').hidden = false;
-      $('banner-pr-sep').hidden = false;
-    }
-    $<HTMLAnchorElement>('banner-commit').href = `https://github.com/sf624/bash-explainer/commit/${COMMIT}`;
-    $('banner-commit').textContent = COMMIT;
-    $('channel-banner').hidden = false;
-  }
+  showChannel(lang);
   $<HTMLSelectElement>('lang').value = lang;
   kindPicker?.set(KINDS.map((k) => ({ value: k.kind, name: t.kinds[k.kind] ?? k.name, short: SHORT_KIND[k.kind] })), kind, t.kind);
   // The same choice as a select in the menu, for a phone.
@@ -461,6 +434,7 @@ function clearEverything(): void {
   resetSplit?.();
   resetProblems?.();
   showReadTip();
+  showFile();
 }
 function showReadMode(): void {
   // The compare page has no such button.
@@ -493,6 +467,8 @@ function hideReadTip(remember: boolean): void {
   const tip = document.getElementById('readtip');
   if (tip) tip.hidden = true;
   if (remember) writeStored(STORAGE_KEYS.readTipSeen, '1');
+  // The first visit's hint over the editor waits for this tip: one at a time.
+  showFile();
 }
 /** Shows the tip, if there is a switch to point at and the tip was not seen. */
 function showReadTip(): void {
@@ -530,12 +506,15 @@ if (edge) setUpEdgeSwipe(edge, openMenu, 'left');
 const edgeRight = document.getElementById('edge-right');
 if (edgeRight) setUpEdgeSwipe(edgeRight, openSettings, 'right');
 // The menu's items do what the top bar's buttons do, and close the menu first.
-for (const [item, target] of [['menu-sample', 'sample'], ['menu-share', 'share']]) {
+// The menu's items do what the editor's header does, and close the menu first. Copy a link says "Copied" on the item
+// itself, and the menu stays.
+for (const [item, run] of [['menu-sample', sampleAsked], ['menu-clear', clearEditor], ['menu-copy-script', copyScript]] as const) {
   on(item, 'click', () => {
     drawer?.close();
-    $(target).click();
+    run();
   });
 }
+on('menu-share', 'click', () => void copyLink('menu-share'));
 
 // ---- The divider between the editor and the explanation ------------------------------------------
 
@@ -622,30 +601,58 @@ function askAboutSample(k: Kind): void {
 /** Puts in the current kind's sample; when it replaced the user's own text, the toast offers to undo it. */
 function loadSample(own: boolean): void {
   const info = kindInfo(kind);
-  const before = { file, format, clean };
+  const before = { file, format, clean, draftName, renamed };
   loadingSample = true;
   try { editor.setText(info.sample, info.cursorLine); } finally { loadingSample = false; }
   // The sample is no file's text: a save asks where again (and never writes it into the file opened before).
   file = undefined;
   format = PLAIN;
   clean = editor.text;
+  draftName = undefined;
+  renamed = false;
   showFile();
   // Undo brings back the text, and the file it was (its name, its handle, its line ends).
   const back = () => {
     undo(editor.view);
-    ({ file, format, clean } = before);
+    ({ file, format, clean, draftName, renamed } = before);
     showFile();
     editor.focusUnlessTouch();
   };
   if (own) status(TEXT[lang].sampleLoaded, false, { label: TEXT[lang].undo, run: back, untilEdit: true });
 }
 
-on('sample', 'click', () => {
+/** "Load the sample" (⋯, the menu, the empty editor; the compare page's button). */
+function sampleAsked(): void {
   // The user's own text asks for a confirmation and, once replaced, offers to undo; a sample or nothing does not.
   const own = ownText();
   if (own && !confirm(TEXT[lang].replace)) return;
   loadSample(own);
-});
+}
+on('sample', 'click', sampleAsked);
+
+/**
+ * Empties the editor, as one step of the history: the toast offers to undo it ("Sample cleared" when it held a sample).
+ * A file opened stays the file (its text is now empty, not saved).
+ */
+function clearEditor(): void {
+  const t = TEXT[lang];
+  if (!editor.text) return editor.view.focus();
+  const wasSample = untouched(editor.text);
+  loadingSample = true;
+  try { editor.setText('', 1); } finally { loadingSample = false; }
+  showFile();
+  const back = () => {
+    undo(editor.view);
+    showFile();
+    editor.focusUnlessTouch();
+  };
+  status(wasSample ? t.sampleCleared : t.editorCleared, false, { label: t.undo, run: back, untilEdit: true });
+  editor.focusUnlessTouch();
+}
+
+function copyScript(): void {
+  void navigator.clipboard.writeText(editor.text).then(() => status(TEXT[lang].scriptCopied));
+}
 
 // The other version is another page: go there with the script in the hash, in the same language.
 on('channel', 'change', async (e) => {
@@ -664,21 +671,37 @@ for (const [id, href] of [['banner-compare', 'compare.html'], ['back', './']]) {
   });
 }
 
-on('share', 'click', async () => {
+/** Copies the link to the script, and says "Copied" on the button pressed (the app bar's, or the menu's on a phone). */
+async function copyLink(id: 'share' | 'menu-share'): Promise<void> {
   const params = await scriptParams(lang, kind, editor.text);
   const url = `${location.origin}${location.pathname}#${params}`;
   await navigator.clipboard.writeText(url);
-  status(TEXT[lang].shared);
-});
+  confirmCopied($(id), lang, document.getElementById(id === 'share' ? 'share-said' : 'menu-share-said'), () => linkWords(id, lang));
+}
+on('share', 'click', () => void copyLink('share'));
 
 // ---- Files: open one into the editor, save the editor's text to one (web/file-io.ts) ----------------
 
 /** The editor page has them; the compare page and the copies in panel mode do not. */
 const withFiles = !mode.compare && !mode.panel;
+/** The editor's header, the first visit's hint and the empty editor's block (web/editor-head.ts); the editor page's only. */
+const head = withFiles ? new EditorHead({
+  lang: () => lang,
+  editor,
+  names: new FileNameControl({ lang: () => lang, view: () => nameView(), rename }),
+  openFile: () => void openFile(),
+  saveFile: () => void saveFile(),
+  loadSample: sampleAsked,
+  clear: clearEditor,
+  copyScript,
+  holdsSample: () => KINDS.some((k) => k.sample === editor.text),
+  tipShown: () => document.getElementById('readtip')?.hidden === false,
+  status: (text) => status(text),
+}) : undefined;
+// Focus rings follow the input: none on a control given the focus back after a pointer (web/popover.ts).
+setUpFocusRings();
 /** The text as it was last opened, saved or loaded: the editor has changes not saved while it differs (`unsaved`). */
 let clean = '';
-/** The key of a shortcut: ⌘S on a Mac, Ctrl+S elsewhere. */
-const shortcut = (key: string) => (isMac() ? `⌘${key}` : `Ctrl+${key}`);
 
 /**
  * Whether opening a file would lose text: the editor's text differs from the one last opened, saved or loaded, and is
@@ -699,20 +722,38 @@ function nameWithMark(name: string, dirty: boolean): Node[] {
 }
 
 let fileTimer: ReturnType<typeof setTimeout> | undefined;
-/** Shows the file's name, and whether it has changes not saved: in the top bar (not on a phone), the menu's Save and the page's title. */
+/** The script's name as the page shows it (src/ui/fileName.ts): muted until saved or opened, ● for changes not saved. */
+const nameView = () => fileNameView({ file: file?.name, draft: draftName, renamed, dirty: unsaved(), kindName: kindInfo(kind).fileName });
+/** Shows the script's name, and whether it has changes not saved: in the editor's header, the menu (its first row and its Save) and the page's title. */
 function showFile(): void {
   if (!withFiles) return;
   clearTimeout(fileTimer);
-  const dirty = unsaved();
-  const name = file?.name;
-  const label = $('file-label');
-  label.hidden = !name;
-  label.title = name ? (dirty ? `${name}${TEXT[lang].unsaved}` : name) : '';
-  $('file-name').replaceChildren(...nameWithMark(name ?? '', dirty));
-  // Save says where the script goes: the file, or the name a first save suggests.
-  $('menu-save-name').replaceChildren(...nameWithMark(name ?? defaultName(kind), dirty && !!name));
-  document.title = name ? `${dirty ? '● ' : ''}${name} — Bash Explainer` : 'Bash Explainer';
+  const v = nameView();
+  const t = TEXT[lang];
+  // Save says where the script goes: into the file, or the name a save suggests.
+  $('menu-save-name').replaceChildren(...nameWithMark(v.name, v.dot));
+  head?.show(file?.handle ? t.saveTo(v.name) : t.saveAs(v.name));
+  document.title = file || draftName ? `${v.dot ? '● ' : ''}${v.name} — Bash Explainer` : 'Bash Explainer';
 }
+
+/** Gives the script another name (the file name, renamed in place): the one a save writes (a file's next save then asks where). */
+function rename(next: string): void {
+  const before = fileName();
+  if (file) {
+    file = { name: next };
+    renamed = true;
+  } else {
+    draftName = next;
+  }
+  showFile();
+  // A new name can say another shell (`.zsh`).
+  if (fileName() !== before) {
+    editor.shade();
+    updatePanel();
+    editor.recheck();
+  }
+}
+
 /** After an edit: the mark follows once typing rests (comparing the whole text at every key would slow a large file down). */
 function showFileSoon(): void {
   if (!withFiles) return;
@@ -746,6 +787,8 @@ async function openChosen({ file: chosen, handle }: ChosenFile, back: HTMLElemen
   }
   file = { name: chosen.name, handle };
   format = { eol: read.eol, bom: read.bom };
+  draftName = undefined;
+  renamed = false;
   editor.openText(read.text);
   clean = editor.text;
   setKind(kindForFile(chosen.name, read.text));
@@ -771,7 +814,7 @@ async function saveFile(): Promise<void> {
   const text = editor.text;
   const before = fileName();
   const saving = file;
-  const r = await saveText(fileContent(text, format), file?.name ?? defaultName(kind), file?.handle);
+  const r = await saveText(fileContent(text, format), nameView().name, file?.handle);
   if (r.how === 'cancelled') return;
   // Another file was opened while the browser asked (its permission bubble is not modal): that one is not the file saved.
   if (file !== saving) return status(r.how === 'refused' ? t.notSaved(r.name) : r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
@@ -782,6 +825,8 @@ async function saveFile(): Promise<void> {
   }
   file = { name: r.name, handle: r.how === 'written' ? r.handle : undefined };
   clean = text;
+  draftName = undefined;
+  renamed = false;
   showFile();
   status(r.how === 'written' ? t.saved(r.name) : t.downloaded(r.name));
   // A new name can say another shell (`.zsh`).

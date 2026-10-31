@@ -92,11 +92,13 @@ describe('the web page: opening a file and saving the script', function () {
     })()`) as Promise<boolean>;
   }
   const kindOf = (page: Page) => page.locator('#kind').getAttribute('aria-label');
+  /** The script's name as the editor's header shows it. */
+  const shownName = (page: Page) => page.evaluate("document.getElementById('file-name-stem').textContent + document.getElementById('file-name-ext').textContent") as Promise<string>;
   const text = (page: Page) => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
   const toast = (page: Page) => page.locator('#status').evaluate((el) => el.firstChild?.textContent ?? '');
   const bytesOf = (s: string) => [...Buffer.from(s, 'utf8')];
 
-  it('saves with Ctrl+S as a download where the browser cannot write files: the exact text, named after the kind, and the browser does not save the page', async () => {
+  it('saves with Ctrl+S as a download where the browser cannot write files: the exact text, named as the editor\'s header shows it, and the browser does not save the page', async () => {
     const { ctx, page, errors } = await open([NO_PICKERS]);
     assert.strictEqual(await page.evaluate('typeof window.showSaveFilePicker'), 'undefined');
     // No newline at the end, and none added; non-ASCII text as UTF-8.
@@ -106,23 +108,26 @@ describe('the web page: opening a file and saving the script', function () {
     await page.evaluate("window.__prevented = []; window.addEventListener('keydown', (e) => { if (e.key.toLowerCase() === 's') window.__prevented.push(e.defaultPrevented); })");
     const saved = await download(page);
     assert.deepStrictEqual(await page.evaluate('window.__prevented'), [true]);
-    assert.strictEqual(saved.name, 'script.sh');
+    assert.strictEqual(saved.name, 'untitled.sh');
     assert.deepStrictEqual([...saved.bytes], bytesOf(script));
-    assert.match(await toast(page), /^Downloaded script\.sh\. This browser cannot write to a file itself/);
-    // The name now shows in the top bar and the title, with no mark: it is saved.
-    assert.strictEqual(await page.locator('#file-label').innerText(), 'script.sh');
-    assert.strictEqual(await page.title(), 'script.sh — Bash Explainer');
+    assert.match(await toast(page), /^Downloaded untitled\.sh\. This browser cannot write to a file itself/);
+    // The name shows in the editor's header (no longer muted) and the title, with no mark: it is saved.
+    assert.strictEqual(await shownName(page), 'untitled.sh');
+    assert.strictEqual(await page.locator('#file-name').evaluate((b) => b.classList.contains('draft')), false);
+    assert.strictEqual(await page.title(), 'untitled.sh — Bash Explainer');
     // An edit marks it, in words for a screen reader too. (The cursor is put at the end first: once, in a full run under
     // load, the letter went to the start of the text. What moved the cursor was not found, in 70 runs under load; this
     // test is about the save.)
     await page.keyboard.press('Control+End');
     await page.keyboard.insertText('x');
-    await until('the mark', () => page.title(), (t) => t === '● script.sh — Bash Explainer');
-    assert.strictEqual(await page.locator('#file-label').textContent(), 'script.sh ● (unsaved changes)');
-    assert.strictEqual(await page.locator('#file-label').getAttribute('title'), 'script.sh (unsaved changes)');
+    await until('the mark', () => page.title(), (t) => t === '● untitled.sh — Bash Explainer');
+    assert.strictEqual(await page.locator('#file-dot').isVisible(), true);
+    assert.strictEqual(await page.locator('#file-name').getAttribute('aria-label'), 'Rename: untitled.sh (unsaved changes)');
+    assert.strictEqual(await page.locator('#file-name').getAttribute('title'), 'Rename: untitled.sh (unsaved changes)');
     const again = await download(page);
     assert.deepStrictEqual([...again.bytes], bytesOf(`${script}x`));
-    await until('no mark', () => page.title(), (t) => t === 'script.sh — Bash Explainer');
+    await until('no mark', () => page.title(), (t) => t === 'untitled.sh — Bash Explainer');
+    assert.strictEqual(await page.locator('#file-dot').isVisible(), false);
     // The name follows the kind for a script that came from no file: a Dockerfile.
     const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US', acceptDownloads: true });
     await ctx2.addInitScript(NO_PICKERS);
@@ -174,7 +179,7 @@ describe('the web page: opening a file and saving the script', function () {
     await panel.evaluate('document.body.tabIndex = -1; document.body.focus()');
     assert.strictEqual(await other.page.evaluate('document.activeElement.id'), 'panel');
     const fromPanel = await download(other.page);
-    assert.strictEqual(fromPanel.name, 'script.sh');
+    assert.strictEqual(fromPanel.name, 'untitled.sh');
     await other.ctx.close();
   });
 
@@ -186,7 +191,7 @@ describe('the web page: opening a file and saving the script', function () {
     await until('the kind', () => kindOf(page), (k) => k === 'File: Dockerfile');
     assert.strictEqual((await text(page)).trim(), DOCKERFILE.trim());
     assert.strictEqual(await toast(page), 'Opened Dockerfile.');
-    assert.strictEqual(await page.locator('#file-label').innerText(), 'Dockerfile');
+    assert.strictEqual(await shownName(page), 'Dockerfile');
     assert.strictEqual(await page.title(), 'Dockerfile — Bash Explainer');
     // The sample was not the user's text: no question. Undo does not go back to it.
     assert.strictEqual(await page.locator('#discard-dialog[open]').count(), 0);
@@ -243,7 +248,7 @@ describe('the web page: opening a file and saving the script', function () {
     assert.strictEqual(await drop(page, 'Makefile', bytesOf('all:\n\techo hi\n')), true);
     await until('the kind', () => kindOf(page), (k) => k === 'File: Makefile');
     assert.match(await text(page), /^all:\n\techo hi/);
-    assert.strictEqual(await page.locator('#file-label').innerText(), 'Makefile');
+    assert.strictEqual(await shownName(page), 'Makefile');
     // A file dropped elsewhere on the page is not shown by the browser in the page's place.
     const prevented = await page.evaluate(`(() => {
       const data = new DataTransfer();
@@ -267,7 +272,7 @@ describe('the web page: opening a file and saving the script', function () {
     })()`);
     assert.strictEqual(textDrop, false);
     await until('the text dropped', () => text(page), (t) => t.startsWith('# dropped all:'));
-    assert.strictEqual(await page.locator('#file-label').innerText(), 'Makefile');
+    assert.strictEqual(await shownName(page), 'Makefile');
     await ctx.close();
   });
 
@@ -378,10 +383,12 @@ describe('the web page: opening a file and saving the script', function () {
     const same = await download(page);
     assert.strictEqual(same.name, 'win.sh');
     assert.deepStrictEqual([...same.bytes], bytesOf(crlf));
-    // The sample, then its Undo: the file comes back with its name and line ends.
-    await page.locator('#sample').click();
+    // The sample (⋯ › Load the sample), then its Undo: the file comes back with its name and line ends.
+    await page.locator('#ed-more').click();
+    await page.locator('#more-sample').click();
     await until('the sample', () => text(page), (t) => t.startsWith('#!/usr/bin/env bash'));
-    assert.strictEqual(await page.locator('#file-label').isVisible(), false);
+    assert.strictEqual(await shownName(page), 'untitled.sh');
+    assert.strictEqual(await page.locator('#file-name').evaluate((b) => b.classList.contains('draft')), true);
     await page.locator('#status .status-action').click();
     await until('the file back', () => page.title(), (t) => t === 'win.sh — Bash Explainer');
     const back = await download(page);
@@ -399,10 +406,11 @@ describe('the web page: opening a file and saving the script', function () {
     const mixed = await download(page);
     assert.deepStrictEqual([...mixed.bytes], bytesOf('a\r\nb\r\nc\r\n'));
     // A sample is no file's: its line ends are LF again, and Save asks for a name again.
-    await page.locator('#sample').click();
+    await page.locator('#ed-more').click();
+    await page.locator('#more-sample').click();
     await until('the sample', () => text(page), (t) => t.startsWith('#!/usr/bin/env bash'));
     const sample = await download(page);
-    assert.strictEqual(sample.name, 'script.sh');
+    assert.strictEqual(sample.name, 'untitled.sh');
     assert.strictEqual(sample.bytes.includes(13), false);
     await ctx.close();
   });
@@ -417,9 +425,9 @@ describe('the web page: opening a file and saving the script', function () {
     await page.keyboard.press('Control+S');
     await until('written', () => page.evaluate('window.__written["chosen.zsh"]') as Promise<number[] | undefined>, (v) => !!v);
     assert.deepStrictEqual(await page.evaluate('window.__written["chosen.zsh"]'), bytesOf('echo one\n'));
-    assert.deepStrictEqual(await page.evaluate('window.__picks'), [['save', 'script.sh']]);
+    assert.deepStrictEqual(await page.evaluate('window.__picks'), [['save', 'untitled.sh']]);
     assert.strictEqual(await toast(page), 'Saved chosen.zsh.');
-    assert.strictEqual(await page.locator('#file-label').innerText(), 'chosen.zsh');
+    assert.strictEqual(await shownName(page), 'chosen.zsh');
     // The name says zsh: the script is explained as zsh now, as a file of that name is in VS Code.
     await until('the shell from the name', () => page.locator('#shell-top option:checked').innerText(), (v) => v === 'Auto (zsh)');
     // The second save writes to the same file, without asking.
@@ -457,7 +465,7 @@ describe('the web page: opening a file and saving the script', function () {
     await ctx.close();
   });
 
-  it('fits the menu and the top bar at 320, 390 and 1280 px in English and Japanese, with the file name cut in the bar rather than overflowing', async () => {
+  it('fits the menu and the editor\'s header at 320, 390 and 1280 px in English and Japanese, with the file name cut in the header rather than overflowing', async () => {
     const long = 'a-very-long-file-name-for-the-deployment-of-the-whole-service-to-production.sh';
     for (const locale of ['en-US', 'ja-JP']) {
       for (const width of [320, 390, 1280]) {
@@ -469,19 +477,14 @@ describe('the web page: opening a file and saving the script', function () {
         await until('the mark', () => page.title(), (t) => t.startsWith('●'));
         const seen = `${locale} ${width}`;
         assert.strictEqual(await page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true, seen);
-        // The label shows on a wide screen, cut inside the bar; a phone has no room for it.
-        const label = await page.locator('#file-label').evaluate((el) => {
-          const r = el.getBoundingClientRect();
-          return { shown: r.width > 0, right: r.right, cut: el.scrollWidth > el.clientWidth, bar: el.parentElement!.getBoundingClientRect().height };
+        // The name shows at every width in the editor's header, its stem cut, its extension and ● before ⋯.
+        const label = await page.locator('#file-name').evaluate((el) => {
+          const stem = el.querySelector('#file-name-stem')!;
+          return { shown: el.getBoundingClientRect().width > 0, right: el.getBoundingClientRect().right, cut: stem.scrollWidth > stem.clientWidth, dot: !(el.querySelector('#file-dot') as unknown as { hidden: boolean }).hidden };
         });
-        if (width === 1280) {
-          assert.strictEqual(label.shown, true, seen);
-          assert.strictEqual(label.cut, true, seen);
-          const actions = (await page.locator('.top .actions').boundingBox())!;
-          assert.ok(label.right <= actions.x, `${seen}: ${JSON.stringify(label)} ${JSON.stringify(actions)}`);
-        } else {
-          assert.strictEqual(label.shown, false, seen);
-        }
+        assert.deepStrictEqual([label.shown, label.cut, label.dot], [true, true, true], seen);
+        const more = (await page.locator('#ed-more').boundingBox())!;
+        assert.ok(label.right <= more.x, `${seen}: ${JSON.stringify(label)} ${JSON.stringify(more)}`);
         const bar = await page.evaluate('document.querySelector(".top").getBoundingClientRect().height') as number;
         assert.ok(bar <= 49, `${seen}: ${bar}`);
         await page.locator('#menu-open').click();
@@ -512,7 +515,7 @@ describe('the web page: opening a file and saving the script', function () {
     await until('the shared Dockerfile', () => text(other.page), (t) => t.trim() === DOCKERFILE.trim());
     assert.strictEqual(await kindOf(other.page), 'File: Dockerfile');
     // A shared script is not the user's unsaved work... until it is edited.
-    assert.strictEqual(await other.page.locator('#file-label').isVisible(), false);
+    assert.strictEqual(await other.page.locator('#file-name').evaluate((b) => b.classList.contains('draft')), true);
     assert.strictEqual(await drop(other.page, 'x.sh', bytesOf('echo x\n')), true);
     await until('opened', () => text(other.page), (t) => t.trim() === 'echo x');
     await choose(other.page, '#lang', 'ja');

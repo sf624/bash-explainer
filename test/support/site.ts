@@ -19,13 +19,15 @@ export const FILES = ['/', '/app.js', '/favicon.ico', '/favicon.svg', '/icons.js
 export const MARKER = 'secret-7f3a9c';
 
 export interface Site {
-  /** Its contexts load the page as on a later load of the session, without the opening; see `firstLoad`. */
+  /** Its contexts load the page as on a later load of the session, without the opening, and as on a later visit, without the first visit's hint; see `firstLoad` and `firstVisit`. */
   browser: Browser;
   /**
    * A context that sees the opening (src/ui/opening.ts) as on the first load of a session: whole, for about two
-   * seconds over the page. The others see none.
+   * seconds over the page, and the first visit's hint over the editor. The others see neither.
    */
   firstLoad: Browser['newContext'];
+  /** A context of a first visit without the opening: the hint over the editor shows (web/editor-head.ts) until it is closed. */
+  firstVisit: Browser['newContext'];
   /** The address of the release page, with a trailing slash (`next/` and `pr/123/` are under it). */
   base: string;
 }
@@ -50,11 +52,18 @@ async function start(): Promise<Running | undefined> {
     return undefined;
   }
   // The opening covers the page for about two seconds on the first load of a session: the tests load the page as on a
-  // later load, which has none (web/theme-init.js reads this key), except those that ask for `firstLoad`.
+  // later load, which has none (web/theme-init.js reads this key), except those that ask for `firstLoad`. And as on a
+  // later visit, where the first visit's hint over the editor was closed (web/storage.ts, `firstHint`), except those
+  // that ask for `firstLoad` or `firstVisit`.
   const firstLoad = browser.newContext.bind(browser);
-  browser.newContext = async (options) => {
+  const firstVisit: Browser['newContext'] = async (options) => {
     const ctx = await firstLoad(options);
     await ctx.addInitScript("try { sessionStorage.setItem('bash-explainer-opening', '1'); } catch {}");
+    return ctx;
+  };
+  browser.newContext = async (options) => {
+    const ctx = await firstVisit(options);
+    await ctx.addInitScript("try { if (localStorage.getItem('bash-explainer-first-hint') === null) localStorage.setItem('bash-explainer-first-hint', '1'); } catch {}");
     return ctx;
   };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-web-'));
@@ -76,7 +85,7 @@ async function start(): Promise<Running | undefined> {
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] ?? 'application/octet-stream' }).end(fs.readFileSync(file));
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  return { browser, firstLoad, server, dir, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}/` };
+  return { browser, firstLoad, firstVisit, server, dir, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}/` };
 }
 
 /**

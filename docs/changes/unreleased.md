@@ -17,6 +17,18 @@ The setting **Wrap long lines** (`editor.wrap`) is now on by default. Before, it
 The line box at the top of the explanation (the line the cursor is on, coloured by its parts) wraps a long line where the editor does: only between the words bash reads, with ↪ on the rows after the first. A word wider than the box breaks at its own blanks, and only as a last resort anywhere. A line of more than three rows shows three, the third fading out; a click, or Enter or Space when the box has the focus, opens it whole, and a click beside its parts (a blank, the margin) folds it again. A click on a part still selects it in the editor. A new line starts folded.
 
 It follows the editor: on the web page, the setting **Wrap long lines** (`editor.wrap`, on by default); in VS Code, `editor.wordWrap` for the file (`off` keeps one row; `on`, `wordWrapColumn` and `bounded` wrap). VS Code has no new setting. Before, the line box was always one row, and a long line scrolled sideways in it.
+### The web page: the editor's header and the app bar
+
+- The editor has a header of its own: **Open** and **Save** (with their words when the editor's pane is 481 px wide or more, as icons below), the script's name, and **⋯** with Rename…, Copy the script, Load the sample and Clear the editor. Before, the name of a file opened or saved was in the top bar, and only there once it had one; the sample button was an icon in the top bar.
+- The name shows from the start: `untitled.sh` (or the kind's own name, such as `Dockerfile`), muted until the script is saved or opened. A first save suggests it. Before, a first save suggested `script.sh`.
+- ● after the name marks a file with changes not saved, in its text or in its name. Save has no dot.
+- A click on the name, or ⋯ › Rename…, turns it into a field: Enter or a click elsewhere renames, Escape keeps the old name. A name ending in `.zsh` explains the script as zsh, as a file of that name does. The menu's first row is the name too, and renames the same way.
+- Copy a link is a button with words in the top bar. After a copy it reads "✓ Copied" for about 2 s, and a screen reader hears "Link copied"; its tooltip says that the script is in the part after `#`, which browsers do not send to the server. Before, a toast said all of it. Under 900 px it shows its icon only, until the file type and the view leave the top bar.
+- Install for VS Code shows from 1100 px (before, from 901 px).
+- Clear the editor empties it, and the toast offers Undo. An empty editor shows Paste a script, Open a file… and Load the sample, and that a file can be dropped there.
+- On a first visit, a row over the sample says "This is a sample: put the cursor on any line.", with Use my own script and Open a file…. It stays closed once closed or used.
+- The menu is in groups: Script; Share and Explanation (on a narrow page, where the top bar has no room for them); Preferences; Help, with the keyboard shortcuts (not on a touch screen); About. Its title is "Bash Explainer".
+- A button that gets the focus back after a dialog or a menu closed with the mouse no longer shows a focus ring; after a key it does.
 
 ## Fixed
 

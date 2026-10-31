@@ -14,7 +14,7 @@ describe('the web page: the menu and the settings sheet', function () {
     ({ browser, base } = await openSite(this));
   });
 
-  it('has a menu that opens from the left with its button (at the left end of the top bar) or a swipe from the left edge, closes with Esc, × or a swipe, and holds what the toolbar and the footer had', async () => {
+  it('has a menu that opens from the left with its button (at the left end of the top bar) or a swipe from the left edge, closes with Esc, × or a swipe, and holds what the toolbar and the footer had, in groups', async () => {
     const { devices } = await import('playwright-core');
     const ctx = await browser.newContext({ ...devices['iPhone 13'], locale: 'en-US' });
     const page = await ctx.newPage();
@@ -24,10 +24,10 @@ describe('the web page: the menu and the settings sheet', function () {
     // On a phone the top bar has the menu, the logo and name, the fold, the quick reference, read mode and the
     // settings; the file kind, the copy, the link and the rest are in the menu.
     const shown = async (ids: string[]) => Promise.all(ids.map(async (id) => [id, await page.locator(id).isVisible()]));
-    assert.deepStrictEqual(await shown(['#kind', '.brand', '#collapse', '#ref', '#copy-md', '#share', '#settings-open', '#menu-open', '#sample', '#github', '#install']),
-      [['#kind', false], ['.brand', true], ['#collapse', true], ['#ref', true], ['#copy-md', false], ['#share', false], ['#settings-open', true], ['#menu-open', true], ['#sample', false], ['#github', false], ['#install', false]]);
+    assert.deepStrictEqual(await shown(['#kind', '.brand', '#collapse', '#ref', '#copy-md', '#share', '#settings-open', '#menu-open', '#ed-more', '#github', '#install']),
+      [['#kind', false], ['.brand', true], ['#collapse', true], ['#ref', true], ['#copy-md', false], ['#share', false], ['#settings-open', true], ['#menu-open', true], ['#ed-more', true], ['#github', false], ['#install', false]]);
     assert.strictEqual(await page.locator('#menu-open').getAttribute('aria-label'), 'Menu');
-    assert.strictEqual(await page.locator('#share').getAttribute('aria-label'), 'Copy a link to this script');
+    assert.strictEqual(await page.locator('#menu-share').innerText(), 'Copy a link to this script');
     await page.locator('#menu-open').tap();
     assert.strictEqual(await open(), true);
     // The focus stays in the menu.
@@ -88,9 +88,8 @@ describe('the web page: the menu and the settings sheet', function () {
     await page.locator('#menu-share').tap();
     await until('the copied link', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.startsWith(`${base}#`));
     assert.strictEqual(await page.evaluate('location.hash'), '');
-    // ...and says so in a toast, inside the screen.
-    const toast = (await page.locator('#status').boundingBox())!;
-    assert.ok(toast.x >= 16 && toast.x + toast.width <= 390 - 16 + 0.5, JSON.stringify(toast));
+    // ...and says so on the item itself, the menu staying open (test/web-editor-head.test.ts has the details).
+    await until('Copied', () => page.locator('#menu-share').innerText(), (t) => t === 'Copied');
     await ctx.close();
   });
 

@@ -52,7 +52,12 @@ a {
 }
 
 .icon-btn svg,
-.menu-item svg {
+.menu-item svg,
+.text-btn svg,
+.tool-btn svg,
+.popitem svg,
+.empty-btn svg,
+.file-pencil {
   width: 18px;
   height: 18px;
   flex: none;
@@ -328,32 +333,6 @@ button {
   text-overflow: ellipsis;
 }
 
-/* The name of the file opened or saved (with ● for changes not saved), in the tagline's place; cut with "…" when
-   the bar is short of room. A phone has no room: its menu's Save shows the name. */
-.file-label {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 24rem;
-  margin: 0;
-  overflow: hidden;
-  color: var(--vscode-foreground);
-  font-size: 13px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.file-label[hidden] {
-  display: none;
-}
-
-.file-label:not([hidden]) ~ .tagline {
-  display: none;
-}
-
-:where(html.narrow) .file-label {
-  display: none;
-}
-
 .actions {
   display: flex;
   flex: none;
@@ -443,6 +422,352 @@ button {
   filter: brightness(1.1);
 }
 
+/* "Copy a link": an icon and its words; after a copy, ✓ and "Copied" for about 2 s (web/editor-head.ts). */
+.text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  min-height: 0;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .text-btn:hover {
+    border-color: transparent;
+  }
+}
+
+.text-btn.copied svg {
+  color: var(--page-accent);
+}
+
+/* ≡ keeps its size; the file kind's picker gives way first. */
+#menu-open {
+  flex: none;
+}
+
+/* Until C5 and C7 move the pickers and the view switch out of the bar, a window under 900 px has no room for the
+   words of "Copy a link": its icon only (✓ after a copy), its words for a screen reader. */
+@media (max-width: 899px) {
+  #share {
+    justify-content: center;
+    width: 34px;
+    padding: 0;
+  }
+
+  #share .lbl {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* A control given the focus back after a pointer has no ring until the next key (web/popover.ts). */
+.no-ring:focus-visible {
+  outline: none;
+}
+
+/* ---- The editor's header: Open, Save, the file name, ⋯ ------------------------------------------ */
+
+.ed-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--page-background);
+}
+
+.tool-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  min-height: 0;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .tool-btn:hover {
+    border-color: transparent;
+  }
+}
+
+@container source (max-width: 480px) {
+  .tool-btn {
+    justify-content: center;
+    width: 32px;
+    padding: 0;
+  }
+
+  .tool-btn .lbl {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* The name: as wide as it is, cut in its stem ("very-long-dep….sh") when the header is short of room. */
+.file-box {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: 6px;
+  margin-right: auto;
+}
+
+.file-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  height: 28px;
+  min-height: 0;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* Never saved or opened: muted. */
+.file-name.draft,
+.menu-file.draft .menu-file-name {
+  color: var(--vscode-descriptionForeground);
+}
+
+.fn-stem {
+  min-width: 3ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fn-ext,
+.file-dot {
+  flex: none;
+}
+
+.file-dot {
+  margin-left: 6px;
+  font-size: 10px;
+}
+
+.file-dot[hidden] {
+  display: none;
+}
+
+/* A pencil says that a click renames, on hover and on focus. */
+.file-pencil {
+  width: 14px;
+  height: 14px;
+  margin-left: 6px;
+  opacity: 0;
+  color: var(--vscode-descriptionForeground);
+}
+
+.file-name:focus-visible .file-pencil,
+.menu-file .file-pencil {
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .file-name:hover {
+    border-color: var(--vscode-panel-border);
+  }
+
+  .file-name:hover .file-pencil {
+    opacity: 1;
+  }
+}
+
+.file-name-input {
+  min-width: 0;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: var(--radius-sm);
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: 13px;
+}
+
+.file-name[hidden],
+.menu-file[hidden],
+.file-name-input[hidden] {
+  display: none;
+}
+
+/* ⋯ and its menu, under it at its right edge. */
+.popbox {
+  position: relative;
+  flex: none;
+}
+
+.popmenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 13rem;
+  padding: 4px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--radius);
+  background: var(--vscode-editor-background);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+.popmenu[hidden] {
+  display: none;
+}
+
+.popitem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.popitem svg {
+  color: var(--vscode-descriptionForeground);
+}
+
+.popitem:focus-visible {
+  outline-offset: -2px;
+}
+
+.popsep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--vscode-panel-border);
+}
+
+/* The first visit's hint: one row over the editor (it pushes the code down; it covers none). */
+.first-hint {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  min-height: 32px;
+  padding: 2px 2px 2px 12px;
+  background: var(--accent-soft);
+  color: var(--vscode-foreground);
+  font-size: 13px;
+}
+
+.first-hint[hidden] {
+  display: none;
+}
+
+.first-hint p {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.hint-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.hint-btn {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  font-size: 13px;
+}
+
+.first-hint .icon-btn {
+  width: 28px;
+  height: 28px;
+}
+
+/* The empty editor's block: Paste, Open, Load the sample, 30% down the editor (web/editor-head.ts puts it inside the
+   editor's box); the editor around it takes clicks. */
+.empty-editor {
+  position: absolute;
+  inset: 30% 0 auto;
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.empty-editor[hidden] {
+  display: none;
+}
+
+.empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: min(18rem, calc(100% - 32px));
+  pointer-events: auto;
+}
+
+.empty-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.empty-btn.primary {
+  border-color: var(--page-accent);
+  background: var(--page-accent);
+  color: var(--page-accent-foreground);
+}
+
+.empty-btn kbd {
+  margin-left: auto;
+  font-family: inherit;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.empty-drop {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  text-align: center;
+}
+
 /* ---- The editor and the explanation ----------------------------------------------------------- */
 
 .split {
@@ -453,12 +778,14 @@ button {
   min-height: 0;
 }
 
+/* The editor's pane is a container: Open and Save in its header show their words from a pane of 481 px, icons below. */
 .source {
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  container: source / inline-size;
 }
 
 /* How to leave the editor (web/a11y.ts): the editor's description, shown at its top right for a few seconds when the
@@ -536,6 +863,7 @@ button {
 }
 
 #editor {
+  position: relative;
   flex: 1;
   min-height: 0;
 }
@@ -1043,6 +1371,80 @@ body.resizing .problems-resize {
   border-top: 1px solid var(--vscode-panel-border);
 }
 
+/* Each group's heading: small capitals over its items. */
+.menu-h {
+  margin: 0;
+  padding: 2px 8px 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Share and Explanation: only where the app bar and the panel have no room for them (stacked). */
+.menu-group.narrow-only {
+  display: none;
+}
+
+:where(html.narrow) .menu-group.narrow-only {
+  display: flex;
+}
+
+/* Help: the keys, for a page with a keyboard (not a touch screen without a mouse). */
+@media (hover: none) and (pointer: coarse) {
+  #menu-g-help {
+    display: none;
+  }
+}
+
+.menu-sub {
+  margin: 4px 8px 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.menu-keys {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0 8px 4px;
+  font-size: 12.5px;
+}
+
+.menu-keys dt {
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+}
+
+.menu-keys dd {
+  margin: 0;
+}
+
+/* The script's name, the menu's first row: a click renames it here. */
+.menu-file-row {
+  display: flex;
+  min-width: 0;
+}
+
+.menu-file {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.menu-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-file-row .file-name-input {
+  flex: 1 1 auto;
+  height: 40px;
+  margin: 0 8px;
+}
+
 .field {
   display: grid;
   grid-template-columns: 6.5rem minmax(0, 1fr);
@@ -1268,7 +1670,8 @@ body.resizing .problems-resize {
   background: var(--accent-soft);
 }
 
-@media (max-width: 900px) {
+/* "Install for VS Code" from 1100 px. */
+@media (max-width: 1099px) {
   .top .install {
     display: none;
   }
@@ -1362,6 +1765,58 @@ body.resizing .problems-resize {
 :where(html.narrow) .menu-item {
   min-height: 44px;
 }
+
+:where(html.narrow) .ed-head {
+  height: 44px;
+  padding: 0;
+}
+
+:where(html.narrow) .tool-btn,
+:where(html.narrow) .file-name,
+:where(html.narrow) .file-name-input {
+  height: 44px;
+}
+
+:where(html.narrow) .tool-btn {
+  min-width: 44px;
+  justify-content: center;
+}
+
+/* A touch screen has strips along its edges for the swipes that open the menu and the settings (.edge): the header's
+   and the hint's controls keep clear of them. */
+@media (pointer: coarse) {
+  :where(html.narrow) .ed-head,
+  :where(html.narrow) .first-hint {
+    padding-inline: 12px;
+  }
+}
+
+/* Stacked, the hint's × is 44 px; on a phone (a touch screen) its text and × share the first row, its buttons the second. */
+:where(html.narrow) .first-hint .icon-btn {
+  width: 44px;
+  height: 44px;
+}
+
+@media (pointer: coarse) {
+  :where(html.narrow) .first-hint p {
+    flex-basis: calc(100% - 60px);
+  }
+
+  :where(html.narrow) .first-hint .icon-btn {
+    order: 1;
+  }
+
+  :where(html.narrow) .hint-actions {
+    order: 2;
+  }
+}
+
+:where(html.narrow) .popitem,
+:where(html.narrow) .hint-btn,
+:where(html.narrow) .empty-btn {
+  min-height: 44px;
+}
+
 
 :where(html.narrow) .field select {
   min-height: 40px;

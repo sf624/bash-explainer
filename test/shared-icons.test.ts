@@ -1,6 +1,6 @@
 // An action shows the same icon in the VS Code panel's header and on the web page (top bar, menu, compare page):
 // both draw it from the one table of media/icons.js, by the same name. The web page's own actions (menu, share,
-// sample, read mode, GitHub…) keep the page's own icons. test/web-topbar.test.ts checks that the page follows the
+// sample, read mode, GitHub, the editor's header…) keep the page's own icons. test/web-topbar.test.ts checks that the page follows the
 // panel when the fold and the quick reference buttons change their icon.
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -47,7 +47,7 @@ describe('shared icons', () => {
   });
 
   it('keeps the web page\'s own icons for the actions only it has', () => {
-    for (const [id, icon] of [['menu-open', '#i-menu'], ['share', '#i-link'], ['sample', '#i-sample'], ['readmode', '#i-keyboard'], ['github', '#i-github'], ['menu-close', '#i-close']]) {
+    for (const [id, icon] of [['menu-open', '#i-menu'], ['share', '#i-link'], ['more-sample', '#i-sample'], ['readmode', '#i-keyboard'], ['github', '#i-github'], ['menu-close', '#i-close'], ['open-btn', '#i-open'], ['save-btn', '#i-save'], ['ed-more', '#i-more'], ['more-copy', '#i-duplicate'], ['more-clear', '#i-clear']]) {
       assert.strictEqual(iconOf(index, id), icon, id);
     }
   });
