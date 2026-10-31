@@ -5,7 +5,7 @@ import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
 import type { ReadingNode } from '../src/reading';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { needsReading, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
+import { isPressed, needsReading, PANEL_DEFAULTS, PanelState, panelState, panelUpdate, viewControl } from '../src/ui/panelView';
 import {
   aboutKey, bandOf, chipOf, DrawnNode, layerOfStep, levelOf, measureSteps, ownStep, readerOf, readingView, roleOf, startsBand, stepFrom, stepNames, STEPS,
 } from '../src/ui/readingSteps';
@@ -138,6 +138,25 @@ describe('the view slot\'s contract (src/ui/panelView.ts)', () => {
     assert.deepStrictEqual(panelState({ view: 'list', level: 2 }), { view: 'list', step: 6, level: 2 });
     assert.deepStrictEqual(panelState({ step: 2, level: 4 }), { step: 2, level: 1 });
     for (const kept of [undefined, null, 'tree', 3, {}, { view: 'graph', step: 9, level: 5 }, { step: 2.5, level: 0 }, { step: '3' }]) assert.deepStrictEqual(panelState(kept), {}, JSON.stringify(kept));
+  });
+
+  it('keeps every field of the state: a field added to PanelState and not read back fails here', () => {
+    // (Required<PanelState>: a new field must be given a value here, and `panelState` must keep it.)
+    const every: Required<PanelState> = { view: 'tree', step: 7, level: 3 };
+    assert.deepStrictEqual(panelState(every), every);
+    assert.deepStrictEqual(panelState(JSON.parse(JSON.stringify(panelState(every)))), every);
+  });
+
+  it('presses an option by one rule: the state, with its defaults, has everything the option sets', () => {
+    assert.deepStrictEqual(PANEL_DEFAULTS, { view: 'list', step: STEPS });
+    assert.ok(isPressed({}, { view: 'list' }) && !isPressed({}, { view: 'tree' }));
+    assert.ok(isPressed({ view: 'tree', step: 3 }, { view: 'tree' }));
+    assert.ok(isPressed({ step: 3 }, { view: 'list', step: 3 }) && !isPressed({ step: 3 }, { view: 'list', step: 8 }));
+    assert.ok(isPressed({ view: 'tree' }, {}), 'an option that sets nothing is always shown');
+    // viewControl applies it to each option.
+    for (const state of [{}, { view: 'list' as const }, { view: 'tree' as const, step: 2 }]) {
+      for (const o of viewControl(state, 'en').options) assert.strictEqual(o.pressed, isPressed(state, o.sets), `${JSON.stringify(state)} ${o.id}`);
+    }
   });
 
   it('says when the explanation needs the reading tree: in the tree view only', () => {

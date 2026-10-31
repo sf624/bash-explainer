@@ -207,7 +207,7 @@ Risks: an example value could be read as the real one. The note says it is an ex
 
 Three PRs:
 
-- **P7a. The row model.** `src/ui/panelRows.ts`: a pure function of the explanation, the depth and the switch. It builds the rows, the text of each depth, the boxes, the role ids, the marks and the Key entries. Data only, drawn by nothing yet, with its tests. It stays under the 1,000 lines of test/file-length.test.ts (split by part if it grows). The basis chips of the roadmap's basis of an explanation ("Not in the manual · checked with bash 5.2", "Try it") are row data here, as they land before P7 (section 8, decision 3).
+- **P7a. The row model.** `src/ui/panelRows.ts`: a pure function of the explanation, the depth and the switch. It builds the rows, the text of each depth, the boxes, the role ids, the marks and the Key entries. It takes over `chipOf`, `readerOf`, `bandOf` and `roleOf` of src/ui/readingSteps.ts (P1) rather than writing them again; `ROLES` goes to the one colour table per kind (sources.md, SC10). Data only, drawn by nothing yet, with its tests. It stays under the 1,000 lines of test/file-length.test.ts (split by part if it grows). The basis chips of the roadmap's basis of an explanation ("Not in the manual · checked with bash 5.2", "Try it") are row data here, as they land before P7 (section 8, decision 3).
 - **P7b. The problems box, in today's Meaning.** Each warning and caveat gets a headline: one sentence in its catalog entry or style check, required by the type (as test/suggestions.test.ts requires a class), and per params where the text has cases. The box "Problems on this line": each item with its level's mark and word from the catalog, the headline, "more" with the whole text and the fix to copy (P3), and chips that link each row to its problem and back. A line inside a construct gets a pointer to the problem on the construct's line, with the level's word and the line number.
 - **Prerequisites of P7a and P7b** (2026-10-31, [sources.md](sources.md), SB3): `Token.role` and `Token.facts` (fact ids); no string notes (`cx.note` with a plain string goes, and the `cmd 2>&1 >file` note of `simulateRedirects` becomes a catalog fact at Info, with the rewrite `>file 2>&1` and none where stdout goes to `/dev/null` before a pipe, as in `cmd 2>&1 >/dev/null | grep …`), so P7b has every warning typed; one row record per token, which all four renderers read (media/panel.js `item()`, src/ui/hoverView.ts, src/ui/render.ts `toPlainMarkdown`, cli/main.ts `textOutput`); the `ui` texts out of render.ts into a module of their own. The guard SA5 then ends with an empty known list.
 - **P7c. The grid and the boxes.** The Meaning tab becomes depth 1 of the new view: "In short", the problems box, the folded whole-line example, the grid, a box per command. Reading stays as the second tab.
@@ -236,6 +236,8 @@ Tests: depth 2 adds to depth 1 and moves nothing (the second half of test/web-de
 
 Risks: users of Reading's eight steps lose them. The changelog says so.
 
+From P1 (review of #538): `PanelState` gains `depth` here. `panelState` must read it back: the round-trip test of test/reading-steps.test.ts fails until it does. The options of `viewControl` say what they `sets` (`{ depth: 2 }`), and `pressed` follows from the one rule of `isPressed` (src/ui/panelView.ts), which media/panel.js applies too; `PANEL_DEFAULTS` gets the default depth.
+
 ### P9. "What the program receives"
 
 What: the switch, on by default, remembered once chosen (key W). Under each command, the words its program receives as chips (P4); a word received as written is tinted.
@@ -247,6 +249,8 @@ The mark "not in POSIX sh", on the construct only, where it uses a feature of `F
 The Key lists the marks drawn, the level marks included, inline in the panel.
 
 CHANGELOG (New): "A switch shows what each program receives: its words after bash's expansions, and the parts bash handles itself. A mark shows what POSIX sh lacks."
+
+From P1 (review of #538): `needsReading(state)` becomes `explainNeeds(state)`, which returns the explain options a state needs (the reading data at depth 2, argv with the switch on); both hosts pass them to the explanation. `receives` joins `PanelState`, and `panelState` reads it back (the round-trip test fails until it does).
 
 Tests: the rule of "handled by bash" against P4's argv data, over the corpus, with the count per construct (one). The dialect mark against the dash and yash measurements that test/dialect.test.ts already checks; `bash --posix` is no oracle (it runs `[[ ]]`, `==` in `[ ]` and `source`). Chips whole at three widths; the Key's entries equal the marks drawn.
 
